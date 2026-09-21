@@ -41,7 +41,7 @@ describe("Brevo transactional delivery", () => {
       fromName: 'Marca\r\n<>"', text: "Olá", replyTo: "help@example.com",
       tags: [{ name: "kind", value: "team_invite" }] });
     expect(result).toEqual({ ok: true, id: "<accepted@brevo>" });
-    const [url, init] = fetchMock.mock.calls[0];
+    const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe("https://api.brevo.com/v3/smtp/email");
     expect(init.headers["api-key"]).toBe(config.BREVO_API_KEY);
     expect(init.redirect).toBe("error");

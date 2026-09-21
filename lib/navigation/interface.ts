@@ -18,6 +18,11 @@ export const interfaceSettingsSchema = z
 export type InterfaceSettings = z.infer<typeof interfaceSettingsSchema>;
 export const INTERFACE_COMPLETA: InterfaceSettings = { preset: "completa" };
 const SIMPLIFICADA: readonly NavDestinationId[] = [
+  "/app/instagram",
+  "/app/instagram/new",
+  "/app/instagram/library",
+  "/app/instagram/inspirations",
+  "/app/instagram/insights",
   "/app/inbox",
   "/app/agenda",
   "/app/kanban",

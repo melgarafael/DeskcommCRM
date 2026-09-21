@@ -19,6 +19,8 @@ import { DEFAULT_APP_NAME } from "@/lib/branding";
 import { ArtisanIcon, type ArtisanSymbol } from "@/components/brand/ArtisanIcon";
 
 const daily: { href: string; symbol: ArtisanSymbol }[] = [
+  { href: "/app/instagram", symbol: "instagram" },
+  { href: "/app/prospecting", symbol: "spark" },
   { href: "/app/inbox", symbol: "conversation" },
   { href: "/app/kanban", symbol: "pipeline" },
   { href: "/app/ai/agents", symbol: "agent" },

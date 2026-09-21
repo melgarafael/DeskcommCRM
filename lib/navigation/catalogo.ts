@@ -104,6 +104,41 @@ export const GRUPO_NO_RODAPE: NavGroupId = "organizacao";
  */
 export const NAV_CATALOG = [
   {
+    href: "/app/instagram",
+    label: "Instagram",
+    description: "Crie imagens, encontre referências e entenda seus resultados.",
+    icon: "InstagramLogo",
+    group: "canais",
+  },
+  {
+    href: "/app/instagram/new",
+    label: "Criar postagem",
+    description: "Conte sua ideia e gere uma imagem para revisar e baixar.",
+    icon: "InstagramLogo",
+    group: "canais",
+  },
+  {
+    href: "/app/instagram/library",
+    label: "Minhas criações",
+    description: "Imagens e legendas salvas para o seu Instagram.",
+    icon: "InstagramLogo",
+    group: "canais",
+  },
+  {
+    href: "/app/instagram/inspirations",
+    label: "Inspirações",
+    description: "Pesquise ideias do seu nicho e guarde perfis de referência.",
+    icon: "InstagramLogo",
+    group: "canais",
+  },
+  {
+    href: "/app/instagram/insights",
+    label: "Meus resultados",
+    description: "Consulte alcance, visualizações e interações do Instagram.",
+    icon: "InstagramLogo",
+    group: "canais",
+  },
+  {
     href: "/app",
     label: "Escreve aí",
     description: "Converse com o conteúdo do seu CRM e encontre seu próximo passo.",
@@ -112,7 +147,7 @@ export const NAV_CATALOG = [
   },
   {
     href: "/app/prospecting",
-    label: "Prospecção",
+    label: "Conquiste novos clientes",
     description: "Busque empresas e conduza abordagens graduais com IA.",
     icon: "Funnel",
     group: "crm",

@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Instagram — da ideia à criação",
+    "subtitle": "Conteúdo, referências e resultados com isolamento por empresa",
+    "output": "instagram-studio.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "ui",
+      "label": "ui"
+    },
+    {
+      "id": "server",
+      "label": "server"
+    },
+    {
+      "id": "storage",
+      "label": "storage"
+    }
+  ],
+  "mainPath": ["ui", "api", "db", "ai", "assets"],
+  "nodes": [
+    {
+      "id": "ui",
+      "lane": "ui",
+      "col": 0,
+      "type": "service",
+      "label": "Instagram: criar, revisar, biblioteca e inspirações"
+    },
+    {
+      "id": "api",
+      "lane": "server",
+      "col": 1,
+      "type": "service",
+      "label": "API Instagram: sessão, papel e organização"
+    },
+    {
+      "id": "db",
+      "lane": "storage",
+      "col": 2,
+      "type": "service",
+      "label": "instagram_studio_items: RLS e idempotência"
+    },
+    {
+      "id": "ai",
+      "lane": "server",
+      "col": 3,
+      "type": "service",
+      "label": "OpenAI: imagem, legenda e pesquisa com fontes"
+    },
+    {
+      "id": "billing",
+      "lane": "storage",
+      "col": 4,
+      "type": "service",
+      "label": "Reservas e consumo por assinatura"
+    },
+    {
+      "id": "assets",
+      "lane": "storage",
+      "col": 5,
+      "type": "service",
+      "label": "Imagens privadas e URLs assinadas"
+    },
+    {
+      "id": "social",
+      "lane": "server",
+      "col": 6,
+      "type": "service",
+      "label": "Adapter social: contas e resultados da organização"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "from": "ui",
+      "to": "api",
+      "label": "pedido ou leitura"
+    },
+    {
+      "id": "e1",
+      "from": "api",
+      "to": "db",
+      "label": "persistência antes de gerar"
+    },
+    {
+      "id": "e2",
+      "from": "api",
+      "to": "ai",
+      "label": "geração autorizada"
+    },
+    {
+      "id": "e3",
+      "from": "ai",
+      "to": "billing",
+      "label": "reserva e custo medido"
+    },
+    {
+      "id": "e4",
+      "from": "api",
+      "to": "assets",
+      "label": "salva imagem privada"
+    },
+    {
+      "id": "e5",
+      "from": "assets",
+      "to": "ui",
+      "label": "revisão e download"
+    },
+    {
+      "id": "e6",
+      "from": "db",
+      "to": "ui",
+      "label": "histórico e recuperação"
+    },
+    {
+      "id": "e7",
+      "from": "api",
+      "to": "social",
+      "label": "insights da conta validada"
+    }
+  ]
+}

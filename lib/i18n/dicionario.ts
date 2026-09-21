@@ -36,7 +36,9 @@ import type { Idioma } from "./idiomas";
 /** `pt-BR` não aparece: é a chave. Só o que DIFERE precisa de linha. */
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
+import { INSTAGRAM_ES } from "./instagram";
 export const DICIONARIO: Traducoes = {
+  ...INSTAGRAM_ES,
   "Informe o custo em dólares, a referência da consulta e confirme a verificação.": { es: "Indica el costo en dólares, la referencia de la consulta y confirma la verificación." },
   "Conciliação confirmada. Valor aplicado à franquia:": { es: "Conciliación confirmada. Importe aplicado al saldo incluido:" },
   "Não foi possível confirmar. Os dados foram preservados. Atualize a lista antes de tentar novamente.": { es: "No se pudo confirmar. Los datos se conservaron. Actualiza la lista antes de volver a intentarlo." },

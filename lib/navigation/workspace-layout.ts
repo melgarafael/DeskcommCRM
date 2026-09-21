@@ -9,6 +9,6 @@ export function workspaceLayout(
   if (/^\/app\/(metrics|activities|audit|ads|ai\/(usage|runs|evolution))(\/|$)/.test(path))
     return "insights";
   if (/^\/app\/(agenda|tasks)(\/|$)/.test(path)) return "agenda";
-  if (/^\/app\/(ai\/agents\/|connections|prospecting)/.test(path)) return "studio";
+  if (/^\/app\/(ai\/agents\/|connections|prospecting|instagram)/.test(path)) return "studio";
   return "directory";
 }

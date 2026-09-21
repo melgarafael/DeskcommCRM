@@ -338,3 +338,5 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20260920113000` | `0319_subscription_ai_reconciliation` | Conferência explícita por administrador completo, conciliação e auditoria atômicas, sem liberar reservas em andamento. |
 
 | `20260920150000` | `0320_cakto_billing` | Cakto opt-in, fila durável sem dados pessoais e vínculo de compra por empresa. |
+
+| `20260920234500` | `0321_instagram_studio` | Rascunhos, imagens privadas, pesquisas com fontes e referências por organização; escrita somente pelo backend autorizado. |
