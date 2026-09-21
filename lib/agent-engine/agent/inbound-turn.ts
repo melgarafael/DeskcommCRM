@@ -138,6 +138,7 @@ import { buildMcpTurnTools } from '../edge/crm/mcp-tools';
 import { cancelPendingCronsForLead } from '../cron/scheduler';
 import {
   latestInboundSignal,
+  recentInboundSignal,
   loadSkills,
   matchSkills,
   recordSkillMissCandidates,
@@ -2645,7 +2646,10 @@ async function executarTurnoDoAgente(
   // montar rawTools (Fase 2): o gate de read_skill_reference precisa do resultado do match
   // para decidir se a tool entra no turno (mesmo padrão de gate de search_knowledge/
   // request_human_handoff, feito antes do wrapToolsWithBreaker).
-  const skillSignal = latestInboundSignal(effectiveContext.messages);
+  // Sinal do matcher com o CONTEXTO recente (não só a última mensagem): a
+  // conversa sobre motos continua e a skill não pode "cair" quando o cliente
+  // responde a escolha ("A 2025"), senão as fotos da moto escolhida não saem.
+  const skillSignal = recentInboundSignal(effectiveContext.messages);
   const skillMatch = matchSkills(skills, skillSignal);
   // Skills do fluxo de atendimento entram em PARALELO ao match por keyword: um
   // nó `skill` do fluxo diz "puxe isto neste trecho". Dedup por nome — o match
