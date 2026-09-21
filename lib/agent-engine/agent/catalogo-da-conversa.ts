@@ -42,9 +42,15 @@ export interface CatalogoDaConversa {
   motos: MotoDoCatalogo[];
   /** Nomes (normalizados) das motos já enviadas em detalhe — não repetir. */
   detalhadas: string[];
+  /**
+   * TRAVA DE DECISÃO: a moto que o cliente ESCOLHEU. Uma vez escolhida, o agente
+   * NÃO oferece outra — conduz ao fechamento. Só destrava (volta a `null`) quando
+   * uma NOVA apresentação acontece (o cliente pediu para ver outras).
+   */
+  escolhida: MotoDoCatalogo | null;
 }
 
-const VAZIO: CatalogoDaConversa = { motos: [], detalhadas: [] };
+const VAZIO: CatalogoDaConversa = { motos: [], detalhadas: [], escolhida: null };
 
 /** Teto de motos guardadas por conversa — estado efêmero, não acervo. */
 export const MAX_MOTOS_GUARDADAS = 40;
@@ -76,12 +82,13 @@ export async function carregarCatalogoDaConversa(
     );
     const raw = rows[0]?.agent_catalogo;
     if (typeof raw !== 'object' || raw === null) return VAZIO;
-    const obj = raw as { motos?: unknown; detalhadas?: unknown };
+    const obj = raw as { motos?: unknown; detalhadas?: unknown; escolhida?: unknown };
     return {
       motos: Array.isArray(obj.motos) ? obj.motos.filter(ehMoto) : [],
       detalhadas: Array.isArray(obj.detalhadas)
         ? obj.detalhadas.filter((d): d is string => typeof d === 'string')
         : [],
+      escolhida: ehMoto(obj.escolhida) ? obj.escolhida : null,
     };
   } catch {
     return VAZIO;
@@ -92,6 +99,11 @@ export async function carregarCatalogoDaConversa(
  * Grava o catálogo da conversa (merge com o atual): acrescenta as motos novas
  * (dedup por nome, mais recentes primeiro, teto) e marca a moto detalhada.
  * Nunca lança para fora — estado de apresentação não derruba o turno.
+ *
+ * TRAVA DE DECISÃO (`escolhida`): quando o cliente escolhe uma moto, ela é
+ * gravada e passa a valer até o fim da conversa. Uma NOVA apresentação
+ * (`motosNovas` não-vazio = o cliente pediu para ver outras) DESTRAVA, voltando a
+ * `null`; sem nova apresentação e sem nova escolha, a trava é preservada.
  */
 export async function salvarCatalogoDaConversa(
   db: pg.Pool,
@@ -100,6 +112,7 @@ export async function salvarCatalogoDaConversa(
   atual: CatalogoDaConversa,
   motosNovas: readonly MotoDoCatalogo[],
   detalhada: string | null,
+  escolhida: MotoDoCatalogo | null = null,
 ): Promise<void> {
   try {
     const vistas = new Set<string>();
@@ -116,6 +129,9 @@ export async function salvarCatalogoDaConversa(
       const chave = normalizarNomeDeMoto(detalhada);
       if (chave !== '' && !detalhadas.includes(chave)) detalhadas.push(chave);
     }
+    // Escolha nova manda; senão, nova apresentação destrava; senão, preserva.
+    const escolhidaFinal: MotoDoCatalogo | null =
+      escolhida !== null ? escolhida : motosNovas.length > 0 ? null : atual.escolhida;
     await db.query(
       `update conversations
           set metadata = jsonb_set(
@@ -125,7 +141,7 @@ export async function salvarCatalogoDaConversa(
                 true
               )
         where organization_id = $1 and id = $2`,
-      [organizationId, conversationId, JSON.stringify({ motos, detalhadas })],
+      [organizationId, conversationId, JSON.stringify({ motos, detalhadas, escolhida: escolhidaFinal })],
     );
   } catch {
     // silencioso de propósito: memória de apresentação é best-effort.

@@ -71,13 +71,31 @@ describe('carregarCatalogoDaConversa', () => {
   it('lê o metadata e filtra entradas inválidas', async () => {
     const db = {
       query: vi.fn().mockResolvedValue({
-        rows: [{ agent_catalogo: { motos: [TWISTER, { nome: 'x' }], detalhadas: ['CB 300', 7] } }],
+        rows: [
+          {
+            agent_catalogo: {
+              motos: [TWISTER, { nome: 'x' }],
+              detalhadas: ['CB 300', 7],
+              escolhida: TWISTER,
+            },
+          },
+        ],
       }),
     } as never;
     const estado = await carregarCatalogoDaConversa(db, 'org', 'conv');
     expect(estado.motos).toHaveLength(1);
     expect(estado.motos[0]?.nome).toBe('CB 300 F Twister');
     expect(estado.detalhadas).toEqual(['CB 300']);
+    expect(estado.escolhida?.nome).toBe('CB 300 F Twister');
+  });
+
+  it('escolhida inválida/ausente ⇒ null', async () => {
+    const db = {
+      query: vi.fn().mockResolvedValue({
+        rows: [{ agent_catalogo: { motos: [TWISTER], detalhadas: [], escolhida: { nome: 'x' } } }],
+      }),
+    } as never;
+    expect((await carregarCatalogoDaConversa(db, 'org', 'conv')).escolhida).toBeNull();
   });
 
   it('ausência/erro ⇒ vazio (nunca lança)', async () => {
@@ -85,27 +103,73 @@ describe('carregarCatalogoDaConversa', () => {
     expect(await carregarCatalogoDaConversa(db, 'org', 'conv')).toEqual({
       motos: [],
       detalhadas: [],
+      escolhida: null,
     });
   });
 });
 
 describe('salvarCatalogoDaConversa', () => {
+  function payloadDe(query: ReturnType<typeof vi.fn>): {
+    motos: { nome: string }[];
+    detalhadas: string[];
+    escolhida: { nome: string } | null;
+  } {
+    return JSON.parse(query.mock.calls[0]![1]![2] as string);
+  }
+
   it('faz merge: motos novas primeiro, dedup e marca a detalhada', async () => {
     const query = vi.fn().mockResolvedValue({ rows: [] });
     await salvarCatalogoDaConversa(
       { query } as never,
       'org',
       'conv',
-      { motos: [TWISTER], detalhadas: [] },
+      { motos: [TWISTER], detalhadas: [], escolhida: null },
       [CB300, TWISTER],
       'CB 300 F Twister',
     );
     expect(query).toHaveBeenCalledTimes(1);
-    const payload = JSON.parse(query.mock.calls[0]![1]![2] as string) as {
-      motos: { nome: string }[];
-      detalhadas: string[];
-    };
+    const payload = payloadDe(query);
     expect(payload.motos.map((m) => m.nome)).toEqual(['CB 300', 'CB 300 F Twister']);
     expect(payload.detalhadas).toEqual(['cb 300 f twister']);
+  });
+
+  it('GRAVA a escolha (trava de decisão)', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    await salvarCatalogoDaConversa(
+      { query } as never,
+      'org',
+      'conv',
+      { motos: [CB300, TWISTER], detalhadas: [], escolhida: null },
+      [],
+      'CB 300 F Twister',
+      TWISTER,
+    );
+    expect(payloadDe(query).escolhida?.nome).toBe('CB 300 F Twister');
+  });
+
+  it('PRESERVA a escolha quando não há nova apresentação nem nova escolha', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    await salvarCatalogoDaConversa(
+      { query } as never,
+      'org',
+      'conv',
+      { motos: [CB300, TWISTER], detalhadas: ['cb 300 f twister'], escolhida: TWISTER },
+      [],
+      null,
+    );
+    expect(payloadDe(query).escolhida?.nome).toBe('CB 300 F Twister');
+  });
+
+  it('DESTRAVA (null) quando há NOVA apresentação — o cliente pediu outras', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    await salvarCatalogoDaConversa(
+      { query } as never,
+      'org',
+      'conv',
+      { motos: [CB300, TWISTER], detalhadas: [], escolhida: TWISTER },
+      [CB300],
+      null,
+    );
+    expect(payloadDe(query).escolhida).toBeNull();
   });
 });

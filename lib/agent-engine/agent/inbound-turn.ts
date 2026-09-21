@@ -168,6 +168,7 @@ import {
   salvarCatalogoDaConversa,
   type CatalogoDaConversa,
 } from './catalogo-da-conversa';
+import { renderBlocoDeEstado } from './estado-do-atendimento';
 import { ordenarSimilares } from './similaridade';
 import {
   carregarCatalogoMapeamento,
@@ -2548,8 +2549,11 @@ async function executarTurnoDoAgente(
   // lê nem grava (não é uma conversa real).
   const catalogoDaConversa: CatalogoDaConversa =
     preview !== undefined
-      ? { motos: [], detalhadas: [] }
+      ? { motos: [], detalhadas: [], escolhida: null }
       : await carregarCatalogoDaConversa(pool, tenantId, input.conversationId);
+  // TRAVA DE DECISÃO: a moto escolhida NESTE turno (detectada no send_message) —
+  // gravada junto do catálogo da conversa para valer nos turnos seguintes.
+  let escolhaDetectadaNesteTurno: MotoDoCatalogo | null = null;
   // Teto de mensagens físicas por turno (F2-15b) — `seq` JÁ é a contagem certa: ele só
   // avança quando o envio de fato sai pro canal (send_message + send_template, bolhas
   // incluídas), nunca em veto de gate. Checar `seq` antes de tentar o próximo envio
@@ -3310,6 +3314,7 @@ async function executarTurnoDoAgente(
             );
             if (escolhida !== undefined) {
               motoDetalhadaNome = escolhida.nome;
+              escolhaDetectadaNesteTurno = escolhida;
               return planoDeFotosDasMotos(
                 [escolhida],
                 agentConfig?.catalogConfig?.fotos_moto_escolhida ?? 5,
@@ -3347,6 +3352,7 @@ async function executarTurnoDoAgente(
             catalogoDaConversa,
             catalogoDoTurno,
             motoDetalhadaNome,
+            escolhaDetectadaNesteTurno,
           );
         }
         const fotos = fotosDeclaradas;
@@ -4477,6 +4483,14 @@ async function executarTurnoDoAgente(
       // Vazio quando não há mapeamento. Fica no sufixo (situacional), nunca no
       // prefixo fixo da persona.
       renderBlocoCatalogo(catalogoMapeamento),
+      // ESTADO DO ATENDIMENTO: o que JÁ sabemos (dados lidos de volta + moto
+      // escolhida/trava). Determinístico, por-lead — evita reperguntar e reabrir a
+      // escolha sem depender de o modelo garimpar o histórico.
+      renderBlocoDeEstado({
+        contact: effectiveContext.contact,
+        escolhida: catalogoDaConversa.escolhida,
+        valoresDoFluxo: fluxoAtendimento?.valores ?? {},
+      }),
       fluxoAtendimento ? renderBlocoDeAtendimento(fluxoAtendimento, finalizacaoDoFluxo) : '',
       stageHintBlock,
       splitHint,
