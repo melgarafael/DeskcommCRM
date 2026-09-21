@@ -155,6 +155,7 @@ import { esperarComoHumano } from './atraso-humano';
 import { sendInBubbles } from './split-message';
 import {
   extrairMotosDoResultado,
+  motosCitadasNoTexto,
   planoDeFotos,
   planoDeFotosDasMotos,
   separarTextoApresentacao,
@@ -3277,6 +3278,9 @@ async function executarTurnoDoAgente(
         // Moto que ESTE turno enviou em DETALHE (as fotos extras da escolha) — para
         // persistir que ela já foi mostrada e não repetir no próximo turno.
         let motoDetalhadaNome: string | null = null;
+        // Já apresentamos opções nesta conversa? Só então a resposta seguinte pode
+        // ser lida como ESCOLHA (senão é o próprio pedido, que deve apresentar).
+        const jaApresentou = catalogoDaConversa.motos.length > 0;
         const planoAutomatico: FotoComLegenda[] = (() => {
           if (fotosDeclaradas.length > 0) return [];
           // Catálogo EFETIVO = o consultado NESTE turno + o apresentado em turnos
@@ -3292,38 +3296,44 @@ async function executarTurnoDoAgente(
             catalogoEfetivo.push(moto);
           }
 
-          // (1) ESCOLHA de uma moto já apresentada → as fotos DELA (quantidade da
-          // tela). Determinístico e independente do modelo: casa o que o agente
+          // (1) DETALHE da ESCOLHA — só DEPOIS de já ter apresentado opções em
+          // turno anterior (`jaApresentou`). Sem isto, o turno do PRÓPRIO pedido
+          // ("Cb 300") era lido como escolha e saíam 5 fotos de uma moto só, em
+          // vez de apresentar as opções. Determinístico: casa o que o agente
           // escreveu OU a mensagem do cliente (nome/ano/cor); só age quando é UMA.
-          const escolhida = motoEscolhidaPeloCliente(
-            body,
-            mensagemDoJob ?? '',
-            catalogoEfetivo,
-            catalogoDaConversa.detalhadas,
-          );
-          if (escolhida !== undefined) {
-            motoDetalhadaNome = escolhida.nome;
-            return planoDeFotosDasMotos(
-              [escolhida],
-              agentConfig?.catalogConfig?.fotos_moto_escolhida ?? 5,
+          if (jaApresentou) {
+            const escolhida = motoEscolhidaPeloCliente(
+              body,
+              mensagemDoJob ?? '',
+              catalogoEfetivo,
+              catalogoDaConversa.detalhadas,
             );
+            if (escolhida !== undefined) {
+              motoDetalhadaNome = escolhida.nome;
+              return planoDeFotosDasMotos(
+                [escolhida],
+                agentConfig?.catalogConfig?.fotos_moto_escolhida ?? 5,
+              );
+            }
           }
 
-          // (2) Escolha DETERMINÍSTICA das semelhantes (flag da tela): a regra mora
-          // no CATÁLOGO (Integração de dados), fonte ÚNICA — o dado é LEVADO junto
-          // pela migration 0246 (backfill ai_agents.config.catalog ->
-          // catalog_mappings), não por um fallback em runtime.
-          if (
-            catalogoMapeamento?.similaridadeDeterministica === true &&
-            catalogoEfetivo.length > 0
-          ) {
-            const termo = mensagemDoJob && mensagemDoJob.trim() !== '' ? mensagemDoJob : body;
-            const escolhidas = ordenarSimilares(termo, catalogoEfetivo, {
-              quantidade: catalogoMapeamento.similaresQtd ?? 3,
-              criterios: criteriosDeSimilaridade(catalogoMapeamento),
-            });
-            // UMA só moto → até N fotos dela; várias → 1 foto por moto.
-            return planoDeFotosDasMotos(escolhidas);
+          // (2) APRESENTAÇÃO (pedido novo): o modelo consultou o catálogo neste
+          // turno. A flag da tela manda na escolha das semelhantes; sem ela, o
+          // motor apresenta TODAS as motos que o PEDIDO do cliente casa por nome
+          // (robusto à curadoria do modelo, que às vezes filtra uma só) — e, se o
+          // pedido não casar nenhuma, cai na curadoria do modelo (`motos`/texto).
+          if (catalogoDoTurno.length > 0) {
+            if (catalogoMapeamento?.similaridadeDeterministica === true) {
+              const termo = mensagemDoJob && mensagemDoJob.trim() !== '' ? mensagemDoJob : body;
+              const escolhidas = ordenarSimilares(termo, catalogoDoTurno, {
+                quantidade: catalogoMapeamento.similaresQtd ?? 3,
+                criterios: criteriosDeSimilaridade(catalogoMapeamento),
+              });
+              // UMA só moto → até N fotos dela; várias → 1 foto por moto.
+              return planoDeFotosDasMotos(escolhidas);
+            }
+            const doPedido = motosCitadasNoTexto(mensagemDoJob ?? '', catalogoDoTurno);
+            if (doPedido.length > 0) return planoDeFotosDasMotos(doPedido);
           }
           return planoDeFotos(motos, body, catalogoDoTurno);
         })();
