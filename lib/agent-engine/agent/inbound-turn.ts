@@ -2378,10 +2378,14 @@ async function executarTurnoDoAgente(
     atendimento !== null &&
     !preview &&
     liveJob().kind === 'inbound_turn' &&
-    input.inboundMessageId !== undefined &&
-    // O turno que ACIONOU o fluxo não tem resposta a capturar (ver acima).
-    !fluxoIniciadoNesteTurno
+    input.inboundMessageId !== undefined
   ) {
+    // ⚠️ O turno que ACIONOU o fluxo TAMBÉM captura (mudança de 2026-09-21): a
+    // mensagem de gatilho pode JÁ conter dados ("aceitam a CG 125?", "quero dar
+    // minha moto, uma CG 125 2015"). Antes esse turno era pulado e o dado se
+    // perdia — o agente reperguntava depois. Para não gravar a FRASE de gatilho
+    // como resposta, no turno de início só gravamos o que o VALIDADOR identificar
+    // (abaixo); o classificador puro não roda nesse turno.
     // Narrowing estável dentro do callback/try: o TypeScript perde o `!== null`
     // do `if` quando `atendimento` é reatribuído mais abaixo.
     const atendimentoDoTurno = atendimento;
@@ -2453,17 +2457,23 @@ async function executarTurnoDoAgente(
       // `flow_collect`: ele gravava a MESMA resposta no próximo campo (medido ao
       // vivo: validador grava `moto_troca`, e 6s depois o modelo grava
       // `troca_ano`). Uma resposta, um campo — quem grava é o motor.
-      validadorGravouNesteTurno = validacoes !== undefined && validacoes.length > 0;
-      const r = await processarInboundDoFluxo(pool, {
-        organizationId: tenantId,
-        estado: atendimento,
-        texto: currentInboundText,
-        messageId: input.inboundMessageId,
-        ...(validacoes !== undefined ? { validacoes } : {}),
-      });
-      atendimento = r.estado;
-      if (r.concluiu) {
-        finalizacaoDoFluxo = r.finalizacao ?? atendimento.checklist.fim.config.ao_finalizar;
+      const temValidacao = validacoes !== undefined && validacoes.length > 0;
+      validadorGravouNesteTurno = temValidacao;
+      // No turno de INÍCIO do fluxo, só gravamos o que o validador capturou —
+      // sem validação, NÃO caímos no classificador puro (ele gravaria a frase de
+      // gatilho como resposta). Nos demais turnos, o caminho de sempre.
+      if (temValidacao || !fluxoIniciadoNesteTurno) {
+        const r = await processarInboundDoFluxo(pool, {
+          organizationId: tenantId,
+          estado: atendimento,
+          texto: currentInboundText,
+          messageId: input.inboundMessageId,
+          ...(validacoes !== undefined ? { validacoes } : {}),
+        });
+        atendimento = r.estado;
+        if (r.concluiu) {
+          finalizacaoDoFluxo = r.finalizacao ?? atendimento.checklist.fim.config.ao_finalizar;
+        }
       }
     } catch (err) {
       runLog.warn('não consegui processar o inbound do fluxo de atendimento', {
