@@ -156,6 +156,7 @@ import { sendInBubbles } from './split-message';
 import {
   extrairMotosDoResultado,
   motosCitadasNoTexto,
+  normalizarNomeDeMoto,
   planoDeFotos,
   planoDeFotosDasMotos,
   separarTextoApresentacao,
@@ -3285,41 +3286,46 @@ async function executarTurnoDoAgente(
         // Já apresentamos opções nesta conversa? Só então a resposta seguinte pode
         // ser lida como ESCOLHA (senão é o próprio pedido, que deve apresentar).
         const jaApresentou = catalogoDaConversa.motos.length > 0;
-        const planoAutomatico: FotoComLegenda[] = (() => {
-          if (fotosDeclaradas.length > 0) return [];
-          // Catálogo EFETIVO = o consultado NESTE turno + o apresentado em turnos
-          // anteriores (persistido por conversa). É o que permite reconhecer a
-          // ESCOLHA do cliente mesmo quando o modelo não reconsulta o catálogo —
-          // medido ao vivo: ele mostrou "CB 300", o cliente respondeu "A 2025" e,
-          // sem esta memória, as fotos da moto escolhida não saíam.
+        // Catálogo EFETIVO = o consultado NESTE turno + o apresentado em turnos
+        // anteriores (persistido por conversa). É o que permite reconhecer a
+        // ESCOLHA do cliente mesmo quando o modelo não reconsulta o catálogo —
+        // medido ao vivo: ele mostrou "CB 300", o cliente respondeu "A 2025" e,
+        // sem esta memória, as fotos da moto escolhida não saíam.
+        const catalogoEfetivo: MotoDoCatalogo[] = (() => {
           const vistas = new Set<string>();
-          const catalogoEfetivo: MotoDoCatalogo[] = [];
+          const lista: MotoDoCatalogo[] = [];
           for (const moto of [...catalogoDoTurno, ...catalogoDaConversa.motos]) {
             if (vistas.has(moto.nome)) continue;
             vistas.add(moto.nome);
-            catalogoEfetivo.push(moto);
+            lista.push(moto);
           }
-
-          // (1) DETALHE da ESCOLHA — só DEPOIS de já ter apresentado opções em
-          // turno anterior (`jaApresentou`). Sem isto, o turno do PRÓPRIO pedido
-          // ("Cb 300") era lido como escolha e saíam 5 fotos de uma moto só, em
-          // vez de apresentar as opções. Determinístico: casa o que o agente
-          // escreveu OU a mensagem do cliente (nome/ano/cor); só age quando é UMA.
-          if (jaApresentou) {
-            const escolhida = motoEscolhidaPeloCliente(
+          return lista;
+        })();
+        // (1) ESCOLHA do cliente — detectada INDEPENDENTE de o modelo ter declarado
+        // fotos (`media_urls`). A skill manda o modelo mandar as fotos seguintes por
+        // `media_urls`, e nesse caminho a escolha era PULADA: não virava trava nem
+        // marcava `detalhadas`. Só age depois de já ter apresentado (`jaApresentou`),
+        // para o turno do PRÓPRIO pedido ("Cb 300") não ser lido como escolha.
+        const escolhidaNesteTurno = jaApresentou
+          ? motoEscolhidaPeloCliente(
               body,
               mensagemDoJob ?? '',
               catalogoEfetivo,
               catalogoDaConversa.detalhadas,
+            )
+          : undefined;
+        if (escolhidaNesteTurno !== undefined) {
+          motoDetalhadaNome = escolhidaNesteTurno.nome;
+          escolhaDetectadaNesteTurno = escolhidaNesteTurno;
+        }
+        const planoAutomatico: FotoComLegenda[] = (() => {
+          if (fotosDeclaradas.length > 0) return [];
+          // ESCOLHA determinística → as fotos DELA (quantidade da tela).
+          if (escolhidaNesteTurno !== undefined) {
+            return planoDeFotosDasMotos(
+              [escolhidaNesteTurno],
+              agentConfig?.catalogConfig?.fotos_moto_escolhida ?? 5,
             );
-            if (escolhida !== undefined) {
-              motoDetalhadaNome = escolhida.nome;
-              escolhaDetectadaNesteTurno = escolhida;
-              return planoDeFotosDasMotos(
-                [escolhida],
-                agentConfig?.catalogConfig?.fotos_moto_escolhida ?? 5,
-              );
-            }
           }
 
           // (2) APRESENTAÇÃO (pedido novo): o modelo consultou o catálogo neste
@@ -3345,6 +3351,17 @@ async function executarTurnoDoAgente(
         // Persiste o catálogo apresentado (motos deste turno) e a moto detalhada —
         // best-effort, não bloqueia o envio. `preview` não grava.
         if (preview === undefined && (catalogoDoTurno.length > 0 || motoDetalhadaNome !== null)) {
+          // TRAVA DE DECISÃO: escolha nova grava; "pediu para ver outras" destrava;
+          // qualquer outro turno preserva a trava atual (undefined = não mexe).
+          const msgNorm = normalizarNomeDeMoto(mensagemDoJob ?? '');
+          const pediuOutraMoto =
+            jaApresentou && /outra|outro modelo|mais opcoes|ver mais/.test(msgNorm);
+          const escolhaParaSalvar: MotoDoCatalogo | null | undefined =
+            escolhaDetectadaNesteTurno !== null
+              ? escolhaDetectadaNesteTurno
+              : pediuOutraMoto
+                ? null
+                : undefined;
           void salvarCatalogoDaConversa(
             pool,
             tenantId,
@@ -3352,7 +3369,7 @@ async function executarTurnoDoAgente(
             catalogoDaConversa,
             catalogoDoTurno,
             motoDetalhadaNome,
-            escolhaDetectadaNesteTurno,
+            escolhaParaSalvar,
           );
         }
         const fotos = fotosDeclaradas;

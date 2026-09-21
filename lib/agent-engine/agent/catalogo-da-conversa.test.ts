@@ -160,7 +160,7 @@ describe('salvarCatalogoDaConversa', () => {
     expect(payloadDe(query).escolhida?.nome).toBe('CB 300 F Twister');
   });
 
-  it('DESTRAVA (null) quando há NOVA apresentação — o cliente pediu outras', async () => {
+  it('DESTRAVA (null explícito) quando o cliente pede para ver outras', async () => {
     const query = vi.fn().mockResolvedValue({ rows: [] });
     await salvarCatalogoDaConversa(
       { query } as never,
@@ -168,6 +168,7 @@ describe('salvarCatalogoDaConversa', () => {
       'conv',
       { motos: [CB300, TWISTER], detalhadas: [], escolhida: TWISTER },
       [CB300],
+      null,
       null,
     );
     expect(payloadDe(query).escolhida).toBeNull();

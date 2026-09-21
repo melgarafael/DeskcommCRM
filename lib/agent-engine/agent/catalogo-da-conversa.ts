@@ -101,9 +101,11 @@ export async function carregarCatalogoDaConversa(
  * Nunca lança para fora — estado de apresentação não derruba o turno.
  *
  * TRAVA DE DECISÃO (`escolhida`): quando o cliente escolhe uma moto, ela é
- * gravada e passa a valer até o fim da conversa. Uma NOVA apresentação
- * (`motosNovas` não-vazio = o cliente pediu para ver outras) DESTRAVA, voltando a
- * `null`; sem nova apresentação e sem nova escolha, a trava é preservada.
+ * gravada e passa a valer até o fim da conversa. `escolhida` aceita três estados:
+ *   - `MotoDoCatalogo` → grava a escolha;
+ *   - `null`           → DESTRAVA (o cliente pediu para ver outras);
+ *   - `undefined`      → não mexe (preserva a trava atual).
+ * O motor decide qual dos três mandar; a função não infere "pediu outra" sozinha.
  */
 export async function salvarCatalogoDaConversa(
   db: pg.Pool,
@@ -112,7 +114,7 @@ export async function salvarCatalogoDaConversa(
   atual: CatalogoDaConversa,
   motosNovas: readonly MotoDoCatalogo[],
   detalhada: string | null,
-  escolhida: MotoDoCatalogo | null = null,
+  escolhida: MotoDoCatalogo | null | undefined = undefined,
 ): Promise<void> {
   try {
     const vistas = new Set<string>();
@@ -129,9 +131,8 @@ export async function salvarCatalogoDaConversa(
       const chave = normalizarNomeDeMoto(detalhada);
       if (chave !== '' && !detalhadas.includes(chave)) detalhadas.push(chave);
     }
-    // Escolha nova manda; senão, nova apresentação destrava; senão, preserva.
     const escolhidaFinal: MotoDoCatalogo | null =
-      escolhida !== null ? escolhida : motosNovas.length > 0 ? null : atual.escolhida;
+      escolhida === undefined ? atual.escolhida : escolhida;
     await db.query(
       `update conversations
           set metadata = jsonb_set(
