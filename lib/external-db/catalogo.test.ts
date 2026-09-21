@@ -101,4 +101,10 @@ describe('renderBlocoCatalogo', () => {
     expect(bloco).toContain('imagem_url');
     expect(bloco).toContain('contem');
   });
+
+  it('instrui a não cravar o número de motos na abertura (texto bate com as fotos)', () => {
+    const bloco = renderBlocoCatalogo({ ...BASE, similaresQtd: 3 });
+    expect(bloco).toContain('algumas opções');
+    expect(bloco).toContain('até 3');
+  });
 });

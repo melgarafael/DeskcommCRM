@@ -258,5 +258,9 @@ export function renderBlocoCatalogo(m: CatalogoMapeamento | null): string {
     'Colunas disponíveis:',
     mapa,
     'Para apresentar o catálogo, consulte a tabela acima pedindo TODAS as colunas listadas (inclusive a de foto) e filtre pela coluna de nome com o operador indicado. NUNCA invente nome de tabela ou coluna; use exatamente estes.',
+    // O motor envia as fotos sozinho (uma por moto escolhida). O modelo não sabe
+    // quantas serão — então a abertura NÃO deve cravar um número, senão o texto
+    // ("separei a CB 300") não bate com as fotos enviadas (medido ao vivo).
+    `Ao oferecer motos semelhantes sem mandar foto, o SISTEMA envia uma foto por moto escolhida (hoje até ${m.similaresQtd ?? 3}). Na sua abertura, NÃO diga o número exato nem cite só uma — diga "algumas opções" — para o texto bater com as fotos que forem enviadas.`,
   ].join('\n');
 }
