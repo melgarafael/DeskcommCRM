@@ -9,6 +9,7 @@ import {
   motosCitadasNoTexto,
   normalizarNomeDeMoto,
   planoDeFotos,
+  planoDeFotosDasMotos,
   separarTextoApresentacao,
 } from './fotos-do-catalogo';
 
@@ -117,6 +118,24 @@ describe('fotosComLegenda', () => {
   });
 });
 
+describe('planoDeFotosDasMotos', () => {
+  const catalogo = extrairMotosDoResultado(RESULTADO);
+
+  it('UMA só moto → mais de uma foto dela (1ª com legenda, demais sem)', () => {
+    const plano = planoDeFotosDasMotos([catalogo[0]!]);
+    expect(plano.length).toBeGreaterThan(1);
+    expect(plano[0]?.legenda).toContain('CB 300 F Twister');
+    expect(plano.slice(1).every((p) => p.legenda === '')).toBe(true);
+  });
+
+  it('VÁRIAS motos → 1 foto de cada, com a legenda da própria moto', () => {
+    const plano = planoDeFotosDasMotos(catalogo.slice(0, 3));
+    expect(plano).toHaveLength(3);
+    expect(plano[0]?.legenda).toContain('CB 300 F Twister');
+    expect(plano[1]?.legenda).toContain('XMax 250');
+  });
+});
+
 describe('planoDeFotos / fotosComLegendaDeNomes', () => {
   const catalogo = extrairMotosDoResultado(RESULTADO);
 
@@ -133,8 +152,9 @@ describe('planoDeFotos / fotosComLegendaDeNomes', () => {
   });
 
   it('sem nomes, cai no matching por texto do body', () => {
+    // UMA só moto citada → agora vão TODAS as fotos dela (antes, só a 1ª).
     const plano = planoDeFotos(undefined, 'temos a CB 300 F Twister', catalogo);
-    expect(plano.map((p) => p.url)).toEqual(['http://x/cb1.jpg']);
+    expect(plano.map((p) => p.url)).toEqual(['http://x/cb1.jpg', 'http://x/cb2.jpg']);
   });
 
   it('nomes que não casam caem no texto; sem nada, plano vazio', () => {

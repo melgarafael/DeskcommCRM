@@ -154,8 +154,8 @@ import { esperarComoHumano } from './atraso-humano';
 import { sendInBubbles } from './split-message';
 import {
   extrairMotosDoResultado,
-  legendaDaMoto,
   planoDeFotos,
+  planoDeFotosDasMotos,
   separarTextoApresentacao,
   type FotoComLegenda,
   type MotoDoCatalogo,
@@ -3262,9 +3262,8 @@ async function executarTurnoDoAgente(
               quantidade: catalogoMapeamento.similaresQtd ?? 3,
               criterios: criteriosDeSimilaridade(catalogoMapeamento),
             });
-            return escolhidas
-              .map((m) => ({ url: m.fotos[0] ?? '', legenda: legendaDaMoto(m) }))
-              .filter((f) => f.url !== '');
+            // UMA só moto → até 5 fotos dela; várias → 1 foto por moto.
+            return planoDeFotosDasMotos(escolhidas);
           }
           return planoDeFotos(motos, body, catalogoDoTurno);
         })();

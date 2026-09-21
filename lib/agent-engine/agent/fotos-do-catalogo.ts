@@ -212,6 +212,39 @@ export interface FotoComLegenda {
  * no matching por texto do `body`, comportamento anterior).
  */
 /**
+ * Plano de fotos a partir das motos já escolhidas (motor ou texto):
+ *  - UMA só moto → até `maxPorMoto` fotos DELA (a 1ª leva a legenda; as demais
+ *    sem) — o cliente pediu aquele modelo e quer VER a moto.
+ *  - VÁRIAS motos → 1 foto de cada, com a legenda da própria moto.
+ * Antes, o motor mandava sempre 1 foto por moto, e uma moto específica aparecia
+ * com uma foto só (medido ao vivo).
+ */
+export function planoDeFotosDasMotos(
+  motos: readonly MotoDoCatalogo[],
+  maxPorMoto = 5,
+): FotoComLegenda[] {
+  const plano: FotoComLegenda[] = [];
+  const urlsVistas = new Set<string>();
+  if (motos.length === 1) {
+    const moto = motos[0]!;
+    for (let i = 0; i < moto.fotos.length && i < maxPorMoto; i += 1) {
+      const url = moto.fotos[i]!;
+      if (urlsVistas.has(url)) continue;
+      urlsVistas.add(url);
+      plano.push({ url, legenda: i === 0 ? legendaDaMoto(moto) : '' });
+    }
+    return plano;
+  }
+  for (const moto of motos) {
+    const url = moto.fotos[0];
+    if (url === undefined || urlsVistas.has(url)) continue;
+    urlsVistas.add(url);
+    plano.push({ url, legenda: legendaDaMoto(moto) });
+  }
+  return plano;
+}
+
+/**
  * Escolhe o plano de fotos do turno: nomes explícitos do campo `motos` primeiro
  * (a abertura não cita as motos); se o modelo não informou nomes OU nenhum casou
  * no catálogo, cai no matching por texto do `body` (compatibilidade). Nunca os
@@ -223,10 +256,32 @@ export function planoDeFotos(
   catalogo: readonly MotoDoCatalogo[],
 ): FotoComLegenda[] {
   if (nomes !== undefined && nomes.length > 0) {
-    const porNome = fotosComLegendaDeNomes(nomes, catalogo);
-    if (porNome.length > 0) return porNome;
+    const motos = motosDeNomes(nomes, catalogo);
+    if (motos.length > 0) return planoDeFotosDasMotos(motos);
   }
-  return fotosComLegenda(texto, catalogo);
+  return planoDeFotosDasMotos(motosCitadasNoTexto(texto, catalogo));
+}
+
+/** As motos do catálogo cujos nomes foram pedidos (ordem pedida, dedup, tolerante). */
+export function motosDeNomes(
+  nomes: readonly string[],
+  catalogo: readonly MotoDoCatalogo[],
+): MotoDoCatalogo[] {
+  const motos: MotoDoCatalogo[] = [];
+  const vistas = new Set<string>();
+  for (const nomePedido of nomes) {
+    const alvo = chaveSemEspaco(nomePedido);
+    if (alvo.length < MIN_NOME_CASAVEL) continue;
+    const moto =
+      catalogo.find((m) => chaveSemEspaco(m.nome) === alvo) ??
+      catalogo.find(
+        (m) => chaveSemEspaco(m.nome).includes(alvo) || alvo.includes(chaveSemEspaco(m.nome)),
+      );
+    if (moto === undefined || vistas.has(moto.nome)) continue;
+    vistas.add(moto.nome);
+    motos.push(moto);
+  }
+  return motos;
 }
 
 export function fotosComLegendaDeNomes(
