@@ -161,6 +161,12 @@ import {
   type FotoComLegenda,
   type MotoDoCatalogo,
 } from './fotos-do-catalogo';
+import {
+  carregarCatalogoDaConversa,
+  motoEscolhidaPeloCliente,
+  salvarCatalogoDaConversa,
+  type CatalogoDaConversa,
+} from './catalogo-da-conversa';
 import { ordenarSimilares } from './similaridade';
 import {
   carregarCatalogoMapeamento,
@@ -2535,6 +2541,14 @@ async function executarTurnoDoAgente(
   // a 1ª foto de cada moto citada quando o `send_message` sai sem mídia — ver
   // `fotos-do-catalogo.ts` e o gancho no `send_message.execute`.
   const catalogoDoTurno: MotoDoCatalogo[] = [];
+  // Catálogo APRESENTADO em turnos anteriores, persistido por conversa. Sem ele,
+  // a escolha do cliente ("A 2025") cai no vazio quando o modelo não reconsulta o
+  // catálogo naquele turno — e as fotos da moto escolhida não saem. `preview` não
+  // lê nem grava (não é uma conversa real).
+  const catalogoDaConversa: CatalogoDaConversa =
+    preview !== undefined
+      ? { motos: [], detalhadas: [] }
+      : await carregarCatalogoDaConversa(pool, tenantId, input.conversationId);
   // Teto de mensagens físicas por turno (F2-15b) — `seq` JÁ é a contagem certa: ele só
   // avança quando o envio de fato sai pro canal (send_message + send_template, bolhas
   // incluídas), nunca em veto de gate. Checar `seq` antes de tentar o próximo envio
@@ -3260,27 +3274,71 @@ async function executarTurnoDoAgente(
         // da legenda única presa na 1ª. Medido ao vivo: modelos lite listam a
         // moto e esquecem a foto; foto ao ofertar a moto é promessa do PRODUTO.
         // Se o modelo JÁ mandou fotos, a decisão dele vence e nada é mudado.
+        // Moto que ESTE turno enviou em DETALHE (as fotos extras da escolha) — para
+        // persistir que ela já foi mostrada e não repetir no próximo turno.
+        let motoDetalhadaNome: string | null = null;
         const planoAutomatico: FotoComLegenda[] = (() => {
           if (fotosDeclaradas.length > 0) return [];
-          // Escolha DETERMINÍSTICA: a regra mora no CATÁLOGO (Integração de dados),
-          // fonte ÚNICA. A mudança de estrutura não muda o processo porque o dado
-          // é LEVADO junto pela migration 0246 (backfill de
-          // ai_agents.config.catalog -> catalog_mappings) — não por um fallback em
-          // runtime, que criaria ambiguidade e impediria desligar a regra.
+          // Catálogo EFETIVO = o consultado NESTE turno + o apresentado em turnos
+          // anteriores (persistido por conversa). É o que permite reconhecer a
+          // ESCOLHA do cliente mesmo quando o modelo não reconsulta o catálogo —
+          // medido ao vivo: ele mostrou "CB 300", o cliente respondeu "A 2025" e,
+          // sem esta memória, as fotos da moto escolhida não saíam.
+          const vistas = new Set<string>();
+          const catalogoEfetivo: MotoDoCatalogo[] = [];
+          for (const moto of [...catalogoDoTurno, ...catalogoDaConversa.motos]) {
+            if (vistas.has(moto.nome)) continue;
+            vistas.add(moto.nome);
+            catalogoEfetivo.push(moto);
+          }
+
+          // (1) ESCOLHA de uma moto já apresentada → as fotos DELA (quantidade da
+          // tela). Determinístico e independente do modelo: casa o que o agente
+          // escreveu OU a mensagem do cliente (nome/ano/cor); só age quando é UMA.
+          const escolhida = motoEscolhidaPeloCliente(
+            body,
+            mensagemDoJob ?? '',
+            catalogoEfetivo,
+            catalogoDaConversa.detalhadas,
+          );
+          if (escolhida !== undefined) {
+            motoDetalhadaNome = escolhida.nome;
+            return planoDeFotosDasMotos(
+              [escolhida],
+              agentConfig?.catalogConfig?.fotos_moto_escolhida ?? 5,
+            );
+          }
+
+          // (2) Escolha DETERMINÍSTICA das semelhantes (flag da tela): a regra mora
+          // no CATÁLOGO (Integração de dados), fonte ÚNICA — o dado é LEVADO junto
+          // pela migration 0246 (backfill ai_agents.config.catalog ->
+          // catalog_mappings), não por um fallback em runtime.
           if (
             catalogoMapeamento?.similaridadeDeterministica === true &&
-            catalogoDoTurno.length > 0
+            catalogoEfetivo.length > 0
           ) {
             const termo = mensagemDoJob && mensagemDoJob.trim() !== '' ? mensagemDoJob : body;
-            const escolhidas = ordenarSimilares(termo, catalogoDoTurno, {
+            const escolhidas = ordenarSimilares(termo, catalogoEfetivo, {
               quantidade: catalogoMapeamento.similaresQtd ?? 3,
               criterios: criteriosDeSimilaridade(catalogoMapeamento),
             });
-            // UMA só moto → até 5 fotos dela; várias → 1 foto por moto.
+            // UMA só moto → até N fotos dela; várias → 1 foto por moto.
             return planoDeFotosDasMotos(escolhidas);
           }
           return planoDeFotos(motos, body, catalogoDoTurno);
         })();
+        // Persiste o catálogo apresentado (motos deste turno) e a moto detalhada —
+        // best-effort, não bloqueia o envio. `preview` não grava.
+        if (preview === undefined && (catalogoDoTurno.length > 0 || motoDetalhadaNome !== null)) {
+          void salvarCatalogoDaConversa(
+            pool,
+            tenantId,
+            input.conversationId,
+            catalogoDaConversa,
+            catalogoDoTurno,
+            motoDetalhadaNome,
+          );
+        }
         const fotos = fotosDeclaradas;
         if (claimsCurrentInboundIsEmpty(body, mensagemDoJob)) {
           falseEmptyInboundVetoCount += 1;

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useT } from "@/hooks/i18n/useT";
@@ -122,6 +123,26 @@ export function CatalogoDoAgente({ agentId, inicial, disabled, aoSalvar }: Props
           />
           <Label htmlFor="cat-pergunta">
             {t("Pergunta final depois das fotos, em mensagem separada")}
+          </Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <Input
+            id="cat-fotos-escolhida"
+            type="number"
+            min={1}
+            max={10}
+            className="w-20"
+            value={cfg.fotos_moto_escolhida}
+            onChange={(e) =>
+              setCfg((c) => ({
+                ...c,
+                fotos_moto_escolhida: Math.min(10, Math.max(1, Number(e.target.value) || 1)),
+              }))
+            }
+            disabled={disabled}
+          />
+          <Label htmlFor="cat-fotos-escolhida">
+            {t("Fotos da moto quando o cliente escolhe uma específica")}
           </Label>
         </div>
       </div>

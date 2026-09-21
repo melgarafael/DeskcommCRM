@@ -25,6 +25,11 @@ export const catalogConfigSchema = z
     similaridade_deterministica: z.boolean().default(false),
     /** Enviar uma foto por moto, com a legenda da própria moto. */
     foto_por_moto: z.boolean().default(true),
+    /**
+     * Quantas fotos enviar quando o cliente ESCOLHE uma moto específica (o motor
+     * manda o detalhe dela sem depender do modelo). 1..10.
+     */
+    fotos_moto_escolhida: z.number().int().min(1).max(10).default(5),
     /** A abertura não cita/listra as motos (elas vão nas fotos). */
     abertura_sem_citar: z.boolean().default(true),
     /** A pergunta de avanço vai numa mensagem de texto separada, depois das fotos. */
