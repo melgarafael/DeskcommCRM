@@ -3329,77 +3329,61 @@ async function executarTurnoDoAgente(
           // sem legenda. Feito AQUI (sem rodada do modelo por foto) para ser rápido.
           const dormir =
             deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
-          const enviarFotos = async (legenda: string): Promise<ChannelSendResult> => {
-            let ultimo: ChannelSendResult | undefined;
-            for (let i = 0; i < fotos.length; i++) {
-              ultimo = await liveChannel().send({
-                tenantId,
-                leadId,
-                jobId: liveJob().id,
-                jobClaim: claimOfJob(liveJob()),
-                agentOperation,
-                seq: (seq += 1),
-                conversationId: input.conversationId,
-                body: i === 0 ? legenda : '',
-                media: { type: 'image', url: fotos[i]! },
-              });
-              if (i < fotos.length - 1) await dormir(700);
-            }
-            return ultimo!;
+          let ultimo: ChannelSendResult | undefined;
+
+          const enviarTexto = async (txt: string): Promise<void> => {
+            if (txt.trim() === '') return;
+            ultimo = await sendInBubbles(txt, {
+              enabled: agentConfig?.splitMessages ?? false,
+              maxChars: agentConfig?.splitMaxChars ?? 600,
+              sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
+              jitter: () => 1200 + Math.floor(Math.random() * 800),
+              send: (bubble): Promise<ChannelSendResult> => {
+                seq += 1;
+                return liveChannel().send({
+                  tenantId,
+                  leadId,
+                  jobId: liveJob().id,
+                  jobClaim: claimOfJob(liveJob()),
+                  agentOperation,
+                  seq,
+                  conversationId: input.conversationId,
+                  body: bubble,
+                });
+              },
+            });
+            await dormir(700);
           };
-          // Formato do dono (2026-09-19): (1) introdução em TEXTO sem a lista —
-          // ela já vive na legenda de cada foto; (2) UMA FOTO POR MOTO com a
-          // legenda da PRÓPRIA moto; (3) pergunta final em TEXTO, DEPOIS das
-          // fotos. A lista de blocos é removida do texto e as perguntas são
-          // movidas para o fim — ver `separarTextoApresentacao`.
-          const enviarFotosAutomaticas = async (
+          const enviarFoto = async (url: string, legenda: string): Promise<void> => {
+            ultimo = await liveChannel().send({
+              tenantId,
+              leadId,
+              jobId: liveJob().id,
+              jobClaim: claimOfJob(liveJob()),
+              agentOperation,
+              seq: (seq += 1),
+              conversationId: input.conversationId,
+              body: legenda,
+              media: { type: 'image', url },
+            });
+            await dormir(700);
+          };
+
+          // FORMATO ÚNICO (dono, 2026-09-19/21): (1) mensagem de TEXTO (chamada);
+          // (2) as FOTOS; (3) pergunta final em TEXTO, DEPOIS das fotos. Vale para
+          // os DOIS caminhos: fotos que o motor escolhe (apresentação) E fotos que
+          // o modelo mandou (`media_urls`, ex.: "mais fotos"). Antes, o caminho
+          // declarado punha o texto como LEGENDA da 1ª foto — o texto aparecia
+          // antes das fotos e a pergunta não vinha separada.
+          //  - `abertura_sem_citar` (default true): tira a lista do texto.
+          //  - `pergunta_separada` (default true): a pergunta vai DEPOIS das fotos.
+          //  - `agrupar`: legenda só na 1ª foto (toggle `foto_por_moto=false`).
+          const enviarApresentacao = async (
+            itens: readonly { url: string; legenda: string }[],
             textoDoModelo: string,
+            agrupar: boolean,
           ): Promise<ChannelSendResult> => {
             const cfg = agentConfig?.catalogConfig;
-            let ultimo: ChannelSendResult | undefined;
-            const enviarTexto = async (txt: string): Promise<void> => {
-              if (txt.trim() === '') return;
-              ultimo = await sendInBubbles(txt, {
-                enabled: agentConfig?.splitMessages ?? false,
-                maxChars: agentConfig?.splitMaxChars ?? 600,
-                sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
-                jitter: () => 1200 + Math.floor(Math.random() * 800),
-                send: (bubble): Promise<ChannelSendResult> => {
-                  seq += 1;
-                  return liveChannel().send({
-                    tenantId,
-                    leadId,
-                    jobId: liveJob().id,
-                    jobClaim: claimOfJob(liveJob()),
-                    agentOperation,
-                    seq,
-                    conversationId: input.conversationId,
-                    body: bubble,
-                  });
-                },
-              });
-              await dormir(700);
-            };
-            const enviarFoto = async (url: string, legenda: string): Promise<void> => {
-              ultimo = await liveChannel().send({
-                tenantId,
-                leadId,
-                jobId: liveJob().id,
-                jobClaim: claimOfJob(liveJob()),
-                agentOperation,
-                seq: (seq += 1),
-                conversationId: input.conversationId,
-                body: legenda,
-                media: { type: 'image', url },
-              });
-              await dormir(700);
-            };
-
-            // Separação do texto conforme os toggles:
-            //  - `abertura_sem_citar` (default true): tira a lista e manda a
-            //    abertura sem citar as motos; false = manda o texto como veio.
-            //  - `pergunta_separada` (default true): a pergunta vai DEPOIS das
-            //    fotos; false = vai junto na abertura (antes).
             let introducao: string;
             let final = '';
             if (cfg?.abertura_sem_citar === false) {
@@ -3414,18 +3398,14 @@ async function executarTurnoDoAgente(
               final = '';
             }
 
-            if (cfg?.foto_por_moto === false) {
-              // Agrupado (comportamento antigo): legenda na 1ª foto, demais sem.
-              // A legenda vai junto da abertura que seria enviada em texto.
-              for (let i = 0; i < planoAutomatico.length; i += 1) {
-                await enviarFoto(planoAutomatico[i]!.url, i === 0 ? introducao : '');
+            if (agrupar) {
+              for (let i = 0; i < itens.length; i += 1) {
+                await enviarFoto(itens[i]!.url, i === 0 ? introducao : '');
               }
               await enviarTexto(final);
             } else {
-              // Padrão: abertura em texto; uma foto por moto com a legenda dela;
-              // pergunta final em texto.
               await enviarTexto(introducao);
-              for (const item of planoAutomatico) {
+              for (const item of itens) {
                 await enviarFoto(item.url, item.legenda);
               }
               await enviarTexto(final);
@@ -3495,15 +3475,23 @@ async function executarTurnoDoAgente(
             // imagem em bolhas não faz sentido). Sem mídia, o caminho é o de sempre.
             send: (finalBody: string) => {
               corposEnviados.push(finalBody);
-              if (
-                planoAutomatico.length > 0 &&
-                agentConfig?.catalogConfig.enviar_foto_automatica !== false
-              ) {
-                return enviarFotosAutomaticas(finalBody);
+              const cfg = agentConfig?.catalogConfig;
+              // Apresentação (motor escolheu as motos): 1 foto por moto com a
+              // legenda dela (ou agrupada, se o toggle pedir).
+              if (planoAutomatico.length > 0 && cfg?.enviar_foto_automatica !== false) {
+                return enviarApresentacao(planoAutomatico, finalBody, cfg?.foto_por_moto === false);
               }
-              return fotos.length > 0
-                ? enviarFotos(finalBody)
-                : sendInBubbles(finalBody, {
+              // Fotos que o MODELO mandou (`media_urls`, ex.: "mais fotos"):
+              // mesmo formato — texto, depois as fotos (sem legenda), depois a
+              // pergunta. Antes o texto virava legenda da 1ª foto.
+              if (fotos.length > 0) {
+                return enviarApresentacao(
+                  fotos.map((url) => ({ url, legenda: '' })),
+                  finalBody,
+                  false,
+                );
+              }
+              return sendInBubbles(finalBody, {
                 enabled: agentConfig?.splitMessages ?? false,
                 maxChars: agentConfig?.splitMaxChars ?? 600,
                 sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
