@@ -6,6 +6,7 @@ import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
+import { companyContext, companyLogo } from "@/lib/instagram/brand";
 import { createSchema } from "@/lib/instagram/schema";
 import { listItems } from "@/lib/instagram/store";
 import { createImage, createCaption, research, StudioError } from "@/lib/instagram/ai";
@@ -91,8 +92,18 @@ export async function POST(req: Request) {
       metadata: { kind: input.kind },
     });
     if (input.kind === "post") {
-      const caption = await createCaption(org, input);
-      const image = await createImage(org, input);
+      const company = await companyContext(org);
+      let logo;
+      try {
+        logo = input.use_logo ? await companyLogo(org, company) : null;
+      } catch (error) {
+        throw new StudioError(
+          error instanceof Error ? error.message : "Não foi possível carregar o logo.",
+          422,
+        );
+      }
+      const caption = await createCaption(org, input, company);
+      const image = await createImage(org, input, company, logo);
       const path = `${org}/instagram/${input.id}.png`;
       const uploaded = await createAdminClient()
         .storage.from("whatsapp-media")

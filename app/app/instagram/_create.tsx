@@ -4,14 +4,17 @@ import { useT } from "@/hooks/i18n/useT";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import Image from "next/image";
+import type { CompanyContext } from "@/lib/instagram/brand";
 import { Textarea } from "@/components/ui/textarea";
 import { formats, type StudioItem } from "@/lib/instagram/schema";
 import { StudioShell, Intro, Notice, studioApi } from "./_shared";
 export function CreatePost({
+  company,
   initialBrief = "",
   initialNiche = "",
 }: {
+  company: CompanyContext;
   initialBrief?: string;
   initialNiche?: string;
 }) {
@@ -21,20 +24,29 @@ export function CreatePost({
   const [brief, setBrief] = useState(initialBrief);
   const [niche, setNiche] = useState(initialNiche);
   const [format, setFormat] = useState<keyof typeof formats>("feed");
+  const [useLogo, setUseLogo] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError("");
-    const fingerprint = JSON.stringify({ brief, niche, format });
+    const fingerprint = JSON.stringify({ brief, niche, format, useLogo });
     if (pendingRequest.current?.fingerprint !== fingerprint)
       pendingRequest.current = { fingerprint, id: randomId() };
     const id = pendingRequest.current.id;
     try {
       const item = await studioApi<StudioItem>("", {
         method: "POST",
-        body: JSON.stringify({ id, kind: "post", brief, niche, format, caption: "" }),
+        body: JSON.stringify({
+          id,
+          kind: "post",
+          brief,
+          niche,
+          format,
+          use_logo: useLogo,
+          caption: "",
+        }),
       });
       router.push(`/app/instagram/posts/${item.id}`);
     } catch (e) {
@@ -50,21 +62,67 @@ export function CreatePost({
       </Intro>
       <form onSubmit={submit} className="grid items-start gap-10 lg:grid-cols-[1.3fr_1fr]">
         <div className="space-y-6">
-          <div className="space-y-2">
-            <label htmlFor="niche" className="block text-sm font-medium">
-              {t("Qual é o seu negócio?")}
-            </label>
-            <Input
-              id="niche"
-              required
-              minLength={2}
-              maxLength={150}
-              value={niche}
-              onChange={(e) => setNiche(e.target.value)}
-              placeholder={t("Ex.: confeitaria artesanal")}
-              disabled={busy}
-            />
-          </div>
+          <section className="rounded-3xl border border-border bg-muted/30 p-5">
+            <div className="flex items-center gap-4">
+              {company.logoUrl && (
+                <Image
+                  unoptimized
+                  width={64}
+                  height={64}
+                  src={company.logoUrl}
+                  alt={company.name}
+                  className="h-16 w-16 rounded-xl bg-white object-contain p-2"
+                />
+              )}
+              <div>
+                <p className="text-sm text-muted-foreground">{t("Criando para")}</p>
+                <h2 className="text-xl font-medium">{company.name}</h2>
+              </div>
+            </div>
+            {niche && <p className="mt-3 line-clamp-3 text-sm text-muted-foreground">{niche}</p>}
+            <details open={!initialNiche || undefined} className="mt-4">
+              <summary className="cursor-pointer text-sm underline underline-offset-4">
+                {t("Ajustar contexto da empresa")}
+              </summary>
+              <label htmlFor="niche" className="mt-4 mb-2 block text-sm font-medium">
+                {t("O que sua empresa faz?")}
+              </label>
+              <Textarea
+                id="niche"
+                onInvalid={(e) => {
+                  const section = e.currentTarget.closest("details");
+                  if (section) section.open = true;
+                }}
+                required
+                minLength={2}
+                maxLength={2000}
+                rows={4}
+                value={niche}
+                onChange={(e) => setNiche(e.target.value)}
+                placeholder={t("Ex.: confeitaria artesanal")}
+                disabled={busy}
+              />
+              <p className="mt-2 text-sm text-muted-foreground">
+                {t("Esse contexto será reaproveitado nas próximas criações.")}
+              </p>
+              {company.descriptionSource === "agent" && (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {t("Contexto encontrado na descrição do seu agente. Você pode ajustar aqui.")}
+                </p>
+              )}
+            </details>
+            {company.logoUrl && (
+              <label className="mt-4 flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={useLogo}
+                  onChange={(e) => setUseLogo(e.target.checked)}
+                  disabled={busy}
+                />
+                {t("Usar meu logo como referência")}
+              </label>
+            )}
+          </section>
           <div className="space-y-2">
             <label htmlFor="brief" className="block font-medium">
               {t("Conte sua ideia")}

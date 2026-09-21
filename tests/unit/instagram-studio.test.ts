@@ -20,6 +20,7 @@ import {
 const input = {
   id: "10000000-0000-4000-8000-000000000011",
   kind: "post" as const,
+  use_logo: true,
   niche: "Confeitaria",
   brief: "Uma imagem de bolo artesanal",
   format: "feed" as const,
@@ -127,5 +128,49 @@ describe("metered research", () => {
       textCostCents({ ...response, output: [{ type: "web_search_call", status: "failed" }] }),
     ).toBeNull();
     expect(textCostCents({ ...response, service_tier: "auto" })).toBeNull();
+  });
+});
+
+describe("company reference generation", () => {
+  it("sends the actual reference bytes as multipart and measures image input tokens", async () => {
+    const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+    const f = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            usage: {
+              input_tokens: 150,
+              input_tokens_details: { text_tokens: 100, image_tokens: 50 },
+              output_tokens: 1000,
+            },
+            data: [{ b64_json: Buffer.from(png).toString("base64") }],
+          }),
+        ),
+      );
+    vi.stubGlobal("fetch", f);
+    await createImage(
+      "org",
+      input,
+      {
+        name: "Aurora",
+        description: "Café",
+        descriptionSource: "post",
+        logoPath: null,
+        logoUrl: null,
+        accent: "#cc9900",
+      },
+      { bytes: png, type: "image/png" },
+    );
+    const [url, options] = f.mock.calls[0]!;
+    expect(url).toContain("images/edits");
+    expect(options.headers["Content-Type"]).toBeUndefined();
+    expect(options.body.get("prompt")).toContain("Aurora");
+    expect(options.body.get("prompt")).toContain("#cc9900");
+    expect(options.body.get("image[]").size).toBe(png.length);
+    expect(settle).toHaveBeenCalledWith({}, "org", "reservation", 3.09);
+  });
+  it("holds the reservation when reference usage is incomplete", () => {
+    expect(imageCostCents({ input_tokens: 100, output_tokens: 1000 }, true)).toBeNull();
   });
 });

@@ -84,6 +84,13 @@
       "col": 0,
       "type": "service",
       "label": "Retorno social público: documento sem efeitos"
+    },
+    {
+      "id": "company",
+      "lane": "storage",
+      "col": 1,
+      "type": "service",
+      "label": "Identidade da empresa e logo no bucket dedicado"
     }
   ],
   "edges": [
@@ -146,6 +153,18 @@
       "from": "return",
       "to": "ui",
       "label": "navegação interna fixa; sessão e permissões normais"
+    },
+    {
+      "id": "company-prefill",
+      "from": "company",
+      "to": "ui",
+      "label": "nome e contexto visíveis antes de criar"
+    },
+    {
+      "id": "company-reference",
+      "from": "company",
+      "to": "ai",
+      "label": "contexto e bytes do logo com escopo validado"
     }
   ]
 }

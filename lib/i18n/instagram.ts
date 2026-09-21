@@ -1,5 +1,15 @@
 /** Interface do estúdio; conteúdo criado pelo usuário mantém o idioma original. */
 export const INSTAGRAM_ES: Record<string, { es: string }> = {
+  "Criando para": { es: "Creando para" },
+  "Ajustar contexto da empresa": { es: "Ajustar contexto de la empresa" },
+  "O que sua empresa faz?": { es: "¿Qué hace tu empresa?" },
+  "Esse contexto será reaproveitado nas próximas criações.": {
+    es: "Este contexto se reutilizará en las próximas creaciones.",
+  },
+  "Contexto encontrado na descrição do seu agente. Você pode ajustar aqui.": {
+    es: "Contexto encontrado en la descripción de tu agente. Puedes ajustarlo aquí.",
+  },
+  "Usar meu logo como referência": { es: "Usar mi logo como referencia" },
   "Criar postagem": { es: "Crear publicación" },
   "O que você quer contar?": { es: "¿Qué quieres contar?" },
   "Uma ideia já é um começo. Descreva do seu jeito; a imagem nasce daqui.": {
