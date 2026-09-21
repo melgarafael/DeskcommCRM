@@ -21,7 +21,13 @@
       "label": "storage"
     }
   ],
-  "mainPath": ["ui", "api", "db", "ai", "assets"],
+  "mainPath": [
+    "ui",
+    "api",
+    "db",
+    "ai",
+    "assets"
+  ],
   "nodes": [
     {
       "id": "ui",
@@ -71,6 +77,13 @@
       "col": 6,
       "type": "service",
       "label": "Adapter social: contas e resultados da organização"
+    },
+    {
+      "id": "return",
+      "lane": "server",
+      "col": 0,
+      "type": "service",
+      "label": "Retorno social público: documento sem efeitos"
     }
   ],
   "edges": [
@@ -121,6 +134,18 @@
       "from": "api",
       "to": "social",
       "label": "insights da conta validada"
+    },
+    {
+      "id": "oauth-return",
+      "from": "social",
+      "to": "return",
+      "label": "navegação externa sem cookie Strict"
+    },
+    {
+      "id": "oauth-resume",
+      "from": "return",
+      "to": "ui",
+      "label": "navegação interna fixa; sessão e permissões normais"
     }
   ]
 }

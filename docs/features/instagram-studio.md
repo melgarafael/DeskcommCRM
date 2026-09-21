@@ -15,3 +15,5 @@ Dados: `instagram_studio_items`, isolada por organização, RLS para leitura, mu
 Credencial central existente `OPENAI_API_KEY`, nunca enviada ao navegador. Consumo usa reservas da assinatura. Imagem mede tokens reais com a tarifa publicada do modelo. Texto e pesquisa usam GPT 5.6 Luna, medem tokens, cache e tier retornados, e acrescentam a tarifa da busca web por chamada concluída. Quando faltam medições, a reserva fica para conciliação, sem declarar consumo gratuito. Limite adicional de 20 pedidos por organização por dia.
 
 Fontes consultadas em 20/09/2026: https://developers.openai.com/api/docs/models/gpt-image-2.5-flare e https://docs.zernio.com/analytics/get-instagram-account-insights.mdx.
+
+O retorno OAuth passa por `/auth/social-return`, um documento público sem efeitos, que inicia uma navegação interna para Conexões. O cookie de sessão continua SameSite=Strict. Parâmetros do provedor são descartados; a tela consulta a integração autenticada para descobrir o estado real. O proxy encaminha retornos antigos de Conexões à mesma transição.

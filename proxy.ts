@@ -18,6 +18,19 @@ export async function proxy(request: NextRequest) {
   response.headers.set("x-request-id", requestId);
 
   const { pathname, search } = request.nextUrl;
+  // Recover provider links already issued before the public return page existed.
+  // Only navigation changes: account binding remains behind the normal guards.
+  if (
+    request.method === "GET" &&
+    pathname === "/app/connections" &&
+    request.nextUrl.searchParams.has("connected") &&
+    request.nextUrl.searchParams.has("connect_token")
+  ) {
+    const landing = NextResponse.redirect(new URL("/auth/social-return", request.url));
+    landing.headers.set("Cache-Control", "no-store");
+    landing.headers.set("Referrer-Policy", "no-referrer");
+    return landing;
+  }
   // Expose pathname to Server Components via header (used by onboarding layout).
   response.headers.set("x-pathname", pathname);
   request.headers.set("x-pathname", pathname);
