@@ -82,6 +82,10 @@ const INSTRUCAO =
   'Use a CHAVE do campo em `campo`. ' +
   'Regras do `valor`: sim/não → "true"/"false"; número → só os dígitos (sem "km", "ano", "R$"); ' +
   'data → "AAAA-MM-DD"; escolha → exatamente uma das opções; texto livre → o trecho sucinto. ' +
+  'NÃO trate INTENÇÃO genérica como resposta: se a mensagem só diz que quer dar/ver/trocar algo ' +
+  '("quero dar uma moto na troca", "quero trocar de moto", "tenho interesse") SEM dizer QUAL, o ' +
+  'campo que espera um dado específico (um modelo, um ano, um valor) NÃO foi respondido — ' +
+  'devolva {"respostas":[]}. Só responda se a mensagem trouxer o DADO específico. ' +
   'NÃO invente, NÃO complete e NÃO responda por conta própria.';
 
 /** Monta a mensagem do modelo. Puro — coberto por teste. */
