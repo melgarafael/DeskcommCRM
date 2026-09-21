@@ -635,8 +635,9 @@ export async function processarInboundDoFluxo(
     for (const v of args.validacoes) {
       const node = campoPorChave(estado.checklist, v.campo);
       if (node === null) continue;
-      const pendenteAgora = estado.situacao.pendentes[0];
-      const ehPendente = pendenteAgora?.config.key === v.campo;
+      // Pendente = QUALQUER campo ainda não preenchido (não só o primeiro): o
+      // cliente pode responder a todos de uma vez, em qualquer ordem.
+      const ehPendente = estado.situacao.pendentes.some((n) => n.config.key === v.campo);
       const ehCorrecao =
         !ehPendente && node.config.permite_correcao && estado.valores[v.campo] !== undefined;
       if (!ehPendente && !ehCorrecao) continue;

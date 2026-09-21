@@ -333,6 +333,15 @@ describe("idempotência do inbound do fluxo (retry de job não reprocessa)", () 
   });
 });
 
+describe("captura MULTI-campo (2026-09-21)", () => {
+  it("aceita QUALQUER pendente, não só o primeiro (senão só o 1º campo é gravado)", () => {
+    const src = readFileSync(join(process.cwd(), "lib/followup/atendimento.ts"), "utf8");
+    // Medido ao vivo: o validador devolveu os 5 campos, mas a gravação só aceitou
+    // `moto_troca` porque `ehPendente` comparava só com `pendentes[0]`.
+    expect(src).toMatch(/const ehPendente = estado\.situacao\.pendentes\.some\(/);
+  });
+});
+
 describe("auditoria 2026-09-19 — o nao_respondeu do validador cai no classificador puro", () => {
   it("distinguir aceno (conta tentativa) de desvio (não conta) preserva o teto", () => {
     const src = readFileSync(join(process.cwd(), "lib/followup/atendimento.ts"), "utf8");
