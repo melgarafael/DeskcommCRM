@@ -3301,19 +3301,26 @@ async function executarTurnoDoAgente(
           }
           return lista;
         })();
+        // Cliente PEDIU PARA VER OUTRAS? Então o turno NÃO é escolha: destrava a
+        // decisão e reapresenta. Calculado ANTES da detecção para que o texto do
+        // modelo (que costuma citar as novas motos) não seja lido como escolha.
+        const msgClienteNorm = normalizarNomeDeMoto(mensagemDoJob ?? '');
+        const pediuOutraMoto =
+          jaApresentou && /outra|outro modelo|mais opcoes|ver mais/.test(msgClienteNorm);
         // (1) ESCOLHA do cliente — detectada INDEPENDENTE de o modelo ter declarado
         // fotos (`media_urls`). A skill manda o modelo mandar as fotos seguintes por
         // `media_urls`, e nesse caminho a escolha era PULADA: não virava trava nem
         // marcava `detalhadas`. Só age depois de já ter apresentado (`jaApresentou`),
         // para o turno do PRÓPRIO pedido ("Cb 300") não ser lido como escolha.
-        const escolhidaNesteTurno = jaApresentou
-          ? motoEscolhidaPeloCliente(
-              body,
-              mensagemDoJob ?? '',
-              catalogoEfetivo,
-              catalogoDaConversa.detalhadas,
-            )
-          : undefined;
+        const escolhidaNesteTurno =
+          jaApresentou && !pediuOutraMoto
+            ? motoEscolhidaPeloCliente(
+                body,
+                mensagemDoJob ?? '',
+                catalogoEfetivo,
+                catalogoDaConversa.detalhadas,
+              )
+            : undefined;
         if (escolhidaNesteTurno !== undefined) {
           motoDetalhadaNome = escolhidaNesteTurno.nome;
           escolhaDetectadaNesteTurno = escolhidaNesteTurno;
@@ -3350,18 +3357,21 @@ async function executarTurnoDoAgente(
         })();
         // Persiste o catálogo apresentado (motos deste turno) e a moto detalhada —
         // best-effort, não bloqueia o envio. `preview` não grava.
-        if (preview === undefined && (catalogoDoTurno.length > 0 || motoDetalhadaNome !== null)) {
-          // TRAVA DE DECISÃO: escolha nova grava; "pediu para ver outras" destrava;
-          // qualquer outro turno preserva a trava atual (undefined = não mexe).
-          const msgNorm = normalizarNomeDeMoto(mensagemDoJob ?? '');
-          const pediuOutraMoto =
-            jaApresentou && /outra|outro modelo|mais opcoes|ver mais/.test(msgNorm);
-          const escolhaParaSalvar: MotoDoCatalogo | null | undefined =
-            escolhaDetectadaNesteTurno !== null
-              ? escolhaDetectadaNesteTurno
-              : pediuOutraMoto
-                ? null
-                : undefined;
+        // TRAVA DE DECISÃO: escolha nova grava; "pediu para ver outras" destrava;
+        // qualquer outro turno preserva a trava atual (undefined = não mexe). O
+        // destrave NÃO depende de o modelo ter reconsultado o catálogo no turno.
+        const escolhaParaSalvar: MotoDoCatalogo | null | undefined =
+          escolhaDetectadaNesteTurno !== null
+            ? escolhaDetectadaNesteTurno
+            : pediuOutraMoto
+              ? null
+              : undefined;
+        if (
+          preview === undefined &&
+          (catalogoDoTurno.length > 0 ||
+            motoDetalhadaNome !== null ||
+            escolhaParaSalvar !== undefined)
+        ) {
           void salvarCatalogoDaConversa(
             pool,
             tenantId,
