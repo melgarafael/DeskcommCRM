@@ -596,9 +596,10 @@ export async function processarInboundDoFluxo(
      * chamador conseguiu rodá-lo. Tem PRECEDÊNCIA sobre a captura determinística
      * porque ele vê o CONTEXTO da conversa — é o que evita gravar "ok"/2019 no
      * campo errado. Ausente = comportamento de antes (só o classificador puro).
-     * `campo` presente = CORREÇÃO de um dado já preenchido (com permite_correcao).
+     * Pode trazer VÁRIOS campos (respostas e/ou correções), em qualquer ordem —
+     * o cliente costuma responder a mais de uma pergunta na mesma mensagem.
      */
-    validacao?: { respondeu: boolean; valor?: string; campo?: string } | undefined;
+    validacoes?: ReadonlyArray<{ campo: string; valor: string }> | undefined;
   },
 ): Promise<ResultadoDoInbound> {
   const { estado } = args;
@@ -623,43 +624,42 @@ export async function processarInboundDoFluxo(
     }
   }
 
-  // CORREÇÃO: o validador apontou um campo JÁ PREENCHIDO que aceita correção.
-  // Trata antes da pendente — o cliente mudou um dado e isso não é resposta à
-  // pergunta atual. O campo precisa existir e permitir correção (defesa dupla).
-  if (args.validacao?.respondeu === true && args.validacao.campo !== undefined) {
-    const alvo = campoPorChave(estado.checklist, args.validacao.campo);
-    const pendenteAgora = estado.situacao.pendentes[0];
-    const ehCorrecao = alvo !== null && alvo.config.key !== pendenteAgora?.config.key;
-    if (ehCorrecao) {
-      if (!alvo.config.permite_correcao) return { estado, concluiu: false };
-      const valorNovo = args.validacao.valor ?? "";
-      // Correção NO-OP: o valor não mudou. Sem este corte, um turno atrasado que
-      // reprocessa uma mensagem antiga sobrescrevia o campo com o MESMO texto da
-      // pergunta anterior (medido ao vivo, 2026-09-18: `troca_ano` virou
-      // "é uma CG 125"). Não é correção, é ruído.
-      const valorAtual = estado.valores[alvo.config.key] ?? "";
-      if (valorNovo === "" || valorNovo === valorAtual) return { estado, concluiu: false };
+  // MÚLTIPLAS validações do validador (respostas e correções), em QUALQUER ordem.
+  // O cliente costuma responder a VÁRIAS perguntas na mesma mensagem ("é uma CG
+  // 125 2015, 120 mil km, tá boa, doc em dia"); aplicamos TODAS de uma vez, para
+  // nada ser reperguntado. Cada campo precisa ser uma pendente (resposta) ou um
+  // já preenchido que permite correção.
+  if (args.validacoes !== undefined && args.validacoes.length > 0) {
+    const valoresNovos: Record<string, string> = { ...estado.valores };
+    let aplicou = false;
+    for (const v of args.validacoes) {
+      const node = campoPorChave(estado.checklist, v.campo);
+      if (node === null) continue;
+      const pendenteAgora = estado.situacao.pendentes[0];
+      const ehPendente = pendenteAgora?.config.key === v.campo;
+      const ehCorrecao =
+        !ehPendente && node.config.permite_correcao && estado.valores[v.campo] !== undefined;
+      if (!ehPendente && !ehCorrecao) continue;
+      // NO-OP: o valor não mudou (turno atrasado/reprocessado) — não é ruído novo.
+      if (v.valor === "" || v.valor === (valoresNovos[v.campo] ?? "")) continue;
       try {
         await registrarDadoDoFluxo(db, {
           organizationId: args.organizationId,
           contactId: estado.enrollment.contact_id,
           flowPointerId: estado.enrollment.pointer_id,
           enrollmentId: estado.enrollment.id,
-          fieldKey: alvo.config.key,
-          // O texto cru de uma correção é o próprio valor normalizado: a mensagem
-          // que a trouxe pode ser de outro turno, e gravar `args.texto` colocava a
-          // pergunta anterior no cadastro.
-          value: valorNovo,
+          fieldKey: v.campo,
+          value: v.valor,
           valueJson: {
-            normalizado: valorNovo,
-            tipo: alvo.config.type,
+            normalizado: v.valor,
+            tipo: node.config.type,
             deterministico: true,
-            correcao: true,
+            ...(ehCorrecao ? { correcao: true } : {}),
           },
           source: "deterministic",
         });
       } catch {
-        return { estado, concluiu: false };
+        continue;
       }
       void registrarEventoDoFluxo(db, {
         organizationId: args.organizationId,
@@ -668,29 +668,32 @@ export async function processarInboundDoFluxo(
         contactId: estado.enrollment.contact_id,
         kind: "resposta",
         messageId: args.messageId ?? null,
-        fieldKey: alvo.config.key,
-        payload: { normalizado: valorNovo, correcao: true, deterministico: true },
+        fieldKey: v.campo,
+        payload: {
+          normalizado: v.valor,
+          deterministico: true,
+          ...(ehCorrecao ? { correcao: true } : {}),
+        },
       }).catch(() => {});
-      const valores = new Set(Object.keys(estado.valores));
-      valores.add(alvo.config.key);
-      const comValor = {
-        ...estado,
-        valores: { ...estado.valores, [alvo.config.key]: valorNovo },
-      };
-      const atualizado = recomputarSituacao(comValor, valores);
-      if (!atualizado.situacao.completo) return { estado: atualizado, concluiu: false };
-      const { finalizacao } = await finalizarFluxoDeAtendimento(db, {
-        organizationId: args.organizationId,
-        estado: atualizado,
-        messageId: args.messageId ?? null,
-        kind: "concluido",
-      });
-      return {
-        estado: atualizado,
-        concluiu: true,
-        ...(finalizacao !== undefined ? { finalizacao } : {}),
-      };
+      valoresNovos[v.campo] = v.valor;
+      aplicou = true;
     }
+    if (!aplicou) return { estado, concluiu: false };
+
+    const comValor = { ...estado, valores: valoresNovos };
+    const atualizado = recomputarSituacao(comValor, new Set(Object.keys(valoresNovos)));
+    if (!atualizado.situacao.completo) return { estado: atualizado, concluiu: false };
+    const { finalizacao } = await finalizarFluxoDeAtendimento(db, {
+      organizationId: args.organizationId,
+      estado: atualizado,
+      messageId: args.messageId ?? null,
+      kind: "concluido",
+    });
+    return {
+      estado: atualizado,
+      concluiu: true,
+      ...(finalizacao !== undefined ? { finalizacao } : {}),
+    };
   }
 
   const primeiro = estado.situacao.pendentes[0];
@@ -722,19 +725,10 @@ export async function processarInboundDoFluxo(
   // "ok"/emoji repetidos viravam `fora_do_fluxo` e o teto de tentativas nunca
   // disparava — `max_tentativas_pergunta` ficava inerte (achado da auditoria,
   // 2026-09-19). Sem validação → classificador puro direto.
-  const leitura =
-    args.validacao === undefined
-      ? classificarInbound(comoCampoParaCaptura(primeiro), args.texto)
-      : args.validacao.respondeu
-        ? {
-            resultado: "respondeu" as const,
-            captura: {
-              key: primeiro.config.key,
-              valor: args.validacao.valor ?? args.texto ?? "",
-              bruto: args.texto ?? "",
-            },
-          }
-        : classificarInbound(comoCampoParaCaptura(primeiro), args.texto);
+  // Chegou aqui = SEM validação do validador (ou nenhum campo aplicável): decide
+  // pelo classificador puro (desvio x aceno/silêncio). As respostas e correções
+  // do validador foram aplicadas no bloco acima.
+  const leitura = classificarInbound(comoCampoParaCaptura(primeiro), args.texto);
 
   if (leitura.resultado === "desviou") {
     await registrarEventoDoFluxo(db, {

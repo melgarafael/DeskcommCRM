@@ -2405,9 +2405,19 @@ async function executarTurnoDoAgente(
           label: p.node.config.label,
           valor: atendimentoDoTurno.valores[p.node.config.key] ?? "",
         }));
-      let validacao: { respondeu: boolean; valor?: string; campo?: string } | undefined;
+      // TODAS as pendentes vão para o validador: o cliente pode responder a
+      // várias de uma vez, em qualquer ordem. Ele devolve as que a mensagem
+      // responde; o motor grava todas (nada é reperguntado).
+      const pendentesDoFluxo = atendimentoDoTurno.situacao.pendentes.map((n) => ({
+        key: n.config.key,
+        label: n.config.label,
+        type: n.config.type,
+        ...(n.config.options !== undefined ? { options: n.config.options } : {}),
+        ...(n.config.question !== undefined ? { question: n.config.question } : {}),
+      }));
+      let validacoes: Array<{ campo: string; valor: string }> | undefined;
       if (
-        (pendente !== undefined || corrigiveis.length > 0) &&
+        (pendentesDoFluxo.length > 0 || corrigiveis.length > 0) &&
         currentInboundText !== null &&
         currentInboundText.trim() !== ''
       ) {
@@ -2415,39 +2425,27 @@ async function executarTurnoDoAgente(
           de: (m.direction === 'inbound' ? 'cliente' : 'loja') as 'cliente' | 'loja',
           texto: m.body,
         }));
-        const cfg = pendente?.config;
         const leitura = await validarRespostaDoFluxo(
           pool,
           deps.llmCfg,
           { tenantId, leadId, jobId: liveJob().id },
           {
-            pergunta:
-              cfg === undefined
-                ? null
-                : {
-                    key: cfg.key,
-                    label: cfg.label,
-                    type: cfg.type,
-                    ...(cfg.options !== undefined ? { options: cfg.options } : {}),
-                    ...(cfg.question !== undefined ? { question: cfg.question } : {}),
-                  },
+            perguntas: pendentesDoFluxo,
             preenchidos: corrigiveis,
             mensagens: ultimasMensagens,
           },
           { registry: deps.registry, log: runLog },
         );
         if (leitura.resultado === 'respondeu') {
-          validacao = { respondeu: true, valor: leitura.valor, campo: leitura.campo };
-        } else if (leitura.resultado === 'nao_respondeu') {
-          validacao = { respondeu: false };
+          validacoes = leitura.respostas;
         }
         // `indefinido` → sem validação; o classificador puro decide abaixo.
         validadorDecidiuNesteTurno = leitura.resultado !== 'indefinido';
         runLog.info('fluxo: decisão do validador', {
-          campo: cfg?.key ?? null,
+          pendentes: pendentesDoFluxo.map((p) => p.key),
           corrigiveis: corrigiveis.map((c) => c.key),
           resultado: leitura.resultado,
-          campo_alvo: leitura.resultado === 'respondeu' ? leitura.campo : null,
+          campos: leitura.resultado === 'respondeu' ? leitura.respostas.map((r) => r.campo) : [],
           texto: (currentInboundText ?? '').slice(0, 60),
         });
       }
@@ -2455,13 +2453,13 @@ async function executarTurnoDoAgente(
       // `flow_collect`: ele gravava a MESMA resposta no próximo campo (medido ao
       // vivo: validador grava `moto_troca`, e 6s depois o modelo grava
       // `troca_ano`). Uma resposta, um campo — quem grava é o motor.
-      validadorGravouNesteTurno = validacao?.respondeu === true;
+      validadorGravouNesteTurno = validacoes !== undefined && validacoes.length > 0;
       const r = await processarInboundDoFluxo(pool, {
         organizationId: tenantId,
         estado: atendimento,
         texto: currentInboundText,
         messageId: input.inboundMessageId,
-        ...(validacao !== undefined ? { validacao } : {}),
+        ...(validacoes !== undefined ? { validacoes } : {}),
       });
       atendimento = r.estado;
       if (r.concluiu) {

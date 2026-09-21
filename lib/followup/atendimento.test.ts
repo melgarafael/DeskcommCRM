@@ -336,10 +336,13 @@ describe("idempotência do inbound do fluxo (retry de job não reprocessa)", () 
 describe("auditoria 2026-09-19 — o nao_respondeu do validador cai no classificador puro", () => {
   it("distinguir aceno (conta tentativa) de desvio (não conta) preserva o teto", () => {
     const src = readFileSync(join(process.cwd(), "lib/followup/atendimento.ts"), "utf8");
-    // A forma do código: `args.validacao.respondeu ? ... : classificarInbound(...)`.
+    // O validador trata respostas/correções no bloco `validacoes`; o caminho SEM
+    // validação decide pelo classificador puro (aceno conta tentativa; desvio não).
     // Antes era `: { resultado: "desviou" }`, e TODO nao_respondeu virava desvio —
     // "ok"/emoji nunca esgotavam a pergunta (max_tentativas_pergunta inerte).
-    expect(src).toMatch(/args\.validacao\.respondeu\s*\?\s*\{[\s\S]*?\}\s*:\s*classificarInbound\(/);
+    expect(src).toMatch(
+      /if \(args\.validacoes !== undefined[\s\S]*classificarInbound\(comoCampoParaCaptura\(primeiro\), args\.texto\)/,
+    );
     expect(src).not.toMatch(/:\s*\{ resultado: "desviou" as const \};/);
   });
 });
