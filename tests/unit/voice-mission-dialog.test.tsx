@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock("@/lib/api/client", () => ({ apiClient: mocks }));
+import { CanalVozClient } from "@/components/connections/CanalVozClient";
 import { VoiceMissionDialog } from "@/components/voice/VoiceMissionDialog";
 const agent = "11111111-1111-4111-8111-111111111111";
 const channel = "22222222-2222-4222-8222-222222222222";
@@ -103,4 +104,15 @@ it("keeps objective and choices after save failure", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent("Falha temporária");
   expect(screen.getByLabelText("Seu objetivo")).toHaveValue("Resolver a dúvida");
   expect(screen.getByLabelText("Agente")).toHaveValue(agent);
+});
+
+it("offers the activation path without enabling calls automatically", async () => {
+  mocks.get.mockImplementation(async (url: string) => ({
+    data: url.includes("opt-in") ? { ligada: false } : { configured: true, paired: false },
+  }));
+  render(<CanalVozClient wacallsConfigured />);
+  expect(
+    await screen.findByRole("link", { name: "Abrir configuração de chamadas" }),
+  ).toHaveAttribute("href", "/app/settings/security");
+  expect(mocks.post).not.toHaveBeenCalled();
 });
