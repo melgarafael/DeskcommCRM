@@ -1,6 +1,6 @@
 ---
 name: deskcomm-cliente-novo
-description: 'Guia para montar um cliente novo no DeskcommCRM por nicho — clínica, imobiliária, serviços/agência, curso/infoproduto, loja — criando os agentes de IA, roteadores, follow-ups, base de conhecimento, memória e funil, na ordem certa e pela tela. Use SEMPRE que alguém quiser "configurar o CRM para um cliente", "criar o agente da clínica", "montar o atendimento", "que prompt eu uso", "como faço o roteador/follow-up", "subir a base de conhecimento", ou terminou o onboarding e pergunta "e agora?" — inclusive agências implantando para terceiros. Faz a triagem, monta o pacote do nicho como texto pronto para colar e conduz tela a tela até o teste.'
+description: 'Guia para montar um cliente novo no DeskcommCRM por nicho — clínica, imobiliária, serviços/agência, curso/infoproduto, loja, escritório de advocacia — criando os agentes de IA, roteadores, follow-ups, base de conhecimento, memória e funil, na ordem certa e pela tela. Use SEMPRE que alguém quiser "configurar o CRM para um cliente", "criar o agente da clínica", "montar o atendimento", "que prompt eu uso", "como faço o roteador/follow-up", "subir a base de conhecimento", ou terminou o onboarding e pergunta "e agora?" — inclusive agências implantando para terceiros. Faz a triagem, monta o pacote do nicho como texto pronto para colar e conduz tela a tela até o teste.'
 metadata:
   publico: leigo, agência, implantador
   ponto-de-partida: depois do onboarding (o wizard para no funil e nos convites)
@@ -35,10 +35,11 @@ tem. Um usuário pediu exatamente isto na discussão #673 do repositório.
 
 Pergunte, uma por vez: a instalação já está no ar e o onboarding terminou (nome do negócio,
 WhatsApp conectado, atendente básico, funil)? É para o próprio negócio ou para um cliente? Qual o
-nicho — clínica/consultório, imobiliária, serviços/agência/obra, curso/mentoria/infoproduto, loja?
+nicho — clínica/consultório, imobiliária, serviços/agência/obra, curso/mentoria/infoproduto, loja,
+escritório de advocacia?
 
 Sem instalação: guia `deskcomm-instalar`. Sem WhatsApp conectado: nada publica — o agente exige um
-número com status WORKING. Nicho fora dos cinco: use o pacote genérico e adapte com a triagem.
+número com status WORKING. Nicho fora dos seis: use o pacote genérico e adapte com a triagem.
 
 ## Passo 1 — a triagem
 

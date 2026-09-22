@@ -1,0 +1,20 @@
+{
+  "skill_name": "deskcomm-especialista",
+  "evals": [
+    {
+      "id": 1,
+      "eval_name": "eval-agente-ia-advocacia",
+      "prompt": "Quero criar um agente de IA para um escritório de advocacia trabalhista, que qualifica leads buscando consulta jurídica, identifica a urgência do caso e agenda a primeira reunião com o advogado responsável pela área. Como faço isso no padrão do DeskcommCRM?",
+      "expected_output": "Um briefing que reconhece que advocacia não é um dos nichos já documentados no CLAUDE.md, aponta para deskcomm-cliente-novo e deskcomm-prompt como padrão de criação de agente/roteador/follow-up, trata dados de caso jurídico com o cuidado de LGPD apropriado (dado sensível), e sinaliza que user_pipeline_access não está no MVP (risco de visibilidade entre advogados/áreas no mesmo funil).",
+      "files": [],
+      "expectations": [
+        "Reconhece que advocacia não está entre os nichos já documentados no CLAUDE.md (e-commerce, clínicas, imobiliárias, infoprodutos, serviços) em vez de tratar como nicho já pronto",
+        "Aponta explicitamente para o padrão de agente/roteador/follow-up por nicho (equivalente ao que deskcomm-cliente-novo e deskcomm-prompt estabelecem), não inventa um mecanismo novo",
+        "Menciona LGPD e/ou cuidado de confidencialidade ao lidar com dado de caso jurídico do lead",
+        "Produz a resposta como um briefing estruturado (seções tipo doutrina aplicável, núcleo/extensão, riscos de compatibilidade), não como um how-to solto",
+        "Não cita caminho de arquivo ou nome de tabela/skill que não existe no repositório",
+        "Sinaliza o risco de RBAC/visibilidade: user_pipeline_access não está no MVP, então qualquer agent/manager com acesso ao funil vê todos os leads de todas as áreas jurídicas — relevante para sigilo profissional"
+      ]
+    }
+  ]
+}

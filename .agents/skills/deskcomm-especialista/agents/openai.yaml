@@ -1,0 +1,6 @@
+interface:
+  display_name: "Especialista DeskcommCRM"
+  short_description: "Vire especialista no produto antes de implementar — doutrina, UI/UX, agentes de IA"
+  default_prompt: "Use a skill deskcomm-especialista antes de começar qualquer implementação neste repositório."
+policy:
+  allow_implicit_invocation: true
