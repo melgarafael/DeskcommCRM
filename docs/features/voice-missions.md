@@ -25,3 +25,9 @@ Cancelamento, bloqueio do contato, anonimização, fechamento da conversa, desat
 8. Humano dá objetivo/contexto; IA devolve resumo e pendências para a equipe.
 9. Falha conserva o histórico e impede retry automático; equipe revê o objetivo antes de novo pedido.
 10. Mapa `docs/architecture/voice-missions.json` registra entrada, voz e retorno.
+
+## Pedido simplificado
+
+O objetivo é o único campo aberto de início. Novos pedidos usam o cliente do atendimento como destinatário, sempre exibido antes da confirmação. Se houver exatamente um agente pronto e um canal conectado, as escolhas vêm preenchidas e aparecem no resumo de Ajustes da ligação. Ambiguidade exige escolha explícita; rascunhos existentes preservam todos os valores, inclusive modo de teste. Teste com outro contato permanece disponível nos ajustes.
+
+O worker monta uma orientação padrão de conversa natural com objetivo, instruções publicadas e contexto recente. A IA se identifica como assistente virtual, verifica disponibilidade, escuta sem atropelar e confirma o próximo passo. Não há edição de prompt no pedido nem mudanças nas permissões de execução. O aviso de voz desativada aponta diretamente para Segurança; ativação continua a exigir a confirmação do administrador.

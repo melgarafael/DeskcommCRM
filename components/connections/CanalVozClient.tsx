@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -155,12 +156,15 @@ export function CanalVozClient({ wacallsConfigured }: { wacallsConfigured: boole
   if (vozLigada === false) {
     return (
       <div className="rounded-md border border-border bg-surface p-4 text-sm">
-        <p className="font-medium">{t("A chamada de voz está desligada nesta empresa.")}</p>
+        <p className="font-medium">{t("Ative as chamadas para conectar seu número.")}</p>
         <p className="mt-1 text-muted-foreground">
           {t(
-            "Conectar o aparelho exige ligá-la antes, em Configurações › Segurança — é lá que está o aviso sobre o risco de o WhatsApp bloquear a conta, e quem liga precisa ter lido.",
+            "Um administrador precisa ativar as chamadas em Segurança e confirmar o aviso sobre o risco de bloqueio do WhatsApp. Depois, volte aqui para conectar o aparelho pelo QR Code.",
           )}
         </p>
+        <Button asChild className="mt-4">
+          <Link href="/app/settings/security">{t("Abrir configuração de chamadas")}</Link>
+        </Button>
       </div>
     );
   }
