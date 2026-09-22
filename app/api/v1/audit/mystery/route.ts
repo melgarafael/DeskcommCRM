@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,7 @@ export async function GET(req: Request) {
     const activeOrg = await resolveActiveOrg(user);
     if (!activeOrg) return NextResponse.json({ error: "No active org" }, { status: 400 });
 
-    const supabase = await createServerClient();
+    const supabase = await createClient();
     const { data: scenarios, error: sErr } = await supabase
       .from("audit_mystery_scenarios")
       .select("*, audit_mystery_executions(*)")
@@ -50,7 +50,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const supabase = await createServerClient();
+    const supabase = await createClient();
     const { data, error } = await supabase
       .from("audit_mystery_scenarios")
       .insert({
