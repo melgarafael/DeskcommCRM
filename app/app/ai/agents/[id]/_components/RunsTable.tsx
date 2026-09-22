@@ -74,12 +74,12 @@ export function RunsTable({ agentId, active }: Props) {
       </div>
 
       {error ? (
-        <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+        <p className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
           {t("Erro ao carregar execuções.")}
         </p>
       ) : null}
 
-      <div className="rounded-md border border-border/60">
+      <div className="rounded-2xl border border-border/60">
         <Table>
           <TableHeader>
             <TableRow>

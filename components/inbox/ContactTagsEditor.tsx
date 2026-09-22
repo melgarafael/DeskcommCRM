@@ -35,7 +35,7 @@ export function ContactTagsEditor({ contactId, tags }: Props) {
   }
 
   return (
-    <div className="mt-2 space-y-2 rounded-md border border-border p-2">
+    <div className="mt-2 space-y-2 rounded-2xl border border-border p-2">
       <div className="flex flex-wrap gap-1">
         {tags.length > 0 ? (
           tags.map((tag) => (

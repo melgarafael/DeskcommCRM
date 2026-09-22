@@ -33,9 +33,7 @@ const TIMEZONES = [
 export function TenantForm({ initial }: Props) {
   const t = useT();
   const [form, setForm] = useState<TenantInput>(initial);
-  const [reasonsText, setReasonsText] = useState(
-    (initial.lost_reasons_extra ?? []).join(", "),
-  );
+  const [reasonsText, setReasonsText] = useState((initial.lost_reasons_extra ?? []).join(", "));
   const [isPending, startTransition] = useTransition();
 
   function set<K extends keyof TenantInput>(key: K, value: TenantInput[K]) {
@@ -117,16 +115,12 @@ export function TenantForm({ initial }: Props) {
           </div>
           <div className="space-y-2">
             <Label htmlFor="locale">{t("Idioma")}</Label>
-            <Select
-              value={form.locale}
-              onValueChange={(v) => set("locale", v as Locale)}
-            >
+            <Select value={form.locale} onValueChange={(v) => set("locale", v as Locale)}>
               <SelectTrigger id="locale">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="pt-BR">Português (BR)</SelectItem>
-                <SelectItem value="es">Español</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -153,7 +147,9 @@ export function TenantForm({ initial }: Props) {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="lost_reasons">{t("Motivos de perda extras (separados por vírgula)")}</Label>
+          <Label htmlFor="lost_reasons">
+            {t("Motivos de perda extras (separados por vírgula)")}
+          </Label>
           <Input
             id="lost_reasons"
             value={reasonsText}

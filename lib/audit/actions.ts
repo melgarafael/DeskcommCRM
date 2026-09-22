@@ -403,6 +403,80 @@ export const AUDIT_ACTIONS = [
   "catalog_product.updated",
   "catalog_product.deleted",
   "catalog_product.imported",
+  // Os pedidos comerciais (migration 0208). Dinheiro em movimento: criação e
+  // alteração precisam de rastro append-only.
+  "commercial_order.created",
+  "commercial_order.updated",
+  "commercial_order.items_updated",
+  "commercial_order.duplicated",
+  "commercial_order.deleted",
+  // Categorias e tabelas de preço (migration 0210). Preço de venda é dado que
+  // a equipe disputa — mesmo motivo do catálogo.
+  "catalog_category.created",
+  "catalog_category.updated",
+  "catalog_category.deleted",
+  "price_table.created",
+  "price_table.updated",
+  // Expedição (migration 0212). Carga e entrega mexem com mercadoria em
+  // movimento — quem embarcou e quem confirmou precisa de rastro.
+  "shipment.created",
+  "shipment.updated",
+  "shipment.deleted",
+  "shipment_order.status",
+  "shipment_order.removed",
+  "shipment.proof_uploaded",
+  // Roteirizador (migration 0231). Rota é dinheiro em movimento com GPS no
+  // meio: otimização, sequência, posição manual, início e fim com rastro.
+  "shipment.rota.geocodificada",
+  "shipment.rota.posicao_manual",
+  "shipment.rota.ordenada",
+  "shipment.rota.iniciada",
+  "shipment.rota.finalizada",
+  // Fiscal (migration 0213). Nota é fato fiscal: criação e cancelamento com
+  // rastro de quem, quando e por quê.
+  "invoice.created",
+  "invoice.cancelled",
+  "invoice.retry_requested",
+  "invoice.emitted",
+  "invoice.carta_correcao",
+  "fiscal.inutilizacao",
+  "fiscal.cfop_equivalente",
+  "fiscal_settings.updated",
+  // Entradas (migration 0236). NF-e contra o CNPJ: sincronização, manifestação
+  // e importação (estoque + contas a pagar) com rastro de quem e quando.
+  "fiscal_entrada.sincronizada",
+  "fiscal_entrada.manifestada",
+  "fiscal_entrada.importada",
+  "fiscal_entrada.ignorada",
+  "pagavel.created",
+  // Prospecção (migration 0220). Busca criada/pausada/cancelada e importação
+  // em lote para o CRM — dinheiro futuro, rastro presente.
+  "prospecting_search.created",
+  "prospecting_search.state_changed",
+  "prospect.updated",
+  "prospect.deleted",
+  "prospect.imported_to_crm",
+  "prospect.importado_arquivo",
+  "prospecting_settings.updated",
+  // Metas comerciais (migration 0225). Meta é decisão gerencial com efeito no
+  // dashboard de todo mundo — quem mudou e para quanto fica registrado.
+  "commercial_goal.saved",
+  // Comissões (migration 0226). Pagar e estornar comissão é evento de
+  // dinheiro: quem, quando e de qual pedido.
+  "commercial_commission.baixada",
+  "commercial_commission.estornada",
+  // Títulos (migration 0227). Receber e estornar parcela, idem.
+  "commercial_titulo.baixado",
+  "commercial_titulo.estornado",
+  // Recebíveis (migration 0233). Entidade própria: gerar, pagar e estornar.
+  "financial_receivable.created",
+  "financial_receivable.generated",
+  "financial_payment.created",
+  "financial_payment.reversed",
+  // Tarefas e atividades (migration 0229). Rotina de campo com rastro.
+  "commercial_task.created",
+  "commercial_task.concluida",
+  "commercial_activity.created",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

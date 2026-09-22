@@ -6,6 +6,7 @@ import type { Locale } from "date-fns";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/empty";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -82,7 +83,7 @@ function relativeDate(iso: string, locale: Locale): string {
 export function IncidentsTableSkeleton() {
   const t = useT();
   return (
-    <div className="rounded-md border">
+    <div className="rounded-3xl border">
       <Table>
         <TableHeader>
           <TableRow>
@@ -131,19 +132,17 @@ export function IncidentsTable({
   const t = useT();
   if (data.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-md border py-16 text-center text-muted-foreground">
-        <Warning size={36} weight="duotone" className="opacity-40" aria-hidden />
-        <p className="text-sm font-medium">{t("Nenhum incidente encontrado")}</p>
-        <p className="max-w-xs text-xs opacity-70">
-          {t("Ajuste os filtros para ver outros incidentes.")}
-        </p>
-      </div>
+      <EmptyState
+        icon={Warning}
+        headline="Nenhum incidente encontrado"
+        subcopy="Ajuste os filtros para ver outros incidentes."
+      />
     );
   }
 
   return (
     <div className="space-y-4">
-      <div className="rounded-md border">
+      <div className="rounded-3xl border">
         <Table>
           <TableHeader>
             <TableRow>

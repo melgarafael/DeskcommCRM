@@ -1,0 +1,4 @@
+vendor/
+*.pfx
+*.p12
+.env

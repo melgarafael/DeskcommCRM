@@ -30,7 +30,7 @@ export function PlanoDeTempoBloco({ plano, nos, decididoRelativo }: Props) {
   const porId = Object.fromEntries(nos.map((n) => [n.id, n]));
 
   return (
-    <section className="rounded-md border border-border p-4" data-testid="dossie-plano-de-tempo">
+    <section className="rounded-2xl border border-border p-4" data-testid="dossie-plano-de-tempo">
       <header className="mb-3">
         <h2 className="text-sm font-medium">{t("O tempo que o agente escolheu")}</h2>
         <p className="text-xs text-text-muted">

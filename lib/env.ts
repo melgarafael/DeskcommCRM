@@ -175,6 +175,15 @@ const schema = z.object({
   ANTHROPIC_API_KEY: z.string().optional().default(""),
   OPENAI_API_KEY: z.string().optional().default(""),
 
+  // Prospecção (§2 do plano): chave de INSTALAÇÃO (fallback quando o tenant
+  // não tem a própria em prospecting_settings). Opcional — sem ela, buscas
+  // com provider google_places falham nomeando a configuração, nunca 500 mudo.
+  GOOGLE_MAPS_API_KEY: z.string().optional().default(""),
+  GOOGLE_PLACES_ENABLED: z.enum(["true", "false"]).optional().default("true"),
+  MAPS_BROWSER_ENABLED: z.enum(["true", "false"]).optional().default("false"),
+  // Overpass: espelho público padrão; trocar sem código (uso justo do espelho).
+  OSM_OVERPASS_URL: z.string().optional().default(""),
+
   // Fusão (Fase 4): DONO ÚNICO dos eventos ai_agent.dispatch_requested.
   // 'engine' (default) = o worker agent-engine é o único consumidor (o cron
   // agent-dispatcher vira no-op mecânico); 'native' = o dispatcher EPIC-13

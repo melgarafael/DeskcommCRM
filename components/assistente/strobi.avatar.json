@@ -1,0 +1,1732 @@
+{
+  "schema": "bible-strong/avatar-definition",
+  "schemaVersion": 1,
+  "name": "Strobi",
+  "body": {
+    "primary": {
+      "type": "sphere",
+      "width": 240,
+      "height": 240,
+      "depth": 240.03671875,
+      "roundness": 1
+    },
+    "nodes": []
+  },
+  "colors": {
+    "body": "#5b7fe5",
+    "eyes": "#111316"
+  },
+  "expressions": {
+    "neutral": {
+      "head": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "eyes": {
+        "left": {
+          "width": 20,
+          "height": 50,
+          "x": 0,
+          "y": -7,
+          "angle": 0
+        },
+        "right": {
+          "width": 20,
+          "height": 50,
+          "x": 0,
+          "y": -7,
+          "angle": 0
+        },
+        "spacing": 35
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "upward-side-glance": {
+      "head": {
+        "x": 7.3,
+        "y": 27.8,
+        "z": -16.1
+      },
+      "eyes": {
+        "left": {
+          "width": 22.501171874999997,
+          "height": 42.37773437499999,
+          "x": 0,
+          "y": -20.5,
+          "angle": 0
+        },
+        "right": {
+          "width": 22.501171874999997,
+          "height": 42.37773437499999,
+          "x": 0,
+          "y": -20.5,
+          "angle": 0
+        },
+        "spacing": 54.3
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "downward-gaze": {
+      "head": {
+        "x": -15.057812500000004,
+        "y": 0.14296874999999964,
+        "z": -14.549218750000001
+      },
+      "eyes": {
+        "left": {
+          "width": 22.401171875000003,
+          "height": 54.5703125,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "right": {
+          "width": 22.401171875000003,
+          "height": 54.5703125,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "spacing": 57.7
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "skeptical-right": {
+      "head": {
+        "x": -16.528515625,
+        "y": -3.7679687499999996,
+        "z": -13.7296875
+      },
+      "eyes": {
+        "left": {
+          "width": 23.090625000000003,
+          "height": 57.6796875,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "right": {
+          "width": 49.924609375,
+          "height": 12.431640625,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "spacing": 56.3
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "small-attentive": {
+      "head": {
+        "x": -4.232421875000001,
+        "y": 14.362109375000003,
+        "z": 11.204296875
+      },
+      "eyes": {
+        "left": {
+          "width": 22.066796874999994,
+          "height": 39.599218750000006,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "right": {
+          "width": 22.066796874999994,
+          "height": 39.599218750000006,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "spacing": 50.900000000000006
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "wide-downward-gaze": {
+      "head": {
+        "x": -19.20859375,
+        "y": 15.2,
+        "z": 11.8
+      },
+      "eyes": {
+        "left": {
+          "width": 52.084765625,
+          "height": 51.46715970849806,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "right": {
+          "width": 53.11410881916996,
+          "height": 52.18769994441695,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "spacing": 69.5
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "surprised-left": {
+      "head": {
+        "x": 2.9468749999999986,
+        "y": -16.051171875,
+        "z": -20.916015625
+      },
+      "eyes": {
+        "left": {
+          "width": 51.68336723153048,
+          "height": 51.74054108796297,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "right": {
+          "width": 51.68336723153048,
+          "height": 51.74054108796297,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "spacing": 70.9
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "sleepy-squint": {
+      "head": {
+        "x": 3.4,
+        "y": 13.22578125,
+        "z": 8.976953125
+      },
+      "eyes": {
+        "left": {
+          "width": 51.775000000000006,
+          "height": 13.02734375,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "right": {
+          "width": 51.775000000000006,
+          "height": 13.02734375,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "spacing": 63.872265625
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "angry-right": {
+      "head": {
+        "x": 8.063671874999999,
+        "y": 17.626562500000002,
+        "z": -11.116796874999999
+      },
+      "eyes": {
+        "left": {
+          "width": 20.908203125,
+          "height": 40.400781249999994,
+          "x": 0,
+          "y": 0,
+          "angle": -30.865625
+        },
+        "right": {
+          "width": 20.908203125,
+          "height": 40.400781249999994,
+          "x": 0,
+          "y": 0,
+          "angle": 28.781640625
+        },
+        "spacing": 52.059765625
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "curious-left": {
+      "head": {
+        "x": -12.303515625,
+        "y": -17.601171875,
+        "z": 5.9109375
+      },
+      "eyes": {
+        "left": {
+          "width": 20.605859374999994,
+          "height": 47.769921874999994,
+          "x": 0,
+          "y": 0,
+          "angle": 23.523046875000002
+        },
+        "right": {
+          "width": 20.605859374999994,
+          "height": 47.769921874999994,
+          "x": 0,
+          "y": 0,
+          "angle": -24.042578125000002
+        },
+        "spacing": 54.900000000000006
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "asymmetric-down-right": {
+      "head": {
+        "x": -20.058203125,
+        "y": 12.607421875,
+        "z": -12.7
+      },
+      "eyes": {
+        "left": {
+          "width": 42.5,
+          "height": 41.8,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "right": {
+          "width": 22.1,
+          "height": 22.200000000000003,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "spacing": 61.7
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "attentive-left": {
+      "head": {
+        "x": 1.43359375,
+        "y": 6.194140624999999,
+        "z": 10.56015625
+      },
+      "eyes": {
+        "left": {
+          "width": 23.836718749999996,
+          "height": 58.130078125,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "right": {
+          "width": 23.836718749999996,
+          "height": 58.130078125,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "spacing": 56.8
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "joyful-wide": {
+      "head": {
+        "x": -2.092968750000001,
+        "y": -15.899609374999999,
+        "z": -14.469921875
+      },
+      "eyes": {
+        "left": {
+          "width": 34.20086765973213,
+          "height": 85.33085937499999,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "right": {
+          "width": 34.20086765973213,
+          "height": 83.17775668160692,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "spacing": 59.414453124999994
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "eyes-closed": {
+      "head": {
+        "x": -8.752343750000001,
+        "y": -8.743359375,
+        "z": -10.773828125000001
+      },
+      "eyes": {
+        "left": {
+          "width": 56.133984375,
+          "height": 15.5,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "right": {
+          "width": 56.133984375,
+          "height": 15.155468749999997,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "spacing": 69.276171875
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "joyful-down-right": {
+      "head": {
+        "x": -15.287109375000002,
+        "y": 15.006640625,
+        "z": 12.787890625
+      },
+      "eyes": {
+        "left": {
+          "width": 31.25390625,
+          "height": 76.720703125,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "right": {
+          "width": 31.25390625,
+          "height": 76.720703125,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "spacing": 68.7
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "skeptical-left": {
+      "head": {
+        "x": 3.5292968750000004,
+        "y": -7.0765625,
+        "z": 9.830078125
+      },
+      "eyes": {
+        "left": {
+          "width": 24.306250000000006,
+          "height": 59.281640624999994,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "right": {
+          "width": 48.92421875000001,
+          "height": 13.408203125,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "spacing": 62.218359375000006
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "far-right-glance": {
+      "head": {
+        "x": 0.31914062500000184,
+        "y": 35.307421874999996,
+        "z": -10.904296875
+      },
+      "eyes": {
+        "left": {
+          "width": 22.4609375,
+          "height": 39.820703124999994,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "right": {
+          "width": 22.4609375,
+          "height": 39.820703124999994,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "spacing": 53.900000000000006
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "angry-left": {
+      "head": {
+        "x": -14.750781250000001,
+        "y": -19.350000000000005,
+        "z": 5.631640624999998
+      },
+      "eyes": {
+        "left": {
+          "width": 19.602343750000003,
+          "height": 48.63984375,
+          "x": 0,
+          "y": 0,
+          "angle": -27.606640625
+        },
+        "right": {
+          "width": 19.602343750000003,
+          "height": 48.63984375,
+          "x": 0,
+          "y": 0,
+          "angle": 26.1484375
+        },
+        "spacing": 55.099999999999994
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "playful-right": {
+      "head": {
+        "x": -4.3953125,
+        "y": 14.07265625,
+        "z": -16.126171874999997
+      },
+      "eyes": {
+        "left": {
+          "width": 19.045145681988203,
+          "height": 43.370703125000006,
+          "x": 0,
+          "y": 0,
+          "angle": 26.2921875
+        },
+        "right": {
+          "width": 19.045145681988203,
+          "height": 43.370703125000006,
+          "x": 0,
+          "y": 0,
+          "angle": -20.249218750000004
+        },
+        "spacing": 51.73124999999999
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "asymmetric-up-left": {
+      "head": {
+        "x": 6.585546875,
+        "y": 4.737109375000001,
+        "z": 12.840234374999998
+      },
+      "eyes": {
+        "left": {
+          "width": 42.1,
+          "height": 41.7,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "right": {
+          "width": 22.200000000000003,
+          "height": 22.099999999999994,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "spacing": 60.400000000000006
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "gentle-downward-gaze": {
+      "head": {
+        "x": -6.077734375000001,
+        "y": -11.03515625,
+        "z": -13.965625000000001
+      },
+      "eyes": {
+        "left": {
+          "width": 23.045703125000003,
+          "height": 58.685156250000006,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "right": {
+          "width": 23.045703125000003,
+          "height": 58.685156250000006,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "spacing": 56.2
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "wide-down-left": {
+      "head": {
+        "x": -17.127734375000003,
+        "y": 18.070703124999998,
+        "z": 13.891796875
+      },
+      "eyes": {
+        "left": {
+          "width": 35.452734375,
+          "height": 79.10429687499999,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "right": {
+          "width": 35.452734375,
+          "height": 79.10429687499999,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "spacing": 70.8
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "surprised-wide-left": {
+      "head": {
+        "x": -5.428125,
+        "y": -11.71328125,
+        "z": -13.472265625000002
+      },
+      "eyes": {
+        "left": {
+          "width": 51.400000000000006,
+          "height": 50.099999999999994,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "right": {
+          "width": 50.5,
+          "height": 49.400000000000006,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "spacing": 69
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "drowsy-closed": {
+      "head": {
+        "x": 10.292578125,
+        "y": 3.39921875,
+        "z": 7.583203125
+      },
+      "eyes": {
+        "left": {
+          "width": 55.672265624999994,
+          "height": 14.616015625000003,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "right": {
+          "width": 55.672265624999994,
+          "height": 14.616015625000003,
+          "x": 0,
+          "y": 0,
+          "angle": 0
+        },
+        "spacing": 68.416796875
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "suspicious-right": {
+      "head": {
+        "x": -17.8,
+        "y": 10,
+        "z": -10.894921875
+      },
+      "eyes": {
+        "left": {
+          "width": 23.969921874999997,
+          "height": 55.892968749999994,
+          "x": 0,
+          "y": -9.8,
+          "angle": 0
+        },
+        "right": {
+          "width": 53.56328125,
+          "height": 13.333593750000006,
+          "x": 0,
+          "y": -9.8,
+          "angle": 0
+        },
+        "spacing": 59.943749999999994
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "shy-downward": {
+      "head": {
+        "x": 7.131640624999998,
+        "y": 7.7828124999999995,
+        "z": 3.935546874999999
+      },
+      "eyes": {
+        "left": {
+          "width": 21.5,
+          "height": 32,
+          "x": 0,
+          "y": 40,
+          "angle": 0
+        },
+        "right": {
+          "width": 23.200000000000003,
+          "height": 33.5,
+          "x": 0,
+          "y": 40,
+          "angle": 0
+        },
+        "spacing": 51.2
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "none"
+      }
+    },
+    "angry-brows": {
+      "head": {
+        "x": 10.473974503042374,
+        "y": 5.087293619785961,
+        "z": 4.698252132317348
+      },
+      "eyes": {
+        "left": {
+          "width": 27.12656249999999,
+          "height": 63.028125,
+          "x": 0,
+          "y": 0,
+          "angle": -36.244531249999994
+        },
+        "right": {
+          "width": 27.12656249999999,
+          "height": 63.028125,
+          "x": 0,
+          "y": 0,
+          "angle": 27.730078125000002
+        },
+        "spacing": 68.7
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "none",
+        "body": "shake"
+      },
+      "colors": {
+        "body": "#ba3636",
+        "eyes": "#610000"
+      }
+    },
+    "uneasy-left": {
+      "head": {
+        "x": -12.303515625,
+        "y": -17.601171875,
+        "z": 5.9109375
+      },
+      "eyes": {
+        "left": {
+          "width": 20.605859374999994,
+          "height": 47.769921874999994,
+          "x": 0,
+          "y": 0,
+          "angle": 23.523046875000002
+        },
+        "right": {
+          "width": 20.605859374999994,
+          "height": 47.769921874999994,
+          "x": 0,
+          "y": 0,
+          "angle": -24.042578125000002
+        },
+        "spacing": 54.900000000000006
+      },
+      "perspective": 1,
+      "motion": {
+        "eyes": "shake",
+        "body": "slowDrift"
+      },
+      "colors": {
+        "body": "#adc3ff"
+      }
+    }
+  },
+  "expressionOrder": [
+    "neutral",
+    "upward-side-glance",
+    "downward-gaze",
+    "skeptical-right",
+    "small-attentive",
+    "wide-downward-gaze",
+    "surprised-left",
+    "sleepy-squint",
+    "angry-right",
+    "curious-left",
+    "asymmetric-down-right",
+    "attentive-left",
+    "joyful-wide",
+    "eyes-closed",
+    "joyful-down-right",
+    "skeptical-left",
+    "far-right-glance",
+    "angry-left",
+    "playful-right",
+    "asymmetric-up-left",
+    "gentle-downward-gaze",
+    "wide-down-left",
+    "surprised-wide-left",
+    "drowsy-closed",
+    "suspicious-right",
+    "shy-downward",
+    "angry-brows",
+    "uneasy-left"
+  ],
+  "animations": {
+    "sleeping": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "eyes-closed",
+          "holdMs": 3600,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "drowsy-closed",
+          "holdMs": 3600,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "sleepy-squint",
+          "holdMs": 3600,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 4800,
+        "minIntervalMs": 6500,
+        "maxIntervalMs": 9500,
+        "durationMs": 420
+      },
+      "metadata": {
+        "label": "sleeping",
+        "description": "Yeux presque fermés, respiration lente et expression de sommeil.",
+        "group": "Cycle de vie"
+      }
+    },
+    "waking": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "eyes-closed",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 1200,
+        "minIntervalMs": 1800,
+        "maxIntervalMs": 3600,
+        "durationMs": 220
+      },
+      "metadata": {
+        "label": "waking",
+        "description": "Séquence courte de réveil avant retour vers une expression neutre.",
+        "group": "Cycle de vie"
+      }
+    },
+    "idle": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "upward-side-glance",
+          "holdMs": 5200,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "curious-left",
+          "holdMs": 5200,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 2600,
+        "minIntervalMs": 3400,
+        "maxIntervalMs": 6200,
+        "durationMs": 280
+      },
+      "metadata": {
+        "label": "idle",
+        "description": "Micro-mouvements lents, expressions 00 et 08, clignement rare.",
+        "group": "Cycle de vie"
+      }
+    },
+    "listening": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "attentive-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "downward-gaze",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "gentle-downward-gaze",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 3200,
+        "minIntervalMs": 4800,
+        "maxIntervalMs": 7200,
+        "durationMs": 240
+      },
+      "metadata": {
+        "label": "listening",
+        "description": "Expressions 10, 01 et 19, regard stable et clignement attentif.",
+        "group": "Cycle de vie"
+      }
+    },
+    "thinking": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "curious-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "angry-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "skeptical-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "playful-right",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "skeptical-right",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 2100,
+        "minIntervalMs": 2800,
+        "maxIntervalMs": 5000,
+        "durationMs": 260
+      },
+      "metadata": {
+        "label": "thinking",
+        "description": "Regard haut et latéral, expressions asymétriques et changements fréquents.",
+        "group": "Cycle de vie"
+      }
+    },
+    "searching": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "far-right-glance",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "asymmetric-down-right",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "surprised-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "wide-down-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "wide-downward-gaze",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "asymmetric-up-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 2100,
+        "minIntervalMs": 2800,
+        "maxIntervalMs": 5000,
+        "durationMs": 260
+      },
+      "metadata": {
+        "label": "searching",
+        "description": "Balayage rapide et changements très fréquents.",
+        "group": "Cycle de vie"
+      }
+    },
+    "working": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "angry-right",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "angry-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "joyful-wide",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "attentive-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 2100,
+        "minIntervalMs": 2800,
+        "maxIntervalMs": 5000,
+        "durationMs": 260
+      },
+      "metadata": {
+        "label": "working",
+        "description": "Rythme régulier et expressions concentrées.",
+        "group": "Cycle de vie"
+      }
+    },
+    "excited": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "joyful-down-right",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "playful-right",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "surprised-wide-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "surprised-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "joyful-wide",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 1200,
+        "minIntervalMs": 1800,
+        "maxIntervalMs": 3600,
+        "durationMs": 220
+      },
+      "metadata": {
+        "label": "excited",
+        "description": "Grandes expressions et transitions rapides.",
+        "group": "Réactions"
+      }
+    },
+    "bored": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "sleepy-squint",
+          "holdMs": 3600,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "drowsy-closed",
+          "holdMs": 3600,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "upward-side-glance",
+          "holdMs": 3600,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 4800,
+        "minIntervalMs": 6500,
+        "maxIntervalMs": 9500,
+        "durationMs": 420
+      },
+      "metadata": {
+        "label": "bored",
+        "description": "Cet état enchaîne un pool de presets et des clignements.",
+        "group": "Réactions"
+      }
+    },
+    "suspicious": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "skeptical-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "skeptical-right",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "suspicious-right",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 2100,
+        "minIntervalMs": 2800,
+        "maxIntervalMs": 5000,
+        "durationMs": 260
+      },
+      "metadata": {
+        "label": "suspicious",
+        "description": "Cet état enchaîne un pool de presets et des clignements.",
+        "group": "Réactions"
+      }
+    },
+    "angry": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "angry-right",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "angry-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 2100,
+        "minIntervalMs": 2800,
+        "maxIntervalMs": 5000,
+        "durationMs": 260
+      },
+      "metadata": {
+        "label": "angry",
+        "description": "Cet état enchaîne un pool de presets et des clignements.",
+        "group": "Réactions"
+      }
+    },
+    "drowsy": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "sleepy-squint",
+          "holdMs": 3600,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "drowsy-closed",
+          "holdMs": 3600,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "eyes-closed",
+          "holdMs": 3600,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 4800,
+        "minIntervalMs": 6500,
+        "maxIntervalMs": 9500,
+        "durationMs": 420
+      },
+      "metadata": {
+        "label": "drowsy",
+        "description": "Cet état enchaîne un pool de presets et des clignements.",
+        "group": "Réactions"
+      }
+    },
+    "happy": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "joyful-down-right",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "joyful-wide",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "playful-right",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "gentle-downward-gaze",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 2100,
+        "minIntervalMs": 2800,
+        "maxIntervalMs": 5000,
+        "durationMs": 260
+      },
+      "metadata": {
+        "label": "happy",
+        "description": "Cet état enchaîne un pool de presets et des clignements.",
+        "group": "Réactions"
+      }
+    },
+    "curious": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "surprised-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "surprised-wide-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "upward-side-glance",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "far-right-glance",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 2100,
+        "minIntervalMs": 2800,
+        "maxIntervalMs": 5000,
+        "durationMs": 260
+      },
+      "metadata": {
+        "label": "curious",
+        "description": "Inclinaisons et forte asymétrie.",
+        "group": "Réactions"
+      }
+    },
+    "confused": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "skeptical-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "skeptical-right",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "curious-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 2100,
+        "minIntervalMs": 2800,
+        "maxIntervalMs": 5000,
+        "durationMs": 260
+      },
+      "metadata": {
+        "label": "confused",
+        "description": "Cet état enchaîne un pool de presets et des clignements.",
+        "group": "Réactions"
+      }
+    },
+    "surprised": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "surprised-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "surprised-wide-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 1200,
+        "minIntervalMs": 1800,
+        "maxIntervalMs": 3600,
+        "durationMs": 220
+      },
+      "metadata": {
+        "label": "surprised",
+        "description": "Cet état enchaîne un pool de presets et des clignements.",
+        "group": "Réactions"
+      }
+    },
+    "proud": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "far-right-glance",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "curious-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "joyful-down-right",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 2100,
+        "minIntervalMs": 2800,
+        "maxIntervalMs": 5000,
+        "durationMs": 260
+      },
+      "metadata": {
+        "label": "proud",
+        "description": "Cet état enchaîne un pool de presets et des clignements.",
+        "group": "Réactions"
+      }
+    },
+    "shy": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "upward-side-glance",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "shy-downward",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "eyes-closed",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 2100,
+        "minIntervalMs": 2800,
+        "maxIntervalMs": 5000,
+        "durationMs": 260
+      },
+      "metadata": {
+        "label": "shy",
+        "description": "Cet état enchaîne un pool de presets et des clignements.",
+        "group": "Réactions"
+      }
+    },
+    "sad": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "sleepy-squint",
+          "holdMs": 3600,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "eyes-closed",
+          "holdMs": 3600,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "drowsy-closed",
+          "holdMs": 3600,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 4800,
+        "minIntervalMs": 6500,
+        "maxIntervalMs": 9500,
+        "durationMs": 420
+      },
+      "metadata": {
+        "label": "sad",
+        "description": "Cet état enchaîne un pool de presets et des clignements.",
+        "group": "Réactions"
+      }
+    },
+    "laughing": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "joyful-down-right",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "joyful-wide",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "playful-right",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 1200,
+        "minIntervalMs": 1800,
+        "maxIntervalMs": 3600,
+        "durationMs": 220
+      },
+      "metadata": {
+        "label": "laughing",
+        "description": "Cet état enchaîne un pool de presets et des clignements.",
+        "group": "Réactions"
+      }
+    },
+    "scared": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "surprised-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "surprised-wide-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 1200,
+        "minIntervalMs": 1800,
+        "maxIntervalMs": 3600,
+        "durationMs": 220
+      },
+      "metadata": {
+        "label": "scared",
+        "description": "Cet état enchaîne un pool de presets et des clignements.",
+        "group": "Réactions"
+      }
+    },
+    "playful": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "joyful-down-right",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "playful-right",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "joyful-wide",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "curious-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 2100,
+        "minIntervalMs": 2800,
+        "maxIntervalMs": 5000,
+        "durationMs": 260
+      },
+      "metadata": {
+        "label": "playful",
+        "description": "Cet état enchaîne un pool de presets et des clignements.",
+        "group": "Réactions"
+      }
+    },
+    "celebrate": {
+      "playbackMode": "loop",
+      "steps": [
+        {
+          "expression": "joyful-down-right",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "curious-left",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        },
+        {
+          "expression": "playful-right",
+          "holdMs": 2300,
+          "transitionMs": 500,
+          "transition": "smooth"
+        }
+      ],
+      "blink": {
+        "enabled": true,
+        "initialDelayMs": 1200,
+        "minIntervalMs": 1800,
+        "maxIntervalMs": 3600,
+        "durationMs": 220
+      },
+      "metadata": {
+        "label": "celebrate",
+        "description": "Cet état enchaîne un pool de presets et des clignements.",
+        "group": "Réactions"
+      }
+    }
+  },
+  "animationOrder": [
+    "sleeping",
+    "waking",
+    "idle",
+    "listening",
+    "thinking",
+    "searching",
+    "working",
+    "excited",
+    "bored",
+    "suspicious",
+    "angry",
+    "drowsy",
+    "happy",
+    "curious",
+    "confused",
+    "surprised",
+    "proud",
+    "shy",
+    "sad",
+    "laughing",
+    "scared",
+    "playful",
+    "celebrate"
+  ]
+}

@@ -123,7 +123,7 @@ export function SkillsClient({ initialState }: Props) {
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {installed.length === 0 ? (
-            <p className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
+            <p className="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-foreground">
               {t('Nenhuma skill instalada ainda. Instale uma pronta do catálogo abaixo ou envie a sua em "Enviar skill (.zip)".')}
             </p>
           ) : (
@@ -131,7 +131,7 @@ export function SkillsClient({ initialState }: Props) {
               {installed.map((skill) => (
                 <li
                   key={skill.name}
-                  className="flex flex-col gap-1.5 rounded-md border border-border/60 p-3 text-sm"
+                  className="flex flex-col gap-1.5 rounded-2xl border border-border/60 p-3 text-sm"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <PuzzlePiece className="text-accent" aria-hidden />
@@ -162,7 +162,7 @@ export function SkillsClient({ initialState }: Props) {
             </ul>
           )}
 
-          <div className="flex items-start gap-2 rounded-md bg-accent-soft p-3 text-xs text-text-muted">
+          <div className="flex items-start gap-2 rounded-2xl bg-accent-soft p-3 text-xs text-text-muted">
             <Info className="mt-0.5 shrink-0" aria-hidden />
             <p>
               {t(
@@ -182,7 +182,7 @@ export function SkillsClient({ initialState }: Props) {
         </CardHeader>
         <CardContent>
           {catalog.length === 0 ? (
-            <p className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
+            <p className="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-foreground">
               {t("Nenhuma skill nova no catálogo — você já instalou tudo que a plataforma oferece hoje.")}
             </p>
           ) : (
@@ -190,7 +190,7 @@ export function SkillsClient({ initialState }: Props) {
               {catalog.map((skill) => (
                 <li
                   key={skill.name}
-                  className="flex flex-col gap-1.5 rounded-md border border-border/60 p-3 text-sm"
+                  className="flex flex-col gap-1.5 rounded-2xl border border-border/60 p-3 text-sm"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <PuzzlePiece aria-hidden />

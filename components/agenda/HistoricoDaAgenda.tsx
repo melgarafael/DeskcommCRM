@@ -118,7 +118,7 @@ export function HistoricoDaAgenda({
       <div
         role="tablist"
         aria-label={t("Filtrar o histórico")}
-        className="flex flex-wrap items-center gap-0.5 rounded-md border border-border bg-surface p-0.5"
+        className="flex flex-wrap items-center gap-0.5 rounded-full border border-border bg-surface p-0.5"
       >
         {ABAS.map((a) => {
           const n = grupos[a.id].length;

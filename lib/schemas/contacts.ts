@@ -9,6 +9,8 @@
  */
 import { z } from "zod";
 
+import { isValidCnpj, normalizarCnpj } from "@/lib/brasil/cnpj";
+
 const PHONE_REGEX = /^\+\d{8,15}$/;
 const CPF_DIGITS = /^\d{11}$/;
 
@@ -40,9 +42,43 @@ export const contactCreateSchema = z.object({
     .regex(PHONE_REGEX, "Telefone deve estar em formato E.164 (+5511999998888)")
     .optional(),
   cpf: z.string().refine(isValidCpf, "CPF inválido").optional(),
+  /**
+   * CNPJ (dado público, 14 dígitos — com ou sem máscara, normaliza na
+   * entrada). Empresa: preenche via BrasilAPI na tela antes de chegar aqui.
+   */
+  cnpj: z
+    .string()
+    .transform((v) => normalizarCnpj(v) ?? v)
+    .refine((v) => v === "" || isValidCnpj(v), "CNPJ inválido")
+    .nullable()
+    .optional(),
   birthdate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  /** PF ou PJ: define o card do cadastro (CPF x CNPJ+IE). */
+  tipo_pessoa: z.enum(["F", "J"]).nullable().optional(),
+  fantasia: z.string().trim().max(200).nullable().optional(),
+  ie: z.string().trim().max(30).nullable().optional(),
+  regime: z.string().trim().max(60).nullable().optional(),
+  logradouro: z.string().trim().max(200).nullable().optional(),
+  numero_end: z.string().trim().max(20).nullable().optional(),
+  complemento: z.string().trim().max(100).nullable().optional(),
+  bairro: z.string().trim().max(100).nullable().optional(),
+  cidade: z.string().trim().max(100).nullable().optional(),
+  uf: z
+    .string()
+    .trim()
+    .length(2)
+    .transform((v) => v.toUpperCase())
+    .nullable()
+    .optional(),
+  cep: z
+    .string()
+    .transform((v) => v.replace(/\D/g, ""))
+    .refine((v) => v === "" || /^\d{8}$/.test(v), "CEP tem 8 dígitos")
+    .transform((v) => (v === "" ? null : v))
+    .nullable()
     .optional(),
   tags: z.array(z.string()).optional(),
   source: z.string().min(1).default("manual"),
@@ -53,6 +89,12 @@ export type ContactCreate = z.infer<typeof contactCreateSchema>;
 
 export const contactPatchSchema = contactCreateSchema.partial().extend({
   source: z.string().min(1).optional(),
+  /**
+   * Crédito (ATT.txt Fase 1). Só no PATCH, nunca no create: limite é análise,
+   * não captura — cliente novo nasce sem limite (NULL = não bloqueia).
+   */
+  limite_credito_cents: z.number().int().min(0).nullable().optional(),
+  condicao_pagamento: z.string().trim().max(200).nullable().optional(),
 });
 export type ContactPatch = z.infer<typeof contactPatchSchema>;
 

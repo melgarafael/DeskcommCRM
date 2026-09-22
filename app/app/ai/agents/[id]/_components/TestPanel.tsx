@@ -71,14 +71,14 @@ function Verificacoes({ g }: { g: NonNullable<TestResponse["data"]["guardrails"]
       {g.passou ? (
         <p
           data-testid="teste-vazamento-limpo"
-          className="rounded-md border border-border/60 bg-muted/40 p-2 text-xs"
+          className="rounded-2xl border border-border/60 bg-muted/40 p-2 text-xs"
         >
           {t("A resposta não usa palavras internas do sistema.")}
         </p>
       ) : (
         <div
           data-testid="teste-vazamento-achado"
-          className="rounded-md border border-destructive/50 bg-destructive/5 p-2 text-xs"
+          className="rounded-lg border border-destructive/50 bg-destructive/5 p-2 text-xs"
         >
           <p className="font-medium text-destructive">
             {t("Esta resposta usa palavras que o cliente não deveria ver.")}
@@ -200,8 +200,8 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
           </div>
         </div>
 
-        <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-xs">
-          <p className="font-medium text-amber-700 dark:text-amber-400">
+        <div className="rounded-lg border border-warning/40 bg-warning-bg p-3 text-xs text-warning-fg">
+          <p className="font-medium text-warning-fg">
             {t("⚠ Modo teste consome créditos do provider.")}
           </p>
           <p className="mt-1 text-muted-foreground">
@@ -267,7 +267,7 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
         {result ? (
           <>
             {result.stub ? (
-              <p className="rounded-md border border-border/60 bg-muted/40 p-2 text-xs text-muted-foreground">
+              <p className="rounded-2xl border border-border/60 bg-muted/40 p-2 text-xs text-muted-foreground">
                 {t("Stub: o runtime real é entregue na S-13.08. O trace abaixo é simulado.")}
               </p>
             ) : null}
@@ -300,7 +300,7 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
 
 function Cell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-md border border-border/60 px-2 py-1">
+    <div className="rounded-2xl border border-border/60 px-2 py-1">
       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="font-mono">{children}</p>
     </div>

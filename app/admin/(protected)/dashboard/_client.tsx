@@ -43,7 +43,7 @@ export function DashboardClient() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{t("Dashboard")}</h1>
+        <h1 className="text-2xl font-medium text-text tracking-tight">{t("Dashboard")}</h1>
         <p className="text-sm text-muted-foreground mt-1">
           {t("Visão cross-tenant — atualiza a cada 30 segundos.")}
         </p>

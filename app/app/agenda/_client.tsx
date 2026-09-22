@@ -264,7 +264,7 @@ export function AgendaClient({
 
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">{t("Agenda")}</h1>
+          <h1 className="text-2xl font-medium tracking-tight text-text">{t("Agenda")}</h1>
           <p className="text-sm text-muted-foreground">
             {t("O que está marcado, com quem, e quem atende — seu e da equipe.")}
           </p>
@@ -363,7 +363,7 @@ export function AgendaClient({
           <FiltroDePessoas pessoas={pessoas} isolada={isolada} onIsolar={setIsolada} />
           <div
             data-testid="alternador-de-visao"
-            className="flex items-center gap-0.5 rounded-md border border-border bg-surface p-0.5"
+            className="flex items-center gap-0.5 rounded-full border border-border bg-surface p-0.5"
           >
             {VISOES.map((v) => (
               <button
@@ -374,7 +374,7 @@ export function AgendaClient({
                 onClick={() => setVisao(v.id)}
                 className={cn(
                   "rounded-sm px-2.5 py-1 text-xs transition-colors duration-fast ease-out",
-                  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-500",
+                  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600",
                   visao === v.id
                     ? "bg-accent font-semibold text-accent-fg"
                     : "text-text-muted hover:bg-surface-elevated hover:text-text",
@@ -588,7 +588,7 @@ export function AgendaClient({
               value={motivo}
               onChange={(e) => setMotivo(e.target.value)}
               rows={3}
-              className="w-full rounded-md border border-border bg-surface p-2 text-sm outline-hidden focus:border-border-strong"
+              className="w-full rounded-lg border border-border bg-surface p-2 text-sm outline-hidden focus:border-border-strong"
               placeholder={t("O paciente pediu para remarcar por telefone")}
             />
             <div className="flex justify-end gap-2">

@@ -244,7 +244,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
       </div>
 
       {!wahaConfigured && (
-        <div className="rounded-md border border-warning bg-warning-bg p-4 text-sm text-warning-fg">
+        <div className="rounded-lg border border-warning bg-warning-bg p-4 text-sm text-warning-fg">
           <p className="font-medium">{t("O serviço do WhatsApp não está configurado.")}</p>
           <p className="mt-1">
             {t("Faltam o endereço e a chave do serviço (")}
@@ -264,7 +264,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
       )}
 
       {schemaOutdated && (
-        <div className="rounded-md border border-warning bg-warning-bg p-4 text-sm text-warning-fg">
+        <div className="rounded-lg border border-warning bg-warning-bg p-4 text-sm text-warning-fg">
           <p className="font-medium">{t("Esta instalação está com o banco atrasado.")}</p>
           <p className="mt-1">
             {t(
@@ -650,7 +650,7 @@ function QrDialog({
             <img
               src={`/api/v1/channel-sessions/${sessionId}/qr?t=${tick}`}
               alt={t("QR Code para conectar WhatsApp")}
-              className="h-64 w-64 rounded-md border bg-white p-2"
+              className="h-64 w-64 rounded-lg border bg-white p-2"
             />
           ) : status === "WORKING" ? (
             <div className="flex flex-col items-center gap-2 text-sm font-medium text-success-fg">

@@ -125,7 +125,7 @@ export function TimelineView({ contactId, types }: Props) {
                 return (
                   <li
                     key={it.id}
-                    className="flex items-start gap-3 rounded-md border border-border bg-card p-3"
+                    className="flex items-start gap-3 rounded-2xl border border-border bg-card p-3"
                   >
                     {/* Marcador por ator (BRIEFING §5): preenchido = humano,
                         anel = agente, quadrado = sistema. Mesma geometria do

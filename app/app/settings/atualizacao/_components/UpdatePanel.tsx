@@ -307,7 +307,7 @@ export function UpdatePanel() {
   return (
     <Layout titulo={`${t("Versão")} ${nova} ${t("disponível")}`}>
       {data.off_release && (
-        <p className="mb-4 rounded-md border border-warning bg-warning-bg p-3 text-sm text-warning-fg">
+        <p className="mb-4 rounded-lg border border-warning bg-warning-bg p-3 text-sm text-warning-fg">
           {t("Sua instalação está numa versão de desenvolvimento. Atualizar vai levá-la para a versão publicada")}{" "}
           {nova}.
         </p>
@@ -319,7 +319,7 @@ export function UpdatePanel() {
           que versão veio — num salto de várias, "reconecte o número" sem dizer
           de qual release não informa o operador, assusta. */}
       {data.notes?.requires_attention.length ? (
-        <div className="mb-4 rounded-md border border-warning bg-warning-bg p-3 text-sm text-warning-fg">
+        <div className="mb-4 rounded-lg border border-warning bg-warning-bg p-3 text-sm text-warning-fg">
           <p className="mb-1 font-medium">⚠️ {t("Requer atenção")}</p>
           {data.notes.requires_attention.map((aviso) => (
             <div key={aviso.version} className="mt-2">
@@ -447,7 +447,7 @@ function DetalhesTecnicos({ texto }: { texto: string | undefined }) {
   const t = useT();
   if (!texto?.trim()) return null;
   return (
-    <details className="mt-4 rounded-md border">
+    <details className="mt-4 rounded-2xl border">
       <summary className="cursor-pointer px-3 py-2 text-sm text-muted-foreground">
         {t("Detalhes técnicos (útil se for pedir ajuda)")}
       </summary>
@@ -463,7 +463,7 @@ function Layout({ titulo, children }: { titulo?: string; children: React.ReactNo
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="text-2xl font-medium tracking-tight text-text">
           {titulo ?? t("Atualização do sistema")}
         </h1>
       </header>

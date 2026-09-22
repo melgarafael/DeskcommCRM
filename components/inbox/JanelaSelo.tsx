@@ -9,7 +9,6 @@ import {
   formatarRestante,
   LIMIAR_URGENTE_MS,
 } from "@/lib/channels/janela";
-import { cn } from "@/lib/utils";
 
 /**
  * Quanto tempo resta para escrever livremente nesta conversa.
@@ -64,8 +63,8 @@ export function JanelaSelo({
         : `${t("Janela fechada há")} ${formatarDecorrido(estado.fechadaHaMs)}`;
     return (
       <Badge
-        variant="outline"
-        className="h-4 border-amber-400 px-1.5 text-[10px] text-amber-700 dark:border-amber-700 dark:text-amber-300"
+        variant="amber"
+        className="h-4 px-1.5 text-[10px]"
         title={t(
           "Passaram 24h desde a última mensagem do cliente. Só um modelo aprovado sai daqui — texto livre é recusado pela plataforma.",
         )}
@@ -78,11 +77,8 @@ export function JanelaSelo({
   const urgente = estado.restanteMs <= LIMIAR_URGENTE_MS;
   return (
     <Badge
-      variant="outline"
-      className={cn(
-        "h-4 px-1.5 text-[10px]",
-        urgente && "border-amber-400 text-amber-700 dark:border-amber-700 dark:text-amber-300",
-      )}
+      variant={urgente ? "amber" : "outline"}
+      className="h-4 px-1.5 text-[10px]"
       title={t("Tempo restante para escrever texto livre. Depois disso, só modelo aprovado.")}
     >
       {t("Janela")} {formatarRestante(estado.restanteMs)}

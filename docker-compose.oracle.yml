@@ -1,0 +1,29 @@
+# Override Oracle Cloud (Ampere ARM) — deploy HÍBRIDO.
+#
+# O motor do WhatsApp (WAHA) é amd64-only no upstream e NÃO roda em ARM.
+# Por isso nesta instalação o WAHA fica no host x86 e aqui sobem só:
+#   app, worker, scheduler, redis, srh, caddy
+#
+# Uso (Caddy próprio, o padrão Oracle):
+#   docker compose -f docker-compose.prod.yml -f docker-compose.oracle.yml --env-file .env up -d app worker scheduler redis srh caddy
+#
+# O que este arquivo faz, e só isto:
+#   1. tira o `waha` do `depends_on` do app (sem isso o `up -d` tenta puxar a
+#      imagem amd64 e morre em "no match for platform");
+#   2. põe o serviço `waha` num profile que nunca é ativado aqui, para um
+#      `up -d` sem lista de serviços não ressuscitá-lo.
+#
+# No .env desta instalação (ver docs/runbooks/oracle.md):
+#   WAHA_API_BASE_URL=http://<IP-OU-DNS-DO-HOST-X86>:3000
+#   WAHA_WEBHOOK_BASE_URL=https://<DOMINIO-ORACLE>
+#   (WAHA_API_KEY, WAHA_API_KEY_SHA512 e WAHA_HMAC_SECRET IGUAIS nos dois lados)
+services:
+  app:
+    # `!reset`: o merge padrão do compose UNI os dois `depends_on` — sem isto
+    # o `waha` da base sobrevive e o `up -d` tenta puxar a imagem amd64.
+    depends_on: !reset
+      srh:
+        condition: service_started
+
+  waha:
+    profiles: ["waha-local"]

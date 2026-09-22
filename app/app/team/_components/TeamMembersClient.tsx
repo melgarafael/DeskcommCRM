@@ -69,7 +69,7 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
 
   return (
     <>
-      <div className="rounded-md border">
+      <div className="rounded-2xl border">
         <Table>
           <TableHeader>
             <TableRow>

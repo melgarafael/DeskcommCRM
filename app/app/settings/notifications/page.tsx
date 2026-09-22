@@ -51,14 +51,14 @@ export default async function NotificationsPage() {
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{t("Notificações")}</h1>
+        <h1 className="text-2xl font-medium tracking-tight text-text">{t("Notificações")}</h1>
         <p className="text-sm text-muted-foreground">{t("Canais e categorias.")}</p>
       </header>
 
       {pushPronto ? (
         <Card
           data-testid="push-status-pronto"
-          className="border-amber-500/40 bg-amber-50/40 p-4 text-sm dark:bg-amber-900/10"
+          className="border-warning/40 bg-warning-bg p-4 text-sm text-warning-fg"
         >
           {t(
             "Email ainda não está disponível. In-app (toast) e Push (Chrome) já funcionam para as cinco categorias, inclusive com a aba fechada.",
@@ -67,7 +67,7 @@ export default async function NotificationsPage() {
       ) : (
         <Card
           data-testid="push-status-faltando-chaves"
-          className="border-amber-500/40 bg-amber-50/40 p-4 text-sm dark:bg-amber-900/10"
+          className="border-warning/40 bg-warning-bg p-4 text-sm text-warning-fg"
         >
           <p className="font-medium">
             {t("Nesta instalação, os avisos só aparecem com o site aberto.")}
@@ -81,7 +81,7 @@ export default async function NotificationsPage() {
               "Ligar o Push abaixo já faz o aviso aparecer na bandeja do sistema enquanto você está com o site aberto numa aba. Para receber também com a aba fechada, quem administra o servidor precisa gerar um par de chaves uma única vez e reiniciar:",
             )}
           </p>
-          <pre className="mt-2 overflow-x-auto rounded-md bg-muted p-2 text-xs">
+          <pre className="mt-2 overflow-x-auto rounded-lg bg-muted p-2 text-xs">
             <code>npx web-push generate-vapid-keys</code>
           </pre>
           <p className="mt-2 text-muted-foreground">

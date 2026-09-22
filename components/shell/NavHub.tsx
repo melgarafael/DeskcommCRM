@@ -53,7 +53,7 @@ export function NavHub({ group, isPlatformAdmin, role, title, subtitle, locale =
   return (
     <div className="flex h-full flex-col gap-8 p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{traduzir(title, locale)}</h1>
+        <h1 className="text-2xl font-medium tracking-tight text-text">{traduzir(title, locale)}</h1>
         {subtitle && <p className="text-sm text-muted-foreground">{traduzir(subtitle, locale)}</p>}
       </header>
 
@@ -71,9 +71,11 @@ export function NavHub({ group, isPlatformAdmin, role, title, subtitle, locale =
               return (
                 <Link key={item.href} href={item.href} className="block">
                   <Card className="flex h-full gap-3 p-4 transition-colors hover:border-border-strong">
-                    <Icon size={20} weight="regular" aria-hidden className="mt-0.5 shrink-0 text-muted-foreground" />
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-soft">
+                      <Icon size={20} weight="regular" aria-hidden className="text-accent" />
+                    </span>
                     <div>
-                      <h3 className="text-sm font-semibold">{traduzir(item.label, locale)}</h3>
+                      <h3 className="text-sm font-medium text-text">{traduzir(item.label, locale)}</h3>
                       <p className="mt-1 text-xs text-muted-foreground">{traduzir(item.description, locale)}</p>
                     </div>
                   </Card>

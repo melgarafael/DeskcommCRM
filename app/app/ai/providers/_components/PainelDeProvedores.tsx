@@ -177,7 +177,7 @@ export function PainelDeProvedores() {
   return (
     <div className="mx-auto w-full max-w-5xl p-6" data-testid="painel-de-provedores">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">{t("Provedores de IA")}</h1>
+        <h1 className="text-2xl font-medium tracking-tight text-text">{t("Provedores de IA")}</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
           {t("Seu sistema usa inteligência artificial em")} {dados.pontos.length}{" "}
           {t("lugares diferentes. Aqui você vê qual está atendendo cada um — e troca, se quiser.")}
@@ -185,7 +185,7 @@ export function PainelDeProvedores() {
       </header>
 
       {semChave && (
-        <Card className="mb-6 border-amber-500/40 bg-amber-500/5 p-4" data-testid="aviso-sem-chave">
+        <Card className="mb-6 border-warning/40 bg-warning-bg p-4" data-testid="aviso-sem-chave">
           <p className="text-sm">
             {t(
               "Você ainda não cadastrou nenhuma chave de provedor. Enquanto isso, tudo usa a chave que veio na instalação.",
@@ -255,7 +255,7 @@ function ResumoDoGrupo({ pontos }: { pontos: Ponto[] }) {
         ))}
       </div>
       {comAviso > 0 && (
-        <p className="mt-2 text-sm text-amber-600 dark:text-amber-500" data-testid="grupo-com-aviso">
+        <p className="mt-2 text-sm text-warning-fg" data-testid="grupo-com-aviso">
           {comAviso === 1
             ? t("1 ponto deste grupo precisa da sua atenção.")
             : `${comAviso} ${t("pontos deste grupo precisam da sua atenção.")}`}
@@ -353,14 +353,14 @@ function CartaoDoPonto({
       </div>
 
       {/* O que a pessoa VÊ quando este ponto falha. É a razão de a tela existir. */}
-      <p className="mt-3 rounded-md bg-muted/50 p-2 text-xs text-muted-foreground">
+      <p className="mt-3 rounded-lg bg-muted/50 p-2 text-xs text-muted-foreground">
         <span className="font-medium">{t("Se falhar:")}</span> {t(ponto.sintomaDeFalha)}
       </p>
 
       {ponto.avisos.map((a) => (
         <p
           key={a}
-          className="mt-2 rounded-md bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-500"
+          className="mt-2 rounded-lg bg-warning-bg p-2 text-xs text-warning-fg"
           data-testid={`aviso-${ponto.id}`}
         >
           {a}

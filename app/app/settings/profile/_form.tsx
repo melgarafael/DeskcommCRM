@@ -15,11 +15,7 @@ import {
 } from "@/components/ui/select";
 import { updateProfile } from "@/app/actions/settings/updateProfile";
 import { useT } from "@/hooks/i18n/useT";
-import {
-  profileSchema,
-  SEM_PREFERENCIA_DE_IDIOMA,
-  type Locale,
-} from "@/lib/schemas/settings";
+import { profileSchema, SEM_PREFERENCIA_DE_IDIOMA, type Locale } from "@/lib/schemas/settings";
 
 const TIMEZONES = [
   "America/Sao_Paulo",
@@ -77,9 +73,7 @@ export function ProfileForm({
         <div className="space-y-2">
           <Label htmlFor="email">{t("Email")}</Label>
           <Input id="email" value={email} disabled />
-          <p className="text-xs text-muted-foreground">
-            {t("Trocar email — em breve.")}
-          </p>
+          <p className="text-xs text-muted-foreground">{t("Trocar email — em breve.")}</p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="full_name">{t("Nome completo")}</Label>
@@ -102,12 +96,6 @@ export function ProfileForm({
                   {t("Seguir o idioma da empresa")}
                 </SelectItem>
                 <SelectItem value="pt-BR">Português (BR)</SelectItem>
-                {/* Espanhol entrou quando passou a MUDAR alguma coisa. Enquanto
-                    o campo era guardado e ninguém o lia, oferecer um idioma a
-                    mais era prometer o que a tela não cumpre — e o operador
-                    conclui que o sistema está quebrado.
-                    `en-US` saiu pela mesma razão: nunca teve tradução. */}
-                <SelectItem value="es">Español</SelectItem>
               </SelectContent>
             </Select>
           </div>

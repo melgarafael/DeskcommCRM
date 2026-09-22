@@ -136,7 +136,7 @@ export function TestarClient({ nome, agenteId, versaoId }: Props) {
           </div>
 
           {desfecho?.tipo === "resposta" && (
-            <div className="space-y-2 rounded-md border bg-muted/40 p-4">
+            <div className="space-y-2 rounded-2xl border bg-muted/40 p-4">
               <p className="text-xs uppercase tracking-wider text-muted-foreground">
                 {funcionario} {t("respondeu")}
               </p>
@@ -150,7 +150,7 @@ export function TestarClient({ nome, agenteId, versaoId }: Props) {
           {desfecho?.tipo === "erro" && (
             <div
               role="alert"
-              className="space-y-2 rounded-md border border-amber-300/60 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-950/20"
+              className="space-y-2 rounded-2xl border border-warning/40 bg-warning-bg p-4 text-warning-fg"
             >
               <p className="text-sm font-medium">
                 {t(

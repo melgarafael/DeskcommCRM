@@ -181,7 +181,7 @@ export function QueueTab({ canWrite }: Props) {
       </div>
 
       {!isLoading && rows.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-md border border-border py-16 text-center">
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-border py-16 text-center">
           <Clock size={36} className="text-text-muted" aria-hidden />
           <h2 className="font-medium">{t("Nenhum item na fila")}</h2>
           <p className="max-w-sm text-sm text-text-muted">
@@ -189,7 +189,7 @@ export function QueueTab({ canWrite }: Props) {
           </p>
         </div>
       ) : (
-        <div className="rounded-md border border-border">
+        <div className="rounded-2xl border border-border">
           <Table>
             <TableHeader>
               <TableRow>

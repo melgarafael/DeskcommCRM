@@ -109,7 +109,7 @@ export function GuardrailsEditor({ value, onChange, disabled }: Props) {
       </div>
 
       {value.length === 0 ? (
-        <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+        <p className="rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
           {t("Nenhum guardrail definido. O agent responde sem restrições adicionais.")}
         </p>
       ) : (
@@ -120,7 +120,7 @@ export function GuardrailsEditor({ value, onChange, disabled }: Props) {
             return (
               <li
                 key={idx}
-                className={`rounded-md border p-3 ${invalid ? "border-destructive/60" : ""}`}
+                className={`rounded-2xl border p-3 ${invalid ? "border-destructive/60" : ""}`}
               >
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">

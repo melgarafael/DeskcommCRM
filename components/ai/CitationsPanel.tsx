@@ -49,7 +49,7 @@ export function CitationsPanel({
               return (
               <div
                 key={c.chunk_id ?? `cit-${i}`}
-                className="rounded-md border p-3 text-sm"
+                className="rounded-2xl border p-3 text-sm"
               >
                 <div className="mb-1 flex items-center justify-between">
                   <Badge variant="secondary">

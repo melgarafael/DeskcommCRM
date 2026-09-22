@@ -38,7 +38,7 @@ export function TemplateMenu({ open, query, templates, onPick, onClose: _onClose
           <button
             key={tpl.id}
             type="button"
-            className="flex w-full flex-col items-start gap-0.5 rounded-md px-3 py-2 text-left hover:bg-muted"
+            className="flex w-full flex-col items-start gap-0.5 rounded-full px-3 py-2 text-left hover:bg-muted"
             onClick={() => onPick(tpl)}
           >
             <span className="text-sm font-medium">{tpl.title}</span>

@@ -138,7 +138,7 @@ export function KnowledgeSourceCard({
         </div>
 
         {mostraErro ? (
-          <details className="rounded-md border border-error-bg bg-error-bg/30 p-2 text-xs text-error-fg">
+          <details className="rounded-lg border border-error-bg bg-error-bg/30 p-2 text-xs text-error-fg">
             <summary className="cursor-pointer font-medium">{t("Por que não entrou")}</summary>
             <p className="mt-1 whitespace-pre-wrap break-words">{source.last_index_error}</p>
           </details>

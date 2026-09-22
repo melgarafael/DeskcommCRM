@@ -1,11 +1,14 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
+import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
 import { MagnifyingGlass } from "@/lib/ui/icons";
+import { apiClient } from "@/lib/api/client";
+import { numeroDoPedido } from "@/lib/format/moeda";
 import { NAV_GROUPS, searchable, type NavDestination } from "@/lib/navigation/registry";
 import { cn } from "@/lib/utils";
 
@@ -56,6 +59,8 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
   const { user, activeOrg } = useAuth();
   const [busca, setBusca] = useState("");
   const [destacado, setDestacado] = useState(0);
+  const [pedidos, setPedidos] = useState<{ id: string; numero: number; cliente_nome: string }[]>([]);
+  const [contatos, setContatos] = useState<{ id: string; display_name: string | null; name: string | null }[]>([]);
 
   const visiveis = useMemo(
     () => searchable(user.is_platform_admin, activeOrg?.role ?? null),
@@ -69,6 +74,33 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
     if (!termo) return visiveis.filter((d) => d.group === "atendimento");
     return visiveis.filter((d) => normalizar(`${d.label} ${d.description}`).includes(termo));
   }, [busca, visiveis]);
+
+  // Entidades (pedidos + contatos) a partir de 2 letras, com debounce: a
+  // paleta vira a "Busca rápida" do Mercos, não só um lançador de telas.
+  const buscarEntidades = useDebouncedCallback((termo: string) => {
+    if (termo.trim().length < 2) {
+      setPedidos([]);
+      setContatos([]);
+      return;
+    }
+    const qs = new URLSearchParams({ busca: termo.trim(), limit: "5" });
+    const qsContatos = new URLSearchParams({ search: termo.trim(), limit: "5" });
+    void Promise.allSettled([
+      apiClient.get<{ data: { id: string; numero: number; cliente_nome: string }[] }>(
+        `/api/v1/commercial-orders?${qs}`,
+      ),
+      apiClient.get<{ data: { id: string; display_name: string | null; name: string | null }[] }>(
+        `/api/v1/contacts?${qsContatos}`,
+      ),
+    ]).then(([p, c]) => {
+      if (p.status === "fulfilled") setPedidos((p.value.data ?? []).slice(0, 5));
+      if (c.status === "fulfilled") setContatos((c.value.data ?? []).slice(0, 5));
+    });
+  }, 300);
+
+  useEffect(() => {
+    buscarEntidades(busca);
+  }, [busca, buscarEntidades]);
 
   function navegar(destino: NavDestination) {
     aoEscolher();
@@ -117,18 +149,20 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
         />
       </div>
 
-      {resultados.length === 0 ? (
+      {resultados.length === 0 && pedidos.length === 0 && contatos.length === 0 ? (
         <p className="px-4 py-8 text-center text-sm text-muted-foreground">
           {t("Nada encontrado para")} “{busca}”.
         </p>
       ) : (
-        <ul
-          id="palette-resultados"
-          role="listbox"
-          aria-label={t("Telas")}
-          className="max-h-80 overflow-y-auto p-2"
-        >
-          {resultados.map((d, i) => {
+        <>
+          {resultados.length > 0 && (
+            <ul
+              id="palette-resultados"
+              role="listbox"
+              aria-label={t("Telas")}
+              className="max-h-80 overflow-y-auto p-2"
+            >
+              {resultados.map((d, i) => {
             const Icon = d.icon;
             const ativo = i === destacado;
             return (
@@ -141,7 +175,7 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
                 onMouseEnter={() => setDestacado(i)}
                 onClick={() => navegar(d)}
                 className={cn(
-                  "flex cursor-pointer items-start gap-3 rounded-md px-3 py-2",
+                  "flex cursor-pointer items-start gap-3 rounded-full px-3 py-2",
                   ativo && "bg-accent text-accent-foreground",
                 )}
               >
@@ -159,6 +193,49 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
             );
           })}
         </ul>
+          )}
+          {(pedidos.length > 0 || contatos.length > 0) && (
+            <div className="border-t p-2">
+              {pedidos.length > 0 && (
+                <>
+                  <p className="px-3 pb-1 text-[11px] uppercase tracking-wider text-muted-foreground">
+                    {t("Pedidos")}
+                  </p>
+                  <ul>
+                    {pedidos.map((p) => (
+                      <li
+                        key={p.id}
+                        onClick={() => navegar({ href: `/app/pedidos/${p.id}` } as NavDestination)}
+                        className="flex cursor-pointer items-center gap-3 rounded-full px-3 py-2 hover:bg-accent hover:text-accent-foreground"
+                      >
+                        <span className="text-sm font-medium">{numeroDoPedido(p.numero)}</span>
+                        <span className="truncate text-xs text-muted-foreground">{p.cliente_nome}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              {contatos.length > 0 && (
+                <>
+                  <p className="px-3 pb-1 pt-2 text-[11px] uppercase tracking-wider text-muted-foreground">
+                    {t("Clientes")}
+                  </p>
+                  <ul>
+                    {contatos.map((c) => (
+                      <li
+                        key={c.id}
+                        onClick={() => navegar({ href: `/app/contacts/${c.id}` } as NavDestination)}
+                        className="flex cursor-pointer items-center gap-3 rounded-full px-3 py-2 hover:bg-accent hover:text-accent-foreground"
+                      >
+                        <span className="text-sm font-medium">{c.display_name ?? c.name ?? "—"}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
+          )}
+        </>
       )}
     </>
   );

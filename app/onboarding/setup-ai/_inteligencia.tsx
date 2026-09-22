@@ -101,7 +101,7 @@ export function InteligenciaDele({ inicial }: { inicial: EstadoDaChave }) {
 
   if (!temChave) {
     return (
-      <section className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-5">
+      <section className="space-y-3 rounded-lg border border-warning/40 bg-warning-bg p-5 text-warning-fg">
         <div>
           <h3 className="text-sm font-medium">{t("Ele ainda não tem cérebro")}</h3>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -118,7 +118,7 @@ export function InteligenciaDele({ inicial }: { inicial: EstadoDaChave }) {
               id="provedor_da_ia"
               value={provedor}
               onChange={(e) => setProvedor(e.target.value)}
-              className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+              className="h-9 w-full rounded-lg border bg-background px-3 text-sm"
             >
               {PROVEDORES.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -190,7 +190,7 @@ export function InteligenciaDele({ inicial }: { inicial: EstadoDaChave }) {
         {prova?.estado === "problema" && (
           <>
             {t("A chave foi aceita, mas o teste não passou:")}{" "}
-            <span className="text-amber-700 dark:text-amber-500">{prova.mensagem}</span>.{" "}
+            <span className="text-warning-fg">{prova.mensagem}</span>.{" "}
             {t(
               "Se for falta de crédito, adicione saldo na conta da empresa de IA — sem isso ele não responde a nenhum cliente.",
             )}

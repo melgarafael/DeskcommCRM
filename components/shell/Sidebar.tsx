@@ -90,16 +90,20 @@ export function SidebarContent({
             className="h-7 w-auto max-w-[10rem] object-contain"
           />
         ) : (
-          <span className={cn("font-semibold tracking-tight", collapsed && "sr-only")}>
+          <span className={cn("font-medium tracking-tight", collapsed && "sr-only")}>
             {nome}
           </span>
         )}
         {collapsed && (
-          <span aria-hidden className="text-lg font-bold text-primary">
+          <span
+            aria-hidden
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-sm font-medium text-accent-foreground"
+          >
             {/* Spread e não `[0]`: nome começando com emoji ou acento composto
                 quebraria no meio do code point. Mesma regra de `resolveBranding`
                 — a inicial precisa acompanhar o nome que a barra mostra, senão
-                recolher o menu troca a marca. */}
+                recolher o menu troca a marca. Círculo no accent (não na lavanda
+                crua) para seguir a marca do revendedor e passar no piso. */}
             {[...nome][0]?.toUpperCase() ?? brand.initial}
           </span>
         )}
@@ -151,7 +155,10 @@ export function SidebarContent({
                         aria-current={isActive ? "page" : undefined}
                         onClick={onNavigate}
                         className={cn(
-                          "relative flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
+                          // Pill nos links (assinatura Visitors); a altura da
+                          // linha não muda — o e2e `navegacao.spec.ts` exige o
+                          // menu inteiro em 900px sem scroll.
+                          "relative flex items-center gap-3 rounded-full px-3 py-1 text-sm font-medium transition-colors",
                           isActive
                             ? "bg-accent text-accent-foreground"
                             : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
@@ -177,7 +184,7 @@ export function SidebarContent({
                       aria-current={pathname === group.hub.href ? "page" : undefined}
                       onClick={onNavigate}
                       className={cn(
-                        "flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
+                        "flex items-center gap-3 rounded-full px-3 py-1 text-sm font-medium transition-colors",
                         pathname === group.hub.href
                           ? "bg-accent text-accent-foreground"
                           : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
@@ -202,7 +209,7 @@ export function SidebarContent({
             aria-current={pathname.startsWith(rodape.href) ? "page" : undefined}
             onClick={onNavigate}
             className={cn(
-              "mb-1 flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
+              "mb-1 flex items-center gap-3 rounded-full px-3 py-1 text-sm font-medium transition-colors",
               pathname.startsWith(rodape.href)
                 ? "bg-accent text-accent-foreground"
                 : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
@@ -220,7 +227,7 @@ export function SidebarContent({
             onClick={() => startTransition(() => toggleSidebar(collapsed))}
             disabled={isPending}
             className={cn(
-              "flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+              "flex w-full items-center gap-2 rounded-full px-3 py-2 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground",
               collapsed && "justify-center px-2",
             )}
             aria-label={collapsed ? t("Expandir sidebar") : t("Recolher sidebar")}

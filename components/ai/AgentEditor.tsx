@@ -232,7 +232,7 @@ export function AgentEditor({ agentId, initialData, readOnly = false }: Props) {
               />
               <Label htmlFor="is_active">{t("Agent ativo")}</Label>
             </div>
-            <div className="rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">
+            <div className="rounded-2xl bg-muted/40 p-3 text-xs text-muted-foreground">
               <strong>{t("Default:")}</strong> {agent.is_default ? t("Sim") : t("Não")} ({t("read-only — gerenciado pelo backend")}).
             </div>
           </Card>

@@ -42,7 +42,7 @@ export function AttachMenu({ disabled, onPick, onPickContact }: Props) {
         <PopoverContent align="start" side="top" className="w-52 p-1">
           <button
             type="button"
-            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-muted"
+            className="flex w-full items-center gap-2 rounded-full px-2 py-2 text-sm hover:bg-muted"
             onClick={() => mediaRef.current?.click()}
           >
             <ImageSquare size={18} weight="duotone" className="text-primary" aria-hidden />
@@ -50,7 +50,7 @@ export function AttachMenu({ disabled, onPick, onPickContact }: Props) {
           </button>
           <button
             type="button"
-            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-muted"
+            className="flex w-full items-center gap-2 rounded-full px-2 py-2 text-sm hover:bg-muted"
             onClick={() => docRef.current?.click()}
           >
             <FileText size={18} weight="duotone" className="text-primary" aria-hidden />
@@ -59,7 +59,7 @@ export function AttachMenu({ disabled, onPick, onPickContact }: Props) {
           {onPickContact && (
             <button
               type="button"
-              className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-muted"
+              className="flex w-full items-center gap-2 rounded-full px-2 py-2 text-sm hover:bg-muted"
               onClick={onPickContact}
             >
               <UserCircle size={18} weight="duotone" className="text-primary" aria-hidden />

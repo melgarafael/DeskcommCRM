@@ -30,7 +30,7 @@ export default async function FunilPage() {
   return (
     <div className="space-y-6">
       <header>
-        <h2 className="text-2xl font-semibold tracking-tight">
+        <h2 className="text-2xl font-medium text-text tracking-tight">
           {traduzir("Onde ele organiza seus clientes", idioma)}
         </h2>
         <p className="text-sm text-muted-foreground">

@@ -48,7 +48,7 @@ export default async function CredentialsPage() {
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Chaves de acesso à IA", idioma)}</h1>
+        <h1 className="text-2xl font-medium tracking-tight text-text">{traduzir("Chaves de acesso à IA", idioma)}</h1>
         <p className="text-sm text-muted-foreground">
           {traduzir(
             "A conta de inteligência artificial é sua: você contrata direto na Anthropic, OpenAI ou Google e cola a chave aqui. Ela é guardada criptografada e nunca mais aparece na tela depois de salva — nem para você.",

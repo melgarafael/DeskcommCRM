@@ -43,7 +43,7 @@ export function ConversaNoDossie({
   return (
     <Link
       href={`/app/inbox?id=${conversa.id}`}
-      className="group mt-3 flex items-center gap-2.5 rounded-md border border-border bg-muted/40 px-3 py-2 transition-colors hover:border-primary/40 hover:bg-muted"
+      className="group mt-3 flex items-center gap-2.5 rounded-2xl border border-border bg-muted/40 px-3 py-2 transition-colors hover:border-primary/40 hover:bg-muted"
     >
       <ChatCircle size={16} weight="regular" className="shrink-0 text-text-muted" aria-hidden />
       <span className="min-w-0 flex-1">

@@ -6,6 +6,8 @@ import type { Locale } from "date-fns";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/empty";
+import { ClipboardText } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -53,7 +55,7 @@ function shortId(id: string | null | undefined): string {
 export function AuditTableSkeleton() {
   const t = useT();
   return (
-    <div className="rounded-md border">
+    <div className="rounded-3xl border">
       <Table>
         <TableHeader>
           <TableRow>
@@ -79,24 +81,6 @@ export function AuditTableSkeleton() {
 }
 
 // ---------------------------------------------------------------------------
-// Empty state
-// ---------------------------------------------------------------------------
-
-function EmptyState() {
-  const t = useT();
-  return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
-      <p className="text-sm font-medium text-muted-foreground">
-        {t("Nenhum evento encontrado")}
-      </p>
-      <p className="mt-1 text-xs text-muted-foreground">
-        {t("Ajuste os filtros para ver entradas do audit log.")}
-      </p>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Table
 // ---------------------------------------------------------------------------
 
@@ -116,12 +100,18 @@ export function AuditTable({
   const localeDaData = useLocaleDeData();
   const t = useT();
   if (data.length === 0) {
-    return <EmptyState />;
+    return (
+      <EmptyState
+        icon={ClipboardText}
+        headline="Nenhum evento encontrado"
+        subcopy="Ajuste os filtros para ver entradas do audit log."
+      />
+    );
   }
 
   return (
     <div className="space-y-3">
-      <div className="rounded-md border">
+      <div className="rounded-3xl border">
         <Table>
           <TableHeader>
             <TableRow>

@@ -48,6 +48,9 @@ export const PUBLIC_PATHS: RegExp[] = [
   // antes desta linha: `GET /icon` → 307 para `/login?next=%2Ficon`, enquanto
   // `/icon.png` (inexistente) devolvia 404 — a diferença é só a extensão.
   /^\/icon$/,
+  // O ícone grande do PWA (`app/icone-512/route.ts`), mesma natureza do
+  // `/icon`: o navegador pede sem sessão ao avaliar a instalação.
+  /^\/icone-512$/,
   /^\/manifest\.webmanifest$/,
   /^\/team\/accept-invite\/.+$/,
   /^\/account-suspended$/,

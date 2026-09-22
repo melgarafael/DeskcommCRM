@@ -25,56 +25,79 @@
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 /* ─────────────────────────────────────────────────────────────────────────
-   DeskcommCRM — Design System tokens (Sage palette · density Aerada)
-   Source of truth: /app/design/lib/tokens.ts (PALETTES.sage)
-   Light + dark drawn separately (NOT inverted).
+   DeskcommCRM — Design System tokens (Visitors · light-only)
+   Source of truth: DESIGN.md (raiz do repo).
+   O accent funcional é o grau 600 da rampa (#7e77f0): a lavanda do DESIGN.md
+   (#918df6, que a derivação põe no grau 500) dá 2,86 contra o branco e reprova
+   o piso de componente (3,0) — medido em scripts/explorar-lavanda.ts antes de
+   fixar a semente. O anel de foco também sai do 600 pelo mesmo motivo (era 500
+   na Sage). O texto sobre o accent é Carbon (#181925), não branco: branco sobre
+   o 600 dá 4,0 e reprova o piso de texto (4,5); Carbon dá 7+.
+   O bloco `[data-theme="dark"]` abaixo está MORTO (o provider trava em light),
+   mas fica de pé: `extrairRegua` (lib/branding/contraste.ts) e meia dúzia de
+   gates exigem os dois blocos, e a derivação de marca de revendedor continua
+   calculando o tema escuro. Removê-lo é um épico próprio, não este commit.
    ───────────────────────────────────────────────────────────────────────── */
 
 :root {
-  /* Surfaces (light) */
-  --color-bg: #faf9f6;
+  /* Surfaces (light) — Visitors: Paper canvas, Linen bands */
+  --color-bg: #ffffff;
   --color-surface: #ffffff;
-  --color-surface-elevated: #f5f3ee;
-  --color-overlay: rgba(28, 26, 22, 0.42);
+  --color-surface-elevated: #fafafa;
+  --color-overlay: rgba(24, 25, 37, 0.42);
 
-  /* Text (light) */
-  --color-text: #1c1a16;
-  --color-text-muted: #5d594f;
-  --color-text-subtle: #7d786c;
+  /* Text (light) — Carbon / Graphite / Ash */
+  --color-text: #181925;
+  --color-text-muted: #666666;
+  --color-text-subtle: #999999;
 
-  /* Borders (light) */
-  --color-border: #e7e3da;
-  --color-border-strong: #d2cdbf;
+  /* Borders (light) — Fog hairlines */
+  --color-border: #e8e8e8;
+  --color-border-strong: #e8e8e8;
 
-  /* Accent — Sage (11 stops) */
-  --color-accent-50:  #f3f6f1;
-  --color-accent-100: #e4ebe0;
-  --color-accent-200: #c8d6c1;
-  --color-accent-300: #a4ba9a;
-  --color-accent-400: #82a077;
-  --color-accent-500: #67885d;
-  --color-accent-600: #506d48;
-  --color-accent-700: #41573b;
-  --color-accent-800: #374731;
-  --color-accent-900: #2f3c2b;
-  --color-accent-950: #171f15;
+  /* Accent — rampa derivada da semente #7e77f0 (ver cabeçalho do bloco).
+     Grau 500 (#918dff) é a lavanda do DESIGN.md; o funcional é o 600. */
+  --color-accent-50: #f3f4ff;
+  --color-accent-100: #e9eaff;
+  --color-accent-200: #d5d7ff;
+  --color-accent-300: #bcbeff;
+  --color-accent-400: #a4a5ff;
+  --color-accent-500: #918dff;
+  --color-accent-600: #7e77f0;
+  --color-accent-700: #625db8;
+  --color-accent-800: #4d4b90;
+  --color-accent-900: #403e74;
+  --color-accent-950: #191837;
   --color-accent: var(--color-accent-600);
-  --color-accent-fg: #ffffff;
+  --color-accent-fg: #181925;
   --color-accent-soft: var(--color-accent-100);
   --color-accent-hover: var(--color-accent-700);
 
-  /* Neutrals — greige (11 stops, light) */
-  --color-neutral-50:  #faf9f6;
-  --color-neutral-100: #f3f1ec;
-  --color-neutral-200: #e7e3da;
-  --color-neutral-300: #d2cdbf;
-  --color-neutral-400: #a9a395;
-  --color-neutral-500: #7d786c;
-  --color-neutral-600: #5d594f;
-  --color-neutral-700: #46433b;
-  --color-neutral-800: #2e2c26;
-  --color-neutral-900: #1c1a16;
-  --color-neutral-950: #0e0d0a;
+  /* Tons categoria do DESIGN.md — constantes decorativas, iguais nos temas.
+     Lavanda aqui (#918df6) é a COR DA REFERÊNCIA (círculos de ícone, tags),
+     não o accent funcional (600). Nunca texto corrido: par com fundo próprio
+     abaixo de 4,5 — tags curtas e pontuação funcional, como a referência manda. */
+  --color-lavender: #918df6;
+  --color-iris: #9580ff;
+  --color-mint: #33c758;
+  --color-mint-wash: #def6e4;
+  --color-amber: #ffa600;
+  --color-sky: #2c78fc;
+  --color-magenta: #d6409f;
+  --color-ember: #ff3e00;
+
+  /* Neutrals — grayscale (11 stops, light). O 900 é o Carbon. */
+  --color-neutral-50: #fafafa;
+  --color-neutral-100: #f5f5f5;
+  --color-neutral-200: #e8e8e8;
+  --color-neutral-300: #d4d4d4;
+  --color-neutral-400: #a3a3a3;
+  --color-neutral-500: #737373;
+  --color-neutral-600: #525252;
+  --color-neutral-700: #3f3f3f;
+  --color-neutral-800: #262626;
+  --color-neutral-900: #181925;
+  --color-neutral-950: #0a0a0c;
 
   /* States (light) */
   --color-success: #5a8a5f;
@@ -114,12 +137,16 @@
   --radius-xl: 16px;
   --radius-full: 9999px;
 
-  /* Shadows — desaturated, neutral-based */
-  --shadow-xs: 0 1px 2px 0 rgba(20, 18, 14, 0.04);
-  --shadow-sm: 0 1px 2px 0 rgba(20, 18, 14, 0.05), 0 1px 1px 0 rgba(20, 18, 14, 0.03);
-  --shadow-md: 0 4px 12px -2px rgba(20, 18, 14, 0.06), 0 2px 4px -1px rgba(20, 18, 14, 0.04);
-  --shadow-lg: 0 12px 32px -6px rgba(20, 18, 14, 0.10), 0 4px 12px -2px rgba(20, 18, 14, 0.06);
-  --shadow-xl: 0 24px 48px -12px rgba(20, 18, 14, 0.16), 0 8px 16px -4px rgba(20, 18, 14, 0.08);
+  /* Shadows — Visitors: flat, três camadas no máximo (ver DESIGN.md) */
+  --shadow-xs: rgba(0, 0, 0, 0.08) 0px 1px 1px 1px, rgba(0, 0, 0, 0.06) 0px 0px 0px 0.5px;
+  --shadow-sm: rgba(0, 0, 0, 0.08) 0px 1px 1px 0px, rgba(0, 0, 0, 0.05) 0px 0px 0px 1px;
+  --shadow-md: rgba(0, 0, 0, 0.08) 0px 1px 1px 0px, rgba(0, 0, 0, 0.05) 0px 0px 0px 1px;
+  --shadow-lg:
+    rgba(0, 0, 0, 0.06) 0px 1px 3px 0px, rgba(0, 0, 0, 0.06) 0px 8px 16px 0px,
+    rgba(0, 0, 0, 0.02) 0px 0px 0px 1px;
+  --shadow-xl:
+    rgba(0, 0, 0, 0.06) 0px 1px 3px 0px, rgba(0, 0, 0, 0.06) 0px 8px 16px 0px,
+    rgba(0, 0, 0, 0.02) 0px 0px 0px 1px;
 
   /* Density — Aerada */
   --density-row: 56px;
@@ -161,7 +188,7 @@
   --destructive-foreground: #ffffff;
   --border: var(--color-border);
   --input: var(--color-border);
-  --ring: var(--color-accent-500);
+  --ring: var(--color-accent-600);
   --radius: var(--radius-md);
   /* ---- Agenda · cor de pessoa (8 trilhas) ------------------------------
    * Quem é o dono do compromisso é o eixo visual da grade, e a accent NÃO
@@ -192,8 +219,11 @@
    * equipe. Por isso Telha, Âmbar, Oliva, Turquesa, Azul, Índigo, Violeta,
    * Framboesa: oito palavras diferentes.
    *
-   * A faixa 113-165 é vetada: é onde mora a accent Sage (139 graus). Cor de
-   * PESSOA não pode ser confundida com cor de ESTADO do sistema.
+    * As oito trilhas NÃO foram re-derivadas nesta fase: os valores são os da era
+    * Sage, e a banda que elas evitavam (113-165, o verde de 139 graus) não é
+    * mais a do accent (agora violeta). Re-medir o afastamento trilha × accent é
+    * pendência da próxima fase — por enquanto vale o que sempre valeu: cor de
+    * PESSOA nunca é a única informação, a inicial acompanha sempre.
    *
    * A luminosidade ALTERNA entre vizinhos, que é o truque da Okabe-Ito para
    * separar o azul-céu do azul — e foi exatamente o que a minha versão
@@ -206,14 +236,14 @@
    * não duplicado aqui — assim a relação entre a faixa e o fundo é uma só,
    * e não dois hex que envelhecem separados.
    */
-  --agenda-pessoa-1: #ac4d40;   /* telha */
-  --agenda-pessoa-2: #bd7c20;   /* âmbar */
-  --agenda-pessoa-3: #7e6f01;   /* oliva */
-  --agenda-pessoa-4: #11a19b;   /* turquesa */
-  --agenda-pessoa-5: #0b7a9a;   /* azul */
-  --agenda-pessoa-6: #608bda;   /* índigo */
-  --agenda-pessoa-7: #7b5bad;   /* violeta */
-  --agenda-pessoa-8: #cc77b1;   /* framboesa */
+  --agenda-pessoa-1: #ac4d40; /* telha */
+  --agenda-pessoa-2: #bd7c20; /* âmbar */
+  --agenda-pessoa-3: #7e6f01; /* oliva */
+  --agenda-pessoa-4: #11a19b; /* turquesa */
+  --agenda-pessoa-5: #0b7a9a; /* azul */
+  --agenda-pessoa-6: #608bda; /* índigo */
+  --agenda-pessoa-7: #7b5bad; /* violeta */
+  --agenda-pessoa-8: #cc77b1; /* framboesa */
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -250,30 +280,43 @@
    (lib/branding/css.ts), que só ganha consumidor com a tela de marca.
    ───────────────────────────────────────────────────────────────────────── */
 [data-theme="light"] {
-  --color-bg: #faf9f6;
+  --color-bg: #ffffff;
   --color-surface: #ffffff;
-  --color-surface-elevated: #f5f3ee;
-  --color-overlay: rgba(28, 26, 22, 0.42);
-  --color-text: #1c1a16;
-  --color-text-muted: #5d594f;
-  --color-text-subtle: #7d786c;
-  --color-border: #e7e3da;
-  --color-border-strong: #d2cdbf;
+  --color-surface-elevated: #fafafa;
+  --color-overlay: rgba(24, 25, 37, 0.42);
+  --color-text: #181925;
+  --color-text-muted: #666666;
+  --color-text-subtle: #999999;
+  --color-border: #e8e8e8;
+  --color-border-strong: #e8e8e8;
   --color-accent: var(--color-accent-600);
-  --color-accent-fg: #ffffff;
+  --color-accent-fg: #181925;
   --color-accent-soft: var(--color-accent-100);
   --color-accent-hover: var(--color-accent-700);
-  --color-neutral-50: #faf9f6;
-  --color-neutral-100: #f3f1ec;
-  --color-neutral-200: #e7e3da;
-  --color-neutral-300: #d2cdbf;
-  --color-neutral-400: #a9a395;
-  --color-neutral-500: #7d786c;
-  --color-neutral-600: #5d594f;
-  --color-neutral-700: #46433b;
-  --color-neutral-800: #2e2c26;
-  --color-neutral-900: #1c1a16;
-  --color-neutral-950: #0e0d0a;
+
+  /* Tons categoria do DESIGN.md — constantes decorativas, iguais nos temas.
+     Lavanda aqui (#918df6) é a COR DA REFERÊNCIA (círculos de ícone, tags),
+     não o accent funcional (600). Nunca texto corrido: par com fundo próprio
+     abaixo de 4,5 — tags curtas e pontuação funcional, como a referência manda. */
+  --color-lavender: #918df6;
+  --color-iris: #9580ff;
+  --color-mint: #33c758;
+  --color-mint-wash: #def6e4;
+  --color-amber: #ffa600;
+  --color-sky: #2c78fc;
+  --color-magenta: #d6409f;
+  --color-ember: #ff3e00;
+  --color-neutral-50: #fafafa;
+  --color-neutral-100: #f5f5f5;
+  --color-neutral-200: #e8e8e8;
+  --color-neutral-300: #d4d4d4;
+  --color-neutral-400: #a3a3a3;
+  --color-neutral-500: #737373;
+  --color-neutral-600: #525252;
+  --color-neutral-700: #3f3f3f;
+  --color-neutral-800: #262626;
+  --color-neutral-900: #181925;
+  --color-neutral-950: #0a0a0c;
   --color-success: #5a8a5f;
   --color-success-bg: rgba(90, 138, 95, 0.12);
   --color-success-fg: #41673f;
@@ -286,11 +329,15 @@
   --color-info: #4a7a93;
   --color-info-bg: rgba(74, 122, 147, 0.12);
   --color-info-fg: #355d72;
-  --shadow-xs: 0 1px 2px 0 rgba(20, 18, 14, 0.04);
-  --shadow-sm: 0 1px 2px 0 rgba(20, 18, 14, 0.05), 0 1px 1px 0 rgba(20, 18, 14, 0.03);
-  --shadow-md: 0 4px 12px -2px rgba(20, 18, 14, 0.06), 0 2px 4px -1px rgba(20, 18, 14, 0.04);
-  --shadow-lg: 0 12px 32px -6px rgba(20, 18, 14, 0.10), 0 4px 12px -2px rgba(20, 18, 14, 0.06);
-  --shadow-xl: 0 24px 48px -12px rgba(20, 18, 14, 0.16), 0 8px 16px -4px rgba(20, 18, 14, 0.08);
+  --shadow-xs: rgba(0, 0, 0, 0.08) 0px 1px 1px 1px, rgba(0, 0, 0, 0.06) 0px 0px 0px 0.5px;
+  --shadow-sm: rgba(0, 0, 0, 0.08) 0px 1px 1px 0px, rgba(0, 0, 0, 0.05) 0px 0px 0px 1px;
+  --shadow-md: rgba(0, 0, 0, 0.08) 0px 1px 1px 0px, rgba(0, 0, 0, 0.05) 0px 0px 0px 1px;
+  --shadow-lg:
+    rgba(0, 0, 0, 0.06) 0px 1px 3px 0px, rgba(0, 0, 0, 0.06) 0px 8px 16px 0px,
+    rgba(0, 0, 0, 0.02) 0px 0px 0px 1px;
+  --shadow-xl:
+    rgba(0, 0, 0, 0.06) 0px 1px 3px 0px, rgba(0, 0, 0, 0.06) 0px 8px 16px 0px,
+    rgba(0, 0, 0, 0.02) 0px 0px 0px 1px;
   --background: var(--color-bg);
   --foreground: var(--color-text);
   --card: var(--color-surface);
@@ -308,7 +355,7 @@
   --destructive-foreground: #ffffff;
   --border: var(--color-border);
   --input: var(--color-border);
-  --ring: var(--color-accent-500);
+  --ring: var(--color-accent-600);
   /* ---- Agenda · cor de pessoa (espelho do :root) -----------------------
    * Espelhado aqui porque o tema escuro sobrescreve estas oito chaves, e
    * `tests/unit/branding-tema-claro-escopavel.test.ts` exige que este bloco
@@ -316,14 +363,14 @@
    * dentro de página escura herdaria os valores escuros, e a amostra de cor
    * mentiria sobre a cor que a pessoa tem.
    */
-  --agenda-pessoa-1: #ac4d40;   /* telha */
-  --agenda-pessoa-2: #bd7c20;   /* âmbar */
-  --agenda-pessoa-3: #7e6f01;   /* oliva */
-  --agenda-pessoa-4: #11a19b;   /* turquesa */
-  --agenda-pessoa-5: #0b7a9a;   /* azul */
-  --agenda-pessoa-6: #608bda;   /* índigo */
-  --agenda-pessoa-7: #7b5bad;   /* violeta */
-  --agenda-pessoa-8: #cc77b1;   /* framboesa */
+  --agenda-pessoa-1: #ac4d40; /* telha */
+  --agenda-pessoa-2: #bd7c20; /* âmbar */
+  --agenda-pessoa-3: #7e6f01; /* oliva */
+  --agenda-pessoa-4: #11a19b; /* turquesa */
+  --agenda-pessoa-5: #0b7a9a; /* azul */
+  --agenda-pessoa-6: #608bda; /* índigo */
+  --agenda-pessoa-7: #7b5bad; /* violeta */
+  --agenda-pessoa-8: #cc77b1; /* framboesa */
 }
 
 [data-theme="dark"] {
@@ -343,7 +390,7 @@
   --color-border-strong: #444239;
 
   /* Accent stays same hex stops; default shifts up for dark contrast */
-  --color-accent-50:  #f3f6f1;
+  --color-accent-50: #f3f6f1;
   --color-accent-100: #e4ebe0;
   --color-accent-200: #c8d6c1;
   --color-accent-300: #a4ba9a;
@@ -359,8 +406,18 @@
   --color-accent-soft: rgba(130, 160, 119, 0.16);
   --color-accent-hover: var(--color-accent-300);
 
+  /* Tons categoria do DESIGN.md (constantes — mesmos valores do claro). */
+  --color-lavender: #918df6;
+  --color-iris: #9580ff;
+  --color-mint: #33c758;
+  --color-mint-wash: #def6e4;
+  --color-amber: #ffa600;
+  --color-sky: #2c78fc;
+  --color-magenta: #d6409f;
+  --color-ember: #ff3e00;
+
   /* Neutrals — greige (11 stops, dark) */
-  --color-neutral-50:  #f5f4ef;
+  --color-neutral-50: #f5f4ef;
   --color-neutral-100: #e6e4dc;
   --color-neutral-200: #bbb8ac;
   --color-neutral-300: #8e8b7f;
@@ -387,11 +444,11 @@
   --color-info-fg: #9bbfd2;
 
   /* Shadows — heavier in dark */
-  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.30);
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.40), 0 1px 1px 0 rgba(0, 0, 0, 0.20);
-  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.45), 0 2px 4px -1px rgba(0, 0, 0, 0.30);
-  --shadow-lg: 0 12px 32px -6px rgba(0, 0, 0, 0.55), 0 4px 12px -2px rgba(0, 0, 0, 0.40);
-  --shadow-xl: 0 24px 48px -12px rgba(0, 0, 0, 0.65), 0 8px 16px -4px rgba(0, 0, 0, 0.50);
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4), 0 1px 1px 0 rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.45), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 12px 32px -6px rgba(0, 0, 0, 0.55), 0 4px 12px -2px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 24px 48px -12px rgba(0, 0, 0, 0.65), 0 8px 16px -4px rgba(0, 0, 0, 0.5);
 
   /* shadcn-compat aliases */
   --background: var(--color-bg);
@@ -507,6 +564,16 @@
   --color-info-bg: var(--color-info-bg);
   --color-info-fg: var(--color-info-fg);
 
+  /* Tons categoria do DESIGN.md (decorativos) */
+  --color-lavender: var(--color-lavender);
+  --color-iris: var(--color-iris);
+  --color-mint: var(--color-mint);
+  --color-mint-wash: var(--color-mint-wash);
+  --color-amber: var(--color-amber);
+  --color-sky: var(--color-sky);
+  --color-magenta: var(--color-magenta);
+  --color-ember: var(--color-ember);
+
   /* Aliases shadcn (consumers ainda não migrados). Espelham 1:1 o que o
      `tailwind.config.ts` mapeava — inclusive `ring`, que apontava para a
      parada 500 fixa e NÃO para `--ring` (que muda no escuro). Mantido igual de
@@ -515,7 +582,7 @@
   --color-border: var(--color-border);
   --color-border-strong: var(--color-border-strong);
   --color-input: var(--color-border);
-  --color-ring: var(--color-accent-500);
+  --color-ring: var(--color-accent-600);
   --color-background: var(--color-bg);
   --color-foreground: var(--color-text);
   --color-primary: var(--color-accent);
@@ -531,11 +598,10 @@
   --color-card: var(--color-surface);
   --color-card-foreground: var(--color-text);
 
-  /* Tipografia */
-  --font-sans: var(--font-atkinson), ui-sans-serif, system-ui, -apple-system,
-    "Segoe UI", Roboto, sans-serif;
-  --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco,
-    Consolas, monospace;
+  /* Tipografia — Inter (substituto do OpenRunde do DESIGN.md, ver layout) */
+  --font-sans:
+    var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   /* Espaçamento. Os valores são px LITERAIS (`--space-6` = 24px), não rem — e
      essa diferença é carregada por quem consome: ver o cálculo de altura em
@@ -592,7 +658,6 @@
 @utility duration-slow {
   transition-duration: var(--duration-slow);
 }
-
 
 @layer base {
   /* O preflight do v4 não pinta mais borda por padrão (`border: 0 solid`, cor
@@ -678,17 +743,34 @@
     overflow-x: hidden;
     background-color: var(--color-bg);
     color: var(--color-text);
-    font-family: var(--font-atkinson), ui-sans-serif, system-ui, -apple-system,
-      "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
+    font-family:
+      var(--font-inter),
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      Roboto,
+      "Helvetica Neue",
+      Arial,
+      sans-serif;
+    /* DESIGN.md: corpo 16px/400 com tracking -0,32px (=-0,02em, escala junto). */
+    letter-spacing: -0.02em;
+    font-feature-settings:
+      "rlig" 1,
+      "calt" 1,
+      "ss01" 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
 
-  code, kbd, pre, samp {
-    font-family: var(--font-mono), ui-monospace, "SFMono-Regular", Menlo,
-      Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  code,
+  kbd,
+  pre,
+  samp {
+    font-family:
+      var(--font-mono), ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono",
+      "Courier New", monospace;
     font-variant-numeric: tabular-nums;
   }
 
@@ -701,9 +783,10 @@
     color: var(--color-accent-50);
   }
 
-  /* Focus ring: Sage 500/400, 2px with offset */
+  /* Focus ring: accent 600 nos dois papéis (anel + --ring). Era 500 na Sage;
+     na rampa lavanda o 500 dá 2,3 contra o branco e reprova o piso 3,0. */
   :focus-visible {
-    outline: 2px solid var(--color-accent-500);
+    outline: 2px solid var(--color-accent-600);
     outline-offset: 2px;
     border-radius: var(--radius-sm);
   }
@@ -903,4 +986,91 @@
     transition: none;
     transform: none;
   }
+}
+
+/* ---- Assistente de ajuda · o pulo do avatar ao ser clicado --------------
+   Uma vez só (sem `infinite`), 380ms: squash no meio (escala Y 0.82) e
+   esticada no fim — o "vivo" do ajudante. O componente só aplica a classe
+   quando `prefers-reduced-motion` NÃO está ativo (ver AssistenteAvatar), então
+   aqui não precisa de media query: quem desligou animação nem recebe a classe. */
+@keyframes assistente-pulo {
+  0% {
+    scale: 1 1;
+  }
+  35% {
+    scale: 1.12 0.82;
+  }
+  70% {
+    scale: 0.94 1.08;
+  }
+  100% {
+    scale: 1 1;
+  }
+}
+
+/* ---- Assistente de ajuda · o pisca do clique ------------------------------
+   A transição de expressão da lib leva 420ms — devagar demais para ler como
+   "pisca". Este squash vertical de 160ms no rosto inteiro é o que o olho
+   humano registra como piscada; a expressão `eyes-closed` (comandada junto)
+   completa o efeito. Mesma regra do pulo: só com movimento permitido. */
+@keyframes assistente-pisca {
+  0% {
+    scale: 1 1;
+  }
+  45% {
+    scale: 1 0.12;
+  }
+  100% {
+    scale: 1 1;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Nexus UI · micro-interações e spinner (FASE 2/3 do redesign).
+   Pequenas, rápidas, funcionais. Tudo congela em `reduced-motion`.
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  --nexus-input-height: 36px;
+  --nexus-button-height: 36px;
+  --nexus-table-row-height: var(--density-row);
+}
+
+@keyframes nexus-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.nexus-spinner {
+  animation: nexus-spin 0.8s linear infinite;
+}
+
+/* Transições funcionais de lista/drawer/modal (óticas, ≤200ms). */
+.nexus-transition {
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    opacity var(--duration-base) var(--ease-out),
+    transform var(--duration-base) var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nexus-spinner {
+    animation: none;
+    border-top-color: var(--color-border);
+  }
+  .nexus-transition {
+    transition: none;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Inbox · fundo do fio estilo WhatsApp (assimilação do usuário final).
+   Estático de propósito: é textura, não animação — nada para congelar em
+   `reduced-motion`. Escopo: só o inbox usa (`.wa-chat-bg`).
+   ───────────────────────────────────────────────────────────────────────── */
+.wa-chat-bg {
+  background-color: #efeae2;
+  background-image: radial-gradient(rgba(0, 0, 0, 0.045) 1px, transparent 1px);
+  background-size: 22px 22px;
 }

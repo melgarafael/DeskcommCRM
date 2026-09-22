@@ -52,10 +52,10 @@ interface TemplateParceiro {
 }
 
 const COR_DO_ESTADO: Record<string, string> = {
-  APPROVED: "text-emerald-700 dark:text-emerald-400",
-  PENDING: "text-amber-700 dark:text-amber-400",
+  APPROVED: "text-success-fg",
+  PENDING: "text-warning-fg",
   REJECTED: "text-destructive",
-  PAUSED: "text-amber-700 dark:text-amber-400",
+  PAUSED: "text-warning-fg",
   DISABLED: "text-muted-foreground",
 };
 
@@ -136,7 +136,7 @@ export function TemplatesParceiroClient() {
       </div>
 
       {criando && (
-        <div className="grid gap-4 rounded-md border border-border p-3 lg:grid-cols-[1fr_20rem]">
+        <div className="grid gap-4 rounded-2xl border border-border p-3 lg:grid-cols-[1fr_20rem]">
           <div className="flex flex-col gap-2">
           <div className="flex flex-wrap gap-2">
             <input
@@ -144,7 +144,7 @@ export function TemplatesParceiroClient() {
               onChange={(e) => setNome(e.target.value)}
               placeholder="nome_do_modelo"
               aria-label={t("Nome do modelo")}
-              className="h-9 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+              className="h-9 flex-1 rounded-lg border border-input bg-background px-2 text-sm"
             />
             {/* LISTA, e não campo livre. O contrato descreve o formato e não
                 enumera os valores; digitar é onde o erro nasce — `esp`, `ES`,
@@ -154,7 +154,7 @@ export function TemplatesParceiroClient() {
               value={idioma}
               onChange={(e) => setIdioma(e.target.value)}
               aria-label={t("Idioma")}
-              className="h-9 w-56 rounded-md border border-input bg-background px-2 text-sm"
+              className="h-9 w-56 rounded-lg border border-input bg-background px-2 text-sm"
             >
               {IDIOMAS_DA_DEFINICAO.map((i) => (
                 <option key={i.codigo} value={i.codigo}>
@@ -172,7 +172,7 @@ export function TemplatesParceiroClient() {
             value={categoria}
             onChange={(e) => setCategoria(e.target.value)}
             aria-label={t("Categoria")}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
           >
             <option value="UTILITY">
               {t("Utilidade — aviso de pedido, agendamento, cobrança")}
@@ -193,7 +193,7 @@ export function TemplatesParceiroClient() {
               placeholder={t("Cabeçalho de texto (opcional)")}
               aria-label={t("Cabeçalho de texto")}
               disabled={!!midiaUrl}
-              className="h-9 flex-1 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
+              className="h-9 flex-1 rounded-lg border border-input bg-background px-2 text-sm disabled:opacity-50"
             />
             {/* SUBIR, e não colar URL. Colar exigia que o operador já tivesse a
                 imagem hospedada em algum lugar público — que é justamente o que
@@ -201,7 +201,7 @@ export function TemplatesParceiroClient() {
                 um link assinado, que é o que a plataforma baixa na revisão. */}
             <label
               className={cn(
-                "flex h-9 flex-1 cursor-pointer items-center justify-center rounded-md border border-dashed border-input px-2 text-sm text-muted-foreground hover:bg-muted",
+                "flex h-9 flex-1 cursor-pointer items-center justify-center rounded-2xl border border-dashed border-input px-2 text-sm text-muted-foreground hover:bg-muted",
                 cabecalho && "pointer-events-none opacity-50",
               )}
             >
@@ -250,7 +250,7 @@ export function TemplatesParceiroClient() {
               onChange={(e) => setCorpo(e.target.value.slice(0, LIMITE_CORPO))}
               placeholder={t("Texto da mensagem. Use {{1}}, {{2}} para os valores que mudam.")}
               aria-label={t("Conteúdo")}
-              className="min-h-20 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+              className="min-h-20 rounded-lg border border-input bg-background px-2 py-1.5 text-sm"
             />
             {/* O contador existe porque passar do limite é RECUSA, e a recusa
                 chega horas depois sem dizer que o problema era o tamanho. */}
@@ -265,7 +265,7 @@ export function TemplatesParceiroClient() {
               onChange={(e) => setRodape(e.target.value.slice(0, LIMITE_RODAPE))}
               placeholder={t("Rodapé (opcional) — texto pequeno no fim da mensagem")}
               aria-label={t("Rodapé")}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
             />
             <span className="self-end text-[10px] text-muted-foreground">
               {rodape.length}/{LIMITE_RODAPE}
@@ -287,7 +287,7 @@ export function TemplatesParceiroClient() {
                     setBotoes(p);
                   }}
                   aria-label={`${t("Tipo do botão")} ${i + 1}`}
-                  className="h-8 w-40 rounded-md border border-input bg-background px-2 text-sm"
+                  className="h-8 w-40 rounded-lg border border-input bg-background px-2 text-sm"
                 >
                   <option value="quick_reply">{t("Resposta rápida")}</option>
                   <option value="url">{t("Abrir link")}</option>
@@ -306,7 +306,7 @@ export function TemplatesParceiroClient() {
                   }}
                   placeholder={t("Texto do botão")}
                   aria-label={`${t("Texto do botão")} ${i + 1}`}
-                  className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+                  className="h-8 flex-1 rounded-lg border border-input bg-background px-2 text-sm"
                 />
                 {b.tipo === "url" && (
                   <input
@@ -318,7 +318,7 @@ export function TemplatesParceiroClient() {
                     }}
                     placeholder="https://…"
                     aria-label={`${t("URL do botão")} ${i + 1}`}
-                    className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+                    className="h-8 flex-1 rounded-lg border border-input bg-background px-2 text-sm"
                   />
                 )}
                 {b.tipo === "phone_number" && (
@@ -331,7 +331,7 @@ export function TemplatesParceiroClient() {
                     }}
                     placeholder="+595…"
                     aria-label={`${t("Telefone do botão")} ${i + 1}`}
-                    className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+                    className="h-8 flex-1 rounded-lg border border-input bg-background px-2 text-sm"
                   />
                 )}
                 <button
@@ -361,8 +361,8 @@ export function TemplatesParceiroClient() {
                é recusada, e a recusa chega horas depois sem ninguém ligar uma
                coisa à outra. O formulário deixava digitar `{{1}}` e nunca
                pedia o exemplo. */
-            <div className="flex flex-col gap-1.5 rounded-md border border-amber-300 bg-amber-50/50 p-2 dark:border-amber-800/60 dark:bg-amber-950/20">
-              <p className="text-[11px] text-amber-900 dark:text-amber-200">
+            <div className="flex flex-col gap-1.5 rounded-2xl border border-warning/40 bg-warning-bg p-2">
+              <p className="text-[11px] text-warning-fg">
                 {t("A revisão exige um exemplo de cada valor. Sem eles o modelo é recusado.")}
               </p>
               {Array.from({ length: nVariaveis }, (_, i) => (
@@ -379,7 +379,7 @@ export function TemplatesParceiroClient() {
                     }}
                     placeholder={t("ex.: María")}
                     aria-label={`${t("Exemplo do valor")} ${i + 1}`}
-                    className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+                    className="h-8 flex-1 rounded-lg border border-input bg-background px-2 text-sm"
                   />
                 </div>
               ))}
@@ -443,7 +443,7 @@ export function TemplatesParceiroClient() {
           {t("para trazer os que já existem na plataforma.")}
         </p>
       ) : (
-        <ul className="divide-y divide-border rounded-md border border-border">
+        <ul className="divide-y divide-border rounded-2xl border border-border">
           {templates.map((tpl) => {
             const chave = `${tpl.name}|${tpl.language}`;
             const c = lerConteudo(tpl.components);
@@ -462,7 +462,7 @@ export function TemplatesParceiroClient() {
                   <span className="font-mono text-sm">{tpl.name}</span>
                   <span className="text-xs text-muted-foreground">{tpl.language}</span>
                   {tpl.category && (
-                    <span className="rounded-md bg-muted px-1.5 text-[10px] uppercase text-muted-foreground">
+                    <span className="rounded-full bg-muted px-1.5 text-[10px] uppercase text-muted-foreground">
                       {tpl.category}
                     </span>
                   )}
@@ -489,7 +489,7 @@ export function TemplatesParceiroClient() {
                 )}
 
                 {expandido && (
-                  <div className="mt-2 flex flex-col gap-1.5 rounded-md bg-muted/40 p-2 text-sm">
+                  <div className="mt-2 flex flex-col gap-1.5 rounded-full bg-muted/40 p-2 text-sm">
                     {c.header && (
                       <p className="text-xs">
                         <span className="text-muted-foreground">
@@ -509,7 +509,7 @@ export function TemplatesParceiroClient() {
                     {c.botoes.length > 0 && (
                       <div className="flex flex-wrap gap-1">
                         {c.botoes.map((b, i) => (
-                          <span key={i} className="rounded-md border border-border px-1.5 text-[11px]">
+                          <span key={i} className="rounded-2xl border border-border px-1.5 text-[11px]">
                             {b.texto} <span className="text-muted-foreground">({b.tipo})</span>
                           </span>
                         ))}

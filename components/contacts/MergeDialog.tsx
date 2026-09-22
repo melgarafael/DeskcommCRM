@@ -76,7 +76,7 @@ export function MergeDialog({ queueItemId, open, onOpenChange }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>{t("Resolver merge de contatos")}</DialogTitle>
+          <DialogTitle>{t("Resolver merge de clientes")}</DialogTitle>
           <DialogDescription>
             {t(
               "Comparação dos candidatos detectados. A resolução automática via API ainda não está disponível neste MVP — entre em contato com o admin para mesclar via SQL.",
@@ -93,7 +93,7 @@ export function MergeDialog({ queueItemId, open, onOpenChange }: Props) {
             {candidates.map((c, idx) => (
               <div
                 key={c.id ?? idx}
-                className="rounded-md border border-border bg-card p-3 text-sm"
+                className="rounded-2xl border border-border bg-card p-3 text-sm"
               >
                 <div className="font-medium">{c.name ?? "—"}</div>
                 <div className="text-muted-foreground">{c.email ?? "—"}</div>

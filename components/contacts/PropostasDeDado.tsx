@@ -119,7 +119,7 @@ export function PropostasDeDado({ contactId, podeDecidir, aoDecidir }: Props) {
 
       <ul className="space-y-3">
         {(itens ?? []).map((p) => (
-          <li key={p.id} className="rounded-md border bg-background p-3">
+          <li key={p.id} className="rounded-2xl border bg-background p-3">
             <div className="flex flex-wrap items-baseline gap-2">
               <span className="text-xs uppercase tracking-wide text-muted-foreground">
                 {t(NOME_DO_CAMPO[p.campo] ?? p.campo)}

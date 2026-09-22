@@ -73,7 +73,7 @@ export function RunTrace({
         return (
           <details
             key={`${stepNum}-${s.tool_name ?? idx}`}
-            className="group rounded-md border border-border/60 bg-background"
+            className="group rounded-2xl border border-border/60 bg-background"
           >
             <summary className="flex cursor-pointer items-center justify-between gap-2 px-3 py-2 text-sm">
               <span className="flex items-center gap-2">
@@ -94,20 +94,20 @@ export function RunTrace({
             <div className="space-y-3 border-t border-border/60 px-3 py-3 text-xs">
               <div>
                 <p className="mb-1 font-medium text-muted-foreground">{t("Args")}</p>
-                <pre className="overflow-x-auto rounded-md bg-muted/40 p-2 font-mono leading-relaxed">
+                <pre className="overflow-x-auto rounded-lg bg-muted/40 p-2 font-mono leading-relaxed">
                   {clip(fmtJson(s.args))}
                 </pre>
               </div>
               <div>
                 <p className="mb-1 font-medium text-muted-foreground">{t("Result")}</p>
-                <pre className="overflow-x-auto rounded-md bg-muted/40 p-2 font-mono leading-relaxed">
+                <pre className="overflow-x-auto rounded-lg bg-muted/40 p-2 font-mono leading-relaxed">
                   {clip(fmtJson(s.result))}
                 </pre>
               </div>
               {errMsg ? (
                 <div>
                   <p className="mb-1 font-medium text-destructive">{t("Error")}</p>
-                  <pre className="overflow-x-auto rounded-md bg-destructive/10 p-2 font-mono leading-relaxed text-destructive">
+                  <pre className="overflow-x-auto rounded-lg bg-destructive/10 p-2 font-mono leading-relaxed text-destructive">
                     {clip(errMsg)}
                   </pre>
                 </div>
@@ -123,7 +123,7 @@ export function RunTrace({
       })}
 
       {finalText ? (
-        <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
+        <div className="rounded-2xl border border-primary/30 bg-primary/5 p-3 text-sm">
           <p className="mb-1 text-xs font-medium uppercase tracking-wide text-primary">
             {t("Mensagem que SERIA enviada")}
           </p>

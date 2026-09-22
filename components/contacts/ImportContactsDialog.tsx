@@ -43,7 +43,7 @@ export function ImportContactsDialog({ open, onOpenChange }: Props) {
     try {
       const r = await importar.mutateAsync(file);
       setResumo(r);
-      if (r.imported > 0) toast.success(`${r.imported} ${t("contato(s) importado(s)")}`);
+      if (r.imported > 0) toast.success(`${r.imported} ${t("cliente(s) importado(s)")}`);
       if (r.errors.length > 0) toast.warning(`${r.errors.length} ${t("linha(s) com problema")}`);
     } catch (err) {
       // Falha de requisição (arquivo grande, formato errado…): mostra no rodapé.
@@ -65,7 +65,7 @@ export function ImportContactsDialog({ open, onOpenChange }: Props) {
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t("Importar contatos de planilha")}</DialogTitle>
+          <DialogTitle>{t("Importar clientes de planilha")}</DialogTitle>
           <DialogDescription>
             {t(
               "Envie um arquivo .csv com cabeçalho — colunas reconhecidas: nome, telefone, email, cpf, nascimento, tags. Excel: use “Salvar como” → “CSV UTF-8”. Máximo de 500 linhas por arquivo.",
@@ -110,26 +110,26 @@ export function ImportContactsDialog({ open, onOpenChange }: Props) {
           {resumo && (
             <div className="space-y-3">
               <div className="flex flex-wrap gap-2 text-sm">
-                <span className="rounded-md bg-surface px-2 py-1">
+                <span className="rounded-full bg-surface px-2 py-1">
                   {resumo.total_linhas} {t("linha(s) lidas")}
                 </span>
-                <span className="rounded-md px-2 py-1 font-medium">
+                <span className="rounded-full px-2 py-1 font-medium">
                   {resumo.imported} {t("importado(s)")}
                 </span>
                 {resumo.skipped_duplicates > 0 && (
-                  <span className="rounded-md bg-surface px-2 py-1">
+                  <span className="rounded-full bg-surface px-2 py-1">
                     {resumo.skipped_duplicates} {t("já existente(s)")}
                   </span>
                 )}
                 {resumo.errors.length > 0 && (
-                  <span className="rounded-md px-2 py-1 font-medium">
+                  <span className="rounded-full px-2 py-1 font-medium">
                     {resumo.errors.length} {t("com erro")}
                   </span>
                 )}
               </div>
 
               {resumo.errors.length > 0 && (
-                <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-border p-2 text-sm">
+                <div className="max-h-48 space-y-1 overflow-y-auto rounded-2xl border border-border p-2 text-sm">
                   {resumo.errors.map((err) => (
                     <p key={err.linha}>
                       {t("Linha")} {err.linha}: {err.motivo}

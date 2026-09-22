@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Atkinson_Hyperlegible, IBM_Plex_Mono } from "next/font/google";
+import { Inter, IBM_Plex_Mono } from "next/font/google";
 import { headers } from "next/headers";
 import { Toaster } from "sonner";
 import { coresDaBarraDoNavegador } from "@/lib/branding/barra-do-navegador";
@@ -25,11 +25,14 @@ import { Providers } from "./providers";
 import { PublicEnvScript } from "./public-env-script";
 import "./globals.css";
 
-const atkinson = Atkinson_Hyperlegible({
+/* DESIGN.md pede OpenRunde, que não existe no Google Fonts: Inter é o
+   substituto listado pela própria referência (Inter, DM Sans ou Geist Sans).
+   Pesos 400/500/600/700 cobrem corpo, botões e display. */
+const inter = Inter({
   subsets: ["latin", "latin-ext"],
-  weight: ["400", "700"],
+  weight: ["400", "500", "600", "700"],
   display: "swap",
-  variable: "--font-atkinson",
+  variable: "--font-inter",
 });
 
 const plexMono = IBM_Plex_Mono({
@@ -117,9 +120,11 @@ export const viewport: Viewport = {
   themeColor: coresDaBarraDoNavegador(REGUA_DO_PRODUTO),
 };
 
-// Inline FOUC-prevention. Conteúdo é string literal estática (zero input do usuário),
-// portanto seguro. Lê localStorage + prefers-color-scheme antes do primeiro paint.
-const THEME_INIT_SCRIPT = `(function(){try{var s=localStorage.getItem('deskcomm-theme');var d=window.matchMedia('(prefers-color-scheme: dark)').matches;var r=(s==='dark'||s==='light')?s:((s==='system'||!s)&&d?'dark':'light');document.documentElement.setAttribute('data-theme',r);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`;
+// Light-only (DESIGN.md): o produto não tem mais tema escuro. O script fixa
+// `light` sem ler storage nem `prefers-color-scheme` — conteúdo estático,
+// portanto seguro. O bloco `[data-theme="dark"]` do globals.css segue morto
+// de pé para a derivação de marca (ver cabeçalho dos tokens).
+const THEME_INIT_SCRIPT = `(function(){try{document.documentElement.setAttribute('data-theme','light');}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`;
 
 /**
  * Motivos já registrados neste processo. `EstiloDaMarca` roda em TODA
@@ -278,7 +283,7 @@ export default function RootLayout({
       lang="pt-BR"
       data-theme="light"
       suppressHydrationWarning
-      className={`${atkinson.variable} ${plexMono.variable}`}
+      className={`${inter.variable} ${plexMono.variable}`}
     >
       <head>
         {/* Primeiro de tudo: a cor da instalação, antes do CSS e do script de tema. */}

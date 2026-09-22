@@ -142,7 +142,7 @@ export function VersionHistory({ agentId, versions, readOnly }: Props) {
           return (
             <li
               key={v.id}
-              className="flex flex-wrap items-center gap-3 rounded-md border border-border/60 p-3 text-sm"
+              className="flex flex-wrap items-center gap-3 rounded-2xl border border-border/60 p-3 text-sm"
             >
               <Badge variant={STATUS_VARIANT[v.status] ?? "outline"} className="text-xs">
                 {t(STATUS_LABEL_PT[v.status] ?? v.status)}

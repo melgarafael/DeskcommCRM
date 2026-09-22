@@ -23,7 +23,7 @@ export function PlatformModeBanner() {
       </div>
       <Link
         href="/app"
-        className="rounded-md px-2 py-1 text-xs font-medium underline-offset-2 hover:underline"
+          className="rounded-full px-2 py-1 text-xs font-medium underline-offset-2 hover:underline"
       >
         {t("Sair pra app pessoal")}
       </Link>

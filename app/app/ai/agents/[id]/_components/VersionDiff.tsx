@@ -186,11 +186,11 @@ export function VersionDiff({ versionA, versionB }: Props) {
       </Section>
 
       <Section title={t("System prompt")}>
-        <pre className="max-h-96 overflow-auto rounded-md border border-border/60 bg-muted/30 p-2 font-mono text-xs leading-relaxed">
+        <pre className="max-h-96 overflow-auto rounded-lg border border-border/60 bg-muted/30 p-2 font-mono text-xs leading-relaxed">
           {lines.map((l, idx) => {
             const cls =
               l.kind === "add"
-                ? "block bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                ? "block bg-success-bg text-success-fg"
                 : l.kind === "del"
                   ? "block bg-destructive/10 text-destructive"
                   : "block";
@@ -238,7 +238,7 @@ function Pills({
           variant="outline"
           className={
             tone === "add"
-              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+              ? "border-success/40 bg-success-bg text-success-fg"
               : "border-destructive/40 bg-destructive/10 text-destructive"
           }
         >

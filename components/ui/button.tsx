@@ -5,23 +5,28 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /**
- * Button — Sage design system.
+ * Button — Visitors design system (DESIGN.md).
+ *
+ * Pill em tudo (9999px é a assinatura), Inter 14px/500 com tracking apertado.
+ * O fill primário é o accent funcional (600) com texto Carbon — a lavanda da
+ * referência (#918df6) com texto branco reprova o piso de texto (4,5), medido
+ * na Fase 1; o 500 da rampa derivada é a lavanda da referência.
  * Variants:
- *   - primary (default): accent fill, branded CTA
- *   - secondary: surface-elevated com border, ação neutra
- *   - ghost: transparent, hover suave (toolbar/inline)
+ *   - primary (default): accent fill, CTA de conversão
+ *   - secondary: surface com border Fog, ação neutra
+ *   - ghost: transparente, texto Graphite (toolbar/inline)
  *   - destructive: error fill (delete/cancel destrutivo)
  *   - outline: alias de secondary com background transparente (compat shadcn)
- *   - link: text-only com underline
+ *   - link: text-only Carbon com underline no hover
  *   - default: alias de primary (compat shadcn)
  */
 const buttonVariants = cva(
   [
     "inline-flex items-center justify-center gap-2 whitespace-nowrap",
-    "rounded-sm font-medium",
+    "rounded-full font-medium tracking-[-0.02em]",
     "transition-[background-color,border-color,color,box-shadow,transform]",
     "duration-fast ease-out",
-    "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
+    "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-600 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
     "disabled:pointer-events-none disabled:opacity-50",
     "[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
     "active:translate-y-px",
@@ -34,15 +39,15 @@ const buttonVariants = cva(
         default:
           "bg-accent text-accent-foreground hover:bg-accent-hover shadow-xs",
         secondary:
-          "bg-surface-elevated text-text border border-border hover:border-accent hover:text-accent",
+          "bg-surface text-text border border-border hover:border-accent hover:text-accent",
         outline:
           "bg-transparent text-text border border-border hover:border-accent hover:text-accent",
         ghost:
-          "bg-transparent text-text hover:bg-accent-soft hover:text-accent",
+          "bg-transparent text-text-muted hover:bg-accent-soft hover:text-accent",
         destructive:
           "bg-error text-white hover:brightness-95 shadow-xs",
         link:
-          "bg-transparent text-accent underline underline-offset-4 decoration-1 hover:decoration-2 h-auto p-0",
+          "bg-transparent text-text underline-offset-4 hover:underline h-auto p-0",
       },
       // Alturas de toque: abaixo de `lg` (mesmo corte que o resto da casca
       // usa pra decidir "é celular/tablet, é mouse") toda variante bate os
@@ -52,8 +57,8 @@ const buttonVariants = cva(
       // necessidade nenhuma. `lg` já nascia com 44px e não precisou mudar.
       size: {
         sm: "h-11 px-3 text-xs lg:h-8",
-        default: "h-11 px-4 text-sm lg:h-9",
-        md: "h-11 px-4 text-sm lg:h-9",
+        default: "h-11 px-5 text-sm lg:h-9",
+        md: "h-11 px-5 text-sm lg:h-9",
         lg: "h-11 px-6 text-sm",
         icon: "h-11 w-11 lg:h-9 lg:w-9",
       },

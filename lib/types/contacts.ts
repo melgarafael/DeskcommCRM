@@ -11,7 +11,21 @@ export interface Contact {
   email_normalized: string | null;
   phone_number: string | null;
   cpf_hash: string | null;
+  /** CNPJ em dígitos (público). NULL = pessoa física ou não informado. */
+  cnpj: string | null;
   birthdate: string | null;
+  /** Fiscal e endereço (0230): o que a ficha do Mercos mostra e a nossa não mostrava. */
+  tipo_pessoa: "F" | "J" | null;
+  fantasia: string | null;
+  ie: string | null;
+  regime: string | null;
+  logradouro: string | null;
+  numero_end: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  cidade: string | null;
+  uf: string | null;
+  cep: string | null;
   is_blocked: boolean;
   blocked_reason: string | null;
   is_anonymized: boolean;
@@ -22,6 +36,9 @@ export interface Contact {
   tags: string[];
   source: string;
   source_metadata: Record<string, unknown>;
+  /** Crédito (0211). NULL = sem limite definido (não bloqueia). */
+  limite_credito_cents: number | null;
+  condicao_pagamento: string | null;
   created_at: string;
   updated_at: string;
   last_activity_at: string | null;

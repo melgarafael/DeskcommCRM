@@ -1,5 +1,6 @@
 "use client";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/empty";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -76,13 +77,11 @@ export function UsageTable({ tenants, range }: UsageTableProps) {
   const t = useT();
   if (tenants.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-md border py-16 text-center text-muted-foreground">
-        <ChartBar size={36} weight="duotone" className="opacity-40" aria-hidden />
-        <p className="text-sm font-medium">{t("Nenhum tenant encontrado")}</p>
-        <p className="max-w-xs text-xs opacity-70">
-          {t("Não há dados de uso no período selecionado.")}
-        </p>
-      </div>
+      <EmptyState
+        icon={ChartBar}
+        headline="Nenhum tenant encontrado"
+        subcopy="Não há dados de uso no período selecionado."
+      />
     );
   }
 
@@ -102,7 +101,7 @@ export function UsageTable({ tenants, range }: UsageTableProps) {
         </Button>
       </div>
 
-      <div className="rounded-md border">
+      <div className="rounded-3xl border">
         <Table>
           <TableHeader>
             <TableRow>

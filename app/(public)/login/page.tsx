@@ -30,12 +30,12 @@ export default async function LoginPage({
   return (
     <div className="space-y-6">
       <div className="space-y-1.5 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">{t("Entrar")}</h1>
+        <h1 className="text-2xl font-medium tracking-tight text-text">{t("Entrar")}</h1>
         <p className="text-sm text-muted-foreground">{branding().name}</p>
       </div>
       {reset === "success" && (
         <div
-          className="rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm"
+          className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm"
           role="status"
         >
           {t("Senha redefinida com sucesso. Entre com a nova senha.")}
@@ -43,7 +43,7 @@ export default async function LoginPage({
       )}
       {error === "link_invalido" && (
         <div
-          className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           role="alert"
         >
           {t("Link inválido ou expirado. Peça um novo em Recuperar senha ou refaça o cadastro.")}
@@ -56,7 +56,7 @@ export default async function LoginPage({
       */}
       {error === "convite_invalido" && (
         <div
-          className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           role="alert"
         >
           {t(
@@ -66,7 +66,7 @@ export default async function LoginPage({
       )}
       {error === "template_padrao" && (
         <div
-          className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           role="alert"
         >
           {t(
@@ -78,7 +78,7 @@ export default async function LoginPage({
       )}
       {error === "provisionamento" && (
         <div
-          className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           role="alert"
         >
           {t(

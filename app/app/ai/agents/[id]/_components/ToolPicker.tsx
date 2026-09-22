@@ -69,7 +69,7 @@ const TODOS_OS_PACOTES: ReadonlyArray<ToolBundle> = PACOTES.map((p) => p.id);
 
 const CLASSE_RISCO: Record<ToolRisk, string> = {
   seguro: "border-border/60 text-muted-foreground",
-  atencao: "border-amber-500/40 text-amber-700 dark:text-amber-400",
+  atencao: "border-warning/40 text-warning-fg",
   critico: "border-destructive/40 text-destructive",
 };
 
@@ -103,7 +103,7 @@ function FichaCapacidade({
       data-testid={`capacidade-${capacidade.name}`}
       data-marcada={marcada ? "sim" : "nao"}
       data-risco={capacidade.risco}
-      className={`flex cursor-pointer items-start gap-3 rounded-md p-2 hover:bg-muted/40 ${
+      className={`flex cursor-pointer items-start gap-3 rounded-full p-2 hover:bg-muted/40 ${
         bloqueada ? "opacity-60" : ""
       }`}
     >
@@ -221,7 +221,7 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
   }
   if (query.isError) {
     return (
-      <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+          <p className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
         {t("Não foi possível carregar as capacidades. Recarregue a página.")}
       </p>
     );
@@ -230,7 +230,7 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
   return (
     <div className="space-y-4" data-testid="tool-picker">
       {/* Consumo do teto — o número que impede a surpresa no salvar. */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/60 bg-muted/30 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border/60 bg-muted/30 p-3">
         <p className="text-sm">
           <strong data-testid="consumo-teto">
             {value.length} {t("de")} {TETO_TOOLS_POR_AGENTE}
@@ -247,7 +247,7 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
       {recusa ? (
         <p
           data-testid="aviso-teto"
-          className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+          className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
         >
           {recusa}
         </p>
@@ -270,7 +270,7 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
               key={pacote.id}
               data-testid={`pacote-${pacote.id}`}
               data-estado={estado}
-              className="space-y-3 rounded-md border border-border/60 p-4"
+              className="space-y-3 rounded-2xl border border-border/60 p-4"
             >
               <div className="flex items-start gap-3">
                 <Switch
@@ -306,7 +306,7 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
               {criticas.length > 0 ? (
                 <div
                   data-testid={`criticas-${pacote.id}`}
-                  className="space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-2"
+                  className="space-y-1 rounded-lg border border-destructive/30 bg-destructive/5 p-2"
                 >
                   <p className="text-xs font-medium text-destructive">
                     {t("Só ligando uma a uma — o pacote não liga por você:")}
@@ -348,7 +348,7 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
         {avancado ? (
           <div
             data-testid="lista-avancada"
-            className="space-y-1 rounded-md border border-border/60 p-3"
+            className="space-y-1 rounded-2xl border border-border/60 p-3"
           >
             <p className="pb-1 text-xs text-muted-foreground">
               {t(
@@ -376,7 +376,7 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
       {orfas.length > 0 ? (
         <div
           data-testid="capacidades-orfas"
-          className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400"
+          className="space-y-2 rounded-lg border border-warning/40 bg-warning-bg p-3 text-xs text-warning-fg"
         >
           <p>
             {orfas.length === 1

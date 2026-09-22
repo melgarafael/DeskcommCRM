@@ -5,6 +5,12 @@ import * as TabsPrimitive from "@radix-ui/react-tabs"
 
 import { cn } from "@/lib/utils"
 
+/**
+ * Tab Bar — Visitors (DESIGN.md): sem preenchimento de fundo, texto Ash no
+ * inativo, Carbon no ativo com underline lavanda de 2px. Mantido o
+ * `max-w-full overflow-x-auto`: fila de abas cresce com o produto e a página
+ * nunca pode rolar na horizontal (ver comentário original abaixo).
+ */
 const Tabs = TabsPrimitive.Root
 
 const TabsList = React.forwardRef<
@@ -24,7 +30,7 @@ const TabsList = React.forwardRef<
       // Aqui e não na tela do agente de propósito: TODA `TabsList` do app tem a
       // mesma fragilidade, e consertar só onde eu esbarrei deixaria as irmãs
       // quebradas com um álibi de "já foi tratado".
-      "inline-flex h-9 max-w-full items-center justify-center overflow-x-auto rounded-lg bg-muted p-1 text-muted-foreground",
+      "inline-flex h-10 max-w-full items-center justify-start gap-1 overflow-x-auto border-b border-border bg-transparent p-0 text-text-subtle",
       className
     )}
     {...props}
@@ -39,7 +45,7 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm",
+      "inline-flex items-center justify-center whitespace-nowrap border-b-2 border-transparent px-3 py-2 text-sm font-medium tracking-[-0.02em] ring-offset-background transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:border-accent data-[state=active]:text-text",
       className
     )}
     {...props}

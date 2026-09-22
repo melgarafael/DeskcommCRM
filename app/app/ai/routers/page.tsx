@@ -45,7 +45,7 @@ export default async function RoutersPage() {
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Roteadores", idioma)}</h1>
+        <h1 className="text-2xl font-medium tracking-tight text-text">{traduzir("Roteadores", idioma)}</h1>
         <p className="text-sm text-muted-foreground">
           {traduzir(
             "Um roteador entende o que o cliente quer e entrega a conversa para o agente certo — plugado em um número de WhatsApp.",

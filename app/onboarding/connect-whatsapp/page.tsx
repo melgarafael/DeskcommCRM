@@ -24,7 +24,7 @@ export default async function ConnectWhatsappPage() {
   return (
     <div className="space-y-6">
       <header>
-        <h2 className="text-2xl font-semibold tracking-tight">{traduzir("Dê um telefone a ele", idioma)}</h2>
+        <h2 className="text-2xl font-medium text-text tracking-tight">{traduzir("Dê um telefone a ele", idioma)}</h2>
         <p className="text-sm text-muted-foreground">
           {traduzir(
             "É por este número que ele vai atender seus clientes. Se você conecta pelo celular, tenha ele por perto.",

@@ -19,6 +19,7 @@ import type { ConversationWithContact } from "@/hooks/inbox/useConversationsReal
 import { activityLabel, actorLabel, actorShape } from "@/lib/leads/activity-vocabulary";
 import { ConversationTagsEditor } from "./ConversationTagsEditor";
 import { ContactTagsEditor } from "./ContactTagsEditor";
+import { SecoesComerciais } from "./SecoesComerciais";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
@@ -165,7 +166,7 @@ function MarcarProximoPasso({ demandaId, onPronto }: { demandaId: string; onPron
         placeholder={t("O que acontece a seguir?")}
         aria-label={t("Próximo passo desta demanda")}
         data-testid="campo-proximo-passo"
-        className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-hidden focus:ring-1 focus:ring-ring"
+        className="w-full rounded-lg border border-input bg-background px-2 py-1 text-xs focus:ring-1 focus:ring-ring focus:outline-hidden"
       />
       <div className="flex gap-1.5">
         <Button
@@ -177,12 +178,7 @@ function MarcarProximoPasso({ demandaId, onPronto }: { demandaId: string; onPron
         >
           {salvando ? t("Salvando…") : t("Salvar")}
         </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 text-xs"
-          onClick={() => setAberto(false)}
-        >
+        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setAberto(false)}>
           {t("Cancelar")}
         </Button>
       </div>
@@ -194,9 +190,7 @@ function formatMoney(cents: number | null, currency: string | null): string {
   if (cents == null) return "—";
   const cur = currency ?? "BRL";
   try {
-    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: cur }).format(
-      cents / 100,
-    );
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: cur }).format(cents / 100);
   } catch {
     return `${(cents / 100).toFixed(2)} ${cur}`;
   }
@@ -272,7 +266,7 @@ function InboxLeadEditor({
                   aria-pressed={marcado}
                   onClick={() => onSelecionar(l.id)}
                   className={cn(
-                    "w-full rounded-md border p-2 text-left text-xs",
+                    "w-full rounded-lg border p-2 text-left text-xs",
                     marcado ? "border-accent bg-accent/10" : "border-border",
                   )}
                 >
@@ -321,7 +315,9 @@ function CamposDoFunil({
   const [customFields, setCustomFields] = useState(valores);
 
   if (fieldDefs.length === 0) {
-    return <p className="text-xs text-muted-foreground">{t("Este funil não tem campos extras.")}</p>;
+    return (
+      <p className="text-xs text-muted-foreground">{t("Este funil não tem campos extras.")}</p>
+    );
   }
 
   async function salvar() {
@@ -487,13 +483,15 @@ export function CRMSidePanel({ conversation }: Props) {
   return (
     <aside className="flex h-full flex-col gap-4 overflow-y-auto border-l border-border bg-background p-4">
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           {t("Contato")}
         </h3>
         <Card className="mt-2 space-y-2 p-3 text-sm">
           <div className="font-medium">{displayName}</div>
           {contact?.phone_number && (
-            <div className="text-xs text-muted-foreground">{phoneForDisplay(contact.phone_number)}</div>
+            <div className="text-xs text-muted-foreground">
+              {phoneForDisplay(contact.phone_number)}
+            </div>
           )}
           {tags.length > 0 && (
             <div className="flex flex-wrap gap-1">
@@ -567,7 +565,7 @@ export function CRMSidePanel({ conversation }: Props) {
           conversa está atendendo alguém que pediu alguma coisa — a primeira
           pergunta a responder é o que ainda está pendente, não quanto vale. */}
       <section data-testid="inbox-demandas">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           {t("Demandas abertas")}
         </h3>
         {sectionsLoading ? (
@@ -581,7 +579,7 @@ export function CRMSidePanel({ conversation }: Props) {
                   key={d.id}
                   data-testid={semPasso ? "demanda-sem-proximo-passo" : "demanda-com-proximo-passo"}
                   className={cn(
-                    "rounded-md border p-2 text-xs",
+                    "rounded-lg border p-2 text-xs",
                     semPasso ? "border-warning-border bg-warning-bg/40" : "border-border",
                   )}
                 >
@@ -589,7 +587,7 @@ export function CRMSidePanel({ conversation }: Props) {
                     <span className="truncate font-medium">
                       {t(ESTADO_LEGIVEL[d.estado] ?? d.estado)}
                     </span>
-                    <span className="shrink-0 tabular-nums text-muted-foreground">
+                    <span className="shrink-0 text-muted-foreground tabular-nums">
                       {t("há")} {horasDesde(d.aberta_em)}h
                     </span>
                   </div>
@@ -619,7 +617,7 @@ export function CRMSidePanel({ conversation }: Props) {
       <Separator />
 
       <section data-testid="inbox-campos-lead">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           {t("Leads recentes")}
         </h3>
         {sectionsLoading ? (
@@ -632,14 +630,18 @@ export function CRMSidePanel({ conversation }: Props) {
             onSalvo={recarregar}
           />
         ) : (
-          <SemLista vazio="Sem leads." erro={erro} onTentarDeNovo={() => setTentativa((n) => n + 1)} />
+          <SemLista
+            vazio="Sem leads."
+            erro={erro}
+            onTentarDeNovo={() => setTentativa((n) => n + 1)}
+          />
         )}
       </section>
 
       <Separator />
 
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           {t("Pedidos recentes")}
         </h3>
         {sectionsLoading ? (
@@ -649,7 +651,7 @@ export function CRMSidePanel({ conversation }: Props) {
             {orders.map((o) => (
               <li
                 key={o.id}
-                className="flex items-center justify-between rounded-md border border-border p-2 text-xs"
+                className="flex items-center justify-between rounded-lg border border-border p-2 text-xs"
               >
                 <div className="min-w-0">
                   <div className="flex items-center gap-1 truncate font-medium">
@@ -664,14 +666,22 @@ export function CRMSidePanel({ conversation }: Props) {
             ))}
           </ul>
         ) : (
-          <SemLista vazio="Sem pedidos." erro={erro} onTentarDeNovo={() => setTentativa((n) => n + 1)} />
+          <SemLista
+            vazio="Sem pedidos."
+            erro={erro}
+            onTentarDeNovo={() => setTentativa((n) => n + 1)}
+          />
         )}
       </section>
+
+      {/* Independente do crm-summary de propósito: cada seção falha sozinha
+          sem derrubar as outras — a mesma doutrina dos três estados acima. */}
+      {contactId && <SecoesComerciais contactId={contactId} />}
 
       <Separator />
 
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           {t("Atividade")}
         </h3>
         {sectionsLoading ? (
@@ -679,7 +689,7 @@ export function CRMSidePanel({ conversation }: Props) {
         ) : activities && activities.length > 0 ? (
           <ul className="mt-2 space-y-1.5">
             {activities.map((a) => (
-              <li key={a.id} className="rounded-md border border-border p-2 text-xs">
+              <li key={a.id} className="rounded-lg border border-border p-2 text-xs">
                 {/* Rótulo do vocabulário único (activity-vocabulary), nunca o
                     tipo cru: a tela e o banco divergiram justamente por manter
                     duas listas. Marcador por ator, forma e não cor (§5). */}
@@ -697,15 +707,22 @@ export function CRMSidePanel({ conversation }: Props) {
                   />
                   {t(activityLabel(a.type))}
                 </div>
-                {a.reason && <div className="mt-0.5 truncate text-muted-foreground">{a.reason}</div>}
+                {a.reason && (
+                  <div className="mt-0.5 truncate text-muted-foreground">{a.reason}</div>
+                )}
                 <div className="text-muted-foreground">
-                  {a.performed_by_name ?? t(actorLabel(a.actor_kind))} · {shortDate(a.performed_at, localeDaData)}
+                  {a.performed_by_name ?? t(actorLabel(a.actor_kind))} ·{" "}
+                  {shortDate(a.performed_at, localeDaData)}
                 </div>
               </li>
             ))}
           </ul>
         ) : (
-          <SemLista vazio="Sem atividade." erro={erro} onTentarDeNovo={() => setTentativa((n) => n + 1)} />
+          <SemLista
+            vazio="Sem atividade."
+            erro={erro}
+            onTentarDeNovo={() => setTentativa((n) => n + 1)}
+          />
         )}
       </section>
     </aside>

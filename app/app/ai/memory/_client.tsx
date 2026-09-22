@@ -226,7 +226,7 @@ export function OrgMemoryClient({ initialState }: Props) {
           {formOpen && (
             <form
               onSubmit={handleCreateEntry}
-              className="flex flex-col gap-3 rounded-md border border-border bg-surface-elevated p-4"
+              className="flex flex-col gap-3 rounded-2xl border border-border bg-surface-elevated p-4"
             >
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="entry-title">{t("Título")}</Label>
@@ -272,7 +272,7 @@ export function OrgMemoryClient({ initialState }: Props) {
           )}
 
           {visibleEntries.length === 0 ? (
-            <p className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
+            <p className="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-foreground">
               {showArchived
                 ? t("Nenhum aprendizado arquivado.")
                 : t(
@@ -284,7 +284,7 @@ export function OrgMemoryClient({ initialState }: Props) {
               {visibleEntries.map((entry) => (
                 <li
                   key={entry.id}
-                  className="flex flex-col gap-1.5 rounded-md border border-border/60 p-3 text-sm"
+                  className="flex flex-col gap-1.5 rounded-2xl border border-border/60 p-3 text-sm"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{entry.title}</span>
@@ -335,7 +335,7 @@ export function OrgMemoryClient({ initialState }: Props) {
           {versionDetail.isLoading ? (
             <p className="text-sm text-muted-foreground">{t("Carregando…")}</p>
           ) : (
-            <pre className="max-h-[50vh] overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-surface-elevated p-4 font-mono text-[13px]">
+            <pre className="max-h-[50vh] overflow-y-auto whitespace-pre-wrap rounded-2xl border border-border bg-surface-elevated p-4 font-mono text-[13px]">
               {versionDetail.data?.content}
             </pre>
           )}

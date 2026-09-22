@@ -90,7 +90,7 @@ export function TriggerEditor({ value, onChange, disabled }: Props) {
             return (
               <label
                 key={ev}
-                className="flex cursor-pointer items-center gap-2 rounded-md border border-border/60 px-2 py-1 text-xs"
+                className="flex cursor-pointer items-center gap-2 rounded-full border border-border/60 px-2 py-1 text-xs"
               >
                 <input
                   type="checkbox"
@@ -172,7 +172,7 @@ export function TriggerEditor({ value, onChange, disabled }: Props) {
         </Select>
       </div>
 
-      <div className="space-y-2 rounded-md border border-border/60 p-3">
+      <div className="space-y-2 rounded-2xl border border-border/60 p-3">
         <div className="flex items-center gap-2">
           <Switch
             checked={!!bh}
@@ -226,7 +226,7 @@ export function TriggerEditor({ value, onChange, disabled }: Props) {
                       type="button"
                       onClick={() => toggleWeekday(d.id)}
                       disabled={disabled}
-                      className={`rounded-md border px-2 py-1 text-xs ${
+                      className={`rounded-full border px-2 py-1 text-xs ${
                         active
                           ? "border-primary bg-primary/10 text-primary"
                           : "border-border/60 text-muted-foreground"

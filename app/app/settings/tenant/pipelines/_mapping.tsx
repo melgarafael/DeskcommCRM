@@ -262,7 +262,7 @@ export function AgentMappingSection({
         </p>
       </div>
 
-      <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
+      <ul className="flex flex-col divide-y divide-border rounded-2xl border border-border">
         {LEAD_STAGES.map((passo) => {
           const opcoes = opcoesDoPasso(passo, etapas, rascunho);
           // A etapa já escolhida some das opções DOS OUTROS passos, nunca das

@@ -85,7 +85,7 @@ export function TrechosDoMaterialDialog({ sourceId, nome, aberto, onFechar }: Pr
           ) : null}
           {/* `trecho`, e não `t`: o `t` do `useT()` já ocupa o nome neste escopo. */}
           {data?.trechos.map((trecho) => (
-            <div key={trecho.id} className="rounded-md border border-border bg-surface p-3">
+            <div key={trecho.id} className="rounded-2xl border border-border bg-surface p-3">
               <div className="mb-1 flex items-center justify-between text-xs text-text-muted">
                 <span>
                   {t("Trecho")} {trecho.position + 1}

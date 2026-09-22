@@ -53,7 +53,7 @@ export function NodeCard({
   return (
     <div
       className={cn(
-        "w-56 rounded-md border border-l-4 border-border bg-surface shadow-sm transition-shadow",
+        "w-56 rounded-2xl border border-l-4 border-border bg-surface shadow-sm transition-shadow",
         visual.borderClassName,
         selected && "ring-2 ring-accent-500 ring-offset-1 ring-offset-bg",
         hasError && "border-error ring-2 ring-error ring-offset-1 ring-offset-bg",

@@ -73,7 +73,7 @@ export function JaEstaPronto({
               aria-hidden
               className={
                 "mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full " +
-                (it.pronto ? "bg-emerald-500" : "bg-amber-500")
+                (it.pronto ? "bg-success" : "bg-warning")
               }
             />
             <span className={it.pronto ? "" : "text-muted-foreground"}>{it.texto}</span>

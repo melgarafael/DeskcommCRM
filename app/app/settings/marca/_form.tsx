@@ -252,7 +252,7 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente }
   return (
     <form onSubmit={handleSubmit} className="max-w-3xl space-y-6">
       <Card className="space-y-4 p-6">
-        <h2 className="text-base font-semibold tracking-tight text-text">
+        <h2 className="text-base font-medium tracking-tight text-text">
           {t("Como sua empresa aparece")}
         </h2>
 
@@ -369,7 +369,7 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente }
       */}
       <Card className="space-y-3 p-6">
         <div>
-          <h2 className="text-base font-semibold tracking-tight text-text">
+          <h2 className="text-base font-medium tracking-tight text-text">
             {t("De onde vem cada coisa")}
           </h2>
           <p className="text-sm text-text-muted">
@@ -414,7 +414,7 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente }
         o que ela vai repetir para o fornecedor dela.
       */}
       <Card className="space-y-2 p-6">
-        <h2 className="text-base font-semibold tracking-tight text-text">
+        <h2 className="text-base font-medium tracking-tight text-text">
           {t("O que isto ainda não muda")}
         </h2>
         <ul className="list-disc space-y-1 pl-5 text-sm text-text-muted">

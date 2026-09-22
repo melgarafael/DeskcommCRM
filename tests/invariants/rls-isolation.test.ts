@@ -204,6 +204,14 @@ beforeAll(() => {
               'auth-rls'
             );
         end if;
+
+        -- migration 0225 — meta mensal da loja. A leitura é org-scoped sem
+        -- gate de papel (o dashboard lê para todo viewer), então o agent
+        -- semeado aqui serve para o controle positivo.
+        if not exists (select 1 from public.commercial_goals where organization_id = v_org) then
+          insert into public.commercial_goals (organization_id, ano_mes, valor_cents)
+            values (v_org, '2026-09', 100000);
+        end if;
       end loop;
     end
     $seed$;
@@ -247,6 +255,11 @@ export const TABLES = [
   // exige `manager` — esse segundo eixo é medido em
   // `tests/invariants/catalogo-so-gestor-muda-preco.test.ts`, não aqui.
   "catalog_products",
+  // migration 0225 — metas mensais (o denominador do dashboard). Leitura
+  // org-scoped sem gate de papel, mesma situação do catálogo acima: o `agent`
+  // semeado serve para o controle positivo. A escrita `manager` é provada em
+  // `tests/unit/commercial-goals-route.test.ts` (403 para viewer/agent).
+  "commercial_goals",
   // ⚠️ `webhook_lead_captures` (migration 0174) NÃO entra nesta lista, e a
   // ausência é deliberada: a policy dela exige `manager`, e o usuário semeado
   // aqui é `agent` — o controle positivo falharia por ACERTO, e a "correção"

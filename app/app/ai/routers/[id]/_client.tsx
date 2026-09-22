@@ -272,7 +272,7 @@ export function RouterEditorClient({
             </div>
             <div className="space-y-1">
               <Label>{t("Número de WhatsApp")}</Label>
-              <p className="rounded-md border border-border/60 px-3 py-2 text-sm text-muted-foreground">
+              <p className="rounded-2xl border border-border/60 px-3 py-2 text-sm text-muted-foreground">
                 {channel
                   ? `${channel.display_name}${channel.phone_number ? ` · ${channel.phone_number}` : ""}`
                   : t("Número removido")}
@@ -391,7 +391,7 @@ export function RouterEditorClient({
             </div>
 
             {draftMembers.length === 0 ? (
-              <p className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
+              <p className="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-foreground">
                 {t(
                   "Nenhuma intenção ainda. Sem intenções, toda conversa cai direto no agente de fallback (ou fica sem resposta automática, se você não escolher um).",
                 )}
@@ -399,7 +399,7 @@ export function RouterEditorClient({
             ) : (
               <ul className="flex flex-col gap-3">
                 {draftMembers.map((m, i) => (
-                  <li key={m.key} className="rounded-md border border-border/60 p-3">
+                  <li key={m.key} className="rounded-2xl border border-border/60 p-3">
                     <IntentRow
                       member={m}
                       agents={agents}
@@ -559,13 +559,13 @@ function ExamplesInput({
   return (
     <div className="space-y-1">
       <Label>{t("Frases de exemplo (opcional)")}</Label>
-      <div className="flex flex-wrap gap-1 rounded-md border border-border/60 p-2">
+      <div className="flex flex-wrap gap-1 rounded-2xl border border-border/60 p-2">
         {value.map((ex) => (
           <button
             key={ex}
             type="button"
             onClick={() => !disabled && remove(ex)}
-            className="group flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs hover:bg-destructive/15"
+            className="group flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs hover:bg-destructive/15"
             disabled={disabled}
             aria-label={`${t("Remover exemplo")} ${ex}`}
           >
@@ -594,7 +594,7 @@ function ExamplesInput({
           />
           <button
             type="button"
-            className="rounded-md border border-border/60 px-3 text-xs hover:bg-muted"
+            className="rounded-2xl border border-border/60 px-3 text-xs hover:bg-muted"
             onClick={() => add(draft)}
             disabled={draft.trim() === ""}
           >
@@ -645,7 +645,7 @@ function TestPanel({
       </CardHeader>
       <CardContent className="space-y-3 p-0">
         {!isActive && (
-          <div className="flex items-start gap-2 rounded-md bg-accent-soft p-3 text-xs text-text-muted">
+          <div className="flex items-start gap-2 rounded-2xl bg-accent-soft p-3 text-xs text-text-muted">
             <Info className="mt-0.5 shrink-0" aria-hidden />
             <p>{t("Ative o roteador para poder testar a classificação.")}</p>
           </div>
@@ -668,7 +668,7 @@ function TestPanel({
           {!pending && <ArrowRight />}
         </Button>
         {result && (
-          <div className="rounded-md border border-border/60 p-3 text-sm">
+          <div className="rounded-2xl border border-border/60 p-3 text-sm">
             <p>
               {t("Intenção")}: <span className="font-medium">{result.intent_name ?? t("nenhuma casou")}</span>
               {result.intent_name && (

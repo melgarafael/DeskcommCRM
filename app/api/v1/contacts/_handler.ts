@@ -27,7 +27,7 @@ import { contactListQuerySchema } from "@/lib/schemas";
 type SB = SupabaseClient;
 
 const SELECT_COLS =
-  "id, organization_id, name, display_name, email, email_normalized, phone_number, cpf_hash, birthdate, is_blocked, blocked_reason, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, created_at, updated_at, last_activity_at";
+  "id, organization_id, name, display_name, email, email_normalized, phone_number, cpf_hash, cnpj, birthdate, tipo_pessoa, fantasia, ie, regime, logradouro, numero_end, complemento, bairro, cidade, uf, cep, is_blocked, blocked_reason, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, limite_credito_cents, condicao_pagamento, created_at, updated_at, last_activity_at";
 
 interface CursorPayload {
   sort: string | null;
@@ -357,6 +357,27 @@ export async function createContactHandler(
     const enc = await encryptCpfSql(supabase, input.cpf);
     if (enc) insertRow.cpf_encrypted = enc;
   }
+  // CNPJ é público: vai em dígitos, sem cifra. Vazio não grava.
+  if (input.cnpj) {
+    insertRow.cnpj = input.cnpj;
+  }
+  // Endereço e fiscal (0230): passam direto, já validados no Zod.
+  for (const campo of [
+    "tipo_pessoa",
+    "fantasia",
+    "ie",
+    "regime",
+    "logradouro",
+    "numero_end",
+    "complemento",
+    "bairro",
+    "cidade",
+    "uf",
+    "cep",
+  ] as const) {
+    const valor = input[campo];
+    if (valor !== undefined) insertRow[campo] = valor;
+  }
 
   const { data: created, error: insErr } = await supabase
     .from("contacts")
@@ -489,6 +510,25 @@ export async function patchContactHandler(
     patch.cpf_hash = hashCpf(input.cpf);
     const enc = await encryptCpfSql(supabase, input.cpf);
     if (enc) patch.cpf_encrypted = enc;
+  }
+  // Crédito (0211): limite e condição padrão. NULL limpa (volta a "sem limite").
+  if (input.limite_credito_cents !== undefined) patch.limite_credito_cents = input.limite_credito_cents;
+  if (input.condicao_pagamento !== undefined) patch.condicao_pagamento = input.condicao_pagamento;
+  if (input.cnpj !== undefined) patch.cnpj = input.cnpj === "" ? null : input.cnpj;
+  for (const campo of [
+    "tipo_pessoa",
+    "fantasia",
+    "ie",
+    "regime",
+    "logradouro",
+    "numero_end",
+    "complemento",
+    "bairro",
+    "cidade",
+    "uf",
+    "cep",
+  ] as const) {
+    if (input[campo] !== undefined) patch[campo] = input[campo];
   }
 
   if (Object.keys(patch).length === 0) {

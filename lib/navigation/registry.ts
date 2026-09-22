@@ -2,6 +2,7 @@ import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 
 import { ROLE_RANK, type Role } from "@/lib/auth/types";
 import {
+  Archive,
   Bell,
   BookOpen,
   Brain,
@@ -23,6 +24,7 @@ import {
   Lightbulb,
   ListChecks,
   Lock,
+  MagnifyingGlass,
   Palette,
   Plugs,
   PlugsConnected,
@@ -33,9 +35,11 @@ import {
   ShieldCheck,
   Signpost,
   Storefront,
+  Truck,
   UserCircle,
   Users,
   UsersThree,
+  Wallet,
   WebhooksLogo,
 } from "@/lib/ui/icons";
 
@@ -186,6 +190,20 @@ export const NAV_DESTINATIONS: NavDestination[] = [
 
   // ---- CRM — o funil ----
   {
+    // A mesa do dono. Primeiro do grupo porque é onde o dia começa — mas NÃO
+    // é a landing pós-login (essa segue /app/inbox, porta documentada na
+    // allowlist e nos e2e; trocar quebraria as duas).
+    //
+    // Era duas telas ("Dashboard" + "Indicadores") para a mesma pergunta e o
+    // dono comparava as duas em vez de agir. Ficou só esta.
+    href: "/app/indicadores",
+    label: "Indicadores",
+    description: "Evolução de venda, carteira de clientes, ranking e curva ABC do mês.",
+    icon: ChartLineUp,
+    group: "crm",
+    sidebar: true,
+  },
+  {
     // ⚠️ ERA "Kanban", e a URL continua sendo. O nome saiu da interface porque o
     // produto tinha CINCO vocabulários para a mesma coisa — "Kanban" no menu,
     // "Pipelines" no título desta tela, "Funis" no menu ao lado, "funil" em todo
@@ -205,8 +223,8 @@ export const NAV_DESTINATIONS: NavDestination[] = [
   },
   {
     href: "/app/contacts",
-    label: "Contatos",
-    description: "As pessoas do outro lado da conversa e seu histórico.",
+    label: "Clientes",
+    description: "Seus clientes e o histórico de cada um.",
     icon: Users,
     group: "crm",
     sidebar: true,
@@ -226,6 +244,115 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     icon: Storefront,
     group: "crm",
     sidebar: true,
+  },
+  {
+    // 0226: o "quanto cada vendedor leva" com Dar Baixa. No CRM porque a
+    // pergunta é do dia a dia do dono — não configuração.
+    href: "/app/comissoes",
+    label: "Comissões",
+    description: "Comissão por pedido no mês, com baixa do que já foi pago.",
+    icon: ChartBar,
+    group: "crm",
+    sidebar: true,
+  },
+  {
+    // Títulos e Faturamento: consulta eventual de cobrança (doutrina da dobra,
+    // como Notas e Recuperação) — sem sidebar, com porta no ⌘K e no Indicadores.
+    href: "/app/titulos",
+    label: "Títulos",
+    description: "Contas a receber por vencimento, derivadas dos pedidos faturados.",
+    icon: ClockCountdown,
+    group: "crm",
+  },
+  {
+    href: "/app/faturamento",
+    label: "Faturamento",
+    description: "Pedidos faturados com a NF vinculada.",
+    icon: Archive,
+    group: "crm",
+  },
+  {
+    // Financeiro como entidade (0233): dinheiro do dia a dia, no menu junto
+    // de Comissões e Pedidos. ATENÇÃO à dobra: cada linha aqui custa 28px no
+    // e2e `navegacao.spec.ts` (menu inteiro em 900px sem scroll); se estourar,
+    // a saída documentada é um hub do CRM, não raspar pixel (ver Sidebar).
+    href: "/app/financeiro",
+    label: "Financeiro",
+    description: "Contas a receber, recebimentos e conciliação pedido × NF × financeiro.",
+    icon: Wallet,
+    group: "crm",
+    sidebar: true,
+  },
+  {
+    // O "detalhar carteira" do Mercos: cada cliente na sua situação, com
+    // última compra e dias parado. Sem sidebar (doutrina da dobra): a porta
+    // é o ⌘K e o donut do Indicadores.
+    href: "/app/carteira",
+    label: "Carteira",
+    description: "Clientes por situação — ativos, inativos e prospects.",
+    icon: Users,
+    group: "crm",
+  },
+  {
+    // Rotina do vendedor externo (visitas, check-in, atividades). Sem sidebar
+    // (doutrina da dobra): a porta é o ⌘K.
+    href: "/app/tarefas",
+    label: "Tarefas",
+    description: "Visitas agendadas, check-in e atividades realizadas.",
+    icon: ClockCountdown,
+    group: "crm",
+  },
+  {
+    // ATT.txt Fase 2: o coração comercial. Fica no CRM porque pedido nasce do
+    // funil e da conversa — não é configuração, é operação diária.
+    href: "/app/pedidos",
+    label: "Pedidos",
+    description:
+      "Os pedidos da loja, com origem (IA, vendedor, WhatsApp, B2B) e status do ciclo comercial.",
+    icon: Receipt,
+    group: "crm",
+    sidebar: true,
+  },
+  {
+    // ATT.txt Fase 3: transporte próprio. No CRM porque expedir é o dia a dia
+    // de quem vende com entrega — não configuração.
+    href: "/app/expedicao",
+    label: "Expedição",
+    description: "Cargas do transporte próprio, romaneio e controle de entregas.",
+    icon: Truck,
+    group: "crm",
+    sidebar: true,
+  },
+  {
+    // Prospecção B2B: descobrir empresas por região/categoria e levar ao CRM.
+    // Uma tela com abas (não 7 itens no menu): a dobra em 900px agradece.
+    href: "/app/prospeccao",
+    label: "Prospecção",
+    description: "Encontre empresas por região e categoria e leve ao CRM.",
+    icon: MagnifyingGlass,
+    group: "crm",
+    sidebar: true,
+  },
+  {
+    // ATT.txt Fase 3: fiscal. SEM sidebar de propósito: em 900px o menu já
+    // ATENÇÃO à dobra: cada linha aqui custa 28px no e2e `navegacao.spec.ts`
+    // (menu inteiro em 900px sem scroll); se estourar, a saída documentada
+    // é um hub do CRM, não raspar pixel (ver Sidebar).
+    href: "/app/notas",
+    label: "Notas fiscais",
+    description: "Emita a partir do pedido faturado e acompanhe o status na SEFAZ.",
+    icon: Archive,
+    group: "crm",
+    sidebar: true,
+  },
+  {
+    // ATT.txt Fase 4: recuperação. SEM sidebar pelo mesmo motivo da fiscal —
+    // a porta é o alerta do Dashboard ("clientes sumidos") e o ⌘K.
+    href: "/app/recuperacao",
+    label: "Recuperação",
+    description: "Quem comprava e parou, por ordem de prioridade — com ação direta.",
+    icon: ClockCountdown,
+    group: "crm",
   },
   {
     // A promessa que o comentário da Agenda fazia desde que ela nasceu. Aqui se
@@ -469,6 +596,29 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     group: "analise",
     minRole: "manager",
     sidebar: true,
+  },
+  {
+    // ATT.txt F5 (sem B2B): vendas por vendedor/cliente/produto + Curva ABC.
+    // SEM sidebar (dobra 900px): chega-se pelos Pedidos e pelo ⌘K.
+    href: "/app/relatorios",
+    label: "Relatórios",
+    description: "Vendas por vendedor, cliente e produto, com Curva ABC e exportação.",
+    icon: ClipboardText,
+    group: "analise",
+    minRole: "manager",
+  },
+  {
+    // Grafo funcional de inteligência (NEXUS FASE 2): clientes, regiões,
+    // situações de recompra, riscos, conhecimento e métricas — tudo lido das
+    // APIs reais, nada decorativo. SEM sidebar pelo mesmo motivo dos Relatórios
+    // (a dobra em 900px é medida pelo e2e `navegacao.spec.ts`): as portas são o
+    // ⌘K, o link no Radar e o botão na Inteligência. Vira `sidebar: true` só
+    // com medição nova da dobra.
+    href: "/app/inteligencia",
+    label: "Inteligência",
+    description: "O grafo vivo do negócio — selecione nós e monte contextos para agir.",
+    icon: Brain,
+    group: "analise",
   },
 
   // ---- Organização — conta, empresa, acesso ----

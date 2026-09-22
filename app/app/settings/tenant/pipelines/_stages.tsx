@@ -355,7 +355,7 @@ export function StagesSection({
         <span className={`${LARGURA.arquivar} shrink-0`} />
       </div>
 
-      <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
+      <ul className="flex flex-col divide-y divide-border rounded-2xl border border-border">
         {etapas.map((etapa, i) => {
           const passo = passos.get(etapa.id) ?? null;
           const erroDaLinha = erro?.etapaId === etapa.id ? erro.texto : null;

@@ -144,7 +144,7 @@ export function CanalParceiroClient() {
         </div>
 
         {conectado && (
-          <div className="rounded-md border border-border bg-muted/40 p-3 text-sm">
+          <div className="rounded-2xl border border-border bg-muted/40 p-3 text-sm">
             <p className="font-medium">{estado?.display_name ?? t("Número conectado")}</p>
             <p className="text-xs text-muted-foreground">
               {estado?.phone_number ?? t("sem número informado")} · {estado?.status ?? "—"}

@@ -44,9 +44,9 @@ export function AnonymizeDialog({ contactId, open, onOpenChange }: Props) {
         justification: justification.trim(),
       });
       if (res.data.action === "already_anonymized") {
-        toast.info(t("Contato já estava anonimizado."));
+        toast.info(t("Cliente já estava anonimizado."));
       } else {
-        toast.success(t("Contato anonimizado."));
+        toast.success(t("Cliente anonimizado."));
       }
       reset();
       onOpenChange(false);
@@ -64,7 +64,7 @@ export function AnonymizeDialog({ contactId, open, onOpenChange }: Props) {
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle className="text-error-fg">{t("Anonimizar contato (LGPD)")}</DialogTitle>
+          <DialogTitle className="text-error-fg">{t("Anonimizar cliente (LGPD)")}</DialogTitle>
           <DialogDescription>
             {t(
               "Esta ação é irreversível. O nome será substituído por \"Contato Anonimizado #N\", email/telefone/CPF serão limpos, e atividades terão conteúdo redigido.",
@@ -102,7 +102,7 @@ export function AnonymizeDialog({ contactId, open, onOpenChange }: Props) {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="rounded-md border border-error-fg/30 bg-error-bg p-3 text-sm text-error-fg">
+            <div className="rounded-lg border border-error-fg/30 bg-error-bg p-3 text-sm text-error-fg">
               {t("Para confirmar, digite")} <strong>{CONFIRM_TEXT}</strong> {t("abaixo.")}
             </div>
             <div className="space-y-2">

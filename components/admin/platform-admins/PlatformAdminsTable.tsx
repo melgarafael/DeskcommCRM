@@ -5,6 +5,8 @@ import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import type { Locale } from "date-fns";
 import { formatDistanceToNow } from "date-fns";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/empty";
+import { ShieldCheck } from "@/lib/ui/icons";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -50,7 +52,7 @@ function shortEmail(email: string | null): string {
 export function PlatformAdminsTableSkeleton() {
   const t = useT();
   return (
-    <div className="rounded-md border">
+    <div className="rounded-3xl border">
       <Table>
         <TableHeader>
           <TableRow>
@@ -73,24 +75,6 @@ export function PlatformAdminsTableSkeleton() {
           ))}
         </TableBody>
       </Table>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Empty state
-// ---------------------------------------------------------------------------
-
-function EmptyState() {
-  const t = useT();
-  return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
-      <p className="text-sm font-medium text-muted-foreground">
-        {t("Nenhum platform admin encontrado")}
-      </p>
-      <p className="mt-1 text-xs text-muted-foreground">
-        {t("Platform admins são configurados exclusivamente via DBA.")}
-      </p>
     </div>
   );
 }
@@ -130,10 +114,18 @@ interface PlatformAdminsTableProps {
 export function PlatformAdminsTable({ data }: PlatformAdminsTableProps) {
   const localeDaData = useLocaleDeData();
   const t = useT();
-  if (data.length === 0) return <EmptyState />;
+  if (data.length === 0) {
+    return (
+      <EmptyState
+        icon={ShieldCheck}
+        headline="Nenhum platform admin encontrado"
+        subcopy="Platform admins são configurados exclusivamente via DBA."
+      />
+    );
+  }
 
   return (
-    <div className="rounded-md border">
+    <div className="rounded-3xl border">
       <Table>
         <TableHeader>
           <TableRow>

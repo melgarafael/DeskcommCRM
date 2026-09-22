@@ -58,8 +58,8 @@ export function EmptyContacts({ primary, secondary }: VariantProps = {}) {
   return (
     <EmptyState
       icon={UsersThree}
-      headline={t("Nenhum contato ainda")}
-      subcopy={t("Contatos chegam automaticamente via WhatsApp ou Nuvemshop.")}
+      headline={t("Nenhum cliente ainda")}
+      subcopy={t("Clientes chegam automaticamente via WhatsApp ou Nuvemshop.")}
       primary={primary}
       secondary={secondary}
     />

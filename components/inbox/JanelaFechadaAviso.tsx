@@ -124,13 +124,13 @@ export function JanelaFechadaAviso({
   }
 
   return (
-    <div className="border-t border-amber-300 bg-amber-50/60 px-4 py-3 dark:border-amber-800/60 dark:bg-amber-950/30">
-      <p className="mb-2 text-xs text-amber-900 dark:text-amber-200">{motivo}</p>
+    <div className="border-t border-warning/40 bg-warning-bg px-4 py-3">
+      <p className="mb-2 text-xs text-warning-fg">{motivo}</p>
 
       {aprovados.length === 0 ? (
         // Sem modelo aprovado não há saída por aqui, e dizer isso é melhor que
         // um seletor vazio que se lê como "ainda não carregou".
-        <p className="text-xs text-amber-900/80 dark:text-amber-200/80">
+        <p className="text-xs text-warning-fg">
           {t("Nenhum modelo aprovado ainda. Crie um em")} <strong>{t("Conexões → Templates")}</strong>{" "}
           {t("e envie quando a plataforma aprovar.")}
         </p>
@@ -142,7 +142,7 @@ export function JanelaFechadaAviso({
             disabled={send.isPending}
             aria-label={t("Modelo aprovado")}
             className={cn(
-              "h-9 min-w-[16rem] flex-1 rounded-md border border-input bg-background px-2 text-sm",
+              "h-9 min-w-[16rem] flex-1 rounded-lg border border-input bg-background px-2 text-sm",
               "focus:outline-hidden focus:ring-1 focus:ring-ring",
             )}
           >
@@ -163,7 +163,7 @@ export function JanelaFechadaAviso({
       {pedeParametros && (
         // Avisa ANTES do clique: este modelo precisa de valores e este seletor
         // ainda não os coleta, então o envio vai falhar na plataforma.
-        <p className="mt-2 text-[11px] text-amber-900/80 dark:text-amber-200/80">
+        <p className="mt-2 text-[11px] text-warning-fg">
           {t("Este modelo pede")} {atual?.slots?.length} {t("valor(es) e ainda não dá para preenchê-los aqui — envie por")}{" "}
           <strong>{t("Conexões → Templates")}</strong>, {t("ou escolha um modelo sem parâmetros.")}
         </p>

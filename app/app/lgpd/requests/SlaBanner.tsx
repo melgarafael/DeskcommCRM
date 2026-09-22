@@ -22,9 +22,9 @@ export function SlaBanner({ requests }: SlaBannerProps) {
     return (
       <div
         role="alert"
-        className="flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300"
+        className="flex items-center gap-3 rounded-lg border border-error/40 bg-error-bg px-4 py-3 text-sm text-error-fg"
       >
-        <Warning size={18} weight="fill" className="shrink-0 text-red-600 dark:text-red-400" aria-hidden />
+        <Warning size={18} weight="fill" className="shrink-0 text-error-fg" aria-hidden />
         <span>
           <strong>{critical.length}</strong>{" "}
           {t(critical.length === 1 ? "solicitação crítica" : "solicitações críticas")} —{" "}
@@ -38,9 +38,9 @@ export function SlaBanner({ requests }: SlaBannerProps) {
     return (
       <div
         role="alert"
-        className="flex items-center gap-3 rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300"
+        className="flex items-center gap-3 rounded-lg border border-warning/40 bg-warning-bg px-4 py-3 text-sm text-warning-fg"
       >
-        <Warning size={18} weight="fill" className="shrink-0 text-yellow-600 dark:text-yellow-400" aria-hidden />
+        <Warning size={18} weight="fill" className="shrink-0 text-warning-fg" aria-hidden />
         <span>
           <strong>{warning.length}</strong>{" "}
           {t(warning.length === 1 ? "solicitação em alerta" : "solicitações em alerta")} —{" "}

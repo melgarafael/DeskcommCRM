@@ -149,7 +149,7 @@ function Bloco({
   return (
     <section className="flex flex-col gap-3" data-testid={testId}>
       <div>
-        <h2 className="text-lg font-semibold tracking-tight">{titulo}</h2>
+        <h2 className="text-lg font-medium tracking-tight text-text">{titulo}</h2>
         <p className="text-sm text-text-muted">{descricao}</p>
       </div>
       {children}

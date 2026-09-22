@@ -4,9 +4,15 @@ import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { COLUNAS_DO_PRODUTO, type Produto } from "@/lib/schemas/produtos";
+import {
+  COLUNAS_DA_CATEGORIA,
+  COLUNAS_DA_TABELA,
+  type Categoria,
+  type TabelaDePreco,
+} from "@/lib/schemas/precos";
 import { createClient } from "@/lib/supabase/server";
 
-import { ProdutosClient } from "./_client";
+import { CatalogoClient } from "./_catalogo";
 
 export const dynamic = "force-dynamic";
 
@@ -36,19 +42,36 @@ export default async function ProdutosPage() {
   const podeEditar = user.is_platform_admin || ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
 
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("catalog_products")
-    .select(COLUNAS_DO_PRODUTO)
-    .eq("organization_id", activeOrg.orgId)
-    .order("ativo", { ascending: false })
-    .order("nome")
-    .limit(500);
+  const [{ data: produtos }, { data: categorias }, { data: tabelas }] = await Promise.all([
+    supabase
+      .from("catalog_products")
+      .select(COLUNAS_DO_PRODUTO)
+      .eq("organization_id", activeOrg.orgId)
+      .order("ativo", { ascending: false })
+      .order("nome")
+      .limit(500),
+    supabase
+      .from("product_categories")
+      .select(COLUNAS_DA_CATEGORIA)
+      .eq("organization_id", activeOrg.orgId)
+      .order("posicao")
+      .order("nome")
+      .limit(500),
+    supabase
+      .from("price_tables")
+      .select(COLUNAS_DA_TABELA)
+      .eq("organization_id", activeOrg.orgId)
+      .order("nome")
+      .limit(100),
+  ]);
 
   return (
-    <ProdutosClient
-      inicial={(data ?? []) as unknown as Produto[]}
+    <CatalogoClient
+      produtos={(produtos ?? []) as unknown as Produto[]}
+      categorias={(categorias ?? []) as unknown as Categoria[]}
+      tabelas={(tabelas ?? []) as unknown as TabelaDePreco[]}
       podeEditar={podeEditar}
-      textos={{
+      textosProdutos={{
         titulo: t("Produtos"),
         subtitulo: t(
           "O catálogo da loja. É daqui que o atendente de IA tira o preço quando alguém pergunta.",

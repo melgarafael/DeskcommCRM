@@ -50,7 +50,7 @@ export function EdgeConfigPanel({ sourceNode, targetNode, condition, onChange }:
   return (
     <div className="flex h-full flex-col gap-5 overflow-y-auto" data-testid="edge-config-panel">
       <div className="space-y-1">
-        <h2 className="text-base font-semibold text-text">{t("Condição da aresta")}</h2>
+        <h2 className="text-base font-medium text-text">{t("Condição da aresta")}</h2>
         <p className="flex items-center gap-1.5 text-sm text-text-muted">
           <span className="truncate">{sourceNode?.label ?? "?"}</span>
           <ArrowRight size={12} aria-hidden className="shrink-0" />

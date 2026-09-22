@@ -181,6 +181,9 @@ jobs:
           labels: |
             org.opencontainers.image.title=${{ matrix.title }}
 
+      - name: Set up QEMU (build arm64 no runner amd64)
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -189,8 +192,10 @@ jobs:
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          # linux/amd64: o VPS HostGator e a imagem do WAHA são amd64.
-          platforms: linux/amd64
+          # amd64 (VPS HostGator/x86) + arm64 (Oracle Ampere).
+          # A imagem do WAHA continua amd64-only (upstream) — por isso o
+          # deploy ARM é híbrido: WAHA roda no host x86 (ver docs/runbooks/oracle.md).
+          platforms: linux/amd64,linux/arm64
           # PR de fork não tem permissão de escrita no GHCR, e publicar imagem
           # de código não revisado seria pior que não gatear. Em PR: constrói
           # (que é o gate) e descarta.
@@ -233,6 +238,8 @@ jobs:
         with:
           context: .
           file: Dockerfile
+          # Só amd64 de propósito: `load: true` não aceita manifesto
+          # multi-arch; o gate aqui é o boot, que não depende de arco.
           platforms: linux/amd64
           push: false
           load: true

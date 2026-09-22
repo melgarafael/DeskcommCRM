@@ -263,7 +263,7 @@ export function PainelDeMarcacao({
           {/* "Marcado." — ponto final. Exclamação em sucesso é anti-pattern
               declarado do design system deste produto, e emoji em UI funcional
               também. */}
-          <h3 className="mt-3 text-base font-semibold">{t("Marcado.")}</h3>
+          <h3 className="mt-3 text-base font-medium text-text">{t("Marcado.")}</h3>
           <p className="mt-1 text-sm text-text-muted">
             {format(new Date(marcado.instante), t("EEEE, d 'de' MMMM 'às' HH:mm"), { locale: localeDaData })}
           </p>
@@ -358,7 +358,7 @@ export function PainelDeMarcacao({
           <AvatarDaPessoa pessoa={responsavel} tamanho="sm" />
           <span className="truncate text-sm font-semibold">{responsavel.nome}</span>
         </div>
-        <h3 className="mt-3 text-base font-semibold leading-tight">{tipo}</h3>
+        <h3 className="mt-3 text-base font-medium leading-tight text-text">{tipo}</h3>
         <dl className="mt-3 space-y-2 text-xs text-text-muted">
           <div className="flex items-center gap-1.5">
             <Clock size={14} aria-hidden />

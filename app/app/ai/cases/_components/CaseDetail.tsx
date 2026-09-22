@@ -38,7 +38,7 @@ export function CaseDetail({ caseId }: { caseId: string | null }) {
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-base font-semibold">{data.contact_name ?? t("Contato sem nome")}</h2>
+          <h2 className="text-base font-medium text-text">{data.contact_name ?? t("Contato sem nome")}</h2>
           <p className="text-xs text-muted-foreground">{data.contact_phone ?? t("Sem telefone")}</p>
         </div>
         <div className="flex items-center gap-2">

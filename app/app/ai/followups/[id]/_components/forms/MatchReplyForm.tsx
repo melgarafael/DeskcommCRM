@@ -77,7 +77,7 @@ export function MatchReplyForm({
       <div className="space-y-2">
         <Label>Regras de texto</Label>
         {branches.map((branch, index) => (
-          <div key={branch.id} className="space-y-2 rounded-md border border-border p-2">
+          <div key={branch.id} className="space-y-2 rounded-2xl border border-border p-2">
             <Input
               aria-label={`Rótulo da regra ${index + 1}`}
               value={branch.label}

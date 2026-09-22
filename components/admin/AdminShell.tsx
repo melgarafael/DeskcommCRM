@@ -69,9 +69,14 @@ export function AdminShell({ userEmail, children }: AdminShellProps) {
 
   return (
     <TooltipProvider>
-      <div className="flex min-h-screen w-full flex-col bg-background">
+      {/*
+        Mesmo padrão do `AppShell`: casca travada no viewport com rolagem só
+        no `main` — antes a sidebar e o hambúrguer rolavam para cima e sumiam
+        nas páginas longas do admin.
+      */}
+      <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
         <PlatformModeBanner />
-        <div className="flex flex-1">
+        <div className="flex min-h-0 flex-1">
           <AdminSidebar userEmail={userEmail} />
           <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
             <SheetContent side="left" className="w-72 max-w-[85vw] gap-0 p-0 lg:hidden">
@@ -79,11 +84,11 @@ export function AdminShell({ userEmail, children }: AdminShellProps) {
               <AdminSidebar userEmail={userEmail} variant="mobile" />
             </SheetContent>
           </Sheet>
-          <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             {/* Sem TopBar própria no admin (era só sidebar + main): esta barra
                 existe só pra carregar o hambúrguer abaixo de `lg`, onde a
                 sidebar fixa não está mais no DOM. */}
-            <header className="flex h-12 items-center gap-2 border-b bg-background px-3 lg:hidden">
+            <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-2 border-b bg-background px-3 lg:hidden">
               <Button
                 type="button"
                 variant="ghost"
@@ -100,7 +105,7 @@ export function AdminShell({ userEmail, children }: AdminShellProps) {
                 `AppShell` (ver comentário lá): se algo estourar a largura, a
                 PÁGINA não rola de lado; quem precisa de scroll horizontal é
                 o componente específico, contido nele mesmo. */}
-            <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">{children}</main>
+            <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">{children}</main>
           </div>
         </div>
       </div>

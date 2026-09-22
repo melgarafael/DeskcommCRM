@@ -23,7 +23,7 @@ export function AlertsBell() {
           : t("Central de avisos")
       }
       data-testid="alerts-bell"
-      className="relative inline-flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:h-9 lg:w-9"
+      className="relative inline-flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:h-9 lg:w-9"
     >
       <Bell size={18} aria-hidden />
       {count > 0 ? (

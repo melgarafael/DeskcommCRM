@@ -79,7 +79,7 @@ export function SignupForm({ convite }: { convite?: ConviteDoSignup }) {
   if (sentTo) {
     return (
       <div
-        className="space-y-2 rounded-md border bg-muted/40 px-4 py-6 text-center"
+        className="space-y-2 rounded-2xl border bg-muted/40 px-4 py-6 text-center"
         role="status"
       >
         <p className="text-sm font-medium">{t("Confirme seu e-mail")}</p>
@@ -153,7 +153,7 @@ export function SignupForm({ convite }: { convite?: ConviteDoSignup }) {
       </div>
       {serverError && (
         <div
-          className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           role="alert"
         >
           {serverError}

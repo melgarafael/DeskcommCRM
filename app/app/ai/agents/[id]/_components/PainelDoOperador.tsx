@@ -144,7 +144,7 @@ export function PainelDoOperador(props: Props) {
         {!props.enabled ? (
           <div
             data-testid="operador-consequencia"
-            className="rounded-md border border-dashed p-3 text-xs text-muted-foreground"
+            className="rounded-2xl border border-dashed p-3 text-xs text-muted-foreground"
           >
             <p className="font-medium text-foreground">{t("Com isto desligado:")}</p>
             <p className="mt-1">

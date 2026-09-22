@@ -240,7 +240,7 @@ export function LgpdRequestAdminDetail({ id }: Props) {
 
   if (error || !data) {
     return (
-      <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+      <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
         {t("Falha ao carregar solicitação.")}
       </div>
     );
@@ -348,7 +348,7 @@ export function LgpdRequestAdminDetail({ id }: Props) {
               />
             )}
             {request.error_message && (
-              <div className="rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1">
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-2 py-1">
                 <p className="text-xs text-muted-foreground">{t("Erro")}</p>
                 <p className="text-destructive text-xs">{request.error_message}</p>
               </div>

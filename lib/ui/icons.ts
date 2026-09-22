@@ -67,6 +67,7 @@ export {
   CheckCircle,
   Warning,
   WarningOctagon,
+  Wallet,
   Info,
   CircleNotch,
   // lgpd
@@ -112,6 +113,7 @@ export {
   WebhooksLogo,
   PuzzlePiece,
   UploadSimple,
+  Printer,
   Signpost,
   // atualização de versão
   ArrowCircleUp,
@@ -132,4 +134,6 @@ export {
   GoogleLogo,
   MapPin,
   ArrowsOutSimple,
+  // expedição (o caminhão da entrega, não a seta genérica de fluxo)
+  Truck,
 } from "@phosphor-icons/react/dist/ssr";

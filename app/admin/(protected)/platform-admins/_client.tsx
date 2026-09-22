@@ -15,7 +15,7 @@ export function PlatformAdminsClient() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{t("Platform Admins")}</h1>
+        <h1 className="text-2xl font-medium text-text tracking-tight">{t("Platform Admins")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {t("Administradores com acesso privilegiado à plataforma")}
         </p>

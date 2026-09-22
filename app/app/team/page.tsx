@@ -46,7 +46,7 @@ export default async function TeamPage({
     <div className="flex h-full flex-col gap-6 p-6">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">Equipe</h1>
+          <h1 className="text-2xl font-medium tracking-tight text-text">Equipe</h1>
           <p className="text-sm text-muted-foreground">
             {t("Gestão de membros, roles e atendimento do tenant.")}
           </p>

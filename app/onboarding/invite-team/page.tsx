@@ -12,7 +12,7 @@ export default async function InviteTeamPage() {
   return (
     <div className="space-y-6">
       <header>
-        <h2 className="text-2xl font-semibold tracking-tight">{traduzir("Quem trabalha com ele", idioma)}</h2>
+        <h2 className="text-2xl font-medium text-text tracking-tight">{traduzir("Quem trabalha com ele", idioma)}</h2>
         <p className="text-sm text-muted-foreground">
           {traduzir(
             "Seu funcionário não trabalha sozinho: quando ele passar uma conversa adiante, é uma dessas pessoas que atende.",
@@ -21,7 +21,7 @@ export default async function InviteTeamPage() {
         </p>
       </header>
       {!emailReady ? (
-        <div className="rounded-md border border-amber-300/60 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-100">
+        <div className="rounded-2xl border border-warning/40 bg-warning-bg p-4 text-sm text-warning-fg">
           <p className="font-medium">{traduzir("Esta instalação ainda não envia e-mail.", idioma)}</p>
           {/*
             A frase anterior dizia que os convites ficariam "registrados

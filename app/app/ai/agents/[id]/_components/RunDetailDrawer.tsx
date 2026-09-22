@@ -88,7 +88,7 @@ export function RunDetailDrawer({ run, open, onOpenChange }: Props) {
             </dl>
 
             {run.error_code || run.error_message ? (
-              <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs">
+              <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-2 text-xs">
                 <p className="font-medium text-destructive">
                   {run.error_code ?? t("error")}
                 </p>
@@ -132,7 +132,7 @@ export function RunDetailDrawer({ run, open, onOpenChange }: Props) {
 
 function Cell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-md border border-border/60 px-2 py-1">
+    <div className="rounded-2xl border border-border/60 px-2 py-1">
       <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</dt>
       <dd className="font-mono">{children}</dd>
     </div>

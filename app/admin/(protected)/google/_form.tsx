@@ -50,7 +50,7 @@ export function FormularioDoGoogle({
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{t("Google Agenda desta instalação")}</h1>
+        <h1 className="text-2xl font-medium text-text tracking-tight">{t("Google Agenda desta instalação")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {t("Com estas duas informações, quem atende consegue conectar a agenda pessoal do Google e ver os compromissos do CRM lá. Elas valem para a instalação inteira — cada pessoa conecta a conta dela depois, sozinha.")}
         </p>
@@ -109,13 +109,13 @@ export function FormularioDoGoogle({
         {temNoAmbiente ? (
           <p
             data-testid="google-tem-no-ambiente"
-            className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground"
+            className="rounded-2xl border border-border bg-muted/30 p-3 text-xs text-muted-foreground"
           >
             {t("Esta instalação já tem as credenciais no arquivo de configuração do servidor. O que você salvar aqui passa a valer no lugar delas; apagar o que está aqui faz o sistema voltar a usar as do arquivo.")}
           </p>
         ) : null}
 
-        <p className="rounded-md border border-warning/40 bg-warning-bg p-3 text-xs leading-4 text-text-muted">
+        <p className="rounded-lg border border-warning bg-warning-bg p-3 text-xs leading-4 text-text-muted">
           {/*
             O efeito colateral que ninguém antecipa: trocar o client id ou a
             chave invalida os refresh tokens que o Google já emitiu para esta

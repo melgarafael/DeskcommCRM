@@ -1,0 +1,27 @@
+{
+  "name": "deskcomm/fiscal-sidecar",
+  "description": "Sidecar emissor de NF-e (sped-nfe) do DeskcommCRM. Rede privada, nunca exposto.",
+  "type": "project",
+  "license": "MIT",
+  "require": {
+    "php": ">=8.1",
+    "ext-curl": "*",
+    "ext-dom": "*",
+    "ext-json": "*",
+    "ext-mbstring": "*",
+    "ext-openssl": "*",
+    "ext-soap": "*",
+    "ext-xml": "*",
+    "ext-zip": "*",
+    "nfephp-org/sped-nfe": "^5.0"
+  },
+  "suggest": {
+    "nfephp-org/sped-da": "Geração do DANFE em PDF (endpoint /danfe; sem ele, o endpoint responde DANFE_INDISPONIVEL)"
+  },
+  "autoload": {
+    "psr-4": { "FiscalSidecar\\": "src/" }
+  },
+  "config": {
+    "sort-packages": true
+  }
+}

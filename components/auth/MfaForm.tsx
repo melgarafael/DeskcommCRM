@@ -85,7 +85,7 @@ export function MfaForm({ next }: MfaFormProps) {
       {error && (
         <div
           role="alert"
-          className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-center text-sm text-destructive"
+          className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-center text-sm text-destructive"
         >
           {locked && secondsLeft > 0
             ? `${t("Muitas tentativas. Tente novamente em")} ${secondsLeft}s.`

@@ -211,7 +211,7 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
           </div>
 
           <section className="space-y-2">
-            <h3 className="text-lg font-semibold text-text">{t("QUANDO")}</h3>
+            <h3 className="text-lg font-medium text-text">{t("QUANDO")}</h3>
             <Select
               value={triggerEvent}
               onValueChange={(v) => {
@@ -234,7 +234,7 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
           </section>
 
           <section className="space-y-3">
-            <h3 className="text-lg font-semibold text-text">{t("SE (opcional)")}</h3>
+            <h3 className="text-lg font-medium text-text">{t("SE (opcional)")}</h3>
             {conditions.map((cond, idx) => {
               // Linha nova (campo vazio) começa no modo curado — o avançado é
               // escape p/ quem sabe o path; só cai nele sozinho ao EDITAR uma
@@ -345,7 +345,7 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
           </section>
 
           <section className="space-y-3">
-            <h3 className="text-lg font-semibold text-text">{t("ENTÃO")}</h3>
+            <h3 className="text-lg font-medium text-text">{t("ENTÃO")}</h3>
             {actions.map((action, idx) => (
               <div key={idx} className="space-y-3 rounded-sm border border-border p-3">
                 <div className="flex items-center justify-between">

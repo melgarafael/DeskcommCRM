@@ -57,7 +57,7 @@ export default async function AiUsagePage({ searchParams }: PageProps) {
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Uso de IA", idioma)}</h1>
+        <h1 className="text-2xl font-medium tracking-tight text-text">{traduzir("Uso de IA", idioma)}</h1>
         <p className="text-sm text-muted-foreground">
           {traduzir(
             "Quanto a inteligência artificial custou, quantos atendimentos ela fez, quanto demorou para responder e quantas vezes precisou chamar uma pessoa — nos últimos 30 dias.",

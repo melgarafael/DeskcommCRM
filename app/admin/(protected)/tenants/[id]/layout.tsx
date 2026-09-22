@@ -91,7 +91,7 @@ export default async function TenantDetailLayout({
       {/* Header */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className="text-2xl font-medium tracking-tight text-text">
             {org?.display_name ?? id}
           </h1>
           {org?.slug && (

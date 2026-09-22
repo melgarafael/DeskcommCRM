@@ -112,7 +112,7 @@ export function ApiTokensClient() {
       ) : tokens.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t("Nenhum token criado ainda.")}</p>
       ) : (
-        <div className="rounded-md border">
+        <div className="rounded-2xl border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -203,7 +203,7 @@ export function ApiTokensClient() {
                     onClick={() => toggleScope(s.id)}
                     title={t(s.label)}
                     aria-label={`${s.id} — ${t(s.label)}`}
-                    className={`rounded-md border px-2 py-1 text-xs ${
+                    className={`rounded-full border px-2 py-1 text-xs ${
                       scopes.includes(s.id) ? "border-primary bg-primary/10" : "border-border"
                     }`}
                   >

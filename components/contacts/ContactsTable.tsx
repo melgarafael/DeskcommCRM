@@ -143,7 +143,7 @@ export function ContactsTable({ contacts, orderBy, orderDir, onSort }: Props) {
     if (!alvo) return;
     try {
       await del.mutateAsync(alvo.id);
-      toast.success(t("Contato excluído."));
+      toast.success(t("Cliente excluído."));
       setAlvo(null);
     } catch {
       // hook handles toast
@@ -176,6 +176,7 @@ export function ContactsTable({ contacts, orderBy, orderDir, onSort }: Props) {
             orderDir={orderDir}
             onSort={onSort}
           />
+          <TableHead>{t("Cidade/UF")}</TableHead>
           <TableHead>{t("Tags")}</TableHead>
           <SortableHead
             label={t("Última atividade")}
@@ -203,6 +204,9 @@ export function ContactsTable({ contacts, orderBy, orderDir, onSort }: Props) {
             </TableCell>
             <TableCell className="text-muted-foreground">
               {c.phone_number ? phoneForDisplay(c.phone_number) : "—"}
+            </TableCell>
+            <TableCell className="text-muted-foreground">
+              {[c.cidade, c.uf].filter(Boolean).join("/") || "—"}
             </TableCell>
             <TableCell>
               <div className="flex flex-wrap gap-1">
@@ -259,8 +263,8 @@ export function ContactsTable({ contacts, orderBy, orderDir, onSort }: Props) {
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 text-muted-foreground hover:text-error-fg"
-                  title={t("Excluir contato")}
-                  aria-label={`${t("Excluir contato")} ${displayName(c, t)}`}
+                  title={t("Excluir cliente")}
+                  aria-label={`${t("Excluir cliente")} ${displayName(c, t)}`}
                   onClick={() => setAlvo(c)}
                 >
                   <Trash size={16} weight="regular" aria-hidden />
@@ -275,7 +279,7 @@ export function ContactsTable({ contacts, orderBy, orderDir, onSort }: Props) {
     <AlertDialog open={alvo !== null} onOpenChange={(open) => { if (!open) setAlvo(null); }}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>{t("Excluir contato?")}</AlertDialogTitle>
+          <AlertDialogTitle>{t("Excluir cliente?")}</AlertDialogTitle>
           <AlertDialogDescription>
             {alvo
               ? `${t("Isso remove")} ${displayName(alvo, t)} ${t("e a conversa associada, se houver. Esta ação não pode ser desfeita.")}`

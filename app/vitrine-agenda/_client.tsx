@@ -18,7 +18,6 @@ import { EmptyAgenda } from "@/components/empty";
 import { Button } from "@/components/ui/button";
 import { CalendarPlus, CaretLeft, CaretRight } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
-import { useTheme } from "@/lib/theme";
 
 const VISOES: Array<{ id: VisaoDaAgenda; rotulo: string }> = [
   { id: "dia", rotulo: "Dia" },
@@ -52,7 +51,6 @@ export function VitrineDaAgenda() {
   const localeDaData = useLocaleDeData();
   const [visao, setVisao] = React.useState<VisaoDaAgenda>("semana");
   const [isolada, setIsolada] = React.useState<string | null>(null);
-  const { theme, setTheme } = useTheme();
 
   const visiveis = React.useMemo(
     () => (isolada === null ? AGENDAMENTOS : AGENDAMENTOS.filter((c) => c.responsavelId === isolada)),
@@ -69,24 +67,12 @@ export function VitrineDaAgenda() {
             decidido antes de haver o que exibir.
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {/* O alternador existe para a prova: a spec troca o tema e remede as
-              cores, porque uma paleta só está certa quando está certa nos dois. */}
-          <Button
-            variant="outline"
-            size="sm"
-            data-testid="alternar-tema"
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          >
-            Tema: {theme === "dark" ? "escuro" : "claro"}
-          </Button>
-        </div>
       </header>
 
       <Secao
         id="paleta"
         titulo="As oito trilhas de cor"
-        descricao="Oito matizes espalhados e nomeáveis, derivados por cálculo: cada par passa em contraste (mínimo 3:1) e nenhum encosta no verde da marca. O par mais próximo fica a 0,119 no claro e 0,116 no escuro — a paleta de referência para daltonismo faz 0,156 com sete cores. Cor nunca vem sozinha: a inicial acompanha sempre."
+        descricao="Oito matizes espalhados e nomeáveis, derivados por cálculo: cada par passa em contraste (mínimo 3:1). O par mais próximo fica a 0,119 no claro — a paleta de referência para daltonismo faz 0,156 com sete cores. Cor nunca vem sozinha: a inicial acompanha sempre."
       >
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {TRILHAS.map(({ trilha, nome }) => (

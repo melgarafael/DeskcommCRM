@@ -99,7 +99,7 @@ export function IncidentDetailClient({ id }: IncidentDetailClientProps) {
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div className="min-w-0 space-y-2">
-          <h1 className="break-words text-2xl font-semibold tracking-tight font-mono">
+          <h1 className="break-words text-2xl font-medium tracking-tight font-mono text-text">
             {incident.type}
           </h1>
           <div className="flex flex-wrap items-center gap-2">
@@ -145,7 +145,7 @@ export function IncidentDetailClient({ id }: IncidentDetailClientProps) {
             <CardTitle className="text-sm font-medium">Payload</CardTitle>
           </CardHeader>
           <CardContent>
-            <pre className="overflow-auto rounded-md bg-muted p-4 text-xs leading-relaxed max-h-80">
+            <pre className="overflow-auto rounded-lg bg-muted p-4 text-xs leading-relaxed max-h-80">
               {JSON.stringify(incident.payload, null, 2)}
             </pre>
           </CardContent>

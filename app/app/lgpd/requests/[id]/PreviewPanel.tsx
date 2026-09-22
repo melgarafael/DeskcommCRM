@@ -73,7 +73,7 @@ export function PreviewPanel({ requestId }: PreviewPanelProps) {
           )}
 
           {error && (
-            <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
+            <div className="flex items-center gap-2 rounded-lg border border-error/40 bg-error-bg px-3 py-2 text-sm text-error-fg">
               <Warning size={16} aria-hidden />
               {t("Falha ao carregar prévia.")}
             </div>
@@ -82,14 +82,14 @@ export function PreviewPanel({ requestId }: PreviewPanelProps) {
           {preview && (
             <div className="space-y-4">
               {preview.no_local_footprint && (
-                <div className="rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300">
+                <div className="rounded-lg border border-warning/40 bg-warning-bg px-3 py-2 text-sm text-warning-fg">
                   {t("Nenhum dado local encontrado para este titular.")}
                 </div>
               )}
 
               {/* Contact card */}
               {preview.contact && (
-                <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                <div className="rounded-2xl border bg-muted/30 px-3 py-2 text-sm">
                   <p className="font-medium">{preview.contact.name ?? preview.contact.display_name ?? "—"}</p>
                   {preview.contact.email && (
                     <p className="text-muted-foreground">{preview.contact.email}</p>
@@ -166,7 +166,7 @@ function SampleBlock({ label, rows }: { label: string; rows: unknown[] }) {
   return (
     <div className="space-y-1">
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <div className="max-h-40 overflow-y-auto rounded-md border bg-muted/20 p-2">
+      <div className="max-h-40 overflow-y-auto rounded-lg border bg-muted/20 p-2">
         <pre className="text-xs leading-relaxed whitespace-pre-wrap break-all">
           {JSON.stringify(rows, null, 2)}
         </pre>

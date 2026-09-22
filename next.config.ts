@@ -37,10 +37,24 @@ const nextConfig: NextConfig = {
   },
   reactStrictMode: true,
   poweredByHeader: false,
+  // Dev via túnel (cloudflared quick tunnel): o Turbopack responde 403 a
+  // chunks buscados com `Origin` de fora da lista — sem isto, a página abre
+  // mas nenhum JS carrega (login "volta" sem mensagem). O hostname do quick
+  // tunnel é sorteado a cada boot, então vem por env, não fixo:
+  //   $env:ALLOWED_DEV_ORIGINS="xxx.trycloudflare.com"; <dev-server>
+  // Só afeta `next dev`; produção ignora.
+  allowedDevOrigins:
+    process.env.ALLOWED_DEV_ORIGINS?.split(",")
+      .map((h) => h.trim())
+      .filter(Boolean) ?? [],
   // typedRoutes moved out of experimental in Next 15.5+
   typedRoutes: true,
   experimental: {
     optimizePackageImports: ["@phosphor-icons/react", "lucide-react", "date-fns"],
+    // Dev no Windows: o cache persistente do Turbopack em disco trava o
+    // servidor em "compaction" (medido: 10–34s parado). Desligar troca boot
+    // frio mais lento por steady-state sem stalls. Só afeta `next dev`.
+    turbopackFileSystemCacheForDev: false,
   },
   images: {
     // O app não usa next/image de fato (só <img> raw); desligar o otimizador
@@ -70,11 +84,14 @@ const nextConfig: NextConfig = {
           // microphone=(self): o gravador de voz do composer (PTT estilo WhatsApp)
           // usa getUserMedia({audio}); microphone=() bloquearia em TODA origem,
           // inclusive a própria — daria "microphone is not allowed in this document".
-          // Câmera e geolocalização seguem bloqueadas (não usadas).
+          // geolocation=(self): o modo motorista da Expedição usa o GPS do
+          // aparelho (watchPosition) com o rastreio ligado — geolocation=()
+          // negaria em silêncio e o mapa nunca veria o caminhão. Câmera segue
+          // bloqueada (não usada).
           // notifications=(self): bandeja do SO quando a janela está minimizada.
           {
             key: "Permissions-Policy",
-            value: "camera=(), microphone=(self), geolocation=(), notifications=(self)",
+            value: "camera=(), microphone=(self), geolocation=(self), notifications=(self)",
           },
         ],
       },

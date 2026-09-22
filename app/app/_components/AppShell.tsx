@@ -2,6 +2,7 @@
 import type { ReactNode } from "react";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { TopBar } from "@/components/shell/TopBar";
+import { AssistenteFlutuante } from "@/components/assistente/AssistenteFlutuante";
 import { useInboundMessageAlerts } from "@/hooks/notifications/useInboundMessageAlerts";
 import { useCrmAlerts } from "@/hooks/notifications/useCrmAlerts";
 import { useNotifyOpenFromServiceWorker } from "@/lib/notifications/notify_open";
@@ -16,8 +17,14 @@ export function AppShell({ sidebarCollapsed, children }: AppShellProps) {
   useCrmAlerts();
   useNotifyOpenFromServiceWorker();
   return (
-    <div className="flex min-h-screen w-full bg-background">
-      <div className="hidden md:block">
+    <div className="flex h-screen w-full overflow-hidden bg-background">
+      {/*
+        Casca travada no viewport: `h-screen overflow-hidden` em vez de
+        `min-h-screen`. Antes a casca crescia com o conteúdo e a rolagem era do
+        body — o TopBar (`sticky`) ficava para cima e sumia da tela nas páginas
+        longas. Agora só o `main` rola; TopBar e Sidebar ficam sempre visíveis.
+      */}
+      <div className="hidden md:block print:hidden">
         <Sidebar collapsed={sidebarCollapsed} />
       </div>
       {/*
@@ -39,10 +46,19 @@ export function AppShell({ sidebarCollapsed, children }: AppShellProps) {
         SEGUNDA medida da mesma coisa — a que discordava e deixava a barra por
         cima da lista.
       */}
-      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+      {/*
+        `min-h-0` nos dois níveis é o que deixa o `overflow` do `main`
+        engatar: item de flex nasce com `min-height: auto` e nunca encolhe
+        abaixo do conteúdo — sem isso a coluna estourava o viewport de novo
+        e a rolagem voltava para o body (o defeito original por outro caminho).
+      */}
+      <div className="flex h-screen min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <TopBar />
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+        <main className="min-h-0 flex-1 overflow-auto p-6">{children}</main>
       </div>
+      {/* Assistente de ajuda: só na área logada (/app/*), canto inferior
+          direito. Reage ao mouse, pula no clique e abre o chat de ajuda. */}
+      <AssistenteFlutuante />
     </div>
   );
 }

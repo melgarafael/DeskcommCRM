@@ -4,16 +4,19 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /**
- * Badge — Sage design system.
- * Variants: default (accent soft), neutral, success, warning, error, info.
- * Compat aliases: secondary -> neutral, destructive -> error, outline -> neutral.
+ * Badge — Visitors design system (DESIGN.md).
+ * Pill em tudo (assinatura). Variants: default (accent soft), neutral,
+ * success, warning, error, info + tons categoria (mint/sky/amber/magenta/
+ * ember, pontuação funcional em tags curtas — nunca texto corrido, ver
+ * globals.css). Compat aliases: secondary -> neutral, destructive -> error,
+ * outline -> neutral.
  */
 const badgeVariants = cva(
   [
     "inline-flex items-center gap-1 rounded-full border px-3 py-0.5",
-    "text-xs font-medium leading-5",
+    "text-xs font-medium leading-5 tracking-[-0.02em]",
     "transition-colors duration-fast ease-out",
-    "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2",
+    "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-600 focus-visible:ring-offset-2",
   ].join(" "),
   {
     variants: {
@@ -30,6 +33,16 @@ const badgeVariants = cva(
           "border-transparent bg-error-bg text-error-fg",
         info:
           "border-transparent bg-info-bg text-info-fg",
+        mint:
+          "border-transparent bg-mint-wash text-mint",
+        sky:
+          "border-border bg-surface text-sky",
+        amber:
+          "border-border bg-surface text-amber",
+        magenta:
+          "border-border bg-surface text-magenta",
+        ember:
+          "border-border bg-surface text-ember",
         // shadcn aliases
         secondary:
           "border-border bg-surface-elevated text-text-muted",

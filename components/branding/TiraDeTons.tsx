@@ -63,7 +63,7 @@ export function TiraDeTons({ tons, legenda }: Props) {
           `Escala de ${tons.length} tons gerada a partir da sua cor, do mais claro ao mais ` +
           `escuro. Os tons em uso estão descritos na lista abaixo.`
         }
-        className="flex overflow-hidden rounded-md border border-border"
+        className="flex overflow-hidden rounded-lg border border-border"
       >
         {tons.map((hex, i) => (
           <div

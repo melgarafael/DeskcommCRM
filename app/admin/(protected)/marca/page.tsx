@@ -81,7 +81,7 @@ export default async function Page() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Marca", idioma)}</h1>
+        <h1 className="text-2xl font-medium text-text tracking-tight">{traduzir("Marca", idioma)}</h1>
         <p className="mt-1 text-sm text-text-muted">
           {traduzir(
             "O nome e a cor que este sistema mostra para todo mundo que usa esta instalação.",

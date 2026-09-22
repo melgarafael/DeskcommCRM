@@ -46,11 +46,11 @@ const SINAL: Record<SinalDeUso, { rotulo: string; classe: string }> = {
   },
   fora_da_configuracao: {
     rotulo: "usada sem estar ligada",
-    classe: "border-amber-500/40 text-amber-700 dark:text-amber-400",
+    classe: "border-warning/40 text-warning-fg",
   },
   nunca_usada: {
     rotulo: "nunca usada",
-    classe: "border-amber-500/40 text-amber-700 dark:text-amber-400",
+    classe: "border-warning/40 text-warning-fg",
   },
   recem_ligada: {
     rotulo: "ligada agora",
@@ -62,7 +62,7 @@ const SINAL: Record<SinalDeUso, { rotulo: string; classe: string }> = {
   },
   saudavel: {
     rotulo: "funcionando",
-    classe: "border-emerald-500/40 text-emerald-700 dark:text-emerald-400",
+    classe: "border-success/40 text-success-fg",
   },
 };
 
@@ -103,7 +103,7 @@ export function UsoDasCapacidades({ agentId, active }: Props) {
   }
   if (query.isError || !query.data) {
     return (
-      <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+      <p className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
         {t("Não foi possível carregar o uso das capacidades.")}
       </p>
     );
@@ -156,7 +156,7 @@ export function UsoDasCapacidades({ agentId, active }: Props) {
       {capacidades.length === 0 ? (
         <p
           data-testid="uso-vazio"
-          className="rounded-md border border-border/60 p-4 text-sm text-muted-foreground"
+          className="rounded-2xl border border-border/60 p-4 text-sm text-muted-foreground"
         >
           {t(
             "Este agente ainda não tem nenhuma capacidade ligada, e nenhuma foi usada. Ligue o que ele pode fazer na aba Configuração.",
@@ -169,7 +169,7 @@ export function UsoDasCapacidades({ agentId, active }: Props) {
               key={c.name}
               data-testid={`uso-${c.name}`}
               data-sinal={c.sinal}
-              className="rounded-md border border-border/60 p-3"
+              className="rounded-2xl border border-border/60 p-3"
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm font-medium">{c.rotulo}</span>

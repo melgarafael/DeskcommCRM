@@ -144,7 +144,7 @@ export function ContactPickerDialog({
           />
         </div>
 
-        <div className="max-h-48 overflow-y-auto rounded-md border border-border">
+        <div className="max-h-48 overflow-y-auto rounded-2xl border border-border">
           {list.isLoading && contacts.length === 0 ? (
             <p className="px-3 py-6 text-center text-sm text-muted-foreground">Carregando…</p>
           ) : contacts.length === 0 ? (
@@ -205,7 +205,7 @@ export function ContactPickerDialog({
                 type="button"
                 disabled={sending}
                 className={cn(
-                  "flex w-full items-center gap-3 rounded-md border border-border px-3 py-2.5 text-left text-sm",
+                  "flex w-full items-center gap-3 rounded-2xl border border-border px-3 py-2.5 text-left text-sm",
                   "hover:bg-muted disabled:opacity-50",
                 )}
                 onClick={pickManual}

@@ -118,7 +118,7 @@ export function EstadoDaMarca({
   return (
     <section className="space-y-4" aria-labelledby="estado-da-marca">
       <div>
-        <h2 id="estado-da-marca" className="text-base font-semibold tracking-tight text-text">
+        <h2 id="estado-da-marca" className="text-base font-medium tracking-tight text-text">
           {t("Como está agora")}
         </h2>
         <p className="text-sm text-text-muted">

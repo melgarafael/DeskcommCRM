@@ -133,12 +133,12 @@ export function AuditDetailClient({ entryId }: AuditDetailClientProps) {
         {/* Metadata JSON viewer */}
         <div className="space-y-3">
           <h2 className="text-sm font-medium">Metadata</h2>
-          <pre className="overflow-auto rounded-md border bg-muted/40 p-4 text-xs leading-relaxed">
+          <pre className="overflow-auto rounded-lg border bg-muted/40 p-4 text-xs leading-relaxed">
             {JSON.stringify(entry.metadata, null, 2)}
           </pre>
 
           {/* Extra entry fields */}
-          <div className="rounded-md border p-4 space-y-2 text-sm">
+          <div className="rounded-2xl border p-4 space-y-2 text-sm">
             <Row label="Request ID" value={entry.request_id ?? "—"} mono />
             <Row label="Resource Type" value={entry.resource_type ?? "—"} />
             <Row label="Resource ID" value={entry.resource_id ?? "—"} mono />
@@ -155,7 +155,7 @@ export function AuditDetailClient({ entryId }: AuditDetailClientProps) {
         {/* Right sidebar: actor + tenant + resource link */}
         <div className="space-y-4">
           {/* Actor card */}
-          <div className="rounded-md border p-4 space-y-2">
+          <div className="rounded-2xl border p-4 space-y-2">
             <h2 className="text-sm font-medium">Actor</h2>
             {actor ? (
               <div className="space-y-1 text-sm">
@@ -173,7 +173,7 @@ export function AuditDetailClient({ entryId }: AuditDetailClientProps) {
 
           {/* Tenant card */}
           {tenant && (
-            <div className="rounded-md border p-4 space-y-2">
+            <div className="rounded-2xl border p-4 space-y-2">
               <h2 className="text-sm font-medium">Tenant</h2>
               <div className="space-y-1 text-sm">
                 <Row label={t("Nome")} value={tenant.display_name} />
@@ -190,7 +190,7 @@ export function AuditDetailClient({ entryId }: AuditDetailClientProps) {
 
           {/* Resource deep link */}
           {deepLink && (
-            <div className="rounded-md border p-4">
+            <div className="rounded-2xl border p-4">
               <h2 className="text-sm font-medium mb-2">{t("Recurso")}</h2>
               <p className="text-sm text-muted-foreground mb-3">
                 {entry.resource_type}&nbsp;·&nbsp;

@@ -122,7 +122,7 @@ export function ExecucoesDeIa() {
   return (
     <div className="mx-auto w-full max-w-5xl p-6" data-testid="execucoes-de-ia">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">{t("Execuções de IA")}</h1>
+        <h1 className="text-2xl font-medium tracking-tight text-text">{t("Execuções de IA")}</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
           {t(
             "Tudo que a inteligência artificial fez por aqui — e, quando algo falhou, o que aconteceu e o que fazer.",
@@ -134,7 +134,7 @@ export function ExecucoesDeIa() {
       <Card className="mb-6 p-4" data-testid="resumo">
         {resumo.erros === 0 ? (
           <p className="text-sm">
-            <span className="font-medium text-emerald-600 dark:text-emerald-500">
+            <span className="font-medium text-success-fg">
               {t("Nenhuma falha")}
             </span>{" "}
             {t("nas últimas")} {resumo.total} {t("execuções.")}
@@ -215,7 +215,7 @@ export function ExecucoesDeIa() {
                   {e.error_message && (
                     <details className="text-xs text-muted-foreground">
                       <summary className="cursor-pointer">{t("Mensagem técnica do provedor")}</summary>
-                      <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-muted p-2">
+                      <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-words rounded-lg bg-muted p-2">
                         {e.error_message}
                         {e.http_status ? `\n(${t("código")} ${e.http_status})` : ""}
                       </pre>

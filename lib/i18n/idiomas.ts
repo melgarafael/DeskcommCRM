@@ -45,7 +45,15 @@
  * alcançar quem entra depois e nunca abriu o próprio perfil.
  */
 
-export const IDIOMAS = ["pt-BR", "es"] as const;
+/**
+ * Produto em português (BR) apenas — decisão de produto, não falta.
+ *
+ * O espanhol foi removido: dicionário, seletor, opções nos formulários e os
+ * guardas de cobertura saíram junto. `t()` continua existindo como identidade
+ * (a CHAVE é o texto pt-BR), então nenhuma tela precisa ser reescrita e uma
+ * futura tradução volta sem migração.
+ */
+export const IDIOMAS = ["pt-BR"] as const;
 export type Idioma = (typeof IDIOMAS)[number];
 
 export const IDIOMA_PADRAO: Idioma = "pt-BR";
@@ -58,7 +66,5 @@ export const IDIOMA_PADRAO: Idioma = "pt-BR";
  * e um valor desconhecido chegando ao dicionário devolveria a CHAVE na tela.
  */
 export function normalizarIdioma(bruto: string | null | undefined): Idioma {
-  return (IDIOMAS as readonly string[]).includes(bruto ?? "")
-    ? (bruto as Idioma)
-    : IDIOMA_PADRAO;
+  return (IDIOMAS as readonly string[]).includes(bruto ?? "") ? (bruto as Idioma) : IDIOMA_PADRAO;
 }

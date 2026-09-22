@@ -23,7 +23,7 @@ export function DoneClient({
   return (
     <div className="space-y-6 rounded-lg border bg-background p-6">
       <div className="space-y-1 text-center">
-        <h2 className="text-2xl font-semibold tracking-tight">{t("Tudo pronto!")}</h2>
+        <h2 className="text-2xl font-medium text-text tracking-tight">{t("Tudo pronto!")}</h2>
         <p className="text-sm text-muted-foreground">
           {pendentes.length === 0
             ? t("Seu funcionário está montado. Daqui em diante é só acompanhar.")
@@ -38,7 +38,7 @@ export function DoneClient({
               aria-hidden
               className={
                 "inline-block h-2 w-2 rounded-full " +
-                (it.feito ? "bg-emerald-500" : "bg-muted-foreground/30")
+                (it.feito ? "bg-success" : "bg-muted-foreground/30")
               }
             />
             <span className={it.feito ? "" : "text-muted-foreground"}>
@@ -84,7 +84,7 @@ export function DoneClient({
         */}
         <ul className="grid gap-2 sm:grid-cols-2">
           {pecas.map((p) => (
-            <li key={p.href} className="rounded-md border p-3">
+            <li key={p.href} className="rounded-2xl border p-3">
               <a href={p.href} className="text-sm font-medium underline-offset-2 hover:underline">
                 {t(p.comoChamar)}
               </a>

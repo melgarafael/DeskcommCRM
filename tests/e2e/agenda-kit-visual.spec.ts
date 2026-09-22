@@ -377,19 +377,10 @@ test.describe("kit visual da Agenda", () => {
     expect(neutra, "a faixa de fora usa a cor de borda forte, não uma trilha").toBeTruthy();
   });
 
-  test("as oito trilhas passam em contraste e são distinguíveis — nos DOIS temas", async () => {
+  test("as oito trilhas passam em contraste e são distinguíveis — no tema claro", async () => {
     const relatorio: string[] = [];
 
-    for (const tema of ["claro", "escuro"] as const) {
-      if (tema === "escuro") {
-        await page.getByTestId("alternar-tema").click();
-        await expect
-          .poll(async () => page.evaluate(() => document.documentElement.getAttribute("data-theme")), {
-            timeout: ESPERA,
-          })
-          .toBe("dark");
-      }
-
+    {
       const m = await medirTrilhas(page);
       relatorio.push(
         `tema=${m.tema} fundo=${m.fundo}\n` +
@@ -402,14 +393,16 @@ test.describe("kit visual da Agenda", () => {
       // WCAG 1.4.11: componente gráfico não-textual precisa de 3:1 contra o
       // fundo adjacente. É esta a régua — 4.5:1 é para TEXTO, e a faixa de cor
       // não carrega texto (o nome vem na inicial, que usa a cor de texto do tema).
+      // Light-only desde o redesign: o bloco escuro do CSS segue morto de pé
+      // para a derivação de marca, sem leitor na UI.
       for (const [i, c] of m.contrastes.entries()) {
-        expect(c, `trilha ${i + 1} no tema ${tema} (${m.cores[i]})`).toBeGreaterThanOrEqual(3);
+        expect(c, `trilha ${i + 1} no tema claro (${m.cores[i]})`).toBeGreaterThanOrEqual(3);
       }
 
       // Distinguibilidade: nenhum par pode estar perto demais no espaço em que o
       // olho compara. 0.10 em OKLab é a distância abaixo da qual duas trilhas
       // vizinhas na tela começam a ser lidas como a mesma cor.
-      expect(m.menorDistancia, `par mais próximo no tema ${tema}`).toBeGreaterThan(0.1);
+      expect(m.menorDistancia, "par mais próximo no tema claro").toBeGreaterThan(0.1);
     }
 
     console.info("\n[medidas das trilhas]\n" + relatorio.join("\n\n") + "\n");
@@ -462,30 +455,16 @@ test.describe("kit visual da Agenda", () => {
     const texto = await page.getByTestId("secao-paleta").innerText();
 
     const afirmados = [...texto.matchAll(/0,(\d{3})/g)].map((m) => Number(`0.${m[1]}`));
-    expect(afirmados.length, `a seção deveria afirmar números; texto: ${texto}`).toBeGreaterThanOrEqual(2);
+    expect(afirmados.length, `a seção deveria afirmar números; texto: ${texto}`).toBeGreaterThanOrEqual(1);
 
-    const medido = { claro: 0, escuro: 0 };
-    for (const tema of ["claro", "escuro"] as const) {
-      if (tema === "escuro") {
-        await page.getByTestId("alternar-tema").click();
-        await expect
-          .poll(async () => page.evaluate(() => document.documentElement.getAttribute("data-theme")), {
-            timeout: ESPERA,
-          })
-          .toBe("dark");
-      }
-      medido[tema] = (await medirTrilhas(page)).menorDistancia;
-    }
+    // Light-only desde o redesign: a vitrine afirma só o número do claro.
+    const medido = (await medirTrilhas(page)).menorDistancia;
 
-    // Os dois primeiros números do texto são o par mais próximo em cada tema.
+    // O primeiro número do texto é o par mais próximo no claro.
     // Tolerância de 0.002: o texto arredonda para três casas.
     expect(
-      Math.abs(afirmados[0]! - medido.claro),
-      `a tela afirma ${afirmados[0]} no claro, e mede ${medido.claro.toFixed(4)}`,
-    ).toBeLessThan(0.002);
-    expect(
-      Math.abs(afirmados[1]! - medido.escuro),
-      `a tela afirma ${afirmados[1]} no escuro, e mede ${medido.escuro.toFixed(4)}`,
+      Math.abs(afirmados[0]! - medido),
+      `a tela afirma ${afirmados[0]} no claro, e mede ${medido.toFixed(4)}`,
     ).toBeLessThan(0.002);
   });
 
@@ -650,7 +629,7 @@ test.describe("kit visual da Agenda", () => {
     await expect(defasada).toContainText(/desde/i);
   });
 
-  test("evidência visual: claro, escuro e celular", async () => {
+  test("evidência visual: claro e celular", async () => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await expect(page.getByTestId("grade-da-agenda")).toBeVisible({ timeout: ESPERA });
     await page.screenshot({ path: "evidence/calendario/kit-visual-claro.png", fullPage: true });
@@ -669,17 +648,11 @@ test.describe("kit visual da Agenda", () => {
     );
     await painelDaFoto.screenshot({ path: "evidence/calendario/painel-coluna-aberta.png" });
 
-    await page.getByTestId("alternar-tema").click();
-    await expect
-      .poll(async () => page.evaluate(() => document.documentElement.getAttribute("data-theme")), {
-        timeout: ESPERA,
-      })
-      .toBe("dark");
-    await page.screenshot({ path: "evidence/calendario/kit-visual-escuro.png", fullPage: true });
+    // Light-only desde o redesign: sem foto do tema escuro (o bloco escuro do
+    // CSS segue morto de pé para a derivação de marca, sem leitor na UI).
 
     // 390px é o iPhone que o dono da clínica tem no bolso.
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByTestId("alternar-tema").click();
     await expect(page.getByTestId("grade-da-agenda")).toBeVisible({ timeout: ESPERA });
     await page.screenshot({ path: "evidence/calendario/kit-visual-celular.png", fullPage: true });
 

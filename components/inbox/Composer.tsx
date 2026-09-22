@@ -2,6 +2,7 @@
 import { useT } from "@/hooks/i18n/useT";
 import {
   forwardRef,
+  useEffect,
   useImperativeHandle,
   useRef,
   useState,
@@ -15,6 +16,8 @@ import { AttachmentPreviewDialog } from "@/components/inbox/composer/AttachmentP
 import { ContactPickerDialog } from "@/components/inbox/composer/ContactPickerDialog";
 import { AudioRecorder } from "@/components/inbox/composer/AudioRecorder";
 import { DraftReplyButton } from "@/components/inbox/composer/DraftReplyButton";
+import { WA } from "@/components/inbox/whatsapp-theme";
+import { NexusAiSuggestion } from "@/components/nexus-ui/ai/NexusAi";
 import { EmojiButton } from "@/components/inbox/composer/EmojiButton";
 import { resolveSlash, TemplateMenu } from "@/components/inbox/composer/TemplateMenu";
 import { useCreateNote } from "@/hooks/inbox/useCreateNote";
@@ -79,6 +82,15 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const [contactPickerOpen, setContactPickerOpen] = useState(false);
   const [menuDismissed, setMenuDismissed] = useState(false);
   const [mode, setMode] = useState<"reply" | "note">("reply");
+  // Sugestão da IA aguardando decisão explícita: nunca entra no campo sozinha
+  // (o botão gerava e aplicava direto). Aprovar preenche para editar/enviar;
+  // descartar some sem tocar no que já foi digitado.
+  const [sugestao, setSugestao] = useState<string | null>(null);
+  // Sugestão vale para UMA conversa: trocar de conversa com ela aberta
+  // responderia a pessoa errada com o contexto da anterior.
+  useEffect(() => {
+    setSugestao(null);
+  }, [conversationId]);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const send = useSendMessage();
   const upload = useUploadMedia();
@@ -211,7 +223,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     <>
       <div
         className={cn(
-          "relative border-t border-border bg-background px-3 py-2",
+          "relative border-t border-border px-3 py-2",
+          WA.bar,
           mode === "note" && "border-warning/40 bg-warning-bg",
         )}
       >
@@ -259,7 +272,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           relê-la — ela está logo acima, no fio.
         */}
         {respondendo && mode === "reply" && (
-          <div className="mb-1 flex items-start gap-2 rounded-md border-l-2 border-primary bg-muted/60 px-2 py-1.5">
+          <div className="mb-1 flex items-start gap-2 rounded-lg border-l-2 border-primary bg-muted/60 px-2 py-1.5">
             <div className="min-w-0 flex-1">
               <div className="text-[11px] font-medium text-primary">
                 {respondendo.direction === "outbound" ? t("Você") : t("Cliente")}
@@ -272,10 +285,24 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               type="button"
               onClick={onCancelarResposta}
               aria-label={t("Cancelar resposta")}
-              className="rounded-md p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <X className="size-4" />
             </button>
+          </div>
+        )}
+        {sugestao && mode === "reply" && (
+          <div className="mb-1.5">
+            <NexusAiSuggestion
+              text={sugestao}
+              sourceLabel={t("rascunho do agente")}
+              approveLabel={t("Usar no campo")}
+              onApprove={() => {
+                applyDraft(sugestao);
+                setSugestao(null);
+              }}
+              onDismiss={() => setSugestao(null)}
+            />
           </div>
         )}
         <div className="flex items-end gap-2">
@@ -287,7 +314,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             />
           )}
           {mode === "reply" && (
-            <DraftReplyButton conversationId={conversationId} disabled={isDisabled} onDraft={applyDraft} />
+            <DraftReplyButton
+              conversationId={conversationId}
+              disabled={isDisabled}
+              onDraft={setSugestao}
+            />
           )}
           <EmojiButton
             disabled={isDisabled}
@@ -330,7 +361,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             // uma nota interna precisa saber que ela não vai para o cliente, e
             // essa informação não pode depender de abrir um diálogo.
             placeholder={
-              mode === "note" ? t("Escreva uma nota interna… (só o time vê)") : t("Escreva uma mensagem…")
+              mode === "note"
+                ? t("Escreva uma nota interna… (só o time vê)")
+                : t("Escreva uma mensagem…")
             }
             title={
               mode === "note"
@@ -338,8 +371,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
                 : t("Enter envia · Shift+Enter quebra linha")
             }
             className={cn(
-              "min-h-9 max-h-40 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm",
-              "placeholder:text-muted-foreground focus:outline-hidden focus:ring-1 focus:ring-ring",
+              "max-h-40 min-h-9 flex-1 resize-none rounded-full border border-input bg-white px-4 py-2 text-sm",
+              "placeholder:text-muted-foreground focus:ring-1 focus:ring-ring focus:outline-hidden",
             )}
             disabled={mode === "note" ? isDisabled : respostaBarrada}
             aria-label={t("Mensagem")}

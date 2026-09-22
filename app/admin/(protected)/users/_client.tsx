@@ -70,7 +70,7 @@ export function UsersClient() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{t("Usuários")}</h1>
+        <h1 className="text-2xl font-medium text-text tracking-tight">{t("Usuários")}</h1>
         <p className="text-sm text-muted-foreground mt-1">
           {isLoading
             ? t("Carregando...")

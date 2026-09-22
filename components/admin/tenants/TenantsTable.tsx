@@ -3,6 +3,7 @@
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/empty";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -90,7 +91,7 @@ function shortCnpj(cnpj: string | null): string {
 export function TenantsTableSkeleton() {
   const t = useT();
   return (
-    <div className="rounded-md border">
+    <div className="rounded-3xl border">
       <Table>
         <TableHeader>
           <TableRow>
@@ -138,19 +139,17 @@ export function TenantsTable({
   const t = useT();
   if (data.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-md border py-16 text-center text-muted-foreground">
-        <Buildings size={36} weight="duotone" className="opacity-40" aria-hidden />
-        <p className="text-sm font-medium">{t("Nenhum tenant encontrado")}</p>
-        <p className="max-w-xs text-xs opacity-70">
-          {t("Ajuste os filtros ou crie um novo tenant.")}
-        </p>
-      </div>
+      <EmptyState
+        icon={Buildings}
+        headline="Nenhum tenant encontrado"
+        subcopy="Ajuste os filtros ou crie um novo tenant."
+      />
     );
   }
 
   return (
     <div className="space-y-4">
-      <div className="rounded-md border">
+      <div className="rounded-3xl border">
         <Table>
           <TableHeader>
             <TableRow>

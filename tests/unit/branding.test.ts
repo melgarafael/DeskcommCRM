@@ -245,6 +245,24 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
       "User-Agent exigido pela Nuvemshop, que identifica a aplicação registrada na plataforma deles. Trocar pelo nome do revendedor descreveria uma aplicação que não existe lá",
     marcas: ["deskcommcrm"],
   },
+  "lib/prospeccao/providers/osm.ts": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "User-Agent e Referer exigidos pela política de uso do Nominatim/Overpass: identificam a aplicação para o controle de abuso DELES, nunca chegam ao usuário final, e UA genérico toma bloqueio. Trocar pelo nome do revendedor descreveria uma aplicação que não existe para eles",
+    marcas: ["deskcommcrm-prospeccao", "deskcommcrm-prospeccao", "deskcommcrm.local"],
+  },
+  "lib/rotas/geocodificacao.ts": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "User-Agent exigido pela política de uso do Nominatim (mesmo caso do osm.ts da prospecção): identifica a aplicação para o controle de abuso DELES, nunca chega ao usuário final, e UA genérico toma bloqueio",
+    marcas: ["deskcommcrm-rotas", "deskcommcrm-rotas"],
+  },
+  "lib/rotas/osrm.ts": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "User-Agent das chamadas ao OSRM (mesmo caso do osm.ts da prospecção): identifica a aplicação para o controle de abuso DELES, nunca chega ao usuário final",
+    marcas: ["deskcommcrm-rotas"],
+  },
   "lib/agenda/google/evento.ts": {
     categoria: "PROTOCOLO",
     motivo:
@@ -253,15 +271,9 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
   },
 
   // ─── INFRA — cookie/storage/contêiner. Renomear desloga ou perde estado. ───
-  "app/layout.tsx": {
-    categoria: "INFRA",
-    motivo:
-      "chave de localStorage do tema, lida no script anti-flash. Renomear faz todo mundo voltar ao tema claro no próximo acesso — e o par com lib/theme.tsx tem de mudar junto",
-    marcas: ["deskcomm-theme"],
-  },
   "lib/theme.tsx": {
     categoria: "INFRA",
-    motivo: "a mesma chave de localStorage do script do layout; as duas são um par só",
+    motivo: "chave de localStorage do tema (light-only desde o redesign: o layout fixa light sem ler; a chave segue gravada por compatibilidade com quem tinha preferência guardada)",
     marcas: ["deskcomm-theme"],
   },
   "lib/supabase/browser.ts": {

@@ -2,6 +2,7 @@
 import { useT } from "@/hooks/i18n/useT";
 import { useEffect, useState } from "react";
 import { MagnifyingGlass } from "@/lib/ui/icons";
+import { WA } from "@/components/inbox/whatsapp-theme";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
@@ -105,12 +106,12 @@ export function InboxFilters({ value, onChange }: Props) {
   }, [searchInput]);
 
   return (
-    <div className="space-y-3 border-b border-border bg-background px-3 py-3">
+    <div className={`space-y-3 border-b border-border px-3 py-3 ${WA.bar}`}>
       <div className="relative">
         <MagnifyingGlass
           size={14}
           weight="regular"
-          className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+          className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground"
           aria-hidden
         />
         <Input
@@ -165,10 +166,7 @@ export function InboxFilters({ value, onChange }: Props) {
         </Select>
       )}
 
-      <Tabs
-        value={value.tab}
-        onValueChange={(v) => onChange({ ...value, tab: v as InboxTab })}
-      >
+      <Tabs value={value.tab} onValueChange={(v) => onChange({ ...value, tab: v as InboxTab })}>
         <TabsList
           className="grid h-8 w-full"
           style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
@@ -180,9 +178,7 @@ export function InboxFilters({ value, onChange }: Props) {
               <TabsTrigger key={tab} value={tab} className="gap-1 text-[11px]">
                 {t(meta.label)}
                 {typeof count === "number" && count > 0 && (
-                  <span className="text-[10px] tabular-nums text-muted-foreground">
-                    {count}
-                  </span>
+                  <span className="text-[10px] text-muted-foreground tabular-nums">{count}</span>
                 )}
               </TabsTrigger>
             );

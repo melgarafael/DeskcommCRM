@@ -208,7 +208,7 @@ export function DossieDoFollowup({ id, canWrite }: Props) {
           <CaretLeft size={14} aria-hidden /> {t("Fila de follow-ups")}
         </Link>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">{data.contact.name}</h1>
+          <h1 className="text-2xl font-medium tracking-tight text-text">{data.contact.name}</h1>
           <Badge variant={tomDoStatus(data.status)} data-testid="dossie-status">
             {rotuloDoStatus(data.status, t)}
           </Badge>
@@ -221,7 +221,7 @@ export function DossieDoFollowup({ id, canWrite }: Props) {
         </div>
       </header>
 
-      <section className="rounded-md border border-border p-4" data-testid="dossie-onde-esta">
+      <section className="rounded-2xl border border-border p-4" data-testid="dossie-onde-esta">
         <h2 className="mb-2 text-sm font-medium">{t("Onde está agora")}</h2>
         <div className="flex flex-col gap-1">
           <p className="text-sm text-text">
@@ -368,7 +368,7 @@ export function DossieDoFollowup({ id, canWrite }: Props) {
         decididoRelativo={relativa(data.plano_de_tempo?.decidido_em ?? null, localeDaData)}
       />
 
-      <section className="rounded-md border border-border p-4">
+      <section className="rounded-2xl border border-border p-4">
         <h2 className="mb-1 text-sm font-medium">{t("O que já aconteceu")}</h2>
         <LinhaDoTempo
           eventos={data.eventos}

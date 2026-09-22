@@ -104,6 +104,19 @@ export const produtoCreateSchema = z.object({
   quantidade: z.number().int().min(0).default(0),
   ativo: z.boolean().default(true),
   imagem_url: z.string().trim().url().max(2000).optional(),
+  /** Fiscal (0216): NCM com 8 dígitos; NULL = vende sem nota até preencher. */
+  ncm: z.string().trim().regex(/^\d{8}$/, "NCM tem 8 dígitos").nullable().optional(),
+  unidade: z.string().trim().max(10).nullable().optional(),
+  cfop: z.string().trim().regex(/^\d{4}$/, "CFOP tem 4 dígitos").nullable().optional(),
+  /** Vitrine (0228): destaque manual + preço promocional com validade. */
+  destaque: z.boolean().optional(),
+  preco_promocional_cents: z.number().int().min(0, "promoção não pode ser negativa").nullable().optional(),
+  promocao_ate: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "promoção até YYYY-MM-DD")
+    .nullable()
+    .optional(),
 });
 
 /** Tudo opcional: o PATCH muda o que veio e não encosta no resto. */
@@ -127,10 +140,35 @@ export interface Produto {
   ativo: boolean;
   origem: string;
   imagem_url: string | null;
+  ncm: string | null;
+  unidade: string | null;
+  cfop: string | null;
+  destaque: boolean;
+  preco_promocional_cents: number | null;
+  promocao_ate: string | null;
   updated_at: string;
 }
 
 /** As colunas que a tela e a rota leem — uma lista, não duas. */
 export const COLUNAS_DO_PRODUTO =
   "id, codigo, nome, descricao, marca, categoria, preco_cents, moeda, custo_cents, " +
-  "controla_estoque, quantidade, ativo, origem, imagem_url, updated_at";
+  "controla_estoque, quantidade, ativo, origem, imagem_url, ncm, unidade, cfop, " +
+  "destaque, preco_promocional_cents, promocao_ate, updated_at";
+
+/**
+ * Preço de VITRINE (0228): a promoção vale quando há preço promocional E
+ * (sem data final OU hoje dentro dela). Data em "YYYY-MM-DD" — compara
+ * string, sem fuso, sem hora: promoção "até dia 10" vale o dia 10 inteiro.
+ */
+export function precoDeVitrine(produto: {
+  preco_cents: number;
+  preco_promocional_cents: number | null;
+  promocao_ate: string | null;
+}, hoje: string): { cents: number; emPromocao: boolean } {
+  const promo = produto.preco_promocional_cents;
+  if (promo == null) return { cents: produto.preco_cents, emPromocao: false };
+  if (produto.promocao_ate && hoje > produto.promocao_ate) {
+    return { cents: produto.preco_cents, emPromocao: false };
+  }
+  return { cents: promo, emPromocao: true };
+}

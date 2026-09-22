@@ -2,6 +2,10 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * Card — Visitors (DESIGN.md): 16px de raio, borda Fog 1px, flat (shadow-xs).
+ * Título em peso 500 (a referência reserva 600+ para display).
+ */
 const Card = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
@@ -9,7 +13,7 @@ const Card = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "rounded-lg border border-border bg-surface text-text shadow-xs",
+      "rounded-2xl border border-border bg-surface text-text shadow-xs",
       className,
     )}
     {...props}
@@ -36,7 +40,7 @@ const CardTitle = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "text-base font-semibold leading-tight tracking-tight text-text",
+      "text-base font-medium leading-tight tracking-tight text-text",
       className,
     )}
     {...props}

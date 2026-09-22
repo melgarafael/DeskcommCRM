@@ -36,14 +36,14 @@ export default async function PrivacyPage() {
   return (
     <>
       <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">{t("Política de Privacidade")}</h1>
+        <h1 className="text-2xl font-medium text-text tracking-tight">{t("Política de Privacidade")}</h1>
         <p className="text-muted-foreground">
           {t("Como esta instalação do")} {op.sistema} {t("trata dados pessoais.")}
         </p>
       </header>
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold">{t("1. Quem é o controlador")}</h2>
+        <h2 className="text-base font-medium text-text">{t("1. Quem é o controlador")}</h2>
         <p>
           {t("O controlador dos dados tratados aqui é")} <strong>{operador}</strong>
           {op.cnpj ? ` (CNPJ ${op.cnpj})` : ""} —{" "}
@@ -54,7 +54,7 @@ export default async function PrivacyPage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold">{t("2. Que dados são tratados")}</h2>
+        <h2 className="text-base font-medium text-text">{t("2. Que dados são tratados")}</h2>
         <ul className="list-disc space-y-1 pl-5">
           <li>
             <strong>{t("De quem é atendido:")}</strong>{" "}
@@ -70,7 +70,7 @@ export default async function PrivacyPage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold">{t("3. Para que são usados")}</h2>
+        <h2 className="text-base font-medium text-text">{t("3. Para que são usados")}</h2>
         <p>
           {t(
             "Para atender, responder, registrar o andamento do atendimento e organizar a relação comercial — inclusive por agentes de inteligência artificial que atuam sob as regras configuradas pelo operador. Registros de ação são mantidos para auditoria e segurança.",
@@ -79,7 +79,7 @@ export default async function PrivacyPage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold">{t("4. Com quem são compartilhados")}</h2>
+        <h2 className="text-base font-medium text-text">{t("4. Com quem são compartilhados")}</h2>
         <p>
           {t(
             "Os dados ficam no servidor do operador. Para funcionar, o sistema se comunica com terceiros escolhidos e contratados pelo operador:",
@@ -98,7 +98,7 @@ export default async function PrivacyPage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold">{t("5. Por quanto tempo")}</h2>
+        <h2 className="text-base font-medium text-text">{t("5. Por quanto tempo")}</h2>
         <p>
           {t(
             "Conversas e registros de negócio são mantidos enquanto houver relação com o cliente ou obrigação legal de guarda. Arquivos de mídia têm prazo próprio, configurado pelo operador. Registros de auditoria são mantidos por período mais longo, por serem prova de quem fez o quê.",
@@ -107,7 +107,7 @@ export default async function PrivacyPage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold">{t("6. Seus direitos")}</h2>
+        <h2 className="text-base font-medium text-text">{t("6. Seus direitos")}</h2>
         <p>
           {t(
             "A LGPD garante a você confirmar se há tratamento, acessar seus dados, corrigir dados incompletos ou desatualizados, pedir anonimização ou eliminação, saber com quem foram compartilhados e revogar consentimento.",
@@ -122,7 +122,7 @@ export default async function PrivacyPage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold">{t("7. Segurança")}</h2>
+        <h2 className="text-base font-medium text-text">{t("7. Segurança")}</h2>
         <p>
           {t(
             "O acesso é controlado por conta, senha e papel, com verificação em duas etapas obrigatória para administradores. Cada organização hospedada só enxerga os próprios dados, e as chaves de integração são guardadas cifradas.",
@@ -131,7 +131,7 @@ export default async function PrivacyPage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold">{t("8. Encarregado e contato")}</h2>
+        <h2 className="text-base font-medium text-text">{t("8. Encarregado e contato")}</h2>
         <p>
           {op.dpoEmail ? (
             <>

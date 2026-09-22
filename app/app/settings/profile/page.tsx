@@ -29,7 +29,7 @@ export default async function ProfilePage() {
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Perfil", idioma)}</h1>
+        <h1 className="text-2xl font-medium tracking-tight text-text">{traduzir("Perfil", idioma)}</h1>
         <p className="text-sm text-muted-foreground">
           {traduzir("Informações pessoais. Email só pode ser trocado em breve.", idioma)}
         </p>

@@ -46,7 +46,7 @@ export default async function SetupAiPage() {
   return (
     <div className="space-y-6">
       <header>
-        <h2 className="text-2xl font-semibold tracking-tight">{traduzir("Treine seu funcionário", idioma)}</h2>
+        <h2 className="text-2xl font-medium text-text tracking-tight">{traduzir("Treine seu funcionário", idioma)}</h2>
         <p className="text-sm text-muted-foreground">
           {traduzir("Quem ele é, como fala e o que pode prometer. Dá para mudar tudo depois.", idioma)}
         </p>

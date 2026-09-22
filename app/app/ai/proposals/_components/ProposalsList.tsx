@@ -7,16 +7,15 @@ import { useState } from "react";
 import { formatDistanceToNowStrict } from "date-fns";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { NexusAiApproval } from "@/components/nexus-ui/ai/NexusAiApproval";
 import {
   useProposals,
   useDecidirProposta,
   type DecisaoPassada,
   type PropostaPendente,
 } from "@/hooks/leads/useProposals";
-import { Check, X } from "@/lib/ui/icons";
 import { useT } from "@/hooks/i18n/useT";
 
 function quando(iso: string, locale: Locale): string {
@@ -36,7 +35,8 @@ export function ProposalsList({ canDecide }: { canDecide: boolean }) {
       <Tabs value={tab} onValueChange={(v) => setTab(v as "pending" | "history")}>
         <TabsList>
           <TabsTrigger value="pending">
-            {t("Aguardando decisão")}{data ? ` (${data.pending.length})` : ""}
+            {t("Aguardando decisão")}
+            {data ? ` (${data.pending.length})` : ""}
           </TabsTrigger>
           <TabsTrigger value="history">{t("Já decididas")}</TabsTrigger>
         </TabsList>
@@ -86,49 +86,38 @@ function Pendentes({
   }
 
   return (
-    <ul className="divide-y divide-border rounded-lg border border-border">
+    <ul className="space-y-2">
       {itens.map((p) => (
-        <li key={`${p.lead_id}-${p.seq}`} className="flex flex-col gap-3 p-4">
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span className="text-sm font-medium">{p.lead_title}</span>
-            {p.contact_name && (
-              <span className="text-xs text-muted-foreground">· {p.contact_name}</span>
-            )}
-            {p.stage_name && (
-              <Badge variant="secondary" className="text-[11px]">
-                {p.stage_name}
-              </Badge>
-            )}
-            {/* Há quanto tempo espera é a informação que decide a ORDEM de quem
-                olha — por isso fica na linha do título, não escondida embaixo. */}
-            <span className="text-xs text-muted-foreground">
-              {t("proposta")} {quando(p.proposed_at, localeDaData)}
-            </span>
-          </div>
-
-          <p className="text-sm text-foreground/90">{p.next_action}</p>
-
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              disabled={!canDecide || pending}
-              onClick={() => onDecidir(p.lead_id, "approve", p.seq)}
-              aria-label={`${t("Aprovar")}: ${p.next_action}`}
-            >
-              <Check size={14} aria-hidden />
-              {t("Aprovar")}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!canDecide || pending}
-              onClick={() => onDecidir(p.lead_id, "dismiss", p.seq)}
-              aria-label={`${t("Ignorar")}: ${p.next_action}`}
-            >
-              <X size={14} aria-hidden />
-              {t("Ignorar")}
-            </Button>
-          </div>
+        <li key={`${p.lead_id}-${p.seq}`}>
+          {/* Mesmo contrato do botão anterior: `seq` é a trava (409 se mudou),
+              `canDecide` é o papel, `pending` trava os dois durante a mutação. */}
+          <NexusAiApproval
+            title={p.lead_title}
+            description={p.next_action}
+            context={
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                {p.contact_name && <span>· {p.contact_name}</span>}
+                {p.stage_name && (
+                  <Badge variant="secondary" className="text-[11px]">
+                    {p.stage_name}
+                  </Badge>
+                )}
+                {/* Há quanto tempo espera é a informação que decide a ORDEM de
+                    quem olha — por isso fica no contexto, não escondida. */}
+                <span>
+                  {t("proposta")} {quando(p.proposed_at, localeDaData)}
+                </span>
+              </span>
+            }
+            approveLabel={t("Aprovar")}
+            dismissLabel={t("Ignorar")}
+            approveAria={`${t("Aprovar")}: ${p.next_action}`}
+            dismissAria={`${t("Ignorar")}: ${p.next_action}`}
+            busy={pending}
+            enabled={canDecide}
+            onApprove={() => onDecidir(p.lead_id, "approve", p.seq)}
+            onDismiss={() => onDecidir(p.lead_id, "dismiss", p.seq)}
+          />
         </li>
       ))}
     </ul>

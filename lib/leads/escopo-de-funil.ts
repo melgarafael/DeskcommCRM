@@ -127,6 +127,11 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   crm_create_webhook_source: "sem_funil",
   crm_set_webhook_source_active: "sem_funil",
   crm_set_automation_rule_active: "sem_funil",
+  // Pedido comercial (rascunho): escreve em commercial_orders, não em
+  // crm_leads — não há funil para resolver. A barreira é OUTRA: papel
+  // `ai_operator` (nenhuma pessoa alcança) + as travas comerciais de estoque
+  // e crédito, que a IA nunca ignora.
+  commercial_create_order: "sem_funil",
 };
 
 /**

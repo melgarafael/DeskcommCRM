@@ -13,6 +13,8 @@ import { z } from "zod";
 
 import type { McpToolDefinition } from "../types";
 import { buscarComRelaxamento } from "@/lib/catalogo/busca";
+import { criarPedidoComercial } from "@/lib/comercial/criar-pedido";
+import { precoDeVitrine } from "@/lib/schemas/produtos";
 
 // ---------------------------------------------------------------------------
 // pedidos de um cliente
@@ -188,7 +190,7 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
       const { data: lote, error, count } = await ctx.supabase
         .from("catalog_products")
         .select(
-          "id, codigo, nome, descricao, marca, categoria, preco_cents, moeda, controla_estoque, quantidade, ativo",
+          "id, codigo, nome, descricao, marca, categoria, preco_cents, moeda, controla_estoque, quantidade, ativo, destaque, preco_promocional_cents, promocao_ate",
           { count: "exact" },
         )
         .eq("organization_id", ctx.organizationId)
@@ -231,6 +233,9 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
       moeda: string;
       controla_estoque: boolean;
       quantidade: number;
+      destaque: boolean | null;
+      preco_promocional_cents: number | null;
+      promocao_ate: string | null;
     };
 
     const { achados, ignorados } = buscarComRelaxamento((data ?? []) as Linha[], input.termo);
@@ -272,15 +277,28 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
     const mensagem = avisosDaBusca({ empate, ignorados });
 
     return {
-      produtos: topo.map(({ produto }) => ({
-        codigo: produto.codigo,
-        nome: produto.nome,
-        preco: precoLegivel(produto.preco_cents, produto.moeda),
-        preco_cents: produto.preco_cents,
-        ...(produto.marca ? { marca: produto.marca } : {}),
-        ...(produto.descricao ? { descricao: produto.descricao } : {}),
-        disponivel: !produto.controla_estoque || produto.quantidade > 0,
-      })),
+      produtos: topo.map(({ produto }) => {
+        // Mesmo preço de vitrine da tela: promoção válida vence o base — uma
+        // regra só, ou o agente anuncia um preço e o pedido cobra outro.
+        const vitrine = precoDeVitrine(
+          {
+            preco_cents: produto.preco_cents,
+            preco_promocional_cents: produto.preco_promocional_cents,
+            promocao_ate: produto.promocao_ate,
+          },
+          new Date().toISOString().slice(0, 10),
+        );
+        return {
+          codigo: produto.codigo,
+          nome: produto.nome,
+          preco: precoLegivel(vitrine.cents, produto.moeda),
+          preco_cents: vitrine.cents,
+          ...(vitrine.emPromocao ? { em_promocao: true as const } : {}),
+          ...(produto.marca ? { marca: produto.marca } : {}),
+          ...(produto.descricao ? { descricao: produto.descricao } : {}),
+          disponivel: !produto.controla_estoque || produto.quantidade > 0,
+        };
+      }),
       empate,
       // Relaxamento é o irmão do empate: nos dois a busca sabe que a resposta
       // NÃO é exatamente o que foi pedido, e nos dois quem decide é a pessoa.
@@ -288,6 +306,116 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
       // número que sumiu importava.
       ...(ignorados.length > 0 ? { numeros_ignorados: ignorados } : {}),
       ...(mensagem ? { mensagem } : {}),
+    };
+  },
+};
+
+// ---------------------------------------------------------------------------
+// montar rascunho de pedido (ATT.txt F4 — a IA vende de verdade)
+// ---------------------------------------------------------------------------
+
+const montarPedidoShape = {
+  contact_id: z.string().uuid().optional().describe("o cliente, quando você sabe quem é na conversa"),
+  cliente_nome: z.string().trim().min(2).max(200).describe("nome do cliente para o cabeçalho do pedido"),
+  itens: z
+    .array(
+      z.object({
+        codigo: z.string().trim().min(1).max(60).describe("o CÓDIGO do produto, como voltou em `crm_search_products` — nunca o nome"),
+        quantidade: z.number().int().min(1).max(1000),
+      }),
+    )
+    .min(1)
+    .max(20),
+  observacoes: z.string().trim().max(2000).optional(),
+};
+
+export const commercialCreateOrder: McpToolDefinition<typeof montarPedidoShape> = {
+  name: "commercial_create_order",
+  description:
+    "Monta o RASCUNHO de um pedido comercial a partir do que o cliente pediu na conversa. " +
+    "Use quando o cliente confirmou os itens e as quantidades: a ferramenta cria o pedido como " +
+    "RASCUNHO (origem ia) e devolve o número e o total para você mostrar e pedir a confirmação final. " +
+    "RASCUNHO NÃO É VENDA: estoque não baixa de verdade para rascunho, e um humano aprova depois — " +
+    "diga isso ao cliente ('deixei o pedido montado, o vendedor confirma já já'). " +
+    "Passe CÓDIGOS vindos de `crm_search_products`, nunca nomes lembrados: código que não existe " +
+    "é recusado e a recusa nomeia qual. Preço sai do catálogo, não do seu input — você não informa preço. " +
+    "Se o cliente ainda está comparando opções, NÃO monte pedido: apresente os produtos primeiro.",
+  inputSchema: montarPedidoShape,
+  category: "write",
+  // Piso `ai_operator`, não `agent`: criar pedido muda a casa (estoque
+  // reservado, crédito consumido) e não é trabalho de atendente. `ai_operator`
+  // vive só no token efêmero — nenhuma pessoa o alcança — e é o papel do
+  // agente publicado, então a IA continua alcançando deliberadamente.
+  requiresRole: "ai_operator",
+  requiresScope: "mcp:write",
+  handler: async (input, ctx) => {
+    // Resolve códigos → produtos (match exato no código da org). Nome não
+    // resolve: nome é ambíguo e preço errado é promessa.
+    const codigos = [...new Set(input.itens.map((i) => i.codigo))];
+    const { data: prods, error } = await ctx.supabase
+      .from("catalog_products")
+      .select("id, codigo, preco_cents")
+      .eq("organization_id", ctx.organizationId)
+      .eq("ativo", true)
+      .in("codigo", codigos);
+    if (error) throw new Error(`montar_pedido_falhou: ${error.message}`);
+    const porCodigo = new Map(((prods ?? []) as { id: string; codigo: string; preco_cents: number }[]).map((p) => [p.codigo, p]));
+    const faltando = codigos.find((c) => !porCodigo.has(c));
+    if (faltando) {
+      return {
+        rascunho: false,
+        motivo: "codigo_desconhecido",
+        mensagem: `não há produto com código "${faltando}" no catálogo. Confira com \`crm_search_products\` e tente de novo — não chute outro código.`,
+      };
+    }
+
+    const resultado = await criarPedidoComercial(ctx.supabase, ctx.supabase, {
+      orgId: ctx.organizationId,
+      userId: null,
+      // IA nunca ignora trava comercial: sem estoque ou sem crédito, o
+      // rascunho volta recusado e você explica ao cliente.
+      podeIgnorar: false,
+    }, {
+      contact_id: input.contact_id ?? null,
+      cliente_nome: input.cliente_nome,
+      status: "rascunho",
+      origem: "ia",
+      moeda: "BRL",
+      desconto_cents: 0,
+      frete_cents: 0,
+      modalidade_frete: "retirada",
+      ignorar_estoque: false,
+      ignorar_credito: false,
+      ...(input.observacoes ? { observacoes: input.observacoes } : {}),
+      itens: input.itens.map((i) => {
+        const p = porCodigo.get(i.codigo);
+        return {
+          product_id: p ? p.id : null,
+          quantidade: i.quantidade,
+          preco_unit_cents: p ? p.preco_cents : 0,
+          desconto_pct: 0,
+        };
+      }),
+    });
+
+    if (!resultado.ok) {
+      return {
+        rascunho: false,
+        motivo: resultado.code,
+        mensagem: resultado.message + " Explique ao cliente com suas palavras e ofereça alternativa.",
+      };
+    }
+
+    const pedido = resultado.pedido as { numero: number; total_cents: number; id: string };
+    const total = (pedido.total_cents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+    return {
+      rascunho: true,
+      numero: `PED-${String(pedido.numero).padStart(4, "0")}`,
+      total: `R$ ${total}`,
+      itens: resultado.itens,
+      mensagem:
+        "Rascunho montado — mostre número e total ao cliente e peça a confirmação. " +
+        "Avise que um vendedor confere e aprova em seguida.",
     };
   },
 };

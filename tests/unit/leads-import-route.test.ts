@@ -1,3 +1,4 @@
+// @vitest-environment node
 /**
  * A IMPORTAÇÃO DE LEADS NÃO ACEITA NADA NO ESCURO.
  *
@@ -11,6 +12,12 @@
  *  - O mesmo telefone repetido vira UM contato. O original criava um contato por
  *    linha, e o produto passava a ter a duplicata que ele mesmo fabricou.
  *  - `viewer` não importa.
+ *
+ * O ambiente é `node`, e não o `jsdom` padrão da suíte, de propósito: a rota
+ * roda no runtime do servidor, e o `req.formData()` do undici constrói `File`
+ * do realm do Node — sob o jsdom o parser aborta no brand-check do WebIDL e o
+ * teste passaria a medir o realm do ambiente, não a rota (o mesmo motivo pelo
+ * qual o multipart aqui é montado à mão, ver `pedido` abaixo).
  */
 import { NextRequest } from "next/server";
 import { describe, expect, it, vi, beforeEach } from "vitest";

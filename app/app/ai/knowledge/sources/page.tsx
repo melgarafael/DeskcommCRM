@@ -100,7 +100,7 @@ export default async function AcervoPage() {
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">{t("O que o agente sabe")}</h1>
+        <h1 className="text-2xl font-medium tracking-tight text-text">{t("O que o agente sabe")}</h1>
         <p className="text-sm text-text-muted">
           {t(
             "O material do seu negócio que os assistentes consultam antes de responder. Cada assistente escolhe, na tela dele, o que pode ler daqui.",

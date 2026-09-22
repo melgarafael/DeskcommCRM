@@ -38,9 +38,9 @@ export function AttachmentPreviewDialog({ file, sending, onCancel, onSend }: Pro
         </DialogHeader>
         <div className="flex items-center justify-center rounded-lg bg-muted/40 p-3">
           {isImage && objectUrl && (
-            <img src={objectUrl} alt={file.name} className="max-h-64 rounded-md object-contain" />
+            <img src={objectUrl} alt={file.name} className="max-h-64 rounded-lg object-contain" />
           )}
-          {isVideo && objectUrl && <video src={objectUrl} controls className="max-h-64 rounded-md" />}
+          {isVideo && objectUrl && <video src={objectUrl} controls className="max-h-64 rounded-lg" />}
           {!isImage && !isVideo && (
             <div className="flex items-center gap-3 py-4">
               <FileText size={28} weight="duotone" className="text-primary" aria-hidden />

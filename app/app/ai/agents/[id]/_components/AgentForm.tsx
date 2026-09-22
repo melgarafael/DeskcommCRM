@@ -524,7 +524,7 @@ export function AgentForm(props: Props) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-xl font-semibold tracking-tight">
+            <h2 className="text-xl font-medium tracking-tight text-text">
               {isEdit ? props.agent.name : t("Novo agente")}
             </h2>
             {statusBadge}
@@ -744,7 +744,7 @@ export function AgentForm(props: Props) {
               <p className="text-xs text-destructive">{validation.credential_id}</p>
             ) : null}
             {cred && credSt && credSt !== "validated" ? (
-              <p className="text-xs text-amber-600 dark:text-amber-400">
+              <p className="text-xs text-warning-fg">
                 {t("Credencial selecionada está com status")} {t(STATUS_LABEL[credSt])}
                 {t(". Publish bloqueado até validar.")}
               </p>
@@ -755,7 +755,7 @@ export function AgentForm(props: Props) {
           <Card className="space-y-3 p-4">
             <h3 className="text-sm font-medium">{t("Por qual número ele atende")}</h3>
             {props.routerMembership && (
-              <div className="flex items-start gap-2 rounded-md bg-accent-soft p-3 text-xs text-text-muted">
+              <div className="flex items-start gap-2 rounded-2xl bg-accent-soft p-3 text-xs text-text-muted">
                 <Info className="mt-0.5 shrink-0" aria-hidden />
                 <p>
                   {t("Este agente é acionado pelo roteador")}{" "}

@@ -17246,6 +17246,2529 @@ comment on column public.catalog_products.custo_cents is
 comment on column public.catalog_products.controla_estoque is
   'false = item que não se conta (decant, sob encomenda). A busca do agente não o esconde por quantidade zero.';
 
+-- APÊNDICE 0208 — PEDIDOS COMERCIAIS (idempotente; fonte: supabase/migrations/20260904120000_0208_pedidos_comerciais.sql)
+-- ============================================================================
+
+-- ============================================================================
+-- 0208 — PEDIDOS COMERCIAIS (o coração do sistema de gestão, ATT.txt Fase 2)
+--
+-- ─── Por que tabelas NOVAS, e não a `orders` existente
+--
+-- A mesma razão da 0204 (catálogo): `orders` é ESPELHO da Nuvemshop —
+-- `external_id`, `external_provider`, `payload` e `updated_at_remote` significam
+-- "o que o sistema remoto disse, e quando". Pedido digitado pelo vendedor, pela
+-- IA ou pelo portal B2B teria de inventar os quatro, e um sync futuro da
+-- Nuvemshop (upsert por external_id + delete do que sumiu) apagaria pedido
+-- interno com um `where` esquecido. Ela fica onde está, como espelho. O que
+-- faltava era a tabela dos pedidos que a LOJA possui.
+--
+-- ─── Desenho
+--
+-- `commercial_orders`: um pedido interno — número sequencial por tenant
+-- (PED-0001), cliente (contato + snapshot para histórico), vendedor, status do
+-- ciclo comercial, origem (o badge da tela: ia/vendedor/whatsapp/b2b), totais
+-- em `_cents` + moeda (regra do CLAUDE.md), condição de pagamento, frete.
+--
+-- `commercial_order_items`: um item — produto (FK anulável + snapshot, porque
+-- apagar produto do catálogo não pode apagar o que foi vendido), quantidade,
+-- preço unitário, desconto %, subtotal.
+--
+-- `commercial_order_counters`: o próximo número por tenant. Existe porque
+-- `MAX(numero)+1` na rota tem janela de corrida (dois vendedores finalizando
+-- juntos geram o mesmo número, e um deles toma 409 fantasma). O avanço é
+-- atômico: `INSERT ... ON CONFLICT DO UPDATE ... RETURNING`.
+--
+-- ─── Status: vocabulário FECHADO (CHECK). Origem: ABERTO (sem CHECK)
+--
+-- Status é máquina de estados do produto (rascunho → ... → entregue, com
+-- cancelado fora da linha) — um clone com status legado NÃO deve passar pelo
+-- `update.sh` quebrando. Origem é rótulo de exibição (o badge): mesma doutrina
+-- da 0204 (`origem` do produto), sem CHECK.
+-- ============================================================================
+
+-- ─── Contadores (primeiro: orders referencia ao avançar) ────────────────────
+
+create table if not exists public.commercial_order_counters (
+  organization_id uuid primary key references public.organizations(id) on delete cascade,
+  ultimo_numero integer not null default 0,
+  updated_at timestamptz not null default now(),
+  constraint commercial_order_counters_ultimo_nao_negativo check (ultimo_numero >= 0)
+);
+
+alter table public.commercial_order_counters enable row level security;
+
+drop policy if exists commercial_order_counters_select on public.commercial_order_counters;
+create policy commercial_order_counters_select on public.commercial_order_counters
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+-- Escrita da rota via service role (bypass RLS); a policy existe para o mesmo
+-- motivo das demais tabelas: PostgREST nunca enxerga sem porta.
+drop policy if exists commercial_order_counters_write on public.commercial_order_counters;
+create policy commercial_order_counters_write on public.commercial_order_counters
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+revoke all on public.commercial_order_counters from anon;
+grant select, insert, update, delete on public.commercial_order_counters to authenticated;
+grant all on public.commercial_order_counters to service_role;
+
+-- ─── Pedidos ────────────────────────────────────────────────────────────────
+
+create table if not exists public.commercial_orders (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+
+  -- Numeração sequencial por tenant (PED-0001 na tela). É o `ultimo_numero`
+  -- avançado atomicamente em `commercial_order_counters`, nunca MAX()+1.
+  numero integer not null,
+
+  -- Cliente: contato vivo + snapshot para o histórico (o contato pode mudar de
+  -- nome/telefone; o pedido impresso não pode).
+  contact_id uuid references public.contacts(id) on delete set null,
+  cliente_nome text not null,
+  cliente_documento text,
+
+  -- Vendedor responsável (assignee humano). NULL = sem dono (fila, ou IA).
+  vendedor_user_id uuid references auth.users(id) on delete set null,
+
+  status text not null default 'rascunho',
+
+  -- O badge da tela. Vocabulário ABERTO de propósito (sem CHECK): mesma
+  -- doutrina da 0204.
+  origem text not null default 'vendedor',
+
+  moeda text not null default 'BRL',
+  subtotal_cents bigint not null default 0,
+  desconto_cents bigint not null default 0,
+  frete_cents bigint not null default 0,
+  total_cents bigint not null default 0,
+
+  condicao_pagamento text,
+  observacoes text,
+
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  constraint commercial_orders_numero_positivo check (numero > 0),
+  constraint commercial_orders_status_valido check (
+    status in ('rascunho', 'em_analise', 'aprovado', 'faturado', 'expedido', 'entregue', 'cancelado')
+  ),
+  constraint commercial_orders_moeda_iso check (moeda ~ '^[A-Z]{3}$'),
+  constraint commercial_orders_subtotal_nao_negativo check (subtotal_cents >= 0),
+  constraint commercial_orders_desconto_nao_negativo check (desconto_cents >= 0),
+  constraint commercial_orders_frete_nao_negativo check (frete_cents >= 0),
+  constraint commercial_orders_total_nao_negativo check (total_cents >= 0)
+);
+
+-- O número é a identidade dentro da organização.
+create unique index if not exists commercial_orders_org_numero_key
+  on public.commercial_orders (organization_id, numero);
+
+-- A lista da tela: por status e recência.
+create index if not exists commercial_orders_org_status_idx
+  on public.commercial_orders (organization_id, status, created_at desc);
+
+-- Pedidos do cliente (ficha 360°).
+create index if not exists commercial_orders_org_contact_idx
+  on public.commercial_orders (organization_id, contact_id);
+
+-- Carteira do vendedor (dashboard por vendedor).
+create index if not exists commercial_orders_org_vendedor_idx
+  on public.commercial_orders (organization_id, vendedor_user_id);
+
+alter table public.commercial_orders enable row level security;
+
+drop policy if exists commercial_orders_select on public.commercial_orders;
+create policy commercial_orders_select on public.commercial_orders
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+-- Escrita de `agent` para cima: vendedor e IA criam pedido; viewer não.
+drop policy if exists commercial_orders_write on public.commercial_orders;
+create policy commercial_orders_write on public.commercial_orders
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+revoke all on public.commercial_orders from anon;
+grant select, insert, update, delete on public.commercial_orders to authenticated;
+grant all on public.commercial_orders to service_role;
+
+drop trigger if exists trg_commercial_orders_updated_at on public.commercial_orders;
+create trigger trg_commercial_orders_updated_at
+  before update on public.commercial_orders
+  for each row execute function public.fn_set_updated_at();
+
+-- ─── Itens ──────────────────────────────────────────────────────────────────
+
+create table if not exists public.commercial_order_items (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  order_id uuid not null references public.commercial_orders(id) on delete cascade,
+
+  -- Produto vivo (anulável: apagar do catálogo preserva o histórico via
+  -- snapshot abaixo) + snapshot imutável do que foi vendido.
+  product_id uuid references public.catalog_products(id) on delete set null,
+  produto_codigo text not null,
+  produto_nome text not null,
+
+  quantidade integer not null,
+  preco_unit_cents bigint not null,
+  desconto_pct numeric(5, 2) not null default 0,
+  subtotal_cents bigint not null,
+
+  posicao integer not null default 0,
+
+  created_at timestamptz not null default now(),
+
+  constraint commercial_order_items_quantidade_positiva check (quantidade > 0),
+  constraint commercial_order_items_preco_nao_negativo check (preco_unit_cents >= 0),
+  constraint commercial_order_items_desconto_faixa check (desconto_pct >= 0 and desconto_pct <= 100),
+  constraint commercial_order_items_subtotal_nao_negativo check (subtotal_cents >= 0)
+);
+
+create index if not exists commercial_order_items_order_idx
+  on public.commercial_order_items (order_id, posicao);
+
+alter table public.commercial_order_items enable row level security;
+
+drop policy if exists commercial_order_items_select on public.commercial_order_items;
+create policy commercial_order_items_select on public.commercial_order_items
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists commercial_order_items_write on public.commercial_order_items;
+create policy commercial_order_items_write on public.commercial_order_items
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+revoke all on public.commercial_order_items from anon;
+grant select, insert, update, delete on public.commercial_order_items to authenticated;
+grant all on public.commercial_order_items to service_role;
+
+comment on table public.commercial_orders is
+  'Os pedidos que a LOJA possui — número sequencial por tenant, ciclo rascunho→entregue, origem (badge ia/vendedor/whatsapp/b2b). Distinto de orders, que é ESPELHO da Nuvemshop.';
+comment on column public.commercial_orders.numero is
+  'Sequencial por organização (PED-0001 na tela). Avançado atomicamente via commercial_order_counters, nunca MAX()+1.';
+comment on column public.commercial_orders.origem is
+  'O badge da tela: ia | vendedor | whatsapp | b2b. Vocabulário ABERTO (sem CHECK), mesma doutrina da origem do produto (0204).';
+comment on table public.commercial_order_items is
+  'Itens do pedido comercial, com snapshot de produto (código/nome/preço da venda) para o histórico sobreviver à edição do catálogo.';
+
+-- APÊNDICE 0209 — PRÓXIMO NÚMERO DO PEDIDO (idempotente; fonte: supabase/migrations/20260904130000_0209_proximo_numero_do_pedido.sql)
+
+-- ============================================================================
+-- 0209 — O PRÓXIMO NÚMERO DO PEDIDO (contador atômico)
+--
+-- `MAX(numero)+1` na rota tem janela de corrida: dois vendedores finalizando
+-- juntos leem o mesmo MAX, um deles toma 409 fantasma. A tabela
+-- `commercial_order_counters` (0208) existe para isto, e esta função é o único
+-- escritor dela: `INSERT ... ON CONFLICT DO UPDATE ... RETURNING` é atômico
+-- no Postgres, então dois avanços concorrentes saem com números diferentes.
+--
+-- SECURITY DEFINER de propósito: o contador não pertence a nenhum papel, e a
+-- rota chama com o JWT do usuário. A função NÃO confia no parâmetro sozinho —
+-- a primeira coisa que ela faz é conferir que quem chama é membro da org
+-- (`fn_user_org_ids`), senão levanta exceção. Parâmetro forjado de outra org
+-- morre aqui, não na RLS.
+--
+-- Grants (item 6 da doutrina de Migrations): revoke das DUAS origens de
+-- EXECUTE (`public` e `anon`) e grant só para `authenticated`. Sem o revoke, a
+-- função fica chamável pela anon key como RPC.
+-- ============================================================================
+
+create or replace function public.fn_proximo_numero_pedido(p_org uuid)
+returns integer
+  language plpgsql security definer
+  set search_path to 'public', 'pg_temp'
+as $$
+declare
+  v_numero integer;
+begin
+  if not exists (select 1 from public.fn_user_org_ids() where fn_user_org_ids = p_org)
+     and not public.fn_is_platform_admin() then
+    raise exception 'pedido_numero_org_invalida' using errcode = '42501';
+  end if;
+
+  insert into public.commercial_order_counters (organization_id, ultimo_numero, updated_at)
+  values (p_org, 1, now())
+  on conflict (organization_id)
+  do update set ultimo_numero = public.commercial_order_counters.ultimo_numero + 1,
+                updated_at = now()
+  returning ultimo_numero into v_numero;
+
+  return v_numero;
+end;
+$$;
+
+alter function public.fn_proximo_numero_pedido(uuid) owner to postgres;
+
+revoke execute on function public.fn_proximo_numero_pedido(uuid) from public, anon;
+grant execute on function public.fn_proximo_numero_pedido(uuid) to authenticated;
+grant execute on function public.fn_proximo_numero_pedido(uuid) to service_role;
+
+comment on function public.fn_proximo_numero_pedido(uuid) is
+  'Avança atomicamente o contador de pedidos da org e devolve o próximo número (PED-0001 na tela). Único escritor de commercial_order_counters; confere membership antes de avançar.';
+
+
+-- APÊNDICE 0210 — CATEGORIAS E TABELAS DE PREÇO (idempotente; fonte: supabase/migrations/20260904140000_0210_categorias_e_tabelas_de_preco.sql)
+
+-- ============================================================================
+-- 0210 — CATEGORIAS E TABELAS DE PREÇO (ATT.txt Fase 1)
+--
+-- O `categoria text` livre de `catalog_products` (0204) não sustenta tabela de
+-- preço por grupo nem árvore de categorias: texto livre duplica ("Bebidas" vs
+-- "bebidas") e não tem pai. Entram duas tabelas próprias, e a coluna antiga
+-- FICA — migração de dado em `update.sh` de cliente é o custo que a doutrina
+-- manda não pagar sem necessidade; a tela passa a escrever `categoria_id`, e
+-- `categoria` vira legado legível.
+--
+-- `product_categories`: árvore por `parent_id` auto-FK (NULL = raiz).
+-- `price_tables`: uma tabela (atacado, varejo, cliente X) com desconto
+--   padrão; `price_table_items` sobrescreve o preço por produto.
+-- Regra de preço efetivo (aplicada na rota, não em trigger): item da tabela
+--   > desconto da tabela sobre o base > preço base do produto.
+-- ============================================================================
+
+create table if not exists public.product_categories (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  parent_id uuid references public.product_categories(id) on delete cascade,
+  nome text not null,
+  posicao integer not null default 0,
+  ativo boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint product_categories_nome_obrigatorio check (char_length(trim(nome)) > 0),
+  -- Sem CHECK anti-ciclo no banco: ciclo A→B→A se detecta na escrita da rota
+  -- (sobe a cadeia de pais com limite de profundidade); CHECK recursivo em
+  -- trigger é o tipo de mágica que quebra `update.sh` sem mensagem útil.
+  constraint product_categories_sem_auto_pai check (parent_id is null or parent_id <> id)
+);
+
+create unique index if not exists product_categories_org_nome_pai_key
+  on public.product_categories (organization_id, coalesce(parent_id, '00000000-0000-0000-0000-000000000000'::uuid), nome);
+
+create index if not exists product_categories_org_pai_idx
+  on public.product_categories (organization_id, parent_id);
+
+alter table public.product_categories enable row level security;
+
+drop policy if exists product_categories_select on public.product_categories;
+create policy product_categories_select on public.product_categories
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists product_categories_write on public.product_categories;
+create policy product_categories_write on public.product_categories
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  );
+
+revoke all on public.product_categories from anon;
+grant select, insert, update, delete on public.product_categories to authenticated;
+grant all on public.product_categories to service_role;
+
+drop trigger if exists trg_product_categories_updated_at on public.product_categories;
+create trigger trg_product_categories_updated_at
+  before update on public.product_categories
+  for each row execute function public.fn_set_updated_at();
+
+-- ─── Tabelas de preço ───────────────────────────────────────────────────────
+
+create table if not exists public.price_tables (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  nome text not null,
+  -- Desconto padrão aplicado sobre o preço base quando não há item específico.
+  desconto_pct numeric(5, 2) not null default 0,
+  -- Só uma padrão por org: é ela que o pedido usa quando o cliente não tem
+  -- tabela própria (decisão futura; hoje a rota usa a base + itens).
+  padrao boolean not null default false,
+  ativo boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint price_tables_nome_obrigatorio check (char_length(trim(nome)) > 0),
+  constraint price_tables_desconto_faixa check (desconto_pct >= 0 and desconto_pct <= 100)
+);
+
+create unique index if not exists price_tables_org_nome_key
+  on public.price_tables (organization_id, nome);
+
+-- Uma padrão só: índice único parcial (NULLs não colidem, então o filtro).
+create unique index if not exists price_tables_org_padrao_unica
+  on public.price_tables (organization_id)
+  where padrao is true;
+
+alter table public.price_tables enable row level security;
+
+drop policy if exists price_tables_select on public.price_tables;
+create policy price_tables_select on public.price_tables
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists price_tables_write on public.price_tables;
+create policy price_tables_write on public.price_tables
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  );
+
+revoke all on public.price_tables from anon;
+grant select, insert, update, delete on public.price_tables to authenticated;
+grant all on public.price_tables to service_role;
+
+drop trigger if exists trg_price_tables_updated_at on public.price_tables;
+create trigger trg_price_tables_updated_at
+  before update on public.price_tables
+  for each row execute function public.fn_set_updated_at();
+
+create table if not exists public.price_table_items (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  price_table_id uuid not null references public.price_tables(id) on delete cascade,
+  product_id uuid not null references public.catalog_products(id) on delete cascade,
+  -- Preço final nesta tabela. NULL = vale o desconto padrão da tabela.
+  preco_cents bigint,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint price_table_items_preco_nao_negativo check (preco_cents is null or preco_cents >= 0)
+);
+
+create unique index if not exists price_table_items_tabela_produto_key
+  on public.price_table_items (price_table_id, product_id);
+
+create index if not exists price_table_items_org_tabela_idx
+  on public.price_table_items (organization_id, price_table_id);
+
+alter table public.price_table_items enable row level security;
+
+drop policy if exists price_table_items_select on public.price_table_items;
+create policy price_table_items_select on public.price_table_items
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists price_table_items_write on public.price_table_items;
+create policy price_table_items_write on public.price_table_items
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  );
+
+revoke all on public.price_table_items from anon;
+grant select, insert, update, delete on public.price_table_items to authenticated;
+grant all on public.price_table_items to service_role;
+
+drop trigger if exists trg_price_table_items_updated_at on public.price_table_items;
+create trigger trg_price_table_items_updated_at
+  before update on public.price_table_items
+  for each row execute function public.fn_set_updated_at();
+
+-- O produto ganha a FK para a categoria (a coluna texto `categoria` fica como
+-- legado legível — ver cabeçalho).
+alter table public.catalog_products
+  add column if not exists categoria_id uuid references public.product_categories(id) on delete set null;
+
+create index if not exists catalog_products_categoria_idx
+  on public.catalog_products (organization_id, categoria_id);
+
+comment on table public.product_categories is
+  'Árvore de categorias do catálogo (parent_id NULL = raiz). Substitui o texto livre catalog_products.categoria, que fica como legado.';
+comment on table public.price_tables is
+  'Tabelas de preço (atacado, varejo, cliente X). Preço efetivo: item da tabela > desconto da tabela sobre a base > preço base.';
+comment on table public.price_table_items is
+  'Sobrescrita de preço por produto dentro de uma tabela. preco NULL = vale o desconto padrão da tabela.';
+
+
+-- APÊNDICE 0211 — CRÉDITO DO CLIENTE (idempotente; fonte: supabase/migrations/20260904150000_0211_credito_do_cliente.sql)
+
+-- ============================================================================
+-- 0211 — CRÉDITO DO CLIENTE (ATT.txt Fase 1, ficha 360° Financeiro)
+--
+-- O bloqueio de pedido por limite de crédito (regra Fase 2) precisa de ONDE
+-- guardar o limite. Duas colunas anuláveis em `contacts`: NULL = sem limite
+-- definido (não bloqueia nada) — cliente novo não nasce bloqueado por um
+-- default, e a ausência de análise de crédito é um estado visível, não zero.
+--
+-- Sem tabela nova de propósito: limite e condição são atributos do cliente,
+-- não entidade com ciclo próprio (DIRC letra C — derivável não se cria).
+-- RLS/policies inalteradas: mesmas da tabela.
+-- ============================================================================
+
+alter table public.contacts
+  add column if not exists limite_credito_cents bigint,
+  add column if not exists condicao_pagamento text;
+
+alter table public.contacts
+  drop constraint if exists contacts_limite_credito_nao_negativo;
+
+alter table public.contacts
+  add constraint contacts_limite_credito_nao_negativo
+  check (limite_credito_cents is null or limite_credito_cents >= 0);
+
+comment on column public.contacts.limite_credito_cents is
+  'Teto de crédito em centavos. NULL = sem limite definido (não bloqueia). Soma dos pedidos em aberto + novo pedido acima disto barra a venda, salvo override de gerente.';
+comment on column public.contacts.condicao_pagamento is
+  'Condição padrão do cliente (ex.: 30/60/90 dias). Sugestão no pedido, não trava.';
+
+
+-- APÊNDICE 0212 — EXPEDIÇÃO E ROMANEIO (idempotente; fonte: supabase/migrations/20260904160000_0212_expedicao_e_romaneio.sql)
+
+-- ============================================================================
+-- 0212 — EXPEDIÇÃO E ROMANEIO (ATT.txt Fase 3, transporte próprio)
+--
+-- `shipments`: uma carga — veículo (placa/tipo/motorista em linha, sem tabela
+--   de frota: frota é entidade com ciclo próprio e hoje ninguém a pede),
+--   status do ciclo (montando → em_rota → concluída; cancelada fora da linha).
+-- `shipment_orders`: um pedido dentro da carga — sequência de entrega
+--   (a rota) + status por pedido (na_carga → em_rota → entregue/devolvido).
+--
+-- `commercial_orders.endereco_entrega`: o endereço onde ESTE pedido desce.
+--   Coluna anulável no pedido (não no contato): o mesmo cliente recebe em
+--   endereços diferentes por pedido, e o romaneio imprime o do pedido.
+--   Sem ela o romaneio seria lista de nomes sem onde ir.
+--
+-- Integração com o ciclo do pedido: confirmar entrega avança o pedido para
+-- `entregue` (a rota faz, não trigger — trigger escondendo transição de
+-- status é o tipo de mágica que ninguém acha depurando).
+-- ============================================================================
+
+alter table public.commercial_orders
+  add column if not exists endereco_entrega text;
+
+comment on column public.commercial_orders.endereco_entrega is
+  'Onde ESTE pedido desce. Por pedido, não por cliente: o mesmo cliente recebe em endereços diferentes. O romaneio imprime este.';
+
+create table if not exists public.shipments (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+
+  numero integer not null,
+
+  placa text,
+  veiculo_tipo text,
+  motorista_nome text,
+
+  status text not null default 'montando',
+
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  constraint shipments_numero_positivo check (numero > 0),
+  constraint shipments_status_valido check (
+    status in ('montando', 'em_rota', 'concluida', 'cancelada')
+  )
+);
+
+-- O número da carga é sequencial por tenant, como o do pedido. Reusa a
+-- mecânica atômica (contador próprio): MAX()+1 na rota teria a mesma janela
+-- de corrida da 0208.
+create table if not exists public.commercial_shipment_counters (
+  organization_id uuid primary key references public.organizations(id) on delete cascade,
+  ultimo_numero integer not null default 0,
+  updated_at timestamptz not null default now(),
+  constraint commercial_shipment_counters_ultimo_nao_negativo check (ultimo_numero >= 0)
+);
+
+alter table public.commercial_shipment_counters enable row level security;
+
+drop policy if exists commercial_shipment_counters_select on public.commercial_shipment_counters;
+create policy commercial_shipment_counters_select on public.commercial_shipment_counters
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists commercial_shipment_counters_write on public.commercial_shipment_counters;
+create policy commercial_shipment_counters_write on public.commercial_shipment_counters
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+revoke all on public.commercial_shipment_counters from anon;
+grant select, insert, update, delete on public.commercial_shipment_counters to authenticated;
+grant all on public.commercial_shipment_counters to service_role;
+
+create or replace function public.fn_proximo_numero_carga(p_org uuid)
+returns integer
+  language plpgsql security definer
+  set search_path to 'public', 'pg_temp'
+as $$
+declare
+  v_numero integer;
+begin
+  if not exists (select 1 from public.fn_user_org_ids() where fn_user_org_ids = p_org)
+     and not public.fn_is_platform_admin() then
+    raise exception 'carga_numero_org_invalida' using errcode = '42501';
+  end if;
+
+  insert into public.commercial_shipment_counters (organization_id, ultimo_numero, updated_at)
+  values (p_org, 1, now())
+  on conflict (organization_id)
+  do update set ultimo_numero = public.commercial_shipment_counters.ultimo_numero + 1,
+                updated_at = now()
+  returning ultimo_numero into v_numero;
+
+  return v_numero;
+end;
+$$;
+
+alter function public.fn_proximo_numero_carga(uuid) owner to postgres;
+
+revoke execute on function public.fn_proximo_numero_carga(uuid) from public, anon;
+grant execute on function public.fn_proximo_numero_carga(uuid) to authenticated;
+grant execute on function public.fn_proximo_numero_carga(uuid) to service_role;
+
+create unique index if not exists shipments_org_numero_key
+  on public.shipments (organization_id, numero);
+
+create index if not exists shipments_org_status_idx
+  on public.shipments (organization_id, status, created_at desc);
+
+alter table public.shipments enable row level security;
+
+drop policy if exists shipments_select on public.shipments;
+create policy shipments_select on public.shipments
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists shipments_write on public.shipments;
+create policy shipments_write on public.shipments
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+revoke all on public.shipments from anon;
+grant select, insert, update, delete on public.shipments to authenticated;
+grant all on public.shipments to service_role;
+
+drop trigger if exists trg_shipments_updated_at on public.shipments;
+create trigger trg_shipments_updated_at
+  before update on public.shipments
+  for each row execute function public.fn_set_updated_at();
+
+create table if not exists public.shipment_orders (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  shipment_id uuid not null references public.shipments(id) on delete cascade,
+  order_id uuid not null references public.commercial_orders(id) on delete restrict,
+
+  -- A ordem de entrega (a rota). Base 1, sem buraco obrigatório.
+  sequencia integer not null default 1,
+
+  status text not null default 'na_carga',
+
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  constraint shipment_orders_sequencia_positiva check (sequencia > 0),
+  constraint shipment_orders_status_valido check (
+    status in ('na_carga', 'em_rota', 'entregue', 'devolvido')
+  )
+);
+
+-- Um pedido, uma carga por vez: sem isto o mesmo pedido entra em dois
+-- romaneios e é entregue duas vezes (ou nenhuma, cada motorista achando que
+-- é do outro).
+create unique index if not exists shipment_orders_order_unico
+  on public.shipment_orders (order_id);
+
+create index if not exists shipment_orders_carga_idx
+  on public.shipment_orders (shipment_id, sequencia);
+
+alter table public.shipment_orders enable row level security;
+
+drop policy if exists shipment_orders_select on public.shipment_orders;
+create policy shipment_orders_select on public.shipment_orders
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists shipment_orders_write on public.shipment_orders;
+create policy shipment_orders_write on public.shipment_orders
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+revoke all on public.shipment_orders from anon;
+grant select, insert, update, delete on public.shipment_orders to authenticated;
+grant all on public.shipment_orders to service_role;
+
+drop trigger if exists trg_shipment_orders_updated_at on public.shipment_orders;
+create trigger trg_shipment_orders_updated_at
+  before update on public.shipment_orders
+  for each row execute function public.fn_set_updated_at();
+
+comment on table public.shipments is
+  'Cargas do transporte próprio: veículo + motorista + rota de entregas. O romaneio imprime os pedidos em ordem de sequência.';
+comment on table public.shipment_orders is
+  'Pedidos dentro da carga, com sequência de entrega e status próprio. Um pedido por vez (unique em order_id): sem isto o mesmo pedido entra em dois romaneios.';
+comment on function public.fn_proximo_numero_carga(uuid) is
+  'Avança atomicamente o contador de cargas da org. Mesmo molde da fn_proximo_numero_pedido (0209).';
+
+
+-- APÊNDICE 0214 — EMBARQUE CERTO (idempotente; fonte: supabase/migrations/20260904180000_0214_embarque_certo.sql)
+
+-- ============================================================================
+-- 0214 — EMBARQUE CERTO: quem já foi sai da fila, e devolvido pode voltar
+--
+-- Dois defeitos da 0212, achados no uso:
+--
+-- 1. O pedido embarcado CONTINUAVA na lista de "aguardando embarque": o
+--    status não mudava, e a tela filtrava por status. Efeito: o expedidor
+--    embarcava o mesmo pedido duas vezes (a segunda morria no unique com
+--    mensagem técnica) ou, pior, duvidava da lista inteira.
+--
+-- 2. O `unique(order_id)` TOTAL impedia reembarque para sempre: pedido
+--    devolvido não podia entrar em outra carga, porque a linha histórica
+--    (devolvido) ainda ocupava a unicidade. Histórico e trava eram a mesma
+--    coisa — e não podiam ser.
+--
+-- O conserto separa as duas coisas:
+-- - a TRAVA vira índice parcial: só uma linha ATIVA (na_carga/em_rota) por
+--   pedido. Entregue/devolvido é história, e história não trava reembarque;
+-- - a ROTA avança o pedido para `expedido` ao embarcar (e a tela de
+--   expedição passa a listar só aprovado/faturado — o texto do ATT.txt,
+--   não o conjunto largo da 0212 que incluía em_analise).
+-- ============================================================================
+
+drop index if exists public.shipment_orders_order_unico;
+
+-- Uma carga ativa por vez; história (entregue/devolvido) não trava reembarque.
+create unique index if not exists shipment_orders_order_ativo_unico
+  on public.shipment_orders (order_id)
+  where status in ('na_carga', 'em_rota');
+
+comment on index public.shipment_orders_order_ativo_unico is
+  'Um pedido, uma carga ATIVA por vez. Entregue/devolvido é história e não ocupa a trava — devolvido pode embarcar de novo.';
+
+
+-- APÊNDICE 0213 — FISCAL (idempotente; fonte: supabase/migrations/20260904170000_0213_fiscal_notas.sql)
+
+-- ============================================================================
+-- 0213 — FISCAL: CONFIG + NOTAS (ATT.txt Fase 3, Grupo 6)
+--
+-- `fiscal_settings`: UMA linha por org (singleton por unique em
+--   organization_id) — série, natureza de operação, CFOP padrão, documento do
+--   emitente. Sem ela, emitir é impossível e a rota diz isso (422 nomeando a
+--   tela), em vez de presumir série 1.
+--
+-- `invoices`: a nota. `numero` ANULÁVEL de propósito: quem numera é a SEFAZ
+--   na autorização, não o app na criação — pendente nasce sem número, e o
+--   unique parcial (serie, numero) só vale quando há número. Criar pendente
+--   com número inventado seria prometer documento que não existe.
+--
+-- Status (CHECK fechado): pendente → autorizada | denegada | erro;
+--   cancelada só de autorizada (com motivo) ou pendente. XML e chave chegam
+--   na autorização; o stub (lib/fiscal/provedor.ts) nunca os inventa.
+-- ============================================================================
+
+create table if not exists public.fiscal_settings (
+  organization_id uuid primary key references public.organizations(id) on delete cascade,
+  serie text not null default '1',
+  natureza_operacao text not null default 'Venda de mercadoria',
+  cfop_padrao text not null default '5102',
+  emitente_documento text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint fiscal_settings_serie_obrigatoria check (char_length(trim(serie)) > 0)
+);
+
+alter table public.fiscal_settings enable row level security;
+
+drop policy if exists fiscal_settings_select on public.fiscal_settings;
+create policy fiscal_settings_select on public.fiscal_settings
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+-- Config fiscal é `manager` para cima: série e CFOP errados geram nota
+-- inválida para a empresa inteira.
+drop policy if exists fiscal_settings_write on public.fiscal_settings;
+create policy fiscal_settings_write on public.fiscal_settings
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  );
+
+revoke all on public.fiscal_settings from anon;
+grant select, insert, update, delete on public.fiscal_settings to authenticated;
+grant all on public.fiscal_settings to service_role;
+
+drop trigger if exists trg_fiscal_settings_updated_at on public.fiscal_settings;
+create trigger trg_fiscal_settings_updated_at
+  before update on public.fiscal_settings
+  for each row execute function public.fn_set_updated_at();
+
+create table if not exists public.invoices (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  order_id uuid references public.commercial_orders(id) on delete set null,
+
+  serie text not null,
+  -- NULL até a autorização: quem numera é a SEFAZ, não o app.
+  numero integer,
+  chave_acesso text,
+  xml text,
+
+  status text not null default 'pendente',
+  provedor text not null default 'stub',
+  erro text,
+
+  total_cents bigint not null,
+
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  constraint invoices_status_valido check (
+    status in ('pendente', 'autorizada', 'denegada', 'cancelada', 'erro')
+  ),
+  constraint invoices_numero_positivo check (numero is null or numero > 0),
+  constraint invoices_total_nao_negativo check (total_cents >= 0)
+);
+
+create unique index if not exists invoices_org_serie_numero_key
+  on public.invoices (organization_id, serie, numero)
+  where numero is not null;
+
+create unique index if not exists invoices_chave_unica
+  on public.invoices (chave_acesso)
+  where chave_acesso is not null;
+
+create index if not exists invoices_org_status_idx
+  on public.invoices (organization_id, status, created_at desc);
+
+create index if not exists invoices_org_pedido_idx
+  on public.invoices (organization_id, order_id);
+
+alter table public.invoices enable row level security;
+
+drop policy if exists invoices_select on public.invoices;
+create policy invoices_select on public.invoices
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists invoices_write on public.invoices;
+create policy invoices_write on public.invoices
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+revoke all on public.invoices from anon;
+grant select, insert, update, delete on public.invoices to authenticated;
+grant all on public.invoices to service_role;
+
+drop trigger if exists trg_invoices_updated_at on public.invoices;
+create trigger trg_invoices_updated_at
+  before update on public.invoices
+  for each row execute function public.fn_set_updated_at();
+
+comment on table public.fiscal_settings is
+  'Config fiscal da org (singleton): série, natureza, CFOP, documento do emitente. Sem ela, emitir é 422 nomeando a tela.';
+comment on table public.invoices is
+  'Notas fiscais. numero NULL até a autorização (quem numera é a SEFAZ). O provedor stub nunca autoriza: pendente é o estado honesto sem emissor.';
+comment on column public.invoices.numero is
+  'NULL até a autorização. Criar pendente COM número inventado seria prometer documento que não existe.';
+
+
+-- APÊNDICE 0215 — FISCAL EMITENTE COMPLETO (idempotente; fonte: supabase/migrations/20260904190000_0215_fiscal_emitente_completo.sql)
+
+-- ============================================================================
+-- 0215 — FISCAL PARA VALER: emitente completo + ambiente + certificado
+--
+-- A 0213 nasceu mínima (série/natureza/CFOP) porque o único provedor era o
+-- stub. O emissor real (sped-nfe via sidecar, `fiscal/sidecar/`) precisa de
+-- MAIS: IE, regime tributário (CRT), endereço completo do emitente, ambiente
+-- (homologação/produção) e ONDE está o certificado A1 + sua senha cifrada.
+--
+-- A senha usa a MESMA infra de cifra do resto do repo (`fn_encrypt_oauth` /
+-- `fn_decrypt_oauth`, precedente Meta/Zernio em `lib/webhooks/secrets.ts`):
+-- RPCs com GRANT só para service_role, chamadas com admin client. Nenhuma
+-- função nova, nenhuma chave nova — e plaintext de senha nunca toca o banco.
+--
+-- `ambiente` CHECK fechado: só homologação ou produção. Produção sem
+-- certificado é 422 na rota (não existe "emitir de verdade sem identidade").
+-- ============================================================================
+
+alter table public.fiscal_settings
+  add column if not exists ie text,
+  add column if not exists crt text not null default '1',
+  add column if not exists logradouro text,
+  add column if not exists numero_end text,
+  add column if not exists bairro text,
+  add column if not exists municipio text,
+  add column if not exists uf text,
+  add column if not exists cep text,
+  add column if not exists ambiente text not null default 'homologacao',
+  add column if not exists provedor text not null default 'stub',
+  add column if not exists certificado_path text,
+  add column if not exists certificado_senha_encrypted bytea;
+
+alter table public.fiscal_settings
+  drop constraint if exists fiscal_settings_ambiente_valido;
+
+alter table public.fiscal_settings
+  add constraint fiscal_settings_ambiente_valido
+  check (ambiente in ('homologacao', 'producao'));
+
+alter table public.fiscal_settings
+  drop constraint if exists fiscal_settings_provedor_valido;
+
+alter table public.fiscal_settings
+  add constraint fiscal_settings_provedor_valido
+  check (provedor in ('stub', 'spednfe'));
+
+alter table public.fiscal_settings
+  drop constraint if exists fiscal_settings_crt_valido;
+
+alter table public.fiscal_settings
+  add constraint fiscal_settings_crt_valido
+  check (crt in ('1', '2', '3'));
+
+alter table public.invoices
+  add column if not exists protocolo text,
+  add column if not exists sefaz_cstat text,
+  add column if not exists sefaz_xmotivo text;
+
+comment on column public.fiscal_settings.ambiente is
+  'homologacao (default, seguro) ou producao. Produção sem certificado é 422 na rota.';
+comment on column public.fiscal_settings.provedor is
+  'stub (default, honesto sem emissor) ou spednfe (sidecar PHP em fiscal/sidecar/).';
+comment on column public.fiscal_settings.certificado_path is
+  'Caminho do .pfx A1 DENTRO do volume do sidecar (ex.: /certs/empresa.pfx). Nunca URL pública.';
+comment on column public.fiscal_settings.certificado_senha_encrypted is
+  'Senha do .pfx cifrada (mesma infra fn_encrypt_oauth). Plaintext nunca toca o banco.';
+
+
+-- APÊNDICE 0216 — NCM NO PRODUTO (idempotente; fonte: supabase/migrations/20260904200000_0216_ncm_no_produto.sql)
+
+-- ============================================================================
+-- 0216 — NCM E UNIDADE NO PRODUTO (base fiscal do item)
+--
+-- A NF-e exige NCM por item: sem ele, o sidecar sped-nfe não tem o que
+-- mandar, e a emissão morre em 422 nomeando o produto. Colunas anuláveis —
+-- produto sem NCM vende normal no balcão/WhatsApp; só não vira nota até
+-- alguém preencher (a rota de emissão lista quais faltam).
+--
+-- `unidade` (UN, CX, KG…) e `cfop` específico do produto seguem a mesma
+-- regra: NULL = vale o padrão (unidade UN, CFOP da config fiscal).
+-- ============================================================================
+
+alter table public.catalog_products
+  add column if not exists ncm text,
+  add column if not exists unidade text,
+  add column if not exists cfop text;
+
+alter table public.catalog_products
+  drop constraint if exists catalog_products_ncm_formato;
+
+alter table public.catalog_products
+  add constraint catalog_products_ncm_formato
+  check (ncm is null or ncm ~ '^\d{8}$');
+
+comment on column public.catalog_products.ncm is
+  'NCM com 8 dígitos, sem ponto. NULL = vende sem nota até preencher; a emissão lista os produtos sem NCM em vez de presumir.';
+comment on column public.catalog_products.unidade is
+  'Unidade comercial (UN, CX, KG). NULL = UN.';
+comment on column public.catalog_products.cfop is
+  'CFOP específico do produto. NULL = o CFOP padrão da config fiscal.';
+
+-- Código IBGE do município do emitente (7 dígitos): a NF-e exige cMunFG, e
+-- nome de município não vira código sozinho. NULL = a emissão pede.
+alter table public.fiscal_settings
+  add column if not exists codigo_municipio text;
+
+comment on column public.fiscal_settings.codigo_municipio is
+  'IBGE com 7 dígitos (ex.: 3550308 São Paulo). Exigido na emissão; sem ele, 422 nomeando o campo.';
+
+
+-- APÊNDICE 0217 — CONTADOR PARA SERVICE ROLE (idempotente; fonte: supabase/migrations/20260904210000_0217_contador_para_service_role.sql)
+
+-- ============================================================================
+-- 0217 — SIDECAR INTERNO TAMBÉM NUMERA (service_role no contador)
+--
+-- A `fn_proximo_numero_pedido` (0209) confere membership via `auth.uid()`.
+-- Chamada com service_role (tool de IA, worker), `auth.uid()` é NULL e a
+-- função recusava — mesmo a org sendo a do contexto confiável.
+--
+-- Service role BYPASSA toda RLS por desenho: exigir membership dele seria
+-- mais restritivo que o resto do banco, sem ganhar nada (quem tem a service
+-- key já lê/escreve tudo). O firewall continua valendo para `authenticated`:
+-- usuário forjando outra org morre no 42501 como antes.
+-- ============================================================================
+
+create or replace function public.fn_proximo_numero_pedido(p_org uuid)
+returns integer
+  language plpgsql security definer
+  set search_path to 'public', 'pg_temp'
+as $$
+declare
+  v_numero integer;
+begin
+  if (auth.jwt() ->> 'role') <> 'service_role'
+     and not exists (select 1 from public.fn_user_org_ids() where fn_user_org_ids = p_org)
+     and not public.fn_is_platform_admin() then
+    raise exception 'pedido_numero_org_invalida' using errcode = '42501';
+  end if;
+
+  insert into public.commercial_order_counters (organization_id, ultimo_numero, updated_at)
+  values (p_org, 1, now())
+  on conflict (organization_id)
+  do update set ultimo_numero = public.commercial_order_counters.ultimo_numero + 1,
+                updated_at = now()
+  returning ultimo_numero into v_numero;
+
+  return v_numero;
+end;
+$$;
+
+alter function public.fn_proximo_numero_pedido(uuid) owner to postgres;
+
+revoke execute on function public.fn_proximo_numero_pedido(uuid) from public, anon;
+grant execute on function public.fn_proximo_numero_pedido(uuid) to authenticated;
+grant execute on function public.fn_proximo_numero_pedido(uuid) to service_role;
+
+-- Mesma razão para a irmã das cargas.
+create or replace function public.fn_proximo_numero_carga(p_org uuid)
+returns integer
+  language plpgsql security definer
+  set search_path to 'public', 'pg_temp'
+as $$
+declare
+  v_numero integer;
+begin
+  if (auth.jwt() ->> 'role') <> 'service_role'
+     and not exists (select 1 from public.fn_user_org_ids() where fn_user_org_ids = p_org)
+     and not public.fn_is_platform_admin() then
+    raise exception 'carga_numero_org_invalida' using errcode = '42501';
+  end if;
+
+  insert into public.commercial_shipment_counters (organization_id, ultimo_numero, updated_at)
+  values (p_org, 1, now())
+  on conflict (organization_id)
+  do update set ultimo_numero = public.commercial_shipment_counters.ultimo_numero + 1,
+                updated_at = now()
+  returning ultimo_numero into v_numero;
+
+  return v_numero;
+end;
+$$;
+
+alter function public.fn_proximo_numero_carga(uuid) owner to postgres;
+
+revoke execute on function public.fn_proximo_numero_carga(uuid) from public, anon;
+grant execute on function public.fn_proximo_numero_carga(uuid) to authenticated;
+grant execute on function public.fn_proximo_numero_carga(uuid) to service_role;
+
+
+-- APÊNDICE 0218 — COMPROVANTE DE ENTREGA (idempotente; fonte: supabase/migrations/20260904220000_0218_comprovante_de_entrega.sql)
+
+-- ============================================================================
+-- 0218 — COMPROVANTE DE ENTREGA (ATT.txt F3, controle de entrega)
+--
+-- `shipment_proofs`: a foto/assinatura da entrega — um registro por pedido
+-- (unique em order_id: a última prova vale; reentrega sobrescreve via
+-- upsert, e a história de QUEM entregou QUANDO está no audit log).
+--
+-- Bucket `delivery-proofs` PRIVADO, mesmo molde do `whatsapp-media` (0055):
+-- sem policies em storage.objects para anon/authenticated; upload e signed
+-- URL só via service role nos endpoints. Teto 10 MB (foto de celular) e só
+-- imagem — o Storage compara o header que QUEM SOBE escolhe, então a rota
+-- fareja os bytes mágicos antes de aceitar (JPEG/PNG/WebP).
+-- ============================================================================
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('delivery-proofs', 'delivery-proofs', false, 10485760, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update set
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+create table if not exists public.shipment_proofs (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  shipment_id uuid not null references public.shipments(id) on delete cascade,
+  order_id uuid not null references public.commercial_orders(id) on delete cascade,
+
+  -- Caminho no bucket (org/order/uuid.ext). Grava-se o CAMINHO, nunca a URL
+  -- (DIRC-C, mesmo motivo do logo em 0158): URL assinada vence.
+  storage_path text not null,
+  observacao text,
+
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+
+  constraint shipment_proofs_path_obrigatorio check (char_length(trim(storage_path)) > 0)
+);
+
+-- Um comprovante por pedido: reentrega com foto nova substitui (upsert), e
+-- QUEM/QUANDO fica no audit log, não em N linhas.
+create unique index if not exists shipment_proofs_order_unico
+  on public.shipment_proofs (order_id);
+
+create index if not exists shipment_proofs_carga_idx
+  on public.shipment_proofs (shipment_id);
+
+alter table public.shipment_proofs enable row level security;
+
+drop policy if exists shipment_proofs_select on public.shipment_proofs;
+create policy shipment_proofs_select on public.shipment_proofs
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists shipment_proofs_write on public.shipment_proofs;
+create policy shipment_proofs_write on public.shipment_proofs
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+revoke all on public.shipment_proofs from anon;
+grant select, insert, update, delete on public.shipment_proofs to authenticated;
+grant all on public.shipment_proofs to service_role;
+
+comment on table public.shipment_proofs is
+  'Comprovantes de entrega (foto/assinatura): um por pedido, caminho no bucket delivery-proofs. Reentrega sobrescreve via upsert.';
+
+
+-- APÊNDICE 0219 — FOTOS DO PRODUTO (idempotente; fonte: supabase/migrations/20260904230000_0219_fotos_do_produto.sql)
+
+-- ============================================================================
+-- 0219 — FOTOS DO PRODUTO (ATT.txt F1: upload múltiplo, máx 5)
+--
+-- `product_images`: uma linha por foto (produto + caminho + posição). A capa
+-- é a de menor posição — sem coluna `is_cover` para não sincronizar (duas
+-- fontes para "qual é a capa" divergem; ORDER BY não diverge).
+--
+-- Bucket `product-images` PÚBLICO, molde do `brand-logos` (0158): foto de
+-- produto aparece em tela sem sessão (catálogo, portal futuro), e URL
+-- assinada VENCE — a foto sumiria sozinha. Contenções iguais: ZERO policy em
+-- storage.objects (público abre LEITURA, não escrita), caminho não-enumerável
+-- `<org>/<uuid>.ext`, MIME como backstop (a rota fareja os bytes).
+-- Teto 2 MB por foto: thumbnail de catálogo não precisa de mais, e a cota do
+-- Supabase é do cliente.
+-- ============================================================================
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('product-images', 'product-images', true, 2097152, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update set
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+create table if not exists public.product_images (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  product_id uuid not null references public.catalog_products(id) on delete cascade,
+
+  -- Caminho no bucket. Grava-se o CAMINHO, nunca a URL (DIRC-C).
+  storage_path text not null,
+  posicao integer not null default 0,
+
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+
+  constraint product_images_path_obrigatorio check (char_length(trim(storage_path)) > 0),
+  constraint product_images_posicao_nao_negativa check (posicao >= 0)
+);
+
+create index if not exists product_images_produto_idx
+  on public.product_images (product_id, posicao);
+
+alter table public.product_images enable row level security;
+
+drop policy if exists product_images_select on public.product_images;
+create policy product_images_select on public.product_images
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+-- Foto de produto é catálogo: escrita manager+, como preço.
+drop policy if exists product_images_write on public.product_images;
+create policy product_images_write on public.product_images
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  );
+
+revoke all on public.product_images from anon;
+grant select, insert, update, delete on public.product_images to authenticated;
+grant all on public.product_images to service_role;
+
+comment on table public.product_images is
+  'Fotos do produto (máx 5, contado na rota): capa = menor posição. Bucket público product-images; caminho não-enumerável.';
+
+
+-- APÊNDICE 0220 — PROSPECÇÃO (idempotente; fonte: supabase/migrations/20260905120000_0220_prospeccao.sql)
+
+-- ============================================================================
+-- 0220 — PROSPECÇÃO DE EMPRESAS (descoberta por região + categoria)
+--
+-- `prospecting_searches`: uma busca = um job. Parâmetros, grade de células
+--   (total/next/processed = checkpoint: continuar da 188, nunca recomeçar),
+--   status queued/running/paused/completed/failed/cancelled, estatísticas
+--   (encontradas/novas/duplicadas/erros), custo (requests/details/cents) e
+--   hash dos parâmetros para cache (TTL configurável, sem reconsultar tudo).
+-- `business_prospects`: a empresa descoberta, normalizada. Deduplicação em
+--   camadas (ver lib/prospeccao/dedup.ts): unique SÓ em (provider,
+--   external_id) — telefone e domínio viram ÍNDICE, nunca unique (matriz e
+--   franquia compartilham os dois; unique fundiria lojas distintas).
+-- `prospect_search_results`: N:N busca↔prospect com primeira_vez (de onde
+--   sai "novas nesta busca" sem comparar coletas).
+-- `prospecting_campaigns`: multi-cidades + recorrência (dias; o agendador é
+--   fase futura — a coluna guarda a intenção, não finge agendar).
+-- `prospecting_settings`: singleton por org. A chave do Google vai CIFRADA
+--   (mesma infra fn_encrypt_oauth); o GET nunca a devolve (só `tem_chave`).
+--
+-- RLS molde 0204: leitura org, escrita agent+ (settings manager+).
+-- ============================================================================
+
+create table if not exists public.prospecting_searches (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  campaign_id uuid,
+
+  categorias text[] not null default '{}',
+  cidade text,
+  estado text,
+  pais text not null default 'BR',
+  latitude double precision,
+  longitude double precision,
+  raio_km integer not null default 30,
+  max_empresas integer not null default 500,
+  provider text not null default 'google_places',
+
+  status text not null default 'queued',
+
+  grid_size_km numeric(6, 2) not null default 5,
+  grid_overlap_pct numeric(5, 2) not null default 10,
+  total_celulas integer not null default 0,
+  celulas_processadas integer not null default 0,
+
+  encontradas integer not null default 0,
+  novas integer not null default 0,
+  duplicadas integer not null default 0,
+  erros integer not null default 0,
+  requisicoes integer not null default 0,
+  detalhes integer not null default 0,
+  custo_estimado_cents integer not null default 0,
+  ultimo_erro text,
+
+  search_hash text,
+
+  created_by uuid references auth.users(id) on delete set null,
+  started_at timestamptz,
+  finished_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  constraint prospecting_searches_status_valido check (
+    status in ('queued', 'running', 'paused', 'completed', 'failed', 'cancelled')
+  ),
+  constraint prospecting_searches_raio_positivo check (raio_km > 0 and raio_km <= 500),
+  constraint prospecting_searches_max_positivo check (max_empresas > 0 and max_empresas <= 10000)
+);
+
+create index if not exists prospecting_searches_org_status_idx
+  on public.prospecting_searches (organization_id, status, created_at desc);
+create index if not exists prospecting_searches_hash_idx
+  on public.prospecting_searches (organization_id, search_hash);
+
+alter table public.prospecting_searches enable row level security;
+
+drop policy if exists prospecting_searches_select on public.prospecting_searches;
+create policy prospecting_searches_select on public.prospecting_searches
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists prospecting_searches_write on public.prospecting_searches;
+create policy prospecting_searches_write on public.prospecting_searches
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+revoke all on public.prospecting_searches from anon;
+grant select, insert, update, delete on public.prospecting_searches to authenticated;
+grant all on public.prospecting_searches to service_role;
+
+drop trigger if exists trg_prospecting_searches_updated_at on public.prospecting_searches;
+create trigger trg_prospecting_searches_updated_at
+  before update on public.prospecting_searches
+  for each row execute function public.fn_set_updated_at();
+
+-- ─── Prospects ──────────────────────────────────────────────────────────────
+
+create table if not exists public.business_prospects (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+
+  nome text not null,
+  nome_normalizado text not null,
+  categoria text,
+  categorias text[] not null default '{}',
+
+  telefone text,
+  telefone_normalizado text,
+  whatsapp_potencial boolean not null default false,
+  website text,
+  dominio text,
+  email text,
+
+  endereco text,
+  logradouro text,
+  numero_end text,
+  bairro text,
+  cidade text,
+  estado text,
+  cep text,
+  pais text not null default 'BR',
+  latitude double precision,
+  longitude double precision,
+
+  provider text not null,
+  external_id text,
+  external_url text,
+
+  nota numeric(2, 1),
+  total_avaliacoes integer not null default 0,
+  horario_funcionamento jsonb,
+
+  status_comercial text not null default 'novo',
+  score integer not null default 0,
+
+  -- Vínculo CRM (não duplica cliente: ver §17 do plano).
+  contact_id uuid references public.contacts(id) on delete set null,
+  lead_id uuid references public.crm_leads(id) on delete set null,
+
+  -- Sugestão de duplicata (revisão humana, nunca merge automático).
+  candidato_duplicado_de uuid references public.business_prospects(id) on delete set null,
+
+  -- LGPD/governança (§26): origem, verificação, não-contatar, bloqueio.
+  source text,
+  source_url text,
+  discovered_at timestamptz not null default now(),
+  last_verified_at timestamptz,
+  do_not_contact boolean not null default false,
+  bloqueado boolean not null default false,
+
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  constraint business_prospects_status_valido check (
+    status_comercial in ('novo', 'nao_analisado', 'qualificado', 'contato_pendente', 'contatado', 'respondeu', 'sem_interesse', 'cliente', 'descartado')
+  ),
+  constraint business_prospects_score_faixa check (score >= 0 and score <= 100),
+  constraint business_prospects_nota_faixa check (nota is null or (nota >= 0 and nota <= 5))
+);
+
+-- Deduplicação nível 1 (§8): provider + id externo é identidade.
+create unique index if not exists business_prospects_provider_id_key
+  on public.business_prospects (organization_id, provider, external_id)
+  where external_id is not null;
+
+-- Níveis 2–5 viram ÍNDICE (não unique): matriz/franquia compartilha telefone
+-- e domínio entre lojas distintas — unique fundiria o que não deve.
+create index if not exists business_prospects_org_fone_idx
+  on public.business_prospects (organization_id, telefone_normalizado)
+  where telefone_normalizado is not null;
+create index if not exists business_prospects_org_dominio_idx
+  on public.business_prospects (organization_id, dominio)
+  where dominio is not null;
+create index if not exists business_prospects_org_nome_idx
+  on public.business_prospects (organization_id, nome_normalizado);
+create index if not exists business_prospects_org_cidade_idx
+  on public.business_prospects (organization_id, cidade, estado);
+create index if not exists business_prospects_org_status_idx
+  on public.business_prospects (organization_id, status_comercial);
+
+alter table public.business_prospects enable row level security;
+
+drop policy if exists business_prospects_select on public.business_prospects;
+create policy business_prospects_select on public.business_prospects
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists business_prospects_write on public.business_prospects;
+create policy business_prospects_write on public.business_prospects
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+revoke all on public.business_prospects from anon;
+grant select, insert, update, delete on public.business_prospects to authenticated;
+grant all on public.business_prospects to service_role;
+
+drop trigger if exists trg_business_prospects_updated_at on public.business_prospects;
+create trigger trg_business_prospects_updated_at
+  before update on public.business_prospects
+  for each row execute function public.fn_set_updated_at();
+
+-- ─── N:N busca↔prospect ─────────────────────────────────────────────────────
+
+create table if not exists public.prospect_search_results (
+  search_id uuid not null references public.prospecting_searches(id) on delete cascade,
+  prospect_id uuid not null references public.business_prospects(id) on delete cascade,
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  primeira_vez boolean not null default true,
+  created_at timestamptz not null default now(),
+  primary key (search_id, prospect_id)
+);
+
+create index if not exists prospect_search_results_prospect_idx
+  on public.prospect_search_results (prospect_id);
+
+alter table public.prospect_search_results enable row level security;
+
+drop policy if exists prospect_search_results_select on public.prospect_search_results;
+create policy prospect_search_results_select on public.prospect_search_results
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists prospect_search_results_write on public.prospect_search_results;
+create policy prospect_search_results_write on public.prospect_search_results
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+revoke all on public.prospect_search_results from anon;
+grant select, insert, update, delete on public.prospect_search_results to authenticated;
+grant all on public.prospect_search_results to service_role;
+
+-- ─── Campanhas ──────────────────────────────────────────────────────────────
+
+create table if not exists public.prospecting_campaigns (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  nome text not null,
+  categorias text[] not null default '{}',
+  -- [{cidade, estado}] — JSON porque cidade não é entidade (sem ciclo próprio).
+  cidades jsonb not null default '[]',
+  status text not null default 'rascunho',
+  recorrencia_dias integer,
+  ultima_execucao_at timestamptz,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint prospecting_campaigns_status_valido check (
+    status in ('rascunho', 'ativa', 'pausada', 'concluida')
+  )
+);
+
+alter table public.prospecting_campaigns enable row level security;
+
+drop policy if exists prospecting_campaigns_select on public.prospecting_campaigns;
+create policy prospecting_campaigns_select on public.prospecting_campaigns
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists prospecting_campaigns_write on public.prospecting_campaigns;
+create policy prospecting_campaigns_write on public.prospecting_campaigns
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+revoke all on public.prospecting_campaigns from anon;
+grant select, insert, update, delete on public.prospecting_campaigns to authenticated;
+grant all on public.prospecting_campaigns to service_role;
+
+drop trigger if exists trg_prospecting_campaigns_updated_at on public.prospecting_campaigns;
+create trigger trg_prospecting_campaigns_updated_at
+  before update on public.prospecting_campaigns
+  for each row execute function public.fn_set_updated_at();
+
+alter table public.prospecting_searches
+  drop constraint if exists prospecting_searches_campaign_fk;
+alter table public.prospecting_searches
+  add constraint prospecting_searches_campaign_fk
+  foreign key (campaign_id) references public.prospecting_campaigns(id) on delete set null;
+
+-- ─── Settings (singleton por org) ───────────────────────────────────────────
+
+create table if not exists public.prospecting_settings (
+  organization_id uuid primary key references public.organizations(id) on delete cascade,
+  provider_ativo text not null default 'google_places',
+  -- Cifrada (mesma infra fn_encrypt_oauth). O GET nunca a devolve.
+  google_api_key_encrypted bytea,
+  limite_por_busca integer not null default 500,
+  limite_diario integer not null default 2000,
+  grid_size_km numeric(6, 2) not null default 5,
+  raio_padrao_km integer not null default 30,
+  concorrencia integer not null default 2,
+  retries integer not null default 3,
+  timeout_ms integer not null default 15000,
+  requisicoes_por_minuto integer not null default 60,
+  cache_ttl_dias integer not null default 30,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint prospecting_settings_limites_positivos check (
+    limite_por_busca > 0 and limite_diario > 0 and concorrencia > 0 and concorrencia <= 10
+  )
+);
+
+alter table public.prospecting_settings enable row level security;
+
+drop policy if exists prospecting_settings_select on public.prospecting_settings;
+create policy prospecting_settings_select on public.prospecting_settings
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+-- Config é `manager` para cima: chave de API e teto de custo.
+drop policy if exists prospecting_settings_write on public.prospecting_settings;
+create policy prospecting_settings_write on public.prospecting_settings
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  );
+
+revoke all on public.prospecting_settings from anon;
+grant select, insert, update, delete on public.prospecting_settings to authenticated;
+grant all on public.prospecting_settings to service_role;
+
+drop trigger if exists trg_prospecting_settings_updated_at on public.prospecting_settings;
+create trigger trg_prospecting_settings_updated_at
+  before update on public.prospecting_settings
+  for each row execute function public.fn_set_updated_at();
+
+comment on table public.prospecting_settings is
+  'Config da prospecção (singleton): provider, limites, grade, ritmo. Chave cifrada; GET devolve só tem_chave.';
+
+comment on table public.prospecting_searches is
+  'Uma busca = um job com checkpoint (total/next/processed). Cache por search_hash; custo em requests/details/cents.';
+comment on table public.business_prospects is
+  'Empresas descobertas e normalizadas. Dedup: unique só em (provider, external_id); telefone/domínio são índice (matriz compartilha). Score é heurística documentada.';
+comment on table public.prospecting_campaigns is
+  'Multi-cidades + categorias. recorrencia_dias guarda a intenção; o agendador é fase futura.';
+
+
+-- APÊNDICE 0221 — POLITICAS COMERCIAIS (idempotente; fonte: supabase/migrations/20260905220000_0221_politicas_comerciais.sql)
+
+-- ============================================================================
+-- 0221 — POLÍTICAS COMERCIAIS (workflow de aprovação e travas da venda)
+--
+-- Singleton por org: teto de desconto do vendedor, permissão de estoque
+-- negativo e comissão padrão. Sem ela, defaults seguros valem (5%, sem
+-- negativo): loja nova não nasce liberando tudo por ausência de config.
+-- RLS: leitura org, escrita manager+ (política comercial é decisão de dono).
+-- ============================================================================
+
+create table if not exists public.commercial_policies (
+  organization_id uuid primary key references public.organizations(id) on delete cascade,
+  -- Desconto (item ou geral) até aqui: vendedor aprova sozinho. Acima: o
+  -- pedido cai em `em_analise` sozinho (a rota força) e só gerente aprova.
+  desconto_max_vendedor_pct numeric(5, 2) not null default 5,
+  -- Estoque pode negativar? false = bloqueia (com override de gerente);
+  -- true = vende mesmo sem saldo (vale para sob-encomenda global).
+  permite_estoque_negativo boolean not null default false,
+  -- Comissão padrão da operação (% sobre o total). NULL = sem comissão
+  -- configurada (a tela não mostra estimativa em vez de chutar).
+  comissao_padrao_pct numeric(5, 2),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint commercial_policies_desconto_faixa check (
+    desconto_max_vendedor_pct >= 0 and desconto_max_vendedor_pct <= 100
+  ),
+  constraint commercial_policies_comissao_faixa check (
+    comissao_padrao_pct is null or (comissao_padrao_pct >= 0 and comissao_padrao_pct <= 100)
+  )
+);
+
+alter table public.commercial_policies enable row level security;
+
+drop policy if exists commercial_policies_select on public.commercial_policies;
+create policy commercial_policies_select on public.commercial_policies
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists commercial_policies_write on public.commercial_policies;
+create policy commercial_policies_write on public.commercial_policies
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  );
+
+revoke all on public.commercial_policies from anon;
+grant select, insert, update, delete on public.commercial_policies to authenticated;
+grant all on public.commercial_policies to service_role;
+
+drop trigger if exists trg_commercial_policies_updated_at on public.commercial_policies;
+create trigger trg_commercial_policies_updated_at
+  before update on public.commercial_policies
+  for each row execute function public.fn_set_updated_at();
+
+comment on table public.commercial_policies is
+  'Trava comercial da org: teto de desconto sem aprovação, estoque negativo e comissão. Sem linha, valem os defaults seguros da DDL.';
+
+
+-- APÊNDICE 0222 — PEDIDO COMPLETO (idempotente; fonte: supabase/migrations/20260905230000_0222_pedido_completo.sql)
+
+-- ============================================================================
+-- 0222 — PEDIDO COMPLETO (observações separadas, entrega, desconto %, parcelas)
+--
+-- - `obs_interna`: o que a equipe lê e o cliente nunca vê. `observacoes`
+--   segue existindo como a do CLIENTE (imprime no PDF) — separar sem migrar
+--   dado: o que já foi escrito era visível, e escondê-lo retroativamente
+--   mudaria documento já entregue.
+-- - Entrega: transportadora, modalidade e previsão (o romaneio imprime).
+-- - `desconto_pct`: desconto GERAL em % (alternativo a desconto_cents em R$;
+--   valem juntos, somando — a rota calcula). Por item continua desconto_pct.
+-- - `parcelas`: espelho calculado da condição (30/60/90 → 3 linhas com
+--   vencimento). JSON porque parcela não tem ciclo próprio: recalcular é
+--   barato, e entidade sem comportamento é tabela à toa (DIRC-C).
+-- ============================================================================
+
+alter table public.commercial_orders
+  add column if not exists obs_interna text,
+  add column if not exists transportadora_nome text,
+  add column if not exists modalidade_frete text not null default 'retirada',
+  add column if not exists previsao_entrega date,
+  add column if not exists desconto_pct numeric(5, 2),
+  add column if not exists parcelas jsonb not null default '[]';
+
+alter table public.commercial_orders
+  drop constraint if exists commercial_orders_modalidade_valida;
+
+alter table public.commercial_orders
+  add constraint commercial_orders_modalidade_valida
+  check (modalidade_frete in ('retirada', 'propria', 'terceirizada'));
+
+alter table public.commercial_orders
+  drop constraint if exists commercial_orders_desconto_pct_faixa;
+
+alter table public.commercial_orders
+  add constraint commercial_orders_desconto_pct_faixa
+  check (desconto_pct is null or (desconto_pct >= 0 and desconto_pct <= 100));
+
+comment on column public.commercial_orders.obs_interna is
+  'Só a equipe lê. observacoes (legado) é a do cliente e imprime no PDF.';
+comment on column public.commercial_orders.parcelas is
+  'Espelho calculado [{n, valor_cents, vencimento}]: derivado da condição, recalculado a cada gravação — sem ciclo próprio.';
+
+
+-- APÊNDICE 0223 — TABELA NO PEDIDO (idempotente; fonte: supabase/migrations/20260905230001_0223_tabela_no_pedido.sql)
+
+-- ============================================================================
+-- 0223 — TABELA USADA NO PEDIDO (filtro e auditoria da lista refeita)
+--
+-- O POST aceitava `price_table_id` mas não persistia: o preço aplicado
+-- ficava sem rastro de QUAL tabela o gerou, e a lista não filtrava por
+-- tabela. FK anulável com `set null` (apagar tabela não apaga venda).
+-- ============================================================================
+
+alter table public.commercial_orders
+  add column if not exists price_table_id uuid references public.price_tables(id) on delete set null;
+
+create index if not exists commercial_orders_tabela_idx
+  on public.commercial_orders (organization_id, price_table_id);
+
+comment on column public.commercial_orders.price_table_id is
+  'Tabela que gerou os preços (NULL = preço base/negociado). Auditoria do preço, não só do valor.';
+
+
+-- APÊNDICE 0224 — CNPJ NO CONTATO (idempotente; fonte: supabase/migrations/20260905230002_0224_cnpj_no_contato.sql)
+
+-- ============================================================================
+-- 0224 — CNPJ NO CONTATO (autocompletar empresa pela Receita/BrasilAPI)
+--
+-- `cnpj` em DÍGITOS, texto puro: CNPJ é dado público (não é segredo como o
+-- CPF, que vai cifrado + hash). Unique parcial por org — o mesmo CNPJ não
+-- vira dois clientes, e é por ele que a importação de prospects acha quem já
+-- existe. Endereço da empresa vai em `source_metadata` (sem coluna nova:
+-- endereço de ENTREGA mora no pedido, e endereço fiscal não tem ciclo
+-- próprio que justifique entidade).
+-- ============================================================================
+
+alter table public.contacts
+  add column if not exists cnpj text;
+
+alter table public.contacts
+  drop constraint if exists contacts_cnpj_formato;
+
+alter table public.contacts
+  add constraint contacts_cnpj_formato
+  check (cnpj is null or cnpj ~ '^\d{14}$');
+
+create unique index if not exists contacts_org_cnpj_key
+  on public.contacts (organization_id, cnpj)
+  where cnpj is not null;
+
+comment on column public.contacts.cnpj is
+  'CNPJ com 14 dígitos, dado público. Unique por org: mesma empresa, um contato. Preenchido via BrasilAPI no cadastro.';
+
+-- APÊNDICE 0225 — METAS COMERCIAIS (idempotente; fonte: supabase/migrations/20260906080000_0225_metas_comerciais.sql)
+
+-- ============================================================================
+-- 0225 — METAS COMERCIAIS (o denominador do dashboard)
+--
+-- `commercial_goals`: uma linha por (org, mês, vendedor). `vendedor_user_id`
+-- NULL = meta DA LOJA; preenchido = meta individual. NULL não colide em
+-- unique do Postgres, então são DOIS índices parciais (loja e vendedor).
+-- RLS molde 0204: leitura org, escrita manager+.
+-- ============================================================================
+
+create table if not exists public.commercial_goals (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  ano_mes text not null check (ano_mes ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'),
+  vendedor_user_id uuid,
+  valor_cents integer not null check (valor_cents >= 0),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists commercial_goals_loja_key
+  on public.commercial_goals (organization_id, ano_mes)
+  where vendedor_user_id is null;
+
+create unique index if not exists commercial_goals_vendedor_key
+  on public.commercial_goals (organization_id, ano_mes, vendedor_user_id)
+  where vendedor_user_id is not null;
+
+create index if not exists idx_commercial_goals_org_mes
+  on public.commercial_goals (organization_id, ano_mes);
+
+drop trigger if exists trg_commercial_goals_updated_at on public.commercial_goals;
+create trigger trg_commercial_goals_updated_at
+  before update on public.commercial_goals
+  for each row execute function public.fn_set_updated_at();
+
+alter table public.commercial_goals enable row level security;
+
+drop policy if exists commercial_goals_select on public.commercial_goals;
+create policy commercial_goals_select on public.commercial_goals
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists commercial_goals_write on public.commercial_goals;
+create policy commercial_goals_write on public.commercial_goals
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  );
+
+revoke all on public.commercial_goals from anon;
+grant select, insert, update, delete on public.commercial_goals to authenticated;
+grant all on public.commercial_goals to service_role;
+
+comment on table public.commercial_goals is
+  'Meta mensal em centavos por (org, mês). vendedor_user_id NULL = meta da loja; preenchido = meta individual do vendedor.';
+comment on column public.commercial_goals.ano_mes is
+  'Mês de vigência em YYYY-MM. Sem dia: meta é mensal por definição.';
+
+-- APÊNDICE 0226 — COMISSÕES (idempotente; fonte: supabase/migrations/20260906140000_0226_comissoes.sql)
+
+-- ============================================================================
+-- 0226 — COMISSÕES (o que o vendedor leva por pedido)
+--
+-- `catalog_products.comissao_pct` (NULL = sem regra) + a tabela
+-- `commercial_commission_baixas` (um pedido, uma baixa). RLS molde 0204:
+-- leitura org, escrita manager+.
+-- ============================================================================
+
+alter table public.catalog_products
+  add column if not exists comissao_pct numeric(5, 2);
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'catalog_products_comissao_faixa'
+  ) then
+    alter table public.catalog_products
+      add constraint catalog_products_comissao_faixa
+      check (comissao_pct is null or (comissao_pct >= 0 and comissao_pct <= 100));
+  end if;
+end $$;
+
+comment on column public.catalog_products.comissao_pct is
+  'Comissão do vendedor em % sobre o item. NULL = produto sem regra (não é 0).';
+
+create table if not exists public.commercial_commission_baixas (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  order_id uuid not null references public.commercial_orders(id) on delete cascade,
+  vendedor_user_id uuid,
+  valor_cents bigint not null check (valor_cents >= 0),
+  baixado_por uuid,
+  baixado_em timestamptz not null default now(),
+  observacao text,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists commercial_commission_baixas_order_key
+  on public.commercial_commission_baixas (organization_id, order_id);
+
+create index if not exists commercial_commission_baixas_vendedor_idx
+  on public.commercial_commission_baixas (organization_id, vendedor_user_id);
+
+alter table public.commercial_commission_baixas enable row level security;
+
+drop policy if exists commercial_commission_baixas_select on public.commercial_commission_baixas;
+create policy commercial_commission_baixas_select on public.commercial_commission_baixas
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists commercial_commission_baixas_write on public.commercial_commission_baixas;
+create policy commercial_commission_baixas_write on public.commercial_commission_baixas
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  );
+
+revoke all on public.commercial_commission_baixas from anon;
+grant select, insert, update, delete on public.commercial_commission_baixas to authenticated;
+grant all on public.commercial_commission_baixas to service_role;
+
+comment on table public.commercial_commission_baixas is
+  'Baixa de comissão paga por pedido (o "Dar Baixa" do relatório). Um pedido, uma baixa.';
+
+-- APÊNDICE 0227 — BAIXA DE TÍTULOS (idempotente; fonte: supabase/migrations/20260906150000_0227_baixa_de_titulos.sql)
+
+-- ============================================================================
+-- 0227 — BAIXA DE TÍTULOS (o "pago" das contas a receber)
+--
+-- `commercial_titulo_baixas`: uma linha por parcela paga. RLS molde 0204:
+-- leitura org, escrita manager+.
+-- ============================================================================
+
+create table if not exists public.commercial_titulo_baixas (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  order_id uuid not null references public.commercial_orders(id) on delete cascade,
+  parcela_n integer not null check (parcela_n > 0),
+  valor_cents bigint not null check (valor_cents >= 0),
+  baixado_por uuid,
+  baixado_em timestamptz not null default now(),
+  observacao text,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists commercial_titulo_baixas_parcela_key
+  on public.commercial_titulo_baixas (organization_id, order_id, parcela_n);
+
+create index if not exists commercial_titulo_baixas_order_idx
+  on public.commercial_titulo_baixas (organization_id, order_id);
+
+alter table public.commercial_titulo_baixas enable row level security;
+
+drop policy if exists commercial_titulo_baixas_select on public.commercial_titulo_baixas;
+create policy commercial_titulo_baixas_select on public.commercial_titulo_baixas
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists commercial_titulo_baixas_write on public.commercial_titulo_baixas;
+create policy commercial_titulo_baixas_write on public.commercial_titulo_baixas
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  );
+
+revoke all on public.commercial_titulo_baixas from anon;
+grant select, insert, update, delete on public.commercial_titulo_baixas to authenticated;
+grant all on public.commercial_titulo_baixas to service_role;
+
+comment on table public.commercial_titulo_baixas is
+  'Baixa de parcela recebida (o "pago" dos Títulos). Uma parcela, uma baixa.';
+
+-- APÊNDICE 0228 — VITRINE (idempotente; fonte: supabase/migrations/20260906160000_0228_vitrine.sql)
+
+-- ============================================================================
+-- 0228 — VITRINE (destaques e promoções do catálogo)
+-- ============================================================================
+
+alter table public.catalog_products
+  add column if not exists destaque boolean not null default false;
+
+alter table public.catalog_products
+  add column if not exists preco_promocional_cents bigint;
+
+alter table public.catalog_products
+  add column if not exists promocao_ate date;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'catalog_products_promo_nao_negativa'
+  ) then
+    alter table public.catalog_products
+      add constraint catalog_products_promo_nao_negativa
+      check (preco_promocional_cents is null or preco_promocional_cents >= 0);
+  end if;
+end $$;
+
+create index if not exists catalog_products_destaque_idx
+  on public.catalog_products (organization_id, destaque)
+  where destaque is true;
+
+comment on column public.catalog_products.destaque is
+  'Vai para a aba Destaques do catálogo (curadoria manual da loja).';
+
+comment on column public.catalog_products.preco_promocional_cents is
+  'Preço da promoção. Vale com promocao_ate nula (indeterminada) ou futura.';
+
+comment on column public.catalog_products.promocao_ate is
+  'Último dia da promoção (YYYY-MM-DD, vale o dia inteiro). NULL = indeterminada.';
+
+-- APÊNDICE 0229 — TAREFAS E ATIVIDADES (idempotente; fonte: supabase/migrations/20260906170000_0229_tarefas_e_atividades.sql)
+
+-- ============================================================================
+-- 0229 — TAREFAS E ATIVIDADES (a rotina do vendedor externo)
+-- ============================================================================
+
+create table if not exists public.commercial_tasks (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  titulo text not null check (char_length(trim(titulo)) > 0),
+  descricao text,
+  tipo text not null default 'visita' check (tipo in ('visita', 'ligacao', 'retorno', 'outro')),
+  status text not null default 'pendente' check (status in ('pendente', 'concluida', 'cancelada')),
+  contact_id uuid references public.contacts(id) on delete set null,
+  responsavel_user_id uuid,
+  agendada_para date,
+  checkin_em timestamptz,
+  checkin_lat numeric(9, 6),
+  checkin_lng numeric(9, 6),
+  concluida_em timestamptz,
+  created_by uuid,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists commercial_tasks_org_status_idx
+  on public.commercial_tasks (organization_id, status, agendada_para);
+
+create index if not exists commercial_tasks_contact_idx
+  on public.commercial_tasks (organization_id, contact_id);
+
+create table if not exists public.commercial_activities (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  contact_id uuid references public.contacts(id) on delete set null,
+  tipo text not null default 'visita' check (tipo in ('visita', 'ligacao', 'whatsapp', 'email', 'outro')),
+  resultado text,
+  observacao text,
+  user_id uuid,
+  ocorrida_em timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists commercial_activities_org_data_idx
+  on public.commercial_activities (organization_id, ocorrida_em desc);
+
+create index if not exists commercial_activities_contact_idx
+  on public.commercial_activities (organization_id, contact_id);
+
+drop trigger if exists trg_commercial_tasks_updated_at on public.commercial_tasks;
+create trigger trg_commercial_tasks_updated_at
+  before update on public.commercial_tasks
+  for each row execute function public.fn_set_updated_at();
+
+alter table public.commercial_tasks enable row level security;
+alter table public.commercial_activities enable row level security;
+
+drop policy if exists commercial_tasks_select on public.commercial_tasks;
+create policy commercial_tasks_select on public.commercial_tasks
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists commercial_tasks_write on public.commercial_tasks;
+create policy commercial_tasks_write on public.commercial_tasks
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+drop policy if exists commercial_activities_select on public.commercial_activities;
+create policy commercial_activities_select on public.commercial_activities
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists commercial_activities_write on public.commercial_activities;
+create policy commercial_activities_write on public.commercial_activities
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+revoke all on public.commercial_tasks from anon;
+grant select, insert, update, delete on public.commercial_tasks to authenticated;
+grant all on public.commercial_tasks to service_role;
+
+revoke all on public.commercial_activities from anon;
+grant select, insert, update, delete on public.commercial_activities to authenticated;
+grant all on public.commercial_activities to service_role;
+
+comment on table public.commercial_tasks is
+  'Tarefas do vendedor externo (visita, ligação, retorno) com check-in de lugar + hora.';
+
+comment on table public.commercial_activities is
+  'Atividades realizadas (o que aconteceu no contato) — base do relatório de atendimentos.';
+
+-- APÊNDICE 0230 — ENDEREÇO E FISCAL NO CONTATO (idempotente; fonte: supabase/migrations/20260906180000_0230_endereco_no_contato.sql)
+
+alter table public.contacts
+  add column if not exists tipo_pessoa text check (tipo_pessoa in ('F', 'J'));
+
+alter table public.contacts
+  add column if not exists fantasia text;
+
+alter table public.contacts
+  add column if not exists ie text;
+
+alter table public.contacts
+  add column if not exists regime text;
+
+alter table public.contacts
+  add column if not exists logradouro text;
+
+alter table public.contacts
+  add column if not exists numero_end text;
+
+alter table public.contacts
+  add column if not exists complemento text;
+
+alter table public.contacts
+  add column if not exists bairro text;
+
+alter table public.contacts
+  add column if not exists cidade text;
+
+alter table public.contacts
+  add column if not exists uf char(2);
+
+alter table public.contacts
+  add column if not exists cep text;
+
+create index if not exists contacts_org_cidade_idx
+  on public.contacts (organization_id, cidade);
+
+comment on column public.contacts.tipo_pessoa is
+  'F = pessoa física, J = jurídica. Define o card do cadastro (CPF x CNPJ+IE).';
+
+comment on column public.contacts.fantasia is
+  'Nome fantasia (PJ). Razão social vai em name/display_name.';
+
+-- APÊNDICE 0231 — ROTEIRIZADOR DE ENTREGAS (idempotente; fonte: supabase/migrations/20260906210000_0231_roteirizador_de_entregas.sql)
+
+alter table public.contacts
+  add column if not exists latitude double precision;
+
+alter table public.contacts
+  add column if not exists longitude double precision;
+
+alter table public.contacts
+  add column if not exists geo_status text not null default 'pendente';
+
+alter table public.contacts
+  add column if not exists geo_em timestamptz;
+
+alter table public.contacts
+  add column if not exists geo_fonte text;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'contacts_geo_status_valido'
+  ) then
+    alter table public.contacts
+      add constraint contacts_geo_status_valido
+      check (geo_status in ('pendente', 'ok', 'nao_encontrado', 'ambiguo', 'erro'));
+  end if;
+end $$;
+
+create index if not exists contacts_org_geo_idx
+  on public.contacts (organization_id, geo_status);
+
+alter table public.shipments
+  add column if not exists origem_endereco text;
+
+alter table public.shipments
+  add column if not exists origem_lat double precision;
+
+alter table public.shipments
+  add column if not exists origem_lng double precision;
+
+alter table public.shipments
+  add column if not exists retornar_origem boolean not null default false;
+
+alter table public.shipments
+  add column if not exists tempo_parada_min integer not null default 8;
+
+alter table public.shipments
+  add column if not exists distancia_m integer;
+
+alter table public.shipments
+  add column if not exists duracao_s integer;
+
+alter table public.shipments
+  add column if not exists rota_geojson jsonb;
+
+alter table public.shipments
+  add column if not exists rota_em timestamptz;
+
+alter table public.shipments
+  add column if not exists rota_versao integer not null default 0;
+
+alter table public.shipments
+  add column if not exists started_at timestamptz;
+
+alter table public.shipments
+  add column if not exists started_by uuid references auth.users(id) on delete set null;
+
+alter table public.shipments
+  add column if not exists finished_at timestamptz;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'shipments_tempo_parada_faixa'
+  ) then
+    alter table public.shipments
+      add constraint shipments_tempo_parada_faixa
+      check (tempo_parada_min >= 0 and tempo_parada_min <= 120);
+  end if;
+end $$;
+
+alter table public.shipment_orders
+  add column if not exists motivo text;
+
+alter table public.shipment_orders
+  add column if not exists entregue_em timestamptz;
+
+alter table public.shipment_orders
+  add column if not exists entregue_lat double precision;
+
+alter table public.shipment_orders
+  add column if not exists entregue_lng double precision;
+
+alter table public.shipment_orders
+  drop constraint if exists shipment_orders_status_valido;
+
+alter table public.shipment_orders
+  add constraint shipment_orders_status_valido check (
+    status in ('na_carga', 'em_rota', 'em_atendimento', 'entregue', 'devolvido')
+  );
+
+create table if not exists public.shipment_positions (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  shipment_id uuid not null references public.shipments(id) on delete cascade,
+
+  latitude double precision not null,
+  longitude double precision not null,
+  precisao_m double precision,
+
+  em timestamptz not null default now(),
+  por uuid references auth.users(id) on delete set null,
+
+  constraint shipment_positions_lat_faixa check (latitude >= -90 and latitude <= 90),
+  constraint shipment_positions_lng_faixa check (longitude >= -180 and longitude <= 180)
+);
+
+create index if not exists shipment_positions_carga_idx
+  on public.shipment_positions (shipment_id, em desc);
+
+alter table public.shipment_positions enable row level security;
+
+drop policy if exists shipment_positions_select on public.shipment_positions;
+create policy shipment_positions_select on public.shipment_positions
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists shipment_positions_write on public.shipment_positions;
+create policy shipment_positions_write on public.shipment_positions
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+revoke all on public.shipment_positions from anon;
+grant select, insert, delete on public.shipment_positions to authenticated;
+grant all on public.shipment_positions to service_role;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'shipment_positions'
+  ) then
+    execute 'alter publication supabase_realtime add table public.shipment_positions';
+  end if;
+end $$;
+
+-- APÊNDICE 0232 — ÍNDICE DA ORDEM CRONOLÓGICA DOS PEDIDOS (idempotente; fonte: supabase/migrations/20260907010000_0232_indice_pedidos_cronologico.sql)
+
+create index if not exists commercial_orders_org_created_idx
+  on public.commercial_orders (organization_id, created_at);
+
+-- APÊNDICE 0233 — RECEBÍVEIS FINANCEIROS (idempotente; fonte: supabase/migrations/20260908010000_0233_recebiveis_financeiros.sql)
+
+create table if not exists public.financial_receivables (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  order_id uuid references public.commercial_orders(id) on delete set null,
+  invoice_id uuid references public.invoices(id) on delete set null,
+  contact_id uuid references public.contacts(id) on delete set null,
+  parcela_n integer not null check (parcela_n > 0),
+  total_parcelas integer not null check (total_parcelas > 0),
+  valor_original_cents bigint not null check (valor_original_cents >= 0),
+  vencimento date not null,
+  status text not null default 'aberto'
+    check (status in ('aberto', 'parcial', 'pago', 'cancelado')),
+  forma_pagamento text,
+  observacoes text,
+  created_by uuid,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists financial_receivables_pedido_parcela_key
+  on public.financial_receivables (organization_id, order_id, parcela_n)
+  where order_id is not null;
+
+create index if not exists financial_receivables_contato_idx
+  on public.financial_receivables (organization_id, contact_id);
+create index if not exists financial_receivables_vencimento_idx
+  on public.financial_receivables (organization_id, vencimento);
+create index if not exists financial_receivables_status_idx
+  on public.financial_receivables (organization_id, status);
+create index if not exists financial_receivables_pedido_idx
+  on public.financial_receivables (organization_id, order_id);
+
+create table if not exists public.financial_payments (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  receivable_id uuid not null references public.financial_receivables(id) on delete cascade,
+  valor_cents bigint not null check (valor_cents > 0),
+  pago_em timestamptz not null default now(),
+  forma_pagamento text,
+  conta text,
+  observacao text,
+  -- Retry/duplo-clique: a segunda tentativa vira o original, nunca duplicata.
+  idempotency_key text,
+  created_by uuid,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists financial_payments_idem_key
+  on public.financial_payments (organization_id, receivable_id, idempotency_key)
+  where idempotency_key is not null;
+
+create index if not exists financial_payments_recebivel_idx
+  on public.financial_payments (organization_id, receivable_id);
+
+alter table public.financial_receivables enable row level security;
+alter table public.financial_payments enable row level security;
+
+drop policy if exists financial_receivables_select on public.financial_receivables;
+create policy financial_receivables_select on public.financial_receivables
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists financial_receivables_write on public.financial_receivables;
+create policy financial_receivables_write on public.financial_receivables
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  );
+
+drop policy if exists financial_payments_select on public.financial_payments;
+create policy financial_payments_select on public.financial_payments
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists financial_payments_write on public.financial_payments;
+create policy financial_payments_write on public.financial_payments
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  );
+
+revoke all on public.financial_receivables from anon;
+grant select, insert, update, delete on public.financial_receivables to authenticated;
+grant all on public.financial_receivables to service_role;
+
+revoke all on public.financial_payments from anon;
+grant select, insert, update, delete on public.financial_payments to authenticated;
+grant all on public.financial_payments to service_role;
+
+-- APÊNDICE 0234 — FILA FISCAL E EVENTOS (idempotente; fonte: supabase/migrations/20260908020000_0234_fila_fiscal_e_eventos.sql)
+
+alter table public.invoices drop constraint if exists invoices_status_valido;
+
+alter table public.invoices add constraint invoices_status_valido check (
+  status in ('pendente', 'em_emissao', 'autorizada', 'denegada', 'cancelada', 'erro')
+);
+
+create table if not exists public.fiscal_jobs (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  invoice_id uuid not null references public.invoices(id) on delete cascade,
+  tipo text not null default 'emitir' check (tipo in ('emitir')),
+  status text not null default 'pendente'
+    check (status in ('pendente', 'processando', 'concluido', 'erro')),
+  tentativas integer not null default 0 check (tentativas >= 0),
+  max_tentativas integer not null default 5 check (max_tentativas > 0),
+  proxima_tentativa timestamptz not null default now(),
+  ultimo_erro text,
+  idempotency_key text,
+  created_by uuid,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists fiscal_jobs_nota_aberta_key
+  on public.fiscal_jobs (organization_id, invoice_id)
+  where status in ('pendente', 'processando');
+
+create index if not exists fiscal_jobs_drain_idx
+  on public.fiscal_jobs (status, proxima_tentativa);
+
+create table if not exists public.fiscal_events (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  invoice_id uuid not null references public.invoices(id) on delete cascade,
+  tipo text not null check (tipo in ('criada', 'enviada', 'autorizada', 'rejeitada', 'erro', 'retry', 'cancelada')),
+  status text,
+  protocolo text,
+  mensagem text,
+  xml text,
+  created_by uuid,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists fiscal_events_nota_idx
+  on public.fiscal_events (organization_id, invoice_id, created_at);
+
+alter table public.fiscal_jobs enable row level security;
+alter table public.fiscal_events enable row level security;
+
+drop policy if exists fiscal_jobs_select on public.fiscal_jobs;
+create policy fiscal_jobs_select on public.fiscal_jobs
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists fiscal_jobs_insert on public.fiscal_jobs;
+create policy fiscal_jobs_insert on public.fiscal_jobs
+  for insert with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+drop policy if exists fiscal_events_select on public.fiscal_events;
+create policy fiscal_events_select on public.fiscal_events
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+revoke all on public.fiscal_jobs from anon;
+grant select on public.fiscal_jobs to authenticated;
+grant all on public.fiscal_jobs to service_role;
+
+revoke all on public.fiscal_events from anon;
+grant select on public.fiscal_events to authenticated;
+grant all on public.fiscal_events to service_role;
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
@@ -17353,3 +19876,297 @@ create unique index if not exists ai_kbv_version_por_fonte
 create unique index if not exists ai_kbv_version_por_agente_legado
   on public.ai_knowledge_versions (agent_id, version_number)
   where knowledge_source_id is null;
+
+
+-- ============================================================================
+
+-- APÊNDICE 0235 — FISCAL: CC-E, INUTILIZAÇÃO E CFOP EQUIVALENTE (idempotente; fonte: supabase/migrations/20260908030000_0235_fiscal_cce_inutilizacao_cfop.sql)
+
+alter table public.fiscal_events drop constraint if exists fiscal_events_tipo_check;
+
+alter table public.fiscal_events
+  add constraint fiscal_events_tipo_check check (
+    tipo in ('criada', 'enviada', 'autorizada', 'rejeitada', 'erro', 'retry', 'cancelada', 'carta_correcao')
+  );
+
+create table if not exists public.fiscal_inutilizacoes (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  serie text not null check (char_length(trim(serie)) between 1 and 10),
+  numero_inicial integer not null check (numero_inicial > 0),
+  numero_final integer not null check (numero_final > 0),
+  motivo text not null check (char_length(trim(motivo)) between 15 and 255),
+  ambiente text not null default 'homologacao' check (ambiente in ('homologacao', 'producao')),
+  status text not null default 'registrada' check (status in ('registrada', 'transmitida', 'erro')),
+  sefaz_protocolo text,
+  sefaz_xmotivo text,
+  created_by uuid,
+  created_at timestamptz not null default now()
+);
+
+alter table public.fiscal_inutilizacoes drop constraint if exists fiscal_inutilizacoes_faixa_valida;
+
+alter table public.fiscal_inutilizacoes
+  add constraint fiscal_inutilizacoes_faixa_valida check (numero_final >= numero_inicial);
+
+create index if not exists fiscal_inutilizacoes_org_idx
+  on public.fiscal_inutilizacoes (organization_id, created_at desc);
+
+create table if not exists public.fiscal_cfop_equivalentes (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  cfop_origem text not null check (cfop_origem ~ '^\d{4}$'),
+  cfop_destino text not null check (cfop_destino ~ '^\d{4}$'),
+  created_by uuid,
+  created_at timestamptz not null default now(),
+  constraint fiscal_cfop_equiv_diferentes check (cfop_destino <> cfop_origem)
+);
+
+create unique index if not exists fiscal_cfop_equiv_org_origem_key
+  on public.fiscal_cfop_equivalentes (organization_id, cfop_origem);
+
+alter table public.fiscal_inutilizacoes enable row level security;
+alter table public.fiscal_cfop_equivalentes enable row level security;
+
+drop policy if exists fiscal_inutilizacoes_select on public.fiscal_inutilizacoes;
+create policy fiscal_inutilizacoes_select on public.fiscal_inutilizacoes
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists fiscal_inutilizacoes_insert on public.fiscal_inutilizacoes;
+create policy fiscal_inutilizacoes_insert on public.fiscal_inutilizacoes
+  for insert with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+drop policy if exists fiscal_cfop_equiv_select on public.fiscal_cfop_equivalentes;
+create policy fiscal_cfop_equiv_select on public.fiscal_cfop_equivalentes
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists fiscal_cfop_equiv_write on public.fiscal_cfop_equivalentes;
+create policy fiscal_cfop_equiv_write on public.fiscal_cfop_equivalentes
+  for all using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  );
+
+revoke all on public.fiscal_inutilizacoes from anon;
+grant select on public.fiscal_inutilizacoes to authenticated;
+grant all on public.fiscal_inutilizacoes to service_role;
+
+revoke all on public.fiscal_cfop_equivalentes from anon;
+grant select, insert, update, delete on public.fiscal_cfop_equivalentes to authenticated;
+grant all on public.fiscal_cfop_equivalentes to service_role;
+
+-- ============================================================================
+-- APÊNDICE 0236 — NOTAS DE ENTRADA + CONTAS A PAGAR (idempotente)
+-- ============================================================================
+
+-- ============================================================================
+-- 0236 — NOTAS DE ENTRADA (NF-e emitida contra o CNPJ) + CONTAS A PAGAR
+--
+-- `fiscal_entradas`: uma linha por NF-e de fornecedor puxada da SEFAZ
+-- (distribuição de DF-e, modelo 55). `chave` é a identidade: o mesmo XML
+-- nunca vira duas linhas (unique por org), nem com duplo clique nem com
+-- retry da sincronização. O XML completo só chega DEPOIS da manifestação
+-- do destinatário (regra da SEFAZ, não nossa) — por isso `xml`/`itens_json`
+-- nascem nulos e o status anda: nova → manifestada → importada (ou
+-- ignorada, quando a nota não é da operação: desfazimento honesto).
+--
+-- `fiscal_entrada_cursor`: o `ultNSU` por organização. A próxima
+-- sincronização continua daqui — sem ele, cada clique baixaria tudo de
+-- novo e a SEFAZ bloquearia o CNPJ por consumo indevido (cStat 656).
+--
+-- `financial_pagaveis`: a conta a pagar por parcela da nota (espelho das
+-- `financial_receivables` da 0233, sem pedido próprio). `contact_id` é
+-- NULLABLE com snapshot (`fornecedor_nome/cnpj` na linha): criar contato
+-- exige telefone e o fornecedor pode não ter — o financeiro não pode
+-- depender disso. Sem duplicata na nota, nasce 1 parcela com vencimento
+-- na emissão (à vista implícito).
+--
+-- RLS molde 0204/0233: leitura org; escrita das entradas+cursor agent+
+-- (operacional); escrita do pagável manager+ (dinheiro é decisão
+-- gerencial — mesmo piso das recebíveis).
+-- ============================================================================
+
+create table if not exists public.fiscal_entradas (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  chave text not null check (chave ~ '^\d{44}$'),
+  nsu bigint not null,
+  emitente_cnpj text not null,
+  emitente_nome text not null,
+  emitente_ie text,
+  numero integer,
+  serie text,
+  dh_emi timestamptz,
+  valor_total_cents bigint not null default 0 check (valor_total_cents >= 0),
+  xml text,
+  itens_json jsonb not null default '[]'::jsonb,
+  cobranca_json jsonb not null default '[]'::jsonb,
+  manifestacao text check (manifestacao in ('ciencia', 'confirmacao', 'desconhecimento', 'nao_realizada')),
+  manifestada_em timestamptz,
+  status text not null default 'nova'
+    check (status in ('nova', 'manifestada', 'importada', 'ignorada')),
+  contact_id uuid references public.contacts(id) on delete set null,
+  estoque_processado_em timestamptz,
+  financeiro_processado_em timestamptz,
+  created_by uuid,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- A mesma chave nunca vira duas entradas, nem com duplo clique nem com
+-- retry: a sincronização faz upsert por esta trava.
+create unique index if not exists fiscal_entradas_org_chave_key
+  on public.fiscal_entradas (organization_id, chave);
+
+create index if not exists fiscal_entradas_status_idx
+  on public.fiscal_entradas (organization_id, status);
+create index if not exists fiscal_entradas_emissao_idx
+  on public.fiscal_entradas (organization_id, dh_emi);
+
+create table if not exists public.fiscal_entrada_cursor (
+  organization_id uuid primary key references public.organizations(id) on delete cascade,
+  ult_nsu bigint not null default 0,
+  atualizado_em timestamptz not null default now()
+);
+
+create table if not exists public.financial_pagaveis (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  entrada_id uuid references public.fiscal_entradas(id) on delete set null,
+  contact_id uuid references public.contacts(id) on delete set null,
+  fornecedor_nome text,
+  fornecedor_cnpj text,
+  parcela_n integer not null check (parcela_n > 0),
+  total_parcelas integer not null check (total_parcelas > 0),
+  valor_original_cents bigint not null check (valor_original_cents >= 0),
+  vencimento date not null,
+  status text not null default 'aberto'
+    check (status in ('aberto', 'parcial', 'pago', 'cancelado')),
+  forma_pagamento text,
+  observacoes text,
+  created_by uuid,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Idempotência da geração: a mesma (nota, parcela) nunca vira dois
+-- pagáveis. Manual (entrada_id nulo) fica sem a trava, com auditoria.
+create unique index if not exists financial_pagaveis_entrada_parcela_key
+  on public.financial_pagaveis (organization_id, entrada_id, parcela_n)
+  where entrada_id is not null;
+
+create index if not exists financial_pagaveis_contato_idx
+  on public.financial_pagaveis (organization_id, contact_id);
+create index if not exists financial_pagaveis_vencimento_idx
+  on public.financial_pagaveis (organization_id, vencimento);
+create index if not exists financial_pagaveis_status_idx
+  on public.financial_pagaveis (organization_id, status);
+create index if not exists financial_pagaveis_entrada_idx
+  on public.financial_pagaveis (organization_id, entrada_id);
+
+alter table public.fiscal_entradas enable row level security;
+alter table public.fiscal_entrada_cursor enable row level security;
+alter table public.financial_pagaveis enable row level security;
+
+drop policy if exists fiscal_entradas_select on public.fiscal_entradas;
+create policy fiscal_entradas_select on public.fiscal_entradas
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists fiscal_entradas_write on public.fiscal_entradas;
+create policy fiscal_entradas_write on public.fiscal_entradas
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+drop policy if exists fiscal_entrada_cursor_select on public.fiscal_entrada_cursor;
+create policy fiscal_entrada_cursor_select on public.fiscal_entrada_cursor
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists fiscal_entrada_cursor_write on public.fiscal_entrada_cursor;
+create policy fiscal_entrada_cursor_write on public.fiscal_entrada_cursor
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+drop policy if exists financial_pagaveis_select on public.financial_pagaveis;
+create policy financial_pagaveis_select on public.financial_pagaveis
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists financial_pagaveis_write on public.financial_pagaveis;
+create policy financial_pagaveis_write on public.financial_pagaveis
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  );
+
+-- `ALTER DEFAULT PRIVILEGES ... GRANT ALL ON TABLES TO anon` do baseline
+-- alcança TODA tabela criada depois dele — sem o revoke, os XMLs dos
+-- fornecedores ficam legíveis pela anon key, que vai para o browser.
+revoke all on public.fiscal_entradas from anon;
+grant select, insert, update, delete on public.fiscal_entradas to authenticated;
+grant all on public.fiscal_entradas to service_role;
+
+revoke all on public.fiscal_entrada_cursor from anon;
+grant select, insert, update, delete on public.fiscal_entrada_cursor to authenticated;
+grant all on public.fiscal_entrada_cursor to service_role;
+
+revoke all on public.financial_pagaveis from anon;
+grant select, insert, update, delete on public.financial_pagaveis to authenticated;
+grant all on public.financial_pagaveis to service_role;
+
+drop trigger if exists trg_fiscal_entradas_updated_at on public.fiscal_entradas;
+create trigger trg_fiscal_entradas_updated_at
+  before update on public.fiscal_entradas
+  for each row execute function public.fn_set_updated_at();
+
+drop trigger if exists trg_financial_pagaveis_updated_at on public.financial_pagaveis;
+create trigger trg_financial_pagaveis_updated_at
+  before update on public.financial_pagaveis
+  for each row execute function public.fn_set_updated_at();
+
+comment on table public.fiscal_entradas is
+  'NF-e de entrada (fornecedor emitiu contra o CNPJ): resumo vira linha, XML completo só depois da manifestação. Chave única por org.';
+comment on table public.fiscal_entrada_cursor is
+  'Cursor da distribuição DF-e por org (ultNSU). Sem ele, cada sincronização baixaria tudo de novo.';
+comment on table public.financial_pagaveis is
+  'Conta a pagar por parcela da nota de entrada. Sem duplicata, 1 parcela com vencimento na emissão.';

@@ -28,14 +28,14 @@ export default async function TermsPage() {
   return (
     <>
       <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">{t("Termos de Uso")}</h1>
+        <h1 className="text-2xl font-medium text-text tracking-tight">{t("Termos de Uso")}</h1>
         <p className="text-muted-foreground">
           {t("As regras de uso desta instalação do")} {op.sistema}.
         </p>
       </header>
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold">{t("1. Quem é quem")}</h2>
+        <h2 className="text-base font-medium text-text">{t("1. Quem é quem")}</h2>
         <p>
           {t("O")} {op.sistema} {t("é um software de código aberto instalado e operado por")}{" "}
           <strong>{operador}</strong>
@@ -53,7 +53,7 @@ export default async function TermsPage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold">{t("2. O que o sistema faz")}</h2>
+        <h2 className="text-base font-medium text-text">{t("2. O que o sistema faz")}</h2>
         <p>
           {t("O")} {op.sistema}{" "}
           {t(
@@ -63,7 +63,7 @@ export default async function TermsPage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold">{t("3. Sua conta")}</h2>
+        <h2 className="text-base font-medium text-text">{t("3. Sua conta")}</h2>
         <p>
           {t(
             "O acesso é pessoal. Você é responsável por manter sua senha em segredo e pelo que for feito com a sua conta. Contas de administrador exigem verificação em duas etapas. Avise o operador imediatamente se suspeitar de acesso indevido.",
@@ -72,7 +72,7 @@ export default async function TermsPage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold">{t("4. Uso aceitável")}</h2>
+        <h2 className="text-base font-medium text-text">{t("4. Uso aceitável")}</h2>
         <p>{t("Ao usar este sistema, você concorda em não:")}</p>
         <ul className="list-disc space-y-1 pl-5">
           <li>{t("enviar mensagens não solicitadas em massa, nem burlar pedidos de descadastro;")}</li>
@@ -90,7 +90,7 @@ export default async function TermsPage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold">{t("5. Conteúdo e dados")}</h2>
+        <h2 className="text-base font-medium text-text">{t("5. Conteúdo e dados")}</h2>
         <p>
           {t(
             "Os dados inseridos aqui — contatos, conversas, negócios, arquivos — pertencem ao operador e às pessoas a que se referem. O tratamento desses dados é descrito na",
@@ -108,7 +108,7 @@ export default async function TermsPage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold">{t("6. Disponibilidade e garantias")}</h2>
+        <h2 className="text-base font-medium text-text">{t("6. Disponibilidade e garantias")}</h2>
         <p>
           {t(
             "Este sistema roda em servidor do operador e depende de serviços de terceiros para funcionar. O software é distribuído “como está”, sem garantia de funcionamento ininterrupto ou de adequação a uma finalidade específica. Interrupções, falhas de terceiros e perda de dados por causas fora do controle do operador não geram obrigação de indenizar, salvo quando a lei determinar.",
@@ -117,7 +117,7 @@ export default async function TermsPage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold">{t("7. Encerramento")}</h2>
+        <h2 className="text-base font-medium text-text">{t("7. Encerramento")}</h2>
         <p>
           {t(
             "O operador pode suspender ou encerrar o seu acesso em caso de descumprimento destes termos. Você pode pedir o encerramento da sua conta a qualquer momento. O encerramento do acesso não apaga automaticamente os registros de atendimento, que seguem as regras de retenção descritas na Política de Privacidade.",
@@ -126,7 +126,7 @@ export default async function TermsPage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold">{t("8. Mudanças")}</h2>
+        <h2 className="text-base font-medium text-text">{t("8. Mudanças")}</h2>
         <p>
           {t(
             "O operador pode atualizar estes termos. Mudanças relevantes devem ser comunicadas antes de passarem a valer.",
@@ -135,7 +135,7 @@ export default async function TermsPage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold">{t("9. Contato")}</h2>
+        <h2 className="text-base font-medium text-text">{t("9. Contato")}</h2>
         <p>
           {t("Falar com o operador")}
           {op.dpoEmail ? (

@@ -37,7 +37,7 @@ export function TokenCounter({ text, contextWindow, className }: Props) {
   const tone = danger
     ? "text-destructive"
     : warn
-      ? "text-amber-600 dark:text-amber-400"
+      ? "text-warning-fg"
       : "text-muted-foreground";
 
   return (

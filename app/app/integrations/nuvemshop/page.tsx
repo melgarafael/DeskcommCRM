@@ -61,7 +61,7 @@ export default async function NuvemshopIntegrationPage() {
       </Suspense>
 
       <header className="flex items-start gap-4">
-        <div className="rounded-md border border-border bg-surface p-3">
+        <div className="rounded-2xl border border-border bg-surface p-3">
           <Storefront size={28} weight="duotone" className="text-muted-foreground" />
         </div>
         <div>

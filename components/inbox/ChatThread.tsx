@@ -8,6 +8,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { format, isToday, isYesterday } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { WA } from "@/components/inbox/whatsapp-theme";
 import { MessageBubble } from "./MessageBubble";
 import { NoteCard } from "./NoteCard";
 import { useMessagesRealtime } from "@/hooks/inbox/useMessagesRealtime";
@@ -26,8 +27,7 @@ interface Props {
 
 /** Onda 5.2: union de item do thread — mensagem real ou nota interna (nunca vai ao cliente). */
 export type ThreadItem =
-  | { kind: "message"; ts: string; data: Message }
-  | { kind: "note"; ts: string; data: Note };
+  { kind: "message"; ts: string; data: Message } | { kind: "note"; ts: string; data: Note };
 
 /** Intercala mensagens e notas por timestamp asc (puro, sem I/O — testado em thread-merge.test.ts). */
 export function mergeThreadItems(messages: Message[], notes: Note[]): ThreadItem[] {
@@ -41,7 +41,11 @@ export function mergeThreadItems(messages: Message[], notes: Note[]): ThreadItem
   return items;
 }
 
-function dayLabel(d: Date, t: (texto: string) => string = (texto) => texto, locale: Locale): string {
+function dayLabel(
+  d: Date,
+  t: (texto: string) => string = (texto) => texto,
+  locale: Locale,
+): string {
   if (isToday(d)) return t("Hoje");
   if (isYesterday(d)) return t("Ontem");
   return format(d, "dd/MM/yyyy", { locale: locale });
@@ -61,10 +65,7 @@ export function ChatThread({ conversationId, onResponder }: Props) {
   const canManage = activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
   const { enabled: debugCitations } = useDebugToggle(activeOrg?.role ?? null);
 
-  const messages: Message[] = useMemo(
-    () => q.data?.pages.flatMap((p) => p.data) ?? [],
-    [q.data],
-  );
+  const messages: Message[] = useMemo(() => q.data?.pages.flatMap((p) => p.data) ?? [], [q.data]);
 
   /**
    * As mensagens por id, para resolver a CITADA sem ir ao servidor.
@@ -76,10 +77,7 @@ export function ChatThread({ conversationId, onResponder }: Props) {
    */
   const porId = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
 
-  const items: ThreadItem[] = useMemo(
-    () => mergeThreadItems(messages, notes),
-    [messages, notes],
-  );
+  const items: ThreadItem[] = useMemo(() => mergeThreadItems(messages, notes), [messages, notes]);
 
   const paginas = q.data?.pages.length ?? 0;
 
@@ -201,7 +199,7 @@ export function ChatThread({ conversationId, onResponder }: Props) {
   }
 
   return (
-    <div {...sinalDoCanal} className="flex h-full flex-col">
+    <div {...sinalDoCanal} className={`flex h-full flex-col ${WA.chatBg}`}>
       <div ref={scrollerRef} className="flex-1 overflow-y-auto py-2">
         {q.hasNextPage && (
           <div className="flex justify-center py-2">
@@ -219,7 +217,7 @@ export function ChatThread({ conversationId, onResponder }: Props) {
         {groups.map((g) => (
           <div key={g.key} className="space-y-1">
             <div className="sticky top-0 z-10 flex justify-center py-1">
-              <span className="rounded-full bg-background/80 px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground backdrop-blur">
+              <span className="rounded-lg bg-white px-3 py-1 text-[11px] font-medium tracking-wide text-[#54656f] uppercase shadow-sm">
                 {dayLabel(g.date, t, localeDaData)}
               </span>
             </div>

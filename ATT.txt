@@ -1,0 +1,400 @@
+Aqui está o **prompt completo e detalhado**, estruturado como um PRD (Product Requirements Document) técnico, para transformar o DeskcommCRM em um sistema de gestão comercial completo, inspirado no Mercos, mas mantendo e elevando tudo o que o Deskcomm já tem de diferencial (IA nativa, WhatsApp, multi-tenant, self-hosted, LGPD).
+
+---
+
+# 🚀 PROMPT: DeskcommCRM → Sistema de Gestão Comercial Completo (Estilo Mercos)
+
+> **Base de código:** `https://github.com/melgarafael/DeskcommCRM`  
+> **Stack atual:** Next.js 16 + React 19 + TypeScript + Tailwind + shadcn/ui + Supabase (Postgres + RLS + Auth + Storage + Realtime) + WAHA + Vercel AI SDK + Zod  
+> **Objetivo:** Evoluir o DeskcommCRM de "CRM de atendimento por WhatsApp com IA" para um **Sistema Operacional de Vendas completo** — do primeiro contato à entrega da mercadoria — mantendo 100% das funcionalidades existentes (WhatsApp, IA, automações, webhooks, multi-tenant, LGPD, self-host) e adicionando módulos de **pedidos comerciais, nota fiscal, expedição/logística, catálogo de produtos, dashboards executivos, recuperação de clientes, e-commerce B2B interno, e gestão de força de vendas**.
+
+---
+
+## 1. VISÃO GERAL DO PRODUTO
+
+O sistema deve ser uma **plataforma unificada de vendas B2B** que atenda desde a prospecção (via WhatsApp, IA, formulários web) até a expedição da mercadoria e emissão de nota fiscal. Ele deve funcionar como um **"vendedor digital"** para a empresa: qualifica leads, converte em pedidos, gerencia estoque, controla políticas comerciais, emite documentos fiscais, organiza a logística de entrega e recupera clientes inativos automaticamente.
+
+**Princípios não-negociáveis:**
+- Manter multi-tenancy com RLS, LGPD by-design, audit log append-only
+- Manter self-hosted com instalação em 1 comando (`hostgator-setup-kit`)
+- Manter agentes de IA como "assignees de primeira classe" que operam o CRM via MCP
+- Manter WhatsApp (WAHA + Meta Cloud API) como canal nativo
+- Design moderno, limpo, inspirado no Mercos (tons de azul escuro, branco, cinza claro, verde para sucesso, laranja para alertas)
+- Tudo integrado: nenhum dado duplicado, nenhuma tela isolada
+
+---
+
+## 2. ESTRUTURA DE MÓDULOS (Mantendo + Novos)
+
+Organize o sistema em **grupos de navegação** na sidebar, com ícones e hierarquia clara:
+
+### GRUPO 1: DASHBOARD EXECUTIVO (Novo)
+**Tela principal após login.** Substitua a landing pós-login atual por um dashboard completo.
+
+- **KPI Cards no topo:** Faturamento do dia/semana/mês, pedidos em aberto, ticket médio, clientes ativos vs. inativos, taxa de conversão funil, meta vs. realizado (por vendedor e geral)
+- **Gráficos interativos (Recharts):**
+  - Evolução de faturamento (linha temporal)
+  - Pedidos por canal (pizza: WhatsApp, IA, Vendedor, E-commerce B2B)
+  - Top 10 produtos mais vendidos (barras)
+  - Funil de vendas (visualização em pirâmide)
+  - Mapa de calor de vendas por região (se houver geolocalização)
+- **Alertas inteligentes:** Cards de "Atenção" — clientes sem compra há X dias, pedidos pendentes de expedição, estoque baixo, leads esfriando
+- **Atalhos rápidos:** "Novo Pedido", "Novo Cliente", "Importar Planilha", "Ver Radar"
+- **Filtros globais:** Período (hoje, ontem, 7 dias, 30 dias, personalizado), Vendedor, Canal, Região
+
+### GRUPO 2: ATENDIMENTO (Mantém + Evolui)
+- **Inbox** (conversas WhatsApp — já existe, manter)
+- **Radar** (leads esfriando — já existe, manter)
+- **Respostas Rápidas** (já existe)
+- **NOVO: CRM no WhatsApp** — Quando um vendedor ou IA está no WhatsApp, exibir um painel lateral flutuante (widget) com:
+  - Histórico de compras do cliente
+  - Último pedido e status
+  - Tabela de preços aplicada
+  - Limite de crédito
+  - Botão "Criar Pedido" que preenche automaticamente o cliente
+
+### GRUPO 3: CRM E FUNIL DE VENDAS (Mantém + Evolui)
+- **Kanban** (já existe — manter vocabulário configurável por nicho)
+- **Contatos** (já existe — evoluir para ficha 360° completa)
+- **Funis** (já existe)
+- **NOVO: Ficha do Cliente 360°** — Tela única com abas:
+  - **Resumo:** Dados cadastrais, score de compra, tags, status (ativo/inativo), foto/logo
+  - **Histórico de Compras:** Timeline de todos os pedidos com status, valor, produtos
+  - **Negociações:** Leads/oportunidades no funil
+  - **Conversas:** Todas as mensagens de WhatsApp, e-mails, ligações
+  - **Documentos:** CNH, contratos, cartão CNPJ (upload via Storage)
+  - **Financeiro:** Limite de crédito, condição de pagamento, inadimplência
+  - **Mapa:** Localização no mapa (Google Maps embed) para roteirização de visitas
+  - **Anexos:** Arquivos relacionados ao cliente
+
+### GRUPO 4: CATÁLOGO E PRODUTOS (Novo módulo completo)
+- **Lista de Produtos:** Tabela com filtros, busca, paginação. Colunas: Código, Nome, Foto (thumbnail), Categoria, Preço base, Estoque, Status (ativo/inativo)
+- **Cadastro de Produto:** Formulário com:
+  - Dados básicos: código SKU, nome, descrição, categoria, subcategoria
+  - **Fotos:** Upload múltiplo via Supabase Storage (máx. 5 fotos, com crop/thumbnail automático)
+  - Preços: Preço base, preço promocional, tabelas de preço por cliente/grupo
+  - Estoque: Quantidade disponível, unidade de medida, localização no depósito
+  - Variações: Tamanho, cor, etc. (tipo SKU matrix)
+  - Anexos: PDF de ficha técnica, manual
+- **Categorias:** Árvore de categorias (pai/filho)
+- **Tabelas de Preço:** Múltiplas tabelas (atacado, varejo, representante, cliente específico) com regras de desconto (% ou valor fixo)
+- **Importação de Produtos via Excel:** Upload de `.xlsx` com mapeamento de colunas (drag-and-drop ou select). Preview dos dados antes de importar. Validação de duplicatas (por SKU). Log de erros linha a linha.
+
+### GRUPO 5: PEDIDOS (Novo módulo central)
+Este é o coração do sistema. Deve ser robusto, rápido e visual.
+
+#### 5.1 Tela de Pedidos (Lista)
+- **Filtros avançados:** Por período, vendedor, cliente, status, canal de origem, valor mín/máx
+- **Visualização em cards ou tabela**
+- **Badges de origem visuais e distintas:**
+  - 🤖 **IA** — pedido gerado automaticamente por agente de IA (badge roxo com ícone de robô)
+  - 👤 **Vendedor** — pedido criado manualmente por um vendedor no sistema (badge azul com ícone de usuário)
+  - 💬 **WhatsApp** — pedido originado de conversa no WhatsApp (badge verde com ícone do WhatsApp)
+  - 🌐 **B2B** — pedido feito pelo cliente no portal/e-commerce B2B (badge laranja com ícone de globo)
+- **Colunas:** Nº do Pedido, Cliente, Vendedor, Data, Valor Total, Status, Origem, Ações
+- **Status do pedido:** Rascunho → Em Análise → Aprovado → Faturado → Expedido → Entregue → Cancelado
+- **Ações em massa:** Aprovar, cancelar, gerar NF, expedir, exportar PDF
+
+#### 5.2 Tela de Novo Pedido / Edição
+Interface dividida em 3 colunas (inspirada no Mercos):
+- **Coluna 1 (esquerda, 20%):** Busca de cliente (autocomplete), dados do cliente selecionado, condição de pagamento, tabela de preço aplicada, observações gerais
+- **Coluna 2 (centro, 50%):** Busca de produtos (com foto thumbnail no autocomplete), lista de itens do pedido com: produto, quantidade, preço unitário, desconto (%), subtotal. Permitir arrastar para reordenar. Cálculo automático de total.
+- **Coluna 3 (direita, 30%):** Resumo do pedido — subtotal, descontos, impostos (ICMS, IPI, etc.), frete, total. Botões de ação: Salvar Rascunho, Finalizar Pedido, Compartilhar PDF.
+
+**Regras de negócio:**
+- Aplicar políticas comerciais automaticamente (desconto máximo por vendedor, tabela de preço do cliente)
+- Bloquear pedido se estoque insuficiente (com opção de override para admin)
+- Bloquear pedido se cliente exceder limite de crédito
+- Histórico de versões do pedido (quem alterou, quando, o que mudou — audit log)
+
+#### 5.3 Pedido Detalhado para Impressão (Novo)
+- **Layout de PDF profissional** (usar biblioteca como `react-pdf` ou `jspdf` + `html2canvas`):
+  - Cabeçalho com logo da empresa, dados do emitente
+  - Dados do cliente (razão social, CNPJ, endereço)
+  - Tabela de produtos com código, descrição, unidade, quantidade, preço unitário, desconto, total
+  - Totais (subtotal, descontos, impostos, frete, total geral)
+  - Condição de pagamento, observações, assinatura
+  - Numeração de página
+- **Opções:** Visualizar PDF, Baixar PDF, Enviar por e-mail/WhatsApp, Imprimir direto
+- **Template configurável:** Admin pode customizar cabeçalho, rodapé, cores, campos visíveis
+
+#### 5.4 Expedição de Pedidos / Geração de Carga (Novo)
+Módulo para empresas com **transporte próprio**.
+
+- **Tela de Expedição:** Lista de pedidos aprovados/faturados aguardando expedição
+- **Criar Carga (Romaneio):**
+  - Selecionar múltiplos pedidos (checkbox)
+  - Definir veículo (placa, tipo, motorista)
+  - Definir rota/sequência de entregas
+  - Gerar **Romaneio de Carga** (documento de expedição)
+- **Romaneio em PDF:** Lista de pedidos na carga, endereços de entrega em ordem de rota, peso total, volume total, espaço para assinatura do motorista
+- **Controle de Entrega:** Status por pedido na carga: "Na carga" → "Em rota" → "Entregue" → "Devolvido"
+- **Comprovante de Entrega:** Upload de foto/assinatura digital no app mobile (futuro) ou web
+- **Mapa de Rota:** Visualização da rota de entregas no Google Maps (para planejamento)
+
+### GRUPO 6: NOTA FISCAL (Novo)
+Integração com emissão de NF-e/NFC-e.
+
+- **Configurações Fiscais:** Cadastro de série, natureza de operação, CFOP padrão, dados do emitente (certificado digital A1/A3)
+- **Emissão de NF-e a partir do Pedido:** Botão "Gerar NF-e" no pedido aprovado. Puxar dados automaticamente.
+- **Tela de NF-e:** Lista com status (Pendente, Autorizada, Cancelada, Denegada), número, série, cliente, valor, data
+- **Download XML e DANFE:** Botões para baixar XML e visualizar DANFE em PDF
+- **Envio automático:** Enviar NF-e por e-mail para o cliente quando autorizada
+- **Integração com ERP:** Webhook para enviar dados da NF ao ERP (ou receber status do ERP)
+- **Importação de NF por e-mail:** (como o Mercos faz) — receber XML de fornecedores por e-mail e dar entrada no estoque automaticamente
+
+### GRUPO 7: RECUPERAÇÃO DE CLIENTES (Novo — Automação Inteligente)
+Módulo para **reativar clientes inativos automaticamente**.
+
+- **Configuração de Regras:**
+  - Definir "cliente inativo": ex: sem compra há 30/60/90 dias
+  - Definir segmentos: por valor histórico, categoria de produto, região
+- **Campanhas de Recuperação:**
+  - Criar sequências de ação: Dia 1 → WhatsApp com oferta personalizada; Dia 3 → E-mail; Dia 7 → Ligação (tarefa para vendedor); Dia 14 → Cupom de desconto
+  - Usar IA para gerar mensagens personalizadas baseadas no histórico de compras do cliente
+- **Tela de Clientes Inativos:** Lista com score de recuperação (probabilidade de recompra baseada em IA), última compra, valor histórico, botão "Iniciar Recuperação"
+- **Resultados:** Taxa de reativação, faturamento recuperado, campanhas mais efetivas
+- **Integração com Automações:** Usar o motor QUANDO/SE/ENTÃO existente para disparar fluxos de recuperação
+
+### GRUPO 8: E-COMMERCE B2B / PORTAL DO CLIENTE (Novo)
+Um portal onde os clientes fazem pedidos sozinhos.
+
+- **Login do Cliente:** Acesso restrito por CNPJ + senha ou link mágico por e-mail
+- **Catálogo B2B:** Produtos com fotos, descrição, preço (de acordo com a tabela do cliente), estoque disponível
+- **Carrinho de Compras:** Adicionar produtos, quantidade, ver total
+- **Meus Pedidos:** Histórico, status, reimprimir pedido, acompanhar entrega
+- **Segunda Via de NF:** Download de NF-e anteriores
+- **Dados Cadastrais:** Atualizar endereço, contatos
+- **White-label:** Cores e logo da empresa configuráveis
+
+### GRUPO 9: AGENTE DE IA (Mantém + Evolui)
+Manter tudo que existe e adicionar:
+
+- **NOVO: IA Gera Pedido a partir de Conversa:** Durante atendimento no WhatsApp, a IA pode montar um pedido automaticamente reconhecendo produtos, quantidades e condições na conversa. Enviar resumo para confirmação do cliente. Após confirmação, criar pedido no sistema com origem "IA".
+- **NOVO: IA de Recuperação:** Agente específico para campanhas de reativação de clientes
+- **NOVO: IA de Análise de Estoque:** Alertar quando produtos estão com giro baixo e sugerir promoções
+- **NOVO: IA de Precificação:** Sugerir preços baseados em histórico, concorrência (se houver dados) e margem desejada
+
+### GRUPO 10: ANÁLISE E RELATÓRIOS (Mantém + Evolui)
+- **Desempenho** (já existe)
+- **Evolução da IA** (já existe)
+- **NOVO: Relatórios Comerciais:**
+  - Vendas por período, vendedor, região, produto, cliente
+  - Curva ABC de clientes e produtos
+  - Análise de margem de contribuição
+  - Prazo médio de recebimento
+  - Giro de estoque
+- **NOVO: Exportação:** Todos os relatórios exportáveis para Excel/PDF
+- **NOVO: Relatórios Agendados:** Enviar por e-mail automaticamente (diário/semanal/mensal)
+
+### GRUPO 11: CONFIGURAÇÕES E ADMIN (Mantém + Evolui)
+- **Organização, Equipe, Segurança** (já existe)
+- **NOVO: Dados da Empresa:** Razão social, CNPJ, IE, endereço, logo (para cabeçalho de pedidos e NF), certificado digital
+- **NOVO: Políticas Comerciais:** Regras de desconto máximo, prazo máximo, frete mínimo para frete grátis
+- **NOVO: Integrações Fiscais:** Configuração de emissor de NF (se integrar com API de emissão como Focus NFE, Webmania, etc.)
+- **NOVO: Importações em Massa:** Central única para importar clientes, produtos, tabelas de preço via Excel
+
+---
+
+## 3. DESIGN SYSTEM E UI/UX
+
+### Paleta de Cores (Inspirada no Mercos)
+- **Primária:** `#1E3A5F` (azul escuro profissional) — headers, sidebar, botões primários
+- **Secundária:** `#00A8E8` (azul claro) — destaques, links, hover
+- **Sucesso:** `#2ECC71` (verde) — pedidos aprovados, estoque OK, alertas positivos
+- **Alerta:** `#F39C12` (laranja) — pedidos pendentes, estoque baixo, clientes inativos
+- **Perigo:** `#E74C3C` (vermelho) — cancelamentos, erros, bloqueios
+- **Fundo:** `#F5F7FA` (cinza muito claro) — background das telas
+- **Cards:** `#FFFFFF` — superfícies elevadas
+- **Texto:** `#2C3E50` (escuro), `#7F8C8D` (cinza secundário)
+
+### Tipografia
+- **Fonte:** Inter (já usada no shadcn/ui) — manter
+- **Tamanhos:** Hierarquia clara — H1 24px, H2 20px, H3 16px, body 14px
+
+### Componentes Visuais
+- **Sidebar:** Colapsável, ícones do Lucide, grupos com accordion
+- **Tabelas:** Com sorting, filtros inline, paginação, seleção em massa
+- **Cards de KPI:** Com ícone, valor grande, variação percentual (seta para cima/baixo colorida)
+- **Badges de Origem:** Cores distintas conforme especificado no módulo de Pedidos
+- **Modais:** Para ações rápidas (novo pedido, adicionar produto)
+- **Toast notifications:** Para feedback de ações (sucesso, erro, aviso)
+- **Skeleton loaders:** Para estados de carregamento
+- **Empty states:** Ilustrações amigáveis quando não há dados
+
+### Responsividade
+- **Desktop:** Layout completo com sidebar, 3 colunas no pedido
+- **Tablet:** Sidebar colapsada, 2 colunas no pedido
+- **Mobile:** Layout adaptado, cards empilhados, ações principais em FAB (Floating Action Button)
+
+---
+
+## 4. FLUXOS DE TRABALHO DETALHADOS
+
+### Fluxo 1: Venda Completa (WhatsApp → Pedido → NF → Expedição)
+1. Cliente manda mensagem no WhatsApp
+2. IA atende, qualifica, monta carrinho na conversa
+3. Cliente confirma → IA cria pedido (origem: WhatsApp/IA)
+4. Vendedor recebe notificação, revisa e aprova
+5. Sistema gera NF-e automaticamente (ou manualmente)
+6. Pedido vai para fila de expedição
+7. Expedidor cria carga/romaneio com vários pedidos
+8. Motorista entrega → comprovante de entrega
+9. Cliente recebe NF-e por e-mail/WhatsApp
+
+### Fluxo 2: Recuperação de Cliente Inativo
+1. Sistema identifica cliente sem compra há 60 dias
+2. Automação dispara: IA envia WhatsApp personalizado com oferta
+3. Cliente não responde em 3 dias → E-mail automático
+4. Cliente não responde em 7 dias → Tarefa criada para vendedor ligar
+5. Cliente faz pedido → marcado como "Recuperado", campanha atualiza métricas
+
+### Fluxo 3: Importação em Massa
+1. Admin acessa Configurações → Importações
+2. Seleciona tipo: Clientes ou Produtos
+3. Faz upload do Excel
+4. Sistema mostra preview com mapeamento de colunas
+5. Valida CNPJs duplicados (clientes) ou SKUs duplicados (produtos)
+6. Admin confirma → importação em background com progresso
+7. Log de resultado: quantos importados, quantos erros, quais linhas
+
+### Fluxo 4: Pedido pelo Portal B2B
+1. Cliente acessa portal com CNPJ + senha
+2. Vê catálogo com preços dele (tabela específica)
+3. Adiciona produtos ao carrinho
+4. Finaliza pedido → entra no sistema como "B2B"
+5. Vendedor recebe notificação para aprovação
+6. Após aprovação, segue fluxo normal de faturamento
+
+---
+
+## 5. REGRAS DE NEGÓCIO E VALIDAÇÕES
+
+- **SKU único por tenant:** Não permitir SKU duplicado dentro do mesmo tenant
+- **Cliente único por CNPJ/CPF:** Alertar se CNPJ já cadastrado na importação
+- **Política de desconto:** Se vendedor aplicar desconto acima do permitido, pedido vai para "Em Análise" (aprovador)
+- **Estoque negativo:** Configurável por tenant — permitir ou bloquear
+- **Limite de crédito:** Bloquear pedido se soma de pedidos em aberto + novo pedido > limite
+- **Histórico de preços:** Registrar todo histórico de alteração de preço de produto (audit)
+- **Numeração de pedido:** Sequencial por tenant (ex: PED-0001, PED-0002)
+- **NF-e:** Não permitir cancelar NF-e após 24h sem justificativa (regra fiscal)
+
+---
+
+## 6. INTEGRAÇÕES
+
+- **ERP:** Webhook bidirecional — enviar pedidos, receber estoque atualizado, receber status de NF
+- **Emissor de NF-e:** API REST (Focus NFE, Webmania, Tecnospeed, ou similar) — enviar dados do pedido, receber XML e chave de acesso
+- **WhatsApp:** Manter WAHA + Meta Cloud API
+- **E-mail:** Manter Resend (ou similar) — para envio de NF, pedidos, relatórios
+- **Google Maps:** API para geocodificação de endereços e rotas
+- **Planilhas:** Biblioteca `xlsx` ou `sheetjs` para import/export
+
+---
+
+## 7. REQUISITOS TÉCNICOS
+
+### Banco de Dados (Supabase/Postgres)
+Criar novas tabelas (todas com RLS por tenant):
+- `products` (produtos)
+- `product_images` (fotos)
+- `categories` (categorias)
+- `price_tables` (tabelas de preço)
+- `price_table_items` (itens da tabela)
+- `orders` (pedidos)
+- `order_items` (itens do pedido)
+- `invoices` (notas fiscais)
+- `shipments` (expedições/cargas)
+- `shipment_orders` (pedidos na carga)
+- `customer_360` (dados extendidos do cliente)
+- `recovery_campaigns` (campanhas de recuperação)
+- `recovery_logs` (execuções)
+- `b2b_portal_users` (usuários do portal)
+- `company_settings` (dados da empresa emitente)
+
+Todas as tabelas devem ter:
+- `org_id` (tenant)
+- `created_at`, `updated_at`
+- `created_by`, `updated_by`
+- Triggers para audit log
+
+### API (Route Handlers Next.js)
+- CRUD completo para todos os novos módulos
+- Validação Zod em todos os endpoints
+- RBAC server-side (manter padrão atual)
+- Rate limiting nas rotas de importação
+
+### Workers/Filas
+- Processamento de importação em background
+- Emissão de NF-e (assíncrona)
+- Geração de PDFs em lote
+- Envio de e-mails em lote
+
+### Storage (Supabase)
+- `product-images/` — fotos dos produtos
+- `invoices/xml/` — XMLs de NF
+- `invoices/danfe/` — PDFs de DANFE
+- `orders/pdf/` — PDFs de pedidos
+- `company/logos/` — Logo da empresa
+
+---
+
+## 8. ROADMAP DE IMPLEMENTAÇÃO (Sugestão)
+
+### Fase 1: Fundação Comercial (Semanas 1-3)
+- [ ] Módulo de Produtos (cadastro, fotos, categorias, tabelas de preço)
+- [ ] Importação via Excel (produtos e clientes)
+- [ ] Ficha do Cliente 360°
+- [ ] Dashboard executivo básico
+
+### Fase 2: Pedidos (Semanas 4-6)
+- [ ] Tela de novo pedido (3 colunas)
+- [ ] Lista de pedidos com badges de origem
+- [ ] PDF de pedido para impressão
+- [ ] Regras de negócio (estoque, limite de crédito, desconto)
+
+### Fase 3: Fiscal e Logística (Semanas 7-9)
+- [ ] Emissão de NF-e integrada
+- [ ] Módulo de expedição e romaneio
+- [ ] Geração de carga para transporte próprio
+
+### Fase 4: Automação e Recuperação (Semanas 10-12)
+- [ ] Módulo de recuperação de clientes
+- [ ] IA gerando pedidos automaticamente
+- [ ] Campanhas automatizadas via QUANDO/SE/ENTÃO
+
+### Fase 5: Portal B2B e Polish (Semanas 13-15)
+- [ ] Portal do cliente (e-commerce B2B)
+- [ ] Relatórios avançados e agendados
+- [ ] Ajustes de UI/UX finais, testes, documentação
+
+---
+
+## 9. CHECKLIST DE ENTREGA
+
+- [ ] Todas as telas descritas implementadas e navegáveis
+- [ ] Badges de origem de pedido (IA, Vendedor, WhatsApp, B2B) visíveis e funcionais
+- [ ] Produtos com upload de fotos funcionando
+- [ ] Importação Excel com preview e validação
+- [ ] PDF de pedido profissional e configurável
+- [ ] Romaneio de carga com PDF e controle de entrega
+- [ ] NF-e emitida e integrada
+- [ ] Recuperação de clientes com automação funcional
+- [ ] Dashboard com KPIs reais e gráficos
+- [ ] Design consistente com a paleta definida
+- [ ] RLS aplicado em todas as novas tabelas
+- [ ] Audit log em todas as mutações comerciais
+- [ ] Testes de invariantes passando
+- [ ] Documentação de API atualizada
+
+---
+
+## 10. NOTAS FINAIS PARA A IA DESENVOLVEDORA
+
+> **"Você está evoluindo um CRM open-source já maduro. Não reinvente a roda — estenda.**
+> **Mantenha a arquitetura existente (Next.js App Router, Supabase RLS, shadcn/ui, Zod, workers).**
+> **Cada nova tabela deve seguir o padrão de multi-tenancy já estabelecido.**
+> **Cada nova tela deve ter navegação na sidebar e ser acessível por URL.**
+> **O design deve ser profissional, limpo, inspirado no Mercos — mas com a alma do Deskcomm: IA nativa, WhatsApp integrado, e automação inteligente."**
+
+-

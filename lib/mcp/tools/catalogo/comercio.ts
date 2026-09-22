@@ -28,6 +28,18 @@ export const TOOLS_COMERCIO = declararTools([
     pacotes: ["vender", "atender"],
   },
   {
+    name: "commercial_create_order",
+    category: "write",
+    rotulo: "Montar rascunho de pedido",
+    explicacao:
+      "Monta o rascunho do pedido com o que o cliente confirmou na conversa. Sai sempre como RASCUNHO com origem IA: um humano aprova depois. Sem estoque ou sem crédito, volta recusado.",
+    oQueToca: "Pedidos da loja (rascunho)",
+    // Crítico de propósito: dinheiro em movimento não entra no default de
+    // nenhum agente — o dono liga por agente, sabendo o que está ligando.
+    risco: "critico",
+    pacotes: ["vender"],
+  },
+  {
     name: "crm_list_privacy_requests",
     category: "read",
     rotulo: "Ver pedidos de privacidade",

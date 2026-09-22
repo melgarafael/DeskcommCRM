@@ -82,7 +82,7 @@ export default async function AcceptInvitePage({ params }: PageProps) {
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <Link
             href={`/login?next=${next}`}
-            className="inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+            className="inline-block rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
           >
             {t("Fazer login")}
           </Link>
@@ -117,7 +117,7 @@ export default async function AcceptInvitePage({ params }: PageProps) {
         <form action="/api/auth/signout" method="post" className="mt-4">
           <button
             type="submit"
-            className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
+            className="rounded-full border px-4 py-2 text-sm font-medium hover:bg-accent"
           >
             {t("Sair")}
           </button>
@@ -141,7 +141,7 @@ export default async function AcceptInvitePage({ params }: PageProps) {
       <form action={accept} className="mt-4">
         <button
           type="submit"
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+          className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
         >
           {t("Aceitar convite")}
         </button>

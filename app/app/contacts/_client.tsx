@@ -81,9 +81,9 @@ export function ContactsListClient() {
     <div className="space-y-4 p-6">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">{t("Contatos")}</h1>
+          <h1 className="text-2xl font-medium tracking-tight text-text">{t("Clientes")}</h1>
           <p className="text-sm text-muted-foreground">
-            {t("Customer 360 — busque, filtre e gerencie contatos.")}
+            {t("Customer 360 — busque, filtre e gerencie clientes.")}
           </p>
         </div>
         {/*
@@ -98,7 +98,7 @@ export function ContactsListClient() {
           </Button>
           <Button onClick={() => setCreateOpen(true)}>
             <Plus size={16} weight="bold" aria-hidden />
-            <span>{t("Novo contato")}</span>
+            <span>{t("Novo cliente")}</span>
           </Button>
         </div>
       </header>
@@ -193,7 +193,7 @@ export function ContactsListClient() {
         </div>
       ) : q.isError ? (
         <Card className="p-6 text-center">
-          <p className="text-sm text-error-fg">{t("Erro ao carregar contatos.")}</p>
+          <p className="text-sm text-error-fg">{t("Erro ao carregar clientes.")}</p>
           <Button
             size="sm"
             variant="outline"
@@ -219,7 +219,7 @@ export function ContactsListClient() {
           </Card>
           <div className="flex flex-col items-center gap-2 sm:flex-row sm:justify-between">
             <p className="text-sm text-muted-foreground">
-              {allContacts.length} {allContacts.length === 1 ? t("contato") : t("contatos")}
+              {allContacts.length} {allContacts.length === 1 ? t("cliente") : t("clientes")}
               {q.hasNextPage ? ` ${t("carregados — há mais resultados")}` : ""}
             </p>
             {q.hasNextPage && (

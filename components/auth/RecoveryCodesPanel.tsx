@@ -75,7 +75,7 @@ export function RecoveryCodesPanel({ codes, onAcknowledge }: RecoveryCodesPanelP
 
   return (
     <div className="space-y-4">
-      <div className="rounded-md border border-border bg-muted/40 p-4">
+      <div className="rounded-2xl border border-border bg-muted/40 p-4">
         <p className="mb-3 text-sm text-muted-foreground">
           {t("Salve esses 10 códigos em um local seguro. Cada um pode ser usado")}{" "}
           <strong>{t("uma única vez")}</strong> {t("para entrar caso você perca acesso ao autenticador.")}{" "}
@@ -85,7 +85,7 @@ export function RecoveryCodesPanel({ codes, onAcknowledge }: RecoveryCodesPanelP
           {codes.map((c, i) => (
             <div
               key={i}
-              className="rounded-md border border-border bg-background px-3 py-2 text-center font-mono text-sm tracking-widest"
+              className="rounded-2xl border border-border bg-background px-3 py-2 text-center font-mono text-sm tracking-widest"
             >
               {c}
             </div>
@@ -107,7 +107,7 @@ export function RecoveryCodesPanel({ codes, onAcknowledge }: RecoveryCodesPanelP
           type="checkbox"
           checked={acked}
           onChange={(e) => setAcked(e.target.checked)}
-          className="mt-0.5 h-4 w-4 rounded-md border-border"
+          className="mt-0.5 h-4 w-4 rounded-sm border-border"
         />
         <span>{t("Salvei meus códigos em local seguro.")}</span>
       </label>

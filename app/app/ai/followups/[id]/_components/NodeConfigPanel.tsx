@@ -55,7 +55,7 @@ export function NodeConfigPanel({ node, onChange, ramosLigados }: Props) {
   return (
     <div className="flex h-full flex-col gap-5 overflow-y-auto" data-testid="node-config-panel">
       <div className="space-y-1">
-        <h2 className="flex items-center gap-2 text-base font-semibold text-text">
+        <h2 className="flex items-center gap-2 text-base font-medium text-text">
           <span className={`flex h-6 w-6 items-center justify-center rounded-full ${visual.chipClassName}`}>
             <Icon size={14} aria-hidden />
           </span>
