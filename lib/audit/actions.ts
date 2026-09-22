@@ -235,6 +235,7 @@ export const AUDIT_ACTIONS = [
   // atende ou a recusa, e alguém a derruba. Um registro em `voice_calls` diz o
   // QUE aconteceu; a trilha diz QUEM mandou acontecer, e são perguntas
   // diferentes quando o time inteiro compartilha o mesmo número.
+  "voice.mission_requested",
   "voice.call_started",
   "voice.call_accepted",
   "voice.call_rejected",

@@ -93,6 +93,8 @@
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.6.0",
     "web-push": "^3.6.7",
+    "werift": "^0.24.4",
+    "ws": "^8.21.3",
     "zod": "^4.6.0"
   },
   "devDependencies": {
@@ -109,6 +111,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/web-push": "^3.6.4",
+    "@types/ws": "^8.18.1",
     "@vercel/config": "^0.7.0",
     "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^9.12.0",

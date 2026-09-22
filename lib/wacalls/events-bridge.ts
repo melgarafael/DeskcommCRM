@@ -244,6 +244,11 @@ async function handleCallStatus(
   },
   log: Logger,
 ): Promise<void> {
+  if (typeof ev.owner === 'string' && ev.owner.startsWith('ai:')) {
+    const id = ev.owner.slice(3);
+    if (UUID.test(id)) await pool.query(`update voice_missions set call_id=$3, transport_status=$4, transport_ended=(transport_ended or $4='ended'), updated_at=now() where id=$1 and organization_id=$2 and status in ('preparing','dialing','ringing','connected','finishing')`, [id,sess.organizationId,ev.id,ev.status]);
+    return;
+  }
   const peerPhone = peerToPhone(ev.peer);
   // Quem está na linha. O upstream manda em TODO `call-status`; a versão
   // anterior desta ponte descartava, e o resultado era uma ligação sem dono:
@@ -346,6 +351,13 @@ async function handleCallEnded(
   ev: { id: string; reason: string; endedAt: number; owner?: unknown },
   log: Logger,
 ): Promise<void> {
+  if (typeof ev.owner === 'string' && ev.owner.startsWith('ai:')) {
+    const id=ev.owner.slice(3);
+    if(UUID.test(id)) await pool.query(`update voice_missions set transport_ended=true,transport_status='ended',updated_at=now() where id=$1 and organization_id=$2`,[id,sess.organizationId]);
+    return;
+  }
+  const missionEnded = await pool.query(`update voice_missions set transport_ended=true,transport_status='ended',updated_at=now() where call_id=$1 and organization_id=$2 returning id`,[ev.id,sess.organizationId]);
+  if(missionEnded.rowCount)return;
   const { rows } = await pool.query<{
     id: string;
     contact_id: string | null;

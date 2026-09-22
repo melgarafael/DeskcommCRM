@@ -60,6 +60,7 @@ export class WacallsClient {
 
   private async req<T>(path: string, init?: RequestInit): Promise<T> {
     const res = await fetch(`${this.baseUrl}${path}`, {
+      signal: AbortSignal.timeout(15000),
       ...init,
       headers: {
         "Content-Type": "application/json",

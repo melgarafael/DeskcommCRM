@@ -7604,6 +7604,96 @@ export type Database = {
         }
         Relationships: []
       }
+      voice_missions: {
+        Row: {
+          id: string
+          organization_id: string
+          conversation_id: string
+          created_by: string
+          objective: string
+          agent_id: string | null
+          channel_id: string | null
+          test_contact_id: string | null
+          test: boolean
+          status: string
+          cancel_requested: boolean
+          call_id: string | null
+          provider_conversation_id: string | null
+          context_snapshot: string | null
+          result: Json | null
+          error: string | null
+          heartbeat_at: string | null
+          started_at: string | null
+          ended_at: string | null
+          created_at: string
+          updated_at: string
+          transport_status: string | null
+          transport_ended: boolean
+          session_id: string | null
+          reservation_id: string | null
+          usage_evidence: Json | null
+          redacted: boolean
+        }
+        Insert: {
+          id: string
+          organization_id: string
+          conversation_id: string
+          created_by: string
+          objective?: string
+          agent_id?: string | null
+          channel_id?: string | null
+          test_contact_id?: string | null
+          test?: boolean
+          status?: string
+          cancel_requested?: boolean
+          call_id?: string | null
+          provider_conversation_id?: string | null
+          context_snapshot?: string | null
+          result?: Json | null
+          error?: string | null
+          heartbeat_at?: string | null
+          started_at?: string | null
+          ended_at?: string | null
+          created_at?: string
+          updated_at?: string
+          transport_status?: string | null
+          transport_ended?: boolean
+          session_id?: string | null
+          reservation_id?: string | null
+          usage_evidence?: Json | null
+          redacted?: boolean
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          conversation_id?: string
+          created_by?: string
+          objective?: string
+          agent_id?: string | null
+          channel_id?: string | null
+          test_contact_id?: string | null
+          test?: boolean
+          status?: string
+          cancel_requested?: boolean
+          call_id?: string | null
+          provider_conversation_id?: string | null
+          context_snapshot?: string | null
+          result?: Json | null
+          error?: string | null
+          heartbeat_at?: string | null
+          started_at?: string | null
+          ended_at?: string | null
+          created_at?: string
+          updated_at?: string
+          transport_status?: string | null
+          transport_ended?: boolean
+          session_id?: string | null
+          reservation_id?: string | null
+          usage_evidence?: Json | null
+          redacted?: boolean
+        }
+        Relationships: []
+      }
       voice_calls: {
         Row: {
           answered_at: string | null

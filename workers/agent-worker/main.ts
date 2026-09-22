@@ -89,6 +89,7 @@ import { runDrainLoop } from "@/lib/agent-engine/edge/crm/drain";
 import { runEventLogDrainLoop } from "@/lib/event-log/drain-loop";
 import { crmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/crm/mcp-client";
 import { enforceHolds, sessionHealthMetrics } from "@/lib/agent-engine/edge/crm/session-watchdog";
+import { runVoiceMissionLoop } from "@/lib/voice/missions/worker";
 import { runVoiceCallsBridgeLoop } from "@/lib/wacalls/events-bridge";
 import { runSessionWatchdogLoop } from "@/lib/agent-engine/edge/crm/session-reconciler";
 import { runHealthLoop } from "@/lib/agent-engine/health/circuit";
@@ -349,6 +350,7 @@ export async function startWorker(
   // Ponte de eventos WaCalls (spec 18, §4.2) — chamada de voz, opt-in por
   // org. Sem a env, fica OFF: instalação que não usa a feature não paga o
   // custo de uma conexão SSE tentando alcançar um serviço que não existe.
+  const voiceMissionLoop = runVoiceMissionLoop(pool, log, loopsAbort.signal);
   const voiceCallsBridgeLoop =
     env.WACALLS_API_BASE_URL !== undefined && env.WACALLS_API_TOKEN !== undefined
       ? runVoiceCallsBridgeLoop(
@@ -543,6 +545,7 @@ export async function startWorker(
       sessionWatchdogLoop,
       flywheelLoop,
       voiceCallsBridgeLoop,
+      voiceMissionLoop,
     ]);
     await workerLoop;
     let graceTimer: NodeJS.Timeout | undefined;
