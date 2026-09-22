@@ -20,11 +20,19 @@ interface Props {
   messageId: string;
   isOutbound: boolean;
   transcription?: string | null;
+  transcriptionStatus?: string | null;
   summary?: string | null;
   intent?: string | null;
 }
 
-export function AudioPlayer({ messageId, isOutbound, transcription, summary, intent }: Props) {
+export function AudioPlayer({
+  messageId,
+  isOutbound,
+  transcription,
+  transcriptionStatus,
+  summary,
+  intent,
+}: Props) {
   const t = useT();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -95,7 +103,8 @@ export function AudioPlayer({ messageId, isOutbound, transcription, summary, int
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const hasAIEnrichment = Boolean(transcription || summary || intent);
+  const isProcessing = transcriptionStatus === "processing" || transcriptionStatus === "pending";
+  const transcriptionFailed = transcriptionStatus === "failed";
 
   return (
     <div className="flex flex-col gap-2 w-full max-w-[320px]">
@@ -138,17 +147,18 @@ export function AudioPlayer({ messageId, isOutbound, transcription, summary, int
         </button>
       </div>
 
-      {hasAIEnrichment && (
-        <div className="flex flex-col gap-1 text-xs">
+      <div
+        className="flex flex-col gap-1 rounded-lg border border-purple-500/20 bg-purple-500/5 p-2 text-xs"
+        aria-label={t("Inteligência do áudio")}
+      >
           <div className="flex items-center justify-between">
-            {intent && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
-                <Sparkle className="w-3 h-3" />
-                {intent}
-              </span>
-            )}
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+              <Sparkle className="w-3 h-3" />
+              {intent || t("Áudio analisado por IA")}
+            </span>
             {transcription && (
               <button
+                type="button"
                 onClick={() => setShowTranscription(!showTranscription)}
                 className="inline-flex items-center gap-1 text-[11px] text-brand-600 dark:text-brand-400 hover:underline ml-auto"
               >
@@ -158,6 +168,16 @@ export function AudioPlayer({ messageId, isOutbound, transcription, summary, int
             )}
           </div>
 
+          {!transcription && (
+            <p className="px-1 text-[11px] text-muted-foreground">
+              {isProcessing
+                ? t("Preparando transcrição…")
+                : transcriptionFailed
+                  ? t("Não foi possível transcrever este áudio.")
+                  : t("Transcrição ainda não disponível.")}
+            </p>
+          )}
+
           {showTranscription && transcription && (
             <div className="p-2.5 rounded-lg bg-surface-elevated border border-border text-foreground/90 space-y-2 mt-1">
               <div className="flex items-center justify-between border-b border-border pb-1">
@@ -165,6 +185,7 @@ export function AudioPlayer({ messageId, isOutbound, transcription, summary, int
                   Transcrição (IA)
                 </span>
                 <button
+                  type="button"
                   onClick={() => copyText(transcription)}
                   className="p-1 hover:bg-surface rounded text-muted-foreground hover:text-foreground transition"
                   title="Copiar transcrição"
@@ -181,8 +202,7 @@ export function AudioPlayer({ messageId, isOutbound, transcription, summary, int
               )}
             </div>
           )}
-        </div>
-      )}
+      </div>
     </div>
   );
 }
