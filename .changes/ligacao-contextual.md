@@ -1,6 +1,6 @@
 ---
 impacto: capacidade_nova
-secao: melhorado
+secao: alterado
 titulo: Ligações retomam o atendimento com sugestões de objetivo
 ---
 
