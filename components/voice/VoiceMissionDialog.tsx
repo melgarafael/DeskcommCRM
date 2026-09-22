@@ -145,6 +145,7 @@ function MissionEditor({ conversationId }: { conversationId: string }) {
       </div>
     );
   const active = data.missions.find((m) => activeStatuses.includes(m.status));
+  const selectedChannel = data.channels.find((c) => c.id === effective.channel_id);
   const connected = data.channels.some((c) => c.ready);
   const needsConnection = !data.voice.configured || !data.voice.enabled || !connected;
   const recipient = draft.test
@@ -226,8 +227,9 @@ function MissionEditor({ conversationId }: { conversationId: string }) {
               <span className="block font-normal text-muted-foreground">
                 {data.agents.find((a) => a.id === effective.agent_id)?.name || "Agente a escolher"}
                 {" · "}
-                {data.channels.find((c) => c.id === effective.channel_id)?.name ||
-                  "Número a escolher"}
+                {selectedChannel?.name ||
+                  selectedChannel?.phone_number ||
+                  (selectedChannel ? "Número de chamadas" : "Número a escolher")}
                 {draft.test ? " · modo de teste" : ""}
               </span>
             </summary>
