@@ -60,6 +60,34 @@ it("starts in two clicks with the recipient visible and no review step", async (
     ),
   );
 });
+it("preenche uma sugestão contextual sem ligar nem sobrescrever o texto durante atualização", async () => {
+  mocks.get.mockResolvedValue({
+    data: {
+      ...panel,
+      suggestions: [
+        {
+          id: "continue",
+          label: "Continuar esse assunto",
+          evidence: "Posso parcelar?",
+          objective: "Esclarecer o parcelamento da proposta discutida.",
+        },
+      ],
+    },
+  });
+  const client = await open();
+  expect(screen.getByText("“Posso parcelar?”")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Continuar esse assunto" }));
+  expect(screen.getByLabelText("Seu objetivo")).toHaveValue(
+    "Esclarecer o parcelamento da proposta discutida.",
+  );
+  expect(mocks.post).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("Seu objetivo"), {
+    target: { value: "Meu objetivo ajustado" },
+  });
+  await client.invalidateQueries({ queryKey: ["voice-missions", "conversation"] });
+  expect(screen.getByLabelText("Seu objetivo")).toHaveValue("Meu objetivo ajustado");
+});
+
 it("keeps ambiguous choices pending and never starts when saving", async () => {
   mocks.get.mockResolvedValue({
     data: {

@@ -1,5 +1,6 @@
 import type pg from "pg";
 import { MissionError, activeStatuses, type MissionInput } from "./schema";
+import { callSuggestions, serializeCallContext, type ContextMessage } from "./context";
 
 export async function conversationForMission(
   db: pg.Pool | pg.PoolClient,
@@ -19,7 +20,7 @@ export async function conversationForMission(
 
 export async function readMissions(pool: pg.Pool, org: string, conversation: string, user: string) {
   const c = await conversationForMission(pool, org, conversation);
-  const [missions, agents, channels, contacts, voice] = await Promise.all([
+  const [missions, agents, channels, contacts, voice, recent] = await Promise.all([
     pool.query(
       `select id,objective,agent_id,channel_id,test_contact_id,test,status,result,error,cancel_requested,created_at,started_at,ended_at
       from voice_missions where organization_id=$1 and conversation_id=$2 and (status<>'draft' or created_by=$3) order by created_at desc limit 20`,
@@ -38,6 +39,10 @@ export async function readMissions(pool: pg.Pool, org: string, conversation: str
       [org],
     ),
     pool.query("select enabled from org_voice_calls where organization_id=$1", [org]),
+    pool.query<ContextMessage>(
+      `select id,direction,body,sent_at from messages where organization_id=$1 and conversation_id=$2 and revoked_at is null and body is not null and btrim(body)<>'' order by sent_at desc,id desc limit 40`,
+      [org, conversation],
+    ),
   ]);
   const readyAgents = agents.rows.filter((a) => a.ready);
   const defaultAgents = readyAgents.filter((a) => a.is_default);
@@ -55,6 +60,7 @@ export async function readMissions(pool: pg.Pool, org: string, conversation: str
       channel_id: readyChannels.length === 1 ? readyChannels[0].id : null,
     },
     contact: { name: c.name, phone: c.phone_number },
+    suggestions: callSuggestions(recent.rows),
     missions: missions.rows,
     agents: agents.rows,
     channels: channels.rows,
@@ -213,17 +219,9 @@ export async function missionContext(pool: pg.Pool, org: string, conversation: s
   const c = await conversationForMission(pool, org, conversation);
   if (c.is_blocked || c.is_group || ["closed", "archived", "resolved"].includes(c.status))
     throw new MissionError("Atendimento não está disponível para ligar.");
-  const { rows } = await pool.query(
-    `select direction,body,sent_at from messages where organization_id=$1 and conversation_id=$2 and revoked_at is null and body is not null order by sent_at desc limit 40`,
+  const { rows } = await pool.query<ContextMessage>(
+    `select direction,body,sent_at from messages where organization_id=$1 and conversation_id=$2 and revoked_at is null and body is not null order by sent_at desc,id desc limit 40`,
     [org, conversation],
   );
-  return JSON.stringify({
-    empresa: c.company,
-    cliente: c.name,
-    mensagens: rows.reverse().map((m) => ({
-      quem: m.direction === "inbound" ? "cliente" : "empresa",
-      texto: String(m.body).slice(0, 1600),
-      quando: m.sent_at,
-    })),
-  }).slice(0, 24000);
+  return serializeCallContext(c.company, c.name, rows);
 }

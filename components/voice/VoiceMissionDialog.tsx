@@ -42,6 +42,7 @@ type Panel = {
   agents: Choice[];
   channels: Choice[];
   contacts: Choice[];
+  suggestions?: { id: string; label: string; evidence: string; objective: string }[];
 };
 const selectClass =
   "w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring";
@@ -156,8 +157,8 @@ function MissionEditor({ conversationId }: { conversationId: string }) {
       <div className="rounded-xl bg-muted/50 p-3 text-sm">
         <strong>{data.contact.name || "Cliente deste atendimento"}</strong>
         <p className="mt-1 text-muted-foreground">
-          A IA se apresenta, escuta com calma e adapta a conversa ao seu objetivo, usando o
-          histórico deste atendimento.
+          A IA chama a pessoa pelo nome e retoma o assunto deste atendimento, sem pedir que ela
+          explique tudo de novo.
         </p>
       </div>
       {active ? (
@@ -179,6 +180,39 @@ function MissionEditor({ conversationId }: { conversationId: string }) {
         </section>
       ) : (
         <>
+          {!!data.suggestions?.length && (
+            <section
+              aria-label="Sugestões para esta conversa"
+              className="space-y-2 rounded-xl border p-3"
+            >
+              <p className="text-sm font-medium">A partir da última mensagem do cliente</p>
+              <blockquote className="text-sm break-words text-muted-foreground">
+                “{data.suggestions[0]?.evidence}”
+              </blockquote>
+              {!draft.objective.trim() ? (
+                <div className="flex flex-wrap gap-2">
+                  {data.suggestions.map((suggestion) => (
+                    <Button
+                      key={suggestion.id}
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => {
+                        update({ objective: suggestion.objective });
+                        document.getElementById("voice-objective")?.focus();
+                      }}
+                    >
+                      {suggestion.label}
+                    </Button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Seu objetivo está abaixo. Você pode ajustar antes de ligar.
+                </p>
+              )}
+            </section>
+          )}
           <div className="block space-y-2 text-sm font-medium">
             <label htmlFor="voice-objective">Seu objetivo</label>
             <textarea
