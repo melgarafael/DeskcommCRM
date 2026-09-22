@@ -147,7 +147,7 @@ async function executeMission(
   let durationTimer: ReturnType<typeof setTimeout> | undefined;
   const limit = setTimeout(() => controller.abort(), 360000);
   try {
-    const context = await missionContext(pool, m.organization_id, m.conversation_id);
+    const context = await missionContext(pool, m.organization_id, m.conversation_id, m.created_by);
     stage = "configuration";
     const config = await missionConfiguration(pool, m);
     if (!config?.phone_number || !config.wacalls_session_id) throw new Error("mission_not_ready");

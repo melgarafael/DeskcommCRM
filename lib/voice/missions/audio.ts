@@ -79,7 +79,7 @@ export async function audioBridge(options: {
                   output_modalities: ["audio"],
                   instructions:
                     options.instructions +
-                    "\nFale em português brasileiro. Comece se apresentando e perguntando se pode conversar sobre o assunto. Ao terminar, despeça-se em voz e só depois chame end_call com o resultado e próximo passo. Não chame end_call antes de o cliente falar.",
+                    "\nFale em português brasileiro. Siga a abertura natural orientada acima: cumprimente, apresente-se brevemente e pergunte se pode falar um minutinho. Ao terminar, despeça-se em voz e só depois chame end_call com o resultado e próximo passo. Não chame end_call antes de o cliente falar.",
                   audio: {
                     input: {
                       format: { type: "audio/pcm", rate: 24000 },

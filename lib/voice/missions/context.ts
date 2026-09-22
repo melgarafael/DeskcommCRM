@@ -28,7 +28,27 @@ export function callSuggestions(messages: ContextMessage[]) {
 }
 
 /** Input is newest first; keep the newest messages when the context budget is full. */
-export function serializeCallContext(company: string, name: string, messages: ContextMessage[]) {
+export function voiceGreeting(timezone: string, now = new Date()) {
+  try {
+    const hour = Number(
+      new Intl.DateTimeFormat("en-GB", {
+        timeZone: timezone,
+        hour: "2-digit",
+        hourCycle: "h23",
+      }).format(now),
+    );
+    return hour >= 6 && hour < 12 ? "Bom dia" : hour >= 12 && hour < 18 ? "Boa tarde" : "Boa noite";
+  } catch {
+    return ""; // An invalid timezone must not invent the recipient's time of day.
+  }
+}
+
+export function serializeCallContext(
+  company: string,
+  name: string,
+  messages: ContextMessage[],
+  opening?: { requester: string | null; greeting: string },
+) {
   const selected: { quem: string; texto: string; quando: string | Date }[] = [];
   let budget = 21000;
   for (const m of messages) {
@@ -45,6 +65,9 @@ export function serializeCallContext(company: string, name: string, messages: Co
   return JSON.stringify({
     empresa: String(company ?? "").slice(0, 300),
     cliente: String(name ?? "").slice(0, 300),
+    ...(opening
+      ? { solicitante: String(opening.requester ?? "").slice(0, 300), saudacao: opening.greeting }
+      : {}),
     mensagens: selected.reverse(),
   });
 }

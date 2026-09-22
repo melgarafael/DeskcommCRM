@@ -1,6 +1,11 @@
 import type pg from "pg";
 import { MissionError, activeStatuses, type MissionInput } from "./schema";
-import { callSuggestions, serializeCallContext, type ContextMessage } from "./context";
+import {
+  callSuggestions,
+  serializeCallContext,
+  voiceGreeting,
+  type ContextMessage,
+} from "./context";
 
 export async function conversationForMission(
   db: pg.Pool | pg.PoolClient,
@@ -9,7 +14,7 @@ export async function conversationForMission(
 ) {
   const { rows } = await db.query(
     `select c.id,c.contact_id,c.active_ai_agent_id,c.status,c.is_group,p.name,p.phone_number,p.is_blocked,p.is_anonymized,
-    o.display_name as company from conversations c join contacts p on p.id=c.contact_id and p.organization_id=c.organization_id
+    o.display_name as company,o.timezone from conversations c join contacts p on p.id=c.contact_id and p.organization_id=c.organization_id
     join organizations o on o.id=c.organization_id where c.organization_id=$1 and c.id=$2`,
     [org, conversation],
   );
@@ -210,7 +215,12 @@ export async function saveMission(
   }
 }
 
-export async function missionContext(pool: pg.Pool, org: string, conversation: string) {
+export async function missionContext(
+  pool: pg.Pool,
+  org: string,
+  conversation: string,
+  requesterId?: string,
+) {
   const c = await conversationForMission(pool, org, conversation);
   if (c.is_blocked || c.is_group || ["closed", "archived", "resolved"].includes(c.status))
     throw new MissionError("Atendimento não está disponível para ligar.");
@@ -218,7 +228,18 @@ export async function missionContext(pool: pg.Pool, org: string, conversation: s
     `select direction,body,sent_at from messages where organization_id=$1 and conversation_id=$2 and revoked_at is null and body is not null order by sent_at desc,id desc limit 40`,
     [org, conversation],
   );
-  return serializeCallContext(c.company, c.name, rows);
+  const requester = requesterId
+    ? await pool.query<{ name: string | null }>(
+        `select u.raw_user_meta_data->>'full_name' as name from auth.users u
+    join user_organizations m on m.user_id=u.id and m.organization_id=$1
+    where u.id=$2 and m.accepted_at is not null and m.role in ('agent','manager','admin')`,
+        [org, requesterId],
+      )
+    : null;
+  return serializeCallContext(c.company, c.name, rows, {
+    requester: requester?.rows[0]?.name ?? null,
+    greeting: voiceGreeting(c.timezone),
+  });
 }
 
 /** Voice is a built-in capability. A legacy explicit agent remains tenant-scoped. */

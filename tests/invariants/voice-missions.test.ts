@@ -1,5 +1,5 @@
 import pg from "pg";
-import { saveMission, missionConfiguration } from "../../lib/voice/missions/store";
+import { saveMission, missionConfiguration, missionContext } from "../../lib/voice/missions/store";
 const pool = new pg.Pool({
   connectionString: `postgresql://postgres:postgres@127.0.0.1:${process.env.TEST_DB_PORT ?? 54329}/postgres`,
 });
@@ -87,6 +87,13 @@ describe("voice mission isolation and lifecycle", () => {
           `select status||':'||(agent_id is null)::text from voice_missions where id='${input.id}'`,
         ),
       ).toBe("queued:true");
+      sql(`update auth.users set raw_user_meta_data='{"full_name":"Felipe"}' where id='${agent}'`);
+      expect(JSON.parse(await missionContext(pool, org, conversation, agent)).solicitante).toBe(
+        "Felipe",
+      );
+      expect(JSON.parse(await missionContext(pool, org, conversation, stranger)).solicitante).toBe(
+        "",
+      );
       const m = {
         organization_id: org,
         conversation_id: conversation,
