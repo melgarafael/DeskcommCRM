@@ -1,1 +1,93 @@
-{"title":"Ligação pontual por IA","nodes":[{"id":"conversation","label":"Atendimento e objetivo do operador"},{"id":"mission","label":"Pedido durável e confirmação"},{"id":"worker","label":"Worker de ligações"},{"id":"wacalls","label":"WA Calls PCM16k"},{"id":"realtime","label":"OpenAI Realtime 2.1 PCM24k"},{"id":"result","label":"Resumo, transcrição e próximo passo"}],"edges":[{"source":"conversation","target":"mission"},{"source":"mission","target":"worker"},{"source":"worker","target":"wacalls"},{"source":"worker","target":"realtime"},{"source":"worker","target":"result"},{"source":"result","target":"conversation"}]}
+{
+  "title": "Ligação pontual por IA",
+  "nodes": [
+    {
+      "id": "conversation",
+      "label": "Atendimento e objetivo do operador",
+      "lane": "interface"
+    },
+    {
+      "id": "mission",
+      "label": "Pedido durável e confirmação",
+      "lane": "runtime"
+    },
+    {
+      "id": "worker",
+      "label": "Worker de ligações",
+      "lane": "runtime"
+    },
+    {
+      "id": "wacalls",
+      "label": "WA Calls PCM16k",
+      "lane": "runtime"
+    },
+    {
+      "id": "realtime",
+      "label": "OpenAI Realtime 2.1 PCM24k",
+      "lane": "runtime"
+    },
+    {
+      "id": "result",
+      "label": "Resumo, transcrição e próximo passo",
+      "lane": "interface"
+    },
+    {
+      "id": "voice-default",
+      "lane": "runtime",
+      "label": "Assistente padrão: objetivo e contexto, sem cadastro de agente"
+    }
+  ],
+  "edges": [
+    {
+      "id": "voice-0",
+      "from": "conversation",
+      "to": "mission"
+    },
+    {
+      "id": "voice-1",
+      "from": "mission",
+      "to": "worker"
+    },
+    {
+      "id": "voice-2",
+      "from": "worker",
+      "to": "wacalls"
+    },
+    {
+      "id": "voice-3",
+      "from": "worker",
+      "to": "realtime"
+    },
+    {
+      "id": "voice-4",
+      "from": "worker",
+      "to": "result"
+    },
+    {
+      "id": "voice-5",
+      "from": "result",
+      "to": "conversation"
+    },
+    {
+      "id": "voice-objective",
+      "from": "mission",
+      "to": "voice-default"
+    },
+    {
+      "id": "voice-prompt",
+      "from": "voice-default",
+      "to": "worker"
+    }
+  ],
+  "schema_version": 1,
+  "lanes": [
+    {
+      "id": "interface",
+      "label": "Atendimento"
+    },
+    {
+      "id": "runtime",
+      "label": "Execução de voz"
+    }
+  ]
+}
