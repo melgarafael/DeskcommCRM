@@ -121,3 +121,115 @@ describe("lerPlanilha — a recusa nomeia a coluna que falta", () => {
     expect(erro).not.toContain("de nombre");
   });
 });
+
+/**
+ * Um apelido por linha, os de antes e os de espanhol — e não uma amostra: o
+ * mapa de colunas para no primeiro campo que contém o cabeçalho, então um
+ * apelido repetido em dois campos cairia em silêncio no primeiro, e só uma
+ * linha por apelido denuncia isso. O efeito no produto prova em QUAL campo, e
+ * `colunasIgnoradas` vazio prova que o cabeçalho foi reconhecido.
+ */
+describe("lerPlanilha — todo apelido de coluna cai no seu campo", () => {
+  type Produto = Extract<ReturnType<typeof lerPlanilha>, { produtos: unknown }>["produtos"][number];
+
+  // Separador `;` sempre: os valores levam vírgula ("1.200,00") e não precisam de aspas.
+  const CAMPOS: Record<string, { ancora: string; celula: string; le: (p: Produto) => unknown; esperado: unknown }> = {
+    codigo: { ancora: "nome;preco", celula: "ABC-1", le: (p) => p.codigo, esperado: "ABC-1" },
+    nome: { ancora: "preco", celula: "Café", le: (p) => p.nome, esperado: "Café" },
+    preco: { ancora: "nome", celula: "1.200,00", le: (p) => p.preco_cents, esperado: 120000 },
+    custo: { ancora: "nome;preco", celula: "8,50", le: (p) => p.custo_cents, esperado: 850 },
+    marca: { ancora: "nome;preco", celula: "Melitta", le: (p) => p.marca, esperado: "Melitta" },
+    categoria: { ancora: "nome;preco", celula: "Bebidas", le: (p) => p.categoria, esperado: "Bebidas" },
+    quantidade: {
+      ancora: "nome;preco",
+      celula: "7",
+      le: (p) => [p.quantidade, p.controla_estoque],
+      esperado: [7, true],
+    },
+  };
+  // Célula das colunas âncora, na ordem em que aparecem em `ancora`.
+  const CELULA_ANCORA: Record<string, string> = { nome: "Café", preco: "10" };
+
+  const APELIDOS: ReadonlyArray<readonly [campo: string, apelido: string]> = [
+    // pt-BR / en (o que já existia)
+    ...["codigo", "código", "sku", "ref", "referencia", "referência", "cod"].map((a) => ["codigo", a] as const),
+    ...["nome", "produto", "descricao", "descrição", "titulo", "título", "item"].map((a) => ["nome", a] as const),
+    ...["preco", "preço", "valor", "preco de venda", "preço de venda", "venda"].map((a) => ["preco", a] as const),
+    ...["custo", "preco de custo", "preço de custo", "compra"].map((a) => ["custo", a] as const),
+    ...["marca", "fabricante"].map((a) => ["marca", a] as const),
+    ...["categoria", "tipo", "departamento"].map((a) => ["categoria", a] as const),
+    ...["quantidade", "estoque", "qtd", "qtde", "qty"].map((a) => ["quantidade", a] as const),
+    // es — como o Excel escreve, com acento e caixa. Os quatro primeiros grupos
+    // já valiam por coincidirem com o português (Código, Categoría, Marca, Compra…).
+    ...["Código", "Referencia"].map((a) => ["codigo", a] as const),
+    ...["Categoría", "Departamento"].map((a) => ["categoria", a] as const),
+    ...["Marca", "Fabricante"].map((a) => ["marca", a] as const),
+    ...["Compra"].map((a) => ["custo", a] as const),
+    // …e os que só o espanhol escreve:
+    ...["Nombre", "Producto", "Descripción", "Artículo"].map((a) => ["nome", a] as const),
+    ...["Precio", "Precio de venta", "Venta"].map((a) => ["preco", a] as const),
+    ...["Costo", "Coste", "Precio de costo", "Precio de coste"].map((a) => ["custo", a] as const),
+    ...["Cantidad", "Existencias", "Stock"].map((a) => ["quantidade", a] as const),
+  ];
+
+  it.each(APELIDOS)("%s ← %s", (campo, apelido) => {
+    const { ancora, celula, le, esperado } = CAMPOS[campo]!;
+    const cabecalho = `${apelido};${ancora}`;
+    const linha = `${celula};${ancora.split(";").map((c) => CELULA_ANCORA[c]).join(";")}`;
+    const resultado = lerPlanilha(`${cabecalho}\n${linha}\n`);
+    if ("erro" in resultado) throw new Error(`planilha recusada: ${resultado.erro}`);
+    expect(resultado.colunasIgnoradas).toEqual([]);
+    expect(le(resultado.produtos[0]!)).toEqual(esperado);
+  });
+});
+
+describe("lerPlanilha — planilha em espanhol", () => {
+  it("cabeçalho completo como o Excel escreve", () => {
+    const csv = [
+      "Código;Producto;Precio;Costo;Marca;Categoría;Cantidad",
+      "CAF-1;Café molido;1.200,50;800,00;Melitta;Bebidas;12",
+    ].join("\n");
+    const resultado = lerPlanilha(csv);
+    if ("erro" in resultado) throw new Error(`planilha recusada: ${resultado.erro}`);
+    expect(resultado.erros).toEqual([]);
+    expect(resultado.colunasIgnoradas).toEqual([]);
+    expect(resultado.produtos).toEqual([
+      {
+        linha: 2,
+        codigo: "CAF-1",
+        nome: "Café molido",
+        preco_cents: 120050,
+        custo_cents: 80000,
+        marca: "Melitta",
+        categoria: "Bebidas",
+        quantidade: 12,
+        controla_estoque: true,
+      },
+    ]);
+  });
+
+  it("Descripción nomeia o produto (como `descrição` em português) e Precio de venda é o preço", () => {
+    const resultado = lerPlanilha("Descripción;Precio de venta;Existencias\nTaza de barro;15,00;3\n");
+    if ("erro" in resultado) throw new Error(`planilha recusada: ${resultado.erro}`);
+    expect(resultado.colunasIgnoradas).toEqual([]);
+    expect(resultado.produtos[0]).toMatchObject({
+      nome: "Taza de barro",
+      preco_cents: 1500,
+      quantidade: 3,
+      controla_estoque: true,
+    });
+  });
+
+  it("cabeçalho misto pt + es", () => {
+    const resultado = lerPlanilha("Nome;Precio;Estoque\nLivro;30,00;4\n");
+    if ("erro" in resultado) throw new Error(`planilha recusada: ${resultado.erro}`);
+    expect(resultado.colunasIgnoradas).toEqual([]);
+    expect(resultado.produtos[0]).toMatchObject({ nome: "Livro", preco_cents: 3000, quantidade: 4 });
+  });
+
+  it("sem coluna de nome nem de preço em espanhol, a recusa nomeia as duas e lista o que achou", () => {
+    expect(recusa("Marca;Categoría\nMelitta;Café\n")).toBe(
+      "A planilha precisa de uma coluna de nome e de preço. Encontrei: Marca, Categoría.",
+    );
+  });
+});

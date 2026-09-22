@@ -244,7 +244,6 @@ export async function POST(req: NextRequest): Promise<Response> {
           description: linha.description,
           contact_id: contactId,
           value_cents: linha.value_cents,
-          currency: "BRL",
           tags: linha.tags,
           source: linha.source,
         },

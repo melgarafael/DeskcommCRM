@@ -16,6 +16,7 @@
 import { createHash } from "node:crypto";
 
 import type { Actor } from "@/lib/api/handlers/types";
+import { registrarFalhaDeToken, tokenFailureLimited } from "@/lib/auth/rate-limit";
 import type { Role } from "@/lib/auth/types";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -162,12 +163,30 @@ export async function resolveApiToken(plaintext: string): Promise<ResolvedApiTok
   };
 }
 
+/**
+ * Mensagem do teto de falhas. Escrita para quem lê a resposta — quase sempre um
+ * modelo: o texto é o único sinal útil depois do bloqueio. Nada de contador,
+ * nada de "quantas faltam": a resposta não diz se o token existe nem quanto
+ * resta da janela.
+ */
+const TETO_DE_TOKEN_MSG =
+  "Too many failed token attempts. Wait a few minutes before retrying and send a valid `dsk_` API token — if yours was revoked or expired, issue a new one.";
+
 export async function validateBearerToken(
   authHeader: string | null,
 ): Promise<McpAuthResult> {
   const plaintext = extractBearer(authHeader);
   if (!plaintext) {
+    // Cabeçalho torto é o primeiro palpite de quem varre: conta antes de sair.
+    await registrarFalhaDeToken(null);
     throw new McpAuthError(-32001, 401, "Missing or malformed Authorization header.");
+  }
+
+  // O teto vem ANTES de resolver o token: é esta linha que tira o custo zero da
+  // tentativa — sem ela cada `dsk_` chutado custa um SELECT em `api_tokens` que
+  // ninguém conta, e varrer tokens sai de graça (issue #1447).
+  if (await tokenFailureLimited(plaintext)) {
+    throw new McpAuthError(-32004, 429, TETO_DE_TOKEN_MSG);
   }
 
   let resolved: ResolvedApiToken;
@@ -175,6 +194,14 @@ export async function validateBearerToken(
     resolved = await resolveApiToken(plaintext);
   } catch (err) {
     if (err instanceof ApiTokenError) {
+      if (err.reason !== "lookup_failed") {
+        // Chute (malformado/desconhecido) debita o balde por ORIGEM; token real
+        // e morto (revogado/expirado) debita só o do valor apresentado — ver
+        // `registrarFalhaDeToken`. `lookup_failed` é falha NOSSA: não debita.
+        await registrarFalhaDeToken(plaintext, {
+          contaNoIp: err.reason === "malformed" || err.reason === "not_found",
+        });
+      }
       throw new McpAuthError(
         err.reason === "lookup_failed" ? -32603 : -32001,
         err.reason === "lookup_failed" ? 500 : 401,

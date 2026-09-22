@@ -217,6 +217,20 @@ describe("POST /api/v1/leads/import", () => {
     }
   });
 
+  // A planilha não tem coluna de moeda, então quem decide é a organização: o
+  // handler lê `organizations.currency` quando o campo chega AUSENTE
+  // (`lead-nasce-na-moeda-da-organizacao.test.ts`). A rota mandava "BRL" em
+  // duro, e a importação de uma organização em euro gravava real.
+  it("não decide a moeda: deixa para a da organização", async () => {
+    fazerSupabase(null);
+    const { POST } = await import("@/app/api/v1/leads/import/route");
+
+    await POST(pedido("nome,valor\nAna,100"));
+
+    const [, , input] = vi.mocked(createLeadHandler).mock.calls[0]!;
+    expect(input).not.toHaveProperty("currency");
+  });
+
   it("uma linha ruim não derruba as outras — e o motivo volta com o número da linha", async () => {
     fazerSupabase(null);
     const { POST } = await import("@/app/api/v1/leads/import/route");

@@ -130,12 +130,12 @@ describe("NavHub", () => {
     );
 
     expect(
-      screen.getByText("Todo lo que define quién atiende por ti — y cómo seguir lo que hace."),
+      screen.getByText("Todo lo que define quién atiende por ti, y cómo dar seguimiento a lo que hace."),
     ).toBeTruthy();
     expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent?.trim())).toEqual([
       "Configurar el agente",
       "Enseñar al agente",
-      "Acompañar al agente",
+      "Supervisar al agente",
     ]);
     expect(
       screen.getByRole("link", { name: /Credenciales.*La clave del proveedor de IA/ }),

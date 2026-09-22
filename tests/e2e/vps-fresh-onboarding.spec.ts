@@ -97,7 +97,7 @@ async function login(page: Page, password = OWNER_PASSWORD): Promise<void> {
   await page.goto("/login");
   await page.locator("#email").fill(OWNER_EMAIL);
   await page.locator("#password").fill(password);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
 }
 
 test.describe.configure({ mode: "serial", timeout: 120_000 });

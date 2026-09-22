@@ -51,7 +51,7 @@ test("criar conta: signup → e-mail de confirmação → onboarding → re-logi
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Senha").fill(password);
-  await page.getByRole("button", { name: "Entrar" }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/(app|onboarding)\//, { timeout: 30_000 });
   await expect(page).not.toHaveURL(/\/login/);
 });

@@ -19,7 +19,7 @@ const EMAIL = process.argv[2] || "e2e-agent@deskcomm.test";
   await page.locator("#password").pressSequentially(PASSWORD, { delay: 30 });
   console.log("EMAIL VAL:", await page.locator("#email").inputValue());
   console.log("PASS LEN:", (await page.locator("#password").inputValue()).length);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForTimeout(6000);
   console.log("FINAL URL:", page.url());
   console.log("COOKIES:", (await ctx.cookies()).map((c) => c.name).join(","));

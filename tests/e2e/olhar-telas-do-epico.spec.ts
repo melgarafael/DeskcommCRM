@@ -80,7 +80,7 @@ test.describe("as telas do épico abrem para uma pessoa", () => {
     await page.goto("/login");
     await page.locator("#email").fill(creds.users.admin!.email);
     await page.locator("#password").fill(creds.password);
-    await page.getByRole("button", { name: /entrar/i }).click();
+    await page.getByRole("button", { name: "Entrar", exact: true }).click();
     await page.waitForURL(/\/login\/mfa/, { timeout: 30_000 });
     // Espera a janela virar: um código gerado no fim da janela expira durante a
     // digitação e o sintoma é "MFA falhou", que não parece o que é.

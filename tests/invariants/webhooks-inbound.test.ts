@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import { NextRequest } from "next/server";
@@ -1317,5 +1317,30 @@ describe("POST /api/v1/webhooks/in/[token] — RD Station (envelope leads[])", (
     const lead = rows(`select external_id, title from public.crm_leads where id = '${leadId}'`)[0]!;
     expect(lead.title).toBe("Flat No RD Source");
     expect(lead.external_id).toBeNull(); // genérico sem external_id de topo
+  });
+
+  it("o lead nasce na moeda da ORGANIZAÇÃO, e não num real em duro", async () => {
+    // A rota mandava `currency: "BRL"` ao handler: o lead de uma organização
+    // em euro nascia em real, e o funil somava o valor com o símbolo errado.
+    // Organização própria, para o euro não vazar para os outros casos.
+    const [org, pipeline, stage, fonte] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    const token = `wh-in-euro-${org.slice(0, 8)}`;
+    sql(`
+      insert into public.organizations (id, slug, legal_name, display_name, currency)
+        values ('${org}', 'gov-inv-whin-euro-${org.slice(0, 8)}', 'Euro', 'Euro', 'EUR');
+      insert into public.crm_pipelines (id, organization_id, name, slug)
+        values ('${pipeline}', '${org}', 'Funil', 'funil');
+      insert into public.crm_stages (id, organization_id, pipeline_id, name, slug, position)
+        values ('${stage}', '${org}', '${pipeline}', 'Novo', 'novo', 1000);
+      insert into public.webhook_sources
+        (id, organization_id, name, path_token, default_pipeline_id, default_stage_id)
+        values ('${fonte}', '${org}', 'Landing PT', '${token}', '${pipeline}', '${stage}');
+    `);
+    const res = await POST(jsonReq(token, { nome: "Rita", telefone: "+351912345678" }), reqCtx(token));
+    expect(res.status).toBe(200);
+    const { data } = (await res.json()) as { data: { lead_id: string } };
+    const lead = rows(`select currency, organization_id from public.crm_leads where id = '${data.lead_id}'`)[0]!;
+    expect(lead.organization_id).toBe(org);
+    expect(lead.currency).toBe("EUR");
   });
 });

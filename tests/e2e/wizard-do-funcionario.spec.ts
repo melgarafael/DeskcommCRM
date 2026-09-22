@@ -85,7 +85,7 @@ async function login(page: Page): Promise<void> {
   await page.goto("/login");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(SENHA);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
 }
 
 test.describe.configure({ mode: "serial", timeout: 120_000 });

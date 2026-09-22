@@ -20,15 +20,20 @@ import { precoParaCentavos } from "@/lib/schemas/produtos";
  * errado dito a um cliente depois.
  */
 
-/** Como cada coluna pode vir escrita. A primeira forma é a que a gente sugere. */
+/**
+ * Como cada coluna pode vir escrita. A primeira forma é a que a gente sugere.
+ * As de espanhol (`nombre`, `precio`, `costo`, `cantidad`…) cumprem o que a tela
+ * promete a quem a usa nesse idioma; a comparação tira acento e caixa dos dois
+ * lados, então as formas novas entram sem acento.
+ */
 const COLUNAS: Record<string, readonly string[]> = {
   codigo: ["codigo", "código", "sku", "ref", "referencia", "referência", "cod"],
-  nome: ["nome", "produto", "descricao", "descrição", "titulo", "título", "item"],
-  preco: ["preco", "preço", "valor", "preco de venda", "preço de venda", "venda"],
-  custo: ["custo", "preco de custo", "preço de custo", "compra"],
+  nome: ["nome", "produto", "descricao", "descrição", "titulo", "título", "item", "nombre", "producto", "descripcion", "articulo"],
+  preco: ["preco", "preço", "valor", "preco de venda", "preço de venda", "venda", "precio", "precio de venta", "venta"],
+  custo: ["custo", "preco de custo", "preço de custo", "compra", "costo", "coste", "precio de costo", "precio de coste"],
   marca: ["marca", "fabricante"],
   categoria: ["categoria", "tipo", "departamento"],
-  quantidade: ["quantidade", "estoque", "qtd", "qtde", "qty"],
+  quantidade: ["quantidade", "estoque", "qtd", "qtde", "qty", "cantidad", "existencias", "stock"],
 };
 
 function normalizarCabecalho(texto: string): string {

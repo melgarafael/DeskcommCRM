@@ -47,7 +47,7 @@ async function login(context: BrowserContext, email: string): Promise<void> {
   await page.locator("#password").focus();
   await page.waitForTimeout(200);
   await page.locator("#password").pressSequentially(PASSWORD, { delay: 25 });
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   try {
     await page.waitForURL(
       (url) => /\/app\b|\/login\/mfa/.test(url.toString()),

@@ -1051,6 +1051,7 @@ jobs:
       SPECS_PARTE_5: >-
         inbox-busca-e-filtros-dizem-a-verdade.spec.ts
         extensoes-da-instalacao.spec.ts
+        admin-credencial-google.spec.ts
         agenda-primeira-pintura-no-fuso.spec.ts
         agenda-portao-de-hidratacao.spec.ts
         qa-l12-inbox.spec.ts

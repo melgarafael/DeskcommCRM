@@ -36,7 +36,7 @@ async function loginComTotp(
   await page.goto("/login");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(senha);
-  await page.getByRole("button", { name: /entrar/i }).click({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Entrar", exact: true }).click({ timeout: 15_000 });
   await page.waitForURL(/\/login\/mfa/, { timeout: 90_000 });
 
   const digito1 = page.locator('input[aria-label="Dígito 1"]');

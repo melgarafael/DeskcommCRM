@@ -6,6 +6,7 @@ import {
   formatCents,
   MOEDAS_SERVIDAS,
   MOEDA_PADRAO,
+  simboloDaMoeda,
 } from "./money";
 
 describe("parseReaisToCents", () => {
@@ -78,6 +79,11 @@ describe("formatCents", () => {
     // Angola — `formatadorDa` maximiza `und-AO` para `pt-AO` e é o ICU que
     // decide, não uma tabela nossa.
     expect(semNbsp(formatCents(24990, "AOA"))).toBe("249,90 Kz");
+    // Euro: moeda sem país. A maximização de `und-EU` daria `€249.90`, a
+    // convenção irlandesa; Portugal, Espanha, França, Alemanha e Itália
+    // escrevem assim.
+    expect(semNbsp(formatCents(24990, "EUR"))).toBe("249,90 €");
+    expect(semNbsp(formatCents(149700, "EUR"))).toBe("1497,00 €");
   });
 
   /**
@@ -149,6 +155,11 @@ describe("MOEDAS_SERVIDAS — a lista que a tela oferece", () => {
     expect(MOEDAS_SERVIDAS).toContain("BRL");
     expect(MOEDAS_SERVIDAS).toContain("MXN");
     expect(MOEDAS_SERVIDAS).toContain("USD");
+  });
+
+  it("serve o euro, com o símbolo que o seletor mostra", () => {
+    expect(MOEDAS_SERVIDAS).toContain("EUR");
+    expect(simboloDaMoeda("EUR")).toBe("€");
   });
 
   it("e o padrão de quem não escolheu segue sendo o real", () => {

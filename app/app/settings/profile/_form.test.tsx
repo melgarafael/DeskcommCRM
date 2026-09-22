@@ -46,7 +46,7 @@ describe("ProfileForm em espanhol", () => {
   it("com locale es, os rótulos vêm do dicionário", () => {
     renderForm("es", "es");
     expect(screen.getByText("Nombre completo")).toBeTruthy();
-    expect(screen.getByText("Huso horario")).toBeTruthy();
+    expect(screen.getByText("Zona horaria")).toBeTruthy();
     expect(screen.queryByText("Nome completo")).toBeNull();
   });
 

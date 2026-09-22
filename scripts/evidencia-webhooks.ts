@@ -28,7 +28,7 @@ async function main(): Promise<void> {
   await page.goto(`${APP}/login`);
   await page.locator("#email").fill(creds.users.manager!.email);
   await page.locator("#password").fill(creds.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/app\//);
 
   await page.goto(`${APP}/app/webhooks`);

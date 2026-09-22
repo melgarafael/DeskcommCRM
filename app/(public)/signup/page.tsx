@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { EntrarComGoogle } from "@/components/auth/EntrarComGoogle";
 import { SignupForm } from "@/components/auth/SignupForm";
 import { Button } from "@/components/ui/button";
 import { branding } from "@/lib/branding";
@@ -102,6 +103,9 @@ export default async function SignupPage({
       )}
 
       <SignupForm convite={convite} />
+      {/* O convite atravessa o Google na URL de retorno: sem ele, quem foi
+          convidado e cria a conta com Google ganharia uma empresa própria. */}
+      <EntrarComGoogle convite={convite?.token} />
 
       <p className="text-center text-sm text-muted-foreground">
         {t("Já tem conta?")}{" "}
