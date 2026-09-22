@@ -19,7 +19,7 @@ Cancelamento, bloqueio do contato, anonimização, fechamento da conversa, desat
 2. Alimenta `conversation_notes` e histórico em `VoiceMissionDialog`.
 3. Rota emite `voice.mission_requested`; worker registra execução e uso na missão.
 4. Entrada no cabeçalho da conversa; não exige página nova.
-5. Rascunho, revisão e confirmação são operações separadas.
+5. Salvar rascunho não liga. O destinatário fica visível e Ligar agora é a confirmação explícita.
 6. Prazo de fila, duração máxima, heartbeat e reconciliação evitam pedidos esquecidos.
 7. Agente, número e contato são escolhidos no painel; falta de conexão aponta para Conexões.
 8. Humano dá objetivo/contexto; IA devolve resumo e pendências para a equipe.
@@ -28,6 +28,6 @@ Cancelamento, bloqueio do contato, anonimização, fechamento da conversa, desat
 
 ## Pedido simplificado
 
-O objetivo é o único campo aberto de início. Novos pedidos usam o cliente do atendimento como destinatário, sempre exibido antes da confirmação. Se houver exatamente um agente pronto e um canal conectado, as escolhas vêm preenchidas e aparecem no resumo de Ajustes da ligação. Ambiguidade exige escolha explícita; rascunhos existentes preservam todos os valores, inclusive modo de teste. Teste com outro contato permanece disponível nos ajustes.
+O objetivo é o único campo aberto de início. Abrir o pedido e clicar em Ligar agora são os dois cliques do caminho já conectado; não há uma revisão intermediária. Novos pedidos usam o cliente do atendimento como destinatário, sempre exibido antes da confirmação. Se houver exatamente um agente pronto e um canal conectado, as escolhas vêm preenchidas e aparecem no resumo de Ajustes da ligação. O agente ativo no atendimento tem preferência, seguido do agente padrão publicado ou da única opção pronta. Ambiguidade exige escolha explícita. Rascunhos preservam escolhas concretas; lacunas recebem os padrões disponíveis. Um teste antigo sem destinatário deixa de bloquear o pedido: o cliente do atendimento aparece como destino. Testes com destinatário escolhido são preservados. Teste com outro contato permanece disponível nos ajustes.
 
-O worker monta uma orientação padrão de conversa natural com objetivo, instruções publicadas e contexto recente. A IA se identifica como assistente virtual, verifica disponibilidade, escuta sem atropelar e confirma o próximo passo. Não há edição de prompt no pedido nem mudanças nas permissões de execução. O aviso de voz desativada aponta diretamente para Segurança; ativação continua a exigir a confirmação do administrador.
+O worker monta uma orientação padrão de conversa natural com objetivo, instruções publicadas e contexto recente. A IA se identifica como assistente virtual, verifica disponibilidade, escuta sem atropelar e confirma o próximo passo. Não há edição de prompt no pedido nem mudanças nas permissões de execução. Se não houver número de voz pareado, o pedido oferece conectar ali mesmo, sem formulário vazio nem tentativa de discagem. O painel reaproveita os controles de ativação e QR Code, com autorização de administrador no servidor. Pareamento inicial exige o celular e acontece uma vez; não conta como ligação nem é declarado concluído sem confirmação.

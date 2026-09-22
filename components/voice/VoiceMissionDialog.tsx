@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
@@ -11,6 +11,9 @@ import {
   DialogDescription,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { CanalVozClient } from "@/components/connections/CanalVozClient";
+import { PainelDeChamadaDeVoz } from "@/components/voice/PainelDeChamadaDeVoz";
+import { randomId } from "@/lib/random-id";
 import { Phone } from "@/lib/ui/icons";
 import { activeStatuses, statusLabels, type MissionInput } from "@/lib/voice/missions/schema";
 
@@ -32,6 +35,8 @@ type Mission = Omit<MissionInput, "action"> & {
   } | null;
 };
 type Panel = {
+  voice: { configured: boolean; enabled: boolean };
+  defaults: { agent_id: string | null; channel_id: string | null };
   contact: { name: string; phone: string };
   missions: Mission[];
   agents: Choice[];
@@ -39,7 +44,7 @@ type Panel = {
   contacts: Choice[];
 };
 const selectClass =
-  "w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring";
 
 export function VoiceMissionDialog({ conversationId }: { conversationId: string }) {
   const [open, setOpen] = useState(false);
@@ -72,7 +77,7 @@ function MissionEditor({ conversationId }: { conversationId: string }) {
     refetchInterval: 5000,
   });
   const [draft, setDraft] = useState<MissionInput>(() => ({
-    id: crypto.randomUUID(),
+    id: randomId(),
     action: "save",
     objective: "",
     agent_id: null,
@@ -84,7 +89,8 @@ function MissionEditor({ conversationId }: { conversationId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
-  const [review, setReview] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const sending = useRef(false);
   const [choicesOpen, setChoicesOpen] = useState(false);
   const data = q.data?.data;
   if (data && !loaded) {
@@ -97,37 +103,34 @@ function MissionEditor({ conversationId }: { conversationId: string }) {
         agent_id: previous.agent_id,
         channel_id: previous.channel_id,
         test_contact_id: previous.test_contact_id,
-        test: previous.test,
+        test: previous.test && !!previous.test_contact_id,
       });
-    else {
-      const agents = data.agents.filter((a) => a.ready);
-      const channels = data.channels.filter((c) => c.status === "WORKING");
-      setDraft((d) => ({
-        ...d,
-        agent_id: agents.length === 1 ? (agents[0]?.id ?? null) : null,
-        channel_id: channels.length === 1 ? (channels[0]?.id ?? null) : null,
-      }));
-    }
     setLoaded(true);
   }
   function update(p: Partial<MissionInput>) {
     setDraft((d) => ({ ...d, ...p }));
     setSaved(false);
-    setReview(false);
     setError("");
   }
+  const effective = {
+    ...draft,
+    agent_id: draft.agent_id ?? data?.defaults.agent_id ?? null,
+    channel_id: draft.channel_id ?? data?.defaults.channel_id ?? null,
+  };
   async function send(action: MissionInput["action"], id = draft.id) {
+    if (sending.current) return;
+    sending.current = true;
     setBusy(true);
     setError("");
     try {
-      await apiClient.post(url, { ...draft, id, action });
+      await apiClient.post(url, { ...effective, id, action });
       setSaved(action === "save");
-      setReview(false);
       await qc.invalidateQueries({ queryKey: key });
-      if (action === "start") setDraft((d) => ({ ...d, id: crypto.randomUUID(), objective: "" }));
+      if (action === "start") setDraft((d) => ({ ...d, id: randomId(), objective: "" }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível concluir. Tente novamente.");
     } finally {
+      sending.current = false;
       setBusy(false);
     }
   }
@@ -142,6 +145,8 @@ function MissionEditor({ conversationId }: { conversationId: string }) {
       </div>
     );
   const active = data.missions.find((m) => activeStatuses.includes(m.status));
+  const connected = data.channels.some((c) => c.ready);
+  const needsConnection = !data.voice.configured || !data.voice.enabled || !connected;
   const recipient = draft.test
     ? data.contacts.find((c) => c.id === draft.test_contact_id)
     : { name: data.contact.name, phone_number: data.contact.phone };
@@ -189,9 +194,28 @@ function MissionEditor({ conversationId }: { conversationId: string }) {
             <strong className="text-foreground">{recipient?.name || "contato a escolher"}</strong>
             {recipient?.phone_number && ` · ${recipient.phone_number}`}
             <span className="mt-1 block">
-              Você revisa antes de ligar. Salvar não inicia a chamada.
+              Até 5 minutos. Usa o saldo de IA da empresa. Salvar não inicia a chamada.
             </span>
           </p>
+          {needsConnection && (
+            <section className="space-y-3 rounded-xl border p-3" aria-label="Conectar chamadas">
+              <p className="text-sm">
+                {data.voice.enabled
+                  ? "Seu WhatsApp de mensagens não conecta as chamadas automaticamente. Conecte o número uma vez pelo QR Code."
+                  : "Ative as chamadas da empresa e conecte o número uma vez pelo QR Code."}
+              </p>
+              {setupOpen ? (
+                <>
+                  {!data.voice.enabled && <PainelDeChamadaDeVoz />}
+                  {data.voice.enabled && (
+                    <CanalVozClient wacallsConfigured={data.voice.configured} />
+                  )}
+                </>
+              ) : (
+                <Button onClick={() => setSetupOpen(true)}>Conectar número para ligar</Button>
+              )}
+            </section>
+          )}
           <details
             className="rounded-xl border p-3"
             open={choicesOpen}
@@ -200,9 +224,10 @@ function MissionEditor({ conversationId }: { conversationId: string }) {
             <summary className="cursor-pointer text-sm font-medium">
               Ajustes da ligação
               <span className="block font-normal text-muted-foreground">
-                {data.agents.find((a) => a.id === draft.agent_id)?.name || "Agente a escolher"}
+                {data.agents.find((a) => a.id === effective.agent_id)?.name || "Agente a escolher"}
                 {" · "}
-                {data.channels.find((c) => c.id === draft.channel_id)?.name || "Número a escolher"}
+                {data.channels.find((c) => c.id === effective.channel_id)?.name ||
+                  "Número a escolher"}
                 {draft.test ? " · modo de teste" : ""}
               </span>
             </summary>
@@ -212,7 +237,7 @@ function MissionEditor({ conversationId }: { conversationId: string }) {
                 <select
                   id="voice-agent"
                   className={selectClass}
-                  value={draft.agent_id ?? ""}
+                  value={effective.agent_id ?? ""}
                   onChange={(e) => update({ agent_id: e.target.value || null })}
                 >
                   <option value="">Escolher depois</option>
@@ -229,7 +254,7 @@ function MissionEditor({ conversationId }: { conversationId: string }) {
                 <select
                   className={selectClass}
                   id="voice-channel"
-                  value={draft.channel_id ?? ""}
+                  value={effective.channel_id ?? ""}
                   onChange={(e) => update({ channel_id: e.target.value || null })}
                 >
                   <option value="">Escolher depois</option>
@@ -292,64 +317,42 @@ function MissionEditor({ conversationId }: { conversationId: string }) {
               )}
             </div>
           </details>
-          {review && (
-            <section
-              className="space-y-2 rounded-xl border border-primary/40 p-4"
-              aria-label="Revisar ligação"
-            >
-              <strong>Ligar para {recipient?.name || "o contato selecionado"}</strong>
-              <p className="text-sm">{recipient?.phone_number}</p>
-              <p className="text-sm">{draft.objective}</p>
-              <p className="text-xs text-muted-foreground">
-                Até 5 minutos. Consome o saldo de IA da empresa. Mudanças em agenda, pagamentos ou
-                cadastro que não puderem ser executadas serão devolvidas como pendências.
-              </p>
-              <Button disabled={busy} onClick={() => send("start")}>
-                {busy ? "Iniciando…" : "Ligar agora"}
-              </Button>
-            </section>
-          )}
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" disabled={busy} onClick={() => send("save")}>
-              {busy ? "Salvando…" : "Salvar para depois"}
-            </Button>
-            {!review && (
+            {!needsConnection && (
               <Button
                 disabled={busy}
                 onClick={() => {
+                  if (draft.objective.trim().length < 8) {
+                    setError("Conte o que a IA precisa resolver nesta ligação.");
+                    document.getElementById("voice-objective")?.focus();
+                    return;
+                  }
                   if (
-                    draft.objective.trim().length < 8 ||
-                    !draft.agent_id ||
-                    !draft.channel_id ||
+                    !effective.agent_id ||
+                    !effective.channel_id ||
                     (draft.test && !draft.test_contact_id)
                   ) {
-                    if (
-                      !draft.agent_id ||
-                      !draft.channel_id ||
-                      (draft.test && !draft.test_contact_id)
-                    )
-                      setChoicesOpen(true);
-                    const missingField =
-                      draft.objective.trim().length < 8
-                        ? "voice-objective"
-                        : !draft.agent_id
-                          ? "voice-agent"
-                          : !draft.channel_id
-                            ? "voice-channel"
-                            : "voice-test-contact";
-                    requestAnimationFrame(() => document.getElementById(missingField)?.focus());
+                    setChoicesOpen(true);
+                    const field = !effective.agent_id
+                      ? "voice-agent"
+                      : !effective.channel_id
+                        ? "voice-channel"
+                        : "voice-test-contact";
+                    requestAnimationFrame(() => document.getElementById(field)?.focus());
                     setError(
-                      "Preencha o objetivo e escolha o agente, o número e o contato antes de ligar. Você pode salvar sem completar agora.",
+                      "Escolha nos ajustes o agente ou número disponível para esta ligação.",
                     );
                     return;
                   }
-                  setError("");
-                  setReview(true);
+                  void send("start");
                 }}
               >
-                Revisar ligação
+                {busy ? "Iniciando…" : draft.test ? "Ligar para contato de teste" : "Ligar agora"}
               </Button>
             )}
+            <Button variant="ghost" disabled={busy} onClick={() => send("save")}>
+              {busy ? "Aguarde…" : "Salvar para depois"}
+            </Button>
           </div>
           {saved && (
             <p role="status" className="text-sm">

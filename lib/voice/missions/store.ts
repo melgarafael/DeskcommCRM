@@ -7,7 +7,7 @@ export async function conversationForMission(
   conversation: string,
 ) {
   const { rows } = await db.query(
-    `select c.id,c.contact_id,c.status,c.is_group,p.name,p.phone_number,p.is_blocked,p.is_anonymized,
+    `select c.id,c.contact_id,c.active_ai_agent_id,c.status,c.is_group,p.name,p.phone_number,p.is_blocked,p.is_anonymized,
     o.display_name as company from conversations c join contacts p on p.id=c.contact_id and p.organization_id=c.organization_id
     join organizations o on o.id=c.organization_id where c.organization_id=$1 and c.id=$2`,
     [org, conversation],
@@ -19,26 +19,41 @@ export async function conversationForMission(
 
 export async function readMissions(pool: pg.Pool, org: string, conversation: string, user: string) {
   const c = await conversationForMission(pool, org, conversation);
-  const [missions, agents, channels, contacts] = await Promise.all([
+  const [missions, agents, channels, contacts, voice] = await Promise.all([
     pool.query(
       `select id,objective,agent_id,channel_id,test_contact_id,test,status,result,error,cancel_requested,created_at,started_at,ended_at
       from voice_missions where organization_id=$1 and conversation_id=$2 and (status<>'draft' or created_by=$3) order by created_at desc limit 20`,
       [org, conversation, user],
     ),
     pool.query(
-      `select id,name,(is_active and published_version_id is not null) as ready from ai_agents where organization_id=$1 and archived_at is null order by name`,
+      `select id,name,is_default,(is_active and published_version_id is not null) as ready from ai_agents where organization_id=$1 and archived_at is null order by name`,
       [org],
     ),
     pool.query(
-      `select id,display_name as name,phone_number,status from channel_sessions where organization_id=$1 and provider='wacalls' and archived_at is null`,
+      `select id,display_name as name,phone_number,status,(status='WORKING' and wacalls_session_id is not null and wacalls_paired_at is not null) as ready from channel_sessions where organization_id=$1 and provider='wacalls' and archived_at is null`,
       [org],
     ),
     pool.query(
       `select id,name,phone_number from contacts where organization_id=$1 and not is_anonymized and not is_blocked and phone_number is not null order by updated_at desc limit 100`,
       [org],
     ),
+    pool.query("select enabled from org_voice_calls where organization_id=$1", [org]),
   ]);
+  const readyAgents = agents.rows.filter((a) => a.ready);
+  const defaultAgents = readyAgents.filter((a) => a.is_default);
+  const readyChannels = channels.rows.filter((c) => c.ready);
   return {
+    voice: {
+      configured: !!(process.env.WACALLS_API_BASE_URL && process.env.WACALLS_API_TOKEN),
+      enabled: voice.rows[0]?.enabled === true,
+    },
+    defaults: {
+      agent_id:
+        readyAgents.find((a) => a.id === c.active_ai_agent_id)?.id ??
+        (defaultAgents.length === 1 ? defaultAgents[0].id : null) ??
+        (readyAgents.length === 1 ? readyAgents[0].id : null),
+      channel_id: readyChannels.length === 1 ? readyChannels[0].id : null,
+    },
     contact: { name: c.name, phone: c.phone_number },
     missions: missions.rows,
     agents: agents.rows,
