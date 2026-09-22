@@ -12,6 +12,7 @@ import type { AgentRow } from "@/hooks/ai/useAgent";
 import { AgentCard } from "./AgentCard";
 import { AgentsListFilters, type StatusFilter } from "./AgentsListFilters";
 import { deriveAgentStatus } from "./AgentStatusBadge";
+import { EmployeeRoleCatalog } from "./EmployeeRoleCatalog";
 
 interface Props {
   initialData: AgentRow[];
@@ -66,7 +67,18 @@ export function AgentsList({ initialData, canWrite }: Props) {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-10">
+      <EmployeeRoleCatalog agents={agents} canWrite={canWrite} />
+
+      <section aria-labelledby="equipe-atual" className="space-y-4">
+        <div>
+          <h2 id="equipe-atual" className="text-xl font-semibold tracking-tight">
+            {t("Equipe atual")}
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t("Acompanhe quem está em rascunho, publicado, pausado ou arquivado.")}
+          </p>
+        </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <AgentsListFilters
           status={status}
@@ -78,8 +90,8 @@ export function AgentsList({ initialData, canWrite }: Props) {
         />
         {canWrite && (
           <Link href="/app/ai/agents/new">
-            <Button>
-              <Plus size={14} aria-hidden className="mr-2" /> {t("Novo agente")}
+            <Button variant="outline" className="rounded-full">
+              <Plus size={14} aria-hidden className="mr-2" /> {t("Função personalizada")}
             </Button>
           </Link>
         )}
@@ -87,7 +99,7 @@ export function AgentsList({ initialData, canWrite }: Props) {
 
       {filtered.length === 0 ? (
         <Card className="p-8 text-center text-sm text-muted-foreground">
-          {t("Nenhum agent corresponde aos filtros atuais.")}
+          {t("Nenhum funcionário corresponde aos filtros atuais.")}
         </Card>
       ) : (
         <ul className="agent-directory divide-y">
@@ -98,6 +110,7 @@ export function AgentsList({ initialData, canWrite }: Props) {
           ))}
         </ul>
       )}
+      </section>
     </div>
   );
 }

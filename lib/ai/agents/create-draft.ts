@@ -24,6 +24,7 @@ export function mcpAgentDraftRecords(
       is_active: true,
       is_default: false,
       created_by: context.userId,
+      config: input.employee_role ? { employee_role: input.employee_role } : {},
     },
     version: {
       ...input.version,
@@ -67,8 +68,8 @@ export async function createMcpAgentDraft(
   const agentId = records.agent.id;
   const versionId = records.version.id;
   const { rows: agents } = await db.query(
-    `insert into ai_agents(id,organization_id,name,description,model,system_prompt,kind,priority,is_active,is_default,created_by,paused_at)
-     values($1,$2,$3,$4,$5,$6,'mcp_agent',$7,true,false,$8,$9) returning *`,
+    `insert into ai_agents(id,organization_id,name,description,model,system_prompt,kind,priority,is_active,is_default,created_by,paused_at,config)
+     values($1,$2,$3,$4,$5,$6,'mcp_agent',$7,true,false,$8,$9,$10::jsonb) returning *`,
     [
       agentId,
       context.orgId,
@@ -79,6 +80,7 @@ export async function createMcpAgentDraft(
       records.agent.priority,
       context.userId,
       options.pausedAt ?? null,
+      JSON.stringify(records.agent.config),
     ],
   );
   // Preserve the database's normal agent defaults; setup metadata is additive.

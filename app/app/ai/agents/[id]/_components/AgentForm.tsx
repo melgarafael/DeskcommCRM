@@ -69,6 +69,7 @@ import type { AgentVersionRow } from "@/hooks/ai/useAgentVersions";
 import type { CredentialRow, Provider } from "@/hooks/ai/useCredentials";
 import { credentialStatus } from "@/hooks/ai/useCredentials";
 import type { FunilDaResposta } from "@/hooks/pipelines/usePipelines";
+import type { EmployeeRolePreset } from "@/lib/ai/agents/employee-roles";
 
 /**
  * O canal oferecido no seletor é exatamente o que `listSelectableChannels`
@@ -110,6 +111,7 @@ interface EditProps extends BaseProps {
 }
 
 interface CreateProps extends BaseProps {
+  initialPreset?: EmployeeRolePreset | null;
   mode: "create";
   creationState?: FormState;
   onCreationStateChange?: React.Dispatch<React.SetStateAction<FormState>>;
@@ -187,12 +189,12 @@ const DEFAULT_TRIGGER: TriggerValue = {
   concurrency: "one_per_conversation",
 };
 
-function buildState(args: { agent?: AgentRow; version: AgentVersionRow | null }): FormState {
-  const { agent, version } = args;
+function buildState(args: { agent?: AgentRow; version: AgentVersionRow | null; preset?: EmployeeRolePreset | null }): FormState {
+  const { agent, version, preset } = args;
   return {
-    name: agent?.name ?? "",
-    description: agent?.description ?? "",
-    priority: agent?.priority ?? 0,
+    name: agent?.name ?? preset?.title ?? "",
+    description: agent?.description ?? preset?.description ?? "",
+    priority: agent?.priority ?? preset?.priority ?? 0,
     provider: (version?.provider as Provider) ?? "anthropic",
     model: version?.model ?? "",
     // `null` gravado = a versão usa a chave da instalação. Sem esta tradução,
@@ -308,7 +310,9 @@ export function AgentForm(props: Props) {
       const ref = props.base ?? props.draft ?? props.published;
       return buildState({ agent: props.agent, version: ref });
     }
-    return initialAgentCreationState(props.defaultAI);
+    const initial = initialAgentCreationState(props.defaultAI);
+    const preset = props.initialPreset;
+    return preset ? { ...initial, name: preset.title, description: preset.description, priority: preset.priority, system_prompt: preset.systemPrompt, handoff_keywords: [...preset.handoffKeywords] } : initial;
   }, [isEdit, props]);
 
   const [localForm, setLocalForm] = React.useState<FormState>(baseline);
@@ -563,6 +567,7 @@ export function AgentForm(props: Props) {
           name: form.name,
           description: form.description.trim() === "" ? undefined : form.description,
           priority: form.priority,
+          employee_role: props.initialPreset?.id,
           version: toVersionPayload(form),
         };
         const validated = agentMcpCreateSchema.safeParse(payload);
@@ -847,7 +852,7 @@ export function AgentForm(props: Props) {
         <div className="min-w-0 space-y-4">
           {/* Identification */}
           <Card className="space-y-3 p-4">
-            <h3 className="text-sm font-medium">{t("Quem é este agente")}</h3>
+            <h3 className="text-sm font-medium">{t("Quem é este funcionário")}</h3>
             <div className="space-y-1">
               <Label htmlFor="name">{t("Nome")}</Label>
               <Input

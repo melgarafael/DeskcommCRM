@@ -721,7 +721,7 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
                 <fieldset>
                   <legend className="mb-4 text-sm font-semibold">3. Critérios avaliados</legend>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {[
+                    {([
                       ["speed", "Velocidade", "Tempo até a primeira resposta"],
                       ["politeness", "Cordialidade", "Clareza, educação e empatia"],
                       [
@@ -730,7 +730,7 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
                         "Como dúvidas e resistência são conduzidas",
                       ],
                       ["closing", "Fechamento", "Próximo passo e chamada para ação"],
-                    ].map(([key, label, help]) => (
+                    ] as const).map(([key, label, help]) => (
                       <label
                         key={key}
                         className="flex items-start gap-3 rounded-xl bg-muted/45 p-3"

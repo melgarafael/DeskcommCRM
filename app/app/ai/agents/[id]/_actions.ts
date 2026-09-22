@@ -703,6 +703,7 @@ export async function createMcpAgentAction(
       is_active: false,
       is_default: false,
       created_by: authUser.id,
+      config: parsed.data.employee_role ? { employee_role: parsed.data.employee_role } : {},
     })
     .select("id")
     .single();
@@ -765,7 +766,7 @@ export async function createMcpAgentAction(
     resourceType: "ai_agent",
     resourceId: agentRow.id,
     requestId,
-    metadata: { kind: "mcp_agent" },
+    metadata: { kind: "mcp_agent", employee_role: parsed.data.employee_role ?? null },
   });
 
   revalidatePath("/app/ai/agents");

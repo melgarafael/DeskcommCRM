@@ -87,7 +87,7 @@ export function AgentRowMenu({ agent }: Props) {
           </DropdownMenuItem>
           <DropdownMenuItem
             disabled={isArchived}
-            onSelect={() => run(t("Agent duplicado."), () => duplicateAgentAction(agent.id))}
+            onSelect={() => run(t("Funcionário duplicado."), () => duplicateAgentAction(agent.id))}
           >
             <Copy size={14} aria-hidden className="mr-2" /> {t("Duplicar")}
           </DropdownMenuItem>
@@ -103,14 +103,14 @@ export function AgentRowMenu({ agent }: Props) {
           {isPaused ? (
             <DropdownMenuItem
               disabled={isArchived || agent.kind === "mcp_agent"}
-              onSelect={() => run(t("Agent reativado."), () => unpauseAgentAction(agent.id))}
+              onSelect={() => run(t("Funcionário reativado."), () => unpauseAgentAction(agent.id))}
             >
               <Play size={14} aria-hidden className="mr-2" /> {t("Despausar")}
             </DropdownMenuItem>
           ) : (
             <DropdownMenuItem
               disabled={isArchived}
-              onSelect={() => run(t("Agent pausado."), () => pauseAgentAction(agent.id))}
+              onSelect={() => run(t("Funcionário pausado."), () => pauseAgentAction(agent.id))}
             >
               <Pause size={14} aria-hidden className="mr-2" /> {t("Pausar")}
             </DropdownMenuItem>
@@ -143,7 +143,7 @@ export function AgentRowMenu({ agent }: Props) {
             </AlertDialogTitle>
             <AlertDialogDescription>
               {t(
-                "O agent deixa de responder gatilhos e some das listas ativas. Versões publicadas são preservadas para auditoria. Não é possível desarquivar pela UI nesta versão.",
+                "O funcionário deixa de responder e sai da equipe ativa. Treinamentos publicados e histórico são preservados para auditoria. Não é possível desarquivar pela interface nesta versão.",
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -151,7 +151,7 @@ export function AgentRowMenu({ agent }: Props) {
             <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() =>
-                run(t("Agent arquivado."), () => archiveAgentAction(agent.id))
+                run(t("Funcionário arquivado."), () => archiveAgentAction(agent.id))
               }
             >
               {t("Arquivar")}

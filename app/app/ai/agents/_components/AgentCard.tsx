@@ -8,6 +8,7 @@ import { useT } from "@/hooks/i18n/useT";
 import type { AgentRow } from "@/hooks/ai/useAgent";
 import { AgentStatusBadge, deriveAgentStatus } from "./AgentStatusBadge";
 import { AgentRowMenu } from "./AgentRowMenu";
+import { employeeRoleFromConfig } from "@/lib/ai/agents/employee-roles";
 import { ArtisanIcon } from "@/components/brand/ArtisanIcon";
 
 interface Props {
@@ -56,6 +57,7 @@ export function modeloEmVigor(agent: AgentRow): string {
 export function AgentCard({ agent, canWrite }: Props) {
   const t = useT();
   const status = deriveAgentStatus(agent);
+  const employeeRole = employeeRoleFromConfig(agent.config);
 
   return (
     <Card className="agent-directory-item relative flex h-full flex-col gap-3 rounded-none border-0 bg-transparent px-2 py-6 shadow-none sm:pl-20">
@@ -69,6 +71,7 @@ export function AgentCard({ agent, canWrite }: Props) {
               {agent.name}
             </Link>
           </h3>
+          {employeeRole && <p className="text-sm text-muted-foreground">{employeeRole.title}</p>}
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {agent.is_default && (

@@ -68,7 +68,7 @@ export interface NavMetadata {
 export const NAV_GROUPS: NavGroup[] = [
   { id: "atendimento", label: "Atendimento" },
   { id: "crm", label: "CRM", hub: { href: "/app/crm", label: "Ver tudo em CRM" } },
-  { id: "ia", label: "Agente de IA", hub: { href: "/app/ai", label: "Ver tudo em IA" } },
+  { id: "ia", label: "Funcionários", hub: { href: "/app/ai", label: "Ver toda a equipe" } },
   { id: "canais", label: "Canais" },
   { id: "analise", label: "Análise", hub: { href: "/app/analise", label: "Ver tudo em Análise" } },
   {
@@ -328,14 +328,14 @@ export const NAV_CATALOG = [
     // Tarefas se abrem todo dia. É esse o corte que decide quem fica no menu.
   },
 
-  // ---- Agente de IA — montar, ensinar, acompanhar ----
+  // ---- Funcionários digitais — montar, ensinar, acompanhar ----
   {
     href: "/app/ai/agents",
-    label: "Agentes",
-    description: "Quem atende por você: instruções, modelo, ferramentas e publicação.",
-    icon: "Robot",
+    label: "Funcionários",
+    description: "Sua equipe digital por função: SDR, BDR, Closer, atendimento e operações.",
+    icon: "UsersThree",
     group: "ia",
-    section: "Montar o agente",
+    section: "Montar a equipe",
     minRole: "manager",
     sidebar: true,
   },

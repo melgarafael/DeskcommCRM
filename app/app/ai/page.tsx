@@ -4,7 +4,7 @@ import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Agente de IA" };
+export const metadata: Metadata = { title: "Funcionários" };
 
 /**
  * Hub da área de IA.
@@ -28,9 +28,9 @@ export default async function AiHubPage() {
       isPlatformAdmin={user.is_platform_admin && !user.support}
       role={activeOrg?.role ?? null}
       interfaceSettings={activeOrg?.interface_settings}
-      title={traduzir("Agente de IA", idioma)}
+      title={traduzir("Funcionários", idioma)}
       subtitle={traduzir(
-        "Tudo que define quem atende por você — e como acompanhar o que ele faz.",
+        "Monte, treine e acompanhe a equipe digital que trabalha com sua empresa.",
         idioma,
       )}
       locale={idioma}

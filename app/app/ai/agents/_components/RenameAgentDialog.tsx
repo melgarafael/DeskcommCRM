@@ -52,7 +52,7 @@ export function RenameAgentDialog({ agent, open, onOpenChange }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t("Renomear agent")}</DialogTitle>
+          <DialogTitle>{t("Renomear funcionário")}</DialogTitle>
           <DialogDescription>
             {t("Apenas o nome interno muda. Versões publicadas e histórico são preservados.")}
           </DialogDescription>

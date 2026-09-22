@@ -152,7 +152,12 @@ export async function POST(req: NextRequest): Promise<Response> {
       resourceType: "ai_agent",
       resourceId: agentRow.id,
       requestId,
-      metadata: { kind: "mcp_agent", first_version_id: versionRow.id, priority: input.priority },
+      metadata: {
+        kind: "mcp_agent",
+        first_version_id: versionRow.id,
+        priority: input.priority,
+        employee_role: input.employee_role ?? null,
+      },
     });
 
     return ok({ agent: agentRow, version: versionRow }, { status: 201, requestId });

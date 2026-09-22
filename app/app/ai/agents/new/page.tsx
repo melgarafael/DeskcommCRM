@@ -12,6 +12,8 @@ import { chaveDePlataforma } from "@/lib/ai/runtime/agent";
 
 import { lerAmbiente } from "@/lib/instalacao/ambiente";
 
+import { AgentForm } from "../[id]/_components/AgentForm";
+import { employeeRoleById } from "@/lib/ai/agents/employee-roles";
 import { ConversationalAgentCreator } from "./_components/ConversationalAgentCreator";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +36,11 @@ function provedoresDaInstalacao(): string[] {
     .map(([id]) => id);
 }
 
-export default async function NewAgentPage() {
+export default async function NewAgentPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ cargo?: string }>;
+}) {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) redirect("/app");
@@ -52,6 +58,8 @@ export default async function NewAgentPage() {
   ]);
 
   const credentials = (credentialsRes.data ?? []) as unknown as CredentialRow[];
+  const { cargo } = await searchParams;
+  const initialPreset = employeeRoleById(cargo);
 
   const platformProviders = provedoresDaInstalacao();
   const db = await getRequestPool().connect();
@@ -64,12 +72,12 @@ export default async function NewAgentPage() {
 
   return (
     <div className="flex h-full flex-col gap-6 p-4 sm:p-6">
-      <ConversationalAgentCreator
+      {initialPreset ? <AgentForm mode="create" initialPreset={initialPreset} credentials={credentials} provedoresDaInstalacao={platformProviders} defaultAI={defaultAI} channelSessions={channelSessions} /> : <ConversationalAgentCreator
         credentials={credentials}
         provedoresDaInstalacao={platformProviders}
         defaultAI={defaultAI}
         channelSessions={channelSessions}
-      />
+      />}
     </div>
   );
 }
