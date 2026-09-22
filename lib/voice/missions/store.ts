@@ -125,6 +125,10 @@ export async function saveMission(
         );
       if (c.is_group || c.is_blocked || ["closed", "archived", "resolved"].includes(c.status))
         throw new MissionError("Escolha um atendimento individual aberto e um contato permitido.");
+      if (!input.test && !c.phone_number)
+        throw new MissionError(
+          "Cadastre o telefone do contato antes de ligar ou escolha um contato de teste.",
+        );
       if (input.objective.length < 8)
         throw new MissionError("Conte o que a IA precisa resolver nesta ligação.");
       if (!input.agent_id || !input.channel_id || (input.test && !input.test_contact_id))

@@ -105,6 +105,7 @@ async function executeMission(
     dialAttempted = false,
     providerStarted = false,
     monitorBusy = false;
+  let stage = "context";
   let failure = false,
     hangupFailed = false;
   let audio: Awaited<ReturnType<typeof audioBridge>> | null = null;
@@ -147,6 +148,7 @@ async function executeMission(
   const limit = setTimeout(() => controller.abort(), 360000);
   try {
     const context = await missionContext(pool, m.organization_id, m.conversation_id);
+    stage = "configuration";
     const { rows } = await pool.query(
       `select v.system_prompt,s.wacalls_session_id,p.phone_number from ai_agents a
       join ai_agent_versions v on v.id=a.published_version_id and v.organization_id=a.organization_id
@@ -160,14 +162,17 @@ async function executeMission(
     const config = rows[0];
     if (!config?.phone_number || !config.wacalls_session_id) throw new Error("mission_not_ready");
     sessionId = config.wacalls_session_id;
+    stage = "transport";
     const sessions = await wa.listSessions();
     if (!sessions.some((s) => s.id === sessionId && s.paired)) throw new Error("number_not_paired");
+    stage = "phone";
     const target = await resolverNumeroDiscavel(
       createAdminClient(),
       m.organization_id,
       config.phone_number,
     );
     if (!/^\d{8,15}$/.test(target.digitos)) throw new Error("invalid_phone");
+    stage = "allowance";
     reservation = await reserveSubscriptionAi(pool, m.organization_id);
     await recordSubscriptionAiEvidence(
       pool,
@@ -182,6 +187,7 @@ async function executeMission(
     );
     await monitor();
     if (signal.aborted) throw new Error("mission_cancelled");
+    stage = "audio";
     audio = await audioBridge({
       apiKey,
       instructions: missionPrompt(m.objective, context, config.system_prompt),
@@ -225,9 +231,19 @@ async function executeMission(
       },
     });
     if (audio.error) throw new Error(audio.error);
-  } catch {
+  } catch (error) {
     failure = true;
-    log.warn("voice mission interrupted", { mission_id: m.id, organization_id: m.organization_id });
+    log.warn("voice mission interrupted", {
+      stage,
+      error_code:
+        error instanceof Error && /^[a-z_]{1,80}$/.test(error.message)
+          ? error.message
+          : error && typeof error === "object" && "code" in error
+            ? String(error.code)
+            : "execution_failed",
+      mission_id: m.id,
+      organization_id: m.organization_id,
+    });
   } finally {
     clearInterval(timer);
     clearTimeout(limit);
