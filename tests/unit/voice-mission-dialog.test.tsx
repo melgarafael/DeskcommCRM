@@ -34,6 +34,7 @@ async function open() {
   );
   fireEvent.click(screen.getByRole("button", { name: "Pedir ligação à IA" }));
   await screen.findByLabelText("Seu objetivo");
+  return client;
 }
 it("starts in two clicks with the recipient visible and no review step", async () => {
   await open();
@@ -164,4 +165,19 @@ it("does not trap a legacy draft in test mode without a chosen recipient", async
   expect(screen.getByLabelText(/Fazer um teste primeiro/)).not.toBeChecked();
   expect(screen.getByRole("button", { name: "Ligar agora" })).toBeVisible();
   expect(screen.getByLabelText("Seu objetivo")).toHaveValue("Pedido antigo");
+});
+
+it("keeps the objective and enables calling when pairing completes", async () => {
+  mocks.get.mockResolvedValue({
+    data: { ...panel, channels: [], defaults: { agent_id: agent, channel_id: null } },
+  });
+  const client = await open();
+  fireEvent.change(screen.getByLabelText("Seu objetivo"), {
+    target: { value: "Entender a dúvida" },
+  });
+  mocks.get.mockResolvedValue({ data: panel });
+  await client.invalidateQueries({ queryKey: ["voice-missions", "conversation"] });
+  expect(await screen.findByRole("button", { name: "Ligar agora" })).toBeVisible();
+  expect(screen.getByLabelText("Seu objetivo")).toHaveValue("Entender a dúvida");
+  expect(screen.getByLabelText("Número que fará a ligação")).toHaveValue(channel);
 });
