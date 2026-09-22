@@ -467,3 +467,18 @@ describe("apagar o canal não apaga o histórico de ligações", () => {
     expect(Number(sobrou?.n)).toBeGreaterThan(0);
   });
 });
+
+it('reconcilia a chamada da IA quando o primeiro evento chegou sem dono', async () => {
+  const mission = 'cccccccc-8888-4000-8000-0000000000f1';
+  const call = 'voice-ai-owner-race';
+  await pool.query(`insert into voice_missions(id,organization_id,conversation_id,created_by,status) values($1,$2,$3,$4,'preparing')`,[mission,GOV_ORG,VOZ_CONVERSA,GOV_AGENT_A]);
+  const event={type:'call-status',sessionId:SESSAO_UPSTREAM,id:call,status:'ringing',peer:`${TELEFONE}@s.whatsapp.net`,startedAt:Date.now()};
+  await despachar(event);
+  expect((await um<{n:string}>('select count(*)::text n from voice_calls where organization_id=$1 and wacalls_call_id=$2',[GOV_ORG,call]))?.n).toBe('1');
+  await despachar({...event,owner:`ai:${mission}`});
+  expect((await um<{n:string}>('select count(*)::text n from voice_calls where organization_id=$1 and wacalls_call_id=$2',[GOV_ORG,call]))?.n).toBe('0');
+  expect((await um<{call_id:string}>('select call_id from voice_missions where id=$1',[mission]))?.call_id).toBe(call);
+  await despachar({type:'call-ended',sessionId:SESSAO_UPSTREAM,id:call,owner:`ai:${mission}`,reason:'user_ended',endedAt:Date.now()});
+  expect((await um<{transport_ended:boolean}>('select transport_ended from voice_missions where id=$1',[mission]))?.transport_ended).toBe(true);
+  await pool.query('delete from voice_missions where id=$1',[mission]);
+});
