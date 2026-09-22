@@ -155,6 +155,8 @@ export const NAV_CATALOG = [
     sidebar: true,
     section: "O dia a dia da venda",
   },
+  { href: "/app/growth/instagram", label: "Instagram Growth", description: "Responda comentários com DMs e gere leads no Instagram.", icon: "Megaphone", group: "crm", minRole: "admin", sidebar: true, section: "O dia a dia da venda" },
+  { href: "/app/audit/mystery-shopper", label: "Cliente Oculto", description: "Auditoria com IA do atendimento e tempo de resposta.", icon: "ShieldCheck", group: "analise", minRole: "admin", sidebar: true, section: "Qualidade e Auditoria" },
   // ---- Atendimento — onde o operador passa o dia ----
   {
     href: "/app/inbox",
