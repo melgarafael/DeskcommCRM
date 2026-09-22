@@ -143,3 +143,25 @@ it("blocks duplicate clicks while a start request is pending", async () => {
   fireEvent.click(call);
   expect(mocks.post).toHaveBeenCalledOnce();
 });
+it("does not trap a legacy draft in test mode without a chosen recipient", async () => {
+  mocks.get.mockResolvedValue({
+    data: {
+      ...panel,
+      missions: [
+        {
+          id: agent,
+          status: "draft",
+          objective: "Pedido antigo",
+          agent_id: null,
+          channel_id: null,
+          test: true,
+          test_contact_id: null,
+        },
+      ],
+    },
+  });
+  await open();
+  expect(screen.getByLabelText(/Fazer um teste primeiro/)).not.toBeChecked();
+  expect(screen.getByRole("button", { name: "Ligar agora" })).toBeVisible();
+  expect(screen.getByLabelText("Seu objetivo")).toHaveValue("Pedido antigo");
+});
