@@ -15,7 +15,7 @@ export async function GET(req: Request) {
     const { data, error } = await supabase
       .from("growth_instagram_triggers")
       .select("*")
-      .eq("organization_id", activeOrg.id)
+      .eq("organization_id", activeOrg.orgId)
       .order("created_at", { ascending: false });
 
     if (error) throw error;
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     const { data, error } = await supabase
       .from("growth_instagram_triggers")
       .insert({
-        organization_id: activeOrg.id,
+        organization_id: activeOrg.orgId,
         name,
         post_id: post_id || null,
         post_permalink: post_permalink || null,

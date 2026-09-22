@@ -12,5 +12,5 @@ export default async function InstagramGrowthPage() {
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) redirect("/login");
 
-  return <InstagramGrowthClient orgId={activeOrg.id} />;
+  return <InstagramGrowthClient orgId={activeOrg.orgId} />;
 }

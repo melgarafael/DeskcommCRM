@@ -12,5 +12,5 @@ export default async function MysteryShopperPage() {
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) redirect("/login");
 
-  return <MysteryShopperClient orgId={activeOrg.id} />;
+  return <MysteryShopperClient orgId={activeOrg.orgId} />;
 }

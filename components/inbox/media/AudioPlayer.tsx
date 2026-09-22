@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Pause, Play, FileText, Sparkle, Copy, Check } from "@phosphor-icons/react";
-import { useT } from "@/lib/i18n/useT";
+import { Pause, Play, FileText, Sparkle, Copy, Check } from "@/lib/ui/icons";
+import { useT } from "@/hooks/i18n/useT";
 import { cn } from "@/lib/utils";
 import { mediaSrc } from "./media-utils";
 import { MediaUnavailable } from "./MediaUnavailable";
@@ -24,169 +24,165 @@ interface Props {
   intent?: string | null;
 }
 
-/** Player de voz WhatsApp com Transcrição e Resumo de IA nativos */
 export function AudioPlayer({ messageId, isOutbound, transcription, summary, intent }: Props) {
   const t = useT();
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const [playing, setPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
-  const [current, setCurrent] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
   const [rateIdx, setRateIdx] = useState(0);
   const [failed, setFailed] = useState(false);
-  const [showTranscript, setShowTranscript] = useState(false);
+  const [showTranscription, setShowTranscription] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const src = mediaSrc(messageId);
+
   useEffect(() => {
-    const el = audioRef.current;
-    if (!el) return;
-    const onTime = () => setCurrent(el.currentTime);
-    const onMeta = () => setDuration(el.duration);
-    const onEnded = () => setPlaying(false);
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
+    const onEnded = () => {
+      setIsPlaying(false);
+      setCurrentTime(0);
+    };
+    const onTimeUpdate = () => setCurrentTime(audio.currentTime);
+    const onLoadedMetadata = () => setDuration(audio.duration || 0);
     const onError = () => setFailed(true);
-    el.addEventListener("timeupdate", onTime);
-    el.addEventListener("loadedmetadata", onMeta);
-    el.addEventListener("durationchange", onMeta);
-    el.addEventListener("ended", onEnded);
-    el.addEventListener("error", onError);
+
+    audio.addEventListener("play", onPlay);
+    audio.addEventListener("pause", onPause);
+    audio.addEventListener("ended", onEnded);
+    audio.addEventListener("timeupdate", onTimeUpdate);
+    audio.addEventListener("loadedmetadata", onLoadedMetadata);
+    audio.addEventListener("error", onError);
+
     return () => {
-      el.removeEventListener("timeupdate", onTime);
-      el.removeEventListener("loadedmetadata", onMeta);
-      el.removeEventListener("durationchange", onMeta);
-      el.removeEventListener("ended", onEnded);
-      el.removeEventListener("error", onError);
+      audio.removeEventListener("play", onPlay);
+      audio.removeEventListener("pause", onPause);
+      audio.removeEventListener("ended", onEnded);
+      audio.removeEventListener("timeupdate", onTimeUpdate);
+      audio.removeEventListener("loadedmetadata", onLoadedMetadata);
+      audio.removeEventListener("error", onError);
     };
   }, []);
 
-  if (failed) return <MediaUnavailable kind="Áudio" className="h-12 w-60" />;
+  if (failed) {
+    return <MediaUnavailable kind="audio" />;
+  }
 
-  const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 0;
-
-  const toggle = () => {
-    const el = audioRef.current;
-    if (!el) return;
-    if (playing) {
-      el.pause();
-      setPlaying(false);
+  const togglePlay = () => {
+    if (!audioRef.current) return;
+    if (isPlaying) {
+      audioRef.current.pause();
     } else {
-      void el.play();
-      setPlaying(true);
+      audioRef.current.play().catch(() => setFailed(true));
     }
   };
 
-  const cycleRate = () => {
-    const next = (rateIdx + 1) % RATES.length;
-    setRateIdx(next);
-    if (audioRef.current) audioRef.current.playbackRate = RATES[next]!;
+  const changeRate = () => {
+    if (!audioRef.current) return;
+    const nextIdx = (rateIdx + 1) % RATES.length;
+    const nextRate = RATES[nextIdx] ?? 1;
+    audioRef.current.playbackRate = nextRate;
+    setRateIdx(nextIdx);
   };
 
-  const seek = (value: number) => {
-    if (audioRef.current) audioRef.current.currentTime = value;
-    setCurrent(value);
+  const copyText = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleCopy = () => {
-    if (transcription) {
-      navigator.clipboard.writeText(transcription);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
+  const hasAIEnrichment = Boolean(transcription || summary || intent);
 
   return (
-    <div className="flex flex-col gap-2 py-1 max-w-sm">
-      <div className="flex w-64 items-center gap-2">
-        <audio ref={audioRef} src={mediaSrc(messageId)} preload="metadata" />
+    <div className="flex flex-col gap-2 w-full max-w-[320px]">
+      <audio ref={audioRef} src={src} preload="metadata" />
+
+      <div
+        className={cn(
+          "flex items-center gap-2 px-3 py-2 rounded-xl border transition-colors",
+          isOutbound
+            ? "bg-brand-600/10 border-brand-500/20 text-brand-900 dark:text-brand-100"
+            : "bg-surface-elevated border-border text-foreground"
+        )}
+      >
         <button
-          type="button"
-          aria-label={playing ? t("Pausar áudio") : t("Reproduzir áudio")}
-          onClick={toggle}
-          className={cn(
-            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors",
-            isOutbound
-              ? "bg-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/30"
-              : "bg-primary/10 text-primary hover:bg-primary/20",
-          )}
+          onClick={togglePlay}
+          className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition"
+          aria-label={isPlaying ? "Pausar áudio" : "Tocar áudio"}
         >
-          {playing ? (
-            <Pause size={16} weight="fill" aria-hidden />
-          ) : (
-            <Play size={16} weight="fill" aria-hidden />
-          )}
+          {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
         </button>
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <input
-            type="range"
-            aria-label={t("Progresso do áudio")}
-            aria-valuetext={`${fmt(current)} ${t("de")} ${fmt(safeDuration)}`}
-            min="0"
-            max={String(safeDuration || 1)}
-            step="0.1"
-            value={current}
-            onChange={(e) => seek(Number(e.target.value))}
-            className="h-1 w-full cursor-pointer accent-current"
-          />
-          <span className="text-[10px] tabular-nums opacity-70">
-            {fmt(current)} / {fmt(safeDuration)}
-          </span>
+
+        <div className="flex-1 flex flex-col gap-1">
+          <div className="h-1.5 bg-border rounded-full overflow-hidden">
+            <div
+              className="h-full bg-brand-500 rounded-full transition-all"
+              style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }}
+            />
+          </div>
+          <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
+            <span>{fmt(currentTime)}</span>
+            <span>{fmt(duration)}</span>
+          </div>
         </div>
+
         <button
-          type="button"
-          aria-label={`${t("Velocidade de reprodução")}: ${RATES[rateIdx]}x`}
-          onClick={cycleRate}
-          className={cn(
-            "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums transition-colors",
-            isOutbound
-              ? "bg-primary-foreground/20 text-primary-foreground"
-              : "bg-primary/10 text-primary",
-          )}
+          onClick={changeRate}
+          className="text-[10px] font-bold px-1.5 py-0.5 rounded border border-border hover:bg-surface transition"
         >
           {RATES[rateIdx]}x
         </button>
       </div>
 
-      {/* Botão e Painel de Transcrição e Resumo */}
-      <div className="border-t border-border/40 pt-1.5 flex flex-col gap-1">
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={() => setShowTranscript(!showTranscript)}
-            className="flex items-center gap-1 text-[11px] font-medium opacity-80 hover:opacity-100 transition"
-          >
-            <FileText size={13} weight="bold" />
-            <span>{showTranscript ? "Ocultar transcrição" : "Ver transcrição"}</span>
-          </button>
-          
-          {intent && (
-            <span className="px-1.5 py-0.5 rounded text-[10px] bg-primary/10 text-primary font-medium flex items-center gap-1">
-              <Sparkle size={11} weight="fill" />
-              {intent}
-            </span>
-          )}
-        </div>
-
-        {showTranscript && (
-          <div className="mt-1 p-2 rounded-lg bg-background/80 text-foreground text-xs space-y-1.5 border shadow-sm">
-            <div className="flex items-start justify-between gap-2">
-              <p className="italic text-[11px] leading-relaxed">
-                "{transcription || "Transcrição do áudio processada automaticamente via IA nativa."}"
-              </p>
+      {hasAIEnrichment && (
+        <div className="flex flex-col gap-1 text-xs">
+          <div className="flex items-center justify-between">
+            {intent && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+                <Sparkle className="w-3 h-3" />
+                {intent}
+              </span>
+            )}
+            {transcription && (
               <button
-                type="button"
-                onClick={handleCopy}
-                className="shrink-0 p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
-                title="Copiar transcrição"
+                onClick={() => setShowTranscription(!showTranscription)}
+                className="inline-flex items-center gap-1 text-[11px] text-brand-600 dark:text-brand-400 hover:underline ml-auto"
               >
-                {copied ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                <FileText className="w-3.5 h-3.5" />
+                {showTranscription ? "Ocultar texto" : "Ver transcrição"}
               </button>
-            </div>
-            {summary && (
-              <div className="text-[10px] text-muted-foreground pt-1 border-t border-border/50">
-                <strong>Resumo:</strong> {summary}
-              </div>
             )}
           </div>
-        )}
-      </div>
+
+          {showTranscription && transcription && (
+            <div className="p-2.5 rounded-lg bg-surface-elevated border border-border text-foreground/90 space-y-2 mt-1">
+              <div className="flex items-center justify-between border-b border-border pb-1">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  Transcrição (IA)
+                </span>
+                <button
+                  onClick={() => copyText(transcription)}
+                  className="p-1 hover:bg-surface rounded text-muted-foreground hover:text-foreground transition"
+                  title="Copiar transcrição"
+                >
+                  {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                </button>
+              </div>
+              <p className="text-xs leading-relaxed whitespace-pre-wrap">{transcription}</p>
+              {summary && (
+                <div className="pt-1.5 border-t border-border">
+                  <span className="text-[10px] font-semibold text-muted-foreground block mb-0.5">Resumo:</span>
+                  <p className="text-[11px] text-muted-foreground leading-snug">{summary}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
