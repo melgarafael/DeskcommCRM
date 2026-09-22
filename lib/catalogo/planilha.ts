@@ -199,14 +199,20 @@ export function lerPlanilha(
     // `codigoDoProduto`: cortar AQUI, antes de colapsar os espaços, fazia dois
     // nomes longos chegarem ao banco com o mesmo código.
     const codigo = codigoDoProduto(valor("codigo") || nome);
-    if (codigosVistos.has(codigo.toLowerCase())) {
+    // Comparação pela CAIXA EXATA — o mesmo critério do índice único do banco
+    // (`catalog_products_org_codigo_key`, sobre `codigo`) e do pré-check da rota
+    // de importação (`.in("codigo", …)`). Com `toLowerCase()` aqui, `IP15` e
+    // `ip15` na mesma planilha recusavam a segunda linha com "código repetido"
+    // mesmo o banco aceitando as duas — as camadas discordavam sobre o que é o
+    // mesmo produto (#482, item 3).
+    if (codigosVistos.has(codigo)) {
       erros.push({
         linha: numeroNaPlanilha,
         motivo: _t("código repetido na planilha (") + `"${codigo}"` + ")",
       });
       continue;
     }
-    codigosVistos.add(codigo.toLowerCase());
+    codigosVistos.add(codigo);
 
     // Coluna de estoque AUSENTE significa "esta loja não conta estoque" — e é
     // diferente de estoque zero. Sem essa distinção, uma planilha sem a coluna

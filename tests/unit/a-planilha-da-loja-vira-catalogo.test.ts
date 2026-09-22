@@ -215,3 +215,56 @@ describe("coluna desconhecida é relatada, não ignorada em silêncio", () => {
     expect(r.colunasIgnoradas).toEqual(["Fornecedor"]);
   });
 });
+
+/**
+ * O DEDUPE DA PLANILHA E O ÍNDICE DO BANCO COMPARAM A CAIXA DO MESMO JEITO.
+ *
+ * ─── O defeito que este bloco guarda (#482, item 3) ─────────────────────────
+ *
+ * O dedupe da planilha comparava `codigo.toLowerCase()`; o índice único do
+ * banco (`catalog_products_org_codigo_key`, sobre `codigo`) e o pré-check da
+ * rota de importação (`.in("codigo", …)`, que também separa "novos" de
+ * "existentes" e por isso decide quem leva `moeda`) comparam o texto exato. A
+ * discordância aparecia de dois jeitos:
+ *
+ *   IP15 + ip15 na MESMA planilha   -> a segunda linha era recusada com "código
+ *                                      repetido na planilha", recusa que o banco
+ *                                      não faria;
+ *   IP15 na planilha, ip15 no banco -> o pré-check não achava o par e a linha
+ *                                      entrava como produto NOVO.
+ *
+ * O conserto é a planilha comparar o que o banco compara: código escrito igual
+ * é repetido; código que difere só na caixa é outro código — e aí a linha entra
+ * (o resumo da importação a conta como criada), que é o desfecho do banco.
+ */
+describe("a planilha compara a caixa como o índice do banco", () => {
+  it("IP15 e ip15 na mesma planilha entram como DOIS produtos", () => {
+    const r = lerPlanilha(
+      planilha(
+        "codigo,nome,preco",
+        "IP15,iPhone 15 128GB,5499",
+        "ip15,iPhone 15 128GB (importado),4999",
+      ),
+    );
+
+    if ("erro" in r) throw new Error(r.erro);
+    // Antes: a segunda linha voltava como "código repetido na planilha (ip15)"
+    // e o produto simplesmente não existia para o agente.
+    expect(r.erros).toEqual([]);
+    expect(r.produtos.map((p) => p.codigo)).toEqual(["IP15", "ip15"]);
+  });
+
+  it("o código escrito IGUAL continua recusado — a guarda do repetido não caiu", () => {
+    // Par do "não faça": há conserto que parece igual e solta a guarda inteira
+    // (comparar com o conjunto vazio) em vez de só tirar o `toLowerCase`. Aí
+    // duas linhas idênticas caem no MESMO lote de upsert, que o banco recusa
+    // inteiro — a planilha perde 200 produtos por causa de uma linha repetida.
+    const r = lerPlanilha(
+      planilha("codigo,nome,preco", "IP15,iPhone 15,5499", "IP15,iPhone 15 Pro,7999"),
+    );
+
+    if ("erro" in r) throw new Error(r.erro);
+    expect(r.produtos).toHaveLength(1);
+    expect(r.erros[0]?.motivo).toContain("repetido");
+  });
+});
