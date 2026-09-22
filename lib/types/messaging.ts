@@ -42,6 +42,8 @@ export interface Conversation {
    * como aparecer só quando faz sentido, e a rota ficaria sem porta.
    */
   bot_silenced_until: string | null;
+  /** Funcionário de IA aderido a esta conversa pelo roteador de intenções. */
+  active_ai_agent_id?: string | null;
   /**
    * Campo CALCULADO pelo banco (migration 0203) — não é coluna, e por isso não vem
    * em `select=*`: quem o quiser tem de pedi-lo por nome. Opcional porque a

@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { randomId } from "@/lib/random-id";
 import { float32ToInt16LE, int16LEToFloat32 } from "@/lib/wacalls/pcm";
+import { createAiWacallsRelay } from "@/lib/voice/ai-wacalls-relay";
 
 export type VoiceCallStatus = "starting" | "ringing" | "connected" | "ended";
 
@@ -246,9 +247,12 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
   const [muted, setMuted] = useState(false);
   const [connectingMedia, setConnectingMedia] = useState(false);
   const [estadoDaMidia, setEstadoDaMidia] = useState<EstadoDaMidia>("ociosa");
+  const [aiConduzindo, setAiConduzindo] = useState(false);
+  const [aiAgentName, setAiAgentName] = useState<string | null>(null);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
+  const aiSocketRef = useRef<WebSocket | null>(null);
   const prazoRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /**
    * "Já chegou áudio?" mora num ref, e não no estado, de propósito.
@@ -319,10 +323,15 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
    * a ligação é dele, está conectada, e a marca do áudio não é desta aba.
    * Derivado no render — é o que o painel usa para oferecer "Ouvir aqui".
    */
-  const midiaEmOutraAba = minha && call?.status === "connected" && marcaDaAba !== call.id;
+  const midiaEmOutraAba =
+    !aiConduzindo && minha && call?.status === "connected" && marcaDaAba !== call.id;
 
   const teardownMedia = useCallback(() => {
     geracaoDaMidiaRef.current++;
+    try {
+      aiSocketRef.current?.close(1000, "CRM encerrou a ponte");
+    } catch {}
+    aiSocketRef.current = null;
     try {
       dcRef.current?.close();
     } catch {}
@@ -349,6 +358,8 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
 
     if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null;
     setMuted(false);
+    setAiConduzindo(false);
+    setAiAgentName(null);
     setConnectingMedia(false);
     setEstadoDaMidia("ociosa");
   }, [remoteAudioRef]);
@@ -636,6 +647,143 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
   }, [remoteAudioRef, teardownMedia, reconciliar]);
 
   /**
+   * Abre a mesma perna PCM do WaCalls sem pedir microfone. O outro lado dessa
+   * perna é a sessão privada do funcionário de voz, e o navegador apenas
+   * retransmite os quadros em memória. Nada de áudio é gravado pelo CRM.
+   */
+  const conectarMidiaIa = useCallback(
+    async (callId: string, signedUrl: string, agentName: string) => {
+      midiaTentadaRef.current = callId;
+      const geracao = ++geracaoDaMidiaRef.current;
+      setConnectingMedia(true);
+      setEstadoDaMidia("negociando");
+      setAiConduzindo(true);
+      setAiAgentName(agentName);
+      recebeuAudioRef.current = false;
+      canalAbriuRef.current = false;
+
+      let pc: RTCPeerConnection | null = null;
+      let socket: WebSocket | null = null;
+      const superada = () => geracaoDaMidiaRef.current !== geracao;
+
+      try {
+        socket = new WebSocket(signedUrl, ["convai"]);
+        aiSocketRef.current = socket;
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error("voice_agent_timeout")), 12_000);
+          socket!.addEventListener(
+            "open",
+            () => {
+              clearTimeout(timer);
+              resolve();
+            },
+            { once: true },
+          );
+          socket!.addEventListener(
+            "error",
+            () => {
+              clearTimeout(timer);
+              reject(new Error("voice_agent_connection_failed"));
+            },
+            { once: true },
+          );
+        });
+        if (superada()) return;
+
+        socket.send(JSON.stringify({ type: "conversation_initiation_client_data" }));
+
+        pc = new RTCPeerConnection({ iceServers: [] });
+        pcRef.current = pc;
+        const dc = pc.createDataChannel("pcm", { ordered: true });
+        dc.binaryType = "arraybuffer";
+        dcRef.current = dc;
+        const audioPendente: ArrayBuffer[] = [];
+
+        const relay = createAiWacallsRelay({
+          sendAgent(command) {
+            if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(command));
+          },
+          sendWacalls(pcm) {
+            if (dc.readyState === "open") dc.send(pcm);
+            else if (audioPendente.length < 250) audioPendente.push(pcm);
+          },
+          onReady() {
+            if (!superada() && dc.readyState === "open") setEstadoDaMidia("aberta");
+          },
+          onFailure() {
+            if (!superada()) setEstadoDaMidia("falhou");
+          },
+        });
+
+        socket.addEventListener("message", (event) => {
+          if (!superada() && typeof event.data === "string") relay.fromAgent(event.data);
+        });
+        socket.addEventListener("close", () => {
+          if (!superada() && callRef.current?.id === callId) {
+            setEstadoDaMidia("caiu");
+            void reconciliar();
+          }
+        });
+
+        dc.onopen = () => {
+          if (superada()) return;
+          canalAbriuRef.current = true;
+          setEstadoDaMidia(recebeuAudioRef.current ? "com_audio" : "aberta");
+          for (const pcm of audioPendente.splice(0)) dc.send(pcm);
+        };
+        dc.onmessage = (event: MessageEvent<ArrayBuffer>) => {
+          if (superada()) return;
+          if (!recebeuAudioRef.current) {
+            recebeuAudioRef.current = true;
+            setEstadoDaMidia("com_audio");
+          }
+          relay.fromWacalls(event.data);
+        };
+        pc.onconnectionstatechange = () => {
+          if (superada()) return;
+          if (["failed", "closed", "disconnected"].includes(pc!.connectionState)) {
+            setEstadoDaMidia(canalAbriuRef.current ? "caiu" : "sem_rota");
+            void reconciliar();
+          }
+        };
+
+        prazoRef.current = setTimeout(() => {
+          setEstadoDaMidia((atual) => (atual === "negociando" ? "sem_rota" : atual));
+        }, PRAZO_PARA_ABRIR_MS);
+
+        const offer = await pc.createOffer();
+        if (superada()) return;
+        await pc.setLocalDescription(offer);
+        if (superada()) return;
+        await new Promise<void>((resolve) => {
+          if (pc!.iceGatheringState === "complete") return resolve();
+          const check = () => {
+            if (pc!.iceGatheringState !== "complete") return;
+            pc!.removeEventListener("icegatheringstatechange", check);
+            resolve();
+          };
+          pc!.addEventListener("icegatheringstatechange", check);
+        });
+        if (superada()) return;
+        const response = await apiClient.post<{ data: { sdpAnswer: string } }>(
+          `/api/v1/voice/calls/${callId}/webrtc`,
+          { sdpOffer: pc.localDescription!.sdp, aba: idDaAba() },
+        );
+        if (superada()) return;
+        await pc.setRemoteDescription({ type: "answer", sdp: response.data.sdpAnswer });
+      } catch (error) {
+        if (superada()) return;
+        teardownMedia();
+        setEstadoDaMidia("falhou");
+        throw error;
+      } finally {
+        if (!superada()) setConnectingMedia(false);
+      }
+    },
+    [reconciliar, teardownMedia],
+  );
+
+  /**
    * Quem abre o áudio é o GESTO ("Chamar", "Atender"), nesta aba — ver
    * `MARCA_DA_ABA`. Este efeito cobre só o que sobra:
    *
@@ -728,6 +876,39 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
     void conectarMidia(criada.id);
   }, [podeLigar, conectarMidia]);
 
+  const startAiCall = useCallback(
+    async (conversationId: string, contactId: string) => {
+      if (!podeLigar || callRef.current) return;
+      let criada: VoiceCallRow | null = null;
+      try {
+        // O motor é preparado ANTES de discar. Se a credencial ou a voz não
+        // estiver pronta, o telefone do cliente não toca para ouvir silêncio.
+        const prepared = await apiClient.post<{
+          data: { signed_url: string; agent_name: string; contact_id: string };
+        }>("/api/v1/voice/ai-session", { conversationId });
+        if (prepared.data.contact_id !== contactId) {
+          throw new Error("voice_conversation_contact_mismatch");
+        }
+
+        const started = await apiClient.post<{ data: VoiceCallRow }>("/api/v1/voice/calls", {
+          contactId,
+        });
+        criada = started.data;
+        ultimaChamadaRef.current = criada.id;
+        setCall((atual) => mesclarRespostaDaChamada(atual, criada!));
+        await conectarMidiaIa(criada.id, prepared.data.signed_url, prepared.data.agent_name);
+      } catch (error) {
+        showApiError(error);
+        if (criada) {
+          encerradasRef.current.add(criada.id);
+          await apiClient.delete(`/api/v1/voice/calls/${criada.id}`).catch(() => undefined);
+          setCall(null);
+        }
+      }
+    },
+    [conectarMidiaIa, podeLigar],
+  );
+
   const acceptCall = useCallback(async () => {
     const atual = callRef.current;
     if (!atual || isAcceptingRef.current) return;
@@ -797,10 +978,14 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
     /** Encerrar em voo — o botão fica desabilitado para não sair outro DELETE. */
     encerrando,
     startCall,
+    startAiCall,
     acceptCall,
     rejectCall,
     hangUp,
     toggleMute,
     ouvirAqui,
+    /** A ponte PCM está ligada ao funcionário, e não ao microfone humano. */
+    aiConduzindo,
+    aiAgentName,
   };
 }

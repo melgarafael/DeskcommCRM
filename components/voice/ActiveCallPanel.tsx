@@ -7,7 +7,7 @@ import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { CircleNotch, Microphone, MicrophoneSlash, PhoneX, Warning } from "@/lib/ui/icons";
+import { CircleNotch, Microphone, MicrophoneSlash, PhoneX, Robot, Warning } from "@/lib/ui/icons";
 import { useT } from "@/hooks/i18n/useT";
 
 function formatarDuracao(segundos: number): string {
@@ -28,6 +28,8 @@ export function ActiveCallPanel() {
     estadoDaMidia,
     midiaEmOutraAba,
     encerrando,
+    aiConduzindo,
+    aiAgentName,
     toggleMute,
     hangUp,
     ouvirAqui,
@@ -78,7 +80,14 @@ export function ActiveCallPanel() {
    * O cronômetro NÃO some quando o áudio falha: a ligação existe mesmo, e
    * escondê-la mentiria para o outro lado. Quem conta a verdade é esta linha.
    */
-  const avisoDeMidia: { texto: string; grave: boolean; ouvirAqui?: string } | null = midiaEmOutraAba
+  const avisoDeMidia: { texto: string; grave: boolean; ouvirAqui?: string } | null = aiConduzindo
+    ? estadoDaMidia === "falhou" || estadoDaMidia === "sem_rota" || estadoDaMidia === "caiu"
+      ? { texto: t("A ponte de áudio da IA caiu"), grave: true }
+      : {
+          texto: `${aiAgentName ?? t("Funcionário de IA")} ${t("está conduzindo")}`,
+          grave: false,
+        }
+    : midiaEmOutraAba
     ? // A ligação é desta pessoa, mas o áudio está noutra aba ou aparelho dela.
       // Abrir aqui sozinho trocaria a ponte do serviço de voz e emudeceria a aba
       // que ela está usando — então pergunta, com o botão.
@@ -128,7 +137,9 @@ export function ActiveCallPanel() {
               avisoDeMidia.grave ? "font-medium text-destructive" : "text-muted-foreground"
             }`}
           >
-            {avisoDeMidia.grave ? (
+            {aiConduzindo && !avisoDeMidia.grave ? (
+              <Robot size={11} weight="duotone" className="shrink-0" aria-hidden />
+            ) : avisoDeMidia.grave ? (
               <Warning size={11} weight="fill" className="shrink-0" aria-hidden />
             ) : (
               <CircleNotch size={11} weight="bold" className="shrink-0 animate-spin" aria-hidden />
@@ -147,21 +158,23 @@ export function ActiveCallPanel() {
         ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
-        <Button
-          size="icon"
-          variant="ghost"
-          className="rounded-full"
-          onClick={toggleMute}
-          disabled={call.status !== "connected"}
-          aria-pressed={muted}
-          aria-label={muted ? t("Reativar microfone") : t("Silenciar microfone")}
-        >
-          {muted ? (
-            <MicrophoneSlash size={16} weight="bold" aria-hidden />
-          ) : (
-            <Microphone size={16} weight="bold" aria-hidden />
-          )}
-        </Button>
+        {!aiConduzindo ? (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="rounded-full"
+            onClick={toggleMute}
+            disabled={call.status !== "connected"}
+            aria-pressed={muted}
+            aria-label={muted ? t("Reativar microfone") : t("Silenciar microfone")}
+          >
+            {muted ? (
+              <MicrophoneSlash size={16} weight="bold" aria-hidden />
+            ) : (
+              <Microphone size={16} weight="bold" aria-hidden />
+            )}
+          </Button>
+        ) : null}
         <Button
           size="icon"
           variant="destructive"

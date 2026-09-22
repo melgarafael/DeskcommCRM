@@ -54,6 +54,9 @@ vi.mock("@/hooks/auth/AuthProvider", () => ({
   usePermission: () => true,
   useAuth: () => ({ user: { id: "u-1" }, activeOrg: { orgId: "org-1", role: "manager" } }),
 }));
+vi.mock("@/components/voice/AiDialButton", () => ({
+  AiDialButton: () => <button type="button">Ligar com IA</button>,
+}));
 
 const conversation = {
   id: "cv-1",

@@ -121,6 +121,43 @@ export async function readVoicePanel(
   };
 }
 
+/** Sessão efêmera usada pelo transporte de voz ao vivo fora da tela de edição. */
+export async function createVoiceRuntimeSession(
+  pool: pg.Pool,
+  org: string,
+  id: string,
+): Promise<{ signed_url: string; agent_name: string; max_duration_seconds: number }> {
+  const db = await pool.connect();
+  try {
+    const agent = await readAgent(db, org, id);
+    const state = savedState(agent);
+    if (!state?.remote_agent_id || state.status !== "ready") {
+      throw new VoiceAssistantError(
+        "Este funcionário ainda não tem a voz pronta. Salve a configuração de voz antes de ligar.",
+        409,
+      );
+    }
+    const key = await readKey(db, org);
+    if (!key) {
+      throw new VoiceAssistantError(
+        "A conta de voz da ElevenLabs não está conectada nesta empresa.",
+        409,
+      );
+    }
+    const provider = new VoiceProvider(key);
+    const remote = await provider.get(state.remote_agent_id);
+    assertOwnedPrivateAgent(remote, state.marker);
+    assertVoiceTestConfiguration(remote, state.settings);
+    return {
+      signed_url: await provider.signedUrl(state.remote_agent_id),
+      agent_name: agent.name,
+      max_duration_seconds: state.settings.max_duration_seconds,
+    };
+  } finally {
+    db.release();
+  }
+}
+
 export async function performVoiceAction(
   pool: pg.Pool,
   org: string,
