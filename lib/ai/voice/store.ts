@@ -9,6 +9,10 @@ import {
   type VoicePanelData,
   type VoiceState,
 } from "./schema";
+import {
+  buildOpenAiRealtimeSession,
+  createOpenAiRealtimeClientSecret,
+} from "./openai-realtime";
 
 const CREDENTIAL_LABEL = "Assistentes de voz";
 interface AgentData {
@@ -150,6 +154,51 @@ export async function createVoiceRuntimeSession(
     assertVoiceTestConfiguration(remote, state.settings);
     return {
       signed_url: await provider.signedUrl(state.remote_agent_id),
+      agent_name: agent.name,
+      max_duration_seconds: state.settings.max_duration_seconds,
+    };
+  } finally {
+    db.release();
+  }
+}
+
+/** Sessão efêmera do OpenAI Realtime usada pela ligação conduzida via WaCalls. */
+export async function createOpenAiRealtimeRuntimeSession(
+  pool: pg.Pool,
+  org: string,
+  id: string,
+  safetyIdentifier: string,
+): Promise<{
+  client_secret: string;
+  expires_at: number;
+  websocket_url: string;
+  agent_name: string;
+  max_duration_seconds: number;
+}> {
+  const db = await pool.connect();
+  try {
+    const agent = await readAgent(db, org, id);
+    const state = savedState(agent);
+    if (!state || state.status !== "ready") {
+      throw new VoiceAssistantError(
+        "Este funcionário ainda não tem a voz pronta. Salve a configuração de voz antes de ligar.",
+        409,
+      );
+    }
+    const apiKey = process.env.OPENAI_API_KEY?.trim();
+    if (!apiKey) {
+      throw new VoiceAssistantError(
+        "A chave da OpenAI não está configurada para ligações com IA.",
+        503,
+      );
+    }
+    const secret = await createOpenAiRealtimeClientSecret({
+      apiKey,
+      safetyIdentifier,
+      session: buildOpenAiRealtimeSession(agent.name, state.settings),
+    });
+    return {
+      ...secret,
       agent_name: agent.name,
       max_duration_seconds: state.settings.max_duration_seconds,
     };

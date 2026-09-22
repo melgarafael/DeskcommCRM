@@ -1,6 +1,4 @@
-type AgentCommand =
-  | { user_audio_chunk: string }
-  | { type: "pong"; event_id: number };
+type AgentCommand = { type: "input_audio_buffer.append"; audio: string };
 
 interface RelayOptions {
   sendAgent(command: AgentCommand): void;
@@ -26,6 +24,40 @@ function base64ToBuffer(value: string): ArrayBuffer {
   return bytes.buffer;
 }
 
+/**
+ * Reamostrador PCM16 contínuo. Guarda a fase e a última amostra entre quadros,
+ * porque a OpenAI pode devolver blocos que não terminam num múltiplo exato da
+ * razão 24 kHz -> 16 kHz.
+ */
+function createPcm16Resampler(inputRate: number, outputRate: number) {
+  let pending: number[] = [];
+  let position = 0;
+  const step = inputRate / outputRate;
+
+  return (buffer: ArrayBuffer): ArrayBuffer => {
+    const bytes = buffer.byteLength - (buffer.byteLength % 2);
+    if (bytes === 0) return new ArrayBuffer(0);
+    const input = new Int16Array(buffer, 0, bytes / 2);
+    pending.push(...input);
+    const output: number[] = [];
+
+    while (position + 1 < pending.length) {
+      const left = Math.floor(position);
+      const fraction = position - left;
+      const interpolated = pending[left]! + (pending[left + 1]! - pending[left]!) * fraction;
+      output.push(Math.max(-32768, Math.min(32767, Math.round(interpolated))));
+      position += step;
+    }
+
+    const consumed = Math.floor(position);
+    if (consumed > 0) {
+      pending = pending.slice(consumed);
+      position -= consumed;
+    }
+    return Int16Array.from(output).buffer;
+  };
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -33,13 +65,23 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 /**
- * Traduz somente o protocolo de áudio entre o DataChannel PCM do WaCalls e o
- * WebSocket do ElevenLabs. Transporte e ciclo de vida ficam no hook global.
+ * Traduz o protocolo e a taxa de amostragem entre o DataChannel PCM 16 kHz do
+ * WaCalls e o WebSocket PCM 24 kHz do OpenAI Realtime. Transporte e ciclo de
+ * vida ficam no hook global.
  */
 export function createAiWacallsRelay(options: RelayOptions) {
+  const toRealtime = createPcm16Resampler(16_000, 24_000);
+  const toWacalls = createPcm16Resampler(24_000, 16_000);
+
   return {
     fromWacalls(pcm: ArrayBuffer) {
-      options.sendAgent({ user_audio_chunk: bytesToBase64(pcm) });
+      const converted = toRealtime(pcm);
+      if (converted.byteLength > 0) {
+        options.sendAgent({
+          type: "input_audio_buffer.append",
+          audio: bytesToBase64(converted),
+        });
+      }
     },
 
     fromAgent(raw: string) {
@@ -51,50 +93,41 @@ export function createAiWacallsRelay(options: RelayOptions) {
         return;
       }
 
-      if (event.type === "ping") {
-        const ping = asRecord(event.ping_event);
-        if (typeof ping.event_id === "number") {
-          options.sendAgent({ type: "pong", event_id: ping.event_id });
+      if (event.type === "session.created" || event.type === "session.updated") {
+        const session = asRecord(event.session);
+        if (typeof session.id === "string") {
+          options.onReady?.(session.id);
         }
         return;
       }
 
-      if (event.type === "conversation_initiation_metadata") {
-        const metadata = asRecord(event.conversation_initiation_metadata_event);
-        if (
-          metadata.user_input_audio_format !== "pcm_16000" ||
-          metadata.agent_output_audio_format !== "pcm_16000"
-        ) {
-          options.onFailure?.("voice_audio_format_mismatch");
-          return;
-        }
-        if (typeof metadata.conversation_id === "string") {
-          options.onReady?.(metadata.conversation_id);
+      if (event.type === "response.output_audio.delta") {
+        if (typeof event.delta === "string" && event.delta.length > 0) {
+          const converted = toWacalls(base64ToBuffer(event.delta));
+          if (converted.byteLength > 0) options.sendWacalls(converted);
         }
         return;
       }
 
-      if (event.type === "audio") {
-        const audio = asRecord(event.audio_event);
-        if (typeof audio.audio_base_64 === "string" && audio.audio_base_64.length > 0) {
-          options.sendWacalls(base64ToBuffer(audio.audio_base_64));
+      if (event.type === "conversation.item.input_audio_transcription.completed") {
+        if (typeof event.transcript === "string") {
+          options.onTranscript?.("contact", event.transcript);
         }
         return;
       }
 
-      if (event.type === "user_transcript") {
-        const transcript = asRecord(event.user_transcription_event);
-        if (typeof transcript.user_transcript === "string") {
-          options.onTranscript?.("contact", transcript.user_transcript);
+      if (event.type === "response.output_audio_transcript.done") {
+        if (typeof event.transcript === "string") {
+          options.onTranscript?.("agent", event.transcript);
         }
         return;
       }
 
-      if (event.type === "agent_response") {
-        const response = asRecord(event.agent_response_event);
-        if (typeof response.agent_response === "string") {
-          options.onTranscript?.("agent", response.agent_response);
-        }
+      if (event.type === "error") {
+        const error = asRecord(event.error);
+        options.onFailure?.(
+          typeof error.code === "string" ? error.code : "voice_agent_realtime_error",
+        );
       }
     },
   };

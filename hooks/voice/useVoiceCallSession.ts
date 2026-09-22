@@ -652,7 +652,11 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
    * retransmite os quadros em memória. Nada de áudio é gravado pelo CRM.
    */
   const conectarMidiaIa = useCallback(
-    async (callId: string, signedUrl: string, agentName: string) => {
+    async (
+      callId: string,
+      realtime: { websocketUrl: string; clientSecret: string },
+      agentName: string,
+    ) => {
       midiaTentadaRef.current = callId;
       const geracao = ++geracaoDaMidiaRef.current;
       setConnectingMedia(true);
@@ -664,10 +668,33 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
 
       let pc: RTCPeerConnection | null = null;
       let socket: WebSocket | null = null;
+      let realtimeReady = false;
+      let wacallsReady = false;
+      let greetingStarted = false;
       const superada = () => geracaoDaMidiaRef.current !== geracao;
+      const iniciarCumprimento = () => {
+        if (
+          greetingStarted ||
+          !realtimeReady ||
+          !wacallsReady ||
+          socket?.readyState !== WebSocket.OPEN
+        ) {
+          return;
+        }
+        greetingStarted = true;
+        socket.send(
+          JSON.stringify({
+            type: "response.create",
+            response: { output_modalities: ["audio"] },
+          }),
+        );
+      };
 
       try {
-        socket = new WebSocket(signedUrl, ["convai"]);
+        socket = new WebSocket(realtime.websocketUrl, [
+          "realtime",
+          `openai-insecure-api-key.${realtime.clientSecret}`,
+        ]);
         aiSocketRef.current = socket;
         await new Promise<void>((resolve, reject) => {
           const timer = setTimeout(() => reject(new Error("voice_agent_timeout")), 12_000);
@@ -690,8 +717,6 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
         });
         if (superada()) return;
 
-        socket.send(JSON.stringify({ type: "conversation_initiation_client_data" }));
-
         pc = new RTCPeerConnection({ iceServers: [] });
         pcRef.current = pc;
         const dc = pc.createDataChannel("pcm", { ordered: true });
@@ -708,10 +733,18 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
             else if (audioPendente.length < 250) audioPendente.push(pcm);
           },
           onReady() {
-            if (!superada() && dc.readyState === "open") setEstadoDaMidia("aberta");
+            if (superada()) return;
+            realtimeReady = true;
+            if (dc.readyState === "open") setEstadoDaMidia("aberta");
+            iniciarCumprimento();
           },
           onFailure() {
-            if (!superada()) setEstadoDaMidia("falhou");
+            if (superada()) return;
+            setEstadoDaMidia("falhou");
+            encerradasRef.current.add(callId);
+            void apiClient.delete(`/api/v1/voice/calls/${callId}`).finally(() => {
+              if (!superada()) setCall(null);
+            });
           },
         });
 
@@ -728,8 +761,10 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
         dc.onopen = () => {
           if (superada()) return;
           canalAbriuRef.current = true;
+          wacallsReady = true;
           setEstadoDaMidia(recebeuAudioRef.current ? "com_audio" : "aberta");
           for (const pcm of audioPendente.splice(0)) dc.send(pcm);
+          iniciarCumprimento();
         };
         dc.onmessage = (event: MessageEvent<ArrayBuffer>) => {
           if (superada()) return;
@@ -884,7 +919,12 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
         // O motor é preparado ANTES de discar. Se a credencial ou a voz não
         // estiver pronta, o telefone do cliente não toca para ouvir silêncio.
         const prepared = await apiClient.post<{
-          data: { signed_url: string; agent_name: string; contact_id: string };
+          data: {
+            client_secret: string;
+            websocket_url: string;
+            agent_name: string;
+            contact_id: string;
+          };
         }>("/api/v1/voice/ai-session", { conversationId });
         if (prepared.data.contact_id !== contactId) {
           throw new Error("voice_conversation_contact_mismatch");
@@ -896,7 +936,14 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
         criada = started.data;
         ultimaChamadaRef.current = criada.id;
         setCall((atual) => mesclarRespostaDaChamada(atual, criada!));
-        await conectarMidiaIa(criada.id, prepared.data.signed_url, prepared.data.agent_name);
+        await conectarMidiaIa(
+          criada.id,
+          {
+            websocketUrl: prepared.data.websocket_url,
+            clientSecret: prepared.data.client_secret,
+          },
+          prepared.data.agent_name,
+        );
       } catch (error) {
         showApiError(error);
         if (criada) {

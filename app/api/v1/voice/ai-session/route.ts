@@ -1,10 +1,10 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
-import { createVoiceRuntimeSession } from "@/lib/ai/voice/store";
+import { createOpenAiRealtimeRuntimeSession } from "@/lib/ai/voice/store";
 import { VoiceAssistantError } from "@/lib/ai/voice/schema";
 import { createClient } from "@/lib/supabase/server";
 
@@ -64,10 +64,14 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   try {
-    const session = await createVoiceRuntimeSession(
+    const safetyIdentifier = createHash("sha256")
+      .update(`${auth.org.orgId}:${auth.user.id}`)
+      .digest("hex");
+    const session = await createOpenAiRealtimeRuntimeSession(
       pool,
       auth.org.orgId,
       selectedAgent,
+      safetyIdentifier,
     );
     return ok(
       {
