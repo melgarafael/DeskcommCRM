@@ -1,5 +1,11 @@
+import pg from "pg";
+import { saveMission, missionConfiguration } from "../../lib/voice/missions/store";
+const pool = new pg.Pool({
+  connectionString: `postgresql://postgres:postgres@127.0.0.1:${process.env.TEST_DB_PORT ?? 54329}/postgres`,
+});
+afterAll(() => pool.end());
 import { execFileSync } from "node:child_process";
-import { beforeAll, describe, it, expect } from "vitest";
+import { afterAll, beforeAll, describe, it, expect, vi } from "vitest";
 const container = process.env.TEST_DB_CONTAINER!;
 const sql = (query: string) =>
   execFileSync(
@@ -55,6 +61,60 @@ describe("voice mission isolation and lifecycle", () => {
     expect(
       sql("select has_table_privilege('authenticated','voice_mission_runtime','UPDATE')"),
     ).toBe("f");
+  });
+  it("enqueues and resolves voice configuration in an organization without AI agents", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "synthetic");
+    vi.stubEnv("WACALLS_API_BASE_URL", "http://127.0.0.1:9");
+    vi.stubEnv("WACALLS_API_TOKEN", "synthetic");
+    const input = {
+      id: "c0322000-0000-4000-8000-000000000010",
+      action: "start" as const,
+      objective: "Esclarecer a proposta com o contato",
+      agent_id: null,
+      channel_id: channel,
+      test: false,
+      test_contact_id: null,
+    };
+    try {
+      sql(`update channel_sessions set provider='wacalls',status='WORKING',wacalls_session_id='synthetic',wacalls_paired_at=now() where id='${channel}';
+      insert into org_voice_calls(organization_id,enabled) values('${org}',true);
+      insert into voice_mission_runtime(id,heartbeat_at) values(1,now()) on conflict(id) do update set heartbeat_at=now();`);
+      expect(sql(`select count(*) from ai_agents where organization_id='${org}'`)).toBe("0");
+      await saveMission(pool, org, agent, conversation, input);
+      await saveMission(pool, org, agent, conversation, input);
+      expect(
+        sql(
+          `select status||':'||(agent_id is null)::text from voice_missions where id='${input.id}'`,
+        ),
+      ).toBe("queued:true");
+      const m = {
+        organization_id: org,
+        conversation_id: conversation,
+        ...input,
+        channel_id: channel,
+      };
+      expect(await missionConfiguration(pool, m)).toMatchObject({
+        system_prompt: null,
+        wacalls_session_id: "synthetic",
+      });
+      expect(await missionConfiguration(pool, { ...m, organization_id: other })).toBeUndefined();
+      expect(await missionConfiguration(pool, { ...m, agent_id: stranger })).toBeUndefined();
+      await expect(
+        saveMission(pool, org, agent, conversation, {
+          ...input,
+          id: "c0322000-0000-4000-8000-000000000011",
+          agent_id: stranger,
+        }),
+      ).rejects.toThrow("Uma das escolhas");
+      sql(`update contacts set is_blocked=true where id='${contact}'`);
+      expect(await missionConfiguration(pool, m)).toBeUndefined();
+      sql(`update contacts set is_blocked=false where id='${contact}'`);
+      sql(`update channel_sessions set wacalls_paired_at=null where id='${channel}'`);
+      expect(await missionConfiguration(pool, m)).toBeUndefined();
+    } finally {
+      sql(`delete from voice_missions where id='${input.id}'`);
+      vi.unstubAllEnvs();
+    }
   });
   it("contact anonymization cancels and redacts saved voice context", () => {
     sql(`update contacts set is_anonymized=true,anonymized_at=now() where id='${contact}'`);

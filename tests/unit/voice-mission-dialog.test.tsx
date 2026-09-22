@@ -39,7 +39,7 @@ async function open() {
 it("starts in two clicks with the recipient visible and no review step", async () => {
   await open();
   expect(screen.getByText("Ajustes da ligação").closest("details")).not.toHaveAttribute("open");
-  expect(screen.getByLabelText("Agente")).toHaveValue(agent);
+  expect(screen.queryByLabelText("Agente")).not.toBeInTheDocument();
   expect(screen.getByLabelText("Número que fará a ligação")).toHaveValue(channel);
   fireEvent.change(screen.getByLabelText("Seu objetivo"), {
     target: { value: "Entender a dúvida sobre a proposta" },
@@ -53,7 +53,7 @@ it("starts in two clicks with the recipient visible and no review step", async (
       expect.any(String),
       expect.objectContaining({
         action: "start",
-        agent_id: agent,
+        agent_id: null,
         channel_id: channel,
         test: false,
       }),
@@ -97,7 +97,7 @@ it("keeps ambiguous choices pending and never starts when saving", async () => {
     },
   });
   await open();
-  expect(screen.getByLabelText("Agente")).toHaveValue("");
+  expect(screen.queryByLabelText("Agente")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Salvar para depois" }));
   await waitFor(() =>
     expect(mocks.post).toHaveBeenCalledWith(
@@ -124,7 +124,7 @@ it("preserves a deliberately selected test recipient in an existing draft", asyn
     },
   });
   await open();
-  expect(screen.getByLabelText("Agente")).toHaveValue(agent);
+  expect(screen.queryByLabelText("Agente")).not.toBeInTheDocument();
   expect(screen.getByLabelText("Número que fará a ligação")).toHaveValue(channel);
   expect(screen.getByLabelText(/Fazer um teste primeiro/)).toBeChecked();
   expect(screen.getByLabelText("Seu objetivo")).toHaveValue("Pedido anterior");
@@ -138,7 +138,7 @@ it("keeps objective and choices after save failure", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Salvar para depois" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Falha temporária");
   expect(screen.getByLabelText("Seu objetivo")).toHaveValue("Resolver a dúvida");
-  expect(screen.getByLabelText("Agente")).toHaveValue(agent);
+  expect(screen.queryByLabelText("Agente")).not.toBeInTheDocument();
 });
 
 it("offers the activation path without enabling calls automatically", async () => {
@@ -208,4 +208,49 @@ it("keeps the objective and enables calling when pairing completes", async () =>
   expect(await screen.findByRole("button", { name: "Ligar agora" })).toBeVisible();
   expect(screen.getByLabelText("Seu objetivo")).toHaveValue("Entender a dúvida");
   expect(screen.getByLabelText("Número que fará a ligação")).toHaveValue(channel);
+});
+
+it("starts with the built-in voice assistant even when no agents exist", async () => {
+  mocks.get.mockResolvedValue({
+    data: { ...panel, agents: [], defaults: { agent_id: null, channel_id: channel } },
+  });
+  await open();
+  expect(screen.queryByLabelText("Agente")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Seu objetivo"), {
+    target: { value: "Esclarecer o prazo de entrega" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Ligar agora" }));
+  await waitFor(() =>
+    expect(mocks.post).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ action: "start", agent_id: null, channel_id: channel }),
+    ),
+  );
+});
+it("preserves a legacy draft's objective but uses the built-in voice assistant", async () => {
+  mocks.get.mockResolvedValue({
+    data: {
+      ...panel,
+      missions: [
+        {
+          id: agent,
+          status: "draft",
+          objective: "Objetivo salvo antes",
+          agent_id: agent,
+          channel_id: channel,
+          test: false,
+          test_contact_id: null,
+        },
+      ],
+    },
+  });
+  await open();
+  expect(screen.getByLabelText("Seu objetivo")).toHaveValue("Objetivo salvo antes");
+  fireEvent.click(screen.getByRole("button", { name: "Salvar para depois" }));
+  await waitFor(() =>
+    expect(mocks.post).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ id: agent, agent_id: null, objective: "Objetivo salvo antes" }),
+    ),
+  );
 });

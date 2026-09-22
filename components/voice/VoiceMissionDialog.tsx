@@ -60,7 +60,8 @@ export function VoiceMissionDialog({ conversationId }: { conversationId: string 
       <DialogContent className="max-h-[90dvh] w-[calc(100%-1rem)] max-w-xl overflow-y-auto rounded-2xl">
         <DialogTitle>O que essa ligação precisa resolver?</DialogTitle>
         <DialogDescription>
-          A IA usa o contexto deste atendimento. Seu pedido fica só com a equipe.
+          O assistente de voz já está pronto. Conte o objetivo; ele usa o contexto deste
+          atendimento.
         </DialogDescription>
         {open && <MissionEditor key={conversationId} conversationId={conversationId} />}
       </DialogContent>
@@ -101,7 +102,7 @@ function MissionEditor({ conversationId }: { conversationId: string }) {
         id: previous.id,
         action: "save",
         objective: previous.objective,
-        agent_id: previous.agent_id,
+        agent_id: null,
         channel_id: previous.channel_id,
         test_contact_id: previous.test_contact_id,
         test: previous.test && !!previous.test_contact_id,
@@ -115,7 +116,7 @@ function MissionEditor({ conversationId }: { conversationId: string }) {
   }
   const effective = {
     ...draft,
-    agent_id: draft.agent_id ?? data?.defaults.agent_id ?? null,
+    agent_id: null,
     channel_id: draft.channel_id ?? data?.defaults.channel_id ?? null,
   };
   async function send(action: MissionInput["action"], id = draft.id) {
@@ -259,7 +260,7 @@ function MissionEditor({ conversationId }: { conversationId: string }) {
             <summary className="cursor-pointer text-sm font-medium">
               Ajustes da ligação
               <span className="block font-normal text-muted-foreground">
-                {data.agents.find((a) => a.id === effective.agent_id)?.name || "Agente a escolher"}
+                Assistente de voz padrão
                 {" · "}
                 {selectedChannel?.name ||
                   selectedChannel?.phone_number ||
@@ -268,23 +269,6 @@ function MissionEditor({ conversationId }: { conversationId: string }) {
               </span>
             </summary>
             <div className="mt-4 space-y-4">
-              <label className="block space-y-1 text-sm">
-                Agente
-                <select
-                  id="voice-agent"
-                  className={selectClass}
-                  value={effective.agent_id ?? ""}
-                  onChange={(e) => update({ agent_id: e.target.value || null })}
-                >
-                  <option value="">Escolher depois</option>
-                  {data.agents.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                      {a.ready ? "" : " · publique e ative para ligar"}
-                    </option>
-                  ))}
-                </select>
-              </label>
               <label className="block space-y-1 text-sm">
                 Número que fará a ligação
                 <select
@@ -363,21 +347,11 @@ function MissionEditor({ conversationId }: { conversationId: string }) {
                     document.getElementById("voice-objective")?.focus();
                     return;
                   }
-                  if (
-                    !effective.agent_id ||
-                    !effective.channel_id ||
-                    (draft.test && !draft.test_contact_id)
-                  ) {
+                  if (!effective.channel_id || (draft.test && !draft.test_contact_id)) {
                     setChoicesOpen(true);
-                    const field = !effective.agent_id
-                      ? "voice-agent"
-                      : !effective.channel_id
-                        ? "voice-channel"
-                        : "voice-test-contact";
+                    const field = !effective.channel_id ? "voice-channel" : "voice-test-contact";
                     requestAnimationFrame(() => document.getElementById(field)?.focus());
-                    setError(
-                      "Escolha nos ajustes o agente ou número disponível para esta ligação.",
-                    );
+                    setError("Escolha nos ajustes o número de saída ou o contato de teste.");
                     return;
                   }
                   void send("start");

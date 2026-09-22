@@ -11,7 +11,7 @@ import {
 import type { Logger } from "@/lib/agent-engine/obs/logger";
 import { audioBridge, VOICE_MODEL, type RealtimeUsage } from "./audio";
 import { voiceCost } from "./cost";
-import { missionContext } from "./store";
+import { missionContext, missionConfiguration } from "./store";
 import { missionPrompt } from "./schema";
 
 type Mission = {
@@ -19,7 +19,7 @@ type Mission = {
   organization_id: string;
   conversation_id: string;
   created_by: string;
-  agent_id: string;
+  agent_id: string | null;
   channel_id: string;
   test: boolean;
   test_contact_id: string | null;
@@ -149,17 +149,7 @@ async function executeMission(
   try {
     const context = await missionContext(pool, m.organization_id, m.conversation_id);
     stage = "configuration";
-    const { rows } = await pool.query(
-      `select v.system_prompt,s.wacalls_session_id,p.phone_number from ai_agents a
-      join ai_agent_versions v on v.id=a.published_version_id and v.organization_id=a.organization_id
-      join channel_sessions s on s.id=$3 and s.organization_id=a.organization_id and s.provider='wacalls' and s.status='WORKING' and s.archived_at is null
-      join conversations c on c.id=$4 and c.organization_id=a.organization_id
-      join contacts p on p.id=case when $5 then $6::uuid else c.contact_id end and p.organization_id=a.organization_id
-      join org_voice_calls o on o.organization_id=a.organization_id and o.enabled
-      where a.id=$2 and a.organization_id=$1 and a.is_active and a.archived_at is null and not p.is_blocked and not p.is_anonymized`,
-      [m.organization_id, m.agent_id, m.channel_id, m.conversation_id, m.test, m.test_contact_id],
-    );
-    const config = rows[0];
+    const config = await missionConfiguration(pool, m);
     if (!config?.phone_number || !config.wacalls_session_id) throw new Error("mission_not_ready");
     sessionId = config.wacalls_session_id;
     stage = "transport";
@@ -190,7 +180,7 @@ async function executeMission(
     stage = "audio";
     audio = await audioBridge({
       apiKey,
-      instructions: missionPrompt(m.objective, context, config.system_prompt),
+      instructions: missionPrompt(m.objective, context, config.system_prompt ?? undefined),
       signal,
       onConversation: async (id) => {
         providerStarted = true;

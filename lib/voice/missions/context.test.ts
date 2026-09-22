@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { missionPrompt } from "./schema";
 import { callSuggestions, serializeCallContext } from "./context";
 
 describe("contexto da ligação", () => {
@@ -39,4 +40,12 @@ describe("contexto da ligação", () => {
       callSuggestions([{ direction: "outbound", body: "Olá", sent_at: "2026-09-22" }]),
     ).toEqual([]);
   });
+});
+
+it("usa orientação própria de voz sem depender de instruções de um agente", () => {
+  const prompt = missionPrompt("Esclarecer a entrega", '{"cliente":"Ana"}');
+  expect(prompt).toContain("Sua especialidade é conversar por telefone");
+  expect(prompt).toContain("Esclarecer a entrega");
+  expect(prompt).toContain('"cliente":"Ana"');
+  expect(prompt).toContain("não diga que alterou cadastro");
 });

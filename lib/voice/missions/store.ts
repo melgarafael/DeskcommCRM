@@ -20,15 +20,11 @@ export async function conversationForMission(
 
 export async function readMissions(pool: pg.Pool, org: string, conversation: string, user: string) {
   const c = await conversationForMission(pool, org, conversation);
-  const [missions, agents, channels, contacts, voice, recent] = await Promise.all([
+  const [missions, channels, contacts, voice, recent] = await Promise.all([
     pool.query(
       `select id,objective,agent_id,channel_id,test_contact_id,test,status,result,error,cancel_requested,created_at,started_at,ended_at
       from voice_missions where organization_id=$1 and conversation_id=$2 and (status<>'draft' or created_by=$3) order by created_at desc limit 20`,
       [org, conversation, user],
-    ),
-    pool.query(
-      `select id,name,is_default,(is_active and published_version_id is not null) as ready from ai_agents where organization_id=$1 and archived_at is null order by name`,
-      [org],
     ),
     pool.query(
       `select id,display_name as name,phone_number,status,(status='WORKING' and wacalls_session_id is not null and wacalls_paired_at is not null) as ready from channel_sessions where organization_id=$1 and provider='wacalls' and archived_at is null`,
@@ -44,8 +40,6 @@ export async function readMissions(pool: pg.Pool, org: string, conversation: str
       [org, conversation],
     ),
   ]);
-  const readyAgents = agents.rows.filter((a) => a.ready);
-  const defaultAgents = readyAgents.filter((a) => a.is_default);
   const readyChannels = channels.rows.filter((c) => c.ready);
   return {
     voice: {
@@ -53,16 +47,13 @@ export async function readMissions(pool: pg.Pool, org: string, conversation: str
       enabled: voice.rows[0]?.enabled === true,
     },
     defaults: {
-      agent_id:
-        readyAgents.find((a) => a.id === c.active_ai_agent_id)?.id ??
-        (defaultAgents.length === 1 ? defaultAgents[0].id : null) ??
-        (readyAgents.length === 1 ? readyAgents[0].id : null),
+      agent_id: null,
       channel_id: readyChannels.length === 1 ? readyChannels[0].id : null,
     },
     contact: { name: c.name, phone: c.phone_number },
     suggestions: callSuggestions(recent.rows),
     missions: missions.rows,
-    agents: agents.rows,
+    agents: [],
     channels: channels.rows,
     contacts: contacts.rows,
   };
@@ -152,21 +143,25 @@ export async function saveMission(
         );
       if (input.objective.length < 8)
         throw new MissionError("Conte o que a IA precisa resolver nesta ligação.");
-      if (!input.agent_id || !input.channel_id || (input.test && !input.test_contact_id))
-        throw new MissionError(
-          "Escolha o agente, o número de saída e, para testar, o contato de teste.",
-        );
+      if (!input.channel_id || (input.test && !input.test_contact_id))
+        throw new MissionError("Escolha o número de saída e, para testar, o contato de teste.");
       const allowed = await db.query(
         `select 1 from org_voice_calls where organization_id=$1 and enabled`,
         [org],
       );
       if (!allowed.rowCount)
         throw new MissionError("Ative as chamadas da empresa em Conexões antes de ligar.");
-      const ready = await db.query(
-        `select 1 from ai_agents where organization_id=$1 and id=$2 and is_active and published_version_id is not null`,
-        [org, input.agent_id],
-      );
-      if (!ready.rowCount) throw new MissionError("Publique e ative o agente antes de ligar.");
+      // Older API clients may still explicitly request a published agent.
+      if (input.agent_id) {
+        const ready = await db.query(
+          `select 1 from ai_agents where organization_id=$1 and id=$2 and is_active and published_version_id is not null`,
+          [org, input.agent_id],
+        );
+        if (!ready.rowCount)
+          throw new MissionError(
+            "O agente indicado não está disponível. Abra um novo pedido para usar o assistente de voz padrão.",
+          );
+      }
       const paired = await db.query(
         `select 1 from channel_sessions where organization_id=$1 and id=$2 and wacalls_session_id is not null and wacalls_paired_at is not null and status='WORKING'`,
         [org, input.channel_id],
@@ -224,4 +219,44 @@ export async function missionContext(pool: pg.Pool, org: string, conversation: s
     [org, conversation],
   );
   return serializeCallContext(c.company, c.name, rows);
+}
+
+/** Voice is a built-in capability. A legacy explicit agent remains tenant-scoped. */
+export async function missionConfiguration(
+  pool: pg.Pool,
+  mission: {
+    organization_id: string;
+    agent_id: string | null;
+    channel_id: string;
+    conversation_id: string;
+    test: boolean;
+    test_contact_id: string | null;
+  },
+) {
+  const { rows } = await pool.query<{
+    system_prompt: string | null;
+    wacalls_session_id: string;
+    phone_number: string;
+  }>(
+    `select v.system_prompt,s.wacalls_session_id,p.phone_number from channel_sessions s
+    join conversations c on c.id=$4 and c.organization_id=s.organization_id
+    join contacts p on p.id=case when $5 then $6::uuid else c.contact_id end and p.organization_id=s.organization_id
+    join org_voice_calls o on o.organization_id=s.organization_id and o.enabled
+    left join ai_agents a on a.id=$2 and a.organization_id=s.organization_id and a.is_active and a.archived_at is null
+    left join ai_agent_versions v on v.id=a.published_version_id and v.organization_id=a.organization_id and v.status='published'
+    where s.organization_id=$1 and s.id=$3 and s.provider='wacalls' and s.status='WORKING'
+    and s.archived_at is null and s.wacalls_session_id is not null and s.wacalls_paired_at is not null
+    and not p.is_blocked and not p.is_anonymized and not c.is_group
+    and c.status not in ('closed','resolved','archived')
+    and ($2::uuid is null or v.id is not null)`,
+    [
+      mission.organization_id,
+      mission.agent_id,
+      mission.channel_id,
+      mission.conversation_id,
+      mission.test,
+      mission.test_contact_id,
+    ],
+  );
+  return rows[0];
 }
