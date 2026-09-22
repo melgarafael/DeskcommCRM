@@ -246,7 +246,13 @@ async function handleCallStatus(
 ): Promise<void> {
   if (typeof ev.owner === 'string' && ev.owner.startsWith('ai:')) {
     const id = ev.owner.slice(3);
-    if (UUID.test(id)) await pool.query(`update voice_missions set call_id=$3, transport_status=$4, transport_ended=(transport_ended or $4='ended'), updated_at=now() where id=$1 and organization_id=$2 and status in ('preparing','dialing','ringing','connected','finishing')`, [id,sess.organizationId,ev.id,ev.status]);
+    if (UUID.test(id)) {
+      const mission = await pool.query(`update voice_missions set call_id=$3, transport_status=$4, transport_ended=(transport_ended or $4='ended'), updated_at=now() where id=$1 and organization_id=$2 and status in ('preparing','dialing','ringing','connected','finishing','uncertain') returning id`, [id,sess.organizationId,ev.id,ev.status]);
+      // StartCall can emit a state before the transport attaches X-Client-Id.
+      // Once ownership is confirmed, remove only that duplicate manual projection;
+      // the durable mission remains the call's history and owns its audio.
+      if(mission.rowCount) await pool.query('delete from voice_calls where organization_id=$1 and wacalls_call_id=$2',[sess.organizationId,ev.id]);
+    }
     return;
   }
   const peerPhone = peerToPhone(ev.peer);
