@@ -39,6 +39,9 @@ type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>
 import { INSTAGRAM_ES } from "./instagram";
 export const DICIONARIO: Traducoes = {
   ...INSTAGRAM_ES,
+  "Ative as chamadas para conectar seu número.": { es: "Activa las llamadas para conectar tu número." },
+  "Um administrador precisa ativar as chamadas em Segurança e confirmar o aviso sobre o risco de bloqueio do WhatsApp. Depois, volte aqui para conectar o aparelho pelo QR Code.": { es: "Un administrador debe activar las llamadas en Seguridad y confirmar el aviso sobre el riesgo de bloqueo de WhatsApp. Después, vuelve aquí para conectar el dispositivo con el código QR." },
+  "Abrir configuração de chamadas": { es: "Abrir configuración de llamadas" },
   "Informe o custo em dólares, a referência da consulta e confirme a verificação.": { es: "Indica el costo en dólares, la referencia de la consulta y confirma la verificación." },
   "Conciliação confirmada. Valor aplicado à franquia:": { es: "Conciliación confirmada. Importe aplicado al saldo incluido:" },
   "Não foi possível confirmar. Os dados foram preservados. Atualize a lista antes de tentar novamente.": { es: "No se pudo confirmar. Los datos se conservaron. Actualiza la lista antes de volver a intentarlo." },
