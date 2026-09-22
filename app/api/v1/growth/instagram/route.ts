@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: Request) {
+export async function GET(_req: Request) {
   try {
     const user = await loadAuthUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -20,8 +20,8 @@ export async function GET(req: Request) {
 
     if (error) throw error;
     return NextResponse.json({ triggers: data ?? [] });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Não foi possível acessar os gatilhos." }, { status: 500 });
   }
 }
 
@@ -76,7 +76,7 @@ export async function POST(req: Request) {
 
     if (error) throw error;
     return NextResponse.json({ trigger: data }, { status: 201 });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Não foi possível acessar os gatilhos." }, { status: 500 });
   }
 }

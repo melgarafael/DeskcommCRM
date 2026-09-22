@@ -72,12 +72,23 @@ export default async function NewAgentPage({
 
   return (
     <div className="flex h-full flex-col gap-6 p-4 sm:p-6">
-      {initialPreset ? <AgentForm mode="create" initialPreset={initialPreset} credentials={credentials} provedoresDaInstalacao={platformProviders} defaultAI={defaultAI} channelSessions={channelSessions} /> : <ConversationalAgentCreator
-        credentials={credentials}
-        provedoresDaInstalacao={platformProviders}
-        defaultAI={defaultAI}
-        channelSessions={channelSessions}
-      />}
+      {initialPreset ? (
+        <AgentForm
+          mode="create"
+          initialPreset={initialPreset}
+          credentials={credentials}
+          provedoresDaInstalacao={platformProviders}
+          defaultAI={defaultAI}
+          channelSessions={channelSessions}
+        />
+      ) : (
+        <ConversationalAgentCreator
+          credentials={credentials}
+          provedoresDaInstalacao={platformProviders}
+          defaultAI={defaultAI}
+          channelSessions={channelSessions}
+        />
+      )}
     </div>
   );
 }

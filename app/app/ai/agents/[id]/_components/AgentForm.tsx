@@ -189,7 +189,11 @@ const DEFAULT_TRIGGER: TriggerValue = {
   concurrency: "one_per_conversation",
 };
 
-function buildState(args: { agent?: AgentRow; version: AgentVersionRow | null; preset?: EmployeeRolePreset | null }): FormState {
+function buildState(args: {
+  agent?: AgentRow;
+  version: AgentVersionRow | null;
+  preset?: EmployeeRolePreset | null;
+}): FormState {
   const { agent, version, preset } = args;
   return {
     name: agent?.name ?? preset?.title ?? "",
@@ -312,7 +316,16 @@ export function AgentForm(props: Props) {
     }
     const initial = initialAgentCreationState(props.defaultAI);
     const preset = props.initialPreset;
-    return preset ? { ...initial, name: preset.title, description: preset.description, priority: preset.priority, system_prompt: preset.systemPrompt, handoff_keywords: [...preset.handoffKeywords] } : initial;
+    return preset
+      ? {
+          ...initial,
+          name: preset.title,
+          description: preset.description,
+          priority: preset.priority,
+          system_prompt: preset.systemPrompt,
+          handoff_keywords: [...preset.handoffKeywords],
+        }
+      : initial;
   }, [isEdit, props]);
 
   const [localForm, setLocalForm] = React.useState<FormState>(baseline);
@@ -407,11 +420,14 @@ export function AgentForm(props: Props) {
     if (!parsed.success) {
       for (const issue of parsed.error.issues) {
         const key = String(issue.path[0] ?? "");
-        errors[key] ??= issue.code === "too_small" && issue.origin === "number"
-          ? `${t("O valor mínimo é")} ${issue.minimum}.`
-          : issue.code === "too_big" && issue.origin === "number"
-            ? `${t("O valor máximo é")} ${issue.maximum}.`
-            : issue.code === "custom" ? issue.message : t("Confira o valor deste campo.");
+        errors[key] ??=
+          issue.code === "too_small" && issue.origin === "number"
+            ? `${t("O valor mínimo é")} ${issue.minimum}.`
+            : issue.code === "too_big" && issue.origin === "number"
+              ? `${t("O valor máximo é")} ${issue.maximum}.`
+              : issue.code === "custom"
+                ? issue.message
+                : t("Confira o valor deste campo.");
       }
     }
     return errors;
@@ -1023,7 +1039,9 @@ export function AgentForm(props: Props) {
           >
             <summary className="cursor-pointer rounded-md text-sm font-bold focus-visible:outline-2 focus-visible:outline-ring">
               {t("Configuração da IA")}
-              {form.credential_id === CHAVE_DA_INSTALACAO && form.model && props.provedoresDaInstalacao?.includes(form.provider) ? (
+              {form.credential_id === CHAVE_DA_INSTALACAO &&
+              form.model &&
+              props.provedoresDaInstalacao?.includes(form.provider) ? (
                 <span className="mt-1 block text-sm font-normal text-muted-foreground">
                   {t("IA gerenciada pelo escreve.ai. Você não precisa cadastrar uma chave.")}
                 </span>
@@ -1152,7 +1170,9 @@ export function AgentForm(props: Props) {
                   <Input
                     id="token_budget"
                     aria-invalid={!!visibleErrors.token_budget}
-                    aria-describedby={visibleErrors.token_budget ? "validation-token_budget" : undefined}
+                    aria-describedby={
+                      visibleErrors.token_budget ? "validation-token_budget" : undefined
+                    }
                     type="number"
                     min={1000}
                     max={500000}
@@ -1169,7 +1189,9 @@ export function AgentForm(props: Props) {
                   <Input
                     id="cost_budget_cents"
                     aria-invalid={!!visibleErrors.cost_budget_cents}
-                    aria-describedby={visibleErrors.cost_budget_cents ? "validation-cost_budget_cents" : undefined}
+                    aria-describedby={
+                      visibleErrors.cost_budget_cents ? "validation-cost_budget_cents" : undefined
+                    }
                     type="number"
                     min={1}
                     max={10000}
@@ -1185,7 +1207,11 @@ export function AgentForm(props: Props) {
                   <Input
                     id="history_message_window"
                     aria-invalid={!!visibleErrors.history_message_window}
-                    aria-describedby={visibleErrors.history_message_window ? "validation-history_message_window" : undefined}
+                    aria-describedby={
+                      visibleErrors.history_message_window
+                        ? "validation-history_message_window"
+                        : undefined
+                    }
                     type="number"
                     min={0}
                     max={200}
@@ -1201,7 +1227,11 @@ export function AgentForm(props: Props) {
                   <Input
                     id="history_token_window"
                     aria-invalid={!!visibleErrors.history_token_window}
-                    aria-describedby={visibleErrors.history_token_window ? "validation-history_token_window" : undefined}
+                    aria-describedby={
+                      visibleErrors.history_token_window
+                        ? "validation-history_token_window"
+                        : undefined
+                    }
                     type="number"
                     min={0}
                     max={50000}

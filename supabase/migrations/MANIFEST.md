@@ -341,6 +341,6 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 
 | `20260920234500` | `0321_instagram_studio` | Rascunhos, imagens privadas, pesquisas com fontes e referências por organização; escrita somente pelo backend autorizado. |
 
-| `20260922010000_0322_voice_missions.sql` | Pedidos duráveis de ligação por IA, isolamento, cancelamento e proteção de dados |
+| `20260922010000` | `0322_voice_missions` | Pedidos duráveis de ligação por IA, isolamento, cancelamento e proteção de dados |
 
 | `20260922223000` | `0323_growth_e_auditoria_recuperacao` | Recupera módulos nativos sem colidir com assinaturas; FK de etapa correta e isolamento por empresa. |
