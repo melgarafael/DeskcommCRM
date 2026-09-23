@@ -163,10 +163,16 @@ it("tenant roles cannot write balances or invoke service-only accounting", () =>
     expect(
       sql(`select has_table_privilege('${role}','subscription_ai_periods','insert,update,delete')`),
     ).toBe("f");
+    expect(sql(`select has_table_privilege('${role}','subscription_ai_periods','select')`)).toBe(
+      "f",
+    );
     expect(
       sql(
         `select has_table_privilege('${role}','subscription_ai_reservations','insert,update,delete')`,
       ),
+    ).toBe("f");
+    expect(
+      sql(`select has_table_privilege('${role}','subscription_ai_reservations','select')`),
     ).toBe("f");
   }
 });

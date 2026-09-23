@@ -114,6 +114,7 @@ describe("sidebarGroups", () => {
     const crm = sidebarGroups(true, null).find((g) => g.group.id === "crm");
     expect(crm?.items.map((i) => i.href)).toEqual([
       "/app/prospecting",
+      "/app/growth/instagram",
       "/app/kanban",
       "/app/contacts",
       "/app/tasks",
@@ -143,7 +144,7 @@ describe("sidebarGroups", () => {
 });
 
 describe("hubSections", () => {
-  it("o hub do CRM é inventário: as seis telas do grupo, nas duas seções", () => {
+  it("o hub do CRM é inventário: inclui os módulos nativos nas duas seções", () => {
     // As seções são a régua do sidebar escrita por extenso — o que se abre todo
     // dia contra o que se define uma vez. Lista EXATA: `toContain` deixaria uma
     // tela nova entrar sem que ninguém decidisse de que lado dela ela cai.
@@ -151,6 +152,7 @@ describe("hubSections", () => {
     expect(secoes.map((s) => s.section)).toEqual(["O dia a dia da venda", "Preparar a venda"]);
     expect(secoes.flatMap((s) => s.items.map((i) => i.href))).toEqual([
       "/app/prospecting",
+      "/app/growth/instagram",
       "/app/kanban",
       "/app/contacts",
       "/app/tasks",
@@ -159,9 +161,14 @@ describe("hubSections", () => {
     ]);
   });
 
-  it("agrupa a IA nas três etapas da jornada, na ordem", () => {
+  it("agrupa a equipe digital e as três etapas da jornada, na ordem", () => {
     const secoes = hubSections("ia", true, null).map((s) => s.section);
-    expect(secoes).toEqual(["Montar o agente", "Ensinar o agente", "Acompanhar o agente"]);
+    expect(secoes).toEqual([
+      "Montar a equipe",
+      "Montar o agente",
+      "Ensinar o agente",
+      "Acompanhar o agente",
+    ]);
   });
 
   it("o hub mostra também o que já está no sidebar — é inventário, não sobra", () => {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,8 @@ async function authorize() {
 }
 
 export async function PATCH(request: Request, context: Context) {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
   try {
     const auth = await authorize();
     if ("error" in auth) return auth.error;
@@ -73,6 +76,8 @@ export async function PATCH(request: Request, context: Context) {
 }
 
 export async function DELETE(_request: Request, context: Context) {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
   try {
     const auth = await authorize();
     if ("error" in auth) return auth.error;

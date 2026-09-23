@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 import { openSharedContactConversation } from "@/lib/messaging/open-shared-contact-conversation";
 import { sendMessageSchema } from "@/lib/schemas/messaging";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -20,6 +21,8 @@ type Criteria = {
 };
 
 export async function POST(_request: Request, context: Context) {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
   const requestId = randomUUID();
   const user = await loadAuthUser();
   if (!user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });

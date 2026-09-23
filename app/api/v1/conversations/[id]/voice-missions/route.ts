@@ -14,10 +14,6 @@ async function handle(request: Request, context: Context, write: boolean) {
   const requestId = randomUUID();
   const auth = await requireRole("agent", { requestId, resource: "voice_calls" });
   if (!auth.ok) return auth.response;
-  if (write) {
-    const denied = await requireSupportWrite();
-    if (denied) return denied;
-  }
   const id = z
     .string()
     .uuid()
@@ -70,6 +66,8 @@ async function handle(request: Request, context: Context, write: boolean) {
 export function GET(r: Request, c: Context) {
   return handle(r, c, false);
 }
-export function POST(r: Request, c: Context) {
+export async function POST(r: Request, c: Context) {
+  const denied = await requireSupportWrite();
+  if (denied) return denied;
   return handle(r, c, true);
 }

@@ -21,6 +21,9 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { useT } from "@/hooks/i18n/useT";
+import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
+import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 
 type Criteria = {
   speed?: boolean;
@@ -128,6 +131,8 @@ function statusLabel(status: Execution["status"]) {
 }
 
 export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
+  const t = useT();
+  const tagDoIdioma = useTagDeIdioma();
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -336,18 +341,21 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
       <header className="flex flex-col gap-5 border-b border-border/70 pb-6 lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-2">
           <div className="inline-flex items-center gap-2 rounded-full bg-accent-soft px-3 py-1 text-[11px] font-semibold tracking-[0.16em] text-accent uppercase">
-            <ShieldCheck size={14} /> Qualidade de atendimento
+            <ShieldCheck size={14} /> {t("Qualidade de atendimento")}
           </div>
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Cliente Oculto</h1>
+            <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+              {t("Cliente Oculto")}
+            </h1>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Crie a persona, escolha o número que será auditado, dispare o teste e acompanhe cada
-              execução.
+              {t(
+                "Crie a persona, escolha o número que será auditado, dispare o teste e acompanhe cada execução.",
+              )}
             </p>
           </div>
         </div>
         <Button onClick={openCreate} className="rounded-full px-5">
-          <Plus size={17} weight="bold" /> Novo cenário
+          <Plus size={17} weight="bold" /> {t("Novo cenário")}
         </Button>
       </header>
 
@@ -369,12 +377,12 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
                   className="ml-2 font-semibold underline"
                   href={`/app/inbox/${notice.conversationId}`}
                 >
-                  Abrir conversa
+                  {t("Abrir conversa")}
                 </a>
               )}
             </span>
           </div>
-          <button aria-label="Fechar aviso" onClick={() => setNotice(null)}>
+          <button aria-label={t("Fechar aviso")} onClick={() => setNotice(null)}>
             <X size={16} />
           </button>
         </div>
@@ -383,24 +391,24 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
       <section className="grid gap-3 md:grid-cols-4">
         {[
           [
-            "Cenários ativos",
+            t("Cenários ativos"),
             String(scenarios.filter((scenario) => scenario.is_active).length),
-            "Prontos para executar",
+            t("Prontos para executar"),
           ],
           [
-            "Execuções",
+            t("Execuções"),
             String(executions.length),
-            `${executions.filter((execution) => execution.status === "running").length} em andamento`,
+            `${executions.filter((execution) => execution.status === "running").length} ${t("em andamento")}`,
           ],
           [
-            "Nota média",
-            averageScore == null ? "Sem nota" : averageScore.toFixed(1),
-            averageScore == null ? "Execute e avalie o primeiro teste" : "de 10 pontos",
+            t("Nota média"),
+            averageScore == null ? t("Sem nota") : averageScore.toFixed(1),
+            averageScore == null ? t("Execute e avalie o primeiro teste") : t("de 10 pontos"),
           ],
           [
-            "Primeira resposta",
-            averageResponse == null ? "Sem dados" : `${averageResponse}s`,
-            "média das concluídas",
+            t("Primeira resposta"),
+            averageResponse == null ? t("Sem dados") : `${averageResponse}s`,
+            t("média das concluídas"),
           ],
         ].map(([label, value, detail]) => (
           <div key={label} className="rounded-2xl bg-surface p-1 ring-1 ring-border/60">
@@ -416,9 +424,9 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
       <section className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-lg font-semibold">Cenários de auditoria</h2>
+            <h2 className="text-lg font-semibold">{t("Cenários de auditoria")}</h2>
             <p className="text-sm text-muted-foreground">
-              Toda configuração e o histórico operacional em um só lugar.
+              {t("Toda configuração e o histórico operacional em um só lugar.")}
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -430,12 +438,12 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Buscar cenário"
+                placeholder={t("Buscar cenário")}
                 className="pl-9 sm:w-64"
               />
             </div>
             <label className="flex items-center gap-2 rounded-lg px-2 text-sm text-muted-foreground">
-              <Switch checked={onlyActive} onCheckedChange={setOnlyActive} /> Só ativos
+              <Switch checked={onlyActive} onCheckedChange={setOnlyActive} /> {t("Só ativos")}
             </label>
           </div>
         </div>
@@ -449,13 +457,14 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
             <div className="mb-4 rounded-2xl bg-accent-soft p-4 text-accent">
               <ShieldCheck size={30} />
             </div>
-            <h3 className="text-lg font-semibold">Nenhum cenário configurado</h3>
+            <h3 className="text-lg font-semibold">{t("Nenhum cenário configurado")}</h3>
             <p className="mt-2 max-w-md text-sm text-muted-foreground">
-              Defina quem o cliente simulado será, qual número receberá a abordagem e o que deve ser
-              avaliado.
+              {t(
+                "Defina quem o cliente simulado será, qual número receberá a abordagem e o que deve ser avaliado.",
+              )}
             </p>
             <Button onClick={openCreate} className="mt-5 rounded-full">
-              <Plus size={16} /> Criar primeiro cenário
+              <Plus size={16} /> {t("Criar primeiro cenário")}
             </Button>
           </div>
         ) : (
@@ -487,24 +496,24 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
                                 : "bg-muted text-muted-foreground",
                             )}
                           >
-                            {scenario.is_active ? "Ativo" : "Pausado"}
+                            {scenario.is_active ? t("Ativo") : t("Pausado")}
                           </span>
                           {latest && (
                             <span className="rounded-full bg-accent-soft px-2.5 py-1 text-[11px] font-medium text-accent">
-                              Última: {statusLabel(latest.status)}
+                              {t("Última:")} {t(statusLabel(latest.status))}
                             </span>
                           )}
                         </div>
                         <h3 className="mt-3 truncate text-lg font-semibold">{scenario.title}</h3>
                         <p className="mt-1 text-sm text-muted-foreground">
-                          Persona: {scenario.persona_name}
+                          {t("Persona:")} {scenario.persona_name}
                         </p>
                       </div>
                       <div className="flex items-center gap-1">
                         <Button
                           variant="ghost"
                           size="icon"
-                          title="Editar"
+                          title={t("Editar")}
                           onClick={() => openEdit(scenario)}
                         >
                           <PencilSimple />
@@ -512,7 +521,7 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
                         <Button
                           variant="ghost"
                           size="icon"
-                          title="Duplicar"
+                          title={t("Duplicar")}
                           onClick={() => void duplicateScenario(scenario)}
                         >
                           <Copy />
@@ -520,7 +529,7 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
                         <Button
                           variant="ghost"
                           size="icon"
-                          title="Excluir"
+                          title={t("Excluir")}
                           onClick={() => void deleteScenario(scenario)}
                         >
                           <Trash />
@@ -530,18 +539,18 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
                       <div className="rounded-xl bg-muted/50 p-3">
                         <p className="text-[11px] font-semibold tracking-wider text-text-subtle uppercase">
-                          Destino
+                          {t("Destino")}
                         </p>
                         <p className="mt-1 text-sm font-medium">
-                          {scenario.target_phone || "Não informado"}
+                          {scenario.target_phone || t("Não informado")}
                         </p>
                       </div>
                       <div className="rounded-xl bg-muted/50 p-3">
                         <p className="text-[11px] font-semibold tracking-wider text-text-subtle uppercase">
-                          Histórico
+                          {t("Histórico")}
                         </p>
                         <p className="mt-1 text-sm font-medium">
-                          {history.length} {history.length === 1 ? "execução" : "execuções"}
+                          {history.length} {history.length === 1 ? t("execução") : t("execuções")}
                         </p>
                       </div>
                     </div>
@@ -550,7 +559,7 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
                     </p>
                     {latest && (
                       <div className="mt-4 flex flex-wrap items-center gap-4 border-t border-border/60 pt-4 text-xs text-muted-foreground">
-                        <span>{new Date(latest.started_at).toLocaleString("pt-BR")}</span>
+                        <span>{new Date(latest.started_at).toLocaleString(tagDoIdioma)}</span>
                         {latest.score != null && (
                           <span className="flex items-center gap-1 font-semibold text-foreground">
                             <Sparkle size={14} weight="fill" className="text-warning" />{" "}
@@ -568,7 +577,7 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
                           checked={scenario.is_active}
                           onCheckedChange={() => void toggleScenario(scenario)}
                         />
-                        {scenario.is_active ? "Cenário ativo" : "Cenário pausado"}
+                        {scenario.is_active ? t("Cenário ativo") : t("Cenário pausado")}
                       </label>
                       <Button
                         disabled={!scenario.is_active || !ready || runningId === scenario.id}
@@ -580,7 +589,7 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
                         ) : (
                           <Play weight="fill" />
                         )}
-                        {ready ? "Auditar agora" : "Complete a configuração"}
+                        {ready ? t("Auditar agora") : t("Complete a configuração")}
                       </Button>
                     </div>
                   </div>
@@ -602,39 +611,41 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
               <div className="flex items-start justify-between border-b border-border/60 px-5 py-5 md:px-7">
                 <div>
                   <p className="text-[11px] font-semibold tracking-[0.16em] text-accent uppercase">
-                    Configuração operacional
+                    {t("Configuração operacional")}
                   </p>
                   <h2 className="mt-1 text-xl font-semibold">
-                    {editingId ? "Editar cenário" : "Novo cenário de cliente oculto"}
+                    {editingId ? t("Editar cenário") : t("Novo cenário de cliente oculto")}
                   </h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Esses dados controlam quem fala, por onde sai e o que será medido.
+                    {t("Esses dados controlam quem fala, por onde sai e o que será medido.")}
                   </p>
                 </div>
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={() => setModalOpen(false)}
-                  aria-label="Fechar"
+                  aria-label={t("Fechar")}
                 >
                   <X />
                 </Button>
               </div>
               <form onSubmit={saveScenario} className="space-y-7 px-5 py-6 md:px-7">
                 <fieldset className="grid gap-4 md:grid-cols-2">
-                  <legend className="mb-4 text-sm font-semibold">1. Cenário e persona</legend>
+                  <legend className="mb-4 text-sm font-semibold">
+                    {t("1. Cenário e persona")}
+                  </legend>
                   <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor="title">Nome do cenário</Label>
+                    <Label htmlFor="title">{t("Nome do cenário")}</Label>
                     <Input
                       id="title"
                       required
                       value={form.title}
                       onChange={(event) => setForm({ ...form, title: event.target.value })}
-                      placeholder="Objeção de preço no WhatsApp"
+                      placeholder={t("Objeção de preço no WhatsApp")}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="persona">Nome da persona</Label>
+                    <Label htmlFor="persona">{t("Nome da persona")}</Label>
                     <Input
                       id="persona"
                       required
@@ -643,7 +654,7 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="phone">Número que será auditado</Label>
+                    <Label htmlFor="phone">{t("Número que será auditado")}</Label>
                     <Input
                       id="phone"
                       required
@@ -653,7 +664,7 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
                     />
                   </div>
                   <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor="persona-description">Comportamento da persona</Label>
+                    <Label htmlFor="persona-description">{t("Comportamento da persona")}</Label>
                     <Textarea
                       id="persona-description"
                       required
@@ -666,9 +677,11 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
                   </div>
                 </fieldset>
                 <fieldset className="grid gap-4 md:grid-cols-2">
-                  <legend className="mb-4 text-sm font-semibold">2. Canal e abordagem</legend>
+                  <legend className="mb-4 text-sm font-semibold">
+                    {t("2. Canal e abordagem")}
+                  </legend>
                   <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor="channel">Canal de saída</Label>
+                    <Label htmlFor="channel">{t("Canal de saída")}</Label>
                     <select
                       id="channel"
                       required
@@ -678,21 +691,21 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
                       }
                       className="flex h-11 w-full rounded-md border border-border bg-background px-3 text-sm lg:h-9"
                     >
-                      <option value="">Selecione um número conectado</option>
+                      <option value="">{t("Selecione um número conectado")}</option>
                       {channels.map((channel) => (
                         <option key={channel.id} value={channel.id}>
-                          {channel.display_name || channel.phone_number || "WhatsApp"}
+                          {rotuloDoContato(channel, t)}
                         </option>
                       ))}
                     </select>
                     {channels.length === 0 && (
                       <p className="text-xs text-error">
-                        Nenhum canal WhatsApp conectado e operacional.
+                        {t("Nenhum canal WhatsApp conectado e operacional.")}
                       </p>
                     )}
                   </div>
                   <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor="opening">Primeira mensagem enviada ao atendimento</Label>
+                    <Label htmlFor="opening">{t("Primeira mensagem enviada ao atendimento")}</Label>
                     <Textarea
                       id="opening"
                       required
@@ -701,14 +714,14 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
                       onChange={(event) =>
                         setForm({ ...form, opening_message: event.target.value })
                       }
-                      placeholder="Olá! Gostaria de entender melhor..."
+                      placeholder={t("Olá! Gostaria de entender melhor...")}
                     />
                     <p className="text-xs text-text-subtle">
-                      A mensagem sai de verdade ao clicar em Auditar agora.
+                      {t("A mensagem sai de verdade ao clicar em Auditar agora.")}
                     </p>
                   </div>
                   <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor="objective">Objetivo interno da avaliação</Label>
+                    <Label htmlFor="objective">{t("Objetivo interno da avaliação")}</Label>
                     <Textarea
                       id="objective"
                       required
@@ -719,18 +732,22 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
                   </div>
                 </fieldset>
                 <fieldset>
-                  <legend className="mb-4 text-sm font-semibold">3. Critérios avaliados</legend>
+                  <legend className="mb-4 text-sm font-semibold">
+                    {t("3. Critérios avaliados")}
+                  </legend>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {([
-                      ["speed", "Velocidade", "Tempo até a primeira resposta"],
-                      ["politeness", "Cordialidade", "Clareza, educação e empatia"],
+                    {(
                       [
-                        "objection_handling",
-                        "Objeções",
-                        "Como dúvidas e resistência são conduzidas",
-                      ],
-                      ["closing", "Fechamento", "Próximo passo e chamada para ação"],
-                    ] as const).map(([key, label, help]) => (
+                        ["speed", t("Velocidade"), t("Tempo até a primeira resposta")],
+                        ["politeness", t("Cordialidade"), t("Clareza, educação e empatia")],
+                        [
+                          "objection_handling",
+                          t("Objeções"),
+                          t("Como dúvidas e resistência são conduzidas"),
+                        ],
+                        ["closing", t("Fechamento"), t("Próximo passo e chamada para ação")],
+                      ] as const
+                    ).map(([key, label, help]) => (
                       <label
                         key={key}
                         className="flex items-start gap-3 rounded-xl bg-muted/45 p-3"
@@ -753,15 +770,15 @@ export function MysteryShopperClient({ orgId: _orgId }: { orgId: string }) {
                       checked={form.is_active}
                       onCheckedChange={(checked) => setForm({ ...form, is_active: checked })}
                     />{" "}
-                    Deixar ativo ao salvar
+                    {t("Deixar ativo ao salvar")}
                   </label>
                   <div className="flex gap-2">
                     <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>
-                      Cancelar
+                      {t("Cancelar")}
                     </Button>
                     <Button type="submit" disabled={saving}>
                       {saving && <CircleNotch className="animate-spin" />}
-                      {editingId ? "Salvar alterações" : "Criar cenário"}
+                      {editingId ? t("Salvar alterações") : t("Criar cenário")}
                     </Button>
                   </div>
                 </div>

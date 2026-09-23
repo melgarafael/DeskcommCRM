@@ -14,7 +14,20 @@ export default defineConfig([
   // Cópias compiladas da demonstração e binários baixados pelo Playwright
   // vivem no scratch local. Os scripts escritos à mão em .superpowers seguem
   // sob lint; somente estes dois tipos de artefato gerado ficam de fora.
-  globalIgnores([".next/", "node_modules/", "dist/", "supabase/", "next-env.d.ts", ".claude/worktrees/", ".superpowers/**/bundles/", ".superpowers/**/playwright-browsers/"]),
+  globalIgnores([
+    ".next/",
+    "node_modules/",
+    "dist/",
+    "supabase/",
+    "next-env.d.ts",
+    ".claude/worktrees/",
+    ".superpowers/**/bundles/",
+    ".superpowers/**/playwright-browsers/",
+    // Bibliotecas de terceiros vendorizadas e compactadas para o site público.
+    // Os scripts autorais em website/assets continuam sob lint.
+    "website/assets/gsap.min.js",
+    "website/assets/ScrollTrigger.min.js",
+  ]),
   nextPlugin.configs["core-web-vitals"],
   reactHooks.configs.flat.recommended,
   ...tseslint.configs.recommended,

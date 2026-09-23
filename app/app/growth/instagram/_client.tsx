@@ -1,16 +1,17 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { 
-  InstagramLogo, 
-  ChatCircleDots, 
-  Lightning, 
-  Plus, 
-  Funnel, 
-  CheckCircle, 
-  Tag, 
-  Users 
+import {
+  InstagramLogo,
+  ChatCircleDots,
+  Lightning,
+  Plus,
+  Funnel,
+  CheckCircle,
+  Tag,
+  Users,
 } from "@phosphor-icons/react";
+import { useT } from "@/hooks/i18n/useT";
 
 interface Trigger {
   id: string;
@@ -26,6 +27,7 @@ interface Trigger {
 }
 
 export function InstagramGrowthClient({ orgId }: { orgId: string }) {
+  const t = useT();
   const [triggers, setTriggers] = useState<Trigger[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -33,7 +35,9 @@ export function InstagramGrowthClient({ orgId }: { orgId: string }) {
   // Form State
   const [name, setName] = useState("");
   const [keywords, setKeywords] = useState("EU QUERO, PREÇO, QUERO");
-  const [dmTemplate, setDmTemplate] = useState("Olá! Vi seu comentário no nosso post. Aqui está o link exclusivo que você pediu: https://saraiva.ai");
+  const [dmTemplate, setDmTemplate] = useState(
+    "Olá! Vi seu comentário no nosso post. Aqui está o link exclusivo que você pediu: https://saraiva.ai",
+  );
   const [autoLead, setAutoLead] = useState(true);
 
   const fetchTriggers = async () => {
@@ -60,7 +64,10 @@ export function InstagramGrowthClient({ orgId }: { orgId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
-          keywords: keywords.split(",").map(k => k.trim()).filter(Boolean),
+          keywords: keywords
+            .split(",")
+            .map((k) => k.trim())
+            .filter(Boolean),
           dm_response_template: dmTemplate,
           auto_create_lead: autoLead,
           match_mode: "contains",
@@ -77,50 +84,52 @@ export function InstagramGrowthClient({ orgId }: { orgId: string }) {
   };
 
   return (
-    <div className="flex-1 p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="mx-auto max-w-7xl flex-1 space-y-6 p-6">
       {/* Header */}
       <div className="flex items-center justify-between border-b pb-4">
         <div className="flex items-center gap-3">
-          <div className="p-3 bg-gradient-to-tr from-yellow-500 via-pink-500 to-purple-600 rounded-xl text-white shadow-md">
+          <div className="rounded-xl bg-gradient-to-tr from-yellow-500 via-pink-500 to-purple-600 p-3 text-white shadow-md">
             <InstagramLogo size={28} weight="bold" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Instagram Growth Engine</h1>
+            <h1 className="text-2xl font-bold tracking-tight">{t("Instagram Growth Engine")}</h1>
             <p className="text-sm text-muted-foreground">
-              Converta automaticamente comentários de Reels e Posts em DMs e Leads no seu CRM.
+              {t(
+                "Converta automaticamente comentários de Reels e Posts em DMs e Leads no seu CRM.",
+              )}
             </p>
           </div>
         </div>
         <button
           onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground font-medium rounded-lg hover:opacity-90 transition shadow-sm"
+          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground shadow-sm transition hover:opacity-90"
         >
           <Plus size={18} weight="bold" />
-          Novo Gatilho de Comentário
+          {t("Novo Gatilho de Comentário")}
         </button>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="p-5 border rounded-xl bg-card shadow-sm space-y-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="space-y-2 rounded-xl border bg-card p-5 shadow-sm">
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-sm font-medium">Gatilhos Ativos</span>
+            <span className="text-sm font-medium">{t("Gatilhos Ativos")}</span>
             <Lightning size={20} className="text-amber-500" />
           </div>
-          <div className="text-3xl font-bold">{triggers.filter(t => t.is_active).length}</div>
+          <div className="text-3xl font-bold">{triggers.filter((t) => t.is_active).length}</div>
         </div>
-        <div className="p-5 border rounded-xl bg-card shadow-sm space-y-2">
+        <div className="space-y-2 rounded-xl border bg-card p-5 shadow-sm">
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-sm font-medium">DMs Disparadas</span>
+            <span className="text-sm font-medium">{t("DMs Disparadas")}</span>
             <ChatCircleDots size={20} className="text-blue-500" />
           </div>
           <div className="text-3xl font-bold">
             {triggers.reduce((acc, t) => acc + (t.executions_count || 0), 0)}
           </div>
         </div>
-        <div className="p-5 border rounded-xl bg-card shadow-sm space-y-2">
+        <div className="space-y-2 rounded-xl border bg-card p-5 shadow-sm">
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-sm font-medium">Leads Gerados</span>
+            <span className="text-sm font-medium">{t("Leads Gerados")}</span>
             <Users size={20} className="text-emerald-500" />
           </div>
           <div className="text-3xl font-bold">
@@ -130,56 +139,65 @@ export function InstagramGrowthClient({ orgId }: { orgId: string }) {
       </div>
 
       {/* Triggers List */}
-      <div className="border rounded-xl bg-card shadow-sm overflow-hidden">
-        <div className="p-4 border-b font-semibold flex items-center justify-between">
-          <span>Regras de Automação de Comentários</span>
-          <span className="text-xs text-muted-foreground">{triggers.length} cadastradas</span>
+      <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
+        <div className="flex items-center justify-between border-b p-4 font-semibold">
+          <span>{t("Regras de Automação de Comentários")}</span>
+          <span className="text-xs text-muted-foreground">
+            {triggers.length} {t("cadastradas")}
+          </span>
         </div>
 
         {loading ? (
-          <div className="p-8 text-center text-muted-foreground">Carregando gatilhos...</div>
+          <div className="p-8 text-center text-muted-foreground">{t("Carregando gatilhos...")}</div>
         ) : triggers.length === 0 ? (
-          <div className="p-12 text-center space-y-3">
-            <div className="inline-flex p-3 rounded-full bg-muted text-muted-foreground">
+          <div className="space-y-3 p-12 text-center">
+            <div className="inline-flex rounded-full bg-muted p-3 text-muted-foreground">
               <InstagramLogo size={32} />
             </div>
-            <h3 className="font-semibold text-lg">Nenhum gatilho de Instagram ativo</h3>
-            <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              Crie seu primeiro gatilho para responder comentários como "EU QUERO" ou "PREÇO" enviando uma DM instantânea com seu link.
+            <h3 className="text-lg font-semibold">{t("Nenhum gatilho de Instagram ativo")}</h3>
+            <p className="mx-auto max-w-md text-sm text-muted-foreground">
+              {t(
+                'Crie seu primeiro gatilho para responder comentários como "EU QUERO" ou "PREÇO" enviando uma DM instantânea com seu link.',
+              )}
             </p>
             <button
               onClick={() => setShowModal(true)}
-              className="mt-2 inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg"
+              className="mt-2 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
             >
               <Plus size={16} weight="bold" />
-              Criar Primeiro Gatilho
+              {t("Criar Primeiro Gatilho")}
             </button>
           </div>
         ) : (
           <div className="divide-y">
-            {triggers.map((t) => (
-              <div key={t.id} className="p-4 flex items-center justify-between hover:bg-muted/50 transition">
+            {triggers.map((trigger) => (
+              <div
+                key={trigger.id}
+                className="flex items-center justify-between p-4 transition hover:bg-muted/50"
+              >
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold">{t.name}</span>
-                    <span className="px-2 py-0.5 text-xs bg-emerald-500/10 text-emerald-600 rounded-full font-medium">
-                      Ativo
+                    <span className="font-semibold">{trigger.name}</span>
+                    <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600">
+                      {t("Ativo")}
                     </span>
                   </div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Tag size={14} />
-                    <span>Palavras-chave: </span>
-                    <span className="font-mono bg-muted px-1.5 py-0.5 rounded text-foreground">
-                      {t.keywords.join(", ")}
+                    <span>{t("Palavras-chave:")} </span>
+                    <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-foreground">
+                      {trigger.keywords.join(", ")}
                     </span>
                   </div>
-                  <p className="text-xs text-muted-foreground line-clamp-1 italic">
-                    "{t.dm_response_template}"
+                  <p className="line-clamp-1 text-xs text-muted-foreground italic">
+                    "{trigger.dm_response_template}"
                   </p>
                 </div>
-                <div className="text-right space-y-1">
-                  <div className="text-sm font-semibold">{t.executions_count} DMs / {t.leads_generated_count} Leads</div>
-                  <div className="text-xs text-muted-foreground">Automação nativa</div>
+                <div className="space-y-1 text-right">
+                  <div className="text-sm font-semibold">
+                    {trigger.executions_count} DMs / {trigger.leads_generated_count} Leads
+                  </div>
+                  <div className="text-xs text-muted-foreground">{t("Automação nativa")}</div>
                 </div>
               </div>
             ))}
@@ -189,45 +207,56 @@ export function InstagramGrowthClient({ orgId }: { orgId: string }) {
 
       {/* Modal Criar Gatilho */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-card border rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg space-y-4 rounded-2xl border bg-card p-6 shadow-2xl">
             <div className="flex items-center justify-between border-b pb-3">
-              <h3 className="font-bold text-lg">Criar Gatilho de Comentário (Instagram)</h3>
-              <button onClick={() => setShowModal(false)} className="text-muted-foreground hover:text-foreground">✕</button>
+              <h3 className="text-lg font-bold">{t("Criar Gatilho de Comentário (Instagram)")}</h3>
+              <button
+                onClick={() => setShowModal(false)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                ✕
+              </button>
             </div>
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
-                <label className="text-xs font-semibold text-muted-foreground block mb-1">Nome da Regra</label>
+                <label className="mb-1 block text-xs font-semibold text-muted-foreground">
+                  {t("Nome da Regra")}
+                </label>
                 <input
                   type="text"
                   required
-                  placeholder="Ex: Campanha Reels - Curso IA"
+                  placeholder={t("Ex: Campanha Reels - Curso IA")}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-hidden"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-muted-foreground block mb-1">Palavras-chave Gatilho (separadas por vírgula)</label>
+                <label className="mb-1 block text-xs font-semibold text-muted-foreground">
+                  {t("Palavras-chave Gatilho (separadas por vírgula)")}
+                </label>
                 <input
                   type="text"
                   required
-                  placeholder="EU QUERO, PREÇO, AULA, ME MANDA"
+                  placeholder={t("EU QUERO, PREÇO, AULA, ME MANDA")}
                   value={keywords}
                   onChange={(e) => setKeywords(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary font-mono"
+                  className="w-full rounded-lg border bg-background px-3 py-2 font-mono text-sm focus:ring-2 focus:ring-primary focus:outline-hidden"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-muted-foreground block mb-1">Mensagem enviada na DM</label>
+                <label className="mb-1 block text-xs font-semibold text-muted-foreground">
+                  {t("Mensagem enviada na DM")}
+                </label>
                 <textarea
                   rows={3}
                   required
                   value={dmTemplate}
                   onChange={(e) => setDmTemplate(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-hidden"
                 />
               </div>
 
@@ -237,26 +266,26 @@ export function InstagramGrowthClient({ orgId }: { orgId: string }) {
                   id="autoLead"
                   checked={autoLead}
                   onChange={(e) => setAutoLead(e.target.checked)}
-                  className="rounded border-gray-300 text-primary focus:ring-primary"
+                  className="rounded-md border-gray-300 text-primary focus:ring-primary"
                 />
                 <label htmlFor="autoLead" className="text-sm font-medium">
-                  Criar Lead automaticamente no Funil de Vendas ao enviar a DM
+                  {t("Criar Lead automaticamente no Funil de Vendas ao enviar a DM")}
                 </label>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t">
+              <div className="flex justify-end gap-2 border-t pt-2">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted"
+                  className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-muted"
                 >
-                  Cancelar
+                  {t("Cancelar")}
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:opacity-90"
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
                 >
-                  Salvar e Ativar Gatilho
+                  {t("Salvar e Ativar Gatilho")}
                 </button>
               </div>
             </form>

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -21,11 +22,16 @@ export async function GET(_req: Request) {
     if (error) throw error;
     return NextResponse.json({ triggers: data ?? [] });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Não foi possível acessar os gatilhos." }, { status: 500 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Não foi possível acessar os gatilhos." },
+      { status: 500 },
+    );
   }
 }
 
 export async function POST(req: Request) {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
   try {
     const user = await loadAuthUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -50,7 +56,7 @@ export async function POST(req: Request) {
     if (!name || !dm_response_template) {
       return NextResponse.json(
         { error: "Nome e template de resposta da DM são obrigatórios." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -77,6 +83,9 @@ export async function POST(req: Request) {
     if (error) throw error;
     return NextResponse.json({ trigger: data }, { status: 201 });
   } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Não foi possível acessar os gatilhos." }, { status: 500 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Não foi possível acessar os gatilhos." },
+      { status: 500 },
+    );
   }
 }

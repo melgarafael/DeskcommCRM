@@ -75,6 +75,61 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
+  {
+    tabela: "growth_instagram_triggers",
+    razao:
+      "tests/invariants/recovery-native-modules.test.ts — admin da organização " +
+      "lê a própria linha, admin do tenant vizinho e viewer local leem zero; " +
+      "anon também não possui SELECT.",
+  },
+  {
+    tabela: "audit_mystery_scenarios",
+    razao:
+      "tests/invariants/recovery-native-modules.test.ts — mesma prova " +
+      "comportamental cross-tenant, gate de papel e controle positivo local.",
+  },
+  {
+    tabela: "audit_mystery_executions",
+    razao:
+      "tests/invariants/recovery-native-modules.test.ts — mesma prova " +
+      "comportamental cross-tenant, gate de papel e controle positivo local.",
+  },
+  {
+    tabela: "org_subscriptions",
+    razao:
+      "tests/invariants/subscription-isolation.test.ts — admins dos dois " +
+      "tenants leem apenas a própria assinatura; manager local lê zero.",
+  },
+  {
+    tabela: "billing_webhook_events",
+    razao:
+      "tests/invariants/subscription-isolation.test.ts — recibo exclusivo do " +
+      "servidor, sem SELECT nem escrita para anon ou authenticated.",
+  },
+  {
+    tabela: "subscription_ai_periods",
+    razao:
+      "tests/invariants/subscription-ai-allowance.test.ts — livro-razão " +
+      "exclusivo do servidor, sem SELECT ou mutação para anon/authenticated.",
+  },
+  {
+    tabela: "subscription_ai_reservations",
+    razao:
+      "tests/invariants/subscription-ai-allowance.test.ts — mesma prova de " +
+      "negação total ao navegador e funções contábeis service-only.",
+  },
+  {
+    tabela: "instagram_studio_items",
+    razao:
+      "tests/invariants/instagram-studio.test.ts — usuário autenticado vê uma " +
+      "linha local entre duas organizações, não pode mutar e anon não lê.",
+  },
+  {
+    tabela: "voice_missions",
+    razao:
+      "tests/invariants/voice-missions.test.ts — agent lê a missão local; " +
+      "viewer local e agent do tenant vizinho leem zero; navegador não enfileira.",
+  },
   { tabela: "prospecting_settings", razao: "tests/invariants/prospecting.test.ts — tabela exclusiva do servidor, ACL e RLS verificadas; FK composta e comandos autenticados cercam a organização." },
   { tabela: "prospecting_campaigns", razao: "tests/invariants/prospecting.test.ts — tabela exclusiva do servidor, ACL e RLS verificadas; FK composta e comandos autenticados cercam a organização." },
   { tabela: "prospecting_candidates", razao: "tests/invariants/prospecting.test.ts — tabela exclusiva do servidor, ACL e RLS verificadas; FK composta e comandos autenticados cercam a organização." },

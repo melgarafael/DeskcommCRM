@@ -15,10 +15,15 @@ import { hubSections } from "@/lib/navigation/registry";
 afterEach(cleanup);
 
 describe("NavHub", () => {
-  it("apresenta a IA nas três etapas da jornada, na ordem", () => {
+  it("apresenta a equipe digital e as três etapas da jornada, na ordem", () => {
     render(<NavHub group="ia" isPlatformAdmin role={null} title="Agente de IA" subtitle="" />);
     const secoes = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent?.trim());
-    expect(secoes).toEqual(["Montar o agente", "Ensinar o agente", "Acompanhar o agente"]);
+    expect(secoes).toEqual([
+      "Montar a equipe",
+      "Montar o agente",
+      "Ensinar o agente",
+      "Acompanhar o agente",
+    ]);
   });
 
   it("desenterra Conhecimento, que só existia atrás das abas", () => {
@@ -35,7 +40,7 @@ describe("NavHub", () => {
 
   it("mostra também o que já está no sidebar — é inventário, não sobra", () => {
     render(<NavHub group="ia" isPlatformAdmin role={null} title="Agente de IA" subtitle="" />);
-    expect(screen.getByRole("link", { name: /Agentes/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Funcionários/ })).toBeTruthy();
   });
 
   it("some com a seção inteira quando a permissão esvazia", () => {
@@ -70,6 +75,7 @@ describe("NavHub", () => {
       screen.getByText("Todo lo que define quién atiende por ti — y cómo seguir lo que hace."),
     ).toBeTruthy();
     expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent?.trim())).toEqual([
+      "Montar el equipo",
       "Configurar el agente",
       "Enseñar al agente",
       "Acompañar al agente",

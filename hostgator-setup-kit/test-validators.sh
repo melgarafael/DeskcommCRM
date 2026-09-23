@@ -1908,7 +1908,9 @@ STUB
     env_ia="$(printf '%s\n' "$BASE_ENV" | grep -v '^ANTHROPIC_API_KEY=')"
     printf '%s\n%s=%s\n' "$env_ia" "$var" "'$val'" > "$raiz/crmia/.env"
     : > "$raiz/docker.log"
-    saida="$(cd "$raiz/crmia" && env PATH="$raiz/bin:$PATH" DOCKER_LOG="$raiz/docker.log" \
+    saida="$(cd "$raiz/crmia" && env -u AI_PROVIDER -u OPENROUTER_API_KEY \
+      -u OPENAI_API_KEY -u ANTHROPIC_API_KEY -u AI_GATEWAY_API_KEY \
+      PATH="$raiz/bin:$PATH" DOCKER_LOG="$raiz/docker.log" \
       CRONTAB_SANDBOX="$CRONTAB_SANDBOX" bash "$raiz/install.sh" --yes 2>&1 || true \
       | sed -E 's/\x1b\[[0-9;]*m//g')"
     if printf '%s' "$saida" | grep -q 'comando não encontrado\|command not found'; then
@@ -1983,7 +1985,9 @@ STUB
 
   rodar_sem_ia() {
     : > "$VPS_LOG"
-    (cd "$VPS_PROJ" && env PATH="$VPS_RAIZ/bin:$PATH" DOCKER_LOG="$VPS_LOG" \
+    (cd "$VPS_PROJ" && env -u AI_PROVIDER -u OPENROUTER_API_KEY \
+      -u OPENAI_API_KEY -u ANTHROPIC_API_KEY -u AI_GATEWAY_API_KEY \
+      PATH="$VPS_RAIZ/bin:$PATH" DOCKER_LOG="$VPS_LOG" \
       CRONTAB_SANDBOX="$CRONTAB_SANDBOX" SUPABASE_ACCESS_TOKEN= \
       bash "$VPS_RAIZ/install.sh" --yes 2>&1 || true) | sed -E 's/\x1b\[[0-9;]*m//g'
   }

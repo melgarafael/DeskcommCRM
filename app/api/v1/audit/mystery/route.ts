@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,8 @@ export async function GET(_req: Request) {
 }
 
 export async function POST(req: Request) {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
   try {
     const user = await loadAuthUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

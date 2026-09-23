@@ -38,6 +38,13 @@ it("tenant cannot grant itself a plan or write payment events", () => {
     ).toBe("f");
   }
 });
+it("billing event receipts are server-only", () => {
+  for (const role of ["anon", "authenticated"]) {
+    expect(sql(`select has_table_privilege('${role}','billing_webhook_events','SELECT')`)).toBe(
+      "f",
+    );
+  }
+});
 it("manager cannot read billing", () => {
   sql(`update user_organizations set role='manager' where user_id='${UB}'`);
   expect(countAs(UB, "select count(*) from org_subscriptions")).toBe(0);

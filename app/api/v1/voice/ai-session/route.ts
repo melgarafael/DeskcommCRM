@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,8 @@ export const dynamic = "force-dynamic";
  * Never issue an unmetered ephemeral token through the superseded route.
  */
 export async function POST(): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
   const requestId = randomUUID();
   const auth = await requireRole("agent", { requestId, resource: "voice_calls" });
   if (!auth.ok) return auth.response;

@@ -25768,20 +25768,20 @@ alter table public.messages add column if not exists audio_intent text;
 revoke all on public.growth_instagram_triggers from public, anon;
 drop policy if exists tenant_isolation_growth_instagram_triggers_all on public.growth_instagram_triggers;
 create policy tenant_isolation_growth_instagram_triggers_all on public.growth_instagram_triggers for all to authenticated
- using (organization_id in (select public.fn_user_org_ids()) and public.fn_user_role_in_org(organization_id)='admin')
- with check (organization_id in (select public.fn_user_org_ids()) and public.fn_user_role_in_org(organization_id)='admin');
+ using (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'admin'))
+ with check (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'admin'));
 
 revoke all on public.audit_mystery_scenarios from public, anon;
 drop policy if exists tenant_isolation_audit_mystery_scenarios_all on public.audit_mystery_scenarios;
 create policy tenant_isolation_audit_mystery_scenarios_all on public.audit_mystery_scenarios for all to authenticated
- using (organization_id in (select public.fn_user_org_ids()) and public.fn_user_role_in_org(organization_id)='admin')
- with check (organization_id in (select public.fn_user_org_ids()) and public.fn_user_role_in_org(organization_id)='admin');
+ using (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'admin'))
+ with check (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'admin'));
 
 revoke all on public.audit_mystery_executions from public, anon;
 drop policy if exists tenant_isolation_audit_mystery_executions_all on public.audit_mystery_executions;
 create policy tenant_isolation_audit_mystery_executions_all on public.audit_mystery_executions for all to authenticated
- using (organization_id in (select public.fn_user_org_ids()) and public.fn_user_role_in_org(organization_id)='admin')
- with check (organization_id in (select public.fn_user_org_ids()) and public.fn_user_role_in_org(organization_id)='admin');
+ using (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'admin'))
+ with check (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'admin'));
 
 -- ---- Cakto billing (migration 0320) ----
 -- Cakto is opt-in; existing subscriptions and resource/AI limits are preserved.
