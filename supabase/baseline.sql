@@ -36362,6 +36362,127 @@ alter table public.meta_templates
 comment on column public.meta_templates.saved_values is
   'Valores que o operador salvou para reaproveitar em todo disparo deste modelo, chaveados como template_values (slotKey: header:1, button0:1). Só link de mídia: a rota de escrita recusa valor de texto, que costuma ser dado de pessoa. Sobrevive à sincronização, que não lista esta coluna no upsert.';
 
+-- ---- honorários: primeiro módulo oficial via ADR-0002 (migration 0385) ----
+-- ⚠️ ANTES DA VARREDURA anon: cria função. Corpo completo e o porquê de cada
+-- decisão (D2/D4/D5/D8) em supabase/migrations/20260922200000_0385_honorarios_modulo_oficial.sql —
+-- criar a função aqui NÃO cria tabela nenhuma; as tabelas só nascem quando um
+-- administrador da instalação chama fn_modulo_instalar('honorarios', ...).
+
+create or replace function public.fn_honorarios_provisionar()
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $f$
+begin
+  create table if not exists public.honorarios_contratos (
+    id uuid primary key default gen_random_uuid(),
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+
+    -- Preservado mesmo se o lead for excluído (mesma decisão de
+    -- `financial_entries.sale_id`): o contrato é registro financeiro e sobrevive
+    -- à linha operacional que o originou.
+    lead_id uuid references public.crm_leads(id) on delete set null,
+
+    -- `text` + CHECK, não enum (doutrina: enum é difícil de estender).
+    modelo text not null check (modelo in ('fixo', 'exito', 'misto')),
+
+    valor_fixo_cents bigint check (valor_fixo_cents is null or valor_fixo_cents > 0),
+    percentual_exito numeric(5,2) check (percentual_exito is null or (percentual_exito > 0 and percentual_exito <= 100)),
+    repasse_advogado_pct numeric(5,2) check (repasse_advogado_pct is null or (repasse_advogado_pct >= 0 and repasse_advogado_pct <= 100)),
+
+    -- Modelo declara o campo que faz sentido: fixo pede valor, êxito pede
+    -- percentual, misto pede os dois. Não impede o resto de ficar em branco.
+    constraint honorarios_contratos_modelo_tem_o_campo check (
+      (modelo = 'fixo' and valor_fixo_cents is not null)
+      or (modelo = 'exito' and percentual_exito is not null)
+      or (modelo = 'misto' and valor_fixo_cents is not null and percentual_exito is not null)
+    ),
+
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+  );
+
+  create index if not exists honorarios_contratos_org_idx
+    on public.honorarios_contratos (organization_id);
+  create index if not exists honorarios_contratos_lead_idx
+    on public.honorarios_contratos (organization_id, lead_id) where lead_id is not null;
+
+  create table if not exists public.honorarios_parcelas (
+    id uuid primary key default gen_random_uuid(),
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+    contrato_id uuid not null references public.honorarios_contratos(id) on delete cascade,
+
+    numero integer not null check (numero > 0),
+    vencimento date not null,
+    valor_cents bigint not null check (valor_cents > 0),
+
+    -- Preservada mesmo se o lançamento do caixa for desfeito — a MESMA decisão
+    -- de `financial_entries.sale_id`: o link é conveniência de navegação, nunca
+    -- a fonte da verdade do valor ou da data.
+    financial_entry_id uuid references public.financial_entries(id) on delete set null,
+
+    status text not null default 'pendente' check (status in ('pendente', 'pago', 'atrasado')),
+
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+
+    constraint honorarios_parcelas_numero_unico unique (contrato_id, numero)
+  );
+
+  create index if not exists honorarios_parcelas_org_idx
+    on public.honorarios_parcelas (organization_id);
+  create index if not exists honorarios_parcelas_contrato_idx
+    on public.honorarios_parcelas (organization_id, contrato_id);
+  create index if not exists honorarios_parcelas_vencimento_idx
+    on public.honorarios_parcelas (organization_id, vencimento) where status = 'pendente';
+
+  -- ── RLS por PAPEL (D5, ligada aqui e não pela rotina automática) ───────────
+  -- Leitura para quem é da organização; escrita para manager+ — mesmo padrão do
+  -- caixa núcleo (financial_accounts/payment_methods/account_plans, migration
+  -- 0350): dinheiro não é coisa que `agent` configure.
+  execute format('alter table public.%I enable row level security', 'honorarios_contratos');
+  execute format('drop policy if exists tenant_isolation_%I_all on public.%I', 'honorarios_contratos', 'honorarios_contratos');
+  execute format($p$
+    create policy tenant_isolation_%I_all on public.%I
+      for all
+      using (organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin())
+      with check (
+        public.fn_is_platform_admin()
+        or (organization_id in (select public.fn_user_org_ids())
+            and public.fn_role_at_least(organization_id, 'manager'))
+      )
+  $p$, 'honorarios_contratos', 'honorarios_contratos');
+  execute format('revoke all on public.%I from anon', 'honorarios_contratos');
+
+  execute format('alter table public.%I enable row level security', 'honorarios_parcelas');
+  execute format('drop policy if exists tenant_isolation_%I_all on public.%I', 'honorarios_parcelas', 'honorarios_parcelas');
+  execute format($p$
+    create policy tenant_isolation_%I_all on public.%I
+      for all
+      using (organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin())
+      with check (
+        public.fn_is_platform_admin()
+        or (organization_id in (select public.fn_user_org_ids())
+            and public.fn_role_at_least(organization_id, 'manager'))
+      )
+  $p$, 'honorarios_parcelas', 'honorarios_parcelas');
+  execute format('revoke all on public.%I from anon', 'honorarios_parcelas');
+
+  comment on table public.honorarios_contratos is
+    'Modelo de cobrança do caso (fixo/êxito/misto). Financeiro real (contas, lançamentos) é o caixa núcleo — este módulo só descreve o contrato.';
+  comment on table public.honorarios_parcelas is
+    'Calendário de parcelas do contrato. Pagar uma parcela cria um financial_entries e liga por financial_entry_id; não há tabela de "pagamento" própria.';
+
+  -- RLS já ligada por nós, então esta rotina não mexe mais nelas (D5) — só
+  -- aplica as travas de suporte, que dependem de RLS já estar de pé.
+  perform public.fn_proteger_modulo_provisionado();
+end;
+$f$;
+
+revoke execute on function public.fn_honorarios_provisionar() from public, anon, authenticated;
+grant execute on function public.fn_honorarios_provisionar() to service_role;
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
