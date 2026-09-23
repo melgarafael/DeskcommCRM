@@ -202,7 +202,7 @@ function FormularioDeLinks({ contato, pipelineId }: { contato: Contact; pipeline
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label={`${t("Abrir")} ${t(rotulo)}`}
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border text-text-muted hover:text-text"
+                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-border text-text-muted hover:text-text lg:h-9 lg:w-9"
                   >
                     ↗
                   </a>

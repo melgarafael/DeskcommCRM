@@ -140,7 +140,10 @@ export function TarefasClient({ podeEditar }: { podeEditar: boolean }) {
           </Button>
 
           {podeEditar && (
-            <Button size="sm" className="h-9 gap-1.5 text-xs" onClick={() => abrirNova()}>
+            // Sem `h-9`: o `size="sm"` já dá 44px no mobile (alvo mínimo de
+            // toque) e volta a 32px no desktop. "Nova tarefa" é o CTA primário
+            // da tela.
+            <Button size="sm" className="gap-1.5 text-xs" onClick={() => abrirNova()}>
               <Plus size={14} aria-hidden />
               {t("Nova tarefa")}
             </Button>

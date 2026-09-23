@@ -37213,6 +37213,99 @@ update public.crm_leads l
    and l.currency = 'BRL'
    and l.value_cents is null;
 
+
+
+
+-- APÊNDICE 0388_etapas_funil_padrao_em_espanhol — idempotente, espelho da migration.
+--
+-- O funil padrão ("Pedidos") era semeado em português e o dono não lê
+-- português. Instalação nova tem de nascer em espanhol; base existente tem
+-- as etapas renomeadas com escopo cirúrgico (pipeline padrão + slug + nome),
+-- no-op onde a tela já corrigiu e sem tocar etapa criada pelo dono.
+-- `create or replace` reassenta a função (a definição que vale é a ÚLTIMA);
+-- os slugs ficam (identificadores internos, não texto de tela).
+
+create or replace function public.fn_seed_default_pipeline_for_org()
+returns trigger
+language plpgsql
+set search_path to 'public', 'pg_temp'
+as $$
+declare
+  v_pipeline_id uuid;
+  v_position numeric := 1000;
+  r record;
+begin
+  insert into public.crm_pipelines (organization_id, name, slug, is_default, position)
+  values (new.id, 'Pedidos', 'pedidos', true, 1000)
+  returning id into v_pipeline_id;
+
+  for r in
+    select * from (values
+      ('Carrito abandonado', 'carrinho_abandonado',  false, false),
+      ('Esperando pago',     'aguardando_pagamento', false, false),
+      ('Pagado',             'pago',                 true,  false),
+      ('En preparación',     'em_separacao',         false, false),
+      ('Enviado',            'enviado',              false, false),
+      ('Entregado',          'entregue',             false, false),
+      ('Posventa',           'pos_venda',            false, false),
+      ('Cancelado',          'cancelado',            false, true)
+    ) as t(stage_name, stage_slug, won, lost)
+  loop
+    insert into public.crm_stages (organization_id, pipeline_id, name, slug, position, is_won, is_lost)
+    values (new.id, v_pipeline_id, r.stage_name, r.stage_slug, v_position, r.won, r.lost);
+    v_position := v_position + 1000;
+  end loop;
+
+  return new;
+end$$;
+
+-- Escopo cirúrgico, de propósito: SÓ a etapa semeada pelo trigger, ainda com o
+-- nome em português. O `slug` é chave técnica imutável (não muda ao renomear),
+-- então `pipeline padrão + slug + nome` identifica exatamente "a etapa do seed
+-- que o dono não tocou" — etapa criada pelo dono com o mesmo nome noutro funil
+-- não é tocada. `uniq_crm_pipelines_org_default` garante um só padrão por org.
+update public.crm_stages s
+set name = 'Carrito abandonado'
+from public.crm_pipelines p
+where s.pipeline_id = p.id and p.is_default
+  and s.slug = 'carrinho_abandonado' and s.name = 'Carrinho abandonado';
+update public.crm_stages s
+set name = 'Esperando pago'
+from public.crm_pipelines p
+where s.pipeline_id = p.id and p.is_default
+  and s.slug = 'aguardando_pagamento' and s.name = 'Aguardando pagamento';
+update public.crm_stages s
+set name = 'Pagado'
+from public.crm_pipelines p
+where s.pipeline_id = p.id and p.is_default
+  and s.slug = 'pago' and s.name = 'Pago';
+update public.crm_stages s
+set name = 'En preparación'
+from public.crm_pipelines p
+where s.pipeline_id = p.id and p.is_default
+  and s.slug = 'em_separacao' and s.name = 'Em separação';
+update public.crm_stages s
+set name = 'Entregado'
+from public.crm_pipelines p
+where s.pipeline_id = p.id and p.is_default
+  and s.slug = 'entregue' and s.name = 'Entregue';
+update public.crm_stages s
+set name = 'Posventa'
+from public.crm_pipelines p
+where s.pipeline_id = p.id and p.is_default
+  and s.slug = 'pos_venda' and s.name = 'Pós-venda';
+
+alter table public.crm_pipelines
+  alter column vocabulary set default
+  jsonb_build_object('lead', 'Cliente', 'lead_plural', 'Clientes', 'deal', 'Pedido',
+                     'deal_plural', 'Pedidos', 'won', 'Pagado', 'lost', 'Cancelado',
+                     'stage', 'Etapa', 'stage_plural', 'Etapas');
+
+update public.crm_pipelines
+  set vocabulary = jsonb_set(vocabulary, '{won}', '"Pagado"')
+  where is_default and vocabulary->>'won' = 'Pago';
+
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria

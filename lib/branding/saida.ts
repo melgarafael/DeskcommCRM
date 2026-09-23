@@ -59,11 +59,12 @@ import { camadaDaInstalacao, camadaDoAmbiente, resolverMarca } from "./resolve";
 export type MarcaDeSaida = {
   readonly nome: string;
   /**
-   * `null` = não há logo configurado, e quem renderiza NÃO desenha nada no
-   * lugar. Ficou sem leitor nenhum desde que este seam nasceu — os dois
-   * consumidores entraram nesta onda: o topo do convite de time
-   * (`lib/email/templates/invite.ts`) e a casca das telas de acesso
-   * (`app/(public)/layout.tsx`).
+   * `null` = ninguém configurou logo E a marca não é a do produto (ex.: um
+   * revendedor que só trocou o nome) — quem renderiza NÃO desenha nada no
+   * lugar. Com a marca padrão do produto, isto aqui é o lockup em
+   * `public/brand/` (ver `resolverMarca`): caminho relativo, servido pelo
+   * próprio app — por isso os templates de e-mail só o desenham quando a URL
+   * é absoluta.
    */
   readonly logoUrl: string | null;
   /** `#hex` sempre — o formato que cliente de e-mail e @react-pdf entendem. */
@@ -77,11 +78,11 @@ export type MarcaDeSaida = {
 /**
  * O accent do tema CLARO do produto — LIDO da régua, nunca redigitado.
  *
- * `REGUA_DO_PRODUTO.claro.indices.accent` é 6 (`regua-do-produto.ts:175`) e o
- * grau 600 da rampa do produto é `#506d48` (`:34`). Escrever `"#506d48"` aqui
- * criaria a QUARTA cópia do mesmo hex no repositório (as outras vivem em
- * `regua-do-produto.ts`, `app/globals.css` e na rampa derivada), e nada as
- * manteria em sincronia — o dia em que o produto mudar de cor, o botão dos
+ * `REGUA_DO_PRODUTO.claro.indices.accent` é 7 (`regua-do-produto.ts`) e o grau 700
+ * da rampa do produto é `#957c2f` (o ouro acessível sobre branco). Escrever
+ * `"#957c2f"` aqui criaria a QUARTA cópia do mesmo hex no repositório (as outras
+ * vivem em `regua-do-produto.ts`, `app/globals.css` e na rampa derivada), e nada
+ * as manteria em sincronia — o dia em que o produto mudar de cor, o botão dos
  * e-mails ficaria com a cor velha e nenhum teste reprovaria.
  *
  * `stop()` e não `[6]`: sob `noUncheckedIndexedAccess`, indexar a tupla com um

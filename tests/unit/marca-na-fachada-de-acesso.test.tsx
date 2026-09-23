@@ -70,6 +70,23 @@ describe("a casca das telas de acesso", () => {
     expect(html).toContain("formulário");
   });
 
+  it("sem marca configurada, a fachada desenha o logo do produto", async () => {
+    // O padrão do produto resolve `logoUrl` para o lockup em `public/brand/`:
+    // a primeira tela que alguém abre já carrega a marca, em vez de texto.
+    const { DEFAULT_APP_NAME } = await import("@/lib/branding");
+    const html = await fachada({
+      nome: DEFAULT_APP_NAME,
+      logoUrl: "/brand/canti-crm-logo-full.png",
+      accent: "#2f6f4e",
+      accentFg: "#ffffff",
+      origens: { nome: "padrao", cor: "padrao" },
+    });
+
+    expect(html).toContain('src="/brand/canti-crm-logo-full.png"');
+    expect(html).toContain(`alt="${DEFAULT_APP_NAME}"`);
+    expect(html).toContain("formulário");
+  });
+
   it("sem logo, nenhuma imagem — e nunca um `src` vazio", async () => {
     const html = await fachada(MARCA);
 

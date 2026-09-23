@@ -67,6 +67,18 @@ describe("moldes de acesso do GoTrue", () => {
     expect(html).not.toContain("<img");
   });
 
+  it("logo com caminho relativo não desenha `<img>` — no e-mail ele seria quebrado", () => {
+    // A marca padrão do produto resolve o logo de `public/brand/` como caminho
+    // relativo (`/brand/...`), que o próprio app serve. Num cliente de e-mail,
+    // relativo não resolve para nada: desenhar seria o ícone de imagem quebrada
+    // no topo do primeiro e-mail que a pessoa recebe do sistema.
+    const html = montarTemplateDeAcesso("confirmation", {
+      ...MARCA,
+      logoUrl: "/brand/canti-crm-logo-full.png",
+    });
+    expect(html).not.toContain("<img");
+  });
+
   it("a rota dos moldes é PÚBLICA — senão o GoTrue recebe a tela de login", () => {
     // Este é o caso mais caro do arquivo. Quem busca é o GoTrue, que não tem
     // sessão nossa: sem entrada em PUBLIC_PATHS o proxy responde 307 para

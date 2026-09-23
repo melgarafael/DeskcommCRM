@@ -1,7 +1,7 @@
 /**
  * Marca da instalação — nome e logo configuráveis pelo `.env`, SEM rebuild.
  *
- * Por que existe: quem instala o DeskcommCRM para clientes (agência, revendedor)
+ * Por que existe: quem instala o Canti CRM para clientes (agência, revendedor)
  * precisa da própria marca na interface. Fazer isso editando o código quebraria o
  * caminho de atualização — `update.sh` puxa a imagem nova e o patch local se perde,
  * que é exatamente a dor nº 1 de quem hospeda o próprio sistema. Configuração em
@@ -16,7 +16,26 @@
  * runtime em vez de lida do bundle.
  */
 
-export const DEFAULT_APP_NAME = "DeskcommCRM";
+export const DEFAULT_APP_NAME = "Canti CRM";
+
+/**
+ * O logo do PRODUTO, servido de `public/` — o que a marca padrão resolve como
+ * `logoUrl` quando ninguém configurou marca própria (ver `resolverMarca` em
+ * `lib/branding/resolve.ts`).
+ *
+ * Caminho RELATIVO de propósito: ele só é consumido dentro do app (fachada de
+ * acesso, barra lateral, ícone da aba), onde o próprio servidor responde. Num
+ * e-mail, relativo é imagem quebrada — e é por isso que os templates de e-mail
+ * só desenham o logo quando a URL é absoluta.
+ */
+export const LOGO_DO_PRODUTO = "/brand/canti-crm-logo-full.png";
+
+/**
+ * O monograma do produto — o mesmo `public/brand/` do lockup, para os cantos
+ * apertados onde o lockup não cabe: barra lateral recolhida e ícone da aba
+ * (`app/icon.tsx`).
+ */
+export const MONOGRAMA_DO_PRODUTO = "/brand/canti-crm-monogram.png";
 
 export type Branding = {
   /** Nome exibido na interface e nos títulos de página. */
@@ -83,17 +102,21 @@ export function resolveBranding(
  * barulhento (o console acusa), e barulhento é o modo de falhar que se conserta.
  */
 /**
- * A marca em vigor é a do PRODUTO — e é só então que o símbolo e o logotipo
- * de `lib/branding/desenho.ts` podem aparecer.
+ * A marca em vigor é a do PRODUTO — e é só então que a arte do produto (o
+ * lockup e o monograma de `public/brand/`, via `LOGO_DO_PRODUTO` e
+ * `MONOGRAMA_DO_PRODUTO`) pode aparecer.
  *
  * Duas condições, e as duas são necessárias: sem logo configurado E com o nome
- * padrão. Quem só trocou o nome (para "Acme CRM") não pode receber um logotipo
- * que soletra outro nome; quem só subiu um logo já tem o dele na tela. Trocar a
- * cor de destaque não conta — a marca do produto continua sendo a que está
- * escrita, só pintada de outro jeito.
+ * padrão. O logo DO PRÓPRIO produto (`LOGO_DO_PRODUTO`) conta como "sem logo
+ * configurado": é a arte padrão, não uma escolha do operador — quem só trocou o
+ * nome (para "Acme CRM") não pode receber um logotipo que soletra outro nome;
+ * quem só subiu um logo já tem o dele na tela. Trocar a cor de destaque não
+ * conta — a marca do produto continua sendo a que está escrita, só pintada de
+ * outro jeito.
  */
 export function marcaEhADoProduto(marca: Pick<Branding, "name" | "logoUrl">): boolean {
-  return marca.logoUrl === null && marca.name === DEFAULT_APP_NAME;
+  const semLogoProprio = marca.logoUrl === null || marca.logoUrl === LOGO_DO_PRODUTO;
+  return semLogoProprio && marca.name === DEFAULT_APP_NAME;
 }
 
 export function branding(): Branding {

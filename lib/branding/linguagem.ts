@@ -113,6 +113,12 @@ export const TRADUCOES: Record<CodigoDaMarca, Traducao> = {
       "Sua cor é um tom neutro (cinza, preto ou branco), e uma cor assim não destaca nada " +
       "na tela. Os botões seguem com a cor padrão do sistema, e a sua fica reservada ao logo.",
   },
+  semente_eh_o_produto: {
+    modo: "frase",
+    tom: "informativo",
+    texto:
+      "Esta é a cor padrão do sistema, então nada muda: os botões e os tons seguem exatamente como já eram.",
+  },
   accent_deslocado: {
     modo: "com_contexto",
     porque:

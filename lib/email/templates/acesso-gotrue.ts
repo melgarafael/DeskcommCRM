@@ -74,8 +74,9 @@ export function montarTemplateDeAcesso(modelo: ModeloDeAcesso, marca: MarcaDeSai
   const t = COPIA[modelo];
   const nome = escapeHtml(marca.nome);
 
-  const logo = marca.logoUrl
-    ? `<p style="margin:0 0 24px"><img src="${escapeHtml(marca.logoUrl)}" alt="${nome}" height="40" style="height:40px;width:auto;max-width:200px;border:0;display:block"></p>`
+  const logoUrl = logoAbsolutoParaEmail(marca.logoUrl);
+  const logo = logoUrl
+    ? `<p style="margin:0 0 24px"><img src="${escapeHtml(logoUrl)}" alt="${nome}" height="40" style="height:40px;width:auto;max-width:200px;border:0;display:block"></p>`
     : "";
 
   // As chaves duplas ficam CRUAS de propósito: o GoTrue as substitui.
@@ -116,4 +117,16 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+/**
+ * O logo que o E-MAIL pode desenhar: só URL absoluta.
+ *
+ * A marca padrão do produto resolve um caminho RELATIVO (`/brand/...`,
+ * servido pelo próprio app). Num cliente de e-mail, relativo é imagem
+ * quebrada no topo do primeiro e-mail que a pessoa recebe — então relativo
+ * não desenha nada. `http(s)` de quem configurou continua saindo como antes.
+ */
+function logoAbsolutoParaEmail(url: string | null): string | null {
+  return url && /^https?:\/\//i.test(url) ? url : null;
 }

@@ -40,6 +40,7 @@ import {
   hexParaLinear,
   hexParaOklch,
   hexParaRgb,
+  K,
   linearParaHex,
   normalizarHex,
   oklchParaHex,
@@ -706,6 +707,7 @@ export function reconciliarSemanticas(
 
 export type CodigoDeMotivo =
   | "marca_acromatica"
+  | "semente_eh_o_produto"
   | "accent_deslocado"
   | "accent_sem_contraste_possivel"
   | "semantica_deslocada"
@@ -770,8 +772,8 @@ function derivarTema(tema: TemaDaRegua, rampa: Rampa): { tokens: TokensDoTema; m
 
   // Deslocar é decisão do sistema sobre a cor de OUTRA pessoa, e ela não pode acontecer
   // calada: um amarelo `#f5c518` não alcança 3:1 contra branco em nenhum universo, o
-  // tema claro pousa no grau 900 e a interface fica verde-oliva. Sem este motivo o
-  // cliente vê a cor mudar e conclui que o produto está quebrado.
+  // tema claro anda até o primeiro grau que passa e a interface muda de cor. Sem este
+  // motivo o cliente vê a cor mudar e conclui que o produto está quebrado.
   if (d !== 0) {
     motivos.push({
       codigo: "accent_deslocado",
@@ -840,11 +842,86 @@ export function derivarMarca(semente: string, regua: Regua): Marca {
   const marca = normalizarHex(semente);
   const { C } = hexParaOklch(marca);
   const acromatica = C < LIMIAR_ACROMATICO;
-  const rampa = acromatica ? regua.rampaDoProduto : rampaDeSemente(marca);
+  // A semente É uma cor do produto (um stop da rampa): não se deriva, usa-se a
+  // rampa do produto. Na era Sage a reconstrução reproduzia a rampa do CSS por
+  // construção (Δ ≤ 2/255); a rampa do ouro é desenhada à mão e a reconstrução
+  // desvia até 27/255 — sem este curto, configurar a cor do próprio produto
+  // mudaria a tela, e "o produto sem marca não pode se mexer" deixaria de valer.
+  // A comparação é por pertencimento à rampa, não por literal: qualquer stop do
+  // produto como semente devolve o produto.
+  const sementeDoProduto = regua.rampaDoProduto.some((h) => normalizarHex(h) === marca);
+  const rampa = acromatica || sementeDoProduto ? regua.rampaDoProduto : rampaDeSemente(marca);
 
-  const claro = derivarTema(regua.claro, rampa);
+  // Âncora do accent no tema claro. Para a rampa DO PRODUTO (marca acromática ou
+  // semente do produto), o papel `accent` do tema — hoje o 700, onde o piso de
+  // contraste do produto mora. Para a rampa de UMA SEMENTE, o grau da semente
+  // (K): a doutrina exige que o hex do cliente SEJA o accent do tema claro, e a
+  // caminhada desloca a partir daí quando o piso exige — com motivo
+  // `accent_deslocado`, nunca calada. Sem isto, o 700 do produto viraria o ponto
+  // de partida da rampa alheia e o hex do cliente sumiria do botão sem nenhum
+  // motivo registrado.
+  //
+  // A âncora move `indices` E os papéis juntos. Os papéis guardam a FORMA como o
+  // `globals.css` escreve os tokens (`--color-accent: var(--color-accent-700)`);
+  // sob uma marca de terceiro o bloco emitido REDEFINE `--color-accent` para o
+  // accent derivado (`rampa[K+d]`), então medir o papel no grau do produto
+  // validaria um stop e a tela pintaria outro — exatamente o defeito que
+  // `branding-pares-pintados.test.ts` vigia. `--color-accent` → K,
+  // `--color-accent-hover` → K+1, e o `-fg` (frente calculada sobre o accent)
+  // acompanha nos dois lados da medição (`sobre` e `contra`). O anel de foco e
+  // o `--ring` NÃO se movem: o `globals.css` os escreve como
+  // `var(--color-accent-700)` e o bloco emitido não redefine essas propriedades
+  // — a tela pinta a rampa emitida no 700, que é o que a régua já mede.
+  //
+  // A semente do produto e a marca acromática usam o tema claro DO PRODUTO, sem
+  // reancoragem: os papéis e os `indices` da régua já descrevem a rampa do
+  // produto (700/800), e a medição tem que mirar o que a tela pinta — que, nestes
+  // casos, é o CSS do produto, byte a byte.
+  const temaClaro =
+    acromatica || sementeDoProduto
+      ? regua.claro
+      : {
+        ...regua.claro,
+        indices: { ...regua.claro.indices, accent: K, hover: K + 1 },
+        papeis: regua.claro.papeis.map((p) => {
+          if (p.token === "--color-accent" && p.fonte.tipo === "grau") {
+            return { ...p, fonte: { ...p.fonte, indice: K } };
+          }
+          if (p.token === "--color-accent-hover" && p.fonte.tipo === "grau") {
+            return { ...p, fonte: { ...p.fonte, indice: K + 1 } };
+          }
+          if (
+            p.token === "--color-accent-fg" &&
+            p.fonte.tipo === "frenteCalculada" &&
+            p.fonte.sobre.tipo === "grau"
+          ) {
+            const sobre = { ...p.fonte.sobre, indice: K };
+            return {
+              ...p,
+              fonte: { ...p.fonte, sobre },
+              contra: (p.contra ?? []).map((c) => (c.tipo === "grau" ? { ...c, indice: K } : c)),
+            };
+          }
+          return p;
+        }),
+      };
+
+  const claro = derivarTema(temaClaro, rampa);
   const escuro = derivarTema(regua.escuro, rampa);
   const motivos: Motivo[] = [...claro.motivos, ...escuro.motivos];
+
+  if (sementeDoProduto) {
+    motivos.unshift({
+      codigo: "semente_eh_o_produto",
+      tema: null,
+      alvo: "--color-accent",
+      // Sem o hex na frase: os `detalhe` dos outros motivos carregam graus e
+      // ΔE, nunca identidade — e a cor do produto já é pública no CSS.
+      detalhe:
+        "a semente é uma cor do produto: a rampa do produto permanece, " +
+        "sem derivação nem deslocamento",
+    });
+  }
 
   if (acromatica) {
     motivos.unshift({
@@ -860,7 +937,7 @@ export function derivarMarca(semente: string, regua: Regua): Marca {
   return {
     marca,
     rampa,
-    origemDaRampa: acromatica ? "produto" : "semente",
+    origemDaRampa: acromatica || sementeDoProduto ? "produto" : "semente",
     claro: claro.tokens,
     escuro: escuro.tokens,
     motivos,

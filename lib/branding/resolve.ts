@@ -25,7 +25,7 @@
  * concluir que o produto está quebrado.
  */
 
-import { resolveBranding, type Branding } from "@/lib/branding";
+import { DEFAULT_APP_NAME, LOGO_DO_PRODUTO, resolveBranding, type Branding } from "@/lib/branding";
 
 import {
   derivarMarca,
@@ -307,7 +307,11 @@ function resolverCor(
  * Junta as camadas, da MAIS específica para a MAIS genérica.
  *
  * O padrão do produto é o fundo implícito da pilha — não é uma camada que se
- * passa, é o que sobra quando ninguém definiu nada.
+ * passa, é o que sobra quando ninguém definiu nada. E o padrão do produto tem
+ * LOGO: sem logo configurado em nenhuma camada e com o nome padrão, a marca
+ * resolve o `LOGO_DO_PRODUTO` (o lockup em `public/brand/`). `origens.logoUrl`
+ * continua `"padrao"` — ninguém configurou nada, e é isso que distingue "o
+ * operador apagou o logo" de "nunca houve logo".
  *
  * Uma cor inválida numa camada de cima NÃO apaga a cor válida de baixo: ela é
  * anotada e a busca continua descendo. Numa instalação de revendedor, uma
@@ -320,6 +324,11 @@ export function resolverMarca(
   const nome = primeiroDefinido(camadas, (c) => c.nome);
   const logo = primeiroDefinido(camadas, (c) => c.logoUrl);
   const base = resolveBranding(nome?.valor, logo?.valor);
+  // Só o padrão do produto ganha o logo padrão: quem configurou nome próprio
+  // ("Acme CRM") não pode receber um lockup que soletra outro nome, e quem
+  // configurou logo já tem o dele.
+  const logoUrl =
+    base.logoUrl ?? (base.name === DEFAULT_APP_NAME ? LOGO_DO_PRODUTO : null);
 
   const motivos: MotivoDaMarca[] = [];
   let cor: CorResolvida | null = null;
@@ -338,6 +347,7 @@ export function resolverMarca(
 
   return {
     ...base,
+    logoUrl,
     cor,
     origens: {
       nome: nome?.origem ?? PADRAO,

@@ -39,7 +39,13 @@ export function buildInviteEmail(opts: InviteEmailOptions): {
   const subject = `${opts.inviterName} convidou você para a ${opts.orgName} no ${marca}`;
 
   /**
-   * O logo de quem convidou, quando há um.
+   * O logo de quem convidou, quando há um — e quando a URL é ABSOLUTA.
+   *
+   * A marca padrão do produto resolve um caminho RELATIVO (`/brand/...`,
+   * servido pelo próprio app). Num cliente de e-mail, relativo é imagem
+   * quebrada — exatamente o estado que o parágrafo abaixo manda evitar —,
+   * então relativo não desenha nada. URL absoluta de quem configurou continua
+   * saindo como antes.
    *
    * `<img>` solto e não background: cliente de e-mail não carrega CSS externo e
    * boa parte ignora `background-image`. Dimensão no ATRIBUTO além do style
@@ -55,8 +61,9 @@ export function buildInviteEmail(opts: InviteEmailOptions): {
    * — o cliente de e-mail desenharia o ícone de imagem quebrada no topo do
    * primeiro e-mail que a pessoa recebe do sistema.
    */
-  const logo = opts.marca.logoUrl
-    ? `<p style="margin:0 0 24px"><img src="${escapeHtml(opts.marca.logoUrl)}" alt="${escapeHtml(marca)}" height="40" style="height:40px;width:auto;max-width:200px;border:0;display:block"></p>`
+  const logoUrl = logoAbsolutoParaEmail(opts.marca.logoUrl);
+  const logo = logoUrl
+    ? `<p style="margin:0 0 24px"><img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(marca)}" height="40" style="height:40px;width:auto;max-width:200px;border:0;display:block"></p>`
     : "";
 
   const html = `<!doctype html>
@@ -105,4 +112,16 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+/**
+ * O logo que o E-MAIL pode desenhar: só URL absoluta.
+ *
+ * A marca padrão do produto resolve um caminho RELATIVO (`/brand/...`,
+ * servido pelo próprio app). Num cliente de e-mail, relativo é imagem
+ * quebrada no topo do primeiro e-mail que a pessoa recebe — então relativo
+ * não desenha nada. `http(s)` de quem configurou continua saindo como antes.
+ */
+function logoAbsolutoParaEmail(url: string | null): string | null {
+  return url && /^https?:\/\//i.test(url) ? url : null;
 }

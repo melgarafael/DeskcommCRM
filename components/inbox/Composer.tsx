@@ -347,11 +347,16 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             disabled={mode === "note" ? isDisabled : respostaBarrada}
             aria-label={t("Mensagem")}
           />
+          {/*
+            Sem `h-9 w-9` no botão de enviar: o `size="icon"` já dá 44px no
+            mobile (`lg:h-9 lg:w-9` no desktop). Enviar é a ação primária do
+            composer e 36px fica abaixo do alvo mínimo de toque.
+          */}
           {text.trim() || mode === "note" ? (
             <Button
               type="button"
               size="icon"
-              className="h-9 w-9 shrink-0"
+              className="shrink-0"
               onClick={handleSubmit}
               disabled={(mode === "note" ? isDisabled : respostaBarrada) || !text.trim()}
               aria-label={t("Enviar")}

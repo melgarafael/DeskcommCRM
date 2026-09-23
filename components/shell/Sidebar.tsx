@@ -124,9 +124,21 @@ export function SidebarContent({
           collapsed ? "justify-center" : "justify-start",
         )}
       >
-        {logo && !collapsed ? (
+        {marcaDoProduto ? (
+          // A arte do produto, SEM a moldura clara: o dourado já é desenhado
+          // para os dois temas, e a moldura é remédio só para o logo enviado
+          // por quem hospeda — o e2e `logo-moldura-no-tema-escuro.spec.ts`
+          // (caso 5) mede a fronteira. Vem ANTES do `logo`: o padrão do produto
+          // também resolve `logoUrl`, e cair no ramo de cima daria moldura a
+          // quem não precisa dela.
+          collapsed ? (
+            <SimboloDoProduto nome={nome} className="h-8 w-8" />
+          ) : (
+            <LogotipoDoProduto nome={nome} className="h-8 w-auto" />
+          )
+        ) : logo && !collapsed ? (
           // A moldura clara vale SÓ para o logo enviado por quem hospeda. A arte
-          // do produto (ramo `marcaDoProduto`, logo abaixo) já é desenhada para os
+          // do produto (ramo `marcaDoProduto`, logo acima) já é desenhada para os
           // dois temas e não precisa dela — pôr a moldura ali seria dar o remédio
           // a quem não tem a doença.
           // Chip claro só no tema escuro: a arte enviada é de quem hospeda, sem
@@ -149,14 +161,6 @@ export function SidebarContent({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={logo} alt={nome} className="h-7 w-auto max-w-[10rem] object-contain" />
           </div>
-        ) : marcaDoProduto ? (
-          // O desenho do produto, inline (ver `components/branding/MarcaDoProduto.tsx`):
-          // logotipo com a barra aberta, só o símbolo com ela recolhida.
-          collapsed ? (
-            <SimboloDoProduto nome={nome} className="h-8 w-8" />
-          ) : (
-            <LogotipoDoProduto nome={nome} className="h-8 w-auto" />
-          )
         ) : (
           <span className={cn("font-semibold tracking-tight", collapsed && "sr-only")}>{nome}</span>
         )}

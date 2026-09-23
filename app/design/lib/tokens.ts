@@ -2,7 +2,7 @@
 // "Soft-tech / calmo" — neutros desaturados (greige/warm-gray), accent não-saturado.
 // 5-Constraint Rule applied: Shape, Color (exact hex), Typography, Motion, Layout.
 
-export type PaletteId = "sage" | "clay" | "mist" | "plum" | "olive";
+export type PaletteId = "sage" | "clay" | "mist" | "plum" | "olive" | "oro";
 export type TypoId = "bricolage-jakarta" | "fraunces-manrope" | "atkinson" | "source-plex";
 export type DensityId = "aerada" | "equilibrada" | "compacta";
 export type ThemeId = "light" | "dark";
@@ -176,6 +176,34 @@ export const PALETTES: Record<PaletteId, PaletteDef> = {
     surfaces: {
       light: { bg: "#faf9f4", surface: "#ffffff", surfaceElevated: "#f3f0e3", text: "#191712", textMuted: "#534e3e", border: "#e3dfcc" },
       dark:  { bg: "#11100d", surface: "#181713", surfaceElevated: "#21201b", text: "#f3f1ea", textMuted: "#807a68", border: "#2c2a24" },
+    },
+  },
+  oro: {
+    id: "oro",
+    name: "Oro",
+    description: "Ouro da marca Canti — âncora #D0B64E. \"Dueño Claro\" no claro, \"Oro Negro\" no escuro.",
+    accent: {
+      50: "#fbf9f1", 100: "#f6f2df", 200: "#f0e6bf", 300: "#e6d699",
+      400: "#dac674", 500: "#D0B64E", 600: "#bc9b37", 700: "#957c2f",
+      800: "#705f29", 900: "#504522", 950: "#332d19",
+    },
+    neutralLight: {
+      50: "#faf9f6", 100: "#f3f1ec", 200: "#e7e3da", 300: "#d2cdbf",
+      400: "#a9a395", 500: "#7d786c", 600: "#5d594f", 700: "#46433b",
+      800: "#2e2c26", 900: "#1c1a16", 950: "#0e0d0a",
+    },
+    neutralDark: {
+      50: "#f5f4ef", 100: "#e6e4dc", 200: "#bbb8ac", 300: "#8e8b7f",
+      400: "#605e54", 500: "#444239", 600: "#33312a", 700: "#272620",
+      800: "#1d1c17", 900: "#161510", 950: "#0c0b08",
+    },
+    states: {
+      light: { success: "#5a8a5f", warning: "#b07a2b", error: "#a94a3c", info: "#4a7a93" },
+      dark:  { success: "#82a077", warning: "#d09455", error: "#c87263", info: "#7da9bf" },
+    },
+    surfaces: {
+      light: { bg: "#ffffff", surface: "#ffffff", surfaceElevated: "#faf8f1", text: "#1c1a16", textMuted: "#5d594f", border: "#e7e3da" },
+      dark:  { bg: "#0A0A0A", surface: "#131210", surfaceElevated: "#1c1b16", text: "#f5f4ef", textMuted: "#8e8b7f", border: "#33312a" },
     },
   },
 };

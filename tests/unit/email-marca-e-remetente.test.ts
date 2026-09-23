@@ -90,6 +90,23 @@ describe("convite de time", () => {
     expect(convite().html).not.toContain("<img");
   });
 
+  it("logo com caminho relativo não desenha `<img>` — no e-mail ele seria quebrado", () => {
+    // A marca padrão do produto resolve o logo de `public/brand/` como caminho
+    // relativo (`/brand/...`), que o próprio app serve. Num cliente de e-mail,
+    // relativo não resolve para nada: desenhar seria o ícone de imagem quebrada
+    // no topo do primeiro e-mail que a pessoa recebe do sistema.
+    const { html } = buildInviteEmail({
+      inviterName: "Ana",
+      orgName: "Clínica Bem Viver",
+      acceptUrl: "https://crm.exemplo.com.br/team/accept-invite/tok",
+      role: "agent",
+      expiresAt: new Date("2026-08-20T12:00:00.000Z"),
+      marca: { ...MARCA, logoUrl: "/brand/canti-crm-logo-full.png" },
+    });
+
+    expect(html).not.toContain("<img");
+  });
+
   it("URL de logo com aspas não escapa do atributo", () => {
     // `platform_branding.logo_url` é `text` livre no banco e a tela de marca
     // ainda não o edita — o valor pode ter vindo de SQL ou de um `.env` colado.

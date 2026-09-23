@@ -221,10 +221,27 @@ describe("precedência POR CAMPO", () => {
 
   it("sem nenhuma camada, tudo é o padrão do produto", () => {
     const marca = resolverMarca([], REGUA);
-    expect(marca.name).toBe("DeskcommCRM");
+    expect(marca.name).toBe("Canti CRM");
     expect(marca.cor).toBeNull();
     expect(marca.origens).toEqual({ nome: "padrao", logoUrl: "padrao", cor: "padrao" });
     expect(marca.motivos).toEqual([]);
+  });
+
+  it("o padrão do produto resolve o logo do produto, sem apagar o do revendedor", () => {
+    // Instalação de fábrica: ninguém configurou nada — a marca que resolve é a
+    // do produto, e ela tem arte própria em `public/brand/`.
+    const padrao = resolverMarca([], REGUA);
+    expect(padrao.logoUrl).toBe("/brand/canti-crm-logo-full.png");
+    expect(padrao.origens.logoUrl).toBe("padrao");
+    // Quem configurou nome próprio não recebe um lockup que soletra outro nome.
+    const renomeada = resolverMarca([{ origem: "env", nome: "Acme CRM" }], REGUA);
+    expect(renomeada.logoUrl).toBeNull();
+    // Quem configurou logo continua com o dele.
+    const comLogo = resolverMarca(
+      [{ origem: "env", logoUrl: "https://cdn.exemplo.test/logo.png" }],
+      REGUA,
+    );
+    expect(comLogo.logoUrl).toBe("https://cdn.exemplo.test/logo.png");
   });
 });
 

@@ -1,12 +1,13 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { ImageResponse } from "next/og";
 
 import { marcaEhADoProduto } from "@/lib/branding";
-import { CORES_DA_MARCA, SIMBOLO } from "@/lib/branding/desenho";
 import { letraDoIcone } from "@/lib/branding/icone";
-import { marcaDaSaida, NEUTROS_DE_SAIDA } from "@/lib/branding/saida";
+import { marcaDaSaida } from "@/lib/branding/saida";
 
 /**
- * O ícone da aba, DESENHADO em runtime com a marca da instalação.
+ * O ícone da aba, com a marca da instalação — resolvido em runtime.
  *
  * ─── O que existia antes: nada ──────────────────────────────────────────────
  *
@@ -35,15 +36,23 @@ import { marcaDaSaida, NEUTROS_DE_SAIDA } from "@/lib/branding/saida";
  * e-mails (`marcaDaSaida`) e a fonte (`Geist-Regular.ttf`) vem embutida no
  * `@vercel/og` que o Next já traz — nenhuma dependência nova, nenhum download.
  *
- * ─── O símbolo do produto, quando a marca é a do produto ────────────────────
+ * ─── O monograma do produto, quando a marca é a do produto ──────────────────
  *
- * Sem nome nem logo configurados (`marcaEhADoProduto`), o ladrilho é o símbolo
- * de `lib/branding/desenho.ts` sobre o creme da régua — o mesmo desenho que a
- * barra lateral e a fachada mostram, para a aba e a tela contarem a mesma
- * marca. O satori aceita `<svg>` inline (medido: 1.135 bytes de PNG válido com
- * o símbolo, em 2026-09-08), então continua sem rede e sem arquivo em `public/`.
- * Quem configurou um nome próprio segue com cor + inicial: o símbolo soletra
- * "D", e um "D" na aba de quem se chama "Acme" seria a nossa marca vazando.
+ * Sem nome nem logo configurados (`marcaEhADoProduto`), o ícone é o monograma
+ * dourado de `public/brand/canti-crm-monogram.png`, servido como está — para a
+ * aba e a tela contarem a mesma marca.
+ *
+ * Arquivo em vez do símbolo vetorial de `lib/branding/desenho.ts` porque aquele
+ * desenho soletra o nome antigo do produto, e redesenhá-lo em vetor seria
+ * recriar à mão o que o arquivo já entrega em pixel. E continua NÃO sendo um
+ * favicon estático em `public/`: um arquivo fixo ali seria servido na
+ * instalação de um revendedor que configurou a marca dele — aqui a condição
+ * `marcaEhADoProduto` já excluiu o revendedor, então quem cai neste ramo é só
+ * o produto padrão.
+ *
+ * Lido do disco em runtime (nunca do bundle): o `Dockerfile` copia `public/`
+ * para a imagem final, e `process.cwd()` no servidor é a raiz onde ela está —
+ * em dev, a raiz do repositório. Nada de rede: zero requisição de saída.
  *
  * ─── `force-dynamic` não é zelo ─────────────────────────────────────────────
  *
@@ -57,11 +66,11 @@ import { marcaDaSaida, NEUTROS_DE_SAIDA } from "@/lib/branding/saida";
  *
  * ─── Custo ──────────────────────────────────────────────────────────────────
  *
- * Um `ImageResponse` por requisição a `/icon`. O `Cache-Control` abaixo é o que
- * mantém isso em uma renderização por minuto por navegador em vez de uma por
- * navegação. A leitura da marca é a MESMA que o `generateMetadata` do layout já
- * faz, memoizada por 30s (`lib/branding/instalacao.ts:209`) — nenhuma consulta
- * a mais no banco.
+ * Uma resposta por requisição a `/icon` (o arquivo do monograma ou um
+ * `ImageResponse`). O `Cache-Control` abaixo é o que mantém isso em uma
+ * renderização por minuto por navegador em vez de uma por navegação. A leitura
+ * da marca é a MESMA que o `generateMetadata` do layout já faz, memoizada por
+ * 30s (`lib/branding/instalacao.ts:209`) — nenhuma consulta a mais no banco.
  *
  * ⚠️ `/icon` precisa estar em `PUBLIC_PATHS` (`lib/auth/public-paths.ts`): o
  * matcher do `proxy.ts:128` só dispensa caminho COM extensão, e `/icon` não tem
@@ -79,31 +88,15 @@ export default async function Icon() {
   const marca = await marcaDaSaida(null);
 
   if (marcaEhADoProduto({ name: marca.nome, logoUrl: marca.logoUrl })) {
-    // 78% da aresta: o D ocupa ~75% do próprio viewBox, então sobra o mesmo
-    // respiro que a letra tem no ramo de baixo.
-    const lado = Math.round(size.width * 0.78);
-    return new ImageResponse(
-      (
-        <div
-          style={{
-            width: "100%",
-            height: "100%",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: NEUTROS_DE_SAIDA.fundo,
-          }}
-        >
-          <svg viewBox={SIMBOLO.viewBox} width={lado} height={lado}>
-            <g fill={CORES_DA_MARCA.claro.simbolo} transform={SIMBOLO.transform}>
-              <path d={SIMBOLO.d} />
-              <rect {...SIMBOLO.modulo} />
-            </g>
-          </svg>
-        </div>
-      ),
-      { ...size, headers: CACHE },
+    // O monograma do produto, em pixel — ver o cabeçalho. `Response` cru em
+    // vez de `ImageResponse`: não há nada para desenhar, e o formato continua
+    // PNG com os mesmos cabeçalhos de cache do ramo de baixo.
+    const monograma = await readFile(
+      path.join(process.cwd(), "public/brand/canti-crm-monogram.png"),
     );
+    return new Response(monograma, {
+      headers: { "content-type": "image/png", ...CACHE },
+    });
   }
 
   const letra = letraDoIcone(marca.nome);

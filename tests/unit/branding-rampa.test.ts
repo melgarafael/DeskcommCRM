@@ -28,7 +28,7 @@ const CSS = fs.readFileSync(path.join(RAIZ, "app/globals.css"), "utf8");
  *
  * Copiar à mão criaria uma segunda fonte da verdade que envelhece em silêncio: quem
  * mexesse na paleta do design system veria este teste verde contra a paleta de ontem, e
- * a catraca deixaria de calibrar contra a régua. Lendo do arquivo, mudar a Sage quebra
+ * a catraca deixaria de calibrar contra a régua. Lendo do arquivo, mudar o ouro quebra
  * este teste — que é exatamente o aviso que se quer.
  */
 /**
@@ -48,7 +48,7 @@ function blocoRoot(css: string): string {
   return css.slice(i, fim);
 }
 
-function stopsSageDoCss(): string[] {
+function stopsDoProdutoDoCss(): string[] {
   const raiz = blocoRoot(CSS);
   return GRAUS.map((g) => {
     const m = new RegExp(`--color-accent-${g}:\\s*(#[0-9a-f]{6})`, "i").exec(raiz);
@@ -103,29 +103,34 @@ describe("conversões de cor", () => {
 });
 
 describe("rampaDeSemente — catraca de calibração contra o design system", () => {
-  const esperados = stopsSageDoCss();
+  const esperados = stopsDoProdutoDoCss();
 
   it("lê 11 stops distintos do globals.css (guarda de vacuidade)", () => {
     // Sem isto, um regex quebrado devolveria lista vazia e a comparação abaixo passaria
     // por não ter o que comparar — instrumento morto tem cara de teste verde.
     expect(esperados).toHaveLength(11);
     expect(new Set(esperados).size).toBe(11);
-    expect(esperados[K]).toBe("#506d48");
+    expect(esperados[K]).toBe("#bc9b37");
   });
 
-  it("reproduz os 11 stops Sage a partir de #506d48 com Δ ≤ 2/255 por canal", () => {
-    const derivada = rampaDeSemente("#506d48");
-    const distancias = esperados.map((esperado, i) => distanciaPorCanal(esperado, derivada[i]!));
-    expect(
-      Math.max(...distancias),
-      `derivada: ${derivada.join(" ")}\nesperada: ${esperados.join(" ")}\nΔ: ${distancias.join(",")}`,
-    ).toBeLessThanOrEqual(2);
+  it("a rampa do produto é artesanal — a reconstrução ancora a semente, não a reproduz", () => {
+    // Na era Sage a rampa saía do algoritmo e este teste calibrava a reconstrução
+    // contra o CSS com Δ ≤ 2/255 por canal. A rampa do ouro é desenhada à mão em
+    // torno da âncora da marca (`#D0B64E` no 500): `rampaDeSemente("#D0B64E")` desvia
+    // até 27/255 dos stops do CSS, então a calibração antiga não se aplica mais.
+    // O contrato que a doutrina precisa — e que este teste fixa — é outro:
+    // a semente do produto ancora no stop K como qualquer semente, e a âncora da
+    // marca está no CSS onde o design a pôs.
+    expect(rampaDeSemente("#D0B64E")[K]).toBe("#d0b64e");
+    expect(esperados[5]).toBe("#d0b64e");
+    // E a forma da escada (constantes que a derivação assume) continua fixada no
+    // describe "forma da escada" abaixo: mudar CURVA_C/ESCADA_L quebra lá.
   });
 
   it("devolve o hex LITERAL no stop da semente", () => {
     // Ida-e-volta por OKLab erra ±1/255. Mostrar `#516d49` no seletor de cor enquanto a
     // UI pinta `#506d48` custa mais confiança do que o pixel vale.
-    for (const semente of ["#506d48", "#f5c518", "#0f172a", "#e11d48"]) {
+    for (const semente of ["#d0b64e", "#506d48", "#f5c518", "#0f172a", "#e11d48"]) {
       expect(rampaDeSemente(semente)[K]).toBe(semente);
     }
   });

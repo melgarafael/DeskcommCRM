@@ -32,7 +32,7 @@ export function AttachMenu({ disabled, onPick, onPickContact }: Props) {
             type="button"
             size="icon"
             variant="ghost"
-            className="h-9 w-9 shrink-0"
+            className="shrink-0"
             aria-label={t("Anexar")}
             disabled={disabled}
           >

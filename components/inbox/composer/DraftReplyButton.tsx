@@ -20,7 +20,7 @@ export function DraftReplyButton({ conversationId, onDraft, disabled }: Props) {
       type="button"
       size="icon"
       variant="ghost"
-      className="h-9 w-9 shrink-0"
+      className="shrink-0"
       aria-label={t("Sugerir resposta")}
       aria-busy={mutation.isPending}
       disabled={disabled || mutation.isPending}

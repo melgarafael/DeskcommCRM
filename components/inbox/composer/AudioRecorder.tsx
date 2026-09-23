@@ -129,7 +129,7 @@ export function AudioRecorder({ conversationId, disabled }: Props) {
       <Button
         type="button"
         size="icon"
-        className="h-9 w-9 shrink-0"
+        className="shrink-0"
         aria-label={t("Gravar áudio")}
         onClick={start}
         disabled={disabled}
@@ -145,7 +145,7 @@ export function AudioRecorder({ conversationId, disabled }: Props) {
         type="button"
         size="icon"
         variant="ghost"
-        className="h-9 w-9 shrink-0 text-destructive"
+        className="shrink-0 text-destructive"
         aria-label={t("Cancelar gravação")}
         onClick={() => {
           discardRef.current = true;
@@ -161,7 +161,7 @@ export function AudioRecorder({ conversationId, disabled }: Props) {
       <Button
         type="button"
         size="icon"
-        className="h-9 w-9 shrink-0"
+        className="shrink-0"
         aria-label={t("Enviar áudio")}
         onClick={stopIfRecording}
       >

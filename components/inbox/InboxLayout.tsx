@@ -463,7 +463,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
             <Button
               variant="ghost"
               size="sm"
-              className="h-9 gap-1 px-2"
+              className="gap-1 px-2"
               onClick={() => handleSelect(null)}
             >
               <CaretLeft size={16} />
@@ -473,7 +473,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
             {selectedConversation && (
               <Sheet open={fichaAberta} onOpenChange={setFichaAberta}>
                 <SheetTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-9 gap-1 px-2 xl:hidden">
+                  <Button variant="ghost" size="sm" className="gap-1 px-2 xl:hidden">
                     <IdentificationCard size={16} />
                     {t("Ficha")}
                   </Button>

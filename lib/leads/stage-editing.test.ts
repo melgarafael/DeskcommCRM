@@ -97,13 +97,13 @@ describe('validarMarcacao', () => {
   });
 
   it('recusa desmarcar o ganho da INSTALAÇÃO FRESCA, onde ninguém tem hint', () => {
-    // fn_seed_default_pipeline_for_org semeia "Pago" com is_won=true e
+    // fn_seed_default_pipeline_for_org semeia "Pagado" com is_won=true e
     // agent_stage_hint=null; o backfill da 0084 só pegou o que já existia. Uma
     // guarda chaveada no hint protegeria só bancos antigos — e o funil de toda
     // org nova ficaria sem etapa de ganho, com /leads/[id]/win em 422.
     const fresco = [
-      { ...etapas[0]!, id: 'p1', name: 'Aguardando pagamento', slug: 'aguardando_pagamento' },
-      { ...etapas[0]!, id: 'p2', name: 'Pago', slug: 'pago', is_won: true, agent_stage_hint: null },
+      { ...etapas[0]!, id: 'p1', name: 'Esperando pago', slug: 'aguardando_pagamento' },
+      { ...etapas[0]!, id: 'p2', name: 'Pagado', slug: 'pago', is_won: true, agent_stage_hint: null },
     ];
     expect(validarMarcacao(fresco, 'p2', { is_won: false }).ok).toBe(false);
   });

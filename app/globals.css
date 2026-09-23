@@ -25,16 +25,17 @@
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 /* ─────────────────────────────────────────────────────────────────────────
-   DeskcommCRM — Design System tokens (Sage palette · density Aerada)
-   Source of truth: /app/design/lib/tokens.ts (PALETTES.sage)
+   DeskcommCRM — Design System tokens (Oro (gold) palette · density Aerada)
+   Source of truth: /app/design/lib/tokens.ts (PALETTES.oro)
    Light + dark drawn separately (NOT inverted).
+   "Dueño Claro" = light, "Oro Negro" = dark.
    ───────────────────────────────────────────────────────────────────────── */
 
 :root {
-  /* Surfaces (light) */
-  --color-bg: #faf9f6;
+  /* Surfaces (light — "Dueño Claro": pure white family) */
+  --color-bg: #ffffff;
   --color-surface: #ffffff;
-  --color-surface-elevated: #f5f3ee;
+  --color-surface-elevated: #faf8f1;
   --color-overlay: rgba(28, 26, 22, 0.42);
 
   /* Text (light) */
@@ -46,22 +47,22 @@
   --color-border: #e7e3da;
   --color-border-strong: #d2cdbf;
 
-  /* Accent — Sage (11 stops) */
-  --color-accent-50:  #f3f6f1;
-  --color-accent-100: #e4ebe0;
-  --color-accent-200: #c8d6c1;
-  --color-accent-300: #a4ba9a;
-  --color-accent-400: #82a077;
-  --color-accent-500: #67885d;
-  --color-accent-600: #506d48;
-  --color-accent-700: #41573b;
-  --color-accent-800: #374731;
-  --color-accent-900: #2f3c2b;
-  --color-accent-950: #171f15;
-  --color-accent: var(--color-accent-600);
-  --color-accent-fg: #ffffff;
+  /* Accent — Oro (gold), 11 stops; 500 is the brand anchor (#D0B64E) */
+  --color-accent-50:  #fbf9f1;
+  --color-accent-100: #f6f2df;
+  --color-accent-200: #f0e6bf;
+  --color-accent-300: #e6d699;
+  --color-accent-400: #dac674;
+  --color-accent-500: #D0B64E;
+  --color-accent-600: #bc9b37;
+  --color-accent-700: #957c2f;
+  --color-accent-800: #705f29;
+  --color-accent-900: #504522;
+  --color-accent-950: #332d19;
+  --color-accent: var(--color-accent-700);
+  --color-accent-fg: #1c1a16;
   --color-accent-soft: var(--color-accent-100);
-  --color-accent-hover: var(--color-accent-700);
+  --color-accent-hover: var(--color-accent-800);
 
   /* Neutrals — greige (11 stops, light) */
   --color-neutral-50:  #faf9f6;
@@ -161,7 +162,7 @@
   --destructive-foreground: #ffffff;
   --border: var(--color-border);
   --input: var(--color-border);
-  --ring: var(--color-accent-500);
+  --ring: var(--color-accent-700);
   --radius: var(--radius-md);
   /* ---- Agenda · cor de pessoa (8 trilhas) ------------------------------
    * Quem é o dono do compromisso é o eixo visual da grade, e a accent NÃO
@@ -241,28 +242,28 @@
    As 11 paradas `--color-accent-NNN` ficam DE FORA de propósito. Elas são
    idênticas nos dois blocos do produto, então omiti-las não muda pixel algum
    aqui; e, na instalação que trocou a cor, a subárvore clara passa a herdar a
-   rampa do `<html>` (a do revendedor) em vez de fixar a Sage. Pelo mesmo
+   rampa do `<html>` (a do revendedor) em vez de fixar a Oro (gold). Pelo mesmo
    motivo os papéis abaixo mantêm a forma `var(--color-accent-NNN)`.
 
-   Buraco conhecido: `--color-accent-fg` é literal `#ffffff` e, numa subárvore
-   clara sob página escura, ficaria preso ao branco mesmo quando a marca exige
-   preto. Fechar isso pede um bloco de escopo claro no CSS injetado
+   Buraco conhecido: `--color-accent-fg` é literal `#1c1a16` e, numa subárvore
+   clara sob página escura, ficaria preso ao escuro mesmo quando a marca exige
+   branco. Fechar isso pede um bloco de escopo claro no CSS injetado
    (lib/branding/css.ts), que só ganha consumidor com a tela de marca.
    ───────────────────────────────────────────────────────────────────────── */
 [data-theme="light"] {
-  --color-bg: #faf9f6;
+  --color-bg: #ffffff;
   --color-surface: #ffffff;
-  --color-surface-elevated: #f5f3ee;
+  --color-surface-elevated: #faf8f1;
   --color-overlay: rgba(28, 26, 22, 0.42);
   --color-text: #1c1a16;
   --color-text-muted: #5d594f;
   --color-text-subtle: #7d786c;
   --color-border: #e7e3da;
   --color-border-strong: #d2cdbf;
-  --color-accent: var(--color-accent-600);
-  --color-accent-fg: #ffffff;
+  --color-accent: var(--color-accent-700);
+  --color-accent-fg: #1c1a16;
   --color-accent-soft: var(--color-accent-100);
-  --color-accent-hover: var(--color-accent-700);
+  --color-accent-hover: var(--color-accent-800);
   --color-neutral-50: #faf9f6;
   --color-neutral-100: #f3f1ec;
   --color-neutral-200: #e7e3da;
@@ -308,7 +309,7 @@
   --destructive-foreground: #ffffff;
   --border: var(--color-border);
   --input: var(--color-border);
-  --ring: var(--color-accent-500);
+  --ring: var(--color-accent-700);
   /* ---- Agenda · cor de pessoa (espelho do :root) -----------------------
    * Espelhado aqui porque o tema escuro sobrescreve estas oito chaves, e
    * `tests/unit/branding-tema-claro-escopavel.test.ts` exige que este bloco
@@ -327,10 +328,10 @@
 }
 
 [data-theme="dark"] {
-  /* Surfaces (dark — drawn) */
-  --color-bg: #161510;
-  --color-surface: #1d1c17;
-  --color-surface-elevated: #272620;
+  /* Surfaces (dark — "Oro Negro": true black family, drawn) */
+  --color-bg: #0A0A0A;
+  --color-surface: #131210;
+  --color-surface-elevated: #1c1b16;
   --color-overlay: rgba(0, 0, 0, 0.55);
 
   /* Text (dark) */
@@ -342,21 +343,21 @@
   --color-border: #33312a;
   --color-border-strong: #444239;
 
-  /* Accent stays same hex stops; default shifts up for dark contrast */
-  --color-accent-50:  #f3f6f1;
-  --color-accent-100: #e4ebe0;
-  --color-accent-200: #c8d6c1;
-  --color-accent-300: #a4ba9a;
-  --color-accent-400: #82a077;
-  --color-accent-500: #67885d;
-  --color-accent-600: #506d48;
-  --color-accent-700: #41573b;
-  --color-accent-800: #374731;
-  --color-accent-900: #2f3c2b;
-  --color-accent-950: #171f15;
+  /* Accent — Oro (gold), same hex stops as light; default shifts up for dark contrast */
+  --color-accent-50:  #fbf9f1;
+  --color-accent-100: #f6f2df;
+  --color-accent-200: #f0e6bf;
+  --color-accent-300: #e6d699;
+  --color-accent-400: #dac674;
+  --color-accent-500: #D0B64E;
+  --color-accent-600: #bc9b37;
+  --color-accent-700: #957c2f;
+  --color-accent-800: #705f29;
+  --color-accent-900: #504522;
+  --color-accent-950: #332d19;
   --color-accent: var(--color-accent-400);
-  --color-accent-fg: #161510;
-  --color-accent-soft: rgba(130, 160, 119, 0.16);
+  --color-accent-fg: #0A0A0A;
+  --color-accent-soft: rgba(218, 198, 116, 0.16);
   --color-accent-hover: var(--color-accent-300);
 
   /* Neutrals — greige (11 stops, dark) */
@@ -463,7 +464,7 @@
   --color-text-muted: var(--color-text-muted);
   --color-text-subtle: var(--color-text-subtle);
 
-  /* Accent — Sage */
+  /* Accent — Oro (gold) */
   --color-accent: var(--color-accent);
   --color-accent-foreground: var(--color-accent-fg);
   --color-accent-soft: var(--color-accent-soft);
@@ -717,13 +718,18 @@
     color: var(--color-accent-950);
   }
   [data-theme="dark"] ::selection {
-    background-color: var(--color-accent-700);
+    /* 800, não 700: o bronze 700 (#957c2f) dá 3,83 contra o 50 — abaixo do piso
+       de texto 4,5. O 800 fecha em 5,93. Medido em branding-contraste.test.ts. */
+    background-color: var(--color-accent-800);
     color: var(--color-accent-50);
   }
 
-  /* Focus ring: Sage 500/400, 2px with offset */
+  /* Focus ring: Oro 700/400, 2px with offset. Os stops são literais de propósito:
+     a régua (`extrairRegua`) só enxerga referência DIRETA a `--color-accent-NNN`
+     (`var(--ring)` aqui apagaria o par do gate em silêncio). Se `--ring` mudar
+     de stop, este também muda. */
   :focus-visible {
-    outline: 2px solid var(--color-accent-500);
+    outline: 2px solid var(--color-accent-700);
     outline-offset: 2px;
     border-radius: var(--radius-sm);
   }

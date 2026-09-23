@@ -275,10 +275,16 @@ describe("allowlist de FORMA de valor", () => {
 
 describe("o que a derivação move e o CSS ainda não emite", () => {
   it("toda semântica deslocada vira um motivo de não-serialização", () => {
-    // O par com rótulo: a derivação DIZ que girou `--color-success`; se o CSS
+    // O par com rótulo: a derivação DIZ que girou `--color-error`; se o CSS
     // não a emite, o log precisa dizer isso também — senão o motivo descreve um
     // movimento que a tela não faz.
-    const cor = corDe("#22c55e");
+    //
+    // A semente é a Sage (`#506d48`), não um verde qualquer: o `#22c55e` que este
+    // teste usava na era Sage hoje folga 0,14 do `--color-success` sob dicromacia
+    // simulada (piso 0,05) e não move mais nada — a colisão antiga era artefato
+    // da caminhada da época, não da cor. A Sage colide de verdade (claro/error,
+    // escuro/warning, escuro/error) e é o controle positivo vivo do mecanismo.
+    const cor = corDe("#506d48");
     const movidas = (cor.derivada?.motivos ?? []).filter(
       (m) => m.codigo === "semantica_deslocada",
     );

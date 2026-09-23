@@ -243,8 +243,8 @@ describe("o que o produto pinta — todo par, toda semente", () => {
   );
 
   it("a instrumentação vê os papéis frágeis — inclusive o de stop fixo por tema", () => {
-    // O anel de foco usa stop FIXO por tema (500 no claro, 400 no escuro,
-    // globals.css:376 e :381) e não passa por token nenhum — é exatamente a
+    // O anel de foco usa stop FIXO por tema (700 no claro, 400 no escuro,
+    // globals.css:731 e :736) e não passa por token nenhum — é exatamente a
     // categoria que a régua alcança e que a emissão deixava para trás. Se ele
     // sumir do conjunto medido, os pares acima ficam verdes sem cobri-lo.
     const pintados = pintadosDaSemente("#506d48");
@@ -278,32 +278,60 @@ describe("o que o produto pinta — todo par, toda semente", () => {
 describe("o bloco emitido não pode contradizer o globals.css", () => {
   it("`--color-accent` É `var(--color-accent-NNN)`, como a folha declara", () => {
     // ESTA é a forma curta do defeito. O `globals.css` declara
-    // `--color-accent: var(--color-accent-600)` (claro) e `var(--color-accent-400)`
+    // `--color-accent: var(--color-accent-700)` (claro) e `var(--color-accent-400)`
     // (escuro). Quando a emissão mandava a rampa CRUA e os papéis DESLOCADOS, o
     // mesmo bloco dizia `--color-accent-400: #545f77` e `--color-accent: #828a9d`
     // — duas verdades, e quem lia a rampa direto (`--ring`, `::selection`,
     // `:focus-visible`, `focus-visible:ring-accent-500` nos componentes) ficava
     // com a de antes da caminhada.
+    //
+    // O grau de onde o accent sai é o que a DERIVAÇÃO escolheu — não o da régua:
+    // para a rampa do produto é o 700/400; para uma semente, o grau da semente
+    // (K) deslocado pela caminhada.
+    //
+    // Subtileza: o bloco emitido desloca a rampa inteira por `d`, mas os RÓTULOS
+    // continuam os originais (`--color-accent-700` passa a guardar a cor que
+    // estava no índice 7+d). O accent sai do índice-âncora, então no bloco ele
+    // é o stop rotulado com o grau da âncora = grau derivado MENOS `d`. Comparar
+    // com o grau derivado direto erra por `d` — foi o que este teste fazia.
     for (const hex of SEMENTES) {
-      const { css } = cssDaMarca(corDe(hex));
+      const cor = corDe(hex);
+      const { css } = cssDaMarca(cor);
       const blocos = lerBlocos(css ?? "");
       for (const { nome, seletor } of TEMAS) {
         const bloco = blocos[seletor] ?? {};
-        const { indices } = REGUA[nome];
+        const tokens = cor.derivada?.[nome];
+        const grauDoAccent =
+          tokens?.grauDoAccent ?? GRAUS[REGUA[nome].indices.accent] ?? 500;
+        const d = tokens?.deslocamento ?? 0;
+        const ancora =
+          GRAUS[Math.max(0, Math.min(10, GRAUS.indexOf(grauDoAccent) - d))] ?? 500;
         const rotulo = `${hex}/${nome}`;
         expect(bloco["--color-accent"], `${rotulo}: --color-accent`).toBe(
-          bloco[`--color-accent-${GRAUS[indices.accent]}`],
+          bloco[`--color-accent-${ancora}`],
         );
+        // O hover é sempre o vizinho do accent na direção de mais contraste com o
+        // fundo: um grau ACIMA no claro (700/800 no produto, K/K+1 na semente),
+        // um grau ABAIXO no escuro (400/300 — no escuro o hover clareia). A
+        // caminhada move a rampa inteira junta, então ele também é um stop da
+        // rampa emitida, no rótulo vizinho ao da âncora.
+        const vizinhoDoHover = nome === "claro" ? 1 : -1;
+        const ancoraDoHover =
+          GRAUS[Math.max(0, Math.min(10, GRAUS.indexOf(ancora) + vizinhoDoHover))] ??
+          500;
         expect(bloco["--color-accent-hover"], `${rotulo}: --color-accent-hover`).toBe(
-          bloco[`--color-accent-${GRAUS[indices.hover]}`],
+          bloco[`--color-accent-${ancoraDoHover}`],
         );
         // `--color-accent-soft` no escuro é translúcido (`rgba(…, 0.16)`): a
         // identidade vale sobre a TINTA, e o índice do soft de lá é nulo — o
-        // token é reancorado no stop do accent (ver `resolverSoft`).
+        // token é reancorado no stop do accent (ver `resolverSoft`). O soft NÃO
+        // acompanha a âncora da semente: no claro ele é o stop 100 da rampa
+        // (deslocado junto), no escuro o stop do accent.
         const tinta = lerCor(bloco["--color-accent-soft"] ?? "#000000").hex;
-        const ancora = GRAUS[indices.soft ?? indices.accent];
+        const indices = REGUA[nome].indices;
+        const ancoraDoSoft = GRAUS[indices.soft ?? indices.accent];
         expect(tinta, `${rotulo}: --color-accent-soft`).toBe(
-          lerCor(bloco[`--color-accent-${ancora}`] ?? "#000000").hex,
+          lerCor(bloco[`--color-accent-${ancoraDoSoft}`] ?? "#000000").hex,
         );
       }
     }
@@ -312,8 +340,8 @@ describe("o bloco emitido não pode contradizer o globals.css", () => {
   it("a caminhada de fato ANDA — e a emissão anda junto", () => {
     // Guarda de vacuidade da sabotagem: se nenhuma semente deslocasse, emitir a
     // rampa crua e emiti-la deslocada dariam o mesmo texto, e os testes acima
-    // seriam verdes contra o defeito. 13 combos (semente × tema) andam — o mesmo
-    // número que `branding-contraste.test.ts` mede na derivação.
+    // seriam verdes contra o defeito. 7 combos (semente × tema) andam nesta
+    // fixture — se esse número zerar, a guarda acima deixa de provar nada.
     let andaram = 0;
     for (const hex of SEMENTES) {
       const cor = corDe(hex);
@@ -332,35 +360,34 @@ describe("o bloco emitido não pode contradizer o globals.css", () => {
         );
       }
     }
-    expect(andaram).toBe(13);
+    expect(andaram).toBe(7);
   });
 });
 
 describe("controle positivo — o produto sem marca não pode se mexer", () => {
-  it("a Sage reproduz, pintada, os números do design system", () => {
-    // `#506d48` é a semente do próprio produto: ela não desloca nada, e os pares
-    // pintados têm que dar o que o `globals.css` sempre deu. Se estes números
-    // mudarem, o conserto vazou para quem não pediu.
-    const cor = corDe("#506d48");
+  it("o ouro reproduz, pintado, os números do design system", () => {
+    // `#D0B64E` é a cor do próprio produto: a derivação usa a rampa do produto
+    // (`origemDaRampa: "produto"`, motivo `semente_eh_o_produto`), ela não
+    // desloca nada, e os pares pintados têm que dar o que o `globals.css`
+    // sempre deu. Se estes números mudarem, o conserto vazou para quem não pediu.
+    const cor = corDe("#D0B64E");
+    expect(cor.derivada?.origemDaRampa).toBe("produto");
     expect(cor.derivada?.claro.deslocamento).toBe(0);
     expect(cor.derivada?.escuro.deslocamento).toBe(0);
+    expect(cor.derivada?.motivos.some((m) => m.codigo === "semente_eh_o_produto")).toBe(true);
 
-    const p = pintadosDaSemente("#506d48");
+    const p = pintadosDaSemente("#D0B64E");
     // Claro: os dois números que `contraste.ts` documenta como medidos à mão.
-    expect(foco(p.claro, "--color-bg")).toBeCloseTo(3.79, 2);
-    expect(foco(p.claro, "--color-surface-elevated")).toBeCloseTo(3.6, 2);
-    // Escuro: 6,30 e 5,22 na rampa DERIVADA da semente; os literais do
-    // `globals.css` (`#82a077`) dão 6,31 e 5,23 — a rampa reproduz a Sage com
-    // Δ ≤ 2/255 por canal, e a diferença de 0,01 é esse arredondamento.
-    expect(foco(p.escuro, "--color-bg")).toBeCloseTo(6.3, 2);
-    expect(foco(p.escuro, "--color-surface-elevated")).toBeCloseTo(5.22, 2);
+    expect(foco(p.claro, "--color-bg")).toBeCloseTo(4.04, 2);
+    expect(foco(p.claro, "--color-surface-elevated")).toBeCloseTo(3.8, 2);
+    // Escuro: o anel pinta o stop 400 do ouro (`#dac674`).
+    expect(foco(p.escuro, "--color-bg")).toBeCloseTo(11.61, 2);
+    expect(foco(p.escuro, "--color-surface-elevated")).toBeCloseTo(10.11, 2);
     // No escuro o anel NÃO fica apertado contra as bases: quem aperta é o
-    // `-soft` COMPOSTO. 4,58 aqui — é este o par que a prova em tela reportou
-    // como "4,58 no escuro", e não `foco × --color-bg` (6,30). Nos literais do
-    // `globals.css` o mesmo par dá 4,59, e `superficiesDoTema` documenta o trio
-    // 4,99 · 4,59 · 4,02.
-    expect(foco(p.escuro, "--color-accent-soft@--color-surface")).toBeCloseTo(4.58, 2);
-    expect(foco(p.escuro, "--color-accent-soft@--color-surface-elevated")).toBeCloseTo(4.03, 2);
+    // `-soft` COMPOSTO — é este o par que a prova em tela reportou como
+    // "4,58 no escuro" na era Sage, e não `foco × --color-bg`.
+    expect(foco(p.escuro, "--color-accent-soft@--color-surface")).toBeCloseTo(7.85, 2);
+    expect(foco(p.escuro, "--color-accent-soft@--color-surface-elevated")).toBeCloseTo(7.1, 2);
   });
 
   it("sem marca configurada nada é injetado, e a tela fica como está", () => {
@@ -375,12 +402,14 @@ describe("a navy #0f172a — o defeito que a prova em tela achou", () => {
     // ANTES (medido no browser, servidor de dev na 3111): claro 10,77 e 10,22;
     // escuro 2,86 e 2,37 — os dois de baixo abaixo do piso 3,0, porque o anel
     // pintava `--color-accent-400: #545f77`, o stop CRU. O tema escuro anda -1,
-    // então o anel agora pinta `#828a9d`, o stop 300 da rampa da marca.
+    // então o anel agora pinta `#828a9d`, o stop 300 da rampa da marca. O tema
+    // claro não anda (d=0): o anel pinta o stop 700 da rampa navy, que é bem
+    // mais escuro que o 700 da era Sage — por isso os números do claro mudaram.
     const p = pintadosDaSemente("#0f172a");
-    expect(foco(p.claro, "--color-bg")).toBeCloseTo(10.77, 2);
-    expect(foco(p.claro, "--color-surface-elevated")).toBeCloseTo(10.22, 2);
-    expect(foco(p.escuro, "--color-bg")).toBeCloseTo(5.28, 2);
-    expect(foco(p.escuro, "--color-surface-elevated")).toBeCloseTo(4.39, 2);
+    expect(foco(p.claro, "--color-bg")).toBeCloseTo(17.57, 2);
+    expect(foco(p.claro, "--color-surface-elevated")).toBeCloseTo(16.53, 2);
+    expect(foco(p.escuro, "--color-bg")).toBeCloseTo(5.72, 2);
+    expect(foco(p.escuro, "--color-surface-elevated")).toBeCloseTo(4.99, 2);
     for (const superficie of ["--color-bg", "--color-surface-elevated"] as const) {
       expect(foco(p.escuro, superficie), superficie).toBeGreaterThanOrEqual(PISOS.componente);
     }

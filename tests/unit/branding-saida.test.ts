@@ -60,7 +60,7 @@ vi.mock("@/lib/branding/instalacao", () => ({
   marcaDaInstalacao: async () => linhaDaInstalacao,
 }));
 
-/** A régua manda: nada de literal. Grau 600 do tema claro do produto. */
+/** A régua manda: nada de literal. Grau 700 do tema claro do produto. */
 const ACCENT_DO_PRODUTO = stop(
   REGUA_DO_PRODUTO.rampaDoProduto,
   REGUA_DO_PRODUTO.claro.indices.accent,
@@ -109,8 +109,8 @@ describe("marcaDaSaida — o piso", () => {
     // Controle positivo do item 2 do cabeçalho: se alguém trocar o índice em
     // `saida.ts` por outro grau, a igualdade abaixo continua valendo pelo lado
     // errado — por isso a asserção seguinte prende o ÍNDICE, que é a decisão.
-    expect(REGUA_DO_PRODUTO.claro.indices.accent).toBe(6);
-    expect(ACCENT_DO_PRODUTO).toBe(REGUA_DO_PRODUTO.rampaDoProduto[6]);
+    expect(REGUA_DO_PRODUTO.claro.indices.accent).toBe(7);
+    expect(ACCENT_DO_PRODUTO).toBe(REGUA_DO_PRODUTO.rampaDoProduto[7]);
   });
 
   it("a frente do accent é CALCULADA, nunca branco fixo", async () => {
@@ -191,7 +191,7 @@ describe("marcaDaSaida — NUNCA LANÇA", () => {
     clienteExplode = true;
 
     const marca = await marcaDaSaida("11111111-1111-4111-8111-111111111111");
-    expect(marca.nome).toBe("DeskcommCRM");
+    expect(marca.nome).toBe("Canti CRM");
     expect(marca.accent).toBe(ACCENT_DO_PRODUTO);
     expect(marca.accentFg).toBe(melhorFrenteSobre(ACCENT_DO_PRODUTO));
   });
@@ -214,7 +214,7 @@ describe("marcaDaSaida — NUNCA LANÇA", () => {
     for (const settings of ["texto", 42, [], { branding: "isto era um objeto" }, null]) {
       respostaDaOrganizacao = { data: { settings }, error: null };
       const marca = await marcaDaSaida("11111111-1111-4111-8111-111111111111");
-      expect(marca.nome).toBe("DeskcommCRM");
+      expect(marca.nome).toBe("Canti CRM");
     }
   });
 
