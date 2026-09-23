@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -164,6 +164,31 @@ describe("Composer — colar imagem", () => {
     fireEvent.paste(campo(), { clipboardData: clipboard({ files: [png()] }) });
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
+describe("Composer — texto digitado durante o envio", () => {
+  beforeEach(() => sendMock.mockClear());
+
+  it("mantém o novo rascunho quando a resposta anterior confirma", () => {
+    renderComposer();
+    fireEvent.change(campo(), { target: { value: "Primeira resposta" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enviar", exact: true }));
+    expect(campo()).toHaveValue("");
+    fireEvent.change(campo(), { target: { value: "Próxima resposta" } });
+    const callbacks = sendMock.mock.calls[0]![1] as { onSuccess: () => void };
+    act(() => callbacks.onSuccess());
+    expect(campo()).toHaveValue("Próxima resposta");
+  });
+
+  it("devolve a resposta com falha sem apagar o novo rascunho", () => {
+    renderComposer();
+    fireEvent.change(campo(), { target: { value: "Primeira resposta" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enviar", exact: true }));
+    fireEvent.change(campo(), { target: { value: "Próxima resposta" } });
+    const callbacks = sendMock.mock.calls[0]![1] as { onError: () => void };
+    act(() => callbacks.onError());
+    expect(campo()).toHaveValue("Primeira resposta\nPróxima resposta");
   });
 });
 

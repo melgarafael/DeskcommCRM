@@ -42,7 +42,7 @@ export function useSendMessage() {
       const queryKey = ["messages", args.conversation_id];
       await qc.cancelQueries({ queryKey });
 
-      const tempId = `temp-${Date.now()}`;
+      const tempId = `temp-${crypto.randomUUID()}`;
       const tempMsg: Message = {
         id: tempId,
         organization_id: "",
@@ -80,11 +80,12 @@ export function useSendMessage() {
         if (!old) return old;
         const pages = [...old.pages];
         if (pages.length > 0) {
-          const lastIdx = pages.length - 1;
-          const lastPage = pages[lastIdx]!;
-          pages[lastIdx] = {
-            ...lastPage,
-            data: [...lastPage.data, tempMsg],
+          // A primeira página contém as mensagens mais recentes. As páginas
+          // seguintes são carregadas para trás no histórico.
+          const newest = pages[0]!;
+          pages[0] = {
+            ...newest,
+            data: [...newest.data, tempMsg],
           };
         }
         return { ...old, pages };
@@ -92,8 +93,35 @@ export function useSendMessage() {
 
       return { tempId };
     },
-    onError: (err, args) => {
-      qc.invalidateQueries({ queryKey: ["messages", args.conversation_id] });
+    onSuccess: (result, args, context) => {
+      const real = result.data;
+      const queryKey = ["messages", args.conversation_id];
+      qc.setQueryData<InfiniteData<MessagesPage>>(queryKey, (old) => {
+        if (!old || old.pages.length === 0) return old;
+        // O Realtime pode ter buscado a mensagem real antes da resposta do
+        // POST. Remover ambas as cópias antes de inseri-la evita duplicação.
+        const pages = old.pages.map((page) => ({
+          ...page,
+          data: page.data.filter((m) => m.id !== context?.tempId && m.id !== real.id),
+        }));
+        pages[0] = { ...pages[0]!, data: [...pages[0]!.data, real] };
+        return { ...old, pages };
+      });
+    },
+    onError: (err, args, context) => {
+      if (context?.tempId) {
+        qc.setQueryData<InfiniteData<MessagesPage>>(["messages", args.conversation_id], (old) =>
+          old
+            ? {
+                ...old,
+                pages: old.pages.map((page) => ({
+                  ...page,
+                  data: page.data.filter((m) => m.id !== context.tempId),
+                })),
+              }
+            : old,
+        );
+      }
       showApiError(err);
     },
     onSettled: (_data, _err, args) => {

@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
+import { audit } from "@/lib/audit";
 import { resolveAuthDual } from "@/lib/api/auth-dual";
 import { ApiError } from "@/lib/api/types";
 import { fail, ok } from "@/lib/api/wrappers";
@@ -93,6 +94,35 @@ export async function POST(req: NextRequest): Promise<Response> {
       },
       input as SendMessageInput,
     );
+    // Uma resposta humana pelo inbox assume uma conversa livre. A RPC faz o
+    // claim condicional e registra a troca de dono na mesma transação; se outro
+    // atendente chegou primeiro, não tomamos a conversa dele. O envio já pode
+    // ter sido aceito pelo canal, portanto falha do claim nunca vira erro de
+    // envio (o operador poderia reenviar e duplicar a mensagem).
+    if (authz.via === "session" && actor.type === "user" && message.status !== "failed") {
+      try {
+        const { data: claimed, error: claimError } = await supabase.rpc("fn_conversation_assign", {
+          p_organization_id: organizationId,
+          p_conversation_id: message.conversation_id,
+          p_to_user_id: actor.id,
+          p_reason: "claim",
+          p_enforce_expected: true,
+        });
+        if (claimError) throw claimError;
+        if (claimed?.[0]) {
+          await audit({
+            action: "conversation.claimed",
+            actorUserId: actor.id,
+            organizationId,
+            resourceType: "conversation",
+            resourceId: message.conversation_id,
+            requestId,
+          });
+        }
+      } catch (claimError) {
+        console.error("[messages.send] claim after reply failed", claimError);
+      }
+    }
     if (ritmo) await registrarEnvioPorToken(ritmo, organizationId, segurado, message.status);
     return ok(message, { status: 201, requestId });
   } catch (err) {
@@ -102,7 +132,10 @@ export async function POST(req: NextRequest): Promise<Response> {
       return fail(err.code, err.message, err.status, {
         requestId,
         ...(err.status === 429 && retryAfter
-          ? { details: err.details as Record<string, unknown>, headers: { "Retry-After": String(retryAfter) } }
+          ? {
+              details: err.details as Record<string, unknown>,
+              headers: { "Retry-After": String(retryAfter) },
+            }
           : {}),
       });
     }
