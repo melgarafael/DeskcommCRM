@@ -212,6 +212,29 @@ describe("espanhol — a palavra que a plantilla pede", () => {
   }
 });
 
+const INGLES_PEDE_PARA_SAIR = ["exit", "EXIT", "Exit", "cancel", "quit", "end"];
+
+const INGLES_NAO_PEDE = [
+  "I want to quit smoking",
+  "cancel my appointment tomorrow",
+  "when does the sale end?",
+  "the exit interview is scheduled",
+];
+
+describe("inglês — a palavra que a interface promete", () => {
+  for (const texto of INGLES_PEDE_PARA_SAIR) {
+    it(`bloqueia: ${texto}`, () => {
+      expect(ehPedidoDeOptOut(texto)).toBe(true);
+    });
+  }
+
+  for (const texto of INGLES_NAO_PEDE) {
+    it(`NÃO bloqueia: ${texto}`, () => {
+      expect(ehPedidoDeOptOut(texto)).toBe(false);
+    });
+  }
+});
+
 /**
  * O lado negativo do corpus verificava só o BLOQUEIO, e não a ESCALADA.
  *

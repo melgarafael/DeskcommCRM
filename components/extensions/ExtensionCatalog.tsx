@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import { useT } from "@/hooks/i18n/useT";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
+import type { Idioma } from "@/lib/i18n/idiomas";
 import { portasLegiveis } from "@/lib/extensions/portas-legiveis";
 import { localize, type CatalogEntry, type ExtensionManifest } from "@/lib/extensions/manifest";
 import { compararVersoes } from "@/lib/extensions/versao";
@@ -71,7 +72,7 @@ export function matchesExtensionFilter(
   identity: string[],
   query: string,
   category: CategoryFilter,
-  locale: "pt-BR" | "es",
+  locale: Idioma,
 ): boolean {
   if (category !== "all" && display.category !== category) return false;
   const needle = normalizedSearch(query.trim());

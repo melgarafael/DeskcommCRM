@@ -26,10 +26,11 @@ export interface FaqItem {
 
 const DEFAULT_LOCALE = "pt-BR";
 
-/** Regex matching both `## Pergunta:` and `## P:` (case-insensitive). */
-const QUESTION_RE = /^##\s+(?:pergunta|p)\s*:/i;
-/** Regex matching both `## Resposta:` and `## R:` (case-insensitive). */
-const ANSWER_RE = /^##\s+(?:resposta|r)\s*:/i;
+/** Regex matching `## Pergunta:` / `## Pregunta:` / `## Question:` (and `## P:` / `## Q:`), case-insensitive.
+ *  Trilingual on purpose: the UI teaches each language its own markers, so the parser must accept all three. */
+const QUESTION_RE = /^##\s+(?:pergunta|pregunta|question|p|q)\s*:/i;
+/** Regex matching `## Resposta:` / `## Respuesta:` / `## Answer:` (and `## R:` / `## A:`), case-insensitive. */
+const ANSWER_RE = /^##\s+(?:resposta|respuesta|answer|r|a)\s*:/i;
 
 interface Frontmatter {
   locale: string;

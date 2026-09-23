@@ -103,6 +103,18 @@ export const PALAVRAS_DE_OPT_OUT: ReadonlySet<string> = new Set([
   "salir",
   "desuscribir",
   "desuscribirme",
+  // ── inglês ───────────────────────────────────────────────────────────────
+  //
+  // A interface em inglês promete "reply STOP, EXIT…" — o matcher precisa
+  // honrar a promessa. "stop" e "unsubscribe" já estavam aqui desde sempre;
+  // "exit", "cancel", "quit" e "end" faltavam. Vale a mesma regra de todo o
+  // resto: só a palavra SOZINHA (mensagem inteira = a palavra). "I want to
+  // quit smoking" tem cinco palavras: não bloqueia — a mesma proteção que
+  // faz "tem como parar a dor?" não bloquear paciente de clínica.
+  "exit",
+  "cancel",
+  "quit",
+  "end",
 ]);
 
 /**
