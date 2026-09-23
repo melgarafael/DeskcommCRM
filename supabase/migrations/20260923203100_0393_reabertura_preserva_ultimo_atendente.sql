@@ -1,4 +1,4 @@
--- 0392 — Uma nova mensagem reabre o atendimento com o último atendente.
+-- 0393 — Uma nova mensagem reabre o atendimento com o último atendente.
 -- Só conserva um dono humano que ainda é membro ativo agent+ da organização.
 -- A revisão de serviço e a nova demanda continuam novas: trabalho do episódio
 -- encerrado não ganha autoridade sobre o episódio reaberto.

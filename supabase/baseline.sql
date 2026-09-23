@@ -36591,8 +36591,8 @@ update public.lead_checkpoints l set
         or l.next_action is not null
         or l.declaracao is not null);
 
--- ---- reabertura com o ultimo atendente (migration 0392) ----
--- 0392 — Uma nova mensagem reabre o atendimento com o último atendente.
+-- ---- reabertura com o ultimo atendente (migration 0393) ----
+-- 0393 — Uma nova mensagem reabre o atendimento com o último atendente.
 -- Só conserva um dono humano que ainda é membro ativo agent+ da organização.
 -- A revisão de serviço e a nova demanda continuam novas: trabalho do episódio
 -- encerrado não ganha autoridade sobre o episódio reaberto.
