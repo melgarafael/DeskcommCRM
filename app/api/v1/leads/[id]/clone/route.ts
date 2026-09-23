@@ -22,6 +22,7 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { createLeadHandler } from "@/app/api/v1/leads/_handler";
+import { listPipelinesHandler } from "@/app/api/v1/pipelines/_handler";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
@@ -49,6 +50,53 @@ import { cloneLeadSchema, validateRequest } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * GET /api/v1/leads/[id]/clone — para ONDE este negócio pode ir.
+ *
+ * Exceção deliberada e MÍNIMA à matriz spec 13 §4 (pipelines read = manager+,
+ * `GET /api/v1/pipelines`): quem vai clicar em "Levar para outro funil" precisa
+ * escolher o destino, e `pipeline.move_card` (a MESMA permissão que já autoriza
+ * o POST abaixo) já é `agent`+ — negar a leitura aqui só empurraria o mesmo dado
+ * por um caminho sem gate nenhum. Payload mínimo: `id` e `name`, nunca
+ * `settings`/`description` (isso é configuração, fica atrás de `manager` na rota
+ * de gestão). O funil ATUAL do lead sai da lista — não é destino válido de troca
+ * (a mesma regra de `recusaTrocaDeFunil`, medida aqui em vez de deixar a tela
+ * descobrir só ao tentar).
+ */
+export async function GET(
+  _req: NextRequest,
+  ctx: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  const requestId = randomUUID();
+  const { id: leadId } = await ctx.params;
+
+  const supabase = await createClient();
+  const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
+  if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+
+  const { data: origem, error: selErr } = await supabase
+    .from("crm_leads")
+    .select("id, pipeline_id")
+    .eq("id", leadId)
+    .eq("organization_id", authz.org.orgId)
+    .maybeSingle();
+  if (selErr) return fail("internal_error", selErr.message, 500, { requestId });
+  if (!origem) return fail("not_found", t("Lead não encontrado."), 404, { requestId });
+
+  const { pipelines } = await listPipelinesHandler(supabase, {
+    organization_id: authz.org.orgId,
+    actor: { type: "user", id: authz.user.id },
+    requestId,
+  });
+
+  const destinos = pipelines
+    .filter((p) => p.id !== (origem as { pipeline_id: string }).pipeline_id)
+    .map((p) => ({ id: p.id, name: p.name }));
+
+  return ok({ pipelines: destinos }, { requestId });
+}
 
 export async function POST(
   req: NextRequest,

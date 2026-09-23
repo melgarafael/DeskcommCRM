@@ -35,6 +35,9 @@ vi.mock("@/hooks/kanban/useUpdateLead", () => ({
 vi.mock("@/hooks/inbox/useAssignableMembers", () => ({ useAssignableMembers: () => ({ data: [] }) }));
 vi.mock("@/hooks/kanban/useAssignableAgents", () => ({ useAssignableAgents: () => ({ data: [] }) }));
 vi.mock("@/components/kanban/LoseLeadDialog", () => ({ LoseLeadDialog: () => null }));
+vi.mock("@/components/kanban/MoveToOtherPipelineDialog", () => ({
+  MoveToOtherPipelineDialog: () => null,
+}));
 vi.mock("@/components/kanban/EditLeadDialog", () => ({ EditLeadDialog: () => null }));
 
 const LEAD = {
@@ -176,6 +179,26 @@ describe("menu do card — Excluir", () => {
     await user.click(screen.getByRole("button", { name: "Ações do lead" }));
     await screen.findByRole("menuitem", { name: "Editar" });
     expect(screen.queryByRole("menuitem", { name: "Excluir" })).toBeNull();
+  });
+
+  it("sem permissão de mexer no funil, 'Levar para outro funil' também some", async () => {
+    estado.podeMover = false;
+    const user = userEvent.setup();
+    renderMenu();
+
+    await user.click(screen.getByRole("button", { name: "Ações do lead" }));
+    await screen.findByRole("menuitem", { name: "Editar" });
+    expect(screen.queryByRole("menuitem", { name: "Levar para outro funil" })).toBeNull();
+  });
+
+  it("com permissão, 'Levar para outro funil' aparece no menu — mesmo gate do Excluir", async () => {
+    const user = userEvent.setup();
+    renderMenu();
+
+    await user.click(screen.getByRole("button", { name: "Ações do lead" }));
+    expect(
+      await screen.findByRole("menuitem", { name: "Levar para outro funil" }),
+    ).toBeTruthy();
   });
 
   it("o botão do menu não depende de hover: no toque ele fica visível", () => {

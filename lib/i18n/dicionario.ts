@@ -9153,6 +9153,12 @@ export const DICIONARIO: Traducoes = {
   // novo e as duas razões que não dependem do nome do funil.
   "Veio de outro funil": { es: "Vino de otro embudo" },
   "Levado para outro funil": { es: "Movido a otro embudo" },
+  // A TELA que faltava para a troca de funil — menu do card e o diálogo.
+  "Levar para outro funil": { es: "Llevar a otro embudo" },
+  "Escolha o funil de destino": { es: "Elige el embudo de destino" },
+  'O negócio é recriado no funil escolhido e este encerra como perdido, com o motivo "Levado para outro funil" — o histórico dos dois lados fica registrado na linha do tempo.': {
+    es: 'El negocio se recrea en el embudo elegido y este se cierra como perdido, con el motivo "Movido a otro embudo" — el historial de los dos lados queda registrado en la línea de tiempo.',
+  },
   // As recusas da troca de funil (lib/leads/clonar-para-funil.ts e a rota).
   "O negócio já está neste funil. Para trocar de etapa use /api/v1/leads/[id]/move.": {
     es: "El negocio ya está en este embudo. Para cambiar de etapa, usa /api/v1/leads/[id]/move.",

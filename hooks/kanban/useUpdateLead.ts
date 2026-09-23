@@ -84,6 +84,44 @@ export function useLoseLead(pipelineId: string) {
   });
 }
 
+interface MoveToPipelineArgs {
+  leadId: string;
+  targetPipelineId: string;
+}
+
+/**
+ * Levar o negócio para OUTRO funil — `POST /api/v1/leads/[id]/clone`.
+ *
+ * A origem (ESTE quadro) fecha como perdida com o motivo canônico
+ * `moved_to_another_pipeline` (o servidor grava sozinho quando nenhum motivo é
+ * enviado — `lib/leads/motivo-da-perda.ts`); é `res.data.origem`, não
+ * `res.data.lead` (o clone novo, que vive no funil de DESTINO e não pertence a
+ * este cache), que volta para o quadro atual — mesmo padrão de
+ * `gravaLeadNoQuadro` que `useLoseLead` já usa, então o card sai visualmente
+ * para a etapa de perda deste funil, com o motivo na linha do tempo.
+ */
+export function useMoveLeadToPipeline(pipelineId: string) {
+  const qc = useQueryClient();
+  const queryKey = ["board", pipelineId] as const;
+  return useMutation({
+    mutationFn: async ({ leadId, targetPipelineId }: MoveToPipelineArgs) => {
+      marcarEcoLocal(leadId);
+      return apiClient.post<{ data: { lead: Lead; origem: Lead } }>(
+        `/api/v1/leads/${leadId}/clone`,
+        { pipeline_id: targetPipelineId },
+      );
+    },
+    onSuccess: (res, { leadId }) => {
+      gravaLeadNoQuadro(qc, queryKey, leadId, res?.data?.origem);
+    },
+    onError: showApiError,
+    onSettled: (_data, _err, { leadId }) => {
+      liberarEcoLocal(leadId);
+      qc.invalidateQueries({ queryKey });
+    },
+  });
+}
+
 interface EditArgs {
   leadId: string;
   patch: UpdateLeadInput;
