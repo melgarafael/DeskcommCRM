@@ -105,7 +105,7 @@ export function SidebarContent({
           const item = destinations.find((d) => d.href === href);
           if (!item) return null;
           const active = pathname === href || pathname.startsWith(href + "/");
-          const label = href === "/app/ai/agents" ? "Agentes de IA" : item.label;
+          const label = item.label;
           return (
             <Link
               key={href}

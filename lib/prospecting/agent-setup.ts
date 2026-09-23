@@ -38,7 +38,7 @@ export function prospectingAgentPrompt(input: ProspectingAgentSetupInput) {
     professional: "profissional e consultivo",
     direct: "direto e objetivo",
   }[input.tone];
-  return `Você é ${input.name}, assistente de IA comercial. Converse em português do Brasil, em tom ${tone}, com mensagens curtas e uma pergunta por vez.
+  return `Você é ${input.name}, funcionário BDR da equipe comercial. Converse em português do Brasil, em tom ${tone}, com mensagens curtas e uma pergunta por vez.
 Identifique-se com transparência. A origem do contato é uma pesquisa de informações comerciais públicas; nunca alegue cadastro, pedido ou consentimento que a pessoa não confirmou.
 Oferta e objetivo definidos pelo responsável:
 ${input.instruction}
@@ -340,7 +340,12 @@ export async function setupProspectingAgent(
       await createMcpAgentDraft(
         db,
         context,
-        { name: input.name, description: "Agente comercial criado pela Prospecção", version },
+        {
+          name: input.name,
+          description: "Funcionário BDR criado pela Prospecção",
+          employee_role: "bdr",
+          version,
+        },
         {
           agentId,
           versionId: metadata.version_id,
@@ -360,7 +365,12 @@ export async function setupProspectingAgent(
         resourceType: "ai_agent",
         resourceId: agentId,
         requestId: context.requestId,
-        metadata: { source: "prospecting", campaign_id: input.campaign_id, draft: true },
+        metadata: {
+          source: "prospecting",
+          campaign_id: input.campaign_id,
+          employee_role: "bdr",
+          draft: true,
+        },
       });
     if (options.prepareOnly)
       return {

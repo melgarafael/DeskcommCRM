@@ -31,11 +31,11 @@ export function JourneyGuide() {
         </Link>
         <span aria-hidden>/</span>
         {pathname === destination.href ? (
-          <span aria-current="page">{t(destination.href === "/app/ai/agents" ? "Agentes de IA" : destination.label)}</span>
+          <span aria-current="page">{t(destination.label)}</span>
         ) : (
           <>
             <Link href={destination.href} className="rounded-md px-1 py-2 hover:text-foreground">
-              {t(destination.href === "/app/ai/agents" ? "Agentes de IA" : destination.label)}
+              {t(destination.label)}
             </Link>
             <span aria-hidden>/</span>
             <span>{t(pathname.endsWith("/new") ? "Criar" : "Detalhes")}</span>
@@ -64,7 +64,7 @@ export function JourneyGuide() {
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs">
                     {i + 1}
                   </span>
-                  {t(step.href === "/app/ai/agents" ? "Agentes de IA" : step.label)}
+                  {t(step.label)}
                   <span className="ml-auto" aria-hidden>
                     ↗
                   </span>

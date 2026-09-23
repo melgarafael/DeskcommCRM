@@ -11354,6 +11354,40 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível concluir": { es: "No se pudo completar" },
   "Resultado precisa de conferência": { es: "El resultado necesita revisión" },
 
+  "BDR recomendado": { es: "BDR recomendado" },
+  "Busca ativa": { es: "Prospección activa" },
+  "Um funcionário acompanha cada campanha": {
+    es: "Un empleado acompaña cada campaña",
+  },
+  "Responsável atual": { es: "Responsable actual" },
+  "Defina um BDR na etapa 2": { es: "Define un BDR en el paso 2" },
+  "Gerenciar Funcionários": { es: "Gestionar empleados" },
+  "2. Definir o funcionário": { es: "2. Definir el empleado" },
+  "Criar BDR conversando": { es: "Crear BDR conversando" },
+  "Escolher BDR ou SDR existente": { es: "Elegir un BDR o SDR existente" },
+  "Funcionário selecionado": { es: "Empleado seleccionado" },
+  "Funcionário responsável": { es: "Empleado responsable" },
+  "Escolha um BDR ou SDR publicado": { es: "Elige un BDR o SDR publicado" },
+  "Configurações avançadas do funcionário": { es: "Configuración avanzada del empleado" },
+  "BDR publicado e selecionado.": { es: "BDR publicado y seleccionado." },
+  "BDR pronto. Escolha o ritmo abaixo e inicie quando estiver preparado.": {
+    es: "BDR listo. Elige el ritmo e inicia cuando estés preparado.",
+  },
+  "Da busca ao Inbox: encontre empresas, delegue a abordagem e acompanhe quem avança no funil.": {
+    es: "De la búsqueda al Inbox: encuentra empresas, delega el contacto y acompaña quién avanza en el embudo.",
+  },
+  "O BDR encontra e inicia conversas com novas empresas. Use um SDR quando a operação for receber e qualificar quem já demonstrou interesse.":
+    {
+      es: "El BDR encuentra e inicia conversaciones con nuevas empresas. Usa un SDR para recibir y calificar a quienes ya mostraron interés.",
+    },
+  "O funcionário escolhido abre a conversa, acompanha as respostas e move o lead no funil. As proteções do canal continuam valendo.":
+    {
+      es: "El empleado elegido abre la conversación, acompaña las respuestas y mueve el lead en el embudo. Las protecciones del canal siguen activas.",
+    },
+  "BDR é o padrão para busca ativa. SDR é indicado para leads que já chegaram até você.": {
+    es: "BDR es el estándar para prospección activa. SDR es indicado para leads que ya llegaron hasta ti.",
+  },
+
   Filtros: { es: "Filtros" },
   "Onde estão as oportunidades?": { es: "¿Dónde están las oportunidades?" },
 };

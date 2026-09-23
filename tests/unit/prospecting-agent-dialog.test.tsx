@@ -80,7 +80,7 @@ function fixture() {
         socials: [],
       },
     })),
-    agents: [{ id: AGENT, name: "Agente existente" }],
+    agents: [{ id: AGENT, name: "Agente existente", employee_role: "bdr" }],
     channels: [{ id: CHANNEL, display_name: "Comercial", phone_number: null, status: "WORKING" }],
     stages: [
       { id: STAGE, name: "Novos", pipeline_id: PIPELINE, pipeline_name: "Comercial" },
@@ -271,7 +271,7 @@ describe("conversa principal para configurar o agente", () => {
     expect(publish).toBeDisabled();
     fireEvent.click(screen.getByRole("checkbox", { name: /Manter a continuidade/ }));
     fireEvent.click(publish);
-    await screen.findByRole("region", { name: "Agente selecionado" });
+    await screen.findByRole("region", { name: "Funcionário selecionado" });
     expect(mutationCalls()[0]![1]).toMatchObject({
       campaign_id: CAMPAIGN,
       enable_router_continuity: true,
@@ -418,7 +418,7 @@ describe("conversa principal para configurar o agente", () => {
     view.unmount();
     openPage();
     fireEvent.click(await screen.findByRole("button", { name: "Recuperar criação do agente" }));
-    await screen.findByRole("region", { name: "Agente selecionado" });
+    await screen.findByRole("region", { name: "Funcionário selecionado" });
     expect(mutationCalls()[1]![1]).toEqual(attempt);
   });
 
@@ -452,7 +452,7 @@ describe("conversa principal para configurar o agente", () => {
     expect(screen.getByRole("button", { name: "Publicar e usar agente" })).toBeDisabled();
     fireEvent.click(screen.getByRole("checkbox", { name: /Manter a continuidade/ }));
     fireEvent.click(screen.getByRole("button", { name: "Publicar e usar agente" }));
-    await screen.findByRole("region", { name: "Agente selecionado" });
+    await screen.findByRole("region", { name: "Funcionário selecionado" });
     expect(mutationCalls()[0]![1]).toMatchObject({
       request_id: attempt!.request_id,
       enable_router_continuity: true,
@@ -481,7 +481,7 @@ describe("conversa principal para configurar o agente", () => {
     );
     await say("Convide para uma conversa inicial.");
     fireEvent.click(await ready());
-    await screen.findByRole("region", { name: "Agente selecionado" });
+    await screen.findByRole("region", { name: "Funcionário selecionado" });
     expect(mutationCalls()[0]![1].request_id).not.toEqual(mutationCalls()[1]![1].request_id);
   });
 
@@ -584,8 +584,10 @@ describe("conversa principal para configurar o agente", () => {
       },
     };
     openPage();
-    await screen.findByRole("region", { name: "Agente selecionado" });
-    expect(screen.getByRole("link", { name: "Configurações avançadas do agente" })).toHaveAttribute(
+    await screen.findByRole("region", { name: "Funcionário selecionado" });
+    expect(
+      screen.getByRole("link", { name: "Configurações avançadas do funcionário" }),
+    ).toHaveAttribute(
       "href",
       `/app/ai/agents/${NEW_AGENT}`,
     );
@@ -615,20 +617,16 @@ describe("alternativa manual e campanha existente", () => {
   it("mantém controles manuais como alternativa e preserva dados por campanha", async () => {
     openPage();
     await builder();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Usar agente existente / configurar manualmente" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Escolher BDR ou SDR existente" }));
     const offer = () => screen.getByLabelText("O que a IA deve oferecer e como iniciar");
     fireEvent.change(offer(), { target: { value: "Oferecer avaliação para clínicas" } });
     fireEvent.click(screen.getByRole("button", { name: /Escritórios de contabilidade/ }));
     await builder();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Usar agente existente / configurar manualmente" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Escolher BDR ou SDR existente" }));
     expect(offer()).toHaveValue("");
     fireEvent.click(screen.getByRole("button", { name: /Clínicas de estética/ }));
     expect(offer()).toHaveValue("Oferecer avaliação para clínicas");
-    fireEvent.click(screen.getByRole("button", { name: "Configurar por conversa" }));
+    fireEvent.click(screen.getByRole("button", { name: "Criar BDR conversando" }));
     await say("Complete o agente com essa oferta.");
     await ready();
     expect(chatReply.mock.calls[0]![0].draft.instruction).toBe("Oferecer avaliação para clínicas");
@@ -636,7 +634,7 @@ describe("alternativa manual e campanha existente", () => {
   it("preserva a configuração congelada de uma campanha que já preparou contatos", async () => {
     state.campaigns[0]!.config = CONFIG;
     openPage();
-    const select = await screen.findByLabelText("Agente de IA");
+    const select = await screen.findByLabelText("Funcionário responsável");
     expect(select).toHaveValue(AGENT);
     expect(select).toBeDisabled();
     expect(

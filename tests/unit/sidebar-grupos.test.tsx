@@ -42,7 +42,7 @@ describe("Navegação leve do escreve.ai", () => {
     comoPapel("admin");
     render(<Sidebar collapsed={false} />);
     expect(screen.getByRole("link", { name: "Funis" })).toHaveAttribute("href", "/app/kanban");
-    expect(screen.getByRole("link", { name: "Agentes de IA" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Funcionários" })).toHaveAttribute(
       "href",
       "/app/ai/agents",
     );
@@ -55,7 +55,7 @@ describe("Navegação leve do escreve.ai", () => {
   it("não oferece áreas administrativas ao atendente", () => {
     comoPapel("agent");
     render(<Sidebar collapsed={false} />);
-    expect(screen.queryByRole("link", { name: "Agentes de IA" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Funcionários" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Todas as ferramentas" }));
     expect(screen.queryByRole("option", { name: /Credenciais|Audit Log/ })).toBeNull();
   });

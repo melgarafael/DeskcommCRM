@@ -221,6 +221,8 @@ describe("inline prospecting agent setup", () => {
     expect(state.version!.tool_ids).toContain("crm_move_lead_stage");
     expect(state.version!.tool_ids).not.toContain("crm_create_lead");
     expect(state.version!.handoff_tool_enabled).toBe(true);
+    expect(mocks.create.mock.calls[0]![2]).toMatchObject({ employee_role: "bdr" });
+    expect(prospectingAgentPrompt(input)).toContain("funcionário BDR");
     expect(state.agent!.paused_at).toBeNull();
     expect(
       db.query.mock.calls.some(([sql]) =>

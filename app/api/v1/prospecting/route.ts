@@ -49,7 +49,7 @@ export async function GET() {
         [org],
       ),
       db.query(
-        "select id,name from ai_agents where organization_id=$1 and published_version_id is not null and archived_at is null and paused_at is null and operation_mode='automatic' order by name",
+        "select id,name,config->>'employee_role' as employee_role from ai_agents where organization_id=$1 and published_version_id is not null and archived_at is null and paused_at is null and operation_mode='automatic' order by case config->>'employee_role' when 'bdr' then 0 when 'sdr' then 1 else 2 end,name",
         [org],
       ),
       db.query(

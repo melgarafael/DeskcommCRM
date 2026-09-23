@@ -108,7 +108,7 @@ export function ConversationalAgentCreator(props: Props) {
           href="/app/ai/agents"
           className="text-sm text-muted-foreground underline underline-offset-4"
         >
-          {t("Agentes de IA")}
+          {t("Funcionários")}
         </Link>
         <Button
           variant="ghost"

@@ -273,7 +273,7 @@ function WorkspaceSession() {
                 href={d.href}
                 className="flex items-center gap-1 text-sm font-medium hover:text-primary"
               >
-                {t(d.href === "/app/ai/agents" ? "Agentes de IA" : d.label)}
+                {t(d.label)}
                 <ArrowUpRight size={14} aria-hidden />
               </Link>
             ))}

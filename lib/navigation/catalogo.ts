@@ -147,8 +147,8 @@ export const NAV_CATALOG = [
   },
   {
     href: "/app/prospecting",
-    label: "Conquiste novos clientes",
-    description: "Busque empresas e conduza abordagens graduais com IA.",
+    label: "Prospecção",
+    description: "Encontre empresas, delegue a um BDR e acompanhe cada conversa até o funil.",
     icon: "Funnel",
     group: "crm",
     minRole: "admin",

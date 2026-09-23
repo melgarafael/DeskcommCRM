@@ -36,11 +36,16 @@ type Candidate = {
   error: string | null;
   conversation_id: string | null;
 };
+type ProspectingEmployee = {
+  id: string;
+  name: string;
+  employee_role: "bdr" | "sdr" | string | null;
+};
 type State = {
   configured: boolean;
   campaigns: Campaign[];
   candidates: Candidate[];
-  agents: { id: string; name: string }[];
+  agents: ProspectingEmployee[];
   channels: {
     id: string;
     display_name: string | null;
@@ -101,7 +106,7 @@ export function ProspectingClient() {
   const [enrich, setEnrich] = useState(true);
   const [campaignDrafts, setCampaignDrafts] = useState<Record<string, CampaignConfig>>({});
   const [manualCampaigns, setManualCampaigns] = useState<Record<string, boolean>>({});
-  const [createdAgents, setCreatedAgents] = useState<{ id: string; name: string }[]>([]);
+  const [createdAgents, setCreatedAgents] = useState<ProspectingEmployee[]>([]);
   const campaign = data?.campaigns.find((c) => c.id === selected) ?? data?.campaigns[0];
   // A stored config is frozen by activation; unsaved choices belong to one campaign.
   const config = campaign?.config ?? (campaign && campaignDrafts[campaign.id]) ?? emptyConfig;
@@ -112,6 +117,13 @@ export function ProspectingClient() {
       [...(data?.agents ?? []), ...createdAgents].map((agent) => [agent.id, agent]),
     ).values(),
   ];
+  const prospectingEmployees = agents.filter(
+    (employee) =>
+      employee.employee_role === "bdr" ||
+      employee.employee_role === "sdr" ||
+      employee.id === config.agent_id,
+  );
+  const selectedEmployee = agents.find((employee) => employee.id === config.agent_id);
   function setConfig(update: CampaignConfig | ((previous: CampaignConfig) => CampaignConfig)) {
     if (!campaign || campaign.config) return;
     setCampaignDrafts((drafts) => ({
@@ -130,7 +142,7 @@ export function ProspectingClient() {
   ) {
     setCreatedAgents((current) => [
       ...current.filter((agent) => agent.id !== result.agent.id),
-      result.agent,
+      { ...result.agent, employee_role: "bdr" },
     ]);
     setCampaignDrafts((drafts) => ({
       ...drafts,
@@ -148,7 +160,7 @@ export function ProspectingClient() {
     setManualCampaigns((current) => ({ ...current, [campaignId]: false }));
     await query.refetch();
     setNotice(
-      `${t("Agente publicado e selecionado.")} ${result.model_label}. ${t("Revise o ritmo e inicie a campanha quando estiver pronto.")}`,
+      `${t("BDR publicado e selecionado.")} ${result.model_label}. ${t("Revise o ritmo e inicie a campanha quando estiver pronto.")}`,
     );
   }
   const candidates = data?.candidates.filter((c) => c.campaign_id === campaign?.id) ?? [];
@@ -176,17 +188,58 @@ export function ProspectingClient() {
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-medium tracking-widest text-muted-foreground uppercase">CRM</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-            {t("Conquiste novos clientes")}
-          </h1>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight">{t("Prospecção")}</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            {t("Encontre empresas, aborde aos poucos e acompanhe quem avança na conversa.")}
+            {t(
+              "Da busca ao Inbox: encontre empresas, delegue a abordagem e acompanhe quem avança no funil.",
+            )}
           </p>
         </div>
         <Button variant="outline" onClick={() => setSettings((s) => !s)}>
           {t("Configurar busca")}
         </Button>
       </header>
+      <Card className="overflow-hidden rounded-[1.35rem] border-border/60 bg-card shadow-[0_18px_60px_-44px_rgba(15,23,42,0.65)]">
+        <div className="grid gap-0 lg:grid-cols-[1.35fr_1fr]">
+          <div className="p-5 sm:p-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge className="rounded-full px-3 py-1">{t("BDR recomendado")}</Badge>
+              <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                {t("Busca ativa")}
+              </span>
+            </div>
+            <h2 className="mt-3 text-xl font-semibold tracking-tight">
+              {t("Um funcionário acompanha cada campanha")}
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+              {t(
+                "O BDR encontra e inicia conversas com novas empresas. Use um SDR quando a operação for receber e qualificar quem já demonstrou interesse.",
+              )}
+            </p>
+          </div>
+          <div className="flex flex-col justify-center gap-3 bg-muted/35 p-5 sm:p-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs text-muted-foreground">{t("Responsável atual")}</p>
+                <p className="mt-1 font-semibold">
+                  {selectedEmployee?.name ?? t("Defina um BDR na etapa 2")}
+                </p>
+              </div>
+              {selectedEmployee?.employee_role && (
+                <Badge variant="outline" className="rounded-full uppercase">
+                  {selectedEmployee.employee_role}
+                </Badge>
+              )}
+            </div>
+            <Link
+              className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+              href="/app/ai/agents"
+            >
+              {t("Gerenciar Funcionários")}
+            </Link>
+          </div>
+        </div>
+      </Card>
       {(error || query.error) && (
         <div
           role="alert"
@@ -240,9 +293,9 @@ export function ProspectingClient() {
           </form>
         </Card>
       )}
-      <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
-        <aside className="flex flex-col gap-5">
-          <Card className="p-5">
+      <div className="grid items-start gap-6 lg:grid-cols-[320px_1fr]">
+        <aside className="flex flex-col gap-5 lg:sticky lg:top-6">
+          <Card className="rounded-[1.35rem] border-border/60 p-5 shadow-[0_18px_50px_-46px_rgba(15,23,42,0.7)]">
             <h2 className="text-lg font-semibold">{t("1. Encontrar empresas")}</h2>
             <form
               className="mt-4 space-y-4"
@@ -348,7 +401,7 @@ export function ProspectingClient() {
           </Card>
           <section>
             <h2 className="mb-3 text-sm font-semibold">{t("Suas campanhas")}</h2>
-            <div className="space-y-2">
+            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
               {data?.campaigns.map((c) => (
                 <button
                   key={c.id}
@@ -455,10 +508,10 @@ export function ProspectingClient() {
                 campaign.search_status === "succeeded" &&
                 candidates.length > 0 && (
                   <Card className="p-5">
-                    <h2 className="text-lg font-semibold">{t("2. Preparar a abordagem")}</h2>
+                    <h2 className="text-lg font-semibold">{t("2. Definir o funcionário")}</h2>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {t(
-                        "A IA usa o agente escolhido para abrir a conversa e atender as respostas. As proteções do canal continuam valendo.",
+                        "O funcionário escolhido abre a conversa, acompanha as respostas e move o lead no funil. As proteções do canal continuam valendo.",
                       )}
                     </p>
                     {!campaign.config && (
@@ -474,7 +527,7 @@ export function ProspectingClient() {
                               }))
                             }
                           >
-                            {t("Configurar por conversa")}
+                            {t("Criar BDR conversando")}
                           </Button>
                           <Button
                             type="button"
@@ -483,7 +536,7 @@ export function ProspectingClient() {
                               setManualCampaigns((current) => ({ ...current, [campaign.id]: true }))
                             }
                           >
-                            {t("Usar agente existente / configurar manualmente")}
+                            {t("Escolher BDR ou SDR existente")}
                           </Button>
                         </div>
                         {!manual && !config.agent_id && data && (
@@ -498,12 +551,12 @@ export function ProspectingClient() {
                         )}
                         {!manual && config.agent_id && (
                           <section
-                            aria-label={t("Agente selecionado")}
+                            aria-label={t("Funcionário selecionado")}
                             className="space-y-2 rounded-xl border bg-muted/20 p-4 text-sm"
                           >
                             <p className="font-semibold">
                               {agents.find((agent) => agent.id === config.agent_id)?.name ??
-                                t("Agente selecionado")}
+                                t("Funcionário selecionado")}
                             </p>
                             <p className="whitespace-pre-wrap text-muted-foreground">
                               {config.instruction}
@@ -513,7 +566,7 @@ export function ProspectingClient() {
                                 className="underline"
                                 href={`/app/ai/agents/${config.agent_id}`}
                               >
-                                {t("Configurações avançadas do agente")}
+                                {t("Configurações avançadas do funcionário")}
                               </Link>
                               <Link
                                 className="underline"
@@ -524,7 +577,7 @@ export function ProspectingClient() {
                             </div>
                             <p className="text-xs text-muted-foreground">
                               {t(
-                                "Agente pronto. Escolha o ritmo abaixo e inicie quando estiver preparado.",
+                                "BDR pronto. Escolha o ritmo abaixo e inicie quando estiver preparado.",
                               )}
                             </p>
                           </section>
@@ -556,7 +609,9 @@ export function ProspectingClient() {
                             <div className="space-y-4">
                               <div className="grid gap-4 md:grid-cols-2">
                                 <div>
-                                  <Label htmlFor="prospecting-agent">{t("Agente de IA")}</Label>
+                                  <Label htmlFor="prospecting-agent">
+                                    {t("Funcionário responsável")}
+                                  </Label>
                                   <select
                                     id="prospecting-agent"
                                     className={`${selectClass} mt-1`}
@@ -564,19 +619,27 @@ export function ProspectingClient() {
                                     onChange={(e) => update("agent_id", e.target.value)}
                                     required
                                   >
-                                    <option value="">{t("Escolha um agente publicado")}</option>
-                                    {agents.map((a) => (
+                                    <option value="">{t("Escolha um BDR ou SDR publicado")}</option>
+                                    {prospectingEmployees.map((a) => (
                                       <option key={a.id} value={a.id}>
+                                        {a.employee_role
+                                          ? `${a.employee_role.toUpperCase()} · `
+                                          : ""}
                                         {a.name}
                                       </option>
                                     ))}
                                   </select>
+                                  <p className="mt-2 text-xs text-muted-foreground">
+                                    {t(
+                                      "BDR é o padrão para busca ativa. SDR é indicado para leads que já chegaram até você.",
+                                    )}
+                                  </p>
                                   {config.agent_id && (
                                     <Link
                                       className="mt-2 block text-xs underline"
                                       href={`/app/ai/agents/${config.agent_id}`}
                                     >
-                                      {t("Configurações avançadas do agente")}
+                                      {t("Configurações avançadas do funcionário")}
                                     </Link>
                                   )}
                                 </div>
@@ -756,7 +819,7 @@ export function ProspectingClient() {
                           type="submit"
                           disabled={
                             busy ||
-                            !agents.length ||
+                            (!prospectingEmployees.length && !config.agent_id) ||
                             !data?.channels.some((c) => c.status === "WORKING")
                           }
                         >
@@ -776,9 +839,9 @@ export function ProspectingClient() {
                       )}
                     </p>
                   </div>
-                  <div className="overflow-x-auto">
+                  <div className="max-h-[34rem] overflow-auto">
                     <table className="w-full text-left text-sm">
-                      <thead className="border-b bg-muted/30 text-xs text-muted-foreground">
+                      <thead className="sticky top-0 z-10 border-b bg-card text-xs text-muted-foreground">
                         <tr>
                           <th className="p-4">{t("Empresa")}</th>
                           <th className="p-4">{t("Informações")}</th>

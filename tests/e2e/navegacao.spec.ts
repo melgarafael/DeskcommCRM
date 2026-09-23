@@ -19,7 +19,7 @@ test("entrada conversacional, navegação enxuta e catálogo completo por teclad
   await expect(page.getByRole("heading", { name: /O que vamos resolver hoje/ })).toBeVisible();
   const nav = page.getByRole("navigation", { name: "Navegação principal" });
   await expect(nav.getByRole("link")).toHaveCount(6);
-  await expect(nav.getByRole("link", { name: "Agentes de IA" })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "Funcionários" })).toBeVisible();
   await page.getByRole("button", { name: "Todas as ferramentas" }).click();
   await page.getByRole("combobox").fill("etapas do funil");
   await expect(page.getByRole("option", { name: /Etapas do funil/ })).toBeVisible();
