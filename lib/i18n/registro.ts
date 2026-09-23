@@ -74,6 +74,17 @@ export const REGISTRO_DE_IDIOMAS = [
     mantenedor: "mantenedores do projeto",
   },
   {
+    codigo: "en",
+    nomeNativo: "English",
+    rotuloCurto: "EN",
+    // `en` e não `en-US`: o público é a América do Norte e Latina, e com `en`
+    // puro o navegador resolve pela região de quem lê.
+    tagBcp47: "en",
+    subtagsDoNavegador: ["en"],
+    nivel: "completo",
+    mantenedor: "mantenedores do projeto",
+  },
+  {
     codigo: "zh-CN",
     nomeNativo: "简体中文",
     rotuloCurto: "中",

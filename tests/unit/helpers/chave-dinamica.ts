@@ -605,3 +605,10 @@ export function buracosDeEspanhol(
   }
   return [...buracos.values()].map((b) => ({ ...b, locais: [...b.locais].sort() }));
 }
+
+/**
+ * O nome acima carrega "espanhol" por história — foi o primeiro idioma da
+ * catraca. A função só recebe um predicado e não sabe de idioma nenhum;
+ * este alias existe para o guarda do inglês não mentir no nome.
+ */
+export const buracosDeTraducao = buracosDeEspanhol;

@@ -74,7 +74,9 @@ describe("Accept-Language de quem ainda não tem sessão", () => {
   // consultar — sem isto, um visitante em espanhol via anônimo cai sempre em
   // português, mesmo que o navegador dele diga `es` na frente da lista.
   it("acha o primeiro idioma suportado na ORDEM de preferência, não no maior q", () => {
-    expect(parseAcceptLanguage("en;q=0.9,es;q=0.8")).toBe("es");
+    // `fr` não é servido: mesmo com o maior q, quem vence é o `es`.
+    // (Antes do inglês ser servido, este exemplo usava `en` no lugar do `fr`.)
+    expect(parseAcceptLanguage("fr;q=0.9,es;q=0.8")).toBe("es");
   });
 
   it("reconhece a família do idioma, não só a tag exata", () => {
@@ -83,7 +85,9 @@ describe("Accept-Language de quem ainda não tem sessão", () => {
   });
 
   it("sem nenhum idioma suportado na lista, devolve null (cai no padrão depois)", () => {
-    expect(parseAcceptLanguage("en-US,en;q=0.9,fr;q=0.8")).toBeNull();
+    // `en` agora é servido: o exemplo antigo (`en-US,en;q=0.9,fr;q=0.8`)
+    // devolveria "en". Sem idioma suportado, segue null.
+    expect(parseAcceptLanguage("fr-FR,fr;q=0.9,de;q=0.8")).toBeNull();
   });
 
   it("cabeçalho ausente ou vazio devolve null", () => {

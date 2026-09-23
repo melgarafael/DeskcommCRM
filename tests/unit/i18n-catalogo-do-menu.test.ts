@@ -18,6 +18,7 @@ import { NAV_CATALOG, NAV_GROUPS } from "@/lib/navigation/catalogo";
  */
 
 const temEspanhol = (texto: string): boolean => Boolean(DICIONARIO[texto]?.es);
+const temIngles = (texto: string): boolean => Boolean(DICIONARIO[texto]?.en);
 
 interface TextoDoMenu {
   readonly onde: string;
@@ -82,6 +83,20 @@ describe("o catálogo do menu tem espanhol", () => {
       pagas,
       `${pagas.length} entrada(s) da DIVIDA_CONGELADA não casam mais com buraco nenhum: ` +
         "o texto foi traduzido ou mudou. Remova a entrada deste arquivo — a lista só encolhe.",
+    ).toEqual([]);
+  });
+});
+
+describe("o catálogo do menu tem inglês", () => {
+  const textos = textosDoMenu();
+  const buracos = textos.filter((t) => !temIngles(t.texto));
+
+  it("todo texto do menu tem inglês", () => {
+    const lista = buracos.map((t) => `${t.onde} [${t.campo}] → ${JSON.stringify(t.texto)}`);
+    expect(
+      lista,
+      `${lista.length} texto(s) do menu sem inglês: quem escolheu inglês vê isto em português. ` +
+        "Conserto: a coluna `en` em lib/i18n/dicionario.ts.",
     ).toEqual([]);
   });
 });

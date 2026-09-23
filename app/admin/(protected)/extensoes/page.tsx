@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { loadAuthUser } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { tagDeIdioma } from "@/lib/i18n/datas";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -73,7 +74,7 @@ export default async function Page() {
   }
 
   const dataLegivel = (iso: string) =>
-    new Date(iso).toLocaleDateString(idioma === "es" ? "es" : "pt-BR", {
+    new Date(iso).toLocaleDateString(tagDeIdioma(idioma), {
       day: "2-digit",
       month: "short",
       year: "numeric",
