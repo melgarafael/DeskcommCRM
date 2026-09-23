@@ -88,6 +88,24 @@ export const PUBLIC_PATHS: RegExp[] = [
   // Ancoradas com `$` de propósito. `/^\/api\/v1\/messages/` sem âncora daria
   // carona a `/api/v1/messages/[id]`, que NÃO tem suporte a Bearer.
   /^\/api\/v1\/messages$/,
+  // ATUALIZAR LEAD SERVER-TO-SERVER. Mesma dualidade de `/api/v1/messages`
+  // acima: sessão de navegador OU Bearer `dsk_…`, resolvidos por
+  // `lib/api/auth-dual.ts` DENTRO da rota (`app/api/v1/leads/[id]/route.ts`).
+  // Existe para a integração de monitoramento processual (n8n consultando
+  // Escavador/Jusbrasil/Codilo/Judit), que não tem navegador.
+  //
+  // O segmento é uma FORMA DE UUID, nunca `[^/]+` — `/api/v1/leads/` tem
+  // irmãos literais no mesmo nível (`bulk`, `at-risk`, `import`, `proposals`,
+  // `reactivations`) que `[^/]+$` alcançaria por engano, tornando-os "públicos"
+  // (proxy não decide) quando nenhum deles tem suporte a Bearer.
+  /^\/api\/v1\/leads\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  // MARCAR/REMARCAR/CANCELAR COMPROMISSO SERVER-TO-SERVER. Mesma dualidade dos
+  // dois de cima: sessão OU Bearer `dsk_…`, resolvidos por `lib/api/auth-dual.ts`
+  // DENTRO da rota (`app/api/v1/agenda/agendamentos/route.ts`, função
+  // `despachar`). `GET` (listar) segue só-sessão — este path cobre os quatro
+  // verbos porque o proxy filtra por PATH, não por método; quem decide o
+  // método é a própria rota, como sempre foi.
+  /^\/api\/v1\/agenda\/agendamentos$/,
   /^\/api\/v1\/conversations\/open-with-contact$/,
   // Upload outbound: primeiro passo do envio de MÍDIA por token. Sem ele, o
   // cartão de fidelidade (a única das automações que não é texto) não teria
