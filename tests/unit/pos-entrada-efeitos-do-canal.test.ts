@@ -65,6 +65,13 @@ let rpcChamadas: Array<{ nome: string; args: Record<string, unknown> }> = [];
  * tipo não distingue) passava verde: o fake respondia igual a qualquer filtro.
  */
 let filtrosDeMessages: Array<[string, unknown]> = [];
+/**
+ * O que a tabela do ref devolve quando o UPDATE de consumo roda. `null` é o
+ * ref que NÃO casa: já consumido, de outra organização, ou nunca gravado.
+ */
+let refCasado: { utm: Record<string, string> } | null = null;
+/** Os `.eq()`/`.is()` do consumo do ref — provam a organização e a trava de uso único. */
+let filtrosDoRef: Record<string, unknown> = {};
 
 /** Imita o builder do PostgREST: encadeável, o efeito acontece no `await`. */
 function cadeia(rotulo: string): Record<string, unknown> {
@@ -88,6 +95,26 @@ const admin = {
   from(tabela: string) {
     return {
       update(payload: Record<string, unknown>) {
+        if (tabela === "meta_ads_click_refs") {
+          const consumo = {
+            eq(coluna: string, valor: unknown) {
+              filtrosDoRef[coluna] = valor;
+              return consumo;
+            },
+            is(coluna: string, valor: unknown) {
+              filtrosDoRef[coluna] = valor;
+              return consumo;
+            },
+            select(_colunas: string) {
+              return consumo;
+            },
+            async maybeSingle() {
+              sequencia.push("update:meta_ads_click_refs");
+              return { data: refCasado, error: null };
+            },
+          };
+          return consumo;
+        }
         ultimoUpdate = payload;
         return cadeia(`update:${tabela}`);
       },
@@ -157,6 +184,8 @@ beforeEach(() => {
   ultimaRpc = null;
   rpcChamadas = [];
   filtrosDeMessages = [];
+  refCasado = { utm: { utm_campaign: "black-friday", utm_ad: "video-depoimento-v3" } };
+  filtrosDoRef = {};
   audit.mockClear();
   garantirLeadDaConversa.mockClear();
   garantirLeadDaConversa.mockResolvedValue({ criado: true, leadId: "lead-1" } as never);
@@ -546,5 +575,68 @@ describe("a origem da página que veio no texto", () => {
     expect(nomesDeRpc()).not.toContain("fn_estampar_atribuicao_de_anuncio");
     expect(garantirLeadDaConversa).toHaveBeenCalled();
     expect(vi.mocked(acelerarPipelineDeEventos)).toHaveBeenCalled();
+  });
+});
+
+/**
+ * O MESMO bloco de origem, pelo outro transporte: `[ref:XXXXXX]`, com as UTMs
+ * guardadas no servidor quando a rota de captura recebeu o clique
+ * (`app/api/v1/anuncios/meta/[org]/route.ts`).
+ *
+ * O que estes casos vigiam não é o casamento em si — é que o ref passa pelas
+ * MESMAS guardas do `[dk1:]`, e que o clique só é CONSUMIDO quando vai virar
+ * atribuição de verdade. Consumir fora da primeira mensagem queimaria o ref
+ * sem estampar ninguém, e o dono do clique nunca saberia por quê.
+ */
+describe("o ref curto da página que veio no texto", () => {
+  const REF = "[ref:K7M2P9]";
+  /** O mesmo `[dk1:]` do bloco acima, escrito aqui de forma independente. */
+  const DK1 = `[dk1:${Buffer.from(JSON.stringify({ utm_campaign: "dia-das-maes" }), "utf8").toString("base64url")}]`;
+  const nomesDeRpc = () => rpcChamadas.map((c) => c.nome);
+
+  it("casa o ref e estampa as UTMs guardadas no servidor", async () => {
+    await rodar({ texto: `Olá! Vim pelo site. ${REF}` });
+
+    const estampa = rpcChamadas.find((c) => c.nome === "fn_estampar_atribuicao_de_anuncio");
+    expect(estampa, "a origem do ref não foi estampada").toBeDefined();
+    expect(estampa?.args.p_platform).toBe("site");
+    const metadata = estampa?.args.p_metadata as Record<string, unknown>;
+    expect(metadata.utm_campaign).toBe("black-friday");
+    expect(metadata.utm_ad).toBe("video-depoimento-v3");
+  });
+
+  it("o consumo filtra por organização e por ref ainda não usado", async () => {
+    await rodar({ texto: `oi ${REF}` });
+
+    expect(filtrosDoRef.organization_id).toBe("org-1");
+    expect(filtrosDoRef.token).toBe("K7M2P9");
+    expect(filtrosDoRef.matched_at).toBeNull();
+  });
+
+  it("fora da primeira mensagem o ref NÃO é consumido", async () => {
+    historicoDoContato = { id: "outra-msg", count: 4 };
+
+    await rodar({ texto: `oi ${REF}` });
+
+    expect(sequencia).not.toContain("update:meta_ads_click_refs");
+    expect(nomesDeRpc()).not.toContain("fn_estampar_atribuicao_de_anuncio");
+  });
+
+  it("ref que não casa não estampa nada e a ingestão segue", async () => {
+    refCasado = null;
+
+    await expect(rodar({ texto: `oi ${REF}` })).resolves.toBeUndefined();
+
+    expect(nomesDeRpc()).not.toContain("fn_estampar_atribuicao_de_anuncio");
+    expect(garantirLeadDaConversa).toHaveBeenCalled();
+  });
+
+  it("com `[dk1:]` no texto, o ref nem vai ao banco", async () => {
+    // O `[dk1:]` se resolve sem consulta nenhuma. Ir ao banco assim mesmo
+    // consumiria um clique que ninguém pediu.
+    await rodar({ texto: `oi ${DK1} ${REF}` });
+
+    expect(sequencia).not.toContain("update:meta_ads_click_refs");
+    expect(nomesDeRpc()).toContain("fn_estampar_atribuicao_de_anuncio");
   });
 });

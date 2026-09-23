@@ -1,6 +1,7 @@
 /** Apresentação por vínculo. Nunca é autorização de página, API ou ação. */
 import { z } from "zod";
 import { ROLE_RANK, type Role } from "@/lib/auth/types";
+import type { ModuloOpcional } from "@/lib/instalacao/modulos";
 import { NAV_CATALOG, type NavMetadata, type NavDestinationId } from "./catalogo";
 
 const ids = NAV_CATALOG.map((d) => d.href);
@@ -63,8 +64,19 @@ export function canSee(
 ): boolean {
   return platform || (!!role && ROLE_RANK[role] >= ROLE_RANK[d.minRole ?? "viewer"]);
 }
-export function permitidos(platform: boolean, role: Role | null): NavMetadata[] {
-  return NAV_CATALOG.filter((d) => canSee(d, platform, role));
+/**
+ * `modulos` são os módulos opcionais LIGADOS na instalação. Ausente = não filtra
+ * por módulo: quem desenha menu (sidebar, hub, ⌘K) passa a lista; quem só
+ * pergunta "sobra alguma porta?" não precisa.
+ */
+export function permitidos(
+  platform: boolean,
+  role: Role | null,
+  modulos?: readonly ModuloOpcional[],
+): NavMetadata[] {
+  return (NAV_CATALOG as readonly NavMetadata[]).filter(
+    (d) => canSee(d, platform, role) && (!modulos || !d.modulo || modulos.includes(d.modulo)),
+  );
 }
 /** Leitura tolera versões antigas/removidas sem lançar no layout. */
 export function lerInterface(raw: unknown): {
@@ -91,9 +103,10 @@ export function destinosDaInterface(
   raw: unknown,
   platform: boolean,
   role: Role | null,
+  modulos?: readonly ModuloOpcional[],
 ): NavMetadata[] {
   const { settings } = lerInterface(raw);
-  const allowed = permitidos(platform, role);
+  const allowed = permitidos(platform, role, modulos);
   const chosen =
     settings.destinos ?? (settings.preset === "simplificada" ? SIMPLIFICADA : undefined);
   return allowed.filter(

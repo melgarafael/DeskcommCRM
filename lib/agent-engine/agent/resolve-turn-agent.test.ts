@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { resolveTurnAgent } from './resolve-turn-agent';
+import { resolveConversationTurn, resolveTurnAgent } from './resolve-turn-agent';
 import type { PublishedAgentConfig } from './agent-config';
 import type { LoadedRouter } from './router-config';
 
@@ -296,5 +296,72 @@ describe('resolveTurnAgent', () => {
     expect(out.config).toBeNull();
     expect(out.outcome).toBe('no_match');
     expect(warn).toHaveBeenCalled();
+  });
+});
+
+describe('resolveConversationTurn — contexto curto do classificador', () => {
+  /** Banco falso por consulta: conversa com agente fixo, a última inbound e o contexto (mais recente primeiro, como o SQL devolve). */
+  function fakeDb(signalRow: { id: string; body: string | null } | null, contextoDesc: { direction: string; body: string }[]) {
+    return {
+      query: vi.fn(async (sql: string, _values: unknown[]) => {
+        if (sql.includes('from conversations')) return { rows: [{ active_ai_agent_id: 'agent-vendas', active_intent: 'vendas' }] };
+        if (sql.includes('id<>$3')) return { rows: contextoDesc };
+        return { rows: signalRow ? [signalRow] : [] };
+      }),
+    };
+  }
+  function deps() {
+    const classifyIntent = vi.fn().mockResolvedValue({ intentName: 'vendas', confidence: 0.9 });
+    return {
+      classifyIntent,
+      deps: makeDeps({
+        loadActiveRouter: vi.fn().mockResolvedValue(router()),
+        loadPublishedAgentConfigById: idAwareLoader(),
+        classifyIntent,
+      }),
+    };
+  }
+
+  it('passa ao classificador as mensagens anteriores em ordem cronológica, sem a atual, recortadas pela organização', async () => {
+    const db = fakeDb({ id: 'msg-atual', body: 'Primeira' }, [
+      { direction: 'outbound', body: 'Qual data prefere: a primeira ou a segunda?' },
+      { direction: 'inbound', body: 'Quero marcar uma consulta' },
+    ]);
+    const { classifyIntent, deps: d } = deps();
+    const out = await resolveConversationTurn(db as never, {} as never, { ...baseInput, inbound: true }, d);
+
+    expect(out.outcome).toBe('sticky');
+    const [sql, values] = db.query.mock.calls.find(([q]) => q.includes('id<>$3'))!;
+    expect(sql).toContain('organization_id=$1 and conversation_id=$2');
+    expect(values).toEqual(['org-1', 'conv-1', 'msg-atual', 4]);
+    expect(classifyIntent.mock.calls[0]![2]).toMatchObject({
+      signal: 'Primeira',
+      recentMessages: [
+        { direction: 'inbound', body: 'Quero marcar uma consulta' },
+        { direction: 'outbound', body: 'Qual data prefere: a primeira ou a segunda?' },
+      ],
+    });
+  });
+
+  it('sem inbound (follow-up) não consulta contexto nem classifica', async () => {
+    const db = fakeDb(null, []);
+    const { classifyIntent, deps: d } = deps();
+    await resolveConversationTurn(db as never, {} as never, { ...baseInput, inbound: false }, d);
+    // Afirma o que o título promete — nenhuma leitura de `messages`, nem a do
+    // signal nem a do contexto — em vez de CONTAR consultas. A contagem era um
+    // atalho que media o resto do turno junto: o degrau 0 de campanha (#1392)
+    // lê `campaign_recipients` em todo turno, por projeto, e derrubou este caso
+    // sem que nada do que ele guarda tivesse mudado. A forma abaixo é a mesma
+    // do caso de mídia, logo adiante.
+    expect(db.query.mock.calls.some(([q]) => q.includes('from messages'))).toBe(false);
+    expect(classifyIntent).not.toHaveBeenCalled();
+  });
+
+  it('inbound sem texto (mídia) não consulta contexto: o classificador nem roda', async () => {
+    const db = fakeDb({ id: 'msg-audio', body: null }, []);
+    const { classifyIntent, deps: d } = deps();
+    await resolveConversationTurn(db as never, {} as never, { ...baseInput, inbound: true }, d);
+    expect(db.query.mock.calls.some(([q]) => q.includes('id<>$3'))).toBe(false);
+    expect(classifyIntent).not.toHaveBeenCalled();
   });
 });

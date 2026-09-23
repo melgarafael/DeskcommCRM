@@ -343,6 +343,33 @@ export function resolveWaitPhase(events: EnrollmentEventRef[], nodeId: string, s
 }
 
 /**
+ * Piso do inbound que casa neste `match_reply`: o instante em que a espera
+ * começou, não o `updated_at` da inscrição.
+ *
+ * O `inbound_woke` (e qualquer tick depois) regrava `updated_at`. Usar essa
+ * coluna como piso esconde a mensagem que ACORDOU a espera — ela chegou
+ * segundos antes do wake. `wait_started.payload.next_eval_at` é park+graça,
+ * então park = next_eval_at − grace_timeout_ms.
+ */
+export function pisoDoInboundDaEspera(
+  node: Extract<FlowNode, { type: "match_reply" }>,
+  events: EnrollmentEventRef[],
+  fallback: string,
+): string {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i]!;
+    if (e.node_id !== node.id) continue;
+    if (e.event_type !== "wait_started") continue;
+    const next = e.payload?.next_eval_at;
+    if (typeof next !== "string") break;
+    const start = Date.parse(next) - node.config.grace_timeout_ms;
+    if (Number.isFinite(start)) return new Date(start).toISOString();
+    break;
+  }
+  return fallback;
+}
+
+/**
  * Passos é número, mas o formulário gravou por meses o que se DIGITAVA — texto.
  * Com `"3"`, `gte` nunca era verdadeiro e `neq` sempre era: a regra aparecia
  * pronta no card e decidia sozinha. Lê o número que a pessoa escreveu; texto que
@@ -657,28 +684,41 @@ export function processNode(input: {
       }
       if (wokeEarly) {
         const body = (lastInboundBody ?? "").trim().toLowerCase();
-        const hit =
-          node.config.save_to !== undefined
-            ? undefined
-            : node.config.branches.find((b) => {
-                const needle = b.pattern.trim().toLowerCase();
-                if (needle.length === 0) return false;
-                return b.op === "eq" ? body === needle : body.includes(needle);
-              });
-        const edge = hit
-          ? selectEdge(edges, node.id, { type: "branch", branch_id: hit.id })
-          : selectEdge(edges, node.id, { type: "always" }) ??
-            (() => {
-              const ramo = node.config.branches.find((b) => b.id !== NO_REPLY_BRANCH_ID);
-              return ramo ? selectEdge(edges, node.id, { type: "branch", branch_id: ramo.id }) : null;
-            })();
-        if (!edge) {
-          return {
-            kind: "fail",
-            error: `match_reply node "${node.id}" has no edge for branch "${hit?.id ?? "else"}" (fallback also missing)`,
-          };
+        // inbound_woke sem texto desta pergunta (piso excluiu o "." que
+        // enfileirou o menu) NÃO é ALWAYS nem no_reply — senão o fluxo
+        // dispara o cardápio inteiro no mesmo request.
+        if (!body) {
+          if (!waitElapsed) {
+            return {
+              kind: "wait",
+              next_eval_at: new Date(clock().getTime() + node.config.grace_timeout_ms),
+              wake_status: "waiting_reply",
+            };
+          }
+        } else {
+          const hit =
+            node.config.save_to !== undefined
+              ? undefined
+              : node.config.branches.find((b) => {
+                  const needle = b.pattern.trim().toLowerCase();
+                  if (needle.length === 0) return false;
+                  return b.op === "eq" ? body === needle : body.includes(needle);
+                });
+          const edge = hit
+            ? selectEdge(edges, node.id, { type: "branch", branch_id: hit.id })
+            : selectEdge(edges, node.id, { type: "always" }) ??
+              (() => {
+                const ramo = node.config.branches.find((b) => b.id !== NO_REPLY_BRANCH_ID);
+                return ramo ? selectEdge(edges, node.id, { type: "branch", branch_id: ramo.id }) : null;
+              })();
+          if (!edge) {
+            return {
+              kind: "fail",
+              error: `match_reply node "${node.id}" has no edge for branch "${hit?.id ?? "else"}" (fallback also missing)`,
+            };
+          }
+          return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
         }
-        return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
       }
       const edge = selectEdge(edges, node.id, classEdgeMatch(node, NO_REPLY_BRANCH_ID));
       if (!edge) {

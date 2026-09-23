@@ -27,6 +27,7 @@ vi.mock("@/hooks/followup/useFollowupFlow", () => {
     useDeleteFollowupFlow: mutacao,
     useDisableFollowupFlow: mutacao,
     usePublishFollowupFlow: mutacao,
+    useRenameFollowupFlow: mutacao,
     useRollbackFollowupFlow: mutacao,
     useSaveFollowupFlowDraft: mutacao,
     useUpdateHandoffPolicy: mutacao,

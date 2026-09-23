@@ -12,10 +12,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { z } from "zod";
 
+import type { ModuloOpcional } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { auditMcpToolCall } from "./audit";
 import { ensureRole, ensureScope, type McpAuthResult } from "./auth";
+import { verificarTetoMcp } from "./rate-limit";
 import { allTools } from "./tools";
+import { deModuloDesligado } from "./tools/catalog";
 import { higienizarUuidsDeAterro } from "./uuid-de-aterro";
 import type { McpContext } from "./types";
 
@@ -32,7 +35,16 @@ function summarizeResult(result: unknown): string | undefined {
   return undefined;
 }
 
-export function createMcpServer(auth: McpAuthResult, requestId: string): McpServer {
+/**
+ * `modulosLigados`: os módulos opcionais ligados na instalação. Capacidade de
+ * módulo desligado nem é registrada — o cliente externo não a vê na lista.
+ * Ausente vale como nenhum, pela mesma razão de `pickToolsFromMcp`.
+ */
+export function createMcpServer(
+  auth: McpAuthResult,
+  requestId: string,
+  modulosLigados: readonly ModuloOpcional[] = [],
+): McpServer {
   const server = new McpServer({
     name: SERVER_NAME,
     version: SERVER_VERSION,
@@ -41,6 +53,7 @@ export function createMcpServer(auth: McpAuthResult, requestId: string): McpServ
   const supabase = createAdminClient();
 
   for (const tool of allTools) {
+    if (deModuloDesligado(tool.name, modulosLigados)) continue;
     server.registerTool(
       tool.name,
       {
@@ -60,6 +73,7 @@ export function createMcpServer(auth: McpAuthResult, requestId: string): McpServ
           (rawArgs ?? {}) as Record<string, unknown>,
         );
         const args = higiene.limpos;
+        const argsAudit = tool.redigirParaAuditoria ? tool.redigirParaAuditoria(args) : args;
         const ctx: McpContext = {
           organizationId: auth.organizationId,
           role: auth.role,
@@ -70,6 +84,11 @@ export function createMcpServer(auth: McpAuthResult, requestId: string): McpServ
         };
 
         try {
+          // ANTES de escopo e papel: quem está em laço estourando o teto não
+          // deve pagar o custo de mais nada. Dentro do `try` de propósito — o
+          // `catch` abaixo é quem AUDITA, e recusa sem rastro em
+          // `api_audit_log` faria "o agente parou" virar mistério.
+          await verificarTetoMcp(auth, tool.category);
           ensureScope(auth.scopes, tool.requiresScope);
           ensureRole(auth.role, tool.requiresRole);
 
@@ -83,7 +102,7 @@ export function createMcpServer(auth: McpAuthResult, requestId: string): McpServ
           await auditMcpToolCall({
             ctx,
             toolName: tool.name,
-            args,
+            args: argsAudit,
             durationMs,
             success: motivoDoVazio === null,
             resultSummary: summarizeResult(result),
@@ -103,7 +122,7 @@ export function createMcpServer(auth: McpAuthResult, requestId: string): McpServ
           await auditMcpToolCall({
             ctx,
             toolName: tool.name,
-            args,
+            args: argsAudit,
             durationMs,
             success: false,
             errorMessage: message,

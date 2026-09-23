@@ -3,6 +3,7 @@ import pg from "pg";
 
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import type { FollowupGateDb } from "@/lib/followup/agent-followup-gate";
+import { noDeGatilhoDoGrafo } from "@/lib/followup/agent-followup-gate";
 import { aplicaGatilhoDeEtapa, type GatilhoEtapaDb, type PointerDeEtapa } from "@/lib/followup/gatilho-etapa";
 import { applyReactivityEvent, type ReactivityAdminClient, type LiveEnrollmentRef } from "@/lib/followup/reactivity";
 import type { EnrollmentPatch } from "@/lib/followup/engine";
@@ -195,7 +196,7 @@ function gatilhoDb(): GatilhoEtapaDb {
         `select graph from followup_flow_versions where organization_id = $1 and id = $2`,
         [orgId, versionId],
       );
-      return rows[0]?.graph.nodes.find((n) => n.type === "trigger")?.id ?? null;
+      return rows[0] ? noDeGatilhoDoGrafo(rows[0].graph) : null;
     },
     async insereEnrollment(input) {
       const comRelogio = input.next_eval_at !== undefined && input.next_eval_at !== null;

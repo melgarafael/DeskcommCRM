@@ -39,6 +39,7 @@ import {
   lerPendencias,
   MOTIVO_LEGIVEL,
 } from "@/lib/conversoes/estado-da-conexao";
+import { listSelectableChannels } from "@/lib/channels/selectable";
 import { traduzir } from "@/lib/i18n/dicionario";
 import {
   CHAVES_DE_UTM,
@@ -51,8 +52,10 @@ import {
   googleAdsEstaConfigurado,
 } from "@/lib/plataformas-de-anuncio/google/config";
 import { lerEstadoDaConexaoGoogle } from "@/lib/plataformas-de-anuncio/google/estado-da-conexao";
+import { lerEstadoDaCaptura } from "@/lib/plataformas-de-anuncio/landing-config";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+import { FormularioDeCapturaDeUtm } from "./_formCapturaDeUtm";
 import { FormularioDeConversoes } from "./_form";
 import { FormularioDeConversoesGoogle } from "./_formGoogle";
 
@@ -88,12 +91,23 @@ export default async function ConversoesPage({
   const { erro: erroDoGoogle, ok: okDoGoogle } = await searchParams;
 
   const admin = createAdminClient();
-  const [estado, pendencias, enviadas, estadoGoogle] = await Promise.all([
-    lerEstadoDaConexao(admin, activeOrg.orgId),
-    lerPendencias(admin, activeOrg.orgId),
-    contaEnviadas(admin, activeOrg.orgId),
-    lerEstadoDaConexaoGoogle(admin, activeOrg.orgId),
-  ]);
+  const [estado, pendencias, enviadas, estadoGoogle, estadoDaCaptura, canais, organizacao] =
+    await Promise.all([
+      lerEstadoDaConexao(admin, activeOrg.orgId),
+      lerPendencias(admin, activeOrg.orgId),
+      contaEnviadas(admin, activeOrg.orgId),
+      lerEstadoDaConexaoGoogle(admin, activeOrg.orgId),
+      lerEstadoDaCaptura(admin, "meta_ads_landing_pages", activeOrg.orgId),
+      // Os números conectados viram SUGESTÃO no formulário de captura. Falhar
+      // aqui não pode derrubar a tela inteira: sem sugestão, a pessoa digita.
+      listSelectableChannels(admin, activeOrg.orgId).catch(() => []),
+      // O `slug` é o `[org]` da rota pública, e não está no `ActiveOrg`.
+      admin.from("organizations").select("slug").eq("id", activeOrg.orgId).maybeSingle(),
+    ]);
+  const slug = (organizacao.data as { slug: string | null } | null)?.slug ?? null;
+  const numerosConectados = canais
+    .map((c) => c.phone_number)
+    .filter((n): n is string => Boolean(n));
   const idioma = user.idioma;
   const t = (texto: string) => traduzir(texto, idioma);
 
@@ -260,6 +274,25 @@ export default async function ConversoesPage({
             {CHAVES_DE_UTM.join(", ")}.
           </p>
         </div>
+
+        {/*
+          O endereço de captura é o caminho RECOMENDADO, e o código acima
+          continua valendo: quem já montou link com ele não precisa mexer em
+          nada. A diferença é quem monta o marcador — lá é a página, aqui é o
+          servidor, e por isso só este dispensa script.
+        */}
+        {slug ? (
+          <FormularioDeCapturaDeUtm
+            estado={estadoDaCaptura}
+            idioma={idioma}
+            slug={slug}
+            numerosConectados={numerosConectados}
+          />
+        ) : (
+          <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
+            {t("Esta organização ainda não tem um apelido de URL, e o endereço de captura precisa de um. Fale com quem administra o servidor.")}
+          </div>
+        )}
 
         <ul className="flex max-w-2xl list-disc flex-col gap-2 pl-5 text-sm text-muted-foreground">
           <li>

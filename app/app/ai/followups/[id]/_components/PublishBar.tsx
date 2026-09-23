@@ -39,6 +39,7 @@ import {
 import { Trash, TreeStructure } from "@/lib/ui/icons";
 import { FlowStatusBadge } from "../../_components/FlowStatusBadge";
 import { DeleteFollowupFlowButton } from "../../_components/DeleteFollowupFlowButton";
+import { RenameFollowupFlowButton } from "../../_components/RenameFollowupFlowButton";
 import { TriggerConfigControl } from "./TriggerConfigControl";
 
 interface Props {
@@ -128,8 +129,14 @@ export function PublishBar({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface px-4 py-3">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1">
         <h1 className="text-sm font-semibold text-text">{flow.name}</h1>
+        <RenameFollowupFlowButton
+          flowId={flowId}
+          flowName={flow.name}
+          variant="ghost"
+          size="icon"
+        />
         <FlowStatusBadge status={flow.status} />
         {dirty && (
           <Badge variant="warning" data-testid="dirty-indicator">

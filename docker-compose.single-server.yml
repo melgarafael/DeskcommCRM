@@ -1,0 +1,40 @@
+# Override do modo single-server: o CRM e o Supabase self-hosted compartilham
+# somente uma rede privada. Caddy publica HTTPS; Postgres e Studio ficam fora.
+
+services:
+  app:
+    networks:
+      - internal
+      - supabase_private
+
+  # O worker e o voice-agent leem SUPABASE_DB_URL=...@supabase-db do .env, e
+  # esse nome só existe na rede supabase_private: fora dela o boot não resolve
+  # o banco e o serviço reinicia em loop (tests/shell/single-server-operacao).
+  worker:
+    networks:
+      - internal
+      - supabase_private
+
+  voice-agent:
+    networks:
+      - internal
+      - supabase_private
+
+  caddy:
+    volumes:
+      - ./Caddyfile.single-server:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      internal:
+        aliases:
+          # Faz app, worker e WAHA resolverem o dominio publico para o Caddy
+          # desta propria stack. O certificado continua valido e nenhuma
+          # chamada entre os servicos precisa sair da VPS e voltar pelo IP.
+          - ${DOMAIN}
+      supabase_private: {}
+
+networks:
+  supabase_private:
+    external: true
+    name: ${SINGLE_SERVER_NETWORK:-deskcomm_single_server}

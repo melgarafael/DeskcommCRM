@@ -17,9 +17,9 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { env } from "@/lib/env";
 import { ingestConversationsBatch } from "@/lib/ai/rag/ingest/conversations";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { autorizaCron } from "@/lib/auth/cron-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -33,16 +33,7 @@ interface AgentRow {
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
-  const auth = req.headers.get("authorization") ?? "";
-  const provided = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : "";
-
-  const cronSecret = env.INTERNAL_CRON_SECRET;
-  const fallbackSecret = env.INTERNAL_SECRET;
-  const accepted: string[] = [];
-  if (cronSecret) accepted.push(cronSecret);
-  if (fallbackSecret) accepted.push(fallbackSecret);
-
-  if (accepted.length === 0 || !provided || !accepted.includes(provided)) {
+  if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
 

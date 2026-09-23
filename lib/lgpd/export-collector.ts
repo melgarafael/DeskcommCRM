@@ -375,6 +375,43 @@ export interface ProspectingCandidateRow {
   updated_at: string;
 }
 
+/**
+ * Uma campanha que falou com este titular (migration 0374).
+ *
+ * O texto vai junto porque é o que foi DITO a ele; o telefone não, porque ele já
+ * está no bloco do contato e repeti-lo só multiplica PII no arquivo entregue.
+ */
+export interface CampaignRecipientRow {
+  id: string;
+  campaign_id: string;
+  status: string;
+  eligibility_status: string;
+  exclusion_reason: string | null;
+  rendered_body: string | null;
+  sent_at: string | null;
+  delivered_at: string | null;
+  read_at: string | null;
+  replied_at: string | null;
+  opted_out_at: string | null;
+}
+
+/**
+ * Uma linha da lista de exclusão de campanhas que aponta para este titular
+ * (migration 0375).
+ *
+ * O hash do telefone NÃO entra: ele não diz nada a quem lê e não é dado que o
+ * titular reconheça. O que entra é o fato — "este número está fora das
+ * campanhas desde tal dia, por tal motivo" —, que é exatamente a informação
+ * dele que a organização guarda.
+ */
+export interface CampaignSuppressionRow {
+  id: string;
+  address_tail: string | null;
+  reason: string | null;
+  source: string;
+  created_at: string;
+}
+
 export interface ExportPayload {
   request_id: string;
   organization_id: string;
@@ -455,6 +492,25 @@ export interface ExportPayload {
    */
   passagens: PassagemDeAtendimentoRow[];
   avisos_de_caso: AvisoDeCasoEntregaRow[];
+  /**
+   * Campanhas que falaram com o titular (migration 0375).
+   *
+   * Entra pelo mesmo motivo de `voice_calls`: o trigger
+   * `trg_redigir_campanhas_anonimizado` APAGA o texto e o telefone destas linhas
+   * quando ele pede anonimização, e o que se apaga a pedido dele é o que se
+   * entrega a pedido dele (Art. 18 II). Sem este bloco, alguém que recebeu uma
+   * prospecção pediria acesso e não veria a mensagem que recebeu.
+   */
+  campaign_recipients: CampaignRecipientRow[];
+  /**
+   * Lista de exclusão de campanhas (migration 0375).
+   *
+   * Entra pelo mesmo motivo das demais: o trigger
+   * `trg_redigir_exclusoes_anonimizado` APAGA o vínculo e os últimos dígitos
+   * quando o titular pede anonimização, e o que se apaga a pedido dele é o que
+   * se entrega a pedido dele (Art. 18 II).
+   */
+  campaign_suppressions: CampaignSuppressionRow[];
   reply_drafts?: Array<{
     id: string;
     status: string;
@@ -894,6 +950,48 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // Campanhas — `contact_id` direto em `campaign_recipients` (migration 0375).
+  let campaign_recipients: CampaignRecipientRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("campaign_recipients")
+      .select(
+        "id, campaign_id, status, eligibility_status, exclusion_reason, rendered_body, sent_at, delivered_at, read_at, replied_at, opted_out_at",
+      )
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (error) {
+      logger.warn("[lgpd-export-worker] campaign recipients load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    } else if (data) {
+      campaign_recipients = data as unknown as CampaignRecipientRow[];
+    }
+  }
+
+  // Lista de exclusão de campanhas — `contact_id` direto (migration 0375).
+  let campaign_suppressions: CampaignSuppressionRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("campaign_suppressions")
+      .select("id, address_tail, reason, source, created_at")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (error) {
+      logger.warn("[lgpd-export-worker] campaign suppressions load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    } else if (data) {
+      campaign_suppressions = data as unknown as CampaignSuppressionRow[];
+    }
+  }
+
   // Captação por webhook — a MESMA classe do bloco acima, achada pelo gate.
   let webhook_captures: CaptureRow[] = [];
   if (contactId) {
@@ -1285,6 +1383,8 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     case_chat_messages,
     passagens,
     avisos_de_caso,
+    campaign_recipients,
+    campaign_suppressions,
   };
 }
 
@@ -1326,5 +1426,7 @@ function emptyPayload(
     case_chat_messages: [],
     passagens: [],
     avisos_de_caso: [],
+    campaign_recipients: [],
+    campaign_suppressions: [],
   };
 }

@@ -48,6 +48,7 @@ import { finalizeHandoff } from "./handoff";
 import { loadHistoryWithBudget } from "./history";
 import { mintEphemeralToken, revokeEphemeralToken } from "./mcp_token";
 import { pickToolsFromMcp, type RuntimeHandoffSignal } from "./tools";
+import { modulosLigados } from "@/lib/instalacao/modulos";
 import { serializeSteps } from "./serialize";
 import {
   CHANNEL_SESSION_REF_COLUMNS,
@@ -484,6 +485,7 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
       handoffToolEnabled: version.handoff_tool_enabled,
       // `?? []` — o clone sem a coluna 0125 nasce FECHADO.
       pipelineIds: (version as { pipeline_ids?: string[] }).pipeline_ids ?? [],
+      modulosLigados: await modulosLigados(admin),
       handoffSignal,
     });
 

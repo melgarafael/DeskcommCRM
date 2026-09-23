@@ -29,6 +29,8 @@ import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
+import { seModuloDesligado } from "../_falha";
+
 export const dynamic = "force-dynamic";
 
 const COLUNAS_SEGURAS =
@@ -36,6 +38,8 @@ const COLUNAS_SEGURAS =
 
 export async function GET(): Promise<Response> {
   const requestId = randomUUID();
+  const desligado = await seModuloDesligado(requestId);
+  if (desligado) return desligado;
   const authz = await requireRole("viewer", { requestId, resource: "external_db_connections" });
   if (!authz.ok) return authz.response;
   const { org: activeOrg } = authz;
@@ -58,6 +62,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
+  const desligado = await seModuloDesligado(requestId);
+  if (desligado) return desligado;
   const authz = await requireRole("admin", { requestId, resource: "external_db_connections" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);

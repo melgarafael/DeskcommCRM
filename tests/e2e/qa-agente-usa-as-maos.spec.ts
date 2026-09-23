@@ -304,7 +304,7 @@ async function login(page: Page): Promise<void> {
   await page.goto(`${APP_URL}/login`);
   await page.locator("#email").fill(creds.users.admin!.email);
   await page.locator("#password").fill(creds.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/login\/mfa/);
 
   for (let tentativa = 0; tentativa < 2; tentativa++) {

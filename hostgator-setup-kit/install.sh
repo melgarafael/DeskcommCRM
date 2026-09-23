@@ -30,6 +30,10 @@ NONINTERACTIVE=0
 # usar o _common.sh). As duas funções abaixo são gêmeas das de lá — se mexer
 # numa, mexa na outra.
 dc() {
+  if [ "${SINGLE_SERVER:-0}" = "1" ]; then
+    docker compose -f "$COMPOSE" -f docker-compose.single-server.yml "$@"
+    return
+  fi
   case "${REVERSE_PROXY:-caddy}" in
   traefik) docker compose -f "$COMPOSE" -f "$COMPOSE_TRAEFIK" "$@" ;;
   npm)     docker compose -f "$COMPOSE" -f "$COMPOSE_NPM" "$@" ;;
@@ -37,11 +41,23 @@ dc() {
   esac
 }
 dc_files() {
+  if [ "${SINGLE_SERVER:-0}" = "1" ]; then
+    printf -- '-f %s -f %s' "$COMPOSE" docker-compose.single-server.yml
+    return
+  fi
   case "${REVERSE_PROXY:-caddy}" in
   traefik) printf -- '-f %s -f %s' "$COMPOSE" "$COMPOSE_TRAEFIK" ;;
   npm)     printf -- '-f %s -f %s' "$COMPOSE" "$COMPOSE_NPM" ;;
   *)       printf -- '-f %s' "$COMPOSE" ;;
   esac
+}
+
+# psql/pg_dump efêmeros. No modo single-server o Postgres só é alcançável pela
+# bridge privada (supabase-db), nunca por porta pública.
+pg_container() {
+  local -a rede=()
+  [ -n "${PSQL_DOCKER_NETWORK:-}" ] && rede=(--network "$PSQL_DOCKER_NETWORK")
+  docker run --rm ${rede[@]+"${rede[@]}"} "$@"
 }
 
 # ── Aparência ───────────────────────────────────────────────────────────────
@@ -235,10 +251,20 @@ v_supabase_url() {
     *supabase.co*) echo "Cole a URL completa, começando com https:// — ex.: https://abcdefgh.supabase.co"; return 1;;
     *) echo "A URL precisa começar com https://. Na nuvem ela fica em Settings > API > Project URL (termina em .supabase.co); num Supabase próprio, é o endereço do seu servidor."; return 1;;
   esac
+  # No single-server a URL pública é servida pelo Caddy, que só sobe DEPOIS
+  # deste validador. A prova disponível aqui é o gateway local do Supabase,
+  # publicado só em loopback.
+  local health_url="$1"
+  if [ "${SINGLE_SERVER:-0}" = "1" ]; then
+    case "${SUPABASE_INTERNAL_URL:-}" in
+      http://*|https://*) health_url="$SUPABASE_INTERNAL_URL";;
+      *) echo "O modo single-server exige SUPABASE_INTERNAL_URL com http:// ou https:// para validar o Supabase local."; return 1;;
+    esac
+  fi
   local code
-  code="$(curl -s -o /dev/null -w '%{http_code}' -m 15 "$1/auth/v1/health" 2>/dev/null)" || code=000
+  code="$(curl -s -o /dev/null -w '%{http_code}' -m 15 "${health_url%/}/auth/v1/health" 2>/dev/null)" || code=000
   if [ "$code" = "000" ]; then
-    echo "Não consegui alcançar $1 — confira se o projeto existe, está ativo (projeto pausado não responde) e se o VPS tem internet."
+    echo "Não consegui alcançar $health_url — confira se o projeto existe, está ativo (projeto pausado não responde) e se o VPS tem internet."
     return 1
   fi
   return 0
@@ -323,7 +349,7 @@ v_db_url() {
       fi;;
   esac
   local out
-  if out="$(docker run --rm postgres:17-alpine psql "$1" -tAc 'select 1' 2>&1)"; then
+  if out="$(pg_container postgres:17-alpine psql "$1" -tAc 'select 1' 2>&1)"; then
     return 0
   fi
   echo "Não consegui conectar no banco. O Postgres respondeu:"
@@ -1589,6 +1615,13 @@ esac
   envq NEXT_PUBLIC_SUPABASE_ANON_KEY "$NEXT_PUBLIC_SUPABASE_ANON_KEY"
   envq SUPABASE_SERVICE_ROLE_KEY "$SUPABASE_SERVICE_ROLE_KEY"
   envq SUPABASE_DB_URL "$SUPABASE_DB_URL"
+  # Modo single-server (install-single-server.sh). O .env é reescrito com
+  # truncamento: sem estas linhas, o update seguinte perderia o override do
+  # compose e o Caddy voltaria ao Caddyfile sem o Supabase. Vazio/0 = modo comum.
+  envq SINGLE_SERVER "${SINGLE_SERVER:-0}"
+  envq SINGLE_SERVER_NETWORK "${SINGLE_SERVER_NETWORK:-}"
+  envq PSQL_DOCKER_NETWORK "${PSQL_DOCKER_NETWORK:-}"
+  envq SUPABASE_INTERNAL_URL "${SUPABASE_INTERNAL_URL:-}"
   envq NEXT_PUBLIC_APP_URL "$NEXT_PUBLIC_APP_URL"
   envq NEXT_PUBLIC_ADMIN_URL "$NEXT_PUBLIC_ADMIN_URL"
   printf '# Marca da instalação (white-label). Preencha APP_LOGO_URL com a URL de uma\n'
@@ -1808,7 +1841,7 @@ if [ -f supabase/baseline.sql ]; then
   # (pg_trgm) mas NÃO cria as extensões. Supabase não as habilita no schema public por
   # padrão — criamos aqui, senão o schema quebra no meio (ex.: "type public.vector does
   # not exist"). Idempotente (if not exists).
-  docker run --rm postgres:17-alpine psql "$(url_do_schema)" -v ON_ERROR_STOP=1 -c \
+  pg_container postgres:17-alpine psql "$(url_do_schema)" -v ON_ERROR_STOP=1 -c \
     "create extension if not exists vector with schema public; create extension if not exists citext with schema public; create extension if not exists pg_trgm with schema public;" \
     >/dev/null 2>&1 \
     && c_grn "✓ extensões (vector, citext, pg_trgm) habilitadas no public" \
@@ -1825,7 +1858,7 @@ if [ -f supabase/baseline.sql ]; then
   # dentro da substituição e, com `set -e` + `pipefail`, derruba o instalador sem
   # imprimir nada (o 2>/dev/null já tinha engolido a causa). Preferimos seguir e
   # deixar o erro aparecer no ponto em que dá para explicá-lo.
-  has_schema="$(docker run --rm postgres:17-alpine psql "$(url_do_schema)" -tAc \
+  has_schema="$(pg_container postgres:17-alpine psql "$(url_do_schema)" -tAc \
     "select 1 from information_schema.tables where table_schema='public' and table_name='organizations' limit 1" 2>/dev/null | tr -d '[:space:]' || true)"
 
   if [ "$has_schema" = "1" ]; then
@@ -1841,7 +1874,7 @@ if [ -f supabase/baseline.sql ]; then
       listar_erros_do_banco "$BASELINE_INESPERADO" 20
     fi
   else
-    if docker run --rm -i -v "$PROJECT_DIR/supabase/baseline.sql:/baseline.sql:ro" \
+    if pg_container -i -v "$PROJECT_DIR/supabase/baseline.sql:/baseline.sql:ro" \
         postgres:17-alpine psql "$(url_do_schema)" -v ON_ERROR_STOP=1 -f /baseline.sql \
         > "$SCHEMA_LOG" 2>&1; then
       c_grn "✓ schema aplicado (log: $SCHEMA_LOG)"
@@ -1855,7 +1888,7 @@ if [ -f supabase/baseline.sql ]; then
   fi
 
   # Verificação real, não wishful thinking: o app precisa das tabelas core.
-  n_tables="$(docker run --rm postgres:17-alpine psql "$(url_do_schema)" -tAc \
+  n_tables="$(pg_container postgres:17-alpine psql "$(url_do_schema)" -tAc \
     "select count(*) from information_schema.tables where table_schema='public'" 2>/dev/null | tr -d '[:space:]')"
   if [ "${n_tables:-0}" -ge 30 ]; then
     c_grn "✓ verificação: ${n_tables} tabelas no schema public"
@@ -2010,7 +2043,9 @@ PENDENCIA_ARQUIVO="$PENDENCIA_EMAIL" \
 step "Criando o primeiro admin (${OWNER_EMAIL})"
 # 1) Cria o usuário no Supabase Auth. Se já existe, a API responde 422 — ignoramos
 #    (|| true): a re-execução é idempotente, o passo seguinte encontra o usuário.
-curl -fsS -X POST "${NEXT_PUBLIC_SUPABASE_URL}/auth/v1/admin/users" \
+# No single-server o Caddy pode ainda estar emitindo o certificado: fala com o
+# gateway local, que já respondeu ao validador.
+curl -fsS -X POST "${SUPABASE_INTERNAL_URL:-${NEXT_PUBLIC_SUPABASE_URL}}/auth/v1/admin/users" \
   -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
   -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
   -H "Content-Type: application/json" \
@@ -2020,7 +2055,7 @@ curl -fsS -X POST "${NEXT_PUBLIC_SUPABASE_URL}/auth/v1/admin/users" \
 # 2) Resolve o id direto do auth.users e cria org + membership + platform_admin.
 #    Resolver o uid DENTRO do SQL evita parsing frágil de JSON e funciona tanto para
 #    usuário recém-criado quanto para um que já existia (re-execução).
-docker run --rm -i postgres:17-alpine psql "$(url_do_schema)" -v ON_ERROR_STOP=1 <<SQL \
+pg_container -i postgres:17-alpine psql "$(url_do_schema)" -v ON_ERROR_STOP=1 <<SQL \
   && c_grn "✓ dono criado e promovido a super-admin" \
   || die "Não consegui promover o admin. Confira a service_role key, a URL e a connection string do Supabase.
      Este passo lê auth.users e escreve em public: num Supabase próprio ele precisa do dono do

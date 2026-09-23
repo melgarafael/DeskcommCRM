@@ -11,7 +11,7 @@
 //   lib/schemas/leads.ts:69          currency: z.string().length(3).default("BRL")
 //   app/api/v1/leads/_handler.ts:317 currency: input.currency ?? "BRL"
 //   components/kanban/NewLeadDialog.tsx:127  currency: "BRL"
-//   lib/mcp/tools/leads.ts:191       currency: input.currency ?? "BRL"   ← fora deste conserto
+//   lib/mcp/tools/leads.ts:191       currency: input.currency ?? "BRL"   ← consertado depois, com o euro
 //
 // O `.default()` do schema é o que torna os outros inalcançáveis: ele preenche
 // o campo ANTES do handler, então o `?? "BRL"` de lá nunca rodava e nenhum
@@ -39,6 +39,7 @@ vi.mock("@/lib/atendimento/origem", () => ({
 }));
 
 import { createLeadHandler } from "@/app/api/v1/leads/_handler";
+import { crmCreateLead } from "@/lib/mcp/tools/leads";
 import { createLeadSchema } from "@/lib/schemas/leads";
 
 const ORG = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -168,5 +169,18 @@ describe("createLeadHandler — moeda", () => {
     expect(inseridos[0]).toMatchObject({ currency: "BRL" });
     expect(silenciado).toHaveBeenCalled();
     silenciado.mockRestore();
+  });
+
+  it("o agente pelo MCP também: sem moeda no argumento, vale a da organização", async () => {
+    // `crm_create_lead` trocava a moeda ausente por "BRL" ANTES de chamar o
+    // handler, e o agente criava em real o negócio de uma empresa em euro.
+    const { cliente, inseridos } = supabaseCom("EUR");
+
+    await crmCreateLead.handler(
+      { pipeline_id: PIPELINE, stage_id: ETAPA, title: "Negócio aberto pelo agente" },
+      { supabase: cliente, organizationId: ORG, actor: { type: "user", id: "user-1" }, requestId: "req-1" } as never,
+    );
+
+    expect(inseridos[0]).toMatchObject({ currency: "EUR" });
   });
 });

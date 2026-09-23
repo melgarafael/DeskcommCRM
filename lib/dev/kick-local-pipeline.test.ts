@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 vi.mock("@/lib/event-log/drain", () => ({
@@ -30,5 +32,13 @@ describe("kickLocalPipeline", () => {
         contactId: "contact",
       }),
     ).resolves.toBeUndefined();
+  });
+
+  it("acorda a espera existente antes de aplicar o texto (não o contrário)", () => {
+    const src = readFileSync(join(process.cwd(), "lib/dev/kick-local-pipeline.ts"), "utf8");
+    const acordar = src.indexOf("await acordarFollowupPorInbound(admin, inbound)");
+    const aplicar = src.indexOf("await aplicarTextoNosFollowups(admin, inbound)");
+    expect(acordar).toBeGreaterThan(0);
+    expect(aplicar).toBeGreaterThan(acordar);
   });
 });

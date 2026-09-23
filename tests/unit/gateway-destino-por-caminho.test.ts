@@ -40,9 +40,32 @@ async function destinoDe(model: NonNullable<Awaited<ReturnType<typeof resolveLan
   return destinos;
 }
 
+/**
+ * O SHELL DE QUEM RODA A SUÍTE NÃO PODE DECIDIR O DESTINO MEDIDO.
+ *
+ * Os SDKs da Anthropic e da OpenAI honram `ANTHROPIC_BASE_URL` /
+ * `OPENAI_BASE_URL` do ambiente. Quem trabalha com um proxy de modelo no shell
+ * — LiteLLM, um gateway corporativo, qualquer roteador local — via o caso
+ * "provider direto" falhar com `localhost:<porta>` no lugar de
+ * `api.anthropic.com`, num arquivo que passa no CI e reprova na máquina de
+ * quem contribui. O `@/lib/env` já está dublado; o que faltava era o
+ * `process.env`, que estes SDKs leem por conta própria.
+ *
+ * Elas são REMOVIDAS, não fixadas num valor: o que o teste afirma é que o
+ * PRODUTO escolhe o destino, e um default nosso escondendo a ausência delas
+ * seria outra medida.
+ */
+const BASE_URLS_DO_AMBIENTE = ["ANTHROPIC_BASE_URL", "OPENAI_BASE_URL", "OPENROUTER_BASE_URL"] as const;
+let baseUrlsSalvas: Record<string, string | undefined> = {};
+
 beforeEach(() => {
   for (const k of Object.keys(envMock)) delete envMock[k];
   delete process.env.AI_GATEWAY_API_KEY;
+  baseUrlsSalvas = {};
+  for (const k of BASE_URLS_DO_AMBIENTE) {
+    baseUrlsSalvas[k] = process.env[k];
+    delete process.env[k];
+  }
   destinos = [];
   fetchOriginal = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -58,6 +81,12 @@ beforeEach(() => {
 afterEach(() => {
   globalThis.fetch = fetchOriginal;
   delete process.env.AI_GATEWAY_API_KEY;
+  // Devolve o ambiente de quem roda: outro arquivo da mesma execução pode
+  // depender do proxy que este teste precisou tirar do caminho.
+  for (const [k, v] of Object.entries(baseUrlsSalvas)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
 });
 
 describe("destino real de cada caminho de resolveLanguageModel", () => {

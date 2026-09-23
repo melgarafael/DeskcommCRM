@@ -22,6 +22,13 @@ export function useMarkAsRead(conversationId: string | null, unread: number) {
     onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: ["conversations"] });
       qc.invalidateQueries({ queryKey: ["conversation", id] });
+      // O contador do topo vive em `["conversation-counts", orgId, sufixo]`
+      // (useConversationCounts). O casamento por prefixo do react-query compara
+      // elemento a elemento: nem `["conversations"]` nem `["conversation", id]`
+      // alcançam essa família — era por isso que o negrito sumia e o número
+      // ficava parado até recarregar a página. Invalidar a família inteira
+      // acompanha também os sufixos que não estão na tela agora.
+      qc.invalidateQueries({ queryKey: ["conversation-counts"] });
     },
   });
 

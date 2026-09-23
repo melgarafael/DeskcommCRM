@@ -77,7 +77,7 @@ export async function login(page: Page, email: string, senha: string): Promise<v
     await page.goto("/login");
     await page.locator("#email").fill(email);
     await page.locator("#password").fill(senha);
-    await page.getByRole("button", { name: /entrar/i }).click();
+    await page.getByRole("button", { name: "Entrar", exact: true }).click();
     try {
       await page.waitForURL(/\/app/, { timeout: 45_000 });
       if (i > 1) registra(`[ambiente] login de ${email} só entrou na tentativa ${i}`);

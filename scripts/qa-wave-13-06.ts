@@ -32,7 +32,7 @@ async function loginAndGetApi(): Promise<{ api: APIRequestContext; close: () => 
   await page.goto(`${BASE_URL}/login`, { waitUntil: "domcontentloaded" });
   await page.locator("#email").pressSequentially(ADMIN_EMAIL, { delay: 20 });
   await page.locator("#password").pressSequentially(PASSWORD, { delay: 20 });
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   try {
     await page.waitForURL((u) => /\/app\b|\/login\/mfa/.test(u.toString()), { timeout: 20_000 });
   } catch { /* tolerate */ }

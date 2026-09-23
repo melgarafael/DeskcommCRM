@@ -4,6 +4,7 @@ import {
   BACKOFF_MS,
   actionTurnCompleted,
   occupancyEventCount,
+  pisoDoInboundDaEspera,
   processNode,
   resolveWaitPhase,
   selectEdge,
@@ -139,6 +140,34 @@ describe("occupancyEventCount", () => {
     const events = [{ node_id: "cap_nome", idempotency_key: "cap_nome:3" }];
     expect(resolveWaitPhase(events, "cap_nome", 8)).toBe(false);
     expect(occupancyEventCount(events, "cap_nome")).toBe(1);
+  });
+});
+
+describe("pisoDoInboundDaEspera", () => {
+  const no = {
+    id: "mr1",
+    type: "match_reply" as const,
+    label: "Casar",
+    position: { x: 0, y: 0 },
+    config: {
+      branches: [{ id: "br_sim", label: "1", op: "eq" as const, pattern: "1" }],
+      grace_timeout_ms: 7_200_000,
+    },
+  };
+  const park = "2026-09-20T17:02:31.053Z";
+  const wait = {
+    node_id: "mr1",
+    idempotency_key: "mr1:3",
+    event_type: "wait_started",
+    payload: { wake_status: "waiting_reply", next_eval_at: "2026-09-20T19:02:31.053Z" },
+  };
+
+  it("volta ao instante em que a espera começou, não ao updated_at do wake", () => {
+    expect(pisoDoInboundDaEspera(no, [wait], "2026-09-20T19:18:00.000Z")).toBe(park);
+  });
+
+  it("sem wait_started, usa o fallback", () => {
+    expect(pisoDoInboundDaEspera(no, [], "2026-09-20T19:18:00.000Z")).toBe("2026-09-20T19:18:00.000Z");
   });
 });
 
@@ -898,6 +927,21 @@ describe("processNode — match_reply", () => {
       lastInboundBody: "talvez depois",
     });
     expect(result).toMatchObject({ kind: "advance", next_node_id: "escape" });
+  });
+
+  it("wokeEarly sem texto desta pergunta permanece na espera — não ALWAYS", () => {
+    const result = processNode({
+      node: matchNode(),
+      edges,
+      enrollment: enrollment(),
+      lead: lead(),
+      clock,
+      waitElapsed: false,
+      wokeEarly: true,
+      lastInboundBody: "",
+    });
+    expect(result.kind).toBe("wait");
+    expect(result).toMatchObject({ wake_status: "waiting_reply" });
   });
 
   it("wokeEarly + save_to sem aresta Sempre usa o primeiro ramo que não é no_reply", () => {

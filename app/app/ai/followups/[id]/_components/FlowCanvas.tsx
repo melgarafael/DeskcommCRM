@@ -50,7 +50,7 @@ import { EdgeConfigPanel } from "./EdgeConfigPanel";
 import { EtapasDoFluxoProvider, useEtapasDoFluxo } from "./EtapasDoFluxo";
 import { NodePalette } from "./NodePalette";
 import { PublishBar } from "./PublishBar";
-import { NODE_VISUALS } from "./nodes/nodeVisuals";
+import { NODE_VISUALS, configPadraoDaAcao } from "./nodes/nodeVisuals";
 import { TriggerNode } from "./nodes/TriggerNode";
 import { WaitNode } from "./nodes/WaitNode";
 import { ConditionNode } from "./nodes/ConditionNode";
@@ -213,19 +213,25 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
     [setEdges, nodes],
   );
 
+  // O nó de ação nasce com o padrão do gatilho do fluxo. O callback depende só
+  // do `kind` (string), não do objeto `trigger_config`, que é novo a cada refetch.
+  const triggerKindRaw = flow?.trigger_config?.kind;
+  const triggerKind = typeof triggerKindRaw === "string" ? triggerKindRaw : undefined;
+
   const addNodeAt = useCallback(
     (type: NodeType, position: { x: number; y: number }) => {
       const visual = NODE_VISUALS[type];
       const id = `${type}-${nextId.current++}`;
+      const config = type === "action" ? configPadraoDaAcao(triggerKind) : visual.defaultConfig();
       const newNode: RFNode = {
         id,
         type,
         position,
-        data: { label: t(visual.defaultLabel), config: visual.defaultConfig() },
+        data: { label: t(visual.defaultLabel), config },
       };
       setNodes((nds) => nds.concat(newNode));
     },
-    [setNodes, t],
+    [setNodes, t, triggerKind],
   );
 
   const onPaletteAdd = useCallback(

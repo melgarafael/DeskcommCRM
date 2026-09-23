@@ -174,6 +174,7 @@ describe("hubSections", () => {
     expect(secoes.flatMap((s) => s.items.map((i) => i.href))).toEqual([
       "/app/prospecting",
       "/app/kanban",
+      "/app/campaigns",
       "/app/contacts",
       "/app/tasks",
       "/app/calls",

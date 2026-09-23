@@ -55,6 +55,8 @@ function payload(): ExportPayload {
     passagens: [],
     avisos_de_caso: [],
     demandas: [],
+    campaign_recipients: [],
+    campaign_suppressions: [],
     appointment_notices: [
       {
         id: "aviso-aberto",

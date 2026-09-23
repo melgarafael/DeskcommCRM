@@ -163,7 +163,7 @@ test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à
     await page.goto("/login");
     await page.getByLabel(/e-?mail/i).fill(email);
     await page.getByLabel(/senha/i).fill(password);
-    await page.getByRole("button", { name: /entrar/i }).click();
+    await page.getByRole("button", { name: "Entrar", exact: true }).click();
     await page.waitForURL(/\/app(?:\/|$)/);
     await abrirConversa(page, conversation);
     const panel = page.getByTestId("inbox-demandas");
@@ -259,7 +259,7 @@ test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à
     if (language.error) throw language.error;
     await page.reload();
     await expect(page.getByTestId("inbox-memoria")).toContainText("Historial cerrado — sin tareas pendientes");
-    await expect(page.getByTestId("inbox-memoria")).toContainText("Resuelta");
+    await expect(page.getByTestId("inbox-memoria")).toContainText("Resuelto");
     await page.screenshot({ path: `${evidence}/task4-historico-es.png`, fullPage: true });
     await page.getByRole("button", { name: "Reabrir", exact: true }).click();
     await expect.poll(async () => (await db.from("conversations").select("status").eq("organization_id",org).eq("id",conversation).single()).data?.status).toBe("open");

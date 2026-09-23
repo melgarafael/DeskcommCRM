@@ -92,7 +92,7 @@ describe("painel de etiquetas com idioma espanhol", () => {
     expect(frase("Eliminar vip de 3 contacto(s), 2 lead(s) y 1 conversación(es).")).toBeTruthy();
     expect(
       frase(
-        "Atención: 2 regla(s) de agente siguen escribiendo esta etiqueta. Eliminar aquí no borra la regla — el agente volverá a crear la etiqueta en la próxima atención.",
+        "Atención: 2 regla(s) de agente siguen escribiendo esta etiqueta. Eliminarla aquí no borra la regla: el agente volverá a crear la etiqueta en la próxima atención.",
       ),
     ).toBeTruthy();
   });

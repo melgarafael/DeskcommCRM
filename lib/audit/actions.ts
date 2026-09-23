@@ -303,6 +303,7 @@ export const AUDIT_ACTIONS = [
   "followup_flow.published",
   "followup_flow.disabled",
   "followup_flow.deleted",
+  "followup_flow.duplicated",
   "followup_flow.rolled_back",
   "followup.worker_run",
   "followup.silence_sweep_run",
@@ -394,6 +395,12 @@ export const AUDIT_ACTIONS = [
   // é a única tabela que guarda quem desligou o bloqueio de gasto, mudou o
   // portão de divulgação ou passou a exigir assinatura nas entregas.
   "platform.comportamento_updated",
+  // Um MÓDULO OPCIONAL da instalação ligado ou desligado em `/admin/sistema`
+  // (linha em `platform_config`, migration 0384 — o banco externo, doc 37).
+  // Auditável porque a linha guarda o estado e não o histórico: "desde quando
+  // as empresas deste servidor podiam ligar um banco de outro sistema?" só tem
+  // resposta aqui.
+  "platform.modulo_updated",
   // A lista de endereços da rede INTERNA que a instalação pode alcançar
   // (`platform_settings.internal_destinations`, migration 0324, decisão 22-d).
   // Auditável pela mesma razão da linha acima e com alcance maior: cada entrada
@@ -435,6 +442,15 @@ export const AUDIT_ACTIONS = [
   // O `metadata` carrega o id da conta padrão (identificador, não segredo) e um
   // booleano dizendo se o token foi trocado. O token, nem em metadata.
   "ad_insights_connection.updated",
+  // O ENDEREÇO DE CAPTURA da landing page (0381): para qual WhatsApp a rota
+  // pública manda quem clicou no botão, e com que texto. Ação separada das duas
+  // acima pelo mesmo critério delas — aqui não há credencial nenhuma, e a
+  // pergunta que esta trilha responde é "quem apontou o tráfego pago da minha
+  // organização para este número?". Trocar a linha não derruba nada: o
+  // endereço continua respondendo, os anúncios continuam rodando, e os leads
+  // simplesmente passam a chegar noutro WhatsApp — por isso o número vai no
+  // `metadata`, que é o único lugar onde a troca fica visível depois.
+  "captura_de_utm.updated",
   // Desconectar APAGA o token (a 0205 não tem `enabled`, e o porquê está no
   // cabeçalho dela). Auditada à parte de `.updated` porque some uma credencial:
   // a tela de Meta Ads para de funcionar para todo mundo da organização, e a
@@ -460,9 +476,14 @@ export const AUDIT_ACTIONS = [
   "security.mfa_exigida",
   "security.mfa_dispensada",
   "security.mfa_desativada",
-  // Havia convite no signup e ele não valia (expirado, ou emitido para outro
-  // e-mail). Não é falha de sistema: é a recusa deliberada de abrir organização
-  // nova para quem estava tentando entrar numa existente.
+  // A porta recusou o provisionamento no signup, com `motivo` no metadata. Os
+  // casos: convite que não valia (expirado, ou emitido para outro e-mail),
+  // `somente_convite` (a instalação não abre organização para quem chega sem
+  // convite) e `acesso_revogado` (a conta teve o acesso retirado — a consulta a
+  // `acessoFoiRevogado` é feita ENTRE `vinculoAtivo` e `decidirConviteDoSignup`,
+  // senão o motivo auditado sairia como convite inválido, que não é a verdade
+  // sobre o que aconteceu com quem foi revogado). Não é falha de sistema: é a
+  // recusa deliberada de abrir organização nova.
   "auth.signup_provision_recusado",
 
   // ── O teto de gasto de IA (migration 0159) ──────────────────────────────
@@ -783,6 +804,59 @@ export const AUDIT_ACTIONS = [
   "external_db_connection.deleted",
   "external_db_connection.tested",
   "external_db_connection.read",
+  // Campanhas (migration 0375). Toda mudança de ESTADO da campanha audita: são
+  // as ações que fazem mensagem sair para gente que não pediu, e "quem mandou
+  // isso, e quando?" precisa de resposta. Edição de rascunho não audita — não
+  // saiu nada dela.
+  "campaign.created",
+  "campaign.prepared",
+  "campaign.test_sent",
+  "campaign.scheduled",
+  "campaign.started",
+  "campaign.paused",
+  "campaign.resumed",
+  "campaign.cancelled",
+  "campaign.duplicated",
+  // Rodada do cron que MEXEU em alguma campanha (enviou, pulou, concluiu,
+  // promoveu agendada). Rodada vazia não audita — o critério do `CLAUDE.md`.
+  "cron.campaign_worker",
+  // Lista de exclusão da operação (migration 0376). Audita porque é decisão que
+  // tira alguém de todo envio futuro — "quem tirou este número, e quando?"
+  // precisa de resposta. O telefone NÃO entra no payload: só os últimos dígitos.
+  "campaign.suppression_added",
+  "campaign.suppression_removed",
+  // Padrões de campanha da organização (janela de atribuição de resposta e o
+  // ritmo que campanha nova herda). Auditável porque muda o comportamento de
+  // TODA campanha futura, e a de atribuição muda a métrica das já enviadas.
+  "campaign.settings_updated",
+
+  // ── Entrada com Google (issue #1388) ────────────────────────────────────
+  // UM código para as recusas do OAuth, com `motivo` no metadata. Da partida
+  // (`signInWithGoogle`): `provedor_indisponivel` (ninguém ligou o provedor
+  // Google no projeto) e `url_ausente`. Da volta (`/auth/callback`, já depois
+  // do gate): `troca_do_code_falhou` (o verificador de PKCE não voltou, o code
+  // já foi gasto, o relógio do GoTrue passou) e `leitura_do_vinculo_falhou` (a
+  // sessão fechou, mas a leitura do vínculo não respondeu — falha fechada).
+  //
+  // As duas recusas que acontecem ANTES do gate — `error` na URL e chegada sem
+  // `code` — não escrevem auditoria, de propósito: quem chega assim ainda não
+  // provou ser dono do verificador de PKCE, e `error` é texto cru de quem
+  // chama. A doutrina é a do irmão desta rota — `app/api/v1/agenda/google/
+  // callback/route.ts` audita DEPOIS do gate, nunca antes. A tela de login diz
+  // o que aconteceu a quem chega por esses dois caminhos.
+  //
+  // A pergunta de triagem é sempre a mesma — "por que a entrada com Google não
+  // fechou para esta pessoa?" —, e ela não precisa de quatro filtros no painel
+  // para ser respondida; o que precisa estar separado é a causa, e ela está.
+  "auth.google_signin_failed",
+
+  // ── Cadastro com aprovação (migration 0383, recorte do PR #714) ─────────
+  // O pedido de empresa nova numa instalação em `com_aprovacao`, e a decisão
+  // do administrador da instalação. `approved` leva o `organization_id` da
+  // empresa que nasceu da aprovação — é a única ligação entre o pedido e ela.
+  "registration.requested",
+  "registration.approved",
+  "registration.rejected",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

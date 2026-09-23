@@ -32,7 +32,7 @@ async function loginAdmin(p: Page): Promise<void> {
   await p.goto(`${BASE}/login`);
   await p.locator("#email").fill(C.users.admin!.email);
   await p.locator("#password").fill(C.password);
-  await p.getByRole("button", { name: /entrar/i }).click();
+  await p.getByRole("button", { name: "Entrar", exact: true }).click();
   await p.waitForURL(/\/login\/mfa/);
   for (let i = 0; i < 3; i++) {
     if (msUntilNextTotpWindow() < 3_000 || generateTotp(C.admin_totp.secret) === ultimoCodigo) {

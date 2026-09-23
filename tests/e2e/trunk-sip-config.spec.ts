@@ -73,7 +73,7 @@ async function entrarComoAdmin(page: Page): Promise<void> {
   await page.goto("/login");
   await page.locator("#email").fill(usuario!.email);
   await page.locator("#password").fill(creds.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/login\/mfa/);
 
   for (let tentativa = 0; tentativa < 2; tentativa += 1) {
@@ -99,7 +99,7 @@ async function entrarComoManager(page: Page): Promise<void> {
   await page.goto("/login");
   await page.locator("#email").fill(usuario!.email);
   await page.locator("#password").fill(creds.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/app(\/|$)/, { timeout: 20_000 });
 }
 

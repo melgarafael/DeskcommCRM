@@ -19,14 +19,15 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
 import { estamparAtribuicaoDoContato } from "@/lib/leads/atribuicao-de-anuncio";
+import { PADRAO_DO_REF } from "../captura-de-clique";
 import { casarClickRef } from "./captura-de-clique";
 
 /**
- * `[ref:XXXXXX]` — colchetes e prefixo de propósito, para não casar por
- * acidente com seis caracteres que apareçam à toa no meio de uma mensagem
- * comum. O alfabeto (sem 0/O/1/I/L) espelha `captura-de-clique.ts`.
+ * O padrão do ref subiu para `../captura-de-clique.ts` quando a captura de UTM
+ * da landing page passou a usar o MESMO marcador: um padrão por eixo
+ * divergiria no dia em que só um dos dois mudasse de alfabeto.
  */
-const PADRAO_DO_TOKEN = /\[ref:([2-9A-HJ-NP-Z]{6})\]/;
+const PADRAO_DO_TOKEN = PADRAO_DO_REF;
 
 /**
  * Melhor esforço: nunca lança, nunca derruba o inbound. Ausência de match é o

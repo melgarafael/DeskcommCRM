@@ -14,6 +14,7 @@ import { marcaDaInstalacao } from "@/lib/branding/instalacao";
 import { resolverMarcaDaOrganizacao } from "@/lib/branding/organizacao";
 import { env } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { modulosLigados } from "@/lib/instalacao/modulos";
 import {
   ImpersonateBanner,
 } from "@/components/app/ImpersonateBanner";
@@ -64,7 +65,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (activeOrg) {
     const admin = createAdminClient();
     /**
-     * As quatro consultas que TODA página de `/app` paga, disparadas juntas.
+     * As cinco consultas que TODA página de `/app` paga, disparadas juntas.
      *
      * Elas eram sequenciais e independentes: cada uma esperava a anterior sem
      * precisar do resultado dela, e a soma aparecia como a tela que não reage ao
@@ -87,7 +88,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
      *    este layout — a cerca anterior lia o texto-fonte e reprovava esta
      *    refatoração sem que nada tivesse quebrado.
      */
-    const [orgRes, conexoes, isEnrolled, mfaRequired] = await Promise.all([
+    const [orgRes, conexoes, isEnrolled, mfaRequired, modulos] = await Promise.all([
       admin
         .from("organizations")
         .select("onboarded_at, status, settings")
@@ -101,6 +102,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         user.id,
         activeOrg.orgId,
       ),
+      // Da INSTALAÇÃO: decide se a porta de um módulo opcional entra no menu.
+      modulosLigados(admin),
     ]);
 
     const orgRow = orgRes.data;
@@ -119,6 +122,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       visibility_mode: mode ?? DEFAULT_VISIBILITY_MODE,
       // Mesma linha de `settings` já lida acima — nenhuma consulta a mais.
       cliente_pela_agenda: clientePelaAgendaLigado(orgRow?.settings),
+      modulos_ligados: modulos,
     };
 
     // `marcaDaInstalacao()` é memoizada por TTL no PROCESSO (`lib/branding/

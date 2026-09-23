@@ -46,6 +46,8 @@ import {
   extrairOrigemDaPagina,
 } from "@/lib/leads/origem-do-site";
 import { logger } from "@/lib/logger";
+import { PADRAO_DO_REF } from "@/lib/plataformas-de-anuncio/captura-de-clique";
+import { casarClickRef } from "@/lib/plataformas-de-anuncio/meta/captura-de-clique";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
 import { ehContatoDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
@@ -358,13 +360,25 @@ async function pedirDespachoDoAgente(admin: Admin, entrada: EntradaDeMensagem): 
  * Falha aqui é LOG, nunca exceção: a mensagem do cliente JÁ está gravada, e
  * devolver erro ao provider faria ele reenviar a mensagem. Trocar um rótulo de
  * origem faltando por uma tempestade de reentregas é um péssimo negócio.
+ *
+ * ─── Dois transportes para a MESMA origem ──────────────────────────────────
+ *
+ * `[dk1:<base64url>]` carrega as UTMs dentro do próprio texto, e `[ref:XXXXXX]`
+ * carrega só um ref de seis caracteres, cujas UTMs ficaram no servidor quando a
+ * rota de captura recebeu o clique. O resto — primeira mensagem, primeiro
+ * toque, formato do que é gravado — é idêntico nos dois, e é por isso que eles
+ * compartilham este bloco em vez de ganharem um caminho cada.
+ *
+ * O `[dk1:]` é tentado PRIMEIRO porque é o que não custa consulta nenhuma: ele
+ * se resolve no texto. O ref só vai ao banco quando o texto não trouxe UTM.
  */
 async function guardarOrigemDaPagina(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
   const achada = extrairOrigemDaPagina(entrada.texto);
-  // O caso comum: quase nenhuma mensagem traz código de página.
-  if (!achada) return;
-
-  const origem = { ...achada, capturadaEm: new Date().toISOString() };
+  // O ref não é lido no banco aqui: a leitura CONSOME o clique, e consumir um
+  // clique fora da primeira mensagem o queimaria sem estampar ninguém.
+  const ref = achada ? null : (PADRAO_DO_REF.exec(entrada.texto ?? "")?.[1] ?? null);
+  // O caso comum: quase nenhuma mensagem traz código de página nem ref.
+  if (!achada && !ref) return;
 
   try {
     // A consulta vem ANTES de qualquer escrita, e DENTRO do try: falha de
@@ -384,6 +398,24 @@ async function guardarOrigemDaPagina(admin: Admin, entrada: EntradaDeMensagem): 
       });
       return;
     }
+
+    const utm = achada
+      ? achada.utm
+      : ref
+        ? (await casarClickRef(admin, entrada.organizationId, ref, entrada.contactId))?.utm
+        : undefined;
+    if (!utm) {
+      // Ref que não casa é sinal NOSSO que não fechou: já consumido, de outra
+      // organização, ou de um clique que nunca foi gravado. Não é tráfego
+      // orgânico, então vale um aviso — ao contrário da mensagem sem marcador
+      // nenhum, que nem chega aqui.
+      logger.warn("pos-entrada: ref da página não casou (a mensagem entra assim mesmo)", {
+        contactId: entrada.contactId,
+      });
+      return;
+    }
+
+    const origem = { utm, capturadaEm: new Date().toISOString() };
 
     const gravou = await estamparOrigemDaPagina(admin, entrada.organizationId, entrada.contactId, origem);
     if (!gravou) {

@@ -698,11 +698,18 @@ async function upsertSocialContact(
   identity: string,
   name: string | null,
 ): Promise<string> {
+  // Contato FUNDIDO não é alvo: ele aponta para o vencedor da fusão, e
+  // escrever nele é escrever num cadastro que ninguém mais lê — o mesmo motivo
+  // de `contato-por-telefone`. Aqui a guarda ainda evita um segundo defeito: o
+  // índice único é PARCIAL (`where ... and is_merged_into is null`), então duas
+  // linhas com a mesma identidade — uma mesclada, uma viva — são estado
+  // legítimo, e sem o filtro o `.maybeSingle()` estoura.
   const { data: existing, error: readError } = await admin
     .from("contacts")
     .select("id")
     .eq("organization_id", org)
     .eq("social_identity", identity)
+    .is("is_merged_into", null)
     .maybeSingle();
   if (readError) throw new Error("social_contact_lookup_failed");
   if (existing) return existing.id as string;
@@ -723,6 +730,10 @@ async function upsertSocialContact(
       .select("id")
       .eq("organization_id", org)
       .eq("social_identity", identity)
+      // Mesma guarda da busca acima: quem perdeu a corrida procura o VIVO.
+      // O `.single()` reclama de zero e de duas — sem o filtro, uma ficha
+      // mesclada com a mesma identidade tornaria "duas" alcançável.
+      .is("is_merged_into", null)
       .single();
     if (retryError || !winner) throw new Error("social_contact_race_failed");
     return winner.id as string;

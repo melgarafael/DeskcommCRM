@@ -2,21 +2,22 @@
  * Gate de gatilho AUTOMÁTICO de follow-up (Task 7.2) + resolução do agente que
  * ARMA o pointer (Task 8.6).
  *
- * Regra (spec 2026-07-21, seletor no agente): um gatilho AUTOMÁTICO
- * (silence/stage_change/conversation_end — `TriggerConfig.kind` em
- * `api-schemas.ts`) só pode criar um enrollment para um pointer se algum
- * agente PUBLICADO (`ai_agent_versions.status='published'`) da mesma org tem
- * `followup.enabled=true` e `followup.flow_pointer_ids` inclui esse pointer.
- * Enrollment MANUAL (`POST /api/v1/ai/followups/enrollments`) NÃO passa por
- * este gate — é escolha explícita de um humano, ortogonal ao vínculo do
- * agente (mas o manual TAMBÉM resolve o agente pinado por aqui pra registro).
+ * Um gatilho AUTOMÁTICO cujo grafo pede IA (`ai_classify`, espera `smart`,
+ * ação `ai_message`) só enrolla se algum agente PUBLICADO tem
+ * `followup.enabled=true` e o pointer em `flow_pointer_ids`.
  *
- * Task 8.6: além do booleano, o consumidor (silence-sweep) precisa saber QUAL
- * agente pinar no enrollment. `resolveAgentForAutomaticTrigger` devolve o
- * agent_id — determinístico quando >1 agente publicado habilita o mesmo
- * pointer: MENOR agent_id (uuid asc). Escolha estável, sem depender de uma
- * coluna `published_at` (que a tabela não tem por versão publicada) e sem
- * ambiguidade; documentada e testada.
+ * Grafo só de texto fixo / template / `match_reply` / espera fixa NÃO pede
+ * agente: o enrollment nasce com `agent_id` nulo, igual a `manual`/`webhook`.
+ * Sem isto, uma instalação sem chave de LLM publica o fluxo, vê "Ativo" e
+ * ninguém recebe a mensagem.
+ *
+ * Enrollment MANUAL (`POST /api/v1/ai/followups/enrollments`) NÃO passa por
+ * este gate — é escolha explícita de um humano (mas o manual TAMBÉM resolve o
+ * agente pinado por aqui pra registro).
+ *
+ * Task 8.6: quando o grafo pede IA, o consumidor precisa saber QUAL agente
+ * pinar. `resolveAgentForAutomaticTrigger` devolve o agent_id — menor uuid
+ * se >1 agente publicado habilita o mesmo pointer.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -32,25 +33,75 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  *   appointment_no_show  → `fn_appointment_recover` (a MESMA condição em SQL:
  *                          o `exists` sobre `ai_agent_versions` publicadas com
  *                          `followup->'enabled'` e o ponteiro em
- *                          `flow_pointer_ids`)
+ *                          `flow_pointer_ids` — SQL ainda não lê o grafo)
  *
- * ⚠️ `manual` e `webhook` NÃO entram, e a omissão é o que mantém o aviso da
- * Central honesto. Os dois enrollam por `lib/followup/enroll.ts`, que resolve o
- * agente só para PINAR no enrollment e segue com `agent_id = null` quando não
- * acha nenhum — o fluxo funciona. Avisar sobre eles seria alarme falso, e
- * alarme falso é o que ensina uma equipe a ignorar o alarme verdadeiro.
+ * ⚠️ `manual` e `webhook` NÃO entram. Os dois enrollam por `lib/followup/enroll.ts`
+ * com `agent_id = null` quando não há agente. Avisar sobre eles seria alarme
+ * falso. O cron `followup-sem-agente` recorta por esta lista, dispensa o aviso
+ * se o grafo publicado não pede IA (`fluxoPedeAgente`), e em
+ * `appointment_no_show` ainda avisa sempre (o SQL não acompanhou).
+ *
+ * `inbound_after_silence` entra: o handler aplica o mesmo gate, e a Central
+ * precisa poder avisar quando o grafo TEM nó de IA e ninguém arma o pointer.
  */
 export const GATILHOS_QUE_EXIGEM_AGENTE = [
   "silence",
   "stage_change",
   "case_opened",
   "appointment_no_show",
+  "inbound_after_silence",
 ] as const;
 
 export type GatilhoQueExigeAgente = (typeof GATILHOS_QUE_EXIGEM_AGENTE)[number];
 
 export function exigeAgente(kind: string): kind is GatilhoQueExigeAgente {
   return (GATILHOS_QUE_EXIGEM_AGENTE as readonly string[]).includes(kind);
+}
+
+/** Nó de gatilho do grafo publicado + se o fluxo precisa de um agente de IA. */
+export type NoDeGatilho = { id: string; pedeAgente: boolean };
+
+type NoDoGrafo = { id: string; type: string; config?: Record<string, unknown> };
+
+/**
+ * O grafo pede um agente publicado quando algum nó chama modelo.
+ * Texto fixo, template, `match_reply` e espera fixa não pedem.
+ */
+export function fluxoPedeAgente(graph: { nodes: ReadonlyArray<NoDoGrafo> }): boolean {
+  return graph.nodes.some((n) => {
+    if (n.type === "ai_classify") return true;
+    const mode = n.config?.mode;
+    return (n.type === "wait" && mode === "smart") || (n.type === "action" && mode === "ai_message");
+  });
+}
+
+export function noDeGatilhoDoGrafo(graph: { nodes: ReadonlyArray<NoDoGrafo> }): NoDeGatilho | null {
+  const trigger = graph.nodes.find((n) => n.type === "trigger");
+  if (!trigger) return null;
+  return { id: trigger.id, pedeAgente: fluxoPedeAgente(graph) };
+}
+
+/**
+ * Sem agente: fluxo de texto fixo segue (`agent_id` nulo); fluxo que pede IA
+ * é barrado. Com agente, pina o id — o grafo não muda essa escolha.
+ */
+export function agenteDoGatilhoAutomatico(
+  agentId: string | null,
+  pedeAgente: boolean,
+): { agentId: string | null; barrado: boolean } {
+  if (agentId !== null) return { agentId, barrado: false };
+  if (!pedeAgente) return { agentId: null, barrado: false };
+  return { agentId: null, barrado: true };
+}
+
+export async function decidirAgenteDoEnrollmentAutomatico(
+  db: FollowupGateDb,
+  orgId: string,
+  pointerId: string,
+  pedeAgente: boolean,
+): Promise<{ agentId: string | null; barrado: boolean }> {
+  const agentId = await resolveAgentForAutomaticTrigger(db, orgId, pointerId);
+  return agenteDoGatilhoAutomatico(agentId, pedeAgente);
 }
 
 /** Um agente publicado da org com follow-up habilitado + os pointers que ele arma. */

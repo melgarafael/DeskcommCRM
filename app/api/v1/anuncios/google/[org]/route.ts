@@ -28,13 +28,23 @@
  * de anúncio pago é dinheiro gasto; perder a ATRIBUIÇÃO por uma configuração
  * faltando é aceitável nesta v1 (fica no `google_ads_click_refs` como "nunca
  * aconteceu"), perder o LEAD inteiro por uma tela quebrada não é.
+ *
+ * As peças de navegador (IP do cliente, link do `wa.me`, página de saída) são
+ * as MESMAS da rota irmã de captura de UTM da Meta e moram em
+ * `lib/plataformas-de-anuncio/pagina-de-captura.ts`.
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { criarClickRef } from "@/lib/plataformas-de-anuncio/google/captura-de-clique";
-import { lerConfigDaLanding } from "@/lib/plataformas-de-anuncio/google/landing-config";
+import { lerConfigDaLanding } from "@/lib/plataformas-de-anuncio/landing-config";
+import {
+  clientIp,
+  paginaDeSaida,
+  textoSemRef,
+  whatsAppUrl,
+} from "@/lib/plataformas-de-anuncio/pagina-de-captura";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -48,36 +58,8 @@ const querySchema = z.object({
   gclid: z.string().trim().min(1).max(512).optional(),
 });
 
-/** Mesma lição de `lib/auth/rate-limit.ts`: sem IP identificável, não conta —
- * um balde global aqui trancaria a landing page da instalação inteira. */
-function clientIp(req: NextRequest): string | null {
-  const encaminhado = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  if (encaminhado) return encaminhado;
-  return req.headers.get("x-real-ip")?.trim() || null;
-}
-
 const TETO_POR_IP = 30;
 const JANELA_SEGUNDOS = 60;
-
-function whatsAppUrl(whatsappE164: string, mensagem: string): string {
-  const digitos = whatsappE164.replace(/\D/g, "");
-  return `https://wa.me/${digitos}?text=${encodeURIComponent(mensagem)}`;
-}
-
-/**
- * A página de saída para todo caminho que não é o feliz. Sem CSS de marca —
- * é intencionalmente neutra, porque o dono da organização é quem decide como
- * a própria landing se parece, e esta rota não é essa tela.
- */
-function paginaDeSaida(destino: string | null): NextResponse {
-  if (destino) {
-    return NextResponse.redirect(destino, { status: 302 });
-  }
-  return new NextResponse(
-    `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Link indisponível</title></head><body style="font-family:system-ui,sans-serif;padding:2rem;text-align:center;color:#333"><p>Este link não está disponível no momento.</p></body></html>`,
-    { status: 404, headers: { "content-type": "text/html; charset=utf-8" } },
-  );
-}
 
 export async function GET(req: NextRequest, ctx: RouteContext): Promise<Response> {
   const { org } = await ctx.params;
@@ -114,7 +96,7 @@ export async function GET(req: NextRequest, ctx: RouteContext): Promise<Response
   const organizationId = (organizacao as { id: string } | null)?.id ?? null;
   if (!organizationId) return paginaDeSaida(null);
 
-  const config = await lerConfigDaLanding(admin, organizationId);
+  const config = await lerConfigDaLanding(admin, "google_ads_landing_pages", organizationId);
   if (!config) return paginaDeSaida(null);
 
   // Sem gclid não há o que capturar, mas a pessoa ainda consegue abrir o
@@ -123,7 +105,7 @@ export async function GET(req: NextRequest, ctx: RouteContext): Promise<Response
   // linha sem gclid não teria o que reportar depois).
   if (!gclid) {
     logger.warn("[anuncios.google.landing] hit sem gclid", { org });
-    return paginaDeSaida(whatsAppUrl(config.whatsappE164, config.messageTemplate.replace("{token}", "").trim()));
+    return paginaDeSaida(whatsAppUrl(config.whatsappE164, textoSemRef(config.messageTemplate)));
   }
 
   const queryRaw = Object.fromEntries(new URL(req.url).searchParams.entries());
@@ -131,7 +113,7 @@ export async function GET(req: NextRequest, ctx: RouteContext): Promise<Response
   if (!criado) {
     // Falha ao gravar o clique: mesma régua — a pessoa não paga o preço de um
     // erro nosso, só a atribuição é que se perde.
-    return paginaDeSaida(whatsAppUrl(config.whatsappE164, config.messageTemplate.replace("{token}", "").trim()));
+    return paginaDeSaida(whatsAppUrl(config.whatsappE164, textoSemRef(config.messageTemplate)));
   }
 
   const mensagem = config.messageTemplate.replaceAll("{token}", criado.token);

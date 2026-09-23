@@ -24,6 +24,7 @@ import { mintEphemeralToken, revokeEphemeralToken } from '@/lib/ai/runtime/mcp_t
 import { IDS_DO_HARNESS, motivoDoHarness } from '@/lib/mcp/tools/ferramentas-do-harness';
 import type { McpAuthResult } from '@/lib/mcp/auth';
 import type { McpContext } from '@/lib/mcp/types';
+import { modulosLigados } from '@/lib/instalacao/modulos';
 
 import type { Logger } from '../../obs/logger';
 import type { CrmEdgeConfig } from './mcp-client';
@@ -130,6 +131,7 @@ export async function buildMcpTurnTools(
     // por isso TODA escrita de lead era recusada — com a capacidade ligada na
     // tela e o card parado. Quem passava era só o dispatcher antigo.
     pipelineIds: agentConfig.pipelineIds,
+    modulosLigados: await modulosLigados(cfg.supabase),
   });
 
   return {

@@ -473,6 +473,12 @@ export function descreveEvento(
             : "o agente abriu um caso de atendimento",
         ...motor,
       };
+    case "enrolled_by_inbound_after_silence":
+      return {
+        titulo: "Começou porque o cliente voltou a escrever",
+        detalhe: "depois do tempo de silêncio escolhido no gatilho deste fluxo",
+        ...motor,
+      };
     case "cancelled_by_case_closed":
       return {
         titulo: "Cancelado porque o caso foi resolvido",

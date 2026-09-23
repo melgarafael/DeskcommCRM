@@ -188,7 +188,9 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
       description: input.description ?? null,
       contact_id: input.contact_id ?? null,
       value_cents: input.value_cents ?? null,
-      currency: input.currency ?? "BRL",
+      // Ausente, a moeda é a da organização (`createLeadHandler` a lê): um
+      // literal "BRL" aqui fazia o agente criar em real numa empresa em euro.
+      currency: input.currency,
       owner_user_id: input.owner_user_id ?? null,
       owner_agent_id: input.owner_agent_id ?? null,
       expected_close_date: input.expected_close_date ?? null,

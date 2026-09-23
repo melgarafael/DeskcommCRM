@@ -4,6 +4,7 @@ import pg from "pg";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import { triggerConfigSchema } from "@/lib/followup/api-schemas";
 import type { FollowupGateDb } from "@/lib/followup/agent-followup-gate";
+import { noDeGatilhoDoGrafo } from "@/lib/followup/agent-followup-gate";
 import {
   EVENTO_DE_ETAPA,
   aplicaGatilhoDeEtapa,
@@ -190,7 +191,7 @@ function gatilhoDb(): GatilhoEtapaDb {
         [orgId, versionId],
       );
       if (rows.length === 0) return null;
-      return rows[0]!.graph.nodes.find((n) => n.type === "trigger")?.id ?? null;
+      return noDeGatilhoDoGrafo(rows[0]!.graph);
     },
     async insereEnrollment(input) {
       try {
@@ -318,14 +319,18 @@ async function seedFunilComNegocio(
 async function seedFluxo(
   org: string,
   trigger: Record<string, unknown>,
+  opts?: { comIa?: boolean },
 ): Promise<{ pointerId: string; versionId: string }> {
-  const graph: FlowGraph = {
+  const graph = {
     nodes: [
       { id: "t1", type: "trigger", label: "Start", position: { x: 0, y: 0 }, config: {} },
+      ...(opts?.comIa
+        ? [{ id: "c1", type: "ai_classify" as const, label: "Class", position: { x: 0, y: 0 }, config: {} }]
+        : []),
       { id: "e1", type: "end", label: "Done", position: { x: 0, y: 0 }, config: { outcome: "converted" } },
     ],
     edges: [{ id: "t1-e1", source: "t1", target: "e1", priority: 0, condition: { type: "always" } }],
-  };
+  } as FlowGraph;
   const { rows: version } = await pool.query<{ id: string }>(
     `insert into followup_flow_versions (organization_id, graph) values ($1, $2) returning id`,
     [org, JSON.stringify(graph)],
@@ -448,12 +453,16 @@ describe("gatilho de etapa — enrolla o negócio que entrou na etapa armada", (
 // ---- 2. gate real contra ai_agent_versions -------------------------------
 
 describe("gatilho de etapa — o gate do agente, contra ai_agent_versions real", () => {
-  it("versão em RASCUNHO não libera o fluxo", async () => {
+  it("versão em RASCUNHO, grafo de IA, não libera o fluxo", async () => {
     const org = nextOrgId();
     await seedOrg(org);
     const contactId = await seedContact(org);
     const { etapaOrigem, etapaDestino, leadId } = await seedFunilComNegocio(org, contactId);
-    const { pointerId } = await seedFluxo(org, { kind: "stage_change", params: { stage_id: etapaDestino } });
+    const { pointerId } = await seedFluxo(
+      org,
+      { kind: "stage_change", params: { stage_id: etapaDestino } },
+      { comIa: true },
+    );
     await seedAgentePublicado(org, { status: "draft", pointerIds: [pointerId] });
 
     const s = await aplicaGatilhoDeEtapa(deps(), eventoDeEtapa(org, leadId, etapaOrigem, etapaDestino));
@@ -461,17 +470,33 @@ describe("gatilho de etapa — o gate do agente, contra ai_agent_versions real",
     expect(s.enrolled).toBe(0);
   });
 
-  it("agente publicado com follow-up DESLIGADO não libera o fluxo", async () => {
+  it("agente publicado com follow-up DESLIGADO, grafo de IA, não libera o fluxo", async () => {
     const org = nextOrgId();
     await seedOrg(org);
     const contactId = await seedContact(org);
     const { etapaOrigem, etapaDestino, leadId } = await seedFunilComNegocio(org, contactId);
-    const { pointerId } = await seedFluxo(org, { kind: "stage_change", params: { stage_id: etapaDestino } });
+    const { pointerId } = await seedFluxo(
+      org,
+      { kind: "stage_change", params: { stage_id: etapaDestino } },
+      { comIa: true },
+    );
     await seedAgentePublicado(org, { enabled: false, pointerIds: [pointerId] });
 
     const s = await aplicaGatilhoDeEtapa(deps(), eventoDeEtapa(org, leadId, etapaOrigem, etapaDestino));
     expect(s.pointers_barrados_pelo_gate).toBe(1);
     expect(s.enrolled).toBe(0);
+  });
+
+  it("sem agente, grafo só de texto enrolla com agent_id nulo", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const contactId = await seedContact(org);
+    const { etapaOrigem, etapaDestino, leadId } = await seedFunilComNegocio(org, contactId);
+    await seedFluxo(org, { kind: "stage_change", params: { stage_id: etapaDestino } });
+
+    const s = await aplicaGatilhoDeEtapa(deps(), eventoDeEtapa(org, leadId, etapaOrigem, etapaDestino));
+    expect(s.enrolled).toBe(1);
+    expect(s.pointers_barrados_pelo_gate).toBe(0);
   });
 });
 

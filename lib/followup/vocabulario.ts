@@ -569,5 +569,6 @@ export const GATILHOS: Record<TipoDeGatilho, string> = {
   // dispara ("o agente pediu ajuda"), não o nome da tabela — quem lê é dono de
   // clínica, não quem escreveu o schema.
   case_opened: "Quando o agente pede ajuda de um humano",
+  inbound_after_silence: "Cliente voltou",
   conversation_end: "Fim da conversa",
 };

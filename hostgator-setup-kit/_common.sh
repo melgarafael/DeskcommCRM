@@ -64,6 +64,10 @@ unset _deskcomm_chamador
 # Todo `docker compose` do kit passa por aqui: com proxy externo, um comando sem
 # o override subiria o Caddy e ele iria bater de frente com o proxy da hospedagem.
 dc() {
+  if [ "${SINGLE_SERVER:-0}" = "1" ]; then
+    docker compose -f "$COMPOSE" -f docker-compose.single-server.yml "$@"
+    return
+  fi
   case "${REVERSE_PROXY:-caddy}" in
   traefik) docker compose -f "$COMPOSE" -f "$COMPOSE_TRAEFIK" "$@" ;;
   npm)     docker compose -f "$COMPOSE" -f "$COMPOSE_NPM" "$@" ;;
@@ -75,11 +79,140 @@ dc() {
 # dono. Se a mensagem omitisse o override numa instalação com proxy externo, o
 # próprio dono derrubaria o site seguindo a instrução do kit.
 dc_files() {
+  if [ "${SINGLE_SERVER:-0}" = "1" ]; then
+    printf -- '-f %s -f %s' "$COMPOSE" docker-compose.single-server.yml
+    return
+  fi
   case "${REVERSE_PROXY:-caddy}" in
   traefik) printf -- '-f %s -f %s' "$COMPOSE" "$COMPOSE_TRAEFIK" ;;
   npm)     printf -- '-f %s -f %s' "$COMPOSE" "$COMPOSE_NPM" ;;
   *)       printf -- '-f %s' "$COMPOSE" ;;
   esac
+}
+
+# psql/pg_dump efêmeros. No modo single-server o Postgres só é alcançável pela
+# bridge privada (supabase-db), nunca por porta pública.
+pg_container() {
+  local -a rede=()
+  [ -n "${PSQL_DOCKER_NETWORK:-}" ] && rede=(--network "$PSQL_DOCKER_NETWORK")
+  docker run --rm ${rede[@]+"${rede[@]}"} "$@"
+}
+
+# ── MODO SINGLE-SERVER: o Supabase que o kit instala e opera ─────────────────
+#
+# Só vale com SINGLE_SERVER=1 (install-single-server.sh). Nada aqui roda numa
+# instalação comum: todo call site pergunta pelo modo antes.
+#
+# A versão do Supabase self-hosted é UMA, e mora aqui: o instalador a instala e
+# o update.sh leva quem já instalou até ela (atualizar_supabase_single_server).
+# Sem `readonly`: o update.sh relê este arquivo depois do checkout.
+SUPABASE_REF="self-hosted/v0.8.1"
+
+dir_do_supabase() { printf '%s/.runtime/supabase' "${PROJECT_DIR:-$PWD}"; }
+
+# O compose oficial declara `name: supabase` e `container_name` fixos
+# (supabase-db, supabase-envoy…). Dois Supabase na mesma VPS — o nosso e outro
+# qualquer, ou o de uma segunda árvore do CRM — brigariam pelos mesmos nomes. O
+# projeto leva o nome do projeto do CRM (o override tira os container_name), e
+# a identidade continua sendo a árvore: ver recusar_supabase_de_outra_arvore.
+projeto_do_supabase() { printf '%s-supabase' "$(nome_do_projeto_atual)"; }
+
+# `docker compose` do Supabase, com o ambiente LIMPO. O load_env exporta o .env
+# inteiro do CRM, e variável de ambiente vence o .env do projeto na
+# interpolação: sem o `env -i`, o SMTP_HOST/SMTP_PORT do CRM entrariam no lugar
+# dos do Supabase. O nome do projeto vai explícito pelo mesmo motivo.
+dc_supabase() {
+  (cd "$(dir_do_supabase)" && env -i PATH="$PATH" HOME="${HOME:-/root}" \
+    ${DOCKER_HOST:+DOCKER_HOST="$DOCKER_HOST"} \
+    ${DOCKER_CONTEXT:+DOCKER_CONTEXT="$DOCKER_CONTEXT"} \
+    ${DOCKER_CONFIG:+DOCKER_CONFIG="$DOCKER_CONFIG"} \
+    COMPOSE_PROJECT_NAME="$(projeto_do_supabase)" docker compose "$@")
+}
+
+# Invariante 8 (docs/doctrine/packaging.md) para o projeto do Supabase: o
+# mesmo guarda do CRM, perguntando pelos contêineres do Supabase e pela pasta
+# que os criou.
+recusar_supabase_de_outra_arvore() {  # recusar_supabase_de_outra_arvore [como reportar]
+  local projeto dir
+  projeto="$(projeto_do_supabase)"; dir="$(dir_do_supabase)"
+  COMPOSE_PROJECT_NAME="$projeto" PROJECT_DIR="$dir" COMPOSE=docker-compose.yml \
+    recusar_projeto_de_outra_arvore "$@"
+}
+
+# Valor para o .env do Supabase, que só o dotenv do Compose lê: aspas duplas
+# com `\`, `"` e `$` escapados (o Compose os desfaz; medido no install.sh, envq).
+valor_compose() { printf '"%s"' "$(printf '%s' "${1-}" | sed 's/[\\"$]/\\&/g')"; }
+
+# ── O GoTrue manda e-mail pelo SMTP do CRM ───────────────────────────────────
+#
+# O compose oficial aponta o GoTrue para `supabase-mail`, que não existe em
+# produção: "esqueci a senha" e a confirmação de cadastro não chegariam. O SMTP
+# do CRM (#1176) é a fonte, na MESMA precedência de lib/email/config.ts: a
+# linha da tela /admin/email, se existe; senão o .env. Sai 1 (e não toca em
+# nada) quando o CRM não tem SMTP — quem chama avisa o dono.
+sincronizar_smtp_do_gotrue() {
+  local env_sb sep=$'\x1f' linha="" host porta usuario senha remetente nome
+  env_sb="$(dir_do_supabase)/.env"
+  [ -f "$env_sb" ] || return 1
+  linha="$(psql_run -tA -F "$sep" -c "select coalesce(smtp_host,''), smtp_port,
+      coalesce(smtp_username,''),
+      coalesce(case when smtp_password_encrypted is null then '' else public.fn_decrypt_oauth(smtp_password_encrypted) end,''),
+      coalesce(from_email,''), coalesce(from_name,'')
+    from public.platform_smtp_settings where id = 1" 2>/dev/null)" || linha=""
+  if [ -n "$linha" ]; then
+    IFS="$sep" read -r host porta usuario senha remetente nome <<<"$linha"
+  else
+    host="${SMTP_HOST:-}"; porta="${SMTP_PORT:-587}"; usuario="${SMTP_USERNAME:-}"
+    senha="${SMTP_PASSWORD:-}"; remetente="${SMTP_FROM_EMAIL:-}"; nome="${SMTP_FROM_NAME:-}"
+  fi
+  [ -n "$host" ] && [ -n "$remetente" ] || return 1
+  set_env_var "$env_sb" SMTP_HOST "$(valor_compose "$host")"
+  set_env_var "$env_sb" SMTP_PORT "${porta:-587}"
+  set_env_var "$env_sb" SMTP_USER "$(valor_compose "$usuario")"
+  set_env_var "$env_sb" SMTP_PASS "$(valor_compose "$senha")"
+  set_env_var "$env_sb" SMTP_ADMIN_EMAIL "$(valor_compose "$remetente")"
+  set_env_var "$env_sb" SMTP_SENDER_NAME "$(valor_compose "${nome:-${APP_NAME:-DeskcommCRM}}")"
+}
+
+# ── O update.sh leva o Supabase até a versão pinada ──────────────────────────
+#
+# O `update.sh` oficial do Supabase faz o merge de três vias dos arquivos dele
+# contra a versão de partida (.supabase-version), nunca toca em dado nem no
+# .env (só acrescenta chave nova). Falhar aqui NÃO derruba a atualização do
+# CRM: o Supabase segue na versão de antes e a próxima rodada tenta de novo.
+atualizar_supabase_single_server() {
+  local dir atual
+  dir="$(dir_do_supabase)"
+  [ -f "$dir/.env" ] || { c_red "⛔ Modo single-server sem $dir/.env — rode install-single-server.sh."; return 1; }
+  cp "$KIT_DIR/supabase-single-server.override.yml" "$dir/docker-compose.deskcomm.yml" || return 1
+  set_env_var "$dir/.env" COMPOSE_PROJECT_NAME "$(projeto_do_supabase)"
+  atual="$(sed -n 's/^ref=//p' "$dir/.supabase-version" 2>/dev/null | tail -1)"
+  if [ "$atual" != "$SUPABASE_REF" ]; then
+    step "Atualizando o Supabase desta VPS (${atual:-desconhecida} → $SUPABASE_REF)"
+    if ! (cd "$dir" && env -i PATH="$PATH" HOME="${HOME:-/root}" sh update.sh --to "$SUPABASE_REF" --yes); then
+      c_ylw "⚠ O Supabase não foi atualizado; segue na versão ${atual:-anterior}. A próxima atualização tenta de novo."
+    fi
+  fi
+  dc_supabase up -d --wait
+}
+
+# Nome FÍSICO do volume que guarda as sessões do WAHA. `docker compose config
+# --volumes` devolve o nome LÓGICO (`waha-data`); passá-lo direto a `docker run
+# -v` cria/abre outro volume global com esse nome e produz um backup vazio que
+# parece válido. Perguntar ao contêiner pela montagem real mantém o prefixo do
+# projeto Compose (ex.: `deskcommcrm_waha-data`). Sem contêiner, o nome sai de
+# nome_do_projeto_atual, o mesmo que o compose usa: respeita COMPOSE_PROJECT_NAME
+# e mantém o `-` de uma pasta como `deskcomm-crm`.
+volume_waha_data() {
+  local container vol
+  container="$(dc ps -a -q waha 2>/dev/null || true)"
+  vol=""
+  if [ -n "$container" ]; then
+    vol="$(docker inspect "$container" \
+      --format '{{range .Mounts}}{{if eq .Destination "/app/.sessions"}}{{.Name}}{{end}}{{end}}' \
+      2>/dev/null || true)"
+  fi
+  printf '%s' "${vol:-$(nome_do_projeto_atual)_waha-data}"
 }
 
 # ── QUEM FALA COM O BANCO E PODE SER PARADO ──────────────────────────────────
@@ -109,6 +242,15 @@ dc_files() {
 # Vazio quando o Supabase é HOSPEDADO — lá não há o que parar, e é por isso que
 # a conferência das regras, que não depende de parar nada, é a peça portável.
 supabase_local_containers() {
+  # No single-server os nomes são os do projeto (sem container_name fixo): as
+  # mesmas três peças, achadas pelo projeto e pelo serviço — nunca as de outro
+  # Supabase que more na VPS.
+  if [ "${SINGLE_SERVER:-0}" = "1" ]; then
+    docker ps --filter "label=com.docker.compose.project=$(projeto_do_supabase)" \
+      --format '{{.Names}} {{.Label "com.docker.compose.service"}}' 2>/dev/null \
+      | awk '$2 == "rest" || $2 == "studio" || $2 == "realtime" { print $1 }' || true
+    return 0
+  fi
   docker ps --format '{{.Names}}' 2>/dev/null | grep -E \
     '^(supabase-rest|supabase-studio|realtime-dev\.supabase-realtime)$' || true
 }
@@ -708,7 +850,7 @@ url_do_schema() {
 # psql efêmero via container (não exige psql no host). Usa a conexão de schema:
 # os chamadores mexem em `auth.mfa_factors` e `private.app_secrets`, fora do
 # alcance de uma role de app com grants só em `public`.
-psql_run() { docker run --rm -i postgres:17-alpine psql "$(url_do_schema)" -v ON_ERROR_STOP=1 "$@"; }
+psql_run() { pg_container -i postgres:17-alpine psql "$(url_do_schema)" -v ON_ERROR_STOP=1 "$@"; }
 
 # ── Re-aplicar o baseline num banco que JÁ existe ────────────────────────────
 # Chamado pelo `update.sh` e pelo `install.sh` re-executado. Sem `ON_ERROR_STOP`,
@@ -777,7 +919,7 @@ reaplicar_baseline() {
   [ -z "$log" ] || : > "$log"
   while :; do
     rc=0
-    raw="$(docker run --rm -i -v "$arquivo:/b.sql:ro" postgres:17-alpine \
+    raw="$(pg_container -i -v "$arquivo:/b.sql:ro" postgres:17-alpine \
           psql "$(url_do_schema)" -q -f /b.sql 2>&1)" || rc=$?
     [ -z "$log" ] || printf '── passada %s de %s (saída %s) ──\n%s\n' "$BASELINE_PASSADAS" "$tentativas" "$rc" "$raw" >> "$log"
     BASELINE_INESPERADO="$(printf '%s\n' "$raw" | grep -iE 'ERROR|FATAL' | grep -viE "$BASELINE_ERROS_BENIGNOS" || true)"

@@ -447,8 +447,9 @@ const schema = z.object({
   APP_ACCENT_HEX: z.string().optional().default(""),
 
   /**
-   * Com o que a instalação NASCE quanto a cadastro: `aberto` (padrão) ou
-   * `so_convite`. Vazio = `aberto`, que é como o produto sempre funcionou.
+   * Com o que a instalação NASCE quanto a cadastro: `aberto` (padrão),
+   * `com_aprovacao` ou `so_convite`. Vazio = `aberto`, que é como o produto
+   * sempre funcionou.
    *
    * O BANCO ESTÁ ACIMA DISTO. Havendo linha em `platform_settings` — o que
    * acontece assim que alguém usa a tela em `/admin/cadastro` —, é ela que

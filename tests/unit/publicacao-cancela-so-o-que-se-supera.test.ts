@@ -21,21 +21,34 @@ function campo(chave: "group" | "cancel-in-progress"): string {
   return m[1];
 }
 
-type Contexto = { event_name: string; ref: string; workflow: string; pr?: number; matriz: string };
+type Contexto = {
+  event_name: string;
+  ref: string;
+  workflow: string;
+  pr?: number;
+  matriz: string;
+  tentativa?: string;
+  head?: string;
+};
 
 // Tradutor mínimo das expressões do Actions usadas aqui (==, !=, ||, &&,
-// strings entre aspas simples). Qualquer outro token faz `new Function` falhar
-// e o teste reprovar — melhor que avaliar errado em silêncio.
+// strings entre aspas simples, `format`). Qualquer outro token faz `new
+// Function` falhar e o teste reprovar — melhor que avaliar errado em silêncio.
+// `run_attempt` é string no Actions ('1', '2'…), e é assim que entra aqui.
 function avaliar(expr: string, c: Contexto): unknown {
   const js = expr
     .replace(/github\.event\.pull_request\.number/g, "c.pr")
+    .replace(/github\.event\.pull_request\.head\.sha/g, "c.head")
+    .replace(/github\.run_attempt/g, "(c.tentativa ?? '1')")
     .replace(/github\.event_name/g, "c.event_name")
     .replace(/github\.workflow/g, "c.workflow")
     .replace(/github\.ref\b/g, "c.ref")
     .replace(/matrix\.name/g, "c.matriz")
     .replace(/==/g, "===")
     .replace(/!=/g, "!==");
-  return new Function("c", `return (${js});`)(c);
+  const format = (modelo: string, ...args: unknown[]) =>
+    modelo.replace(/\{(\d+)\}/g, (_, i: string) => String(args[Number(i)]));
+  return new Function("c", "format", `return (${js});`)(c, format);
 }
 
 // `texto-${{ a }}-${{ b }}` → cada `${{ }}` avaliado e concatenado.
@@ -71,5 +84,26 @@ describe("publish-image: cancela só o que se supera", () => {
     expect(g({ ...EVENTOS.tag, ref: "refs/tags/v1.36.0" })).not.toBe(g(EVENTOS.tag));
     // E a matriz entra no grupo: sem ela, o build do worker cancelaria o do app.
     expect(g({ ...EVENTOS.pr, matriz: "deskcomm-worker" })).not.toBe(g(EVENTOS.pr));
+  });
+
+  // Reentrada — aprovação de `action_required` ou rerun, ambas tentativa ≥ 2 —
+  // vai para o grupo do SEU head e não cancela o head atual de outro commit.
+  // Medido em 22/09/2026: a aprovação do run velho do #1446 cancelou o
+  // `verify-parte` do head novo. A razão inteira está no cabeçalho do ci.yml.
+  it("reentrada num PR fica no grupo do seu head; a primeira tentativa, no do PR", () => {
+    const g = (c: Contexto) => interpolar(grupo, c);
+    const novo = { ...EVENTOS.pr, head: "096b49930aaa" };
+    const velho = { ...EVENTOS.pr, head: "42abeb075bbb" };
+    // Primeira tentativa: o grupo do PR, como sempre — o push novo cancela o velho.
+    expect(g(novo)).toBe(g(velho));
+    expect(g(novo)).not.toContain("reentrada");
+    // O run velho aprovado depois NÃO cai no grupo do head novo.
+    expect(g({ ...velho, tentativa: "2" })).not.toBe(g(novo));
+    expect(g({ ...velho, tentativa: "2" })).not.toBe(g({ ...novo, tentativa: "2" }));
+    expect(g({ ...velho, tentativa: "2" })).toContain("42abeb075bbb");
+    // Reruns do MESMO head continuam dividindo um grupo.
+    expect(g({ ...novo, tentativa: "2" })).toBe(g({ ...novo, tentativa: "3" }));
+    // Fora de PR nada muda: o rerun da main segue no grupo da main.
+    expect(g({ ...EVENTOS.main, tentativa: "2" })).toBe(g(EVENTOS.main));
   });
 });

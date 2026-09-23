@@ -31,7 +31,11 @@ let upserts: Array<Array<Record<string, unknown>>> = [];
  * Por isso o fake abaixo espera duas chamadas distintas a `.upsert()`, uma por
  * grupo, e é isso que os testes verificam.
  */
-function supabaseCom(moedaDaOrg: string, codigosExistentes: string[]) {
+function supabaseCom(
+  moedaDaOrg: string,
+  codigosExistentes: string[],
+  { falhaNaLeitura = false }: { falhaNaLeitura?: boolean } = {},
+) {
   return {
     from: (tabela: string) => {
       if (tabela === "organizations") {
@@ -45,11 +49,17 @@ function supabaseCom(moedaDaOrg: string, codigosExistentes: string[]) {
       }
       // catalog_products
       return {
+        // Página a página, como o PostgREST: `range` é inclusivo nas duas pontas.
         select: () => ({
           eq: () => ({
-            in: async () => ({
-              data: codigosExistentes.map((codigo) => ({ codigo })),
-              error: null,
+            order: () => ({
+              range: async (de: number, ate: number) =>
+                falhaNaLeitura
+                  ? { data: null, error: { message: "conexão recusada" } }
+                  : {
+                      data: codigosExistentes.slice(de, ate + 1).map((codigo) => ({ codigo })),
+                      error: null,
+                    },
             }),
           }),
         }),
@@ -127,6 +137,71 @@ describe("POST /api/v1/products/import — reimportar não pisa a moeda de quem 
     const existente = todas.find((l) => l.codigo === "AND-01");
     expect(novo).toMatchObject({ moeda: "USD" });
     expect(existente).not.toHaveProperty("moeda");
+  });
+});
+
+/**
+ * "ip15" NA PLANILHA COM "IP15" NO CATÁLOGO (#482, decisão do mantenedor de 22/09/2026).
+ *
+ * O índice do banco compara o texto exato e aceitaria os dois — mas a busca do
+ * agente ignora a caixa, e o cliente ouviria dois preços para o mesmo produto.
+ * A linha é recusada com aviso no resumo, e nada chega ao upsert.
+ */
+describe("POST /api/v1/products/import — o código não diferencia maiúsculas", () => {
+  async function importar(codigosExistentes: string[], linhas: string) {
+    vi.mocked(createClient).mockResolvedValue(supabaseCom("BRL", codigosExistentes) as never);
+    const { POST } = await import("./route");
+    const res = await POST(pedido(csv(linhas)));
+    return { status: res.status, corpo: (await res.json()) as { data: Record<string, unknown> } };
+  }
+
+  it("ip15 com IP15 já cadastrado é recusado com aviso, não vira um segundo produto", async () => {
+    const { corpo } = await importar(["IP15"], "ip15,iPhone 15,4999");
+
+    expect(upserts.flat()).toEqual([]);
+    expect(corpo.data).toMatchObject({ criados: 0, atualizados: 0, total_linhas: 1 });
+    expect(corpo.data.erros).toEqual([
+      {
+        linha: 2,
+        motivo:
+          '"ip15": este código já está no catálogo escrito "IP15". Maiúsculas e minúsculas não mudam o código — escreva igual ao do catálogo para atualizar o produto.',
+      },
+    ]);
+  });
+
+  it("o código escrito IGUAL ao do catálogo continua atualizando", async () => {
+    const { corpo } = await importar(["IP15"], "IP15,iPhone 15,4999");
+
+    expect(upserts.flat().map((l) => l.codigo)).toEqual(["IP15"]);
+    expect(corpo.data).toMatchObject({ criados: 0, atualizados: 1, erros: [] });
+  });
+
+  it("só a linha em outra caixa sai: o resto da planilha entra", async () => {
+    const { corpo } = await importar(["IP15"], "IP16,iPhone 16,6499\nip15,iPhone 15,4999");
+
+    expect(upserts.flat().map((l) => l.codigo)).toEqual(["IP16"]);
+    expect(corpo.data).toMatchObject({ criados: 1, atualizados: 0 });
+    expect(corpo.data.erros).toHaveLength(1);
+  });
+
+  it("confere o catálogo INTEIRO, não só a primeira página", async () => {
+    const catalogo = [...Array.from({ length: 1000 }, (_, i) => `A${String(i).padStart(4, "0")}`), "IP15"];
+    const { corpo } = await importar(catalogo, "ip15,iPhone 15,4999");
+
+    expect(upserts.flat()).toEqual([]);
+    expect(corpo.data.erros).toHaveLength(1);
+  });
+
+  it("sem conseguir ler o catálogo, nada é gravado", async () => {
+    vi.mocked(createClient).mockResolvedValue(
+      supabaseCom("BRL", [], { falhaNaLeitura: true }) as never,
+    );
+    const { POST } = await import("./route");
+
+    const res = await POST(pedido(csv("ip15,iPhone 15,4999")));
+
+    expect(res.status).toBe(500);
+    expect(upserts).toEqual([]);
   });
 });
 

@@ -110,8 +110,16 @@ const RE_DO_CODIGO = new RegExp(
   `\\[${VERSAO_DO_CODIGO}:([A-Za-z0-9_-]{1,${TAMANHO_MAXIMO_DO_CODIGO}})\\]`,
 );
 
-/** Normaliza `{"  UTM_SOURCE  ": " ig "}` → `{ utm_source: "ig" }`. */
-function normalizar(carga: unknown): Record<string, string> {
+/**
+ * Normaliza `{"  UTM_SOURCE  ": " ig "}` → `{ utm_source: "ig" }`.
+ *
+ * Exportada porque a rota de captura de UTM da Meta
+ * (`app/api/v1/anuncios/meta/[org]/route.ts`) guarda EXATAMENTE as mesmas
+ * chaves, com o mesmo teto por valor: dois normalizadores para o mesmo dado
+ * dariam duas listas de chaves aceitas, e a da rota envelheceria calada no dia
+ * em que `CHAVES_DE_UTM` ganhasse a próxima chave.
+ */
+export function normalizarUtm(carga: unknown): Record<string, string> {
   if (!carga || typeof carga !== "object" || Array.isArray(carga)) return {};
   const utm: Record<string, string> = {};
   for (const [bruta, valor] of Object.entries(carga as Record<string, unknown>)) {
@@ -134,7 +142,7 @@ function normalizar(carga: unknown): Record<string, string> {
  * `TAMANHO_MAXIMO_DO_CODIGO`: não se gera um marcador que o parser recusa.
  */
 export function montarCodigoDeOrigemDoSite(utm: Record<string, string>): string | null {
-  const normalizado = normalizar(utm);
+  const normalizado = normalizarUtm(utm);
   if (Object.keys(normalizado).length === 0) return null;
   const ordenado: Record<string, string> = {};
   for (const chave of [...Object.keys(normalizado)].sort()) ordenado[chave] = normalizado[chave]!;
@@ -159,7 +167,7 @@ export function extrairOrigemDaPagina(texto: string | null | undefined): OrigemD
   if (!achado?.[1]) return null;
   try {
     const json = Buffer.from(achado[1], "base64url").toString("utf8");
-    const utm = normalizar(JSON.parse(json));
+    const utm = normalizarUtm(JSON.parse(json));
     if (Object.keys(utm).length === 0) return null;
     return { utm, capturadaEm: null };
   } catch {

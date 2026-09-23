@@ -19,6 +19,19 @@ import { fail, type ApiError } from "@/lib/api/wrappers";
 import type { MotivoAcesso } from "@/lib/external-db/acesso";
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
+import { moduloLigado } from "@/lib/instalacao/modulos";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+/**
+ * O banco externo é MÓDULO OPCIONAL da instalação, desligado por padrão (doc 37,
+ * `lib/instalacao/modulos.ts`). Desligado, nenhuma rota dele existe: 404, a
+ * mesma resposta de uma rota que nunca foi instalada — e a mesma de
+ * `notFound()` na tela. Toda rota de `/api/v1/external-db` chama isto primeiro.
+ */
+export async function seModuloDesligado(requestId: string): Promise<NextResponse<ApiError> | null> {
+  if (await moduloLigado(createAdminClient(), "banco_externo")) return null;
+  return fail("not_found", "Not found.", 404, { requestId });
+}
 
 export function respostaDeAcesso(
   motivo: MotivoAcesso,
@@ -27,6 +40,8 @@ export function respostaDeAcesso(
   const t = (texto: string) => (idioma ? traduzir(texto, idioma) : texto);
 
   switch (motivo) {
+    case "modulo_desligado":
+      return fail("not_found", "Not found.", 404, { requestId });
     case "nao_encontrada":
       return fail("not_found", t("Conexão não encontrada."), 404, { requestId });
     case "desativada":

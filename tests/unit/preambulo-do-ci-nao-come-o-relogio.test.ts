@@ -301,6 +301,34 @@ describe("o preâmbulo do CI não come o orçamento dos testes", () => {
     }
   });
 
+  it("a divisão do verify cobre cada arquivo uma vez: --shard e `if:` batem com a matrix", () => {
+    // Mexer na divisão (reequilibrar passos, criar a parte 3) tem dois erros
+    // VERDES: `--shard=N/3` com matrix [1, 2] deixa um terço da suíte sem rodar,
+    // e `if: matrix.parte == 3` com matrix [1, 2] deixa o passo sem parte.
+    // Que o `--shard` do vitest corta em fatias disjuntas que somam tudo foi
+    // provado com o sequenciador dele no PR que moveu o lint (1108 = 554 + 554).
+    const texto = readFileSync(join(DIR_WORKFLOWS, "ci.yml"), "utf8");
+    const inicio = texto.indexOf("\n  verify-parte:\n");
+    expect(inicio, "o job verify-parte sumiu do ci.yml — esta guarda cegou").toBeGreaterThan(-1);
+    const resto = texto.slice(inicio + 1);
+    const fim = resto.slice(1).search(/\n {2}[\w-]+:\n/);
+    const job = (fim === -1 ? resto : resto.slice(0, fim + 1))
+      .split("\n")
+      .filter((l) => !l.trimStart().startsWith("#"))
+      .join("\n");
+
+    const partes = job.match(/^\s+parte: \[([\d, ]+)\]\s*$/m)?.[1]?.split(",").map(Number);
+    expect(partes, "a matrix `parte: [...]` não foi encontrada").toBeDefined();
+    expect(partes, "as partes têm de ser 1..N, sem buraco").toEqual(partes!.map((_, i) => i + 1));
+
+    const shards = [...job.matchAll(/--shard=\$\{\{ matrix\.parte \}\}\/(\d+)/g)].map((m) => Number(m[1]));
+    expect(shards, "o passo de unit tem de recortar com --shard=${{ matrix.parte }}/N").toEqual([partes!.length]);
+
+    const alvos = [...job.matchAll(/matrix\.parte == (\d+)/g)].map((m) => Number(m[1]));
+    expect(alvos.length, "nenhum `if: matrix.parte == N` — o regex cegou").toBeGreaterThan(0);
+    expect(alvos.filter((n) => !partes!.includes(n)), "passo preso a uma parte que não existe").toEqual([]);
+  });
+
   it("a action preparada tira o registry npm do caminho crítico", () => {
     const a = readFileSync(ACTION, "utf8")
       .split("\n")

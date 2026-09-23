@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 
 import { updateComportamento } from "@/app/actions/settings/updateComportamento";
+import { updateModuloDaInstalacao } from "@/app/actions/settings/updateModuloDaInstalacao";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
@@ -18,6 +19,7 @@ import type {
   ChaveDeOrcamentoDaInstalacao,
   ComportamentoDaInstalacao,
 } from "@/lib/instalacao/comportamento";
+import type { ModuloOpcional } from "@/lib/instalacao/modulos";
 
 /**
  * Cada interruptor salva na hora, sem botão de confirmar — mesmo desenho do
@@ -161,6 +163,70 @@ export function FormularioDeComportamento({ inicial }: { inicial: ComportamentoD
             onCheckedChange={(v) => trocar("promessa_semantica", v)}
             disabled={pendente}
             aria-label={t("Conferência de promessa antes de enviar")}
+          />
+        </div>
+
+        {erro && (
+          <p className="text-sm text-destructive" role="alert">
+            {erro}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Os MÓDULOS OPCIONAIS da instalação — desligados por padrão, e é aqui, e só
+ * aqui, que se ligam (doc 24: liga/desliga de configuração geral tem tela, sem
+ * `.env`). Mesmo desenho do cartão de cima: salva no clique, volta no erro.
+ */
+export function FormularioDeModulos({ ligados }: { ligados: readonly ModuloOpcional[] }) {
+  const t = useT();
+  const [bancoExterno, setBancoExterno] = useState(ligados.includes("banco_externo"));
+  const [erro, setErro] = useState<string | null>(null);
+  const [pendente, startTransition] = useTransition();
+
+  function trocar(valor: boolean) {
+    setErro(null);
+    setBancoExterno(valor);
+    startTransition(async () => {
+      const r = await updateModuloDaInstalacao({ modulo: "banco_externo", ligado: valor });
+      if (!r.ok) {
+        setBancoExterno(!valor);
+        setErro(t("Não deu para salvar. Tente de novo em instantes."));
+      }
+    });
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("Módulos opcionais")}</CardTitle>
+        <CardDescription>
+          {t(
+            "Recursos que a maioria das instalações não usa. Desligados, eles não aparecem para nenhuma empresa daqui.",
+          )}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
+          <div className="space-y-1">
+            <Label htmlFor="modulo-banco-externo" className="text-base">
+              {t("Banco de dados externo")}
+            </Label>
+            <p className="text-sm text-muted-foreground">
+              {t(
+                "Ligado, cada empresa pode conectar o banco de outro sistema (um ERP, outro CRM) para o agente consultar. Isso guarda a senha daquele banco neste servidor e abre conexão com ele. Desligado, a tela, o menu e as ferramentas do agente somem.",
+              )}
+            </p>
+          </div>
+          <Switch
+            id="modulo-banco-externo"
+            checked={bancoExterno}
+            onCheckedChange={trocar}
+            disabled={pendente}
+            aria-label={t("Banco de dados externo")}
           />
         </div>
 

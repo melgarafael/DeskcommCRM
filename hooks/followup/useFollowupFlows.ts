@@ -62,3 +62,24 @@ export function useCreateFollowupFlow() {
     },
   });
 }
+
+export function useDuplicateFollowupFlow() {
+  const t = useT();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationKey: ["followup", "flows", "duplicate"],
+    mutationFn: async (id: string) => {
+      const res = await apiClient.post<SingleResponse>(`/api/v1/ai/followup-flows/${id}/duplicate`, {});
+      return res.data;
+    },
+    onSuccess: (created) => {
+      qc.setQueryData<FollowupFlowPointerRow[]>(followupFlowsListQueryKey, (prev) =>
+        prev ? [created, ...prev] : [created],
+      );
+      toast.success(t("Fluxo duplicado."));
+    },
+    onError: (err) => {
+      showApiError(err);
+    },
+  });
+}

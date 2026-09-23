@@ -22,6 +22,7 @@ import { decidirRajada } from './debounce';
 import { avisoDeEventoMorto, IA_QUE_NAO_RESPONDEU } from '@/lib/event-log/aviso-de-evento-morto';
 import { TIPOS_DERIVAVEIS, DERIVACAO_TERMINADA } from '@/lib/messaging/media/derivable';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
+import { deveCederTurnoAoRetorno } from '@/lib/followup/ceder-turno-ao-retorno';
 
 const DRAIN_CONSUMER = 'agent-engine';
 
@@ -337,6 +338,23 @@ async function processEvent(
       event_id: event.id,
       inbound_message_id: p.inbound_message_id,
       ultima_inbound_id: ultimaInbound[0].id,
+    });
+    return 'processado';
+  }
+
+  // UMA VOZ: se o gatilho "cliente voltou" enrollaria neste inbound, o LLM
+  // não responde por cima. Fail-open dentro do helper — consulta falha = turno segue.
+  if (
+    await deveCederTurnoAoRetorno(pool, {
+      organizationId: event.organization_id,
+      contactId: p.contact_id,
+      conversationId: p.conversation_id,
+      messageId: p.inbound_message_id,
+    })
+  ) {
+    log.info('drain: turno cedido ao follow-up de retorno — inbound_turn pulado', {
+      event_id: event.id,
+      contact_id: p.contact_id,
     });
     return 'processado';
   }

@@ -4,6 +4,7 @@ import pg from "pg";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import { triggerConfigSchema } from "@/lib/followup/api-schemas";
 import type { FollowupGateDb } from "@/lib/followup/agent-followup-gate";
+import { noDeGatilhoDoGrafo } from "@/lib/followup/agent-followup-gate";
 import {
   EVENTO_DE_ETAPA,
   aplicaGatilhoDeEtapa,
@@ -190,7 +191,7 @@ function gatilhoDb(): GatilhoEtapaDb {
         [orgId, versionId],
       );
       if (rows.length === 0) return null;
-      return rows[0]!.graph.nodes.find((n) => n.type === "trigger")?.id ?? null;
+      return noDeGatilhoDoGrafo(rows[0]!.graph);
     },
     async insereEnrollment(input) {
       try {

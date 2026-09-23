@@ -20,12 +20,14 @@ import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-import { respostaDeAcesso } from "../../../_falha";
+import { respostaDeAcesso, seModuloDesligado } from "../../../_falha";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
   const requestId = randomUUID();
+  const desligado = await seModuloDesligado(requestId);
+  if (desligado) return desligado;
   const { id } = await ctx.params;
 
   const authz = await requireRole("viewer", { requestId, resource: "external_db_connections" });

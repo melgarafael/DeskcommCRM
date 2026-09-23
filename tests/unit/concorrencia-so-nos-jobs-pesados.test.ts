@@ -45,6 +45,12 @@ describe("concurrency: só nos jobs pesados", () => {
     (arq, job) => {
       const bloco = blocoDoJob(ler(arq), job);
       expect(bloco).toMatch(/^ {4}concurrency:\n {6}group: .*github\.event\.pull_request\.number \|\| github\.ref/m);
+      // Reentrada (aprovação de `action_required`, rerun) não cancela o head
+      // atual de outro commit. Medido em 22/09/2026 (#1446, #1431). A razão
+      // inteira está no cabeçalho do ci.yml.
+      expect(bloco).toContain(
+        "${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}",
+      );
       const cancela = bloco.match(/^ {6}cancel-in-progress: (.*)$/m)?.[1];
       expect(cancela).toBe(
         arq === "publish-image.yml"

@@ -20,15 +20,20 @@ import { precoParaCentavos } from "@/lib/schemas/produtos";
  * errado dito a um cliente depois.
  */
 
-/** Como cada coluna pode vir escrita. A primeira forma é a que a gente sugere. */
+/**
+ * Como cada coluna pode vir escrita. A primeira forma é a que a gente sugere.
+ * As de espanhol (`nombre`, `precio`, `costo`, `cantidad`…) cumprem o que a tela
+ * promete a quem a usa nesse idioma; a comparação tira acento e caixa dos dois
+ * lados, então as formas novas entram sem acento.
+ */
 const COLUNAS: Record<string, readonly string[]> = {
   codigo: ["codigo", "código", "sku", "ref", "referencia", "referência", "cod"],
-  nome: ["nome", "produto", "descricao", "descrição", "titulo", "título", "item"],
-  preco: ["preco", "preço", "valor", "preco de venda", "preço de venda", "venda"],
-  custo: ["custo", "preco de custo", "preço de custo", "compra"],
+  nome: ["nome", "produto", "descricao", "descrição", "titulo", "título", "item", "nombre", "producto", "descripcion", "articulo"],
+  preco: ["preco", "preço", "valor", "preco de venda", "preço de venda", "venda", "precio", "precio de venta", "venta"],
+  custo: ["custo", "preco de custo", "preço de custo", "compra", "costo", "coste", "precio de costo", "precio de coste"],
   marca: ["marca", "fabricante"],
   categoria: ["categoria", "tipo", "departamento"],
-  quantidade: ["quantidade", "estoque", "qtd", "qtde", "qty"],
+  quantidade: ["quantidade", "estoque", "qtd", "qtde", "qty", "cantidad", "existencias", "stock"],
 };
 
 function normalizarCabecalho(texto: string): string {
@@ -86,6 +91,20 @@ function assinaturaDoTexto(texto: string): string {
     h = Math.imul(h, 0x01000193) >>> 0;
   }
   return h.toString(16).padStart(TAMANHO_DA_ASSINATURA, "0");
+}
+
+/**
+ * O código NÃO diferencia maiúsculas: "IP15" e "ip15" são o MESMO produto.
+ *
+ * A busca que o agente usa para responder o cliente ignora a caixa
+ * (`normalizar()` em `lib/catalogo/busca.ts`): dois produtos que só diferem
+ * nela chegariam à conversa como um só, com dois preços. O índice do banco
+ * compara o texto exato, então a regra é garantida AQUI e na rota de
+ * importação, que compara com o catálogo já cadastrado (decisão do mantenedor
+ * de 22/09/2026, #482).
+ */
+export function chaveDoCodigo(codigo: string): string {
+  return codigo.toLowerCase();
 }
 
 export interface LinhaImportada {
@@ -156,7 +175,8 @@ export function lerPlanilha(
 
   const produtos: LinhaImportada[] = [];
   const erros: ErroDaLinha[] = [];
-  const codigosVistos = new Set<string>();
+  /** Chave sem caixa → a primeira linha que trouxe o código, como foi escrito ali. */
+  const codigosVistos = new Map<string, { linha: number; codigo: string }>();
 
   for (let i = 1; i < linhas.length; i += 1) {
     const bruto = linhas[i]!;
@@ -199,14 +219,32 @@ export function lerPlanilha(
     // `codigoDoProduto`: cortar AQUI, antes de colapsar os espaços, fazia dois
     // nomes longos chegarem ao banco com o mesmo código.
     const codigo = codigoDoProduto(valor("codigo") || nome);
-    if (codigosVistos.has(codigo.toLowerCase())) {
+    const anterior = codigosVistos.get(chaveDoCodigo(codigo));
+    if (anterior) {
+      // As DUAS linhas na mensagem: quem corrige precisa achar o par, e quando
+      // a diferença é só a caixa ("IP15" e "ip15") o motivo não salta aos olhos.
+      // A frase inteira é UMA chave com os valores como placeholder: traduzida
+      // aos pedaços, cada trecho novo é mais uma chave que pode faltar.
+      const frase =
+        anterior.codigo === codigo
+          ? _t('código repetido na planilha ("{codigo}") — já está na linha {linha}')
+          : _t(
+              'código repetido na planilha ("{codigo}") — já está na linha {linha}, escrito "{anterior}". Maiúsculas e minúsculas não mudam o código.',
+            );
+      const valores: Record<string, string> = {
+        codigo,
+        linha: String(anterior.linha),
+        anterior: anterior.codigo,
+      };
+      // Uma passada só, com função: o código vem da planilha e um "$&" ou um
+      // "{linha}" dentro dele não pode virar outra coisa.
       erros.push({
         linha: numeroNaPlanilha,
-        motivo: _t("código repetido na planilha (") + `"${codigo}"` + ")",
+        motivo: frase.replace(/\{(codigo|linha|anterior)\}/g, (_, nome: string) => valores[nome]!),
       });
       continue;
     }
-    codigosVistos.add(codigo.toLowerCase());
+    codigosVistos.set(chaveDoCodigo(codigo), { linha: numeroNaPlanilha, codigo });
 
     // Coluna de estoque AUSENTE significa "esta loja não conta estoque" — e é
     // diferente de estoque zero. Sem essa distinção, uma planilha sem a coluna

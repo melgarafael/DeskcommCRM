@@ -30,6 +30,8 @@ ser fonte sem ninguém decidir isso.
 | `escalacao-ciclo-humano.architecture.json` | o ciclo agente ↔ pessoa — 30 peças, 38 arestas; as **três** travas da passagem (só uma era solta) e por onde a decisão da pessoa volta ao contexto do turno |
 | `central-avisos.architecture.json` | projeção em lote sob RLS, contexto real e resolver/reabrir independentes |
 | `followup-dossie.architecture.json` | dossiê do follow-up e intervenção humana — 20 peças, 30 arestas; as **duas metades** da corrida contra o motor (o tick reclamado e o turno em voo) e quatro não-ligações declaradas |
+| `followup-duplicar.architecture.json` | duplicar e renomear um fluxo — cópia sempre rascunho, nome único na org, o mesmo PATCH de nome agora com superfície na lista e no construtor |
+| `followup-retorno.architecture.json` | gatilho Cliente voltou — inbound depois do silêncio, envio inline, turno do agente cede |
 | `indice-de-atrito.architecture.json` | índice de atrito — 24 peças, 31 arestas; a régua do atrito, o rádio que a lê e as demandas que entram nela |
 | `marca-propria.architecture.json` | marca própria (white-label) — 37 peças, 54 arestas, 6 faixas; a pilha org → instalação → `.env` → padrão, as saídas SEM DOM (`marcaDaSaida`) e a **não-ligação declarada** do PDF de LGPD, que imprime o CONTROLADOR e nunca a marca de quem revende |
 | `retencao-de-historico.architecture.json` | poda do histórico (issue #261) — 16 peças, 18 arestas, 6 faixas; o que sai (`done`/`failed`/`dead` velho), o que tem dono e **não** sai (`pending`/`running`, e `dead` com aviso ainda aberto), e por que o expurgo do audit é uma `security definer` sem seletor de linha em vez de uma porta |
