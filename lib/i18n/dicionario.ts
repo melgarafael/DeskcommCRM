@@ -3716,6 +3716,9 @@ export const DICIONARIO: Traducoes = {
   "Sua cor é um tom neutro (cinza, preto ou branco), e uma cor assim não destaca nada na tela. Os botões seguem com a cor padrão do sistema, e a sua fica reservada ao logo.": {
     es: "Tu color es un tono neutro (gris, negro o blanco), y un color así no resalta nada en la pantalla. Los botones siguen con el color predeterminado del sistema, y el tuyo queda reservado al logo.",
   },
+  "Esta é a cor padrão do sistema, então nada muda: os botões e os tons seguem exatamente como já eram.": {
+    es: "Este es el color predeterminado del sistema, así que nada cambia: los botones y los tonos siguen exactamente como estaban.",
+  },
   "Não existe tom desta cor que deixe todos os elementos legíveis. Alguns detalhes — como o contorno que marca o campo em foco — ficam difíceis de enxergar.": {
     es: "Ningún tono de este color deja todos los elementos legibles. Algunos detalles, como el contorno que marca el campo enfocado, quedan difíciles de ver.",
   },
