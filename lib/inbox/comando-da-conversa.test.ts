@@ -114,6 +114,26 @@ describe("comandoDaConversa — o automático está ativo?", () => {
     expect(r.motivo).toBe("atendente_no_comando");
   });
 
+  it("silêncio durável sem dono: pausa genérica — a ação é devolver", () => {
+    const r = comandoDaConversa(fatos({ bot_silenced_until: "infinity" }), AGORA);
+    expect(r.motivo).toBe("pausado");
+    expect(r.travaVigente).toBe(true);
+  });
+
+  it("C-075: pausa por resposta no CELULAR tem motivo próprio, e a trava é devolvível", () => {
+    const r = comandoDaConversa(
+      fatos({
+        status: "claimed",
+        bot_silenced_until: "infinity",
+        last_handoff_reason: "Atendimento manual pelo canal (resposta fora do CRM)",
+      }),
+      AGORA,
+    );
+    expect(r.motivo).toBe("atendimento_pelo_celular");
+    expect(r.travaVigente).toBe(true);
+    expect(ROTULO_DO_MOTIVO.atendimento_pelo_celular).toMatch(/#on/i);
+  });
+
   it("valor ilegível falha FECHADA: trata como calado, nunca afirma que está ativo", () => {
     const r = comandoDaConversa(fatos({ bot_silenced_until: "isto-nao-e-data" }), AGORA);
     expect(r.automaticoAtivo).toBe(false);
@@ -263,10 +283,11 @@ describe("o espelho entre a tela e o motor", () => {
     expect(Object.keys(ROTULO_DO_COMANDO).sort()).toEqual(
       ["aguardando", "automatico", "encerrada", "humano", "ninguem"],
     );
-    // Cinco desde 2026-08-30: `contato_descadastrado` entrou junto com
-    // `is_blocked` nos fatos. O número fica escrito porque motivo novo tem de
-    // ganhar rótulo no mesmo commit — um motivo sem rótulo imprime a chave crua.
-    expect(Object.keys(ROTULO_DO_MOTIVO)).toHaveLength(5);
+    // Seis desde 2026-09-24: `atendimento_pelo_celular` (C-075) entrou junto com
+    // a pausa durável por resposta no celular. O número fica escrito porque motivo
+    // novo tem de ganhar rótulo no mesmo commit — um motivo sem rótulo imprime a
+    // chave crua.
+    expect(Object.keys(ROTULO_DO_MOTIVO)).toHaveLength(6);
     // "IA" no rótulo colidiria com o léxico que o produto já fixou em quatro
     // arquivos e que `handoff-por-orcamento.test.ts` usa como sabotagem-controle.
     for (const rotulo of Object.values(ROTULO_DO_MOTIVO)) {

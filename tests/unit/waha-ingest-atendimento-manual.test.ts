@@ -34,7 +34,6 @@ vi.mock("@/lib/logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: 
 vi.mock("@/lib/channels/health", () => ({ sincronizarSaudeDaConexao: vi.fn(async () => {}) }));
 
 import { dispatchWahaEvent } from "@/lib/waha/ingest";
-import { PRAZO_DO_SILENCIO_MS } from "@/lib/escalacao/atendimento-manual";
 
 const ORG = "org-1";
 const SESSION = { id: "sess-1", organization_id: ORG, is_warmup_complete: true, warmup_started_at: null };
@@ -87,6 +86,11 @@ function makeAdmin(cap: Captura, jaRegistrada: boolean) {
         if (name === "conversations" && selectCols.includes("bot_silenced_until")) {
           return Promise.resolve({ data: { bot_silenced_until: null }, error: null });
         }
+        // Resposta do UPDATE de pausa: `pausarIaDuravelmente` pede a linha de
+        // volta (`.select("id")`); devolver `{ id }` sinaliza "gravou".
+        if (name === "conversations" && mode === "update") {
+          return Promise.resolve({ data: { id: "conv-1" }, error: null });
+        }
         return Promise.resolve({ data: null, error: null });
       },
       then: (r: (v: unknown) => unknown) => Promise.resolve({ data: null, error: null }).then(r),
@@ -119,18 +123,14 @@ const envelopeFromMe = {
 beforeEach(() => vi.clearAllMocks());
 
 describe("R8 · resposta manual pelo celular pausa a IA", () => {
-  it("mensagem fromMe GENUÍNA → grava bot_silenced_until com PRAZO + rastro, sem tocar autorização", async () => {
+  it("mensagem fromMe GENUÍNA → grava 'infinity' + rastro, sem tocar autorização", async () => {
     const cap: Captura = { conversationUpdates: [], rpcs: [] };
-    const antes = Date.now();
     await dispatchWahaEvent(makeAdmin(cap, false), SESSION, envelopeFromMe, "req-1");
 
     const pausa = cap.conversationUpdates.find((u) => u.last_handoff_reason !== undefined);
     expect(pausa).toBeDefined();
-    // NÃO é 'infinity': o silêncio vence sozinho (decisão do dono do produto).
-    expect(pausa!.bot_silenced_until).not.toBe("infinity");
-    const ate = new Date(String(pausa!.bot_silenced_until)).getTime();
-    expect(ate).toBeGreaterThanOrEqual(antes + PRAZO_DO_SILENCIO_MS);
-    expect(ate).toBeLessThanOrEqual(Date.now() + PRAZO_DO_SILENCIO_MS);
+    // DURÁVEL (decisão do dono, 2026-09-24): só `#on` ou a tela religam.
+    expect(pausa!.bot_silenced_until).toBe("infinity");
     expect(pausa).toHaveProperty("last_handoff_at");
     expect(String(pausa!.last_handoff_reason)).toMatch(/manual/i);
     // NÃO toca a elegibilidade do lead.
@@ -151,12 +151,12 @@ describe("R8 · resposta manual pelo celular pausa a IA", () => {
    * chamada esteja lá também, já que o fake do teste de ingestão do Zernio não
    * exercita a leitura de `bot_silenced_until`.
    */
-  it("zernio: o caminho de saída manual também chama pausarIaPorAtendimentoManual", () => {
+  it("zernio: o caminho de saída manual também chama pausarIaDuravelmente", () => {
     const fonte = readFileSync(
       resolve(__dirname, "../../lib/channels/zernio/ingest.ts"),
       "utf-8",
     );
-    expect(fonte).toContain("pausarIaPorAtendimentoManual");
-    expect(fonte).toMatch(/direction === "outbound"[\s\S]{0,200}pausarIaPorAtendimentoManual/);
+    expect(fonte).toContain("pausarIaDuravelmente");
+    expect(fonte).toMatch(/direction === "outbound"[\s\S]{0,200}pausarIaDuravelmente/);
   });
 });

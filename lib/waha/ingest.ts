@@ -14,7 +14,14 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { audit } from "@/lib/audit";
 import { sincronizarSaudeDaConexao } from "@/lib/channels/health";
 import { aplicarEfeitosPosEntrada } from "@/lib/channels/pos-entrada";
-import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
+import {
+  MOTIVO_COMANDO_OFF,
+  pausarIaDuravelmente,
+  pausarIaPorAtendimentoManual,
+} from "@/lib/escalacao/atendimento-manual";
+import { lerComandoDeControle } from "@/lib/escalacao/comando-de-canal";
+import { devolverAtendimentoAoAgente } from "@/lib/escalacao/retomada";
+import { getWahaClient } from "@/lib/waha/client";
 import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { estamparAtribuicaoDoContato } from "@/lib/leads/atribuicao-de-anuncio";
@@ -29,13 +36,16 @@ export type Admin = ReturnType<typeof createAdminClient>;
 
 /**
  * A pausa da IA quando uma pessoa responde pelo celular vive em
- * `lib/escalacao/atendimento-manual.ts` (`pausarIaPorAtendimentoManual`), e não
- * mais aqui. Era `silenciarBotPorRetomadaHumana`, exclusiva deste arquivo e do
+ * `lib/escalacao/atendimento-manual.ts` (`pausarIaDuravelmente`), e não mais
+ * aqui. Era `silenciarBotPorRetomadaHumana`, exclusiva deste arquivo e do
  * WhatsApp; o gesto é o mesmo em qualquer canal (o Zernio tem o mesmo caminho de
  * saída-por-fora-do-CRM), e duas encarnações da mesma regra divergiriam na
- * primeira vez que alguém mexesse numa só. O helper unificado mantém o que esta
- * função garantia — prazo que expira sozinho, renovado a cada fala humana, e
- * silêncio maior NUNCA encurtado — e acrescenta o rastro de handoff.
+ * primeira vez que alguém mexesse numa só. O helper unificado grava silêncio
+ * DURÁVEL (`'infinity'`, que só `#on` ou a tela desfazem) e o rastro de handoff.
+ *
+ * Os comandos `#on`/`#off` (decisão do dono, 2026-09-24) também entram por aqui,
+ * em `handleOutboundFromUserPhone`: são lidos por `lerComandoDeControle` e
+ * escondidos do cliente com `revogarComando`.
  */
 
 /**
@@ -108,6 +118,12 @@ async function ehEcoDeEnvioNosso(
 interface Session {
   id: string;
   organization_id: string;
+  /**
+   * Nome da sessão no WAHA. Só é usado para chamar o transporte de volta (ex.:
+   * revogar o comando `#on`/`#off`). Opcional porque há chamadas sintéticas
+   * (testes, caminhos internos) que não passam por uma linha de `channel_sessions`.
+   */
+  waha_session_name?: string | null;
 }
 
 /**
@@ -767,6 +783,38 @@ async function handleInbound(
 }
 
 /**
+ * Esconde do cliente os comandos de controle (`#on`/`#off`).
+ *
+ * O operador digita o comando no MESMO chat do cliente — o celular dele é o
+ * número do bot —, então sem revogar o cliente recebe literalmente "#off".
+ * `DELETE .../messages/{id}` com `fromMe: true` é "apagar para todos" no WAHA.
+ *
+ * BEST-EFFORT de propósito: a mensagem JÁ está gravada e o efeito (pausar/ligar)
+ * JÁ foi aplicado quando chegamos aqui. Falhar em revogar só deixa o comando
+ * visível — não pode derrubar a ingestão nem desfazer a decisão.
+ */
+async function revogarComando(
+  session: Session,
+  chatId: string,
+  messageId: string | undefined,
+): Promise<void> {
+  if (!messageId) return;
+  const sessionName = session.waha_session_name;
+  if (!sessionName) return;
+  const client = getWahaClient();
+  if (!client) return;
+  try {
+    await client.deleteMessage(sessionName, chatId, messageId);
+  } catch (err) {
+    logger.warn("[waha.ingest] não consegui revogar o comando do celular", {
+      organization_id: session.organization_id,
+      message_id: messageId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "erro",
+    });
+  }
+}
+
+/**
  * fromMe=true: operador respondeu direto do WhatsApp dele (não pelo composer).
  * Contato = destinatário (`to`). `from` é o próprio número do operador — nunca
  * vira contato. Registrado como outbound p/ o operador ver o histórico completo.
@@ -855,6 +903,11 @@ async function handleOutboundFromUserPhone(
   const conversationId = await upsertConversation(admin, session.organization_id, contactId, session.id);
   if (!conversationId) return;
 
+  // Comando de controle vindo do celular (`#on`/`#off`). Só a mensagem INTEIRA
+  // conta (ver `lib/escalacao/comando-de-canal.ts`). Lido ANTES do insert para a
+  // própria linha carregar o metadata do comando.
+  const comando = lerComandoDeControle(bodyOf(p));
+
   const now = new Date().toISOString();
   const { data: insertedOutbound, error: insertErr } = await admin
     .from("messages")
@@ -873,7 +926,7 @@ async function handleOutboundFromUserPhone(
       media_mime: mediaMimeOf(p),
       sent_via: "external_device",
       sent_at: dataDoTimestamp(p.timestamp, now),
-      metadata: { raw_type: p.type, fromMe: true },
+      metadata: { raw_type: p.type, fromMe: true, ...(comando ? { control_command: comando } : {}) },
     })
     .select("id")
     .maybeSingle();
@@ -893,39 +946,56 @@ async function handleOutboundFromUserPhone(
 
   await markConversation(admin, session.organization_id, conversationId, "outbound", previewFromMessage(p), now);
 
-  // Uma PESSOA respondeu este cliente pelo celular, fora do composer/IA — a IA
-  // para NESTA conversa para não responder junto, por uma janela que expira
-  // sozinha (ver `PRAZO_DO_SILENCIO_MS`). NÃO mexe em `contacts.ai_authorized_at`
-  // — a origem do lead é outro estado.
+  // ── CONTROLE DO AUTOMÁTICO NESTA CONVERSA ─────────────────────────────────
   //
-  // ⚠️ MAS ANTES: isto é MESMO um humano, ou é o eco do nosso próprio envio?
+  // Três desfechos para uma mensagem `fromMe` que NÃO é eco:
+  //   - `#off`         → pausa DURÁVEL (só `#on` ou a tela do CRM religam)
+  //   - `#on`          → devolve o atendimento à IA (limpa as 3 travas)
+  //   - mensagem normal → pausa durável (uma pessoa assumiu pelo celular)
   //
-  // ⚠️ NÃO basta o `jaRegistrada` acima. Este comentário já afirmou que bastava
-  // ("o eco do nosso próprio envio já saiu no dedup") e a afirmação é FALSA,
-  // medida na fonte: `jaRegistrada` casa por `.in("external_id", …)`, e todo
-  // envio do CRM grava a linha ANTES de falar com o canal (`status='queued'`,
-  // `external_id` NULL) — o id só existe depois que o WAHA responde. Nessa
-  // janela o dedup não casa nada, o eco chega com `fromMe`, e esta função
-  // concluía "humano assumiu". A tela mostrava "Automático pausado", um estado
-  // legítimo que ninguém investiga. (issue #519, consertada no #521)
-  //
-  // Aqui isso é PIOR do que era: o silêncio deste caminho é um estado que dura
-  // até vencer o prazo ou até alguém clicar — a IA passaria a se calar porque
-  // ela mesma falou.
+  // ⚠️ A GUARDA DE ECO VEM PRIMEIRO, e a ordem importa. O eco de um envio nosso
+  // (composer/IA) chega por este mesmo caminho com `fromMe`, e não pode ser lido
+  // como comando nem como "humano assumiu". O `jaRegistrada` acima NÃO basta: o
+  // envio grava a linha ANTES de falar com o canal (`status='queued'`,
+  // `external_id` NULL), e nessa janela o dedup não casa — o eco chega e esta
+  // função concluía "humano assumiu". A tela mostrava "Automático pausado", um
+  // estado legítimo que ninguém investiga. (issue #519, consertada no #521)
   //
   // As DUAS decisões que eram uma só se separam aqui, e em direções OPOSTAS de
   // propósito:
-  //   gravar a linha  -> tolerante  (na dúvida grava; perder mensagem é pior que
+  //   gravar a linha   -> tolerante (na dúvida grava; perder mensagem é pior que
   //                                  duplicar — é o #108, que já custou caro)
-  //   silenciar o bot -> ESTRITO    (na dúvida NÃO cala; calar a IA por engano é
-  //                                  pior que não calar)
+  //   mexer no automa. -> ESTRITO   (na dúvida NÃO age; calar/ligar a IA por
+  //                                  engano é pior que não agir)
   // Quem reaproveitar esta condição para pular o INSERT reabre o #108.
-  if (!(await ehEcoDeEnvioNosso(admin, session.organization_id, conversationId, p))) {
-    await pausarIaPorAtendimentoManual(admin, {
-      organizationId: session.organization_id,
-      conversationId,
-      canal: "waha",
-    });
+  const ehEco = await ehEcoDeEnvioNosso(admin, session.organization_id, conversationId, p);
+  if (!ehEco) {
+    if (comando === "off") {
+      await pausarIaDuravelmente(admin, {
+        organizationId: session.organization_id,
+        conversationId,
+        canal: "waha",
+        motivo: MOTIVO_COMANDO_OFF,
+      });
+    } else if (comando === "on") {
+      await devolverAtendimentoAoAgente(
+        {
+          supabase: admin,
+          organizationId: session.organization_id,
+          actor: { type: "webhook_source", id: session.id },
+          requestId,
+        },
+        { conversationId },
+      );
+    } else {
+      await pausarIaPorAtendimentoManual(admin, {
+        organizationId: session.organization_id,
+        conversationId,
+        canal: "waha",
+      });
+    }
+    // O comando não é fala de atendimento: esconde do cliente depois de aplicar.
+    if (comando) await revogarComando(session, chatId, p.id);
   }
 
   await audit({
@@ -933,7 +1003,13 @@ async function handleOutboundFromUserPhone(
     organizationId: session.organization_id,
     resourceType: "message",
     requestId,
-    metadata: { conversation_id: conversationId, type: p.type, external_id: p.id, from_user_phone: true },
+    metadata: {
+      conversation_id: conversationId,
+      type: p.type,
+      external_id: p.id,
+      from_user_phone: true,
+      ...(comando ? { control_command: comando } : {}),
+    },
   });
 
   if (insertedOutbound?.id && mediaUrlOf(p)) {

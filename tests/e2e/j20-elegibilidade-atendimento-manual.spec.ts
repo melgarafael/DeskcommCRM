@@ -31,7 +31,7 @@ import * as path from "node:path";
 
 import { expect, test, type Page } from "@playwright/test";
 
-import { PRAZO_DO_SILENCIO_MS } from "@/lib/escalacao/atendimento-manual";
+import { SILENCIO_DURAVEL } from "@/lib/escalacao/atendimento-manual";
 
 const APP_URL = `http://localhost:${process.env.E2E_PORT ?? "3001"}`;
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
@@ -192,15 +192,13 @@ test.describe("J20.18 — resposta manual pelo celular pausa a IA (sem apagar a 
       expect(String(depoisDaPausa.last_handoff_reason)).toMatch(/manual/i);
       expect(depoisDaPausa.last_handoff_at).not.toBeNull();
 
-      // O SILÊNCIO TEM PRAZO — não é 'infinity'. Decisão do dono do produto:
-      // ninguém clicou em "assumir", então nada aqui pode calar a IA para
-      // sempre. O instante gravado é finito, está no futuro, e não passa do
-      // prazo (com folga para o tempo de trânsito do webhook).
-      expect(String(depoisDaPausa.bot_silenced_until)).not.toMatch(/infinity/i);
-      const venceEm = new Date(String(depoisDaPausa.bot_silenced_until)).getTime();
-      expect(Number.isFinite(venceEm), "bot_silenced_until tem de ser um instante real").toBe(true);
-      expect(venceEm).toBeGreaterThan(Date.now());
-      expect(venceEm).toBeLessThanOrEqual(Date.now() + PRAZO_DO_SILENCIO_MS + 60_000);
+      // O SILÊNCIO É DURÁVEL (decisão do dono, 2026-09-24): só `#on` pelo
+      // celular ou "devolver ao automático" na tela religam a IA. Não expira
+      // sozinho.
+      expect(
+        String(depoisDaPausa.bot_silenced_until),
+        "a pausa por resposta manual tem de ser durável até #on",
+      ).toBe(SILENCIO_DURAVEL);
 
       // A AUTORIZAÇÃO DO LEAD SOBREVIVE — pausar a conversa ≠ apagar a origem.
       const autorizacao = helper<{ ai_authorized_at: string | null; ai_authorized_reason: string | null }>(
@@ -221,7 +219,6 @@ test.describe("J20.18 — resposta manual pelo celular pausa a IA (sem apagar a 
       // conversa, que é o pior instante possível.
       // ---------------------------------------------------------------------
       const handoffAntes = depoisDaPausa.last_handoff_at;
-      const venciaAntes = venceEm;
       expect(
         await postWaha({
           event: "message.any",
@@ -253,9 +250,9 @@ test.describe("J20.18 — resposta manual pelo celular pausa a IA (sem apagar a 
         last_handoff_at: string | null;
       }>("conversation-silence", conversationId);
       expect(
-        new Date(String(depoisDaRenovacao.bot_silenced_until)).getTime(),
-        "o vencimento conta a partir da ÚLTIMA fala humana, não da primeira",
-      ).toBeGreaterThan(venciaAntes);
+        String(depoisDaRenovacao.bot_silenced_until),
+        "a 2ª fala humana mantém o silêncio durável",
+      ).toBe(SILENCIO_DURAVEL);
 
       // ---------------------------------------------------------------------
       // (5) A tela DIZ que uma pessoa assumiu, e oferece a volta.

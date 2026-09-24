@@ -48,7 +48,6 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
 
 import { dispatchWahaEvent, type WahaEnvelope, type WahaPayload } from "@/lib/waha/ingest";
-import { PRAZO_DO_SILENCIO_MS } from "@/lib/escalacao/atendimento-manual";
 
 interface Linha {
   id: string;
@@ -162,9 +161,13 @@ function banco(preexistentes: Array<Partial<Linha>> = []) {
     }),
     update: (patch: Record<string, unknown>) => {
       if (nome === "conversations") Object.assign(conversa, patch);
+      // `pausarIaDuravelmente` agora exige a linha de volta (`.select("id")` +
+      // `maybeSingle()`); devolvemos `{ id }` para que "gravou" seja true.
       const enc: Record<string, unknown> = { error: null };
       enc.eq = () => enc;
       enc.in = () => enc;
+      enc.select = () => enc;
+      enc.maybeSingle = () => Promise.resolve({ data: { id: "conversa-1" }, error: null });
       return enc;
     },
   });
@@ -241,14 +244,15 @@ describe("eco do próprio envio — a IA não se cala por ter falado", () => {
       "o atendente respondeu pelo celular e a IA continuou solta — é o defeito do #371 de volta",
     ).not.toBeNull();
 
-    // …e o silêncio tem PRAZO. As duas condições ficam LIGADAS de propósito:
-    // separadas, um conserto que voltasse a gravar 'infinity' aqui deixaria este
-    // caso verde, e a decisão do dono do produto ("sim, mas com prazo") morreria
-    // sem nenhum vermelho.
-    expect(conversa.bot_silenced_until, "voltou a calar a IA para sempre").not.toBe("infinity");
-    const ate = new Date(String(conversa.bot_silenced_until)).getTime();
-    expect(Number.isFinite(ate), "bot_silenced_until tem de ser um instante real").toBe(true);
-    expect(ate).toBeLessThanOrEqual(Date.now() + PRAZO_DO_SILENCIO_MS);
+    // …e o silêncio é DURÁVEL (decisão do dono, 2026-09-24): não expira sozinho,
+    // só `#on` pelo celular ou a tela do CRM religam. As duas condições ficam
+    // LIGADAS de propósito: separadas, um conserto que voltasse a gravar um prazo
+    // deixaria este caso verde e a decisão ("até mandar #on") morreria sem
+    // nenhum vermelho.
+    expect(
+      conversa.bot_silenced_until,
+      "a pausa por resposta manual voltou a expirar sozinha — o dono decidiu que ela dura até #on",
+    ).toBe("infinity");
   });
 
   it("CONTROLE 2: sem envio em voo, qualquer mensagem do celular silencia", async () => {

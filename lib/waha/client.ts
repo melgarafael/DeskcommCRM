@@ -513,6 +513,26 @@ export class WahaClient {
   }
 
   /**
+   * Apaga uma mensagem no WhatsApp.
+   *
+   * Para mensagem enviada por NÓS (`fromMe: true`), o WAHA dispara "apagar para
+   * todos" — é o que esconde do cliente os comandos de controle `#on`/`#off`,
+   * que o operador digita no próprio chat e que não podem virar fala de
+   * atendimento. Medido na doc oficial do WAHA 2026.x (NOWEB suporta o endpoint).
+   *
+   * LANÇA com `waha_<status>` (mesmo contrato dos demais métodos) e a decisão de
+   * falhar macio é de QUEM CHAMA: revogar é higiene, e uma revogação que falha
+   * não pode derrubar a ingestão da mensagem. Best-effort do lado de fora.
+   */
+  async deleteMessage(session: string, chatId: string, messageId: string): Promise<void> {
+    const res = await this.fetchComTeto(
+      `${this.baseUrl}/api/${encodeURIComponent(session)}/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}`,
+      { method: "DELETE", headers: { "X-Api-Key": this.apiKey } },
+    );
+    if (!res.ok) throw new Error(`waha_${res.status}`);
+  }
+
+  /**
    * O "digitando…" (e o "gravando…") no aparelho do cliente.
    *
    * ─── O contrato, e por que ele é diferente do resto deste arquivo ─────────

@@ -89,16 +89,23 @@ describe("fiação — resposta manual pelo WhatsApp silencia o bot temporariame
    * cala porque ela mesma falou.
    *
    * `eco-do-envio-nao-silencia-o-bot.test.ts` mede o COMPORTAMENTO; esta guarda
-   * mede a FIAÇÃO — que a pausa está DENTRO do `if`, e não ao lado dele. Um
-   * refactor que desaninhasse as duas manteria os dois símbolos no arquivo e
-   * passaria pela asserção de presença acima.
+   * mede a FIAÇÃO — que a pausa está DENTRO da guarda de eco, e não ao lado
+   * dela. Um refactor que desaninhasse as duas manteria os dois símbolos no
+   * arquivo e passaria pela asserção de presença acima.
+   *
+   * Atualizada em 2026-09-24 (C-075): o `if` deixou de ser inline e passou a
+   * guardar os três desfechos (`#off` durável / `#on` devolve / mensagem normal
+   * pausa durável). O que a guarda protege continua o mesmo: TODA ação sobre o
+   * automático somente acontece se `!ehEco`.
    */
-  it("a pausa acontece DENTRO da guarda de eco, nunca ao lado dela", () => {
+  it("a ação sobre o automático acontece DENTRO da guarda de eco, nunca ao lado dela", () => {
     const i = FONTE_INGEST.indexOf("async function handleOutboundFromUserPhone(");
     const j = FONTE_INGEST.indexOf("async function handleAck(", i);
     const corpo = FONTE_INGEST.slice(i, j);
     expect(corpo).toMatch(
-      /if \(!\(await ehEcoDeEnvioNosso\([^)]*\)\)\) \{[\s\S]{0,300}?pausarIaPorAtendimentoManual\(/,
+      /const ehEco = await ehEcoDeEnvioNosso\([^)]*\);[\s\S]{0,80}?if \(!ehEco\) \{/,
     );
+    expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,700}?pausarIaDuravelmente\(/);
+    expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,700}?devolverAtendimentoAoAgente\(/);
   });
 });

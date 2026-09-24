@@ -1,8 +1,9 @@
 /**
  * ATENDIMENTO MANUAL PELO CANAL — o dono pegou o celular e respondeu o cliente
  * direto no WhatsApp (ou por outra plataforma ligada à mesma conta). A IA para
- * NESSA conversa, para não responder junto — e volta sozinha quando o prazo
- * vence.
+ * NESSA conversa, para não responder junto — e fica parada até um humano
+ * devolver o atendimento (`#on` pelo celular ou "devolver ao automático" na
+ * tela).
  *
  * ## Por que existe
  *
@@ -18,50 +19,33 @@
  * volta na conversa afirmando que "os dados do PIX estão sendo confirmados" —
  * algo que ela não tem nenhuma ferramenta para saber.
  *
- * ## O prazo, e por que ele é 60 minutos
+ * ## Duração: DURÁVEL, não um prazo (decisão do dono, 2026-09-24)
  *
- * O silêncio EXPIRA sozinho. Não é `'infinity'`: `'infinity'` é o handoff
- * FORMAL, aquele em que alguém clicou "assumir" na tela e assumiu junto a
- * responsabilidade de devolver. Aqui ninguém clicou em nada — a pessoa só
- * respondeu uma mensagem pelo celular. Silêncio durável nesse gesto significa
- * que um "oi" do próprio dono testando o número desliga o atendimento
- * automático daquela conversa para sempre, e ninguém fica sabendo: a conversa
- * some do robô sem aparecer para nenhum humano.
+ * A primeira versão gravava `agora + 60 min` e o silêncio expirava sozinho. O
+ * dono decidiu o contrário: uma resposta humana pelo celular significa "eu
+ * assumo esta conversa", e a IA só volta quando ele mandar `#on` (ou clicar
+ * "devolver ao automático" na tela). O silêncio agora é gravado com o MESMO
+ * literal do handoff formal, `'infinity'` — `bot_silenced_until > now()` é sempre
+ * verdadeiro.
  *
- * 60 minutos porque é a ordem de grandeza de um atendimento humano de verdade
- * — quem parou para responder pelo celular termina o assunto dentro da hora —,
- * é muito mais que a janela de 5 min do composer (que cobre só o tempo de
- * digitar dentro do CRM) e é curto o bastante para que um engano se pague
- * sozinho no mesmo turno de trabalho, em vez de virar uma conversa morta.
+ * ## O defeito que a versão antiga tinha, e que este arquivo conserta
  *
- * ⚠️ Quem quiser outro prazo mexe AQUI, num lugar só: a constante é lida por
- * TODO canal cuja ingestão reconhece saída feita fora do CRM, e pelo teste.
- *
- * ## Cada mensagem nova do humano RENOVA o prazo
- *
- * O relógio conta a partir da ÚLTIMA fala humana, não da primeira. Sem isso, um
- * atendimento de uma hora e meia veria a IA voltar a falar no meio — que é o
- * pior desfecho possível, porque é justamente quando há uma pessoa na conversa.
- * Na prática: cada chamada propõe `agora + PRAZO` e grava se isso for MAIS
- * TARDE que o silêncio em vigor.
- *
- * ## O que NUNCA encurta
- *
- * Um silêncio maior já em vigor fica: handoff formal (`'infinity'`, que
- * `normalizarInstante` devolve como `Infinity`) e qualquer janela mais longa
- * que a nossa. A pausa por resposta manual é o silêncio mais FRACO da casa —
- * ela estende, nunca regride.
+ * O UPDATE de antes **não usava `.select()`**: com a linha já apagada, ou sob a
+ * concorrência real que o `HANDOFF-silencio-retomada-humana-nao-gruda.md`
+ * documenta, o PostgREST respondia `error: null` tendo afetado ZERO linhas — e a
+ * função devolvia `true`, logava "IA pausada" e seguia. O bot nunca parou e a
+ * tela nunca mostrou nada. Agora o UPDATE pede a linha de volta (`.select("id")`)
+ * e ausência de linha é tratada como FALHA, com log — não como sucesso.
  *
  * ## O que grava, e o que NÃO grava
  *
- *   - `bot_silenced_until = agora + PRAZO_DO_SILENCIO_MS`
+ *   - `bot_silenced_until = 'infinity'`
  *   - `last_handoff_at` / `last_handoff_reason` — rastro visível de que uma
  *     pessoa assumiu por fora.
  *
  * **NÃO toca `contacts.ai_authorized_at`.** A origem/autorização do lead é
  * estado SEPARADO (elegibilidade), não handoff. Uma resposta manual pausa a
- * conversa; não apaga que o lead veio do Respondi. Quando o prazo vence, a
- * autorização ainda está lá.
+ * conversa; não apaga que o lead veio do Respondi.
  *
  * **NÃO toca `contacts.force_human`** (trava do CONTATO inteiro — pausar uma
  * conversa não é bloquear o cliente) nem `assignee_kind` (exige um
@@ -69,28 +53,37 @@
  * CRM) nem `status` (mandar para `pending` diria "na fila esperando atendente",
  * o oposto de "estou atendendo").
  *
- * Fire-and-forget: a ingestão da mensagem do cliente não pode cair porque a
- * pausa falhou.
+ * Fire-and-forget do lado de quem chama: a ingestão da mensagem do cliente não
+ * pode cair porque a pausa falhou.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { logger } from "@/lib/logger";
 import { normalizarInstante } from "@/lib/ai/elegibilidade/gate";
+import { logger } from "@/lib/logger";
 
 /**
- * Quanto tempo a IA fica calada depois de uma resposta manual pelo canal.
- * Ver "O prazo, e por que ele é 60 minutos" na docstring do módulo — o número
- * tem motivo, e mudá-lo é uma decisão de produto, não de implementação.
+ * O mesmo literal do handoff formal: `bot_silenced_until > now()` é sempre
+ * verdadeiro. `normalizarInstante` o traduz para `Infinity`.
  */
-export const PRAZO_DO_SILENCIO_MS = 60 * 60 * 1000;
+export const SILENCIO_DURAVEL = "infinity";
 
-const MOTIVO = "Atendimento manual pelo canal (resposta fora do CRM)";
+/** Motivo gravado quando uma pessoa responde pelo canal, fora do CRM. */
+export const MOTIVO_ATENDIMENTO_MANUAL = "Atendimento manual pelo canal (resposta fora do CRM)";
 
-export interface PausaPorAtendimentoManualInput {
+/**
+ * Motivo gravado quando o operador manda `#off` do celular. Separado do motivo
+ * acima de propósito: a tela e a trilha precisam distinguir "alguém respondeu à
+ * mão" de "alguém desligou o automático com o comando".
+ */
+export const MOTIVO_COMANDO_OFF = "Comando #off enviado pelo celular";
+
+export interface PausaDuravelInput {
   organizationId: string;
   conversationId: string;
   /** Rótulo da origem do evento, só para log (o adapter que chamou se identifica). */
   canal?: string;
+  /** Texto gravado em `last_handoff_reason`. Default = motivo do atendimento manual. */
+  motivo?: string;
   /**
    * O instante da fala humana. INJETADO para o teste não depender do relógio
    * real: o `now()` do banco e o `Date.now()` do processo são dois relógios, e
@@ -100,17 +93,19 @@ export interface PausaPorAtendimentoManualInput {
 }
 
 /**
- * Pausa a IA numa conversa porque uma pessoa respondeu por fora do CRM, por
- * `PRAZO_DO_SILENCIO_MS` a contar de `agora`. Devolve `true` se gravou (pausa
- * nova ou prazo renovado), `false` se havia silêncio mais longo em vigor ou se
- * falhou.
+ * Pausa a IA numa conversa de forma DURÁVEL (`'infinity'`), por uma pessoa ter
+ * respondido por fora do CRM. Devolve `true` se gravou; `false` se já havia
+ * silêncio durável em vigor, se a conversa não existe, ou se a escrita falhou.
+ *
+ * Idempotente por natureza: reexecutar sobre uma conversa já durável não faz
+ * nada e devolve `false`.
  */
-export async function pausarIaPorAtendimentoManual(
+export async function pausarIaDuravelmente(
   admin: SupabaseClient,
-  input: PausaPorAtendimentoManualInput,
+  input: PausaDuravelInput,
 ): Promise<boolean> {
   const agora = input.agora ?? new Date();
-  const proposto = new Date(agora.getTime() + PRAZO_DO_SILENCIO_MS);
+  const motivo = input.motivo ?? MOTIVO_ATENDIMENTO_MANUAL;
 
   try {
     const { data: atual, error: readErr } = await admin
@@ -130,11 +125,11 @@ export async function pausarIaPorAtendimentoManual(
     }
     if (atual == null) return false;
 
-    // NUNCA encurta um silêncio maior já em vigor. `Infinity` (handoff formal)
-    // vence qualquer prazo finito; uma janela mais longa que a nossa também.
-    // Instante ilegível vira `null` e é tratado como "sem silêncio" — a leitura
-    // conservadora seria não pausar, e ela deixaria a IA falando por cima do
-    // humano, que é o defeito que este módulo existe para não ter.
+    // `'infinity'` já em vigor (handoff formal ou pausa anterior): nada a fazer.
+    // `normalizarInstante` traduz o literal do Postgres para `Infinity`; só ele
+    // satisfaz a comparação abaixo, então um instante finito ou ilegível cai no
+    // caminho de escrita (a leitura conservadora da versão antiga — data que não
+    // dá para ler conta como "sem silêncio" e a pausa é reafirmada).
     const silenciadaAte = normalizarInstante(
       (atual as { bot_silenced_until: string | null }).bot_silenced_until,
     );
@@ -144,17 +139,22 @@ export async function pausarIaPorAtendimentoManual(
         : silenciadaAte instanceof Date
           ? silenciadaAte.getTime()
           : silenciadaAte;
-    if (atualMs >= proposto.getTime()) return false;
+    if (atualMs >= Number.POSITIVE_INFINITY) return false;
 
-    const { error: updErr } = await admin
+    // `.select("id")` NÃO é decoração: sem ele, um UPDATE que afeta zero linhas
+    // responde `error: null` e a função mentiria "pausei". É o conserto do
+    // defeito relatado no handoff do silêncio que não gruda.
+    const { data: atualizada, error: updErr } = await admin
       .from("conversations")
       .update({
-        bot_silenced_until: proposto.toISOString(),
+        bot_silenced_until: SILENCIO_DURAVEL,
         last_handoff_at: agora.toISOString(),
-        last_handoff_reason: MOTIVO,
+        last_handoff_reason: motivo,
       })
       .eq("organization_id", input.organizationId)
-      .eq("id", input.conversationId);
+      .eq("id", input.conversationId)
+      .select("id")
+      .maybeSingle();
 
     if (updErr) {
       logger.warn("[atendimento-manual] pausa da IA não gravada", {
@@ -164,12 +164,21 @@ export async function pausarIaPorAtendimentoManual(
       });
       return false;
     }
+    if (atualizada == null) {
+      // 0 linhas: o desfecho silencioso que este arquivo existe para não ter.
+      logger.warn("[atendimento-manual] pausa da IA não afetou nenhuma linha", {
+        organization_id: input.organizationId,
+        conversation_id: input.conversationId,
+        canal: input.canal ?? "desconhecido",
+      });
+      return false;
+    }
 
-    logger.info("[atendimento-manual] IA pausada — pessoa respondeu pelo canal", {
+    logger.info("[atendimento-manual] IA pausada (durável) — atendimento humano pelo canal", {
       organization_id: input.organizationId,
       conversation_id: input.conversationId,
       canal: input.canal ?? "desconhecido",
-      silenciada_ate: proposto.toISOString(),
+      motivo,
     });
     return true;
   } catch (err) {
@@ -180,4 +189,16 @@ export async function pausarIaPorAtendimentoManual(
     });
     return false;
   }
+}
+
+/**
+ * Atalho histórico para a resposta manual pelo canal. Mantido porque é o nome
+ * que os canais (WAHA e Zernio) e os testes já conhecem — a regra vive em
+ * `pausarIaDuravelmente`.
+ */
+export async function pausarIaPorAtendimentoManual(
+  admin: SupabaseClient,
+  input: Omit<PausaDuravelInput, "motivo">,
+): Promise<boolean> {
+  return pausarIaDuravelmente(admin, { ...input, motivo: MOTIVO_ATENDIMENTO_MANUAL });
 }

@@ -28,7 +28,7 @@ import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 
 import { extrairAtribuicaoMeta } from "@/lib/channels/atribuicao-de-anuncio-oficial";
 import { estamparAtribuicaoDoContato } from "@/lib/leads/atribuicao-de-anuncio";
-import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
+import { pausarIaDuravelmente } from "@/lib/escalacao/atendimento-manual";
 
 import { aplicarEfeitosPosEntrada } from "../pos-entrada";
 
@@ -180,7 +180,7 @@ export async function ingestZernioInbound(
   // outra plataforma na mesma conta). A IA para nesta conversa. O eco do nosso
   // próprio envio já saiu como `"duplicate"` acima. NÃO mexe na origem do lead.
   if (msg.direction === "outbound") {
-    await pausarIaPorAtendimentoManual(admin, {
+    await pausarIaDuravelmente(admin, {
       organizationId: input.organizationId,
       conversationId,
       canal: "zernio",
