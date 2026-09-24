@@ -37216,7 +37216,7 @@ update public.crm_leads l
 
 
 
--- APÊNDICE 0388_etapas_funil_padrao_em_espanhol — idempotente, espelho da migration.
+-- APÊNDICE 0401_etapas_funil_padrao_em_espanhol — idempotente, espelho da migration.
 --
 -- O funil padrão ("Pedidos") era semeado em português e o dono não lê
 -- português. Instalação nova tem de nascer em espanhol; base existente tem
