@@ -25,6 +25,12 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// O caso CONTROLE deste arquivo assina um convite de verdade (não mockado) —
+// e assinar exige segredo desde o fail-closed do hardening (sem segredo, não
+// há convite). Sem o stub, o controle quebra no `SECRET` em vez de provar que
+// o modo fechado deixa entrar quem tem convite válido.
+vi.stubEnv("INVITE_TOKEN_SECRET", "segredo-de-teste-só-para-este-arquivo");
+
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
