@@ -7,7 +7,7 @@ import { z } from "zod";
 import { audit } from "@/lib/audit";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import {
-  MODULOS_OPCIONAIS,
+  MODULOS_OPCIONAIS_POR_FLAG,
   gravarModulo,
   moduloLigado,
 } from "@/lib/instalacao/modulos";
@@ -15,8 +15,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export type UpdateModuloResult = { ok: true } | { ok: false; error: string };
 
+// Só módulos por FLAG passam por aqui — um módulo de tabela (ADR-0002, ex. "honorarios")
+// se instala em `/admin/modulos` via `fn_modulo_instalar`, nunca por este action.
 const entradaSchema = z.object({
-  modulo: z.enum(MODULOS_OPCIONAIS),
+  modulo: z.enum(MODULOS_OPCIONAIS_POR_FLAG),
   ligado: z.boolean(),
 });
 

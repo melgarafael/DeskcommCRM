@@ -591,6 +591,13 @@ export const AUDIT_ACTIONS = [
   "financeiro.lancamento_criado",
   "financeiro.lancamento_pago",
   "financeiro.lancamento_removido",
+  // Módulo opcional de honorários (advocacia, ADR-0002) — contrato criado e parcela marcada
+  // como paga. Pagar uma parcela cria um `financial_entries` por baixo (DIRC "integrar"), mas
+  // o código aqui é do módulo: quem lê a auditoria do caixo núcleo não precisa saber que a
+  // origem foi uma parcela de honorários, e quem lê a do módulo não quer vasculhar o caixa.
+  "honorarios.contrato_criado",
+  "honorarios.parcela_criada",
+  "honorarios.parcela_paga",
   "fidelidade.ponto_dado",
   "fidelidade.ponto_resgatado",
   "financeiro.recorrencia_gerada",
@@ -690,6 +697,11 @@ export const AUDIT_ACTIONS = [
   // Nome próprio, e não `extension.deactivated`: na auditoria da organização, "nós desligamos" e
   // "o responsável pela instalação removeu" precisam ser distinguíveis sem abrir os metadados.
   "extension.deactivated_by_removal",
+  // Módulo opcional com tabela própria instalado NA INSTÂNCIA (ADR-0002, D3) — nunca numa
+  // organização. Passa pelo mesmo livro de recibos das extensões (`extension_operations`,
+  // kind `module_install`), mas é um código próprio: "extension.installed" fala de pacote
+  // baixado de um catálogo, e aqui não há pacote nenhum, só a função provisionadora do módulo.
+  "modulo.instalado",
   // "Cliente pela agenda" ligada ou desligada (migration 0262). Ligar reescreve
   // etiquetas de toda a organização; metadata leva as contagens.
   "crm.cliente_pela_agenda_alterado",
