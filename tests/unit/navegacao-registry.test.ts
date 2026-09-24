@@ -142,7 +142,7 @@ describe("sidebarGroups", () => {
 });
 
 describe("hubSections", () => {
-  it("o hub do CRM é inventário: as cinco telas do grupo, nas duas seções", () => {
+  it("o hub do CRM é inventário: as telas do grupo, nas duas seções", () => {
     // As seções são a régua do sidebar escrita por extenso — o que se abre todo
     // dia contra o que se define uma vez. Lista EXATA: `toContain` deixaria uma
     // tela nova entrar sem que ninguém decidisse de que lado dela ela cai.
@@ -151,8 +151,12 @@ describe("hubSections", () => {
     expect(secoes.flatMap((s) => s.items.map((i) => i.href))).toEqual([
       "/app/kanban",
       "/app/contacts",
+      "/app/companies",
+      "/app/people",
       "/app/tasks",
       "/app/products",
+      "/app/imports",
+      "/app/whatsapp-campaigns",
       "/app/settings/tenant/pipelines",
     ]);
   });

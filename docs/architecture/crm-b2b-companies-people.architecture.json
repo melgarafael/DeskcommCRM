@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "CRM B2B — companies → people → contacts",
+    "subtitle": "Fase 1: cadastro e importação sem campanhas WhatsApp",
+    "output": "crm-b2b-companies-people.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "humano", "label": "O que o humano vê" },
+    { "id": "api", "label": "API / domínio" },
+    { "id": "dados", "label": "Postgres" },
+    { "id": "fora", "label": "Fora (BrasilAPI / WAHA)" }
+  ],
+  "mainPath": ["ui_empresas", "api_companies", "companies", "people", "contacts"],
+  "nodes": [
+    { "id": "ui_empresas", "lane": "humano", "col": 0, "type": "frontend", "label": "/app/companies", "sublabel": "lista + detalhe" },
+    { "id": "ui_pessoas", "lane": "humano", "col": 1, "type": "frontend", "label": "/app/people", "sublabel": "decisores" },
+    { "id": "ui_imports", "lane": "humano", "col": 2, "type": "frontend", "label": "/app/imports", "sublabel": "CSV/XLSX" },
+    { "id": "api_companies", "lane": "api", "col": 0, "type": "api", "label": "/api/v1/companies", "sublabel": "requireRole + audit" },
+    { "id": "api_people", "lane": "api", "col": 1, "type": "api", "label": "/api/v1/people", "sublabel": "company_people" },
+    { "id": "api_imports", "lane": "api", "col": 2, "type": "api", "label": "/api/v1/imports", "sublabel": "dedupe + enrich" },
+    { "id": "brasilapi", "lane": "api", "col": 3, "type": "service", "label": "lib/brasil-api", "sublabel": "CNPJ async" },
+    { "id": "companies", "lane": "dados", "col": 0, "type": "database", "label": "companies", "sublabel": "normalized_cnpj unique" },
+    { "id": "people", "lane": "dados", "col": 1, "type": "database", "label": "people", "sublabel": "sem telefone" },
+    { "id": "company_people", "lane": "dados", "col": 2, "type": "database", "label": "company_people", "sublabel": "same-org trigger" },
+    { "id": "contacts", "lane": "dados", "col": 3, "type": "database", "label": "contacts.person_id", "sublabel": "nullable · WAHA intacto" },
+    { "id": "import_batches", "lane": "dados", "col": 4, "type": "database", "label": "import_batches/rows", "sublabel": "conflitos" },
+    { "id": "waha", "lane": "fora", "col": 3, "type": "external", "label": "WAHA ingest", "sublabel": "person_id NULL" },
+    { "id": "brasilapi_ext", "lane": "fora", "col": 0, "type": "external", "label": "BrasilAPI", "sublabel": "cnpj/v1" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "ui_empresas", "to": "api_companies", "label": "CRUD" },
+    { "id": "e2", "from": "ui_pessoas", "to": "api_people", "label": "CRUD" },
+    { "id": "e3", "from": "ui_imports", "to": "api_imports", "label": "upload" },
+    { "id": "e4", "from": "api_companies", "to": "companies", "label": "insert + RLS" },
+    { "id": "e5", "from": "api_companies", "to": "brasilapi", "label": "enrich async" },
+    { "id": "e6", "from": "brasilapi", "to": "brasilapi_ext", "label": "GET cnpj" },
+    { "id": "e7", "from": "brasilapi", "to": "companies", "label": "brasilapi_raw" },
+    { "id": "e8", "from": "api_people", "to": "people", "label": "insert" },
+    { "id": "e9", "from": "api_people", "to": "company_people", "label": "vínculo" },
+    { "id": "e10", "from": "company_people", "to": "companies", "label": "FK same org" },
+    { "id": "e11", "from": "company_people", "to": "people", "label": "FK same org" },
+    { "id": "e12", "from": "api_imports", "to": "import_batches", "label": "lote" },
+    { "id": "e13", "from": "api_imports", "to": "companies", "label": "dedupe CNPJ" },
+    { "id": "e14", "from": "api_imports", "to": "people", "label": "dedupe nome+empresa" },
+    { "id": "e15", "from": "api_imports", "to": "contacts", "label": "telefone E.164" },
+    { "id": "e16", "from": "contacts", "to": "people", "label": "person_id opcional" },
+    { "id": "e17", "from": "waha", "to": "contacts", "label": "upsert sem person_id", "route": "highlight" },
+    { "id": "e18", "from": "companies", "to": "ui_empresas", "label": "lista" },
+    { "id": "e19", "from": "people", "to": "ui_pessoas", "label": "lista" },
+    { "id": "e20", "from": "import_batches", "to": "ui_imports", "label": "conflitos na tela" }
+  ]
+}

@@ -24066,3 +24066,1557 @@ grant execute on function public.fn_decrypt_oauth(bytea) to service_role;
 grant execute on function public.fn_encrypt_oauth(text) to service_role;
 grant execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) to service_role;
 grant execute on function public.fn_update_budget_consumption() to service_role;
+
+-- ---- companies / people / import (migration 0239) ----
+--
+-- CRM B2B fase 1. Mesmo SQL da migration 0239 � idempotente para INSTALL e UPDATE.
+
+-- 0239_companies_people_import
+--
+-- Fase 1 do CRM B2B: companies → company_people → people → contacts.person_id.
+-- Aditivo e idempotente. NÃO altera uniques de contacts/conversations/messages
+-- nem o comportamento de fn_upsert_wa_contact (person_id permanece NULL no
+-- upsert WAHA). organizations.cnpj continua sendo o CNPJ do TENANT, não de
+-- clientes — empresas clientes vivem em public.companies.
+
+-- ---------------------------------------------------------------------------
+-- 1. companies
+-- ---------------------------------------------------------------------------
+create table if not exists public.companies (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  legal_name text,
+  trade_name text,
+  cnpj text,
+  normalized_cnpj text,
+  registration_status text,
+  legal_nature text,
+  company_size text,
+  share_capital numeric,
+  opened_at date,
+  main_cnae_code text,
+  main_cnae_description text,
+  secondary_cnaes jsonb not null default '[]'::jsonb,
+  street text,
+  number text,
+  complement text,
+  district text,
+  city text,
+  state text,
+  zip_code text,
+  email text,
+  phone text,
+  enrichment_status text not null default 'pending'
+    check (enrichment_status in ('pending', 'processing', 'completed', 'failed')),
+  enriched_at timestamptz,
+  enrichment_error text,
+  brasilapi_raw jsonb,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint companies_normalized_cnpj_digits
+    check (normalized_cnpj is null or normalized_cnpj ~ '^\d{14}$')
+);
+
+create index if not exists idx_companies_org_updated
+  on public.companies (organization_id, updated_at desc);
+
+create index if not exists idx_companies_org_trade
+  on public.companies (organization_id, trade_name);
+
+create unique index if not exists companies_org_normalized_cnpj_uidx
+  on public.companies (organization_id, normalized_cnpj)
+  where normalized_cnpj is not null;
+
+alter table public.companies enable row level security;
+
+drop policy if exists tenant_isolation_companies_all on public.companies;
+create policy tenant_isolation_companies_all on public.companies
+  for all
+  using (organization_id in (select public.fn_user_org_ids()))
+  with check (organization_id in (select public.fn_user_org_ids()));
+
+revoke all on table public.companies from anon;
+grant select, insert, update, delete on table public.companies to authenticated;
+grant all on table public.companies to service_role;
+
+drop trigger if exists trg_companies_set_updated_at on public.companies;
+create trigger trg_companies_set_updated_at
+  before update on public.companies
+  for each row execute function public.fn_set_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- 2. people
+-- ---------------------------------------------------------------------------
+create table if not exists public.people (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  full_name text not null,
+  normalized_name text,
+  email text,
+  notes text,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint people_full_name_nao_vazio check (length(btrim(full_name)) > 0)
+);
+
+create index if not exists idx_people_org_name
+  on public.people (organization_id, normalized_name);
+
+create index if not exists idx_people_org_updated
+  on public.people (organization_id, updated_at desc);
+
+alter table public.people enable row level security;
+
+drop policy if exists tenant_isolation_people_all on public.people;
+create policy tenant_isolation_people_all on public.people
+  for all
+  using (organization_id in (select public.fn_user_org_ids()))
+  with check (organization_id in (select public.fn_user_org_ids()));
+
+revoke all on table public.people from anon;
+grant select, insert, update, delete on table public.people to authenticated;
+grant all on table public.people to service_role;
+
+drop trigger if exists trg_people_set_updated_at on public.people;
+create trigger trg_people_set_updated_at
+  before update on public.people
+  for each row execute function public.fn_set_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- 3. company_people
+-- ---------------------------------------------------------------------------
+create table if not exists public.company_people (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  company_id uuid not null references public.companies(id) on delete cascade,
+  person_id uuid not null references public.people(id) on delete cascade,
+  job_title text,
+  department text,
+  is_decision_maker boolean not null default false,
+  is_primary boolean not null default false,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint company_people_company_person_uidx unique (company_id, person_id)
+);
+
+create index if not exists idx_company_people_org
+  on public.company_people (organization_id);
+
+create index if not exists idx_company_people_person
+  on public.company_people (organization_id, person_id);
+
+create index if not exists idx_company_people_company
+  on public.company_people (organization_id, company_id);
+
+alter table public.company_people enable row level security;
+
+drop policy if exists tenant_isolation_company_people_all on public.company_people;
+create policy tenant_isolation_company_people_all on public.company_people
+  for all
+  using (organization_id in (select public.fn_user_org_ids()))
+  with check (organization_id in (select public.fn_user_org_ids()));
+
+revoke all on table public.company_people from anon;
+grant select, insert, update, delete on table public.company_people to authenticated;
+grant all on table public.company_people to service_role;
+
+drop trigger if exists trg_company_people_set_updated_at on public.company_people;
+create trigger trg_company_people_set_updated_at
+  before update on public.company_people
+  for each row execute function public.fn_set_updated_at();
+
+-- Mesma organization entre vínculo, company e person (anti cross-tenant por FK).
+create or replace function public.fn_company_people_same_org()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_company_org uuid;
+  v_person_org uuid;
+begin
+  select organization_id into v_company_org
+    from public.companies where id = new.company_id;
+  select organization_id into v_person_org
+    from public.people where id = new.person_id;
+
+  if v_company_org is null then
+    raise exception 'company_people: company_id inexistente';
+  end if;
+  if v_person_org is null then
+    raise exception 'company_people: person_id inexistente';
+  end if;
+  if new.organization_id is distinct from v_company_org
+     or new.organization_id is distinct from v_person_org then
+    raise exception 'company_people: organization_id deve coincidir com company e person';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_company_people_same_org() from public, anon;
+-- trigger functions are owned; no grant needed for callers
+
+drop trigger if exists trg_company_people_same_org on public.company_people;
+create trigger trg_company_people_same_org
+  before insert or update on public.company_people
+  for each row execute function public.fn_company_people_same_org();
+
+-- ---------------------------------------------------------------------------
+-- 4. contacts.person_id (aditivo, nullable)
+-- ---------------------------------------------------------------------------
+alter table public.contacts
+  add column if not exists person_id uuid references public.people(id) on delete set null;
+
+create index if not exists idx_contacts_org_person
+  on public.contacts (organization_id, person_id)
+  where person_id is not null;
+
+create or replace function public.fn_contacts_person_same_org()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_person_org uuid;
+begin
+  if new.person_id is null then
+    return new;
+  end if;
+  select organization_id into v_person_org
+    from public.people where id = new.person_id;
+  if v_person_org is null then
+    raise exception 'contacts.person_id: pessoa inexistente';
+  end if;
+  if new.organization_id is distinct from v_person_org then
+    raise exception 'contacts.person_id: organization_id deve coincidir com a pessoa';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_contacts_person_same_org() from public, anon;
+
+drop trigger if exists trg_contacts_person_same_org on public.contacts;
+create trigger trg_contacts_person_same_org
+  before insert or update of person_id, organization_id on public.contacts
+  for each row execute function public.fn_contacts_person_same_org();
+
+-- ---------------------------------------------------------------------------
+-- 5. import_batches / import_rows
+-- ---------------------------------------------------------------------------
+create table if not exists public.import_batches (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  kind text not null default 'companies_people'
+    check (kind in ('companies_people', 'contacts')),
+  filename text not null,
+  status text not null default 'pending'
+    check (status in ('pending', 'processing', 'completed', 'failed')),
+  total_rows integer not null default 0,
+  processed_rows integer not null default 0,
+  successful_rows integer not null default 0,
+  failed_rows integer not null default 0,
+  conflict_rows integer not null default 0,
+  column_mapping jsonb not null default '{}'::jsonb,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  completed_at timestamptz,
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_import_batches_org_created
+  on public.import_batches (organization_id, created_at desc);
+
+alter table public.import_batches enable row level security;
+
+drop policy if exists tenant_isolation_import_batches_all on public.import_batches;
+create policy tenant_isolation_import_batches_all on public.import_batches
+  for all
+  using (organization_id in (select public.fn_user_org_ids()))
+  with check (organization_id in (select public.fn_user_org_ids()));
+
+revoke all on table public.import_batches from anon;
+grant select, insert, update, delete on table public.import_batches to authenticated;
+grant all on table public.import_batches to service_role;
+
+drop trigger if exists trg_import_batches_set_updated_at on public.import_batches;
+create trigger trg_import_batches_set_updated_at
+  before update on public.import_batches
+  for each row execute function public.fn_set_updated_at();
+
+create table if not exists public.import_rows (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  batch_id uuid not null references public.import_batches(id) on delete cascade,
+  row_number integer not null,
+  raw_data jsonb not null default '{}'::jsonb,
+  normalized_data jsonb not null default '{}'::jsonb,
+  status text not null default 'pending'
+    check (status in ('pending', 'processing', 'success', 'conflict', 'failed')),
+  error text,
+  company_id uuid references public.companies(id) on delete set null,
+  person_id uuid references public.people(id) on delete set null,
+  contact_id uuid references public.contacts(id) on delete set null,
+  created_at timestamptz not null default now(),
+  constraint import_rows_batch_row_uidx unique (batch_id, row_number)
+);
+
+create index if not exists idx_import_rows_batch_status
+  on public.import_rows (batch_id, status);
+
+create index if not exists idx_import_rows_org
+  on public.import_rows (organization_id);
+
+alter table public.import_rows enable row level security;
+
+drop policy if exists tenant_isolation_import_rows_all on public.import_rows;
+create policy tenant_isolation_import_rows_all on public.import_rows
+  for all
+  using (organization_id in (select public.fn_user_org_ids()))
+  with check (organization_id in (select public.fn_user_org_ids()));
+
+revoke all on table public.import_rows from anon;
+grant select, insert, update, delete on table public.import_rows to authenticated;
+grant all on table public.import_rows to service_role;
+
+create or replace function public.fn_import_rows_same_org()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_batch_org uuid;
+begin
+  select organization_id into v_batch_org
+    from public.import_batches where id = new.batch_id;
+  if v_batch_org is null then
+    raise exception 'import_rows: batch_id inexistente';
+  end if;
+  if new.organization_id is distinct from v_batch_org then
+    raise exception 'import_rows: organization_id deve coincidir com o batch';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_import_rows_same_org() from public, anon;
+
+drop trigger if exists trg_import_rows_same_org on public.import_rows;
+create trigger trg_import_rows_same_org
+  before insert or update on public.import_rows
+  for each row execute function public.fn_import_rows_same_org();
+
+-- ---- whatsapp campaigns (migration 0240) ----
+
+-- 0240_whatsapp_campaigns
+--
+-- Fase 2 CRM B2B: campanhas WhatsApp com fila em whatsapp_campaign_recipients
+-- (FOR UPDATE SKIP LOCKED), attempts, lease por channel_session.
+-- Aditivo. Não altera contacts/conversations/messages uniques nem WAHA RPCs.
+
+-- ---------------------------------------------------------------------------
+-- 1. whatsapp_campaigns
+-- ---------------------------------------------------------------------------
+create table if not exists public.whatsapp_campaigns (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  name text not null,
+  description text,
+  status text not null default 'draft'
+    check (status in ('draft','scheduled','running','paused','completed','cancelled','failed')),
+  message_text text not null,
+  channel_session_id uuid not null references public.channel_sessions(id) on delete restrict,
+  min_interval_seconds integer not null default 20
+    check (min_interval_seconds >= 5),
+  max_interval_seconds integer not null default 45
+    check (max_interval_seconds >= 5),
+  send_window_start time,
+  send_window_end time,
+  timezone text not null default 'America/Sao_Paulo',
+  daily_limit integer check (daily_limit is null or daily_limit > 0),
+  next_send_at timestamptz,
+  scheduled_at timestamptz,
+  started_at timestamptz,
+  paused_at timestamptz,
+  completed_at timestamptz,
+  cancelled_at timestamptz,
+  session_problem text,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint whatsapp_campaigns_interval_order
+    check (max_interval_seconds >= min_interval_seconds),
+  constraint whatsapp_campaigns_name_nao_vazio
+    check (length(btrim(name)) > 0),
+  constraint whatsapp_campaigns_message_nao_vazio
+    check (length(btrim(message_text)) > 0)
+);
+
+create index if not exists idx_wa_campaigns_org_status
+  on public.whatsapp_campaigns (organization_id, status);
+
+create index if not exists idx_wa_campaigns_running_next
+  on public.whatsapp_campaigns (status, next_send_at)
+  where status = 'running';
+
+alter table public.whatsapp_campaigns enable row level security;
+
+drop policy if exists tenant_isolation_whatsapp_campaigns_all on public.whatsapp_campaigns;
+create policy tenant_isolation_whatsapp_campaigns_all on public.whatsapp_campaigns
+  for all
+  using (organization_id in (select public.fn_user_org_ids()))
+  with check (organization_id in (select public.fn_user_org_ids()));
+
+revoke all on table public.whatsapp_campaigns from anon;
+grant select, insert, update, delete on table public.whatsapp_campaigns to authenticated;
+grant all on table public.whatsapp_campaigns to service_role;
+
+drop trigger if exists trg_whatsapp_campaigns_set_updated_at on public.whatsapp_campaigns;
+create trigger trg_whatsapp_campaigns_set_updated_at
+  before update on public.whatsapp_campaigns
+  for each row execute function public.fn_set_updated_at();
+
+-- same-org: channel_session
+create or replace function public.fn_whatsapp_campaigns_same_org()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_sess_org uuid;
+begin
+  select organization_id into v_sess_org
+    from public.channel_sessions where id = new.channel_session_id;
+  if v_sess_org is null then
+    raise exception 'whatsapp_campaigns: channel_session inexistente';
+  end if;
+  if new.organization_id is distinct from v_sess_org then
+    raise exception 'whatsapp_campaigns: channel_session de outra organization';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_whatsapp_campaigns_same_org() from public, anon;
+
+drop trigger if exists trg_whatsapp_campaigns_same_org on public.whatsapp_campaigns;
+create trigger trg_whatsapp_campaigns_same_org
+  before insert or update of channel_session_id, organization_id on public.whatsapp_campaigns
+  for each row execute function public.fn_whatsapp_campaigns_same_org();
+
+-- ---------------------------------------------------------------------------
+-- 2. whatsapp_campaign_recipients (fila persistente)
+-- ---------------------------------------------------------------------------
+create table if not exists public.whatsapp_campaign_recipients (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  campaign_id uuid not null references public.whatsapp_campaigns(id) on delete cascade,
+  contact_id uuid not null references public.contacts(id) on delete restrict,
+  person_id uuid references public.people(id) on delete set null,
+  company_id uuid references public.companies(id) on delete set null,
+  channel_session_id uuid not null references public.channel_sessions(id) on delete restrict,
+  phone_number_snapshot text not null,
+  contact_name_snapshot text,
+  person_name_snapshot text,
+  company_name_snapshot text,
+  message_rendered text,
+  status text not null default 'pending'
+    check (status in (
+      'pending','scheduled','processing','sent','delivered','read','replied',
+      'failed','skipped','cancelled'
+    )),
+  next_attempt_at timestamptz,
+  claimed_at timestamptz,
+  claimed_by text,
+  outbound_message_id uuid,
+  sent_at timestamptz,
+  delivered_at timestamptz,
+  read_at timestamptz,
+  replied_at timestamptz,
+  failed_at timestamptz,
+  cancelled_at timestamptz,
+  skipped_reason text,
+  message_id uuid references public.messages(id) on delete set null,
+  external_message_id text,
+  attempt_count integer not null default 0,
+  max_attempts integer not null default 3,
+  last_error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint whatsapp_campaign_recipients_campaign_contact_uidx unique (campaign_id, contact_id)
+);
+
+create index if not exists idx_wa_recipients_org_campaign
+  on public.whatsapp_campaign_recipients (organization_id, campaign_id);
+
+create index if not exists idx_wa_recipients_claim
+  on public.whatsapp_campaign_recipients (status, next_attempt_at, channel_session_id)
+  where status in ('pending','scheduled','failed');
+
+create index if not exists idx_wa_recipients_session_processing
+  on public.whatsapp_campaign_recipients (channel_session_id, status)
+  where status = 'processing';
+
+create index if not exists idx_wa_recipients_message
+  on public.whatsapp_campaign_recipients (message_id)
+  where message_id is not null;
+
+create index if not exists idx_wa_recipients_contact_person
+  on public.whatsapp_campaign_recipients (organization_id, person_id)
+  where person_id is not null;
+
+alter table public.whatsapp_campaign_recipients enable row level security;
+
+drop policy if exists tenant_isolation_whatsapp_campaign_recipients_all on public.whatsapp_campaign_recipients;
+create policy tenant_isolation_whatsapp_campaign_recipients_all on public.whatsapp_campaign_recipients
+  for all
+  using (organization_id in (select public.fn_user_org_ids()))
+  with check (organization_id in (select public.fn_user_org_ids()));
+
+revoke all on table public.whatsapp_campaign_recipients from anon;
+grant select, insert, update, delete on table public.whatsapp_campaign_recipients to authenticated;
+grant all on table public.whatsapp_campaign_recipients to service_role;
+
+drop trigger if exists trg_whatsapp_campaign_recipients_set_updated_at on public.whatsapp_campaign_recipients;
+create trigger trg_whatsapp_campaign_recipients_set_updated_at
+  before update on public.whatsapp_campaign_recipients
+  for each row execute function public.fn_set_updated_at();
+
+create or replace function public.fn_whatsapp_campaign_recipients_same_org()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_camp_org uuid;
+  v_contact_org uuid;
+begin
+  select organization_id into v_camp_org from public.whatsapp_campaigns where id = new.campaign_id;
+  select organization_id into v_contact_org from public.contacts where id = new.contact_id;
+  if v_camp_org is null then raise exception 'recipient: campaign inexistente'; end if;
+  if v_contact_org is null then raise exception 'recipient: contact inexistente'; end if;
+  if new.organization_id is distinct from v_camp_org
+     or new.organization_id is distinct from v_contact_org then
+    raise exception 'recipient: organization_id deve coincidir com campaign e contact';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_whatsapp_campaign_recipients_same_org() from public, anon;
+
+drop trigger if exists trg_whatsapp_campaign_recipients_same_org on public.whatsapp_campaign_recipients;
+create trigger trg_whatsapp_campaign_recipients_same_org
+  before insert or update on public.whatsapp_campaign_recipients
+  for each row execute function public.fn_whatsapp_campaign_recipients_same_org();
+
+-- ---------------------------------------------------------------------------
+-- 3. whatsapp_campaign_attempts
+-- ---------------------------------------------------------------------------
+create table if not exists public.whatsapp_campaign_attempts (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  campaign_id uuid not null references public.whatsapp_campaigns(id) on delete cascade,
+  recipient_id uuid not null references public.whatsapp_campaign_recipients(id) on delete cascade,
+  attempt_number integer not null,
+  channel_session_id uuid not null references public.channel_sessions(id) on delete restrict,
+  started_at timestamptz not null default now(),
+  finished_at timestamptz,
+  status text not null
+    check (status in ('started','sent','failed','skipped','retry')),
+  message_id uuid references public.messages(id) on delete set null,
+  external_message_id text,
+  provider_status text,
+  error_code text,
+  error_message text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  constraint whatsapp_campaign_attempts_recipient_num_uidx unique (recipient_id, attempt_number)
+);
+
+create index if not exists idx_wa_attempts_org_campaign
+  on public.whatsapp_campaign_attempts (organization_id, campaign_id);
+
+alter table public.whatsapp_campaign_attempts enable row level security;
+
+drop policy if exists tenant_isolation_whatsapp_campaign_attempts_all on public.whatsapp_campaign_attempts;
+create policy tenant_isolation_whatsapp_campaign_attempts_all on public.whatsapp_campaign_attempts
+  for all
+  using (organization_id in (select public.fn_user_org_ids()))
+  with check (organization_id in (select public.fn_user_org_ids()));
+
+revoke all on table public.whatsapp_campaign_attempts from anon;
+grant select, insert, update, delete on table public.whatsapp_campaign_attempts to authenticated;
+grant all on table public.whatsapp_campaign_attempts to service_role;
+
+create or replace function public.fn_whatsapp_campaign_attempts_same_org()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_rec_org uuid;
+begin
+  select organization_id into v_rec_org
+    from public.whatsapp_campaign_recipients where id = new.recipient_id;
+  if v_rec_org is null then raise exception 'attempt: recipient inexistente'; end if;
+  if new.organization_id is distinct from v_rec_org then
+    raise exception 'attempt: organization_id deve coincidir com recipient';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_whatsapp_campaign_attempts_same_org() from public, anon;
+
+drop trigger if exists trg_whatsapp_campaign_attempts_same_org on public.whatsapp_campaign_attempts;
+create trigger trg_whatsapp_campaign_attempts_same_org
+  before insert or update on public.whatsapp_campaign_attempts
+  for each row execute function public.fn_whatsapp_campaign_attempts_same_org();
+
+-- ---------------------------------------------------------------------------
+-- 4. Lease por channel_session (1 envio de campanha por sessão)
+-- ---------------------------------------------------------------------------
+create table if not exists public.whatsapp_campaign_session_leases (
+  channel_session_id uuid primary key references public.channel_sessions(id) on delete cascade,
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  campaign_id uuid references public.whatsapp_campaigns(id) on delete set null,
+  recipient_id uuid references public.whatsapp_campaign_recipients(id) on delete set null,
+  worker_id text not null,
+  leased_until timestamptz not null,
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_wa_session_leases_until
+  on public.whatsapp_campaign_session_leases (leased_until);
+
+alter table public.whatsapp_campaign_session_leases enable row level security;
+
+drop policy if exists tenant_isolation_whatsapp_campaign_session_leases_all
+  on public.whatsapp_campaign_session_leases;
+create policy tenant_isolation_whatsapp_campaign_session_leases_all
+  on public.whatsapp_campaign_session_leases
+  for all
+  using (organization_id in (select public.fn_user_org_ids()))
+  with check (organization_id in (select public.fn_user_org_ids()));
+
+revoke all on table public.whatsapp_campaign_session_leases from anon;
+grant select, insert, update, delete on table public.whatsapp_campaign_session_leases to authenticated;
+grant all on table public.whatsapp_campaign_session_leases to service_role;
+
+-- ---------------------------------------------------------------------------
+-- 5. Claim atômico de recipient (SKIP LOCKED) — security definer, só service_role
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_claim_whatsapp_campaign_recipient(
+  p_worker_id text,
+  p_lease_seconds integer default 120
+)
+returns table (
+  recipient_id uuid,
+  organization_id uuid,
+  campaign_id uuid,
+  contact_id uuid,
+  channel_session_id uuid,
+  outbound_message_id uuid,
+  message_rendered text,
+  attempt_count integer,
+  phone_number_snapshot text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_camp public.whatsapp_campaigns%rowtype;
+  v_rec public.whatsapp_campaign_recipients%rowtype;
+  v_lease_until timestamptz := now() + make_interval(secs => greatest(coalesce(p_lease_seconds, 120), 30));
+  v_msg_id uuid;
+  v_got_lease boolean := false;
+begin
+  if p_worker_id is null or length(btrim(p_worker_id)) = 0 then
+    raise exception 'worker_id obrigatório';
+  end if;
+
+  select c.* into v_camp
+    from public.whatsapp_campaigns c
+   where c.status = 'running'
+     and (c.scheduled_at is null or c.scheduled_at <= now())
+     and (c.next_send_at is null or c.next_send_at <= now())
+   order by c.next_send_at nulls first, c.created_at
+   for update of c skip locked
+   limit 1;
+
+  if not found then
+    return;
+  end if;
+
+  insert into public.whatsapp_campaign_session_leases as l
+    (channel_session_id, organization_id, campaign_id, worker_id, leased_until)
+  values (v_camp.channel_session_id, v_camp.organization_id, v_camp.id, p_worker_id, v_lease_until)
+  on conflict (channel_session_id) do update
+    set campaign_id = excluded.campaign_id,
+        worker_id = excluded.worker_id,
+        leased_until = excluded.leased_until,
+        updated_at = now()
+  where public.whatsapp_campaign_session_leases.leased_until < now()
+     or public.whatsapp_campaign_session_leases.worker_id = p_worker_id;
+
+  select exists (
+    select 1 from public.whatsapp_campaign_session_leases
+     where channel_session_id = v_camp.channel_session_id
+       and worker_id = p_worker_id
+       and leased_until >= now()
+  ) into v_got_lease;
+
+  if not v_got_lease then
+    return;
+  end if;
+
+  select r.* into v_rec
+    from public.whatsapp_campaign_recipients r
+   where r.campaign_id = v_camp.id
+     and r.organization_id = v_camp.organization_id
+     and r.status in ('pending', 'scheduled', 'failed')
+     and (r.next_attempt_at is null or r.next_attempt_at <= now())
+     and r.attempt_count < r.max_attempts
+   order by r.next_attempt_at nulls first, r.created_at
+   for update of r skip locked
+   limit 1;
+
+  if not found then
+    delete from public.whatsapp_campaign_session_leases
+     where channel_session_id = v_camp.channel_session_id
+       and worker_id = p_worker_id;
+    return;
+  end if;
+
+  v_msg_id := coalesce(v_rec.outbound_message_id, gen_random_uuid());
+
+  update public.whatsapp_campaign_recipients
+     set status = 'processing',
+         claimed_at = now(),
+         claimed_by = p_worker_id,
+         outbound_message_id = v_msg_id,
+         attempt_count = attempt_count + 1,
+         updated_at = now()
+   where id = v_rec.id
+   returning * into v_rec;
+
+  update public.whatsapp_campaign_session_leases
+     set recipient_id = v_rec.id,
+         leased_until = v_lease_until,
+         updated_at = now()
+   where channel_session_id = v_camp.channel_session_id;
+
+  recipient_id := v_rec.id;
+  organization_id := v_rec.organization_id;
+  campaign_id := v_rec.campaign_id;
+  contact_id := v_rec.contact_id;
+  channel_session_id := v_rec.channel_session_id;
+  outbound_message_id := v_rec.outbound_message_id;
+  message_rendered := v_rec.message_rendered;
+  attempt_count := v_rec.attempt_count;
+  phone_number_snapshot := v_rec.phone_number_snapshot;
+  return next;
+end;
+$$;
+
+revoke execute on function public.fn_claim_whatsapp_campaign_recipient(text, integer) from public, anon, authenticated;
+grant execute on function public.fn_claim_whatsapp_campaign_recipient(text, integer) to service_role;
+
+-- ---- whatsapp campaigns hardening (migration 0241) ----
+
+alter table public.whatsapp_campaign_recipients
+  drop constraint if exists whatsapp_campaign_recipients_status_check;
+
+alter table public.whatsapp_campaign_recipients
+  add constraint whatsapp_campaign_recipients_status_check
+  check (status in (
+    'pending','scheduled','processing','sent','delivered','read','replied',
+    'failed','skipped','cancelled','send_uncertain'
+  ));
+
+create index if not exists idx_wa_recipients_stale_processing
+  on public.whatsapp_campaign_recipients (claimed_at)
+  where status = 'processing';
+
+create or replace function public.fn_recover_stale_whatsapp_campaign_claims(
+  p_stale_seconds integer default 180
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_n integer := 0;
+  v_cutoff timestamptz := now() - make_interval(secs => greatest(coalesce(p_stale_seconds, 180), 60));
+begin
+  delete from public.whatsapp_campaign_session_leases
+   where leased_until < now();
+
+  with freed as (
+    update public.whatsapp_campaign_recipients r
+       set status = 'pending',
+           claimed_at = null,
+           claimed_by = null,
+           attempt_count = greatest(attempt_count - 1, 0),
+           next_attempt_at = now(),
+           updated_at = now()
+     where r.status = 'processing'
+       and (
+         r.claimed_at is null
+         or r.claimed_at < v_cutoff
+         or not exists (
+           select 1
+             from public.whatsapp_campaign_session_leases l
+            where l.channel_session_id = r.channel_session_id
+              and l.leased_until >= now()
+              and (l.recipient_id is null or l.recipient_id = r.id)
+         )
+       )
+    returning r.id
+  )
+  select count(*)::int into v_n from freed;
+  return coalesce(v_n, 0);
+end;
+$$;
+
+revoke execute on function public.fn_recover_stale_whatsapp_campaign_claims(integer)
+  from public, anon, authenticated;
+grant execute on function public.fn_recover_stale_whatsapp_campaign_claims(integer)
+  to service_role;
+
+create or replace function public.fn_whatsapp_campaign_status_counts(
+  p_organization_id uuid,
+  p_campaign_ids uuid[] default null
+)
+returns table (campaign_id uuid, status text, n bigint)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  select r.campaign_id, r.status, count(*)::bigint as n
+    from public.whatsapp_campaign_recipients r
+   where r.organization_id = p_organization_id
+     and (p_campaign_ids is null or r.campaign_id = any (p_campaign_ids))
+   group by r.campaign_id, r.status;
+$$;
+
+revoke execute on function public.fn_whatsapp_campaign_status_counts(uuid, uuid[])
+  from public, anon;
+grant execute on function public.fn_whatsapp_campaign_status_counts(uuid, uuid[])
+  to authenticated, service_role;
+
+create or replace function public.fn_claim_whatsapp_campaign_recipient(
+  p_worker_id text,
+  p_lease_seconds integer default 120
+)
+returns table (
+  recipient_id uuid,
+  organization_id uuid,
+  campaign_id uuid,
+  contact_id uuid,
+  channel_session_id uuid,
+  outbound_message_id uuid,
+  message_rendered text,
+  attempt_count integer,
+  phone_number_snapshot text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_camp public.whatsapp_campaigns%rowtype;
+  v_rec public.whatsapp_campaign_recipients%rowtype;
+  v_lease_until timestamptz := now() + make_interval(secs => greatest(coalesce(p_lease_seconds, 120), 30));
+  v_msg_id uuid;
+  v_got_lease boolean := false;
+begin
+  if p_worker_id is null or length(btrim(p_worker_id)) = 0 then
+    raise exception 'worker_id obrigat�rio';
+  end if;
+
+  perform public.fn_recover_stale_whatsapp_campaign_claims(180);
+
+  select c.* into v_camp
+    from public.whatsapp_campaigns c
+   where c.status = 'running'
+     and (c.scheduled_at is null or c.scheduled_at <= now())
+     and (c.next_send_at is null or c.next_send_at <= now())
+   order by c.next_send_at nulls first, c.created_at
+   for update of c skip locked
+   limit 1;
+
+  if not found then
+    return;
+  end if;
+
+  insert into public.whatsapp_campaign_session_leases as l
+    (channel_session_id, organization_id, campaign_id, worker_id, leased_until)
+  values (v_camp.channel_session_id, v_camp.organization_id, v_camp.id, p_worker_id, v_lease_until)
+  on conflict (channel_session_id) do update
+    set campaign_id = excluded.campaign_id,
+        worker_id = excluded.worker_id,
+        leased_until = excluded.leased_until,
+        updated_at = now()
+  where public.whatsapp_campaign_session_leases.leased_until < now()
+     or public.whatsapp_campaign_session_leases.worker_id = p_worker_id;
+
+  select exists (
+    select 1 from public.whatsapp_campaign_session_leases
+     where channel_session_id = v_camp.channel_session_id
+       and worker_id = p_worker_id
+       and leased_until >= now()
+  ) into v_got_lease;
+
+  if not v_got_lease then
+    return;
+  end if;
+
+  select r.* into v_rec
+    from public.whatsapp_campaign_recipients r
+   where r.campaign_id = v_camp.id
+     and r.organization_id = v_camp.organization_id
+     and r.status in ('pending', 'scheduled', 'failed')
+     and (r.next_attempt_at is null or r.next_attempt_at <= now())
+     and r.attempt_count < r.max_attempts
+   order by r.next_attempt_at nulls first, r.created_at
+   for update of r skip locked
+   limit 1;
+
+  if not found then
+    delete from public.whatsapp_campaign_session_leases
+     where channel_session_id = v_camp.channel_session_id
+       and worker_id = p_worker_id;
+    return;
+  end if;
+
+  v_msg_id := v_rec.outbound_message_id;
+  if v_msg_id is not null then
+    if exists (
+      select 1 from public.messages m
+       where m.id = v_msg_id
+         and m.organization_id = v_rec.organization_id
+         and m.status = 'failed'
+    ) then
+      v_msg_id := gen_random_uuid();
+    end if;
+  else
+    v_msg_id := gen_random_uuid();
+  end if;
+
+  update public.whatsapp_campaign_recipients
+     set status = 'processing',
+         claimed_at = now(),
+         claimed_by = p_worker_id,
+         outbound_message_id = v_msg_id,
+         attempt_count = attempt_count + 1,
+         updated_at = now()
+   where id = v_rec.id
+   returning * into v_rec;
+
+  update public.whatsapp_campaign_session_leases
+     set recipient_id = v_rec.id,
+         leased_until = v_lease_until,
+         updated_at = now()
+   where channel_session_id = v_camp.channel_session_id;
+
+  recipient_id := v_rec.id;
+  organization_id := v_rec.organization_id;
+  campaign_id := v_rec.campaign_id;
+  contact_id := v_rec.contact_id;
+  channel_session_id := v_rec.channel_session_id;
+  outbound_message_id := v_rec.outbound_message_id;
+  message_rendered := v_rec.message_rendered;
+  attempt_count := v_rec.attempt_count;
+  phone_number_snapshot := v_rec.phone_number_snapshot;
+  return next;
+end;
+$$;
+
+revoke execute on function public.fn_claim_whatsapp_campaign_recipient(text, integer)
+  from public, anon, authenticated;
+grant execute on function public.fn_claim_whatsapp_campaign_recipient(text, integer)
+  to service_role;
+
+-- ---- whatsapp campaign uncertain resolution (migration 0242) ----
+
+-- 0242_whatsapp_campaign_uncertain_resolution
+--
+-- ResoluÃ§Ã£o explÃ­cita de send_uncertain + assumed_sent.
+-- Impede requeue genÃ©rico send_uncertain â†’ pending sem resoluÃ§Ã£o registrada.
+
+-- ---------------------------------------------------------------------------
+-- 1. Colunas de resoluÃ§Ã£o no recipient + status assumed_sent
+-- ---------------------------------------------------------------------------
+alter table public.whatsapp_campaign_recipients
+  add column if not exists uncertainty_resolution text
+    check (
+      uncertainty_resolution is null
+      or uncertainty_resolution in ('assume_sent', 'retry_anyway', 'provider_ack')
+    );
+
+alter table public.whatsapp_campaign_recipients
+  add column if not exists uncertainty_resolved_at timestamptz;
+
+alter table public.whatsapp_campaign_recipients
+  add column if not exists uncertainty_resolved_by uuid
+    references auth.users(id) on delete set null;
+
+alter table public.whatsapp_campaign_recipients
+  add column if not exists uncertainty_resolution_note text;
+
+alter table public.whatsapp_campaign_recipients
+  drop constraint if exists whatsapp_campaign_recipients_status_check;
+
+alter table public.whatsapp_campaign_recipients
+  add constraint whatsapp_campaign_recipients_status_check
+  check (status in (
+    'pending','scheduled','processing','sent','delivered','read','replied',
+    'failed','skipped','cancelled','send_uncertain','assumed_sent'
+  ));
+
+-- ---------------------------------------------------------------------------
+-- 2. HistÃ³rico append-only de resoluÃ§Ãµes
+-- ---------------------------------------------------------------------------
+create table if not exists public.whatsapp_campaign_uncertainty_resolutions (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  campaign_id uuid not null references public.whatsapp_campaigns(id) on delete cascade,
+  recipient_id uuid not null references public.whatsapp_campaign_recipients(id) on delete cascade,
+  attempt_number integer,
+  resolution text not null
+    check (resolution in ('assume_sent', 'retry_anyway', 'provider_ack')),
+  resolved_by uuid references auth.users(id) on delete set null,
+  resolved_at timestamptz not null default now(),
+  note text,
+  previous_outbound_message_id uuid,
+  new_outbound_message_id uuid,
+  previous_message_id uuid,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_wa_uncertainty_res_org_campaign
+  on public.whatsapp_campaign_uncertainty_resolutions (organization_id, campaign_id);
+
+create index if not exists idx_wa_uncertainty_res_recipient
+  on public.whatsapp_campaign_uncertainty_resolutions (recipient_id);
+
+alter table public.whatsapp_campaign_uncertainty_resolutions enable row level security;
+
+drop policy if exists tenant_isolation_whatsapp_campaign_uncertainty_resolutions_all
+  on public.whatsapp_campaign_uncertainty_resolutions;
+create policy tenant_isolation_whatsapp_campaign_uncertainty_resolutions_all
+  on public.whatsapp_campaign_uncertainty_resolutions
+  for all
+  using (organization_id in (select public.fn_user_org_ids()))
+  with check (organization_id in (select public.fn_user_org_ids()));
+
+revoke all on table public.whatsapp_campaign_uncertainty_resolutions from anon;
+grant select, insert on table public.whatsapp_campaign_uncertainty_resolutions to authenticated;
+grant all on table public.whatsapp_campaign_uncertainty_resolutions to service_role;
+
+create or replace function public.fn_whatsapp_campaign_uncertainty_resolutions_same_org()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_rec_org uuid;
+begin
+  select organization_id into v_rec_org
+    from public.whatsapp_campaign_recipients where id = new.recipient_id;
+  if v_rec_org is null or v_rec_org <> new.organization_id then
+    raise exception 'whatsapp_campaign_uncertainty_resolutions: recipient de outra organization';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_whatsapp_campaign_uncertainty_resolutions_same_org()
+  from public, anon;
+drop trigger if exists trg_wa_uncertainty_res_same_org
+  on public.whatsapp_campaign_uncertainty_resolutions;
+create trigger trg_wa_uncertainty_res_same_org
+  before insert or update on public.whatsapp_campaign_uncertainty_resolutions
+  for each row execute function public.fn_whatsapp_campaign_uncertainty_resolutions_same_org();
+
+-- ---------------------------------------------------------------------------
+-- 3. Guarda: send_uncertain â†’ pending/processing/failed/scheduled exige resoluÃ§Ã£o
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_whatsapp_campaign_recipients_guard_uncertain()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  if tg_op = 'UPDATE'
+     and old.status = 'send_uncertain'
+     and new.status is distinct from old.status then
+    -- SaÃ­das permitidas sem resoluÃ§Ã£o humana:
+    --   * confirmed pelo provider (sent/delivered/read/replied) via sync ACK
+    --   * cancelled
+    --   * assumed_sent / pending com uncertainty_resolution preenchida
+    if new.status in ('pending', 'scheduled', 'processing', 'failed') then
+      if new.uncertainty_resolution is null
+         or new.uncertainty_resolution not in ('retry_anyway') then
+        raise exception
+          'whatsapp_campaign_recipients: send_uncertain nÃ£o pode ir para % sem resolution=retry_anyway',
+          new.status;
+      end if;
+    elsif new.status = 'assumed_sent' then
+      if new.uncertainty_resolution is distinct from 'assume_sent' then
+        raise exception
+          'whatsapp_campaign_recipients: assumed_sent exige uncertainty_resolution=assume_sent';
+      end if;
+    elsif new.status in ('sent', 'delivered', 'read', 'replied') then
+      -- provider_ack: sync descobriu external_id â€” OK
+      null;
+    elsif new.status = 'cancelled' then
+      null;
+    elsif new.status = 'skipped' then
+      null;
+    elsif new.status = 'send_uncertain' then
+      null;
+    else
+      raise exception
+        'whatsapp_campaign_recipients: transiÃ§Ã£o send_uncertain â†’ % nÃ£o permitida',
+        new.status;
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_whatsapp_campaign_recipients_guard_uncertain()
+  from public, anon;
+
+drop trigger if exists trg_wa_recipients_guard_uncertain
+  on public.whatsapp_campaign_recipients;
+create trigger trg_wa_recipients_guard_uncertain
+  before update of status on public.whatsapp_campaign_recipients
+  for each row execute function public.fn_whatsapp_campaign_recipients_guard_uncertain();
+
+-- ---------------------------------------------------------------------------
+-- 4. Stale recovery: NUNCA toca send_uncertain (sÃ³ processing)
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_recover_stale_whatsapp_campaign_claims(
+  p_stale_seconds integer default 180
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_n integer := 0;
+  v_cutoff timestamptz := now() - make_interval(secs => greatest(coalesce(p_stale_seconds, 180), 60));
+begin
+  delete from public.whatsapp_campaign_session_leases
+   where leased_until < now();
+
+  with freed as (
+    update public.whatsapp_campaign_recipients r
+       set status = 'pending',
+           claimed_at = null,
+           claimed_by = null,
+           attempt_count = greatest(attempt_count - 1, 0),
+           next_attempt_at = now(),
+           updated_at = now()
+     where r.status = 'processing'  -- nunca send_uncertain
+       and (
+         r.claimed_at is null
+         or r.claimed_at < v_cutoff
+         or not exists (
+           select 1
+             from public.whatsapp_campaign_session_leases l
+            where l.channel_session_id = r.channel_session_id
+              and l.leased_until >= now()
+              and (l.recipient_id is null or l.recipient_id = r.id)
+         )
+       )
+    returning r.id
+  )
+  select count(*)::int into v_n from freed;
+  return coalesce(v_n, 0);
+end;
+$$;
+
+revoke execute on function public.fn_recover_stale_whatsapp_campaign_claims(integer)
+  from public, anon, authenticated;
+grant execute on function public.fn_recover_stale_whatsapp_campaign_claims(integer)
+  to service_role;
+
+
+-- ---- whatsapp campaigns fase 3 (migration 0243) ----
+-- 0243_whatsapp_campaigns_fase3
+--
+-- Fase 3: reply_stop_mode, create_lead_on_reply, multi-session (N:N),
+-- round-robin no claim, pacing por sessão.
+-- Aditivo. Não altera WAHA ingest / conversations uniques.
+
+-- ---------------------------------------------------------------------------
+-- 1. Colunas comerciais na campanha
+-- ---------------------------------------------------------------------------
+alter table public.whatsapp_campaigns
+  add column if not exists reply_stop_mode text not null default 'person';
+
+alter table public.whatsapp_campaigns
+  drop constraint if exists whatsapp_campaigns_reply_stop_mode_check;
+
+alter table public.whatsapp_campaigns
+  add constraint whatsapp_campaigns_reply_stop_mode_check
+  check (reply_stop_mode in ('none', 'person', 'company'));
+
+alter table public.whatsapp_campaigns
+  add column if not exists create_lead_on_reply boolean not null default false;
+
+alter table public.whatsapp_campaigns
+  add column if not exists session_rr_index integer not null default 0;
+
+-- ---------------------------------------------------------------------------
+-- 2. whatsapp_campaign_sessions (N:N campanha ↔ channel_session)
+-- ---------------------------------------------------------------------------
+create table if not exists public.whatsapp_campaign_sessions (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  campaign_id uuid not null references public.whatsapp_campaigns(id) on delete cascade,
+  channel_session_id uuid not null references public.channel_sessions(id) on delete restrict,
+  enabled boolean not null default true,
+  weight integer not null default 1 check (weight >= 1 and weight <= 100),
+  next_send_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (campaign_id, channel_session_id)
+);
+
+create index if not exists idx_wa_campaign_sessions_org_campaign
+  on public.whatsapp_campaign_sessions (organization_id, campaign_id);
+
+create index if not exists idx_wa_campaign_sessions_next
+  on public.whatsapp_campaign_sessions (channel_session_id, next_send_at)
+  where enabled;
+
+alter table public.whatsapp_campaign_sessions enable row level security;
+
+drop policy if exists tenant_isolation_whatsapp_campaign_sessions_all
+  on public.whatsapp_campaign_sessions;
+create policy tenant_isolation_whatsapp_campaign_sessions_all
+  on public.whatsapp_campaign_sessions
+  for all
+  using (organization_id in (select public.fn_user_org_ids()))
+  with check (organization_id in (select public.fn_user_org_ids()));
+
+revoke all on table public.whatsapp_campaign_sessions from anon;
+grant select, insert, update, delete on table public.whatsapp_campaign_sessions to authenticated;
+grant all on table public.whatsapp_campaign_sessions to service_role;
+
+create or replace function public.fn_whatsapp_campaign_sessions_same_org()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_camp_org uuid;
+  v_sess_org uuid;
+begin
+  select organization_id into v_camp_org
+    from public.whatsapp_campaigns where id = new.campaign_id;
+  if v_camp_org is null or v_camp_org is distinct from new.organization_id then
+    raise exception 'whatsapp_campaign_sessions: campaign de outra organization';
+  end if;
+  select organization_id into v_sess_org
+    from public.channel_sessions where id = new.channel_session_id;
+  if v_sess_org is null or v_sess_org is distinct from new.organization_id then
+    raise exception 'whatsapp_campaign_sessions: channel_session de outra organization';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_whatsapp_campaign_sessions_same_org()
+  from public, anon;
+
+drop trigger if exists trg_whatsapp_campaign_sessions_same_org
+  on public.whatsapp_campaign_sessions;
+create trigger trg_whatsapp_campaign_sessions_same_org
+  before insert or update of campaign_id, channel_session_id, organization_id
+  on public.whatsapp_campaign_sessions
+  for each row execute function public.fn_whatsapp_campaign_sessions_same_org();
+
+-- Backfill: 1 linha por campanha existente (canal primário legado)
+insert into public.whatsapp_campaign_sessions
+  (organization_id, campaign_id, channel_session_id, enabled, next_send_at)
+select c.organization_id, c.id, c.channel_session_id, true, c.next_send_at
+  from public.whatsapp_campaigns c
+ where not exists (
+   select 1 from public.whatsapp_campaign_sessions s
+    where s.campaign_id = c.id and s.channel_session_id = c.channel_session_id
+ )
+on conflict (campaign_id, channel_session_id) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- 3. Stats por sessão (métricas operacionais)
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_whatsapp_campaign_session_stats(
+  p_organization_id uuid,
+  p_campaign_id uuid
+)
+returns table (
+  channel_session_id uuid,
+  sent bigint,
+  failed bigint,
+  replied bigint,
+  last_sent_at timestamptz
+)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  select
+    r.channel_session_id,
+    count(*) filter (
+      where r.status in ('sent','delivered','read','replied','assumed_sent')
+    )::bigint as sent,
+    count(*) filter (where r.status = 'failed')::bigint as failed,
+    count(*) filter (where r.status = 'replied')::bigint as replied,
+    max(r.sent_at) as last_sent_at
+  from public.whatsapp_campaign_recipients r
+  where r.organization_id = p_organization_id
+    and r.campaign_id = p_campaign_id
+  group by r.channel_session_id;
+$$;
+
+revoke execute on function public.fn_whatsapp_campaign_session_stats(uuid, uuid)
+  from public, anon;
+grant execute on function public.fn_whatsapp_campaign_session_stats(uuid, uuid)
+  to authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
+-- 4. Claim multi-session + round-robin
+-- ---------------------------------------------------------------------------
+create or replace function public.fn_claim_whatsapp_campaign_recipient(
+  p_worker_id text,
+  p_lease_seconds integer default 120
+)
+returns table (
+  recipient_id uuid,
+  organization_id uuid,
+  campaign_id uuid,
+  contact_id uuid,
+  channel_session_id uuid,
+  outbound_message_id uuid,
+  message_rendered text,
+  attempt_count integer,
+  phone_number_snapshot text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_camp public.whatsapp_campaigns%rowtype;
+  v_rec public.whatsapp_campaign_recipients%rowtype;
+  v_lease_until timestamptz := now() + make_interval(secs => greatest(coalesce(p_lease_seconds, 120), 30));
+  v_msg_id uuid;
+  v_got_lease boolean := false;
+  v_session_id uuid;
+  v_sess_count integer;
+  v_try integer := 0;
+  v_start integer;
+begin
+  if p_worker_id is null or length(btrim(p_worker_id)) = 0 then
+    raise exception 'worker_id obrigatório';
+  end if;
+
+  perform public.fn_recover_stale_whatsapp_campaign_claims(180);
+
+  -- Campanha running com destinatário pendente (lock skip)
+  select c.* into v_camp
+    from public.whatsapp_campaigns c
+   where c.status = 'running'
+     and (c.scheduled_at is null or c.scheduled_at <= now())
+     and exists (
+       select 1 from public.whatsapp_campaign_recipients r
+        where r.campaign_id = c.id
+          and r.organization_id = c.organization_id
+          and r.status in ('pending', 'scheduled', 'failed')
+          and (r.next_attempt_at is null or r.next_attempt_at <= now())
+          and r.attempt_count < r.max_attempts
+     )
+   order by c.next_send_at nulls first, c.created_at
+   for update of c skip locked
+   limit 1;
+
+  if not found then
+    return;
+  end if;
+
+  select count(*)::int into v_sess_count
+    from public.whatsapp_campaign_sessions cs
+    join public.channel_sessions s
+      on s.id = cs.channel_session_id
+     and s.organization_id = cs.organization_id
+   where cs.campaign_id = v_camp.id
+     and cs.organization_id = v_camp.organization_id
+     and cs.enabled
+     and s.status = 'WORKING'
+     and (cs.next_send_at is null or cs.next_send_at <= now());
+
+  if coalesce(v_sess_count, 0) = 0 then
+    update public.whatsapp_campaigns
+       set session_problem = 'awaiting_whatsapp_session',
+           next_send_at = now() + interval '5 minutes'
+     where id = v_camp.id;
+    return;
+  end if;
+
+  v_start := abs(coalesce(v_camp.session_rr_index, 0)) % v_sess_count;
+
+  -- Round-robin entre sessões elegíveis; tenta as seguintes se lease ocupado
+  while v_try < v_sess_count loop
+    select cs.channel_session_id into v_session_id
+      from (
+        select cs.channel_session_id,
+               row_number() over (order by cs.created_at, cs.id) - 1 as ord
+          from public.whatsapp_campaign_sessions cs
+          join public.channel_sessions s
+            on s.id = cs.channel_session_id
+           and s.organization_id = cs.organization_id
+         where cs.campaign_id = v_camp.id
+           and cs.organization_id = v_camp.organization_id
+           and cs.enabled
+           and s.status = 'WORKING'
+           and (cs.next_send_at is null or cs.next_send_at <= now())
+      ) cs
+     where cs.ord = (v_start + v_try) % v_sess_count;
+
+    if v_session_id is null then
+      v_try := v_try + 1;
+      continue;
+    end if;
+
+    insert into public.whatsapp_campaign_session_leases as l
+      (channel_session_id, organization_id, campaign_id, worker_id, leased_until)
+    values (v_session_id, v_camp.organization_id, v_camp.id, p_worker_id, v_lease_until)
+    on conflict (channel_session_id) do update
+      set campaign_id = excluded.campaign_id,
+          worker_id = excluded.worker_id,
+          leased_until = excluded.leased_until,
+          updated_at = now()
+    where public.whatsapp_campaign_session_leases.leased_until < now()
+       or public.whatsapp_campaign_session_leases.worker_id = p_worker_id;
+
+    select exists (
+      select 1 from public.whatsapp_campaign_session_leases
+       where channel_session_id = v_session_id
+         and worker_id = p_worker_id
+         and leased_until >= now()
+    ) into v_got_lease;
+
+    if v_got_lease then
+      exit;
+    end if;
+
+    v_try := v_try + 1;
+    v_session_id := null;
+  end loop;
+
+  if not v_got_lease or v_session_id is null then
+    update public.whatsapp_campaigns
+       set session_problem = 'awaiting_session_lease',
+           next_send_at = now() + interval '15 seconds'
+     where id = v_camp.id;
+    return;
+  end if;
+
+  select r.* into v_rec
+    from public.whatsapp_campaign_recipients r
+   where r.campaign_id = v_camp.id
+     and r.organization_id = v_camp.organization_id
+     and r.status in ('pending', 'scheduled', 'failed')
+     and (r.next_attempt_at is null or r.next_attempt_at <= now())
+     and r.attempt_count < r.max_attempts
+   order by r.next_attempt_at nulls first, r.created_at
+   for update of r skip locked
+   limit 1;
+
+  if not found then
+    delete from public.whatsapp_campaign_session_leases
+     where channel_session_id = v_session_id
+       and worker_id = p_worker_id;
+    return;
+  end if;
+
+  v_msg_id := v_rec.outbound_message_id;
+  if v_msg_id is not null then
+    if exists (
+      select 1 from public.messages m
+       where m.id = v_msg_id
+         and m.organization_id = v_rec.organization_id
+         and m.status = 'failed'
+    ) then
+      v_msg_id := gen_random_uuid();
+    end if;
+  else
+    v_msg_id := gen_random_uuid();
+  end if;
+
+  -- Sessão REAL do envio (pode diferir da planejada na materialização)
+  update public.whatsapp_campaign_recipients
+     set status = 'processing',
+         claimed_at = now(),
+         claimed_by = p_worker_id,
+         outbound_message_id = v_msg_id,
+         channel_session_id = v_session_id,
+         attempt_count = attempt_count + 1,
+         updated_at = now()
+   where id = v_rec.id
+   returning * into v_rec;
+
+  update public.whatsapp_campaign_session_leases
+     set recipient_id = v_rec.id,
+         leased_until = v_lease_until,
+         updated_at = now()
+   where channel_session_id = v_session_id;
+
+  update public.whatsapp_campaigns
+     set session_rr_index = coalesce(session_rr_index, 0) + 1,
+         session_problem = null
+   where id = v_camp.id;
+
+  recipient_id := v_rec.id;
+  organization_id := v_rec.organization_id;
+  campaign_id := v_rec.campaign_id;
+  contact_id := v_rec.contact_id;
+  channel_session_id := v_rec.channel_session_id;
+  outbound_message_id := v_rec.outbound_message_id;
+  message_rendered := v_rec.message_rendered;
+  attempt_count := v_rec.attempt_count;
+  phone_number_snapshot := v_rec.phone_number_snapshot;
+  return next;
+end;
+$$;
+
+revoke execute on function public.fn_claim_whatsapp_campaign_recipient(text, integer)
+  from public, anon, authenticated;
+grant execute on function public.fn_claim_whatsapp_campaign_recipient(text, integer)
+  to service_role;
+

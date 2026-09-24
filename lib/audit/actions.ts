@@ -494,6 +494,31 @@ export const AUDIT_ACTIONS = [
   // um bloqueio não há como saber nem uma coisa nem outra.
   "voice.opt_in_changed",
   "voice.session_unpaired",
+
+  // CRM B2B fase 1 — companies / people / import (migration 0239)
+  "companies.created",
+  "companies.updated",
+  "companies.enriched",
+  "people.created",
+  "people.updated",
+  "company_people.linked",
+  "company_people.updated",
+  "contacts.person_linked",
+  "imports.companies_people",
+
+  // Campanhas WhatsApp (migration 0240)
+  "whatsapp_campaigns.created",
+  "whatsapp_campaigns.updated",
+  "whatsapp_campaigns.recipients_added",
+  "whatsapp_campaigns.started",
+  "whatsapp_campaigns.paused",
+  "whatsapp_campaigns.resumed",
+  "whatsapp_campaigns.cancelled",
+  "whatsapp_campaigns.uncertain_assumed_sent",
+  "whatsapp_campaigns.uncertain_retry_anyway",
+  "whatsapp_campaigns.sessions_updated",
+  "whatsapp_campaigns.reply_stop_mode_changed",
+  "whatsapp_campaigns.create_lead_on_reply_changed",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

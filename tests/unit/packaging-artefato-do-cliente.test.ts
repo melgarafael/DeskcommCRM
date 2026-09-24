@@ -77,7 +77,7 @@ function lerServicos(yaml: string): Map<string, string> {
 const servicos = lerServicos(compose);
 
 /** Só as imagens que NÓS publicamos. Upstream tem regra própria, mais abaixo. */
-const NOSSOS = ["app", "worker", "scheduler"] as const;
+const NOSSOS = ["app", "worker", "scheduler", "campaign-worker"] as const;
 
 describe("packaging — o artefato que o cliente instala", () => {
   it("o parser enxerga os 8 serviços de produção", () => {
@@ -92,7 +92,7 @@ describe("packaging — o artefato que o cliente instala", () => {
     // Movê-lo para `NOSSOS` seria assumir o build de um binário de terceiro
     // dentro de uma imagem nossa.
     expect([...servicos.keys()].sort()).toEqual(
-      ["app", "caddy", "redis", "scheduler", "srh", "wacalls", "waha", "worker"].sort(),
+      ["app", "caddy", "campaign-worker", "redis", "scheduler", "srh", "wacalls", "waha", "worker"].sort(),
     );
   });
 

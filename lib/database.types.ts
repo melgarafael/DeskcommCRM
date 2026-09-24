@@ -3171,6 +3171,343 @@ export type Database = {
           },
         ]
       }
+      companies: {
+        Row: {
+          id: string
+          organization_id: string
+          legal_name: string | null
+          trade_name: string | null
+          cnpj: string | null
+          normalized_cnpj: string | null
+          registration_status: string | null
+          legal_nature: string | null
+          company_size: string | null
+          share_capital: number | null
+          opened_at: string | null
+          main_cnae_code: string | null
+          main_cnae_description: string | null
+          secondary_cnaes: Json
+          street: string | null
+          number: string | null
+          complement: string | null
+          district: string | null
+          city: string | null
+          state: string | null
+          zip_code: string | null
+          email: string | null
+          phone: string | null
+          enrichment_status: string
+          enriched_at: string | null
+          enrichment_error: string | null
+          brasilapi_raw: Json | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          legal_name?: string | null
+          trade_name?: string | null
+          cnpj?: string | null
+          normalized_cnpj?: string | null
+          registration_status?: string | null
+          legal_nature?: string | null
+          company_size?: string | null
+          share_capital?: number | null
+          opened_at?: string | null
+          main_cnae_code?: string | null
+          main_cnae_description?: string | null
+          secondary_cnaes?: Json
+          street?: string | null
+          number?: string | null
+          complement?: string | null
+          district?: string | null
+          city?: string | null
+          state?: string | null
+          zip_code?: string | null
+          email?: string | null
+          phone?: string | null
+          enrichment_status?: string
+          enriched_at?: string | null
+          enrichment_error?: string | null
+          brasilapi_raw?: Json | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          legal_name?: string | null
+          trade_name?: string | null
+          cnpj?: string | null
+          normalized_cnpj?: string | null
+          registration_status?: string | null
+          legal_nature?: string | null
+          company_size?: string | null
+          share_capital?: number | null
+          opened_at?: string | null
+          main_cnae_code?: string | null
+          main_cnae_description?: string | null
+          secondary_cnaes?: Json
+          street?: string | null
+          number?: string | null
+          complement?: string | null
+          district?: string | null
+          city?: string | null
+          state?: string | null
+          zip_code?: string | null
+          email?: string | null
+          phone?: string | null
+          enrichment_status?: string
+          enriched_at?: string | null
+          enrichment_error?: string | null
+          brasilapi_raw?: Json | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "companies_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_people: {
+        Row: {
+          id: string
+          organization_id: string
+          company_id: string
+          person_id: string
+          job_title: string | null
+          department: string | null
+          is_decision_maker: boolean
+          is_primary: boolean
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          company_id: string
+          person_id: string
+          job_title?: string | null
+          department?: string | null
+          is_decision_maker?: boolean
+          is_primary?: boolean
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          company_id?: string
+          person_id?: string
+          job_title?: string | null
+          department?: string | null
+          is_decision_maker?: boolean
+          is_primary?: boolean
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_people_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_people_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_people_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      import_batches: {
+        Row: {
+          id: string
+          organization_id: string
+          kind: string
+          filename: string
+          status: string
+          total_rows: number
+          processed_rows: number
+          successful_rows: number
+          failed_rows: number
+          conflict_rows: number
+          column_mapping: Json
+          created_by: string | null
+          created_at: string
+          completed_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          kind?: string
+          filename: string
+          status?: string
+          total_rows?: number
+          processed_rows?: number
+          successful_rows?: number
+          failed_rows?: number
+          conflict_rows?: number
+          column_mapping?: Json
+          created_by?: string | null
+          created_at?: string
+          completed_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          kind?: string
+          filename?: string
+          status?: string
+          total_rows?: number
+          processed_rows?: number
+          successful_rows?: number
+          failed_rows?: number
+          conflict_rows?: number
+          column_mapping?: Json
+          created_by?: string | null
+          created_at?: string
+          completed_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "import_batches_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      import_rows: {
+        Row: {
+          id: string
+          organization_id: string
+          batch_id: string
+          row_number: number
+          raw_data: Json
+          normalized_data: Json
+          status: string
+          error: string | null
+          company_id: string | null
+          person_id: string | null
+          contact_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          batch_id: string
+          row_number: number
+          raw_data?: Json
+          normalized_data?: Json
+          status?: string
+          error?: string | null
+          company_id?: string | null
+          person_id?: string | null
+          contact_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          batch_id?: string
+          row_number?: number
+          raw_data?: Json
+          normalized_data?: Json
+          status?: string
+          error?: string | null
+          company_id?: string | null
+          person_id?: string | null
+          contact_id?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "import_rows_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "import_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "import_rows_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      people: {
+        Row: {
+          id: string
+          organization_id: string
+          full_name: string
+          normalized_name: string | null
+          email: string | null
+          notes: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          full_name: string
+          normalized_name?: string | null
+          email?: string | null
+          notes?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          full_name?: string
+          normalized_name?: string | null
+          email?: string | null
+          notes?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "people_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contacts: {
         Row: {
           ai_authorized_at: string | null
@@ -3200,6 +3537,7 @@ export type Database = {
           merged_at: string | null
           name: string | null
           organization_id: string
+          person_id: string | null
           phone_lookup_at: string | null
           phone_number: string | null
           source: string
@@ -3237,6 +3575,7 @@ export type Database = {
           merged_at?: string | null
           name?: string | null
           organization_id: string
+          person_id?: string | null
           phone_lookup_at?: string | null
           phone_number?: string | null
           source?: string
@@ -3274,6 +3613,7 @@ export type Database = {
           merged_at?: string | null
           name?: string | null
           organization_id?: string
+          person_id?: string | null
           phone_lookup_at?: string | null
           phone_number?: string | null
           source?: string
@@ -3296,6 +3636,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contacts_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
             referencedColumns: ["id"]
           },
         ]
@@ -7299,6 +7646,378 @@ export type Database = {
           },
         ]
       }
+      whatsapp_campaign_attempts: {
+        Row: {
+          id: string
+          organization_id: string
+          campaign_id: string
+          recipient_id: string
+          attempt_number: number
+          channel_session_id: string
+          started_at: string
+          finished_at: string | null
+          status: string
+          message_id: string | null
+          external_message_id: string | null
+          provider_status: string | null
+          error_code: string | null
+          error_message: string | null
+          metadata: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          campaign_id: string
+          recipient_id: string
+          attempt_number: number
+          channel_session_id: string
+          started_at?: string
+          finished_at?: string | null
+          status?: string
+          message_id?: string | null
+          external_message_id?: string | null
+          provider_status?: string | null
+          error_code?: string | null
+          error_message?: string | null
+          metadata?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          campaign_id?: string
+          recipient_id?: string
+          attempt_number?: number
+          channel_session_id?: string
+          started_at?: string
+          finished_at?: string | null
+          status?: string
+          message_id?: string | null
+          external_message_id?: string | null
+          provider_status?: string | null
+          error_code?: string | null
+          error_message?: string | null
+          metadata?: Json
+          created_at?: string
+        }
+        Relationships: []
+      }
+      whatsapp_campaign_uncertainty_resolutions: {
+        Row: {
+          id: string
+          organization_id: string
+          campaign_id: string
+          recipient_id: string
+          attempt_number: number | null
+          resolution: string
+          resolved_by: string | null
+          resolved_at: string
+          note: string | null
+          previous_outbound_message_id: string | null
+          new_outbound_message_id: string | null
+          previous_message_id: string | null
+          metadata: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          campaign_id: string
+          recipient_id: string
+          attempt_number?: number | null
+          resolution: string
+          resolved_by?: string | null
+          resolved_at?: string
+          note?: string | null
+          previous_outbound_message_id?: string | null
+          new_outbound_message_id?: string | null
+          previous_message_id?: string | null
+          metadata?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          campaign_id?: string
+          recipient_id?: string
+          attempt_number?: number | null
+          resolution?: string
+          resolved_by?: string | null
+          resolved_at?: string
+          note?: string | null
+          previous_outbound_message_id?: string | null
+          new_outbound_message_id?: string | null
+          previous_message_id?: string | null
+          metadata?: Json
+          created_at?: string
+        }
+        Relationships: []
+      }
+      whatsapp_campaign_recipients: {
+        Row: {
+          id: string
+          organization_id: string
+          campaign_id: string
+          contact_id: string
+          person_id: string | null
+          company_id: string | null
+          channel_session_id: string
+          phone_number_snapshot: string
+          contact_name_snapshot: string | null
+          person_name_snapshot: string | null
+          company_name_snapshot: string | null
+          message_rendered: string | null
+          status: string
+          next_attempt_at: string | null
+          claimed_at: string | null
+          claimed_by: string | null
+          outbound_message_id: string | null
+          sent_at: string | null
+          delivered_at: string | null
+          read_at: string | null
+          replied_at: string | null
+          failed_at: string | null
+          cancelled_at: string | null
+          skipped_reason: string | null
+          message_id: string | null
+          external_message_id: string | null
+          attempt_count: number
+          max_attempts: number
+          last_error: string | null
+          created_at: string
+          updated_at: string
+          uncertainty_resolution: string | null
+          uncertainty_resolved_at: string | null
+          uncertainty_resolved_by: string | null
+          uncertainty_resolution_note: string | null
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          campaign_id: string
+          contact_id: string
+          person_id?: string | null
+          company_id?: string | null
+          channel_session_id: string
+          phone_number_snapshot: string
+          contact_name_snapshot?: string | null
+          person_name_snapshot?: string | null
+          company_name_snapshot?: string | null
+          message_rendered?: string | null
+          status?: string
+          next_attempt_at?: string | null
+          claimed_at?: string | null
+          claimed_by?: string | null
+          outbound_message_id?: string | null
+          sent_at?: string | null
+          delivered_at?: string | null
+          read_at?: string | null
+          replied_at?: string | null
+          failed_at?: string | null
+          cancelled_at?: string | null
+          skipped_reason?: string | null
+          message_id?: string | null
+          external_message_id?: string | null
+          attempt_count?: number
+          max_attempts?: number
+          last_error?: string | null
+          created_at?: string
+          updated_at?: string
+          uncertainty_resolution?: string | null
+          uncertainty_resolved_at?: string | null
+          uncertainty_resolved_by?: string | null
+          uncertainty_resolution_note?: string | null
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          campaign_id?: string
+          contact_id?: string
+          person_id?: string | null
+          company_id?: string | null
+          channel_session_id?: string
+          phone_number_snapshot?: string
+          contact_name_snapshot?: string | null
+          person_name_snapshot?: string | null
+          company_name_snapshot?: string | null
+          message_rendered?: string | null
+          status?: string
+          next_attempt_at?: string | null
+          claimed_at?: string | null
+          claimed_by?: string | null
+          outbound_message_id?: string | null
+          sent_at?: string | null
+          delivered_at?: string | null
+          read_at?: string | null
+          replied_at?: string | null
+          failed_at?: string | null
+          cancelled_at?: string | null
+          skipped_reason?: string | null
+          message_id?: string | null
+          external_message_id?: string | null
+          attempt_count?: number
+          max_attempts?: number
+          last_error?: string | null
+          created_at?: string
+          updated_at?: string
+          uncertainty_resolution?: string | null
+          uncertainty_resolved_at?: string | null
+          uncertainty_resolved_by?: string | null
+          uncertainty_resolution_note?: string | null
+        }
+        Relationships: []
+      }
+      whatsapp_campaign_session_leases: {
+        Row: {
+          channel_session_id: string
+          organization_id: string
+          campaign_id: string | null
+          recipient_id: string | null
+          worker_id: string
+          leased_until: string
+          updated_at: string
+        }
+        Insert: {
+          channel_session_id: string
+          organization_id: string
+          campaign_id?: string | null
+          recipient_id?: string | null
+          worker_id: string
+          leased_until: string
+          updated_at?: string
+        }
+        Update: {
+          channel_session_id?: string
+          organization_id?: string
+          campaign_id?: string | null
+          recipient_id?: string | null
+          worker_id?: string
+          leased_until?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      whatsapp_campaigns: {
+        Row: {
+          id: string
+          organization_id: string
+          name: string
+          description: string | null
+          status: string
+          message_text: string
+          channel_session_id: string
+          min_interval_seconds: number
+          max_interval_seconds: number
+          send_window_start: string | null
+          send_window_end: string | null
+          timezone: string
+          daily_limit: number | null
+          next_send_at: string | null
+          scheduled_at: string | null
+          started_at: string | null
+          paused_at: string | null
+          completed_at: string | null
+          cancelled_at: string | null
+          session_problem: string | null
+          reply_stop_mode: string
+          create_lead_on_reply: boolean
+          session_rr_index: number
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          name: string
+          description?: string | null
+          status?: string
+          message_text: string
+          channel_session_id: string
+          min_interval_seconds?: number
+          max_interval_seconds?: number
+          send_window_start?: string | null
+          send_window_end?: string | null
+          timezone?: string
+          daily_limit?: number | null
+          next_send_at?: string | null
+          scheduled_at?: string | null
+          started_at?: string | null
+          paused_at?: string | null
+          completed_at?: string | null
+          cancelled_at?: string | null
+          session_problem?: string | null
+          reply_stop_mode?: string
+          create_lead_on_reply?: boolean
+          session_rr_index?: number
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          name?: string
+          description?: string | null
+          status?: string
+          message_text?: string
+          channel_session_id?: string
+          min_interval_seconds?: number
+          max_interval_seconds?: number
+          send_window_start?: string | null
+          send_window_end?: string | null
+          timezone?: string
+          daily_limit?: number | null
+          next_send_at?: string | null
+          scheduled_at?: string | null
+          started_at?: string | null
+          paused_at?: string | null
+          completed_at?: string | null
+          cancelled_at?: string | null
+          session_problem?: string | null
+          reply_stop_mode?: string
+          create_lead_on_reply?: boolean
+          session_rr_index?: number
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      whatsapp_campaign_sessions: {
+        Row: {
+          id: string
+          organization_id: string
+          campaign_id: string
+          channel_session_id: string
+          enabled: boolean
+          weight: number
+          next_send_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          campaign_id: string
+          channel_session_id: string
+          enabled?: boolean
+          weight?: number
+          next_send_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          campaign_id?: string
+          channel_session_id?: string
+          enabled?: boolean
+          weight?: number
+          next_send_at?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       watchdog_cursors: {
         Row: {
           consumer: string
@@ -8177,6 +8896,35 @@ export type Database = {
         Returns: string
       }
       fn_user_org_ids: { Args: never; Returns: string[] }
+      fn_whatsapp_campaign_status_counts: {
+        Args: {
+          p_organization_id: string
+          p_campaign_ids?: string[] | null
+        }
+        Returns: {
+          campaign_id: string
+          status: string
+          n: number
+        }[]
+      }
+      fn_claim_whatsapp_campaign_recipient: {
+        Args: { p_worker_id: string; p_lease_seconds?: number }
+        Returns: {
+          recipient_id: string
+          organization_id: string
+          campaign_id: string
+          contact_id: string
+          channel_session_id: string
+          outbound_message_id: string
+          message_rendered: string | null
+          attempt_count: number
+          phone_number_snapshot: string
+        }[]
+      }
+      fn_recover_stale_whatsapp_campaign_claims: {
+        Args: { p_stale_seconds?: number }
+        Returns: number
+      }
       fn_user_role_in: { Args: { p_org: string }; Returns: number }
       fn_user_role_in_org: { Args: { p_org: string }; Returns: string }
       midpoint: { Args: { p_next: number; p_prev: number }; Returns: number }

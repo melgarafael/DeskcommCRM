@@ -107,6 +107,30 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+
+  # Campanhas WhatsApp — mesma imagem do worker (código no mesmo build),
+  # CMD dedicado. Fila = whatsapp_campaign_recipients (SKIP LOCKED).
+  campaign-worker:
+    mem_limit: 256m
+    image: ${WORKER_IMAGE:-ghcr.io/melgarafael/deskcomm-worker:stable}
+    pull_policy: ${WORKER_PULL_POLICY:-always}
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    command: ["pnpm", "exec", "tsx", "workers/campaign-worker/main.ts"]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      WAHA_API_BASE_URL: http://waha:3000
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8788/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
   waha:
     # Teto de memória — 893 MiB de pico MEDIDO nesta VPS.
     #

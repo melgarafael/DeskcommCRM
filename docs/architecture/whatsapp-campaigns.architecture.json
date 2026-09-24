@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Campanhas WhatsApp — Fase 3 comercial",
+    "subtitle": "Stop-on-reply · multi-session · lead on reply · métricas",
+    "output": "whatsapp-campaigns.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "humano", "label": "O que o humano vê" },
+    { "id": "api", "label": "API / domínio" },
+    { "id": "worker", "label": "Worker" },
+    { "id": "dados", "label": "Postgres" },
+    { "id": "fora", "label": "WAHA" }
+  ],
+  "mainPath": [
+    "ui_campanhas",
+    "api_campaigns",
+    "campaign_sessions",
+    "recipients",
+    "campaign_worker",
+    "send_handler",
+    "messages",
+    "reply_handler",
+    "waha"
+  ],
+  "nodes": [
+    { "id": "ui_campanhas", "lane": "humano", "col": 0, "type": "frontend", "label": "/app/whatsapp-campaigns", "sublabel": "wizard multi-WA · reply_stop · dashboard" },
+    { "id": "ui_company", "lane": "humano", "col": 1, "type": "frontend", "label": "/app/companies/:id", "sublabel": "seção Campanhas" },
+    { "id": "ui_inbox", "lane": "humano", "col": 5, "type": "frontend", "label": "Inbox", "sublabel": "conversation por sessão" },
+    { "id": "api_campaigns", "lane": "api", "col": 0, "type": "api", "label": "/api/v1/whatsapp-campaigns", "sublabel": "CRUD + sessions + stats" },
+    { "id": "reply_logic", "lane": "api", "col": 4, "type": "service", "label": "processCampaignInboundReply", "sublabel": "stop person/company · lead" },
+    { "id": "reply_handler", "lane": "api", "col": 4, "type": "service", "label": "campaignReplyHandler", "sublabel": "event_log message.received" },
+    { "id": "lead_nasc", "lane": "api", "col": 5, "type": "service", "label": "garantirLeadDaConversa", "sublabel": "create_lead_on_reply" },
+    { "id": "send_handler", "lane": "api", "col": 3, "type": "service", "label": "sendMessageHandler", "sublabel": "ensureConversation" },
+    { "id": "campaign_worker", "lane": "worker", "col": 2, "type": "service", "label": "campaign-worker", "sublabel": "RR + pacing por sessão" },
+    { "id": "claim_rpc", "lane": "dados", "col": 2, "type": "database", "label": "fn_claim_*", "sublabel": "round-robin + lease" },
+    { "id": "campaigns", "lane": "dados", "col": 0, "type": "database", "label": "whatsapp_campaigns", "sublabel": "reply_stop_mode · lead flag" },
+    { "id": "campaign_sessions", "lane": "dados", "col": 1, "type": "database", "label": "whatsapp_campaign_sessions", "sublabel": "N:N · next_send_at" },
+    { "id": "recipients", "lane": "dados", "col": 2, "type": "database", "label": "recipients", "sublabel": "channel_session real" },
+    { "id": "leases", "lane": "dados", "col": 3, "type": "database", "label": "session_leases", "sublabel": "1 envio / sessão" },
+    { "id": "messages", "lane": "dados", "col": 4, "type": "database", "label": "messages + conversations", "sublabel": "mesmo sink do inbox" },
+    { "id": "leads", "lane": "dados", "col": 5, "type": "database", "label": "crm_leads + links", "sublabel": "origem campanha" },
+    { "id": "waha", "lane": "fora", "col": 5, "type": "external", "label": "WAHA", "sublabel": "via adapter existente" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "ui_campanhas", "to": "api_campaigns", "label": "wizard / controles" },
+    { "id": "e2", "from": "api_campaigns", "to": "campaigns", "label": "CRUD + audit" },
+    { "id": "e3", "from": "api_campaigns", "to": "campaign_sessions", "label": "N:N sync" },
+    { "id": "e4", "from": "campaign_worker", "to": "claim_rpc", "label": "claim RR" },
+    { "id": "e5", "from": "claim_rpc", "to": "recipients", "label": "processing + sessão real" },
+    { "id": "e6", "from": "claim_rpc", "to": "leases", "label": "lock sessão" },
+    { "id": "e7", "from": "campaign_worker", "to": "send_handler", "label": "send" },
+    { "id": "e8", "from": "send_handler", "to": "messages", "label": "INSERT" },
+    { "id": "e9", "from": "send_handler", "to": "waha", "label": "adapter" },
+    { "id": "e10", "from": "messages", "to": "ui_inbox", "label": "aparece no inbox" },
+    { "id": "e11", "from": "waha", "to": "reply_handler", "label": "inbound → event_log" },
+    { "id": "e12", "from": "reply_handler", "to": "reply_logic", "label": "atribuição" },
+    { "id": "e13", "from": "reply_logic", "to": "recipients", "label": "replied + skip" },
+    { "id": "e14", "from": "reply_logic", "to": "lead_nasc", "label": "se create_lead_on_reply" },
+    { "id": "e15", "from": "lead_nasc", "to": "leads", "label": "lead + crm_lead_links" },
+    { "id": "e16", "from": "ui_company", "to": "recipients", "label": "histórico por company_id" },
+    { "id": "e17", "from": "api_campaigns", "to": "ui_campanhas", "label": "stats + reply rate" }
+  ]
+}

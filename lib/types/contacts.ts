@@ -18,6 +18,8 @@ export interface Contact {
   anonymized_at: string | null;
   is_merged_into: string | null;
   merged_at: string | null;
+  /** Pessoa B2B (people.id); null = identidade só operacional (WhatsApp). */
+  person_id?: string | null;
   consent: Record<string, unknown>;
   tags: string[];
   source: string;
