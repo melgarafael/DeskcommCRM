@@ -26,8 +26,7 @@ export function extrairAtribuicaoMeta(referral: unknown): AtribuicaoDeAnuncio | 
   const tipo = str(r.source_type) ?? str(r.sourceType);
   if (tipo && tipo !== "ad") return null;
 
-  const sourceId =
-    str(r.ctwa_clid) ?? str(r.ctwaClid) ?? str(r.source_id) ?? str(r.sourceId);
+  const sourceId = str(r.ctwa_clid) ?? str(r.ctwaClid);
   // O id do anúncio, SEMPRE, e não só quando o clique falta. Enquanto ele era
   // apenas o degrau de baixo do `??` acima, o payload que trazia os dois — o
   // caso comum — perdia este aqui, e a pergunta "de qual anúncio veio?" ficava
@@ -38,7 +37,7 @@ export function extrairAtribuicaoMeta(referral: unknown): AtribuicaoDeAnuncio | 
   // Sem NENHUM campo que identifique o anúncio, não há o que atribuir — um
   // `referral` vazio (ou só com `body`) não distingue "veio de anúncio" de
   // "o provider mandou um objeto vazio por engano".
-  if (!sourceId && !titulo && !sourceUrl) return null;
+  if (!sourceId && !adId && !titulo && !sourceUrl) return null;
 
   return {
     plataforma: "meta_ads",

@@ -230,6 +230,50 @@ describe("processNode — action after send closed", () => {
   });
 });
 
+describe("processNode — collect/skill (passagem no relógio)", () => {
+  // Os dois nós são do fluxo de ATENDIMENTO: quem coleta e quem ativa a skill é
+  // o executor in-turn. Aqui, no motor de relógio, eles apenas seguem pela
+  // aresta única — o teste fixa esse contrato para o dia em que alguém tentar
+  // dar semântica de coleta ao tick.
+  it("collect avança pela aresta única", () => {
+    const node: FlowNode = {
+      id: "c1",
+      type: "collect",
+      label: "Cidade",
+      position: { x: 0, y: 0 },
+      config: { key: "cidade", label: "Cidade", type: "text", required: true, permite_correcao: true },
+    };
+    const edges = [edge({ source: "c1", target: "n2", condition: { type: "always" } })];
+    const r = processNode({ node, edges, enrollment: enrollment(), lead: lead(), clock });
+    expect(r).toMatchObject({ kind: "advance", next_node_id: "n2" });
+  });
+
+  it("skill avança pela aresta única", () => {
+    const node: FlowNode = {
+      id: "s1",
+      type: "skill",
+      label: "Catálogo",
+      position: { x: 0, y: 0 },
+      config: { skill_name: "catalogo-apresentacao" },
+    };
+    const edges = [edge({ source: "s1", target: "n2", condition: { type: "always" } })];
+    const r = processNode({ node, edges, enrollment: enrollment(), lead: lead(), clock });
+    expect(r).toMatchObject({ kind: "advance", next_node_id: "n2" });
+  });
+
+  it("collect sem aresta de saída falha com motivo claro", () => {
+    const node: FlowNode = {
+      id: "c1",
+      type: "collect",
+      label: "Cidade",
+      position: { x: 0, y: 0 },
+      config: { key: "cidade", label: "Cidade", type: "text", required: true, permite_correcao: true },
+    };
+    const r = processNode({ node, edges: [], enrollment: enrollment(), lead: lead(), clock });
+    expect(r).toMatchObject({ kind: "fail" });
+  });
+});
+
 describe("processNode — trigger", () => {
   it("advances via the 'always' edge immediately", () => {
     const node: FlowNode = { id: "t1", type: "trigger", label: "Start", position: { x: 0, y: 0 }, config: {} };

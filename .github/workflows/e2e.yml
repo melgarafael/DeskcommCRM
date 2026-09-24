@@ -983,6 +983,7 @@ jobs:
         followup-modelos-de-clinica.spec.ts
         presenca-do-atendente.spec.ts
         trunk-sip-config.spec.ts
+        fotos-no-catalogo.spec.ts
 
       # ─── PARTE 4 — a spec de VPS fresca, e quem pode entrar ao lado dela ───
       #
@@ -1327,11 +1328,68 @@ jobs:
       # tabela que ainda não existe) — está no CLAUDE.md e foi confirmado neste
       # CI. O que o self-hoster aplica é o `baseline.sql`, então é ele que o
       # e2e aplica: o banco do teste fica igual ao de quem instalou o produto.
+      #
+      # ⚠️ O PULL DAS IMAGENS BATE NO LIMITE DO REGISTRO, e por isso há laço.
+      #
+      # Medido em 23/09/2026, run 35908153939: com ~10 PRs disparando CI quase
+      # juntos, as CINCO partes morreram aqui com
+      #
+      #   Error response from daemon: toomanyrequests: retry-after: 913.381µs, allowed: 44000/minute
+      #   failed to pull docker image from all registries: ghcr.io/supabase/gotrue:v2.196.0 …
+      #
+      # O CLI já tenta 3 vezes por imagem, mas com 4s e 8s de espera — tudo
+      # dentro do mesmo minuto em que o limite estourou. O laço daqui espera
+      # 20s, 60s e 120s, e o `supabase stop` entre tentativas não apaga as
+      # camadas já baixadas (ficam no Docker do runner): a tentativa seguinte
+      # só baixa o que faltou. Só tenta de novo quando a saída é de pull/rede;
+      # qualquer outra falha (porta ocupada, contêiner que não fica saudável)
+      # vermelha na hora, sem gastar o relógio da parte.
+      #
+      # Esperar só não basta, e isso foi MEDIDO: na primeira rodada do PR que
+      # criou este laço (run 35910532729), o ghcr.io seguiu recusando por 4,5
+      # min, nas 4 tentativas, nas 5 partes. O limite não era rajada de um
+      # minuto; era o registro inteiro sob carga. Por isso as tentativas pares
+      # trocam de REGISTRO: o `supabase/setup-cli` exporta
+      # `SUPABASE_INTERNAL_IMAGE_REGISTRY=ghcr.io`, e o CLI publica as mesmas
+      # imagens em `public.ecr.aws` (o default dele sem o setup-cli). As 7
+      # tags que este stack sobe responderam 200 lá em 23/09/2026. Camada é
+      # endereçada por digest, então o que já veio de um registro não é
+      # baixado de novo do outro.
+      #
+      # `-x studio,postgres-meta`: menos imagens, menos requisições ao
+      # registro. Nenhuma spec, script ou passo deste workflow fala com o
+      # Studio (porta 54323) nem com o postgres-meta (que só o Studio usa):
+      # `grep -rn "54323\|STUDIO_URL\|pgmeta" tests scripts lib app` devolveu
+      # vazio em 23/09/2026, e este workflow não cita nenhum dos três fora deste
+      # comentário. imgproxy, edge-runtime, logflare e vector já não subiam (o
+      # log do run acima não baixa nenhum deles).
       - name: Subir Supabase local (sem a cadeia de migrations)
         run: |
+          # O shell padrão do passo é `bash -e`, SEM pipefail: sem esta linha o
+          # `supabase start | tee` teria o status do `tee`, e a falha passaria.
+          set -euo pipefail
           mv supabase/migrations /tmp/migrations-off
           mkdir -p supabase/migrations
-          supabase start
+          esperas=(0 20 60 120)
+          registros=(ghcr.io public.ecr.aws ghcr.io public.ecr.aws)
+          for tentativa in 1 2 3 4; do
+            espera=${esperas[$((tentativa - 1))]}
+            registro=${registros[$((tentativa - 1))]}
+            if [ "$espera" -gt 0 ]; then
+              echo "::warning title=supabase start: nova tentativa::tentativa ${tentativa} de 4 daqui a ${espera}s, puxando de ${registro} — a anterior falhou baixando imagem do registro"
+              supabase stop --no-backup || true
+              sleep "$espera"
+            fi
+            if SUPABASE_INTERNAL_IMAGE_REGISTRY="$registro" supabase start -x studio,postgres-meta 2>&1 | tee /tmp/supabase-start.log; then
+              exit 0
+            fi
+            if ! grep -qE 'toomanyrequests|failed to pull docker image|error pulling image|TLS handshake timeout|i/o timeout|connection reset by peer' /tmp/supabase-start.log; then
+              echo "::error title=supabase start falhou (não é o registro)::a saída acima não tem erro de pull nem de rede, então não há nova tentativa"
+              exit 1
+            fi
+          done
+          echo "::error title=supabase start falhou 4 vezes baixando imagens::ghcr.io e public.ecr.aws recusaram o pull nas 4 tentativas (esperas de 20s, 60s e 120s). É limite de taxa ou rede do registro, não o PR — rerode a parte."
+          exit 1
 
       # O baseline é um dump `--schema-only`: ele USA os tipos das extensões
       # (public.vector, citext, gin_trgm_ops) mas não as cria. O stack local do

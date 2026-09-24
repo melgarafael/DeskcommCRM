@@ -294,6 +294,12 @@ export const AUDIT_ACTIONS = [
   "ai.skill_imported",
   "ai.skill_installed",
   "ai.skill_uninstalled",
+  // Edição pela tela (Fase 2 do PLANO-CONFIG-UI-AGENTE): nova versão + ponteiro
+  // movido. O corpo é texto que o agente lê — mudar isso muda o comportamento,
+  // então fica auditado.
+  "ai.skill_saved",
+  // Rollback para uma versão anterior (Fase 5): move o ponteiro sem criar versão.
+  "ai.skill_restored",
   "ai.router_created",
   "ai.router_updated",
   "ai.router_deleted",
@@ -307,6 +313,8 @@ export const AUDIT_ACTIONS = [
   "followup_flow.rolled_back",
   "followup.worker_run",
   "followup.silence_sweep_run",
+  // Roteiros de atendimento encerrados por prazo (0397) — só quando houve efeito.
+  "followup.roteiros_expirados",
   "followup_enrollment.created",
   "followup_enrollment.cancelled",
   // As quatro intervenções humanas num follow-up em andamento (0145). São
@@ -645,6 +653,9 @@ export const AUDIT_ACTIONS = [
   "catalog_product.updated",
   "catalog_product.deleted",
   "catalog_product.imported",
+  // As fotos do produto (migration 0390): subir uma, e reordenar/remover.
+  "catalog_product.photo_added",
+  "catalog_product.photos_updated",
 
   // As tarefas do CRM (migration 0210). Tarefa é combinado de trabalho entre
   // pessoas do time — quem a criou, quem mudou o prazo e quem a apagou é

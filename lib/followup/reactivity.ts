@@ -82,7 +82,7 @@ export const LIVE_STATUSES: readonly EnrollmentStatus[] = ["active", "waiting_re
  * dias que sobrevivesse ao "pare de me mandar mensagem" voltaria a falar com
  * quem pediu silêncio — um mês depois, quando ninguém mais lembra por quê.
  */
-const STATUS_ALCANCADOS_PELO_OPT_OUT: readonly EnrollmentStatus[] = [...LIVE_STATUSES, "dormente"];
+const STATUS_ALCANCADOS_PELO_OPT_OUT: readonly EnrollmentStatus[] = [...LIVE_STATUSES, "dormente", "coletando"];
 
 export interface LiveEnrollmentRef {
   id: string;

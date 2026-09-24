@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { abrirAcesso } from "@/lib/external-db/acesso";
 
-import { modulosLigados } from "./modulos";
+import { esquecerMemoDosModulos, MEMO_DO_MODULO_MS, moduloLigadoComMemo, modulosLigados } from "./modulos";
 
 type Resposta = { data?: unknown; error?: unknown } | Error;
 
@@ -55,6 +55,19 @@ describe("modulosLigados — banco_externo (flag em platform_config)", () => {
     expect(await modulosLigados(banco({ platform_config: { data: desligado } }).db)).toEqual([]);
     const lixo = [{ chave: "MODULO_BANCO_EXTERNO", valor: "true" }];
     expect(await modulosLigados(banco({ platform_config: { data: lixo } }).db)).toEqual([]);
+  });
+
+  it("cada módulo tem a sua linha — ligar um não liga o outro", async () => {
+    const soFluxos = [{ chave: "MODULO_FLUXOS_DE_ATENDIMENTO", valor: "ligado" }];
+    expect(await modulosLigados(banco({ data: soFluxos }).db)).toEqual(["fluxos_atendimento"]);
+    const osDois = [
+      { chave: "MODULO_BANCO_EXTERNO", valor: "ligado" },
+      { chave: "MODULO_FLUXOS_DE_ATENDIMENTO", valor: "ligado" },
+    ];
+    expect(await modulosLigados(banco({ data: osDois }).db)).toEqual([
+      "banco_externo",
+      "fluxos_atendimento",
+    ]);
   });
 
   it("banco que recusa ou lança = desligado, sem lançar", async () => {
@@ -110,3 +123,16 @@ describe("abrirAcesso com o módulo desligado", () => {
     expect(from).toHaveBeenCalledWith("modulos_instalados");
   });
 });
+
+describe("moduloLigadoComMemo (turno do agente)", () => {
+  it("dentro do prazo do memo, uma leitura só; vencido, lê de novo", async () => {
+    esquecerMemoDosModulos();
+    const { db, from } = banco({ data: [{ chave: "MODULO_FLUXOS_DE_ATENDIMENTO", valor: "ligado" }] });
+    expect(await moduloLigadoComMemo(db, "fluxos_atendimento", 1_000)).toBe(true);
+    expect(await moduloLigadoComMemo(db, "fluxos_atendimento", 1_000 + MEMO_DO_MODULO_MS - 1)).toBe(true);
+    expect(from).toHaveBeenCalledTimes(1);
+    await moduloLigadoComMemo(db, "fluxos_atendimento", 1_000 + MEMO_DO_MODULO_MS + 1);
+    expect(from).toHaveBeenCalledTimes(2);
+  });
+});
+

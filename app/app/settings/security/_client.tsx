@@ -2,6 +2,16 @@
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { RecoveryCodesPanel } from "@/components/auth/RecoveryCodesPanel";
@@ -34,15 +44,11 @@ export function SecurityClient({
   const [isSigningOut, startSignOut] = useTransition();
   const [ativando, setAtivando] = useState(false);
   const [mexendo, startMexer] = useTransition();
+  const [confirmRegenerar, setConfirmRegenerar] = useState(false);
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const [confirmDesligarMfa, setConfirmDesligarMfa] = useState(false);
 
   function handleRegenerate() {
-    if (
-      !confirm(
-        t("Gerar novos códigos invalida TODOS os atuais. Tem certeza?"),
-      )
-    ) {
-      return;
-    }
     startTransition(async () => {
       const r = await regenerateRecoveryCodes();
       if (r.ok) {
@@ -55,12 +61,6 @@ export function SecurityClient({
   }
 
   function handleSignOutAll() {
-    if (
-      !confirm(
-        t("Sair de TODOS os dispositivos? Você precisará fazer login de novo."),
-      )
-    )
-      return;
     startSignOut(async () => {
       await signOutEverywhere();
     });
@@ -107,19 +107,7 @@ export function SecurityClient({
                 variant="outline"
                 size="sm"
                 disabled={mexendo}
-                onClick={() => {
-                  if (!confirm(t("Desligar a verificação em duas etapas desta conta?")))
-                    return;
-                  startMexer(async () => {
-                    const r = await desativarMfaDaConta();
-                    if (!r.ok) {
-                      toast.error(t(r.erro));
-                      return;
-                    }
-                    toast.success(t("Verificação desligada."));
-                    window.location.reload();
-                  });
-                }}
+                onClick={() => setConfirmDesligarMfa(true)}
               >
                 {mexendo ? t("Desligando…") : t("Desligar")}
               </Button>
@@ -183,7 +171,7 @@ export function SecurityClient({
           <Button
             variant="outline"
             disabled={!mfaEnrolled || isPending}
-            onClick={handleRegenerate}
+            onClick={() => setConfirmRegenerar(true)}
           >
             {isPending ? t("Gerando…") : t("Regenerar códigos de recuperação")}
           </Button>
@@ -208,11 +196,74 @@ export function SecurityClient({
         <Button
           variant="outline"
           disabled={isSigningOut}
-          onClick={handleSignOutAll}
+          onClick={() => setConfirmSignOut(true)}
         >
           {isSigningOut ? t("Saindo…") : t("Sair de todos os dispositivos")}
         </Button>
       </Card>
+
+      <AlertDialog open={confirmRegenerar} onOpenChange={setConfirmRegenerar}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Gerar novos códigos de recuperação?")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("Os códigos atuais são invalidados imediatamente.")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleRegenerate}>
+              {t("Confirmar")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmSignOut} onOpenChange={setConfirmSignOut}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Sair de todos os dispositivos?")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("Você precisará fazer login de novo em cada um deles.")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleSignOutAll}>
+              {t("Confirmar")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmDesligarMfa} onOpenChange={setConfirmDesligarMfa}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Desligar a verificação em duas etapas?")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("Sua conta fica sem essa camada de proteção até você ativar de novo.")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                startMexer(async () => {
+                  const r = await desativarMfaDaConta();
+                  if (!r.ok) {
+                    toast.error(t(r.erro));
+                    return;
+                  }
+                  toast.success(t("Verificação desligada."));
+                  window.location.reload();
+                });
+              }}
+            >
+              {t("Desligar")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

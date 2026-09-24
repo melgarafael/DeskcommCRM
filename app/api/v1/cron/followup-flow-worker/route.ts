@@ -35,6 +35,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseAdminClient, runFollowupTick, type FollowupJobRequest } from "@/lib/followup/engine";
 import { createSupabaseFollowupGateDb } from "@/lib/followup/agent-followup-gate";
 import { enviarTextoFixoPendente } from "@/lib/followup/enviar-texto-fixo";
+import { encerrarRoteirosVencidos } from "@/lib/followup/atendimento";
 import { createSupabaseSilenceSweepDb, runSilenceSweep } from "@/lib/followup/silence-sweep";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 
@@ -134,6 +135,24 @@ async function handle(req: NextRequest): Promise<Response> {
     // resultado de runFollowupTick, que rodou (e foi auditado) antes disto.
     const detail = err instanceof Error ? err.message : String(err);
     logger.error("[followup-flow-worker.cron] runSilenceSweep threw", { error: detail, requestId });
+  }
+
+  // Roteiro de atendimento com o prazo vencido (0397). Audita só quando houve
+  // efeito — rodada que não encerrou nada não é mutação.
+  try {
+    const expirados = await encerrarRoteirosVencidos(admin);
+    if (expirados > 0) {
+      void audit({
+        action: "followup.roteiros_expirados",
+        organizationId: null,
+        bypassedRls: true,
+        metadata: { expirados },
+        requestId,
+      });
+    }
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    logger.error("[followup-flow-worker.cron] encerrarRoteirosVencidos threw", { error: detail, requestId });
   }
 
   // ponytail: instalação sem `agent-worker` (relógio HTTP, cron puro) não tem

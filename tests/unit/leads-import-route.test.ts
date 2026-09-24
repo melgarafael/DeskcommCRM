@@ -220,6 +220,17 @@ describe("POST /api/v1/leads/import", () => {
     }
   });
 
+  // O gatilho de follow-up "Lead criado" lê essa marca para não inscrever a
+  // planilha inteira de uma vez (`lib/followup/gatilho-lead.ts`).
+  it("marca cada linha como vinda de planilha", async () => {
+    fazerSupabase(null);
+    const { POST } = await import("@/app/api/v1/leads/import/route");
+
+    await POST(pedido("nome,valor\nAna,100"));
+
+    expect(vi.mocked(createLeadHandler).mock.calls[0]![2]).toMatchObject({ via_planilha: true });
+  });
+
   // A planilha não tem coluna de moeda, então quem decide é a organização: o
   // handler lê `organizations.currency` quando o campo chega AUSENTE
   // (`lead-nasce-na-moeda-da-organizacao.test.ts`). A rota mandava "BRL" em

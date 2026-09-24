@@ -207,6 +207,8 @@ O gate de arquitetura de qualquer peça que atende pessoas é a skill `sistema-v
 1. Zod valida **todo** input externo (body, query, path).
 2. Guard canônico: `requireRole()` de `lib/auth/require-role.ts`,
    `requirePlatformAdmin`, ou secret/HMAC. Nunca reimplemente a comparação de rank na mão.
+   Handler **mutante** de `app/api/v1` declara ainda `requireSupportWrite(` (`lib/impersonate/support.ts`)
+   antes do efeito: barra escrita em `support_readonly` e não substitui RBAC/MFA.
 3. `organization_id` resolvido de **fonte confiável** (cookie/JWT/webhook secret/path token) —
    **nunca do body**.
 4. Query: RLS pelo client de sessão, ou filtro manual de `organization_id` quando usa service role.

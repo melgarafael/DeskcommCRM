@@ -73,17 +73,21 @@ function makeDb(pointers: Row[], versions: Row[], stages: Row[] = []) {
 
   function builder(table: string) {
     const filters: Array<[string, unknown]> = [];
+    // `neq` (roteiros fora da lista de follow-ups, PR 2 dos fluxos de atendimento).
+    const negados: Array<[string, unknown]> = [];
     let orderCol: string | null = null;
     let orderAsc = true;
     let mode: "select" | "insert" | "update" | "delete" = "select";
     let payload: Row | undefined;
 
     function matches(row: Row): boolean {
-      return filters.every(([k, v]) => {
-        if (k === "surface") return (row.surface ?? "followup") === v;
-        if (v instanceof Set) return v.has(row[k]);
-        return row[k] === v;
-      });
+      const valor = (k: string) => (k === "surface" ? (row.surface ?? "followup") : row[k]);
+      return (
+        filters.every(([k, v]) => {
+          if (v instanceof Set) return v.has(row[k]);
+          return valor(k) === v;
+        }) && negados.every(([k, v]) => valor(k) !== v)
+      );
     }
 
     function execute(): { data: Row[] | null; error: { code?: string; message: string } | null } {
@@ -153,7 +157,7 @@ function makeDb(pointers: Row[], versions: Row[], stages: Row[] = []) {
     }
 
     const b = {
-      select() {
+      select(_cols?: string) {
         return b;
       },
       insert(obj: Row) {
@@ -172,6 +176,10 @@ function makeDb(pointers: Row[], versions: Row[], stages: Row[] = []) {
       },
       eq(col: string, val: unknown) {
         filters.push([col, val]);
+        return b;
+      },
+      neq(col: string, val: unknown) {
+        negados.push([col, val]);
         return b;
       },
       in(col: string, vals: unknown[]) {

@@ -17,6 +17,7 @@ import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitte
 import { listaLegivel } from "@/lib/leads/activity-vocabulary";
 import { camposAlterados } from "@/lib/leads/campos-alterados";
 import { RECUSA_DE_TROCA_DE_FUNIL } from "@/lib/leads/clonar-para-funil";
+import { ORIGEM_DA_PLANILHA } from "@/lib/leads/planilha";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import {
@@ -258,6 +259,12 @@ export async function createLeadHandler(
     source_metadata?: Record<string, unknown>;
     /** Interno (webhook inbound) — idempotência via uniq_crm_leads_org_source_external. */
     external_id?: string;
+    /**
+     * Interno (importação de planilha). Marca o `lead.created` com
+     * `metadata.via`, e o gatilho de follow-up "Lead criado" não inscreve em
+     * lote quem entrou por planilha. Não vem do corpo da requisição.
+     */
+    via_planilha?: boolean;
   },
 ): Promise<Record<string, unknown>> {
   // Validate stage belongs to pipeline within active org.
@@ -374,7 +381,11 @@ export async function createLeadHandler(
         stage_id: (lead as { stage_id: string }).stage_id,
         title: (lead as { title: string }).title,
       },
-      p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
+      p_metadata: {
+        request_id: ctx.requestId,
+        ...a.metadataActor,
+        ...(input.via_planilha ? { via: ORIGEM_DA_PLANILHA } : {}),
+      },
       p_organization_id: ctx.organization_id,
     })
     .then(({ error }) => {

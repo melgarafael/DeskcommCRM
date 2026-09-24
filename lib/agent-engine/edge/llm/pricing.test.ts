@@ -63,6 +63,19 @@ describe("costCents — cada tarifa isolada, por modelo", () => {
     // Aposentados, e 3× mais caros que o Opus 4.5 — é o par que o prefixo confundia.
     ["claude-opus-4-1", 1500, 7500, 150, 1875, 3000],
     ["claude-opus-4", 1500, 7500, 150, 1875, 3000],
+    // OpenAI — gpt-4o, gpt-4o-mini e linha 5.x do catálogo (issue #1478)
+    ["gpt-4o-mini", 15, 60, 7.5, 15, 15],
+    ["gpt-4o", 250, 1000, 125, 250, 250],
+    ["gpt-4o-2024-05-13", 500, 1500, 500, 500, 500],
+    ["gpt-5.6-terra", 200, 1200, 20, 250, 250],
+    ["gpt-5.6-sol", 400, 2000, 40, 500, 500],
+    ["gpt-5.6-luna", 20, 120, 2, 25, 25],
+    ["gpt-5.5", 500, 3000, 50, 500, 500],
+    ["gpt-5.5-pro", 3000, 18000, 3000, 3000, 3000],
+    ["gpt-5.4", 250, 1500, 25, 250, 250],
+    ["gpt-5.4-mini", 75, 450, 7.5, 75, 75],
+    ["gpt-5.4-nano", 20, 125, 2, 20, 20],
+    ["gpt-5.4-pro", 3000, 18000, 3000, 3000, 3000],
   ])("%s", (model, cIn, cOut, cLeitura, cGrav5m, cGrav1h) => {
     expect(entrada(model)).toBeCloseTo(cIn, 6);
     expect(saida(model)).toBeCloseTo(cOut, 6);
@@ -89,7 +102,7 @@ describe("costCents — o TTL do cache é o que o knob LLM_CACHE_TTL diz", () =>
 
 describe("costCents — id que a tabela não conhece volta NULL", () => {
   it.each([
-    ["gpt-4o-mini"],
+    ["gpt-desconhecido-9"],
     ["claude-inexistente-9"],
     [""],
     // O caso que o `startsWith` deixava passar: começa igual a um id conhecido,
@@ -113,8 +126,15 @@ describe("costCents — sufixo de data do vendor é tolerado", () => {
     ["claude-opus-4-20250514", 1500],
     ["claude-sonnet-4-5-20250929", 300],
     ["claude-haiku-4-5-20251001", 100],
+    ["gpt-4o-mini-2024-07-18", 15],
+    ["gpt-4o-2024-08-06", 250],
   ])("%s custa como o id sem data", (model, cIn) => {
     expect(entrada(model)).toBeCloseTo(cIn, 6);
+  });
+
+  it("snapshot com preço próprio não herda o do id sem data (gpt-4o-2024-05-13)", () => {
+    expect(entrada("gpt-4o-2024-05-13")).toBeCloseTo(500, 6);
+    expect(entrada("gpt-4o-2024-05-13")).not.toBeCloseTo(250, 6);
   });
 
   it("data mal formada não vira desconto silencioso", () => {
@@ -138,5 +158,17 @@ describe("costCents — a conversa real que originou este PR", () => {
     // deste conserto era NULL — zero para o teto mensal.
     expect(costCents("claude-sonnet-5", turnoReal)).toBeGreaterThan(22);
     expect(costCents("claude-sonnet-5", turnoReal)).toBeLessThan(24);
+  });
+
+  it("gpt-4o-mini com tokens reais não devolve custo nulo (Anditec / issue #1478)", () => {
+    const turnoReal: TokenUsage = {
+      inputTokens: 1_200,
+      outputTokens: 150,
+      cacheReadTokens: 500,
+      cacheWriteTokens: 0,
+    };
+    const custo = costCents("gpt-4o-mini", turnoReal);
+    expect(custo).not.toBeNull();
+    expect(custo).toBeCloseTo(0.02325, 5);
   });
 });

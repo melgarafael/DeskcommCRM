@@ -176,6 +176,13 @@ const schema = z.object({
   // devolve 401 em toda chamada — por isso `getWacallsClient()` exige os dois.
   WACALLS_API_TOKEN: z.string().optional().default(""),
 
+  // ─── Canal Datafy (recorte do #1130) — OPCIONAL, DESLIGADO POR PADRÃO ───
+  //
+  // Só `true` liga (decisão do dono, doc 54). Vazio = a instalação não oferece o
+  // canal: sem aba em Conexões, rota de conexão 404, webhook recusado. Quem lê
+  // é `canalGraphParceiroLigado()` em `lib/channels/graph-parceiro/credentials.ts`.
+  DATAFY_ENABLED: z.string().optional().default(""),
+
   // Upstash Redis
   UPSTASH_REDIS_REST_URL: required("UPSTASH_REDIS_REST_URL"),
   UPSTASH_REDIS_REST_TOKEN: required("UPSTASH_REDIS_REST_TOKEN"),
@@ -425,6 +432,12 @@ const schema = z.object({
     .string()
     .url()
     .default("http://localhost:3000"),
+  /**
+   * URL pública opcional para os webhooks da Meta (WhatsApp Cloud API / canais oficiais).
+   * Quando definida, é usada no lugar de NEXT_PUBLIC_APP_URL para compor a URL de callback
+   * dos webhooks da Meta (#1426), permitindo isolar a interface interna/VPN da URL pública.
+   */
+  META_WEBHOOK_BASE_URL: z.string().optional().default(""),
 
   // Marca da instalação (white-label) — ver lib/branding.ts.
   // Sem prefixo NEXT_PUBLIC_ de propósito: essas seriam queimadas no bundle

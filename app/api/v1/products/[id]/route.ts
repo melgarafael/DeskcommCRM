@@ -13,6 +13,7 @@ import { type NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { apagarDoBucket } from "@/lib/catalogo/fotos-no-bucket";
 import { COLUNAS_DO_PRODUTO, produtoPatchSchema } from "@/lib/schemas/produtos";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -93,11 +94,13 @@ export async function DELETE(
     .delete()
     .eq("organization_id", authz.org.orgId)
     .eq("id", id)
-    .select("id")
+    .select("id, fotos")
     .maybeSingle();
 
   if (error) return fail("internal_error", "Erro ao remover o produto.", 500, { requestId });
   if (!data) return fail("not_found", t("Produto não encontrado."), 404, { requestId });
+  // As fotos saem junto: a linha era a única referência a elas.
+  await apagarDoBucket(authz.org.orgId, id, (data as { fotos: string[] | null }).fotos ?? [], requestId);
 
   await audit({
     organizationId: authz.org.orgId,

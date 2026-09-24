@@ -39,7 +39,13 @@ export interface ChannelSendInput {
     language: string;
     /** Valor por slot, chaveado por `slotKey` — a mesma chave da tela. */
     values: Record<string, string>;
-  };
+  };  /**
+   * Presente = este envio é uma IMAGEM já guardada no Storage da conversa, e o
+   * `body` é a legenda (pode ser vazio). Hoje só a foto do catálogo usa
+   * (`agent/fotos-do-produto.ts`). Caminho, nunca URL nem bytes: quem assina a
+   * URL curta para o canal é o handler de mensagens, como em toda mídia.
+   */
+  media?: { storagePath: string; mime: string };
 }
 
 /**

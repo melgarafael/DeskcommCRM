@@ -177,6 +177,7 @@ function baseDaOpenRouter(): string {
 export async function validateOpenRouterKey(apiKey: string): Promise<ValidationResult> {
   try {
     const base = baseDaOpenRouter();
+    const isCustomBase = !!(env.OPENROUTER_BASE_URL ?? "").trim();
 
     const auth = await timedFetch(`${base}/key`, {
       method: "GET",
@@ -184,6 +185,24 @@ export async function validateOpenRouterKey(apiKey: string): Promise<ValidationR
     });
     if (auth.status === 401 || auth.status === 403) {
       return { ok: false, error: "auth_failed_401" };
+    }
+    // Quando uma OPENROUTER_BASE_URL customizada está configurada (gateway OpenAI-compatível próprio,
+    // vLLM, LiteLLM etc), o endpoint proprietário `/key` da OpenRouter geralmente não existe e retorna 404.
+    // Nesses gateways, a autenticação e catálogo são provados via GET `/models`. (#1376)
+    if (auth.status === 404 && isCustomBase) {
+      const res = await timedFetch(`${base}/models`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (res.status === 401 || res.status === 403) {
+        return { ok: false, error: "auth_failed_401" };
+      }
+      if (!res.ok) {
+        return { ok: false, error: `provider_status_${res.status}` };
+      }
+      const json = (await res.json()) as { data?: { id?: string }[] };
+      const models = (json.data ?? []).map((m) => m.id ?? "").filter(Boolean);
+      return { ok: true, models };
     }
     if (!auth.ok) {
       return { ok: false, error: `provider_status_${auth.status}` };

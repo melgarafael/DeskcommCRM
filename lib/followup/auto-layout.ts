@@ -41,8 +41,10 @@ const TYPE_ORDER: Record<NodeType, number> = {
   ai_classify: 3,
   match_reply: 4,
   repeat: 5,
-  action: 6,
-  end: 7,
+  collect: 6,
+  skill: 7,
+  action: 8,
+  end: 9,
 };
 
 export type NodeSize = { width: number; height: number };

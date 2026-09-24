@@ -634,10 +634,10 @@ async function handleInbound(
 
   // Best-effort: o dado do anúncio (se houver) vai embutido na PRÓPRIA
   // mensagem que o app do cliente manda ao clicar num anúncio "Clique para o
-  // WhatsApp" — não é exclusivo da API oficial. NUNCA verificado contra um
-  // clique real nesta instalação (ver cabeçalho de `atribuicao-de-anuncio.ts`);
-  // por isso é silencioso quando não reconhece a forma, nunca derruba o
-  // inbound. `estamparAtribuicaoDoContato` só grava na primeira vez — se o
+  // WhatsApp" — não é exclusivo da API oficial. O WAHA NOWEB pode entregar
+  // `externalAdReply`; formas não reconhecidas seguem silenciosas e nunca
+  // derrubam o inbound.
+  // `estamparAtribuicaoDoContato` só grava na primeira vez — se o
   // contato já tem atribuição, o UPDATE casa zero linhas.
   const atribuicao = extrairAtribuicaoWaha(p._data?.message);
   if (atribuicao) await estamparAtribuicaoDoContato(admin, session.organization_id, contactId, atribuicao);

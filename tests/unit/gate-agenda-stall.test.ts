@@ -120,6 +120,69 @@ describe("agendaStallGate — veta a promessa vazia, nunca a checagem de verdade
     expect(v.pass).toBe(true);
   });
 
+  const FRASE_CHAMAR_VER =
+    "Vou chamar a responsável pra ver os horários.";
+
+  it("veta 'vou chamar a responsável pra ver os horários' sem ferramenta (#970)", () => {
+    const v = agendaStallGate.evaluate(
+      baseCtx({
+        agenda: { active: true, ferramentas: TODAS, toolCalledThisTurn: false },
+        body: FRASE_CHAMAR_VER,
+      }),
+    );
+    expect(v.pass).toBe(false);
+    if (v.pass) throw new Error("inalcançável");
+    expect(v.code).toBe("agenda_stall_sem_ferramenta");
+  });
+
+  it("a mesma frase passa depois de crm_find_free_slots neste turno", () => {
+    const v = agendaStallGate.evaluate(
+      baseCtx({
+        agenda: { active: true, ferramentas: TODAS, toolCalledThisTurn: true },
+        body: FRASE_CHAMAR_VER,
+      }),
+    );
+    expect(v.pass).toBe(true);
+  });
+
+  // O padrão de "ver" é o mais largo do gate, e o gate não tem fail-safe: um falso
+  // positivo se repete até o modelo chamar a ferramenta sem precisar ou trocar a frase.
+  // Uma frase por corte — tirar qualquer um dos três do padrão reprova a linha dele.
+  const armado = { active: true, ferramentas: TODAS, toolCalledThisTurn: false } as const;
+
+  it.each([
+    ["quem vê é o cliente (antes do ver)", "Vou te mandar o link pra você ver a agenda do evento."],
+    ["quem vê é o cliente (depois do ver)", "Estou aqui para ver o que você precisa: agendamento, orçamento ou dúvida?"],
+    ["'a ver' não é checagem", "Vou explicar: isso não tem nada a ver com o seu agendamento."],
+    ["'a ver' não é checagem (ajudar a ver)", "Estou aqui pra te ajudar a ver horários, valores e tratamentos."],
+    ["'ver:' é marcador de fala", "Vamos ver: horário de funcionamento é das 8h às 18h."],
+    ["o substantivo está uma oração adiante", "Vou te explicar como funciona pra ver se faz sentido marcar um horário."],
+  ])("não veta quando %s", (_corte, body) => {
+    expect(agendaStallGate.evaluate(baseCtx({ agenda: armado, body })).pass).toBe(true);
+  });
+
+  it.each([
+    "Vou ver os horários disponíveis e já te falo.",
+    "Estou falando com a recepção pra ver as vagas de amanhã.",
+    "Vou dar uma olhada aqui no sistema pra ver se tem vaga amanhã cedo.",
+    "Vou conversar com o pessoal da recepção para ver a agenda de sexta.",
+  ])("veta a promessa de olhar a agenda: %s", (body) => {
+    expect(agendaStallGate.evaluate(baseCtx({ agenda: armado, body })).pass).toBe(false);
+  });
+
+  // Limites conhecidos, presos para que mexer no corte seja decisão visível e não efeito
+  // colateral. Medidos num corpus escrito (não tráfego): 10/12 promessas vetadas, 1/12 e
+  // 1/10 frases que não prometem agenda vetadas.
+  it("limite conhecido: substantivo além de 25 caracteres depois do ver escapa", () => {
+    const body = "Vou ver aqui no sistema quais são os horários livres.";
+    expect(agendaStallGate.evaluate(baseCtx({ agenda: armado, body })).pass).toBe(true);
+  });
+
+  it("limite conhecido: pedir um dado antes de consultar ainda veta", () => {
+    const body = "Vou precisar do seu nome completo para ver a disponibilidade.";
+    expect(agendaStallGate.evaluate(baseCtx({ agenda: armado, body })).pass).toBe(false);
+  });
+
   // Frase EXATA do incidente original (2026-08-29, em produção) que deu origem a este
   // gate — uma afirmação de FATO CONSUMADO, não uma promessa de checar. O
   // AGENDA_STALL_PATTERN sozinho não cobre ("vou/estou" + verbo de checagem não aparece

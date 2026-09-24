@@ -422,6 +422,19 @@ export function UpdatePanel() {
         </p>
       )}
 
+      {/* O botão fica ANTES do changelog, não depois: com várias versões
+          acumuladas ele descia para o fim de uma lista longa, e quem só
+          queria clicar "Atualizar agora" precisava rolar por tudo. Os avisos
+          que pesam na decisão (`off_release`, `requires_attention` e o de
+          histórico incompleto) continuam antes DELE — só o "O que muda", que é
+          consulta, não decisão, desceu para depois. O de histórico incompleto
+          entra na lista porque, com `complete === false`, o "Requer atenção"
+          só junta as versões presentes no texto: pode estar faltando aviso, e
+          esse parágrafo é a única pista disso. */}
+      <div className="mb-6">
+        <BotaoAtualizar mutate={() => atualizar.mutate()} isPending={atualizar.isPending} erro={erro} />
+      </div>
+
       {data.notes?.sections.length ? (
         <div className="mb-6">
           <p className="mb-2 text-sm font-medium">{t("O que muda")}</p>
@@ -448,8 +461,6 @@ export function UpdatePanel() {
           ))}
         </div>
       ) : null}
-
-      <BotaoAtualizar mutate={() => atualizar.mutate()} isPending={atualizar.isPending} erro={erro} />
     </Layout>
   );
 }

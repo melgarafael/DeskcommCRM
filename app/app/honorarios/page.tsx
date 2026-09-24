@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  *
  * `viewer` lê; criar contrato e parcela, e marcar parcela como paga, exige
  * `manager`+ — dinheiro não é coisa que `agent` configure, mesma régua do
- * catálogo financeiro e da migration 0385.
+ * catálogo financeiro e da migration 0398.
  */
 export default async function Page() {
   const user = await requireAuth();

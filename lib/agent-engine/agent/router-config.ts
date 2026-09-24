@@ -17,12 +17,24 @@ export interface RouterMember {
   intentName: string;
   intentDescription: string;
   examples: string[];
+  /**
+   * Fluxo de atendimento que COMEÇA quando esta intenção casa (migration 0394; 0237 na branch do autor).
+   * `null`/ausente = só roteia agente, como antes.
+   */
+  flowPointerId?: string | null;
 }
 
 export interface LoadedRouter {
   id: string;
   name: string;
-  classifierModel: string;
+  /**
+   * `null` = "Automático": o seam decide (painel de provedores, senão o padrão
+   * da organização). NUNCA um id fixo aqui — o seam trata o modelo do call site
+   * como knob de ambiente, que vence o padrão da org, e um `claude-haiku-4-5`
+   * fixo ia para o endpoint da OpenAI numa org só-OpenAI: toda classificação
+   * falhava com "modelo inexistente".
+   */
+  classifierModel: string | null;
   /**
    * Provedor do classificador, quando o roteador escolhe um diferente do da org.
    *
@@ -53,6 +65,7 @@ interface MemberRow {
   intent_name: string;
   intent_description: string;
   examples: string[] | null;
+  flow_pointer_id: string | null;
 }
 
 export async function loadActiveRouter(
@@ -72,7 +85,7 @@ export async function loadActiveRouter(
   if (router === undefined) return null;
 
   const { rows: memberRows } = await db.query<MemberRow>(
-    `select agent_id, intent_name, intent_description, examples
+    `select agent_id, intent_name, intent_description, examples, flow_pointer_id
      from ai_router_members
      where router_id = $1
        and organization_id = $2
@@ -89,7 +102,7 @@ export async function loadActiveRouter(
   const classifierModel =
     typeof cfg.classifier_model === 'string' && cfg.classifier_model.trim() !== ''
       ? cfg.classifier_model
-      : 'claude-haiku-4-5';
+      : null;
   const classifierProvider =
     typeof cfg.classifier_provider === 'string' && cfg.classifier_provider.trim() !== ''
       ? cfg.classifier_provider
@@ -113,6 +126,7 @@ export async function loadActiveRouter(
       intentName: m.intent_name,
       intentDescription: m.intent_description,
       examples: m.examples ?? [],
+      flowPointerId: m.flow_pointer_id,
     })),
   };
 }

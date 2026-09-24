@@ -162,6 +162,7 @@ describe("GET /api/v1/cron/followup-sem-agente", () => {
     ["case_opened", "atendimento é aberto"],
     ["appointment_no_show", "não compareceu"],
     ["inbound_after_silence", "volta a escrever"],
+    ["lead_created", "negócio nasce"],
   ])("também vigia o gatilho %s, e diz em português quando ele dispararia", async (kind, frase) => {
     const cap = vazio();
     vi.mocked(createAdminClient).mockReturnValue(

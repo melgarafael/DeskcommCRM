@@ -497,8 +497,15 @@ test("marca Meet, copia link, autoriza em atendimento humano e entrega novamente
     expect(oldJob).toHaveLength(1);
     expect(oldJob[0]).toMatchObject({ id: firstJob, organization_id: f.org, contact_id: f.contact, kind: "transactional_delivery", status: "done" });
     await page.goto(`/app/inbox/${f.conversation}`);
-    page.on("dialog", (dialog) => dialog.accept());
+    // Fechar não é mais `window.confirm()` (bloqueado em iframe, ignora o
+    // tema) — é o `AlertDialog` da casa. O botão que abre e o que confirma
+    // têm o MESMO rótulo "Fechar"; o segundo clique escopado ao
+    // `alertdialog` é o que desambigua.
     await page.getByRole("button", { name: "Fechar", exact: true }).click();
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "Fechar", exact: true })
+      .click();
     await expect
       .poll(
         async () =>

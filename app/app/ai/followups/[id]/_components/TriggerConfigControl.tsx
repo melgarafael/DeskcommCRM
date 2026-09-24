@@ -70,7 +70,8 @@ type TriggerKind =
   | "stage_change"
   | "case_opened"
   | "webhook"
-  | "inbound_after_silence";
+  | "inbound_after_silence"
+  | "lead_created";
 
 interface TriggerFormState {
   kind: TriggerKind;
@@ -100,6 +101,7 @@ const KIND_LABEL: Record<TriggerKind, string> = {
   case_opened: "Agente pediu ajuda",
   webhook: "Automação (Webhooks)",
   inbound_after_silence: "Cliente voltou",
+  lead_created: "Lead criado",
 };
 
 function parseTriggerConfig(raw: Record<string, unknown>): TriggerFormState {
@@ -122,7 +124,9 @@ function parseTriggerConfig(raw: Record<string, unknown>): TriggerFormState {
               ? "case_opened"
               : raw.kind === "webhook"
                 ? "webhook"
-                : "manual";
+                : raw.kind === "lead_created"
+                  ? "lead_created"
+                  : "manual";
   const params =
     (raw.params as { threshold_minutes?: number; segments?: string[]; stage_id?: string; event_type_ids?: string[] } | undefined) ?? {};
   const minutosRetorno =
@@ -161,6 +165,7 @@ function toTriggerConfig(form: TriggerFormState): Record<string, unknown> {
   // todo fluxo armado assim.
   if (form.kind === "case_opened") return { kind: "case_opened", ...cancelOnReply };
   if (form.kind === "webhook") return { kind: "webhook", ...cancelOnReply };
+  if (form.kind === "lead_created") return { kind: "lead_created", ...cancelOnReply };
 
   const segments = form.segments
     .split(",")
@@ -222,6 +227,7 @@ function summaryLabel(
   }
   if (cfg.kind === "case_opened") return `${t("Gatilho")}: ${t("quando o agente pede ajuda")}`;
   if (cfg.kind === "webhook") return t("Disparado por uma automação em Webhooks");
+  if (cfg.kind === "lead_created") return `${t("Gatilho")}: ${t("Lead criado")}`;
   if (cfg.kind === "manual" || cfg.kind === undefined) return `${t("Gatilho")}: ${t("Manual")}`;
   // conversation_end de dados antigos (API crua) — sem UI própria, mas mostrado
   // com transparência em vez de mentir "Manual".
@@ -325,6 +331,7 @@ export function TriggerConfigControl({ flowId, triggerConfig }: Props) {
                 <SelectItem value="appointment_no_show">{t(KIND_LABEL.appointment_no_show)}</SelectItem>
                 <SelectItem value="case_opened">{t(KIND_LABEL.case_opened)}</SelectItem>
                 <SelectItem value="inbound_after_silence">{t(KIND_LABEL.inbound_after_silence)}</SelectItem>
+                <SelectItem value="lead_created">{t(KIND_LABEL.lead_created)}</SelectItem>
                 <SelectItem value="webhook">{t(KIND_LABEL.webhook)}</SelectItem>
               </SelectContent>
             </Select>
@@ -390,6 +397,22 @@ export function TriggerConfigControl({ flowId, triggerConfig }: Props) {
               </p>
               <p className="text-xs text-muted-foreground">
                 {t("Se o caso for resolvido antes, o follow-up é cancelado sozinho.")}
+              </p>
+            </div>
+          )}
+
+          {form.kind === "lead_created" && (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "O fluxo começa quando um negócio nasce: a primeira mensagem que abre o card, um formulário ou o cadastro manual. Negócios importados por planilha não entram. A entrada na fila leva poucos minutos, não é instantânea.",
+                )}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                <strong className="font-medium">{t("Comece o fluxo por uma espera.")}</strong>{" "}
+                {t(
+                  "Quem escreveu pode receber a resposta do agente no mesmo instante — sem espera, saem duas mensagens juntas.",
+                )}
               </p>
             </div>
           )}

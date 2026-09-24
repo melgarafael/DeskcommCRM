@@ -125,6 +125,33 @@ describe('resolveTurnAgent', () => {
     expect(loadPublishedAgentConfigById).toHaveBeenCalledWith({}, 'org-1', 'agent-vendas');
   });
 
+  it('roteiro do membro: começa na intenção casada agora, nunca no sticky', async () => {
+    const comRoteiro = [
+      { ...members[0]!, flowPointerId: 'roteiro-vendas' },
+      { ...members[1]!, flowPointerId: 'roteiro-suporte' },
+    ];
+    const loadPublishedAgentConfigById = idAwareLoader();
+    const classificado = await resolveTurnAgent({} as never, {} as never,
+      { ...baseInput, signal: 'quanto custa?', stickyAgentId: null, stickyIntent: null },
+      makeDeps({
+        loadActiveRouter: vi.fn().mockResolvedValue(router({ sticky: false, members: comRoteiro })),
+        classifyIntent: vi.fn().mockResolvedValue({ intentName: 'vendas', confidence: 0.9 }),
+        loadPublishedAgentConfigById,
+      }));
+    expect(classificado.outcome).toBe('classified');
+    expect(classificado.flowPointerId).toBe('roteiro-vendas');
+
+    const sticky = await resolveTurnAgent({} as never, {} as never,
+      { ...baseInput, signal: 'e o preço?', stickyAgentId: 'agent-vendas', stickyIntent: 'vendas' },
+      makeDeps({
+        loadActiveRouter: vi.fn().mockResolvedValue(router({ members: comRoteiro })),
+        classifyIntent: vi.fn().mockResolvedValue({ intentName: 'vendas', confidence: 0.9 }),
+        loadPublishedAgentConfigById,
+      }));
+    expect(sticky.outcome).toBe('sticky');
+    expect(sticky.flowPointerId).toBeNull();
+  });
+
   it('4. sticky + intenção diferente com confiança >= min → reclassified, troca de agente', async () => {
     const r = router();
     const loadActiveRouter = vi.fn().mockResolvedValue(r);

@@ -150,7 +150,7 @@ const GATILHO_ESPERADO: Record<string, { condicao: string | null; efeito: string
   // Desligar qualquer um destes faz o PR entrar sem ter sido testado.
   "ci.yml::verify-parte": {
     condicao: null,
-    efeito: "São as duas partes da suíte (typecheck + lint + test:unit); sem elas o `verify` não tem o que ler.",
+    efeito: "São as partes da suíte (typecheck + lint + test:unit); sem elas o `verify` não tem o que ler.",
   },
   // A suíte foi dividida em partes (tempo medido, ver ci.yml); o nome que a
   // branch protection exige continua sendo `verify`, agora o agregado.

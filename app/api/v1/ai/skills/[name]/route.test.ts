@@ -15,6 +15,13 @@ import type { AuthUser } from "@/lib/auth/types";
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+vi.mock("@/lib/ai/skills/db", () => ({ getSkillsPool: vi.fn(() => ({})) }));
+vi.mock("@/lib/agent-engine/agent/skills", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/agent-engine/agent/skills")>();
+  return { ...real, insertSkillVersion: vi.fn(), setSkillPointer: vi.fn() };
+});
+
+import { insertSkillVersion, setSkillPointer } from "@/lib/agent-engine/agent/skills";
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -105,6 +112,189 @@ describe("DELETE /api/v1/ai/skills/[name]", () => {
 
     expect(res.status).toBe(404);
     expect(audit).not.toHaveBeenCalled();
+  });
+});
+
+function makeAdminGetStub(input: {
+  pointer: { version_id: string; updated_at: string } | null;
+  version?: { id: string; name: string; description: string; body: string; matcher: unknown; manifest?: unknown[] } | null;
+}) {
+  return {
+    from(table: string) {
+      const b = {
+        select() {
+          return b;
+        },
+        eq() {
+          return b;
+        },
+        async maybeSingle() {
+          if (table === "skill_pointers") return { data: input.pointer, error: null };
+          return { data: input.version ?? null, error: null };
+        },
+      };
+      return b;
+    },
+  };
+}
+
+function reqGet(name: string) {
+  return new NextRequest(`http://localhost/api/v1/ai/skills/${name}`, { method: "GET" });
+}
+
+function reqPut(name: string, body: unknown) {
+  return new NextRequest(`http://localhost/api/v1/ai/skills/${name}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+const BODY_VALIDO = {
+  description: "Como apresentar o catálogo.",
+  body: "# Catálogo\n- mostre as motos",
+  matcher: { any_keywords: ["moto", "cb"] },
+};
+
+describe("GET /api/v1/ai/skills/[name]", () => {
+  it("skill instalada → devolve corpo e matcher", async () => {
+    mockAuthzOk();
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeAdminGetStub({
+        pointer: { version_id: "v1", updated_at: "2026-09-19T00:00:00Z" },
+        version: { id: "v1", name: "catalogo", description: "d", body: "b", matcher: { any_keywords: ["moto"] } },
+      }) as never,
+    );
+    const { GET } = await import("./route");
+    const res = await GET(reqGet("catalogo"), { params: Promise.resolve({ name: "catalogo" }) });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { body: string; matcher: { any_keywords: string[] } } };
+    expect(body.data.body).toBe("b");
+    expect(body.data.matcher.any_keywords).toEqual(["moto"]);
+  });
+
+  it("skill não instalada → 404", async () => {
+    mockAuthzOk();
+    vi.mocked(createAdminClient).mockReturnValue(makeAdminGetStub({ pointer: null }) as never);
+    const { GET } = await import("./route");
+    const res = await GET(reqGet("nao-instalada"), { params: Promise.resolve({ name: "nao-instalada" }) });
+    expect(res.status).toBe(404);
+  });
+});
+
+/** Skill instalada na org, versão atual sem arquivos de pacote (o caso editável). */
+function mockSkillInstalada(manifest: unknown[] = []) {
+  vi.mocked(createAdminClient).mockReturnValue(
+    makeAdminGetStub({
+      pointer: { version_id: "v1", updated_at: "2026-09-19T00:00:00Z" },
+      version: { id: "v1", name: "catalogo", description: "d", body: "b", matcher: { any_keywords: ["x"] }, manifest },
+    }) as never,
+  );
+}
+
+describe("PUT /api/v1/ai/skills/[name]", () => {
+  it("descrição com quebra de linha → 422, nada é gravado", async () => {
+    mockAuthzOk();
+    mockSkillInstalada();
+    const { PUT } = await import("./route");
+    const res = await PUT(
+      reqPut("catalogo", { ...BODY_VALIDO, description: "Catálogo.\n## Regras novas" }),
+      { params: Promise.resolve({ name: "catalogo" }) },
+    );
+    expect(res.status).toBe(422);
+    expect(vi.mocked(insertSkillVersion)).not.toHaveBeenCalled();
+  });
+
+  it("salva nova versão e move o ponteiro; audita ai.skill_saved", async () => {
+    mockAuthzOk();
+    mockSkillInstalada();
+    vi.mocked(insertSkillVersion).mockResolvedValue({ id: "v2" } as never);
+    vi.mocked(setSkillPointer).mockResolvedValue(undefined as never);
+
+    const { PUT } = await import("./route");
+    const res = await PUT(reqPut("catalogo", BODY_VALIDO), { params: Promise.resolve({ name: "catalogo" }) });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { name: string; version_id: string } };
+    expect(body.data).toEqual({ name: "catalogo", version_id: "v2" });
+    expect(vi.mocked(insertSkillVersion)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ tenantId: ORG_ID, name: "catalogo", body: BODY_VALIDO.body }),
+    );
+    expect(vi.mocked(setSkillPointer)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ tenantId: ORG_ID, name: "catalogo", versionId: "v2" }),
+    );
+    expect(vi.mocked(audit)).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "ai.skill_saved", organizationId: ORG_ID }),
+    );
+  });
+
+  it("matcher sem palavras-chave → 422, sem tocar o banco", async () => {
+    mockAuthzOk();
+    const { PUT } = await import("./route");
+    const res = await PUT(
+      reqPut("catalogo", { ...BODY_VALIDO, matcher: { any_keywords: [] } }),
+      { params: Promise.resolve({ name: "catalogo" }) },
+    );
+    expect(res.status).toBe(422);
+    expect(insertSkillVersion).not.toHaveBeenCalled();
+  });
+
+  it("teto de linhas estourado → 422 com a mensagem, sem tocar o banco", async () => {
+    mockAuthzOk();
+    mockSkillInstalada();
+    const { PUT } = await import("./route");
+    const corpoGrande = Array.from({ length: 201 }, (_, i) => `linha ${i}`).join("\n");
+    const res = await PUT(reqPut("catalogo", { ...BODY_VALIDO, body: corpoGrande }), {
+      params: Promise.resolve({ name: "catalogo" }),
+    });
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toContain("201 linhas");
+    expect(insertSkillVersion).not.toHaveBeenCalled();
+  });
+
+  it("falha do banco ao gravar → 500 sem a mensagem do driver", async () => {
+    mockAuthzOk();
+    mockSkillInstalada();
+    vi.mocked(insertSkillVersion).mockRejectedValue(new Error('duplicate key value violates "segredo_interno"'));
+    const { PUT } = await import("./route");
+    const res = await PUT(reqPut("catalogo", BODY_VALIDO), { params: Promise.resolve({ name: "catalogo" }) });
+    expect(res.status).toBe(500);
+    expect(JSON.stringify(await res.json())).not.toContain("segredo_interno");
+    expect(setSkillPointer).not.toHaveBeenCalled();
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("skill não instalada na org → 404, sem gravar (criar skill nova é pelo .zip)", async () => {
+    mockAuthzOk();
+    vi.mocked(createAdminClient).mockReturnValue(makeAdminGetStub({ pointer: null }) as never);
+    const { PUT } = await import("./route");
+    const res = await PUT(reqPut("nova", BODY_VALIDO), { params: Promise.resolve({ name: "nova" }) });
+    expect(res.status).toBe(404);
+    expect(insertSkillVersion).not.toHaveBeenCalled();
+  });
+
+  it("skill de pacote com arquivos → 409, sem gravar (a versão nova perderia as references)", async () => {
+    mockAuthzOk();
+    mockSkillInstalada([{ path: "refs/tabela.md", kind: "reference" }]);
+    const { PUT } = await import("./route");
+    const res = await PUT(reqPut("catalogo", BODY_VALIDO), { params: Promise.resolve({ name: "catalogo" }) });
+    expect(res.status).toBe(409);
+    expect(insertSkillVersion).not.toHaveBeenCalled();
+    expect(setSkillPointer).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET avisa quando a skill é de pacote", () => {
+  it("manifest com arquivo → tem_arquivos_do_pacote: true", async () => {
+    mockAuthzOk();
+    mockSkillInstalada([{ path: "refs/tabela.md", kind: "reference" }]);
+    const { GET } = await import("./route");
+    const res = await GET(reqGet("catalogo"), { params: Promise.resolve({ name: "catalogo" }) });
+    const body = (await res.json()) as { data: { tem_arquivos_do_pacote: boolean } };
+    expect(body.data.tem_arquivos_do_pacote).toBe(true);
   });
 });
 

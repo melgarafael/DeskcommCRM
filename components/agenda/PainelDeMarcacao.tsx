@@ -554,10 +554,8 @@ export function PainelDeMarcacao({
         // colunas cabem com folga. Abaixo disso o painel EMPILHA — os horários
         // viram uma seção sob o calendário, que é o que o cal.com faz e o que
         // esta base já fazia no celular.
-        // `lg:min-h-0` junto do piso: em janela larga e BAIXA (menos de ~560px
-        // de altura) um `min-h-[450px]` sem teto estoura o Sheet e o
-        // `overflow-hidden` corta em silêncio — o mesmo modo de falha que este
-        // painel já teve na horizontal.
+        // `lg:min-h-0`: de `lg` para cima o painel tem a altura do conteúdo e
+        // quem rola é o Sheet (`_client.tsx`); o piso de 450px é do empilhado.
         "flex min-h-[450px] flex-col overflow-hidden rounded-lg border border-border bg-surface lg:min-h-0 lg:w-fit lg:flex-row",
         className,
       )}
@@ -595,24 +593,20 @@ export function PainelDeMarcacao({
       {/* CORPO — o mês. 420–480px é a faixa medida no cal.com; aqui ela é
           `min-width` e não largura fixa, porque no celular a coluna ocupa tudo. */}
       {/*
-        ⚠️ `lg:min-h-0 lg:overflow-y-auto` — A CONFIRMAÇÃO FICAVA FORA DO ALCANCE.
+        ⚠️ SEM rolagem própria — o corpo cresce e quem rola é o Sheet.
 
-        De `lg` para cima o painel tem a altura do Sheet, e o Sheet não rola
-        (`_client.tsx`). O corpo não tinha teto nem rolagem: mês + confirmação
-        passavam da caixa, e o `overflow-hidden` do painel cortava EM SILÊNCIO.
-        Medido em 2026-09-15 pela tela, com o bloco "Quem será atendido" acima:
-        o botão Confirmar começava em 840px numa janela de 800 (1280×800) e em
-        821px numa de 768 (1366×768), com o painel terminando em 776 e 744 —
-        inteiro fora da caixa, sem barra e sem como clicar. Em 1440×900 ele saía
-        cortado ao meio, e a recusa do servidor logo acima dele também.
-
-        Rolar o CORPO, e não o Sheet, pelo mesmo motivo que a lista rola sozinha:
-        o contexto e os horários ficam parados, e não nasce barra horizontal no
-        Sheet. Abaixo de `lg` nada muda — ali quem rola é o diálogo.
+        Em 2026-09-15 o Confirmar ficou fora da caixa (1280×800: começava em
+        840px) porque o painel tinha a altura do Sheet e o Sheet não rolava; o
+        remendo foi dar `lg:overflow-y-auto` a este corpo. Não bastou: a altura
+        que sobrava para o painel era o que o formulário acima deixava, e em
+        janela baixa (1280×500, 1024×560), pela conta das alturas do formulário,
+        isso é quase nada — o corpo rolava dentro de uma fresta. Agora o Sheet
+        rola (`_client.tsx`), e um segundo rolador aqui dentro só prenderia a
+        roda do mouse no de dentro.
       */}
       <div
         data-testid="corpo-da-marcacao"
-        className="flex min-w-0 flex-1 flex-col p-4 lg:min-h-0 lg:min-w-[420px] lg:overflow-y-auto"
+        className="flex min-w-0 flex-1 flex-col p-4 lg:min-w-[420px]"
       >
         <div className="mb-3 flex items-center justify-between">
           <span className="text-sm font-semibold first-letter:uppercase">

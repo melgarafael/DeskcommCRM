@@ -95,6 +95,22 @@ export interface ActivityRow {
 }
 
 /**
+ * O resumo que o agente guarda sobre o titular (`lead_checkpoints`).
+ *
+ * Entra porque a anonimização o REDIGE (migration 0391): o resumo corrido, os
+ * compromissos e a próxima ação são texto que o modelo escreveu SOBRE a pessoa,
+ * e o que se apaga a pedido do titular é o que se entrega a pedido dele.
+ */
+export interface CheckpointRow {
+  id: string;
+  rolling_summary: string;
+  commitments: unknown;
+  objections: unknown;
+  next_action: string | null;
+  created_at: string;
+}
+
+/**
  * Compromisso da agenda do titular.
  *
  * As colunas são as MESMAS que a migration 0184 redige ao anonimizar — e não é
@@ -446,6 +462,7 @@ export interface ExportPayload {
   leads: LeadRow[];
   orders: OrderRow[];
   activities: ActivityRow[];
+  checkpoints: CheckpointRow[];
   appointments: AppointmentRow[];
   sales: SaleRow[];
   tasks: TaskRow[];
@@ -840,6 +857,26 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
       });
     } else if (data) {
       activities = data;
+    }
+  }
+
+  // Resumos do agente — contact_id direto em lead_checkpoints.
+  let checkpoints: CheckpointRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("lead_checkpoints")
+      .select("id, rolling_summary, commitments, objections, next_action, created_at")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (error) {
+      logger.warn("[lgpd-export-worker] checkpoints load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    } else if (data) {
+      checkpoints = data;
     }
   }
 
@@ -1367,6 +1404,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     leads,
     orders,
     activities,
+    checkpoints,
     appointments,
     sales,
     tasks,
@@ -1411,6 +1449,7 @@ function emptyPayload(
     leads: [],
     orders: [],
     activities: [],
+    checkpoints: [],
     appointments: [],
     sales: [],
     tasks: [],

@@ -117,25 +117,42 @@ export type WahaEnvelope = z.infer<typeof wahaEnvelopeSchema>;
  *
  * `docs/prd/03-prd-whatsapp-waha.md` §3.3 tem um AC explícito: "webhook com
  * HMAC válido grava raw em `webhook_events_log` mesmo se o parse falhar
- * depois". Conferir o contrato inteiro antes de arquivar destruiria justamente
- * a evidência que se quer guardar — o corpo cru de um payload cujo formato
- * mudou é o artefato que responde O QUE mudou.
+ * depois". Recusar pelo contrato inteiro antes de arquivar destruiria
+ * justamente a evidência que se quer guardar — o corpo cru de um payload cujo
+ * formato mudou é o artefato que responde O QUE mudou.
  *
- * Então o estágio 1 confere só o que a rota precisa ANTES de poder arquivar:
- * a sessão (que resolve a organização) e o id da mensagem (que vai numa coluna
- * do próprio arquivo). O estágio 2 confere o resto, depois do INSERT.
+ * Então o estágio 1 confere só o que a rota precisa ANTES de poder arquivar, e
+ * isso depende de QUEM resolve a organização em cada rota:
+ *
+ *   - rota por token: o token do caminho resolve. O estágio 1 confere o evento
+ *     e o id da mensagem (que vai numa coluna do próprio arquivo), e só.
+ *   - rota global: a `session` do corpo resolve, então ela entra também.
+ *
+ * Um estágio 1 único, com `session`, fazia a rota por token recusar ANTES do
+ * INSERT um campo que ela nem lê — e o corpo cru sumia (issue #290, item 1). O
+ * estágio 2 confere o resto e decide o status com que a linha é arquivada.
  */
-export const wahaRoteamentoSchema = z.looseObject({
+export const wahaRoteamentoPorTokenSchema = z.looseObject({
   event: texto,
-  session: texto,
   payload: z.looseObject({ id: texto }).nullish(),
 });
 
+export const wahaRoteamentoSchema = z.looseObject({
+  ...wahaRoteamentoPorTokenSchema.shape,
+  session: texto,
+});
+
+export type WahaRoteamentoPorToken = z.infer<typeof wahaRoteamentoPorTokenSchema>;
 export type WahaRoteamento = z.infer<typeof wahaRoteamentoSchema>;
 
-/** Estágio 1 — o mínimo para resolver o tenant e arquivar o corpo. */
+/** Estágio 1 da rota global — o mínimo para resolver o tenant pela sessão e arquivar o corpo. */
 export function lerRoteamentoWaha(rawBody: string): LeituraDeEnvelope<WahaRoteamento> {
   return lerEnvelope(rawBody, wahaRoteamentoSchema);
+}
+
+/** Estágio 1 da rota por token — o tenant já vem do caminho; só o que vai para o arquivo. */
+export function lerRoteamentoWahaPorToken(rawBody: string): LeituraDeEnvelope<WahaRoteamentoPorToken> {
+  return lerEnvelope(rawBody, wahaRoteamentoPorTokenSchema);
 }
 
 /**
@@ -145,6 +162,8 @@ export function lerRoteamentoWaha(rawBody: string): LeituraDeEnvelope<WahaRoteam
  * schema é `loose` em todo nível, então o que ele devolve tem as MESMAS chaves
  * que entraram. Provado em `contrato-do-webhook-waha.test.ts`.
  */
-export function conferirContratoWaha(roteado: WahaRoteamento): LeituraDeEnvelope<WahaEnvelope> {
+export function conferirContratoWaha(
+  roteado: WahaRoteamento | WahaRoteamentoPorToken,
+): LeituraDeEnvelope<WahaEnvelope> {
   return conferirEnvelope(roteado, wahaEnvelopeSchema);
 }

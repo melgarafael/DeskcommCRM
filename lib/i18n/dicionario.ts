@@ -1179,6 +1179,9 @@ export const DICIONARIO: Traducoes = {
   "Agent arquivado.": { es: "Agente archivado." },
   Falha: { es: "Error" },
   "Erro ao executar ação.": { es: "Error al ejecutar la acción." },
+  "O agent padrão da organização não pode ser arquivado.": {
+    es: "El agente predeterminado de la organización no se puede archivar.",
+  },
   "O agent deixa de responder gatilhos e some das listas ativas. Versões publicadas são preservadas para auditoria. Não é possível desarquivar pela UI nesta versão.": {
     es: "El agente deja de responder a los disparadores y desaparece de las listas activas. Las versiones publicadas se conservan para auditoría. En esta versión no se puede desarchivar desde la interfaz.",
   },
@@ -1791,6 +1794,7 @@ export const DICIONARIO: Traducoes = {
   "Aguardando resposta": { es: "Esperando respuesta" },
   "Pausado (atendimento humano)": { es: "Pausado (atención humana)" },
   "Pausado por uma pessoa": { es: "Pausado por una persona" },
+  "Coletando respostas do roteiro": { es: "Recopilando respuestas del guion" },
   "Parou de tentar": { es: "Dejó de intentar" },
   Cancelado: { es: "Cancelado" },
   Agendada: { es: "Programada" },
@@ -2840,6 +2844,7 @@ export const DICIONARIO: Traducoes = {
   "a cada 100": { es: "por cada 100" },
   "a maioria responde em": { es: "la mayoría responde en" },
   "agora usa": { es: "ahora usa" },
+  "anotado pelo agente": { es: "anotado por el agente" },
   "aprendido automaticamente": { es: "aprendido automáticamente" },
   ativa: { es: "activa" },
   "atualizada em": { es: "actualizada el" },
@@ -4297,6 +4302,28 @@ export const DICIONARIO: Traducoes = {
   "Guardada cifrada. Depois de gravar ela não é mostrada de novo — para trocar, cole a nova.": {
     es: "Se guarda cifrada y no se vuelve a mostrar. Para cambiarla, pega una nueva.",
   },
+  // ─── Canal parceiro que espelha a Cloud API (recorte do #1130) ───
+  "Informe o token do provedor parceiro.": { es: "Indica el token del proveedor socio." },
+  "Cole o segredo de assinatura do painel do provedor (começa com whsec_).": {
+    es: "Pega el secreto de firma del panel del proveedor (empieza con whsec_).",
+  },
+  "Conecte o número com o token antes de gravar o segredo.": {
+    es: "Conecta el número con el token antes de guardar el secreto.",
+  },
+  "Segredo gravado. O canal passa a receber mensagens.": {
+    es: "Secreto guardado. El canal empieza a recibir mensajes.",
+  },
+  "Não foi possível gravar o segredo.": { es: "No se pudo guardar el secreto." },
+  "Um número oficial (WhatsApp Business) por um parceiro homologado pela Meta. Você cola só o token: o número e a conta são descobertos sozinhos.": {
+    es: "Un número oficial (WhatsApp Business) a través de un socio homologado por Meta. Solo pegas el token: el número y la cuenta se descubren solos.",
+  },
+  "Receber as respostas": { es: "Recibir las respuestas" },
+  "No painel do provedor, cole a URL abaixo no webhook do número e ative a assinatura. Depois cole aqui o segredo que o painel mostrar. Sem o segredo o CRM envia, mas recusa tudo o que chega — a resposta do cliente não entra.": {
+    es: "En el panel del proveedor, pega la URL de abajo en el webhook del número y activa la firma. Después pega aquí el secreto que muestre el panel. Sin el secreto el CRM envía, pero rechaza todo lo que llega: la respuesta del cliente no entra.",
+  },
+  Recebendo: { es: "Recibiendo" },
+  "Não recebe": { es: "No recibe" },
+  "Segredo de assinatura": { es: "Secreto de firma" },
   "Verificando…": { es: "Verificando…" },
   "A credencial é testada contra o provedor antes de ser gravada.": {
     es: "Antes de guardar la credencial, se prueba con el proveedor.",
@@ -4881,13 +4908,19 @@ export const DICIONARIO: Traducoes = {
   "In-app": { es: "En la app" },
   Push: { es: "Push" },
   // ─── Configurações: Segurança ───
-  "Gerar novos códigos invalida TODOS os atuais. Tem certeza?": {
-    es: "Generar nuevos códigos invalida TODOS los actuales. ¿Estás seguro?",
+  "Gerar novos códigos de recuperação?": {
+    es: "¿Generar nuevos códigos de recuperación?",
+  },
+  "Os códigos atuais são invalidados imediatamente.": {
+    es: "Los códigos actuales se invalidan de inmediato.",
   },
   "Novos códigos gerados.": { es: "Nuevos códigos generados." },
   "Erro:": { es: "Error:" },
-  "Sair de TODOS os dispositivos? Você precisará fazer login de novo.": {
-    es: "¿Cerrar sesión en TODOS los dispositivos? Tendrás que iniciar sesión de nuevo.",
+  "Sair de todos os dispositivos?": {
+    es: "¿Cerrar sesión en todos los dispositivos?",
+  },
+  "Você precisará fazer login de novo em cada um deles.": {
+    es: "Tendrás que iniciar sesión de nuevo en cada uno de ellos.",
   },
   "Verificação em duas etapas": { es: "Verificación en dos pasos" },
   "Além da senha, o sistema pede um código de 6 dígitos que só existe no seu celular. É a proteção que segura uma senha vazada.": {
@@ -4898,8 +4931,11 @@ export const DICIONARIO: Traducoes = {
   "Ela é obrigatória para administradores desta empresa, então não dá para desligar aqui. Um administrador pode mudar essa regra abaixo.": {
     es: "Es obligatoria para los administradores de esta empresa, así que no se puede desactivar aquí. Un administrador puede cambiar esta regla abajo.",
   },
-  "Desligar a verificação em duas etapas desta conta?": {
-    es: "¿Desactivar la verificación en dos pasos de esta cuenta?",
+  "Desligar a verificação em duas etapas?": {
+    es: "¿Desactivar la verificación en dos pasos?",
+  },
+  "Sua conta fica sem essa camada de proteção até você ativar de novo.": {
+    es: "Tu cuenta queda sin esa capa de protección hasta que la actives de nuevo.",
   },
   "Verificação desligada.": { es: "Verificación desactivada." },
 
@@ -5309,6 +5345,12 @@ export const DICIONARIO: Traducoes = {
   "Pausando...": { es: "Pausando..." },
   "Fechar esta conversa?": { es: "¿Cerrar esta conversación?" },
   "Arquivar esta conversa?": { es: "¿Archivar esta conversación?" },
+  "O atendimento é encerrado. Se o cliente escrever de novo, você pode reabrir.": {
+    es: "La atención se cierra. Si el cliente vuelve a escribir, puedes reabrirla.",
+  },
+  "Arquivar encerra este atendimento e guarda a conversa no histórico. Se o cliente escrever de novo, ela volta.": {
+    es: "Archivar cierra esta atención y guarda la conversación en el historial. Si el cliente vuelve a escribir, ella vuelve.",
+  },
   "Arquivar encerra este atendimento e guarda a conversa no histórico. Se o cliente escrever de novo, ela volta. Arquivar?": {
     es: "Archivar cierra esta atención y guarda la conversación en el historial. Si el cliente vuelve a escribir, la conversación regresa. ¿Archivar?",
   },
@@ -5324,6 +5366,21 @@ export const DICIONARIO: Traducoes = {
     es: "La transferencia es inmediata: el asesor elegido pasa a ser el responsable y el cambio queda registrado en el historial.",
   },
   "Transferir para": { es: "Transferir a" },
+  "Continuar pelo número": { es: "Continuar por el número" },
+  "Continuar por este número": { es: "Continuar por este número" },
+  "O cliente passa a receber as mensagens pelo número escolhido. Se a conversa lá estiver livre, você fica como responsável. O histórico deste número continua nesta conversa.": {
+    es: "El cliente pasa a recibir los mensajes por el número elegido. Si la conversación allí está libre, tú quedas como responsable. El historial de este número sigue en esta conversación.",
+  },
+  "Este contato não tem telefone salvo, então não dá para falar com ele por outro número.": {
+    es: "Este contacto no tiene teléfono guardado, así que no se le puede hablar por otro número.",
+  },
+  "A conversa neste número está com": { es: "La conversación en este número está con" },
+  "outro atendente": { es: "otro agente" },
+  "Atendimento continua pelo outro número.": { es: "La atención sigue por el otro número." },
+  "O número desta conversa não está conectado.": {
+    es: "El número de esta conversación no está conectado.",
+  },
+  "Responder por outro número": { es: "Responder por otro número" },
   "Carregando atendentes…": { es: "Cargando asesores…" },
   "Nenhum outro atendente disponível nesta organização.": {
     es: "No hay ningún otro asesor disponible en esta organización.",
@@ -5359,6 +5416,19 @@ export const DICIONARIO: Traducoes = {
   "link da imagem": { es: "enlace de la imagen" },
   "Salvar este link no modelo": { es: "Guardar este enlace en la plantilla" },
   "já há um link salvo": { es: "ya hay un enlace guardado" },
+  "Link salvo no modelo.": { es: "Enlace guardado en la plantilla." },
+  "Link removido do modelo.": { es: "Enlace eliminado de la plantilla." },
+  "Remover link": { es: "Quitar enlace" },
+  "Salvar link": { es: "Guardar enlace" },
+  "Link salvo: o painel do modelo na conversa já vem preenchido com ele.": {
+    es: "Enlace guardado: el panel de la plantilla en la conversación ya viene completado con él.",
+  },
+  "Link público (https) do arquivo. Salvo aqui, o painel do modelo na conversa já vem preenchido.": {
+    es: "Enlace público (https) del archivo. Guardado aquí, el panel de la plantilla en la conversación ya viene completado.",
+  },
+  "Use um link público que comece com https://": {
+    es: "Usa un enlace público que empiece con https://",
+  },
   "O modelo saiu, mas não consegui salvar o link nele.": {
     es: "La plantilla se envió, pero no pude guardar el enlace en ella.",
   },
@@ -5721,7 +5791,7 @@ export const DICIONARIO: Traducoes = {
   "Seu atendente foi criado, mas ficou como": { es: "Tu agente se creó, pero quedó como" },
   "rascunho": { es: "borrador" },
   "— ele ainda não tem com o que pensar.": { es: "— todavía no tiene con qué pensar." },
-  "Não achei chave de": { es: "No encontré ninguna clave de" },
+  "Não achei chave": { es: "No encontré ninguna clave" },
   "nem cadastrada aqui, nem vinda da instalação. Cole a chave no campo acima («o cérebro dele») e crie o atendente de novo — ou cadastre em": {
     es: "ni registrada aquí ni incluida con la instalación. Pega la clave en el campo de arriba («su cerebro») y vuelve a crear el agente, o regístrala en",
   },
@@ -6185,6 +6255,8 @@ export const DICIONARIO: Traducoes = {
   "Adiado por uma pessoa da equipe": { es: "Pospuesto por una persona del equipo" },
   "Passo pulado por uma pessoa da equipe": { es: "Paso saltado por una persona del equipo" },
   "Começou porque o negócio entrou numa etapa": { es: "Empezó porque el negocio entró en una etapa" },
+  "Começou porque o negócio nasceu": { es: "Empezó porque el negocio nació" },
+  "o card acabou de ser criado": { es: "la tarjeta acaba de crearse" },
   "Começou porque o agente pediu ajuda de um humano": {
     es: "Empezó porque el agente pidió ayuda a un humano",
   },
@@ -6887,6 +6959,14 @@ export const DICIONARIO: Traducoes = {
   "Ex: Cliente desistiu por X motivo": { es: "Ej: El cliente desistió por X motivo" },
   "Confirmar": { es: "Confirmar" },
   "Lead criado": { es: "Lead creado" },
+  "O fluxo começa quando um negócio nasce: a primeira mensagem que abre o card, um formulário ou o cadastro manual. Negócios importados por planilha não entram. A entrada na fila leva poucos minutos, não é instantânea.":
+    {
+      es: "El flujo empieza cuando nace un negocio: el primer mensaje que abre la tarjeta, un formulario o el alta manual. Los negocios importados por planilla no entran. La entrada en la fila tarda unos minutos, no es instantánea.",
+    },
+  "Quem escreveu pode receber a resposta do agente no mesmo instante — sem espera, saem duas mensagens juntas.":
+    {
+      es: "Quien escribió puede recibir la respuesta del agente en el mismo instante — sin espera, salen dos mensajes juntos.",
+    },
   "Crie um lead manualmente neste pipeline.": { es: "Crea un lead manualmente en este pipeline." },
   "Ex: Pedido Maria — combo presente": { es: "Ej: Pedido María — combo regalo" },
   "Contexto, observações, links…": { es: "Contexto, observaciones, enlaces…" },
@@ -7979,6 +8059,9 @@ export const DICIONARIO: Traducoes = {
   "Falha ao salvar o teto diário.": { es: "No se pudo guardar el tope diario." },
   "Faltam nome, idioma ou conteúdo.": { es: "Faltan nombre, idioma o contenido." },
   "Fluxo não encontrado.": { es: "Flujo no encontrado." },
+  "Roteiro de atendimento começa por palavra-gatilho ou pelo roteador, não por gatilho de follow-up.": {
+    es: "El guion de atención empieza por palabra clave o por el enrutador, no por un disparador de seguimiento.",
+  },
   "Fluxo não tem rascunho pronto para publicar.": { es: "El flujo no tiene un borrador listo para publicar." },
   "Fluxo reprovado na validação de publish.": { es: "El flujo no pasó la validación de publicación." },
   "Follow-up não encontrado.": { es: "Follow-up no encontrado." },
@@ -8473,6 +8556,26 @@ export const DICIONARIO: Traducoes = {
   "Produto reativado": { es: "Producto reactivado" },
   "Não consegui ler essa planilha.": { es: "No pude leer esa hoja de cálculo." },
   "Não consegui enviar o arquivo.": { es: "No pude enviar el archivo." },
+  // As fotos do produto (migration 0390).
+  "Fotos": { es: "Fotos" },
+  "foto": { es: "foto" },
+  "A primeira foto é a capa. O atendente de IA manda as fotos nesta ordem quando apresenta o produto.": {
+    es: "La primera foto es la portada. El asistente de IA envía las fotos en este orden cuando presenta el producto.",
+  },
+  "Sem prévia": { es: "Sin vista previa" },
+  "Mover a foto para a esquerda": { es: "Mover la foto a la izquierda" },
+  "Mover a foto para a direita": { es: "Mover la foto a la derecha" },
+  "Remover a foto": { es: "Quitar la foto" },
+  "Adicionar foto": { es: "Agregar foto" },
+  "JPG ou PNG, até 5 MB. No máximo 5 fotos.": { es: "JPG o PNG, hasta 5 MB. Máximo 5 fotos." },
+  "Foto adicionada": { es: "Foto agregada" },
+  "Não consegui enviar a foto.": { es: "No pude enviar la foto." },
+  "Ordem das fotos salva": { es: "Orden de las fotos guardado" },
+  "Foto removida": { es: "Foto quitada" },
+  "Cada produto tem no máximo 5 fotos.": { es: "Cada producto tiene como máximo 5 fotos." },
+  "A foto precisa ter até 5 MB.": { es: "La foto debe tener hasta 5 MB." },
+  "A foto precisa ser JPG ou PNG.": { es: "La foto debe ser JPG o PNG." },
+  "As fotos mudaram. Recarregue a página.": { es: "Las fotos cambiaron. Recarga la página." },
   "Preço inválido. Escreva assim: 5.499,00": { es: "Precio inválido. Escríbelo así: 5.499,00" },
   "Custo inválido.": { es: "Costo inválido." },
   "novos": { es: "nuevos" },
@@ -11510,6 +11613,36 @@ export const DICIONARIO: Traducoes = {
   "Conta para receber o pagamento": { es: "Cuenta para recibir el pago" },
   "Nenhuma parcela ainda.": { es: "Todavía no hay cuotas." },
   "Adicionar parcela": { es: "Agregar cuota" },
+  // ─── Editor de skill, histórico e restauração (recorte do #1130, @vgamkt) ───
+  "Informe pelo menos uma palavra-chave de ativação.": { es: "Indica al menos una palabra clave de activación." },
+  "A descrição é obrigatória.": { es: "La descripción es obligatoria." },
+  "O corpo da skill não pode ficar vazio.": { es: "El cuerpo de la skill no puede quedar vacío." },
+  "Linhas no corpo": { es: "Líneas en el cuerpo" },
+  "atualizada — já vale para os agentes.": { es: "actualizada: ya vale para los agentes." },
+  "Editar skill": { es: "Editar skill" },
+  "Salvar cria uma versão nova (a antiga fica no histórico). O corpo só entra na conversa quando uma das palavras-chave aparece na mensagem do cliente.": {
+    es: "Guardar crea una versión nueva (la anterior queda en el historial). El cuerpo solo entra en la conversación cuando una de las palabras clave aparece en el mensaje del cliente.",
+  },
+  "Não foi possível carregar a skill.": { es: "No se pudo cargar la skill." },
+  "Esta skill veio de um pacote com arquivos. Para mudar o texto, edite o pacote e envie o .zip de novo.": {
+    es: "Esta skill vino de un paquete con archivos. Para cambiar el texto, edita el paquete y vuelve a enviar el .zip.",
+  },
+  "Descrição (aparece no índice do agente)": { es: "Descripción (aparece en el índice del agente)" },
+  "Palavras-chave de ativação (separe por vírgula)": { es: "Palabras clave de activación (separadas por coma)" },
+  "consulta, horário, preço": { es: "consulta, horario, precio" },
+  "A skill é carregada quando o cliente escreve uma destas palavras.": {
+    es: "La skill se carga cuando el cliente escribe una de estas palabras.",
+  },
+  "Corpo (o procedimento que o agente segue)": { es: "Cuerpo (el procedimiento que sigue el agente)" },
+  linhas: { es: "líneas" },
+  "em uso": { es: "en uso" },
+  "Versão restaurada.": { es: "Versión restaurada." },
+  Restaurar: { es: "Restaurar" },
+  "Use Editar para ajustar o texto de uma skill instalada — cada salvamento cria uma versão nova e a anterior fica no histórico. Também dá para reenviar um .zip com o mesmo nome; a sua versão passa a valer no lugar da do catálogo.": {
+    es: "Usa Editar para ajustar el texto de una skill instalada: cada guardado crea una versión nueva y la anterior queda en el historial. También puedes volver a enviar un .zip con el mismo nombre; tu versión pasa a valer en lugar de la del catálogo.",
+  },
+  "Versão não encontrada para esta skill.": { es: "No se encontró esa versión para esta skill." },
+  "Versão da skill não encontrada.": { es: "No se encontró la versión de la skill." },
 };
 
 /**

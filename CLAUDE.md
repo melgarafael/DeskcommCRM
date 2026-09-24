@@ -83,6 +83,9 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
   - **⚠️ CADASTRAR e PROVAR são perguntas diferentes.** A política decide o cadastro. Já `mfaEmDivida()` — o 403 `mfa_required` das rotas — NÃO consulta a política: quem TEM fator prova na sessão, sempre. Ligá-lo à política faria quem ativa a verificação por vontade própria ter o fator ignorado
   - Ligar/desligar vive em **Configurações › Segurança**; desligar o próprio fator exige sessão `aal2` (senão uma sessão roubada desliga a proteção com um clique)
 - Permissão por pipeline (`user_pipeline_access`) **NÃO** entra no MVP
+- Suporte temporário: todo handler mutante de `app/api/v1` declara `requireSupportWrite(`
+  de `lib/impersonate/support.ts` **antes do efeito**. É guarda de efeito, não de papel — não substitui
+  `requireRole`/RBAC/MFA — e é cobrada pelo gate `tests/unit/suporte-cobertura-de-efeitos.test.ts`
 
 ### Audit log
 - Toda mutação POST/PATCH/DELETE bem-sucedida → 1 entrada em `api_audit_log` (fire-and-forget, p99 ≤500ms)

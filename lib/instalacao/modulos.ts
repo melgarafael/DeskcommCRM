@@ -40,13 +40,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "@/lib/logger";
 
 /**
- * `banco_externo` liga/desliga por uma linha em `platform_config` (ver o resto deste arquivo).
- * `honorarios` é um MÓDULO DE TABELA (ADR-0002): a fonte da verdade é `modulos_instalados`,
- * escrita só por `fn_modulo_instalar` (`lib/modulos/service.ts`), nunca por esta tela. Os dois
- * tipos convivem na mesma lista porque é isso que `deModuloDesligado` (catálogo de tools MCP)
- * precisa: "este módulo, seja qual for o mecanismo por trás, está ligado nesta instalação?".
+ * `banco_externo` e `fluxos_atendimento` ligam/desligam por uma linha em `platform_config`
+ * (ver o resto deste arquivo). `honorarios` é um MÓDULO DE TABELA (ADR-0002): a fonte da
+ * verdade é `modulos_instalados`, escrita só por `fn_modulo_instalar` (`lib/modulos/service.ts`),
+ * nunca por esta tela. Os dois mecanismos convivem na mesma lista porque é isso que
+ * `deModuloDesligado` (catálogo de tools MCP) precisa: "este módulo, seja qual for o mecanismo
+ * por trás, está ligado nesta instalação?".
  */
-export const MODULOS_OPCIONAIS = ["banco_externo", "honorarios"] as const;
+export const MODULOS_OPCIONAIS = ["banco_externo", "fluxos_atendimento", "honorarios"] as const;
 export type ModuloOpcional = (typeof MODULOS_OPCIONAIS)[number];
 
 /** Os módulos de tabela do ADR-0002 dentro de `MODULOS_OPCIONAIS` — resolvidos por
@@ -60,12 +61,19 @@ const MODULOS_DE_TABELA = ["honorarios"] as const satisfies readonly ModuloOpcio
  * gravar em `platform_config` com uma chave que não existe — silenciosamente, porque
  * `CHAVE_DO_MODULO[modulo]` seria `undefined`.
  */
-export const MODULOS_OPCIONAIS_POR_FLAG = ["banco_externo"] as const satisfies readonly ModuloOpcional[];
+export const MODULOS_OPCIONAIS_POR_FLAG = [
+  "banco_externo",
+  "fluxos_atendimento",
+] as const satisfies readonly ModuloOpcional[];
 
 /** A linha de cada módulo por FLAG em `platform_config`. O formato é o da CHECK da 0341.
  * Não inclui os módulos de tabela — esses vêm de `modulos_instalados`. */
 export const CHAVE_DO_MODULO: Record<(typeof MODULOS_OPCIONAIS_POR_FLAG)[number], string> = {
   banco_externo: "MODULO_BANCO_EXTERNO",
+  // Doc 64 (a): os fluxos de atendimento do #1130 entram desligados. A IA passa
+  // a conduzir um roteiro de perguntas no turno — quem não liga não carrega o
+  // caminho novo (`lib/agent-engine/agent/roteiro-no-turno.ts`).
+  fluxos_atendimento: "MODULO_FLUXOS_DE_ATENDIMENTO",
 };
 
 const LIGADO = "ligado";
@@ -139,6 +147,44 @@ async function modulosDeTabelaAtivos(
 export async function moduloLigado(db: SupabaseClient, modulo: ModuloOpcional): Promise<boolean> {
   return (await modulosLigados(db)).includes(modulo);
 }
+
+/**
+ * Quanto tempo o turno do agente confia na última leitura da chave. O motor lia
+ * `platform_config` a cada mensagem recebida (revisão do PR 1 dos fluxos:
+ * +1 ida ao banco por turno, em toda instalação, para a minoria que liga o
+ * módulo). O custo do memo: desligar a chave vale para o turno em até 30 s.
+ */
+export const MEMO_DO_MODULO_MS = 30_000;
+
+const memoDoModulo = new Map<ModuloOpcional, { ligado: boolean; ate: number }>();
+
+/**
+ * `moduloLigado` com memo de processo — para o caminho QUENTE (o turno do
+ * agente). Telas e rotas seguem lendo o banco a cada vez.
+ */
+export async function moduloLigadoComMemo(
+  db: SupabaseClient,
+  modulo: ModuloOpcional,
+  agora: number = Date.now(),
+): Promise<boolean> {
+  const memo = memoDoModulo.get(modulo);
+  if (memo !== undefined && memo.ate > agora) return memo.ligado;
+  const ligado = await moduloLigado(db, modulo);
+  memoDoModulo.set(modulo, { ligado, ate: agora + MEMO_DO_MODULO_MS });
+  return ligado;
+}
+
+/** Só para teste: esquece o memo. */
+export function esquecerMemoDosModulos(): void {
+  memoDoModulo.clear();
+}
+
+/**
+ * Módulos que existem no código mas ainda NÃO podem ser ligados por quem opera:
+ * a capacidade chega em partes e a tela que a torna usável ainda não entrou.
+ * `fluxos_atendimento`: o PR 3 do port do #1130 (telas) tira daqui.
+ */
+export const MODULOS_AINDA_NAO_LIGAVEIS: readonly ModuloOpcional[] = ["fluxos_atendimento"];
 
 /**
  * Grava a escolha de quem administra a instalação. `semeado_do_env = false`

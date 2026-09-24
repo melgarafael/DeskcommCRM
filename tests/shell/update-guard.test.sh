@@ -92,6 +92,12 @@ case " $* " in
   # devolver algo: com PREV_IMAGE vazio o rollback nem seria tentado, e o teste
   # do agente passaria mesmo com o defeito de volta.
   *" images "*) printf 'sha256:deadbeef\n' ;;
+  # Caso 13: o aviso de manutenção de uma atualização anterior ficou de pé
+  # (AVISO_PRESO=1), e a imagem local é a mesma do registro (IMAGEM_EM_DIA=1) —
+  # a combinação que leva o update.sh à saída "nada a atualizar".
+  *" ps "*) [ "${AVISO_PRESO:-0}" = "1" ] && printf 'deskcomm-manutencao\n' ;;
+  *" image inspect "*) [ "${IMAGEM_EM_DIA:-0}" = "1" ] && printf 'x@sha256:aaa\n' ;;
+  *" imagetools inspect "*) [ "${IMAGEM_EM_DIA:-0}" = "1" ] && printf 'Digest: sha256:aaa\n' ;;
   # Aplicação do baseline. Só com BASELINE_ROTEIRO no ambiente (caso 4c): cada
   # chamada imprime a próxima passada do roteiro. Fora dele, sai limpa como antes.
   *" -f /b.sql "*)
@@ -729,6 +735,25 @@ check "caminho feliz: a saída não fala em arquitetura nem em construção loca
 # depois do `up -d` que pode falhar, não em outro lugar qualquer.
 check "install.sh chama a recuperação depois de um up -d que pode falhar" \
   bash -c "grep -A1 'if ! dc up -d; then' '$REPO_ROOT/hostgator-setup-kit/install.sh' | grep -q 'construir_aqui_e_subir'"
+
+echo "── 13. \"Nada a atualizar\" derruba o aviso de manutenção preso (PR #1524)"
+# Medido numa VPS real: a atualização morreu depois de subir o aviso, com a tag
+# nova já no disco. Toda execução seguinte caía na saída antecipada e o aviso —
+# que segura o apelido de rede `app` — seguia respondendo 503 por 6h30.
+cd "$PROJ" || exit 1
+: > "$DOCKER_LOG"
+IMAGEM_EM_DIA=1 AVISO_PRESO=1 run_update --to v1.1.0
+check "sai com sucesso pela saída \"nada a atualizar\"" test "$RC" -eq 0
+check "  e a saída é mesmo a antecipada" grep -q "Nada a atualizar" "$OUTFILE"
+check "  não rodou o backup (não virou atualização)" test ! -f "$BACKUP_MARK"
+check "  removeu o contêiner do aviso" grep -q "rm -f deskcomm-manutencao" "$DOCKER_LOG"
+check "  e contou a quem opera" grep -q "aviso de manutenção preso" "$OUTFILE"
+check "  e ensina a concluir com --force" grep -q -- "--to v1.1.0 --force" "$OUTFILE"
+: > "$DOCKER_LOG"
+IMAGEM_EM_DIA=1 run_update --to v1.1.0
+check "sem aviso de pé: não mexe em contêiner nenhum" \
+  bash -c "! grep -q 'rm -f deskcomm-manutencao' '$DOCKER_LOG'"
+check "  e não fala de aviso preso" bash -c "! grep -q 'aviso de manutenção preso' '$OUTFILE'"
 
 if [ "$FAILS" -eq 0 ]; then echo "OK — todas as provas passaram."; else echo "FALHOU — $FAILS prova(s)."; fi
 exit $((FAILS > 0))

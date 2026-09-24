@@ -2,7 +2,7 @@
  * Memória Geral da Org (Fase 1 do épico harness — spec 2026-07-23).
  *
  * Doc-mãe versionado+ponteiro (mesmo padrão do playbook 0004) + entradas de
- * aprendizado (manual | flywheel aprovado). Resolvida no início de CADA run —
+ * aprendizado (manual | flywheel aprovado | agent, via MCP). Resolvida no início de CADA run —
  * sem cache de processo, de propósito: publicar ⇒ próximo turno já vê.
  * O bloco renderizado entra no PREFIXO ESTÁVEL: determinístico byte-a-byte
  * para a mesma versão+entries (ordem estável por created_at, id).

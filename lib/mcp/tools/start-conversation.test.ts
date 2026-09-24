@@ -15,8 +15,16 @@ vi.mock("@/lib/messaging/open-shared-contact-conversation", () => ({
 vi.mock("@/app/api/v1/messages/_handler", () => ({
   sendMessageHandler: vi.fn(),
 }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) }));
+vi.mock("@/lib/messaging/ritmo-do-envio-por-token", () => ({
+  depsDoRitmo: vi.fn(async () => ({})),
+  segurarEnvioPorToken: vi.fn(async () => null),
+  registrarEnvioPorToken: vi.fn(async () => {}),
+}));
 
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
+import { ApiError } from "@/lib/api/types";
+import { registrarEnvioPorToken, segurarEnvioPorToken } from "@/lib/messaging/ritmo-do-envio-por-token";
 import { openSharedContactConversation } from "@/lib/messaging/open-shared-contact-conversation";
 import type { McpContext } from "@/lib/mcp/types";
 
@@ -24,6 +32,8 @@ import { crmStartConversationAndSend } from "./start-conversation";
 
 const mockedOpen = vi.mocked(openSharedContactConversation);
 const mockedSend = vi.mocked(sendMessageHandler);
+const mockedSegurar = vi.mocked(segurarEnvioPorToken);
+const mockedRegistrar = vi.mocked(registrarEnvioPorToken);
 
 const ORG_ID = "11111111-1111-4111-8111-111111111111";
 const SESSION_ID = "22222222-2222-4222-8222-222222222222";
@@ -76,6 +86,54 @@ function makeCtx(state: IdemState): McpContext {
 beforeEach(() => {
   mockedOpen.mockReset();
   mockedSend.mockReset();
+  mockedSegurar.mockReset();
+  mockedSegurar.mockResolvedValue(null);
+  mockedRegistrar.mockClear();
+});
+
+describe("crm_start_conversation_and_send — freio anti-ban do número", () => {
+  it("passa pelo freio ANTES de enviar e conta o envio que saiu", async () => {
+    const segurado = { channelSessionId: SESSION_ID };
+    mockedSegurar.mockResolvedValue(segurado);
+    mockedOpen.mockResolvedValue({ conversation_id: CONVERSATION_ID, contact_id: CONTACT_ID });
+    mockedSend.mockResolvedValue({
+      id: MESSAGE_ID,
+      status: "sent",
+      external_id: "wamid.abc",
+      sent_at: "2026-09-14T12:00:00.000Z",
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    await crmStartConversationAndSend.handler(
+      { channel_session_id: SESSION_ID, contact_id: CONTACT_ID, body: "Oi!", type: "text" } as never,
+      makeCtx({ cached: null, inserts: [] }),
+    );
+
+    expect(mockedSegurar).toHaveBeenCalledWith(expect.anything(), {
+      organizationId: ORG_ID,
+      channelSessionId: SESSION_ID,
+      requestId: "req-1",
+    });
+    expect(mockedSegurar.mock.invocationCallOrder[0]!).toBeLessThan(
+      mockedOpen.mock.invocationCallOrder[0]!,
+    );
+    expect(mockedRegistrar).toHaveBeenCalledWith(expect.anything(), ORG_ID, segurado, "sent");
+  });
+
+  it("quando o freio recusa, a conversa NÃO é aberta e a mensagem NÃO sai", async () => {
+    mockedSegurar.mockRejectedValue(new ApiError(429, "rate_limited", undefined, "req-1"));
+    mockedOpen.mockResolvedValue({ conversation_id: CONVERSATION_ID, contact_id: CONTACT_ID });
+
+    await expect(
+      crmStartConversationAndSend.handler(
+        { channel_session_id: SESSION_ID, contact_id: CONTACT_ID, body: "Oi!", type: "text" } as never,
+        makeCtx({ cached: null, inserts: [] }),
+      ),
+    ).rejects.toBeInstanceOf(ApiError);
+    expect(mockedOpen).not.toHaveBeenCalled();
+    expect(mockedSend).not.toHaveBeenCalled();
+    expect(mockedRegistrar).not.toHaveBeenCalled();
+  });
 });
 
 describe("crm_start_conversation_and_send", () => {

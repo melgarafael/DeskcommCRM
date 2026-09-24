@@ -1,7 +1,7 @@
 /**
  * GET/POST /api/v1/honorarios/contratos — módulo opcional de advocacia (ADR-0002).
  *
- * Ler exige `viewer`; criar exige `manager` (mesma RLS da migration 0385: dinheiro não é coisa
+ * Ler exige `viewer`; criar exige `manager` (mesma RLS da migration 0398: dinheiro não é coisa
  * que `agent` configure). Um 42P01 (tabela ausente — módulo não instalado) vira uma mensagem
  * clara, nunca um 500 cru.
  */

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   ATRASO_MAXIMO_MS,
   ATRASO_MINIMO_MS,
+  acenderDigitando,
   calcularAtrasoHumano,
   esperarComoHumano,
 } from "@/lib/agent-engine/agent/atraso-humano";
@@ -153,5 +154,30 @@ describe("esperarComoHumano", () => {
     const texto = "Uma resposta de tamanho médio para o cliente do sítio.";
     const ms = await esperarComoHumano({ texto, sleep: async () => undefined, log: logDeTeste() });
     expect(ms).toBe(calcularAtrasoHumano(texto));
+  });
+});
+
+describe("acenderDigitando — presença no início do turno", () => {
+  it("chama o canal e NÃO espera a resposta dele", () => {
+    let resolver: () => void = () => {};
+    const sinalizarDigitando = vi.fn(
+      () => new Promise<void>((r) => {
+        resolver = r;
+      }),
+    );
+
+    // Síncrono de propósito: o turno segue para o modelo sem pagar a ida à rede.
+    expect(acenderDigitando(sinalizarDigitando, logDeTeste())).toBeUndefined();
+    expect(sinalizarDigitando).toHaveBeenCalledTimes(1);
+    resolver();
+  });
+
+  it("recusa do canal vira warn, nunca rejeição solta", async () => {
+    const log = logDeTeste();
+    acenderDigitando(() => Promise.reject(new Error("waha_500")), log);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(log.linhas).toEqual([
+      { nivel: "warn", msg: 'não consegui sinalizar "digitando" (segue o turno)' },
+    ]);
   });
 });

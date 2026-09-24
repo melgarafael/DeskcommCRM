@@ -91,6 +91,30 @@ MESMA_TAG=""
 [ "$CURRENT_TAG" = "$TARGET_TAG" ] && MESMA_TAG=1
 
 if [ -n "$MESMA_TAG" ] && [ -z "$FORCE" ] && ! image_desatualizada; then
+  # ⛔ O AVISO TAMBÉM DESCE AQUI — esta saída é anterior ao `manutencao_desce`
+  # do fluxo normal (mais abaixo) e ao `restaurar_servicos` do caminho de erro.
+  #
+  # MEDIDO numa VPS real: uma atualização morreu logo depois de `manutencao_sobe`
+  # (tag nova já no disco, imagem antiga ainda rodando). O aviso ficou de pé com
+  # o apelido de rede `app`, e o Caddy passou a entregar ELE — 503 em tudo:
+  # site, crons e webhook do WAHA. O app estava saudável o tempo todo.
+  #
+  # A volta por cima não existia: como o `git checkout` da tag JÁ tinha
+  # acontecido, toda execução seguinte caía nesta linha, dizia "nada a
+  # atualizar" e saía — sem nunca tocar no aviso. O CRM ficou 6h30 fora do ar
+  # e nem o botão da tela voltava, porque o agente do host também levava 503.
+  #
+  # `manutencao_desce` é `docker rm -f ... || true`: idempotente, custa nada
+  # quando não há aviso nenhum de pé, que é o caso comum desta saída.
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$NOME_DA_MANUTENCAO"; then
+    manutencao_desce
+    c_ylw "⚠ Havia um aviso de manutenção preso de uma atualização anterior — removido."
+    c_ylw "  Enquanto ele estava de pé, o CRM respondia 503 para todo mundo."
+    # Aviso preso = a execução anterior morreu no meio (banco e/ou imagem pela
+    # metade); "nada a atualizar" sozinho deixaria o app na imagem antiga.
+    c_ylw "  A atualização anterior não terminou. Para concluí-la:"
+    c_ylw "    bash hostgator-setup-kit/update.sh --to $TARGET_TAG --force"
+  fi
   c_grn "✓ Você já está na versão mais recente ($TARGET_TAG). Nada a atualizar."
   exit 0
 fi
@@ -139,7 +163,7 @@ fi
 # ── 2. Backup de segurança ANTES de tocar no banco ───────────────────────────
 if [ -z "$SKIP_BACKUP" ]; then
   step "Backup de segurança (antes de mexer no banco)"
-  if bash "$(dirname "$0")/backup.sh"; then
+  if bash "$KIT_DIR/backup.sh"; then
     c_grn "✓ backup feito — se algo der errado, dá pra restaurar (restore.sh)."
   else
     if [ -n "${DESKCOMM_AGENT_REPORT:-}" ] || [ ! -t 0 ]; then

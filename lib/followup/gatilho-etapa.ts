@@ -244,7 +244,7 @@ export function createSupabaseGatilhoEtapaDb(admin: SupabaseClient): GatilhoEtap
     async carregaPointersDeEtapa(orgId) {
       const { data, error } = await admin
         .from("followup_flow_pointers")
-        .select("id, organization_id, active_version_id, trigger_config")
+        .select("id, organization_id, active_version_id, trigger_config, surface")
         .eq("organization_id", orgId)
         .eq("status", "active")
         .not("active_version_id", "is", null);
@@ -256,8 +256,11 @@ export function createSupabaseGatilhoEtapaDb(admin: SupabaseClient): GatilhoEtap
         organization_id: string;
         active_version_id: string | null;
         trigger_config: unknown;
+        surface?: string | null;
       }>) {
-        if (!row.active_version_id) continue;
+        // Roteiro de atendimento (0394) é do turno, nunca do relógio: o banco
+        // já o prende em gatilho manual, e este corte é a segunda porta.
+        if (!row.active_version_id || row.surface === "atendimento") continue;
         // O parse é o MESMO schema do publish — um `trigger_config` que não
         // passa nele não arma nada, em vez de armar torto.
         const parsed = triggerConfigSchema.safeParse(row.trigger_config);
