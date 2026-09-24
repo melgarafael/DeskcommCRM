@@ -181,6 +181,41 @@ function normalizarTexto(s: string): string {
     .trim();
 }
 
+/** Texto de um valor de `custom_fields` (mesmo critério do bloco de estado). */
+function valorComoTexto(valor: unknown): string | null {
+  if (typeof valor === "string" && valor.trim() !== "") return valor.trim();
+  if (typeof valor === "boolean") return valor ? "sim" : "não";
+  if (typeof valor === "number" && Number.isFinite(valor)) return String(valor);
+  return null;
+}
+
+/**
+ * Dados JÁ CONHECIDOS do contato, indexados pela chave do campo: cada chave de
+ * `custom_fields` + o `nome` de `contacts.name` (que vence o custom_field, por
+ * ser o nome do WhatsApp já resolvido).
+ *
+ * É a fonte que o motor SOMA aos valores de `contact_flow_data` para calcular as
+ * pendências — a regra é: dado já gravado (em qualquer das duas origens) NÃO é
+ * perguntado de novo. Sem isto, o fluxo reperguntava o nome já conhecido do
+ * contato (medido ao vivo: saudou "Vander" e depois perguntou "Como você se
+ * chama?").
+ */
+export function valoresConhecidosDoContato(
+  contato: { name?: string | null; custom_fields?: unknown } | null | undefined,
+): Record<string, string> {
+  const saida: Record<string, string> = {};
+  const cf = contato?.custom_fields;
+  if (cf !== null && cf !== undefined && typeof cf === "object" && !Array.isArray(cf)) {
+    for (const [chave, valor] of Object.entries(cf as Record<string, unknown>)) {
+      const t = valorComoTexto(valor);
+      if (t !== null) saida[chave] = t;
+    }
+  }
+  const nome = typeof contato?.name === "string" ? contato.name.trim() : "";
+  if (nome !== "") saida.nome = nome;
+  return saida;
+}
+
 export interface FluxoComGatilhos {
   id: string;
   nome: string;
@@ -347,6 +382,26 @@ export async function carregarEstadoDeAtendimento(
   for (const v of dados.rows) {
     if (v.value !== null) valores[v.field_key] = v.value;
     tentativas[v.field_key] = v.attempts;
+  }
+
+  // DADO JÁ CONHECIDO NÃO SE PERGUNTA DE NOVO: soma aos valores do fluxo os
+  // dados gravados no CONTATO (nome do WhatsApp + `custom_fields`), apenas para
+  // as chaves que pertencem a este fluxo e ainda não têm valor. O valor do
+  // fluxo (`contact_flow_data`) tem precedência; a correção pedida pelo cliente
+  // continua valendo pelo caminho `permite_correcao`.
+  const contato = await db.query<{ name: string | null; custom_fields: unknown }>(
+    `select name, custom_fields from contacts
+      where organization_id = $1 and id = $2
+      limit 1`,
+    [args.organizationId, args.contactId],
+  );
+  const conhecidos = valoresConhecidosDoContato(contato.rows[0] ?? null);
+  for (const passo of checklist.checklist.passos) {
+    if (passo.kind !== "collect") continue;
+    const chave = passo.node.config.key;
+    if (valores[chave] !== undefined) continue;
+    const conhecido = conhecidos[chave];
+    if (conhecido !== undefined) valores[chave] = conhecido;
   }
   const maxTentativas =
     parsed.data.settings?.max_tentativas_pergunta ?? MAX_TENTATIVAS_PADRAO;
@@ -640,7 +695,12 @@ export async function processarInboundDoFluxo(
       const ehPendente = estado.situacao.pendentes.some((n) => n.config.key === v.campo);
       const ehCorrecao =
         !ehPendente && node.config.permite_correcao && estado.valores[v.campo] !== undefined;
-      if (!ehPendente && !ehCorrecao) continue;
+      // RESPOSTA TARDIA: a pergunta foi encerrada por não resposta (teto), mas o
+      // cliente finalmente a informou. Gravar é melhor que perder o dado — era o
+      // que acontecia (medido: CPF informado após esgotar caiu no vazio).
+      const ehEsgotada =
+        !ehPendente && estado.situacao.esgotadas.some((n) => n.config.key === v.campo);
+      if (!ehPendente && !ehCorrecao && !ehEsgotada) continue;
       // NO-OP: o valor não mudou (turno atrasado/reprocessado) — não é ruído novo.
       if (v.valor === "" || v.valor === (valoresNovos[v.campo] ?? "")) continue;
       try {
@@ -964,10 +1024,17 @@ export async function finalizarFluxoDeAtendimento(
 /**
  * ENTRADA POR GATILHO (motor): entre os fluxos ativos, qual LIGA pela mensagem
  * do cliente (palavra-gatilho). Independe do modelo e do roteador.
+ *
+ * `contactId` (opcional) liga a regra "fluxo já concluído por este contato NÃO
+ * reabre". Sem ela, uma frase-gatilho genérica ("quero uma moto") reabria a
+ * Qualificação a cada mensagem depois de ela já ter concluído — ruído de
+ * enrollment e, pior, um fluxo ativo impedindo o gatilho do PRÓXIMO fluxo (o
+ * Financiamento não abria em "prefiro financiar"). Rodar uma vez por contato é
+ * o suficiente: os valores de `contact_flow_data` persistem entre execuções.
  */
 export async function escolherFluxoPeloGatilho(
   db: pg.Pool,
-  args: { organizationId: string; texto: string | null },
+  args: { organizationId: string; texto: string | null; contactId?: string },
 ): Promise<{ id: string; nome: string } | null> {
   if (!args.texto) return null;
   const { rows } = await db.query<{ id: string; nome: string; graph: unknown }>(
@@ -979,8 +1046,25 @@ export async function escolherFluxoPeloGatilho(
         and p.status = 'active'`,
     [args.organizationId],
   );
+
+  // Fluxos que ESTE contato já concluiu — não reabrem por palavra-gatilho.
+  const concluidos = new Set<string>();
+  if (args.contactId) {
+    try {
+      const feitos = await db.query<{ pointer_id: string }>(
+        `select distinct pointer_id from followup_enrollments
+          where organization_id = $1 and contact_id = $2 and status = 'completed'`,
+        [args.organizationId, args.contactId],
+      );
+      for (const f of feitos.rows) concluidos.add(f.pointer_id);
+    } catch {
+      // best-effort: sem a lista, cai no comportamento antigo (pode reabrir).
+    }
+  }
+
   const fluxos: FluxoComGatilhos[] = [];
   for (const row of rows) {
+    if (concluidos.has(row.id)) continue;
     const parsed = flowGraphSchema.safeParse(row.graph);
     if (!parsed.success) continue;
     const gatilhos = parsed.data.settings?.gatilhos ?? [];

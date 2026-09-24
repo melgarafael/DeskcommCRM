@@ -24,6 +24,14 @@ export interface CreateVersionParams {
   /** Histórico: o agente a partir do qual a fonte nasceu (pode ser null). */
   agentId: string | null;
   sourceType: string;
+  /**
+   * Proveniência do embedding: o modelo/dimensão EFETIVAMENTE usados. A busca
+   * casa por este valor (migration 0181) — gravar o default quando a indexação
+   * usou outro provedor faria a busca recusar os próprios chunks. Ausente =
+   * default OpenAI (compatível com quem não resolveu a chave antes).
+   */
+  embeddingModel?: string;
+  embeddingDims?: number;
 }
 
 export interface CreateVersionResult {
@@ -70,8 +78,8 @@ export async function createKnowledgeVersion(
       is_active: false,
       // Proveniência: sem ela, "indexado com um modelo e consultado com outro"
       // é a falha que responde com trecho errado e nota alta.
-      embedding_model: MODELO_DE_EMBEDDING,
-      embedding_dims: DIMENSOES_DO_EMBEDDING,
+      embedding_model: params.embeddingModel ?? MODELO_DE_EMBEDDING,
+      embedding_dims: params.embeddingDims ?? DIMENSOES_DO_EMBEDDING,
     })
     .select("id, version_number")
     .single();

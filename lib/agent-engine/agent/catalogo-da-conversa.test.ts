@@ -65,6 +65,21 @@ describe('motoEscolhidaPeloCliente', () => {
   it('sem escolha clara ⇒ undefined (nunca chuta)', () => {
     expect(motoEscolhidaPeloCliente('Sobre a loja...', 'Sao paulo', CATALOGO, [])).toBeUndefined();
   });
+
+  it('pergunta/objeção sobre a moto NÃO é escolha (medido ao vivo 2026-09-22)', () => {
+    expect(motoEscolhidaPeloCliente('', 'E a CB 300? Achei meio caro', CATALOGO, [])).toBeUndefined();
+    expect(motoEscolhidaPeloCliente('', 'Tem como melhorar o preço?', CATALOGO, [])).toBeUndefined();
+    expect(motoEscolhidaPeloCliente('', 'Vou pensar melhor', CATALOGO, [])).toBeUndefined();
+    expect(
+      motoEscolhidaPeloCliente('', 'Vocês aceitam minha moto na troca?', CATALOGO, []),
+    ).toBeUndefined();
+  });
+
+  it('sinal positivo vence a pergunta: "quero a CB 300, quanto fica?" é escolha', () => {
+    expect(motoEscolhidaPeloCliente('', 'quero a CB 300, quanto fica?', CATALOGO, [])?.nome).toBe(
+      'CB 300',
+    );
+  });
 });
 
 describe('carregarCatalogoDaConversa', () => {
@@ -104,6 +119,8 @@ describe('carregarCatalogoDaConversa', () => {
       motos: [],
       detalhadas: [],
       escolhida: null,
+      referencia: null,
+      objecao: null,
     });
   });
 });
@@ -113,6 +130,8 @@ describe('salvarCatalogoDaConversa', () => {
     motos: { nome: string }[];
     detalhadas: string[];
     escolhida: { nome: string } | null;
+    referencia: { nome: string } | null;
+    objecao: { moto: string; fase: string } | null;
   } {
     return JSON.parse(query.mock.calls[0]![1]![2] as string);
   }
@@ -123,7 +142,7 @@ describe('salvarCatalogoDaConversa', () => {
       { query } as never,
       'org',
       'conv',
-      { motos: [TWISTER], detalhadas: [], escolhida: null },
+      { motos: [TWISTER], detalhadas: [], escolhida: null, referencia: null, objecao: null },
       [CB300, TWISTER],
       'CB 300 F Twister',
     );
@@ -139,7 +158,7 @@ describe('salvarCatalogoDaConversa', () => {
       { query } as never,
       'org',
       'conv',
-      { motos: [CB300, TWISTER], detalhadas: [], escolhida: null },
+      { motos: [CB300, TWISTER], detalhadas: [], escolhida: null, referencia: null, objecao: null },
       [],
       'CB 300 F Twister',
       TWISTER,
@@ -153,7 +172,7 @@ describe('salvarCatalogoDaConversa', () => {
       { query } as never,
       'org',
       'conv',
-      { motos: [CB300, TWISTER], detalhadas: ['cb 300 f twister'], escolhida: TWISTER },
+      { motos: [CB300, TWISTER], detalhadas: ['cb 300 f twister'], escolhida: TWISTER, referencia: null, objecao: null },
       [],
       null,
     );
@@ -166,11 +185,78 @@ describe('salvarCatalogoDaConversa', () => {
       { query } as never,
       'org',
       'conv',
-      { motos: [CB300, TWISTER], detalhadas: [], escolhida: TWISTER },
+      { motos: [CB300, TWISTER], detalhadas: [], escolhida: TWISTER, referencia: null, objecao: null },
       [CB300],
       null,
       null,
     );
     expect(payloadDe(query).escolhida).toBeNull();
+  });
+
+  it('grava a REFERÊNCIA e a preserva quando o turno não manda outra', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    // 1º turno: cliente pediu a Twister → vira referência.
+    await salvarCatalogoDaConversa(
+      { query } as never,
+      'org',
+      'conv',
+      { motos: [], detalhadas: [], escolhida: null, referencia: null, objecao: null },
+      [TWISTER],
+      null,
+      undefined,
+      TWISTER,
+    );
+    expect(payloadDe(query).referencia?.nome).toBe('CB 300 F Twister');
+
+    // 2º turno (outra query): sem nova referência → PRESERVA a atual.
+    const query2 = vi.fn().mockResolvedValue({ rows: [] });
+    await salvarCatalogoDaConversa(
+      { query: query2 } as never,
+      'org',
+      'conv',
+      { motos: [TWISTER], detalhadas: [], escolhida: null, referencia: TWISTER, objecao: null },
+      [CB300],
+      null,
+      undefined,
+      undefined,
+    );
+    expect(payloadDe(query2).referencia?.nome).toBe('CB 300 F Twister');
+  });
+
+  it('grava e limpa o estado de OBJEÇÃO (C-071)', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    await salvarCatalogoDaConversa(
+      { query } as never,
+      'org',
+      'conv',
+      { motos: [], detalhadas: [], escolhida: null, referencia: null, objecao: null },
+      [],
+      null,
+      undefined,
+      undefined,
+      { moto: 'biz 125', fase: 'persuadir' },
+    );
+    expect(payloadDe(query).objecao).toEqual({ moto: 'biz 125', fase: 'persuadir' });
+
+    // A ferramenta de semelhantes LIMPA a objeção (null explícito).
+    const query2 = vi.fn().mockResolvedValue({ rows: [] });
+    await salvarCatalogoDaConversa(
+      { query: query2 } as never,
+      'org',
+      'conv',
+      {
+        motos: [],
+        detalhadas: [],
+        escolhida: null,
+        referencia: null,
+        objecao: { moto: 'biz 125', fase: 'checar' },
+      },
+      [],
+      null,
+      undefined,
+      undefined,
+      null,
+    );
+    expect(payloadDe(query2).objecao).toBeNull();
   });
 });

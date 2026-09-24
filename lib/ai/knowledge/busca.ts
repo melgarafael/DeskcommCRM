@@ -16,7 +16,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { embedText } from "@/lib/ai/embed";
-import { MODELO_DE_EMBEDDING } from "@/lib/ai/embeddings/chave";
 
 export interface TrechoEncontrado {
   chunk_id: string;
@@ -67,7 +66,7 @@ export async function buscarConhecimento(
   }
 
   const embed = deps?.embed ?? embedText;
-  const { embedding } = await embed(p.pergunta, {
+  const { embedding, model } = await embed(p.pergunta, {
     organizationId: p.organizationId,
     ponto: "embedding_consultar",
   });
@@ -84,7 +83,7 @@ export async function buscarConhecimento(
     p_embedding: `[${embedding.join(",")}]`,
     p_k: p.topK,
     p_threshold: PISO,
-    p_embedding_model: MODELO_DE_EMBEDDING,
+    p_embedding_model: model,
   });
 
   if (error) {

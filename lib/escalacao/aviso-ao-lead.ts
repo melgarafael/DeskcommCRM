@@ -40,13 +40,15 @@
  * (`conversations.last_handoff_reason`), então a frase o respeita em vez de
  * escolher um genérico que serve mal aos dois.
  *
- * ## Por que o texto muda com a DISPONIBILIDADE
+ * ## Por que o texto NÃO conta o estado da equipe
  *
- * Mesma razão de `fraseDeExpectativa` em `./disponibilidade.ts`, e a mesma
- * fonte: prometer "alguém já vai te atender" para uma conta que não tem NINGUÉM
- * configurado é a pior primeira impressão possível num produto self-host, e é o
- * estado real de toda instalação recém-feita. A diferença é o destinatário —
- * lá a frase é INSTRUÇÃO ao modelo, aqui é FALA ao cliente.
+ * A leitura de disponibilidade (`expectativaDeAtendimento`) continua existindo e
+ * alimenta a INSTRUÇÃO ao modelo (`./disponibilidade.ts`), mas NÃO vai para a
+ * fala do cliente: falar de "fila", "ninguém disponível" ou prazo ao cliente é
+ * deselegante e revela a operação. A frase é sempre acolhedora — "vou passar seu
+ * atendimento para o responsável; ele entra em contato logo menos por aqui
+ * mesmo" — variando só a redação (gate anti-spinning). O parâmetro `quem` ainda
+ * escolhe o CONJUNTO de redações, mas nenhuma delas revela o estado real.
  */
 
 import { createHash } from "node:crypto";
@@ -118,41 +120,45 @@ const ABERTURAS: Record<MotivoDoAviso, readonly string[]> = {
     "Ok! Encerro os envios automáticos deste canal agora mesmo.",
   ],
   pediu_humano: [
-    "Claro! Já estou chamando alguém da equipe para falar com você.",
-    "Sem problema — acabei de acionar uma pessoa do time para continuar daqui.",
-    "Perfeito. Passei sua conversa para um atendente humano agora.",
+    "Claro! Vou passar seu atendimento para o responsável.",
+    "Sem problema — já vou passar seu atendimento para o responsável.",
+    "Perfeito. Vou passar seu atendimento para o responsável agora.",
   ],
   orcamento_de_ia: [
-    "Vou passar seu atendimento para uma pessoa da equipe.",
-    "A partir daqui quem continua com você é alguém do time.",
-    "Estou transferindo esta conversa para um atendente humano.",
+    "Vou passar seu atendimento para o responsável.",
+    "A partir daqui quem continua com você é o responsável.",
+    "Estou passando seu atendimento para o responsável.",
   ],
   outro: [
-    "Esse caso é melhor resolvido por uma pessoa. Já acionei o time.",
-    "Prefiro não arriscar aqui: passei seu pedido para um atendente humano.",
-    "Vou pedir ajuda de alguém da equipe para cuidar disso com você.",
+    "Esse caso é melhor resolvido pelo responsável, e já vou passar seu atendimento.",
+    "Vou passar seu atendimento para o responsável, que cuida disso com você.",
+    "Deixa comigo: vou passar seu atendimento para o responsável.",
   ],
 };
 
-/** Fechos por estado da equipe. Mesmo sorteio, mesma razão. */
+/**
+ * Fechos por estado da equipe. Mesmo sorteio, mesma razão.
+ *
+ * REGRA (decisão do dono): o cliente NUNCA ouve falar de fila, indisponibilidade
+ * ou prazo — a frase é sempre acolhedora: o responsável entra em contato por aqui
+ * mesmo. Os três estados seguem variando SÓ a redação (o gate anti-spinning
+ * cruza leads); nenhum deles revela o estado real do time.
+ */
 const FECHOS = {
-  /** Ninguém configurado, ou leitura falhou: NADA de prazo. */
   sem_equipe: [
-    "Seu pedido ficou registrado e a equipe responde assim que possível.",
-    "Deixei tudo anotado; retornamos para você assim que der.",
-    "Já registrei aqui, e alguém te responde na primeira oportunidade.",
+    "Ele vai entrar em contato logo menos por aqui mesmo.",
+    "O responsável te chama por aqui mesmo daqui a pouco.",
+    "Fique tranquilo que o responsável entra em contato por aqui mesmo.",
   ],
-  /** Tem equipe, ninguém elegível agora: nada de prazo curto. */
   fora_de_expediente: [
-    "No momento ninguém está disponível, mas seu pedido ficou registrado.",
-    "Agora não tem ninguém livre; deixei sua solicitação anotada para o time.",
-    "Não há atendente disponível neste instante — sua conversa entrou na fila.",
+    "Ele vai entrar em contato por aqui mesmo, logo menos.",
+    "O responsável te responde por aqui mesmo em breve.",
+    "Pode ficar tranquilo: o responsável entra em contato por aqui mesmo.",
   ],
-  /** Há gente elegível: pode convidar a aguardar. */
   com_equipe: [
-    "É só aguardar um instante aqui na conversa.",
-    "Fica por aqui que já te respondem.",
-    "Aguarde só um momento nesta conversa, por favor.",
+    "Ele entra em contato por aqui mesmo, logo menos.",
+    "O responsável fala com você por aqui mesmo daqui a pouco.",
+    "Fique de olho aqui no WhatsApp, que o responsável te chama.",
   ],
 } as const;
 

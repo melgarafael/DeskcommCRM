@@ -42,6 +42,41 @@ function redactArgs(args: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
+/**
+ * O resultado de uma tool é um ERRO "soft" — devolvido como valor, não lançado?
+ *
+ * Várias tools (ex.: `crm_query_external_data`) sinalizam falha de NEGÓCIO no
+ * próprio retorno (`{ erro: "filtro_sem_valor", mensagem }`) em vez de lançar.
+ * O `success` da auditoria era `true` para QUALQUER retorno, então uma consulta
+ * que não foi feita aparecia como bem-sucedida nas métricas. Aqui a gente lê o
+ * resultado e devolve o código do erro (ou `null` quando é sucesso).
+ *
+ * Convenções observadas no repo:
+ *   - `{ erro: "codigo", mensagem }`           → erro
+ *   - `{ ok: false, error: { code, message } }` → erro
+ *   - `{ error: "..." }`                        → erro
+ */
+export function erroDeResultadoDaTool(result: unknown): string | null {
+  if (typeof result !== "object" || result === null) return null;
+  const r = result as Record<string, unknown>;
+
+  if (typeof r.erro === "string" && r.erro.trim() !== "") return r.erro.trim();
+
+  if (r.ok === false) {
+    const e = r.error;
+    if (typeof e === "string" && e.trim() !== "") return e.trim();
+    if (e !== null && typeof e === "object") {
+      const code = (e as { code?: unknown }).code;
+      if (typeof code === "string" && code.trim() !== "") return code.trim();
+    }
+    return "ok_false";
+  }
+
+  if (typeof r.error === "string" && r.error.trim() !== "") return r.error.trim();
+
+  return null;
+}
+
 export async function auditMcpToolCall(input: AuditMcpToolCallInput): Promise<void> {
   const { ctx, toolName, args, durationMs, success, errorMessage, resultSummary } = input;
 

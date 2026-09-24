@@ -48,7 +48,7 @@ export const TOOLS_GOVERNANCA = declararTools([
   {
     name: "crm_request_human_handoff",
     category: "handoff",
-    rotulo: "Chamar um atendente humano",
+    rotulo: "Chamar um consultor responsável",
     explicacao:
       "Interrompe o atendimento automático e chama uma pessoa, entregando um resumo do que já aconteceu na conversa.",
     oQueToca: "Atendimento",

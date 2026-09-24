@@ -9,12 +9,11 @@
  * que sim.
  */
 
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { embed } from "ai";
 
 import {
-  DIMENSOES_DO_EMBEDDING,
-  MODELO_DE_EMBEDDING,
   resolverChaveDeEmbedding,
   type ChaveDeEmbedding,
   type PontoDeEmbedding,
@@ -66,22 +65,28 @@ export async function embedText(
     throw new SemChaveDeEmbeddingError(opts.organizationId);
   }
 
-  const modelId = String(opts.model ?? MODELO_DE_EMBEDDING);
+  const provider = chave.provider;
+  const modelId = String(opts.model ?? chave.model);
+  const dims = chave.dims;
 
   // COM gateway: a string `openai/text-embedding-3-small` é roteada por ele, que
   // lê `AI_GATEWAY_API_KEY` do process.env. Headers vão junto p/ observabilidade
   // por tenant + ZDR.
   //
-  // SEM gateway: precisa ser o provider OpenAI EXPLÍCITO. Passar a string com
-  // barra aqui não cai no OpenAI direto — no AI SDK, id com barra é resolvido
-  // pelo gateway da Vercel mesmo sem chave, entrando no plano anônimo, cujo teto
-  // devolve `GatewayRateLimitError` e derruba a busca na base de conhecimento.
+  // SEM gateway: precisa ser o provider EXPLÍCITO. Passar a string com barra aqui
+  // não cai no provedor direto — no AI SDK, id com barra é resolvido pelo gateway
+  // da Vercel mesmo sem chave, entrando no plano anônimo, cujo teto devolve
+  // `GatewayRateLimitError` e derruba a busca na base de conhecimento.
   const resolvido = chave.viaGateway
     ? modelId
-    : createOpenAI({
-        apiKey: chave.apiKey ?? "",
-        ...(chave.baseUrl ? { baseURL: chave.baseUrl } : {}),
-      }).textEmbeddingModel(modelId.replace(/^openai\//, ""));
+    : provider === "google"
+      ? createGoogleGenerativeAI({ apiKey: chave.apiKey ?? "" }).textEmbeddingModel(
+          modelId.replace(/^google\//, ""),
+        )
+      : createOpenAI({
+          apiKey: chave.apiKey ?? "",
+          ...(chave.baseUrl ? { baseURL: chave.baseUrl } : {}),
+        }).textEmbeddingModel(modelId.replace(/^openai\//, ""));
 
   const result = await embed({
     model: resolvido,
@@ -89,15 +94,20 @@ export async function embedText(
     headers: chave.viaGateway
       ? gatewayHeaders({ organizationId: opts.organizationId })
       : undefined,
+    // O Google escolhe a dimensão na chamada (MRL). Fixamos na do contrato
+    // (1536) para a coluna `vector` não precisar migrar ao trocar de provedor.
+    ...(provider === "google" && !chave.viaGateway
+      ? { providerOptions: { google: { outputDimensionality: dims } } }
+      : {}),
   });
 
   // Dimensão asserida a cada chamada: divergir de modelo quebra o recall em
   // SILÊNCIO (os vetores deixam de ser comparáveis), e uma chamada recusada é
   // infinitamente melhor que um acervo que responde errado com nota alta.
-  if (result.embedding.length !== DIMENSOES_DO_EMBEDDING) {
+  if (result.embedding.length !== dims) {
     throw new Error(
-      `embedding com ${result.embedding.length} dimensões, esperado ${DIMENSOES_DO_EMBEDDING} ` +
-        `(pin de contrato ${modelId}) — recall quebraria em silêncio`,
+      `embedding com ${result.embedding.length} dimensões, esperado ${dims} ` +
+        `(contrato ${modelId}) — recall quebraria em silêncio`,
     );
   }
 

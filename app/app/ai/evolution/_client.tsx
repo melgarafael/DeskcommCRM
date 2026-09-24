@@ -80,7 +80,7 @@ const SIGNIFICA_MUDANCAS =
  * frase entrega a CONSEQUÊNCIA (leia como estimativa) e para por aí.
  */
 const SIGNIFICA_AJUDA =
-  "Conversas que o agente passou para um atendente humano, a cada 100 mensagens recebidas. Leia como estimativa: no geral o mesmo caso conta uma vez só, mesmo que o cliente peça ajuda várias vezes, mas em parte dos atendimentos ele pode contar mais de uma.";
+  "Conversas que o agente passou para um consultor responsável, a cada 100 mensagens recebidas. Leia como estimativa: no geral o mesmo caso conta uma vez só, mesmo que o cliente peça ajuda várias vezes, mas em parte dos atendimentos ele pode contar mais de uma.";
 
 /**
  * Uma ajuda em 5.000 mensagens é 0,02 a cada 100 — com uma casa decimal isso

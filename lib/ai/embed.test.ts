@@ -57,6 +57,9 @@ beforeEach(() => {
     origem: "credencial_da_organizacao",
     rotulo: "Chave principal",
     avisos: [],
+    provider: "openai",
+    model: "openai/text-embedding-3-small",
+    dims: 1536,
   });
 });
 
@@ -83,6 +86,9 @@ describe("embedText", () => {
       origem: "gateway_da_instalacao",
       rotulo: null,
       avisos: [],
+      provider: "openai",
+      model: "openai/text-embedding-3-small",
+      dims: 1536,
     });
 
     await embedText("oi", { organizationId: "org-1" });
@@ -119,6 +125,9 @@ describe("embedText", () => {
         origem: "credencial_da_organizacao",
         rotulo: "x",
         avisos: [],
+        provider: "openai",
+        model: "openai/text-embedding-3-small",
+        dims: 1536,
       };
     };
 
@@ -129,6 +138,9 @@ describe("embedText", () => {
       origem: "credencial_da_organizacao" as const,
       rotulo: "x",
       avisos: [],
+      provider: "openai" as const,
+      model: "openai/text-embedding-3-small",
+      dims: 1536,
     };
     await embedText("a", { organizationId: "org-1", chave });
     await embedText("b", { organizationId: "org-1", chave });

@@ -43,7 +43,7 @@ export const crmRequestHumanHandoff: McpToolDefinition<typeof inputShape> = {
     "destino pelo roteamento G5: atende o target_user_id se elegível agora, senão rodízio " +
     "entre os disponíveis; sem ninguém elegível vai para a fila. Registra activity + " +
     "event_log + audit. Retorna assigned_to OU queued+position. Use quando o cliente pedir " +
-    "atendente humano ou o agente identificar limite da automação.",
+    "para falar com uma pessoa (consultor responsável) ou o agente identificar limite da automação.",
   inputSchema: inputShape,
   category: "handoff",
   requiresRole: "agent",
@@ -168,7 +168,7 @@ export const crmRequestHumanHandoff: McpToolDefinition<typeof inputShape> = {
       assigned_to_user_id: assignedUserId,
       idempotent: !result.triggered && result.reason === "idempotent_5s",
       next_action:
-        "Avise o cliente em tom acolhedor que um atendente humano vai assumir em instantes.",
+        "Avise o cliente em tom acolhedor que um consultor responsável vai assumir em instantes.",
     };
   },
 };

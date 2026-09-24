@@ -159,6 +159,7 @@ import {
   normalizarNomeDeMoto,
   planoDeFotos,
   planoDeFotosDasMotos,
+  redigirColunaDoResultado,
   separarTextoApresentacao,
   type FotoComLegenda,
   type MotoDoCatalogo,
@@ -170,11 +171,23 @@ import {
   type CatalogoDaConversa,
 } from './catalogo-da-conversa';
 import { renderBlocoDeEstado } from './estado-do-atendimento';
-import { ordenarSimilares } from './similaridade';
+import {
+  ehObjecaoValor,
+  ehPedidoDesconto,
+  proximaFase,
+  renderBlocoObjecao,
+  type EstadoObjecao,
+  type FaseObjecao,
+} from './objecao-de-valor';
+import { extrairCriterios } from './extrair-criterios';
+import { carregarCatalogoDoBanco, mesclarMotos } from './catalogo-do-banco';
+import { querAlternativa, selecionarPorIntencao } from './selecao-por-intencao';
 import {
   carregarCatalogoMapeamento,
+  colunaDeSimilares,
   colunasDoCatalogo,
-  criteriosDeSimilaridade,
+  criteriosDaIA,
+  legendaParaExibicao,
   renderBlocoCatalogo,
 } from '@/lib/external-db/catalogo';
 import type { DisclosureMode } from '../guardrails/disclosure/template';
@@ -280,6 +293,13 @@ export const AGENT_TOOL_DEFS = {
       cpf: z.string().min(1).max(20).optional(),
       data_nascimento: z.string().min(1).max(20).optional(),
     }),
+  },
+  crm_offer_similar_motos: {
+    description:
+      'Pede ao SISTEMA para buscar e enviar motos SEMELHANTES à moto atual da conversa (mesmo segmento/faixa), com foto e legenda. ' +
+      'Use quando o cliente QUER VER OUTRAS OPÇÕES (está aberto a outros modelos) — o SISTEMA busca no estoque real; você NÃO consulta nada. ' +
+      'Depois de chamar, apresente as opções em `send_message` e conduza a escolha.',
+    inputSchema: z.object({}),
   },
   send_message: {
     description:
@@ -2110,6 +2130,7 @@ async function executarTurnoDoAgente(
       const alvo = await escolherFluxoPeloGatilho(pool, {
         organizationId: tenantId,
         texto: currentInboundText,
+        contactId: leadId,
       });
       if (alvo !== null) {
         await iniciarFluxoDeAtendimento(pool, {
@@ -2429,9 +2450,22 @@ async function executarTurnoDoAgente(
         ...(n.config.options !== undefined ? { options: n.config.options } : {}),
         ...(n.config.question !== undefined ? { question: n.config.question } : {}),
       }));
+      // Campos ENCERRADOS por não resposta (teto de tentativas) também vão: se a
+      // mensagem agora os informa, o valor é gravado mesmo com a pergunta fechada
+      // — antes, a resposta tardia era descartada e o dado se perdia (medido:
+      // CPF informado depois de a pergunta esgotar caiu no vazio).
+      const esgotadasDoFluxo = atendimentoDoTurno.situacao.esgotadas.map((n) => ({
+        key: n.config.key,
+        label: n.config.label,
+        type: n.config.type,
+        ...(n.config.options !== undefined ? { options: n.config.options } : {}),
+        ...(n.config.question !== undefined ? { question: n.config.question } : {}),
+      }));
       let validacoes: Array<{ campo: string; valor: string }> | undefined;
       if (
-        (pendentesDoFluxo.length > 0 || corrigiveis.length > 0) &&
+        (pendentesDoFluxo.length > 0 ||
+          corrigiveis.length > 0 ||
+          esgotadasDoFluxo.length > 0) &&
         currentInboundText !== null &&
         currentInboundText.trim() !== ''
       ) {
@@ -2446,6 +2480,7 @@ async function executarTurnoDoAgente(
           {
             perguntas: pendentesDoFluxo,
             preenchidos: corrigiveis,
+            esgotados: esgotadasDoFluxo,
             mensagens: ultimasMensagens,
           },
           { registry: deps.registry, log: runLog },
@@ -2544,14 +2579,76 @@ async function executarTurnoDoAgente(
   // a 1ª foto de cada moto citada quando o `send_message` sai sem mídia — ver
   // `fotos-do-catalogo.ts` e o gancho no `send_message.execute`.
   const catalogoDoTurno: MotoDoCatalogo[] = [];
+  // Motos que o MODELO devolveu na consulta ao catálogo NESTE turno (antes de o
+  // motor acrescentar alternativas). Serve para gravar a moto de REFERÊNCIA da
+  // conversa: se o cliente pediu UMA moto específica, ela vira a âncora do modo
+  // "alternativa" e permanece mesmo depois de o motor já ter oferecido outras.
+  let motosConsultadasPeloModelo: MotoDoCatalogo[] = [];
+  // TRAVA anti-duplicidade: as fotos automáticas (motor escolhe as motos) saem
+  // NO MÁXIMO UMA VEZ por turno. O modelo lite às vezes chama `send_message`
+  // duas vezes com o mesmo texto; sem esta trava a apresentação saía dobrada.
+  let jaApresentouAutomatico = false;
+  // C-071: a IA chamou `crm_offer_similar_motos` neste turno (o cliente quer ver
+  // outras opções)? Dispara a busca do MOTOR e limpa o estado de objeção.
+  let ofereceuSimilaresNesteTurno = false;
+  // Motos que o MOTOR ofereceu (plano de fotos) NESTE turno. Usado para gravar a
+  // moto de REFERÊNCIA quando ele ofereceu UMA só (pedido específico) — mais
+  // robusto do que depender de o modelo ter consultado uma só.
+  let motosOferecidasNesteTurno: MotoDoCatalogo[] = [];
+  // Critérios que a IA mandou na chamada da ferramenta (ex.: {marca:"Yamaha",
+  // categoria:"Naked"}). O motor GUARDA e usa para ordenar as semelhantes —
+  // vale para qualquer coluna de critério. É o 2º passo feito pelo motor, sem
+  // depender de a IA chamar a ferramenta de novo.
+  const criteriosDoTurno: Record<string, string | number> = {};
+  // Intenção classificada pela pergunta dirigida: 'pedido' | 'alternativa' | null.
+  let intencaoDoTurno: 'pedido' | 'alternativa' | null = null;
+  // TRAVA anti-loop: a pergunta dirigida à IA roda NO MÁXIMO UMA VEZ por turno.
+  // Sem isto, se algo reentrasse neste bloco, a extração seria disparada de novo.
+  let extraiuCriteriosNesteTurno = false;
+  /** Valores distintos de cada coluna de critério (para a pergunta dirigida à IA). */
+  const valoresDasColunas = (
+    motos: readonly MotoDoCatalogo[],
+    colunas: readonly string[],
+  ): Record<string, string[]> => {
+    const saida: Record<string, string[]> = {};
+    for (const coluna of colunas) {
+      const vistos = new Set<string>();
+      for (const moto of motos) {
+        const v = moto.valores?.[coluna];
+        if (typeof v === 'string' && v.trim() !== '') vistos.add(v.trim());
+        if (vistos.size >= 15) break;
+      }
+      if (vistos.size > 0) saida[coluna] = [...vistos];
+    }
+    return saida;
+  };
   // Catálogo APRESENTADO em turnos anteriores, persistido por conversa. Sem ele,
   // a escolha do cliente ("A 2025") cai no vazio quando o modelo não reconsulta o
   // catálogo naquele turno — e as fotos da moto escolhida não saem. `preview` não
   // lê nem grava (não é uma conversa real).
   const catalogoDaConversa: CatalogoDaConversa =
     preview !== undefined
-      ? { motos: [], detalhadas: [], escolhida: null }
+      ? { motos: [], detalhadas: [], escolhida: null, referencia: null, objecao: null }
       : await carregarCatalogoDaConversa(pool, tenantId, input.conversationId);
+  // C-071: OBJEÇÃO DE VALOR — a fase do turno sai da mensagem + do estado
+  // guardado (`persuadir` na 1ª objeção; `checar` quando ela persiste). Serve
+  // para injetar o bloco que diz à IA o que fazer e para gravar a fase.
+  const ehObjecaoTurno =
+    mensagemDoJob.trim() !== '' && ehObjecaoValor(mensagemDoJob);
+  // Pedido DIRETO de desconto/condição melhor: persuade na 1ª vez; se insistir,
+  // encaminha ao consultor (não oferece outras motos).
+  const descontoTurno =
+    mensagemDoJob.trim() !== '' && ehPedidoDesconto(mensagemDoJob);
+  const faseObjecaoTurno: FaseObjecao | null = ehObjecaoTurno
+    ? proximaFase(catalogoDaConversa.objecao?.fase ?? null, descontoTurno)
+    : null;
+  // "Moto atual" da conversa (âncora do modo alternativa e da ferramenta de
+  // semelhantes): a ESCOLHIDA; sem escolha, a REFERÊNCIA; sem ela, a única moto
+  // apresentada. Calculada no nível do turno — o motor e a ferramenta usam.
+  const motoAtualDaConversa: MotoDoCatalogo | null =
+    catalogoDaConversa.escolhida ??
+    catalogoDaConversa.referencia ??
+    (catalogoDaConversa.motos.length === 1 ? catalogoDaConversa.motos[0]! : null);
   // TRAVA DE DECISÃO: a moto escolhida NESTE turno (detectada no send_message) —
   // gravada junto do catálogo da conversa para valer nos turnos seguintes.
   let escolhaDetectadaNesteTurno: MotoDoCatalogo | null = null;
@@ -3038,6 +3135,31 @@ async function executarTurnoDoAgente(
         return { ok: true, gravou: Object.keys(campos) };
       },
     }),
+    // C-071: botão de intenção — a IA pede as semelhantes; o MOTOR busca e envia.
+    crm_offer_similar_motos: tool({
+      ...AGENT_TOOL_DEFS.crm_offer_similar_motos,
+      execute: async () => {
+        if (motoAtualDaConversa === null) {
+          return {
+            ok: false,
+            error: {
+              code: 'sem_moto_atual',
+              message:
+                'Não há uma moto em foco na conversa ainda. Apresente/confirme uma moto com o cliente antes de oferecer semelhantes.',
+            },
+          };
+        }
+        ofereceuSimilaresNesteTurno = true;
+        // O cliente quer algo parecido: a busca é do MOTOR, com a âncora na moto atual.
+        intencaoDoTurno = 'alternativa';
+        return {
+          ok: true,
+          instrucao:
+            'O sistema vai buscar e enviar as motos semelhantes à moto atual (foto + legenda). ' +
+            'Apresente essas opções em `send_message` e conduza a escolha.',
+        };
+      },
+    }),
     get_lead_context: tool({
       ...AGENT_TOOL_DEFS.get_lead_context,
       execute: async (): Promise<
@@ -3325,36 +3447,156 @@ async function executarTurnoDoAgente(
           motoDetalhadaNome = escolhidaNesteTurno.nome;
           escolhaDetectadaNesteTurno = escolhidaNesteTurno;
         }
-        const planoAutomatico: FotoComLegenda[] = (() => {
+        const planoAutomatico: FotoComLegenda[] = await (async (): Promise<FotoComLegenda[]> => {
+          // Fotografa o que o MODELO trouxe ANTES de o motor acrescentar
+          // alternativas (usado para gravar a moto de referência).
+          motosConsultadasPeloModelo = [...catalogoDoTurno];
           if (fotosDeclaradas.length > 0) return [];
+          // Já apresentou as fotos automáticas neste turno? Não repete.
+          if (jaApresentouAutomatico) return [];
+          // Campos da legenda configurados pelo dono (C-067): colunas marcadas
+          // com "Mostrar", por nome, com o papel para o rótulo. Vazio = deixa o
+          // motor usar o comportamento antigo (ano/cor/km/preço).
+          const legendaConfig =
+            catalogoMapeamento !== null && (catalogoMapeamento.legenda?.length ?? 0) > 0
+              ? legendaParaExibicao(catalogoMapeamento)
+              : undefined;
           // ESCOLHA determinística → as fotos DELA (quantidade da tela).
           if (escolhidaNesteTurno !== undefined) {
+            motosOferecidasNesteTurno = [escolhidaNesteTurno];
             return planoDeFotosDasMotos(
               [escolhidaNesteTurno],
               agentConfig?.catalogConfig?.fotos_moto_escolhida ?? 5,
+              legendaConfig,
             );
           }
 
-          // (2) APRESENTAÇÃO (pedido novo): o modelo consultou o catálogo neste
-          // turno. A flag da tela manda na escolha das semelhantes; sem ela, o
-          // motor apresenta TODAS as motos que o PEDIDO do cliente casa por nome
-          // (robusto à curadoria do modelo, que às vezes filtra uma só) — e, se o
-          // pedido não casar nenhuma, cai na curadoria do modelo (`motos`/texto).
-          if (catalogoDoTurno.length > 0) {
-            if (catalogoMapeamento?.similaridadeDeterministica === true) {
-              const termo = mensagemDoJob && mensagemDoJob.trim() !== '' ? mensagemDoJob : body;
-              const escolhidas = ordenarSimilares(termo, catalogoDoTurno, {
-                quantidade: catalogoMapeamento.similaresQtd ?? 3,
-                criterios: criteriosDeSimilaridade(catalogoMapeamento),
-              });
-              // UMA só moto → até N fotos dela; várias → 1 foto por moto.
-              return planoDeFotosDasMotos(escolhidas);
+          // (2) APRESENTAÇÃO / ALTERNATIVA: a flag da tela manda na escolha das
+          // semelhantes. Roda quando o modelo consultou o catálogo NESTE turno OU
+          // quando há MOTO ATUAL na conversa. G4: no turno da objeção ("Achei
+          // caro") o modelo NÃO consulta o catálogo — o motor busca os candidatos
+          // sozinho (banco externo + catálogo guardado) e oferece as parecidas.
+          // "Moto atual" = a ESCOLHIDA; sem escolha explícita, a ÚNICA moto
+          // apresentada na conversa (pedido específico, ex.: "Quero ver a Biz
+          // 125") — sem essa âncora o turno da objeção não teria referência.
+          const motoAtual = motoAtualDaConversa;
+          const mapeamento = catalogoMapeamento;
+          if (
+            mapeamento !== null &&
+            mapeamento.similaridadeDeterministica === true &&
+            (catalogoDoTurno.length > 0 || motoAtual !== null)
+          ) {
+            const termoBase = mensagemDoJob && mensagemDoJob.trim() !== '' ? mensagemDoJob : body;
+            const msgCliente = mensagemDoJob ?? body;
+            // MECANISMO (pergunta dirigida): roda quando o pedido não casou nenhuma
+            // moto do catálogo OU quando há moto atual E a mensagem sugere querer
+            // algo diferente. O pré-filtro `querAlternativa` evita consultar o
+            // banco/classificar a cada turno (ex.: "obrigado", "ok"). 1x/turno.
+            const semMotoDoPedido = motosCitadasNoTexto(msgCliente, catalogoDoTurno).length === 0;
+            // C-071: numa OBJEÇÃO DE VALOR não se oferece semelhantes automaticamente
+            // — primeiro a IA persuade; só a ferramenta `crm_offer_similar_motos`
+            // (ou um pedido explícito de diferente) dispara a busca.
+            const ehObjecaoMsg = ehObjecaoValor(msgCliente);
+            const precisaClassificar =
+              !ehObjecaoMsg &&
+              ((catalogoDoTurno.length > 0 && semMotoDoPedido) ||
+                (motoAtual !== null && querAlternativa(msgCliente)));
+            // A ferramenta de semelhantes já decidiu — não precisa classificar.
+            if (!ofereceuSimilaresNesteTurno && precisaClassificar && !extraiuCriteriosNesteTurno) {
+              const colunasCriterio = criteriosDaIA(mapeamento);
+              if (colunasCriterio.length > 0) {
+                extraiuCriteriosNesteTurno = true;
+                const extraidos = await extrairCriterios(
+                  pool,
+                  deps.llmCfg,
+                  {
+                    tenantId,
+                    leadId: leadId || null,
+                    jobId: job?.id ?? null,
+                    model: agentConfig?.model ?? '',
+                    provider: agentConfig?.provider ?? null,
+                    // A moto atual entra como contexto para o classificador saber
+                    // do que o cliente está falando ("Achei caro" → alternativa).
+                    mensagem:
+                      motoAtual !== null
+                        ? `${msgCliente}\n(moto atual da conversa: ${motoAtual.nome})`
+                        : msgCliente,
+                    colunas: colunasCriterio,
+                    // Valores possíveis vêm do catálogo do turno e, quando o modelo
+                    // não consultou, do catálogo guardado da conversa — sem isso a
+                    // pergunta dirigida ficaria sem os valores de cada coluna.
+                    valores: valoresDasColunas(
+                      mesclarMotos(catalogoDoTurno, catalogoDaConversa.motos),
+                      colunasCriterio,
+                    ),
+                  },
+                  { log: runLog },
+                );
+                runLog.info('catalog: critérios extraídos pela IA (pergunta dirigida)', {
+                  intencao: extraidos.intencao,
+                  criterios: extraidos.criterios,
+                });
+                intencaoDoTurno = extraidos.intencao;
+                for (const [coluna, valor] of Object.entries(extraidos.criterios)) {
+                  criteriosDoTurno[coluna] = valor;
+                }
+              }
             }
+            // Candidatos: o catálogo consultado pelo modelo neste turno. No modo
+            // ALTERNATIVA (ou pedido com critérios) SEM consulta do modelo, o
+            // motor lê o banco externo e junta o catálogo guardado da conversa —
+            // é o que faz "Achei caro" achar as mais baratas mesmo sem a IA
+            // consultar. Falha da leitura ⇒ fica com o guardado (fallback).
+            let candidatos = catalogoDoTurno;
+            if (
+              catalogoDoTurno.length === 0 &&
+              (intencaoDoTurno === 'alternativa' ||
+                Object.keys(criteriosDoTurno).length > 0 ||
+                ofereceuSimilaresNesteTurno)
+            ) {
+              const doBanco = await carregarCatalogoDoBanco(
+                deps.crmCfg.supabase,
+                tenantId,
+                mapeamento,
+                colunasCatalogo ?? colunasDoCatalogo(mapeamento),
+              );
+              candidatos = mesclarMotos(doBanco, catalogoDaConversa.motos);
+            }
+            const selecao = selecionarPorIntencao({
+              termoBase,
+              criterios: criteriosDoTurno,
+              intencao: intencaoDoTurno,
+              motoAtual,
+              candidatos,
+              mapeamento,
+            });
+            if (selecao.motos.length > 0) {
+              // Persiste as motos oferecidas (inclusive as buscadas no banco) no
+              // catálogo da conversa: sem isso a ESCOLHA do cliente no turno
+              // seguinte não casaria e as fotos dela não sairiam.
+              for (const moto of selecao.motos) {
+                if (!catalogoDoTurno.some((m) => m.nome === moto.nome)) catalogoDoTurno.push(moto);
+              }
+              motosOferecidasNesteTurno = [...selecao.motos];
+              return planoDeFotosDasMotos(selecao.motos, undefined, legendaConfig);
+            }
+            // Fallback (comportamento anterior): pedido novo que casa por nome.
             const doPedido = motosCitadasNoTexto(mensagemDoJob ?? '', catalogoDoTurno);
-            if (doPedido.length > 0) return planoDeFotosDasMotos(doPedido);
+            if (doPedido.length > 0) {
+              motosOferecidasNesteTurno = doPedido;
+              return planoDeFotosDasMotos(doPedido, undefined, legendaConfig);
+            }
+          } else if (catalogoDoTurno.length > 0) {
+            const doPedido = motosCitadasNoTexto(mensagemDoJob ?? '', catalogoDoTurno);
+            if (doPedido.length > 0) {
+              motosOferecidasNesteTurno = doPedido;
+              return planoDeFotosDasMotos(doPedido, undefined, legendaConfig);
+            }
           }
-          return planoDeFotos(motos, body, catalogoDoTurno);
+          return planoDeFotos(motos, body, catalogoDoTurno, legendaConfig);
         })();
+        // Marca que as fotos automáticas já saíram neste turno (não repetir).
+        if (planoAutomatico.length > 0) jaApresentouAutomatico = true;
         // Persiste o catálogo apresentado (motos deste turno) e a moto detalhada —
         // best-effort, não bloqueia o envio. `preview` não grava.
         // TRAVA DE DECISÃO: escolha nova grava; "pediu para ver outras" destrava;
@@ -3366,11 +3608,53 @@ async function executarTurnoDoAgente(
             : pediuOutraMoto
               ? null
               : undefined;
+        // Moto de REFERÊNCIA (âncora do modo "alternativa"): a escolha vence;
+        // senão, quando o cliente pediu UMA moto específica (a consulta do
+        // modelo trouxe uma só), ela vira a referência — mas só se for uma moto
+        // DIFERENTE da atual (mesma base = não sobrescreve com uma versão
+        // parcial que o modelo trouxe sem todas as colunas). Qualquer outro
+        // turno PRESERVA (undefined = não mexe): é o que impede a âncora de se
+        // perder depois de o motor já ter oferecido alternativas.
+        const baseDaReferencia = (m: MotoDoCatalogo): string =>
+          normalizarNomeDeMoto(m.valores?.nome ?? m.nome);
+        const baseAtual = catalogoDaConversa.referencia
+          ? baseDaReferencia(catalogoDaConversa.referencia)
+          : null;
+        // Candidata a referência: a moto que o MOTOR ofereceu (se foi UMA só);
+        // senão, a que o modelo consultou (se foi uma só). Preferir a oferta do
+        // motor torna a referência robusta a uma consulta ampla do modelo.
+        const candidataReferencia =
+          motosOferecidasNesteTurno.length === 1
+            ? motosOferecidasNesteTurno[0]!
+            : motosConsultadasPeloModelo.length === 1
+              ? motosConsultadasPeloModelo[0]!
+              : null;
+        const referenciaParaSalvar: MotoDoCatalogo | null | undefined =
+          escolhaDetectadaNesteTurno !== null
+            ? escolhaDetectadaNesteTurno
+            : candidataReferencia !== null && baseDaReferencia(candidataReferencia) !== baseAtual
+              ? candidataReferencia
+              : undefined;
+        // C-071: estado da OBJEÇÃO DE VALOR. A ferramenta de semelhantes limpa;
+        // uma objeção nova/que persiste grava a fase; outro turno preserva.
+        const motoDaObjecao = catalogoDaConversa.escolhida ?? catalogoDaConversa.referencia;
+        const objecaoParaSalvar: EstadoObjecao | null | undefined =
+          ofereceuSimilaresNesteTurno
+            ? null
+            : faseObjecaoTurno !== null
+              ? {
+                  moto: motoDaObjecao
+                    ? normalizarNomeDeMoto(motoDaObjecao.valores?.nome ?? motoDaObjecao.nome)
+                    : '',
+                  fase: faseObjecaoTurno,
+                }
+              : undefined;
         if (
           preview === undefined &&
           (catalogoDoTurno.length > 0 ||
             motoDetalhadaNome !== null ||
-            escolhaParaSalvar !== undefined)
+            escolhaParaSalvar !== undefined ||
+            objecaoParaSalvar !== undefined)
         ) {
           void salvarCatalogoDaConversa(
             pool,
@@ -3380,6 +3664,8 @@ async function executarTurnoDoAgente(
             catalogoDoTurno,
             motoDetalhadaNome,
             escolhaParaSalvar,
+            referenciaParaSalvar,
+            objecaoParaSalvar,
           );
         }
         const fotos = fotosDeclaradas;
@@ -4301,11 +4587,25 @@ async function executarTurnoDoAgente(
               rawTools[name] = {
                 ...mcpTool,
                 execute: (async (...args: Parameters<typeof executeOriginal>) => {
+                  const entrada = args[0] as { criterios?: Record<string, string | number> } | undefined;
+                  if (entrada?.criterios !== undefined && entrada.criterios !== null) {
+                    for (const [coluna, valor] of Object.entries(entrada.criterios)) {
+                      if (typeof valor === 'string' || typeof valor === 'number') {
+                        criteriosDoTurno[coluna] = valor;
+                      }
+                    }
+                  }
                   const resultado = await executeOriginal(...args);
                   for (const moto of extrairMotosDoResultado(resultado, colunasCatalogo)) {
                     if (!catalogoDoTurno.some((m) => m.nome === moto.nome)) catalogoDoTurno.push(moto);
                   }
-                  return resultado;
+                  // A coluna de REFERÊNCIA de similares é SÓ do motor: o valor já
+                  // foi capturado acima; a IA não pode vê-lo (senão ofereceria as
+                  // referências como estoque).
+                  return redigirColunaDoResultado(
+                    resultado,
+                    catalogoMapeamento !== null ? colunaDeSimilares(catalogoMapeamento) : null,
+                  );
                 }) as typeof mcpTool.execute,
               };
             } else {
@@ -4519,6 +4819,8 @@ async function executarTurnoDoAgente(
         valoresDoFluxo: fluxoAtendimento?.valores ?? {},
       }),
       fluxoAtendimento ? renderBlocoDeAtendimento(fluxoAtendimento, finalizacaoDoFluxo) : '',
+      // C-071: fase da OBJEÇÃO DE VALOR (só quando a mensagem é uma objeção).
+      faseObjecaoTurno !== null ? renderBlocoObjecao(faseObjecaoTurno) : '',
       stageHintBlock,
       splitHint,
       caseAwaitingLeadBlock,

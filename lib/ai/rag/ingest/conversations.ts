@@ -20,6 +20,7 @@
  */
 
 import { embedText } from "@/lib/ai/embed";
+import { aguardarVezDeEmbedding } from "@/lib/ai/embeddings/throttle";
 import { resolverChaveDeEmbedding } from "@/lib/ai/embeddings/chave";
 import { anonymize, detectResidualPii } from "@/lib/ai/anonymize";
 import { chunkText, computeContentHash } from "@/lib/ai/rag/chunker";
@@ -182,6 +183,8 @@ export async function ingestConversationsBatch(
       knowledgeSourceId: sourceId,
       agentId,
       sourceType: "conversas",
+      embeddingModel: chave.model,
+      embeddingDims: chave.dims,
     });
     versionId = v.versionId;
   } catch (err) {
@@ -294,6 +297,9 @@ export async function ingestConversationsBatch(
 
       let embedding: number[];
       try {
+        // Ritmo global (C-064): o teto do plano gratuito do Google é 100/min e
+        // cada trecho é uma requisição.
+        await aguardarVezDeEmbedding();
         const embedded = await embedText(content, { organizationId, chave });
         embedding = embedded.embedding;
       } catch (err) {

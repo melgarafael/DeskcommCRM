@@ -87,4 +87,29 @@ describe("briefing do Operador", () => {
     const d: DeclaracaoDoTurno = { intencoes: [], promessas: [], nada_a_declarar: false };
     expect(renderBriefingDoOperador(d, [])).toContain("não repita");
   });
+
+  it("leva os identificadores REAIS do atendimento (o modelo não inventa UUID)", () => {
+    const texto = renderBriefingDoOperador(null, [], "", {
+      leadId: "11111111-1111-4111-8111-111111111111",
+      contactId: "33333333-3333-4333-8333-333333333333",
+      conversationId: "22222222-2222-4222-8222-222222222222",
+    });
+    // `lead_id` é o CARD do funil — diferente do contato.
+    expect(texto).toContain("lead_id=11111111-1111-4111-8111-111111111111");
+    expect(texto).toContain("contact_id=33333333-3333-4333-8333-333333333333");
+    expect(texto).toContain("conversation_id=22222222-2222-4222-8222-222222222222");
+    expect(texto).toContain("nunca invente");
+    // Sem ids, nada é injetado (chamadores antigos não quebram).
+    expect(renderBriefingDoOperador(null, [])).not.toContain("lead_id=");
+  });
+
+  it("sem card de funil: diz explicitamente para não chamar ferramenta de lead", () => {
+    const texto = renderBriefingDoOperador(null, [], "", {
+      leadId: null,
+      contactId: "33333333-3333-4333-8333-333333333333",
+      conversationId: "22222222-2222-4222-8222-222222222222",
+    });
+    expect(texto).toContain("lead_id=(sem card)");
+    expect(texto).toContain("não chame ferramentas de lead");
+  });
 });

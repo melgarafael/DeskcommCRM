@@ -97,7 +97,7 @@ export async function guardarCredencial(p: PedidoDeGuardar): Promise<ResultadoDe
   return { ok: true, id, last4: encrypted.last4 };
 }
 
-async function validarEmSegundoPlano(
+export async function validarEmSegundoPlano(
   admin: ReturnType<typeof createAdminClient>,
   credentialId: string,
   organizationId: string,

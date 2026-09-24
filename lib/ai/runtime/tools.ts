@@ -15,7 +15,7 @@ import { tool, type Tool } from "ai";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { auditMcpToolCall } from "@/lib/mcp/audit";
+import { auditMcpToolCall, erroDeResultadoDaTool } from "@/lib/mcp/audit";
 import { McpAuthError, ensureRole, ensureScope } from "@/lib/mcp/auth";
 import type { McpAuthResult } from "@/lib/mcp/auth";
 import { logger } from "@/lib/logger";
@@ -176,6 +176,8 @@ function wrapMcpTool(
         }
 
         const result = await def.handler(argsRecord as never, input.ctx);
+        // Erro de negócio devolvido no resultado NÃO é sucesso (a métrica não mente).
+        const erroSoft = erroDeResultadoDaTool(result);
 
         // Capture handoff signal so the runtime can short-circuit the loop.
         if (def.name === HANDOFF_TOOL_NAME) {
@@ -189,7 +191,8 @@ function wrapMcpTool(
           toolName: def.name,
           args: argsAudit,
           durationMs: Date.now() - startedAt,
-          success: true,
+          success: erroSoft === null,
+          ...(erroSoft !== null ? { errorMessage: erroSoft } : {}),
         });
         return result;
       } catch (err) {

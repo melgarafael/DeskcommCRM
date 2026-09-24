@@ -90,7 +90,7 @@ export function useEstadoDaChave(initial?: EstadoDaChave) {
     refetchInterval: (query) => {
       const d = query.state.data;
       if (!d) return false;
-      const esperandoValidacao = !d.pode_indexar && d.credenciais_openai.length > 0;
+      const esperandoValidacao = !d.pode_indexar && d.credenciais_embedding.length > 0;
       return esperandoValidacao ? 2_000 : false;
     },
     ...(initial ? { initialData: initial } : {}),
@@ -111,6 +111,33 @@ export function useReindexSource() {
     },
     onSuccess: () => {
       toast.success(t("Vou preparar este material de novo — leva alguns instantes."));
+    },
+    onError: (err) => showApiError(err),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: sourcesQueryKey() });
+    },
+  });
+}
+
+export function useReindexAll() {
+  const t = useT();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationKey: ["ai", "knowledge", "sources", "reindex-all"],
+    mutationFn: async () => {
+      const res = await apiClient.post<{
+        data: { total: number; prioridade1: number; prioridade2: number; emitidos: number };
+      }>("/api/v1/ai/knowledge/reindex-all", {});
+      return res.data;
+    },
+    onSuccess: (r) => {
+      toast.success(
+        r.total === 0
+          ? t("Não há material para reindexar.")
+          : t(
+              "Vou preparar o que falta e o que mudou; o material sem alteração é pulado.",
+            ),
+      );
     },
     onError: (err) => showApiError(err),
     onSettled: () => {

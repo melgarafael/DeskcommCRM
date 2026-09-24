@@ -211,14 +211,14 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
   },
   {
     id: "draft_suggestion",
-    rotulo: "Sugerir resposta ao atendente",
+    rotulo: "Sugerir resposta ao consultor responsável",
     oQueFaz:
-      "Escreve um rascunho de resposta para o atendente humano revisar antes de enviar.",
+      "Escreve um rascunho de resposta para o consultor responsável revisar antes de enviar.",
     papel: "atender",
     exige: {},
     emissor: "lib/agent-engine/agent/draft-reply.ts",
     sintomaDeFalha:
-      "O botão de sugerir resposta não traz nada, e o atendente escreve do zero sem saber por quê.",
+      "O botão de sugerir resposta não traz nada, e o consultor responsável escreve do zero sem saber por quê.",
     registraEm: "llm_calls",
   },
   {

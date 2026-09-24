@@ -31,6 +31,10 @@ export const catalogoExternoQueryKey = (connectionId: string) =>
 export function useCatalogoExterno(connectionId: string) {
   return useQuery({
     queryKey: catalogoExternoQueryKey(connectionId),
+    // Schema externo muda com frequência e é barato de reler: nada de servir
+    // colunas velhas por 30s (o padrão global). Uma coluna nova no banco tem que
+    // aparecer no diálogo do catálogo no próximo carregamento.
+    staleTime: 0,
     queryFn: async () => {
       try {
         const res = await apiClient.get<CatalogoResponse>(

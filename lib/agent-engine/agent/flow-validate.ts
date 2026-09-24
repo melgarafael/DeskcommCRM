@@ -93,6 +93,7 @@ export function montarMensagemDoValidador(
   perguntas: readonly PerguntaDoFluxo[],
   preenchidos: readonly { key: string; label: string; valor: string }[],
   mensagens: readonly MensagemDoContexto[],
+  esgotados: readonly PerguntaDoFluxo[] = [],
 ): string {
   const campos = (p: PerguntaDoFluxo): string => {
     const opcoes =
@@ -113,6 +114,17 @@ export function montarMensagemDoValidador(
     preenchidos.length === 0
       ? '(nenhum)'
       : preenchidos.map((p) => `- ${p.label} (chave: ${p.key}): ${p.valor}`).join('\n'),
+    // Campos que o motor ENCERROU por não resposta (teto de tentativas). Se a
+    // mensagem do cliente finalmente os informar, aceite — antes, a resposta
+    // tardia era descartada e o dado se perdia (medido: CPF dado em "Meu CPF é
+    // ... e nasci em ..." caiu no vazio porque a pergunta já tinha esgotado).
+    ...(esgotados.length > 0
+      ? [
+          '',
+          '## Campos encerrados por não resposta (SÓ inclua se a mensagem os informar)',
+          esgotados.map((p) => `- ${campos(p)}`).join('\n'),
+        ]
+      : []),
     '',
     '## Últimas mensagens (a mais recente é a que importa)',
     conversa,
@@ -163,12 +175,18 @@ export async function validarRespostaDoFluxo(
     perguntas: readonly PerguntaDoFluxo[];
     /** Campos já preenchidos que ACEITAM correção (o cliente pode mudar). */
     preenchidos: readonly { key: string; label: string; valor: string }[];
+    /** Campos encerrados por não resposta — aceitos se a mensagem os informar. */
+    esgotados?: readonly PerguntaDoFluxo[] | undefined;
     mensagens: readonly MensagemDoContexto[];
   },
   deps: { registry?: ProviderRegistry; log: Logger },
 ): Promise<LeituraDaResposta> {
-  // Sem pergunta pendente e sem corrigível, não há o que validar.
-  if (args.perguntas.length === 0 && args.preenchidos.length === 0) {
+  // Sem pergunta pendente, sem corrigível e sem encerrado, não há o que validar.
+  if (
+    args.perguntas.length === 0 &&
+    args.preenchidos.length === 0 &&
+    (args.esgotados?.length ?? 0) === 0
+  ) {
     return { resultado: 'nao_respondeu' };
   }
   let texto: string;
@@ -184,7 +202,12 @@ export async function validarRespostaDoFluxo(
         messages: [
           {
             role: 'user',
-            content: montarMensagemDoValidador(args.perguntas, args.preenchidos, args.mensagens),
+            content: montarMensagemDoValidador(
+              args.perguntas,
+              args.preenchidos,
+              args.mensagens,
+              args.esgotados ?? [],
+            ),
           },
         ],
       },
@@ -201,10 +224,12 @@ export async function validarRespostaDoFluxo(
   const validas: RespostaDoFluxo[] = [];
   const vistas = new Set<string>();
   for (const r of leitura.respostas) {
-    // O `campo` só é aceito se for uma pendente OU um corrigível declarado.
+    // O `campo` só é aceito se for uma pendente, um corrigível declarado ou um
+    // encerrado por não resposta (resposta tardia).
     const pendente = args.perguntas.find((p) => p.key === r.campo);
     const preenchido = args.preenchidos.find((p) => p.key === r.campo);
-    const alvo = pendente ?? preenchido;
+    const esgotado = (args.esgotados ?? []).find((p) => p.key === r.campo);
+    const alvo = pendente ?? preenchido ?? esgotado;
     if (alvo === undefined) continue;
     if (vistas.has(r.campo)) continue; // um campo, uma resposta
     // O valor passa pela MESMA régua de tipo da captura determinística. Um campo

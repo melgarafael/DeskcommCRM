@@ -19,7 +19,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { ok, fail } from "@/lib/api/wrappers";
+import { ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -41,9 +41,9 @@ export async function GET(): Promise<Response> {
   const supabase = await createClient();
   const { data: credenciais } = await supabase
     .from("ai_provider_credentials_safe")
-    .select("id, label, api_key_last4, validated_at, validation_error, is_active")
+    .select("id, provider, label, api_key_last4, validated_at, validation_error, is_active")
     .eq("organization_id", activeOrg.orgId)
-    .eq("provider", "openai")
+    .in("provider", ["openai", "google"])
     .order("created_at", { ascending: true });
 
   return ok(
@@ -53,7 +53,7 @@ export async function GET(): Promise<Response> {
       explicacao: chave ? EXPLICACAO_DA_ORIGEM[chave.origem] : null,
       chave_em_uso: chave?.rotulo ?? null,
       avisos: chave?.avisos ?? [],
-      credenciais_openai: credenciais ?? [],
+      credenciais_embedding: credenciais ?? [],
     },
     { requestId },
   );

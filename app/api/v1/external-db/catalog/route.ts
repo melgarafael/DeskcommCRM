@@ -36,6 +36,7 @@ const COLUNAS = [
   "schema_name",
   "table_name",
   "col_nome",
+  "col_versao",
   "col_ano",
   "col_cor",
   "col_km",
@@ -49,6 +50,9 @@ const COLUNAS = [
   "similaridade_deterministica",
   "similares_qtd",
   "ordem",
+  "legenda",
+  "colunas",
+  "col_similares",
   "updated_at",
 ].join(", ");
 
@@ -162,6 +166,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
 
   const camposColuna: Array<keyof typeof input> = [
     "col_nome",
+    "col_versao",
     "col_ano",
     "col_cor",
     "col_km",
@@ -188,6 +193,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
     schema_name: input.schema_name,
     table_name: input.table_name,
     col_nome: input.col_nome,
+    col_versao: input.col_versao ?? null,
     col_ano: input.col_ano ?? null,
     col_cor: input.col_cor ?? null,
     col_km: input.col_km ?? null,
@@ -201,6 +207,9 @@ export async function PUT(req: NextRequest): Promise<Response> {
     similaridade_deterministica: input.similaridade_deterministica,
     similares_qtd: input.similares_qtd,
     ordem: input.ordem,
+    legenda: input.legenda,
+    colunas: input.colunas,
+    col_similares: input.col_similares ?? null,
   };
 
   const { data: salvo, error } = await admin

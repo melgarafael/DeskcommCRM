@@ -52,6 +52,13 @@ vi.mock("@/hooks/external-db/useDadosExternos", () => ({
   }),
 }));
 
+// O componente consome o mapeamento do catálogo (React Query) no topo. Sem o
+// mock, o `useQuery` exige um `QueryClientProvider` que este teste não monta.
+vi.mock("@/hooks/external-db/useCatalogoMapeamento", () => ({
+  useCatalogoMapeamento: () => ({ data: null, isLoading: false, isError: false }),
+  useSalvarCatalogoMapeamento: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
 import { ExploradorDeDados } from "./ExploradorDeDados";
 
 const CHAVE_LARGURAS = "external-db:conn-1:public.pedidos:larguras";

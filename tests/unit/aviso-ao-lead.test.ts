@@ -70,31 +70,32 @@ describe("motivoDoAviso traduz o que o banco grava", () => {
   });
 });
 
-describe("o texto respeita o estado REAL da equipe", () => {
-  it("instalação sem ninguém configurado: registra, não promete prazo", () => {
-    const t = textoDoAviso("pediu_humano", { disponiveis: 0, total: 0 }, LEAD);
-    expect(t).toMatch(/registr|anotad|primeira oportunidade/i);
-    expect(t).not.toMatch(/aguard/i);
+describe("o aviso NÃO revela o estado da equipe (regra do dono)", () => {
+  it("nenhum motivo/estado fala em fila, indisponibilidade, espera ou prazo", () => {
+    for (const motivo of MOTIVOS) {
+      for (const estado of ESTADOS) {
+        const t = textoDoAviso(motivo, estado.quem, LEAD);
+        expect(t, `${motivo} / ${estado.rotulo}`).not.toMatch(
+          /fila|indispon|ninguém|equipe responde|aguard|instante|expediente|prazo/i,
+        );
+      }
+    }
   });
 
-  it("leitura falhou é tratado como 'não sei' — mesma cautela", () => {
+  it("diz que passa o atendimento ao responsável e que ele entra em contato por aqui", () => {
+    const t = textoDoAviso("pediu_humano", { disponiveis: 0, total: 3 }, LEAD);
+    expect(t).toMatch(/respons[áa]vel/i);
+    expect(t).toMatch(/entra(r)? em contato|te chama|te responde|fala com voc/i);
+    expect(t).toMatch(/por aqui/i);
+  });
+
+  it("leitura falhou é tratado como 'não sei' — mesma frase", () => {
     const semLeitura = textoDoAviso("pediu_humano", null, LEAD);
     const semEquipe = textoDoAviso("pediu_humano", { disponiveis: 0, total: 0 }, LEAD);
     expect(semLeitura).toBe(semEquipe);
   });
 
-  it("equipe existe mas ninguém livre: não convida a aguardar", () => {
-    const t = textoDoAviso("pediu_humano", { disponiveis: 0, total: 3 }, LEAD);
-    expect(t).toMatch(/ninguém|não há atendente/i);
-    expect(t).not.toMatch(/aguarde só um momento|é só aguardar/i);
-  });
-
-  it("com gente livre: convida a aguardar na conversa", () => {
-    const t = textoDoAviso("pediu_humano", { disponiveis: 2, total: 3 }, LEAD);
-    expect(t).toMatch(/aguard|fica por aqui/i);
-  });
-
-  it("os três estados produzem fechos DIFERENTES", () => {
+  it("os três estados variam a redação (gate anti-spinning)", () => {
     // Sem este caso, três ramos colapsados num texto só passariam calados.
     const fechos = new Set(
       ESTADOS.filter((e) => e.rotulo !== "leitura falhou").map((e) =>

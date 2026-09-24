@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type pg from "pg";
 
 import type { FlowEdge, FlowGraph, FlowNode } from "./graph-schema";
-import { finalizarFluxoDeAtendimento, mapearChecklist, melhorFluxoPorGatilho, montarNotaDeConclusao, renderBlocoDeAtendimento, situacaoDoChecklist, type ChecklistDeAtendimento, type EstadoDeAtendimento } from "./atendimento";
+import { finalizarFluxoDeAtendimento, mapearChecklist, melhorFluxoPorGatilho, montarNotaDeConclusao, processarInboundDoFluxo, renderBlocoDeAtendimento, situacaoDoChecklist, valoresConhecidosDoContato, carregarEstadoDeAtendimento, escolherFluxoPeloGatilho, type ChecklistDeAtendimento, type EstadoDeAtendimento } from "./atendimento";
 
 function no(node: Partial<FlowNode> & Pick<FlowNode, "id" | "type" | "config">): FlowNode {
   return { label: node.id, position: { x: 0, y: 0 }, ...node } as FlowNode;
@@ -353,5 +353,195 @@ describe("auditoria 2026-09-19 — o nao_respondeu do validador cai no classific
       /if \(args\.validacoes !== undefined[\s\S]*classificarInbound\(comoCampoParaCaptura\(primeiro\), args\.texto\)/,
     );
     expect(src).not.toMatch(/:\s*\{ resultado: "desviou" as const \};/);
+  });
+});
+
+describe("valoresConhecidosDoContato (dado já gravado não se pergunta de novo)", () => {
+  it("lê cada chave de custom_fields como texto", () => {
+    expect(
+      valoresConhecidosDoContato({
+        name: null,
+        custom_fields: { cidade: "Campinas", cnh: true, cpfs: 0, vazio: "  " },
+      }),
+    ).toEqual({ cidade: "Campinas", cnh: "sim", cpfs: "0" });
+  });
+
+  it("o nome do contato (WhatsApp) vence o custom_field `nome`", () => {
+    expect(
+      valoresConhecidosDoContato({ name: "Vander", custom_fields: { nome: "Outro" } }).nome,
+    ).toBe("Vander");
+    expect(valoresConhecidosDoContato({ name: null, custom_fields: { nome: "Ana" } }).nome).toBe(
+      "Ana",
+    );
+  });
+
+  it("null/array/objeto vazio devolvem {}", () => {
+    expect(valoresConhecidosDoContato(null)).toEqual({});
+    expect(valoresConhecidosDoContato(undefined)).toEqual({});
+    expect(valoresConhecidosDoContato({ custom_fields: [] })).toEqual({});
+  });
+});
+
+describe("carregarEstadoDeAtendimento — pendências consideram o contato, não só o fluxo", () => {
+  function poolFake(opts: {
+    contact: { name: string | null; custom_fields: unknown };
+    flowData?: Array<{ field_key: string; value: string | null; attempts: number }>;
+  }) {
+    const query = async (sql: string) => {
+      if (/completion_note/.test(sql)) return { rows: [] };
+      if (/from followup_enrollments e/.test(sql)) {
+        return {
+          rows: [
+            {
+              id: "enr-1",
+              pointer_id: "p1",
+              version_id: "v1",
+              contact_id: "ct-1",
+              current_node_id: "c1",
+              status: "active",
+              nome: "Qualificação",
+              graph: grafo(
+                [
+                  trigger("t"),
+                  collect("c1", "nome"),
+                  collect("c2", "cidade"),
+                  collect("c3", "cnh"),
+                  end("e"),
+                ],
+                [
+                  aresta("t", "c1"),
+                  aresta("c1", "c2"),
+                  aresta("c2", "c3"),
+                  aresta("c3", "e"),
+                ],
+              ),
+            },
+          ],
+        };
+      }
+      if (/from contact_flow_data/.test(sql)) return { rows: opts.flowData ?? [] };
+      if (/select name, custom_fields from contacts/.test(sql)) return { rows: [opts.contact] };
+      return { rows: [] };
+    };
+    return { query } as unknown as pg.Pool;
+  }
+
+  it("nome/cidade/CNH já no contato saem das pendentes; só o que falta é perguntado", async () => {
+    const estado = await carregarEstadoDeAtendimento(
+      poolFake({ contact: { name: "Vander", custom_fields: { cidade: "Campinas", cnh: true } } }),
+      { organizationId: "org", contactId: "ct-1" },
+    );
+    expect(estado).not.toBeNull();
+    expect(estado!.valores).toEqual({ nome: "Vander", cidade: "Campinas", cnh: "sim" });
+    expect(estado!.situacao.pendentes).toHaveLength(0);
+    expect(estado!.situacao.completo).toBe(true);
+  });
+
+  it("o valor do FLUXO vence o custom_field; chave estranha é ignorada", async () => {
+    const estado = await carregarEstadoDeAtendimento(
+      poolFake({
+        contact: { name: "Vander", custom_fields: { cidade: "Campinas", extra: "não é do fluxo" } },
+        flowData: [{ field_key: "cidade", value: "Santos", attempts: 1 }],
+      }),
+      { organizationId: "org", contactId: "ct-1" },
+    );
+    expect(estado!.valores.cidade).toBe("Santos");
+    expect(estado!.valores.nome).toBe("Vander");
+    expect(estado!.valores.extra).toBeUndefined();
+    expect(estado!.situacao.pendentes.map((n) => n.config.key)).toEqual(["cnh"]);
+  });
+});
+
+describe("resposta TARDIA a campo esgotado (não se perde)", () => {
+  it("grava o valor de um campo encerrado por não resposta e conclui", async () => {
+    const built = mapearChecklist(
+      grafo([trigger("t"), collect("c1", "cpf"), end("e")], [aresta("t", "c1"), aresta("c1", "e")]),
+    );
+    if (!built.ok) throw new Error("grafo inválido");
+    const tentativas = { cpf: 3 };
+    const estado: EstadoDeAtendimento = {
+      enrollment: {
+        id: "enr-1",
+        pointer_id: "p1",
+        version_id: "v1",
+        contact_id: "ct-1",
+        current_node_id: "c1",
+        status: "active",
+      },
+      nomeDoFluxo: "Financiamento",
+      checklist: built.checklist,
+      valores: {},
+      tentativas,
+      maxTentativas: 3,
+      situacao: situacaoDoChecklist(built.checklist, new Set(), { tentativas, maxTentativas: 3 }),
+    };
+    // A pergunta esgotou (3 tentativas) e não está mais pendente.
+    expect(estado.situacao.esgotadas.map((n) => n.config.key)).toEqual(["cpf"]);
+    expect(estado.situacao.pendentes).toHaveLength(0);
+
+    const sqls: string[] = [];
+    const query = async (sql: string) => {
+      sqls.push(sql);
+      return { rows: [] };
+    };
+    const r = await processarInboundDoFluxo({ query } as never, {
+      organizationId: "org",
+      estado,
+      texto: "meu cpf é 12345678900",
+      validacoes: [{ campo: "cpf", valor: "12345678900" }],
+    });
+    expect(sqls.some((s) => /insert into contact_flow_data/.test(s))).toBe(true);
+    expect(r.concluiu).toBe(true);
+  });
+});
+
+describe("escolherFluxoPeloGatilho — fluxo concluído não reabre", () => {
+  const grafoComGatilhos = (gatilhos: string[]): FlowGraph =>
+    ({
+      nodes: [trigger("t"), collect("c1", "x"), end("e")],
+      edges: [aresta("t", "c1"), aresta("c1", "e")],
+      settings: { gatilhos },
+    }) as FlowGraph;
+
+  function poolFake(): pg.Pool {
+    const query = async (sql: string) => {
+      if (/from followup_flow_pointers p/.test(sql)) {
+        return {
+          rows: [
+            { id: "q", nome: "Qualificação", graph: grafoComGatilhos(["quero uma moto", "tenho interesse"]) },
+            { id: "f", nome: "Financiamento", graph: grafoComGatilhos(["financiar", "financiamento"]) },
+          ],
+        };
+      }
+      if (/from followup_enrollments/.test(sql)) return { rows: [{ pointer_id: "q" }] };
+      return { rows: [] };
+    };
+    return { query } as unknown as pg.Pool;
+  }
+
+  it("sem contactId escolhe o fluxo pelo gatilho (comportamento antigo)", async () => {
+    const r = await escolherFluxoPeloGatilho(poolFake(), {
+      organizationId: "o",
+      texto: "quero uma moto",
+    });
+    expect(r?.id).toBe("q");
+  });
+
+  it("com contactId, fluxo já concluído não é reaberto", async () => {
+    const r = await escolherFluxoPeloGatilho(poolFake(), {
+      organizationId: "o",
+      texto: "quero uma moto",
+      contactId: "ct",
+    });
+    expect(r).toBeNull();
+  });
+
+  it("financiamento liga quando o assunto é financiar (fluxo ainda não concluído)", async () => {
+    const r = await escolherFluxoPeloGatilho(poolFake(), {
+      organizationId: "o",
+      texto: "prefiro financiar",
+      contactId: "ct",
+    });
+    expect(r?.id).toBe("f");
   });
 });

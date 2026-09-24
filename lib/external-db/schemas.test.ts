@@ -87,12 +87,14 @@ describe("salvarCatalogoSchema", () => {
     expect(r.ordem).toEqual({});
   });
 
-  it("recusa ORDEM repetida (não pode usar o mesmo número duas vezes)", () => {
+  it("aceita ORDEM EMPATADA (nome + versão = 1 → nome composto)", () => {
     const r = salvarCatalogoSchema.safeParse({
       ...BASE,
-      ordem: { cilindrada: 1, preco: 1 },
+      col_versao: "versao",
+      ordem: { nome: 1, versao: 1 },
     });
-    expect(r.success).toBe(false);
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.ordem).toEqual({ nome: 1, versao: 1 });
   });
 
   it("aceita ordem com números distintos", () => {
@@ -101,6 +103,17 @@ describe("salvarCatalogoSchema", () => {
       ordem: { cilindrada: 1, preco: 2 },
     });
     expect(r.ordem).toEqual({ cilindrada: 1, preco: 2 });
+  });
+
+  it("aceita `legenda` como NOMES de coluna (qualquer coluna, mesmo sem papel)", () => {
+    expect(salvarCatalogoSchema.parse({ ...BASE, legenda: ["ano", "preco"] }).legenda).toEqual([
+      "ano",
+      "preco",
+    ]);
+    // default vazio (o motor cai no comportamento antigo)
+    expect(salvarCatalogoSchema.parse(BASE).legenda).toEqual([]);
+    // coluna sem papel é aceita (C-067)
+    expect(salvarCatalogoSchema.parse({ ...BASE, legenda: ["marca"] }).legenda).toEqual(["marca"]);
   });
 
   it("recusa papel desconhecido e quantidade fora da faixa", () => {

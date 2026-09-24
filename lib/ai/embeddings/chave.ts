@@ -54,9 +54,31 @@ import { createAdminClient } from "@/lib/supabase/admin";
 /** Os dois pontos de IA que consomem embedding (`lib/ai/pontos/registro.ts`). */
 export type PontoDeEmbedding = "embedding_indexar" | "embedding_consultar";
 
-/** Pin de contrato: o mesmo modelo dos dois lados, com a mesma dimensão. */
+/** Pin de contrato do provedor PADRÃO (OpenAI). Mantido para compatibilidade. */
 export const MODELO_DE_EMBEDDING = "openai/text-embedding-3-small";
 export const DIMENSOES_DO_EMBEDDING = 1536;
+
+/**
+ * O par modelo+dimensão por provedor. A dimensão é 1536 nos dois — o Google vem
+ * com `outputDimensionality: 1536` —, então a coluna `ai_chunks.embedding` NÃO
+ * muda ao trocar de provedor. Trocar de provedor, porém, EXIGE reindexar: a
+ * busca casa o `embedding_model` gravado na versão (migration 0181), e vetores
+ * de modelos diferentes não são comparáveis.
+ */
+export type ProvedorDeEmbedding = "openai" | "google";
+
+export const MODELO_DE_EMBEDDING_POR_PROVEDOR: Record<
+  ProvedorDeEmbedding,
+  { model: string; dims: number }
+> = {
+  openai: { model: MODELO_DE_EMBEDDING, dims: DIMENSOES_DO_EMBEDDING },
+  google: { model: "google/gemini-embedding-001", dims: 1536 },
+};
+
+/** O provedor do embedding é um dos que sabem fazer embedding? */
+export function ehProvedorDeEmbedding(p: string): p is ProvedorDeEmbedding {
+  return p === "openai" || p === "google";
+}
 
 export type OrigemDaChave =
   | "binding_do_ponto"
@@ -74,7 +96,7 @@ export const EXPLICACAO_DA_ORIGEM: Record<OrigemDaChave, string> = {
 export interface ChaveDeEmbedding {
   /** Plaintext. Vive só no escopo de quem chamou — nunca logada nem persistida. */
   apiKey: string | null;
-  /** `null` = falar direto com a OpenAI. */
+  /** `null` = endpoint oficial do provedor. */
   baseUrl: string | null;
   /** Quando true, a chamada vai pelo gateway (o SDK lê a chave do process.env). */
   viaGateway: boolean;
@@ -83,6 +105,12 @@ export interface ChaveDeEmbedding {
   rotulo: string | null;
   /** Incoerências que não impedem a chamada mas alguém precisa ver. */
   avisos: string[];
+  /** Provedor de embedding efetivo (decide qual SDK chama). */
+  provider: ProvedorDeEmbedding;
+  /** Id qualificado do modelo (ex.: `openai/text-embedding-3-small`). */
+  model: string;
+  /** Dimensão do vetor (contrato da coluna `vector`). */
+  dims: number;
 }
 
 /**
@@ -102,15 +130,14 @@ export async function resolverChaveDeEmbedding(
   const binding = await lerBindingDeEmbedding(ponto, organizationId);
   if (binding?.credential_id) {
     const credencial = await decifrarCredencial(binding.credential_id, organizationId);
-    if (credencial) {
-      if (binding.model_id && !/embed/i.test(binding.model_id)) {
-        // Falha ABERTA na informação: a chamada segue com o modelo do contrato,
-        // e quem configurou fica sabendo que o campo dele não é obedecido.
-        avisos.push(
-          `O painel aponta "${binding.model_id}" para este ponto, mas o modelo de embedding é fixo ` +
-            `(${MODELO_DE_EMBEDDING}) — trocá-lo exigiria reindexar todo o material de uma vez.`,
-        );
-      }
+    if (credencial && ehProvedorDeEmbedding(credencial.provider)) {
+      const provider = credencial.provider;
+      // O modelo vem do binding SÓ quando ele é um modelo de embedding; senão
+      // vale o par do provedor. (Só o par indexador×consulta é que precisa casar;
+      // aqui é o id que vai para a proveniência da versão e para a busca.)
+      const modeloDoBinding =
+        binding.model_id && /embed/i.test(binding.model_id) ? binding.model_id : null;
+      const padrao = MODELO_DE_EMBEDDING_POR_PROVEDOR[provider];
       return {
         apiKey: credencial.apiKey,
         baseUrl: binding.base_url,
@@ -118,15 +145,25 @@ export async function resolverChaveDeEmbedding(
         origem: "binding_do_ponto",
         rotulo: credencial.rotulo,
         avisos,
+        provider,
+        model: modeloDoBinding ?? padrao.model,
+        dims: padrao.dims,
       };
     }
-    avisos.push(
-      "A chave escolhida no painel de Provedores para este ponto não está utilizável " +
-        "(desativada, apagada ou ainda não validada). Seguindo com a próxima chave disponível.",
-    );
+    if (credencial && !ehProvedorDeEmbedding(credencial.provider)) {
+      avisos.push(
+        `A credencial escolhida no painel é do provedor "${credencial.provider}", que não tem ` +
+          "endpoint de embeddings. Escolha OpenAI ou Google (Gemini) para a base de conhecimento.",
+      );
+    } else {
+      avisos.push(
+        "A chave escolhida no painel de Provedores para este ponto não está utilizável " +
+          "(desativada, apagada ou ainda não validada). Seguindo com a próxima chave disponível.",
+      );
+    }
   }
 
-  // 2 · A credencial OpenAI da organização, sem exigir binding nenhum.
+  // 2 · A credencial OpenAI da organização, sem exigir binding nenhum (legado).
   const daOrg = await credencialOpenAiDaOrganizacao(organizationId);
   if (daOrg) {
     if (daOrg.quantas > 1) {
@@ -135,6 +172,7 @@ export async function resolverChaveDeEmbedding(
           `a base de conhecimento. Usando "${daOrg.rotulo}" — escolha uma em Provedores para não depender disso.`,
       );
     }
+    const padrao = MODELO_DE_EMBEDDING_POR_PROVEDOR.openai;
     return {
       apiKey: daOrg.apiKey,
       baseUrl: null,
@@ -142,11 +180,15 @@ export async function resolverChaveDeEmbedding(
       origem: "credencial_da_organizacao",
       rotulo: daOrg.rotulo,
       avisos,
+      provider: "openai",
+      model: padrao.model,
+      dims: padrao.dims,
     };
   }
 
   // 3 · O gateway da instalação. A chave não sai daqui: o SDK a lê do process.env.
   if (env.AI_GATEWAY_API_KEY) {
+    const padrao = MODELO_DE_EMBEDDING_POR_PROVEDOR.openai;
     return {
       apiKey: null,
       baseUrl: env.AI_GATEWAY_BASE_URL || null,
@@ -154,11 +196,15 @@ export async function resolverChaveDeEmbedding(
       origem: "gateway_da_instalacao",
       rotulo: null,
       avisos,
+      provider: "openai",
+      model: padrao.model,
+      dims: padrao.dims,
     };
   }
 
   // 4 · A chave que o install.sh pediu.
   if (env.OPENAI_API_KEY) {
+    const padrao = MODELO_DE_EMBEDDING_POR_PROVEDOR.openai;
     return {
       apiKey: env.OPENAI_API_KEY,
       baseUrl: null,
@@ -166,6 +212,9 @@ export async function resolverChaveDeEmbedding(
       origem: "chave_da_instalacao",
       rotulo: null,
       avisos,
+      provider: "openai",
+      model: padrao.model,
+      dims: padrao.dims,
     };
   }
 
@@ -223,12 +272,12 @@ async function lerBindingDeEmbedding(
 async function decifrarCredencial(
   credentialId: string,
   organizationId: string,
-): Promise<{ apiKey: string; rotulo: string } | null> {
+): Promise<{ apiKey: string; rotulo: string; provider: string } | null> {
   try {
     const admin = createAdminClient();
     const { data } = await admin
       .from("ai_provider_credentials")
-      .select("label, api_key_encrypted, api_key_iv, api_key_tag")
+      .select("provider, label, api_key_encrypted, api_key_iv, api_key_tag")
       .eq("id", credentialId)
       .eq("organization_id", organizationId)
       .eq("is_active", true)
@@ -242,6 +291,7 @@ async function decifrarCredencial(
         tag: byteaToBuffer(data.api_key_tag),
       }),
       rotulo: String((data as { label?: string }).label ?? ""),
+      provider: String((data as { provider?: string }).provider ?? "openai"),
     };
   } catch {
     // Sem detalhe no log: qualquer eco aqui corre o risco de carregar material

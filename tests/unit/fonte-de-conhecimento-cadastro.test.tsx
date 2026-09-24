@@ -92,7 +92,7 @@ const CHAVE_OK: EstadoDaChave = {
   explicacao: "Usando a chave OpenAI cadastrada em Credenciais.",
   chave_em_uso: "Chave principal",
   avisos: [],
-  credenciais_openai: [],
+  credenciais_embedding: [],
 };
 
 beforeEach(() => {

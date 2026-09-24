@@ -35,6 +35,7 @@
 import type pg from 'pg';
 
 import { normalizarNomeDeMoto, type MotoDoCatalogo } from './fotos-do-catalogo';
+import type { EstadoObjecao } from './objecao-de-valor';
 
 /** Estado persistido por conversa. */
 export interface CatalogoDaConversa {
@@ -48,12 +49,41 @@ export interface CatalogoDaConversa {
    * uma NOVA apresentação acontece (o cliente pediu para ver outras).
    */
   escolhida: MotoDoCatalogo | null;
+  /**
+   * Moto de REFERÊNCIA da conversa — a que o cliente PEDIU e está sendo
+   * discutida (ex.: "Quero ver a Biz 125"). Diferente de `escolhida` (decisão
+   * travada): é a ÂNCORA do modo "alternativa". Fica gravada mesmo depois de o
+   * motor já ter oferecido alternativas (senão, na 2ª objeção, a referência se
+   * perderia e o motor ofereceria a própria moto atual).
+   */
+  referencia: MotoDoCatalogo | null;
+  /**
+   * Estado da OBJEÇÃO DE VALOR (C-071): em que passo a conversa está
+   * (`persuadir` = justificar/convencer; `checar` = oferecer outras opções).
+   * `null` quando não há objeção em andamento.
+   */
+  objecao: EstadoObjecao | null;
 }
 
-const VAZIO: CatalogoDaConversa = { motos: [], detalhadas: [], escolhida: null };
+const VAZIO: CatalogoDaConversa = {
+  motos: [],
+  detalhadas: [],
+  escolhida: null,
+  referencia: null,
+  objecao: null,
+};
 
 /** Teto de motos guardadas por conversa — estado efêmero, não acervo. */
 export const MAX_MOTOS_GUARDADAS = 40;
+
+function ehEstadoObjecao(valor: unknown): valor is EstadoObjecao {
+  if (typeof valor !== 'object' || valor === null) return false;
+  const o = valor as { fase?: unknown; moto?: unknown };
+  return (
+    (o.fase === 'persuadir' || o.fase === 'checar' || o.fase === 'handoff') &&
+    (o.moto === undefined || typeof o.moto === 'string')
+  );
+}
 
 function ehMoto(valor: unknown): valor is MotoDoCatalogo {
   if (typeof valor !== 'object' || valor === null) return false;
@@ -82,13 +112,21 @@ export async function carregarCatalogoDaConversa(
     );
     const raw = rows[0]?.agent_catalogo;
     if (typeof raw !== 'object' || raw === null) return VAZIO;
-    const obj = raw as { motos?: unknown; detalhadas?: unknown; escolhida?: unknown };
+    const obj = raw as {
+      motos?: unknown;
+      detalhadas?: unknown;
+      escolhida?: unknown;
+      referencia?: unknown;
+      objecao?: unknown;
+    };
     return {
       motos: Array.isArray(obj.motos) ? obj.motos.filter(ehMoto) : [],
       detalhadas: Array.isArray(obj.detalhadas)
         ? obj.detalhadas.filter((d): d is string => typeof d === 'string')
         : [],
       escolhida: ehMoto(obj.escolhida) ? obj.escolhida : null,
+      referencia: ehMoto(obj.referencia) ? obj.referencia : null,
+      objecao: ehEstadoObjecao(obj.objecao) ? obj.objecao : null,
     };
   } catch {
     return VAZIO;
@@ -115,6 +153,8 @@ export async function salvarCatalogoDaConversa(
   motosNovas: readonly MotoDoCatalogo[],
   detalhada: string | null,
   escolhida: MotoDoCatalogo | null | undefined = undefined,
+  referencia: MotoDoCatalogo | null | undefined = undefined,
+  objecao: EstadoObjecao | null | undefined = undefined,
 ): Promise<void> {
   try {
     const vistas = new Set<string>();
@@ -133,6 +173,10 @@ export async function salvarCatalogoDaConversa(
     }
     const escolhidaFinal: MotoDoCatalogo | null =
       escolhida === undefined ? atual.escolhida : escolhida;
+    const referenciaFinal: MotoDoCatalogo | null =
+      referencia === undefined ? atual.referencia : referencia;
+    const objecaoFinal: EstadoObjecao | null =
+      objecao === undefined ? atual.objecao : objecao;
     await db.query(
       `update conversations
           set metadata = jsonb_set(
@@ -142,7 +186,17 @@ export async function salvarCatalogoDaConversa(
                 true
               )
         where organization_id = $1 and id = $2`,
-      [organizationId, conversationId, JSON.stringify({ motos, detalhadas, escolhida: escolhidaFinal })],
+      [
+        organizationId,
+        conversationId,
+        JSON.stringify({
+          motos,
+          detalhadas,
+          escolhida: escolhidaFinal,
+          referencia: referenciaFinal,
+          objecao: objecaoFinal,
+        }),
+      ],
     );
   } catch {
     // silencioso de propósito: memória de apresentação é best-effort.
@@ -202,6 +256,32 @@ function textoContemCor(texto: string, cor: string | undefined): boolean {
 }
 
 /**
+ * A mensagem do cliente é uma PERGUNTA/OBJEÇÃO sobre a moto (e não uma escolha)?
+ *
+ * Medido ao vivo (2026-09-22): "E a CB 300? Achei meio caro" era lida como ESCOLHA
+ * (o cliente citou a moto), o motor travava `escolhida = CB 300` e o agente passava
+ * a tratá-la como decidida ("Como a CB 300 já é a sua escolha") — mesmo com o
+ * cliente só questionando o preço. Uma pergunta/objeção NÃO decide nada.
+ *
+ * Um SINAL POSITIVO explícito ("quero", "gostei", "fico com"...) vence a pergunta:
+ * "quero a CB 300, quanto fica?" continua sendo escolha.
+ */
+function bloqueiaEscolha(texto: string): boolean {
+  const n = normalizarNomeDeMoto(texto);
+  const temEscolha =
+    /\b(quero|queria|gostei|gostaria|fico com|vou levar|vou ficar|pode ser|fechar|escolho|levo|interessei|decidi)\b/.test(
+      n,
+    );
+  if (temEscolha) return false;
+  const temPergunta = texto.includes('?');
+  const temObjecao =
+    /\b(caro|preco|desconto|parcela|parcelar|financiar|financiamento|pensar|depois|nao|duvida|nao tenho)\b/.test(
+      n,
+    );
+  return temPergunta || temObjecao;
+}
+
+/**
  * A moto que o cliente ESCOLHEU, se houver exatamente uma.
  *
  * `textoDoModelo` = o que o agente escreveu no turno (diz qual moto, quando ele
@@ -215,6 +295,9 @@ export function motoEscolhidaPeloCliente(
   jaDetalhadas: readonly string[],
 ): MotoDoCatalogo | undefined {
   if (catalogo.length === 0) return undefined;
+  // Pergunta/objeção não é escolha — barra ANTES de qualquer casamento (inclusive
+  // o que citaria a moto pelo nome).
+  if (bloqueiaEscolha(textoDoCliente)) return undefined;
   const detalhadas = new Set(jaDetalhadas.map(normalizarNomeDeMoto));
 
   // (1) O modelo citou UMA moto (nome maximal) → é ela; se já foi detalhada, nada

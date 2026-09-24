@@ -232,6 +232,100 @@ export const crmDescribeExternalData: McpToolDefinition<typeof descreverInputSha
 // crm_query_external_data
 // ---------------------------------------------------------------------------
 
+const COLUNAS_DO_MAPEAMENTO =
+  "table_name, schema_name, col_nome, col_versao, col_ano, col_cor, col_km, col_preco, col_imagem, col_estoque, col_cilindrada, col_tipo, legenda";
+
+interface CatalogoDoMapeamento {
+  /** Colunas do catálogo configurado, presentes na tabela consultada. */
+  colunas: string[];
+  /** Coluna de nome configurada (para ordenar de forma determinística). */
+  ordemPorNome: string | null;
+  /** Coluna de REFERÊNCIA de similares (ex.: `moto_similar`). Só o motor usa. */
+  colSimilares: string | null;
+  /** Colunas marcadas como "Critério da IA" (a IA pode filtrar por elas). */
+  criterios: string[];
+}
+
+/**
+ * O catálogo configurado pela tela (migration 0244/0247) para ESTA conexão e
+ * ESTA tabela. É a fonte do `colunas` quando o modelo omite a projeção: sem
+ * isto, a leitura vira `select *` e a resposta estoura o teto de bytes — foi o
+ * que escondeu a "Neo 125" (a 14ª linha da tabela) do agente.
+ */
+async function catalogoDoMapeamento(
+  ctx: McpContext,
+  connectionId: string,
+  schema: string,
+  tabela: string,
+  permitidas: ReadonlySet<string>,
+): Promise<CatalogoDoMapeamento> {
+  // Best-effort: o mapeamento é uma OTIMIZAÇÃO da leitura. Se a consulta falhar
+  // (ou o client não suportar), volta ao comportamento antigo (`select *`) em vez
+  // de derrubar o turno do cliente.
+  let data: Record<string, unknown> | null = null;
+  try {
+    const resposta = await ctx.supabase
+      .from("catalog_mappings")
+      .select(COLUNAS_DO_MAPEAMENTO)
+      .eq("organization_id", ctx.organizationId)
+      .eq("connection_id", connectionId)
+      .eq("table_name", tabela)
+      .eq("schema_name", schema)
+      .maybeSingle();
+    data = (resposta.data ?? null) as Record<string, unknown> | null;
+  } catch {
+    return { colunas: [], ordemPorNome: null, colSimilares: null, criterios: [] };
+  }
+  if (data === null) return { colunas: [], ordemPorNome: null, colSimilares: null, criterios: [] };
+
+  const candidatas = [
+    data.col_nome,
+    data.col_versao,
+    data.col_ano,
+    data.col_cor,
+    data.col_km,
+    data.col_preco,
+    data.col_imagem,
+    data.col_estoque,
+    data.col_cilindrada,
+    data.col_tipo,
+    // Colunas marcadas para aparecer na LEGENDA (C-067), mesmo as sem papel
+    // (ex.: `marca`, `potencia`) — precisam vir na consulta para o motor exibi-las.
+    ...(Array.isArray(data.legenda) ? data.legenda : []),
+    // A coluna de REFERÊNCIA de similares: o motor precisa do valor dela para
+    // achar a moto real que cita o pedido. É redigida antes de chegar à IA.
+    data.col_similares,
+  ];
+  const colunas = [
+    ...new Set(
+      candidatas.filter(
+        (c): c is string => typeof c === "string" && c !== "" && permitidas.has(c),
+      ),
+    ),
+  ];
+  const ordemPorNome =
+    typeof data.col_nome === "string" && permitidas.has(data.col_nome) ? data.col_nome : null;
+  const colSimilares =
+    typeof data.col_similares === "string" && permitidas.has(data.col_similares)
+      ? data.col_similares
+      : null;
+  // Colunas "Critério da IA" (config nova). Vazio = nenhuma (comportamento antigo).
+  const criterios = Array.isArray(data.colunas)
+    ? [
+        ...new Set(
+          (data.colunas as unknown[])
+            .map((c) =>
+              c !== null && typeof c === "object" && (c as { criterio?: unknown }).criterio === true
+                ? (c as { coluna?: unknown }).coluna
+                : null,
+            )
+            .filter((c): c is string => typeof c === "string" && c !== "" && permitidas.has(c)),
+        ),
+      ]
+    : [];
+  return { colunas, ordemPorNome, colSimilares, criterios };
+}
+
 const consultarInputShape = {
   ...connectionIdShape,
   tabela: z.string().trim().min(1).max(128).describe("A tabela de onde ler."),
@@ -251,6 +345,16 @@ const consultarInputShape = {
     .optional()
     .describe("Como ordenar as linhas."),
   limite: z.number().int().min(1).max(LIMITE_LINHAS.maximo).optional().default(20),
+  // Critérios que a IA usa para AMPLIAR quando o modelo pedido não existe.
+  // Ex.: { "marca": "Yamaha", "categoria": "Naked", "cilindrada": 689 }. O motor
+  // guarda e usa para ordenar as semelhantes (vale para QUALQUER coluna de
+  // critério configurada na tela).
+  criterios: z
+    .record(z.string().trim().min(1).max(128), z.union([z.string(), z.number()]))
+    .optional()
+    .describe(
+      "Quando o modelo pedido NÃO existir, informe aqui os critérios para achar parecidas, por coluna (ex.: {\"marca\":\"Yamaha\",\"categoria\":\"Naked\",\"cilindrada\":689}). Use as colunas marcadas como critério na configuração.",
+    ),
 };
 
 /** Tira os VALORES de filtro do audit; mantém só coluna/operador. */
@@ -313,6 +417,9 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
           `${semValor.map((f) => `${f.coluna} ${f.operador}`).join(", ")}. ` +
           "Repita a chamada preenchendo `valor` com o termo real do que o cliente pediu " +
           '(ex.: { coluna: "nome", operador: "contem", valor: "CB 250" }). ' +
+          "Isto NÃO é indisponibilidade do catálogo nem erro do sistema — foi só um filtro " +
+          "incompleto. NUNCA diga ao cliente que o sistema está instável ou fora do ar; " +
+          "refaça a chamada agora com o `valor`. " +
           "Se o termo exato não existir, tente uma parte dele (ex.: \"CB\") para o agente ver as mais parecidas.",
       };
     }
@@ -370,16 +477,48 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
       };
     }
 
+    // Projeção e ordem: se o modelo OMITIU `colunas`, usa as colunas do catálogo
+    // configurado (as "marcadas" na tela) em vez de `select *`. É o que impede a
+    // resposta de estourar `max_response_bytes` e vir truncada — o defeito que
+    // escondia motos do fim da tabela (ex.: "Neo 125") do agente.
+    let colunasDoPedido = input.colunas ?? [];
+    let ordemDoPedido = input.ordem;
+    const mapeamento = await catalogoDoMapeamento(
+      ctx,
+      resolucao.id,
+      schema!,
+      input.tabela,
+      permitidas,
+    );
+    if (colunasDoPedido.length === 0) {
+      if (mapeamento.colunas.length > 0) colunasDoPedido = mapeamento.colunas;
+      if (ordemDoPedido === undefined && mapeamento.ordemPorNome !== null) {
+        ordemDoPedido = { coluna: mapeamento.ordemPorNome, desc: false };
+      }
+    }
+    // A coluna de REFERÊNCIA precisa vir SEMPRE (o motor a usa por dentro para
+    // achar a moto real que cita o pedido). Ela é REDIGIDA do resultado antes de
+    // chegar à IA (wrapper em `inbound-turn.ts`).
+    if (
+      colunasDoPedido.length > 0 &&
+      mapeamento.colSimilares !== null &&
+      !colunasDoPedido.includes(mapeamento.colSimilares)
+    ) {
+      colunasDoPedido = [...colunasDoPedido, mapeamento.colSimilares];
+    }
+
     const pedido: PedidoDeLeitura = {
       schema: schema!,
       tabela: input.tabela,
-      colunas: input.colunas ?? [],
+      colunas: colunasDoPedido,
       filtros: filtros.map((f) => ({
         coluna: f.coluna,
         operador: f.operador as OperadorDeFiltro,
         ...(f.valor !== undefined ? { valor: f.valor } : {}),
       })),
-      ...(input.ordem ? { ordem: { coluna: input.ordem.coluna, desc: input.ordem.desc ?? false } } : {}),
+      ...(ordemDoPedido
+        ? { ordem: { coluna: ordemDoPedido.coluna, desc: ordemDoPedido.desc ?? false } }
+        : {}),
       // O teto é o da conexão, não o que o modelo pediu.
       limite: Math.min(input.limite, acesso.conexao.maxRows),
       offset: 0,
@@ -438,6 +577,23 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
       bytes += tamanho;
     }
 
+    // F5: quando o filtro não casou nada, devolve os VALORES possíveis das
+    // colunas de critério (ex.: `categoria`) para a IA refazer a consulta com um
+    // valor EXATO que se pareça com o que o cliente quer. Sem isto, o modelo
+    // (lite) tende a filtrar só pelo nome e a escolha sai fraca.
+    const valoresDosCriterios: Record<string, string[]> = {};
+    if (fallbackSemFiltro && mapeamento.criterios.length > 0) {
+      for (const coluna of mapeamento.criterios) {
+        const vistos = new Set<string>();
+        for (const linha of resultado.linhas) {
+          const v = linha[coluna];
+          if (typeof v === "string" && v.trim() !== "") vistos.add(v.trim());
+          if (vistos.size >= 15) break;
+        }
+        if (vistos.size > 0) valoresDosCriterios[coluna] = [...vistos];
+      }
+    }
+
     return {
       conexao: { id: acesso.conexao.id, label: acesso.conexao.label },
       schema,
@@ -451,6 +607,13 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
         ? {
             filtro_sem_resultado:
               'nenhum registro casou o filtro; o catálogo (até 100 linhas) está abaixo — ofereça as opções mais próximas do que o cliente pediu (ele pode ter errado a digitação).',
+          }
+        : {}),
+      ...(Object.keys(valoresDosCriterios).length > 0
+        ? {
+            valores_dos_criterios: valoresDosCriterios,
+            dica_criterios:
+              'o filtro não casou nenhum registro. Estes são os valores possíveis das colunas de critério: escolha o que MAIS se parece com o que o cliente quer (ex.: para uma naked, categoria "Naked"; para trail, "Adventure / Trilha") e REFAÇA a consulta filtrando por esse valor exato.',
           }
         : {}),
       aviso: AVISO_DADOS_NAO_CONFIAVEIS,

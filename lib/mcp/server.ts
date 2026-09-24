@@ -13,7 +13,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { z } from "zod";
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { auditMcpToolCall } from "./audit";
+import { auditMcpToolCall, erroDeResultadoDaTool } from "./audit";
 import { ensureRole, ensureScope, type McpAuthResult } from "./auth";
 import { allTools } from "./tools";
 import { higienizarUuidsDeAterro } from "./uuid-de-aterro";
@@ -76,13 +76,17 @@ export function createMcpServer(auth: McpAuthResult, requestId: string): McpServ
 
           const result = await tool.handler(args as never, ctx);
           const durationMs = Date.now() - startedAt;
+          // Erro de negócio devolvido no resultado (ex.: `{ erro: "filtro_sem_valor" }`)
+          // NÃO é sucesso: a consulta não foi feita e a métrica não pode mentir.
+          const erroSoft = erroDeResultadoDaTool(result);
 
           await auditMcpToolCall({
             ctx,
             toolName: tool.name,
             args: argsAudit,
             durationMs,
-            success: true,
+            success: erroSoft === null,
+            ...(erroSoft !== null ? { errorMessage: erroSoft } : {}),
             resultSummary: summarizeResult(result),
           });
 

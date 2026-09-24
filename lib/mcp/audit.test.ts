@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const auditSpy = vi.fn();
 vi.mock("@/lib/audit", () => ({ audit: (e: unknown) => auditSpy(e) }));
 
-import { auditMcpToolCall } from "./audit";
+import { auditMcpToolCall, erroDeResultadoDaTool } from "./audit";
 import type { McpContext } from "./types";
 
 const ctx = {
@@ -65,5 +65,29 @@ describe("auditMcpToolCall", () => {
     const e = auditSpy.mock.calls[0]![0];
     expect(e.metadata.args.cpf).toBe("[redacted]");
     expect(e.metadata.args.query).toBe("joana");
+  });
+});
+
+describe("erroDeResultadoDaTool — erro de negócio no retorno não é sucesso", () => {
+  it("reconhece `{ erro, mensagem }` (convenção do banco externo)", () => {
+    expect(erroDeResultadoDaTool({ erro: "filtro_sem_valor", mensagem: "..." })).toBe(
+      "filtro_sem_valor",
+    );
+  });
+
+  it("reconhece `{ ok: false, error: { code } }` e `{ error }`", () => {
+    expect(erroDeResultadoDaTool({ ok: false, error: { code: "sem_fluxo", message: "x" } })).toBe(
+      "sem_fluxo",
+    );
+    expect(erroDeResultadoDaTool({ ok: false })).toBe("ok_false");
+    expect(erroDeResultadoDaTool({ error: "boom" })).toBe("boom");
+  });
+
+  it("retorno normal (inclusive com campo `erro` vazio) é sucesso", () => {
+    expect(erroDeResultadoDaTool({ produtos: [], empate: false })).toBeNull();
+    expect(erroDeResultadoDaTool({ ok: true, resultado: 1 })).toBeNull();
+    expect(erroDeResultadoDaTool({ erro: "  " })).toBeNull();
+    expect(erroDeResultadoDaTool(null)).toBeNull();
+    expect(erroDeResultadoDaTool("texto")).toBeNull();
   });
 });

@@ -85,6 +85,7 @@ export const salvarCatalogoSchema = z
     schema_name: z.string().trim().min(1).max(128).default("public"),
     table_name: z.string().trim().min(1).max(128),
     col_nome: colunaDoCatalogo,
+    col_versao: colunaDoCatalogo.optional(),
     col_ano: colunaDoCatalogo.optional(),
     col_cor: colunaDoCatalogo.optional(),
     col_km: colunaDoCatalogo.optional(),
@@ -101,26 +102,42 @@ export const salvarCatalogoSchema = z
     // Prioridade por papel (1 = mais importante). Chaves = PAPEIS_COLUNA.
     // Usa `z.record(string, ...)` de propósito: `z.record(z.enum(...), ...)` no
     // Zod 4 exige TODAS as chaves no default, o que impediria `{}`.
+    // PRIORIDADE EMPATADA é permitida (ex.: `nome` e `versao` ambos = 1) — é o
+    // que faz o nome exibido ser a junção dos dois.
     ordem: z.record(z.string(), z.number().int().min(1).max(9)).default({}),
+    // Colunas (por NOME) que aparecem na legenda enviada JUNTO com a foto
+    // (0250/0251). Independente do papel: pode incluir coluna sem papel. Vazio =
+    // comportamento antigo (ano/cor/km/preço).
+    legenda: z.array(z.string().trim().min(1).max(128)).max(60).default([]),
+    // Configuração POR COLUNA (migration 0251): o que o agente faz com cada
+    // coluna. Vazio = derivar da configuração antiga (papéis + legenda + ordem).
+    colunas: z
+      .array(
+        z
+          .object({
+            coluna: colunaDoCatalogo,
+            ia: z.boolean().default(false),
+            criterio: z.boolean().default(false),
+            mostrar: z.boolean().default(false),
+            comparar: z.boolean().default(false),
+            ordem: z.number().int().min(1).max(9).optional(),
+            compoe_nome: z.boolean().default(false),
+          })
+          .strict(),
+      )
+      .max(200)
+      .default([]),
+    // Coluna de REFERÊNCIA de motos similares (ex.: moto_similar). Usada SÓ no
+    // motor; nunca vai para a IA nem para o cliente.
+    col_similares: colunaDoCatalogo.optional(),
   })
   .strict()
   .superRefine((val, ctx) => {
     const papeisValidos = new Set<string>(PAPEIS_COLUNA);
-    const usados = new Set<number>();
-    for (const [papel, n] of Object.entries(val.ordem)) {
+    for (const [papel] of Object.entries(val.ordem)) {
       if (!papeisValidos.has(papel)) {
         ctx.addIssue({ code: "custom", path: ["ordem"], message: `papel desconhecido: ${papel}` });
-        continue;
       }
-      if (usados.has(n)) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["ordem"],
-          message: "cada número de ordem só pode ser usado uma vez",
-        });
-        break;
-      }
-      usados.add(n);
     }
   });
 

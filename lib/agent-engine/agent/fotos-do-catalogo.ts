@@ -45,6 +45,36 @@ export interface MotoDoCatalogo {
   cilindrada?: string;
   /** Tipo (street/trail/...), quando houver coluna. */
   tipo?: string;
+  /** Estoque, quando houver coluna (usado só se o dono marcar "Mostrar"). */
+  estoque?: string;
+  /**
+   * Valores CRUS das colunas marcadas para exibição (C-067), por nome de coluna.
+   * Permite exibir coluna sem papel (ex.: `marca`, `potencia`).
+   */
+  valores?: Record<string, string>;
+}
+
+/** Um campo exibido na legenda: coluna real + papel (para rótulo), se houver. */
+export interface CampoDaMoto {
+  coluna: string;
+  papel: string | null;
+}
+
+/** Rótulo bonito por papel; coluna sem papel usa o próprio nome. */
+const ROTULO_POR_PAPEL: Record<string, string> = {
+  cor: 'Cor',
+  km: 'Quilometragem',
+  preco: 'Preço',
+  tipo: 'Tipo',
+  cilindrada: 'Cilindrada',
+  estoque: 'Estoque',
+  versao: 'Versão',
+  ano: 'Ano',
+};
+
+function humanizarColuna(coluna: string): string {
+  const t = coluna.replace(/_/g, ' ').trim();
+  return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
 /** normaliza para casar nome: minúsculas, sem acento, espaços colapsados. */
@@ -74,6 +104,13 @@ function textoDe(registro: Record<string, unknown>, chaves: readonly string[]): 
 /** Colunas do catálogo configurado (migration 0244) — `nome` é obrigatória. */
 export interface ColunasDoCatalogo {
   nome: string;
+  /**
+   * Colunas que COMPÕEM o nome da moto, na ordem: sempre o `nome` + as marcadas
+   * como prioridade 1 (ex.: `nome` + `versao` = "Biz 125 Flex"). Ausente ⇒ só o
+   * `nome` (comportamento antigo).
+   */
+  nomeComposto?: readonly string[];
+  versao?: string;
   ano?: string;
   cor?: string;
   km?: string;
@@ -82,18 +119,53 @@ export interface ColunasDoCatalogo {
   estoque?: string;
   cilindrada?: string;
   tipo?: string;
+  /** Colunas marcadas para aparecer na legenda (C-067), por nome. */
+  legendaColunas?: readonly string[];
 }
 
 /** Lê o campo pela coluna configurada; sem config, pelos nomes usuais. */
 function valorDe(
   registro: Record<string, unknown>,
   colunas: ColunasDoCatalogo | undefined,
-  papel: keyof ColunasDoCatalogo,
+  papel: Exclude<keyof ColunasDoCatalogo, 'nomeComposto'>,
   candidatos: readonly string[],
 ): string | undefined {
   const col = colunas?.[papel];
-  if (col !== undefined) return textoDe(registro, [col]);
+  if (typeof col === 'string') return textoDe(registro, [col]);
   return textoDe(registro, candidatos);
+}
+
+/**
+ * O NOME da moto a partir das colunas de prioridade 1 (ex.: `nome` + `versao` =
+ * "Biz 125 Flex"), na ordem em que vieram no mapeamento. Sem composição
+ * configurada, é o comportamento antigo: só a coluna de nome (ou os candidatos
+ * usuais quando não há mapeamento).
+ */
+function nomeCompostoDe(
+  registro: Record<string, unknown>,
+  colunas: ColunasDoCatalogo | undefined,
+): string | undefined {
+  const cols = colunas?.nomeComposto;
+  if (cols !== undefined && cols.length > 1) {
+    // Junta as partes SEM REPETIR: se a versão já está contida no nome (dado
+    // duplicado, ex.: nome e versao = "CB 300 F Twister"), ela é omitida — mas
+    // quando ACRESCENTA (versao "FLEX"), entra normalmente.
+    const partes: string[] = [];
+    for (const col of cols) {
+      const valor = textoDe(registro, [col]);
+      if (valor === undefined) continue;
+      const norm = normalizarNomeDeMoto(valor);
+      const repetida =
+        norm !== '' &&
+        partes.some((p) => {
+          const pn = normalizarNomeDeMoto(p);
+          return pn === norm || pn.includes(norm) || norm.includes(pn);
+        });
+      if (!repetida) partes.push(valor);
+    }
+    if (partes.length > 0) return partes.join(' ').replace(/\s+/g, ' ').trim();
+  }
+  return valorDe(registro, colunas, 'nome', ['nome', 'modelo', 'titulo', 'descricao']);
 }
 
 /**
@@ -105,6 +177,32 @@ function valorDe(
  * coluna; sem ele, descobre por candidatos usuais (retrocompatível com quem
  * ainda não configurou o catálogo).
  */
+/**
+ * Remove uma coluna do resultado da tool antes de ele chegar à IA. Usado para a
+ * coluna de REFERÊNCIA de similares (`moto_similar`): o motor lê o valor por
+ * dentro (via `extrairMotosDoResultado`), mas a IA NUNCA pode vê-lo — senão
+ * ofereceria as referências como se fossem estoque.
+ */
+export function redigirColunaDoResultado(resultado: unknown, coluna: string | null): unknown {
+  if (coluna === null || coluna === '' || resultado === null || typeof resultado !== 'object') {
+    return resultado;
+  }
+  const r = resultado as { colunas?: unknown; linhas?: unknown };
+  const saida: Record<string, unknown> = { ...(resultado as Record<string, unknown>) };
+  if (Array.isArray(r.colunas)) {
+    saida.colunas = r.colunas.filter((c) => c !== coluna);
+  }
+  if (Array.isArray(r.linhas)) {
+    saida.linhas = r.linhas.map((linha) => {
+      if (linha === null || typeof linha !== 'object') return linha;
+      const copia: Record<string, unknown> = { ...(linha as Record<string, unknown>) };
+      delete copia[coluna];
+      return copia;
+    });
+  }
+  return saida;
+}
+
 export function extrairMotosDoResultado(
   resultado: unknown,
   colunas?: ColunasDoCatalogo,
@@ -118,7 +216,7 @@ export function extrairMotosDoResultado(
     if (typeof linha !== 'object' || linha === null) continue;
     const registro = linha as Record<string, unknown>;
 
-    const nomeBruto = valorDe(registro, colunas, 'nome', ['nome', 'modelo', 'titulo', 'descricao']);
+    const nomeBruto = nomeCompostoDe(registro, colunas);
     const imagemBruta = valorDe(registro, colunas, 'imagem', ['imagem_url', 'imagem', 'foto', 'fotos']);
     if (nomeBruto === undefined || imagemBruta === undefined) continue;
 
@@ -134,6 +232,16 @@ export function extrairMotosDoResultado(
     const preco = valorDe(registro, colunas, 'preco', ['preco', 'preço', 'valor']);
     const cilindrada = valorDe(registro, colunas, 'cilindrada', ['cilindrada', 'cc']);
     const tipo = valorDe(registro, colunas, 'tipo', ['tipo', 'categoria']);
+    const estoque = valorDe(registro, colunas, 'estoque', ['estoque', 'quantidade', 'qtd']);
+
+    // Valores crus de TODAS as colunas da linha. É a fonte da legenda (C-067) e
+    // da comparação genérica por coluna (F1/F2) — inclusive colunas SEM papel
+    // (ex.: `marca`, `categoria`) marcadas como "Mostrar"/"Comparar" na tela.
+    const valores: Record<string, string> = {};
+    for (const col of Object.keys(registro)) {
+      const v = textoDe(registro, [col]);
+      if (v !== undefined) valores[col] = v;
+    }
 
     motos.push({
       nome: nomeBruto,
@@ -144,6 +252,8 @@ export function extrairMotosDoResultado(
       ...(preco !== undefined ? { preco } : {}),
       ...(cilindrada !== undefined ? { cilindrada } : {}),
       ...(tipo !== undefined ? { tipo } : {}),
+      ...(estoque !== undefined ? { estoque } : {}),
+      ...(Object.keys(valores).length > 0 ? { valores } : {}),
     });
   }
   return motos;
@@ -181,20 +291,71 @@ export function formatarPreco(preco: string | undefined): string | undefined {
   return `R$ ${numero.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-/**
- * A legenda da foto de UMA moto — nome/ano em cima, cor/km/preço nas linhas
- * seguintes. É o que prende a imagem à moto específica (pedido direto do dono,
- * 2026-09-19): sem isto, a foto solta não diz QUAL moto é. Campos ausentes são
- * omitidos; nome sozinho ainda identifica.
- */
-export function legendaDaMoto(moto: MotoDoCatalogo): string {
-  const titulo = [moto.nome, moto.ano].filter((v) => v !== undefined && v !== '').join(' ');
+/** Lê o valor de um campo: da coluna marcada (C-067) ou do campo tipado pelo papel. */
+function valorDoCampo(moto: MotoDoCatalogo, campo: CampoDaMoto): string | undefined {
+  if (campo.coluna !== '' && moto.valores?.[campo.coluna] !== undefined) {
+    return moto.valores[campo.coluna];
+  }
+  switch (campo.papel) {
+    case 'ano':
+      return moto.ano;
+    case 'cor':
+      return moto.cor;
+    case 'km':
+      return moto.quilometragem;
+    case 'preco':
+      return moto.preco;
+    case 'tipo':
+      return moto.tipo;
+    case 'cilindrada':
+      return moto.cilindrada;
+    case 'estoque':
+      return moto.estoque;
+    default:
+      return campo.coluna !== '' ? moto.valores?.[campo.coluna] : undefined;
+  }
+}
+
+function montarLegenda(moto: MotoDoCatalogo, campos: readonly CampoDaMoto[]): string {
+  const anoCampo = campos.find((c) => c.papel === 'ano');
+  const anoValor = anoCampo ? valorDoCampo(moto, anoCampo) : undefined;
+  const titulo = [moto.nome, anoValor].filter((v) => v !== undefined && v !== '').join(' ');
   const linhas = [titulo];
-  if (moto.cor) linhas.push(`Cor: ${moto.cor}`);
-  if (moto.quilometragem) linhas.push(`Quilometragem: ${moto.quilometragem} km`);
-  const preco = formatarPreco(moto.preco);
-  if (preco) linhas.push(`Preço: ${preco}`);
+  for (const campo of campos) {
+    // `nome` já é o título; `ano` entra no título; `imagem` é a foto, não texto.
+    if (campo.papel === 'nome' || campo.papel === 'imagem' || campo.papel === 'ano') continue;
+    const valor = valorDoCampo(moto, campo);
+    if (valor === undefined || valor === '') continue;
+    if (campo.papel === 'preco') {
+      const preco = formatarPreco(valor);
+      if (preco) linhas.push(`Preço: ${preco}`);
+      continue;
+    }
+    const rotulo = ROTULO_POR_PAPEL[campo.papel ?? ''] ?? humanizarColuna(campo.coluna);
+    const sufixo = campo.papel === 'km' ? ' km' : '';
+    linhas.push(`${rotulo}: ${valor}${sufixo}`);
+  }
   return linhas.join('\n');
+}
+
+/**
+ * A legenda da foto de UMA moto — nome/ano em cima e, abaixo, os campos
+ * marcados. É o que prende a imagem à moto específica.
+ *
+ * `campos` = o que o dono marcou para exibir (migration 0250/0251), por nome de
+ * coluna + papel (para o rótulo). Ausente = comportamento antigo (ano, cor, km,
+ * preço). O NOME sempre aparece (é a identidade); a FOTO é a imagem.
+ */
+export function legendaDaMoto(moto: MotoDoCatalogo, campos?: readonly CampoDaMoto[]): string {
+  if (campos === undefined) {
+    return montarLegenda(moto, [
+      { coluna: '', papel: 'ano' },
+      { coluna: '', papel: 'cor' },
+      { coluna: '', papel: 'km' },
+      { coluna: '', papel: 'preco' },
+    ]);
+  }
+  return montarLegenda(moto, campos);
 }
 
 /** Plano de envio determinístico: a moto e a legenda própria de cada foto. */
@@ -222,6 +383,7 @@ export interface FotoComLegenda {
 export function planoDeFotosDasMotos(
   motos: readonly MotoDoCatalogo[],
   maxPorMoto = 5,
+  campos?: readonly CampoDaMoto[],
 ): FotoComLegenda[] {
   const plano: FotoComLegenda[] = [];
   const urlsVistas = new Set<string>();
@@ -231,7 +393,7 @@ export function planoDeFotosDasMotos(
       const url = moto.fotos[i]!;
       if (urlsVistas.has(url)) continue;
       urlsVistas.add(url);
-      plano.push({ url, legenda: i === 0 ? legendaDaMoto(moto) : '' });
+      plano.push({ url, legenda: i === 0 ? legendaDaMoto(moto, campos) : '' });
     }
     return plano;
   }
@@ -239,7 +401,7 @@ export function planoDeFotosDasMotos(
     const url = moto.fotos[0];
     if (url === undefined || urlsVistas.has(url)) continue;
     urlsVistas.add(url);
-    plano.push({ url, legenda: legendaDaMoto(moto) });
+    plano.push({ url, legenda: legendaDaMoto(moto, campos) });
   }
   return plano;
 }
@@ -254,12 +416,13 @@ export function planoDeFotos(
   nomes: readonly string[] | undefined,
   texto: string,
   catalogo: readonly MotoDoCatalogo[],
+  campos?: readonly CampoDaMoto[],
 ): FotoComLegenda[] {
   if (nomes !== undefined && nomes.length > 0) {
     const motos = motosDeNomes(nomes, catalogo);
-    if (motos.length > 0) return planoDeFotosDasMotos(motos);
+    if (motos.length > 0) return planoDeFotosDasMotos(motos, undefined, campos);
   }
-  return planoDeFotosDasMotos(motosCitadasNoTexto(texto, catalogo));
+  return planoDeFotosDasMotos(motosCitadasNoTexto(texto, catalogo), undefined, campos);
 }
 
 /** As motos do catálogo cujos nomes foram pedidos (ordem pedida, dedup, tolerante). */
@@ -288,6 +451,7 @@ export function fotosComLegendaDeNomes(
   nomes: readonly string[],
   catalogo: readonly MotoDoCatalogo[],
   limite = MAX_FOTOS_AUTO,
+  campos?: readonly CampoDaMoto[],
 ): FotoComLegenda[] {
   const plano: FotoComLegenda[] = [];
   const urlsVistas = new Set<string>();
@@ -302,7 +466,7 @@ export function fotosComLegendaDeNomes(
     const foto = moto.fotos[0];
     if (foto === undefined || urlsVistas.has(foto)) continue;
     urlsVistas.add(foto);
-    plano.push({ url: foto, legenda: legendaDaMoto(moto) });
+    plano.push({ url: foto, legenda: legendaDaMoto(moto, campos) });
     if (plano.length >= limite) break;
   }
   return plano;
@@ -317,6 +481,7 @@ export function fotosComLegenda(
   texto: string,
   catalogo: readonly MotoDoCatalogo[],
   limite = MAX_FOTOS_AUTO,
+  campos?: readonly CampoDaMoto[],
 ): FotoComLegenda[] {
   const plano: FotoComLegenda[] = [];
   const urlsVistas = new Set<string>();
@@ -324,7 +489,7 @@ export function fotosComLegenda(
     const foto = moto.fotos[0];
     if (foto === undefined || urlsVistas.has(foto)) continue;
     urlsVistas.add(foto);
-    plano.push({ url: foto, legenda: legendaDaMoto(moto) });
+    plano.push({ url: foto, legenda: legendaDaMoto(moto, campos) });
     if (plano.length >= limite) break;
   }
   return plano;

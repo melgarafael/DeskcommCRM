@@ -8,6 +8,7 @@ export type OperadorDeBusca = "contem" | "eq" | "comeca_com";
 
 export type PapelColuna =
   | "nome"
+  | "versao"
   | "ano"
   | "cor"
   | "km"
@@ -19,12 +20,32 @@ export type PapelColuna =
 
 export type OrdemPorPapel = Partial<Record<PapelColuna, number>>;
 
+/** Configuração de UMA coluna (migration 0251). */
+export interface ColunaConfigDTO {
+  coluna: string;
+  /** Valor enviado à IA como contexto. */
+  ia: boolean;
+  /** A IA pode usar como filtro na consulta ampla. */
+  criterio: boolean;
+  /** Aparece na legenda que vai com a foto. */
+  mostrar: boolean;
+  /** O motor usa para ordenar as semelhantes. */
+  comparar: boolean;
+  /** Prioridade (1 = mais importante). */
+  ordem?: number;
+  /** Entra no nome exibido (ex.: nome + versão). */
+  compoe_nome: boolean;
+  /** PREFIXO do nome, em maiúsculas (ex.: `marca` → "YAMAHA FZ 15 ..."). */
+  prefixo_nome?: boolean;
+}
+
 /** Linha de `catalog_mappings` como a API devolve (snake_case). */
 export interface CatalogoMapeamentoDTO {
   connection_id: string;
   schema_name: string;
   table_name: string;
   col_nome: string;
+  col_versao: string | null;
   col_ano: string | null;
   col_cor: string | null;
   col_km: string | null;
@@ -38,6 +59,12 @@ export interface CatalogoMapeamentoDTO {
   similaridade_deterministica: boolean;
   similares_qtd: number;
   ordem: OrdemPorPapel;
+  /** Colunas (por nome) que aparecem na legenda enviada com a foto. */
+  legenda: string[];
+  /** Configuração POR COLUNA (migration 0251). */
+  colunas?: ColunaConfigDTO[];
+  /** Coluna de REFERÊNCIA de motos similares (ex.: moto_similar). */
+  col_similares?: string | null;
   updated_at?: string;
 }
 
@@ -47,6 +74,7 @@ export interface SalvarCatalogoBody {
   schema_name: string;
   table_name: string;
   col_nome: string;
+  col_versao?: string;
   col_ano?: string;
   col_cor?: string;
   col_km?: string;
@@ -60,6 +88,12 @@ export interface SalvarCatalogoBody {
   similaridade_deterministica: boolean;
   similares_qtd: number;
   ordem: OrdemPorPapel;
+  /** Colunas (por nome) que aparecem na legenda enviada com a foto. */
+  legenda: string[];
+  /** Configuração POR COLUNA (migration 0251). */
+  colunas?: ColunaConfigDTO[];
+  /** Coluna de REFERÊNCIA de motos similares (ex.: moto_similar). */
+  col_similares?: string;
 }
 
 export const catalogoMapeamentoQueryKey = ["external-db", "catalog"] as const;

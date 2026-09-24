@@ -5,8 +5,10 @@ import {
   cilindradaDaMoto,
   extrairCilindrada,
   extrairPrecoDoPedido,
+  numeroDaCelula,
   ordenarSimilares,
   parsePreco,
+  relevanciaDoNome,
 } from './similaridade';
 
 function moto(nome: string, preco: string, extras: Partial<MotoDoCatalogo> = {}): MotoDoCatalogo {
@@ -63,6 +65,30 @@ describe('cilindradaDaMoto', () => {
   });
 });
 
+describe('relevanciaDoNome', () => {
+  it('nome igual ao termo vale 2 (máximo)', () => {
+    expect(relevanciaDoNome('Neo 125', 'Neo 125')).toBe(2);
+  });
+
+  it('nome inteiro citado num termo maior pontua alto', () => {
+    expect(relevanciaDoNome('quero a Neo 125 por favor', 'Neo 125')).toBeGreaterThan(1);
+    expect(relevanciaDoNome('YAMAHA Neo 125 UBS 2025', 'Neo 125')).toBeGreaterThan(0);
+  });
+
+  it('pontua mais o nome mais específico (com versão)', () => {
+    const termo = 'quero a Biz 125 Flex';
+    expect(relevanciaDoNome(termo, 'Biz 125 Flex')).toBeGreaterThan(
+      relevanciaDoNome(termo, 'Biz 125'),
+    );
+  });
+
+  it('sem tokens em comum → 0; sem nome → 0', () => {
+    expect(relevanciaDoNome('nenhum token aqui', 'Neo 125')).toBe(0);
+    expect(relevanciaDoNome('Neo 125', undefined)).toBe(0);
+    expect(relevanciaDoNome('Neo 125', '')).toBe(0);
+  });
+});
+
 describe('ordenarSimilares', () => {
   it('mesma cilindrada primeiro, desempate pelo menor preço', () => {
     const r = ordenarSimilares('vc tem a CB 250?', CATALOGO, { quantidade: 3 });
@@ -87,5 +113,109 @@ describe('ordenarSimilares', () => {
   it('nunca devolve vazio com catálogo preenchido', () => {
     const r = ordenarSimilares('xyz', CATALOGO, { quantidade: 3 });
     expect(r).toHaveLength(3);
+  });
+
+  it('critério `nome` põe a moto de nome igual primeiro (ex.: Neo 125)', () => {
+    const catalogo = [
+      moto('Biz 125', '14500.00'),
+      moto('CBX 250', '9990.00'),
+      moto('Neo 125', '13500.00'),
+    ];
+    const r = ordenarSimilares('YAMAHA Neo 125 UBS 2025', catalogo, {
+      quantidade: 1,
+      criterios: ['nome'],
+    });
+    expect(r[0]?.nome).toBe('Neo 125');
+  });
+
+  it('nome composto (nome + versão) casa o pedido com a versão', () => {
+    const catalogo = [moto('Biz 125', '14500.00'), moto('Biz 125 Flex', '15000.00')];
+    const r = ordenarSimilares('quero a Biz 125 Flex', catalogo, {
+      quantidade: 1,
+      criterios: ['nome'],
+    });
+    expect(r[0]?.nome).toBe('Biz 125 Flex');
+  });
+});
+
+describe('ordenarSimilares — critérios por COLUNA (qualquer coluna marcada "Comparar")', () => {
+  const COM_VALORES: MotoDoCatalogo[] = [
+    { nome: 'XRE 300', valores: { marca: 'Honda', cilindrada: '300', ano: '2022' }, fotos: [] },
+    { nome: 'Lander 250', valores: { marca: 'Yamaha', cilindrada: '250', ano: '2020' }, fotos: [] },
+    { nome: 'Biz 125', valores: { marca: 'Honda', cilindrada: '125', ano: '2024' }, fotos: [] },
+  ];
+
+  it('coluna numérica: o mais próximo do número do pedido vem primeiro', () => {
+    const r = ordenarSimilares('quero uma 300', COM_VALORES, {
+      quantidade: 3,
+      criteriosColunas: ['cilindrada'],
+    });
+    expect(r[0]?.nome).toBe('XRE 300');
+  });
+
+  it('coluna de texto: o mais parecido com o pedido vem primeiro (sem limitar marca)', () => {
+    const r = ordenarSimilares('prefiro Honda', COM_VALORES, {
+      quantidade: 3,
+      criteriosColunas: ['marca'],
+    });
+    // Honda antes de Yamaha, mas Yamaha continua na lista (não filtra).
+    expect(r.map((m) => m.nome)).toContain('Lander 250');
+    expect(r[0]?.valores?.marca).toBe('Honda');
+  });
+});
+
+describe('numeroDaCelula — numérico só quando a célula é essencialmente número', () => {
+  it('números com rótulo de moeda/unidade contam', () => {
+    expect(numeroDaCelula('14500.00')).toBe(14500);
+    expect(numeroDaCelula('R$ 14.500,00')).toBe(14500);
+    expect(numeroDaCelula('125')).toBe(125);
+    expect(numeroDaCelula('125 cc')).toBe(125);
+    expect(numeroDaCelula('29000 km')).toBe(29000);
+    expect(numeroDaCelula('2021')).toBe(2021);
+  });
+
+  it('nome/categoria/marca com letras NÃO é número (era o defeito da BMW)', () => {
+    expect(numeroDaCelula('HONDA Biz 125 FLEX 2021')).toBeNull();
+    expect(numeroDaCelula('BMW G 310 GS 2022')).toBeNull();
+    expect(numeroDaCelula('Street')).toBeNull();
+    expect(numeroDaCelula('HONDA')).toBeNull();
+  });
+
+  it('coluna `nome` com dígitos usa relevância textual (não distância numérica)', () => {
+    const cat: MotoDoCatalogo[] = [
+      { nome: 'HONDA CG 160 Titan', valores: { nome: 'HONDA CG 160 Titan' }, fotos: [] },
+      { nome: 'BMW G 310 GS 2022', valores: { nome: 'BMW G 310 GS 2022' }, fotos: [] },
+    ];
+    const r = ordenarSimilares('HONDA Biz 125 FLEX 2021 HONDA', cat, {
+      quantidade: 2,
+      criteriosColunas: ['nome'],
+    });
+    expect(r[0]?.nome).toBe('HONDA CG 160 Titan');
+  });
+});
+
+describe('ordenarSimilares — preferência de ordem (qualquer coluna)', () => {
+  const CAT: MotoDoCatalogo[] = [
+    { nome: 'A', valores: { categoria: 'Naked', preco: '30000', ano: '2015' }, fotos: [] },
+    { nome: 'B', valores: { categoria: 'Naked', preco: '20000', ano: '2022' }, fotos: [] },
+    { nome: 'C', valores: { categoria: 'Naked', preco: '25000', ano: '2018' }, fotos: [] },
+  ];
+
+  it('preco "menor" → mais baratas primeiro, entre as parecidas', () => {
+    const r = ordenarSimilares('naked', CAT, {
+      quantidade: 3,
+      criteriosColunas: ['categoria'],
+      preferencias: { preco: 'menor' },
+    });
+    expect(r.map((m) => m.nome)).toEqual(['B', 'C', 'A']);
+  });
+
+  it('ano "maior" → mais novas primeiro', () => {
+    const r = ordenarSimilares('naked', CAT, {
+      quantidade: 3,
+      criteriosColunas: ['categoria'],
+      preferencias: { ano: 'maior' },
+    });
+    expect(r.map((m) => m.nome)).toEqual(['B', 'C', 'A']);
   });
 });

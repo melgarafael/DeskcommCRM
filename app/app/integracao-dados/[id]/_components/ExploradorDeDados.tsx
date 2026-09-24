@@ -86,7 +86,20 @@ export function ExploradorDeDados({ connectionId }: Props) {
   const mapeamento = useCatalogoMapeamento();
 
   const [catalogoAberto, setCatalogoAberto] = useState(false);
-  const [selecionada, setSelecionada] = useState<TabelaExterna | null>(null);
+  // Guarda só a IDENTIDADE da tabela (schema+nome); o objeto completo é DERIVADO
+  // da consulta ao vivo. Antes era um snapshot: quando o schema mudava (coluna
+  // nova no banco) e a lista era re-buscada, a tabela selecionada continuava com
+  // as colunas velhas — e o diálogo do catálogo mostrava menos colunas do que a
+  // tabela tem.
+  const [selecionadaId, setSelecionadaId] = useState<{ schema: string; nome: string } | null>(null);
+  const selecionada = useMemo<TabelaExterna | null>(() => {
+    if (!selecionadaId) return null;
+    return (
+      (catalogo.data ?? []).find(
+        (t) => t.schema === selecionadaId.schema && t.nome === selecionadaId.nome,
+      ) ?? null
+    );
+  }, [catalogo.data, selecionadaId]);
   const [limite, setLimite] = useState(LIMITE_PADRAO);
   const [offset, setOffset] = useState(0);
   const [ordem, setOrdem] = useState<{ coluna: string; desc: boolean } | null>(null);
@@ -128,7 +141,7 @@ export function ExploradorDeDados({ connectionId }: Props) {
   }
 
   function selecionar(tabela: TabelaExterna) {
-    setSelecionada(tabela);
+    setSelecionadaId({ schema: tabela.schema, nome: tabela.nome });
     setOffset(0);
     setOrdem(null);
     // Retoma os ajustes salvos da tabela escolhida, se houver; sem ajuste, a

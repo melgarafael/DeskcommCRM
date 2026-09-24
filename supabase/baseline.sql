@@ -24375,3 +24375,73 @@ where a.organization_id = cm.organization_id
   and a.config->'catalog'->'criterio' is not null;
 
 -- ---- fim backfill: config do agente para o catálogo (migration 0246) ----
+
+-- ---- papel `versao` e nome composto no catálogo (migration 0247) ----
+-- Idempotente. A tela passa a reconhecer a coluna `versao` (e `versão`,
+-- `submodelo`) e o nome exibido vira a junção das colunas de prioridade 1.
+
+alter table public.catalog_mappings
+  add column if not exists col_versao text;
+
+comment on column public.catalog_mappings.col_versao is
+  'Coluna de versão/submodelo, se existir. Marque `nome` e `versao` como prioridade 1 para o nome exibido ser a junção dos dois (ex.: "Biz 125" + "Flex").';
+
+-- ---- fim papel `versao` e nome composto no catálogo (migration 0247) ----
+
+-- ---- embedding pelo Google/Gemini no catálogo de modelos (migration 0248) ----
+-- Idempotente. Habilita o RAG sem OpenAI (opção B): o painel passa a oferecer
+-- `gemini-embedding-001` (dimensão 1536) para indexar/consultar o material.
+
+insert into public.ai_models
+  (provider, model_id, display_name, description,
+   input_price_per_million_cents, output_price_per_million_cents,
+   supports_tools, supports_embedding, embedding_dims)
+values
+  ('google', 'gemini-embedding-001', 'Gemini Embedding 001',
+   'Alternativa sem OpenAI para indexar e consultar o seu material. Dimensão 1536 (MRL) — a coluna vetorial não muda. Trocar de provedor exige reindexar o material.',
+   0, 0, false, true, 1536)
+on conflict (provider, model_id) do update set
+  display_name       = excluded.display_name,
+  description        = excluded.description,
+  supports_embedding = excluded.supports_embedding,
+  embedding_dims     = excluded.embedding_dims,
+  supports_tools     = excluded.supports_tools;
+
+-- ---- fim embedding pelo Google/Gemini no catálogo (migration 0248) ----
+
+-- ---- reindexação incremental: hash do conteúdo por fonte (migration 0249) ----
+-- Idempotente. O indexador grava aqui o hash do conteúdo indexado e pula a
+-- reindexação quando nada mudou (e o modelo de embedding é o mesmo).
+
+alter table public.ai_knowledge_sources
+  add column if not exists content_hash text;
+
+comment on column public.ai_knowledge_sources.content_hash is
+  'Hash do conteúdo que foi indexado por último. O indexador pula a reindexação quando o hash atual é igual E o modelo de embedding da versão ativa é o mesmo.';
+
+-- ---- fim reindexação incremental (migration 0249) ----
+
+-- ---- legenda configurável do catálogo (migration 0250) ----
+-- Idempotente. Quais papéis aparecem no texto enviado JUNTO com a foto.
+
+alter table public.catalog_mappings
+  add column if not exists legenda jsonb not null default '[]'::jsonb;
+
+comment on column public.catalog_mappings.legenda is
+  'Papéis de coluna que aparecem na legenda enviada com a foto da moto (ex.: ["ano","cor","preco"]). Independente do uso interno do dado (semelhança/disponibilidade). Default: ano, cor, km, preço.';
+
+-- ---- fim legenda configurável do catálogo (migration 0250) ----
+
+-- ---- configuração por coluna + referência de similares (migration 0251) ----
+-- Idempotente. `colunas` vazio = derivar da configuração antiga.
+
+alter table public.catalog_mappings
+  add column if not exists colunas jsonb not null default '[]'::jsonb,
+  add column if not exists col_similares text;
+
+comment on column public.catalog_mappings.colunas is
+  'Configuração POR COLUNA: array de {coluna, ia, criterio, mostrar, comparar, ordem, compoe_nome}. Vazio = derivar da configuração antiga (papéis + legenda + ordem).';
+comment on column public.catalog_mappings.col_similares is
+  'Coluna de REFERÊNCIA de motos similares (ex.: moto_similar). Usada SÓ no motor: acha a moto real que cita o pedido. Nunca vai para a IA nem para o cliente.';
+
+-- ---- fim configuração por coluna + referência (migration 0251) ----

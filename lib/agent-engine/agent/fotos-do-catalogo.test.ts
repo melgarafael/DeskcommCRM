@@ -80,6 +80,48 @@ describe('extrairMotosDoResultado', () => {
       fotos: ['http://x/cb.jpg'],
     });
   });
+
+  it('compõe o nome juntando as colunas de prioridade 1 (nome + versão)', () => {
+    const resultado = {
+      linhas: [{ nome: 'Biz 125', versao: 'Flex', imagem_url: 'http://x/biz.jpg' }],
+    };
+    const motos = extrairMotosDoResultado(resultado, {
+      nome: 'nome',
+      versao: 'versao',
+      imagem: 'imagem_url',
+      nomeComposto: ['nome', 'versao'],
+    });
+    expect(motos).toHaveLength(1);
+    expect(motos[0]?.nome).toBe('Biz 125 Flex');
+  });
+
+  it('NÃO repete a versão quando ela já está contida no nome (dado duplicado)', () => {
+    const resultado = {
+      linhas: [
+        { marca: 'HONDA', nome: 'CB 300 F Twister', versao: 'CB 300 F Twister', ano: '2022', imagem_url: 'http://x/cb.jpg' },
+      ],
+    };
+    const motos = extrairMotosDoResultado(resultado, {
+      nome: 'nome',
+      versao: 'versao',
+      imagem: 'imagem_url',
+      nomeComposto: ['marca', 'nome', 'versao', 'ano'],
+    });
+    expect(motos[0]?.nome).toBe('HONDA CB 300 F Twister 2022');
+  });
+
+  it('mantém a versão quando ela ACRESCENTA ao nome', () => {
+    const resultado = {
+      linhas: [{ marca: 'HONDA', nome: 'Biz 125', versao: 'FLEX', ano: '2021', imagem_url: 'http://x/biz.jpg' }],
+    };
+    const motos = extrairMotosDoResultado(resultado, {
+      nome: 'nome',
+      versao: 'versao',
+      imagem: 'imagem_url',
+      nomeComposto: ['marca', 'nome', 'versao', 'ano'],
+    });
+    expect(motos[0]?.nome).toBe('HONDA Biz 125 FLEX 2021');
+  });
 });
 
 describe('fotosComLegenda', () => {
@@ -184,6 +226,38 @@ describe('legendaDaMoto / formatarPreco', () => {
 
   it('com só o nome, ainda identifica a moto', () => {
     expect(legendaDaMoto({ nome: 'XMax 250', fotos: ['http://x/1.jpg'] })).toBe('XMax 250');
+  });
+
+  it('respeita o que o dono marcou para MOSTRAR (C-067)', () => {
+    const moto = {
+      nome: 'Biz 125 Flex',
+      fotos: ['http://x/1.jpg'],
+      ano: '2021',
+      cor: 'Marrom',
+      quilometragem: '29000',
+      preco: '14500.00',
+      tipo: 'Scooter',
+      cilindrada: '125 cc',
+      valores: { marca: 'Honda', potencia: '9,2 cv' },
+    };
+    const campos = (papeis: string[]) => papeis.map((p) => ({ coluna: '', papel: p }));
+    // Só ano e preço → sem cor, km, tipo, cilindrada.
+    expect(legendaDaMoto(moto, campos(['ano', 'preco']))).toBe(
+      'Biz 125 Flex 2021\nPreço: R$ 14.500,00',
+    );
+    // Nome sozinho (sem ano) continua identificando.
+    expect(legendaDaMoto(moto, campos(['preco']))).toBe('Biz 125 Flex\nPreço: R$ 14.500,00');
+    // Tudo mostrado, inclusive tipo e cilindrada.
+    expect(legendaDaMoto(moto, campos(['ano', 'cor', 'km', 'preco', 'tipo', 'cilindrada']))).toBe(
+      'Biz 125 Flex 2021\nCor: Marrom\nQuilometragem: 29000 km\nPreço: R$ 14.500,00\nTipo: Scooter\nCilindrada: 125 cc',
+    );
+    // Coluna SEM papel (ex.: marca, potencia) sai como "Nome da coluna: valor".
+    expect(
+      legendaDaMoto(moto, [
+        { coluna: 'marca', papel: null },
+        { coluna: 'potencia', papel: null },
+      ]),
+    ).toBe('Biz 125 Flex\nMarca: Honda\nPotencia: 9,2 cv');
   });
 });
 
