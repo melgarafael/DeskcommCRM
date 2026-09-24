@@ -2,6 +2,7 @@
 import { useMutation, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
+import { randomId } from "@/lib/random-id";
 import type { Message } from "@/lib/types/messaging";
 
 interface SendArgs {
@@ -42,7 +43,7 @@ export function useSendMessage() {
       const queryKey = ["messages", args.conversation_id];
       await qc.cancelQueries({ queryKey });
 
-      const tempId = `temp-${crypto.randomUUID()}`;
+      const tempId = `temp-${randomId()}`;
       const tempMsg: Message = {
         id: tempId,
         organization_id: "",
