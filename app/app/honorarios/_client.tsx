@@ -13,6 +13,7 @@ import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { useT } from "@/hooks/i18n/useT";
+import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
 import { formatCents } from "@/lib/money";
@@ -46,6 +47,7 @@ function resumoDoValor(c: Contrato, t: (s: string) => string): string {
 
 export function Honorarios({ podeGerenciar }: { podeGerenciar: boolean }) {
   const t = useT();
+  const tagDoIdioma = useTagDeIdioma();
   const qc = useQueryClient();
   const [selecionado, setSelecionado] = useState<string | null>(null);
 
@@ -110,7 +112,7 @@ export function Honorarios({ podeGerenciar }: { podeGerenciar: boolean }) {
                   <td className="py-2">{rotuloDoModelo(c.modelo, t)}</td>
                   <td className="py-2 tabular-nums">{resumoDoValor(c, t)}</td>
                   <td className="py-2 text-right text-xs text-text-muted">
-                    {new Date(c.created_at).toLocaleDateString("pt-BR")}
+                    {new Date(c.created_at).toLocaleDateString(tagDoIdioma)}
                   </td>
                 </tr>
               ))}

@@ -13,6 +13,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { useT } from "@/hooks/i18n/useT";
+import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { apiClient } from "@/lib/api/client";
 import { formatCents, parseReaisToCents } from "@/lib/money";
 
@@ -36,6 +37,7 @@ export function Parcelas({
   podeGerenciar: boolean;
 }) {
   const t = useT();
+  const tagDoIdioma = useTagDeIdioma();
   const qc = useQueryClient();
   const [contaId, setContaId] = useState("");
 
@@ -114,7 +116,7 @@ export function Parcelas({
             {lista.map((p) => (
               <tr key={p.id} className="border-b border-border/60" data-testid={`parcela-${p.id}`}>
                 <td className="py-1 text-text-muted">#{p.numero}</td>
-                <td className="py-1">{new Date(p.vencimento).toLocaleDateString("pt-BR")}</td>
+                <td className="py-1">{new Date(p.vencimento).toLocaleDateString(tagDoIdioma)}</td>
                 <td className="py-1 text-right tabular-nums">
                   {formatCents(p.valor_cents, "BRL")}
                 </td>

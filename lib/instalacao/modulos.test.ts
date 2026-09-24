@@ -59,12 +59,14 @@ describe("modulosLigados — banco_externo (flag em platform_config)", () => {
 
   it("cada módulo tem a sua linha — ligar um não liga o outro", async () => {
     const soFluxos = [{ chave: "MODULO_FLUXOS_DE_ATENDIMENTO", valor: "ligado" }];
-    expect(await modulosLigados(banco({ data: soFluxos }).db)).toEqual(["fluxos_atendimento"]);
+    expect(await modulosLigados(banco({ platform_config: { data: soFluxos } }).db)).toEqual([
+      "fluxos_atendimento",
+    ]);
     const osDois = [
       { chave: "MODULO_BANCO_EXTERNO", valor: "ligado" },
       { chave: "MODULO_FLUXOS_DE_ATENDIMENTO", valor: "ligado" },
     ];
-    expect(await modulosLigados(banco({ data: osDois }).db)).toEqual([
+    expect(await modulosLigados(banco({ platform_config: { data: osDois } }).db)).toEqual([
       "banco_externo",
       "fluxos_atendimento",
     ]);
@@ -127,12 +129,17 @@ describe("abrirAcesso com o módulo desligado", () => {
 describe("moduloLigadoComMemo (turno do agente)", () => {
   it("dentro do prazo do memo, uma leitura só; vencido, lê de novo", async () => {
     esquecerMemoDosModulos();
-    const { db, from } = banco({ data: [{ chave: "MODULO_FLUXOS_DE_ATENDIMENTO", valor: "ligado" }] });
+    const { db, from } = banco({
+      platform_config: { data: [{ chave: "MODULO_FLUXOS_DE_ATENDIMENTO", valor: "ligado" }] },
+    });
     expect(await moduloLigadoComMemo(db, "fluxos_atendimento", 1_000)).toBe(true);
     expect(await moduloLigadoComMemo(db, "fluxos_atendimento", 1_000 + MEMO_DO_MODULO_MS - 1)).toBe(true);
-    expect(from).toHaveBeenCalledTimes(1);
-    await moduloLigadoComMemo(db, "fluxos_atendimento", 1_000 + MEMO_DO_MODULO_MS + 1);
+    // Cada leitura de verdade é DUAS chamadas a `.from()` (flag + módulo de tabela, ver
+    // `modulosLigados`) — 1 leitura real = 2, não 1; o memo evita a SEGUNDA leitura, não a
+    // segunda chamada dentro da mesma leitura.
     expect(from).toHaveBeenCalledTimes(2);
+    await moduloLigadoComMemo(db, "fluxos_atendimento", 1_000 + MEMO_DO_MODULO_MS + 1);
+    expect(from).toHaveBeenCalledTimes(4);
   });
 });
 
