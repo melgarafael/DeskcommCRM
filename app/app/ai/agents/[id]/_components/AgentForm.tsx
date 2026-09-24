@@ -51,6 +51,7 @@ import { BasesDoAgente, type MaterialDoAcervo } from "./BasesDoAgente";
 import { FunisDoAgente, type CoberturaPorFunil } from "./FunisDoAgente";
 import { PublishConfirmDialog } from "./PublishConfirmDialog";
 import { CatalogoDoAgente } from "./CatalogoDoAgente";
+import { ComandosDoCelular } from "./ComandosDoCelular";
 import {
   saveAgentDraftAction,
   publishAgentAction,
@@ -1096,6 +1097,16 @@ export function AgentForm(props: Props) {
             <CatalogoDoAgente
               agentId={props.agent.id}
               inicial={(props.agent.config ?? {}).catalog}
+              disabled={disabled}
+            />
+          )}
+
+          {/* Comandos pelo celular (`#on`/`#off`, C-076). Salva em
+              `ai_agents.config.aceita_comandos_celular`. */}
+          {isEdit && (
+            <ComandosDoCelular
+              agentId={props.agent.id}
+              inicial={(props.agent.config ?? {}).aceita_comandos_celular}
               disabled={disabled}
             />
           )}

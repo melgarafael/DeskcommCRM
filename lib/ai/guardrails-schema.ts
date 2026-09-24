@@ -94,6 +94,16 @@ export const agentConfigSchema = z.object({
   // PLANO-CONFIG-UI-AGENTE). Opcional: sem o bloco, o runtime usa os defaults
   // (comportamento atual). A validação estrita mora no próprio schema.
   catalog: catalogConfigSchema.optional(),
+  /**
+   * Aceita os comandos de controle `#on`/`#off` enviados pelo CELULAR do
+   * operador (C-076)? `false` (default do produto) = o ingest NÃO reconhece os
+   * comandos; qualquer mensagem do celular continua pausando a IA normalmente.
+   *
+   * O default é `false` de propósito: um comando digitado no chat do CLIENTE é
+   * uma decisão de produto com efeito visível (o cliente pode ver a mensagem),
+   * então não se liga por migration — se liga na tela do agente.
+   */
+  aceita_comandos_celular: z.boolean().default(false),
 });
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 
@@ -104,6 +114,7 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
   rag_top_k: 5,
   rag_similarity_threshold: 0.4,
   confidence_threshold: 0.6,
+  aceita_comandos_celular: false,
 };
 
 // ---------------------------------------------------------------------------

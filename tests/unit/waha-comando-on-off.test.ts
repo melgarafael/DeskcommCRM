@@ -49,7 +49,10 @@ interface Captura {
   rpcs: Array<{ fn: string; args: unknown }>;
 }
 
-function makeAdmin(cap: Captura, opts: { jaRegistrada?: boolean } = {}) {
+function makeAdmin(
+  cap: Captura,
+  opts: { jaRegistrada?: boolean; aceitaComandos?: boolean } = {},
+) {
   const table = (name: string) => {
     let mode: "select" | "insert" | "update" = "select";
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -87,6 +90,13 @@ function makeAdmin(cap: Captura, opts: { jaRegistrada?: boolean } = {}) {
         }
         if (name === "conversations" && mode === "select") {
           return Promise.resolve({ data: { bot_silenced_until: null }, error: null });
+        }
+        // C-076: consulta da flag `config.aceita_comandos_celular`.
+        if (name === "ai_agents" && mode === "select") {
+          return Promise.resolve({
+            data: { config: { aceita_comandos_celular: opts.aceitaComandos === true } },
+            error: null,
+          });
         }
         return Promise.resolve({ data: null, error: null });
       },
@@ -126,7 +136,7 @@ beforeEach(() => vi.clearAllMocks());
 describe("C-075 · comando do celular controla o automático", () => {
   it("#off → pausa DURÁVEL e grava a mensagem", async () => {
     const cap: Captura = { conversationUpdates: [], insertedMessages: [], rpcs: [] };
-    await dispatchWahaEvent(makeAdmin(cap), SESSION, comando("#off"), "req-off");
+    await dispatchWahaEvent(makeAdmin(cap, { aceitaComandos: true }), SESSION, comando("#off"), "req-off");
 
     const pausa = cap.conversationUpdates.find((u) => u.last_handoff_reason !== undefined);
     expect(pausa).toBeDefined();
@@ -140,7 +150,7 @@ describe("C-075 · comando do celular controla o automático", () => {
 
   it("#on → devolve o atendimento à IA (limpa as travas), sem pausar", async () => {
     const cap: Captura = { conversationUpdates: [], insertedMessages: [], rpcs: [] };
-    await dispatchWahaEvent(makeAdmin(cap), SESSION, comando("#on"), "req-on");
+    await dispatchWahaEvent(makeAdmin(cap, { aceitaComandos: true }), SESSION, comando("#on"), "req-on");
 
     // A mensagem do comando é gravada…
     expect(cap.insertedMessages).toHaveLength(1);
@@ -180,5 +190,29 @@ describe("C-075 · comando do celular controla o automático", () => {
     );
     expect(cap.conversationUpdates.some((u) => u.last_handoff_reason !== undefined)).toBe(false);
     expect(cap.rpcs.some((r) => r.fn === "emit_event")).toBe(false);
+  });
+});
+
+describe("C-076 · o comando só VALE se o agente aceitar (config da UI)", () => {
+  it("DESLIGADO (default): '#off' NÃO pausa por comando — só a pausa normal da mensagem", async () => {
+    const cap: Captura = { conversationUpdates: [], insertedMessages: [], rpcs: [] };
+    await dispatchWahaEvent(makeAdmin(cap), SESSION, comando("#off"), "req-off-desligado");
+
+    // A pausa que aconteceu é a da mensagem manual (não a do comando).
+    const pausa = cap.conversationUpdates.find((u) => u.last_handoff_reason !== undefined);
+    expect(pausa).toBeDefined();
+    expect(String(pausa!.last_handoff_reason)).toMatch(/manual/i);
+    expect(String(pausa!.last_handoff_reason)).not.toMatch(/#off/i);
+  });
+
+  it("DESLIGADO (default): '#on' NÃO devolve o atendimento à IA", async () => {
+    const cap: Captura = { conversationUpdates: [], insertedMessages: [], rpcs: [] };
+    await dispatchWahaEvent(makeAdmin(cap), SESSION, comando("#on"), "req-on-desligado");
+
+    // Sem devolução: nada de `emit_event` de retomada, e a linha vira pausa normal.
+    expect(cap.rpcs.some((r) => r.fn === "emit_event")).toBe(false);
+    const pausa = cap.conversationUpdates.find((u) => u.last_handoff_reason !== undefined);
+    expect(pausa).toBeDefined();
+    expect(String(pausa!.last_handoff_reason)).toMatch(/manual/i);
   });
 });

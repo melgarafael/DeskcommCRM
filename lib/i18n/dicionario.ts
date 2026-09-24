@@ -2194,8 +2194,8 @@ export const DICIONARIO: Traducoes = {
   "Quantas vezes o agente registrou que um cliente mudou de passo no atendimento — o sinal de que a conversa andou, e não só aconteceu. Inclui as mudanças para fechado e para perdido, então não leia como só progresso. Cartão movido à mão no quadro não entra aqui.": {
     es: "Cuántas veces el agente registró que un cliente cambió de paso en la atención — la señal de que la conversación avanzó, y no solo ocurrió. Incluye los cambios a cerrado y a perdido, así que no lo leas como solo progreso. La tarjeta movida a mano en el tablero no entra aquí.",
   },
-  "Conversas que o agente passou para um atendente humano, a cada 100 mensagens recebidas. Leia como estimativa: no geral o mesmo caso conta uma vez só, mesmo que o cliente peça ajuda várias vezes, mas em parte dos atendimentos ele pode contar mais de uma.": {
-    es: "Conversaciones que el agente pasó a una persona, cada 100 mensajes recibidos. Léelo como estimación: en general el mismo caso cuenta una sola vez, aunque el cliente pida ayuda varias veces, pero en parte de las atenciones puede contar más de una.",
+  "Conversas que o agente passou para um consultor responsável, a cada 100 mensagens recebidas. Leia como estimativa: no geral o mesmo caso conta uma vez só, mesmo que o cliente peça ajuda várias vezes, mas em parte dos atendimentos ele pode contar mais de uma.": {
+    es: "Conversaciones que el agente pasó a un consultor responsable, cada 100 mensajes recibidos. Léelo como estimación: en general el mismo caso cuenta una sola vez, aunque el cliente pida ayuda varias veces, pero en parte de las atenciones puede contar más de una.",
   },
   "Não houve atendimento neste período, então os zeros abaixo querem dizer \"nada aconteceu\", e não \"foi mal\". Mude as datas acima para um período com movimento.": {
     es: "No hubo atención en este período, así que los ceros de abajo quieren decir \"no pasó nada\", y no \"salió mal\". Cambia las fechas de arriba a un período con movimiento.",
@@ -2266,14 +2266,14 @@ export const DICIONARIO: Traducoes = {
   "O lead entra pelo formulário, a automação roda, e a mensagem de abordagem nunca é escrita — o contato fica no funil sem ninguém falar com ele.": {
     es: "El lead entra por el formulario, la automatización corre, y el mensaje de abordaje nunca se escribe — el contacto queda en el embudo sin que nadie le hable.",
   },
-  "Sugerir resposta ao atendente": {
-    es: "Sugerir respuesta al agente humano",
+  "Sugerir resposta ao consultor responsável": {
+    es: "Sugerir respuesta al consultor responsable",
   },
-  "Escreve um rascunho de resposta para o atendente humano revisar antes de enviar.": {
-    es: "Escribe un borrador de respuesta para que el agente humano lo revise antes de enviarlo.",
+  "Escreve um rascunho de resposta para o consultor responsável revisar antes de enviar.": {
+    es: "Escribe un borrador de respuesta para que el consultor responsable lo revise antes de enviarlo.",
   },
-  "O botão de sugerir resposta não traz nada, e o atendente escreve do zero sem saber por quê.": {
-    es: "El botón de sugerir respuesta no trae nada, y el agente humano escribe desde cero sin saber por qué.",
+  "O botão de sugerir resposta não traz nada, e o consultor responsável escreve do zero sem saber por quê.": {
+    es: "El botón de sugerir respuesta no trae nada, y el consultor responsable escribe desde cero sin saber por qué.",
   },
   "Responder (motor antigo)": {
     es: "Responder (motor antiguo)",
@@ -7772,7 +7772,7 @@ export const DICIONARIO: Traducoes = {
   "Cancelar um retorno agendado": { es: "Cancelar un retorno agendado" },
   "Catálogo da loja": { es: "Catálogo de la tienda" },
   "Chamados para uma pessoa": { es: "Casos para una persona" },
-  "Chamar um atendente humano": { es: "Llamar a un agente humano" },
+  "Chamar um consultor responsável": { es: "Llamar a un consultor responsable" },
   "Compras do cliente": { es: "Compras del cliente" },
   "Confirma o horário que estava esperando a resposta da pessoa, para a equipe saber que ela vem mesmo.": {
     es: "Confirma el horario que estaba esperando la respuesta de la persona, para que el equipo sepa que va a venir de verdad.",
@@ -8452,6 +8452,20 @@ export const DICIONARIO: Traducoes = {
     {
       es: "Cuando este flujo termine, el siguiente comienza solo — lo que el cliente ya respondió sigue valiendo.",
     },
+  // ─── C-076: Comandos pelo celular (#on/#off) ───
+  "Comandos pelo celular": { es: "Comandos desde el celular" },
+  "Aceitar #on/#off enviados pelo celular": { es: "Aceptar #on/#off enviados desde el celular" },
+  "Ligado, o atendente pode enviar #off para pausar o automático e #on para devolvê-lo à IA, digitando no próprio WhatsApp do celular. Desligado, essas mensagens são tratadas como texto comum.":
+    {
+      es: "Activado, el agente puede enviar #off para pausar el automático y #on para devolverlo a la IA, escribiendo en el propio WhatsApp del celular. Desactivado, esos mensajes se tratan como texto normal.",
+    },
+  "Atenção: o comando é digitado no chat do cliente e pode aparecer para ele. Vale por conversa, e a pausa só termina com #on ou pelo botão “devolver ao automático”.":
+    {
+      es: "Atención: el comando se escribe en el chat del cliente y puede aparecer para él. Vale por conversación, y la pausa solo termina con #on o con el botón “devolver al automático”.",
+    },
+  "Comandos pelo celular ligados — já valem no próximo atendimento.":
+    { es: "Comandos desde el celular activados — ya valen en la próxima atención." },
+  "Comandos pelo celular desligados.": { es: "Comandos desde el celular desactivados." },
 };
 
 /**

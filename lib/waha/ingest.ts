@@ -19,7 +19,7 @@ import {
   pausarIaDuravelmente,
   pausarIaPorAtendimentoManual,
 } from "@/lib/escalacao/atendimento-manual";
-import { lerComandoDeControle } from "@/lib/escalacao/comando-de-canal";
+import { agenteAceitaComandoDeCelular, lerComandoDeControle } from "@/lib/escalacao/comando-de-canal";
 import { devolverAtendimentoAoAgente } from "@/lib/escalacao/retomada";
 import { getWahaClient } from "@/lib/waha/client";
 import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
@@ -970,14 +970,19 @@ async function handleOutboundFromUserPhone(
   // Quem reaproveitar esta condição para pular o INSERT reabre o #108.
   const ehEco = await ehEcoDeEnvioNosso(admin, session.organization_id, conversationId, p);
   if (!ehEco) {
-    if (comando === "off") {
+    // C-076: o comando APENAS VALE se o agente o aceita
+    // (`ai_agents.config.aceita_comandos_celular`, ligado na tela). Desligado
+    // (default), `#on`/`#off` são texto comum e a mensagem só pausa, como
+    // qualquer outra. FAIL-CLOSED: falha de leitura ⇒ não aplica o comando.
+    const comandoVale = comando !== null && (await agenteAceitaComandoDeCelular(admin, session.organization_id));
+    if (comandoVale && comando === "off") {
       await pausarIaDuravelmente(admin, {
         organizationId: session.organization_id,
         conversationId,
         canal: "waha",
         motivo: MOTIVO_COMANDO_OFF,
       });
-    } else if (comando === "on") {
+    } else if (comandoVale && comando === "on") {
       await devolverAtendimentoAoAgente(
         {
           supabase: admin,
@@ -995,7 +1000,7 @@ async function handleOutboundFromUserPhone(
       });
     }
     // O comando não é fala de atendimento: esconde do cliente depois de aplicar.
-    if (comando) await revogarComando(session, chatId, p.id);
+    if (comandoVale) await revogarComando(session, chatId, p.id);
   }
 
   await audit({

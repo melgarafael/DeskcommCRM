@@ -61,6 +61,11 @@ export interface PublishedAgentConfig {
   /** Apresentação do catálogo e escolha das motos semelhantes (Fase 3). */
   catalogConfig: CatalogConfig;
   /**
+   * Aceita comandos `#on`/`#off` do celular (C-076)? Default `false`: o ingest
+   * NÃO reconhece comando nenhum, e qualquer mensagem do celular só pausa.
+   */
+  aceitaComandosCelular: boolean;
+  /**
    * O papel OPERADOR está ligado nesta versão (spec 16 §3.2)?
    *
    * Default do banco é FALSE: um papel que gasta uma chamada de modelo por turno
@@ -161,6 +166,7 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     rag_top_k?: unknown;
     rag_similarity_threshold?: unknown;
     catalog?: unknown;
+    aceita_comandos_celular?: unknown;
   };
   const ragTopK =
     typeof cfg.rag_top_k === 'number' &&
@@ -225,6 +231,9 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // Config de catálogo (Fase 3). Leitura TOLERANTE: bloco ausente/parcial cai
     // no default (não muda o comportamento de quem nunca abriu a tela).
     catalogConfig: parseCatalogConfig(cfg.catalog),
+    // C-076: só `true` EXPLÍCITO liga. Ausente/qualquer outro valor = desligado
+    // (a direção segura: não aceitar um comando que o dono não ligou na tela).
+    aceitaComandosCelular: cfg.aceita_comandos_celular === true,
     versionCreatedBy: r.version_created_by,
     agentCreatedBy: r.agent_created_by,
   };
