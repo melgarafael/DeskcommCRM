@@ -17,6 +17,11 @@ export interface RouterMember {
   intentName: string;
   intentDescription: string;
   examples: string[];
+  /**
+   * Fluxo de atendimento que COMEÇA quando esta intenção casa (migration 0394; 0237 na branch do autor).
+   * `null`/ausente = só roteia agente, como antes.
+   */
+  flowPointerId?: string | null;
 }
 
 export interface LoadedRouter {
@@ -60,6 +65,7 @@ interface MemberRow {
   intent_name: string;
   intent_description: string;
   examples: string[] | null;
+  flow_pointer_id: string | null;
 }
 
 export async function loadActiveRouter(
@@ -79,7 +85,7 @@ export async function loadActiveRouter(
   if (router === undefined) return null;
 
   const { rows: memberRows } = await db.query<MemberRow>(
-    `select agent_id, intent_name, intent_description, examples
+    `select agent_id, intent_name, intent_description, examples, flow_pointer_id
      from ai_router_members
      where router_id = $1
        and organization_id = $2
@@ -120,6 +126,7 @@ export async function loadActiveRouter(
       intentName: m.intent_name,
       intentDescription: m.intent_description,
       examples: m.examples ?? [],
+      flowPointerId: m.flow_pointer_id,
     })),
   };
 }

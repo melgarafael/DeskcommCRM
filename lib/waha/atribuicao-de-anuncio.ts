@@ -44,13 +44,13 @@ export function extrairAtribuicaoWaha(messageRaw: unknown): AtribuicaoDeAnuncio 
   const tipo = str(ad.sourceType) ?? str(ad.source_type);
   if (tipo && tipo !== "ad") return null;
 
-  const sourceId = str(ad.ctwaClid) ?? str(ad.sourceId);
+  const sourceId = str(ad.ctwaClid) ?? str(ad.ctwa_clid);
   // Mesma separação do irmão da API oficial: o clique é `ctwaClid`, o anúncio é
   // `sourceId`, e quem traz os dois não pode perder um.
-  const adId = str(ad.sourceId);
+  const adId = str(ad.sourceId) ?? str(ad.source_id);
   const titulo = str(ad.title);
   const sourceUrl = str(ad.sourceUrl);
-  if (!sourceId && !titulo && !sourceUrl) return null;
+  if (!sourceId && !adId && !titulo && !sourceUrl) return null;
 
   return {
     plataforma: "meta_ads",

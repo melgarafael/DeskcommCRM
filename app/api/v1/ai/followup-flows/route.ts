@@ -11,6 +11,8 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createFollowupFlowSchema } from "@/lib/followup/api-schemas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -59,10 +61,23 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
+  // Roteiro de atendimento é módulo opcional da instalação (doc 64): desligado,
+  // a porta não existe — 404, a mesma resposta do banco externo desligado.
+  if (
+    parsed.data.surface === "atendimento" &&
+    !(await moduloLigado(createAdminClient(), "fluxos_atendimento"))
+  ) {
+    return fail("not_found", t("Fluxo não encontrado."), 404, { requestId });
+  }
+
   const supabase = await createClient();
   const { data: created, error: insErr } = await supabase
     .from("followup_flow_pointers")
-    .insert({ organization_id: activeOrg.orgId, name: parsed.data.name })
+    .insert({
+      organization_id: activeOrg.orgId,
+      name: parsed.data.name,
+      ...(parsed.data.surface !== undefined ? { surface: parsed.data.surface } : {}),
+    })
     .select("*")
     .single();
 

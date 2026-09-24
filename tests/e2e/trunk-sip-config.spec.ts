@@ -117,7 +117,9 @@ test.describe("trunk SIP — permissão e conteúdo do bloco pjsip.conf", () => 
     await page.waitForURL(/\/app\/settings\/voip-trunk/);
 
     // ── VALORES ÚNICOS por execução: reconhecíveis no bloco final ──────────
-    const sufixo = Date.now().toString(36);
+    // O sufixo sempre inclui um dígito ('1') para impedir que <sufixo>.invariant.test
+    // forme três segmentos exclusivamente alfabéticos pontuados (#1434).
+    const sufixo = `${Date.now().toString(36)}1`;
     const host = `sip-e2e-${sufixo}.invariant.test`;
     const usuario = `e2e-user-${sufixo}`;
     const senha = `e2e-senha-${sufixo}`;
@@ -143,10 +145,11 @@ test.describe("trunk SIP — permissão e conteúdo do bloco pjsip.conf", () => 
     // CÓPIA da tela, e um arquivo `.conf` tem token pontuado em minúsculas por
     // construção. Medido: `sufixo` é `Date.now().toString(36)`, então o host
     // gerado (`sip-e2e-<sufixo>.invariant.test`) casa com o padrão de chave crua
-    // toda vez que o relógio devolve base36 só com letras — o caso reprovava por
-    // hora do dia, e passava na hora seguinte.
+    // toda vez que o relógio devolve base36 só com letras (#1434) — o caso reprovava por
+    // hora do dia, e passava na hora seguinte. Além de excluir o bloco, limpamos o host
+    // e garantimos dígito no sufixo.
     const corpo = (await page.locator("body").innerText()).trim();
-    const corpoSemOBloco = corpo.replace(texto, "").trim();
+    const corpoSemOBloco = corpo.replace(texto, "").replaceAll(host, "").trim();
     expect(corpoSemOBloco, "a tela mostra o que parece uma chave de tradução crua").not.toMatch(
       /\b[a-z]+(?:[._][a-z]+){2,}\b/,
     );

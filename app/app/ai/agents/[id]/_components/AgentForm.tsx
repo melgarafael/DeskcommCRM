@@ -728,6 +728,7 @@ export function AgentForm(props: Props) {
           toolIds={form.operator_tool_ids}
           onToolIdsChange={(ids) => patch({ operator_tool_ids: ids })}
           modeloDoConversador={form.model}
+          agentId={props.mode === "edit" ? props.agent.id : null}
           disabled={disabled}
         />
       ) : null}

@@ -61,7 +61,7 @@ import type pg from 'pg';
 import type { Logger } from '../obs/logger';
 import type { LlmEdgeConfig } from '../edge/llm/run-model-call';
 import { agenteDaCampanhaDaConversa } from './agente-da-campanha';
-import { loadActiveRouter } from './router-config';
+import { loadActiveRouter, type RouterMember } from './router-config';
 import {
   loadPublishedAgentConfig,
   loadPublishedAgentConfigById,
@@ -93,6 +93,12 @@ export interface TurnAgentResolution {
     | 'classifier_failed'
     /** A conversa nasceu de uma campanha que declarou agente (migration 0267). */
     | 'campanha';
+  /**
+   * Fluxo de atendimento que o membro casado aponta (migration 0394; 0237 na branch do autor). O turno
+   * começa o fluxo para o contato; `null` = nenhum. Só rótulos casados o trazem
+   * — fallback/sem-router NÃO começam fluxo.
+   */
+  flowPointerId?: string | null;
 }
 
 export interface ResolveTurnAgentDeps {
@@ -205,10 +211,11 @@ export async function resolveTurnAgent(
     // router com log.warn, honesto sobre a causa real.
     const loadMatchedOrFallback = async (
       outcome: 'sticky' | 'classified' | 'reclassified',
-      agentId: string,
+      member: RouterMember,
       intentName: string | null,
       confidence: number | null,
     ): Promise<TurnAgentResolution> => {
+      const agentId = member.agentId;
       const config = await _loadAgentById(db, input.tenantId, agentId);
       if (config === null) {
         deps.log.warn('resolve-turn-agent: agente casado sem versão publicada — tentando fallback do router', {
@@ -218,7 +225,17 @@ export async function resolveTurnAgent(
         });
         return resolveFallback('no_match', confidence);
       }
-      return { config, routerId: router.id, intentName, confidence, outcome };
+      return {
+        config,
+        routerId: router.id,
+        intentName,
+        confidence,
+        outcome,
+        // Só a intenção casada AGORA começa roteiro. Sticky é o mesmo assunto da
+        // conversa em curso: devolvê-lo recomeçaria o roteiro a cada turno — e,
+        // depois de concluído, de novo, para sempre.
+        flowPointerId: outcome === 'sticky' ? null : (member.flowPointerId ?? null),
+      };
     };
 
     // sticky elegível: config liga sticky E o agente ainda é membro do router
@@ -231,7 +248,7 @@ export async function resolveTurnAgent(
     // regra 6: sem mensagem inbound (follow-up) — nunca classifica.
     if (input.signal === null) {
       if (stickyMember !== undefined) {
-        return loadMatchedOrFallback('sticky', stickyMember.agentId, input.stickyIntent, null);
+        return loadMatchedOrFallback('sticky', stickyMember, input.stickyIntent, null);
       }
       return resolveFallback('no_match', null);
     }
@@ -255,7 +272,7 @@ export async function resolveTurnAgent(
     // "sem sinal", nunca deve derrubar a stickiness (review T4 finding 1).
     if (verdict === null) {
       if (stickyMember !== undefined) {
-        return loadMatchedOrFallback('sticky', stickyMember.agentId, input.stickyIntent, null);
+        return loadMatchedOrFallback('sticky', stickyMember, input.stickyIntent, null);
       }
       return resolveFallback('classifier_failed', null);
     }
@@ -264,17 +281,17 @@ export async function resolveTurnAgent(
       const changedSubject =
         verdict.intentName !== null && verdict.intentName !== input.stickyIntent && verdict.confidence >= router.minConfidence;
       if (!changedSubject) {
-        return loadMatchedOrFallback('sticky', stickyMember.agentId, input.stickyIntent, verdict.confidence);
+        return loadMatchedOrFallback('sticky', stickyMember, input.stickyIntent, verdict.confidence);
       }
       const newMember = router.members.find((m) => m.intentName === verdict.intentName);
       // newMember sempre definido: classifyIntent só devolve intentName que bateu em router.members.
-      return loadMatchedOrFallback('reclassified', newMember!.agentId, verdict.intentName, verdict.confidence);
+      return loadMatchedOrFallback('reclassified', newMember!, verdict.intentName, verdict.confidence);
     }
 
     // sem sticky (regra 3).
     if (verdict.intentName !== null && verdict.confidence >= router.minConfidence) {
       const member = router.members.find((m) => m.intentName === verdict.intentName);
-      return loadMatchedOrFallback('classified', member!.agentId, verdict.intentName, verdict.confidence);
+      return loadMatchedOrFallback('classified', member!, verdict.intentName, verdict.confidence);
     }
 
     return resolveFallback('no_match', verdict.confidence);

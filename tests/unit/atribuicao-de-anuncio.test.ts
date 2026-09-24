@@ -38,9 +38,9 @@ describe("extrairAtribuicaoMeta — referral do webhook oficial", () => {
     expect(r?.adId).toBeNull();
   });
 
-  it("cai pra source_id quando não há ctwa_clid", () => {
+  it("deixa sourceId nulo quando não há ctwa_clid, preservando adId", () => {
     const r = extrairAtribuicaoMeta({ source_type: "ad", source_id: "abc" });
-    expect(r?.sourceId).toBe("abc");
+    expect(r?.sourceId).toBeNull();
     expect(r?.adId).toBe("abc");
   });
 
@@ -136,7 +136,7 @@ describe("extrairAtribuicaoWaha — externalAdReply do WAHA e forma legada", () 
         contextInfo: { externalAdReplyInfo: { sourceId: "ad-1", title: "X" } },
       },
     });
-    expect(r?.sourceId).toBe("ad-1");
+    expect(r?.sourceId).toBeNull();
     expect(r?.adId).toBe("ad-1");
   });
 

@@ -30,6 +30,7 @@ function deps(
   const sleep = vi.fn(async () => {});
   return {
     lerCanalDaConversa: vi.fn(async () => canal),
+    lerCanalDaSessao: vi.fn(async () => canal),
     pacing: { decide, registraEnvio: vi.fn(async () => {}) },
     sleep,
     agora: () => AGORA,
@@ -45,6 +46,16 @@ describe("segurarEnvioPorToken", () => {
     await expect(segurarEnvioPorToken(d, entrada)).resolves.toEqual({ channelSessionId: SESSAO });
     expect(d.decide).toHaveBeenCalledWith(ORG, SESSAO, AGORA);
     expect(d.sleep).not.toHaveBeenCalled();
+  });
+
+  it("aceita channelSessionId direto antes de a conversa existir", async () => {
+    const d = deps({ channelSessionId: SESSAO, provider: COM_RISCO }, { liberado: true });
+    await expect(
+      segurarEnvioPorToken(d, { organizationId: ORG, channelSessionId: SESSAO, requestId: "req-1" }),
+    ).resolves.toEqual({ channelSessionId: SESSAO });
+    expect(d.lerCanalDaSessao).toHaveBeenCalledWith(ORG, SESSAO);
+    expect(d.lerCanalDaConversa).not.toHaveBeenCalled();
+    expect(d.decide).toHaveBeenCalledWith(ORG, SESSAO, AGORA);
   });
 
   it("espera o espaçamento curto em vez de recusar", async () => {

@@ -12,6 +12,8 @@ export const NODE_TYPES = [
   'ai_classify',
   'match_reply',
   'repeat',
+  'collect',
+  'skill',
   'action',
   'end',
 ] as const;
@@ -294,12 +296,81 @@ export const conditionConfigSchema = z
   });
 
 /**
+ * Collect node (`collect`) — uma pergunta do fluxo de ATENDIMENTO.
+ *
+ * O nó NÃO envia nada sozinho: ele declara o CAMPO que precisa ser preenchido
+ * (chave, rótulo, tipo) e o executor in-turn injeta a pergunta no contexto do
+ * agente. Quando o valor entra (`flow_collect`, extrator ou resposta do cliente),
+ * o campo deixa de ser pendente e o fluxo avança. `key` casa 1:1 com
+ * `contact_flow_data.field_key` (migration 0236) — a regex espelha o CHECK do
+ * banco (minúsculas, começa com letra).
+ */
+export const contactFlowFieldTypeSchema = z.enum(['text', 'number', 'date', 'boolean', 'select']);
+export type ContactFlowFieldType = z.infer<typeof contactFlowFieldTypeSchema>;
+
+export const collectConfigSchema = z
+  .strictObject({
+    key: z
+      .string()
+      .min(1)
+      .max(60)
+      .regex(/^[a-z][a-z0-9_]*$/, 'Use letras minúsculas, números e underscore'),
+    label: z.string().min(1).max(80),
+    type: contactFlowFieldTypeSchema.default('text'),
+    required: z.boolean().default(true),
+    /**
+     * Permite o cliente CORRIGIR o dado a qualquer momento: com `true` (padrão),
+     * uma nova informação sobrescreve a anterior. Com `false`, o primeiro valor
+     * fica travado.
+     */
+    permite_correcao: z.boolean().default(true),
+    options: z.array(z.string().min(1).max(80)).max(20).optional(),
+    /** Texto sugerido da pergunta; o agente pode reescrever (checklist guiado pela IA). */
+    question: z.string().max(400).optional(),
+  })
+  .refine((c) => c.type !== 'select' || (c.options?.length ?? 0) > 0, {
+    message: 'tipo "select" exige ao menos uma opção',
+    path: ['options'],
+  });
+
+/**
+ * Skill node (`skill`) — puxa uma skill instalada em paralelo ao passo do fluxo.
+ * Ao entrar no nó, o executor in-turn inclui o corpo da skill no contexto do
+ * turno (união com o matcher por keyword). O nome é validado contra as skills
+ * instaladas no executor, não aqui (o grafo é portável entre organizações).
+ */
+export const skillConfigSchema = z.strictObject({
+  skill_name: z.string().min(1).max(80),
+});
+
+/**
+ * Ação ao finalizar um fluxo de atendimento — "quando finaliza, chama qual skill
+ * ou manda pra IA". Opcional para não quebrar grafos existentes; ausente = `nada`
+ * (comportamento anterior).
+ */
+export const endFinishSchema = z.discriminatedUnion('tipo', [
+  z.strictObject({ tipo: z.literal('nada') }),
+  z.strictObject({ tipo: z.literal('ia'), prompt: z.string().max(1000).optional() }),
+  z.strictObject({ tipo: z.literal('skill'), skill_name: z.string().min(1).max(80) }),
+  /**
+   * Encadeia a venda: ao concluir, o motor inicia OUTRO fluxo de atendimento
+   * (`fluxo` = id do `followup_flow_pointers`). A síntese do fluxo concluído
+   * (`completion_note`) entra no contexto do próximo. O id é validado em runtime
+   * contra os fluxos instalados da organização (o grafo é portável) — como
+   * `skill_name`. Autoencadeamento (fluxo → ele mesmo) é ignorado pelo motor.
+   */
+  z.strictObject({ tipo: z.literal('proximo_fluxo'), fluxo: z.string().min(1).max(80) }),
+]);
+export type EndFinish = z.infer<typeof endFinishSchema>;
+
+/**
  * End node configuration.
  * Marks the conclusion of a flow with an outcome.
  */
 export const endConfigSchema = z.strictObject({
   outcome: z.enum(['converted', 'exhausted', 'custom']),
   note: z.string().max(200).optional(),
+  ao_finalizar: endFinishSchema.optional(),
 });
 
 /**
@@ -371,6 +442,28 @@ export const flowNodeSchema = z.discriminatedUnion('type', [
     }),
     config: repeatConfigSchema,
   }),
+  // Collect node: uma pergunta do fluxo de atendimento (coleta um campo)
+  z.strictObject({
+    id: z.string().min(1),
+    type: z.literal('collect'),
+    label: z.string().min(1).max(60),
+    position: z.strictObject({
+      x: z.number(),
+      y: z.number(),
+    }),
+    config: collectConfigSchema,
+  }),
+  // Skill node: puxa uma skill instalada em paralelo ao passo
+  z.strictObject({
+    id: z.string().min(1),
+    type: z.literal('skill'),
+    label: z.string().min(1).max(60),
+    position: z.strictObject({
+      x: z.number(),
+      y: z.number(),
+    }),
+    config: skillConfigSchema,
+  }),
   // Action node: sends a message
   z.strictObject({
     id: z.string().min(1),
@@ -434,6 +527,26 @@ export type FlowEdge = z.infer<typeof flowEdgeSchema>;
 export type FlowEdgeCondition = FlowEdge['condition'];
 
 /**
+ * Configurações do fluxo (nível do grafo, não de um nó). Opcional: um grafo
+ * antigo sem `settings` continua válido e cai nos defaults.
+ */
+export const flowSettingsSchema = z.strictObject({
+  /**
+   * Quantas vezes uma pergunta pode ser feita SEM resposta antes de ser
+   * encerrada como não respondida (deixa de ser feita e não bloqueia a
+   * conclusão). Default 3.
+   */
+  max_tentativas_pergunta: z.number().int().min(1).max(10).default(3),
+  /**
+   * Palavras/expressões que LIGAM este fluxo: quando a mensagem do cliente
+   * contém uma delas, o MOTOR inicia o fluxo (entrada por gatilho, sem depender
+   * do modelo). Vazio/ausente = o fluxo só começa por `flow_start` ou roteador.
+   */
+  gatilhos: z.array(z.string().min(1).max(60)).max(30).optional(),
+});
+export type FlowSettings = z.infer<typeof flowSettingsSchema>;
+
+/**
  * Complete flow graph schema.
  * Contains nodes and edges defining the flow automation.
  *
@@ -451,6 +564,7 @@ export const flowGraphSchema = z
   .strictObject({
     nodes: z.array(flowNodeSchema).min(2).max(60),
     edges: z.array(flowEdgeSchema).max(120),
+    settings: flowSettingsSchema.optional(),
   })
   .superRefine((grafo, ctx) => {
     const idsDeNo = new Set<string>();

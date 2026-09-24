@@ -25,7 +25,7 @@ import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/arch
 import { CHANNEL_PROVIDER_META } from "@/lib/channels/capabilities";
 import { registrarWebhookDaSessao } from "@/lib/channels/meta/webhook-da-sessao";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { basePublicaDaInstalacao } from "@/lib/webhooks/url-publica";
+import { basePublicaDoWebhookMeta } from "@/lib/webhooks/url-publica";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     wabaId: sessao.meta_waba_id,
     tokenCifrado: sessao.meta_token_encrypted,
     webhookPathToken: sessao.webhook_path_token,
-    base: basePublicaDaInstalacao(req),
+    base: basePublicaDoWebhookMeta(req),
     requestId,
   });
 
@@ -95,6 +95,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     url: desfecho.url,
     erro: desfecho.erro,
     em: desfecho.em,
-    callbackUrl: `${basePublicaDaInstalacao(req)}/api/v1/webhooks/meta/${sessao.webhook_path_token}`,
+    callbackUrl: `${basePublicaDoWebhookMeta(req)}/api/v1/webhooks/meta/${sessao.webhook_path_token}`,
   });
 }

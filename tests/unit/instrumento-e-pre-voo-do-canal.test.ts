@@ -55,6 +55,7 @@ const admin = {
       select() {
         const cadeia: Record<string, unknown> = {
           eq: () => cadeia,
+          is: () => cadeia,
           maybeSingle: async () =>
             erroSelect ? { data: null, error: erroSelect } : { data: linhaTemplate, error: null },
         };

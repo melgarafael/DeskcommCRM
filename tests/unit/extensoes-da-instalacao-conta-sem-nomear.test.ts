@@ -39,6 +39,20 @@ describe("a tela de extensões da instalação", () => {
     ).toEqual(["installation_id", "enabled"]);
   });
 
+  it("não chama de instalada a extensão que o operador já removeu", () => {
+    // Remoção é soft delete (`extension_installations.removed_at`), então a linha
+    // continua lá. Uma tela que não filtra mostra a removida como instalada e conta
+    // os vínculos dela — e o erro é invisível justamente para quem removeu.
+    const inicio = semProsa.indexOf('from("extension_installations")');
+    expect(inicio, `nenhuma leitura de extension_installations em ${TELA}`).toBeGreaterThan(-1);
+    const proxima = semProsa.indexOf('.from("', inicio + 1);
+    const consulta = semProsa.slice(inicio, proxima === -1 ? undefined : proxima);
+    expect(
+      consulta,
+      "a consulta das instaladas não filtra `removed_at`. Ver o cabeçalho deste caso.",
+    ).toContain('.is("removed_at", null)');
+  });
+
   it("a varredura ENCONTRA o select — um regex quebrado passaria por vacuidade", () => {
     // Sem este caso, renomear a tabela ou trocar as aspas deixaria o caso acima
     // verde sobre um conjunto vazio, que é o modo silencioso de uma cerca morrer.

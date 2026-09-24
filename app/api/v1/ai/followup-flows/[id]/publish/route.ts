@@ -19,6 +19,8 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { carregaEtapasCitadas } from "@/lib/followup/etapas-citadas";
+import type { FollowupFlowSurface } from "@/lib/followup/api-schemas";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { validateFlowForPublish } from "@/lib/followup/validate-publish";
 import { publishFollowupFlowVersion } from "@/lib/followup/publish";
 import type { FlowGraph } from "@/lib/followup/graph-schema";
@@ -48,12 +50,33 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   const admin = createAdminClient();
   const { data: pointer, error: fetchErr } = await admin
     .from("followup_flow_pointers")
-    .select("id, draft_graph, trigger_config")
+    .select("id, draft_graph, trigger_config, surface")
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
   if (!pointer) return fail("not_found", t("Fluxo não encontrado."), 404, { requestId });
+
+  // Roteiro de atendimento: só existe com o módulo ligado (mesma resposta de
+  // quem não tem a porta), e só começa por palavra-gatilho ou roteador — nunca
+  // pelo relógio. Gatilho de relógio num roteiro criaria enrollment que o banco
+  // recusa (`trg_enrollment_superficie_coerente`, 0394); a recusa é AQUI, com
+  // uma pessoa na tela para corrigir.
+  const surface = (pointer.surface ?? "followup") as FollowupFlowSurface;
+  if (surface === "atendimento") {
+    if (!(await moduloLigado(admin, "fluxos_atendimento"))) {
+      return fail("not_found", t("Fluxo não encontrado."), 404, { requestId });
+    }
+    const kind = (pointer.trigger_config as { kind?: string } | null)?.kind ?? "manual";
+    if (kind !== "manual") {
+      return fail(
+        "trigger_kind_not_implemented",
+        t("Roteiro de atendimento começa por palavra-gatilho ou pelo roteador, não por gatilho de follow-up."),
+        422,
+        { requestId },
+      );
+    }
+  }
 
   // ⚠️ ALLOWLIST, NÃO DENYLIST — e a diferença não é estilo.
   //
@@ -145,7 +168,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   // está ativa — sem esta leitura, uma regra que nunca decide publicaria calada.
   const citadas = await carregaEtapasCitadas(admin, activeOrg.orgId, graph.nodes);
   if (!citadas.ok) return fail("internal_error", citadas.mensagem, 500, { requestId });
-  const validation = validateFlowForPublish(graph, { etapas: citadas.etapas });
+  const validation = validateFlowForPublish(graph, { etapas: citadas.etapas, surface });
   if (!validation.ok) {
     return fail("validation_failed", t("Fluxo reprovado na validação de publish."), 422, {
       requestId,

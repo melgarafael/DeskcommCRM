@@ -31,7 +31,8 @@ export function apiTranscriptionProvider(
   creds: TranscriptionCreds,
   fetchImpl: typeof fetch = fetch,
 ): TranscriptionProvider {
-  const base = creds.baseUrl ?? DEFAULT_BASE;
+  const rawBase = (creds.baseUrl ?? DEFAULT_BASE).trim().replace(/\/+$/, "");
+  const base = rawBase.replace(/\/v1$/, "");
   const model = creds.model ?? DEFAULT_MODEL;
   return {
     async transcribe(audio, mime) {

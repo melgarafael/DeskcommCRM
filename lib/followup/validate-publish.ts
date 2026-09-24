@@ -1,4 +1,5 @@
-import type { FlowGraph, FlowEdge, FlowNode } from './graph-schema';
+import type { FlowGraph, FlowEdge, FlowNode, NodeType } from './graph-schema';
+import type { FollowupFlowSurface } from './api-schemas';
 import { branchIdForCondition, nodeBranches } from './graph-schema';
 import { rotuloDoRamo } from './rotulo-do-ramo';
 import type { NomesDeValor } from './vocabulario';
@@ -28,6 +29,9 @@ export const PUBLISH_ERROR_CODES = [
   'immune_wait_too_short',
   'cycle_without_wait',
   'max_steps_exceeded',
+  'no_fora_da_superficie',
+  'roteiro_ramificado',
+  'campo_repetido',
 ] as const;
 export type PublishErrorCode = (typeof PUBLISH_ERROR_CODES)[number];
 
@@ -50,6 +54,78 @@ export type PublishValidationResult =
 export interface ContextoDoPublish {
   /** Etapas da organização por `stage_id`, com o nome como a tela mostra («Etapa · Funil»). */
   etapas?: ReadonlyMap<string, { nome: string; arquivada: boolean }>;
+  /** Superfície do pointer. Ausente = follow-up (o que a coluna tem por padrão). */
+  surface?: FollowupFlowSurface;
+}
+
+/**
+ * Os tipos de nó que cada superfície EXECUTA. É a mesma lista que a paleta do
+ * editor oferece: o que um motor não sabe rodar, a tela não deixa pôr.
+ *
+ * O roteiro de atendimento (`lib/followup/atendimento.ts`) percorre só
+ * início → pergunta/skill → fim, em linha. O relógio do follow-up nunca vê
+ * `collect`/`skill` — no motor dele, os dois são passagem (`node-handlers.ts`),
+ * e publicar um fluxo de retomada com pergunta seria fluxo com passo mudo.
+ * Na prova prática do #1130 a paleta do roteiro oferecia seis caixas que o motor
+ * recusava em silêncio; a recusa aqui é o erro que a pessoa lê no editor.
+ */
+export const NOS_DA_SUPERFICIE: Record<FollowupFlowSurface, readonly NodeType[]> = {
+  followup: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'end'],
+  crm_automation: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'end'],
+  atendimento: ['trigger', 'collect', 'skill', 'end'],
+};
+
+/** Regras do roteiro de atendimento que o grafo sozinho não carrega. */
+function validarSuperficie(graph: FlowGraph, surface: FollowupFlowSurface, errors: PublishValidationError[]): void {
+  const permitidos = new Set<NodeType>(NOS_DA_SUPERFICIE[surface]);
+  for (const n of [...graph.nodes].sort(byId)) {
+    if (!permitidos.has(n.type)) {
+      errors.push({
+        node_id: n.id,
+        code: 'no_fora_da_superficie',
+        message:
+          surface === 'atendimento'
+            ? `A caixa "${n.label}" não é de roteiro de atendimento — use Pergunta, Skill e Fim.`
+            : `A caixa "${n.label}" é de roteiro de atendimento e não roda num follow-up.`,
+      });
+    }
+  }
+  if (surface !== 'atendimento') return;
+
+  const saidas = new Map<string, number>();
+  for (const e of graph.edges) {
+    saidas.set(e.source, (saidas.get(e.source) ?? 0) + 1);
+    if (e.condition.type !== 'always') {
+      errors.push({
+        node_id: e.source,
+        code: 'roteiro_ramificado',
+        message: 'No roteiro de atendimento as caixas são ligadas direto, sem condição.',
+      });
+    }
+  }
+  for (const [origem, n] of [...saidas.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    if (n > 1) {
+      errors.push({
+        node_id: origem,
+        code: 'roteiro_ramificado',
+        message: 'O roteiro de atendimento segue uma linha só: cada caixa liga em uma próxima.',
+      });
+    }
+  }
+  const chaves = new Map<string, string>();
+  for (const n of [...graph.nodes].sort(byId)) {
+    if (n.type !== 'collect') continue;
+    const dona = chaves.get(n.config.key);
+    if (dona !== undefined) {
+      errors.push({
+        node_id: n.id,
+        code: 'campo_repetido',
+        message: `O campo "${n.config.key}" já é perguntado em outra caixa — cada pergunta grava um campo diferente.`,
+      });
+    } else {
+      chaves.set(n.config.key, n.id);
+    }
+  }
 }
 
 const LONG_WAIT_THRESHOLD_MS = 86_400_000; // 24h
@@ -361,6 +437,7 @@ export function validateFlowForPublish(
 ): PublishValidationResult {
   const { nodes, edges } = graph;
   const errors: PublishValidationError[] = [];
+  validarSuperficie(graph, contexto.surface ?? 'followup', errors);
   const etapas = contexto.etapas;
   const nomes: NomesDeValor = etapas ? { etapa: (id) => etapas.get(id)?.nome ?? null } : {};
   const nodesById = new Map(nodes.map((n) => [n.id, n]));

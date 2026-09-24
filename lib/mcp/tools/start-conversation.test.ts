@@ -111,16 +111,16 @@ describe("crm_start_conversation_and_send — freio anti-ban do número", () => 
 
     expect(mockedSegurar).toHaveBeenCalledWith(expect.anything(), {
       organizationId: ORG_ID,
-      conversationId: CONVERSATION_ID,
+      channelSessionId: SESSION_ID,
       requestId: "req-1",
     });
     expect(mockedSegurar.mock.invocationCallOrder[0]!).toBeLessThan(
-      mockedSend.mock.invocationCallOrder[0]!,
+      mockedOpen.mock.invocationCallOrder[0]!,
     );
     expect(mockedRegistrar).toHaveBeenCalledWith(expect.anything(), ORG_ID, segurado, "sent");
   });
 
-  it("quando o freio recusa, a mensagem NÃO sai", async () => {
+  it("quando o freio recusa, a conversa NÃO é aberta e a mensagem NÃO sai", async () => {
     mockedSegurar.mockRejectedValue(new ApiError(429, "rate_limited", undefined, "req-1"));
     mockedOpen.mockResolvedValue({ conversation_id: CONVERSATION_ID, contact_id: CONTACT_ID });
 
@@ -130,6 +130,7 @@ describe("crm_start_conversation_and_send — freio anti-ban do número", () => 
         makeCtx({ cached: null, inserts: [] }),
       ),
     ).rejects.toBeInstanceOf(ApiError);
+    expect(mockedOpen).not.toHaveBeenCalled();
     expect(mockedSend).not.toHaveBeenCalled();
     expect(mockedRegistrar).not.toHaveBeenCalled();
   });

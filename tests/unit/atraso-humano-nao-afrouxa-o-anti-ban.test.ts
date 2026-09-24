@@ -121,6 +121,23 @@ const FONTE_INBOUND = fs.readFileSync(
   "utf8",
 );
 
+describe("fiação — o \"digitando…\" cobre o tempo do modelo", () => {
+  it("acende ANTES da chamada principal ao modelo, só em turno que fala com o lead", () => {
+    // Medido numa instalação real: 7s de LLM contra ~2s de alvo — a pausa humana
+    // zera, e espera zero não acende presença. Sem esta chamada o cliente esperava
+    // o modelo inteiro sem indicador nenhum.
+    const modelo = FONTE_INBOUND.indexOf("    const turn = await runModelCall(");
+    expect(modelo).toBeGreaterThan(-1);
+    // Entre a montagem das mensagens de abertura e a chamada — nada roda no meio.
+    const abertura = FONTE_INBOUND.lastIndexOf("    const openingMessages: ModelMessage[] =", modelo);
+    expect(abertura).toBeGreaterThan(-1);
+    const janela = FONTE_INBOUND.slice(abertura, modelo);
+    expect(janela).toMatch(
+      /if \(channel\?\.signalTyping && turnoVaiFalarComOLead\(liveJob\(\)\)\) \{\s*acenderDigitando\(/,
+    );
+  });
+});
+
 describe("fiação — a espera humana é paga UMA vez por turno", () => {
   it("`esperaForaDoLock` abre com a guarda do flag e a arma antes de esperar", () => {
     const i = FONTE_INBOUND.indexOf("esperaForaDoLock: async (): Promise<void> => {");

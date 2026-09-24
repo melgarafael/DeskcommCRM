@@ -635,29 +635,33 @@ export function AgendaClient({
           maior só roubaria contexto da tela atrás.
         */}
         {/*
-          A CADEIA DE ALTURAS, e ela é o que faz a lista de horários rolar.
-          
-          O `overflow-y-auto` da lista (`PainelDeMarcacao`) sempre esteve no
-          elemento certo e era INERTE: `overflow-y-auto` cujo pai tem altura
-          `auto` não rola — o filho cresce, `scrollHeight === clientHeight`, e os
-          últimos horários ficavam abaixo da dobra sem nenhum jeito de alcançá-los.
-          E a página também não rolava: o `SheetContent` é `position: fixed`, e
-          transbordo de elemento fixo não estende a área rolável do documento.
-          
-          Abaixo de `lg` o próprio Sheet rola (ali o painel empilha e a lista é
-          uma seção, não uma coluna). De `lg` para cima o Sheet segura a altura e
-          a LISTA rola, com calendário e contexto parados.
-          
-          ⚠️ `lg:overflow-hidden` e não `overflow-y-auto` em todo breakpoint: em
-          `lg` o Sheet tem 1040px com `p-6` → 992px de caixa contra ~980px de
-          painel. Uma barra vertical come essa folga, e como o CSS computa
-          `overflow-x: visible` como `auto` quando `overflow-y` não é `visible`,
-          nasceria barra HORIZONTAL exatamente no breakpoint que o conserto de
-          largura acabou de reparar.
+          O SHEET ROLA EM TODO BREAKPOINT — é o único rolador vertical do painel.
+
+          Era `lg:overflow-hidden`, com o painel em `lg:flex-1` dividindo a
+          altura do Sheet com o formulário acima dele. O formulário é
+          `shrink-0` e cresceu (vínculo, tipos, convidado, endereço,
+          observação): em janela larga e BAIXA ele come quase toda a altura, o
+          painel fica com uma fresta de poucos pixels, e com a janela abaixo de
+          ~560px o formulário sozinho passa da caixa — o `overflow-hidden`
+          cortava horários e o botão Confirmar EM SILÊNCIO, sem barra.
+
+          Agora o painel tem a altura do próprio conteúdo e quem rola é o Sheet.
+          A lista de horários não depende disso: ela tem teto próprio
+          (`lg:max-h` em `PainelDeMarcacao`) e rola sozinha.
+
+          ⚠️ `lg:px-3` + `overflow-x-hidden`: em `lg` o painel mede ~982px. Com
+          o `p-6` de fábrica, 1024px de janela − 1 de borda − 48 de padding − 15
+          de barra vertical clássica = 960px, e o CSS computa `overflow-x:
+          visible` como `auto` quando `overflow-y` não é `visible` — nasceria
+          barra HORIZONTAL no limiar das três colunas. Com 12px de cada lado
+          sobram 984px. O `overflow-x-hidden` é a trava para quando a barra for mais
+          larga que 15px; a régua de largura em
+          `tests/e2e/agenda-painel-cabe-na-tela.spec.ts` continua medindo o
+          painel contra o Sheet, então um transbordo real ainda reprova.
         */}
         <SheetContent
           side="right"
-          className="flex w-full flex-col overflow-y-auto sm:max-w-3xl lg:max-w-[1040px] lg:overflow-hidden"
+          className="flex w-full flex-col overflow-x-hidden overflow-y-auto sm:max-w-3xl lg:max-w-[1040px] lg:px-3"
         >
           <SheetHeader>
             <SheetTitle>
@@ -777,9 +781,8 @@ export function AgendaClient({
             ) : null}
           </div>
           {tipo && (
-            <div className="mt-4 lg:min-h-0 lg:flex-1">
+            <div className="mt-4 shrink-0">
               <PainelDeMarcacao
-                className="lg:h-full"
                 // O mês que abre é o da organização, como a grade ao lado.
                 ancora={ancoraLocalDoDia(hojeNaOrganizacao)}
                 agora={new Date()}

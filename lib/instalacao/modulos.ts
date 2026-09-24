@@ -39,12 +39,16 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
 
-export const MODULOS_OPCIONAIS = ["banco_externo"] as const;
+export const MODULOS_OPCIONAIS = ["banco_externo", "fluxos_atendimento"] as const;
 export type ModuloOpcional = (typeof MODULOS_OPCIONAIS)[number];
 
 /** A linha de cada módulo em `platform_config`. O formato é o da CHECK da 0341. */
 export const CHAVE_DO_MODULO: Record<ModuloOpcional, string> = {
   banco_externo: "MODULO_BANCO_EXTERNO",
+  // Doc 64 (a): os fluxos de atendimento do #1130 entram desligados. A IA passa
+  // a conduzir um roteiro de perguntas no turno — quem não liga não carrega o
+  // caminho novo (`lib/agent-engine/agent/roteiro-no-turno.ts`).
+  fluxos_atendimento: "MODULO_FLUXOS_DE_ATENDIMENTO",
 };
 
 const LIGADO = "ligado";

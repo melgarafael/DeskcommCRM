@@ -131,6 +131,9 @@ import {
 } from './entrega-de-capacidade';
 import { composeSystemPrompt, loadOrgMemory, renderOrgMemory } from './org-memory';
 import { matchesHandoffKeyword } from './agent-config';
+import { garantirPerguntaDoRoteiro, prepararRoteiroDoTurno } from './roteiro-no-turno';
+import { validarRespostaDoFluxo } from './flow-validate';
+import { moduloLigado } from '@/lib/instalacao/modulos';
 import { msAteAJanelaAbrir } from './janela-de-atendimento';
 import { janelaDeEnvioAberta, proximaAberturaDaJanela } from '../pacing/engine';
 import { loadChannelKnobs } from '../pacing/store';
@@ -161,7 +164,7 @@ import { loadChannelProvider, nomesDasFerramentas, runBeforeSend } from '../guar
 import { isStatusSendable } from '../../channels/meta/template-binding';
 import { capabilitiesOf } from '@/lib/channels/capabilities';
 import { renderTemplateBody } from '@/lib/channels/meta/render-template';
-import { esperarComoHumano } from './atraso-humano';
+import { acenderDigitando, esperarComoHumano } from './atraso-humano';
 import { sendInBubbles, splitForSend } from './split-message';
 import type { DisclosureMode } from '../guardrails/disclosure/template';
 import { decidePromise } from '../guardrails/promise/engine';
@@ -2377,6 +2380,42 @@ async function executarTurnoDoAgente(
     return; // bot silencia: a confirmação já saiu, e nada mais sai neste turno
   }
 
+  // ROTEIRO DE ATENDIMENTO (módulo opcional `fluxos_atendimento`, #1130). Entra
+  // AQUI, depois de tudo que silencia o turno — handoff humano, pausa, pedido de
+  // humano, opt-out ambíguo — e nunca para contato bloqueado. Na prova prática,
+  // o roteiro começava antes dessas travas e abria para quem pedira para parar.
+  // Chave desligada: `null` sem consulta nenhuma. Ver `roteiro-no-turno.ts`.
+  const roteiro =
+    !preview && liveJob().kind === 'inbound_turn' && !optedOutThisTurn
+      ? await prepararRoteiroDoTurno(
+          {
+            pool,
+            moduloLigado: () => moduloLigado(deps.crmCfg.supabase, 'fluxos_atendimento'),
+            validar: (args) =>
+              validarRespostaDoFluxo(
+                pool,
+                deps.llmCfg,
+                { tenantId, leadId, jobId: liveJob().id },
+                args,
+                { registry: deps.registry, log: runLog, aux: argsAux(undefined) },
+              ),
+            log: runLog,
+          },
+          {
+            organizationId: tenantId,
+            contactId: leadId,
+            conversationId: input.conversationId,
+            texto: currentInboundText,
+            messageId: input.inboundMessageId ?? null,
+            flowPointerDoRoteador: 'flowPointerId' in routed ? (routed.flowPointerId ?? null) : null,
+            mensagens: openingContext.context.messages.slice(-6).map((m) => ({
+              de: m.direction === 'inbound' ? ('cliente' as const) : ('loja' as const),
+              texto: m.body,
+            })),
+          },
+        )
+      : null;
+
   // F3-07: compaction + flush pré-compaction. Quando o histórico cresce além do limiar,
   // o FLUSH grava as notas duráveis (lead_notes) e a compaction resume a conversa com o
   // modelo BARATO; o resumo compactado entra no lugar do rolling summary e o transcript
@@ -2485,6 +2524,9 @@ async function executarTurnoDoAgente(
 
   // Estado do RUN — vive só neste closure (isolamento por construção, acc 3).
   let seq = 0;
+  // O que o modelo de fato mandou neste turno (depois da cadeia). A trava "a
+  // pergunta saiu?" do roteiro de atendimento lê daqui.
+  const corposEnviados: string[] = [];
   // Teto de mensagens físicas por turno (F2-15b) — `seq` JÁ é a contagem certa: ele só
   // avança quando o envio de fato sai pro canal (send_message + send_template, bolhas
   // incluídas), nunca em veto de gate. Checar `seq` antes de tentar o próximo envio
@@ -2598,7 +2640,13 @@ async function executarTurnoDoAgente(
   const skillSignal = latestInboundSignal(effectiveContext.messages);
   const sinalDoMatcher = recentInboundSignal(effectiveContext.messages);
   const skillMatch = matchSkills(skills, sinalDoMatcher);
-  const matchedSkillsBlock = renderMatchedSkillBodies(skillMatch.matched);
+  // Skills que o roteiro puxa neste passo entram JUNTO do match por palavra
+  // (o nó `skill` diz "puxe isto aqui"). O match vence o empate por nome.
+  const skillsDoRoteiro = (roteiro?.skills ?? [])
+    .map((nome) => skills.find((sk) => sk.name === nome))
+    .filter((sk): sk is (typeof skills)[number] => sk !== undefined)
+    .filter((sk) => !skillMatch.matched.some((m) => m.name === sk.name));
+  const matchedSkillsBlock = renderMatchedSkillBodies([...skillMatch.matched, ...skillsDoRoteiro]);
   if (!preview && deps.knobs.goldenCandidatesDir !== undefined) {
     await recordSkillMissCandidates(
       deps.knobs.goldenCandidatesDir,
@@ -3060,6 +3108,7 @@ async function executarTurnoDoAgente(
             // `finalBody` = corpo após a cadeia (o disclosureGate F4-05 pode prependar o
             // disclosure via inject); é ELE que vai ao canal, não o `body` capturado da tool.
             send: (finalBody: string) => {
+              corposEnviados.push(finalBody);
               const sleep =
                 deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
               const jitter = () => 1200 + Math.floor(Math.random() * 800); // piso no throttle anti-ban (1.2s) — bolhas são mensagens físicas
@@ -3082,10 +3131,12 @@ async function executarTurnoDoAgente(
               };
               // Cada foto é uma mensagem física: só vão as que cabem no que resta do teto
               // do turno (a checagem de `max_sends_per_turn` acima roda uma vez, antes).
-              const fotosNoTeto = fotosDoProduto.slice(0, Math.max(0, maxSendsPerTurn - seq));
-              return enviarComFotos(finalBody, fotosNoTeto, {
+              // O resto é medido ANTES DE CADA FOTO, depois do texto: o texto acima do
+              // teto de legenda sai à parte e também gasta o teto.
+              return enviarComFotos(finalBody, fotosDoProduto, {
                 sleep,
                 jitter,
+                restantes: () => maxSendsPerTurn - seq,
                 enviarFoto: (foto, legenda) => enviar(legenda, foto),
                 enviarTexto: (texto) =>
                   sendInBubbles(texto, {
@@ -3951,6 +4002,7 @@ async function executarTurnoDoAgente(
       stageHintBlock,
       splitHint,
       caseAwaitingLeadBlock,
+      roteiro?.bloco ?? '',
       preview?.feedback ? '## Revisão humana deste atendimento\n' + preview.feedback : '',
     ].filter((b) => b !== '');
     const openingText =
@@ -3975,6 +4027,18 @@ async function executarTurnoDoAgente(
       nativeParts.length === 0
         ? openingTextOnly
         : [{ role: 'user', content: [{ type: 'text', text: openingText }, ...nativeParts] }];
+
+    // "digitando…" ENQUANTO o modelo pensa. A pausa humana antes da 1ª bolha
+    // (`esperaForaDoLock`) desconta este tempo e quase sempre zera — e com espera
+    // zero ela não acende presença. Sem esta linha o cliente esperava a chamada
+    // inteira do modelo sem indicador nenhum. Só em turno que fala com o lead:
+    // turno de retaguarda não abre o WhatsApp de ninguém.
+    if (channel?.signalTyping && turnoVaiFalarComOLead(liveJob())) {
+      acenderDigitando(
+        () => channel.signalTyping!({ tenantId, conversationId: input.conversationId }),
+        runLog,
+      );
+    }
 
     // O modelo decide tools livremente dentro do teto de steps (knob AGENT_MAX_STEPS).
     //
@@ -4041,6 +4105,57 @@ async function executarTurnoDoAgente(
       // ponytail: retry re-roda o run inteiro (LLM incluso); seq N re-encontra a
       // linha do ledger — 'accepted' pula, 'failed' rotaciona a key (F2-06).
       throw new Error('envio marcado como failed pelo CRM — run re-tentado pela fila');
+    }
+
+    // ROTEIRO: a pergunta pendente é compromisso. Se o modelo não a fez, o motor
+    // a manda — pela MESMA cadeia de guardrails, dentro do teto de envios.
+    if (roteiro !== null && seq < maxSendsPerTurn) {
+      await garantirPerguntaDoRoteiro(
+        { pool, log: runLog },
+        {
+          organizationId: tenantId,
+          roteiro,
+          corposEnviados,
+          enviar: async (texto) => {
+            const chain = await runBeforeSend({
+              pool,
+              log: runLog,
+              agentOperation,
+              tenantId,
+              leadId,
+              jobId: liveJob().id,
+              channelSessionId: input.channelSessionId,
+              body: texto,
+              optedOutThisTurn,
+              crmDailyLimit: null,
+              // A pergunta repete por design (foi feita e não respondida); o
+              // anti-blast vetaria justamente o que esta trava garante. Mesmo
+              // motivo do aviso de escalação.
+              enforceSpinning: false,
+              now: clock(),
+              sleep: deps.sleep,
+              lgpd,
+              ...(deps.knobs.disclosureMode !== undefined
+                ? { disclosureMode: deps.knobs.disclosureMode }
+                : {}),
+              send: (finalBody: string) => {
+                seq += 1;
+                return liveChannel().send({
+                  tenantId,
+                  leadId,
+                  jobId: liveJob().id,
+                  jobClaim: claimOfJob(liveJob()),
+                  agentOperation,
+                  seq,
+                  conversationId: input.conversationId,
+                  body: finalBody,
+                });
+              },
+            });
+            return chain.status !== 'vetoed' && (chain.outcome.kind === 'sent' || chain.outcome.kind === 'already_sent');
+          },
+        },
+      );
     }
 
     // F3-10: poda os tool results antigos da fita do run ANTES de reenviá-los no fechamento

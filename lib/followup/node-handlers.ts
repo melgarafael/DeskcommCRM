@@ -763,6 +763,24 @@ export function processNode(input: {
       };
     }
 
+    case "collect": {
+      // Nó de COLETA do fluxo de atendimento (surface=atendimento). Perguntar e
+      // gravar é responsabilidade do executor in-turn; no relógio do follow-up
+      // ele é passagem (segue pela aresta única). Um fluxo de retomada não
+      // deveria usar este nó — o publish é quem recorta isso.
+      const edge = selectEdge(edges, node.id, { type: "always" });
+      if (!edge) return { kind: "fail", error: `collect node "${node.id}" has no outbound edge` };
+      return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
+    }
+
+    case "skill": {
+      // Puxa uma skill instalada em paralelo ao passo; a ativação é do executor
+      // in-turn (união com o `matchSkills`). No relógio, é passagem.
+      const edge = selectEdge(edges, node.id, { type: "always" });
+      if (!edge) return { kind: "fail", error: `skill node "${node.id}" has no outbound edge` };
+      return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
+    }
+
     case "action": {
       // At-most-once send: enqueue the turn EXACTLY ONCE per occupancy. First entry
       // (no prior occupancy event) enqueues; a recheck fired while the turn is still in

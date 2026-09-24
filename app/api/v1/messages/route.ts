@@ -10,7 +10,7 @@ import { audit } from "@/lib/audit";
 import { resolveAuthDual } from "@/lib/api/auth-dual";
 import { ApiError } from "@/lib/api/types";
 import { fail, ok } from "@/lib/api/wrappers";
-import { JANELA_SEGUNDOS, TETO_DE_ESCRITA } from "@/lib/mcp/rate-limit";
+import { JANELA_SEGUNDOS, TETO_DE_ESCRITA, TETO_POR_ORGANIZACAO } from "@/lib/mcp/rate-limit";
 import {
   depsDoRitmo,
   registrarEnvioPorToken,
@@ -46,13 +46,25 @@ export async function POST(req: NextRequest): Promise<Response> {
   const { supabase, organizationId, actor, idioma } = authz;
 
   // Por token, esta rota é a mesma porta de escrita do MCP — e leva o mesmo
-  // teto por token (`lib/mcp/rate-limit.ts`). Pela sessão do navegador não há
-  // teto: quem digita é uma pessoa.
+  // teto por token e agregado por organização (`lib/mcp/rate-limit.ts`, #1491).
+  // Pela sessão do navegador não há teto: quem digita é uma pessoa.
   if (authz.via === "token") {
     const tokenId = actor.type === "ai_agent" ? (actor.api_token_id ?? actor.id) : actor.id;
     const teto = await checkRateLimit(`messages:tok:${tokenId}`, TETO_DE_ESCRITA, JANELA_SEGUNDOS);
     if (!teto.allowed) {
       return fail("rate_limited", "Too many requests.", 429, {
+        requestId,
+        headers: { "Retry-After": String(JANELA_SEGUNDOS) },
+      });
+    }
+
+    const tetoOrg = await checkRateLimit(
+      `messages:org:${organizationId}`,
+      TETO_POR_ORGANIZACAO,
+      JANELA_SEGUNDOS,
+    );
+    if (!tetoOrg.allowed) {
+      return fail("rate_limited", "Too many requests for organization.", 429, {
         requestId,
         headers: { "Retry-After": String(JANELA_SEGUNDOS) },
       });

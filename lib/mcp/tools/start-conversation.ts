@@ -117,6 +117,16 @@ export const crmStartConversationAndSend: McpToolDefinition<typeof inputShape> =
       }
     }
 
+    // Freio anti-ban do número (#1491): aplicar ANTES de criar ou reabrir a conversa.
+    // Se o freio segurar o envio por teto diário ou espaçamento, recusa com 429
+    // sem deixar uma conversa vazia pendente no CRM.
+    const ritmo = await depsDoRitmo(createAdminClient());
+    const segurado = await segurarEnvioPorToken(ritmo, {
+      organizationId: ctx.organizationId,
+      channelSessionId: input.channel_session_id,
+      requestId: ctx.requestId,
+    });
+
     // Referencia a mesma origem autorizada que `open-with-contact` usa —
     // fn_service_begin decide reaproveitar a conversa aberta ou criar uma.
     const opened = await openSharedContactConversation(ctx.supabase, ctx.organizationId, {
@@ -132,15 +142,6 @@ export const crmStartConversationAndSend: McpToolDefinition<typeof inputShape> =
       body: input.body,
       media_url: input.media_url,
       media_mime: input.media_mime,
-    });
-
-    // Freio anti-ban do número: o MCP é sempre token, e o teto de chamadas
-    // (`lib/mcp/rate-limit.ts`) não sabe de warm-up nem de teto diário do número.
-    const ritmo = await depsDoRitmo(createAdminClient());
-    const segurado = await segurarEnvioPorToken(ritmo, {
-      organizationId: ctx.organizationId,
-      conversationId: opened.conversation_id,
-      requestId: ctx.requestId,
     });
 
     const message = await sendMessageHandler(

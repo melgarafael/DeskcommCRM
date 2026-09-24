@@ -85,6 +85,13 @@ const ESCRITORES: Record<string, { agenda: "agora" | "futuro" | "nenhum"; nota: 
       "menção é `next_eval_at: null` no cancelamento por caso fechado — desagendar não é agendar, " +
       "e `null` não tem relógio para escolher errado.",
   },
+  "atendimento.ts": {
+    agenda: "nenhum",
+    nota:
+      "O roteiro de atendimento (0394) nasce 'coletando' com `next_eval_at` NULO de propósito: " +
+      "ele é conduzido pelo turno do agente e não tem relógio (o CHECK `relogio_coerente` o põe " +
+      "no grupo sem relógio). Omitir a coluna daria o default now() — nulo é não agendar.",
+  },
   "aplicar-inbound.ts": {
     agenda: "nenhum",
     nota:

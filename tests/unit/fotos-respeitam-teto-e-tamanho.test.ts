@@ -10,8 +10,12 @@ describe("fotos do catálogo", () => {
     const turno = ler("lib/agent-engine/agent/inbound-turn.ts");
     const chamada = turno.slice(0, turno.indexOf("return enviarComFotos("));
     const recorte = chamada.slice(chamada.lastIndexOf("send: (finalBody"));
-    expect(recorte).toMatch(/fotosDoProduto\.slice\(0,\s*Math\.max\(0,\s*maxSendsPerTurn\s*-\s*seq\)\)/);
-    expect(turno).toMatch(/return enviarComFotos\(finalBody,\s*fotosNoTeto,/);
+    // O teto é medido antes de CADA foto (`restantes`), depois do texto — que,
+    // acima do teto de legenda, sai à parte e também gasta o teto. O
+    // comportamento é provado em lib/agent-engine/agent/fotos-do-produto.test.ts.
+    const envio = turno.slice(turno.indexOf("return enviarComFotos("));
+    expect(envio.slice(0, envio.indexOf("});"))).toMatch(/restantes:\s*\(\)\s*=>\s*maxSendsPerTurn\s*-\s*seq/);
+    expect(recorte).not.toMatch(/fotosDoProduto\.slice\(0,/);
   });
 
   it("a rota de upload recusa pelo Content-Length antes de ler o corpo", () => {

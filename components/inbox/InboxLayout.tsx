@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/auth/AuthProvider";
 import { fonteDeTemplates } from "@/lib/channels/templates-fonte";
 import { estadoDaJanela, formatarDecorrido } from "@/lib/channels/janela";
 import { JanelaFechadaAviso } from "@/components/inbox/JanelaFechadaAviso";
+import { NumeroForaDoAr } from "@/components/inbox/NumeroForaDoAr";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useCloseConversation } from "@/hooks/inbox/useCloseConversation";
 import { useMarkAsRead } from "@/hooks/inbox/useMarkAsRead";
@@ -489,7 +490,11 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
           <>
             {/* `key`: trocar de conversa desmonta a confirmação de Fechar/Arquivar
                 aberta — senão o clique de dentro agiria sobre a conversa nova. */}
-            <ConversationHeader key={selectedConversation.id} conversation={selectedConversation} />
+            <ConversationHeader
+              key={selectedConversation.id}
+              conversation={selectedConversation}
+              onAbrirConversa={handleSelect}
+            />
             <div className="min-h-0 flex-1 overflow-hidden">
               <ChatThread
                 conversationId={selectedConversation.id}
@@ -506,6 +511,16 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
               />
             </div>
             <RetentionNotice conversationId={selectedConversation.id} />
+            {selectedConversation.contacts?.id && (
+              <NumeroForaDoAr
+                key={`numero:${selectedConversation.id}`}
+                conversationId={selectedConversation.id}
+                channelSessionId={selectedConversation.channel_session_id}
+                contactId={selectedConversation.contacts.id}
+                contactPhone={selectedConversation.contacts.phone_number ?? null}
+                onAbrirConversa={handleSelect}
+              />
+            )}
             {motivoDaJanela && (
               <JanelaFechadaAviso
                 conversationId={selectedConversation.id}

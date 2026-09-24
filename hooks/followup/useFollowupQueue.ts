@@ -22,6 +22,9 @@ export type FollowupEnrollmentStatus =
   | "dormente"
   | "paused_handoff"
   | "paused_manual"
+  // Roteiro de atendimento em andamento (0394): conduzido pelo turno do agente,
+  // não pelo relógio. O motor de follow-up nunca o lê.
+  | "coletando"
   | "completed"
   | "cancelled"
   | "dead";

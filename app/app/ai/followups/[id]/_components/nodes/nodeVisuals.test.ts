@@ -160,3 +160,12 @@ describe("configPadraoDaAcao", () => {
     });
   });
 });
+
+describe("paleta do follow-up (roteiro de atendimento, #1130)", () => {
+  it("não oferece Pergunta nem Skill — o relógio não as executa", () => {
+    const tipos = NODE_VISUAL_LIST.map((v) => v.type);
+    expect(tipos).not.toContain("collect");
+    expect(tipos).not.toContain("skill");
+    expect(tipos).toContain("action");
+  });
+});

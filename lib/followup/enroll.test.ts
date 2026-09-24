@@ -104,4 +104,23 @@ describe("enrollFollowupFlow", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("flow_not_active");
   });
+
+  it("recusa roteiro de atendimento — ele começa na conversa, não por inscrição", async () => {
+    const db = fakeDb({
+      id: POINTER,
+      organization_id: ORG,
+      status: "active",
+      active_version_id: VERSION,
+      surface: "atendimento",
+    });
+    const result = await enrollFollowupFlow(db as never, {
+      organizationId: ORG,
+      pointerId: POINTER,
+      contactId: CONTACT,
+      actorUserId: null,
+      requestId: "r1",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("flow_not_enrollable");
+  });
 });

@@ -80,15 +80,28 @@ describe("POST /api/v1/messages — ritmo por token", () => {
 
     expect(res.status).toBe(201);
     expect(mockedTeto).toHaveBeenCalledWith("messages:tok:tok-1", expect.any(Number), expect.any(Number));
+    expect(mockedTeto).toHaveBeenCalledWith(`messages:org:${ORG_ID}`, expect.any(Number), expect.any(Number));
     expect(mockedSegurar.mock.invocationCallOrder[0]!).toBeLessThan(
       mockedSend.mock.invocationCallOrder[0]!,
     );
     expect(mockedRegistrar).toHaveBeenCalledWith(expect.anything(), ORG_ID, segurado, "sent");
   });
 
-  it("por token, acima do teto de chamadas devolve 429 sem enviar", async () => {
+  it("por token, acima do teto de chamadas por token devolve 429 sem enviar", async () => {
     autenticado("token");
-    mockedTeto.mockResolvedValue({ allowed: false } as never);
+    mockedTeto.mockResolvedValueOnce({ allowed: false } as never);
+
+    const res = await POST(pedido());
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBeTruthy();
+    expect(mockedSend).not.toHaveBeenCalled();
+  });
+
+  it("por token, acima do teto da organização devolve 429 sem enviar", async () => {
+    autenticado("token");
+    mockedTeto.mockResolvedValueOnce({ allowed: true } as never); // token ok
+    mockedTeto.mockResolvedValueOnce({ allowed: false } as never); // org limit
 
     const res = await POST(pedido());
 

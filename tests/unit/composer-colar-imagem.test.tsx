@@ -173,7 +173,7 @@ describe("Composer — texto digitado durante o envio", () => {
   it("mantém o novo rascunho quando a resposta anterior confirma", () => {
     renderComposer();
     fireEvent.change(campo(), { target: { value: "Primeira resposta" } });
-    fireEvent.click(screen.getByRole("button", { name: /^Enviar$/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
     expect(campo()).toHaveValue("");
     fireEvent.change(campo(), { target: { value: "Próxima resposta" } });
     const callbacks = sendMock.mock.calls[0]![1] as { onSuccess: () => void };
@@ -184,7 +184,7 @@ describe("Composer — texto digitado durante o envio", () => {
   it("devolve a resposta com falha sem apagar o novo rascunho", () => {
     renderComposer();
     fireEvent.change(campo(), { target: { value: "Primeira resposta" } });
-    fireEvent.click(screen.getByRole("button", { name: /^Enviar$/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
     fireEvent.change(campo(), { target: { value: "Próxima resposta" } });
     const callbacks = sendMock.mock.calls[0]![1] as { onError: () => void };
     act(() => callbacks.onError());

@@ -38,16 +38,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // o provider riscava o evento da fila achando que entregou.
   //
   // O estágio 1 confere só o que é preciso para RESOLVER O TENANT e ARQUIVAR o
-  // corpo. O contrato completo vem depois do INSERT, porque o AC do
-  // `docs/prd/03-prd-whatsapp-waha.md` §3.3 manda gravar o raw "mesmo se o
-  // parse falhar depois" — e o corpo cru de um payload cujo formato mudou é
-  // justamente o artefato que responde o que mudou.
+  // corpo: aqui a `session` do corpo resolve a organização, e o id da mensagem
+  // vai numa coluna do arquivo. O contrato completo não pode barrar o arquivo,
+  // porque o AC do `docs/prd/03-prd-whatsapp-waha.md` §3.3 manda gravar o raw
+  // "mesmo se o parse falhar depois" — e o corpo cru de um payload cujo
+  // formato mudou é justamente o artefato que responde o que mudou.
   //
   // Desfecho da recusa: 400 com os CAMPOS (nunca os valores: são dado de
-  // cliente e podem ter megabytes) e uma linha no log estruturado. Não 200,
-  // porque payload fora do contrato não é "evento que não interessa" — é o fio
-  // ter mudado, e isso precisa ser barulhento. Não 500, porque o corpo é do
-  // chamador, e 5xx mandaria o provider reentregar o que nunca vai passar.
+  // cliente e podem ter megabytes) e uma linha no log estruturado. O 400 é
+  // escolhido por ser BARULHENTO: payload fora do contrato não é "evento que
+  // não interessa" — é o fio ter mudado, e um 200 diria que deu tudo certo. Não
+  // 500, porque o defeito está no corpo recebido, não numa falha nossa.
+  //
+  // Esta escolha NÃO se apoia em como o provider reage ao 400 (se reentrega,
+  // quantas vezes, se desiste): isso nunca foi medido contra o WAHA.
   //
   // O schema é LOOSE: campo desconhecido passa intacto. Ver lib/waha/envelope.ts.
   const roteamento = lerRoteamentoWaha(rawBody);
@@ -55,6 +59,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (roteamento.motivo === "json_invalido") {
       return fail("invalid_request", "invalid_json", 400, { requestId });
     }
+    // `error`, e aqui isto está certo: o Caddy do kit responde 403 para este
+    // caminho exato (`Caddyfile`, `@waha_global`), então quem chega aqui é o
+    // WAHA pela rede interna. Recusa de contrato nesta rota é o fio ter mudado.
+    // Na rota por token, que é pública de propósito, o mesmo log é `warn`.
     logger.error("[waha.webhook] payload fora do contrato do canal", {
       request_id: requestId,
       estagio: "roteamento",
@@ -79,8 +87,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // Canal ARQUIVADO não ingere — mesmo motivo da rota per-tenant: a sessão já foi
   // removida do transporte, e o que ainda chega é evento em voo. Cai no ramo
-  // `session_not_registered` abaixo, que responde 200 (a plataforma pararia de
-  // retentar de qualquer forma, porque a sessão não existe mais lá).
+  // `session_not_registered` abaixo, que responde 200.
   const base = () =>
     admin
       .from("channel_sessions")
@@ -97,9 +104,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return fail("internal_error", sessErr.message, 500, { requestId });
   }
   if (!session) {
-    // Sessão ainda não registrada no nosso DB — aceita e ignora (200 p/ WAHA
-    // não ficar retentando). Comum quando a sessão foi iniciada pelo dashboard
-    // antes da nossa linha existir.
+    // Sessão ainda não registrada no nosso DB — aceita e ignora. Comum quando a
+    // sessão foi iniciada pelo dashboard antes da nossa linha existir, e por isso
+    // 200: aqui NÃO houve defeito nenhum no corpo, ao contrário da recusa de
+    // contrato acima. O que o WAHA faz com um 4xx aqui nunca foi medido, e esta
+    // escolha não se apoia nisso.
     return ok(
       { accepted: false, reason: "session_not_registered", session: sessionName },
       { requestId },
@@ -150,6 +159,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (key.toLowerCase() === "cookie") return;
     headersJson[key] = value;
   });
+  // Estágio 2: o resto do contrato. Conferido ANTES do INSERT para a linha já
+  // nascer com o desfecho — o corpo cru é arquivado nos dois casos. Gravar
+  // `received` e corrigir depois abriria uma janela (e um segundo write que pode
+  // falhar) em que a recusa fica com a mesma palavra de um evento que deu certo.
+  const contrato = conferirContratoWaha(roteado);
+
   await admin.from("webhook_events_log").insert({
     organization_id: session.organization_id,
     channel_session_id: session.id,
@@ -163,12 +178,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     valid_signature: validSignature,
     event_type: eventType,
     external_id: externalId,
-    status: "received",
+    status: contrato.ok ? "received" : "error",
+    // Só os NOMES dos campos: o valor recusado é dado de cliente.
+    error_message: contrato.ok ? null : `${contrato.motivo}: ${contrato.campos.join(", ")}`,
     attempts: 0,
   });
 
-  // Estágio 2: o resto do contrato, agora que o corpo cru já está arquivado.
-  const contrato = conferirContratoWaha(roteado);
   if (!contrato.ok) {
     logger.error("[waha.webhook] payload fora do contrato do canal", {
       request_id: requestId,

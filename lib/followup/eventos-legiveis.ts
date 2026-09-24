@@ -82,6 +82,7 @@ const STATUS: Record<string, { rotulo: string; tom: TomDoStatus }> = {
   dormente: { rotulo: "Aguardando a data do retorno", tom: "info" },
   paused_handoff: { rotulo: "Pausado (atendimento humano)", tom: "warning" },
   paused_manual: { rotulo: "Pausado por uma pessoa", tom: "warning" },
+  coletando: { rotulo: "Coletando respostas do roteiro", tom: "info" },
   completed: { rotulo: "Concluído", tom: "neutral" },
   cancelled: { rotulo: "Cancelado", tom: "neutral" },
   dead: { rotulo: "Parou de tentar", tom: "error" },
@@ -128,6 +129,8 @@ const TIPO_DO_NO: Record<FlowNode["type"], string> = {
   ai_classify: "Interpretação da resposta",
   match_reply: "Resposta (texto)",
   repeat: "Repetição",
+  collect: "Pergunta",
+  skill: "Skill",
   action: "Mensagem",
   end: "Fim",
 };
@@ -176,6 +179,13 @@ export function resumoDoNo(node: FlowNode): NoDoDossie {
         ...base,
         resumo: `repete até ${node.config.max_count} voltas conforme a resposta`,
       };
+    case "collect":
+      return {
+        ...base,
+        resumo: `pergunta "${node.config.label}" (campo ${node.config.key})`,
+      };
+    case "skill":
+      return { ...base, resumo: `puxa a skill ${node.config.skill_name}` };
     case "action":
       return {
         ...base,

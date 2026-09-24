@@ -35,6 +35,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { linhaDoEspelho } from "./linha-do-espelho";
 import { missingSlots } from "./meta/build-components";
 import { bindingState } from "./meta/template-binding";
 import { deriveTemplateContract } from "./meta/template-contract";
@@ -72,16 +73,14 @@ export async function conferirDefinicao(
     throw new Error("template_incompleto: nome e idioma são obrigatórios em type=template");
   }
 
-  let q = db
-    .from("meta_templates")
-    .select("name, language, status, contract_hash, components, parameter_format")
-    .eq("organization_id", pedido.organizationId)
-    .eq("name", pedido.name)
-    .eq("language", pedido.language);
-
-  if (pedido.channelSessionId) q = q.eq("channel_session_id", pedido.channelSessionId);
-
-  const { data, error } = await q.maybeSingle();
+  // A linha desta conexão, ou a do canal oficial (gravada sem conexão). Sem o
+  // segundo passo, o canal oficial nunca era conferido: a linha não casava e o
+  // "não espelhada" abaixo deixava passar tudo.
+  const { data, error } = await linhaDoEspelho(
+    db,
+    "name, language, status, contract_hash, components, parameter_format",
+    pedido,
+  );
 
   // Falha de leitura não é definição inválida. Barrar aqui trocaria um envio
   // que ia dar certo por um erro nosso.

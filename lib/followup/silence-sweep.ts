@@ -47,6 +47,8 @@ import {
   montarEstadoDeElegibilidade,
   ttlDaAutorizacaoMs,
 } from "@/lib/ai/elegibilidade/gate";
+import { logger } from "@/lib/logger";
+
 import { flowGraphSchema } from "./graph-schema";
 import { triggerConfigSchema } from "./api-schemas";
 import {
@@ -89,6 +91,12 @@ export interface SilenceSweepSummary {
   pointers_gated_out: number;
   enrolled: number;
   skipped_existing: number;
+  /**
+   * Pointers que FALHARAM nesta varredura (logados e pulados). Um pointer ruim
+   * — de uma empresa só — não pode calar a varredura de todas as outras: antes,
+   * a primeira exceção abortava o laço e nenhum pointer depois dele era varrido.
+   */
+  pointers_failed: number;
 }
 
 export interface SilenceSweepDeps {
@@ -104,6 +112,7 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
     pointers_gated_out: 0,
     enrolled: 0,
     skipped_existing: 0,
+    pointers_failed: 0,
   };
 
   const pointers = await db.loadActiveSilencePointers();
@@ -128,35 +137,44 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
   };
 
   for (const pointer of pointers) {
-    const trigger = await db.loadTriggerNode(pointer.organization_id, pointer.active_version_id);
-    if (!trigger) continue;
+    try {
+      const trigger = await db.loadTriggerNode(pointer.organization_id, pointer.active_version_id);
+      if (!trigger) continue;
 
-    const { agentId, barrado } = await decidirAgente(
-      pointer.organization_id,
-      pointer.id,
-      trigger.pedeAgente,
-    );
-    if (barrado) {
-      summary.pointers_gated_out++;
-      continue;
-    }
+      const { agentId, barrado } = await decidirAgente(
+        pointer.organization_id,
+        pointer.id,
+        trigger.pedeAgente,
+      );
+      if (barrado) {
+        summary.pointers_gated_out++;
+        continue;
+      }
 
-    const cutoffIso = new Date(clock().getTime() - pointer.threshold_minutes * 60_000).toISOString();
-    const contactIds = await db.loadSilentContactIds(pointer.organization_id, cutoffIso, pointer.segments);
-    const nextEvalAt = clock().toISOString();
+      const cutoffIso = new Date(clock().getTime() - pointer.threshold_minutes * 60_000).toISOString();
+      const contactIds = await db.loadSilentContactIds(pointer.organization_id, cutoffIso, pointer.segments);
+      const nextEvalAt = clock().toISOString();
 
-    for (const contactId of contactIds) {
-      const { inserted } = await db.insertEnrollment({
+      for (const contactId of contactIds) {
+        const { inserted } = await db.insertEnrollment({
+          organization_id: pointer.organization_id,
+          pointer_id: pointer.id,
+          version_id: pointer.active_version_id,
+          contact_id: contactId,
+          current_node_id: trigger.id,
+          next_eval_at: nextEvalAt,
+          agent_id: agentId,
+        });
+        if (inserted) summary.enrolled++;
+        else summary.skipped_existing++;
+      }
+    } catch (err) {
+      summary.pointers_failed++;
+      logger.warn("[silence-sweep] pointer falhou — pulado; os demais seguem", {
         organization_id: pointer.organization_id,
         pointer_id: pointer.id,
-        version_id: pointer.active_version_id,
-        contact_id: contactId,
-        current_node_id: trigger.id,
-        next_eval_at: nextEvalAt,
-        agent_id: agentId,
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
       });
-      if (inserted) summary.enrolled++;
-      else summary.skipped_existing++;
     }
   }
 
@@ -179,7 +197,7 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
     async loadActiveSilencePointers() {
       const { data, error } = await admin
         .from("followup_flow_pointers")
-        .select("id, organization_id, active_version_id, trigger_config")
+        .select("id, organization_id, active_version_id, trigger_config, surface")
         .eq("status", "active")
         .not("active_version_id", "is", null);
       if (error) throw new Error(error.message);
@@ -190,8 +208,11 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
         organization_id: string;
         active_version_id: string | null;
         trigger_config: unknown;
+        surface?: string | null;
       }>) {
-        if (!row.active_version_id) continue;
+        // Roteiro de atendimento (0394) é do turno, nunca do relógio: o banco
+        // já o prende em gatilho manual, e este corte é a segunda porta.
+        if (!row.active_version_id || row.surface === "atendimento") continue;
         const parsed = triggerConfigSchema.safeParse(row.trigger_config);
         if (!parsed.success || parsed.data.kind !== "silence") continue;
         pointers.push({

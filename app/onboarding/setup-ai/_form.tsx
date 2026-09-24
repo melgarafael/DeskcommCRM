@@ -242,7 +242,7 @@ export function SetupAiForm({ capacidades, conferencias }: Props) {
             </p>
           ) : (
             <p className="text-sm">
-              {t("Não achei chave de")} {provedorLegivel(provedor, t)}{" "}
+              {t("Não achei chave")} {provedorLegivel(provedor, t)}{" "}
               {t("nem cadastrada aqui, nem vinda da instalação. Cole a chave no campo acima («o cérebro dele») e crie o atendente de novo — ou cadastre em")}{" "}
               <strong>{t("IA › Credenciais")}</strong>.
             </p>

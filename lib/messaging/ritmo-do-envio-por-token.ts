@@ -52,6 +52,7 @@ export interface CanalDaConversa {
 
 export interface DepsDoRitmo {
   lerCanalDaConversa(organizationId: string, conversationId: string): Promise<CanalDaConversa | null>;
+  lerCanalDaSessao?(organizationId: string, channelSessionId: string): Promise<CanalDaConversa | null>;
   pacing: {
     decide(organizationId: string, channelSessionId: string, agora: Date): Promise<DecisaoDeEspacamento>;
     registraEnvio(organizationId: string, channelSessionId: string, quando: Date): Promise<void>;
@@ -59,6 +60,11 @@ export interface DepsDoRitmo {
   sleep(ms: number): Promise<void>;
   agora(): Date;
 }
+
+/** Entrada aceita por `segurarEnvioPorToken`: por conversa existente ou direto pela sessão do canal. */
+export type EntradaDoFreio =
+  | { organizationId: string; conversationId: string; requestId: string }
+  | { organizationId: string; channelSessionId: string; requestId: string };
 
 /** O que `segurarEnvioPorToken` devolve e `registrarEnvioPorToken` consome. */
 export type EnvioSegurado = { channelSessionId: string } | null;
@@ -81,9 +87,14 @@ function temRiscoDeBan(provider: string | null): boolean {
  */
 export async function segurarEnvioPorToken(
   deps: DepsDoRitmo,
-  entrada: { organizationId: string; conversationId: string; requestId: string },
+  entrada: EntradaDoFreio,
 ): Promise<EnvioSegurado> {
-  const canal = await deps.lerCanalDaConversa(entrada.organizationId, entrada.conversationId);
+  const canal =
+    "channelSessionId" in entrada
+      ? await (deps.lerCanalDaSessao
+          ? deps.lerCanalDaSessao(entrada.organizationId, entrada.channelSessionId)
+          : null)
+      : await deps.lerCanalDaConversa(entrada.organizationId, entrada.conversationId);
   if (!canal || !temRiscoDeBan(canal.provider)) return null;
 
   const agora = deps.agora();
@@ -140,6 +151,20 @@ export async function depsDoRitmo(admin: SupabaseClient): Promise<DepsDoRitmo> {
       return {
         channelSessionId: linha.channel_session_id,
         provider: linha.channel_sessions?.provider ?? null,
+      };
+    },
+    async lerCanalDaSessao(organizationId, channelSessionId) {
+      const { data } = await admin
+        .from("channel_sessions")
+        .select("id, provider")
+        .eq("organization_id", organizationId)
+        .eq("id", channelSessionId)
+        .maybeSingle();
+      const linha = data as { id: string; provider: string | null } | null;
+      if (!linha?.id) return null;
+      return {
+        channelSessionId: linha.id,
+        provider: linha.provider ?? null,
       };
     },
     pacing: await criarPacingDoCanal(admin),

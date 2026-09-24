@@ -103,6 +103,12 @@ export async function prepararFotosDoProduto(
  * acima do teto de legenda sai primeiro, como texto, e as fotos depois sem
  * legenda. Entre uma e outra, o mesmo jitter anti-ban das bolhas; para no
  * primeiro desfecho que não seja de sucesso, como `sendInBubbles`.
+ *
+ * `restantes` é quantas mensagens físicas o turno ainda pode mandar
+ * (`max_sends_per_turn`), consultado ANTES de cada foto. Consultar uma vez só,
+ * antes de tudo, não contava o texto que sai à parte quando passa do teto de
+ * legenda (uma ou mais bolhas): com teto 3, um produto de 3 fotos e descrição
+ * longa mandava 4 mensagens. Sem `restantes`, nenhum teto (quem chama decide).
  */
 export async function enviarComFotos<T extends BubbleOutcome>(
   body: string,
@@ -112,14 +118,17 @@ export async function enviarComFotos<T extends BubbleOutcome>(
     enviarFoto: (foto: FotoParaEnvio, legenda: string) => Promise<T>;
     sleep: (ms: number) => Promise<void>;
     jitter: () => number;
+    restantes?: () => number;
   },
 ): Promise<T> {
+  const cabeMaisUma = () => (opts.restantes?.() ?? Number.POSITIVE_INFINITY) > 0;
   const [capa, ...demais] = fotos;
-  if (!capa) return opts.enviarTexto(body);
+  if (!capa || !cabeMaisUma()) return opts.enviarTexto(body);
   const legendaCabe = body.length <= LIMITE_DA_LEGENDA;
   let ultimo = legendaCabe ? await opts.enviarFoto(capa, body) : await opts.enviarTexto(body);
   for (const foto of legendaCabe ? demais : fotos) {
     if (!OK_KINDS.has(ultimo.kind)) return ultimo;
+    if (!cabeMaisUma()) return ultimo;
     await opts.sleep(opts.jitter());
     ultimo = await opts.enviarFoto(foto, '');
   }

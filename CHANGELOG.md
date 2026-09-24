@@ -8,6 +8,107 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.46.0] — 2026-09-24
+
+### Adicionado
+
+- **Quando o telefone da conversa cai, dá para continuar o atendimento por outro número** No Inbox, o botão **Transferir** ganhou duas abas: **Atendente**, como antes, e **Número**. Na aba Número você escolhe outro número de WhatsApp da empresa e clica **Continuar por este número**: o sistema abre a conversa do mesmo cliente nesse número e já a mostra na tela. Se a conversa lá estiver livre, você fica como responsável e o atendimento automático daquele número não entra no meio; se ela já estiver com alguém, a tela diz com quem. Números desconectados aparecem na lista, mas não podem ser escolhidos. Quando o número da conversa aberta não está conectado e existe outro conectado, aparece acima do campo de digitar a faixa **Responder por outro número**, que leva direto para essa escolha. Antes não havia como responder: a conversa ficava presa ao número que caiu. O histórico antigo continua na conversa do número original. Crédito: @rafaelbatistazz.
+
+- **Variável META_WEBHOOK_BASE_URL para separar a URL pública dos webhooks da Meta** Adiciona a variável opcional `META_WEBHOOK_BASE_URL`, permitindo configurar uma URL pública dedicada para o callback dos webhooks da Meta (WhatsApp Cloud API / canais oficiais), separada de `NEXT_PUBLIC_APP_URL`. Mantém compatibilidade total com instalações existentes por fallback automático.
+
+  Contribuição de @webtecnica (#1554).
+
+- **O link da imagem do modelo se salva na aba Templates, sem enviar nada** Em **Conexões › Templates da Meta**, cada modelo com imagem, vídeo ou documento no cabeçalho ganha um campo para o link público do arquivo e o botão **Salvar link**. Antes a única forma de salvar esse link era enviar o modelo numa conversa com a janela de 24 horas fechada — ou seja, era preciso disparar para um cliente só para deixar o modelo pronto. Agora o link fica salvo direto no modelo, e quando você escolhe esse modelo numa conversa o campo do link já vem preenchido. Apagar o campo e clicar em **Remover link** esquece o link. Salvar é do administrador, como sincronizar. Crédito: @rafaelbatistazz.
+
+### Corrigido
+
+- **Extratores de atribuição deixam de gravar o id do anúncio como clique de origem** Quando uma mensagem com `referral` de anúncio chegava sem `ctwa_clid`, os extratores de atribuição (API oficial e WAHA) utilizavam o id do anúncio (`source_id`) como fallback para `sourceId` (`ad_source_id`), fazendo com que o envio de conversões reportasse o identificador do anúncio à plataforma como se fosse o identificador do clique. Agora os extratores gravam `sourceId` exclusivamente quando o clique (`ctwa_clid` / `ctwaClid`) estiver presente, mantendo o id do anúncio estritamente em `adId` (`ad_id`).
+
+  Contribuição de @webtecnica (#1552).
+
+- **Na Agenda, o botão Confirmar volta a ser alcançável em janelas baixas** Em telas largas com pouca altura (por exemplo 1280×500 ou 1024×560), o formulário de "Novo agendamento" cortava a lista de horários e o botão Confirmar sem barra de rolagem: os campos acima do calendário ocupavam quase toda a altura e o painel ficava sem espaço. Agora o formulário inteiro rola, o painel de marcar mantém a altura do próprio conteúdo e a lista de horários continua com a sua rolagem própria.
+
+- **O agente deixa de dizer que "vai ver os horários" sem consultar a agenda** O agente com ferramenta de agenda já era impedido de responder "vou verificar os horários" ou "estou confirmando a disponibilidade" sem ter consultado a agenda de verdade naquele turno. Uma forma parecida escapava: "Vou chamar a responsável pra ver os horários." A mensagem saía e o turno terminava sem consulta nenhuma: a promessa de olhar os horários ficava só na promessa. Agora essa forma também é barrada, e o agente é orientado a consultar a agenda e responder com os horários reais. A regra nova é estreita de propósito: frases em que quem vai ver é o cliente ("pra você ver a agenda do evento"), "nada a ver com o seu agendamento" e "vamos ver: o horário de funcionamento é…" continuam saindo normalmente. Não há nada a configurar.
+
+  Contribuição de @gyanu2507 (#972); relato de @spoliagency (#970).
+
+- **Ação de automação assign_owner passa a ajustar owner_kind e limpar owner_agent_id** A ação de automação `assign_owner` atualizava `owner_user_id` diretamente no `crm_leads` sem ajustar `owner_kind` nem limpar `owner_agent_id`, violando a constraint `crm_leads_owner_kind_coherence` em leads previamente atribuídos a agentes de IA ou gerando incoerência em leads com dono sem tipo. Agora a ação roteia a atribuição por `resolveOwnerPatch`, garantindo a coerência do trio `owner_user_id`, `owner_kind` e `owner_agent_id`.
+
+  Contribuição de @webtecnica (#1549).
+
+- **A atualização para de refazer no banco o que já estava pronto** Toda atualização reaplica o esquema do banco inteiro com o sistema no ar. Alguns trechos dele desfaziam e refaziam, a cada atualização, coisas que já estavam no formato final: a tabela de compromissos da agenda era regravada inteira, uma coluna da tabela de membros da equipe era criada e apagada, e duas proteções da agenda e do follow-up eram reconstruídas. Enquanto isso acontecia, quem usava a agenda ou fazia login podia ficar esperando, e cada passada consumia de novo recursos do banco.
+
+  Agora esses trechos conferem o banco antes e só agem quando ele ainda não chegou ao formato final. O resultado final é o mesmo de antes; a atualização só deixa de repetir esse trabalho. Nada precisa ser feito por quem opera a instalação.
+
+- **Rodar a atualização de novo remove o aviso de manutenção que ficou preso** Se uma atualização era interrompida depois de pôr no ar o aviso de manutenção, o aviso ficava de pé e o CRM respondia 503 para todo mundo (site, rotinas e webhooks do WhatsApp); rodar o `update.sh` de novo dizia "Nada a atualizar" e saía sem tocar nele. Agora essa mesma saída remove o aviso preso, avisa quem está operando e diz como concluir a atualização interrompida. Medido numa VPS real, onde o CRM ficou 6h30 fora do ar por isso.
+
+  Contribuição de @gideony (#1524).
+
+- **O aviso de "sem chave de IA" no onboarding deixa de dizer "chave de da Anthropic"** Quem instala sem chave de IA e cria o primeiro atendente vê um aviso explicando que ele ficou
+  como rascunho. A frase juntava duas preposições e saía "Não achei chave de da Anthropic
+  (Claude)" — e, em espanhol, "No encontré ninguna clave de de la Anthropic". Agora sai "Não
+  achei chave da Anthropic (Claude)". Nenhum comportamento muda: é só o texto do aviso.
+
+- **crm_find_free_slots tolera dia e dias_a_frente juntos priorizando dia** A ferramenta MCP `crm_find_free_slots` não recusa mais chamadas com `periodo_ambiguo` quando o modelo de IA preenche `dia` e `dias_a_frente` simultaneamente, priorizando o campo mais específico (`dia`) e documentando a precedência no schema da ferramenta.
+
+  Contribuição de @webtecnica (#1555).
+
+- **Atualizar a instalação não duplica mais as demandas do Radar** Cada atualização da VPS criava uma segunda demanda para toda conversa nova que já tinha a sua, e o Radar passava a mostrar o dobro de demandas abertas sem próximo passo (o índice de atrito também contava em dobro). A atualização agora só cria demanda para conversa que não tem nenhuma, e a duplicata que as atualizações anteriores deixaram é apagada sozinha na próxima atualização. Só sai a cópia que ninguém tocou: demanda com próximo passo, responsável, lead ou caso fica como está, e a cópia que já virou o atendimento em curso da conversa também fica, para não interromper acompanhamento nenhum. Depois de atualizar, a contagem do Radar pode cair, e o número novo é o correto.
+
+- **O "digitando…" aparece no WhatsApp do cliente enquanto a IA prepara a resposta** O indicador de "digitando…" praticamente nunca aparecia quando o agente de IA respondia: ele só era acionado se sobrasse tempo de espera depois que a IA terminava de pensar, e quase nunca sobrava. Agora ele acende no começo do atendimento de cada mensagem, cobrindo os segundos em que o cliente espera a resposta. Crédito: @rafaelbatistazz.
+
+- **Extensão removida deixa de aparecer como instalada no painel do dono do servidor** Remover uma extensão marca a instalação como removida, mas a linha continua no banco. A tela `/admin/extensoes` lia todas as linhas, então uma extensão já removida seguia listada como instalada, junto com a contagem de empresas dela. Agora a tela ignora as instalações removidas, do mesmo jeito que o restante do sistema de extensões já fazia.
+
+- **As fotos do produto não passam mais do limite de mensagens por resposta** Quando a descrição de um produto era longa demais para ir como legenda da foto, o texto saía numa mensagem à parte e as fotos vinham depois sem contar essa mensagem. Com o limite de 3 mensagens por resposta, um produto com 3 fotos chegava ao cliente em 4 mensagens, acima do ritmo que protege o número de bloqueio. Agora o limite é conferido antes de cada foto, já contando o texto. Crédito: @bonito-system.
+
+- **Freio de envio por token aplicado antes de abrir conversa e teto por organização** Ao iniciar conversa e envio por token (`crm_start_conversation_and_send`), o freio de ritmo e teto diário do número passa a ser checado antes de registrar a abertura da conversa no banco, impedindo conversas vazias residuais quando o envio for retido por limite de taxa (429). Além disso, a rota `/api/v1/messages` agora respeita um teto global por organização além do teto por token individual.
+
+  Contribuição de @webtecnica (#1556).
+
+- **Textos longos sem espaços no Inbox não estouram mais a largura da tela** No Inbox, mensagens com sequências longas e contínuas de caracteres sem espaço (como códigos Pix copia-e-cola de 150+ caracteres) estufavam a bolha de mensagem para além da coluna de conversa, desalinhando o layout e ocultando os botões de ação do topo. A coluna da conversa, o scroller e a bolha ganharam contenção de largura mínima, e o texto ganhou quebra forçada (`wrap-anywhere`): o layout fica íntegro no desktop (medido em 1024 e 1280 px).
+
+  Contribuição de @webtecnica (#1508); relato de @tec7alex (#1451).
+
+- **O modelo de mensagem volta a sair pelo WhatsApp oficial da Meta** Desde a 1.45.0, todo envio de modelo aprovado por um número conectado ao WhatsApp oficial da Meta falhava com "template_missing", e a conferência dos valores do modelo deixava de acontecer. Como o modelo é o único jeito de voltar a falar com um cliente depois de 24 horas sem resposta, essas conversas ficavam sem saída. Agora o envio acha o modelo que a sincronização da Meta trouxe, e quem usa também um canal parceiro com um modelo de mesmo nome continua com cada número usando a própria definição. Crédito: @bonito-system.
+
+- **Importar uma skill recusa, já na leitura do pacote, nome que o Storage não aceita** O pacote de skill vira chave de objeto no Storage (`{organização}/{nome}/{versão}/{caminho}`), e o
+  Storage tem alfabeto próprio para nome de arquivo. Um zip com `assets/ícone.png` — ou uma skill
+  chamada `Relatório de vendas` — passava pela conferência do pacote e só quebrava adiante, na hora de
+  subir o arquivo, com um erro que não ensinava o que fazer. Agora a recusa acontece na leitura do
+  zip, antes de qualquer envio, e a mensagem diz qual nome está fora do alfabeto e o que usar no
+  lugar. Quem envia pacote com letras sem acento, números, ponto, hífen, sublinhado ou espaço não vê
+  diferença nenhuma.
+
+  Contribuição de @webtecnica (#1346), no passo que a #686 pedia.
+
+- **Validação de credenciais OpenRouter passa a aceitar gateways compatíveis sem rota /key** Quando `OPENROUTER_BASE_URL` aponta para um gateway próprio OpenAI-compatível (LiteLLM, vLLM, proxy interno), a validação de credenciais em IA › Credenciais falhava com `provider_status_404` porque a rota `/key` é exclusiva do OpenRouter oficial. O validador agora detecta a ausência de `/key` em bases customizadas e valida a autenticidade e catálogo via `GET /models`, permitindo validar e publicar agentes contra gateways privados.
+
+  Contribuição de @webtecnica (#1376).
+
+- **O painel "Como está indo" do papel Operador passa a contar só o agente aberto** Na página de um agente, a aba de operação mostrava os números do papel Operador somando todos os agentes da organização. Com dois ou mais agentes, o painel de um mandava marcar capacidades nele por causa de conversas de outro, e um agente parado não aparecia enquanto outro trabalhasse. Agora cada agente vê só as conversas dele.
+
+  Os números passam a contar a partir desta versão: as execuções registradas antes dela não diziam qual agente atendeu, então o painel de cada agente começa do zero e se preenche com as próximas conversas (a janela é de 30 dias).
+
+- **Evento do WhatsApp que chega num formato inesperado fica guardado e marcado como recusado** Quando o WhatsApp manda um evento num formato que o CRM não reconhece, o CRM recusa o evento e guarda uma cópia dele para quem for investigar. Isso tinha três falhas. No endereço de recebimento próprio de cada número, um campo que esse endereço nem usa podia fazer o evento ser recusado antes de a cópia ser guardada, e ela se perdia. Quando a cópia era guardada, ficava marcada como "recebida", igual a um evento que deu certo, e depois ninguém conseguia separar um do outro. E um evento malformado, que qualquer pessoa pode mandar antes de o CRM conferir a assinatura, aparecia no registro do servidor como erro.
+
+  Agora a cópia é guardada nesses casos, a recusa fica marcada como erro junto com os nomes dos campos que vieram diferentes (nunca o conteúdo, que é dado do cliente), e a recusa que acontece antes da assinatura aparece no registro como aviso. Mensagens no formato normal seguem entrando exatamente como antes.
+
+- **Etapa criada pela tela gera slug com hífen e normaliza busca em agendamento e handoff** A geração de slug de etapa na interface (`lib/leads/stage-editing.ts`) utilizava sublinhado (`_`), enquanto os módulos de movimentação automática por agendamento (`lib/leads/appointment-stage-move.ts`) e de handoff (`lib/leads/handoff-stage-move.ts`) procuravam slugs padronizados com hífen (`agendamento-solicitado` e `chamar-humano`). Agora o gerador produz slugs com hífens e os consumidores passam a buscar também etapas legadas com sublinhado como fallback, garantindo compatibilidade total sem quebras. Funis novos também passam a nascer com slug de hífen, porque usam o mesmo gerador; slugs já gravados não mudam.
+
+  Contribuição de @webtecnica (#1548); relato de @franceschini-lucas (#1542).
+
+- **Transcrição aceita base URL com ou sem /v1 e sem duplicar caminho** Ao configurar uma URL base customizada para transcrição de áudio (ex.: Groq ou Whisper próprio, como sugerido no `.env.example`), o provedor de transcrição concatenava `/v1/audio/transcriptions` sem normalizar o sufixo `/v1` ou barras finais, resultando em `/v1/v1/audio/transcriptions` e gerando erro 404. O provedor agora normaliza a base removendo barras finais e o sufixo `/v1`, suportando tanto URLs com quanto sem `/v1`.
+
+  Contribuição de @webtecnica (#1550).
+
+- **e2e do Trunk SIP garante dígito no sufixo e remove host na varredura de chave crua** A spec `tests/e2e/trunk-sip-config.spec.ts` passa a garantir um dígito no sufixo aleatório derivado de `Date.now().toString(36)` e a limpar ocorrências de `host` em `corpoSemOBloco`, evitando que nomes de host gerados casem com o padrão de chave de tradução crua (`a.b.c`).
+
+  Contribuição de @webtecnica (#1553).
+
+- **Atualização de modelo pelo Zernio passa a filtrar pela conexão correspondente** A sincronização de status de modelo vinda de webhook do Zernio (`lib/channels/zernio/avisos.ts`) atualizava o espelho local (`meta_templates`) filtrando apenas por organização e nome. Em organizações com mais de uma conexão espelhando modelos de mesmo nome (ou conexões com múltiplos idiomas), o estado recebido do Zernio podia sobrescrever a linha de outro canal. Agora a atualização filtra por `channel_session_id` e idioma, isolando as conexões.
+
+  Contribuição de @webtecnica (#1551).
+
 ## [1.45.0] — 2026-09-23
 
 ### Adicionado
@@ -7626,7 +7727,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.45.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.46.0...HEAD
+[1.46.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.45.0...v1.46.0
 [1.45.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.44.0...v1.45.0
 [1.44.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.43.0...v1.44.0
 [1.43.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.42.0...v1.43.0

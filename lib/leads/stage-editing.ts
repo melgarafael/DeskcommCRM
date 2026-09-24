@@ -127,9 +127,9 @@ export function slugDeNome(
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/[^a-z0-9]+/g, "-")
     .slice(0, SLUG_MAX)
-    .replace(/^_+|_+$/g, "");
+    .replace(/^-+|-+$/g, "");
 
   // Nome só de emoji, ou de uma letra só, não vira slug válido — e slug vazio
   // violaria o formato e o índice único de uma vez.
@@ -139,7 +139,7 @@ export function slugDeNome(
   if (!ocupados.has(raiz)) return raiz;
 
   for (let n = 2; ; n++) {
-    const sufixo = `_${n}`;
+    const sufixo = `-${n}`;
     const candidato = raiz.slice(0, SLUG_MAX - sufixo.length) + sufixo;
     if (!ocupados.has(candidato)) return candidato;
   }

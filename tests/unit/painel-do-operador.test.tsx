@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { PainelDoOperador } from "@/app/app/ai/agents/[id]/_components/PainelDoOperador";
+import { apiClient } from "@/lib/api/client";
 
 /**
  * Dublê POR URL, não por ordem de chamada: o painel e o ModelPicker buscam no
@@ -47,6 +48,10 @@ function renderPainel(overrides: Partial<React.ComponentProps<typeof PainelDoOpe
     toolIds: [],
     onToolIdsChange: vi.fn(),
     modeloDoConversador: "claude-sonnet-4-6",
+    // A medida do papel é do agente DESTA página (ver
+    // `operador-metrica-e-do-agente-da-tela.test.ts`): sem o id, o painel não
+    // tem o que pedir.
+    agentId: "aaaaaaaa-0000-4000-8000-00000000000a",
     ...overrides,
   };
   // O ModelPicker busca modelos por react-query; sem o provider ele estoura.
@@ -167,6 +172,23 @@ describe("o papel funcionando aparece na tela", () => {
     expect(promessas.textContent?.toLowerCase()).not.toContain("cumprid");
     // O único número que aponta ação de configuração vem com o caminho.
     expect(screen.getByTestId("operador-metrica-sem-mao").textContent).toContain("marcar abaixo");
+  });
+
+  it("pede a medida do agente DESTA página, não da organização", async () => {
+    // O agregado da organização na página de um agente manda configurar o agente
+    // errado. Ver `operador-metrica-e-do-agente-da-tela.test.ts`.
+    renderPainel({ enabled: true, agentId: "aaaaaaaa-0000-4000-8000-0000000000ff" });
+    await screen.findByTestId("operador-como-esta-indo");
+    const urls = vi.mocked(apiClient.get).mock.calls.map(([url]) => String(url));
+    expect(urls.filter((u) => u.includes("operator-metrics"))).toContain(
+      "/api/v1/ai/operator-metrics?agent_id=aaaaaaaa-0000-4000-8000-0000000000ff",
+    );
+  });
+
+  it("sem agente (agente ainda não criado) não pergunta — não há de quem medir", () => {
+    vi.mocked(apiClient.get).mockClear();
+    renderPainel({ enabled: true, agentId: null });
+    expect(vi.mocked(apiClient.get).mock.calls.some(([url]) => String(url).includes("operator-metrics"))).toBe(false);
   });
 
   it("sem promessa órfã, não inventa alarme", async () => {

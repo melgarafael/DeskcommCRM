@@ -126,6 +126,37 @@ describe("enviarComFotos — o texto é a legenda da primeira foto", () => {
     ]);
   });
 
+  // O teto de mensagens do turno é medido ANTES DE CADA FOTO, contando o que
+  // já saiu. Achado de revisão: com o teto calculado uma vez, antes do texto, a
+  // descrição longa (texto à parte) não era descontada e o turno estourava.
+  describe("teto de mensagens do turno (max_sends_per_turn)", () => {
+    const FOTO_3: FotoParaEnvio = { storagePath: `${ORG}/${CONVERSA}/catalogo-3.jpg`, mime: "image/jpeg" };
+    const comTeto = (c: ReturnType<typeof canal>, teto: number) => ({
+      ...c.opts,
+      restantes: () => teto - c.enviados.length,
+    });
+
+    it("descrição longa + 3 fotos com teto 3: o texto gasta uma, e só 2 fotos saem", async () => {
+      const c = canal();
+      const longo = "a".repeat(LIMITE_DA_LEGENDA + 1);
+      await enviarComFotos(longo, [FOTO_1, FOTO_2, FOTO_3], comTeto(c, 3));
+      expect(c.enviados).toHaveLength(3);
+      expect(c.enviados.map((e) => e.tipo)).toEqual(["texto", "foto", "foto"]);
+    });
+
+    it("legenda que cabe + 3 fotos com teto 3: as 3 saem, a capa com o texto", async () => {
+      const c = canal();
+      await enviarComFotos("Caneca por R$ 49", [FOTO_1, FOTO_2, FOTO_3], comTeto(c, 3));
+      expect(c.enviados.map((e) => e.tipo)).toEqual(["foto", "foto", "foto"]);
+    });
+
+    it("teto já gasto: só o texto sai, sem foto", async () => {
+      const c = canal();
+      await enviarComFotos("Caneca por R$ 49", [FOTO_1], { ...c.opts, restantes: () => 0 });
+      expect(c.enviados).toEqual([{ tipo: "texto", corpo: "Caneca por R$ 49" }]);
+    });
+  });
+
   it("para no primeiro desfecho que não é sucesso — contato bloqueado não recebe a segunda foto", async () => {
     const c = canal(["blocked"]);
     const r = await enviarComFotos("oi", [FOTO_1, FOTO_2], c.opts);

@@ -24,3 +24,20 @@ export function basePublicaDaInstalacao(req: { headers: Headers; nextUrl: URL })
   // override do número (`(#100) Invalid callback URL`).
   return base.replace(/\/+$/, "");
 }
+
+/**
+ * A base do callback da META — e só dela (#1426). `META_WEBHOOK_BASE_URL`, quando
+ * definida, deixa o painel numa rede privada e expõe à Meta só `/api/v1/webhooks/meta/*`.
+ *
+ * NÃO mora dentro de `basePublicaDaInstalacao`: aquela também monta a URL de webhook
+ * dos canais parceiros (`channels/partner` e `channels/graph-partner`, em
+ * `/api/v1/webhooks/channel/<token>`), e a variável trocaria a URL deles para um
+ * endereço que o proxy da receita da issue bloqueia.
+ */
+export function basePublicaDoWebhookMeta(req: { headers: Headers; nextUrl: URL }): string {
+  const configurada = env.META_WEBHOOK_BASE_URL.trim();
+  if (configurada && !configurada.includes("placeholder.invalid")) {
+    return configurada.replace(/\/+$/, "");
+  }
+  return basePublicaDaInstalacao(req);
+}

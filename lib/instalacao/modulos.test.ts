@@ -36,6 +36,19 @@ describe("modulosLigados", () => {
     expect(await modulosLigados(banco({ data: lixo }).db)).toEqual([]);
   });
 
+  it("cada módulo tem a sua linha — ligar um não liga o outro", async () => {
+    const soFluxos = [{ chave: "MODULO_FLUXOS_DE_ATENDIMENTO", valor: "ligado" }];
+    expect(await modulosLigados(banco({ data: soFluxos }).db)).toEqual(["fluxos_atendimento"]);
+    const osDois = [
+      { chave: "MODULO_BANCO_EXTERNO", valor: "ligado" },
+      { chave: "MODULO_FLUXOS_DE_ATENDIMENTO", valor: "ligado" },
+    ];
+    expect(await modulosLigados(banco({ data: osDois }).db)).toEqual([
+      "banco_externo",
+      "fluxos_atendimento",
+    ]);
+  });
+
   it("banco que recusa ou lança = desligado, sem lançar", async () => {
     expect(await modulosLigados(banco({ error: { code: "42P01", message: "x" } }).db)).toEqual([]);
     expect(await modulosLigados(banco(new Error("rede")).db)).toEqual([]);

@@ -52,6 +52,7 @@ import {
   type actionConfigSchema,
   type aiClassifyConfigSchema,
   type conditionConfigSchema,
+  type contactFlowFieldTypeSchema,
   type endConfigSchema,
   type waitConfigSchema,
 } from "./graph-schema";
@@ -69,6 +70,7 @@ export type AlvoDaClassificacao = z.infer<typeof aiClassifyConfigSchema>["target
 export type ResultadoDoFim = z.infer<typeof endConfigSchema>["outcome"];
 export type ModoDeEspera = z.infer<typeof waitConfigSchema>["mode"];
 export type ModoDaAcao = z.infer<typeof actionConfigSchema>["mode"];
+export type TipoDeCampo = z.infer<typeof contactFlowFieldTypeSchema>;
 export type TipoDeGatilho = TriggerConfig["kind"];
 
 /** `{ valor, rotulo }` na ordem de declaração do mapa — pronto para um `<Select>`. */
@@ -509,6 +511,17 @@ export const MODOS_DA_ACAO: Record<ModoDaAcao, string> = {
   text: "Texto fixo",
   ai_message: "Mensagem escrita pela IA",
   template: "Modelo de mensagem pronto",
+};
+
+// ─── pergunta do fluxo de atendimento (nó collect) ───────────────────────
+
+/** Tipo do valor que uma pergunta espera — rótulos do formulário e do card. */
+export const TIPOS_DE_CAMPO: Record<TipoDeCampo, string> = {
+  text: "Texto livre",
+  number: "Número",
+  date: "Data",
+  boolean: "Sim ou não",
+  select: "Escolha numa lista",
 };
 
 // ─── nó final ────────────────────────────────────────────────────────────

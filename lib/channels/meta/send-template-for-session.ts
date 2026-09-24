@@ -18,6 +18,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { graphVersion } from "@/lib/graph-version";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+import { linhaDoEspelho } from "../linha-do-espelho";
+
 import { resolveMetaCreds } from "./credentials";
 import { sendTemplate } from "./send-template";
 
@@ -103,17 +105,20 @@ export async function sendTemplateForSession(
     );
   }
 
-  let consulta = db
-    .from("meta_templates")
-    .select("name, language, status, contract_hash, components")
-    .eq("organization_id", input.organizationId)
-    .eq("name", input.name)
-    .eq("language", input.language);
-  // Com sessão, restringe à conexão: dois números têm definições diferentes e
-  // conferir a do número errado aprovaria um envio que a plataforma recusa.
-  if (input.channelSessionId) consulta = consulta.eq("channel_session_id", input.channelSessionId);
-
-  const { data: linha, error } = await consulta.maybeSingle();
+  // Com sessão, a linha DESTA conexão — ou, se não houver, a do canal oficial,
+  // que o sync grava sem conexão. Nunca a de outro número (ver linha-do-espelho.ts).
+  const { data: linha, error } = await linhaDoEspelho<{
+    name: string;
+    language: string;
+    status: string;
+    contract_hash: string;
+    components: unknown;
+  }>(db, "name, language, status, contract_hash, components", {
+    organizationId: input.organizationId,
+    name: input.name,
+    language: input.language,
+    channelSessionId: input.channelSessionId,
+  });
 
   if (error) throw new Error(`template_lookup_failed: ${error.message}`);
 

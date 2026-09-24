@@ -1,8 +1,8 @@
 "use client";
 import { useMutation, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
-import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { randomId } from "@/lib/random-id";
+import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { Message } from "@/lib/types/messaging";
 
 interface SendArgs {

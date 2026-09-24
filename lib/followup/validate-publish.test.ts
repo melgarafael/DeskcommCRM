@@ -737,3 +737,60 @@ describe('validateFlowForPublish — a regra precisa poder decidir', () => {
     expect(validateFlowForPublish(comRegras([{ field: 'lead_stage', op: 'eq', value: 'PAGO' }]))).toEqual({ ok: true });
   });
 });
+
+describe('publish por superfície (roteiro de atendimento, #1130)', () => {
+  function pergunta(id: string, key = id): FlowNode {
+    return {
+      id,
+      type: 'collect',
+      label: id,
+      position: pos,
+      config: { key, label: id, type: 'text', required: true, permite_correcao: true },
+    };
+  }
+  const codigos = (g: FlowGraph, surface?: 'followup' | 'atendimento') => {
+    const r = validateFlowForPublish(g, surface ? { surface } : {});
+    return r.ok ? [] : r.errors.map((e) => e.code);
+  };
+
+  it('roteiro linear início → pergunta → fim publica', () => {
+    const g = graph(
+      [trigger('t'), pergunta('nome'), end('f', 'converted')],
+      [edge('t', 'nome', always()), edge('nome', 'f', always())],
+    );
+    expect(validateFlowForPublish(g, { surface: 'atendimento' })).toEqual({ ok: true });
+  });
+
+  it('roteiro com espera é recusado com a caixa nomeada', () => {
+    const g = graph(
+      [trigger('t'), wait('w', { mode: 'fixed', duration_ms: 3_600_000 }), end('f')],
+      [edge('t', 'w', always()), edge('w', 'f', always())],
+    );
+    expect(codigos(g, 'atendimento')).toContain('no_fora_da_superficie');
+  });
+
+  it('follow-up com pergunta é recusado (o relógio não pergunta)', () => {
+    const g = graph(
+      [trigger('t'), pergunta('nome'), end('f')],
+      [edge('t', 'nome', always()), edge('nome', 'f', always())],
+    );
+    expect(codigos(g)).toContain('no_fora_da_superficie');
+    expect(codigos(g, 'followup')).toContain('no_fora_da_superficie');
+  });
+
+  it('roteiro que ramifica é recusado', () => {
+    const g = graph(
+      [trigger('t'), pergunta('a'), pergunta('b'), end('f')],
+      [edge('t', 'a', always()), edge('t', 'b', always()), edge('a', 'f', always()), edge('b', 'f', always())],
+    );
+    expect(codigos(g, 'atendimento')).toContain('roteiro_ramificado');
+  });
+
+  it('duas perguntas no mesmo campo são recusadas', () => {
+    const g = graph(
+      [trigger('t'), pergunta('a', 'cidade'), pergunta('b', 'cidade'), end('f')],
+      [edge('t', 'a', always()), edge('a', 'b', always()), edge('b', 'f', always())],
+    );
+    expect(codigos(g, 'atendimento')).toContain('campo_repetido');
+  });
+});

@@ -38,6 +38,8 @@ import { phoneForDisplay } from "@/lib/channels/phone-variants";
 
 interface Props {
   conversation: ConversationWithContact;
+  /** Seleciona outra conversa no Inbox — a aba Número do Transferir abre a do outro número. */
+  onAbrirConversa?: (id: string) => void;
 }
 
 /**
@@ -66,7 +68,7 @@ const STATUS_LABEL: Record<string, string> = {
   archived: "Arquivada",
 };
 
-export function ConversationHeader({ conversation }: Props) {
+export function ConversationHeader({ conversation, onAbrirConversa }: Props) {
   const t = useT();
   const { user } = useAuth();
   const claim = useClaimConversation();
@@ -365,6 +367,16 @@ export function ConversationHeader({ conversation }: Props) {
         conversationId={conversation.id}
         open={reassignOpen}
         onOpenChange={setReassignOpen}
+        numero={
+          onAbrirConversa && c?.id
+            ? {
+                contactId: c.id,
+                contactPhone: c.phone_number ?? null,
+                channelSessionId: conversation.channel_session_id,
+                onAbrirConversa,
+              }
+            : undefined
+        }
       />
       <AlertDialog open={confirmFecharOpen} onOpenChange={setConfirmFecharOpen}>
         <AlertDialogContent>

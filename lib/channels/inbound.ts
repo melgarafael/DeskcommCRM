@@ -179,7 +179,12 @@ async function zernioInbound(
     // O espelho local também: o aviso empurra para olhar, e a tela de modelos
     // precisa mostrar o estado novo. Ver o estado velho depois de ler o aviso é
     // pior que não ter avisado.
-    const espelhado = await atualizarEspelhoDoTemplate(admin, input.session.organization_id, payload);
+    const espelhado = await atualizarEspelhoDoTemplate(
+      admin,
+      input.session.organization_id,
+      payload,
+      input.session.id,
+    );
 
     // ─── Evento de CONEXÃO passa pelo vigia, não por um insert cru ──────────
     //
