@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
-import { PuzzlePiece, UploadSimple, DownloadSimple, Trash, Info } from "@/lib/ui/icons";
+import { PuzzlePiece, UploadSimple, DownloadSimple, Trash, Info, PencilSimple } from "@/lib/ui/icons";
+import { EditorDeSkill } from "./_components/EditorDeSkill";
 import { usePermission } from "@/hooks/auth/AuthProvider";
 import {
   useSkills,
@@ -46,6 +47,7 @@ export function SkillsClient({ initialState }: Props) {
   const importSkill = useImportSkill();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [pendingName, setPendingName] = React.useState<string | null>(null);
+  const [editando, setEditando] = React.useState<string | null>(null);
 
   function handleInstall(name: string) {
     setPendingName(name);
@@ -145,7 +147,15 @@ export function SkillsClient({ initialState }: Props) {
                   </div>
                   {skill.description && <p className="text-text-muted">{skill.description}</p>}
                   {canManage && (
-                    <div className="flex sm:justify-end">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEditando(skill.name)}
+                        className="w-full sm:w-auto"
+                      >
+                        <PencilSimple /> {t("Editar")}
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -166,7 +176,7 @@ export function SkillsClient({ initialState }: Props) {
             <Info className="mt-0.5 shrink-0" aria-hidden />
             <p>
               {t(
-                "Para personalizar uma skill instalada, basta reenviar um .zip com o mesmo nome — a sua versão passa a valer no lugar da do catálogo. Não há editor dentro do sistema nesta fase.",
+                "Use Editar para ajustar o texto de uma skill instalada — cada salvamento cria uma versão nova e a anterior fica no histórico. Também dá para reenviar um .zip com o mesmo nome; a sua versão passa a valer no lugar da do catálogo.",
               )}
             </p>
           </div>
@@ -216,6 +226,16 @@ export function SkillsClient({ initialState }: Props) {
           )}
         </CardContent>
       </Card>
+
+      {editando !== null && (
+        <EditorDeSkill
+          nome={editando}
+          aberto
+          aoMudarAberto={(aberto) => {
+            if (!aberto) setEditando(null);
+          }}
+        />
+      )}
     </div>
   );
 }

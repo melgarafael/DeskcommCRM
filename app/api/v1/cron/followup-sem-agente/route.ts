@@ -2,7 +2,7 @@
  * O FLUXO PUBLICADO QUE NUNCA VAI DISPARAR.
  *
  * Um gatilho automático de follow-up cujo grafo pede IA (silêncio, etapa,
- * caso, cliente voltou, falta a compromisso) só cria inscrição se algum
+ * caso, cliente voltou, lead criado, falta a compromisso) só cria inscrição se algum
  * agente PUBLICADO tem o ponteiro em `followup.flow_pointer_ids` —
  * `lib/followup/agent-followup-gate.ts`. Grafo só de texto fixo / template
  * NÃO pede agente: o enrollment nasce com `agent_id` nulo. A recuperação de
@@ -71,6 +71,7 @@ const COMO_DISPARA: Record<string, string> = {
   case_opened: "quando um atendimento é aberto",
   appointment_no_show: "quando alguém confirma que o contato não compareceu",
   inbound_after_silence: "quando o contato volta a escrever depois de um tempo sem falar",
+  lead_created: "quando um negócio nasce",
 };
 
 interface PonteiroDesarmado {

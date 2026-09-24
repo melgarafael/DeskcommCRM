@@ -142,7 +142,9 @@ export async function classifyIntent(
         leadId: input.leadId,
         jobId: input.jobId,
         purpose: 'intent_router',
-        model: input.router.classifierModel,
+        // Sem modelo próprio ("Automático"), não passa nenhum: o seam resolve
+        // pelo painel de provedores ou pelo padrão da organização.
+        ...(input.router.classifierModel ? { model: input.router.classifierModel } : {}),
         // Sem isto, o modelo do roteador viaja para o provedor da ORG: escolher
         // um modelo OpenAI numa org configurada como Anthropic mandava o id para
         // o lugar errado, e a classificação falhava sempre.

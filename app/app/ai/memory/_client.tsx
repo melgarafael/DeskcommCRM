@@ -29,6 +29,7 @@ import {
   useOrgMemoryVersion,
   type OrgMemoryState,
   type OrgMemoryVersionMeta,
+  type OrigemDaMemoria,
 } from "@/hooks/ai/useOrgMemory";
 import { useT } from "@/hooks/i18n/useT";
 
@@ -49,6 +50,13 @@ function formatDate(iso: string, idioma: string): string {
 export function OrgMemoryClient({ initialState }: Props) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
+  // Exaustivo por tipo: uma origem nova no CHECK sem rótulo aqui para de compilar,
+  // em vez de a tela chamar de "manual" o que a IA anotou.
+  const rotuloDaOrigem: Record<OrigemDaMemoria, string> = {
+    manual: t("manual"),
+    flywheel: t("aprendido automaticamente"),
+    agent: t("anotado pelo agente"),
+  };
   const { data } = useOrgMemory(initialState);
   const document = data?.document ?? null;
   const versions = data?.versions ?? [];
@@ -288,8 +296,8 @@ export function OrgMemoryClient({ initialState }: Props) {
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{entry.title}</span>
-                    <Badge variant={entry.source === "flywheel" ? "info" : "neutral"} className="text-[10px]">
-                      {entry.source === "flywheel" ? t("aprendido automaticamente") : t("manual")}
+                    <Badge variant={entry.source === "manual" ? "neutral" : "info"} className="text-[10px]">
+                      {rotuloDaOrigem[entry.source]}
                     </Badge>
                     <span className="ml-auto text-xs text-muted-foreground">{formatDate(entry.created_at, tagDoIdioma)}</span>
                   </div>

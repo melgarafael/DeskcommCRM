@@ -33,6 +33,8 @@ export default async function FollowupFlowBuilderPage({
       .select(DETAIL_COLUMNS)
       .eq("id", id)
       .eq("organization_id", activeOrg.orgId)
+      // Roteiro de atendimento não abre no editor de follow-up (prova do #1130).
+      .neq("surface", "atendimento")
       .maybeSingle(),
     supabase
       .from("followup_flow_versions")

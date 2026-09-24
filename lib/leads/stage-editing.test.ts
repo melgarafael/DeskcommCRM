@@ -46,14 +46,16 @@ describe('validarNomeDeEtapa', () => {
 });
 
 describe('slugDeNome', () => {
-  it('gera slug estável a partir do nome', () => {
-    expect(slugDeNome('Em negociação')).toBe('em_negociacao');
-    expect(slugDeNome('Pós-venda!')).toBe('pos_venda');
+  it('gera slug estável a partir do nome com hífens', () => {
+    expect(slugDeNome('Em negociação')).toBe('em-negociacao');
+    expect(slugDeNome('Pós-venda!')).toBe('pos-venda');
+    expect(slugDeNome('Agendamento solicitado')).toBe('agendamento-solicitado');
+    expect(slugDeNome('Chamar humano')).toBe('chamar-humano');
   });
 
   it('desempata acrescentando sufixo quando o slug já existe', () => {
     // "Pós venda" e "Pós-venda" viram o mesmo slug; o índice único recusaria.
-    expect(slugDeNome('Pós venda', ['pos_venda'])).toBe('pos_venda_2');
+    expect(slugDeNome('Pós venda', ['pos-venda'])).toBe('pos-venda-2');
   });
 
   it('nunca devolve slug vazio', () => {

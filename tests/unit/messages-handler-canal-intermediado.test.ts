@@ -267,7 +267,22 @@ function makeSupabase(linhaCompleta: Row, espelhoDoModelo: Row | null = null) {
         // não fala do comportamento sob teste.
         const cadeia: Record<string, unknown> = {
           eq: () => cadeia,
+          is: () => cadeia,
           maybeSingle: async () => ({ data: espelhoDoModelo, error: null }),
+        };
+        return { select: () => cadeia };
+      }
+      if (tabela === "channel_sessions") {
+        // A busca da definição do modelo pergunta o provedor e a conta oficial
+        // da sessão antes de aceitar uma linha sem conexão (lib/channels/
+        // linha-do-espelho.ts). Responde com a sessão DESTA conversa.
+        const sessao = (linhaCompleta.channel_sessions ?? {}) as Row;
+        const cadeia: Record<string, unknown> = {
+          eq: () => cadeia,
+          maybeSingle: async () => ({
+            data: { provider: sessao.provider ?? null, meta_waba_id: sessao.meta_waba_id ?? null },
+            error: null,
+          }),
         };
         return { select: () => cadeia };
       }

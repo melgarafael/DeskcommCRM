@@ -1,5 +1,5 @@
 /**
- * Honorários — primeiro módulo oficial via ADR-0002 (migration 0385).
+ * Honorários — primeiro módulo oficial via ADR-0002 (migration 0398).
  *
  * O molde já cobre forma (D4) e efeito (provisionar cria exatamente as duas
  * tabelas, protegidas, e o núcleo fica intocado). `protecaoPropria` porque a

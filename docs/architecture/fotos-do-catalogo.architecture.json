@@ -1,0 +1,183 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Fotos no catálogo",
+    "subtitle": "O produto ganha foto, e a IA manda a foto junto (migration 0390; ideia de @vgamkt, #1130)",
+    "output": "fotos-do-catalogo.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "ui",
+      "label": "Tela"
+    },
+    {
+      "id": "api",
+      "label": "Rotas"
+    },
+    {
+      "id": "data",
+      "label": "Banco e Storage"
+    },
+    {
+      "id": "agent",
+      "label": "Turno do agente"
+    }
+  ],
+  "mainPath": [
+    "tela",
+    "rota",
+    "coluna",
+    "busca",
+    "envio",
+    "copia",
+    "handler"
+  ],
+  "nodes": [
+    {
+      "id": "tela",
+      "lane": "ui",
+      "col": 1,
+      "type": "frontend",
+      "label": "Produtos › Fotos (subir, ordenar, remover)"
+    },
+    {
+      "id": "rota",
+      "lane": "api",
+      "col": 2,
+      "type": "api",
+      "label": "POST/PUT /api/v1/products/:id/fotos"
+    },
+    {
+      "id": "auditoria",
+      "lane": "data",
+      "col": 3,
+      "type": "database",
+      "label": "api_audit_log (catalog_product.photo_added / photos_updated)"
+    },
+    {
+      "id": "coluna",
+      "lane": "data",
+      "col": 2,
+      "type": "database",
+      "label": "catalog_products.fotos"
+    },
+    {
+      "id": "bucket",
+      "lane": "data",
+      "col": 1,
+      "type": "database",
+      "label": "storage catalog-photos (privado)"
+    },
+    {
+      "id": "busca",
+      "lane": "agent",
+      "col": 2,
+      "type": "service",
+      "label": "crm_search_products (devolve quantas fotos)"
+    },
+    {
+      "id": "envio",
+      "lane": "agent",
+      "col": 3,
+      "type": "service",
+      "label": "send_message com produto_codigo (cadeia before_send)"
+    },
+    {
+      "id": "copia",
+      "lane": "agent",
+      "col": 4,
+      "type": "service",
+      "label": "cópia para whatsapp-media/<org>/<conversa>"
+    },
+    {
+      "id": "handler",
+      "lane": "api",
+      "col": 4,
+      "type": "api",
+      "label": "handler de mensagens (imagem, URL assinada curta)"
+    },
+    {
+      "id": "inbox",
+      "lane": "ui",
+      "col": 4,
+      "type": "frontend",
+      "label": "Inbox mostra a foto enviada"
+    }
+  ],
+  "edges": [
+    {
+      "id": "0",
+      "from": "tela",
+      "to": "rota",
+      "label": "arquivo / nova ordem"
+    },
+    {
+      "id": "1",
+      "from": "rota",
+      "to": "bucket",
+      "label": "sobe e apaga (só caminho do produto)"
+    },
+    {
+      "id": "2",
+      "from": "rota",
+      "to": "coluna",
+      "label": "grava a lista"
+    },
+    {
+      "id": "3",
+      "from": "rota",
+      "to": "auditoria",
+      "label": "registra quem mudou"
+    },
+    {
+      "id": "4",
+      "from": "coluna",
+      "to": "tela",
+      "label": "URL assinada de 1 h"
+    },
+    {
+      "id": "5",
+      "from": "coluna",
+      "to": "busca",
+      "label": "fotos: N"
+    },
+    {
+      "id": "6",
+      "from": "busca",
+      "to": "envio",
+      "label": "o modelo passa o código"
+    },
+    {
+      "id": "7",
+      "from": "envio",
+      "to": "copia",
+      "label": "antes da cadeia; falhou = só texto"
+    },
+    {
+      "id": "8",
+      "from": "bucket",
+      "to": "copia",
+      "label": "origem"
+    },
+    {
+      "id": "9",
+      "from": "copia",
+      "to": "handler",
+      "label": "media_storage_path"
+    },
+    {
+      "id": "10",
+      "from": "handler",
+      "to": "inbox",
+      "label": "mensagem de imagem"
+    },
+    {
+      "id": "11",
+      "from": "auditoria",
+      "to": "tela",
+      "label": "Configurações › Auditoria lê"
+    }
+  ]
+}

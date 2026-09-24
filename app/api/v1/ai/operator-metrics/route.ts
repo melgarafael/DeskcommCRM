@@ -27,6 +27,8 @@
  * explícito por `organization_id` continua no SQL porque um usuário pode
  * pertencer a mais de uma organização — a RLS deixaria passar as duas.
  */
+import { z } from "zod";
+
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
@@ -37,13 +39,48 @@ export const dynamic = "force-dynamic";
 /** Janela fixa. Um seletor de período aqui seria configuração antes de haver uso. */
 const DIAS = 30;
 
-export async function GET(): Promise<Response> {
+/**
+ * QUAL agente. O painel que consome isto vive em `/app/ai/agents/[id]` e as
+ * frases dele mandam agir sobre AQUELE agente ("marcar abaixo"). Agregar a
+ * organização inteira ali aponta ação concreta e errada quando há mais de um
+ * agente — que é o desenho normal (lista, roteadores, mapa por funil). Sem o
+ * parâmetro a rota segue devolvendo o agregado da organização.
+ */
+const querySchema = z.object({ agent_id: z.string().uuid().optional() });
+
+export async function GET(req: Request): Promise<Response> {
   const authz = await requireRole("manager", { resource: "ai_operator_metrics" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org } = authz;
 
+  const parsed = querySchema.safeParse(
+    Object.fromEntries(new URL(req.url).searchParams.entries()),
+  );
+  if (!parsed.success) {
+    return fail("validation_failed", t("Filtros inválidos."), 422, {
+      details: parsed.error.flatten(),
+    });
+  }
+  const agenteDaTela = parsed.data.agent_id ?? null;
+
   const db = await createClient();
+
+  // O agente pedido tem de ser da organização da sessão. O filtro por
+  // `organization_id` abaixo já impede ler turno alheio, mas sem esta conferência
+  // um id de outra organização responderia "zero turnos" — uma afirmação sobre
+  // um agente que esta organização não tem.
+  if (agenteDaTela !== null) {
+    const { data: agente, error } = await db
+      .from("ai_agents")
+      .select("id")
+      .eq("id", agenteDaTela)
+      .eq("organization_id", org.orgId)
+      .maybeSingle();
+    if (error) return fail("read_failed", error.message, 500);
+    if (!agente) return fail("not_found", t("Agente não encontrado."), 404);
+  }
+
   const desde = new Date(Date.now() - DIAS * 24 * 60 * 60 * 1000).toISOString();
 
   /** Uma contagem, sem trazer linha nenhuma (`head: true`). */
@@ -55,12 +92,15 @@ export async function GET(): Promise<Response> {
     return count ?? 0;
   }
   function base() {
-    return db
+    const q = db
       .from("event_log")
       .select("id", { count: "exact", head: true })
       .eq("organization_id", org!.orgId)
       .eq("event_type", "agent.operator_turn")
       .gte("created_at", desde);
+    // A chave é a que `registrarDesfecho` grava. Filtrar por uma que ninguém
+    // escreve casa zero linha e o painel zera em silêncio — pior que agregar.
+    return agenteDaTela === null ? q : q.eq("payload->>agent_id", agenteDaTela);
   }
 
   try {

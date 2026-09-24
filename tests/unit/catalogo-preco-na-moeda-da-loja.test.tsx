@@ -56,6 +56,7 @@ function produto(over: Partial<Produto> = {}): Produto {
     ativo: true,
     origem: "manual",
     imagem_url: null,
+    fotos: [],
     updated_at: "2026-09-03T00:00:00.000Z",
     ...over,
   };
@@ -64,7 +65,7 @@ function produto(over: Partial<Produto> = {}): Produto {
 const TEXTOS = { titulo: "Produtos", subtitulo: "", vazio: "", vazioDica: "" };
 
 function montar(itens: Produto[]) {
-  render(<ProdutosClient inicial={itens} podeEditar={false} textos={TEXTOS} />);
+  render(<ProdutosClient inicial={itens} urlsDasFotos={{}} podeEditar={false} textos={TEXTOS} />);
 }
 
 /** O `Intl` emite NBSP (U+00A0) ou narrow NBSP (U+202F) entre símbolo e número. */

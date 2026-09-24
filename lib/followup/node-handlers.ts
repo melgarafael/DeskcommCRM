@@ -23,6 +23,13 @@ export type EnrollmentStatus =
    */
   | "dormente"
   | "paused_handoff"
+  /**
+   * Roteiro de atendimento em andamento (0394). Conduzido pelo TURNO, não pelo
+   * relógio: o motor de follow-up nunca o reclama (o claim filtra
+   * `active|waiting_reply`). Está aqui porque o opt-out o alcança
+   * (`reactivity.ts`) e o cancelamento pela fila o encerra.
+   */
+  | "coletando"
   | "completed"
   | "cancelled"
   | "dead";
@@ -761,6 +768,24 @@ export function processNode(input: {
         next_eval_at: clock(),
         repeat: { index: taken + 1, total },
       };
+    }
+
+    case "collect": {
+      // Nó de COLETA do fluxo de atendimento (surface=atendimento). Perguntar e
+      // gravar é responsabilidade do executor in-turn; no relógio do follow-up
+      // ele é passagem (segue pela aresta única). Um fluxo de retomada não
+      // deveria usar este nó — o publish é quem recorta isso.
+      const edge = selectEdge(edges, node.id, { type: "always" });
+      if (!edge) return { kind: "fail", error: `collect node "${node.id}" has no outbound edge` };
+      return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
+    }
+
+    case "skill": {
+      // Puxa uma skill instalada em paralelo ao passo; a ativação é do executor
+      // in-turn (união com o `matchSkills`). No relógio, é passagem.
+      const edge = selectEdge(edges, node.id, { type: "always" });
+      if (!edge) return { kind: "fail", error: `skill node "${node.id}" has no outbound edge` };
+      return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
     }
 
     case "action": {

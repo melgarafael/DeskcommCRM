@@ -122,3 +122,25 @@ export async function esperarComoHumano(args: EsperaHumanaArgs): Promise<number>
   await args.sleep(ms);
   return ms;
 }
+
+/**
+ * Acende o "digitando…" SEM esperar a resposta do canal — para o início do turno,
+ * antes da chamada ao modelo.
+ *
+ * Por que existe além de `esperarComoHumano`: aquela desconta do alvo o tempo que
+ * o turno já gastou, e o modelo quase sempre gasta mais que o alvo (medido numa
+ * instalação real: 7s de LLM contra ~2s de alvo, `atraso_ms: 0`). Espera zero é
+ * retorno antes da presença — e o indicador nunca acendia justamente nos segundos
+ * em que o cliente está esperando. Acender aqui cobre esses segundos.
+ *
+ * Não espera o transporte: uma ida à rede a mais antes do modelo seria latência
+ * paga pelo cliente por um enfeite. Falha vira warn, com a mesma disciplina de
+ * `esperarComoHumano` (sem corpo de erro no log).
+ */
+export function acenderDigitando(sinalizarDigitando: () => Promise<void>, log: Logger): void {
+  void sinalizarDigitando().catch((err: unknown) => {
+    log.warn('não consegui sinalizar "digitando" (segue o turno)', {
+      error: err instanceof Error ? err.name : 'unknown',
+    });
+  });
+}

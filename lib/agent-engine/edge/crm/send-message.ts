@@ -63,6 +63,39 @@ export interface SendMessageInput {
    * colidirem no ledger e o segundo virar `already_sent` sem ter saído.
    */
   template?: { name: string; language: string; values: Record<string, string> };
+  /** Presente = imagem da pasta da conversa em `whatsapp-media`; `body` é a legenda. */
+  media?: { storagePath: string; mime: string };
+}
+
+/**
+ * O corpo que o handler de mensagens recebe: texto, template ou imagem da
+ * conversa. Exportado para o teste — o tipo decide o caminho no handler, e um
+ * `type` errado manda a foto como texto sem ninguém ver.
+ */
+export function corpoDoEnvio(
+  input: SendMessageInput,
+  idempotencyKey: string,
+): Parameters<typeof sendMessageHandler>[2] {
+  return {
+    conversation_id: input.conversationId,
+    ...(input.template
+      ? {
+          type: 'template' as const,
+          template_name: input.template.name,
+          template_language: input.template.language,
+          template_values: input.template.values,
+        }
+      : input.media
+        ? {
+            type: 'image' as const,
+            media_storage_path: input.media.storagePath,
+            media_mime: input.media.mime,
+          }
+        : { type: 'text' as const }),
+    // Foto sem legenda vai sem `body`: o schema do envio pede corpo não vazio.
+    ...(input.body !== '' || !input.media ? { body: input.body } : {}),
+    metadata: { idempotency_key: idempotencyKey },
+  };
 }
 
 /** Fallback do ator ai_agent quando não há agente publicado (cfg.agentActorId). */
@@ -143,19 +176,7 @@ export async function sendTurnMessage(
           agentOperation: input.agentOperation,
           internalMessageId: messageId,
         },
-        {
-          conversation_id: input.conversationId,
-          ...(input.template
-            ? {
-                type: 'template' as const,
-                template_name: input.template.name,
-                template_language: input.template.language,
-                template_values: input.template.values,
-              }
-            : { type: 'text' as const }),
-          body: input.body,
-          metadata: { idempotency_key: idempotencyKey },
-        },
+        corpoDoEnvio(input, idempotencyKey),
       );
     } catch (err) {
       if (err instanceof AgendaDeferredError || err instanceof StaleServiceBoundaryError) throw err;

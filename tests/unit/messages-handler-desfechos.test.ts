@@ -144,6 +144,7 @@ function makeSupabase(
         // manda quem lê procurar defeito onde não há.
         const cadeia: Record<string, unknown> = {
           eq: () => cadeia,
+          is: () => cadeia,
           maybeSingle: async () => ({ data: templateRow, error: null }),
         };
         return { select: () => cadeia };

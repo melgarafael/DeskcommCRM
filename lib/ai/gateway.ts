@@ -75,7 +75,7 @@ export function resolveLanguageModel(model: ModelId): LanguageModel | null {
     return createOpenAI({
       apiKey: env.OPENROUTER_API_KEY,
       baseURL: env.OPENROUTER_BASE_URL || OPENROUTER_BASE_URL,
-    })(id);
+    }).chat(id); // chat/completions, como o registry do worker (providers.ts)
   }
 
   if (id.startsWith("anthropic/") && env.ANTHROPIC_API_KEY) {

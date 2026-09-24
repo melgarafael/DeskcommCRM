@@ -185,3 +185,51 @@ describe("a base do OpenRouter vem de OPENROUTER_BASE_URL", () => {
     expect(chamadas).toEqual([`${comApiV1}/key`, `${comApiV1}/models`]);
   });
 });
+
+describe("gateway customizado via OPENROUTER_BASE_URL sem /key (#1376)", () => {
+  const customBase = "https://custom-gateway.internal/v1";
+
+  it("quando /key dá 404 em gateway customizado, valida pelo catálogo /models", async () => {
+    vi.stubGlobal(
+      "fetch",
+      fetchFalso({
+        "/key": { status: 404 },
+        "/models": { status: 200, body: { data: [{ id: "custom/llama-3.3-70b" }] } },
+      }),
+    );
+    envMock.OPENROUTER_BASE_URL = customBase;
+    const r = await validateOpenRouterKey("sk-custom-key");
+    expect(r.ok).toBe(true);
+    expect(r.ok === true && r.models).toEqual(["custom/llama-3.3-70b"]);
+    expect(chamadas).toEqual([`${customBase}/key`, `${customBase}/models`]);
+  });
+
+  it("quando /key dá 404 e /models recusa a credencial com 401, retorna auth_failed_401", async () => {
+    vi.stubGlobal(
+      "fetch",
+      fetchFalso({
+        "/key": { status: 404 },
+        "/models": { status: 401 },
+      }),
+    );
+    envMock.OPENROUTER_BASE_URL = customBase;
+    const r = await validateOpenRouterKey("sk-invalid-key");
+    expect(r.ok).toBe(false);
+    expect(r.ok === false && r.error).toBe("auth_failed_401");
+  });
+
+  it("quando /key dá 404 no OpenRouter oficial (sem OPENROUTER_BASE_URL), mantém provider_status_404", async () => {
+    vi.stubGlobal(
+      "fetch",
+      fetchFalso({
+        "/key": { status: 404 },
+        "/models": { status: 200, body: { data: [] } },
+      }),
+    );
+    delete envMock.OPENROUTER_BASE_URL;
+    const r = await validateOpenRouterKey("sk-or-v1-any");
+    expect(r.ok).toBe(false);
+    expect(r.ok === false && r.error).toBe("provider_status_404");
+  });
+});
+

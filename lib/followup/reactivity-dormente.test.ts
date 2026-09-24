@@ -217,3 +217,22 @@ describe("reatividade — o handoff não alcança o dormente", () => {
     }
   });
 });
+
+describe("reatividade — o roteiro de atendimento ('coletando', PR 2 do #1130)", () => {
+  it("É cancelado no opt-out", async () => {
+    const { db, espiao } = montarDb([inscricao({ status: "coletando" })], { bloqueado: true });
+    const s = await applyReactivityEvent(db, () => new Date(AGORA), eventoDeInbound());
+    expect(s.reacted).toBe(1);
+    expect(espiao.patches[0]?.patch).toMatchObject({ status: "cancelled" });
+  });
+
+  it("NÃO é tocado por uma mensagem comum — quem conduz é o turno", async () => {
+    const { db, espiao } = montarDb([
+      inscricao({ status: "coletando", trigger_config: { kind: "manual", cancel_on_reply: true } }),
+    ]);
+    const s = await applyReactivityEvent(db, () => new Date(AGORA), eventoDeInbound());
+    expect(s.reacted).toBe(0);
+    expect(espiao.patches).toEqual([]);
+  });
+});
+

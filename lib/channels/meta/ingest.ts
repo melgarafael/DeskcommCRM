@@ -142,15 +142,27 @@ function previewOf(e: InboundMessageEvent): string {
 export async function ingestMetaInbound(
   admin: Admin,
   e: InboundMessageEvent,
-  dono: ChannelTenantScope,
+  dono: ChannelTenantScope & {
+    /**
+     * A sessão JÁ resolvida pelo token do webhook, por quem chama. É o caminho
+     * do canal parceiro que espelha a Cloud API (Datafy): ele entra pela rota
+     * genérica, e a coluna do número oficial é NULL para ele — buscar por ela
+     * nunca acharia a sessão. Quem passa isto já conferiu que o número é dela.
+     */
+    channelSessionId?: string;
+  },
 ): Promise<IngestOutcome> {
   let sessao: { id: string; organization_id: string } | null;
-  try {
-    sessao = await sessionByPhoneNumberId(admin, dono.organizationId, e.phoneNumberId);
-  } catch (err) {
-    // Falhar FECHADO na ação (nada é gravado) e ABERTO na informação: o motivo
-    // sobe como `failed` e o chamador o escreve no log e no corpo.
-    return { status: "failed", reason: err instanceof Error ? err.message : "sessao_do_numero" };
+  if (dono.channelSessionId) {
+    sessao = { id: dono.channelSessionId, organization_id: dono.organizationId };
+  } else {
+    try {
+      sessao = await sessionByPhoneNumberId(admin, dono.organizationId, e.phoneNumberId);
+    } catch (err) {
+      // Falhar FECHADO na ação (nada é gravado) e ABERTO na informação: o motivo
+      // sobe como `failed` e o chamador o escreve no log e no corpo.
+      return { status: "failed", reason: err instanceof Error ? err.message : "sessao_do_numero" };
+    }
   }
   // Sem sessão: a mensagem é de um número que não administramos. Devolver 200 (o
   // chamador faz isso) evita a Meta re-entregar em loop algo que nunca vamos aceitar.

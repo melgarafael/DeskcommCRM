@@ -22,10 +22,23 @@ c_grn "✓ banco: $(du -h "$BACKUP_DIR/db-$ts.sql.gz" | awk '{print $1}')"
 
 step "Snapshot das sessões do WhatsApp → $BACKUP_DIR/waha-$ts.tgz"
 vol="$(volume_waha_data)"
-docker run --rm -v "${vol}:/data:ro" -v "$BACKUP_DIR:/out" alpine:3.20 \
-  tar czf "/out/waha-$ts.tgz" -C /data . 2>/dev/null \
-  && c_grn "✓ sessões WhatsApp salvas" \
-  || c_ylw "⚠ não achei o volume waha-data (nome pode variar). Ajuste manualmente se necessário."
+# O arquivo só recebe o nome definitivo depois de PROVADO que tem sessão dentro.
+# Volume errado (ou vazio) renderia um .tgz de ~87 bytes cujo `tar` sai com zero:
+# o passo virava "✓ sessões WhatsApp salvas", o arquivo sem valor entrava na
+# retenção dos 14 e o pareamento do WhatsApp — o que este snapshot existe para
+# poupar — só se dava por perdido no dia do restore.
+parcial="$BACKUP_DIR/.waha-$ts.tgz.parcial"
+if ! docker run --rm -v "${vol}:/data:ro" -v "$BACKUP_DIR:/out" alpine:3.20 \
+       tar czf "/out/${parcial##*/}" -C /data . 2>/dev/null; then
+  rm -f "$parcial"
+  c_ylw "⚠ não consegui ler o volume das sessões ('$vol'): o backup do banco está feito, mas o pareamento do WhatsApp NÃO entrou nele."
+elif ! tar_tem_sessao "$parcial"; then
+  rm -f "$parcial"
+  c_ylw "⚠ o snapshot das sessões saiu VAZIO — a montagem /app/.sessions do contêiner waha resolveu para '$vol' e não tem sessão gravada. Este backup NÃO salva o pareamento do WhatsApp (o restore vai pedir o QR code de novo). Confira a montagem antes de considerar o backup completo."
+else
+  mv "$parcial" "$BACKUP_DIR/waha-$ts.tgz"
+  c_grn "✓ sessões WhatsApp salvas ($(du -h "$BACKUP_DIR/waha-$ts.tgz" | awk '{print $1}'))"
+fi
 
 # Single-server: os ANEXOS (fotos, documentos) moram no disco desta VPS, no
 # Storage do Supabase (STORAGE_BACKEND=file) — o dump acima leva só as linhas

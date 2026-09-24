@@ -176,12 +176,21 @@ export function createDefaultRegistry(opts?: {
      */
     openrouter: (apiKey, modelId, baseUrl) => {
       const endpoint = baseUrl ?? OPENROUTER_ENDPOINT;
-      return createOpenAI({
+      const provider = createOpenAI({
         apiKey,
         baseURL: endpoint,
         headers: cabecalhosDeAtribuicaoOpenRouter(),
         fetch: contain(endpoint),
-      })(modelId);
+      });
+      // Chat Completions, NÃO Responses: a OpenRouter fala a API da OpenAI
+      // (chat/completions). O `createOpenAI()(modelId)` desta versão do SDK usa
+      // o endpoint /responses por padrão, e a OpenRouter NÃO o implementa para
+      // todo modelo: medido em 2026-09-19, `google/gemini-2.5-flash-lite`
+      // devolvia "Invalid JSON response" (o SDK tentava
+      // /responses e recebia a página do chat), enquanto gpt-4o/4.1 passavam
+      // por sorte do roteamento. `.chat()` fixa o formato que a OpenRouter
+      // realmente serve, para qualquer família de modelo.
+      return provider.chat(modelId);
     },
     /**
      * DeepSeek é OpenAI-compatível e aceita um `base_url` próprio pela mesma

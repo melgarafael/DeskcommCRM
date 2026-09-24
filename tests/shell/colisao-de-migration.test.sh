@@ -146,21 +146,47 @@ git -C "$principal" add -A && git -C "$principal" commit -q -m "base"
 # 1 run em várias); a defesa é a mesma que `scripts/checar-colisao-de-migration.sh` já usa
 # para outra falha transiente (fetch de cabeça de PR): repetir antes de desistir, e nomear
 # o desfecho se as tentativas se esgotarem — nunca seguir com um clone pela metade.
-clonar_com_retry() { # $1 = origem, $2 = destino
-  local tentativas=3 i
+# O retry ESTREITA a janela — não a encerra, e não prova a causa: ele só protege o clone
+# que passa por AQUI. Um `git clone` cru em qualquer caso reabre o flake um caso adiante
+# (medido: injetando a falha do log só no clone do caso 27, a suíte ia a 3 de 102 casos
+# vermelhos). Quem vigia isso é o caso 32, no fim do arquivo: ele reprova todo `git clone`
+# em posição de comando fora de clonar_com_retry(). (Um `grep -n 'git clone'` cru NÃO serve
+# de sonda: conta os comentários e a mensagem de erro, que citam o comando sem rodá-lo.)
+# Uma causa candidata JÁ foi descartada por medição: o `gc --auto` que o receive-pack
+# dispara no `git push` de pr_no_principal() não roda neste fixture — o push deixa 6
+# objetos SOLTOS e ZERO packs (`git count-objects -v`) contra `gc.auto=6700`, e nenhum
+# `run_command: ... gc` aparece sob `GIT_TRACE=1`. `git -c gc.auto=0 push` seria inerte.
+clonar_com_retry() { # $1 = origem, $2 = destino, $3 = flag extra opcional (ex.: --bare)
+  local tentativas=3 i rc
   for i in $(seq 1 "$tentativas"); do
     rm -rf "$2"
-    if git clone -q "$1" "$2" 2>/dev/null && git -C "$2" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-      return 0
+    # a tentativa FINAL deixa o stderr passar: se as 3 falharem, a causa tem de aparecer
+    # no log de quem roda — erro engolido é o anti-pattern nº 14 do CLAUDE.md.
+    if [ "$i" -lt "$tentativas" ]; then
+      git clone -q ${3:+"$3"} "$1" "$2" 2>/dev/null; rc=$?
+    else
+      git clone -q ${3:+"$3"} "$1" "$2"; rc=$?
     fi
+    # O exit do clone é o critério; o rev-parse sozinho NÃO basta: um clone que sai 128 na
+    # fase de checkout ("Clone succeeded, but checkout failed") deixa o `.git` no disco, e o
+    # rev-parse responderia 0 com a árvore pela metade (caso 33).
+    # `--git-dir` responde para clone comum E para `--bare` (lá não há work tree, e
+    # `--is-inside-work-tree` imprimiria `false` saindo 0 — passaria por acidente).
+    [ "$rc" -eq 0 ] && git -C "$2" rev-parse --git-dir >/dev/null 2>&1 && return 0
     [ "$i" -lt "$tentativas" ] && sleep 0.2
   done
   return 1
 }
 
+# Todo clone da suíte passa por aqui: origem, destino e o desfecho nomeado se as três
+# tentativas se esgotarem — nunca seguir com um clone pela metade.
+clonar_ou_falhar() { # $1 = origem, $2 = destino, $3 = flag extra opcional
+  clonar_com_retry "$@" \
+    || { echo "clonar: 'git clone $1 $2' falhou 3x — provável I/O transiente do runner, não do gate" >&2; exit 90; }
+}
+
 clonar() { # $1 = destino (traz o gate SOB PROVA, a versão da árvore de trabalho)
-  clonar_com_retry "$principal" "$1" \
-    || { echo "clonar: 'git clone $principal $1' falhou 3x — provável I/O transiente do runner, não do gate" >&2; exit 90; }
+  clonar_ou_falhar "$principal" "$1"
   mkdir -p "$1/scripts"; cp "$GATE_ORIGEM" "$1/scripts/checar-colisao-de-migration.sh"
 }
 gate() { ( cd "$1" && bash scripts/checar-colisao-de-migration.sh "${2:-origin/main}" 2>&1 ); }
@@ -244,7 +270,7 @@ git -C "$principal2" init -q -b main
 printf 'select 1;\n' > "$principal2/supabase/migrations/20260101120000_0270_um.sql"
 printf 'select 2;\n' > "$principal2/supabase/migrations/20260102090000_0270_dois.sql"
 git -C "$principal2" add -A && git -C "$principal2" commit -q -m "base com divida herdada"
-c="$TMP/c8"; rm -rf "$c"; git clone -q "$principal2" "$c"
+c="$TMP/c8"; clonar_ou_falhar "$principal2" "$c"
 mkdir -p "$c/scripts"; cp "$GATE_ORIGEM" "$c/scripts/checar-colisao-de-migration.sh"
 git -C "$c" switch -q -c fix/livre
 migrar "$c" "20260916180000_0271_livre.sql"; commit "$c" "migration livre com dívida antiga na base"
@@ -337,8 +363,7 @@ assert_contains "$saida" "refs/heads/outra/resgate" "só o dono de verdade é no
 # traz refs/pull — igual ao clone real —, então só o gate buscando é que a enxerga.
 pr_no_principal() { # $1 = número do PR, $2 = nome da migration que a cabeça dele carrega
   local w="$TMP/cabeca-pr-$1"
-  clonar_com_retry "$principal" "$w" \
-    || { echo "pr_no_principal: 'git clone $principal $w' falhou 3x — provável I/O transiente do runner" >&2; exit 90; }
+  clonar_ou_falhar "$principal" "$w"
   printf 'select %s;\n' "$1" > "$w/supabase/migrations/$2"
   git -C "$w" add -A >/dev/null && git -C "$w" commit -q -m "PR #$1"
   # O push ALIMENTA os objetos de $principal — é o repositório que TODO clonar() lê
@@ -497,8 +522,8 @@ echo "27. origin = FORK (clone de contribuidor): os PRs são do PAI, e as cabeç
 # O contribuidor clona o PRÓPRIO fork: origin = fork, e os PRs moram no repositório pai. Sem
 # resolver o pai, o gate lista os PRs do fork (zero) e chama isso de medição. As URLs são as
 # do GitHub, e o insteadOf leva cada uma para um diretório local — sem rede.
-fork_repo="$TMP/fork-contrib"; rm -rf "$fork_repo"; git clone -q --bare "$principal" "$fork_repo"
-c="$TMP/c27"; rm -rf "$c"; git clone -q "$fork_repo" "$c"
+fork_repo="$TMP/fork-contrib"; clonar_ou_falhar "$principal" "$fork_repo" --bare
+c="$TMP/c27"; clonar_ou_falhar "$fork_repo" "$c"
 git -C "$c" config remote.origin.url "https://github.com/contrib/DeskcommCRM.git"
 git -C "$c" config "url.$fork_repo.insteadOf" "https://github.com/contrib/DeskcommCRM.git"
 git -C "$c" config "url.$principal.insteadOf" "https://github.com/up/DeskcommCRM.git"
@@ -570,6 +595,37 @@ saida="$(gate "$c")"; code=$?
 assert_exit "$code" 0 "o renumerado passa"
 assert_not_contains "$saida" "NNNN=0291" "o 0290 do retrato ANCESTRAL não sobe o próximo livre"
 assert_not_contains "$saida" "refs/heads/retrato-antigo" "e o retrato ancestral não vira 'quem tem'"
+
+echo "32. todo clone da suíte passa por clonar_com_retry(): nenhum 'git clone' cru fora dela"
+# Um clone cru reabre o flake de I/O do #1403 um caso adiante — o #1413 blindou dois pontos e
+# deixou três. Só conta `git clone` em POSIÇÃO DE COMANDO (início de linha ou depois de ; & |
+# { ( then do): citação em comentário, crase ou mensagem de erro não é clone rodando.
+crus="$(awk '/^clonar_com_retry\(\) \{/ {dentro=1}
+  dentro { if (/^}/) dentro=0; next }
+  /^[[:space:]]*#/ { next }
+  /(^|[;&|{(]|then|do)[[:space:]]*git clone/ { print NR": "$0 }' "${BASH_SOURCE[0]}")"
+if [ -z "$crus" ]; then ok "nenhum git clone fora do retry"
+else falha "nenhum git clone fora do retry" "clone cru em: $crus"; fi
+
+echo "33. clone que sai não-zero DEIXANDO o .git no disco não passa: o retry repete"
+# "Clone succeeded, but checkout failed": o git sai 128 com o repositório criado e a árvore
+# pela metade. Aqui a 1ª tentativa clona de verdade, apaga um arquivo rastreado e sai 128;
+# as seguintes passam. Só o exit do clone separa isso de um clone inteiro.
+d="$TMP/c33"; n33="$TMP/c33.tentativas"; : > "$n33"
+( git() {
+    if [ "$1" = clone ]; then
+      echo x >> "$n33"; command git "$@" || return
+      if [ "$(wc -l < "$n33")" -eq 1 ]; then rm -f "$d/supabase/migrations/"*; return 128; fi
+      return 0
+    fi
+    command git "$@"
+  }
+  clonar_com_retry "$principal" "$d" )
+code=$?
+assert_exit "$code" 0 "a falha transiente de checkout é absorvida"
+assert_exit "$(wc -l < "$n33" | tr -d ' ')" 2 "e absorvida REPETINDO o clone, não aceitando o da 1ª tentativa"
+if [ -n "$(ls "$d/supabase/migrations/" 2>/dev/null)" ]; then ok "a árvore chega inteira"
+else falha "a árvore chega inteira" "supabase/migrations vazio: seguiu com o clone pela metade"; fi
 
 echo
 if [ "$falhas" = 0 ]; then echo "colisao-de-migration: $casos casos, todos verdes"; exit 0

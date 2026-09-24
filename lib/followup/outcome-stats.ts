@@ -63,7 +63,7 @@ export async function aggregateFollowupOutcomes(pool: pg.Pool, orgId: string): P
        count(*) filter (where e.outcome = 'exhausted') as exhausted,
        count(*) filter (where e.outcome = 'opted_out') as opted_out,
        count(*) filter (where e.outcome = 'handoff') as handoff,
-       count(*) filter (where e.status in ('active', 'waiting_reply', 'dormente', 'paused_handoff', 'paused_manual')) as in_flight,
+       count(*) filter (where e.status in ('active', 'waiting_reply', 'dormente', 'paused_handoff', 'paused_manual', 'coletando')) as in_flight,
        count(*) filter (where e.status in ('completed', 'cancelled')) as terminal
      from followup_enrollments e
      join followup_flow_pointers p on p.id = e.pointer_id

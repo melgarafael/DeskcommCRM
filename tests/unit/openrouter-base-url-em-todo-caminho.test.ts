@@ -50,6 +50,7 @@ const PROXY = "https://meu-proxy.example.com/v1";
 
 let fetchOriginal: typeof globalThis.fetch;
 let destinos: string[];
+let caminhos: string[];
 
 async function destinoDe(model: LanguageModel) {
   const { generateText } = await import("ai");
@@ -71,10 +72,12 @@ beforeAll(async () => {
 
 beforeEach(() => {
   destinos = [];
+  caminhos = [];
   fetchOriginal = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = typeof input === "string" || input instanceof URL ? String(input) : input.url;
     destinos.push(new URL(url).host);
+    caminhos.push(new URL(url).pathname);
     return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
   }) as typeof globalThis.fetch;
 });
@@ -125,5 +128,56 @@ describe("OPENROUTER_BASE_URL em todo caminho", () => {
     expect(await destinoDe(buildModel("openrouter", "sk-x", "qwen3.8-flash"))).toEqual([
       "openrouter.ai",
     ]);
+  });
+});
+
+/**
+ * A OpenRouter serve `/chat/completions`; o `/responses` — o padrão de
+ * `createOpenAI()(modelId)` nesta versão do SDK — não existe para todo modelo
+ * lá (medido pelo @vgamkt no #1130: `google/gemini-2.5-flash-lite` devolvia
+ * "Invalid JSON response"). São QUATRO fábricas que falam com a OpenRouter; o
+ * conserto numa só deixava o ensaio, os workers de ponto e o gateway legado
+ * ainda no endpoint que falha. Mesma técnica acima: SDK real, fetch
+ * interceptado, a asserção é o caminho que saiu.
+ */
+describe("OpenRouter fala chat/completions em todo caminho", () => {
+  beforeEach(() => vi.stubEnv("OPENROUTER_BASE_URL", ""));
+
+  it("agente publicado (ensaio no app)", async () => {
+    vi.resetModules();
+    const { buildModel } = await import("@/lib/ai/runtime/agent");
+    await destinoDe(buildModel("openrouter", "sk-x", "google/gemini-2.5-flash-lite"));
+    expect(caminhos).toEqual(["/api/v1/chat/completions"]);
+  });
+
+  it("turno do worker", async () => {
+    vi.resetModules();
+    const { createDefaultRegistry } = await import("@/lib/agent-engine/edge/llm/providers");
+    await destinoDe(createDefaultRegistry().openrouter!("sk-x", "google/gemini-2.5-flash-lite"));
+    expect(caminhos).toEqual(["/api/v1/chat/completions"]);
+  });
+
+  it("credencial da organização (pontos de IA)", async () => {
+    vi.resetModules();
+    const { resolverModeloDoPonto } = await import("@/lib/ai/gateway-binding");
+    const r = await resolverModeloDoPonto(
+      "sentiment_classify",
+      "33333333-3333-4333-8333-333333333333",
+      "anthropic/claude-haiku-4-5",
+    );
+    await destinoDe(r!.model);
+    expect(caminhos).toEqual(["/api/v1/chat/completions"]);
+  });
+
+  it("chave da instalação (resolveLanguageModel)", async () => {
+    envMock.OPENROUTER_API_KEY = "sk-or-x";
+    try {
+      vi.resetModules();
+      const { resolveLanguageModel } = await import("@/lib/ai/gateway");
+      await destinoDe(resolveLanguageModel("google/gemini-2.5-flash-lite")!);
+      expect(caminhos).toEqual(["/api/v1/chat/completions"]);
+    } finally {
+      delete envMock.OPENROUTER_API_KEY;
+    }
   });
 });

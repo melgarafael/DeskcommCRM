@@ -1,6 +1,6 @@
 "use client";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { useRefetchDeSeguranca } from "@/hooks/realtime/useRefetchDeSeguranca";
 import { apiClient } from "@/lib/api/client";
@@ -14,7 +14,7 @@ interface MessagesResponse {
 
 export function useMessagesRealtime(conversationId: string | null) {
   const qc = useQueryClient();
-  const queryKey = ["messages", conversationId] as const;
+  const queryKey = useMemo(() => ["messages", conversationId] as const, [conversationId]);
 
   const query = useInfiniteQuery({
     queryKey,

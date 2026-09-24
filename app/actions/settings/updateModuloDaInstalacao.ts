@@ -7,7 +7,8 @@ import { z } from "zod";
 import { audit } from "@/lib/audit";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import {
-  MODULOS_OPCIONAIS,
+  MODULOS_AINDA_NAO_LIGAVEIS,
+  MODULOS_OPCIONAIS_POR_FLAG,
   gravarModulo,
   moduloLigado,
 } from "@/lib/instalacao/modulos";
@@ -15,8 +16,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export type UpdateModuloResult = { ok: true } | { ok: false; error: string };
 
+// Só módulos por FLAG passam por aqui — um módulo de tabela (ADR-0002, ex. "honorarios")
+// se instala em `/admin/modulos` via `fn_modulo_instalar`, nunca por este action.
 const entradaSchema = z.object({
-  modulo: z.enum(MODULOS_OPCIONAIS),
+  modulo: z.enum(MODULOS_OPCIONAIS_POR_FLAG),
   ligado: z.boolean(),
 });
 
@@ -41,6 +44,12 @@ export async function updateModuloDaInstalacao(
   const parsed = entradaSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "invalid_input" };
   const { modulo, ligado } = parsed.data;
+  // Ligar um módulo que ainda não tem tela não daria nada usável — e, no caso
+  // dos roteiros de atendimento, poria o motor no turno sem que ninguém pudesse
+  // ver o que ele coleta. Desligar continua permitido.
+  if (ligado && MODULOS_AINDA_NAO_LIGAVEIS.includes(modulo)) {
+    return { ok: false, error: "modulo_ainda_nao_disponivel" };
+  }
 
   const db = createAdminClient();
   const antes = await moduloLigado(db, modulo);

@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { relativoEmBarraNormal } from "./helpers/caminho";
 
 /**
  * TODO ÍNDICE ÚNICO DE IDENTIDADE EM `public.contacts` IGNORA A FICHA MESCLADA.
@@ -112,7 +113,7 @@ const ARQUIVOS = [
 ];
 
 const CORPUS = ARQUIVOS.flatMap((caminho) =>
-  varrer(caminho.slice(process.cwd().length + 1), readFileSync(caminho, "utf8")),
+  varrer(relativoEmBarraNormal(process.cwd(), caminho), readFileSync(caminho, "utf8")),
 );
 
 describe("índice único de identidade em public.contacts", () => {

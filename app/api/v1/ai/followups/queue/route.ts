@@ -39,6 +39,7 @@ const ENROLLMENT_STATUSES = [
   "dormente",
   "paused_handoff",
   "paused_manual",
+  "coletando",
   "completed",
   "cancelled",
   "dead",

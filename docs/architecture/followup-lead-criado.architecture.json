@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Lead criado — follow-up quando o negócio nasce",
+    "subtitle": "o mesmo evento do cadastro e da conversa",
+    "output": "followup-lead-criado.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "canal", "label": "Entrada" },
+    { "id": "ui", "label": "Tela" },
+    { "id": "motor", "label": "Motor" },
+    { "id": "dados", "label": "Banco" }
+  ],
+  "mainPath": ["nascimento", "evento", "gatilho", "fila"],
+  "nodes": [
+    {
+      "id": "nascimento",
+      "lane": "canal",
+      "col": 1,
+      "type": "backend",
+      "label": "nascimento-do-lead",
+      "sublabel": "conversa abre o primeiro card"
+    },
+    {
+      "id": "cadastro",
+      "lane": "canal",
+      "col": 1,
+      "type": "backend",
+      "label": "createLeadHandler",
+      "sublabel": "manual, API, formulário"
+    },
+    {
+      "id": "evento",
+      "lane": "dados",
+      "col": 2,
+      "type": "database",
+      "label": "lead.created",
+      "sublabel": "entity_kind crm_lead"
+    },
+    {
+      "id": "tela",
+      "lane": "ui",
+      "col": 2,
+      "type": "frontend",
+      "label": "Gatilho Lead criado",
+      "sublabel": "IA → Follow-ups"
+    },
+    {
+      "id": "gatilho",
+      "lane": "motor",
+      "col": 3,
+      "type": "backend",
+      "label": "gatilho-lead",
+      "sublabel": "followup-gatilho-lead.v1"
+    },
+    {
+      "id": "fila",
+      "lane": "ui",
+      "col": 4,
+      "type": "frontend",
+      "label": "Dossiê do follow-up",
+      "sublabel": "enrolled_by_lead_created"
+    }
+  ],
+  "edges": [
+    { "from": "nascimento", "to": "evento", "label": "emite depois do card" },
+    { "from": "cadastro", "to": "evento", "label": "já emitia" },
+    { "from": "tela", "to": "gatilho", "label": "pointer active kind lead_created" },
+    { "from": "evento", "to": "gatilho", "label": "drain do event_log" },
+    { "from": "gatilho", "to": "fila", "label": "proveniência na timeline" },
+    { "from": "fila", "to": "tela", "label": "operador vê por que começou" }
+  ]
+}

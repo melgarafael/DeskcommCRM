@@ -596,6 +596,8 @@ create policy "messages_agent_insert_own_conversation"
 | `channel_sessions` | `(last_health_check_at) where status='WORKING'` | Cron `sync-sessions` |
 | `webhook_events_log` | `(status, received_at) where status in ('received','error')` | Cron `process-pending-webhooks` |
 
+> ⚠️ **`error` deixou de significar só "falhou, tente de novo" (issue #290).** Desde que a recusa de contrato passou a ser arquivada, uma linha `error` pode ser um corpo que **nunca** vai passar: o formato do fio mudou. Quem implementar o `process-pending-webhooks` descrito aqui precisa distinguir os dois casos pelo `error_message` (as recusas de contrato começam com `contrato_violado:`), senão reprocessa para sempre o que não tem conserto. O cron ainda não existe no código.
+
 ---
 
 ## 4. WAHA Client (TypeScript wrapper)

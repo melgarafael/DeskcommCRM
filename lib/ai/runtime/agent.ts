@@ -183,7 +183,7 @@ export function buildModel(provider: string, apiKey: string, modelId: string): L
         apiKey,
         baseURL: OPENROUTER_ENDPOINT,
         headers: cabecalhosDeAtribuicaoOpenRouter(),
-      })(modelId);
+      }).chat(modelId); // chat/completions: a OpenRouter não serve /responses para todo modelo (#1130)
     // Mesma fábrica OpenAI-compatível que o registry de produção usa. Sem este
     // caso, o dono que publicou em DeepSeek receberia `unsupported_provider` no
     // ensaio enquanto o worker responderia a mensagem real — ensaio mais

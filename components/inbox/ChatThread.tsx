@@ -276,8 +276,8 @@ export function ChatThread({ conversationId, onResponder, dono, contatoId }: Pro
   }
 
   return (
-    <div {...sinalDoCanal} className="flex h-full flex-col">
-      <div ref={scrollerRef} className="flex-1 overflow-y-auto py-2">
+    <div {...sinalDoCanal} className="flex h-full min-w-0 flex-col">
+      <div ref={scrollerRef} className="min-w-0 flex-1 overflow-y-auto py-2">
         {q.hasNextPage && (
           <div className="flex justify-center py-2">
             <Button

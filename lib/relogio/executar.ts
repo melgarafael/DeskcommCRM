@@ -11,6 +11,7 @@ import {
   type FollowupJobRequest,
   type TickDeps,
 } from "@/lib/followup/engine";
+import { encerrarRoteirosVencidos } from "@/lib/followup/atendimento";
 import { enviarTextoFixoPendente } from "@/lib/followup/enviar-texto-fixo";
 import type { EnrollmentRow } from "@/lib/followup/node-handlers";
 import { createSupabaseSilenceSweepDb, runSilenceSweep } from "@/lib/followup/silence-sweep";
@@ -137,6 +138,17 @@ export async function executarTickDoRelogio(): Promise<{
       if (sweep.enrolled || sweep.pointers_gated_out || sweep.skipped_existing) mexeu = true;
     } catch (err) {
       logger.warn("[relogio] silence sweep falhou", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    try {
+      const expirados = await encerrarRoteirosVencidos(admin);
+      if (expirados > 0) {
+        mexeu = true;
+        logger.info("[relogio] roteiros de atendimento encerrados por prazo", { expirados });
+      }
+    } catch (err) {
+      logger.warn("[relogio] prazo dos roteiros falhou", {
         error: err instanceof Error ? err.message : String(err),
       });
     }

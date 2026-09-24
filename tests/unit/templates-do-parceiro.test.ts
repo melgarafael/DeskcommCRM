@@ -42,6 +42,10 @@ describe("de onde vêm as definições", () => {
     expect(fonteDeTemplates("meta_cloud")).toBe("oficial");
   });
 
+  it("parceiro Graph-compatível busca na rota própria", () => {
+    expect(fonteDeTemplates("datafy")).toBe("graph");
+  });
+
   it("número por QR não tem definição a listar", () => {
     // Ele manda texto livre a qualquer hora: um seletor ali ofereceria uma
     // solução para um problema que aquele canal não tem.
@@ -58,7 +62,9 @@ describe("de onde vêm as definições", () => {
     // lista da Meta — que é exatamente o defeito de origem.
     expect(rotaDeTemplates("parceiro")).toBe("/api/v1/channels/partner/templates");
     expect(rotaDeTemplates("oficial")).toBe("/api/v1/channels/templates");
+    expect(rotaDeTemplates("graph")).toBe("/api/v1/channels/graph-partner/templates");
     expect(rotaDeTemplates("parceiro")).not.toBe(rotaDeTemplates("oficial"));
+    expect(rotaDeTemplates("graph")).not.toBe(rotaDeTemplates("parceiro"));
   });
 });
 

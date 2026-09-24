@@ -815,6 +815,10 @@ export async function sendMessageHandler(
           : await sendTemplateForSession(supabase, {
               beforeSend: checkBoundary,
               organizationId: ctx.organization_id,
+              // A conexão desta conversa: com dois canais espelhando o mesmo
+              // modelo (oficial + parceiro), sem ela a busca acha duas linhas
+              // e o envio falha com template_lookup_failed.
+              channelSessionId: c.channel_session_id ?? null,
               // O número DESTA conexão: é por ele (com a organização) que a
               // credencial da tela é achada. Sem ele, a resolução não casaria
               // linha nenhuma e o envio voltaria ao ambiente.

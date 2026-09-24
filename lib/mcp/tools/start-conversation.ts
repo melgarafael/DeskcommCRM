@@ -35,6 +35,8 @@ import { z } from "zod";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { openSharedContactConversation } from "@/lib/messaging/open-shared-contact-conversation";
 import { sendMessageSchema } from "@/lib/schemas/messaging";
+import { depsDoRitmo, registrarEnvioPorToken, segurarEnvioPorToken } from "@/lib/messaging/ritmo-do-envio-por-token";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { McpToolDefinition } from "../types";
 
 const ENDPOINT_TAG = "mcp:crm_start_conversation_and_send";
@@ -115,6 +117,16 @@ export const crmStartConversationAndSend: McpToolDefinition<typeof inputShape> =
       }
     }
 
+    // Freio anti-ban do número (#1491): aplicar ANTES de criar ou reabrir a conversa.
+    // Se o freio segurar o envio por teto diário ou espaçamento, recusa com 429
+    // sem deixar uma conversa vazia pendente no CRM.
+    const ritmo = await depsDoRitmo(createAdminClient());
+    const segurado = await segurarEnvioPorToken(ritmo, {
+      organizationId: ctx.organizationId,
+      channelSessionId: input.channel_session_id,
+      requestId: ctx.requestId,
+    });
+
     // Referencia a mesma origem autorizada que `open-with-contact` usa —
     // fn_service_begin decide reaproveitar a conversa aberta ou criar uma.
     const opened = await openSharedContactConversation(ctx.supabase, ctx.organizationId, {
@@ -141,6 +153,7 @@ export const crmStartConversationAndSend: McpToolDefinition<typeof inputShape> =
       },
       parsed,
     );
+    await registrarEnvioPorToken(ritmo, ctx.organizationId, segurado, message.status);
 
     const response = {
       contact_id: opened.contact_id,

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { ConexoesShell } from "@/components/connections/ConexoesShell";
+import { canalGraphParceiroLigado, GRAPH_PARTNER_LABEL } from "@/lib/channels/graph-parceiro/credentials";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -35,7 +36,11 @@ export default async function ConnectionsPage() {
           )}
         </p>
       </header>
-      <ConexoesShell wahaConfigured={wahaConfigured} wacallsConfigured={wacallsConfigured} />
+      <ConexoesShell
+        wahaConfigured={wahaConfigured}
+        wacallsConfigured={wacallsConfigured}
+        graphParceiro={canalGraphParceiroLigado() ? { label: GRAPH_PARTNER_LABEL } : null}
+      />
     </div>
   );
 }

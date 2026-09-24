@@ -8,6 +8,7 @@ import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { useT } from "@/hooks/i18n/useT";
 import { Button } from "@/components/ui/button";
 import { apiClient } from "@/lib/api/client";
+import { MAXIMO_DE_FOTOS } from "@/lib/catalogo/fotos";
 import { formatCents } from "@/lib/money";
 import { precoParaCentavos, type Produto } from "@/lib/schemas/produtos";
 
@@ -69,12 +70,151 @@ function doRascunho(
   };
 }
 
+/**
+ * As fotos de UM produto: pôr, tirar e trocar a ordem. A primeira é a capa, e é
+ * na ordem daqui que o atendente de IA as manda ao cliente.
+ *
+ * Toda mudança vai ao servidor e volta pelo `router.refresh()`: as URLs são
+ * assinadas pela página, e a lista que vale é a do banco.
+ */
+function FotosDoProduto({ produto, urls }: { produto: Produto; urls: Record<string, string> }) {
+  const t = useT();
+  const router = useRouter();
+  const [ocupado, setOcupado] = React.useState(false);
+  const entradaRef = React.useRef<HTMLInputElement>(null);
+  const fotos = produto.fotos ?? [];
+
+  async function subir(arquivo: File) {
+    setOcupado(true);
+    try {
+      const form = new FormData();
+      form.append("file", arquivo);
+      const res = await fetch(`/api/v1/products/${produto.id}/fotos`, { method: "POST", body: form });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+        toast.error(json?.error?.message ?? t("Não consegui enviar a foto."));
+        return;
+      }
+      toast.success(t("Foto adicionada"));
+      router.refresh();
+    } catch {
+      toast.error(t("Não consegui enviar a foto."));
+    } finally {
+      setOcupado(false);
+      if (entradaRef.current) entradaRef.current.value = "";
+    }
+  }
+
+  async function gravarOrdem(nova: string[], aviso: string) {
+    setOcupado(true);
+    try {
+      await apiClient.put(`/api/v1/products/${produto.id}/fotos`, { fotos: nova });
+      toast.success(aviso);
+      router.refresh();
+    } catch (e) {
+      showApiError(e);
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  function mover(i: number, delta: -1 | 1) {
+    const nova = [...fotos];
+    [nova[i], nova[i + delta]] = [nova[i + delta]!, nova[i]!];
+    void gravarOrdem(nova, t("Ordem das fotos salva"));
+  }
+
+  return (
+    <div className="border-t bg-muted/30 p-3" data-testid={`fotos-${produto.codigo}`}>
+      <p className="mb-2 text-xs text-muted-foreground">
+        {t("A primeira foto é a capa. O atendente de IA manda as fotos nesta ordem quando apresenta o produto.")}
+      </p>
+      <ul className="flex flex-wrap gap-3">
+        {fotos.map((caminho, i) => (
+          <li key={caminho} className="w-28" data-testid="foto-do-produto">
+            {urls[caminho] ? (
+              // URL assinada e curta, de outro host: `next/image` exigiria allowlist no build.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={urls[caminho]}
+                alt={`${produto.nome} — ${t("foto")} ${i + 1}`}
+                className="h-28 w-28 rounded-md border object-cover"
+              />
+            ) : (
+              <div className="flex h-28 w-28 items-center justify-center rounded-md border text-xs text-muted-foreground">
+                {t("Sem prévia")}
+              </div>
+            )}
+            <div className="mt-1 flex justify-between">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={ocupado || i === 0}
+                onClick={() => mover(i, -1)}
+                aria-label={t("Mover a foto para a esquerda")}
+              >
+                ←
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={ocupado}
+                onClick={() => void gravarOrdem(fotos.filter((c) => c !== caminho), t("Foto removida"))}
+                aria-label={t("Remover a foto")}
+                data-testid="remover-foto"
+              >
+                ✕
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={ocupado || i === fotos.length - 1}
+                onClick={() => mover(i, 1)}
+                aria-label={t("Mover a foto para a direita")}
+              >
+                →
+              </Button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <input
+        ref={entradaRef}
+        type="file"
+        accept="image/jpeg,image/png"
+        className="hidden"
+        data-testid="arquivo-foto"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void subir(f);
+        }}
+      />
+      <div className="mt-3 flex items-center gap-3">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={ocupado || fotos.length >= MAXIMO_DE_FOTOS}
+          onClick={() => entradaRef.current?.click()}
+          data-testid="adicionar-foto"
+        >
+          {t(ocupado ? "Salvando…" : "Adicionar foto")}
+        </Button>
+        <span className="text-xs text-muted-foreground">
+          {t("JPG ou PNG, até 5 MB. No máximo 5 fotos.")}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function ProdutosClient({
   inicial,
+  urlsDasFotos,
   podeEditar,
   textos,
 }: {
   inicial: Produto[];
+  urlsDasFotos: Record<string, string>;
   podeEditar: boolean;
   textos: Textos;
 }) {
@@ -87,6 +227,7 @@ export function ProdutosClient({
   const [importando, setImportando] = React.useState(false);
   const [resumo, setResumo] = React.useState<ResumoDaImportacao | null>(null);
   const arquivoRef = React.useRef<HTMLInputElement>(null);
+  const [fotosAbertas, setFotosAbertas] = React.useState<string | null>(null);
 
   const filtrados = React.useMemo(() => {
     const q = busca.trim().toLowerCase();
@@ -346,8 +487,15 @@ export function ProdutosClient({
         </div>
       ) : (
         <ul className="divide-y rounded-lg border" data-testid="lista-produtos">
-          {filtrados.map((p) => (
-            <li key={p.id} className="flex items-center gap-4 p-3" data-testid={`produto-${p.codigo}`}>
+          {filtrados.map((p) => {
+            const capa = p.fotos?.[0] ? urlsDasFotos[p.fotos[0]] : undefined;
+            return (
+            <li key={p.id} data-testid={`produto-${p.codigo}`}>
+            <div className="flex items-center gap-4 p-3">
+              {capa ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={capa} alt="" className="h-10 w-10 shrink-0 rounded-md object-cover" />
+              ) : null}
               <div className="min-w-0 flex-1">
                 <p className={`truncate font-medium ${p.ativo ? "" : "text-muted-foreground line-through"}`}>
                   {p.nome}
@@ -364,17 +512,33 @@ export function ProdutosClient({
                 {formatCents(p.preco_cents, p.moeda)}
               </span>
               {podeEditar ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => void alternarAtivo(p)}
-                  data-testid={`alternar-${p.codigo}`}
-                >
-                  {t(p.ativo ? "Desativar" : "Reativar")}
-                </Button>
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setFotosAbertas((v) => (v === p.id ? null : p.id))}
+                    aria-expanded={fotosAbertas === p.id}
+                    data-testid={`abrir-fotos-${p.codigo}`}
+                  >
+                    {t("Fotos")} ({p.fotos?.length ?? 0})
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void alternarAtivo(p)}
+                    data-testid={`alternar-${p.codigo}`}
+                  >
+                    {t(p.ativo ? "Desativar" : "Reativar")}
+                  </Button>
+                </>
               ) : null}
+            </div>
+            {podeEditar && fotosAbertas === p.id ? (
+              <FotosDoProduto produto={p} urls={urlsDasFotos} />
+            ) : null}
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
     </div>

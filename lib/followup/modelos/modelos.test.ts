@@ -63,7 +63,7 @@ describe("catálogo de modelos de follow-up", () => {
     it("o gatilho tem motor vivo — publicar um kind sem motor deixa fluxo morto com cara de vivo", () => {
       // Mesma lista que `app/api/v1/ai/followup-flows/[id]/publish/route.ts`
       // aplica como allowlist. Um modelo fora dela instala e nunca dispara.
-      expect(["manual", "webhook", "silence", "stage_change", "case_opened", "appointment_no_show"]).toContain(
+      expect(["manual", "webhook", "silence", "stage_change", "case_opened", "appointment_no_show", "lead_created"]).toContain(
         modelo.gatilho({ stageId: ETAPA }).kind,
       );
     });

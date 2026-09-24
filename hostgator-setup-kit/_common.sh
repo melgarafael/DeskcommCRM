@@ -200,19 +200,43 @@ atualizar_supabase_single_server() {
 # --volumes` devolve o nome LÓGICO (`waha-data`); passá-lo direto a `docker run
 # -v` cria/abre outro volume global com esse nome e produz um backup vazio que
 # parece válido. Perguntar ao contêiner pela montagem real mantém o prefixo do
-# projeto Compose (ex.: `deskcommcrm_waha-data`). Sem contêiner, o nome sai de
+# projeto Compose (ex.: `deskcommcrm_waha-data`).
+#
+# A montagem também diz de QUE ESPÉCIE ela é, e `.Name` só responde por uma: num
+# bind de pasta do host (`- /srv/waha:/app/.sessions`) ele vem VAZIO, e ficar só
+# com ele devolve exatamente o volume fantasma que esta função existe para não
+# usar. Volume nomeado → `.Name`; bind → `.Source`.
+#
+# Sem contêiner não há montagem para ler, e o nome sai de
 # nome_do_projeto_atual, o mesmo que o compose usa: respeita COMPOSE_PROJECT_NAME
 # e mantém o `-` de uma pasta como `deskcomm-crm`.
 volume_waha_data() {
-  local container vol
+  local container campos tipo nome origem
   container="$(dc ps -a -q waha 2>/dev/null || true)"
-  vol=""
+  campos=""
   if [ -n "$container" ]; then
-    vol="$(docker inspect "$container" \
-      --format '{{range .Mounts}}{{if eq .Destination "/app/.sessions"}}{{.Name}}{{end}}{{end}}' \
+    campos="$(docker inspect "$container" \
+      --format '{{range .Mounts}}{{if eq .Destination "/app/.sessions"}}{{.Type}}|{{.Name}}|{{.Source}}{{end}}{{end}}' \
       2>/dev/null || true)"
   fi
-  printf '%s' "${vol:-$(nome_do_projeto_atual)_waha-data}"
+  tipo="${campos%%|*}"
+  nome="${campos#*|}"; nome="${nome%%|*}"
+  origem="${campos##*|*|}"
+  case "$tipo" in
+    volume) if [ -n "$nome" ]; then printf '%s' "$nome"; return 0; fi ;;
+    bind)   if [ -n "$origem" ]; then printf '%s' "$origem"; return 0; fi ;;
+  esac
+  printf '%s' "$(nome_do_projeto_atual)_waha-data"
+}
+
+# O `.tgz` de um volume VAZIO tem ~87 bytes, uma entrada só (`.`) e o `tar` SAI
+# COM ZERO. Quem decide se o snapshot presta é o CONTEÚDO, não o código de saída
+# dele: contar as entradas além da raiz é o que separa um backup de verdade do
+# volume errado — a diferença que só aparecia no dia do restore.
+tar_tem_sessao() {  # tar_tem_sessao <arquivo.tgz>
+  local itens
+  itens="$(tar tzf "$1" 2>/dev/null | grep -cvxE '\./?$' || true)"
+  [ "${itens:-0}" -gt 0 ]
 }
 
 # ── QUEM FALA COM O BANCO E PODE SER PARADO ──────────────────────────────────

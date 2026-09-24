@@ -64,7 +64,7 @@ const TETOS: Record<string, { minutos: number; razao: string }> = {
   "ci.yml::verify-parte": {
     minutos: 15,
     razao:
-      "a suíte foi repartida em partes (#1185 via #1190); cada parte roda metade de uma suíte " +
+      "a suíte foi repartida em partes (#1185 via #1190; três desde 22/09/2026); cada parte roda uma fatia de uma suíte " +
       "que custava 649s de unit num verde. 15 é guarda de travamento; quem denuncia crescimento " +
       "é o passo `Orçamento de tempo do verify-parte` (12 min por parte, medido em 19/09)",
   },
@@ -98,10 +98,10 @@ const TETOS: Record<string, { minutos: number; razao: string }> = {
  * nova (partes/matrix) e continuava passando antes deste mapa.
  */
 const ORCAMENTOS: Record<string, { minutos: number; razao: string }> = {
-  // UMA entrada cobre as DUAS partes: o `ORCAMENTO_MIN` vive no `env:` de um
-  // passo único dentro da `matrix`, então as duas partes leem o mesmo número.
+  // UMA entrada cobre TODAS as partes: o `ORCAMENTO_MIN` vive no `env:` de um
+  // passo único dentro da `matrix`, então as partes leem o mesmo número.
   // Que o passo não fique preso a uma delas é o que o caso
-  // "o orçamento vale para as DUAS partes" abaixo guarda.
+  // "o orçamento vale para TODAS as partes" abaixo guarda.
   "ci.yml::verify-parte": {
     minutos: 12,
     razao:
@@ -248,9 +248,9 @@ describe("o preâmbulo do CI não come o orçamento dos testes", () => {
     }
   });
 
-  it("o orçamento vale para as DUAS partes da matrix, não só para uma", () => {
-    // `verify-parte` é uma `matrix` de 2, e o `ORCAMENTO_MIN` vive num passo
-    // ÚNICO que as duas partes executam. Os passos vizinhos (`Cercas`,
+  it("o orçamento vale para TODAS as partes da matrix, não só para uma", () => {
+    // `verify-parte` é uma `matrix` (3 partes desde 22/09/2026), e o
+    // `ORCAMENTO_MIN` vive num passo ÚNICO que todas as partes executam. Os passos vizinhos (`Cercas`,
     // `Typecheck`, `Lint`, `Kit self-host`) são todos `if: matrix.parte == N` —
     // então pôr um `if:` de parte neste aqui é uma edição de uma linha, natural
     // de fazer por simetria, e deixaria metade da suíte sem detector nenhum.

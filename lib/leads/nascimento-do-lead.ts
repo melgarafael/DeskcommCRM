@@ -445,6 +445,31 @@ export async function garantirLeadDaConversa(
     });
   }
 
+  // O mesmo fato que o cadastro manual já emitia (`createLeadHandler`). Sem
+  // esta linha, o card nasce no funil e o gatilho "Lead criado" nunca vê a
+  // conversa — o follow-up só existiria para formulário e API. `emit_event`
+  // carimba a origem do atendimento quando o payload não traz uma; falha aqui
+  // não desfaz o card.
+  const { error: erroEvento } = await db.rpc("emit_event", {
+    p_event_type: "lead.created",
+    p_entity_kind: "crm_lead",
+    p_entity_id: lead.id,
+    p_payload: {
+      pipeline_id: destino.pipelineId,
+      stage_id: destino.stageId,
+      conversation_id: conversationId,
+    },
+    p_metadata: { source: "nascimento-da-conversa" },
+    p_organization_id: organizationId,
+  });
+  if (erroEvento) {
+    logger.warn("nascimento-do-lead: evento lead.created não emitido", {
+      organization_id: organizationId,
+      lead_id: lead.id as string,
+      error: erroEvento.message.slice(0, 120),
+    });
+  }
+
   return {
     criado: true,
     leadId: lead.id as string,

@@ -13,6 +13,7 @@
  */
 import { registerAction } from "@/lib/automation/actions";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
+import { resolveOwnerPatch } from "@/lib/leads/owner-patch";
 
 async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise<ActionResultDetail> {
   const userId = typeof config.user_id === "string" ? config.user_id : null;
@@ -44,9 +45,18 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     return { type: "assign_owner", status: "failed", error: "invalid_owner" };
   }
 
+  const patchResult = resolveOwnerPatch({ owner_user_id: userId });
+  if (!patchResult.ok || !patchResult.patch) {
+    return { type: "assign_owner", status: "failed", error: "invalid_owner" };
+  }
+
   const { error } = await ctx.admin
     .from("crm_leads")
-    .update({ owner_user_id: userId, assigned_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .update({
+      ...patchResult.patch,
+      assigned_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", lead.id)
     .eq("organization_id", ctx.organizationId);
   if (error) return { type: "assign_owner", status: "failed", error: error.message };

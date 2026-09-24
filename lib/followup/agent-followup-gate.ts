@@ -30,6 +30,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  *   silence              → `lib/followup/silence-sweep.ts`
  *   stage_change         → `lib/followup/gatilho-etapa.ts`
  *   case_opened          → `lib/followup/gatilho-caso.ts`
+ *   lead_created         → `lib/followup/gatilho-lead.ts`
  *   appointment_no_show  → `fn_appointment_recover` (a MESMA condição em SQL:
  *                          o `exists` sobre `ai_agent_versions` publicadas com
  *                          `followup->'enabled'` e o ponteiro em
@@ -50,6 +51,7 @@ export const GATILHOS_QUE_EXIGEM_AGENTE = [
   "case_opened",
   "appointment_no_show",
   "inbound_after_silence",
+  "lead_created",
 ] as const;
 
 export type GatilhoQueExigeAgente = (typeof GATILHOS_QUE_EXIGEM_AGENTE)[number];

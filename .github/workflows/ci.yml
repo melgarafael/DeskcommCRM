@@ -86,7 +86,8 @@ permissions:
 # segue no grupo do PR, e o push novo continua cancelando o velho.
 
 jobs:
-  # A suíte de unit em DUAS partes paralelas, e o check obrigatório `verify` é o
+  # A suíte de unit em TRÊS partes paralelas (duas até 22/09/2026 — ver o fim
+  # deste bloco), e o check obrigatório `verify` é o
   # agregador lá embaixo — mesmo padrão do `invariants`.
   #
   # Medido em 18/09/2026: o `verify` inteiro levava 712 s de mediana nos verdes e
@@ -96,9 +97,10 @@ jobs:
   # e `import` 415 s (run do head d8af02fee). Custo por arquivo se divide por
   # arquivo: cada parte roda metade (`--shard`) e paga metade do jsdom.
   #
-  # Os passos de arquivo inteiro rodam cada um numa parte só: cercas, typecheck
-  # e as três auditorias na 1; lint e kit bash na 2 — é o que equilibra as duas.
-  # O `--shard` corta por CONTAGEM de arquivos (554/554), não por tempo; quem
+  # Os passos de arquivo inteiro rodam cada um numa parte só: typecheck e as
+  # três auditorias na 1; lint na 2; cercas e kit bash na 3 — é o que equilibra
+  # as três (a conta está no fim deste bloco). O `--shard` corta por CONTAGEM de
+  # arquivos, não por tempo; quem
   # equilibra o relógio é onde moram estes passos. A divisão em partes é o
   # conserto estrutural da issue #1185, que o #1184 deixou anotado: com ele,
   # o teto volta de 25 para 15 (guarda de travamento) e o orçamento desce de 16
@@ -112,6 +114,19 @@ jobs:
   # cura: a suíte soma ~46 s/dia às duas partes juntas. Quando uma parte chegar
   # a 11 min (2 de folga até o vermelho do orçamento, aos 13), o conserto é a
   # terceira parte (matrix + `--shard=N/3`) — reequilibrar de novo não sobra.
+  #
+  # A TERCEIRA PARTE ENTROU EM 22/09/2026, antes dos 11. Medido nos 16 pares
+  # verdes de ci.yml criados depois de o lint mudar de parte (17:54Z–00:06Z):
+  # parte 1 mediana 9,1 min (máx 9,4), parte 2 mediana 9,5 (máx 10,4). O relógio
+  # é `Unit tests` (mediana 412 s / 433 s); os fixos já estavam iguais — parte 1
+  # 107 s (typecheck 67, cercas 36, auditorias ~4), parte 2 109 s (lint 65, kit
+  # bash 44) —, então não havia mais o que reequilibrar. Com três, os fixos
+  # medianos ficam: parte 1 typecheck+auditorias ~71 s, parte 2 lint ~65 s,
+  # parte 3 cercas+kit bash ~80 s. A conta de unit por parte (~845 s / 3 ≈ 282 s)
+  # e o total esperado (~6,4 min por parte) são PREVISÃO, não medição: o
+  # `--shard` corta por contagem, e o terço de cada um só se sabe rodando. O
+  # custo é um job a mais por rodada na fila de runners (~25 s de preâmbulo), NÃO
+  # MEDIDO quanto à espera.
   verify-parte:
     # Guarda de travamento. O DETECTOR de crescimento é o passo `Orçamento de
     # tempo` no fim de cada parte; a medição que justifica o número está em
@@ -127,7 +142,7 @@ jobs:
       # Sem fail-fast: um vermelho numa parte não esconde o da outra.
       fail-fast: false
       matrix:
-        parte: [1, 2]
+        parte: [1, 2, 3]
     steps:
       - uses: actions/checkout@v7
 
@@ -209,8 +224,9 @@ jobs:
       # em segundos; dentro da suíte longa, o mesmo vermelho chegava aos 7–12
       # minutos. Rodam UMA vez: o passo de unit abaixo pula o projeto `cercas`.
       # Seleção e medições: o bloco `projects` de vitest.config.ts.
+      # Na parte 3, junto do kit bash: o porquê e a conta estão no cabeçalho do job.
       - name: Cercas estruturais
-        if: matrix.parte == 1
+        if: matrix.parte == 3
         run: pnpm cercas
 
       - name: Typecheck
@@ -302,11 +318,11 @@ jobs:
           echo "OK — ${total} migrations na árvore, nenhum NNNN nem timestamp repetido."
 
       # `--project produto` é o `pnpm test:unit` MENOS as cercas, que já
-      # rodaram acima; `--shard` divide os arquivos entre as duas partes. Juntos
+      # rodaram acima; `--shard` divide os arquivos entre as três partes. Juntos
       # são a suíte inteira, uma vez só. Localmente o comando continua sendo
       # `pnpm test:unit`, sem recorte.
-      - name: Unit tests (parte ${{ matrix.parte }}/2)
-        run: pnpm test:unit --project produto --shard=${{ matrix.parte }}/2
+      - name: Unit tests (parte ${{ matrix.parte }}/3)
+        run: pnpm test:unit --project produto --shard=${{ matrix.parte }}/3
 
       # O ACERVO DE `.changes/` CABE NA TELA DA VPS? — e por que fora de PR.
       #
@@ -352,7 +368,7 @@ jobs:
       # escolher OpenRouter travava o instalador num laço, escolher OpenAI
       # deixava o .env pela metade — passaram por todos os checks verdes. 15s.
       - name: Kit self-host (bash)
-        if: matrix.parte == 2
+        if: matrix.parte == 3
         run: pnpm test:shell
 
       - name: Orçamento de tempo do verify-parte
@@ -380,6 +396,12 @@ jobs:
           # corte, que é a propriedade que faz chegar um `::error::` legível em
           # vez de um `cancelled` mudo. A estimativa acertou; agora ela tem
           # número atrás.
+          #
+          # 22/09/2026: a suíte cresceu até 9,1 / 9,5 min de mediana (máx 10,4)
+          # nas duas partes, e o conserto foi a TERCEIRA parte, não subir este
+          # número (a conta está no cabeçalho do job). O 12 fica: pela lição de
+          # método logo abaixo, só se recalibra depois de medir a distribuição
+          # NOVA das três partes e classificar os `cancelled` dela.
           #
           # ── OS 100 CANCELADOS, E POR QUE ELES NÃO CENSURAM ESTA CONTA ────
           #
@@ -415,11 +437,11 @@ jobs:
             exit 0
           fi
           decorrido=$(( ($(date +%s) - VERIFY_INICIO) / 60 ))
-          echo "verify parte ${{ matrix.parte }}/2: ${decorrido} min (orçamento ${ORCAMENTO_MIN} min, teto de travamento 15 min)"
+          echo "verify parte ${{ matrix.parte }}/3: ${decorrido} min (orçamento ${ORCAMENTO_MIN} min, teto de travamento 15 min)"
           if [ "$decorrido" -le "${ORCAMENTO_MIN}" ]; then
             exit 0
           fi
-          echo "::error::A parte ${{ matrix.parte }}/2 do verify levou ${decorrido} min contra um orçamento de ${ORCAMENTO_MIN} min."
+          echo "::error::A parte ${{ matrix.parte }}/3 do verify levou ${decorrido} min contra um orçamento de ${ORCAMENTO_MIN} min."
           echo "::error::Isto NÃO é defeito do seu PR: a suíte unitária cresceu. Em 18/09/2026, \`Unit tests\` já era 10,3 dos 13,2 min do job."
           echo "::error::O conserto é mais uma parte em \`verify-parte\` (matrix + --shard), não subir este número."
           exit 1
@@ -437,7 +459,7 @@ jobs:
       - name: Falhar se qualquer parte não passou
         run: |
           echo "verify-parte: ${{ needs.verify-parte.result }}"
-          # `success` só com AS DUAS partes verdes; `skipped` e `cancelled`
+          # `success` só com TODAS as partes verdes; `skipped` e `cancelled`
           # reprovam — parte que não rodou não mediu nada.
           [ "${{ needs.verify-parte.result }}" = "success" ]
 

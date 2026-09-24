@@ -606,6 +606,7 @@ Presença nunca vai medir isto; só geometria mede.
 | J14.4 | Abaixo de `lg` os horários empilham sob o calendário | **PASS** — caso de 900px |
 | J14.5 | O limiar de 1024px, onde as 3 colunas passam a valer com 44px de folga | **PASS** — é onde um ajuste de padding estoura primeiro |
 | J14.6 | "Ver na agenda" leva até o compromisso, inclusive em outra semana | **PASS** — `agenda-ver-na-agenda.spec.ts`. O botão não tinha `onClick` nenhum. Evidência: `evidence/calendario/d2-ver-na-agenda.png` |
+| J14.7 | Em janela larga e BAIXA (1024×560, 1280×500) o formulário rola com a roda do mouse até o Confirmar, e a marcação grava; 390×700 é o controle empilhado | **NÃO MEDIDO em tela local** — caso novo em `agenda-painel-cabe-na-tela.spec.ts` (roda do mouse, botão inteiro na viewport, teste de oclusão, `POST /api/v1/agenda/agendamentos` 2xx e "Marcado."); a prova é o `e2e` do CI. A forma é vigiada por `tests/unit/agenda-confirmar-alcancavel.test.ts`. Antes: Sheet com `lg:overflow-hidden` e painel em `lg:flex-1 lg:min-h-0`, com o formulário acima (vínculo, tipos, convidado, endereço, observação) comendo quase toda a altura — a conta das alturas deixa o painel com uma fresta em 1024×560 e sem espaço em 1280×500 |
 
 **Duas correções ao diagnóstico inicial, ambas medidas:**
 1. O defeito de largura **não sumia em tela grande** — em 1920 o transbordo era

@@ -169,7 +169,9 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
     "Lista vazia só significa que a loja não tem esse item quando a busca conseguiu varrer o " +
     "catálogo INTEIRO: se a resposta disser que a varredura foi parcial, não afirme que a loja não " +
     "tem — diga que vai confirmar com a equipe. Em qualquer caso, não invente preço e nunca " +
-    "invente um valor que você lembra.",
+    "invente um valor que você lembra. " +
+    "Produto com `fotos` tem foto cadastrada: ao apresentá-lo, passe o `codigo` dele em " +
+    "`produto_codigo` no send_message, e a foto vai junto com o texto.",
   inputSchema: produtosInputShape,
   category: "read",
   requiresRole: "agent",
@@ -217,7 +219,7 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
       const { data: lote, error, count } = await ctx.supabase
         .from("catalog_products")
         .select(
-          "id, codigo, nome, descricao, marca, categoria, preco_cents, moeda, controla_estoque, quantidade, ativo",
+          "id, codigo, nome, descricao, marca, categoria, preco_cents, moeda, controla_estoque, quantidade, ativo, fotos",
           { count: "exact" },
         )
         .eq("organization_id", ctx.organizationId)
@@ -260,6 +262,7 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
       moeda: string;
       controla_estoque: boolean;
       quantidade: number;
+      fotos: string[] | null;
     };
 
     const { achados, ignorados } = buscarComRelaxamento((data ?? []) as Linha[], input.termo);
@@ -327,6 +330,10 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
         ...(produto.marca ? { marca: produto.marca } : {}),
         ...(produto.descricao ? { descricao: produto.descricao } : {}),
         disponivel: !produto.controla_estoque || produto.quantidade > 0,
+        // Quantas fotos, e não quais: o caminho é vocabulário interno e a URL
+        // assinada expira. Quem manda a foto é o `send_message` do agente, com
+        // `produto_codigo` — ele acha as fotos pelo código (migration 0390).
+        ...(produto.fotos && produto.fotos.length > 0 ? { fotos: produto.fotos.length } : {}),
       })),
       empate,
       // Relaxamento é o irmão do empate: nos dois a busca sabe que a resposta
