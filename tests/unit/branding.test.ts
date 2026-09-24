@@ -262,12 +262,12 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
   "app/layout.tsx": {
     categoria: "INFRA",
     motivo:
-      "chave de localStorage do tema, lida no script anti-flash. Renomear faz todo mundo voltar ao tema claro no próximo acesso — e o par com lib/theme.tsx tem de mudar junto",
+      "chave legada `deskcomm-theme` como fallback de migração no script anti-flash (a chave nova é `canti-theme`). Remover o fallback faz quem já tinha tema salvo voltar ao claro. O par com lib/theme.tsx tem de mudar junto",
     marcas: ["deskcomm-theme"],
   },
   "lib/theme.tsx": {
     categoria: "INFRA",
-    motivo: "a mesma chave de localStorage do script do layout; as duas são um par só",
+    motivo: "a mesma chave legada de localStorage do script do layout; as duas são um par só",
     marcas: ["deskcomm-theme"],
   },
   "lib/supabase/browser.ts": {

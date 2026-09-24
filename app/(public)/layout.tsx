@@ -79,7 +79,7 @@ export default async function PublicLayout({ children }: { children: React.React
               <div className="rounded-md dark:bg-white dark:px-3 dark:py-2 dark:shadow-sm">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  data-testid="logo-da-fachada"
+                  data-testid="storefront-logo"
                   src={marca.logoUrl}
                   alt={marca.nome}
                   className="h-10 w-auto max-w-[12rem] object-contain"

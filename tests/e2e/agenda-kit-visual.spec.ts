@@ -147,7 +147,7 @@ test.describe("kit visual da Agenda", () => {
     await page.goto(VITRINE);
     await page.evaluate(() => {
       try {
-        window.localStorage.removeItem("deskcomm-theme");
+        window.localStorage.removeItem("canti-theme");
       } catch {
         /* modo privado: o tema já é o default */
       }

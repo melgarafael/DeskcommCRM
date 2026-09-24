@@ -8,7 +8,10 @@ export type ResolvedTheme = "light" | "dark";
 // Exportada para o teste reusar em vez de duplicar o literal — duplicar
 // acionaria `tests/unit/branding.test.ts` (a mesma marca hardcoded, fora da
 // lista congelada, num segundo arquivo).
-export const STORAGE_KEY = "deskcomm-theme";
+export const STORAGE_KEY = "canti-theme";
+// Chave legada do rebrand: quem já tinha tema salvo continua com ele.
+// A leitura tenta a nova primeiro, depois a legada (migração silenciosa).
+const LEGACY_STORAGE_KEY = "deskcomm-theme";
 
 type ThemeContextValue = {
   /** User preference: light, dark, or system. */
@@ -24,7 +27,9 @@ const ThemeContext = React.createContext<ThemeContextValue | null>(null);
 function readStoredTheme(): Theme {
   if (typeof window === "undefined") return "system";
   try {
-    const v = window.localStorage.getItem(STORAGE_KEY);
+    const v =
+      window.localStorage.getItem(STORAGE_KEY) ??
+      window.localStorage.getItem(LEGACY_STORAGE_KEY);
     if (v === "light" || v === "dark" || v === "system") return v;
   } catch {
     // localStorage indisponível (modo privado, sandbox) — segue com default.

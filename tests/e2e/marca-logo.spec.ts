@@ -564,7 +564,7 @@ async function logoDoLogin(browser: Browser): Promise<LogoNaTela | null> {
   try {
     const pagina = await contexto.newPage();
     await pagina.goto("/login");
-    const img = pagina.getByTestId("logo-da-fachada");
+    const img = pagina.getByTestId("storefront-logo");
     // Ausência é resposta legítima: sem logo em nenhuma camada, o layout não
     // renderiza `<img>` nenhum e a fachada aparece com o nome em texto. Mas
     // `count()` puro tornava "ausente" indistinguível de "ainda não montou" —
