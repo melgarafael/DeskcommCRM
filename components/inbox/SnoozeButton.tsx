@@ -14,6 +14,7 @@ interface Props {
   conversationId: string;
   snoozeUntil: string | null;
   disabled?: boolean;
+  compactInHeader?: boolean;
 }
 
 const DURATIONS: Array<{ hours: 1 | 3 | 24; label: string }> = [
@@ -26,7 +27,7 @@ function isSnoozeActive(snoozeUntil: string | null): boolean {
   return snoozeUntil != null && new Date(snoozeUntil).getTime() > Date.now();
 }
 
-export function SnoozeButton({ conversationId, snoozeUntil, disabled }: Props) {
+export function SnoozeButton({ conversationId, snoozeUntil, disabled, compactInHeader = false }: Props) {
   const t = useT();
   const { snooze, cancel } = useSnoozeConversation();
   const isActive = isSnoozeActive(snoozeUntil);
@@ -39,10 +40,13 @@ export function SnoozeButton({ conversationId, snoozeUntil, disabled }: Props) {
           size="sm"
           variant="outline"
           disabled={disabled || isPending}
-          className="flex items-center gap-1"
+          className={compactInHeader
+            ? "flex items-center gap-1 @max-[849px]/header:h-8 @max-[849px]/header:w-8 @max-[849px]/header:justify-center @max-[849px]/header:px-0"
+            : "flex items-center gap-1"}
+          aria-label={isActive ? t("Lembrete ativo") : t("Lembrar")}
         >
           <Clock size={12} weight="regular" aria-hidden />
-          {isActive ? t("Lembrete ativo") : t("Lembrar")}
+          <span className={compactInHeader ? "@max-[849px]/header:hidden" : undefined}>{isActive ? t("Lembrete ativo") : t("Lembrar")}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">

@@ -905,6 +905,7 @@ export const DICIONARIO: Traducoes = {
   "Cliente pediu para não receber mensagens": { es: "El cliente pidió no recibir mensajes" },
   "Pausar o automático": { es: "Pausar el automático" },
   "Ver contato": { es: "Ver contacto" },
+  "Mais ações": { es: "Más acciones" },
 
   // ─── Inbox: composer ───
   Responder: { es: "Responder" },

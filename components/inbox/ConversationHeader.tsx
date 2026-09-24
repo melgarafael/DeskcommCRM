@@ -14,9 +14,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { JanelaSelo } from "@/components/inbox/JanelaSelo";
 import { ChannelLogo } from "@/components/inbox/ChannelLogo";
-import { Phone, ArrowRight } from "@/lib/ui/icons";
+import { Phone, ArrowRight, ArrowsClockwise, DotsThree } from "@/lib/ui/icons";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
@@ -150,23 +151,15 @@ export function ConversationHeader({ conversation, onAbrirConversa }: Props) {
     <strong>{displayName}</strong><span className="text-sm text-muted-foreground">{STATUS_LABEL[status] ?? status} · Somente leitura</span>
   </header>;
   return (
-    // `flex-wrap` porque este header travava a LARGURA DA TELA INTEIRA. Ele
-    // media 707px de `min-content` — a identidade do contato encolhia bem
-    // (`min-w-0` + `truncate`), mas a barra de ações era `shrink-0` e não
-    // quebrava. Como a coluna do meio do inbox é `1fr`, que é
-    // `minmax(auto, 1fr)`, ela não podia ficar menor que esses 707px, e o
-    // painel de CRM era empurrado 311px para fora da viewport em 1280px.
-    //
-    // Reorganizar em vez de esconder: acima de ~1440px o header fica IDÊNTICO ao
-    // de antes (uma linha), e quando aperta a barra desce para a linha de baixo.
-    // Nenhuma ação some — um menu "mais" esconderia o "Lembrar" que a spec
-    // `canais-baseline` clica, e, pior, esconderia ação de quem atende.
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background px-4 py-3">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
+    // A largura útil é a da COLUNA de conversa, não a da janela. O badge de
+    // retorno do automático fazia o bloco de identidade crescer e lançava a
+    // barra inteira para baixo. O menu compacto preserva as ações nessa coluna.
+    <div className="@container/header flex min-w-0 items-start gap-2 border-b border-border bg-background px-4 py-3">
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-1.5">
           <ChannelLogo channel={conversation.channel_sessions} size={20} />
-          <h2 className="truncate text-sm font-semibold">{displayName}</h2>
-          <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
+          <h2 className="min-w-0 truncate text-sm font-semibold" title={displayName}>{displayName}</h2>
+          <Badge variant="outline" className="h-4 shrink-0 px-1.5 text-[10px]">
             {t(STATUS_LABEL[status] ?? status)}
           </Badge>
           {/* Ao lado do estado, não escondido num painel: a pergunta "dá para
@@ -176,22 +169,6 @@ export function ConversationHeader({ conversation, onAbrirConversa }: Props) {
             provider={conversation.channel_sessions?.provider ?? null}
             lastInboundAt={conversation.last_inbound_at}
           />
-          {/* Sem esta marca, a conversa em que o robô está calado tem exatamente
-              a mesma cara de uma conversa normal — e ninguém entende por que as
-              respostas automáticas pararam.
-              O testid é o MESMO de antes de propósito: `escalacao-ciclo.spec.ts`
-              o clica, e rótulo visível é contrato. O que mudou é o texto DIZER o
-              motivo — "alguém assumiu" e "pausado para este cliente" pediam ações
-              diferentes e tinham a mesma frase. */}
-          {motivo !== null && (
-            <Badge
-              variant="outline"
-              className="h-4 px-1.5 text-[10px]"
-              data-testid="badge-atendimento-humano"
-            >
-              {t(ROTULO_DO_MOTIVO[motivo])}
-            </Badge>
-          )}
         </div>
 
         {/* QUEM ESTÁ NO COMANDO, com nome e por GEOMETRIA — disco cheio para
@@ -211,16 +188,14 @@ export function ConversationHeader({ conversation, onAbrirConversa }: Props) {
           )}
         </div>
         {phone && (
-          <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+          <p className="mt-0.5 flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground">
             <Phone size={11} weight="regular" aria-hidden /> {phone}
           </p>
         )}
       </div>
 
-      {/* `shrink-0` saiu daqui: era ele que impunha o piso de largura. Agora a
-          barra pode encolher e quebrar internamente, e os botões continuam
-          todos visíveis e clicáveis — só que em duas linhas quando preciso. */}
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <div className="flex shrink-0 flex-col items-end gap-1">
+        <div className="flex items-center gap-1.5">
         {isOpen && (
           <Button
             size="sm"
@@ -245,6 +220,7 @@ export function ConversationHeader({ conversation, onAbrirConversa }: Props) {
           <Button
             size="sm"
             variant="outline"
+            className="@max-[849px]/header:hidden"
             disabled={release.isPending}
             onClick={() => release.mutate({ conversation_id: conversation.id })}
           >
@@ -267,6 +243,8 @@ export function ConversationHeader({ conversation, onAbrirConversa }: Props) {
           <Button
             size="sm"
             variant="outline"
+            aria-label={t("Devolver ao automático")}
+            className="@max-[849px]/header:h-8 @max-[849px]/header:w-8 @max-[849px]/header:px-0"
             disabled={retomar.isPending}
             data-testid="devolver-ao-automatico"
             // O ALCANCE DA VOLTA NÃO É SEMPRE O MESMO, e a tela precisa dizer qual é.
@@ -282,13 +260,15 @@ export function ConversationHeader({ conversation, onAbrirConversa }: Props) {
             }
             onClick={() => retomar.mutate({ conversation_id: conversation.id })}
           >
-            {retomar.isPending ? t("Devolvendo...") : t("Devolver ao automático")}
+            <ArrowsClockwise size={16} className="hidden @max-[849px]/header:block" aria-hidden />
+            <span className="@max-[849px]/header:hidden">{retomar.isPending ? t("Devolvendo...") : t("Devolver ao automático")}</span>
           </Button>
         )}
         {podePausar && (
           <Button
             size="sm"
             variant="outline"
+            className="@max-[849px]/header:hidden"
             disabled={pausar.isPending}
             data-testid="pausar-o-automatico"
             // `podePausar` já exige dono != null, então este botão NUNCA aparece
@@ -301,7 +281,7 @@ export function ConversationHeader({ conversation, onAbrirConversa }: Props) {
           </Button>
         )}
         {!encerrada && (
-          <Button size="sm" variant="outline" onClick={() => setReassignOpen(true)}>
+          <Button size="sm" variant="outline" className="@max-[849px]/header:hidden" onClick={() => setReassignOpen(true)}>
             {t("Transferir")}
           </Button>
         )}
@@ -309,19 +289,21 @@ export function ConversationHeader({ conversation, onAbrirConversa }: Props) {
           <SnoozeButton
             conversationId={conversation.id}
             snoozeUntil={conversation.snooze_until ?? null}
+            compactInHeader
           />
         )}
         {!encerrada && (
           <Button
             size="sm"
             variant="outline"
+            className="@max-[849px]/header:hidden"
             disabled={close.isPending}
             onClick={() => setConfirmFecharOpen(true)}
           >
             {t("Fechar")}
           </Button>
         )}
-        {encerrada && <Button size="sm" variant="outline" disabled={reopen.isPending}
+        {encerrada && <Button size="sm" variant="outline" className="@max-[849px]/header:hidden" disabled={reopen.isPending}
           onClick={() => reopen.mutate({ conversation_id: conversation.id, expected_revision: conversation.service_revision })}>
           {t("Reabrir")}
         </Button>}
@@ -337,6 +319,7 @@ export function ConversationHeader({ conversation, onAbrirConversa }: Props) {
           <Button
             size="sm"
             variant="ghost"
+            className="@max-[849px]/header:hidden"
             disabled={arquivar.isPending}
             onClick={() => setConfirmArquivarOpen(true)}
           >
@@ -355,12 +338,38 @@ export function ConversationHeader({ conversation, onAbrirConversa }: Props) {
             contato — por isso a condição é a mesma do painel, e não um valor
             escolhido à parte. Não é esconder ação; é não repeti-la. */}
         {c?.id && (
-          <Button asChild size="sm" variant="ghost" className="xl:hidden">
+          <Button asChild size="sm" variant="ghost" className="xl:hidden @max-[849px]/header:hidden">
             <Link href={`/app/contacts/${c.id}`} className="flex items-center gap-1">
               {t("Ver contato")}
               <ArrowRight size={12} weight="regular" aria-hidden />
             </Link>
           </Button>
+        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" variant="outline" className="hidden h-8 w-8 p-0 @max-[849px]/header:inline-flex"
+              aria-label={t("Mais ações")} title={t("Mais ações")}>
+              <DotsThree size={18} weight="bold" aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {isMineAssigned && <DropdownMenuItem onSelect={() => release.mutate({ conversation_id: conversation.id })}>{t("Liberar")}</DropdownMenuItem>}
+            {podePausar && <DropdownMenuItem onSelect={() => pausar.mutate({ conversation_id: conversation.id })}>{t("Pausar o automático")}</DropdownMenuItem>}
+            {!encerrada && <DropdownMenuItem onSelect={() => setReassignOpen(true)}>{t("Transferir")}</DropdownMenuItem>}
+            {!encerrada && <DropdownMenuItem onSelect={() => setConfirmFecharOpen(true)}>{t("Fechar")}</DropdownMenuItem>}
+            {encerrada && <DropdownMenuItem onSelect={() => reopen.mutate({ conversation_id: conversation.id, expected_revision: conversation.service_revision })}>{t("Reabrir")}</DropdownMenuItem>}
+            {status !== "archived" && <DropdownMenuItem onSelect={() => setConfirmArquivarOpen(true)}>{t("Arquivar")}</DropdownMenuItem>}
+            {c?.id && <DropdownMenuItem asChild><Link href={`/app/contacts/${c.id}`}>{t("Ver contato")}</Link></DropdownMenuItem>}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        </div>
+        {/* O aviso pertence à operação automática. Abaixo da barra ele não
+            alarga a ficha do contato nem muda a posição dos botões. */}
+        {motivo !== null && (
+          <Badge variant="outline" className="h-4 w-fit max-w-full truncate px-1.5 text-[10px]"
+            title={t(ROTULO_DO_MOTIVO[motivo])} data-testid="badge-atendimento-humano">
+            {t(ROTULO_DO_MOTIVO[motivo])}
+          </Badge>
         )}
       </div>
       <ReassignDialog

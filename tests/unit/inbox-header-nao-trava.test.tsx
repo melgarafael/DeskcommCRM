@@ -9,8 +9,9 @@ import { ConversationHeader } from "@/components/inbox/ConversationHeader";
  *
  * ## O defeito, medido
  *
- * A barra de ações deste header era `shrink-0`. Como ela não encolhia nem
- * quebrava, o `min-content` do header inteiro era **707px** — e a coluna do
+ * A barra de ações deste header era `shrink-0` sem alternativa para ações
+ * secundárias. Como ela não encolhia nem quebrava, o `min-content` do header
+ * inteiro era **707px** — e a coluna do
  * meio do inbox é `1fr`, que é `minmax(auto, 1fr)` e não encolhe abaixo do
  * conteúdo. Resultado: o painel de CRM ficava **311px fora da viewport em
  * 1280px**. Em uma resolução de trabalho comum, o atendente não via contexto
@@ -24,9 +25,8 @@ import { ConversationHeader } from "@/components/inbox/ConversationHeader";
  * zero em tudo e passaria feliz: verde por ausência de motor.
  *
  * A medição de verdade é `tests/sonda-inbox-cabe-na-tela.ts`, que roda num
- * browser e afere as 5 larguras. Esta catraca existe porque aquela sonda não
- * roda no CI, e a regressão específica — alguém devolver `shrink-0` à barra de
- * ações "para os botões não quebrarem" — é textual e barata de pegar.
+ * browser e afere as 5 larguras. Esta catraca verifica que a identidade pode
+ * encolher e que as ações secundárias entram no menu da coluna estreita.
  *
  * Se um dia o CI ganhar um passo de browser, este arquivo pode morrer em favor
  * da sonda. Enquanto isso, ele é a única coisa entre a regressão e a main.
@@ -82,7 +82,7 @@ function renderHeader() {
 }
 
 describe("header do inbox — não trava a largura da tela", () => {
-  it("a barra de ações NÃO é shrink-0 — era isso que impunha o piso de 707px", () => {
+  it("a identidade encolhe e a barra de ações tem menu compacto", () => {
     const { container } = renderHeader();
     const header = container.firstElementChild as HTMLElement;
     // Guarda de vacuidade: sem header renderizado, todas as asserções abaixo
@@ -91,28 +91,24 @@ describe("header do inbox — não trava a largura da tela", () => {
 
     const acoes = header.children[1] as HTMLElement;
     expect(acoes, "a barra de ações não renderizou").toBeTruthy();
-    expect(
-      acoes.className.split(/\s+/),
-      "`shrink-0` de volta na barra de ações: o header volta a travar em 707px e o painel de CRM sai da tela em 1280px",
-    ).not.toContain("shrink-0");
+    expect(header.className).toContain("min-w-0");
+    expect((header.children[0] as HTMLElement).className).toContain("min-w-0");
+    expect(screen.getByRole("button", { name: "Mais ações" }).className).toContain("@max-[849px]/header:inline-flex");
   });
 
-  it("o header pode reorganizar em vez de esconder ação", () => {
+  it("o cabeçalho usa a largura da coluna e mantém ações na primeira linha", () => {
     const { container } = renderHeader();
     const header = container.firstElementChild as HTMLElement;
     const acoes = header.children[1] as HTMLElement;
-    // As duas pontas: o container quebra E a barra quebra internamente. Só uma
-    // das duas não basta — sem a de dentro, a barra desce inteira e continua
-    // pedindo a largura toda.
-    expect(header.className).toContain("flex-wrap");
-    expect(acoes.className).toContain("flex-wrap");
-    expect(acoes.className).toContain("min-w-0");
+    expect(header.className).toContain("@container/header");
+    expect(header.className).not.toContain("flex-wrap");
+    expect(acoes.className).toContain("flex-col");
+    expect((acoes.children[0] as HTMLElement).className).toContain("flex");
   });
 
   it("as ações continuam TODAS no header — reorganizar não é esconder", () => {
     renderHeader();
-    // Se um dia alguém "resolver" o aperto colapsando ações num menu, este caso
-    // reprova. Esconder ação de quem atende é pior que uma segunda linha.
+    // As ações ficam no DOM; em coluna estreita, as secundárias aparecem no menu.
     for (const rotulo of ["Assumir", "Transferir", "Fechar"]) {
       expect(screen.getByText(rotulo), `a ação "${rotulo}" sumiu do header`).toBeTruthy();
     }

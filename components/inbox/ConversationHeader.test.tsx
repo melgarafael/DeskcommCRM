@@ -80,6 +80,18 @@ beforeEach(() => {
 });
 
 describe("ConversationHeader — Fechar e Arquivar por AlertDialog", () => {
+  it("mantém as ações secundárias acessíveis no menu compacto", async () => {
+    const user = userEvent.setup();
+    render(<ConversationHeader conversation={conversa("open")} />);
+
+    await user.click(screen.getByRole("button", { name: "Mais ações" }));
+    expect(screen.getByRole("menuitem", { name: "Transferir" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Arquivar" })).toBeInTheDocument();
+    await user.click(screen.getByRole("menuitem", { name: "Fechar" }));
+    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
+    expect(closeMutate).not.toHaveBeenCalled();
+  });
+
   it("Fechar pede confirmação e só encerra no clique de dentro do diálogo", async () => {
     const user = userEvent.setup();
     render(<ConversationHeader conversation={conversa("open")} />);
