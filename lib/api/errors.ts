@@ -210,6 +210,22 @@ export const ApiErrorCodes = {
   aviso_canal_invalido: "aviso_canal_invalido",
   aviso_nao_configurado: "aviso_nao_configurado",
 
+  // ─── Módulo CAMPANHAS (migration 0264, Spec 12 §17) ───
+  campanha_nao_encontrada: "campanha_nao_encontrada", // 404
+  // 409: a ação não cabe no estado atual. A mensagem diz os DOIS estados, porque
+  // "estado inválido" sem dizer qual manda o operador adivinhar.
+  campanha_estado_invalido: "campanha_estado_invalido",
+  campanha_nao_editavel: "campanha_nao_editavel", // 409: só rascunho aceita edição
+  campanha_preparando: "campanha_preparando", // 409: preparação em andamento
+  campanha_sem_audiencia: "campanha_sem_audiencia", // 422: o recorte não achou ninguém
+  // 422: achou gente, e nenhuma pode receber (todos bloqueados/sem telefone). É
+  // diferente de audiência vazia: o filtro está certo e a lista é que não presta.
+  campanha_sem_elegiveis: "campanha_sem_elegiveis",
+  campanha_canal_indisponivel: "campanha_canal_indisponivel", // 409: conexão fora do ar ou de outra org
+  campanha_agenda_invalida: "campanha_agenda_invalida", // 422: data no passado
+  campanha_conteudo_invalido: "campanha_conteudo_invalido", // 422: texto vazio ou variável que não existe
+  campanha_base_legal_invalida: "campanha_base_legal_invalida", // 422: interesse legítimo sem referência da LIA
+
   // 500 / upstream
   internal_error: "internal_error",
   upstream_unavailable: "upstream_unavailable",

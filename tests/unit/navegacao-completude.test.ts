@@ -35,6 +35,10 @@ const NAV_ALLOWLIST: Record<string, string> = {
   "/app/ai/agents/new":
     "sub-fluxo de criar agente, alcançado pelo botão dentro da lista de Agentes",
   "/app/team/invite": "sub-fluxo de convite, alcançado de dentro de Equipe",
+  "/app/campaigns/new":
+    "sub-fluxo de criar campanha, alcançado pelo botão dentro da lista de Campanhas",
+  "/app/campaigns/settings":
+    "padrões de campanha da organização, alcançados pelo botão dentro da lista de Campanhas — é ajuste que se faz uma vez, não tela de uso diário",
   "/app/settings/tenant/whatsapp": "redirect legado para /app/connections; mantido por links salvos",
   "/app/settings/canal-oficial":
     "redirect para /app/connections?aba=oficial desde o PR #105 — conectar canal passou a ter um lugar só. Conexões é a porta; a aba é navegação interna dela",

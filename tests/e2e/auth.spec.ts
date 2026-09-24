@@ -13,7 +13,7 @@ test.describe("auth flow", () => {
     await page.goto("/login");
     await page.locator("#email").fill("nobody@example.com");
     await page.locator("#password").fill("wrong-password-xyz");
-    await page.getByRole("button", { name: /entrar/i }).click();
+    await page.getByRole("button", { name: "Entrar", exact: true }).click();
     // Wait for either an inline error or that we did NOT navigate to /app
     await page.waitForTimeout(1500);
     expect(page.url()).not.toMatch(/\/app\//);
@@ -27,7 +27,7 @@ test.describe("auth flow", () => {
     await expect(page.locator("#password")).toBeFocused();
     await page.keyboard.press("Tab");
     // Next focusable is the submit button
-    const submit = page.getByRole("button", { name: /entrar/i });
+    const submit = page.getByRole("button", { name: "Entrar", exact: true });
     await expect(submit).toBeFocused();
   });
 

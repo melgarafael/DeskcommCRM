@@ -64,7 +64,7 @@ export async function loginAs(
   await page.goto(`${BASE}/login`);
   await page.locator("#email").fill(cred.email);
   await page.locator("#password").fill(cred.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
 
   // Espera por URL, não por visibilidade: correr `waitForURL` contra
   // `isVisible()` avalia o campo de OTP enquanto a página de MFA ainda monta, e

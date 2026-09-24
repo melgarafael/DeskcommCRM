@@ -45,6 +45,7 @@ function fakeDb(opts: {
   pointers?: PointerDeCaso[];
   contato?: string | null;
   noDeGatilho?: string | null;
+  pedeAgente?: boolean;
   jaVivo?: boolean;
   stale?: boolean;
   vivos?: Array<{ id: string; current_node_id: string | null }>;
@@ -60,7 +61,8 @@ function fakeDb(opts: {
       return opts.contato === undefined ? CONTATO : opts.contato;
     },
     async carregaNoDeGatilho() {
-      return opts.noDeGatilho === undefined ? "t1" : opts.noDeGatilho;
+      if (opts.noDeGatilho === null) return null;
+      return { id: opts.noDeGatilho ?? "t1", pedeAgente: opts.pedeAgente ?? true };
     },
     async insereEnrollment(input) {
       if (opts.stale) return { inserted: false, id: null, reason: "stale_origin" };
@@ -177,6 +179,17 @@ describe("gatilho de caso — abertura", () => {
     const s = await aplicaGatilhoDeCaso(deps(fakeDb({ reg }), fakeGate([])), evento());
     expect(s.pointers_barrados_pelo_gate).toBe(1);
     expect(s.enrolled).toBe(0);
+  });
+
+  it("sem agente, grafo só de texto fixo enrolla com agent_id nulo", async () => {
+    const reg = registro();
+    const s = await aplicaGatilhoDeCaso(
+      deps(fakeDb({ reg, pedeAgente: false }), fakeGate([])),
+      evento(),
+    );
+    expect(s.enrolled).toBe(1);
+    expect(s.pointers_barrados_pelo_gate).toBe(0);
+    expect(reg.enrollments[0]).toMatchObject({ agent_id: null });
   });
 
   it("contato já vivo em outro fluxo vira skip, nunca erro", async () => {

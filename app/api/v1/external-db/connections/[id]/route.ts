@@ -27,6 +27,8 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
+import { seModuloDesligado } from "../../_falha";
+
 export const dynamic = "force-dynamic";
 
 const COLUNAS_SEGURAS =
@@ -36,6 +38,8 @@ type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
   const requestId = randomUUID();
+  const desligado = await seModuloDesligado(requestId);
+  if (desligado) return desligado;
   const { id } = await ctx.params;
 
   const authz = await requireRole("viewer", { requestId, resource: "external_db_connections" });
@@ -62,6 +66,8 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
+  const desligado = await seModuloDesligado(requestId);
+  if (desligado) return desligado;
   const { id } = await ctx.params;
 
   const authz = await requireRole("admin", { requestId, resource: "external_db_connections" });
@@ -168,6 +174,8 @@ export async function DELETE(_req: NextRequest, ctx: Ctx): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
+  const desligado = await seModuloDesligado(requestId);
+  if (desligado) return desligado;
   const { id } = await ctx.params;
 
   const authz = await requireRole("admin", { requestId, resource: "external_db_connections" });

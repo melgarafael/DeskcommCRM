@@ -11,9 +11,11 @@ import { Card } from "@/components/ui/card";
 import { FlowArrow, Plus, Sparkle } from "@/lib/ui/icons";
 import { useFollowupFlows, type FollowupFlowPointerRow } from "@/hooks/followup/useFollowupFlows";
 import { DeleteFollowupFlowButton } from "./DeleteFollowupFlowButton";
+import { DuplicateFollowupFlowButton } from "./DuplicateFollowupFlowButton";
 import { FlowStatusBadge } from "./FlowStatusBadge";
 import { ModelosDialog } from "./ModelosDialog";
 import { NewFlowDialog } from "./NewFlowDialog";
+import { RenameFollowupFlowButton } from "./RenameFollowupFlowButton";
 
 interface Props {
   initialData: FollowupFlowPointerRow[];
@@ -123,7 +125,9 @@ export function FlowsList({ initialData, canWrite }: Props) {
                 </p>
               </Link>
               {canWrite && (
-                <div className="flex justify-end border-t border-border pt-2">
+                <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-2">
+                  <RenameFollowupFlowButton flowId={flow.id} flowName={flow.name} />
+                  <DuplicateFollowupFlowButton flowId={flow.id} />
                   <DeleteFollowupFlowButton flowId={flow.id} flowName={flow.name} />
                 </div>
               )}

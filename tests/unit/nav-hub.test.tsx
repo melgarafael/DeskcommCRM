@@ -110,6 +110,40 @@ describe("NavHub", () => {
     expect(screen.queryByRole("link", { name: /LGPD/ })).toBeNull();
   });
 
+  it("a porta do banco externo só existe com o módulo ligado na instalação (doc 37)", () => {
+    // Desligado: some para TODO papel, inclusive o admin da empresa — quem liga
+    // é quem administra o servidor. Para o viewer, a seção inteira some junto,
+    // porque "Dados externos" era a única porta dela ao alcance dele.
+    render(
+      <NavHub group="organizacao" isPlatformAdmin={false} role="admin" title="Org" subtitle="" modulosLigados={[]} />,
+    );
+    expect(screen.queryByRole("link", { name: /Dados externos/ })).toBeNull();
+    expect(screen.getByRole("link", { name: /API Tokens/ })).toBeTruthy();
+    cleanup();
+
+    render(
+      <NavHub group="organizacao" isPlatformAdmin={false} role="viewer" title="Org" subtitle="" modulosLigados={[]} />,
+    );
+    const secoes = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent?.trim());
+    expect(secoes).not.toContain("Dados e acesso");
+    cleanup();
+
+    render(
+      <NavHub
+        group="organizacao"
+        isPlatformAdmin={false}
+        role="viewer"
+        title="Org"
+        subtitle=""
+        modulosLigados={["banco_externo"]}
+      />,
+    );
+    expect(screen.getByRole("link", { name: /Dados externos/ })).toHaveAttribute(
+      "href",
+      "/app/integracao-dados",
+    );
+  });
+
   it("agrupa os cards sob a própria seção, não numa lista solta", () => {
     render(<NavHub group="ia" isPlatformAdmin role={null} title="Agente de IA" subtitle="" />);
     const ensinar = screen.getByRole("region", { name: "Ensinar o agente" });
@@ -130,12 +164,12 @@ describe("NavHub", () => {
     );
 
     expect(
-      screen.getByText("Todo lo que define quién atiende por ti — y cómo seguir lo que hace."),
+      screen.getByText("Todo lo que define quién atiende por ti, y cómo dar seguimiento a lo que hace."),
     ).toBeTruthy();
     expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent?.trim())).toEqual([
       "Configurar el agente",
       "Enseñar al agente",
-      "Acompañar al agente",
+      "Supervisar al agente",
     ]);
     expect(
       screen.getByRole("link", { name: /Credenciales.*La clave del proveedor de IA/ }),

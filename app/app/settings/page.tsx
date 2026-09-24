@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { NavHub } from "@/components/shell/NavHub";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { modulosLigados } from "@/lib/instalacao/modulos";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Configurações" };
@@ -34,6 +36,8 @@ export default async function SettingsHubPage() {
       isPlatformAdmin={user.is_platform_admin && !user.support}
       role={activeOrg?.role ?? null}
       interfaceSettings={activeOrg?.interface_settings}
+      // A porta do banco externo mora neste hub, e só existe com o módulo ligado.
+      modulosLigados={await modulosLigados(createAdminClient())}
       title={traduzir("Configurações", idioma)}
       subtitle={traduzir("Sua conta, os dados da empresa e quem tem acesso ao quê.", idioma)}
       locale={idioma}

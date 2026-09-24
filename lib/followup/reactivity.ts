@@ -53,6 +53,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { EventRow } from "@/lib/event-log/dispatcher";
+import { inboundEhDestaPergunta } from "@/lib/followup/aplicar-inbound";
 import type { EnrollmentPatch } from "./engine";
 import { triggerConfigSchema } from "./api-schemas";
 import type { EnrollmentOutcome, EnrollmentStatus } from "./node-handlers";
@@ -92,6 +93,9 @@ export interface LiveEnrollmentRef {
   handoff_policy: "pause" | "cancel" | "allow";
   /** jsonb bruto do pointer — parseado defensivamente aqui (safeParse, default false). */
   trigger_config: unknown;
+  /** Instante em que o nó estacionou. Sem isto o inbound de uma pergunta
+   *  anterior acorda a espera seguinte (ALWAYS → menu de novo). */
+  updated_at?: string;
 }
 
 /** Interface estreita de DB (mesma doutrina de `AdminClient`/`TurnBridgeAdminClient`
@@ -290,10 +294,17 @@ async function reactToInbound(
 
 async function acordarPorInbound(
   db: ReactivityAdminClient,
-  clock: () => Date,
+  _clock: () => Date,
   row: EventRow,
   e: LiveEnrollmentRef,
 ): Promise<boolean> {
+  // A mensagem que acabou de avançar o nó (e estacionou uma espera NOVA)
+  // não acorda essa espera. Sem `created_at`/`sent_at` falha aberto: o
+  // kick sintético ainda precisa acordar a espera que já existia.
+  const enviadaEm = strOrNull(row.payload.sent_at) ?? row.created_at ?? null;
+  if (enviadaEm && e.updated_at && !inboundEhDestaPergunta(enviadaEm, e.updated_at)) {
+    return false;
+  }
   const wakeKey = `${e.current_node_id}:${e.steps_taken}:wake`;
   const agora = await db.agoraNoBanco();
   return applyStep(
@@ -303,7 +314,10 @@ async function acordarPorInbound(
     wakeKey,
     "inbound_woke",
     {},
-    { next_eval_at: agora, updated_at: clock().toISOString() },
+    // Não toca `updated_at`: o piso do inbound da pergunta é o instante em que
+    // o nó estacionou. Regravar agora faria a mensagem que acordou a espera
+    // parecer anterior à pergunta (`enviadaEm >= updated_at` falha).
+    { next_eval_at: agora },
   );
 }
 
@@ -455,7 +469,7 @@ export function createSupabaseReactivityClient(admin: SupabaseClient): Reactivit
       const ids = await idsDoContatoEGemeos(admin, orgId, contactId);
       const { data: enrollments, error } = await admin
         .from("followup_enrollments")
-        .select("id, status, current_node_id, steps_taken, pointer_id")
+        .select("id, status, current_node_id, steps_taken, pointer_id, updated_at")
         .eq("organization_id", orgId)
         .in("contact_id", ids)
         .in("status", statuses);
@@ -481,6 +495,7 @@ export function createSupabaseReactivityClient(admin: SupabaseClient): Reactivit
           pointer_id: e.pointer_id,
           handoff_policy: (p?.handoff_policy as LiveEnrollmentRef["handoff_policy"]) ?? "pause",
           trigger_config: p?.trigger_config ?? null,
+          updated_at: typeof e.updated_at === "string" ? e.updated_at : undefined,
         };
       });
     },

@@ -39,15 +39,28 @@ import { precoParaCentavos } from "@/lib/schemas/produtos";
  * linha recusada com o motivo, nunca um chute.
  */
 
-/** Como cada coluna pode vir escrita. A primeira forma é a que a gente sugere. */
+/**
+ * Como cada coluna pode vir escrita. A primeira forma é a que a gente sugere.
+ * As de espanhol (`nombre`, `teléfono`, `correo`…) cumprem o que a tela promete
+ * a quem a usa nesse idioma; a comparação tira acento e caixa dos dois lados.
+ */
 const COLUNAS: Record<string, readonly string[]> = {
-  titulo: ["nome", "titulo", "título", "lead", "negocio", "negócio", "oportunidade", "empresa", "assunto"],
-  contato: ["nome do contato", "contato", "responsavel", "responsável", "pessoa"],
-  telefone: ["telefone", "celular", "whatsapp", "fone", "phone"],
-  email: ["email", "e-mail"],
-  descricao: ["descricao", "descrição", "observacao", "observação", "observacoes", "observações", "notas", "detalhes"],
-  valor: ["valor", "preco", "preço", "ticket", "value"],
-  origem: ["origem", "fonte", "canal", "source"],
+  titulo: [
+    "nome", "titulo", "título", "lead", "negocio", "negócio", "oportunidade", "empresa", "assunto",
+    "nombre", "oportunidad", "asunto",
+  ],
+  contato: [
+    "nome do contato", "contato", "responsavel", "responsável", "pessoa",
+    "nombre del contacto", "contacto", "responsable", "persona",
+  ],
+  telefone: ["telefone", "celular", "whatsapp", "fone", "phone", "telefono", "movil"],
+  email: ["email", "e-mail", "correo", "correo electronico"],
+  descricao: [
+    "descricao", "descrição", "observacao", "observação", "observacoes", "observações", "notas", "detalhes",
+    "descripcion", "observacion", "observaciones", "detalles",
+  ],
+  valor: ["valor", "preco", "preço", "ticket", "value", "precio", "importe", "monto"],
+  origem: ["origem", "fonte", "canal", "source", "origen", "fuente"],
   etiquetas: ["tags", "etiquetas", "marcadores"],
 };
 

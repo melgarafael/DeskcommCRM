@@ -242,7 +242,7 @@ test.describe("o agente marca consulta", () => {
     await page.goto(`${APP_URL}/login`);
     await page.getByLabel(/e-?mail/i).fill(usuario.email);
     await page.getByLabel(/senha/i).fill(creds.password);
-    await page.getByRole("button", { name: /entrar/i }).click();
+    await page.getByRole("button", { name: "Entrar", exact: true }).click();
     // Timeout explícito: o padrão do Playwright é curto para um login que sobe sessão.
     await page.waitForURL(/\/app(\/|$)/, { timeout: 20_000 });
 

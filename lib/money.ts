@@ -108,8 +108,9 @@ export function formatCentsUSD(cents: number): string {
  * `es-Latn-MX`, e o CLDR indexa o símbolo de moeda por `es-MX` — com o script
  * no meio, o MXN volta a sair como `"249,90 MXN"`. Medido nos dois sentidos.
  *
- * Moeda sem país (EUR→`en-EU`, XOF→`en-XO`) e código desconhecido caem em
- * `en-US`, que escreve o código ISO e não mente sobre a unidade.
+ * Código desconhecido cai em `en-US`, que escreve o código ISO e não mente
+ * sobre a unidade. Moeda SEM país é a exceção que a regra acima não alcança, e
+ * tem locale declarado em `LOCALE_DA_MOEDA_SEM_PAIS`.
  *
  * ─── `_cents` nem sempre é centésimo ───────────────────────────────────────
  *
@@ -153,17 +154,32 @@ export function formatCentsUSD(cents: number): string {
  */
 const formatadores = new Map<string, Intl.NumberFormat>();
 
+/**
+ * Moeda cujo código ISO não começa por um país. `EU` maximiza para `en-EU`, e
+ * `en-EU` escreve `€249.90` — ponto decimal e símbolo na frente, a convenção da
+ * Irlanda. Português, espanhol, francês, alemão e italiano escrevem `249,90 €`,
+ * e é o que `pt-PT` devolve (medido no ICU do Node 22, junto com `de-DE`,
+ * `fr-FR`, `es-ES` e `it-IT`).
+ *
+ * ponytail: um formato só para a zona euro. Holanda (`€ 249,90`) e Irlanda
+ * (`€249.90`) leem a convenção vizinha; quando `organizations.country` puder
+ * escolher o locale, é ele que decide, e esta tabela some.
+ */
+const LOCALE_DA_MOEDA_SEM_PAIS: Readonly<Record<string, string>> = { EUR: "pt-PT" };
+
 function formatadorDa(moeda: string): Intl.NumberFormat {
   const cacheado = formatadores.get(moeda);
   if (cacheado) return cacheado;
 
-  let locale = "en-US";
-  try {
-    const provavel = new Intl.Locale(`und-${moeda.slice(0, 2)}`).maximize();
-    const tag = `${provavel.language}-${provavel.region}`;
-    if (Intl.NumberFormat.supportedLocalesOf(tag).length > 0) locale = tag;
-  } catch {
-    // Região que o ICU não conhece: fica o padrão.
+  let locale = LOCALE_DA_MOEDA_SEM_PAIS[moeda] ?? "en-US";
+  if (!LOCALE_DA_MOEDA_SEM_PAIS[moeda]) {
+    try {
+      const provavel = new Intl.Locale(`und-${moeda.slice(0, 2)}`).maximize();
+      const tag = `${provavel.language}-${provavel.region}`;
+      if (Intl.NumberFormat.supportedLocalesOf(tag).length > 0) locale = tag;
+    } catch {
+      // Região que o ICU não conhece: fica o padrão.
+    }
   }
 
   const novo = new Intl.NumberFormat(locale, { style: "currency", currency: moeda });
@@ -215,7 +231,7 @@ export function formatCents(cents: number, moeda: string): string {
  * ABERTO que a doutrina de modelagem descreve. O conjunto vive só aqui, no
  * TypeScript.
  *
- * As quatro têm subunidade de 2 casas, então nenhuma esbarra na ressalva de
+ * As cinco têm subunidade de 2 casas, então nenhuma esbarra na ressalva de
  * unidades menores de `formatCents`. Acrescentar JPY ou CLP funciona — o
  * formatador já os cobre —, mas exige olhar `precoParaCentavos`, que ainda
  * multiplica por 100 na leitura do que a pessoa digita.
@@ -226,8 +242,13 @@ export function formatCents(cents: number, moeda: string): string {
  * `maximumFractionDigits` responde 2, então a régua de centavos vale. Entrar na
  * lista NÃO muda o padrão de ninguém — `MOEDA_PADRAO` continua `BRL`, e é isso
  * que o `default` da coluna grava em quem não escolheu.
+ *
+ * `EUR` entrou pelo mesmo motivo, para quem opera em Portugal e no resto da
+ * zona euro. É o caso que a maximização não resolve (ver
+ * `LOCALE_DA_MOEDA_SEM_PAIS`): sem a exceção, `formatCents(24990, "EUR")`
+ * sairia `€249.90`, e a varredura de degradação deixaria passar.
  */
-export const MOEDAS_SERVIDAS = ["AOA", "BRL", "MXN", "USD"] as const;
+export const MOEDAS_SERVIDAS = ["AOA", "BRL", "EUR", "MXN", "USD"] as const;
 export type MoedaServida = (typeof MOEDAS_SERVIDAS)[number];
 
 /** O que o `default` da coluna grava quando ninguém escolheu. */

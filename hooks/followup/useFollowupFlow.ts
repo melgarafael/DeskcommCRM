@@ -163,6 +163,24 @@ export function useUpdateTriggerConfig(id: string) {
   });
 }
 
+export function useRenameFollowupFlow() {
+  const t = useT();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      const res = await apiClient.patch<SingleResponse>(`/api/v1/ai/followup-flows/${id}`, { name });
+      return res.data;
+    },
+    onSuccess: (updated) => {
+      qc.setQueryData<FollowupFlowDetailRow>(followupFlowQueryKey(updated.id), (prev) =>
+        prev ? { ...prev, ...updated } : prev,
+      );
+      qc.invalidateQueries({ queryKey: ["followup", "flows", "list"] });
+      toast.success(t("Fluxo renomeado."));
+    },
+  });
+}
+
 export function useUpdateHandoffPolicy(id: string) {
   const t = useT();
   const qc = useQueryClient();

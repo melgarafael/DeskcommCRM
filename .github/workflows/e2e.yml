@@ -176,7 +176,7 @@ jobs:
     # deixa de ser apertado sem que ninguém precise ceder.
     timeout-minutes: 30
     concurrency:
-      group: ${{ github.workflow }}-e2e-parte${{ matrix.parte }}-${{ github.event.pull_request.number || github.ref }}
+      group: ${{ github.workflow }}-e2e-parte${{ matrix.parte }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     strategy:
       # Sem fail-fast: se a parte 1 quebrar, ainda quero saber se a 2 também.
@@ -719,6 +719,7 @@ jobs:
       # Se um dia uma spec de follow-up entrar na PARTE_1 com nome depois de
       # `relogio-`, é aqui que se olha: ou ela vai para a PARTE_2, ou esta vai.
       SPECS_PARTE_2: >-
+        protecao-de-envio-nao-congela-o-padrao.spec.ts
         agente-marca-consulta.spec.ts
         agenda-marcar-pela-tela.spec.ts
         agenda-remarcar-e-cancelar.spec.ts
@@ -1051,6 +1052,7 @@ jobs:
       SPECS_PARTE_5: >-
         inbox-busca-e-filtros-dizem-a-verdade.spec.ts
         extensoes-da-instalacao.spec.ts
+        admin-credencial-google.spec.ts
         agenda-primeira-pintura-no-fuso.spec.ts
         agenda-portao-de-hidratacao.spec.ts
         qa-l12-inbox.spec.ts
@@ -1158,6 +1160,53 @@ jobs:
           echo "parte ${{ matrix.parte }}: relógio do job iniciado em $(date -u +%H:%M:%S) UTC"
 
       - uses: actions/checkout@v7
+
+      # ─── As portas do Supabase saem da faixa efêmera do kernel ─────────────
+      #
+      # O `supabase start` publica portas FIXAS no host — as de
+      # `supabase/config.toml`, 54320 a 54329 — e todas caem dentro da faixa
+      # efêmera do Linux (`net.ipv4.ip_local_port_range`, 32768–60999 no
+      # runner). Qualquer conexão de SAÍDA deste job (o pull das imagens do
+      # próprio Supabase, o `pnpm install`) pode receber uma delas como porta de
+      # origem, e o bind do contêiner morre com
+      #
+      #   failed to bind host port for 0.0.0.0:54322:172.18.0.2:5432/tcp:
+      #   address already in use
+      #
+      # Medido de 15 a 22/09/2026: 6 partes vermelhas assim (54322 cinco vezes,
+      # 54324 uma), em 5 PRs e 1 push da `main` — runs 34997333501, 35013924504,
+      # 35331913043, 35343096791, 35423329919 e 35497099264 —, todas em
+      # `ubuntu-latest`, com a parte morta em ~2 min sem rodar teste. A triagem
+      # mandava rerodar (§3-quater do TRIAGEM.md). Reservar as portas tira-as do
+      # sorteio do kernel, e elas continuam livres para o bind explícito do
+      # Docker.
+      #
+      # Depois do checkout porque as portas são LIDAS do `config.toml` — mudou
+      # lá, a reserva acompanha sem ninguém lembrar deste passo. E antes de
+      # qualquer passo que abra conexão em massa.
+      #
+      # Só em máquina do GitHub: no executor próprio o runner é um contêiner, e
+      # quem publica a porta é o Docker do hospedeiro — a reserva feita aqui
+      # dentro não alcançaria o namespace de rede que importa.
+      - name: Tirar as portas do Supabase da faixa efêmera
+        if: runner.environment == 'github-hosted'
+        run: |
+          set -euo pipefail
+          portas=$(grep -oE '^[[:space:]]*(shadow_)?port[[:space:]]*=[[:space:]]*[0-9]+' supabase/config.toml \
+            | grep -oE '[0-9]+$' | sort -un | paste -sd, -)
+          if [ -z "$portas" ]; then
+            echo "::error::nenhuma porta lida de supabase/config.toml — a sonda perdeu o arquivo, e reservar nada é não reservar"
+            exit 1
+          fi
+          sudo sysctl -w net.ipv4.ip_local_reserved_ports="$portas"
+          echo "faixa efêmera: $(cat /proc/sys/net/ipv4/ip_local_port_range) | reservadas: $(cat /proc/sys/net/ipv4/ip_local_reserved_ports)"
+          # A reserva vale para conexões NOVAS. Uma já aberta numa destas portas
+          # continua lá até fechar — se houver, fica dito aqui, e não no bind.
+          abertas=$(ss -Htan | awk '{print $4}' | sed 's/.*://' | sort -u)
+          ocupadas=$(comm -12 <(printf '%s\n' "$abertas") <(tr , '\n' <<<"$portas" | sort -u))
+          if [ -n "$ocupadas" ]; then
+            echo "::warning::porta(s) do Supabase já em uso por conexão aberta antes da reserva: $(echo $ocupadas)"
+          fi
 
       # ─── Serviços da parte 4 — a spec de VPS fresca (issue #179) ──────────
       #

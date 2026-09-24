@@ -59,6 +59,31 @@ permissions:
 # O grupo é por PR (e não por branch) para reabrir um PR não colidir com o run
 # de outro que aponte para a mesma ref. Vigiado por
 # tests/unit/concorrencia-so-nos-jobs-pesados.test.ts.
+#
+# ── REENTRADA (aprovação, rerun) vai para o grupo DO SEU HEAD ────────────────
+#
+# O GitHub decide quem cancela quem pela ORDEM EM QUE O JOB ENTRA NA FILA, não
+# pela idade do commit. A primeira tentativa de um run nasce do push, na ordem
+# dos pushes, e aí "o último a entrar" é o head novo. A tentativa ≥ 2 não: ela
+# é um run VELHO voltando — aprovação de `action_required` (PR de fork de quem
+# contribui pela primeira vez; a aprovação vira a tentativa 2) ou rerun manual.
+# Com o grupo só por PR, esse run velho entrava por último e cancelava o head
+# ATUAL, que ficava só com `cancelled` e o agregador em `failure` — vermelho
+# para sempre, com o merge automático ligado, sem nenhum run novo para salvá-lo.
+#
+# Medido em 22/09/2026: #1446 (head 096b49930, run 35746675409) e #1431 (head
+# 1119e0ce8, run 35746393767). Os dois runs de cada PR estavam em
+# `action_required` e foram aprovados. O do head NOVO começou primeiro (#1446:
+# 15:21:04Z), o do head VELHO foi aprovado às 15:28:10Z, e o `verify-parte`
+# do head novo foi cancelado dois segundos depois ("Canceling since a higher
+# priority waiting request for ci-verify-parte1-1446 exists"). O run velho
+# terminou verde, medindo um commit que já não era o do PR.
+#
+# Por isso, em `pull_request`, a tentativa ≥ 2 ganha o sufixo
+# `-reentrada-<head>`: ela nunca cancela o head de outro commit, e reruns do
+# MESMO head continuam dividindo um grupo só. O custo é o run velho aprovado
+# rodar até o fim em paralelo, em vez de ser cancelado. A primeira tentativa
+# segue no grupo do PR, e o push novo continua cancelando o velho.
 
 jobs:
   # A suíte de unit em DUAS partes paralelas, e o check obrigatório `verify` é o
@@ -71,11 +96,22 @@ jobs:
   # e `import` 415 s (run do head d8af02fee). Custo por arquivo se divide por
   # arquivo: cada parte roda metade (`--shard`) e paga metade do jsdom.
   #
-  # Os passos de arquivo inteiro (cercas, typecheck, lint e as três auditorias)
-  # rodam só na parte 1; o kit bash, na parte 2 — é o que equilibra as duas.
-  # É o conserto estrutural da issue #1185, que o #1184 deixou anotado: com ele,
+  # Os passos de arquivo inteiro rodam cada um numa parte só: cercas, typecheck
+  # e as três auditorias na 1; lint e kit bash na 2 — é o que equilibra as duas.
+  # O `--shard` corta por CONTAGEM de arquivos (554/554), não por tempo; quem
+  # equilibra o relógio é onde moram estes passos. A divisão em partes é o
+  # conserto estrutural da issue #1185, que o #1184 deixou anotado: com ele,
   # o teto volta de 25 para 15 (guarda de travamento) e o orçamento desce de 16
   # para 12 — quem denuncia a suíte crescendo é o orçamento, por parte.
+  #
+  # O lint morava na parte 1 até 22/09/2026. Medido nos 24 pares verdes daquele
+  # dia: parte 1 mediana 10,0 min (máx 10,5), parte 2 8,1 (máx 8,7) — a 1
+  # carregava 167 s de passos inteiros contra 42 s da 2, e crescia ~0,4 min/dia
+  # (8,4 em 18/09). Mudar só o lint (63 s) dá 8,9 / 9,1 (máx 9,3 / 9,6); mudar
+  # lint E typecheck só trocaria qual parte pesa (7,8 / 10,1). Isto ADIA, não
+  # cura: a suíte soma ~46 s/dia às duas partes juntas. Quando uma parte chegar
+  # a 11 min (2 de folga até o vermelho do orçamento, aos 13), o conserto é a
+  # terceira parte (matrix + `--shard=N/3`) — reequilibrar de novo não sobra.
   verify-parte:
     # Guarda de travamento. O DETECTOR de crescimento é o passo `Orçamento de
     # tempo` no fim de cada parte; a medição que justifica o número está em
@@ -85,7 +121,7 @@ jobs:
     # porquê e a guarda contra fork: comentário do e2e-parte no e2e.yml.
     runs-on: ${{ vars.EXECUTOR_PROPRIO == 'ligado' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && 'deskcomm-proprio' || 'ubuntu-latest' }}
     concurrency:
-      group: ${{ github.workflow }}-verify-parte${{ matrix.parte }}-${{ github.event.pull_request.number || github.ref }}
+      group: ${{ github.workflow }}-verify-parte${{ matrix.parte }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     strategy:
       # Sem fail-fast: um vermelho numa parte não esconde o da outra.
@@ -181,8 +217,9 @@ jobs:
         if: matrix.parte == 1
         run: pnpm typecheck
 
+      # Na parte 2, não na 1: o porquê e a conta estão no cabeçalho do job.
       - name: Lint
-        if: matrix.parte == 1
+        if: matrix.parte == 2
         run: pnpm lint
 
       # Invariante 1 de docs/doctrine/restricao-de-canal.md: nenhuma feature
@@ -495,7 +532,7 @@ jobs:
     runs-on: ${{ vars.EXECUTOR_PROPRIO == 'ligado' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && 'deskcomm-proprio' || 'ubuntu-latest' }}
     needs: [invariants-alcance]
     concurrency:
-      group: ${{ github.workflow }}-invariants-majors-pg${{ matrix.pg }}-${{ github.event.pull_request.number || github.ref }}
+      group: ${{ github.workflow }}-invariants-majors-pg${{ matrix.pg }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     strategy:
       # `false` e não o padrão (`true`): com `fail-fast`, a primeira major que

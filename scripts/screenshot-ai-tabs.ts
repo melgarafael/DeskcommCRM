@@ -48,7 +48,7 @@ async function main() {
   await page.goto(`${baseURL}/login`);
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Senha").fill(password);
-  await page.getByRole("button", { name: "Entrar" }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/login\/mfa/, { timeout: 20_000 });
   console.log("etapa: /login/mfa alcançado");
   // Input OTP com auto-submit no onComplete — digitar via teclado, não fill().

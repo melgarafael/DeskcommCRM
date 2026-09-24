@@ -91,7 +91,7 @@ async function login(page: Page, email: string): Promise<void> {
   await page.goto("/login");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(base.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/app\//);
 }
 
@@ -100,7 +100,7 @@ async function loginAdminTotp(page: Page): Promise<void> {
   await page.goto("/login");
   await page.locator("#email").fill(base.users.admin!.email);
   await page.locator("#password").fill(base.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/login\/mfa/);
   for (let attempt = 0; attempt < 3; attempt++) {
     // não digitar em cima da virada da janela TOTP (o código expiraria no envio)
@@ -150,7 +150,7 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     await page.goto("/login");
     await page.locator("#email").fill(base.users.agent!.email);
     await page.locator("#password").fill(base.password);
-    await page.getByRole("button", { name: /entrar/i }).click();
+    await page.getByRole("button", { name: "Entrar", exact: true }).click();
     await page.waitForURL(/\/app\//, { timeout: 150_000 }).catch(() => {});
     for (const r of ["/app/inbox", "/app/kanban", "/app/contacts", "/app/settings/billing", "/app/settings/api-tokens"]) {
       await page.goto(r).catch(() => {});
@@ -169,7 +169,7 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     await mp.goto("/login");
     await mp.locator("#email").fill(base.users.admin!.email);
     await mp.locator("#password").fill(base.password);
-    await mp.getByRole("button", { name: /entrar/i }).click();
+    await mp.getByRole("button", { name: "Entrar", exact: true }).click();
     await mp.waitForURL(/\/login\/mfa/, { timeout: 150_000 }).catch(() => {});
     await mctx.close();
   });
@@ -193,7 +193,7 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     await page.goto("/login");
     await page.locator("#email").fill(inv.invitee_email);
     await page.locator("#password").fill(base.password);
-    await page.getByRole("button", { name: /entrar/i }).click();
+    await page.getByRole("button", { name: "Entrar", exact: true }).click();
     // Sem membership ainda: o login não cai em /app. Esperamos a SESSÃO (cookie)
     // se firmar antes de ir ao accept_url — senão a página cai no estado não-logado.
     await expect
@@ -496,7 +496,7 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     await ip.goto("/login");
     await ip.locator("#email").fill(FRESH_EMAIL);
     await ip.locator("#password").fill(base.password);
-    await ip.getByRole("button", { name: /entrar/i }).click();
+    await ip.getByRole("button", { name: "Entrar", exact: true }).click();
     await expect
       .poll(
         async () =>

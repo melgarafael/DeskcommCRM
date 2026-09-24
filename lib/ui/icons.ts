@@ -78,6 +78,7 @@ export {
   // lgpd
   Scales as ScalesSimple,
   Eye,
+  EyeSlash,
   ChartBar,
   ClockCountdown,
   // painéis de evolução / aprendizado

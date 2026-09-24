@@ -41,7 +41,7 @@ async function login(page: Page): Promise<void> {
   await page.goto(`${BASE}/login`);
   await page.locator("#email").fill(CREDS.users.manager!.email);
   await page.locator("#password").fill(CREDS.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/app(\/|$)/);
 }
 
@@ -228,7 +228,7 @@ async function main(): Promise<void> {
   await admin.goto(`${BASE}/login`);
   await admin.locator("#email").fill(CREDS.users.admin!.email);
   await admin.locator("#password").fill(CREDS.password);
-  await admin.getByRole("button", { name: /entrar/i }).click();
+  await admin.getByRole("button", { name: "Entrar", exact: true }).click();
   await admin.waitForURL(/\/login\/mfa/);
   for (let tentativa = 0; tentativa < 2; tentativa++) {
     if (msUntilNextTotpWindow() < 3_000) await admin.waitForTimeout(msUntilNextTotpWindow() + 200);

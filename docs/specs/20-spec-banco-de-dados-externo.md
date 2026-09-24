@@ -1,8 +1,8 @@
 # Spec 20 — Banco de dados externo
 
-Autoria: **@vgamkt**, escrita para o PR #1130. Chegou à `main` por recorte, e o
-recorte é menor que a spec: o núcleo, a API e a tela entraram; as **tools do
-agente NÃO** (ver a seção própria abaixo). Mapa vivo:
+Autoria: **@vgamkt**, escrita para o PR #1130. Chegou à `main` em dois recortes:
+o núcleo, a API e a tela primeiro (#1372); as **tools do agente** depois (ver a
+seção própria abaixo). Mapa vivo:
 `docs/architecture/banco-de-dados-externo.architecture.json`.
 
 Numerada `18` na origem; `18` e `19` já eram de outras specs na `main`.
@@ -73,27 +73,42 @@ Lista (todos) + cadastro/edição (admin) + explorador (árvore por schema e gra
 paginada). A senha nunca é exibida após salva. Entrada de navegação em
 Organização › Dados e acesso.
 
-### Tools do agente — **NÃO entraram neste recorte**
+### Tools do agente
 
-Esta seção descreve o que existe no PR #1130 e **ainda não está na `main`**:
+O segundo recorte do #1130. O agente que atende no WhatsApp lê o banco externo
+por duas tools MCP (`lib/mcp/tools/dados-externos.ts`):
 
-- `crm_describe_external_data` (`read`) — catálogo para o modelo escolher a tabela.
-- `crm_query_external_data` (`read`) — leitura com filtros, ordem e limite.
-- `McpToolDefinition.redigirParaAuditoria`, que tira os valores de filtro do
-  `api_audit_log` nos dois ingressos, mais o aviso anti prompt-injection e o teto
-  de bytes na resposta devolvida ao modelo.
+- `crm_describe_external_data` (`read`) — catálogo ao vivo para o modelo
+  escolher a tabela e os campos.
+- `crm_query_external_data` (`read`) — leitura com filtros, ordem e limite,
+  presa aos tetos DA CONEXÃO (`max_rows`, `max_filters`, `max_response_bytes`,
+  migration 0373), nunca ao que o modelo pede.
 
-Por que ficaram de fora: são **consumidoras** deste núcleo e se apoiam em
-`lib/ai/runtime/tools.ts`, `lib/mcp/server.ts`, `lib/mcp/types.ts` e
-`lib/atendimento/fronteira-server.ts` — quatro arquivos que se moveram na `main`
-depois que o PR foi escrito. A fatia desta spec que entrou se sustenta sozinha
-(cadastro → API → tela), então a camada do agente pode entrar como um segundo
-recorte sem retrabalho neste. Até lá, **D1 e D3 da tabela acima descrevem o
-destino, não o estado**: quem consulta o banco externo hoje é a tela, não a IA.
+Sem `connection_id`, as duas usam a única conexão ativa; com várias, pedem para o
+modelo escolher em vez de adivinhar. Toda resposta leva um aviso fixo dizendo
+que o conteúdo é dado de outro sistema, nunca instrução.
 
-Consequência prática para quem lê o código: `max_filters` e `max_response_bytes`
-(migration 0373) existem, são configuráveis e **ainda não têm consumidor** — eles
-governam as tools. `max_rows` tem: é o teto da grade.
+**Desligadas por padrão.** As duas entram no pacote "Organizar a operação", mas
+um agente só as usa se o dono ligá-las na tela do agente — a lista de
+capacidades é gravada por agente, e nenhum agente existente ganha as duas sozinho.
+Sem conexão cadastrada, respondem `sem_conexao` sem abrir rede.
+
+**PII fora do audit.** `McpToolDefinition.redigirParaAuditoria` tira os VALORES
+de filtro dos args antes de `api_audit_log`, nos dois ingressos (turno do agente
+em `lib/ai/runtime/tools.ts` e `/api/mcp` em `lib/mcp/server.ts`). Prova:
+`tests/unit/valor-de-filtro-nao-vai-ao-audit.test.ts`, que roda a tool real pelos
+dois caminhos.
+
+**Erro não é sucesso (#484).** A tool devolve o erro como texto para o modelo;
+`motivoDoVazio` faz o audit gravar `success: false` com o código (`acesso_negado`,
+`tabela_nao_encontrada`, `nenhuma_linha`…), para o painel de capacidades não
+dizer "nenhuma falha" com o host bloqueado.
+
+**Filtro sem resultado devolve vazio.** A versão do PR reexecutava a consulta sem
+o filtro e entregava até 100 linhas para o modelo oferecer "as mais próximas"
+(pensado num catálogo de produtos). Numa tabela de clientes, o CPF que não casa
+entregaria os registros de outras pessoas. No recorte, o vazio fica vazio e a
+resposta ensina o modelo a repetir com um trecho menor do termo.
 
 ## Segurança
 

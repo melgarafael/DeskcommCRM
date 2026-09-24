@@ -48,23 +48,9 @@ function textosDoMenu(): TextoDoMenu[] {
  * vermelho pedindo a remoção daqui. Entrada nova precisa do argumento escrito, e
  * ele nunca é "não deu tempo".
  *
- * Todas vieram de telas novas de v1.38–v1.41 que entraram sem linha no dicionário.
+ * Zerada em 20/09/2026: as cinco descrições e a seção que faltavam ganharam espanhol.
  */
-const DIVIDA_CONGELADA: { onde: string; campo: string; motivo: string }[] = [
-  { onde: "/app/prospecting", campo: "description", motivo: "descrição sem linha no dicionário" },
-  { onde: "/app/faturamento", campo: "section", motivo: "seção “Dinheiro” sem linha no dicionário" },
-  { onde: "/app/settings/tags", campo: "description", motivo: "descrição sem linha no dicionário" },
-  {
-    onde: "/app/settings/voip-trunk",
-    campo: "description",
-    motivo: "descrição sem linha no dicionário",
-  },
-  {
-    onde: "/app/integracao-dados",
-    campo: "description",
-    motivo: "descrição sem linha no dicionário",
-  },
-];
+const DIVIDA_CONGELADA: { onde: string; campo: string; motivo: string }[] = [];
 
 const ehDividaCongelada = (t: TextoDoMenu): boolean =>
   DIVIDA_CONGELADA.some((d) => d.onde === t.onde && d.campo === t.campo);

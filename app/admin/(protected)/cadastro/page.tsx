@@ -2,9 +2,11 @@ import { notFound } from "next/navigation";
 
 import { loadAuthUser } from "@/lib/auth/server";
 import { modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
+import { listPendingRegistrationRequests } from "@/lib/auth/registration-requests";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 import { FormularioDeCadastro } from "./_form";
+import { PedidosPendentes } from "./_pedidos";
 
 export const metadata = { title: "Cadastro na instalação" };
 export const dynamic = "force-dynamic";
@@ -38,6 +40,10 @@ export default async function Page() {
   const usuario = await loadAuthUser();
   if (!usuario?.is_platform_admin) notFound();
 
+  // A fila só é lida com a chave ligada: desligada, esta tela é a de antes.
+  const modo = await modoDeCadastro();
+  const pedidos = modo === "com_aprovacao" ? await listPendingRegistrationRequests() : null;
+
   return (
     <div className="space-y-6">
       <div className="space-y-1">
@@ -48,7 +54,8 @@ export default async function Page() {
           {traduzir("Quem pode criar uma conta nesta instalação.", usuario.idioma)}
         </p>
       </div>
-      <FormularioDeCadastro modoInicial={await modoDeCadastro()} />
+      <FormularioDeCadastro modoInicial={modo} />
+      {pedidos && <PedidosPendentes pedidos={pedidos} />}
     </div>
   );
 }

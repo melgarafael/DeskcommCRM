@@ -37,6 +37,19 @@ done
 # em 401. Ver `recusar_projeto_de_outra_arvore` em _common.sh.
 recusar_projeto_de_outra_arvore || die "Atualização interrompida para não quebrar a instalação que está no ar."
 
+# Single-server: o Supabase desta VPS também tem dono. E o e-mail de acesso
+# (GoTrue) acompanha o SMTP do CRM AQUI, antes da decisão de versão: é este
+# comando que o instalador ensina a rodar depois de configurar /admin/email, e
+# "já está na versão mais recente" sairia sem entregar a troca.
+if [ "${SINGLE_SERVER:-0}" = "1" ]; then
+  recusar_supabase_de_outra_arvore || die "Atualização interrompida para não mexer no Supabase de outra instalação."
+  if sincronizar_smtp_do_gotrue; then
+    dc_supabase up -d --no-deps auth >/dev/null 2>&1 || c_ylw "⚠ Não consegui reiniciar o auth do Supabase com o SMTP do CRM."
+  else
+    c_ylw "⚠ Sem SMTP no CRM: 'esqueci a senha' e a confirmação de cadastro não enviam e-mail. Configure em /admin/email e rode o update.sh de novo."
+  fi
+fi
+
 # ── 0. Liga o agente da tela ANTES de qualquer decisão de versão ─────────────
 # Instalar o cron aqui, e não no fim, é o que faz o bootstrap ter fim: os
 # caminhos "já está na versão mais recente" e "essa versão é anterior à sua"
@@ -171,6 +184,12 @@ source "$KIT_DIR/_common.sh"
 # releitura existe para fechar.
 source "$KIT_DIR/manutencao.sh"
 
+# Single-server: o Supabase vai para a versão pinada no código novo ANTES do
+# banco (o passo 4 pausa peças dele, e um `up` depois as religaria).
+if [ "${SINGLE_SERVER:-0}" = "1" ]; then
+  atualizar_supabase_single_server || die "O Supabase desta VPS não subiu (erro acima). NÃO mexi no banco do CRM."
+fi
+
 [ -n "${DESKCOMM_AGENT_REPORT:-}" ] && eval "${DESKCOMM_AGENT_REPORT_CMD}" codigo
 
 # ── 4. Banco: schema + correções de dados (schema ANTES do app) ──────────────
@@ -242,7 +261,7 @@ if [ -f supabase/baseline.sql ]; then
   manutencao_sobe
   pausar_o_que_fala_com_o_banco
   # Extensões que o schema exige (idempotente; iguais ao install.sh).
-  docker run --rm postgres:17-alpine psql "$(url_do_schema)" -c \
+  pg_container postgres:17-alpine psql "$(url_do_schema)" -c \
     "create extension if not exists vector with schema public; create extension if not exists citext with schema public; create extension if not exists pg_trgm with schema public;" \
     >/dev/null 2>&1 || true
 
@@ -316,7 +335,7 @@ if [ -f supabase/baseline.sql ]; then
     END { for (k in estado) if (estado[k] == "create") print k }
   ' supabase/baseline.sql | sort -u)"
 
-  existentes="$(docker run --rm -i postgres:17-alpine psql "$(url_do_schema)" -t -A -F'|' -c \
+  existentes="$(pg_container -i postgres:17-alpine psql "$(url_do_schema)" -t -A -F'|' -c \
     "select p.polname, c.relname from pg_policy p join pg_class c on c.oid=p.polrelid
        join pg_namespace n on n.oid=c.relnamespace where n.nspname='public';" 2>/dev/null | sort -u)"
 
@@ -367,12 +386,12 @@ if [ -f supabase/baseline.sql ]; then
     ' "$faltam_arq" supabase/baseline.sql)"
 
     if [ -n "$recria" ]; then
-      printf '%s\n' "$recria" | docker run --rm -i postgres:17-alpine \
+      printf '%s\n' "$recria" | pg_container -i postgres:17-alpine \
         psql "$(url_do_schema)" >> "$PROJECT_DIR/.deskcomm-banco.log" 2>&1 || true
     fi
     rm -f "$faltam_arq"
 
-    existentes="$(docker run --rm -i postgres:17-alpine psql "$(url_do_schema)" -t -A -F'|' -c \
+    existentes="$(pg_container -i postgres:17-alpine psql "$(url_do_schema)" -t -A -F'|' -c \
       "select p.polname, c.relname from pg_policy p join pg_class c on c.oid=p.polrelid
          join pg_namespace n on n.oid=c.relnamespace where n.nspname='public';" 2>/dev/null | sort -u)"
     faltando="$(comm -23 <(printf '%s\n' "$esperadas") <(printf '%s\n' "$existentes") || true)"

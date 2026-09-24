@@ -24,7 +24,7 @@ import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
-import { lerPlanilha, type ErroDaLinha } from "@/lib/catalogo/planilha";
+import { chaveDoCodigo, lerPlanilha, type ErroDaLinha } from "@/lib/catalogo/planilha";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { CSV_MAX_BYTES, CSV_MAX_DATA_ROWS, decodificarCsv } from "@/lib/contacts/csv";
 import { COLUNAS_DO_PRODUTO } from "@/lib/schemas/produtos";
@@ -34,6 +34,9 @@ export const dynamic = "force-dynamic";
 
 /** Lote grande o bastante para uma planilha de loja caber em 3 idas ao banco. */
 const LOTE = 200;
+
+/** O teto de linhas por resposta do PostgREST (`max_rows` em `supabase/config.toml`). */
+const PAGINA = 1000;
 
 /**
  * A linha da planilha acompanha o produto até o insert — é o que permite dizer
@@ -130,20 +133,62 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const supabase = await createClient();
 
-  // Quem já existia, para o resumo dizer "3 novos, 12 atualizados" em vez de um
-  // número só. É a diferença entre a pessoa confiar no que aconteceu e ter de
-  // conferir o catálogo linha a linha depois.
-  const { data: jaExistiam } = await supabase
-    .from("catalog_products")
-    .select("codigo")
-    .eq("organization_id", orgId)
-    .in(
-      "codigo",
-      lido.produtos.map((p) => p.codigo),
-    );
-  const antigos = new Set((jaExistiam ?? []).map((r) => (r as { codigo: string }).codigo));
+  // Os códigos já cadastrados na organização servem a duas coisas. Quem já
+  // existia com o código IGUAL é atualizado, para o resumo dizer "3 novos, 12
+  // atualizados" em vez de um número só. Quem existe com o código escrito em
+  // OUTRA caixa ("IP15" no catálogo, "ip15" na planilha) é recusado: o índice
+  // do banco criaria um segundo produto, e o agente veria os dois como um só,
+  // com dois preços (`chaveDoCodigo`, #482). O índice compara o texto exato,
+  // então a comparação sem caixa é feita aqui, em memória.
+  // O teto conhecido: lê todos os códigos da organização (varredura do índice
+  // `(organization_id, codigo)` só dela, nunca da tabela inteira). Serve a
+  // catálogo de loja; com centenas de milhares de produtos, vira uma função no
+  // banco com `lower(codigo)` e índice de expressão.
+  const cadastrados: string[] = [];
+  // Avança pelo que VEIO, não pelo que pediu, e para na página vazia: uma
+  // instalação com `max_rows` menor que a página não fica com o catálogo cortado.
+  for (;;) {
+    const { data, error } = await supabase
+      .from("catalog_products")
+      .select("codigo")
+      .eq("organization_id", orgId)
+      .order("codigo")
+      .range(cadastrados.length, cadastrados.length + PAGINA - 1);
+    // Sem o catálogo atual não há como saber quem é repetido: seguir gravaria
+    // exatamente a duplicata que esta conferência existe para impedir.
+    if (error) {
+      return fail(
+        "internal_error",
+        t("Não consegui conferir o que já está gravado, então nada foi alterado. Tente de novo em instantes."),
+        500,
+        { requestId },
+      );
+    }
+    if (!data || data.length === 0) break;
+    cadastrados.push(...data.map((r) => (r as { codigo: string }).codigo));
+  }
+  const antigos = new Set(cadastrados);
+  const porChave = new Map<string, string[]>();
+  for (const codigo of cadastrados) {
+    const chave = chaveDoCodigo(codigo);
+    porChave.set(chave, [...(porChave.get(chave) ?? []), codigo]);
+  }
 
   const erros: ErroDaLinha[] = [...lido.erros];
+  const aceitos = lido.produtos.filter((p) => {
+    if (antigos.has(p.codigo)) return true;
+    const outraCaixa = porChave.get(chaveDoCodigo(p.codigo));
+    if (!outraCaixa) return true;
+    erros.push({
+      linha: p.linha,
+      motivo:
+        `"${p.codigo}"` +
+        t(": este código já está no catálogo escrito ") +
+        outraCaixa.map((c) => `"${c}"`).join(", ") +
+        t(". Maiúsculas e minúsculas não mudam o código — escreva igual ao do catálogo para atualizar o produto."),
+    });
+    return false;
+  });
   let gravados = 0;
 
   // A moeda vem da organização, igual ao cadastro manual — mas só entra na
@@ -172,7 +217,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     origem: "planilha",
   });
 
-  const paraGravar = lido.produtos.map((p) =>
+  const paraGravar = aceitos.map((p) =>
     antigos.has(p.codigo) ? base(p) : { ...base(p), moeda },
   );
 

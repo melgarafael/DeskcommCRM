@@ -24,7 +24,7 @@ jobs:
     runs-on: ${{ vars.EXECUTOR_PROPRIO == 'ligado' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && 'deskcomm-proprio' || 'ubuntu-latest' }}
     timeout-minutes: 15
     concurrency:
-      group: ${{ github.workflow }}-build-and-size-${{ github.event.pull_request.number || github.ref }}
+      group: ${{ github.workflow }}-build-and-size-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@v7

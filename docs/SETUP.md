@@ -8,6 +8,66 @@
 
 ---
 
+## Instalação local em Ubuntu/VM (PostgreSQL + serviços em Docker)
+
+Em uma VM Ubuntu nova, execute o instalador uma única vez na raiz do clone:
+
+```bash
+chmod +x ubuntu-local-installer.sh
+./ubuntu-local-installer.sh
+```
+
+O instalador sobe o Supabase local em Docker (PostgreSQL com `pgvector`, Auth,
+PostgREST, Storage e Realtime), aplica `supabase/baseline.sql`, e inicia o app,
+worker, scheduler, WAHA e Redis/SRH pelo `docker-compose.local.yml`. As chaves
+ficam somente em `.env.local`, que não é versionado. O primeiro build pode levar
+alguns minutos e precisa de espaço para as imagens do Supabase e do WAHA.
+
+O instalador também cria o usuário inicial e escolhe uma porta livre para o app.
+Não é necessário executá-lo novamente a cada reinício.
+
+### Uso diário
+
+Depois da instalação inicial, use:
+
+```bash
+pnpm local:up
+pnpm local:status
+pnpm local:logs          # ou: bash scripts/local-stack.sh logs worker
+pnpm local:down
+```
+
+`pnpm local:up` verifica se o Supabase local está ativo e confere o `.env.local`.
+Se o arquivo estiver ausente ou incompleto, ele gera automaticamente as URLs e
+chaves locais do PostgreSQL/Supabase, WAHA, Redis/SRH e da aplicação. Se já
+existir um `.env.local` de outro ambiente, ele é preservado como
+`.env.local.cloud-backup` antes da geração local.
+
+Para atualizar o código e aplicar a versão nova:
+
+```bash
+git pull --ff-only
+pnpm local:up
+```
+
+Para aplicar uma alteração manual no `.env.local`, use também `pnpm local:up`,
+pois a aplicação precisa ser recriada e recompilada para carregar as novas
+variáveis. `docker compose restart` sozinho não atualiza o ambiente do
+container.
+
+O endereço e a porta são mostrados ao final do instalador. Se a porta 3000 já
+estiver ocupada, ele escolhe a próxima porta livre. O painel local do Supabase
+fica em `http://127.0.0.1:54323` e o WAHA em `http://127.0.0.1:3030`.
+
+> A senha do dono e a chave da API do WAHA nascem **aleatórias** a cada
+> instalação e são impressas no fim. Elas não estão neste repositório, e o
+> painel do WAHA só atende em `127.0.0.1` — de outra máquina da rede, só o app
+> responde. Quem quiser escolher a senha exporta `OWNER_PASSWORD` antes.
+
+> A cadeia histórica de migrations contém dependências antigas e não é usada
+> para uma instalação fresca. O helper inicia a infraestrutura sem aplicá-la e
+> carrega o baseline versionado, que é o artefato de instalação do self-host.
+
 ## Índice
 
 1. [Antes de começar](#antes-de-começar)

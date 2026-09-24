@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "diagram_type": "fluxo",
+  "meta": {
+    "titulo": "Duplicar e renomear um fluxo de follow-up",
+    "pergunta": "Como a pessoa copia um fluxo que já funciona, ou só troca o nome, sem mandar mensagem a ninguém?",
+    "resumo": "Duplicar clona rascunho (ou a versão no ar, se o rascunho estiver vazio), gatilho e handoff num ponteiro novo sempre draft. Renomear é o PATCH de nome que já existia, agora com superfície na lista e no construtor. Inscrições, versões publicadas e o vínculo com o agente ficam no original."
+  },
+  "lanes": [
+    { "id": "humano", "label": "O que o humano vê" },
+    { "id": "borda", "label": "Borda HTTP" },
+    { "id": "regra", "label": "Regras puras" },
+    { "id": "dados", "label": "Banco" }
+  ],
+  "mainPath": ["lista", "duplicar", "nome", "pointers"],
+  "nodes": [
+    {
+      "id": "lista",
+      "lane": "humano",
+      "col": 1,
+      "type": "frontend",
+      "label": "FlowsList",
+      "sublabel": "Renomear · Duplicar · Excluir em cada cartão"
+    },
+    {
+      "id": "construtor",
+      "lane": "humano",
+      "col": 2,
+      "type": "frontend",
+      "label": "PublishBar",
+      "sublabel": "lápis ao lado do nome — o mesmo diálogo da lista"
+    },
+    {
+      "id": "duplicar",
+      "lane": "borda",
+      "col": 3,
+      "type": "api",
+      "label": "POST /ai/followup-flows/[id]/duplicate",
+      "sublabel": "manager+ · sem body · 201 draft"
+    },
+    {
+      "id": "patch",
+      "lane": "borda",
+      "col": 3,
+      "type": "api",
+      "label": "PATCH /ai/followup-flows/[id]",
+      "sublabel": "name 1–80 · 409 se o nome já existe na org"
+    },
+    {
+      "id": "nome",
+      "lane": "regra",
+      "col": 2,
+      "type": "regra",
+      "label": "nomeDaCopia()",
+      "sublabel": "(cópia) / (cópia N) · teto 80"
+    },
+    {
+      "id": "rascunho",
+      "lane": "regra",
+      "col": 2,
+      "type": "regra",
+      "label": "rascunhoDoFluxo()",
+      "sublabel": "rascunho vazio + versão no ar = copia o que está publicado"
+    },
+    {
+      "id": "pointers",
+      "lane": "dados",
+      "col": 4,
+      "type": "tabela",
+      "label": "followup_flow_pointers",
+      "sublabel": "unique (organization_id, name) · cópia status=draft"
+    },
+    {
+      "id": "audit",
+      "lane": "dados",
+      "col": 4,
+      "type": "tabela",
+      "label": "api_audit_log",
+      "sublabel": "followup_flow.duplicated com source_pointer_id · updated no rename"
+    }
+  ],
+  "edges": [
+    {
+      "id": "d1",
+      "from": "lista",
+      "to": "duplicar",
+      "label": "um clique — não pede confirmação (a cópia não publica)"
+    },
+    {
+      "id": "d2",
+      "from": "lista",
+      "to": "patch",
+      "label": "diálogo Renomear"
+    },
+    {
+      "id": "d3",
+      "from": "construtor",
+      "to": "patch",
+      "label": "o mesmo diálogo, a partir do lápis do título"
+    },
+    {
+      "id": "d4",
+      "from": "duplicar",
+      "to": "nome",
+      "label": "lê os nomes da org e escolhe o primeiro livre"
+    },
+    {
+      "id": "d5",
+      "from": "duplicar",
+      "to": "rascunho",
+      "label": "o grafo copiado é o que a tela desenharia"
+    },
+    {
+      "id": "d6",
+      "from": "rascunho",
+      "to": "pointers",
+      "label": "INSERT draft_graph + trigger + handoff · active_version_id nulo"
+    },
+    {
+      "id": "d7",
+      "from": "duplicar",
+      "to": "pointers",
+      "label": "organization_id da sessão, nunca do body"
+    },
+    {
+      "id": "d8",
+      "from": "duplicar",
+      "to": "audit",
+      "label": "followup_flow.duplicated — de qual ponteiro veio"
+    },
+    {
+      "id": "d9",
+      "from": "patch",
+      "to": "pointers",
+      "label": "UPDATE name · 23505 → 409"
+    },
+    {
+      "id": "d10",
+      "from": "patch",
+      "to": "audit",
+      "label": "followup_flow.updated com fields_changed"
+    },
+    {
+      "id": "d11",
+      "from": "pointers",
+      "to": "lista",
+      "label": "a cópia aparece como rascunho; publicar continua sendo ato de gente"
+    },
+    {
+      "id": "d12",
+      "from": "nome",
+      "to": "pointers",
+      "label": "o primeiro nome livre cabe no unique (organization_id, name)"
+    },
+    {
+      "id": "d13",
+      "from": "lista",
+      "to": "construtor",
+      "label": "abre o fluxo — o lápis do título é o mesmo diálogo"
+    }
+  ],
+  "cards": [
+    {
+      "titulo": "Por que a cópia nasce rascunho",
+      "texto": "O original pode estar active e mandando mensagem agora. Herdar o status publicaria um segundo fluxo com o mesmo gatilho no mesmo clique — duas escadas disputando o mesmo paciente. Duplicar é copiar o desenho; publicar continua no construtor."
+    },
+    {
+      "titulo": "Por que não arma o agente",
+      "texto": "Mesma omissão deliberada da instalação de modelo: o vínculo vive na versão publicada do agente (`followup.flow_pointer_ids`). Ligar sozinho mudaria um agente que já atende, sem ninguém pedir."
+    },
+    {
+      "titulo": "O laço de retorno (invariante 7)",
+      "texto": "Cópia errada se apaga (o original não se mexe). Nome colidido é 409 dentro do diálogo, não toast que some. Se o rascunho original estava vazio, a cópia abre o grafo que está no ar — senão a pessoa duplicaria um fluxo vivo e receberia tela em branco."
+    }
+  ]
+}

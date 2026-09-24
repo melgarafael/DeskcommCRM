@@ -1,4 +1,5 @@
 import { followupGatilhoPresencaHandler } from "@/lib/followup/gatilho-presenca.handler";
+import { followupGatilhoRetornoHandler } from "@/lib/followup/gatilho-retorno.handler";
 /**
  * Centralised handler registration for the event_log dispatcher.
  *
@@ -14,6 +15,7 @@ import { lgpdExportHandler } from "@/workers/lgpd-export-worker.handler";
 import { lgpdRedactHandler } from "@/workers/lgpd-redact-worker.handler";
 import { automationRulesHandler } from "@/lib/automation/engine.handler";
 import { followupReactivityHandler } from "@/lib/followup/reactivity.handler";
+import { campanhaRespostaHandler } from "@/lib/campanhas/resposta.handler";
 import { followupGatilhoEtapaHandler } from "@/lib/followup/gatilho-etapa.handler";
 import { followupGatilhoCasoHandler } from "@/lib/followup/gatilho-caso.handler";
 import { mediaPersistHandler } from "@/workers/media-persist-worker.handler";
@@ -30,6 +32,13 @@ export function ensureHandlersRegistered(): void {
   // Follow-up de inbound ANTES do LLM: no Hobby o drain da mensagem
   // estourava no worker de IA e o match_reply nunca lia a resposta.
   registerHandler(followupReactivityHandler);
+  // Atribuição de resposta da campanha: logo depois da reatividade e ANTES do
+  // LLM, pelo mesmo motivo dela — é escrita curta no banco, sem rede de
+  // terceiro, e não pode ficar atrás de um consumidor que pode estourar.
+  registerHandler(campanhaRespostaHandler);
+  // Mesmo critério: o gatilho do cliente que volta é escrita curta no banco e
+  // precisa rodar antes do LLM.
+  registerHandler(followupGatilhoRetornoHandler);
   registerHandler(aiResponseHandler);
   registerHandler(aiSentimentHandler);
   registerHandler(aiHandoffFromSentimentHandler);

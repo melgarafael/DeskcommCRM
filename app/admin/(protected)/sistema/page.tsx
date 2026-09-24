@@ -2,9 +2,11 @@ import { notFound } from "next/navigation";
 
 import { loadAuthUser } from "@/lib/auth/server";
 import { carregarComportamentoDaInstalacao } from "@/lib/instalacao/comportamento-servidor";
+import { modulosLigados } from "@/lib/instalacao/modulos";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 
-import { FormularioDeComportamento } from "./_form";
+import { FormularioDeComportamento, FormularioDeModulos } from "./_form";
 
 export const metadata = { title: "Comportamento da instalação" };
 export const dynamic = "force-dynamic";
@@ -41,7 +43,10 @@ export default async function Page() {
 
   // O valor EFETIVO (linha acima, `.env` como piso): a tela mostra o que está
   // valendo de verdade, e não o que a linha diria se ela existisse.
-  const comportamento = await carregarComportamentoDaInstalacao();
+  const [comportamento, ligados] = await Promise.all([
+    carregarComportamentoDaInstalacao(),
+    modulosLigados(createAdminClient()),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -57,6 +62,7 @@ export default async function Page() {
         </p>
       </div>
       <FormularioDeComportamento inicial={comportamento} />
+      <FormularioDeModulos ligados={ligados} />
     </div>
   );
 }

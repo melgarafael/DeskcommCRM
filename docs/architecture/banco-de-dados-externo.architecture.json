@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "titulo": "Banco de dados externo",
-  "descricao": "A organização cadastra um PostgreSQL de OUTRO sistema (segundo CRM, ERP) e o consulta de dentro do CRM. O cadastro é de admin; a leitura é de qualquer autenticado. Schema lido ao vivo, nada hard-coded. Recorte do PR #1130, de @vgamkt.",
+  "descricao": "A organização cadastra um PostgreSQL de OUTRO sistema (segundo CRM, ERP) e o consulta de dentro do CRM — pela tela e pela IA que atende. O cadastro é de admin; a leitura é de qualquer autenticado. Schema lido ao vivo, nada hard-coded. Recortes do PR #1130, de @vgamkt.",
   "lanes": [
     {
       "id": "dados",
@@ -18,6 +18,10 @@
     {
       "id": "ui",
       "label": "Tela /app/integracao-dados"
+    },
+    {
+      "id": "agente",
+      "label": "Agente (tools MCP)"
     }
   ],
   "mainPath": [
@@ -139,6 +143,22 @@
       "sublabel": "árvore por schema + grade paginada com ordem e PK",
       "type": "route",
       "dot": "purple"
+    },
+    {
+      "id": "toolsAgente",
+      "lane": "agente",
+      "label": "crm_describe / crm_query_external_data",
+      "sublabel": "lib/mcp/tools/dados-externos.ts · tetos da conexão · aviso anti prompt-injection · vazio fica vazio",
+      "type": "lib",
+      "dot": "amber"
+    },
+    {
+      "id": "ingressos",
+      "lane": "agente",
+      "label": "Ingressos: turno do agente e /api/mcp",
+      "sublabel": "aplicam redigirParaAuditoria (tira os valores de filtro) e motivoDoVazio (erro não é sucesso)",
+      "type": "lib",
+      "dot": "amber"
     }
   ],
   "edges": [
@@ -255,6 +275,42 @@
       "from": "telaLista",
       "to": "telaExplorador",
       "label": "abre a conexão"
+    },
+    {
+      "id": "e30",
+      "from": "safeview",
+      "to": "toolsAgente",
+      "label": "conexões ativas da org"
+    },
+    {
+      "id": "e31",
+      "from": "acesso",
+      "to": "toolsAgente",
+      "label": "pool pronto"
+    },
+    {
+      "id": "e32",
+      "from": "introspeccao",
+      "to": "toolsAgente",
+      "label": "catálogo"
+    },
+    {
+      "id": "e33",
+      "from": "leitura",
+      "to": "toolsAgente",
+      "label": "linhas"
+    },
+    {
+      "id": "e34",
+      "from": "toolsAgente",
+      "to": "ingressos",
+      "label": "resultado + args redigidos"
+    },
+    {
+      "id": "e35",
+      "from": "ingressos",
+      "to": "auditlog",
+      "label": "audita sem valores de filtro"
     }
   ],
   "cards": [
@@ -283,10 +339,10 @@
       "body": "A IA lê QUALQUER tabela da conexão; a trava não é uma lista, é a conexão somente-leitura + teto de linhas + auditoria sem valores. Uma allowlist seria uma segunda lista para manter em sincronia com um schema que muda todo dia."
     },
     {
-      "id": "card-nao-ligacao",
-      "tone": "slate",
-      "title": "Não-ligação declarada: o agente ainda não lê esta fonte",
-      "body": "As tools `crm_describe_external_data` e `crm_query_external_data` existem no PR #1130 e NÃO entraram neste recorte: elas são consumidoras deste núcleo e se apoiam em `lib/ai/runtime/tools.ts` e `lib/mcp/server.ts`, que se moveram na `main` desde que o PR foi escrito. A fatia que está aqui se sustenta sozinha — cadastro, API e tela — e a camada do agente entra como um segundo recorte, sem retrabalho neste."
+      "id": "card-vazio-fica-vazio",
+      "tone": "amber",
+      "title": "Filtro sem resultado devolve vazio, nunca a tabela inteira",
+      "body": "A versão do PR reexecutava sem o filtro e entregava até 100 linhas ao modelo, pensando num catálogo de produtos. A tool é genérica: numa tabela de clientes, o CPF que não casa entregaria os registros de outras pessoas. O vazio fica vazio, e a resposta ensina o modelo a repetir com um trecho menor do termo."
     }
   ]
 }

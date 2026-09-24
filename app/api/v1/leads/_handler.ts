@@ -316,10 +316,12 @@ export async function createLeadHandler(
   // no catálogo de produtos. Mesma função daquele conserto, pelo mesmo motivo
   // (uma leitura só, que não diverge entre caminhos de escrita).
   //
-  // A leitura extra só acontece quando quem chamou NÃO mandou moeda — a REST
-  // com `currency` no corpo, o import e o webhook passam direto. E ela não pode
-  // derrubar a criação: `moedaDaOrganizacao` degrada para o padrão e deixa
-  // rastro (console.error + Sentry) em vez de lançar.
+  // A leitura extra só acontece quando quem chamou NÃO mandou moeda: a REST com
+  // `currency` no corpo passa direto. O import por planilha e o webhook de
+  // captação NÃO mandam — mandavam `"BRL"` em duro, e o lead de uma organização
+  // em euro nascia em real — e caem aqui. Ela não pode derrubar a criação:
+  // `moedaDaOrganizacao` degrada para o padrão e deixa rastro (console.error +
+  // Sentry) em vez de lançar.
   const currency = input.currency ?? (await moedaDaOrganizacao(supabase, ctx.organization_id));
 
   const serviceOrigin = ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, input.contact_id ?? null);

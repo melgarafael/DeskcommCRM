@@ -20,7 +20,7 @@ async function login(page: Page, role: string) {
   await page.goto("/login");
   await page.getByLabel(/e-?mail/i).fill(user.email);
   await page.getByLabel(/senha/i).fill(password);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/app(?:\/|$)/, { timeout: 60_000 });
 }
 const row = (page: Page, title: string) => page.getByTestId("inbox-item").filter({ hasText: title });

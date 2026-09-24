@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 
 import {
+  agenteDoGatilhoAutomatico,
+  fluxoPedeAgente,
   isPointerEnabledForAutomaticTrigger,
+  noDeGatilhoDoGrafo,
   resolveAgentForAutomaticTrigger,
   type EnabledFollowupAgent,
   type FollowupGateDb,
@@ -64,5 +67,58 @@ describe("resolveAgentForAutomaticTrigger (pick determinístico)", () => {
   it("null quando nenhum agente arma o pointer (gate-out)", async () => {
     const db = fakeDb({ [ORG]: [{ agentId: AGENT_LOW, pointerIds: [POINTER_B] }] });
     await expect(resolveAgentForAutomaticTrigger(db, ORG, POINTER_A)).resolves.toBeNull();
+  });
+});
+
+describe("fluxoPedeAgente", () => {
+  it("texto fixo, template, match_reply e espera fixa não pedem agente", () => {
+    expect(
+      fluxoPedeAgente({
+        nodes: [
+          { id: "t", type: "trigger" },
+          { id: "a", type: "action", config: { mode: "text" } },
+          { id: "m", type: "match_reply" },
+          { id: "w", type: "wait", config: { mode: "fixed" } },
+          { id: "e", type: "end" },
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it("ai_classify, espera smart e ai_message pedem agente", () => {
+    expect(fluxoPedeAgente({ nodes: [{ id: "c", type: "ai_classify" }] })).toBe(true);
+    expect(fluxoPedeAgente({ nodes: [{ id: "w", type: "wait", config: { mode: "smart" } }] })).toBe(true);
+    expect(fluxoPedeAgente({ nodes: [{ id: "a", type: "action", config: { mode: "ai_message" } }] })).toBe(true);
+  });
+});
+
+describe("agenteDoGatilhoAutomatico", () => {
+  it("sem agente, texto fixo enrolla com agent_id nulo", () => {
+    expect(agenteDoGatilhoAutomatico(null, false)).toEqual({ agentId: null, barrado: false });
+  });
+
+  it("sem agente, grafo que pede IA é barrado", () => {
+    expect(agenteDoGatilhoAutomatico(null, true)).toEqual({ agentId: null, barrado: true });
+  });
+
+  it("com agente, pina o id mesmo em fluxo de texto", () => {
+    expect(agenteDoGatilhoAutomatico(AGENT_LOW, false)).toEqual({ agentId: AGENT_LOW, barrado: false });
+  });
+});
+
+describe("noDeGatilhoDoGrafo", () => {
+  it("devolve o trigger e se o grafo pede agente", () => {
+    expect(
+      noDeGatilhoDoGrafo({
+        nodes: [
+          { id: "t1", type: "trigger" },
+          { id: "a1", type: "action", config: { mode: "text" } },
+        ],
+      }),
+    ).toEqual({ id: "t1", pedeAgente: false });
+  });
+
+  it("sem trigger devolve null", () => {
+    expect(noDeGatilhoDoGrafo({ nodes: [{ id: "e1", type: "end" }] })).toBeNull();
   });
 });

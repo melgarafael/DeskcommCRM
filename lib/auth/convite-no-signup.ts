@@ -39,8 +39,21 @@ function normalizar(email: string | null | undefined): string {
   return (email ?? "").trim().toLowerCase();
 }
 
-export function decidirConviteDoSignup(user: UsuarioConfirmado): DecisaoDeSignup {
-  const bruto = user.user_metadata?.["invite_token"];
+export function decidirConviteDoSignup(
+  user: UsuarioConfirmado,
+  /**
+   * Convite vindo de FORA do `user_metadata` — hoje, o que o `/auth/callback`
+   * leu da URL na volta do Google.
+   *
+   * ⚠️ Não é mais confiável que o `user_metadata`: os dois chegam das mãos de
+   * quem está entrando. O que autoriza é o que vem DEPOIS — a assinatura HMAC
+   * do token e a comparação com o e-mail que o provedor de auth confirmou —, e
+   * essas duas provas valem igual para as duas origens. É por isso que este
+   * parâmetro pode existir sem afrouxar nada.
+   */
+  tokenDoConvite?: string | null,
+): DecisaoDeSignup {
+  const bruto = tokenDoConvite?.trim() || user.user_metadata?.["invite_token"];
   // Sem convite em jogo: o caminho de sempre, intocado.
   if (typeof bruto !== "string" || bruto.trim() === "") return { tipo: "provisionar" };
 

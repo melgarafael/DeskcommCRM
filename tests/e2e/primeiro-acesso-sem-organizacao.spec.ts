@@ -118,7 +118,7 @@ async function entrar(page: Page, email: string): Promise<void> {
   await page.goto("/login");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(SENHA);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/(app|onboarding|get-started)/, { timeout: 30_000 });
 }
 

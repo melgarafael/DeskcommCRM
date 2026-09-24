@@ -1,3 +1,4 @@
+import type { ModuloOpcional } from "@/lib/instalacao/modulos";
 import type { InterfaceSettings } from "@/lib/navigation/interface";
 import Link from "next/link";
 
@@ -14,6 +15,8 @@ import { BookOpen, Lightbulb, ListChecks, Warning } from "@/lib/ui/icons";
 
 interface NavHubProps {
   interfaceSettings?: InterfaceSettings;
+  /** Módulos opcionais ligados na instalação. Ausente = o hub não filtra por módulo. */
+  modulosLigados?: readonly ModuloOpcional[];
   group: NavGroupId;
   isPlatformAdmin: boolean;
   role: Role | null;
@@ -69,11 +72,12 @@ export function NavHub({
   title,
   subtitle,
   interfaceSettings,
+  modulosLigados,
   locale = IDIOMA_PADRAO,
   extensionGuides = [],
   extensionsUnavailable = false,
 }: NavHubProps) {
-  const secoes = hubSections(group, isPlatformAdmin, role, interfaceSettings);
+  const secoes = hubSections(group, isPlatformAdmin, role, interfaceSettings, modulosLigados);
 
   return (
     <div className="flex h-full flex-col gap-8 p-6">

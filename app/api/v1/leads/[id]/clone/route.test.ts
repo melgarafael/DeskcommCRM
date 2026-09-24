@@ -138,8 +138,8 @@ function fakeDb(seed: Record<string, Row[]>) {
 function seed() {
   return {
     crm_pipelines: [
-      { id: P1, organization_id: ORG_ID, name: "Comercial" },
-      { id: P2, organization_id: ORG_ID, name: "Suporte" },
+      { id: P1, organization_id: ORG_ID, name: "Comercial", position: 1000, is_archived: false },
+      { id: P2, organization_id: ORG_ID, name: "Suporte", position: 2000, is_archived: false },
     ],
     crm_stages: [
       { id: S1_A, organization_id: ORG_ID, pipeline_id: P1, name: "Novo", position: 1000, is_won: false, is_lost: false, is_archived: false },
@@ -208,6 +208,55 @@ function moveRequest(body: unknown): NextRequest {
 }
 
 const params = { params: Promise.resolve({ id: LEAD_ID }) };
+
+function getRequest(): NextRequest {
+  return new NextRequest(`http://localhost/api/v1/leads/${LEAD_ID}/clone`, {
+    method: "GET",
+  });
+}
+
+describe("GET /api/v1/leads/[id]/clone", () => {
+  it("lista os funis de destino, sem o funil ATUAL do lead", async () => {
+    const { GET } = await import("./route");
+
+    const response = await GET(getRequest(), params);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.pipelines).toEqual([{ id: P2, name: "Suporte" }]);
+  });
+
+  it("payload mínimo: nunca settings/description, só id e name", async () => {
+    const base = seed();
+    db = fakeDb({
+      ...base,
+      crm_pipelines: (base.crm_pipelines ?? []).map((funil) =>
+        funil.id === P2
+          ? { ...funil, description: "Interno", settings: { lost_reasons: ["x"] } }
+          : funil,
+      ),
+    });
+    vi.mocked(createClient).mockResolvedValue(db.client);
+    const { GET } = await import("./route");
+
+    const response = await GET(getRequest(), params);
+    const body = await response.json();
+
+    expect(Object.keys(body.data.pipelines[0])).toEqual(["id", "name"]);
+  });
+
+  it("recusa lead inexistente na organização", async () => {
+    const { GET } = await import("./route");
+
+    const response = await GET(getRequest(), {
+      params: Promise.resolve({ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(body.error.code).toBe("not_found");
+  });
+});
 
 describe("POST /api/v1/leads/[id]/clone", () => {
   it("cria o negócio no funil destino e fecha a origem como perdida", async () => {

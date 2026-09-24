@@ -1,0 +1,31 @@
+# Um domínio, duas superfícies: as APIs públicas do Supabase seguem para o
+# Envoy privado; todo o restante segue para o app. Studio e Postgres não são
+# publicados.
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode gzip
+
+	route {
+		# O webhook global do WAHA só pode ser chamado pela rede interna.
+		@waha_global path /api/v1/webhooks/waha
+		respond @waha_global 403
+
+		# Superfícies públicas necessárias aos SDKs Supabase no navegador.
+		@supabase path /auth/v1* /rest/v1* /realtime/v1* /storage/v1* /functions/v1* /graphql/v1*
+		reverse_proxy @supabase supabase-envoy:8000
+
+		@agentrun path /api/internal/agents/run*
+		reverse_proxy @agentrun app:3000 {
+			transport http {
+				read_timeout 320s
+				write_timeout 320s
+			}
+		}
+
+		reverse_proxy app:3000
+	}
+}

@@ -14,12 +14,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type pg from "pg";
 
+import { moduloLigado } from "@/lib/instalacao/modulos";
+
 import { carregarConexao, type MotivoSemConexao } from "./credenciais";
 import { obterPool } from "./conexao";
 import { validarHostDeBanco } from "./guardas";
 import type { ConexaoExterna } from "./types";
 
-export type MotivoAcesso = MotivoSemConexao | "host_bloqueado" | "dns_falhou";
+export type MotivoAcesso = MotivoSemConexao | "host_bloqueado" | "dns_falhou" | "modulo_desligado";
 
 export type Acesso =
   | { ok: true; conexao: ConexaoExterna; pool: pg.Pool }
@@ -30,6 +32,12 @@ export async function abrirAcesso(
   organizationId: string,
   connectionId: string,
 ): Promise<Acesso> {
+  // A porta de saída que o doc 37 manda fechar é ESTA: abrir conexão com o
+  // banco de outro sistema. Toda leitura passa por aqui — as rotas e as
+  // ferramentas do agente —, então o módulo desligado recusa aqui também, e
+  // nenhum caminho novo precisa lembrar de perguntar.
+  if (!(await moduloLigado(admin, "banco_externo"))) return { ok: false, motivo: "modulo_desligado" };
+
   const leitura = await carregarConexao(admin, organizationId, connectionId);
   if (!leitura.ok) return { ok: false, motivo: leitura.motivo };
 

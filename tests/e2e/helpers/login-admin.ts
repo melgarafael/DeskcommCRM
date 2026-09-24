@@ -141,7 +141,7 @@ export async function loginComoPapel(
     await page.goto("/login");
     await page.locator("#email").fill(usuario!.email);
     await page.locator("#password").fill(atuais.password);
-    await page.getByRole("button", { name: /entrar/i }).click();
+    await page.getByRole("button", { name: "Entrar", exact: true }).click();
     await page.waitForURL(/\/login\/mfa/, { timeout: 30_000 });
 
     if (await tentarMfa(page, fator!.secret, 3)) return atuais;

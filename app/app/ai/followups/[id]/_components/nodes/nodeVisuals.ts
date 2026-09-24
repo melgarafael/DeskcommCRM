@@ -43,6 +43,18 @@ export function regraEmBranco(): RegraDeCondicao {
   return { field: "lead_stage", op: "eq", value: "" };
 }
 
+/**
+ * Nó de mensagem novo: IA, salvo o gatilho de retorno — ali o padrão é texto
+ * fixo, porque a saudação de quem voltou não pede o LLM (e duas vozes
+ * nasceriam se o default fosse `ai_message` + o turno inbound).
+ */
+export function configPadraoDaAcao(triggerKind?: string): FlowNode["config"] {
+  if (triggerKind === "inbound_after_silence") {
+    return { mode: "text", body: "Configure esta mensagem." };
+  }
+  return { mode: "ai_message", prompt_hint: "Configure esta etapa." };
+}
+
 export const NODE_VISUALS: Record<NodeType, NodeVisual> = {
   trigger: {
     type: "trigger",
@@ -118,7 +130,7 @@ export const NODE_VISUALS: Record<NodeType, NodeVisual> = {
     chipClassName: "bg-success-bg text-success-fg",
     borderClassName: "border-l-success",
     defaultLabel: "Enviar mensagem",
-    defaultConfig: () => ({ mode: "ai_message", prompt_hint: "Configure esta etapa." }),
+    defaultConfig: () => configPadraoDaAcao(),
   },
   end: {
     type: "end",

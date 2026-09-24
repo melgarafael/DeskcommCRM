@@ -195,6 +195,7 @@ cite cada um:
 | Contribuir: corrigir bug, abrir ou atualizar PR, migration, conflito com a `main`   | `deskcomm-contribuir`   |
 | Criar extensão/plugin/módulo de nicho, ou transformar um PR de nicho em pacote      | `deskcomm-extensao`     |
 | Escrever ou revisar código aqui                                                     | `deskcomm-doutrina`     |
+| Antes de começar qualquer implementação/melhoria nova: mapear doutrina, UI/UX e padrões de agente aplicáveis | `deskcomm-especialista` |
 
 O gate de arquitetura de qualquer peça que atende pessoas é a skill `sistema-vivo` (lei em
 [`docs/doctrine/sistema-vivo.md`](docs/doctrine/sistema-vivo.md)).
@@ -339,6 +340,23 @@ dentro do include do unit. Fixtures em `tests/fixtures/`, helpers em `tests/help
 em `tests/setup/vitest.setup.ts`. Determinismo é regra: teste que depende de ordem ou de rede
 quebra a suíte inteira.
 
+**Locator de tela compartilhada é contrato da suíte, não detalhe do teste.** `getByRole("button",
+{ name: "Entrar" })` casa por **substring** — e `/entrar/i`, que era a forma do login, também: um
+segundo botão com essa palavra na mesma tela ("Entrar com Google") torna o locator ambíguo, e o
+Playwright **recusa clicar** (`strict mode violation`) em vez de escolher. O alcance não fica na
+tela: `/login` é a porta de quase toda spec. Medido em 2026-09-21, um botão a mais ali pôs as 5
+partes do `e2e` vermelhas — 320 violações do mesmo erro em 306 casos, 140 specs citadas no log.
+Quem acrescenta botão ou link numa tela já coberta assume os locators que já existem: ancore com
+`{ name: "Entrar", exact: true }`, forma que a suíte já usa 282× para outros rótulos, e meça antes
+de empurrar:
+
+```bash
+git grep -nE "name: *(\"Entrar\"|'Entrar'|/entrar)" -- tests scripts | grep -vE 'exact: *true'
+```
+
+O conserto é no locator, **nunca** no produto: esconder um botão real para agradar regex de teste
+troca um defeito de teste por um defeito de tela.
+
 O `.env.e2e` é obrigatório e é recusado se apontar para Supabase que não seja `127.0.0.1`/
 `localhost` — a proteção existe porque sem ela a suíte rodaria contra produção (`pnpm e2e:env`
 gera o arquivo).
@@ -401,7 +419,10 @@ itens envelhecem em ritmos diferentes, e o cabeçalho passava a mentir por todos
   inclusive. O número e a contagem que ficavam aqui eram de uma fotografia de agosto.
 - Rate limit HTTP: `lib/auth/rate-limit.ts` cobre **login, signup, recuperação de senha e
   aceite de convite** (contando por IP **e** por identificador hasheado); `checkRateLimit` cobre
-  o webhook de captação e o dispatcher de IA. **Crons e MCP seguem sem.** Meça antes de agir:
+  o webhook de captação e o dispatcher de IA. **Crons seguem sem.** O MCP conta em dois pontos:
+  a recusa de token, antes da autenticação (`lib/mcp/auth.ts`, #1449), e o teto de chamadas de
+  token válido — por token, por organização e de escrita, Spec 11 §7 (`lib/mcp/rate-limit.ts`,
+  #1446). Meça antes de agir:
   `grep -rln 'authRateLimited\|checkRateLimit(' app lib --include='*.ts' --include='*.tsx'`.
   Esta linha dizia "existe em 2 pontos; login e signup estão sem" — era o estado anterior à
   issue #64, e o `docs/threat-model.md` ainda carrega a versão velha, com nota de reauditoria.
@@ -500,6 +521,7 @@ casar, mesmo que a pessoa não saiba que ele existe. Fora de um clone (ou num cl
 | o agente responde errado, passa tudo para humano, não usa a agenda; melhorar o prompt | `deskcomm-prompt` |
 | contribuir: corrigir bug, abrir ou atualizar PR, migration, conflito com a `main` | `deskcomm-contribuir` — que fica quieto quando `bash .agents/skills/deskcomm-contribuir/scripts/quem-sou.sh` responde `mantenedor` |
 | escrever ou revisar código aqui | `deskcomm-doutrina` (as três regras que mais custam) e `sistema-vivo` (o gate de arquitetura) |
+| antes de começar qualquer implementação/melhoria nova: mapear doutrina, UI/UX e padrões de agente aplicáveis | `deskcomm-especialista` |
 
 Os guias têm vitrine pública em [deskcomm.com.br/guias](https://www.deskcomm.com.br/guias) (pt-BR,
 en, es), escrita à mão no repositório `deskcomm-site` (`conteudo/guias.ts`). Guia criado,

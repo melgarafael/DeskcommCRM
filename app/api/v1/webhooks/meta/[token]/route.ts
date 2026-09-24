@@ -33,6 +33,7 @@ import { fail } from "@/lib/api/wrappers";
 import { appDaMeta } from "@/lib/channels/meta/app";
 import { lerEnvelopeMeta } from "@/lib/channels/meta/envelope";
 import { parseMetaWebhook, verificationChallenge, verifyMetaSignature } from "@/lib/channels/meta/webhook";
+import { statusUpdate } from "@/lib/channels/meta/status-update";
 import { ingestMetaInbound } from "@/lib/channels/meta/ingest";
 import { metaSessionByWebhookToken } from "@/lib/channels/meta/session";
 import { logger } from "@/lib/logger";
@@ -158,9 +159,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
         .eq("name", e.templateName)
         .eq("language", e.templateLanguage);
     } else {
+      // O evento inteiro vira colunas, não só `status`: quando a Meta ACEITA o
+      // template e reprova a entrega depois, o motivo só existe aqui. Ver
+      // `lib/channels/meta/status-update.ts`.
       await admin
         .from("messages")
-        .update({ status: e.status === "failed" ? "failed" : "sent", updated_at: now })
+        .update(statusUpdate(e, now))
         .eq("organization_id", session.organizationId)
         .eq("external_id", e.externalId);
     }
