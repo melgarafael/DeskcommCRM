@@ -8,10 +8,19 @@
  *  - provisionar quando havia convite → o defeito de origem volta, agora com um
  *    conserto por cima dando a impressão de estar resolvido.
  */
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { decidirConviteDoSignup } from "@/lib/auth/convite-no-signup";
 import { signInviteToken, verifyInviteToken } from "@/lib/auth/invite-token";
+
+// invite-token agora é fail-closed: sem segredo não assina.
+beforeAll(() => {
+  vi.stubEnv("INVITE_TOKEN_SECRET", "segredo-de-teste-só-para-este-arquivo");
+});
+
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
 
 const ORG = "22222222-2222-4222-8222-222222222222";
 

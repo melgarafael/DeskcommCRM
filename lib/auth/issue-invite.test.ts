@@ -1,5 +1,13 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({ send: vi.fn(), audit: vi.fn() }));
+// invite-token agora é fail-closed: sem segredo não assina.
+beforeAll(() => {
+  vi.stubEnv("INVITE_TOKEN_SECRET", "segredo-de-teste-só-para-este-arquivo");
+});
+
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
 vi.mock("@/lib/env", () => ({ env: { NEXT_PUBLIC_APP_URL: "http://localhost:3013" } }));
 vi.mock("@/lib/email/roteador", () => ({ sendEmail: h.send }));
 vi.mock("@/lib/audit", () => ({ audit: h.audit }));

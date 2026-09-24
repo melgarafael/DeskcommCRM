@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { NAV_CATALOG } from "@/lib/navigation/catalogo";
 import {
   destinosDaInterface,
@@ -9,6 +9,15 @@ import {
 } from "@/lib/navigation/interface";
 import { sidebarGroups, searchable, hubSections } from "@/lib/navigation/registry";
 import { signInviteToken, verifyInviteToken } from "@/lib/auth/invite-token";
+
+// invite-token agora é fail-closed: sem segredo não assina.
+beforeAll(() => {
+  vi.stubEnv("INVITE_TOKEN_SECRET", "segredo-de-teste-só-para-este-arquivo");
+});
+
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
 const complete = { preset: "completa" } as const;
 const simplified = { preset: "simplificada" } as const;
 const granular = { preset: "completa", destinos: ["/app/products"] } as const;

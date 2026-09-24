@@ -6,16 +6,27 @@
  *   - body = base64url(JSON({invite_id, email, organization_id, role, exp}))
  *   - sig  = base64url(HMAC_SHA256(secret, body))
  *
- * Secret resolution: INVITE_TOKEN_SECRET → INTERNAL_SECRET → "dev-fallback".
- * Production deployments MUST set one of the first two. Verification uses
- * `timingSafeEqual` to avoid timing oracles.
+ * Secret resolution: INVITE_TOKEN_SECRET → INTERNAL_SECRET, fail-closed.
+ * Sem um dos dois o módulo lança em vez de assinar com segredo fraco:
+ * convite assinado com "dev-fallback" seria forjável por qualquer um que leia
+ * este arquivo. Em produção o boot já exige INTERNAL_SECRET (lib/env.ts);
+ * este throw fecha a porta para quem importar o módulo sem passar por lá
+ * (scripts, testes, workers isolados).
+ * Verification uses `timingSafeEqual` to avoid timing oracles.
  */
 import { z } from "zod";
 import { interfaceSettingsSchema, type InterfaceSettings } from "@/lib/navigation/interface";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-const SECRET = (): string =>
-  process.env.INVITE_TOKEN_SECRET ?? process.env.INTERNAL_SECRET ?? "dev-fallback";
+const SECRET = (): string => {
+  const s = process.env.INVITE_TOKEN_SECRET ?? process.env.INTERNAL_SECRET;
+  if (!s) {
+    throw new Error(
+      "INVITE_TOKEN_SECRET (ou INTERNAL_SECRET) não configurado: defina um dos dois — sem segredo não há convite.",
+    );
+  }
+  return s;
+};
 
 export interface InvitePayload {
   interface_settings?: InterfaceSettings;

@@ -23,7 +23,16 @@
  *
  *     npx vitest run lib/auth/aplicar-convite.test.ts
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+// invite-token agora é fail-closed: sem segredo não assina.
+beforeAll(() => {
+  vi.stubEnv("INVITE_TOKEN_SECRET", "segredo-de-teste-só-para-este-arquivo");
+});
+
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
 
 const ORG = "33333333-3333-4333-8333-333333333333";
 const CONVITE = "22222222-2222-4222-8222-222222222222";

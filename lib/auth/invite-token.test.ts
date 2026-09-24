@@ -1,5 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { afterAll, beforeAll, describe, it, expect, vi } from "vitest";
 import { signInviteToken, verifyInviteToken, INVITE_TTL_SECONDS } from "./invite-token";
+
+beforeAll(() => {
+  vi.stubEnv("INVITE_TOKEN_SECRET", "segredo-de-teste-só-para-este-arquivo");
+});
+
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
 
 const base = () => ({
   invite_id: "11111111-1111-4111-8111-111111111111",
@@ -56,3 +64,21 @@ describe("invite-token", () => {
     const p = { ...base(), invited_by: "33333333-3333-4333-8333-333333333333", iat: Math.floor(Date.now()/1000) };
     expect(verifyInviteToken(signInviteToken(p))).toEqual(p);
   });
+
+describe("invite-token fail-closed", () => {
+  it("lança em vez de assinar quando não há segredo configurado", () => {
+    vi.stubEnv("INVITE_TOKEN_SECRET", "");
+    vi.stubEnv("INTERNAL_SECRET", "");
+    const payload = {
+      invite_id: "11111111-1111-4111-8111-111111111111",
+      email: "alice@example.com",
+      organization_id: "22222222-2222-4222-8222-222222222222",
+      role: "agent",
+      exp: Math.floor(Date.now() / 1000) + INVITE_TTL_SECONDS,
+    };
+    expect(() => signInviteToken(payload)).toThrow(/não configurado/);
+    // Restaura o segredo de teste para os demais testes deste arquivo.
+    vi.stubEnv("INVITE_TOKEN_SECRET", "segredo-de-teste-só-para-este-arquivo");
+    vi.stubEnv("INTERNAL_SECRET", "");
+  });
+});
