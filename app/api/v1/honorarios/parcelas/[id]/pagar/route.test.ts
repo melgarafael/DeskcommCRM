@@ -1,6 +1,12 @@
 /**
  * POST /api/v1/honorarios/parcelas/[id]/pagar — DIRC "integrar": cria um `financial_entries`
  * do caixa núcleo e liga por `financial_entry_id`, nunca uma tabela de "pagamento" própria.
+ *
+ * Tudo passa por `fn_honorarios_parcela_pagar` (migration 0398, RPC) — uma função com
+ * `for update`, não três chamadas separadas do PostgREST. É essa função que garante que
+ * pagar a mesma parcela duas vezes (dois cliques, um retry) nunca lança duas vezes no caixa;
+ * aqui o fake só prova que a ROTA lê a resposta da RPC certo, incluindo o "já paga" que vem
+ * de quem perde a corrida dentro da função.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
@@ -53,61 +59,10 @@ function postReq(body: unknown): NextRequest {
   });
 }
 
-/** Duas tabelas em jogo: `honorarios_parcelas` (lê, depois atualiza) e `financial_entries`
- * (cria o lançamento). O fake decide pela tabela pedida. */
-function fakeSupabase(opts: {
-  parcela: { status: string; valor_cents: number; numero: number; contrato_id: string } | null;
-  erroLeituraParcela?: { code?: string };
-  erroLancamento?: { code?: string };
-  erroAtualizacao?: { code?: string };
-}) {
-  return {
-    from(table: string) {
-      if (table === "honorarios_parcelas") {
-        let atualizando = false;
-        const builder: Record<string, unknown> = {
-          select: () => builder,
-          eq: () => builder,
-          maybeSingle: () =>
-            Promise.resolve(
-              opts.erroLeituraParcela
-                ? { data: null, error: opts.erroLeituraParcela }
-                : { data: opts.parcela ? { id: PARCELA_ID, ...opts.parcela } : null, error: null },
-            ),
-          update: () => {
-            atualizando = true;
-            return builder;
-          },
-          single: () =>
-            Promise.resolve(
-              opts.erroAtualizacao
-                ? { data: null, error: opts.erroAtualizacao }
-                : {
-                    data: atualizando
-                      ? { id: PARCELA_ID, status: "pago", financial_entry_id: "fe-1" }
-                      : null,
-                    error: null,
-                  },
-            ),
-        };
-        return builder;
-      }
-      if (table === "financial_entries") {
-        const builder: Record<string, unknown> = {
-          insert: () => builder,
-          select: () => builder,
-          single: () =>
-            Promise.resolve(
-              opts.erroLancamento
-                ? { data: null, error: opts.erroLancamento }
-                : { data: { id: "fe-1" }, error: null },
-            ),
-        };
-        return builder;
-      }
-      throw new Error(`tabela inesperada: ${table}`);
-    },
-  };
+/** Um único ponto de entrada agora: `.rpc("fn_honorarios_parcela_pagar", ...)`. */
+function fakeSupabase(resultado: { data?: unknown; error?: { message?: string; code?: string } | null }) {
+  const rpc = vi.fn(() => Promise.resolve({ data: resultado.data ?? null, error: resultado.error ?? null }));
+  return { rpc };
 }
 
 beforeEach(() => {
@@ -115,13 +70,19 @@ beforeEach(() => {
 });
 
 describe("POST /api/v1/honorarios/parcelas/[id]/pagar", () => {
-  it("manager paga uma parcela pendente — cria lançamento e liga por financial_entry_id", async () => {
+  it("manager paga uma parcela pendente — chama a RPC atômica e devolve o recibo dela", async () => {
     autorizadoComoManager();
-    vi.mocked(createClient).mockResolvedValue(
-      fakeSupabase({
-        parcela: { status: "pendente", valor_cents: 50000, numero: 1, contrato_id: "c1" },
-      }) as never,
-    );
+    const supabase = fakeSupabase({
+      data: {
+        id: PARCELA_ID,
+        contrato_id: "c1",
+        numero: 1,
+        valor_cents: 50000,
+        status: "pago",
+        financial_entry_id: "fe-1",
+      },
+    });
+    vi.mocked(createClient).mockResolvedValue(supabase as never);
 
     const { POST } = await import("./route");
     const res = await POST(postReq({ account_id: ACCOUNT_ID }), params);
@@ -129,6 +90,12 @@ describe("POST /api/v1/honorarios/parcelas/[id]/pagar", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data).toMatchObject({ status: "pago", financial_entry_id: "fe-1" });
+    expect(supabase.rpc).toHaveBeenCalledWith("fn_honorarios_parcela_pagar", {
+      p_org: ORG_ID,
+      p_parcela: PARCELA_ID,
+      p_account_id: ACCOUNT_ID,
+      p_account_plan_id: null,
+    });
   });
 
   it("viewer/agent não paga — write exige manager+", async () => {
@@ -138,12 +105,20 @@ describe("POST /api/v1/honorarios/parcelas/[id]/pagar", () => {
     expect(res.status).toBe(403);
   });
 
-  it("parcela já paga → 422, não duplica lançamento", async () => {
+  it("a RPC recusa por papel (honorarios_forbidden) → 403, mesmo se requireRole deixasse passar", async () => {
     autorizadoComoManager();
     vi.mocked(createClient).mockResolvedValue(
-      fakeSupabase({
-        parcela: { status: "pago", valor_cents: 50000, numero: 1, contrato_id: "c1" },
-      }) as never,
+      fakeSupabase({ error: { message: "honorarios_forbidden", code: "42501" } }) as never,
+    );
+    const { POST } = await import("./route");
+    const res = await POST(postReq({ account_id: ACCOUNT_ID }), params);
+    expect(res.status).toBe(403);
+  });
+
+  it("parcela já paga (quem perde a corrida do for update) → 422, não duplica lançamento", async () => {
+    autorizadoComoManager();
+    vi.mocked(createClient).mockResolvedValue(
+      fakeSupabase({ error: { message: "parcela_ja_paga", code: "22023" } }) as never,
     );
 
     const { POST } = await import("./route");
@@ -154,7 +129,9 @@ describe("POST /api/v1/honorarios/parcelas/[id]/pagar", () => {
 
   it("parcela inexistente → 404", async () => {
     autorizadoComoManager();
-    vi.mocked(createClient).mockResolvedValue(fakeSupabase({ parcela: null }) as never);
+    vi.mocked(createClient).mockResolvedValue(
+      fakeSupabase({ error: { message: "parcela_nao_encontrada", code: "P0002" } }) as never,
+    );
 
     const { POST } = await import("./route");
     const res = await POST(postReq({ account_id: ACCOUNT_ID }), params);
@@ -162,18 +139,29 @@ describe("POST /api/v1/honorarios/parcelas/[id]/pagar", () => {
     expect(res.status).toBe(404);
   });
 
-  it("conta inválida (23503 do financial_entries) → 422 legível", async () => {
+  it("conta inválida (23503 dentro da RPC) → 422 legível", async () => {
     autorizadoComoManager();
     vi.mocked(createClient).mockResolvedValue(
-      fakeSupabase({
-        parcela: { status: "pendente", valor_cents: 50000, numero: 1, contrato_id: "c1" },
-        erroLancamento: { code: "23503" },
-      }) as never,
+      fakeSupabase({ error: { message: "insert or update on table...", code: "23503" } }) as never,
     );
 
     const { POST } = await import("./route");
     const res = await POST(postReq({ account_id: ACCOUNT_ID }), params);
 
     expect(res.status).toBe(422);
+  });
+
+  it("módulo não instalado (42P01 dentro da RPC) → 409 com mensagem clara", async () => {
+    autorizadoComoManager();
+    vi.mocked(createClient).mockResolvedValue(
+      fakeSupabase({ error: { message: "relation does not exist", code: "42P01" } }) as never,
+    );
+
+    const { POST } = await import("./route");
+    const res = await POST(postReq({ account_id: ACCOUNT_ID }), params);
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.code).toBe("module_not_installed");
   });
 });

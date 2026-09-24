@@ -215,6 +215,36 @@ export interface CaptureRow {
   received_at: string;
 }
 
+/**
+ * Contrato de honorários (advocacia) — módulo opcional, ADR-0002 D8: todo
+ * módulo com dados declara sua seção de export, mesmo sem estar na cascata de
+ * redação (achado da revisão do PR #1578). O vínculo é `lead_id`, não
+ * `contact_id` direto — o contrato pertence ao CASO, não à pessoa em geral —
+ * por isso deriva dos ids de `leads` já coletados acima, e não de uma consulta
+ * própria por contato.
+ */
+export interface HonorariosContratoRow {
+  id: string;
+  lead_id: string | null;
+  modelo: string;
+  valor_fixo_cents: number | null;
+  percentual_exito: number | null;
+  repasse_advogado_pct: number | null;
+  created_at: string;
+}
+
+/** O calendário de parcelas do contrato acima — o titular tem direito de ver
+ * o que foi combinado e o que já foi pago, do mesmo jeito que vê `sales`. */
+export interface HonorariosParcelaRow {
+  id: string;
+  contrato_id: string;
+  numero: number;
+  vencimento: string;
+  valor_cents: number;
+  status: string;
+  financial_entry_id: string | null;
+}
+
 export interface AuditRow {
   id: string;
   action: string;
@@ -460,6 +490,14 @@ export interface ExportPayload {
   messages_count_total: number;
   messages_recent: MessageRow[];
   leads: LeadRow[];
+  /**
+   * Módulo opcional de honorários (advocacia, ADR-0002). Vazio nas instalações
+   * que não o instalaram, ou quando o titular não tem contrato — nunca ausente:
+   * campo obrigatório é o que faz um caminho de export novo não compilar se
+   * esquecer, a mesma razão de `case_chat_messages`.
+   */
+  honorarios_contratos: HonorariosContratoRow[];
+  honorarios_parcelas: HonorariosParcelaRow[];
   orders: OrderRow[];
   activities: ActivityRow[];
   checkpoints: CheckpointRow[];
@@ -802,6 +840,52 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
       });
     } else if (data) {
       leads = data;
+    }
+  }
+
+  // Honorários — módulo opcional (ADR-0002/D8). Deriva dos ids de `leads` já
+  // coletados: o contrato é `lead_id`, não `contact_id` direto.
+  //
+  // Módulo pode não estar instalado nesta instalação — a tabela então não
+  // existe (42P01) — e o bloco sai vazio nesse caso, sem falhar o export
+  // inteiro por causa de um módulo que a organização nem ligou.
+  let honorarios_contratos: HonorariosContratoRow[] = [];
+  let honorarios_parcelas: HonorariosParcelaRow[] = [];
+  const leadIds = leads.map((l) => l.id);
+  if (leadIds.length > 0) {
+    const { data, error } = await admin
+      .from("honorarios_contratos")
+      .select(
+        "id, lead_id, modelo, valor_fixo_cents, percentual_exito, repasse_advogado_pct, created_at",
+      )
+      .eq("organization_id", organizationId)
+      .in("lead_id", leadIds);
+    if (error) {
+      if (error.code !== "42P01") {
+        logger.warn("[lgpd-export-worker] honorarios contratos load failed", {
+          request_id: requestId,
+          error: error.message,
+        });
+      }
+    } else if (data) {
+      honorarios_contratos = data;
+      const contratoIds = data.map((c) => c.id);
+      if (contratoIds.length > 0) {
+        const { data: parcelas, error: erroParcelas } = await admin
+          .from("honorarios_parcelas")
+          .select("id, contrato_id, numero, vencimento, valor_cents, status, financial_entry_id")
+          .eq("organization_id", organizationId)
+          .in("contrato_id", contratoIds)
+          .order("numero", { ascending: true });
+        if (erroParcelas) {
+          logger.warn("[lgpd-export-worker] honorarios parcelas load failed", {
+            request_id: requestId,
+            error: erroParcelas.message,
+          });
+        } else if (parcelas) {
+          honorarios_parcelas = parcelas;
+        }
+      }
     }
   }
 
@@ -1402,6 +1486,8 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     messages_count_total,
     messages_recent,
     leads,
+    honorarios_contratos,
+    honorarios_parcelas,
     orders,
     activities,
     checkpoints,
@@ -1447,6 +1533,8 @@ function emptyPayload(
     messages_count_total: 0,
     messages_recent: [],
     leads: [],
+    honorarios_contratos: [],
+    honorarios_parcelas: [],
     orders: [],
     activities: [],
     checkpoints: [],

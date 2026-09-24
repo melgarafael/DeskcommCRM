@@ -11613,6 +11613,7 @@ export const DICIONARIO: Traducoes = {
   "Conta para receber o pagamento": { es: "Cuenta para recibir el pago" },
   "Nenhuma parcela ainda.": { es: "Todavía no hay cuotas." },
   "Adicionar parcela": { es: "Agregar cuota" },
+  "Módulos": { es: "Módulos" },
   // ─── Editor de skill, histórico e restauração (recorte do #1130, @vgamkt) ───
   "Informe pelo menos uma palavra-chave de ativação.": { es: "Indica al menos una palabra clave de activación." },
   "A descrição é obrigatória.": { es: "La descripción es obligatoria." },

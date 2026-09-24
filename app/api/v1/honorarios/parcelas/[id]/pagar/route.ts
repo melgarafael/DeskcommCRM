@@ -5,6 +5,13 @@
  * cria um `financial_entries` (direction='in', origin='manual' — o CHECK de `financial_entries`
  * não tem valor `'honorarios'`, e adicioná-lo mudaria o caixa NÚCLEO por causa de uma extensão)
  * e liga por `financial_entry_id`; o extrato do caixa já enxerga o dinheiro sem saber de onde veio.
+ *
+ * ⚠️ ATÔMICO POR RPC (achado da revisão do PR #1578), não três chamadas separadas do
+ * PostgREST: ler status, inserir o lançamento e atualizar a parcela em requests distintos
+ * deixava uma janela onde dois cliques (ou um retry) na mesma parcela liam "pendente" nos
+ * dois e cada um lançava o SEU financial_entries — pagamento em dobro no caixa.
+ * `fn_honorarios_parcela_pagar` (migration 0398) faz os três passos numa função com
+ * `for update`, o mesmo desenho de `fn_finalizar_comanda`.
  */
 import { randomUUID } from "node:crypto";
 
@@ -52,66 +59,50 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   const supabase = await createClient();
 
-  const { data: parcela, error: erroLeitura } = await supabase
-    .from("honorarios_parcelas")
-    .select("id, contrato_id, numero, valor_cents, status, financial_entry_id")
-    .eq("id", parcelaId)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("fn_honorarios_parcela_pagar", {
+    p_org: authz.org.orgId,
+    p_parcela: parcelaId,
+    p_account_id: lido.data.account_id,
+    p_account_plan_id: lido.data.account_plan_id ?? null,
+  });
 
-  if (erroLeitura) {
-    if (moduloNaoInstalado(erroLeitura)) {
+  if (error) {
+    if (moduloNaoInstalado(error)) {
       return fail("module_not_installed", MODULO_NAO_INSTALADO, 409, { requestId });
     }
-    return fail("internal_error", erroLeitura.message, 500, { requestId });
-  }
-  if (!parcela) {
-    return fail("not_found", "Parcela não encontrada.", 404, { requestId });
-  }
-  if (parcela.status === "pago") {
-    return fail("validation_failed", "Esta parcela já está paga.", 422, { requestId });
-  }
-
-  const { data: lancamento, error: erroLancamento } = await supabase
-    .from("financial_entries")
-    .insert({
-      organization_id: authz.org.orgId,
-      account_id: lido.data.account_id,
-      account_plan_id: lido.data.account_plan_id ?? null,
-      direction: "in",
-      amount_cents: parcela.valor_cents,
-      description: `Parcela ${parcela.numero} de honorários`,
-      status: "paid",
-      paid_at: new Date().toISOString(),
-      origin: "manual",
-      created_by_user_id: authz.user.id,
-    })
-    .select("id")
-    .single();
-
-  if (erroLancamento) {
-    if (erroLancamento.code === "23503") {
+    if (error.message === "honorarios_forbidden") {
+      return fail("forbidden_role", "Papel insuficiente.", 403, { requestId });
+    }
+    if (error.message === "parcela_nao_encontrada") {
+      return fail("not_found", "Parcela não encontrada.", 404, { requestId });
+    }
+    if (error.message === "parcela_ja_paga") {
+      return fail("validation_failed", "Esta parcela já está paga.", 422, { requestId });
+    }
+    if (error.code === "23503") {
       return fail("validation_failed", "Conta ou plano de contas inválido.", 422, { requestId });
     }
-    return fail("internal_error", erroLancamento.message, 500, { requestId });
+    return fail("internal_error", error.message, 500, { requestId });
   }
 
-  const { data: parcelaPaga, error: erroAtualizacao } = await supabase
-    .from("honorarios_parcelas")
-    .update({ status: "pago", financial_entry_id: lancamento.id })
-    .eq("id", parcelaId)
-    .select("id, contrato_id, numero, valor_cents, status, financial_entry_id")
-    .single();
-
-  if (erroAtualizacao) {
-    return fail("internal_error", erroAtualizacao.message, 500, { requestId });
-  }
+  const parcelaPaga = data as {
+    id: string;
+    contrato_id: string;
+    numero: number;
+    valor_cents: number;
+    status: string;
+    financial_entry_id: string;
+  };
 
   await audit({
     action: "honorarios.parcela_paga",
     resourceType: "honorarios_parcela",
     resourceId: parcelaId,
     requestId,
-    metadata: { contrato_id: parcela.contrato_id, financial_entry_id: lancamento.id },
+    metadata: {
+      contrato_id: parcelaPaga.contrato_id,
+      financial_entry_id: parcelaPaga.financial_entry_id,
+    },
   });
 
   return ok(parcelaPaga, { requestId });

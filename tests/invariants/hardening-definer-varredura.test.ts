@@ -67,6 +67,17 @@ const ANON_PERMITIDO: readonly Excecao[] = [];
  */
 const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
   {
+    fn: "fn_honorarios_parcela_pagar(uuid,uuid,uuid,uuid)",
+    razao:
+      "POST app/api/v1/honorarios/parcelas/[id]/pagar/route.ts usa createClient da " +
+      "sessão. Definer porque insere em financial_entries (fora da policy de escrita " +
+      "de honorarios_parcelas) e atualiza a parcela sob FOR UPDATE na mesma transação " +
+      "— exatamente o desenho de fn_finalizar_comanda logo abaixo, e pela mesma razão: " +
+      "sem o lock, dois cliques na mesma parcela liam 'pendente' nos dois e cada um " +
+      "lançava o SEU financial_entries, pagando em dobro no caixa. Exige " +
+      "fn_role_at_least(p_org, 'manager'), mesmo papel da RLS de honorarios_parcelas.",
+  },
+  {
     fn: "fn_finalizar_comanda(uuid,uuid,uuid,integer)",
     razao:
       "POST app/api/v1/financeiro/comandas/[id]/finalizar/route.ts e " +

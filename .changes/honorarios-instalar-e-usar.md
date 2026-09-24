@@ -4,12 +4,14 @@ secao: adicionado
 titulo: O módulo de Honorários agora se instala, tem tela e responde pela IA
 ---
 
-O módulo opcional de honorários (advocacia), que só existia como fundação de banco desde
-[[honorarios-modulo-oficial]], agora é usável de ponta a ponta.
+Novo módulo opcional para escritórios de advocacia, de ponta a ponta: contrato de honorários,
+calendário de parcelas, e o agente de IA sabendo responder sobre os dois.
 
 **Instalar.** Quem administra a instalação vai em **Modo administrador › Módulos** e liga
-"Honorários" com um clique — o mesmo mecanismo de módulo por tabela (ADR-0002) que o banco de
-dados externo já usa, só que aqui é o administrador da instalação que decide, não cada empresa.
+"Honorários" com um clique — módulo por tabela (ADR-0002): as tabelas só nascem quando a
+instalação liga o módulo, nenhuma instalação que não o usa carrega o schema dele. (Diferente do
+banco de dados externo, que é módulo por FLAG — outro mecanismo, mesma ideia de "desligado por
+padrão".)
 
 **Usar.** Uma nova tela em **Análise › Dinheiro › Honorários** (só aparece com o módulo
 instalado) deixa registrar o contrato de cada caso — fixo, êxito ou misto — e o calendário de

@@ -162,3 +162,72 @@ $f$;
 -- Postgres dá ao criar a função, e o `alter default privileges ... to anon` do baseline.
 revoke execute on function public.fn_honorarios_provisionar() from public, anon, authenticated;
 grant execute on function public.fn_honorarios_provisionar() to service_role;
+
+-- ---- fn_honorarios_parcela_pagar: pagamento atômico (achado da revisão do PR #1578) ----
+--
+-- A rota fazia três chamadas separadas do PostgREST — ler status, inserir o lançamento,
+-- atualizar a parcela — sem lock nenhum entre elas. Dois cliques (ou um retry de rede) na
+-- mesma parcela liam "pendente" nos dois, e cada um inseria o SEU financial_entries: a
+-- parcela pagava em dobro no caixa. `for update` torna a transição pendente→pago atômica:
+-- quem perde a corrida encontra `status = 'pago'` e cai no erro "já paga", nunca lança de novo.
+--
+-- ⚠️ D7 (ADR-0002): `record`, não `honorarios_parcelas%rowtype` — a função precisa compilar
+-- mesmo antes de o módulo ser instalado (as tabelas só nascem em fn_honorarios_provisionar()).
+-- Mesmo desenho de fn_finalizar_comanda (migration 0351): security definer + for update +
+-- fn_role_at_least, porque o caixa é núcleo e honorários só o alimenta.
+create or replace function public.fn_honorarios_parcela_pagar(
+  p_org uuid,
+  p_parcela uuid,
+  p_account_id uuid,
+  p_account_plan_id uuid default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_parcela record;
+  v_entry uuid;
+begin
+  if auth.uid() is null or not public.fn_role_at_least(p_org, 'manager') then
+    raise exception 'honorarios_forbidden' using errcode = '42501';
+  end if;
+
+  select * into v_parcela from public.honorarios_parcelas
+   where id = p_parcela and organization_id = p_org
+   for update;
+
+  if not found then
+    raise exception 'parcela_nao_encontrada' using errcode = 'P0002';
+  end if;
+  if v_parcela.status = 'pago' then
+    raise exception 'parcela_ja_paga' using errcode = '22023';
+  end if;
+
+  insert into public.financial_entries
+    (organization_id, account_id, account_plan_id, direction, amount_cents,
+     description, status, paid_at, origin, created_by_user_id)
+  values (
+    p_org, p_account_id, p_account_plan_id, 'in', v_parcela.valor_cents,
+    format('Parcela %s de honorários', v_parcela.numero), 'paid', now(), 'manual', auth.uid()
+  )
+  returning id into v_entry;
+
+  update public.honorarios_parcelas
+     set status = 'pago', financial_entry_id = v_entry
+   where id = p_parcela;
+
+  return jsonb_build_object(
+    'id', v_parcela.id,
+    'contrato_id', v_parcela.contrato_id,
+    'numero', v_parcela.numero,
+    'valor_cents', v_parcela.valor_cents,
+    'status', 'pago',
+    'financial_entry_id', v_entry
+  );
+end;
+$$;
+
+revoke execute on function public.fn_honorarios_parcela_pagar(uuid, uuid, uuid, uuid) from public, anon;
+grant execute on function public.fn_honorarios_parcela_pagar(uuid, uuid, uuid, uuid) to authenticated;
