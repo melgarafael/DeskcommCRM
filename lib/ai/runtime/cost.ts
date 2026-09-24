@@ -3,7 +3,11 @@
  *
  * Looks up the curated `ai_models` catalog (Spec 10 §2.2) and converts token
  * usage into cents, rounded up. Cached in-memory for 5 min — stale catalog data
- * never crashes; missing entries simply mean cost=0 for that run.
+ * never crashes.
+ *
+ * Returns `null` when the model is not in the catalog or the catalog has no
+ * price for it. `null` = "don't know" — never invent 0 ("free"): a new model
+ * without pricing must not pass the budget guard as free.
  *
  * IMPORTANT: distinct from `lib/ai/cost.ts` which still serves the legacy
  * `ai_pricing` table used by the EPIC-06 RAG worker.
@@ -51,13 +55,16 @@ export interface ComputeCostInput {
   outputTokens?: number;
 }
 
-/** Returns cost in cents (rounded up). 0 if model not in catalog. */
-export async function computeCostCents(input: ComputeCostInput): Promise<number> {
+/** Returns cost in cents (rounded up), or `null` when the model has no pricing. */
+export async function computeCostCents(input: ComputeCostInput): Promise<number | null> {
   const pricing = await loadPricing();
   const row = pricing.get(key(input.provider, input.model));
-  if (!row) return 0;
+  if (!row) return null;
   const inputRate = Number(row.input_price_per_million_cents ?? 0);
   const outputRate = Number(row.output_price_per_million_cents ?? 0);
+  // Catalog knows the model but has no price — not better than absence:
+  // returning 0 here would invent "free".
+  if (inputRate === 0 && outputRate === 0) return null;
   const cents =
     ((input.inputTokens ?? 0) * inputRate) / 1_000_000 +
     ((input.outputTokens ?? 0) * outputRate) / 1_000_000;

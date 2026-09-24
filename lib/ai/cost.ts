@@ -33,7 +33,7 @@ async function loadPricing(): Promise<Map<string, PricingRow>> {
     .is("superseded_at", null);
 
   if (error) {
-    // Surface but don't crash — cost will be 0 and the row stays auditable.
+    // Surface but don't crash — cost will be null (unknown) and the row stays auditable.
     return _pricingCache ?? new Map();
   }
 
@@ -105,17 +105,23 @@ async function precoDoCatalogo(
 }
 
 /**
- * Returns cost in **cents**, rounded up. Zero when pricing missing.
+ * Returns cost in **cents**, rounded up.
+ *
+ * Returns `null` when pricing is unknown (model not in `ai_pricing` and not in
+ * the `ai_models` catalog, or catalog knows the model but has no price).
+ * `null` = "don't know" — never invent 0 ("free"). Callers that need a number
+ * for display must render unknown as unknown, not $0.
  */
-export async function computeCost(input: ComputeCostInput): Promise<number> {
+export async function computeCost(input: ComputeCostInput): Promise<number | null> {
   const pricing = await loadPricing();
   const row = pricing.get(input.model);
   if (!row) {
     // `ai_pricing` não conhece: tenta o catálogo, que é onde o cron grava e
     // onde a OpenRouter chega. Embedding não passa por aqui — o catálogo não
-    // guarda preço de embedding —, e nesse caso o desfecho é o mesmo de antes.
+    // guarda preço de embedding —, e nesse caso o desfecho é o mesmo de antes:
+    // desconhecido, não zero.
     const doCatalogo = await precoDoCatalogo(input.model);
-    if (!doCatalogo) return 0;
+    if (!doCatalogo) return null;
     const cents =
       ((input.promptTokens ?? 0) * doCatalogo.prompt) / 1_000_000 +
       ((input.completionTokens ?? 0) * doCatalogo.completion) / 1_000_000;

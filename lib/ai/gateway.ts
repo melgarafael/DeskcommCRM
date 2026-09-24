@@ -99,13 +99,20 @@ export function isEmbeddingProviderConfigured(): boolean {
 
 /**
  * Headers that flow with every gateway call. Tenant ID lets the gateway
- * dashboard slice usage per organization; ZDR opts the request out of provider
- * training corpora (privacy-by-default for tenant data).
+ * dashboard slice usage per organization.
+ *
+ * NOTA DE HONESTIDADE (2026-09-24): esta função JÁ enviou um header
+ * `X-AI-Gateway-Zero-Retention: 1` com o comentário de que "optava a chamada
+ * para fora dos corpora de treino". Esse header NÃO é um mecanismo documentado
+ * do Vercel AI Gateway — ele era ignorado, e o comentário criava uma garantia
+ * de privacidade que não existia. O mecanismo real é
+ * `providerOptions: { gateway: { zeroDataRetention: true } }` na chamada do AI
+ * SDK, e o ZDR por request exige plano Pro ou Enterprise. Ver
+ * `docs/decisoes/pii-para-llm.md` para o estado real da privacidade dos prompts.
  */
 export function gatewayHeaders(opts: { organizationId: string }): Record<string, string> {
   return {
     "X-AI-Gateway-Tenant-Id": opts.organizationId,
-    "X-AI-Gateway-Zero-Retention": "1",
   };
 }
 

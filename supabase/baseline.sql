@@ -951,7 +951,7 @@ CREATE TABLE IF NOT EXISTS "public"."ai_agent_runs" (
     "error_message" "text",
     "tokens_in" integer DEFAULT 0 NOT NULL,
     "tokens_out" integer DEFAULT 0 NOT NULL,
-    "cost_cents" numeric(10,4) DEFAULT 0 NOT NULL,
+    "cost_cents" numeric(10,4),
     "latency_ms" integer,
     "steps_count" integer DEFAULT 0 NOT NULL,
     "tool_calls" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,

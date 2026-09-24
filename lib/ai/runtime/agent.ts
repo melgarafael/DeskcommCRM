@@ -74,7 +74,8 @@ export interface RunAgentResult {
   tool_calls?: ReturnType<typeof serializeSteps>;
   tokens_in?: number;
   tokens_out?: number;
-  cost_cents?: number;
+  /** `null` = custo desconhecido (modelo sem preço). Nunca inventar 0. */
+  cost_cents?: number | null;
   latency_ms?: number;
   steps_count?: number;
   abort_reason?: string;
@@ -419,6 +420,9 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
         reason: "requested_human",
         source: "sentinel",
         latencyMs: Date.now() - startedAt,
+        // Nenhuma chamada ao provedor aconteceu (handoff por palavra-chave
+        // antes do LLM): custo genuinamente 0, não desconhecido.
+        costCents: 0,
         isDryRun: run.is_dry_run,
       });
       return {
@@ -522,7 +526,13 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
       });
-      if (cost > version.cost_budget_cents) {
+      // Custo desconhecido (modelo sem preço no catálogo) NÃO bloqueia: a
+      // doutrina do orçamento ("toda condição ambígua resolve para não
+      // bloqueia", ver `lib/agent-engine/edge/llm/orcamento.ts`) manda errar
+      // frouxo — calar a IA por um modelo novo sem preço é pior que gastar sem
+      // saber quanto. O `null` segue para o `finalizeRun` e aparece como
+      // desconhecido nas telas, nunca como R$ 0,00.
+      if (cost !== null && cost > version.cost_budget_cents) {
         abortReason = "cost_budget_exceeded";
         return true;
       }

@@ -47,7 +47,13 @@ export interface LogInvocationInput {
   prompt_tokens: number;
   completion_tokens: number;
   latency_ms: number;
-  cost_cents: number;
+  /**
+   * `null` = preço desconhecido — nunca inventar 0 ("de graça"). O caminho
+   * legado (`computeCost`) devolve `null` quando o modelo não tem preço no
+   * catálogo; 0 fica reservado para "nenhuma chamada ao provedor" (erro antes
+   * do provider, 0 tokens).
+   */
+  cost_cents: number | null;
   finish_reason?: string | null;
   citations?: Array<Record<string, unknown>>;
   error_payload?: Record<string, unknown> | null;

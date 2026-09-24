@@ -341,7 +341,9 @@ export async function processMessageReceived(row: EventRow): Promise<ProcessResu
       prompt_tokens: 0,
       completion_tokens: 0,
       latency_ms: 0,
-      cost_cents: 0,
+      // O erro pode ter acontecido ANTES ou DURANTE a chamada ao provedor
+      // (este catch envolve o pipeline inteiro): custo desconhecido, não 0.
+      cost_cents: null,
       finish_reason: "error",
       error_payload: { message: detail },
     });

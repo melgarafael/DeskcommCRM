@@ -22,7 +22,8 @@ export interface FinalizeRunInput {
   status: RunStatus;
   tokensIn?: number;
   tokensOut?: number;
-  costCents?: number;
+  /** `null` = custo desconhecido (modelo sem preço). Nunca inventar 0. */
+  costCents?: number | null;
   latencyMs?: number;
   stepsCount?: number;
   toolCalls?: SerializedStep[];
@@ -78,7 +79,7 @@ export async function finalizeRun(input: FinalizeRunInput): Promise<void> {
       status: input.status,
       tokens_in: input.tokensIn ?? 0,
       tokens_out: input.tokensOut ?? 0,
-      cost_cents: input.costCents ?? 0,
+      cost_cents: input.costCents ?? null,
       latency_ms: input.latencyMs ?? null,
       steps_count: input.stepsCount ?? 0,
       abort_reason: input.abortReason ?? null,
@@ -104,7 +105,7 @@ export async function finalizeRun(input: FinalizeRunInput): Promise<void> {
       error_code: input.errorCode ?? null,
       tokens_in: input.tokensIn ?? 0,
       tokens_out: input.tokensOut ?? 0,
-      cost_cents: input.costCents ?? 0,
+      cost_cents: input.costCents ?? null,
       latency_ms: input.latencyMs ?? null,
       steps_count: input.stepsCount ?? 0,
       is_dry_run: input.isDryRun ?? false,

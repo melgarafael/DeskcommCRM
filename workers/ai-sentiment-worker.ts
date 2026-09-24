@@ -263,7 +263,9 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
         prompt_tokens: promptTokens,
         completion_tokens: completionTokens,
         latency_ms: Date.now() - start,
-        cost_cents: 0,
+        // O `generateText` lançou: a chamada ao provedor pode ter falhado
+        // antes de responder ou no meio — custo desconhecido, não 0.
+        cost_cents: null,
         finish_reason: "error",
         error_payload: { message: err instanceof Error ? err.message : String(err) },
       });

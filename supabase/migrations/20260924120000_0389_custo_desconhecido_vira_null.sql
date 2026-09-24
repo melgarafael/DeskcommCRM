@@ -1,0 +1,31 @@
+-- 0389 — custo desconhecido de IA vira NULL em vez de 0.
+--
+-- ─── O defeito ──────────────────────────────────────────────────────────────
+-- `ai_agent_runs.cost_cents` era `numeric(10,4) DEFAULT 0 NOT NULL`. Todo caminho
+-- que não conhecia o preço do modelo — modelo novo sem linha no catálogo
+-- `ai_models`, catálogo que conhece o modelo mas não tem preço, erro ao ler o
+-- catálogo — gravava 0. Zero significa "de graça"; desconhecido significa "não
+-- sei". Confundir os dois faz a tela de Execuções mostrar R$ 0,00 enquanto o
+-- dinheiro sai, e faz o budget guard do runtime (`lib/ai/runtime/agent.ts`)
+-- deixar passar como grátis um modelo que o catálogo ainda não conhece.
+--
+-- ─── O conserto ─────────────────────────────────────────────────────────────
+-- 1. A coluna passa a aceitar NULL e perde o DEFAULT 0. O único INSERT da
+--    tabela (`lib/ai/dispatcher/index.ts`) não passa `cost_cents`: a linha
+--    nasce `pending` com custo NULL (desconhecido até o `finalizeRun`), que é
+--    honesto — o custo só existe depois que o modelo roda.
+-- 2. `finalizeRun`/`finalizeHandoff` passam a gravar `null` quando o custo é
+--    desconhecido, e 0 só quando nenhuma chamada ao provedor aconteceu
+--    (sentinel antes do LLM, erro antes do provider): 0 genuíno continua 0.
+-- 3. O budget guard do runtime NÃO bloqueia custo desconhecido: a doutrina do
+--    orçamento ("toda condição ambígua resolve para não bloqueia",
+--    `lib/agent-engine/edge/llm/orcamento.ts`) manda errar frouxo — calar a IA
+--    por um modelo novo sem preço é pior que gastar sem saber quanto.
+--
+-- ─── Dado tocado ────────────────────────────────────────────────────────────
+-- NENHUM. As linhas antigas com 0 ficam como estão: 0 gravado antes desta
+-- mudança pode ser "desconhecido disfarçado" ou 0 genuíno (erro antes do
+-- provider), e reescrever história seria inventar dado. O conserto é só para
+-- frente. Idempotente (`if exists` em tudo).
+ALTER TABLE "public"."ai_agent_runs" ALTER COLUMN "cost_cents" DROP NOT NULL;
+ALTER TABLE "public"."ai_agent_runs" ALTER COLUMN "cost_cents" DROP DEFAULT;
