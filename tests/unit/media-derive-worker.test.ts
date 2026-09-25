@@ -91,6 +91,7 @@ vi.mock("@/lib/agent-engine/edge/llm/credentials", () => ({
     enabledModels: [],
     orcamento: { modo: "off", tetoCents: 0, efetivoEm: null, limiarPct: 80 },
     orcamentoIndisponivelPorque: null,
+    baseUrl: null,
   })),
 }));
 
@@ -109,6 +110,9 @@ function configResolvida(over: Partial<OrgLlmConfig> = {}): OrgLlmConfig {
     enabledModels: [],
     orcamento: { modo: "off", tetoCents: 0, efetivoEm: null, limiarPct: 80 },
     orcamentoIndisponivelPorque: null,
+    // Coluna nova da credencial do provedor personalizado (#1642): nula aqui
+    // como é em todo provedor nativo.
+    baseUrl: null,
     ...over,
   };
 }

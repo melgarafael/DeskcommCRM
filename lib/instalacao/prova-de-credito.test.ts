@@ -19,8 +19,17 @@ describe("montarRequisicaoDeProva", () => {
   it("sabe cobrar TODOS os provedores que a lista oferece", () => {
     // Se a lista ganhar um provedor e este módulo não souber testá-lo, o
     // diagnóstico ficaria mudo justamente para quem escolheu o mais novo.
+    // `custom` nasce com o endereço na credencial: sem ele a prova não tem
+    // para onde ir, e recusar é o comportamento certo — mas a lista dos
+    // OUTROS segue medida sem endereço nenhum.
     const semProva = IDS_DE_PROVEDOR.filter(
-      (id) => montarRequisicaoDeProva(id, "k", "m") === null,
+      (id) =>
+        montarRequisicaoDeProva(
+          id,
+          "k",
+          "m",
+          id === "custom" ? "https://gw.exemplo/v1" : undefined,
+        ) === null,
     );
     expect(semProva).toEqual([]);
   });
@@ -28,7 +37,12 @@ describe("montarRequisicaoDeProva", () => {
   it("é uma GERAÇÃO, não uma listagem — é o que o provedor cobra", () => {
     // O ponto do arquivo inteiro: listar modelos passa com saldo zero.
     for (const id of IDS_DE_PROVEDOR) {
-      const req = montarRequisicaoDeProva(id, "k", "modelo-x");
+      const req = montarRequisicaoDeProva(
+        id,
+        "k",
+        "modelo-x",
+        id === "custom" ? "https://gw.exemplo/v1" : undefined,
+      );
       expect(req, id).not.toBeNull();
       expect(req!.url, `${id} está batendo num endpoint de catálogo`).not.toMatch(/\/models$/);
     }

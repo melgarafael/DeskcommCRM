@@ -25,7 +25,11 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('@/lib/agent-engine/agent/router-config', () => ({ loadActiveRouter: mocks.router }));
 vi.mock('@/lib/agent-engine/agent/intent-classifier', () => ({ classifyIntent: mocks.classify }));
-vi.mock('@/lib/agent-engine/agent/agent-config', () => ({
+// O spread do original É obrigatório: o ramo assistido agora roda as detecções
+// determinísticas (#1648) e usa `matchesHandoffKeyword` DESTE módulo — mock de
+// módulo inteiro sem ele transformava a chamada em TypeError no meio do turno.
+vi.mock('@/lib/agent-engine/agent/agent-config', async (importOriginal) => ({
+  ...await importOriginal<Record<string, unknown>>(),
   loadPublishedAgentConfigById: mocks.byId, loadPublishedAgentConfig: mocks.bySession,
   loadConversationAgentConfig: mocks.conversationAgent,
 }));
@@ -66,6 +70,9 @@ const deps = {
 } as unknown as InboundTurnDeps;
 const assistido = {
   agentId: 'A', versionId: 'version-A', operationRevision: '7', operationMode: 'assisted', pausedAt: null,
+  // Presente em toda config publicada de verdade (`mapAgentConfigRow`); o ramo
+  // assistido passou a ler isto para a detecção de handoff por keyword (#1648).
+  handoffKeywords: [] as string[],
 } as PublishedAgentConfig;
 
 function pool() {

@@ -246,7 +246,15 @@ describe("a corrente inteira: lista × execução × tela", () => {
     const recusados: string[] = [];
     for (const id of IDS_DE_PROVEDOR) {
       try {
-        buildModel(id, "chave-de-teste", "modelo/qualquer");
+        // `custom` nasce com o ENDEREÇO na credencial (base_url): sem ele o
+        // ensaio é recusado de propósito — provar contra o endpoint da OpenAI
+        // com a chave de um gateway privado seria mentir nos dois sentidos.
+        buildModel(
+          id,
+          "chave-de-teste",
+          "modelo/qualquer",
+          id === "custom" ? "https://gateway.exemplo/v1" : undefined,
+        );
       } catch {
         recusados.push(id);
       }

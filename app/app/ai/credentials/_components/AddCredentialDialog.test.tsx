@@ -57,4 +57,66 @@ describe("AddCredentialDialog — ajuda ao escolher", () => {
     montar();
     expect(screen.getByLabelText("Chave")).toHaveAttribute("placeholder", "sk-ant-…");
   });
+
+  it("provedor personalizado: pede a base URL e SÓ grava depois do teste passar", async () => {
+    // Medido: o endereço é escolha do operador, então há algo a provar ANTES
+    // de gravar. O teste falha aqui — e a criação nem chega a ser chamada.
+    api.post.mockClear();
+    api.post.mockImplementation((url: string) =>
+      url.endsWith("/credentials/test")
+        ? Promise.resolve({ data: { ok: false, models: [], error: "provider_status_404" } })
+        : Promise.resolve({ data: { id: "c1" } }),
+    );
+    montar("custom");
+
+    expect(screen.getByLabelText("Endereço (base URL)")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Chave"), {
+      target: { value: "sk-gateway-0123456789" },
+    });
+    fireEvent.change(screen.getByLabelText("Endereço (base URL)"), {
+      target: { value: "https://gw.exemplo/v1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar e validar" }));
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith("/api/v1/ai/credentials/test", {
+        base_url: "https://gw.exemplo/v1",
+        api_key: "sk-gateway-0123456789",
+      }),
+    );
+
+    // Nada gravado: com o teste reprovado, a criação não acontece.
+    expect(api.post).not.toHaveBeenCalledWith("/api/v1/ai/credentials", expect.anything());
+
+    // E a tela diz o que deu errado, no campo que a pessoa acabou de preencher.
+    expect(await screen.findByText(/não respondeu em \/models/)).toBeInTheDocument();
+  });
+
+  it("provedor personalizado: teste aprovado, aí sim a credencial é criada", async () => {
+    api.post.mockClear();
+    api.post.mockImplementation((url: string) =>
+      url.endsWith("/credentials/test")
+        ? Promise.resolve({ data: { ok: true, models: ["gpt-x"], error: null } })
+        : Promise.resolve({ data: { id: "c2" } }),
+    );
+    montar("custom");
+
+    fireEvent.change(screen.getByLabelText("Chave"), {
+      target: { value: "sk-gateway-0123456789" },
+    });
+    fireEvent.change(screen.getByLabelText("Endereço (base URL)"), {
+      target: { value: "https://gw.exemplo/v1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar e validar" }));
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith("/api/v1/ai/credentials", {
+        provider: "custom",
+        label: "Provedor personalizado (compatível com OpenAI)",
+        api_key: "sk-gateway-0123456789",
+        base_url: "https://gw.exemplo/v1",
+      }),
+    );
+  });
 });

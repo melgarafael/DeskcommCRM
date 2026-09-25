@@ -14,6 +14,7 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { byteaToBuffer, decryptKey } from "@/lib/crypto/aes_gcm";
 import { validateProviderKey } from "@/lib/ai/provider-validators";
+import { lerBaseUrlDaCredencial } from "@/lib/ai/credenciais/guardar";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -77,7 +78,11 @@ export async function POST(
     return fail("decrypt_failed", t("Falha ao decifrar credential."), 500, { requestId });
   }
 
-  const result = await validateProviderKey(row.provider, apiKey);
+  // O provedor personalizado (#1642) valida pelo endereço GRAVADO na linha —
+  // sem ele, revalidar marcaria como inválida a credencial que funciona.
+  const baseUrl =
+    row.provider === "custom" ? await lerBaseUrlDaCredencial(admin, row.id) : undefined;
+  const result = await validateProviderKey(row.provider, apiKey, baseUrl);
   const patch = result.ok
     ? {
         validated_at: new Date().toISOString(),

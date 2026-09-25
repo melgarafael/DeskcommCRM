@@ -156,4 +156,25 @@ describe("POST /api/v1/ai/credentials/:id/revalidate", () => {
     expect(patch.models_available).toEqual(["claude-sonnet-5", "claude-haiku-4-5"]);
     expect(patch.validation_error).toBeNull();
   });
+
+  it("provedor personalizado (#1642): revalida pelo endereço GRAVADO, não sem endereço", async () => {
+    vi.mocked(validateProviderKey).mockResolvedValue({ ok: true, models: ["gpt-x"] } as Awaited<
+      ReturnType<typeof validateProviderKey>
+    >);
+    const fake = fakeAdmin({
+      "ai_provider_credentials:select": {
+        data: { ...linha, provider: "custom", base_url: "https://gw.exemplo/v1" },
+        error: null,
+      },
+      "ai_provider_credentials:update": { data: { ...segura, provider: "custom" }, error: null },
+    });
+    vi.mocked(createAdminClient).mockReturnValue(fake as unknown as ReturnType<typeof createAdminClient>);
+
+    const res = await invocar();
+    expect(res.status).toBe(200);
+    expect(
+      vi.mocked(validateProviderKey),
+      "sem o endereço, o validador responde base_url_ausente e a credencial que funciona vira inválida",
+    ).toHaveBeenCalledWith("custom", "sk-decifrada", "https://gw.exemplo/v1");
+  });
 });

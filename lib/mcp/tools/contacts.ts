@@ -110,7 +110,9 @@ export const crmGetContact: McpToolDefinition<typeof getInputShape> = {
 
 const propostaShape = {
   contact_id: z.string().uuid(),
-  campo: z.enum(CAMPOS_PROPONIVEIS).describe("Qual informação: email, name ou phone_number."),
+  campo: z
+    .enum(CAMPOS_PROPONIVEIS)
+    .describe("Qual informação: email, name, phone_number ou birthdate (AAAA-MM-DD)."),
   valor: z.string().min(1).max(200).describe("O valor exatamente como a pessoa informou."),
   trecho: z
     .string()
@@ -134,7 +136,7 @@ const propostaShape = {
 export const crmProposeContactField: McpToolDefinition<typeof propostaShape> = {
   name: "crm_propose_contact_field",
   description:
-    "Registra uma informação que o cliente forneceu (email, nome ou telefone) como PROPOSTA para " +
+    "Registra uma informação que o cliente forneceu (email, nome, telefone ou data de nascimento) como PROPOSTA para " +
     "uma pessoa confirmar. NADA é gravado no cadastro por conta desta chamada, e a proposta vence " +
     "sozinha se ninguém decidir. Nunca diga ao cliente que o cadastro foi atualizado. Recusa se já " +
     "houver proposta do mesmo campo aguardando decisão, se o valor for igual ao que já está " +
@@ -160,7 +162,8 @@ export const crmProposeContactField: McpToolDefinition<typeof propostaShape> = {
         contato_nao_encontrado: "não encontrei esse contato nesta conta.",
         contato_anonimizado:
           "esse contato exerceu o direito de exclusão de dados; não é possível registrar informações dele.",
-        valor_invalido: "o valor não tem forma de email/telefone/nome válido — confirme com a pessoa.",
+        valor_invalido:
+          "o valor não tem forma de email/telefone/nome/data de nascimento válidos — confirme com a pessoa.",
         valor_igual_ao_atual: "essa informação já está no cadastro; não há o que confirmar.",
         ja_existe_proposta:
           "já existe uma proposta desse mesmo campo aguardando decisão de uma pessoa — não crie outra.",

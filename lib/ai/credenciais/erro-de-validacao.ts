@@ -48,6 +48,60 @@ export function descreverErroDeValidacao(codigo: string | null, provedor?: strin
     };
   }
 
+  // Provedor personalizado (#1642): o problema é o ENDEREÇO, não a chave —
+  // dizer "confira a chave" mandaria quem opera procurar no lugar errado.
+  if (codigo === "base_url_ausente" || codigo === "base_url_invalida") {
+    return {
+      frase:
+        "Falta o endereço (base URL) do provedor personalizado, ou ele não começa com http:// ou https://. Edite a credencial e informe o endereço da API.",
+      chaveErrada: false,
+      generico: false,
+    };
+  }
+
+  // A régua de destino (`motivoDaRecusaDeDestino`, decisão 22-d) recusou o
+  // endereço antes de a chave sair. O problema é o ENDEREÇO, e cada código diz
+  // o que fazer de um jeito diferente.
+  if (codigo === "unsafe_url:dns_failed" || codigo === "unsafe_url:dns_empty") {
+    return {
+      frase: "Este servidor não encontrou o endereço: o nome não resolve. Confira a base URL.",
+      chaveErrada: false,
+      generico: false,
+    };
+  }
+  if (codigo === "unsafe_url:https_required") {
+    return {
+      frase: "Em produção, o endereço (base URL) precisa começar com https://.",
+      chaveErrada: false,
+      generico: false,
+    };
+  }
+  if (codigo === "unsafe_url:redirect_not_followed") {
+    return {
+      frase:
+        "Este endereço respondeu com um redirecionamento, e o CRM não segue redirecionamento em endereço cadastrado pela empresa. Informe o endereço final da API.",
+      chaveErrada: false,
+      generico: false,
+    };
+  }
+  if (codigo.startsWith("unsafe_url:")) {
+    return {
+      frase:
+        "Este endereço não é aceito: um endereço cadastrado pela empresa não pode apontar para a rede interna do servidor (localhost, IP privado ou serviço interno).",
+      chaveErrada: false,
+      generico: false,
+    };
+  }
+
+  if (codigo === "provider_status_404") {
+    return {
+      frase:
+        "Este endereço não respondeu em /models. Confira a base URL: ela deve apontar para a raiz de uma API compatível com a OpenAI.",
+      chaveErrada: false,
+      generico: false,
+    };
+  }
+
   if (codigo === "provider_status_429") {
     return {
       frase: "O provedor limitou as chamadas desta chave. Tente de novo em alguns minutos.",

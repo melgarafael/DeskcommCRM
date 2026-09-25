@@ -15,6 +15,13 @@ export interface LoadedCredential {
   apiKey: string;
   provider: ProvedorComChave;
   label: string;
+  /**
+   * O endereço da API quando a credencial É de provedor personalizado (#1642);
+   * `null` nos nativos, cujo endpoint é intrínseco. Lido numa segunda consulta
+   * e só para `custom`, para que uma clone sem a migration 0413 continue
+   * carregando as quatro chave nativas que já carrega hoje.
+   */
+  baseUrl: string | null;
 }
 
 export class CredentialUnavailableError extends Error {
@@ -97,5 +104,18 @@ export async function loadCredential(
     );
   }
 
-  return { apiKey, provider: data.provider, label: data.label };
+  let baseUrl: string | null = null;
+  if (data.provider === "custom") {
+    const { data: endereco } = await admin
+      .from("ai_provider_credentials")
+      .select("base_url")
+      .eq("id", id)
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+    // Coluna ausente (clone atrás da 0413) devolve `error`, não lança: fica
+    // `null` e `buildModel` recusa a chamada dizendo qual endereço falta.
+    baseUrl = typeof endereco?.base_url === "string" ? endereco.base_url : null;
+  }
+
+  return { apiKey, provider: data.provider, label: data.label, baseUrl };
 }

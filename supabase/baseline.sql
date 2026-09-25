@@ -1212,6 +1212,14 @@ CREATE TABLE IF NOT EXISTS "public"."ai_provider_credentials" (
 ALTER TABLE "public"."ai_provider_credentials" OWNER TO "postgres";
 
 
+-- (migration 0413) `base_url` entra AQUI, antes da view do dump, e não só no
+-- apêndice: o `update.sh`/modo UPDATE reaplica este bloco num banco em que a
+-- view já tem `base_url`, e `create or replace view` não remove coluna
+-- ("cannot drop columns from view"). Com a coluna no fim das duas definições,
+-- a reaplicação é no-op e o clone antigo ganha a coluna no fim (permitido).
+ALTER TABLE "public"."ai_provider_credentials" ADD COLUMN IF NOT EXISTS "base_url" "text";
+
+
 CREATE OR REPLACE VIEW "public"."ai_provider_credentials_safe" WITH ("security_invoker"='true') AS
  SELECT "id",
     "organization_id",
@@ -1224,7 +1232,8 @@ CREATE OR REPLACE VIEW "public"."ai_provider_credentials_safe" WITH ("security_i
     "is_active",
     "created_by",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "base_url"
    FROM "public"."ai_provider_credentials";
 
 
@@ -11570,11 +11579,17 @@ create table if not exists public.contact_field_proposals (
 comment on table public.contact_field_proposals is
   'Dado do contato que a IA ouviu na conversa e propôs — aguardando confirmação humana (spec 17 §4b). SEMPRE com prazo: proposta que ninguém decide vira badge permanente, que simula atenção e adia a decisão. No vencimento sai da tela e vira item de caixa.';
 
+-- 0412 (issue #1546): `birthdate` entra AQUI, no bloco Único desta constraint —
+-- o apêndice de uma migration que só amplia vocabulário NÃO reconstrói a
+-- constraint (uma constraint, um bloco, `baseline-constraint-reconstruida`):
+-- dois blocos fariam o primeiro falhar no `update.sh` de um clone cuja fila já
+-- tenha uma proposta de nascimento, deixando a tabela SEM constraint entre o
+-- drop e o add que funciona.
 alter table public.contact_field_proposals
   drop constraint if exists contact_field_proposals_campo_check;
 alter table public.contact_field_proposals
   add constraint contact_field_proposals_campo_check check (
-    campo = any (array['email', 'name', 'phone_number']::text[])
+    campo = any (array['email', 'name', 'phone_number', 'birthdate']::text[])
   );
 
 alter table public.contact_field_proposals
@@ -38196,6 +38211,164 @@ alter table public.ai_knowledge_sources
   add column if not exists content_hash text;
 comment on column public.ai_knowledge_sources.content_hash is
   'Hash do conteúdo que foi indexado por último. O indexador pula a reindexação quando o hash atual é igual E o modelo de embedding da versão ativa é o mesmo.';
+
+-- ---- birthdate na fila de proposta (migration 0412, issue #1546) ----
+-- NADA DE DDL AQUI, e a razão é a cerca `baseline-constraint-reconstruida`:
+-- `contact_field_proposals_campo_check` já tem o seu bloco ÚNICO, e foi ele que
+-- a 0412 editou, acrescentando `birthdate` ao conjunto. Um segundo `add`
+-- constraint neste apêndice faria o bloco antigo falhar no `update.sh` de um
+-- clone cuja fila já tenha uma proposta de nascimento — e deixaria a tabela sem
+-- constraint entre o `drop` e o `add` que funciona, se o run morrer no meio.
+-- O vocabulário novo é lido lá onde a constraint mora; esta linha é só o
+-- marcador de que a mudança existe e onde ela foi parar.
+
+-- ---- provedor personalizado: endereço da credencial (migration 0413, #1642) ----
+--
+-- `base_url` na linha da credencial: o endereço do endpoint compatível com a
+-- OpenAI que vai receber a chave, escolha do operador na tela de Credenciais.
+-- Aditiva e idempotente; nenhum provedor nativo muda (`null` em toda linha
+-- existente, e o runtime só lê a coluna quando o provider é `custom`).
+-- Racional inteiro na migration 0413.
+alter table public.ai_provider_credentials
+  add column if not exists base_url text;
+
+-- Forma do dado no banco, igual à da aplicação (zod da rota): http(s) sem
+-- espaço. O CHECK é o que sobra para quem escrever direto no SQL ou pelo
+-- PostgREST — e `null` continua sendo a resposta de todo provedor nativo.
+alter table public.ai_provider_credentials
+  drop constraint if exists ai_provider_credentials_base_url_check;
+alter table public.ai_provider_credentials
+  add constraint ai_provider_credentials_base_url_check
+  check (base_url is null or base_url ~* '^https?://[^[:space:]]+$');
+
+-- A view é a ÚNICA superfície de leitura da tela: expor `base_url` aqui é o
+-- que faz a tela mostrar o endereço cadastrado sem abrir a tabela. Coluna nova
+-- no FIM da lista — `create or replace view` não renomea nem reordena coluna
+-- existente.
+create or replace view public.ai_provider_credentials_safe
+with (security_invoker = true) as
+ select id,
+    organization_id,
+    provider,
+    label,
+    api_key_last4,
+    validated_at,
+    validation_error,
+    models_available,
+    is_active,
+    created_by,
+    created_at,
+    updated_at,
+    base_url
+   from public.ai_provider_credentials;
+
+-- O SELECT é POR COLUNA desde a 0150: as três colunas do segredo ficam fora
+-- de propósito, e `revoke` de tabela inteira é quem as mantém fora. A lista tem
+-- de acompanhar a tabela — sem `base_url` aqui, a view nova responderia
+-- "permission denied for table ai_provider_credentials" para todo manager, e a
+-- tela de Credenciais viraria `[]`. `base_url` não é segredo: é um endpoint.
+revoke select on public.ai_provider_credentials from authenticated, anon;
+grant select (
+  id, organization_id, provider, label, api_key_last4, validated_at,
+  validation_error, models_available, is_active, created_by, created_at, updated_at,
+  base_url
+) on public.ai_provider_credentials to authenticated;
+grant select on public.ai_provider_credentials_safe to authenticated;
+
+-- O PostgREST guarda o schema em cache; sem isto a coluna nova só aparece no
+-- próximo reload.
+notify pgrst, 'reload schema';
+
+-- ---- redact unificado: o portão do botão chama a cascata canônica (migration 0414, issue #1504) ----
+--
+-- Os DOIS caminhos de anonimizar passam a redigir na MESMA função,
+-- `fn_lgpd_cascade_redact_contact`: o botão da ficha (`fn_lgpd_anonymize_contact`,
+-- este portão) e o pedido formal (`lib/lgpd/redact-cascade.ts`). Antes desta
+-- troca o botão reescrevia o CONTATO e mais nada — as 11 tabelas ligadas ao
+-- contato (orders, sales, voice_calls, prospecting_candidates, agent_cases,
+-- agent_case_events, demandas, agent_inbox_items, agent_case_chat_messages,
+-- passagens_de_atendimento, entregas_de_aviso_de_caso) e os campos `consent`,
+-- `source_metadata` e `tags` do contato só eram alcançados pelo pedido formal.
+--
+-- O portão continua portão: autoridade (suporte, papel `admin`, MFA), mutex
+-- (`fn_service_lock` antes do `for update`) e o contrato de retorno
+-- `{already_anonymized, anonymized_at}` com a data original na retomada. O que
+-- sai do corpo dele é o `update contacts` — a escrita do contato é da cascata.
+--
+-- Racional completo, decisão por decisão, na própria migration. Corpo IGUAL ao
+-- da cadeia (`apendice-do-baseline-nao-diverge-da-cadeia` cobra), antes da
+-- VARREDURA anon logo abaixo.
+create or replace function public.fn_lgpd_anonymize_contact(p_organization_id uuid,p_contact_id uuid)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare c public.contacts; support jsonb; v_quando timestamptz;
+begin
+ support:=public.fn_support_context();
+ if auth.uid() is null or not public.fn_support_write_allowed(p_organization_id)
+  or not (public.fn_role_at_least(p_organization_id,'admin') or (public.fn_is_platform_admin() and support is null)) then
+  raise exception 'contact_anonymize_forbidden' using errcode='42501';
+ end if;
+ if not public.fn_session_mfa_proven() then raise exception 'contact_anonymize_mfa_required' using errcode='42501';end if;
+ perform public.fn_service_lock(p_organization_id,p_contact_id);
+ select * into c from public.contacts where organization_id=p_organization_id and id=p_contact_id for update;
+ if not found then raise exception 'contact_not_found' using errcode='P0002';end if;
+ if c.is_anonymized then return jsonb_build_object('already_anonymized',true,'anonymized_at',c.anonymized_at);end if;
+ -- issue #1504 — a redação em si é da função ÚNICA. Este caminho (o botão) e o
+ -- pedido formal passam por aqui; o portão acima é quem decide QUEM pode
+ -- anonimizar, e nada é escrito por conta próprio neste corpo.
+ perform public.fn_lgpd_cascade_redact_contact(p_organization_id,p_contact_id,null);
+ select anonymized_at into v_quando
+   from public.contacts where organization_id=p_organization_id and id=p_contact_id;
+ return jsonb_build_object('already_anonymized',false,'anonymized_at',v_quando);
+end;$$;
+revoke all on function public.fn_lgpd_anonymize_contact(uuid,uuid) from public,anon,authenticated,service_role;
+grant execute on function public.fn_lgpd_anonymize_contact(uuid,uuid) to authenticated;
+
+-- ---- teto de tokens ativos por organização (migration 0415, issue #1448) ----
+-- Um trigger BEFORE INSERT conta os tokens VIVOS da organização (sem
+-- revoked_at, não expirados) e recusa a emissão quando bate no teto, com
+-- mensagem própria em PT-BR que diz o limite e manda revogar um token para
+-- liberar espaço. Revogados e expirados não contam: é o que deixa a rotação
+-- legítima passar. SQLSTATE `PT409`, que a rota de emissão devolve como 409 —
+-- mesmo desenho do `PT404`/`PT422` da 0403. Racional inteiro no cabeçalho da
+-- migration; a definição abaixo é a MESMA, byte a byte.
+
+create or replace function public.fn_teto_de_tokens_ativos() returns trigger
+    language plpgsql security definer
+    set search_path = ''
+as $$
+declare
+  v_teto   constant integer := 50;
+  v_ativos integer;
+begin
+  select count(*)
+    into v_ativos
+    from public.api_tokens
+   where organization_id = new.organization_id
+     and revoked_at is null
+     and (expires_at is null or expires_at > now());
+
+  if v_ativos >= v_teto then
+    raise exception
+      'Teto de tokens ativos por organização atingido: % de %. Revogue um token que não esteja mais em uso (Configurações → Tokens de API → Revogar) para liberar espaço — tokens revogados ou expirados não contam — e tente criar outro.',
+      v_ativos, v_teto
+      using errcode = 'PT409';
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_teto_de_tokens_ativos() from public, anon, authenticated;
+
+comment on function public.fn_teto_de_tokens_ativos() is
+  'Gatilho de api_tokens (migration 0415, issue #1448): recusa a INSERÇÃO quando a organização já tem o teto de tokens ATIVOS (sem revoked_at e não expirados). Mensagem própria em PT-BR com o limite e como revogar; SQLSTATE PT409, que a rota de emissão devolve como 409.';
+
+drop trigger if exists trg_teto_de_tokens_ativos on public.api_tokens;
+
+create trigger trg_teto_de_tokens_ativos
+    before insert on public.api_tokens
+    for each row
+    execute function public.fn_teto_de_tokens_ativos();
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --

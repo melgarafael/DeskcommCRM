@@ -54,6 +54,7 @@ case " $* " in
     case " $* " in *" -c "*|*" -f "*) ;; *" -i "*) cat >/dev/null ;; esac
     case " $* " in
       *platform_smtp_settings*) printf '%b' "${PSQL_SMTP:-}" ;;
+      *signup_mode*) printf '%b' "${PSQL_SIGNUP:-}" ;;
       *" pg_dump "*) echo "-- dump" ;;
       *" tar czf /out/"*)
         [ "${STORAGE_FALHA:-0}" = "1" ] && case " $* " in *storage-*) exit 1;; esac
@@ -360,6 +361,34 @@ mv "$SB/.env" "$SB/.env.bak"
 atualiza >/dev/null; rc=$?
 check "modo single-server sem o .env do Supabase é erro dito, não silêncio" test "$rc" -ne 0
 mv "$SB/.env.bak" "$SB/.env"
+
+# #1653 — o fechamento do cadastro direto no GoTrue chega JÁ na atualização que
+# o traz. Quem executa essa atualização é o update.sh ANTIGO (o bash segue lendo
+# o arquivo que abriu; linha nova no texto do update.sh não roda), e o que ele
+# faz depois do checkout — desde a v1.42.0, a primeira com single-server — é
+# reler o _common.sh e chamar esta função. Então é aqui, no corpo dela, que o
+# efeito tem de acontecer; o caso abaixo prova o efeito, não a posição no texto.
+atualiza_sm() { PROJECT_DIR="$PROJ" SUPABASE_DB_URL=postgresql://x@supabase-db/postgres kit 'atualizar_supabase_single_server' 2>&1; }
+env_sb_inicial; printf 'DISABLE_SIGNUP=false\n' >> "$SB/.env"; : > "$LOG"
+PSQL_SIGNUP='so_convite\n' atualiza_sm >/dev/null; rc=$?
+check "so_convite: a atualização fecha o cadastro direto do GoTrue (rc=0)" \
+  bash -c '[ "$1" -eq 0 ] && grep -qx "DISABLE_SIGNUP=true" "$2"' _ "$rc" "$SB/.env"
+l_wait="$(grep -n 'compose up -d --wait' "$LOG" | head -1 | cut -d: -f1)"
+l_auth="$(grep -n 'compose up -d --no-deps auth' "$LOG" | head -1 | cut -d: -f1)"
+check "e reinicia o auth DEPOIS de subir o Supabase, para ele ler o valor novo" \
+  test "${l_auth:-0}" -gt "${l_wait:-999}"
+: > "$LOG"
+PSQL_SIGNUP='so_convite\n' atualiza_sm >/dev/null
+check "rodar de novo não reinicia o auth (idempotente)" nao_contem "$LOG" '--no-deps auth'
+: > "$LOG"
+PSQL_SIGNUP='aberto\n' atualiza_sm >/dev/null
+check "voltou para aberto: a atualização reabre" \
+  bash -c 'grep -qx "DISABLE_SIGNUP=false" "$1" && grep -qF -- "--no-deps auth" "$2"' _ "$SB/.env" "$LOG"
+: > "$LOG"; touch "$FLAGS/compose-falha"
+PSQL_SIGNUP='so_convite\n' atualiza_sm >/dev/null; rc=$?
+rm -f "$FLAGS/compose-falha"
+check "Supabase que não sobe: reprova sem mexer no modo de cadastro" \
+  bash -c '[ "$1" -ne 0 ] && grep -qx "DISABLE_SIGNUP=false" "$2"' _ "$rc" "$SB/.env"
 
 echo "update.sh chama tudo isso no lugar certo:"
 U="$KIT_DIR/update.sh"

@@ -137,6 +137,36 @@ function horarioDoBloco(testid: string): { dia: string; hora: string } {
   return { dia: m[1]!, hora: m[2]! };
 }
 
+/**
+ * `y(de) − y(ate)`, com as DUAS caixas lidas no mesmo instante.
+ *
+ * ⚠️ Duas chamadas de `boundingBox()` são duas idas ao navegador, e entre elas
+ * a página continua desenhando. Qualquer coisa que entre ACIMA da grade nesse
+ * intervalo empurra só a segunda leitura, e a diferença acusa o produto de
+ * desenhar o card fora do lugar. Foi o que aconteceu no caso do arraste, duas
+ * vezes (runs 36061761510 e 36164033754): depois do F5 a grade volta ao
+ * primeiro tipo, "Atendimento", que não tem jornada — e o aviso
+ * `motivo-da-grade` (34px + 8px de `gap`) chegou entre a leitura do card e a
+ * do bloco. Os snapshots do trace mostram o DOM parado na primeira e o aviso
+ * nascendo na segunda: "-42px fora da faixa", com o card no lugar certo.
+ *
+ * Um `evaluate` só lê as duas no mesmo quadro; o que muda acima da grade
+ * desloca as duas juntas e a distância não se mexe.
+ */
+async function distanciaVertical(page: Page, de: string, ate: string): Promise<number> {
+  return page.evaluate(
+    ([a, b]) => {
+      const y = (seletor: string) => {
+        const el = document.querySelector(seletor);
+        if (!el) throw new Error(`elemento ausente na medição: ${seletor}`);
+        return el.getBoundingClientRect().y;
+      };
+      return y(a) - y(b);
+    },
+    [de, ate] as const,
+  );
+}
+
 // Cada caso faz login e uma jornada inteira. O teto padrão de 30s vira
 // "timeout", que é indistinguível de defeito — foi o que aconteceu com a spec
 // irmã na primeira execução.
@@ -348,14 +378,17 @@ test("arrastar um card remarca — e o horário novo sobrevive ao reload", async
   //
   // O card tem de estar na faixa de hora do horário novo. A olho isto é "parece
   // certo"; medido, é o topo do card contra o topo do bloco daquele horário.
-  const blocoDoNovoHorario = page.locator(`[data-testid="bloco-${dia}-${horarioOferecido}"]`);
-  await blocoDoNovoHorario.scrollIntoViewIfNeeded();
-  const caixaFinal = (await cardDepois.boundingBox())!;
-  const caixaFaixa = (await blocoDoNovoHorario.boundingBox())!;
+  const seletorDoNovoHorario = `[data-testid="bloco-${dia}-${horarioOferecido}"]`;
+  await page.locator(seletorDoNovoHorario).scrollIntoViewIfNeeded();
+  const foraDaFaixa = await distanciaVertical(
+    page,
+    `button:has([data-testid="faixa-${id}"])`,
+    seletorDoNovoHorario,
+  );
   expect(
-    Math.abs(caixaFinal.y - caixaFaixa.y),
+    Math.abs(foraDaFaixa),
     `o card foi remarcado para ${horarioOferecido} e está desenhado ${Math.round(
-      caixaFinal.y - caixaFaixa.y,
+      foraDaFaixa,
     )}px fora da faixa daquela hora`,
   ).toBeLessThanOrEqual(2);
 
@@ -408,9 +441,8 @@ test("arrastar para fora da disponibilidade é RECUSADO e o card volta", async (
    *
    * A distância entre o card e o bloco da sua hora não depende da rolagem.
    */
-  const blocoDaHoraOriginal = page.locator(`[data-testid="${testidOrigem}"]`);
-  const distanciaAoBloco = async () =>
-    (await card.boundingBox())!.y - (await blocoDaHoraOriginal.boundingBox())!.y;
+  const distanciaAoBloco = () =>
+    distanciaVertical(page, `button:has([data-testid="faixa-${id}"])`, `[data-testid="${testidOrigem}"]`);
   const distanciaAntes = await distanciaAoBloco();
 
   const bloqueado = blocoBloqueado(page);

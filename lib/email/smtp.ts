@@ -1,4 +1,6 @@
+import { isIP } from "node:net";
 import nodemailer, { type Transporter } from "nodemailer";
+import { env } from "@/lib/env";
 import { getSmtpConfig, type SmtpConfig } from "@/lib/email/config";
 
 interface SendArgs {
@@ -34,11 +36,24 @@ export function formatFromAddress(config: SmtpConfig, override?: string): string
   const name = (override ?? config.fromName).replace(/[<>"\r\n]/g, "").trim();
   return name ? `${name} <${config.fromEmail}>` : config.fromEmail;
 }
+/** A URL já é validada por lib/env; em desenvolvimento mantemos o padrão local. */
+function smtpClientName(): string | undefined {
+  const hostname = new URL(env.NEXT_PUBLIC_APP_URL).hostname;
+  const address = hostname.replace(/^\[|\]$/g, "");
+  if (isIP(address) === 4) return `[${address}]`;
+  if (isIP(address) === 6) return `[IPv6:${address}]`;
+  return hostname.includes(".") ? hostname : undefined;
+}
+
 function getTransport(config: SmtpConfig) {
-  const key = `${config.host}\0${config.port}\0${config.security}\0${config.username}\0${config.password}`;
+  const name = smtpClientName();
+  const key = `${name ?? ""}\0${config.host}\0${config.port}\0${config.security}\0${config.username}\0${config.password}`;
   if (transporter && transporterKey === key) return transporter;
   transporterKey = key;
   transporter = nodemailer.createTransport({
+    // Docker usa hostname curto; o padrão do Nodemailer vira [127.0.0.1],
+    // que alguns provedores aceitam e filtram depois. Identifique a instalação.
+    name,
     host: config.host,
     port: config.port,
     secure: config.security === "tls",

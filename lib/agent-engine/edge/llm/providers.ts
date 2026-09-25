@@ -9,6 +9,8 @@ import { createOpenAI } from '@ai-sdk/openai';
 import type { LanguageModel } from 'ai';
 import { MockLanguageModelV3 } from 'ai/test';
 
+import { fetchParaDestinoDaOrganizacao } from '@/lib/automation/destinos-internos-autorizados';
+
 import { allowlistedFetch, buildAllowlist } from '../egress';
 
 /**
@@ -300,6 +302,31 @@ export function createDefaultRegistry(opts?: {
     requesty: (apiKey, modelId, baseUrl) => {
       const endpoint = baseUrl ?? REQUESTY_ENDPOINT;
       return createOpenAI({ apiKey, baseURL: endpoint, fetch: contain(endpoint) }).chat(modelId);
+    },
+    /**
+     * Provedor personalizado (#1642): o endpoint É DO OPERADOR e vem na
+     * credencial (`ai_provider_credentials.base_url`), através de
+     * `decisao.baseUrl ?? config.baseUrl`. Não existe endpoint canônico aqui de
+     * propósito: sem endereço a chamada é RECUSADA, porque cair no endpoint da
+     * OpenAI seria mandar a chave de um gateway privado para a OpenAI — e
+     * silenciosamente, que é a forma pior de errar. Mesma fábrica e mesmo
+     * `.chat()` da OpenRouter: quem fala a API da OpenAI fala Chat Completions.
+     * A allowlist do egress é a do endpoint escolhido, como nos roteadores, e
+     * cada requisição passa ANTES pela régua de destino de organização: o
+     * endereço foi escolhido por uma empresa, então não aponta para a rede
+     * interna do servidor (decisão 22-d).
+     */
+    custom: (apiKey, modelId, baseUrl) => {
+      if (!baseUrl) {
+        throw new Error(
+          "custom_provider_sem_base_url: cadastre o endereço (base URL) na credencial do provedor personalizado",
+        );
+      }
+      return createOpenAI({
+        apiKey,
+        baseURL: baseUrl,
+        fetch: fetchParaDestinoDaOrganizacao(contain(baseUrl)),
+      }).chat(modelId);
     },
   };
 }

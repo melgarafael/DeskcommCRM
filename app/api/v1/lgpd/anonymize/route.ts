@@ -6,11 +6,16 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * tenant or platform_admin can execute.
  *
  * Cascade (best-effort sequential — no client-side transaction):
- *   1. contacts: nullify PII, set is_anonymized + anonymized_at, rewrite display_name
- *      — roda UMA vez (repeti-la apagaria a data real do exercício do direito)
+ *   1. contacts + as 11 tabelas ligadas a ele: `fn_lgpd_anonymize_contact`,
+ *      que desde a migration 0414 CHAMA `fn_lgpd_cascade_redact_contact` — a
+ *      MESMA função do pedido formal (issue #1504). O portão é quem decide
+ *      QUEM anonimiza (papel, suporte, MFA, mutex); a redação é da função
+ *      única, e roda UMA vez (repeti-la apagaria a data real do exercício do
+ *      direito — daí o `already_anonymized` da retomada)
  *   2. crm_leads + 3. crm_lead_activities: `lib/lgpd/cascata.ts`, idempotentes,
  *      e a MESMA função que o cron `data-retention` usa para completar sozinho
- *      o que ficou pela metade
+ *      o que ficou pela metade (numa retomada a cascata já devolveu cedo e é
+ *      ela quem fecha o resíduo)
  *   4. mensagens, conversa, resumo do agente (`lead_checkpoints`) e a mídia
  *      (para `storage_redaction_queue`): gatilho `trg_redigir_conversas_ao_anonimizar`
  *      na virada de `is_anonymized`, dentro da transação do passo 1 (migration 0391)

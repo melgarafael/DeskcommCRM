@@ -40,7 +40,17 @@ const NOME_DO_CAMPO: Record<string, string> = {
   email: "E-mail",
   name: "Nome",
   phone_number: "Telefone",
+  birthdate: "Data de nascimento",
 };
+
+/**
+ * `birthdate` chega como `AAAA-MM-DD` e vira `dd/MM/aaaa` PELOS PEDAÇOS, como na
+ * ficha: `new Date("1990-09-14")` nasce à meia-noite UTC e, no fuso da tela
+ * (UTC-3), mostraria o dia anterior a quem está confirmando.
+ */
+function valorParaExibir(campo: string, valor: string): string {
+  return campo === "birthdate" ? valor.split("-").reverse().join("/") : valor;
+}
 
 interface Props {
   contactId: string;
@@ -124,12 +134,12 @@ export function PropostasDeDado({ contactId, podeDecidir, aoDecidir }: Props) {
               <span className="text-xs uppercase tracking-wide text-muted-foreground">
                 {t(NOME_DO_CAMPO[p.campo] ?? p.campo)}
               </span>
-              <span className="font-medium">{p.valor_proposto}</span>
+              <span className="font-medium">{valorParaExibir(p.campo, p.valor_proposto)}</span>
               {/* O valor atual fica à vista: sem ele, "confirmar" não diz o que
                   vai ser substituído. */}
               {p.valor_anterior && (
                 <span className="text-xs text-muted-foreground">
-                  ({t("hoje:")} {p.valor_anterior})
+                  ({t("hoje:")} {valorParaExibir(p.campo, p.valor_anterior)})
                 </span>
               )}
             </div>

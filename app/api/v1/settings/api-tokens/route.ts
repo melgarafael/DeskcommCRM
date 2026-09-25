@@ -86,7 +86,17 @@ export async function POST(req: NextRequest): Promise<Response> {
     .select(SELECT_COLS)
     .single();
 
-  if (insErr) return fail("internal_error", insErr.message, 500, { requestId });
+  if (insErr) {
+    // O teto de tokens ATIVOS por organização é do BANCO (migration 0415): quem
+    // conta é o gatilho `trg_teto_de_tokens_ativos`, e a mensagem — com o limite
+    // e o caminho para liberar espaço (revogar um token) — vem de lá, porque é
+    // ele quem sabe o número. Sem este ramo a pessoa veria "internal_error" no
+    // lugar da instrução que o erro já traz, e o toast da tela propagaria o 500.
+    if (insErr.code === "PT409") {
+      return fail("api_token_teto_atingido", insErr.message, 409, { requestId });
+    }
+    return fail("internal_error", insErr.message, 500, { requestId });
+  }
 
   await audit({
     action: "token.created",

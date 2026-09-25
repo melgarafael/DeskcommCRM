@@ -220,7 +220,6 @@ async function ensureAgent(orgId: string): Promise<string> {
         context_message_window: 20,
         rag_top_k: 5,
         rag_similarity_threshold: 0.72,
-        confidence_threshold: 0.6,
       },
       guardrails: [],
     } as never)

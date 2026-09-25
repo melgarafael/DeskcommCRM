@@ -265,6 +265,30 @@ consertos estão em commits próprios desta branch — procure pelas palavras ab
 | J5.13 | Admin **reenvia** um convite | `POST /api/v1/team/invites/[id]/resend` re-assina o mesmo `invite_id`, renova 24h, audita `member.invited`; reconvidar o mesmo e-mail pendente pela tela de convite RENOVA a linha (índice único parcial) |
 | J5.14 | Manager vê a lista, mas não as ações | leitura é `team_invites_select` (manager+); reenviar/revogar são admin-only (403) |
 
+### J5.15 `[P0]` — Convite SMTP em Docker com hostname curto
+
+Falha observada na release 1.48.0: conexão e autenticação SMTP passavam, mas seis
+convites aceitos pelo servidor foram classificados como `filtered` pelo router
+HostGator `fightspamHG`. O Nodemailer, sem `name` explícito e com hostname Docker
+curto, usava EHLO `[127.0.0.1]`. `email_dispatched=true` atesta aceitação SMTP,
+não entrega na caixa de entrada.
+
+Correção: `lib/email/smtp.ts` identifica envio e verificação com o hostname de
+`env.NEXT_PUBLIC_APP_URL`, já configurado pelo instalador. A opção é lida do
+ambiente validado em runtime; não exige novo campo nem ajuste de compose.
+`tests/unit/smtp-identifica-a-instalacao.test.ts` usa Nodemailer real e receptor
+TCP local: mede EHLO, envio de mensagem, verificação sem envio, URL com porta/caminho,
+literais IPv4/IPv6, fallback local, cache e ausência de configuração.
+
+**Evidência externa em 25/09/2026:** teste controlado com FQDN recebeu `success` no
+rastreamento do provedor e confirmação de recebimento pelo destinatário. Após o
+workaround equivalente de hostname no contêiner da instalação, quatro convites
+reenviados pelo endpoint oficial tiveram `success` no gateway. Isso valida o
+mecanismo; o patch de código deste PR foi exercitado no receptor local. **Não medido:**
+entrega desses quatro convites nas caixas finais, todos os provedores e uma nova
+jornada Playwright em instalação fresca. Nenhum endereço ou token real é necessário
+para reproduzir o teste local.
+
 ## J6 — Webhooks: receber, automatizar, provar `[P0]`
 
 | # | Caso | Expectativa |

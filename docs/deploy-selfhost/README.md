@@ -163,7 +163,13 @@ sem quebrar nada.
 **O caminho manual:** no Dashboard →
 
 1. **Authentication → Sign In / Up**: habilite *Allow new users to sign up* e
-   mantenha *Confirm email* ligado.
+   mantenha *Confirm email* ligado. **Exceção:** com a instalação em
+   "Cadastro apenas por convite" (`/admin/cadastro`), **desligue** *Allow new
+   users to sign up*. Ligado, qualquer um cria conta direto no Supabase com a
+   chave pública que vai ao navegador, passando por fora do CRM (#1653). O
+   convite continua funcionando: com o cadastro público fechado, o app cria a
+   conta do convidado pela admin API, no servidor. Voltou para "aberto" ou
+   "com aprovação"? Ligue de novo, senão o cadastro pela tela falha.
 2. **Authentication → URL Configuration**: `Site URL = https://SEU_DOMINIO` e
    adicione `https://SEU_DOMINIO/auth/confirm` em *Redirect URLs*.
 3. **Authentication → Email Templates**: troque o link dos templates
@@ -193,7 +199,12 @@ sem quebrar nada.
    `smtp_host: null`).
 
 **GoTrue self-hosted:** equivalente por env:
-`GOTRUE_DISABLE_SIGNUP=false`, `GOTRUE_MAILER_AUTOCONFIRM=false`,
+`GOTRUE_DISABLE_SIGNUP=false` (`true` em "só convite", pela mesma razão do
+passo 1; no Supabase self-hosted oficial a chave do `.env` é `DISABLE_SIGNUP`.
+No kit de servidor único, o `update.sh` grava essa chave sozinho a partir do
+modo da instalação. A troca feita em `/admin/cadastro` só chega ao Supabase na
+próxima atualização, nos dois sentidos),
+`GOTRUE_MAILER_AUTOCONFIRM=false`,
 `GOTRUE_SITE_URL=https://SEU_DOMINIO`,
 `GOTRUE_URI_ALLOW_LIST=https://SEU_DOMINIO/auth/confirm`,
 `GOTRUE_SMTP_{HOST,PORT,USER,PASS}` e

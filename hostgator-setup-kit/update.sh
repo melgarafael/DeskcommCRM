@@ -43,6 +43,17 @@ recusar_projeto_de_outra_arvore || die "Atualização interrompida para não que
 # "já está na versão mais recente" sairia sem entregar a troca.
 if [ "${SINGLE_SERVER:-0}" = "1" ]; then
   recusar_supabase_de_outra_arvore || die "Atualização interrompida para não mexer no Supabase de outra instalação."
+  # A porta direta do GoTrue acompanha o `signup_mode` da instalação (#1653).
+  # Antes do SMTP de propósito: é o caminho que roda MESMO quando o update não
+  # tem nada a atualizar (a saída "você já está na versão mais recente" fica
+  # mais abaixo), então quem trocou "só convite" na tela e rodou o update leva
+  # o `DISABLE_SIGNUP` no mesmo comando — e é ele que fecha
+  # `POST /auth/v1/signup` para quem tem a anon key. Esta chamada roda com o
+  # kit ANTERIOR ao checkout; a da versão nova fica dentro de
+  # `atualizar_supabase_single_server` (_common.sh), mais abaixo.
+  if sincronizar_signup_mode_do_gotrue; then
+    dc_supabase up -d --no-deps auth >/dev/null 2>&1 || c_ylw "⚠ Não consegui reiniciar o auth do Supabase com o modo de cadastro (#1653)."
+  fi
   if sincronizar_smtp_do_gotrue; then
     dc_supabase up -d --no-deps auth >/dev/null 2>&1 || c_ylw "⚠ Não consegui reiniciar o auth do Supabase com o SMTP do CRM."
   else
@@ -216,6 +227,9 @@ source "$KIT_DIR/manutencao.sh"
 # Single-server: o Supabase vai para a versão pinada no código novo ANTES do
 # banco (o passo 4 pausa peças dele, e um `up` depois as religaria).
 if [ "${SINGLE_SERVER:-0}" = "1" ]; then
+  # Esta função também sincroniza o modo de cadastro com o GoTrue (#1653). A
+  # chamada mora DENTRO dela, e não numa linha aqui, porque é o corpo dela que
+  # o update.sh antigo executa na atualização que traz o conserto.
   atualizar_supabase_single_server || die "O Supabase desta VPS não subiu (erro acima). NÃO mexi no banco do CRM."
 fi
 

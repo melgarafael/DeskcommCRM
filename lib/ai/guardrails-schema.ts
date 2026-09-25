@@ -117,7 +117,13 @@ export const agentConfigSchema = z.object({
   context_message_window: z.number().int().min(1).max(50).default(20),
   rag_top_k: z.number().int().min(1).max(20).default(5),
   rag_similarity_threshold: z.number().min(0).max(1).default(0.4),
-  confidence_threshold: z.number().min(0).max(1).default(0.6),
+  // O campo de LIMIAR DE CONFIANÇA saiu daqui (issue #1660): o único leitor
+  // era o bloco G3 de `workers/ai-response-worker.ts`, inalcançável desde que
+  // `elegivelParaWorkerLegado()` passou a devolver `false` (07/09) — a tela
+  // vendia "escala para humano abaixo do limiar" e nada escutava. A chave
+  // continua no jsonb gravado (default da baseline) e o Zod a descarta como
+  // desconhecida, o mesmo destino de `sentiment_threshold` — que também está
+  // no default do banco e em nenhum formulário.
   // Só usados por agentes do canal "voice" (audioSocketBridge.ts) — ficam no
   // mesmo config jsonb dos demais, em vez de uma coluna nova, pelo mesmo
   // motivo do rag_top_k: um valor por versão publicada, sem tabela extra.
@@ -145,7 +151,6 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
   context_message_window: 20,
   rag_top_k: 5,
   rag_similarity_threshold: 0.4,
-  confidence_threshold: 0.6,
   voice: "marin",
   voice_speed: 0.85,
   voice_model: "gpt-realtime",
@@ -170,7 +175,6 @@ export const agentConfigPatchSchema = agentConfigSchema
     context_message_window: cfg.context_message_window.removeDefault(),
     rag_top_k: cfg.rag_top_k.removeDefault(),
     rag_similarity_threshold: cfg.rag_similarity_threshold.removeDefault(),
-    confidence_threshold: cfg.confidence_threshold.removeDefault(),
     voice: cfg.voice.removeDefault(),
     voice_speed: cfg.voice_speed.removeDefault(),
     voice_model: cfg.voice_model.removeDefault(),

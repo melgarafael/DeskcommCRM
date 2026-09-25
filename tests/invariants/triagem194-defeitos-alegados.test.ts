@@ -221,7 +221,8 @@ describe("defeito 3 — anonimização LGPD", () => {
       rows[0]!.is_anonymized,
       `a anonimização NÃO aconteceu — resposta ${res.status} ${JSON.stringify(corpo)}`,
     ).toBe(true);
-    expect(rows[0]!.name, "o nome do titular continua no banco").toBeNull();
+    expect(rows[0]!.name, "o nome do titular continua no banco").not.toBe("Titular Real");
+    expect(rows[0]!.name, "rótulo único dos dois caminhos (#1504)").toMatch(/^Cliente Anonimizado #[0-9a-f]{8}$/);
     expect(rows[0]!.email, "o e-mail do titular continua no banco").toBeNull();
   });
 

@@ -2218,9 +2218,9 @@ export const DICIONARIO: Traducoes = {
   "Agent ativo": { es: "Agente activo" },
   "read-only — gerenciado pelo backend": { es: "solo lectura — gestionado por el backend" },
   "Janela de contexto (msgs, 1–50)": { es: "Ventana de contexto (msgs, 1–50)" },
-  "Top K = quantos trechos buscar. Similarity threshold = mínimo de relevância (cosine). Confidence = limiar abaixo do qual o agent escala para humano.":
+  "Top K = quantos trechos buscar. Similarity threshold = mínimo de relevância (cosine).":
     {
-      es: "Top K = cuántos fragmentos buscar. Similarity threshold = relevancia mínima (cosine). Confidence = umbral por debajo del cual el agente escala a un humano.",
+      es: "Top K = cuántos fragmentos buscar. Similarity threshold = relevancia mínima (cosine).",
     },
   "Chaves de acesso à IA": { es: "Claves de acceso a la IA" },
   "A conta de inteligência artificial é sua: você contrata direto com {provedores} e cola a chave aqui. A chave fica guardada criptografada e nunca mais aparece na tela depois de salva — nem para você. O Jev (TypeSafe) não conversa com o cliente: a chave dele serve só para decisões rápidas.": {
@@ -2275,6 +2275,49 @@ export const DICIONARIO: Traducoes = {
   },
   "Muito barata e desconta sozinha o trecho repetido da conversa, sem você configurar nada — o custo cai para quem atende com um roteiro que não muda.": {
     es: "Muy barata y descuenta sola la parte repetida de la conversación, sin que configures nada: el costo baja para quien atiende con un guion que no cambia.",
+  },
+  "Endpoint seu que fala a API da OpenAI — OmniRouter, 9Router, LiteLLM hospedado ou proxy corporativo, num endereço público. Você informa o endereço (base URL) e a chave, e o CRM conversa com ele como conversa com a OpenAI.": {
+    es: "Endpoint propio que habla la API de OpenAI — OmniRouter, 9Router, LiteLLM alojado o proxy corporativo, en una dirección pública. Tú informas la dirección (base URL) y la clave, y el CRM conversa con él como conversa con OpenAI.",
+  },
+  "Endereço (base URL)": { es: "Dirección (base URL)" },
+  "Obrigatório — ex.: https://seu-gateway.example/v1": {
+    es: "Obligatorio — ej.: https://tu-gateway.example/v1",
+  },
+  "Informe o endereço (base URL) começando com http:// ou https://.": {
+    es: "Informa la dirección (base URL) comenzando con http:// o https://.",
+  },
+  "Informe o endereço (base URL) do provedor personalizado.": {
+    es: "Informa la dirección (base URL) del proveedor personalizado.",
+  },
+  "O endereço (base URL) precisa começar com http:// ou https://.": {
+    es: "La dirección (base URL) debe comenzar con http:// o https://.",
+  },
+  "Só o provedor personalizado aceita um endereço (base URL) próprio.": {
+    es: "Solo el proveedor personalizado acepta una dirección (base URL) propia.",
+  },
+  "Testando a conexão com o provedor…": { es: "Probando la conexión con el proveedor…" },
+  "Conexão confirmada com o provedor.": { es: "Conexión confirmada con el proveedor." },
+  "Conexão OK": { es: "Conexión OK" },
+  "Não consegui falar com este endereço. Confira a base URL e a chave.": {
+    es: "No pude hablar con esta dirección. Revisa la base URL y la clave.",
+  },
+  "Falta o endereço (base URL) do provedor personalizado, ou ele não começa com http:// ou https://. Edite a credencial e informe o endereço da API.": {
+    es: "Falta la dirección (base URL) del proveedor personalizado, o no comienza con http:// o https://. Edita la credencial e informa la dirección de la API.",
+  },
+  "Este servidor não encontrou o endereço: o nome não resolve. Confira a base URL.": {
+    es: "Este servidor no encontró la dirección: el nombre no resuelve. Revisa la base URL.",
+  },
+  "Em produção, o endereço (base URL) precisa começar com https://.": {
+    es: "En producción, la dirección (base URL) debe comenzar con https://.",
+  },
+  "Este endereço respondeu com um redirecionamento, e o CRM não segue redirecionamento em endereço cadastrado pela empresa. Informe o endereço final da API.": {
+    es: "Esta dirección respondió con una redirección, y el CRM no sigue redirecciones en una dirección registrada por la empresa. Informa la dirección final de la API.",
+  },
+  "Este endereço não é aceito: um endereço cadastrado pela empresa não pode apontar para a rede interna do servidor (localhost, IP privado ou serviço interno).": {
+    es: "Esta dirección no se acepta: una dirección registrada por la empresa no puede apuntar a la red interna del servidor (localhost, IP privada o servicio interno).",
+  },
+  "Este endereço não respondeu em /models. Confira a base URL: ela deve apontar para a raiz de uma API compatível com a OpenAI.": {
+    es: "Esta dirección no respondió en /models. Revisa la base URL: debe apuntar a la raíz de una API compatible con OpenAI.",
   },
   "Uma chave só para centenas de modelos de vários fabricantes, com a opção de manter o tráfego na Europa. Bom para comparar modelos sem abrir conta em cada provedor.": {
     es: "Una sola clave para cientos de modelos de varios fabricantes, con la opción de mantener el tráfico en Europa. Útil para comparar modelos sin abrir una cuenta con cada proveedor.",
@@ -6652,8 +6695,8 @@ export const DICIONARIO: Traducoes = {
   },
   "Contato anonimizado.": { es: "Contacto anonimizado." },
   "Anonimizar contato (LGPD)": { es: "Anonimizar contacto (LGPD)" },
-  "Esta ação é irreversível. O nome será substituído por \"Contato Anonimizado #N\", email/telefone/CPF serão limpos, e atividades terão conteúdo redigido.": {
-    es: "Esta acción es irreversible. El nombre se reemplazará por \"Contacto Anonimizado #N\", se borrarán el email, el teléfono y el CPF, y se redactará el contenido de las actividades.",
+  "Esta ação é irreversível. O nome será substituído por \"Cliente Anonimizado #N\", email/telefone/CPF serão limpos, e atividades terão conteúdo redigido.": {
+    es: "Esta acción es irreversible. El nombre se reemplazará por \"Cliente Anonimizado #N\", se borrarán el email, el teléfono y el CPF, y se redactará el contenido de las actividades.",
   },
   "Justificativa (mínimo 10 caracteres)": { es: "Justificación (mínimo 10 caracteres)" },
   "Ex.: Solicitação formal do titular via email em DD/MM/YYYY": {
@@ -6675,6 +6718,7 @@ export const DICIONARIO: Traducoes = {
   "Editar contato": { es: "Editar contacto" },
   "Atualize os dados deste contato.": { es: "Actualiza los datos de este contacto." },
   "Telefone (E.164)": { es: "Teléfono (E.164)" },
+  "Data de nascimento": { es: "Fecha de nacimiento" },
   "contato(s) importado(s)": { es: "contacto(s) importado(s)" },
   "linha(s) com problema": { es: "fila(s) con problema" },
   "Não foi possível importar o arquivo.": { es: "No se pudo importar el archivo." },
@@ -6962,6 +7006,8 @@ export const DICIONARIO: Traducoes = {
   },
   "Anterior": { es: "Anterior" },
   "Próxima": { es: "Siguiente" },
+  "Aba anterior": { es: "Pestaña anterior" },
+  "Próxima aba": { es: "Pestaña siguiente" },
   "solicitação crítica": { es: "solicitud crítica" },
   "solicitações críticas": { es: "solicitudes críticas" },
   "SLA vencido ou inferior a 2 dias. Ação imediata requerida.": {

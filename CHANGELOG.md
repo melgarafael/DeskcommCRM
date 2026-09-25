@@ -8,6 +8,84 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.50.0] — 2026-09-25
+
+### Adicionado
+
+- **Data de nascimento na ficha do contato e no agente** A data de nascimento agora entra pela tela e pela conversa: o diálogo "Editar contato" ganhou o campo "Data de nascimento", a ficha do contato passou a mostrá-la, e o agente de IA consegue propor a data ouvida na conversa pelo mesmo fluxo de aprovação humana que já existe para nome, e-mail e telefone — nada é gravado sem alguém confirmar. Com a data no cadastro, a rotina de aniversários encontra quem parabenizar sem depender de digitação manual. Crédito: @webtecnica (#1650).
+
+- **A tela de credenciais ganha o provedor personalizado compatível com OpenAI** Quem roteia a própria IA por um endpoint próprio — OmniRouter, 9Router, FreellmAPI, LiteLLM hospedado, proxy corporativo — agora encontra a opção **"Provedor personalizado (compatível com OpenAI)"** em **IA › Credenciais**, junto dos provedores de sempre. Dá para informar a base URL e a chave, escolher o modelo no assistente e publicar: o agente conversa por aquele endpoint do mesmo jeito que conversa pelos outros.
+
+  O endereço fica guardado na própria credencial, cifrada como todas as outras — na tela só aparecem os quatro últimos caracteres da chave, e o endereço nunca é impresso em log. Cadastro, teste, validação e o turno do agente leem a mesma escolha.
+
+  Antes de salvar, a tela testa a conexão (`GET {base}/models`, 10 segundos): acertou, mostra a confirmação e quantos modelos o endpoint devolveu; errou, não grava nada e mostra o erro no campo. Depois de gravada, a validação em segundo plano repete a mesma chamada sobre a linha salva.
+
+  O endereço precisa ser público e, em produção, `https://`: como é escolhido por uma empresa, ele passa pela mesma régua dos webhooks e é recusado quando aponta para a rede interna do servidor (localhost, IP privado, metadados de nuvem, serviços do compose) ou quando redireciona. A régua vale no teste, na validação e em cada chamada do agente.
+
+  Nada muda para quem já usa Anthropic, OpenAI, Google ou OpenRouter: a opção nova nasce disponível, não ligada.
+
+  Contribuição de @webtecnica (#1651).
+
+### Alterado
+
+- **Cada organização passa a ter um teto de 50 tokens de API ativos** A emissão de tokens de API (Configurações › API Tokens) passa a parar em 50 tokens ativos por organização, e a trava fica no banco, então vale para a tela, para chamadas diretas e para os tokens temporários que o agente de IA usa em cada atendimento. Tokens revogados ou vencidos não contam: revogar um antigo e emitir um novo sempre funciona, e quem já tem mais de 50 hoje não perde nenhum, só não emite outro até revogar. Ao bater no teto, a tela mostra o limite e como liberar espaço, em vez de um erro interno. Isso fecha a brecha em que emitir mais tokens multiplicava o limite de uso da API. Crédito: @webtecnica (#1658).
+
+### Corrigido
+
+- **O botão "Anonimizar contato" da ficha passa a apagar tudo o que o pedido formal de LGPD apaga** Anonimizar um contato pelo botão da ficha agora usa a mesma redação completa do pedido formal de LGPD: além do contato, das conversas e das mensagens, passam a ser redigidos os pedidos e as vendas (valores e datas continuam, só sai o dado pessoal), as chamadas de voz, a prospecção, os casos do agente e seus avisos, as demandas, as passagens de atendimento, e o consentimento, a origem e as etiquetas do contato. O nome do contato passa a ficar como "Cliente Anonimizado #…", o mesmo rótulo do pedido formal. Contatos anonimizados antes desta versão não são reprocessados. Crédito: @webtecnica (#1659).
+
+- **O Testar do agente consulta o catálogo e o acervo de conhecimento** Na aba Teste do agente, as capacidades "Procurar produto na loja" e "Consultar o que a empresa já sabe" eram recusadas com "Esta consulta precisa de um contato real autorizado". Quem perguntava preço, agenda ou disponibilidade recebia "vou confirmar e já te retorno", como se o catálogo estivesse vazio, embora o mesmo agente respondesse certo no WhatsApp. Agora o Teste faz essas duas consultas como o atendimento real, só leitura. Consultas sobre um contato ou lead continuam exigindo um contato real.
+
+## [1.49.0] — 2026-09-25
+
+### Adicionado
+
+- **A base de conhecimento só reprepara o material que mudou, e ganha o botão "Preparar tudo de novo"** No acervo de conhecimento (IA › Conhecimento), o botão "Preparar tudo de novo" coloca todos os materiais na fila de uma vez: primeiro o que ainda não está pronto, depois o resto. O material cujo conteúdo não mudou desde a última preparação é pulado, sem gastar a chave de IA, e continua marcado como pronto. Um cartão novo mostra quantos materiais estão prontos, quantos ainda estão sendo preparados e quantos falharam. Nos roteiros de atendimento, a resposta que o cliente dá a uma pergunta já encerrada por falta de resposta agora é gravada, em vez de se perder. E o operador de IA passa a receber o identificador real do negócio do contato, em vez de inventar um. A atualização acrescenta uma coluna ao banco (migration 0409) e não pede nenhuma ação.
+
+  Contribuição de @vgamkt (#1130).
+
+- **No canal oficial com coexistência, as respostas dadas pelo app WhatsApp Business aparecem na conversa** Quem usa o mesmo número no app WhatsApp Business e na API oficial (coexistência) passa a ver no CRM as mensagens que a equipe envia pelo celular. Elas entram na conversa como resposta de uma pessoa fora do CRM, e o agente de IA pausa naquela conversa para não responder por cima, como já acontecia no canal por QR. Para ativar, marque o campo `smb_message_echoes` nos webhooks do app na Meta; a aba API Oficial (Meta) já o lista entre os campos a assinar. Quem não usa coexistência não precisa fazer nada.
+
+  Contribuição de @tratham-oficial (#1633).
+
+- **O Testar do agente consegue consultar o banco de dados conectado** Na aba Teste do agente, as capacidades "Ver as tabelas do banco conectado" e "Buscar dados no banco conectado" eram sempre recusadas com "Esta consulta precisa de um contato real autorizado", e o agente respondia "vou confirmar e te retorno", o que parecia erro de configuração da conexão. Agora o Teste executa as duas consultas como o atendimento real: só leitura, com os mesmos limites de linhas, filtros e tamanho da conexão, e só quando o módulo de banco externo está ligado e há conexão ativa.
+
+  Contribuição de @webtecnica (#1636), a partir do relato de @caicoia (#1608).
+
+- **Ligar e desligar o agente pelo celular (#on/#off)** O atendente pode pausar e devolver o atendimento automático de uma conversa digitando `#off` e `#on` no próprio WhatsApp do celular vinculado à organização. Vale por conversa, só quando a mensagem inteira é o comando, e a pausa dura até alguém mandar `#on` ou apertar "devolver ao automático" na tela. O comando é apagado do WhatsApp do cliente logo depois de aplicado, para não aparecer como fala do atendimento. O recurso se liga por agente, no cartão novo **"Comandos pelo celular"** da tela do agente. Com ele ligado, responder o cliente direto pelo celular também pausa a IA até o `#on`. Desligado, que é o padrão, nada muda: `#on` e `#off` são texto comum e a pausa por resposta no celular continua acabando sozinha em 60 minutos. A atualização não pede nenhuma ação.
+
+  Contribuição de @vgamkt (#1130).
+
+- **Link direto para cada conversa da Inbox** Ao abrir uma conversa, o endereço da Inbox passa a incluir o identificador dela. O atendente pode copiar esse link para a equipe; quem tiver acesso à conversa abre o mesmo atendimento, mesmo que ele esteja fora do filtro atual.
+
+  Contribuição de @raphaelmartins (#1629).
+
+- **A Requesty entra como empresa de inteligência artificial do atendente** A Requesty agora aparece na lista de empresas de IA, junto de Anthropic, OpenAI, Google, OpenRouter e DeepSeek. Dá para cadastrar a chave em "IA › Credenciais" ou no passo de treinar durante a instalação, escolher o modelo na tela do assistente e publicar. O agente atende pela Requesty do mesmo jeito que atende pelas outras, com ferramentas (cria o lead, move o card) e com a mesma conferência de chave ao cadastrar.
+
+  Como a OpenRouter, a Requesty é um roteador: uma chave só dá acesso a modelos de vários fabricantes, com ids no formato `fabricante/modelo` (por exemplo `openai/gpt-4o-mini`). Quem precisa manter o tráfego na Europa aponta o endpoint próprio do painel para `https://router.eu.requesty.ai/v1`.
+
+  O catálogo já vem com cinco modelos (GPT-4o mini, GPT-4.1 mini, Gemini 2.5 Flash, Claude Haiku 4.5 e Claude Sonnet 4.5), e a tela escolhe o mais barato que dá conta quando você deixa em branco. Nada muda nas instalações que já usam outro provedor: a opção nasce disponível, não ligada.
+
+  Contribuição de @Thibaultjaigu (#1638).
+
+### Corrigido
+
+- **Alterar um ajuste do agente de IA pela API não apaga mais os outros ajustes** Uma alteração pela API (`PATCH /api/v1/ai/agents/:id`) que mandava só parte dos ajustes do agente, como a temperatura ou a quantidade de trechos da base de conhecimento, gravava os valores padrão por cima de todos os ajustes que não vieram na alteração. Mudar só a busca na base, por exemplo, voltava a temperatura para o padrão. Agora só muda o que foi enviado, e o resto fica como estava. O cartão novo de comandos pelo celular grava por esse mesmo caminho, e por isso já nasce sem o defeito.
+
+- **A atualização para quando o banco não recebe a versão nova, em vez de dizer que deu certo** Quando a atualização do banco terminava com um erro que tentar de novo não resolve (o caso comum é a conexão do `.env` não ser a dona do banco: `permission denied` ou `must be owner`), o `update.sh` avisava no meio da saída e seguia: trocava o app pela versão nova por cima de um banco pela metade e terminava com sucesso. Na atualização automática ninguém via o aviso. Agora a atualização para nesse ponto, depois de conferir as regras de isolamento. O app segue na versão anterior, a tela registra a rodada como falha e o log diz o que fazer: num Supabase próprio, declarar `SUPABASE_DB_ADMIN_URL` no `.env` e repetir com `bash hostgator-setup-kit/update.sh --to <versão> --force`. Quem tem a conexão dona do banco não vê diferença. Disputa com o banco ocupado continua sendo repetida e aceita como antes.
+
+  Contribuição de @hiro-nikaitou (#1640).
+
+- **O backup diário do banco usa a conexão do dono, e não sai mais incompleto** O `scripts/backup-db.sh` (o backup que a documentação manda pôr no cron) agora usa a conexão do dono do banco (`SUPABASE_DB_ADMIN_URL`) quando ela existe, com a conexão do app como reserva — a mesma ordem que o backup do kit já seguia. Antes, numa instalação com role de app menor, o dump salvava só o que essa role enxergava e terminava sem erro. Quem tem só `SUPABASE_DB_URL` não precisa fazer nada: o backup continua igual. Contribuição de @hiro-nikaitou (#1637).
+
+- **O primeiro nome do contato passa a sair nas automações de WhatsApp e nos modelos montados pela integração** Um modelo com a variável `{{primeiro_nome}}` saía com o espaço vazio ("Olá, !") quando era enviado por uma automação de WhatsApp ou montado pela ferramenta de integração `crm_render_message_template`, embora saísse certo quando inserido na conversa. Agora vale a mesma regra da conversa e das campanhas: a primeira palavra do nome do contato. Sem nome cadastrado, a variável continua listada como lacuna para quem montou o modelo.
+
+  Contribuição de @hiro-nikaitou (#1635), a partir do relato de @franceschini-lucas (#1616).
+
+- **O agente espera a foto ficar legível quando o cliente manda a foto e depois escreve** Quando o cliente mandava uma foto (um comprovante, por exemplo) e logo depois escrevia a pergunta em outra mensagem, o turno do agente saía pela mensagem de texto sem esperar a leitura da foto, e o agente pedia ao cliente que descrevesse uma imagem que o sistema terminava de ler segundos depois. Agora a espera olha a conversa inteira: se há mídia recebida ainda sendo lida, o turno aguarda até o mesmo teto de antes, contado a partir da hora em que a mídia chegou. Mídia que o sistema não vai ler (vídeo com leitura desligada, arquivo que não chegou ao storage) não segura a resposta.
+
+  Contribuição de @deskcommopp4s-cmd (#1594).
+
 ## [1.48.0] — 2026-09-24
 
 ### Adicionado
@@ -7974,7 +8052,9 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.48.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.50.0...HEAD
+[1.50.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.49.0...v1.50.0
+[1.49.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.48.0...v1.49.0
 [1.48.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.47.0...v1.48.0
 [1.47.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.46.0...v1.47.0
 [1.46.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.45.0...v1.46.0

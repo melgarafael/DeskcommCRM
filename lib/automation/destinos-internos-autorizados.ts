@@ -330,3 +330,26 @@ export async function motivoDaRecusaDeDestino(
   }
   return null;
 }
+
+/**
+ * `fetch` para um endereço escolhido por uma ORGANIZAÇÃO e chamado por um SDK
+ * (o provedor personalizado, #1642). Cada requisição passa pela régua da
+ * organização ANTES de a chave sair, e redirect não é seguido: um 3xx vira
+ * recusa, porque um endpoint público que redireciona levaria a chamada, e a
+ * chave, para a rede interna. Julgar a cada chamada, e não só no cadastro, é o
+ * que pega o nome que passou a resolver para IP interno depois de validado.
+ *
+ * ponytail: entre o lookup daqui e o connect do fetch sobra a janela de um
+ * segundo lookup (rebinding com TTL zero). Fechá-la pede fixar o IP resolvido
+ * no dispatcher do undici, e isso vale para todo o egress, não só para este.
+ */
+export function fetchParaDestinoDaOrganizacao(interno: typeof fetch = fetch): typeof fetch {
+  return async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    const recusa = await motivoDaRecusaDeDestino(url, "organizacao");
+    if (recusa) throw new Error(recusa);
+    const res = await interno(input, { ...init, redirect: "manual" });
+    if (res.status >= 300 && res.status < 400) throw new Error("unsafe_url:redirect_not_followed");
+    return res;
+  };
+}
