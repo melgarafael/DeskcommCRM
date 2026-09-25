@@ -149,6 +149,10 @@ export const PONTOS_QUE_HERDAM_DO_AGENTE: ReadonlySet<string> = new Set([
   "checkpoint",
   "draft_suggestion",
   "automation_ai_message",
+  // Classificação de critérios do catálogo: chamada em `inbound-turn.ts` com
+  // `llmOverride` do agente publicado (mesmo par model+provider) — sem entrar
+  // aqui, a tela anunciaria o padrão da org num ponto que usa o modelo do agente.
+  "catalog_criteria",
 ]);
 
 export function decidirBinding(entrada: EntradaDaDecisao): DecisaoDeBinding {

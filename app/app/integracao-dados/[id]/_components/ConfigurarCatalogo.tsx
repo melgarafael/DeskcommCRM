@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useT } from "@/hooks/i18n/useT";
 import {
   Select,
   SelectContent,
@@ -197,6 +198,7 @@ function acharColuna(colunas: readonly string[], alvos: readonly string[]): stri
 }
 
 export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto }: Props) {
+  const t = useT();
   const mapeamento = useCatalogoMapeamento(aberto);
   const salvar = useSalvarCatalogoMapeamento();
 
@@ -338,56 +340,51 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
     <Dialog open={aberto} onOpenChange={aoMudarAberto}>
       <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Catálogo do agente — “{tabela.nome}”</DialogTitle>
+          <DialogTitle>{t("Catálogo do agente — “")}{tabela.nome}{t("”")}</DialogTitle>
           <DialogDescription>
-            Diga o que o agente deve fazer com cada coluna: enviar à IA, usar como critério,
-            mostrar no texto e comparar.
+            {t("Diga o que o agente deve fazer com cada coluna: enviar à IA, usar como critério, mostrar no texto e comparar.")}
           </DialogDescription>
         </DialogHeader>
 
         {/* LEGENDA — explica os controles para quem não é técnico. */}
         <details className="rounded-md border border-border/60 bg-muted/30 p-3 text-xs">
           <summary className="cursor-pointer font-medium">
-            Como preencher (Nome · Foto · Similares · IA · Critério · Mostrar · Comparar · Ordem)
+            {t("Como preencher (Nome · Foto · Similares · IA · Critério · Mostrar · Comparar · Ordem)")}
           </summary>
           <div className="mt-2 space-y-2 text-muted-foreground">
             <p>
-              <span className="font-medium text-foreground">Nome da moto</span> — a coluna que
-              identifica e busca a moto (obrigatória).
+              <span className="font-medium text-foreground">{t("Nome da moto")}</span> {t("— a coluna que identifica e busca a moto (obrigatória).")}
             </p>
             <p>
-              <span className="font-medium text-foreground">Foto</span> — a coluna com a URL da
-              imagem enviada.
+              <span className="font-medium text-foreground">{t("Foto")}</span> {t("— a coluna com a URL da imagem enviada.")}
             </p>
             <p>
-              <span className="font-medium text-foreground">Motos similares (referência)</span> — uma
-              coluna que lista motos parecidas (ex.:{" "}
-              <span className="font-mono">moto_similar</span>). Quando o cliente pede uma moto que
-              não temos, o motor procura o pedido nessa coluna e oferece a <b>moto real</b> que a
-              cita. É usada <b>só pelo motor</b>: a IA nunca vê esses nomes.
+              <span className="font-medium text-foreground">{t("Motos similares (referência)")}</span>{" "}
+              {t("— uma coluna que lista motos parecidas (ex.:")} <span className="font-mono">moto_similar</span>
+              {t("). Quando o cliente pede uma moto que não temos, o motor procura o pedido nessa coluna e oferece a")}{" "}
+              <b>{t("moto real")}</b> {t("que a cita. É usada")} <b>{t("só pelo motor")}</b>
+              {t(": a IA nunca vê esses nomes.")}
             </p>
             <p>
-              <span className="font-medium text-foreground">Enviar à IA</span> — a IA vê o valor
-              desta coluna (contexto). Menos colunas = menos tokens.
+              <span className="font-medium text-foreground">{t("Enviar à IA")}</span> {t("— a IA vê o valor desta coluna (contexto). Menos colunas = menos tokens.")}
             </p>
             <p>
-              <span className="font-medium text-foreground">Critério da IA</span> — a IA pode usar
-              esta coluna para montar o filtro quando não achar o pedido. (Diferente de "Enviar à
-              IA": aqui ela pode filtrar por ela.)
+              <span className="font-medium text-foreground">{t("Critério da IA")}</span>{" "}
+              {t("— a IA pode usar esta coluna para montar o filtro quando não achar o pedido. (Diferente de")}{" "}
+              {t("\"Enviar à IA\": aqui ela pode filtrar por ela.)")}
             </p>
             <p>
-              <span className="font-medium text-foreground">Mostrar</span> — o valor aparece no texto
-              que vai junto com a foto.
+              <span className="font-medium text-foreground">{t("Mostrar")}</span> {t("— o valor aparece no texto que vai junto com a foto.")}
             </p>
             <p>
-              <span className="font-medium text-foreground">Comparar</span> — o motor usa esta coluna
-              para ordenar as motos semelhantes (número → mais próximo; texto → mais parecido).
+              <span className="font-medium text-foreground">{t("Comparar")}</span>{" "}
+              {t("— o motor usa esta coluna para ordenar as motos semelhantes (número → mais próximo; texto → mais parecido).")}
             </p>
             <p>
-              <span className="font-medium text-foreground">Ordem</span> — prioridade (1 = mais
-              importante). Colunas de <b>Ordem 1</b> também compõem o nome (ex.:{" "}
-              <span className="font-mono">nome</span> + <span className="font-mono">versao</span> = "
-              Biz 125 FLEX").
+              <span className="font-medium text-foreground">{t("Ordem")}</span>{" "}
+              {t("— prioridade (1 = mais importante). Colunas de")} <b>{t("Ordem 1")}</b>{" "}
+              {t("também compõem o nome (ex.:")} <span className="font-mono">nome</span> +{" "}
+              <span className="font-mono">versao</span> = " Biz 125 FLEX").
             </p>
           </div>
         </details>
@@ -401,7 +398,7 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
               checked={enabled}
               onChange={(e) => setEnabled(e.target.checked)}
             />
-            <Label htmlFor="cat-enabled">Usar este catálogo no agente</Label>
+            <Label htmlFor="cat-enabled">{t("Usar este catálogo no agente")}</Label>
           </div>
           <div className="flex items-center gap-2">
             <input
@@ -411,18 +408,18 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
               checked={similaridade}
               onChange={(e) => setSimilaridade(e.target.checked)}
             />
-            <Label htmlFor="cat-sim">Escolher as semelhantes automaticamente</Label>
+            <Label htmlFor="cat-sim">{t("Escolher as semelhantes automaticamente")}</Label>
           </div>
           <div className="flex items-center gap-2">
-            <Label>Como buscar</Label>
+            <Label>{t("Como buscar")}</Label>
             <Select value={operador} onValueChange={(v) => setOperador(v as OperadorDeBusca)}>
               <SelectTrigger className="h-8 w-44">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="contem">Contém (recomendado)</SelectItem>
-                <SelectItem value="eq">Igual</SelectItem>
-                <SelectItem value="comeca_com">Começa com</SelectItem>
+                <SelectItem value="contem">{t("Contém (recomendado)")}</SelectItem>
+                <SelectItem value="eq">{t("Igual")}</SelectItem>
+                <SelectItem value="comeca_com">{t("Começa com")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -430,10 +427,10 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
 
         <div className="grid grid-cols-1 gap-3 rounded-md border border-border/60 p-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="flex flex-col gap-1">
-            <Label>Nome da moto</Label>
+            <Label>{t("Nome da moto")}</Label>
             <Select value={nome} onValueChange={setNome}>
               <SelectTrigger className="h-8">
-                <SelectValue placeholder="Escolha a coluna" />
+                <SelectValue placeholder={t("Escolha a coluna")} />
               </SelectTrigger>
               <SelectContent>
                 {opcoesColuna.map((c) => (
@@ -445,16 +442,16 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
             </Select>
           </div>
           <div className="flex flex-col gap-1">
-            <Label>Prefixo do nome (ex.: marca)</Label>
+            <Label>{t("Prefixo do nome (ex.: marca)")}</Label>
             <Select
               value={prefixo || "__nenhuma__"}
               onValueChange={(v) => setPrefixo(v === "__nenhuma__" ? "" : v)}
             >
               <SelectTrigger className="h-8">
-                <SelectValue placeholder="Nenhum" />
+                <SelectValue placeholder={t("Nenhum")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__nenhuma__">Nenhum</SelectItem>
+                <SelectItem value="__nenhuma__">{t("Nenhum")}</SelectItem>
                 {opcoesColuna.map((c) => (
                   <SelectItem key={c} value={c}>
                     {c}
@@ -464,13 +461,13 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
             </Select>
           </div>
           <div className="flex flex-col gap-1">
-            <Label>Foto (URL da imagem)</Label>
+            <Label>{t("Foto (URL da imagem)")}</Label>
             <Select value={foto || "__nenhuma__"} onValueChange={(v) => setFoto(v === "__nenhuma__" ? "" : v)}>
               <SelectTrigger className="h-8">
-                <SelectValue placeholder="Nenhuma" />
+                <SelectValue placeholder={t("Nenhuma")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__nenhuma__">Nenhuma</SelectItem>
+                <SelectItem value="__nenhuma__">{t("Nenhuma")}</SelectItem>
                 {opcoesColuna.map((c) => (
                   <SelectItem key={c} value={c}>
                     {c}
@@ -488,7 +485,7 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
                 checked={similaresAtivo}
                 onChange={(e) => setSimilaresAtivo(e.target.checked)}
               />
-              <Label htmlFor="cat-similares-ativo">Motos similares (referência)</Label>
+              <Label htmlFor="cat-similares-ativo">{t("Motos similares (referência)")}</Label>
             </div>
             <Select
               value={similares || "__nenhuma__"}
@@ -496,10 +493,10 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
               disabled={!similaresAtivo}
             >
               <SelectTrigger className="h-8">
-                <SelectValue placeholder="Nenhuma" />
+                <SelectValue placeholder={t("Nenhuma")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__nenhuma__">Nenhuma</SelectItem>
+                <SelectItem value="__nenhuma__">{t("Nenhuma")}</SelectItem>
                 {opcoesColuna.map((c) => (
                   <SelectItem key={c} value={c}>
                     {c}
@@ -513,8 +510,8 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
         <div className="flex items-center justify-between gap-2">
           <p className="text-xs text-muted-foreground">
             {colunasVivas
-              ? `Estrutura conferida agora: ${colunasVivas.length} colunas.`
-              : "Se a tabela mudou no banco, confira a estrutura."}
+              ? t("Estrutura conferida agora:") + ` ${colunasVivas.length} ` + t("colunas.")
+              : t("Se a tabela mudou no banco, confira a estrutura.")}
           </p>
           <Button
             variant="outline"
@@ -524,18 +521,18 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
             data-testid="catalogo-verificar-estrutura"
           >
             <RefreshCw className={`mr-2 h-3.5 w-3.5 ${verificando ? "animate-spin" : ""}`} aria-hidden />
-            {verificando ? "Conferindo…" : "Verificar estrutura"}
+            {verificando ? t("Conferindo…") : t("Verificar estrutura")}
           </Button>
         </div>
 
         <div className="flex max-h-[42vh] flex-col gap-2 overflow-y-auto rounded-md border border-border/60 p-3">
           <div className="grid grid-cols-[3rem_3rem_3.5rem_3.5rem_1fr_3.5rem] items-center gap-2 text-xs font-semibold text-muted-foreground">
-            <span title="Enviar o valor para a IA (contexto)">IA</span>
-            <span title="A IA pode usar como filtro">Critério</span>
-            <span title="Aparece no texto junto da foto">Mostrar</span>
-            <span title="O motor ordena as semelhantes por esta coluna">Comparar</span>
-            <span>Coluna</span>
-            <span title="Prioridade (1 = mais importante)">Ordem</span>
+            <span title={t("Enviar o valor para a IA (contexto)")}>IA</span>
+            <span title={t("A IA pode usar como filtro")}>{t("Critério")}</span>
+            <span title={t("Aparece no texto junto da foto")}>{t("Mostrar")}</span>
+            <span title={t("O motor ordena as semelhantes por esta coluna")}>{t("Comparar")}</span>
+            <span>{t("Coluna")}</span>
+            <span title={t("Prioridade (1 = mais importante)")}>{t("Ordem")}</span>
           </div>
           {linhas.map((linha, i) => (
             <div
@@ -546,28 +543,28 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
                 type="checkbox"
                 className="h-4 w-4"
                 checked={linha.ia}
-                title="Enviar o valor desta coluna para a IA"
+                title={t("Enviar o valor desta coluna para a IA")}
                 onChange={(e) => atualizar(i, { ia: e.target.checked })}
               />
               <input
                 type="checkbox"
                 className="h-4 w-4"
                 checked={linha.criterio}
-                title="A IA pode usar esta coluna como filtro"
+                title={t("A IA pode usar esta coluna como filtro")}
                 onChange={(e) => atualizar(i, { criterio: e.target.checked })}
               />
               <input
                 type="checkbox"
                 className="h-4 w-4"
                 checked={linha.mostrar}
-                title="Exibir este valor no texto que vai junto com a foto"
+                title={t("Exibir este valor no texto que vai junto com a foto")}
                 onChange={(e) => atualizar(i, { mostrar: e.target.checked })}
               />
               <input
                 type="checkbox"
                 className="h-4 w-4"
                 checked={linha.comparar}
-                title="Usar esta coluna para ordenar as motos semelhantes"
+                title={t("Usar esta coluna para ordenar as motos semelhantes")}
                 onChange={(e) => atualizar(i, { comparar: e.target.checked })}
               />
               <span className="truncate font-mono text-xs" title={linha.coluna}>
@@ -588,16 +585,16 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
 
         {mapeamento.data && mapeamento.data.table_name !== tabela.nome && (
           <p className="text-xs text-muted-foreground">
-            Hoje o catálogo é a tabela “{mapeamento.data.table_name}”. Salvar aqui troca para esta.
+            {t("Hoje o catálogo é a tabela “")}{mapeamento.data.table_name}{t("”. Salvar aqui troca para esta.")}
           </p>
         )}
 
         <DialogFooter>
           <Button variant="outline" onClick={() => aoMudarAberto(false)}>
-            Cancelar
+            {t("Cancelar")}
           </Button>
           <Button onClick={salvarMapeamento} disabled={salvar.isPending}>
-            {salvar.isPending ? "Salvando…" : "Salvar catálogo"}
+            {salvar.isPending ? t("Salvando…") : t("Salvar catálogo")}
           </Button>
         </DialogFooter>
       </DialogContent>

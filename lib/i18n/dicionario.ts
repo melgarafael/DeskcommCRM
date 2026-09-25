@@ -8485,6 +8485,205 @@ export const DICIONARIO: Traducoes = {
     {
       es: "Cuando el cliente menciona un modelo/familia, mostrar TODAS las unidades que coinciden",
     },
+
+  // ─── C-087: catálogo — quantidade no agente e liga/desliga ───
+  "Catálogo de motos": { es: "Catálogo de motos" },
+  "Formato das mensagens": { es: "Formato de los mensajes" },
+  "Catálogo atual": { es: "Catálogo actual" },
+  Tabela: { es: "Tabla" },
+  "Nenhum catálogo configurado ainda.": { es: "Todavía no hay ningún catálogo configurado." },
+  "semelhança automática LIGADA": { es: "similitud automática ACTIVADA" },
+  "semelhança automática desligada": { es: "similitud automática desactivada" },
+  "Enviar a foto automaticamente quando a IA esquecer":
+    { es: "Enviar la foto automáticamente cuando la IA lo olvide" },
+  "Uma foto por moto, cada uma com a legenda dela":
+    { es: "Una foto por moto, cada una con su leyenda" },
+  "Abertura sem citar as motos (elas aparecem nas fotos)":
+    { es: "Apertura sin mencionar las motos (aparecen en las fotos)" },
+  "Pergunta final depois das fotos, em mensagem separada":
+    { es: "Pregunta final después de las fotos, en un mensaje aparte" },
+  "Quantidade e escolha das motos": { es: "Cantidad y elección de las motos" },
+  "Catálogo do agente salvo — já vale no próximo atendimento.":
+    { es: "Catálogo del agente guardado — ya vale en la próxima conversación." },
+  "Salvar configuração do catálogo": { es: "Guardar configuración del catálogo" },
+  "A tabela, as colunas e a semelhança automática são configuradas em Integração de dados. A QUANTIDADE de motos e o formato das mensagens ficam aqui, no agente.":
+    {
+      es: "La tabla, las columnas y la similitud automática se configuran en Integración de datos. La CANTIDAD de motos y el formato de los mensajes se ajustan aquí, en el agente.",
+    },
+  "Quando o cliente cita um MODELO que existe, mostrar TODAS as unidades que batem (ignora o limite)":
+    {
+      es: "Cuando el cliente menciona un MODELO que existe, mostrar TODAS las unidades que coinciden (ignora el límite)",
+    },
+  "Usar limite de quantidade quando o modelo pedido NÃO existe (alternativas)":
+    {
+      es: "Usar límite de cantidad cuando el modelo pedido NO existe (alternativas)",
+    },
+  "Quantas alternativas oferecer (1 a 8) quando o modelo não existe":
+    { es: "Cuántas alternativas ofrecer (1 a 8) cuando el modelo no existe" },
+  "Desligue o limite para mostrar todas as alternativas candidatas. O limite não afeta um modelo que existe quando a opção acima está ligada.":
+    {
+      es: "Desactiva el límite para mostrar todas las alternativas candidatas. El límite no afecta a un modelo que existe cuando la opción de arriba está activada.",
+    },
+
+  // ─── Base de conhecimento / embeddings (telas ChaveDeConhecimento e StatusDaBase) ───
+  "Provedor de embeddings": { es: "Proveedor de embeddings" },
+  "Google Gemini (recomendado)": { es: "Google Gemini (recomendado)" },
+  OpenAI: { es: "OpenAI" },
+  "Chave do Google AI Studio": { es: "Clave de Google AI Studio" },
+  "Chave dos embeddings (Base de conhecimento)": { es: "Clave de los embeddings (Base de conocimiento)" },
+  "Obter uma chave no Google AI Studio": { es: "Obtener una clave en Google AI Studio" },
+  "Obter uma chave na OpenAI": { es: "Obtener una clave en OpenAI" },
+  "Trocar a chave": { es: "Cambiar la clave" },
+  "Testar a chave": { es: "Probar la clave" },
+  "Preparar tudo de novo": { es: "Preparar todo de nuevo" },
+  "Chave salva. Estamos conferindo com o provedor — leva alguns segundos.":
+    { es: "Clave guardada. Estamos verificando con el proveedor — tarda unos segundos." },
+  "Conferindo a chave com o provedor — leva alguns segundos.":
+    { es: "Verificando la clave con el proveedor — tarda unos segundos." },
+  "Chave OK": { es: "Clave OK" },
+  "A chave falhou:": { es: "La clave falló:" },
+  dimensões: { es: "dimensiones" },
+  "Estado da base de conhecimento": { es: "Estado de la base de conocimiento" },
+  prontos: { es: "listos" },
+  preparando: { es: "preparando" },
+  "preparando o material…": { es: "preparando el material…" },
+  "tudo pronto": { es: "todo listo" },
+  "precisa reindexar (o modelo mudou)": { es: "necesita reindexar (el modelo cambió)" },
+  "Não há material para reindexar.": { es: "No hay material para reindexar." },
+  "Falta uma chave de embeddings para o agente aprender o seu material":
+    { es: "Falta una clave de embeddings para que el agente aprenda tu material" },
+  "Preparar um documento para o agente encontrá-lo usa um provedor de embeddings. Escolha OpenAI ou Google Gemini (a chave é gratuita no Google AI Studio). Sem ela você consegue cadastrar o material, mas ele fica esperando — e o agente segue sem saber o que está nele.":
+    {
+      es: "Preparar un documento para que el agente lo encuentre usa un proveedor de embeddings. Elige OpenAI o Google Gemini (la clave es gratuita en Google AI Studio). Sin ella puedes registrar el material, pero queda en espera — y el agente sigue sin saber qué contiene.",
+    },
+  "Como configurar a base (passo a passo)": { es: "Cómo configurar la base (paso a paso)" },
+  "Escolha o provedor de embeddings (Google Gemini é o recomendado e tem chave gratuita).":
+    { es: "Elige el proveedor de embeddings (Google Gemini es el recomendado y tiene clave gratuita)." },
+  "Clique em “Obter uma chave…” e crie/copie a chave no site do provedor.":
+    { es: "Haz clic en “Obtener una clave…” y crea/copia la clave en el sitio del proveedor." },
+  "Cole a chave e clique em “Salvar chave”. A validação leva alguns segundos.":
+    { es: "Pega la clave y haz clic en “Guardar clave”. La validación tarda unos segundos." },
+  "Clique em “Testar a chave” para confirmar que ela funciona de verdade.":
+    { es: "Haz clic en “Probar la clave” para confirmar que funciona de verdad." },
+  "Clique em “Preparar tudo de novo” no acervo — ele prepara primeiro o que falta e depois o que mudou; o que não mudou é pulado.":
+    {
+      es: "Haz clic en “Preparar todo de nuevo” en el acervo — prepara primero lo que falta y después lo que cambió; lo que no cambió se omite.",
+    },
+  "Depois de trocar o provedor, use “Preparar tudo de novo” no acervo para reindexar o material — a busca usa o mesmo modelo com que o material foi indexado.":
+    {
+      es: "Después de cambiar el proveedor, usa “Preparar todo de nuevo” en el acervo para reindexar el material — la búsqueda usa el mismo modelo con el que se indexó el material.",
+    },
+  "Alguns materiais falharam ao preparar. Clique em “Preparar tudo de novo” — se for cota do provedor (limite por minuto), a reindexação agora respeita o ritmo.":
+    {
+      es: "Algunos materiales fallaron al prepararse. Haz clic en “Preparar todo de nuevo” — si es cuota del proveedor (límite por minuto), la reindexación ahora respeta el ritmo.",
+    },
+  "Observação: no plano gratuito do Google, a indexação respeita o limite de requisições por minuto automaticamente — pode demorar, mas conclui sozinha.":
+    {
+      es: "Nota: en el plan gratuito de Google, la indexación respeta automáticamente el límite de solicitudes por minuto — puede tardar, pero termina sola.",
+    },
+  "Vou preparar o que falta e o que mudou; o material sem alteração é pulado.":
+    { es: "Voy a preparar lo que falta y lo que cambió; el material sin cambios se omite." },
+
+  // ─── Skills e exploração de dados ───
+  "Use Editar para ajustar o texto de uma skill instalada — cada salvamento cria uma versão nova e a anterior fica no histórico. Também dá para reenviar um .zip com o mesmo nome; a sua versão passa a valer no lugar da do catálogo.":
+    {
+      es: "Usa Editar para ajustar el texto de una skill instalada — cada guardado crea una versión nueva y la anterior queda en el historial. También puedes reenviar un .zip con el mismo nombre; tu versión pasa a valer en lugar de la del catálogo.",
+    },
+  "Catálogo do agente": { es: "Catálogo del agente" },
+  "Usar como catálogo": { es: "Usar como catálogo" },
+
+  // ─── ConfigurarCatálogo (Integração de dados) — fragmentos com t() ───
+  "Catálogo do agente — “": { es: "Catálogo del agente — “" },
+  "”": { es: "”" },
+  "Diga o que o agente deve fazer com cada coluna: enviar à IA, usar como critério, mostrar no texto e comparar.":
+    {
+      es: "Dile al agente qué hacer con cada columna: enviar a la IA, usar como criterio, mostrar en el texto y comparar.",
+    },
+  "Como preencher (Nome · Foto · Similares · IA · Critério · Mostrar · Comparar · Ordem)":
+    { es: "Cómo completar (Nombre · Foto · Similares · IA · Criterio · Mostrar · Comparar · Orden)" },
+  "Nome da moto": { es: "Nombre de la moto" },
+  "— a coluna que identifica e busca a moto (obrigatória).":
+    { es: "— la columna que identifica y busca la moto (obligatoria)." },
+  Foto: { es: "Foto" },
+  "— a coluna com a URL da imagem enviada.": { es: "— la columna con la URL de la imagen enviada." },
+  "Motos similares (referência)": { es: "Motos similares (referencia)" },
+  "— uma coluna que lista motos parecidas (ex.:": { es: "— una columna que lista motos parecidas (ej.:" },
+  "). Quando o cliente pede uma moto que não temos, o motor procura o pedido nessa coluna e oferece a":
+    {
+      es: "). Cuando el cliente pide una moto que no tenemos, el motor busca el pedido en esa columna y ofrece la",
+    },
+  "moto real": { es: "moto real" },
+  "que a cita. É usada": { es: "que la menciona. La usa" },
+  "só pelo motor": { es: "solo el motor" },
+  ": a IA nunca vê esses nomes.": { es: ": la IA nunca ve esos nombres." },
+  "Enviar à IA": { es: "Enviar a la IA" },
+  "— a IA vê o valor desta coluna (contexto). Menos colunas = menos tokens.":
+    { es: "— la IA ve el valor de esta columna (contexto). Menos columnas = menos tokens." },
+  "Critério da IA": { es: "Criterio de la IA" },
+  "— a IA pode usar esta coluna para montar o filtro quando não achar o pedido. (Diferente de":
+    {
+      es: "— la IA puede usar esta columna para armar el filtro cuando no encuentra el pedido. (A diferencia de",
+    },
+  "\"Enviar à IA\": aqui ela pode filtrar por ela.)":
+    { es: "\"Enviar a la IA\": aquí puede filtrar por ella.)" },
+  Mostrar: { es: "Mostrar" },
+  "— o valor aparece no texto que vai junto com a foto.":
+    { es: "— el valor aparece en el texto que acompaña la foto." },
+  Comparar: { es: "Comparar" },
+  "— o motor usa esta coluna para ordenar as motos semelhantes (número → mais próximo; texto → mais parecido).":
+    {
+      es: "— el motor usa esta columna para ordenar las motos similares (número → más cercano; texto → más parecido).",
+    },
+  "— prioridade (1 = mais importante). Colunas de":
+    { es: "— prioridad (1 = más importante). Columnas de" },
+  "Ordem 1": { es: "Orden 1" },
+  "também compõem o nome (ex.:": { es: "también componen el nombre (ej.:" },
+  "Usar este catálogo no agente": { es: "Usar este catálogo en el agente" },
+  "Escolher as semelhantes automaticamente": { es: "Elegir las similares automáticamente" },
+  "Como buscar": { es: "Cómo buscar" },
+  "Contém (recomendado)": { es: "Contiene (recomendado)" },
+  Igual: { es: "Igual" },
+  "Começa com": { es: "Empieza con" },
+  "Escolha a coluna": { es: "Elige la columna" },
+  "Prefixo do nome (ex.: marca)": { es: "Prefijo del nombre (ej.: marca)" },
+  "Foto (URL da imagem)": { es: "Foto (URL de la imagen)" },
+  Nenhuma: { es: "Ninguna" },
+  "Estrutura conferida agora:": { es: "Estructura verificada ahora:" },
+  "colunas.": { es: "columnas." },
+  "Se a tabela mudou no banco, confira a estrutura.":
+    { es: "Si la tabla cambió en la base, verifica la estructura." },
+  "Conferindo…": { es: "Verificando…" },
+  "Verificar estrutura": { es: "Verificar estructura" },
+  "Enviar o valor para a IA (contexto)": { es: "Enviar el valor a la IA (contexto)" },
+  Critério: { es: "Criterio" },
+  "A IA pode usar como filtro": { es: "La IA puede usar como filtro" },
+  "Aparece no texto junto da foto": { es: "Aparece en el texto junto a la foto" },
+  "O motor ordena as semelhantes por esta coluna": { es: "El motor ordena las similares por esta columna" },
+  Coluna: { es: "Columna" },
+  "Prioridade (1 = mais importante)": { es: "Prioridad (1 = más importante)" },
+  "Enviar o valor desta coluna para a IA": { es: "Enviar el valor de esta columna a la IA" },
+  "A IA pode usar esta coluna como filtro": { es: "La IA puede usar esta columna como filtro" },
+  "Exibir este valor no texto que vai junto com a foto":
+    { es: "Mostrar este valor en el texto que acompaña la foto" },
+  "Usar esta coluna para ordenar as motos semelhantes":
+    { es: "Usar esta columna para ordenar las motos similares" },
+  "Hoje o catálogo é a tabela “": { es: "Hoy el catálogo es la tabla “" },
+  "”. Salvar aqui troca para esta.": { es: "”. Guardar aquí cambia a esta." },
+  "Salvar catálogo": { es: "Guardar catálogo" },
+
+  // ─── EditorDeSkill — fragmentos e textos ───
+  "Editar skill “": { es: "Editar skill “" },
+  "Salvar cria uma versão nova (a antiga fica no histórico). O corpo só entra na conversa quando uma das palavras-chave aparece na mensagem do cliente.":
+    {
+      es: "Guardar crea una versión nueva (la anterior queda en el historial). El cuerpo solo entra en la conversación cuando una de las palabras clave aparece en el mensaje del cliente.",
+    },
+  "Não foi possível carregar a skill.": { es: "No se pudo cargar la skill." },
+  "Descrição (aparece no índice do agente)": { es: "Descripción (aparece en el índice del agente)" },
+  "Palavras-chave de ativação (separe por vírgula)": { es: "Palabras clave de activación (separa por coma)" },
+  "moto, motos, cb, estoque, preço": { es: "moto, motos, cb, stock, precio" },
+  "A skill é carregada quando o cliente escreve uma destas palavras.":
+    { es: "La skill se carga cuando el cliente escribe una de estas palabras." },
+  linhas: { es: "líneas" },
 };
 
 /**

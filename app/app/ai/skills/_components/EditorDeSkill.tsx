@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useT } from "@/hooks/i18n/useT";
+import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useSkill, useSalvarSkill, useSkillVersions, useRestaurarSkill } from "@/hooks/ai/useSkills";
 
 /** Mesmo teto do backend (`MAX_SKILL_BODY_LINES` em lib/agent-engine/agent/skills.ts). */
@@ -44,6 +45,7 @@ function parseKeywords(texto: string): string[] {
 
 export function EditorDeSkill({ nome, aberto, aoMudarAberto }: Props) {
   const t = useT();
+  const tagDoIdioma = useTagDeIdioma();
   const skill = useSkill(aberto ? nome : null);
   const salvar = useSalvarSkill();
   const versoes = useSkillVersions(aberto ? nome : null);
@@ -107,22 +109,21 @@ export function EditorDeSkill({ nome, aberto, aoMudarAberto }: Props) {
     <Dialog open={aberto} onOpenChange={aoMudarAberto}>
       <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Editar skill “{nome}”</DialogTitle>
+          <DialogTitle>{t("Editar skill “")}{nome}{t("”")}</DialogTitle>
           <DialogDescription>
-            Salvar cria uma versão nova (a antiga fica no histórico). O corpo só entra na
-            conversa quando uma das palavras-chave aparece na mensagem do cliente.
+            {t("Salvar cria uma versão nova (a antiga fica no histórico). O corpo só entra na conversa quando uma das palavras-chave aparece na mensagem do cliente.")}
           </DialogDescription>
         </DialogHeader>
 
-        {skill.isLoading && <p className="text-sm text-muted-foreground">Carregando…</p>}
+        {skill.isLoading && <p className="text-sm text-muted-foreground">{t("Carregando…")}</p>}
         {skill.isError && (
-          <p className="text-sm text-destructive">Não foi possível carregar a skill.</p>
+          <p className="text-sm text-destructive">{t("Não foi possível carregar a skill.")}</p>
         )}
 
         {skill.isSuccess && (
           <div className="flex flex-col gap-4 py-2">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="skill-desc">Descrição (aparece no índice do agente)</Label>
+              <Label htmlFor="skill-desc">{t("Descrição (aparece no índice do agente)")}</Label>
               <Input
                 id="skill-desc"
                 value={descricao}
@@ -132,15 +133,15 @@ export function EditorDeSkill({ nome, aberto, aoMudarAberto }: Props) {
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="skill-kw">Palavras-chave de ativação (separe por vírgula)</Label>
+              <Label htmlFor="skill-kw">{t("Palavras-chave de ativação (separe por vírgula)")}</Label>
               <Input
                 id="skill-kw"
                 value={keywords}
                 onChange={(e) => setKeywords(e.target.value)}
-                placeholder="moto, motos, cb, estoque, preço"
+                placeholder={t("moto, motos, cb, estoque, preço")}
               />
               <p className="text-xs text-muted-foreground">
-                A skill é carregada quando o cliente escreve uma destas palavras.
+                {t("A skill é carregada quando o cliente escreve uma destas palavras.")}
               </p>
             </div>
 
@@ -148,7 +149,7 @@ export function EditorDeSkill({ nome, aberto, aoMudarAberto }: Props) {
               <div className="flex items-center justify-between">
                 <Label htmlFor="skill-body">Corpo (o procedimento que o agente segue)</Label>
                 <span className={excedeTeto ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
-                  {linhas}/{MAX_LINHAS} linhas
+                  {linhas}/{MAX_LINHAS} {t("linhas")}
                 </span>
               </div>
               <Textarea
@@ -170,7 +171,7 @@ export function EditorDeSkill({ nome, aberto, aoMudarAberto }: Props) {
                   {versoes.data.map((v) => (
                     <li key={v.id} className="flex items-center justify-between gap-2 text-xs">
                       <span>
-                        {new Date(v.created_at).toLocaleString("pt-BR", {
+                        {new Date(v.created_at).toLocaleString(tagDoIdioma, {
                           day: "2-digit",
                           month: "2-digit",
                           year: "numeric",

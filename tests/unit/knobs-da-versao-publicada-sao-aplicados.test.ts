@@ -43,6 +43,15 @@ const SEM_CONSUMIDOR_ACEITO: Readonly<Record<string, string>> = {
   // Nome só para o log do turno: não muda o que o agente faz nem o que o
   // cliente recebe. Sai daqui no dia em que virar comportamento.
   agentName: "usado apenas no log do run, nunca em decisão",
+  // Liga/desliga pelo celular (C-076/C-077). O motor NÃO lê estes campos
+  // carregados: quem decide é `configDeComandosDoAgente`
+  // (`lib/escalacao/comando-de-canal.ts`), consultado pelo ingest do canal
+  // (que não carrega o `agentConfig`). Os campos aqui espelham a config para
+  // leitura/tela — o consumo de comportamento vive na outra consulta. Some da
+  // lista no dia em que o ingest passar a usar o config já carregado.
+  aceitaComandosCelular: "consumido via configDeComandosDoAgente (ingest), não pelo agentConfig",
+  comandoLigar: "consumido via configDeComandosDoAgente (ingest), não pelo agentConfig",
+  comandoDesligar: "consumido via configDeComandosDoAgente (ingest), não pelo agentConfig",
 };
 
 function camposDaConfig(): string[] {

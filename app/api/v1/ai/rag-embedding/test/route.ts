@@ -13,10 +13,14 @@ import { randomUUID } from "node:crypto";
 import { ok } from "@/lib/api/wrappers";
 import { embedText } from "@/lib/ai/embed";
 import { requireRole } from "@/lib/auth/require-role";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "ai_embeddings" });
   if (!authz.ok) return authz.response;

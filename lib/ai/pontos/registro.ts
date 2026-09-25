@@ -307,6 +307,19 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     registraEm: "llm_calls",
   },
   {
+    id: "catalog_criteria",
+    rotulo: "Ler o que o cliente procura na moto",
+    oQueFaz:
+      "Classifica a mensagem e extrai a intenção e os critérios do pedido (ex.: modelo, cor, preço) para a busca no catálogo — sem ela o motor oferece as motos erradas.",
+    papel: "entender",
+    // Só classificação: não cria lead nem move o funil, então não exige tools.
+    exige: {},
+    emissor: "lib/agent-engine/agent/extrair-criterios.ts",
+    sintomaDeFalha:
+      "A busca no catálogo recebe critérios vazios ou errados e o cliente vê motos que não têm a ver com o que pediu.",
+    registraEm: "llm_calls",
+  },
+  {
     id: "flow_validate",
     rotulo: "Validar a resposta do fluxo",
     oQueFaz:
