@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { RouterMemberInput } from "./router-members";
+import { roteirosApontados, type RouterMemberInput } from "./router-members";
 
 /** Compatibility for HTTP-only installations, where native prospecting cannot run. */
 export async function replaceRouterMembersHttp(
@@ -29,9 +29,20 @@ export async function replaceRouterMembersHttp(
     if (agents.error) throw agents.error;
     if (agents.data?.length !== ids.length) throw new Error("member_agent_not_found");
   }
+  const roteiros = roteirosApontados(members);
+  if (roteiros.length > 0) {
+    const achados = await admin
+      .from("followup_flow_pointers")
+      .select("id")
+      .eq("organization_id", orgId)
+      .eq("surface", "atendimento")
+      .in("id", roteiros);
+    if (achados.error) throw achados.error;
+    if (achados.data?.length !== roteiros.length) throw new Error("member_flow_not_found");
+  }
   const existing = await admin
     .from("ai_router_members")
-    .select("id,agent_id,intent_name,intent_description,examples,position")
+    .select("id,agent_id,intent_name,intent_description,examples,flow_pointer_id,position")
     .eq("organization_id", orgId)
     .eq("router_id", routerId);
   if (existing.error) throw existing.error;
@@ -49,6 +60,7 @@ export async function replaceRouterMembersHttp(
     .insert(
       members.map((member, position) => ({
         ...member,
+        flow_pointer_id: member.flow_pointer_id ?? null,
         position,
         organization_id: orgId,
         router_id: routerId,

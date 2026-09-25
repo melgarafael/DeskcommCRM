@@ -23,6 +23,8 @@ export type Branding = {
   name: string;
   /** URL do logo, ou `null` quando a marca deve aparecer como texto. */
   logoUrl: string | null;
+  /** Arte opcional preparada para o tema escuro; ausente preserva o logo padrão. */
+  logoDarkUrl?: string | null;
   /** Primeira letra do nome — usada onde só cabe um caractere (sidebar recolhida). */
   initial: string;
 };

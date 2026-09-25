@@ -32,6 +32,7 @@ import { OwnerBadge } from "@/components/kanban/OwnerBadge";
 import { comandoDaConversa, ROTULO_DO_MOTIVO } from "@/lib/inbox/comando-da-conversa";
 import { ReassignDialog } from "@/components/inbox/ReassignDialog";
 import { SnoozeButton } from "@/components/inbox/SnoozeButton";
+import { DialButton } from "@/components/voice/DialButton";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
@@ -108,6 +109,7 @@ export function ConversationHeader({ conversation, onAbrirConversa }: Props) {
     assigned_to_user_name: conversation.assigned_to_user_name ?? null,
     assignee_kind: conversation.assignee_kind ?? null,
     bot_silenced_until: conversation.bot_silenced_until ?? null,
+    last_handoff_reason: conversation.last_handoff_reason ?? null,
     force_human: c?.force_human ?? null,
     is_blocked: conversation.contacts?.is_blocked ?? null,
     automaticoDaOrg: automaticoDaOrg.data,
@@ -163,10 +165,10 @@ export function ConversationHeader({ conversation, onAbrirConversa }: Props) {
     // `canais-baseline` clica, e, pior, esconderia ação de quem atende.
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background px-4 py-3">
       <div className="min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">
           <ChannelLogo channel={conversation.channel_sessions} size={20} />
-          <h2 className="truncate text-sm font-semibold">{displayName}</h2>
-          <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
+          <h2 className="min-w-0 truncate text-sm font-semibold" title={displayName}>{displayName}</h2>
+          <Badge variant="outline" className="h-4 shrink-0 px-1.5 text-[10px]">
             {t(STATUS_LABEL[status] ?? status)}
           </Badge>
           {/* Ao lado do estado, não escondido num painel: a pergunta "dá para
@@ -176,22 +178,6 @@ export function ConversationHeader({ conversation, onAbrirConversa }: Props) {
             provider={conversation.channel_sessions?.provider ?? null}
             lastInboundAt={conversation.last_inbound_at}
           />
-          {/* Sem esta marca, a conversa em que o robô está calado tem exatamente
-              a mesma cara de uma conversa normal — e ninguém entende por que as
-              respostas automáticas pararam.
-              O testid é o MESMO de antes de propósito: `escalacao-ciclo.spec.ts`
-              o clica, e rótulo visível é contrato. O que mudou é o texto DIZER o
-              motivo — "alguém assumiu" e "pausado para este cliente" pediam ações
-              diferentes e tinham a mesma frase. */}
-          {motivo !== null && (
-            <Badge
-              variant="outline"
-              className="h-4 px-1.5 text-[10px]"
-              data-testid="badge-atendimento-humano"
-            >
-              {t(ROTULO_DO_MOTIVO[motivo])}
-            </Badge>
-          )}
         </div>
 
         {/* QUEM ESTÁ NO COMANDO, com nome e por GEOMETRIA — disco cheio para
@@ -211,7 +197,7 @@ export function ConversationHeader({ conversation, onAbrirConversa }: Props) {
           )}
         </div>
         {phone && (
-          <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+          <p className="mt-0.5 flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground">
             <Phone size={11} weight="regular" aria-hidden /> {phone}
           </p>
         )}
@@ -219,8 +205,18 @@ export function ConversationHeader({ conversation, onAbrirConversa }: Props) {
 
       {/* `shrink-0` saiu daqui: era ele que impunha o piso de largura. Agora a
           barra pode encolher e quebrar internamente, e os botões continuam
-          todos visíveis e clicáveis — só que em duas linhas quando preciso. */}
+          todos visíveis e clicáveis — só que em duas linhas quando preciso.
+          Esta coluna existe para o selo do automático morar ABAIXO da barra
+          (#1625): na linha do nome ele alargava a identidade e empurrava a
+          barra inteira para baixo. Ela também não é `shrink-0`, pelo mesmo
+          motivo da barra. */}
+      <div className="flex min-w-0 flex-col items-end gap-1">
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        {/* A chamada usa o telefone da ficha, mesmo quando o contato chegou por
+            outro canal. Grupos não representam uma pessoa para ligar. */}
+        {!conversation.is_group && c?.id && (
+          <DialButton contactId={c.id} hasPhone={!!c.phone_number} />
+        )}
         {isOpen && (
           <Button
             size="sm"
@@ -361,6 +357,18 @@ export function ConversationHeader({ conversation, onAbrirConversa }: Props) {
               <ArrowRight size={12} weight="regular" aria-hidden />
             </Link>
           </Button>
+        )}
+      </div>
+        {/* O aviso pertence à operação automática. Abaixo da barra ele não
+            alarga a ficha do contato nem muda a posição dos botões.
+            Sem esta marca, a conversa em que o robô está calado tem exatamente
+            a mesma cara de uma conversa normal. O testid é contrato:
+            `escalacao-ciclo.spec.ts` o clica. */}
+        {motivo !== null && (
+          <Badge variant="outline" className="h-4 w-fit max-w-full truncate px-1.5 text-[10px]"
+            title={t(ROTULO_DO_MOTIVO[motivo])} data-testid="badge-atendimento-humano">
+            {t(ROTULO_DO_MOTIVO[motivo])}
+          </Badge>
         )}
       </div>
       <ReassignDialog

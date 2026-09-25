@@ -50,6 +50,8 @@ function banco(
     mensagem?: { body: string | null; media_derived_text?: string | null } | null;
     /** Perguntas já feitas ao cliente (eventos `roteiro_pergunta_feita`). */
     perguntasFeitas?: string[];
+    /** Tentativas por pergunta (eventos `roteiro_tentativa`) — no teto, a pergunta esgota. */
+    tentativas?: Record<string, number>;
     /** O LOTE inteiro (rajada): vence `mensagem` quando presente. */
     lote?: Array<{ id: string; body: string | null; media_derived_text?: string | null }>;
   } = {},
@@ -96,7 +98,10 @@ function banco(
       return { rows: [{ id: 'enr-1' }], rowCount: 1 };
     }
     if (/event_type in \('roteiro_tentativa', 'roteiro_pergunta_feita'\)/.test(sql)) {
-      const linhas = (opts.perguntasFeitas ?? []).map((campo) => ({ tipo: 'roteiro_pergunta_feita', campo, n: 1 }));
+      const linhas = [
+        ...(opts.perguntasFeitas ?? []).map((campo) => ({ tipo: 'roteiro_pergunta_feita', campo, n: 1 })),
+        ...Object.entries(opts.tentativas ?? {}).map(([campo, n]) => ({ tipo: 'roteiro_tentativa', campo, n })),
+      ];
       return { rows: linhas, rowCount: linhas.length };
     }
     if (/from messages/.test(sql)) {
@@ -293,6 +298,59 @@ describe('revisão adversarial do PR 2 — dado inventado', () => {
       { ...turno, texto: 'sim' },
     );
     expect(validar).toHaveBeenCalledWith(expect.objectContaining({ perguntaAtual: 'tem_cnh' }));
+  });
+
+  it('⭐ RESPOSTA TARDIA (#1130, @vgamkt): a pergunta esgotada vai ao validador, e o que ele leu é gravado', async () => {
+    // Duas perguntas: `cidade` já bateu no teto (3 de 3) e está ENCERRADA; a
+    // CNH segue pendente, então o roteiro continua vivo.
+    const grafo: FlowGraph = {
+      ...GRAFO,
+      nodes: [
+        GRAFO.nodes[0]!,
+        {
+          id: 'c1',
+          type: 'collect',
+          label: 'Cidade',
+          position: { x: 0, y: 0 },
+          config: { key: 'cidade', label: 'Cidade', type: 'text', required: true, permite_correcao: false },
+        },
+        {
+          id: 'c2',
+          type: 'collect',
+          label: 'CNH',
+          position: { x: 0, y: 0 },
+          config: { key: 'tem_cnh', label: 'Tem CNH', type: 'boolean', required: true, permite_correcao: false },
+        },
+        GRAFO.nodes[2]!,
+      ],
+      edges: [
+        { id: 'a', source: 't', target: 'c1', priority: 0, condition: { type: 'always' } },
+        { id: 'b', source: 'c1', target: 'c2', priority: 0, condition: { type: 'always' } },
+        { id: 'c', source: 'c2', target: 'e', priority: 0, condition: { type: 'always' } },
+      ],
+    };
+    const b = banco({
+      roteiroJaExiste: true,
+      grafo,
+      mensagem: { body: 'ah, eu moro em Campinas' },
+      perguntasFeitas: ['cidade', 'tem_cnh'],
+      tentativas: { cidade: 3 },
+    });
+    const validar = vi.fn<ValidarResposta>(async () => ({
+      resultado: 'respondeu',
+      respostas: [{ campo: 'cidade', valor: 'Campinas' }],
+    }));
+    await prepararRoteiroDoTurno(
+      { pool: b.pool, moduloLigado: async () => true, validar, log: log() as never },
+      { ...turno, texto: 'ah, eu moro em Campinas' },
+    );
+
+    const args = validar.mock.calls[0]![0];
+    expect(args.perguntas.map((p) => p.key)).toEqual(['tem_cnh']);
+    expect(args.esgotados?.map((p) => p.key)).toEqual(['cidade']);
+    const gravacao = b.query.mock.calls.find(([sql]) => /update contacts/.test(sql));
+    expect(gravacao, 'a resposta tardia precisa chegar ao contato').toBeDefined();
+    expect(gravacao![1]).toEqual(expect.arrayContaining(['cidade', 'Campinas']));
   });
 
   it('⭐ rajada "oi" + "meu cpf é 529.982.247-25": o validador lê o LOTE, e o retry não relê', async () => {

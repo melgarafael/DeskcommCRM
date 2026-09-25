@@ -13,7 +13,10 @@ vi.mock("@/lib/auth/require-role", () => ({ requireRole: mocks.guard }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: mocks.support }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.admin }));
 vi.mock("@/lib/agent-engine/db/request-pool", () => ({ getRequestPool: mocks.pool }));
-vi.mock("@/lib/ai/agents/router-members", () => ({ writeRouterMembers: mocks.write }));
+vi.mock("@/lib/ai/agents/router-members", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/ai/agents/router-members")>()),
+  writeRouterMembers: mocks.write,
+}));
 vi.mock("@/lib/audit", () => ({ audit: mocks.audit }));
 import { PUT } from "@/app/api/v1/ai/routers/[id]/members/route";
 import { replaceRouterMembersHttp } from "@/lib/ai/agents/router-members-http";
@@ -78,7 +81,8 @@ it("uses the transactional shared lock when a DB URL is configured", async () =>
   mocks.pool.mockReturnValue({ connect: async () => db });
   const response = await PUT(request(), { params: Promise.resolve({ id }) });
   expect(response.status).toBe(200);
-  expect(mocks.write).toHaveBeenCalledWith(db, id, id, [member], "replace");
+  // O schema completa `flow_pointer_id` (null) — o vínculo com o roteiro (#1573, B2).
+  expect(mocks.write).toHaveBeenCalledWith(db, id, id, [{ ...member, flow_pointer_id: null }], "replace");
   expect(db.query.mock.calls.map(([sql]) => sql)).toEqual(["begin", "commit"]);
   expect(mocks.admin).not.toHaveBeenCalled();
 });

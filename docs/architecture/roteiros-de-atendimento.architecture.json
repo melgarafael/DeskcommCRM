@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "diagram_type": "fluxo",
+  "meta": {
+    "titulo": "Roteiros de atendimento (port do #1130, de @vgamkt)",
+    "pergunta": "Como uma pergunta desenhada no editor vira um dado na ficha do cliente, e onde se vê quando não virou?",
+    "resumo": "O dono do servidor liga o módulo; o gerente desenha o roteiro no mesmo editor dos follow-ups, recortado pela superfície `atendimento`. A mensagem entra pelo webhook, o turno do agente começa o roteiro pela palavra-gatilho (ou pelo roteador), grava a resposta em `contacts.custom_fields` e o rastro em `followup_enrollment_events`. A ficha e o painel da conversa leem os dois e montam o resumo dos campos, sem modelo."
+  },
+  "lanes": [
+    { "id": "humano", "label": "O que o humano vê" },
+    { "id": "borda", "label": "Borda HTTP" },
+    { "id": "motor", "label": "Turno do agente" },
+    { "id": "dados", "label": "Banco" }
+  ],
+  "mainPath": ["interruptor", "editor", "publish", "webhook", "turno", "campos", "ficha"],
+  "nodes": [
+    { "id": "interruptor", "lane": "humano", "col": 1, "type": "frontend", "label": "/admin/sistema", "sublabel": "chave MODULO_FLUXOS_DE_ATENDIMENTO — desligada por padrão" },
+    { "id": "editor", "lane": "humano", "col": 2, "type": "frontend", "label": "/app/ai/atendimento", "sublabel": "lista + editor; paleta só Início, Pergunta, Skill e Fim" },
+    { "id": "ficha", "lane": "humano", "col": 5, "type": "frontend", "label": "RoteirosDoContato", "sublabel": "ficha do contato e painel da conversa" },
+    { "id": "fila", "lane": "humano", "col": 5, "type": "frontend", "label": "Fila de acompanhamentos", "sublabel": "filtro «Coletando respostas do roteiro»" },
+    { "id": "publish", "lane": "borda", "col": 2, "type": "api", "label": "POST /ai/followup-flows/[id]/publish", "sublabel": "NOS_DA_SUPERFICIE + roteiro em linha, sem condição" },
+    { "id": "webhook", "lane": "borda", "col": 3, "type": "api", "label": "POST /webhooks/waha/[token]", "sublabel": "a mensagem do cliente" },
+    { "id": "rota-roteiros", "lane": "borda", "col": 5, "type": "api", "label": "GET /contacts/[id]/roteiros", "sublabel": "viewer+ · 404 com o módulo desligado" },
+    { "id": "turno", "lane": "motor", "col": 4, "type": "worker", "label": "prepararRoteiroDoTurno", "sublabel": "gatilho/roteador · captura conferida na mensagem" },
+    { "id": "expira", "lane": "motor", "col": 4, "type": "worker", "label": "fn_encerrar_roteiros_vencidos", "sublabel": "72h sem resposta, ou settings.expira_em_horas" },
+    { "id": "enrollments", "lane": "dados", "col": 4, "type": "tabela", "label": "followup_enrollments (coletando)", "sublabel": "+ followup_enrollment_events roteiro_*" },
+    { "id": "campos", "lane": "dados", "col": 5, "type": "tabela", "label": "contacts.custom_fields", "sublabel": "a resposta, por chave" }
+  ],
+  "edges": [
+    { "id": "r1", "from": "interruptor", "to": "editor", "label": "ligado: a porta aparece no hub de IA e a tela deixa de ser 404" },
+    { "id": "r2", "from": "editor", "to": "publish", "label": "grafo com settings.gatilhos" },
+    { "id": "r3", "from": "webhook", "to": "turno", "label": "o turno lê o lote da mensagem" },
+    { "id": "r4", "from": "turno", "to": "enrollments", "label": "começa, conta tentativas, conclui" },
+    { "id": "r5", "from": "turno", "to": "campos", "label": "grava só o que está escrito na mensagem" },
+    { "id": "r6", "from": "expira", "to": "enrollments", "label": "encerra o que ficou parado" },
+    { "id": "r7", "from": "enrollments", "to": "rota-roteiros", "label": "roteiros do contato com o grafo da versão" },
+    { "id": "r8", "from": "campos", "to": "rota-roteiros", "label": "valores dos campos" },
+    { "id": "r9", "from": "rota-roteiros", "to": "ficha", "label": "resumo montado dos campos, sem modelo" },
+    { "id": "r10", "from": "enrollments", "to": "fila", "label": "status coletando" }
+  ],
+  "cards": [
+    { "titulo": "O laço de retorno (invariante 7)", "texto": "Quando o roteiro erra, quem mostra é a própria ficha: a pergunta que esgotou as tentativas aparece como «não respondido», e o roteiro que parou (humano assumiu, cliente pediu para parar, prazo vencido) aparece com o status cancelado. O rastro de cada pergunta feita e respondida fica em `followup_enrollment_events`, sem o valor; os rótulos legíveis desses eventos na fila ainda não existem." },
+    { "titulo": "Por que o resumo não é da IA", "texto": "O resumo é montado dos campos: rótulo da pergunta e o valor que o cliente deu. Um resumo escrito por modelo é pergunta aberta ao dono do produto; montar dos campos não inventa nada e custa zero chamada." }
+  ]
+}

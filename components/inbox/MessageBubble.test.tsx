@@ -19,8 +19,9 @@
  * Sem provider de idioma o `t()` degrada para a chave (pt-BR), então o texto
  * esperado é o português — o espanhol é coberto por i18n-espanhol-cobre-a-tela.
  */
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import { MessageBubble } from "./MessageBubble";
 import type { Message } from "@/lib/types/messaging";
@@ -57,6 +58,117 @@ function msg(over: Partial<Message> = {}): Message {
     ...over,
   };
 }
+
+describe("MessageBubble — ações sobre mensagem própria", () => {
+  it("edita texto recente e confirma a exclusão para todos", async () => {
+    const user = userEvent.setup();
+    const onEditar = vi.fn(async () => undefined);
+    const onApagar = vi.fn(async () => undefined);
+    render(<MessageBubble message={msg({
+      external_id: "ABC", sent_by_user_id: "usuario-1", sent_at: new Date().toISOString(),
+    })} viewerUserId="usuario-1" onEditar={onEditar} onApagar={onApagar} />);
+    await user.click(screen.getByRole("button", { name: "Opções da mensagem" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Editar mensagem" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Editar mensagem" }), { target: { value: "novo texto" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    await waitFor(() => expect(onEditar).toHaveBeenCalledWith("novo texto"));
+    await user.click(screen.getByRole("button", { name: "Opções da mensagem" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Apagar para todos" }));
+    expect(screen.getByText("O WhatsApp tentará remover esta mensagem também para o cliente.")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "Apagar para todos" }).at(-1)!);
+    await waitFor(() => expect(onApagar).toHaveBeenCalledOnce());
+  });
+
+  it("salva com Enter, preserva Shift+Enter e evita envio duplicado", async () => {
+    const user = userEvent.setup();
+    const onEditar = vi.fn(async () => undefined);
+    render(<MessageBubble message={msg({ external_id: "ABC", sent_at: new Date().toISOString() })}
+      onEditar={onEditar} />);
+    await user.click(screen.getByRole("button", { name: "Opções da mensagem" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Editar mensagem" }));
+    const campo = screen.getByRole("textbox", { name: "Editar mensagem" });
+    fireEvent.change(campo, { target: { value: "primeira linha\nsegunda linha" } });
+    fireEvent.keyDown(campo, { key: "Enter", shiftKey: true });
+    expect(onEditar).not.toHaveBeenCalled();
+    fireEvent.keyDown(campo, { key: "Enter" });
+    fireEvent.keyDown(campo, { key: "Enter" });
+    await waitFor(() => expect(onEditar).toHaveBeenCalledOnce());
+    expect(onEditar).toHaveBeenCalledWith("primeira linha\nsegunda linha");
+  });
+
+  it("rola até os controles quando abre a edição da última mensagem", async () => {
+    const user = userEvent.setup();
+    const scrollIntoView = vi.fn();
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    try {
+      render(<MessageBubble message={msg({ external_id: "ABC", sent_at: new Date().toISOString() })}
+        onEditar={vi.fn(async () => undefined)} />);
+      await user.click(screen.getByRole("button", { name: "Opções da mensagem" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Editar mensagem" }));
+      await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({
+        behavior: "smooth", block: "nearest", inline: "nearest",
+      }));
+      expect(screen.getByRole("textbox", { name: "Editar mensagem" })).toHaveFocus();
+      expect(screen.getByRole("button", { name: "Salvar" })).toBeInTheDocument();
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+
+  it("não oferece editar mensagem antiga nem apagar mensagem recebida", async () => {
+    const user = userEvent.setup();
+    const onEditar = vi.fn(async () => undefined);
+    const onApagar = vi.fn(async () => undefined);
+    const { rerender } = render(<MessageBubble message={msg({ external_id: "ABC" })}
+      onEditar={onEditar} onApagar={onApagar} />);
+    await user.click(screen.getByRole("button", { name: "Opções da mensagem" }));
+    expect(screen.queryByRole("menuitem", { name: "Editar mensagem" })).not.toBeInTheDocument();
+    rerender(<MessageBubble message={msg({ external_id: "ABC", direction: "inbound" })}
+      onEditar={onEditar} onApagar={onApagar} />);
+    expect(screen.queryByRole("button", { name: "Opções da mensagem" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Apagar para todos" })).not.toBeInTheDocument();
+  });
+
+  it("mantém o texto apagado dentro da bolha do CRM sem mostrar o texto revogado pelo cliente", () => {
+    const { rerender } = render(<MessageBubble message={msg({ revoked_at: "2026-09-24T11:00:00Z", body: "valor combinado" })} />);
+    expect(screen.getByText("Esta mensagem foi apagada")).toBeInTheDocument();
+    expect(screen.getByText("valor combinado")).toBeInTheDocument();
+    expect(screen.getByText("Visível só aqui no CRM")).toBeInTheDocument();
+    expect(screen.getByTestId("message-bubble").className).toContain("opacity-70");
+    rerender(<MessageBubble message={msg({ direction: "inbound", revoked_at: "2026-09-24T11:00:00Z", body: "texto do cliente" })} />);
+    expect(screen.queryByText("texto do cliente")).not.toBeInTheDocument();
+  });
+
+  it("põe o menu dentro da bolha sem ocupar uma coluna ao lado", () => {
+    const { container } = render(<MessageBubble message={msg({ external_id: "ABC" })} onApagar={vi.fn(async () => undefined)} />);
+    const bolha = screen.getByTestId("message-bubble");
+    expect(bolha).toContainElement(screen.getByRole("button", { name: "Opções da mensagem" }));
+    expect(container.firstElementChild?.children).toHaveLength(1);
+  });
+});
+
+describe("MessageBubble — ocultação local de recebida", () => {
+  it("oculta corpo e citação, com restauração disponível ao gestor", async () => {
+    const user = userEvent.setup();
+    const onOcultar = vi.fn(async () => undefined);
+    const onRestaurar = vi.fn(async () => undefined);
+    const recebida = msg({ direction: "inbound", body: "segredo do cliente" });
+    const { rerender } = render(<MessageBubble message={recebida} onOcultar={onOcultar} onRestaurar={onRestaurar} />);
+    await user.click(screen.getByRole("button", { name: "Opções da mensagem" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Ocultar no CRM" }));
+    expect(screen.getByText(/continua no WhatsApp do cliente/)).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "Ocultar no CRM" }).at(-1)!);
+    await waitFor(() => expect(onOcultar).toHaveBeenCalledOnce());
+    rerender(<MessageBubble message={{ ...recebida, metadata: { crm_hidden_at: "2026-09-24T12:00:00Z" } }}
+      onOcultar={onOcultar} onRestaurar={onRestaurar} />);
+    expect(screen.queryByText("segredo do cliente")).not.toBeInTheDocument();
+    expect(screen.getByText("Mensagem ocultada no CRM")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Opções da mensagem" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Restaurar no CRM" }));
+    await waitFor(() => expect(onRestaurar).toHaveBeenCalledOnce());
+  });
+});
 
 describe("MessageBubble — rótulo de origem", () => {
   it("resposta pelo celular (external_device) mostra 'Celular'", () => {
@@ -158,4 +270,28 @@ describe("MessageBubble — contenção de layout e quebra de palavras (#1451)",
     expect(linha.className).toContain("min-w-0");
   });
 });
+describe("pino compartilhado pelo cliente", () => {
+  it("vira cartão que abre o mapa, no lugar do link cru", () => {
+    render(
+      <MessageBubble
+        message={msg({
+          direction: "inbound",
+          sent_via: "external_device",
+          type: "location",
+          body: "📍 https://maps.google.com/?q=-25.33,-57.54",
+          metadata: { location: { latitude: -25.33, longitude: -57.54 } },
+        })}
+      />,
+    );
+    const link = screen.getByRole("link", { name: /Abrir no mapa/ });
+    expect(link.getAttribute("href")).toBe("https://maps.google.com/?q=-25.33,-57.54");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(screen.queryByText("📍 https://maps.google.com/?q=-25.33,-57.54")).toBeNull();
+  });
 
+  it("sem coordenadas, o corpo aparece como sempre", () => {
+    render(<MessageBubble message={msg({ direction: "inbound", type: "location", body: "📍 Location" })} />);
+    expect(screen.getByText("📍 Location")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Abrir no mapa/ })).toBeNull();
+  });
+});

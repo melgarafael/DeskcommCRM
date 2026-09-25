@@ -24,6 +24,12 @@ vi.mock('@/lib/agent-engine/guardrails/camadas-da-org', () => ({
 }));
 vi.mock('@/lib/agent-engine/agent/fuso-da-org', () => ({ fusoDaOrganizacao: vi.fn(async () => 'UTC') }));
 vi.mock('@/lib/ai/elegibilidade/consulta-pg', () => ({ decidirElegibilidadeDaConversa: vi.fn(async () => null) }));
+// "Outro turno já respondeu?" fica fora da seleção medida aqui — tem invariante
+// próprio contra o banco (tests/invariants/turno-nao-responde-duas-vezes.test.ts).
+vi.mock('@/lib/agent-engine/agent/turno-ja-respondido', () => ({
+  ultimaInboundJaRespondida: vi.fn(async () => false),
+  anotarUltimaInboundVista: vi.fn(async () => {}),
+}));
 vi.mock('@/lib/agent-engine/pacing/store', () => ({ loadChannelKnobs: vi.fn(async () => ({ knobs: {} })) }));
 vi.mock('@/lib/agent-engine/pacing/engine', () => ({ janelaDeEnvioAberta: () => true, proximaAberturaDaJanela: vi.fn() }));
 vi.mock('@/lib/agent-engine/pacing/aviso-de-janela', () => ({

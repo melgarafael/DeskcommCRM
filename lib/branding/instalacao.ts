@@ -102,7 +102,7 @@ export type SementeDoAmbiente = {
  * 0155; tratá-la diferente agora criaria duas regras para o mesmo caso.
  */
 const COLUNAS =
-  "app_name, logo_url, logo_path, accent_hex, show_powered_by, seeded_from_env, fallback_at, fallback_reason";
+  "app_name, logo_url, logo_path, logo_dark_path, accent_hex, show_powered_by, seeded_from_env, fallback_at, fallback_reason";
 
 /**
  * Códigos de recusa — os que significam "a cor configurada NÃO pintou".

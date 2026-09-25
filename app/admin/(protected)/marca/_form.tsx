@@ -46,6 +46,7 @@ interface Props {
    * interface aparece com o nome em texto.
    */
   readonly logoEmVigor: string | null;
+  readonly logoEscuroEmVigor?: string | null;
   /** O que apareceria SEM o arquivo subido — a URL colada no `.env`, se houver. */
   readonly logoDoAmbiente: string | null;
   readonly origens: { readonly nome: string; readonly logoUrl: string; readonly cor: string };
@@ -68,6 +69,7 @@ export function FormularioDaMarca({
   gravada,
   nomeEmVigor,
   logoEmVigor,
+  logoEscuroEmVigor,
   logoDoAmbiente,
   origens,
   definidoNestaTela,
@@ -339,7 +341,10 @@ export function FormularioDaMarca({
           escopo="instalacao"
           // Literal, nunca memoizado: a identidade deste objeto é o que diz ao
           // campo que houve render NOVO do servidor. Ver os Props de CampoDeLogo.
-          logoDaCamada={{ url: gravada.logo_path ? logoEmVigor : null }}
+          logoDaCamada={{
+            url: gravada.logo_path ? logoEmVigor : null,
+            escuraUrl: logoEscuroEmVigor,
+          }}
           logoHerdado={logoDoAmbiente}
           origemDoHerdado="do arquivo de instalação do servidor"
           nomeEmVigor={nomeEmVigor}

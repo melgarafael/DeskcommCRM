@@ -366,13 +366,13 @@ check "  e a orientação é a ÚLTIMA coisa da saída, depois do passo 7" \
 
 # Lista grande (role sem dono: milhares de "must be owner") com a disputa no topo.
 # `printf | head -20` sob pipefail levava SIGPIPE e o set -e matava o update.sh
-# com 141 — antes do aviso de PERMISSÃO, que existe para este caso, e antes do pull.
+# com 141 — antes do aviso de PERMISSÃO, que existe para este caso e agora o encerra.
 rm -rf "$ROTEIRO_UG"; mkdir -p "$ROTEIRO_UG"
 { printf '%s\n' "$DEADLOCK_UG"; for i in $(seq 1 4000); do printf 'psql:/b.sql:%s: ERROR:  must be owner of table tabela_%s\n' "$i" "$i"; done; } > "$ROTEIRO_UG/passada.1"
 cp "$ROTEIRO_UG/passada.1" "$ROTEIRO_UG/passada.2"; cp "$ROTEIRO_UG/passada.1" "$ROTEIRO_UG/passada.3"
 : > "$DOCKER_LOG"
 BASELINE_ROTEIRO="$ROTEIRO_UG" BASELINE_ESPERA_S=0 run_update --to v1.1.0 --force
-check "lista de erros maior que o buffer do pipe não mata o update.sh" test "$RC" -eq 0
+check "lista de erros maior que o buffer do pipe não mata o update.sh (para com 1)" test "$RC" -eq 1
 check "  a disputa no topo foi reconhecida (3 passadas)" test "$(grep -c -- '-f /b.sql' "$DOCKER_LOG")" -eq 3
 check "  o aviso de PERMISSÃO chegou à tela" grep -q "erros de PERMISSÃO" "$OUTFILE"
 check "  e o fim diz que o banco NÃO terminou limpo" grep -q "banco NÃO terminou limpo" "$OUTFILE"
@@ -390,6 +390,25 @@ BASELINE_ROTEIRO="$ROTEIRO_UG" BASELINE_ESPERA_S=0 run_update --to v1.1.0 --forc
 check "só permissão: uma passada (repetir não cura)" test "$(grep -c -- '-f /b.sql' "$DOCKER_LOG")" -eq 1
 check "  sem a metade de banco ocupado (não houve disputa)" test -z "$(grep 'Parte não aplicou' "$OUTFILE" || true)"
 check "  e o FIM orienta a conexão do dono" test -n "$(tail -n 8 "$OUTFILE" | grep -F 'SUPABASE_DB_ADMIN_URL' || true)"
+check "  e PARA com 1, sem baixar a imagem nova" test "$RC" -eq 1
+check "  (nenhum pull depois do banco)" test -z "$(grep -E ' pull( |$)' "$DOCKER_LOG" || true)"
+
+# Erro que repetir não cura DEPOIS de um `drop policy` que o `create` não refez.
+# A parada por banco incompleto vem DEPOIS da conferência das regras: saindo
+# antes dela, o trap subia app, worker e scheduler sem a regra — tela vazia para
+# todo mundo. Com a ordem certa o CRM fica parado com o aviso vermelho.
+printf 'drop policy if exists "leitura" on public.leads;\ncreate policy "leitura" on public.leads using (true);\n' > "$PROJ/supabase/baseline.sql"
+rm -rf "$ROTEIRO_UG"; mkdir -p "$ROTEIRO_UG"
+printf 'psql:/b.sql:2: ERROR:  column "organization_id" does not exist\n' > "$ROTEIRO_UG/passada.1"
+: > "$DOCKER_LOG"
+BASELINE_ROTEIRO="$ROTEIRO_UG" BASELINE_ESPERA_S=0 run_update --to v1.1.0 --force
+check "regra derrubada + erro não curável: o baseline aplicado tinha a regra (controle)" \
+  grep -q 'create policy "leitura" on public.leads' "$PROJ/supabase/baseline.sql"
+check "  para com 1" test "$RC" -eq 1
+check "  a conferência das regras rodou e acusou a ausente" grep -q "REGRAS DE ISOLAMENTO AUSENTES" "$OUTFILE"
+check "  e o CRM NÃO subiu depois do banco" \
+  test -z "$(awk '/-f \/b.sql/ {b=1} b && / up -d/' "$DOCKER_LOG")"
+git -C "$PROJ" checkout --quiet -- supabase/baseline.sql
 
 # ── Clone RASO: a topologia que o install.sh realmente entrega ───────────────
 # `install.sh` instala com `git clone --depth 1`. Num repositório raso o

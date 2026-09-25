@@ -121,7 +121,12 @@ async function handle(req: NextRequest): Promise<Response> {
       gateDb: createSupabaseFollowupGateDb(admin),
       clock: () => new Date(),
     });
-    if (sweepSummary.enrolled || sweepSummary.pointers_gated_out || sweepSummary.skipped_existing) {
+    if (
+      sweepSummary.enrolled ||
+      sweepSummary.pointers_gated_out ||
+      sweepSummary.skipped_existing ||
+      sweepSummary.skipped_cooldown
+    ) {
       void audit({
         action: "followup.silence_sweep_run",
         organizationId: null,

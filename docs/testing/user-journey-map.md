@@ -114,6 +114,91 @@ fonte só (`lib/onboarding/passos.ts`) — eram três listas que discordavam. Ga
 
 - `[P0]` Colar chave inválida e entender o motivo — `tests/e2e/credenciais-de-ia.spec.ts`. Achados corrigidos em 2026-09-02: lista de modelos colada por vírgula no card; "Validando…" eterno após restart; erro em código (`auth_failed_401`, no card e no toast); diálogo sem dizer quando usar cada provedor nem onde pegar a chave; contagem "em uso" divergente do DELETE. **PASS** — executada de verdade contra browser real (Supabase local pg17 + baseline + Chromium) em 2026-09-02, depois que o Docker da máquina (antes indisponível) voltou. A própria execução achou um SEXTO defeito que a leitura de código não tinha achado: `descreverErroDeValidacao` não classificava `TypeError` (o nome que o `fetch()` do Node usa para falha de rede/DNS) como erro de rede, e o card mostrava "Falha na validação (TypeError)." cru em vez da frase amigável — corrigido em `lib/ai/credenciais/erro-de-validacao.ts`, com caso de teste. Evidência em `.superpowers/evidence/credenciais-de-ia.png`.
 
+## J32 — Ligar o Jev para perceber o cliente irritado `[P1]` (2026-09-23)
+
+O Jev (System One, da TypeSafe AI) mede o clima de cada mensagem do cliente,
+geralmente em menos de um segundo, no lugar ou ao lado da IA de sempre. Nasce desligado;
+ligar manda cada mensagem dos clientes aos EUA, uma de cada vez e sem o resto da
+conversa, então pede o aceite de quem administra. É `[P1]` e não `[P0]`: nada dele está no caminho de quem acabou de
+instalar.
+
+Specs: `tests/e2e/jev-decisoes-rapidas.spec.ts` (parte 5 do `e2e`, contra o dublê
+HTTP `scripts/duble-jev-e2e.mjs`, que grava cada chamada num arquivo que a spec lê) e
+`tests/e2e/jev-chave-real.spec.ts` (fora do CI: exige a chave paga; pula sem ela).
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J32.1 | Procurar "jev" no ⌘K | a busca leva a Provedores, onde está o cartão | **PASS** — `jev-decisoes-rapidas.spec.ts` verde em 2026-09-24 (bancada fresca: pg15 + `baseline.sql` + `bootstrap-owner.ts`, build de produção, dublê) e na prova manual em campo com a chave REAL (Chromium dirigido como leigo, clínica recém-instalada): ⌘K "Jev" → Provedores |
+| J32.2 | Cartão sem chave | diz o que o Jev é, leva à TypeSafe para pegar a chave e abre o diálogo de colar já no Jev (formato `apikey_…`) | **PASS** — `jev-decisoes-rapidas.spec.ts` verde em 2026-09-24 (bancada fresca: pg15 + `baseline.sql` + `bootstrap-owner.ts`, build de produção, dublê) e na prova manual em campo com a chave REAL (Chromium dirigido como leigo, clínica recém-instalada) |
+| J32.3 | Colar a chave | o teste da chave passa (o dublê recebeu o `GET /v1/models` com a chave certa) e o cartão fica pronto para ligar | **PASS** — `jev-decisoes-rapidas.spec.ts` verde em 2026-09-24 (bancada fresca: pg15 + `baseline.sql` + `bootstrap-owner.ts`, build de produção, dublê) e na prova manual em campo com a chave REAL (Chromium dirigido como leigo, clínica recém-instalada): validada na TypeSafe real |
+| J32.4 | Chave validada, Jev desligado, e uma mensagem do cliente chega e é drenada | nenhuma pergunta sai para o fornecedor (D6). O controle positivo é a J32.7: mesmo cliente, mesma conversa, só o interruptor muda | **PASS** — `jev-decisoes-rapidas.spec.ts` verde em 2026-09-24 (bancada fresca: pg15 + `baseline.sql` + `bootstrap-owner.ts`, build de produção, dublê); na prova de campo, desligado: 4 chamadas ao Jev antes, 4 depois |
+| J32.5 | Ligar sem marcar o aceite | o botão fica travado; a rota recusa com `jev_exige_aceite` (provado em `app/api/v1/ai/jev/route.test.ts`) | **PASS** em tela (prova de campo: "Ligar o Jev" desabilitado até marcar o aceite) e na rota (unit) |
+| J32.6 | Ligar com o aceite, e deixar o Jev decidir | observando (com IA de sempre), com o bloco de concordância na tela — o laço de retorno da observação — → decidindo; sozinho quando a empresa não tem a IA de sempre. O NÚMERO da concordância (acima de zero) não se alcança pela tela neste ambiente: a IA de sempre tem chave falsa; ele é provado em `CartaoDoJev.test.tsx` e `app/api/v1/ai/jev/route.test.ts` | **PASS** — `jev-decisoes-rapidas.spec.ts` verde em 2026-09-24 (bancada fresca: pg15 + `baseline.sql` + `bootstrap-owner.ts`, build de produção, dublê) (bloco de concordância em observação); "Decidindo sozinho" **PASS** em tela com a chave real. O NÚMERO da concordância acima de zero segue provado só em unit (sem IA de sempre real neste ambiente) |
+| J32.7 | Segunda mensagem do mesmo cliente pelo webhook do WhatsApp | o dublê recebe a pergunta do clima com a chave colada, a versão `jev-1.13.0` e SÓ a última mensagem (sem a da J32.4, que está na mesma conversa), com telefone e e-mail trocados por `[PHONE]`/`[EMAIL]` | **PASS** — `jev-decisoes-rapidas.spec.ts` verde em 2026-09-24 (bancada fresca: pg15 + `baseline.sql` + `bootstrap-owner.ts`, build de produção, dublê); com a chave real, a TypeSafe mediu irritada=0,0025 e feliz=0,745 (323/751 ms) |
+| J32.8 | IA › Execuções, "Ver as decisões do Jev" | a medição aparece com "Jev (TypeSafe AI)", o modelo devolvido e sem "falhou"; o filtro "Só o Jev" vem marcado | **PASS** — `jev-decisoes-rapidas.spec.ts` verde em 2026-09-24 (bancada fresca: pg15 + `baseline.sql` + `bootstrap-owner.ts`, build de produção, dublê) e na prova manual em campo com a chave REAL (Chromium dirigido como leigo, clínica recém-instalada): "Mostrando só o Jev" e "O Jev decidiu." |
+| J32.9 | O cartão depois da medição | "Mensagens medidas" sobe ao menos 1 (a nossa; outra que tenha voltado à fila depois do escoamento também conta — a prova de que foi a NOSSA é a do dublê, na J32.7) | **PASS** — `jev-decisoes-rapidas.spec.ts` verde em 2026-09-24 (bancada fresca: pg15 + `baseline.sql` + `bootstrap-owner.ts`, build de produção, dublê) e na prova manual em campo com a chave REAL (Chromium dirigido como leigo, clínica recém-instalada): mensagens medidas, **clientes irritados percebidos**, custo e tempo |
+| J32.10 | O Jev como IA que conversa | ausente do "Modelo padrão", do seletor do ponto "Medir o clima da conversa" e do seletor de IA do agente novo | **PASS** — `jev-decisoes-rapidas.spec.ts` verde em 2026-09-24 (bancada fresca: pg15 + `baseline.sql` + `bootstrap-owner.ts`, build de produção, dublê); derivação **PASS** (`tests/unit/provedores-de-decisao-catraca.test.ts`) |
+| J32.11 | O Jev no "Qual você contratou" do onboarding | ausente | **PASS** em tela — prova de campo numa instalação fresca SEM chave: "Qual você contratou" lista Anthropic, OpenAI, Google, OpenRouter e DeepSeek, sem o Jev |
+| J32.12 | Desligar | volta a pronto para ligar, e religar não pede o aceite de novo | **PASS** — `jev-decisoes-rapidas.spec.ts` verde em 2026-09-24 (bancada fresca: pg15 + `baseline.sql` + `bootstrap-owner.ts`, build de produção, dublê) e na prova manual em campo com a chave REAL (Chromium dirigido como leigo, clínica recém-instalada): "Envio aceito pela empresa em …", religar sem novo aceite |
+| J32.13 | A mesma jornada contra a API de verdade | a chave paga passa no teste, a versão fixada responde e a medição aparece em Execuções | **PASS** local em 2026-09-24 (`jev-chave-real.spec.ts`, 7,5 s, chave do dono) — segue **FORA DO CI** (exige `JEV_API_KEY`) |
+| J32.14 | Falha que pede ação (chave recusada, sem crédito) | aviso na Central dizendo o que fazer e se a IA de sempre de fato mediu; atualizado quando o desfecho piora; fechado sozinho quando o Jev volta a medir | **PASS** em tela na prova de campo: a TypeSafe real recusou a chave → aviso crítico na Central ("O Jev parou de medir o clima das conversas…") → chave certa colada pela tela → aviso fechado sozinho, com `resolved_at` |
+| J32.15 | Irritação percebida pelo Jev | a passagem para humano diz "(percebido pelo Jev)" só no que a equipe lê | **PASS** em tela na prova de campo: título e resumo da passagem dizem "(percebido pelo Jev)"; a mensagem ao cliente não cita o Jev |
+
+**Achados da execução em campo (2026-09-24), todos consertados antes do PR:** a spec do CI
+recarregava a página com o POST da chave em voo e o salvamento morria (status `-1` no trace);
+aviso da Central fechado sem `resolved_at`; "Usada em" sumia depois de editar a chave; "Nome"
+obrigatório barrava quem só colava a chave; ⌘K com a descrição do resultado selecionado em
+**1,20:1** de contraste e cortando a palavra "Jev"; cartão espremido e custo fora da borda a
+375 px; aviso "falta a IA principal" dentro do cartão com o Jev funcionando; nenhum número de
+VALOR no cartão (entrou "Clientes irritados percebidos"); "Close" em inglês nos diálogos.
+Evidência (capturas numeradas, chave mascarada) na bancada local da sessão.
+
+"ESCRITA, NÃO EXECUTADA" quer dizer isso mesmo: a spec existe e passa pelas cercas
+estáticas (`e2e-cobertura-completa` e as irmãs), mas ninguém a rodou contra um app
+buildado ainda. Esta linha muda quando a primeira rodada da parte 5 medir.
+
+### Achados da integração (cada um com commit próprio)
+
+1. **O redator de segredo nunca apagou chave nenhuma** (`de7236805`). O padrão de
+   `redigirMensagemDoProvedor` tinha um byte de backspace onde devia estar `\b`, desde
+   2026-08-08: `sk-…`, `AIza…` e `Bearer …` chegavam inteiros à tela de Execuções.
+   Apareceu ao escrever o caso da chave do Jev.
+2. **O clima da conversa não media com a chave colada pela tela** (`3c3d4ccf5`). Um
+   portão olhava só as variáveis do `.env`; quem pulou a chave no `install.sh` e a
+   cadastrou depois ficava sem passagem por irritação, sem aviso nenhum.
+3. **Cadastrar a chave do Jev já mandava as mensagens para fora** (`87332b348`), antes
+   de alguém ligar ou aceitar. A guarda passou para onde toda chamada passa.
+4. **O `scrubMessage` não apagava telefone como se escreve no Brasil** (`625f895a6`):
+   `(11) 98765-4321` passava inteiro — para o Sentry e para a frase de aceite do Jev,
+   que prometia o contrário.
+5. **O aviso "falta a chave da sua IA principal" era falso** quando a chave estava no
+   `.env` (`65b8078c6`).
+6. **O filtro `?provider=` de Execuções** era afirmado no cabeçalho da rota e não
+   existia (`4a38195fc`).
+
+### Achados da prova em campo (2026-09-23, instalação zerada, chave real do Jev)
+
+Dirigida pela tela como leigo; capturas fora do repo (bancada do coordenador). Os
+consertos estão em commits próprios desta branch — procure pelas palavras abaixo em
+`git log main..HEAD`.
+
+1. **A spec abortava o próprio cadastro da chave** — recarregava a página logo depois
+   de "Salvar e validar", e o `POST` saía com status -1. Agora espera a resposta e o
+   cartão mudar sozinho.
+2. **Aviso do Jev fechado sem `resolved_at`**, fora da convenção da Central.
+3. **"Usada em" sumia depois de trocar a chave** até recarregar: vinha de uma foto
+   tirada no servidor com a chave nova ainda em teste. Hoje sai da lista viva.
+4. **O "Nome" obrigatório barrava quem colava só a chave.** Opcional; vazio vira o
+   nome do provedor.
+5. **⌘K ilegível no item destacado** (cinza sobre verde, 1,20:1) e a descrição de
+   Provedores cortada antes do "Jev". O "X" dos diálogos se anunciava "Close".
+6. **Cartão**: aviso de "falta a IA principal" repetido com o Jev funcionando, nada
+   dizendo que a chave foi conferida, sem número de valor ("Clientes irritados
+   percebidos"), um zero de reserva que nunca muda sem IA de sempre, cabeçalho e
+   números espremidos a 375 px, link com 20 px de alvo.
+7. **Execuções não dizia se o Jev decidiu ou observou**, e o motivo da passagem no
+   Inbox só atribuía ao Jev no resumo, não na frase em destaque.
+
 ## J4 — CRM e Pipelines `[P1]`
 
 | # | Caso | Expectativa |
@@ -446,6 +531,7 @@ ao cliente dele, e a tela de acesso é a primeira coisa que qualquer usuário v�
 | J10.6 | O instalador pergunta a cor da marca | `APP_ACCENT_HEX` no `install.sh`, com validação — o revendedor não recebe o verde do produto | PASS (`tests/shell/`) |
 | J10.7 | Nome com apóstrofo (`Sant'Ana Odontologia`) | o `.env` sobrevive: 18/18 nos três consumidores de compose | PASS |
 | J10.8 | Cor escura de marca não quebra o contraste | o anel de foco respeita o piso de 3:1 em ambos os temas | PASS (unit) |
+| J10.9 | Dois logos, um por tema, com remoção independente | arte escura sem moldura na prévia, menu e login; remover apenas a escura preserva o padrão com a proteção anterior | `tests/e2e/logo-moldura-no-tema-escuro.spec.ts`, caso (7); ver evidência da execução no PR |
 
 **Bug de produto achado ao executar (2026-08-14), e é o que justifica esta jornada
 existir.** O caso J10.1 reprovou no CI, e não por defeito do teste: quem sobe o
@@ -2854,3 +2940,16 @@ que dirige o browser resolviam `E2E_PORT` para valores **diferentes** — servid
 `page.goto` em outra, e `ERR_CONNECTION_REFUSED` com um servidor saudável no ar. O CI nunca
 pisou nisso porque o gerador não escreve `E2E_PORT`; quem monta bancada em porta própria,
 sim. Consertado pela ordem: publicar primeiro, decidir a porta depois.
+
+## J33 — Um roteiro de atendimento coleta dados e a ficha mostra `[P1]` (2026-09-24)
+
+Port do #1130 (@vgamkt), PR 3 de 4. Spec: `tests/e2e/fluxo-de-atendimento.spec.ts` (job e2e, parte 5).
+
+| Caso | Esperado |
+|---|---|
+| J33.1 | O dono do servidor liga «Fluxos de atendimento» em /admin/sistema e a chave fica gravada na instalação |
+| J33.2 | O gerente cria o roteiro em IA › Fluxos de atendimento; a paleta tem SÓ Início, Pergunta, Skill e Fim (medido no DOM) |
+| J33.3 | Palavra-gatilho no Início, uma Pergunta de CPF e uma de lista; publicar grava o gatilho na versão ativa |
+| J33.4 | Três mensagens pelo webhook do WAHA; a ficha mostra o roteiro «Concluído» com CPF e modelo (caixa medida por `boundingBox` e estilo computado) |
+
+**NÃO coberto por esta spec:** o turno do agente roda com o worker e o modelo de verdade — no CI não há nenhum dos dois, e a spec chama as mesmas funções do motor (`prepararRoteiroDoTurno`, `garantirPerguntaDoRoteiro`) com o validador devolvendo `indefinido`. A pergunta enviada ao cliente pelo WhatsApp e a leitura pelo validador de modelo ficam para a prova do PR 4.

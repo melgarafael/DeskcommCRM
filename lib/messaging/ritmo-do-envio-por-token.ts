@@ -1,5 +1,5 @@
 /**
- * O freio anti-ban de quem envia pela API com TOKEN — REST (`Bearer tok_...`) e MCP.
+ * O freio anti-ban de quem envia pela API com TOKEN — REST (`Bearer dsk_...`) e MCP.
  *
  * ## Por que existe
  *

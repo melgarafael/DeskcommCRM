@@ -180,11 +180,11 @@ export function esquecerMemoDosModulos(): void {
 }
 
 /**
- * Módulos que existem no código mas ainda NÃO podem ser ligados por quem opera:
- * a capacidade chega em partes e a tela que a torna usável ainda não entrou.
- * `fluxos_atendimento`: o PR 3 do port do #1130 (telas) tira daqui.
+ * Módulos que existem no código mas ainda NÃO podem ser ligados por quem opera
+ * (a capacidade chega em partes e a tela que a torna usável ainda não entrou).
+ * Vazia: os roteiros de atendimento ganharam tela no PR 3 do port do #1130.
  */
-export const MODULOS_AINDA_NAO_LIGAVEIS: readonly ModuloOpcional[] = ["fluxos_atendimento"];
+export const MODULOS_AINDA_NAO_LIGAVEIS: readonly ModuloOpcional[] = [];
 
 /**
  * Grava a escolha de quem administra a instalação. `semeado_do_env = false`

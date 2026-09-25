@@ -84,6 +84,9 @@ export const dynamic = "force-dynamic";
  */
 const escopoSchema = z.enum(["instalacao", "organizacao"]);
 type Escopo = z.infer<typeof escopoSchema>;
+const temaSchema = z.enum(["claro", "escuro"]).default("claro");
+type TemaDoLogo = z.infer<typeof temaSchema>;
+const campoDoLogo = (tema: TemaDoLogo) => (tema === "escuro" ? "logo_dark_path" : "logo_path");
 
 /**
  * 10 trocas de logo por pessoa a cada 5 min.
@@ -187,22 +190,19 @@ async function abrirContexto(escopo: Escopo): Promise<{ ctx: Contexto } | { recu
 }
 
 /** O caminho HOJE gravado, lido do BANCO. Nunca do cliente. */
-async function caminhoGravado(ctx: Contexto): Promise<string | null> {
+async function caminhoGravado(ctx: Contexto, tema: TemaDoLogo): Promise<string | null> {
+  const campo = campoDoLogo(tema);
   const admin = createAdminClient();
   if (ctx.escopo === "instalacao") {
-    const { data } = await admin
-      .from("platform_branding")
-      .select("logo_path")
-      .eq("id", 1)
-      .maybeSingle();
-    return (data as { logo_path?: string | null } | null)?.logo_path ?? null;
+    const { data } = await admin.from("platform_branding").select(campo).eq("id", 1).maybeSingle();
+    return (data as Record<string, string | null> | null)?.[campo] ?? null;
   }
   const { data } = await admin
     .from("organizations")
     .select("settings")
     .eq("id", ctx.orgId)
     .maybeSingle();
-  return marcaDaOrganizacaoDeSettings(data?.settings ?? null)?.logo_path ?? null;
+  return marcaDaOrganizacaoDeSettings(data?.settings ?? null)?.[campo] ?? null;
 }
 
 /**
@@ -218,12 +218,19 @@ async function caminhoGravado(ctx: Contexto): Promise<string | null> {
  * outros fazem read-modify-write do jsonb inteiro. O `row_count` de volta é o que
  * distingue "gravou" de "não gravou".
  */
-async function gravarCaminho(ctx: Contexto, caminho: string | null): Promise<Recusa | null> {
+async function gravarCaminho(
+  ctx: Contexto,
+  caminho: string | null,
+  tema: TemaDoLogo,
+): Promise<Recusa | null> {
   const admin = createAdminClient();
   if (ctx.escopo === "instalacao") {
     const { error } = await admin
       .from("platform_branding")
-      .upsert({ id: 1, logo_path: caminho, seeded_from_env: false }, { onConflict: "id" });
+      .upsert(
+        { id: 1, [campoDoLogo(tema)]: caminho, seeded_from_env: false },
+        { onConflict: "id" },
+      );
     if (error) {
       logger.error("[marca/logo] gravação da instalação falhou", {
         codigo: error.code,
@@ -243,7 +250,8 @@ async function gravarCaminho(ctx: Contexto, caminho: string | null): Promise<Rec
     return null;
   }
 
-  const { data, error } = await admin.rpc("fn_definir_logo_da_organizacao", {
+  const { data, error } = await admin.rpc("fn_definir_logo_por_tema_da_organizacao", {
+    p_tema: tema,
     p_org: ctx.orgId,
     p_actor: ctx.userId,
     p_path: caminho,
@@ -317,12 +325,17 @@ async function registrarAuditoria(
   req: NextRequest,
   requestId: string,
   acao: "definido" | "removido",
+  tema: TemaDoLogo,
 ): Promise<void> {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
   const userAgent = req.headers.get("user-agent") ?? null;
   // FORMA, nunca IDENTIDADE — mesma disciplina de `resolve.ts`. O caminho do
   // arquivo não entra: a trilha é lida por quem opera a plataforma inteira.
-  const metadata = { fields_changed: ["logo_path"], logo_definido: acao === "definido" };
+  const metadata = {
+    fields_changed: [campoDoLogo(tema)],
+    logo_definido: acao === "definido",
+    tema,
+  };
 
   if (ctx.escopo === "instalacao") {
     await audit({
@@ -367,6 +380,10 @@ export async function POST(req: NextRequest): Promise<Response> {
     return fail("validation_failed", "Campo 'escopo' inválido.", 422, { requestId });
   }
 
+  const temaLido = temaSchema.safeParse(form?.get("tema") ?? undefined);
+  if (!temaLido.success)
+    return fail("validation_failed", "Campo 'tema' inválido.", 422, { requestId });
+  const tema = temaLido.data;
   const aberto = await abrirContexto(escopoLido.data);
   if ("recusa" in aberto) {
     return fail(aberto.recusa.codigo, aberto.recusa.mensagem, aberto.recusa.status, { requestId });
@@ -420,7 +437,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
-  const anterior = await caminhoGravado(ctx);
+  const anterior = await caminhoGravado(ctx, tema);
   const caminho = caminhoNovoDoLogo(ctx.prefixo, extensaoDe(tipo));
 
   const { error: erroUp } = await createAdminClient()
@@ -431,7 +448,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     return fail("internal_error", "Erro ao subir o logo.", 500, { requestId });
   }
 
-  const recusa = await gravarCaminho(ctx, caminho);
+  const recusa = await gravarCaminho(ctx, caminho, tema);
   if (recusa) {
     // A gravação falhou DEPOIS do upload: o arquivo novo é que vira órfão, não o
     // antigo. Tentar apagá-lo aqui seria o caminho certo e não é obrigatório —
@@ -441,7 +458,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   await apagarAnterior(ctx, anterior);
-  await registrarAuditoria(ctx, req, requestId, "definido");
+  await registrarAuditoria(ctx, req, requestId, "definido", tema);
 
   return ok(
     { logo_path: caminho, logo_url: urlPublicaDoLogo(caminho, baseDoStorage()) },
@@ -467,6 +484,10 @@ export async function DELETE(req: NextRequest): Promise<Response> {
     return fail("validation_failed", "Parâmetro 'escopo' inválido.", 422, { requestId });
   }
 
+  const temaLido = temaSchema.safeParse(new URL(req.url).searchParams.get("tema") ?? undefined);
+  if (!temaLido.success)
+    return fail("validation_failed", "Parâmetro 'tema' inválido.", 422, { requestId });
+  const tema = temaLido.data;
   const aberto = await abrirContexto(escopoLido.data);
   if ("recusa" in aberto) {
     return fail(aberto.recusa.codigo, aberto.recusa.mensagem, aberto.recusa.status, { requestId });
@@ -485,12 +506,12 @@ export async function DELETE(req: NextRequest): Promise<Response> {
     });
   }
 
-  const anterior = await caminhoGravado(ctx);
-  const recusa = await gravarCaminho(ctx, null);
+  const anterior = await caminhoGravado(ctx, tema);
+  const recusa = await gravarCaminho(ctx, null, tema);
   if (recusa) return fail(recusa.codigo, recusa.mensagem, recusa.status, { requestId });
 
   await apagarAnterior(ctx, anterior);
-  await registrarAuditoria(ctx, req, requestId, "removido");
+  await registrarAuditoria(ctx, req, requestId, "removido", tema);
 
   return ok({ logo_path: null, logo_url: null }, { requestId });
 }

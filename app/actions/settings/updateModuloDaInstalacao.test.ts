@@ -1,8 +1,7 @@
 /**
- * Os roteiros de atendimento (#1130) chegam em partes: até a tela existir
- * (PR 3), ligar o módulo poria o motor no turno sem que ninguém visse o que ele
- * coleta. A ação RECUSA ligar `fluxos_atendimento`; desligar segue permitido, e
- * o banco externo liga como sempre.
+ * Os roteiros de atendimento (#1130) chegaram em partes, e o PR 2 recusava
+ * ligar o módulo até a tela existir. Com as telas (PR 3), quem administra o
+ * servidor liga e desliga os dois módulos opcionais aqui.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -29,12 +28,12 @@ beforeEach(() => {
 });
 
 describe("updateModuloDaInstalacao", () => {
-  it("recusa LIGAR os roteiros de atendimento antes da tela", async () => {
-    expect(await updateModuloDaInstalacao({ modulo: "fluxos_atendimento", ligado: true })).toEqual({
-      ok: false,
-      error: "modulo_ainda_nao_disponivel",
-    });
-    expect(deps.upsert).not.toHaveBeenCalled();
+  it("com as telas, os roteiros de atendimento LIGAM", async () => {
+    expect(await updateModuloDaInstalacao({ modulo: "fluxos_atendimento", ligado: true })).toEqual({ ok: true });
+    expect(deps.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ chave: "MODULO_FLUXOS_DE_ATENDIMENTO", valor: "ligado" }),
+      expect.anything(),
+    );
   });
 
   it("desligar os roteiros continua permitido", async () => {

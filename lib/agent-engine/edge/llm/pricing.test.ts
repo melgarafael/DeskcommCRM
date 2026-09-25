@@ -172,3 +172,21 @@ describe("costCents — a conversa real que originou este PR", () => {
     expect(custo).toBeCloseTo(0.02325, 5);
   });
 });
+
+describe("costCents — o Jev cobra só a entrada, em fração de centavo", () => {
+  it("1 MTok de entrada custa 4,2 centavos, e a saída é de graça", () => {
+    expect(entrada("jev-1.13.0")).toBeCloseTo(4.2, 10);
+    expect(saida("jev-1.13.0")).toBe(0);
+  });
+
+  it("uma medição real (388 de entrada, 18 de saída) vale fração, nunca 1 centavo", () => {
+    // O caminho do worker arredonda para cima (lib/ai/cost.ts) e transformaria
+    // cada decisão em 1 centavo — ~600× o real. Este é o número que vai à coluna.
+    const custo = costCents("jev-1.13.0", { ...NADA, inputTokens: 388, outputTokens: 18 });
+    expect(custo).toBeCloseTo(0.0016296, 7);
+  });
+
+  it("o apelido móvel NÃO herda o preço da versão fixada", () => {
+    expect(costCents("jev-latest", { ...NADA, inputTokens: 1_000 })).toBeNull();
+  });
+});

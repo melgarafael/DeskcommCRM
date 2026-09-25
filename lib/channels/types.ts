@@ -54,6 +54,8 @@ export interface ChannelCapabilities {
   groups: "full" | "limited" | "none";
   /** Mensagem entregue gera custo → decisões de envio precisam considerar orçamento. */
   costPerMessage: boolean;
+  /** O atendente pode editar e apagar para todos uma mensagem já enviada. */
+  alteraMensagemEnviada: boolean;
 }
 
 /**
@@ -285,6 +287,31 @@ export interface ChannelAdapter {
   signalTyping?(input: ChannelTenantScope & {
     sessionRef: string;
     recipient: string;
+  }): Promise<void>;
+
+  /**
+   * Troca o texto de uma mensagem que o próprio atendente já enviou.
+   *
+   * `externalId` é o que o CRM gravou (`messages.external_id`); `recipient` é o
+   * endereço de `resolveRecipient`, ou `null` quando não há. Como o canal monta
+   * o id completo a partir dos dois é conhecimento dele, não da rota. Lança
+   * `recipient_unavailable` quando não dá para endereçar a mensagem.
+   *
+   * OPCIONAL como os demais: a tela pergunta `alteraMensagemEnviada` e a rota
+   * testa a presença do método em vez de perguntar QUAL provider é.
+   */
+  editMessage?(input: ChannelTenantScope & {
+    sessionRef: string;
+    recipient: string | null;
+    externalId: string;
+    text: string;
+  }): Promise<void>;
+
+  /** Apaga para todos uma mensagem enviada. Mesmo contrato de `editMessage`. */
+  revokeMessage?(input: ChannelTenantScope & {
+    sessionRef: string;
+    recipient: string | null;
+    externalId: string;
   }): Promise<void>;
 
   /**

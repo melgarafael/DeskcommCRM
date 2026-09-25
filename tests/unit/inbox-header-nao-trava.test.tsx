@@ -55,6 +55,9 @@ vi.mock("@/hooks/inbox/useReleaseConversation", () => ({
 vi.mock("@/hooks/inbox/useResumeAiAttendance", () => ({
   useResumeAiAttendance: () => ({ mutate: vi.fn(), isPending: false }),
 }));
+// O header monta o discador (`DialButton`), que exige o `VoiceCallProvider` do
+// shell autenticado. Aqui só a largura importa: o discador fica fora da conta.
+vi.mock("@/components/voice/DialButton", () => ({ DialButton: () => null }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   usePermission: () => true,
   useAuth: () => ({ user: { id: "u-1" }, activeOrg: { orgId: "org-1", role: "manager" } }),
@@ -72,13 +75,21 @@ const conversation = {
   contacts: { id: "ct-1", display_name: "Fulana", name: null, phone_number: "5511999" },
 } as unknown as React.ComponentProps<typeof ConversationHeader>["conversation"];
 
-function renderHeader() {
+function renderHeader(conv = conversation) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <ConversationHeader conversation={conversation} />
+      <ConversationHeader conversation={conv} />
     </QueryClientProvider>,
   );
+}
+
+// A barra é quem segura os botões, não um índice fixo: desde o #1625 o
+// `children[1]` do header é a coluna que empilha a barra e o selo do automático.
+function barraDeAcoes() {
+  const barra = screen.getByText("Transferir").closest("button")?.parentElement;
+  expect(barra, "a barra de ações não renderizou").toBeTruthy();
+  return barra as HTMLElement;
 }
 
 describe("header do inbox — não trava a largura da tela", () => {
@@ -89,18 +100,21 @@ describe("header do inbox — não trava a largura da tela", () => {
     // passariam por não haver o que verificar.
     expect(header, "o header não renderizou").toBeTruthy();
 
-    const acoes = header.children[1] as HTMLElement;
-    expect(acoes, "a barra de ações não renderizou").toBeTruthy();
-    expect(
-      acoes.className.split(/\s+/),
-      "`shrink-0` de volta na barra de ações: o header volta a travar em 707px e o painel de CRM sai da tela em 1280px",
-    ).not.toContain("shrink-0");
+    const coluna = header.children[1] as HTMLElement;
+    expect(coluna, "a coluna de ações não renderizou").toBeTruthy();
+    for (const el of [coluna, barraDeAcoes()]) {
+      expect(
+        el.className.split(/\s+/),
+        "`shrink-0` de volta na barra de ações: o header volta a travar em 707px e o painel de CRM sai da tela em 1280px",
+      ).not.toContain("shrink-0");
+      expect(el.className).toContain("min-w-0");
+    }
   });
 
   it("o header pode reorganizar em vez de esconder ação", () => {
     const { container } = renderHeader();
     const header = container.firstElementChild as HTMLElement;
-    const acoes = header.children[1] as HTMLElement;
+    const acoes = barraDeAcoes();
     // As duas pontas: o container quebra E a barra quebra internamente. Só uma
     // das duas não basta — sem a de dentro, a barra desce inteira e continua
     // pedindo a largura toda.
@@ -116,6 +130,33 @@ describe("header do inbox — não trava a largura da tela", () => {
     for (const rotulo of ["Assumir", "Transferir", "Fechar"]) {
       expect(screen.getByText(rotulo), `a ação "${rotulo}" sumiu do header`).toBeTruthy();
     }
+  });
+
+  it("com o selo do automático, nenhuma ação some e o selo não divide linha com nome nem ações (#1625)", () => {
+    // O defeito do #1625: o selo morava na linha do nome, alargava a identidade
+    // e jogava a barra inteira para baixo. O conserto recusado escondia ações
+    // num menu "Mais ações"; o aceito tira o selo das duas linhas.
+    renderHeader({
+      ...conversation,
+      assigned_to_user_id: "u-1",
+      assigned_to_user_name: "Eu",
+      assignee_kind: "user",
+      bot_silenced_until: new Date(Date.now() + 10 * 60_000).toISOString(),
+    } as typeof conversation);
+
+    const selo = screen.getByTestId("badge-atendimento-humano");
+    expect(selo.textContent).toBe("Automático volta em instantes");
+
+    const barra = barraDeAcoes();
+    expect(barra.contains(selo), "o selo voltou para a linha das ações").toBe(false);
+    const linhaDoNome = screen.getByRole("heading", { name: "Fulana" }).parentElement as HTMLElement;
+    expect(linhaDoNome.contains(selo), "o selo voltou para a linha do nome").toBe(false);
+
+    for (const rotulo of ["Liberar", "Devolver ao automático", "Transferir", "Lembrar", "Fechar", "Arquivar"]) {
+      const botao = screen.getByRole("button", { name: rotulo });
+      expect(barra.contains(botao), `a ação "${rotulo}" saiu da barra`).toBe(true);
+    }
+    expect(screen.queryByRole("button", { name: "Mais ações" }), "ação de quem atende escondida num menu").toBeNull();
   });
 
   it('"Ver contato" existe no DOM e só se cala onde há outra porta', () => {

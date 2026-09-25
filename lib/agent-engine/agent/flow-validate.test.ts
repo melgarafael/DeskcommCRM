@@ -47,6 +47,14 @@ describe("montarMensagemDoValidador", () => {
     );
     expect(msg).toContain("uma de: Azul, Vermelha");
   });
+
+  it("lista os campos ENCERRADOS por não resposta (resposta tardia)", () => {
+    const msg = montarMensagemDoValidador([], [], [], [
+      { key: "cpf", label: "CPF", type: "text", question: "Pode me passar seu CPF?" },
+    ]);
+    expect(msg).toContain("encerrados por não resposta");
+    expect(msg).toContain("chave: cpf");
+  });
 });
 
 describe("parseLeituraDoValidador", () => {
@@ -208,6 +216,26 @@ describe("validarRespostaDoFluxo", () => {
     );
     expect(r).toEqual({ resultado: "nao_respondeu" });
     expect(runModelCallMock).not.toHaveBeenCalled();
+  });
+
+  it("RESPOSTA TARDIA: campo encerrado por não resposta é aceito se a mensagem o informar", async () => {
+    runModelCallMock.mockReset();
+    runModelCallMock.mockResolvedValue({
+      result: { text: '{"respostas":[{"campo":"cpf","valor":"12345678900"}]}' },
+    } as never);
+    const r = await validarRespostaDoFluxo(
+      db,
+      cfg,
+      { tenantId: "o", leadId: "l", jobId: "j" },
+      {
+        perguntas: [],
+        preenchidos: [],
+        esgotados: [{ key: "cpf", label: "CPF", type: "text" }],
+        mensagens: [{ de: "cliente", texto: "meu cpf é 12345678900" }],
+      },
+      { log: logger },
+    );
+    expect(r).toEqual({ resultado: "respondeu", respostas: [{ campo: "cpf", valor: "12345678900" }] });
   });
 
   it("usa o modelo auxiliar do turno — sem ele, instalação sem default_model nunca teria validador", async () => {

@@ -58,6 +58,13 @@ const DONO_NO_SQL: Record<string, string> = {
   // BAIXO da lista (30), e isso é decisão escrita em `politica.ts`: o que ele
   // protege é o incidente em apuração, não rastro legal.
   AVISO_DE_CASO: "fn_expurgar_avisos_de_caso_vencidos",
+  // migration 0408 — o candidato da prospecção nativa vencido (issue #1313).
+  // Entra aqui no MESMO commit da migration, que é a lição desta lista. Foi o
+  // par que NASCEU como isenção com razão MENTIDA ("poda pelo admin client",
+  // que não existia) — a isenção sem dono deixa o teste verde sem medir nada,
+  // e este par é a prova: a razão escrita não correspondia ao código, e ninguém
+  // percebeu até a revisão medir o repo.
+  PROSPECCAO: "fn_expurgar_prospeccao_vencida",
 };
 
 /**

@@ -31,7 +31,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { ArrowRight, CaretLeft, Info, Plus, Trash } from "@/lib/ui/icons";
 import { randomId } from "@/lib/random-id";
-import { usePermission } from "@/hooks/auth/AuthProvider";
+import { useAuth, usePermission } from "@/hooks/auth/AuthProvider";
 import {
   useRouter as useRouterData,
   useUpdateRouter,
@@ -44,6 +44,7 @@ import {
 } from "@/hooks/ai/useRouters";
 import type { ClassifierModelOption } from "@/lib/ai/classifier-models";
 import type { ChannelSessionLite } from "../../agents/[id]/_components/AgentForm";
+import { useFollowupFlows } from "@/hooks/followup/useFollowupFlows";
 import { useT } from "@/hooks/i18n/useT";
 
 interface AgentLite {
@@ -116,6 +117,12 @@ export function RouterEditorClient({
   const deleteRouter = useDeleteRouter();
   const saveMembers = useSaveMembers(routerId);
   const testRouter = useTestRouter(routerId);
+  // Fluxos de atendimento disponíveis para amarrar a uma intenção (surface=atendimento).
+  // Com o módulo desligado o seletor não existe: amarrar a um roteiro que não roda
+  // seria prometer um comportamento que a instalação não tem.
+  const { activeOrg } = useAuth();
+  const roteirosLigados = activeOrg?.modulos_ligados?.includes("fluxos_atendimento") === true;
+  const { data: atendimentoFlows } = useFollowupFlows({ surface: "atendimento", enabled: roteirosLigados });
 
   const baseline = React.useMemo(
     () => ({
@@ -123,22 +130,26 @@ export function RouterEditorClient({
       isActive: router.is_active,
       fallbackAgentId: router.fallback_agent_id ?? "",
       classifier: classifierKeyFrom(router.config),
-      members: members.map(({ agent_id, intent_name, intent_description, examples }) => ({
+      members: members.map(({ agent_id, intent_name, intent_description, examples, flow_pointer_id }) => ({
         agent_id,
         intent_name,
         intent_description,
         examples,
+        flow_pointer_id: flow_pointer_id ?? null,
       })),
     }),
     [router, members],
   );
 
-  const currentMembers = draftMembers.map(({ agent_id, intent_name, intent_description, examples }) => ({
-    agent_id,
-    intent_name,
-    intent_description,
-    examples,
-  }));
+  const currentMembers = draftMembers.map(
+    ({ agent_id, intent_name, intent_description, examples, flow_pointer_id }) => ({
+      agent_id,
+      intent_name,
+      intent_description,
+      examples,
+      flow_pointer_id: flow_pointer_id ?? null,
+    }),
+  );
 
   const dirty =
     name !== baseline.name ||
@@ -179,6 +190,7 @@ export function RouterEditorClient({
         intent_name: "",
         intent_description: "",
         examples: [],
+        flow_pointer_id: null,
       },
     ]);
   }
@@ -404,6 +416,7 @@ export function RouterEditorClient({
                     <IntentRow
                       member={m}
                       agents={agents}
+                      flows={roteirosLigados ? (atendimentoFlows ?? []) : null}
                       disabled={!canManage}
                       error={memberErrors[i] ?? null}
                       duplicate={duplicateNames.has(m.intent_name.trim().toLowerCase())}
@@ -451,6 +464,7 @@ export function RouterEditorClient({
 function IntentRow({
   member,
   agents,
+  flows,
   disabled,
   error,
   duplicate,
@@ -459,6 +473,8 @@ function IntentRow({
 }: {
   member: DraftMember;
   agents: AgentLite[];
+  /** `null` = módulo de roteiros desligado: o seletor não aparece. */
+  flows: Array<{ id: string; name: string }> | null;
   disabled: boolean;
   error: string | null;
   duplicate: boolean;
@@ -520,6 +536,33 @@ function IntentRow({
           maxLength={2000}
         />
       </div>
+      {flows !== null && (
+      <div className="space-y-1" data-testid="seletor-de-roteiro">
+        <Label>{t("Fluxo de atendimento (opcional)")}</Label>
+        <Select
+          value={member.flow_pointer_id ?? NONE}
+          onValueChange={(v) => onChange({ flow_pointer_id: v === NONE ? null : v })}
+          disabled={disabled}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder={t("Nenhum — só roteia o agente")} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE}>{t("Nenhum — só roteia o agente")}</SelectItem>
+            {flows.map((f) => (
+              <SelectItem key={f.id} value={f.id}>
+                {f.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Quando a intenção casar, este fluxo começa e as perguntas dele guiam o atendimento até o cliente completar.",
+          )}
+        </p>
+      </div>
+      )}
       <ExamplesInput
         value={member.examples}
         onChange={(examples) => onChange({ examples })}

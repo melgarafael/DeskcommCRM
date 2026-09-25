@@ -48,7 +48,7 @@
  * `settings` e dentro de `llm`, cujos `params` e `enabled_models` o turno lê
  * (`lib/agent-engine/edge/llm/credentials.ts`).
  */
-import { escolherModeloDoProvedor } from "@/lib/ai/agents/escolher-modelo";
+import { escolherModeloNoCatalogo } from "@/lib/ai/agents/escolher-modelo";
 import { audit } from "@/lib/audit";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
@@ -82,18 +82,8 @@ export interface PedidoDePadrao {
 export async function definirPadraoDeIaDaOrganizacao(
   p: PedidoDePadrao,
 ): Promise<ResultadoDoPadrao> {
-  const { data: modelos, error: catalogoErr } = await p.admin
-    .from("ai_models")
-    .select(
-      "model_id, is_default_for_provider, supports_tools, input_price_per_million_cents, output_price_per_million_cents",
-    )
-    .eq("provider", p.provider)
-    .is("deprecated_at", null);
-  if (catalogoErr) return { ok: false, motivo: "leitura_falhou" };
-
-  const escolha = escolherModeloDoProvedor(
-    (modelos ?? []) as Parameters<typeof escolherModeloDoProvedor>[0],
-  );
+  const escolha = await escolherModeloNoCatalogo(p.admin, p.provider);
+  if (escolha === null) return { ok: false, motivo: "leitura_falhou" };
   if (!escolha.escolhido) return { ok: false, motivo: "sem_modelo_no_catalogo" };
 
   const { data: orgAtual, error: leituraErr } = await p.admin

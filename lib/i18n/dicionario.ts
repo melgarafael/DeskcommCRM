@@ -231,6 +231,9 @@ export const DICIONARIO: Traducoes = {
   "Abordado": { es: "Contactado" },
   "Não abordado": { es: "No contactado" },
   "Respondeu": { es: "Respondió" },
+  "Logo para o tema escuro (opcional)": { es: "Logo para el tema oscuro (opcional)" },
+  "Remover logo escuro": { es: "Eliminar logo oscuro" },
+  "Use uma versão legível sobre fundo escuro. Ela aparece sem moldura branca. Sem ela, o logo padrão mantém a proteção de contraste. PNG ou JPG, até 512 KB.": { es: "Usa una versión legible sobre fondo oscuro. Se muestra sin marco blanco. Sin ella, el logo predeterminado conserva la protección de contraste. PNG o JPG, hasta 512 KB." },
   // /admin/email — o servidor SMTP da instalação (PR #714, @betoarts, recorte).
   "Servidor de e-mail conectado e autenticado.": { es: "Servidor de correo conectado y autenticado." },
   "Preencha e salve o servidor e o remetente antes de testar.": {
@@ -898,6 +901,9 @@ export const DICIONARIO: Traducoes = {
   "Automático pausado — alguém assumiu": {
     es: "Automático pausado — alguien la asumió",
   },
+  "Automático pausado — atendimento pelo celular (#on religa)": {
+    es: "Automático pausado — atención desde el celular (#on lo reactiva)",
+  },
   "Automático pausado para este cliente": {
     es: "Automático pausado para este cliente",
   },
@@ -1024,8 +1030,8 @@ export const DICIONARIO: Traducoes = {
     es: "La clave del proveedor de IA que los agentes usan para pensar.",
   },
   Provedores: { es: "Proveedores" },
-  "Qual inteligência atende cada parte do sistema — e o que acontece se ela falhar.": {
-    es: "Qué inteligencia atiende cada parte del sistema y qué ocurre si falla.",
+  "Ligue o Jev para decisões rápidas e escolha qual inteligência atende cada parte do sistema.": {
+    es: "Activa Jev para decisiones rápidas y elige qué inteligencia atiende cada parte del sistema.",
   },
   Conhecimento: { es: "Conocimiento" },
   "Os materiais que o agente consulta antes de responder sobre o seu negócio.": {
@@ -1128,15 +1134,21 @@ export const DICIONARIO: Traducoes = {
   "Buscar telas": { es: "Buscar pantallas" },
   "Buscar telas do sistema…": { es: "Buscar pantallas del sistema…" },
   Telas: { es: "Pantallas" },
+  "Buscar por nome, objetivo ou função (ex: leads, agenda, prompt, whatsapp)...": {
+    es: "Buscar por nombre, objetivo o función (ej.: leads, agenda, prompt, whatsapp)...",
+  },
+  "Tente buscar por outro termo ou selecione 'Todas' nas categorias.": {
+    es: "Prueba con otro término o selecciona 'Todas' en las categorías.",
+  },
+  ferramenta: { es: "herramienta" },
+  ferramentas: { es: "herramientas" },
+  "Use as setas ↑↓ e Enter para navegar": { es: "Usa las flechas ↑↓ y Enter para navegar" },
+  "ESC para fechar": { es: "ESC para cerrar" },
   // O gatilho da busca no topo mostra RETICENCIA ASCII desde antes do i18n
   // (`Buscar...`). A chave e o byte que a tela ja mostrava: trocar por "…"
   // aqui mudaria a tela de quem usa em portugues — que e o unico jeito de
   // esta feature piorar alguma coisa.
   "Buscar...": { es: "Buscar..." },
-  // Rotulo so-para-leitor-de-tela do X de fechar em Dialog e Sheet. Ele esta
-  // em INGLES no produto desde o shadcn, e continua: traduzi-lo mudaria o
-  // portugues. Consertar o rotulo pt-BR e mudanca de UX, com PR proprio.
-  Close: { es: "Cerrar" },
   "Menu do usuário": { es: "Menú del usuario" },
   Sair: { es: "Cerrar sesión" },
   "Central de avisos": { es: "Central de avisos" },
@@ -2211,10 +2223,9 @@ export const DICIONARIO: Traducoes = {
       es: "Top K = cuántos fragmentos buscar. Similarity threshold = relevancia mínima (cosine). Confidence = umbral por debajo del cual el agente escala a un humano.",
     },
   "Chaves de acesso à IA": { es: "Claves de acceso a la IA" },
-  "A conta de inteligência artificial é sua: você contrata direto na Anthropic, OpenAI ou Google e cola a chave aqui. Ela é guardada criptografada e nunca mais aparece na tela depois de salva — nem para você.":
-    {
-      es: "La cuenta de inteligencia artificial es tuya: la contratas directamente con Anthropic, OpenAI o Google y pegas aquí la clave. Se guarda cifrada y, una vez guardada, no vuelve a mostrarse en pantalla, ni siquiera para ti.",
-    },
+  "A conta de inteligência artificial é sua: você contrata direto com {provedores} e cola a chave aqui. A chave fica guardada criptografada e nunca mais aparece na tela depois de salva — nem para você. O Jev (TypeSafe) não conversa com o cliente: a chave dele serve só para decisões rápidas.": {
+    es: "La cuenta de inteligencia artificial es tuya: la contratas directamente con {provedores} y pegas la clave aquí. La clave queda guardada cifrada y nunca más aparece en pantalla después de guardarla, ni siquiera para ti. Jev (TypeSafe) no conversa con el cliente: su clave sirve solo para decisiones rápidas.",
+  },
   "Nenhuma chave cadastrada ainda": { es: "Todavía no hay ninguna clave registrada" },
   "Seus agentes só conseguem pensar depois que você cola aqui uma chave da Anthropic, da OpenAI ou do Google. A cobrança vai direto para a sua conta no provedor, e a chave fica guardada criptografada.":
     {
@@ -2230,6 +2241,15 @@ export const DICIONARIO: Traducoes = {
   "O provedor recusou a chave. Confira se copiou inteira ou gere uma nova.": {
     es: "El proveedor rechazó la clave. Verifica que la hayas copiado completa o genera una nueva.",
   },
+  "A TypeSafe recusou a chave. Confira se copiou inteira ou gere uma nova.": {
+    es: "TypeSafe rechazó la clave. Verifica que la copiaste completa o genera una nueva.",
+  },
+  "O provedor recusou a chave. Confira se ela está inteira e se a conta no provedor tem crédito.": {
+    es: "El proveedor rechazó la clave. Revisa que esté completa y que la cuenta en el proveedor tenga crédito.",
+  },
+  "A TypeSafe recusou a chave. Confira se ela está inteira e se a conta na TypeSafe tem crédito.": {
+    es: "TypeSafe rechazó la clave. Verifica que esté completa y que la cuenta en TypeSafe tenga crédito.",
+  },
   "O provedor limitou as chamadas desta chave. Tente de novo em alguns minutos.": {
     es: "El proveedor limitó las llamadas de esta clave. Inténtalo de nuevo en unos minutos.",
   },
@@ -2240,7 +2260,7 @@ export const DICIONARIO: Traducoes = {
     es: "No se pudo conectar con el proveedor desde este servidor. Revalida más tarde.",
   },
   "Falha na validação": { es: "Falló la validación" },
-  "Pegar chave em": { es: "Obtener clave en" },
+  "Onde pegar a chave": { es: "Dónde obtener la clave" },
   "O padrão recomendado para conversar com o cliente: é o que melhor segue instruções longas e usa as ferramentas do CRM.": {
     es: "La opción recomendada por defecto para conversar con el cliente. Es la que mejor sigue instrucciones largas y usa las herramientas del CRM.",
   },
@@ -2253,9 +2273,26 @@ export const DICIONARIO: Traducoes = {
   "Uma chave só dá acesso a centenas de modelos de dezenas de fabricantes, inclusive os gratuitos. É o caminho mais simples para experimentar sem abrir conta em cada provedor.": {
     es: "Una sola clave da acceso a cientos de modelos de decenas de fabricantes, incluidos los gratuitos. Es la forma más sencilla de experimentar sin abrir una cuenta con cada proveedor.",
   },
+  "Muito barata e desconta sozinha o trecho repetido da conversa, sem você configurar nada — o custo cai para quem atende com um roteiro que não muda.": {
+    es: "Muy barata y descuenta sola la parte repetida de la conversación, sin que configures nada: el costo baja para quien atiende con un guion que no cambia.",
+  },
+  "Uma chave só para centenas de modelos de vários fabricantes, com a opção de manter o tráfego na Europa. Bom para comparar modelos sem abrir conta em cada provedor.": {
+    es: "Una sola clave para cientos de modelos de varios fabricantes, con la opción de mantener el tráfico en Europa. Útil para comparar modelos sin abrir una cuenta con cada proveedor.",
+  },
+  "Não conversa com o cliente: toma decisões rápidas e baratas — como perceber se o cliente está irritado — geralmente em menos de um segundo. Trabalha junto com a sua IA principal.": {
+    es: "No conversa con el cliente: toma decisiones rápidas y baratas, como notar si el cliente está molesto, normalmente en menos de un segundo. Trabaja junto con tu IA principal.",
+  },
+  "O Jev não conversa com o cliente — falta a chave da sua IA principal.": {
+    es: "Jev no conversa con el cliente: falta la clave de tu IA principal.",
+  },
   Inativa: { es: "Inactiva" },
   "Revalidando…": { es: "Revalidando…" },
   "Credencial removida.": { es: "Credencial eliminada." },
+  "Credencial removida. O Jev foi desligado.": { es: "Credencial eliminada. Jev se desactivó." },
+  "Usada em": { es: "Usada en" },
+  "O Jev usa esta chave. Sem ela, o Jev é desligado e o clima da conversa volta a ser medido só pela sua IA principal.": {
+    es: "Jev usa esta clave. Sin ella, Jev se desactiva y el clima de la conversación vuelve a medirlo solo tu IA principal.",
+  },
   "Excluir credencial": { es: "Eliminar credencial" },
   Modelos: { es: "Modelos" },
   "Em uso por": { es: "En uso por" },
@@ -2265,16 +2302,17 @@ export const DICIONARIO: Traducoes = {
   "Agents que usam esta credencial vão falhar ao executar. Esta ação não pode ser desfeita.": {
     es: "Los agentes que usan esta credencial fallarán al ejecutarse. Esta acción no se puede deshacer.",
   },
-  "A chave é cifrada (AES-GCM) antes de gravar e nunca é retornada em texto claro.": {
-    es: "La clave se cifra (AES-GCM) antes de guardarse y nunca se devuelve en texto plano.",
+  "A chave é guardada cifrada. Depois de salva, só os quatro últimos caracteres aparecem na tela.": {
+    es: "La clave se guarda cifrada. Una vez guardada, solo los cuatro últimos caracteres aparecen en pantalla.",
   },
   "Ex: Produção": { es: "Ej.: Producción" },
+  "Opcional — ex.: Chave da clínica": { es: "Opcional — ej.: Clave de la clínica" },
   "Credencial salva. Validando…": { es: "Credencial guardada. Validando…" },
   "Credencial salva. Validação em segundo plano.": { es: "Credencial guardada. Se validará en segundo plano." },
   "modelos disponíveis.": { es: "modelos disponibles." },
   "Salvar e validar": { es: "Guardar y validar" },
   "Obrigatório": { es: "Obligatorio" },
-  "API key muito curta": { es: "API key demasiado corta" },
+  "Chave muito curta": { es: "Clave demasiado corta" },
   Casos: { es: "Casos" },
   "Quando a IA trava em algo que só um humano resolve, ela abre um caso aqui — e continua conversando com o cliente enquanto espera sua resposta.":
     {
@@ -2837,8 +2875,8 @@ export const DICIONARIO: Traducoes = {
   "Ver habilidades disponíveis": { es: "Ver habilidades disponibles" },
   "Ver sugestões de melhoria": { es: "Ver sugerencias de mejora" },
   "Ver só as falhas": { es: "Ver solo las fallas" },
-  "Você ainda não cadastrou nenhuma chave de provedor. Enquanto isso, tudo usa a chave que veio na instalação.": {
-    es: "Todavía no registraste ninguna clave de proveedor. Mientras tanto, todo usa la clave que vino con la instalación.",
+  "Você ainda não cadastrou a chave da sua IA principal, a que conversa com os clientes.": {
+    es: "Todavía no registraste la clave de tu IA principal, la que conversa con los clientes.",
   },
   "Volume de texto processado por dia": { es: "Volumen de texto procesado por día" },
   "a cada 100": { es: "por cada 100" },
@@ -3035,6 +3073,29 @@ export const DICIONARIO: Traducoes = {
   },
   "Cliente irritado não é mais escalado para um humano, e a insatisfação só aparece quando ele já sumiu.": {
     es: "El cliente molesto deja de escalarse a una persona, y la insatisfacción solo se nota cuando el cliente ya desapareció.",
+  },
+  "Percebe, geralmente em menos de um segundo, se o cliente está irritado — e avisa para passar a conversa a uma pessoa.": {
+    es: "Nota, normalmente en menos de un segundo, si el cliente está molesto, y avisa para pasar la conversación a una persona.",
+  },
+  "Validar a resposta do fluxo": { es: "Validar la respuesta del flujo" },
+  "Quando o fluxo está esperando uma resposta, lê a mensagem do cliente com o contexto da conversa e devolve SÓ o dado que deve ser salvo — ou diz que ele não respondeu.": {
+    es: "Cuando el flujo espera una respuesta, lee el mensaje del cliente con el contexto de la conversación y devuelve SOLO el dato que debe guardarse, o indica que no respondió.",
+  },
+  "Dado errado entra no cadastro do cliente (ex.: o modelo grava a resposta na pergunta errada) ou o cliente fica sem a pergunta seguinte.": {
+    es: "Entra un dato erróneo en el registro del cliente (p. ej.: el modelo guarda la respuesta en la pregunta equivocada) o el cliente se queda sin la siguiente pregunta.",
+  },
+  "Prepara uma resposta com a versão e o conhecimento do agente, sem aplicar alterações ao cliente.": {
+    es: "Prepara una respuesta con la versión y el conocimiento del agente, sin aplicar cambios al cliente.",
+  },
+  "O teste ou a sugestão não consegue preparar a resposta para revisão.": {
+    es: "La prueba o la sugerencia no logra preparar la respuesta para revisión.",
+  },
+  "Montar agente por conversa": { es: "Armar agente conversando" },
+  "Conversa com o administrador e prepara uma proposta de agente para uma campanha. A criação depende da confirmação no resumo.": {
+    es: "Conversa con el administrador y prepara una propuesta de agente para una campaña. La creación depende de la confirmación en el resumen.",
+  },
+  "A conversa de configuração mostra um erro e preserva o que foi escrito; nenhum agente é criado.": {
+    es: "La conversación de configuración muestra un error y conserva lo escrito; no se crea ningún agente.",
   },
   "Ler a resposta ao follow-up": {
     es: "Leer la respuesta al seguimiento",
@@ -3234,8 +3295,182 @@ export const DICIONARIO: Traducoes = {
   "Usando o padrão da organização.": {
     es: "Usando el valor predeterminado de la organización.",
   },
+  "O produto resolve este ponto sozinho — não há modelo a escolher.": {
+    es: "El producto resuelve este punto por sí solo; no hay modelo que elegir.",
+  },
+  // O Jev em IA › Execuções e na Central (`lib/ai/decisao/textos.ts`).
+  "O Jev decidiu.": { es: "Jev decidió." },
+  "O Jev observou; quem decidiu foi a IA de sempre.": { es: "Jev observó; quien decidió fue la IA de siempre." },
+  "O Jev não respondeu; a IA de sempre mediu no lugar dele.": {
+    es: "Jev no respondió; la IA de siempre midió en su lugar.",
+  },
+  "A IA de sempre falhou, mas o Jev já tinha medido esta mensagem: nada se perdeu.": {
+    es: "La IA de siempre falló, pero Jev ya había medido este mensaje: no se perdió nada.",
+  },
+  "O Jev estava ligado e não respondeu, e não havia outra IA para medir no lugar dele.": {
+    es: "Jev estaba activado y no respondió, y no había otra IA para medir en su lugar.",
+  },
+  "A TypeSafe não aceitou a chave do Jev. Confira em Credenciais se ela ainda vale, ou cole uma nova.": {
+    es: "TypeSafe no aceptó la clave de Jev. Revisa en Credenciales si todavía es válida o pega una nueva.",
+  },
+  "A TypeSafe recusou o pedido do Jev, em geral por crédito esgotado. Confira o saldo na sua conta da TypeSafe.": {
+    es: "TypeSafe rechazó el pedido de Jev, normalmente por falta de crédito. Revisa el saldo en tu cuenta de TypeSafe.",
+  },
+  "O sistema fez ao Jev uma pergunta que ele não aceitou. É defeito nosso, não da sua configuração: avise o suporte.": {
+    es: "El sistema le hizo a Jev una pregunta que no aceptó. Es un defecto nuestro, no de tu configuración: avisa al soporte.",
+  },
+  "O Jev recebeu pedidos demais de uma vez e pediu uma pausa. Ele volta sozinho em alguns minutos.": {
+    es: "Jev recibió demasiados pedidos a la vez y pidió una pausa. Vuelve solo en unos minutos.",
+  },
+  "O Jev está sobrecarregado neste momento. Costuma se resolver sozinho em alguns minutos.": {
+    es: "Jev está sobrecargado en este momento. Suele resolverse solo en unos minutos.",
+  },
+  "O Jev não respondeu a tempo ou está fora do ar. Costuma se resolver sozinho.": {
+    es: "Jev no respondió a tiempo o está caído. Suele resolverse solo.",
+  },
+  "O Jev respondeu de um jeito que o sistema não entendeu. Se continuar acontecendo, avise o suporte.": {
+    es: "Jev respondió de una forma que el sistema no entendió. Si sigue pasando, avisa al soporte.",
+  },
+  "O Jev usa esta chave. Sem ela, ele passa a usar a outra chave dele que já passou no teste.": {
+    es: "Jev usa esta clave. Sin ella, pasa a usar su otra clave que ya pasó la prueba.",
+  },
+  "O Jev usa esta chave. Sem ela, o Jev é desligado e o clima da conversa deixa de ser medido: ninguém da equipe é chamado quando um cliente se irrita.": {
+    es: "Jev usa esta clave. Sin ella, Jev se desactiva y el clima de la conversación deja de medirse: nadie del equipo recibe aviso cuando un cliente se molesta.",
+  },
+  "O Jev parou de medir o clima das conversas": {
+    es: "Jev dejó de medir el clima de las conversaciones",
+  },
+  "Enquanto isso, a IA de sempre mede o clima no lugar dele.": {
+    es: "Mientras tanto, la IA de siempre mide el clima en su lugar.",
+  },
+  "Enquanto isso, o clima não está sendo medido: ninguém da equipe é chamado quando um cliente se irrita.": {
+    es: "Mientras tanto, el clima no se está midiendo: nadie del equipo recibe aviso cuando un cliente se molesta.",
+  },
+  "Já foram várias falhas seguidas. O sistema segue tentando sozinho; se continuar assim, confira na sua conta da TypeSafe se o serviço do Jev está no ar.": {
+    es: "Ya van varias fallas seguidas. El sistema sigue intentando solo; si continúa así, revise en su cuenta de TypeSafe si el servicio de Jev está en línea.",
+  },
+  "Este aviso se fecha sozinho quando o Jev voltar a medir.": {
+    es: "Este aviso se cierra solo cuando Jev vuelva a medir.",
+  },
+  // O cartão do Jev em IA › Provedores (`app/app/ai/providers/_components/CartaoDoJev.tsx`).
+  "Enquanto isso, o atendimento usa a chave que veio na instalação.": {
+    es: "Mientras tanto, la atención usa la clave que vino con la instalación.",
+  },
+  "Não consegui carregar o cartão agora.": {
+    es: "No pude cargar la tarjeta ahora.",
+  },
+  "Não consegui falar com o servidor. Confira a internet e tente de novo.": {
+    es: "No pude comunicarme con el servidor. Revisa la conexión e inténtalo de nuevo.",
+  },
+  "Para pegar a chave, você cria uma conta na TypeSafe AI e põe crédito: cada mensagem medida custa uma fração de centavo de dólar, cobrada lá. A chave começa com": {
+    es: "Para obtener la clave, creas una cuenta en TypeSafe AI y cargas crédito: cada mensaje medido cuesta una fracción de centavo de dólar, cobrada allí. La clave empieza con",
+  },
+  "A chave está sendo testada. Se esta mensagem não sumir em alguns segundos, recarregue a página.": {
+    es: "La clave se está probando. Si este mensaje no desaparece en unos segundos, recarga la página.",
+  },
+  "Não consegui testar a chave. Tente de novo em instantes.": {
+    es: "No pude probar la clave. Inténtalo de nuevo en unos instantes.",
+  },
+  "Não consegui testar a chave agora. Tente de novo em instantes.": {
+    es: "No pude probar la clave ahora. Inténtalo de nuevo en unos instantes.",
+  },
+  "Pegar uma chave nova na TypeSafe": {
+    es: "Obtener una clave nueva en TypeSafe",
+  },
+  "Sem uma IA principal que meça o clima, ele já começa decidindo sozinho: não há com quem comparar nem quem cubra uma falha dele.": {
+    es: "Sin una IA principal que mida el clima, empieza decidiendo solo: no hay con quién comparar ni quién cubra una falla suya.",
+  },
+  "Ligado, mas parado: o Jev só volta a medir quando a chave passar no teste.": {
+    es: "Activado, pero detenido: Jev solo vuelve a medir cuando la clave pase la prueba.",
+  },
+  "Parte das medições veio de uma versão do Jev sem preço conhecido: o custo mostrado soma só as outras.": {
+    es: "Parte de las mediciones vino de una versión de Jev sin precio conocido: el costo mostrado suma solo las demás.",
+  },
+  "Jev — decisões rápidas": { es: "Jev: decisiones rápidas" },
+  "Não consegui carregar o cartão do Jev": { es: "No pude cargar la tarjeta de Jev" },
+  Observando: { es: "Observando" },
+  Decidindo: { es: "Decidiendo" },
+  "Decidindo sozinho": { es: "Decidiendo solo" },
+  "Pegar a chave na TypeSafe": { es: "Obtener la clave en TypeSafe" },
+  "Colar a chave": { es: "Pegar la clave" },
+  "Só quem administra a empresa pode colar a chave e ligar o Jev.": {
+    es: "Solo quien administra la empresa puede pegar la clave y activar Jev.",
+  },
+  "Só quem administra a empresa pode mudar o Jev.": {
+    es: "Solo quien administra la empresa puede cambiar Jev.",
+  },
+  "A chave está sendo testada. Se esta mensagem não sumir em alguns segundos, clique em “Testar de novo”.": {
+    es: "La clave se está probando. Si este mensaje no desaparece en unos segundos, haz clic en “Probar de nuevo”.",
+  },
+  "O Jev está ligado, mas sem chave ativa: enquanto isso, ele não mede nada.": {
+    es: "Jev está activado, pero sin clave activa: mientras tanto, no mide nada.",
+  },
+  "A chave passou no teste.": { es: "La clave pasó la prueba." },
+  "A chave não passou no teste.": { es: "La clave no pasó la prueba." },
+  "Testar de novo": { es: "Probar de nuevo" },
+  "Trocar a chave em Credenciais": { es: "Cambiar la clave en Credenciales" },
+  "O que o Jev vai fazer": { es: "Qué va a hacer Jev" },
+  "Ele começa só observando: a sua IA de sempre continua decidindo, e você compara os dois antes de deixar o Jev decidir.": {
+    es: "Empieza solo observando: tu IA de siempre sigue decidiendo, y comparas los dos antes de dejar que Jev decida.",
+  },
+  "Ele volta decidindo, como estava antes de ser desligado.": {
+    es: "Vuelve decidiendo, como estaba antes de desactivarlo.",
+  },
+  "Ao ligar, cada mensagem que o cliente manda vai para a TypeSafe AI, nos Estados Unidos, uma de cada vez e sem o resto da conversa, para o Jev avaliar. Antes de sair, o sistema apaga CPF, telefone e e-mail do texto. Com o Jev desligado, nada é enviado.": {
+    es: "Al activarlo, cada mensaje que envía el cliente va a TypeSafe AI, en Estados Unidos, uno por vez y sin el resto de la conversación, para que Jev lo evalúe. Antes de salir, el sistema borra del texto el CPF, el teléfono y el correo. Con Jev desactivado, no se envía nada.",
+  },
+  "Concordo com o envio de cada mensagem dos clientes, uma de cada vez e sem o resto da conversa, para a TypeSafe AI, nos Estados Unidos.": {
+    es: "Estoy de acuerdo con el envío de cada mensaje de los clientes, uno por vez y sin el resto de la conversación, a TypeSafe AI, en Estados Unidos.",
+  },
+  "Envio aceito pela empresa em": { es: "Envío aceptado por la empresa el" },
+  "Ligar o Jev": { es: "Activar Jev" },
+  "O Jev foi ligado.": { es: "Jev se activó." },
+  "O Jev foi desligado.": { es: "Jev se desactivó." },
+  "Agora o Jev decide.": { es: "Ahora Jev decide." },
+  "O Jev voltou a só observar.": { es: "Jev volvió a solo observar." },
+  "Observando — a sua IA de sempre ainda decide. Compare os dois antes de deixar o Jev decidir.": {
+    es: "Observando: tu IA de siempre todavía decide. Compara los dos antes de dejar que Jev decida.",
+  },
+  "Decidindo — o Jev mede primeiro, e a sua IA de sempre só entra se ele não responder.": {
+    es: "Decidiendo: Jev mide primero, y tu IA de siempre solo entra si él no responde.",
+  },
+  "Decidindo sozinho — a empresa ainda não tem uma IA principal que meça o clima, então o Jev mede sem reserva.": {
+    es: "Decidiendo solo: la empresa todavía no tiene una IA principal que mida el clima, así que Jev mide sin respaldo.",
+  },
+  "Ainda não há mensagens medidas pelos dois. A comparação aparece aqui assim que houver.": {
+    es: "Todavía no hay mensajes medidos por los dos. La comparación aparece aquí en cuanto los haya.",
+  },
+  "Nos últimos": { es: "En los últimos" },
+  "dias, o Jev e a sua IA de sempre chegaram à mesma conclusão em": {
+    es: "días, Jev y tu IA de siempre llegaron a la misma conclusión en",
+  },
+  "mensagens — os dois chamariam, ou não, uma pessoa para a conversa.": {
+    es: "mensajes: los dos llamarían, o no, a una persona para la conversación.",
+  },
+  "Mensagens medidas": { es: "Mensajes medidos" },
+  "Chave conferida com a TypeSafe": { es: "Clave verificada con TypeSafe" },
+  "Clientes irritados percebidos": { es: "Clientes molestos detectados" },
+  "Tempo médio": { es: "Tiempo promedio" },
+  "Vezes que a IA de sempre cobriu o Jev": { es: "Veces que la IA de siempre cubrió a Jev" },
+  "O Jev não conseguiu medir.": { es: "Jev no pudo medir." },
+  "Ver as decisões do Jev": { es: "Ver las decisiones de Jev" },
+  "Deixar o Jev decidir": { es: "Dejar que Jev decida" },
+  "Voltar a só observar": { es: "Volver a solo observar" },
+  // A linha do Jev no cartão do ponto (`PainelDeProvedores.tsx`).
+  "O Jev mede primeiro; o modelo abaixo é a reserva.": {
+    es: "Jev mide primero; el modelo de abajo es el respaldo.",
+  },
+  "O Jev observa; o modelo abaixo ainda decide.": {
+    es: "Jev observa; el modelo de abajo todavía decide.",
+  },
+  "O Jev mede sozinho: não há modelo de reserva.": {
+    es: "Jev mide solo: no hay modelo de respaldo.",
+  },
+  // IA › Execuções, o filtro do Jev.
+  "Só o Jev": { es: "Solo Jev" },
+  "Mostrando só o Jev": { es: "Mostrando solo Jev" },
+  "O Jev ainda não mediu nenhuma mensagem.": { es: "Jev todavía no midió ningún mensaje." },
   "Default:": { es: "Predeterminado:" },
-  "API key": { es: "Clave de API" },
 
   // ─── Admin de plataforma: casca (shell, sidebar, banner, impersonate) ───
   "Acesso negado": { es: "Acceso denegado" },
@@ -4640,6 +4875,16 @@ export const DICIONARIO: Traducoes = {
     es: "El tiempo se cuenta desde la última actividad de una persona en la conversación: asumirla, responder desde la pantalla o desde el celular. Solo se devuelve donde hay un agente publicado. Si la opción está desactivada, rige la regla de siempre: la IA solo vuelve cuando alguien hace clic en Devolver.",
   },
   "Minutos sem resposta da equipe": { es: "Minutos sin respuesta del equipo" },
+  "Quando alguém responde, a conversa fica com essa pessoa?": {
+    es: "Cuando alguien responde, ¿la conversación se queda con esa persona?",
+  },
+  "Desligado, vale a regra de sempre: responder pela tela cala a IA por alguns minutos, e a conversa encerrada que recebe mensagem nova volta para a fila.": {
+    es: "Si está desactivado, rige la regla de siempre: responder desde la pantalla silencia a la IA por algunos minutos, y la conversación cerrada que recibe un mensaje nuevo vuelve a la fila.",
+  },
+  "A conversa fica com quem atendeu": { es: "La conversación se queda con quien la atendió" },
+  "Responder pelo Inbox numa conversa sem dono passa a assumi-la, e a IA fica calada até alguém devolver. Quando o cliente escreve numa conversa encerrada, ela volta direto para o último atendente, sem passar pela distribuição, se ele ainda faz parte da equipe.": {
+    es: "Responder desde el Inbox en una conversación sin responsable la asigna a quien responde, y la IA queda en silencio hasta que alguien la devuelva. Cuando el cliente escribe en una conversación cerrada, vuelve directo al último asesor, sin pasar por la distribución, si todavía forma parte del equipo.",
+  },
   "Entre 5 minutos e 24 horas. Sessenta minutos é a ordem de grandeza de um atendimento humano.": {
     es: "Entre 5 minutos y 24 horas. Sesenta minutos es el orden de magnitud de una atención humana.",
   },
@@ -5325,7 +5570,32 @@ export const DICIONARIO: Traducoes = {
   Entregue: { es: "Entregado" },
   Enviada: { es: "Enviado" },
   "Responder a esta mensagem": { es: "Responder a este mensaje" },
+  "Opções da mensagem": { es: "Opciones del mensaje" },
+  "Editar mensagem": { es: "Editar mensaje" },
+  "Apagar para todos": { es: "Eliminar para todos" },
+  "Apagar mensagem para todos?": { es: "¿Eliminar el mensaje para todos?" },
+  "O WhatsApp tentará remover esta mensagem também para o cliente.": { es: "WhatsApp intentará eliminar este mensaje también para el cliente." },
+  "Mensagem editada.": { es: "Mensaje editado." },
+  "Mensagem apagada para todos.": { es: "Mensaje eliminado para todos." },
+  "Mensagem ocultada no CRM": { es: "Mensaje oculto en el CRM" },
+  "Mensagem ocultada no CRM.": { es: "Mensaje oculto en el CRM." },
+  "Mensagem restaurada no CRM.": { es: "Mensaje restaurado en el CRM." },
+  "Restaurar no CRM": { es: "Restaurar en el CRM" },
+  "Ocultar no CRM": { es: "Ocultar en el CRM" },
+  "Ocultar esta mensagem no CRM?": { es: "¿Ocultar este mensaje en el CRM?" },
+  "A mensagem continua no WhatsApp do cliente e no registro da empresa. Um gestor pode restaurá-la aqui.": { es: "El mensaje permanece en el WhatsApp del cliente y en el registro de la empresa. Un administrador puede restaurarlo aquí." },
+  "Esta mensagem não pode ser ocultada.": { es: "Este mensaje no se puede ocultar." },
+  "Não foi possível atualizar a mensagem.": { es: "No se pudo actualizar el mensaje." },
+  "Mensagem não encontrada.": { es: "Mensaje no encontrado." },
+  "Esta mensagem não pode ser alterada.": { es: "Este mensaje no se puede modificar." },
+  "O prazo para editar esta mensagem terminou.": { es: "Terminó el plazo para editar este mensaje." },
+  "Este canal não permite alterar mensagens.": { es: "Este canal no permite modificar mensajes." },
+  "WhatsApp indisponível no momento.": { es: "WhatsApp no está disponible en este momento." },
+  "Contato sem WhatsApp válido.": { es: "Contacto sin WhatsApp válido." },
+  "O WhatsApp recusou a alteração da mensagem.": { es: "WhatsApp rechazó el cambio del mensaje." },
+  "O WhatsApp alterou a mensagem, mas o CRM não conseguiu atualizar o histórico.": { es: "WhatsApp modificó el mensaje, pero el CRM no pudo actualizar el historial." },
   "Esta mensagem foi apagada": { es: "Este mensaje fue eliminado" },
+  "Visível só aqui no CRM": { es: "Visible solo aquí en el CRM" },
   editada: { es: "editado" },
   "O autor editou esta mensagem": { es: "El autor editó este mensaje" },
   "Erro desconhecido": { es: "Error desconocido" },
@@ -5506,12 +5776,15 @@ export const DICIONARIO: Traducoes = {
   "Imagem recebida": { es: "Imagen recibida" },
   Baixar: { es: "Descargar" },
   "Abrir conversa com este contato": { es: "Abrir conversación con este contacto" },
+  "Localização compartilhada": { es: "Ubicación compartida" },
+  "Abrir no mapa": { es: "Abrir en el mapa" },
   "Não foi possível abrir a conversa.": { es: "No se pudo abrir la conversación." },
   "Enter salva a nota · Shift+Enter quebra linha": { es: "Enter guarda la nota · Shift+Enter agrega un salto de línea" },
   "Enter envia · Shift+Enter quebra linha": { es: "Enter envía · Shift+Enter agrega un salto de línea" },
 
   // ─── Inbox: aviso de retenção (before_send) ───
   "sem domingo": { es: "sin domingo" },
+  "horário de": { es: "horario de" },
   "Fora da janela de envio": { es: "Fuera de la ventana de envío" },
   "A resposta fica agendada para a próxima abertura da janela, às": {
     es: "La respuesta queda programada para cuando se abra de nuevo la ventana, a las",
@@ -6538,8 +6811,11 @@ export const DICIONARIO: Traducoes = {
   "a plataforma de mensagens usada para conversar com o cliente;": {
     es: "la plataforma de mensajería usada para conversar con el cliente;",
   },
-  "o provedor de inteligência artificial contratado pelo operador, que recebe o trecho da conversa necessário para gerar a resposta;": {
-    es: "el proveedor de inteligencia artificial contratado por el operador, que recibe el fragmento de la conversación necesario para generar la respuesta;",
+  "o provedor de inteligência artificial contratado pelo operador, que recebe o trecho da conversa necessário para gerar a resposta ou avaliar a conversa;": {
+    es: "el proveedor de inteligencia artificial contratado por el operador, que recibe el fragmento de la conversación necesario para generar la respuesta o evaluar la conversación;",
+  },
+  "quando o operador liga a análise automática do humor das mensagens pelo Jev (desligada por padrão), a TypeSafe AI, nos Estados Unidos, que recebe cada mensagem do cliente, sozinha e já sem CPF, telefone e e-mail, para avaliar se ele está irritado;": {
+    es: "cuando el operador activa el análisis automático del ánimo de los mensajes con Jev (desactivado por defecto), TypeSafe AI, en Estados Unidos, que recibe cada mensaje del cliente, por separado y ya sin CPF, teléfono ni correo, para evaluar si está molesto;",
   },
   "o provedor de infraestrutura onde o servidor está hospedado.": {
     es: "el proveedor de infraestructura donde el servidor está alojado.",
@@ -6560,8 +6836,8 @@ export const DICIONARIO: Traducoes = {
   },
   "não pode ser desfeita": { es: "no se puede deshacer" },
   "7. Segurança": { es: "7. Seguridad" },
-  "O acesso é controlado por conta, senha e papel, com verificação em duas etapas obrigatória para administradores. Cada organização hospedada só enxerga os próprios dados, e as chaves de integração são guardadas cifradas.": {
-    es: "El acceso se controla con cuenta, contraseña y rol, y la verificación en dos pasos es obligatoria para los administradores. Cada organización alojada solo ve sus propios datos y las claves de integración se guardan cifradas.",
+  "O acesso é controlado por conta, senha e papel. A verificação em duas etapas é opcional para todos e só pode ser exigida de quem administra. Cada organização hospedada só enxerga os próprios dados, e as chaves de integração são guardadas cifradas.": {
+    es: "El acceso se controla con cuenta, contraseña y rol. La verificación en dos pasos es opcional para todos y solo se puede exigir a quien administra. Cada organización alojada solo ve sus propios datos y las claves de integración se guardan cifradas.",
   },
   "8. Encarregado e contato": { es: "8. Encargado y contacto" },
   "Para exercer seus direitos ou tirar dúvidas sobre privacidade, fale com o encarregado de dados:": {
@@ -6590,8 +6866,8 @@ export const DICIONARIO: Traducoes = {
     es: "organiza atención y ventas: recibe y envía mensajes por los canales que el operador conecte, registra contactos y negocios, y permite que agentes de inteligencia artificial atiendan junto con personas, bajo las reglas que el operador configure.",
   },
   "3. Sua conta": { es: "3. Tu cuenta" },
-  "O acesso é pessoal. Você é responsável por manter sua senha em segredo e pelo que for feito com a sua conta. Contas de administrador exigem verificação em duas etapas. Avise o operador imediatamente se suspeitar de acesso indevido.": {
-    es: "El acceso es personal. Eres responsable de mantener tu contraseña en secreto y de lo que se haga con tu cuenta. Las cuentas de administrador exigen verificación en dos pasos. Avisa al operador de inmediato si sospechas de un acceso indebido.",
+  "O acesso é pessoal. Você é responsável por manter sua senha em segredo e pelo que for feito com a sua conta. A verificação em duas etapas é opcional e pode ser exigida por quem administra a empresa. Avise o operador imediatamente se suspeitar de acesso indevido.": {
+    es: "El acceso es personal. Eres responsable de mantener tu contraseña en secreto y de lo que se haga con tu cuenta. La verificación en dos pasos es opcional y puede exigirla quien administra la empresa. Avisa al operador de inmediato si sospechas de un acceso indebido.",
   },
   "4. Uso aceitável": { es: "4. Uso aceptable" },
   "Ao usar este sistema, você concorda em não:": { es: "Al usar este sistema, te comprometes a no:" },
@@ -7316,6 +7592,12 @@ export const DICIONARIO: Traducoes = {
   "Quem atende (sem isto, não há horário para oferecer)": { es: "Quién atiende (sin esto, no hay horarios para ofrecer)" },
   "Definir depois": { es: "Definir después" },
   "Nenhum tipo de agendamento ainda. Crie o primeiro para que a Agenda tenha o que oferecer.": { es: "Todavía no hay tipos de cita. Crea el primero para que la Agenda tenga qué ofrecer." },
+  "Não consegui carregar os tipos de agendamento.": {
+    es: "No pude cargar los tipos de cita.",
+  },
+  "Isto é uma falha de leitura, não uma lista vazia — pode haver tipos cadastrados que não estão aparecendo. Recarregue a página; se continuar, avise quem cuida da instalação.": {
+    es: "Esto es un fallo de lectura, no una lista vacía — puede haber tipos registrados que no se están mostrando. Recarga la página; si continúa, avisa a quien cuida la instalación.",
+  },
   "sem responsável — não aparece para marcar": { es: "sin responsable — no aparece al agendar una cita" },
   "Duração": { es: "Duración" },
   "Quem atende": { es: "Quién atiende" },
@@ -7931,6 +8213,11 @@ export const DICIONARIO: Traducoes = {
   "Conexão sem identificador utilizável.": { es: "Conexión sin identificador utilizable." },
   "Conflito de versionamento — tente novamente.": { es: "Conflicto de versiones. Intenta de nuevo." },
   "Contato não encontrado.": { es: "Contacto no encontrado." },
+  "Contato inválido.": { es: "Contacto inválido." },
+  "Não foi possível desbloquear o contato.": { es: "No fue posible desbloquear el contacto." },
+  Desbloquear: { es: "Desbloquear" },
+  "Desbloquear este contato?": { es: "¿Desbloquear este contacto?" },
+  "Este contato pediu para não receber mais mensagens. Desbloquear volta a permitir campanhas, follow-ups e respostas da IA para ele, e a ação fica registrada na auditoria em seu nome.": { es: "Este contacto pidió no recibir más mensajes. Desbloquearlo vuelve a permitir campañas, seguimientos y respuestas de la IA para él, y la acción queda registrada en la auditoría a tu nombre." },
   "content é obrigatório.": { es: "content es obligatorio." },
   "Conversa do caso sem contato associado.": { es: "La conversación del caso no tiene contacto asociado." },
   "Conversa não encontrada.": { es: "Conversación no encontrada." },
@@ -8084,6 +8371,14 @@ export const DICIONARIO: Traducoes = {
   "nada foi gravado — verifique as permissões da organização": {
     es: "no se guardó nada; revisa los permisos de la organización",
   },
+  // PATCH /api/v1/ai/jev. Fora da varredura de tela (pastas `api` não entram), e
+  // chegam ao admin como a mensagem do erro.
+  "Ligar o Jev manda cada mensagem dos clientes, uma de cada vez e sem o resto da conversa, para a TypeSafe AI, nos Estados Unidos. Para ligar, confirme que você está de acordo.": {
+    es: "Activar Jev envía cada mensaje de los clientes, uno por vez y sin el resto de la conversación, a TypeSafe AI, en Estados Unidos. Para activarlo, confirma que estás de acuerdo.",
+  },
+  "Para ligar o Jev, cole a chave dele em Credenciais e espere o teste da chave passar.": {
+    es: "Para activar Jev, pega su clave en Credenciales y espera a que pase la prueba de la clave.",
+  },
   "Não consegui checar o pedido de atualização.": { es: "No pude verificar la solicitud de actualización." },
   "Não consegui finalizar a atualização.": { es: "No pude finalizar la actualización." },
   "Não consegui gravar o estado.": { es: "No pude guardar el estado." },
@@ -8211,6 +8506,19 @@ export const DICIONARIO: Traducoes = {
   // Ausentes de propósito, porque a palavra é a MESMA nos dois idiomas e
   // `traduzir()` devolve a chave: "nunca", "Preparado", "Consultado por",
   // "Preparando…". Entrada que repete a chave é ruído que envelhece.
+  "Estado da base de conhecimento": { es: "Estado de la base de conocimiento" },
+  "prontos": { es: "listos" },
+  "preparando": { es: "preparando" },
+  "preparando o material…": { es: "preparando el material…" },
+  "tudo pronto": { es: "todo listo" },
+  "Alguns materiais falharam ao preparar. O motivo está no cartão de cada um; depois de corrigir, clique em “Preparar tudo de novo”.": {
+    es: "Algunos materiales fallaron al prepararse. El motivo está en la tarjeta de cada uno; después de corregirlo, haz clic en “Preparar todo de nuevo”.",
+  },
+  "Preparar tudo de novo": { es: "Preparar todo de nuevo" },
+  "Não há material para reindexar.": { es: "No hay material para reindexar." },
+  "Vou preparar o que falta e o que mudou; o material sem alteração é pulado.": {
+    es: "Voy a preparar lo que falta y lo que cambió; el material sin cambios se omite.",
+  },
   "Vou preparar este material de novo — leva alguns instantes.": {
     es: "Voy a preparar este material de nuevo. Tardará unos instantes.",
   },
@@ -8293,6 +8601,7 @@ export const DICIONARIO: Traducoes = {
   "O assistente prometeu algo ao cliente e ninguém ficou responsável": {
     es: "El asistente prometió algo al cliente y nadie quedó a cargo",
   },
+  "promessas ao cliente sem ninguém responsável": { es: "promesas al cliente sin nadie a cargo" },
   "Nesta conversa o assistente combinou algo com o cliente. Ele ainda não tem nenhuma capacidade marcada para registrar isso no sistema, então nada foi agendado nem anotado. Abra a conversa para ver o que foi combinado — e, na tela do assistente, marque o que ele pode fazer.": {
     es: "En esta conversación el asistente acordó algo con el cliente. Como aún no tiene ninguna capacidad marcada para registrarlo en el sistema, no se programó ni se anotó nada. Abre la conversación para ver qué se acordó y, en la pantalla del asistente, marca lo que puede hacer.",
   },
@@ -9126,6 +9435,9 @@ export const DICIONARIO: Traducoes = {
   "Trocar a chave aqui mantém os agentes ligados nela: no próximo atendimento eles já usam a chave nova. Deixe a chave em branco para mudar só o nome.": {
     es: "Al cambiar la clave aquí, los agentes que la usan se mantienen conectados: en su próxima conversación ya usarán la clave nueva. Deja la clave en blanco para cambiar solo el nombre.",
   },
+  "Trocar a chave aqui mantém o Jev ligado: na próxima mensagem ele já usa a chave nova. Deixe a chave em branco para mudar só o nome.": {
+    es: "Cambiar la clave aquí mantiene Jev activado: en el próximo mensaje ya usa la clave nueva. Deja la clave en blanco para cambiar solo el nombre.",
+  },
   "versão(ões) de agente": { es: "versión(es) de agente" },
   "Para trocar a chave, use editar. Para excluir, nenhuma versão pode estar usando a chave — e versão já publicada ou substituída não aceita mais apontar para outra chave, então a exclusão fica travada enquanto esse histórico existir.": {
     es: "Para cambiar la clave, usa Editar. Para eliminarla, ninguna versión debe estar usándola. Una versión ya publicada o reemplazada no puede apuntar a otra clave, así que la eliminación queda bloqueada mientras exista ese historial.",
@@ -9156,10 +9468,13 @@ export const DICIONARIO: Traducoes = {
   "Header Idempotency-Key é obrigatório.": { es: "El header Idempotency-Key es obligatorio." },
   "JSON inválido.": { es: "JSON inválido." },
   "Já existe um produto com esse código.": { es: "Ya existe un producto con ese código." },
-  "Já existe uma credential com este label e provider.": { es: "Ya existe una credential con este label y provider." },
+  "Já existe uma chave deste provedor com este nome. Dê outro nome a ela.": {
+    es: "Ya existe una clave de este proveedor con este nombre. Ponle otro nombre.",
+  },
   "Já existe uma atualização em andamento.": { es: "Ya hay una actualización en curso." },
   "Lead foi modificado por outro usuário. Recarregue e tente novamente.": { es: "Otro usuario modificó el lead. Recarga e inténtalo de nuevo." },
   "Liberou a conversa de volta para a fila": { es: "Devolvió la conversación a la cola" },
+  "Atendente revogado da organização": { es: "Asesor revocado de la organización" },
   "Material não encontrado.": { es: "Material no encontrado." },
   "Move cross-pipeline não é permitido. Use POST /api/v1/leads/[id]/clone para levar o negócio a outro funil.": { es: "No se permite mover entre embudos. Usa POST /api/v1/leads/[id]/clone para llevar el negocio a otro embudo." },
   "Nada para alterar.": { es: "No hay nada que modificar." },
@@ -9259,6 +9574,9 @@ export const DICIONARIO: Traducoes = {
   // A TELA que faltava para a troca de funil — menu do card e o diálogo.
   "Levar para outro funil": { es: "Llevar a otro embudo" },
   "Escolha o funil de destino": { es: "Elige el embudo de destino" },
+  "Este é o único funil. Crie outro funil para poder levar o negócio até ele.": {
+    es: "Este es el único embudo. Crea otro embudo para poder llevar el negocio hasta él.",
+  },
   'O negócio é recriado no funil escolhido e este encerra como perdido, com o motivo "Levado para outro funil" — o histórico dos dois lados fica registrado na linha do tempo.': {
     es: 'El negocio se recrea en el embudo elegido y este se cierra como perdido, con el motivo "Movido a otro embudo" — el historial de los dos lados queda registrado en la línea de tiempo.',
   },
@@ -10577,6 +10895,8 @@ export const DICIONARIO: Traducoes = {
     { es: "Se alcanzó el límite de gasto en IA — el cliente no pidió hablar con una persona" },
   "O cliente demonstrou irritação na conversa":
     { es: "El cliente mostró molestia en la conversación" },
+  // D11: só na passagem e no aviso da equipe (`MARCA_DO_JEV`), nunca ao cliente.
+  "(percebido pelo Jev)": { es: "(detectado por Jev)" },
   "O assistente não teve confiança suficiente para responder":
     { es: "El asistente no estaba lo bastante seguro para responder" },
   "O negócio chegou a uma etapa que pede uma pessoa":
@@ -11644,6 +11964,84 @@ export const DICIONARIO: Traducoes = {
   },
   "Versão não encontrada para esta skill.": { es: "No se encontró esa versión para esta skill." },
   "Versão da skill não encontrada.": { es: "No se encontró la versión de la skill." },
+  // ─── Roteiros de atendimento (PR 3 do port do #1130) ───
+  "Nada (só encerra)": { es: "Nada (solo termina)" },
+  "Devolver à IA": { es: "Devolver a la IA" },
+  "Chamar uma skill": { es: "Llamar una skill" },
+  "Iniciar outro fluxo de atendimento": { es: "Iniciar otro flujo de atención" },
+  "O fluxo de atendimento escolhido não existe nesta organização.": { es: "El flujo de atención elegido no existe en esta organización." },
+  "Como usar os fluxos de atendimento (guia rápido)": { es: "Cómo usar los flujos de atención (guía rápida)" },
+  "É um roteiro de perguntas que a IA segue durante a conversa: ela pergunta uma coisa por vez, entende a resposta e guarda o dado no cadastro do cliente.": { es: "Es un guion de preguntas que la IA sigue durante la conversación: pregunta una cosa a la vez, entiende la respuesta y guarda el dato en el registro del cliente." },
+  "Montando o roteiro": { es: "Armando el guion" },
+  "Crie o roteiro e dê um nome.": { es: "Cree el guion y dele un nombre." },
+  "No Início, escreva as palavras-gatilho: quando a mensagem do cliente tiver uma delas, o roteiro começa sozinho. Ele também pode começar por uma intenção em IA › Roteadores.": { es: "En el Inicio, escriba las palabras clave: cuando el mensaje del cliente tenga una de ellas, el guion empieza solo. También puede empezar por una intención en IA › Enrutadores." },
+  "Adicione uma Pergunta para cada dado, com uma chave curta (ex.: cidade), o tipo e se é obrigatória. O tipo CPF confere o dígito verificador.": { es: "Agregue una Pregunta para cada dato, con una clave corta (ej.: ciudad), el tipo y si es obligatoria. El tipo CPF verifica el dígito verificador." },
+  "Se quiser, adicione uma Skill — um procedimento da loja que a IA usa naquele passo.": { es: "Si quiere, agregue una Skill: un procedimiento de la tienda que la IA usa en ese paso." },
+  "Ligue as caixas em linha, do Início ao Fim. No Fim, escolha o que acontece ao concluir: nada, orientar a IA, chamar uma skill ou começar outro roteiro.": { es: "Conecte las cajas en línea, del Inicio al Fin. En el Fin, elija qué pasa al concluir: nada, orientar a la IA, llamar una skill o empezar otro guion." },
+  "Publique.": { es: "Publique." },
+  "Como a IA se comporta": { es: "Cómo se comporta la IA" },
+  "Só grava uma resposta que esteja escrita na mensagem do cliente.": { es: "Solo guarda una respuesta que esté escrita en el mensaje del cliente." },
+  "Se o cliente já disser um dado antes de ser perguntado, ela registra sem perguntar.": { es: "Si el cliente ya dice un dato antes de que se le pregunte, lo registra sin preguntar." },
+  "Se o cliente corrigir um dado, a resposta é atualizada (quando a pergunta permite correção).": { es: "Si el cliente corrige un dato, la respuesta se actualiza (cuando la pregunta permite corrección)." },
+  "Pergunta sem resposta é repetida até o máximo de tentativas; depois é encerrada e não trava o roteiro.": { es: "La pregunta sin respuesta se repite hasta el máximo de intentos; después se cierra y no traba el guion." },
+  "O roteiro para quando uma pessoa assume a conversa, quando o cliente pede para parar, e depois do prazo sem resposta (72 horas, se você não mudar).": { es: "El guion se detiene cuando una persona asume la conversación, cuando el cliente pide parar y después del plazo sin respuesta (72 horas, si usted no lo cambia)." },
+  "As respostas ficam nos campos do cliente e aparecem na ficha dele e na conversa. O que o cliente já respondeu não é perguntado de novo, em nenhum roteiro.": { es: "Las respuestas quedan en los campos del cliente y aparecen en su ficha y en la conversación. Lo que el cliente ya respondió no se vuelve a preguntar en ningún guion." },
+  "Fluxos de atendimento": { es: "Flujos de atención" },
+  "Perguntas que a IA faz durante a conversa, em ordem, e o que fazer ao concluir — os dados ficam guardados por cliente.": { es: "Preguntas que la IA hace durante la conversación, en orden, y qué hacer al concluir: los datos quedan guardados por cliente." },
+  "Perguntas que a IA conduz durante a conversa, com as respostas guardadas na ficha do cliente.": { es: "Preguntas que la IA conduce durante la conversación, con las respuestas guardadas en la ficha del cliente." },
+  "O roteiro começa quando a mensagem do cliente tem uma palavra-gatilho, ou quando um roteador de intenção o aponta.": { es: "El guion empieza cuando el mensaje del cliente tiene una palabra clave, o cuando un enrutador de intención lo indica." },
+  "Palavras-gatilho (separe por vírgula)": { es: "Palabras clave (separe con coma)" },
+  "Máximo de tentativas por pergunta": { es: "Máximo de intentos por pregunta" },
+  "Depois de tantas vezes sem resposta, a pergunta é encerrada como não respondida e deixa de ser feita.": { es: "Después de tantas veces sin respuesta, la pregunta se cierra como no respondida y deja de hacerse." },
+  "Encerrar o roteiro depois de quantas horas sem resposta": { es: "Cerrar el guion después de cuántas horas sin respuesta" },
+  "Em branco, o roteiro encerra depois de 72 horas sem resposta.": { es: "En blanco, el guion se cierra después de 72 horas sin respuesta." },
+  "Pergunta (o que a IA deve perguntar)": { es: "Pregunta (lo que la IA debe preguntar)" },
+  "Chave do campo (onde a resposta é guardada)": { es: "Clave del campo (dónde se guarda la respuesta)" },
+  "Minúsculas, sem espaço (ex.: cidade, cnh, moto_interesse).": { es: "Minúsculas, sin espacio (ej.: ciudad, licencia, moto_interes)." },
+  "Tipo da resposta": { es: "Tipo de respuesta" },
+  "Opções (separe por vírgula)": { es: "Opciones (separe con coma)" },
+  "Obrigatória": { es: "Obligatoria" },
+  "Permitir correção": { es: "Permitir corrección" },
+  "Se o cliente mudar de ideia, a nova informação substitui a anterior.": { es: "Si el cliente cambia de idea, la nueva información reemplaza a la anterior." },
+  "Texto sugerido (opcional)": { es: "Texto sugerido (opcional)" },
+  "A IA pode adaptar a pergunta ao tom da conversa.": { es: "La IA puede adaptar la pregunta al tono de la conversación." },
+  "Ao concluir, o que fazer": { es: "Al concluir, qué hacer" },
+  "Vale para o fluxo de atendimento: o que acontece quando o cliente completa as perguntas.": { es: "Vale para el flujo de atención: qué pasa cuando el cliente completa las preguntas." },
+  "Orientação para a IA (opcional)": { es: "Orientación para la IA (opcional)" },
+  "Nome da skill": { es: "Nombre de la skill" },
+  "Ex.: fechamento-pagamento, catalogo-apresentacao.": { es: "Ej.: cierre-pago, catalogo-presentacion." },
+  "Próximo fluxo": { es: "Próximo flujo" },
+  "Escolha um fluxo": { es: "Elija un flujo" },
+  "Quando este fluxo terminar, o próximo começa sozinho — o que o cliente já respondeu segue valendo.": { es: "Cuando este flujo termine, el próximo empieza solo: lo que el cliente ya respondió sigue valiendo." },
+  "Skill a puxar neste passo": { es: "Skill a usar en este paso" },
+  "Carregando suas skills…": { es: "Cargando sus skills…" },
+  "Você ainda não tem skills instaladas. Instale em IA → Skills.": { es: "Usted todavía no tiene skills instaladas. Instale en IA → Skills." },
+  "Escolha uma skill": { es: "Elija una skill" },
+  "Novo fluxo de atendimento": { es: "Nuevo flujo de atención" },
+  "Nenhum fluxo de atendimento ainda": { es: "Ningún flujo de atención todavía" },
+  "Os fluxos de atendimento cadastram as perguntas que a IA faz durante a conversa e o que acontece ao concluir — os dados ficam guardados por cliente.": { es: "Los flujos de atención registran las preguntas que la IA hace durante la conversación y qué pasa al concluir: los datos quedan guardados por cliente." },
+  "Nasce como rascunho. Você cadastra as perguntas e a finalização no editor em seguida.": { es: "Nace como borrador. Usted registra las preguntas y la finalización en el editor a continuación." },
+  "Fluxo de atendimento (opcional)": { es: "Flujo de atención (opcional)" },
+  "Nenhum — só roteia o agente": { es: "Ninguno: solo enruta al agente" },
+  "Quando a intenção casar, este fluxo começa e as perguntas dele guiam o atendimento até o cliente completar.": { es: "Cuando la intención coincida, este flujo empieza y sus preguntas guían la atención hasta que el cliente complete." },
+  "Respostas dos roteiros de atendimento": { es: "Respuestas de los guiones de atención" },
+  "não respondido": { es: "no respondido" },
+  "Ligado, cada empresa pode montar roteiros de perguntas que a IA conduz durante a conversa (nome, CPF, interesse…), e as respostas aparecem na ficha do cliente. Desligado, a tela, o menu e o roteiro no atendimento da IA somem.": { es: "Activado, cada empresa puede armar guiones de preguntas que la IA conduce durante la conversación (nombre, CPF, interés…), y las respuestas aparecen en la ficha del cliente. Desactivado, la pantalla, el menú y el guion en la atención de la IA desaparecen." },
+  "Recurso não encontrado.": { es: "Recurso no encontrado." },
+  // ─── C-076: Comandos pelo celular (#on/#off) ───
+  "Comandos pelo celular": { es: "Comandos desde el celular" },
+  "Aceitar #on/#off enviados pelo celular": { es: "Aceptar #on/#off enviados desde el celular" },
+  "Ligado, QUALQUER mensagem enviada pelo WhatsApp do celular pausa a IA nesta conversa até alguém mandar #on — a pausa não vence sozinha. #off pausa sem precisar responder o cliente. Desligado, #on e #off são texto comum, e responder pelo celular pausa a IA só por um tempo.":
+    {
+      es: "Activado, CUALQUIER mensaje enviado desde el WhatsApp del celular pausa la IA en esta conversación hasta que alguien envíe #on — la pausa no vence sola. #off pausa sin necesidad de responder al cliente. Desactivado, #on y #off son texto normal, y responder desde el celular pausa la IA solo por un tiempo.",
+    },
+  "Atenção: o comando é digitado no chat do cliente e pode aparecer para ele. Vale por conversa, e a pausa só termina com #on ou pelo botão “devolver ao automático”.":
+    {
+      es: "Atención: el comando se escribe en el chat del cliente y puede aparecer para él. Vale por conversación, y la pausa solo termina con #on o con el botón “devolver al automático”.",
+    },
+  "Comandos pelo celular ligados — já valem no próximo atendimento.":
+    { es: "Comandos desde el celular activados — ya valen en la próxima atención." },
+  "Comandos pelo celular desligados.": { es: "Comandos desde el celular desactivados." },
 };
 
 /**

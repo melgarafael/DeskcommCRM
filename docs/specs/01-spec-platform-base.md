@@ -191,7 +191,7 @@ create table public.api_tokens (
   organization_id uuid not null references public.organizations(id) on delete cascade,
   created_by      uuid not null references auth.users(id) on delete restrict,
   name            text not null,
-  prefix          text not null, -- ex: 'tok_live_a3f9' (mostrado na UI; primeiros 12 chars)
+  prefix          text not null, -- ex: 'dsk_a3f9b2c4' (mostrado na UI; primeiros 12 chars)
   token_hash      bytea not null, -- sha256(plaintext) — plaintext NUNCA volta após criação
   scopes          jsonb not null default '[]'::jsonb,
                   -- ex: ["leads:read","leads:write","contacts:read","lgpd:execute"]
@@ -215,7 +215,9 @@ create index idx_api_tokens_org  on public.api_tokens(organization_id) where rev
 comment on table public.api_tokens is 'Bearer tokens. Plaintext mostrado UMA vez na criação; depois apenas hash. Prefix visível na UI.';
 ```
 
-**Formato do plaintext**: `tok_<env>_<base62 random 32 chars>`. Ex: `tok_live_a3f9b2c4d5e6f7g8h9i0j1k2l3m4n5o6`. Os primeiros 12 chars (`tok_live_a3f9`) viram o `prefix`.
+**Formato do plaintext**: `dsk_<8 hex aleatórios>_<segredo base64url de 32 bytes>`. Ex: `dsk_a3f9b2c4_<43 chars>`. Os primeiros 12 chars (`dsk_a3f9b2c4`) viram o `prefix`, que é o que a UI mostra.
+
+**Por que o prefixo NÃO carrega ambiente**: o esquema com `live`/`test` dentro do prefixo nunca chegou ao código — quem emite e quem valida são `app/api/v1/settings/api-tokens/route.ts` e `lib/mcp/auth.ts`, e o prefixo lá é `dsk_` (o `CLAUDE.md` registra, desde 17/09/2026 / PR #1128, que o prefixo antigo nunca existiu no código). O produto também não tem ambiente por token: o que separa uma credencial da outra é a organização (`organization_id`) e o estado vive em `revoked_at`/`expires_at`. O prefixo identifica o TIPO de credencial, e os 12 primeiros chars continuam sendo o que a tela exibe (issue #1129).
 
 ### 2.5 `api_audit_log` (append-only)
 
@@ -720,8 +722,8 @@ $$;
 POST /api/v1/auth/tokens (admin-only)
 Body: { name, scopes: ["leads:read","leads:write"], expires_at: "2026-12-31T00:00:00Z" }
 → Backend:
-  1. Gera plaintext: `tok_live_${randomBase62(32)}`
-  2. prefix = plaintext.slice(0, 12) // "tok_live_a3f9"
+  1. Gera plaintext: `dsk_${randomBytes(4).toString("hex")}_${randomBytes(32).toString("base64url")}`
+  2. prefix = plaintext.slice(0, 12) // "dsk_a3f9b2c4"
   3. token_hash = sha256(plaintext)
   4. INSERT INTO api_tokens (...)
   5. Audit `token.created`

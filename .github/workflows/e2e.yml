@@ -752,6 +752,7 @@ jobs:
         agenda-caminho-ate-os-horarios.spec.ts
         agenda-google-volta-do-consentimento.spec.ts
         agenda-google-volta-nao-desloga.spec.ts
+        redes-sociais-volta-nao-desloga.spec.ts
         navegacao.spec.ts
         menu-por-empresa-e-a-porta-de-volta.spec.ts
         agenda-google-meet.spec.ts
@@ -1050,6 +1051,21 @@ jobs:
       SPECS_PARTE_4: >-
         vps-fresh-onboarding.spec.ts
 
+      # `jev-decisoes-rapidas` entrou na PARTE_5 em 2026-09-23, pelo relógio e não
+      # pela família. A família dela (`prova-painel-provedores`,
+      # `credenciais-de-ia`) mora na PARTE_1 — e a PARTE_1 é a mais apertada.
+      # Medido nas 5 últimas rodadas verdes da main (runs 35921818285,
+      # 35920487831, 35918022238, 35914742522, 35893024353), relógio do JOB:
+      #
+      #     parte 1 → máx 1570s · folga 230s
+      #     parte 2 → máx 1373s · folga 427s
+      #     parte 3 → máx 1481s · folga 319s
+      #     parte 5 → máx 1352s · folga 448s   ← a maior
+      #
+      # Ela não depende da vizinhança: sobe o próprio dublê (porta 3996, a do
+      # `JEV_API_BASE_URL` que o `.env.e2e` grava), semeia a entrada de mensagens
+      # com o seed da `conversa-vira-lead` e apaga a chave e o `settings.jev` que
+      # criou, antes e depois. PREVISÃO, não medida: ~1,5 min de Playwright.
       SPECS_PARTE_5: >-
         inbox-busca-e-filtros-dizem-a-verdade.spec.ts
         extensoes-da-instalacao.spec.ts
@@ -1063,6 +1079,7 @@ jobs:
         followup-journey.spec.ts
         followup-dossie.spec.ts
         followup-queue.spec.ts
+        fluxo-de-atendimento.spec.ts
         qa-l12-funil.spec.ts
         i18n-espanhol-na-tela.spec.ts
         extensoes-declarativas.spec.ts
@@ -1070,16 +1087,32 @@ jobs:
         marca-logo.spec.ts
         suporte-temporario.spec.ts
         olhar-telas-do-epico.spec.ts
+        jev-decisoes-rapidas.spec.ts
+        buffer-ssr-caixa-orfa.spec.ts
 
-      # ─── FORA_DO_CI — as duas que ficaram, e o motivo continua onde sempre ───
+      # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #
       # A `vps-fresh-onboarding` saiu desta lista no PR da issue #179 (a infra
-      # dela está no `SPECS_PARTE_4` logo acima). As duas abaixo continuam
-      # fora, e o motivo delas é o que o job `resumo` imprime no run.
+      # dela está no `SPECS_PARTE_4` logo acima). As de baixo continuam fora, e
+      # o motivo de cada uma está escrito neste arquivo — no topo do workflow ou
+      # logo abaixo. (Este parágrafo dizia "as duas" com três na lista: número
+      # em prosa envelhece, e por isso ele saiu.)
+      #
+      # `jev-chave-real` entrou aqui em 2026-09-23: EXIGE UMA CHAVE PAGA da
+      # TypeSafe AI (`JEV_API_KEY`), e segredo de repositório público não é
+      # lugar para ela. Não é o caso de ficar no CI e pular os casos pagos, como
+      # a `acervo-de-conhecimento` faz: aqui a chave é a spec inteira, e mesmo
+      # com ela este job a reprovaria — o `pnpm e2e:env` aponta o Jev do
+      # servidor para o dublê, e ela recusa medir o dublê. O que o CI prova é a
+      # `jev-decisoes-rapidas` (PARTE_5), contra um dublê que responde o contrato
+      # MEDIDO na API real. O que só esta prova é que o contrato ainda é esse — a
+      # versão fixada responde e a chave passa no teste. Sem a chave, ela pula; o
+      # cabeçalho dela tem a receita para rodar contra a API de verdade.
       FORA_DO_CI: >-
         inbox-tempo-real.spec.ts
         cadastro-sem-confirmacao-de-email.spec.ts
         aviso-de-caso-chega-no-whatsapp.spec.ts
+        jev-chave-real.spec.ts
     steps:
       # ── O RELÓGIO DESTA PARTE: ONDE O TETO DE 30 MIN COMEÇA A CONTAR ──────
       #

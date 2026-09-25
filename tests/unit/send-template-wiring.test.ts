@@ -122,7 +122,10 @@ describe("send_template — o execute não pode virar rota de fuga dos guardrail
     expect(corpo).toMatch(/template_nao_aprovado/);
     // Selecionar `status` é o que torna a checagem possível: sem a coluna, o gate
     // acima compilaria contra `undefined` e aprovaria tudo.
-    expect(corpo).toMatch(/select components, parameter_format, status from meta_templates/);
+    expect(corpo).toMatch(/definicaoNaConexao<[\s\S]*?\['components', 'parameter_format', 'status'\]/);
+    // E a definição é a DESTA conexão (lib/channels/linha-do-espelho.ts): sem o
+    // escopo, o agente conferia o modelo de outro número com o mesmo nome.
+    expect(corpo).toMatch(/channelSessionId: input\.channelSessionId/);
   });
 
   it("as duas recusas são códigos DIFERENTES — pedem ações humanas diferentes", () => {

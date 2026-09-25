@@ -16,14 +16,17 @@ import { useConversationNotes } from "@/hooks/inbox/useConversationNotes";
 import { usePassagensDaConversa } from "@/hooks/inbox/usePassagensDaConversa";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useDeleteNote } from "@/hooks/inbox/useDeleteNote";
+import { useAlterarMensagem } from "@/hooks/inbox/useAlterarMensagem";
 import { useDebugToggle } from "@/hooks/ai/useDebugToggle";
 import { useActiveOrg, useUser } from "@/hooks/auth/AuthProvider";
 import { ROLE_RANK } from "@/lib/auth/types";
+import { capabilitiesOf, transportaMensagem, type ChannelProvider } from "@/lib/channels/capabilities";
 import { montarCartoesDaPassagem, type CartaoDaPassagem } from "@/lib/escalacao/cartao-da-passagem";
 import type { Message, Note } from "@/lib/types/messaging";
 
 interface Props {
   conversationId: string | null;
+  provider?: string | null;
   /** Escolher uma mensagem para responder. Sobe até o composer. */
   onResponder?: (m: Message) => void;
   /**
@@ -77,7 +80,7 @@ function dayLabel(d: Date, t: (texto: string) => string = (texto) => texto, loca
   return format(d, "dd/MM/yyyy", { locale: locale });
 }
 
-export function ChatThread({ conversationId, onResponder, dono, contatoId }: Props) {
+export function ChatThread({ conversationId, provider, onResponder, dono, contatoId }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const q = useMessagesRealtime(conversationId);
@@ -98,7 +101,10 @@ export function ChatThread({ conversationId, onResponder, dono, contatoId }: Pro
   const activeOrg = useActiveOrg();
   const currentUser = useUser();
   const deleteNote = useDeleteNote(conversationId ?? "");
+  const { editar, apagar, ocultar, restaurar } = useAlterarMensagem(conversationId);
   const canManage = activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
+  const canalAlteraEnviada = transportaMensagem(provider)
+    && capabilitiesOf(provider as ChannelProvider).alteraMensagemEnviada;
   const { enabled: debugCitations } = useDebugToggle(activeOrg?.role ?? null);
 
   const messages: Message[] = useMemo(
@@ -182,6 +188,7 @@ export function ChatThread({ conversationId, onResponder, dono, contatoId }: Pro
      * conversa já chegou ao fim alguma vez, com conteúdo na tela?" —, em vez de
      * inferir isso da paginação de UMA das três fontes do fio.
      */
+    const primeiraAncoragem = !jaAncorou.current;
     if (jaAncorou.current) {
       const sc = scrollerRef.current;
       if (sc && sc.scrollHeight - sc.scrollTop - sc.clientHeight > 120) return;
@@ -190,7 +197,10 @@ export function ChatThread({ conversationId, onResponder, dono, contatoId }: Pro
     // da pintura em branco, que é exatamente o defeito acima.
     if (items.length > 0) jaAncorou.current = true;
 
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    bottomRef.current?.scrollIntoView({
+      behavior: primeiraAncoragem ? "auto" : "smooth",
+      block: "end",
+    });
   }, [items.length, conversationId, paginas]);
 
   /**
@@ -343,6 +353,18 @@ export function ChatThread({ conversationId, onResponder, dono, contatoId }: Pro
                   // CRM — inclusive nas do colega, porque `sent_via='user'` só
                   // registra que um humano digitou, nunca qual.
                   viewerUserId={currentUser.id}
+                  onEditar={canalAlteraEnviada && item.data.sent_by_user_id === currentUser.id
+                    ? (text) => editar.mutateAsync({ id: item.data.id, text }).then(() => undefined)
+                    : undefined}
+                  onApagar={canalAlteraEnviada && item.data.sent_by_user_id === currentUser.id
+                    ? () => apagar.mutateAsync(item.data.id).then(() => undefined)
+                    : undefined}
+                  onOcultar={canManage && item.data.direction === "inbound"
+                    ? () => ocultar.mutateAsync(item.data.id).then(() => undefined)
+                    : undefined}
+                  onRestaurar={canManage && item.data.direction === "inbound"
+                    ? () => restaurar.mutateAsync(item.data.id).then(() => undefined)
+                    : undefined}
                 />
               ),
             )}

@@ -26,7 +26,7 @@ owner: Rafael Melgaço
 
 - `@modelcontextprotocol/sdk` server (TypeScript)
 - Hospedado em `app/api/mcp/route.ts` (Next.js Route Handler com Streamable HTTP transport)
-- Auth: Bearer token (`tok_...`) — mesma API key do REST `/api/v1/` (Spec 01 §api-tokens). Tabela `api_tokens` reutilizada
+- Auth: Bearer token (`dsk_...`) — mesma API key do REST `/api/v1/` (Spec 01 §api-tokens). Tabela `api_tokens` reutilizada
 - RLS: tools executam via Supabase client autenticado, **mesma policy** do REST. Zero código de autorização ad-hoc dentro das tools
 
 ### 1.3 Princípios
@@ -53,10 +53,10 @@ Transport conforme MCP spec 2025-06: Streamable HTTP recomendado, fallback SSE l
 ### 2.2 Auth
 
 ```
-Authorization: Bearer tok_xxxxxxxxxxxxxxxxxxxx
+Authorization: Bearer dsk_xxxxxxxxxxxxxxxxxxxx
 ```
 
-- Token plain prefix `tok_`. Validado via SHA256 hash em `api_tokens` (Spec 01).
+- Token plain prefix `dsk_`. Validado via SHA256 hash em `api_tokens` (Spec 01).
 - Token resolve `organization_id` + `role` + `actor_type` (`user` ou `system`).
 - Para agentes (Spec 10), o runner mints um token efêmero (TTL 5min) escopado: `actor_type='ai_agent'`, `agent_run_id=run.id`. Não aparece na UI; é interno.
 - Token escopo: tools podem checar `tok.role >= manager` para mutations sensíveis (mesmas regras do REST).

@@ -20,6 +20,8 @@ import { createClient } from "@supabase/supabase-js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { escolherModeloNoCatalogo } from "@/lib/ai/agents/escolher-modelo";
+
 /** Lê env do processo; completa com .env / .env.local se rodando localmente. */
 function loadEnv(): Record<string, string> {
   const out: Record<string, string> = { ...process.env } as Record<string, string>;
@@ -145,9 +147,17 @@ async function ensureOrg(ownerId: string): Promise<string> {
  * Anthropic, `LlmNotConfiguredError` em tudo, com a mensagem mandando cadastrar
  * justamente a chave que ele decidiu não usar.
  *
- * Escreve só o `provider`: o `default_model` fica com o que o trigger semeou
- * até alguém escolher na tela de Provedores, porque adivinhar um id de modelo
- * de outro provedor aqui seria inventar um valor que ninguém verificou.
+ * O par vai INTEIRO (`lib/ai/pontos/padrao-da-organizacao.ts`): o gatilho
+ * semeia `provider` e `default_model` da Anthropic juntos, e trocar só o
+ * provedor deixava `{openai, claude-sonnet-5}` — um id que a OpenAI não
+ * conhece, pedido por todo ponto que cai no padrão da empresa. O modelo sai do
+ * catálogo do provedor escolhido pela MESMA régua do onboarding
+ * (`escolherModeloNoCatalogo`), então nada aqui é inventado.
+ *
+ * Catálogo vazio (a OpenRouter chega com zero linhas até o cron de catálogo
+ * rodar) ou ilegível: grava só o `provider`, como antes. O par incoerente que
+ * sobra é resolvido na LEITURA por `lib/ai/gateway-binding.ts`, que troca o
+ * modelo pelo do catálogo assim que ele existir.
  */
 async function aplicarProvedorEscolhido(orgId: string): Promise<void> {
   const escolhido = (process.env.AI_PROVIDER ?? "").trim().toLowerCase();
@@ -164,9 +174,19 @@ async function aplicarProvedorEscolhido(orgId: string): Promise<void> {
   >;
   const llm = ((settings["llm"] as Record<string, unknown> | undefined) ?? {}) as Record<string, unknown>;
 
+  const escolha = await escolherModeloNoCatalogo(admin, escolhido);
+  const modelo = escolha?.escolhido ? escolha.modelId : null;
+  if (modelo === null) {
+    console.warn(
+      `[bootstrap] ${escolha === null ? "não consegui ler" : "ainda não há modelo no"} catálogo de "${escolhido}": ` +
+        `gravo só o provedor, e o modelo padrão se escolhe em Agente de IA → Provedores.`,
+    );
+  }
+  const novoLlm = modelo === null ? { ...llm, provider: escolhido } : { ...llm, provider: escolhido, default_model: modelo };
+
   const { error } = await admin
     .from("organizations")
-    .update({ settings: { ...settings, llm: { ...llm, provider: escolhido } } } as never)
+    .update({ settings: { ...settings, llm: novoLlm } } as never)
     .eq("id", orgId);
   if (error) {
     // Não derruba a instalação: a org existe e o operador consegue trocar o
@@ -178,7 +198,7 @@ async function aplicarProvedorEscolhido(orgId: string): Promise<void> {
     );
     return;
   }
-  console.log(`[bootstrap] provedor de IA da organização: ${escolhido}`);
+  console.log(`[bootstrap] provedor de IA da organização: ${escolhido}${modelo === null ? "" : ` (modelo ${modelo})`}`);
 }
 
 async function ensureMembership(userId: string, orgId: string): Promise<void> {

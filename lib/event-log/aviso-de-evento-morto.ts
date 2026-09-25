@@ -94,6 +94,24 @@ export const IA_QUE_NAO_RESPONDEU = {
     "depois de corrigida a causa, marque-o como resolvido para voltar a ser avisado.",
 } as const;
 
+/**
+ * A mensagem do cliente que o banco não conseguiu gravar — a terceira família.
+ * O cron `webhook-replay` reprocessa o arquivo do webhook enquanto o banco falha
+ * de forma transitória; quando desiste, a mensagem não existe no CRM e ninguém
+ * a verá pela tela. É o mesmo tamanho de dano da IA que não respondeu (o cliente
+ * falou e ninguém ouviu), e por isso tem título próprio: o dreno de handlers o
+ * exclui do seu dedupe, como exclui o da IA.
+ */
+export const MENSAGEM_QUE_NAO_ENTROU = {
+  titulo: "Uma mensagem de WhatsApp não entrou no CRM",
+  consequencia:
+    "Um cliente mandou mensagem, mas o banco de dados estava indisponível e ela não pôde ser gravada, mesmo depois de várias tentativas. " +
+    "Ela não aparece no Inbox e a IA não a respondeu: confira no celular do número as conversas recebidas nesse horário e responda por lá.",
+  rearme:
+    "Enquanto este aviso estiver aberto, outras mensagens que também não entrarem não abrem aviso novo: " +
+    "depois de conferir, marque-o como resolvido para voltar a ser avisado.",
+} as const;
+
 export const TITULO_GENERICO = "Uma tarefa automática parou de tentar";
 
 const CONSEQUENCIA_GENERICA =

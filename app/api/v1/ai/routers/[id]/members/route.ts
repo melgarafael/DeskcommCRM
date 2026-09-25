@@ -29,6 +29,9 @@ const memberInputSchema = z.object({
   intent_name: z.string().min(1).max(120),
   intent_description: z.string().min(1).max(2000),
   examples: z.array(z.string()).default([]),
+  // Sem esta linha o Zod descartava o campo em silêncio e o vínculo
+  // intenção → roteiro nunca era gravado (revisão do #1573, B2).
+  flow_pointer_id: z.string().uuid().nullable().default(null),
 });
 
 const membersPutSchema = z.object({
@@ -86,6 +89,13 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       return fail("validation_failed", t("Um dos agentes não existe nesta organização."), 422, {
         requestId,
       });
+    if (message === "member_flow_not_found")
+      return fail(
+        "validation_failed",
+        t("O fluxo de atendimento escolhido não existe nesta organização."),
+        422,
+        { requestId },
+      );
     if (message === "duplicate_intent_name" || code === "23505")
       return fail(
         "duplicate_intent_name",

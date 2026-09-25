@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FlowArrow, Plus, Sparkle } from "@/lib/ui/icons";
 import { useFollowupFlows, type FollowupFlowPointerRow } from "@/hooks/followup/useFollowupFlows";
+import type { FollowupFlowSurface } from "@/lib/followup/api-schemas";
 import { DeleteFollowupFlowButton } from "./DeleteFollowupFlowButton";
 import { DuplicateFollowupFlowButton } from "./DuplicateFollowupFlowButton";
 import { FlowStatusBadge } from "./FlowStatusBadge";
@@ -20,6 +21,8 @@ import { RenameFollowupFlowButton } from "./RenameFollowupFlowButton";
 interface Props {
   initialData: FollowupFlowPointerRow[];
   canWrite: boolean;
+  /** Recorte por superfície. Ausente = todos (comportamento atual). */
+  surface?: FollowupFlowSurface;
 }
 
 function formatUpdatedAt(iso: string, idioma: string): string {
@@ -30,14 +33,18 @@ function formatUpdatedAt(iso: string, idioma: string): string {
   });
 }
 
-export function FlowsList({ initialData, canWrite }: Props) {
+export function FlowsList({ initialData, canWrite, surface }: Props) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
-  const { data } = useFollowupFlows({ initialData });
+  const { data } = useFollowupFlows({ initialData, ...(surface ? { surface } : {}) });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [modelosOpen, setModelosOpen] = useState(false);
+  const deAtendimento = surface === "atendimento";
 
   const flows = data ?? [];
+  // Cada superfície tem a SUA rota de editor: abrir um fluxo de atendimento não
+  // pode jogar o usuário na lista de Follow-ups.
+  const baseHref = deAtendimento ? "/app/ai/atendimento" : "/app/ai/followups";
 
   // ⚠️ "Começar de um modelo" vem ANTES de "Novo fluxo", e na tela vazia é o
   // botão cheio. Quem chega aqui numa instalação nova não sabe o que é nó, ramo
@@ -51,19 +58,26 @@ export function FlowsList({ initialData, canWrite }: Props) {
   );
 
   const newFlowButton = (
-    <Button onClick={() => setDialogOpen(true)} variant="outline" className="w-full sm:w-auto">
-      <Plus size={14} aria-hidden className="mr-2" /> Novo fluxo
+    <Button
+      onClick={() => setDialogOpen(true)}
+      variant={deAtendimento ? "default" : "outline"}
+      className="w-full sm:w-auto"
+    >
+      <Plus size={14} aria-hidden className="mr-2" />
+      {deAtendimento ? t("Novo fluxo de atendimento") : t("Novo fluxo")}
     </Button>
   );
 
   const dialogos = canWrite && (
     <>
-      <NewFlowDialog open={dialogOpen} onOpenChange={setDialogOpen} />
-      <ModelosDialog
-        open={modelosOpen}
-        onOpenChange={setModelosOpen}
-        nomesExistentes={flows.map((f) => f.name)}
-      />
+      <NewFlowDialog open={dialogOpen} onOpenChange={setDialogOpen} surface={surface} />
+      {!deAtendimento && (
+        <ModelosDialog
+          open={modelosOpen}
+          onOpenChange={setModelosOpen}
+          nomesExistentes={flows.map((f) => f.name)}
+        />
+      )}
     </>
   );
 
@@ -72,15 +86,21 @@ export function FlowsList({ initialData, canWrite }: Props) {
       <>
         <Card className="flex flex-col items-center gap-3 p-10 text-center">
           <FlowArrow size={36} aria-hidden className="text-text-muted" />
-          <h2 className="font-medium">{t("Nenhum fluxo de follow-up ainda")}</h2>
+          <h2 className="font-medium">
+            {deAtendimento ? t("Nenhum fluxo de atendimento ainda") : t("Nenhum fluxo de follow-up ainda")}
+          </h2>
           <p className="max-w-sm text-sm text-text-muted">
-            {t(
-              "Follow-ups reengajam contatos após silêncio, mudança de etapa, uma regra em Webhooks ou a resposta do contato — sem depender de alguém lembrar de mandar mensagem.",
-            )}
+            {deAtendimento
+              ? t(
+                  "Os fluxos de atendimento cadastram as perguntas que a IA faz durante a conversa e o que acontece ao concluir — os dados ficam guardados por cliente.",
+                )
+              : t(
+                  "Follow-ups reengajam contatos após silêncio, mudança de etapa, uma regra em Webhooks ou a resposta do contato — sem depender de alguém lembrar de mandar mensagem.",
+                )}
           </p>
           {canWrite && (
             <div className="mt-1 flex flex-col items-center gap-2 sm:flex-row">
-              {modelosButton}
+              {!deAtendimento && modelosButton}
               {newFlowButton}
             </div>
           )}
@@ -94,7 +114,7 @@ export function FlowsList({ initialData, canWrite }: Props) {
     <div className="flex flex-col gap-4">
       {canWrite && (
         <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-          {modelosButton}
+          {!deAtendimento && modelosButton}
           {newFlowButton}
         </div>
       )}
@@ -103,7 +123,7 @@ export function FlowsList({ initialData, canWrite }: Props) {
         {flows.map((flow) => (
           <li key={flow.id}>
             <Card className="flex h-full flex-col gap-3 p-4 transition-colors hover:border-accent-400">
-              <Link href={`/app/ai/followups/${flow.id}`} className="flex flex-1 flex-col gap-3">
+              <Link href={`${baseHref}/${flow.id}`} className="flex flex-1 flex-col gap-3">
                 <div className="flex items-start justify-between gap-2">
                   <h3 className="min-w-0 flex-1 truncate font-medium" title={flow.name}>
                     {flow.name}
@@ -128,7 +148,7 @@ export function FlowsList({ initialData, canWrite }: Props) {
                 <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-2">
                   <RenameFollowupFlowButton flowId={flow.id} flowName={flow.name} />
                   <DuplicateFollowupFlowButton flowId={flow.id} />
-                  <DeleteFollowupFlowButton flowId={flow.id} flowName={flow.name} />
+                  <DeleteFollowupFlowButton flowId={flow.id} flowName={flow.name} listHref={baseHref} />
                 </div>
               )}
             </Card>

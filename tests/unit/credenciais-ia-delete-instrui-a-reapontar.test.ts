@@ -169,7 +169,8 @@ describe("DELETE /api/v1/ai/credentials/:id instrui a repontar", () => {
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body.data).toEqual({ id, deleted: true });
+    // `jev_desligado` só é `true` na chave do Jev (credenciais-ia-delete-desliga-o-jev).
+    expect(body.data).toEqual({ id, deleted: true, jev_desligado: false });
     expect(audit).toHaveBeenCalledWith(
       expect.objectContaining({ action: "ai.credential_deleted", resourceId: id }),
     );

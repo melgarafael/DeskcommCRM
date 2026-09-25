@@ -47,9 +47,16 @@ beforeEach(() => {
   get.mockReset();
   post.mockReset();
   get.mockResolvedValue({
-    data: { pipelines: [{ id: "p-destino-1", name: "Suporte" }, { id: "p-destino-2", name: "Cobrança" }] },
+    data: {
+      pipelines: [
+        { id: "p-destino-1", name: "Suporte" },
+        { id: "p-destino-2", name: "Cobrança" },
+      ],
+    },
   });
-  post.mockResolvedValue({ data: { lead: { id: "clone-1" }, origem: { id: LEAD_ID, status: "lost" } } });
+  post.mockResolvedValue({
+    data: { lead: { id: "clone-1" }, origem: { id: LEAD_ID, status: "lost" } },
+  });
 });
 
 describe("MoveToOtherPipelineDialog", () => {
@@ -84,6 +91,19 @@ describe("MoveToOtherPipelineDialog", () => {
       }),
     );
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  it("sem outro funil (instalação nova), explica em vez de abrir uma lista vazia", async () => {
+    get.mockResolvedValue({ data: { pipelines: [] } });
+    renderDialog();
+
+    expect(
+      await screen.findByText(
+        "Este é o único funil. Crie outro funil para poder levar o negócio até ele.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole("combobox", { name: "Funil de destino" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Confirmar" })).toBeDisabled();
   });
 
   it("cancelar fecha sem chamar a API", async () => {

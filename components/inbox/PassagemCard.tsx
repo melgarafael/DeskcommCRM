@@ -78,7 +78,8 @@ export function PassagemCard({ cartao, contatoId, onAssumir, assumindo }: Props)
           data-passagem-recolhido="true"
         >
           <summary className="cursor-pointer text-xs text-muted-foreground">
-            {t(cartao.motivo)} · {hora}
+            {t(cartao.motivo)}
+            {cartao.percebidoPeloJev && <> {t("(percebido pelo Jev)")}</>} · {hora}
           </summary>
           <div className="mt-2">
             <Corpo cartao={cartao} tituloId={tituloId} />
@@ -139,6 +140,7 @@ function Corpo({ cartao, tituloId }: { cartao: CartaoDaPassagem; tituloId: strin
     <>
       <p className="mt-1.5 font-medium" data-testid="passagem-motivo">
         {t(cartao.motivo)}
+        {cartao.percebidoPeloJev && <> {t("(percebido pelo Jev)")}</>}
       </p>
 
       {cartao.clienteQuer !== null && (

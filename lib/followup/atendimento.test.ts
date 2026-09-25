@@ -383,6 +383,38 @@ describe("processarInboundDoFluxo — gravação e trilha", () => {
     expect(params[i]![2]).toBe("exhausted");
   });
 
+  it("RESPOSTA TARDIA (#1130, @vgamkt): pergunta ESGOTADA aceita o valor que o validador leu", async () => {
+    // `cidade` no teto (3 de 3) = esgotada; `cnh` segue pendente.
+    const { pool, sqls, params, eventos } = poolFake();
+    const estado = estadoCom(cidadeECnh(), {}, { cidade: 3 });
+    expect(estado.situacao.esgotadas.map((n) => n.config.key)).toEqual(["cidade"]);
+
+    await processarInboundDoFluxo(pool, {
+      organizationId: ORG,
+      estado,
+      texto: "ah, eu moro em Campinas",
+      messageId: "m1",
+      validacoes: [{ campo: "cidade", valor: "Campinas" }],
+    });
+
+    const i = sqls.findIndex((s) => /update contacts/.test(s));
+    expect(i, "o valor tardio precisa ser gravado no contato").toBeGreaterThanOrEqual(0);
+    expect(params[i]).toEqual([ORG, "ct", "cidade", "Campinas"]);
+    expect(eventos().map((e) => e.tipo)).toContain("roteiro_resposta");
+  });
+
+  it("controle: campo fora do roteiro continua descartado", async () => {
+    const { pool, sqls } = poolFake();
+    await processarInboundDoFluxo(pool, {
+      organizationId: ORG,
+      estado: estadoCom(cidadeECnh(), {}, { cidade: 3 }),
+      texto: "meu cpf é 529.982.247-25",
+      messageId: "m1",
+      validacoes: [{ campo: "cpf", valor: "52998224725" }],
+    });
+    expect(sqls.some((s) => /update contacts/.test(s))).toBe(false);
+  });
+
   it("tudo respondido fecha como converted, não 'Esgotado'", async () => {
     const c = lista([trigger("t"), collect("c1", "cidade"), end("e")], [aresta("t", "c1"), aresta("c1", "e")]);
     const { pool, sqls, params } = poolFake();

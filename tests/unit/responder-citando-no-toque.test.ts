@@ -38,8 +38,9 @@ const BOLHA = readFileSync("components/inbox/MessageBubble.tsx", "utf8");
 describe("no celular o botão de responder aparece", () => {
   it("o padrão é VISÍVEL — esconder é a exceção", () => {
     // A ordem importa: `opacity-100` como base e o `0` atrás da media query.
-    // Invertido, o celular volta a não ver nada.
-    expect(BOLHA).toMatch(/"opacity-100 \[@media\(hover:hover\)\]:opacity-0"/);
+    // Invertido, o celular volta a não ver nada. A string pode seguir com mais
+    // classes (o menu da mensagem acrescenta `data-[state=open]`), mas COMEÇA assim.
+    expect(BOLHA).toMatch(/"opacity-100 \[@media\(hover:hover\)\]:opacity-0[ "]/);
   });
 
   it("só esconde onde EXISTE hover", () => {
@@ -55,11 +56,15 @@ describe("no celular o botão de responder aparece", () => {
     expect(trechos.map((m) => m[0]), "largura não responde 'tem hover?'").toEqual([]);
   });
 
-  it("os DOIS botões (entrada e saída) seguem a mesma regra", () => {
-    // São dois elementos espelhados. Consertar um e esquecer o outro deixaria a
-    // metade da conversa sem resposta possível no celular.
+  it("entrada e saída passam pelo MESMO gatilho, e ele segue a regra", () => {
+    // Eram dois botões espelhados fora da bolha; desde o #1626 é um gatilho de
+    // menu só, dentro dela, para as duas direções. O que não pode voltar é um
+    // segundo gatilho sem a regra (metade da conversa sem resposta no celular),
+    // nem o gatilho único amarrado a uma direção só.
     const comRegra = [...BOLHA.matchAll(/\[@media\(hover:hover\)\]:opacity-0/g)];
-    expect(comRegra.length, "um dos dois botões ficou de fora").toBe(2);
+    expect(comRegra.length, "apareceu gatilho novo; confira se ele segue a regra").toBe(1);
+    expect(BOLHA).toMatch(/\{temMenu && \(\s*<DropdownMenu>/);
+    expect(BOLHA).toMatch(/const temMenu = Boolean\(onResponder \|\|/);
   });
 
   it("o teclado também alcança", () => {

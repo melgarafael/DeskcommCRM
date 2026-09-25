@@ -72,6 +72,8 @@ import { arquivosDeCodigo, caminhoRelativo } from "./helpers/varrer-codigo";
 import {
   caminhoDaCadeia,
   caminhosDoClienteAdmin,
+  ehReceptorAdmin,
+  escopoDeTipos,
   nomesDoClienteAdmin,
   raizDaCadeia,
 } from "./helpers/cliente-admin";
@@ -122,8 +124,8 @@ function escritasEmOrganizations(caminho: string): Achado[] {
  * de cliente passado entre funções — num teste que roda em todo CI.
  */
 function achadosNaFonte(fonte: ts.SourceFile, arquivo: string): Achado[] {
-  const admins = nomesDoClienteAdmin(fonte);
-  const caminhosAdmin = caminhosDoClienteAdmin(fonte);
+  const escopo = escopoDeTipos(fonte);
+  const caminhos = caminhosDoClienteAdmin(fonte);
   const achados: Achado[] = [];
 
   const visitar = (no: ts.Node): void => {
@@ -154,9 +156,7 @@ function achadosNaFonte(fonte: ts.SourceFile, arquivo: string): Achado[] {
         // por um tipo que mora em OUTRO arquivo, ou herdado por `extends` — ou
         // passado por outra função deste mesmo arquivo (a chamada prova).
         const caminho = caminhoDaCadeia(receptor);
-        const deServico =
-          (raiz !== null && admins.has(raiz)) ||
-          (caminho !== null && caminhosAdmin.has(caminho));
+        const deServico = ehReceptorAdmin(receptor, fonte, escopo, caminhos);
         if (raiz !== null && !deServico) {
           achados.push({
             arquivo,
@@ -299,6 +299,15 @@ describe("toda escrita em `organizations` passa pelo cliente admin", () => {
           "export async function gravar(orgId: string, settings: unknown) " +
           "{ await aplicar(admin, orgId, settings); }",
       },
+      {
+        forma: "chamada encadeada `.schema(\"public\")` a partir do cliente admin criado aqui",
+        codigo:
+          IMPORTA_A_FABRICA +
+          "const admin = createAdminClient();\n" +
+          "export async function gravar(orgId: string, settings: unknown) {\n" +
+          '  await admin.schema("public").from("organizations").update({ settings }).eq("id", orgId);\n' +
+          "}",
+      },
     ];
     for (const { forma, codigo } of aceitos) {
       // `expect.soft`: o vermelho lista TODAS as formas que passaram, e não só a
@@ -419,6 +428,162 @@ describe("toda escrita em `organizations` passa pelo cliente admin", () => {
           "export async function outro(orgId: string, settings: unknown) " +
           "{ const sessao = await createClient(); await vazar(sessao, orgId, settings); }",
         esperado: ["cliente.update", "cliente.update"],
+      },
+      {
+        forma: "F1d: valor padrão com local homônimo de sessão noutra função (escopo léxico)",
+        codigo:
+          IMPORTA_A_FABRICA +
+          IMPORTA_A_SESSAO +
+          "const admin = createAdminClient();\n" +
+          "async function aplicar(cliente = admin, orgId: string, settings: unknown) " +
+          `{ ${MUTA_PELO_CLIENTE_PASSADO} }\n` +
+          "export async function gravar(orgId: string, settings: unknown) " +
+          "{ await aplicar(admin, orgId, settings); }\n" +
+          "export async function vazar(orgId: string, settings: unknown) " +
+          `{ const cliente = await createClient(); ${MUTA_PELO_CLIENTE_PASSADO} }`,
+        esperado: ["cliente.update"],
+      },
+      {
+        forma: "F2d: valor padrão com export { aplicar } (função exportada por declaração nomeada)",
+        codigo:
+          IMPORTA_A_FABRICA +
+          "const admin = createAdminClient();\n" +
+          "async function aplicar(cliente = admin, orgId: string, settings: unknown) " +
+          `{ ${MUTA_PELO_CLIENTE_PASSADO} }\n` +
+          "export { aplicar };\n" +
+          "export async function gravar(orgId: string, settings: unknown) " +
+          "{ await aplicar(admin, orgId, settings); }",
+        esperado: ["cliente.update"],
+      },
+      {
+        forma: "F2d2: valor padrão com export default aplicar (função exportada como default)",
+        codigo:
+          IMPORTA_A_FABRICA +
+          "const admin = createAdminClient();\n" +
+          "async function aplicar(cliente = admin, orgId = \"\", settings: unknown = null) " +
+          `{ ${MUTA_PELO_CLIENTE_PASSADO} }\n` +
+          "export default aplicar;\n" +
+          "export async function gravar(orgId: string, settings: unknown) " +
+          "{ await aplicar(admin, orgId, settings); }",
+        esperado: ["cliente.update"],
+      },
+      {
+        forma: "funções homônimas com valor padrão (ordem a depois b: escopo da função vs arquivo)",
+        codigo:
+          IMPORTA_A_FABRICA +
+          IMPORTA_A_SESSAO +
+          "const admin = createAdminClient();\n" +
+          "export async function a(orgId: string, settings: unknown) {\n" +
+          '  const run = async (cliente = admin) => { await cliente.from("organizations").update({ settings }).eq("id", orgId); };\n' +
+          "  await run();\n" +
+          "}\n" +
+          "export async function b(orgId: string, settings: unknown) {\n" +
+          "  const sessao = await createClient();\n" +
+          '  const run = async (cliente = sessao) => { await cliente.from("organizations").update({ settings }).eq("id", orgId); };\n' +
+          "  await run();\n" +
+          "}",
+        esperado: ["cliente.update", "cliente.update"],
+      },
+      {
+        forma: "funções homônimas com valor padrão (ordem b depois a: independência de ordem)",
+        codigo:
+          IMPORTA_A_FABRICA +
+          IMPORTA_A_SESSAO +
+          "const admin = createAdminClient();\n" +
+          "export async function b(orgId: string, settings: unknown) {\n" +
+          "  const sessao = await createClient();\n" +
+          '  const run = async (cliente = sessao) => { await cliente.from("organizations").update({ settings }).eq("id", orgId); };\n' +
+          "  await run();\n" +
+          "}\n" +
+          "export async function a(orgId: string, settings: unknown) {\n" +
+          '  const run = async (cliente = admin) => { await cliente.from("organizations").update({ settings }).eq("id", orgId); };\n' +
+          "  await run();\n" +
+          "}",
+        esperado: ["cliente.update", "cliente.update"],
+      },
+      {
+        forma:
+          "valor padrão aponta para uma local de SESSÃO homônima do admin do módulo " +
+          "(vale a declaração que o nome alcança, não o nome no arquivo)",
+        codigo:
+          IMPORTA_A_FABRICA +
+          IMPORTA_A_SESSAO +
+          "const admin = createAdminClient();\n" +
+          "export async function b(orgId: string, settings: unknown) {\n" +
+          "  const admin = await createClient();\n" +
+          `  const run = async (cliente = admin) => { ${MUTA_PELO_CLIENTE_PASSADO} };\n` +
+          "  await run();\n" +
+          "}",
+        esperado: ["cliente.update"],
+      },
+      {
+        forma: "argumento é uma local de SESSÃO homônima do admin do módulo",
+        codigo:
+          IMPORTA_A_FABRICA +
+          IMPORTA_A_SESSAO +
+          "const admin = createAdminClient();\n" +
+          "async function aplicar(cliente = admin, orgId: string, settings: unknown) " +
+          `{ ${MUTA_PELO_CLIENTE_PASSADO} }\n` +
+          "export async function vazar(orgId: string, settings: unknown) " +
+          "{ const admin = await createClient(); await aplicar(admin, orgId, settings); }",
+        esperado: ["cliente.update"],
+      },
+      {
+        forma: "argumento `admin.schema(...)` sobre uma local de SESSÃO homônima do admin do módulo",
+        codigo:
+          IMPORTA_A_FABRICA +
+          IMPORTA_A_SESSAO +
+          "const admin = createAdminClient();\n" +
+          "async function aplicar(cliente = admin, orgId: string, settings: unknown) " +
+          `{ ${MUTA_PELO_CLIENTE_PASSADO} }\n` +
+          "export async function vazar(orgId: string, settings: unknown) " +
+          '{ const admin = await createClient(); await aplicar(admin.schema("public"), orgId, settings); }',
+        esperado: ["cliente.update"],
+      },
+      {
+        forma:
+          "chamada com spread omite o argumento na posição, mas o spread entrega o cliente de SESSÃO " +
+          "(o valor padrão não pode provar)",
+        codigo:
+          IMPORTA_A_FABRICA +
+          IMPORTA_A_SESSAO +
+          "const admin = createAdminClient();\n" +
+          "async function aplicar(orgId: string, settings: unknown, cliente = admin) " +
+          `{ ${MUTA_PELO_CLIENTE_PASSADO} }\n` +
+          "export async function vazar(orgId: string, settings: unknown) " +
+          "{ const sessao = await createClient(); const args = [orgId, settings, sessao] as const; await aplicar(...args); }",
+        esperado: ["cliente.update"],
+      },
+      {
+        forma:
+          "closure com valor padrão escrita ANTES da local de SESSÃO homônima do admin do módulo " +
+          "(const vale para o bloco inteiro: a posição não devolve o nome ao módulo)",
+        codigo:
+          IMPORTA_A_FABRICA +
+          IMPORTA_A_SESSAO +
+          "const admin = createAdminClient();\n" +
+          "export async function b(orgId: string, settings: unknown) {\n" +
+          `  const run = async (cliente = admin) => { ${MUTA_PELO_CLIENTE_PASSADO} };\n` +
+          "  const admin = await createClient();\n" +
+          "  await run();\n" +
+          "}",
+        esperado: ["cliente.update"],
+      },
+      {
+        forma:
+          "closure escreve com um APELIDO do admin do módulo, sombreado depois no mesmo bloco " +
+          "por um cliente de SESSÃO",
+        codigo:
+          IMPORTA_A_FABRICA +
+          IMPORTA_A_SESSAO +
+          "const servico = createAdminClient();\n" +
+          "const cliente = servico;\n" +
+          "export async function b(orgId: string, settings: unknown) {\n" +
+          `  const run = async () => { ${MUTA_PELO_CLIENTE_PASSADO} };\n` +
+          "  const cliente = await createClient();\n" +
+          "  await run();\n" +
+          "}",
+        esperado: ["cliente.update"],
       },
     ];
     for (const { forma, codigo, esperado = ["p.admin.update"] } of reprovados) {

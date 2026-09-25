@@ -91,6 +91,10 @@ export const ApiErrorCodes = {
   invalid_state_transition: "invalid_state_transition",
   invalid_owner: "invalid_owner", // novo dono não é membro ativo agent+ da org (bulk assign, G3-04)
   trigger_kind_not_implemented: "trigger_kind_not_implemented", // publish de followup-flow com kind sem motor de enrollment (stage_change/conversation_end)
+  // PATCH /api/v1/ai/jev ao ligar. Dois códigos porque são duas ações de quem lê:
+  // colar e testar a chave, ou marcar o aceite de mandar a mensagem para fora.
+  jev_exige_chave_validada: "jev_exige_chave_validada",
+  jev_exige_aceite: "jev_exige_aceite",
 
   // 415 — tipo de mídia
   unsupported_media_type: "unsupported_media_type",

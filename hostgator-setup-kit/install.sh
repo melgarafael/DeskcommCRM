@@ -2092,15 +2092,33 @@ begin
   -- escolhe OpenRouter instala, cadastra a chave, e todo caminho que passa
   -- pelo agent-engine resolve 'anthropic' — sem chave da Anthropic, erro de
   -- "IA não configurada" em tudo, mandando cadastrar a chave que ele decidiu
-  -- não usar. Só o provider: o modelo padrão fica com o que o trigger semeou
-  -- até alguém escolher em Agente de IA -> Provedores, porque adivinhar um id
-  -- de modelo de outro provedor aqui seria inventar um valor não verificado.
+  -- não usar.
+  --
+  -- O par vai INTEIRO: o trigger semeia provider E default_model da Anthropic
+  -- juntos, e trocar só o provider deixava openai com claude-sonnet-5, um id
+  -- que a OpenAI não conhece, pedido por todo ponto que cai no padrão da
+  -- empresa. O modelo é o curado do provedor escolhido no catálogo (a mesma
+  -- régua de escolherModeloDoProvedor para os provedores que o baseline semeia
+  -- com curado), e só entra quando o modelo gravado NÃO é desse provedor: quem
+  -- re-roda o instalador não perde o modelo escolhido pela tela. Sem curado (a
+  -- OpenRouter chega com o catálogo vazio até o primeiro sync) fica só o
+  -- provider, e lib/ai/gateway-binding.ts resolve o par na leitura.
   if '${AI_PROVIDER}' not in ('', 'anthropic') then
     update public.organizations
        set settings = jsonb_set(
              coalesce(settings, '{}'::jsonb), '{llm,provider}',
              to_jsonb('${AI_PROVIDER}'::text), true)
      where id = v_org;
+    update public.organizations o
+       set settings = jsonb_set(o.settings, '{llm,default_model}', to_jsonb(c.model_id), true)
+      from (select m.model_id from public.ai_models m
+             where m.provider = '${AI_PROVIDER}' and m.is_default_for_provider
+               and m.supports_tools and m.deprecated_at is null
+             limit 1) c
+     where o.id = v_org
+       and not exists (select 1 from public.ai_models a
+                        where a.provider = '${AI_PROVIDER}'
+                          and a.model_id = o.settings->'llm'->>'default_model');
   end if;
   insert into public.user_organizations (user_id, organization_id, role, accepted_at)
   values (v_uid, v_org, 'admin', now())

@@ -15,5 +15,12 @@ export const TIPOS_DERIVAVEIS: ReadonlySet<string> = new Set([
   "video",
 ]);
 
-/** Estados finais de `messages.media_derived_status` — não há o que esperar. */
-export const DERIVACAO_TERMINADA: ReadonlySet<string> = new Set(["ready", "failed"]);
+/**
+ * Estados finais de `messages.media_derived_status` — não há o que esperar.
+ *
+ * `skipped` é a mídia que o worker desiste de ler DE PROPÓSITO (vídeo com a
+ * leitura desligada, que é o padrão; mensagem sem arquivo no storage). Sem ele
+ * a linha ficava null para sempre, e o drain — que espera a mídia da CONVERSA —
+ * segurava a resposta do texto seguinte até o teto.
+ */
+export const DERIVACAO_TERMINADA: ReadonlySet<string> = new Set(["ready", "failed", "skipped"]);

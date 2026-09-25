@@ -48,6 +48,7 @@ const FLUXO: FollowupFlowDetailRow = {
   draft_graph: null,
   handoff_policy: "pause",
   trigger_config: {},
+  surface: "followup",
   created_at: "2026-09-01T00:00:00.000Z",
   updated_at: "2026-09-01T00:00:00.000Z",
   versions_count: 1,

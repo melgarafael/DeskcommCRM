@@ -2,7 +2,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
-import { PROVEDORES } from "@/lib/ai/pontos/provedores";
+import type { PROVEDORES, ProvedorComChave } from "@/lib/ai/pontos/provedores";
 
 /**
  * Derivado de `lib/ai/pontos/provedores.ts` — a lista única desde a migration
@@ -14,7 +14,11 @@ export type Provider = (typeof PROVEDORES)[number]["id"];
 export interface CredentialRow {
   id: string;
   organization_id: string;
-  provider: Provider;
+  /**
+   * A união, não `Provider`: a linha pode ser a chave do Jev, que não conversa.
+   * `Provider` segue sendo só quem conversa — é o que o agente escolhe.
+   */
+  provider: ProvedorComChave;
   label: string;
   api_key_last4: string | null;
   validated_at: string | null;

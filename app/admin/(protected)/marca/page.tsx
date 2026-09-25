@@ -102,6 +102,7 @@ export default async function Page() {
         }}
         nomeEmVigor={marca.name}
         logoEmVigor={marca.logoUrl}
+        logoEscuroEmVigor={marca.logoDarkUrl}
         logoDoAmbiente={semOArquivo.logoUrl}
         origens={marca.origens}
         // `seeded_from_env` ligado significa que a linha é cópia do arquivo de

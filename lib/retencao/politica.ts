@@ -165,6 +165,34 @@ export const RETENCAO_AVISO_DE_CASO_DIAS_PADRAO = 180;
  */
 export const RETENCAO_AVISO_DE_CASO_DIAS_PISO = 30;
 
+/**
+ * 365 dias para os CANDIDATOS da prospecção nativa (`prospecting_candidates`,
+ * migration 0369; expurgo na 0408, issue #1313).
+ *
+ * Guarda nome, telefone, endereço e identificador de lugar — a pessoa que mais
+ * cedo ou mais tarde vai ser abordada, e que em muitos casos nunca falou com a
+ * empresa. Um ano é a decisão do dono do projeto (24/09/2026, PR #1577),
+ * alinhado ao horizonte da conversa do caso e da captação: depois disso o
+ * funil responde por EVENTOS, não por raspagem parada.
+ *
+ * Quem APLICA é `fn_expurgar_prospeccao_vencida` (migration 0408), chamada em
+ * lotes pelo cron `data-retention` — e o piso mora DENTRO do corpo da função,
+ * `greatest(...)`, como as sete irmãs: só assim ele vale para qualquer
+ * chamador, inclusive um `psql` na mão.
+ *
+ * Duas guardas que a função impõe e esta declaração não pode expressar:
+ * - `status not in ('queued','sending')` — trabalho vivo nunca entra no
+ *   expurgo, em nenhuma idade;
+ * - `suppression_salt is null` — os tokens de supressão (`suppression_salt`,
+ *   `suppression_place`, `suppression_phone`) de quem exerceu opt-out/exclusão
+ *   NUNCA são expurgados: é o tombstone que faz o trigger
+ *   `prospecting_refuse_erased` barrar a reimportação futura da mesma pessoa.
+ *   Expurgá-lo reabriria a porta que a anonimização (0370) fechou.
+ */
+export const RETENCAO_PROSPECCAO_DIAS_PADRAO = 365;
+export const RETENCAO_PROSPECCAO_DIAS_PISO = 90;
+
+
 export interface RetencaoInterpretada {
   /** Dias a pedir ao banco. Nunca abaixo do piso, nunca `NaN`. */
   readonly dias: number;

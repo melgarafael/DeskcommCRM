@@ -265,3 +265,35 @@ describe('adapter WAHA', () => {
     });
   });
 });
+
+describe('adapter WAHA — alterar mensagem enviada', () => {
+  it('edita pelo id completo reconstruído a partir da cauda gravada no envio', async () => {
+    const fetchMock = stubWaha({});
+    await getAdapter('waha').editMessage!({
+      organizationId: ORG, sessionRef: 'numero-1', recipient: '5511999999999@c.us',
+      externalId: 'ABC', text: 'depois',
+    });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`${WAHA_BASE}/api/numero-1/chats/5511999999999%40c.us/messages/true_5511999999999%40c.us_ABC`);
+    expect(init.method).toBe('PUT');
+  });
+
+  it('id completo gravado pelo webhook vence o endereço do contato', async () => {
+    const fetchMock = stubWaha({});
+    await getAdapter('waha').revokeMessage!({
+      organizationId: ORG, sessionRef: 's', recipient: '5511999999999@c.us',
+      externalId: 'true_123@lid_ABC',
+    });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`${WAHA_BASE}/api/s/chats/123%40lid/messages/true_123%40lid_ABC`);
+    expect(init.method).toBe('DELETE');
+  });
+
+  it('sem endereço possível, recusa antes de ir à rede', async () => {
+    const fetchMock = stubWaha({});
+    await expect(getAdapter('waha').revokeMessage!({
+      organizationId: ORG, sessionRef: 's', recipient: null, externalId: 'ABC',
+    })).rejects.toThrow('recipient_unavailable');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

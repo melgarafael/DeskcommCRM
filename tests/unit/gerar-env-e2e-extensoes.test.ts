@@ -47,6 +47,9 @@ exit 2
       expect(ambiente).toContain(`NEXT_PUBLIC_APP_URL=http://localhost:${porta || "3001"}\n`);
       expect(ambiente).toContain("NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321\n");
       expect(ambiente).toContain("EXTENSIONS_LOCAL_CATALOG_ORIGIN=http://127.0.0.1:56331\n");
+      // A spec do Jev sobe o dublê nesta porta; o servidor sob teste só o
+      // alcança se o gerador a escrever.
+      expect(ambiente).toContain("JEV_API_BASE_URL=http://127.0.0.1:3996\n");
       expect(ambiente).toContain(`CPF_ENCRYPTION_KEY=${chave}\n`);
       expect(ambiente).toContain("SENTRY_DSN=off\n");
     } finally {

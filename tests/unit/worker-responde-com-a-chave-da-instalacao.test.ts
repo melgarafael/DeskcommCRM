@@ -20,6 +20,13 @@
  * sem a rota (o prefixo é rota, não nome de modelo); sem chave nenhuma o
  * desfecho continua o mesmo; e id de outro provedor não passa a ser atendido
  * pela chave da OpenAI.
+ *
+ * E os DOIS CAMINHOS da escada de chave, medidos separadamente: quando a conta
+ * TEM credencial utilizável quem responde é ela (`credencial_da_organizacao`);
+ * quando a conta NÃO tem, quem responde é a chave da plataforma
+ * (`padrao`) — inclusive quando o provedor que a organização registrou não tem
+ * chave no ambiente, caso em que quem decide de quem é o id BARE é o catálogo
+ * `ai_models` e não uma tentativa com qualquer chave que exista.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -34,6 +41,8 @@ const estado = vi.hoisted(() => ({
   binding: null as Record<string, unknown> | null,
   credencial: null as Record<string, unknown> | null,
   settings: null as unknown,
+  /** Linha do catálogo `ai_models` para o id BARE que o teste usa. */
+  catalogo: null as Record<string, unknown> | null,
   leiturasDeOrganizacao: 0,
 }));
 
@@ -53,7 +62,9 @@ vi.mock("@/lib/supabase/admin", () => ({
               ? estado.binding
               : tabela === "organizations"
                 ? { settings: estado.settings }
-                : estado.credencial,
+                : tabela === "ai_models"
+                  ? estado.catalogo
+                  : estado.credencial,
         }),
       };
       return chain;
@@ -76,6 +87,7 @@ beforeEach(() => {
   estado.binding = null;
   estado.credencial = null;
   estado.settings = { llm: { provider: "openai" } };
+  estado.catalogo = { provider: "openai" };
   estado.leiturasDeOrganizacao = 0;
 });
 
@@ -157,5 +169,56 @@ describe("o worker responde com a chave da instalação", () => {
 
     expect(resolvido).not.toBeNull();
     expect(estado.leiturasDeOrganizacao).toBe(1);
+  });
+
+  it("caminho 1 — a chave da CONTA responde, sem chave nenhuma no ambiente", async () => {
+    // Sem `OPENAI_API_KEY` de propósito: quem paga é a credencial que a
+    // organização cadastrou e validou em IA › Credenciais.
+    estado.settings = { llm: { provider: "openai" } };
+    estado.credencial = { api_key_encrypted: "x", api_key_iv: "y", api_key_tag: "z" };
+
+    const resolvido = await resolverModeloDoPonto("bot_respond", ORG, MODELO_PADRAO_DA_OPENAI);
+
+    expect(resolvido).not.toBeNull();
+    expect(resolvido?.origem).toBe("credencial_da_organizacao");
+  });
+
+  it("caminho 2 — sem chave na conta, quem responde é a chave da PLATAFORMA", async () => {
+    envMock.OPENAI_API_KEY = "sk-openai";
+    estado.settings = { llm: { provider: "openai" } };
+
+    const resolvido = await resolverModeloDoPonto("bot_respond", ORG, MODELO_PADRAO_DA_OPENAI);
+
+    expect(resolvido).not.toBeNull();
+    expect(resolvido?.origem).toBe("padrao");
+  });
+
+  it("conta no provedor SEM chave no ambiente: o degrau é o do MODELO no catálogo", async () => {
+    // O caso que a issue #1181 descreve e que a main ainda não respondia: o
+    // gatilho semeia `anthropic` na organização, o instalador coletou só
+    // `OPENAI_API_KEY`, e o id BARE do catálogo é da OpenAI. A rota do provedor
+    // da conta não acha chave nenhuma, o ponto pedia silêncio com
+    // `ai_gateway_key_missing` — e a chave da instalação estava lá o tempo todo.
+    envMock.OPENAI_API_KEY = "sk-openai";
+    estado.settings = { llm: { provider: "anthropic" } };
+    estado.catalogo = { provider: "openai" };
+
+    const resolvido = await resolverModeloDoPonto("bot_respond", ORG, MODELO_PADRAO_DA_OPENAI);
+
+    expect(resolvido).not.toBeNull();
+    expect(resolvido?.origem).toBe("padrao");
+  });
+
+  it("o catálogo não vira passe livre: id de outro provedor continua sem resposta", async () => {
+    // Controle negativo do degrau novo: a instalação tem só a chave da OpenAI,
+    // mas o id é da Anthropic — mandá-lo para o endpoint da OpenAI seria
+    // adivinhar provedor, que é exatamente o freio do PR #151.
+    envMock.OPENAI_API_KEY = "sk-openai";
+    estado.settings = { llm: { provider: "anthropic" } };
+    estado.catalogo = { provider: "anthropic" };
+
+    const resolvido = await resolverModeloDoPonto("bot_respond", ORG, "claude-haiku-4-5");
+
+    expect(resolvido).toBeNull();
   });
 });

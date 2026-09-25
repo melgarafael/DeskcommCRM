@@ -34,6 +34,7 @@ describe("capabilities do canal intermediado", () => {
       voiceNote: "opus-only",
       groups: "limited",
       costPerMessage: true,
+      alteraMensagemEnviada: false,
     });
   });
 

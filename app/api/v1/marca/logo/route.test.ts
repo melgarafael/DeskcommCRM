@@ -22,7 +22,9 @@ import type { AuthUser } from "@/lib/auth/types";
  * quebra, sem ninguém notar — o portão aprovou a própria quebra.
  *
  * `tests/invariants/marca-logo.test.ts` já prova que a FUNÇÃO do banco
- * (`fn_definir_logo_da_organizacao`) recusa caminho fora do escopo dela. O que
+ * (`fn_definir_logo_da_organizacao`, hoje um invólucro da
+ * `fn_definir_logo_por_tema_da_organizacao`, que é a que a rota chama) recusa
+ * caminho fora do escopo dela. O que
  * faltava é a metade de cima: prova de que a ROTA, para `escopo=organizacao`,
  * nem CHEGA a tocar `platform_branding` — porque o bug de origem não estava na
  * função (que segue correta), estava na ROTA decidindo chamar a coisa errada.
@@ -158,7 +160,7 @@ describe("POST /api/v1/marca/logo — escopo organizacao nunca toca platform_bra
     ).not.toContain("platform_branding");
     // Controle POSITIVO: a escrita aconteceu pelo caminho certo — sem isto,
     // "não chamou platform_branding" seria indistinguível de "não escreveu nada".
-    expect(espiao.rpcChamadas.map((r) => r.nome)).toContain("fn_definir_logo_da_organizacao");
+    expect(espiao.rpcChamadas.map((r) => r.nome)).toContain("fn_definir_logo_por_tema_da_organizacao");
   });
 });
 

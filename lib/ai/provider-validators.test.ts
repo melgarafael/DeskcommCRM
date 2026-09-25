@@ -13,7 +13,7 @@ vi.mock("@/lib/env", () => ({
   },
 }));
 
-import { validateOpenRouterKey } from "@/lib/ai/provider-validators";
+import { validateOpenRouterKey, validateProviderKey, validateTypeSafeKey } from "@/lib/ai/provider-validators";
 
 /**
  * POR QUE ESTE ARQUIVO EXISTE
@@ -54,6 +54,7 @@ function fetchFalso(respostas: Record<string, { status: number; body?: unknown }
 beforeEach(() => {
   // Quem define a variável é o caso; nenhum caso herda a do anterior.
   delete envMock.OPENROUTER_BASE_URL;
+  delete envMock.JEV_API_BASE_URL;
 });
 
 afterEach(() => {
@@ -233,3 +234,58 @@ describe("gateway customizado via OPENROUTER_BASE_URL sem /key (#1376)", () => {
   });
 });
 
+
+/**
+ * O JEV (TypeSafe AI) prova a chave por `GET /v1/models`, que EXIGE credencial
+ * e não gasta token. Medido contra a API real: 401 com chave falsa, 403 sem
+ * chave, 200 com a real no formato `{ models: [{ name, ... }] }` — diferente do
+ * `{ data: [{ id }] }` dos outros, e é por isso que o nome do campo está preso.
+ */
+describe("validateTypeSafeKey", () => {
+  // O catálogo real (medido em 2026-09-23 com a chave paga) lista só os
+  // APELIDOS — a versão fixada `jev-1.13.0` não aparece aqui, embora o POST a
+  // aceite. `models_available` não serve para conferir a versão fixada.
+  const CATALOGO = {
+    models: [
+      { name: "jev-latest", description: "x", release_date: "2026-09-01" },
+      { name: "jev-preview", description: "x", release_date: "2026-09-01" },
+    ],
+  };
+
+  it("chave boa: bate no endpoint AUTENTICADO, com Bearer, e devolve os nomes", async () => {
+    const fetchFalsoJev = vi.fn(async (url: string, init?: RequestInit) => {
+      chamadas.push(url);
+      expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer apikey_boa");
+      return { ok: true, status: 200, json: async () => CATALOGO } as unknown as Response;
+    });
+    vi.stubGlobal("fetch", fetchFalsoJev);
+    const r = await validateTypeSafeKey("apikey_boa");
+    expect(r).toEqual({ ok: true, models: ["jev-latest", "jev-preview"] });
+    expect(chamadas).toEqual(["https://api.typesafe.ai/v1/models"]);
+  });
+
+  it.each([401, 403])("HTTP %i é chave recusada, no vocabulário da tela", async (status) => {
+    vi.stubGlobal("fetch", fetchFalso({ "/v1/models": { status } }));
+    const r = await validateTypeSafeKey("apikey_ruim");
+    expect(r).toEqual({ ok: false, error: "auth_failed_401" });
+  });
+
+  it("outra falha do fornecedor não é confundida com chave ruim", async () => {
+    vi.stubGlobal("fetch", fetchFalso({ "/v1/models": { status: 503 } }));
+    expect(await validateTypeSafeKey("apikey_x")).toEqual({ ok: false, error: "provider_status_503" });
+  });
+
+  it("o endereço segue a instalação (o dublê do e2e valida pelo mesmo caminho)", async () => {
+    envMock.JEV_API_BASE_URL = "http://127.0.0.1:4010/";
+    vi.stubGlobal("fetch", fetchFalso({ "/v1/models": { status: 200, body: CATALOGO } }));
+    await validateTypeSafeKey("apikey_x");
+    expect(chamadas).toEqual(["http://127.0.0.1:4010/v1/models"]);
+  });
+
+  it("o despacho por provedor chega nele (não cai em unknown_provider)", async () => {
+    vi.stubGlobal("fetch", fetchFalso({ "/v1/models": { status: 401 } }));
+    const r = await validateProviderKey("typesafe", "apikey_x");
+    expect(r).toEqual({ ok: false, error: "auth_failed_401" });
+    expect(chamadas).toEqual(["https://api.typesafe.ai/v1/models"]);
+  });
+});

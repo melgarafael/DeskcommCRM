@@ -21,6 +21,8 @@
  * e que dá para trocar.
  */
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 export interface ModeloDoCatalogo {
   model_id: string;
   is_default_for_provider?: boolean | null;
@@ -95,4 +97,36 @@ export function escolherModeloDoProvedor(
   })[0]!;
 
   return { escolhido: true, modelId: melhor.model_id, origem: "automatico" };
+}
+
+/**
+ * A mesma régua, lida do catálogo (`ai_models`) de um provedor.
+ *
+ * Existe para que quem grava o padrão da organização (o onboarding, o
+ * `bootstrap-owner.ts`) e quem o LÊ (`lib/ai/gateway-binding.ts`, quando o par
+ * gravado não se sustenta) escolham o mesmo modelo por construção, e não por
+ * três cópias da mesma consulta que envelhecem separadas.
+ *
+ * `null` é "não consegui ler o catálogo" — distinto de catálogo vazio, que é o
+ * estado legítimo de uma instalação OpenRouter antes do primeiro sync. Nunca
+ * lança: quem chama decide o que fazer sem a resposta.
+ */
+export async function escolherModeloNoCatalogo(
+  admin: SupabaseClient,
+  provider: string,
+): Promise<EscolhaDeModelo | null> {
+  try {
+    const { data, error } = await admin
+      .from("ai_models")
+      .select(
+        "model_id, is_default_for_provider, supports_tools, input_price_per_million_cents, output_price_per_million_cents",
+      )
+      .eq("provider", provider)
+      .is("deprecated_at", null);
+    if (error) return null;
+    return escolherModeloDoProvedor((data ?? []) as ModeloDoCatalogo[]);
+  } catch {
+    // O `null` já é a informação: todo chamador registra a leitura que falhou.
+    return null;
+  }
 }

@@ -8,20 +8,9 @@
  *
  * Timeout 5s, sem retry. Erros 401 são distintos de erros de rede.
  */
-import { PROVEDORES } from "@/lib/ai/pontos/provedores";
+import { baseDaApiDoJev } from "@/lib/ai/decisao/cliente";
+import type { ProvedorComChave } from "@/lib/ai/pontos/provedores";
 import { env } from "@/lib/env";
-
-/**
- * Os provedores cuja CHAVE este arquivo sabe validar.
- *
- * Derivado de `lib/ai/pontos/provedores.ts`, que é a lista única desde a
- * migration 0127 — quando ela era repetida à mão aqui, na rota de credenciais,
- * no diálogo da tela e em `lib/ai/agents/validation.ts`, a 0127 abriu o banco
- * para a OpenRouter e as quatro cópias continuaram recusando. O resultado era
- * uma tela que oferecia OpenRouter num ponto e não tinha onde cadastrar a
- * chave dela.
- */
-export type Provider = (typeof PROVEDORES)[number]["id"];
 
 export interface ValidationOk {
   ok: true;
@@ -259,8 +248,75 @@ export async function validateDeepSeekKey(apiKey: string): Promise<ValidationRes
   }
 }
 
+/**
+ * A Requesty prova a chave pelo `GET /v1/models` AUTENTICADO: chave inválida
+ * devolve 403 (medido), chave boa devolve 200 com os modelos que a conta pode
+ * usar, e nenhum token é gasto. Sem o header o endpoint também responde 200
+ * (é o catálogo público), por isso o header vai sempre. O endpoint próprio do
+ * painel é provado pela geração real (`lib/instalacao/prova-de-credito.ts`),
+ * como nos outros validadores.
+ */
+export async function validateRequestyKey(apiKey: string): Promise<ValidationResult> {
+  try {
+    const res = await timedFetch("https://router.requesty.ai/v1/models", {
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, error: "auth_failed_401" };
+    }
+    if (!res.ok) {
+      return { ok: false, error: `provider_status_${res.status}` };
+    }
+    const json = (await res.json()) as { data?: { id?: string }[] };
+    const models = (json.data ?? []).map((m) => m.id ?? "").filter(Boolean);
+    return { ok: true, models };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.name : "network_error" };
+  }
+}
+
+/**
+ * O Jev (TypeSafe AI) prova a chave pelo `GET /v1/models`, que EXIGE a
+ * credencial (medido: 401 com chave falsa, 403 sem chave, 200 com a real) e não
+ * gasta token. O formato do catálogo é `{ models: [{ name }] }`, diferente do
+ * `{ data: [{ id }] }` dos outros. A base é a mesma que o cliente usa, para o
+ * dublê do e2e validar pelo mesmo caminho.
+ */
+export async function validateTypeSafeKey(apiKey: string): Promise<ValidationResult> {
+  try {
+    const res = await timedFetch(`${baseDaApiDoJev()}/v1/models`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, error: "auth_failed_401" };
+    }
+    if (!res.ok) {
+      return { ok: false, error: `provider_status_${res.status}` };
+    }
+    const json = (await res.json()) as { models?: { name?: string }[] };
+    const models = (json.models ?? []).map((m) => m.name ?? "").filter(Boolean);
+    return { ok: true, models };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.name : "network_error" };
+  }
+}
+
+/**
+ * Valida a CHAVE de qualquer natureza — de quem conversa E de quem só decide (o
+ * Jev). Chave é chave: as duas se cadastram na mesma tela.
+ *
+ * O tipo é `ProvedorComChave` pelo nome, sem apelido: um `Provider` exportado
+ * daqui com o sentido da UNIÃO convivia com o `Provider` de
+ * `hooks/ai/useCredentials.ts`, que quer dizer o contrário (só quem conversa),
+ * e ficava invisível à catraca de `provedores-de-decisao-catraca.test.ts`.
+ * Derivado de `lib/ai/pontos/provedores.ts`, a lista única desde a migration
+ * 0127 — quando era repetida à mão aqui, a 0127 abriu o banco para a OpenRouter
+ * e as cópias continuaram recusando.
+ */
 export function validateProviderKey(
-  provider: Provider,
+  provider: ProvedorComChave,
   apiKey: string,
 ): Promise<ValidationResult> {
   switch (provider) {
@@ -274,9 +330,13 @@ export function validateProviderKey(
       return validateOpenRouterKey(apiKey);
     case "deepseek":
       return validateDeepSeekKey(apiKey);
+    case "requesty":
+      return validateRequestyKey(apiKey);
+    case "typesafe":
+      return validateTypeSafeKey(apiKey);
     default: {
-      // Sem `never` aqui: `Provider` agora é derivado de PROVEDORES, e a lista
-      // cresce sem que este arquivo saiba. Provedor novo cadastrado antes de
+      // Sem `never` aqui: o tipo é derivado das listas, e elas
+      // crescem sem que este arquivo saiba. Provedor novo cadastrado antes de
       // ganhar validador devolve um erro que DIZ isso, em vez de quebrar o
       // build de quem só acrescentou uma linha na lista.
       return Promise.resolve({ ok: false, error: `unknown_provider:${provider}` });

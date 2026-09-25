@@ -57,7 +57,7 @@ Ao finalizar um epic:
    **O que o CI reprova sozinho** — rode antes de abrir o PR e não terá surpresa:
 
    ```bash
-   pnpm cercas    # ~30 s: as guardas estruturais (baseline, MANIFEST, docs, workflows) — o que mais reprova PR
+   pnpm cercas    # ~30 s: as guardas estruturais (baseline, MANIFEST, docs, workflows, espanhol do i18n, fragmentos de .changes/) — o que mais reprova PR
    pnpm typecheck && pnpm lint && pnpm lint:channels && pnpm test:unit && pnpm test:shell && pnpm build
    pnpm test:db   # precisa de Docker; sobe um Postgres limpo e aplica o baseline
    ```

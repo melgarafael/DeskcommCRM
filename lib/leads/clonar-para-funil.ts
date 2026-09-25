@@ -199,6 +199,7 @@ export function montaPayloadDoClone(
 ): CreateLeadInput & {
   custom_fields: Record<string, unknown>;
   source_metadata: Record<string, unknown>;
+  dono_herdado: true;
 } {
   const dono: { owner_user_id?: string; owner_agent_id?: string } = {};
   if (origem.owner_user_id) dono.owner_user_id = origem.owner_user_id;
@@ -213,6 +214,9 @@ export function montaPayloadDoClone(
     value_cents: origem.value_cents ?? null,
     currency: origem.currency ?? "BRL",
     ...dono,
+    // O dono é o da origem: se ele não pode mais ser dono, o clone nasce sem
+    // dono em vez de a troca de funil falhar (ver `createLeadHandler`).
+    dono_herdado: true,
     expected_close_date: origem.expected_close_date ?? null,
     tags: origem.tags ?? [],
     source: origem.source ?? "manual",

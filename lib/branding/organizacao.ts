@@ -84,6 +84,7 @@ export function marcaDaOrganizacaoDeSettings(settings: unknown): MarcaDaOrganiza
     // não fosse string desceria para `logoDaCamada` e viraria uma URL montada a
     // partir de um objeto.
     logo_path: texto(envelope.logo_path),
+    ...(texto(envelope.logo_dark_path) ? { logo_dark_path: texto(envelope.logo_dark_path) } : {}),
   };
 }
 

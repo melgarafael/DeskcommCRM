@@ -7,6 +7,8 @@ import {
   montarBriefingDaPassagem,
   type EntradaDoBriefing,
 } from "@/lib/escalacao/briefing-da-passagem";
+import { corpoCurtoDoAviso, MARCA_DO_JEV } from "@/lib/escalacao/passagem";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 /**
  * A MONTAGEM DO BRIEFING DA PASSAGEM É ÚNICA — E SEPARA A PALAVRA DO CLIENTE DA
@@ -267,5 +269,32 @@ describe("buildHandoffSummary — o adaptador não muda o caminho que já existi
     expect(buildHandoffSummary(CHECKPOINT)).toBe(
       montarBriefingDaPassagem({ checkpoint: CHECKPOINT }).body,
     );
+  });
+});
+
+describe("D11 — a equipe sabe quando foi o Jev que percebeu a irritação", () => {
+  const comJev = { codigo: "low_sentiment" as const, percebidoPeloJev: true };
+
+  it("o resumo da passagem e o aviso da Central ganham a marca", () => {
+    expect(montarBriefingDaPassagem({ checkpoint: null, motivo: comJev }).body).toContain(
+      `O cliente demonstrou irritação na conversa ${MARCA_DO_JEV}`,
+    );
+    expect(corpoCurtoDoAviso({ motivoCodigo: "low_sentiment", percebidoPeloJev: true }, (t) => t)).toContain(
+      `O cliente demonstrou irritação na conversa ${MARCA_DO_JEV}`,
+    );
+  });
+
+  it("sem o Jev, a frase fica exatamente como era (controle)", () => {
+    const b = montarBriefingDaPassagem({ checkpoint: null, motivo: { codigo: "low_sentiment" } });
+    expect(b.body).not.toContain("Jev");
+    expect(corpoCurtoDoAviso({ motivoCodigo: "low_sentiment" }, (t) => t)).not.toContain("Jev");
+  });
+
+  it("a marca chega traduzida ao aviso da Central de quem usa em espanhol", () => {
+    const corpo = corpoCurtoDoAviso({ motivoCodigo: "low_sentiment", percebidoPeloJev: true }, (t) =>
+      traduzir(t, "es"),
+    );
+    expect(corpo).not.toContain(MARCA_DO_JEV);
+    expect(corpo).toContain(traduzir(MARCA_DO_JEV, "es"));
   });
 });

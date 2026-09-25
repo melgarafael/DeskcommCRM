@@ -20,7 +20,8 @@
  */
 import { audit } from "@/lib/audit";
 import { bufToBytea, encryptKey } from "@/lib/crypto/aes_gcm";
-import { validateProviderKey, type Provider } from "@/lib/ai/provider-validators";
+import type { ProvedorComChave } from "@/lib/ai/pontos/provedores";
+import { validateProviderKey } from "@/lib/ai/provider-validators";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
 export type ResultadoDeGuardar =
@@ -52,7 +53,7 @@ export interface PedidoDeGuardar {
   admin: ReturnType<typeof createAdminClient>;
   orgId: string;
   userId: string;
-  provider: Provider;
+  provider: ProvedorComChave;
   label: string;
   /** Plaintext. Vive só no escopo desta chamada — nunca persistido nem logado. */
   apiKey: string;
@@ -146,7 +147,7 @@ export interface PedidoDeRotacionar {
   orgId: string;
   userId: string;
   credentialId: string;
-  provider: Provider;
+  provider: ProvedorComChave;
   /** Presente = trocar a chave. Ausente = manter a atual. Plaintext: nunca logado. */
   apiKey?: string;
   /** Presente = trocar o rótulo. Ausente = manter. */
@@ -226,7 +227,7 @@ async function validarEmSegundoPlano(
   admin: ReturnType<typeof createAdminClient>,
   credentialId: string,
   organizationId: string,
-  provider: Provider,
+  provider: ProvedorComChave,
   apiKey: string,
 ): Promise<void> {
   try {

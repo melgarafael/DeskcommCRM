@@ -24,7 +24,7 @@ import {
   credentialsListQueryKey,
   type CredentialRow,
 } from "@/hooks/ai/useCredentials";
-import { PROVEDORES } from "@/lib/ai/pontos/provedores";
+import { ehProvedorDeDecisao, PROVEDORES_COM_CHAVE } from "@/lib/ai/pontos/provedores";
 import { descreverErroDeValidacao } from "@/lib/ai/credenciais/erro-de-validacao";
 import { useT } from "@/hooks/i18n/useT";
 
@@ -55,7 +55,8 @@ export function RotateCredentialDialog({ open, onOpenChange, credential }: Props
   const [apiKey, setApiKey] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<keyof FormValues, string>>>({});
-  const provedor = PROVEDORES.find((p) => p.id === credential.provider) ?? PROVEDORES[0];
+  const provedor =
+    PROVEDORES_COM_CHAVE.find((p) => p.id === credential.provider) ?? PROVEDORES_COM_CHAVE[0];
 
   const chaveMudou = apiKey.trim() !== "";
   const rotuloMudou = label.trim() !== credential.label;
@@ -75,7 +76,7 @@ export function RotateCredentialDialog({ open, onOpenChange, credential }: Props
     // A chave só é obrigatória a partir de 8 caracteres QUANDO existe uma nova;
     // em branco é "manter a atual", e é isso que impede renomear de girar a chave.
     if (chave !== "" && chave.length < 8) {
-      setErrors({ api_key: t("API key muito curta") });
+      setErrors({ api_key: t("Chave muito curta") });
       return;
     }
 
@@ -111,25 +112,38 @@ export function RotateCredentialDialog({ open, onOpenChange, credential }: Props
       await qc.invalidateQueries({ queryKey: credentialsListQueryKey });
 
       if (chaveMudou) {
-        // Mesma janela do cadastro: o resultado da validação chega depois da
-        // resposta, então a tela busca uma vez para refletir no card.
-        setTimeout(async () => {
-          await qc.invalidateQueries({ queryKey: credentialsListQueryKey });
-          const fresh = qc.getQueryData<CredentialRow[]>(credentialsListQueryKey);
-          const atual = fresh?.find((c) => c.id === credential.id);
-          if (atual?.models_available != null) {
-            toast.success(
-              `${t("Validada")} — ${atual.models_available.length} ${t("modelos disponíveis.")}`,
-            );
-          } else if (atual?.validation_error) {
-            const erro = descreverErroDeValidacao(atual.validation_error);
-            toast.error(
-              erro.generico
-                ? `${t("Falha na validação")} (${atual.validation_error}).`
-                : t(erro.frase),
-            );
+        // O teste da chave nova roda depois da resposta. A lista só se relê
+        // sozinha enquanto a linha está "validando", e isso sai de
+        // `created_at`, que a troca não mexe: para ela, uma chave antiga
+        // trocada já está "sem validação". Uma releitura só, aos 3 s, perdia o
+        // teste que demorasse mais (o teto é 5 s por chamada, em
+        // lib/ai/provider-validators.ts) e o card — com o "Usada em" do Jev —
+        // só voltava recarregando a página. Relê até o veredito, por 10 s.
+        void (async () => {
+          for (const espera of [3000, 3000, 4000]) {
+            await new Promise((pronto) => setTimeout(pronto, espera));
+            await qc.invalidateQueries({ queryKey: credentialsListQueryKey });
+            const fresh = qc.getQueryData<CredentialRow[]>(credentialsListQueryKey);
+            const atual = fresh?.find((c) => c.id === credential.id);
+            if (atual?.validation_error) {
+              const erro = descreverErroDeValidacao(atual.validation_error, credential.provider);
+              toast.error(
+                erro.generico
+                  ? `${t("Falha na validação")} (${atual.validation_error}).`
+                  : t(erro.frase),
+              );
+              return;
+            }
+            if (atual?.validated_at) {
+              if (atual.models_available != null) {
+                toast.success(
+                  `${t("Validada")} — ${atual.models_available.length} ${t("modelos disponíveis.")}`,
+                );
+              }
+              return;
+            }
           }
-        }, 3000);
+        })();
       }
 
       await refreshCredentialsView();
@@ -153,9 +167,14 @@ export function RotateCredentialDialog({ open, onOpenChange, credential }: Props
         <DialogHeader>
           <DialogTitle>{t("Editar credencial")}</DialogTitle>
           <DialogDescription>
-            {t(
-              "Trocar a chave aqui mantém os agentes ligados nela: no próximo atendimento eles já usam a chave nova. Deixe a chave em branco para mudar só o nome.",
-            )}
+            {/* A chave do Jev não tem agente ligado nela: quem a usa é ele. */}
+            {ehProvedorDeDecisao(credential.provider)
+              ? t(
+                  "Trocar a chave aqui mantém o Jev ligado: na próxima mensagem ele já usa a chave nova. Deixe a chave em branco para mudar só o nome.",
+                )
+              : t(
+                  "Trocar a chave aqui mantém os agentes ligados nela: no próximo atendimento eles já usam a chave nova. Deixe a chave em branco para mudar só o nome.",
+                )}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
@@ -181,7 +200,7 @@ export function RotateCredentialDialog({ open, onOpenChange, credential }: Props
                 target="_blank"
                 rel="noreferrer"
               >
-                {t("Pegar chave em")} {provedor.rotulo}
+                {t("Onde pegar a chave")}
               </a>
             </div>
             <Input

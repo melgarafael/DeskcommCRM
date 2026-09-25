@@ -91,9 +91,14 @@ describe("config de atendimento — routing + visibilidade na mesma porta", () =
     // O contrato v1 já estava publicado. Se o corpo de antes deixasse de valer,
     // a mudança seria quebra de API disfarçada de feature nova.
     const antigo = { mode: "round_robin", max_retries: 3, backoff_seconds: 30 };
-    // O corpo antigo não conhece o prazo de devolução: no PATCH ele fica
-    // OMITIDO (e a mescla preserva o que vale), no schema do jsonb ele é null.
-    const { handoff_return_after_minutes: _padrao, ...semPrazo } = routingConfigSchema.parse(antigo);
+    // O corpo antigo não conhece o prazo de devolução nem "a conversa fica com
+    // quem atendeu": no PATCH eles ficam OMITIDOS (e a mescla preserva o que
+    // vale), no schema do jsonb eles têm o padrão (null e false).
+    const {
+      handoff_return_after_minutes: _padrao,
+      conversation_stays_with_attendant: _fica,
+      ...semPrazo
+    } = routingConfigSchema.parse(antigo);
     expect(atendimentoConfigPatchSchema.parse(antigo)).toEqual(semPrazo);
   });
 

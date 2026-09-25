@@ -1,5 +1,6 @@
 "use client";
 
+import { RoteirosDoContato } from "@/components/contacts/RoteirosDoContato";
 import { LeadEnrichment } from "./LeadEnrichment";
 import type { ProspectEnrichment } from "@/lib/prospecting/schema";
 import { useAuth } from "@/hooks/auth/AuthProvider";
@@ -761,6 +762,10 @@ export function CRMSidePanel({ conversation }: Props) {
         {!sectionsLoading && historico.length > 0 && <div className="mt-3 text-xs"><h4>{t("Histórico encerrado — sem tarefas pendentes")}</h4>{historico.map((h) => <p key={h.id}>{t(DESFECHO_LEGIVEL[h.desfecho] ?? h.desfecho)}{h.fechada_em ? ` · ${shortDate(h.fechada_em, localeDaData)}` : ""}</p>)}</div>}
       </section>
       <Separator />
+
+      {/* O que os roteiros de atendimento coletaram (módulo opcional; desligado
+          ou sem roteiro, não desenha nada). */}
+      {contactId && !contact?.is_anonymized && <RoteirosDoContato contactId={contactId} variante="painel" />}
 
       <section data-testid="inbox-campos-lead">
         <h3 className="text-xs font-semibold text-text">

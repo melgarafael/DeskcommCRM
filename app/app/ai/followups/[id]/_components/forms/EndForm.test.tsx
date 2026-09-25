@@ -8,9 +8,36 @@
  */
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
-import { EndForm } from "./EndForm";
+import { DICIONARIO } from "@/lib/i18n/dicionario";
+
+import { ACOES_AO_FINALIZAR, EndForm } from "./EndForm";
+
+// A lista de fluxos para encadear vem de um hook de rede; o teste isola o
+// formulário e fixa a lista (um ativo, um rascunho — só o ativo é oferecido).
+vi.mock("@/hooks/followup/useFollowupFlows", () => ({
+  useFollowupFlows: () => ({
+    data: [
+      {
+        id: "flow-b",
+        name: "Financiamento",
+        status: "active",
+        active_version_id: "ver-b",
+        handoff_policy: "none",
+        updated_at: "2026-09-17T00:00:00Z",
+      },
+      {
+        id: "flow-draft",
+        name: "Rascunho",
+        status: "draft",
+        active_version_id: null,
+        handoff_policy: "none",
+        updated_at: "2026-09-17T00:00:00Z",
+      },
+    ],
+  }),
+}));
 
 beforeAll(() => {
   // Radix Select usa pointer capture e scrollIntoView; o jsdom não implementa
@@ -58,5 +85,74 @@ describe("EndForm — seletor de resultado", () => {
 
     // O rótulo é português; o que desce para o grafo continua sendo o wire.
     expect(gravados).toEqual([{ outcome: "converted" }]);
+  });
+});
+
+describe("EndForm — encadear o próximo fluxo de atendimento", () => {
+  it("oferece a ação, lista os fluxos ATIVOS e grava o id escolhido", { timeout: TETO_MS }, async () => {
+    const gravados: Array<Record<string, unknown>> = [];
+    const user = usuario();
+    render(
+      <EndForm
+        config={{ outcome: "converted" }}
+        onChange={(c) => gravados.push(c as Record<string, unknown>)}
+        surface="atendimento"
+        flowId="flow-a"
+      />,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Ao concluir, o que fazer" }));
+    await user.click(
+      await screen.findByRole("option", { name: "Iniciar outro fluxo de atendimento" }),
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Próximo fluxo" }));
+    const fluxos = await screen.findAllByRole("option");
+    // O rascunho não aparece (só fluxo ativo encadeia), nem o próprio roteiro
+    // (o motor ignoraria calado — prova prática do #1130, J5).
+    expect(fluxos.map((f) => f.textContent)).toEqual(["Escolha um fluxo", "Financiamento"]);
+
+    await user.click(screen.getByRole("option", { name: "Financiamento" }));
+    expect(gravados.at(-1)).toEqual({
+      outcome: "converted",
+      ao_finalizar: { tipo: "proximo_fluxo", fluxo: "flow-b" },
+    });
+  });
+});
+
+describe("EndForm por superfície (PR 3 do port do #1130)", () => {
+  it("no FOLLOW-UP não há 'Ao concluir' (não existe para o relógio)", () => {
+    render(<EndForm config={{ outcome: "converted" }} onChange={() => {}} />);
+    expect(screen.getByRole("combobox", { name: "Resultado" })).toBeTruthy();
+    expect(screen.queryByRole("combobox", { name: "Ao concluir, o que fazer" })).toBeNull();
+  });
+
+  it("no ROTEIRO não há 'Resultado' — o desfecho é do motor", () => {
+    render(<EndForm config={{ outcome: "converted" }} onChange={() => {}} surface="atendimento" />);
+    expect(screen.queryByRole("combobox", { name: "Resultado" })).toBeNull();
+    expect(screen.getByRole("combobox", { name: "Ao concluir, o que fazer" })).toBeTruthy();
+  });
+
+  it("não oferece encadear no próprio roteiro", { timeout: TETO_MS }, async () => {
+    const user = usuario();
+    render(
+      <EndForm
+        config={{ outcome: "converted", ao_finalizar: { tipo: "proximo_fluxo", fluxo: "" } }}
+        onChange={() => {}}
+        surface="atendimento"
+        flowId="flow-b"
+      />,
+    );
+    await user.click(screen.getByRole("combobox", { name: "Próximo fluxo" }));
+    const fluxos = await screen.findAllByRole("option");
+    expect(fluxos.map((f) => f.textContent)).toEqual(["Escolha um fluxo"]);
+  });
+});
+
+describe("tradução das ações ao concluir", () => {
+  // Saem de um `.map()` — a varredura de texto do i18n não as vê.
+  it("toda ação tem espanhol no dicionário", () => {
+    const sem = ACOES_AO_FINALIZAR.filter(({ rotulo }) => !DICIONARIO[rotulo]?.es).map((a) => a.rotulo);
+    expect(sem).toEqual([]);
   });
 });

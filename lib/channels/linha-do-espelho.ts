@@ -76,3 +76,44 @@ export async function linhaDoEspelho<T>(
     .maybeSingle();
   return { data: (semConexao.data as T | null) ?? null, error: semConexao.error };
 }
+
+/** O mínimo de um cliente `pg` que esta consulta usa (o `Pool` do agent-engine encaixa). */
+export interface ConsultaSql {
+  query<R>(sql: string, params: unknown[]): Promise<{ rows: R[] }>;
+}
+
+/**
+ * A MESMA regra de `linhaDoEspelho`, para quem fala SQL direto (a ferramenta
+ * `send_template` do agente, que roda com o `pg` do agent-engine): a linha da
+ * conexão tem precedência; na falta dela, a linha sem conexão do canal oficial,
+ * só se a sessão é do canal oficial e só da WABA dela. Uma consulta, `limit 1`,
+ * com a precedência no `order by`.
+ *
+ * `colunas` é uma lista de colunas de `meta_templates` (sem prefixo).
+ */
+export async function definicaoNaConexao<R>(
+  db: ConsultaSql,
+  colunas: readonly string[],
+  chave: ChaveDaDefinicao & { channelSessionId: string },
+): Promise<R | null> {
+  const lista = colunas.map((c) => `t.${c}`).join(", ");
+  const { rows } = await db.query<R>(
+    `select ${lista} from meta_templates t
+      where t.organization_id = $1 and t.name = $2 and t.language = $3
+        and (
+          t.channel_session_id = $4
+          or (
+            t.channel_session_id is null
+            and exists (
+              select 1 from channel_sessions s
+               where s.organization_id = $1 and s.id = $4
+                 and s.provider = $5 and s.meta_waba_id = t.waba_id
+            )
+          )
+        )
+      order by (t.channel_session_id is not null) desc
+      limit 1`,
+    [chave.organizationId, chave.name, chave.language, chave.channelSessionId, CHANNEL_PROVIDER_META],
+  );
+  return rows[0] ?? null;
+}

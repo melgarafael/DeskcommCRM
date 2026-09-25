@@ -27,6 +27,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { type NextRequest } from "next/server";
 
+import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import type { Actor } from "@/lib/api/handlers/types";
 import { fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
@@ -39,6 +40,7 @@ import {
   extractBearer,
   validateBearerToken,
 } from "@/lib/mcp/auth";
+import { JANELA_SEGUNDOS, TETO_DE_ESCRITA, TETO_POR_ORGANIZACAO } from "@/lib/mcp/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -59,10 +61,16 @@ export interface AuthDualOptions {
   requestId: string;
   /** `resource_type` gravado no audit `authz.denied` (ex.: "messages"). */
   resource: string;
-  /** Rank mínimo exigido nos DOIS modos. */
+  /** Rank mínimo exigido nos DOIS modos (salvo `tokenRole`). */
   role: Role;
   /** Scope exigido do token. Rotas de escrita usam `mcp:write`. */
   scope: string;
+  /**
+   * Rank mínimo do TOKEN, quando a tool MCP da mesma escrita exige mais que a
+   * sessão. Sem isto a rota REST vira atalho: o token que leva 403 pela tool
+   * passa pela rota, porque as duas chamam o mesmo handler.
+   */
+  tokenRole?: Role;
 }
 
 /**
@@ -71,7 +79,7 @@ export interface AuthDualOptions {
  */
 export async function resolveAuthDual(
   req: NextRequest,
-  { requestId, resource, role, scope }: AuthDualOptions,
+  { requestId, resource, role, scope, tokenRole }: AuthDualOptions,
 ): Promise<AuthDual> {
   const authHeader = req.headers.get("authorization");
 
@@ -96,7 +104,7 @@ export async function resolveAuthDual(
 
     try {
       ensureScope(auth.scopes, scope);
-      ensureRole(auth.role, role);
+      ensureRole(auth.role, tokenRole ?? role);
     } catch (err) {
       if (err instanceof McpAuthError) {
         return {
@@ -127,4 +135,48 @@ export async function resolveAuthDual(
     idioma: authz.user.idioma,
     via: "session",
   };
+}
+
+/**
+ * Teto de escrita POR TOKEN e agregado POR ORGANIZAÇÃO — os mesmos números de
+ * `/api/v1/messages` e do MCP (`lib/mcp/rate-limit.ts`, #1491).
+ *
+ * Toda rota que aceita Bearer está em `PUBLIC_PATHS`, e isso quer dizer que não
+ * há estrangulamento a montante: o que não for contado na rota não é contado em
+ * lugar nenhum. Pela sessão não há teto — quem digita é uma pessoa — e por isso
+ * a sessão devolve `null` sem tocar no contador.
+ *
+ * `recurso` separa os baldes por rota (`leads:tok:…`, `agenda:tok:…`): uma
+ * integração em laço numa rota não come a cota da outra.
+ */
+export async function tetoDeEscritaDoToken(
+  authz: Extract<AuthDual, { ok: true }>,
+  recurso: string,
+  requestId: string,
+): Promise<Response | null> {
+  if (authz.via !== "token") return null;
+  const { actor, organizationId } = authz;
+  const tokenId = actor.type === "ai_agent" ? (actor.api_token_id ?? actor.id) : actor.id;
+
+  // Sequencial de propósito: `checkRateLimit` INCREMENTA ao consultar, e a
+  // chamada já recusada pelo teto do token não deve gastar a cota da org.
+  const teto = await checkRateLimit(`${recurso}:tok:${tokenId}`, TETO_DE_ESCRITA, JANELA_SEGUNDOS);
+  if (!teto.allowed) {
+    return fail("rate_limited", "Too many requests.", 429, {
+      requestId,
+      headers: { "Retry-After": String(JANELA_SEGUNDOS) },
+    });
+  }
+  const tetoOrg = await checkRateLimit(
+    `${recurso}:org:${organizationId}`,
+    TETO_POR_ORGANIZACAO,
+    JANELA_SEGUNDOS,
+  );
+  if (!tetoOrg.allowed) {
+    return fail("rate_limited", "Too many requests for organization.", 429, {
+      requestId,
+      headers: { "Retry-After": String(JANELA_SEGUNDOS) },
+    });
+  }
+  return null;
 }

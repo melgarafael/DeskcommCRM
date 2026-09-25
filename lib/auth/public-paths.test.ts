@@ -69,8 +69,6 @@ describe("isPublicPath", () => {
   });
 
   it("nem um sub-path do lead (clone, move, lose, win, …) passa de carona", () => {
-    expect(
-      isPublicPath("/api/v1/leads/11111111-1111-4111-8111-111111111111/clone"),
-    ).toBe(false);
+    expect(isPublicPath("/api/v1/leads/11111111-1111-4111-8111-111111111111/clone")).toBe(false);
   });
 });

@@ -10,6 +10,7 @@ import { serviceFromMessage } from "@/lib/atendimento/origem-mensagem";
  */
 
 import type { EventHandler, HandlerResult } from "@/lib/event-log/dispatcher";
+import { CHAVES_DO_CLIMA } from "@/lib/ai/decisao/metadados-do-clima";
 import { triggerHandoff } from "@/lib/ai/handoff/orchestrator";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
@@ -26,6 +27,9 @@ export const aiHandoffFromSentimentHandler: EventHandler = {
       (row.payload?.["conversation_id"] as string | undefined) ?? null;
     const sentimentScore =
       (row.payload?.["sentiment_score"] as number | undefined) ?? null;
+    /** Qual motor mediu — a passagem marca "(percebido pelo Jev)" quando foi ele. */
+    const sentimentEngine =
+      (row.payload?.[CHAVES_DO_CLIMA.motor] as string | undefined) ?? null;
 
     if (!messageId && !conversationIdHint) {
       return {
@@ -69,6 +73,7 @@ export const aiHandoffFromSentimentHandler: EventHandler = {
       leadId,
       metadata: {
         sentiment_score: sentimentScore,
+        [CHAVES_DO_CLIMA.motor]: sentimentEngine,
         message_id: messageId,
         source: "ai.sentiment_alert",
       },
