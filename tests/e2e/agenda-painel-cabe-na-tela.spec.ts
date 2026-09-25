@@ -88,7 +88,7 @@ async function entrar(page: Page, creds: Creds) {
   await page.goto("/login");
   await page.getByLabel(/e-?mail/i).fill(usuario.email);
   await page.getByLabel(/senha/i).fill(creds.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/app(\/|$)/, { timeout: 20_000 });
 }
 
@@ -336,3 +336,72 @@ test("dá para CLICAR num horário — o teste final é a ação, não a medida"
 
   await page.screenshot({ path: "evidence/calendario/d1-painel-cabe-1280.png", fullPage: false });
 });
+
+/**
+ * JANELA BAIXA: o formulário rola até o Confirmar, e a marcação GRAVA.
+ *
+ * De `lg` para cima o Sheet era `lg:overflow-hidden` e o painel só tinha a
+ * altura que o formulário acima dele deixava. Em 1280×500 e 1024×560 isso é
+ * quase nada: horários e Confirmar ficavam cortados em silêncio. 390×700 é o
+ * controle empilhado, onde o Sheet sempre rolou.
+ *
+ * A roda do mouse, e não `scrollIntoViewIfNeeded`: o clique do Playwright rola
+ * até ancestrais com `overflow: hidden` — alcança o que a pessoa não alcança.
+ */
+for (const viewport of [
+  { width: 1024, height: 560 },
+  { width: 1280, height: 500 },
+  { width: 390, height: 700 },
+]) {
+  test(`o formulário rola com o mouse até confirmar e grava — ${viewport.width}×${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const creds = lerCreds();
+    await entrar(page, creds);
+    await abrirPainelComDiaEscolhido(page, creds.agenda!.tipo_nome);
+    await page.locator('[data-testid^="horario-"]').first().click({ timeout: 15_000 });
+
+    const dialog = page.getByRole("dialog");
+    const confirmar = page.getByTestId("confirmar-marcacao");
+    await expect(confirmar).toBeVisible();
+
+    // Volta ao topo e rola com a roda, em passos: um salto único passa do botão
+    // no celular, onde o formulário é curto.
+    await dialog.evaluate((el) => {
+      el.scrollTop = 0;
+    });
+    const bounds = await dialog.boundingBox();
+    if (!bounds) throw new Error("Formulário sem área na tela");
+    await page.mouse.move(bounds.x + 8, bounds.y + Math.min(150, bounds.height / 2));
+    for (let passo = 0; passo < 20; passo += 1) {
+      const botao = await confirmar.boundingBox();
+      if (botao && botao.y >= 0 && botao.y + botao.height <= viewport.height) break;
+      await page.mouse.wheel(0, 200);
+      await page.waitForTimeout(100);
+    }
+    await expect.poll(() => dialog.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    await expect(confirmar).toBeInViewport({ ratio: 1 });
+
+    const geometria = await confirmar.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const alvo = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return { topo: r.top, base: r.bottom, janela: innerHeight, acerta: alvo !== null && el.contains(alvo) };
+    });
+    expect(geometria.topo).toBeGreaterThanOrEqual(0);
+    expect(geometria.base).toBeLessThanOrEqual(geometria.janela);
+    expect(geometria.acerta, "o botão está encoberto ou cortado por um ancestral").toBe(true);
+    expect(
+      await dialog.evaluate((el) => el.scrollWidth - el.clientWidth),
+      "nasceu transbordo horizontal no Sheet",
+    ).toBeLessThanOrEqual(1);
+
+    fs.mkdirSync("evidence/calendario", { recursive: true });
+    await page.screenshot({ path: `evidence/calendario/formulario-confirmar-${viewport.width}x${viewport.height}.png` });
+
+    const gravacao = page.waitForResponse(
+      (r) => r.request().method() === "POST" && new URL(r.url()).pathname === "/api/v1/agenda/agendamentos",
+    );
+    await confirmar.click();
+    expect((await gravacao).ok(), "o compromisso precisa ser gravado pelo backend").toBe(true);
+    await expect(page.getByText("Marcado.", { exact: true })).toBeVisible();
+  });
+}

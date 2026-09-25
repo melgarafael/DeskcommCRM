@@ -159,7 +159,7 @@ function imgNs(): string {
 
 /** Os três repositórios de imagem, na ordem em que `_common.sh` os declara. */
 function reposDoKit(): string[] {
-  return ["IMG_APP", "IMG_WORKER", "IMG_SCHEDULER"].map((chave) => {
+  return ["IMG_APP", "IMG_WORKER", "IMG_SCHEDULER", "IMG_VOICE_AGENT"].map((chave) => {
     const m = COMUM.match(new RegExp(`^${chave}="\\$\\{IMG_NS\\}/([^"]+)"$`, "m"));
     if (!m?.[1]) {
       throw new Error(
@@ -306,9 +306,14 @@ describe("o kit aponta para o que o CI realmente publica", () => {
     );
   });
 
-  it("as três imagens do kit são exatamente as três que o workflow constrói", () => {
+  it("as imagens do kit são exatamente as que o workflow constrói", () => {
+    // Eram três até a telefonia por SIP entrar como módulo opcional (#677) e
+    // trazer a quarta (`deskcomm-voice-agent`). O número não é o invariante — a
+    // IGUALDADE entre as duas listas é; prendê-lo em 3 fez este caso reprovar a
+    // imagem nova em vez de reprovar a divergência. Fica um piso, que é o que o
+    // caso precisa para não passar sobre lista vazia.
     const naMatriz = [...PUBLICA.matchAll(/^\s{10}- name: (\S+)$/gm)].map((m) => m[1]);
-    expect(naMatriz.length, "a matriz de publish-image.yml não tem mais três imagens").toBe(3);
+    expect(naMatriz.length, "a matriz de publish-image.yml veio vazia — o leitor cegou").toBeGreaterThanOrEqual(3);
     expect([...naMatriz].sort()).toEqual([...reposDoKit()].sort());
   });
 });

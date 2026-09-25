@@ -18,9 +18,11 @@ import type pg from 'pg';
 import { insertInboxItem } from '../../db/repository';
 import type { Logger } from '../../obs/logger';
 import { enqueueJob } from '../../queue/queue';
+import { decidirRajada } from './debounce';
 import { avisoDeEventoMorto, IA_QUE_NAO_RESPONDEU } from '@/lib/event-log/aviso-de-evento-morto';
 import { TIPOS_DERIVAVEIS, DERIVACAO_TERMINADA } from '@/lib/messaging/media/derivable';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
+import { deveCederTurnoAoRetorno } from '@/lib/followup/ceder-turno-ao-retorno';
 
 const DRAIN_CONSUMER = 'agent-engine';
 
@@ -340,6 +342,23 @@ async function processEvent(
     return 'processado';
   }
 
+  // UMA VOZ: se o gatilho "cliente voltou" enrollaria neste inbound, o LLM
+  // não responde por cima. Fail-open dentro do helper — consulta falha = turno segue.
+  if (
+    await deveCederTurnoAoRetorno(pool, {
+      organizationId: event.organization_id,
+      contactId: p.contact_id,
+      conversationId: p.conversation_id,
+      messageId: p.inbound_message_id,
+    })
+  ) {
+    log.info('drain: turno cedido ao follow-up de retorno — inbound_turn pulado', {
+      event_id: event.id,
+      contact_id: p.contact_id,
+    });
+    return 'processado';
+  }
+
   // GATE DE ELEGIBILIDADE (opt-in por canal — `metadata.ai_gate = 'allowlist'`).
   // Num canal 'open' (o default), `decidirElegibilidade` devolve `permite:true`
   // com motivo 'gate_aberto' e nada muda. Num canal 'allowlist', a IA só assume
@@ -395,32 +414,65 @@ async function processEvent(
   // baixado e transcrito — e o cliente recebia "recebi seu áudio, mas não
   // consigo ouvi-lo" segundos ANTES de a transcrição ficar pronta. Medido nesta
   // VPS: dispatch às 20:24:22, derivação só pedida às 20:25:03.
-  const { rows: msgRows } = await pool.query<{
+  //
+  // ─── A espera olha a CONVERSA, não a mensagem que disparou o evento ────────
+  //
+  // Antes olhava só `p.inbound_message_id`. Quando o cliente manda a FOTO e,
+  // logo depois, a pergunta em TEXTO ("isso é de vocês?"), o turno dispara pelo
+  // TEXTO — que não é derivável — e seguia sem esperar a visão da foto. O
+  // cliente recebia "me conta o que aparece nela?" sobre uma foto cujo texto
+  // derivado o próprio sistema terminou de gerar 3s depois. Medido nesta VPS,
+  // 24/09/2026: foto 13:28:16 · texto 13:28:19 · turno enfileirado 13:28:28 ·
+  // derivação concluída 13:28:35.
+  //
+  // O caso que isso quebra é o mais comum de todos: o cliente manda o
+  // COMPROVANTE e escreve "já paguei, e vocês estão me cobrando". A evidência e
+  // a alegação chegam em mensagens separadas, e o turno precisa das duas.
+  //
+  // A âncora do teto passou a ser a hora DA MÍDIA, não a do evento: é a idade
+  // da derivação que diz se ainda vale esperar. Mídia antiga e travada não segura
+  // o turno para sempre — sai do teto e o turno segue com o marcador `[tipo]`.
+  //
+  // E a hora da mídia é `created_at` — quando ELA CHEGOU A NÓS —, nunca
+  // `sent_at`. No inbound, `sent_at` é o timestamp do WhatsApp, o relógio do
+  // aparelho (a ingestão do canal, `dataDoTimestamp(p.timestamp)`): uma foto
+  // entregue com atraso (aparelho offline, canal reconectando) nasceria "além do
+  // teto" e o turno seguiria sem esperar a leitura que acabou de começar.
+  //
+  // `media_url is not null` é a pré-condição de TODA a esteira: sem ela o
+  // `media.persist_requested` nem é emitido, a derivação nunca é pedida e o
+  // status fica null para sempre — esperar por ela só atrasaria a resposta.
+  const { rows: midias } = await pool.query<{
     type: string;
     media_derived_status: string | null;
+    quando: string;
   }>(
-    `select type, media_derived_status from messages
-     where organization_id = $1 and id = $2`,
-    [event.organization_id, p.inbound_message_id],
+    `select type, media_derived_status, created_at as quando
+       from messages
+      where organization_id = $1
+        and conversation_id = $2
+        and direction = 'inbound'
+        and type = any($3::text[])
+        and media_url is not null
+      order by created_at desc
+      limit 20`,
+    [event.organization_id, p.conversation_id, [...TIPOS_DERIVAVEIS]],
   );
-  const msg = msgRows[0];
-  if (
-    msg !== undefined &&
-    TIPOS_DERIVAVEIS.has(msg.type) &&
-    !DERIVACAO_TERMINADA.has(msg.media_derived_status ?? '')
-  ) {
-    const esperandoHa = Date.now() - new Date(event.created_at).getTime();
+  // A mais RECENTE que ainda não terminou: é ela que o turno não pode perder.
+  const midia = midias.find((m) => !DERIVACAO_TERMINADA.has(m.media_derived_status ?? ''));
+  if (midia !== undefined) {
+    const esperandoHa = Date.now() - new Date(midia.quando).getTime();
     if (esperandoHa < TETO_ESPERA_DERIVACAO_MS) {
       log.info('drain: mídia ainda sendo transcrita — turno adiado', {
         event_id: event.id,
-        tipo: msg.type,
+        tipo: midia.type,
         esperando_ha_ms: esperandoHa,
       });
       return 'adiar';
     }
     log.warn('drain: derivação não concluiu no teto — seguindo sem o texto', {
       event_id: event.id,
-      tipo: msg.type,
+      tipo: midia.type,
       esperando_ha_ms: esperandoHa,
     });
   }
@@ -428,36 +480,22 @@ async function processEvent(
   // Coalescência: já existe job PENDING futuro deste contato → esta mensagem
   // entra de carona (o turno lê o histórico completo). Evento vira done.
   //
-  // ⚠️ `run_after > now()` sozinho casa com um job em HOLD (`enforceHolds`,
-  // session-watchdog.ts) — que usa `run_after = 'infinity'` como marcador, e
-  // 'infinity' É maior que `now()`. Um job em hold por sessão MORTA (WhatsApp
-  // reconectado, sessão antiga arquivada) nunca libera — a condição de
-  // liberação exige a MESMA sessão antiga voltar a 'WORKING', o que não
-  // acontece nunca. Sem esta exclusão, TODA mensagem nova do mesmo contato —
-  // inclusive na sessão NOVA — coalescia nesse job morto para sempre: o
-  // cliente escrevia, o evento saía "done" sem erro nenhum, e nenhum turno
-  // rodava. Medido em produção (2026-09-14): 6 mensagens ao longo de 7h,
-  // zero resposta, zero job novo — só o coalescing silencioso repetido no
-  // mesmo job com `held_run_after` no payload.
-  if (knobs.debounceMs > 0) {
-    const { rows: pendingRows } = await pool.query<{ id: string }>(
-      `select id from job_queue
-       where organization_id = $1 and contact_id = $2
-         and kind = 'inbound_turn' and status = 'pending' and run_after > now()
-         and not (payload ? 'held_run_after')
-       limit 1`,
-      [event.organization_id, p.contact_id],
-    );
-    if (pendingRows[0]) {
-      log.info('drain: rajada coalescida em job pendente', {
-        event_id: event.id,
-        job_id: pendingRows[0].id,
-      });
-      return 'processado';
-    }
+  // A janela e a exclusão do job em HOLD (`held_run_after` no payload — a lição
+  // do #830) moram em ./debounce.ts, com teste próprio.
+  const rajada = await decidirRajada(
+    pool,
+    { organizationId: event.organization_id, contactId: p.contact_id },
+    knobs.debounceMs,
+  );
+  if (rajada.tipo === 'coalescido') {
+    log.info('drain: rajada coalescida em job pendente', {
+      event_id: event.id,
+      job_id: rajada.jobId,
+    });
+    return 'processado';
   }
 
-  const runAfter = knobs.debounceMs > 0 ? new Date(Date.now() + knobs.debounceMs) : undefined;
+  const runAfter = rajada.runAfter;
   const { job, deduped } = await enqueueJob(pool, event.organization_id, {
     kind: 'inbound_turn',
     leadId: p.contact_id,

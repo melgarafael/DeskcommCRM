@@ -20,7 +20,8 @@ import { McpAuthError, ensureRole, ensureScope } from "@/lib/mcp/auth";
 import type { McpAuthResult } from "@/lib/mcp/auth";
 import { logger } from "@/lib/logger";
 import { allTools, getToolByName } from "@/lib/mcp/tools";
-import { catalogEntry } from "@/lib/mcp/tools/catalog";
+import { catalogEntry, deModuloDesligado } from "@/lib/mcp/tools/catalog";
+import type { ModuloOpcional } from "@/lib/instalacao/modulos";
 import { higienizarUuidsDeAterro } from "@/lib/mcp/uuid-de-aterro";
 import { recusaDeCapacidadeParaOModelo } from "@/lib/mcp/recusa-para-o-modelo";
 import type { McpContext, McpToolDefinition } from "@/lib/mcp/types";
@@ -47,8 +48,54 @@ export interface PickToolsInput {
    * direção segura é agir de menos.
    */
   pipelineIds?: readonly string[];
+  /**
+   * Módulos opcionais LIGADOS na instalação (`modulosLigados()`). Ausente vale
+   * como nenhum: capacidade de módulo não entra no turno sem que o chamador
+   * tenha perguntado — a direção segura, como a de `pipelineIds`.
+   */
+  modulosLigados?: readonly ModuloOpcional[];
   /** Mutable signal — runtime checks after each step. */
   handoffSignal: RuntimeHandoffSignal;
+  /**
+   * O CONTATO que este turno atende, quando o turno é de uma conversa.
+   *
+   * No motor do agente, "lead" é o CONTATO (`job.contact_id`), e é esse id que o
+   * modelo vê rotulado como lead. As ferramentas do catálogo chamam de
+   * `lead_id` o NEGÓCIO (`crm_leads.id`). Medido em produção: o assistente
+   * fechou um pedido e chamou `crm_update_lead` duas vezes com o id do contato
+   * — as duas recusadas, e o pedido confirmado ficou sem valor. Com o contato
+   * do turno à mão, esse id é traduzido para o negócio aberto dele.
+   */
+  contatoDoTurno?: string;
+}
+
+/**
+ * `lead_id` que é o id do CONTATO do turno → o negócio ABERTO desse contato.
+ *
+ * Só o contato do turno, e só quando o negócio aberto é um só: com dois
+ * abertos a escolha não é do runtime e o id segue como veio, para a recusa de
+ * sempre. Quem recusa é o guarda abaixo, não `resolveActiveLeadForContact` —
+ * ela só chama de ambíguo o EMPATE de atividade; fora dele, escolhe o mais
+ * recente, e uma escrita (valor, ganho/perdido) cairia num cartão por palpite.
+ * Falha de leitura também devolve o id intacto.
+ */
+export async function leadIdDoContatoDoTurno(
+  supabase: SupabaseClient,
+  organizationId: string,
+  contatoDoTurno: string | undefined,
+  leadId: unknown,
+): Promise<string | null> {
+  if (!contatoDoTurno || leadId !== contatoDoTurno) return null;
+  const { data, error } = await supabase
+    .from("crm_leads")
+    .select("id, organization_id, pipeline_id, status, last_activity_at, created_at")
+    .eq("organization_id", organizationId)
+    .eq("contact_id", contatoDoTurno);
+  if (error) return null;
+  const candidatos = (data ?? []) as LeadCandidate[];
+  if (candidatos.filter((l) => l.status === "open").length !== 1) return null;
+  const r = resolveActiveLeadForContact(candidatos);
+  return r.routed ? r.leadId : null;
 }
 
 const HANDOFF_TOOL_NAME = "crm_request_human_handoff";
@@ -86,6 +133,23 @@ function wrapMcpTool(
         (args ?? {}) as Record<string, unknown>,
       );
       const argsRecord = higiene.limpos;
+      if ("lead_id" in argsRecord) {
+        const traduzido = await leadIdDoContatoDoTurno(
+          input.supabase,
+          input.ctx.organizationId,
+          input.contatoDoTurno,
+          argsRecord.lead_id,
+        );
+        if (traduzido) {
+          logger.info("lead_id era o contato do turno — traduzido para o negócio aberto", {
+            tool: def.name,
+          });
+          argsRecord.lead_id = traduzido;
+        }
+      }
+      // O que vai ao audit não é necessariamente o que vai ao handler: a tool
+      // pode declarar como tirar PII dos args (ex.: valores de filtro).
+      const argsAudit = def.redigirParaAuditoria ? def.redigirParaAuditoria(argsRecord) : argsRecord;
       if (higiene.descartados.length > 0) {
         // Não é cosmético: sem esta linha o defeito passa a se curar em
         // silêncio e ninguém descobre que um modelo faz isso o tempo todo.
@@ -161,7 +225,7 @@ function wrapMcpTool(
           void auditMcpToolCall({
             ctx: input.ctx,
             toolName: def.name,
-            args: argsRecord,
+            args: argsAudit,
             durationMs: Date.now() - startedAt,
             success: false,
             errorMessage: `escopo_de_funil:${veredito.motivo}`,
@@ -197,7 +261,7 @@ function wrapMcpTool(
         void auditMcpToolCall({
           ctx: input.ctx,
           toolName: def.name,
-          args: argsRecord,
+          args: argsAudit,
           durationMs: Date.now() - startedAt,
           success: motivoDoVazio === null,
           ...(motivoDoVazio === null
@@ -210,7 +274,7 @@ function wrapMcpTool(
         void auditMcpToolCall({
           ctx: input.ctx,
           toolName: def.name,
-          args: argsRecord,
+          args: argsAudit,
           durationMs: Date.now() - startedAt,
           success: false,
           errorMessage: message,
@@ -266,6 +330,11 @@ export function pickToolsFromMcp(input: PickToolsInput): Record<string, Tool> {
     // A marca era declaração sem efeito no runtime: eu a criei no catálogo e
     // não a apliquei aqui. Não montar é o que faz a declaração valer.
     if (catalogEntry(def.name)?.apenasHumano) continue;
+
+    // Módulo opcional desligado nesta instalação (doc 37): a capacidade não
+    // existe aqui, então nem chega ao modelo — mesmo que a versão publicada do
+    // agente a tenha marcada de quando o módulo estava ligado.
+    if (deModuloDesligado(def.name, input.modulosLigados ?? [])) continue;
 
     result[def.name] = wrapMcpTool(def, input);
   }

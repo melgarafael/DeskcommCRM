@@ -129,4 +129,15 @@ describe("o instalador grava o provedor escolhido no banco", () => {
     expect(fonte).toContain("aplicarProvedorEscolhido");
     expect(fonte).toMatch(/process\.env\.AI_PROVIDER/);
   });
+
+  it("e os dois gravam o MODELO do provedor escolhido, não só o provedor", () => {
+    // Trocar só o provider deixava `{openai, claude-sonnet-5}`: o gatilho semeia
+    // o par da Anthropic, e o id dela ia à OpenAI. A escolha em si é provada em
+    // `lib/ai/agents/escolher-modelo.test.ts`; aqui, que os dois a usam.
+    const bootstrap = readFileSync("scripts/bootstrap-owner.ts", "utf8");
+    expect(bootstrap).toMatch(/escolherModeloNoCatalogo\(admin, escolhido\)/);
+    expect(bootstrap).toMatch(/default_model: modelo/);
+    const instalador = readFileSync("hostgator-setup-kit/install.sh", "utf8");
+    expect(instalador).toMatch(/'\{llm,default_model\}'/);
+  });
 });

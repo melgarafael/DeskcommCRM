@@ -56,9 +56,20 @@ import { env } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 
-export type ModoDeCadastro = "aberto" | "so_convite";
+/**
+ * `com_aprovacao` (migration 0383, recorte do PR #714): a conta é criada como
+ * no `aberto`, mas a empresa só nasce quando o administrador da instalação
+ * aprova o pedido em `/admin/cadastro`. Nasce DESLIGADO — o padrão continua
+ * `aberto` — por decisão do dono do produto (doc 24, Decisão 2 = d). Quem tem
+ * convite válido entra na empresa que convidou em qualquer modo.
+ */
+export type ModoDeCadastro = "aberto" | "com_aprovacao" | "so_convite";
 
-export const MODOS_DE_CADASTRO: readonly ModoDeCadastro[] = ["aberto", "so_convite"];
+export const MODOS_DE_CADASTRO: readonly ModoDeCadastro[] = [
+  "aberto",
+  "com_aprovacao",
+  "so_convite",
+];
 
 /**
  * O PISO da instalação: o que vale quando o banco nunca respondeu nesta vida do
@@ -147,7 +158,7 @@ function avisarUmaVez(
   avisado.add(chave);
   if (nivel === "erro") {
     logger.error(
-      "política de cadastro: SIGNUP_MODE no .env não é 'aberto' nem 'so_convite'; vale 'aberto'",
+      "política de cadastro: SIGNUP_MODE no .env não é 'aberto', 'com_aprovacao' nem 'so_convite'; vale 'aberto'",
       contexto,
     );
     return;

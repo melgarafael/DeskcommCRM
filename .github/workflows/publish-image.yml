@@ -4,12 +4,19 @@ name: Publicar imagem Docker (GHCR)
 # Container Registry. O leigo puxa no VPS (não builda lá). Roda nos runners do
 # GitHub, então o build pesado nunca cai no VPS do usuário.
 #
-# São TRÊS imagens, e a razão de o worker e o scheduler estarem aqui é um defeito
-# real: o serviço `worker` não tinha `image:` no compose de produção, só `build:`.
-# Serviço build-only é pulado por `docker compose pull` e imune a `up -d` sem
-# `--build` — ele era construído na VPS de cada cliente, no install, e NENHUM
-# update.sh jamais o reconstruiu. O runtime do agente de IA congelava no código
-# do dia da instalação. Doutrina: docs/doctrine/packaging.md, invariante 1.
+# São QUATRO imagens. As primeiras três (worker e scheduler inclusos) entraram
+# por um defeito real: esses serviços não tinham `image:` no compose de
+# produção, só `build:`. Serviço build-only é pulado por `docker compose pull`
+# e imune a `up -d` sem `--build` — ele era construído na VPS de cada cliente,
+# no install, e NENHUM update.sh jamais o reconstruiu. O runtime do agente de
+# IA congelava no código do dia da instalação. Doutrina: docs/doctrine/packaging.md,
+# invariante 1.
+#
+# `deskcomm-voice-agent` (módulo de voz SIP, #677) entrou pelo MESMO motivo,
+# antes mesmo de existir produção: o compose de voz nasceu com o mesmo
+# `build:` sozinho que o worker teve (hoje ele é o serviço `voice-agent`, profile
+# `telefonia`, em docker-compose.prod.yml) — publicar a imagem aqui evita repetir o
+# defeito no dia em que o módulo for instalado por um self-hoster de verdade.
 
 on:
   push:
@@ -166,7 +173,7 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     concurrency:
-      group: ${{ github.workflow }}-build-and-push-${{ matrix.name }}-${{ github.event.pull_request.number || github.ref }}
+      group: ${{ github.workflow }}-build-and-push-${{ matrix.name }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     permissions:
       contents: read
@@ -188,6 +195,9 @@ jobs:
           - name: deskcomm-scheduler
             dockerfile: Dockerfile.scheduler
             title: DeskcommCRM scheduler
+          - name: deskcomm-voice-agent
+            dockerfile: Dockerfile.voice-agent
+            title: DeskcommCRM voice agent
 
     steps:
       - uses: actions/checkout@v7
@@ -270,7 +280,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             APP_VERSION=${{ steps.ver.outputs.value }}
-          # Cache por imagem: as três têm camadas diferentes e um escopo único
+          # Cache por imagem: cada uma tem camadas diferentes, e um escopo único
           # faria uma sobrescrever o cache da outra a cada run.
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
@@ -301,7 +311,7 @@ jobs:
     # comentário do e2e-parte no e2e.yml.
     runs-on: ${{ vars.EXECUTOR_PROPRIO == 'ligado' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && 'deskcomm-proprio' || 'ubuntu-latest' }}
     concurrency:
-      group: ${{ github.workflow }}-imagem-do-app-sobe-${{ github.event.pull_request.number || github.ref }}
+      group: ${{ github.workflow }}-imagem-do-app-sobe-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     permissions:
       contents: read
@@ -455,7 +465,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Apontar `stable` para esta versão, nas três imagens
+      - name: Apontar `stable` para esta versão, em todas as imagens do conjunto
         env:
           VERSAO: ${{ github.ref_name }}
         run: |
@@ -466,14 +476,14 @@ jobs:
           # canal deixaria de ser o mesmo manifesto que a versão.
           dono=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
           numero="${VERSAO#v}"
-          for img in deskcommcrm deskcomm-worker deskcomm-scheduler; do
+          for img in deskcommcrm deskcomm-worker deskcomm-scheduler deskcomm-voice-agent; do
             echo "::group::${img}"
             docker buildx imagetools create \
               --tag "${REGISTRY}/${dono}/${img}:stable" \
               "${REGISTRY}/${dono}/${img}:${numero}"
             echo "::endgroup::"
           done
-          echo "stable agora aponta para ${numero} nas três imagens"
+          echo "stable agora aponta para ${numero} em todas as imagens do conjunto"
 
   # As imagens de FUNDO sobem — e o laço do event_log CARREGA? (issue #604)
   #
@@ -518,7 +528,7 @@ jobs:
     # comentário do e2e-parte no e2e.yml.
     runs-on: ${{ vars.EXECUTOR_PROPRIO == 'ligado' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && 'deskcomm-proprio' || 'ubuntu-latest' }}
     concurrency:
-      group: ${{ github.workflow }}-imagens-de-fundo-sobem-${{ github.event.pull_request.number || github.ref }}
+      group: ${{ github.workflow }}-imagens-de-fundo-sobem-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     # Só leitura, explícita: sem o bloco o GITHUB_TOKEN herda o default do
     # REPOSITÓRIO — configuração que vive fora do repo, muda num clique e não
@@ -560,6 +570,26 @@ jobs:
           tags: deskcomm-scheduler:pr
           cache-from: type=gha,scope=deskcommcrm-scheduler
           cache-to: ${{ github.event_name == 'pull_request' && 'type=gha,mode=max,scope=deskcommcrm-scheduler' || '' }}
+
+      # A QUARTA imagem (módulo opcional de telefonia, #677). Ela entrou na
+      # `main` sem nunca ter sido construída: `build-and-push` tem a matriz com
+      # as quatro, mas não roda em PR, e este job nomeava só worker e scheduler.
+      # O `imagens-ok` ficou verde e o defeito — a receita não copiava
+      # `patches/`, e o `pnpm install` morria com ENOENT — só apareceu no
+      # primeiro build de verdade, já na `main`, com a esteira de publicação
+      # travada. `tests/unit/toda-imagem-publicada-constroi-em-pr.test.ts`
+      # compara a matriz com os builds de PR e reprova quem esquecer a próxima.
+      - name: Build local da imagem do agente de voz (sem push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.voice-agent
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: deskcomm-voice-agent:pr
+          cache-from: type=gha,scope=deskcommcrm-voice-agent
+          cache-to: ${{ github.event_name == 'pull_request' && 'type=gha,mode=max,scope=deskcommcrm-voice-agent' || '' }}
 
       - name: O laço do event_log CARREGA dentro da imagem do worker?
         run: |
@@ -766,9 +796,12 @@ jobs:
           docker logs sched 2>&1 | tail -20
 
   # Job de fachada: dá UM nome estável para a branch protection exigir. Sem ele,
-  # o required check teria que listar as três instâncias da matriz pelo nome
-  # gerado, e acrescentar uma quarta imagem um dia quebraria o gate em silêncio —
-  # o merge voltaria a passar sem que ninguém tivesse decidido isso.
+  # o required check teria que listar cada instância da matriz pelo nome gerado,
+  # e acrescentar uma imagem quebraria o gate em silêncio — o merge voltaria a
+  # passar sem que ninguém tivesse decidido isso.
+  #
+  # A previsão deste comentário foi MEDIDA: a quarta imagem
+  # (`deskcomm-voice-agent`, #677) chegou em 20/09/2026 e o gate não se mexeu.
   imagens-ok:
     if: always()
     runs-on: ubuntu-latest

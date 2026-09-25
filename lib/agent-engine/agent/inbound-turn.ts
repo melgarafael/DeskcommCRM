@@ -1,3 +1,4 @@
+import { prospectingConversationContext } from "@/lib/prospecting/context";
 import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
 import { TIPOS_DE_CASO, TIPOS_DE_CASO_PARA_A_IA } from "@/lib/ai/case-copy";
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
@@ -69,6 +70,12 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { moverLeadParaEtapaDeHandoff } from '@/lib/leads/handoff-stage-move';
 import { detectUrgencySignal } from '../guardrails/sinal-de-urgencia';
 import { buildNativeMediaParts } from './media-parts';
+import {
+  copiarFotoNoStorage,
+  enviarComFotos,
+  prepararFotosDoProduto,
+  type FotoParaEnvio,
+} from './fotos-do-produto';
 import { enqueueJob, rescheduleJob, type JobRow, type Queryable } from '../queue/queue';
 import {
   applyLeadStateUpdate,
@@ -124,6 +131,9 @@ import {
 } from './entrega-de-capacidade';
 import { composeSystemPrompt, loadOrgMemory, renderOrgMemory } from './org-memory';
 import { matchesHandoffKeyword } from './agent-config';
+import { garantirPerguntaDoRoteiro, prepararRoteiroDoTurno } from './roteiro-no-turno';
+import { validarRespostaDoFluxo } from './flow-validate';
+import { moduloLigadoComMemo } from '@/lib/instalacao/modulos';
 import { msAteAJanelaAbrir } from './janela-de-atendimento';
 import { janelaDeEnvioAberta, proximaAberturaDaJanela } from '../pacing/engine';
 import { loadChannelKnobs } from '../pacing/store';
@@ -138,9 +148,11 @@ import {
   provideCaseUpdateInputSchema,
 } from './human-cases';
 import { buildMcpTurnTools } from '../edge/crm/mcp-tools';
+import { definicaoNaConexao } from '@/lib/channels/linha-do-espelho';
 import { cancelPendingCronsForLead } from '../cron/scheduler';
 import {
   latestInboundSignal,
+  recentInboundSignal,
   loadSkills,
   matchSkills,
   recordSkillMissCandidates,
@@ -153,7 +165,7 @@ import { loadChannelProvider, nomesDasFerramentas, runBeforeSend } from '../guar
 import { isStatusSendable } from '../../channels/meta/template-binding';
 import { capabilitiesOf } from '@/lib/channels/capabilities';
 import { renderTemplateBody } from '@/lib/channels/meta/render-template';
-import { esperarComoHumano } from './atraso-humano';
+import { acenderDigitando, esperarComoHumano } from './atraso-humano';
 import { sendInBubbles, splitForSend } from './split-message';
 import type { DisclosureMode } from '../guardrails/disclosure/template';
 import { decidePromise } from '../guardrails/promise/engine';
@@ -179,6 +191,7 @@ import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
+import { anotarUltimaInboundVista, ultimaInboundJaRespondida } from './turno-ja-respondido';
 
 /**
  * Superfície ESTÁTICA das tools do agente (description + inputSchema) — parte do
@@ -197,6 +210,13 @@ export const AGENT_TOOL_DEFS = {
       'Envia UMA mensagem de WhatsApp ao lead desta conversa. É o ÚNICO jeito de falar com o lead; texto fora desta tool nunca é enviado.',
     inputSchema: z.object({
       body: z.string().min(1).describe('corpo da mensagem, em pt-br, pronto para envio'),
+      produto_codigo: z
+        .string()
+        .optional()
+        .describe(
+          'código de um produto do catálogo (o `codigo` de crm_search_products) que tem `fotos`: ' +
+            'as fotos dele vão junto, e o texto vira a legenda da primeira',
+        ),
     }),
   },
   update_lead_state: {
@@ -2146,10 +2166,11 @@ async function executarTurnoDoAgente(
   // Ritual de abertura: playbook por ponteiro + checkpoint + contexto curado.
   // Com agente publicado, o system_prompt DELE é a camada tenant (platform de
   // compliance continua à frente, sempre).
+  const prospectingContext = !preview && input.conversationId ? await prospectingConversationContext(pool, tenantId, input.conversationId) : "";
   const playbook = await loadPlaybook(
     pool,
     tenantId,
-    agentConfig !== null ? { agentLayer: agentConfig.systemPrompt } : undefined,
+    agentConfig !== null ? { agentLayer: agentConfig.systemPrompt + prospectingContext } : undefined,
   );
   // Skills situacionais (F3-09): índice (name+description) SEMPRE residente — vai junto do
   // system do playbook, no prefixo estável org-wide (disclosure progressivo; cacheável F2-17).
@@ -2361,6 +2382,42 @@ async function executarTurnoDoAgente(
     return; // bot silencia: a confirmação já saiu, e nada mais sai neste turno
   }
 
+  // ROTEIRO DE ATENDIMENTO (módulo opcional `fluxos_atendimento`, #1130). Entra
+  // AQUI, depois de tudo que silencia o turno — handoff humano, pausa, pedido de
+  // humano, opt-out ambíguo — e nunca para contato bloqueado. Na prova prática,
+  // o roteiro começava antes dessas travas e abria para quem pedira para parar.
+  // Chave desligada: `null` sem consulta nenhuma. Ver `roteiro-no-turno.ts`.
+  const roteiro =
+    !preview && liveJob().kind === 'inbound_turn' && !optedOutThisTurn
+      ? await prepararRoteiroDoTurno(
+          {
+            pool,
+            moduloLigado: () => moduloLigadoComMemo(deps.crmCfg.supabase, 'fluxos_atendimento'),
+            validar: (args) =>
+              validarRespostaDoFluxo(
+                pool,
+                deps.llmCfg,
+                { tenantId, leadId, jobId: liveJob().id },
+                args,
+                { registry: deps.registry, log: runLog, aux: argsAux(undefined) },
+              ),
+            log: runLog,
+          },
+          {
+            organizationId: tenantId,
+            contactId: leadId,
+            conversationId: input.conversationId,
+            texto: currentInboundText,
+            messageId: input.inboundMessageId ?? null,
+            flowPointerDoRoteador: 'flowPointerId' in routed ? (routed.flowPointerId ?? null) : null,
+            mensagens: openingContext.context.messages.slice(-6).map((m) => ({
+              de: m.direction === 'inbound' ? ('cliente' as const) : ('loja' as const),
+              texto: m.body,
+            })),
+          },
+        )
+      : null;
+
   // F3-07: compaction + flush pré-compaction. Quando o histórico cresce além do limiar,
   // o FLUSH grava as notas duráveis (lead_notes) e a compaction resume a conversa com o
   // modelo BARATO; o resumo compactado entra no lugar do rolling summary e o transcript
@@ -2469,6 +2526,9 @@ async function executarTurnoDoAgente(
 
   // Estado do RUN — vive só neste closure (isolamento por construção, acc 3).
   let seq = 0;
+  // O que o modelo de fato mandou neste turno (depois da cadeia). A trava "a
+  // pergunta saiu?" do roteiro de atendimento lê daqui.
+  const corposEnviados: string[] = [];
   // Teto de mensagens físicas por turno (F2-15b) — `seq` JÁ é a contagem certa: ele só
   // avança quando o envio de fato sai pro canal (send_message + send_template, bolhas
   // incluídas), nunca em veto de gate. Checar `seq` antes de tentar o próximo envio
@@ -2571,9 +2631,24 @@ async function executarTurnoDoAgente(
   // montar rawTools (Fase 2): o gate de read_skill_reference precisa do resultado do match
   // para decidir se a tool entra no turno (mesmo padrão de gate de search_knowledge/
   // request_human_handoff, feito antes do wrapToolsWithBreaker).
+  // Sinal do matcher com o CONTEXTO recente (não só a última mensagem): a
+  // conversa sobre motos continua e a skill não pode "cair" quando o cliente
+  // responde a escolha ("A 2025"), senão as fotos da moto escolhida não saem.
+  //
+  // SÓ o matcher lê a janela. `skillSignal` segue sendo a ÚLTIMA inbound: ele
+  // também alimenta o classificador de jailbreak e os candidatos de divergência
+  // de estágio, e uma tentativa de jailbreak de cinco mensagens atrás não pode
+  // seguir marcando todo turno seguinte.
   const skillSignal = latestInboundSignal(effectiveContext.messages);
-  const skillMatch = matchSkills(skills, skillSignal);
-  const matchedSkillsBlock = renderMatchedSkillBodies(skillMatch.matched);
+  const sinalDoMatcher = recentInboundSignal(effectiveContext.messages);
+  const skillMatch = matchSkills(skills, sinalDoMatcher);
+  // Skills que o roteiro puxa neste passo entram JUNTO do match por palavra
+  // (o nó `skill` diz "puxe isto aqui"). O match vence o empate por nome.
+  const skillsDoRoteiro = (roteiro?.skills ?? [])
+    .map((nome) => skills.find((sk) => sk.name === nome))
+    .filter((sk): sk is (typeof skills)[number] => sk !== undefined)
+    .filter((sk) => !skillMatch.matched.some((m) => m.name === sk.name));
+  const matchedSkillsBlock = renderMatchedSkillBodies([...skillMatch.matched, ...skillsDoRoteiro]);
   if (!preview && deps.knobs.goldenCandidatesDir !== undefined) {
     await recordSkillMissCandidates(
       deps.knobs.goldenCandidatesDir,
@@ -2581,7 +2656,7 @@ async function executarTurnoDoAgente(
         tenantId,
         leadId,
         jobId: liveJob().id,
-        signal: skillSignal,
+        signal: sinalDoMatcher,
         candidates: skillMatch.missCandidates,
       },
       runLog,
@@ -2699,16 +2774,20 @@ async function executarTurnoDoAgente(
         // O texto RENDERIZADO vai como `body` da cadeia: os gates de promessa,
         // spinning e disclosure avaliam exatamente o que o contato vai ler. Sem
         // isso, "usar template" seria a forma de escapar dos guardrails de conteúdo.
-        const { rows } = await pool.query<{
-          components: unknown;
-          parameter_format: string;
-          status: string;
-        }>(
-          `select components, parameter_format, status from meta_templates
-            where organization_id = $1 and name = $2 and language = $3`,
-          [tenantId, template_name, language],
-        );
-        const linha = rows[0];
+        // A definição DESTA conexão (lib/channels/linha-do-espelho.ts): sem o
+        // escopo, com canal oficial e parceiro espelhando o mesmo nome, o agente
+        // renderizava e passava pelos gates o texto de OUTRO número.
+        const linha =
+          (await definicaoNaConexao<{
+            components: unknown;
+            parameter_format: string;
+            status: string;
+          }>(pool, ['components', 'parameter_format', 'status'], {
+            organizationId: tenantId,
+            name: template_name,
+            language,
+            channelSessionId: input.channelSessionId,
+          })) ?? undefined;
         if (linha === undefined) {
           return {
             ok: false,
@@ -2840,7 +2919,23 @@ async function executarTurnoDoAgente(
     }),
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
-      execute: async ({ body }) => {
+      execute: async ({ body, produto_codigo }) => {
+        // CORPO VAZIO NÃO SAI. Medido ao vivo (2026-09-19): o `gpt-4o-mini`
+        // chamou `send_message` várias vezes com corpo que virou vazio e o
+        // WhatsApp do cliente recebeu bolhas em branco. O schema garante
+        // min(1) no argumento, mas um `\n`/espaço passa e vira vazio depois do
+        // trim/gates. Recusar aqui devolve ao modelo para reescrever — nunca
+        // manda bolha em branco.
+        if (body.trim() === '') {
+          return {
+            ok: false,
+            error: {
+              code: 'corpo_vazio',
+              message:
+                'O texto da mensagem ficou vazio. Escreva a resposta de verdade e chame send_message de novo.',
+            },
+          };
+        }
         if (claimsCurrentInboundIsEmpty(body, mensagemDoJob)) {
           falseEmptyInboundVetoCount += 1;
           if (falseEmptyInboundVetoCount < MAX_VETOS_DE_FALSO_VAZIO) {
@@ -2873,6 +2968,24 @@ async function executarTurnoDoAgente(
                 'NÃO envie mais nada agora — encerre o turno e espere a resposta do lead.',
             },
           };
+        }
+        // A foto do produto (ideia de @vgamkt, #1130): preparada ANTES da cadeia e
+        // fora do lock do número — a cópia no Storage é rede. Código errado volta
+        // ao modelo sem enviar nada; foto que não copiou sai do envio e o texto
+        // segue (degradar para só texto). Ver `agent/fotos-do-produto.ts`.
+        let fotosDoProduto: FotoParaEnvio[] = [];
+        let fotosQueFaltaram = 0;
+        if (produto_codigo !== undefined && produto_codigo.trim() !== '' && !preview) {
+          const preparadas = await prepararFotosDoProduto(pool, copiarFotoNoStorage(runLog), {
+            tenantId,
+            conversationId: input.conversationId,
+            codigo: produto_codigo,
+          });
+          if (!preparadas.ok) {
+            return { ok: false, error: { code: preparadas.code, message: preparadas.message } };
+          }
+          fotosDoProduto = preparadas.fotos;
+          fotosQueFaltaram = preparadas.tinha - preparadas.fotos.length;
         }
         // F4-04: sinaliza (independente do gate F4-01/F4-08) se ESTA candidata é uma
         // promessa fora de tabela — usado só para correlacionar com o jailbreak no fim do
@@ -3000,29 +3113,50 @@ async function executarTurnoDoAgente(
             },
             // `finalBody` = corpo após a cadeia (o disclosureGate F4-05 pode prependar o
             // disclosure via inject); é ELE que vai ao canal, não o `body` capturado da tool.
-            send: (finalBody: string) =>
-              sendInBubbles(finalBody, {
-                enabled: agentConfig?.splitMessages ?? false,
-                maxChars: agentConfig?.splitMaxChars ?? 600,
-                sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
-                jitter: () => 1200 + Math.floor(Math.random() * 800), // piso no throttle anti-ban (1.2s) — bolhas são mensagens físicas
-                // A pausa humana do turno NÃO mora mais aqui: ela subiu para
-                // `esperaForaDoLock` (paga antes de o guardrail tomar o lock do número) —
-                // issue #654. Neste ponto fica só o jitter anti-ban entre bolhas.
-                send: (bubble): Promise<ChannelSendResult> => {
-                  seq += 1;
-                  return liveChannel().send({
-                    tenantId,
-                    leadId,
-                    jobId: liveJob().id,
-                    jobClaim: claimOfJob(liveJob()),
-                    agentOperation,
-                    seq,
-                    conversationId: input.conversationId,
-                    body: bubble,
-                  });
-                },
-              }),
+            send: (finalBody: string) => {
+              corposEnviados.push(finalBody);
+              const sleep =
+                deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+              const jitter = () => 1200 + Math.floor(Math.random() * 800); // piso no throttle anti-ban (1.2s) — bolhas são mensagens físicas
+              const enviar = (
+                corpo: string,
+                media?: FotoParaEnvio,
+              ): Promise<ChannelSendResult> => {
+                seq += 1;
+                return liveChannel().send({
+                  tenantId,
+                  leadId,
+                  jobId: liveJob().id,
+                  jobClaim: claimOfJob(liveJob()),
+                  agentOperation,
+                  seq,
+                  conversationId: input.conversationId,
+                  body: corpo,
+                  ...(media ? { media } : {}),
+                });
+              };
+              // Cada foto é uma mensagem física: só vão as que cabem no que resta do teto
+              // do turno (a checagem de `max_sends_per_turn` acima roda uma vez, antes).
+              // O resto é medido ANTES DE CADA FOTO, depois do texto: o texto acima do
+              // teto de legenda sai à parte e também gasta o teto.
+              return enviarComFotos(finalBody, fotosDoProduto, {
+                sleep,
+                jitter,
+                restantes: () => maxSendsPerTurn - seq,
+                enviarFoto: (foto, legenda) => enviar(legenda, foto),
+                enviarTexto: (texto) =>
+                  sendInBubbles(texto, {
+                    enabled: agentConfig?.splitMessages ?? false,
+                    maxChars: agentConfig?.splitMaxChars ?? 600,
+                    sleep,
+                    jitter,
+                    // A pausa humana do turno NÃO mora mais aqui: ela subiu para
+                    // `esperaForaDoLock` (paga antes de o guardrail tomar o lock do número) —
+                    // issue #654. Neste ponto fica só o jitter anti-ban entre bolhas.
+                    send: (bubble) => enviar(bubble),
+                  }),
+              });
+            },
           };
           let chain = await runBeforeSend(beforeSendArgs);
           if (chain.status === 'vetoed' && chain.code === 'case_promise_without_case') {
@@ -3140,7 +3274,17 @@ async function executarTurnoDoAgente(
           switch (outcome.kind) {
             case 'sent':
             case 'already_sent':
-              return { ok: true, status: 'enviada', message_id: outcome.messageId };
+              return {
+                ok: true,
+                status: 'enviada',
+                message_id: outcome.messageId,
+                ...(produto_codigo !== undefined ? { fotos_enviadas: fotosDoProduto.length } : {}),
+                ...(fotosQueFaltaram > 0
+                  ? {
+                      aviso: `${fotosQueFaltaram} foto(s) do produto não puderam ser enviadas; o texto foi. Não diga ao cliente que mandou essas fotos.`,
+                    }
+                  : {}),
+              };
             case 'queued':
               return {
                 ok: true,
@@ -3622,7 +3766,11 @@ async function executarTurnoDoAgente(
         }
         const mcp = await buildMcpTurnTools(
           deps.crmCfg,
-          { organizationId: tenantId, jobId: preview?.runId ?? liveJob().id },
+          {
+            organizationId: tenantId,
+            jobId: preview?.runId ?? liveJob().id,
+            ...(leadId ? { contactId: leadId } : {}),
+          },
           configDoTurno,
           runLog,
           preview ? { readOnly: true } : undefined,
@@ -3864,6 +4012,7 @@ async function executarTurnoDoAgente(
       stageHintBlock,
       splitHint,
       caseAwaitingLeadBlock,
+      roteiro?.bloco ?? '',
       preview?.feedback ? '## Revisão humana deste atendimento\n' + preview.feedback : '',
     ].filter((b) => b !== '');
     const openingText =
@@ -3889,6 +4038,18 @@ async function executarTurnoDoAgente(
         ? openingTextOnly
         : [{ role: 'user', content: [{ type: 'text', text: openingText }, ...nativeParts] }];
 
+    // "digitando…" ENQUANTO o modelo pensa. A pausa humana antes da 1ª bolha
+    // (`esperaForaDoLock`) desconta este tempo e quase sempre zera — e com espera
+    // zero ela não acende presença. Sem esta linha o cliente esperava a chamada
+    // inteira do modelo sem indicador nenhum. Só em turno que fala com o lead:
+    // turno de retaguarda não abre o WhatsApp de ninguém.
+    if (channel?.signalTyping && turnoVaiFalarComOLead(liveJob())) {
+      acenderDigitando(
+        () => channel.signalTyping!({ tenantId, conversationId: input.conversationId }),
+        runLog,
+      );
+    }
+
     // O modelo decide tools livremente dentro do teto de steps (knob AGENT_MAX_STEPS).
     //
     // Sem escolta LOCAL: quem cobre o teto de gasto é `runAgentTurn`, que envolve
@@ -3912,6 +4073,12 @@ async function executarTurnoDoAgente(
         messages: openingMessages,
         tools,
         maxSteps,
+        // Rascunho: a resposta é o send_message ACEITO; a etapa seguinte só
+        // "encerrava". Aceito, e não chamado: o envio vetado pela cadeia
+        // before_send volta ao modelo para ele reescrever (o 1º veto ensina).
+        ...(preview?.kind === 'assisted'
+          ? { pararQuando: () => preview.result.candidates.length > 0 }
+          : {}),
         ...(agentConfig !== null
           ? {
               model: agentConfig.model,
@@ -3956,6 +4123,60 @@ async function executarTurnoDoAgente(
       throw new Error('envio marcado como failed pelo CRM — run re-tentado pela fila');
     }
 
+    // ROTEIRO: a pergunta pendente é compromisso. Se o modelo não a fez, o motor
+    // a manda — pela MESMA cadeia de guardrails, dentro do teto de envios. Roda
+    // mesmo com o teto cheio: registrar que o MODELO fez a pergunta é o que a
+    // torna "a pergunta atual" no turno seguinte.
+    if (roteiro !== null) {
+      await garantirPerguntaDoRoteiro(
+        { pool, log: runLog },
+        {
+          organizationId: tenantId,
+          roteiro,
+          corposEnviados,
+          enviar: async (texto) => {
+            if (seq >= maxSendsPerTurn) return false;
+            const chain = await runBeforeSend({
+              pool,
+              log: runLog,
+              agentOperation,
+              tenantId,
+              leadId,
+              jobId: liveJob().id,
+              channelSessionId: input.channelSessionId,
+              body: texto,
+              optedOutThisTurn,
+              crmDailyLimit: null,
+              // A pergunta repete por design (foi feita e não respondida); o
+              // anti-blast vetaria justamente o que esta trava garante. Mesmo
+              // motivo do aviso de escalação.
+              enforceSpinning: false,
+              now: clock(),
+              sleep: deps.sleep,
+              lgpd,
+              ...(deps.knobs.disclosureMode !== undefined
+                ? { disclosureMode: deps.knobs.disclosureMode }
+                : {}),
+              send: (finalBody: string) => {
+                seq += 1;
+                return liveChannel().send({
+                  tenantId,
+                  leadId,
+                  jobId: liveJob().id,
+                  jobClaim: claimOfJob(liveJob()),
+                  agentOperation,
+                  seq,
+                  conversationId: input.conversationId,
+                  body: finalBody,
+                });
+              },
+            });
+            return chain.status !== 'vetoed' && (chain.outcome.kind === 'sent' || chain.outcome.kind === 'already_sent');
+          },
+        },
+      );
+    }
+
     // F3-10: poda os tool results antigos da fita do run ANTES de reenviá-los no fechamento
     // (é onde a fita inteira é re-serializada num prompt) — o conteúdo durável já foi para
     // lead_notes pelo flush (F3-07), então o stub não perde nada recuperável. Opera SÓ no
@@ -3972,6 +4193,25 @@ async function executarTurnoDoAgente(
     // turno. Aqui o lead já recebeu resposta, mas a conversa ficaria sem
     // checkpoint e sem dono, e o próximo inbound cairia no mesmo bloqueio, agora
     // sem nada tendo mudado no meio.
+    // Prévia sem candidato e sem impedimento: quem opera precisa saber que o agente não propôs nada.
+    const avisarSemCandidato = (p: NonNullable<typeof preview>): void => {
+      if (p.result.candidates.length === 0 && p.result.impediments.length === 0)
+        p.result.impediments.push({
+          code: 'no_candidate',
+          message: 'O agente não propôs uma resposta. Revise o cenário ou a configuração.',
+        });
+    };
+    // ⚠️ RASCUNHO (modo assistido) não fecha o turno com checkpoint. O checkpoint
+    // da prévia não é gravado (a prévia retorna antes do `insertCheckpoint`, logo
+    // abaixo) e o `reply-drafts.ts` não o lê — só a prévia de TESTE (sandbox) o
+    // mostra na tela. Mesmo assim, a chamada de fechamento segurava a entrega do
+    // rascunho: medido em produção (gpt-6-luna, 2026-09-24), resposta pronta às
+    // 12:32:40 e rascunho entregue às 12:32:56 — 16 dos 28 s que o operador
+    // esperava depois de clicar em "Sugerir resposta".
+    if (preview?.kind === 'assisted') {
+      avisarSemCandidato(preview);
+      return;
+    }
     const closing = await runModelCall(
       pool,
       deps.llmCfg,
@@ -4009,11 +4249,7 @@ async function executarTurnoDoAgente(
 
     if (preview) {
       preview.result.checkpoint = content;
-      if (preview.result.candidates.length === 0 && preview.result.impediments.length === 0)
-        preview.result.impediments.push({
-          code: 'no_candidate',
-          message: 'O agente não propôs uma resposta. Revise o cenário ou a configuração.',
-        });
+      avisarSemCandidato(preview);
       return;
     }
 
@@ -4420,6 +4656,26 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
       return;
     }
     if (operationAgent?.pausedAt) return;
+    // UMA RESPOSTA POR MENSAGEM: um turno que rodou antes deste pode ter lido a
+    // mensagem que acordou este job e já respondido a ela — ver o cabeçalho de
+    // `turno-ja-respondido.ts`, com o caso medido. A anotação vem DEPOIS da
+    // pergunta e ANTES de `runAgentTurn` ler a conversa: é ela que deixa o
+    // próximo turno fazer a mesma pergunta a respeito deste.
+    const alvo = {
+      organizationId: job.organization_id,
+      contactId: job.contact_id,
+      conversationId: payload.conversation_id,
+      jobId: job.id,
+    };
+    if (await ultimaInboundJaRespondida(pool, alvo)) {
+      deps.log.info('turno pulado — outro turno já viu e respondeu a última mensagem do cliente', {
+        job_id: job.id,
+        conversation_id: payload.conversation_id,
+        inbound_message_id: payload.inbound_message_id,
+      });
+      return;
+    }
+    await anotarUltimaInboundVista(pool, alvo);
     await runAgentTurn(deps, job, pool, ctx, {
       resolvedAgent,
       channelSessionId: payload.channel_session_id,

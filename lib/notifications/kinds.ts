@@ -5,6 +5,7 @@ export const NOTIFY_KINDS = {
   lead_won: { sound: "success", tagPrefix: "lead-won" },
   lead_lost: { sound: "failure", tagPrefix: "lead-lost" },
   mention: { sound: "attention", tagPrefix: "mention" },
+  call_inbound: { sound: "attention", tagPrefix: "call-inbound" },
 } as const;
 
 export type NotifyKind = keyof typeof NOTIFY_KINDS;

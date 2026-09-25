@@ -147,7 +147,7 @@ export interface SendInBubblesOpts<T extends BubbleOutcome = BubbleOutcome> {
  * em 1, não N — aceitável por ora (doutrina: "anti-ban gateia uma vez"); revisitar
  * se o warm-up precisar de precisão por mensagem física.
  */
-const OK_KINDS = new Set(["sent", "already_sent", "queued"]);
+export const OK_KINDS = new Set(["sent", "already_sent", "queued"]);
 
 /**
  * A decisão de fatiamento do `sendInBubbles`, exposta separadamente (issue #654).

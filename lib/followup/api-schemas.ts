@@ -6,13 +6,21 @@
  */
 import { z } from "zod";
 import { flowGraphSchema } from "./graph-schema";
+import { MAX_THRESHOLD_MINUTES, MIN_THRESHOLD_MINUTES } from "./gap-de-retorno";
 
-/** Vocabulário da coluna `surface` (0167). A UI não recorta mais por ela. */
-export const FOLLOWUP_FLOW_SURFACES = ["followup", "crm_automation"] as const;
+/**
+ * Vocabulário da coluna `surface` (0167; `atendimento` na 0394 — roteiro de
+ * perguntas conduzido no turno, módulo opcional `fluxos_atendimento`). A UI não
+ * recorta mais por ela; o CHECK do banco espelha esta tupla.
+ */
+export const FOLLOWUP_FLOW_SURFACES = ["followup", "crm_automation", "atendimento"] as const;
 export type FollowupFlowSurface = (typeof FOLLOWUP_FLOW_SURFACES)[number];
 
 export const createFollowupFlowSchema = z.strictObject({
   name: z.string().trim().min(1).max(80),
+  // Superfície do fluxo (default do banco = 'followup'). A tela de Atendimento
+  // cria com 'atendimento'; a de Follow-ups, sem o campo.
+  surface: z.enum(FOLLOWUP_FLOW_SURFACES).optional(),
 });
 
 // `cancel_on_reply` (Task 5.2 — reatividade): se true, um enrollment `waiting_reply`
@@ -28,6 +36,11 @@ export const triggerConfigSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("manual"), ...CANCEL_ON_REPLY }),
   z.strictObject({ kind: z.literal("webhook"), ...CANCEL_ON_REPLY }),
   z.strictObject({
+    kind: z.literal("lead_created"),
+    params: z.strictObject({}).optional(),
+    ...CANCEL_ON_REPLY,
+  }),
+  z.strictObject({
     kind: z.literal("stage_change"),
     params: z.strictObject({ stage_id: z.string().uuid() }),
     ...CANCEL_ON_REPLY,
@@ -36,6 +49,16 @@ export const triggerConfigSchema = z.discriminatedUnion("kind", [
     kind: z.literal("silence"),
     params: z.strictObject({
       threshold_minutes: z.number().int().min(5).max(10_080),
+      segments: z.array(z.string()).optional(),
+    }),
+    ...CANCEL_ON_REPLY,
+  }),
+  z.strictObject({
+    kind: z.literal("inbound_after_silence"),
+    params: z.strictObject({
+      // Piso 1h / teto 90 dias: `lib/followup/gap-de-retorno.ts`. A tela pede
+      // valor + unidade; o fio guarda só minutos.
+      threshold_minutes: z.number().int().min(MIN_THRESHOLD_MINUTES).max(MAX_THRESHOLD_MINUTES),
       segments: z.array(z.string()).optional(),
     }),
     ...CANCEL_ON_REPLY,

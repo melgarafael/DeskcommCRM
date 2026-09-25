@@ -4,6 +4,11 @@
 # Todos os guards precisam passar; qualquer um falhando bloqueia o commit.
 set -euo pipefail
 top="$(git rev-parse --show-toplevel)"
+# PRIMEIRO de todos, e por quê: os guards abaixo são os DESTE checkout (o `$top`
+# acima), e um checkout atrasado roda versões mais fracas deles sem ninguém ver.
+# Medido em 19/09/2026 nesta máquina: o checkout principal estava 3026 commits
+# atrás, com um freeze-invariants de 26 linhas contra 230 na `main`.
+"$top/loop/hooks/guard-hooks-atualizados.sh"
 "$top/loop/hooks/validate-features.sh"
 "$top/loop/hooks/check-migration-triple.sh"
 "$top/loop/hooks/freeze-invariants.sh"

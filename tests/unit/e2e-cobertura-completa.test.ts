@@ -150,6 +150,41 @@ describe("cobertura do e2e no CI", () => {
     ).toEqual(declaradas);
   });
 
+  it("as listas do workflow só contêm NOMES DE SPEC — palavra solta vira filtro no runner", () => {
+    /**
+     * O bloco vai para o shell como `playwright test $LISTA`, SEM aspas. Qualquer
+     * palavra que não seja um caminho de spec vira um FILTRO do Playwright — e
+     * filtro casa por substring, então uma palavra curta como `de` alcança dezenas
+     * de arquivos, inclusive os declarados FORA_DO_CI.
+     *
+     * Medido em 2026-09-20, no PR #1359: três linhas de comentário escritas DENTRO
+     * do bloco `>-` viraram texto do valor. O `#` vindo de variável NÃO comenta
+     * (provado em bancada: ele chega como argumento), então o runner recebeu
+     * `# Ao lado da navegacao de propósito: ...` como lista de filtros. Rodaram 70
+     * arquivos em vez de 33 — com specs que exigem WAHA/Resend — e o job estourou
+     * o teto de 30 min.
+     *
+     * ⚠️ E a cerca não pegou: `listaDoWorkflow` termina em
+     * `.filter((s) => s.endsWith(".spec.ts"))`, ou seja, ela DESCARTA em silêncio
+     * exatamente o lixo que quebra o comando. Este caso lê o bloco cru, sem esse
+     * filtro — é a diferença entre medir a lista e medir o que o shell recebe.
+     */
+    const cru = (chave: string): string[] => {
+      const re = new RegExp(`^\\s*${chave}:\\s*>-\\s*\\n((?:\\s{8,}\\S.*\\n)+)`, "m");
+      const m = re.exec(yml);
+      return m === null ? [] : m[1]!.split(/\s+/).map((t) => t.trim()).filter(Boolean);
+    };
+    for (const chave of ["SPECS_PARTE_1", "SPECS_PARTE_2", "SPECS_PARTE_3", "SPECS_PARTE_4", "SPECS_PARTE_5"]) {
+      const tokens = cru(chave);
+      expect(tokens.length, `${chave} não foi lida do workflow`).toBeGreaterThan(0);
+      const intrusos = tokens.filter((t) => !t.endsWith(".spec.ts"));
+      expect(
+        intrusos,
+        `${chave} tem palavra que não é spec: o runner receberia isso como FILTRO. Comentário vai ACIMA da chave, nunca dentro do bloco.`,
+      ).toEqual([]);
+    }
+  });
+
   it("toda spec do disco está em exatamente uma lista", () => {
     const declaradas = [...parte1, ...parte2, ...parte3, ...parte4, ...parte5, ...foraDoCi];
     const semLista = noDisco.filter((f) => !declaradas.includes(f));

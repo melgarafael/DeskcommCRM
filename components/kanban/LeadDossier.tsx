@@ -7,6 +7,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useLeadTimeline } from "@/hooks/leads/useLeadTimeline";
 import type { Lead } from "@/lib/types/leads";
+import { ContatoDoNegocio } from "./ContatoDoNegocio";
 import { ConversaNoDossie } from "./ConversaNoDossie";
 import { LeadFieldsForm } from "./LeadFieldsForm";
 import { ScoreSlot } from "./ScoreSlot";
@@ -131,6 +132,15 @@ export function LeadDossier({
         )}
 
         <ConversaNoDossie conversa={lead.conversa} />
+
+        {/* Os dados do CLIENTE: telefone e e-mail numa aba, links (Instagram,
+            site, Google Meu Negócio…) na outra. Vêm do contato, não do lead. */}
+        <section className="border-b border-border py-3">
+          <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">
+            {t("Contato")}
+          </h3>
+          <ContatoDoNegocio contactId={lead.contact_id} pipelineId={pipelineId} />
+        </section>
 
         {/* ② timeline */}
         <section className="flex-1 py-3">

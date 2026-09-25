@@ -41,8 +41,36 @@ export const routingConfigSchema = z.object({
     .max(PRAZO_MAX_MINUTOS)
     .nullable()
     .default(null),
+  /**
+   * "A conversa fica com quem atendeu" (ideia de @gustavorodcruz96, #1527).
+   * Desligado = o comportamento de sempre: a resposta humana cala a IA por
+   * alguns minutos e a conversa encerrada que recebe mensagem nova volta para a
+   * fila e para o roteamento. Ligado: responder pelo Inbox numa conversa sem
+   * dono a assume (a IA fica calada até alguém devolver), e a conversa
+   * encerrada volta direto para o último atendente, se ele ainda é da equipe.
+   *
+   * ⚠️ O BANCO LÊ ESTE CAMINHO EXATO: `fn_service_inbound` (migration 0396)
+   * compara `settings->'routing'->'conversation_stays_with_attendant'` com o
+   * booleano `true`. Renomear ou mover a chave desliga a reabertura em silêncio.
+   * No TypeScript, quem lê é `conversaFicaComQuemAtendeu()`, com a mesma régua.
+   */
+  conversation_stays_with_attendant: z.boolean().default(false),
 });
 export type RoutingConfig = z.infer<typeof routingConfigSchema>;
+
+/**
+ * Lê o ajuste "a conversa fica com quem atendeu" sem nunca lançar.
+ *
+ * A régua é a MESMA do banco: só o booleano `true` liga. Qualquer outra coisa
+ * (chave ausente, `"true"` em texto, outra chave de `routing` inválida ao lado)
+ * é desligado — o padrão de toda empresa que nunca abriu a tela.
+ */
+export function conversaFicaComQuemAtendeu(settings: unknown): boolean {
+  if (!settings || typeof settings !== "object") return false;
+  const routing = (settings as Record<string, unknown>).routing;
+  if (!routing || typeof routing !== "object") return false;
+  return (routing as Record<string, unknown>).conversation_stays_with_attendant === true;
+}
 
 /**
  * `organizations.settings.visibility_mode` — o escopo de leitura do role
@@ -81,6 +109,8 @@ export const atendimentoConfigPatchSchema = routingConfigSchema.extend({
     .max(PRAZO_MAX_MINUTOS)
     .nullable()
     .optional(),
+  /** Opcional pela mesma razão: cliente antigo não desliga o ajuste por omissão. */
+  conversation_stays_with_attendant: z.boolean().optional(),
 });
 export type AtendimentoConfigPatch = z.infer<typeof atendimentoConfigPatchSchema>;
 
@@ -99,7 +129,12 @@ export function mesclarSettingsDeAtendimento(
   atual: Record<string, unknown>,
   input: AtendimentoConfigPatch,
 ): { settings: Record<string, unknown>; routing: RoutingConfig } {
-  const { visibility_mode, handoff_return_after_minutes, ...routingInput } = input;
+  const {
+    visibility_mode,
+    handoff_return_after_minutes,
+    conversation_stays_with_attendant,
+    ...routingInput
+  } = input;
   const routingAtual = routingConfigSchema
     .catch(routingConfigSchema.parse({}))
     .parse(atual.routing ?? {});
@@ -109,6 +144,8 @@ export function mesclarSettingsDeAtendimento(
       handoff_return_after_minutes !== undefined
         ? handoff_return_after_minutes
         : routingAtual.handoff_return_after_minutes,
+    conversation_stays_with_attendant:
+      conversation_stays_with_attendant ?? routingAtual.conversation_stays_with_attendant,
   };
   const settings: Record<string, unknown> = { ...atual, routing };
   if (visibility_mode !== undefined) settings.visibility_mode = visibility_mode;

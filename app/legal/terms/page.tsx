@@ -66,7 +66,7 @@ export default async function TermsPage() {
         <h2 className="text-base font-semibold">{t("3. Sua conta")}</h2>
         <p>
           {t(
-            "O acesso é pessoal. Você é responsável por manter sua senha em segredo e pelo que for feito com a sua conta. Contas de administrador exigem verificação em duas etapas. Avise o operador imediatamente se suspeitar de acesso indevido.",
+            "O acesso é pessoal. Você é responsável por manter sua senha em segredo e pelo que for feito com a sua conta. A verificação em duas etapas é opcional e pode ser exigida por quem administra a empresa. Avise o operador imediatamente se suspeitar de acesso indevido.",
           )}
         </p>
       </section>

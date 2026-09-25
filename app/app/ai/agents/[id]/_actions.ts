@@ -137,8 +137,12 @@ export async function saveAgentDraftAction(
   // conferido depois, uma ordem inválida devolveria erro com a versão já
   // gravada; se fosse GRAVADO antes, um escopo inválido devolveria erro com o
   // nome já trocado — a lista mostrando o novo e o editor o velho.
-  // `agentMcpPatchSchema` é a régua que a rota REST já usa: uma quarta régua
-  // para o mesmo campo é o defeito seguinte.
+  // `agentMcpPatchSchema` NÃO é a régua da rota REST (essa é `agentPatchSchema`,
+  // em lib/ai/guardrails-schema.ts — mais estrita em name/description). É a régua
+  // do cadastro do editor MCP, a mesma do formulário (AgentForm.tsx) e alinhada de
+  // propósito com `agentMcpCreateSchema`, para criar e editar terem a mesma régua.
+  // A afirmação de equivalência com o REST era falsa e ficou parada aqui até o
+  // achado #532 medir a divergência.
   const cadastroParsed =
     cadastro === undefined ? null : agentMcpPatchSchema.safeParse(cadastro);
   if (cadastroParsed && !cadastroParsed.success) {

@@ -47,7 +47,12 @@ function rotasDeCallback(): string[] {
   // `git ls-files` em vez de varredura do disco: arquivo não rastreado não
   // existe para o CI, e um teste que o considerasse acusaria defeito que
   // ninguém consegue reproduzir a partir do repositório.
-  const saida = execFileSync("git", ["ls-files", "app/api/**/callback/route.ts"], {
+  //
+  // O glob cobre `app/**`, e não só `app/api/**`: a entrada com Google (#1388)
+  // trouxe `/auth/callback`, que é a MESMA coisa — o navegador voltando de
+  // outro site com um `code` na mão. Deixar a descoberta presa em `app/api`
+  // criaria exatamente o ponto cego que este arquivo foi escrito para fechar.
+  const saida = execFileSync("git", ["ls-files", "app/**/callback/route.ts"], {
     encoding: "utf8",
   });
   return saida.split("\n").filter(Boolean);

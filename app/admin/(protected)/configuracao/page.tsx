@@ -23,11 +23,20 @@ export const dynamic = "force-dynamic";
  * quando já precisava. Depois o que ela pode querer conferir; por último o que
  * ela não troca aqui, que é referência e não tarefa.
  */
-const ORDEM: readonly { grupo: GrupoDaInstalacao; titulo: string; resumo: string }[] = [
+const ORDEM: readonly {
+  grupo: GrupoDaInstalacao;
+  titulo: string;
+  resumo: string;
+  ponteiro?: { href: string; texto: string };
+}[] = [
   {
     grupo: "email",
     titulo: "E-mail",
     resumo: "Sem isto o sistema não envia convite para a equipe nem recuperação de senha.",
+    ponteiro: {
+      href: "/admin/email",
+      texto: "O serviço de envio de e-mail — próprio ou externo — fica em E-mail →",
+    },
   },
   {
     grupo: "seguranca",
@@ -61,8 +70,15 @@ export default async function Page() {
   // Uma ida ao banco por chave, em paralelo. Sem cache de propósito — ver o
   // cabeçalho de `lib/instalacao/config.ts`: com memo, a tela mostraria o valor
   // velho depois de uma troca, atrás de um aviso de sucesso.
+  // ⚠️ SÓ O QUE MORA AQUI. A chave e o remetente do serviço externo de e-mail
+  // saíram desta tela para `/admin/email` (DEC-009, opção A): "como o meu
+  // servidor manda e-mail" é um assunto só, e estava dividido em duas telas.
+  // O filtro é o catálogo, não uma lista escrita aqui — assim não há como as
+  // duas telas mostrarem a mesma chave.
+  const daTela = CATALOGO_DA_INSTALACAO.filter((d) => (d.telaDona ?? "credenciais") === "credenciais");
+
   const linhas: LinhaDaTela[] = await Promise.all(
-    CATALOGO_DA_INSTALACAO.map(async (definicao) => ({
+    daTela.map(async (definicao) => ({
       definicao,
       estado: await estadoParaTela(definicao.chave, definicao.natureza === "segredo"),
     })),

@@ -9,6 +9,25 @@ PORT="${SMOKE_DB_PORT:-54331}"
 CONTAINER="deskcomm-smoke-db-$$"
 IMAGE="pgvector/pgvector:pg15"
 
+# ═══ O INSTRUMENTO, ANTES DO CONTAINER ═══
+#
+# Mesma classe de `scripts/test-db.sh` (issue #1351): o `tsx` só é chamado no
+# fim, depois do container subir, do prelude e do baseline — medido, o script
+# anuncia `==> subindo pgvector/pgvector:pg15 ...` e morre adiante com exit 127.
+# O anúncio fica na tela e o que veio depois dele não rodou. Devolver isso só no
+# instante da chamada custa um ciclo de container para descobrir o que a
+# primeira linha já podia dizer.
+#
+# A guarda olha o ARQUIVO, não o PATH: medido, `pnpm exec` resolve
+# `node_modules/.bin` sozinho (sai 0 mesmo com `node_modules/.bin` fora do
+# PATH), então um `command -v tsx` recusaria uma chamada que funcionaria.
+if [ ! -x "$ROOT/node_modules/.bin/tsx" ]; then
+  echo "ERRO: \`tsx\` não está instalado (falta node_modules/.bin/tsx) — o smoke não rodaria." >&2
+  echo "      Rode \`pnpm install\` e chame este script de novo." >&2
+  echo "      Você chamou: $0 $*" >&2
+  exit 1
+fi
+
 [ -n "${ANTHROPIC_API_KEY:-}" ] || { echo "FATAL: exporte ANTHROPIC_API_KEY (o smoke usa o modelo real)" >&2; exit 1; }
 
 # `-v`: a imagem declara `VOLUME /var/lib/postgresql/data`, então sem ele cada

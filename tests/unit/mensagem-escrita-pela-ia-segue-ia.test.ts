@@ -56,7 +56,7 @@ vi.mock("@/lib/agent-engine/agent/abordagem-de-formulario", () => ({
 }));
 vi.mock("@/lib/agent-engine/db/request-pool", () => ({ getRequestPool: () => ({}) }));
 vi.mock("@/lib/automation/dados-do-formulario", () => ({
-  dadosDoFormularioDoContexto: vi.fn(async () => ({ dados: {}, origem: null, veioDeFormulario: false })),
+  dadosDoFormularioDoContexto: vi.fn(async () => ({ dados: {}, origem: null, origemDaAbordagem: "automacao" })),
 }));
 
 // ─── Guardas que não decidem o carimbo ───

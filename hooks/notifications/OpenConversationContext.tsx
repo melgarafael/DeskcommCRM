@@ -3,13 +3,17 @@
 import { createContext, useContext, useEffect, type ReactNode } from "react";
 
 /**
- * Id da conversa aberta no inbox. O listener de INSERT mora no AppShell
+ * Conversas visíveis no Inbox e no painel flutuante. Cada provider registra
+ * sua própria entrada: minimizar um painel não limpa a conversa do outro.
+ * O listener de INSERT mora no AppShell
  * (ancestral), então além do contexto há um módulo-level lido no evento.
  */
-let publishedId: string | null = null;
+const publishedIds = new Map<symbol, string>();
 
-export function getOpenConversationId(): string | null {
-  return publishedId;
+export function getOpenConversationId(candidate?: string | null): string | null {
+  const ids = [...publishedIds.values()];
+  if (candidate !== undefined) return candidate && ids.includes(candidate) ? candidate : null;
+  return ids.at(-1) ?? null;
 }
 
 const Ctx = createContext<string | null>(null);
@@ -22,9 +26,10 @@ export function OpenConversationProvider({
   children: ReactNode;
 }) {
   useEffect(() => {
-    publishedId = conversationId;
+    const owner = Symbol();
+    if (conversationId) publishedIds.set(owner, conversationId);
     return () => {
-      publishedId = null;
+      publishedIds.delete(owner);
     };
   }, [conversationId]);
 

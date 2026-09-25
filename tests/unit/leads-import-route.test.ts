@@ -1,3 +1,6 @@
+// @vitest-environment node
+// Rota de API, sem DOM. Sob jsdom, `req.formData()` lança AssertionError no Node 26 (medido:
+// 11 casos com 422); em ambiente `node` o mesmo teste passa nos Node 22 e 26.
 /**
  * A IMPORTAÇÃO DE LEADS NÃO ACEITA NADA NO ESCURO.
  *
@@ -215,6 +218,31 @@ describe("POST /api/v1/leads/import", () => {
     for (const [, ctx] of vi.mocked(createLeadHandler).mock.calls) {
       expect((ctx as { organization_id: string }).organization_id).toBe(ORG);
     }
+  });
+
+  // O gatilho de follow-up "Lead criado" lê essa marca para não inscrever a
+  // planilha inteira de uma vez (`lib/followup/gatilho-lead.ts`).
+  it("marca cada linha como vinda de planilha", async () => {
+    fazerSupabase(null);
+    const { POST } = await import("@/app/api/v1/leads/import/route");
+
+    await POST(pedido("nome,valor\nAna,100"));
+
+    expect(vi.mocked(createLeadHandler).mock.calls[0]![2]).toMatchObject({ via_planilha: true });
+  });
+
+  // A planilha não tem coluna de moeda, então quem decide é a organização: o
+  // handler lê `organizations.currency` quando o campo chega AUSENTE
+  // (`lead-nasce-na-moeda-da-organizacao.test.ts`). A rota mandava "BRL" em
+  // duro, e a importação de uma organização em euro gravava real.
+  it("não decide a moeda: deixa para a da organização", async () => {
+    fazerSupabase(null);
+    const { POST } = await import("@/app/api/v1/leads/import/route");
+
+    await POST(pedido("nome,valor\nAna,100"));
+
+    const [, , input] = vi.mocked(createLeadHandler).mock.calls[0]!;
+    expect(input).not.toHaveProperty("currency");
   });
 
   it("uma linha ruim não derruba as outras — e o motivo volta com o número da linha", async () => {

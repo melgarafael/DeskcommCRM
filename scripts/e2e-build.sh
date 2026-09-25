@@ -22,6 +22,24 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# ═══ O INSTRUMENTO, ANTES DO TRABALHO ═══
+#
+# Mesma classe de `scripts/test-db.sh` (issue #1351): o binário que faz o
+# trabalho pode não estar instalado, e o script só descobre isso no instante da
+# chamada — DEPOIS de já ter anunciado `==> Buildando contra ...` —, com o erro
+# genérico do `pnpm` no lugar de uma frase que diga qual binário falta.
+#
+# A guarda olha o ARQUIVO, não o PATH: medido, `pnpm exec` resolve
+# `node_modules/.bin` sozinho (sai 0 mesmo com `node_modules/.bin` fora do
+# PATH), então um `command -v next` recusaria uma chamada que funcionaria.
+# Não instala nada nem mexe no PATH: RECUSA, nomeando o binário ausente.
+if [ ! -x node_modules/.bin/next ]; then
+  echo "ERRO: \`next\` não está instalado (falta node_modules/.bin/next) — o build do E2E não rodaria." >&2
+  echo "      Rode \`pnpm install\` e chame este script de novo." >&2
+  echo "      Você chamou: $0 $*" >&2
+  exit 1
+fi
+
 if [ ! -f .env.e2e ]; then
   echo "==> .env.e2e não existe. Rode 'pnpm e2e:env' (precisa do Supabase local de pé)." >&2
   exit 1

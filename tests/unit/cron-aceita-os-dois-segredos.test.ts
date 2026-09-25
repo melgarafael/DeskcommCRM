@@ -60,6 +60,23 @@ describe("autenticação das rotas de cron", () => {
     ).toEqual([]);
   });
 
+  it("toda rota autoriza pelo portão compartilhado — autorizaCron(), em tempo constante", () => {
+    // `includes(provided)` e `=== \`Bearer ${s}\`` comparam byte a byte e param no
+    // primeiro que difere: o tempo de resposta vaza quantos bytes do segredo
+    // estão certos. `autorizaCron()` passa por `timingSafeStringEqual()`, que
+    // compara hashes de tamanho fixo. A asserção é POSITIVA de propósito — exige
+    // o helper, em vez de procurar `===` — para que nenhuma outra forma de
+    // comparação manual volte no futuro (#1327).
+    const semHelper = rotasDeCron()
+      .filter((r) => !r.fonte.includes("autorizaCron("))
+      .map((r) => r.nome);
+
+    expect(
+      semHelper,
+      `Rota(s) de cron sem autorizaCron() de lib/auth/cron-auth.ts: ${semHelper.join(", ")}.`,
+    ).toEqual([]);
+  });
+
   it("o inventário não está vazio — senão os dois casos acima passam por vacuidade", () => {
     expect(rotasDeCron().length).toBeGreaterThan(20);
   });

@@ -7,10 +7,12 @@ import { toast } from "sonner";
 import { checkSmtp, updateSmtp } from "@/app/actions/settings/smtp";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { CampoEditavel, type LinhaDaInstalacao } from "@/components/admin/CampoDaInstalacao";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useT } from "@/hooks/i18n/useT";
 import type { SmtpSecurity } from "@/lib/email/config";
+import type { Idioma } from "@/lib/i18n/idiomas";
 
 interface Props {
   readonly host: string;
@@ -32,6 +34,13 @@ interface Props {
    * que já mandava e-mail antes desta tela existir, e continua mandando.
    */
   readonly transporte: "smtp" | "resend" | "nenhum";
+  /**
+   * As chaves do SERVIÇO EXTERNO de envio, vindas do catálogo da instalação
+   * (`telaDona: "email"`). Chegam prontas do servidor — valor visível ou os
+   * quatro últimos do segredo, nunca o segredo inteiro.
+   */
+  readonly servicoExterno: readonly LinhaDaInstalacao[];
+  readonly idioma: Idioma;
 }
 
 export function FormularioDeSmtp({
@@ -44,6 +53,8 @@ export function FormularioDeSmtp({
   temSenhaSalva,
   origem,
   transporte,
+  servicoExterno,
+  idioma,
 }: Props) {
   const t = useT();
   const router = useRouter();
@@ -247,6 +258,37 @@ export function FormularioDeSmtp({
           </div>
         </div>
       </Card>
+
+      {/*
+        O SERVIÇO EXTERNO, na mesma tela e depois do servidor próprio.
+
+        A ordem não é estética: preencher o servidor próprio é a alternativa a
+        contratar um serviço, e é o que o produto recomenda a quem instala numa
+        VPS. Quem já usa um serviço externo encontra a chave dele aqui embaixo,
+        em vez de procurá-la em outra tela — que era o defeito que o DEC-009
+        nomeia.
+
+        Os campos são o MESMO componente da tela de Credenciais, lendo a mesma
+        linha do banco pela mesma ação de servidor. Uma segunda cópia do
+        formulário é como as duas telas começariam a divergir.
+      */}
+      {servicoExterno.length > 0 ? (
+        <Card className="flex flex-col gap-2 p-4" data-testid="email-servico-externo">
+          <div>
+            <h2 className="text-base font-semibold">{t("Serviço externo de envio")}</h2>
+            <p className="text-sm text-muted-foreground">
+              {t(
+                "A alternativa ao servidor próprio: um serviço que entrega o e-mail por você. Se as duas coisas estiverem configuradas, o servidor próprio tem preferência.",
+              )}
+            </p>
+          </div>
+          <div>
+            {servicoExterno.map((linha) => (
+              <CampoEditavel key={linha.definicao.chave} linha={linha} idioma={idioma} />
+            ))}
+          </div>
+        </Card>
+      ) : null}
     </div>
   );
 }

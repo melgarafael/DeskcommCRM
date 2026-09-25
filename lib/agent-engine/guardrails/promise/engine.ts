@@ -10,7 +10,13 @@
  * o teto conhecido → cobertos pela camada semântica F4-02, não aqui. Conservador de
  * propósito: só dispara em valor claramente estruturado (evita falso-positivo tipo
  * "temos 500 clientes" — sem R$/reais não vira preço).
+ *
+ * Euro (`49 €`, `€ 49`, `1 497,00 €`, `49 euros`) entra pelo mesmo critério:
+ * sem ele, a trava ficava cega para toda organização que cobra em euro — o
+ * agente podia prometer `1 €` e nada vetava.
  */
+
+import { formatCents } from '@/lib/money';
 
 export type PromiseKind = 'price' | 'discount' | 'installments';
 
@@ -18,6 +24,8 @@ export interface DetectedPromise {
   kind: PromiseKind;
   /** preço em centavos; desconto em %; parcelamento em nº de parcelas. */
   value: number;
+  /** Moeda que o PRÓPRIO texto escreveu, para o veto responder nela. Ausente = real. */
+  moeda?: 'EUR';
 }
 
 export interface PromiseDecision {
@@ -34,6 +42,17 @@ export interface PromiseDecision {
 const MONEY = '(\\d{1,3}(?:\\.\\d{3})+(?:,\\d{2})?|\\d+(?:,\\d{2})?)';
 const RE_PRICE_RS = new RegExp(`R\\$\\s*${MONEY}`, 'gi');
 const RE_PRICE_REAIS = new RegExp(`${MONEY}\\s*(?:reais|real)\\b`, 'gi');
+// Número monetário europeu: o milhar também vem por ESPAÇO (`1 497,00 €`, com o
+// espaço fino que o `Intl` de pt-PT/fr-FR escreve). Sem isso, o sufixo casaria
+// só `497,00` — o preço lido mil vezes menor viraria veto de um valor legítimo.
+// O lookbehind impede COMEÇAR no meio de um número (`49.90 €` não vira `90 €`)
+// e o lookahead impede PARAR no meio (`€49.90` não vira `€49`, `€1,234.56` — a
+// convenção irlandesa — não vira `€1,23`): o que o detector não lê inteiro, ele
+// não lê.
+const MONEY_EU =
+  '(?<![\\d.,])(\\d{1,3}(?:[.\\u0020\\u00a0\\u202f]\\d{3})+(?:,\\d{2})?|\\d+(?:,\\d{2})?)(?![.,\\u0020\\u00a0\\u202f]?\\d)';
+const RE_PRICE_EUR_PREFIX = new RegExp(`€\\s*${MONEY_EU}`, 'gi');
+const RE_PRICE_EUR_SUFFIX = new RegExp(`${MONEY_EU}\\s*(?:€|euros?\\b|EUR\\b)`, 'gi');
 // Desconto: exige a palavra "desconto"/"off" adjacente ao percentual (conservador —
 // "100% satisfação" não é desconto).
 const RE_DISCOUNT_PREFIX = /desconto\s+(?:de\s+)?(\d{1,3})\s*(?:%|por\s*cento)/gi;
@@ -48,9 +67,9 @@ const RE_INSTALLMENTS_PREFIX =
 const RE_INSTALLMENTS_SUFFIX =
   /(\d{1,3})\s*(?:x\b|vezes\b)\s+(?:sem\s+juros|de\s*R\$|no\s+(?:cart[ãa]o|boleto)|iguais)/gi;
 
-/** "1.497,00" → 149700 centavos; "1" → 100; "500" → 50000. */
+/** "1.497,00" → 149700 centavos; "1 497,00" → 149700; "1" → 100; "500" → 50000. */
 function moneyToCents(raw: string): number {
-  const normalized = raw.replace(/\./g, '').replace(',', '.');
+  const normalized = raw.replace(/[.\s]/g, '').replace(',', '.');
   return Math.round(parseFloat(normalized) * 100);
 }
 
@@ -69,6 +88,9 @@ export function extractPromises(body: string): DetectedPromise[] {
     out.push({ kind: 'price', value: cents });
   for (const cents of collect(RE_PRICE_REAIS, body, (m) => moneyToCents(m[1] ?? '0')))
     out.push({ kind: 'price', value: cents });
+  for (const re of [RE_PRICE_EUR_PREFIX, RE_PRICE_EUR_SUFFIX])
+    for (const cents of collect(re, body, (m) => moneyToCents(m[1] ?? '0')))
+      out.push({ kind: 'price', value: cents, moeda: 'EUR' });
   for (const pct of collect(RE_DISCOUNT_PREFIX, body, (m) => Number(m[1])))
     out.push({ kind: 'discount', value: pct });
   for (const pct of collect(RE_DISCOUNT_SUFFIX, body, (m) => Number(m[1])))
@@ -84,6 +106,9 @@ export function extractPromises(body: string): DetectedPromise[] {
 
 const brl = (cents: number): string =>
   `R$ ${(cents / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/** O veto responde na moeda que a mensagem escreveu: "mínimo R$ 39,00" a quem cobra em euro confunde o modelo. */
+const naMoeda = (cents: number, moeda: DetectedPromise['moeda']): string =>
+  moeda === 'EUR' ? formatCents(cents, 'EUR') : brl(cents);
 
 /**
  * Vete quando um valor detectado CONTRADIZ claramente a tabela versionada da org
@@ -98,8 +123,8 @@ export function decidePromise(args: { candidate: string; table: import('./table'
         allow: false,
         code: 'promise_out_of_table',
         reason:
-          `o preço ${brl(p.value)} está fora da tabela do playbook (mínimo permitido: ` +
-          `${brl(table.minPriceCents)}); corrija para um valor da tabela antes de reenviar.`,
+          `o preço ${naMoeda(p.value, p.moeda)} está fora da tabela do playbook (mínimo permitido: ` +
+          `${naMoeda(table.minPriceCents, p.moeda)}); corrija para um valor da tabela antes de reenviar.`,
         detail: { promise_kind: 'price', detected_cents: p.value, allowed_min_cents: table.minPriceCents },
       };
     }

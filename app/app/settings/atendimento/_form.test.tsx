@@ -28,6 +28,7 @@ const inicial: AtendimentoConfig = {
   backoff_seconds: 60,
   visibility_mode: "all",
   handoff_return_after_minutes: null,
+  conversation_stays_with_attendant: false,
 };
 
 function corpoDoPatch(): Record<string, unknown> {
@@ -71,5 +72,29 @@ describe("Distribuição de atendimento — devolver ao agente sozinho", () => {
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
     await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
     expect(corpoDoPatch()).toMatchObject({ handoff_return_after_minutes: null });
+  });
+});
+
+describe("Distribuição de atendimento — a conversa fica com quem atendeu", () => {
+  it("desligado por padrão, e salvar outra coisa manda false", async () => {
+    render(<AtendimentoForm initial={inicial} />);
+    expect(screen.getByTestId("fica-com-quem-atendeu")).not.toBeChecked();
+    fireEvent.click(screen.getByTestId("opcao-modo-round_robin"));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    expect(corpoDoPatch()).toMatchObject({ conversation_stays_with_attendant: false });
+  });
+
+  it("ligar manda true", async () => {
+    render(<AtendimentoForm initial={inicial} />);
+    fireEvent.click(screen.getByTestId("fica-com-quem-atendeu"));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    expect(corpoDoPatch()).toMatchObject({ conversation_stays_with_attendant: true });
+  });
+
+  it("empresa com o ajuste ligado vê a caixa marcada", () => {
+    render(<AtendimentoForm initial={{ ...inicial, conversation_stays_with_attendant: true }} />);
+    expect(screen.getByTestId("fica-com-quem-atendeu")).toBeChecked();
   });
 });

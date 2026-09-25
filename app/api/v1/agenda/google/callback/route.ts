@@ -50,7 +50,7 @@ import { audit } from "@/lib/audit";
 import { PROVEDOR_GOOGLE } from "@/lib/agenda/tipos";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
-import { CAMINHO_DO_CALLBACK, configuracaoDoGoogle } from "@/lib/agenda/google/config";
+import { CAMINHO_DO_CALLBACK, configuracaoDoGoogle, origemLocalDosCabecalhos } from "@/lib/agenda/google/config";
 import { verificarEstado } from "@/lib/agenda/google/estado";
 import { NOME_DO_VINCULO, vinculoConfere } from "@/lib/agenda/google/vinculo";
 import { cookieSecure } from "@/lib/supabase/cookie-secure";
@@ -208,7 +208,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return voltar("erro=retorno_incompleto");
   }
 
-  const app = await configuracaoDoGoogle();
+  const app = await configuracaoDoGoogle(origemLocalDosCabecalhos(req.headers) ?? undefined);
   if (!app) return voltar("erro=google_nao_configurado");
 
   // ⚠️ QUEIMA DO NONCE — e ela vem ANTES de trocar o código, não depois.

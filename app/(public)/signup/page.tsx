@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { EntrarComGoogle } from "@/components/auth/EntrarComGoogle";
 import { SignupForm } from "@/components/auth/SignupForm";
 import { Button } from "@/components/ui/button";
 import { branding } from "@/lib/branding";
@@ -53,7 +54,8 @@ export default async function SignupPage({
   const t = (texto: string) => traduzir(texto, idioma);
 
   // Convite VÁLIDO passa em qualquer modo — é o ponto inteiro do convite.
-  const soPorConvite = !convite && (await modoDeCadastro()) === "so_convite";
+  const modo = convite ? null : await modoDeCadastro();
+  const soPorConvite = modo === "so_convite";
 
   if (soPorConvite) {
     return (
@@ -88,6 +90,11 @@ export default async function SignupPage({
             ? t("Crie sua senha para entrar na empresa que te convidou")
             : `${t("Comece a usar o")} ${branding().name} ${t("em minutos")}`}
         </p>
+        {modo === "com_aprovacao" && (
+          <p className="text-sm text-muted-foreground">
+            {t("Nesta instalação, a empresa só é criada depois da aprovação de quem administra.")}
+          </p>
+        )}
       </div>
 
       {conviteExpirado && (
@@ -102,6 +109,9 @@ export default async function SignupPage({
       )}
 
       <SignupForm convite={convite} />
+      {/* O convite atravessa o Google na URL de retorno: sem ele, quem foi
+          convidado e cria a conta com Google ganharia uma empresa própria. */}
+      <EntrarComGoogle convite={convite?.token} />
 
       <p className="text-center text-sm text-muted-foreground">
         {t("Já tem conta?")}{" "}

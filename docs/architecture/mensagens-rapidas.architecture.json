@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Mensagens rápidas em qualquer tela",
+    "subtitle": "Uma superfície do Inbox existente",
+    "output": "mensagens-rapidas.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "ui",
+      "label": "Interface"
+    },
+    {
+      "id": "data",
+      "label": "Runtime existente"
+    }
+  ],
+  "mainPath": [
+    "shell",
+    "dock",
+    "composer",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "shell",
+      "lane": "ui",
+      "col": 1,
+      "type": "frontend",
+      "label": "AppShell"
+    },
+    {
+      "id": "dock",
+      "lane": "ui",
+      "col": 2,
+      "type": "frontend",
+      "label": "FloatingInbox"
+    },
+    {
+      "id": "composer",
+      "lane": "ui",
+      "col": 3,
+      "type": "frontend",
+      "label": "ChatThread + Composer"
+    },
+    {
+      "id": "api",
+      "lane": "data",
+      "col": 3,
+      "type": "api",
+      "label": "APIs de conversas e mensagens com RLS"
+    },
+    {
+      "id": "realtime",
+      "lane": "data",
+      "col": 2,
+      "type": "service",
+      "label": "Hooks existentes + realtime"
+    },
+    {
+      "id": "full",
+      "lane": "ui",
+      "col": 4,
+      "type": "frontend",
+      "label": "Inbox completo"
+    }
+  ],
+  "edges": [
+    {
+      "id": "0",
+      "from": "shell",
+      "to": "dock",
+      "label": "botão global"
+    },
+    {
+      "id": "1",
+      "from": "realtime",
+      "to": "dock",
+      "label": "contagem e conversas"
+    },
+    {
+      "id": "2",
+      "from": "dock",
+      "to": "composer",
+      "label": "seleção"
+    },
+    {
+      "id": "3",
+      "from": "composer",
+      "to": "api",
+      "label": "leitura e envio"
+    },
+    {
+      "id": "4",
+      "from": "api",
+      "to": "realtime",
+      "label": "mensagens e estados"
+    },
+    {
+      "id": "5",
+      "from": "dock",
+      "to": "full",
+      "label": "ampliar conversa"
+    }
+  ]
+}

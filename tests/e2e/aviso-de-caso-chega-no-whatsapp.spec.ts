@@ -142,7 +142,7 @@ async function preencheLogin(page: Page, email: string): Promise<void> {
   await expect(page.locator("#email")).toBeVisible({ timeout: ESPERA });
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
 }
 
 /** Ver o comentário do helper homônimo em `aviso-de-caso-no-whatsapp.spec.ts`:

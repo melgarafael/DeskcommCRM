@@ -512,6 +512,27 @@ export class WahaClient {
     return res.json();
   }
 
+  /** O id completo identifica a mensagem no WAHA; o id curto do sendText não basta. */
+  async editMessage(session: string, chatId: string, messageId: string, text: string): Promise<void> {
+    const path = `/api/${encodeURIComponent(session)}/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}`;
+    const res = await this.fetchComTeto(`${this.baseUrl}${path}`, {
+      method: "PUT",
+      headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) throw new Error(`waha_${res.status}`);
+  }
+
+  /** Sem `forMe`: para mensagem enviada, WAHA revoga para todos. */
+  async deleteMessage(session: string, chatId: string, messageId: string): Promise<void> {
+    const path = `/api/${encodeURIComponent(session)}/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}`;
+    const res = await this.fetchComTeto(`${this.baseUrl}${path}`, {
+      method: "DELETE",
+      headers: { "X-Api-Key": this.apiKey },
+    });
+    if (!res.ok) throw new Error(`waha_${res.status}`);
+  }
+
   /**
    * O "digitando…" (e o "gravando…") no aparelho do cliente.
    *

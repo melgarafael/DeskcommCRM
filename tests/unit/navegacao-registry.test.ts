@@ -117,11 +117,24 @@ describe("sidebarGroups", () => {
     // para encerrar. Ela mora dentro do hub, em "O dia a dia da venda", que é
     // onde o grupo com hub recebe tela nova (ver o comentário no destino, em
     // lib/navigation/catalogo.ts).
+
+    // `/app/prospecting` NÃO está aqui, e a ausência é decisão, não esquecimento:
+    // a tela existe e é alcançável pelo hub e pelo ⌘K, mas o menu já está no
+    // limite — com ela seriam 20 portas e o e2e reprova por scroll em 900px. A
+    // razão e a condição que encerram a exceção estão ao lado do item, em
+    // `lib/navigation/catalogo.ts`.
     const crm = sidebarGroups(true, null).find((g) => g.group.id === "crm");
     expect(crm?.items.map((i) => i.href)).toEqual([
       "/app/kanban",
       "/app/contacts",
       "/app/tasks",
+      // "/app/calls" (telefonia por SIP) NÃO entra aqui, e a ausência é a
+      // decisão: o módulo é OPCIONAL e nasce desligado (doc 27), então a porta
+      // no sidebar custaria um item a TODA instalação — e o vigésimo item é o
+      // que faz o menu rolar em 900px, que é a corrida por pixel que este
+      // teste existe para vigiar. A tela vive no hub do grupo e no ⌘K. Volta
+      // para cá no dia em que o app souber que o módulo está ligado (hoje isso
+      // é profile do compose, não estado que o aplicativo conheça).
     ]);
     // E continua alcançável: o hub é a porta dela.
     expect(
@@ -152,16 +165,19 @@ describe("sidebarGroups", () => {
 });
 
 describe("hubSections", () => {
-  it("o hub do CRM é inventário: as cinco telas do grupo, nas duas seções", () => {
+  it("o hub do CRM é inventário: as seis telas do grupo, nas duas seções", () => {
     // As seções são a régua do sidebar escrita por extenso — o que se abre todo
     // dia contra o que se define uma vez. Lista EXATA: `toContain` deixaria uma
     // tela nova entrar sem que ninguém decidisse de que lado dela ela cai.
     const secoes = hubSections("crm", true, null);
     expect(secoes.map((s) => s.section)).toEqual(["O dia a dia da venda", "Preparar a venda"]);
     expect(secoes.flatMap((s) => s.items.map((i) => i.href))).toEqual([
+      "/app/prospecting",
       "/app/kanban",
+      "/app/campaigns",
       "/app/contacts",
       "/app/tasks",
+      "/app/calls",
       "/app/comandas",
       "/app/products",
       "/app/settings/tenant/pipelines",
@@ -188,8 +204,49 @@ describe("hubSections", () => {
   });
 
   it("some com a seção que ficou vazia pela permissão", () => {
-    const secoes = hubSections("organizacao", VIEWER.platform, VIEWER.role).map((s) => s.section);
-    expect(secoes).not.toContain("Dados e acesso");
+    /**
+     * Esta asserção era `expect(secoes).not.toContain("Dados e acesso")`, e o
+     * que a fazia passar era um ACIDENTE do catálogo: por um tempo, os dois
+     * destinos daquela seção eram `admin`. Quando "Dados externos" entrou nela
+     * SEM `minRole` — o banco externo é lido por qualquer autenticado, decisão
+     * do dono no #1130 —, a seção passou a existir para o `viewer` e o teste
+     * ficou vermelho. Ele não pegou defeito nenhum: reprovou o CATÁLOGO por uma
+     * mudança que a projeção tratou certo.
+     *
+     * A propriedade não é sobre uma seção nomeada; é sobre TODA seção, em todo
+     * grupo, para todo papel. Escrita assim, ela não envelhece quando alguém
+     * acrescenta, move ou reclassifica um destino.
+     */
+    for (const grupo of NAV_GROUPS) {
+      for (const quem of [VIEWER, AGENT, MANAGER, ADMIN]) {
+        for (const s of hubSections(grupo.id, quem.platform, quem.role)) {
+          expect(
+            s.items.length,
+            `${grupo.id} / "${s.section}" veio vazia para ${quem.role}`,
+          ).toBeGreaterThan(0);
+        }
+      }
+    }
+
+    /**
+     * E a testemunha de que a projeção está mesmo sendo exercitada: precisa
+     * existir ALGUMA seção que o admin vê e o viewer não. Sem isto, o laço
+     * acima seguiria verde num catálogo onde nada é gateado — verde por
+     * ausência de caso, que se lê igual a verde por acerto. A seção sai do
+     * catálogo, nunca escrita à mão.
+     */
+    const secoesDe = (quem: typeof VIEWER | typeof ADMIN) =>
+      new Set(
+        NAV_GROUPS.flatMap((g) =>
+          hubSections(g.id, quem.platform, quem.role).map((s) => `${g.id}/${s.section}`),
+        ),
+      );
+    const doViewer = secoesDe(VIEWER);
+    const somemParaOViewer = [...secoesDe(ADMIN)].filter((s) => !doViewer.has(s));
+    expect(
+      somemParaOViewer.length,
+      "nenhuma seção some para o viewer — a projeção por papel deixou de ser exercitada",
+    ).toBeGreaterThan(0);
   });
 });
 

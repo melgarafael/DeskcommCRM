@@ -81,6 +81,36 @@ export type Guardrails = z.infer<typeof guardrailsSchema>;
 // Agent config (vai dentro de ai_agents.config jsonb)
 // ---------------------------------------------------------------------------
 
+export const AGENT_VOICE_OPTIONS = [
+  "marin",
+  "cedar",
+  "alloy",
+  "ash",
+  "ballad",
+  "coral",
+  "echo",
+  "sage",
+  "shimmer",
+  "verse",
+] as const;
+export const agentVoiceSchema = z.enum(AGENT_VOICE_OPTIONS);
+export type AgentVoice = z.infer<typeof agentVoiceSchema>;
+
+// Modelos Realtime da OpenAI que falam por voz de ponta a ponta (audio in ->
+// audio out) -- não é o mesmo catálogo de AGENT_MODELS (texto, Vercel AI
+// Gateway): a ligação nunca passa por ali. Default "gpt-realtime" == o que
+// já rodava fixo via env OPENAI_REALTIME_MODEL antes deste campo existir.
+export const AGENT_VOICE_MODEL_OPTIONS = [
+  "gpt-realtime",
+  "gpt-realtime-mini",
+  "gpt-realtime-2.1",
+  "gpt-realtime-2.1-mini",
+  "gpt-4o-realtime-preview",
+  "gpt-4o-mini-realtime-preview",
+] as const;
+export const agentVoiceModelSchema = z.enum(AGENT_VOICE_MODEL_OPTIONS);
+export type AgentVoiceModel = z.infer<typeof agentVoiceModelSchema>;
+
 export const agentConfigSchema = z.object({
   temperature: z.number().min(0).max(2).default(0.4),
   max_tokens: z.number().int().min(64).max(4096).default(1024),
@@ -88,6 +118,24 @@ export const agentConfigSchema = z.object({
   rag_top_k: z.number().int().min(1).max(20).default(5),
   rag_similarity_threshold: z.number().min(0).max(1).default(0.4),
   confidence_threshold: z.number().min(0).max(1).default(0.6),
+  // Só usados por agentes do canal "voice" (audioSocketBridge.ts) — ficam no
+  // mesmo config jsonb dos demais, em vez de uma coluna nova, pelo mesmo
+  // motivo do rag_top_k: um valor por versão publicada, sem tabela extra.
+  voice: agentVoiceSchema.default("marin"),
+  // Faixa aceita pela Realtime API da OpenAI é 0.25–1.5 — fora disso a
+  // sessão rejeita a configuração.
+  voice_speed: z.number().min(0.25).max(1.5).default(0.85),
+  voice_model: agentVoiceModelSchema.default("gpt-realtime"),
+  /**
+   * Aceita os comandos de controle `#on`/`#off` enviados pelo CELULAR do
+   * operador (C-076)? `false` (default do produto) = o ingest NÃO reconhece os
+   * comandos; qualquer mensagem do celular continua pausando a IA normalmente.
+   *
+   * O default é `false` de propósito: um comando digitado no chat do CLIENTE é
+   * uma decisão de produto com efeito visível (o cliente pode ver a mensagem),
+   * então não se liga por migration — se liga na tela do agente.
+   */
+  aceita_comandos_celular: z.boolean().default(false),
 });
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 
@@ -98,11 +146,37 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
   rag_top_k: 5,
   rag_similarity_threshold: 0.4,
   confidence_threshold: 0.6,
+  voice: "marin",
+  voice_speed: 0.85,
+  voice_model: "gpt-realtime",
+  aceita_comandos_celular: false,
 };
 
 // ---------------------------------------------------------------------------
 // PATCH / CREATE schemas
 // ---------------------------------------------------------------------------
+
+// Parcial SEM defaults. No Zod 4, `.partial()` mantém o `.default()` de cada
+// campo: `agentConfigSchema.partial().parse({ rag_top_k: 10 })` devolve os DEZ
+// campos, e a junção da rota (`{ ...atual, ...patch.config }`) regravava os
+// ajustes que o cliente nem mandou. O cartão "Comandos pelo celular" manda uma
+// chave só e zerava temperatura/RAG. Todo campo com default entra aqui — o teste
+// `patch-de-config-grava-so-o-que-veio` reprova o que ficar de fora.
+const cfg = agentConfigSchema.shape;
+export const agentConfigPatchSchema = agentConfigSchema
+  .extend({
+    temperature: cfg.temperature.removeDefault(),
+    max_tokens: cfg.max_tokens.removeDefault(),
+    context_message_window: cfg.context_message_window.removeDefault(),
+    rag_top_k: cfg.rag_top_k.removeDefault(),
+    rag_similarity_threshold: cfg.rag_similarity_threshold.removeDefault(),
+    confidence_threshold: cfg.confidence_threshold.removeDefault(),
+    voice: cfg.voice.removeDefault(),
+    voice_speed: cfg.voice_speed.removeDefault(),
+    voice_model: cfg.voice_model.removeDefault(),
+    aceita_comandos_celular: cfg.aceita_comandos_celular.removeDefault(),
+  })
+  .partial();
 
 export const agentPatchSchema = z
   .object({
@@ -113,7 +187,7 @@ export const agentPatchSchema = z
     is_active: z.boolean().optional(),
     model: agentModelSchema.optional(),
     system_prompt: z.string().min(20).max(10000).optional(),
-    config: agentConfigSchema.partial().optional(),
+    config: agentConfigPatchSchema.optional(),
     guardrails: guardrailsSchema.optional(),
   })
   .strict();

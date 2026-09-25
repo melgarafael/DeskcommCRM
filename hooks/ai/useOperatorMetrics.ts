@@ -19,13 +19,20 @@ export interface MetricasDoOperador {
   quisAgirENaoPode: number;
 }
 
-export function useOperatorMetrics(habilitado: boolean) {
+export function useOperatorMetrics(habilitado: boolean, agentId: string | null) {
   return useQuery({
-    queryKey: ["ai", "operator-metrics"] as const,
+    // O id entra na CHAVE, não só na URL: sem ele o cache do react-query serviria
+    // o número do agente anterior ao abrir o próximo — o mesmo erro de dimensão,
+    // agora com aparência de acerto.
+    queryKey: ["ai", "operator-metrics", agentId] as const,
     queryFn: async () =>
-      (await apiClient.get<{ data: MetricasDoOperador }>("/api/v1/ai/operator-metrics")).data,
+      (
+        await apiClient.get<{ data: MetricasDoOperador }>(
+          `/api/v1/ai/operator-metrics?agent_id=${encodeURIComponent(agentId ?? "")}`,
+        )
+      ).data,
     // Não busca quando o papel está desligado: a tela não faz pergunta cuja
-    // resposta ela já sabe que é vazia.
-    enabled: habilitado,
+    // resposta ela já sabe que é vazia. Nem sem agente: a métrica é DELE.
+    enabled: habilitado && agentId !== null,
   });
 }

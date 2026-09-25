@@ -6,12 +6,14 @@ import { createClient } from "@/lib/supabase/server";
 import { googleRpc } from "@/lib/agenda/google/sync-store";
 import { ok, fail } from "@/lib/api/wrappers";
 import { logger } from "@/lib/logger";
+import { motivoDoMeet, semSegredos } from "@/lib/agenda/motivo-do-meet";
+import { traduzir } from "@/lib/i18n/dicionario";
 import { audit } from "@/lib/audit";
 
 export async function meetingAction(
   req: Request,
   context: { params: Promise<{ id: string }> },
-  action: "retry" | "deliver",
+  action: "retry" | "deliver" | "resend",
 ) {
   const denied = await requireSupportWrite();
   if (denied) return denied;
@@ -30,7 +32,10 @@ export async function meetingAction(
   if (
     !z.uuid().safeParse(id).success ||
     !parsed.success ||
-    (action === "deliver" && !parsed.data.conversation_id)
+    // `resend` exige a conversa igual ao `deliver`: a entrega tem destino, e
+    // quem reenvia escolhe para onde. Só o `retry` (refazer o link no Google)
+    // não tem conversa nenhuma envolvida.
+    (action !== "retry" && !parsed.data.conversation_id)
   )
     return fail(
       "validation_failed",
@@ -59,29 +64,33 @@ export async function meetingAction(
       });
     return ok({ pending: true, changed: Boolean(changed) }, { requestId });
   } catch (error) {
-    const code = error && typeof error === "object" && "code" in error ? error.code : null;
-    // ⛔ 55P03 = `lock_not_available`: a migration 0241 pôs `lock_timeout='4s'`
-    // em `fn_meet_action`, e este é o caminho que ela abriu.
+    // O MOTIVO REAL, derivado do que a função escolheu DIZER.
     //
-    // ANTES DELA a espera era infinita, e o desfecho era pior do que um erro:
-    // o cliente HTTP desiste aos 10s (`DEFAULT_TIMEOUT_MS`), a pessoa lia "Erro
-    // inesperado. Tente novamente." — sem identificador, porque o erro vinha do
-    // NAVEGADOR e não daqui —, **a consulta continuava viva** segurando a fila,
-    // e o clique seguinte empilhava atrás. Medido em produção em 2026-09-12:
-    // dez chamadas simultâneas, Postgres a 357% de CPU.
-    //
-    // A frase diz o que fazer e quanto esperar. "Tente novamente" sozinho
-    // convida ao clique imediato, que é exatamente o gesto que empilhava.
-    if (code === "55P03")
-      return fail(
-        "conflict",
-        "Este atendimento está ocupado neste instante. Aguarde alguns segundos e tente de novo.",
-        409,
-        { requestId },
-      );
-    if (code === "40001") return fail("conflict", "O compromisso ou atendimento mudou. Atualize e tente novamente.", 409, { requestId });
-    if (code === "42501") return fail("forbidden", "Esta ação exige o responsável pelo compromisso e uma conversa disponível.", 403, { requestId });
-    logger.error("agenda.meet_action_failed", { requestId, action, code: "internal_error" });
-    return fail("internal_error", "Não foi possível registrar a ação. Atualize e tente novamente em instantes.", 500, { requestId });
+    // A versão anterior reconhecia três SQLSTATE e mandava o resto para 500 —
+    // e 500 é status de "tente de novo", então o cliente HTTP repetia. Medido
+    // numa instalação real em 2026-09-12: "Enviar link ao cliente" ficava 20
+    // segundos parado e terminava em "Erro inesperado. Tente novamente.". Os
+    // 20 segundos eram as três tentativas de um pedido que o banco já tinha
+    // recusado, com nome próprio (`meet_conversation_stale`), no primeiro
+    // milissegundo.
+    const motivo = motivoDoMeet(error);
+    // ⛔ A MENSAGEM CRUA NUNCA ENTRA NO REGISTRO — ela pode carregar o LINK da
+    // reunião. Mas apagá-la inteira também custou caro: um erro real chegou
+    // aqui sem nome e sem SQLSTATE, e o registro guardou apenas
+    // `code: "internal_error"`. `semSegredos` tira os endereços, que é onde o
+    // segredo mora, e deixa a frase, que é onde mora o diagnóstico.
+    logger.error("agenda.meet_action_failed", {
+      requestId,
+      action,
+      code: motivo.codigo,
+      sqlstate:
+        error && typeof error === "object" && "code" in error && error.code !== undefined
+          ? String(error.code)
+          : null,
+      mensagem: semSegredos(error instanceof Error ? error.message : null),
+    });
+    return fail(motivo.codigo, traduzir(motivo.texto, auth.user.idioma), motivo.status, {
+      requestId,
+    });
   }
 }

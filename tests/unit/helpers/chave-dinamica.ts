@@ -22,7 +22,10 @@
  *     ROTULOS = { ... }` / `[...]` (inclusive `as const` e `satisfies`);
  *   - os mesmos três casos quando a constante mora em OUTRO módulo e chega
  *     por `import { ROTULOS } from "@/lib/..."` (caso nomeado, default ou
- *     `import * as`).
+ *     `import * as`);
+ *   - `t(r)` dentro de `Object.entries(ROTULOS).map(([k, r]) => …)` ou de
+ *     `Object.values(ROTULOS).map((r) => …)` — o parâmetro só assume os valores
+ *     da tabela (também `flatMap` e `forEach`).
  *
  * NÃO resolve, e é de propósito — cada um destes exigiria inferência de tipo
  * ou execução, e um gate que chuta é um gate que reprova sem defeito:
@@ -250,6 +253,64 @@ interface ValoresResolvidos {
   readonly procedencia: string;
 }
 
+const METODOS_DE_ITERACAO = new Set(["map", "flatMap", "forEach"]);
+
+/**
+ * `r` em `Object.entries(TABELA).map(([k, r]) => t(r))` (segundo elemento) ou em
+ * `Object.values(TABELA).map((r) => t(r))` (o próprio parâmetro): os únicos
+ * valores possíveis são os da tabela. Qualquer outra forma devolve `null` — a
+ * varredura não chuta.
+ */
+function resolverParametroDeIteracao(
+  no: ts.Identifier,
+  dono: FonteAnalisada,
+  cache: CacheDeFontes,
+): ValoresResolvidos | null {
+  for (let n: ts.Node | undefined = no.parent; n; n = n.parent) {
+    if (!ts.isArrowFunction(n) && !ts.isFunctionExpression(n)) continue;
+    const parametro = n.parameters[0];
+    if (!parametro) return null;
+    let origem: "entries" | "values" | null = null;
+    if (ts.isIdentifier(parametro.name) && parametro.name.text === no.text) {
+      origem = "values";
+    } else if (
+      ts.isArrayBindingPattern(parametro.name) &&
+      parametro.name.elements[1] &&
+      ts.isBindingElement(parametro.name.elements[1]) &&
+      ts.isIdentifier(parametro.name.elements[1].name) &&
+      parametro.name.elements[1].name.text === no.text
+    ) {
+      origem = "entries";
+    }
+    if (!origem) continue; // o nome pertence a uma função mais externa: sobe.
+
+    const chamada = n.parent;
+    if (!ts.isCallExpression(chamada) || chamada.arguments[0] !== n) return null;
+    const metodo = chamada.expression;
+    if (!ts.isPropertyAccessExpression(metodo) || !METODOS_DE_ITERACAO.has(metodo.name.text)) {
+      return null;
+    }
+    const fonteDaLista = desembrulhar(metodo.expression);
+    if (!ts.isCallExpression(fonteDaLista) || fonteDaLista.arguments.length !== 1) return null;
+    const construtor = fonteDaLista.expression;
+    if (
+      !ts.isPropertyAccessExpression(construtor) ||
+      !ts.isIdentifier(construtor.expression) ||
+      construtor.expression.text !== "Object" ||
+      construtor.name.text !== origem
+    ) {
+      return null;
+    }
+    const alvo = fonteDaLista.arguments[0];
+    if (!alvo) return null;
+    const base = baseDeExpressao(desembrulhar(alvo), dono, cache);
+    const valores = base ? valoresDe(base.inicializador) : null;
+    if (!base || !valores) return null;
+    return { valores, procedencia: `${base.procedencia} (Object.${origem}().${metodo.name.text})` };
+  }
+  return null;
+}
+
 /**
  * O coração: dado o argumento de `t()`, devolve os valores possíveis e a
  * procedência escrita, ou `null` se o valor não estiver no código.
@@ -283,6 +344,14 @@ function resolver(
   // fluxo de dado de operador — que é o passo 2 da issue, não este. Chutar a
   // interseção aqui faria a catraca cobrar valores que não são os que a tela
   // mostra, e falso positivo em catraca nova custa a confiança dela.
+
+  // `t(r)` dentro de `Object.entries(TABELA).map(([k, r]) => …)` ou de
+  // `Object.values(TABELA).map((r) => …)`: o parâmetro só pode assumir os valores
+  // da tabela, e eles estão escritos no módulo.
+  if (ts.isIdentifier(no)) {
+    const viaTabela = resolverParametroDeIteracao(no, dono, cache);
+    if (viaTabela) return viaTabela;
+  }
 
   // `ROTULOS.tipo` / `ns.TABELA.tipo` — valor exato da propriedade quando o
   // nome é literal; a tabela inteira não serve aqui, porque só um rótulo é usado.

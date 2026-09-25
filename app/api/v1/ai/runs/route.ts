@@ -13,6 +13,9 @@ import type { NextRequest } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { PROVEDOR_DO_JEV } from "@/lib/ai/decisao/credencial";
+import { JEV_FALHOU_SEM_RESERVA, O_QUE_FAZER_DO_JEV } from "@/lib/ai/decisao/textos";
+import { rotuloDoProvedor } from "@/lib/ai/pontos/provedores";
 import { PONTO_POR_ID } from "@/lib/ai/pontos/registro";
 import { EXPLICACAO_DA_ORIGEM, type OrigemDaEscolha } from "@/lib/ai/pontos/resolver";
 import { createClient } from "@/lib/supabase/server";
@@ -51,6 +54,8 @@ const O_QUE_FAZER: Record<string, string> = {
     "A chamada foi recusada porque este ponto usa um endereço próprio e a empresa não tem chave cadastrada para ele — a chave da instalação não vai para endereço escolhido pela empresa. Cadastre a chave da empresa em Agente de IA › Provedores, ou tire o endereço próprio do ponto.",
   erro_desconhecido:
     "Não conseguimos classificar esta falha. A mensagem original do provedor está abaixo.",
+  // As falhas do Jev (`jev_*`), escritas junto do cliente dele.
+  ...O_QUE_FAZER_DO_JEV,
 };
 
 interface LinhaDeExecucao {
@@ -73,6 +78,9 @@ interface LinhaDeExecucao {
 const filtrosDaQuery = z.object({
   purpose: z.string().min(1).max(64).optional(),
   status: z.enum(["ok", "erro"]).optional(),
+  // O cabeçalho desta rota prometia o filtro por provedor desde o primeiro dia,
+  // e ele não existia: `?provider=` era descartado e a lista vinha inteira.
+  provider: z.string().min(1).max(64).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(100),
 });
 
@@ -90,7 +98,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (!filtros.success) {
     return fail("invalid_query", t("filtros inválidos"), 422, { details: filtros.error.issues });
   }
-  const { purpose, status, limit: limite } = filtros.data;
+  const { purpose, status, provider, limit: limite } = filtros.data;
 
   const db = await createClient();
   let q = db
@@ -104,6 +112,14 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   if (purpose) q = q.eq("purpose", purpose);
   if (status) q = q.eq("status", status);
+  // "Só o Jev" inclui as linhas da reserva que o cobriu: são as que o cartão
+  // conta em "Vezes que a IA de sempre cobriu o Jev", e o link do cartão traz
+  // para cá. Filtrar só pelo provedor escondia justamente elas.
+  if (provider === PROVEDOR_DO_JEV) {
+    q = q.or(`provider.eq.${PROVEDOR_DO_JEV},origem_da_escolha.eq.reserva_do_jev`);
+  } else if (provider) {
+    q = q.eq("provider", provider);
+  }
 
   const { data, error } = await q;
   if (error) return fail("query_failed", error.message, 500);
@@ -115,13 +131,27 @@ export async function GET(req: NextRequest): Promise<Response> {
       // O nome de gente do ponto. Sem isto a tela mostraria `flywheel_judge`, e
       // o operador não tem por que saber o que é isso.
       pontoRotulo: ponto?.rotulo ?? l.purpose,
+      // "typesafe" na coluna, "Jev (TypeSafe AI)" na tela.
+      provedorRotulo: rotuloDoProvedor(l.provider) ?? l.provider,
       // A consequência daquele ponto falhar, que é o que liga uma linha de log
-      // a algo que a pessoa já viu acontecer no negócio dela.
-      consequencia: l.status === "erro" ? (ponto?.sintomaDeFalha ?? null) : null,
+      // a algo que a pessoa já viu acontecer no negócio dela. Só em `erro`: a
+      // linha da reserva que cobriu o Jev sai `ok` (nada se perdeu), e a do Jev
+      // só sai `erro` quando ninguém mediu — aí a consequência é real.
+      // `jev_cobriu` é a exceção do `erro`: a IA de sempre caiu em observação,
+      // mas a nota do Jev já estava na mão e decidiu — nada se perdeu.
+      consequencia:
+        l.status === "erro" && l.origem_da_escolha !== "jev_cobriu"
+          ? (ponto?.sintomaDeFalha ?? null)
+          : null,
       oQueFazer: l.status === "erro" ? (O_QUE_FAZER[l.error_code ?? ""] ?? null) : null,
-      porQueEsteModelo: l.origem_da_escolha
-        ? (EXPLICACAO_DA_ORIGEM[l.origem_da_escolha as OrigemDaEscolha] ?? null)
-        : null,
+      // A linha de falha do Jev só existe quando ninguém mediu: "O Jev decidiu"
+      // seria falso justamente nela.
+      porQueEsteModelo:
+        l.origem_da_escolha === "jev" && l.status === "erro"
+          ? JEV_FALHOU_SEM_RESERVA
+          : l.origem_da_escolha
+            ? (EXPLICACAO_DA_ORIGEM[l.origem_da_escolha as OrigemDaEscolha] ?? null)
+            : null,
     };
   });
 

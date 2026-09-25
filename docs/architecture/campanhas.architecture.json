@@ -1,0 +1,231 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Campanhas — da lista escolhida até a resposta que volta",
+    "subtitle": "O ritmo é do número (channel_knobs + pacing_ledger); a campanha só sabe ir mais devagar",
+    "output": "campanhas.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "tela", "label": "Tela" },
+    { "id": "api", "label": "Borda HTTP (manager+)" },
+    { "id": "motor", "label": "Rodada do cron" },
+    { "id": "envio", "label": "Cadeia de envio que já existia" },
+    { "id": "dados", "label": "Dados" },
+    { "id": "retorno", "label": "Laço de retorno" }
+  ],
+  "mainPath": [
+    "nova",
+    "rota-criar",
+    "rota-acao",
+    "preparacao",
+    "campaign-recipients",
+    "rodada",
+    "send-handler",
+    "messages",
+    "detalhe"
+  ],
+  "nodes": [
+    {
+      "id": "lista",
+      "lane": "tela",
+      "col": 0,
+      "type": "ui",
+      "label": "Lista de campanhas (/app/campaigns)"
+    },
+    {
+      "id": "nova",
+      "lane": "tela",
+      "col": 1,
+      "type": "ui",
+      "label": "Nova campanha (/app/campaigns/new) — público, texto, ritmo"
+    },
+    {
+      "id": "detalhe",
+      "lane": "tela",
+      "col": 2,
+      "type": "ui",
+      "label": "Detalhe (/app/campaigns/[id]) — funil, destinatários e ações do estado"
+    },
+    {
+      "id": "antiban",
+      "lane": "tela",
+      "col": 3,
+      "type": "ui",
+      "label": "Conexões › Proteção de envio (AntiBanSheet) — o ritmo do número"
+    },
+    {
+      "id": "rota-criar",
+      "lane": "api",
+      "col": 0,
+      "type": "service",
+      "label": "GET/POST /api/v1/campaigns + PATCH /[id] (só rascunho edita)"
+    },
+    {
+      "id": "rota-previa",
+      "lane": "api",
+      "col": 1,
+      "type": "service",
+      "label": "POST /api/v1/campaigns/preview — conta sem gravar"
+    },
+    {
+      "id": "rota-acao",
+      "lane": "api",
+      "col": 2,
+      "type": "service",
+      "label": "POST /api/v1/campaigns/[id]/[acao] — preparar, iniciar, pausar, cancelar, testar"
+    },
+    {
+      "id": "rota-metricas",
+      "lane": "api",
+      "col": 3,
+      "type": "service",
+      "label": "GET /[id]/metrics e /[id]/recipients — funil por carimbo, paginado"
+    },
+    {
+      "id": "maquina",
+      "lane": "api",
+      "col": 4,
+      "type": "logic",
+      "label": "maquina-de-estados.ts — única autoridade sobre a transição"
+    },
+    {
+      "id": "preparacao",
+      "lane": "motor",
+      "col": 0,
+      "type": "logic",
+      "label": "preparacao.ts — recorte vira lista congelada, com os excluídos e o motivo"
+    },
+    {
+      "id": "rodada",
+      "lane": "motor",
+      "col": 1,
+      "type": "worker",
+      "label": "cron campaign-worker → rodada.ts: 1 mensagem por número por tique"
+    },
+    {
+      "id": "ritmo",
+      "lane": "motor",
+      "col": 2,
+      "type": "logic",
+      "label": "ritmo.ts — intervalo, janela e tetos DA CAMPANHA (o mais restritivo vence)"
+    },
+    {
+      "id": "elegibilidade",
+      "lane": "motor",
+      "col": 3,
+      "type": "logic",
+      "label": "elegibilidade.ts — bloqueado, anonimizado, recusou marketing, sem telefone, duplicado"
+    },
+    {
+      "id": "pacing",
+      "lane": "envio",
+      "col": 0,
+      "type": "logic",
+      "label": "decidePacing + pacing_ledger — o ritmo do NÚMERO, compartilhado com o agente"
+    },
+    {
+      "id": "send-handler",
+      "lane": "envio",
+      "col": 1,
+      "type": "service",
+      "label": "sendMessageHandler (a mesma porta do inbox e do follow-up)"
+    },
+    {
+      "id": "adapter",
+      "lane": "envio",
+      "col": 2,
+      "type": "external",
+      "label": "ChannelAdapter — a campanha nunca fala com o provedor"
+    },
+    {
+      "id": "campaigns",
+      "lane": "dados",
+      "col": 0,
+      "type": "database",
+      "label": "campaigns — estado, conteúdo, base legal + LIA, ritmo próprio, contadores do snapshot"
+    },
+    {
+      "id": "campaign-recipients",
+      "lane": "dados",
+      "col": 1,
+      "type": "database",
+      "label": "campaign_recipients — quem recebe, com o texto congelado e os carimbos"
+    },
+    {
+      "id": "messages",
+      "lane": "dados",
+      "col": 2,
+      "type": "database",
+      "label": "messages — a mensagem da campanha é outbound normal, na conversa do contato"
+    },
+    {
+      "id": "channel-knobs",
+      "lane": "dados",
+      "col": 3,
+      "type": "database",
+      "label": "channel_knobs + channel_sessions.daily_message_limit — fonte única do ritmo do número"
+    },
+    {
+      "id": "trigger-ack",
+      "lane": "retorno",
+      "col": 0,
+      "type": "logic",
+      "label": "trg_messages_sincroniza_campanha — ack vira entregue/lido; status nunca retrocede"
+    },
+    {
+      "id": "resposta",
+      "lane": "retorno",
+      "col": 1,
+      "type": "worker",
+      "label": "resposta.handler.ts em message.received — fecha o envio em até 72h"
+    },
+    {
+      "id": "opt-out",
+      "lane": "retorno",
+      "col": 2,
+      "type": "logic",
+      "label": "contacts.is_blocked (escrito por lib/opt-out) — fecha o que ainda iria sair"
+    },
+    {
+      "id": "lgpd",
+      "lane": "retorno",
+      "col": 3,
+      "type": "logic",
+      "label": "trg_redigir_campanhas_anonimizado + export-collector — apaga e entrega"
+    }
+  ],
+  "edges": [
+    { "id": "lista-abre-nova", "from": "lista", "to": "nova", "label": "Nova campanha" },
+    { "id": "nova-cria", "from": "nova", "to": "rota-criar", "label": "POST cria o rascunho" },
+    { "id": "nova-preve", "from": "nova", "to": "rota-previa", "label": "quantas pessoas isto pega" },
+    { "id": "previa-le-lista", "from": "rota-previa", "to": "preparacao", "label": "mesma consulta e mesma classificação" },
+    { "id": "detalhe-aciona", "from": "detalhe", "to": "rota-acao", "label": "preparar, testar, iniciar, pausar, cancelar" },
+    { "id": "acao-consulta-maquina", "from": "rota-acao", "to": "maquina", "label": "a transição cabe neste estado?" },
+    { "id": "acao-prepara", "from": "rota-acao", "to": "preparacao", "label": "materializa o snapshot" },
+    { "id": "preparacao-grava", "from": "preparacao", "to": "campaign-recipients", "label": "INSERT com texto congelado e motivo da exclusão" },
+    { "id": "preparacao-classifica", "from": "preparacao", "to": "elegibilidade", "label": "quem pode receber" },
+    { "id": "rota-criar-grava", "from": "rota-criar", "to": "campaigns", "label": "INSERT/UPDATE (só rascunho)" },
+    { "id": "rodada-le-campanha", "from": "rodada", "to": "campaigns", "label": "running, org não suspensa; promove agendada" },
+    { "id": "rodada-le-fila", "from": "rodada", "to": "campaign-recipients", "label": "próximo pendente, claim em compare-and-set" },
+    { "id": "rodada-pergunta-ritmo", "from": "rodada", "to": "ritmo", "label": "pode mandar agora?" },
+    { "id": "rodada-revalida", "from": "rodada", "to": "elegibilidade", "label": "revalida o veto por pessoa antes de enviar" },
+    { "id": "ritmo-herda", "from": "ritmo", "to": "channel-knobs", "label": "null = herda o número" },
+    { "id": "rodada-pergunta-canal", "from": "rodada", "to": "pacing", "label": "e o número, aguenta?" },
+    { "id": "pacing-le-knobs", "from": "pacing", "to": "channel-knobs", "label": "janela, throttle, warm-up, teto" },
+    { "id": "rodada-envia", "from": "rodada", "to": "send-handler", "label": "id da mensagem nasce antes (idempotência)" },
+    { "id": "send-grava", "from": "send-handler", "to": "messages", "label": "outbound com metadata da campanha" },
+    { "id": "send-chama-adapter", "from": "send-handler", "to": "adapter", "label": "entrega ao canal" },
+    { "id": "messages-dispara-trigger", "from": "messages", "to": "trigger-ack", "label": "AFTER UPDATE OF status" },
+    { "id": "trigger-carimba", "from": "trigger-ack", "to": "campaign-recipients", "label": "sent → delivered → read" },
+    { "id": "messages-emite-inbound", "from": "messages", "to": "resposta", "label": "message.received (trigger AFTER INSERT)" },
+    { "id": "resposta-carimba", "from": "resposta", "to": "campaign-recipients", "label": "replied_at, dentro da janela de 72h" },
+    { "id": "resposta-le-bloqueio", "from": "resposta", "to": "opt-out", "label": "o contato pediu para parar?" },
+    { "id": "opt-out-fecha", "from": "opt-out", "to": "campaign-recipients", "label": "pendentes viram opted_out" },
+    { "id": "lgpd-apaga", "from": "lgpd", "to": "campaign-recipients", "label": "anonimizar apaga telefone e texto; o export entrega" },
+    { "id": "detalhe-le-metricas", "from": "detalhe", "to": "rota-metricas", "label": "funil, progresso e quem ficou de fora" },
+    { "id": "metricas-le-destinatarios", "from": "rota-metricas", "to": "campaign-recipients", "label": "contagem por carimbo, não por status" },
+    { "id": "antiban-edita-knobs", "from": "antiban", "to": "channel-knobs", "label": "o operador ajusta o ritmo do número aqui" }
+  ]
+}

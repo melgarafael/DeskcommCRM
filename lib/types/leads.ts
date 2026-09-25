@@ -108,6 +108,17 @@ export interface Lead {
    */
   contact_tags?: string[];
   /**
+   * Derivado (não é coluna): telefone, e-mail e links (Instagram, site, Google
+   * Meu Negócio…) do CONTATO deste negócio — o que o card do funil mostra sem
+   * abrir o dossiê. Ausente quando o negócio não tem contato, o contato foi
+   * anonimizado (LGPD) ou o campo está vazio: o payload do quadro não engorda.
+   * Os links vêm de `contacts.custom_fields` (`lib/leads/links-de-contato.ts`),
+   * já validados — só http/https.
+   */
+  contact_phone?: string;
+  contact_email?: string;
+  contact_links?: Array<{ tipo: string; href: string }>;
+  /**
    * Derivado (não é coluna): os marcadores das CONVERSAS do contato deste
    * negócio — a terceira caixa, "Tags da conversa" no painel do Inbox, onde a
    * IA também escreve. União de TODAS as conversas do contato, não só da mais

@@ -114,22 +114,42 @@ test.describe("Painel de configuração da instalação", () => {
       const primeiroGrupo = page.getByRole("heading", { level: 2 }).first();
       await expect(primeiroGrupo).toHaveText(/e-mail/i);
 
-      // A chave do serviço de e-mail existe na tela e declara a origem.
-      const campo = page.locator("#config-RESEND_API_KEY");
-      await expect(campo).toBeVisible();
+      // ⚠️ A CHAVE DO SERVIÇO EXTERNO NÃO MORA MAIS AQUI (DEC-009, opção A):
+      // ela foi para `/admin/email`, ao lado do servidor próprio. O que esta
+      // tela deve a quem procurar por ela onde ela esteve é o CAMINHO — sem
+      // isso, "sumiu" é o que o operador entende por "não dá mais para
+      // configurar".
+      await expect(
+        page.locator("#config-RESEND_API_KEY"),
+        "a chave do serviço externo voltou a aparecer em Credenciais — ela mora em E-mail",
+      ).toHaveCount(0);
+
+      const ponteiro = page.getByTestId("ponteiro-email");
+      await expect(
+        ponteiro,
+        "sem o ponteiro, quem procura a chave aqui conclui que ela sumiu",
+      ).toBeVisible();
+      await ponteiro.click();
+      await expect(page).toHaveURL(/\/admin\/email/);
+      await expect(
+        page.locator("#config-RESEND_API_KEY"),
+        "o caminho levou a uma tela que não tem a chave — o ponteiro estaria mentindo",
+      ).toBeVisible();
     });
 
     test("configurar pela tela vale na hora, e o segredo não volta ao navegador", async ({
       page,
     }) => {
-      await page.goto("/admin/configuracao");
+      // Na tela de E-MAIL desde o DEC-009 — mesmo campo, mesma ação de servidor,
+      // mesma linha do banco; o que mudou foi o lugar.
+      await page.goto("/admin/email");
 
       const campo = page.locator("#config-RESEND_API_KEY");
       await campo.fill(CHAVE_DE_TESTE);
-      await page
-        .getByRole("button", { name: /^salvar$/i })
-        .first()
-        .click();
+      // ⚠️ PELO TESTID DA CHAVE, e não "o primeiro Salvar da tela". Nesta tela
+      // existem DOIS: o do servidor SMTP vem antes no DOM, e `.first()` clicava
+      // nele — o caso reprovou salvando a configuração errada, sem dizer isso.
+      await page.getByTestId("salvar-RESEND_API_KEY").click();
 
       // A confirmação é em português de gente, não "operação concluída".
       await expect(page.getByText(/já está valendo/i)).toBeVisible({ timeout: 15_000 });
@@ -173,9 +193,9 @@ test.describe("Painel de configuração da instalação", () => {
     });
 
     test("voltar ao padrão devolve a palavra ao arquivo de instalação", async ({ page }) => {
-      await page.goto("/admin/configuracao");
+      await page.goto("/admin/email");
 
-      const voltar = page.getByRole("button", { name: /voltar ao padrão/i }).first();
+      const voltar = page.getByTestId("voltar-RESEND_API_KEY");
       await expect(voltar, "sem valor definido na tela não há o que reverter").toBeVisible();
       await voltar.click();
 
@@ -195,30 +215,38 @@ test.describe("Painel de configuração da instalação", () => {
       ).toHaveCount(0, { timeout: 15_000 });
     });
 
-    test("a tela é usável: sem rolagem lateral, sem botão fora da vista", async ({ page }) => {
-      await page.goto("/admin/configuracao");
-      await page.setViewportSize({ width: 390, height: 844 }); // celular comum
+    // AS DUAS TELAS, e não só a minha: o campo do serviço externo passou a ser
+    // desenhado em `/admin/email` pelo mesmo componente, e um campo que cabe
+    // numa tela pode não caber na outra — a de e-mail tem largura própria
+    // (`max-w-2xl`) e já vinha com os campos do servidor SMTP.
+    for (const tela of ["/admin/configuracao", "/admin/email"]) {
+      test(`a tela é usável em ${tela}: sem rolagem lateral, sem botão fora da vista`, async ({
+        page,
+      }) => {
+        await page.goto(tela);
+        await page.setViewportSize({ width: 390, height: 844 }); // celular comum
 
-      // Medido por ferramenta, nunca a olho: a olho tudo parece bem.
-      const rolagemLateral = await page.evaluate(
-        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-      );
-      expect(rolagemLateral, "a tela força rolagem horizontal no celular").toBeLessThanOrEqual(1);
+        // Medido por ferramenta, nunca a olho: a olho tudo parece bem.
+        const rolagemLateral = await page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        );
+        expect(rolagemLateral, "a tela força rolagem horizontal no celular").toBeLessThanOrEqual(1);
 
-      // Todo botão precisa caber na largura da tela e ter alvo de toque decente.
-      const problemas = await page.evaluate(() => {
-        const ruins: string[] = [];
-        for (const b of Array.from(document.querySelectorAll("button, a[href]"))) {
-          const r = b.getBoundingClientRect();
-          if (r.width === 0 && r.height === 0) continue; // fora do fluxo, não conta
-          if (r.right > window.innerWidth + 1)
-            ruins.push(`fora da vista: ${b.textContent?.trim()}`);
-          if (r.height > 0 && r.height < 24) ruins.push(`alvo pequeno: ${b.textContent?.trim()}`);
-        }
-        return ruins;
+        // Todo botão precisa caber na largura da tela e ter alvo de toque decente.
+        const problemas = await page.evaluate(() => {
+          const ruins: string[] = [];
+          for (const b of Array.from(document.querySelectorAll("button, a[href]"))) {
+            const r = b.getBoundingClientRect();
+            if (r.width === 0 && r.height === 0) continue; // fora do fluxo, não conta
+            if (r.right > window.innerWidth + 1)
+              ruins.push(`fora da vista: ${b.textContent?.trim()}`);
+            if (r.height > 0 && r.height < 24) ruins.push(`alvo pequeno: ${b.textContent?.trim()}`);
+          }
+          return ruins;
+        });
+        expect(problemas, `controles com problema de layout: ${problemas.join(" | ")}`).toEqual([]);
       });
-      expect(problemas, `controles com problema de layout: ${problemas.join(" | ")}`).toEqual([]);
-    });
+    }
   });
 
   test("administrador de ORGANIZAÇÃO não vê a porta — e nem entra digitando a URL", async ({

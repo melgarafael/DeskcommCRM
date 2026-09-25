@@ -32,6 +32,46 @@ type ProvisionOptions = {
 };
 
 /**
+ * De qual organização esta pessoa é, se é de alguma — ou `null`.
+ *
+ * Existe separado de `ensureTenantForUser` porque há um caller que precisa
+ * PERGUNTAR sem AGIR: a volta da entrada com Google (`app/auth/callback/route.ts`)
+ * chega sem saber se aquilo é um primeiro acesso ou alguém voltando, e a
+ * resposta muda tudo o que vem depois — travas de cadastro, convite,
+ * provisionamento. Chamar `ensureTenantForUser` para descobrir seria agir antes
+ * de decidir: quem entrasse sem convite numa instalação `so_convite` já teria
+ * ganhado empresa antes de a política ser lida.
+ *
+ * Service role, como o resto do provisionamento: quem ainda não pertence a
+ * organização nenhuma não enxerga `user_organizations` por RLS. O `user_id`
+ * vem sempre do JWT já validado, nunca do corpo de uma requisição.
+ */
+export async function vinculoAtivo(userId: string): Promise<string | null> {
+  const admin = createAdminClient();
+
+  const { data, error } = await admin
+    .from("user_organizations")
+    .select("organization_id")
+    .eq("user_id", userId)
+    .is("revoked_at", null)
+    .limit(1)
+    .maybeSingle();
+
+  // Erro NÃO vira `null`, pela mesma razão escrita em `vinculoVivo`, ~300 linhas
+  // abaixo: `null` já quer dizer "não pertence a organização nenhuma", e uma
+  // leitura que falhou não é a mesma coisa que um vínculo que não existe. Lido
+  // como equivalente, o soluço de leitura expulsa um membro de casa numa
+  // instalação `so_convite` e, numa instalação aberta, entrega organização nova
+  // a quem já tinha uma. Quem decide o que fazer com a falha é quem chama
+  // (`app/auth/callback/route.ts` degrada para falha FECHADA); aqui ela sobe alto.
+  if (error) {
+    throw new Error(`provisioning: leitura do vínculo ativo falhou: ${error.message}`);
+  }
+
+  return data?.organization_id ?? null;
+}
+
+/**
  * Provisiona o tenant de um usuário recém-confirmado via signup self-service:
  * cria a organização (status `active`, `onboarded_at` null → cai no onboarding)
  * e a membership `admin` do usuário.
@@ -49,14 +89,8 @@ export async function ensureTenantForUser(
 ): Promise<{ provisioned: boolean; organizationId?: string }> {
   const admin = createAdminClient();
 
-  const { data: existing } = await admin
-    .from("user_organizations")
-    .select("organization_id")
-    .eq("user_id", user.id)
-    .is("revoked_at", null)
-    .limit(1)
-    .maybeSingle();
-  if (existing) return { provisioned: false, organizationId: existing.organization_id };
+  const organizationId = await vinculoAtivo(user.id);
+  if (organizationId) return { provisioned: false, organizationId };
 
   const orgName =
     (user.user_metadata?.org_name as string | undefined)?.trim() ||

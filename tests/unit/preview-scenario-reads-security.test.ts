@@ -18,4 +18,9 @@ describe("segurança da prévia: leituras de cenário não podem virar escrita",
     expect(SCENARIO_READS.has("crm_list_event_types")).toBe(true);
     expect(SCENARIO_READS.has("crm_list_appointment_types")).toBe(false);
   });
+
+  it("permite leitura e catálogo de dados externos no modo teste", () => {
+    expect(SCENARIO_READS.has("crm_describe_external_data")).toBe(true);
+    expect(SCENARIO_READS.has("crm_query_external_data")).toBe(true);
+  });
 });

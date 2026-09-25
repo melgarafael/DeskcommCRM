@@ -17,10 +17,12 @@ import {
   useChannelSessions,
   type ChannelSession,
 } from "@/hooks/channels/useChannelSessions";
+import { CHANNEL_PROVIDER_SOCIAL } from "@/lib/channels/capabilities";
 import { usePacingKnobs } from "@/hooks/channels/usePacingKnobs";
 import { AntiBanSheet } from "./AntiBanSheet";
 import { PairingOptions } from "./PairingOptions";
 import { ChannelAiAccess } from "./ChannelAiAccess";
+import { ParaIntegrar } from "./ParaIntegrar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -42,6 +44,7 @@ import {
   Warning,
 } from "@/lib/ui/icons";
 import { lerEstadoDoCanal } from "@/lib/channels/estado";
+import { fonteDeTemplates } from "@/lib/channels/templates-fonte";
 import { useT } from "@/hooks/i18n/useT";
 
 type Variant = "success" | "warning" | "error" | "neutral";
@@ -85,6 +88,21 @@ function errMsg(err: unknown, fallback: string, t: (texto: string) => string): s
  */
 function dependeDoTransporte(c: ChannelSession): boolean {
   return Boolean(c.waha_session_name);
+}
+
+/**
+ * "Este número fala pelo canal OFICIAL?" — perguntado pela FONTE das definições
+ * do canal, que é o único lugar do repo que diz `oficial` para uma linha de
+ * `channel_sessions` sem que a tela precise nomear provider nenhum.
+ *
+ * ⚠️ `!dependeDoTransporte(c)` responderia outra pergunta — "não tem sessão no
+ * transporte" — e a diferença não é acadêmica: um número pareado por QR recém
+ * criado, ainda sem nome de sessão, ganharia a etiqueta de oficial. Ali o erro
+ * de pecar por excesso só escondia um botão (está escrito acima); aqui ele
+ * AFIRMA à pessoa que opera algo falso sobre o número dela.
+ */
+function ehCanalOficial(c: ChannelSession): boolean {
+  return fonteDeTemplates(c.provider) === "oficial";
 }
 
 /** "3 conversas" / "1 conversa" — ou nada, quando não há o que contar. */
@@ -223,7 +241,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
     invalidate();
   }, [invalidate, t]);
 
-  const list = sessions ?? [];
+  const list = (sessions ?? []).filter((session) => session.provider !== CHANNEL_PROVIDER_SOCIAL);
 
   return (
     <div className="flex flex-col gap-4">
@@ -265,6 +283,32 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
       <p className="text-sm text-muted-foreground">
         {t("Novos canais começam em modo de teste, sem respostas automáticas até você autorizar números ou liberar o público.")}
       </p>
+
+      {list.length > 0 ? (
+        <ParaIntegrar
+          campos={[]}
+          ajuda={
+            <div className="space-y-1.5">
+              <p>
+                {t(
+                  "No canal por QR a credencial é interna desta instalação e não serve para fora. Para ligar outro CRM ao mesmo número, conecte-o por uma sessão própria (novo QR).",
+                )}
+              </p>
+              <p>
+                {t(
+                  "Dois dispositivos vinculados recebem as mesmas mensagens — se os dois tiverem atendimento automático, o cliente pode receber resposta dupla.",
+                )}
+              </p>
+            </div>
+          }
+          aviso={
+            <>
+              {t("Não compartilhe esta sessão.")}{" "}
+              {t("Crie uma conexão separada por QR no outro sistema.")}
+            </>
+          }
+        />
+      ) : null}
       {connectionDetail && <details className="rounded-md border p-3 text-sm"><summary>{t("Detalhes para suporte")}</summary><pre className="mt-2 whitespace-pre-wrap break-words">{connectionDetail}</pre><Button variant="outline" size="sm" onClick={async () => {
         if (await copyToClipboard(connectionDetail)) toast.success(t("Copiado!"));
         else toast.error(t("Não foi possível copiar. Selecione e copie manualmente."));
@@ -346,6 +390,11 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                     <div className="flex items-center gap-2">
                       <Phone size={16} className="text-muted-foreground" aria-hidden />
                       <span className="truncate text-sm font-medium">{channelLabel(c, t)}</span>
+                      {ehCanalOficial(c) && (
+                        <Badge variant="default" className="shrink-0">
+                          {t("API oficial")}
+                        </Badge>
+                      )}
                     </div>
                     {c.phone_number && c.display_name && (
                       <p className="mt-0.5 font-mono text-xs text-muted-foreground">

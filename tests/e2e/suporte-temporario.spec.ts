@@ -10,7 +10,7 @@ const password=`Local-${randomUUID()}!`;
 async function insert(table:string,value:Record<string,unknown>) {
  const {data,error}=await db.from(table).insert(value).select("id").single(); if(error)throw error; return data.id as string;
 }
-async function login(page:Page,email:string){await page.goto("/login");await page.getByLabel(/e-?mail/i).fill(email);await page.getByLabel(/senha/i).fill(password);await page.getByRole("button",{name:/entrar/i}).click();await page.waitForURL(/\/app(\/|$)/,{timeout:60000});}
+async function login(page:Page,email:string){await page.goto("/login");await page.getByLabel(/e-?mail/i).fill(email);await page.getByLabel(/senha/i).fill(password);await page.getByRole("button",{name:"Entrar",exact:true}).click();await page.waitForURL(/\/app(\/|$)/,{timeout:60000});}
 async function start(page:Page,org:string,readonly=false){
  await page.goto(`/admin/tenants/${org}`);
  await page.getByRole("button",{name:/Acompanhar/}).click();

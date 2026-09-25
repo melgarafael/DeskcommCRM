@@ -11,7 +11,9 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *   2. crm_leads + 3. crm_lead_activities: `lib/lgpd/cascata.ts`, idempotentes,
  *      e a MESMA função que o cron `data-retention` usa para completar sozinho
  *      o que ficou pela metade
- *   4. Storage media deletion deferred to EPIC-08 worker
+ *   4. mensagens, conversa, resumo do agente (`lead_checkpoints`) e a mídia
+ *      (para `storage_redaction_queue`): gatilho `trg_redigir_conversas_ao_anonimizar`
+ *      na virada de `is_anonymized`, dentro da transação do passo 1 (migration 0391)
  *
  * Três desfechos em `action`, e não dois: `anonymized` (primeira execução),
  * `resumed` (já constava anonimizado E havia resíduo, redigido agora) e

@@ -41,6 +41,11 @@ export function useResumeAiAttendance() {
     onSuccess: (_data, args) => {
       qc.invalidateQueries({ queryKey: ["conversations"] });
       qc.invalidateQueries({ queryKey: ["conversation", args.conversation_id] });
+      // Irmão do par: `usePauseAiAttendance` já invalidava a contagem, e devolver
+      // a conversa ao automático muda o mesmo número — só que para o outro lado.
+      // Sem esta linha, retomar a IA deixava o badge do bucket velho até um
+      // F5, o mesmo defeito do #998 por outra porta.
+      qc.invalidateQueries({ queryKey: ["conversation-counts"] });
     },
   });
 }

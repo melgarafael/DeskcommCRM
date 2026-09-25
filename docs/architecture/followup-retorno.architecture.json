@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Cliente voltou — follow-up no inbound depois do silêncio",
+    "subtitle": "uma voz só: o fluxo fala; o turno do agente cede",
+    "output": "followup-retorno.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "canal", "label": "Canal" },
+    { "id": "ui", "label": "Tela" },
+    { "id": "regra", "label": "Regra" },
+    { "id": "motor", "label": "Motor" },
+    { "id": "dados", "label": "Banco" }
+  ],
+  "mainPath": ["inbound", "gap", "enroll", "envio", "dossie"],
+  "nodes": [
+    {
+      "id": "inbound",
+      "lane": "canal",
+      "col": 1,
+      "type": "external",
+      "label": "message.received",
+      "sublabel": "cliente escreveu agora"
+    },
+    {
+      "id": "tela",
+      "lane": "ui",
+      "col": 1,
+      "type": "frontend",
+      "label": "Gatilho Cliente voltou",
+      "sublabel": "valor + unidade · default 1 dia"
+    },
+    {
+      "id": "gap",
+      "lane": "regra",
+      "col": 2,
+      "type": "backend",
+      "label": "gapQualificaRetorno",
+      "sublabel": "inbound anterior em messages, não last_inbound_at"
+    },
+    {
+      "id": "enroll",
+      "lane": "motor",
+      "col": 3,
+      "type": "backend",
+      "label": "gatilho-retorno",
+      "sublabel": "enroll + envio inline do 1º texto"
+    },
+    {
+      "id": "ceder",
+      "lane": "motor",
+      "col": 3,
+      "type": "backend",
+      "label": "ceder-turno-ao-retorno",
+      "sublabel": "drain do agente não enfileira inbound_turn"
+    },
+    {
+      "id": "envio",
+      "lane": "canal",
+      "col": 4,
+      "type": "external",
+      "label": "Texto fixo no WhatsApp",
+      "sublabel": "uma voz"
+    },
+    {
+      "id": "dossie",
+      "lane": "ui",
+      "col": 4,
+      "type": "frontend",
+      "label": "Dossiê do follow-up",
+      "sublabel": "enrolled_by_inbound_after_silence"
+    },
+    {
+      "id": "pointers",
+      "lane": "dados",
+      "col": 2,
+      "type": "database",
+      "label": "followup_flow_pointers",
+      "sublabel": "kind inbound_after_silence · minutos"
+    }
+  ],
+  "edges": [
+    { "from": "inbound", "to": "gap", "label": "buraco desde o inbound anterior" },
+    { "from": "tela", "to": "pointers", "label": "grava threshold_minutes" },
+    { "from": "pointers", "to": "enroll", "label": "pointers armados" },
+    { "from": "gap", "to": "enroll", "label": "qualifica" },
+    { "from": "enroll", "to": "envio", "label": "avança o 1º passo agora" },
+    { "from": "enroll", "to": "dossie", "label": "proveniência na timeline" },
+    { "from": "inbound", "to": "ceder", "label": "mesmo fato, outro evento" },
+    { "from": "gap", "to": "ceder", "label": "o mesmo predicado" },
+    { "from": "ceder", "to": "envio", "label": "não põe segunda voz" },
+    { "from": "pointers", "to": "tela", "label": "lê valor + unidade" },
+    { "from": "dossie", "to": "tela", "label": "operador vê quem disparou" }
+  ]
+}

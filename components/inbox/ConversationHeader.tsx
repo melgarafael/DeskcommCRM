@@ -2,9 +2,20 @@
 import { useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import Link from "next/link";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { JanelaSelo } from "@/components/inbox/JanelaSelo";
+import { ChannelLogo } from "@/components/inbox/ChannelLogo";
 import { Phone, ArrowRight } from "@/lib/ui/icons";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
@@ -21,12 +32,15 @@ import { OwnerBadge } from "@/components/kanban/OwnerBadge";
 import { comandoDaConversa, ROTULO_DO_MOTIVO } from "@/lib/inbox/comando-da-conversa";
 import { ReassignDialog } from "@/components/inbox/ReassignDialog";
 import { SnoozeButton } from "@/components/inbox/SnoozeButton";
+import { DialButton } from "@/components/voice/DialButton";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 
 interface Props {
   conversation: ConversationWithContact;
+  /** Seleciona outra conversa no Inbox — a aba Número do Transferir abre a do outro número. */
+  onAbrirConversa?: (id: string) => void;
 }
 
 /**
@@ -55,7 +69,7 @@ const STATUS_LABEL: Record<string, string> = {
   archived: "Arquivada",
 };
 
-export function ConversationHeader({ conversation }: Props) {
+export function ConversationHeader({ conversation, onAbrirConversa }: Props) {
   const t = useT();
   const { user } = useAuth();
   const claim = useClaimConversation();
@@ -69,6 +83,8 @@ export function ConversationHeader({ conversation }: Props) {
   // atendendo em instalação que nunca configurou agente nenhum.
   const automaticoDaOrg = useAutomaticoAtivo();
   const [reassignOpen, setReassignOpen] = useState(false);
+  const [confirmFecharOpen, setConfirmFecharOpen] = useState(false);
+  const [confirmArquivarOpen, setConfirmArquivarOpen] = useState(false);
 
   const c = conversation.contacts ?? null;
   const displayName = rotuloDoContato(c, t);
@@ -93,6 +109,7 @@ export function ConversationHeader({ conversation }: Props) {
     assigned_to_user_name: conversation.assigned_to_user_name ?? null,
     assignee_kind: conversation.assignee_kind ?? null,
     bot_silenced_until: conversation.bot_silenced_until ?? null,
+    last_handoff_reason: conversation.last_handoff_reason ?? null,
     force_human: c?.force_human ?? null,
     is_blocked: conversation.contacts?.is_blocked ?? null,
     automaticoDaOrg: automaticoDaOrg.data,
@@ -148,9 +165,10 @@ export function ConversationHeader({ conversation }: Props) {
     // `canais-baseline` clica, e, pior, esconderia ação de quem atende.
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background px-4 py-3">
       <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <h2 className="truncate text-sm font-semibold">{displayName}</h2>
-          <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <ChannelLogo channel={conversation.channel_sessions} size={20} />
+          <h2 className="min-w-0 truncate text-sm font-semibold" title={displayName}>{displayName}</h2>
+          <Badge variant="outline" className="h-4 shrink-0 px-1.5 text-[10px]">
             {t(STATUS_LABEL[status] ?? status)}
           </Badge>
           {/* Ao lado do estado, não escondido num painel: a pergunta "dá para
@@ -160,22 +178,6 @@ export function ConversationHeader({ conversation }: Props) {
             provider={conversation.channel_sessions?.provider ?? null}
             lastInboundAt={conversation.last_inbound_at}
           />
-          {/* Sem esta marca, a conversa em que o robô está calado tem exatamente
-              a mesma cara de uma conversa normal — e ninguém entende por que as
-              respostas automáticas pararam.
-              O testid é o MESMO de antes de propósito: `escalacao-ciclo.spec.ts`
-              o clica, e rótulo visível é contrato. O que mudou é o texto DIZER o
-              motivo — "alguém assumiu" e "pausado para este cliente" pediam ações
-              diferentes e tinham a mesma frase. */}
-          {motivo !== null && (
-            <Badge
-              variant="outline"
-              className="h-4 px-1.5 text-[10px]"
-              data-testid="badge-atendimento-humano"
-            >
-              {t(ROTULO_DO_MOTIVO[motivo])}
-            </Badge>
-          )}
         </div>
 
         {/* QUEM ESTÁ NO COMANDO, com nome e por GEOMETRIA — disco cheio para
@@ -195,7 +197,7 @@ export function ConversationHeader({ conversation }: Props) {
           )}
         </div>
         {phone && (
-          <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+          <p className="mt-0.5 flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground">
             <Phone size={11} weight="regular" aria-hidden /> {phone}
           </p>
         )}
@@ -203,8 +205,18 @@ export function ConversationHeader({ conversation }: Props) {
 
       {/* `shrink-0` saiu daqui: era ele que impunha o piso de largura. Agora a
           barra pode encolher e quebrar internamente, e os botões continuam
-          todos visíveis e clicáveis — só que em duas linhas quando preciso. */}
+          todos visíveis e clicáveis — só que em duas linhas quando preciso.
+          Esta coluna existe para o selo do automático morar ABAIXO da barra
+          (#1625): na linha do nome ele alargava a identidade e empurrava a
+          barra inteira para baixo. Ela também não é `shrink-0`, pelo mesmo
+          motivo da barra. */}
+      <div className="flex min-w-0 flex-col items-end gap-1">
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        {/* A chamada usa o telefone da ficha, mesmo quando o contato chegou por
+            outro canal. Grupos não representam uma pessoa para ligar. */}
+        {!conversation.is_group && c?.id && (
+          <DialButton contactId={c.id} hasPhone={!!c.phone_number} />
+        )}
         {isOpen && (
           <Button
             size="sm"
@@ -300,11 +312,7 @@ export function ConversationHeader({ conversation }: Props) {
             size="sm"
             variant="outline"
             disabled={close.isPending}
-            onClick={() => {
-              if (confirm(t("Fechar esta conversa?"))) {
-                close.mutate({ conversation_id: conversation.id, expected_revision: conversation.service_revision });
-              }
-            }}
+            onClick={() => setConfirmFecharOpen(true)}
           >
             {t("Fechar")}
           </Button>
@@ -326,26 +334,7 @@ export function ConversationHeader({ conversation }: Props) {
             size="sm"
             variant="ghost"
             disabled={arquivar.isPending}
-            onClick={() => {
-              // A confirmação precisa dizer o que ACONTECE, e o que acontece
-              // depende do estado. `fn_conversation_set_status` trata
-              // `archived` como terminal: encerra o atendimento (grava
-              // `service_closed_at`, incrementa a revisão) e, com isso, desfaz
-              // a pausa do automático. Um atendente que leia "arquivar = tirar
-              // da vista, volto depois" encerraria o atendimento sem saber — e
-              // o robô voltaria a responder no próximo "oi" do cliente.
-              const aviso = encerrada
-                ? t("Arquivar esta conversa?")
-                : t(
-                    "Arquivar encerra este atendimento e guarda a conversa no histórico. Se o cliente escrever de novo, ela volta. Arquivar?",
-                  );
-              if (confirm(aviso)) {
-                arquivar.mutate({
-                  conversation_id: conversation.id,
-                  expected_revision: conversation.service_revision,
-                });
-              }
-            }}
+            onClick={() => setConfirmArquivarOpen(true)}
           >
             {arquivar.isPending ? t("Arquivando...") : t("Arquivar")}
           </Button>
@@ -370,11 +359,92 @@ export function ConversationHeader({ conversation }: Props) {
           </Button>
         )}
       </div>
+        {/* O aviso pertence à operação automática. Abaixo da barra ele não
+            alarga a ficha do contato nem muda a posição dos botões.
+            Sem esta marca, a conversa em que o robô está calado tem exatamente
+            a mesma cara de uma conversa normal. O testid é contrato:
+            `escalacao-ciclo.spec.ts` o clica. */}
+        {motivo !== null && (
+          <Badge variant="outline" className="h-4 w-fit max-w-full truncate px-1.5 text-[10px]"
+            title={t(ROTULO_DO_MOTIVO[motivo])} data-testid="badge-atendimento-humano">
+            {t(ROTULO_DO_MOTIVO[motivo])}
+          </Badge>
+        )}
+      </div>
       <ReassignDialog
         conversationId={conversation.id}
         open={reassignOpen}
         onOpenChange={setReassignOpen}
+        numero={
+          onAbrirConversa && c?.id
+            ? {
+                contactId: c.id,
+                contactPhone: c.phone_number ?? null,
+                channelSessionId: conversation.channel_session_id,
+                onAbrirConversa,
+              }
+            : undefined
+        }
       />
+      <AlertDialog open={confirmFecharOpen} onOpenChange={setConfirmFecharOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Fechar esta conversa?")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("O atendimento é encerrado. Se o cliente escrever de novo, você pode reabrir.")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() =>
+                close.mutate({
+                  conversation_id: conversation.id,
+                  expected_revision: conversation.service_revision,
+                })
+              }
+            >
+              {t("Fechar")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {/* A confirmação precisa dizer o que ACONTECE, e o que acontece depende
+          do estado. `fn_conversation_set_status` trata `archived` como
+          terminal: encerra o atendimento (grava `service_closed_at`,
+          incrementa a revisão) e, com isso, desfaz a pausa do automático. Um
+          atendente que leia "arquivar = tirar da vista, volto depois"
+          encerraria o atendimento sem saber — e o robô voltaria a responder
+          no próximo "oi" do cliente. Por isso a descrição só aparece quando
+          `!encerrada`: quando já está encerrada, arquivar não muda o
+          atendimento, só o lugar onde a conversa mora. */}
+      <AlertDialog open={confirmArquivarOpen} onOpenChange={setConfirmArquivarOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Arquivar esta conversa?")}</AlertDialogTitle>
+            {!encerrada && (
+              <AlertDialogDescription>
+                {t(
+                  "Arquivar encerra este atendimento e guarda a conversa no histórico. Se o cliente escrever de novo, ela volta.",
+                )}
+              </AlertDialogDescription>
+            )}
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() =>
+                arquivar.mutate({
+                  conversation_id: conversation.id,
+                  expected_revision: conversation.service_revision,
+                })
+              }
+            >
+              {t("Arquivar")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

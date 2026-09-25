@@ -1,4 +1,5 @@
 import type { Role } from "@/lib/auth/types";
+import type { ModuloOpcional } from "@/lib/instalacao/modulos";
 
 /**
  * Registro de navegação — a ÚNICA lista de destinos do app do tenant.
@@ -43,6 +44,12 @@ export interface NavMetadata {
   /** Ausente = só no hub. `true` = uso diário, sobe para o sidebar. */
   sidebar?: boolean;
   healthDot?: boolean;
+  /**
+   * A porta de um MÓDULO OPCIONAL da instalação (`lib/instalacao/modulos.ts`).
+   * Com o módulo desligado ela some do menu, do hub e do ⌘K — para todo papel.
+   * É apresentação, como o resto deste arquivo: quem recusa é a tela e a rota.
+   */
+  modulo?: ModuloOpcional;
 }
 
 /**
@@ -103,6 +110,27 @@ export const GRUPO_NO_RODAPE: NavGroupId = "organizacao";
  * fechada e por isso não vira `minRole`.
  */
 export const NAV_CATALOG = [
+  {
+    // SEM `sidebar: true`, e a razão não tem nada a ver com a qualidade desta
+    // tela: o menu lateral está no limite medido. Com ela, seriam 20 portas, e
+    // `tests/e2e/navegacao.spec.ts` reprova ("em 900px o menu inteiro tem de
+    // caber sem scroll" · Received: true). O comentário daquela spec já
+    // antecipava o número: "Trocar '17 itens sem hierarquia' por '20 itens que
+    // não cabem' seria recriar o problema em outra forma."
+    //
+    // A porta NÃO sumiu: ela vive no hub do grupo CRM ("Ver tudo em CRM") e no
+    // ⌘K — o mesmo caminho das outras entradas do grupo.
+    // CONDIÇÃO QUE ENCERRA ESTA EXCEÇÃO: quando o menu couber mais uma porta
+    // (ver doc 47), este item volta ao sidebar — é o primeiro da fila, porque
+    // saiu por falta de espaço e não por decisão de produto.
+    href: "/app/prospecting",
+    label: "Prospecção",
+    description: "Busque empresas e conduza abordagens graduais com IA.",
+    icon: "Funnel",
+    group: "crm",
+    minRole: "admin",
+    section: "O dia a dia da venda",
+  },
   // ---- Atendimento — onde o operador passa o dia ----
   {
     href: "/app/inbox",
@@ -173,6 +201,20 @@ export const NAV_CATALOG = [
     sidebar: true,
   },
   {
+    // A campanha vive no CRM e não em Conexões: quem a usa está pensando em
+    // QUEM vai falar, não no número que fala. O ritmo (que é de Conexões) ela
+    // herda, e só sabe deixar mais devagar.
+    href: "/app/campaigns",
+    label: "Campanhas",
+    description: "Fale com uma lista de contatos que você escolhe, no ritmo do número.",
+    icon: "Megaphone",
+    group: "crm",
+    section: "O dia a dia da venda",
+    // SÓ NO HUB, como as demais telas de preparação: o quinto item do sidebar do
+    // CRM já fez o menu rolar 13px em 900px (e2e `navegacao.spec.ts`), e a
+    // campanha é montada de vez em quando, não aberta todo dia.
+  },
+  {
     href: "/app/contacts",
     label: "Contatos",
     description: "As pessoas do outro lado da conversa e seu histórico.",
@@ -194,6 +236,39 @@ export const NAV_CATALOG = [
     group: "crm",
     section: "O dia a dia da venda",
     sidebar: true,
+  },
+  {
+    // Módulo VoIP (migration 0347). No grupo do CRM pelo mesmo critério de
+    // Tarefas: quem atende confere ligações perdidas e transcrições no dia a
+    // dia, não como revisão deliberada.
+    //
+    // ─── SEM `sidebar`, e a razão não é gosto: a telefonia é MÓDULO OPCIONAL ───
+    //
+    // O dono decidiu (doc 27) que a telefonia por SIP entra desligada por
+    // padrão — quem não liga não tem os contêineres, não tem tronco e não tem
+    // ligação nenhuma para ver. Pôr a porta no sidebar de TODA instalação
+    // custaria a todas elas um item que quase nenhuma usa, e o preço é medido:
+    // `tests/e2e/navegacao.spec.ts` exige que, em 900px, o menu caiba inteiro
+    // sem rolagem, e o vigésimo item o faz rolar.
+    //
+    // O ideal seria mostrá-la SÓ para quem ligou o módulo, e isso hoje não é
+    // possível: "telefonia ligada" é um profile do docker compose (servidor),
+    // não um estado que o aplicativo conheça — o shell não consulta nada de
+    // telefonia, e os dois sinais de banco possíveis (linha em
+    // `voip_trunk_settings`, ou `phone_numbers` ativo) custariam uma consulta
+    // em todo render. Está desenhado na issue do `sidebarSe`.
+    //
+    // A porta NÃO sumiu: ela vive no hub do grupo CRM ("Ver tudo em CRM") e no
+    // ⌘K, que é o mesmo caminho das outras dez entradas de "organizacao".
+    // CONDIÇÃO QUE ENCERRA ESTA EXCEÇÃO: no dia em que o app souber que o
+    // módulo está ligado, o item volta ao sidebar para quem ligou.
+    href: "/app/calls",
+    label: "Chamadas",
+    description: "Histórico de ligações (voz por IA) com transcrição.",
+    icon: "Phone",
+    group: "crm",
+    section: "O dia a dia da venda",
+    minRole: "manager",
   },
   {
     // ⚠️ Esta tela nasceu porque a FERRAMENTA já existia sem ela. O agente de IA
@@ -342,6 +417,23 @@ export const NAV_CATALOG = [
     sidebar: true,
   },
   {
+    // Os roteiros de atendimento (#1130, de @vgamkt): perguntas que a IA conduz
+    // durante a conversa. MÓDULO OPCIONAL da instalação, desligado por padrão
+    // (doc 64): a porta só existe onde quem administra o servidor o ligou.
+    //
+    // SEM `sidebar`, pela decisão (d) do doc 48: o menu lateral encheu e ficou
+    // configurável por empresa — o padrão não cresce; a porta mora no hub de IA
+    // e na busca, e quem usa pode pô-la no menu dela.
+    href: "/app/ai/atendimento",
+    label: "Fluxos de atendimento",
+    description: "Perguntas que a IA conduz durante a conversa, com as respostas guardadas na ficha do cliente.",
+    icon: "ListChecks",
+    group: "ia",
+    section: "Montar o agente",
+    minRole: "manager",
+    modulo: "fluxos_atendimento",
+  },
+  {
     href: "/app/ai/routers",
     label: "Roteadores",
     description: "Qual agente pega qual conversa, e quando o humano assume.",
@@ -356,6 +448,12 @@ export const NAV_CATALOG = [
     label: "Credenciais",
     description: "A chave do provedor de IA que os agentes usam para pensar.",
     icon: "Key",
+    // VOLTOU para "ia"/"Montar o agente" na triagem, e a razão de quem tinha
+    // movido VENCEU em vez de estar errada: quando este PR nasceu, a tela não
+    // aparecia em hub nenhum e só se chegava nela digitando a URL. Depois
+    // disso a main ganhou o hub de IA, que a lista — e `tests/unit/nav-hub`
+    // cobra a entrada ali, inclusive em espanhol. Movê-la para "Sua empresa"
+    // agora tiraria a tela do lugar onde o hub promete que ela está.
     group: "ia",
     section: "Montar o agente",
     minRole: "manager",
@@ -366,7 +464,9 @@ export const NAV_CATALOG = [
     // havia onde responder "quem usa IA aqui, e com qual chave?".
     href: "/app/ai/providers",
     label: "Provedores",
-    description: "Qual inteligência atende cada parte do sistema — e o que acontece se ela falhar.",
+    // O "Jev" vem cedo: o ⌘K mostra só o começo da descrição, e a versão
+    // longa cortava antes do nome — quem procurava "jev" achava, mas não via por quê.
+    description: "Ligue o Jev para decisões rápidas e escolha qual inteligência atende cada parte do sistema.",
     icon: "Plugs",
     group: "ia",
     section: "Montar o agente",
@@ -775,6 +875,15 @@ export const NAV_CATALOG = [
     minRole: "admin",
   },
   {
+    href: "/app/settings/voip-trunk",
+    label: "Trunk SIP",
+    description: "Credenciais do provedor SIP para chamadas de voz por IA.",
+    icon: "Phone",
+    group: "organizacao",
+    section: "Dados e acesso",
+    minRole: "admin",
+  },
+  {
     href: "/app/extensions",
     label: "Extensões",
     description:
@@ -782,6 +891,27 @@ export const NAV_CATALOG = [
     icon: "PuzzlePiece",
     group: "organizacao",
     section: "Sua empresa",
+  },
+  {
+    // A porta da fonte de dados externa (migration 0372). Fica em "Dados e
+    // acesso" porque é o MESMO eixo de API Tokens: por onde dado entra e sai do
+    // CRM. NÃO é `admin` como as vizinhas de propósito — a decisão do dono (D2)
+    // é que QUALQUER autenticado vê a lista e consulta os dados; só CRIAR e
+    // editar conexão é `admin`. Gatear a leitura em `manager` esconderia do
+    // atendente exatamente a fonte que responde o que o cliente pergunta.
+    href: "/app/integracao-dados",
+    label: "Dados externos",
+    description:
+      "Conecte um banco de dados de outro sistema para o agente consultar em tempo real.",
+    icon: "PlugsConnected",
+    group: "organizacao",
+    section: "Dados e acesso",
+    // SEM `sidebar`: o menu de Organização já estourou a dobra uma vez e hub é
+    // onde se agrupa por uso. Configurar fonte de dados é tarefa de uma vez.
+    //
+    // Módulo opcional da instalação, desligado por padrão (doc 37): a porta só
+    // existe onde quem administra o servidor o ligou, em `/admin/sistema`.
+    modulo: "banco_externo",
   },
 ] as const satisfies readonly NavMetadata[];
 

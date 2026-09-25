@@ -68,6 +68,8 @@ import {
   RETENCAO_FILA_DIAS_PISO,
   RETENCAO_PASSAGEM_DIAS_PADRAO,
   RETENCAO_PASSAGEM_DIAS_PISO,
+  RETENCAO_PROSPECCAO_DIAS_PADRAO,
+  RETENCAO_PROSPECCAO_DIAS_PISO,
   interpretarRetencao,
 } from "@/lib/retencao/politica";
 import {
@@ -120,12 +122,17 @@ export interface ResultadoDaRetencao {
   avisos_de_caso_apagados: number;
   lotes_avisos_de_caso: number;
   avisos_de_caso_tem_resto: boolean;
+  /** O candidato de prospecção nativa vencido (migration 0408, issue #1313). */
+  prospeccao_apagada: number;
+  lotes_prospeccao: number;
+  prospeccao_tem_resto: boolean;
   retencao_fila_dias: number;
   retencao_auditoria_dias: number;
   retencao_espelho_dias: number;
   retencao_conversa_do_caso_dias: number;
   retencao_passagem_dias: number;
   retencao_aviso_de_caso_dias: number;
+  retencao_prospeccao_dias: number;
   /** Avisos de configuração — nunca ausentes em silêncio quando existem. */
   avisos: string[];
 }
@@ -140,7 +147,8 @@ export interface PodaDb {
       | "fn_expurgar_nonces_de_oauth"
       | "fn_expurgar_conversa_do_caso_vencida"
       | "fn_expurgar_passagens_vencidas"
-      | "fn_expurgar_avisos_de_caso_vencidos",
+      | "fn_expurgar_avisos_de_caso_vencidos"
+      | "fn_expurgar_prospeccao_vencida",
     args: { p_retencao_dias: number; p_limite: number },
   ): Promise<{ data: number | null; error: { message: string } | null }>;
 }
@@ -154,7 +162,8 @@ async function drenar(
     | "fn_expurgar_nonces_de_oauth"
     | "fn_expurgar_conversa_do_caso_vencida"
     | "fn_expurgar_passagens_vencidas"
-    | "fn_expurgar_avisos_de_caso_vencidos",
+    | "fn_expurgar_avisos_de_caso_vencidos"
+    | "fn_expurgar_prospeccao_vencida",
   dias: number,
 ): Promise<{ apagadas: number; lotes: number; temResto: boolean }> {
   let apagadas = 0;
@@ -189,6 +198,7 @@ export async function podarHistorico(
     CASE_CHAT_RETENTION_DAYS?: string;
     PASSAGEM_RETENTION_DAYS?: string;
     CASE_ALERT_RETENTION_DAYS?: string;
+    PROSPECCAO_RETENTION_DAYS?: string;
   },
 ): Promise<ResultadoDaRetencao> {
   const fila = interpretarRetencao(ambiente.JOB_QUEUE_RETENTION_DAYS, {
@@ -226,6 +236,12 @@ export async function podarHistorico(
     piso: RETENCAO_AVISO_DE_CASO_DIAS_PISO,
   });
 
+  const prospeccao = interpretarRetencao(ambiente.PROSPECCAO_RETENTION_DAYS, {
+    chave: "PROSPECCAO_RETENTION_DAYS",
+    padrao: RETENCAO_PROSPECCAO_DIAS_PADRAO,
+    piso: RETENCAO_PROSPECCAO_DIAS_PISO,
+  });
+
   const jobs = await drenar(db, "fn_podar_fila_de_jobs", fila.dias);
   const linhas = await drenar(db, "fn_expurgar_auditoria_vencida", auditoria.dias);
   const eventos = await drenar(db, "fn_expurgar_espelho_da_agenda", espelho.dias);
@@ -249,6 +265,15 @@ export async function podarHistorico(
   // poda aqui é volume de operação — e é a poda de horizonte mais curto das
   // sete, porque a única pergunta que a linha responde é de semanas.
   const avisosDeCaso = await drenar(db, "fn_expurgar_avisos_de_caso_vencidos", avisoDeCaso.dias);
+  // Oitava poda: o candidato de prospecção nativa vencido (migration 0408,
+  // issue #1313). Padrão 365 / piso 90 — decisão do dono, alinhada ao
+  // horizonte da conversa do caso e da captação. O piso mora no CORPO da
+  // função; o relógio é `coalesce(attempted_at, created_at)`; `queued` e
+  // `sending` ficam de fora em qualquer idade, e o tombstone de LGPD
+  // (`suppression_salt is not null`) nunca entra — é ele que barra a
+  // reimportação. É a primeira poda da casa cujo dado é de uma pessoa que
+  // NUNCA falou com a empresa, então as duas guardas são a regra, não enfeite.
+  const prospeccaoDrenada = await drenar(db, "fn_expurgar_prospeccao_vencida", prospeccao.dias);
 
   return {
     jobs_apagados: jobs.apagadas,
@@ -258,24 +283,28 @@ export async function podarHistorico(
     conversa_do_caso_apagada: conversas.apagadas,
     passagens_apagadas: passagens.apagadas,
     avisos_de_caso_apagados: avisosDeCaso.apagadas,
+    prospeccao_apagada: prospeccaoDrenada.apagadas,
     lotes_fila: jobs.lotes,
     lotes_auditoria: linhas.lotes,
     lotes_espelho: eventos.lotes,
     lotes_conversa_do_caso: conversas.lotes,
     lotes_passagens: passagens.lotes,
     lotes_avisos_de_caso: avisosDeCaso.lotes,
+    lotes_prospeccao: prospeccaoDrenada.lotes,
     fila_tem_resto: jobs.temResto,
     auditoria_tem_resto: linhas.temResto,
     espelho_tem_resto: eventos.temResto,
     conversa_do_caso_tem_resto: conversas.temResto,
     passagens_tem_resto: passagens.temResto,
     avisos_de_caso_tem_resto: avisosDeCaso.temResto,
+    prospeccao_tem_resto: prospeccaoDrenada.temResto,
     retencao_fila_dias: fila.dias,
     retencao_auditoria_dias: auditoria.dias,
     retencao_espelho_dias: espelho.dias,
     retencao_conversa_do_caso_dias: conversaDoCaso.dias,
     retencao_passagem_dias: passagem.dias,
     retencao_aviso_de_caso_dias: avisoDeCaso.dias,
+    retencao_prospeccao_dias: prospeccao.dias,
     avisos: [
       fila.aviso,
       auditoria.aviso,
@@ -283,6 +312,7 @@ export async function podarHistorico(
       conversaDoCaso.aviso,
       passagem.aviso,
       avisoDeCaso.aviso,
+      prospeccao.aviso,
     ].filter((a): a is string => a !== null),
   };
 }
@@ -312,10 +342,15 @@ export function houveEfeito(resultado: ResultadoDaRetencao): boolean {
     // apagaria linhas e não deixaria registro — e o CLAUDE.md manda auditar
     // QUANDO HÁ EFEITO, nunca parar de auditar.
     resultado.passagens_apagadas > 0 ||
-    // A sétima, pela MESMA razão: uma rodada que só apagou registro de entrega
-    // de aviso vencido apagaria linhas e não deixaria registro — e o CLAUDE.md
+    // A sétima, pela mesma razão: uma rodada que só apagou registro de entrega
+    // apagaria linhas e não deixaria registro — e o CLAUDE.md
     // manda auditar QUANDO HÁ EFEITO, nunca parar de auditar.
-    resultado.avisos_de_caso_apagados > 0
+    resultado.avisos_de_caso_apagados > 0 ||
+    // A oitava, pela MESMA razão das sete anteriores: uma rodada que só podou
+    // candidato de prospecção vencido apagaria linhas e não deixaria registro.
+    // Esta é a poda de dado de PESSOA que nunca falou com a empresa (0408) —
+    // silenciar aqui seria apagar dado sensível sem trilha.
+    resultado.prospeccao_apagada > 0
   );
 }
 
@@ -351,6 +386,7 @@ async function handle(req: NextRequest): Promise<Response> {
       CASE_CHAT_RETENTION_DAYS: env.CASE_CHAT_RETENTION_DAYS,
       PASSAGEM_RETENTION_DAYS: env.PASSAGEM_RETENTION_DAYS,
       CASE_ALERT_RETENTION_DAYS: env.CASE_ALERT_RETENTION_DAYS,
+      PROSPECCAO_RETENTION_DAYS: env.PROSPECCAO_RETENTION_DAYS,
     });
     // ── A cascata de anonimização que ficou pela metade ──────────────────
     //

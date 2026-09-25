@@ -76,6 +76,7 @@ async function appointment(tenant: Tenant) {
 const changeQuery = "select fn_appointment_change($1,$2,1,$3) result";
 const settingsQuery = "select fn_agenda_settings($1,$2) result";
 const recoverQuery = "select fn_appointment_recover($1,$2) result";
+const colegasQuery = "select fn_definir_colegas_podem_mexer_na_agenda($1,$2) result";
 
 describe("agenda: superfícies humanas e recibo privado têm autorização comportamental", () => {
   it("MFA direto de presença exige prova do fator e preserva o caller service_role", async () => {
@@ -109,6 +110,73 @@ describe("agenda: superfícies humanas e recibo privado têm autorização compo
       expect((await asRole("authenticated", tenant.manager, settingsQuery, [tenant.org, next], "aal2")).rows[0].result).toEqual(next);
       expect((await pool.query("select settings->'agenda' config from organizations where id=$1", [tenant.org])).rows[0].config).toEqual(next);
     } finally { await pool.query("delete from auth.mfa_factors where id=$1", [factor]); }
+  });
+
+  it("a opção da agenda dos colegas: manager da PRÓPRIA org com fator grava, e papéis, sessão sem prova e org vizinha não gravam", async () => {
+    const a = tenants[0]!, b = tenants[1]!;
+    const factor = randomUUID();
+    await pool.query(
+      "insert into auth.mfa_factors(id,user_id,status,factor_type) values($1,$2,'verified','totp')",
+      [factor, a.manager],
+    );
+    try {
+      const antes = (await pool.query("select settings from organizations where id=$1", [a.org]))
+        .rows[0].settings;
+      // Abaixo de manager: Atendente e Somente-leitura.
+      await expect(
+        asRole("authenticated", a.agent, colegasQuery, [a.org, false], "aal2"),
+      ).rejects.toMatchObject({ code: "42501" });
+      await expect(
+        asRole("authenticated", a.viewer, colegasQuery, [a.org, false], "aal2"),
+      ).rejects.toMatchObject({ code: "42501" });
+      // A org VIZINHA: manager de A pedindo em nome de B.
+      await expect(
+        asRole("authenticated", a.manager, colegasQuery, [b.org, false], "aal2"),
+      ).rejects.toMatchObject({ code: "42501" });
+      // O mesmo manager, com fator verificado, numa sessão que NÃO provou o fator.
+      await expect(
+        asRole("authenticated", a.manager, colegasQuery, [a.org, false], "aal1"),
+      ).rejects.toMatchObject({ code: "42501" });
+      // Sem sessão nenhuma.
+      await expect(asRole("anon", null, colegasQuery, [a.org, false])).rejects.toMatchObject({
+        code: "42501",
+      });
+      // Nenhuma recusa escreveu: a configuração está intacta.
+      expect(
+        (await pool.query("select settings from organizations where id=$1", [a.org])).rows[0]
+          .settings,
+      ).toEqual(antes);
+      // O positivo: manager da própria org, com o fator provado.
+      expect(
+        (await asRole("authenticated", a.manager, colegasQuery, [a.org, false], "aal2")).rows[0]
+          .result,
+      ).toEqual({ ligado: false, mudou: true });
+      expect(
+        (
+          await pool.query(
+            "select settings->>'colegas_podem_mexer_na_agenda' valor from organizations where id=$1",
+            [a.org],
+          )
+        ).rows[0].valor,
+      ).toBe("false");
+      // A MESMA leitura que o núcleo e a rota usam enxerga o desligado.
+      expect(
+        (await pool.query("select fn_colegas_podem_mexer_na_agenda($1) v", [a.org])).rows[0].v,
+      ).toBe(false);
+      // Idempotente: pedir o que já está diz que não mudou — e não reescreve.
+      expect(
+        (await asRole("authenticated", a.manager, colegasQuery, [a.org, false], "aal2")).rows[0]
+          .result,
+      ).toEqual({ ligado: false, mudou: false });
+    } finally {
+      // O padrão da opção é LIGADA, e os outros casos deste arquivo dependem disso:
+      // um `agent` cancelando compromisso de colega passa por esta opção.
+      await pool.query(
+        "update organizations set settings = coalesce(settings,'{}'::jsonb) || jsonb_build_object('colegas_podem_mexer_na_agenda', true) where id=$1",
+        [a.org],
+      );
+      await pool.query("delete from auth.mfa_factors where id=$1", [factor]);
+    }
   });
 
   it("RPC de presença exige JWT com papel e org próprios, nos dois sentidos A/B, e preserva autoria humana", async () => {

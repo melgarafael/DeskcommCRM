@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * Ingestão: webhook → contato, conversa, mensagem.
@@ -110,6 +110,13 @@ const admin = {
   }),
 } as never;
 
+vi.mock("@/lib/channels/zernio/credentials", async (orig) => ({
+  ...(await orig<typeof import("@/lib/channels/zernio/credentials")>()),
+  // Sem retorno configurado = sem credencial: a busca do pino nem começa.
+  resolveZernioCreds: vi.fn(),
+}));
+
+import { resolveZernioCreds } from "@/lib/channels/zernio/credentials";
 import { ingestZernioInbound, waIdentityFrom } from "@/lib/channels/zernio/ingest";
 import { verifyZernioSignature } from "@/lib/channels/zernio/webhook";
 import { acceptsInboundWebhook, handleInboundWebhook } from "@/lib/channels/inbound";
@@ -234,6 +241,59 @@ describe("o que a ingestão GRAVA", () => {
     await ingestZernioInbound(admin, { ...ENTRADA, payload: evento() });
     const rpc = ops.find((o) => o.op === "fn_upsert_wa_contact");
     expect(rpc?.payload).toMatchObject({ p_org: "org-1", p_kind: "phone", p_phone: "+595991733685" });
+  });
+});
+
+describe("o pino do WhatsApp — o webhook não traz as coordenadas", () => {
+  // Medido em produção: o evento chega com `text: "📍 Location"` e nada mais;
+  // a MESMA mensagem, na API de mensagens da conversa, tem metadata.location.
+  const pino = () => evento({ text: "📍 Location", platformMessageId: "wamid.PINO" });
+  const listagem = (mensagens: unknown[]) =>
+    new Response(JSON.stringify({ status: "success", messages: mensagens }), { status: 200 });
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.mocked(resolveZernioCreds).mockResolvedValue({
+      accountId: "acc_1", apiKey: "k", baseUrl: "https://z.test/api", source: "session",
+    });
+  });
+
+  it("busca a mensagem na API e grava tipo location, link do mapa e coordenadas", async () => {
+    const f = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      listagem([
+        { id: "wamid.OUTRA", message: "hola", metadata: {} },
+        { id: "wamid.PINO", message: "📍 Location", metadata: { location: { latitude: -25.334888, longitude: -57.543594 } } },
+      ]),
+    );
+    await ingestZernioInbound(admin, { ...ENTRADA, payload: pino() });
+
+    const url = String(f.mock.calls[0]![0]);
+    expect(url).toContain("/v1/inbox/conversations/6a76a2dc4b8fe115e5f6c300/messages");
+    expect(url).toContain("accountId=acc_1");
+    // Mais recentes primeiro: o pino acabou de chegar.
+    expect(url).toContain("sortOrder=desc");
+    const ins = ops.find((o) => o.tabela === "messages" && o.op === "insert")?.payload as Record<string, unknown>;
+    expect(ins.type).toBe("location");
+    expect(ins.body).toBe("📍 https://maps.google.com/?q=-25.334888,-57.543594");
+    expect(ins.metadata).toEqual({ location: { latitude: -25.334888, longitude: -57.543594 } });
+  });
+
+  it("API fora do ar: a mensagem entra como antes, com o marcador — nunca se perde", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("ECONNRESET"));
+    const r = await ingestZernioInbound(admin, { ...ENTRADA, payload: pino() });
+    expect(r.status).toBe("ingested");
+    const ins = ops.find((o) => o.tabela === "messages" && o.op === "insert")?.payload as Record<string, unknown>;
+    expect(ins).toMatchObject({ type: "text", body: "📍 Location", metadata: {} });
+  });
+
+  afterEach(() => {
+    vi.mocked(resolveZernioCreds).mockReset();
+  });
+
+  it("texto comum não consulta a API", async () => {
+    const f = vi.spyOn(globalThis, "fetch");
+    await ingestZernioInbound(admin, { ...ENTRADA, payload: evento() });
+    expect(f).not.toHaveBeenCalled();
   });
 });
 

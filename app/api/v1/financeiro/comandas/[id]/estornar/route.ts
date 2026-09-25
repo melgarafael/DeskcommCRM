@@ -92,12 +92,23 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   const desfecho = (data ?? {}) as { sale_id?: string; ja_estornada?: boolean };
 
   if (!desfecho.ja_estornada) {
+    // ⚠️ O MOTIVO NÃO ENTRA NO AUDIT. Ele é texto livre de até 500 caracteres
+    // que uma pessoa escreve sobre outra ("estornado porque a paciente passou
+    // mal com o procedimento"), e `lib/audit` grava `metadata` cru em
+    // `api_audit_log` — tabela de retenção longa que a cascata de anonimização
+    // da LGPD não alcança, porque nenhum papel tem GRANT de UPDATE/DELETE nela,
+    // nem `service_role`. Anonimizar o titular redigiria `sales.reverse_reason`
+    // e deixaria a mesma frase viva aqui, para sempre.
+    //
+    // O motivo continua GUARDADO onde a LGPD chega: `fn_estornar_comanda` o
+    // grava em `sales.reverse_reason`. O audit só precisa provar que houve
+    // motivo — que é o que a obrigatoriedade do campo existe para garantir.
     await audit({
       action: "comanda.estornada",
       resourceType: "sale",
       resourceId: id,
       requestId,
-      metadata: { reason: lido.data.reason },
+      metadata: { motivo_informado: true, motivo_chars: lido.data.reason.length },
     });
   }
 

@@ -11,6 +11,8 @@ export interface OfficialChannelState {
   hasToken: boolean;
   phoneNumberId: string | null;
   wabaId: string | null;
+  /** Base pública da API — usada no painel "Para integrar". */
+  endpoint: string | null;
   displayName: string | null;
   phoneNumber: string | null;
   status: string | null;

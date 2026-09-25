@@ -49,11 +49,16 @@ import { join } from "node:path";
 
 import { motivoDoErro, sql } from "./psql-transporte";
 
-/** As três tabelas do eixo de anúncios, criadas pelas migrations 0213 e 0214. */
+/** As tabelas do eixo de anúncios, criadas pelas migrations 0213, 0214 e 0380. */
 const TABELAS = [
   "ad_platform_connections",
   "ad_conversion_dispatches",
   "ad_insights_connections",
+  // 0380. Não guarda segredo: guarda a ESTRATÉGIA de mídia — que campanha
+  // existe, como o conjunto foi segmentado, que criativo está no ar. É o que um
+  // concorrente pagaria para ler, e o motivo de a tabela nascer com o mesmo
+  // deny-all das irmãs em vez de uma policy de tenant.
+  "ad_hierarchy_cache",
 ] as const;
 
 function erroSob(papel: string, comando: string): string | null {

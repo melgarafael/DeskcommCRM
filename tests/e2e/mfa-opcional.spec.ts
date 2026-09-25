@@ -76,7 +76,7 @@ async function entrar(page: Page): Promise<void> {
   await page.goto("/login");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(SENHA);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
 }
 
 /** O bloqueador de tela cheia, pelo texto que só ele mostra. */

@@ -21,6 +21,11 @@ vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+// Roteiro de atendimento só publica com o módulo ligado; follow-up não consulta.
+vi.mock("@/lib/instalacao/modulos", async (original) => ({
+  ...(await original<typeof import("@/lib/instalacao/modulos")>()),
+  moduloLigado: vi.fn(async () => true),
+}));
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
@@ -73,17 +78,21 @@ function makeDb(pointers: Row[], versions: Row[], stages: Row[] = []) {
 
   function builder(table: string) {
     const filters: Array<[string, unknown]> = [];
+    // `neq` (roteiros fora da lista de follow-ups, PR 2 dos fluxos de atendimento).
+    const negados: Array<[string, unknown]> = [];
     let orderCol: string | null = null;
     let orderAsc = true;
     let mode: "select" | "insert" | "update" | "delete" = "select";
     let payload: Row | undefined;
 
     function matches(row: Row): boolean {
-      return filters.every(([k, v]) => {
-        if (k === "surface") return (row.surface ?? "followup") === v;
-        if (v instanceof Set) return v.has(row[k]);
-        return row[k] === v;
-      });
+      const valor = (k: string) => (k === "surface" ? (row.surface ?? "followup") : row[k]);
+      return (
+        filters.every(([k, v]) => {
+          if (v instanceof Set) return v.has(row[k]);
+          return valor(k) === v;
+        }) && negados.every(([k, v]) => valor(k) !== v)
+      );
     }
 
     function execute(): { data: Row[] | null; error: { code?: string; message: string } | null } {
@@ -153,7 +162,7 @@ function makeDb(pointers: Row[], versions: Row[], stages: Row[] = []) {
     }
 
     const b = {
-      select() {
+      select(_cols?: string) {
         return b;
       },
       insert(obj: Row) {
@@ -172,6 +181,10 @@ function makeDb(pointers: Row[], versions: Row[], stages: Row[] = []) {
       },
       eq(col: string, val: unknown) {
         filters.push([col, val]);
+        return b;
+      },
+      neq(col: string, val: unknown) {
+        negados.push([col, val]);
         return b;
       },
       in(col: string, vals: unknown[]) {
@@ -196,7 +209,7 @@ function makeDb(pointers: Row[], versions: Row[], stages: Row[] = []) {
         }
         return { data: r.data[0], error: null };
       },
-      then(onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) {
+      then(onF: (v: ReturnType<typeof execute>) => unknown, onR?: (e: unknown) => unknown) {
         return Promise.resolve(execute()).then(onF, onR);
       },
     };
@@ -446,6 +459,41 @@ describe("PATCH /api/v1/ai/followup-flows/:id", () => {
     const body = (await res.json()) as { data: Row };
     expect(body.data.name).toBe("nome-original");
     expect(vi.mocked(audit)).not.toHaveBeenCalled();
+  });
+
+  it("renomeia → 200 com o nome novo", async () => {
+    const db = makeDb([pointerRow({ name: "Antigo" })], []);
+    session("manager", db);
+    const { PATCH } = await import("@/app/api/v1/ai/followup-flows/[id]/route");
+    const res = await PATCH(
+      req("PATCH", { name: "Novo nome" }),
+      ctx("33333333-3333-4333-8333-333333333333"),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: Row };
+    expect(body.data.name).toBe("Novo nome");
+  });
+
+  it("nome já usado na mesma org → 409 conflict", async () => {
+    const db = makeDb(
+      [
+        pointerRow({ name: "A" }),
+        pointerRow({
+          id: "44444444-4444-4444-8444-444444444444",
+          name: "B",
+        }),
+      ],
+      [],
+    );
+    session("manager", db);
+    const { PATCH } = await import("@/app/api/v1/ai/followup-flows/[id]/route");
+    const res = await PATCH(
+      req("PATCH", { name: "B" }),
+      ctx("33333333-3333-4333-8333-333333333333"),
+    );
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("conflict");
   });
 });
 
@@ -739,6 +787,60 @@ describe("POST /api/v1/ai/followup-flows/:id/publish", () => {
   });
 });
 
+describe("POST /api/v1/ai/followup-flows/:id/publish — roteiro que encadeia (revisão do #1573)", () => {
+  const A = "44444444-4444-4444-8444-44444444444a";
+  const B = "44444444-4444-4444-8444-44444444444b";
+  const VB = "44444444-4444-4444-8444-4444444444b1";
+  const roteiroQueVaiPara = (fluxo: string | null): FlowGraph => ({
+    nodes: [
+      trigger("t"),
+      {
+        id: "c",
+        type: "collect",
+        label: "Nome",
+        position: pos,
+        config: { key: "nome", label: "Nome", type: "text", required: true, permite_correcao: true },
+      },
+      {
+        id: "f",
+        type: "end",
+        label: "f",
+        position: pos,
+        config: { outcome: "converted", ...(fluxo ? { ao_finalizar: { tipo: "proximo_fluxo" as const, fluxo } } : {}) },
+      },
+    ],
+    edges: [edge("e1", "t", "c"), edge("e2", "c", "f")],
+  });
+  const cenario = (bVaiPara: string | null) =>
+    makeDb(
+      [
+        { id: A, organization_id: ORG_ID, name: "Cadastro", status: "draft", surface: "atendimento", draft_graph: roteiroQueVaiPara(B), trigger_config: { kind: "manual" } },
+        { id: B, organization_id: ORG_ID, name: "Financiamento", status: "active", surface: "atendimento", active_version_id: VB, trigger_config: { kind: "manual" } },
+      ],
+      [{ id: VB, organization_id: ORG_ID, pointer_id: B, graph: roteiroQueVaiPara(bVaiPara) }],
+    );
+
+  it("⭐ A → B com B → A publicado: 422 roteiro_em_ciclo, nada publicado", async () => {
+    const db = cenario(A);
+    session("manager", db);
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+    const res = await POST(req("POST"), ctx(A));
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: { details: { errors: Array<{ code: string; message: string }> } } };
+    expect(body.error.details.errors.map((e) => e.code)).toEqual(["roteiro_em_ciclo"]);
+    expect(body.error.details.errors[0]!.message).toContain("Financiamento");
+    const { data } = (await db.from("followup_flow_pointers").select().eq("id", A)) as { data: Row[] };
+    expect(data[0]).toMatchObject({ status: "draft" });
+  });
+
+  it("A → B com B terminando: publica", async () => {
+    const db = cenario(null);
+    session("manager", db);
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+    expect((await POST(req("POST"), ctx(A))).status).toBe(200);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Rollback
 // ---------------------------------------------------------------------------
@@ -884,6 +986,102 @@ describe("DELETE /api/v1/ai/followup-flows/:id", () => {
     const { DELETE } = await import("@/app/api/v1/ai/followup-flows/[id]/route");
     const res = await DELETE(req("DELETE"), ctx(P1));
     expect(res.status).toBe(403);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Duplicate
+// ---------------------------------------------------------------------------
+
+describe("POST /api/v1/ai/followup-flows/:id/duplicate", () => {
+  const P1 = "33333333-3333-4333-8333-333333333333";
+  const P2 = "44444444-4444-4444-8444-444444444444";
+  const VID = "66666666-6666-4666-8666-666666666666";
+
+  function origem(overrides: Row = {}): Row {
+    return {
+      id: P1,
+      organization_id: ORG_ID,
+      name: "Carrinho",
+      status: "active",
+      draft_graph: VALID_GRAPH,
+      trigger_config: { kind: "silence", params: { threshold_minutes: 30 } },
+      handoff_policy: "cancel",
+      surface: "followup",
+      active_version_id: VID,
+      ...overrides,
+    };
+  }
+
+  it("agent (< manager) → 403, sem insert", async () => {
+    const db = makeDb([origem()], []);
+    session("agent", db);
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/duplicate/route");
+    const res = await POST(req("POST"), ctx(P1));
+    expect(res.status).toBe(403);
+    const { data } = await db.from("followup_flow_pointers").select();
+    expect(data).toHaveLength(1);
+  });
+
+  it("pointer de outra org → 404", async () => {
+    const db = makeDb([origem({ organization_id: OTHER_ORG_ID })], []);
+    session("manager", db);
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/duplicate/route");
+    const res = await POST(req("POST"), ctx(P1));
+    expect(res.status).toBe(404);
+  });
+
+  it("clona rascunho, gatilho e handoff — nasce draft, sem versão publicada", async () => {
+    const db = makeDb([origem()], []);
+    session("manager", db);
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/duplicate/route");
+    const res = await POST(req("POST"), ctx(P1));
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { data: Row };
+    expect(body.data.status).toBe("draft");
+    expect(body.data.active_version_id).toBeNull();
+    expect(body.data.name).toBe("Carrinho (cópia)");
+    expect(body.data.draft_graph).toEqual(VALID_GRAPH);
+    expect(body.data.trigger_config).toEqual({
+      kind: "silence",
+      params: { threshold_minutes: 30 },
+    });
+    expect(body.data.handoff_policy).toBe("cancel");
+    expect(body.data.id).not.toBe(P1);
+    expect(vi.mocked(audit)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "followup_flow.duplicated",
+        resourceId: body.data.id,
+        metadata: expect.objectContaining({ source_pointer_id: P1 }),
+      }),
+    );
+  });
+
+  it("rascunho vazio com versão no ar copia o grafo publicado", async () => {
+    const db = makeDb(
+      [origem({ draft_graph: null })],
+      [{ id: VID, organization_id: ORG_ID, pointer_id: P1, graph: VALID_GRAPH }],
+    );
+    session("manager", db);
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/duplicate/route");
+    const res = await POST(req("POST"), ctx(P1));
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { data: Row };
+    expect(body.data.draft_graph).toEqual(VALID_GRAPH);
+    expect(body.data.status).toBe("draft");
+  });
+
+  it("segunda cópia numera o nome — unique (organization_id, name)", async () => {
+    const db = makeDb(
+      [origem(), origem({ id: P2, name: "Carrinho (cópia)", status: "draft", active_version_id: null })],
+      [],
+    );
+    session("manager", db);
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/duplicate/route");
+    const res = await POST(req("POST"), ctx(P1));
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { data: Row };
+    expect(body.data.name).toBe("Carrinho (cópia 2)");
   });
 });
 

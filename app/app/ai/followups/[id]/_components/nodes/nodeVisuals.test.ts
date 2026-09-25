@@ -10,7 +10,7 @@ import { validateFlowForPublish } from "@/lib/followup/validate-publish";
 import { RESERVED_BRANCH_IDS, type FlowGraph } from "@/lib/followup/graph-schema";
 import { traduzir } from "@/lib/i18n/dicionario";
 
-import { describeNodeConfig, NODE_VISUAL_LIST, NODE_VISUALS } from "./nodeVisuals";
+import { describeNodeConfig, NODE_VISUAL_LIST, NODE_VISUALS, configPadraoDaAcao } from "./nodeVisuals";
 
 /** Em português o dicionário devolve a própria chave — é o `t` do provider na língua da chave. */
 const pt = (texto: string) => texto;
@@ -144,5 +144,28 @@ describe("o nó de condição nasce sem decidir sozinho", () => {
     };
     const r = validateFlowForPublish(grafo);
     expect(r.ok ? [] : r.errors.map((e) => e.code)).toEqual(["empty_check_value"]);
+  });
+});
+
+describe("configPadraoDaAcao", () => {
+  it("gatilho de retorno nasce em texto fixo; os outros, em mensagem da IA", () => {
+    expect(configPadraoDaAcao("inbound_after_silence")).toEqual({
+      mode: "text",
+      body: "Configure esta mensagem.",
+    });
+    expect(configPadraoDaAcao()).toEqual({ mode: "ai_message", prompt_hint: "Configure esta etapa." });
+    expect(NODE_VISUALS.action.defaultConfig()).toEqual({
+      mode: "ai_message",
+      prompt_hint: "Configure esta etapa.",
+    });
+  });
+});
+
+describe("paleta do follow-up (roteiro de atendimento, #1130)", () => {
+  it("não oferece Pergunta nem Skill — o relógio não as executa", () => {
+    const tipos = NODE_VISUAL_LIST.map((v) => v.type);
+    expect(tipos).not.toContain("collect");
+    expect(tipos).not.toContain("skill");
+    expect(tipos).toContain("action");
   });
 });

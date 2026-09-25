@@ -26,6 +26,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import {
   PARTNER_CHANNEL_LABEL,
   findPartnerSession,
+  partnerEndpoint,
   savePartnerSession,
   validatePartnerCredentials,
 } from "@/lib/channels/connect";
@@ -77,6 +78,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       status: conectado ? sessao.status : null,
       // Existe, não qual é.
       has_api_key: conectado ? sessao.hasApiKey : false,
+      /** Endpoint base do parceiro — para o operador reaproveitar em outro sistema. */
+      endpoint: conectado ? partnerEndpoint() : null,
       webhook_url:
         conectado && sessao.webhookPathToken ? urlDoWebhook(req, sessao.webhookPathToken) : null,
     },

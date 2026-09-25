@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -34,13 +34,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * painel fica sem conversa e o caso reprova.
  */
 
-const { ORG, CONVERSA, CONTATO, CONVERSA_ROW } = vi.hoisted(() => {
+const { ORG, CONVERSA, OUTRA_CONVERSA, CONVERSA_ROW } = vi.hoisted(() => {
   const ORG = "00000000-0000-4000-8000-0000000000aa";
   const CONVERSA = "00000000-0000-4000-8000-0000000000cc";
+  const OUTRA_CONVERSA = "00000000-0000-4000-8000-0000000000dd";
   const CONTATO = "00000000-0000-4000-8000-0000000000c1";
   return {
     ORG,
     CONVERSA,
+    OUTRA_CONVERSA,
     CONTATO,
     CONVERSA_ROW: {
       id: CONVERSA,
@@ -73,6 +75,9 @@ const get = vi.fn(async (bruta?: string): Promise<unknown> => {
   if (url === `/api/v1/conversations/${CONVERSA}`) {
     return { data: CONVERSA_ROW };
   }
+  if (url === `/api/v1/conversations/${OUTRA_CONVERSA}`) {
+    return { data: { ...CONVERSA_ROW, id: OUTRA_CONVERSA } };
+  }
   if (url === "/api/v1/ai/automatico-ativo") return { data: { ativo: false } };
   if (url === "/api/v1/conversations/counts") return { data: {} };
   if (url === "/api/v1/conversation-tags") return { data: [] };
@@ -91,7 +96,7 @@ vi.mock("@/lib/supabase/browser", () => ({
 vi.mock("next/navigation", () => ({
   usePathname: () => "/app/inbox",
   useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(window.location.search),
 }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useAuth: () => ({ user: { id: "u-1", role: "admin" }, activeOrg: { orgId: ORG } }),
@@ -111,7 +116,14 @@ vi.mock("@/components/inbox/CRMSidePanel", () => ({
     <div data-testid="painel">{conversation ? conversation.id : "sem-conversa"}</div>
   ),
 }));
-vi.mock("@/components/inbox/ConversationList", () => ({ ConversationList: () => null }));
+vi.mock("@/components/inbox/ConversationList", () => ({
+  ConversationList: ({ onSelect }: { onSelect: (id: string) => void }) => (
+    <>
+      <button onClick={() => onSelect(CONVERSA)}>Abrir cliente</button>
+      <button onClick={() => onSelect(OUTRA_CONVERSA)}>Abrir outro cliente</button>
+    </>
+  ),
+}));
 vi.mock("@/components/inbox/InboxFilters", () => ({ InboxFilters: () => null }));
 vi.mock("@/components/inbox/ChatThread", () => ({ ChatThread: () => null }));
 vi.mock("@/components/inbox/Composer", () => ({ Composer: () => null }));
@@ -135,7 +147,10 @@ function montar() {
 }
 
 describe("deep-link para conversa fora do filtro", () => {
-  beforeEach(() => get.mockClear());
+  beforeEach(() => {
+    get.mockClear();
+    window.history.replaceState(null, "", "/app/inbox");
+  });
 
   it("pede a conversa por id SEM esperar a lista responder", async () => {
     montar();
@@ -152,5 +167,44 @@ describe("deep-link para conversa fora do filtro", () => {
   it("entrega a conversa ao painel do contato com a lista ainda no ar", async () => {
     montar();
     await waitFor(() => expect(screen.getByTestId("painel")).toHaveTextContent(CONVERSA));
+  });
+
+  it("gera link por conversa e acompanha a volta do navegador", async () => {
+    window.history.replaceState(null, "", "/app/inbox?filter=all");
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const tela = render(
+      <QueryClientProvider client={qc}>
+        <InboxLayout />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Abrir cliente" }));
+    expect(window.location.pathname + window.location.search).toBe(
+      `/app/inbox?filter=all&id=${CONVERSA}`,
+    );
+    await waitFor(() => expect(screen.getByTestId("painel")).toHaveTextContent(CONVERSA));
+
+    fireEvent.click(screen.getByRole("button", { name: "Abrir outro cliente" }));
+    expect(window.location.pathname + window.location.search).toBe(
+      `/app/inbox?filter=all&id=${OUTRA_CONVERSA}`,
+    );
+    await waitFor(() => expect(screen.getByTestId("painel")).toHaveTextContent(OUTRA_CONVERSA));
+
+    // Simula as duas entradas anteriores que o botão Voltar restaura.
+    window.history.replaceState(null, "", `/app/inbox?filter=all&id=${CONVERSA}`);
+    tela.rerender(
+      <QueryClientProvider client={qc}>
+        <InboxLayout />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("painel")).toHaveTextContent(CONVERSA));
+
+    window.history.replaceState(null, "", "/app/inbox?filter=all");
+    tela.rerender(
+      <QueryClientProvider client={qc}>
+        <InboxLayout />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("painel")).toHaveTextContent("sem-conversa"));
   });
 });

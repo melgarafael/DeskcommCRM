@@ -1,6 +1,6 @@
 "use client";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { useRefetchDeSeguranca } from "@/hooks/realtime/useRefetchDeSeguranca";
 import { apiClient } from "@/lib/api/client";
@@ -46,6 +46,7 @@ export interface ChannelSummary {
    * que a doutrina proíbe, e ele mora atrás do seam.
    */
   provider: string | null;
+  social_platform?: string | null;
 }
 
 export type ConversationWithContact = Conversation & {
@@ -105,7 +106,7 @@ export function useConversationsRealtime(
   orgId: string | null,
 ) {
   const qc = useQueryClient();
-  const queryKey = ["conversations", filters] as const;
+  const queryKey = useMemo(() => ["conversations", filters] as const, [filters]);
 
   const query = useInfiniteQuery({
     queryKey,

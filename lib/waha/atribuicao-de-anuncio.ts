@@ -10,7 +10,8 @@ import type { AtribuicaoDeAnuncio, Bruto } from "@/lib/leads/atribuicao-de-anunc
 import { obj, str } from "@/lib/leads/atribuicao-de-anuncio";
 
 /**
- * `contextInfo.externalAdReplyInfo` do Baileys — o mesmo dado do anúncio,
+ * `contextInfo.externalAdReply` (observado em mensagens reais do WAHA NOWEB)
+ * ou `contextInfo.externalAdReplyInfo` (forma legada do Baileys) — o dado do anúncio,
  * embutido na PRÓPRIA mensagem que o app do cliente manda ao clicar num
  * anúncio "Clique para o WhatsApp". `messageRaw` é `_data.message` do payload
  * do WAHA (NOWEB) — a forma bruta do Baileys, sem normalização.
@@ -30,8 +31,10 @@ export function extrairAtribuicaoWaha(messageRaw: unknown): AtribuicaoDeAnuncio 
     obj(m.videoMessage)?.contextInfo,
     obj(m.conversation) ? null : m.contextInfo,
   ];
-  const contextInfo = candidatos.map(obj).find((c): c is Bruto => c !== null);
-  const ad = obj(contextInfo?.externalAdReplyInfo);
+  const ad = candidatos
+    .map(obj)
+    .map((contextInfo) => obj(contextInfo?.externalAdReply) ?? obj(contextInfo?.externalAdReplyInfo))
+    .find((candidate): candidate is Bruto => candidate !== null);
   if (!ad) return null;
 
   // O mesmo filtro que o irmão da API oficial aplica, e que aqui faltava: post
@@ -41,13 +44,13 @@ export function extrairAtribuicaoWaha(messageRaw: unknown): AtribuicaoDeAnuncio 
   const tipo = str(ad.sourceType) ?? str(ad.source_type);
   if (tipo && tipo !== "ad") return null;
 
-  const sourceId = str(ad.ctwaClid) ?? str(ad.sourceId);
+  const sourceId = str(ad.ctwaClid) ?? str(ad.ctwa_clid);
   // Mesma separação do irmão da API oficial: o clique é `ctwaClid`, o anúncio é
   // `sourceId`, e quem traz os dois não pode perder um.
-  const adId = str(ad.sourceId);
+  const adId = str(ad.sourceId) ?? str(ad.source_id);
   const titulo = str(ad.title);
   const sourceUrl = str(ad.sourceUrl);
-  if (!sourceId && !titulo && !sourceUrl) return null;
+  if (!sourceId && !adId && !titulo && !sourceUrl) return null;
 
   return {
     plataforma: "meta_ads",

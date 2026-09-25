@@ -13,11 +13,18 @@ export interface OrgMemoryVersionMeta {
   version_number: number;
   created_at: string;
 }
+/**
+ * Quem escreveu o aprendizado. Espelha `org_memory_entries_source_check` (0385):
+ * `agent` é o que a ferramenta MCP `crm_save_org_memory` grava. Par cobrado por
+ * tests/unit/memoria-da-org-origem-cabe-no-check.test.ts.
+ */
+export type OrigemDaMemoria = "manual" | "flywheel" | "agent";
+
 export interface OrgMemoryEntryRow {
   id: string;
   title: string;
   body: string;
-  source: "manual" | "flywheel";
+  source: OrigemDaMemoria;
   status: "active" | "archived";
   created_at: string;
 }

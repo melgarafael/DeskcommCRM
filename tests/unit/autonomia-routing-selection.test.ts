@@ -24,6 +24,12 @@ vi.mock('@/lib/agent-engine/guardrails/camadas-da-org', () => ({
 }));
 vi.mock('@/lib/agent-engine/agent/fuso-da-org', () => ({ fusoDaOrganizacao: vi.fn(async () => 'UTC') }));
 vi.mock('@/lib/ai/elegibilidade/consulta-pg', () => ({ decidirElegibilidadeDaConversa: vi.fn(async () => null) }));
+// "Outro turno já respondeu?" fica fora da seleção medida aqui — tem invariante
+// próprio contra o banco (tests/invariants/turno-nao-responde-duas-vezes.test.ts).
+vi.mock('@/lib/agent-engine/agent/turno-ja-respondido', () => ({
+  ultimaInboundJaRespondida: vi.fn(async () => false),
+  anotarUltimaInboundVista: vi.fn(async () => {}),
+}));
 vi.mock('@/lib/agent-engine/pacing/store', () => ({ loadChannelKnobs: vi.fn(async () => ({ knobs: {} })) }));
 vi.mock('@/lib/agent-engine/pacing/engine', () => ({ janelaDeEnvioAberta: () => true, proximaAberturaDaJanela: vi.fn() }));
 vi.mock('@/lib/agent-engine/pacing/aviso-de-janela', () => ({
@@ -58,7 +64,12 @@ function setup(a: PublishedAgentConfig, b: PublishedAgentConfig, sticky: boolean
   // These remain valid alternatives; returning B here would hide the original bypass.
   mocks.bySession.mockResolvedValue(a);
   mocks.conversationAgent.mockResolvedValue(a);
-  const query = vi.fn(async (_sql: string, values: unknown[]) => {
+  const query = vi.fn(async (sql: string, values: unknown[]) => {
+    // Contexto curto do classificador (id do signal + limite): não pesa na seleção testada aqui.
+    if (sql.includes('id<>$3')) {
+      expect(values.slice(0, 2)).toEqual([ids.org, ids.conversation]);
+      return { rows: [] };
+    }
     expect(values).toEqual([ids.org, ids.conversation]);
     return { rows: [{ active_ai_agent_id: sticky ? 'A' : null, active_intent: sticky ? 'vendas' : null,
       body: 'Agora preciso de suporte técnico' }] };

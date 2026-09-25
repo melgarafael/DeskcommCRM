@@ -131,13 +131,14 @@ describe("a estampagem no contato", () => {
 
   it("grava pela fn_estampar_atribuicao_de_anuncio com a marca de primeiro toque", async () => {
     const { admin, chamadas } = bancoDeMentira();
-    const ok = await estamparOrigemDaPagina(admin, "contato-1", {
+    const ok = await estamparOrigemDaPagina(admin, "org-1", "contato-1", {
       utm: { utm_source: "instagram", gclid: "Cj0KCQjw" },
       capturadaEm: "2026-09-14T10:00:00.000Z",
     });
     expect(ok).toBe(true);
     expect(chamadas).toHaveLength(1);
     expect(chamadas[0]).toMatchObject({
+      p_org: "org-1",
       p_contact: "contato-1",
       p_platform: "site",
       p_metadata: {
@@ -152,7 +153,7 @@ describe("a estampagem no contato", () => {
   it("devolve false e não lança quando o banco recusa", async () => {
     const { admin } = bancoDeMentira({ message: "permission denied" });
     await expect(
-      estamparOrigemDaPagina(admin, "contato-1", { utm: { utm_source: "ig" }, capturadaEm: null }),
+      estamparOrigemDaPagina(admin, "org-1", "contato-1", { utm: { utm_source: "ig" }, capturadaEm: null }),
     ).resolves.toBe(false);
   });
 });

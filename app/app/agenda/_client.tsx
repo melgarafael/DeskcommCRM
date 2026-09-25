@@ -9,7 +9,7 @@ import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 
 import { useT } from "@/hooks/i18n/useT";
 
-import { addDays, endOfMonth, format, startOfDay, startOfMonth, startOfWeek } from "date-fns";
+import { addDays, format, startOfDay, startOfMonth, startOfWeek } from "date-fns";
 import * as React from "react";
 
 import { AvisoDaConexaoGoogle } from "./_components/AvisoDaConexaoGoogle";
@@ -22,7 +22,9 @@ import type { Agendamento, HorarioLivre, VisaoDaAgenda } from "@/components/agen
 import { EmptyAgenda } from "@/components/empty";
 import { rotuloDoLocal } from "@/lib/agenda/locais";
 import { ancoraAoFecharPainel } from "@/lib/agenda/ancora-depois-de-marcar";
+import { ancoraLocalDoDia } from "@/lib/agenda/semana-semente";
 import { janelaDoMesVisivel } from "@/lib/agenda/janela-do-mes-visivel";
+import { recorteDaGrade as recorteDaGradeDe } from "@/lib/agenda/recorte-da-grade";
 import { resolverResponsavelDoPainel } from "@/lib/agenda/responsavel-do-painel";
 import { useVinculoDaMarcacao } from "@/lib/agenda/vinculo-da-marcacao";
 import { Button } from "@/components/ui/button";
@@ -73,6 +75,7 @@ const VISOES: Array<{ id: VisaoDaAgenda; rotulo: string }> = [
  */
 export function AgendaClient({
   fusoDeApresentacao,
+  hojeNaOrganizacao,
   usuarioId,
   googleConfigurado,
   contaConectada,
@@ -84,6 +87,11 @@ export function AgendaClient({
   podeMarcar,
 }: {
   fusoDeApresentacao: string | null;
+  /**
+   * A data de HOJE no fuso da ORGANIZAÇÃO, resolvida pelo servidor
+   * (`yyyy-MM-dd`). É a mesma que gerou a semente de compromissos.
+   */
+  hojeNaOrganizacao: string;
   /** Id de quem está logado — a única fonte para o rótulo "Você". */
   usuarioId: string;
   googleConfigurado: boolean;
@@ -218,13 +226,37 @@ export function AgendaClient({
     if (window.matchMedia("(max-width: 767px)").matches) setVisao("dia");
   }, []);
   const [isolada, setIsolada] = React.useState<string | null>(null);
-  const [ancora, setAncora] = React.useState(() => new Date());
+  /**
+   * A ÂNCORA NASCE DO RELÓGIO DA ORGANIZAÇÃO, não do navegador.
+   *
+   * Era `useState(() => new Date())`. O servidor desenha a semana no fuso da
+   * organização (decisão do dono em #1350) e o cliente recalculava no fuso do
+   * NAVEGADOR: das 21h de sábado à meia-noite em São Paulo, com servidor em UTC,
+   * os dois discordavam e a tela piscava a semana seguinte — e, para quem abre o
+   * CRM fora do fuso da empresa, discordava sempre.
+   *
+   * O que atravessa a fronteira é a DATA (`hojeNaOrganizacao`), nunca o
+   * instante: `domingo 00:00` em São Paulo é `sábado 22:00` em UTC-5, e
+   * `startOfWeek` sobre esse instante, em hora local, cairia na semana anterior.
+   * `ancoraLocalDoDia` transforma a data numa `Date` local ao meio-dia — a doze
+   * horas de qualquer borda de horário de verão.
+   */
+  const [ancora, setAncora] = React.useState(() => ancoraLocalDoDia(hojeNaOrganizacao));
 
-  // AS PESSOAS SÃO REAIS: vêm de `/api/v1/team`, com a trilha de cor derivada do
-  // `user_id`. Até esta linha o filtro por pessoa era invisível na tela do
-  // produto — `FiltroDePessoas` devolve `null` com menos de duas pessoas, e a
-  // lista estava vazia. Ele existia, estava provado na vitrine, e ninguém o via
-  // aqui.
+  // AS PESSOAS SÃO REAIS, e vêm da lista MÍNIMA da agenda — `/api/v1/agenda/pessoas`
+  // (`ROTA_DA_LISTA_DE_PESSOAS`, `lib/agenda/lista-de-pessoas.ts`), papel mínimo
+  // `agent` e só id/nome. Com a trilha de cor derivada do `user_id`.
+  //
+  // ⚠️ ESTA LINHA DIZIA `/api/v1/team`, E A FRASE MENTIA. Ela descrevia o estado
+  // de antes do item 1 da issue 896, quando a agenda pedia a equipe à rota de
+  // administração — que é `manager+` e devolve e-mail e último acesso — e o
+  // Atendente levava 403 só por abrir a tela (virava aviso de falta de
+  // permissão sobre uma grade que continuava lá). A rota mínima consertou isso;
+  // a prosa ficou. Medido nesta rodada:
+  //   grep -rn "api/v1/team" app/app/agenda/ | grep -v "\(//\|\*\)"  → vazio
+  // É por isso que a frase foi reescrita em vez de apagada: quem lê o código
+  // para entender o 403 do Atendente precisa saber que ele JÁ não existe, e um
+  // comentário que afirma o contrário é o defeito de novo.
   const { data: pessoas = [] } = usePessoasDaAgenda();
 
   // A JANELA ACOMPANHA O MÊS QUE O PAINEL MOSTRA.
@@ -238,7 +270,10 @@ export function AgendaClient({
   // A estabilidade continua: a chave do React Query só muda quando o mês, o
   // tipo ou a abertura mudam — nunca a cada render. `new Date()` aqui corre
   // uma vez por essas mudanças, não no corpo.
-  const [mesDoPainel, setMesDoPainel] = React.useState(() => startOfMonth(new Date()));
+  // Mesmo relógio da grade: o mini-calendário abre no mês da ORGANIZAÇÃO.
+  const [mesDoPainel, setMesDoPainel] = React.useState(() =>
+    startOfMonth(ancoraLocalDoDia(hojeNaOrganizacao)),
+  );
   const onMesVisivel = React.useCallback((mes: Date) => {
     const proximo = startOfMonth(mes);
     setMesDoPainel((atual) => (atual.getTime() === proximo.getTime() ? atual : proximo));
@@ -293,18 +328,12 @@ export function AgendaClient({
   // O recorte acompanha o que a grade DESENHA — mesma visão, mesma âncora.
   // Instante ISO, nunca o filtro `dia`: o cabeçalho do hook mede por que
   // (`dia=` corta em UTC e some com o compromisso das 22h no fuso de São Paulo).
+  // A conta mora em `lib/agenda/recorte-da-grade.ts`, junto com a do desenho:
+  // a visão Mês desenha seis semanas, e buscar só o mês deixava vazios os dias
+  // do mês vizinho que ela mostra.
   const recorteDaGrade = React.useMemo(() => {
-    const inicio =
-      visao === "mes"
-        ? startOfMonth(ancora)
-        : visao === "semana"
-          ? startOfWeek(ancora, { weekStartsOn: 0 })
-          : startOfDay(ancora);
-    const fim =
-      visao === "mes"
-        ? addDays(endOfMonth(ancora), 1)
-        : addDays(inicio, visao === "semana" ? 7 : 1);
-    return { de: inicio.toISOString(), ate: fim.toISOString() };
+    const { de, ate } = recorteDaGradeDe(visao, ancora);
+    return { de: de.toISOString(), ate: ate.toISOString() };
   }, [visao, ancora]);
 
   // A janela que o SERVIDOR pintou. Sem esta comparação, navegar para outra
@@ -405,7 +434,14 @@ export function AgendaClient({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setAncora(new Date())}>
+          {/* "Hoje" é o hoje DA ORGANIZAÇÃO. Com `new Date()` o botão desfazia a
+              âncora do servidor e devolvia a semana do navegador — o defeito que
+              a tela acabou de fechar, a um clique de distância. */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setAncora(ancoraLocalDoDia(hojeNaOrganizacao))}
+          >
             {t("Hoje")}
           </Button>
           {/*
@@ -594,29 +630,33 @@ export function AgendaClient({
           maior só roubaria contexto da tela atrás.
         */}
         {/*
-          A CADEIA DE ALTURAS, e ela é o que faz a lista de horários rolar.
-          
-          O `overflow-y-auto` da lista (`PainelDeMarcacao`) sempre esteve no
-          elemento certo e era INERTE: `overflow-y-auto` cujo pai tem altura
-          `auto` não rola — o filho cresce, `scrollHeight === clientHeight`, e os
-          últimos horários ficavam abaixo da dobra sem nenhum jeito de alcançá-los.
-          E a página também não rolava: o `SheetContent` é `position: fixed`, e
-          transbordo de elemento fixo não estende a área rolável do documento.
-          
-          Abaixo de `lg` o próprio Sheet rola (ali o painel empilha e a lista é
-          uma seção, não uma coluna). De `lg` para cima o Sheet segura a altura e
-          a LISTA rola, com calendário e contexto parados.
-          
-          ⚠️ `lg:overflow-hidden` e não `overflow-y-auto` em todo breakpoint: em
-          `lg` o Sheet tem 1040px com `p-6` → 992px de caixa contra ~980px de
-          painel. Uma barra vertical come essa folga, e como o CSS computa
-          `overflow-x: visible` como `auto` quando `overflow-y` não é `visible`,
-          nasceria barra HORIZONTAL exatamente no breakpoint que o conserto de
-          largura acabou de reparar.
+          O SHEET ROLA EM TODO BREAKPOINT — é o único rolador vertical do painel.
+
+          Era `lg:overflow-hidden`, com o painel em `lg:flex-1` dividindo a
+          altura do Sheet com o formulário acima dele. O formulário é
+          `shrink-0` e cresceu (vínculo, tipos, convidado, endereço,
+          observação): em janela larga e BAIXA ele come quase toda a altura, o
+          painel fica com uma fresta de poucos pixels, e com a janela abaixo de
+          ~560px o formulário sozinho passa da caixa — o `overflow-hidden`
+          cortava horários e o botão Confirmar EM SILÊNCIO, sem barra.
+
+          Agora o painel tem a altura do próprio conteúdo e quem rola é o Sheet.
+          A lista de horários não depende disso: ela tem teto próprio
+          (`lg:max-h` em `PainelDeMarcacao`) e rola sozinha.
+
+          ⚠️ `lg:px-3` + `overflow-x-hidden`: em `lg` o painel mede ~982px. Com
+          o `p-6` de fábrica, 1024px de janela − 1 de borda − 48 de padding − 15
+          de barra vertical clássica = 960px, e o CSS computa `overflow-x:
+          visible` como `auto` quando `overflow-y` não é `visible` — nasceria
+          barra HORIZONTAL no limiar das três colunas. Com 12px de cada lado
+          sobram 984px. O `overflow-x-hidden` é a trava para quando a barra for mais
+          larga que 15px; a régua de largura em
+          `tests/e2e/agenda-painel-cabe-na-tela.spec.ts` continua medindo o
+          painel contra o Sheet, então um transbordo real ainda reprova.
         */}
         <SheetContent
           side="right"
-          className="flex w-full flex-col overflow-y-auto sm:max-w-3xl lg:max-w-[1040px] lg:overflow-hidden"
+          className="flex w-full flex-col overflow-x-hidden overflow-y-auto sm:max-w-3xl lg:max-w-[1040px] lg:px-3"
         >
           <SheetHeader>
             <SheetTitle>
@@ -736,10 +776,10 @@ export function AgendaClient({
             ) : null}
           </div>
           {tipo && (
-            <div className="mt-4 lg:min-h-0 lg:flex-1">
+            <div className="mt-4 shrink-0">
               <PainelDeMarcacao
-                className="lg:h-full"
-                ancora={new Date()}
+                // O mês que abre é o da organização, como a grade ao lado.
+                ancora={ancoraLocalDoDia(hojeNaOrganizacao)}
                 agora={new Date()}
                 responsavel={
                   // O DONO DO TIPO, não o primeiro da lista. A tela dizia "com

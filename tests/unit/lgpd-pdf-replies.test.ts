@@ -48,12 +48,16 @@ function payload(): ExportPayload {
       },
     ],
     voice_calls: [],
+    prospecting_candidates: [],
     cases: [],
     case_events: [],
     case_chat_messages: [],
+    checkpoints: [],
     passagens: [],
     avisos_de_caso: [],
     demandas: [],
+    campaign_recipients: [],
+    campaign_suppressions: [],
   appointment_notices: [
       {
         id: "aviso-aberto",

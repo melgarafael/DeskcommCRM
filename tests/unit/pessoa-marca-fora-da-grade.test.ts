@@ -179,6 +179,10 @@ function bancoEmMemoria(tabelas: Record<string, Linha[]>, olhar: Olhar = "tudo")
         Object.assign(linha, args.p_patch as Linha, { revision: Number(linha.revision) + 1 });
         return { data: { ...linha }, error: null };
       }
+      // A OPÇÃO da agenda dos colegas (issue #978): o dublê responde o PADRÃO,
+      // ligada — este arquivo não é sobre o recorte dela, e o handler só a
+      // consulta quando o compromisso resolvido não é de quem pede.
+      if (fn === "fn_colegas_podem_mexer_na_agenda") return { data: true, error: null };
       // O gatilho de automação da Agenda sai por aqui (issue #877). Este arquivo
       // não é sobre ele — quem o vigia é `agenda-gatilho-leva-o-tipo-real`.
       if (fn === "emit_event") return { data: null, error: null };

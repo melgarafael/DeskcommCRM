@@ -23,22 +23,51 @@ export interface IntentVerdict {
   confidence: number;
 }
 
+/** Mensagem de contexto anterior à atual — só pra desambiguar, nunca o alvo da classificação. */
+export interface ClassifierContextMessage {
+  direction: 'inbound' | 'outbound';
+  body: string;
+}
+
 /** Instrução final fixa — pede JSON estrito, marcador estável pros testes/prompt. */
 const JSON_INSTRUCTION =
   'Responda SOMENTE JSON: {"intent": "<nome exato de uma intenção da lista ou none>", "confidence": <0 a 1>}';
 
-export function buildClassifierPrompt(members: RouterMember[], signal: string): string {
+/**
+ * `recentMessages` é histórico curto (poucas mensagens, mais antiga → mais
+ * recente), NUNCA a conversa inteira: o classificador roda em TODO turno,
+ * inclusive com sticky ativo (resolve-turn-agent.ts regra 2), então o custo é
+ * por mensagem — histórico completo pagaria esse preço a cada turno pra um
+ * modelo cuja única pergunta é "mudou de assunto?". Existe só pra resolver
+ * ambiguidade de resposta curta (“Primeira”, “sim”) que sem a pergunta
+ * anterior parece bater em qualquer intenção — não pra dar memória ao
+ * classificador.
+ */
+export function buildClassifierPrompt(
+  members: RouterMember[],
+  signal: string,
+  recentMessages: ClassifierContextMessage[] = [],
+): string {
   const list = members
     .map((m) => {
       const examples = m.examples.length > 0 ? ` Exemplos: ${m.examples.join('; ')}.` : '';
       return `- ${m.intentName}: ${m.intentDescription}.${examples}`;
     })
     .join('\n');
+  const contexto =
+    recentMessages.length > 0
+      ? [
+          '',
+          'Contexto recente da conversa (mais antiga primeiro — só pra desambiguar, NÃO é o que classificar):',
+          ...recentMessages.map((m) => `${m.direction === 'inbound' ? 'Lead' : 'Agente'}: ${m.body}`),
+        ]
+      : [];
   return [
     'Você é um classificador auxiliar de intenção (NÃO responde ao lead).',
     'Intenções possíveis:',
     list,
     '- none: nenhuma das intenções acima se aplica.',
+    ...contexto,
     '',
     'Mensagem do lead a classificar:',
     signal,
@@ -98,6 +127,8 @@ export async function classifyIntent(
     jobId: string | null;
     router: LoadedRouter;
     signal: string;
+    /** Últimas mensagens ANTERIORES ao signal, mais antiga → mais recente. Default []. */
+    recentMessages?: ClassifierContextMessage[];
   },
   deps: ClassifyIntentDeps,
 ): Promise<IntentVerdict | null> {
@@ -111,14 +142,21 @@ export async function classifyIntent(
         leadId: input.leadId,
         jobId: input.jobId,
         purpose: 'intent_router',
-        model: input.router.classifierModel,
+        // Sem modelo próprio ("Automático"), não passa nenhum: o seam resolve
+        // pelo painel de provedores ou pelo padrão da organização.
+        ...(input.router.classifierModel ? { model: input.router.classifierModel } : {}),
         // Sem isto, o modelo do roteador viaja para o provedor da ORG: escolher
         // um modelo OpenAI numa org configurada como Anthropic mandava o id para
         // o lugar errado, e a classificação falhava sempre.
         ...(input.router.classifierProvider
           ? { llmOverride: { provider: input.router.classifierProvider } }
           : {}),
-        messages: [{ role: 'user', content: buildClassifierPrompt(input.router.members, input.signal) }],
+        messages: [
+          {
+            role: 'user',
+            content: buildClassifierPrompt(input.router.members, input.signal, input.recentMessages ?? []),
+          },
+        ],
       },
       { log: deps.log },
     );

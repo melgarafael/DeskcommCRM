@@ -60,10 +60,11 @@ motor: **Publicar** no construtor, e ligar o fluxo no agente (passo 7 abaixo, ca
 *follow-ups que arma*). Gatilho automático só cria inscrição se um agente **publicado** arma o
 ponteiro. Esquecer o segundo passo não é mais silencioso: uma verificação de hora em hora abre
 na **Central de avisos** um aviso por fluxo publicado que nenhum agente arma, e o fecha sozinho
-quando o vínculo aparece. Vale para silêncio, etapa, atendimento aberto e falta — manual e
-webhook funcionam sem agente e não geram aviso.
+quando o vínculo aparece. Vale para silêncio, cliente voltou, etapa, atendimento aberto e falta —
+manual e webhook funcionam sem agente e não geram aviso.
 
-**Novo fluxo** → nome (único). No editor: **gatilho** (manual; silêncio por N minutos; mudança de
+**Novo fluxo** → nome (único). No editor: **gatilho** (manual; silêncio por N minutos; cliente voltou
+depois de X sem falar — número + minutos/horas/dias, padrão 1 dia, teto 90 dias; mudança de
 etapa; falta a compromisso; caso aberto; webhook) com *cancelar quando responder*; depois os nós:
 **espera** (fixa, de 5 min a 90 dias, ou inteligente com mínimo/máximo), **mensagem** (texto,
 gerada pela IA com uma orientação, ou modelo de mensagem), **condição** (etapa, tag, passos dados,

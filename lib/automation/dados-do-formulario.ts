@@ -1,3 +1,4 @@
+import type { OrigemDaAbordagem } from "@/lib/agent-engine/agent/abordagem-de-formulario";
 /**
  * OS DADOS QUE A IA RECEBE COMO ENTRADA — e de onde eles vêm.
  *
@@ -12,17 +13,23 @@
  * cliente-vip" não tem formulário nenhum, e ainda assim a IA deve escrever com
  * o que se sabe da pessoa.
  *
- * `veioDeFormulario` não é detalhe: é o que decide qual situação o prompt
+ * `origemDaAbordagem` não é detalhe: é o que decide qual situação o prompt
  * declara ao agente ("acabou de preencher um formulário" vs. "entrou no funil
  * por uma automação"). Dizer a errada faz o modelo escrever sobre um formulário
  * que não existiu.
+ *
+ * Era um booleano, e virou três valores porque o `false` não dizia o bastante:
+ * quem chega por PROSPECÇÃO FRIA não entrou em funil nenhum, e as regras do
+ * prompt falavam em "o que ela preencheu" mesmo no ramo negativo. Este arquivo
+ * nunca produz `prospeccao_fria` — aqui sempre houve um gatilho da organização;
+ * quem a produz é `lib/prospecting/worker.ts`.
  */
 import type { ActionCtx } from "@/lib/automation/types";
 
 export interface DadosParaAbordagem {
   dados: Record<string, string>;
   origem: string | null;
-  veioDeFormulario: boolean;
+  origemDaAbordagem: OrigemDaAbordagem;
 }
 
 /**
@@ -113,11 +120,11 @@ export async function dadosDoFormularioDoContexto(ctx: ActionCtx): Promise<Dados
     if (captura) {
       acrescentar(dados, captura.fields);
       acrescentar(dados, captura.utm);
-      return { dados, origem: captura.source_name, veioDeFormulario: true };
+      return { dados, origem: captura.source_name, origemDaAbordagem: "formulario" };
     }
   }
 
   acrescentar(dados, lead?.custom_fields);
   acrescentar(dados, lead?.source_metadata);
-  return { dados, origem: null, veioDeFormulario: false };
+  return { dados, origem: null, origemDaAbordagem: "automacao" };
 }

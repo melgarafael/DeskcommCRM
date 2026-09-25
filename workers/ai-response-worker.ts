@@ -245,7 +245,10 @@ export async function processMessageReceived(row: EventRow): Promise<ProcessResu
     // ── G3 — bot's own response signals low confidence / uncertainty.
     //    Persist the message (may serve as a draft for the human) but DO NOT
     //    dispatch via WAHA, and trigger handoff. ----------------------------
-    const confidence = response.citations[0]?.similarity ?? 0;
+    // `?? null`, nunca `?? 0`: sem citação não houve medição de similaridade, e
+    // zero é uma AFIRMAÇÃO ("o material é péssimo") que escala para humano toda
+    // resposta que não consultou a base. Ver o cabeçalho de `checkG3`.
+    const confidence = response.citations[0]?.similarity ?? null;
     const confidenceThreshold =
       typeof ctx.agent.config?.["confidence_threshold"] === "number"
         ? (ctx.agent.config["confidence_threshold"] as number)

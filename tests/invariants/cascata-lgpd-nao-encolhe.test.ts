@@ -48,6 +48,15 @@ import { sql } from "./psql-transporte";
  * tabela está aqui" é a pergunta que a próxima entrega vai fazer.
  */
 const TABELAS_NA_CASCATA = [
+  // 0375/0376 — `rendered_body` é a MENSAGEM que a pessoa recebeu e
+  // `recipient_address` o telefone para onde foi. A LINHA fica (é a prova de
+  // que ela esteve na campanha, e apagá-la desfaria a contagem de quem
+  // recebeu); o conteúdo sai.
+  "campaign_recipients",
+  // 0376 — a cauda do telefone e o motivo. O HASH do endereço PERMANECE: é
+  // ele que faz o "não me mande mais" continuar valendo depois da
+  // anonimização — apagá-lo faria a pessoa voltar a receber campanha.
+  "campaign_suppressions",
   "agent_case_chat_messages", // 0281 — o `body` da consulta interna da equipe sobre o caso
   "agent_case_events", //  0280 — body/metadata da linha do tempo do caso
   "agent_cases", //        0280 — title/summary/blocker/context_snapshot
@@ -74,6 +83,14 @@ const TABELAS_NA_CASCATA = [
   // FICAM: a venda é registro financeiro da organização, e desligá-la faria o
   // relatório por cliente deixar de fechar com o faturamento do período.
   "sales",
+  // 0345 — nome, telefone, endereço e `maps_url` do negócio raspado antes de
+  // existir conversa. O passo alcança por vínculo OU POR TELEFONE (variantes do
+  // nono dígito): quando o número já era de um contato conhecido, o candidato
+  // fica com `contact_id` NULO de propósito — lá o vínculo é o freio de mão do
+  // envio —, e só pelo vínculo a pessoa que a empresa JÁ conhecia era a única
+  // que o expurgo não alcançava. Prova de comportamento em
+  // `lgpd-alcanca-prospeccao-de-quem-ja-era-contato.test.ts`.
+  "prospecting_candidates",
   "voice_calls", //        0235 — o telefone de quem falou ao telefone
 ] as const;
 

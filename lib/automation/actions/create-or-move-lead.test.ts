@@ -88,7 +88,7 @@ describe("create_or_move_lead — pontuação/classificação nunca bloqueia o E
   ];
 
   it.each(CLASSIFICACOES)("%s → move normalmente, status success", async (_nome, customFields) => {
-    const db = makeDb({
+    const db = makeDb({ contacts: [{ id: "contato-1", organization_id: ORG_ID }],
       pipelines: [funilRow({ id: PIPE, name: "funil comercial imobiliário" })],
       stages: [ETAPA_ORIGEM, ETAPA_DESTINO],
       leads: [negocio("lead-1", "novo")],
@@ -108,7 +108,7 @@ describe("create_or_move_lead — pontuação/classificação nunca bloqueia o E
 
 describe("create_or_move_lead — pontuação/classificação nunca bloqueia a CRIAÇÃO", () => {
   it("contato com custom_fields de classe D no contexto: cria o lead normalmente", async () => {
-    const db = makeDb({
+    const db = makeDb({ contacts: [{ id: "contato-1", organization_id: ORG_ID }],
       pipelines: [funilRow({ id: PIPE, name: "funil comercial imobiliário" })],
       stages: [ETAPA_ORIGEM, ETAPA_DESTINO],
       leads: [],
@@ -175,7 +175,7 @@ describe("create_or_move_lead — gatilho de contato (#958)", () => {
   }
 
   it("contato que já tem negócio aberto no funil de destino: MOVE, não duplica", async () => {
-    const db = makeDb({
+    const db = makeDb({ contacts: [{ id: "contato-1", organization_id: ORG_ID }],
       pipelines: [funilRow({ id: PIPE, name: "Funil" })],
       stages: [ETAPA_ORIGEM, ETAPA_DESTINO],
       leads: [negocio("lead-1", "novo", { contact_id: "contato-1", status: "open" } as Partial<
@@ -194,7 +194,7 @@ describe("create_or_move_lead — gatilho de contato (#958)", () => {
   });
 
   it("contato SEM negócio no funil de destino: cria, como antes", async () => {
-    const db = makeDb({
+    const db = makeDb({ contacts: [{ id: "contato-1", organization_id: ORG_ID }],
       pipelines: [funilRow({ id: PIPE, name: "Funil" })],
       stages: [ETAPA_ORIGEM, ETAPA_DESTINO],
       leads: [],
@@ -210,7 +210,7 @@ describe("create_or_move_lead — gatilho de contato (#958)", () => {
   });
 
   it("o lead fica no contexto para a ação seguinte da regra — fim do missing_input", async () => {
-    const db = makeDb({
+    const db = makeDb({ contacts: [{ id: "contato-1", organization_id: ORG_ID }],
       pipelines: [funilRow({ id: PIPE, name: "Funil" })],
       stages: [ETAPA_ORIGEM, ETAPA_DESTINO],
       leads: [],
@@ -242,7 +242,7 @@ describe("create_or_move_lead — gatilho de contato (#958)", () => {
  */
 describe("create_or_move_lead — o contexto publicado é a linha inteira", () => {
   it("move: as tags do negócio sobrevivem no contexto para a ação seguinte", async () => {
-    const db = makeDb({
+    const db = makeDb({ contacts: [{ id: "contato-1", organization_id: ORG_ID }],
       pipelines: [funilRow({ id: PIPE, name: "Funil" })],
       stages: [ETAPA_ORIGEM, ETAPA_DESTINO],
       leads: [
@@ -264,7 +264,7 @@ describe("create_or_move_lead — o contexto publicado é a linha inteira", () =
   });
 
   it("criação: o contexto traz a linha criada, não só o id", async () => {
-    const db = makeDb({
+    const db = makeDb({ contacts: [{ id: "contato-1", organization_id: ORG_ID }],
       pipelines: [funilRow({ id: PIPE, name: "Funil" })],
       stages: [ETAPA_ORIGEM, ETAPA_DESTINO],
       leads: [],
@@ -301,7 +301,7 @@ describe("create_or_move_lead — não lê nenhuma chave classificacao_inicial_*
 
 it("CRM derivado propaga referência original sem observar ou abrir atendimento", async () => {
   originRpc.mockClear();
-  const db = makeDb({ pipelines: [funilRow({ id: PIPE, name: "Funil" })], stages: [ETAPA_ORIGEM, ETAPA_DESTINO], leads: [negocio("lead-1", "novo")] });
+  const db = makeDb({ contacts: [{ id: "contato-1", organization_id: ORG_ID }], pipelines: [funilRow({ id: PIPE, name: "Funil" })], stages: [ETAPA_ORIGEM, ETAPA_DESTINO], leads: [negocio("lead-1", "novo")] });
   const ctx = ctxComLead({}, db.client as unknown as ActionCtx["admin"]);
   ctx.event = { id: "evento-original", event_type: "message.received" } as ActionCtx["event"];
   ctx.context.contact = { id: "contato-1" };

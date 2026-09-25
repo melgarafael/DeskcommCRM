@@ -1,10 +1,13 @@
 /**
  * O FLUXO PUBLICADO QUE NUNCA VAI DISPARAR.
  *
- * Um gatilho automático de follow-up (silêncio, etapa do funil, caso aberto,
- * falta a compromisso) só cria inscrição se algum agente PUBLICADO tem o
- * ponteiro em `followup.flow_pointer_ids` — `lib/followup/agent-followup-gate.ts`,
- * e a mesma condição escrita de novo em SQL dentro de `fn_appointment_recover`.
+ * Um gatilho automático de follow-up cujo grafo pede IA (silêncio, etapa,
+ * caso, cliente voltou, lead criado, falta a compromisso) só cria inscrição se algum
+ * agente PUBLICADO tem o ponteiro em `followup.flow_pointer_ids` —
+ * `lib/followup/agent-followup-gate.ts`. Grafo só de texto fixo / template
+ * NÃO pede agente: o enrollment nasce com `agent_id` nulo. A recuperação de
+ * falta (`appointment_no_show`) ainda exige o vínculo no SQL
+ * (`fn_appointment_recover`); este cron continua avisando aquele kind.
  *
  * Faltando esse vínculo, todo produtor sai por `pointers_armados = 0` **em
  * silêncio**. O fluxo aparece `active` na tela, com versão publicada e gatilho
@@ -34,20 +37,23 @@
  * ═══ O QUE ELE NÃO OLHA ═══
  *
  * `manual` e `webhook` ficam de fora — funcionam sem agente nenhum
- * (`lib/followup/enroll.ts` segue com `agent_id = null`). Avisar sobre eles
- * seria alarme falso. A lista é `GATILHOS_QUE_EXIGEM_AGENTE`, ao lado do gate.
+ * (`lib/followup/enroll.ts` segue com `agent_id = null`). Texto fixo dos
+ * gatilhos automáticos também: avisar seria alarme falso. A lista de kinds
+ * candidatos é `GATILHOS_QUE_EXIGEM_AGENTE`; o grafo publicado decide se o
+ * aviso sai. `appointment_no_show` ainda avisa sempre — o SQL não leu o grafo.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { autorizaCron } from "@/lib/auth/cron-auth";
 import {
   createSupabaseFollowupGateDb,
   exigeAgente,
+  fluxoPedeAgente,
   type FollowupGateDb,
 } from "@/lib/followup/agent-followup-gate";
 
@@ -64,6 +70,8 @@ const COMO_DISPARA: Record<string, string> = {
   stage_change: "quando um negócio entra numa etapa do funil",
   case_opened: "quando um atendimento é aberto",
   appointment_no_show: "quando alguém confirma que o contato não compareceu",
+  inbound_after_silence: "quando o contato volta a escrever depois de um tempo sem falar",
+  lead_created: "quando um negócio nasce",
 };
 
 interface PonteiroDesarmado {
@@ -71,6 +79,7 @@ interface PonteiroDesarmado {
   organization_id: string;
   name: string;
   kind: string;
+  active_version_id: string | null;
 }
 
 export function corpoDoAviso(nome: string, kind: string): string {
@@ -83,13 +92,18 @@ export function corpoDoAviso(nome: string, kind: string): string {
   );
 }
 
+/** Sem grafo (ou grafo ilegível) falha fechado: o aviso continua sendo o certo. */
+function ponteiroAindaPedeAgente(graph: unknown | undefined): boolean {
+  if (graph == null || typeof graph !== "object") return true;
+  const nodes = (graph as { nodes?: unknown }).nodes;
+  if (!Array.isArray(nodes)) return true;
+  return fluxoPedeAgente({ nodes });
+}
+
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
-  const auth = req.headers.get("authorization") ?? "";
-  const fornecido = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : "";
-  const aceitos = [env.INTERNAL_CRON_SECRET, env.INTERNAL_SECRET].filter(Boolean);
-  if (aceitos.length === 0 || !fornecido || !aceitos.includes(fornecido)) {
+  if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
 
@@ -97,7 +111,7 @@ async function handle(req: NextRequest): Promise<Response> {
 
   const { data, error } = await admin
     .from("followup_flow_pointers")
-    .select("id, organization_id, name, trigger_config")
+    .select("id, organization_id, name, trigger_config, active_version_id")
     .eq("status", "active")
     .limit(LIMITE_DA_VARREDURA);
 
@@ -118,6 +132,7 @@ async function handle(req: NextRequest): Promise<Response> {
           organization_id: linha.organization_id as string,
           name: linha.name as string,
           kind,
+          active_version_id: typeof linha.active_version_id === "string" ? linha.active_version_id : null,
         }]
       : [];
   });
@@ -142,6 +157,25 @@ async function handle(req: NextRequest): Promise<Response> {
     }
   }
 
+  const grafosPorVersao = new Map<string, unknown>();
+  const versaoIds = [...new Set(candidatos.map((c) => c.active_version_id).filter((id): id is string => id !== null))];
+  if (versaoIds.length > 0) {
+    const { data: versoes, error: erroGrafo } = await admin
+      .from("followup_flow_versions")
+      .select("id, graph")
+      .in("id", versaoIds);
+    if (erroGrafo) {
+      logger.error("[followup-sem-agente] grafos publicados não puderam ser lidos", {
+        error: erroGrafo.message,
+        requestId,
+      });
+    } else {
+      for (const v of versoes ?? []) {
+        grafosPorVersao.set(v.id as string, (v as { graph: unknown }).graph);
+      }
+    }
+  }
+
   let abertos = 0;
   let jaAbertos = 0;
   let fechados = 0;
@@ -159,8 +193,12 @@ async function handle(req: NextRequest): Promise<Response> {
       .eq("status", "open")
       .maybeSingle();
 
-    if (armados.has(ponteiro.id)) {
-      // O vínculo apareceu: o aviso perdeu o assunto e é fechado por quem o abriu.
+    const armadoPorAgente = armados.has(ponteiro.id);
+    const pedeAgente =
+      ponteiro.kind === "appointment_no_show" ||
+      ponteiroAindaPedeAgente(grafosPorVersao.get(ponteiro.active_version_id ?? ""));
+    if (armadoPorAgente || !pedeAgente) {
+      // Vínculo apareceu, ou o grafo é só texto fixo: o aviso perdeu o assunto.
       if (!avisoAberto) continue;
       const { error: erroFechar } = await admin
         .from("agent_inbox_items")

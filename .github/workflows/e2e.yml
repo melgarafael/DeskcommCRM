@@ -176,7 +176,7 @@ jobs:
     # deixa de ser apertado sem que ninguém precise ceder.
     timeout-minutes: 30
     concurrency:
-      group: ${{ github.workflow }}-e2e-parte${{ matrix.parte }}-${{ github.event.pull_request.number || github.ref }}
+      group: ${{ github.workflow }}-e2e-parte${{ matrix.parte }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     strategy:
       # Sem fail-fast: se a parte 1 quebrar, ainda quero saber se a 2 também.
@@ -719,6 +719,7 @@ jobs:
       # Se um dia uma spec de follow-up entrar na PARTE_1 com nome depois de
       # `relogio-`, é aqui que se olha: ou ela vai para a PARTE_2, ou esta vai.
       SPECS_PARTE_2: >-
+        protecao-de-envio-nao-congela-o-padrao.spec.ts
         agente-marca-consulta.spec.ts
         agenda-marcar-pela-tela.spec.ts
         agenda-remarcar-e-cancelar.spec.ts
@@ -751,7 +752,9 @@ jobs:
         agenda-caminho-ate-os-horarios.spec.ts
         agenda-google-volta-do-consentimento.spec.ts
         agenda-google-volta-nao-desloga.spec.ts
+        redes-sociais-volta-nao-desloga.spec.ts
         navegacao.spec.ts
+        menu-por-empresa-e-a-porta-de-volta.spec.ts
         agenda-google-meet.spec.ts
         painel-de-configuracao-da-instalacao.spec.ts
       # `moeda-da-organizacao` entrou na PARTE_2 em 2026-09-04, ao lado de
@@ -980,6 +983,8 @@ jobs:
         followup-cartoes.spec.ts
         followup-modelos-de-clinica.spec.ts
         presenca-do-atendente.spec.ts
+        trunk-sip-config.spec.ts
+        fotos-no-catalogo.spec.ts
 
       # ─── PARTE 4 — a spec de VPS fresca, e quem pode entrar ao lado dela ───
       #
@@ -1046,8 +1051,27 @@ jobs:
       SPECS_PARTE_4: >-
         vps-fresh-onboarding.spec.ts
 
+      # `jev-decisoes-rapidas` entrou na PARTE_5 em 2026-09-23, pelo relógio e não
+      # pela família. A família dela (`prova-painel-provedores`,
+      # `credenciais-de-ia`) mora na PARTE_1 — e a PARTE_1 é a mais apertada.
+      # Medido nas 5 últimas rodadas verdes da main (runs 35921818285,
+      # 35920487831, 35918022238, 35914742522, 35893024353), relógio do JOB:
+      #
+      #     parte 1 → máx 1570s · folga 230s
+      #     parte 2 → máx 1373s · folga 427s
+      #     parte 3 → máx 1481s · folga 319s
+      #     parte 5 → máx 1352s · folga 448s   ← a maior
+      #
+      # Ela não depende da vizinhança: sobe o próprio dublê (porta 3996, a do
+      # `JEV_API_BASE_URL` que o `.env.e2e` grava), semeia a entrada de mensagens
+      # com o seed da `conversa-vira-lead` e apaga a chave e o `settings.jev` que
+      # criou, antes e depois. PREVISÃO, não medida: ~1,5 min de Playwright.
       SPECS_PARTE_5: >-
         inbox-busca-e-filtros-dizem-a-verdade.spec.ts
+        extensoes-da-instalacao.spec.ts
+        admin-credencial-google.spec.ts
+        agenda-primeira-pintura-no-fuso.spec.ts
+        agenda-portao-de-hidratacao.spec.ts
         qa-l12-inbox.spec.ts
         filtro-por-marcador-pela-tela.spec.ts
         funil-arquivado-volta-pela-tela.spec.ts
@@ -1055,6 +1079,7 @@ jobs:
         followup-journey.spec.ts
         followup-dossie.spec.ts
         followup-queue.spec.ts
+        fluxo-de-atendimento.spec.ts
         qa-l12-funil.spec.ts
         i18n-espanhol-na-tela.spec.ts
         extensoes-declarativas.spec.ts
@@ -1062,16 +1087,32 @@ jobs:
         marca-logo.spec.ts
         suporte-temporario.spec.ts
         olhar-telas-do-epico.spec.ts
+        jev-decisoes-rapidas.spec.ts
+        buffer-ssr-caixa-orfa.spec.ts
 
-      # ─── FORA_DO_CI — as duas que ficaram, e o motivo continua onde sempre ───
+      # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #
       # A `vps-fresh-onboarding` saiu desta lista no PR da issue #179 (a infra
-      # dela está no `SPECS_PARTE_4` logo acima). As duas abaixo continuam
-      # fora, e o motivo delas é o que o job `resumo` imprime no run.
+      # dela está no `SPECS_PARTE_4` logo acima). As de baixo continuam fora, e
+      # o motivo de cada uma está escrito neste arquivo — no topo do workflow ou
+      # logo abaixo. (Este parágrafo dizia "as duas" com três na lista: número
+      # em prosa envelhece, e por isso ele saiu.)
+      #
+      # `jev-chave-real` entrou aqui em 2026-09-23: EXIGE UMA CHAVE PAGA da
+      # TypeSafe AI (`JEV_API_KEY`), e segredo de repositório público não é
+      # lugar para ela. Não é o caso de ficar no CI e pular os casos pagos, como
+      # a `acervo-de-conhecimento` faz: aqui a chave é a spec inteira, e mesmo
+      # com ela este job a reprovaria — o `pnpm e2e:env` aponta o Jev do
+      # servidor para o dublê, e ela recusa medir o dublê. O que o CI prova é a
+      # `jev-decisoes-rapidas` (PARTE_5), contra um dublê que responde o contrato
+      # MEDIDO na API real. O que só esta prova é que o contrato ainda é esse — a
+      # versão fixada responde e a chave passa no teste. Sem a chave, ela pula; o
+      # cabeçalho dela tem a receita para rodar contra a API de verdade.
       FORA_DO_CI: >-
         inbox-tempo-real.spec.ts
         cadastro-sem-confirmacao-de-email.spec.ts
         aviso-de-caso-chega-no-whatsapp.spec.ts
+        jev-chave-real.spec.ts
     steps:
       # ── O RELÓGIO DESTA PARTE: ONDE O TETO DE 30 MIN COMEÇA A CONTAR ──────
       #
@@ -1153,6 +1194,53 @@ jobs:
           echo "parte ${{ matrix.parte }}: relógio do job iniciado em $(date -u +%H:%M:%S) UTC"
 
       - uses: actions/checkout@v7
+
+      # ─── As portas do Supabase saem da faixa efêmera do kernel ─────────────
+      #
+      # O `supabase start` publica portas FIXAS no host — as de
+      # `supabase/config.toml`, 54320 a 54329 — e todas caem dentro da faixa
+      # efêmera do Linux (`net.ipv4.ip_local_port_range`, 32768–60999 no
+      # runner). Qualquer conexão de SAÍDA deste job (o pull das imagens do
+      # próprio Supabase, o `pnpm install`) pode receber uma delas como porta de
+      # origem, e o bind do contêiner morre com
+      #
+      #   failed to bind host port for 0.0.0.0:54322:172.18.0.2:5432/tcp:
+      #   address already in use
+      #
+      # Medido de 15 a 22/09/2026: 6 partes vermelhas assim (54322 cinco vezes,
+      # 54324 uma), em 5 PRs e 1 push da `main` — runs 34997333501, 35013924504,
+      # 35331913043, 35343096791, 35423329919 e 35497099264 —, todas em
+      # `ubuntu-latest`, com a parte morta em ~2 min sem rodar teste. A triagem
+      # mandava rerodar (§3-quater do TRIAGEM.md). Reservar as portas tira-as do
+      # sorteio do kernel, e elas continuam livres para o bind explícito do
+      # Docker.
+      #
+      # Depois do checkout porque as portas são LIDAS do `config.toml` — mudou
+      # lá, a reserva acompanha sem ninguém lembrar deste passo. E antes de
+      # qualquer passo que abra conexão em massa.
+      #
+      # Só em máquina do GitHub: no executor próprio o runner é um contêiner, e
+      # quem publica a porta é o Docker do hospedeiro — a reserva feita aqui
+      # dentro não alcançaria o namespace de rede que importa.
+      - name: Tirar as portas do Supabase da faixa efêmera
+        if: runner.environment == 'github-hosted'
+        run: |
+          set -euo pipefail
+          portas=$(grep -oE '^[[:space:]]*(shadow_)?port[[:space:]]*=[[:space:]]*[0-9]+' supabase/config.toml \
+            | grep -oE '[0-9]+$' | sort -un | paste -sd, -)
+          if [ -z "$portas" ]; then
+            echo "::error::nenhuma porta lida de supabase/config.toml — a sonda perdeu o arquivo, e reservar nada é não reservar"
+            exit 1
+          fi
+          sudo sysctl -w net.ipv4.ip_local_reserved_ports="$portas"
+          echo "faixa efêmera: $(cat /proc/sys/net/ipv4/ip_local_port_range) | reservadas: $(cat /proc/sys/net/ipv4/ip_local_reserved_ports)"
+          # A reserva vale para conexões NOVAS. Uma já aberta numa destas portas
+          # continua lá até fechar — se houver, fica dito aqui, e não no bind.
+          abertas=$(ss -Htan | awk '{print $4}' | sed 's/.*://' | sort -u)
+          ocupadas=$(comm -12 <(printf '%s\n' "$abertas") <(tr , '\n' <<<"$portas" | sort -u))
+          if [ -n "$ocupadas" ]; then
+            echo "::warning::porta(s) do Supabase já em uso por conexão aberta antes da reserva: $(echo $ocupadas)"
+          fi
 
       # ─── Serviços da parte 4 — a spec de VPS fresca (issue #179) ──────────
       #
@@ -1273,11 +1361,68 @@ jobs:
       # tabela que ainda não existe) — está no CLAUDE.md e foi confirmado neste
       # CI. O que o self-hoster aplica é o `baseline.sql`, então é ele que o
       # e2e aplica: o banco do teste fica igual ao de quem instalou o produto.
+      #
+      # ⚠️ O PULL DAS IMAGENS BATE NO LIMITE DO REGISTRO, e por isso há laço.
+      #
+      # Medido em 23/09/2026, run 35908153939: com ~10 PRs disparando CI quase
+      # juntos, as CINCO partes morreram aqui com
+      #
+      #   Error response from daemon: toomanyrequests: retry-after: 913.381µs, allowed: 44000/minute
+      #   failed to pull docker image from all registries: ghcr.io/supabase/gotrue:v2.196.0 …
+      #
+      # O CLI já tenta 3 vezes por imagem, mas com 4s e 8s de espera — tudo
+      # dentro do mesmo minuto em que o limite estourou. O laço daqui espera
+      # 20s, 60s e 120s, e o `supabase stop` entre tentativas não apaga as
+      # camadas já baixadas (ficam no Docker do runner): a tentativa seguinte
+      # só baixa o que faltou. Só tenta de novo quando a saída é de pull/rede;
+      # qualquer outra falha (porta ocupada, contêiner que não fica saudável)
+      # vermelha na hora, sem gastar o relógio da parte.
+      #
+      # Esperar só não basta, e isso foi MEDIDO: na primeira rodada do PR que
+      # criou este laço (run 35910532729), o ghcr.io seguiu recusando por 4,5
+      # min, nas 4 tentativas, nas 5 partes. O limite não era rajada de um
+      # minuto; era o registro inteiro sob carga. Por isso as tentativas pares
+      # trocam de REGISTRO: o `supabase/setup-cli` exporta
+      # `SUPABASE_INTERNAL_IMAGE_REGISTRY=ghcr.io`, e o CLI publica as mesmas
+      # imagens em `public.ecr.aws` (o default dele sem o setup-cli). As 7
+      # tags que este stack sobe responderam 200 lá em 23/09/2026. Camada é
+      # endereçada por digest, então o que já veio de um registro não é
+      # baixado de novo do outro.
+      #
+      # `-x studio,postgres-meta`: menos imagens, menos requisições ao
+      # registro. Nenhuma spec, script ou passo deste workflow fala com o
+      # Studio (porta 54323) nem com o postgres-meta (que só o Studio usa):
+      # `grep -rn "54323\|STUDIO_URL\|pgmeta" tests scripts lib app` devolveu
+      # vazio em 23/09/2026, e este workflow não cita nenhum dos três fora deste
+      # comentário. imgproxy, edge-runtime, logflare e vector já não subiam (o
+      # log do run acima não baixa nenhum deles).
       - name: Subir Supabase local (sem a cadeia de migrations)
         run: |
+          # O shell padrão do passo é `bash -e`, SEM pipefail: sem esta linha o
+          # `supabase start | tee` teria o status do `tee`, e a falha passaria.
+          set -euo pipefail
           mv supabase/migrations /tmp/migrations-off
           mkdir -p supabase/migrations
-          supabase start
+          esperas=(0 20 60 120)
+          registros=(ghcr.io public.ecr.aws ghcr.io public.ecr.aws)
+          for tentativa in 1 2 3 4; do
+            espera=${esperas[$((tentativa - 1))]}
+            registro=${registros[$((tentativa - 1))]}
+            if [ "$espera" -gt 0 ]; then
+              echo "::warning title=supabase start: nova tentativa::tentativa ${tentativa} de 4 daqui a ${espera}s, puxando de ${registro} — a anterior falhou baixando imagem do registro"
+              supabase stop --no-backup || true
+              sleep "$espera"
+            fi
+            if SUPABASE_INTERNAL_IMAGE_REGISTRY="$registro" supabase start -x studio,postgres-meta 2>&1 | tee /tmp/supabase-start.log; then
+              exit 0
+            fi
+            if ! grep -qE 'toomanyrequests|failed to pull docker image|error pulling image|TLS handshake timeout|i/o timeout|connection reset by peer' /tmp/supabase-start.log; then
+              echo "::error title=supabase start falhou (não é o registro)::a saída acima não tem erro de pull nem de rede, então não há nova tentativa"
+              exit 1
+            fi
+          done
+          echo "::error title=supabase start falhou 4 vezes baixando imagens::ghcr.io e public.ecr.aws recusaram o pull nas 4 tentativas (esperas de 20s, 60s e 120s). É limite de taxa ou rede do registro, não o PR — rerode a parte."
+          exit 1
 
       # O baseline é um dump `--schema-only`: ele USA os tipos das extensões
       # (public.vector, citext, gin_trgm_ops) mas não as cria. O stack local do

@@ -59,6 +59,8 @@ describe("edição do tipo — lembretes dinâmicos", () => {
         usuarioAtualId="user-1"
         podeConfigurarGoogle={false}
         clientePelaAgendaLigado={false}
+        colegasPodemMexerNaAgendaLigado={true}
+        podeMudarAgendaDosColegas={false}
         podeLigarClientePelaAgenda={false}
       />,
     );
@@ -83,6 +85,8 @@ describe("edição do tipo — lembretes dinâmicos", () => {
         usuarioAtualId="user-1"
         podeConfigurarGoogle={false}
         clientePelaAgendaLigado={false}
+        colegasPodemMexerNaAgendaLigado={true}
+        podeMudarAgendaDosColegas={false}
         podeLigarClientePelaAgenda={false}
       />,
     );

@@ -147,10 +147,38 @@ function FichaCapacidade({
   );
 }
 
+/**
+ * A recusa por teto. `role="alert"` faz leitor de tela anunciar na hora; o
+ * `scrollIntoView` garante que quem enxerga também veja — no topo ou dentro
+ * do cartão, o aviso só serve se estiver na tela no momento do clique.
+ */
+function AvisoTeto({ texto }: { texto: string }) {
+  const ref = React.useRef<HTMLParagraphElement>(null);
+  React.useEffect(() => {
+    ref.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+  }, [texto]);
+  return (
+    <p
+      ref={ref}
+      role="alert"
+      data-testid="aviso-teto"
+      className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+    >
+      {texto}
+    </p>
+  );
+}
+
 export function ToolPicker({ value, onChange, disabled }: Props) {
   const t = useT();
   const [avancado, setAvancado] = React.useState(false);
-  const [recusa, setRecusa] = React.useState<string | null>(null);
+  // `pacote` diz ONDE a recusa aconteceu. O aviso nascia só no topo do seletor,
+  // e quem clicava num pacote lá embaixo (com a tela rolada) via o interruptor
+  // não mudar e nada mais — o aviso ficava fora da tela e o clique parecia
+  // quebrado. Recusa de pacote aparece dentro do cartão do pacote clicado.
+  const [recusa, setRecusa] = React.useState<{ texto: string; pacote: ToolBundle | null } | null>(
+    null,
+  );
 
   const query = useQuery({
     queryKey: ["mcp", "tools"],
@@ -185,9 +213,14 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
    * Medido na tela: com 3 ligadas, "Atender" (17 automáticas + 1 crítica)
    * chegava a 20, passava, e a crítica nascia desabilitada.
    */
-  function aplicar(proximo: string[], motivoSeRecusar: string, vagasExigidas = proximo.length) {
+  function aplicar(
+    proximo: string[],
+    motivoSeRecusar: string,
+    vagasExigidas = proximo.length,
+    pacote: ToolBundle | null = null,
+  ) {
     if (vagasExigidas > TETO_TOOLS_POR_AGENTE) {
-      setRecusa(motivoSeRecusar);
+      setRecusa({ texto: motivoSeRecusar, pacote });
       return;
     }
     setRecusa(null);
@@ -210,6 +243,7 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
           excedente === 1 ? t("vaga") : t("vagas")
         }${t("). Desligue um pacote que você usa menos antes.")}`,
         exigidas,
+        pacote,
       );
     } else {
       setRecusa(null);
@@ -259,14 +293,7 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
         </p>
       </div>
 
-      {recusa ? (
-        <p
-          data-testid="aviso-teto"
-          className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
-        >
-          {recusa}
-        </p>
-      ) : null}
+      {recusa && recusa.pacote === null ? <AvisoTeto texto={recusa.texto} /> : null}
 
       {/* Caminho padrão: pacotes por jornada. */}
       <div className="grid gap-3">
@@ -316,6 +343,8 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
                   </p>
                 </div>
               </div>
+
+              {recusa && recusa.pacote === pacote.id ? <AvisoTeto texto={recusa.texto} /> : null}
 
               {/* Crítico nunca entra por pacote: exige o dedo do humano. */}
               {criticas.length > 0 ? (

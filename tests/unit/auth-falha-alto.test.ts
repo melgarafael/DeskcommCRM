@@ -114,10 +114,21 @@ describe("loadAuthUser — falha de permissão não vira 'sem organização'", (
     };
     const u = await loadAuthUser();
     expect(u?.organizations).toEqual([
-      // `locale` é o idioma padrão da organização, que entra na membership para
-      // a resolução do idioma da sessão não precisar de uma segunda consulta.
-      // Aqui vem `null` porque o dublê não devolve a coluna.
-      { organization_id: "o1", organization_name: "Acme", role: "admin", locale: null, interface_settings: { preset: "completa" } },
+      // `locale` e `timezone` são o idioma e o fuso padrão da ORGANIZAÇÃO, que
+      // entram na membership para quem resolve a sessão não precisar de uma
+      // segunda consulta — o idioma para a interface, o fuso para a Agenda abrir
+      // na semana de quem olha. Os dois vêm `null` aqui porque o dublê não
+      // devolve as colunas, e é isso que este caso fixa: quando a consulta não
+      // traz, a sessão recebe `null` em vez de `undefined` ou de um padrão
+      // inventado no meio do caminho.
+      {
+        organization_id: "o1",
+        organization_name: "Acme",
+        role: "admin",
+        locale: null,
+        timezone: null,
+        interface_settings: { preset: "completa" },
+      },
     ]);
   });
 });

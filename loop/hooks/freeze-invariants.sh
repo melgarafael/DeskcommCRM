@@ -5,6 +5,10 @@
 # sem DESKCOMM_GOV_INVARIANTS_EDIT=1.
 # Exceção legítima: o flip test.fails → teste normal nas fases G2+ (o catraca da
 # G1-03) — a sessão exporta a env E o commit message cita o flip.
+# MODIFICAR que não muda o que o invariante vigia (diff VAZIO depois de ignorar
+# comentário — #1324, e com o MODO do arquivo intacto: `chmod +x` deixa os blobs
+# idênticos) passa sem válvula: não é exceção, é o eixo certo. Ver o bloco
+# "O QUE o `M` mudou" abaixo.
 set -euo pipefail
 
 [ "${DESKCOMM_GOV_INVARIANTS_EDIT:-0}" = "1" ] && exit 0
@@ -217,6 +221,135 @@ EOF
   fi
 fi
 
+# ── O QUE o `M` mudou: comentário não é edição (#1324) ───────────────────────────────
+#
+# Tudo acima decide PROCEDÊNCIA — de quem é a mudança. O eixo do `M` é outro: ele
+# responde "o arquivo mudou", não "o que o invariante VIGIA mudou". Renumerar uma
+# migration citada DENTRO DE UM COMENTÁRIO cai na válvula, e válvula usada fora da
+# exceção declarada (o flip de `test.fails`) é dívida — na terceira vez ninguém lê o
+# que ela liberou.
+#
+# O caso concreto que abriu a #1324, medido: no commit af28623d7, `rls-isolation.test.ts`
+# (2 linhas) e `vocabulario-banco-x-typescript.test.ts` (1 linha) mudaram SÓ em
+# comentário — `git show` difere, e o diff SEM os comentários é VAZIO. Isso não altera
+# o que o invariante vigia: não pede válvula e não bloqueia.
+#
+# Os dois lados são lidos com o comentário removido: `:$caminho` (o índice, o mesmo lado
+# de que o `--cached` acima fala) contra `HEAD:$caminho` (a referência).
+#
+# ⚠️ O leitor de comentários PRECISA ser consciente de STRING, e a armadilha é medida:
+# um removedor ingênuo (`s,//.*,,`) apagaria a URL `http://waha:3000` DENTRO de uma
+# string — os dois lados sairiam iguais e uma troca de asserção passaria em silêncio (o
+# furo exato que a #1322 tratou). Por isso `sem_comentarios` percorre o arquivo caractere
+# a caractere e só corta o que está em CÓDIGO:
+#   · `//` e `/* */` — dentro de string normal, template ou regex o texto é PRESERVADO,
+#     mesmo quando se parece com um comentário;
+#   · linha que ABRE com `--`, só DENTRO de template: é onde a linguagem hospedada (SQL
+#     das migrations) tem comentário. Fora de template `--` é argumento
+#     (`--frozen-lockfile`) e fica.
+# O critério é conservador por construção: libera SÓ quando o que sobra é idêntico.
+# Diferença remanescente, blob que falhou, arquivo vazio de um lado ou caminho que o git
+# CITOU (aspas/acento, onde o nome cru não acha o blob) → segue acusado. Falha FECHADA.
+#
+# `D` (deletar) e `R` (rename = delete disfarçado) nem chegam aqui: apagar invariante
+# continua bloqueado sem exceção, e `A` já passava antes.
+sem_comentarios() {
+  awk '
+BEGIN {
+  DQ = sprintf("%c", 34); SQ = sprintf("%c", 39); BT = sprintf("%c", 96)
+  BS = sprintf("%c", 92); est = 0; regiao = 0; pode = 1
+}
+{
+  linha = $0; n = length(linha); saida = ""; i = 1
+  while (i <= n) {
+    c = substr(linha, i, 1); prox = (i < n) ? substr(linha, i + 1, 1) : ""
+    # 1: dentro de bloco /* */
+    if (est == 1) { if (c == "*" && prox == "/") { est = 0; i += 2; continue } i++; continue }
+    # 2/3: dentro de " ou de string normal
+    if (est == 2 || est == 3) {
+      aspas = (est == 2) ? DQ : SQ
+      if (c == BS) { saida = saida c prox; i += 2; continue }
+      if (c == aspas) est = 0
+      saida = saida c; i++; continue
+    }
+    # 4: dentro de template -- e SO aqui a linha que abre com -- e comentario
+    if (est == 4) {
+      if (c == BS) { saida = saida c prox; i += 2; continue }
+      if (c == BT) { est = 0; saida = saida c; i++; continue }
+      if (c == "-" && prox == "-" && saida ~ /^[ \t]*$/) { i = n + 1; continue }
+      saida = saida c; i++; continue
+    }
+    # 5: dentro de regex /.../
+    if (est == 5) {
+      if (c == BS) { saida = saida c prox; i += 2; continue }
+      if (c == "[") regiao = 1
+      else if (c == "]") regiao = 0
+      else if (c == "/" && !regiao) { est = 0; saida = saida c; i++; continue }
+      saida = saida c; i++; continue
+    }
+    if (c == "/" && prox == "/") { i = n + 1; continue }         # comentario de linha
+    if (c == "/" && prox == "*") { est = 1; i += 2; continue }   # comentario de bloco
+    if (c == DQ) { est = 2; pode = 0; saida = saida c; i++; continue }
+    if (c == SQ) { est = 3; pode = 0; saida = saida c; i++; continue }
+    if (c == BT) { est = 4; pode = 0; saida = saida c; i++; continue }
+    if (c == "/" && pode) { est = 5; regiao = 0; saida = saida c; i++; continue }
+    saida = saida c
+    if (c == "[") pode = 1
+    else if (c ~ /[(,=:!&|?{};]/) pode = 1
+    else if (c ~ /[ \t]/) pode = pode
+    else pode = 0
+    i++
+  }
+  sub(/[ \t]+$/, "", saida)
+  print saida
+  # o estado carrega para a linha seguinte, mas aspas/regex NAO: TS nao tem string
+  # multi-linha fora de template, e perder o estado erra para o lado de PRESERVAR.
+  if (est == 2 || est == 3 || est == 5) est = 0
+  pode = (est == 0) ? 1 : 0
+}'
+}
+
+# $1 caminho do invariante modificado; 0 = a modificação NÃO toca no que ele vigia.
+mudanca_so_de_comentario() {
+  local antes depois modo_indice modo_head
+  # O MODO entra na conta, e não é preciosismo: as comparações acima são de BLOB e o git é
+  # CEGO PARA MODO — num `chmod +x` os OIDs são idênticos. É a mesma cegueira que a
+  # CONDIÇÃO 5 (mais abaixo, no eixo do merge) existe para tapar; repeti-la aqui reabriria
+  # o furo por outro caminho. Modo mudou → não é "só comentário" → segue acusado.
+  modo_indice=$(git ls-files --stage -- "$1" 2>/dev/null | awk '{print $1}')
+  modo_head=$(git ls-tree HEAD -- "$1" 2>/dev/null | awk '{print $1}')
+  if [ -z "$modo_indice" ] || [ "$modo_indice" != "$modo_head" ]; then
+    return 1
+  fi
+  antes=$(git show "HEAD:$1" 2>/dev/null | sem_comentarios) || return 1
+  depois=$(git show ":$1" 2>/dev/null | sem_comentarios) || return 1
+  [ -n "$antes" ] || return 1
+  [ "$antes" = "$depois" ]
+}
+
+if [ -n "$violations" ]; then
+  mantidos=''
+  while IFS= read -r linha; do
+    if [ -z "$linha" ]; then
+      continue
+    fi
+    status=${linha%%$'\t'*}
+    caminho=${linha#*$'\t'}
+    case "$caminho" in
+      '"'*)
+        # citado pelo git: nome cru não acha o blob -> não decidível aqui, segue acusado
+        ;;
+      *)
+        if [ "${status:0:1}" = "M" ] && mudanca_so_de_comentario "$caminho"; then
+          continue
+        fi
+        ;;
+    esac
+    mantidos="$mantidos$linha"$'\n'
+  done <<<"$violations"
+  violations="${mantidos%$'\n'}"
+fi
+
 if [ -n "$violations" ]; then
   echo "pre-commit BLOQUEADO: tests/invariants/** é congelado — modificar/deletar invariante existente:" >&2
   echo "$violations" >&2
@@ -224,6 +357,14 @@ if [ -n "$violations" ]; then
   echo "o segundo caso vai pra inbox (loop/INBOX.md), não pro Edit." >&2
   echo "Exceção legítima (o catraca): flip de test.fails → teste normal quando a fase G2+ corrige o gap." >&2
   echo "Nesse caso: exporte DESKCOMM_GOV_INVARIANTS_EDIT=1 e cite o flip no commit message." >&2
+  echo "Válvula NÃO é necessária para editar SÓ comentário: se o diff sem comentários é vazio, o hook" >&2
+  echo "libera sozinho (#1324). Se ele acusou, sobrou mudança de verdade — releia antes de exportar." >&2
+  echo "" >&2
+  echo "RESOLVENDO CONFLITO DE MERGE e caiu aqui? Então a sua resolução ficou DIFERENTE dos dois" >&2
+  echo "lados — isso é edição própria dentro do merge, e é o que este guard existe para pegar." >&2
+  echo "Caminho sem improviso: resolva ESCOLHENDO um dos lados, feche o merge, e faça a mudança" >&2
+  echo "que você queria num commit PRÓPRIO, com a razão escrita. A válvula acima é para o flip," >&2
+  echo "não para resolução — válvula usada fora do caso previsto vira válvula de rotina." >&2
   exit 1
 fi
 

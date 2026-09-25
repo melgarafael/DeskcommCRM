@@ -9,10 +9,10 @@
  *
  * Depois do tick, `runSilenceSweep` (lib/followup/silence-sweep.ts) NO MESMO
  * tick — gatilho TIME-DRIVEN (varredura periódica, não event-driven): acha
- * pointers `trigger_config.kind='silence'` ativos, gateia via
- * `isPointerEnabledForAutomaticTrigger` (só enrolla se algum agente publicado
- * da org tem o pointer habilitado), acha contatos silenciosos e cria
- * enrollment. Falha do sweep NUNCA aborta a resposta do tick (try/catch
+ * pointers `trigger_config.kind='silence'` ativos, decide o agente pelo grafo
+ * (`decidirAgenteDoEnrollmentAutomatico`: texto fixo segue sem agente; nó de
+ * IA exige agente publicado armando o pointer), acha contatos silenciosos e
+ * cria enrollment. Falha do sweep NUNCA aborta a resposta do tick (try/catch
  * isolado, só loga) — o cron sempre devolve o resultado de `runFollowupTick`.
  *
  * No fim, drena texto fixo pendente (`enviarTextoFixoPendente`) — o mesmo
@@ -30,13 +30,14 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseAdminClient, runFollowupTick, type FollowupJobRequest } from "@/lib/followup/engine";
 import { createSupabaseFollowupGateDb } from "@/lib/followup/agent-followup-gate";
 import { enviarTextoFixoPendente } from "@/lib/followup/enviar-texto-fixo";
+import { encerrarRoteirosVencidos } from "@/lib/followup/atendimento";
 import { createSupabaseSilenceSweepDb, runSilenceSweep } from "@/lib/followup/silence-sweep";
+import { autorizaCron } from "@/lib/auth/cron-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -56,11 +57,7 @@ async function enqueueJob(job: FollowupJobRequest): Promise<void> {
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
-  const auth = req.headers.get("authorization") ?? "";
-  const bearer = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : "";
-  const provided = bearer || (req.headers.get("x-cron-secret")?.trim() ?? "");
-  const accepted = [env.INTERNAL_CRON_SECRET, env.INTERNAL_SECRET].filter(Boolean);
-  if (accepted.length === 0 || !provided || !accepted.includes(provided)) {
+  if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
 
@@ -138,6 +135,24 @@ async function handle(req: NextRequest): Promise<Response> {
     // resultado de runFollowupTick, que rodou (e foi auditado) antes disto.
     const detail = err instanceof Error ? err.message : String(err);
     logger.error("[followup-flow-worker.cron] runSilenceSweep threw", { error: detail, requestId });
+  }
+
+  // Roteiro de atendimento com o prazo vencido (0397). Audita só quando houve
+  // efeito — rodada que não encerrou nada não é mutação.
+  try {
+    const expirados = await encerrarRoteirosVencidos(admin);
+    if (expirados > 0) {
+      void audit({
+        action: "followup.roteiros_expirados",
+        organizationId: null,
+        bypassedRls: true,
+        metadata: { expirados },
+        requestId,
+      });
+    }
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    logger.error("[followup-flow-worker.cron] encerrarRoteirosVencidos threw", { error: detail, requestId });
   }
 
   // ponytail: instalação sem `agent-worker` (relógio HTTP, cron puro) não tem

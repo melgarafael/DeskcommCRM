@@ -10,7 +10,7 @@
  * transporte, porque três garantias aqui são sobre a emissão em si — "nenhuma
  * escrita quando é 404", "revoga ANTES de mexer no banco" e "arquivar não apaga".
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
@@ -22,6 +22,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getWahaClient } from "@/lib/waha/client";
 import { logger } from "@/lib/logger";
+import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/auth/server", () => ({
@@ -36,6 +37,12 @@ vi.mock("@/lib/waha/client", () => ({
   getWahaClient: vi.fn(),
   wahaFriendlyError: (m: string) => m,
 }));
+// A credencial da linha chega CIFRADA: aqui só interessa que a rota peça para
+// decifrar a coluna intacta — decifrar de verdade é do módulo, não desta rota.
+vi.mock("@/lib/webhooks/secrets", async (importOriginal) => {
+  const real = (await importOriginal()) as Record<string, unknown>;
+  return { ...real, decryptWebhookSecret: vi.fn() };
+});
 
 const ORG = "22222222-2222-4222-8222-222222222222";
 const OUTRA_ORG = "33333333-3333-4333-8333-333333333333";
@@ -727,6 +734,213 @@ describe("#1023 — a conexão removida fecha o próprio aviso", () => {
     expect(warn).toHaveBeenCalledWith(
       "Falha ao fechar os avisos de saúde da conexão removida",
       expect.objectContaining({ erro: expect.stringContaining("57014") }),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// O canal oficial devolve o webhook do número antes de perder a credencial (#1334)
+// ---------------------------------------------------------------------------
+
+/**
+ * Conectar um canal oficial aponta o webhook DESTE número para a URL desta
+ * instalação (`registrarWebhookDoNumero`). Arquivar/excluir zerava
+ * `meta_token_encrypted` e rotacionava o `webhook_path_token` — que é
+ * exatamente o que autoriza aquela URL — sem nunca devolver o número à URL do
+ * app: a Meta seguiria entregando num endereço que passa a responder 404, para
+ * sempre e sem erro do nosso lado.
+ *
+ * Aqui se mede o que o operador não vê: (a) a Graph é chamada para o número
+ * DAQUELA sessão com `override_callback_uri` vazio; (b) a chamada acontece
+ * ANTES da escrita que apaga a credencial — é a única janela em que o token e o
+ * `phone_number_id` existem, e é o que faz o desfazer ser possível; (c) a falha
+ * da Meta não desfaz a exclusão que o operador pediu.
+ *
+ * A inscrição na WABA (`subscribed_apps`) fica de fora de propósito: é por WABA
+ * e compartilhada, então desfazê-la em uma exclusão derrubaria as outras.
+ */
+describe("#1334 — a conexão oficial devolve o webhook do número à Meta", () => {
+  const OFICIAL = (): Linha =>
+    canal({
+      provider: "meta_cloud",
+      waha_session_name: null,
+      meta_phone_number_id: "1234567890",
+      meta_token_encrypted: "cifra-da-credencial",
+    });
+
+  /** Com histórico, o desfecho é ARQUIVAR; sem nada, a linha some de vez. */
+  const historico = {
+    conversations: [{ id: "c1", organization_id: ORG, channel_session_id: CANAL }],
+  };
+
+  interface ChamadaDaGraph {
+    url: string;
+    corpo: Record<string, unknown>;
+    autorizacao: string | undefined;
+  }
+
+  /**
+   * Dublê do `fetch` GLOBAL — e não do módulo: quem decide a URL e o corpo do
+   * desfazer é `desfazerWebhookDoNumero`, e é isso que precisa ser medido. Um
+   * dublê do módulo mediria só que alguém o chamou.
+   */
+  function graphDublado(
+    registro: Registro,
+    resposta?: { status: number; body: unknown },
+  ): ChamadaDaGraph[] {
+    const chamadas: ChamadaDaGraph[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL, init?: { body?: string; headers?: unknown }) => {
+        const alvo = String(url);
+        chamadas.push({
+          url: alvo,
+          corpo: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
+          autorizacao: (init?.headers as Record<string, string> | undefined)?.Authorization,
+        });
+        // Marca no MESMO registro de ordem do dublê de banco: é assim que a
+        // precedência vira asserção, e não decoração.
+        if (alvo.includes("graph.facebook.com")) registro.eventos.push("meta:override");
+        return new Response(JSON.stringify(resposta?.body ?? { success: true }), {
+          status: resposta?.status ?? 200,
+          headers: { "content-type": "application/json" },
+        });
+      }),
+    );
+    return chamadas;
+  }
+
+  beforeEach(() => {
+    vi.mocked(decryptWebhookSecret).mockResolvedValue("token-da-linha");
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.mocked(decryptWebhookSecret).mockReset();
+  });
+
+  it("⭐ ARQUIVADO → a Graph recebe override vazio ANTES de a credencial ser apagada", async () => {
+    authOk();
+    const db = makeDb({ sessions: [OFICIAL()], rows: historico });
+    wahaOk(db);
+    const chamadas = graphDublado(db);
+    const { DELETE } = await import("./route");
+
+    const res = await DELETE(reqDelete(), ctx());
+    const corpo = (await res.json()) as { data: { archived: boolean } };
+
+    expect(res.status).toBe(200);
+    expect(corpo.data.archived).toBe(true);
+    // (a) A devolução: o número da sessão volta para a URL do app.
+    expect(chamadas).toHaveLength(1);
+    expect(chamadas[0]?.url).toContain("/1234567890");
+    expect(chamadas[0]?.corpo).toEqual({
+      webhook_configuration: { override_callback_uri: "" },
+    });
+    // Quem autoriza a chamada é a credencial da linha intacta, decifrada.
+    expect(chamadas[0]?.autorizacao).toBe("Bearer token-da-linha");
+    expect(decryptWebhookSecret).toHaveBeenCalledWith(expect.anything(), "cifra-da-credencial");
+
+    // (b) A ordem: sem a linha intacta não há token, e o desfazer vira a
+    // chamada que nunca acontece — que é o bug da issue.
+    const graph = db.eventos.indexOf("meta:override");
+    const patch = db.eventos.indexOf("update:channel_sessions");
+    expect(graph).toBeGreaterThanOrEqual(0);
+    expect(patch).toBeGreaterThanOrEqual(0);
+    expect(graph).toBeLessThan(patch);
+    expect(db.escritas.at(-1)?.patch?.meta_token_encrypted).toBeNull();
+
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "channel.archived",
+        metadata: expect.objectContaining({ webhook_override: "desfeito" }),
+      }),
+    );
+  });
+
+  it("⭐ EXCLUÍDO de vez → o override é desfeito antes de a linha sumir", async () => {
+    authOk();
+    const db = makeDb({ sessions: [OFICIAL()] });
+    wahaOk(db);
+    const chamadas = graphDublado(db);
+    const { DELETE } = await import("./route");
+
+    const res = await DELETE(reqDelete(), ctx());
+    const corpo = (await res.json()) as { data: { archived: boolean } };
+
+    expect(res.status).toBe(200);
+    expect(corpo.data.archived).toBe(false);
+    expect(chamadas).toHaveLength(1);
+    expect(chamadas[0]?.corpo).toEqual({
+      webhook_configuration: { override_callback_uri: "" },
+    });
+
+    const graph = db.eventos.indexOf("meta:override");
+    const del = db.eventos.indexOf("delete:channel_sessions");
+    expect(graph).toBeGreaterThanOrEqual(0);
+    expect(graph).toBeLessThan(del);
+
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "channel.deleted",
+        metadata: expect.objectContaining({ webhook_override: "desfeito" }),
+      }),
+    );
+  });
+
+  it("⭐ a Meta recusa o desfazer → a exclusão continua e a falha fica registrada", async () => {
+    authOk();
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const db = makeDb({ sessions: [OFICIAL()], rows: historico });
+    wahaOk(db);
+    graphDublado(db, { status: 400, body: { error: { message: "token inválido" } } });
+    const { DELETE } = await import("./route");
+
+    const res = await DELETE(reqDelete(), ctx());
+
+    // Melhor-esforço: o canal que não devolve o webhook continua arquivado —
+    // recusar a exclusão seria trocar um problema por dois.
+    expect(res.status).toBe(200);
+    expect(db.linhas("channel_sessions")[0]?.archived_at).toEqual(expect.any(String));
+    expect(db.escritas.at(-1)?.patch?.meta_token_encrypted).toBeNull();
+    expect(warn).toHaveBeenCalledWith(
+      "A Meta recusou desfazer o override do webhook do número",
+      expect.objectContaining({
+        channel_session_id: CANAL,
+        organization_id: ORG,
+        phone_number_id: "1234567890",
+        etapa: "configuracao_do_numero",
+        motivo: "token inválido",
+      }),
+    );
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "channel.archived",
+        metadata: expect.objectContaining({ webhook_override: "falhou" }),
+      }),
+    );
+    warn.mockRestore();
+  });
+
+  it("canal oficial já sem credencial → não chama a Graph e diz por quê", async () => {
+    authOk();
+    const db = makeDb({
+      sessions: [canal({ provider: "meta_cloud", waha_session_name: null, meta_phone_number_id: "1234567890", meta_token_encrypted: null })],
+      rows: historico,
+    });
+    wahaOk(db);
+    const chamadas = graphDublado(db);
+    const { DELETE } = await import("./route");
+
+    const res = await DELETE(reqDelete(), ctx());
+
+    expect(res.status).toBe(200);
+    expect(chamadas).toHaveLength(0);
+    expect(decryptWebhookSecret).not.toHaveBeenCalled();
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ webhook_override: "sem_credencial" }),
+      }),
     );
   });
 });

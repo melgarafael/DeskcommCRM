@@ -28,6 +28,7 @@ import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
 import { requireRole } from "@/lib/auth/require-role";
 import { CHANNEL_PROVIDER_WAHA } from "@/lib/channels/capabilities";
 import { resolverSaudeDaConexaoRemovida } from "@/lib/channels/health";
+import { desfazerWebhookDoNumero } from "@/lib/channels/meta/webhook-override";
 import { numeroObservadoDaSessao } from "@/lib/channels/numero-observado";
 import { isChannelStatus } from "@/lib/schemas/channels";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -35,6 +36,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getWahaClient, wahaFriendlyError } from "@/lib/waha/client";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
+import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 
 export const dynamic = "force-dynamic";
 
@@ -288,7 +290,10 @@ export async function GET(
  *    mostra.
  *  - Canal oficial: não há sessão a deslogar — o que dá acesso é a CREDENCIAL
  *    gravada e a URL de webhook. As duas são invalidadas no mesmo patch do
- *    arquivamento (token apagado, `webhook_path_token` rotacionado). Sem isso a
+ *    arquivamento (token apagado, `webhook_path_token` rotacionado) — e, ANTES
+ *    disso, o override do webhook do número é desfeito na Meta (issue #1334),
+ *    porque depois do patch não há mais credencial que autorize a chamada e a
+ *    Meta ficaria entregando para sempre numa URL que virou 404. Sem isso a
  *    plataforma continuava entregando mensagem num canal "excluído": o webhook
  *    resolvia a sessão pelo token antigo e criava contato, conversa e mensagem
  *    num inbox onde o operador nem consegue responder (o arquivamento grava
@@ -319,7 +324,9 @@ export async function DELETE(
   const supabase = await createClient();
   const { data: session } = await supabase
     .from("channel_sessions")
-    .select("id, provider, waha_session_name, display_name, phone_number")
+    .select(
+      "id, provider, waha_session_name, display_name, phone_number, meta_phone_number_id, meta_token_encrypted",
+    )
     .eq("organization_id", activeOrg.orgId)
     .eq("id", id)
     .maybeSingle();
@@ -334,6 +341,13 @@ export async function DELETE(
     status: "STOPPED",
     last_status_change_at: now,
   };
+
+  /**
+   * O que terminou sendo a devolução do webhook do número à Meta (issue #1334).
+   * Fica declarado fora dos ramos porque é o que vai para o metadata da auditoria
+   * — inclusive quando não havia credencial a usar.
+   */
+  let webhookOverride: "desfeito" | "sem_credencial" | "falhou" = "sem_credencial";
 
   if (session.provider === CHANNEL_PROVIDER_WAHA) {
     const waha = getWahaClient();
@@ -356,6 +370,78 @@ export async function DELETE(
       return fail("waha_error", wahaFriendlyError(err), 502, { requestId });
     }
   } else {
+    // ─── O OVERRIDE NÃO FICA ÓRFÃO NA META (issue #1334) ─────────────────────
+    //
+    // Conectar o canal oficial aponta o webhook DESTE número
+    // (`meta_phone_number_id`) para a URL desta instalação, no app da Meta
+    // (`webhook_configuration.override_callback_uri`). Daqui para baixo a rota
+    // apaga a credencial e rotaciona o `webhook_path_token`: a URL antiga vira 404
+    // e a Meta continua entregando nela para sempre, sem erro do nosso lado — o
+    // operador só descobre quando alguém reclama que o canal "não recebe".
+    // `desfazerWebhookDoNumero` devolve o número à URL do app, o par exato do que
+    // a conexão fez. Vale para as DUAS saídas: no hard delete a linha some inteira
+    // e o override ficaria apontando para um canal que não existe mais.
+    //
+    // ⚠️ TEM de sair ANTES de zerar `meta_token_encrypted`: é a credencial da
+    // linha intacta que autoriza a chamada à Meta. Depois do patch não há mais
+    // como desfazer — o override fica vivo e o token, perdido.
+    //
+    // Best-effort, no mesmo padrão do fecho dos avisos logo abaixo: Meta fora do
+    // ar, token já revogado por lá ou rede caída vão para o log e para o metadata
+    // da auditoria, e NÃO desfazem a exclusão que o operador pediu.
+    //
+    // A inscrição na WABA (`subscribed_apps`) NÃO entra aqui de propósito: ela é
+    // por WABA, compartilhada com os outros números — inclusive de outra
+    // organização desta instalação — e desfazê-la apagaria o webhook deles.
+    if (session.meta_token_encrypted && session.meta_phone_number_id) {
+      try {
+        const token = await decryptWebhookSecret(
+          createAdminClient(),
+          session.meta_token_encrypted,
+        );
+        if (!token) {
+          // Credencial ilegível (cifra de outro ambiente, por exemplo): sem token
+          // não há como falar com a Meta pela linha. Fica registrado que o override
+          // continuou lá, em vez de a auditoria dizer "tudo certo".
+          logger.warn(
+            "Canal oficial sem credencial legível — o override do webhook do número fica na Meta",
+            {
+              requestId,
+              channel_session_id: id,
+              organization_id: activeOrg.orgId,
+              phone_number_id: session.meta_phone_number_id,
+            },
+          );
+        } else {
+          const desfecho = await desfazerWebhookDoNumero({
+            phoneNumberId: session.meta_phone_number_id,
+            token,
+          });
+          if (desfecho.ok) {
+            webhookOverride = "desfeito";
+          } else {
+            webhookOverride = "falhou";
+            logger.warn("A Meta recusou desfazer o override do webhook do número", {
+              requestId,
+              channel_session_id: id,
+              organization_id: activeOrg.orgId,
+              phone_number_id: session.meta_phone_number_id,
+              etapa: desfecho.etapa,
+              motivo: desfecho.motivo,
+            });
+          }
+        }
+      } catch (err) {
+        webhookOverride = "falhou";
+        logger.warn("Falha ao desfazer o override do webhook do número na Meta", {
+          requestId,
+          channel_session_id: id,
+          organization_id: activeOrg.orgId,
+          erro: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
     // Revogação do canal oficial: a credencial some e a URL do webhook muda, então
     // o que a plataforma tem configurado do outro lado deixa de valer. Só faz
     // sentido no ramo que PRESERVA a linha — no hard delete ela some inteira.
@@ -420,6 +506,7 @@ export async function DELETE(
       phone_number: session.phone_number,
       provider: session.provider,
       avisos_fechados: avisosFechados,
+      webhook_override: webhookOverride,
       ...impact.history,
       ...impact.configuration,
     },

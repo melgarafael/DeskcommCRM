@@ -15,6 +15,7 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { registrarTrocaDeComando } from "@/lib/inbox/atividade-de-comando";
 
 export const dynamic = "force-dynamic";
 
@@ -68,12 +69,45 @@ export async function POST(
     }
   }
 
+  // Conversas abertas atribuídas a quem está saindo — o trigger do banco desatribui
+  // para a fila e a rota grava a linha do tempo e o audit de liberação de cada uma (#1562).
+  const { data: openConvs } = await supabase
+    .from("conversations")
+    .select("id, contact_id")
+    .eq("organization_id", activeOrg.orgId)
+    .eq("assigned_to_user_id", targetUserId)
+    .in("status", ["open", "pending", "claimed", "ai_handling"]);
+
   const nowIso = new Date().toISOString();
   const { error: updErr } = await supabase
     .from("user_organizations")
     .update({ revoked_at: nowIso, updated_at: nowIso })
     .eq("id", target.id);
   if (updErr) return fail("internal_error", updErr.message, 500, { requestId });
+
+  if (openConvs && openConvs.length > 0) {
+    for (const conv of openConvs) {
+      await audit({
+        action: "conversation.released",
+        actorUserId: authUser.id,
+        organizationId: activeOrg.orgId,
+        resourceType: "conversation",
+        resourceId: conv.id,
+        requestId,
+        metadata: { reason: "member_revoked", target_user_id: targetUserId },
+      });
+
+      await registrarTrocaDeComando({
+        supabase,
+        organizationId: activeOrg.orgId,
+        conversationId: conv.id,
+        contactId: conv.contact_id,
+        tipo: "conversation_released",
+        actor: { type: "user", id: authUser.id, role: authz.org.role },
+        motivo: "Atendente revogado da organização",
+      });
+    }
+  }
 
   await audit({
     action: "member.revoked",
@@ -82,7 +116,11 @@ export async function POST(
     resourceType: "membership",
     resourceId: target.id,
     requestId,
-    metadata: { target_user_id: targetUserId, revoked_role: target.role },
+    metadata: {
+      target_user_id: targetUserId,
+      revoked_role: target.role,
+      released_conversations_count: openConvs?.length ?? 0,
+    },
   });
 
   return ok({ user_id: targetUserId, revoked_at: nowIso }, { requestId });

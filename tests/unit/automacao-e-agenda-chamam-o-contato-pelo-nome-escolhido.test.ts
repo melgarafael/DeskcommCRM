@@ -44,7 +44,7 @@ async function tituloCriadoPara(contato: {
   display_name: string | null;
   phone_number: string | null;
 }): Promise<unknown> {
-  const db = makeDb({ pipelines: [funilRow({ id: PIPE, name: "Funil" })], stages: [ETAPA], leads: [] });
+  const db = makeDb({ contacts: [{ id: "contato-1", organization_id: ORG_ID }], pipelines: [funilRow({ id: PIPE, name: "Funil" })], stages: [ETAPA], leads: [] });
   const ctx: ActionCtx = {
     admin: db.client as unknown as ActionCtx["admin"],
     organizationId: ORG_ID,

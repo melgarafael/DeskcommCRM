@@ -19,7 +19,7 @@ import type pg from 'pg';
 
 import type { Logger } from '../../obs/logger';
 import type { ProviderRegistry } from '../../edge/llm/providers';
-import { runModelCall, type LlmEdgeConfig } from '../../edge/llm/run-model-call';
+import { LlmBudgetExceededError, runModelCall, type LlmEdgeConfig } from '../../edge/llm/run-model-call';
 import type { LlmResolveOverride } from '../../edge/llm/credentials';
 
 /** Severidade do sinal: none (limpo) < low (suspeito) < high (jailbreak/injeção claro). */
@@ -96,6 +96,23 @@ export function parseJailbreakClassification(text: string): JailbreakClassificat
  * budget da org checado ANTES da chamada dentro de runModelCall). Injetável (registry)
  * para testes determinísticos com MockLanguageModelV4. Advisório — o resultado FLAGRA o
  * turno, nunca veta o inbound sozinho.
+ *
+ * ═══ FALHA DO FORNECEDOR DEGRADA PARA `none`, COMO JÁ FAZIA A FALHA DE PARSE ═══
+ *
+ * `parseJailbreakClassification` já decidia que saída ilegível NÃO bloqueia o
+ * atendimento. A exceção de `runModelCall` fugia dessa regra pelo único caminho que
+ * ela não cobria: subindo. Como esta camada roda ANTES da resposta e é advisória por
+ * construção, um provedor fora do ar deixava o cliente SEM RESPOSTA em nome de um
+ * guardrail que nunca teve poder de veto — o oposto do que ele existe para fazer.
+ *
+ * O degrade é visível, não silencioso: `runModelCall` grava a chamada falha em
+ * `llm_calls` (purpose `jailbreak_detect`) antes de relançar, e o warn abaixo carimba
+ * o run — então "a camada de segurança parou de rodar" tem onde ser lido. O que NÃO
+ * degrada é a defesa determinística de injeção indireta (F4-03), que não depende de
+ * modelo nenhum e segue valendo neste mesmo turno.
+ *
+ * `LlmBudgetExceededError` continua subindo: quem a espera é a escolta
+ * `comHandoffSeOrcamentoAcabar`, que passa a conversa a uma pessoa.
  */
 export async function classifyJailbreak(
   db: pg.Pool,
@@ -104,20 +121,32 @@ export async function classifyJailbreak(
   args: { message: string; model?: string; llmOverride?: LlmResolveOverride },
   deps: { registry?: ProviderRegistry; log: Logger },
 ): Promise<JailbreakClassification> {
-  const call = await runModelCall(
-    db,
-    cfg,
-    {
-      tenantId: ids.tenantId,
-      ...(ids.leadId != null ? { leadId: ids.leadId } : {}),
-      ...(ids.jobId !== undefined ? { jobId: ids.jobId } : {}),
-      purpose: 'jailbreak_detect',
-      ...(args.model !== undefined ? { model: args.model } : {}),
-      ...(args.llmOverride !== undefined ? { llmOverride: args.llmOverride } : {}),
-      messages: [{ role: 'user', content: buildJailbreakMessage(args.message) }],
-    },
-    { registry: deps.registry, log: deps.log },
-  );
+  let call: Awaited<ReturnType<typeof runModelCall>>;
+  try {
+    call = await runModelCall(
+      db,
+      cfg,
+      {
+        tenantId: ids.tenantId,
+        ...(ids.leadId != null ? { leadId: ids.leadId } : {}),
+        ...(ids.jobId !== undefined ? { jobId: ids.jobId } : {}),
+        purpose: 'jailbreak_detect',
+        ...(args.model !== undefined ? { model: args.model } : {}),
+        ...(args.llmOverride !== undefined ? { llmOverride: args.llmOverride } : {}),
+        messages: [{ role: 'user', content: buildJailbreakMessage(args.message) }],
+      },
+      { registry: deps.registry, log: deps.log },
+    );
+  } catch (err) {
+    // Ver a nota do cabeçalho: camada advisória não deixa o lead sem resposta — menos
+    // o orçamento, que a escolta do turno precisa receber para fazer a passagem.
+    if (err instanceof LlmBudgetExceededError) throw err;
+    // Sem PII: a mensagem do erro é do fornecedor/config, nunca a mensagem do lead.
+    deps.log.warn('jailbreak: classificador falhou — turno segue sem sinal', {
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 200),
+    });
+    return { flag: false, level: 'none', reason: null };
+  }
   return parseJailbreakClassification(call.result.text);
 }
 

@@ -36,8 +36,11 @@ import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
-import { type Provider } from "@/lib/ai/provider-validators";
+import type { ProvedorComChave } from "@/lib/ai/pontos/provedores";
 import { rotacionarCredencial } from "@/lib/ai/credenciais/guardar";
+import { gravarConfigDoJev, lerConfigDoJev } from "@/lib/ai/decisao/config";
+import { credencialEmUsoPeloJev, PROVEDOR_DO_JEV } from "@/lib/ai/decisao/credencial";
+import { logger } from "@/lib/logger";
 import {
   versoesCongeladas,
   versoesQueBloqueiam,
@@ -176,7 +179,7 @@ export async function PATCH(
     orgId: activeOrg.orgId,
     userId: authUser.id,
     credentialId: id,
-    provider: cred.provider as Provider,
+    provider: cred.provider as ProvedorComChave,
     ...(input.api_key !== undefined ? { apiKey: input.api_key } : {}),
     ...(input.label !== undefined ? { label: input.label } : {}),
     requestId,
@@ -186,7 +189,7 @@ export async function PATCH(
     if (resultado.motivo === "label_em_uso") {
       return fail(
         "label_already_used",
-        t("Já existe uma credential com este label e provider."),
+        t("Já existe uma chave deste provedor com este nome. Dê outro nome a ela."),
         409,
         { requestId },
       );
@@ -306,5 +309,79 @@ export async function DELETE(
     metadata: { provider: cred.provider, label: cred.label, last4: cred.api_key_last4 },
   });
 
-  return ok({ id, deleted: true }, { requestId });
+  const jevDesligado =
+    cred.provider === PROVEDOR_DO_JEV
+      ? await desligarOJevSeFicouSemChave({
+          admin,
+          orgId: activeOrg.orgId,
+          actorUserId: authUser.id,
+          requestId,
+        })
+      : false;
+
+  return ok({ id, deleted: true, jev_desligado: jevDesligado }, { requestId });
+}
+
+/**
+ * A chave do Jev não trava a exclusão (nenhuma versão de agente aponta para
+ * ela), mas sem chave apta o Jev não mede nada. Se a excluída era a última e ele
+ * estava ligado, desliga aqui, com a própria linha de auditoria: o cartão não
+ * fica dizendo "ligado" sem chave, e o clima volta para a IA de sempre. O aceite
+ * de LGPD fica gravado, então religar com chave nova não pede de novo.
+ *
+ * Falha aqui não desfaz a exclusão, que já aconteceu. Ligado e sem chave, o Jev
+ * não chama ninguém (`chaveDaOrganizacao` devolve null e o worker segue sem
+ * ele); o que sobra é o cartão desatualizado, com rastro no log e
+ * `jev_desligado: false` na resposta.
+ */
+async function desligarOJevSeFicouSemChave(p: {
+  admin: ReturnType<typeof createAdminClient>;
+  orgId: string;
+  actorUserId: string;
+  requestId: string;
+}): Promise<boolean> {
+  const [orgRes, credsRes] = await Promise.all([
+    p.admin.from("organizations").select("settings").eq("id", p.orgId).maybeSingle(),
+    p.admin
+      .from("ai_provider_credentials")
+      .select("provider, is_active, validated_at, created_at")
+      .eq("organization_id", p.orgId)
+      .eq("provider", PROVEDOR_DO_JEV)
+      .eq("is_active", true),
+  ]);
+  if (orgRes.error || credsRes.error) {
+    logger.warn("jev: não deu para conferir se a chave excluída era a última", {
+      requestId: p.requestId,
+      organizationId: p.orgId,
+    });
+    return false;
+  }
+  if (!lerConfigDoJev(orgRes.data?.settings).ligado) return false;
+  if (credencialEmUsoPeloJev(credsRes.data ?? []) !== null) return false;
+
+  const gravado = await gravarConfigDoJev({
+    admin: p.admin,
+    orgId: p.orgId,
+    actorUserId: p.actorUserId,
+    mudanca: { ligado: false },
+  });
+  if (!gravado.ok) {
+    logger.warn("jev: a última chave foi excluída e o interruptor não foi desligado", {
+      requestId: p.requestId,
+      organizationId: p.orgId,
+      motivo: gravado.motivo,
+    });
+    return false;
+  }
+
+  await audit({
+    action: "ai.jev.desligado",
+    organizationId: p.orgId,
+    actorUserId: p.actorUserId,
+    resourceType: "organization",
+    resourceId: p.orgId,
+    requestId: p.requestId,
+    metadata: { modo: gravado.config.modo, motivo: "chave_excluida" },
+  });
+  return true;
 }

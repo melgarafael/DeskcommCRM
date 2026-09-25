@@ -66,6 +66,14 @@ const ESCRITORES: Record<string, { agenda: "agora" | "futuro" | "nenhum"; nota: 
     agenda: "agora",
     nota: "o enrollment nasce vencido — o insert omite a coluna e o default now() do banco decide (0147).",
   },
+  "gatilho-lead.ts": {
+    agenda: "agora",
+    nota: "o enrollment nasce vencido — o insert omite a coluna e o default now() do banco decide (0147). A menção no tipo é o campo opcional, igual ao gatilho de etapa.",
+  },
+  "gatilho-retorno.ts": {
+    agenda: "agora",
+    nota: "o enrollment nasce vencido — o insert omite a coluna e o default now() do banco decide (0147).",
+  },
   "silence-sweep.ts": {
     agenda: "agora",
     nota: "mesmo caso do gatilho de etapa: nasce vencido, insert omite a coluna.",
@@ -76,6 +84,13 @@ const ESCRITORES: Record<string, { agenda: "agora" | "futuro" | "nenhum"; nota: 
       "O INSERT omite a coluna (default now() do banco, igual ao gatilho de etapa). A única " +
       "menção é `next_eval_at: null` no cancelamento por caso fechado — desagendar não é agendar, " +
       "e `null` não tem relógio para escolher errado.",
+  },
+  "atendimento.ts": {
+    agenda: "nenhum",
+    nota:
+      "O roteiro de atendimento (0394) nasce 'coletando' com `next_eval_at` NULO de propósito: " +
+      "ele é conduzido pelo turno do agente e não tem relógio (o CHECK `relogio_coerente` o põe " +
+      "no grupo sem relógio). Omitir a coluna daria o default now() — nulo é não agendar.",
   },
   "aplicar-inbound.ts": {
     agenda: "nenhum",

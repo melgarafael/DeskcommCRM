@@ -38,6 +38,38 @@ interface RouteCtx {
 // não limita, mas a tela quebra muito antes disso.
 const bodySchema = z.object({ name: z.string().min(1).max(80) }).strict();
 
+/**
+ * GET — as etapas vivas do funil, na ordem do quadro.
+ *
+ * Existia criação de etapa e nenhuma LEITURA: quem precisava oferecer "escolha
+ * a etapa" numa tela (a campanha, agora) não tinha de onde tirar a lista, e a
+ * saída seria cada tela consultar o banco por conta própria — duas réguas para
+ * "quais etapas existem", que divergem no primeiro arquivamento.
+ *
+ * Ganho e perda entram: quem escolhe etapa para FILTRAR público quer poder
+ * dizer "quem está em Perdido". Quem escolhe etapa de NASCIMENTO é recusado
+ * antes, pela regra de que card não nasce fechado.
+ */
+export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const requestId = randomUUID();
+  const authz = await requireRole("manager", { requestId, resource: "pipeline_stages" });
+  if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const { id } = await ctx.params;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("crm_stages")
+    .select("id, name, position, is_won, is_lost")
+    .eq("organization_id", authz.org.orgId)
+    .eq("pipeline_id", id)
+    .eq("is_archived", false)
+    .order("position", { ascending: true });
+  if (error) return fail("internal_error", t("Falha ao listar etapas."), 500, { requestId });
+
+  return ok(data ?? [], { requestId });
+}
+
 export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;

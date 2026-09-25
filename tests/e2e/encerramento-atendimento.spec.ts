@@ -163,7 +163,7 @@ test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à
     await page.goto("/login");
     await page.getByLabel(/e-?mail/i).fill(email);
     await page.getByLabel(/senha/i).fill(password);
-    await page.getByRole("button", { name: /entrar/i }).click();
+    await page.getByRole("button", { name: "Entrar", exact: true }).click();
     await page.waitForURL(/\/app(?:\/|$)/);
     await abrirConversa(page, conversation);
     const panel = page.getByTestId("inbox-demandas");
@@ -175,8 +175,15 @@ test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à
     // spec, e não numa nova, porque o painel já está montado neste ponto: spec
     // nova custaria mais um login e mais um seed ao relógio do CI.
     await expect(page.getByRole("button", { name: "Novo Lead", exact: true })).toBeVisible();
-    page.on("dialog", (dialog) => dialog.accept());
+    // Fechar não é mais `window.confirm()` (bloqueado em iframe, ignora o
+    // tema) — é o `AlertDialog` da casa. O botão que abre e o que confirma
+    // têm o MESMO rótulo "Fechar"; o segundo clique escopado ao
+    // `alertdialog` é o que desambigua.
     await page.getByRole("button", { name: "Fechar", exact: true }).click();
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "Fechar", exact: true })
+      .click();
     await expect
       .poll(
         async () =>
@@ -232,6 +239,10 @@ test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à
     expect(box?.width).toBeGreaterThan(150);
     await page.screenshot({ path: `${evidence}/task4-reaberto-respondido.png`, fullPage: true });
     await page.getByRole("button", { name: "Fechar", exact: true }).click();
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "Fechar", exact: true })
+      .click();
     await expect
       .poll(
         async () =>
@@ -259,11 +270,15 @@ test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à
     if (language.error) throw language.error;
     await page.reload();
     await expect(page.getByTestId("inbox-memoria")).toContainText("Historial cerrado — sin tareas pendientes");
-    await expect(page.getByTestId("inbox-memoria")).toContainText("Resuelta");
+    await expect(page.getByTestId("inbox-memoria")).toContainText("Resuelto");
     await page.screenshot({ path: `${evidence}/task4-historico-es.png`, fullPage: true });
     await page.getByRole("button", { name: "Reabrir", exact: true }).click();
     await expect.poll(async () => (await db.from("conversations").select("status").eq("organization_id",org).eq("id",conversation).single()).data?.status).toBe("open");
     await page.getByRole("button", { name: "Cerrar", exact: true }).click();
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "Cerrar", exact: true })
+      .click();
     await expect.poll(async () => (await db.from("conversations").select("status").eq("organization_id",org).eq("id",conversation).single()).data?.status).toBe("closed");
     expect(hits.filter((url) => url.includes("sendText"))).toHaveLength(1);
 

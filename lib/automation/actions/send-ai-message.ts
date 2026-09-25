@@ -100,7 +100,7 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     return { type: TIPO, status: "failed", error: "ia_indisponivel", detail: { reason: "ia_indisponivel" } };
   }
 
-  const { dados, origem, veioDeFormulario } = await dadosDoFormularioDoContexto(ctx);
+  const { dados, origem, origemDaAbordagem } = await dadosDoFormularioDoContexto(ctx);
 
   let boundary: ServiceBoundary;
   try { boundary = await serviceForAutomation(ctx, contact.id, sessionId); }
@@ -115,7 +115,7 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
       instrucao,
       origem,
       dados,
-      veioDeFormulario,
+      origemDaAbordagem,
     });
     if (!gerado.ok) {
       return { type: TIPO, status: "failed", error: gerado.reason, detail: { reason: gerado.reason } };

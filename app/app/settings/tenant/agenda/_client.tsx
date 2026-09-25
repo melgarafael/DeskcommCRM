@@ -1,6 +1,7 @@
 "use client";
 import { AgendasConectadas } from "@/components/agenda/AgendasConectadas";
 import { PrazosDePresenca } from "@/components/agenda/PrazosDePresenca";
+import { AgendaDosColegas } from "@/components/agenda/AgendaDosColegas";
 import { ClientePelaAgenda } from "@/components/agenda/ClientePelaAgenda";
 import { DiasBloqueados } from "@/components/agenda/DiasBloqueados";
 
@@ -306,17 +307,25 @@ export function TiposDeAgendamentoClient({
   podeEditar,
   usuarioAtualId,
   podeConfigurarGoogle,
+  erroDeLeitura = null,
   clientePelaAgendaLigado,
   podeLigarClientePelaAgenda,
+  colegasPodemMexerNaAgendaLigado,
+  podeMudarAgendaDosColegas,
 }: {
   tiposIniciais: TipoRow[];
   pessoas: Array<{ id: string; papel: string; nome: string }>;
   podeEditar: boolean;
   usuarioAtualId: string;
   podeConfigurarGoogle: boolean;
+  /** Mensagem do banco quando a consulta FALHOU. `null` = a consulta rodou. */
+  erroDeLeitura?: string | null;
   /** `organizations.settings.crm.cliente_pela_agenda`, lido pela página. */
   clientePelaAgendaLigado: boolean;
   podeLigarClientePelaAgenda: boolean;
+  /** `organizations.settings.colegas_podem_mexer_na_agenda` (migration 0343). */
+  colegasPodemMexerNaAgendaLigado: boolean;
+  podeMudarAgendaDosColegas: boolean;
 }) {
   const t = useT();
   const router = useRouter();
@@ -369,6 +378,14 @@ export function TiposDeAgendamentoClient({
       <ClientePelaAgenda
         ligadoInicial={clientePelaAgendaLigado}
         podeLigar={podeLigarClientePelaAgenda}
+      />
+      {/* A opção da issue #978 fica ao lado das outras regras de comportamento
+          da agenda: é a mesma pergunta ("como a agenda se comporta nesta
+          empresa?"), e separá-la noutra tela esconderia de quem configura que
+          ela existe. */}
+      <AgendaDosColegas
+        ligadoInicial={colegasPodemMexerNaAgendaLigado}
+        podeMudar={podeMudarAgendaDosColegas}
       />
       <DiasBloqueados podeEditar={podeEditar}/>
       {podeEditar ? (
@@ -494,7 +511,30 @@ export function TiposDeAgendamentoClient({
       ) : null}
 
       <ul className="flex flex-col gap-2" data-testid="lista-de-tipos">
-        {tiposIniciais.length === 0 ? (
+        {/*
+          TRÊS ESTADOS, NÃO DOIS. "A consulta falhou" nunca pode ser desenhada
+          como "não há nada": foi assim que esta tela disse "nenhum tipo" com
+          quatro tipos ativos no banco, enquanto a API recusava criar um deles
+          por duplicidade. Quem lê "ainda não existe" vai CRIAR — e leva um erro
+          que não explica nada.
+        */}
+        {erroDeLeitura ? (
+          <li
+            data-testid="erro-ao-ler-tipos"
+            role="alert"
+            className="rounded-lg border border-destructive/50 bg-destructive/5 p-4 text-sm"
+          >
+            <p className="font-medium text-destructive">
+              {t("Não consegui carregar os tipos de agendamento.")}
+            </p>
+            <p className="mt-1 text-text-muted">
+              {t(
+                "Isto é uma falha de leitura, não uma lista vazia — pode haver tipos cadastrados que não estão aparecendo. Recarregue a página; se continuar, avise quem cuida da instalação.",
+              )}
+            </p>
+            <p className="mt-1 font-mono text-xs text-text-muted">{erroDeLeitura}</p>
+          </li>
+        ) : tiposIniciais.length === 0 ? (
           <li data-testid="sem-tipos" className="rounded-lg border border-border bg-surface p-4 text-sm text-text-muted">
             {t("Nenhum tipo de agendamento ainda. Crie o primeiro para que a Agenda tenha o que oferecer.")}
           </li>

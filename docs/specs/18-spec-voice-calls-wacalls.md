@@ -224,7 +224,7 @@ Em todo `call-ended`: `emit_event()` → linha em `event_log` (consumidores futu
 
 ### 5.1 Discador (iniciar chamada)
 
-Botão "Ligar" no header do contato/lead (Customer 360), visível só quando: `organizations.settings.voice_calls.enabled = true` E existe `channel_sessions` com `provider='wacalls'` e status pareado pra essa org. Clique → `POST /api/v1/voice/calls` com o telefone do contato → abre painel de chamada em andamento (§5.3) já em estado `ringing`.
+Botão "Ligar" no header do contato/lead (Customer 360) e no cabeçalho da conversa na Inbox (exceto grupos; `components/inbox/ConversationHeader.tsx`, mesmo `DialButton`), visível só quando: `organizations.settings.voice_calls.enabled = true` E existe `channel_sessions` com `provider='wacalls'` e status pareado pra essa org. Clique → `POST /api/v1/voice/calls` com o telefone do contato → abre painel de chamada em andamento (§5.3) já em estado `ringing`.
 
 ### 5.2 Chamada recebida
 
@@ -251,7 +251,7 @@ Design: aplicar `hm-design`/`frontend-design` antes de considerar pronto — nã
 
 ## 6. Living System Checklist (doutrina `sistema-vivo.md`)
 
-- **Entrada**: botão Ligar no Customer 360; discador acessível.
+- **Entrada**: botão Ligar no Customer 360 e no cabeçalho da conversa na Inbox (exceto grupos); discador acessível.
 - **Saída**: `voice_calls` na timeline do lead + `agent_inbox_items` pra chamada perdida.
 - **Atividade/log**: `crm_lead_activities` type `voice_call`; `event_log` via `emit_event`.
 - **Porta na navegação**: painel de chamada é overlay global, não precisa de item de menu próprio; configuração de pareamento entra em Configurações › Canais (grupo já existente em `lib/navigation/registry.ts`).

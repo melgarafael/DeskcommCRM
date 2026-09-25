@@ -629,10 +629,17 @@ Nada disso é alcançável por teste: o defeito mora no **emit**, não no import
 
 ### O teto do CHANGELOG impõe o ritmo do trem: um lote, uma release
 
-`tests/unit/changelog-cabe-na-tela-da-vps.test.ts` reprova quando a seção que os fragmentos de
-`.changes/` produziriam passa de **30.000 bytes** — o corte que o `agent.sh` aplica sobre o arquivo
-tagueado. Além dele, o dono da VPS recebe o texto cortado no meio, ou pior: a tela troca o histórico
-por *"este histórico pode não alcançar a sua versão"*.
+A seção que os fragmentos de `.changes/` produziriam tem um teto em bytes — o corte que o
+`agent.sh` aplica sobre o arquivo tagueado. Além dele, o dono da VPS recebe o texto cortado no
+meio, ou pior: a tela troca o histórico por *"este histórico pode não alcançar a sua versão"*.
+
+**Quem mede isso é `pnpm release:acervo-cabe`, e ele NÃO roda em `pull_request`.** Até 20/09/2026 a
+medição vivia dentro de `tests/unit/changelog-cabe-na-tela-da-vps.test.ts`, portanto no `verify` —
+status check obrigatório — e reprovava o PR de quem não podia consertá-lo: com 43 fragmentos
+acumulados, os PRs #1377 e #1363 ficaram vermelhos sem tocar `.changes/`, e a mensagem mandava o
+contribuidor enxugar fragmento de terceiro. Hoje o `ci.yml` cobra o acervo fora de `pull_request`,
+onde quem vê o vermelho é quem pode pagá-lo cortando release — e o comando **avisa antes de
+estourar**, quando outro ciclo do tamanho do atual já não caberia.
 
 Num trem de lotes isso vira uma **regra de ordem**, não um defeito a consertar. Medido em 14/09:
 
@@ -646,16 +653,24 @@ O vermelho do lote 3 não é do lote 3: é dele **carregando os fragmentos do lo
 entra e a release é cortada, os 31 são consumidos e o seguinte volta a caber.
 
 > **Logo: cada lote corta a sua versão antes de o próximo entrar.** Não é preferência de processo —
-> é o que o teto do changelog permite. Empilhar quatro lotes e cortar uma release só reprova, e a
-> mensagem do teste ("enxugue o corpo dos fragmentos") aponta para o conserto errado nesse caso: o
-> problema não é fragmento gordo, é lote empilhado.
+> é o que o teto do changelog permite. Empilhar quatro lotes e cortar uma release só estoura o teto,
+> e o problema nunca é fragmento gordo: é lote empilhado.
 
-Antes de declarar vermelho num lote, confira se o vermelho some com o corte anterior:
+**Isto mudou de lugar, não de valor: o lote não fica mais vermelho por acervo cheio.** Como a
+medição saiu do `pull_request`, o PR de integração passa verde e o vermelho só aparece depois, no
+push da `main`. O remédio continua sendo o mesmo e continua sendo seu — então rode o comando **antes
+de mesclar o lote**, em vez de esperar o CI da `main` avisar:
 
 ```bash
 ls .changes/*.md | wc -l          # quantos fragmentos este lote carrega
 pnpm release:conferir             # e que versão eles produzem juntos
+pnpm release:acervo-cabe          # e se essa versão ainda cabe na tela da VPS
 ```
+
+O último sai com `::warning::` enquanto ainda há folga e com `::error::` quando já não há — nos dois
+casos o conserto é `pnpm release:cortar`, nunca subir o `head -c` do `agent.sh`: quem corta o texto é
+o script JÁ instalado na VPS do cliente, e subir o número aqui troca um vermelho honesto por um
+cliente sem aviso.
 
 ---
 

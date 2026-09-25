@@ -92,6 +92,12 @@ case " $* " in
   # devolver algo: com PREV_IMAGE vazio o rollback nem seria tentado, e o teste
   # do agente passaria mesmo com o defeito de volta.
   *" images "*) printf 'sha256:deadbeef\n' ;;
+  # Caso 13: o aviso de manutenção de uma atualização anterior ficou de pé
+  # (AVISO_PRESO=1), e a imagem local é a mesma do registro (IMAGEM_EM_DIA=1) —
+  # a combinação que leva o update.sh à saída "nada a atualizar".
+  *" ps "*) [ "${AVISO_PRESO:-0}" = "1" ] && printf 'deskcomm-manutencao\n' ;;
+  *" image inspect "*) [ "${IMAGEM_EM_DIA:-0}" = "1" ] && printf 'x@sha256:aaa\n' ;;
+  *" imagetools inspect "*) [ "${IMAGEM_EM_DIA:-0}" = "1" ] && printf 'Digest: sha256:aaa\n' ;;
   # Aplicação do baseline. Só com BASELINE_ROTEIRO no ambiente (caso 4c): cada
   # chamada imprime a próxima passada do roteiro. Fora dele, sai limpa como antes.
   *" -f /b.sql "*)
@@ -360,13 +366,13 @@ check "  e a orientação é a ÚLTIMA coisa da saída, depois do passo 7" \
 
 # Lista grande (role sem dono: milhares de "must be owner") com a disputa no topo.
 # `printf | head -20` sob pipefail levava SIGPIPE e o set -e matava o update.sh
-# com 141 — antes do aviso de PERMISSÃO, que existe para este caso, e antes do pull.
+# com 141 — antes do aviso de PERMISSÃO, que existe para este caso e agora o encerra.
 rm -rf "$ROTEIRO_UG"; mkdir -p "$ROTEIRO_UG"
 { printf '%s\n' "$DEADLOCK_UG"; for i in $(seq 1 4000); do printf 'psql:/b.sql:%s: ERROR:  must be owner of table tabela_%s\n' "$i" "$i"; done; } > "$ROTEIRO_UG/passada.1"
 cp "$ROTEIRO_UG/passada.1" "$ROTEIRO_UG/passada.2"; cp "$ROTEIRO_UG/passada.1" "$ROTEIRO_UG/passada.3"
 : > "$DOCKER_LOG"
 BASELINE_ROTEIRO="$ROTEIRO_UG" BASELINE_ESPERA_S=0 run_update --to v1.1.0 --force
-check "lista de erros maior que o buffer do pipe não mata o update.sh" test "$RC" -eq 0
+check "lista de erros maior que o buffer do pipe não mata o update.sh (para com 1)" test "$RC" -eq 1
 check "  a disputa no topo foi reconhecida (3 passadas)" test "$(grep -c -- '-f /b.sql' "$DOCKER_LOG")" -eq 3
 check "  o aviso de PERMISSÃO chegou à tela" grep -q "erros de PERMISSÃO" "$OUTFILE"
 check "  e o fim diz que o banco NÃO terminou limpo" grep -q "banco NÃO terminou limpo" "$OUTFILE"
@@ -384,6 +390,25 @@ BASELINE_ROTEIRO="$ROTEIRO_UG" BASELINE_ESPERA_S=0 run_update --to v1.1.0 --forc
 check "só permissão: uma passada (repetir não cura)" test "$(grep -c -- '-f /b.sql' "$DOCKER_LOG")" -eq 1
 check "  sem a metade de banco ocupado (não houve disputa)" test -z "$(grep 'Parte não aplicou' "$OUTFILE" || true)"
 check "  e o FIM orienta a conexão do dono" test -n "$(tail -n 8 "$OUTFILE" | grep -F 'SUPABASE_DB_ADMIN_URL' || true)"
+check "  e PARA com 1, sem baixar a imagem nova" test "$RC" -eq 1
+check "  (nenhum pull depois do banco)" test -z "$(grep -E ' pull( |$)' "$DOCKER_LOG" || true)"
+
+# Erro que repetir não cura DEPOIS de um `drop policy` que o `create` não refez.
+# A parada por banco incompleto vem DEPOIS da conferência das regras: saindo
+# antes dela, o trap subia app, worker e scheduler sem a regra — tela vazia para
+# todo mundo. Com a ordem certa o CRM fica parado com o aviso vermelho.
+printf 'drop policy if exists "leitura" on public.leads;\ncreate policy "leitura" on public.leads using (true);\n' > "$PROJ/supabase/baseline.sql"
+rm -rf "$ROTEIRO_UG"; mkdir -p "$ROTEIRO_UG"
+printf 'psql:/b.sql:2: ERROR:  column "organization_id" does not exist\n' > "$ROTEIRO_UG/passada.1"
+: > "$DOCKER_LOG"
+BASELINE_ROTEIRO="$ROTEIRO_UG" BASELINE_ESPERA_S=0 run_update --to v1.1.0 --force
+check "regra derrubada + erro não curável: o baseline aplicado tinha a regra (controle)" \
+  grep -q 'create policy "leitura" on public.leads' "$PROJ/supabase/baseline.sql"
+check "  para com 1" test "$RC" -eq 1
+check "  a conferência das regras rodou e acusou a ausente" grep -q "REGRAS DE ISOLAMENTO AUSENTES" "$OUTFILE"
+check "  e o CRM NÃO subiu depois do banco" \
+  test -z "$(awk '/-f \/b.sql/ {b=1} b && / up -d/' "$DOCKER_LOG")"
+git -C "$PROJ" checkout --quiet -- supabase/baseline.sql
 
 # ── Clone RASO: a topologia que o install.sh realmente entrega ───────────────
 # `install.sh` instala com `git clone --depth 1`. Num repositório raso o
@@ -729,6 +754,25 @@ check "caminho feliz: a saída não fala em arquitetura nem em construção loca
 # depois do `up -d` que pode falhar, não em outro lugar qualquer.
 check "install.sh chama a recuperação depois de um up -d que pode falhar" \
   bash -c "grep -A1 'if ! dc up -d; then' '$REPO_ROOT/hostgator-setup-kit/install.sh' | grep -q 'construir_aqui_e_subir'"
+
+echo "── 13. \"Nada a atualizar\" derruba o aviso de manutenção preso (PR #1524)"
+# Medido numa VPS real: a atualização morreu depois de subir o aviso, com a tag
+# nova já no disco. Toda execução seguinte caía na saída antecipada e o aviso —
+# que segura o apelido de rede `app` — seguia respondendo 503 por 6h30.
+cd "$PROJ" || exit 1
+: > "$DOCKER_LOG"
+IMAGEM_EM_DIA=1 AVISO_PRESO=1 run_update --to v1.1.0
+check "sai com sucesso pela saída \"nada a atualizar\"" test "$RC" -eq 0
+check "  e a saída é mesmo a antecipada" grep -q "Nada a atualizar" "$OUTFILE"
+check "  não rodou o backup (não virou atualização)" test ! -f "$BACKUP_MARK"
+check "  removeu o contêiner do aviso" grep -q "rm -f deskcomm-manutencao" "$DOCKER_LOG"
+check "  e contou a quem opera" grep -q "aviso de manutenção preso" "$OUTFILE"
+check "  e ensina a concluir com --force" grep -q -- "--to v1.1.0 --force" "$OUTFILE"
+: > "$DOCKER_LOG"
+IMAGEM_EM_DIA=1 run_update --to v1.1.0
+check "sem aviso de pé: não mexe em contêiner nenhum" \
+  bash -c "! grep -q 'rm -f deskcomm-manutencao' '$DOCKER_LOG'"
+check "  e não fala de aviso preso" bash -c "! grep -q 'aviso de manutenção preso' '$OUTFILE'"
 
 if [ "$FAILS" -eq 0 ]; then echo "OK — todas as provas passaram."; else echo "FALHOU — $FAILS prova(s)."; fi
 exit $((FAILS > 0))

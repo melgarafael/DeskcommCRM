@@ -167,7 +167,8 @@ describe("#669 — painel não morre mudo quando a conexão sumiu da lista", () 
       /pode ter sido removida/,
     );
     expect(screen.getByRole("button", { name: "Tentar de novo" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Fechar" })).toBeInTheDocument();
+    // O "X" do painel também se chama "Fechar"; a saída do rodapé é a do teste.
+    expect(screen.getByTestId("anti-ban-fechar")).toHaveAccessibleName("Fechar");
     expect(screen.queryByTestId("anti-ban-form")).toBeNull();
   });
 
@@ -183,7 +184,7 @@ describe("#669 — painel não morre mudo quando a conexão sumiu da lista", () 
       expect(invalidar).toHaveBeenCalledWith({ queryKey: ["pacing-knobs"] }),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Fechar" }));
+    fireEvent.click(screen.getByTestId("anti-ban-fechar"));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

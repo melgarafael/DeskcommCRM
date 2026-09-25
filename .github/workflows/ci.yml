@@ -59,9 +59,35 @@ permissions:
 # O grupo é por PR (e não por branch) para reabrir um PR não colidir com o run
 # de outro que aponte para a mesma ref. Vigiado por
 # tests/unit/concorrencia-so-nos-jobs-pesados.test.ts.
+#
+# ── REENTRADA (aprovação, rerun) vai para o grupo DO SEU HEAD ────────────────
+#
+# O GitHub decide quem cancela quem pela ORDEM EM QUE O JOB ENTRA NA FILA, não
+# pela idade do commit. A primeira tentativa de um run nasce do push, na ordem
+# dos pushes, e aí "o último a entrar" é o head novo. A tentativa ≥ 2 não: ela
+# é um run VELHO voltando — aprovação de `action_required` (PR de fork de quem
+# contribui pela primeira vez; a aprovação vira a tentativa 2) ou rerun manual.
+# Com o grupo só por PR, esse run velho entrava por último e cancelava o head
+# ATUAL, que ficava só com `cancelled` e o agregador em `failure` — vermelho
+# para sempre, com o merge automático ligado, sem nenhum run novo para salvá-lo.
+#
+# Medido em 22/09/2026: #1446 (head 096b49930, run 35746675409) e #1431 (head
+# 1119e0ce8, run 35746393767). Os dois runs de cada PR estavam em
+# `action_required` e foram aprovados. O do head NOVO começou primeiro (#1446:
+# 15:21:04Z), o do head VELHO foi aprovado às 15:28:10Z, e o `verify-parte`
+# do head novo foi cancelado dois segundos depois ("Canceling since a higher
+# priority waiting request for ci-verify-parte1-1446 exists"). O run velho
+# terminou verde, medindo um commit que já não era o do PR.
+#
+# Por isso, em `pull_request`, a tentativa ≥ 2 ganha o sufixo
+# `-reentrada-<head>`: ela nunca cancela o head de outro commit, e reruns do
+# MESMO head continuam dividindo um grupo só. O custo é o run velho aprovado
+# rodar até o fim em paralelo, em vez de ser cancelado. A primeira tentativa
+# segue no grupo do PR, e o push novo continua cancelando o velho.
 
 jobs:
-  # A suíte de unit em DUAS partes paralelas, e o check obrigatório `verify` é o
+  # A suíte de unit em TRÊS partes paralelas (duas até 22/09/2026 — ver o fim
+  # deste bloco), e o check obrigatório `verify` é o
   # agregador lá embaixo — mesmo padrão do `invariants`.
   #
   # Medido em 18/09/2026: o `verify` inteiro levava 712 s de mediana nos verdes e
@@ -71,11 +97,36 @@ jobs:
   # e `import` 415 s (run do head d8af02fee). Custo por arquivo se divide por
   # arquivo: cada parte roda metade (`--shard`) e paga metade do jsdom.
   #
-  # Os passos de arquivo inteiro (cercas, typecheck, lint e as três auditorias)
-  # rodam só na parte 1; o kit bash, na parte 2 — é o que equilibra as duas.
-  # É o conserto estrutural da issue #1185, que o #1184 deixou anotado: com ele,
+  # Os passos de arquivo inteiro rodam cada um numa parte só: typecheck e as
+  # três auditorias na 1; lint na 2; cercas e kit bash na 3 — é o que equilibra
+  # as três (a conta está no fim deste bloco). O `--shard` corta por CONTAGEM de
+  # arquivos, não por tempo; quem
+  # equilibra o relógio é onde moram estes passos. A divisão em partes é o
+  # conserto estrutural da issue #1185, que o #1184 deixou anotado: com ele,
   # o teto volta de 25 para 15 (guarda de travamento) e o orçamento desce de 16
   # para 12 — quem denuncia a suíte crescendo é o orçamento, por parte.
+  #
+  # O lint morava na parte 1 até 22/09/2026. Medido nos 24 pares verdes daquele
+  # dia: parte 1 mediana 10,0 min (máx 10,5), parte 2 8,1 (máx 8,7) — a 1
+  # carregava 167 s de passos inteiros contra 42 s da 2, e crescia ~0,4 min/dia
+  # (8,4 em 18/09). Mudar só o lint (63 s) dá 8,9 / 9,1 (máx 9,3 / 9,6); mudar
+  # lint E typecheck só trocaria qual parte pesa (7,8 / 10,1). Isto ADIA, não
+  # cura: a suíte soma ~46 s/dia às duas partes juntas. Quando uma parte chegar
+  # a 11 min (2 de folga até o vermelho do orçamento, aos 13), o conserto é a
+  # terceira parte (matrix + `--shard=N/3`) — reequilibrar de novo não sobra.
+  #
+  # A TERCEIRA PARTE ENTROU EM 22/09/2026, antes dos 11. Medido nos 16 pares
+  # verdes de ci.yml criados depois de o lint mudar de parte (17:54Z–00:06Z):
+  # parte 1 mediana 9,1 min (máx 9,4), parte 2 mediana 9,5 (máx 10,4). O relógio
+  # é `Unit tests` (mediana 412 s / 433 s); os fixos já estavam iguais — parte 1
+  # 107 s (typecheck 67, cercas 36, auditorias ~4), parte 2 109 s (lint 65, kit
+  # bash 44) —, então não havia mais o que reequilibrar. Com três, os fixos
+  # medianos ficam: parte 1 typecheck+auditorias ~71 s, parte 2 lint ~65 s,
+  # parte 3 cercas+kit bash ~80 s. A conta de unit por parte (~845 s / 3 ≈ 282 s)
+  # e o total esperado (~6,4 min por parte) são PREVISÃO, não medição: o
+  # `--shard` corta por contagem, e o terço de cada um só se sabe rodando. O
+  # custo é um job a mais por rodada na fila de runners (~25 s de preâmbulo), NÃO
+  # MEDIDO quanto à espera.
   verify-parte:
     # Guarda de travamento. O DETECTOR de crescimento é o passo `Orçamento de
     # tempo` no fim de cada parte; a medição que justifica o número está em
@@ -85,13 +136,13 @@ jobs:
     # porquê e a guarda contra fork: comentário do e2e-parte no e2e.yml.
     runs-on: ${{ vars.EXECUTOR_PROPRIO == 'ligado' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && 'deskcomm-proprio' || 'ubuntu-latest' }}
     concurrency:
-      group: ${{ github.workflow }}-verify-parte${{ matrix.parte }}-${{ github.event.pull_request.number || github.ref }}
+      group: ${{ github.workflow }}-verify-parte${{ matrix.parte }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     strategy:
       # Sem fail-fast: um vermelho numa parte não esconde o da outra.
       fail-fast: false
       matrix:
-        parte: [1, 2]
+        parte: [1, 2, 3]
     steps:
       - uses: actions/checkout@v7
 
@@ -173,16 +224,18 @@ jobs:
       # em segundos; dentro da suíte longa, o mesmo vermelho chegava aos 7–12
       # minutos. Rodam UMA vez: o passo de unit abaixo pula o projeto `cercas`.
       # Seleção e medições: o bloco `projects` de vitest.config.ts.
+      # Na parte 3, junto do kit bash: o porquê e a conta estão no cabeçalho do job.
       - name: Cercas estruturais
-        if: matrix.parte == 1
+        if: matrix.parte == 3
         run: pnpm cercas
 
       - name: Typecheck
         if: matrix.parte == 1
         run: pnpm typecheck
 
+      # Na parte 2, não na 1: o porquê e a conta estão no cabeçalho do job.
       - name: Lint
-        if: matrix.parte == 1
+        if: matrix.parte == 2
         run: pnpm lint
 
       # Invariante 1 de docs/doctrine/restricao-de-canal.md: nenhuma feature
@@ -265,11 +318,44 @@ jobs:
           echo "OK — ${total} migrations na árvore, nenhum NNNN nem timestamp repetido."
 
       # `--project produto` é o `pnpm test:unit` MENOS as cercas, que já
-      # rodaram acima; `--shard` divide os arquivos entre as duas partes. Juntos
+      # rodaram acima; `--shard` divide os arquivos entre as três partes. Juntos
       # são a suíte inteira, uma vez só. Localmente o comando continua sendo
       # `pnpm test:unit`, sem recorte.
-      - name: Unit tests (parte ${{ matrix.parte }}/2)
-        run: pnpm test:unit --project produto --shard=${{ matrix.parte }}/2
+      - name: Unit tests (parte ${{ matrix.parte }}/3)
+        run: pnpm test:unit --project produto --shard=${{ matrix.parte }}/3
+
+      # O ACERVO DE `.changes/` CABE NA TELA DA VPS? — e por que fora de PR.
+      #
+      # A seção que os fragmentos acumulados vão produzir tem o mesmo teto em
+      # bytes que qualquer outra (o `head -c` do agent.sh). O que muda é de quem
+      # é a dívida: o acervo é coletivo, e o único remédio é CORTAR RELEASE.
+      #
+      # Isto rodava dentro do `pnpm test:unit`, portanto em `pull_request`, e em
+      # 20/09/2026 reprovou o `verify` dos PRs #1377 (@lucasa15) e #1363 por
+      # `A seção termina no byte 32686` com 43 fragmentos acumulados — nenhum
+      # dos dois tocava `.changes/`. A mensagem mandava o contribuidor enxugar
+      # fragmento de terceiro, e o vermelho sumiu sozinho quando a 1.41.0
+      # consumiu os fragmentos. Quem responde pelo vermelho tem de poder
+      # consertá-lo; aqui quem o vê é quem corta release.
+      #
+      # O passo também AVISA antes de estourar (`::warning::`), por uma régua
+      # derivada do próprio acervo — "dobrar este acervo não caberia" —, nunca
+      # por um número digitado. O teto já é lido do `agent.sh` pelo mesmo motivo.
+      #
+      # As duas metades da candidata que ficou no PR continuam em
+      # `tests/unit/changelog-cabe-na-tela-da-vps.test.ts`; que esta não sumiu de
+      # todo lugar é cobrado por `tests/unit/acervo-do-changelog-cobra-a-casa.test.ts`.
+      #
+      # DEPOIS dos unit tests, e não antes como as outras cercas: este passo é o
+      # único do job projetado para ficar vermelho DE VEZ EM QUANDO na `main` —
+      # é assim que ele pede o corte de release. Antes da suíte, cada vermelho
+      # dele levaria junto metade dos unit tests da `main` (a parte 1 não
+      # chegaria a rodar), e a dívida de changelog passaria a esconder defeito
+      # de código. As cercas acima podem vir antes porque um vermelho nelas é
+      # anomalia, não rotina.
+      - name: O acervo de .changes/ cabe na tela da VPS?
+        if: matrix.parte == 1 && github.event_name != 'pull_request'
+        run: pnpm release:acervo-cabe
 
 
       # Scripts do kit self-host num repo git descartável (docker/crontab
@@ -282,7 +368,7 @@ jobs:
       # escolher OpenRouter travava o instalador num laço, escolher OpenAI
       # deixava o .env pela metade — passaram por todos os checks verdes. 15s.
       - name: Kit self-host (bash)
-        if: matrix.parte == 2
+        if: matrix.parte == 3
         run: pnpm test:shell
 
       - name: Orçamento de tempo do verify-parte
@@ -310,6 +396,12 @@ jobs:
           # corte, que é a propriedade que faz chegar um `::error::` legível em
           # vez de um `cancelled` mudo. A estimativa acertou; agora ela tem
           # número atrás.
+          #
+          # 22/09/2026: a suíte cresceu até 9,1 / 9,5 min de mediana (máx 10,4)
+          # nas duas partes, e o conserto foi a TERCEIRA parte, não subir este
+          # número (a conta está no cabeçalho do job). O 12 fica: pela lição de
+          # método logo abaixo, só se recalibra depois de medir a distribuição
+          # NOVA das três partes e classificar os `cancelled` dela.
           #
           # ── OS 100 CANCELADOS, E POR QUE ELES NÃO CENSURAM ESTA CONTA ────
           #
@@ -345,11 +437,11 @@ jobs:
             exit 0
           fi
           decorrido=$(( ($(date +%s) - VERIFY_INICIO) / 60 ))
-          echo "verify parte ${{ matrix.parte }}/2: ${decorrido} min (orçamento ${ORCAMENTO_MIN} min, teto de travamento 15 min)"
+          echo "verify parte ${{ matrix.parte }}/3: ${decorrido} min (orçamento ${ORCAMENTO_MIN} min, teto de travamento 15 min)"
           if [ "$decorrido" -le "${ORCAMENTO_MIN}" ]; then
             exit 0
           fi
-          echo "::error::A parte ${{ matrix.parte }}/2 do verify levou ${decorrido} min contra um orçamento de ${ORCAMENTO_MIN} min."
+          echo "::error::A parte ${{ matrix.parte }}/3 do verify levou ${decorrido} min contra um orçamento de ${ORCAMENTO_MIN} min."
           echo "::error::Isto NÃO é defeito do seu PR: a suíte unitária cresceu. Em 18/09/2026, \`Unit tests\` já era 10,3 dos 13,2 min do job."
           echo "::error::O conserto é mais uma parte em \`verify-parte\` (matrix + --shard), não subir este número."
           exit 1
@@ -367,7 +459,7 @@ jobs:
       - name: Falhar se qualquer parte não passou
         run: |
           echo "verify-parte: ${{ needs.verify-parte.result }}"
-          # `success` só com AS DUAS partes verdes; `skipped` e `cancelled`
+          # `success` só com TODAS as partes verdes; `skipped` e `cancelled`
           # reprovam — parte que não rodou não mediu nada.
           [ "${{ needs.verify-parte.result }}" = "success" ]
 
@@ -462,7 +554,7 @@ jobs:
     runs-on: ${{ vars.EXECUTOR_PROPRIO == 'ligado' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && 'deskcomm-proprio' || 'ubuntu-latest' }}
     needs: [invariants-alcance]
     concurrency:
-      group: ${{ github.workflow }}-invariants-majors-pg${{ matrix.pg }}-${{ github.event.pull_request.number || github.ref }}
+      group: ${{ github.workflow }}-invariants-majors-pg${{ matrix.pg }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     strategy:
       # `false` e não o padrão (`true`): com `fail-fast`, a primeira major que

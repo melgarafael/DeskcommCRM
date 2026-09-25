@@ -4,7 +4,7 @@ import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
-import { clientePelaAgendaLigado } from "@/lib/schemas/settings";
+import { clientePelaAgendaLigado, colegasPodemMexerNaAgendaLigado } from "@/lib/schemas/settings";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 
 import { TiposDeAgendamentoClient, type TipoRow } from "./_client";
@@ -43,7 +43,20 @@ export default async function TiposDeAgendamentoPage() {
   const podeEditar = (user.is_platform_admin && !user.support) || ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
 
   const supabase = await createClient();
-  const [{ data: tipos }, { data: pessoas }, { data: org }] = await Promise.all([
+  // ⚠️ O `error` NÃO é descartável, e descartá-lo já mentiu para quem opera.
+  //
+  // Medido em 2026-09-16: esta consulta pedia `reminder_extra_offsets_minutes`,
+  // coluna que o banco daquela instalação não tinha (migration 0254 nunca
+  // aplicada). O PostgREST recusava a consulta INTEIRA, `data` vinha `null`, e
+  // a tela dizia "Nenhum tipo de agendamento ainda" — com QUATRO tipos ativos
+  // no banco, um deles o "Retirada de pedido" que a API recusava recriar por
+  // duplicidade. Erro de leitura virou afirmação sobre os dados, e as duas
+  // telas passaram a discordar sem que nenhuma estivesse "quebrada" aos olhos
+  // de quem olhava.
+  //
+  // Lista vazia e falha de leitura são fatos diferentes, e a tela tem de
+  // dizer qual dos dois aconteceu.
+  const [{ data: tipos, error: erroTipos }, { data: pessoas }, { data: org }] = await Promise.all([
     supabase
       .from("calendar_event_types")
       .select(
@@ -88,6 +101,7 @@ export default async function TiposDeAgendamentoPage() {
       </header>
       <TiposDeAgendamentoClient
         tiposIniciais={(tipos ?? []) as TipoRow[]}
+        erroDeLeitura={erroTipos ? erroTipos.message : null}
         pessoas={(pessoas ?? []).map((p) => ({
           id: String(p.user_id),
           papel: String(p.role),
@@ -98,6 +112,13 @@ export default async function TiposDeAgendamentoPage() {
         podeConfigurarGoogle={ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent}
         podeEditar={podeEditar}
         clientePelaAgendaLigado={clientePelaAgendaLigado(org?.settings)}
+        // A OPÇÃO DA AGENDA (migration 0343, issue #978): LIGADA por padrão, e a
+        // régua de "ligado" é a ausência da chave — quem já instalou está no
+        // padrão sem ter nada gravado. Mesma leitura do banco.
+        colegasPodemMexerNaAgendaLigado={colegasPodemMexerNaAgendaLigado(org?.settings)}
+        // `manager` aqui, e não o `admin` de clientes: esta é regra da AGENDA, a
+        // mesma tela dos prazos, e não reescreve dado nenhum. A RPC cobra de novo.
+        podeMudarAgendaDosColegas={ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager}
         // `admin`, e não `manager` como os prazos ao lado: ligar reescreve as
         // etiquetas de todo contato com histórico. A RPC cobra de novo.
         podeLigarClientePelaAgenda={ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin}

@@ -13,6 +13,13 @@ export const ApiErrorCodes = {
   validation_failed: "validation_failed", // Zod retornou erros de schema (422 também aceita)
   invalid_cursor: "invalid_cursor",
 
+  // Configuração de agentes: validação/estado ou indisponibilidade do provedor.
+  prospecting_agent_session_failed: "prospecting_agent_session_failed",
+  prospecting_agent_prepare_failed: "prospecting_agent_prepare_failed",
+  prospecting_agent_chat_failed: "prospecting_agent_chat_failed",
+  prospecting_agent_setup_failed: "prospecting_agent_setup_failed",
+  voice_assistant_unavailable: "voice_assistant_unavailable",
+
   // 401 — auth
   unauthorized: "unauthorized", // segredo interno inválido/ausente (rotas host↔app, ex. system/agent)
   unauthenticated: "unauthenticated",
@@ -84,6 +91,10 @@ export const ApiErrorCodes = {
   invalid_state_transition: "invalid_state_transition",
   invalid_owner: "invalid_owner", // novo dono não é membro ativo agent+ da org (bulk assign, G3-04)
   trigger_kind_not_implemented: "trigger_kind_not_implemented", // publish de followup-flow com kind sem motor de enrollment (stage_change/conversation_end)
+  // PATCH /api/v1/ai/jev ao ligar. Dois códigos porque são duas ações de quem lê:
+  // colar e testar a chave, ou marcar o aceite de mandar a mensagem para fora.
+  jev_exige_chave_validada: "jev_exige_chave_validada",
+  jev_exige_aceite: "jev_exige_aceite",
 
   // 415 — tipo de mídia
   unsupported_media_type: "unsupported_media_type",
@@ -113,6 +124,17 @@ export const ApiErrorCodes = {
   ads_limite_de_chamadas: "ads_limite_de_chamadas",
   ads_campo_invalido: "ads_campo_invalido",
   ads_cifra_indisponivel: "ads_cifra_indisponivel",
+
+  // ─── BANCO DE DADOS EXTERNO DO AGENTE (migration 0372) ───
+  //
+  // Declarados aqui pelo mesmo motivo dos da Agenda/Anúncios: `fail()` aceita
+  // qualquer string, então o código só é contrato se estiver nesta lista. A tela
+  // distingue "destino bloqueado pela política de rede" de "senha cifrada não
+  // pôde ser lida" — cada um pede uma ação diferente de quem lê.
+  external_db_destino_bloqueado: "external_db_destino_bloqueado",
+  external_db_label_em_uso: "external_db_label_em_uso",
+  external_db_desativada: "external_db_desativada",
+  external_db_sem_chave: "external_db_sem_chave",
 
   // ─── CHAMADA DE VOZ (spec 18, migration 0234) ───
   //
@@ -191,6 +213,22 @@ export const ApiErrorCodes = {
   aviso_numero_da_propria_org: "aviso_numero_da_propria_org",
   aviso_canal_invalido: "aviso_canal_invalido",
   aviso_nao_configurado: "aviso_nao_configurado",
+
+  // ─── Módulo CAMPANHAS (migration 0264, Spec 12 §17) ───
+  campanha_nao_encontrada: "campanha_nao_encontrada", // 404
+  // 409: a ação não cabe no estado atual. A mensagem diz os DOIS estados, porque
+  // "estado inválido" sem dizer qual manda o operador adivinhar.
+  campanha_estado_invalido: "campanha_estado_invalido",
+  campanha_nao_editavel: "campanha_nao_editavel", // 409: só rascunho aceita edição
+  campanha_preparando: "campanha_preparando", // 409: preparação em andamento
+  campanha_sem_audiencia: "campanha_sem_audiencia", // 422: o recorte não achou ninguém
+  // 422: achou gente, e nenhuma pode receber (todos bloqueados/sem telefone). É
+  // diferente de audiência vazia: o filtro está certo e a lista é que não presta.
+  campanha_sem_elegiveis: "campanha_sem_elegiveis",
+  campanha_canal_indisponivel: "campanha_canal_indisponivel", // 409: conexão fora do ar ou de outra org
+  campanha_agenda_invalida: "campanha_agenda_invalida", // 422: data no passado
+  campanha_conteudo_invalido: "campanha_conteudo_invalido", // 422: texto vazio ou variável que não existe
+  campanha_base_legal_invalida: "campanha_base_legal_invalida", // 422: interesse legítimo sem referência da LIA
 
   // 500 / upstream
   internal_error: "internal_error",

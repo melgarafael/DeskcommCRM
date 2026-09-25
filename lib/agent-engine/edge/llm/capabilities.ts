@@ -34,7 +34,7 @@ const PROVIDER_DEFAULT: Record<string, ModelCapabilities> = {
  *
  * O id do modelo carrega o fabricante no prefixo, e é dele que a capacidade sai.
  */
-const ROTEADORES = new Set(["openrouter"]);
+const ROTEADORES = new Set(["openrouter", "requesty"]);
 
 /**
  * Este provedor é um ROTEADOR (revende modelos de vários fabricantes)?

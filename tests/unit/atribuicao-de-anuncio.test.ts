@@ -38,9 +38,9 @@ describe("extrairAtribuicaoMeta — referral do webhook oficial", () => {
     expect(r?.adId).toBeNull();
   });
 
-  it("cai pra source_id quando não há ctwa_clid", () => {
+  it("deixa sourceId nulo quando não há ctwa_clid, preservando adId", () => {
     const r = extrairAtribuicaoMeta({ source_type: "ad", source_id: "abc" });
-    expect(r?.sourceId).toBe("abc");
+    expect(r?.sourceId).toBeNull();
     expect(r?.adId).toBe("abc");
   });
 
@@ -74,7 +74,36 @@ describe("extrairAtribuicaoMeta — referral do webhook oficial", () => {
   });
 });
 
-describe("extrairAtribuicaoWaha — externalAdReplyInfo do Baileys", () => {
+describe("extrairAtribuicaoWaha — externalAdReply do WAHA e forma legada", () => {
+  it("extrai externalAdReply na forma recebida pelo WAHA NOWEB", () => {
+    const r = extrairAtribuicaoWaha({
+      extendedTextMessage: {
+        text: "Quero saber mais",
+        contextInfo: {
+          ctwaPayload: "dados-do-clique",
+          externalAdReply: {
+            sourceType: "ad",
+            sourceId: "ad-exemplo",
+            ctwaClid: "clid-exemplo",
+            title: "Serviço de exemplo",
+            body: "Saiba mais",
+            sourceUrl: "https://fb.me/anuncio",
+          },
+        },
+      },
+      messageContextInfo: { deviceListMetadataVersion: 2 },
+    });
+    expect(r).toEqual({
+      plataforma: "meta_ads",
+      sourceId: "clid-exemplo",
+      adId: "ad-exemplo",
+      titulo: "Serviço de exemplo",
+      corpo: "Saiba mais",
+      sourceUrl: "https://fb.me/anuncio",
+      bruto: expect.objectContaining({ sourceType: "ad" }),
+    });
+  });
+
   it("extrai de extendedTextMessage.contextInfo.externalAdReplyInfo", () => {
     const r = extrairAtribuicaoWaha({
       extendedTextMessage: {
@@ -107,7 +136,7 @@ describe("extrairAtribuicaoWaha — externalAdReplyInfo do Baileys", () => {
         contextInfo: { externalAdReplyInfo: { sourceId: "ad-1", title: "X" } },
       },
     });
-    expect(r?.sourceId).toBe("ad-1");
+    expect(r?.sourceId).toBeNull();
     expect(r?.adId).toBe("ad-1");
   });
 
@@ -137,6 +166,16 @@ describe("extrairAtribuicaoWaha — externalAdReplyInfo do Baileys", () => {
     expect(
       extrairAtribuicaoWaha({
         extendedTextMessage: {
+          contextInfo: {
+            externalAdReply: { sourceType: "post", title: "Publicação", ctwaClid: "x" },
+          },
+        },
+      }),
+    ).toBeNull();
+
+    expect(
+      extrairAtribuicaoWaha({
+        extendedTextMessage: {
           text: "oi",
           contextInfo: {
             externalAdReplyInfo: { sourceType: "ad", title: "Promo", ctwaClid: "x" },
@@ -158,7 +197,7 @@ describe("estamparAtribuicaoDoContato", () => {
     const rpc = vi.fn().mockResolvedValue({ error: null });
     const admin = { rpc } as never;
 
-    await estamparAtribuicaoDoContato(admin, "contact-1", {
+    await estamparAtribuicaoDoContato(admin, "org-1", "contact-1", {
       plataforma: "meta_ads",
       sourceId: "clid-1",
       adId: "120210000000000",
@@ -171,6 +210,7 @@ describe("estamparAtribuicaoDoContato", () => {
     expect(rpc).toHaveBeenCalledWith(
       "fn_estampar_atribuicao_de_anuncio",
       expect.objectContaining({
+        p_org: "org-1",
         p_contact: "contact-1",
         p_platform: "meta_ads",
         p_metadata: expect.objectContaining({
@@ -191,7 +231,7 @@ describe("estamparAtribuicaoDoContato", () => {
     const admin = { rpc } as never;
 
     await expect(
-      estamparAtribuicaoDoContato(admin, "contact-1", {
+      estamparAtribuicaoDoContato(admin, "org-1", "contact-1", {
         plataforma: "meta_ads",
         sourceId: null,
         adId: null,

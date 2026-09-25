@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { aplicarConvite } from "@/lib/auth/aplicar-convite";
 import { decidirConviteDoSignup } from "@/lib/auth/convite-no-signup";
 import { ensureTenantForUser } from "@/lib/auth/provision";
+import { modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -30,6 +31,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/auth/aplicar-convite", () => ({ aplicarConvite: vi.fn() }));
 vi.mock("@/lib/auth/convite-no-signup", () => ({ decidirConviteDoSignup: vi.fn() }));
 vi.mock("@/lib/auth/provision", () => ({ ensureTenantForUser: vi.fn(async () => undefined) }));
+vi.mock("@/lib/auth/politica-de-cadastro", () => ({ modoDeCadastro: vi.fn(async () => "aberto") }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/env", () => ({ env: { NEXT_PUBLIC_APP_URL: "http://localhost:3000" } }));
 
@@ -72,6 +74,7 @@ describe("GET /auth/confirm", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(aplicarConvite).mockResolvedValue({ ok: true, membershipId: "m1", mudou: true });
+    vi.mocked(modoDeCadastro).mockResolvedValue("aberto");
   });
 
   function comSupabase(c: Cenario) {
@@ -167,5 +170,35 @@ describe("GET /auth/confirm", () => {
     expect(vi.mocked(ensureTenantForUser)).toHaveBeenCalledWith(USUARIO);
     expect(vi.mocked(aplicarConvite)).not.toHaveBeenCalled();
     expect(destino(res)).toBe("/onboarding/welcome");
+  });
+
+  it("sem convite em instalação com_aprovacao: e-mail confirmado, mas a empresa espera o pedido", async () => {
+    // Recorte do PR #714 (migration 0383). O e-mail acabou de ser provado pelo
+    // `verifyOtp` do provedor; a empresa só nasce na aprovação do administrador.
+    comSupabase({ verifyOtp: { data: { user: USUARIO }, error: null }, getUser: { data: { user: null } } });
+    vi.mocked(decidirConviteDoSignup).mockReturnValue({ tipo: "provisionar" });
+    vi.mocked(modoDeCadastro).mockResolvedValue("com_aprovacao");
+
+    const { GET } = await import("./route");
+    const res = await GET(requisicao("type=signup&token_hash=abc"));
+
+    expect(vi.mocked(ensureTenantForUser)).not.toHaveBeenCalled();
+    expect(destino(res)).toBe("/get-started");
+  });
+
+  it("convite válido em instalação com_aprovacao: entra direto, o convite já é a aprovação", async () => {
+    comSupabase({ verifyOtp: { data: { user: USUARIO }, error: null }, getUser: { data: { user: null } } });
+    vi.mocked(decidirConviteDoSignup).mockReturnValue({
+      tipo: "convite",
+      token: "tok",
+      payload: PAYLOAD,
+    } as ReturnType<typeof decidirConviteDoSignup>);
+    vi.mocked(modoDeCadastro).mockResolvedValue("com_aprovacao");
+
+    const { GET } = await import("./route");
+    const res = await GET(requisicao("type=signup&token_hash=abc"));
+
+    expect(destino(res)).toBe("/app");
+    expect(vi.mocked(ensureTenantForUser)).not.toHaveBeenCalled();
   });
 });

@@ -78,6 +78,7 @@ export {
   // lgpd
   Scales as ScalesSimple,
   Eye,
+  EyeSlash,
   ChartBar,
   ClockCountdown,
   // painéis de evolução / aprendizado
@@ -89,6 +90,9 @@ export {
   MonitorPlay,
   // conversation
   ChatCircle,
+  WhatsappLogo,
+  InstagramLogo,
+  MessengerLogo,
   Phone,
   PhoneIncoming,
   PhoneOutgoing,
@@ -102,6 +106,7 @@ export {
   Note,
   FileText,
   Lock,
+  LockOpen,
   Receipt,
   Tag,
   Question,

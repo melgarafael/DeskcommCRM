@@ -245,3 +245,42 @@ describe("(c) o Atendente lê a lista de pessoas da agenda", () => {
     expect(hook).toContain("motivoDaFalhaNaLista");
   });
 });
+
+/**
+ * (d) A TELA DA AGENDA NÃO PEDE A LISTA À ROTA DA EQUIPE — E A PROSA NÃO DIZ QUE
+ * PEDE.
+ *
+ * O comentário de 17/09 na issue #978 leu `app/app/agenda/_client.tsx:215` e
+ * concluiu que abrir a Agenda como Atendente dispara toast falso de falta de
+ * permissão, porque a tela chamaria `usePessoasDaAgenda()` e a lista viria de
+ * `GET /api/v1/team` (`manager+`). A CHAMADA não existe mais desde o item 1 da
+ * issue 896 — o hook lê `ROTA_DA_LISTA_DE_PESSOAS`, e o caso "(c)" acima já
+ * vigia isso. O que sobrou foi a FRASE, e ela foi consertada junto com a opção
+ * da migration 0343: um comentário que afirma um caminho extinto é o defeito de
+ * novo, porque a próxima pessoa a medir o 403 vai medi-lo na prosa.
+ *
+ * Medido nesta rodada, no worktree da #978:
+ *   grep -rn "api/v1/team" app/app/agenda/ | grep -c "apiClient\.get"   → 0
+ *   grep -rn "vêm de \`/api/v1/team\`" app/                             → 0
+ *   grep -rn "leitura de \`/api/v1/team\`" app/                         → 0
+ */
+describe("(d) a agenda não atribui a lista de pessoas à rota da equipe", () => {
+  it("a tela e a página não chamam `/api/v1/team`", () => {
+    for (const arquivo of ["app/app/agenda/_client.tsx", "app/app/agenda/page.tsx"]) {
+      expect(fonte(arquivo), arquivo).not.toMatch(/apiClient\.[a-z]+[^\n]*\/api\/v1\/team/);
+    }
+  });
+
+  it("as duas frases que diziam vir de `/api/v1/team` foram reescritas", () => {
+    // As frases EXATAS que a medição de 17/09 leu. Não é vigilância de palavra:
+    // é a garantia de que voltar a afirmar isso exige uma decisão consciente.
+    expect(fonte("app/app/agenda/_client.tsx")).not.toContain(
+      "AS PESSOAS SÃO REAIS: vêm de `/api/v1/team`",
+    );
+    expect(fonte("app/app/agenda/page.tsx")).not.toContain("leitura de `/api/v1/team`");
+  });
+
+  it("a tela aponta para a lista mínima, que é o caminho que existe", () => {
+    expect(fonte("app/app/agenda/_client.tsx")).toContain("/api/v1/agenda/pessoas");
+  });
+});

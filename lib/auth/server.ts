@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { lerInterface } from "@/lib/navigation/interface";
+import { combinarInterfaces } from "@/lib/navigation/interface";
 /**
  * Server-side auth helpers — load AuthUser, resolve active org, gate routes.
  *
@@ -27,11 +27,25 @@ interface RawMembershipRow {
   /** Só para ORDENAR — a lista decide qual organização fica ativa sem cookie. */
   accepted_at?: string | null;
   organizations: OrgJoin | OrgJoin[] | null;
+  /**
+   * As portas da EMPRESA, por embed PRÓPRIO (`organizations.interface_settings`,
+   * migration 0367). Ficam fora de `organizations(display_name, locale)` de
+   * propósito: aquele embed é o que a membership SEMPRE trouxe — nome e IDIOMA da
+   * empresa, lidos em toda navegação — e um jsonb novo ali faria a escolha de menu
+   * mexer no caminho de quem só precisa saber em que língua desenhar a tela.
+   */
+  interface_da_empresa: OrgJoinEmpresa | OrgJoinEmpresa[] | null;
 }
 
 interface OrgJoin {
   display_name: string;
   locale: string | null;
+  timezone: string | null;
+}
+
+/** O mesmo `organizations`, alcançado por outro embed: só as portas da EMPRESA. */
+interface OrgJoinEmpresa {
+  interface_settings?: unknown;
 }
 
 /**
@@ -166,7 +180,14 @@ export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
       supabase
         .from("user_organizations")
         .select(
-          "organization_id, role, interface_settings, accepted_at, organizations(display_name, locale)",
+          // Dois embeds do MESMO `organizations`, como manda o PostgREST quando a
+          // mesma relação aparece duas vezes: `organizations(...)` continua sendo
+          // o que a membership sempre trouxe (nome, IDIOMA e FUSO da empresa — o
+          // idioma decide a tela inteira e não pode depender de um embed que a
+          // issue #1341 acabou de engordar), e o alias traz só as portas da EMPRESA.
+          // `timezone` veio do main (fuso da organização nas listas, #1290) e convive
+          // com o alias: um embed por relação, sem renomear o que já existia.
+          "organization_id, role, interface_settings, accepted_at, organizations(display_name, locale, timezone), interface_da_empresa:organizations(interface_settings)",
         )
         .eq("user_id", user.id)
         .is("revoked_at", null)
@@ -210,12 +231,18 @@ export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
   const memberships: UserOrgMembership[] = rows.map((row) => {
     const orgs = row.organizations;
     const org = Array.isArray(orgs) ? (orgs[0] ?? null) : orgs;
+    const empresas = row.interface_da_empresa;
+    const empresa = Array.isArray(empresas) ? (empresas[0] ?? null) : empresas;
     return {
       organization_id: row.organization_id,
       organization_name: org?.display_name ?? "—",
       role: row.role as Role,
-      interface_settings: lerInterface(row.interface_settings).settings,
+      // EMPRESA ∩ VÍNCULO (migration 0367): a empresa escolhe o universo de
+      // portas da instalação, o vínculo escolhe menos dentro dele. Até aqui o
+      // vínculo decidia sozinho, então a escolha da empresa não existia.
+      interface_settings: combinarInterfaces(empresa?.interface_settings, row.interface_settings),
       locale: org?.locale ?? null,
+      timezone: org?.timezone ?? null,
     };
   });
 
@@ -271,6 +298,7 @@ export const resolveActiveOrg = cache(async (authUser: AuthUser): Promise<Active
     name: ativo.organization_name,
     role: ativo.role,
     interface_settings: ativo.interface_settings,
+    timezone: ativo.timezone ?? null,
   };
 });
 

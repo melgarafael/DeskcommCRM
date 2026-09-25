@@ -393,9 +393,11 @@ Removidos: **OpenClaw** e **Hermes** — não têm relação com o Deskcomm e di
 
 > **Eyebrow:** Parceiro oficial
 > **Título:** Soberania com IA é na HostGator
-> **Corpo:** Datacenter no Brasil, sem transferência internacional de dados. É onde o DeskcommCRM foi feito para rodar.
+> **Corpo:** Datacenter no Brasil: o CRM guarda os seus dados sem tirá-los do país. É onde o DeskcommCRM foi feito para rodar.
 > **CTA:** Assinar a VPS com desconto da parceria →
 > **Microcopy:** link de parceria — assinar por ele apoia o projeto
+
+⚠️ O corpo dizia "sem transferência internacional de dados", e isso só é inteiro enquanto nenhum provedor de IA estrangeiro estiver ligado: a IA de atendimento manda a conversa ao provedor conectado, e o Jev, quando ligado, manda cada mensagem dos clientes à TypeSafe AI, nos EUA, uma de cada vez e sem o resto da conversa. A ressalva completa está em [`docs/white-label.md`](../white-label.md), "O argumento jurídico que fecha venda no Brasil".
 
 ---
 

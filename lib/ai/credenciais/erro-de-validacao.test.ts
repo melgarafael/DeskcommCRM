@@ -14,6 +14,17 @@ describe("descreverErroDeValidacao", () => {
     );
   });
 
+  it("outro 4xx (402, 404…) é recusa com frase, não código cru", () => {
+    const r = descreverErroDeValidacao("provider_status_402");
+    expect(r.generico).toBe(false);
+    expect(r.chaveErrada).toBe(true);
+    expect(r.frase).toBe(
+      "O provedor recusou a chave. Confira se ela está inteira e se a conta no provedor tem crédito.",
+    );
+    // O 429 continua com a frase própria.
+    expect(descreverErroDeValidacao("provider_status_429").frase).toMatch(/limitou/);
+  });
+
   it("5xx é provedor fora", () => {
     expect(descreverErroDeValidacao("provider_status_503").frase).toBe(
       "O provedor está fora do ar. A chave pode estar certa; revalide mais tarde.",
@@ -35,6 +46,20 @@ describe("descreverErroDeValidacao", () => {
     const r = descreverErroDeValidacao("unknown_provider:foo");
     expect(r.chaveErrada).toBe(false);
     expect(r.frase).toBe("Falha na validação (unknown_provider:foo).");
+  });
+
+  it("chave do Jev: diz QUEM recusou, e os outros provedores seguem com a frase comum", () => {
+    expect(descreverErroDeValidacao("auth_failed_401", "typesafe")).toEqual({
+      frase: "A TypeSafe recusou a chave. Confira se copiou inteira ou gere uma nova.",
+      chaveErrada: true,
+      generico: false,
+    });
+    expect(descreverErroDeValidacao("provider_status_402", "typesafe").frase).toBe(
+      "A TypeSafe recusou a chave. Confira se ela está inteira e se a conta na TypeSafe tem crédito.",
+    );
+    expect(descreverErroDeValidacao("auth_failed_401", "anthropic").frase).toMatch(/^O provedor recusou/);
+    // Fora do ar não é recusa: a frase comum serve.
+    expect(descreverErroDeValidacao("provider_status_503", "typesafe").frase).toMatch(/^O provedor está fora/);
   });
 
   it("null é string vazia", () => {

@@ -3,6 +3,7 @@ import type pg from 'pg';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { importSkillPackage, installPlatformSkill } from './install';
+import { ALFABETO_DO_NOME_NO_STORAGE } from './package';
 import type { ParsedSkillPackage } from './package';
 
 const ORG = '11111111-0000-4000-8000-000000000001';
@@ -105,6 +106,41 @@ describe('importSkillPackage', () => {
 
     expect(remove).toHaveBeenCalledWith([`${ORG}/${pkg.name}/ver-3/a.md`]);
     expect((pool.query as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1); // setSkillPointer nunca chamado
+  });
+
+  it('toda chave que cruza para o Storage obedece ao alfabeto de lá (forma, não estabilidade)', async () => {
+    const pool = poolSeq([
+      {
+        rows: [
+          { id: 'ver-4', organization_id: ORG, name: 'frete gratis', description: 'd', body: 'b', matcher: {}, created_at: new Date() },
+        ],
+      },
+      { rowCount: 1 },
+    ]);
+    const { admin, upload } = stubAdmin();
+    const pkg = makePkg({
+      name: 'frete gratis',
+      files: [
+        {
+          path: 'references/tabela de frete.md',
+          bytes: new TextEncoder().encode('# x'),
+          entry: { path: 'references/tabela de frete.md', size: 3, sha256: 'a'.repeat(64), kind: 'reference' },
+        },
+        {
+          path: 'assets/capa.png',
+          bytes: new TextEncoder().encode('x'),
+          entry: { path: 'assets/capa.png', size: 1, sha256: 'b'.repeat(64), kind: 'asset' },
+        },
+      ],
+    });
+
+    await importSkillPackage({ db: pool, admin }, { organizationId: ORG, pkg, createdBy: null });
+
+    const chaves = upload.mock.calls.map((c) => c[0] as string);
+    expect(chaves).toHaveLength(2);
+    for (const chave of chaves) {
+      for (const segmento of chave.split('/')) expect(segmento).toMatch(ALFABETO_DO_NOME_NO_STORAGE);
+    }
   });
 });
 

@@ -62,7 +62,7 @@ export async function loginAdmin(page: Page): Promise<void> {
   await page.goto("/login");
   await page.locator("#email").fill(creds.users.admin!.email);
   await page.locator("#password").fill(creds.password);
-  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/login\/mfa/, { timeout: 30_000 });
 
   for (let tentativa = 0; tentativa < 3; tentativa++) {

@@ -326,9 +326,10 @@ gh api repos/melgarafael/DeskcommCRM/branches/main/protection \
 | Check | What it does |
 |---|---|
 | `verify` | typecheck + lint + `lint:channels` + `test:unit` + `test:shell` |
-| `invariants` | boots a clean Postgres, applies `baseline.sql` in **install** mode (`ON_ERROR_STOP=1`) and then in **update** mode (proving idempotency), and runs **618 invariants across 98 files** — RBAC, assignment, scoping, routing, follow-up, webhooks and automations |
+| `invariants` | boots a clean Postgres, applies `baseline.sql` in **install** mode (`ON_ERROR_STOP=1`) and then in **update** mode (proving idempotency), and runs the invariants for RBAC, assignment, scoping, routing, follow-up, webhooks and automations |
 | `build-and-size` | `pnpm build` on Node 22 |
 | `e2e` | boots a local Supabase, applies `baseline.sql` and runs through the frontend every Playwright spec except the ones `FORA_DO_CI` declares |
+| `imagens-ok` | fails when any of the three Docker images (`app`, `worker`, `scheduler`) does not build — it is the artifact the self-hoster installs |
 
 Which specs stay out is a question for a command, not for reading — this line used to claim the only one was `vps-fresh-onboarding`, and since PR #983 it runs in CI:
 

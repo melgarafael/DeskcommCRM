@@ -195,6 +195,29 @@ function elementosDaPagina(fonte: string) {
   visit(ast);
   return { ast, elements, calls };
 }
+/**
+ * Todo `AgentEditorClient` da página está DENTRO do ramo `agent.channel === "voice"`?
+ *
+ * A cerca original media a PRESENÇA do componente (proxy). A propriedade que
+ * ela protege é outra: a tela tem de gravar no mesmo lugar que o motor lê
+ * (issue #456). Para o agente de VOZ isso se inverte — o motor de voz não
+ * passa por versão nenhuma (`getActiveVoiceAgent` lê `ai_agents.system_prompt`
+ * direto, e é o caso `o motor de voz lê a coluna que o editor legado grava`
+ * abaixo que amarra a exceção a esse fato). Ali o editor legado é justamente o
+ * que cumpre a promessa; no caminho do WhatsApp, ele é o defeito.
+ */
+function editorLegadoSoNoRamoDeVoz(fonte: string): boolean {
+  const { elements } = elementosDaPagina(fonte);
+  const legados = elements.filter(n => n.tagName.getText() === "AgentEditorClient");
+  return legados.every(node => {
+    let pai: ts.Node | undefined = node.parent;
+    while (pai) {
+      if (ts.isIfStatement(pai) && /agent\.channel\s*===\s*"voice"/.test(pai.expression.getText())) return true;
+      pai = pai.parent;
+    }
+    return false;
+  });
+}
 function recoveryGuard(fonte: string): ts.Expression {
   const { elements } = elementosDaPagina(fonte);
   const recovery = elements.filter(n => n.tagName.getText() === "LegacyRecovery");
@@ -236,7 +259,35 @@ describe("a TELA usa o editor de versões e limita recuperação ao legado não 
     expect(selector).toHaveLength(1);
     expect(selector[0]!.arguments[0]!.getText()).toBe("versions");
     expect(selector[0]!.arguments[1]!.getText()).toContain("agent.published_version_id");
-    expect(elements.some(n => n.tagName.getText() === "AgentEditorClient")).toBe(false);
+    // O editor LEGADO só pode aparecer dentro do ramo do canal de VOZ — ver
+    // `editorLegadoSoNoRamoDeVoz` abaixo, e a razão da exceção no próprio
+    // page.tsx. Fora desse ramo (que é o caminho do WhatsApp), ele continua
+    // proibido: é o defeito da issue #456.
+    expect(editorLegadoSoNoRamoDeVoz(fonte)).toBe(true);
+  });
+
+  it("o motor de voz lê a coluna que o editor legado grava — o que sustenta a exceção", () => {
+    /*
+     * ESTE É O LAÇO DE RETORNO DA EXCEÇÃO (issue #456).
+     *
+     * O editor legado é permitido no ramo de voz porque, para voz, tela e motor
+     * leem o MESMO lugar: `getActiveVoiceAgent` busca `system_prompt` em
+     * `ai_agents`, e `workers/voice-agent/index.ts` manda esse texto para a
+     * Realtime. No dia em que a voz ganhar versão publicada — e passar a
+     * resolver por `published_version_id`, como o WhatsApp —, a exceção deixa
+     * de ser verdadeira e ESTE caso reprova: é o sinal de que o ramo de voz em
+     * `page.tsx` tem de sair e a tela passar ao editor de versões.
+     */
+    const agents = readFileSync(join(process.cwd(), "lib/ai/agents.ts"), "utf8");
+    const corpo = /export async function getActiveVoiceAgent[\s\S]*?\n}/.exec(agents)?.[0] ?? "";
+    expect(corpo, "não achei getActiveVoiceAgent — o instrumento cegou").not.toBe("");
+    expect(corpo).toMatch(/\.from\(\s*["']ai_agents["']\s*\)/);
+    expect(corpo).toMatch(/select\([^)]*system_prompt/);
+    expect(
+      corpo,
+      "o motor de voz passou a resolver por versão publicada: a exceção do editor " +
+        "legado em page.tsx perdeu o motivo e tem de sair",
+    ).not.toMatch(/published_version_id/);
   });
 
   it("agente publicado de qualquer kind não volta à recuperação; legado sem versão continua alcançável", () => {

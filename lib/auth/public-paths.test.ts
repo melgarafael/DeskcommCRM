@@ -48,4 +48,27 @@ describe("isPublicPath", () => {
     expect(isPublicPath("/legal/terms/interno")).toBe(false);
     expect(isPublicPath("/legal/qualquer-outra")).toBe(false);
   });
+
+  /**
+   * `PATCH /api/v1/leads/[id]` aceita Bearer (auth-dual, monitoramento
+   * processual). O que este bloco prova é a forma exata do segmento: UUID, não
+   * `[^/]+` — `/api/v1/leads/` tem irmãos LITERAIS no mesmo nível (`bulk`,
+   * `at-risk`, `import`, `proposals`, `reactivations`), nenhum deles com
+   * suporte a Bearer, que um padrão largo tornaria público por engano.
+   */
+  it("libera PATCH /api/v1/leads/[id] (bearer, forma de UUID)", () => {
+    expect(isPublicPath("/api/v1/leads/11111111-1111-4111-8111-111111111111")).toBe(true);
+  });
+
+  it("mas NÃO os irmãos literais de /api/v1/leads/, que não têm Bearer", () => {
+    expect(isPublicPath("/api/v1/leads/bulk")).toBe(false);
+    expect(isPublicPath("/api/v1/leads/at-risk")).toBe(false);
+    expect(isPublicPath("/api/v1/leads/import")).toBe(false);
+    expect(isPublicPath("/api/v1/leads/proposals")).toBe(false);
+    expect(isPublicPath("/api/v1/leads/reactivations")).toBe(false);
+  });
+
+  it("nem um sub-path do lead (clone, move, lose, win, …) passa de carona", () => {
+    expect(isPublicPath("/api/v1/leads/11111111-1111-4111-8111-111111111111/clone")).toBe(false);
+  });
 });

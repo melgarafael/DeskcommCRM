@@ -714,4 +714,32 @@ describe("dente da catraca: a fixture prova os dois lados", () => {
     expect(COMO_CONSERTAR_CHAVE_DINAMICA).toContain("lib/i18n/dicionario.ts");
     expect(COMO_CONSERTAR_CHAVE_DINAMICA).toContain("pnpm test:unit");
   });
+
+  it("fixture VERDE de Object.entries/values passa, e o `.map` de dado de runtime não é chutado", () => {
+    const varredura = varrerChavesDeI18n([`${RAIZ_DAS_FIXTURES}/iteracao-verde`]);
+    expect(
+      varredura.dinamicos.map((d) => d.expressao),
+      "a fixture verde devia resolver `rotulo` de entries() e de values()",
+    ).toEqual(["rotulo", "rotulo"]);
+    expect(buracosDeEspanhol(varredura, temEspanholNoDicionario)).toEqual([]);
+    // `itens.map((item) => t(item))` é dado de runtime: fora do alcance, e contado à parte.
+    expect(varredura.naoResolvidos.map((n) => n.expressao)).toEqual(["item"]);
+  });
+
+  it("fixture VERMELHA de Object.entries/values reprova o valor que falta, nos dois sítios", () => {
+    const varredura = varrerChavesDeI18n([`${RAIZ_DAS_FIXTURES}/iteracao-vermelha`]);
+    const linhas = readFileSync(
+      join(RAIZ, RAIZ_DAS_FIXTURES, "iteracao-vermelha", "painel.tsx"),
+      "utf8",
+    ).split("\n");
+    const locais = linhas
+      .map((l, i) => (l.includes("{t(rotulo)}") ? i + 1 : 0))
+      .filter((n) => n > 0)
+      .map((n) => `${RAIZ_DAS_FIXTURES}/iteracao-vermelha/painel.tsx:${n}`);
+    expect(locais, "a fixture vermelha perdeu um dos dois `t(rotulo)`").toHaveLength(2);
+    const buracos = buracosDeEspanhol(varredura, temEspanholNoDicionario);
+    expect(buracos).toHaveLength(1);
+    expect(buracos[0]?.chave).toBe("Rótulo que a fixture vermelha deixou sem tradução");
+    expect(buracos[0]?.locais).toEqual(locais);
+  });
 });

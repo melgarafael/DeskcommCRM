@@ -107,12 +107,28 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   const { error } = await supabase.from("sales").update(mudanca).eq("id", id);
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
+  // ⚠️ NUNCA espalhe o corpo lido aqui. `lib/audit` grava `metadata` CRU em
+  // `api_audit_log`, sem sanitizador, com retenção de anos — e a cascata de
+  // anonimização da LGPD NÃO alcança essa tabela: nenhum papel tem GRANT de
+  // UPDATE/DELETE nela, nem `service_role`. O que entra fica para sempre, e o
+  // spread carregava `notes`, que é texto livre que a equipe escreve SOBRE A
+  // PESSOA ("cliente reclamou do resultado"). Um titular que peça anonimização
+  // teria a comanda redigida e a frase intacta no audit, fora de alcance.
+  //
+  // O que o audit precisa saber é O QUE MUDOU, não o que foi escrito: campos
+  // derivados respondem "quem alterou a observação da comanda 42?" sem gravar
+  // a observação. Este é o padrão que o POST de abertura já segue.
   await audit({
     action: lido.data.cancel ? "comanda.cancelada" : "comanda.alterada",
     resourceType: "sale",
     resourceId: id,
     requestId,
-    metadata: { number: atual.number, ...lido.data },
+    metadata: {
+      number: atual.number,
+      alterou_notes: lido.data.notes !== undefined,
+      discount_cents: lido.data.discount_cents ?? null,
+      cancelada: lido.data.cancel === true,
+    },
   });
 
   return ok({ id, status: lido.data.cancel ? "cancelled" : "open" }, { requestId });

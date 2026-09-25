@@ -283,6 +283,36 @@ const PARES: Array<{
     arquivo: "lib/tarefas/tipos.ts",
     simbolo: "SITUACOES_DA_TAREFA",
   },
+  // Módulo VoIP (0347/0348) — status fica de fora: é vocabulário de terceiro
+  // (binário WaCalls, compartilhado), mapeado na API — não é 1:1 com TS aqui.
+  {
+    tabela: "voice_calls",
+    coluna: "direction",
+    // lib/voip/call-vocabulary.ts -> CallDirection
+    arquivo: "lib/voip/call-vocabulary.ts",
+    simbolo: "CallDirection",
+  },
+  {
+    tabela: "voice_calls",
+    coluna: "handled_by",
+    // lib/voip/call-vocabulary.ts -> CallHandledBy
+    arquivo: "lib/voip/call-vocabulary.ts",
+    simbolo: "CallHandledBy",
+  },
+  {
+    tabela: "phone_numbers",
+    coluna: "routing_mode",
+    // lib/voip/call-vocabulary.ts -> PhoneNumberRoutingMode
+    arquivo: "lib/voip/call-vocabulary.ts",
+    simbolo: "PhoneNumberRoutingMode",
+  },
+  {
+    tabela: "ai_agents",
+    coluna: "channel",
+    // lib/voip/call-vocabulary.ts -> AiAgentChannel
+    arquivo: "lib/voip/call-vocabulary.ts",
+    simbolo: "AiAgentChannel",
+  },
   {
     tabela: "agent_case_chat_messages",
     coluna: "author_kind",

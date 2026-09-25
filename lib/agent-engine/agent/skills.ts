@@ -295,6 +295,30 @@ export function latestInboundSignal(messages: readonly LeadContextMessage[]): st
 }
 
 /**
+ * SINAL do matcher considerando o CONTEXTO recente, não só a última mensagem.
+ *
+ * Medido ao vivo (2026-09-21): depois de o agente mostrar "CB 300" e o cliente
+ * responder "A 2025" (a escolha), a skill `catalogo-apresentacao` NÃO era
+ * acionada — "A 2025" não tem palavra-chave —, o modelo não consultava o
+ * catálogo e as FOTOS da moto escolhida não eram enviadas. Concatenar as últimas
+ * mensagens INBOUND mantém a skill viva enquanto o assunto continua (a conversa
+ * está claramente sobre motos). Só inbound: é o que o CLIENTE disse.
+ */
+export function recentInboundSignal(
+  messages: readonly LeadContextMessage[],
+  janela = 6,
+): string {
+  const inbounds: string[] = [];
+  for (let i = messages.length - 1; i >= 0 && inbounds.length < janela; i -= 1) {
+    const m = messages[i];
+    if (m !== undefined && m.direction === 'inbound' && m.body.trim() !== '') {
+      inbounds.unshift(m.body);
+    }
+  }
+  return inbounds.join(' \n ');
+}
+
+/**
  * Grava os near-misses como candidatos ao golden set (blueprint 3.3) — fs em RUNTIME
  * (mkdir recursivo + writeFile), NÃO a tool Write, então o freeze do golden não se aplica
  * a este caminho executado. O arquivo é para CURADORIA HUMANA: carrega o sinal (texto do

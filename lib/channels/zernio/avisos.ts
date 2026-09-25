@@ -227,6 +227,7 @@ export async function atualizarEspelhoDoTemplate(
   admin: SupabaseClient,
   organizationId: string,
   payload: unknown,
+  channelSessionId?: string | null,
 ): Promise<boolean> {
   const p = obj(payload);
   if (!p || str(p.event) !== "whatsapp.template.status_updated") return false;
@@ -235,8 +236,9 @@ export async function atualizarEspelhoDoTemplate(
   const estado = str(t?.status);
   if (!nome || !estado) return false;
 
+  const idioma = str(t?.language) ?? str(t?.lang);
   const motivo = str(t?.reason);
-  const { data } = await admin
+  let query = admin
     .from("meta_templates")
     .update({
       status: estado.toUpperCase(),
@@ -244,8 +246,16 @@ export async function atualizarEspelhoDoTemplate(
       updated_at: new Date().toISOString(),
     })
     .eq("organization_id", organizationId)
-    .eq("name", nome)
-    .select("id");
+    .eq("name", nome);
+
+  if (channelSessionId) {
+    query = query.eq("channel_session_id", channelSessionId);
+  }
+  if (idioma) {
+    query = query.eq("language", idioma);
+  }
+
+  const { data } = await query.select("id");
 
   return (data ?? []).length > 0;
 }

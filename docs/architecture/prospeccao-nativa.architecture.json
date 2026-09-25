@@ -1,0 +1,221 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Prospecção nativa",
+    "subtitle": "Da pesquisa ao cliente qualificado",
+    "output": "prospeccao-nativa.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "humano",
+      "label": "Pessoa"
+    },
+    {
+      "id": "app",
+      "label": "Aplicativo"
+    },
+    {
+      "id": "db",
+      "label": "Banco"
+    }
+  ],
+  "mainPath": [
+    "operator",
+    "discovery",
+    "candidates",
+    "crm",
+    "queue",
+    "inbox",
+    "qualification"
+  ],
+  "nodes": [
+    {
+      "id": "operator",
+      "lane": "humano",
+      "col": 0,
+      "type": "component",
+      "label": "Prospecção: público, oferta, ritmo"
+    },
+    {
+      "id": "discovery",
+      "lane": "app",
+      "col": 1,
+      "type": "component",
+      "label": "Busca e enriquecimento comercial"
+    },
+    {
+      "id": "candidates",
+      "lane": "db",
+      "col": 2,
+      "type": "component",
+      "label": "Campanhas e candidatos por organização"
+    },
+    {
+      "id": "crm",
+      "lane": "app",
+      "col": 3,
+      "type": "component",
+      "label": "Contatos e negócios existentes"
+    },
+    {
+      "id": "queue",
+      "lane": "app",
+      "col": 4,
+      "type": "component",
+      "label": "Scheduler e guardas antes do envio"
+    },
+    {
+      "id": "inbox",
+      "lane": "humano",
+      "col": 5,
+      "type": "component",
+      "label": "Inbox: resposta, IA e intervenção humana"
+    },
+    {
+      "id": "qualification",
+      "lane": "db",
+      "col": 6,
+      "type": "component",
+      "label": "Etapa real do funil"
+    },
+    {
+      "id": "agent-setup",
+      "lane": "app",
+      "col": 2,
+      "type": "component",
+      "label": "Conversa persistente, resumo e publicação explícita"
+    },
+    {
+      "id": "setup-session",
+      "lane": "db",
+      "col": 1,
+      "type": "component",
+      "label": "Sessão de configuração por campanha e revisão"
+    },
+    {
+      "id": "agent-preview",
+      "lane": "app",
+      "col": 3,
+      "type": "component",
+      "label": "Rascunho pausado e sandbox canônico"
+    },
+    {
+      "id": "voice-settings",
+      "lane": "app",
+      "col": 4,
+      "type": "component",
+      "label": "Editor do agente: voz e instruções"
+    },
+    {
+      "id": "voice-provider",
+      "lane": "app",
+      "col": 5,
+      "type": "component",
+      "label": "ElevenLabs Agents privado e teste no navegador"
+    }
+  ],
+  "edges": [
+    {
+      "from": "operator",
+      "to": "discovery",
+      "label": "busca com teto"
+    },
+    {
+      "from": "discovery",
+      "to": "candidates",
+      "label": "normalizar e deduplicar"
+    },
+    {
+      "from": "candidates",
+      "to": "crm",
+      "label": "ativação autorizada"
+    },
+    {
+      "from": "crm",
+      "to": "queue",
+      "label": "destino e origem persistidos"
+    },
+    {
+      "from": "queue",
+      "to": "inbox",
+      "label": "primeira abordagem"
+    },
+    {
+      "from": "inbox",
+      "to": "qualification",
+      "label": "critérios confirmados"
+    },
+    {
+      "from": "qualification",
+      "to": "operator",
+      "label": "resultado visível"
+    },
+    {
+      "from": "queue",
+      "to": "operator",
+      "label": "falha pausa a campanha"
+    },
+    {
+      "from": "operator",
+      "to": "agent-setup",
+      "label": "configuração revisada pelo administrador"
+    },
+    {
+      "from": "agent-setup",
+      "to": "queue",
+      "label": "agente selecionado; ativação da campanha separada"
+    },
+    {
+      "from": "agent-setup",
+      "to": "inbox",
+      "label": "publicação e continuidade no canal"
+    },
+    {
+      "from": "agent-setup",
+      "to": "operator",
+      "label": "erros visíveis e retomada sem duplicação"
+    },
+    {
+      "from": "agent-setup",
+      "to": "setup-session",
+      "label": "salvar sem sobrescrever outra revisão"
+    },
+    {
+      "from": "setup-session",
+      "to": "agent-setup",
+      "label": "retomar após recarregar"
+    },
+    {
+      "from": "agent-setup",
+      "to": "agent-preview",
+      "label": "testar antes de publicar"
+    },
+    {
+      "from": "agent-preview",
+      "to": "operator",
+      "label": "resposta simulada e propostas de ferramentas"
+    },
+    {
+      "from": "agent-setup",
+      "to": "voice-settings",
+      "label": "configurar voz do agente salvo"
+    },
+    {
+      "from": "voice-settings",
+      "to": "voice-provider",
+      "label": "chave cifrada, configuração e autorização temporária"
+    },
+    {
+      "from": "voice-provider",
+      "to": "voice-settings",
+      "label": "resultado, falha e revisão antes de novo teste"
+    },
+    {
+      "from": "candidates",
+      "to": "inbox",
+      "label": "crm-summary autorizado: contexto comercial e fontes no painel lateral"
+    }
+  ]
+}

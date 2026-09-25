@@ -3,6 +3,9 @@ import { notFound } from "next/navigation";
 import { loadAuthUser } from "@/lib/auth/server";
 import { getSmtpConfig } from "@/lib/email/config";
 import { transporteEmVigor } from "@/lib/email/roteador";
+import { CATALOGO_DA_INSTALACAO } from "@/lib/instalacao/catalogo";
+import { estadoParaTela } from "@/lib/instalacao/config";
+import { normalizarIdioma } from "@/lib/i18n/idiomas";
 
 import { FormularioDeSmtp } from "./_form";
 
@@ -46,6 +49,26 @@ export default async function Page() {
   const config = await getSmtpConfig();
   const transporte = await transporteEmVigor();
 
+  /**
+   * O SERVIÇO EXTERNO MORA AQUI DESDE O DEC-009 (opção A).
+   *
+   * A chave e o remetente do serviço externo ficavam em `/admin/configuracao`,
+   * e o servidor próprio aqui. É um assunto só — "como o meu servidor manda
+   * e-mail" — e quem instalava abria esta tela, não achava o serviço externo e
+   * concluía que ele não era suportado.
+   *
+   * Quem decide o que aparece é o CATÁLOGO (`telaDona`), não uma lista escrita
+   * aqui: enquanto a fonte for uma só, não há como as duas telas oferecerem a
+   * mesma chave — e, se um dia oferecerem, o defeito é de catálogo e aparece
+   * num lugar só.
+   */
+  const doServicoExterno = await Promise.all(
+    CATALOGO_DA_INSTALACAO.filter((d) => d.telaDona === "email").map(async (definicao) => ({
+      definicao,
+      estado: await estadoParaTela(definicao.chave, definicao.natureza === "segredo"),
+    })),
+  );
+
   return (
     <FormularioDeSmtp
       host={config.host}
@@ -63,6 +86,11 @@ export default async function Page() {
       // Resend abre a única tela de e-mail do produto e lê "não está em uso" —
       // verdade sobre o SMTP, e leitura errada sobre o sistema.
       transporte={transporte}
+      servicoExterno={doServicoExterno}
+      // O mesmo idioma que a tela de Credenciais usa nos campos iguais a estes:
+      // eles são o MESMO componente, e traduzir por caminhos diferentes seria
+      // como as duas telas voltariam a divergir.
+      idioma={normalizarIdioma(usuario.locale)}
     />
   );
 }

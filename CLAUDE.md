@@ -83,6 +83,9 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
   - **⚠️ CADASTRAR e PROVAR são perguntas diferentes.** A política decide o cadastro. Já `mfaEmDivida()` — o 403 `mfa_required` das rotas — NÃO consulta a política: quem TEM fator prova na sessão, sempre. Ligá-lo à política faria quem ativa a verificação por vontade própria ter o fator ignorado
   - Ligar/desligar vive em **Configurações › Segurança**; desligar o próprio fator exige sessão `aal2` (senão uma sessão roubada desliga a proteção com um clique)
 - Permissão por pipeline (`user_pipeline_access`) **NÃO** entra no MVP
+- Suporte temporário: todo handler mutante de `app/api/v1` declara `requireSupportWrite(`
+  de `lib/impersonate/support.ts` **antes do efeito**. É guarda de efeito, não de papel — não substitui
+  `requireRole`/RBAC/MFA — e é cobrada pelo gate `tests/unit/suporte-cobertura-de-efeitos.test.ts`
 
 ### Audit log
 - Toda mutação POST/PATCH/DELETE bem-sucedida → 1 entrada em `api_audit_log` (fire-and-forget, p99 ≤500ms)
@@ -388,8 +391,22 @@ Duas armadilhas irmãs, as duas pagas no mesmo dia:
   echo "rodapé: ${r:-0 failed} | grep contou: $g"   # têm de bater
   ```
 
-  Se não baterem, a sonda está cega — troque por `--reporter=verbose` e rode de
-  novo, em vez de acreditar no silêncio.
+  Se não baterem, antes de diagnosticar *"sonda cega"* e re-rodar a suíte inteira
+  com `--reporter=verbose`, confira se a divergência é explicada por **falha de
+  coleta ou de hook** (que o Vitest imprime na seção dedicada `Failed Suites`,
+  somando às linhas `FAIL` sem entrar no rodapé de casos `Tests ... failed`):
+
+  ```bash
+  grep -aoE "Failed Suites [0-9]+" /tmp/vt.log | grep -oE "[0-9]+"   # > 0 ⇒ arquivo/suíte falhou SEM ser por caso
+  grep -aqE "^ *Test Files" /tmp/vt.log && echo "log inteiro" || echo "log truncado — o zero não vale"
+  ```
+
+  O segundo comando é necessário: a seção só aparece quando existe falha de
+  suíte, então log truncado ou comando que não rodou também devolvem zero.
+  Se `Failed Suites` for > 0 (e o log estiver inteiro), a conta fecha: `Tests failed` + `Failed Suites` = `grep FAIL`.
+  A causa (falha de sintaxe na coleta ou `Hook timed out` em `beforeAll`) está no próprio log.
+  Reserve o diagnóstico de *"sonda cega"* (trocar por `--reporter=verbose`) para quando
+  as seções também não explicarem a divergência.
 
   **E as duas podem bater em zero com a suíte reprovada.** O Vitest sai com
   `exit=1` quando há **erro não tratado** durante a execução, mesmo com todos os
@@ -581,6 +598,38 @@ Processo padrão (siga sempre):
    ```
 
    São duas origens distintas de `EXECUTE`, e tratar só uma deixa a função exposta com o gate verde: **(A)** o grant direto a `anon` do `ALTER DEFAULT PRIVILEGES ... GRANT ALL ON FUNCTIONS TO anon` do baseline, que vale para toda função criada depois dele — isto é, para todo apêndice novo — e que `revoke from public` **não** remove; **(B)** o grant a `PUBLIC` que o Postgres dá a qualquer função ao criá-la, que `revoke from anon` **não** remove. Sem os dois, o PostgREST expõe a função como RPC alcançável pela anon key, que vai para o browser. Vigiado por `tests/invariants/hardening-definer-varredura.test.ts`, que varre todas as `security definer` de `public` (issue #128 — a versão anterior checava uma lista fixa de 6, e 8 de 25 estavam expostas).
+
+10. **Ler o baseline com `grep` no arquivo inteiro mede a definição ERRADA.** O
+    `baseline.sql` é dump + apêndice, então a mesma função aparece **várias
+    vezes** — e quem vale é a **última**, porque o arquivo é aplicado inteiro e
+    em ordem. Medido em 2026-09-20: `fn_meet_action` tinha **quatro**
+    definições; a primeira (o corpo do dump) ainda trazia `errcode='40001'` nas
+    três recusas permanentes, e a última — a que o banco instala — trazia
+    `PT409`. Uma sonda de `grep`/`awk` ancorada na primeira ocorrência afirmou
+    sobre o produto o oposto do que o produto faz. O mesmo vale para
+    `fn_lgpd_cascade_redact_contact`, que tem oito.
+
+    **As duas formas certas**, e a primeira decide:
+
+    ```bash
+    # (a) PERGUNTE AO BANCO, depois de aplicar — é o que o cliente terá
+    pnpm test:db tests/invariants/<um caso que consulte>  # ou, num psql já com o baseline aplicado:
+    psql "$URL" -Atc "select pg_get_functiondef(p.oid) from pg_proc p
+      join pg_namespace n on n.oid=p.pronamespace
+      where n.nspname='public' and p.proname='fn_x'"
+    ```
+
+    ```bash
+    # (b) ANCORE NA ÚLTIMA definição, quando só o arquivo estiver à mão
+    python3 -c "
+    s=open('supabase/baseline.sql').read()
+    i=s.rfind('create or replace function public.fn_x')   # rfind, nunca find
+    print(s[i:s.index('\$\$;', i)+3])"
+    ```
+
+    Contar ocorrências no arquivo inteiro responde *"o arquivo menciona"*, nunca
+    *"o banco faz"*. As duas perguntas divergem sempre que há apêndice — e
+    apêndice é o mecanismo padrão desta casa.
 
 **Resumo do fluxo de uma mudança de schema:** arquivo em `migrations/` (fonte da verdade p/ Supabase CLI) **+** apêndice idempotente no `baseline.sql` (p/ o kit self-host) **+** linha no MANIFEST. Os dois artefatos de schema andam juntos. Nunca edite migrations já aplicadas — corrija com uma "forward-fix" nova (e mais um apêndice no baseline).
 

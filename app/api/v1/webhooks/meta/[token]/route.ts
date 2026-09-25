@@ -33,7 +33,8 @@ import { fail } from "@/lib/api/wrappers";
 import { appDaMeta } from "@/lib/channels/meta/app";
 import { lerEnvelopeMeta } from "@/lib/channels/meta/envelope";
 import { parseMetaWebhook, verificationChallenge, verifyMetaSignature } from "@/lib/channels/meta/webhook";
-import { ingestMetaInbound } from "@/lib/channels/meta/ingest";
+import { statusUpdate } from "@/lib/channels/meta/status-update";
+import { ingestMetaEcho, ingestMetaInbound } from "@/lib/channels/meta/ingest";
 import { metaSessionByWebhookToken } from "@/lib/channels/meta/session";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -149,6 +150,24 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
       continue;
     }
 
+    if (e.kind === "outbound_echo") {
+      // Coexistência: resposta dada pelo app WhatsApp Business. Entra na conversa
+      // como saída de humano e pausa a IA — ver `ingestMetaEcho`. Mesma política
+      // de falha da recebida: 2xx sempre, falha no log e no corpo.
+      const r = await ingestMetaEcho(admin, e, { organizationId: session.organizationId });
+      desfechos.push(`eco:${r.status}`);
+      if (r.status === "failed" || r.status === "no_session") {
+        logger.error("[meta.ingest] eco do app não ingerido", {
+          request_id: requestId,
+          status: r.status,
+          reason: r.status === "failed" ? r.reason : undefined,
+          external_id: e.externalId,
+          phone_number_id: e.phoneNumberId,
+        });
+      }
+      continue;
+    }
+
     if (e.kind === "template_status") {
       await admin
         .from("meta_templates")
@@ -158,9 +177,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
         .eq("name", e.templateName)
         .eq("language", e.templateLanguage);
     } else {
+      // O evento inteiro vira colunas, não só `status`: quando a Meta ACEITA o
+      // template e reprova a entrega depois, o motivo só existe aqui. Ver
+      // `lib/channels/meta/status-update.ts`.
       await admin
         .from("messages")
-        .update({ status: e.status === "failed" ? "failed" : "sent", updated_at: now })
+        .update(statusUpdate(e, now))
         .eq("organization_id", session.organizationId)
         .eq("external_id", e.externalId);
     }

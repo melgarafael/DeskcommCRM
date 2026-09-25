@@ -7,7 +7,7 @@
  *  - shape ANTIGO intacto (nada renomeado/removido — consumidor atual não quebra);
  *  - fixtures dos 3 estados: atribuída (user), na fila, IA atendendo;
  *  - COERÊNCIA da queue_position: o número da tool = a posição na MESMA ordem que
- *    o inbox (G5-03 / gov-5d): last_inbound_at ASC, id ASC — computada de forma
+ *    o inbox (G5-03 / gov-5d): awaiting_since ASC, id ASC — computada de forma
  *    independente e comparada;
  *  - LGPD: só id + nome do usuário no payload; nunca email/telefone/metadata.
  */
@@ -41,19 +41,35 @@ const USER_NAMES: Record<string, string> = { [USER_A]: "Alice", [USER_B]: "Bob" 
 const CONV_OLD = "aaaaaaaa-0000-4000-8000-000000000001";
 const CONV_MID = "aaaaaaaa-0000-4000-8000-000000000002";
 const CONV_NEW = "aaaaaaaa-0000-4000-8000-000000000003";
+// Fila: 3 conversas com tempos de espera conhecidos (oldest = pos 1). A coluna
+// da espera é o awaiting_since (`ORDEM_DA_ESPERA`); o CONV_OLD guarda o
+// last_inbound_at mais NOVO de propósito, para que a ordem emule a régua viva e
+// não a antiga (que dava a ele a ÚLTIMA posição).
 const now = Date.now();
 const QUEUE_ROWS = [
-  { id: CONV_NEW, last_inbound_at: new Date(now - 2 * 60_000).toISOString() },
-  { id: CONV_OLD, last_inbound_at: new Date(now - 30 * 60_000).toISOString() },
-  { id: CONV_MID, last_inbound_at: new Date(now - 10 * 60_000).toISOString() },
+  {
+    id: CONV_NEW,
+    awaiting_since: new Date(now - 2 * 60_000).toISOString(),
+    last_inbound_at: new Date(now - 2 * 60_000).toISOString(),
+  },
+  {
+    id: CONV_OLD,
+    awaiting_since: new Date(now - 30 * 60_000).toISOString(),
+    last_inbound_at: new Date(now).toISOString(),
+  },
+  {
+    id: CONV_MID,
+    awaiting_since: new Date(now - 10 * 60_000).toISOString(),
+    last_inbound_at: new Date(now - 10 * 60_000).toISOString(),
+  },
 ];
 
-/** Ordem canônica do inbox (G5-03): last_inbound_at ASC, id ASC. */
-function inboxOrder(rows: Array<{ id: string; last_inbound_at: string }>): string[] {
+/** Ordem canônica do inbox (G5-03): awaiting_since ASC, id ASC. */
+function inboxOrder(rows: Array<{ id: string; awaiting_since: string }>): string[] {
   return [...rows]
     .sort(
       (a, b) =>
-        a.last_inbound_at.localeCompare(b.last_inbound_at) || a.id.localeCompare(b.id),
+        a.awaiting_since.localeCompare(b.awaiting_since) || a.id.localeCompare(b.id),
     )
     .map((r) => r.id);
 }
@@ -277,7 +293,7 @@ describe("crm_get_conversation — governança + shape", () => {
 // ---------------------------------------------------------------------------
 
 describe("crm_list_conversations — coerência queue_position ↔ inbox", () => {
-  it("as 3 conversas na fila recebem a posição da ordem do inbox (last_inbound_at ASC, id ASC)", async () => {
+  it("as 3 conversas na fila recebem a posição da ordem do inbox (awaiting_since ASC, id ASC)", async () => {
     // Handler de list retorna as 3 conversas da fila.
     const rows = QUEUE_ROWS.map((r) =>
       convRow({ id: r.id, status: "open", assigned_to_user_id: null, last_inbound_at: r.last_inbound_at }),

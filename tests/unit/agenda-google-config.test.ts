@@ -21,6 +21,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const ORIGINAL = { ...process.env };
 
+// Estes casos medem o leitor do ambiente. A credencial de uma instalação local
+// já configurada pela tela não pode transformar "sem chave" em teste falso.
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: () => ({
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({ data: null, error: null }),
+        }),
+      }),
+    }),
+  }),
+}));
+
+vi.mock("@/lib/webhooks/secrets", () => ({
+  decryptWebhookSecret: async () => null,
+}));
+
 async function importarComEnv(vars: Record<string, string>) {
   vi.resetModules();
   for (const [k, v] of Object.entries(vars)) process.env[k] = v;
@@ -98,6 +116,27 @@ describe("enderecoDeRetorno", () => {
     expect(enderecoDeRetorno("https://crm.exemplo/")).toBe("https://crm.exemplo/api/v1/agenda/google/callback");
     expect(enderecoDeRetorno("https://crm.exemplo///")).toBe("https://crm.exemplo/api/v1/agenda/google/callback");
     expect(enderecoDeRetorno("https://crm.exemplo")).toBe("https://crm.exemplo/api/v1/agenda/google/callback");
+  });
+
+  it("aceita a origem localhost do navegador no desenvolvimento local", async () => {
+    const { enderecoDeRetorno, origemLocalDoNavegador } = await importarComEnv({
+      ...COMPLETO,
+      NEXT_PUBLIC_APP_URL: "http://192.168.0.21:3001",
+    });
+    const origem = origemLocalDoNavegador("http://localhost:3001");
+    expect(origem).toBe("http://localhost:3001");
+    expect(enderecoDeRetorno(origem ?? undefined)).toBe("http://localhost:3001/api/v1/agenda/google/callback");
+  });
+
+  it("não deixa host externo substituir a URL canônica", async () => {
+    const { origemLocalDoNavegador } = await importarComEnv(COMPLETO);
+    expect(origemLocalDoNavegador("https://nao-confiavel.exemplo")).toBeNull();
+  });
+
+  it("lê localhost do Host real da requisição", async () => {
+    const { origemLocalDosCabecalhos } = await importarComEnv(COMPLETO);
+    expect(origemLocalDosCabecalhos(new Headers({ host: "localhost:3001" }))).toBe("http://localhost:3001");
+    expect(origemLocalDosCabecalhos(new Headers({ host: "192.168.0.21:3001" }))).toBeNull();
   });
 });
 

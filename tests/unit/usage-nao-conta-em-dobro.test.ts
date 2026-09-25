@@ -82,6 +82,14 @@ describe("o provedor derivado do modelo", () => {
     });
   });
 
+  it("o Jev é typesafe, não OpenRouter — mesmo com a barra no id", async () => {
+    // `typesafe/jev-1.13.0` tem barra, e o ramo da barra atribuiria o custo do
+    // Jev à OpenRouter na divisão por provedor da tela de Uso.
+    const { providerDoModelo } = await import("@/lib/ai/log-invocation");
+    expect(providerDoModelo("typesafe/jev-1.13.0")).toBe("typesafe");
+    expect(providerDoModelo("jev-1.13.0")).toBe("typesafe");
+  });
+
   it("o que não dá para saber vira 'desconhecido', nunca um palpite", async () => {
     // A coluna alimenta a divisão de custo por provedor. Um chute vira
     // estatística, e alguém decide onde cortar gasto olhando para ela.

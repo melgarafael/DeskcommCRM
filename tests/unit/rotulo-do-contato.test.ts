@@ -157,6 +157,27 @@ describe("a sétima cópia não nasce", () => {
    * último caso), para não sobrar autorização em nome de código que sumiu.
    */
   const LEITURAS_LEGITIMAS: ReadonlyArray<{ arquivo: string; trecho: string; motivo: string }> = [
+    // ── prospecção (PR #963): nenhuma destas é nome de CONTATO ──────────────
+    {
+      arquivo: "app/app/prospecting/_client.tsx",
+      trecho: "{c.display_name ?? c.phone_number ?? c.id}",
+      motivo: "rótulo do CANAL na lista de conexões (channel_sessions), não de contato",
+    },
+    {
+      arquivo: "app/app/prospecting/_create-agent.tsx",
+      trecho: "channel={channel?.display_name ?? channel?.phone_number}",
+      motivo: "mesmo rótulo de CANAL, no resumo da configuração da campanha",
+    },
+    {
+      arquivo: "lib/prospecting/agent-setup.ts",
+      trecho: "label: `${row.provider} · ${row.display_name ?? row.model}`,",
+      motivo: "nome do MODELO de IA (ai_models.display_name), não de pessoa",
+    },
+    {
+      arquivo: "lib/prospecting/agent-setup.ts",
+      trecho: "?.display_name ?? selected.modelId}`,",
+      motivo: "o mesmo rótulo de modelo, no caminho em que a escolha já veio da tela",
+    },
     {
       arquivo: "app/api/v1/channels/official/route.ts",
       trecho: "displayName: data?.display_name ?? null,",

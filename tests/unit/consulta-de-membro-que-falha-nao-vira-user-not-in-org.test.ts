@@ -96,6 +96,8 @@ describe("assign_owner — consulta de membro que falha não vira user_not_in_or
     expect(resultado).toEqual({ type: "assign_owner", status: "success", detail: { user_id: GERENTE } });
     expect(escritas.map((e) => e.tabela)).toEqual(["crm_leads"]);
     expect(escritas[0]!.valores.owner_user_id).toBe(GERENTE);
+    expect(escritas[0]!.valores.owner_kind).toBe("user");
+    expect(escritas[0]!.valores.owner_agent_id).toBeNull();
   });
 
   it("membro ausente (data: null, error: null): user_not_in_org, e o lead não é tocado", async () => {
@@ -127,5 +129,21 @@ describe("assign_owner — consulta de membro que falha não vira user_not_in_or
     expect(resultado.error).toBe("membro_indeterminado");
     expect(resultado.detail).toEqual({ reason: "membro_indeterminado", erro: "TypeError: fetch failed" });
     expect(escritas).toEqual([]);
+  });
+
+  it("garante que o trio owner_user_id, owner_kind='user' e owner_agent_id=null seja sempre gravado", async () => {
+    const escritas: Escrita[] = [];
+    const resultado = await getAction("assign_owner")!.execute(
+      ctx(banco({ data: MEMBRO_ATIVO, error: null }, escritas)),
+      { user_id: GERENTE },
+    );
+
+    expect(resultado.status).toBe("success");
+    expect(escritas).toHaveLength(1);
+    expect(escritas[0]!.valores).toMatchObject({
+      owner_user_id: GERENTE,
+      owner_agent_id: null,
+      owner_kind: "user",
+    });
   });
 });

@@ -22,7 +22,7 @@ import { runModelCall } from "@/lib/agent-engine/edge/llm/run-model-call";
 
 const ORG = "22222222-2222-4222-8222-222222222222";
 
-function poolQueGrava() {
+function poolQueGrava(paramsDaOrg: Record<string, unknown> = {}) {
   const inserts: Array<{ sql: string; params: unknown[] }> = [];
   const query = vi.fn(async (sql: string, params: unknown[] = []) => {
     if (sql.includes("settings->'llm'")) {
@@ -32,7 +32,7 @@ function poolQueGrava() {
             llm: {
               provider: "anthropic",
               default_model: "claude-padrao",
-              params: {},
+              params: paramsDaOrg,
               enabled_models: [],
               monthly_budget_cents: null,
             },
@@ -249,5 +249,109 @@ describe("a origem da escolha viaja com o log", () => {
   it("a falha também registra a origem", async () => {
     const { linhaDeErro } = await chamarComErro(new Error("boom"));
     expect(linhaDeErro!.params).toContain("padrao_da_organizacao");
+  });
+});
+
+describe("teto de saída de chamadas auxiliares", () => {
+  it.each([
+    [undefined, 2200, 2200],
+    [1000, 2200, 1000],
+    [3200, undefined, 3200],
+  ])(
+    "configuração %s e pedido %s chegam ao provedor como %s",
+    async (configured, requested, expected) => {
+      const { pool } = poolQueGrava(
+        configured === undefined ? {} : { maxOutputTokens: configured },
+      );
+      let received: unknown;
+      const factory = () =>
+        ({
+          specificationVersion: "v3",
+          provider: "anthropic",
+          modelId: "claude-padrao",
+          doGenerate: async (options: { maxOutputTokens?: number }) => {
+            received = options.maxOutputTokens;
+            throw new Error("fim da sonda de limite");
+          },
+        }) as never;
+      await expect(
+        runModelCall(
+          pool,
+          cfg,
+          {
+            tenantId: ORG,
+            purpose: "prospecting_agent_setup_chat",
+            maxOutputTokens: requested,
+            messages: [{ role: "user", content: "Organize minha proposta." }],
+          },
+          {
+            registry: { anthropic: factory, openai: factory, google: factory, openrouter: factory },
+          },
+        ),
+      ).rejects.toThrow("fim da sonda");
+      expect(received).toBe(expected);
+    },
+  );
+});
+
+describe("cancelamento de chamada auxiliar", () => {
+  it("interrompe o provedor e registra a falha sem devolver uma resposta tardia", async () => {
+    const { pool, inserts } = poolQueGrava();
+    const controller = new AbortController();
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const factory = () =>
+      ({
+        specificationVersion: "v3",
+        provider: "anthropic",
+        modelId: "claude-padrao",
+        doGenerate: async ({ abortSignal }: { abortSignal?: AbortSignal }) => {
+          expect(abortSignal).toBeDefined();
+          entered();
+          return new Promise((_resolve, reject) => {
+            abortSignal!.addEventListener("abort", () => reject(abortSignal!.reason), {
+              once: true,
+            });
+          });
+        },
+      }) as never;
+    const call = runModelCall(
+      pool,
+      cfg,
+      {
+        tenantId: ORG,
+        purpose: "prospecting_agent_setup_chat",
+        messages: [{ role: "user", content: "Monte o agente." }],
+        abortSignal: controller.signal,
+      },
+      { registry: { anthropic: factory } },
+    );
+    const rejected = expect(call).rejects.toMatchObject({ name: "AbortError" });
+    await started;
+    controller.abort();
+    await rejected;
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]!.params).toContain("prospecting_agent_setup_chat");
+  });
+
+  it("não inicia uma chamada já cancelada e preserva seu registro de falha", async () => {
+    const { pool, inserts } = poolQueGrava();
+    const factory = vi.fn();
+    await expect(
+      runModelCall(
+        pool,
+        cfg,
+        {
+          tenantId: ORG,
+          messages: [{ role: "user", content: "Monte o agente." }],
+          abortSignal: AbortSignal.abort(),
+        },
+        { registry: { anthropic: factory } },
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(factory).not.toHaveBeenCalled();
+    expect(inserts).toHaveLength(1);
   });
 });

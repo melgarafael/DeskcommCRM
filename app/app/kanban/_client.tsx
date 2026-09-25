@@ -7,8 +7,18 @@ import { useT } from "@/hooks/i18n/useT";
 
 import { ImportarLeads } from "./_components/ImportarLeads";
 import { EmptyPipeline } from "@/components/empty";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/types";
@@ -49,6 +59,16 @@ export function vizinhoAoMover(
   if (direcao === "subir") return funis[i - 2]?.id ?? null;
   return funis[i + 1]?.id ?? null;
 }
+
+/**
+ * O `id` do `<ul>` da gaveta de arquivados — o que o botão da gaveta controla.
+ *
+ * O `aria-expanded` já dizia QUE a gaveta abre; não dizia QUAL lista abriu. Com
+ * `aria-controls`, quem usa leitor de tela vai direto para a lista em vez de
+ * procurá-la depois do clique. O atributo aponta para um id, então o id precisa
+ * existir no `<ul>` — é este par que o teste de tela cobra.
+ */
+const ID_DA_LISTA_DE_ARQUIVADOS = "funis-arquivados";
 
 /**
  * A mensagem que a rota escreveu, ou uma frase honesta quando não há nenhuma.
@@ -255,6 +275,7 @@ export function FunisClient({
         className="self-start text-muted-foreground"
         onClick={() => setArquivoAberto((aberto) => !aberto)}
         aria-expanded={arquivoAberto}
+        aria-controls={ID_DA_LISTA_DE_ARQUIVADOS}
         data-testid="arquivados-abrir"
       >
         <Archive size={16} className="mr-2" aria-hidden />
@@ -273,7 +294,10 @@ export function FunisClient({
               "Funil arquivado não aparece na lista nem recebe negócio novo. Traga de volta para usar outra vez, ou exclua de vez para liberar o nome.",
             )}
           </p>
-          <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
+          <ul
+            id={ID_DA_LISTA_DE_ARQUIVADOS}
+            className="flex flex-col divide-y divide-border rounded-md border border-border"
+          >
             {arquivados.map((funil) => {
               const excluindoAqui = excluindo?.id === funil.id ? excluindo : null;
 
@@ -317,15 +341,43 @@ export function FunisClient({
                   {erro?.id === funil.id && (
                     <p
                       className="text-sm leading-relaxed text-destructive"
-                      data-testid={`erro-${funil.id}`}
+                      data-testid={`erro-arquivado-${funil.id}`}
                     >
                       {erro.texto}
                     </p>
                   )}
 
-                  {excluindoAqui && (
-                    <Card className="space-y-3 p-4" data-testid={`excluir-painel-${funil.id}`}>
-                      {excluindoAqui.erro ? (
+                  {/*
+                    `AlertDialog`, e não `Card`: é o padrão que
+                    `docs/doctrine/destrutivo-pede-confirmacao.md` (§Como aplicar)
+                    fixa para o clique que apaga, o mesmo do quadro
+                    (`KanbanCardActions`). O `Card` avisava, mas o foco ficava
+                    solto na página e o leitor de tela continuava lendo a lista
+                    atrás da pergunta — quem navega por teclado podia confirmar
+                    sem nunca ter passado pela pergunta.
+                  */}
+                  <AlertDialog
+                    open={excluindoAqui !== null}
+                    onOpenChange={(aberto) => {
+                      if (!aberto) setExcluindo(null);
+                    }}
+                  >
+                    <AlertDialogContent
+                      className="sm:max-w-md"
+                      data-testid={`excluir-painel-${funil.id}`}
+                    >
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>
+                          {t("Excluir de vez")} «{funil.name}»?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {t(
+                            "Isso não tem volta: o funil e as etapas dele somem. Se ele já recebeu negócio, a exclusão é recusada e ele continua arquivado.",
+                          )}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+
+                      {excluindoAqui?.erro && (
                         // A recusa da rota, INTEIRA: é ela que diz quantos
                         // negócios o funil tem, ou qual formulário aponta para
                         // ele. Trocá-la por "erro ao excluir" seria um beco.
@@ -333,37 +385,38 @@ export function FunisClient({
                           className="text-sm leading-relaxed"
                           data-testid={`excluir-erro-${funil.id}`}
                         >
-                          {excluindoAqui.erro}
-                        </p>
-                      ) : (
-                        <p className="text-sm leading-relaxed">
-                          {t("Excluir de vez")} «{funil.name}»?{" "}
-                          {t(
-                            "Isso não tem volta: o funil e as etapas dele somem. Se ele já recebeu negócio, a exclusão é recusada e ele continua arquivado.",
-                          )}
+                          {excluindoAqui?.erro}
                         </p>
                       )}
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => excluirDoArquivo(funil.id)}
+
+                      <AlertDialogFooter>
+                        <AlertDialogCancel
                           disabled={ocupado}
-                          data-testid={`excluir-confirmar-${funil.id}`}
-                        >
-                          {t("Excluir de vez")}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setExcluindo(null)}
-                          disabled={ocupado}
+                          data-testid={`excluir-cancelar-${funil.id}`}
                         >
                           {t("Cancelar")}
-                        </Button>
-                      </div>
-                    </Card>
-                  )}
+                        </AlertDialogCancel>
+                        {/*
+                          `preventDefault` porque o `AlertDialogAction` fecha o
+                          diálogo no próprio clique: sem ele a pergunta sumiria
+                          ANTES de o servidor responder, e uma recusa chegaria
+                          sobre uma tela que já disse "pronto". Quem fecha é o
+                          `onSuccess`; o `disabled` evita o envio em dobro.
+                        */}
+                        <AlertDialogAction
+                          className={buttonVariants({ variant: "destructive" })}
+                          disabled={ocupado}
+                          data-testid={`excluir-confirmar-${funil.id}`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            excluirDoArquivo(funil.id);
+                          }}
+                        >
+                          {t("Excluir de vez")}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </li>
               );
             })}

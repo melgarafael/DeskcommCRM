@@ -58,6 +58,11 @@ export interface Conversation {
    */
   comando_da_conversa?: string | null;
   last_handoff_at: string | null;
+  /**
+   * Por que o automático está parado. Diferencia o handoff formal de uma pausa
+   * por resposta no celular (`comandoDaConversa` escolhe o motivo da tela).
+   */
+  last_handoff_reason?: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { lerPlanilha } from "@/lib/catalogo/planilha";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 /**
  * A PLANILHA QUE A LOJA JÁ TEM VIRA CATÁLOGO.
@@ -183,6 +184,80 @@ describe("recusa o que não dá para ler — e diz onde", () => {
     if ("erro" in r) throw new Error(r.erro);
     expect(r.produtos).toHaveLength(1);
     expect(r.erros[0]?.motivo).toContain("repetido");
+    // A mensagem aponta a OUTRA linha do par: a recusada já vem no `linha`.
+    expect(r.erros[0]).toMatchObject({ linha: 3 });
+    expect(r.erros[0]?.motivo).toContain("linha 2");
+  });
+});
+
+/**
+ * "IP15" E "ip15" SÃO O MESMO PRODUTO (#482, decisão do mantenedor de 22/09/2026).
+ *
+ * A busca do agente ignora a caixa (`normalizar()` em `lib/catalogo/busca.ts`):
+ * duas linhas que só diferem nela virariam um produto com dois preços na
+ * conversa. A planilha recusa a segunda — e, como a diferença não salta aos
+ * olhos, a mensagem diz com qual linha ela colide e como estava escrita lá.
+ */
+describe("o código não diferencia maiúsculas", () => {
+  it("IP15 e ip15 na mesma planilha: a segunda linha é recusada citando a primeira", () => {
+    const r = lerPlanilha(
+      planilha(
+        "codigo,nome,preco",
+        "IP15,iPhone 15 128GB,5499",
+        "ip15,iPhone 15 128GB (importado),4999",
+      ),
+    );
+
+    if ("erro" in r) throw new Error(r.erro);
+    expect(r.produtos.map((p) => p.codigo)).toEqual(["IP15"]);
+    expect(r.erros).toEqual([
+      {
+        linha: 3,
+        motivo:
+          'código repetido na planilha ("ip15") — já está na linha 2, escrito "IP15". Maiúsculas e minúsculas não mudam o código.',
+      },
+    ]);
+  });
+
+  it("IP15 e IP16 entram os dois", () => {
+    const r = lerPlanilha(
+      planilha("codigo,nome,preco", "IP15,iPhone 15,5499", "IP16,iPhone 16,6499"),
+    );
+
+    if ("erro" in r) throw new Error(r.erro);
+    expect(r.erros).toEqual([]);
+    expect(r.produtos.map((p) => p.codigo)).toEqual(["IP15", "IP16"]);
+  });
+
+  it("a mensagem nova chega em espanhol a quem usa a tela em espanhol", () => {
+    const r = lerPlanilha(
+      planilha("codigo,nome,preco", "IP15,iPhone 15,5499", "ip15,iPhone 15,4999"),
+      (texto) => traduzir(texto, "es"),
+    );
+
+    if ("erro" in r) throw new Error(r.erro);
+    expect(r.erros[0]?.motivo).toBe(
+      'código repetido en la hoja ("ip15") — ya está en la fila 2, escrito "IP15". Mayúsculas y minúsculas no cambian el código.',
+    );
+  });
+
+  it("o código repetido escrito igual também chega inteiro em espanhol", () => {
+    const r = lerPlanilha(
+      planilha("codigo,nome,preco", "IP15,iPhone 15,5499", "IP15,iPhone 15 Pro,7999"),
+      (texto) => traduzir(texto, "es"),
+    );
+
+    if ("erro" in r) throw new Error(r.erro);
+    expect(r.erros[0]?.motivo).toBe('código repetido en la hoja ("IP15") — ya está en la fila 2');
+  });
+
+  it("o código entra na mensagem como foi escrito, mesmo parecendo placeholder", () => {
+    const r = lerPlanilha(planilha("codigo,nome,preco", "X{linha}$&,Um,10", "x{linha}$&,Dois,20"));
+
+    if ("erro" in r) throw new Error(r.erro);
+    expect(r.erros[0]?.motivo).toBe(
+      'código repetido na planilha ("x{linha}$&") — já está na linha 2, escrito "X{linha}$&". Maiúsculas e minúsculas não mudam o código.',
+    );
   });
 });
 

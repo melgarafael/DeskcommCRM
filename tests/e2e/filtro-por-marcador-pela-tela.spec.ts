@@ -141,6 +141,69 @@ test.describe("filtro por marcador, pela tela", () => {
     const b = await conversaDe(nomeContato);
     const n = await conversaDe(nomeNeutro);
 
+    // ── EXPERIMENTO (não é conserto): instrumentação, para ser revertida ──────
+    //
+    // O caso morre no clique da linha ~166 com o call log de UMA linha
+    // ("waiting for"), 300s: o locator NUNCA resolve. Duas linhas antes ele
+    // resolveu. Entre as duas só roda o `captura()`. As medições já feitas
+    // (trace do run 35465018832) descartaram a rede: ZERO chamada de API entre
+    // mono=122200 e mono=123200, e zero status >= 400 nas 157 do caso.
+    //
+    // O que falta é o instante EXATO em que a opção sai do DOM e quem a tira.
+    // Amostrar a cada 100 ms erraria uma janela de ~85 ms; um MutationObserver
+    // não erra — ele grava a remoção no momento em que ela acontece. Os
+    // `frame-snapshot` do trace NÃO servem para isso: são incrementais, e
+    // ausência neles não é medição (um deles marca o menu como fechado num
+    // instante em que ele comprovadamente estava aberto).
+    const erros: string[] = [];
+    page.on("console", (m) => {
+      if (m.type() === "error") erros.push(`console.error :: ${m.text().slice(0, 200)}`);
+    });
+    page.on("response", (r) => {
+      if (r.status() >= 400) erros.push(`HTTP ${r.status()} :: ${r.url().slice(0, 140)}`);
+    });
+    page.on("requestfailed", (r) => {
+      erros.push(`requestfailed :: ${r.url().slice(0, 140)} :: ${r.failure()?.errorText ?? "?"}`);
+    });
+    await page.addInitScript(() => {
+      const w = window as unknown as { __filtro?: string[] };
+      w.__filtro = [];
+      const conta = () => document.querySelectorAll('[role="option"]').length;
+      // Teto: o painel da conversa re-renderiza a cada 4s (`ReplyReviewPanel`
+      // tem `refetchInterval: 4000`, e isso é da BASE, não desta branch — 72
+      // chamadas medidas no trace). Sem teto, o filme vira ruído e o log do job
+      // fica ilegível.
+      const marca = (verbo: string, alvo: string) =>
+        w.__filtro!.length < 400 &&
+        w.__filtro!.push(
+          `${performance.now().toFixed(0)}ms ${verbo} ${alvo} | listbox=${
+            document.querySelectorAll('[role="listbox"]').length
+          } options=${conta()} altura=${document.body.scrollHeight} viewport=${window.innerHeight}`,
+        );
+      const interessa = (nó: Node): string | null => {
+        if (!(nó instanceof Element)) return null;
+        const papel = nó.getAttribute("role");
+        if (papel === "option" || papel === "listbox") return `${papel}:${nó.textContent?.trim().slice(0, 40) ?? ""}`;
+        const dentro = nó.querySelector('[role="listbox"], [role="option"]');
+        return dentro ? `ancestral-de:${dentro.getAttribute("role")}` : null;
+      };
+      new MutationObserver((lista) => {
+        for (const m of lista) {
+          for (const nó of m.removedNodes) {
+            const q = interessa(nó);
+            if (q) marca("SAIU", q);
+          }
+          for (const nó of m.addedNodes) {
+            const q = interessa(nó);
+            if (q) marca("entrou", q);
+          }
+        }
+      }).observe(document.documentElement, { childList: true, subtree: true });
+      window.addEventListener("resize", () => marca("resize", `${window.innerWidth}x${window.innerHeight}`));
+      document.addEventListener("focusin", (e) =>
+        marca("focusin", (e.target as Element)?.tagName ?? "?"), true);
+    });
+
     await login(page, c.users.manager!.email, c.password);
     await abreConversa(page, a.conversa);
     await page.getByRole("tab", { name: /^Todas/ }).click();
@@ -160,10 +223,49 @@ test.describe("filtro por marcador, pela tela", () => {
       timeout: 30_000,
     });
     await expect(page.getByRole("option", { name: tagDoContato, exact: true })).toBeVisible();
+
+    // ── EXPERIMENTO: o cerco ao `captura()` ───────────────────────────────────
+    // `fullPage: true` redimensiona a viewport para a ALTURA DO DOCUMENTO. Esta
+    // branch acrescenta uma seção ao painel lateral (`LeadEnrichment`, visível
+    // na screenshot da falha como "Sobre a empresa"), então a página ficou mais
+    // alta — e o resize é a única coisa que roda entre o locator resolver e o
+    // clique. Medir ANTES e DEPOIS separa "o screenshot é o gatilho" de "a
+    // opção já tinha saído antes dele", que é a bifurcação que um bit não dá.
+    const olha = async (marco: string) => {
+      const s = await page.evaluate(() => ({
+        listbox: document.querySelectorAll('[role="listbox"]').length,
+        opcoes: [...document.querySelectorAll('[role="option"]')].map((o) => o.textContent?.trim() ?? ""),
+        altura: document.body.scrollHeight,
+        viewport: window.innerHeight,
+      }));
+      registra(
+        `filtro-instrumento · ${marco} · listbox=${s.listbox} opcoes=[${s.opcoes.join("|")}] altura=${s.altura} viewport=${s.viewport}`,
+      );
+    };
+    await olha("antes-do-screenshot");
     await captura(page, "filtro-tela-01-inbox-uniao-dos-vocabularios");
+    await olha("depois-do-screenshot");
 
     // 4. O marcador do CONTATO acha a conversa dele — e só ela.
-    await page.getByRole("option", { name: tagDoContato, exact: true }).click();
+    // Teto curto de propósito: o caso já morreu aqui por 300s uma vez, e esperar
+    // de novo custa 5 min de CI para reimprimir o mesmo timeout. O que interessa
+    // agora é o filme, despejado logo abaixo.
+    try {
+      await page
+        .getByRole("option", { name: tagDoContato, exact: true })
+        .click({ timeout: 15_000 });
+      registra("filtro-instrumento · clique OK");
+    } catch (e) {
+      registra(`filtro-instrumento · clique FALHOU :: ${(e as Error).message.split("\n")[0]}`);
+    }
+    const filme = await page.evaluate(
+      () => (window as unknown as { __filtro?: string[] }).__filtro ?? [],
+    );
+    registra(`filtro-instrumento · FILME (${filme.length} mutações, últimas 80):`);
+    for (const linha of filme.slice(-80)) registra(`filtro-instrumento ·   ${linha}`);
+    registra(`filtro-instrumento · ERROS (${erros.length}):`);
+    for (const linha of erros) registra(`filtro-instrumento ·   ${linha}`);
+    await olha("depois-do-clique");
     await expect(itemDaLista(page, b.conversa)).toBeVisible({ timeout: 30_000 });
     await expect(itemDaLista(page, a.conversa)).toHaveCount(0);
     await expect(itemDaLista(page, n.conversa)).toHaveCount(0);
@@ -176,6 +278,175 @@ test.describe("filtro por marcador, pela tela", () => {
     await expect(itemDaLista(page, b.conversa)).toHaveCount(0);
     await expect(itemDaLista(page, n.conversa)).toHaveCount(0);
     await captura(page, "filtro-tela-03-inbox-pela-conversa");
+  });
+
+  // ── EXPERIMENTO: a ABLAÇÃO do caso acima ────────────────────────────────
+  //
+  // Idêntico ao caso A em tudo, MENOS uma linha: aqui o `captura()` NÃO roda
+  // entre o locator resolver e o clique — ele foi movido para depois. Se B
+  // passar e A falhar no MESMO run, o screenshot `fullPage` está provado como
+  // a causa, por diferença, sem depender de alguém interpretar o filme do
+  // MutationObserver. Se B falhar junto, a hipótese morre no mesmo ciclo.
+  //
+  // `fullPage: true` redimensiona a viewport para a ALTURA DO DOCUMENTO, e o
+  // Radix fecha o popover em resize. Esta branch acrescenta `LeadEnrichment`
+  // ao painel lateral — a página ficou mais alta que na base, onde o mesmo
+  // caso passa em 11,1s.
+  test("ABLAÇÃO (experimento): o mesmo caso SEM o captura() antes do clique", async ({
+    page,
+  }) => {
+    const nomeConversa = `Filtro Conversa ${SUFIXO}b`;
+    const nomeContato = `Filtro Contato ${SUFIXO}b`;
+    const nomeNeutro = `Filtro Neutro ${SUFIXO}b`;
+    const tagDaConversa = `retorno-${SUFIXO}b`;
+    const tagDoContato = `vip-${SUFIXO}b`;
+
+    const a = await conversaDe(nomeConversa);
+    const b = await conversaDe(nomeContato);
+    const n = await conversaDe(nomeNeutro);
+
+    // ── EXPERIMENTO (não é conserto): instrumentação, para ser revertida ──────
+    //
+    // O caso morre no clique da linha ~166 com o call log de UMA linha
+    // ("waiting for"), 300s: o locator NUNCA resolve. Duas linhas antes ele
+    // resolveu. Entre as duas só roda o `captura()`. As medições já feitas
+    // (trace do run 35465018832) descartaram a rede: ZERO chamada de API entre
+    // mono=122200 e mono=123200, e zero status >= 400 nas 157 do caso.
+    //
+    // O que falta é o instante EXATO em que a opção sai do DOM e quem a tira.
+    // Amostrar a cada 100 ms erraria uma janela de ~85 ms; um MutationObserver
+    // não erra — ele grava a remoção no momento em que ela acontece. Os
+    // `frame-snapshot` do trace NÃO servem para isso: são incrementais, e
+    // ausência neles não é medição (um deles marca o menu como fechado num
+    // instante em que ele comprovadamente estava aberto).
+    const erros: string[] = [];
+    page.on("console", (m) => {
+      if (m.type() === "error") erros.push(`console.error :: ${m.text().slice(0, 200)}`);
+    });
+    page.on("response", (r) => {
+      if (r.status() >= 400) erros.push(`HTTP ${r.status()} :: ${r.url().slice(0, 140)}`);
+    });
+    page.on("requestfailed", (r) => {
+      erros.push(`requestfailed :: ${r.url().slice(0, 140)} :: ${r.failure()?.errorText ?? "?"}`);
+    });
+    await page.addInitScript(() => {
+      const w = window as unknown as { __filtro?: string[] };
+      w.__filtro = [];
+      const conta = () => document.querySelectorAll('[role="option"]').length;
+      // Teto: o painel da conversa re-renderiza a cada 4s (`ReplyReviewPanel`
+      // tem `refetchInterval: 4000`, e isso é da BASE, não desta branch — 72
+      // chamadas medidas no trace). Sem teto, o filme vira ruído e o log do job
+      // fica ilegível.
+      const marca = (verbo: string, alvo: string) =>
+        w.__filtro!.length < 400 &&
+        w.__filtro!.push(
+          `${performance.now().toFixed(0)}ms ${verbo} ${alvo} | listbox=${
+            document.querySelectorAll('[role="listbox"]').length
+          } options=${conta()} altura=${document.body.scrollHeight} viewport=${window.innerHeight}`,
+        );
+      const interessa = (nó: Node): string | null => {
+        if (!(nó instanceof Element)) return null;
+        const papel = nó.getAttribute("role");
+        if (papel === "option" || papel === "listbox") return `${papel}:${nó.textContent?.trim().slice(0, 40) ?? ""}`;
+        const dentro = nó.querySelector('[role="listbox"], [role="option"]');
+        return dentro ? `ancestral-de:${dentro.getAttribute("role")}` : null;
+      };
+      new MutationObserver((lista) => {
+        for (const m of lista) {
+          for (const nó of m.removedNodes) {
+            const q = interessa(nó);
+            if (q) marca("SAIU", q);
+          }
+          for (const nó of m.addedNodes) {
+            const q = interessa(nó);
+            if (q) marca("entrou", q);
+          }
+        }
+      }).observe(document.documentElement, { childList: true, subtree: true });
+      window.addEventListener("resize", () => marca("resize", `${window.innerWidth}x${window.innerHeight}`));
+      document.addEventListener("focusin", (e) =>
+        marca("focusin", (e.target as Element)?.tagName ?? "?"), true);
+    });
+
+    await login(page, c.users.manager!.email, c.password);
+    await abreConversa(page, a.conversa);
+    await page.getByRole("tab", { name: /^Todas/ }).click();
+
+    // 1. Caixa da CONVERSA, pelo editor da conversa.
+    await marcar(page, "Adicionar tag à conversa", `/conversations/${a.conversa}`, tagDaConversa);
+
+    // 2. Caixa do CONTATO, noutra conversa — sem recarregar.
+    await irPelaLista(page, nomeContato, b.conversa);
+    await page.getByRole("button", { name: "Tags do contato", exact: true }).click();
+    await marcar(page, "Adicionar tag ao contato", "/contacts/", tagDoContato);
+
+    // 3. O seletor oferece a UNIÃO dos dois vocabulários.
+    const seletor = page.getByRole("combobox", { name: "Filtrar por tag" });
+    await seletor.click();
+    await expect(page.getByRole("option", { name: tagDaConversa, exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByRole("option", { name: tagDoContato, exact: true })).toBeVisible();
+
+    // ── EXPERIMENTO: o mesmo olhar do caso A, sem o screenshot no meio ───────
+    // O caso A mede ANTES e DEPOIS do `captura()`. Aqui não há `captura()` no
+    // ponto, então há uma leitura só — e é ela que diz se a opção continua na
+    // lista quando nada redimensiona a viewport.
+    const olha = async (marco: string) => {
+      const s = await page.evaluate(() => ({
+        listbox: document.querySelectorAll('[role="listbox"]').length,
+        opcoes: [...document.querySelectorAll('[role="option"]')].map((o) => o.textContent?.trim() ?? ""),
+        altura: document.body.scrollHeight,
+        viewport: window.innerHeight,
+      }));
+      registra(
+        `ablacao-instrumento · ${marco} · listbox=${s.listbox} opcoes=[${s.opcoes.join("|")}] altura=${s.altura} viewport=${s.viewport}`,
+      );
+    };
+    // ← A ABLAÇÃO: nenhuma screenshot aqui. É a ÚNICA diferença para o caso A.
+    await olha("sem-screenshot-no-ponto-critico");
+
+    // 4. O marcador do CONTATO acha a conversa dele — e só ela.
+    // Teto curto de propósito: o caso já morreu aqui por 300s uma vez, e esperar
+    // de novo custa 5 min de CI para reimprimir o mesmo timeout. O que interessa
+    // agora é o filme, despejado logo abaixo.
+    // O `catch` aqui NÃO engole: ele só adia, para o filme abaixo ser despejado
+    // antes de o caso morrer. Engolir de verdade abriria o pior desfecho deste
+    // experimento — B VERDE SEM TER EXERCITADO NADA, que se lê como prova e não
+    // é. Verde de B tem de significar "o clique aconteceu", e só o re-lance no
+    // fim garante isso.
+    let falhaDoClique: Error | null = null;
+    try {
+      await page
+        .getByRole("option", { name: tagDoContato, exact: true })
+        .click({ timeout: 15_000 });
+      registra("ablacao-instrumento · clique OK");
+    } catch (e) {
+      falhaDoClique = e as Error;
+      registra(`ablacao-instrumento · clique FALHOU :: ${falhaDoClique.message.split("\n")[0]}`);
+    }
+    const filme = await page.evaluate(
+      () => (window as unknown as { __filtro?: string[] }).__filtro ?? [],
+    );
+    registra(`ablacao-instrumento · FILME (${filme.length} mutações, últimas 80):`);
+    for (const linha of filme.slice(-80)) registra(`ablacao-instrumento ·   ${linha}`);
+    registra(`ablacao-instrumento · ERROS (${erros.length}):`);
+    for (const linha of erros) registra(`ablacao-instrumento ·   ${linha}`);
+    await olha("depois-do-clique");
+    await captura(page, "ablacao-filtro-tela-01-uniao-dos-vocabularios-tardia");
+    if (falhaDoClique) throw falhaDoClique;
+    await expect(itemDaLista(page, b.conversa)).toBeVisible({ timeout: 30_000 });
+    await expect(itemDaLista(page, a.conversa)).toHaveCount(0);
+    await expect(itemDaLista(page, n.conversa)).toHaveCount(0);
+    await captura(page, "ablacao-filtro-tela-02-inbox-pelo-contato");
+
+    // 5. O marcador da CONVERSA acha a outra — e só ela.
+    await seletor.click();
+    await page.getByRole("option", { name: tagDaConversa, exact: true }).click();
+    await expect(itemDaLista(page, a.conversa)).toBeVisible({ timeout: 30_000 });
+    await expect(itemDaLista(page, b.conversa)).toHaveCount(0);
+    await expect(itemDaLista(page, n.conversa)).toHaveCount(0);
+    await captura(page, "ablacao-filtro-tela-03-inbox-pela-conversa");
   });
 
   test("Funil (#1208): o marcador do contato E o da conversa filtram o quadro", async ({

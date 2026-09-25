@@ -289,7 +289,7 @@ A janela de 24h da Meta (envio proativo só com template aprovado fora da janela
 |---|---|---|
 | `sync-sessions` | a cada 1 min | Health check de todas sessões; faz `GET /api/sessions/<name>` na WAHA; sincroniza status DB ↔ WAHA; alerta se >5min em status não-`WORKING` |
 | `recover-stuck-messages` | a cada 1 min | Marca mensagens com `status='sending'` há >5min como `failed` + atividade na timeline; permite retry manual |
-| `process-pending-webhooks` | a cada 1 min | Re-processa webhooks que entraram em `webhook_events_log` mas não foram fully processados (fallback caso WAHA Plus tenha falha de retry) |
+| `process-pending-webhooks` (no código: `webhook-replay`) | a cada 1 min | Re-processa webhooks que entraram em `webhook_events_log` mas não foram fully processados (fallback caso WAHA Plus tenha falha de retry) |
 
 **Princípios.**
 - Crons são autenticados via `INTERNAL_SECRET` (header) — distinto de `SUPABASE_SERVICE_ROLE_KEY` (Sub-PRD 01 §4.1)
@@ -300,7 +300,7 @@ A janela de 24h da Meta (envio proativo só com template aprovado fora da janela
 **ACs principais.**
 - Sessão derrubada manualmente (stop no WAHA) é detectada pelo cron e marcada como `STOPPED` em <2min
 - Mensagem em `sending` há 6min é marcada como `failed` na próxima rodada do cron
-- Webhook que falhou processamento é re-tentado até 3x; após isso vai pra dead-letter `webhook_events_log.status='dead'` com alerta
+- Webhook cuja ingestão falhou por banco indisponível responde 503 + `Retry-After` (o WAHA reentrega) e fica `error` com `transitoria:`; o cron `webhook-replay` o re-tenta até 20x; depois vai pra dead-letter `webhook_events_log.status='dead'` com aviso na Central
 
 ---
 
@@ -396,7 +396,7 @@ O canal WhatsApp é considerado **MVP-completo** quando:
 |---|---|---|---|
 | W1 | **Banimento de número WhatsApp** (detectado como API não-oficial; tráfego destoa de humano) | Crítico | Anti-banimento §3.7 obrigatório (throttle, warm-up, spinning, STOP, janela horário, limites diários); número backup pré-aquecido por tenant; runbook de troca-de-número; **NÃO há fix técnico pós-banimento** — só prevenção |
 | W2 | **Perda de sessão sem aviso** (WAHA crash, container reiniciado, volume `/app/.sessions` corrompido, `STARTING` indefinido) | Alto | Cron `sync-sessions` com alerta em >5min fora de `WORKING`; runbook de rebuild do volume `/app/.sessions`; backup periódico do estado da sessão (decisão na Spec) |
-| W3 | **Falha de webhook** (WAHA down, network partition, handler crash) | Alto | `webhook_events_log` raw como fonte de verdade; cron `process-pending-webhooks` re-processa; WAHA Plus tem retry nativo (Core não); dead-letter com alerta após 3 tentativas |
+| W3 | **Falha de webhook** (WAHA down, network partition, handler crash) | Alto | `webhook_events_log` raw como fonte de verdade; a rota devolve 503 em falha transitória do banco para o WAHA reentregar, e o cron `webhook-replay` re-processa o que as reentregas não salvaram; dead-letter com aviso na Central após 20 tentativas |
 | W4 | **Inconsistência multi-device** (mensagem enviada por celular não aparece no CRM, ou aparece duplicada) | Médio | Assinar `message.any` (não `message`); idempotência por `(org, external_id)`; teste de regressão simulando envio cross-device |
 | W5 | **Abuso de envio em campanha** (atendente faz blast de 1000 msgs sem warm-up) | Alto | Hard-cap diário por sessão; validação de min 5 variações de copy; bloqueio de campanha durante warm-up; revisão manual de campanhas >500 msgs no MVP |
 | W6 | **Vazamento de credentials WAHA** (`WAHA_API_KEY` em log, repo, ou env exposto) | Crítico | Plaintext apenas no `.env` da instalação (permissão 600); sanitização agressiva em logs; `gitleaks` pre-commit (Sub-PRD 01 §4.1); rotação trimestral; SHA512 no servidor WAHA garante que comprometimento do servidor não vaza o plaintext |

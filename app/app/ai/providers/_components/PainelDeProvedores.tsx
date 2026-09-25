@@ -42,6 +42,8 @@ import {
 } from "@/components/ui/select";
 import { useT } from "@/hooks/i18n/useT";
 
+import { CartaoDoJev, jevNoPonto, useDadosDoJev, type DadosDoJev } from "./CartaoDoJev";
+
 interface Ponto {
   id: string;
   rotulo: string;
@@ -92,6 +94,8 @@ interface Dados {
   pontos: Ponto[];
   provedores: Provedor[];
   credenciais: Credencial[];
+  /** Há chave de IA no `.env` da instalação (`lerAmbiente`). */
+  instalacaoTemChave: boolean;
   modelos: Modelo[];
   padrao: { provider: string; defaultModel: string | null };
   podeEditar: boolean;
@@ -102,6 +106,7 @@ export function PainelDeProvedores() {
   const [dados, setDados] = useState<Dados | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [avancado, setAvancado] = useState<Record<string, boolean>>({});
+  const jev = useDadosDoJev();
 
   const carregar = useCallback(async () => {
     // O try/catch não é zelo genérico: sem ele, qualquer exceção (rede caindo,
@@ -133,8 +138,9 @@ export function PainelDeProvedores() {
       }
       setErro(null);
       setDados(json?.data as Dados);
-    } catch (e) {
-      setErro(e instanceof Error ? t(e.message) : t("não consegui falar com o servidor"));
+    } catch {
+      // A mensagem do navegador ("Failed to fetch") é inglês e não diz nada.
+      setErro(t("não consegui falar com o servidor"));
     }
   }, [t]);
 
@@ -188,9 +194,10 @@ export function PainelDeProvedores() {
       {semChave && (
         <Card className="mb-6 border-amber-500/40 bg-amber-500/5 p-4" data-testid="aviso-sem-chave">
           <p className="text-sm">
-            {t(
-              "Você ainda não cadastrou nenhuma chave de provedor. Enquanto isso, tudo usa a chave que veio na instalação.",
-            )}{" "}
+            {t("Você ainda não cadastrou a chave da sua IA principal, a que conversa com os clientes.")}{" "}
+            {/* Só é verdade quando a instalação tem chave; sem ela, a frase
+                contradizia o cartão do Jev logo abaixo. */}
+            {dados.instalacaoTemChave && t("Enquanto isso, o atendimento usa a chave que veio na instalação.")}{" "}
             <Link className="underline underline-offset-4" href="/app/ai/credentials">
               {t("Cadastrar uma chave")}
             </Link>
@@ -199,6 +206,8 @@ export function PainelDeProvedores() {
       )}
 
       <CartaoDoPadrao dados={dados} aoSalvar={carregar} />
+
+      <CartaoDoJev dados={jev.dados} erro={jev.erro} recarregar={jev.recarregar} />
 
       <div className="space-y-8">
         {porPapel.map(({ papel, info, pontos }) => (
@@ -229,6 +238,7 @@ export function PainelDeProvedores() {
                     key={ponto.id}
                     ponto={ponto}
                     dados={dados}
+                    jev={jev.dados}
                     aoSalvar={carregar}
                   />
                 ))}
@@ -422,13 +432,16 @@ function ResumoDoGrupo({ pontos }: { pontos: Ponto[] }) {
 function CartaoDoPonto({
   ponto,
   dados,
+  jev,
   aoSalvar,
 }: {
   ponto: Ponto;
   dados: Dados;
+  jev: DadosDoJev | null;
   aoSalvar: () => Promise<void>;
 }) {
   const t = useT();
+  const oJevAqui = jevNoPonto(jev, ponto.id);
   const [provider, setProvider] = useState(ponto.efetivo.provider);
   const [modelId, setModelId] = useState(ponto.efetivo.modelId ?? "");
   const [credentialId, setCredentialId] = useState(ponto.efetivo.credentialId ?? "");
@@ -499,6 +512,17 @@ function CartaoDoPonto({
             )}
           </div>
           <p className="mt-1 text-sm text-muted-foreground">{t(ponto.oQueFaz)}</p>
+          {/* O modelo deste cartão continua valendo com o Jev ligado — como
+              reserva, ou como quem decide enquanto o Jev só observa. */}
+          {oJevAqui && (
+            <p className="mt-1 text-xs text-accent" data-testid={`jev-no-ponto-${ponto.id}`}>
+              {oJevAqui === "decide"
+                ? t("O Jev mede primeiro; o modelo abaixo é a reserva.")
+                : oJevAqui === "observacao"
+                  ? t("O Jev observa; o modelo abaixo ainda decide.")
+                  : t("O Jev mede sozinho: não há modelo de reserva.")}
+            </p>
+          )}
         </div>
         <div className="text-right text-xs text-muted-foreground">
           <div className="font-mono">{ponto.efetivo.modelId ?? "—"}</div>

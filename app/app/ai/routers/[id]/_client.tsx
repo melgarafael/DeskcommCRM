@@ -31,7 +31,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { ArrowRight, CaretLeft, Info, Plus, Trash } from "@/lib/ui/icons";
 import { randomId } from "@/lib/random-id";
-import { usePermission } from "@/hooks/auth/AuthProvider";
+import { useAuth, usePermission } from "@/hooks/auth/AuthProvider";
 import {
   useRouter as useRouterData,
   useUpdateRouter,
@@ -40,9 +40,11 @@ import {
   useTestRouter,
   type RouterDetailState,
   type RouterMemberInput,
+  type RouterTestResult,
 } from "@/hooks/ai/useRouters";
 import type { ClassifierModelOption } from "@/lib/ai/classifier-models";
 import type { ChannelSessionLite } from "../../agents/[id]/_components/AgentForm";
+import { useFollowupFlows } from "@/hooks/followup/useFollowupFlows";
 import { useT } from "@/hooks/i18n/useT";
 
 interface AgentLite {
@@ -115,6 +117,12 @@ export function RouterEditorClient({
   const deleteRouter = useDeleteRouter();
   const saveMembers = useSaveMembers(routerId);
   const testRouter = useTestRouter(routerId);
+  // Fluxos de atendimento disponíveis para amarrar a uma intenção (surface=atendimento).
+  // Com o módulo desligado o seletor não existe: amarrar a um roteiro que não roda
+  // seria prometer um comportamento que a instalação não tem.
+  const { activeOrg } = useAuth();
+  const roteirosLigados = activeOrg?.modulos_ligados?.includes("fluxos_atendimento") === true;
+  const { data: atendimentoFlows } = useFollowupFlows({ surface: "atendimento", enabled: roteirosLigados });
 
   const baseline = React.useMemo(
     () => ({
@@ -122,22 +130,26 @@ export function RouterEditorClient({
       isActive: router.is_active,
       fallbackAgentId: router.fallback_agent_id ?? "",
       classifier: classifierKeyFrom(router.config),
-      members: members.map(({ agent_id, intent_name, intent_description, examples }) => ({
+      members: members.map(({ agent_id, intent_name, intent_description, examples, flow_pointer_id }) => ({
         agent_id,
         intent_name,
         intent_description,
         examples,
+        flow_pointer_id: flow_pointer_id ?? null,
       })),
     }),
     [router, members],
   );
 
-  const currentMembers = draftMembers.map(({ agent_id, intent_name, intent_description, examples }) => ({
-    agent_id,
-    intent_name,
-    intent_description,
-    examples,
-  }));
+  const currentMembers = draftMembers.map(
+    ({ agent_id, intent_name, intent_description, examples, flow_pointer_id }) => ({
+      agent_id,
+      intent_name,
+      intent_description,
+      examples,
+      flow_pointer_id: flow_pointer_id ?? null,
+    }),
+  );
 
   const dirty =
     name !== baseline.name ||
@@ -178,6 +190,7 @@ export function RouterEditorClient({
         intent_name: "",
         intent_description: "",
         examples: [],
+        flow_pointer_id: null,
       },
     ]);
   }
@@ -403,6 +416,7 @@ export function RouterEditorClient({
                     <IntentRow
                       member={m}
                       agents={agents}
+                      flows={roteirosLigados ? (atendimentoFlows ?? []) : null}
                       disabled={!canManage}
                       error={memberErrors[i] ?? null}
                       duplicate={duplicateNames.has(m.intent_name.trim().toLowerCase())}
@@ -450,6 +464,7 @@ export function RouterEditorClient({
 function IntentRow({
   member,
   agents,
+  flows,
   disabled,
   error,
   duplicate,
@@ -458,6 +473,8 @@ function IntentRow({
 }: {
   member: DraftMember;
   agents: AgentLite[];
+  /** `null` = módulo de roteiros desligado: o seletor não aparece. */
+  flows: Array<{ id: string; name: string }> | null;
   disabled: boolean;
   error: string | null;
   duplicate: boolean;
@@ -519,6 +536,33 @@ function IntentRow({
           maxLength={2000}
         />
       </div>
+      {flows !== null && (
+      <div className="space-y-1" data-testid="seletor-de-roteiro">
+        <Label>{t("Fluxo de atendimento (opcional)")}</Label>
+        <Select
+          value={member.flow_pointer_id ?? NONE}
+          onValueChange={(v) => onChange({ flow_pointer_id: v === NONE ? null : v })}
+          disabled={disabled}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder={t("Nenhum — só roteia o agente")} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE}>{t("Nenhum — só roteia o agente")}</SelectItem>
+            {flows.map((f) => (
+              <SelectItem key={f.id} value={f.id}>
+                {f.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Quando a intenção casar, este fluxo começa e as perguntas dele guiam o atendimento até o cliente completar.",
+          )}
+        </p>
+      </div>
+      )}
       <ExamplesInput
         value={member.examples}
         onChange={(examples) => onChange({ examples })}
@@ -620,19 +664,28 @@ function TestPanel({
   message: string;
   onMessageChange: (v: string) => void;
   onTest: () => void;
-  result:
-    | {
-        intent_name: string | null;
-        confidence: number;
-        min_confidence: number;
-        agent_id: string | null;
-        agent_name: string | null;
-      }
-    | undefined;
+  /**
+   * O tipo vem do hook, não é redeclarado aqui. Enquanto eram duas declarações
+   * do mesmo contrato, a próxima mudança acertava uma só — foi assim que a rota
+   * passou a poder devolver ausência e este lado continuou prometendo número.
+   */
+  result: RouterTestResult | undefined;
   pending: boolean;
 }) {
   const t = useT();
-  const belowThreshold = result?.intent_name != null && result.confidence < result.min_confidence;
+  // A guarda é sobre a CONFIANÇA, não sobre o campo vizinho. Antes, os três
+  // renders checavam `intent_name` e por acaso concordavam — ninguém havia
+  // escrito que um vale só com o outro. Bastaria um quarto render sem a guarda
+  // para o valor ausente aparecer na tela.
+  // O valor sai para um const ANTES do JSX para que o TypeScript o estreite lá
+  // dentro. Sem ele, o render precisava de `(result.confidence ?? 0)` — e um
+  // `?? 0` sobre confiança, dentro do PR que existe para extingui-lo, é a
+  // definição de padrão que volta pela porta dos fundos. A cerca em
+  // `tests/unit/confianca-do-handoff-nao-e-similaridade.test.ts` passou a cobrir
+  // `app/app/ai` por causa desta linha.
+  const confianca = result?.confidence ?? null;
+  const abaixoDoMinimo =
+    confianca !== null && result !== undefined && confianca < result.min_confidence;
   return (
     <Card className="space-y-3 p-4">
       <CardHeader className="p-0">
@@ -671,15 +724,15 @@ function TestPanel({
           <div className="rounded-md border border-border/60 p-3 text-sm">
             <p>
               {t("Intenção")}: <span className="font-medium">{result.intent_name ?? t("nenhuma casou")}</span>
-              {result.intent_name && (
+              {confianca !== null && (
                 <span className="ml-2 text-xs text-muted-foreground">
-                  {t("confiança")} {(result.confidence * 100).toFixed(0)}%
+                  {t("confiança")} {(confianca * 100).toFixed(0)}%
                 </span>
               )}
             </p>
-            {belowThreshold && (
+            {abaixoDoMinimo && confianca !== null && (
               <p className="text-xs text-amber-600">
-                {t("Confiança")} {(result.confidence * 100).toFixed(0)}% — {t("abaixo do mínimo de")}{" "}
+                {t("Confiança")} {(confianca * 100).toFixed(0)}% — {t("abaixo do mínimo de")}{" "}
                 {(result.min_confidence * 100).toFixed(0)}%, {t("cairia no atendimento padrão em produção.")}
               </p>
             )}

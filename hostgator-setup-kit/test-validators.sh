@@ -37,6 +37,27 @@ set +e   # os dois ligam `set -e`; aqui esperamos validadores falharem de propó
 
 fail=0
 
+# ── Sandbox de CHAVES DE IA: o ambiente de quem roda é uma SEGUNDA fonte que o
+# install.sh lê — e este caso instala SEM chave (issue #1570) ────────────────
+# `pendencia_da_ia` (install.sh:2012) decide o aviso da tela final lendo
+# AI_GATEWAY_API_KEY e a chave do provedor DIRETO DO AMBIENTE, não só do .env;
+# o caso "instalar SEM chave de IA" limpava apenas o .env (grep -v abaixo) e
+# deixava o ambiente de quem roda decidir o veredito. Medido em 24/09/2026: com
+# AI_GATEWAY_API_KEY exportada, a suíte reprova com a MESMA mensagem do run
+# 35948236372 — `✗ a tela final não avisa
+# que a IA ainda não atende`, 1 de 1 — porque o install grava a chave herdada
+# de volta no .env (`envq AI_GATEWAY_API_KEY`, install.sh:1702) e nenhum
+# assertion daqui cobra o gateway. Os outros três nomes contaminam ANTES:
+# ANTHROPIC_API_KEY → 2 vermelhos (provedor + `veio com valor`), OPENAI_API_KEY
+# → 2, OPENROUTER_API_KEY → 3 (contamina o AI_PROVIDER na entrevista).
+# Zerando as quatro aqui, TODO caso nasce sem chave e cada caso decide as
+# chaves que quer pelo .env que escreve — mesma hermetização que a linha
+# `SUPABASE_ACCESS_TOKEN=` já faz por chamada lá embaixo.
+# O passo do CI não exporta chave de IA (env: só VERIFY_INICIO e PNPM_HOME) e o
+# mesmo SHA passou na re-execução: isto hermetiza a suíte para quem roda com
+# chave no terminal, mas não é a causa da intermitência da #1570, que segue aberta.
+export ANTHROPIC_API_KEY= OPENAI_API_KEY= OPENROUTER_API_KEY= AI_GATEWAY_API_KEY=
+
 # ── Sandbox: a suíte NÃO pode escrever no crontab da máquina de quem a roda ──
 # Não é hipótese: os testes JÁ sujaram o crontab do mantenedor com 10 linhas
 # órfãs — uma delas um `curl` com Bearer batendo num domínio de exemplo a cada
@@ -2116,6 +2137,23 @@ echo "packaging: a tag do git não basta — as imagens têm de existir"
 # GHCR nasce privado, e repositório público não muda isso.
 TMP_PRIV="$(mktemp -d)"
 (
+  # O remoto daqui é um FIXTURE local, como no teste de pinagem acima, e não o
+  # default do repositório. Enquanto o default apontava para o upstream (com
+  # tags), este caso dependia de rede e passava por acidente; num fork sem tag
+  # publicada a sonda de versão volta vazia, o install cai em `latest` e o aviso
+  # de build local nunca sai — o teste reprovava o fork por acidente de ambiente,
+  # não por defeito. Com o fixture a asserção é determinística.
+  origem="$TMP_PRIV/origem.git"
+  git init --quiet --bare "$origem"
+  (
+    cd "$TMP_PRIV" || exit 1
+    git clone --quiet "$origem" w 2>/dev/null
+    cd w || exit 1
+    echo x > a; git add -A; git -c user.email=t@t -c user.name=t commit --quiet -m init
+    git tag v1.0.0
+    git push --quiet origin HEAD --tags 2>/dev/null
+  )
+
   montar_vps "$TMP_PRIV/vps" "crmpriv" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$DOCKER_LOG"
@@ -2124,9 +2162,10 @@ case "$1" in
 esac
 exit 0
 STUB
+  export REPO_URL="$origem"
   export DUBLE_GHCR=403          # pacote existe mas está PRIVADO
   saida="$(rodar install.sh --yes)"
-  unset DUBLE_GHCR
+  unset DUBLE_GHCR REPO_URL
 
   if ! printf '%s' "$saida" | grep -q "construídas neste servidor"; then
     printf '  ✗ com as imagens inalcançáveis, o instalador não avisou que ia construir aqui\n'

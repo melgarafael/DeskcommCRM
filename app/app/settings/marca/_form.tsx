@@ -30,7 +30,12 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cssDaMarca, ESCOPO_DA_ORGANIZACAO } from "@/lib/branding/css";
-import { avisosDaMarca, type Aviso, type DistanciaAteSuaCor, type Tom } from "@/lib/branding/linguagem";
+import {
+  avisosDaMarca,
+  type Aviso,
+  type DistanciaAteSuaCor,
+  type Tom,
+} from "@/lib/branding/linguagem";
 import { ehHexValido, K, normalizarHex } from "@/lib/branding/rampa";
 import { REGUA_DO_PRODUTO } from "@/lib/branding/regua-do-produto";
 import {
@@ -349,8 +354,11 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente }
           // campo que houve render NOVO do servidor. Ver os Props de CampoDeLogo.
           logoDaCamada={{
             url: resolvida.origens.logoUrl === "organizacao" ? resolvida.logoUrl : null,
+            escuraUrl:
+              resolvida.origens.logoDarkUrl === "organizacao" ? resolvida.logoDarkUrl : null,
           }}
           logoHerdado={semAOrganizacao.logoUrl}
+          logoEscuroHerdado={semAOrganizacao.logoDarkUrl}
           // Texto-fonte cru, não traduzido aqui: CampoDeLogo já chama t()
           // internamente sobre esta prop (ver componente compartilhado).
           origemDoHerdado="de quem instalou o sistema"
@@ -378,10 +386,7 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente }
         </div>
 
         <div>
-          <LinhaDeOrigem
-            campo={t("Nome")}
-            valor={origemEmPortugues(resolvida.origens.nome, t)}
-          />
+          <LinhaDeOrigem campo={t("Nome")} valor={origemEmPortugues(resolvida.origens.nome, t)} />
           <LinhaDeOrigem campo={t("Cor")} valor={origemEmPortugues(resolvida.origens.cor, t)} />
           <LinhaDeOrigem
             campo={t("Logo")}

@@ -1,15 +1,21 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * PATCH /api/v1/leads/[id] — update lead (handler em ../_handler.ts).
+ *
+ * Aceita sessão de navegador OU token de servidor (`dsk_…` com `mcp:write`),
+ * mesma dualidade de `/api/v1/messages`: a integração de monitoramento
+ * processual (n8n consultando Escavador/Jusbrasil/Codilo/Judit) atualiza o
+ * campo personalizado "Andamento atual" por aqui, sem navegador. A org nunca
+ * vem do corpo — no ramo do token ela sai da linha do token
+ * (`lib/api/auth-dual.ts`).
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { updateLeadSchema, validateRequest } from "@/lib/schemas";
-import { createClient } from "@/lib/supabase/server";
 
 import { updateLeadHandler } from "../_handler";
 
@@ -25,12 +31,18 @@ export async function PATCH(
   const requestId = randomUUID();
   const { id: leadId } = await ctx.params;
 
-  const supabase = await createClient();
   // spec 13 §4: escrita é agent+ (viewer é read-only).
-  const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_leads",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const user = authz.user;
-  const activeOrg = authz.org;
+  const { supabase, organizationId, actor, idioma } = authz;
+
+  const tetoEstourado = await tetoDeEscritaDoToken(authz, "leads", requestId);
+  if (tetoEstourado) return tetoEstourado;
 
   let input;
   try {
@@ -49,10 +61,10 @@ export async function PATCH(
     const updated = await updateLeadHandler(
       supabase,
       {
-        organization_id: activeOrg.orgId,
-        actor: { type: "user", id: user.id },
+        organization_id: organizationId,
+        actor,
         requestId,
-        idioma: user.idioma,
+        idioma,
       },
       leadId,
       input,

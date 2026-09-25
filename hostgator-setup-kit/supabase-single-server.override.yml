@@ -1,0 +1,68 @@
+# Acrescentado ao Compose oficial do Supabase self-hosted. A rede compartilhada
+# expõe apenas Envoy e Postgres aos containers do CRM. A única porta no host é a
+# do gateway, em loopback, que o instalador usa antes de o Caddy existir.
+#
+# Nomes: o compose oficial fixa `container_name` (supabase-db, supabase-envoy…).
+# Com dois Supabase na mesma VPS — este e outro qualquer — o segundo não sobe.
+# Aqui eles saem (`!reset`) e cada contêiner leva o nome do projeto, que o kit
+# põe no .env (COMPOSE_PROJECT_NAME, ver projeto_do_supabase no _common.sh). A
+# lista cobre TODOS os serviços do SUPABASE_REF pinado; um bump que traga
+# serviço novo reprova tests/shell/single-server-installer.test.sh.
+
+services:
+  studio:
+    container_name: !reset null
+
+  api-gw:
+    container_name: !reset null
+    ports: !override
+      - "127.0.0.1:${API_GW_HTTP_PORT:-8000}:8000"
+    networks:
+      default:
+        aliases: [envoy, kong]
+      deskcomm_private:
+        aliases: [supabase-envoy]
+
+  auth:
+    container_name: !reset null
+
+  rest:
+    container_name: !reset null
+
+  realtime:
+    container_name: !reset null
+    networks:
+      default:
+        # O Envoy chama este HOST (e o realtime tira o tenant do subdomínio);
+        # o que o nome do contêiner fazia, o apelido na rede do projeto faz.
+        aliases: [realtime-dev.supabase-realtime]
+
+  storage:
+    container_name: !reset null
+
+  imgproxy:
+    container_name: !reset null
+
+  meta:
+    container_name: !reset null
+
+  functions:
+    container_name: !reset null
+
+  db:
+    container_name: !reset null
+    networks:
+      default: {}
+      deskcomm_private:
+        aliases: [supabase-db]
+
+  supavisor:
+    container_name: !reset null
+    # O kit fala com o Postgres pela rede privada; porta no host só colidiria
+    # com outro Postgres/Supabase da VPS.
+    ports: !reset []
+
+networks:
+  deskcomm_private:
+    external: true
+    name: ${SINGLE_SERVER_NETWORK:-deskcomm_single_server}

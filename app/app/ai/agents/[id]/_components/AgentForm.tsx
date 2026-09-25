@@ -42,6 +42,7 @@ import { ModelPicker, useModelMeta } from "./ModelPicker";
 import { CHAVE_DA_INSTALACAO, CredentialPicker, STATUS_LABEL, findCredential } from "./CredentialPicker";
 import { rotuloDoEstadoDoCanal } from "@/lib/channels/estado";
 import { bloqueioDePublicacao } from "@/lib/ai/agents/bloqueio-de-publicacao";
+import { mesmoRascunho } from "@/lib/ai/agents/mesmo-rascunho";
 import { ToolPicker } from "./ToolPicker";
 import { TriggerEditor, type TriggerValue } from "./TriggerEditor";
 import { HandoffKeywordsInput } from "./HandoffKeywordsInput";
@@ -55,6 +56,7 @@ import { PainelDeSeguranca } from "./PainelDeSeguranca";
 import { BasesDoAgente, type MaterialDoAcervo } from "./BasesDoAgente";
 import { FunisDoAgente, type CoberturaPorFunil } from "./FunisDoAgente";
 import { PublishConfirmDialog } from "./PublishConfirmDialog";
+import { ComandosDoCelular } from "./ComandosDoCelular";
 import {
   saveAgentDraftAction,
   publishAgentAction,
@@ -338,7 +340,19 @@ export function AgentForm(props: Props) {
    */
   const [papel, setPapel] = React.useState<"conversa" | "operacao" | "seguranca">("conversa");
 
-  const dirty = JSON.stringify(form) !== JSON.stringify(baseline);
+  /**
+   * A pergunta é "salvar mudaria alguma coisa?", e não "os dois objetos são
+   * idênticos". Por isso a comparação é feita sobre o que SERIA GRAVADO, de
+   * forma canônica (ver `lib/ai/agents/mesmo-rascunho.ts`): campo que o servidor
+   * completa sozinho e ordem de chaves do `jsonb` deixavam `dirty` verdadeiro
+   * para sempre, e o botão "Publicar" cinza com "Salve o rascunho antes de
+   * publicar" — medido numa instalação em produção, com o agente preso na versão
+   * anterior até alguém publicar por fora da tela.
+   */
+  const dirty = !mesmoRascunho(
+    { cadastro: toCadastroPayload(form), versao: toVersionPayload(form) },
+    { cadastro: toCadastroPayload(baseline), versao: toVersionPayload(baseline) },
+  );
 
   function patch(p: Partial<FormState>) {
     setForm((prev) => ({ ...prev, ...p }));
@@ -481,8 +495,11 @@ export function AgentForm(props: Props) {
     setSaving(true);
     try {
       if (isEdit) {
-        // A mesma régua do servidor, aqui, para o erro aparecer no campo em vez
-        // de voltar como 500 depois de a versão já ter sido gravada.
+        // A mesma régua do cadastro que a Server Action valida de novo
+        // (_actions.ts, `agentMcpPatchSchema` — não a da rota REST, que é
+        // `agentPatchSchema` e diverge em name/description), aqui só para o erro
+        // aparecer no campo em vez de voltar como 500 depois de a versão já ter
+        // sido gravada.
         const cadastro = agentMcpPatchSchema.safeParse(toCadastroPayload(form));
         if (!cadastro.success) {
           toast.error(t("Validação falhou."));
@@ -712,6 +729,7 @@ export function AgentForm(props: Props) {
           toolIds={form.operator_tool_ids}
           onToolIdsChange={(ids) => patch({ operator_tool_ids: ids })}
           modeloDoConversador={form.model}
+          agentId={props.mode === "edit" ? props.agent.id : null}
           disabled={disabled}
         />
       ) : null}
@@ -1212,6 +1230,16 @@ export function AgentForm(props: Props) {
               disabled={disabled}
             />
           </Card>
+
+          {/* Comandos pelo celular (`#on`/`#off`, C-076). Salva em
+              `ai_agents.config.aceita_comandos_celular`. */}
+          {isEdit && (
+            <ComandosDoCelular
+              agentId={props.agent.id}
+              inicial={(props.agent.config ?? {}).aceita_comandos_celular}
+              disabled={disabled}
+            />
+          )}
         </div>
       </div>
 

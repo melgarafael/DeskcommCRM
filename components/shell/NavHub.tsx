@@ -1,3 +1,4 @@
+import type { ModuloOpcional } from "@/lib/instalacao/modulos";
 import type { InterfaceSettings } from "@/lib/navigation/interface";
 import Link from "next/link";
 
@@ -14,6 +15,12 @@ import { BookOpen, Lightbulb, ListChecks, Warning } from "@/lib/ui/icons";
 
 interface NavHubProps {
   interfaceSettings?: InterfaceSettings;
+  /**
+   * Módulos opcionais ligados na instalação. OBRIGATÓRIO: quando era opcional,
+   * ausente queria dizer "não filtra", e o hub de IA mostrava a porta de um
+   * módulo desligado — o clique dava 404 (revisão do #1573, B1).
+   */
+  modulosLigados: readonly ModuloOpcional[];
   group: NavGroupId;
   isPlatformAdmin: boolean;
   role: Role | null;
@@ -69,11 +76,12 @@ export function NavHub({
   title,
   subtitle,
   interfaceSettings,
+  modulosLigados,
   locale = IDIOMA_PADRAO,
   extensionGuides = [],
   extensionsUnavailable = false,
 }: NavHubProps) {
-  const secoes = hubSections(group, isPlatformAdmin, role, interfaceSettings);
+  const secoes = hubSections(group, isPlatformAdmin, role, interfaceSettings, modulosLigados);
 
   return (
     <div className="flex h-full flex-col gap-8 p-6">

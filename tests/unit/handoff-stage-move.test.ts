@@ -28,6 +28,7 @@ interface Cenario {
   etapaDestino: Resposta;
   update: Resposta;
   rpcError?: { message: string } | null;
+  etapaPorSlug?: (slug: string) => Resposta;
 }
 
 function cenario(over: Partial<Cenario> = {}): Cenario {
@@ -61,6 +62,7 @@ function fakeAdmin(c: Cenario, rpcs: ChamadaRpc[] = []) {
         _update: false,
         _select: false,
         _eqKeys: [] as string[],
+        _slugVal: undefined as string | undefined,
         select: () => {
           b._select = true;
           return b;
@@ -69,13 +71,17 @@ function fakeAdmin(c: Cenario, rpcs: ChamadaRpc[] = []) {
           b._update = true;
           return b;
         },
-        eq: (key: string) => {
+        eq: (key: string, val?: unknown) => {
           b._eqKeys.push(key);
+          if (key === "slug" && typeof val === "string") b._slugVal = val;
           return b;
         },
         maybeSingle: () => {
           if (tabela === "crm_leads") return Promise.resolve(c.lead);
-          if (b._eqKeys.includes("slug")) return Promise.resolve(c.etapaDestino);
+          if (b._eqKeys.includes("slug")) {
+            if (c.etapaPorSlug && b._slugVal) return Promise.resolve(c.etapaPorSlug(b._slugVal));
+            return Promise.resolve(c.etapaDestino);
+          }
           return Promise.resolve({ data: ETAPA_ORIGEM, error: null });
         },
         then(onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) {
@@ -204,4 +210,28 @@ it("handoff derivado mantém a continuação do canal A sem observar/iniciar B",
   });
   expect(rpcs.map((call) => call.fn)).not.toContain("fn_service_observe_command");
   expect(rpcs.map((call) => call.fn)).not.toContain("fn_service_begin");
+});
+
+it("encontra etapa legada com sublinhado ('chamar_humano') se não houver etapa com hífen", async () => {
+  const c = cenario({
+    etapaPorSlug: (slug: string) => {
+      if (slug === "chamar_humano") {
+        return { data: { id: "s-handoff-legada", name: "Chamar Humano" }, error: null };
+      }
+      return { data: null, error: null };
+    },
+  });
+  const r = await mover(c);
+  expect(r).toEqual({ moveu: true, motivo: "movido" });
+});
+
+it("erro de banco na busca pelo slug legado é indisponibilidade, não 'sem_etapa_de_handoff'", async () => {
+  const c = cenario({
+    etapaPorSlug: (slug: string) =>
+      slug === "chamar_humano"
+        ? { data: null, error: { message: "fetch failed" } }
+        : { data: null, error: null },
+  });
+  const r = await mover(c);
+  expect(r).toEqual({ moveu: false, motivo: "indisponivel" });
 });

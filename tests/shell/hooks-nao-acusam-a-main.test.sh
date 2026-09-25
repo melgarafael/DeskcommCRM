@@ -354,6 +354,129 @@ assert_exit "$(exit_de "$r")" 1 "A: edição genuína fora de merge SEGUE bloque
 saida=$( cd "$a" && DESKCOMM_GOV_INVARIANTS_EDIT=1 bash loop/hooks/freeze-invariants.sh 2>&1 ); rc=$?
 assert_exit "$rc" 0 "VÁLVULA: DESKCOMM_GOV_INVARIANTS_EDIT=1 segue liberando o estado A"
 
+# ── #1324 · o `M` diz O QUE mudou, não só que mudou ─────────────────────────────────
+# O eixo acima (A, VÁLVULA) mede a PERMISSÃO. Este mede o OBJETO: um `M` cujo diff,
+# ignorados os comentários, é VAZIO não altera o que o invariante vigia — renumerar a
+# migration citada num comentário não é edição, e passar pela válvula uma coisa dessas é
+# dívida (na terceira vez ninguém lê o que ela liberou). É o caso MEDIDO no commit
+# af28623d7: `rls-isolation.test.ts` (2 linhas) e `vocabulario-banco-x-typescript.test.ts`
+# (1 linha) mudaram SÓ em comentário.
+#
+# COMENTARIO-LINHA é o caso que fica VERMELHO na versão anterior do hook; os seguintes
+# fixam os LIMITES — sem eles, "ignorar comentário" viraria um removedor ingênuo, e o
+# ingênuo tem furo conhecido: `http://waha:3000` DENTRO de string (a armadilha da #1322).
+inv1324() {
+  cat <<'TS'
+import { it, expect } from "vitest";
+// a migration 0012_rls_isolation foi renumerada para 0020 no vocabulário do banco
+const esperado = 2;
+it("MARCADOR-BASE-A", () => { expect(esperado).toBe(2); });
+TS
+}
+# mostra quantas e QUAIS linhas o diff bruto mexe, para a premissa de cada caso não ser
+# uma afirmação de fé: 2 linhas citadas, ambas começando por comentário, é o que se espera.
+linhas_do_diff() { diff <(git -C "$1" show "HEAD:$2") "$1/$2" | grep '^[<>]'; }
+
+# CASO COMENTARIO-LINHA · só o comentário mudou (é o caso da issue, na forma mínima)
+cl="$TMP/comentario-linha"; preparar "$cl" "$principal" "$BASE_DA_BRANCH"
+inv1324 > "$cl/$INV"; commitar "$cl" "o invariante com o comentario antigo"
+sed -i 's/renumerada para 0020/renumerada para 0024/' "$cl/$INV"; git -C "$cl" add "$INV"
+if [ -z "$(git -C "$cl" diff --cached --name-only)" ]; then falha 'COMENTARIO-LINHA: a premissa — a mudança está ENCENADA no índice' 'nada encenado: o caso não mede o M'
+else ok "COMENTARIO-LINHA: a premissa — a mudança está ENCENADA no índice (status M)"; fi
+if [ "$(linhas_do_diff "$cl" "$INV" | grep -c '^[<>] *//')" = "2" ] && [ "$(linhas_do_diff "$cl" "$INV" | wc -l)" = "2" ]; then
+  ok "COMENTARIO-LINHA: a premissa — as DUAS linhas que o diff bruto mexe são de COMENTÁRIO"
+else falha "COMENTARIO-LINHA: as duas linhas do diff são de comentário" "diff: $(linhas_do_diff "$cl" "$INV")"; fi
+r=$(rodar "$cl" freeze-invariants.sh)
+assert_exit "$(exit_de "$r")" 0 "COMENTARIO-LINHA: mudar SÓ o comentário LIBERA sem DESKCOMM_GOV_INVARIANTS_EDIT"
+saida=$( cd "$cl" && git commit --no-edit -m "renumera a migration citada em comentario" 2>&1 ); rc=$?
+assert_exit "$rc" 0 'COMENTARIO-LINHA: e pelo caminho de produção (git commit, dispatcher) o commit PASSA'
+
+# CASO COMENTARIO-BLOCO · o mesmo, num comentário de BLOCO e num `--` DENTRO de template
+# (o comentário da linguagem hospedada, o SQL das migrations: é onde ele de fato aparece)
+cb="$TMP/comentario-bloco"; preparar "$cb" "$principal" "$BASE_DA_BRANCH"
+cat > "$cb/$INV" <<'TS'
+import { it } from "vitest";
+/* conferido contra vocabulario-banco-x-typescript em 18/09/2026 */
+const sql = `-- 0012 rls isolation
+select 1 as um;`;
+it("MARCADOR-BASE-A", () => {});
+TS
+commitar "$cb" "o invariante com os comentarios antigos"
+sed -i -e 's/em 18\/09\/2026/em 19\/09\/2026/' -e 's/^-- 0012 rls/-- 0024 rls/' "$cb/$INV"; git -C "$cb" add "$INV"
+if [ -n "$(git -C "$cb" diff --cached --name-only)" ]; then ok "COMENTARIO-BLOCO: a premissa — a mudança está ENCENADA (bloco + comentário de SQL)"
+else falha 'COMENTARIO-BLOCO: a premissa — a mudança está encenada' 'nada encenado: o sed não pegou'; fi
+r=$(rodar "$cb" freeze-invariants.sh)
+assert_exit "$(exit_de "$r")" 0 'COMENTARIO-BLOCO: bloco /* */ e -- dentro de template também liberam sem válvula'
+
+# CASO ASSERCAO-REAL · o CONTROLE NEGATIVO: mudança de asserção de verdade segue bloqueada
+# (é o que prova que a exceção nova não virou "M passa"). Uma troca de número no CORPO do
+# teste é exatamente o que o invariante vigia.
+ar="$TMP/assercao-real"; preparar "$ar" "$principal" "$BASE_DA_BRANCH"
+inv1324 > "$ar/$INV"; commitar "$ar" "o invariante intacto"
+sed -i 's/esperado = 2/esperado = 3/; s/toBe(2)/toBe(3)/' "$ar/$INV"; git -C "$ar" add "$INV"
+if [ "$(linhas_do_diff "$ar" "$INV" | grep -c 'toBe(3)')" -ge 1 ] && [ "$(linhas_do_diff "$ar" "$INV" | grep -c '^[<>] *//')" = "0" ] && [ -n "$(git -C "$ar" diff --cached --name-only)" ]; then
+  ok "ASSERCAO-REAL: a premissa — a mudança toca o CORPO do teste (não o comentário)"
+else falha "ASSERCAO-REAL: a mudança toca o corpo do teste" "diff: $(linhas_do_diff "$ar" "$INV")"; fi
+r=$(rodar "$ar" freeze-invariants.sh)
+assert_exit "$(exit_de "$r")" 1 "ASSERCAO-REAL: trocar o número da asserção SEGUE BLOQUEADO"
+assert_contains "$(saida_de "$r")" "$INV" "ASSERCAO-REAL: e a mensagem nomeia o invariante"
+
+# CASO STRING · a armadilha da #1322, medida: o valor está DENTRO de string, com `http://`.
+# Um removedor ingênuo (`s,//.*,,`) apaga a URL NOS DOIS lados, eles ficam IGUAIS e uma
+# troca de endereço — que o invariante vigia — passaria em silêncio.
+st="$TMP/string-armadilha"; preparar "$st" "$principal" "$BASE_DA_BRANCH"
+cat > "$st/$INV" <<'TS'
+import { it, expect } from "vitest";
+const baseUrl = "http://waha:3000";
+it("MARCADOR-BASE-A", () => { expect(baseUrl).toBe("http://waha:3000"); });
+TS
+commitar "$st" "o invariante com a URL antiga"
+sed -i 's/waha:3000/waha:4000/g' "$st/$INV"; git -C "$st" add "$INV"
+if [ "$(git -C "$st" show "HEAD:$INV" | sed 's,//.*,,' )" = "$(sed 's,//.*,,' "$st/$INV")" ]; then
+  ok 'STRING: a premissa — um removedor ingênuo de // IGUALARIA os dois lados (o falso liberado existe)'
+else falha "STRING: a premissa do removedor ingênuo" "os lados já diferiam sob o filtro ingênuo: o caso não mede a armadilha"; fi
+r=$(rodar "$st" freeze-invariants.sh)
+assert_exit "$(exit_de "$r")" 1 'STRING: trocar o endereço DENTRO da string SEGUE BLOQUEADO (o // não é comentário aqui)'
+assert_contains "$(saida_de "$r")" "$INV" "STRING: e a mensagem nomeia o invariante"
+
+# CASO CARONA · comentário E asserção no MESMO commit: o comentário não leva carona
+cr2="$TMP/carona"; preparar "$cr2" "$principal" "$BASE_DA_BRANCH"
+inv1324 > "$cr2/$INV"; commitar "$cr2" "o invariante intacto"
+sed -i 's/renumerada para 0020/renumerada para 0024/; s/esperado = 2/esperado = 3/' "$cr2/$INV"; git -C "$cr2" add "$INV"
+r=$(rodar "$cr2" freeze-invariants.sh)
+assert_exit "$(exit_de "$r")" 1 "CARONA: renumerar o comentário NÃO libera a asserção que veio junto"
+assert_contains "$(saida_de "$r")" "$INV" "CARONA: e a mensagem nomeia o invariante"
+
+# CASO FLIP-FAILS · a exceção DECLARADA segue exigindo a válvula: o flip `it.fails(` → `it(`
+# é mudança de CÓDIGO (o teste deixa de ser esperado-vermelho), não comentário.
+ff="$TMP/flip-fails"; preparar "$ff" "$principal" "$BASE_DA_BRANCH"
+cat > "$ff/$INV" <<'TS'
+import { it } from "vitest";
+// catraca da G1-03: flipa quando a fase G2+ corrige o gap
+it.fails("MARCADOR-BASE-A", () => {});
+TS
+commitar "$ff" "o invariante com o test.fails"
+sed -i 's/it\.fails(/it(/' "$ff/$INV"; git -C "$ff" add "$INV"
+r=$(rodar "$ff" freeze-invariants.sh)
+assert_exit "$(exit_de "$r")" 1 "FLIP-FAILS: o flip documentado SEGUE BLOQUEADO sem a válvula"
+saida=$( cd "$ff" && DESKCOMM_GOV_INVARIANTS_EDIT=1 bash loop/hooks/freeze-invariants.sh 2>&1 ); rc=$?
+assert_exit "$rc" 0 "FLIP-FAILS: e com DESKCOMM_GOV_INVARIANTS_EDIT=1 segue liberado (a exceção declarada não se perdeu)"
+
+# CASO COMENTARIO-MODO · o limite do LIMITE: se o MODO mudou junto, não é "só comentário".
+# Os blobs ficam IDÊNTICOS num `chmod +x` (é a cegueira que a CONDIÇÃO 5 tapa no eixo do
+# merge — e que reabriria aqui por outro caminho).
+cm="$TMP/comentario-modo"; preparar "$cm" "$principal" "$BASE_DA_BRANCH"
+inv1324 > "$cm/$INV"; commitar "$cm" "o invariante com o comentario antigo"
+sed -i 's/renumerada para 0020/renumerada para 0024/' "$cm/$INV"
+chmod +x "$cm/$INV"; git -C "$cm" add "$INV"
+if git -C "$cm" ls-files --stage "$INV" | grep -q '^100755' \
+   && [ "$(git -C "$cm" ls-tree HEAD -- "$INV" | awk '{print $1}')" = "100644" ] \
+   && [ "$(linhas_do_diff "$cm" "$INV" | grep -c '^[<>] *//')" = "2" ]; then
+  ok "COMENTARIO-MODO: as premissas — o modo virou 100755 e as 2 linhas que mudaram são de COMENTÁRIO"
+else falha "COMENTARIO-MODO: as premissas (modo mudou, mudança de conteúdo só em comentário)" "$(git -C "$cm" ls-files --stage "$INV")"; fi
+r=$(rodar "$cm" freeze-invariants.sh)
+assert_exit "$(exit_de "$r")" 1 "COMENTARIO-MODO: comentário + chmod +x SEGUE BLOQUEADO (só comentário não é licença)"
+
 # CASO D · a branch DELETA um invariante que a main tem
 d="$TMP/d"; preparar "$d" "$principal" "$BASE_DA_BRANCH"
 git -C "$d" rm -q "$INV"

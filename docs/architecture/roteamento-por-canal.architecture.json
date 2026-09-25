@@ -112,6 +112,20 @@
       "col": 3,
       "type": "database",
       "label": "channel.pairing_code_requested sem telefone/código"
+    },
+    {
+      "id": "social-connections",
+      "lane": "humano",
+      "col": 0,
+      "type": "ui",
+      "label": "Redes sociais: conta, autorização e IA pausada"
+    },
+    {
+      "id": "social-inbound",
+      "lane": "app",
+      "col": 1,
+      "type": "service",
+      "label": "Assinatura + conta/rede + Inbox existente"
     }
   ],
   "edges": [
@@ -189,6 +203,21 @@
       "from": "pair-code-ui",
       "to": "finish",
       "label": "Polling existente só conclui em WORKING"
+    },
+    {
+      "from": "social-connections",
+      "to": "social-inbound",
+      "label": "Conta vinculada e webhook autenticado"
+    },
+    {
+      "from": "social-inbound",
+      "to": "loader",
+      "label": "Conversa no Inbox e despacho existente"
+    },
+    {
+      "from": "notice",
+      "to": "social-connections",
+      "label": "Falha de conexão pede correção"
     }
   ]
 }

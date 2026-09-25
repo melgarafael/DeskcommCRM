@@ -40,6 +40,7 @@ function fakeDb(opts: {
   pointers?: PointerDeEtapa[];
   contato?: string | null;
   noDeGatilho?: string | null;
+  pedeAgente?: boolean;
   jaVivo?: boolean;
   registro: Registro;
 }): GatilhoEtapaDb {
@@ -52,7 +53,8 @@ function fakeDb(opts: {
       return opts.contato === undefined ? CONTATO : opts.contato;
     },
     async carregaNoDeGatilho() {
-      return opts.noDeGatilho === undefined ? "t1" : opts.noDeGatilho;
+      if (opts.noDeGatilho === null) return null;
+      return { id: opts.noDeGatilho ?? "t1", pedeAgente: opts.pedeAgente ?? true };
     },
     async insereEnrollment(input) {
       if (opts.jaVivo) return { inserted: false, id: null };
@@ -183,6 +185,21 @@ describe("aplicaGatilhoDeEtapa — o gate do agente", () => {
     );
     expect(s.pointers_barrados_pelo_gate).toBe(1);
     expect(s.enrolled).toBe(0);
+  });
+
+  it("sem agente, grafo só de texto fixo enrolla com agent_id nulo", async () => {
+    const reg = registro();
+    const s = await aplicaGatilhoDeEtapa(
+      {
+        db: fakeDb({ pointers: [pointerArmado], pedeAgente: false, registro: reg }),
+        gateDb: fakeGate([]),
+        clock: CLOCK,
+      },
+      evento(),
+    );
+    expect(s.enrolled).toBe(1);
+    expect(s.pointers_barrados_pelo_gate).toBe(0);
+    expect(reg.enrollments[0]).toMatchObject({ agent_id: null });
   });
 });
 

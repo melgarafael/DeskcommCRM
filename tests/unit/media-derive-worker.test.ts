@@ -7,7 +7,7 @@ const messageRow = {
   organization_id: "org1",
   type: "audio" as string,
   media_mime: "audio/ogg",
-  media_storage_path: "org1/conv1/msg1.ogg",
+  media_storage_path: "org1/conv1/msg1.ogg" as string | null,
   media_derived_status: null as string | null,
 };
 
@@ -23,7 +23,7 @@ const messageRow = {
  * (o caso "ninguém configurou nada", que é o comportamento anterior que estes
  * casos existem para preservar).
  */
-const bindingDeVisao: { provider: string; model_id: string; credential_id: string | null } | null = null;
+let bindingDeVisao: { provider: string; model_id: string; credential_id: string | null } | null = null;
 
 /**
  * A Central: o que ela JÁ TEM aberto, e o que o worker manda inserir.
@@ -34,6 +34,9 @@ const bindingDeVisao: { provider: string; model_id: string; credential_id: strin
  * teste passando por não ter exercitado nada.
  */
 const avisoAbertoNaCentral: Record<string, unknown> | null = null;
+
+/** Versão publicada com `video_frames_enabled` — null = leitura de vídeo desligada (o padrão). */
+let agenteComVideo: Record<string, unknown> | null = { id: "v1" };
 const inboxInsertMock = vi.fn();
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -44,7 +47,9 @@ vi.mock("@/lib/supabase/admin", () => ({
           ? bindingDeVisao
           : tabela === "agent_inbox_items"
             ? avisoAbertoNaCentral
-            : messageRow;
+            : tabela === "ai_agent_versions"
+              ? agenteComVideo
+              : messageRow;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const terminais: any = {
         maybeSingle: async () => ({ data: linha, error: null }),
@@ -92,6 +97,21 @@ vi.mock("@/lib/agent-engine/edge/llm/credentials", () => ({
 import { deriveMessageMedia, MARCADOR_NAO_LIDA } from "@/workers/media-derive-worker";
 import { deriveMediaText } from "@/lib/messaging/media/derive";
 import { DETALHE_TECNICO } from "@/lib/event-log/aviso-de-evento-morto";
+import { resolveOrgLlmConfig, type OrgLlmConfig } from "@/lib/agent-engine/edge/llm/credentials";
+
+function configResolvida(over: Partial<OrgLlmConfig> = {}): OrgLlmConfig {
+  return {
+    provider: "openai",
+    apiKey: "sk-test",
+    origemDaChave: "credencial_da_organizacao",
+    defaultModel: "gpt-5",
+    params: {},
+    enabledModels: [],
+    orcamento: { modo: "off", tetoCents: 0, efetivoEm: null, limiarPct: 80 },
+    orcamentoIndisponivelPorque: null,
+    ...over,
+  };
+}
 
 function eventRow(attempts = 0) {
   return {
@@ -114,7 +134,42 @@ describe("deriveMessageMedia", () => {
     inboxInsertMock.mockReset();
     messageRow.media_derived_status = null;
     messageRow.type = "audio";
+    messageRow.media_storage_path = "org1/conv1/msg1.ogg";
+    agenteComVideo = { id: "v1" };
+    bindingDeVisao = null;
+    messageRow.media_mime = "audio/ogg";
+    vi.mocked(resolveOrgLlmConfig).mockReset().mockResolvedValue(configResolvida());
     vi.mocked(deriveMediaText).mockReset().mockResolvedValue("transcrição do áudio real");
+  });
+
+  it("usa binding da visão quando a organização não tem credencial padrão (#1591)", async () => {
+    messageRow.type = "image";
+    messageRow.media_mime = "image/jpeg";
+    bindingDeVisao = { provider: "openai", model_id: "gpt-4o", credential_id: "cred-vision" };
+
+    // Sem override (padrão da org) rejeita; com override (binding) resolve com sucesso
+    vi.mocked(resolveOrgLlmConfig).mockImplementation(async (_pool, _cfg, _orgId, override) => {
+      if (override?.credentialId === "cred-vision") {
+        return configResolvida({ apiKey: "sk-vision", defaultModel: "gpt-4o" });
+      }
+      throw new Error("Nenhuma credencial padrão encontrada para a organização");
+    });
+
+    const r = await deriveMessageMedia(eventRow());
+    expect(r.status).toBe("ok");
+    expect(resolveOrgLlmConfig).toHaveBeenCalledTimes(1);
+    expect(resolveOrgLlmConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "org1",
+      { provider: "openai", credentialId: "cred-vision" },
+    );
+    expect(deriveMediaText).toHaveBeenCalledWith(
+      "image",
+      expect.anything(),
+      "image/jpeg",
+      expect.anything(),
+    );
   });
 
   it("baixa a mídia, deriva e grava ready", async () => {
@@ -137,6 +192,27 @@ describe("deriveMessageMedia", () => {
     const r = await deriveMessageMedia(eventRow());
     expect(r.status).toBe("skipped");
     expect(downloadMock).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Mídia que o worker PULA de propósito grava `skipped`. Sem a marca o status
+   * ficava null para sempre, e o drain — que espera a mídia da CONVERSA —
+   * atrasava em até 120s a resposta do texto que o cliente mandou depois.
+   */
+  it("vídeo com leitura desligada (padrão) → grava skipped, sem baixar", async () => {
+    messageRow.type = "video";
+    agenteComVideo = null;
+    const r = await deriveMessageMedia(eventRow());
+    expect(r.status).toBe("skipped");
+    expect(downloadMock).not.toHaveBeenCalled();
+    expect(updateEqMock).toHaveBeenCalledWith({ media_derived_status: "skipped" });
+  });
+
+  it("mensagem sem arquivo no storage → grava skipped", async () => {
+    messageRow.media_storage_path = null;
+    const r = await deriveMessageMedia(eventRow());
+    expect(r.status).toBe("skipped");
+    expect(updateEqMock).toHaveBeenCalledWith({ media_derived_status: "skipped" });
   });
 
   it("erro na derivação marca failed no último attempt", async () => {

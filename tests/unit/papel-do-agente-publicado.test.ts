@@ -54,8 +54,17 @@ describe("papel do agente publicado", () => {
     // `fn_role_at_least` consulta `fn_user_role_in_org`, que lê
     // `user_organizations`. O agente não é usuário. Se `ai_operator` aparecer
     // ali, alguém tentou dar papel de máquina a gente pela porta do banco.
-    const fn = baseline.match(/fn_role_at_least[\s\S]*?\$\$;/);
-    expect(fn, "fn_role_at_least não encontrada").not.toBeNull();
+    // A ÚLTIMA definição é a que vale no banco: o arquivo é dump + apêndice,
+    // aplicados em ordem (CLAUDE.md, item 10). O `match` parava na PRIMEIRA
+    // ocorrência do nome — e o dump grafa `"public"."fn_role_at_least"`, com
+    // aspas e maiúsculas, então a varredura é por regex e a leitura da última.
+    const definicoes = [
+      ...baseline.matchAll(
+        /create or replace function\s+"?public"?\.\s*"?fn_role_at_least"?\s*\([\s\S]*?\$\$;/gi,
+      ),
+    ];
+    const fn = definicoes.at(-1);
+    expect(fn, "fn_role_at_least não encontrada").not.toBeUndefined();
     expect(fn![0]).not.toContain("ai_operator");
   });
 

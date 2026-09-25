@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { ensureTenantForUser } from "@/lib/auth/provision";
 import { decidirConviteDoSignup } from "@/lib/auth/convite-no-signup";
 import { modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
+import { createRegistrationRequest, estadoDoPedido } from "@/lib/auth/registration-requests";
 import { acessoFoiRevogado } from "@/lib/auth/vinculo-revogado";
 import { organizationNameSchema } from "@/lib/auth/schemas";
 import { audit } from "@/lib/audit";
@@ -23,7 +24,8 @@ export type RecoverOrganizationResult =
         | "invite_pending"
         | "somente_convite"
         | "provision_failed"
-        | "access_revoked";
+        | "access_revoked"
+        | "pedido_recusado";
     };
 
 /**
@@ -107,7 +109,8 @@ export async function recoverOrganization(name: string): Promise<RecoverOrganiza
   // `so_convite` ela seria a saída de emergência que reabre o que as outras
   // três fecharam: bastaria criar a conta por qualquer via, chegar sem vínculo,
   // e pedir a recuperação. Fechar só a tela de cadastro seria outro capacho.
-  if ((await modoDeCadastro()) === "so_convite") {
+  const modo = await modoDeCadastro();
+  if (modo === "so_convite") {
     void audit({
       action: "auth.signup_provision_recusado",
       actorUserId: authUser.id,
@@ -118,6 +121,38 @@ export async function recoverOrganization(name: string): Promise<RecoverOrganiza
 
   if (await authRateLimited("org_recovery", authUser.id, AUTH_LIMITS.org_recovery)) {
     return { ok: false, error: "rate_limited" };
+  }
+
+  // COM APROVAÇÃO (migration 0383, recorte do PR #714): esta é a ÚNICA porta
+  // que cria o pedido — `/auth/confirm` e `/auth/callback` mandam para cá em
+  // vez de provisionar. A empresa nasce só na aprovação do administrador da
+  // instalação (`app/actions/registration/decide.ts`).
+  if (modo === "com_aprovacao") {
+    // Recusa é final. Sem esta guarda, recusar seria decoração: bastaria
+    // enviar o pedido de novo, e o índice só impede DOIS pendentes.
+    if ((await estadoDoPedido(authUser.id)) === "rejected") {
+      return { ok: false, error: "pedido_recusado" };
+    }
+    try {
+      const pedido = await createRegistrationRequest(authUser.id, parsed.data);
+      if (pedido.created) {
+        void audit({
+          action: "registration.requested",
+          actorUserId: authUser.id,
+          resourceType: "registration_request",
+          resourceId: pedido.id,
+        });
+      }
+    } catch (error) {
+      void audit({
+        action: "auth.signup_provision_recovery_failed",
+        actorUserId: authUser.id,
+        metadata: { reason: error instanceof Error ? error.message : String(error) },
+      });
+      return { ok: false, error: "provision_failed" };
+    }
+    revalidatePath("/get-started");
+    redirect("/get-started");
   }
 
   try {

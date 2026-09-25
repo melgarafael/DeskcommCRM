@@ -54,6 +54,23 @@ export type MotivoDeDiagnostico =
 export interface ChaveDaInstalacao {
   /** O nome da variável de ambiente — é também a chave da linha no banco. */
   readonly chave: string;
+  /**
+   * QUAL TELA mostra esta chave. O padrão é a tela de Credenciais
+   * (`/admin/configuracao`); `"email"` a leva para `/admin/email`, ao lado do
+   * servidor SMTP.
+   *
+   * Existe por decisão de produto (DEC-009, opção A), não por arquitetura:
+   * "como o meu servidor manda e-mail" é UM assunto, e estava dividido em duas
+   * telas — o servidor próprio numa, o serviço externo na outra. Quem instala
+   * abria "E-mail", não achava a chave do serviço externo e concluía que ele
+   * não era suportado.
+   *
+   * ⚠️ O que muda é o LUGAR, e só. A linha continua em `platform_config`, com a
+   * mesma ação de servidor, o mesmo cofre e o mesmo catálogo: duas telas
+   * mostram campos diferentes do MESMO mecanismo, e nenhuma opção aparece em
+   * duas. Se um dia aparecer, o defeito não é de tela — é de catálogo.
+   */
+  readonly telaDona?: "credenciais" | "email";
   readonly rotulo: string;
   /** O que é, para quem não programa. Uma frase. */
   readonly explicacao: string;
@@ -107,6 +124,8 @@ export const CATALOGO_DA_INSTALACAO: readonly ChaveDaInstalacao[] = [
     grupo: "email",
     natureza: "segredo",
     controle: "edita",
+    // Mora na tela E-mail, ao lado do servidor próprio (DEC-009, opção A).
+    telaDona: "email",
   },
   {
     chave: "RESEND_FROM_EMAIL",
@@ -116,6 +135,8 @@ export const CATALOGO_DA_INSTALACAO: readonly ChaveDaInstalacao[] = [
     grupo: "email",
     natureza: "texto",
     controle: "edita",
+    // Mora na tela E-mail, ao lado do servidor próprio (DEC-009, opção A).
+    telaDona: "email",
   },
   {
     chave: "SUPPORT_EMAIL",

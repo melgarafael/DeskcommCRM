@@ -128,7 +128,17 @@ git fetch --tags --quiet origin 2>/dev/null || FETCH_OK=0
 
 CURRENT_TAG="$(git describe --tags --exact-match HEAD 2>/dev/null || true)"
 CURRENT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
-LATEST_TAG="$(git tag -l 'v*' --sort=-v:refname | head -1)" || true
+# A AUTORIDADE é a release publicada, NUNCA a maior tag. Ver
+# `ultima_release_estavel` em _common.sh para o caso real que obrigou a troca
+# (v1.20.0 existia como tag manual, sem release — e a pergunta antiga mandava
+# instalá-la). O `git fetch --tags` acima continua necessário: a API decide
+# QUAL tag, o git fornece o CONTEÚDO dela (changelog, ancestralidade).
+LATEST_TAG="$(ultima_release_estavel)" || true
+# "A API não respondeu" é diferente de "não há release". Sem esta distinção o
+# app leria o silêncio como boa notícia e diria "você está em dia" a uma
+# instalação atrasada — o mesmo defeito que COMPARE_FAILED já evita do outro
+# lado.
+if [ -n "$LATEST_TAG" ]; then RELEASE_OK=1; else RELEASE_OK=0; fi
 
 # Guardado ANTES de qualquer zeragem abaixo: "vi uma tag" e "não anunciei"
 # são coisas diferentes. Sem isto, um fork sem NENHUMA tag `v*` chega ao app
@@ -166,6 +176,9 @@ fi
 # Sem nenhuma tag conhecida E sem ter conseguido buscar: também não dá para
 # afirmar que não há versão nova — nem sabemos se existe alguma publicada.
 [ -z "$LATEST_TAG" ] && [ "$FETCH_OK" = 0 ] && COMPARE_FAILED=true
+# Idem quando quem não respondeu foi a API de releases: não sabemos se existe
+# versão nova, e dizer que não existe seria mentir com cara de boa notícia.
+[ -z "$LATEST_TAG" ] && [ "$RELEASE_OK" = 0 ] && COMPARE_FAILED=true
 
 # ── A ETIQUETA PODE SAIR NA FRENTE DA IMAGEM ─────────────────────────────────
 #
@@ -212,8 +225,13 @@ if [ -n "$LATEST_TAG" ] && [ "$LATEST_TAG" != "$CURRENT" ]; then
   # salto grande. `index()` e não regex: o rótulo tem `[` e `]`, e escapar isso
   # em awk é onde se erra. Instalação fora de release (CURRENT é um SHA) nunca
   # casa, cai no arquivo inteiro cortado, e o app declara que não alcançou.
-  # MANTENHA numa linha física só: tests/unit/changelog-cabe-na-tela-da-vps.test.ts
-  # lê o teto daqui por regex de linha única e EXPLODE se ela for quebrada.
+  # MANTENHA numa linha física só: `lib/release/cabe-na-tela.ts` lê o teto E o
+  # `-v cur=` daqui por regex de linha única e EXPLODE se ela for quebrada. São
+  # dois os leitores, com atores diferentes — o teste que cobra o AUTOR DO PR
+  # (tests/unit/changelog-cabe-na-tela-da-vps.test.ts) e o que cobra a CASA
+  # (pnpm release:acervo-cabe, fora de pull_request) —, mas a régua é uma só:
+  # duas cópias do número seriam duas fontes da verdade, e a que envelhece é
+  # sempre a cópia.
   CHANGELOG="$(git show "${LATEST_TAG}:CHANGELOG.md" 2>/dev/null | awk -v cur="## [${CURRENT#v}]" 'index($0, cur) == 1 { print; exit } { print }' | head -c 30000 || true)"
   # `head -c` corta em byte fixo, e o CHANGELOG tem emoji/acento multi-byte
   # (UTF-8) — um corte no meio de um caractere quebraria o JSON de um jeito

@@ -5,6 +5,8 @@
  */
 
 import type { InboxKind } from "@/lib/agent-engine/db/repository";
+import { traduzir } from "@/lib/i18n/dicionario";
+import type { Idioma } from "@/lib/i18n/idiomas";
 
 export type AgentInboxSeverity = "info" | "warn" | "critical";
 
@@ -134,11 +136,17 @@ export type PromessaSemDono =
 export function copyDaPromessaSemDono(
   quantas: number,
   porque: PromessaSemDono,
+  /**
+   * O idioma da ORGANIZAÇÃO. O aviso é LINHA gravada — a Central mostra como
+   * veio, sem passar por `t()` —, então é na escrita que ele ganha o idioma de
+   * quem vai ler, como o aviso de passagem para pessoa já fazia.
+   */
+  idioma: Idioma = "pt-BR",
 ): { title: string; body: string } {
   const title =
     quantas === 1
-      ? "O assistente prometeu algo ao cliente e ninguém ficou responsável"
-      : `${quantas} promessas ao cliente sem ninguém responsável`;
+      ? traduzir("O assistente prometeu algo ao cliente e ninguém ficou responsável", idioma)
+      : `${quantas} ${traduzir("promessas ao cliente sem ninguém responsável", idioma)}`;
 
   const CORPO: Record<PromessaSemDono, string> = {
     operador_sem_ferramentas:
@@ -156,5 +164,5 @@ export function copyDaPromessaSemDono(
       "combinado e decida quem faz.",
   };
 
-  return { title, body: CORPO[porque] };
+  return { title, body: traduzir(CORPO[porque], idioma) };
 }

@@ -36,7 +36,7 @@ const PASSO = (() => {
 
 /** Um repositório descartável com N migrations, mais as extras pedidas. */
 // Os repositórios descartáveis são apagados no fim: este arquivo roda no projeto
-// `cercas`, o primeiro passo da parte 1 do verify, e lixo em /tmp não é dele
+// `cercas`, o primeiro passo da parte 3 do verify (da 1 até 22/09/2026), e lixo em /tmp não é dele
 // deixar (achado 10 da revisão do #1268).
 const CRIADOS: string[] = [];
 afterAll(() => {

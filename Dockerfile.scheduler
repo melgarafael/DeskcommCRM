@@ -11,14 +11,17 @@ LABEL org.opencontainers.image.source="https://github.com/melgarafael/DeskcommCR
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.title="DeskcommCRM scheduler"
 
-ARG APP_VERSION=dev
-ENV APP_VERSION=$APP_VERSION \
-    TZ=UTC
+ENV TZ=UTC
 
 RUN apk add --no-cache curl tzdata
 
 COPY docker/scheduler/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# A versão depois das camadas que custam (o `apk add`): a instrução `ARG` entra
+# na chave de cache de tudo o que vem depois, e ela muda a cada release.
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
 
 # Prova de vida: se o crond morrer, o contêiner cai e o `restart: unless-stopped`
 # o traz de volta. Sem isto, um crond morto fica indistinguível de um cron ocioso.

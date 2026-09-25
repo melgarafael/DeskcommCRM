@@ -11,6 +11,9 @@ vi.mock("@/lib/auth/server", () => ({
   resolveActiveOrg: resolveActiveOrgMock,
 }));
 
+vi.mock("@/lib/instalacao/modulos", () => ({ modulosLigados: vi.fn().mockResolvedValue([]) }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
+
 vi.mock("@/components/shell/NavHub", () => ({
   NavHub: ({ locale }: { locale?: string }) => <div data-testid="ai-hub" data-locale={locale} />,
 }));

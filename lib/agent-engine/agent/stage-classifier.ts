@@ -28,7 +28,7 @@ import type pg from 'pg';
 
 import type { Logger } from '../obs/logger';
 import type { ProviderRegistry } from '../edge/llm/providers';
-import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
+import { LlmBudgetExceededError, runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
 import type { LlmResolveOverride } from '../edge/llm/credentials';
 import type { LeadContext } from '../edge/crm/get-lead-context';
 import { LEAD_STAGES, type LeadStage } from './lead-state';
@@ -88,6 +88,26 @@ export function parseStageSuggestion(text: string): LeadStage | null {
  * Roda o classificador auxiliar pelo seam agnóstico (purpose 'stage_classifier'; budget
  * da org checado ANTES da chamada dentro de runModelCall). Devolve o estágio SUGERIDO ou
  * null (saída sem estágio reconhecível → degrada sem sugestão; o turno segue normal).
+ *
+ * ═══ FALHA DO FORNECEDOR TAMBÉM DEGRADA PARA `null` ═══
+ *
+ * A sugestão é uma DICA para o conversador, não uma condição para atender o
+ * cliente. Enquanto a exceção de `runModelCall` subia daqui, o turno inteiro
+ * morria por causa do auxiliar: provedor fora do ar, modelo do ponto
+ * `stage_classifier` apagado do painel, chave da empresa revogada — qualquer um
+ * desses fazia o agente PARAR DE RESPONDER, embora o modelo do agente estivesse
+ * de pé. O caminho dominante é o do ponto mal configurado, porque o classificador
+ * roda em TODO turno (`main.ts` monta `stageClassifier` como literal, sempre
+ * definido) e costuma apontar para um modelo barato diferente do modelo do agente.
+ *
+ * Degradar aqui não esconde a falha: `runModelCall` grava a chamada falha em
+ * `llm_calls` (purpose `stage_classifier`) ANTES de relançar, e o warn abaixo
+ * carimba o run. O que some é só a dica do turno.
+ *
+ * A EXCEÇÃO É O ORÇAMENTO. `LlmBudgetExceededError` continua subindo, porque quem
+ * a espera é a escolta `comHandoffSeOrcamentoAcabar` (`inbound-turn.ts`), que passa
+ * a conversa para uma pessoa em vez de deixar o lead no vácuo. Engoli-la aqui
+ * trocaria o handoff por um turno que segue gastando até estourar mais adiante.
  */
 export async function classifyStage(
   db: pg.Pool,
@@ -101,22 +121,34 @@ export async function classifyStage(
   },
   deps: { registry?: ProviderRegistry; log: Logger },
 ): Promise<LeadStage | null> {
-  const call = await runModelCall(
-    db,
-    cfg,
-    {
-      tenantId: ids.tenantId,
-      leadId: ids.leadId,
-      ...(ids.jobId !== undefined ? { jobId: ids.jobId } : {}),
-      purpose: 'stage_classifier',
-      ...(args.model !== undefined ? { model: args.model } : {}),
-      ...(args.llmOverride !== undefined ? { llmOverride: args.llmOverride } : {}),
-      messages: [
-        { role: 'user', content: buildClassifierMessage(args.context, args.currentStage) },
-      ],
-    },
-    { registry: deps.registry, log: deps.log },
-  );
+  let call: Awaited<ReturnType<typeof runModelCall>>;
+  try {
+    call = await runModelCall(
+      db,
+      cfg,
+      {
+        tenantId: ids.tenantId,
+        leadId: ids.leadId,
+        ...(ids.jobId !== undefined ? { jobId: ids.jobId } : {}),
+        purpose: 'stage_classifier',
+        ...(args.model !== undefined ? { model: args.model } : {}),
+        ...(args.llmOverride !== undefined ? { llmOverride: args.llmOverride } : {}),
+        messages: [
+          { role: 'user', content: buildClassifierMessage(args.context, args.currentStage) },
+        ],
+      },
+      { registry: deps.registry, log: deps.log },
+    );
+  } catch (err) {
+    // Ver a nota do cabeçalho: dica não é condição de atendimento — menos o orçamento,
+    // que a escolta do turno precisa receber para passar a conversa a uma pessoa.
+    if (err instanceof LlmBudgetExceededError) throw err;
+    // Sem PII: a mensagem do erro é do fornecedor/config, nunca o texto do lead.
+    deps.log.warn('stage-classifier falhou — turno segue sem sugestão de estágio', {
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 200),
+    });
+    return null;
+  }
   const suggestion = parseStageSuggestion(call.result.text);
   if (suggestion === null) {
     // aux batch sem estágio reconhecível NÃO é incidente do turno: sem PII, só o aviso.

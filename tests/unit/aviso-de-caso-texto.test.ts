@@ -157,7 +157,7 @@ describe("montarAvisoDeCaso", () => {
     const texto = montarAvisoDeCaso({ ...BASE, idioma: "es" });
     expect(texto).toContain("nuevo caso esperando por ti");
     expect(texto).toContain("Cliente: Maria");
-    expect(texto).toContain("Por qué se trabó la IA");
+    expect(texto).toContain("Por qué se atoró la IA");
     expect(texto).not.toContain("Por que a IA travou");
   });
 

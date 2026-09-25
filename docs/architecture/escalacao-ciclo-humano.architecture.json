@@ -529,6 +529,70 @@
       "type": "table",
       "label": "attendant_availability.last_heartbeat_at",
       "sublabel": "presença expira em leitura; is_available é decisão, não presença"
+    },
+    {
+      "id": "jevCartao",
+      "lane": "humano",
+      "col": 1,
+      "type": "frontend",
+      "label": "CartaoDoJev (/app/ai/providers)",
+      "sublabel": "sem chave → teste da chave → aceite de envio aos EUA → observando → decidindo; mostra concordância, custo e a última falha"
+    },
+    {
+      "id": "jevExecucoes",
+      "lane": "humano",
+      "col": 2,
+      "type": "frontend",
+      "label": "/app/ai/runs?provider=typesafe",
+      "sublabel": "'Só o Jev' — cada medição com o rótulo Jev, e o que fazer quando falha"
+    },
+    {
+      "id": "jevRota",
+      "lane": "borda",
+      "col": 1,
+      "type": "api",
+      "label": "GET/PATCH /api/v1/ai/jev",
+      "sublabel": "admin liga, desliga e troca o modo; ligar exige chave validada e, na 1ª vez, o aceite; audit ai.jev.*"
+    },
+    {
+      "id": "jevConfig",
+      "lane": "dados",
+      "col": 1,
+      "type": "database",
+      "label": "organizations.settings.jev",
+      "sublabel": "ligado · modo (observacao | decide) · aceite {em, por} — Zod em lib/ai/decisao/config.ts, sem migration"
+    },
+    {
+      "id": "jevChave",
+      "lane": "dados",
+      "col": 2,
+      "type": "table",
+      "label": "ai_provider_credentials (provider='typesafe')",
+      "sublabel": "ativa e validada pelo GET /v1/models; excluir a última desliga o Jev"
+    },
+    {
+      "id": "jev",
+      "lane": "motor",
+      "col": 1,
+      "type": "external",
+      "label": "Jev (System One) — lib/ai/decisao",
+      "sublabel": "medirClima: cada mensagem recebida, sozinha e sem o histórico, passada por scrubMessage; teto de 1,5 s; disjuntor por organização; nunca lança"
+    },
+    {
+      "id": "jevLlmCalls",
+      "lane": "dados",
+      "col": 3,
+      "type": "table",
+      "label": "llm_calls (typesafe · reserva_do_jev)",
+      "sublabel": "cada medição com custo fracionário e latência; linha de erro só quando ninguém mediu"
+    },
+    {
+      "id": "jevMetadata",
+      "lane": "dados",
+      "col": 4,
+      "type": "table",
+      "label": "messages.metadata (sentiment_*)",
+      "sublabel": "sentiment_score e sentiment_engine (quem decidiu) + sentiment_jev_score — a matéria da concordância"
     }
   ],
   "edges": [
@@ -1151,6 +1215,102 @@
       "from": "presenca_coluna",
       "to": "availability",
       "label": "selo presente/ausente na Equipe"
+    },
+    {
+      "id": "e99",
+      "from": "jevCartao",
+      "to": "jevRota",
+      "label": "Ligar o Jev · Deixar o Jev decidir · Desligar"
+    },
+    {
+      "id": "e100",
+      "from": "jevRota",
+      "to": "jevConfig",
+      "label": "gravarConfigDoJev (mescla, não sobrescreve settings) + api_audit_log ai.jev.*"
+    },
+    {
+      "id": "e101",
+      "from": "jevRota",
+      "to": "jevChave",
+      "label": "ligar exige uma chave ativa e validada"
+    },
+    {
+      "id": "e102",
+      "from": "jevConfig",
+      "to": "sentimento",
+      "label": "o worker lê ligado e modo antes de medir"
+    },
+    {
+      "id": "e103",
+      "from": "sentimento",
+      "to": "jev",
+      "label": "medirClima(a mensagem, sem o histórico) — desligado, nada sai para a rede"
+    },
+    {
+      "id": "e104",
+      "from": "jevChave",
+      "to": "jev",
+      "label": "chaveDaOrganizacao: a chave só é lida com o interruptor ligado (D6)"
+    },
+    {
+      "id": "e105",
+      "from": "jev",
+      "to": "sentimento",
+      "label": "nota de 0 a 1 — em 'decide' vale ela; em 'observacao' quem decide é a IA de sempre"
+    },
+    {
+      "id": "e106",
+      "from": "sentimento",
+      "to": "jevLlmCalls",
+      "label": "linha do Jev (origem jev quando ele decidiu, jev_observacao quando só observou) ou da reserva que o cobriu (reserva_do_jev)"
+    },
+    {
+      "id": "e107",
+      "from": "sentimento",
+      "to": "jevMetadata",
+      "label": "as duas notas, e qual motor decidiu"
+    },
+    {
+      "id": "e108",
+      "from": "sentimento",
+      "to": "central",
+      "label": "falha que pede ação (chave recusada, sem crédito, pergunta recusada) abre aviso kind='other' — atualizado ao desfecho, fechado sozinho quando o Jev volta a medir"
+    },
+    {
+      "id": "e109",
+      "from": "jevLlmCalls",
+      "to": "jevExecucoes",
+      "label": "?provider=typesafe, com o rótulo Jev"
+    },
+    {
+      "id": "e110",
+      "from": "jevLlmCalls",
+      "to": "jevRota",
+      "label": "números da semana e a última falha ainda não superada"
+    },
+    {
+      "id": "e111",
+      "from": "jevMetadata",
+      "to": "jevRota",
+      "label": "concordância em observação: 30 dias, mesmo limiar da passagem — o laço de retorno"
+    },
+    {
+      "id": "e112",
+      "from": "jevRota",
+      "to": "jevCartao",
+      "label": "estado derivado + números: é com eles que o admin decide deixar o Jev decidir"
+    },
+    {
+      "id": "e113",
+      "from": "jevCartao",
+      "to": "jevExecucoes",
+      "label": "Ver as decisões do Jev"
+    },
+    {
+      "id": "e114",
+      "from": "orquestrador",
+      "to": "passagemMontagem",
+      "label": "sentiment_engine='jev' → '(percebido pelo Jev)' no aviso e no briefing — só a equipe lê (D11)"
     }
   ],
   "cards": [
@@ -1182,6 +1342,16 @@
         "crm_resume_ai_attendance exige papel de gestor e é capacidade de risco CRÍTICO: nunca entra ligada por pacote. Reativar automação para um cliente que pediu uma pessoa é decisão do humano",
         "a superfície do agente NÃO recebe e-mail nem telefone de atendente — o roster compartilhado (e25) devolve os dois campos e quem os expõe é só a rota da tela",
         "a atividade da volta NÃO é escrita quando o contato tem dois negócios abertos empatados: `resolveActiveLeadForContact` recusa, e mover o card do cliente errado é pior que não registrar"
+      ]
+    },
+    {
+      "dot": "sky",
+      "title": "O Jev (System One): o que muda quando ele erra",
+      "items": [
+        "errar a nota em observação não chega ao cliente: a IA de sempre decide, e a discordância aparece no cartão (e111 → e112) antes de alguém deixar o Jev decidir",
+        "falhar na rede faz a IA de sempre medir como reserva, e a linha em Execuções diz reserva_do_jev; falha que pede ação vira aviso na Central (e108); falhas seguidas abrem o disjuntor e ele deixa de ser chamado por um tempo",
+        "não-ligação deliberada: o Jev NÃO está no Modelo padrão, no seletor dos pontos nem no do agente, e ai_models não o recebe — ele não escreve texto, e escolhido ali todo atendimento morreria",
+        "não-ligação deliberada: a marca '(percebido pelo Jev)' nunca vai na mensagem ao cliente, só no que a equipe lê (e114)"
       ]
     }
   ]

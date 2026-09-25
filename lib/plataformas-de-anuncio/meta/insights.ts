@@ -314,7 +314,13 @@ async function buscarPaginado<T>(
   return { ok: true, dados: acumulado };
 }
 
-function montarUrl(caminho: string, parametros: Record<string, string>): string {
+/**
+ * Exportada, e não copiada: o endereço da Graph e a versão da API existem UMA
+ * vez neste eixo. Uma segunda cópia em `hierarquia-do-anuncio.ts` sobreviveria à
+ * próxima subida de versão sem ninguém notar — e a lição do achado 2 no
+ * cabeçalho é justamente que campo válido some entre versões.
+ */
+export function montarUrl(caminho: string, parametros: Record<string, string>): string {
   const url = new URL(`https://graph.facebook.com/${VERSAO_DA_API}/${caminho}`);
   for (const [chave, valor] of Object.entries(parametros)) {
     url.searchParams.set(chave, valor);

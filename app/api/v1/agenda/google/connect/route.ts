@@ -34,7 +34,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
-import { CAMINHO_DO_CALLBACK, configuracaoDoGoogle } from "@/lib/agenda/google/config";
+import { CAMINHO_DO_CALLBACK, configuracaoDoGoogle, origemLocalDosCabecalhos } from "@/lib/agenda/google/config";
 import { emitirEstado } from "@/lib/agenda/google/estado";
 import { assinarVinculo, NOME_DO_VINCULO, VALIDADE_DO_VINCULO_S } from "@/lib/agenda/google/vinculo";
 import { cookieSecure } from "@/lib/supabase/cookie-secure";
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!autorizado.ok) return autorizado.response;
   const { user, org } = autorizado;
 
-  const app = await configuracaoDoGoogle();
+  const app = await configuracaoDoGoogle(origemLocalDosCabecalhos(req.headers) ?? undefined);
   if (!app) {
     // Não audita: não houve tentativa de conectar nada, e encher o audit log de
     // "a instalação não tem chave" é ruído numa tabela que se paga por linha.

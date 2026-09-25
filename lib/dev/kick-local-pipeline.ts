@@ -133,18 +133,22 @@ export async function acelerarPipelineDeEventos(
 ): Promise<void> {
   try {
     if (inbound) {
-      try {
-        await aplicarTextoNosFollowups(admin, inbound);
-      } catch (err) {
-        const detail = err instanceof Error ? err.message : String(err);
-        logger.warn("[dev.pipeline] aplicar texto do inbound falhou", { error: detail });
-      }
+      // Mesma ordem do handler de event_log: acordar a espera QUE JÁ EXISTIA,
+      // depois aplicar o texto. Aplicar primeiro estaciona um wait_started
+      // novo (ALWAYS → menu) e o acordar seguinte acorda essa espera com a
+      // mesma mensagem — o fluxo inteiro dispara de uma vez.
       try {
         await acordarFollowupPorInbound(admin, inbound);
       } catch (err) {
         logger.warn("[dev.pipeline] acordar follow-up falhou", {
           error: err instanceof Error ? err.message : String(err),
         });
+      }
+      try {
+        await aplicarTextoNosFollowups(admin, inbound);
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        logger.warn("[dev.pipeline] aplicar texto do inbound falhou", { error: detail });
       }
       await acelerarDesteContato(admin, {
         organizationId: inbound.organizationId,

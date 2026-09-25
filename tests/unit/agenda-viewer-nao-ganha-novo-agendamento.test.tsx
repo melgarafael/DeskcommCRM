@@ -139,6 +139,12 @@ function montar({
     <QueryClientProvider client={cliente}>
       <AgendaClient
         fusoDeApresentacao="America/Sao_Paulo"
+        // A data de hoje NO FUSO DA ORGANIZAÇÃO, que o servidor resolve e a tela
+        // usa para ancorar a semana (#1350). É prop obrigatória de propósito:
+        // um default aqui deixaria o cliente voltar ao relógio do navegador em
+        // silêncio, que é o defeito que ela existe para fechar. Data fixa para o
+        // caso não depender de quando roda.
+        hojeNaOrganizacao="2026-09-16"
         googleConfigurado={false}
         faltaNoGoogle={[]}
         tiposIniciais={tipos}

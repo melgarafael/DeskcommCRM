@@ -60,24 +60,51 @@ import type pg from 'pg';
 
 import type { Logger } from '../obs/logger';
 import type { LlmEdgeConfig } from '../edge/llm/run-model-call';
-import { loadActiveRouter } from './router-config';
+import { agenteDaCampanhaDaConversa } from './agente-da-campanha';
+import { loadActiveRouter, type RouterMember } from './router-config';
 import {
   loadPublishedAgentConfig,
   loadPublishedAgentConfigById,
   type PublishedAgentConfig,
 } from './agent-config';
-import { classifyIntent } from './intent-classifier';
+import { classifyIntent, type ClassifierContextMessage } from './intent-classifier';
+
+/**
+ * Janela de contexto passada ao CLASSIFICADOR, não confundir com
+ * `context_message_window` do agente (esse alimenta o modelo que conversa
+ * com o lead). Curta de propósito: o classificador roda em todo turno,
+ * inclusive sticky (regra 2 abaixo) — histórico completo pagaria caro por
+ * turno pra resolver só ambiguidade de resposta curta.
+ */
+const CLASSIFIER_CONTEXT_MESSAGES = 4;
 
 export interface TurnAgentResolution {
   config: PublishedAgentConfig | null; // null ⇒ turno segue no genérico (comportamento atual)
   routerId: string | null;
   intentName: string | null;
   confidence: number | null;
-  outcome: 'no_router' | 'classified' | 'sticky' | 'reclassified' | 'fallback' | 'no_match' | 'classifier_failed';
+  outcome:
+    | 'no_router'
+    | 'classified'
+    | 'sticky'
+    | 'reclassified'
+    | 'fallback'
+    | 'no_match'
+    | 'classifier_failed'
+    /** A conversa nasceu de uma campanha que declarou agente (migration 0267). */
+    | 'campanha';
+  /**
+   * Fluxo de atendimento que o membro casado aponta (migration 0394; 0237 na branch do autor). O turno
+   * começa o fluxo para o contato; `null` = nenhum. Só rótulos casados o trazem
+   * — fallback/sem-router NÃO começam fluxo.
+   */
+  flowPointerId?: string | null;
 }
 
 export interface ResolveTurnAgentDeps {
   log: Logger;
+  /** Injetável para o teste não precisar de banco. */
+  agenteDaCampanha?: typeof agenteDaCampanhaDaConversa;
   loadActiveRouter?: typeof loadActiveRouter;
   loadPublishedAgentConfigById?: typeof loadPublishedAgentConfigById;
   loadPublishedAgentConfig?: typeof loadPublishedAgentConfig;
@@ -96,6 +123,8 @@ export async function resolveTurnAgent(
     signal: string | null;
     stickyAgentId: string | null;
     stickyIntent: string | null;
+    /** Mensagens anteriores ao signal, mais antiga → mais recente. Default []. */
+    recentMessages?: ClassifierContextMessage[];
   },
   deps: ResolveTurnAgentDeps,
 ): Promise<TurnAgentResolution> {
@@ -105,6 +134,28 @@ export async function resolveTurnAgent(
   const _classifyIntent = deps.classifyIntent ?? classifyIntent;
 
   try {
+    // ─── Degrau 0: a campanha que criou esta conversa ───
+    //
+    // ACIMA do roteador de propósito. O roteador é do NÚMERO e classifica
+    // assunto; a campanha é a razão de a conversa existir, e ela sabe algo que
+    // o classificador não tem como inferir: que esta pessoa está respondendo a
+    // uma abordagem, e que quem aborda segue outro roteiro.
+    //
+    // Falha ABERTA: agente da campanha sem versão publicada devolve `null` em
+    // `_loadAgentById`, e o turno segue pela régua normal em vez de calar.
+    const _agenteDaCampanha = deps.agenteDaCampanha ?? agenteDaCampanhaDaConversa;
+    const idDaCampanha = await _agenteDaCampanha(db, input.tenantId, input.conversationId);
+    if (idDaCampanha !== null) {
+      const config = await _loadAgentById(db, input.tenantId, idDaCampanha);
+      if (config !== null) {
+        return { config, routerId: null, intentName: null, confidence: null, outcome: 'campanha' };
+      }
+      deps.log.warn('agente da campanha sem versão publicada; seguindo pela régua do número', {
+        tenantId: input.tenantId,
+        conversationId: input.conversationId,
+      });
+    }
+
     const router = await _loadActiveRouter(db, input.tenantId, input.channelSessionId);
     if (router === null) {
       return {
@@ -160,10 +211,11 @@ export async function resolveTurnAgent(
     // router com log.warn, honesto sobre a causa real.
     const loadMatchedOrFallback = async (
       outcome: 'sticky' | 'classified' | 'reclassified',
-      agentId: string,
+      member: RouterMember,
       intentName: string | null,
       confidence: number | null,
     ): Promise<TurnAgentResolution> => {
+      const agentId = member.agentId;
       const config = await _loadAgentById(db, input.tenantId, agentId);
       if (config === null) {
         deps.log.warn('resolve-turn-agent: agente casado sem versão publicada — tentando fallback do router', {
@@ -173,7 +225,17 @@ export async function resolveTurnAgent(
         });
         return resolveFallback('no_match', confidence);
       }
-      return { config, routerId: router.id, intentName, confidence, outcome };
+      return {
+        config,
+        routerId: router.id,
+        intentName,
+        confidence,
+        outcome,
+        // Só a intenção casada AGORA começa roteiro. Sticky é o mesmo assunto da
+        // conversa em curso: devolvê-lo recomeçaria o roteiro a cada turno — e,
+        // depois de concluído, de novo, para sempre.
+        flowPointerId: outcome === 'sticky' ? null : (member.flowPointerId ?? null),
+      };
     };
 
     // sticky elegível: config liga sticky E o agente ainda é membro do router
@@ -186,7 +248,7 @@ export async function resolveTurnAgent(
     // regra 6: sem mensagem inbound (follow-up) — nunca classifica.
     if (input.signal === null) {
       if (stickyMember !== undefined) {
-        return loadMatchedOrFallback('sticky', stickyMember.agentId, input.stickyIntent, null);
+        return loadMatchedOrFallback('sticky', stickyMember, input.stickyIntent, null);
       }
       return resolveFallback('no_match', null);
     }
@@ -195,7 +257,14 @@ export async function resolveTurnAgent(
     const verdict = await _classifyIntent(
       db,
       llmCfg,
-      { tenantId: input.tenantId, leadId: input.leadId, jobId: input.jobId, router, signal: input.signal },
+      {
+        tenantId: input.tenantId,
+        leadId: input.leadId,
+        jobId: input.jobId,
+        router,
+        signal: input.signal,
+        recentMessages: input.recentMessages ?? [],
+      },
       { log: deps.log },
     );
 
@@ -203,7 +272,7 @@ export async function resolveTurnAgent(
     // "sem sinal", nunca deve derrubar a stickiness (review T4 finding 1).
     if (verdict === null) {
       if (stickyMember !== undefined) {
-        return loadMatchedOrFallback('sticky', stickyMember.agentId, input.stickyIntent, null);
+        return loadMatchedOrFallback('sticky', stickyMember, input.stickyIntent, null);
       }
       return resolveFallback('classifier_failed', null);
     }
@@ -212,17 +281,17 @@ export async function resolveTurnAgent(
       const changedSubject =
         verdict.intentName !== null && verdict.intentName !== input.stickyIntent && verdict.confidence >= router.minConfidence;
       if (!changedSubject) {
-        return loadMatchedOrFallback('sticky', stickyMember.agentId, input.stickyIntent, verdict.confidence);
+        return loadMatchedOrFallback('sticky', stickyMember, input.stickyIntent, verdict.confidence);
       }
       const newMember = router.members.find((m) => m.intentName === verdict.intentName);
       // newMember sempre definido: classifyIntent só devolve intentName que bateu em router.members.
-      return loadMatchedOrFallback('reclassified', newMember!.agentId, verdict.intentName, verdict.confidence);
+      return loadMatchedOrFallback('reclassified', newMember!, verdict.intentName, verdict.confidence);
     }
 
     // sem sticky (regra 3).
     if (verdict.intentName !== null && verdict.confidence >= router.minConfidence) {
       const member = router.members.find((m) => m.intentName === verdict.intentName);
-      return loadMatchedOrFallback('classified', member!.agentId, verdict.intentName, verdict.confidence);
+      return loadMatchedOrFallback('classified', member!, verdict.intentName, verdict.confidence);
     }
 
     return resolveFallback('no_match', verdict.confidence);
@@ -261,15 +330,32 @@ export async function resolveConversationTurn(
     'select active_ai_agent_id,active_intent from conversations where organization_id=$1 and id=$2',
     [input.tenantId, input.conversationId],
   );
-  const signal = input.inbound
-    ? (await db.query<{ body: string | null }>(
-        "select body from messages where organization_id=$1 and conversation_id=$2 and direction='inbound' order by sent_at desc,created_at desc,id desc limit 1",
+  const signalRow = input.inbound
+    ? (await db.query<{ id: string; body: string | null }>(
+        "select id,body from messages where organization_id=$1 and conversation_id=$2 and direction='inbound' order by sent_at desc,created_at desc,id desc limit 1",
         [input.tenantId, input.conversationId],
-      )).rows[0]?.body ?? null
+      )).rows[0] ?? null
     : null;
+  const signal = signalRow?.body ?? null;
+
+  // Contexto curto pro CLASSIFICADOR (regra 2 abaixo desambigua resposta
+  // curta em meio a fluxo) — nunca o histórico completo. Só busca quando há
+  // signal: sem inbound (regra 6) o classificador nem roda.
+  let recentMessages: ClassifierContextMessage[] = [];
+  if (signalRow !== null && signal !== null) {
+    const { rows: contextRows } = await db.query<ClassifierContextMessage>(
+      `select direction,body from messages
+       where organization_id=$1 and conversation_id=$2 and body is not null and id<>$3
+       order by sent_at desc,created_at desc,id desc limit $4`,
+      [input.tenantId, input.conversationId, signalRow.id, CLASSIFIER_CONTEXT_MESSAGES],
+    );
+    recentMessages = contextRows.reverse();
+  }
+
   return resolveTurnAgent(db, llmCfg, {
     ...input,
     signal,
+    recentMessages,
     stickyAgentId: rows[0]?.active_ai_agent_id ?? null,
     stickyIntent: rows[0]?.active_intent ?? null,
   }, deps);

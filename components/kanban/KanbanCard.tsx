@@ -11,6 +11,7 @@ import { ReactivationSlot } from "./ReactivationSlot";
 import { ConversaSlot } from "./ConversaSlot";
 import { ScoreSlot } from "./ScoreSlot";
 import { OwnerBadge } from "./OwnerBadge";
+import { ContatoNoCard } from "./ContatoNoCard";
 
 /** Os dois gestos de seleção que o card sabe relatar. */
 export type GestoDeSelecao = "alterna" | "intervalo";
@@ -294,6 +295,10 @@ export function KanbanCard({
               de dono/tempo porque é conteúdo do negócio, não metadado do card —
               e some por inteiro quando não há conversa. */}
           <ConversaSlot conversa={lead.conversa} />
+
+          {/* Telefone, e-mail e links do contato — some por inteiro quando o
+              negócio não tem nada disso, como a conversa acima. */}
+          <ContatoNoCard lead={lead} />
 
           {/* ④ dono · ⑤ tempo no estágio */}
           <div className="mt-1 flex h-6 items-center justify-between gap-2">

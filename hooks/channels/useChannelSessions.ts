@@ -5,6 +5,7 @@ import { apiClient } from "@/lib/api/client";
 
 export interface ChannelSession {
   id: string;
+  provider?: string;
   /**
    * Nome da sessão no transporte. NULL no canal oficial, que não tem sessão a
    * iniciar, deslogar ou apagar — é o que distingue, na tela, quem depende do
@@ -39,7 +40,7 @@ export function channelLabel(
 }
 
 /**
- * Lista os canais WhatsApp (channel_sessions) da org ativa. Fonte única
+ * Lista os canais de mensagem (channel_sessions) da org ativa. Fonte única
  * para o seletor do inbox, o sinal de saúde da sidebar e a Central de Conexões.
  *
  * Devolve um objeto explícito (e não o resultado cru do react-query) por dois

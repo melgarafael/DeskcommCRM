@@ -21,6 +21,7 @@ import {
   type ReactivityAdminClient,
 } from "./reactivity";
 import type { EnrollmentPatch } from "./engine";
+import type { EventRow } from "@/lib/event-log/dispatcher";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const CONTATO = "22222222-2222-4222-8222-222222222222";
@@ -78,13 +79,19 @@ function inscricao(over: Partial<LiveEnrollmentRef> = {}): LiveEnrollmentRef {
   };
 }
 
-function eventoDeInbound() {
+function eventoDeInbound(over: Partial<EventRow> = {}): EventRow {
   return {
     id: "33333333-3333-4333-8333-333333333333",
     organization_id: ORG,
     event_type: "message.received",
+    entity_kind: "message",
+    entity_id: null,
     payload: { contact_id: CONTATO, direction: "inbound" },
-  } as never;
+    metadata: {},
+    consumed_by: [],
+    attempts: 0,
+    ...over,
+  };
 }
 
 describe("reatividade — a inscrição dormente", () => {
@@ -137,6 +144,8 @@ describe("reatividade — quem não dorme segue igual (não-regressão)", () => 
 
     expect(s.reacted).toBe(1);
     expect(espiao.eventos.map((e) => e.event_type)).toContain("inbound_woke");
+    expect(espiao.patches[0]?.patch.updated_at).toBeUndefined();
+    expect(espiao.patches[0]?.patch.next_eval_at).toBeDefined();
   });
 
   it("espera comum com `cancel_on_reply` é cancelada", async () => {
@@ -162,6 +171,25 @@ describe("reatividade — quem não dorme segue igual (não-regressão)", () => 
 
     expect(s.reacted).toBe(1);
     expect(espiao.eventos.every((e) => e.enrollment_id === "enr-anda")).toBe(true);
+  });
+
+  it("não acorda espera estacionada depois da mensagem", async () => {
+    const { db, espiao } = montarDb([
+      inscricao({
+        status: "waiting_reply",
+        updated_at: "2026-09-20T19:35:47.000Z",
+      }),
+    ]);
+
+    const s = await applyReactivityEvent(
+      db,
+      () => new Date(AGORA),
+      eventoDeInbound({ created_at: "2026-09-20T19:35:45.000Z" }),
+    );
+
+    expect(s.reacted).toBe(0);
+    expect(espiao.eventos).toEqual([]);
+    expect(espiao.patches).toEqual([]);
   });
 });
 
@@ -189,3 +217,22 @@ describe("reatividade — o handoff não alcança o dormente", () => {
     }
   });
 });
+
+describe("reatividade — o roteiro de atendimento ('coletando', PR 2 do #1130)", () => {
+  it("É cancelado no opt-out", async () => {
+    const { db, espiao } = montarDb([inscricao({ status: "coletando" })], { bloqueado: true });
+    const s = await applyReactivityEvent(db, () => new Date(AGORA), eventoDeInbound());
+    expect(s.reacted).toBe(1);
+    expect(espiao.patches[0]?.patch).toMatchObject({ status: "cancelled" });
+  });
+
+  it("NÃO é tocado por uma mensagem comum — quem conduz é o turno", async () => {
+    const { db, espiao } = montarDb([
+      inscricao({ status: "coletando", trigger_config: { kind: "manual", cancel_on_reply: true } }),
+    ]);
+    const s = await applyReactivityEvent(db, () => new Date(AGORA), eventoDeInbound());
+    expect(s.reacted).toBe(0);
+    expect(espiao.patches).toEqual([]);
+  });
+});
+

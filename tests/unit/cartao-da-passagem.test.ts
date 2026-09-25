@@ -5,13 +5,16 @@ import {
   type PassagemDaConversa,
   type QuemOlha,
 } from "@/lib/escalacao/cartao-da-passagem";
+import { montarBriefingDaPassagem } from "@/lib/escalacao/briefing-da-passagem";
 import { DICIONARIO } from "@/lib/i18n/dicionario";
 import {
   FRASE_DO_MOTIVO,
   FRASE_DO_MOTIVO_DO_AVISO,
+  MOTIVO_PERCEBIDO_PELO_JEV,
   MOTIVOS_DA_PASSAGEM,
   PISO_DO_BRIEFING,
 } from "@/lib/escalacao/passagem";
+import { ROTULO_DE_ANONIMIZADO } from "@/lib/escalacao/texto-do-aviso";
 
 /**
  * OS SETE ESTADOS DO CARTÃO, DECIDIDOS FORA DO JSX.
@@ -166,6 +169,32 @@ describe("cartão da passagem — o que ele mostra", () => {
     )[0]!;
     expect(c.tentativas.map((t) => t.o_que)).toEqual(["válida"]);
     expect(c.motivo).toBe(FRASE_DO_MOTIVO.requested_human);
+  });
+});
+
+describe("cartão da passagem — irritação percebida pelo Jev (D11)", () => {
+  it("o motivo em destaque diz que foi o Jev, a partir do resumo que o briefing gravou", () => {
+    const body = montarBriefingDaPassagem({
+      checkpoint: null,
+      motivo: { codigo: "low_sentiment", percebidoPeloJev: true },
+    }).body;
+    const c = montarCartoesDaPassagem([passagem({ motivo_codigo: "low_sentiment", body })], NINGUEM_ATENDE)[0]!;
+    expect(c.motivo).toBe(FRASE_DO_MOTIVO.low_sentiment);
+    expect(c.percebidoPeloJev).toBe(true);
+  });
+
+  it("controle: a mesma irritação medida pela IA de sempre não ganha a marca", () => {
+    const body = montarBriefingDaPassagem({ checkpoint: null, motivo: { codigo: "low_sentiment" } }).body;
+    const c = montarCartoesDaPassagem([passagem({ motivo_codigo: "low_sentiment", body })], NINGUEM_ATENDE)[0]!;
+    expect(c.percebidoPeloJev).toBe(false);
+  });
+
+  it("contato anonimizado: nem a marca sobrevive", () => {
+    const c = montarCartoesDaPassagem(
+      [passagem({ motivo_codigo: "low_sentiment", body: `${ROTULO_DE_ANONIMIZADO} ${MOTIVO_PERCEBIDO_PELO_JEV}` })],
+      NINGUEM_ATENDE,
+    )[0]!;
+    expect(c.percebidoPeloJev).toBe(false);
   });
 });
 

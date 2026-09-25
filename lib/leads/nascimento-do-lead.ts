@@ -49,6 +49,7 @@
  * aparece neste arquivo.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { marcaDaOrigem, origemDeCampanhaDaConversa } from "@/lib/campanhas/origem-do-lead";
 
 import { logger } from "@/lib/logger";
 
@@ -75,6 +76,29 @@ const ROTULO_DE_ANUNCIO: Record<string, string> = {
 };
 
 /**
+ * De onde a conversa veio, para os dois pontos que precisam de um rotulo
+ * legivel: o titulo de fallback do card (quando nao ha nome cadastrado) e o
+ * `source` gravado em `crm_leads` (quando nao ha atribuicao de anuncio).
+ *
+ * Default preserva o comportamento de sempre (WhatsApp, unico canal ate a
+ * chamada de voz existir) -- os chamadores atuais nao precisam informar isto.
+ */
+export interface OrigemDoNascimento {
+  /** Nome do canal para o fallback do titulo ("Novo contato pelo X"). */
+  rotulo: string;
+  /** Valor de `crm_leads.source` quando nao ha atribuicao de anuncio. */
+  source: string;
+  /** Texto curto do "porque" na atividade da timeline. */
+  motivo: string;
+}
+
+const ORIGEM_PADRAO: OrigemDoNascimento = {
+  rotulo: "WhatsApp",
+  source: "whatsapp",
+  motivo: "primeira mensagem recebida no WhatsApp",
+};
+
+/**
  * Por que um lead NÃO nasceu. Cada motivo é registrado — silêncio não distingue
  * "não devia nascer" de "falhou ao nascer", e a segunda é a que custa caro.
  */
@@ -96,6 +120,8 @@ export interface DadosDoNascimento {
   conversationId: string;
   /** nome do contato, para o título do card. */
   nomeDoContato: string | null;
+  /** Rotulo/source/motivo do canal de origem -- default preserva o WhatsApp. */
+  origem?: OrigemDoNascimento;
 }
 
 /**
@@ -188,6 +214,39 @@ export async function funilDeEntrada(
 }
 
 /**
+ * O destino quando a CAMPANHA declara o funil.
+ *
+ * Etapa declarada vale como está. Sem etapa, cai na primeira do funil — a mesma
+ * régua de `funilDeEntrada`, e pelo mesmo motivo: um card não nasce fechado.
+ *
+ * O funil da campanha pode ter sido arquivado depois de ela ser criada; nesse
+ * caso não há etapa viável e o card não nasce ali. Devolver `sem_etapa` é
+ * melhor que cair calado no funil do número, porque a campanha DISSE onde
+ * queria — e o silêncio faria os cards dela aparecerem noutro lugar.
+ */
+async function destinoDaCampanha(
+  db: SupabaseClient,
+  organizationId: string,
+  pipelineId: string,
+  stageId: string | null,
+): Promise<{ pipelineId: string; stageId: string } | { erro: MotivoSemLead }> {
+  if (stageId) return { pipelineId, stageId };
+  const { data: etapa } = await db
+    .from("crm_stages")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("pipeline_id", pipelineId)
+    .eq("is_archived", false)
+    .eq("is_won", false)
+    .eq("is_lost", false)
+    .order("position", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (!etapa) return { erro: "sem_etapa" };
+  return { pipelineId, stageId: (etapa as { id: string }).id };
+}
+
+/**
  * Garante que a conversa tenha um lead. Idempotente por contato: chamar de novo
  * não cria um segundo card.
  *
@@ -201,6 +260,7 @@ export async function garantirLeadDaConversa(
   dados: DadosDoNascimento,
 ): Promise<NascimentoDoLead> {
   const { organizationId, contactId, conversationId } = dados;
+  const origem = dados.origem ?? ORIGEM_PADRAO;
 
   // 1 · quem pediu para sair não vira oportunidade. O gate de envio já respeita
   // o opt-out; abrir um card para essa pessoa seria a mesma desatenção num
@@ -245,7 +305,19 @@ export async function garantirLeadDaConversa(
   // regra que o cabeçalho deste arquivo já declara.
   const ehCliente =
     contato?.first_service_at != null && (await lerClientePelaAgenda(db, organizationId));
-  const destino = await funilDeEntrada(db, organizationId, ehCliente);
+  // A CAMPANHA ganha do padrão quando declara funil (migration 0378): é a
+  // escolha mais específica, e quem montou a campanha sabe onde quer medir o
+  // resultado dela. Campanha sem funil declarado, ou conversa que não nasceu de
+  // campanha, seguem a regra da 0262 sem diferença nenhuma.
+  const origemDaCampanha = await origemDeCampanhaDaConversa(db, organizationId, conversationId);
+  const destino = origemDaCampanha?.pipelineId
+    ? await destinoDaCampanha(
+        db,
+        organizationId,
+        origemDaCampanha.pipelineId,
+        origemDaCampanha.stageId,
+      )
+    : await funilDeEntrada(db, organizationId, ehCliente);
   if ("erro" in destino) return { criado: false, motivo: destino.erro };
 
   // 4 · o card.
@@ -274,7 +346,7 @@ export async function garantirLeadDaConversa(
         ? doPayload
         : // "Sem nome" serve para uma linha de lista; um card de kanban precisa
           // dizer de onde veio, senão o quadro vira uma coluna de anônimos iguais.
-          "Novo contato pelo WhatsApp";
+          `Novo contato pelo ${origem.rotulo}`;
 
   // De onde veio: o contato já carrega a atribuição de anúncio (gravada no
   // primeiro toque, por `fn_estampar_atribuicao_de_anuncio` — ver
@@ -283,6 +355,11 @@ export async function garantirLeadDaConversa(
   // contato pode ganhar conversas/leads futuros por outros canais sem que
   // isso reescreva a origem deste.
   const rotuloDeAnuncio = contato?.source ? ROTULO_DE_ANUNCIO[contato.source] : undefined;
+
+  // A origem da CAMPANHA vence a do anúncio: esta conversa nasceu porque NÓS
+  // falamos com a pessoa. O anúncio que a trouxe meses atrás continua no
+  // contato; o lead copia o que é verdade sobre o próprio nascimento.
+  const marca = origemDaCampanha ? marcaDaOrigem(origemDaCampanha) : null;
 
   // ⚠️ PELA RPC, E NÃO POR INSERT DIRETO — a checagem do passo 2 não basta.
   //
@@ -302,8 +379,15 @@ export async function garantirLeadDaConversa(
     p_pipeline: destino.pipelineId,
     p_stage: destino.stageId,
     p_title: titulo,
-    p_source: rotuloDeAnuncio ? contato!.source : "whatsapp",
-    p_source_metadata: rotuloDeAnuncio ? (contato!.source_metadata ?? {}) : {},
+    // A campanha ganha: quem montou a lista sabe de onde o card veio. Sem ela,
+    // vale a regra do upstream — anúncio mantém a origem do contato, e o resto
+    // usa `origem.source`.
+    p_source: marca ? marca.source : rotuloDeAnuncio ? contato!.source : origem.source,
+    p_source_metadata: marca
+      ? marca.source_metadata
+      : rotuloDeAnuncio
+        ? (contato!.source_metadata ?? {})
+        : {},
     // O ponto ao lado do título só acende se a organização cadastrar este
     // rótulo em `crm_pipelines.settings.canonical_tags` (Configurações do
     // funil) — a tag sempre entra; o destaque visual é opt-in do operador.
@@ -348,9 +432,7 @@ export async function garantirLeadDaConversa(
     // nasceu naquele funil. Sem esta distinção, o cliente antigo aparece num
     // quadro diferente do resto sem explicação nenhuma, e quem vê conclui que
     // alguém arrastou.
-    reason: ehCliente
-      ? "cliente conhecido voltou a escrever"
-      : "primeira mensagem recebida no WhatsApp",
+    reason: ehCliente ? "cliente conhecido voltou a escrever" : origem.motivo,
     payload: { conversation_id: conversationId, cliente: ehCliente },
   });
   if (!registro.ok) {
@@ -360,6 +442,31 @@ export async function garantirLeadDaConversa(
       organization_id: organizationId,
       lead_id: lead.id as string,
       error: registro.error?.slice(0, 120),
+    });
+  }
+
+  // O mesmo fato que o cadastro manual já emitia (`createLeadHandler`). Sem
+  // esta linha, o card nasce no funil e o gatilho "Lead criado" nunca vê a
+  // conversa — o follow-up só existiria para formulário e API. `emit_event`
+  // carimba a origem do atendimento quando o payload não traz uma; falha aqui
+  // não desfaz o card.
+  const { error: erroEvento } = await db.rpc("emit_event", {
+    p_event_type: "lead.created",
+    p_entity_kind: "crm_lead",
+    p_entity_id: lead.id,
+    p_payload: {
+      pipeline_id: destino.pipelineId,
+      stage_id: destino.stageId,
+      conversation_id: conversationId,
+    },
+    p_metadata: { source: "nascimento-da-conversa" },
+    p_organization_id: organizationId,
+  });
+  if (erroEvento) {
+    logger.warn("nascimento-do-lead: evento lead.created não emitido", {
+      organization_id: organizationId,
+      lead_id: lead.id as string,
+      error: erroEvento.message.slice(0, 120),
     });
   }
 

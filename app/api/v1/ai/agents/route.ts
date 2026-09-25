@@ -20,6 +20,7 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { mcpAgentDraftRecords } from "@/lib/ai/agents/create-draft";
 import { mensagemDoEscopo, validarEscopoDaVersao } from "@/lib/ai/agents/escopo";
 import { agentCreateSchema } from "@/lib/ai/guardrails-schema";
 import { agentMcpCreateSchema } from "@/lib/ai/agents/validation";
@@ -116,90 +117,30 @@ export async function POST(req: NextRequest): Promise<Response> {
       });
     }
     const input = parsed.data;
-    const v = input.version;
 
-    // Insert agent first (no published_version_id yet).
-    const { data: agentRow, error: agentErr } = await admin
+    // Validate scope before the first write; a rejected form leaves no orphan.
+    const escopo = await validarEscopoDaVersao(admin, activeOrg.orgId, input.version);
+    if (!escopo.ok) return fail("validation_failed", mensagemDoEscopo(escopo), 422, { requestId });
+    const records = mcpAgentDraftRecords({ orgId: activeOrg.orgId, userId: authUser.id }, input);
+    const { data: agentRow, error: agentError } = await admin
       .from("ai_agents")
-      .insert({
-        organization_id: activeOrg.orgId,
-        name: input.name,
-        description: input.description ?? null,
-        model: `${v.provider}/${v.model}`,
-        system_prompt: v.system_prompt,
-        is_active: true,
-        is_default: false,
-        kind: "mcp_agent",
-        priority: input.priority,
-        created_by: authUser.id,
-      })
+      .insert(records.agent)
       .select(AGENT_COLUMNS)
       .single();
-
-    if (agentErr || !agentRow) {
+    if (agentError || !agentRow)
       return fail("internal_error", "Erro ao criar agent.", 500, { requestId });
-    }
-
-    // O escopo aponta para coisas que EXISTEM nesta organização. Sem esta
-    // conferência, um id de outra organização (ou de um material apagado) entra no
-    // array, a versão é publicada, e o assistente não acha nada — sem erro, com a
-    // tela mostrando a marcação como se estivesse valendo.
-    const escopo = await validarEscopoDaVersao(admin, activeOrg.orgId, {
-      pipeline_ids: v.pipeline_ids,
-      knowledge_source_ids: v.knowledge_source_ids,
-    });
-    if (!escopo.ok) {
-      return fail("validation_failed", mensagemDoEscopo(escopo), 422, { requestId });
-    }
-    const { data: versionRow, error: versionErr } = await admin
+    const { data: versionRow, error: versionError } = await admin
       .from("ai_agent_versions")
-      .insert({
-        organization_id: activeOrg.orgId,
-        agent_id: agentRow.id,
-        version_number: 1,
-        system_prompt: v.system_prompt,
-        provider: v.provider,
-        model: v.model,
-        credential_id: v.credential_id,
-        tool_ids: v.tool_ids,
-        trigger_config: v.trigger_config ?? undefined,
-        channel_session_id: v.channel_session_id,
-        max_steps: v.max_steps,
-        token_budget: v.token_budget,
-        cost_budget_cents: v.cost_budget_cents,
-        history_message_window: v.history_message_window,
-        history_token_window: v.history_token_window,
-        handoff_keywords: v.handoff_keywords,
-        handoff_tool_enabled: v.handoff_tool_enabled,
-        cases_enabled: v.cases_enabled,
-        split_messages: v.split_messages,
-        split_max_chars: v.split_max_chars,
-        followup: v.followup,
-        // O corpo ACEITAVA estes quatro e o INSERT os descartava: criar um
-        // agente pela API com papel Operador ligado, escopo de funil e acervo
-        // marcado produzia uma versão com todos eles no default do banco —
-        // desligado e vazio. O 201 dizia que tinha dado certo.
-        operator_enabled: v.operator_enabled,
-        operator_model: v.operator_model,
-        operator_tool_ids: v.operator_tool_ids,
-        pipeline_ids: v.pipeline_ids,
-        knowledge_source_ids: v.knowledge_source_ids,
-        status: "draft",
-        created_by: authUser.id,
-      })
+      .insert(records.version)
       .select(VERSION_COLUMNS)
       .single();
-
-    if (versionErr || !versionRow) {
-      // Compensate: agent without v1 is unusable; archive it.
+    if (versionError || !versionRow) {
       await admin
         .from("ai_agents")
         .update({ archived_at: new Date().toISOString() })
+        .eq("organization_id", activeOrg.orgId)
         .eq("id", agentRow.id);
-      return fail("internal_error", t("Erro ao criar versão inicial."), 500, {
-        requestId,
-        details: { agent_rolled_back: true, db_error: versionErr?.message },
-      });
+      return fail("internal_error", t("Erro ao criar versão inicial."), 500, { requestId });
     }
 
     void audit({

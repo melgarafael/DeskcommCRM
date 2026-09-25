@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 
 import { useVoiceCall } from "@/components/voice/VoiceCallContext";
+import { usePecaDoRodape, type PecaDoRodape } from "@/lib/ui/rodape-ocupado";
 import { useContact } from "@/hooks/contacts/useContact";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
@@ -15,6 +16,24 @@ function formatarDuracao(segundos: number): string {
   const s = segundos % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
 }
+
+/**
+ * O que este painel OCUPA no canto inferior direito, para o rodapé da tela
+ * descontar (contrato em `lib/ui/rodape-ocupado.tsx`, issue #1305).
+ *
+ * A conta é a do próprio CSS daqui: `distancia: 16` é o antigo `bottom-4`, e
+ * `altura: 64` é `p-3` (12 + 12) mais a linha mais alta do painel sem aviso de
+ * mídia — o `Avatar`/`h-10` (40). Não é um teto: a linha de aviso ("o áudio
+ * desta ligação está em outra aba") aumenta o painel, e a altura MEDIDA no
+ * navegador entra no lugar desta, maior. O número fica neste arquivo porque é
+ * este arquivo que decide a altura — antes, o `bottom-4` daqui e o `p-6` do
+ * `<main>` eram duas medidas do mesmo canto, em arquivos diferentes.
+ */
+export const PAINEL_DE_CHAMADA: PecaDoRodape = {
+  dono: "components/voice/ActiveCallPanel.tsx",
+  distancia: 16,
+  altura: 64,
+};
 
 /**
  * Chamada em andamento — painel fixo, não modal (spec §5.3): quem está numa
@@ -35,6 +54,12 @@ export function ActiveCallPanel() {
   const contactQuery = useContact(call?.contact_id ?? "");
   const [duracao, setDuracao] = useState(0);
   const t = useT();
+  // O painel é uma peça fixa do rodapé: ele declara o que ocupa e a casca
+  // desconta (issue #1305). Sem provedor em volta ele segue desenhando igual —
+  // só não reserva nada, que é o estado em que este painel vive num teste
+  // isolado. O hook devolve só a âncora (ver o porquê em `lib/ui/rodape-ocupado`);
+  // a distância continua sendo um número deste arquivo.
+  const ancora = usePecaDoRodape(PAINEL_DE_CHAMADA);
 
   const contact = call?.contact_id ? contactQuery.data?.data : undefined;
   const nome = contact ? rotuloDoContato(contact) : phoneForDisplay(call?.peer_phone ?? "");
@@ -99,7 +124,12 @@ export function ActiveCallPanel() {
     <div
       role="region"
       aria-label={t("Chamada em andamento")}
-      className="fixed bottom-4 right-4 z-50 flex w-[min(320px,calc(100%-2rem))] items-center gap-3 rounded-xl border border-border bg-popover p-3 shadow-2xl animate-in fade-in slide-in-from-bottom-4"
+      ref={ancora}
+      // A posição no rodapé vem do contrato, não de uma classe escrita aqui: é
+      // o mesmo número que a casca desconta (issue #1305). `right-4` continua
+      // sendo deste arquivo — ninguém mais mede o canto direito.
+      style={{ bottom: PAINEL_DE_CHAMADA.distancia }}
+      className="fixed right-4 z-50 flex w-[min(320px,calc(100%-2rem))] items-center gap-3 rounded-xl border border-border bg-popover p-3 shadow-2xl animate-in fade-in slide-in-from-bottom-4"
     >
       <Avatar className="h-10 w-10 shrink-0">
         {contact?.id ? (

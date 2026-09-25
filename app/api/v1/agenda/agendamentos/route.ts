@@ -19,8 +19,21 @@ import { z } from "zod";
 import { listaAgendamentos, type AgendamentoListado } from "@/lib/agenda/consulta";
 import { donosDaAgenda } from "@/lib/agenda/donos-da-agenda";
 import { lerOcupacaoExterna } from "@/lib/agenda/ocupacao-externa";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import type { Actor } from "@/lib/api/handlers/types";
+import { ApiError } from "@/lib/api/types";
 import { fail, ok } from "@/lib/api/wrappers";
+import { requireRole } from "@/lib/auth/require-role";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
+import { createClient } from "@/lib/supabase/server";
+
+import {
+  alterarAgendamentoHandler,
+  cancelarAgendamentoHandler,
+  marcarAgendamentoHandler,
+} from "./_handler";
 
 /**
  * O que ESTA ROTA devolve — o contrato da lista mais a ORIGEM.
@@ -31,16 +44,6 @@ import { logger } from "@/lib/logger";
  * e não se clica.
  */
 type AgendamentoDaResposta = AgendamentoListado & { origem?: "google_sync" };
-import { ApiError } from "@/lib/api/types";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
-import { traduzir } from "@/lib/i18n/dicionario";
-
-import {
-  alterarAgendamentoHandler,
-  cancelarAgendamentoHandler,
-  marcarAgendamentoHandler,
-} from "./_handler";
 
 const listarSchema = z.object({
   contact_id: z.string().uuid().optional(),
@@ -307,28 +310,58 @@ export async function DELETE(req: NextRequest): Promise<Response> {
 }
 
 /**
- * O caminho comum dos três verbos: papel, forma, handler, tradução.
+ * O caminho comum dos três verbos: identidade, forma, handler, tradução.
  *
  * Um só, e não três cópias, porque a diferença entre eles é o schema e a função
  * — o resto é idêntico, e três cópias divergiriam no primeiro ajuste, que é
  * exatamente o defeito que a extração do handler veio consertar.
+ *
+ * Aceita sessão de navegador OU token de servidor (`dsk_…` com `mcp:write`),
+ * mesma dualidade de `/api/v1/messages` e `/api/v1/leads/[id]`: a integração de
+ * monitoramento processual marca a audiência/perícia por aqui, sem navegador.
+ * `_handler.ts` já esperava `Actor` completo (é a mesma função que a tool MCP
+ * chama) — só a rota restringia o tipo a `{type:"user"}` antes desta troca.
+ *
+ * ⚠️ Token de servidor sem o scope `actor:ai_agent` vira `actor.type ===
+ * "api_token"` (`lib/mcp/auth.ts`, `deriveActor`), e `podeMarcarForaDaGrade`
+ * só libera `"user"` para marcar fora da grade de disponibilidade. Uma
+ * audiência que o juiz marcou não respeita a agenda do advogado — se a
+ * integração precisar disso, é decisão de produto a abrir (ampliar
+ * `podeMarcarForaDaGrade`), não algo para contornar aqui.
  */
 async function despachar<T>(
   req: NextRequest,
   schema: z.ZodType<T>,
   handler: (
     supabase: Awaited<ReturnType<typeof createClient>>,
-    ctx: { organization_id: string; actor: { type: "user"; id: string }; requestId: string },
+    ctx: { organization_id: string; actor: Actor; requestId: string },
     input: T,
   ) => Promise<Record<string, unknown>>,
   status: 200 | 201,
 ): Promise<Response> {
   const requestId = randomUUID();
 
-  const authz = await requireRole("agent", { requestId, resource: "agenda" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "agenda",
+    role: "agent",
+    scope: "mcp:write",
+    // O MESMO papel das tools MCP de escrita na agenda (`lib/mcp/tools/
+    // agendamento.ts`, `requiresRole: "ai_operator"`), que chamam estes mesmos
+    // handlers. Token criado pela tela nasce `agent`: sem esta linha, o `dsk_`
+    // que leva 403 ao cancelar pela tool cancelaria por aqui. E ator que não é
+    // pessoa escapa de "atendente só mexe na própria agenda"
+    // (`aOpcaoPodeRecortar`) — um token `agent` mexeria na agenda de todos.
+    tokenRole: "ai_operator",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg, user } = authz;
+  // `idioma` só vem no ramo de sessão (`resolveAuthDual`); o ramo de token não
+  // tem preferência de idioma de pessoa nenhuma — degrada para o padrão.
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const { supabase, organizationId, actor } = authz;
+
+  const tetoEstourado = await tetoDeEscritaDoToken(authz, "agenda", requestId);
+  if (tetoEstourado) return tetoEstourado;
 
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -338,16 +371,14 @@ async function despachar<T>(
     });
   }
 
-  const supabase = await createClient();
   try {
     const resultado = await handler(
       supabase,
       {
-        // A organização vem do COOKIE VALIDADO, nunca do corpo. Pela tool, ela
-        // vem do contexto do agente — e é por isso que o handler a recebe como
-        // parâmetro em vez de resolvê-la sozinho.
-        organization_id: activeOrg.orgId,
-        actor: { type: "user", id: user.id },
+        // A organização vem do COOKIE VALIDADO ou da LINHA DO TOKEN, nunca do
+        // corpo. Pela tool MCP nativa, ela vem do contexto do agente.
+        organization_id: organizationId,
+        actor,
         requestId,
       },
       parsed.data,

@@ -111,12 +111,23 @@ export async function POST(req: NextRequest): Promise<Response> {
     return fail("internal_error", error.message, 500, { requestId });
   }
 
+  // ⚠️ O MOTIVO NÃO ENTRA NO AUDIT, e aqui a linha é ainda mais direta que no
+  // estorno: `resourceId` é o PRÓPRIO contato, então a frase ficaria gravada ao
+  // lado do id de quem ela descreve. `lib/audit` grava `metadata` cru em
+  // `api_audit_log` — retenção longa e fora do alcance da cascata de
+  // anonimização, que não tem GRANT de UPDATE/DELETE nessa tabela nem com a
+  // service key. O ledger é a fonte do motivo (`loyalty_ledger.reason`), e lá a
+  // LGPD chega; o audit guarda só quantos pontos e que houve justificativa.
   await audit({
     action: lido.data.points > 0 ? "fidelidade.ponto_dado" : "fidelidade.ponto_resgatado",
     resourceType: "contact",
     resourceId: lido.data.contact_id,
     requestId,
-    metadata: { points: lido.data.points, reason: lido.data.reason },
+    metadata: {
+      points: lido.data.points,
+      motivo_informado: true,
+      motivo_chars: lido.data.reason.length,
+    },
   });
 
   return ok(data, { requestId });

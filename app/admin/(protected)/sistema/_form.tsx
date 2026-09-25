@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 
 import { updateComportamento } from "@/app/actions/settings/updateComportamento";
+import { updateModuloDaInstalacao } from "@/app/actions/settings/updateModuloDaInstalacao";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
@@ -18,6 +19,7 @@ import type {
   ChaveDeOrcamentoDaInstalacao,
   ComportamentoDaInstalacao,
 } from "@/lib/instalacao/comportamento";
+import type { ModuloOpcional } from "@/lib/instalacao/modulos";
 
 /**
  * Cada interruptor salva na hora, sem botão de confirmar — mesmo desenho do
@@ -163,6 +165,93 @@ export function FormularioDeComportamento({ inicial }: { inicial: ComportamentoD
             aria-label={t("Conferência de promessa antes de enviar")}
           />
         </div>
+
+        {erro && (
+          <p className="text-sm text-destructive" role="alert">
+            {erro}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Os MÓDULOS OPCIONAIS da instalação — desligados por padrão, e é aqui, e só
+ * aqui, que se ligam (doc 24: liga/desliga de configuração geral tem tela, sem
+ * `.env`). Mesmo desenho do cartão de cima: salva no clique, volta no erro.
+ */
+/** Cada módulo, como ele aparece aqui. O texto diz o que ligar ABRE, não só o nome. */
+const MODULOS_NA_TELA: ReadonlyArray<{ modulo: ModuloOpcional; id: string; rotulo: string; descricao: string }> = [
+  {
+    modulo: "banco_externo",
+    id: "modulo-banco-externo",
+    rotulo: "Banco de dados externo",
+    descricao:
+      "Ligado, cada empresa pode conectar o banco de outro sistema (um ERP, outro CRM) para o agente consultar. Isso guarda a senha daquele banco neste servidor e abre conexão com ele. Desligado, a tela, o menu e as ferramentas do agente somem.",
+  },
+  {
+    modulo: "fluxos_atendimento",
+    id: "modulo-fluxos-atendimento",
+    rotulo: "Fluxos de atendimento",
+    descricao:
+      "Ligado, cada empresa pode montar roteiros de perguntas que a IA conduz durante a conversa (nome, CPF, interesse…), e as respostas aparecem na ficha do cliente. Desligado, a tela, o menu e o roteiro no atendimento da IA somem.",
+  },
+];
+
+export function FormularioDeModulos({ ligados }: { ligados: readonly ModuloOpcional[] }) {
+  const t = useT();
+  const [estado, setEstado] = useState<ReadonlySet<ModuloOpcional>>(new Set(ligados));
+  const [erro, setErro] = useState<string | null>(null);
+  const [pendente, startTransition] = useTransition();
+
+  function trocar(modulo: ModuloOpcional, valor: boolean) {
+    setErro(null);
+    const alternar = (ligar: boolean) =>
+      setEstado((atual) => {
+        const proximo = new Set(atual);
+        if (ligar) proximo.add(modulo);
+        else proximo.delete(modulo);
+        return proximo;
+      });
+    alternar(valor);
+    startTransition(async () => {
+      const r = await updateModuloDaInstalacao({ modulo, ligado: valor });
+      if (!r.ok) {
+        alternar(!valor);
+        setErro(t("Não deu para salvar. Tente de novo em instantes."));
+      }
+    });
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("Módulos opcionais")}</CardTitle>
+        <CardDescription>
+          {t(
+            "Recursos que a maioria das instalações não usa. Desligados, eles não aparecem para nenhuma empresa daqui.",
+          )}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {MODULOS_NA_TELA.map((m) => (
+          <div key={m.modulo} className="flex items-start justify-between gap-4 rounded-lg border p-4">
+            <div className="space-y-1">
+              <Label htmlFor={m.id} className="text-base">
+                {t(m.rotulo)}
+              </Label>
+              <p className="text-sm text-muted-foreground">{t(m.descricao)}</p>
+            </div>
+            <Switch
+              id={m.id}
+              checked={estado.has(m.modulo)}
+              onCheckedChange={(valor) => trocar(m.modulo, valor)}
+              disabled={pendente}
+              aria-label={t(m.rotulo)}
+            />
+          </div>
+        ))}
 
         {erro && (
           <p className="text-sm text-destructive" role="alert">

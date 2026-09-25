@@ -91,7 +91,14 @@ describe("a fila tem uma definição só", () => {
     // produto que ninguém tomou — e o dia em que for tomada, este teste é onde a
     // decisão vai estar escrita.
     const baseline = fonte("supabase/baseline.sql");
-    const gatilho = baseline.slice(baseline.indexOf("trg_conversation_routing_requested"));
+    // Ancorado na DEFINIÇÃO (`create trigger ...`), não no nome solto, e na ÚLTIMA
+    // delas — CLAUDE.md, item 10. O nome sozinho aparece três vezes no arquivo: no
+    // `drop trigger`, no `create trigger` e dentro de um comentário no apêndice; um
+    // `lastIndexOf` no nome cru cairia no COMENTÁRIO e mediria o texto errado. Com a
+    // âncora na definição, o `lastIndexOf` cai na definição viva.
+    const ancora = baseline.lastIndexOf("create trigger trg_conversation_routing_requested");
+    expect(ancora, "trg_conversation_routing_requested não tem `create trigger` no baseline").toBeGreaterThan(-1);
+    const gatilho = baseline.slice(ancora);
     const when = gatilho.slice(0, gatilho.indexOf("execute function"));
 
     // EQUIVALÊNCIA, não inclusão. Iterar a constante e pedir `toContain` teria um

@@ -26,6 +26,8 @@
  * alternativa (status por seção) triplicaria os estados no componente, e a
  * doença que esta rota cura é exatamente estados distintos colapsados num só.
  */
+import { createAdminClient } from "@/lib/supabase/admin";
+import { prospectEnrichmentSchema } from "@/lib/prospecting/schema";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
@@ -87,9 +89,28 @@ export async function GET(
   }
 
   const { data: contactScope, error: scopeError } = await supabase.from("contacts")
-    .select("organization_id").eq("id", contactId).maybeSingle();
+    .select("organization_id, is_anonymized").eq("id", contactId).maybeSingle();
   if (scopeError) return fail("internal_error", scopeError.message, 500, { requestId });
   if (!contactScope) return fail("not_found", "Contato não encontrado.", 404, { requestId });
+  // Candidates are worker-only. Authorize the contact through RLS first, then
+  // scope this read to that exact contact and organization. Never expose raw data.
+  const enrichment = await (async () => {
+    if (contactScope.is_anonymized) return { enrichment: null, enrichment_error: false };
+    try {
+      const result = await createAdminClient().from("prospecting_candidates")
+        .select("data, created_at")
+        .eq("organization_id", contactScope.organization_id).eq("contact_id", contactId)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (result.error) return { enrichment: null, enrichment_error: true };
+      if (!result.data) return { enrichment: null, enrichment_error: false };
+      const parsed = prospectEnrichmentSchema.safeParse(result.data.data);
+      return parsed.success
+        ? { enrichment: { ...parsed.data, collected_at: result.data.created_at }, enrichment_error: false }
+        : { enrichment: null, enrichment_error: true };
+    } catch {
+      return { enrichment: null, enrichment_error: true };
+    }
+  })();
   const [leads, orders, activities, demandas, fatos, historico] = await Promise.all([
     supabase
       .from("crm_leads")
@@ -149,6 +170,7 @@ export async function GET(
 
   return ok(
     {
+      ...enrichment,
       leads: (leads.data ?? []).map((row) => comCamposDoFunil(row as Record<string, unknown>)),
       orders: orders.data ?? [],
       activities: linhas.map((a) => ({

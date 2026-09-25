@@ -353,4 +353,16 @@ describe("os eventos que o plano de tempo trouxe", () => {
     expect(r.titulo).toBe("Seguiu sem o plano de tempo");
     expect(r.detalhe).toContain("máximo configurado");
   });
+
+  it("nascimento do negócio é proveniência, não código cru", () => {
+    const r = descreveEvento(evento({ event_type: "enrolled_by_lead_created" }), nos, "pt-BR");
+    expect(r.titulo).toBe("Começou porque o negócio nasceu");
+    expect(r.autor).toBe("motor");
+  });
+
+  it("retorno do cliente é proveniência, não código cru", () => {
+    const r = descreveEvento(evento({ event_type: "enrolled_by_inbound_after_silence" }), nos, "pt-BR");
+    expect(r.titulo).toBe("Começou porque o cliente voltou a escrever");
+    expect(r.autor).toBe("motor");
+  });
 });

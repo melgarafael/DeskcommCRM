@@ -46,12 +46,23 @@ export async function enrollFollowupFlow(
 
   const { data: pointer, error: pointerErr } = await supabase
     .from("followup_flow_pointers")
-    .select("id, status, active_version_id")
+    .select("id, status, active_version_id, surface")
     .eq("organization_id", organizationId)
     .eq("id", pointerId)
     .maybeSingle();
   if (pointerErr) return { ok: false, code: "internal_error", message: pointerErr.message, status: 500 };
   if (!pointer) return { ok: false, code: "not_found", message: "Fluxo não encontrado.", status: 404 };
+  // Roteiro de atendimento não se inscreve pelo relógio: ele começa no turno do
+  // agente (palavra-gatilho ou roteador). O banco recusaria a linha
+  // (`trg_enrollment_superficie_coerente`); aqui a recusa vira mensagem legível.
+  if (pointer.surface === "atendimento") {
+    return {
+      ok: false,
+      code: "flow_not_enrollable",
+      message: "Roteiro de atendimento começa na conversa, não por inscrição.",
+      status: 422,
+    };
+  }
 
   if (pointer.status !== "active" || !pointer.active_version_id) {
     return {

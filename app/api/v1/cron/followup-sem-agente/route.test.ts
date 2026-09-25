@@ -31,6 +31,7 @@ interface Ponteiro {
   organization_id: string;
   name: string;
   trigger_config: unknown;
+  active_version_id?: string | null;
 }
 
 interface Capturado {
@@ -47,15 +48,23 @@ function admin(opts: {
   ponteiros: Ponteiro[];
   followupPorOrg?: Record<string, unknown>;
   avisoAbertoDe?: Set<string>;
+  versoes?: Array<{ id: string; graph: unknown }>;
   cap: Capturado;
 }) {
-  const { ponteiros, followupPorOrg = {}, avisoAbertoDe = new Set<string>(), cap } = opts;
+  const { ponteiros, followupPorOrg = {}, avisoAbertoDe = new Set<string>(), versoes = [], cap } = opts;
   return {
     from(tabela: string) {
       if (tabela === "followup_flow_pointers") {
         return {
           select: () => ({
             eq: () => ({ limit: async () => ({ data: ponteiros, error: null }) }),
+          }),
+        };
+      }
+      if (tabela === "followup_flow_versions") {
+        return {
+          select: () => ({
+            in: async () => ({ data: versoes, error: null }),
           }),
         };
       }
@@ -152,6 +161,8 @@ describe("GET /api/v1/cron/followup-sem-agente", () => {
     ["stage_change", "entra numa etapa do funil"],
     ["case_opened", "atendimento é aberto"],
     ["appointment_no_show", "não compareceu"],
+    ["inbound_after_silence", "volta a escrever"],
+    ["lead_created", "negócio nasce"],
   ])("também vigia o gatilho %s, e diz em português quando ele dispararia", async (kind, frase) => {
     const cap = vazio();
     vi.mocked(createAdminClient).mockReturnValue(
@@ -190,6 +201,57 @@ describe("GET /api/v1/cron/followup-sem-agente", () => {
     const res = await GET(req());
     expect((await res.json()).data).toMatchObject({ abertos: 0, fechados: 0 });
     expect(cap.avisos).toEqual([]);
+  });
+
+  it("NÃO avisa sobre o fluxo automático cujo grafo é só texto fixo — ele dispara sem agente", async () => {
+    const cap = vazio();
+    vi.mocked(createAdminClient).mockReturnValue(
+      admin({
+        ponteiros: [{ ...fluxo("f1", "silence", ORG, "Resposta automática"), active_version_id: "v1" }],
+        versoes: [
+          {
+            id: "v1",
+            graph: {
+              nodes: [
+                { id: "t1", type: "trigger" },
+                { id: "a1", type: "action", config: { mode: "text" } },
+              ],
+            },
+          },
+        ],
+        cap,
+      }) as never,
+    );
+
+    const res = await GET(req());
+    expect((await res.json()).data).toMatchObject({ examinados: 1, abertos: 0 });
+    expect(cap.avisos).toEqual([]);
+  });
+
+  it("FECHA o aviso quando o grafo passa a ser só texto fixo", async () => {
+    const cap = vazio();
+    vi.mocked(createAdminClient).mockReturnValue(
+      admin({
+        ponteiros: [{ ...fluxo("f1", "silence"), active_version_id: "v1" }],
+        versoes: [
+          {
+            id: "v1",
+            graph: {
+              nodes: [
+                { id: "t1", type: "trigger" },
+                { id: "a1", type: "action", config: { mode: "text" } },
+              ],
+            },
+          },
+        ],
+        avisoAbertoDe: new Set(["f1"]),
+        cap,
+      }) as never,
+    );
+
+    const res = await GET(req());
+    expect((await res.json()).data).toMatchObject({ abertos: 0, fechados: 1 });
+    expect(cap.resolvidos).toEqual([{ status: "resolved" }]);
   });
 
   it("FECHA o aviso quando o vínculo com o agente aparece — o laço se completa", async () => {

@@ -91,4 +91,24 @@ corpo`;
     expect(out.ok).toBe(true);
     if (out.ok) expect(out.pkg.matcher.any_keywords).toEqual(['frete', 'entrega']);
   });
+
+  it('nome de arquivo fora do alfabeto do Storage é recusado (a chave cruza para o terceiro)', () => {
+    const out = parseSkillPackage(makeZip({ 'SKILL.md': validSkillMd, 'assets/ícone.png': 'x' }));
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.error.code).toBe('skill_storage_name_invalid');
+  });
+
+  it('nome da skill fora do alfabeto do Storage é recusado', () => {
+    const comAcento = validSkillMd.replace('name: frete-gratis', 'name: Relatório de vendas');
+    const out = parseSkillPackage(makeZip({ 'SKILL.md': comAcento }));
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.error.code).toBe('skill_storage_name_invalid');
+  });
+
+  it('o alfabeto aceito é o do Storage, não um slug: espaço, ponto e hífen passam', () => {
+    const comEspaco = validSkillMd.replace('name: frete-gratis', 'name: frete gratis');
+    const out = parseSkillPackage(makeZip({ 'SKILL.md': comEspaco, 'assets/capa do produto.png': 'x' }));
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(out.pkg.files.map((f) => f.path)).toEqual(['assets/capa do produto.png']);
+  });
 });

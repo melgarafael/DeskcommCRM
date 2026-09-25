@@ -90,22 +90,29 @@ LABEL org.opencontainers.image.source="https://github.com/melgarafael/DeskcommCR
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.title="DeskcommCRM"
 
-# A versão que /api/v1/health reporta (invariante 7). Precisa vir por ARG: a
-# alternativa anterior era `process.env.npm_package_version`, que é `undefined`
-# sob `CMD ["node","server.js"]` — só existe quando o processo nasce de um
-# `npm`/`pnpm run`. Toda instalação do mundo reportava o fallback "0.1.0".
-ARG APP_VERSION=dev
+# ⚠️ NADA de ARG de versão acima das camadas caras deste estágio. No BuildKit a
+# própria INSTRUÇÃO `ARG` entra na chave de cache das instruções seguintes —
+# mesmo sem `ENV` no meio — e `APP_VERSION` muda a cada release. Medido
+# (2026-09-13, três builds do mesmo fonte): versão nova → `apk add ffmpeg`
+# REEXECUTA (23–41s); mesma versão → CACHED (3s). Por isso a declaração E o uso
+# descem para depois do `apk add` e do `adduser`, junto da cópia do artefato.
 ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
-    NEXT_TELEMETRY_DISABLED=1 \
-    APP_VERSION=$APP_VERSION
+    NEXT_TELEMETRY_DISABLED=1
 # ffmpeg: a derivação de vídeo (Onda 3.1) roda no processo do app — o cron
 # event-log-drain executa o media_derive handler, que chama `ffmpeg` via spawn
 # pra extrair áudio+frames. Sem o binário, todo vídeo recebido falha a derivação.
 RUN apk add --no-cache ffmpeg
 # non-root
 RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
+# A versão que /api/v1/health reporta (invariante 7). Precisa vir por ARG: a
+# alternativa anterior era `process.env.npm_package_version`, que é `undefined`
+# sob `CMD ["node","server.js"]` — só existe quando o processo nasce de um
+# `npm`/`pnpm run`. Toda instalação do mundo reportava o fallback "0.1.0".
+# Declarada AQUI, depois das camadas caras (ver acima).
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
 # O output standalone NÃO inclui public/ nem .next/static — copiar explicitamente,
 # senão CSS/JS/assets retornam 404 (app "sem estilo").
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./

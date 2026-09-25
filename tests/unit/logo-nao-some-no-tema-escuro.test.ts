@@ -3,7 +3,7 @@
  *
  * ═══ O DEFEITO ═══
  *
- * O produto aceita UM logo só — `platform_branding.logo_url` /
+ * Quando só o logo padrão foi configurado, o produto usa — `platform_branding.logo_url` /
  * `organizations.settings.branding` —, e não há segunda arte para o tema
  * escuro. A arte que o operador sobe é, quase sempre, pensada para fundo
  * claro. O `--color-surface` do tema escuro é `#1d1c17`: um logo azul-marinho
@@ -105,7 +105,7 @@ describe("o logo do operador não some no tema escuro", () => {
     expect(
       fonte,
       "a prévia da aparência escura voltou a mostrar o logo cru — ela deixa de prever o que o app desenha",
-    ).toMatch(/Apar.ncia escura["')\s]*\s*\?\s*["'`][^"'`]*bg-white/);
+    ).toMatch(/Apar.ncia escura["')\s]*\s*&&\s*!escuroEmVigor\s*\?\s*["'`][^"'`]*bg-white/);
   });
 
   it("CONTROLE: as três superfícies continuam sendo as três que desenham o logo do operador", () => {

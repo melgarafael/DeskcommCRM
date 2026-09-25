@@ -153,15 +153,52 @@ export function InboxFilters({ value, onChange }: Props) {
     !channels.some((c) => c.id === value.channel_session_id);
   // Alternador só aparece com 2+ números — com um só não há o que alternar.
   const showChannelSwitch = (channels?.length ?? 0) >= 2 || filtroForaDaLista;
+  /**
+   * O SELETOR NÃO PODE SUMIR DEBAIXO DO MENU ABERTO.
+   *
+   * A condicional abaixo decide a EXISTÊNCIA do `<Select>`, e ela lê duas
+   * queries em voo — as duas com `orgId` na chave e `enabled: !!orgId`. Um
+   * único render em que o vocabulário volte a indefinido ou vazio (chave nova,
+   * refetch, organização piscando) não escondia só o controle: DESMONTAVA o
+   * Select, e o menu que o operador tinha acabado de abrir fechava sozinho, com
+   * o gatilho de volta em "Todas as tags". Era o filtro fechando na cara de
+   * quem ia escolher, e o `filtro-por-marcador-pela-tela.spec.ts` intermitente.
+   *
+   * Por isso o seletor passa a usar o último vocabulário NÃO-VAZIO que esta
+   * tela conheceu: enquanto o de agora oscila, o de antes segura o controle
+   * montado. O quadro nunca teve o defeito pelo mesmo motivo por outro caminho
+   * — `components/kanban/FilterBar.tsx` mantém o gatilho montado e só o desliga
+   * (`disabled`) sem opções. A lembrança faz o mesmo serviço sem estrear um
+   * controle morto para a organização que ainda não tem etiqueta nenhuma: essa
+   * continua sem o seletor, que é o que a condicional sempre quis dizer.
+   *
+   * Medido em `tests/unit/inbox-filtro-de-tag-nao-desmonta.test.tsx`.
+   */
+  const [ultimoVocabulario, setUltimoVocabulario] = useState<string[]>([]);
+  if (tagVocabulary != null && tagVocabulary.length > 0 && tagVocabulary !== ultimoVocabulario) {
+    // Ajuste de estado DURANTE a renderização (o padrão que a documentação do
+    // React chama de "adjusting state when props change"): o React reinicia o
+    // render deste componente com o valor novo antes de pintar, então o seletor
+    // nunca chega à tela com o vocabulário velho. Efeito aqui não serviria —
+    // ele roda DEPOIS da pintura, e a janela de um frame é exatamente a que
+    // desmonta o Select.
+    setUltimoVocabulario(tagVocabulary);
+  }
+  const vocabularioDoSeletor =
+    tagVocabulary != null && tagVocabulary.length > 0 ? tagVocabulary : ultimoVocabulario;
   // O MESMO tratamento, agora para a etiqueta. Sem ele, o seletor inteiro some
   // com o filtro AINDA APLICADO — a lista fica num subconjunto, às vezes vazio,
   // e nada na tela diz que há filtro nem oferece como tirá-lo.
+  // "Conhecido" e "não-vazio" são coisas diferentes, e é o primeiro que vale
+  // aqui: a organização cuja ÚLTIMA etiqueta acabou de ser apagada responde
+  // vocabulário vazio, e é justamente ela que precisa do seletor de volta para
+  // desfazer o filtro que continua valendo.
+  const vocabularioConhecido = tagVocabulary != null || ultimoVocabulario.length > 0;
   const tagForaDoVocabulario =
     value.tag != null &&
-    tagVocabulary != null &&
-    !tagVocabulary.includes(value.tag);
-  const mostrarSeletorDeTag =
-    (tagVocabulary?.length ?? 0) > 0 || tagForaDoVocabulario;
+    vocabularioConhecido &&
+    !vocabularioDoSeletor.includes(value.tag);
+  const mostrarSeletorDeTag = vocabularioDoSeletor.length > 0 || tagForaDoVocabulario;
 
   // O timer lê o valor MAIS RECENTE, não o do render em que foi agendado.
   //
@@ -306,7 +343,7 @@ export function InboxFilters({ value, onChange }: Props) {
                       placeholder no lugar do valor JÁ selecionado, e o operador
                       veria "Todas as tags" com um filtro ativo. */}
                   {[
-                    ...(tagVocabulary ?? []),
+                    ...vocabularioDoSeletor,
                     ...(tagForaDoVocabulario && value.tag ? [value.tag] : []),
                   ].map((tag) => (
                     <SelectItem key={tag} value={tag}>

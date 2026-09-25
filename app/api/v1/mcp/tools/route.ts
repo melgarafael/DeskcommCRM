@@ -20,7 +20,9 @@ import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { allTools } from "@/lib/mcp/tools";
-import { TOOL_CATALOG } from "@/lib/mcp/tools/catalog";
+import { TOOL_CATALOG, deModuloDesligado } from "@/lib/mcp/tools/catalog";
+import { modulosLigados } from "@/lib/instalacao/modulos";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { juntarCatalogoComHandlers } from "@/lib/mcp/tools/catalogo-servido";
 
 export const dynamic = "force-dynamic";
@@ -46,8 +48,11 @@ export async function GET(_req: NextRequest): Promise<Response> {
     );
   }
 
+  // Módulo opcional desligado na instalação: a capacidade não existe aqui, e a
+  // tela não a oferece para marcar (doc 37).
+  const ligados = await modulosLigados(createAdminClient());
   const schemaPorNome = new Map(allTools.map((t) => [t.name, t.inputSchema]));
-  const tools = servidas.map((capacidade) => ({
+  const tools = servidas.filter((c) => !deModuloDesligado(c.id, ligados)).map((capacidade) => ({
     ...capacidade,
     input_schema: z.toJSONSchema(z.object(schemaPorNome.get(capacidade.id) ?? {}), {
       target: "openapi-3.0",

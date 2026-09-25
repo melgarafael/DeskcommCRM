@@ -3,15 +3,11 @@ import { googlePushCandidates } from "@/lib/agenda/google/candidates";
 import { apenasDeMembrosAtivos } from "@/lib/agenda/google/membros";
 import { reconcileAppointment } from "@/lib/agenda/google/sync-executor";
 import { audit } from "@/lib/audit";
-import { env } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { autorizaCron } from "@/lib/auth/cron-auth";
 export const dynamic = "force-dynamic";
 async function executar(req: NextRequest) {
-  if (
-    ![env.INTERNAL_CRON_SECRET, env.INTERNAL_SECRET]
-      .filter(Boolean)
-      .some((s) => req.headers.get("authorization") === `Bearer ${s}`)
-  )
+  if (!autorizaCron(req))
     return NextResponse.json(
       { error: { code: "unauthenticated", message: "cron secret inválido" } },
       { status: 401 },

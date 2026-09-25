@@ -56,6 +56,31 @@ function erroDe(e: unknown): ErroPg {
   return { message: bruto?.message ?? String(e), code: bruto?.code };
 }
 
+/**
+ * `is null|true|false` — o `is` não aceita placeholder: a gramática do SQL exige
+ * a palavra depois do operador, e `x is $1` é erro de sintaxe.
+ */
+function literalDeIs(valor: unknown): string {
+  if (valor === null || valor === undefined) return "null";
+  if (valor === true) return "true";
+  if (valor === false) return "false";
+  return naoImplementado(`is(${JSON.stringify(valor)})`);
+}
+
+/**
+ * `(read,delivered)` — a lista que o PostgREST manda em `.not(col, "in", ...)`.
+ *
+ * As aspas duplas protegem vírgula DENTRO do valor, então o corte passa pelo
+ * `fatiarNoTopo` em vez de um `split(",")` cru.
+ */
+function listaDoPostgrest(bruto: unknown): string[] {
+  if (Array.isArray(bruto)) return bruto.map((x) => String(x));
+  const texto = String(bruto ?? "").trim();
+  const dentro = texto.startsWith("(") && texto.endsWith(")") ? texto.slice(1, -1) : texto;
+  if (dentro.trim() === "") return [];
+  return fatiarNoTopo(dentro).map((v) => v.trim().replace(/^"(.*)"$/, "$1"));
+}
+
 /** Aspas em cada coluna: `slug`, `position` e afins são palavras vivas no SQL. */
 function colunasSql(colunas: string): string {
   if (colunas.trim() === "*") return "*";
@@ -164,6 +189,35 @@ class ConsultaPg<T> implements PromiseLike<RespostaFalsa<T[]>> {
   }
 
   /**
+   * `is` — a coluna contra `null`/`true`/`false`.
+   *
+   * Nasceu sob pressão do ingest do Zernio, que escreve o telefone do contato
+   * só quando ele está vazio (`contacts.phone_number is null`)
+   * e resolve número interno de aviso por `.is("phone_number", null)`.
+   * Um `is` que não filtrasse deixaria o teste afirmar coisa que não mediu.
+   */
+  is(coluna: string, valor: unknown): this {
+    this.filtros.push(["is", coluna, valor]);
+    return this;
+  }
+
+  /**
+   * `.not(coluna, operador, valor)` — a negação do PostgREST é textual, no
+   * terceiro argumento (`(read,delivered)`), não um método próprio por operador.
+   */
+  not(coluna: string, operador: string, valor: unknown): this {
+    if (operador === "in") {
+      this.filtros.push(["not = any", coluna, listaDoPostgrest(valor)]);
+      return this;
+    }
+    if (operador === "eq") {
+      this.filtros.push(["<>", coluna, valor]);
+      return this;
+    }
+    return naoImplementado(`not(${operador})`);
+  }
+
+  /**
    * `<` e `>` — nasceram porque `vencePropostasDeDado` os usa e o adaptador
    * ESTOUROU ao ser chamado. Terceira vez que o `naoImplementado` paga o
    * próprio custo: devolver vazio teria deixado 7 casos verdes medindo nada.
@@ -236,10 +290,13 @@ class ConsultaPg<T> implements PromiseLike<RespostaFalsa<T[]>> {
   private montar(): { texto: string; valores: unknown[] } {
     const valores: unknown[] = [];
     const onde = this.filtros.map(([op, c, v]) => {
+      // `is` não gasta placeholder: a palavra entra inline.
+      if (op === "is") return `"${c}" is ${literalDeIs(v)}`;
       valores.push(v);
       // `= any` recebe o array inteiro num placeholder só; os demais operadores
       // são infixos comuns.
       if (op === "= any") return `"${c}" = any($${valores.length})`;
+      if (op === "not = any") return `not ("${c}" = any($${valores.length}))`;
       return `"${c}" ${op} $${valores.length}`;
     });
     const projecao = projecaoSql(this.colunas, "linha");
@@ -368,7 +425,8 @@ class InsercaoPg<T> implements PromiseLike<RespostaFalsa<null>> {
  * nada). O `naoImplementado` fez o trabalho dele.
  */
 class AtualizacaoPg<T> implements PromiseLike<RespostaFalsa<unknown>> {
-  private filtros: Array<[string, unknown]> = [];
+  /** [operador, coluna, valor] — mesmo contrato do `ConsultaPg`. */
+  private filtros: Array<[string, string, unknown]> = [];
   private colunasDeVolta: string | null = null;
 
   constructor(
@@ -378,8 +436,34 @@ class AtualizacaoPg<T> implements PromiseLike<RespostaFalsa<unknown>> {
   ) {}
 
   eq(coluna: string, valor: unknown): this {
-    this.filtros.push([coluna, valor]);
+    this.filtros.push(["=", coluna, valor]);
     return this;
+  }
+
+  /**
+   * `.is()` na ESCRITA — o caminho que motivou a peça.
+   *
+   * O ingest do Zernio grava o telefone do contato recém-criado com
+   * `update(...).eq("id", id).is("phone_number", null)`: a condição é uma
+   * TRAVA, o telefone só é escrito se ainda estiver vazio. Sem `is` no
+   * builder de update, esse `update` estourava em vez de filtrar.
+   */
+  is(coluna: string, valor: unknown): this {
+    this.filtros.push(["is", coluna, valor]);
+    return this;
+  }
+
+  /** `.not(coluna, operador, valor)` — a negação textual do PostgREST. */
+  not(coluna: string, operador: string, valor: unknown): this {
+    if (operador === "in") {
+      this.filtros.push(["not = any", coluna, listaDoPostgrest(valor)]);
+      return this;
+    }
+    if (operador === "eq") {
+      this.filtros.push(["<>", coluna, valor]);
+      return this;
+    }
+    return naoImplementado(`not(${operador})`);
   }
 
   select(colunas = "*"): this {
@@ -394,9 +478,12 @@ class AtualizacaoPg<T> implements PromiseLike<RespostaFalsa<unknown>> {
       valores.push(v !== null && typeof v === "object" && !Array.isArray(v) ? JSON.stringify(v) : v);
       return `"${k}" = $${valores.length}`;
     });
-    const onde = this.filtros.map(([c, v]) => {
+    const onde = this.filtros.map(([op, c, v]) => {
+      // `is` não gasta placeholder: a palavra entra inline.
+      if (op === "is") return `"${c}" is ${literalDeIs(v)}`;
       valores.push(v);
-      return `"${c}" = $${valores.length}`;
+      if (op === "not = any") return `not ("${c}" = any($${valores.length}))`;
+      return `"${c}" ${op} $${valores.length}`;
     });
     let texto = `update public."${this.tabela}" set ${sets.join(", ")}`;
     if (onde.length > 0) texto += ` where ${onde.join(" and ")}`;

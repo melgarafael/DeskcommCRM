@@ -8,6 +8,7 @@ import { moedaServidaOu } from "@/lib/money";
 import { createClient } from "@/lib/supabase/server";
 import { ZonaDePerigoDaOrganizacao } from "./_danger-zone";
 import { TenantForm } from "./_form";
+import { InterfaceDaEmpresaForm } from "./_interface";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,8 @@ interface OrgRow {
   media_retention_days: number;
   dpo_email: string | null;
   privacy_policy_url: string | null;
+  /** Portas escolhidas pela EMPRESA (issue #1341). Opaco aqui: quem lê é `lerInterface`. */
+  interface_settings: unknown;
 }
 
 export default async function TenantSettingsPage() {
@@ -36,7 +39,7 @@ export default async function TenantSettingsPage() {
   const { data } = await supabase
     .from("organizations")
     .select(
-      "display_name, legal_name, cnpj, country, timezone, locale, currency, media_retention_days, dpo_email, privacy_policy_url",
+      "display_name, legal_name, cnpj, country, timezone, locale, currency, media_retention_days, dpo_email, privacy_policy_url, interface_settings",
     )
     .eq("id", activeOrg.orgId)
     .maybeSingle();
@@ -73,6 +76,12 @@ export default async function TenantSettingsPage() {
             dpo_email: row.dpo_email,
             privacy_policy_url: row.privacy_policy_url,
           }}
+        />
+      )}
+      {row && (
+        <InterfaceDaEmpresaForm
+          initial={row.interface_settings}
+          role={activeOrg.role}
         />
       )}
       {row && <ZonaDePerigoDaOrganizacao displayName={row.display_name} />}

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# pre-merge-commit — o MERGE que auto-commita também passa pelos guards do gov-loop.
+# Armado via: git config core.hooksPath loop/hooks (o mesmo do pre-commit).
+#
+# Por que esta rota existe: `loop/hooks/pre-commit` só roda quando existe um
+# `git commit`. Um merge que resolve SOZINHO auto-commita — o git cria o commit
+# de merge sem passar pelo `git commit` — e o dispatcher dos guards nunca era
+# chamado. Medido na issue #1225: um único `git merge -X theirs origin/main`
+# fazia o fortalecimento de um invariante do outro lado DESAPARECER, com exit 0,
+# sem válvula, sem --no-verify e sem aviso.
+#
+# A peça nova é só a ROTA DE ENTRADA. A lista de guards e o que cada um exige
+# continuam num lugar só: este hook executa o MESMO dispatcher que o commit usa
+# (`loop/hooks/pre-commit`), com as mesmas variáveis de escape
+# (DESKCOMM_GOV_INVARIANTS_EDIT, DESKCOMM_GOV_MIGRATION_EDIT, DESKCOMM_GOV_PLAN_EDIT).
+# Não há segunda cópia de lógica aqui.
+#
+# Quando o git chama isto: antes de criar o commit de merge AUTOMÁTICO. Merge
+# com conflito não cria commit (portanto não passa por aqui, e é o `git commit`
+# da resolução que fecha), e `--no-commit`, `--squash` e `rebase` não criam
+# commit de merge — nenhum dos três passa por este hook. Cobertura medida:
+# only `git merge` com auto-commit (issue #1225, NÃO MEDIDO: --squash/rebase).
+#
+# ⚠️ Isto NÃO fecha a linha do `git checkout --ours -- <arquivo>` + `git add`
+# dentro do merge: ali o índice fica IGUAL ao HEAD, o `git diff --cached` é
+# VAZIO e o caminho nem aparece na lista que os guards leem — nenhum guard desta
+# família alcança isso, porque exigiria olhar o MERGE_HEAD (issue #1225,
+# delimitado fora deste PR).
+set -euo pipefail
+top="$(git rev-parse --show-toplevel)"
+exec bash "$top/loop/hooks/pre-commit"

@@ -312,6 +312,90 @@ services:
     logging: *default-logging
     networks: [internal]
 
+  # ═══ TELEFONIA POR SIP (#677) — MÓDULO OPCIONAL, DESLIGADO POR PADRÃO ═══
+  #
+  # Decisão do dono (doc 27 da triagem): a telefonia por SIP entra como módulo
+  # opcional do compose, no molde do `wacalls`. Os dois serviços abaixo só
+  # existem com `telefonia` em COMPOSE_PROFILES no .env — sem isso o compose
+  # nem os cria, e nenhuma instalação que não pediu ganha porta aberta,
+  # contêiner ou consumo de memória.
+  #
+  # As mesmas duas regras do `wacalls` valem aqui: nomear o serviço no
+  # `up -d` ATIVA o profile; e `app`/`worker` não podem ganhar `depends_on`
+  # nestes serviços (dependência de profile inativo derruba o CRM inteiro).
+  #
+  # Para ligar: copiar asterisk/pjsip.conf.example e asterisk/ari.conf.example
+  # para os nomes sem `.example` (com as credenciais do tronco e do ARI),
+  # pôr `telefonia` em COMPOSE_PROFILES e subir.
+  #
+  # ═══ POR QUE O ASTERISK É PINADO POR DIGEST ═══
+  #
+  # Asterisk é peça UPSTREAM — se referencia, nunca se republica
+  # (docs/doctrine/packaging.md). E neste registry nenhuma tag é imutável: a
+  # `20-alpine` e até as tags de versão (`20.20.1-alpine`) são reconstruídas
+  # a cada build do mantenedor (medido em 18/09/2026: a mesma `20.20.1` com
+  # digests diferentes em 19/08, 26/08, 02/09, 09/09 e 16/09). O digest abaixo
+  # é o da `20-alpine` = `20.20.1_alpine-3.24-e9d725f` (16/09), multi-arch
+  # (amd64 + arm64). `pull_policy: missing` porque o digest é imutável.
+  asterisk:
+    profiles: ["telefonia"]
+    mem_limit: 256m
+    image: ${ASTERISK_IMAGE:-andrius/asterisk@sha256:927d4c98777149c3380c4f8d0e82b1b1ba9e7b38528f86c1e1593d5a25032f27}
+    pull_policy: ${ASTERISK_PULL_POLICY:-missing}
+    restart: unless-stopped
+    ports:
+      # Só UDP, e pelo mesmo motivo do `wacalls`: sinalização SIP e mídia RTP
+      # não falam HTTP, não há proxy L7 que as carregue, e o tronco do
+      # provedor precisa alcançá-las de fora.
+      #
+      # NUNCA TCP: a ARI (REST + WebSocket, 8088) é o controle total das
+      # chamadas e fica só na rede interna, alcançável apenas pelo
+      # `voice-agent`. Publicá-la entregaria à internet quem liga para quem.
+      - "5060:5060/udp"
+      # Faixa de RTP casada com asterisk/rtp.conf — mudar uma sem a outra deixa
+      # a ligação muda com tudo "conectado" nos logs.
+      - "10000-10200:10000-10200/udp"
+    volumes:
+      - ./asterisk/pjsip.conf:/etc/asterisk/pjsip.conf:ro
+      - ./asterisk/extensions.conf:/etc/asterisk/extensions.conf:ro
+      - ./asterisk/ari.conf:/etc/asterisk/ari.conf:ro
+      - ./asterisk/http.conf:/etc/asterisk/http.conf:ro
+      - ./asterisk/rtp.conf:/etc/asterisk/rtp.conf:ro
+      - asterisk-data:/var/lib/asterisk
+      - asterisk-logs:/var/log/asterisk
+    healthcheck:
+      test: ["CMD", "asterisk", "-rx", "core show uptime"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+    networks: [internal]
+
+  # O runtime de voz é NOSSO: imagem publicada pelo CI (publish-image.yml),
+  # nunca build-only (doutrina de packaging, invariante 1). `build:` fica ao
+  # lado só como escape.
+  voice-agent:
+    profiles: ["telefonia"]
+    mem_limit: 512m
+    image: ${VOICE_AGENT_IMAGE:-ghcr.io/melgarafael/deskcomm-voice-agent:stable}
+    pull_policy: ${VOICE_AGENT_PULL_POLICY:-always}
+    build:
+      context: .
+      dockerfile: Dockerfile.voice-agent
+    restart: unless-stopped
+    depends_on:
+      asterisk:
+        condition: service_healthy
+    # env_file completo, como o `worker`: lib/env.ts valida todas as variáveis
+    # da aplicação no import, não só as de voz.
+    env_file: .env
+    environment:
+      ARI_URL: "http://asterisk:8088"
+      ARI_WS_URL: "ws://asterisk:8088/ari/events"
+      ARI_APP: "voice-agent"
+    logging: *default-logging
+    networks: [internal]
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
@@ -335,6 +419,8 @@ volumes:
   waha-data:
   waha-media:
   wacalls-data:
+  asterisk-data:
+  asterisk-logs:
   caddy-data:
   caddy-config:
 

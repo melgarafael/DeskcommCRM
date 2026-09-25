@@ -127,7 +127,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   return ok(
     {
       intent_name: verdict?.intentName ?? null,
-      confidence: verdict?.confidence ?? 0,
+      // `?? null`, nunca `?? 0`: sem veredito não houve medição, e zero é uma
+      // AFIRMAÇÃO ("o classificador tem certeza de que não é nada"). A tela local
+      // escapa por checar `intent_name` antes de exibir, mas isto é contrato de
+      // API pública — todo outro consumidor leria a invenção. Doutrina em
+      // `lib/kanban/card-state.ts`: null é "sinal insuficiente", 0 é "calculei e deu zero".
+      confidence: verdict?.confidence ?? null,
       min_confidence: loaded.minConfidence,
       agent_id: agentId,
       agent_name: agentName,

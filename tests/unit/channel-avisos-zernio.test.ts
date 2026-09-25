@@ -98,6 +98,8 @@ const ops: { tabela: string; op: string; payload?: unknown }[] = [];
 let jaAberto: unknown = null;
 let linhasAfetadas: unknown[] = [{ id: "t1" }];
 
+const eqCalls: { tabela: string; campo: string; valor: unknown }[] = [];
+
 function chain(tabela: string, op: string, payload?: unknown): Record<string, unknown> {
   ops.push({ tabela, op, payload });
   const proxy: Record<string, unknown> = new Proxy(
@@ -107,6 +109,11 @@ function chain(tabela: string, op: string, payload?: unknown): Record<string, un
         if (prop === "maybeSingle") return async () => ({ data: jaAberto, error: null });
         if (prop === "then")
           return (ok: (v: unknown) => unknown) => ok({ data: linhasAfetadas, error: null });
+        if (prop === "eq")
+          return (campo: string, valor: unknown) => {
+            eqCalls.push({ tabela, campo, valor });
+            return proxy;
+          };
         return () => proxy;
       },
     },
@@ -124,6 +131,7 @@ const admin = {
 
 beforeEach(() => {
   ops.length = 0;
+  eqCalls.length = 0;
   jaAberto = null;
   linhasAfetadas = [{ id: "t1" }];
 });
@@ -154,6 +162,35 @@ describe("espelho local do modelo", () => {
     expect(up?.payload).toMatchObject({ status: "REJECTED", rejected_reason: "motivo" });
   });
 
+  it("filtra por channel_session_id quando fornecido, evitando alterar conexão homônima", async () => {
+    const ok = await atualizarEspelhoDoTemplate(
+      admin,
+      "org",
+      template("REJECTED", "motivo"),
+      "sessao-zernio-123",
+    );
+    expect(ok).toBe(true);
+    const eqSession = eqCalls.find(
+      (c) => c.tabela === "meta_templates" && c.campo === "channel_session_id",
+    );
+    expect(eqSession).toBeDefined();
+    expect(eqSession?.valor).toBe("sessao-zernio-123");
+  });
+
+  it("filtra por idioma quando o evento contiver language", async () => {
+    const evComIdioma = {
+      event: "whatsapp.template.status_updated",
+      template: { name: "cuenta_activa", status: "APPROVED", language: "pt_BR" },
+    };
+    const ok = await atualizarEspelhoDoTemplate(admin, "org", evComIdioma, "sessao-1");
+    expect(ok).toBe(true);
+    const eqLang = eqCalls.find(
+      (c) => c.tabela === "meta_templates" && c.campo === "language",
+    );
+    expect(eqLang).toBeDefined();
+    expect(eqLang?.valor).toBe("pt_BR");
+  });
+
   it("modelo ainda não espelhado devolve false, sem inventar linha", async () => {
     // Quem sabe montar a linha inteira é o sync; inventá-la aqui, com o pouco
     // que o evento traz, criaria um registro incompleto para consertar depois.
@@ -178,6 +215,9 @@ describe("o elo que some sem barulho", () => {
     expect(fonte, "não registra o aviso").toMatch(/await registrarAviso\(/);
     expect(fonte, "não atualiza o espelho do modelo").toMatch(
       /await atualizarEspelhoDoTemplate\(/,
+    );
+    expect(fonte, "não passa a sessão para atualizarEspelhoDoTemplate").toMatch(
+      /await atualizarEspelhoDoTemplate\(\s*admin,\s*input\.session\.organization_id,\s*payload,\s*input\.session\.id,?\s*\)/,
     );
   });
 

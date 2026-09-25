@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   SYSTEM_DO_OPERADOR,
+  cardDoFunil,
   renderBriefingDoOperador,
 } from "@/lib/agent-engine/agent/operator-turn";
 import { AGENT_TOOL_DEFS } from "@/lib/agent-engine/agent/inbound-turn";
@@ -86,5 +87,64 @@ describe("briefing do Operador", () => {
     // linha é o que evita ação em dobro.
     const d: DeclaracaoDoTurno = { intencoes: [], promessas: [], nada_a_declarar: false };
     expect(renderBriefingDoOperador(d, [])).toContain("não repita");
+  });
+
+  it("leva os identificadores REAIS do atendimento (o modelo não inventa UUID)", () => {
+    const texto = renderBriefingDoOperador(null, [], "", {
+      leadId: "11111111-1111-4111-8111-111111111111",
+      contactId: "33333333-3333-4333-8333-333333333333",
+      conversationId: "22222222-2222-4222-8222-222222222222",
+    });
+    // `lead_id` é o CARD do funil — diferente do contato.
+    expect(texto).toContain("lead_id=11111111-1111-4111-8111-111111111111");
+    expect(texto).toContain("contact_id=33333333-3333-4333-8333-333333333333");
+    expect(texto).toContain("conversation_id=22222222-2222-4222-8222-222222222222");
+    expect(texto).toContain("nunca invente");
+    // Sem ids, nada é injetado (chamadores antigos não quebram).
+    expect(renderBriefingDoOperador(null, [])).not.toContain("lead_id=");
+  });
+
+  it("sem card de funil: diz explicitamente para não chamar ferramenta de lead", () => {
+    const texto = renderBriefingDoOperador(null, [], "", {
+      leadId: null,
+      contactId: "33333333-3333-4333-8333-333333333333",
+      conversationId: "22222222-2222-4222-8222-222222222222",
+    });
+    expect(texto).toContain("lead_id=(sem card)");
+    expect(texto).toContain("não chame ferramentas de lead");
+  });
+});
+
+describe("cardDoFunil — o lead_id que o briefing leva", () => {
+  const ORG = "org-1";
+  const lead = (id: string, status: string, ultima: string) => ({
+    id,
+    organization_id: ORG,
+    pipeline_id: "p-1",
+    status,
+    last_activity_at: ultima,
+    created_at: "2026-09-01T00:00:00Z",
+  });
+  const pool = (rows: unknown[]) => ({ query: vi.fn(async () => ({ rows })) });
+  const log = () => ({ warn: vi.fn() });
+
+  it("é o negócio ABERTO — não o mais recente, que pode estar perdido", async () => {
+    const p = pool([lead("aberto", "open", "2026-09-10T00:00:00Z"), lead("perdido", "lost", "2026-09-20T00:00:00Z")]);
+    expect(await cardDoFunil(p as never, ORG, "ct-1", log())).toBe("aberto");
+  });
+
+  it("só negócio fechado: sem card", async () => {
+    const p = pool([lead("ganho", "won", "2026-09-20T00:00:00Z")]);
+    expect(await cardDoFunil(p as never, ORG, "ct-1", log())).toBeNull();
+  });
+
+  it("leitura que falha: sem card, e a falha fica no log — não é engolida", async () => {
+    const l = log();
+    const p = { query: vi.fn(async () => Promise.reject(new Error("connection terminated"))) };
+    expect(await cardDoFunil(p as never, ORG, "ct-1", l)).toBeNull();
+    expect(l.warn).toHaveBeenCalledWith(
+      expect.stringContaining("card do funil"),
+      expect.objectContaining({ error: "connection terminated" }),
+    );
   });
 });

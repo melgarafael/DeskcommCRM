@@ -87,7 +87,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   const admin = createAdminClient();
   const { data: existing } = await admin
     .from("ai_agent_versions")
-    .select("id, status, agent_id, organization_id")
+    .select("id, status, agent_id, organization_id, followup")
     .eq("id", vid)
     .eq("organization_id", activeOrg.orgId)
     .eq("agent_id", id)
@@ -122,7 +122,15 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   if (patch.cases_enabled !== undefined) update.cases_enabled = patch.cases_enabled;
   if (patch.split_messages !== undefined) update.split_messages = patch.split_messages;
   if (patch.split_max_chars !== undefined) update.split_max_chars = patch.split_max_chars;
-  if (patch.followup !== undefined) update.followup = patch.followup;
+  if (patch.followup !== undefined) {
+    const existingFollowup =
+      existing.followup !== null &&
+      typeof existing.followup === "object" &&
+      !Array.isArray(existing.followup)
+        ? existing.followup
+        : {};
+    update.followup = { ...existingFollowup, ...patch.followup };
+  }
 
   const { data, error } = await admin
     .from("ai_agent_versions")

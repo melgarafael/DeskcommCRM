@@ -157,6 +157,17 @@ export interface PontoDeIa {
    */
   fixo?: { razao: string; usa?: { provider: string; modelId: string } };
   registraEm: DestinoDeTelemetria;
+  /**
+   * O ponto sabe ser decidido pelo Jev (`lib/ai/decisao/`), que devolve decisão
+   * tipada em vez de texto. Só marque o ponto que TEM chamador do Jev:
+   * `tests/unit/pontos-de-ia-decisao-rapida.test.ts` cobra os dois lados, porque
+   * ponto marcado sem chamador é botão que não controla nada.
+   */
+  decisaoRapida?: {
+    primitiva: "score" | "choice" | "noul";
+    /** O que o Jev faz neste ponto, para quem não é engenheiro. Vai à tela. */
+    oQueOJevFaz: string;
+  };
 }
 
 export const PONTOS_DE_IA: readonly PontoDeIa[] = [
@@ -207,6 +218,16 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     emissor: "lib/agent-engine/agent/abordagem-de-formulario.ts",
     sintomaDeFalha:
       "O lead entra pelo formulário, a automação roda, e a mensagem de abordagem nunca é escrita — o contato fica no funil sem ninguém falar com ele.",
+    registraEm: "llm_calls",
+  },
+  {
+    id: "prospecting_agent_setup_chat",
+    rotulo: "Montar agente por conversa",
+    oQueFaz: "Conversa com o administrador e prepara uma proposta de agente para uma campanha. A criação depende da confirmação no resumo.",
+    papel: "melhorar",
+    exige: {},
+    emissor: "lib/prospecting/agent-chat.ts",
+    sintomaDeFalha: "A conversa de configuração mostra um erro e preserva o que foi escrito; nenhum agente é criado.",
     registraEm: "llm_calls",
   },
   {
@@ -288,6 +309,11 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     sintomaDeFalha:
       "Cliente irritado não é mais escalado para um humano, e a insatisfação só aparece quando ele já sumiu.",
     registraEm: "llm_calls",
+    decisaoRapida: {
+      primitiva: "score",
+      oQueOJevFaz:
+        "Percebe, geralmente em menos de um segundo, se o cliente está irritado — e avisa para passar a conversa a uma pessoa.",
+    },
   },
   {
     id: "followup_classify",
@@ -310,6 +336,19 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     emissor: "lib/agent-engine/agent/followup-flow-classify.ts",
     sintomaDeFalha:
       "As retomadas saem todas no mesmo horário fixo, sem respeitar o ritmo de cada cliente.",
+    registraEm: "llm_calls",
+  },
+
+  {
+    id: "flow_validate",
+    rotulo: "Validar a resposta do fluxo",
+    oQueFaz:
+      "Quando o fluxo está esperando uma resposta, lê a mensagem do cliente com o contexto da conversa e devolve SÓ o dado que deve ser salvo — ou diz que ele não respondeu.",
+    papel: "entender",
+    exige: {},
+    emissor: "lib/agent-engine/agent/flow-validate.ts",
+    sintomaDeFalha:
+      "Dado errado entra no cadastro do cliente (ex.: o modelo grava a resposta na pergunta errada) ou o cliente fica sem a pergunta seguinte.",
     registraEm: "llm_calls",
   },
 
@@ -533,6 +572,9 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
 export const PONTO_POR_ID: ReadonlyMap<string, PontoDeIa> = new Map(
   PONTOS_DE_IA.map((p) => [p.id, p]),
 );
+
+/** Onde o Jev trabalha: o cartão dele lista, e a chave dele diz "Usada em". */
+export const PONTOS_DO_JEV: readonly PontoDeIa[] = PONTOS_DE_IA.filter((p) => p.decisaoRapida);
 
 /**
  * Os pontos agrupados como a tela mostra. A ordem dentro de cada papel é a de

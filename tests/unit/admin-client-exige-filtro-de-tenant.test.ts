@@ -121,6 +121,20 @@ const PLATAFORMA: readonly { caminho: string; motivo: string }[] = [
  */
 const SEM_FILTRO_LIBERADO: readonly { arquivo: string; tabela: string; motivo: string }[] = [
   {
+    arquivo: "app/admin/(protected)/extensoes/page.tsx",
+    tabela: "organization_extensions",
+    motivo:
+      "A pergunta É cross-tenant: 'em quantas empresas esta extensão está ligada'. O " +
+      "`select` traz apenas `installation_id,enabled` — nenhum nome, nenhum dado de " +
+      "cliente, nenhuma coluna que identifique a organização —, e a tela mostra a " +
+      "CONTAGEM, não a lista. Filtrar por uma organização responderia outra pergunta. " +
+      "O gate é de papel, como nas irmãs de `/admin`: `is_platform_admin` no topo da " +
+      "página e `notFound()` para o resto. " +
+      "⚠️ A dispensa VENCE se a tela passar a mostrar QUAIS empresas: aí o `select` " +
+      "carrega `organization_id` e volta a ser leitura de dado de inquilino, que " +
+      "precisa de decisão própria sobre o que o dono da instalação pode ver.",
+  },
+  {
     arquivo: "lib/notifications/web_push.ts",
     tabela: "push_subscriptions",
     motivo:

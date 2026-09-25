@@ -44,6 +44,7 @@ import { renderDeclaracaoParaHumano, type DeclaracaoDoTurno } from "@/lib/agent-
 
 import {
   FRASE_DO_MOTIVO,
+  MARCA_DO_JEV,
   PISO_DO_BRIEFING,
   type MotivoDaPassagem,
   type TentativaDaPassagem,
@@ -136,7 +137,7 @@ export interface EntradaDoBriefing {
    * de um agente MCP). É DADO não confiável: aparece rotulado e entre aspas, e
    * nunca vai a log nem a `api_audit_log`.
    */
-  motivo?: { codigo: MotivoDaPassagem; texto?: string | null } | null;
+  motivo?: { codigo: MotivoDaPassagem; texto?: string | null; percebidoPeloJev?: boolean } | null;
   /** Só quando a passagem veio do "Não consigo → escalar" de um caso. */
   caso?: {
     titulo: string;
@@ -239,7 +240,8 @@ export function montarBriefingDaPassagem(e: EntradaDoBriefing): BriefingDaPassag
   const blocos: string[] = [];
 
   if (e.motivo) {
-    blocos.push(`Por que a IA passou: ${FRASE_DO_MOTIVO[e.motivo.codigo]}`);
+    const marca = e.motivo.percebidoPeloJev === true ? ` ${MARCA_DO_JEV}` : "";
+    blocos.push(`Por que a IA passou: ${FRASE_DO_MOTIVO[e.motivo.codigo]}${marca}`);
     const escrito = limpo(e.motivo.texto);
     // Autoria variável (o modelo na ferramenta, uma pessoa no MCP), e não
     // confiável em nenhum dos casos: sai entre aspas, como citação.
