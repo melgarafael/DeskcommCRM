@@ -57,7 +57,8 @@ export interface CatalogoMapeamentoDTO {
   busca_operador: OperadorDeBusca;
   enabled: boolean;
   similaridade_deterministica: boolean;
-  similares_qtd: number;
+  /** LEGADO: a quantidade agora mora na config do AGENTE. */
+  similares_qtd?: number;
   ordem: OrdemPorPapel;
   /** Colunas (por nome) que aparecem na legenda enviada com a foto. */
   legenda: string[];
@@ -86,7 +87,8 @@ export interface SalvarCatalogoBody {
   busca_operador: OperadorDeBusca;
   enabled: boolean;
   similaridade_deterministica: boolean;
-  similares_qtd: number;
+  /** LEGADO: a quantidade agora mora na config do AGENTE. */
+  similares_qtd?: number;
   ordem: OrdemPorPapel;
   /** Colunas (por nome) que aparecem na legenda enviada com a foto. */
   legenda: string[];

@@ -6,6 +6,8 @@ describe('catalogConfigSchema', () => {
   it('defaults preservam o comportamento atual (determinística DESLIGADA)', () => {
     expect(CATALOG_CONFIG_DEFAULT.similaridade_deterministica).toBe(false);
     expect(CATALOG_CONFIG_DEFAULT.similares_qtd).toBe(3);
+    expect(CATALOG_CONFIG_DEFAULT.usar_limite_quantidade).toBe(true);
+    expect(CATALOG_CONFIG_DEFAULT.especificacao_mostra_todas).toBe(true);
     expect(CATALOG_CONFIG_DEFAULT.criterio).toEqual(['cilindrada', 'preco']);
   });
 
@@ -28,6 +30,18 @@ describe('parseCatalogConfig (runtime tolerante)', () => {
     expect(cfg.similaridade_deterministica).toBe(true);
     expect(cfg.similares_qtd).toBe(5);
     expect(cfg.criterio).toEqual(['cilindrada', 'preco']);
+  });
+
+  it('leitura TOLERANTE do config antigo (sem os toggles novos) cai no default', () => {
+    // O banco do dono tem o bloco no formato antigo (sem usar_limite_quantidade
+    // nem especificacao_mostra_todas). O parse preenche com o default.
+    const cfg = parseCatalogConfig({
+      similares_qtd: 3,
+      similaridade_deterministica: true,
+      criterio: ['cilindrada', 'preco'],
+    });
+    expect(cfg.usar_limite_quantidade).toBe(true);
+    expect(cfg.especificacao_mostra_todas).toBe(true);
   });
 
   it('nunca lança com campo inválido', () => {

@@ -57,11 +57,22 @@ export interface EntradaSelecaoPorIntencao {
   candidatos: readonly MotoDoCatalogo[];
   mapeamento: CatalogoMapeamento;
   /**
-   * C-085: quando o pedido é uma ESPECIFICAÇÃO (um termo/família que casa VÁRIAS
-   * unidades — ex.: "CB 300"), devolver TODAS as que batem em vez de recortar em
-   * `similares_qtd`. Configurável na tela (`especificacao_mostra_todas`). Como o
-   * veredito "é especificação?" depende do catálogo casado, quem decide é o
-   * chamador — aqui só se obedece.
+   * Quantas motos oferecer quando há teto (default: `mapeamento.similaresQtd`,
+   * por retrocompatibilidade). A fonte REAL agora é
+   * `ai_agents.config.catalog.similares_qtd`, passada pelo chamador.
+   */
+  quantidade?: number;
+  /**
+   * Toggle B (`usar_limite_quantidade`): aplicar o teto de `quantidade`. Com
+   * `false`, não recorta nada — devolve todas as candidatas (respeitando
+   * `todasSeEspecificacao`, que também abre o teto). Default `true`.
+   */
+  aplicarLimite?: boolean;
+  /**
+   * Toggle A (`especificacao_mostra_todas`): quando o pedido casa um MODELO que
+   * existe (ex.: "CB 300"), devolver TODAS as unidades que batem em vez de
+   * recortar. O veredito "o modelo existe?" depende do catálogo casado — quem
+   * decide é o chamador; aqui só se obedece.
    */
   todasSeEspecificacao?: boolean;
 }
@@ -148,12 +159,15 @@ export function selecionarPorIntencao(
 
   const criteriosColunas = colunasComparacao.filter((c) => preferencias[c] === undefined);
 
-  // C-085: especificação → todas as que batem. O teto é o próprio catálogo
-  // (nunca "quantidade livre" — `escolherComReferencia` recebe o tamanho).
-  const quantidade =
-    input.todasSeEspecificacao === true
-      ? Math.max(candidatos.length, 1)
-      : (input.mapeamento.similaresQtd ?? 3);
+  // Teto: `todasSeEspecificacao` (modelo existe) OU `aplicarLimite: false`
+  // (toggle B desligado) abrem o teto e devolvem TODAS as candidatas. O teto é o
+  // próprio catálogo — `escolherComReferencia` recebe o tamanho (nunca
+  // "quantidade livre"). A fonte do número é a config do AGENTE, passada pelo
+  // chamador; o default cai no `similaresQtd` do mapeamento (retrocompatível).
+  const semTeto = input.todasSeEspecificacao === true || input.aplicarLimite === false;
+  const quantidade = semTeto
+    ? Math.max(candidatos.length, 1)
+    : Math.max(1, input.quantidade ?? input.mapeamento.similaresQtd ?? 3);
   const motos = escolherComReferencia(termoFinal, candidatos, {
     quantidade,
     criteriosColunas,

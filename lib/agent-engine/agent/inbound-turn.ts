@@ -3617,15 +3617,20 @@ async function executarTurnoDoAgente(
               );
               candidatos = mesclarMotos(doBanco, catalogoDaConversa.motos);
             }
-            // C-085: o pedido é uma ESPECIFICAÇÃO (família/modelo que casa VÁRIAS
-            // unidades, ex.: "CB 300")? Então `especificacao_mostra_todas` decide
-            // se mostra todas as que batem. Um pedido que casa UMA só unidade
-            // (ex.: "Biz 125 FLEX 2021") segue como pedido normal.
-            const ehEspecificacao =
-              motosCitadasNoTexto(msgCliente, candidatos).length > 1 ||
-              (criteriosDoTurno !== undefined &&
-                Object.keys(criteriosDoTurno).length > 0 &&
-                motosCitadasNoTexto(msgCliente, candidatos).length > 0);
+            // Regra do dono (2026-09-25): MODELO que EXISTE → todas as unidades
+            // que casam (toggle A `especificacao_mostra_todas`); modelo que NÃO
+            // existe → N alternativas (toggle B `usar_limite_quantidade`).
+            // "Existe" = a consulta do MODELO trouxe unidades para o pedido e o
+            // turno não é objeção nem foi classificado como alternativa — antes
+            // o teste exigia >1 nome completo citado no TEXTO e quase nunca
+            // disparava (medido ao vivo: mostrava só 3 com mais em estoque).
+            const pedidoDeModeloExistente =
+              catalogoDoTurno.length > 0 &&
+              intencaoDoTurno !== 'alternativa' &&
+              !ehObjecaoMsg;
+            // Fonte ÚNICA da quantidade: a config do AGENTE (`ai_agents.config.
+            // catalog`), não mais o `catalog_mappings`.
+            const cfgCatalogo = agentConfig?.catalogConfig;
             const selecao = selecionarPorIntencao({
               termoBase,
               criterios: criteriosDoTurno,
@@ -3633,9 +3638,10 @@ async function executarTurnoDoAgente(
               motoAtual,
               candidatos,
               mapeamento,
+              quantidade: cfgCatalogo?.similares_qtd ?? 3,
+              aplicarLimite: cfgCatalogo?.usar_limite_quantidade !== false,
               todasSeEspecificacao:
-                ehEspecificacao &&
-                agentConfig?.catalogConfig?.especificacao_mostra_todas !== false,
+                pedidoDeModeloExistente && cfgCatalogo?.especificacao_mostra_todas !== false,
             });
             if (selecao.motos.length > 0) {
               // Persiste as motos oferecidas (inclusive as buscadas no banco) no

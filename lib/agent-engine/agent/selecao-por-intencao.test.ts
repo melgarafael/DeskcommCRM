@@ -125,10 +125,36 @@ describe('selecionarPorIntencao', () => {
       mapeamento: MAPEAMENTO,
       todasSeEspecificacao: true,
     });
-    // Sem a flag, respeita o teto da tela (3).
+    // Sem a flag, respeita o teto (3).
     expect(semFlag.motos.length).toBe(3);
     // Com a flag, traz todas as unidades do catálogo.
     expect(comFlag.motos.length).toBe(familia.length);
+  });
+
+  it('toggle B: `aplicarLimite: false` abre o teto e devolve todas as candidatas', () => {
+    const semTeto = selecionarPorIntencao({
+      termoBase: 'quero uma moto',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: CATALOGO,
+      mapeamento: MAPEAMENTO,
+      aplicarLimite: false,
+    });
+    expect(semTeto.motos.length).toBe(CATALOGO.length);
+  });
+
+  it('quantidade vem do chamador (config do agente) e sobrepõe o mapeamento', () => {
+    const r = selecionarPorIntencao({
+      termoBase: 'quero uma moto',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: CATALOGO,
+      mapeamento: { ...MAPEAMENTO, similaresQtd: 1 },
+      quantidade: 2,
+    });
+    expect(r.motos.length).toBe(2);
   });
 
   it('alternativa: ancora a moto atual, tira ela e traz as mais baratas parecidas', () => {

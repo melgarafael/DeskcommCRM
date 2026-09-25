@@ -4,6 +4,11 @@
  * Decisões de APRESENTAÇÃO e de ESCOLHA das motos ficam aqui — não no prompt da
  * persona. O runtime lê este bloco; a tela do agente o edita; a API o valida.
  *
+ * ─── Onde mora a QUANTIDADE (decisão do dono, 2026-09-25) ────────────────────
+ * `similares_qtd` e `usar_limite_quantidade` vivem AQUI, na config do AGENTE.
+ * O `catalog_mappings` (Integração de dados) guarda só a tabela/colunas e a
+ * semelhança automática — a quantidade saiu de lá para não haver duas fontes.
+ *
  * Defaults preservam o comportamento atual (sem surpresa para quem nunca abriu a
  * tela): `similaridade_deterministica: false` mantém a escolha pelo modelo; o
  * resto dos toggles liga o formato já validado ao vivo. Quem quer a regra fixa
@@ -15,13 +20,26 @@ export const CRITERIOS_SIMILARIDADE = ['cilindrada', 'preco', 'tipo'] as const;
 
 export const catalogConfigSchema = z
   .object({
-    /** Quantas motos semelhantes oferecer quando o pedido não existe. 1..8. */
+    /**
+     * Quantas ALTERNATIVAS oferecer quando o modelo pedido NÃO existe no
+     * catálogo. Fonte ÚNICA (decisão do dono, 2026-09-25). 1..8.
+     *
+     * Só é aplicado se `usar_limite_quantidade` estiver ligado.
+     */
     similares_qtd: z.number().int().min(1).max(8).default(3),
     /**
-     * C-085: quando o cliente pede uma ESPECIFICAÇÃO/família (ex.: "CB 300",
-     * "Fazer 250"), mostrar TODAS as unidades do catálogo que batem — em vez de
-     * recortar em `similares_qtd`. Default `true` (decisão do dono, 2026-09-25):
-     * o cliente quer ver o que existe; recortar escondia unidades reais.
+     * Toggle B (decisão do dono, 2026-09-25): aplicar o LIMITE de
+     * `similares_qtd` das alternativas. Desligado = sem teto — mostra todas as
+     * candidatas que casam/parecem. Default `true` (comportamento atual).
+     */
+    usar_limite_quantidade: z.boolean().default(true),
+    /**
+     * Toggle A (C-085): quando o cliente pede um MODELO que EXISTE (família que
+     * casa uma ou mais unidades, ex.: "CB 300"), mostrar TODAS as unidades que
+     * batem — em vez de recortar em `similares_qtd`. Default `true` (decisão do
+     * dono, 2026-09-25): o cliente quer ver o que existe; recortar escondia
+     * unidades reais. Quando o modelo NÃO existe, valem `similares_qtd` +
+     * `usar_limite_quantidade`.
      */
     especificacao_mostra_todas: z.boolean().default(true),
     /** Prioridade dos critérios de semelhança, na ordem. */

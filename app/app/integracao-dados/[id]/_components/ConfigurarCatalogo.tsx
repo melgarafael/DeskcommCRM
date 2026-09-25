@@ -208,7 +208,6 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
   const [similares, setSimilares] = useState<string>("");
   const [enabled, setEnabled] = useState(true);
   const [similaridade, setSimilaridade] = useState(false);
-  const [qtd, setQtd] = useState(3);
   const [operador, setOperador] = useState<OperadorDeBusca>("contem");
   const [verificando, setVerificando] = useState(false);
   const [colunasVivas, setColunasVivas] = useState<string[] | null>(null);
@@ -239,7 +238,6 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
     );
     setEnabled(salvo ? salvo.enabled : true);
     setSimilaridade(salvo ? salvo.similaridade_deterministica : false);
-    setQtd(salvo ? salvo.similares_qtd : 3);
     setOperador(salvo ? salvo.busca_operador : "contem");
     setColunasVivas(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -308,7 +306,9 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
       busca_operador: operador,
       enabled,
       similaridade_deterministica: similaridade,
-      similares_qtd: qtd,
+      // A QUANTIDADE saiu daqui: fonte única é a config do AGENTE
+      // (`ai_agents.config.catalog.similares_qtd`). A coluna do banco fica só
+      // como legado e é ignorada pelo motor.
       ordem: {},
       legenda: linhas.filter((l) => l.mostrar).map((l) => l.coluna),
       colunas: linhas.map((l) => ({
@@ -412,21 +412,6 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
               onChange={(e) => setSimilaridade(e.target.checked)}
             />
             <Label htmlFor="cat-sim">Escolher as semelhantes automaticamente</Label>
-          </div>
-          <div className="flex items-center gap-2">
-            <Label htmlFor="cat-qtd">Quantas oferecer</Label>
-            <Input
-              id="cat-qtd"
-              type="number"
-              min={1}
-              max={8}
-              value={qtd}
-              onChange={(e) => {
-                const n = Number(e.target.value);
-                if (Number.isFinite(n)) setQtd(Math.min(8, Math.max(1, Math.round(n))));
-              }}
-              className="h-8 w-20"
-            />
           </div>
           <div className="flex items-center gap-2">
             <Label>Como buscar</Label>

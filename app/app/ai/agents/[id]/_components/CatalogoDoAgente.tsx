@@ -12,11 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { useT } from "@/hooks/i18n/useT";
 import { useCatalogoMapeamento } from "@/hooks/external-db/useCatalogoMapeamento";
 import { apiClient } from "@/lib/api/client";
-import {
-  CATALOG_CONFIG_DEFAULT,
-  parseCatalogConfig,
-  type CatalogConfig,
-} from "@/lib/agent-engine/agent/catalog-config";
+import { parseCatalogConfig, type CatalogConfig } from "@/lib/agent-engine/agent/catalog-config";
 
 interface Props {
   agentId: string;
@@ -29,10 +25,10 @@ interface Props {
 /**
  * Cartão "Catálogo de motos" na tela do AGENTE.
  *
- * O QUE o agente mostra e COMO escolhe as semelhantes (tabela, colunas, ordem,
- * quantidade, ligar/desligar) mora no CATÁLOGO — tela de Integração de dados.
- * Aqui ficam só as preferências de MENSAGEM do agente (toggles de formato), e um
- * resumo do catálogo configurado.
+ * O QUE o agente lê (tabela, colunas, ordem, semelhança automática) mora no
+ * CATÁLOGO — tela de Integração de dados. Aqui ficam as preferências de MENSAGEM
+ * do agente e a QUANTIDADE de motos (fonte única, decisão do dono 2026-09-25):
+ * `similares_qtd` + `usar_limite_quantidade` + `especificacao_mostra_todas`.
  */
 export function CatalogoDoAgente({ agentId, inicial, disabled, aoSalvar }: Props) {
   const t = useT();
@@ -46,7 +42,7 @@ export function CatalogoDoAgente({ agentId, inicial, disabled, aoSalvar }: Props
       ? t("Carregando…")
       : m === null
         ? t("Nenhum catálogo configurado ainda.")
-        : `${t("Tabela")}: ${m.table_name} · ${m.similares_qtd} ${t("motos")} · ${
+        : `${t("Tabela")}: ${m.table_name} · ${
             m.similaridade_deterministica
               ? t("semelhança automática LIGADA")
               : t("semelhança automática desligada")
@@ -56,7 +52,7 @@ export function CatalogoDoAgente({ agentId, inicial, disabled, aoSalvar }: Props
     setSalvando(true);
     try {
       await apiClient.patch(`/api/v1/ai/agents/${agentId}`, { config: { catalog: cfg } });
-      toast.success(t("Formato das mensagens salvo — já vale no próximo atendimento."));
+      toast.success(t("Catálogo do agente salvo — já vale no próximo atendimento."));
       aoSalvar?.(cfg);
     } catch (err) {
       showApiError(err);
@@ -71,7 +67,7 @@ export function CatalogoDoAgente({ agentId, inicial, disabled, aoSalvar }: Props
         <h3 className="text-sm font-medium">{t("Catálogo de motos")}</h3>
         <p className="text-xs text-muted-foreground">
           {t(
-            "O catálogo (tabela, colunas, semelhança e quantidade) é configurado em Integração de dados. Aqui você ajusta só o formato das mensagens.",
+            "A tabela, as colunas e a semelhança automática são configuradas em Integração de dados. A QUANTIDADE de motos e o formato das mensagens ficam aqui, no agente.",
           )}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
@@ -145,6 +141,10 @@ export function CatalogoDoAgente({ agentId, inicial, disabled, aoSalvar }: Props
             {t("Fotos da moto escolhida (0 = todas as fotos)")}
           </Label>
         </div>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-md border border-border/60 p-3">
+        <Label>{t("Quantidade e escolha das motos")}</Label>
         <div className="flex items-center gap-2">
           <Switch
             id="cat-especificacao"
@@ -153,14 +153,52 @@ export function CatalogoDoAgente({ agentId, inicial, disabled, aoSalvar }: Props
             disabled={disabled}
           />
           <Label htmlFor="cat-especificacao">
-            {t("Quando o cliente cita um modelo/família, mostrar TODAS as unidades que batem")}
+            {t(
+              "Quando o cliente cita um MODELO que existe, mostrar TODAS as unidades que batem (ignora o limite)",
+            )}
           </Label>
         </div>
+        <div className="flex items-center gap-2">
+          <Switch
+            id="cat-limite"
+            checked={cfg.usar_limite_quantidade}
+            onCheckedChange={(v) => setCfg((c) => ({ ...c, usar_limite_quantidade: v }))}
+            disabled={disabled}
+          />
+          <Label htmlFor="cat-limite">
+            {t("Usar limite de quantidade quando o modelo pedido NÃO existe (alternativas)")}
+          </Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <Input
+            id="cat-similares-qtd"
+            type="number"
+            min={1}
+            max={8}
+            className="w-20"
+            value={cfg.similares_qtd}
+            onChange={(e) =>
+              setCfg((c) => ({
+                ...c,
+                similares_qtd: Math.min(8, Math.max(1, Math.round(Number(e.target.value) || 3))),
+              }))
+            }
+            disabled={disabled || !cfg.usar_limite_quantidade}
+          />
+          <Label htmlFor="cat-similares-qtd">
+            {t("Quantas alternativas oferecer (1 a 8) quando o modelo não existe")}
+          </Label>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Desligue o limite para mostrar todas as alternativas candidatas. O limite não afeta um modelo que existe quando a opção acima está ligada.",
+          )}
+        </p>
       </div>
 
       <div className="flex justify-end">
         <Button onClick={salvar} disabled={disabled || salvando}>
-          {salvando ? t("Salvando…") : t("Salvar formato das mensagens")}
+          {salvando ? t("Salvando…") : t("Salvar configuração do catálogo")}
         </Button>
       </div>
     </Card>
