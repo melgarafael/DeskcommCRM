@@ -1101,12 +1101,17 @@ export function AgentForm(props: Props) {
             />
           )}
 
-          {/* Comandos pelo celular (`#on`/`#off`, C-076). Salva em
-              `ai_agents.config.aceita_comandos_celular`. */}
+          {/* Comandos pelo celular (C-076/C-077). Salva em `ai_agents.config`. */}
           {isEdit && (
             <ComandosDoCelular
               agentId={props.agent.id}
-              inicial={(props.agent.config ?? {}).aceita_comandos_celular}
+              configInicial={
+                (props.agent.config ?? {}) as {
+                  aceita_comandos_celular?: unknown;
+                  comando_ligar?: unknown;
+                  comando_desligar?: unknown;
+                }
+              }
               disabled={disabled}
             />
           )}

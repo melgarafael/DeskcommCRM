@@ -17,6 +17,7 @@ import type pg from 'pg';
 
 import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
 import { parseCatalogConfig, type CatalogConfig } from './catalog-config';
+import { COMANDO_DESLIGAR_PADRAO, COMANDO_LIGAR_PADRAO } from '@/lib/escalacao/comando-de-canal';
 
 export interface PublishedAgentConfig {
   operationMode?: 'automatic' | 'assisted';
@@ -61,10 +62,14 @@ export interface PublishedAgentConfig {
   /** Apresentação do catálogo e escolha das motos semelhantes (Fase 3). */
   catalogConfig: CatalogConfig;
   /**
-   * Aceita comandos `#on`/`#off` do celular (C-076)? Default `false`: o ingest
+   * Aceita comandos de controle do celular (C-076)? Default `false`: o ingest
    * NÃO reconhece comando nenhum, e qualquer mensagem do celular só pausa.
    */
   aceitaComandosCelular: boolean;
+  /** Sequência que LIGA a IA (C-077). Default `#on`. */
+  comandoLigar: string;
+  /** Sequência que DESLIGA a IA (C-077). Default `#off`. */
+  comandoDesligar: string;
   /**
    * O papel OPERADOR está ligado nesta versão (spec 16 §3.2)?
    *
@@ -167,6 +172,8 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     rag_similarity_threshold?: unknown;
     catalog?: unknown;
     aceita_comandos_celular?: unknown;
+    comando_ligar?: unknown;
+    comando_desligar?: unknown;
   };
   const ragTopK =
     typeof cfg.rag_top_k === 'number' &&
@@ -234,6 +241,16 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // C-076: só `true` EXPLÍCITO liga. Ausente/qualquer outro valor = desligado
     // (a direção segura: não aceitar um comando que o dono não ligou na tela).
     aceitaComandosCelular: cfg.aceita_comandos_celular === true,
+    // C-077: sequências personalizáveis. Só string não-vazia vale; qualquer
+    // outra coisa cai no padrão (`#on`/`#off`) — nunca fica sem comando.
+    comandoLigar:
+      typeof cfg.comando_ligar === 'string' && cfg.comando_ligar.trim() !== ''
+        ? cfg.comando_ligar
+        : COMANDO_LIGAR_PADRAO,
+    comandoDesligar:
+      typeof cfg.comando_desligar === 'string' && cfg.comando_desligar.trim() !== ''
+        ? cfg.comando_desligar
+        : COMANDO_DESLIGAR_PADRAO,
     versionCreatedBy: r.version_created_by,
     agentCreatedBy: r.agent_created_by,
   };

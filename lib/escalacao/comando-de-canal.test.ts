@@ -39,6 +39,36 @@ describe("lerComandoDeControle — reconhece #on/#off, e SÓ a mensagem inteira"
   });
 });
 
+describe("lerComandoDeControle — sequências PERSONALIZADAS (C-077)", () => {
+  const seq = { ligar: "religar", desligar: "🔴" };
+
+  it("palavra leiga configurada é reconhecida", () => {
+    expect(lerComandoDeControle("religar", seq)).toBe("on");
+    expect(lerComandoDeControle("RELIGAR", seq)).toBe("on");
+    expect(lerComandoDeControle("  religar  ", seq)).toBe("on");
+  });
+
+  it("emoji configurado é reconhecido, e o padrão (#on) deixa de valer", () => {
+    expect(lerComandoDeControle("🔴", seq)).toBe("off");
+    // As sequências padrão NÃO valem quando há configuração.
+    expect(lerComandoDeControle("#off", seq)).toBeNull();
+    expect(lerComandoDeControle("#on", seq)).toBeNull();
+  });
+
+  it("a palavra configurada no MEIO da frase não dispara", () => {
+    expect(lerComandoDeControle("vou religar o atendimento", seq)).toBeNull();
+  });
+
+  it("sem configuração (undefined) → usa o padrão #on/#off", () => {
+    expect(lerComandoDeControle("#on", undefined)).toBe("on");
+    expect(lerComandoDeControle("#off", undefined)).toBe("off");
+  });
+
+  it("sequências iguais: 'ligar' vence (uma resposta só)", () => {
+    expect(lerComandoDeControle("x", { ligar: "x", desligar: "x" })).toBe("on");
+  });
+});
+
 /**
  * O gate de configuração (C-076): FAIL-CLOSED. Só `true` explícito liga; erro
  * de leitura, ausência de agente ou chave ausente ⇒ `false` (não aplica comando).

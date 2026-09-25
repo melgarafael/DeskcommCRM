@@ -8452,20 +8452,32 @@ export const DICIONARIO: Traducoes = {
     {
       es: "Cuando este flujo termine, el siguiente comienza solo — lo que el cliente ya respondió sigue valiendo.",
     },
-  // ─── C-076: Comandos pelo celular (#on/#off) ───
+  // ─── C-076/C-077: Comandos pelo celular (personalizáveis) ───
   "Comandos pelo celular": { es: "Comandos desde el celular" },
-  "Aceitar #on/#off enviados pelo celular": { es: "Aceptar #on/#off enviados desde el celular" },
-  "Ligado, o atendente pode enviar #off para pausar o automático e #on para devolvê-lo à IA, digitando no próprio WhatsApp do celular. Desligado, essas mensagens são tratadas como texto comum.":
+  "Aceitar comandos enviados pelo celular": {
+    es: "Aceptar comandos enviados desde el celular",
+  },
+  "Ligado, o atendente pode pausar e devolver o automático digitando os comandos no próprio WhatsApp do celular. Desligado, essas mensagens são tratadas como texto comum.":
     {
-      es: "Activado, el agente puede enviar #off para pausar el automático y #on para devolverlo a la IA, escribiendo en el propio WhatsApp del celular. Desactivado, esos mensajes se tratan como texto normal.",
+      es: "Activado, el agente puede pausar y devolver el automático escribiendo los comandos en el propio WhatsApp del celular. Desactivado, esos mensajes se tratan como texto normal.",
     },
-  "Atenção: o comando é digitado no chat do cliente e pode aparecer para ele. Vale por conversa, e a pausa só termina com #on ou pelo botão “devolver ao automático”.":
+  "Comando para LIGAR a IA": { es: "Comando para ACTIVAR la IA" },
+  "Comando para DESLIGAR a IA": { es: "Comando para DESACTIVAR la IA" },
+  "Salvar comandos": { es: "Guardar comandos" },
+  "Voltar ao padrão (#on / #off)": { es: "Volver al estándar (#on / #off)" },
+  "Os dois comandos precisam de um texto.": { es: "Los dos comandos necesitan un texto." },
+  "O comando de ligar e o de desligar não podem ser iguais.": {
+    es: "El comando de activar y el de desactivar no pueden ser iguales.",
+  },
+  "Pode ser uma palavra ou um emoji. Só conta quando a mensagem inteira é o comando — “religar” ou “🔴” sozinhos valem, mas a mesma palavra no meio de uma frase não. O comando é digitado no chat do cliente e pode aparecer para ele.":
     {
-      es: "Atención: el comando se escribe en el chat del cliente y puede aparecer para él. Vale por conversación, y la pausa solo termina con #on o con el botón “devolver al automático”.",
+      es: "Puede ser una palabra o un emoji. Solo cuenta cuando el mensaje completo es el comando — “reactivar” o “🔴” solos valen, pero la misma palabra en medio de una frase no. El comando se escribe en el chat del cliente y puede aparecer para él.",
     },
   "Comandos pelo celular ligados — já valem no próximo atendimento.":
     { es: "Comandos desde el celular activados — ya valen en la próxima atención." },
   "Comandos pelo celular desligados.": { es: "Comandos desde el celular desactivados." },
+  "Comandos salvos — já valem no próximo atendimento.":
+    { es: "Comandos guardados — ya valen en la próxima atención." },
 };
 
 /**

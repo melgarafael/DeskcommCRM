@@ -95,15 +95,25 @@ export const agentConfigSchema = z.object({
   // (comportamento atual). A validação estrita mora no próprio schema.
   catalog: catalogConfigSchema.optional(),
   /**
-   * Aceita os comandos de controle `#on`/`#off` enviados pelo CELULAR do
-   * operador (C-076)? `false` (default do produto) = o ingest NÃO reconhece os
-   * comandos; qualquer mensagem do celular continua pausando a IA normalmente.
+   * Aceita os comandos de controle enviados pelo CELULAR do operador (C-076)?
+   * `false` (default do produto) = o ingest NÃO reconhece os comandos; qualquer
+   * mensagem do celular continua pausando a IA normalmente.
    *
    * O default é `false` de propósito: um comando digitado no chat do CLIENTE é
    * uma decisão de produto com efeito visível (o cliente pode ver a mensagem),
    * então não se liga por migration — se liga na tela do agente.
    */
   aceita_comandos_celular: z.boolean().default(false),
+  /**
+   * A SEQUÊNCIA que LIGA a IA (C-077). Default `#on`. Personalizável na tela —
+   * aceita palavra leiga ("religar"), ou emoji.
+   *
+   * ⚠️ A comparação é por mensagem INTEIRA, então um emoji sozinho é o comando
+   * mais seguro: uma palavra comum dentro de uma frase de venda não dispara.
+   */
+  comando_ligar: z.string().trim().min(1).max(32).default("#on"),
+  /** A SEQUÊNCIA que DESLIGA a IA (C-077). Default `#off`. */
+  comando_desligar: z.string().trim().min(1).max(32).default("#off"),
 });
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 
@@ -115,6 +125,8 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
   rag_similarity_threshold: 0.4,
   confidence_threshold: 0.6,
   aceita_comandos_celular: false,
+  comando_ligar: "#on",
+  comando_desligar: "#off",
 };
 
 // ---------------------------------------------------------------------------

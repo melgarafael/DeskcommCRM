@@ -51,7 +51,7 @@ interface Captura {
 
 function makeAdmin(
   cap: Captura,
-  opts: { jaRegistrada?: boolean; aceitaComandos?: boolean } = {},
+  opts: { jaRegistrada?: boolean; aceitaComandos?: boolean; ligar?: string; desligar?: string } = {},
 ) {
   const table = (name: string) => {
     let mode: "select" | "insert" | "update" = "select";
@@ -91,10 +91,16 @@ function makeAdmin(
         if (name === "conversations" && mode === "select") {
           return Promise.resolve({ data: { bot_silenced_until: null }, error: null });
         }
-        // C-076: consulta da flag `config.aceita_comandos_celular`.
+        // C-076/C-077: consulta da config do agente (flag + sequências).
         if (name === "ai_agents" && mode === "select") {
           return Promise.resolve({
-            data: { config: { aceita_comandos_celular: opts.aceitaComandos === true } },
+            data: {
+              config: {
+                aceita_comandos_celular: opts.aceitaComandos === true,
+                ...(opts.ligar !== undefined ? { comando_ligar: opts.ligar } : {}),
+                ...(opts.desligar !== undefined ? { comando_desligar: opts.desligar } : {}),
+              },
+            },
             error: null,
           });
         }
@@ -214,5 +220,25 @@ describe("C-076 · o comando só VALE se o agente aceitar (config da UI)", () =>
     const pausa = cap.conversationUpdates.find((u) => u.last_handoff_reason !== undefined);
     expect(pausa).toBeDefined();
     expect(String(pausa!.last_handoff_reason)).toMatch(/manual/i);
+  });
+});
+
+describe("C-077 · sequências PERSONALIZADAS na tela", () => {
+  it("emoji/palavra configurados controlam a IA (#on/#off deixam de valer)", async () => {
+    const seq = { aceitaComandos: true, ligar: "religar", desligar: "pausar tudo" };
+    const cap: Captura = { conversationUpdates: [], insertedMessages: [], rpcs: [] };
+    await dispatchWahaEvent(makeAdmin(cap, seq), SESSION, comando("pausar tudo"), "req-off-custom");
+    const pausa = cap.conversationUpdates.find((u) => u.last_handoff_reason !== undefined);
+    expect(pausa).toBeDefined();
+    expect(pausa!.bot_silenced_until).toBe("infinity");
+
+    const cap2: Captura = { conversationUpdates: [], insertedMessages: [], rpcs: [] };
+    await dispatchWahaEvent(makeAdmin(cap2, seq), SESSION, comando("religar"), "req-on-custom");
+    expect(cap2.rpcs.some((r) => r.fn === "emit_event")).toBe(true);
+
+    // O padrão antigo NÃO dispara quando há sequência configurada.
+    const cap3: Captura = { conversationUpdates: [], insertedMessages: [], rpcs: [] };
+    await dispatchWahaEvent(makeAdmin(cap3, seq), SESSION, comando("#on"), "req-on-antigo");
+    expect(cap3.rpcs.some((r) => r.fn === "emit_event")).toBe(false);
   });
 });

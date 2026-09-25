@@ -19,7 +19,7 @@ import {
   pausarIaDuravelmente,
   pausarIaPorAtendimentoManual,
 } from "@/lib/escalacao/atendimento-manual";
-import { agenteAceitaComandoDeCelular, lerComandoDeControle } from "@/lib/escalacao/comando-de-canal";
+import { configDeComandosDoAgente, lerComandoDeControle } from "@/lib/escalacao/comando-de-canal";
 import { devolverAtendimentoAoAgente } from "@/lib/escalacao/retomada";
 import { getWahaClient } from "@/lib/waha/client";
 import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
@@ -903,10 +903,18 @@ async function handleOutboundFromUserPhone(
   const conversationId = await upsertConversation(admin, session.organization_id, contactId, session.id);
   if (!conversationId) return;
 
-  // Comando de controle vindo do celular (`#on`/`#off`). Só a mensagem INTEIRA
-  // conta (ver `lib/escalacao/comando-de-canal.ts`). Lido ANTES do insert para a
-  // própria linha carregar o metadata do comando.
-  const comando = lerComandoDeControle(bodyOf(p));
+  // Comando de controle vindo do celular (`#on`/`#off` por padrão; C-077 permite
+  // outra sequência). Só a mensagem INTEIRA conta (ver
+  // `lib/escalacao/comando-de-canal.ts`). Lido ANTES do insert para a própria
+  // linha carregar o metadata do comando.
+  //
+  // As sequências configuradas são buscadas UMA vez aqui; o parser é puro e usa
+  // `SEQUENCIAS_PADRAO` quando a consulta não devolve nada.
+  const { aceita: aceitaComandos, sequencias } = await configDeComandosDoAgente(
+    admin,
+    session.organization_id,
+  );
+  const comando = lerComandoDeControle(bodyOf(p), sequencias);
 
   const now = new Date().toISOString();
   const { data: insertedOutbound, error: insertErr } = await admin
@@ -972,9 +980,9 @@ async function handleOutboundFromUserPhone(
   if (!ehEco) {
     // C-076: o comando APENAS VALE se o agente o aceita
     // (`ai_agents.config.aceita_comandos_celular`, ligado na tela). Desligado
-    // (default), `#on`/`#off` são texto comum e a mensagem só pausa, como
+    // (default), as sequências são texto comum e a mensagem só pausa, como
     // qualquer outra. FAIL-CLOSED: falha de leitura ⇒ não aplica o comando.
-    const comandoVale = comando !== null && (await agenteAceitaComandoDeCelular(admin, session.organization_id));
+    const comandoVale = comando !== null && aceitaComandos;
     if (comandoVale && comando === "off") {
       await pausarIaDuravelmente(admin, {
         organizationId: session.organization_id,
