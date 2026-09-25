@@ -27,6 +27,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import type { LanguageModel } from "ai";
 
 import { DEEPSEEK_ENDPOINT, REQUESTY_ENDPOINT } from "@/lib/agent-engine/edge/llm/providers";
+import { fetchParaDestinoDaOrganizacao } from "@/lib/automation/destinos-internos-autorizados";
 import { decryptKey, byteaToBuffer } from "@/lib/crypto/aes_gcm";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -561,7 +562,9 @@ function instanciar(
     // contrato deste switch; inventar um endpoint seria mandar a chave do
     // gateway para outro lugar.
     case "custom":
-      return baseUrl ? createOpenAI({ apiKey, baseURL: baseUrl }).chat(modelId) : null;
+      return baseUrl
+        ? createOpenAI({ apiKey, baseURL: baseUrl, fetch: fetchParaDestinoDaOrganizacao() }).chat(modelId)
+        : null;
     default:
       return null;
   }

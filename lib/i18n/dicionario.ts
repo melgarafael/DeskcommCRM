@@ -2276,8 +2276,8 @@ export const DICIONARIO: Traducoes = {
   "Muito barata e desconta sozinha o trecho repetido da conversa, sem você configurar nada — o custo cai para quem atende com um roteiro que não muda.": {
     es: "Muy barata y descuenta sola la parte repetida de la conversación, sin que configures nada: el costo baja para quien atiende con un guion que no cambia.",
   },
-  "Endpoint seu que fala a API da OpenAI — OmniRouter, 9Router, proxy corporativo ou modelo rodando na sua máquina. Você informa o endereço (base URL) e a chave, e o CRM conversa com ele como conversa com a OpenAI.": {
-    es: "Endpoint propio que habla la API de OpenAI — OmniRouter, 9Router, proxy corporativo o un modelo que corre en tu máquina. Tú informas la dirección (base URL) y la clave, y el CRM conversa con él como conversa con OpenAI.",
+  "Endpoint seu que fala a API da OpenAI — OmniRouter, 9Router, LiteLLM hospedado ou proxy corporativo, num endereço público. Você informa o endereço (base URL) e a chave, e o CRM conversa com ele como conversa com a OpenAI.": {
+    es: "Endpoint propio que habla la API de OpenAI — OmniRouter, 9Router, LiteLLM alojado o proxy corporativo, en una dirección pública. Tú informas la dirección (base URL) y la clave, y el CRM conversa con él como conversa con OpenAI.",
   },
   "Endereço (base URL)": { es: "Dirección (base URL)" },
   "Obrigatório — ex.: https://seu-gateway.example/v1": {
@@ -2303,6 +2303,18 @@ export const DICIONARIO: Traducoes = {
   },
   "Falta o endereço (base URL) do provedor personalizado, ou ele não começa com http:// ou https://. Edite a credencial e informe o endereço da API.": {
     es: "Falta la dirección (base URL) del proveedor personalizado, o no comienza con http:// o https://. Edita la credencial e informa la dirección de la API.",
+  },
+  "Este servidor não encontrou o endereço: o nome não resolve. Confira a base URL.": {
+    es: "Este servidor no encontró la dirección: el nombre no resuelve. Revisa la base URL.",
+  },
+  "Em produção, o endereço (base URL) precisa começar com https://.": {
+    es: "En producción, la dirección (base URL) debe comenzar con https://.",
+  },
+  "Este endereço respondeu com um redirecionamento, e o CRM não segue redirecionamento em endereço cadastrado pela empresa. Informe o endereço final da API.": {
+    es: "Esta dirección respondió con una redirección, y el CRM no sigue redirecciones en una dirección registrada por la empresa. Informa la dirección final de la API.",
+  },
+  "Este endereço não é aceito: um endereço cadastrado pela empresa não pode apontar para a rede interna do servidor (localhost, IP privado ou serviço interno).": {
+    es: "Esta dirección no se acepta: una dirección registrada por la empresa no puede apuntar a la red interna del servidor (localhost, IP privada o servicio interno).",
   },
   "Este endereço não respondeu em /models. Confira a base URL: ela deve apontar para a raiz de uma API compatível com a OpenAI.": {
     es: "Esta dirección no respondió en /models. Revisa la base URL: debe apuntar a la raíz de una API compatible con OpenAI.",

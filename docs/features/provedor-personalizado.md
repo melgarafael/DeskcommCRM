@@ -1,8 +1,8 @@
 # Provedor personalizado (compatível com OpenAI)
 
-Quem roteia a própria IA — **OmniRouter**, **9Router**, **FreellmAPI**, um proxy
-corporativo, um LiteLLM/vLLM na própria máquina — pode apontar o CRM para o
-seu endpoint sem abrir mão de nada: a opção **"Provedor personalizado
+Quem roteia a própria IA — **OmniRouter**, **9Router**, **FreellmAPI**, um
+LiteLLM hospedado, um proxy corporativo — pode apontar o CRM para o seu
+endpoint sem abrir mão de nada: a opção **"Provedor personalizado
 (compatível com OpenAI)"** aparece em **IA › Credenciais**, ao lado de
 Anthropic, OpenAI, Google, OpenRouter, DeepSeek e Requesty.
 
@@ -10,13 +10,32 @@ Anthropic, OpenAI, Google, OpenRouter, DeepSeek e Requesty.
 
 | Campo | O que é |
 |---|---|
-| **Endereço (base URL)** | A raiz da API compatível com a OpenAI, por exemplo `https://seu-gateway.example/v1`. Precisa começar com `http://` ou `https://`. |
+| **Endereço (base URL)** | A raiz da API compatível com a OpenAI, por exemplo `https://seu-gateway.example/v1`. Em produção precisa começar com `https://`. |
 | **Chave** | A chave que aquele endpoint aceita. Guardada cifrada (AES-256-GCM), igual às dos outros provedores: na tela só aparecem os quatro últimos caracteres. |
 
 O endereço mora **na própria credencial**, não em variável de ambiente nem no
 painel de provedores — cadastro, teste, validação e o turno do agente leem a
 mesma escolha, e duas telas mandando na mesma coisa é como nasce a
 configuração que mente.
+
+## O endereço precisa ser público
+
+O endereço é cadastrado por uma **empresa**, e quem chama é o **servidor**.
+Por isso ele passa pela mesma régua das outras saídas escolhidas por uma
+empresa (webhooks, endereço da visão): não pode apontar para a rede interna
+do servidor — `localhost`, `127.0.0.1`, IPs privados (`10.x`, `172.16–31.x`,
+`192.168.x`), `169.254.x` (metadados de nuvem) ou um nome que resolve para um
+desses, como os serviços do próprio compose. Em produção, só `https://`. E
+redirecionamento não é seguido: informe o endereço final.
+
+A régua vale no teste antes de salvar, na validação em segundo plano e em
+**cada** chamada do agente, então um nome que passe a resolver para um IP
+interno depois de cadastrado é recusado na hora da chamada.
+
+Um LiteLLM ou vLLM rodando na mesma máquina que o CRM, portanto, não entra
+por aqui: numa instalação com várias empresas, abrir a rede interna para o
+endereço de uma delas deixaria essa empresa ler os serviços internos da
+instalação.
 
 ## O teste antes de salvar
 

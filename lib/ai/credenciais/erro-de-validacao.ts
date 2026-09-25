@@ -59,6 +59,40 @@ export function descreverErroDeValidacao(codigo: string | null, provedor?: strin
     };
   }
 
+  // A régua de destino (`motivoDaRecusaDeDestino`, decisão 22-d) recusou o
+  // endereço antes de a chave sair. O problema é o ENDEREÇO, e cada código diz
+  // o que fazer de um jeito diferente.
+  if (codigo === "unsafe_url:dns_failed" || codigo === "unsafe_url:dns_empty") {
+    return {
+      frase: "Este servidor não encontrou o endereço: o nome não resolve. Confira a base URL.",
+      chaveErrada: false,
+      generico: false,
+    };
+  }
+  if (codigo === "unsafe_url:https_required") {
+    return {
+      frase: "Em produção, o endereço (base URL) precisa começar com https://.",
+      chaveErrada: false,
+      generico: false,
+    };
+  }
+  if (codigo === "unsafe_url:redirect_not_followed") {
+    return {
+      frase:
+        "Este endereço respondeu com um redirecionamento, e o CRM não segue redirecionamento em endereço cadastrado pela empresa. Informe o endereço final da API.",
+      chaveErrada: false,
+      generico: false,
+    };
+  }
+  if (codigo.startsWith("unsafe_url:")) {
+    return {
+      frase:
+        "Este endereço não é aceito: um endereço cadastrado pela empresa não pode apontar para a rede interna do servidor (localhost, IP privado ou serviço interno).",
+      chaveErrada: false,
+      generico: false,
+    };
+  }
+
   if (codigo === "provider_status_404") {
     return {
       frase:

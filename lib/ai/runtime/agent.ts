@@ -36,6 +36,7 @@ import {
   REQUESTY_ENDPOINT,
 } from "@/lib/agent-engine/edge/llm/providers";
 import { CredentialUnavailableError, loadCredential } from "@/lib/ai/credentials";
+import { fetchParaDestinoDaOrganizacao } from "@/lib/automation/destinos-internos-autorizados";
 import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
 import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -209,7 +210,9 @@ export function buildModel(
           "custom_provider_sem_base_url: cadastre o endereço (base URL) na credencial do provedor personalizado",
         );
       }
-      return createOpenAI({ apiKey, baseURL: baseUrl }).chat(modelId);
+      // Endereço escolhido pela empresa: mesma régua de destino do turno do
+      // agente (`providers.ts`), senão o ensaio seria a porta para a rede interna.
+      return createOpenAI({ apiKey, baseURL: baseUrl, fetch: fetchParaDestinoDaOrganizacao() }).chat(modelId);
     default:
       throw new Error(`unsupported_provider: ${provider}`);
   }
