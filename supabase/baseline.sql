@@ -38060,14 +38060,14 @@ with (security_invoker = true) as
     provider,
     label,
     api_key_last4,
-    base_url,
     validated_at,
     validation_error,
     models_available,
     is_active,
     created_by,
     created_at,
-    updated_at
+    updated_at,
+    base_url
    from public.ai_provider_credentials;
 
 -- O SELECT é POR COLUNA desde a 0150: as três colunas do segredo ficam fora
