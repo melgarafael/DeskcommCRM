@@ -27,8 +27,28 @@ import { StaleServiceBoundaryError, parseServiceBoundary, assertCurrentServiceBo
  * contato já vivo em QUALQUER fluxo da org barra novo enrollment (1 follow-up
  * vivo por lead), 23505 vira skip silencioso (`insertEnrollment` devolve
  * `inserted:false`), nunca erro. Um contato que COMPLETOU ou foi cancelado
- * pode ser re-enrollado na varredura seguinte se continuar silencioso —
- * aceitável no MVP, sem cooldown table.
+ * pode ser re-enrollado na varredura seguinte se continuar silencioso — e É
+ * ISSO QUE O COOLDOWN ABAIXO LIMITA.
+ *
+ * ─── Cooldown pós-conclusão (issue reportada em produção, 2026-09-25) ───────
+ *
+ * Esta linha dizia "aceitável no MVP, sem cooldown table" — e o "aceitável"
+ * presumia que o intervalo entre tentativas seguiria sendo, na pior das
+ * hipóteses, próximo do `threshold_minutes` configurado. Não é: o cron roda a
+ * CADA MINUTO (`docker/scheduler/entrypoint.sh`), e como o contato que nunca
+ * responde permanece "silencioso" para sempre (nada atualiza
+ * `last_inbound_at`), a varredura seguinte reinscreve assim que o enrollment
+ * anterior sai de `active`/`waiting_reply` — não depois de outro
+ * `threshold_minutes`. Medido numa instalação real: um pointer "Triagem
+ * parada" com `threshold_minutes: 120` reinscreveu o MESMO contato 32 vezes
+ * em ~9 horas, a cada ~3 minutos (o tempo de vida de um enrollment de um nó
+ * só), não a cada 2 horas — risco de banimento por spam no WhatsApp.
+ *
+ * O conserto reusa o MESMO `cutoffIso` já calculado para "está silencioso":
+ * um contato só é elegível de novo se NENHUM enrollment deste pointer para
+ * ele tiver começado depois desse corte — ou seja, precisa ter passado o
+ * `threshold_minutes` inteiro desde a ÚLTIMA tentativa (successo, cancelado
+ * ou pausado, não importa), não só desde a última mensagem do cliente.
  *
  * agent_id: `decidirAgenteDoEnrollmentAutomatico` pina o agente publicado que
  * ARMA o pointer (menor uuid se >1). Grafo só de texto fixo nasce com
@@ -74,6 +94,19 @@ export interface SilenceSweepDb {
   loadSilentContactIds(orgId: string, cutoffIso: string, segments: string[]): Promise<string[]>;
   /** Nó `trigger` do grafo pinado + se o fluxo pede agente; `null` se version/nó não existir. */
   loadTriggerNode(orgId: string, versionId: string): Promise<NoDeGatilho | null>;
+  /**
+   * Dentre `contactIds`, quais têm um enrollment DESTE pointer iniciado depois
+   * de `cutoffIso` — ainda em cooldown, não podem ser reinscritos agora.
+   * Cobre QUALQUER status (o que importa é "já tentamos recentemente"), não só
+   * os vivos — esses já são barrados pelo índice único; o cooldown cobre o
+   * intervalo depois que um enrollment TERMINA.
+   */
+  loadContactIdsEmCooldown(
+    orgId: string,
+    pointerId: string,
+    contactIds: string[],
+    cutoffIso: string,
+  ): Promise<Set<string>>;
   /** Insere o enrollment nascendo no nó trigger; `inserted:false` = 23505 (já vivo nesse pointer) → skip. */
   insertEnrollment(input: {
     organization_id: string;
@@ -91,6 +124,8 @@ export interface SilenceSweepSummary {
   pointers_gated_out: number;
   enrolled: number;
   skipped_existing: number;
+  /** Elegível por silêncio, mas com tentativa deste pointer iniciada há menos de `threshold_minutes` — ver o cooldown no cabeçalho do arquivo. */
+  skipped_cooldown: number;
   /**
    * Pointers que FALHARAM nesta varredura (logados e pulados). Um pointer ruim
    * — de uma empresa só — não pode calar a varredura de todas as outras: antes,
@@ -112,6 +147,7 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
     pointers_gated_out: 0,
     enrolled: 0,
     skipped_existing: 0,
+    skipped_cooldown: 0,
     pointers_failed: 0,
   };
 
@@ -153,9 +189,21 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
 
       const cutoffIso = new Date(clock().getTime() - pointer.threshold_minutes * 60_000).toISOString();
       const contactIds = await db.loadSilentContactIds(pointer.organization_id, cutoffIso, pointer.segments);
+      if (contactIds.length === 0) continue;
+
+      const emCooldown = await db.loadContactIdsEmCooldown(
+        pointer.organization_id,
+        pointer.id,
+        contactIds,
+        cutoffIso,
+      );
       const nextEvalAt = clock().toISOString();
 
       for (const contactId of contactIds) {
+        if (emCooldown.has(contactId)) {
+          summary.skipped_cooldown++;
+          continue;
+        }
         const { inserted } = await db.insertEnrollment({
           organization_id: pointer.organization_id,
           pointer_id: pointer.id,
@@ -329,6 +377,19 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
       if (error) throw new Error(error.message);
       if (!data) return null;
       return noDeGatilhoDoGrafo(flowGraphSchema.parse(data.graph));
+    },
+
+    async loadContactIdsEmCooldown(orgId, pointerId, contactIds, cutoffIso) {
+      if (contactIds.length === 0) return new Set();
+      const { data, error } = await admin
+        .from("followup_enrollments")
+        .select("contact_id")
+        .eq("organization_id", orgId)
+        .eq("pointer_id", pointerId)
+        .in("contact_id", contactIds)
+        .gte("started_at", cutoffIso);
+      if (error) throw new Error(error.message);
+      return new Set((data ?? []).map((row: { contact_id: string }) => row.contact_id));
     },
 
     async insertEnrollment(input) {
