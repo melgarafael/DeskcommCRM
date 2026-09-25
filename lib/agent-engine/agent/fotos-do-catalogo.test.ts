@@ -170,6 +170,22 @@ describe('planoDeFotosDasMotos', () => {
     expect(plano.slice(1).every((p) => p.legenda === '')).toBe(true);
   });
 
+  /**
+   * C-086: `fotos_moto_escolhida = 0` (default novo) = TODAS as fotos da moto.
+   * Antes o teto era 5 e a moto com mais fotos aparecia pela metade.
+   */
+  it('C-086: teto 0 (default) envia TODAS as fotos da moto escolhida', () => {
+    const comMuitasFotos = {
+      ...catalogo[0]!,
+      fotos: ['u1', 'u2', 'u3', 'u4', 'u5', 'u6', 'u7', 'u8'],
+    };
+    const todas = planoDeFotosDasMotos([comMuitasFotos], 0);
+    expect(todas).toHaveLength(8);
+    // Teto positivo continua respeitado.
+    const tres = planoDeFotosDasMotos([comMuitasFotos], 3);
+    expect(tres).toHaveLength(3);
+  });
+
   it('VÁRIAS motos → 1 foto de cada, com a legenda da própria moto', () => {
     const plano = planoDeFotosDasMotos(catalogo.slice(0, 3));
     expect(plano).toHaveLength(3);

@@ -96,6 +96,41 @@ describe('querAlternativa (pré-filtro)', () => {
 });
 
 describe('selecionarPorIntencao', () => {
+  /**
+   * C-085: pedido de ESPECIFICAÇÃO ("CB 300") com `todasSeEspecificacao` devolve
+   * TODAS as unidades que batem, em vez de recortar em `similaresQtd` (3).
+   */
+  it('C-085: especificação devolve TODAS as que batem quando todasSeEspecificacao', () => {
+    const familia = [
+      moto('HONDA CB 300 R 2011', { categoria: 'Naked', cilindrada: '300', marca: 'HONDA', preco: '12500' }),
+      moto('HONDA CB 300 R FLEX 2015', { categoria: 'Naked', cilindrada: '300', marca: 'HONDA', preco: '14990' }),
+      moto('HONDA CB 300 F Twister 2022', { categoria: 'Naked', cilindrada: '300', marca: 'HONDA', preco: '28990' }),
+      moto('HONDA CB 300 F Twister 2023', { categoria: 'Naked', cilindrada: '300', marca: 'HONDA', preco: '31990' }),
+      moto('HONDA CB 500 F', { categoria: 'Naked', cilindrada: '500', marca: 'HONDA', preco: '42000' }),
+    ];
+    const semFlag = selecionarPorIntencao({
+      termoBase: 'CB 300',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: familia,
+      mapeamento: MAPEAMENTO,
+    });
+    const comFlag = selecionarPorIntencao({
+      termoBase: 'CB 300',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: familia,
+      mapeamento: MAPEAMENTO,
+      todasSeEspecificacao: true,
+    });
+    // Sem a flag, respeita o teto da tela (3).
+    expect(semFlag.motos.length).toBe(3);
+    // Com a flag, traz todas as unidades do catálogo.
+    expect(comFlag.motos.length).toBe(familia.length);
+  });
+
   it('alternativa: ancora a moto atual, tira ela e traz as mais baratas parecidas', () => {
     const r = selecionarPorIntencao({
       termoBase: 'Achei caro',

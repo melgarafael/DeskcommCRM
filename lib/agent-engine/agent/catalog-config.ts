@@ -17,6 +17,13 @@ export const catalogConfigSchema = z
   .object({
     /** Quantas motos semelhantes oferecer quando o pedido não existe. 1..8. */
     similares_qtd: z.number().int().min(1).max(8).default(3),
+    /**
+     * C-085: quando o cliente pede uma ESPECIFICAÇÃO/família (ex.: "CB 300",
+     * "Fazer 250"), mostrar TODAS as unidades do catálogo que batem — em vez de
+     * recortar em `similares_qtd`. Default `true` (decisão do dono, 2026-09-25):
+     * o cliente quer ver o que existe; recortar escondia unidades reais.
+     */
+    especificacao_mostra_todas: z.boolean().default(true),
     /** Prioridade dos critérios de semelhança, na ordem. */
     criterio: z.array(z.enum(CRITERIOS_SIMILARIDADE)).min(1).max(3).default(['cilindrada', 'preco']),
     /** Faixa (%) em torno do preço pedido que ainda conta como "parecido". */
@@ -27,9 +34,14 @@ export const catalogConfigSchema = z
     foto_por_moto: z.boolean().default(true),
     /**
      * Quantas fotos enviar quando o cliente ESCOLHE uma moto específica (o motor
-     * manda o detalhe dela sem depender do modelo). 1..10.
+     * manda o detalhe dela sem depender do modelo).
+     *
+     * C-086: `0` = TODAS as fotos da moto (decisão do dono, 2026-09-25: o cliente
+     * escolheu a moto, quer vê-la por inteiro). Máximo 50 quando for um número
+     * positivo (era 10, que cortava catálogos com mais fotos por moto). Default
+     * `0` = todas.
      */
-    fotos_moto_escolhida: z.number().int().min(1).max(10).default(5),
+    fotos_moto_escolhida: z.number().int().min(0).max(50).default(0),
     /** A abertura não cita/listra as motos (elas vão nas fotos). */
     abertura_sem_citar: z.boolean().default(true),
     /** A pergunta de avanço vai numa mensagem de texto separada, depois das fotos. */

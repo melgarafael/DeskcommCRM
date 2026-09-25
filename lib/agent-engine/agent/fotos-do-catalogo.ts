@@ -263,6 +263,13 @@ export function extrairMotosDoResultado(
 const MIN_NOME_CASAVEL = 3;
 /** Teto de fotos que o motor acrescenta por turno. */
 export const MAX_FOTOS_AUTO = 10;
+/**
+ * Sentinela de "TODAS as fotos" (C-086): `maxPorMoto = 0` significa sem teto.
+ * O limite ABSOLUTO existe só como guarda contra catálogo corrompido (uma linha
+ * com centenas de URLs) — não é regra de produto.
+ */
+export const FOTOS_TODAS = 0;
+const LIMITE_ABSOLUTO_FOTOS = 50;
 
 /**
  * As motos cujo nome aparece no TEXTO da mensagem — na ordem em que aparecem no
@@ -382,14 +389,18 @@ export interface FotoComLegenda {
  */
 export function planoDeFotosDasMotos(
   motos: readonly MotoDoCatalogo[],
-  maxPorMoto = 5,
+  // C-086: `0` (ou ausente) = TODAS as fotos da moto escolhida. Antes o default
+  // era 5, e uma moto com mais fotos aparecia pela metade.
+  maxPorMoto: number = FOTOS_TODAS,
   campos?: readonly CampoDaMoto[],
 ): FotoComLegenda[] {
   const plano: FotoComLegenda[] = [];
   const urlsVistas = new Set<string>();
+  // `0` = sem teto de produto; o absoluto só protege contra catálogo corrompido.
+  const teto = maxPorMoto > 0 ? Math.min(maxPorMoto, LIMITE_ABSOLUTO_FOTOS) : LIMITE_ABSOLUTO_FOTOS;
   if (motos.length === 1) {
     const moto = motos[0]!;
-    for (let i = 0; i < moto.fotos.length && i < maxPorMoto; i += 1) {
+    for (let i = 0; i < moto.fotos.length && i < teto; i += 1) {
       const url = moto.fotos[i]!;
       if (urlsVistas.has(url)) continue;
       urlsVistas.add(url);

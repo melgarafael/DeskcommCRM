@@ -8478,6 +8478,13 @@ export const DICIONARIO: Traducoes = {
   "Comandos pelo celular desligados.": { es: "Comandos desde el celular desactivados." },
   "Comandos salvos — já valem no próximo atendimento.":
     { es: "Comandos guardados — ya valen en la próxima atención." },
+  // ─── C-085/C-086: catálogo — especificação e fotos ───
+  "Fotos da moto escolhida (0 = todas as fotos)":
+    { es: "Fotos de la moto elegida (0 = todas las fotos)" },
+  "Quando o cliente cita um modelo/família, mostrar TODAS as unidades que batem":
+    {
+      es: "Cuando el cliente menciona un modelo/familia, mostrar TODAS las unidades que coinciden",
+    },
 };
 
 /**

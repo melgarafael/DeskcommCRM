@@ -155,6 +155,7 @@ import { esperarComoHumano } from './atraso-humano';
 import { sendInBubbles } from './split-message';
 import {
   extrairMotosDoResultado,
+  FOTOS_TODAS,
   motosCitadasNoTexto,
   normalizarNomeDeMoto,
   planoDeFotos,
@@ -1258,6 +1259,8 @@ export function ritualBlocks(
    * exatamente como era (aditivo, retrocompatível).
    */
   fluxoAtivo = false,
+  /** C-084: coleta de nome/cidade/CNH LIBERADA (cliente já demonstrou interesse). */
+  interesseEmMoto = false,
 ): string[] {
   const checkpointBlock = previous
     ? JSON.stringify({
@@ -1328,14 +1331,25 @@ export function ritualBlocks(
           if (!nome) pendentes.push('nome');
           if (!cidade) pendentes.push('cidade');
           if (cnh === null) pendentes.push('CNH');
+          // C-084: coleta ATIVA e PERSISTENTE. A regra do dono: depois de o
+          // cliente demonstrar interesse (já pediu moto), o agente DEVE pedir os
+          // dados essenciais que faltam, UM por turno, e insistir até 2x por dado.
+          // A versão anterior dizia "colete quando houver abertura natural" e,
+          // como o cliente sempre traz assunto de moto, a coleta NUNCA acontecia
+          // (medido ao vivo, 2026-09-25). Agora a instrução é firme: a pergunta de
+          // coleta é o FECHO do turno quando há pendente.
+          const linhaPendentes =
+            pendentes.length === 0
+              ? 'PENDENTES: nenhum (dados essenciais completos) — não pergunte esses dados.'
+              : interesseEmMoto
+                ? `PENDENTES: ${pendentes.join(', ')}. O cliente JÁ demonstrou interesse em moto — a coleta está LIBERADA. Responda o que ele pediu e TERMINE o turno pedindo UM destes dados (na ordem nome → cidade → CNH), de forma natural, encaixada na conversa. Se ele já foi perguntado e não respondeu, pergunte de novo (até 2 tentativas por dado); se respondeu, o dado some daqui e você passa ao próximo.`
+                : `PENDENTES: ${pendentes.join(', ')} (a coletar). Ainda NÃO pergunte CNH/CPF antes de o cliente demonstrar interesse em moto.`;
           return [
             '## Dados essenciais do cliente',
             `Nome: ${nome ?? 'não informado'}`,
             `Cidade: ${cidade ?? 'não informado'}`,
             `CNH: ${cnh ?? 'não informado'}`,
-            pendentes.length > 0
-              ? `PENDENTES: ${pendentes.join(', ')} — colete NO MÁXIMO UMA quando houver abertura natural, sem deslocar o assunto do cliente; atenda/responda o cliente primeiro. NÃO pergunte financiamento, CPF, data de nascimento nem CNH antes de o cliente demonstrar interesse em uma moto. Pare quando não houver mais pendentes.`
-              : 'PENDENTES: nenhum (dados essenciais completos) — não pergunte esses dados.',
+            linhaPendentes,
             '',
           ];
         })()),
@@ -1404,6 +1418,8 @@ export function buildOpeningMessage(
    * continua como sempre foi (aditivo, retrocompatível).
    */
   fluxoAtivo = false,
+  /** C-084: coleta de nome/cidade/CNH liberada (cliente já demonstrou interesse). */
+  interesseEmMoto = false,
 ): string {
   const entregue = (nome: string): boolean => entregues.includes(nome);
   const mensagemAtual =
@@ -1434,6 +1450,7 @@ export function buildOpeningMessage(
       projeta,
       compromissosBlock,
       fluxoAtivo,
+      interesseEmMoto,
     ),
     '',
     ...mensagemAtualBlock,
@@ -1573,6 +1590,14 @@ export interface AgentTurnInput {
      * (que carrega o enrollment), não pelo callback.
      */
     fluxoAtivo?: boolean;
+    /**
+     * C-084: o cliente demonstrou interesse em moto NESTE turno (ou em algum
+     * anterior)? Quando `true`, a coleta de nome/cidade/CNH está LIBERADA e o
+     * bloco PENDENTES instrui o agente a fechar o turno pedindo UM dado. Sem
+     * isso, a coleta fica represada (regra de não perguntar CNH antes do
+     * interesse). Decidido pelo turno, que conhece o histórico.
+     */
+    interesseEmMoto?: boolean;
   }) => string;
 }
 
@@ -3493,9 +3518,10 @@ async function executarTurnoDoAgente(
           // ESCOLHA determinística → as fotos DELA (quantidade da tela).
           if (escolhidaNesteTurno !== undefined) {
             motosOferecidasNesteTurno = [escolhidaNesteTurno];
+            // C-086: `fotos_moto_escolhida` da tela (0 = TODAS as fotos da moto).
             return planoDeFotosDasMotos(
               [escolhidaNesteTurno],
-              agentConfig?.catalogConfig?.fotos_moto_escolhida ?? 5,
+              agentConfig?.catalogConfig?.fotos_moto_escolhida ?? FOTOS_TODAS,
               legendaConfig,
             );
           }
@@ -3591,6 +3617,15 @@ async function executarTurnoDoAgente(
               );
               candidatos = mesclarMotos(doBanco, catalogoDaConversa.motos);
             }
+            // C-085: o pedido é uma ESPECIFICAÇÃO (família/modelo que casa VÁRIAS
+            // unidades, ex.: "CB 300")? Então `especificacao_mostra_todas` decide
+            // se mostra todas as que batem. Um pedido que casa UMA só unidade
+            // (ex.: "Biz 125 FLEX 2021") segue como pedido normal.
+            const ehEspecificacao =
+              motosCitadasNoTexto(msgCliente, candidatos).length > 1 ||
+              (criteriosDoTurno !== undefined &&
+                Object.keys(criteriosDoTurno).length > 0 &&
+                motosCitadasNoTexto(msgCliente, candidatos).length > 0);
             const selecao = selecionarPorIntencao({
               termoBase,
               criterios: criteriosDoTurno,
@@ -3598,6 +3633,9 @@ async function executarTurnoDoAgente(
               motoAtual,
               candidatos,
               mapeamento,
+              todasSeEspecificacao:
+                ehEspecificacao &&
+                agentConfig?.catalogConfig?.especificacao_mostra_todas !== false,
             });
             if (selecao.motos.length > 0) {
               // Persiste as motos oferecidas (inclusive as buscadas no banco) no
@@ -4793,6 +4831,19 @@ async function executarTurnoDoAgente(
       // fluxo (decisão do dono). O callback não enxerga `fluxoAtendimento` — ele
       // mora neste escopo, então o flag viaja junto.
       fluxoAtivo: fluxoAtendimento !== null,
+      // C-084: coleta de nome/cidade/CNH liberada quando o cliente JÁ demonstrou
+      // interesse em moto — há motos apresentadas/escolhidas na conversa, OU a
+      // mensagem atual pede/consulta moto. Antes, a coleta nunca acontecia porque
+      // o cliente sempre falava de moto e a instrução mandava "atender primeiro".
+      interesseEmMoto:
+        catalogoDaConversa.motos.length > 0 ||
+        catalogoDaConversa.escolhida !== null ||
+        catalogoDaConversa.referencia !== null ||
+        querAlternativa(currentInboundText ?? '') ||
+        motosCitadasNoTexto(
+          currentInboundText ?? '',
+          catalogoDaConversa.motos.length > 0 ? catalogoDaConversa.motos : [],
+        ).length > 0,
     });
     // Sufixos por-lead (situacionais, voláteis — depois do prefixo cacheável F2-17): corpos de
     // skill casadas (F3-09) + hint do classificador (F3-11) + instrução de split (F4-xx, quando
@@ -5518,6 +5569,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         compromissosBlock,
         currentInboundText,
         fluxoAtivo,
+        interesseEmMoto,
       }) =>
         buildOpeningMessage(
           previous,
@@ -5529,6 +5581,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
           compromissosBlock,
           currentInboundText,
           fluxoAtivo ?? false,
+          interesseEmMoto ?? false,
         ),
     });
   };

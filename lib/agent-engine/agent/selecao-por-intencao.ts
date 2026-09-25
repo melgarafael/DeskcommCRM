@@ -56,6 +56,14 @@ export interface EntradaSelecaoPorIntencao {
   /** Motos candidatas (catálogo do turno, guardado e/ou consultado no banco). */
   candidatos: readonly MotoDoCatalogo[];
   mapeamento: CatalogoMapeamento;
+  /**
+   * C-085: quando o pedido é uma ESPECIFICAÇÃO (um termo/família que casa VÁRIAS
+   * unidades — ex.: "CB 300"), devolver TODAS as que batem em vez de recortar em
+   * `similares_qtd`. Configurável na tela (`especificacao_mostra_todas`). Como o
+   * veredito "é especificação?" depende do catálogo casado, quem decide é o
+   * chamador — aqui só se obedece.
+   */
+  todasSeEspecificacao?: boolean;
 }
 
 export interface ResultadoSelecaoPorIntencao {
@@ -140,8 +148,14 @@ export function selecionarPorIntencao(
 
   const criteriosColunas = colunasComparacao.filter((c) => preferencias[c] === undefined);
 
+  // C-085: especificação → todas as que batem. O teto é o próprio catálogo
+  // (nunca "quantidade livre" — `escolherComReferencia` recebe o tamanho).
+  const quantidade =
+    input.todasSeEspecificacao === true
+      ? Math.max(candidatos.length, 1)
+      : (input.mapeamento.similaresQtd ?? 3);
   const motos = escolherComReferencia(termoFinal, candidatos, {
-    quantidade: input.mapeamento.similaresQtd ?? 3,
+    quantidade,
     criteriosColunas,
     // No modo ALTERNATIVA a reserva por `moto_similar` NÃO se aplica: o cliente
     // não está pedindo uma moto pelo nome, e casar o termo (que inclui a objeção

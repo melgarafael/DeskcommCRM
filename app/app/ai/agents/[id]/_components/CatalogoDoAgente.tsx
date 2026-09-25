@@ -129,20 +129,31 @@ export function CatalogoDoAgente({ agentId, inicial, disabled, aoSalvar }: Props
           <Input
             id="cat-fotos-escolhida"
             type="number"
-            min={1}
-            max={10}
+            min={0}
+            max={50}
             className="w-20"
             value={cfg.fotos_moto_escolhida}
             onChange={(e) =>
               setCfg((c) => ({
                 ...c,
-                fotos_moto_escolhida: Math.min(10, Math.max(1, Number(e.target.value) || 1)),
+                fotos_moto_escolhida: Math.min(50, Math.max(0, Number(e.target.value) || 0)),
               }))
             }
             disabled={disabled}
           />
           <Label htmlFor="cat-fotos-escolhida">
-            {t("Fotos da moto quando o cliente escolhe uma específica")}
+            {t("Fotos da moto escolhida (0 = todas as fotos)")}
+          </Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <Switch
+            id="cat-especificacao"
+            checked={cfg.especificacao_mostra_todas}
+            onCheckedChange={(v) => setCfg((c) => ({ ...c, especificacao_mostra_todas: v }))}
+            disabled={disabled}
+          />
+          <Label htmlFor="cat-especificacao">
+            {t("Quando o cliente cita um modelo/família, mostrar TODAS as unidades que batem")}
           </Label>
         </div>
       </div>
