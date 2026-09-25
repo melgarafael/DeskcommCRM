@@ -39107,6 +39107,15 @@ begin
   end if;
 end $$;
 
+-- ---- índice de cooldown do gatilho de silêncio (migration 0411) ----
+--
+-- Racional inteiro na migration 0411: a consulta de cooldown de
+-- `loadContactIdsEmCooldown` (lib/followup/silence-sweep.ts) filtra
+-- `followup_enrollments` por (organization_id, pointer_id, contact_id,
+-- updated_at) a cada tick do cron, e não havia índice cobrindo `pointer_id`.
+create index if not exists idx_followup_enrollments_pointer_contact_cooldown
+  on public.followup_enrollments (organization_id, pointer_id, contact_id, updated_at);
+
 -- ---- módulo suspenso vira ERRO que o kit reporta (migration 0340) ----
 --
 -- Um comando SEPARADO da reaplicação, de propósito: se ela relançasse, a marca

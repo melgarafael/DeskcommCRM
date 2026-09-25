@@ -45,10 +45,30 @@ import { StaleServiceBoundaryError, parseServiceBoundary, assertCurrentServiceBo
  * só), não a cada 2 horas — risco de banimento por spam no WhatsApp.
  *
  * O conserto reusa o MESMO `cutoffIso` já calculado para "está silencioso":
- * um contato só é elegível de novo se NENHUM enrollment deste pointer para
- * ele tiver começado depois desse corte — ou seja, precisa ter passado o
- * `threshold_minutes` inteiro desde a ÚLTIMA tentativa (successo, cancelado
- * ou pausado, não importa), não só desde a última mensagem do cliente.
+ * um contato só é elegível de novo se NENHUM enrollment TERMINADO deste
+ * pointer para ele tiver sido concluído depois desse corte — ou seja, precisa
+ * ter passado o `threshold_minutes` inteiro desde que a ÚLTIMA tentativa
+ * (completed, cancelled ou dead) TERMINOU, não desde que ela começou.
+ *
+ * ⚠️ Duas armadilhas que a primeira versão deste conserto tinha (achadas em
+ * revisão, antes de qualquer instalação real ver o defeito):
+ *
+ *  1. Ancorar em `started_at` em vez do fim da tentativa. Um nó `wait` do
+ *     grafo aceita de 5 minutos a 90 dias (`graph-schema.ts`) — um fluxo cujo
+ *     tempo total de execução passa do `threshold_minutes` do pointer já teria
+ *     `started_at` fora da janela no momento em que finalmente termina, e a
+ *     PRÓXIMA varredura (≤1min depois) reinscreveria na hora — reproduzindo o
+ *     defeito original para qualquer fluxo mais lento que o de hoje. A âncora
+ *     certa é `updated_at` de um enrollment TERMINAL (o mesmo commit que grava
+ *     `completed_at` sempre regrava `updated_at` junto — `engine.ts` linhas
+ *     301-302 e 576 — então não precisa de `coalesce`).
+ *  2. Não excluir os status VIVOS (`active`, `waiting_reply`, `paused_handoff`,
+ *     `paused_manual` — o mesmo conjunto do índice único
+ *     `idx_followup_enrollments_one_live`) da consulta de cooldown. Um
+ *     enrollment ainda em andamento SEMPRE bateria no filtro (acabou de
+ *     começar), e passaria a contar como `skipped_cooldown` em vez do
+ *     `skipped_existing` que o índice único já garante via 23505 — trocando o
+ *     que cada contador mede sem nenhuma mudança de comportamento real.
  *
  * agent_id: `decidirAgenteDoEnrollmentAutomatico` pina o agente publicado que
  * ARMA o pointer (menor uuid se >1). Grafo só de texto fixo nasce com
@@ -78,6 +98,14 @@ import {
   type NoDeGatilho,
 } from "./agent-followup-gate";
 
+/**
+ * Status que ocupam a vaga do índice único `idx_followup_enrollments_one_live`
+ * — mesma lista usada em `gatilho-retorno.ts`, `gatilho-caso.ts` e
+ * `ceder-turno-ao-retorno.ts` (não há constante exportada compartilhada; cada
+ * consumidor já repete a própria cópia).
+ */
+const STATUS_VIVOS = ["active", "waiting_reply", "paused_handoff", "paused_manual"] as const;
+
 export interface SilencePointer {
   id: string;
   organization_id: string;
@@ -95,11 +123,14 @@ export interface SilenceSweepDb {
   /** Nó `trigger` do grafo pinado + se o fluxo pede agente; `null` se version/nó não existir. */
   loadTriggerNode(orgId: string, versionId: string): Promise<NoDeGatilho | null>;
   /**
-   * Dentre `contactIds`, quais têm um enrollment DESTE pointer iniciado depois
-   * de `cutoffIso` — ainda em cooldown, não podem ser reinscritos agora.
-   * Cobre QUALQUER status (o que importa é "já tentamos recentemente"), não só
-   * os vivos — esses já são barrados pelo índice único; o cooldown cobre o
-   * intervalo depois que um enrollment TERMINA.
+   * Dentre `contactIds`, quais têm um enrollment TERMINAL (completed,
+   * cancelled ou dead) deste pointer CONCLUÍDO depois de `cutoffIso` — ainda
+   * em cooldown, não podem ser reinscritos agora. Enrollment VIVO
+   * (active/waiting_reply/paused_handoff/paused_manual) fica de fora de
+   * propósito: esse caso já é barrado pelo índice único
+   * `idx_followup_enrollments_one_live` via `insertEnrollment` → 23505 →
+   * `skipped_existing`; incluí-lo aqui trocaria o que os dois contadores
+   * medem sem mudar nenhum comportamento real.
    */
   loadContactIdsEmCooldown(
     orgId: string,
@@ -387,7 +418,8 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
         .eq("organization_id", orgId)
         .eq("pointer_id", pointerId)
         .in("contact_id", contactIds)
-        .gte("started_at", cutoffIso);
+        .not("status", "in", `(${STATUS_VIVOS.join(",")})`)
+        .gte("updated_at", cutoffIso);
       if (error) throw new Error(error.message);
       return new Set((data ?? []).map((row: { contact_id: string }) => row.contact_id));
     },

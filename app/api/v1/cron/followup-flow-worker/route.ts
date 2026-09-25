@@ -121,12 +121,13 @@ async function handle(req: NextRequest): Promise<Response> {
       gateDb: createSupabaseFollowupGateDb(admin),
       clock: () => new Date(),
     });
-    if (
-      sweepSummary.enrolled ||
-      sweepSummary.pointers_gated_out ||
-      sweepSummary.skipped_existing ||
-      sweepSummary.skipped_cooldown
-    ) {
+    // `skipped_cooldown` NÃO entra aqui de propósito (revisão do PR): por
+    // definição ele é "nada aconteceu" — incluí-lo faria o audit log escrever
+    // uma linha por tick (1×/min) durante toda a janela de cooldown de cada
+    // enrollment concluído, o mesmo anti-padrão que este arquivo já existe
+    // para evitar (ver "Audit log" no CLAUDE.md, o histórico do
+    // routing-worker/attendant-heartbeat).
+    if (sweepSummary.enrolled || sweepSummary.pointers_gated_out || sweepSummary.skipped_existing) {
       void audit({
         action: "followup.silence_sweep_run",
         organizationId: null,
