@@ -51,12 +51,33 @@ export const SEQUENCIAS_PADRAO: SequenciasDeComando = {
 };
 
 /**
- * Normaliza uma sequência para comparação: tira espaços das bordas e baixa a
- * caixa. O emoji não tem caixa, então é comparação exata depois do trim — que é
- * o comportamento desejado.
+ * Normaliza uma sequência para comparação (C-078).
+ *
+ * ─── O defeito que a normalização conserta ────────────────────────────────
+ *
+ * Emoji é uma sequência de code points, e o mesmo desenho tem mais de uma
+ * codificação. "🏍️" (o que a tela grava) é `U+1F3CD` + `U+FE0F` (variation
+ * selector); "🏍" é só `U+1F3CD`. Dependendo do TECLADO do celular, o WhatsApp
+ * entrega uma forma ou a outra — e a comparação exata falhava em silêncio para a
+ * forma que ninguém previu.
+ *
+ * A normalização remove os variation selectors (`U+FE0E`/`U+FE0F`, invisíveis)
+ * e aplica NFC, de modo que as duas formas do mesmo emoji casem. Para texto
+ * puro (`#on`) é inócuo: nada a normalizar.
+ *
+ * ⚠️ É conservadora de propósito: NÃO funde emojis diferentes, não troca
+ * maiúscula/minúscula "inteligente" — só remove o que é decorativo.
  */
+export function normalizarComando(valor: string): string {
+  return valor
+    .trim()
+    .toLowerCase()
+    .normalize("NFC")
+    .replace(/[\uFE0E\uFE0F]/g, "");
+}
+
 function normalizar(valor: string): string {
-  return valor.trim().toLowerCase();
+  return normalizarComando(valor);
 }
 
 /**

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { agenteAceitaComandoDeCelular, lerComandoDeControle } from "./comando-de-canal";
+import {
+  agenteAceitaComandoDeCelular,
+  lerComandoDeControle,
+  normalizarComando,
+} from "./comando-de-canal";
 
 describe("lerComandoDeControle — reconhece #on/#off, e SÓ a mensagem inteira", () => {
   it.each([
@@ -66,6 +70,34 @@ describe("lerComandoDeControle — sequências PERSONALIZADAS (C-077)", () => {
 
   it("sequências iguais: 'ligar' vence (uma resposta só)", () => {
     expect(lerComandoDeControle("x", { ligar: "x", desligar: "x" })).toBe("on");
+  });
+
+  /**
+   * C-078 — o teclado do celular pode mandar o emoji COM ou SEM o variation
+   * selector (`U+FE0F`), e a comparação exata falhava em silêncio numa das
+   * formas. Aqui as duas casam.
+   */
+  it("emoji COM e SEM variation selector casam entre si", () => {
+    const comVs = "\u{1F3CD}\uFE0F"; // 🏍️
+    const semVs = "\u{1F3CD}"; // 🏍
+    const seq = { ligar: `#${comVs}`, desligar: semVs };
+
+    expect(lerComandoDeControle(`#${comVs}`, seq)).toBe("on");
+    expect(lerComandoDeControle(`#${semVs}`, seq), "teclado omitiu o VS").toBe("on");
+    expect(lerComandoDeControle(comVs, seq)).toBe("off");
+    expect(lerComandoDeControle(semVs, seq), "teclado omitiu o VS").toBe("off");
+  });
+
+  it("emoji DIFERENTES não são fundidos pela normalização", () => {
+    const seq = { ligar: "🏍️", desligar: "🚗" };
+    expect(lerComandoDeControle("🏍️", seq)).toBe("on");
+    expect(lerComandoDeControle("🚗", seq)).toBe("off");
+    expect(lerComandoDeControle("✈️", seq)).toBeNull();
+  });
+
+  it("normalizarComando é conservadora: texto puro fica igual", () => {
+    expect(normalizarComando("  #ON  ")).toBe("#on");
+    expect(normalizarComando("religar")).toBe("religar");
   });
 });
 
