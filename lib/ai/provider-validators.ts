@@ -25,10 +25,12 @@ export interface ValidationFail {
 export type ValidationResult = ValidationOk | ValidationFail;
 
 const TIMEOUT_MS = 5000;
+/** Só do provedor personalizado — ver `validateCustomKey`. */
+const TIMEOUT_MS_CUSTOM = 10000;
 
-async function timedFetch(url: string, init: RequestInit): Promise<Response> {
+async function timedFetch(url: string, init: RequestInit, timeoutMs: number = TIMEOUT_MS): Promise<Response> {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     return await fetch(url, { ...init, signal: ctrl.signal });
   } finally {
@@ -315,9 +317,52 @@ export async function validateTypeSafeKey(apiKey: string): Promise<ValidationRes
  * 0127 — quando era repetida à mão aqui, a 0127 abriu o banco para a OpenRouter
  * e as cópias continuaram recusando.
  */
+/**
+ * O provedor personalizado (#1642) não tem endpoint canônico: o endereço vem
+ * da credencial (`ai_provider_credentials.base_url`) e é ele quem recebe a
+ * chave. `GET {base}/models` é a mesma prova dos outros OpenAI-compatíveis —
+ * conectividade e autenticação numa chamada só, sem gastar token.
+ *
+ * Timeout de 10s (e não os 5s dos nativos): quem aponta para o próprio gateway
+ * ou para um modelo local costuma estar atrás de rede que o provedor de nuvem
+ * não tem, e o teste roda ANTES de salvar — derrubar a tela com 5s num
+ * primeiro carregamento lento seria confundir lentidão do operador com chave
+ * ruim. A chave nunca é logada aqui: só o código do desfecho sai.
+ */
+export async function validateCustomKey(
+  apiKey: string,
+  baseUrl?: string,
+): Promise<ValidationResult> {
+  const base = (baseUrl ?? "").trim().replace(/\/+$/, "");
+  if (base === "") return { ok: false, error: "base_url_ausente" };
+  if (!/^https?:\/\//i.test(base)) return { ok: false, error: "base_url_invalida" };
+  try {
+    const res = await timedFetch(`${base}/models`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    }, TIMEOUT_MS_CUSTOM);
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, error: "auth_failed_401" };
+    }
+    if (!res.ok) {
+      return { ok: false, error: `provider_status_${res.status}` };
+    }
+    const json = (await res.json()) as { data?: { id?: string }[]; models?: { id?: string }[] };
+    // OpenAI e quase todo gateway servem `{ data: [{ id }] }`; alguns servem
+    // `{ models: [{ id }] }`. Sem catálogo o ENDEREÇO ainda foi provado — a
+    // lista é o que a tela mostra, não o que decide se a chave vale.
+    const modelos = json.data ?? json.models ?? [];
+    const models = modelos.map((m) => m.id ?? "").filter(Boolean);
+    return { ok: true, models };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.name : "network_error" };
+  }
+}
+
 export function validateProviderKey(
   provider: ProvedorComChave,
   apiKey: string,
+  baseUrl?: string,
 ): Promise<ValidationResult> {
   switch (provider) {
     case "anthropic":
@@ -332,6 +377,8 @@ export function validateProviderKey(
       return validateDeepSeekKey(apiKey);
     case "requesty":
       return validateRequestyKey(apiKey);
+    case "custom":
+      return validateCustomKey(apiKey, baseUrl);
     case "typesafe":
       return validateTypeSafeKey(apiKey);
     default: {

@@ -2276,6 +2276,37 @@ export const DICIONARIO: Traducoes = {
   "Muito barata e desconta sozinha o trecho repetido da conversa, sem você configurar nada — o custo cai para quem atende com um roteiro que não muda.": {
     es: "Muy barata y descuenta sola la parte repetida de la conversación, sin que configures nada: el costo baja para quien atiende con un guion que no cambia.",
   },
+  "Endpoint seu que fala a API da OpenAI — OmniRouter, 9Router, proxy corporativo ou modelo rodando na sua máquina. Você informa o endereço (base URL) e a chave, e o CRM conversa com ele como conversa com a OpenAI.": {
+    es: "Endpoint propio que habla la API de OpenAI — OmniRouter, 9Router, proxy corporativo o un modelo que corre en tu máquina. Tú informas la dirección (base URL) y la clave, y el CRM conversa con él como conversa con OpenAI.",
+  },
+  "Endereço (base URL)": { es: "Dirección (base URL)" },
+  "Obrigatório — ex.: https://seu-gateway.example/v1": {
+    es: "Obligatorio — ej.: https://tu-gateway.example/v1",
+  },
+  "Informe o endereço (base URL) começando com http:// ou https://.": {
+    es: "Informa la dirección (base URL) comenzando con http:// o https://.",
+  },
+  "Informe o endereço (base URL) do provedor personalizado.": {
+    es: "Informa la dirección (base URL) del proveedor personalizado.",
+  },
+  "O endereço (base URL) precisa começar com http:// ou https://.": {
+    es: "La dirección (base URL) debe comenzar con http:// o https://.",
+  },
+  "Só o provedor personalizado aceita um endereço (base URL) próprio.": {
+    es: "Solo el proveedor personalizado acepta una dirección (base URL) propia.",
+  },
+  "Testando a conexão com o provedor…": { es: "Probando la conexión con el proveedor…" },
+  "Conexão confirmada com o provedor.": { es: "Conexión confirmada con el proveedor." },
+  "Conexão OK": { es: "Conexión OK" },
+  "Não consegui falar com este endereço. Confira a base URL e a chave.": {
+    es: "No pude hablar con esta dirección. Revisa la base URL y la clave.",
+  },
+  "Falta o endereço (base URL) do provedor personalizado, ou ele não começa com http:// ou https://. Edite a credencial e informe o endereço da API.": {
+    es: "Falta la dirección (base URL) del proveedor personalizado, o no comienza con http:// o https://. Edita la credencial e informa la dirección de la API.",
+  },
+  "Este endereço não respondeu em /models. Confira a base URL: ela deve apontar para a raiz de uma API compatível com a OpenAI.": {
+    es: "Esta dirección no respondió en /models. Revisa la base URL: debe apuntar a la raíz de una API compatible con OpenAI.",
+  },
   "Uma chave só para centenas de modelos de vários fabricantes, com a opção de manter o tráfego na Europa. Bom para comparar modelos sem abrir conta em cada provedor.": {
     es: "Una sola clave para cientos de modelos de varios fabricantes, con la opción de mantener el tráfico en Europa. Útil para comparar modelos sin abrir una cuenta con cada proveedor.",
   },

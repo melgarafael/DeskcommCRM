@@ -48,6 +48,26 @@ export function descreverErroDeValidacao(codigo: string | null, provedor?: strin
     };
   }
 
+  // Provedor personalizado (#1642): o problema é o ENDEREÇO, não a chave —
+  // dizer "confira a chave" mandaria quem opera procurar no lugar errado.
+  if (codigo === "base_url_ausente" || codigo === "base_url_invalida") {
+    return {
+      frase:
+        "Falta o endereço (base URL) do provedor personalizado, ou ele não começa com http:// ou https://. Edite a credencial e informe o endereço da API.",
+      chaveErrada: false,
+      generico: false,
+    };
+  }
+
+  if (codigo === "provider_status_404") {
+    return {
+      frase:
+        "Este endereço não respondeu em /models. Confira a base URL: ela deve apontar para a raiz de uma API compatível com a OpenAI.",
+      chaveErrada: false,
+      generico: false,
+    };
+  }
+
   if (codigo === "provider_status_429") {
     return {
       frase: "O provedor limitou as chamadas desta chave. Tente de novo em alguns minutos.",
