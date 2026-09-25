@@ -238,7 +238,7 @@ export async function rotacionarCredencial(
  * `undefined` faz o validador responder `base_url_ausente` — a tela diz qual
  * endereço falta em vez de marcar "validada" uma credencial que ninguém testou.
  */
-async function lerBaseUrlDaCredencial(
+export async function lerBaseUrlDaCredencial(
   admin: ReturnType<typeof createAdminClient>,
   credentialId: string,
 ): Promise<string | undefined> {
