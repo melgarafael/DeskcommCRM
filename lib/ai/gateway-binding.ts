@@ -184,7 +184,10 @@ async function lerBinding(
  * a chave certa para aquele prefixo.
  */
 function idParaOProvider(provider: string, id: string): string | null {
-  if (provider === "openrouter" || provider === "requesty") return id;
+  // Os roteadores levam o prefixo inteiro — inclusive o provedor personalizado
+  // (#1642), que serve id de QUALQUER fabricante atrás do próprio endpoint.
+  if (provider === "openrouter" || provider === "requesty" || provider === "custom")
+    return id;
   if (!id.includes("/")) return id;
   if (id.startsWith(`${provider}/`)) return id.slice(provider.length + 1);
   return null;
@@ -304,6 +307,7 @@ async function padraoDaOrganizacao(
   const modelId =
     llm.provider === "openrouter" ||
     llm.provider === "requesty" ||
+    llm.provider === "custom" ||
     defaultModel.startsWith(`${llm.provider}/`)
       ? defaultModel
       : `${llm.provider}/${defaultModel}`;
@@ -552,6 +556,12 @@ function instanciar(
       return createOpenAI({ apiKey, baseURL: baseUrl ?? DEEPSEEK_ENDPOINT })(modelId);
     case "requesty":
       return createOpenAI({ apiKey, baseURL: baseUrl ?? REQUESTY_ENDPOINT }).chat(modelId); // ver providers.ts
+    // Provedor personalizado (#1642): endpoint do operador. Sem `baseUrl` não
+    // há onde ir — `null` deixa o chamador cair no padrão COM AVISO, que é o
+    // contrato deste switch; inventar um endpoint seria mandar a chave do
+    // gateway para outro lugar.
+    case "custom":
+      return baseUrl ? createOpenAI({ apiKey, baseURL: baseUrl }).chat(modelId) : null;
     default:
       return null;
   }

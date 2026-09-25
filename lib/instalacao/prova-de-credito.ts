@@ -110,6 +110,20 @@ export function montarRequisicaoDeProva(
         headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
         body: { model: modelo, max_tokens: 16, messages: msg },
       };
+    // Provedor personalizado (#1642): a instalação não coleta o endereço no
+    // install.sh, então sem `baseUrl` não há para onde provar — `null` é a
+    // leitura honesta de "não sei testar isto aqui", e não um ok por omissão
+    // (fail-closed, a mesma régua do `default` abaixo).
+    case "custom":
+      if (!baseUrl) return null;
+      return {
+        url: `${baseUrl.replace(/\/+$/, "")}/chat/completions`,
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        // `max_tokens: 16` e não 1: modelos da OpenAI atrás de um gateway
+        // recusam menos que 16 (medido na Requesty), e este é um gateway
+        // qualquer — o custo de 16 tokens é irrelevante e o risco, nenhum.
+        body: { model: modelo, max_tokens: 16, messages: msg },
+      };
     case "google":
       return {
         url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
