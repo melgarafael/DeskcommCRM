@@ -25,6 +25,8 @@ interface FormShape {
   name?: string;
   email?: string;
   phone_number?: string;
+  /** `AAAA-MM-DD` — a MESMA forma de `contactPatchSchema` e da coluna do banco. */
+  birthdate?: string;
   tagsRaw?: string;
   custom_fields?: Record<string, unknown>;
 }
@@ -47,6 +49,7 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
       name: contact.name ?? "",
       email: contact.email ?? "",
       phone_number: contact.phone_number ? phoneForDisplay(contact.phone_number) : "",
+      birthdate: contact.birthdate ?? "",
       tagsRaw: contact.tags.join(", "),
       custom_fields: contact.custom_fields ?? {},
     },
@@ -60,6 +63,7 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
         name: contact.name ?? "",
         email: contact.email ?? "",
         phone_number: contact.phone_number ? phoneForDisplay(contact.phone_number) : "",
+        birthdate: contact.birthdate ?? "",
         tagsRaw: contact.tags.join(", "),
         custom_fields: contact.custom_fields ?? {},
       });
@@ -76,6 +80,11 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
     if (values.name?.trim()) payload.name = values.name.trim();
     if (values.email?.trim()) payload.email = values.email.trim();
     if (values.phone_number?.trim()) payload.phone_number = values.phone_number.trim();
+    // Igual aos campos de cima: só manda quando há data. O `type="date"` devolve
+    // `AAAA-MM-DD` (a forma que `contactPatchSchema` e a coluna `birthdate` já
+    // exigem), então o diálogo não normaliza nada — o que se digita é o que se
+    // grava, e a ficha recarregada mostra a MESMA string.
+    if (values.birthdate?.trim()) payload.birthdate = values.birthdate.trim();
     payload.tags = tags;
     // Sempre no payload, mesmo vazio: o PATCH SUBSTITUI, e é assim que apagar um
     // campo pela tela chega ao banco.
@@ -116,7 +125,11 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
             <Input id="ec-phone" {...form.register("phone_number")} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="ec-tags">Tags</Label>
+            <Label htmlFor="ec-birthdate">{t("Data de nascimento")}</Label>
+            <Input id="ec-birthdate" type="date" {...form.register("birthdate")} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="ec-tags">{t("Tags")}</Label>
             <Input id="ec-tags" {...form.register("tagsRaw")} />
           </div>
           {customFieldDefs.length > 0 && (

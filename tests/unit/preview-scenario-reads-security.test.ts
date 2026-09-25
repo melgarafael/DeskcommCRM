@@ -23,4 +23,18 @@ describe("segurança da prévia: leituras de cenário não podem virar escrita",
     expect(SCENARIO_READS.has("crm_describe_external_data")).toBe(true);
     expect(SCENARIO_READS.has("crm_query_external_data")).toBe(true);
   });
+
+  it("consulta catálogo e acervo da organização no modo teste, sem contato", () => {
+    // O dado é da organização, não de um contato: sem isto o Testar responde
+    // "vou confirmar e te retorno" para qualquer pergunta de preço ou agenda.
+    expect(SCENARIO_READS.has("crm_search_products")).toBe(true);
+    expect(SCENARIO_READS.has("crm_search_knowledge")).toBe(true);
+  });
+
+  it("dado de contato continua exigindo contato real no modo teste", () => {
+    expect(SCENARIO_READS.has("crm_get_contact")).toBe(false);
+    expect(SCENARIO_READS.has("crm_search_contacts")).toBe(false);
+    expect(SCENARIO_READS.has("crm_get_lead")).toBe(false);
+    expect(SCENARIO_READS.has("crm_list_leads")).toBe(false);
+  });
 });

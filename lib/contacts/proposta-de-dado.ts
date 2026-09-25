@@ -13,8 +13,15 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-/** Os campos que a IA pode propor. Fechado, e igual ao CHECK da 0123. */
-export const CAMPOS_PROPONIVEIS = ["email", "name", "phone_number"] as const;
+/**
+ * Os campos que a IA pode propor. Fechado, e igual ao CHECK de
+ * `contact_field_proposals.campo` — a 0123 nasceu com três, e a 0412 (issue
+ * #1546) acrescentou `birthdate`. As DUAS listas têm de andar juntas: o que o
+ * código aceita e o que o banco aceita é a mesma fronteira vista de lados
+ * diferentes, e divergir faria a proposta nascer aqui e morrer em 23514 na
+ * confirmação — com o erro aparecendo para quem não causou.
+ */
+export const CAMPOS_PROPONIVEIS = ["email", "name", "phone_number", "birthdate"] as const;
 export type CampoProponivel = (typeof CAMPOS_PROPONIVEIS)[number];
 
 export type MotivoSemProposta =
@@ -67,6 +74,23 @@ export function valorAceitavel(campo: CampoProponivel, valor: string): boolean {
     const digitos = v.replace(/\D/g, "");
     return digitos.length >= 8 && digitos.length <= 15;
   }
+  if (campo === "birthdate") {
+    // MESMA forma que `contactPatchSchema` exige de `birthdate` (`AAAA-MM-DD`),
+    // mais o calendário de verdade: `1990-02-30` tem a forma e não existe, e a
+    // ficha grava a data que o cron `contact-birthdays` nunca acionaria. E não
+    // pode estar no futuro — data que ainda vai acontecer não é nascimento, e a
+    // automação de parabéns correria atrás de um aniversário que ainda não deu.
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+    if (!m) return false;
+    const [, a, mo, d] = m;
+    const ano = Number(a);
+    const mes = Number(mo);
+    const dia = Number(d);
+    const data = new Date(Date.UTC(ano, mes - 1, dia));
+    const existe =
+      data.getUTCFullYear() === ano && data.getUTCMonth() === mes - 1 && data.getUTCDate() === dia;
+    return existe && data.getTime() <= Date.now();
+  }
   // name: só recusa o que claramente não é nome de gente. A guarda forte é a
   // confirmação humana; ser rígido aqui recusaria nome legítimo, que é pior.
   return v.length >= 2 && !/^\d+$/.test(v);
@@ -96,7 +120,7 @@ export async function proporDadoDoContato(
 
   const { data: contato, error: erroContato } = await db
     .from("contacts")
-    .select("id,is_anonymized,email,name,phone_number")
+    .select("id,is_anonymized,email,name,phone_number,birthdate")
     .eq("organization_id", organizationId)
     .eq("id", contactId)
     .maybeSingle();

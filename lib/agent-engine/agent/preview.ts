@@ -136,6 +136,11 @@ export const SCENARIO_READS = new Set([
   'crm_find_free_slots',
   'crm_describe_external_data',
   'crm_query_external_data',
+  // Catálogo e acervo são material da ORGANIZAÇÃO, não de um contato: sem eles o
+  // Testar (que roda sem contato) não responde preço nem agenda e o agente cai
+  // em "vou confirmar e te retorno". Dado de contato/lead continua fora daqui.
+  'crm_search_products',
+  'crm_search_knowledge',
 ]);
 /** Unknown tools fail closed. A write proposal never calls its original execute. */
 export function applyPreviewPolicy(

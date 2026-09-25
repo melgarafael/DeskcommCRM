@@ -265,6 +265,22 @@ export function ContactDetailClient({ contactId }: Props) {
                 </dd>
               </div>
               {/*
+                A data gravada pelo "Editar contato" (e pela proposta aprovada),
+                enxergada aqui — é ela que o cron `contact-birthdays` lê para
+                emitir `contact.birthday`. A string vira `dd/MM/yyyy` PELOS
+                PEDAÇOS: `new Date("1990-09-14")` nasce à meia-noite em UTC, e
+                `format` no fuso da tela (UTC-3) devolveria 13/09 — o
+                aniversário de ontem para quem olha.
+              */}
+              <div>
+                <dt className="text-xs uppercase text-muted-foreground">
+                  {t("Data de nascimento")}
+                </dt>
+                <dd className="mt-1">
+                  {contact.birthdate ? contact.birthdate.split("-").reverse().join("/") : "—"}
+                </dd>
+              </div>
+              {/*
                 A origem sai do `source_metadata` quando ele tem algo melhor a
                 dizer, e cai na coluna `source` quando não tem. Antes esta linha
                 lia só a coluna, e a resposta era `site` para quem chegou pelo
