@@ -166,7 +166,12 @@ export function chaveDePlataforma(provider: string): string | null {
   return v === "" ? null : v;
 }
 
-export function buildModel(provider: string, apiKey: string, modelId: string): LanguageModel {
+export function buildModel(
+  provider: string,
+  apiKey: string,
+  modelId: string,
+  baseUrl?: string | null,
+): LanguageModel {
   switch (provider) {
     case "anthropic":
       return createAnthropic({ apiKey })(modelId);
@@ -194,6 +199,17 @@ export function buildModel(provider: string, apiKey: string, modelId: string): L
     // Requesty: roteador OpenAI-compatível, pelo mesmo `.chat()` do registry.
     case "requesty":
       return createOpenAI({ apiKey, baseURL: REQUESTY_ENDPOINT }).chat(modelId);
+    // Provedor personalizado (#1642): o endereço vem da credencial, junto da
+    // chave. SEM endereço a chamada é RECUSADA — ensaio que fosse para a
+    // OpenAI com a chave de um gateway privado diria que o produto não
+    // funciona enquanto a produção funcionaria (pelo caminho errado).
+    case "custom":
+      if (!baseUrl) {
+        throw new Error(
+          "custom_provider_sem_base_url: cadastre o endereço (base URL) na credencial do provedor personalizado",
+        );
+      }
+      return createOpenAI({ apiKey, baseURL: baseUrl }).chat(modelId);
     default:
       throw new Error(`unsupported_provider: ${provider}`);
   }
@@ -314,10 +330,13 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
     // Ensaio mais rígido que a produção não é cautela: é dizer que está
     // quebrado o que está funcionando.
     let credentialApiKey: string;
+    /** O endereço do provedor personalizado (#1642) — nasce junto da credencial. */
+    let credentialBaseUrl: string | null = null;
     if (version.credential_id) {
       try {
         const credential = await loadCredential(version.credential_id, run.organization_id);
         credentialApiKey = credential.apiKey;
+        credentialBaseUrl = credential.baseUrl;
       } catch (err) {
         const reason = err instanceof CredentialUnavailableError ? err.reason : "decrypt_failed";
         return await failRun(run, `credential_${reason}`, "credential unavailable", startedAt);
@@ -505,7 +524,7 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
       : [];
 
     // 9) Build LM directly against the provider (BYOK credential — see buildModel doc).
-    const model = buildModel(version.provider, credentialApiKey, version.model);
+    const model = buildModel(version.provider, credentialApiKey, version.model, credentialBaseUrl);
 
     // 10) Cost/token guard. Fires BEFORE the next step is taken.
     let abortReason: string | null = null;
