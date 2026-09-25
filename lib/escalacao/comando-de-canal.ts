@@ -123,6 +123,19 @@ export interface ConfigDeComandos {
  * resposta é `aceita: false` — o comando NÃO é aplicado. Aceitar um comando por
  * não ter conseguido ler a configuração seria agir com base no que não se sabe.
  *
+ * ─── A régua de "ativo" é a do ENGINE, não a do worker legado (C-079) ──────
+ *
+ * A primeira versão filtrava `is_active = true`. Isso **não acha um mcp_agent**:
+ * `is_active` é semântica do `rag_bot` legado, e o agente publicado desta
+ * instalação tem `is_active = false` (o que importa é `published_version_id` +
+ * não arquivado). O efeito era o pior possível: a consulta voltava vazia, o
+ * código caía nas SEQUÊNCIAS_PADRAO (`#on`/`#off`) e os comandos configurados na
+ * tela (emoji) NUNCA casavam — silenciosamente, porque o parser só compara.
+ *
+ * A régua correta é a MESMA de `loadPublishedAgentConfig` (o engine): agente não
+ * arquivado + versão publicada. O emoji/palavra que o dono configurou passa a
+ * valer de verdade.
+ *
  * Custo: uma consulta por mensagem `fromMe`. Quem chama só consulta quando o
  * corpo PODE ser um comando (contém a sequência), então o caminho comum paga uma
  * comparação de string, não uma ida ao banco.
@@ -136,9 +149,10 @@ export async function configDeComandosDoAgente(
       .from("ai_agents")
       .select("config")
       .eq("organization_id", organizationId)
-      .eq("is_active", true)
       .is("archived_at", null)
+      .not("published_version_id", "is", null)
       .order("priority", { ascending: false })
+      .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle();
     if (error || !data) return { aceita: false, sequencias: SEQUENCIAS_PADRAO };

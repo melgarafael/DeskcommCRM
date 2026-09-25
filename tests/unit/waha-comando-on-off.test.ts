@@ -71,6 +71,7 @@ function makeAdmin(
       eq: () => chain,
       in: () => chain,
       is: () => chain,
+      not: () => chain,
       gte: () => chain,
       order: () => chain,
       limit: () => chain,

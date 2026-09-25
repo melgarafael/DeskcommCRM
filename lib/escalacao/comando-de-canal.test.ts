@@ -107,7 +107,7 @@ describe("lerComandoDeControle — sequências PERSONALIZADAS (C-077)", () => {
  */
 function admin(over: { data?: unknown; error?: unknown } = {}) {
   const chain: Record<string, unknown> = {};
-  for (const m of ["select", "eq", "is", "order", "limit"]) {
+  for (const m of ["select", "eq", "is", "not", "order", "limit"]) {
     chain[m] = () => chain;
   }
   chain.maybeSingle = () =>
