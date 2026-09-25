@@ -51,7 +51,14 @@ interface Captura {
 
 function makeAdmin(
   cap: Captura,
-  opts: { jaRegistrada?: boolean; aceitaComandos?: boolean; ligar?: string; desligar?: string } = {},
+  opts: {
+    jaRegistrada?: boolean;
+    aceitaComandos?: boolean;
+    ligar?: string;
+    desligar?: string;
+    /** Estado da conversa que o SELECT inicial devolve. Default: destravada. */
+    conversa?: { bot_silenced_until: string | null; assignee_kind?: string };
+  } = {},
 ) {
   const table = (name: string) => {
     let mode: "select" | "insert" | "update" = "select";
@@ -90,7 +97,19 @@ function makeAdmin(
           return Promise.resolve({ data: { id: "conv-1" }, error: null });
         }
         if (name === "conversations" && mode === "select") {
-          return Promise.resolve({ data: { bot_silenced_until: null }, error: null });
+          // Campos que o `pausarIaDuravelmente` e o `reativarAutomaticoNaConversa`
+          // leem. Default = conversa destravada (pausa grava); o teste do `#on`
+          // passa `conversa` travada.
+          return Promise.resolve({
+            data: {
+              bot_silenced_until: opts.conversa?.bot_silenced_until ?? null,
+              assigned_to_user_id: "user-1",
+              assignee_kind: opts.conversa?.assignee_kind ?? "user",
+              status: "claimed",
+              contact_id: "contact-1",
+            },
+            error: null,
+          });
         }
         // C-076/C-077: consulta da config do agente (flag + sequências).
         if (name === "ai_agents" && mode === "select") {
@@ -155,15 +174,20 @@ describe("C-075 · comando do celular controla o automático", () => {
     expect(cap.rpcs.some((r) => r.fn === "fn_conversation_assign")).toBe(false);
   });
 
-  it("#on → devolve o atendimento à IA (limpa as travas), sem pausar", async () => {
+  it("#on → devolve o automático (limpa as travas), sem pausar", async () => {
     const cap: Captura = { conversationUpdates: [], insertedMessages: [], rpcs: [] };
-    await dispatchWahaEvent(makeAdmin(cap, { aceitaComandos: true }), SESSION, comando("#on"), "req-on");
+    await dispatchWahaEvent(makeAdmin(cap, { aceitaComandos: true, conversa: { bot_silenced_until: "infinity" } }), SESSION, comando("#on"), "req-on");
 
     // A mensagem do comando é gravada…
     expect(cap.insertedMessages).toHaveLength(1);
-    // …e o caminho de devolução foi acionado (sinal durável de retomada).
-    expect(cap.rpcs.some((r) => r.fn === "emit_event")).toBe(true);
-    // NÃO pausou: nenhum update gravou o silêncio durável.
+    // …e a reativação foi gravada (bot_silenced_until = null).
+    expect(
+      cap.conversationUpdates.some((u) => u.bot_silenced_until === null && u.assignee_kind === "ai"),
+    ).toBe(true);
+    // C-080: o `#on` é um INTERRUPTOR — NÃO dispara a retomada de follow-up
+    // (`ai.handoff_resolved`), que é do botão "devolver" da tela.
+    expect(cap.rpcs.some((r) => r.fn === "emit_event")).toBe(false);
+    // NÃO pausou.
     expect(cap.conversationUpdates.some((u) => u.bot_silenced_until === "infinity")).toBe(false);
   });
 
@@ -234,12 +258,16 @@ describe("C-077 · sequências PERSONALIZADAS na tela", () => {
     expect(pausa!.bot_silenced_until).toBe("infinity");
 
     const cap2: Captura = { conversationUpdates: [], insertedMessages: [], rpcs: [] };
-    await dispatchWahaEvent(makeAdmin(cap2, seq), SESSION, comando("religar"), "req-on-custom");
-    expect(cap2.rpcs.some((r) => r.fn === "emit_event")).toBe(true);
+    await dispatchWahaEvent(makeAdmin(cap2, { ...seq, conversa: { bot_silenced_until: "infinity" } }), SESSION, comando("religar"), "req-on-custom");
+    expect(
+      cap2.conversationUpdates.some((u) => u.bot_silenced_until === null && u.assignee_kind === "ai"),
+    ).toBe(true);
 
-    // O padrão antigo NÃO dispara quando há sequência configurada.
+    // O padrão antigo NÃO dispara quando há sequência configurada: a mensagem
+    // `#on` vira pausa normal (não reativa).
     const cap3: Captura = { conversationUpdates: [], insertedMessages: [], rpcs: [] };
     await dispatchWahaEvent(makeAdmin(cap3, seq), SESSION, comando("#on"), "req-on-antigo");
-    expect(cap3.rpcs.some((r) => r.fn === "emit_event")).toBe(false);
+    expect(cap3.conversationUpdates.some((u) => u.assignee_kind === "ai")).toBe(false);
+    expect(cap3.conversationUpdates.some((u) => u.bot_silenced_until === "infinity")).toBe(true);
   });
 });

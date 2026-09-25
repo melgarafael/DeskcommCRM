@@ -73,8 +73,15 @@ export type LeituraDaResposta =
 const INSTRUCAO =
   'Você é um validador auxiliar de um sistema de vendas (NÃO fala com o cliente). ' +
   'Recebe as PERGUNTAS pendentes (pode haver várias), os DADOS já preenchidos (que podem ser ' +
-  'corrigidos) e as ÚLTIMAS mensagens da conversa. Sua tarefa: decidir QUAIS perguntas pendentes a ' +
-  'mensagem mais recente do CLIENTE responde E/OU quais dados já preenchidos ela corrige. ' +
+  'corrigidos) e as ÚLTIMAS mensagens da conversa. Sua tarefa: decidir QUAIS perguntas pendentes o ' +
+  'CLIENTE respondeu E/OU quais dados já preenchidos ele corrigiu. ' +
+  // C-082: o cliente manda em RAJADA ("Sou Vander" e, logo depois, "Sao paulo"). A
+  // instrução antiga dizia "a mensagem mais recente é a que importa", e o validador
+  // ignorava a 1ª — o nome se perdia (medido ao vivo em 2026-09-25). O certo é ler
+  // TODAS as mensagens do cliente que ainda não foram respondidas.
+  'IMPORTANTE: o cliente pode ter mandado VÁRIAS mensagens em sequência (uma rajada). ' +
+  'Considere TODAS as mensagens do CLIENTE listadas — não só a última. Cada mensagem pode ' +
+  'responder a uma pergunta diferente: "Sou Vander" responde o nome; "Sao paulo", a cidade. ' +
   'IMPORTANTE: o cliente pode responder a MAIS DE UMA pergunta na MESMA mensagem, e em QUALQUER ' +
   'ordem — devolva TODAS as que ele respondeu, cada uma com sua chave. ' +
   'Responda SOMENTE com JSON: {"respostas":[{"campo":"<chave>","valor":"<dado>"}]}. ' +
@@ -126,7 +133,9 @@ export function montarMensagemDoValidador(
         ]
       : []),
     '',
-    '## Últimas mensagens (a mais recente é a que importa)',
+    // C-082: "a mais recente é a que importa" fazia o validador descartar a 1ª
+    // mensagem de uma rajada. Aqui a instrução é ler TODAS as do cliente.
+    '## Últimas mensagens (leia TODAS as do CLIENTE; ele pode ter mandado em rajada)',
     conversa,
   ].join('\n');
 }

@@ -78,10 +78,37 @@ interface ConversaRow {
   bot_silenced_until: string | null;
 }
 
-export async function devolverAtendimentoAoAgente(
-  deps: RetomadaDeps,
+export type ReativarFalha = "conversation_not_found" | "assignment_conflict";
+
+export type ReativarResultado =
+  | { ok: true; conversationId: string; contactId: string | null; jaEstavaComOAgente: boolean }
+  | { ok: false; erro: ReativarFalha; detalhe?: string };
+
+/**
+ * LIGA o automático nesta conversa — e SÓ isso (C-080).
+ *
+ * ─── Por que esta função existe separada de `devolverAtendimentoAoAgente` ──
+ *
+ * O C-075 ligou o comando `#on` do celular ao `devolverAtendimentoAoAgente`, que
+ * é o caminho do BOTÃO da tela. Só que aquele caminho faz muito mais que religar:
+ * emite `ai.handoff_resolved` (que RETOMA follow-ups pausados), grava checkpoint
+ * de retomada (merge no `lead_checkpoints`) e emite atividade no lead. Para quem
+ * clica "devolver" na tela isso é certo — a pessoa está reassumindo o histórico.
+ * Para o `#on` do celular é ATROPELO: o dono só quer ligar a IA e o comando
+ * mexia no fluxo, no follow-up e no lead de lado.
+ *
+ * Aqui ficam SÓ as três travas de elegibilidade:
+ *   1. `conversations.bot_silenced_until` → null
+ *   2. `conversations.assignee_kind`/`assigned_to_user_id` → devolve o comando
+ *   3. `contacts.force_human` → false
+ * Nada de histórico, fluxo, follow-up ou timeline. O `#on` é UM INTERRUPTOR: o
+ * estado que já está no banco (mensagens, dados do cliente, fluxo) continua
+ * valendo — quem chega depois recupera TUDO do banco, como sempre.
+ */
+export async function reativarAutomaticoNaConversa(
+  deps: Pick<RetomadaDeps, "supabase" | "organizationId">,
   input: { conversationId: string },
-): Promise<RetomadaResultado> {
+): Promise<ReativarResultado> {
   const { supabase, organizationId } = deps;
 
   const { data: convData, error: convErr } = await supabase
@@ -99,19 +126,7 @@ export async function devolverAtendimentoAoAgente(
     conv.bot_silenced_until === null &&
     conv.assignee_kind !== "user";
 
-  // A continuidade é lida ANTES de mexer em qualquer coisa: depois da devolução o
-  // chamado pode ser fechado por outro caminho e o rastro do que a pessoa fez
-  // ficaria mais pobre justamente no momento em que ele importa.
-  const continuidade = await lerContinuidadeHumana(
-    supabase,
-    organizationId,
-    input.conversationId,
-  );
-
-  // (1) Solta o dono humano pela regra que já existe (UPDATE + evento de
-  // atribuição na MESMA transação). `p_enforce_expected: false` porque soltar é
-  // idempotente por natureza: se outro release ganhou a corrida, o estado final
-  // é o mesmo que queríamos.
+  // (1) Solta o dono humano (mesma RPC do release; idempotente).
   if (conv.assigned_to_user_id !== null) {
     const { error: releaseErr } = await supabase.rpc("fn_conversation_assign", {
       p_organization_id: organizationId,
@@ -121,15 +136,11 @@ export async function devolverAtendimentoAoAgente(
       p_expected_assignee: null,
       p_enforce_expected: false,
     });
-    if (releaseErr) {
-      return { ok: false, erro: "assignment_conflict", detalhe: releaseErr.message };
-    }
+    if (releaseErr) return { ok: false, erro: "assignment_conflict", detalhe: releaseErr.message };
   }
 
-  // (2) Devolve o comando. `assignee_kind='ai'` exige `assigned_to_user_id is
-  // null` (CHECK conversations_assignee_kind_coherence) — o filtro `.is(...)` é o
-  // guarda otimista: se alguém assumiu entre o release e aqui, 0 linhas e a gente
-  // reporta o conflito em vez de estourar a constraint.
+  // (2) Devolve o comando. O `.is("assigned_to_user_id", null)` é guarda otimista
+  // contra a constraint de coerência do `assignee_kind`.
   const proximoStatus = STATUS_REATIVAVEIS.has(conv.status ?? "")
     ? "ai_handling"
     : (conv.status ?? "open");
@@ -151,8 +162,7 @@ export async function devolverAtendimentoAoAgente(
   if (updErr) return { ok: false, erro: "assignment_conflict", detalhe: updErr.message };
   if (!atualizada) return { ok: false, erro: "assignment_conflict" };
 
-  // (3) A trava que ninguém soltava. Sem esta linha as outras duas não servem de
-  // nada: os três guards (worker nativo, harness, before-send) leem daqui.
+  // (3) A trava do CONTATO.
   if (conv.contact_id !== null) {
     const { error: contatoErr } = await supabase
       .from("contacts")
@@ -167,6 +177,46 @@ export async function devolverAtendimentoAoAgente(
       return { ok: false, erro: "assignment_conflict", detalhe: contatoErr.message };
     }
   }
+
+  return {
+    ok: true,
+    conversationId: input.conversationId,
+    contactId: conv.contact_id,
+    jaEstavaComOAgente,
+  };
+}
+
+export async function devolverAtendimentoAoAgente(
+  deps: RetomadaDeps,
+  input: { conversationId: string },
+): Promise<RetomadaResultado> {
+  const { supabase, organizationId } = deps;
+
+  // A continuidade é lida ANTES de mexer em qualquer coisa: depois da devolução o
+  // chamado pode ser fechado por outro caminho e o rastro do que a pessoa fez
+  // ficaria mais pobre justamente no momento em que ele importa.
+  const continuidade = await lerContinuidadeHumana(
+    supabase,
+    organizationId,
+    input.conversationId,
+  );
+
+  // (1-3) As três travas de elegibilidade, pela MESMA função que o comando `#on`
+  // usa (C-080). Extraído para que "só ligar" (celular) e "devolver com
+  // continuidade" (tela) compartilhem a escrita e não divirjam.
+  const reativado = await reativarAutomaticoNaConversa(
+    { supabase, organizationId },
+    { conversationId: input.conversationId },
+  );
+  if (!reativado.ok) {
+    return {
+      ok: false,
+      erro: reativado.erro,
+      ...(reativado.detalhe !== undefined ? { detalhe: reativado.detalhe } : {}),
+    };
+  }
+  const { contactId: convContactId, jaEstavaComOAgente } = reativado;
+  const conv = { contact_id: convContactId };
 
   // (3b) ELEGIBILIDADE: devolver o atendimento à IA é uma decisão humana
   // explícita — no gate `allowlist`, é ela que RE-AUTORIZA o contato. Sem isto,

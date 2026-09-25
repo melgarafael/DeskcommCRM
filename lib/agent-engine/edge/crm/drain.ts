@@ -373,32 +373,72 @@ async function processEvent(
     });
   }
 
-  // Coalescência: já existe job PENDING futuro deste contato → esta mensagem
-  // entra de carona (o turno lê o histórico completo). Evento vira done.
+  // Coalescência: já existe job deste contato esperando → esta mensagem entra de
+  // carona (o turno lê o histórico completo). Evento vira done.
+  //
+  // C-083 — o coalesce cobre DOIS estados, não só o `pending`:
+  //   - `pending` com `run_after > now()`: a janela de debounce ainda está aberta;
+  //     a mensagem nova a EMPURRA (teto de 60s), e o turno só começa quando o
+  //     cliente parar de digitar (C-014).
+  //   - `running`: o turno da 1ª mensagem JÁ começou. Sem tratar este caso, a 2ª
+  //     mensagem criava um SEGUNDO turno que rodava depois — e o cliente recebia a
+  //     MESMA pergunta duas vezes ("De qual cidade?" / "Você tem CNH?"), porque o
+  //     turno seguinte relia o histórico e reperguntava o que o anterior já tinha
+  //     perguntado. Uma rajada = UM turno, sempre.
   if (knobs.debounceMs > 0) {
-    const { rows: pendingRows } = await pool.query<{ id: string }>(
+    const { rows: pendenteRows } = await pool.query<{ id: string }>(
       `select id from job_queue
        where organization_id = $1 and contact_id = $2
          and kind = 'inbound_turn' and status = 'pending' and run_after > now()
+       order by created_at desc
        limit 1`,
       [event.organization_id, p.contact_id],
     );
-    if (pendingRows[0]) {
-      // C-014 — VERDADEIRO debounce: cada mensagem nova EMPURRA a janela para
-      // frente (com teto de 60s desde a criação do job), para o turno só começar
-      // quando o cliente PARAR de digitar. Antes a janela era fixa desde a 1ª
-      // mensagem: quem digitava devagar gerava DOIS turnos (respostas duplicadas)
-      // e gastava tokens duas vezes.
+    if (pendenteRows[0]) {
       await pool.query(
         `update job_queue
             set run_after = least(now() + ($3::int * interval '1 millisecond'),
                                   created_at + interval '60 seconds')
           where id = $1 and organization_id = $2 and status = 'pending'`,
-        [pendingRows[0].id, event.organization_id, knobs.debounceMs],
+        [pendenteRows[0].id, event.organization_id, knobs.debounceMs],
       );
       log.info('drain: rajada coalescida (janela estendida)', {
         event_id: event.id,
-        job_id: pendingRows[0].id,
+        job_id: pendenteRows[0].id,
+      });
+      return 'processado';
+    }
+
+    // Turno RODANDO deste contato: agenda um job para depois da janela, para a
+    // mensagem ser lida no PRÓXIMO turno já com o debounce fechado — nunca em
+    // paralelo (a unique `uniq_job_queue_one_running_per_contact` transformaria o
+    // paralelo em sequência sem debounce, que é a causa das perguntas repetidas).
+    const { rows: rodandoRows } = await pool.query<{ id: string }>(
+      `select id from job_queue
+       where organization_id = $1 and contact_id = $2
+         and kind = 'inbound_turn' and status = 'running'
+       limit 1`,
+      [event.organization_id, p.contact_id],
+    );
+    if (rodandoRows[0]) {
+      const runAfterTurno = new Date(Date.now() + knobs.debounceMs);
+      const { job } = await enqueueJob(pool, event.organization_id, {
+        kind: 'inbound_turn',
+        leadId: p.contact_id,
+        sourceEventId: event.id,
+        payload: {
+          conversation_id: p.conversation_id,
+          contact_id: p.contact_id,
+          channel_session_id: p.channel_session_id,
+          inbound_message_id: p.inbound_message_id,
+          crm_event_id: event.id,
+        },
+        runAfter: runAfterTurno,
+      });
+      log.info('drain: turno em andamento — mensagem agendada para o próximo turno', {
+        event_id: event.id,
+        job_id: job.id,
+        rodando_job_id: rodandoRows[0].id,
       });
       return 'processado';
     }

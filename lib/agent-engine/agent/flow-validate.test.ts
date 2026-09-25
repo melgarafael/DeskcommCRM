@@ -55,6 +55,30 @@ describe("montarMensagemDoValidador", () => {
     expect(msg).toContain("encerrados por não resposta");
     expect(msg).toContain("chave: cpf");
   });
+
+  /**
+   * C-082 — o cliente manda em rajada ("Sou Vander" + "Sao paulo"). A instrução
+   * dizia "a mais recente é a que importa", e o validador descartava a 1ª
+   * mensagem: o nome se perdia. Agora a instrução manda ler TODAS as do cliente.
+   */
+  it("manda ler TODAS as mensagens do cliente, não só a última (C-082)", () => {
+    const msg = montarMensagemDoValidador(
+      [
+        { key: "nome", label: "Nome", type: "text" },
+        { key: "cidade", label: "Cidade", type: "text" },
+      ],
+      [],
+      [
+        { de: "cliente", texto: "Sou Vander" },
+        { de: "cliente", texto: "Sao paulo" },
+      ],
+    );
+    expect(msg).toMatch(/TODAS as mensagens do CLIENTE/);
+    expect(msg).not.toMatch(/a mais recente é a que importa/);
+    // As duas mensagens da rajada estão no texto entregue.
+    expect(msg).toContain("CLIENTE: Sou Vander");
+    expect(msg).toContain("CLIENTE: Sao paulo");
+  });
 });
 
 describe("parseLeituraDoValidador", () => {

@@ -105,7 +105,11 @@ describe("fiação — resposta manual pelo WhatsApp silencia o bot temporariame
     expect(corpo).toMatch(
       /const ehEco = await ehEcoDeEnvioNosso\([^)]*\);[\s\S]{0,80}?if \(!ehEco\) \{/,
     );
-    expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,700}?pausarIaDuravelmente\(/);
-    expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,700}?devolverAtendimentoAoAgente\(/);
+    expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,2500}?pausarIaDuravelmente\(/);
+    // C-080: o `#on` usa `reativarAutomaticoNaConversa` (SÓ as travas de
+    // elegibilidade) e NÃO o `devolverAtendimentoAoAgente` (que emite retomada de
+    // follow-up, checkpoint e atividade no lead). A guarda de eco continua.
+    expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,2500}?reativarAutomaticoNaConversa\(/);
+    expect(corpo).not.toContain("devolverAtendimentoAoAgente(");
   });
 });

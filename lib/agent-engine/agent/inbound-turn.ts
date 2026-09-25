@@ -2469,10 +2469,23 @@ async function executarTurnoDoAgente(
         currentInboundText !== null &&
         currentInboundText.trim() !== ''
       ) {
-        const ultimasMensagens = effectiveContext.messages.slice(-6).map((m) => ({
+        // C-082: as mensagens vão em ORDEM, e as PENDENTES (ainda não
+        // respondidas) entram garantidamente — o validador precisa ler a rajada
+        // inteira ("Sou Vander" + "Sao paulo"), não só a última. O histórico
+        // recente continua no fim, para dar contexto.
+        const historico = effectiveContext.messages.slice(-6).map((m) => ({
           de: (m.direction === 'inbound' ? 'cliente' : 'loja') as 'cliente' | 'loja',
           texto: m.body,
         }));
+        const pendentesComoMensagens = inboundsPendentes.map((texto) => ({
+          de: 'cliente' as const,
+          texto,
+        }));
+        const jaNoHistorico = new Set(historico.map((m) => `${m.de}\u0000${m.texto}`));
+        const ultimasMensagens = [
+          ...pendentesComoMensagens.filter((m) => !jaNoHistorico.has(`${m.de}\u0000${m.texto}`)),
+          ...historico,
+        ];
         const leitura = await validarRespostaDoFluxo(
           pool,
           deps.llmCfg,
@@ -3039,6 +3052,22 @@ async function executarTurnoDoAgente(
       execute: async ({ fluxo }) => {
         if (preview) {
           return { ok: false, error: { code: 'previa', message: 'Prévia não inicia fluxo.' } };
+        }
+        // C-081: o fluxo é um roteiro para quando o CLIENTE demonstra o assunto.
+        // Sem este gate, o modelo interpretava saudação ("Ola") como "assunto de
+        // qualificação" e atropelava o atendimento abrindo o roteiro de perguntas
+        // (nome/cidade/CNH) antes de o cliente pedir nada. A mensagem que ACIONA
+        // precisa ter conteúdo de assunto: nem aceno/saudação, nem vazio.
+        const textoDoCliente = (currentInboundText ?? '').trim();
+        if (textoDoCliente === '' || ehAcenoOuSilencio(textoDoCliente)) {
+          return {
+            ok: false,
+            error: {
+              code: 'sem_assunto',
+              message:
+                'O cliente ainda não disse o assunto. NÃO inicie o roteiro: cumprimente e pergunte como pode ajudar.',
+            },
+          };
         }
         // Já existe um fluxo ativo neste contato: devolve o que falta, não inicia outro.
         if (fluxoAtendimento !== null) {

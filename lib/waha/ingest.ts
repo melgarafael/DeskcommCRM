@@ -20,7 +20,7 @@ import {
   pausarIaPorAtendimentoManual,
 } from "@/lib/escalacao/atendimento-manual";
 import { configDeComandosDoAgente, lerComandoDeControle } from "@/lib/escalacao/comando-de-canal";
-import { devolverAtendimentoAoAgente } from "@/lib/escalacao/retomada";
+import { reativarAutomaticoNaConversa } from "@/lib/escalacao/retomada";
 import { getWahaClient } from "@/lib/waha/client";
 import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
@@ -991,13 +991,15 @@ async function handleOutboundFromUserPhone(
         motivo: MOTIVO_COMANDO_OFF,
       });
     } else if (comandoVale && comando === "on") {
-      await devolverAtendimentoAoAgente(
-        {
-          supabase: admin,
-          organizationId: session.organization_id,
-          actor: { type: "webhook_source", id: session.id },
-          requestId,
-        },
+      // C-080: `#on` é um INTERRUPTOR. Chama só a reativação das travas de
+      // elegibilidade — NÃO o `devolverAtendimentoAoAgente`, que emite
+      // `ai.handoff_resolved` (retoma follow-up), grava checkpoint e emite
+      // atividade no lead. Esses efeitos são do botão "devolver" da tela, onde
+      // uma pessoa reassume o histórico; no comando do celular eles atropelavam
+      // fluxo e follow-up. O estado no banco (mensagens, dados, fluxo) continua
+      // valendo INTACTO — quem chega depois recupera tudo, como sempre.
+      await reativarAutomaticoNaConversa(
+        { supabase: admin, organizationId: session.organization_id },
         { conversationId },
       );
     } else {
