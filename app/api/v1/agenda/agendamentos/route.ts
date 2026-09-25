@@ -19,8 +19,21 @@ import { z } from "zod";
 import { listaAgendamentos, type AgendamentoListado } from "@/lib/agenda/consulta";
 import { donosDaAgenda } from "@/lib/agenda/donos-da-agenda";
 import { lerOcupacaoExterna } from "@/lib/agenda/ocupacao-externa";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import type { Actor } from "@/lib/api/handlers/types";
+import { ApiError } from "@/lib/api/types";
 import { fail, ok } from "@/lib/api/wrappers";
+import { requireRole } from "@/lib/auth/require-role";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
+import { createClient } from "@/lib/supabase/server";
+
+import {
+  alterarAgendamentoHandler,
+  cancelarAgendamentoHandler,
+  marcarAgendamentoHandler,
+} from "./_handler";
 
 /**
  * O que ESTA ROTA devolve — o contrato da lista mais a ORIGEM.
@@ -31,19 +44,6 @@ import { logger } from "@/lib/logger";
  * e não se clica.
  */
 type AgendamentoDaResposta = AgendamentoListado & { origem?: "google_sync" };
-import { resolveAuthDual } from "@/lib/api/auth-dual";
-import type { Actor } from "@/lib/api/handlers/types";
-import { ApiError } from "@/lib/api/types";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
-import { traduzir } from "@/lib/i18n/dicionario";
-import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
-
-import {
-  alterarAgendamentoHandler,
-  cancelarAgendamentoHandler,
-  marcarAgendamentoHandler,
-} from "./_handler";
 
 const listarSchema = z.object({
   contact_id: z.string().uuid().optional(),
@@ -346,12 +346,22 @@ async function despachar<T>(
     resource: "agenda",
     role: "agent",
     scope: "mcp:write",
+    // O MESMO papel das tools MCP de escrita na agenda (`lib/mcp/tools/
+    // agendamento.ts`, `requiresRole: "ai_operator"`), que chamam estes mesmos
+    // handlers. Token criado pela tela nasce `agent`: sem esta linha, o `dsk_`
+    // que leva 403 ao cancelar pela tool cancelaria por aqui. E ator que não é
+    // pessoa escapa de "atendente só mexe na própria agenda"
+    // (`aOpcaoPodeRecortar`) — um token `agent` mexeria na agenda de todos.
+    tokenRole: "ai_operator",
   });
   if (!authz.ok) return authz.response;
   // `idioma` só vem no ramo de sessão (`resolveAuthDual`); o ramo de token não
   // tem preferência de idioma de pessoa nenhuma — degrada para o padrão.
   const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const { supabase, organizationId, actor } = authz;
+
+  const tetoEstourado = await tetoDeEscritaDoToken(authz, "agenda", requestId);
+  if (tetoEstourado) return tetoEstourado;
 
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {

@@ -23,11 +23,14 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { audit } from "@/lib/audit";
+import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
 import { estamparAtribuicaoDoContato } from "@/lib/leads/atribuicao-de-anuncio";
 import {
   ehNumeroInternoDeAviso,
   registrarMensagemIgnorada,
 } from "@/lib/escalacao/numero-interno-de-aviso";
+import { logger } from "@/lib/logger";
 
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "../archived";
 import { extrairAtribuicaoMeta } from "../atribuicao-de-anuncio-oficial";
@@ -36,7 +39,7 @@ import { encontrarContatoPorTelefone } from "../contato-por-telefone";
 import { marcarConversaComMensagem } from "../marcar-conversa";
 import { canonicalPhoneBR, phoneLookupVariants } from "../phone-variants";
 import type { ChannelTenantScope } from "../types";
-import type { InboundMessageEvent } from "./webhook";
+import type { InboundMessageEvent, OutboundEchoEvent } from "./webhook";
 
 type Admin = SupabaseClient;
 
@@ -313,4 +316,171 @@ export async function ingestMetaInbound(
     messageId,
     conversationId: conversationId as string,
   };
+}
+
+/** Prévia do eco: mesma régua da recebida, com a legenda no lugar do texto. */
+function previewOfEcho(e: OutboundEchoEvent): string {
+  if (e.type === "text") return (e.text ?? "").slice(0, 120);
+  if (e.type === "image") return "📷 Imagem";
+  if (e.type === "video") return "🎬 Vídeo";
+  if (e.type === "document") return "📎 Documento";
+  if (e.type === "audio") return e.media?.voice ? "🎤 Mensagem de voz" : "🎵 Áudio";
+  if (e.type === "contact") return e.sharedContact?.name ? `👤 ${e.sharedContact.name}` : "[contato]";
+  return `[${e.type}]`;
+}
+
+/**
+ * Mensagem que a EMPRESA mandou pelo app WhatsApp Business (coexistência).
+ *
+ * É o `fromMe` do canal por QR (`handleOutboundFromUserPhone` em
+ * `lib/waha/ingest.ts`) no canal oficial, e segue as mesmas decisões:
+ *
+ * - **Contato = destinatário (`to`).** O nome NÃO vem do eco — o eco não traz o
+ *   perfil do cliente, e o `coalesce` do `fn_upsert_wa_contact` congelaria
+ *   qualquer nome errado.
+ * - **Gravada como saída `external_device`**, para a conversa ficar inteira na
+ *   tela e nos relatórios que já separam "respondido por humano fora do CRM".
+ * - **A IA para nesta conversa** (`pausarIaPorAtendimentoManual`): uma pessoa
+ *   respondeu pelo celular, e o agente não pode responder por cima.
+ *
+ * Diferente do QR, aqui NÃO existe o eco do nosso próprio envio: a Meta só
+ * entrega em `smb_message_echoes` o que saiu PELO APP. Mesmo assim, se o
+ * `wamid` já existir (23505), a função sai ANTES de pausar a IA — calar o
+ * agente é a decisão estrita, e na dúvida ela não acontece.
+ */
+export async function ingestMetaEcho(
+  admin: Admin,
+  e: OutboundEchoEvent,
+  dono: ChannelTenantScope & {
+    /** Ver `ingestMetaInbound`: sessão já resolvida pelo token (canal parceiro). */
+    channelSessionId?: string;
+  },
+): Promise<IngestOutcome> {
+  let sessao: { id: string; organization_id: string } | null;
+  if (dono.channelSessionId) {
+    sessao = { id: dono.channelSessionId, organization_id: dono.organizationId };
+  } else {
+    try {
+      sessao = await sessionByPhoneNumberId(admin, dono.organizationId, e.phoneNumberId);
+    } catch (err) {
+      return { status: "failed", reason: err instanceof Error ? err.message : "sessao_do_numero" };
+    }
+  }
+  if (!sessao) return { status: "no_session" };
+
+  const orgId = sessao.organization_id;
+  const telefone = `+${e.to.replace(/\D/g, "")}`;
+
+  // O número interno de avisos não vira conversa — mesma guarda da recebida.
+  if (await ehNumeroInternoDeAviso(admin, orgId, { kind: "phone", phone: telefone, lid: null })) {
+    await registrarMensagemIgnorada(admin, orgId, { direction: "outbound", sessionId: sessao.id });
+    return { status: "ignored", reason: "numero_interno_de_aviso" };
+  }
+
+  const existente = await findContactByVariants(admin, orgId, e.to);
+  const phone = existente?.phone_number
+    ? canonicalPhoneBR(existente.phone_number)
+    : canonicalPhoneBR(telefone);
+
+  const { data: contactId, error: erroContato } = await admin.rpc(
+    "fn_upsert_wa_contact" as never,
+    {
+      p_org: orgId,
+      p_kind: "phone",
+      p_phone: phone,
+      p_lid: null,
+      p_chat_id: e.to,
+      p_notify: null,
+    } as never,
+  );
+  if (erroContato || !contactId) {
+    return { status: "failed", reason: `contato: ${erroContato?.message ?? "sem id"}` };
+  }
+
+  const { data: conversationId, error: erroConversa } = await admin.rpc(
+    "fn_upsert_wa_conversation" as never,
+    { p_org: orgId, p_contact: contactId as string, p_session: sessao.id } as never,
+  );
+  if (erroConversa || !conversationId) {
+    return { status: "failed", reason: `conversa: ${erroConversa?.message ?? "sem id"}` };
+  }
+
+  const { data: inserida, error: erroInsert } = await admin
+    .from("messages")
+    .insert({
+      organization_id: orgId,
+      conversation_id: conversationId as string,
+      channel_session_id: sessao.id,
+      contact_id: contactId as string,
+      direction: "outbound",
+      status: "sent",
+      sent_via: "external_device",
+      type: e.type === "text" ? "text" : e.type,
+      body: e.type === "contact" ? (e.sharedContact?.name ?? e.text) : e.text,
+      external_id: e.externalId,
+      media_url: e.media ? `meta-media:${e.media.id}` : null,
+      media_mime: e.media?.mime ?? null,
+      sent_at: e.sentAt.toISOString(),
+      metadata: {
+        from_business_app: true,
+        ...(e.media ? { meta_media_id: e.media.id, voice: e.media.voice } : {}),
+        ...(e.sharedContact ? { shared_contact: e.sharedContact } : {}),
+      },
+    })
+    .select("id")
+    .maybeSingle();
+
+  if (erroInsert) {
+    if (erroInsert.code === "23505") return { status: "duplicate" };
+    return { status: "failed", reason: `mensagem: ${erroInsert.message}` };
+  }
+
+  await marcarConversaComMensagem(admin, {
+    organizationId: orgId,
+    conversationId: conversationId as string,
+    direction: "outbound",
+    preview: previewOfEcho(e),
+    at: e.sentAt.toISOString(),
+    canal: "meta",
+  });
+
+  const messageId = (inserida as { id: string } | null)?.id ?? "";
+  if (e.media && messageId) {
+    const { error: erroPersistencia } = await admin.rpc("emit_event" as never, {
+      p_event_type: "media.persist_requested",
+      p_entity_kind: "message",
+      p_entity_id: messageId,
+      p_payload: { message_id: messageId, conversation_id: conversationId as string },
+      p_metadata: { source: "meta_webhook_echo" },
+      p_organization_id: orgId,
+    } as never);
+    if (erroPersistencia) {
+      logger.warn("[meta.ingest] eco: emit media.persist_requested falhou", {
+        organization_id: orgId,
+        erro: erroPersistencia.message,
+      });
+    }
+  }
+
+  await pausarIaPorAtendimentoManual(admin, {
+    organizationId: orgId,
+    conversationId: conversationId as string,
+    canal: "meta",
+  });
+
+  await audit({
+    action: "message.sent",
+    organizationId: orgId,
+    resourceType: "message",
+    // Mesma forma do `message.sent` do canal por QR: o id vai no metadata.
+    metadata: {
+      message_id: messageId || null,
+      conversation_id: conversationId as string,
+      type: e.type,
+      external_id: e.externalId,
+      from_business_app: true,
+    },
+  });
+
+  return { status: "ingested", messageId, conversationId: conversationId as string };
 }

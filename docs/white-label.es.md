@@ -1,4 +1,4 @@
-<!-- traduzido-de: docs/white-label.md@e1d374bb48e0 -->
+<!-- traduzido-de: docs/white-label.md@ca7f3c3481e2 -->
 
 [🇧🇷 Português](white-label.md) · [🇺🇸 English](white-label.en.md) · 🇪🇸 Español
 
@@ -165,7 +165,9 @@ Si tu cliente pregunta "¿dónde quedan mis datos?", la instalación dedicada ti
 
 La **Resolución CD/ANPD nº 19/2024** volvió obligatorias las cláusulas contractuales estándar para la **transferencia internacional de datos personales**, con el plazo de adecuación cerrado el **23 de agosto de 2025**.
 
-Todo cliente tuyo que use un CRM extranjero realiza esa transferencia y necesita el artefacto contractual. Alojando en una VPS en Brasil, **no hay transferencia internacional** — y la obligación no se aplica.
+Todo cliente tuyo que use un CRM extranjero realiza esa transferencia y necesita el artefacto contractual. Alojando en una VPS en Brasil, **el CRM en sí no transfiere datos fuera del país** — y, para él, la obligación no se aplica.
+
+⚠️ **La salvedad es la IA, y vale para casi toda instalación.** La frase de arriba solo es completa mientras ningún proveedor de IA extranjero esté activado. La atención automática envía la conversación al proveedor que el cliente conectó (Anthropic, OpenAI, Google, DeepSeek u OpenRouter, todos fuera de Brasil). Jev, cuando el administrador lo activa en IA › Proveedores, envía cada mensaje de los clientes a TypeSafe AI, en Estados Unidos, uno por vez y sin el resto de la conversación, después de borrar CPF, teléfono y correo electrónico. En esos flujos hay transferencia internacional, y las cláusulas estándar valen para ellos. Jev viene desactivado y pide el consentimiento de quien administra antes de enviar nada; la IA de atención, no.
 
 ⚠️ **No lo vendas como "servidor en Brasil = conformidad con la LGPD".** Eso es falso y un abogado lo desmonta en la primera pregunta: la conformidad depende de base legal, finalidad, seguridad y derechos del titular. El argumento correcto y defendible es el de arriba: sin transferencia internacional, no hay exigencia de cláusulas estándar.
 
@@ -200,3 +202,9 @@ Guía completa de instalación: [`hostgator-setup-kit/README.md`](../hostgator-s
 *Este documento existe en tres idiomas, y el requisito que la versión anterior de este pie nombraba fue pagado: las traducciones llevan en la primera línea un sello con el hash del original, y editar `docs/white-label.md` sin volver a sellar reprueba `pnpm test:unit`. Después de traducir, vuelve a sellar con `pnpm exec tsx scripts/selar-traducao.ts --todas`.*
 
 *Los tres README quedaron **fuera** del sello a propósito. Son el archivo más editado del repositorio: con sello, cada arreglo se volvería un PR bloqueado hasta que ~490 líneas fueran retraducidas dos veces — y el desenlace realista de eso no es traducción al día, es alguien volviendo a sellar sin traducir, que es la única manera de que el sello muera. Entran cuando alguien quiera pagar ese coste con los ojos abiertos.*
+
+## Un logo para cada tema
+
+En **Marca**, **Logo** sigue siendo la imagen predeterminada (tema claro y correo electrónico). **Logo para el tema oscuro (opcional)** acepta una segunda imagen PNG o JPG de hasta 512 KB, preparada para fondos oscuros. Aparece sin marco blanco en el menú lateral, la pantalla de acceso de la instalación y la vista previa. Sin la segunda imagen, el logo predeterminado conserva la protección blanca en el tema oscuro. Cada archivo se elimina por separado; quitar el oscuro restaura el comportamiento anterior.
+
+Una organización que sube su propio logo predeterminado deja de heredar la imagen oscura de la instalación, evitando mezclar marcas. Sin logos propios, hereda el par de la instalación. El acceso siempre usa la marca de la instalación. [Compatibilidad y reversión](runbooks/logo-por-tema.md).

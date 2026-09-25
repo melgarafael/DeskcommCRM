@@ -313,4 +313,17 @@ describe("onboarding: a IA escolhida no passo da chave vale para a empresa intei
     expect(r.ok && r.padrao).toBeNull();
     expect(r.ok && r.aviso).toBe("nao_gravou");
   });
+
+  it("a chave do Jev NÃO vira a IA da empresa: ele decide, não conversa", async () => {
+    // O passo responde "qual IA vai atender seus clientes" e grava o padrão da
+    // empresa inteira. O Jev tem chave, mas não escreve: aceito aqui, todo
+    // ponto sem escolha própria passaria a pedir texto a quem só devolve nota.
+    montarBanco();
+
+    const r = await salvarChaveDaIa(formulario({ provider: "typesafe", api_key: "apikey_de_teste_1234567" }));
+
+    expect(r.ok).toBe(false);
+    expect(guardarCredencial).not.toHaveBeenCalled();
+    expect(escritas).toEqual([]);
+  });
 });

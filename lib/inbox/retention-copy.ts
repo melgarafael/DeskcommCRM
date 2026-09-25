@@ -5,6 +5,8 @@
  * assistente foi retida, sem jargão. Módulo puro: testável sem DOM.
  */
 
+import { cidadeDoFuso } from "@/lib/tempo/fusos";
+
 /** Contexto dos knobs efetivos do número — interpola janela/horário na copy. */
 export interface RetentionContext {
   window_start_hour: number;
@@ -37,7 +39,10 @@ export function retentionCopy(
   ctx: RetentionContext,
   t: (texto: string) => string = (texto) => texto,
 ): RetentionCopy {
-  const janela = `${ctx.window_start_hour}h–${ctx.window_end_hour}h${ctx.allow_sunday ? "" : `, ${t("sem domingo")}`}`;
+  // O fuso vai escrito: "22h" sem dizer DE ONDE foi o que escondeu, por meses,
+  // uma janela avaliada em São Paulo numa operação de Manaus. É o fuso que o
+  // motor usou (`fusoDaJanela`), nunca UTC.
+  const janela = `${ctx.window_start_hour}h–${ctx.window_end_hour}h, ${t("horário de")} ${cidadeDoFuso(ctx.timezone)}${ctx.allow_sunday ? "" : `, ${t("sem domingo")}`}`;
   const make = (kind: RetentionKind, description: string): RetentionCopy => ({
     kind,
     title: t(TITLES[kind]),

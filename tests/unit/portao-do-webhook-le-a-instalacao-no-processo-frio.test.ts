@@ -65,7 +65,12 @@ vi.mock("@/lib/supabase/admin", () => ({
           }),
         };
       }
-      return { insert: async () => ({ error: null }) };
+      // A rota lê o id da linha arquivada (`insert().select("id")`) e depois grava
+      // o desfecho nela (`update().eq("id", …)`) — ver `lib/waha/desfecho-do-webhook.ts`.
+      return {
+        insert: () => ({ select: () => ({ maybeSingle: async () => ({ data: { id: "log-1" }, error: null }) }) }),
+        update: () => ({ eq: async () => ({ error: null }) }),
+      };
     },
     // Sessão sem segredo utilizável: o caso real de quem roda WAHA Core.
     rpc: async () => ({ data: null, error: null }),

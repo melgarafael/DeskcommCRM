@@ -19,6 +19,8 @@ export interface RouterMember {
   intent_description: string;
   examples: string[];
   position: number;
+  /** Fluxo de atendimento que começa quando a intenção casa. `null` = só agente. */
+  flow_pointer_id: string | null;
 }
 
 export interface RouterMemberInput {
@@ -26,6 +28,7 @@ export interface RouterMemberInput {
   intent_name: string;
   intent_description: string;
   examples: string[];
+  flow_pointer_id: string | null;
 }
 
 export interface RouterDetail {

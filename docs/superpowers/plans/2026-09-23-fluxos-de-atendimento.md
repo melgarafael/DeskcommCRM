@@ -497,3 +497,35 @@ o roteador escolhendo roteiro, e tirar `fluxos_atendimento` de `MODULOS_AINDA_NA
    pela tela, roteiro criado pela tela, cliente responde pelo webhook, dado aparece na ficha,
    anonimizar pela tela apaga) — entra em `SPECS_PARTE_*` do `e2e.yml`.
 3. Atualizar `docs/testing/user-journey-map.md` e o mapa `docs/architecture/`.
+
+## PR 3 — execução (2026-09-24, branch `feat/fluxos-atendimento-telas`)
+
+| Item | Feito | Onde se prova |
+|---|---|---|
+| 1. interruptor | `/admin/sistema` com a chave; `MODULOS_AINDA_NAO_LIGAVEIS` vazio | `updateModuloDaInstalacao.test.ts`, e2e |
+| 2. tela + editor | lista e editor em `/app/ai/atendimento` (404 com o módulo desligado); paleta por `NOS_DA_SUPERFICIE`; sem gatilho/handoff do follow-up; painel do Início com gatilhos, tentativas e prazo; Fim com "ao concluir" e encadear (sem o próprio); guia reescrito. Porta: entrada do catálogo com `modulo` e SEM `sidebar` (decisão d do doc 48) | `NodePalette.test.tsx`, `EndForm.test.tsx`, `PublishBar.test.tsx`, e2e |
+| 3. ficha e conversa | `GET /contacts/[id]/roteiros` + `RoteirosDoContato` (ficha e painel do inbox), resumo montado dos campos; "Coletando respostas do roteiro" na fila | `roteiros-do-contato.test.ts`, `route.test.ts`, `RoteirosDoContato.test.tsx`, e2e |
+| 4. roteador | intenção aponta um roteiro (commit portado do autor) | — (tela do autor) |
+| 5. PDF LGPD | snapshot e PDF com `custom_fields` | `lgpd-pdf-campos-personalizados.test.ts` |
+| 6. fragmento | `capacidade_nova`, crédito a @vgamkt | `pnpm release:conferir` |
+
+Não feito no PR 3: a trilha legível dos eventos `roteiro_*` na fila (sem rótulo em
+`eventos-legiveis.ts`); o PDF mostra a chave técnica do campo (o rótulo da pergunta mora no
+grafo). A spec e2e reproduz o turno com as funções do motor, sem worker nem modelo.
+
+### Revisão adversarial do #1573 (2026-09-24) — consertado no PR 3
+
+| Achado | Conserto | Prova |
+|---|---|---|
+| B1 porta visível com o módulo desligado | `NavHub.modulosLigados` virou obrigatório (o compilador cobra de todo hub; IA, CRM e Análise passaram a enviar); seletor de roteiro no roteador some com o módulo desligado | `app/app/ai/page-modulo.test.tsx` (NavHub real), `routers/[id]/_client.test.tsx` |
+| B2 vínculo roteador → roteiro descartado | schema aceita `flow_pointer_id`; os dois gravadores inserem a coluna e recusam roteiro de outra empresa ou fora de `atendimento` (422, nada apagado) | `tests/unit/roteador-grava-o-roteiro.test.ts` |
+| espanhol do "ao concluir" | 4 rótulos no dicionário + teste que cobra cada um | `EndForm.test.tsx` |
+| ficha de anonimizado | a rota devolve lista vazia (vale para ficha e conversa) | `contacts/[id]/roteiros/route.test.ts` |
+| PDF LGPD | seção própria com o rótulo da pergunta (ou a chave legível); CPF só na linha do documento | `lgpd-pdf-campos-personalizados.test.ts` |
+| ciclo A → B → A | o publish recusa o encadeamento que volta ao roteiro | `validate-publish.test.ts`, `tests/api/followup-flows.test.ts` |
+
+Ficam para o PR 4: o cache da lista ao duplicar; a aresta roteador → turno no mapa
+`roteiros-de-atendimento`; a leitura repetida em `lib/followup/editar.ts`; o ciclo que um
+ROLLBACK de versão fecharia (o conserto confere só na publicação); o INSERT de
+`ai_router_members.flow_pointer_id` contra Postgres real (a prova do PR 3 é pela rota com
+banco de mentira).

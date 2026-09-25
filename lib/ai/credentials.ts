@@ -9,11 +9,11 @@
 import { byteaToBuffer, decryptKey } from "@/lib/crypto/aes_gcm";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-import type { Provider } from "./provider-validators";
+import type { ProvedorComChave } from "@/lib/ai/pontos/provedores";
 
 export interface LoadedCredential {
   apiKey: string;
-  provider: Provider;
+  provider: ProvedorComChave;
   label: string;
 }
 
@@ -34,7 +34,7 @@ export class CredentialUnavailableError extends Error {
 interface CredentialRow {
   id: string;
   organization_id: string;
-  provider: Provider;
+  provider: ProvedorComChave;
   label: string;
   api_key_encrypted: unknown;
   api_key_iv: unknown;

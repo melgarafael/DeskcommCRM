@@ -594,9 +594,9 @@ create policy "messages_agent_insert_own_conversation"
 | `conversations` | `(organization_id, last_message_at desc nulls last)` | Inbox listing |
 | `conversations` | `(organization_id, last_inbound_at desc) where status='open' and assigned_to is null` | Fila de não-atribuídas |
 | `channel_sessions` | `(last_health_check_at) where status='WORKING'` | Cron `sync-sessions` |
-| `webhook_events_log` | `(status, received_at) where status in ('received','error')` | Cron `process-pending-webhooks` |
+| `webhook_events_log` | `(status, received_at) where status in ('received','error')` | Cron `webhook-replay` (o `process-pending-webhooks` desta spec) |
 
-> ⚠️ **`error` deixou de significar só "falhou, tente de novo" (issue #290).** Desde que a recusa de contrato passou a ser arquivada, uma linha `error` pode ser um corpo que **nunca** vai passar: o formato do fio mudou. Quem implementar o `process-pending-webhooks` descrito aqui precisa distinguir os dois casos pelo `error_message` (as recusas de contrato começam com `contrato_violado:`), senão reprocessa para sempre o que não tem conserto. O cron ainda não existe no código.
+> ⚠️ **`error` deixou de significar só "falhou, tente de novo" (issue #290).** Desde que a recusa de contrato passou a ser arquivada, uma linha `error` pode ser um corpo que **nunca** vai passar: o formato do fio mudou. O cron que reprocessa existe com outro nome — `app/api/v1/cron/webhook-replay` — e distingue os casos pelo começo do `error_message`: só relê linhas `transitoria:` (banco indisponível na ingestão, gravadas por `lib/waha/desfecho-do-webhook.ts`); `contrato_violado:` e `handler:` nunca voltam para a fila.
 
 ---
 
@@ -1056,7 +1056,9 @@ export async function POST(
       error_message: err instanceof Error ? err.message : String(err),
       attempts: 1,
     }).eq("id", logRow!.id);
-    // 200 mesmo em erro: cron `process-pending-webhooks` re-processa
+    // ⚠️ Esboço original. O código real (`lib/waha/desfecho-do-webhook.ts`)
+    // devolve 503 + Retry-After quando a falha é TRANSITÓRIA (o WAHA reentrega),
+    // e 200 só quando tentar de novo não adianta. O cron é `webhook-replay`.
   }
 
   return new Response(null, { status: 200 });
@@ -1776,6 +1778,8 @@ export async function GET(req: NextRequest) {
 ```
 
 ### 10.3 `process-pending-webhooks`
+
+> **Implementado como `app/api/v1/cron/webhook-replay`**, e diferente deste esboço em três pontos: relê só `status='error'` com `error_message` começando por `transitoria:` (nunca `received`, que é o evento ainda em voo, nem recusa de contrato); desiste em 20 tentativas (não 3), porque a rodada é por minuto e o banco pode ficar fora por um reinício inteiro; e ao desistir abre aviso `event_dead` na Central com o título `MENSAGEM_QUE_NAO_ENTROU` (`lib/event-log/aviso-de-evento-morto.ts`). O esboço abaixo fica como registro do desenho.
 
 ```ts
 export async function GET(req: NextRequest) {

@@ -167,6 +167,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // do produtor existir, de propósito — foi o que fez o upload por organização
     // ser só a camada, sem mais uma passada pela casca inteira.
     const marcaDoTenant = {
+      logoDarkUrl: marca.logoDarkUrl ?? null,
       ...(marca.origens.nome === "organizacao" ? { nome: marca.name } : {}),
       ...(marca.origens.logoUrl === "organizacao" && marca.logoUrl !== null
         ? { logoUrl: marca.logoUrl }

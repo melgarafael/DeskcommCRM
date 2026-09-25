@@ -119,6 +119,31 @@ export function useReindexSource() {
   });
 }
 
+export function useReindexAll() {
+  const t = useT();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationKey: ["ai", "knowledge", "sources", "reindex-all"],
+    mutationFn: async () => {
+      const res = await apiClient.post<{
+        data: { total: number; prioridade1: number; prioridade2: number; emitidos: number };
+      }>("/api/v1/ai/knowledge/reindex-all", {});
+      return res.data;
+    },
+    onSuccess: (r) => {
+      toast.success(
+        r.total === 0
+          ? t("Não há material para reindexar.")
+          : t("Vou preparar o que falta e o que mudou; o material sem alteração é pulado."),
+      );
+    },
+    onError: (err) => showApiError(err),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: sourcesQueryKey() });
+    },
+  });
+}
+
 export function useArquivarSource() {
   const t = useT();
   const qc = useQueryClient();

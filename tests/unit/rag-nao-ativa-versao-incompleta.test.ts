@@ -113,7 +113,7 @@ describe("indexarFonte — falha parcial não ativa versão", () => {
   it("grava os 2 trechos: ok + markVersionReady + activateVersion", async () => {
     const resultado = await indexarFonte(FONTE as never, CHAVE as never, {});
 
-    expect(resultado).toEqual({ tipo: "ok", versionId: "v-2", chunks: 2 });
+    expect(resultado).toEqual({ tipo: "ok", versionId: "v-2", chunks: 2, contentHash: expect.any(String) });
     expect(markVersionReady).toHaveBeenCalledWith("v-2", "org-1", 2);
     expect(activateVersion).toHaveBeenCalledWith({
       organizationId: "org-1",

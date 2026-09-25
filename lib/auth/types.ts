@@ -203,5 +203,9 @@ export interface ActiveOrg {
    * banco: `app/layout.tsx` resolve a pilha e o `<PublicEnvScript/>` a injeta em
    * `window.__PUBLIC_ENV__`, de onde `branding()` a lê.
    */
-  marca?: { readonly nome?: string; readonly logoUrl?: string | null };
+  marca?: {
+    readonly nome?: string;
+    readonly logoUrl?: string | null;
+    readonly logoDarkUrl?: string | null;
+  };
 }

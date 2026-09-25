@@ -34,7 +34,7 @@ import { appDaMeta } from "@/lib/channels/meta/app";
 import { lerEnvelopeMeta } from "@/lib/channels/meta/envelope";
 import { parseMetaWebhook, verificationChallenge, verifyMetaSignature } from "@/lib/channels/meta/webhook";
 import { statusUpdate } from "@/lib/channels/meta/status-update";
-import { ingestMetaInbound } from "@/lib/channels/meta/ingest";
+import { ingestMetaEcho, ingestMetaInbound } from "@/lib/channels/meta/ingest";
 import { metaSessionByWebhookToken } from "@/lib/channels/meta/session";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -141,6 +141,24 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
         // 2xx continua (a Meta re-entregaria em loop), mas a falha NÃO fica muda:
         // vai ao log estruturado e ao corpo da resposta.
         console.error("[meta.ingest] inbound não ingerido", {
+          status: r.status,
+          reason: r.status === "failed" ? r.reason : undefined,
+          external_id: e.externalId,
+          phone_number_id: e.phoneNumberId,
+        });
+      }
+      continue;
+    }
+
+    if (e.kind === "outbound_echo") {
+      // Coexistência: resposta dada pelo app WhatsApp Business. Entra na conversa
+      // como saída de humano e pausa a IA — ver `ingestMetaEcho`. Mesma política
+      // de falha da recebida: 2xx sempre, falha no log e no corpo.
+      const r = await ingestMetaEcho(admin, e, { organizationId: session.organizationId });
+      desfechos.push(`eco:${r.status}`);
+      if (r.status === "failed" || r.status === "no_session") {
+        logger.error("[meta.ingest] eco do app não ingerido", {
+          request_id: requestId,
           status: r.status,
           reason: r.status === "failed" ? r.reason : undefined,
           external_id: e.externalId,

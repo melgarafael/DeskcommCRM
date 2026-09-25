@@ -3,7 +3,7 @@
 import { useT } from "@/hooks/i18n/useT";
 import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Plus, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
@@ -13,6 +13,7 @@ import {
   useArquivarSource,
   useEstadoDaChave,
   useKnowledgeSources,
+  useReindexAll,
   useReindexSource,
   type SourceRow,
 } from "@/hooks/ai/useKnowledgeSources";
@@ -22,6 +23,7 @@ import {
   ChaveDeConhecimento,
   type EstadoDaChave,
 } from "@/components/ai/ChaveDeConhecimento";
+import { StatusDaBase } from "@/components/ai/StatusDaBase";
 
 export interface AgenteQueUsa {
   id: string;
@@ -43,6 +45,7 @@ export function AcervoClient({ initialSources, initialChave, agentes }: Props) {
   const { data: sources } = useKnowledgeSources({ initialData: initialSources });
   const { data: chave } = useEstadoDaChave(initialChave);
   const reindex = useReindexSource();
+  const reindexAll = useReindexAll();
   const arquivar = useArquivarSource();
 
   const recarregar = useCallback(() => {
@@ -71,6 +74,7 @@ export function AcervoClient({ initialSources, initialChave, agentes }: Props) {
   return (
     <div className="space-y-5">
       <ChaveDeConhecimento estado={estado} onChaveCadastrada={recarregar} />
+      <StatusDaBase materiais={lista} podeIndexar={estado.pode_indexar} />
 
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-text-muted">
@@ -78,10 +82,26 @@ export function AcervoClient({ initialSources, initialChave, agentes }: Props) {
             ? t("Nenhum material ainda.")
             : `${lista.length} ${lista.length === 1 ? t("material") : t("materiais")} ${t("no acervo.")}`}
         </p>
-        <Button onClick={() => setNovoAberto(true)} data-testid="acervo-adicionar">
-          <Plus className="mr-2 h-4 w-4" aria-hidden />
-          {t("Adicionar material")}
-        </Button>
+        <div className="flex items-center gap-2">
+          {lista.length > 0 ? (
+            <Button
+              variant="outline"
+              onClick={() => reindexAll.mutate()}
+              disabled={reindexAll.isPending || !estado.pode_indexar}
+              data-testid="acervo-reindexar-tudo"
+            >
+              <RefreshCw
+                className={`mr-2 h-4 w-4 ${reindexAll.isPending ? "animate-spin" : ""}`}
+                aria-hidden
+              />
+              {reindexAll.isPending ? t("Preparando…") : t("Preparar tudo de novo")}
+            </Button>
+          ) : null}
+          <Button onClick={() => setNovoAberto(true)} data-testid="acervo-adicionar">
+            <Plus className="mr-2 h-4 w-4" aria-hidden />
+            {t("Adicionar material")}
+          </Button>
+        </div>
       </div>
 
       <NovoMaterialDialog

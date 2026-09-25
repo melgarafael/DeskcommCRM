@@ -54,7 +54,8 @@ export interface McpTurnTools {
 
 export async function buildMcpTurnTools(
   cfg: CrmEdgeConfig,
-  ids: { organizationId: string; jobId: string },
+  /** `contactId`: o contato do turno — ver `contatoDoTurno` em `lib/ai/runtime/tools.ts`. */
+  ids: { organizationId: string; jobId: string; contactId?: string },
   agentConfig: PublishedAgentConfig,
   log: Logger,
   options?: { readOnly: boolean },
@@ -132,6 +133,7 @@ export async function buildMcpTurnTools(
     // tela e o card parado. Quem passava era só o dispatcher antigo.
     pipelineIds: agentConfig.pipelineIds,
     modulosLigados: await modulosLigados(cfg.supabase),
+    ...(ids.contactId ? { contatoDoTurno: ids.contactId } : {}),
   });
 
   return {

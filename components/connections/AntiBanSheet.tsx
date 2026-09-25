@@ -113,7 +113,7 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
           </SheetHeader>
 
           <div className="mt-auto flex justify-end gap-2 border-t border-border px-4 py-3">
-            <Button variant="ghost" onClick={onClose}>
+            <Button variant="ghost" onClick={onClose} data-testid="anti-ban-fechar">
               {t("Fechar")}
             </Button>
             <Button

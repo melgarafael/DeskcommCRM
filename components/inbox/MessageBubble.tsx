@@ -3,13 +3,22 @@
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { format } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
-import { ArrowBendUpLeft, Check, Checks, Robot, WarningOctagon } from "@/lib/ui/icons";
+import { ArrowBendUpLeft, CaretDown, Check, Checks, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
+import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Message } from "@/lib/types/messaging";
 import { CitationButton } from "@/components/ai/CitationButton";
 import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
 import { ContactCard } from "@/components/inbox/media/ContactCard";
+import { LocationCard } from "@/components/inbox/media/LocationCard";
+import { localizacaoDaMensagem } from "@/lib/messaging/localizacao";
 import {
   extractCitations,
   isAiGeneratedMessage,
@@ -33,6 +42,10 @@ interface Props {
    * "Atendente", que é verdadeiro para todo mundo.
    */
   viewerUserId?: string | null;
+  onEditar?: (text: string) => Promise<void>;
+  onApagar?: () => Promise<void>;
+  onOcultar?: () => Promise<void>;
+  onRestaurar?: () => Promise<void>;
 }
 
 function AckIndicator({ status, t }: { status: string; t: (texto: string) => string }) {
@@ -54,7 +67,30 @@ export function MessageBubble({
   onResponder,
   citada,
   viewerUserId,
+  onEditar,
+  onApagar,
+  onOcultar,
+  onRestaurar,
 }: Props) {
+  const [editando, setEditando] = useState(false);
+  const [texto, setTexto] = useState(message.body ?? "");
+  const [apagando, setApagando] = useState(false);
+  const [ocultando, setOcultando] = useState(false);
+  const [ocupado, setOcupado] = useState(false);
+  const salvandoEdicao = useRef(false);
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const abrindoEdicao = useRef(false);
+  const [agora, setAgora] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setAgora(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    if (!editando) return;
+    // O editor aumenta a altura da última bolha; sem rolar o fio, os botões
+    // ficam escondidos atrás da área de resposta até a pessoa usar o mouse.
+    editorRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest", inline: "nearest" });
+  }, [editando]);
   const localeDaData = useLocaleDeData();
   const t = useT();
   const isOutbound = message.direction === "outbound";
@@ -62,6 +98,8 @@ export function MessageBubble({
   const isFailed = message.status === "failed";
   const hasMedia = Boolean(message.media_url || message.media_storage_path);
   const isContact = message.type === "contact";
+  // Pino com coordenadas: o cartão substitui o corpo, que é só o mesmo link em texto.
+  const localizacao = localizacaoDaMensagem(message);
   // Figurinha sem caption: sem moldura de bolha (padrão WhatsApp).
   const isBareSticker = hasMedia && message.type === "sticker" && !message.body;
   // Apagada pelo autor ("apagar para todos"). A linha continua no histórico —
@@ -69,7 +107,16 @@ export function MessageBubble({
   // texto não aparece: mostrá-lo seria expor justamente o que o cliente pediu
   // para tirar do ar.
   const apagada = Boolean(message.revoked_at);
+  const ocultaNoCrm = Boolean(message.metadata?.crm_hidden_at);
   const editada = Boolean(message.edited_at) && !apagada;
+  const enviadaPeloAtendente = isOutbound && ["user", "crm"].includes(message.sent_via)
+    && Boolean(message.external_id) && !apagada
+    && ["sent", "delivered", "read"].includes(message.status);
+  const podeEditar = enviadaPeloAtendente && message.type === "text" && Boolean(message.body)
+    && agora - new Date(message.sent_at).getTime() <= 15 * 60 * 1000;
+  const podeApagar = enviadaPeloAtendente && Boolean(onApagar);
+  const podeOcultar = !isOutbound && !apagada && Boolean(ocultaNoCrm ? onRestaurar : onOcultar);
+  const temMenu = Boolean(onResponder || (podeEditar && onEditar) || podeApagar || podeOcultar);
   const aiGenerated = isAiGeneratedMessage(message.metadata);
   const citations = extractCitations(message.metadata);
   const showCitationButton =
@@ -110,6 +157,18 @@ export function MessageBubble({
     return null;
   })();
 
+  async function salvarEdicao() {
+    const novoTexto = texto.trim();
+    if (!onEditar || !novoTexto || salvandoEdicao.current) return;
+    // Enter e clique podem chegar antes de React atualizar `ocupado`; o ref
+    // impede duas chamadas ao WhatsApp para a mesma edição.
+    salvandoEdicao.current = true;
+    setOcupado(true);
+    try { await onEditar(novoTexto); setEditando(false); }
+    catch { /* O hook mostra o erro; manter o texto para nova tentativa. */ }
+    finally { salvandoEdicao.current = false; setOcupado(false); }
+  }
+
   return (
     <div
       className={cn(
@@ -117,41 +176,6 @@ export function MessageBubble({
         isOutbound ? "justify-end" : "justify-start",
       )}
     >
-      {/*
-        RESPONDER — aparece ao passar o mouse, como no WhatsApp Web.
-        Fica FORA da bolha para não disputar espaço com o texto, e do lado de
-        dentro da conversa (à esquerda no que sai, à direita no que entra), que
-        é onde a mão já está.
-
-        `opacity` e não `hidden`: esconder de verdade faria o layout pular
-        quando o mouse entra. Em telas de toque não há hover — por isso
-        `focus-visible` também revela, e o teclado alcança.
-      */}
-      {onResponder && isOutbound && (
-        <button
-          type="button"
-          onClick={() => onResponder(message)}
-          aria-label={t("Responder a esta mensagem")}
-          className={cn(
-            "rounded-md p-1 text-muted-foreground transition-opacity hover:bg-muted",
-            // VISÍVEL POR PADRÃO, e escondido só onde EXISTE hover.
-            //
-            // A primeira versão era `opacity-0` + `group-hover`, copiando o
-            // WhatsApp Web. No celular isso deixa o botão invisível para
-            // sempre: não há como passar o mouse, e `focus-visible` só chega
-            // por teclado. Ou seja, a função sumia exatamente onde o dono
-            // deste CRM mais atende.
-            //
-            // `@media (hover: hover)` pergunta pelo DISPOSITIVO, não pela
-            // largura: um tablet largo com toque continua mostrando, e um
-            // desktop estreito continua escondendo. Largura não é a pergunta.
-            "opacity-100 [@media(hover:hover)]:opacity-0",
-            "[@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100",
-          )}
-        >
-          <ArrowBendUpLeft size={14} />
-        </button>
-      )}
       <div
         // Identidade, não aparência. O e2e de citação contava bolhas por
         // `[class*='rounded-2xl']`, e qualquer componente novo com a mesma
@@ -159,18 +183,76 @@ export function MessageBubble({
         // fez a spec achar que havia mensagem onde não havia (issue #1318).
         data-testid="message-bubble"
         className={cn(
-          "max-w-[75%] min-w-0 text-sm",
+          "relative max-w-[75%] min-w-0 text-sm",
           isBareSticker
             ? "px-0 py-0"
             : cn(
                 "rounded-2xl px-3 py-2 shadow-sm",
+                temMenu && "pr-8",
                 isOutbound
                   ? "rounded-br-sm bg-primary text-primary-foreground"
                   : "rounded-bl-sm bg-muted text-foreground",
               ),
           isFailed && "border border-destructive",
+          apagada && "opacity-70",
         )}
       >
+        {temMenu && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" aria-label={t("Opções da mensagem")} disabled={ocupado}
+                className={cn(
+                  "absolute right-1 top-1 z-10 rounded-md p-0.5 transition-opacity focus-visible:outline-2 focus-visible:outline-offset-1",
+                  "opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100",
+                  isOutbound ? "text-primary-foreground hover:bg-primary-foreground/15" : "text-muted-foreground hover:bg-background/70",
+                )}>
+                <CaretDown size={16} weight="bold" aria-hidden />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align={isOutbound ? "end" : "start"} sideOffset={4}
+              onCloseAutoFocus={(event) => {
+                if (!abrindoEdicao.current) return;
+                // O Radix devolve o foco à setinha ao fechar o menu. Isso rola o
+                // fio de volta e esconde o Salvar logo depois de abrir o editor.
+                event.preventDefault();
+                abrindoEdicao.current = false;
+                editorRef.current?.querySelector("textarea")?.focus({ preventScroll: true });
+                editorRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest", inline: "nearest" });
+              }}>
+              {onResponder && (
+                <DropdownMenuItem onSelect={() => onResponder(message)}>
+                  <ArrowBendUpLeft size={16} aria-hidden />{t("Responder a esta mensagem")}
+                </DropdownMenuItem>
+              )}
+              {podeEditar && onEditar && (
+                <DropdownMenuItem onSelect={() => {
+                  abrindoEdicao.current = true;
+                  setTexto(message.body ?? "");
+                  setEditando(true);
+                }}>
+                  <PencilSimple size={16} aria-hidden />{t("Editar mensagem")}
+                </DropdownMenuItem>
+              )}
+              {podeApagar && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => setApagando(true)} className="text-destructive focus:text-destructive">
+                    <Trash size={16} aria-hidden />{t("Apagar para todos")}
+                  </DropdownMenuItem>
+                </>
+              )}
+              {podeOcultar && (ocultaNoCrm ? onRestaurar : onOcultar) && (
+                <DropdownMenuItem onSelect={() => {
+                  if (ocultaNoCrm && onRestaurar) void onRestaurar().catch(() => undefined);
+                  else setOcultando(true);
+                }}>
+                  {ocultaNoCrm ? <PencilSimple size={16} aria-hidden /> : <Trash size={16} aria-hidden />}
+                  {t(ocultaNoCrm ? "Restaurar no CRM" : "Ocultar no CRM")}
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
         {/*
           A CITAÇÃO, dentro da bolha e acima do texto — o fio.
 
@@ -199,9 +281,11 @@ export function MessageBubble({
               continuava legível dentro de cada resposta que a citou. O fio
               permanece (a citação some, não a resposta); o conteúdo, não.
             */}
-            <div className={cn("line-clamp-2 wrap-anywhere opacity-70", citada.revoked_at && "italic")}>
+            <div className={cn("line-clamp-2 wrap-anywhere opacity-70", Boolean(citada.revoked_at || citada.metadata?.crm_hidden_at) && "italic")}>
               {citada.revoked_at
                 ? t("Esta mensagem foi apagada")
+                : citada.metadata?.crm_hidden_at
+                ? t("Mensagem ocultada no CRM")
                 : citada.body?.trim() || t("(sem texto)")}
             </div>
           </div>
@@ -215,12 +299,41 @@ export function MessageBubble({
           </div>
         )}
 
-        {apagada ? (
-          // Nem corpo nem mídia: o anexo apagado também sai. Em itálico e
-          // esmaecido porque não é texto de ninguém — é o CRM narrando o que
-          // aconteceu com aquele lugar da conversa.
+        {editando ? (
+          <div ref={editorRef} className="space-y-2">
+            <textarea
+              aria-label={t("Editar mensagem")}
+              value={texto}
+              onChange={(event) => setTexto(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  void salvarEdicao();
+                }
+              }}
+              maxLength={4096}
+              className="min-h-20 w-full rounded-md border border-border bg-background p-2 text-foreground"
+            />
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="ghost" disabled={ocupado} onClick={() => setEditando(false)}>{t("Cancelar")}</Button>
+              <Button size="sm" disabled={ocupado || !texto.trim()} onClick={() => void salvarEdicao()}>{t("Salvar")}</Button>
+            </div>
+          </div>
+        ) : apagada ? (
+          <div className="space-y-1">
+            <p className="italic leading-snug opacity-70">{t("Esta mensagem foi apagada")}</p>
+            {/* O WhatsApp revoga o envio; o CRM conserva o corpo para auditoria
+                interna. Não revelamos texto de uma mensagem apagada pelo cliente. */}
+            {isOutbound && message.body && (
+              <div className="border-t border-current/20 pt-1">
+                <p className="text-[10px] opacity-70">{t("Visível só aqui no CRM")}</p>
+                <p className="whitespace-pre-wrap wrap-anywhere leading-snug">{message.body}</p>
+              </div>
+            )}
+          </div>
+        ) : ocultaNoCrm ? (
           <p className="whitespace-pre-wrap wrap-anywhere italic leading-snug opacity-60">
-            {t("Esta mensagem foi apagada")}
+            {t("Mensagem ocultada no CRM")}
           </p>
         ) : (
           <>
@@ -236,7 +349,9 @@ export function MessageBubble({
               </div>
             )}
 
-            {message.body && !isContact && (
+            {localizacao && <LocationCard localizacao={localizacao} />}
+
+            {message.body && !isContact && !localizacao && (
               <p className="whitespace-pre-wrap wrap-anywhere leading-snug">{message.body}</p>
             )}
           </>
@@ -279,31 +394,42 @@ export function MessageBubble({
           )}
         </div>
       </div>
-      {onResponder && !isOutbound && (
-        <button
-          type="button"
-          onClick={() => onResponder(message)}
-          aria-label={t("Responder a esta mensagem")}
-          className={cn(
-            "rounded-md p-1 text-muted-foreground transition-opacity hover:bg-muted",
-            // VISÍVEL POR PADRÃO, e escondido só onde EXISTE hover.
-            //
-            // A primeira versão era `opacity-0` + `group-hover`, copiando o
-            // WhatsApp Web. No celular isso deixa o botão invisível para
-            // sempre: não há como passar o mouse, e `focus-visible` só chega
-            // por teclado. Ou seja, a função sumia exatamente onde o dono
-            // deste CRM mais atende.
-            //
-            // `@media (hover: hover)` pergunta pelo DISPOSITIVO, não pela
-            // largura: um tablet largo com toque continua mostrando, e um
-            // desktop estreito continua escondendo. Largura não é a pergunta.
-            "opacity-100 [@media(hover:hover)]:opacity-0",
-            "[@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100",
-          )}
-        >
-          <ArrowBendUpLeft size={14} />
-        </button>
-      )}
+      <AlertDialog open={apagando} onOpenChange={setApagando}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Apagar mensagem para todos?")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("O WhatsApp tentará remover esta mensagem também para o cliente.")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={ocupado}>{t("Cancelar")}</AlertDialogCancel>
+            <Button variant="destructive" disabled={ocupado} onClick={async () => {
+              if (!onApagar) return;
+              setOcupado(true);
+              try { await onApagar(); setApagando(false); }
+              catch { /* Mantém a confirmação aberta se o canal recusar. */ }
+              finally { setOcupado(false); }
+            }}>{t("Apagar para todos")}</Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={ocultando} onOpenChange={setOcultando}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Ocultar esta mensagem no CRM?")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("A mensagem continua no WhatsApp do cliente e no registro da empresa. Um gestor pode restaurá-la aqui.")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={ocupado}>{t("Cancelar")}</AlertDialogCancel>
+            <Button variant="destructive" disabled={ocupado} onClick={async () => {
+              if (!onOcultar) return;
+              setOcupado(true);
+              try { await onOcultar(); setOcultando(false); }
+              catch { /* O hook já informa a falha; preservar a confirmação. */ }
+              finally { setOcupado(false); }
+            }}>{t("Ocultar no CRM")}</Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

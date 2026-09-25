@@ -112,3 +112,13 @@ export function fusoUtilizavel(...candidatos: (string | null | undefined)[]): st
   }
   return FUSO_PADRAO;
 }
+
+/**
+ * O fuso dito como gente fala, para a tela: "Manaus" de `America/Manaus`,
+ * "Buenos Aires" de `America/Argentina/Buenos_Aires`. Fuso sem barra volta como
+ * veio (nunca string vazia).
+ */
+export function cidadeDoFuso(timezone: string): string {
+  const ultimo = timezone.split("/").at(-1) ?? timezone;
+  return ultimo.replace(/_/g, " ");
+}

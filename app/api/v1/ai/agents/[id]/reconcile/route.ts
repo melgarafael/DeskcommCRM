@@ -8,9 +8,13 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { publishFirstVersion } from "@/lib/ai/agents/first-publication";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { ehProvedorSuportado } from "@/lib/ai/pontos/provedores";
 const input = z.object({
   channel_id: z.uuid(),
-  provider: z.string().min(1).max(80),
+  // Só quem CONVERSA: o Jev tem chave cadastrável, mas escolhido como cérebro
+  // do agente todo turno morreria. Antes era qualquer texto, barrado só de
+  // raspão (catálogo sem linha e o credential_provider_mismatch da RPC).
+  provider: z.string().min(1).max(80).refine(ehProvedorSuportado),
   model: z.string().min(1).max(200),
   credential_id: z.uuid().nullable(),
 });

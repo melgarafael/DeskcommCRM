@@ -59,6 +59,8 @@ import { MatchReplyNode } from "./nodes/MatchReplyNode";
 import { RepeatNode } from "./nodes/RepeatNode";
 import { ActionNode } from "./nodes/ActionNode";
 import { EndNode } from "./nodes/EndNode";
+import { CollectNode } from "./nodes/CollectNode";
+import { SkillNode } from "./nodes/SkillNode";
 
 const EMPTY_GRAPH: FlowGraph = { nodes: [], edges: [] };
 const DND_MIME = "application/x-followup-node-type";
@@ -74,6 +76,8 @@ const nodeTypes: NodeTypes = {
   repeat: RepeatNode,
   action: ActionNode,
   end: EndNode,
+  collect: CollectNode,
+  skill: SkillNode,
 };
 
 interface Props {
@@ -95,6 +99,11 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
   const [nodes, setNodes, onNodesChange] = useNodesState<RFNode>(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<RFEdge>(initial.edges);
   const [savedGraph, setSavedGraph] = useState<FlowGraph>(initialData.draft_graph ?? EMPTY_GRAPH);
+  // As configurações do GRAFO (palavras-gatilho, teto de tentativas, prazo do
+  // roteiro) não vivem em nó nenhum: sem este estado, salvar o rascunho as
+  // apagava — `fromReactFlow` só conhece nós e arestas.
+  const [settings, setSettings] = useState<FlowGraph["settings"]>(initialData.draft_graph?.settings);
+  const surface = initialData.surface ?? "followup";
   // Continue after the largest persisted suffix. Starting again at 1 makes a
   // newly-created node/edge reuse an existing React Flow key and visually
   // replace a connection in older drafts.
@@ -105,7 +114,10 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
-  const liveGraph = useMemo(() => fromReactFlow(nodes, edges), [nodes, edges]);
+  const liveGraph = useMemo(() => {
+    const base = fromReactFlow(nodes, edges);
+    return settings ? { ...base, settings } : base;
+  }, [nodes, edges, settings]);
   const dirty = useMemo(() => !graphsEqual(liveGraph, savedGraph), [liveGraph, savedGraph]);
 
   const markNodeErrors = useCallback(
@@ -320,7 +332,7 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
         />
       )}
       <div className="flex flex-1 overflow-hidden">
-        <NodePalette onAdd={onPaletteAdd} />
+        <NodePalette onAdd={onPaletteAdd} surface={surface} />
         {/* Abaixo de `lg` a paleta fixa de 224px não cabe do lado do canvas —
             vira um drawer, disparado por este botão flutuante. */}
         <Sheet open={paletteOpen} onOpenChange={setPaletteOpen}>
@@ -328,6 +340,7 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
             <SheetTitle className="sr-only">{t("Adicionar nó")}</SheetTitle>
             <NodePalette
               variant="mobile"
+              surface={surface}
               onAdd={(type) => {
                 onPaletteAdd(type);
                 setPaletteOpen(false);
@@ -406,6 +419,10 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
                 onChange={(patch) => updateNodeData(selectedNode.id, patch)}
                 onDelete={() => deleteNode(selectedNode.id)}
                 ramosLigados={ramosLigadosDoSelecionado}
+                surface={surface}
+                flowId={flowId}
+                settings={settings}
+                onSettingsChange={setSettings}
               />
             </div>
           </aside>

@@ -43,10 +43,13 @@ let autenticacao: { ok: true; signatureVerified: boolean } | { ok: false; reason
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     from: () => ({
-      insert: async (linha: Record<string, unknown>) => {
+      // A rota lê o id da linha arquivada (`insert().select("id")`) e depois grava
+      // o desfecho nela (`update().eq("id", …)`) — ver `lib/waha/desfecho-do-webhook.ts`.
+      insert: (linha: Record<string, unknown>) => {
         arquivados.push(linha);
-        return { error: null };
+        return { select: () => ({ maybeSingle: async () => ({ data: { id: "log-1" }, error: null }) }) };
       },
+      update: () => ({ eq: async () => ({ error: null }) }),
     }),
     rpc: async () => ({ data: "segredo-decifrado-longo", error: null }),
   }),

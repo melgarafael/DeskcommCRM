@@ -4,8 +4,8 @@
  * Centralises model routing so the rest of the codebase only references model
  * strings like `"anthropic/claude-sonnet-4-6"`. Lazy initialisation: if
  * `AI_GATEWAY_API_KEY` (or `ANTHROPIC_API_KEY` as fallback) is missing we
- * deliberately do NOT throw at import time — `isAiGatewayConfigured()` lets
- * callers skip gracefully.
+ * deliberately do NOT throw at import time — `resolveLanguageModel()` returns
+ * null and callers skip gracefully.
  *
  * Anti-pattern guard (CLAUDE.md): we never `import Anthropic from "@anthropic-ai/sdk"`.
  * Only model strings via the gateway-shaped `ai` SDK calls.
@@ -33,18 +33,10 @@ export const DEFAULT_BOT_MODEL: ModelId = "anthropic/claude-sonnet-5";
 export const DEFAULT_CLASSIFIER_MODEL: ModelId = "anthropic/claude-haiku-4-5";
 export const DEFAULT_EMBEDDING_MODEL: ModelId = "openai/text-embedding-3-small";
 
-export function isAiGatewayConfigured(): boolean {
-  return (
-    Boolean(env.AI_GATEWAY_API_KEY) ||
-    Boolean(env.OPENROUTER_API_KEY) ||
-    Boolean(env.ANTHROPIC_API_KEY)
-  );
-}
-
 /**
  * Resolve o modelo de CHAT para algo que o `ai` SDK saiba executar.
  *
- * Existe porque `isAiGatewayConfigured()` e a execução real estavam
+ * Existe porque a checagem de "tem IA" e a execução real estavam
  * desalinhados: a checagem dizia "tem IA" com a `ANTHROPIC_API_KEY` (a única
  * que o install.sh exige), mas quem executava passava o id como STRING, e no
  * AI SDK string com barra é roteada pelo gateway da Vercel — que sem

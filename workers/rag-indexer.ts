@@ -36,6 +36,7 @@
 
 import { embedText, SemChaveDeEmbeddingError } from "@/lib/ai/embed";
 import {
+  MODELO_DE_EMBEDDING,
   resolverChaveDeEmbedding,
   type ChaveDeEmbedding,
 } from "@/lib/ai/embeddings/chave";
@@ -73,7 +74,15 @@ interface FonteRow {
   status: string;
   is_active: boolean;
   source_metadata: Record<string, unknown> | null;
+  /** Hash do conteúdo indexado por último — base do pulo incremental (0409). */
+  content_hash: string | null;
+  last_index_status: string | null;
+  active_kb_version_id: string | null;
 }
+
+/** As colunas de `FonteRow` — um só lugar para as três leituras da fonte. */
+const COLUNAS_DA_FONTE =
+  "id, organization_id, agent_id, source_type, name, status, is_active, source_metadata, content_hash, last_index_status, active_kb_version_id";
 
 /** Um pedaço pronto para virar vetor. */
 interface Pedaco {
@@ -82,7 +91,7 @@ interface Pedaco {
 }
 
 type Resultado =
-  | { tipo: "ok"; versionId: string; chunks: number }
+  | { tipo: "ok"; versionId: string; chunks: number; contentHash: string }
   | { tipo: "pulado"; motivo: string }
   | { tipo: "erro"; detalhe: string }
   | { tipo: "sem_chave" };
@@ -98,7 +107,7 @@ async function carregarFonte(
   const admin = createAdminClient();
   const { data } = await admin
     .from("ai_knowledge_sources")
-    .select("id, organization_id, agent_id, source_type, name, status, is_active, source_metadata")
+    .select(COLUNAS_DA_FONTE)
     .eq("id", sourceId)
     .eq("organization_id", organizationId)
     .maybeSingle();
@@ -371,6 +380,27 @@ export async function indexarFonte(
     return { tipo: "pulado", motivo: "sem_conteudo_para_indexar" };
   }
 
+  // ─── Pulo incremental ──────────────────────────────────────────────────────
+  // Se o conteúdo NÃO mudou, já está `success` e a versão ativa foi indexada com
+  // o MESMO modelo de embedding, não há nada a fazer — e "Preparar tudo" deixa de
+  // reembedar o que não mudou. Trocar de modelo cai fora da condição e reindexa.
+  const hashDoConteudo = computeContentHash(pedacos.map((p) => p.content).join("\n---\n"));
+  if (
+    fonte.content_hash === hashDoConteudo &&
+    fonte.last_index_status === "success" &&
+    fonte.active_kb_version_id !== null
+  ) {
+    const { data: versaoAtiva } = await createAdminClient()
+      .from("ai_knowledge_versions")
+      .select("embedding_model")
+      .eq("id", fonte.active_kb_version_id)
+      .eq("organization_id", fonte.organization_id)
+      .maybeSingle();
+    if ((versaoAtiva as { embedding_model?: string } | null)?.embedding_model === MODELO_DE_EMBEDDING) {
+      return { tipo: "pulado", motivo: "sem_mudanca" };
+    }
+  }
+
   const { versionId, versionNumber } = await createKnowledgeVersion({
     organizationId: fonte.organization_id,
     knowledgeSourceId: fonte.id,
@@ -454,7 +484,7 @@ export async function indexarFonte(
     versionId,
   });
 
-  return { tipo: "ok", versionId, chunks: gravados };
+  return { tipo: "ok", versionId, chunks: gravados, contentHash: hashDoConteudo };
 }
 
 // ---------------------------------------------------------------------------
@@ -499,7 +529,7 @@ async function garantirFonteDeCatalogo(organizationId: string): Promise<FonteRow
 
   const { data: existente } = await admin
     .from("ai_knowledge_sources")
-    .select("id, organization_id, agent_id, source_type, name, status, is_active, source_metadata")
+    .select(COLUNAS_DA_FONTE)
     .eq("organization_id", organizationId)
     .eq("source_type", "catalogo")
     .eq("is_active", true)
@@ -518,7 +548,7 @@ async function garantirFonteDeCatalogo(organizationId: string): Promise<FonteRow
       ingested_at: new Date().toISOString(),
       source_metadata: { criada_automaticamente: true, origem: "nuvemshop" },
     })
-    .select("id, organization_id, agent_id, source_type, name, status, is_active, source_metadata")
+    .select(COLUNAS_DA_FONTE)
     .single();
 
   if (error) {
@@ -595,6 +625,7 @@ export async function processRagIndexer(row: EventRow): Promise<HandlerResult> {
         last_index_error: null,
         last_indexed_at: new Date().toISOString(),
         chunks_count: resultado.chunks,
+        content_hash: resultado.contentHash,
       });
       return {
         consumer_key: consumerKey,
@@ -604,8 +635,12 @@ export async function processRagIndexer(row: EventRow): Promise<HandlerResult> {
     }
 
     if (resultado.tipo === "pulado") {
-      // Não é falha: limpar o `indexando` para a tela não ficar girando.
-      await marcarFonte(row.organization_id, fonte.id, { last_index_status: null });
+      // Não é falha. `sem_mudanca` RESTAURA o `success` (o material já estava
+      // pronto e continua pronto — limpar para null o faria parecer "nunca
+      // indexado"); os demais pulos limpam o `indexando` para a tela não girar.
+      await marcarFonte(row.organization_id, fonte.id, {
+        last_index_status: resultado.motivo === "sem_mudanca" ? "success" : null,
+      });
       return { consumer_key: consumerKey, status: "skipped", detail: resultado.motivo };
     }
 

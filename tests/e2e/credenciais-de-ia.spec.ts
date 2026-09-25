@@ -20,7 +20,7 @@ test.describe("Chaves de acesso à IA", () => {
 
     // O diálogo ajuda antes de pedir: diz quando usar e onde pegar a chave.
     await expect(page.getByText(/padrão recomendado para conversar/)).toBeVisible();
-    await expect(dialog.getByRole("link", { name: /pegar chave em/i })).toHaveAttribute(
+    await expect(dialog.getByRole("link", { name: "Onde pegar a chave" })).toHaveAttribute(
       "href",
       /console\.anthropic\.com/,
     );

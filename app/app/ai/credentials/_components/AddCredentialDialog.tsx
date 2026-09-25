@@ -27,20 +27,18 @@ import {
 } from "@/components/ui/select";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
-import {
-  credentialsListQueryKey,
-  type CredentialRow,
-  type Provider,
-} from "@/hooks/ai/useCredentials";
-import { IDS_DE_PROVEDOR, PROVEDORES } from "@/lib/ai/pontos/provedores";
+import { credentialsListQueryKey, type CredentialRow } from "@/hooks/ai/useCredentials";
+import { IDS_COM_CHAVE, PROVEDORES_COM_CHAVE, type ProvedorComChave } from "@/lib/ai/pontos/provedores";
 import { descreverErroDeValidacao } from "@/lib/ai/credenciais/erro-de-validacao";
 import { useT } from "@/hooks/i18n/useT";
 
 const formSchema = z.object({
-  // Derivado da lista única (`lib/ai/pontos/provedores.ts`), como a rota.
-  provider: z.enum(IDS_DE_PROVEDOR),
-  label: z.string().trim().min(1, "Obrigatório").max(80),
-  api_key: z.string().trim().min(8, "API key muito curta").max(2048),
+  // Derivado das listas (`lib/ai/pontos/provedores.ts`), como a rota.
+  provider: z.enum(IDS_COM_CHAVE),
+  // Opcional: o leigo cola só a chave. Em branco, o nome vira o do provedor
+  // (ver `onSubmit`) — o banco exige um, e a pessoa não precisa inventá-lo.
+  label: z.string().trim().max(80),
+  api_key: z.string().trim().min(8, "Chave muito curta").max(2048),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -52,21 +50,25 @@ interface CreateResponse {
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** O cartão do Jev abre o diálogo já nele; a tela de Credenciais, na Anthropic. */
+  providerInicial?: ProvedorComChave;
+  /** Chamado depois de gravar, para quem abriu o diálogo fora de Credenciais reler o que mostra. */
+  aoSalvar?: () => void;
 }
 
-export function AddCredentialDialog({ open, onOpenChange }: Props) {
+export function AddCredentialDialog({ open, onOpenChange, providerInicial = "anthropic", aoSalvar }: Props) {
   const t = useT();
   const router = useRouter();
   const qc = useQueryClient();
-  const [provider, setProvider] = useState<Provider>("anthropic");
+  const [provider, setProvider] = useState<ProvedorComChave>(providerInicial);
   const [label, setLabel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<keyof FormValues, string>>>({});
-  const provedor = PROVEDORES.find((p) => p.id === provider) ?? PROVEDORES[0];
+  const provedor = PROVEDORES_COM_CHAVE.find((p) => p.id === provider) ?? PROVEDORES_COM_CHAVE[0];
 
   const reset = () => {
-    setProvider("anthropic");
+    setProvider(providerInicial);
     setLabel("");
     setApiKey("");
     setErrors({});
@@ -90,14 +92,15 @@ export function AddCredentialDialog({ open, onOpenChange }: Props) {
     setSubmitting(true);
     const validatingToast = toast.loading(t("Credencial salva. Validando…"));
     try {
-      const res = await apiClient.post<CreateResponse>(
-        "/api/v1/ai/credentials",
-        parsed.data,
-      );
+      const res = await apiClient.post<CreateResponse>("/api/v1/ai/credentials", {
+        ...parsed.data,
+        label: parsed.data.label || provedor.rotulo,
+      });
       toast.dismiss(validatingToast);
       toast.success(t("Credencial salva. Validação em segundo plano."));
       reset();
       onOpenChange(false);
+      aoSalvar?.();
 
       // Poll uma vez após ~3s para refletir validated_at no card.
       setTimeout(async () => {
@@ -109,7 +112,7 @@ export function AddCredentialDialog({ open, onOpenChange }: Props) {
             `${t("Validada")} — ${justCreated.models_available.length} ${t("modelos disponíveis.")}`,
           );
         } else if (justCreated?.validation_error) {
-          const erro = descreverErroDeValidacao(justCreated.validation_error);
+          const erro = descreverErroDeValidacao(justCreated.validation_error, justCreated.provider);
           toast.error(
             erro.generico
               ? `${t("Falha na validação")} (${justCreated.validation_error}).`
@@ -140,18 +143,18 @@ export function AddCredentialDialog({ open, onOpenChange }: Props) {
         <DialogHeader>
           <DialogTitle>{t("Adicionar credencial")}</DialogTitle>
           <DialogDescription>
-            {t("A chave é cifrada (AES-GCM) antes de gravar e nunca é retornada em texto claro.")}
+            {t("A chave é guardada cifrada. Depois de salva, só os quatro últimos caracteres aparecem na tela.")}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="cred-provider">{t("Provedor")}</Label>
-            <Select value={provider} onValueChange={(v) => setProvider(v as Provider)}>
+            <Select value={provider} onValueChange={(v) => setProvider(v as ProvedorComChave)}>
               <SelectTrigger id="cred-provider">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {PROVEDORES.map((p) => (
+                {PROVEDORES_COM_CHAVE.map((p) => (
                   <SelectItem key={p.id} value={p.id}>
                     {p.rotulo}
                   </SelectItem>
@@ -170,23 +173,22 @@ export function AddCredentialDialog({ open, onOpenChange }: Props) {
               id="cred-label"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
-              placeholder={t("Ex: Produção")}
+              placeholder={t("Opcional — ex.: Chave da clínica")}
               maxLength={80}
-              required
             />
             {errors.label && <p className="text-xs text-destructive">{errors.label}</p>}
           </div>
 
           <div className="space-y-2">
             <div className="flex items-baseline justify-between">
-              <Label htmlFor="cred-key">{t("API key")}</Label>
+              <Label htmlFor="cred-key">{t("Chave")}</Label>
               <a
                 className="text-xs underline underline-offset-4"
                 href={provedor.ondePegarAChave}
                 target="_blank"
                 rel="noreferrer"
               >
-                {t("Pegar chave em")} {provedor.rotulo}
+                {t("Onde pegar a chave")}
               </a>
             </div>
             <Input

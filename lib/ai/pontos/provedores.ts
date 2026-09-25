@@ -20,6 +20,9 @@
  * As duas metades precisam concordar, e é justamente esse tipo de par que este
  * repo já viu divergir em silêncio (catálogo × preço). Por isso
  * `tests/unit/provedores-x-registry.test.ts` casa uma com a outra.
+ *
+ * `PROVEDORES` é só quem ESCREVE texto. Provedor que só decide (o Jev) mora em
+ * `PROVEDORES_DE_DECISAO`, no fim deste arquivo — e o porquê está lá.
  */
 
 /** Como a chave daquele provedor é validada e o que a tela precisa pedir. */
@@ -93,6 +96,16 @@ export const PROVEDORES = [
     ondePegarAChave: "https://platform.deepseek.com/api_keys",
     prefixoDaChave: "sk-…",
   },
+  {
+    id: "requesty",
+    rotulo: "Requesty",
+    quandoUsar:
+      "Uma chave só para centenas de modelos de vários fabricantes, com a opção de manter o tráfego na Europa. Bom para comparar modelos sem abrir conta em cada provedor.",
+    aceitaEndpointProprio: true,
+    catalogoSincronizavel: true,
+    ondePegarAChave: "https://app.requesty.ai/api-keys",
+    prefixoDaChave: "rqsty-…",
+  },
 ] as const satisfies readonly ProvedorSuportado[];
 // `as const satisfies` e não anotação de tipo: a anotação apagaria os literais
 // e `Provider` viraria `string`, deixando o compilador aceitar qualquer texto
@@ -118,4 +131,62 @@ export const PROVEDOR_POR_ID: ReadonlyMap<string, ProvedorSuportado> = new Map(
 
 export function ehProvedorSuportado(id: string): boolean {
   return PROVEDOR_POR_ID.has(id);
+}
+
+/**
+ * OS PROVEDORES QUE TÊM CHAVE MAS NÃO CONVERSAM — lista IRMÃ, não um campo.
+ *
+ * O Jev devolve decisão tipada (nota, escolha, sim/não), nunca texto. Se ele
+ * entrasse em `PROVEDORES`, os doze consumidores de "quem escreve" (seletor do
+ * agente, "Qual você contratou" do onboarding, Modelo padrão da empresa,
+ * seletor de cada ponto) o ofereceriam como cérebro do atendimento, e todo
+ * turno morreria em `LlmProviderUnknownError`.
+ *
+ * Por isso a separação é por LISTA e não por um campo `natureza` na lista
+ * única: um consumidor NOVO de `PROVEDORES` simplesmente não vê o Jev, que é o
+ * lado seguro. Quem precisa dele — só as superfícies de CHAVE — pede a união
+ * explicitamente, e `tests/unit/provedores-de-decisao-catraca.test.ts` cobra
+ * que ninguém mais a peça.
+ */
+export const PROVEDORES_DE_DECISAO = [
+  {
+    id: "typesafe",
+    rotulo: "Jev (TypeSafe AI)",
+    quandoUsar:
+      "Não conversa com o cliente: toma decisões rápidas e baratas — como perceber se o cliente está irritado — geralmente em menos de um segundo. Trabalha junto com a sua IA principal.",
+    aceitaEndpointProprio: false,
+    catalogoSincronizavel: false,
+    ondePegarAChave: "https://console.typesafe.ai/keys",
+    prefixoDaChave: "apikey_…",
+  },
+] as const satisfies readonly ProvedorSuportado[];
+
+export const IDS_DE_PROVEDOR_DE_DECISAO = PROVEDORES_DE_DECISAO.map(
+  (p) => p.id,
+) as unknown as readonly [
+  (typeof PROVEDORES_DE_DECISAO)[number]["id"],
+  ...(typeof PROVEDORES_DE_DECISAO)[number]["id"][],
+];
+
+/** Tudo o que tem chave cadastrável: a tela de Credenciais e a rota dela. */
+export const PROVEDORES_COM_CHAVE = [...PROVEDORES, ...PROVEDORES_DE_DECISAO] as const;
+
+export type ProvedorComChave = (typeof PROVEDORES_COM_CHAVE)[number]["id"];
+
+export const IDS_COM_CHAVE = PROVEDORES_COM_CHAVE.map((p) => p.id) as unknown as readonly [
+  ProvedorComChave,
+  ...ProvedorComChave[],
+];
+
+export function ehProvedorDeDecisao(id: string): boolean {
+  return (IDS_DE_PROVEDOR_DE_DECISAO as readonly string[]).includes(id);
+}
+
+/**
+ * O nome de gente de qualquer provedor que aparece numa execução, inclusive o
+ * Jev. Devolve só o rótulo, e não a lista: quem precisa NOMEAR (a tela de
+ * Execuções) não pede a união, e a catraca continua valendo só para CHAVE.
+ */
+export function rotuloDoProvedor(id: string): string | undefined {
+  return PROVEDORES_COM_CHAVE.find((p) => p.id === id)?.rotulo;
 }

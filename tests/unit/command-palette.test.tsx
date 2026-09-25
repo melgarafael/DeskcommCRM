@@ -59,6 +59,33 @@ describe("CommandPalette", () => {
     expect(screen.getByRole("option", { name: /Radar/ })).toBeTruthy();
   });
 
+  it("acha o Jev pelo nome, embora ele não tenha tela própria", async () => {
+    const user = userEvent.setup();
+    abrir();
+    // O cartão dele mora em Provedores; sem o nome na descrição, quem ouviu
+    // falar do Jev digitava "jev" e não achava nada.
+    await user.type(screen.getByRole("combobox"), "jev");
+    const opcao = screen.getByRole("option", { name: /Provedores/ });
+    // E VÊ o nome: a descrição longa cortava antes do "Jev" (medido em campo).
+    const descricao = opcao.querySelector("p")!.textContent!;
+    expect(descricao.indexOf("Jev"), descricao).toBeGreaterThanOrEqual(0);
+    expect(descricao.indexOf("Jev"), "o Jev tem de vir no começo").toBeLessThan(20);
+  });
+
+  it("o texto de apoio do item destacado usa a cor de frente do destaque, não o cinza", async () => {
+    const user = userEvent.setup();
+    abrir();
+    await user.type(screen.getByRole("combobox"), "jev");
+    const destacada = screen.getByRole("option", { selected: true });
+    // Cinza sobre o verde do destaque dava 1,2:1. Sem opacidade: o piso de
+    // 4,5:1 de lib/branding/contraste.ts só vale para a cor de frente INTEIRA.
+    for (const apoio of [destacada.querySelector("p")!, destacada.querySelector("span.uppercase")!]) {
+      expect(apoio.classList).toContain("text-accent-foreground");
+      expect(apoio.className).not.toMatch(/text-accent-foreground\//);
+      expect(apoio.className).not.toContain("text-muted-foreground");
+    }
+  });
+
   it("respeita o papel", async () => {
     comoPapel("agent");
     const user = userEvent.setup();
@@ -96,5 +123,27 @@ describe("CommandPalette", () => {
     await user.type(screen.getByRole("combobox"), "zzzzzz");
     expect(screen.queryAllByRole("option")).toHaveLength(0);
     expect(screen.getByText(/Nada encontrado/i)).toBeTruthy();
+  });
+
+  it("permite filtrar por categorias através dos botões", async () => {
+    const user = userEvent.setup();
+    abrir();
+    const btnAtendimento = screen.getByRole("button", { name: /Atendimento/i });
+    expect(btnAtendimento).toBeTruthy();
+    await user.click(btnAtendimento);
+    // Ao filtrar por Atendimento, itens de CRM ou Funcionários não devem aparecer
+    expect(screen.getByRole("option", { name: /Inbox/ })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: /Contatos/ })).toBeNull();
+  });
+
+  it("no catálogo, abre em Atendimento e a seta segue a ordem da tela", async () => {
+    const user = userEvent.setup();
+    abrir();
+    // O catálogo começa por Prospecção (CRM): agrupar pela 1ª aparição punha
+    // CRM no topo, e a seta andava pela lista plana, pulando de seção.
+    const opcoes = screen.getAllByRole("option");
+    expect(opcoes[0]?.getAttribute("data-href")).toBe("/app/inbox");
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(push).toHaveBeenCalledWith(opcoes[1]?.getAttribute("data-href"));
   });
 });

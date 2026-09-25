@@ -27,6 +27,8 @@ export interface AtendimentoConfig {
   visibility_mode: VisibilityMode;
   /** `null` = nunca devolve sozinho (o padrão do produto). */
   handoff_return_after_minutes: number | null;
+  /** "A conversa fica com quem atendeu" — desligado é o padrão do produto. */
+  conversation_stays_with_attendant: boolean;
 }
 
 const MODO_COPY: Record<RoutingMode, { titulo: string; corpo: string }> = {
@@ -289,6 +291,39 @@ export function AtendimentoForm({ initial }: { initial: AtendimentoConfig }) {
             </p>
           </div>
         ) : null}
+      </Card>
+
+      <Card className="space-y-4 p-4" data-testid="conversa-fica-com-quem-atendeu">
+        <div>
+          <h2 className="text-sm font-semibold">
+            {t("Quando alguém responde, a conversa fica com essa pessoa?")}
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Desligado, vale a regra de sempre: responder pela tela cala a IA por alguns minutos, e a conversa encerrada que recebe mensagem nova volta para a fila.",
+            )}
+          </p>
+        </div>
+        <label className="flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            data-testid="fica-com-quem-atendeu"
+            checked={form.conversation_stays_with_attendant}
+            disabled={isPending}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, conversation_stays_with_attendant: e.target.checked }))
+            }
+            className="mt-1 h-4 w-4 shrink-0 accent-primary"
+          />
+          <span className="space-y-1">
+            <span className="block text-sm font-medium">{t("A conversa fica com quem atendeu")}</span>
+            <span className="block text-xs text-muted-foreground">
+              {t(
+                "Responder pelo Inbox numa conversa sem dono passa a assumi-la, e a IA fica calada até alguém devolver. Quando o cliente escreve numa conversa encerrada, ela volta direto para o último atendente, sem passar pela distribuição, se ele ainda faz parte da equipe.",
+              )}
+            </span>
+          </span>
+        </label>
       </Card>
 
       <div className="flex items-center gap-3">

@@ -22,6 +22,8 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { ehProvedorSuportado } from "@/lib/ai/pontos/provedores";
+
 /** Um modelo oferecível, já com o provedor que precisa viajar junto dele. */
 export interface ClassifierModelOption {
   provider: string;
@@ -55,7 +57,10 @@ export async function listClassifierModels(
 
   const origemPorProvider = new Map<string, "org" | "plataforma">();
   for (const c of (creds ?? []) as Array<{ provider: string }>) {
-    origemPorProvider.set(c.provider, "org");
+    // Só quem CONVERSA classifica. A chave do Jev (que só decide) entraria na
+    // consulta ao catálogo, e uma linha dele em `ai_models` viraria opção de
+    // classificador — um modelo que o runtime do agente nem sabe instanciar.
+    if (ehProvedorSuportado(c.provider)) origemPorProvider.set(c.provider, "org");
   }
   if (platformKeys.anthropic && !origemPorProvider.has("anthropic")) {
     origemPorProvider.set("anthropic", "plataforma");

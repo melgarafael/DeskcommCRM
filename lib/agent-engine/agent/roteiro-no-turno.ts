@@ -65,6 +65,7 @@ export type ValidarResposta = (args: {
     type?: PerguntaDoFluxo['type'];
     options?: string[] | undefined;
   }[];
+  esgotados?: readonly PerguntaDoFluxo[];
   mensagens: readonly MensagemDoContexto[];
   textoAtual?: string | null;
   perguntaAtual?: string | null;
@@ -226,11 +227,24 @@ export async function prepararRoteiroDoTurno(
         : [],
     );
 
+    // Campos ENCERRADOS por não resposta (teto de tentativas) também vão: se a
+    // mensagem agora os informa, o valor é gravado mesmo com a pergunta fechada
+    // — antes, a resposta tardia era descartada e o dado se perdia (medido pelo
+    // autor: CPF informado depois de a pergunta esgotar caiu no vazio).
+    const esgotados: PerguntaDoFluxo[] = atual.situacao.esgotadas.map((n) => ({
+      key: n.config.key,
+      label: n.config.label,
+      type: n.config.type,
+      ...(n.config.options !== undefined ? { options: n.config.options } : {}),
+      ...(n.config.question !== undefined ? { question: n.config.question } : {}),
+    }));
+
     let validacoes: Array<{ campo: string; valor: string }> | undefined;
-    if (perguntas.length > 0 || preenchidos.length > 0) {
+    if (perguntas.length > 0 || preenchidos.length > 0 || esgotados.length > 0) {
       const leitura = await deps.validar({
         perguntas,
         preenchidos,
+        esgotados,
         mensagens: t.mensagens,
         textoAtual: texto,
         perguntaAtual,

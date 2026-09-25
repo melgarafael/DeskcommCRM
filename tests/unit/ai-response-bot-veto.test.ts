@@ -23,7 +23,6 @@ vi.mock("@/lib/ai/gateway", () => ({
   DEFAULT_BOT_MODEL: "anthropic/claude-sonnet-4-6",
   gatewayConfig: {},
   gatewayHeaders: () => ({}),
-  isAiGatewayConfigured: () => true,
   isEmbeddingProviderConfigured: () => false,
 }));
 

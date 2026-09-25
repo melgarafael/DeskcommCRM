@@ -24,6 +24,7 @@
  * saber o que está guardando.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
+import type { Localizacao } from "@/lib/messaging/localizacao";
 
 /** Assinatura HMAC-SHA256 no header `X-Zernio-Signature`. */
 export function verifyZernioSignature(
@@ -83,6 +84,11 @@ export interface ZernioInboundMessage {
    * diz*) — quem interpreta é `lib/leads/atribuicao-de-anuncio.ts`.
    */
   referral: unknown;
+  /**
+   * Coordenadas do pino, quando a mensagem é uma localização. O webhook NÃO as
+   * traz — quem preenche é a ingestão, pela API (`./localizacao.ts`).
+   */
+  location?: Localizacao | null;
 }
 
 export interface ZernioIdentity {

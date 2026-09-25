@@ -82,6 +82,7 @@ export function PublishBar({
   const disable = useDisableFollowupFlow(flowId);
   const rollback = useRollbackFollowupFlow(flowId);
   const handoffPolicy = useUpdateHandoffPolicy(flowId);
+  const deRoteiro = flow.surface === "atendimento";
 
   const onSave = () => {
     save.mutate(graph, { onSuccess: () => onSaved(graph) });
@@ -146,20 +147,26 @@ export function PublishBar({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <TriggerConfigControl flowId={flowId} triggerConfig={flow.trigger_config} />
+        {/* O roteiro de atendimento começa por palavra-gatilho ou roteador (no
+            Início do grafo) e encerra quando um humano assume (0397): o gatilho
+            de relógio e a política de handoff do follow-up não valem para ele —
+            na prova do #1130 esta barra aparecia igual e confundia. */}
+        {!deRoteiro && <TriggerConfigControl flowId={flowId} triggerConfig={flow.trigger_config} />}
 
-        <Select value={flow.handoff_policy} onValueChange={(v) => handoffPolicy.mutate(v as FollowupFlowDetailRow["handoff_policy"])}>
-          <SelectTrigger className="w-56" aria-label={t("Política de handoff")}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {(Object.keys(HANDOFF_LABEL) as Array<keyof typeof HANDOFF_LABEL>).map((k) => (
-              <SelectItem key={k} value={k}>
-                {t(HANDOFF_LABEL[k])}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {!deRoteiro && (
+          <Select value={flow.handoff_policy} onValueChange={(v) => handoffPolicy.mutate(v as FollowupFlowDetailRow["handoff_policy"])}>
+            <SelectTrigger className="w-56" aria-label={t("Política de handoff")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(HANDOFF_LABEL) as Array<keyof typeof HANDOFF_LABEL>).map((k) => (
+                <SelectItem key={k} value={k}>
+                  {t(HANDOFF_LABEL[k])}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         <Button type="button" variant="secondary" size="sm" disabled={!dirty || busy} onClick={onSave}>
           {save.isPending ? t("Salvando…") : t("Salvar")}
@@ -240,7 +247,12 @@ export function PublishBar({
             </AlertDialog>
           </>
         ) : (
-          <DeleteFollowupFlowButton flowId={flowId} flowName={flow.name} redirectToList />
+          <DeleteFollowupFlowButton
+            flowId={flowId}
+            flowName={flow.name}
+            redirectToList
+            listHref={deRoteiro ? "/app/ai/atendimento" : "/app/ai/followups"}
+          />
         )}
       </div>
     </div>

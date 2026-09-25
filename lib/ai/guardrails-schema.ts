@@ -126,6 +126,16 @@ export const agentConfigSchema = z.object({
   // sessão rejeita a configuração.
   voice_speed: z.number().min(0.25).max(1.5).default(0.85),
   voice_model: agentVoiceModelSchema.default("gpt-realtime"),
+  /**
+   * Aceita os comandos de controle `#on`/`#off` enviados pelo CELULAR do
+   * operador (C-076)? `false` (default do produto) = o ingest NÃO reconhece os
+   * comandos; qualquer mensagem do celular continua pausando a IA normalmente.
+   *
+   * O default é `false` de propósito: um comando digitado no chat do CLIENTE é
+   * uma decisão de produto com efeito visível (o cliente pode ver a mensagem),
+   * então não se liga por migration — se liga na tela do agente.
+   */
+  aceita_comandos_celular: z.boolean().default(false),
 });
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 
@@ -139,11 +149,34 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
   voice: "marin",
   voice_speed: 0.85,
   voice_model: "gpt-realtime",
+  aceita_comandos_celular: false,
 };
 
 // ---------------------------------------------------------------------------
 // PATCH / CREATE schemas
 // ---------------------------------------------------------------------------
+
+// Parcial SEM defaults. No Zod 4, `.partial()` mantém o `.default()` de cada
+// campo: `agentConfigSchema.partial().parse({ rag_top_k: 10 })` devolve os DEZ
+// campos, e a junção da rota (`{ ...atual, ...patch.config }`) regravava os
+// ajustes que o cliente nem mandou. O cartão "Comandos pelo celular" manda uma
+// chave só e zerava temperatura/RAG. Todo campo com default entra aqui — o teste
+// `patch-de-config-grava-so-o-que-veio` reprova o que ficar de fora.
+const cfg = agentConfigSchema.shape;
+export const agentConfigPatchSchema = agentConfigSchema
+  .extend({
+    temperature: cfg.temperature.removeDefault(),
+    max_tokens: cfg.max_tokens.removeDefault(),
+    context_message_window: cfg.context_message_window.removeDefault(),
+    rag_top_k: cfg.rag_top_k.removeDefault(),
+    rag_similarity_threshold: cfg.rag_similarity_threshold.removeDefault(),
+    confidence_threshold: cfg.confidence_threshold.removeDefault(),
+    voice: cfg.voice.removeDefault(),
+    voice_speed: cfg.voice_speed.removeDefault(),
+    voice_model: cfg.voice_model.removeDefault(),
+    aceita_comandos_celular: cfg.aceita_comandos_celular.removeDefault(),
+  })
+  .partial();
 
 export const agentPatchSchema = z
   .object({
@@ -154,7 +187,7 @@ export const agentPatchSchema = z
     is_active: z.boolean().optional(),
     model: agentModelSchema.optional(),
     system_prompt: z.string().min(20).max(10000).optional(),
-    config: agentConfigSchema.partial().optional(),
+    config: agentConfigPatchSchema.optional(),
     guardrails: guardrailsSchema.optional(),
   })
   .strict();

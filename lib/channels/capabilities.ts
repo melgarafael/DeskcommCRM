@@ -29,6 +29,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     voiceNote: "server-convert",
     groups: "full",
     costPerMessage: false,
+    alteraMensagemEnviada: true,
   },
   // Hetero-restrição: não me banem, mas a Meta me proíbe e me cobra.
   meta_cloud: {
@@ -42,6 +43,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     voiceNote: "opus-only",
     groups: "limited",
     costPerMessage: true,
+    alteraMensagemEnviada: false,
   },
   // Mesma hetero-restrição do canal oficial, por baixo: é um BSP: a WABA é da
   // Meta, os templates são aprovados pela Meta e a janela de 24h é da Meta. O
@@ -75,6 +77,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     voiceNote: "server-convert",
     groups: "none",
     costPerMessage: true,
+    alteraMensagemEnviada: false,
   },
   zernio: {
     freeformOutsideWindow: false,
@@ -85,6 +88,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     voiceNote: "opus-only",
     groups: "limited",
     costPerMessage: true,
+    alteraMensagemEnviada: false,
   },
   // Parceiro homologado pela Meta que espelha a Cloud API (recorte do #1130):
   // a WABA, a janela de 24h e o custo são da Meta. O parceiro muda o TRANSPORTE
@@ -104,6 +108,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     voiceNote: "opus-only",
     groups: "limited",
     costPerMessage: true,
+    alteraMensagemEnviada: false,
   },
 };
 

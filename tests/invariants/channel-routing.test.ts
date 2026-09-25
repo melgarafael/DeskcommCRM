@@ -43,6 +43,35 @@ describe("roteamento instalado e transacional", () => {
     expect(await claim()).toBe("candidate_revoked");
     expect((await query("select count(*)::int n from channel_routing_responsibles where organization_id=$1", [org])).rows[0].n).toBe(0);
   });
+  it("revogação de membro desatribui conversas abertas e devolve para a fila (#1562)", async () => {
+    await query(
+      "update conversations set assigned_to_user_id=$1, assigned_to_user_name='Ana', assignee_kind='user', status='claimed', bot_silenced_until='infinity' where organization_id=$2 and id=$3",
+      [ana, org, conv],
+    );
+    await query("update user_organizations set revoked_at=now() where organization_id=$1 and user_id=$2", [org, ana]);
+
+    const r = await query(
+      "select assigned_to_user_id, assigned_to_user_name, assignee_kind, status, bot_silenced_until from conversations where organization_id=$1 and id=$2",
+      [org, conv],
+    );
+    expect(r.rows[0]).toMatchObject({
+      assigned_to_user_id: null,
+      assigned_to_user_name: null,
+      assignee_kind: null,
+      status: "open",
+      bot_silenced_until: null,
+    });
+
+    const ev = await query(
+      "select from_user_id, to_user_id, reason from conversation_assignment_events where organization_id=$1 and conversation_id=$2 order by created_at desc limit 1",
+      [org, conv],
+    );
+    expect(ev.rows[0]).toMatchObject({
+      from_user_id: ana,
+      to_user_id: null,
+      reason: "member_revoked",
+    });
+  });
   it("duas conversas concorrentes disputam uma única vaga global", async () => {
     expect((await Promise.all([claim(conv), claim(second)])).sort()).toEqual(["assigned", "capacity_changed"]);
   });

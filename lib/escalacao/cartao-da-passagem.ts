@@ -44,6 +44,7 @@
 import {
   FRASE_DO_MOTIVO,
   FRASE_DO_MOTIVO_DO_AVISO,
+  MOTIVO_PERCEBIDO_PELO_JEV,
   PISO_DO_BRIEFING,
   tentativaDaPassagemSchema,
   type MotivoDaPassagem,
@@ -107,6 +108,11 @@ export interface CartaoDaPassagem {
   /** Em português. A tela passa por `t()`; o código do banco não chega lá. */
   titulo: string;
   motivo: string;
+  /**
+   * Quem percebeu a irritação foi o Jev (D11): a tela acrescenta "(percebido
+   * pelo Jev)" ao motivo. Só na tela da equipe — nunca na mensagem ao cliente.
+   */
+  percebidoPeloJev: boolean;
   /** `title` — o que a IA entendeu que o cliente quer. */
   clienteQuer: string | null;
   /** `body` — a narrativa. `null` quando é o piso (a seção some). */
@@ -216,6 +222,10 @@ export function montarCartoesDaPassagem(
       recolhido: !ultima,
       titulo: optOut ? TITULO_OPT_OUT : TITULO_PADRAO,
       motivo: FRASE_DO_MOTIVO[p.motivo_codigo],
+      // O motivo aparece em destaque, e o resumo embaixo é que dizia quem
+      // percebeu: a atribuição ficava longe da frase que ela qualifica.
+      percebidoPeloJev:
+        !anonimizada && p.motivo_codigo === "low_sentiment" && p.body.includes(MOTIVO_PERCEBIDO_PELO_JEV),
       clienteQuer: anonimizada ? null : texto(p.title),
       resumo: semContexto ? null : corpo,
       semContexto,

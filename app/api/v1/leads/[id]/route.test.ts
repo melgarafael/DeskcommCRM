@@ -15,6 +15,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 import { fail } from "@/lib/api/wrappers";
+import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { requireRole } from "@/lib/auth/require-role";
 import type { AuthUser } from "@/lib/auth/types";
 import { isPublicPath } from "@/lib/auth/public-paths";
@@ -24,6 +25,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { updateLeadHandler } from "../_handler";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
+vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
@@ -43,6 +45,7 @@ const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const LEAD_ID = "33333333-3333-4333-8333-333333333333";
 
+const OUTRA_ORG = "99999999-9999-4999-8999-999999999999";
 const FAKE_SESSION_CLIENT = { session: true } as never;
 const FAKE_ADMIN_CLIENT = { admin: true } as never;
 
@@ -77,6 +80,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(createClient).mockResolvedValue(FAKE_SESSION_CLIENT);
   vi.mocked(createAdminClient).mockReturnValue(FAKE_ADMIN_CLIENT);
+  vi.mocked(checkRateLimit).mockResolvedValue({ allowed: true } as never);
 });
 
 describe("PATCH /api/v1/leads/[id] — sessão de navegador", () => {
@@ -111,7 +115,12 @@ describe("PATCH /api/v1/leads/[id] — Bearer (monitoramento processual)", () =>
     vi.mocked(validateBearerToken).mockResolvedValue({
       organizationId: over.organizationId ?? ORG_ID,
       role: (over.role ?? "agent") as never,
-      actor: { type: "ai_agent", id: "run-1", role: (over.role ?? "agent") as never, api_token_id: "tok-1" },
+      actor: {
+        type: "ai_agent",
+        id: "run-1",
+        role: (over.role ?? "agent") as never,
+        api_token_id: "tok-1",
+      },
       apiTokenId: "tok-1",
       scopes: over.scopes ?? ["mcp:write"],
     });
@@ -121,9 +130,12 @@ describe("PATCH /api/v1/leads/[id] — Bearer (monitoramento processual)", () =>
     tokenOk({ organizationId: ORG_ID });
     const { PATCH } = await import("./route");
     const res = await PATCH(
-      patchReq({ custom_fields: { "Andamento atual": "aguardando laudo pericial" } }, {
-        authorization: "Bearer dsk_abc_def",
-      }),
+      patchReq(
+        { custom_fields: { "Andamento atual": "aguardando laudo pericial" } },
+        {
+          authorization: "Bearer dsk_abc_def",
+        },
+      ),
       params,
     );
 
@@ -177,5 +189,77 @@ describe("PATCH /api/v1/leads/[id] — alcançável sem cookie (proxy)", () => {
 
   it("NÃO libera os irmãos literais de /api/v1/leads/, que não têm Bearer", () => {
     expect(isPublicPath("/api/v1/leads/bulk")).toBe(false);
+  });
+});
+
+/**
+ * A rota está em `PUBLIC_PATHS`: não há estrangulamento a montante. O teto por
+ * token e por organização (o mesmo de `/api/v1/messages`, #1491) é o único que
+ * existe para uma integração em laço.
+ */
+describe("PATCH /api/v1/leads/[id] — teto de escrita do Bearer", () => {
+  function tokenOk(): void {
+    vi.mocked(validateBearerToken).mockResolvedValue({
+      organizationId: ORG_ID,
+      role: "agent" as never,
+      actor: { type: "api_token", id: "tok-1", role: "agent" as never },
+      apiTokenId: "tok-1",
+      scopes: ["mcp:write"],
+    });
+  }
+
+  it("acima do teto do token → 429 com Retry-After, handler não roda", async () => {
+    tokenOk();
+    vi.mocked(checkRateLimit).mockResolvedValueOnce({ allowed: false } as never);
+    const mod = await import("./route");
+    const res = await mod.PATCH(
+      patchReq({ title: "Novo título" }, { authorization: "Bearer dsk_abc_def" }),
+      params,
+    );
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBeTruthy();
+    expect(updateLeadHandler).not.toHaveBeenCalled();
+  });
+
+  it("acima do teto da organização → 429, handler não roda", async () => {
+    tokenOk();
+    vi.mocked(checkRateLimit)
+      .mockResolvedValueOnce({ allowed: true } as never)
+      .mockResolvedValueOnce({ allowed: false } as never);
+    const mod = await import("./route");
+    const res = await mod.PATCH(
+      patchReq({ title: "Novo título" }, { authorization: "Bearer dsk_abc_def" }),
+      params,
+    );
+
+    expect(res.status).toBe(429);
+    expect(updateLeadHandler).not.toHaveBeenCalled();
+  });
+
+  it("organization_id no corpo é ignorado: a org é a da LINHA DO TOKEN", async () => {
+    tokenOk();
+    const mod = await import("./route");
+    const res = await mod.PATCH(
+      patchReq(
+        { title: "Novo título", organization_id: OUTRA_ORG },
+        { authorization: "Bearer dsk_abc_def" },
+      ),
+      params,
+    );
+
+    expect(res.status).toBeLessThan(300);
+    expect(vi.mocked(updateLeadHandler).mock.calls[0]?.[1]).toMatchObject({
+      organization_id: ORG_ID,
+    });
+  });
+
+  it("pela sessão não há teto — o contador nem é tocado", async () => {
+    sessaoOk();
+    const mod = await import("./route");
+    const res = await mod.PATCH(patchReq({ title: "Novo título" }), params);
+
+    expect(res.status).toBeLessThan(300);
+    expect(checkRateLimit).not.toHaveBeenCalled();
   });
 });

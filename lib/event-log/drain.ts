@@ -6,7 +6,11 @@
  * handler no registry e ficam intocados.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { avisoDeEventoMorto, IA_QUE_NAO_RESPONDEU } from "@/lib/event-log/aviso-de-evento-morto";
+import {
+  avisoDeEventoMorto,
+  IA_QUE_NAO_RESPONDEU,
+  MENSAGEM_QUE_NAO_ENTROU,
+} from "@/lib/event-log/aviso-de-evento-morto";
 import { dispatchEvent, getRegisteredHandlers, type EventRow } from "@/lib/event-log/dispatcher";
 import { logger } from "@/lib/logger";
 
@@ -79,6 +83,7 @@ async function avisarEventoMorto(
       .eq("kind", "event_dead")
       .eq("status", "open")
       .neq("title", IA_QUE_NAO_RESPONDEU.titulo)
+      .neq("title", MENSAGEM_QUE_NAO_ENTROU.titulo)
       .limit(1)
       .maybeSingle();
     if (jaAberto) return;

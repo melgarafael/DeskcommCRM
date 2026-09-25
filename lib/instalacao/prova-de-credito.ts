@@ -23,6 +23,7 @@ import {
   cabecalhosDeAtribuicaoOpenRouter,
   DEEPSEEK_ENDPOINT,
   OPENROUTER_ENDPOINT,
+  REQUESTY_ENDPOINT,
 } from "@/lib/agent-engine/edge/llm/providers";
 
 export type ResultadoDaProva =
@@ -99,6 +100,15 @@ export function montarRequisicaoDeProva(
         url: `${baseUrl ?? DEEPSEEK_ENDPOINT}/chat/completions`,
         headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
         body: { model: modelo, max_tokens: 1, messages: msg },
+      };
+    case "requesty":
+      // OpenAI-compatível. `max_tokens: 16` e não 1: os modelos da OpenAI
+      // atrás do roteador recusam `max_tokens` abaixo de 16 (400, medido), e o
+      // modelo mais barato do catálogo da Requesty é justamente da OpenAI.
+      return {
+        url: `${baseUrl ?? REQUESTY_ENDPOINT}/chat/completions`,
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        body: { model: modelo, max_tokens: 16, messages: msg },
       };
     case "google":
       return {

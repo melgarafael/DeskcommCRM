@@ -373,6 +373,33 @@ describe("o motor do CRM grava a passagem", () => {
     );
   });
 
+  it("D11: irritação percebida pelo Jev é dita à equipe — no resumo e no aviso", async () => {
+    await triggerHandoff({
+      conversationId: CONVERSA,
+      organizationId: ORG,
+      reason: "low_sentiment",
+      origem: "sentimento",
+      metadata: { sentiment_score: 0, sentiment_engine: "jev" },
+    });
+    const passagem = inseridos.find((i) => i.tabela === "passagens_de_atendimento");
+    const aviso = inseridos.find((i) => i.tabela === "agent_inbox_items");
+    expect(String(passagem?.linha.body)).toContain("O cliente demonstrou irritação na conversa (percebido pelo Jev)");
+    expect(String(aviso?.linha.body)).toContain("O cliente demonstrou irritação na conversa (percebido pelo Jev)");
+  });
+
+  it("D11: sem o Jev na medição, nenhuma marca (controle)", async () => {
+    await triggerHandoff({
+      conversationId: CONVERSA,
+      organizationId: ORG,
+      reason: "low_sentiment",
+      origem: "sentimento",
+      metadata: { sentiment_score: 0, sentiment_engine: "llm" },
+    });
+    const aviso = inseridos.find((i) => i.tabela === "agent_inbox_items");
+    expect(String(aviso?.linha.body)).toContain("O cliente demonstrou irritação");
+    expect(String(aviso?.linha.body)).not.toContain("Jev");
+  });
+
   it("com aviso JÁ aberto, a segunda passagem vira ADENDO — não é descartada", async () => {
     abertoNaCentral.valor = { id: "aviso-1", body: "O cliente demonstrou irritação na conversa" };
     await triggerHandoff({

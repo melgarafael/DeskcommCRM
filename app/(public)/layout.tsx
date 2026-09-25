@@ -53,7 +53,7 @@ export default async function PublicLayout({ children }: { children: React.React
     <IdiomaProvider locale={locale}>
       <div className="flex min-h-screen items-center justify-center bg-background p-6">
         <div className="w-full max-w-sm space-y-6">
-          {marca.logoUrl ? (
+          {marca.logoUrl || marca.logoDarkUrl ? (
             <div className="flex justify-center">
               {/*
                 <img> em vez de next/image pelo mesmo motivo da barra lateral: a URL
@@ -71,19 +71,37 @@ export default async function PublicLayout({ children }: { children: React.React
                 "primeira <img> da página", e uma asserção de negação com seletor
                 largo passa sozinha assim que outra imagem entra na tela.
               */}
-              {/* O chip `dark:bg-white` é o mesmo da barra lateral
-                (`components/shell/Sidebar.tsx`): esta tela também respeita
-                `data-theme` (o `ThemeProvider` embrulha a raiz inteira, login
-                incluso), então um logo escuro contra `--color-surface` escuro tem
-                o mesmo problema de contraste aqui. */}
-              <div className="rounded-md dark:bg-white dark:px-3 dark:py-2 dark:shadow-sm">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  data-testid="logo-da-fachada"
-                  src={marca.logoUrl}
-                  alt={marca.nome}
-                  className="h-10 w-auto max-w-[12rem] object-contain"
-                />
+              <div
+                className={
+                  marca.logoDarkUrl
+                    ? "rounded-md"
+                    : "rounded-md dark:bg-white dark:px-3 dark:py-2 dark:shadow-sm"
+                }
+              >
+                {marca.logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    data-testid="logo-da-fachada"
+                    src={marca.logoUrl}
+                    alt={marca.nome}
+                    className={
+                      marca.logoDarkUrl
+                        ? "h-10 w-auto max-w-[12rem] object-contain dark:hidden"
+                        : "h-10 w-auto max-w-[12rem] object-contain"
+                    }
+                  />
+                ) : (
+                  <span className="dark:hidden">{marca.nome}</span>
+                )}
+                {marca.logoDarkUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    data-testid="logo-escuro-da-fachada"
+                    src={marca.logoDarkUrl}
+                    alt={marca.nome}
+                    className="hidden h-10 w-auto max-w-[12rem] object-contain dark:block"
+                  />
+                ) : null}
               </div>
             </div>
           ) : marcaEhADoProduto({ name: marca.nome, logoUrl: null }) ? (

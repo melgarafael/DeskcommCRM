@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { PACING_DEFAULTS } from "@/lib/agent-engine/pacing/defaults";
+import { janelaDeEnvioAberta } from "@/lib/agent-engine/pacing/engine";
 import { fusoDaJanela } from "@/lib/agent-engine/pacing/store";
 import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
@@ -72,7 +73,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   // Knobs do número (coluna NULL = default conservador do engine) — a UI usa o
   // contexto pra dizer QUAL janela segurou o envio, não a genérica.
-  const [{ data: knobs }, { data: org }] = await Promise.all([
+  const [{ data: knobs }, { data: orgRow }, { data: ultimaSaida }] = await Promise.all([
     supabase
       .from("channel_knobs")
       .select("window_start_hour, window_end_hour, allow_sunday, timezone")
@@ -81,18 +82,44 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
       .maybeSingle(),
     // Sem fuso no número, o motor avalia a janela no da organização.
     supabase.from("organizations").select("timezone").eq("id", activeOrg.orgId).maybeSingle(),
+    supabase
+      .from("messages")
+      .select("created_at")
+      .eq("organization_id", activeOrg.orgId)
+      .eq("conversation_id", id)
+      .eq("direction", "outbound")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
-  return ok(
-    {
-      retentions: traces ?? [],
-      context: {
-        window_start_hour: knobs?.window_start_hour ?? PACING_DEFAULTS.windowStartHour,
-        window_end_hour: knobs?.window_end_hour ?? PACING_DEFAULTS.windowEndHour,
-        allow_sunday: knobs?.allow_sunday ?? PACING_DEFAULTS.allowSunday,
-        timezone: fusoDaJanela(knobs?.timezone, (org as { timezone?: string | null } | null)?.timezone),
-      },
-    },
-    { requestId },
+  // O MESMO fuso que o motor usa para decidir (`fusoDaJanela`): override do
+  // canal → fuso da organização → padrão. Antes esta rota caía direto em São
+  // Paulo e o aviso dizia "fora da janela" com a hora de outra cidade.
+  const context = {
+    window_start_hour: knobs?.window_start_hour ?? PACING_DEFAULTS.windowStartHour,
+    window_end_hour: knobs?.window_end_hour ?? PACING_DEFAULTS.windowEndHour,
+    allow_sunday: knobs?.allow_sunday ?? PACING_DEFAULTS.allowSunday,
+    timezone: fusoDaJanela(knobs?.timezone, (orgRow as { timezone?: string | null } | null)?.timezone),
+  };
+
+  // O aviso diz o estado de AGORA, não o histórico:
+  //   - retenção seguida de uma resposta que saiu já foi resolvida;
+  //   - "fora da janela" com a janela ABERTA agora é mentira — o próximo turno
+  //     reavalia com a janela aberta.
+  const saiuDepoisEm = (ultimaSaida as { created_at?: string } | null)?.created_at ?? null;
+  const janelaAbertaAgora = janelaDeEnvioAberta(new Date(), {
+    ...PACING_DEFAULTS,
+    windowStartHour: context.window_start_hour,
+    windowEndHour: context.window_end_hour,
+    allowSunday: context.allow_sunday,
+    timezone: context.timezone,
+  });
+  const vigentes = (traces ?? []).filter(
+    (tr) =>
+      (saiuDepoisEm === null || Date.parse(tr.created_at) > Date.parse(saiuDepoisEm)) &&
+      !(tr.vetoed_code === "outside_window" && janelaAbertaAgora),
   );
+
+  return ok({ retentions: vigentes, context }, { requestId });
 }

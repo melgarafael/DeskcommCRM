@@ -39,7 +39,6 @@ vi.mock("@/lib/ai/gateway", () => ({
   DEFAULT_BOT_MODEL: "anthropic/claude-sonnet-4-6",
   gatewayConfig: () => ({ apiKey: "dublê" }),
   gatewayHeaders: () => ({}),
-  isAiGatewayConfigured: () => true,
   isEmbeddingProviderConfigured: () => false,
   // Resolvido via `resolverModeloDoPonto`; qualquer valor não-nulo serve, porque
   // quem consome é o `generateText` dublê logo abaixo.

@@ -43,7 +43,20 @@ export default async function TiposDeAgendamentoPage() {
   const podeEditar = (user.is_platform_admin && !user.support) || ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
 
   const supabase = await createClient();
-  const [{ data: tipos }, { data: pessoas }, { data: org }] = await Promise.all([
+  // ⚠️ O `error` NÃO é descartável, e descartá-lo já mentiu para quem opera.
+  //
+  // Medido em 2026-09-16: esta consulta pedia `reminder_extra_offsets_minutes`,
+  // coluna que o banco daquela instalação não tinha (migration 0254 nunca
+  // aplicada). O PostgREST recusava a consulta INTEIRA, `data` vinha `null`, e
+  // a tela dizia "Nenhum tipo de agendamento ainda" — com QUATRO tipos ativos
+  // no banco, um deles o "Retirada de pedido" que a API recusava recriar por
+  // duplicidade. Erro de leitura virou afirmação sobre os dados, e as duas
+  // telas passaram a discordar sem que nenhuma estivesse "quebrada" aos olhos
+  // de quem olhava.
+  //
+  // Lista vazia e falha de leitura são fatos diferentes, e a tela tem de
+  // dizer qual dos dois aconteceu.
+  const [{ data: tipos, error: erroTipos }, { data: pessoas }, { data: org }] = await Promise.all([
     supabase
       .from("calendar_event_types")
       .select(
@@ -88,6 +101,7 @@ export default async function TiposDeAgendamentoPage() {
       </header>
       <TiposDeAgendamentoClient
         tiposIniciais={(tipos ?? []) as TipoRow[]}
+        erroDeLeitura={erroTipos ? erroTipos.message : null}
         pessoas={(pessoas ?? []).map((p) => ({
           id: String(p.user_id),
           papel: String(p.role),

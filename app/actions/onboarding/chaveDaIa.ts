@@ -30,7 +30,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { guardarCredencial } from "@/lib/ai/credenciais/guardar";
 import { definirPadraoDeIaDaOrganizacao } from "@/lib/ai/pontos/padrao-da-organizacao";
 import { IDS_DE_PROVEDOR } from "@/lib/ai/pontos/provedores";
-import type { Provider } from "@/lib/ai/provider-validators";
 import { requireOnboardingCtx, OnboardingError } from "./_shared";
 
 export type ResultadoDaChave =
@@ -91,7 +90,7 @@ export async function salvarChaveDaIa(formData: FormData): Promise<ResultadoDaCh
     admin,
     orgId: ctx.orgId,
     userId: ctx.userId,
-    provider: provider as Provider,
+    provider: provider as (typeof IDS_DE_PROVEDOR)[number],
     // O nome existe para a pessoa reconhecer a chave depois, na tela de
     // credenciais — não é identificador.
     label: "Chave do onboarding",

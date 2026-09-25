@@ -212,6 +212,14 @@ export interface RunModelCallInput {
    * agente), nunca constante.
    */
   maxSteps?: number;
+  /**
+   * Encerra o loop quando o predicado for verdadeiro ao fim de uma etapa (além
+   * do teto de `maxSteps`). É predicado, e não nome de tool, de propósito: o
+   * rascunho assistido para quando há resposta ACEITA, não quando o modelo
+   * chamou `send_message` — um envio vetado devolve o erro ao modelo para ele
+   * reescrever na etapa seguinte, e parar ali entregava rascunho vazio.
+   */
+  pararQuando?: () => boolean;
   /** Teto por chamada auxiliar; nunca aumenta o limite configurado pela organização. */
   maxOutputTokens?: number;
   /** Cancelamento propagado pelo chamador; a falha continua registrada em llm_calls. */
@@ -662,7 +670,12 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       messages: input.messages,
       abortSignal: input.abortSignal,
       tools: guardServiceTools(prefix.tools),
-      stopWhen: input.maxSteps === undefined ? undefined : stepCountIs(input.maxSteps),
+      stopWhen:
+        input.maxSteps === undefined
+          ? undefined
+          : input.pararQuando === undefined
+            ? stepCountIs(input.maxSteps)
+            : [stepCountIs(input.maxSteps), input.pararQuando],
       temperature,
       topP,
       topK,
@@ -867,12 +880,14 @@ export function redigirMensagemDoProvedor(bruto: string): string {
   const semSegredo = bruto
     // Chaves de API dos provedores que este produto fala: `sk-ant-…`,
     // `sk-or-v1-…`, `sk-proj-…`, `sk-…`, e as do Google (`AIza…`).
-    .replace(/sk-[A-Za-z0-9_-]{8,}/g, '[CHAVE]')
-    .replace(/AIza[A-Za-z0-9_-]{10,}/g, '[CHAVE]')
+    .replace(/\bsk-[A-Za-z0-9_-]{8,}/g, '[CHAVE]')
+    .replace(/\bAIza[A-Za-z0-9_-]{10,}/g, '[CHAVE]')
+    // A do Jev (`apikey_<hex>_<hex>`), que não tem `sk-` e aparece solta.
+    .replace(/\bapikey_[A-Za-z0-9_]{16,}/g, '[CHAVE]')
     // O header inteiro, em qualquer caixa, com ou sem `Authorization:` na
     // frente — é assim que ele costuma aparecer ecoado num corpo de erro.
-    .replace(/[Bb]earer\s+[A-Za-z0-9._-]{8,}/g, 'Bearer [CHAVE]')
-    .replace(/(x-api-key|api[-_]?key|authorization)\s*[:=]\s*\S+/gi, '$1: [CHAVE]');
+    .replace(/\b[Bb]earer\s+[A-Za-z0-9._-]{8,}/g, 'Bearer [CHAVE]')
+    .replace(/\b(x-api-key|api[-_]?key|authorization)\b\s*[:=]\s*\S+/gi, '$1: [CHAVE]');
   return scrubMessage(semSegredo).slice(0, 500);
 }
 

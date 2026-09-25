@@ -21,6 +21,11 @@ vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+// Roteiro de atendimento só publica com o módulo ligado; follow-up não consulta.
+vi.mock("@/lib/instalacao/modulos", async (original) => ({
+  ...(await original<typeof import("@/lib/instalacao/modulos")>()),
+  moduloLigado: vi.fn(async () => true),
+}));
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
@@ -779,6 +784,60 @@ describe("POST /api/v1/ai/followup-flows/:id/publish", () => {
     const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
     const res = await POST(req("POST"), ctx("33333333-3333-4333-8333-333333333333"));
     expect(res.status).toBe(200);
+  });
+});
+
+describe("POST /api/v1/ai/followup-flows/:id/publish — roteiro que encadeia (revisão do #1573)", () => {
+  const A = "44444444-4444-4444-8444-44444444444a";
+  const B = "44444444-4444-4444-8444-44444444444b";
+  const VB = "44444444-4444-4444-8444-4444444444b1";
+  const roteiroQueVaiPara = (fluxo: string | null): FlowGraph => ({
+    nodes: [
+      trigger("t"),
+      {
+        id: "c",
+        type: "collect",
+        label: "Nome",
+        position: pos,
+        config: { key: "nome", label: "Nome", type: "text", required: true, permite_correcao: true },
+      },
+      {
+        id: "f",
+        type: "end",
+        label: "f",
+        position: pos,
+        config: { outcome: "converted", ...(fluxo ? { ao_finalizar: { tipo: "proximo_fluxo" as const, fluxo } } : {}) },
+      },
+    ],
+    edges: [edge("e1", "t", "c"), edge("e2", "c", "f")],
+  });
+  const cenario = (bVaiPara: string | null) =>
+    makeDb(
+      [
+        { id: A, organization_id: ORG_ID, name: "Cadastro", status: "draft", surface: "atendimento", draft_graph: roteiroQueVaiPara(B), trigger_config: { kind: "manual" } },
+        { id: B, organization_id: ORG_ID, name: "Financiamento", status: "active", surface: "atendimento", active_version_id: VB, trigger_config: { kind: "manual" } },
+      ],
+      [{ id: VB, organization_id: ORG_ID, pointer_id: B, graph: roteiroQueVaiPara(bVaiPara) }],
+    );
+
+  it("⭐ A → B com B → A publicado: 422 roteiro_em_ciclo, nada publicado", async () => {
+    const db = cenario(A);
+    session("manager", db);
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+    const res = await POST(req("POST"), ctx(A));
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: { details: { errors: Array<{ code: string; message: string }> } } };
+    expect(body.error.details.errors.map((e) => e.code)).toEqual(["roteiro_em_ciclo"]);
+    expect(body.error.details.errors[0]!.message).toContain("Financiamento");
+    const { data } = (await db.from("followup_flow_pointers").select().eq("id", A)) as { data: Row[] };
+    expect(data[0]).toMatchObject({ status: "draft" });
+  });
+
+  it("A → B com B terminando: publica", async () => {
+    const db = cenario(null);
+    session("manager", db);
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+    expect((await POST(req("POST"), ctx(A))).status).toBe(200);
   });
 });
 

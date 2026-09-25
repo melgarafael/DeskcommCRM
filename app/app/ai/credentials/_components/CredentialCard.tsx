@@ -35,7 +35,7 @@ import {
   type CredentialStatus,
 } from "@/hooks/ai/useCredentials";
 import { useT } from "@/hooks/i18n/useT";
-import { PROVEDORES } from "@/lib/ai/pontos/provedores";
+import { ehProvedorDeDecisao, PROVEDORES_COM_CHAVE } from "@/lib/ai/pontos/provedores";
 import { descreverErroDeValidacao } from "@/lib/ai/credenciais/erro-de-validacao";
 import { RotateCredentialDialog } from "./RotateCredentialDialog";
 
@@ -43,6 +43,13 @@ interface Props {
   credential: CredentialRow;
   canWrite: boolean;
   usageCount: number;
+  /**
+   * As tarefas em que a chave trabalha fora dos agentes (hoje, as do Jev). Não
+   * trava a exclusão como `usageCount`: excluir desliga o Jev, e o diálogo avisa.
+   */
+  usadaEm?: readonly string[];
+  /** A frase do diálogo de exclusão para a chave do Jev em uso (ver `page.tsx`). */
+  avisoAoExcluir?: string;
 }
 
 const STATUS_LABEL: Record<CredentialStatus, string> = {
@@ -61,7 +68,7 @@ const STATUS_VARIANT: Record<CredentialStatus, "default" | "secondary" | "destru
   inactive: "outline",
 };
 
-export function CredentialCard({ credential, canWrite, usageCount }: Props) {
+export function CredentialCard({ credential, canWrite, usageCount, usadaEm = [], avisoAoExcluir }: Props) {
   const t = useT();
   const router = useRouter();
   const qc = useQueryClient();
@@ -72,8 +79,8 @@ export function CredentialCard({ credential, canWrite, usageCount }: Props) {
   const status = credentialStatus(credential);
   const last4 = credential.api_key_last4 ?? "????";
   const inUse = usageCount > 0;
-  const erro = descreverErroDeValidacao(credential.validation_error);
-  const provedor = PROVEDORES.find((p) => p.id === credential.provider);
+  const erro = descreverErroDeValidacao(credential.validation_error, credential.provider);
+  const provedor = PROVEDORES_COM_CHAVE.find((p) => p.id === credential.provider);
 
   const onRevalidate = () => {
     startTransition(async () => {
@@ -90,8 +97,14 @@ export function CredentialCard({ credential, canWrite, usageCount }: Props) {
   const onDelete = () => {
     startTransition(async () => {
       try {
-        await apiClient.delete(`/api/v1/ai/credentials/${credential.id}`);
-        toast.success(t("Credencial removida."));
+        const res = await apiClient.delete<{ data?: { jev_desligado?: boolean } }>(
+          `/api/v1/ai/credentials/${credential.id}`,
+        );
+        toast.success(
+          res?.data?.jev_desligado
+            ? t("Credencial removida. O Jev foi desligado.")
+            : t("Credencial removida."),
+        );
         setDeleteOpen(false);
         await qc.invalidateQueries({ queryKey: credentialsListQueryKey });
         await refreshCredentialsView();
@@ -146,7 +159,7 @@ export function CredentialCard({ credential, canWrite, usageCount }: Props) {
                 target="_blank"
                 rel="noreferrer"
               >
-                {t("Pegar chave em")} {provedor.rotulo}
+                {t("Onde pegar a chave")}
               </a>
             </>
           )}
@@ -159,16 +172,28 @@ export function CredentialCard({ credential, canWrite, usageCount }: Props) {
         </p>
       )}
 
-      <dl className="grid grid-cols-2 gap-2 text-xs">
-        <div>
-          <dt className="text-muted-foreground">{t("Modelos")}</dt>
-          <dd className="font-mono">{credential.models_available?.length ?? "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">{t("Em uso por")}</dt>
-          <dd className="font-mono">{usageCount}</dd>
-        </div>
-      </dl>
+      {/* "Em uso por" conta versões de agente, e nenhuma aponta para a chave do
+          Jev: o "0" dela, colado no "Usada em" logo abaixo, dizia que dava para
+          excluí-la sem efeito. */}
+      {!ehProvedorDeDecisao(credential.provider) && (
+        <dl className="grid grid-cols-2 gap-2 text-xs">
+          <div>
+            <dt className="text-muted-foreground">{t("Modelos")}</dt>
+            <dd className="font-mono">{credential.models_available?.length ?? "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">{t("Em uso por")}</dt>
+            <dd className="font-mono">{usageCount}</dd>
+          </div>
+        </dl>
+      )}
+
+      {usadaEm.length > 0 && (
+        <p className="text-xs" data-testid="credencial-usada-em">
+          <span className="text-muted-foreground">{t("Usada em")}:</span>{" "}
+          {usadaEm.map((tarefa) => t(tarefa)).join(", ")}
+        </p>
+      )}
 
       {canWrite && (
         <div className="flex items-center justify-end gap-1 pt-1">
@@ -229,7 +254,9 @@ export function CredentialCard({ credential, canWrite, usageCount }: Props) {
               {/* O diálogo só abre com `usageCount === 0` (a chave em uso tem o
                   botão desabilitado), então não há agente a avisar — a frase
                   antiga ("agents vão falhar") descrevia um caso que não chega
-                  aqui. O que sobra é o irreversível. */}
+                  aqui. O que sobra é o irreversível — e, na chave do Jev, que
+                  não trava, o efeito de excluí-la (a rota o desliga). */}
+              {avisoAoExcluir && <>{t(avisoAoExcluir)} </>}
               {t("Esta ação não pode ser desfeita.")}
             </AlertDialogDescription>
           </AlertDialogHeader>

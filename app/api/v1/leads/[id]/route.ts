@@ -12,7 +12,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
-import { resolveAuthDual } from "@/lib/api/auth-dual";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { updateLeadSchema, validateRequest } from "@/lib/schemas";
@@ -40,6 +40,9 @@ export async function PATCH(
   });
   if (!authz.ok) return authz.response;
   const { supabase, organizationId, actor, idioma } = authz;
+
+  const tetoEstourado = await tetoDeEscritaDoToken(authz, "leads", requestId);
+  if (tetoEstourado) return tetoEstourado;
 
   let input;
   try {

@@ -10,7 +10,7 @@ import { FlowBuilder } from "./_components/FlowBuilder";
 export const dynamic = "force-dynamic";
 
 const DETAIL_COLUMNS =
-  "id, name, status, active_version_id, draft_graph, handoff_policy, trigger_config, created_at, updated_at";
+  "id, name, status, active_version_id, draft_graph, handoff_policy, trigger_config, surface, created_at, updated_at";
 
 export default async function FollowupFlowBuilderPage({
   params,

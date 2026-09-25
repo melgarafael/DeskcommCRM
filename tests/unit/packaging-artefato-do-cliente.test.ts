@@ -249,6 +249,23 @@ describe("packaging — o artefato que o cliente instala", () => {
     }
   });
 
+  it("a versão vem depois das camadas caras em cada Dockerfile publicado", () => {
+    // `ARG` entra na chave de cache de toda instrução seguinte do estágio. Com
+    // APP_VERSION acima de um `RUN`, cada release refaz esse `RUN` (o `pnpm
+    // install` inteiro, no worker e na voz) só porque o número mudou (#1569).
+    for (const arquivo of [
+      "Dockerfile",
+      "Dockerfile.worker",
+      "Dockerfile.scheduler",
+      "Dockerfile.voice-agent",
+    ]) {
+      const linhas = fs.readFileSync(path.join(RAIZ, arquivo), "utf8").split("\n");
+      const arg = linhas.findIndex((l) => /^ARG APP_VERSION/.test(l));
+      const runsDepois = linhas.slice(arg + 1).filter((l) => /^RUN /.test(l));
+      expect(runsDepois, `${arquivo}: RUN depois de ARG APP_VERSION`).toEqual([]);
+    }
+  });
+
   it("o workflow publica as quatro imagens e injeta APP_VERSION", () => {
     const wf = fs.readFileSync(path.join(RAIZ, ".github/workflows/publish-image.yml"), "utf8");
     for (const imagem of [

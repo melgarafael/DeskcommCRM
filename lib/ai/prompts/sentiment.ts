@@ -22,3 +22,13 @@ Critérios de pontuação:
 - 0.8–1.0: muito satisfeito, elogio, recomendação
 
 Retorne SOMENTE o JSON, sem texto adicional.`;
+
+/**
+ * Abaixo desta nota o cliente conta como irritado e a conversa passa para um
+ * humano (`ai.sentiment_alert`, em `workers/ai-sentiment-worker.ts`), quando o
+ * agente não define `sentiment_threshold` próprio. Mora aqui, junto da escala
+ * que ele corta, porque tem dois leitores: o worker, que dispara a passagem, e a
+ * concordância do Jev (`app/api/v1/ai/jev/route.ts`), que mede se as duas notas
+ * caíram do mesmo lado DESTE corte.
+ */
+export const DEFAULT_SENTIMENT_THRESHOLD = 0.3;

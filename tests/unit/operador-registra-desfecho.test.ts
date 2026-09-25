@@ -51,6 +51,16 @@ describe("apuraDonoDaPromessa — quem ficou responsável", () => {
     ).toEqual({ assumida: true, por: "ferramenta_do_operador" });
   });
 
+  it("caso esperando uma pessoa assume a promessa — a pergunta já está com a equipe", () => {
+    // Medido em produção: o Conversador abriu o caso "Cliente pregunta
+    // transportadora del envío" e, 17 minutos depois, a Central acusava a MESMA
+    // pergunta como promessa sem dono.
+    expect(apuraDonoDaPromessa({ ...RODOU_COM_MAO, temCasoAberto: true })).toEqual({
+      assumida: true,
+      por: "caso_aberto",
+    });
+  });
+
   it("retorno já agendado assume a promessa, mesmo sem o turno agir", () => {
     expect(apuraDonoDaPromessa({ ...RODOU_COM_MAO, temRetornoVivo: true })).toEqual({
       assumida: true,
@@ -160,12 +170,14 @@ describe("apurarComRetorno — o fio entre a busca e a regra", () => {
     ferramentasChamadas: [] as readonly string[],
     operadorRodou: true,
     operadorTemFerramentas: true,
+    conversationId: "conv",
   };
+  const semCaso = async () => false;
 
   it("retorno VIVO no banco vira `retorno_agendado` — o fio carrega", async () => {
     const dono = await apurarComRetorno({} as never, "org", "lead", 1, entrada, async () => ({
       id: "r-1",
-    }));
+    }), semCaso);
     expect(dono, "sem o fio, a Central volta a acusar quem acabou de agendar").toEqual({
       assumida: true,
       por: "retorno_agendado",
@@ -178,7 +190,17 @@ describe("apurarComRetorno — o fio entre a busca e a regra", () => {
    * cortado do mesmo jeito.
    */
   it("SEM retorno no banco, o desfecho é outro — a sonda distingue", async () => {
-    const dono = await apurarComRetorno({} as never, "org", "lead", 1, entrada, async () => null);
+    const dono = await apurarComRetorno({} as never, "org", "lead", 1, entrada, async () => null, semCaso);
     expect(dono).not.toEqual({ assumida: true, por: "retorno_agendado" });
+  });
+
+  it("caso aberto NA CONVERSA do turno vira `caso_aberto` — o fio carrega a conversa", async () => {
+    const perguntas: string[] = [];
+    const dono = await apurarComRetorno({} as never, "org", "lead", 1, entrada, async () => null, async (t, c) => {
+      perguntas.push(`${t}/${c}`);
+      return true;
+    });
+    expect(dono).toEqual({ assumida: true, por: "caso_aberto" });
+    expect(perguntas).toEqual(["org/conv"]);
   });
 });

@@ -3,7 +3,7 @@
  *
  * Rota per-tenant canônica de produção: cada channel_session tem um
  * webhook_path_token único url-safe. Pipeline: lookup por token -> verifica
- * HMAC SHA512 -> loga em webhook_events_log -> dispatchWahaEvent (ingestão
+ * HMAC SHA512 -> loga em webhook_events_log -> processarEventoWaha (ingestão
  * compartilhada, ver lib/waha/ingest.ts).
  *
  * Idempotência e resolução atômica de contato/conversa vivem no módulo
@@ -19,7 +19,7 @@ import { carregarComportamentoDaInstalacao } from "@/lib/instalacao/comportament
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { conferirContratoWaha, lerRoteamentoWahaPorToken } from "@/lib/waha/envelope";
-import { dispatchWahaEvent } from "@/lib/waha/ingest";
+import { processarEventoWaha, REENTREGA_EM_SEGUNDOS } from "@/lib/waha/desfecho-do-webhook";
 import { authenticateWahaWebhook } from "@/lib/waha/webhook-auth";
 
 export const dynamic = "force-dynamic";
@@ -165,7 +165,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   // falhar) em que a recusa fica com a mesma palavra de um evento que deu certo.
   const contrato = conferirContratoWaha(roteado);
 
-  await admin.from("webhook_events_log").insert({
+  const { data: arquivo } = await admin.from("webhook_events_log").insert({
     organization_id: session.organization_id,
     channel_session_id: session.id,
     provider: "waha",
@@ -182,7 +182,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     // Só os NOMES dos campos: o valor recusado é dado de cliente.
     error_message: contrato.ok ? null : `${contrato.motivo}: ${contrato.campos.join(", ")}`,
     attempts: 0,
-  });
+  }).select("id").maybeSingle();
 
   if (!contrato.ok) {
     logger.error("[waha.webhook] payload fora do contrato do canal", {
@@ -196,10 +196,24 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     });
   }
 
-  try {
-    await dispatchWahaEvent(admin, session, contrato.envelope, requestId);
-  } catch (err) {
-    console.error("[waha.webhook] handler failed", err);
+  // Falha TRANSITÓRIA do banco não pode virar 200: o WAHA riscaria o evento
+  // achando que entregou, e a mensagem do cliente sumiria (medido: 14/09 e
+  // 24/09/2026). 503 + Retry-After pede a reentrega; a reentrega é segura porque
+  // `unique (organization_id, external_id)` faz o `23505` virar dedup. Se as
+  // reentregas do WAHA também não bastarem, o cron `webhook-replay` reprocessa o
+  // arquivo. Ver `lib/waha/desfecho-do-webhook.ts`.
+  const desfecho = await processarEventoWaha(
+    admin,
+    session,
+    contrato.envelope,
+    requestId,
+    (arquivo as { id?: string } | null)?.id ?? null,
+  );
+  if (desfecho === "tentar_de_novo") {
+    return fail("upstream_unavailable", "banco indisponível — reentregue o evento", 503, {
+      requestId,
+      headers: { "Retry-After": String(REENTREGA_EM_SEGUNDOS) },
+    });
   }
 
   return ok({ accepted: true }, { requestId });

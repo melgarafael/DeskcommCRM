@@ -160,7 +160,7 @@ export async function POST(req: Request) {
       }
       const query = new URLSearchParams({
         profileId: config.profileId,
-        redirect_url: `${publicBase()}/app/connections?aba=sociais`,
+        redirect_url: `${publicBase()}/auth/social-return`,
       });
       const connection = z
         .object({ authUrl: z.url() })

@@ -135,6 +135,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const tab = parseFilterParam(searchParams.get("filter"));
+  const idNaUrl = searchParams.get("id");
 
   // tab vive na URL (?filter=); os demais filtros são estado local de sessão.
   const [aux, setAux] = useState<Omit<InboxFiltersValue, "tab">>({
@@ -161,7 +162,8 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
     setFilterValue({ tab, search: "", onlyUnread: false });
   }, [tab, setFilterValue]);
 
-  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId ?? idNaUrl);
+  const ultimoIdNaUrl = useRef(idNaUrl);
   const [visibleIds, setVisibleIds] = useState<string[]>([]);
   const [helpOpen, setHelpOpen] = useState(false);
   /** A ficha do contato como painel deslizante — só existe abaixo do `xl`. */
@@ -173,6 +175,14 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
    * quem MOSTRA é o composer — são irmãos, e o estado comum é do pai.
    */
   const [respondendo, setRespondendo] = useState<ConversationMensagem | null>(null);
+
+  useEffect(() => {
+    if (ultimoIdNaUrl.current === idNaUrl) return;
+    ultimoIdNaUrl.current = idNaUrl;
+    // O histórico do navegador também troca a conversa, sem carregar a página inteira.
+    setSelectedId(idNaUrl);
+    setRespondendo(null);
+  }, [idNaUrl]);
 
   /**
    * A ORG tem automático de pé? Sobe para cá porque agora é a ABA que precisa —
@@ -273,16 +283,20 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   // É um SUPERCONJUNTO do `handleSelect` do upstream — o tipo dele não aceita
   // `null`, e sem isso o botão de voltar não teria o que chamar.
   //
-  // A seleção NÃO vive na URL (só o `?filter=` vive) — então este voltar é
-  // estado local, e o botão de voltar do navegador não desfaz a seleção. É a
-  // limitação conhecida deste caminho; trocar por URL mudaria o deep-link de
-  // conversa, que hoje entra por `initialSelectedId` vindo da rota.
   const handleSelect = useCallback((id: string | null) => {
+    if (id === selectedId) return;
     setSelectedId(id);
     // Sem isto, escolher "responder" numa conversa e trocar para outra levaria
     // a citação junto — e a resposta sairia citando mensagem de outro cliente.
     setRespondendo(null);
-  }, []);
+    // ?id= é o formato já usado pelos atalhos do CRM. A History API mantém a
+    // seleção instantânea sem pedir um novo Server Component a cada clique.
+    const params = new URLSearchParams(searchParams.toString());
+    if (id) params.set("id", id);
+    else params.delete("id");
+    const query = params.toString();
+    window.history.pushState(null, "", query ? `${pathname}?${query}` : pathname);
+  }, [selectedId, searchParams, pathname]);
   const handleVisibleChange = useCallback((ids: string[]) => setVisibleIds(ids), []);
   const handleFocusReply = useCallback(() => composerRef.current?.focus(), []);
   const handleClaim = useCallback(() => {
@@ -498,6 +512,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
             <div className="min-h-0 flex-1 overflow-hidden">
               <ChatThread
                 conversationId={selectedConversation.id}
+                provider={selectedConversation.channel_sessions?.provider ?? null}
                 onResponder={setRespondendo}
                 // O cartão da passagem escolhe o gesto a partir de quem é o dono
                 // da conversa: sem dono convida a assumir, com outro dono diz

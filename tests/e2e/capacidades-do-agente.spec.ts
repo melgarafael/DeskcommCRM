@@ -244,6 +244,13 @@ test.describe("Configurar o que o agente pode fazer", () => {
     // faltam, e o operador faz o que a própria tela manda.
     await page.getByTestId("switch-pacote-atender").click();
     await expect(page.getByTestId("aviso-teto")).toContainText(/faltam? 1 vaga/);
+    // O aviso nasce DENTRO do cartão clicado, não no topo do seletor: com a
+    // tela rolada até um pacote lá de baixo, o aviso do topo ficava fora da
+    // vista e o clique parecia não fazer nada.
+    await expect(
+      page.getByTestId("pacote-atender").getByTestId("aviso-teto"),
+      "a recusa precisa aparecer onde a pessoa clicou",
+    ).toBeVisible();
     await expect(
       page.getByTestId("pacote-atender"),
       "recusar significa NÃO aplicar: pacote meio-ligado seria o pior dos dois mundos",

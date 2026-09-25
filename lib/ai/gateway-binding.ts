@@ -26,11 +26,12 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { LanguageModel } from "ai";
 
-import { DEEPSEEK_ENDPOINT } from "@/lib/agent-engine/edge/llm/providers";
+import { DEEPSEEK_ENDPOINT, REQUESTY_ENDPOINT } from "@/lib/agent-engine/edge/llm/providers";
 import { decryptKey, byteaToBuffer } from "@/lib/crypto/aes_gcm";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+import { escolherModeloNoCatalogo } from "./agents/escolher-modelo";
 import { OPENROUTER_BASE_URL, resolveLanguageModel, type ModelId } from "./gateway";
 
 export interface ModeloResolvido {
@@ -54,10 +55,27 @@ export interface ModeloResolvido {
  * deixá-la de pé faria a próxima pessoa concluir que a chave do `.env` ainda
  * vence a chave que a organização cadastrou na tela.
  */
+export interface OpcoesDoResolvedor {
+  /**
+   * Quando nem a credencial da organização nem a chave da instalação executam
+   * o modelo pedido, usar o padrão da organização (`settings.llm`: provedor e
+   * modelo JUNTOS) em vez de devolver `null`.
+   *
+   * É para o ponto que mede, não para o que conversa: o clima pede um id da
+   * Anthropic, e uma empresa que atende pela OpenAI (ou Google, ou DeepSeek)
+   * sem modelo escolhido para ele ficava com o clima mudo — enquanto o painel
+   * dizia "Usando o padrão da organização" para esse mesmo ponto. O modelo do
+   * agente que responde o cliente é a personalidade dele e muda pela
+   * publicação, nunca por esta queda; por isso é opção, e não regra.
+   */
+  naFaltaUsarOPadraoDaOrganizacao?: boolean;
+}
+
 export async function resolverModeloDoPonto(
   purpose: string,
   organizationId: string,
   padrao: ModelId,
+  opcoes: OpcoesDoResolvedor = {},
 ): Promise<ModeloResolvido | null> {
   const binding = await lerBinding(purpose, organizationId);
 
@@ -83,7 +101,10 @@ export async function resolverModeloDoPonto(
       () => (daOrg !== null ? Promise.resolve(daOrg.provider) : providerDaOrganizacao(organizationId)),
       padrao,
     );
-    return model === null ? null : { model, modelId: String(padrao), origem: "padrao" };
+    if (model !== null) return { model, modelId: String(padrao), origem: "padrao" };
+    return opcoes.naFaltaUsarOPadraoDaOrganizacao === true
+      ? padraoDaOrganizacao(organizationId, daOrg)
+      : null;
   }
 
   const apiKey = await decifrarChave(binding.credential_id, organizationId);
@@ -156,13 +177,14 @@ async function lerBinding(
  * de modelo: quem já está dentro do provedor recebe só o nome, e é o que
  * `resolveLanguageModel` faz ao rotear pelo prefixo. A OpenRouter é a exceção
  * porque é agregadora — lá o prefixo é parte do endereço e vai inteiro.
+ * A Requesty também é agregadora, e segue a mesma regra.
  *
  * O `null` é o freio do PR #151: id de outro provedor não vira chamada com a
  * chave da organização, vira queda para `resolveLanguageModel`, que sabe achar
  * a chave certa para aquele prefixo.
  */
 function idParaOProvider(provider: string, id: string): string | null {
-  if (provider === "openrouter") return id;
+  if (provider === "openrouter" || provider === "requesty") return id;
   if (!id.includes("/")) return id;
   if (id.startsWith(`${provider}/`)) return id.slice(provider.length + 1);
   return null;
@@ -192,8 +214,15 @@ function idParaOProvider(provider: string, id: string): string | null {
  * binding ele custa uma consulta a `organizations`, e o id prefixado — o de
  * toda instalação padrão — resolve sem ela.
  *
- * Devolve `null` quando não há chave nenhuma para o provedor — o chamador PULA
- * com motivo claro, em vez de inventar provedor.
+ * O degrau de BAIXO é a conta SEM chave: quando a rota do provedor que a
+ * organização escolheu não acha chave no ambiente (o `anthropic` que o gatilho
+ * semeia numa instalação onde o instalador coletou `OPENAI_API_KEY`, por
+ * exemplo), o id BARE é resolvido pelo provedor do MODELO no catálogo
+ * `ai_models` — a mesma fonte que o resto do produto usa para o id BARE, e o
+ * que a própria mensagem de `LlmNotConfiguredError` já declara ("fallback de
+ * plataforma, conforme o provider do modelo"). Sem linha no catálogo, nada é
+ * adivinhado: devolve `null` e o chamador PULA com motivo claro, em vez de
+ * mandar um id para o endpoint de outro provedor.
  */
 async function padraoDaInstalacao(
   providerDaConfiguracao: () => Promise<string | null>,
@@ -204,8 +233,150 @@ async function padraoDaInstalacao(
   const id = String(padrao);
   if (id.includes("/")) return null;
   const provider = await providerDaConfiguracao();
-  if (provider === null || provider === "openrouter") return null;
-  return resolveLanguageModel(`${provider}/${id}`);
+  if (provider !== null && provider !== "openrouter") {
+    const peloProvider = resolveLanguageModel(`${provider}/${id}`);
+    if (peloProvider !== null) return peloProvider;
+  }
+
+  // A CONTA NÃO TEM CHAVE PARA ESTE ID — e a instalação tem. A rota de cima
+  // sintetiza o prefixo a partir do provedor que a ORGANIZAÇÃO escolheu (ou do
+  // `anthropic` que `fn_seed_org_llm_defaults` semeia), e quando esse provedor
+  // não tem chave no `.env` o ponto pedia silêncio com
+  // `reason: "ai_gateway_key_missing"` enquanto `OPENAI_API_KEY` estava lá — a
+  // instalação que responde pelo teste do agente e pelo "Sugerir resposta" ficava
+  // muda só no caminho que responde sozinho (issue #1181).
+  //
+  // Quem diz de QUEM é o id é o CATÁLOGO (`ai_models`), não a vontade de usar
+  // qualquer chave que exista: é a mesma fonte que serve o id BARE e o mesmo
+  // predicado que `resolveOrgLlmConfig` declara. Id que o catálogo não conhece,
+  // ou cujo provedor é exatamente o que já tentamos, segue sem resposta.
+  const provedorDoModelo = await provedorDoModeloNoCatalogo(id);
+  if (provedorDoModelo === null || provedorDoModelo === provider) return null;
+  return resolveLanguageModel(`${provedorDoModelo}/${id}`);
+}
+
+/**
+ * O provedor de um id BARE segundo o catálogo `ai_models` — `null` quando o
+ * catálogo não o conhece (id legado, catálogo ainda não sincronizado).
+ *
+ * Leitura só no degrau de baixo, que hoje termina em skip: o custo é uma
+ * consulta no caminho que, sem ela, responderia "nenhuma chave configurada".
+ * Admin client sem coluna de organização — `ai_models` é catálogo da
+ * instalação, e é assim que `definirPadraoDeIaDaOrganizacao` o lê.
+ */
+async function provedorDoModeloNoCatalogo(modelId: string): Promise<string | null> {
+  try {
+    const admin = createAdminClient();
+    const { data } = await admin
+      .from("ai_models")
+      .select("provider")
+      .eq("model_id", modelId)
+      .limit(1)
+      .maybeSingle();
+    const provider = (data as { provider?: unknown } | null)?.provider;
+    return typeof provider === "string" && provider !== "" ? provider : null;
+  } catch (erro) {
+    // Mesma regra das outras leituras do módulo: fecha a ação (o desfecho é o
+    // `null` de antes), abre a informação, e o log leva só a CLASSE do erro.
+    logger.warn("[gateway-binding] não consegui ler o provedor do modelo no catálogo", {
+      model_id: modelId,
+      erro: erro instanceof Error ? erro.name : typeof erro,
+    });
+    return null;
+  }
+}
+
+/**
+ * O último recurso de `naFaltaUsarOPadraoDaOrganizacao`: o par (provedor,
+ * modelo) que a organização escolheu, com a credencial dela quando existe e,
+ * sem ela, com a chave da instalação daquele provedor.
+ *
+ * O par vai inteiro — a lição do PR #151. O `modelId` sai com o prefixo do
+ * provedor, porque é ele que diz a `llm_calls` de quem é o gasto.
+ */
+async function padraoDaOrganizacao(
+  organizationId: string,
+  daOrg: { provider: string; apiKey: string } | null,
+): Promise<ModeloResolvido | null> {
+  const llm = await llmDaOrganizacao(organizationId);
+  if (llm === null || llm.defaultModel === null) return null;
+  const defaultModel = await modeloDoProvedor(organizationId, llm.provider, llm.defaultModel);
+  const modelId =
+    llm.provider === "openrouter" ||
+    llm.provider === "requesty" ||
+    defaultModel.startsWith(`${llm.provider}/`)
+      ? defaultModel
+      : `${llm.provider}/${defaultModel}`;
+  if (daOrg !== null && daOrg.provider === llm.provider) {
+    const id = idParaOProvider(llm.provider, modelId);
+    const model = id === null ? null : instanciar(llm.provider, daOrg.apiKey, id, null);
+    if (model !== null) return { model, modelId, origem: "credencial_da_organizacao" };
+  }
+  const model = await padraoDaInstalacao(() => Promise.resolve(llm.provider), modelId as ModelId);
+  return model === null ? null : { model, modelId, origem: "padrao" };
+}
+
+/**
+ * O `default_model` da organização, se ele for DESTE provedor — senão, o do
+ * catálogo do provedor pela régua do onboarding.
+ *
+ * Instalações feitas antes de `bootstrap-owner.ts` e `install.sh` gravarem o
+ * par inteiro têm `{provider: 'openai', default_model: 'claude-sonnet-5'}`: o
+ * gatilho semeou o par da Anthropic e o instalador trocou só o provedor. Montar
+ * `openai/claude-sonnet-5` com isso mandava à OpenAI um id que ela não conhece,
+ * em todo ponto que cai no padrão da empresa — e sem migration de dados, é aqui
+ * que o par se conserta, na leitura.
+ *
+ * A pertença é conferida pelo id como o catálogo o guarda: sem o prefixo do
+ * próprio provedor, exceto na OpenRouter, onde o `/` faz parte do id. Par
+ * coerente passa intacto, inclusive quando não é o curado — é a escolha de
+ * alguém. Catálogo vazio ou ilegível devolve o gravado: o desfecho de antes,
+ * nunca um id inventado. Nunca lança.
+ */
+async function modeloDoProvedor(
+  organizationId: string,
+  provider: string,
+  defaultModel: string,
+): Promise<string> {
+  const idNoCatalogo =
+    provider !== "openrouter" && defaultModel.startsWith(`${provider}/`)
+      ? defaultModel.slice(provider.length + 1)
+      : defaultModel;
+  const oGravado = (motivo: string): string => {
+    logger.warn("[gateway-binding] não consegui conferir o modelo padrão no catálogo — usando o gravado", {
+      organization_id: organizationId,
+      provider,
+      motivo,
+    });
+    return defaultModel;
+  };
+  try {
+    // `ai_models` é o catálogo da instalação, sem `organization_id`: não há
+    // tenant a filtrar aqui.
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from("ai_models")
+      .select("model_id")
+      .eq("provider", provider)
+      .eq("model_id", idNoCatalogo)
+      .limit(1)
+      .maybeSingle();
+    if (error) return oGravado(error.message);
+    if (data !== null) return defaultModel;
+
+    const escolha = await escolherModeloNoCatalogo(admin, provider);
+    if (escolha === null) return oGravado("catálogo ilegível");
+    if (!escolha.escolhido) return defaultModel;
+    logger.warn("[gateway-binding] o modelo padrão da organização não é do provedor dela — usando o do catálogo", {
+      organization_id: organizationId,
+      provider,
+      gravado: defaultModel,
+      usado: escolha.modelId,
+    });
+    return escolha.modelId;
+  } catch (erro) {
+    return oGravado(erro instanceof Error ? erro.name : typeof erro);
+  }
 }
 
 /**
@@ -217,6 +388,12 @@ async function padraoDaInstalacao(
  * falha devolve `null`, e a escada termina no mesmo desfecho de antes.
  */
 async function providerDaOrganizacao(organizationId: string): Promise<string | null> {
+  return (await llmDaOrganizacao(organizationId))?.provider ?? null;
+}
+
+async function llmDaOrganizacao(
+  organizationId: string,
+): Promise<{ provider: string; defaultModel: string | null } | null> {
   try {
     const admin = createAdminClient();
     // Admin client bypassa RLS: filtro por organização é PROGRAMÁTICO e
@@ -226,8 +403,12 @@ async function providerDaOrganizacao(organizationId: string): Promise<string | n
       .select("settings")
       .eq("id", organizationId)
       .maybeSingle();
-    const provider = (data?.settings as { llm?: { provider?: string } } | null)?.llm?.provider;
-    return typeof provider === "string" && provider !== "" ? provider : null;
+    const llm = (data?.settings as { llm?: { provider?: unknown; default_model?: unknown } } | null)
+      ?.llm;
+    if (typeof llm?.provider !== "string" || llm.provider === "") return null;
+    const defaultModel =
+      typeof llm.default_model === "string" && llm.default_model !== "" ? llm.default_model : null;
+    return { provider: llm.provider, defaultModel };
   } catch (erro) {
     logger.warn("[gateway-binding] não consegui ler o provedor da organização", {
       organization_id: organizationId,
@@ -369,6 +550,8 @@ function instanciar(
     // padrão com aviso — a tela ofereceria um provedor que estes workers ignoram.
     case "deepseek":
       return createOpenAI({ apiKey, baseURL: baseUrl ?? DEEPSEEK_ENDPOINT })(modelId);
+    case "requesty":
+      return createOpenAI({ apiKey, baseURL: baseUrl ?? REQUESTY_ENDPOINT }).chat(modelId); // ver providers.ts
     default:
       return null;
   }

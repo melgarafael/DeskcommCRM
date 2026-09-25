@@ -84,13 +84,31 @@ import { normalizarInstante } from "@/lib/ai/elegibilidade/gate";
  */
 export const PRAZO_DO_SILENCIO_MS = 60 * 60 * 1000;
 
-const MOTIVO = "Atendimento manual pelo canal (resposta fora do CRM)";
+/** Motivo gravado quando uma pessoa responde pelo canal, fora do CRM. */
+export const MOTIVO_ATENDIMENTO_MANUAL = "Atendimento manual pelo canal (resposta fora do CRM)";
+
+/**
+ * Motivo gravado quando o operador manda `#off` do celular. Separado do motivo
+ * acima de propósito: a tela e a trilha precisam distinguir "alguém respondeu à
+ * mão" de "alguém desligou o automático com o comando".
+ */
+export const MOTIVO_COMANDO_OFF = "Comando #off enviado pelo celular";
 
 export interface PausaPorAtendimentoManualInput {
   organizationId: string;
   conversationId: string;
   /** Rótulo da origem do evento, só para log (o adapter que chamou se identifica). */
   canal?: string;
+  /** Texto gravado em `last_handoff_reason`. Default = `MOTIVO_ATENDIMENTO_MANUAL`. */
+  motivo?: string;
+  /**
+   * `true` grava `'infinity'` (só `#on` pelo celular ou "devolver ao automático"
+   * na tela religam) em vez do prazo. Só vale para o agente que ligou "Comandos
+   * pelo celular" (`ai_agents.config.aceita_comandos_celular`): sem o `#on` à
+   * mão, silêncio durável por um "oi" no celular seria a conversa morta que a
+   * docstring deste módulo descreve.
+   */
+  duravel?: boolean;
   /**
    * O instante da fala humana. INJETADO para o teste não depender do relógio
    * real: o `now()` do banco e o `Date.now()` do processo são dois relógios, e
@@ -110,7 +128,11 @@ export async function pausarIaPorAtendimentoManual(
   input: PausaPorAtendimentoManualInput,
 ): Promise<boolean> {
   const agora = input.agora ?? new Date();
-  const proposto = new Date(agora.getTime() + PRAZO_DO_SILENCIO_MS);
+  const propostoMs = input.duravel
+    ? Number.POSITIVE_INFINITY
+    : agora.getTime() + PRAZO_DO_SILENCIO_MS;
+  const gravado = input.duravel ? "infinity" : new Date(propostoMs).toISOString();
+  const motivo = input.motivo ?? MOTIVO_ATENDIMENTO_MANUAL;
 
   try {
     const { data: atual, error: readErr } = await admin
@@ -144,14 +166,14 @@ export async function pausarIaPorAtendimentoManual(
         : silenciadaAte instanceof Date
           ? silenciadaAte.getTime()
           : silenciadaAte;
-    if (atualMs >= proposto.getTime()) return false;
+    if (atualMs >= propostoMs) return false;
 
     const { error: updErr } = await admin
       .from("conversations")
       .update({
-        bot_silenced_until: proposto.toISOString(),
+        bot_silenced_until: gravado,
         last_handoff_at: agora.toISOString(),
-        last_handoff_reason: MOTIVO,
+        last_handoff_reason: motivo,
       })
       .eq("organization_id", input.organizationId)
       .eq("id", input.conversationId);
@@ -169,7 +191,8 @@ export async function pausarIaPorAtendimentoManual(
       organization_id: input.organizationId,
       conversation_id: input.conversationId,
       canal: input.canal ?? "desconhecido",
-      silenciada_ate: proposto.toISOString(),
+      silenciada_ate: gravado,
+      motivo,
     });
     return true;
   } catch (err) {
@@ -180,4 +203,15 @@ export async function pausarIaPorAtendimentoManual(
     });
     return false;
   }
+}
+
+/**
+ * Pausa DURÁVEL (`'infinity'`) — o `#off` do celular, e a resposta manual de quem
+ * ligou "Comandos pelo celular". A regra é a mesma de cima; só o prazo muda.
+ */
+export async function pausarIaDuravelmente(
+  admin: SupabaseClient,
+  input: Omit<PausaPorAtendimentoManualInput, "duravel">,
+): Promise<boolean> {
+  return pausarIaPorAtendimentoManual(admin, { ...input, duravel: true });
 }

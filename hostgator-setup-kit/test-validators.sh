@@ -37,6 +37,27 @@ set +e   # os dois ligam `set -e`; aqui esperamos validadores falharem de propó
 
 fail=0
 
+# ── Sandbox de CHAVES DE IA: o ambiente de quem roda é uma SEGUNDA fonte que o
+# install.sh lê — e este caso instala SEM chave (issue #1570) ────────────────
+# `pendencia_da_ia` (install.sh:2012) decide o aviso da tela final lendo
+# AI_GATEWAY_API_KEY e a chave do provedor DIRETO DO AMBIENTE, não só do .env;
+# o caso "instalar SEM chave de IA" limpava apenas o .env (grep -v abaixo) e
+# deixava o ambiente de quem roda decidir o veredito. Medido em 24/09/2026: com
+# AI_GATEWAY_API_KEY exportada, a suíte reprova com a MESMA mensagem do run
+# 35948236372 — `✗ a tela final não avisa
+# que a IA ainda não atende`, 1 de 1 — porque o install grava a chave herdada
+# de volta no .env (`envq AI_GATEWAY_API_KEY`, install.sh:1702) e nenhum
+# assertion daqui cobra o gateway. Os outros três nomes contaminam ANTES:
+# ANTHROPIC_API_KEY → 2 vermelhos (provedor + `veio com valor`), OPENAI_API_KEY
+# → 2, OPENROUTER_API_KEY → 3 (contamina o AI_PROVIDER na entrevista).
+# Zerando as quatro aqui, TODO caso nasce sem chave e cada caso decide as
+# chaves que quer pelo .env que escreve — mesma hermetização que a linha
+# `SUPABASE_ACCESS_TOKEN=` já faz por chamada lá embaixo.
+# O passo do CI não exporta chave de IA (env: só VERIFY_INICIO e PNPM_HOME) e o
+# mesmo SHA passou na re-execução: isto hermetiza a suíte para quem roda com
+# chave no terminal, mas não é a causa da intermitência da #1570, que segue aberta.
+export ANTHROPIC_API_KEY= OPENAI_API_KEY= OPENROUTER_API_KEY= AI_GATEWAY_API_KEY=
+
 # ── Sandbox: a suíte NÃO pode escrever no crontab da máquina de quem a roda ──
 # Não é hipótese: os testes JÁ sujaram o crontab do mantenedor com 10 linhas
 # órfãs — uma delas um `curl` com Bearer batendo num domínio de exemplo a cada

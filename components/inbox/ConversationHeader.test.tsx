@@ -15,6 +15,7 @@ import type { ConversationWithContact } from "@/hooks/inbox/useConversationsReal
 
 const closeMutate = vi.hoisted(() => vi.fn());
 const arquivarMutate = vi.hoisted(() => vi.fn());
+const startCall = vi.hoisted(() => vi.fn());
 
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useAuth: () => ({ user: { id: "u1", support: null } }),
@@ -44,6 +45,12 @@ vi.mock("@/components/inbox/ReassignDialog", () => ({ ReassignDialog: () => null
 vi.mock("@/components/inbox/SnoozeButton", () => ({ SnoozeButton: () => null }));
 vi.mock("@/components/inbox/JanelaSelo", () => ({ JanelaSelo: () => null }));
 vi.mock("@/components/inbox/ChannelLogo", () => ({ ChannelLogo: () => null }));
+vi.mock("@/hooks/voice/useVoiceSessionStatus", () => ({
+  useVoiceSessionStatus: () => ({ data: { configured: true, paired: true } }),
+}));
+vi.mock("@/components/voice/VoiceCallContext", () => ({
+  useVoiceCall: () => ({ call: null, startCall }),
+}));
 
 function conversa(status: string): ConversationWithContact {
   return {
@@ -77,6 +84,43 @@ function conversa(status: string): ConversationWithContact {
 beforeEach(() => {
   closeMutate.mockReset();
   arquivarMutate.mockReset();
+  startCall.mockReset();
+});
+
+describe("ConversationHeader — chamada de voz na Inbox", () => {
+  it("mostra Chamar e liga para o contato da conversa", async () => {
+    const user = userEvent.setup();
+    const atual = conversa("open");
+    atual.contacts = {
+      id: "contato-1",
+      display_name: "Raphael",
+      name: "Raphael",
+      phone_number: "+5511999999999",
+      tags: [],
+      is_blocked: false,
+      is_anonymized: false,
+    };
+    render(<ConversationHeader conversation={atual} />);
+
+    await user.click(screen.getByRole("button", { name: "Chamar" }));
+    expect(startCall).toHaveBeenCalledWith("contato-1");
+  });
+
+  it("não oferece chamada individual para um grupo", () => {
+    const atual = conversa("open");
+    atual.is_group = true;
+    atual.contacts = {
+      id: "contato-1",
+      display_name: "Grupo",
+      name: "Grupo",
+      phone_number: "+5511999999999",
+      tags: [],
+      is_blocked: false,
+      is_anonymized: false,
+    };
+    render(<ConversationHeader conversation={atual} />);
+    expect(screen.queryByRole("button", { name: "Chamar" })).toBeNull();
+  });
 });
 
 describe("ConversationHeader — Fechar e Arquivar por AlertDialog", () => {

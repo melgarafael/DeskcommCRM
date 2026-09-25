@@ -78,6 +78,21 @@ describe("listClassifierModels", () => {
     expect(out[0]?.origem).toBe("org");
   });
 
+  it("a chave do Jev (que não conversa) não abre o catálogo dele como classificador", async () => {
+    let pedidos: unknown = null;
+    const out = await listClassifierModels(
+      db({
+        creds: { data: [{ provider: "typesafe" }, { provider: "openai" }] },
+        models: { data: [{ provider: "openai", model_id: "gpt-5-mini", display_name: "GPT-5 mini" }] },
+        onIn: (v) => (pedidos = v),
+      }),
+      "org1",
+      SEM_PLATAFORMA,
+    );
+    expect(pedidos).toEqual(["openai"]);
+    expect(out.map((m) => m.provider)).toEqual(["openai"]);
+  });
+
   it("sem credencial nenhuma devolve lista vazia — e NÃO consulta o catálogo", async () => {
     const consultouCatalogo = vi.fn();
     const out = await listClassifierModels(

@@ -21,7 +21,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { carregaEtapasCitadas } from "@/lib/followup/etapas-citadas";
 import type { FollowupFlowSurface } from "@/lib/followup/api-schemas";
 import { moduloLigado } from "@/lib/instalacao/modulos";
-import { validateFlowForPublish } from "@/lib/followup/validate-publish";
+import { proximosDoGrafo, validateFlowForPublish, type RoteiroDoPublish } from "@/lib/followup/validate-publish";
 import { publishFollowupFlowVersion } from "@/lib/followup/publish";
 import type { FlowGraph } from "@/lib/followup/graph-schema";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -168,7 +168,40 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   // está ativa — sem esta leitura, uma regra que nunca decide publicaria calada.
   const citadas = await carregaEtapasCitadas(admin, activeOrg.orgId, graph.nodes);
   if (!citadas.ok) return fail("internal_error", citadas.mensagem, 500, { requestId });
-  const validation = validateFlowForPublish(graph, { etapas: citadas.etapas, surface });
+  // Roteiro: para onde os OUTROS roteiros ativos encadeiam — para recusar a
+  // publicação que fecharia um ciclo A → B → A (revisão do #1573).
+  let roteiro: RoteiroDoPublish | undefined;
+  if (surface === "atendimento") {
+    const { data: ativos, error: ativosErr } = await admin
+      .from("followup_flow_pointers")
+      .select("id, name, active_version_id")
+      .eq("organization_id", activeOrg.orgId)
+      .eq("surface", "atendimento")
+      .eq("status", "active")
+      .neq("id", id);
+    if (ativosErr) return fail("internal_error", ativosErr.message, 500, { requestId });
+    const versoes = (ativos ?? []).flatMap((r) => (r.active_version_id ? [r.active_version_id as string] : []));
+    const grafos = new Map<string, unknown>();
+    if (versoes.length > 0) {
+      const { data: vs, error: vsErr } = await admin
+        .from("followup_flow_versions")
+        .select("id, graph")
+        .eq("organization_id", activeOrg.orgId)
+        .in("id", versoes);
+      if (vsErr) return fail("internal_error", vsErr.message, 500, { requestId });
+      for (const v of vs ?? []) grafos.set(v.id as string, v.graph);
+    }
+    roteiro = {
+      pointerId: id,
+      encadeamentos: new Map(
+        (ativos ?? []).map((r) => [
+          r.id as string,
+          { nome: r.name as string, proximos: proximosDoGrafo(grafos.get(r.active_version_id as string)) },
+        ]),
+      ),
+    };
+  }
+  const validation = validateFlowForPublish(graph, { etapas: citadas.etapas, surface, roteiro });
   if (!validation.ok) {
     return fail("validation_failed", t("Fluxo reprovado na validação de publish."), 422, {
       requestId,

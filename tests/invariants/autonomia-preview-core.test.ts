@@ -250,4 +250,19 @@ it("assistência sob demanda instala fronteira original antes de ler checkpoint"
   });
   expect(JSON.stringify(prompts)).toContain("RESUMO DO ATENDIMENTO ATUAL");
   expect(JSON.stringify(prompts)).not.toContain("SENTINELA DE ATENDIMENTO ANTERIOR");
+  // O rascunho sai sem a chamada de fechamento: o checkpoint da prévia não é lido
+  // por ninguém no modo assistido e segurava a entrega (16 de 28 s, medido).
+  expect(JSON.stringify(prompts)).not.toContain("Feche o turno AGORA");
+  const rascunho = await pool.query(
+    "select status, original_body from ai_reply_drafts where organization_id=$1 and conversation_id=$2 order by created_at desc limit 1",
+    [f.org, f.conversation],
+  );
+  expect(rascunho.rows[0]?.original_body).toContain("nove horas");
+  // E o loop para no send_message: nenhuma chamada ao modelo depois do envio proposto.
+  const depoisDoEnvio = prompts.filter((p) =>
+    (JSON.parse(p) as Array<{ role: string; content: unknown }>).some(
+      (m) => m.role === "tool" && JSON.stringify(m.content).includes('"toolName":"send_message"'),
+    ),
+  );
+  expect(depoisDoEnvio).toHaveLength(0);
 });

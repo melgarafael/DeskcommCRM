@@ -6,6 +6,7 @@ import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { useT } from "@/hooks/i18n/useT";
 import type { FlowGraph } from "@/lib/followup/graph-schema";
+import type { FollowupFlowSurface } from "@/lib/followup/api-schemas";
 import type { FollowupFlowStatus } from "./useFollowupFlows";
 
 export interface FollowupFlowDetailRow {
@@ -16,6 +17,8 @@ export interface FollowupFlowDetailRow {
   draft_graph: FlowGraph | null;
   handoff_policy: "pause" | "cancel" | "allow";
   trigger_config: Record<string, unknown>;
+  /** Superfície do fluxo: decide a paleta, os controles da barra e o Fim. */
+  surface: FollowupFlowSurface;
   created_at: string;
   updated_at: string;
   versions_count: number;

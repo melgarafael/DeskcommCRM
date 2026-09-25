@@ -131,19 +131,21 @@ function chunk(tipo: string, dados: Buffer): Buffer {
   return Buffer.concat([tamanho, corpo, crc]);
 }
 
-function pngSolido(lado: number, cor: [number, number, number]): Buffer {
+function pngSolido(lado: number, cor: [number, number, number], bordaTransparente = false): Buffer {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(lado, 0);
   ihdr.writeUInt32BE(lado, 4);
   ihdr[8] = 8; // bit depth
-  ihdr[9] = 2; // color type: truecolor
+  ihdr[9] = 6; // truecolor + alpha: a fixture também mede transparência real.
   const linhas: Buffer[] = [];
   for (let y = 0; y < lado; y++) {
-    const linha = Buffer.alloc(1 + lado * 3);
+    const linha = Buffer.alloc(1 + lado * 4);
     for (let x = 0; x < lado; x++) {
-      linha[1 + x * 3] = cor[0];
-      linha[2 + x * 3] = cor[1];
-      linha[3 + x * 3] = cor[2];
+      linha[1 + x * 4] = cor[0];
+      linha[2 + x * 4] = cor[1];
+      linha[3 + x * 4] = cor[2];
+      linha[4 + x * 4] =
+        bordaTransparente && (x < 12 || y < 12 || x >= lado - 12 || y >= lado - 12) ? 0 : 255;
     }
     linhas.push(linha);
   }
@@ -297,9 +299,7 @@ async function loginComTotp(page: Page, email: string, secret: string): Promise<
     ]);
     if (desfecho === "entrou") return;
     if (desfecho === "sem-desfecho") {
-      throw new Error(
-        `o desafio de MFA de ${email} não terminou em 60s (url=${page.url()})`,
-      );
+      throw new Error(`o desafio de MFA de ${email} não terminou em 60s (url=${page.url()})`);
     }
     await page.waitForTimeout(msUntilNextTotpWindow() + 200);
   }
@@ -310,6 +310,7 @@ async function subir(
   page: Page,
   escopo: Escopo,
   arquivo: { nome: string; mime: string; bytes: Buffer },
+  tema: "claro" | "escuro" = "claro",
 ): Promise<void> {
   // A HIDRATAÇÃO, e não a visibilidade: o input existe no HTML do SSR antes de o
   // React atar o `onChange`, e arquivo posto nessa janela não dispara requisição
@@ -318,22 +319,33 @@ async function subir(
     page.locator(`[data-campo-de-logo='${escopo}'][data-hidratado]`),
     `o campo de logo da camada "${escopo}" não hidratou`,
   ).toBeVisible({ timeout: 15_000 });
-  await page.locator(`#logo-${escopo}`).setInputFiles({
+  const entrada = tema === "escuro" ? `#logo-escuro-${escopo}` : `#logo-${escopo}`;
+  const resposta = page.waitForResponse(
+    (r) => r.url().includes("/api/v1/marca/logo") && r.request().method() === "POST",
+  );
+  await page.locator(entrada).setInputFiles({
     name: arquivo.nome,
     mimeType: arquivo.mime,
     buffer: arquivo.bytes,
   });
-  await expect(page.getByText(/logo atualizado/i)).toBeVisible({ timeout: 15_000 });
+  expect((await resposta).ok()).toBe(true);
+  await expect(page.getByText(/logo atualizado/i).last()).toBeVisible({ timeout: 15_000 });
 }
 
 async function removerLogoSeHouver(page: Page, tela: string, escopo: Escopo): Promise<void> {
   await page.goto(tela);
-  const remover = page
-    .locator(`[data-campo-de-logo='${escopo}']`)
-    .getByRole("button", { name: /^remover$/i });
-  if ((await remover.count()) === 0) return;
-  await remover.click();
-  await expect(page.getByText(/logo removido/i)).toBeVisible({ timeout: 15_000 });
+  const campo = page.locator(`[data-campo-de-logo='${escopo}'][data-hidratado]`);
+  await expect(campo).toBeVisible();
+  for (const nome of [/^remover logo escuro$/i, /^remover$/i]) {
+    const remover = campo.getByRole("button", { name: nome });
+    if ((await remover.count()) === 0) continue;
+    const resposta = page.waitForResponse(
+      (r) => r.url().includes("/api/v1/marca/logo") && r.request().method() === "DELETE",
+    );
+    await remover.click();
+    expect((await resposta).ok()).toBe(true);
+    await expect(remover).toHaveCount(0);
+  }
 }
 
 function evidencia(nome: string): string {
@@ -401,9 +413,10 @@ test.describe("a moldura do logo no tema escuro", () => {
       `a moldura não foi pintada: o pai do <img> tem background-color=${m.fundo} ` +
         `(tag=${m.tagDoPai}, classe="${m.classeDoPai}")`,
     ).toBe(true);
-    expect(m.padding.every((p) => p > 0), `a moldura não tem folga: padding=${m.padding}`).toBe(
-      true,
-    );
+    expect(
+      m.padding.every((p) => p > 0),
+      `a moldura não tem folga: padding=${m.padding}`,
+    ).toBe(true);
     expect(m.sombra, "a moldura não tem sombra").not.toBe("none");
 
     // CONTENÇÃO, não proximidade: a moldura tem de ser MAIOR que o logo nos dois
@@ -443,10 +456,7 @@ test.describe("a moldura do logo no tema escuro", () => {
       const contexto = await browser.newContext();
       try {
         const pagina = await contexto.newPage();
-        await pagina.addInitScript(
-          (t) => window.localStorage.setItem("deskcomm-theme", t),
-          tema,
-        );
+        await pagina.addInitScript((t) => window.localStorage.setItem("deskcomm-theme", t), tema);
         await pagina.goto("/login");
         expect(await temaDaPagina(pagina), `a fachada não ficou em ${tema}`).toBe(tema);
 
@@ -460,9 +470,10 @@ test.describe("a moldura do logo no tema escuro", () => {
             `a fachada no escuro desenhou o logo CRU (fundo=${m.fundo}) — o defeito ` +
               `volta inteiro na tela de primeira impressão`,
           ).toBe(true);
-          expect(m.padding.every((p) => p > 0), `fachada escura sem folga: ${m.padding}`).toBe(
-            true,
-          );
+          expect(
+            m.padding.every((p) => p > 0),
+            `fachada escura sem folga: ${m.padding}`,
+          ).toBe(true);
           expect(m.caixaDoPai.largura).toBeGreaterThan(m.caixaDoLogo.largura);
           expect(m.caixaDoPai.altura).toBeGreaterThan(m.caixaDoLogo.altura);
         } else {
@@ -582,6 +593,74 @@ test.describe("a moldura do logo no tema escuro", () => {
     // se os DOIS tivessem mudado junto.
     expect(escuro.altura, "o cabeçalho deixou de ser `h-14` (56px)").toBe(56);
     expect(escuro.y, "o cabeçalho saiu do topo da barra").toBe(0);
+  });
+
+  test("(7) dois logos: troca real de tema, fachada e remoção independente", async ({
+    page,
+    browser,
+  }) => {
+    await loginComTotp(page, creds.users.dono!.email, secret());
+    await removerLogoSeHouver(page, "/app/settings/marca", "organizacao");
+    await removerLogoSeHouver(page, "/admin/marca", "instalacao");
+    const clara = { nome: "logo-claro.png", mime: "image/png", bytes: PNG_AZUL_MARINHO };
+    const escura = {
+      nome: "logo-escuro.png",
+      mime: "image/png",
+      bytes: pngSolido(64, [255, 255, 255], true),
+    };
+    await subir(page, "instalacao", clara);
+    await subir(page, "instalacao", escura, "escuro");
+    const previaClara = page.locator("[data-previa-do-logo='claro'] img");
+    const previaEscura = page.locator("[data-previa-do-logo='escuro'] img");
+    await expect(previaEscura).toBeVisible();
+    const urlClara = await previaClara.getAttribute("src");
+    const urlEscura = await previaEscura.getAttribute("src");
+    expect(urlEscura).toBeTruthy();
+    expect(urlEscura).not.toBe(urlClara);
+    expect(fundoETransparente((await medirMoldura(previaEscura)).fundo)).toBe(true);
+    await page.screenshot({ path: evidencia("7-duas-artes-previa.png"), fullPage: true });
+
+    await page.goto("/app/inbox");
+    for (const tema of ["dark", "light"] as const) {
+      await escolherTemaPelaTela(page, tema);
+      const logo = page.locator("aside img:visible").first();
+      await expect(logo).toHaveAttribute("src", (tema === "dark" ? urlEscura : urlClara)!);
+      expect(fundoETransparente((await medirMoldura(logo)).fundo)).toBe(true);
+      await page.screenshot({ path: evidencia(`7-barra-${tema}.png`) });
+      const contexto = await browser.newContext();
+      try {
+        const fachada = await contexto.newPage();
+        await fachada.addInitScript((t) => localStorage.setItem("deskcomm-theme", t), tema);
+        await fachada.goto("/login");
+        const logoPublico = fachada.getByTestId(
+          tema === "dark" ? "logo-escuro-da-fachada" : "logo-da-fachada",
+        );
+        await expect(logoPublico).toHaveAttribute("src", (tema === "dark" ? urlEscura : urlClara)!);
+        expect(fundoETransparente((await medirMoldura(logoPublico)).fundo)).toBe(true);
+        await fachada.screenshot({ path: evidencia(`7-login-${tema}.png`) });
+      } finally {
+        await contexto.close();
+      }
+    }
+    // Remover só o segundo arquivo deve recuperar o chip anterior sem apagar o primeiro.
+    await page.goto("/admin/marca");
+    const resposta = page.waitForResponse(
+      (r) => r.url().includes("tema=escuro") && r.request().method() === "DELETE",
+    );
+    await page.getByRole("button", { name: "Remover logo escuro", exact: true }).click();
+    expect((await resposta).ok()).toBe(true);
+    await expect(page.locator("[data-previa-do-logo='escuro'] img")).toHaveAttribute(
+      "src",
+      urlClara!,
+    );
+    expect(
+      fundoEClaro((await medirMoldura(page.locator("[data-previa-do-logo='escuro'] img"))).fundo),
+    ).toBe(true);
+    await page.reload();
+    await expect(page.locator("[data-previa-do-logo='claro'] img")).toHaveAttribute(
+      "src",
+      urlClara!,
+    );
   });
 
   /**

@@ -354,3 +354,203 @@ describe("a credencial da organização só vale para modelo que o provider dela
     expect((r?.model as { modelId?: string }).modelId).toBe("anthropic/claude-haiku-4-5");
   });
 });
+
+/**
+ * A QUEDA PARA O PADRÃO DA ORGANIZAÇÃO — só quando pedida, e com o par inteiro.
+ *
+ * O clima pede um id da Anthropic. Numa empresa que atende pela OpenAI sem
+ * modelo escolhido para ele, nem a credencial dela nem a chave da instalação
+ * executam esse id, e o resolvedor devolvia `null`: clima mudo. Quem pede a
+ * queda recebe o padrão da organização (provedor E modelo de `settings.llm`);
+ * quem não pede — o agente que responde o cliente — segue recebendo `null`,
+ * porque o modelo dele só muda pela publicação.
+ */
+describe("naFaltaUsarOPadraoDaOrganizacao", () => {
+  function adminOpenAI() {
+    return () => ({
+      from: (tabela: string) => {
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          not: () => chain,
+          order: () => chain,
+          limit: () => chain,
+          maybeSingle: async () => ({
+            data:
+              tabela === "ai_purpose_bindings"
+                ? null
+                : tabela === "organizations"
+                  ? { settings: { llm: { provider: "openai", default_model: "gpt-5.6-terra" } } }
+                  : { api_key_encrypted: "x", api_key_iv: "y", api_key_tag: "z" },
+          }),
+        };
+        return chain;
+      },
+    });
+  }
+
+  async function importarSemChaveDeInstalacao() {
+    vi.doMock("@/lib/supabase/admin", () => ({ createAdminClient: adminOpenAI() }));
+    // Nenhuma chave de instalação executa o id da Anthropic.
+    vi.doMock("@/lib/ai/gateway", async (orig) => ({
+      ...((await orig()) as Record<string, unknown>),
+      resolveLanguageModel: () => null,
+    }));
+    vi.resetModules();
+    return import("@/lib/ai/gateway-binding");
+  }
+
+  it("sem a opção, o id de outro provedor sem chave nenhuma devolve null (controle)", async () => {
+    const mod = await importarSemChaveDeInstalacao();
+    expect(await mod.resolverModeloDoPonto("bot_respond", ORG, "anthropic/claude-haiku-4-5")).toBeNull();
+  });
+
+  it("com a opção, usa o padrão da organização com a credencial dela", async () => {
+    const mod = await importarSemChaveDeInstalacao();
+    const r = await mod.resolverModeloDoPonto("sentiment_classify", ORG, "anthropic/claude-haiku-4-5", {
+      naFaltaUsarOPadraoDaOrganizacao: true,
+    });
+    expect(r?.origem).toBe("credencial_da_organizacao");
+    expect(r?.modelId).toBe("openai/gpt-5.6-terra");
+    expect((r?.model as { modelId?: string }).modelId).toBe("gpt-5.6-terra");
+  });
+});
+
+/**
+ * O PAR QUE A INSTALAÇÃO GRAVOU PELA METADE — conserto na leitura.
+ *
+ * O gatilho `fn_seed_org_llm_defaults` semeia o par da Anthropic, e o
+ * instalador trocava só o `provider`: `{openai, claude-sonnet-5}`. Montado como
+ * `openai/claude-sonnet-5`, o id ia à OpenAI, que não o conhece — em todo ponto
+ * que cai no padrão da empresa. Instalações que já têm o par quebrado não
+ * recebem migration de dados; é a leitura que troca o modelo pelo do catálogo
+ * daquele provedor, e só quando o gravado não é dele.
+ */
+describe("o padrão da organização com o par (provedor, modelo) incoerente", () => {
+  const CATALOGO_OPENAI = [
+    { provider: "openai", model_id: "gpt-5-mini", supports_tools: true, input_price_per_million_cents: 25, output_price_per_million_cents: 200 },
+    {
+      provider: "openai",
+      model_id: "gpt-5.6-terra",
+      is_default_for_provider: true,
+      supports_tools: true,
+      input_price_per_million_cents: 250,
+      output_price_per_million_cents: 1000,
+    },
+  ];
+
+  function admin(
+    llm: Record<string, unknown>,
+    catalogo: Array<Record<string, unknown>> | "falha",
+    credencial: boolean,
+  ) {
+    return () => ({
+      from: (tabela: string) => {
+        const filtros: Record<string, unknown> = {};
+        const doCatalogo = () =>
+          catalogo === "falha"
+            ? []
+            : catalogo.filter((m) => m.provider === filtros.provider && (filtros.model_id === undefined || m.model_id === filtros.model_id));
+        const erro = catalogo === "falha" && tabela === "ai_models" ? { message: "relation does not exist" } : null;
+        const chain = {
+          select: () => chain,
+          eq: (coluna: string, valor: unknown) => {
+            filtros[coluna] = valor;
+            return chain;
+          },
+          not: () => chain,
+          is: () => chain,
+          order: () => chain,
+          limit: () => chain,
+          maybeSingle: async () => ({
+            error: erro,
+            data:
+              tabela === "ai_purpose_bindings"
+                ? null
+                : tabela === "organizations"
+                  ? { settings: { llm } }
+                  : tabela === "ai_models"
+                    ? (doCatalogo()[0] ?? null)
+                    : credencial
+                      ? { api_key_encrypted: "x", api_key_iv: "y", api_key_tag: "z" }
+                      : null,
+          }),
+          // A leitura do catálogo inteiro (`escolherModeloNoCatalogo`) é
+          // aguardada direto na cadeia, sem `maybeSingle`.
+          then: (ok: (r: { data: unknown; error: unknown }) => void) => ok({ data: doCatalogo(), error: erro }),
+        };
+        return chain;
+      },
+    });
+  }
+
+  const PEDIDO = "anthropic/claude-haiku-4-5";
+
+  async function resolver(
+    llm: Record<string, unknown>,
+    catalogo: Array<Record<string, unknown>> | "falha",
+    credencial = true,
+  ) {
+    vi.doMock("@/lib/supabase/admin", () => ({ createAdminClient: admin(llm, catalogo, credencial) }));
+    // Nenhuma chave executa o id PEDIDO; o do padrão da organização, a chave da
+    // instalação executa — é o que deixa ver o modelo escolhido sem credencial.
+    vi.doMock("@/lib/ai/gateway", async (orig) => ({
+      ...((await orig()) as Record<string, unknown>),
+      resolveLanguageModel: (m: string) => (m === PEDIDO ? null : { __padrao: true, modelId: m }),
+    }));
+    vi.resetModules();
+    const mod = await import("@/lib/ai/gateway-binding");
+    return mod.resolverModeloDoPonto("sentiment_classify", ORG, PEDIDO, {
+      naFaltaUsarOPadraoDaOrganizacao: true,
+    });
+  }
+
+  it("{openai, claude-sonnet-5} resolve o curado da OpenAI, não o id da Anthropic", async () => {
+    const r = await resolver({ provider: "openai", default_model: "claude-sonnet-5" }, CATALOGO_OPENAI);
+    expect(r?.modelId).toBe("openai/gpt-5.6-terra");
+    expect((r?.model as { modelId?: string }).modelId).toBe("gpt-5.6-terra");
+  });
+
+  it("par coerente passa intacto, mesmo quando não é o curado", async () => {
+    // Controle: sem ele, um resolvedor que SEMPRE trocasse pelo curado passaria
+    // no caso acima e apagaria a escolha que alguém fez na tela.
+    const r = await resolver({ provider: "openai", default_model: "gpt-5-mini" }, CATALOGO_OPENAI);
+    expect(r?.modelId).toBe("openai/gpt-5-mini");
+  });
+
+  it("o id gravado com o prefixo do próprio provedor é conferido sem ele", async () => {
+    const r = await resolver({ provider: "openai", default_model: "openai/gpt-5-mini" }, CATALOGO_OPENAI);
+    expect(r?.modelId).toBe("openai/gpt-5-mini");
+  });
+
+  describe("na OpenRouter o id com barra é o id do catálogo", () => {
+    // Sem credencial da organização: com ela, a OpenRouter executaria o id
+    // PEDIDO direto (lá o prefixo é rota) e o padrão nem seria consultado.
+    const CATALOGO_OPENROUTER = [
+      { provider: "openrouter", model_id: "anthropic/claude-sonnet-5", supports_tools: true, input_price_per_million_cents: 300, output_price_per_million_cents: 1500 },
+      { provider: "openrouter", model_id: "outro/barato", supports_tools: true, input_price_per_million_cents: 1, output_price_per_million_cents: 1 },
+    ];
+
+    it("e passa intacto quando está no catálogo", async () => {
+      const r = await resolver({ provider: "openrouter", default_model: "anthropic/claude-sonnet-5" }, CATALOGO_OPENROUTER, false);
+      expect(r?.modelId).toBe("anthropic/claude-sonnet-5");
+    });
+
+    it("o id bare da Anthropic, que a OpenRouter não conhece, vira o do catálogo dela", async () => {
+      const r = await resolver({ provider: "openrouter", default_model: "claude-sonnet-5" }, CATALOGO_OPENROUTER, false);
+      expect(r?.modelId).toBe("outro/barato");
+    });
+  });
+
+  it("catálogo vazio do provedor mantém o de antes", async () => {
+    // A OpenRouter chega com zero linhas até o cron de catálogo rodar: sem
+    // modelo para escolher, nada é inventado.
+    const r = await resolver({ provider: "openai", default_model: "claude-sonnet-5" }, []);
+    expect(r?.modelId).toBe("openai/claude-sonnet-5");
+  });
+
+  it("catálogo ilegível mantém o de antes, sem lançar", async () => {
+    const r = await resolver({ provider: "openai", default_model: "claude-sonnet-5" }, "falha");
+    expect(r?.modelId).toBe("openai/claude-sonnet-5");
+  });
+});

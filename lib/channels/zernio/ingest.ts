@@ -25,6 +25,7 @@ import { ehCanalDeConversa } from "@/lib/channels/canais-de-conversa";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
+import { corpoDaLocalizacao } from "@/lib/messaging/localizacao";
 import { encontrarContatoPorTelefone } from "@/lib/channels/contato-por-telefone";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { marcarConversaComMensagem } from "@/lib/channels/marcar-conversa";
@@ -40,6 +41,7 @@ import {
 
 import { aplicarEfeitosPosEntrada } from "../pos-entrada";
 
+import { completarLocalizacao } from "./localizacao";
 import { parseZernioInbound, type ZernioIdentity, type ZernioInboundMessage } from "./webhook";
 
 export interface ZernioIngestResult {
@@ -82,8 +84,11 @@ export async function ingestZernioInbound(
     socialMessage?: SocialMessage;
   },
 ): Promise<ZernioIngestResult> {
-  const msg = input.socialMessage ?? parseZernioInbound(input.payload);
-  if (!msg) return { status: "ignored", reason: "evento_sem_interesse" };
+  const lida = input.socialMessage ?? parseZernioInbound(input.payload);
+  if (!lida) return { status: "ignored", reason: "evento_sem_interesse" };
+  // O pino do WhatsApp chega como "📍 Location", sem coordenadas: elas moram
+  // só na API. Rede social não manda pino — a busca é só do WhatsApp.
+  const msg = input.socialMessage ? lida : await completarLocalizacao(admin, input.organizationId, lida);
 
   // Evento de DESFECHO: a mensagem já existe (ou nem é nossa). Só atualiza o
   // status — inserir aqui criaria uma segunda linha para a mesma mensagem, uma
@@ -588,8 +593,10 @@ async function insertMessage(
       // duplicada na tela.
       sent_via: "external_device",
       status: msg.direction === "outbound" ? (msg.status ?? "sent") : "delivered",
-      type: temAnexo ? tipoDoAnexo(primeiro?.type) : "text",
-      body: msg.text,
+      type: temAnexo ? tipoDoAnexo(primeiro?.type) : msg.location ? "location" : "text",
+      // O pino vira link do mapa no corpo: é o que o agente lê e o que a
+      // prévia da conversa mostra. As coordenadas ficam no metadata para a tela.
+      body: msg.location ? corpoDaLocalizacao(msg.location) : msg.text,
       // A URL do anexo NÃO é pública: é endpoint autenticado do provider, e a
       // plataforma descarta a mídia depois de um tempo. Ela é PONTEIRO, não
       // conteúdo — e é por isso que grava aqui e o worker baixa os bytes já.
@@ -601,7 +608,11 @@ async function insertMessage(
       ...(temAnexo && primeiro?.url
         ? { media_url: primeiro.url, media_mime: mimeDoAnexo(primeiro.type) }
         : {}),
-      metadata: temAnexo ? { provider_attachments: msg.attachments } : {},
+      metadata: temAnexo
+        ? { provider_attachments: msg.attachments }
+        : msg.location
+          ? { location: msg.location }
+          : {},
       ...(msg.sentAt ? { sent_at: msg.sentAt } : {}),
     })
     .select("id")

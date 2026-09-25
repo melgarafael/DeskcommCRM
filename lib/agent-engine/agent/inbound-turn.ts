@@ -148,6 +148,7 @@ import {
   provideCaseUpdateInputSchema,
 } from './human-cases';
 import { buildMcpTurnTools } from '../edge/crm/mcp-tools';
+import { definicaoNaConexao } from '@/lib/channels/linha-do-espelho';
 import { cancelPendingCronsForLead } from '../cron/scheduler';
 import {
   latestInboundSignal,
@@ -190,6 +191,7 @@ import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
+import { anotarUltimaInboundVista, ultimaInboundJaRespondida } from './turno-ja-respondido';
 
 /**
  * Superfície ESTÁTICA das tools do agente (description + inputSchema) — parte do
@@ -2772,16 +2774,20 @@ async function executarTurnoDoAgente(
         // O texto RENDERIZADO vai como `body` da cadeia: os gates de promessa,
         // spinning e disclosure avaliam exatamente o que o contato vai ler. Sem
         // isso, "usar template" seria a forma de escapar dos guardrails de conteúdo.
-        const { rows } = await pool.query<{
-          components: unknown;
-          parameter_format: string;
-          status: string;
-        }>(
-          `select components, parameter_format, status from meta_templates
-            where organization_id = $1 and name = $2 and language = $3`,
-          [tenantId, template_name, language],
-        );
-        const linha = rows[0];
+        // A definição DESTA conexão (lib/channels/linha-do-espelho.ts): sem o
+        // escopo, com canal oficial e parceiro espelhando o mesmo nome, o agente
+        // renderizava e passava pelos gates o texto de OUTRO número.
+        const linha =
+          (await definicaoNaConexao<{
+            components: unknown;
+            parameter_format: string;
+            status: string;
+          }>(pool, ['components', 'parameter_format', 'status'], {
+            organizationId: tenantId,
+            name: template_name,
+            language,
+            channelSessionId: input.channelSessionId,
+          })) ?? undefined;
         if (linha === undefined) {
           return {
             ok: false,
@@ -3760,7 +3766,11 @@ async function executarTurnoDoAgente(
         }
         const mcp = await buildMcpTurnTools(
           deps.crmCfg,
-          { organizationId: tenantId, jobId: preview?.runId ?? liveJob().id },
+          {
+            organizationId: tenantId,
+            jobId: preview?.runId ?? liveJob().id,
+            ...(leadId ? { contactId: leadId } : {}),
+          },
           configDoTurno,
           runLog,
           preview ? { readOnly: true } : undefined,
@@ -4063,6 +4073,12 @@ async function executarTurnoDoAgente(
         messages: openingMessages,
         tools,
         maxSteps,
+        // Rascunho: a resposta é o send_message ACEITO; a etapa seguinte só
+        // "encerrava". Aceito, e não chamado: o envio vetado pela cadeia
+        // before_send volta ao modelo para ele reescrever (o 1º veto ensina).
+        ...(preview?.kind === 'assisted'
+          ? { pararQuando: () => preview.result.candidates.length > 0 }
+          : {}),
         ...(agentConfig !== null
           ? {
               model: agentConfig.model,
@@ -4177,6 +4193,25 @@ async function executarTurnoDoAgente(
     // turno. Aqui o lead já recebeu resposta, mas a conversa ficaria sem
     // checkpoint e sem dono, e o próximo inbound cairia no mesmo bloqueio, agora
     // sem nada tendo mudado no meio.
+    // Prévia sem candidato e sem impedimento: quem opera precisa saber que o agente não propôs nada.
+    const avisarSemCandidato = (p: NonNullable<typeof preview>): void => {
+      if (p.result.candidates.length === 0 && p.result.impediments.length === 0)
+        p.result.impediments.push({
+          code: 'no_candidate',
+          message: 'O agente não propôs uma resposta. Revise o cenário ou a configuração.',
+        });
+    };
+    // ⚠️ RASCUNHO (modo assistido) não fecha o turno com checkpoint. O checkpoint
+    // da prévia não é gravado (a prévia retorna antes do `insertCheckpoint`, logo
+    // abaixo) e o `reply-drafts.ts` não o lê — só a prévia de TESTE (sandbox) o
+    // mostra na tela. Mesmo assim, a chamada de fechamento segurava a entrega do
+    // rascunho: medido em produção (gpt-6-luna, 2026-09-24), resposta pronta às
+    // 12:32:40 e rascunho entregue às 12:32:56 — 16 dos 28 s que o operador
+    // esperava depois de clicar em "Sugerir resposta".
+    if (preview?.kind === 'assisted') {
+      avisarSemCandidato(preview);
+      return;
+    }
     const closing = await runModelCall(
       pool,
       deps.llmCfg,
@@ -4214,11 +4249,7 @@ async function executarTurnoDoAgente(
 
     if (preview) {
       preview.result.checkpoint = content;
-      if (preview.result.candidates.length === 0 && preview.result.impediments.length === 0)
-        preview.result.impediments.push({
-          code: 'no_candidate',
-          message: 'O agente não propôs uma resposta. Revise o cenário ou a configuração.',
-        });
+      avisarSemCandidato(preview);
       return;
     }
 
@@ -4625,6 +4656,26 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
       return;
     }
     if (operationAgent?.pausedAt) return;
+    // UMA RESPOSTA POR MENSAGEM: um turno que rodou antes deste pode ter lido a
+    // mensagem que acordou este job e já respondido a ela — ver o cabeçalho de
+    // `turno-ja-respondido.ts`, com o caso medido. A anotação vem DEPOIS da
+    // pergunta e ANTES de `runAgentTurn` ler a conversa: é ela que deixa o
+    // próximo turno fazer a mesma pergunta a respeito deste.
+    const alvo = {
+      organizationId: job.organization_id,
+      contactId: job.contact_id,
+      conversationId: payload.conversation_id,
+      jobId: job.id,
+    };
+    if (await ultimaInboundJaRespondida(pool, alvo)) {
+      deps.log.info('turno pulado — outro turno já viu e respondeu a última mensagem do cliente', {
+        job_id: job.id,
+        conversation_id: payload.conversation_id,
+        inbound_message_id: payload.inbound_message_id,
+      });
+      return;
+    }
+    await anotarUltimaInboundVista(pool, alvo);
     await runAgentTurn(deps, job, pool, ctx, {
       resolvedAgent,
       channelSessionId: payload.channel_session_id,

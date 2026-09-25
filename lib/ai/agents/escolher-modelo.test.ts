@@ -10,7 +10,11 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { escolherModeloDoProvedor, type ModeloDoCatalogo } from "@/lib/ai/agents/escolher-modelo";
+import {
+  escolherModeloDoProvedor,
+  escolherModeloNoCatalogo,
+  type ModeloDoCatalogo,
+} from "@/lib/ai/agents/escolher-modelo";
 
 const comTools = (id: string, entrada = 100, saida = 200): ModeloDoCatalogo => ({
   model_id: id,
@@ -104,5 +108,63 @@ describe("escolherModeloDoProvedor", () => {
       comTools("gratis/b", 0, 0),
     ]);
     expect(escolha).toMatchObject({ escolhido: true, origem: "automatico" });
+  });
+});
+
+/**
+ * A leitura que o `bootstrap-owner.ts` e o conserto na leitura do par usam: o
+ * script do instalador não é importável (roda `main()` ao carregar), então o
+ * que se prova aqui é a peça que decide o `default_model` que ele grava.
+ */
+describe("escolherModeloNoCatalogo", () => {
+  function dubleDoAdmin(resposta: { data: unknown; error: unknown }) {
+    const filtros: Array<[string, string, unknown]> = [];
+    const chain = {
+      from: (tabela: string) => {
+        filtros.push(["from", tabela, null]);
+        return chain;
+      },
+      select: () => chain,
+      eq: (coluna: string, valor: unknown) => {
+        filtros.push(["eq", coluna, valor]);
+        return chain;
+      },
+      is: (coluna: string, valor: unknown) => {
+        filtros.push(["is", coluna, valor]);
+        return chain;
+      },
+      then: (ok: (r: typeof resposta) => void) => ok(resposta),
+    };
+    return { admin: chain as unknown as Parameters<typeof escolherModeloNoCatalogo>[0], filtros };
+  }
+
+  it("AI_PROVIDER=openai: o par gravado é o curado da OpenAI, lido só do catálogo dela", async () => {
+    const { admin, filtros } = dubleDoAdmin({
+      data: [
+        comTools("gpt-5-mini", 25, 200),
+        { ...comTools("gpt-5.6-terra", 250, 1000), is_default_for_provider: true },
+      ],
+      error: null,
+    });
+    const escolha = await escolherModeloNoCatalogo(admin, "openai");
+    expect(escolha).toEqual({ escolhido: true, modelId: "gpt-5.6-terra", origem: "curado" });
+    expect(filtros).toEqual([
+      ["from", "ai_models", null],
+      ["eq", "provider", "openai"],
+      ["is", "deprecated_at", null],
+    ]);
+  });
+
+  it("catálogo vazio (OpenRouter antes do sync) não escolhe nada", async () => {
+    const { admin } = dubleDoAdmin({ data: [], error: null });
+    expect(await escolherModeloNoCatalogo(admin, "openrouter")).toEqual({
+      escolhido: false,
+      motivo: "catalogo_vazio",
+    });
+  });
+
+  it("leitura que falha é null — distinto de catálogo vazio — e não lança", async () => {
+    const { admin } = dubleDoAdmin({ data: null, error: { message: "boom" } });
+    expect(await escolherModeloNoCatalogo(admin, "openai")).toBeNull();
   });
 });

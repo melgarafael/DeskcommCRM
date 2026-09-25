@@ -106,6 +106,7 @@ export {
   Note,
   FileText,
   Lock,
+  LockOpen,
   Receipt,
   Tag,
   Question,

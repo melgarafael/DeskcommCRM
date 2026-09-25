@@ -24,6 +24,7 @@ vi.mock("@/lib/channels/meta/session", () => ({
 }));
 
 vi.mock("@/lib/channels/meta/ingest", () => ({
+  ingestMetaEcho: async () => ({ status: "ingested" }),
   ingestMetaInbound: async (_a: unknown, e: unknown) => {
     ingeridos.push(e);
     return { status: "ingested" };

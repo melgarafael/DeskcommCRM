@@ -139,6 +139,12 @@ NEXT_PUBLIC_APP_URL=http://localhost:$E2E_PORT
 # quando o aplicativo também é local; o ambiente do produto deixa isto vazio.
 EXTENSIONS_LOCAL_CATALOG_ORIGIN=http://127.0.0.1:56331
 
+# O Jev (\`lib/ai/decisao\`) fala com o dublê \`scripts/duble-jev-e2e.mjs\`, que a
+# spec \`jev-decisoes-rapidas\` sobe nesta porta — a 3996, vizinha do dublê dos
+# SaaS (3997), do Redis HTTP (3998) e do WAHA (3999). Fora daquela spec nada
+# escuta aqui, e não precisa: o Jev nasce desligado em toda organização.
+JEV_API_BASE_URL=http://127.0.0.1:3996
+
 # Placeholders: 'next start' roda em NODE_ENV=production, e lib/env.ts exige
 # estas vars em produção. As specs não exercitam os serviços por trás delas.
 # Local e CI falham pelos mesmos motivos porque leem ESTE arquivo: o workflow

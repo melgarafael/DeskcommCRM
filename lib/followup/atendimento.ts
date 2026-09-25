@@ -737,7 +737,12 @@ export async function processarInboundDoFluxo(
       const ehPendente = estado.situacao.pendentes.some((n) => n.config.key === v.campo);
       const ehCorrecao =
         !ehPendente && node.config.permite_correcao && estado.valores[v.campo] !== undefined;
-      if (!ehPendente && !ehCorrecao) continue;
+      // RESPOSTA TARDIA: a pergunta foi encerrada por não resposta (teto), mas o
+      // cliente finalmente a informou. Gravar é melhor que perder o dado — era o
+      // que acontecia (medido pelo autor: CPF informado após esgotar caiu no vazio).
+      const ehEsgotada =
+        !ehPendente && estado.situacao.esgotadas.some((n) => n.config.key === v.campo);
+      if (!ehPendente && !ehCorrecao && !ehEsgotada) continue;
       // NO-OP: o valor não mudou — não é resposta nova.
       if (v.valor === "" || v.valor === (valoresNovos[v.campo] ?? "")) continue;
       const gravou = await gravarRespostaNoContato(db, {
