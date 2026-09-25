@@ -209,6 +209,18 @@ export const wahaAdapter: ChannelAdapter = {
     }
   },
 
+  async listGroups(input: { sessionRef: string }) {
+    const client = getWahaClient();
+    if (!client) throw new Error("waha_not_configured");
+    return client.listarGrupos(input.sessionRef);
+  },
+
+  async setGroupIntake(input: { sessionRef: string; receive: boolean }) {
+    const client = getWahaClient();
+    if (!client) return false;
+    return client.definirRecebimentoDeGrupos(input.sessionRef, input.receive);
+  },
+
   /**
    * Baixa o anexo que o cliente mandou.
    *

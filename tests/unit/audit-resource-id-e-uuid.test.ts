@@ -57,6 +57,12 @@ const EXCECOES: Record<string, string> = {
   "String(lead.id)": "uuid do lead, convertido porque a origem é jsonb do webhook",
   "string | null | undefined":
     "falso positivo do parser: é uma ANOTAÇÃO DE TIPO num componente, não uma chamada de audit",
+  "string;":
+    "falso positivo do parser: é a ANOTAÇÃO DE TIPO de `resourceId` na interface " +
+    "`DepsDeGrupos.audit` (lib/grupos/servico.ts:77), não uma chamada. As DUAS chamadas " +
+    "reais — `ligarGrupo` e `desligarGrupo`, esta última inclusive quando o desligamento " +
+    "do filtro falha depois da escrita — passam `resourceId: row.id`, o uuid da linha de " +
+    "`channel_session_groups`, que já satisfaz a régua (`row.id` termina em `id`).",
 };
 
 function arquivosDeCodigo(base: string): string[] {

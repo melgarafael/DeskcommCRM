@@ -1,0 +1,117 @@
+{
+  "_medido": {
+    "endpoint_groups": "GET /api/{session}/groups -> objeto { [groupId@g.us]: GroupObject }, NAO array (o brief assumia array; medido: 98 grupos reais retornados como objeto chaveado por id)",
+    "id_format": "group.id e string simples (ex.: 120363XXXXXXXXXXXX@g.us), NUNCA objeto com _serialized. Participante: participant.id e string @lid (id privado), participant.phoneNumber e string @s.whatsapp.net com o numero real -- e o campo phoneNumber, nao id, que carrega o numero para mapear remetente",
+    "id_format_legado_observado": "34 dos 98 grupos reais tinham id no formato antigo <telefone>-<timestamp>@g.us (numero de telefone literal na parte local do id, sem @lid). Nao incluido nesta fixture por conter numero real; ATENCAO ao parsear group.id assumindo sempre 18 digitos numericos puros",
+    "subject_location": "group.subject (string, direto na raiz do objeto do grupo)",
+    "participants_location": "group.participants (array de {id, phoneNumber, admin}), direto na raiz -- nao aninhado. phoneNumber ausente em alguns participantes reais (ver grupo 3, tipo announce/community grande)",
+    "addressingMode_observado": "todos os 98 grupos reais tinham addressingMode=\"lid\"",
+    "outros_campos_com_id_real_encontrados": "linkedParent (grupo vinculado a uma community) tambem carrega um group id real e precisou ser escrutinado -- confira qualquer campo novo antes de reusar esta fixture",
+    "filtro_ignore_groups": {
+      "a_get_reflete_false": "SIM -- GET /api/sessions/{name} apos o PUT devolveu config.ignore.groups=false imediatamente, com os demais campos de ignore (status/broadcast/channels) preservados",
+      "b_status_apos_put": "O PUT muda o status para STARTING sozinho (efeito colateral do WAHA, sem pedido de restart manual) e a sessao volta a WORKING por conta propria em poucos segundos (observado WORKING <= ~5s depois do PUT, confirmado em 6 polls de 5s). Nao foi preciso chamar startExistingSession -- so aguardar",
+      "c_mensagem_chegou_webhook": "NAO OBSERVADO NA JANELA -- 60s de docker logs deskcommcrm-app-1 (grep g.us) sem nenhuma linha apos o PUT; nenhuma mensagem de grupo foi enviada durante a sonda (regra: nao posso pedir para alguem mandar mensagem)",
+      "d_restauracao_confirmada": "GET pos-restore devolveu config.ignore = {status:true,broadcast:true,channels:true,groups:true} -- identico ao original, status WORKING"
+    }
+  },
+  "groups": [
+    {
+      "id": "550000000010000000@g.us",
+      "addressingMode": "lid",
+      "subject": "Grupo de Teste 1",
+      "subjectOwner": "550000000020000@lid",
+      "subjectOwnerPn": "550000000030@s.whatsapp.net",
+      "subjectTime": 1778881607,
+      "size": 1,
+      "creation": 1777568809,
+      "owner": "550000000020000@lid",
+      "ownerPn": "550000000030@s.whatsapp.net",
+      "owner_country_code": "BR",
+      "desc": "Descricao ficticia de teste.",
+      "descId": "E88634EE81473BEA403578AD87F105DC",
+      "descOwner": "550000000020000@lid",
+      "descOwnerPn": "550000000030@s.whatsapp.net",
+      "descTime": 1777568809,
+      "restrict": false,
+      "announce": false,
+      "isCommunity": true,
+      "isCommunityAnnounce": false,
+      "joinApprovalMode": false,
+      "memberAddMode": false,
+      "participants": [
+        {
+          "id": "550000000020000@lid",
+          "phoneNumber": "550000000030@s.whatsapp.net",
+          "admin": "superadmin"
+        }
+      ]
+    },
+    {
+      "id": "550000000040000000@g.us",
+      "addressingMode": "lid",
+      "subject": "Grupo de Teste 2",
+      "subjectOwner": "550000000050000@lid",
+      "subjectOwnerPn": "550000000060@s.whatsapp.net",
+      "subjectTime": 1651775242,
+      "size": 2,
+      "creation": 1651775242,
+      "owner": "550000000050000@lid",
+      "ownerPn": "550000000060@s.whatsapp.net",
+      "owner_country_code": "BR",
+      "descTime": null,
+      "restrict": false,
+      "announce": false,
+      "isCommunity": false,
+      "isCommunityAnnounce": false,
+      "joinApprovalMode": false,
+      "memberAddMode": false,
+      "participants": [
+        {
+          "id": "550000000070000@lid",
+          "phoneNumber": "550000000080@s.whatsapp.net",
+          "admin": null
+        },
+        {
+          "id": "55000000009000@lid",
+          "phoneNumber": "550000000100@s.whatsapp.net",
+          "admin": "admin"
+        }
+      ]
+    },
+    {
+      "id": "550000000110000000@g.us",
+      "addressingMode": "lid",
+      "subject": "Grupo de Teste 3",
+      "subjectOwner": "55000000012000@lid",
+      "subjectOwnerPn": "5500000001300@s.whatsapp.net",
+      "subjectTime": 1725717979,
+      "size": 1891,
+      "creation": 1699283851,
+      "owner": "550000000140000@lid",
+      "ownerPn": "5500000001500@s.whatsapp.net",
+      "owner_country_code": "BR",
+      "descTime": null,
+      "linkedParent": "550000000160000000@g.us",
+      "restrict": false,
+      "announce": true,
+      "isCommunity": false,
+      "isCommunityAnnounce": true,
+      "joinApprovalMode": false,
+      "memberAddMode": false,
+      "participants": [
+        {
+          "id": "550000000170000@lid",
+          "admin": null
+        },
+        {
+          "id": "550000000180000@lid",
+          "admin": null
+        },
+        {
+          "id": "550000000190000@lid",
+          "admin": null
+        }
+      ]
+    }
+  ]
+}

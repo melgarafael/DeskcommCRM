@@ -66,6 +66,9 @@ export async function buscarCandidatos(
     .from("contacts")
     .select("id, name, display_name, phone_number, is_blocked, is_anonymized, consent")
     .eq("organization_id", organizationId)
+    // Placeholder de GRUPO não recebe campanha: campanha é 1:1 por doutrina, e
+    // o grupo não tem opt-in individual nenhum por trás desse registro técnico.
+    .eq("kind", "person")
     // Cadastro mesclado é fantasma: quem responde é o sobrevivente.
     .is("is_merged_into", null)
     .order("created_at", { ascending: true })
@@ -112,6 +115,7 @@ export async function buscarCandidatos(
       .from("contacts")
       .select("id, name, display_name, phone_number, is_blocked, is_anonymized, consent")
       .eq("organization_id", organizationId)
+      .eq("kind", "person")
       .in("id", faltam);
     if (erroExtras) throw new Error(`audiência: incluídos — ${erroExtras.message}`);
     linhas.push(...((extras ?? []) as LinhaDeContato[]));

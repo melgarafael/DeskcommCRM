@@ -343,7 +343,11 @@ describe("sessões: conflito conhecido só converge com identidade e pós-condi�
     ["outra identidade", { name: "outra" }],
     ["outro engine", { engine: { engine: "WEBJS" } }],
     ["config inválida", { config: null }],
-    ["filtro explícito incompatível", { config: { ignore: { groups: false } } }],
+    // "filtro explícito incompatível" (`{ ignore: { groups: false } }`) saiu daqui de
+    // propósito: a funcionalidade de grupos na inbox torna `groups:false` COMPATÍVEL —
+    // é `CHAVES_DO_FILTRO_FIXAS` (sem `groups`) que decide compatibilidade agora. Ver
+    // "sessão com groups=false continua compatível" em client-grupos.test.ts.
+    ["outra chave do filtro incompatível", { config: { ignore: { status: false } } }],
   ])("conflito de create com %s falha sem tomar a sessão", async (_label, extra) => {
     await receive([create(422, duplicate), read(session("STOPPED", extra))], async (c) => {
       await expect(c.startSession(name)).rejects.toThrow("waha_create_422");

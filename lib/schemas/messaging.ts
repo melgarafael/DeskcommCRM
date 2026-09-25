@@ -316,6 +316,14 @@ export const listConversationsQuerySchema = z.object({
   channel_session_id: z.string().uuid().optional(),
   tag: conversationTagSchema.optional(),
   /**
+   * A aba "Grupos" do inbox (Task 10). `"true"`/`"false"` como STRING — vem de
+   * `searchParams`, que só conhece texto — e não `z.coerce.boolean()`, que
+   * transformaria QUALQUER string não-vazia (inclusive `"false"`) em `true`.
+   * Ausente = sem filtro, a lista mostra tudo, como hoje; presente decide o
+   * `.eq("is_group", …)` no handler.
+   */
+  is_group: z.enum(["true", "false"]).optional(),
+  /**
    * Só as que têm mensagem não lida para o dono.
    *
    * NASCEU FORA DO CONTRATO E POR ISSO FORA DE TODO MECANISMO. Era `onlyUnread`,

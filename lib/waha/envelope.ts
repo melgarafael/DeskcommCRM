@@ -63,6 +63,13 @@ const wahaMediaSchema = z.looseObject({
 const wahaKeySchema = z.looseObject({
   remoteJidAlt: texto,
   participantAlt: texto,
+  /**
+   * Quem escreveu, em GRUPO (forma do Baileys). `unknown` e não `texto`: quem o
+   * lê (`remetenteDoGrupo`, em `ingest.ts`) confere `typeof === "string"`
+   * antes — e exigir string aqui transformaria um formato novo do campo em
+   * mensagem descartada inteira, que é a regressão que este arquivo evita.
+   */
+  participant: z.unknown().optional(),
 });
 
 export const wahaPayloadSchema = z.looseObject({
@@ -80,6 +87,15 @@ export const wahaPayloadSchema = z.looseObject({
   mediaUrl: texto,
   mimetype: texto,
   media: wahaMediaSchema.nullish(),
+  /**
+   * O autor de uma mensagem de GRUPO — a doutrina: "Sender é `p.author`, não
+   * `p.from`" (em grupo, `from` é o próprio grupo). O WAHA declara os dois no
+   * `WAMessage`: `participant` e `author`. Nenhum dos dois foi MEDIDO num webhook
+   * real desta instalação (a sonda da Task 0 mediu só a listagem de grupos), então
+   * ficam `unknown` e quem os lê confere o tipo — ver `remetenteDoGrupo`.
+   */
+  participant: z.unknown().optional(),
+  author: z.unknown().optional(),
   /** Id da mensagem ORIGINAL nos eventos `message.edited` / `message.revoked`. */
   editedMessageId: texto,
   revokedMessageId: texto,

@@ -67,6 +67,32 @@ async function handleInbound(row: EventRow): Promise<HandlerResult> {
   return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "ok", detail: `sent:${sent}` };
 }
 
+/**
+ * `message.group_received` — MESMO payload de `message.received` (a
+ * conversa é a do GRUPO ligado, o "contato" é o placeholder de
+ * `kind='whatsapp_group'`), mas nunca a cópia do 1:1: não busca nome/avatar de
+ * contato (a IA não serve grupos, e a Task 8 não abre exceção só para a
+ * notificação), não cria nem roteia nada — só avisa o atendente que o grupo
+ * está falando. Título fixo, igual em toda organização.
+ */
+async function handleGroupInbound(row: EventRow): Promise<HandlerResult> {
+  const conversationId =
+    (typeof row.payload.conversation_id === "string" ? row.payload.conversation_id : null) ?? null;
+  const previewRaw = row.payload.body_preview;
+  const preview = typeof previewRaw === "string" && previewRaw.trim() ? previewRaw : "Nova mensagem";
+  const type = typeof row.payload.type === "string" ? row.payload.type : "text";
+  const body = type === "text" ? preview : "Mídia";
+
+  const payload: PushPayload = {
+    title: "Nova mensagem no grupo",
+    body: truncar(body),
+    tag: conversationId ? `msg:${conversationId}` : "msg",
+    href: conversationId ? `/app/inbox?id=${conversationId}` : "/app/inbox",
+  };
+  const { sent } = await enviarPushDaOrg(row.organization_id, payload);
+  return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "ok", detail: `sent:${sent}` };
+}
+
 async function leadBits(organizationId: string, leadId: string): Promise<{
   title: string;
   ownerUserId: string | null;
@@ -109,12 +135,20 @@ async function enviarParaUsuario(
 
 export const webPushInboundHandler: EventHandler = {
   key: WEB_PUSH_INBOUND_KEY,
-  events: ["message.received", "lead.assigned", "lead.won", "lead.lost", "user.mentioned"],
+  events: [
+    "message.received",
+    "message.group_received",
+    "lead.assigned",
+    "lead.won",
+    "lead.lost",
+    "user.mentioned",
+  ],
   async handle(row): Promise<HandlerResult> {
     if (!vapidPronto()) {
       return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "skipped", detail: "vapid_ausente" };
     }
     if (row.event_type === "message.received") return handleInbound(row);
+    if (row.event_type === "message.group_received") return handleGroupInbound(row);
 
     if (row.event_type === "user.mentioned") {
       const toUserId = typeof row.payload.to_user_id === "string" ? row.payload.to_user_id : null;

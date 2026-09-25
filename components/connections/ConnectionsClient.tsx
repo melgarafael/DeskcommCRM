@@ -17,9 +17,15 @@ import {
   useChannelSessions,
   type ChannelSession,
 } from "@/hooks/channels/useChannelSessions";
-import { CHANNEL_PROVIDER_SOCIAL } from "@/lib/channels/capabilities";
+import {
+  CHANNEL_PROVIDER_SOCIAL,
+  DEFAULT_CHANNEL_PROVIDER,
+  capabilitiesOf,
+} from "@/lib/channels/capabilities";
+import type { ChannelProvider } from "@/lib/channels/capabilities";
 import { usePacingKnobs } from "@/hooks/channels/usePacingKnobs";
 import { AntiBanSheet } from "./AntiBanSheet";
+import { GruposSheet } from "./GruposSheet";
 import { PairingOptions } from "./PairingOptions";
 import { ChannelAiAccess } from "./ChannelAiAccess";
 import { ParaIntegrar } from "./ParaIntegrar";
@@ -41,6 +47,7 @@ import {
   Plus,
   ShieldCheck,
   Trash,
+  UsersThree,
   Warning,
 } from "@/lib/ui/icons";
 import { lerEstadoDoCanal } from "@/lib/channels/estado";
@@ -141,6 +148,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
   const [checking, setChecking] = useState(false);
   const [qr, setQr] = useState<{ sessionId: string; title: string } | null>(null);
   const [antiBanId, setAntiBanId] = useState<string | null>(null);
+  const [gruposId, setGruposId] = useState<string | null>(null);
   const [toDelete, setToDelete] = useState<ChannelSession | null>(null);
   const pacingItems = usePacingKnobs().data?.items ?? [];
 
@@ -435,6 +443,13 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                     <ShieldCheck size={14} aria-hidden />
                     {t("Proteção de envio")}
                   </Button>
+                  {capabilitiesOf((c.provider ?? DEFAULT_CHANNEL_PROVIDER) as ChannelProvider).groups !==
+                    "none" && (
+                    <Button variant="outline" size="sm" onClick={() => setGruposId(c.id)}>
+                      <UsersThree size={14} aria-hidden />
+                      {t("Grupos")}
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
@@ -465,6 +480,12 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
           onClose={() => setAntiBanId(null)}
         />
       )}
+
+      {/* Sem checagem de papel aqui: quem chega a `ConnectionsClient` já passou
+          pelo gate de `/app/connections` (admin+, `app/app/connections/page.tsx`),
+          o mesmo motivo por trás do `canWrite` fixo do `AntiBanSheet` acima. A
+          rota `groups` também exige `manager+` do lado do servidor. */}
+      {gruposId !== null && <GruposSheet channelId={gruposId} onClose={() => setGruposId(null)} />}
 
       {toDelete && (
         <ExcluirCanalDialog

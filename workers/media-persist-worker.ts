@@ -140,17 +140,45 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
     media_mime: media.mime,
   });
 
-  // Dispara a derivação textual (Onda 3) — fire-and-forget, mesmo padrão do
-  // resto do repo: falha de emit não reverte a persistência já concluída.
-  const { error: emitErr } = await admin.rpc("emit_event" as never, {
-    p_event_type: "media.derive_requested",
-    p_entity_kind: "message",
-    p_entity_id: msg.id,
-    p_payload: { message_id: msg.id },
-    p_metadata: { source: "media_persist" },
-    p_organization_id: msg.organization_id,
-  } as never);
-  if (emitErr) logger.warn("[media-persist] emit_event failed (non-blocking)", { message_id: msg.id, detail: emitErr.message });
+  // Grupo nunca é derivado: a IA não serve grupos, e derivar custaria visão/
+  // transcrição PAGA sem consumidor nenhum do outro lado — ninguém leria "o
+  // agente não conseguiu ler o que o cliente mandou" numa conversa que a IA
+  // nunca participa. A mídia FICA persistida (Storage, para quem abrir a
+  // conversa na tela); só a derivação é pulada.
+  const { data: conv, error: convErr } = await admin
+    .from("conversations")
+    .select("is_group")
+    .eq("id", msg.conversation_id)
+    .eq("organization_id", msg.organization_id)
+    .maybeSingle();
+  if (convErr) {
+    // Fecha FECHADO, não aberto: sem saber se a conversa é de grupo, o erro
+    // caro é pedir uma derivação PAGA (visão/transcrição) por engano numa
+    // conversa de grupo — não pedir e alguém reprocessar à mão depois é o
+    // lado barato de errar. A mídia já está `stored`; só a derivação fica de
+    // fora desta rodada.
+    logger.warn("[media-persist] leitura de conversations.is_group falhou — derivação NÃO pedida", {
+      organization_id: msg.organization_id,
+      conversation_id: msg.conversation_id,
+      detail: convErr.message,
+    });
+    return { consumer_key, status: "ok" };
+  }
+  const isGroup = Boolean((conv as { is_group?: boolean | null } | null)?.is_group);
+
+  if (!isGroup) {
+    // Dispara a derivação textual (Onda 3) — fire-and-forget, mesmo padrão do
+    // resto do repo: falha de emit não reverte a persistência já concluída.
+    const { error: emitErr } = await admin.rpc("emit_event" as never, {
+      p_event_type: "media.derive_requested",
+      p_entity_kind: "message",
+      p_entity_id: msg.id,
+      p_payload: { message_id: msg.id },
+      p_metadata: { source: "media_persist" },
+      p_organization_id: msg.organization_id,
+    } as never);
+    if (emitErr) logger.warn("[media-persist] emit_event failed (non-blocking)", { message_id: msg.id, detail: emitErr.message });
+  }
 
   return { consumer_key, status: "ok" };
 }

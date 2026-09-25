@@ -137,7 +137,14 @@ vi.mock("@/lib/supabase/admin", () => ({
       // que os casos de cima vigiam.
       const resolver = () =>
         Promise.resolve({
-          data: tabela === "organizations" ? aplicar(filtros, banco.organizations) : banco[tabela],
+          data:
+            tabela === "organizations"
+              ? aplicar(filtros, banco.organizations)
+              : tabela === "conversations"
+                ? // Aplica os filtros modelados (org, status, is_group); o `.or`
+                  // segue no-op — quem corta a faixa é `selecionarVencidas`.
+                  aplicar(filtros, banco.conversations)
+                : banco[tabela],
           error: null,
         });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -180,6 +187,7 @@ function conversa(id: string, minutosParada: number): Record<string, unknown> {
     last_handoff_at: min(minutosParada),
     last_outbound_at: null,
     status_changed_at: min(minutosParada),
+    is_group: false,
   };
 }
 
@@ -229,6 +237,17 @@ describe("GET /api/v1/cron/handoff-devolucao", () => {
       action: "conversation.handoff_auto_return_run",
       metadata: { devolvidas: 1 },
     });
+  });
+
+  it("I4: grupo de WhatsApp com humano, vencido, NÃO é devolvido ao automático", async () => {
+    const GRUPO_VENCIDO = "cccccccc-0000-4000-8000-0000000000a1";
+    banco.conversations = [{ ...conversa(GRUPO_VENCIDO, 600), is_group: true }];
+    const res = await chamar();
+    expect(res.status).toBe(200);
+    expect(filtrosPorTabela.conversations).toContainEqual({ metodo: "eq", args: ["is_group", false] });
+    expect(devolver).not.toHaveBeenCalled();
+    const corpo = (await res.json()) as { data: Record<string, number> };
+    expect(corpo.data.examinadas).toBe(0);
   });
 
   it("nada vencido: nenhuma devolução e nenhuma linha de auditoria", async () => {

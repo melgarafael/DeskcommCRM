@@ -24,5 +24,6 @@ export function filtrosAuxiliaresAtivos(filters: ConversationsFilters): string[]
   if (filters.search) ativos.push("Busca");
   if (filters.tag) ativos.push("Etiqueta");
   if (filters.channel_session_id) ativos.push("Canal");
+  if (filters.is_group) ativos.push("Grupos");
   return ativos;
 }

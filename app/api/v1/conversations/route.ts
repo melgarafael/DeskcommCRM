@@ -57,6 +57,11 @@ export async function GET(req: NextRequest): Promise<Response> {
     tag: url.searchParams.get("tag") ?? undefined,
     unread: url.searchParams.get("unread") ?? undefined,
     channel_session_id: url.searchParams.get("channel_session_id") ?? undefined,
+    // A aba "Grupos" (Task 10) — mesma rotura que `tag`/`comando` já tiveram
+    // aqui: schema aceita, hook serializa, handler filtra, e esta linha é o
+    // único lugar que pode esquecer sem erro nenhum. `rota-le-todo-filtro-do-schema`
+    // cobra a chave.
+    is_group: url.searchParams.get("is_group") ?? undefined,
     search: url.searchParams.get("search") ?? undefined,
     cursor: url.searchParams.get("cursor") ?? undefined,
     limit: url.searchParams.get("limit") ?? undefined,

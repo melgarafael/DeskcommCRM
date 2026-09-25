@@ -55,6 +55,15 @@ export const CONVERSAS_IGNORADAS = {
 } as const;
 
 /**
+ * As chaves do filtro que o CRM IMPÕE. `groups` fica de fora de propósito: desde a
+ * funcionalidade de grupos na inbox, quem decide `groups` é `definirRecebimentoDeGrupos`,
+ * a partir de `channel_session_groups`. Compatibilidade e convergência não a tocam.
+ */
+export const CHAVES_DO_FILTRO_FIXAS = Object.fromEntries(
+  Object.entries(CONVERSAS_IGNORADAS).filter(([k]) => k !== "groups"),
+) as Omit<typeof CONVERSAS_IGNORADAS, "groups">;
+
+/**
  * Teto de relógio das chamadas ao WAHA.
  *
  * 15s não é número escolhido aqui: é o que `docs/specs/03-spec-whatsapp-waha.md`
@@ -235,7 +244,7 @@ export class WahaClient {
     const ignore = session.config.ignore;
     if (ignore === undefined) return true; // sessão legada; convergência preserva webhooks
     if (!ignore || typeof ignore !== "object" || Array.isArray(ignore)) return false;
-    return Object.entries(CONVERSAS_IGNORADAS).every(([key, value]) =>
+    return Object.entries(CHAVES_DO_FILTRO_FIXAS).every(([key, value]) =>
       !(key in ignore) || (ignore as Record<string, unknown>)[key] === value);
   }
 
@@ -260,7 +269,7 @@ export class WahaClient {
   async startSession(name: string): Promise<{ qr?: string; status: string }> {
     const creation = await this.createSession(name);
     const ignore = creation.session.config?.ignore;
-    const filtersCurrent = ignore && typeof ignore === "object" && Object.entries(CONVERSAS_IGNORADAS)
+    const filtersCurrent = ignore && typeof ignore === "object" && Object.entries(CHAVES_DO_FILTRO_FIXAS)
       .every(([key, value]) => (ignore as Record<string, unknown>)[key] === value);
     if (!creation.created && !filtersCurrent) await this.convergirConfigDaSessao(name);
     return this.startExistingSession(name);
@@ -351,14 +360,34 @@ export class WahaClient {
         return;
       }
       const parsed = sessionSnapshotSchema.safeParse(await atual.json().catch(() => null));
-      if (!parsed.success || parsed.data.name !== name || !(await this.compatibleSession(parsed.data))) {
-        logger.warn("[waha] a sessão respondeu sem identidade/config compatíveis; não vou reescrevê-la", {});
+      if (!parsed.success || parsed.data.name !== name) {
+        logger.warn("[waha] a sessão respondeu sem identidade correta; não vou reescrevê-la", {});
         return;
       }
       const sessao = parsed.data;
       if (!sessao.config) return;
 
-      const config = { ...sessao.config, ignore: CONVERSAS_IGNORADAS };
+      // Checa só o ENGINE aqui, não `compatibleSession()` inteiro: aquele também
+      // exige que o filtro JÁ esteja correto, e o trabalho deste método é
+      // justamente corrigir um filtro que drift ou — o caso comum — entrou
+      // como `{}` numa sessão legada. Recusar converger porque o filtro está
+      // errado seria recusar o próprio propósito da função.
+      const engine = typeof sessao.engine === "string" ? sessao.engine : sessao.engine?.engine;
+      const actualEngine = engine ?? (await this.getServerVersion()).engine;
+      if (actualEngine !== "NOWEB") {
+        logger.warn("[waha] engine incompatível; não vou reescrever o filtro da sessão", {});
+        return;
+      }
+
+      // `groups` NÃO entra no que este método impõe: desde a funcionalidade de
+      // grupos na inbox, quem decide `groups` é `definirRecebimentoDeGrupos`.
+      // Preserva o valor atual (ou o default de criação, se a sessão nunca
+      // teve a chave) em vez de reescrevê-lo às cegas.
+      const ignoreAtual = (typeof sessao.config.ignore === "object" && sessao.config.ignore !== null
+        ? sessao.config.ignore
+        : {}) as Record<string, unknown>;
+      const groupsAtual = typeof ignoreAtual.groups === "boolean" ? ignoreAtual.groups : CONVERSAS_IGNORADAS.groups;
+      const config = { ...sessao.config, ignore: { ...CHAVES_DO_FILTRO_FIXAS, groups: groupsAtual } };
       // Já está como queremos: não reiniciar a sessão à toa. Este caminho roda
       // em TODA reconexão, e um restart desnecessário por rodada seria pior que
       // o gasto que ele evita.
@@ -366,12 +395,7 @@ export class WahaClient {
       // à ORDEM das chaves, então o dia em que o WAHA devolver o mesmo objeto
       // com as chaves noutra sequência, esta guarda passa a dizer "mudou" e a
       // sessão reinicia a cada reconexão — sem que nada tenha mudado.
-      const jaConvergida =
-        typeof sessao.config.ignore === "object" &&
-        sessao.config.ignore !== null &&
-        Object.entries(CONVERSAS_IGNORADAS).every(
-          ([k, v]) => (sessao.config!.ignore as Record<string, unknown>)[k] === v,
-        );
+      const jaConvergida = Object.entries(CHAVES_DO_FILTRO_FIXAS).every(([k, v]) => ignoreAtual[k] === v);
       if (jaConvergida) return;
 
       const res = await this.fetchComTeto(url, {
@@ -392,6 +416,108 @@ export class WahaClient {
         erro: err instanceof Error ? err.message : "unknown",
       });
     }
+  }
+
+  /**
+   * Grupos em que o número está. Medido no WAHA real (Task 0,
+   * `.superpowers/sdd/2026-09-23-grupos-na-inbox/task-0-report.md`):
+   * `GET /api/{session}/groups` devolve um OBJETO chaveado por id de grupo,
+   * não um array — mas a tolerância a array também fica, para não quebrar
+   * contra uma versão futura do WAHA que volte a ele.
+   *
+   * `group.id` é sempre string simples (nunca `{ _serialized }`), em dois
+   * formatos: moderno (`<18 dígitos>@g.us`) e legado
+   * (`<telefone>-<timestamp>@g.us`, 34/98 grupos reais medidos). Os dois
+   * terminam em `@g.us`, e é essa a única checagem — não `18 dígitos`.
+   */
+  async listarGrupos(session: string): Promise<Array<{ chatId: string; subject: string | null }>> {
+    const res = await this.fetchComTeto(`${this.baseUrl}/api/${encodeURIComponent(session)}/groups`, {
+      headers: { "X-Api-Key": this.apiKey },
+    });
+    if (!res.ok) throw new Error(`waha_groups_${res.status}`);
+    const bruto = (await res.json().catch(() => null)) as unknown;
+    const lista = Array.isArray(bruto) ? bruto : bruto && typeof bruto === "object" ? Object.values(bruto) : [];
+    const grupos: Array<{ chatId: string; subject: string | null }> = [];
+    for (const item of lista) {
+      if (!item || typeof item !== "object") continue;
+      const o = item as Record<string, unknown>;
+      const id = o.id;
+      const chatId =
+        typeof id === "string" ? id
+        : id && typeof id === "object" && typeof (id as Record<string, unknown>)._serialized === "string"
+          ? ((id as Record<string, unknown>)._serialized as string)
+          : typeof o.JID === "string" ? (o.JID as string) : null;
+      if (!chatId || !chatId.endsWith("@g.us")) continue;
+      const subject = typeof o.subject === "string" ? o.subject : typeof o.name === "string" ? o.name : null;
+      grupos.push({ chatId, subject });
+    }
+    return grupos;
+  }
+
+  /**
+   * Liga ou desliga o recebimento de grupos NESTA sessão. Só devolve `true` quando o GET
+   * seguinte confirma a troca: o WAHA já respondeu 200 para operação que não aconteceu
+   * (medido na issue melgarafael/DeskcommCRM#1428).
+   *
+   * ─── Por que não chama `startExistingSession` ──────────────────────────────
+   *
+   * A Task 0 mediu o WAHA real (2026.7.2, NOWEB): o `PUT` já muda o status para
+   * `STARTING` sozinho, como efeito colateral, e a sessão volta a `WORKING` por
+   * conta própria em poucos segundos (≤5s, 6/6 polls) — sem pedido de restart
+   * manual. Chamar `startExistingSession` aqui seria um segundo restart em cima
+   * do que o próprio WAHA já dispara.
+   *
+   * O que este método faz em vez disso: espera, com teto, a sessão sair de
+   * `STARTING`, e só então confirma `ignore.groups`. Devolver `true` com a
+   * sessão ainda reiniciando seria aceitável SE o valor já estivesse
+   * confirmado — mas medir enquanto ainda está `STARTING` arriscaria ler um
+   * `config` transitório, então a espera vem antes da leitura que decide.
+   */
+  async definirRecebimentoDeGrupos(name: string, receber: boolean): Promise<boolean> {
+    const url = `${this.baseUrl}/api/sessions/${encodeURIComponent(name)}`;
+    const ler = async () => {
+      const r = await this.fetchComTeto(url, { headers: { "X-Api-Key": this.apiKey } });
+      if (!r.ok) return null;
+      const p = sessionSnapshotSchema.safeParse(await r.json().catch(() => null));
+      return p.success && p.data.name === name ? p.data : null;
+    };
+    const atual = await ler();
+    if (!atual?.config) return false;
+    // IDEMPOTENTE: já está como pedido → confirma sem PUT. O PUT reinicia a
+    // sessão (vai a STARTING), e este método é chamado em TODO "ligar grupo" e
+    // em toda (re)conexão do número — escrever sem mudança seria um reinício
+    // de sessão por clique.
+    const ignoreAtual = typeof atual.config.ignore === "object" && atual.config.ignore
+      ? (atual.config.ignore as Record<string, unknown>)
+      : null;
+    if (ignoreAtual && ignoreAtual.groups === !receber) return true;
+    const ignore = {
+      ...((typeof atual.config.ignore === "object" && atual.config.ignore) || {}),
+      ...CHAVES_DO_FILTRO_FIXAS,
+      groups: !receber,
+    };
+    const put = await this.fetchComTeto(url, {
+      method: "PUT",
+      headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ name, config: { ...atual.config, ignore } }),
+    });
+    if (!put.ok) return false;
+    // Teto de ~10s no total, em passos de 2s: bounded, e curto o bastante para
+    // não prender a rota que chama isto. Só espera quando a sessão realmente
+    // está reiniciando (STARTING); no caso comum (fica WORKING o tempo todo,
+    // como a Task 0 mediu em produção) o laço nem entra.
+    const TETO_DE_ESPERA_MS = 10_000;
+    const PASSO_MS = 2_000;
+    const inicio = Date.now();
+    let depois = await ler();
+    while (depois?.status === "STARTING" && Date.now() - inicio < TETO_DE_ESPERA_MS) {
+      await new Promise((r) => setTimeout(r, PASSO_MS));
+      depois = await ler();
+    }
+    const g = depois?.config && typeof depois.config.ignore === "object" && depois.config.ignore
+      ? (depois.config.ignore as Record<string, unknown>).groups
+      : undefined;
+    return g === !receber;
   }
 
   /** Remoção só converge depois de GET da identidade exata confirmar ausência. */

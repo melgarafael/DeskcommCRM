@@ -295,3 +295,49 @@ describe("pino compartilhado pelo cliente", () => {
     expect(screen.queryByRole("link", { name: /Abrir no mapa/ })).toBeNull();
   });
 });
+
+/**
+ * O remetente de GRUPO, acima do balão recebido.
+ *
+ * `metadata.group_sender` só é lido por `lerRemetenteDeGrupo`
+ * (`lib/messaging/remetente-de-grupo.ts`, Task 2) — este arquivo não conhece o
+ * formato bruto, só o resultado da leitura. Sem o nome de quem mandou, uma
+ * conversa de grupo lida no CRM mostra toda mensagem como se fosse da mesma
+ * pessoa, e é exatamente o WhatsApp que não faz essa confusão.
+ */
+describe("MessageBubble — remetente de grupo", () => {
+  it("mensagem de grupo mostra quem mandou acima do balão", () => {
+    render(
+      <MessageBubble
+        message={msg({
+          direction: "inbound",
+          body: "bom dia",
+          metadata: { group_sender: { name: "Maria", phone: "+5521999990000", lid: null } },
+        })}
+      />,
+    );
+    expect(screen.getByText("Maria · +5521999990000")).toBeInTheDocument();
+  });
+
+  it("mensagem individual não mostra remetente", () => {
+    render(
+      <MessageBubble message={msg({ direction: "inbound", body: "bom dia", metadata: {} })} />,
+    );
+    expect(screen.queryByText(/·/)).toBeNull();
+  });
+
+  it("mensagem outbound não mostra remetente de grupo mesmo com metadata presente", () => {
+    // `lerRemetenteDeGrupo` só é chamado para `inbound` no componente — uma
+    // mensagem que ESTE CRM mandou não tem "quem mandou" a descobrir.
+    render(
+      <MessageBubble
+        message={msg({
+          direction: "outbound",
+          body: "bom dia",
+          metadata: { group_sender: { name: "Maria", phone: "+5521999990000", lid: null } },
+        })}
+      />,
+    );
+    expect(screen.queryByText("Maria · +5521999990000")).toBeNull();
+  });
+});

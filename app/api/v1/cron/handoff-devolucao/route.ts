@@ -145,6 +145,9 @@ export async function devolverHandoffsVencidos(
     )
     .in("organization_id", orgIds)
     .in("status", ["open", "pending", "claimed", "ai_handling"])
+    // Grupo de WhatsApp é sempre de humano: o automático nunca o atende, então
+    // "devolver ao agente" tiraria o grupo da fila humana sem ninguém responder.
+    .eq("is_group", false)
     .or("bot_silenced_until.eq.infinity,assignee_kind.eq.user,assigned_to_user_id.not.is.null")
     .limit(SCAN_LIMIT);
   if (error) throw new Error(`conversations: ${error.message}`);

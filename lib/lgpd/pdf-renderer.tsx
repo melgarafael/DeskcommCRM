@@ -303,6 +303,21 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
           </View>
         ) : null}
 
+        {/* Mensagens em grupos de WhatsApp escritas pelo titular (migration 0411) */}
+        {data.group_messages_authored.length > 0 ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Mensagens em Grupos de WhatsApp</Text>
+            {data.group_messages_authored.slice(0, 25).map((m) => (
+              <View key={m.id} style={styles.itemBlock}>
+                <Text style={styles.small}>
+                  {fmtDate(m.created_at)} · {m.type}
+                </Text>
+                <Text>{m.body ? m.body.slice(0, 280) : m.has_media ? "[mídia]" : "—"}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
         {/* Leads */}
         {data.leads.length > 0 ? (
           <View style={styles.section}>

@@ -1,0 +1,7 @@
+---
+impacto: capacidade_nova
+secao: adicionado
+titulo: Grupos de clientes no chat, com resposta dos atendentes
+---
+
+Em **Conexões**, o botão **Grupos** de cada número conectado por QR Code lista os grupos em que ele está. Cada grupo tem uma chave, e todos vêm desligados. Os grupos ligados aparecem no chat com a etiqueta **Grupo**, mostram quem mandou cada mensagem e podem ser respondidos pelos atendentes como qualquer conversa. Grupo sem atendente fica na fila das pessoas (**Aguardando atendente**), nunca na aba do automático, e um grupo fechado volta a abrir sozinho quando chega mensagem nova. **A IA nunca responde em grupo**, e grupo não vira negócio no funil, não entra em campanha nem em listas de contatos. Só o **administrador** liga grupos pela tela. Ao ligar o primeiro grupo de um número, o WhatsApp dele passa a enviar as mensagens de todos os grupos para o sistema, que descarta os não escolhidos. Ao desligar o último, tudo volta a ser como antes. Entram só as mensagens que chegarem depois de ligar. Áudio e imagem mandados em grupo ficam guardados, mas — diferente do que já acontece numa conversa individual — não são transcritos nem descritos automaticamente. Um pedido de LGPD de quem já é contato alcança também o que essa pessoa escreveu nos grupos ligados: a anonimização apaga essas mensagens e a exportação as entrega; o participante de grupo que não é contato não tem pedido por esta tela.

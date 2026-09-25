@@ -90,6 +90,12 @@ export interface OutboundContact {
   vcard: string;
 }
 
+/** Um grupo em que o número está. Só canais com capacidade `groups` diferente de "none". */
+export interface ChannelGroup {
+  chatId: string;
+  subject: string | null;
+}
+
 /**
  * A organização em nome de quem a operação de canal acontece.
  *
@@ -333,6 +339,12 @@ export interface ChannelAdapter {
    * quem chama testa a presença em vez de perguntar QUAL provider é.
    */
   checkHealth?(input: ChannelTenantScope & { sessionRef: string }): Promise<ChannelHealth>;
+
+  /** Grupos do número. Ausente = o canal não lista grupos. */
+  listGroups?(input: { sessionRef: string }): Promise<ChannelGroup[]>;
+
+  /** Liga/desliga o recebimento de grupos na sessão; `true` só com a troca confirmada. */
+  setGroupIntake?(input: { sessionRef: string; receive: boolean }): Promise<boolean>;
 
   /**
    * Envia uma DEFINIÇÃO APROVADA — o único caminho de volta quando a janela de

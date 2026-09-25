@@ -38,6 +38,7 @@ import { z } from "zod";
 import { assertWahaConnectionIdle, ChannelConnectionError, renomearSessaoParaOTeto } from "@/lib/channels/connect-waha";
 import { nomeDaSessaoCabeNoWaha, podeRenomearSessaoDoWaha } from "@/lib/channels/nome-da-sessao";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { sincronizarRecebimentoDeGrupos } from "@/lib/grupos/sincronizar-filtro";
 import { mfaEmDivida } from "@/lib/auth/server";
 import { audit } from "@/lib/audit";
 import { ok, fail } from "@/lib/api/wrappers";
@@ -176,6 +177,15 @@ export async function POST(
     const { error: syncError } = await supabase.from("channel_sessions").update(patch).eq("organization_id", activeOrg.orgId).eq("id", id);
 
     if (syncError) throw new Error("connection_sync_failed");
+
+    // A sessão recriada (volume do WAHA perdido, logout forçado) nasce ignorando
+    // grupos, mas o banco pode ter grupos LIGADOS neste número. Ressincroniza o
+    // filtro — sem PUT quando já está certo, e nunca lança.
+    await sincronizarRecebimentoDeGrupos(
+      createAdminClient(),
+      (ref, receber) => waha.definirRecebimentoDeGrupos(ref, receber),
+      { organizationId: activeOrg.orgId, channelSessionId: id, sessionRef: nomeParaOTransporte },
+    );
 
     void audit({
       action: "channel.reconnected",

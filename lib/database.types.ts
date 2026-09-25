@@ -3613,6 +3613,80 @@ export type Database = {
           },
         ]
       }
+      channel_session_groups: {
+        Row: {
+          channel_session_id: string
+          contact_id: string | null
+          conversation_id: string | null
+          created_at: string
+          enabled: boolean
+          enabled_at: string | null
+          enabled_by_user_id: string | null
+          group_chat_id: string
+          id: string
+          organization_id: string
+          subject: string | null
+          updated_at: string
+        }
+        Insert: {
+          channel_session_id: string
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          enabled?: boolean
+          enabled_at?: string | null
+          enabled_by_user_id?: string | null
+          group_chat_id: string
+          id?: string
+          organization_id: string
+          subject?: string | null
+          updated_at?: string
+        }
+        Update: {
+          channel_session_id?: string
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          enabled?: boolean
+          enabled_at?: string | null
+          enabled_by_user_id?: string | null
+          group_chat_id?: string
+          id?: string
+          organization_id?: string
+          subject?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "channel_session_groups_channel_session_id_fkey"
+            columns: ["channel_session_id"]
+            isOneToOne: false
+            referencedRelation: "channel_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "channel_session_groups_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "channel_session_groups_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "channel_session_groups_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       channel_session_health: {
         Row: {
           channel_session_id: string
@@ -3958,6 +4032,7 @@ export type Database = {
           is_anonymized: boolean
           is_blocked: boolean
           is_merged_into: string | null
+          kind: string
           last_activity_at: string | null
           locale: string | null
           merged_at: string | null
@@ -3999,6 +4074,7 @@ export type Database = {
           is_anonymized?: boolean
           is_blocked?: boolean
           is_merged_into?: string | null
+          kind?: string
           last_activity_at?: string | null
           locale?: string | null
           merged_at?: string | null
@@ -4040,6 +4116,7 @@ export type Database = {
           is_anonymized?: boolean
           is_blocked?: boolean
           is_merged_into?: string | null
+          kind?: string
           last_activity_at?: string | null
           locale?: string | null
           merged_at?: string | null

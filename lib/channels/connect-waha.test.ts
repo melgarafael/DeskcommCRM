@@ -199,3 +199,27 @@ describe("renomearSessaoParaOTeto — a guarda também mora no WHERE", () => {
     expect(f.renomeios).toEqual([novo]);
   });
 });
+
+describe("I1: conectar/reativar ressincroniza o filtro de grupos", () => {
+  it("canal com grupos LIGADOS no banco pede ao WhatsApp para receber grupos depois de iniciar a sessão", async () => {
+    // Reativação de canal arquivado mantém o id e as linhas ligadas; o caminho é o mesmo.
+    const f = fixture();
+    const fromOriginal = (f.db as unknown as { from: (t: string) => unknown }).from;
+    const filtros: Array<[string, unknown]> = [];
+    (f.db as unknown as { from: (t: string) => unknown }).from = (t: string) => {
+      if (t !== "channel_session_groups") return fromOriginal(t);
+      const b = {
+        select: () => b,
+        eq: (c: string, v: unknown) => { filtros.push([c, v]); return b; },
+        then: (res: (v: unknown) => unknown) => Promise.resolve({ count: 1, error: null }).then(res),
+      };
+      return b;
+    };
+    const definirRecebimentoDeGrupos = vi.fn(async () => true);
+    await connectWahaChannel(f.db, f.db, { ...f.transport, definirRecebimentoDeGrupos }, f.input);
+    expect(definirRecebimentoDeGrupos).toHaveBeenCalledWith("owned", true);
+    expect(filtros).toContainEqual(["organization_id", org]);
+    expect(f.transport.startExistingSession.mock.invocationCallOrder[0])
+      .toBeLessThan(definirRecebimentoDeGrupos.mock.invocationCallOrder[0]!);
+  });
+});

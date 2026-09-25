@@ -112,6 +112,10 @@ const ARQUIVOS = [
   BASELINE,
 ];
 
+// `.replace(/\\/g, "/")`: no-op em Linux/CI (não há backslash), e em dev Windows
+// evita que `arquivo` saia com separador nativo (`supabase\migrations\...`) e
+// falhe os `.includes("migrations/")`/`.endsWith("baseline.sql")` abaixo, que
+// são checagem de PRESENÇA no corpus (a régua em si não muda).
 const CORPUS = ARQUIVOS.flatMap((caminho) =>
   varrer(relativoEmBarraNormal(process.cwd(), caminho), readFileSync(caminho, "utf8")),
 );

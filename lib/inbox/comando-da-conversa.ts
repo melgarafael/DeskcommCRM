@@ -74,6 +74,14 @@ export interface FatosDoComando {
   /** A trava do CONTATO — irrevogável pelo agente. */
   force_human?: boolean | null;
   /**
+   * Conversa de GRUPO de WhatsApp (`conversations.is_group`). O automático nunca
+   * atende grupo (o banco nem emite `message.received` para ele), então grupo sem
+   * dono é conversa HUMANA esperando alguém — `aguardando`, na fila humana — e
+   * nunca "Automático atendendo". Espelho SQL: `p_is_group` de
+   * `fn_comando_da_conversa` (migration 0411).
+   */
+  is_group?: boolean | null;
+  /**
    * O contato pediu para não receber mensagens (`contacts.is_blocked`).
    *
    * Entra aqui porque o motor o trata como parada dura — `before-send.ts` recusa
@@ -223,6 +231,7 @@ export function comandoDaConversa(fatos: FatosDoComando, agora: Date = new Date(
   const travado = fatos.force_human === true;
   const bloqueado = fatos.is_blocked === true;
   const encerrada = STATUS_ENCERRADOS.has(fatos.status);
+  const grupo = fatos.is_group === true;
 
   const comando: Comando = fatos.assigned_to_user_id
     ? {
@@ -234,7 +243,8 @@ export function comandoDaConversa(fatos: FatosDoComando, agora: Date = new Date(
       ? { quem: "encerrada" }
       : // Sem dono: quem manda depende do automático estar de pé. Calado e sem
         // dono é a conversa que o automático escalou e ninguém pegou — a fila.
-        silencio.vigente || travado || bloqueado
+        // Grupo entra junto: o automático nunca o atende, é sempre de humano.
+        grupo || silencio.vigente || travado || bloqueado
         ? { quem: "aguardando" }
         : fatos.automaticoDaOrg === false
           ? { quem: "ninguem" }
@@ -251,11 +261,13 @@ export function comandoDaConversa(fatos: FatosDoComando, agora: Date = new Date(
    */
   const comandoFinal: Comando = comando;
 
-  const automaticoAtivo = !encerrada && !travado && !bloqueado && !silencio.vigente;
+  const automaticoAtivo = !grupo && !encerrada && !travado && !bloqueado && !silencio.vigente;
 
   const motivo: MotivoDoSilencio | null = automaticoAtivo
     ? null
-    : encerrada
+    : grupo
+      ? null // Grupo não é automático pausado: o automático nunca o atende.
+      : encerrada
       ? null // Encerrada não é silêncio: é ausência de assunto. O estado já diz.
       : bloqueado
         ? // ANTES de `travado`, de propósito: quando as duas valem, é o opt-out que
@@ -281,7 +293,8 @@ export function comandoDaConversa(fatos: FatosDoComando, agora: Date = new Date(
     automaticoAtivo,
     // `bloqueado` ANULA a trava devolvível: veja o comentário de `is_blocked` em
     // `FatosDoComando`. Devolver não desfaz opt-out, e o botão seria decorativo.
-    travaVigente: (travado || silencio.vigente) && !bloqueado,
+    // Grupo também: "Devolver ao automático" num grupo prometeria o que não existe.
+    travaVigente: (travado || silencio.vigente) && !bloqueado && !grupo,
     motivo,
     silencioAte: motivo === "resposta_humana_recente" ? silencio.ate : null,
   };

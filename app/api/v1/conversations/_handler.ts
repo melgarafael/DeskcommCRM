@@ -197,6 +197,11 @@ export async function listConversationsHandler(
     query = query.not("status", "in", `(${CONVERSATION_TERMINAL_STATUSES.join(",")})`);
   }
   if (q.channel_session_id) query = query.eq("channel_session_id", q.channel_session_id);
+  // A aba "Grupos" (Task 10). `undefined` (ausente) = sem filtro, a lista
+  // mostra tudo, como hoje — checagem explícita contra `undefined`, e não
+  // `if (q.is_group)`, porque `"false"` é um valor válido e verdadeiro-truthy
+  // como string.
+  if (q.is_group !== undefined) query = query.eq("is_group", q.is_group === "true");
   // ⚠️ O MARCADOR FILTRADO É O DA CONVERSA **OU** O DO CONTATO.
   //
   // Era só `conversations.tags`, e o relato mede o buraco: *"adicionei a tag nele

@@ -7,6 +7,7 @@ import {
 } from "@/lib/channels/nome-da-sessao";
 import type { WahaClient } from "@/lib/waha/client";
 import { WahaSessionError } from "@/lib/waha/client";
+import { sincronizarRecebimentoDeGrupos } from "@/lib/grupos/sincronizar-filtro";
 
 const channelSchema = z.object({
   id: z.string().uuid(), organization_id: z.string().uuid(), waha_session_name: z.string(),
@@ -20,7 +21,8 @@ const receiptSchema = z.object({
 export class ChannelConnectionError extends Error {
   constructor(public readonly code: string, public readonly status: number, public readonly technical?: Record<string, unknown>) { super(code); }
 }
-type Transport = Pick<WahaClient, "createSession" | "startExistingSession" | "stopSession">;
+type Transport = Pick<WahaClient, "createSession" | "startExistingSession" | "stopSession">
+  & Partial<Pick<WahaClient, "definirRecebimentoDeGrupos">>;
 export interface ConnectChannelInput {
   organizationId: string; idempotencyKey: string; userId: string; requestId: string;
   displayName?: string; onboarding?: boolean; restart?: boolean;
@@ -96,6 +98,14 @@ export async function connectWahaChannel(authDb: SupabaseClient, serviceDb: Supa
     if (persisted.organization_id !== input.organizationId || persisted.id !== channel.id || persisted.status !== remote.status) {
       throw new Error("connection_checkpoint_mismatch");
     }
+    // Sessão (re)criada nasce ignorando grupos; reativar um canal arquivado mantém
+    // o mesmo id e as linhas LIGADAS de `channel_session_groups`. Ressincroniza o
+    // filtro com o banco (sem PUT quando já está certo). Nunca lança.
+    await sincronizarRecebimentoDeGrupos(
+      serviceDb,
+      waha.definirRecebimentoDeGrupos ? (ref, receber) => waha.definirRecebimentoDeGrupos!(ref, receber) : undefined,
+      { organizationId: input.organizationId, channelSessionId: channel.id, sessionRef: channel.waha_session_name },
+    );
     void audit({ action: channel.archived_at ? "channel.reactivated" : "channel.connected", actorUserId: input.userId,
       organizationId: input.organizationId, resourceType: "channel_session", resourceId: channel.id,
       requestId: input.requestId, metadata: { provider: "waha", origin: input.onboarding ? "onboarding" : "connections" } });

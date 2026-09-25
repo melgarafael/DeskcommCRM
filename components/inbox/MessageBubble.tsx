@@ -14,6 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Message } from "@/lib/types/messaging";
+import { lerRemetenteDeGrupo, rotuloDoRemetente } from "@/lib/messaging/remetente-de-grupo";
 import { CitationButton } from "@/components/ai/CitationButton";
 import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
 import { ContactCard } from "@/components/inbox/media/ContactCard";
@@ -156,6 +157,12 @@ export function MessageBubble({
     }
     return null;
   })();
+  // QUEM MANDOU, num grupo. Só faz sentido em mensagem RECEBIDA: uma mensagem
+  // que ESTE CRM enviou não tem remetente a descobrir, é sempre o atendente (ou
+  // a IA) — e `senderLabel`, acima, já diz quem foi. A leitura do dado bruto é
+  // `lerRemetenteDeGrupo` (Task 2): este componente não conhece o formato de
+  // `metadata.group_sender`, só o resultado já validado.
+  const remetente = !isOutbound ? lerRemetenteDeGrupo(message.metadata) : null;
 
   async function salvarEdicao() {
     const novoTexto = texto.trim();
@@ -289,6 +296,11 @@ export function MessageBubble({
                 : citada.body?.trim() || t("(sem texto)")}
             </div>
           </div>
+        )}
+        {remetente && (
+          <p className="mb-0.5 text-[11px] font-medium text-muted-foreground">
+            {rotuloDoRemetente(remetente)}
+          </p>
         )}
         {senderLabel && (
           <div className="mb-0.5 flex items-center gap-1 text-[11px] font-semibold opacity-80">

@@ -141,6 +141,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   const [aux, setAux] = useState<Omit<InboxFiltersValue, "tab">>({
     search: "",
     onlyUnread: false,
+    onlyGroups: false,
   });
   const filterValue: InboxFiltersValue = { tab, ...aux };
   const setFilterValue = useCallback(
@@ -159,7 +160,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   // Desliga só os AUXILIARES e mantém a aba: a aba é onde a pessoa está, e
   // limpá-la junto a tiraria do lugar sem ela ter pedido.
   const limparFiltrosAuxiliares = useCallback(() => {
-    setFilterValue({ tab, search: "", onlyUnread: false });
+    setFilterValue({ tab, search: "", onlyUnread: false, onlyGroups: false });
   }, [tab, setFilterValue]);
 
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId ?? idNaUrl);
@@ -210,6 +211,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
       channel_session_id: filterValue.channel_session_id,
       tag: filterValue.tag,
       unread: filterValue.onlyUnread || undefined,
+      is_group: filterValue.onlyGroups || undefined,
     }),
     [
       filterValue.tab,
@@ -218,6 +220,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
       filterValue.channel_session_id,
       filterValue.tag,
       filterValue.onlyUnread,
+      filterValue.onlyGroups,
     ],
   );
 

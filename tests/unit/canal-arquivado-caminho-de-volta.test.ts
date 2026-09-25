@@ -33,6 +33,7 @@ import { CHANNEL_PROVIDER_META, CHANNEL_PROVIDER_WAHA } from "@/lib/channels/cap
 import { reactivateChannelSession } from "@/lib/channels/reactivate";
 import { validateMetaCredentials } from "@/lib/channels/meta/validate-credentials";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { sincronizarRecebimentoDeGrupos } from "@/lib/grupos/sincronizar-filtro";
 import { createClient } from "@/lib/supabase/server";
 import { getWahaClient } from "@/lib/waha/client";
 import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
@@ -46,6 +47,7 @@ vi.mock("@/lib/auth/server", () => ({
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
+vi.mock("@/lib/grupos/sincronizar-filtro", () => ({ sincronizarRecebimentoDeGrupos: vi.fn(async () => "sincronizado") }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/webhooks/secrets", () => ({ encryptWebhookSecret: vi.fn() }));
 vi.mock("@/lib/channels/meta/validate-credentials", () => ({ validateMetaCredentials: vi.fn() }));
@@ -475,6 +477,24 @@ describe("POST /api/v1/channel-sessions/[id]/reconnect — canal excluído não 
     expect(waha.stopSession).toHaveBeenCalledWith(NOME_SESSAO);
     expect(waha.startSession).toHaveBeenCalledWith(NOME_SESSAO);
     expect(db.linhas[0]?.status).toBe("STARTING");
+  });
+
+  it("I1: reconectar ressincroniza o filtro de grupos DEPOIS de reiniciar a sessão, na org da sessão", async () => {
+    authOk();
+    makeDb({ sessions: [canalQr({ status: "FAILED" })] });
+    const waha = transporteOk();
+    vi.mocked(sincronizarRecebimentoDeGrupos).mockClear();
+    const { POST } = await import("@/app/api/v1/channel-sessions/[id]/reconnect/route");
+    const res = await POST(req(), ctx());
+
+    expect(res.status).toBe(200);
+    expect(sincronizarRecebimentoDeGrupos).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(Function),
+      expect.objectContaining({ organizationId: ORG, sessionRef: NOME_SESSAO }),
+    );
+    expect(waha.startSession.mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(sincronizarRecebimentoDeGrupos).mock.invocationCallOrder[0]!);
   });
 
   it("clone sem a migration 0106: reconectar continua funcionando", async () => {

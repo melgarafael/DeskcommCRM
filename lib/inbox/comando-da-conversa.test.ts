@@ -362,3 +362,21 @@ describe("o que entrou quando o banco passou a calcular o mesmo comando", () => 
     expect(COMANDOS_DO_BANCO as readonly string[]).not.toContain("ninguem");
   });
 });
+
+describe("comandoDaConversa — grupo de WhatsApp (I3)", () => {
+  it("grupo sem dono é da fila HUMANA ('aguardando'), nunca 'Automático atendendo'", () => {
+    const r = comandoDaConversa(fatos({ is_group: true, automaticoDaOrg: true }), AGORA);
+    expect(r.comando.quem).toBe("aguardando");
+    expect(r.automaticoAtivo).toBe(false);
+    // Nada de "Devolver ao automático" num grupo, nem motivo de automático pausado.
+    expect(r.travaVigente).toBe(false);
+    expect(r.motivo).toBeNull();
+  });
+  it("grupo com dono continua nomeando o atendente; grupo fechado continua encerrado", () => {
+    expect(comandoDaConversa(fatos({ is_group: true, assigned_to_user_id: ATENDENTE }), AGORA).comando.quem).toBe("humano");
+    expect(comandoDaConversa(fatos({ is_group: true, status: "closed" }), AGORA).comando.quem).toBe("encerrada");
+  });
+  it("controle: a mesma conversa sem ser grupo é do automático", () => {
+    expect(comandoDaConversa(fatos({ is_group: false, automaticoDaOrg: true }), AGORA).comando.quem).toBe("automatico");
+  });
+});

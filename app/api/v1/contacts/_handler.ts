@@ -100,6 +100,12 @@ export async function listContactsHandler(
     .from("contacts")
     .select(SELECT_COLS)
     .eq("organization_id", ctx.organization_id)
+    // O placeholder de GRUPO (`kind='whatsapp_group'`) não é uma pessoa da
+    // base: é o registro técnico que a conversa do grupo pendura para caber no
+    // mesmo esquema de `contacts`. Listar junto misturaria grupo com cliente
+    // numa lista que existe para achar CLIENTE — mesmo raciocínio da lápide de
+    // fusão logo abaixo.
+    .eq("kind", "person")
     // A LÁPIDE DE FUSÃO NÃO É UM CONTATO VIVO.
     //
     // `is_merged_into` marca o cadastro que foi absorvido por outro. Ele não é

@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Grupos na inbox",
+    "subtitle": "só o grupo ligado vira conversa, sem IA e sem funil",
+    "output": "grupos-na-inbox.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "ui", "label": "Tela" },
+    { "id": "motor", "label": "Motor" },
+    { "id": "dados", "label": "Banco" },
+    { "id": "canal", "label": "Canal" }
+  ],
+  "mainPath": ["conexoes", "toggle", "waha-filtro", "ingest", "conversa", "chat"],
+  "nodes": [
+    {
+      "id": "conexoes",
+      "lane": "ui",
+      "col": 1,
+      "type": "frontend",
+      "label": "Conexões › Grupos",
+      "sublabel": "só administrador (app/app/connections/page.tsx)"
+    },
+    {
+      "id": "toggle",
+      "lane": "motor",
+      "col": 2,
+      "type": "backend",
+      "label": "alternarGrupo",
+      "sublabel": "app/api/v1/channel-sessions/[id]/groups"
+    },
+    {
+      "id": "channel_session_groups",
+      "lane": "dados",
+      "col": 2,
+      "type": "database",
+      "label": "channel_session_groups",
+      "sublabel": "grupo ligado/desligado por sessão"
+    },
+    {
+      "id": "waha-filtro",
+      "lane": "canal",
+      "col": 3,
+      "type": "backend",
+      "label": "definirRecebimentoDeGrupos",
+      "sublabel": "ignore.groups do WAHA"
+    },
+    {
+      "id": "ingest",
+      "lane": "motor",
+      "col": 4,
+      "type": "backend",
+      "label": "lib/grupos/ingest.ts",
+      "sublabel": "remetente p.author, media-persist-worker"
+    },
+    {
+      "id": "conversa",
+      "lane": "dados",
+      "col": 5,
+      "type": "database",
+      "label": "conversation is_group",
+      "sublabel": "contato kind whatsapp_group"
+    },
+    {
+      "id": "evento",
+      "lane": "dados",
+      "col": 5,
+      "type": "database",
+      "label": "message.group_received",
+      "sublabel": "não message.received; roteamento pula"
+    },
+    {
+      "id": "chat",
+      "lane": "ui",
+      "col": 6,
+      "type": "frontend",
+      "label": "Chat com etiqueta Grupo",
+      "sublabel": "atendente responde; IA nunca"
+    },
+    {
+      "id": "push",
+      "lane": "ui",
+      "col": 6,
+      "type": "frontend",
+      "label": "Aviso ao atendente",
+      "sublabel": "push assina message.group_received"
+    }
+  ],
+  "edges": [
+    { "from": "conexoes", "to": "toggle", "label": "liga/desliga grupo" },
+    { "from": "toggle", "to": "channel_session_groups", "label": "grava chave do grupo" },
+    { "from": "channel_session_groups", "to": "waha-filtro", "label": "primeiro/último grupo muda ignore.groups" },
+    { "from": "waha-filtro", "to": "ingest", "label": "mensagem de grupo chega" },
+    { "from": "ingest", "to": "conversa", "label": "cria/atualiza conversa is_group" },
+    { "from": "ingest", "to": "evento", "label": "emite message.group_received" },
+    { "from": "evento", "to": "chat", "label": "realtime atualiza a tela" },
+    { "from": "evento", "to": "push", "label": "notifica atendente" },
+    { "from": "conversa", "to": "chat", "label": "etiqueta Grupo + remetente" }
+  ]
+}

@@ -109,39 +109,43 @@ describe("comando da conversa: o banco espelha o TypeScript", () => {
         for (const [rotulo, silencio] of SILENCIOS) {
           for (const fh of [false, true]) {
             for (const ib of [false, true]) {
+             for (const gr of [false, true]) {
               casos.push({
-                chave: `${status}|${dono ? "dono" : "sem"}|${rotulo}|fh=${fh}|ib=${ib}`,
+                chave: `${status}|${dono ? "dono" : "sem"}|${rotulo}|fh=${fh}|ib=${ib}|grupo=${gr}`,
                 fatos: {
                   status,
                   assigned_to_user_id: dono,
                   bot_silenced_until: silencio,
                   force_human: fh,
                   is_blocked: ib,
+                  // Grupo (migration 0411): sem dono é sempre 'aguardando'.
+                  is_group: gr,
                   // `true` de propósito: o banco não sabe deste fato org-wide
                   // (seria `agenteAtende` numa terceira encarnação), e com ele
                   // ligado o TS produz o mesmo vocabulário de quatro que o SQL.
                   automaticoDaOrg: true,
                 },
               });
+             }
             }
           }
         }
       }
     }
-    expect(casos).toHaveLength(STATUS.length * 2 * SILENCIOS.length * 2 * 2);
+    expect(casos).toHaveLength(STATUS.length * 2 * SILENCIOS.length * 2 * 2 * 2);
 
     const values = casos
       .map((c, i) => {
         const f = c.fatos;
         const s = f.bot_silenced_until === null ? "null" : `'${f.bot_silenced_until}'`;
         const d = f.assigned_to_user_id === null ? "null" : `'${f.assigned_to_user_id}'`;
-        return `(${i}, '${f.status}', ${d}::uuid, ${s}::timestamptz, ${f.force_human}, ${f.is_blocked})`;
+        return `(${i}, '${f.status}', ${d}::uuid, ${s}::timestamptz, ${f.force_human}, ${f.is_blocked}, ${f.is_group})`;
       })
       .join(",\n");
 
     const saida = sql(
-      `select i || '=' || public.fn_comando_da_conversa(st, dono, sil, fh, ib, '${AGORA}'::timestamptz)
-         from (values\n${values}\n) as t(i, st, dono, sil, fh, ib) order by i`,
+      `select i || '=' || public.fn_comando_da_conversa(st, dono, sil, fh, ib, '${AGORA}'::timestamptz, gr)
+         from (values\n${values}\n) as t(i, st, dono, sil, fh, ib, gr) order by i`,
     );
     const doBanco = new Map(
       saida
@@ -176,6 +180,11 @@ describe("comando da conversa: o banco espelha o TypeScript", () => {
       { n: 6, status: "closed", dono: null, sil: null, fh: false, ib: false },
       { n: 7, status: "pending", dono: null, sil: null, fh: false, ib: false },
       { n: 8, status: "resolved", dono: null, sil: null, fh: false, ib: false },
+      // Grupo (migration 0411): o wrapper tem de passar `c.is_group` — sem dono,
+      // 'aguardando'; com dono, 'humano'; fechado, 'encerrada'.
+      { n: 9, status: "open", dono: null, sil: null, fh: false, ib: false, grupo: true },
+      { n: 10, status: "open", dono: DONO, sil: null, fh: false, ib: false, grupo: true },
+      { n: 11, status: "closed", dono: null, sil: null, fh: false, ib: false, grupo: true },
     ];
 
     sql(`
@@ -194,10 +203,11 @@ describe("comando da conversa: o banco espelha o TypeScript", () => {
           (l) => `
       insert into contacts (id, organization_id, force_human, is_blocked)
         values ('aaaaaaaa-0000-4000-8000-00000000c${String(l.n).padStart(3, "0")}', '${ORG}', ${l.fh}, ${l.ib});
-      insert into conversations (id, organization_id, contact_id, channel_session_id, status, assigned_to_user_id, bot_silenced_until)
+      insert into conversations (id, organization_id, contact_id, channel_session_id, status, assigned_to_user_id, bot_silenced_until, is_group, group_chat_id)
         values ('aaaaaaaa-0000-4000-8000-00000000e${String(l.n).padStart(3, "0")}', '${ORG}',
                 'aaaaaaaa-0000-4000-8000-00000000c${String(l.n).padStart(3, "0")}', '${ORG}', '${l.status}',
-                ${l.dono ? `'${l.dono}'` : "null"}, ${l.sil ? `'${l.sil}'` : "null"});`,
+                ${l.dono ? `'${l.dono}'` : "null"}, ${l.sil ? `'${l.sil}'` : "null"},
+                ${l.grupo === true}, ${l.grupo === true ? `'${l.n}@g.us'` : "null"});`,
         )
         .join("\n")}
     `);
@@ -225,6 +235,7 @@ describe("comando da conversa: o banco espelha o TypeScript", () => {
           bot_silenced_until: l.sil,
           force_human: l.fh,
           is_blocked: l.ib,
+          is_group: l.grupo === true,
           automaticoDaOrg: true,
         },
         // O wrapper usa `now()` do banco; estas linhas não ficam na fronteira do

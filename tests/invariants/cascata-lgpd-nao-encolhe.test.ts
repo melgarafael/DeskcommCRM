@@ -92,6 +92,12 @@ const TABELAS_NA_CASCATA = [
   // `lgpd-alcanca-prospeccao-de-quem-ja-era-contato.test.ts`.
   "prospecting_candidates",
   "voice_calls", //        0235 — o telefone de quem falou ao telefone
+  // 0411 — `subject` é o NOME do grupo de WhatsApp. `contact_id` aponta para o
+  // placeholder do grupo (contacts.kind = 'whatsapp_group'), nunca para o
+  // titular real deste caminho, mas casa o padrão automático de
+  // `lgpd-cascata-alcanca-quem-guarda-pessoa.test.ts` (FK para `contacts` +
+  // coluna de nome-de-PII), e nulificar não perde nada operacional.
+  "channel_session_groups",
 ] as const;
 
 /**

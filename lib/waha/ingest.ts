@@ -31,6 +31,8 @@ import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { estamparAtribuicaoDoContato } from "@/lib/leads/atribuicao-de-anuncio";
 import { extrairEEstamparAtribuicaoGoogle } from "@/lib/plataformas-de-anuncio/google/atribuicao";
 import { extrairAtribuicaoWaha } from "@/lib/waha/atribuicao-de-anuncio";
+import { criarIngestDeGrupoDb, gravarMensagemDeGrupo } from "@/lib/grupos/ingest";
+import type { RemetenteDeGrupo } from "@/lib/messaging/remetente-de-grupo";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ackToStatus } from "@/lib/types/messaging";
 import type { WahaEnvelope, WahaPayload } from "@/lib/waha/envelope";
@@ -441,7 +443,15 @@ function bodyOf(p: WahaPayload): string | null {
  * estranho.
  */
 export function telefoneAlternativoDe(p: WahaPayload): string | null {
-  const bruto = p._data?.key?.remoteJidAlt ?? p._data?.key?.participantAlt ?? null;
+  return telefoneDoJid(p._data?.key?.remoteJidAlt ?? p._data?.key?.participantAlt ?? null);
+}
+
+/**
+ * O miolo de `telefoneAlternativoDe`, separado para o remetente de GRUPO usar a
+ * MESMA régua sobre `participantAlt` — sem o `remoteJidAlt` na frente, que em
+ * grupo não é de quem escreveu. Mesma entrada de fora, mesmas guardas.
+ */
+function telefoneDoJid(bruto: string | null | undefined): string | null {
   if (!bruto) return null;
   // ⚠️ `endsWith`/`indexOf` e NÃO regex — este valor vem de FORA (é campo de
   // webhook) e a versão com `/@(s\.whatsapp\.net|c\.us)$/` foi apontada pelo
@@ -467,6 +477,129 @@ export function telefoneAlternativoDe(p: WahaPayload): string | null {
   // ingestão inteira da mensagem lá na frente.
   if (digitos.length < 8 || digitos.length > 15) return null;
   return `+${digitos}`;
+}
+
+/** O primeiro valor que É texto não vazio — o resto (null, número, objeto) é ignorado. */
+function primeiroTexto(...valores: unknown[]): string | null {
+  for (const v of valores) if (typeof v === "string" && v.length > 0) return v;
+  return null;
+}
+
+const LID_DE_REMETENTE = /^\d{5,40}$/;
+const TELEFONE_DE_REMETENTE = /^\+\d{8,15}$/;
+
+/**
+ * QUEM escreveu uma mensagem de grupo — tirado do AUTOR, nunca do `from` (que,
+ * em grupo, é o próprio grupo). Doutrina: "Sender é `p.author`, não `p.from`".
+ *
+ * ─── De onde vem cada pedaço, e o que foi medido ────────────────────────────
+ *
+ * O autor é o primeiro texto entre `participant` e `author` (os dois que o WAHA
+ * declara no `WAMessage`) e `_data.key.participant` (a chave do Baileys, que o
+ * NOWEB repassa). O formato exato no webhook NÃO foi medido nesta instalação —
+ * a sonda da Task 0 mediu a LISTAGEM de grupos, onde o participante vem como
+ * `@lid` e o telefone mora à parte. Por isso a leitura aceita as três casas e
+ * confere o tipo de cada uma.
+ *
+ * O telefone segue o que a conversa individual já faz (`telefoneAlternativoDe`):
+ * se o autor é `@lid`, o número real vem em `_data.key.participantAlt` — medido
+ * no 1:1 como 76 de 76 payloads @lid trazendo o `*Alt`. Aqui só o
+ * `participantAlt` conta: o `remoteJidAlt`, em grupo, não é de quem escreveu.
+ *
+ * ─── Nunca lança ────────────────────────────────────────────────────────────
+ *
+ * Cada campo que não passa na régua do `remetenteDeGrupoSchema` vira `null`, em
+ * vez de reprovar o objeto inteiro: o schema é estrito e um nome de 201
+ * caracteres jogaria fora também o telefone. Sem nada aproveitável, `null` — a
+ * mensagem entra do mesmo jeito, e a tela mostra "Participante".
+ */
+export function remetenteDoGrupo(p: WahaPayload): RemetenteDeGrupo | null {
+  const autorBruto = primeiroTexto(p.participant, p.author, p._data?.key?.participant);
+  // Sufixo de DISPOSITIVO (`:4`, `:12`...) que o WhatsApp multi-device às vezes
+  // ancora antes do `@` — `123456:4@lid` e `5511999990000:12@s.whatsapp.net`
+  // são o MESMO lid/telefone de sempre, só que com o dispositivo colado. Sem
+  // remover, o teto de dígitos de `LID_DE_REMETENTE`/`TELEFONE_DE_REMETENTE`
+  // reprova os dois e o remetente do grupo se perde.
+  const autor = autorBruto ? autorBruto.replace(/:\d+@/, "@") : null;
+  // Teto antes de qualquer varredura: é campo de fora, como o `from`.
+  const id = autor && autor.length <= 128 ? parseChatId(autor) : null;
+
+  const doAutor = id?.kind === "phone" ? canonicalPhoneBR(id.phone) : null;
+  const doAlt = telefoneDoJid(primeiroTexto(p._data?.key?.participantAlt));
+  const telefone = [doAutor, doAlt ? canonicalPhoneBR(doAlt) : null].find(
+    (t): t is string => !!t && TELEFONE_DE_REMETENTE.test(t),
+  );
+  const lid = id?.kind === "lid" && LID_DE_REMETENTE.test(id.lid) ? id.lid : null;
+  const nome = notifyNameOf(p)?.trim().slice(0, 200) || null;
+
+  if (!nome && !telefone && !lid) return null;
+  return { name: nome, phone: telefone ?? null, lid };
+}
+
+/**
+ * O chat de GRUPO de uma mensagem `fromMe`, ou null.
+ *
+ * O chat do outbound sai de `to ?? id ?? from` (ver `handleOutboundFromUserPhone`),
+ * e em grupo a segunda fonte engana: o id de grupo tem QUATRO segmentos
+ * (`{fromMe}_{chat}_{id}_{participante}`), e `chatIdFromWaMessageId` devolve
+ * `chat_id` colados — lixo que não termina em `@g.us`. O NOWEB manda o grupo em
+ * `from`; o WEBJS, em `to`. Qualquer um dos dois terminando em `@g.us` basta.
+ */
+function grupoDoEnvio(p: WahaPayload, chatId: string): string | null {
+  for (const c of [chatId, p.to, p.from]) {
+    if (typeof c === "string" && c.endsWith("@g.us")) return c;
+  }
+  return null;
+}
+
+/**
+ * Entrega a mensagem de grupo a `lib/grupos/ingest.ts`, que decide se o grupo
+ * está LIGADO. Desligado: nada é escrito, como antes da feature.
+ *
+ * O que este caminho NÃO chama, e cada ausência é de propósito (spec
+ * "grupos na inbox", tabela "Nunca dispara com grupo"): `upsertContact` (não há
+ * contato por participante), a resolução de avatar/lid, a atribuição de anúncio,
+ * `aplicarEfeitosPosEntrada` (opt-out, lead, agente), `acelerarPipelineDeEventos`,
+ * os audits `message.received`/`message.sent` e `pausarIaPorAtendimentoManual`
+ * (a IA nunca responde em grupo — não há o que pausar).
+ *
+ * Falha de banco não sobe: a conversa individual também registra e segue quando
+ * o INSERT falha, e um throw aqui só faria o provedor reentregar o que o dedup
+ * por `external_id` já recusaria.
+ */
+async function ingerirMensagemDeGrupo(
+  admin: Admin,
+  session: Session,
+  p: WahaPayload,
+  groupChatId: string,
+  direction: "inbound" | "outbound",
+): Promise<void> {
+  if (!p.id) return;
+  const now = new Date().toISOString();
+  try {
+    await gravarMensagemDeGrupo(criarIngestDeGrupoDb(admin as unknown as SupabaseClient), {
+      organizationId: session.organization_id,
+      channelSessionId: session.id,
+      groupChatId,
+      direction,
+      externalId: p.id,
+      type: resolveMessageType(p),
+      body: bodyOf(p),
+      mediaUrl: mediaUrlOf(p),
+      mediaMime: mediaMimeOf(p),
+      temMidia: p.hasMedia === true,
+      sentAt: dataDoTimestamp(p.timestamp, now),
+      // `fromMe`: quem escreveu é o dono do número — o `pushName` é o da loja.
+      remetente: direction === "inbound" ? remetenteDoGrupo(p) : null,
+      rawType: p.type ?? null,
+    });
+  } catch (err) {
+    logger.error("waha.ingest: mensagem de grupo não gravada", {
+      organization_id: session.organization_id,
+      direcao: direction,
+      detail: err instanceof Error ? err.message : String((err as { message?: unknown })?.message ?? err),
+    });
+  }
 }
 
 /**
@@ -611,7 +744,13 @@ async function handleInbound(
 ): Promise<void> {
   const chatId = p.from ?? "";
   const parsed = parseChatId(chatId);
-  if (parsed.kind === "group") return; // grupos não fazem binding CRM
+  if (parsed.kind === "group") {
+    // Grupo só entra se estiver LIGADO em Conexões › Grupos; o resto é descartado,
+    // como antes. Nada de contato por participante, pós-entrada, lead, opt-out ou
+    // pipeline de IA: ver `ingerirMensagemDeGrupo` e lib/grupos/ingest.ts.
+    await ingerirMensagemDeGrupo(admin, session, p, chatId, "inbound");
+    return;
+  }
   if (!p.id) return;
   // WAHA emite eventos vazios p/ status/read-receipt/presence — não viram mensagem.
   const texto = bodyOf(p);
@@ -865,7 +1004,10 @@ async function handleOutboundFromUserPhone(
   // celular e o CRM não mostra", sem nenhum erro em log: o webhook devolvia 200.
   const chatId = p.to ?? chatIdFromWaMessageId(p.id ?? "") ?? p.from ?? "";
   const parsed = parseChatId(chatId);
-  if (parsed.kind === "group") return;
+  // Grupo NÃO sai aqui: ele segue até o dedup do eco, logo abaixo, e só então
+  // desvia. A resposta que o atendente mandou pela inbox volta por este webhook
+  // como `fromMe`, e só o dedup por `external_id` a reconhece como nossa.
+  const grupo = grupoDoEnvio(p, chatId);
   if (!p.id) return;
   if (!p.body && !mediaUrlOf(p) && !p.hasMedia) return;
   // Idem inbound. Aqui o caso que mais dói é o chatId vazio: é literalmente o
@@ -877,7 +1019,11 @@ async function handleOutboundFromUserPhone(
   // MORTA (varri 12 valores de `to` e nenhum a disparava, porque o único falsy
   // já era classificado como grupo uma linha acima) e voltaria a viver como
   // duplicata desta guarda, descartando calado justamente o caso que se quer ver.
-  if (!ehEnderecavel(parsed)) {
+  //
+  // Grupo pula as duas guardas de endereço: ele não é endereçável como pessoa
+  // (e não é anomalia — não emite aviso), e o número interno de avisos é sempre
+  // uma pessoa.
+  if (!grupo && !ehEnderecavel(parsed)) {
     await avisarChatNaoReconhecido(admin, session.organization_id, session.id, chatId, "outbound");
     return;
   }
@@ -889,7 +1035,7 @@ async function handleOutboundFromUserPhone(
   // de eco não o reconhece como nosso — sem este corte, o próprio aviso que
   // acabou de sair voltaria pelo webhook, viraria conversa com o número do
   // plantão e ainda chamaria `pausarIaPorAtendimentoManual` no fim.
-  if (await ehNumeroInternoDeAviso(admin, session.organization_id, parsed)) {
+  if (!grupo && (await ehNumeroInternoDeAviso(admin, session.organization_id, parsed))) {
     await registrarMensagemIgnorada(admin, session.organization_id, {
       direction: "outbound",
       sessionId: session.id,
@@ -922,6 +1068,18 @@ async function handleOutboundFromUserPhone(
     .limit(1)
     .maybeSingle();
   if (jaRegistrada) return; // nasceu no envio; quem atualiza o status é o ack
+
+  // O desvio de GRUPO mora aqui, DEPOIS do dedup do eco e ANTES de qualquer
+  // efeito da conversa individual (contato, pausa da IA, audit).
+  //
+  // O eco AINDA EM VOO (linha nossa sem `external_id`) não é recusado aqui, de
+  // propósito, igual à conversa individual: `ehEcoDeEnvioNosso` decide só o
+  // silêncio da IA, nunca o INSERT — "quem reaproveitar esta condição para pular
+  // o INSERT reabre o #108" (ver o bloco no fim desta função).
+  if (grupo) {
+    await ingerirMensagemDeGrupo(admin, session, p, grupo, "outbound");
+    return;
+  }
 
   // fromMe: o pushName do payload é o do OPERADOR, não do destinatário —
   // repassá-lo batizaria o contato do cliente com o nome da loja (e o
