@@ -67,6 +67,22 @@ interface Props {
 export function InboxFilters({ value, onChange }: Props) {
   const t = useT();
   const [searchInput, setSearchInput] = useState(value.search);
+  const tabsListRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const list = tabsListRef.current;
+    if (!list) return;
+    const showSelectedTab = () => {
+      // A coluna muda com o monitor e os painéis laterais; a aba ativa não pode
+      // ficar fora da faixa rolável sem que o atendente perceba qual filtro vale.
+      list.querySelector<HTMLElement>('[role="tab"][data-state="active"]')
+        ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    };
+    showSelectedTab();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(showSelectedTab);
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, [value.tab]);
   /**
    * O campo escuta o valor de FORA — e só ele.
    *
@@ -364,14 +380,14 @@ export function InboxFilters({ value, onChange }: Props) {
         )}
       </div>
 
-      {/* Faixa sublinhada, não caixa cinza: cinco abas num grid de 280px
-          espremiam "Fechadas" contra "Automático" até os rótulos se tocarem. */}
+      {/* A faixa rola na coluna estreita; o destaque sólido e a barra visível
+          deixam claro qual visão está ativa e onde há mais opções. */}
       <Tabs
         value={value.tab}
         onValueChange={(v) => onChange({ ...value, tab: v as InboxTab })}
         className="px-3"
       >
-        <TabsList className="h-auto w-full justify-between gap-2 rounded-none bg-transparent p-0 [scrollbar-width:none]">
+        <TabsList ref={tabsListRef} className="h-auto w-full justify-start gap-1 rounded-none bg-transparent p-0 pb-1 [scrollbar-width:thin]">
           {tabs.map((tab) => {
             const meta = INBOX_TABS.find((t) => t.value === tab)!;
             const count = countFor[tab];
@@ -379,11 +395,11 @@ export function InboxFilters({ value, onChange }: Props) {
               <TabsTrigger
                 key={tab}
                 value={tab}
-                className="-mb-px shrink-0 gap-1 rounded-none border-b-2 border-transparent px-0 pb-2 pt-1 text-xs font-medium text-text-muted data-[state=active]:border-accent data-[state=active]:bg-transparent data-[state=active]:text-text data-[state=active]:shadow-none"
+                className="shrink-0 gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-text-muted data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
               >
                 {t(meta.label)}
                 {typeof count === "number" && count > 0 && (
-                  <span className="text-[11px] tabular-nums text-text-subtle">{count}</span>
+                  <span className="text-[11px] tabular-nums opacity-75">{count}</span>
                 )}
               </TabsTrigger>
             );

@@ -14,7 +14,7 @@
  * valendo — inbox filtrado, às vezes vazio, sem nada na tela dizendo por quê.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 
 import { InboxFilters, visibleInboxTabs, type InboxFiltersValue } from "@/components/inbox/InboxFilters";
 import type * as CanaisModule from "@/hooks/channels/useChannelSessions";
@@ -107,6 +107,36 @@ describe("visibleInboxTabs (lógica pura de visões)", () => {
 });
 
 describe("InboxFilters render — 3 visões + escopo", () => {
+  it("mantém a aba selecionada visível ao trocar de visão ou estreitar a coluna", () => {
+    setOrg("manager", "all");
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const scrolled: string[] = [];
+    HTMLElement.prototype.scrollIntoView = function () {
+      scrolled.push(this.textContent ?? "");
+    };
+    let onResize: ResizeObserverCallback = () => {};
+    const disconnect = vi.fn();
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(callback: ResizeObserverCallback) { onResize = callback; }
+      observe() {}
+      disconnect = disconnect;
+    });
+
+    try {
+      const { rerender } = render(<InboxFilters value={VALUE} onChange={() => {}} />);
+      rerender(<InboxFilters value={{ ...VALUE, tab: "archived" }} onChange={() => {}} />);
+      expect(scrolled.at(-1)).toContain("Arquivadas");
+      scrolled.length = 0;
+      act(() => onResize([], {} as ResizeObserver));
+      expect(scrolled).toEqual(["Arquivadas"]);
+      expect(screen.getByRole("tab", { name: /Arquivadas/ })).toHaveAttribute("data-state", "active");
+    } finally {
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+      vi.unstubAllGlobals();
+    }
+    expect(disconnect).toHaveBeenCalled();
+  });
+
   it("agent em modo own*: mostra Minhas e Fila, esconde Todas", () => {
     setOrg("agent", "own_and_unassigned");
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
