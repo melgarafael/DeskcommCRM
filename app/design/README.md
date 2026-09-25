@@ -56,7 +56,7 @@ Inter / Geist / Space Grotesk **proibidos** por saturação em training data.
 ## Arquitetura
 
 - `lib/tokens.ts` — única source-of-truth para cores, fontes, densidade, motion.
-- `lib/fonts.ts` — todas as fontes carregadas via `next/font/google` no boot do
+- `lib/fonts.ts` — todas as fontes carregadas via `next/font/local` (arquivos em `app/fonts/`) no boot do
   `_design/layout.tsx` (escopo isolado). Variáveis CSS expostas globalmente.
 - `lib/variant-context.tsx` — Context React + `setProperty` em `:root` para
   injetar tokens. Hidrata de `localStorage`.
