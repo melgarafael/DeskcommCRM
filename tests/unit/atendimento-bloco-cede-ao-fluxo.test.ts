@@ -28,7 +28,11 @@ function contexto(custom_fields: Record<string, unknown>): LeadContext {
   };
 }
 
-function abertura(custom_fields: Record<string, unknown>, fluxoAtivo: boolean): string {
+function abertura(
+  custom_fields: Record<string, unknown>,
+  fluxoAtivo: boolean,
+  interesseEmMoto = false,
+): string {
   return buildOpeningMessage(
     null,
     null,
@@ -39,6 +43,7 @@ function abertura(custom_fields: Record<string, unknown>, fluxoAtivo: boolean): 
     "",
     undefined,
     fluxoAtivo,
+    interesseEmMoto,
   );
 }
 
@@ -61,5 +66,31 @@ describe("quando há fluxo, o bloco fixo de coleta cede", () => {
     const texto = abertura({}, true);
     expect(texto).toContain("Novo turno de atendimento");
     expect(texto).toContain("## Estado do funil");
+  });
+});
+
+describe("C-084 — coleta ativa de nome/cidade/CNH", () => {
+  it("SEM interesse em moto: a coleta fica represada (não pergunta CNH ainda)", () => {
+    const texto = abertura({}, false, false);
+    expect(texto).toContain("PENDENTES:");
+    expect(texto).toMatch(/Ainda NÃO pergunte CNH\/CPF/);
+  });
+
+  it("COM interesse em moto: a coleta é liberada e vira o fecho do turno", () => {
+    const texto = abertura({}, false, true);
+    expect(texto).toContain("PENDENTES:");
+    expect(texto).toMatch(/JÁ demonstrou interesse em moto/);
+    expect(texto).toMatch(/TERMINE o turno pedindo UM destes dados/);
+    // A ordem e a persistência (2 tentativas) estão na instrução.
+    expect(texto).toMatch(/nome → cidade → CNH/);
+    expect(texto).toMatch(/até 2 tentativas/);
+  });
+
+  it("dado já preenchido some dos PENDENTES", () => {
+    const texto = abertura({ nome: "Vander", cidade: "São Paulo" }, false, true);
+    // Só a CNH continua pendente (nome e cidade já no contato).
+    expect(texto).toMatch(/PENDENTES: CNH\./);
+    expect(texto).not.toMatch(/PENDENTES: nome/);
+    expect(texto).not.toMatch(/PENDENTES:.*cidade\./);
   });
 });
