@@ -20,6 +20,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { truncar } from "@/lib/notifications/push_payload";
 import { enviarPushAoUsuario } from "@/lib/notifications/web_push";
 import { PRIORIDADES_DA_TAREFA, type PrioridadeDaTarefa } from "@/lib/tarefas/tipos";
@@ -82,7 +83,7 @@ export function interpolarTitulo(
   valores: { lead?: LeadDoPedido | null; contact?: ContatoDoPedido | null },
 ): string {
   const leadTitle = valores.lead?.title?.trim() ?? "";
-  const contatoNome = valores.contact?.display_name?.trim() || valores.contact?.name?.trim() || "";
+  const contatoNome = nomeDoContato(valores.contact) ?? "";
   return titulo
     .replaceAll("{{lead.title}}", leadTitle)
     .replaceAll("{{contact.name}}", contatoNome)
