@@ -18,6 +18,10 @@ const CREDS = {
 
 const ESCOPO = { organizationId: "org-1", sessionRef: "106540352242922" };
 
+/** Uma página da coleção de modelos, na forma em que a plataforma a devolve. */
+const resposta = (data: unknown[]) =>
+  new Response(JSON.stringify({ data }), { status: 200 });
+
 beforeEach(() => {
   vi.mocked(resolveGraphPartnerCreds).mockReset();
   vi.mocked(resolveGraphPartnerCreds).mockResolvedValue(CREDS);
@@ -90,21 +94,102 @@ describe("modelos do parceiro Graph-compatível", () => {
     expect(body.name).toBe("novo");
   });
 
-  it("apaga pelo nome", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ success: true }), { status: 200 }),
-    );
+  it("apaga UMA variante: resolve o id por nome+idioma e manda o hsm_id junto do name", async () => {
+    // O que a plataforma diz (api-reference/whatsapp/templates/deletar-template):
+    // sem `hsm_id` o DELETE leva TODOS os idiomas daquele nome; com `hsm_id`
+    // "apenas aquela versão é removida, e o name continua obrigatório".
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        // O filtro `name` devolve o nome em TODOS os idiomas — dois ids.
+        resposta([
+          { id: "5400801403478858", name: "antigo", language: "pt_BR" },
+          { id: "900000000000001", name: "antigo", language: "en_US" },
+        ]),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true }), { status: 200 }));
 
-    // `language` é obrigatório no contrato desde o changelog de 28/08 do
-    // provedor intermediado: lá, apagar por nome SEM idioma apaga TODAS as
-    // variantes, e a assinatura obriga quem chama a dizer QUAL morre. O adapter
-    // do Graph ignora o campo — o que se mede aqui é a URL —, mas o contrato é
-    // um só para todos os canais.
     await graphPartnerTemplateOps.remove({ ...ESCOPO, name: "antigo", language: "pt_BR" });
 
-    const [url, init] = fetchSpy.mock.calls[0]!;
-    expect(String(url)).toContain("/message_templates?name=antigo");
+    const [consulta] = fetchSpy.mock.calls[0]!;
+    expect(String(consulta)).toContain("/message_templates?limit=100");
+    expect(String(consulta)).toContain("fields=id,name,language");
+    expect(String(consulta)).toContain("&name=antigo");
+    const [url, init] = fetchSpy.mock.calls[1]!;
+    expect(String(url)).toBe(
+      "https://cloud.example.test/v1/366634483210360/message_templates?name=antigo&hsm_id=5400801403478858",
+    );
     expect(init?.method).toBe("DELETE");
+  });
+
+  it("sem a variante na conta não há id — e sem id nada sai daqui", async () => {
+    // O caminho antigo (DELETE pelo nome) apagaria o pt_BR junto com o en_US.
+    // Aqui a consulta acha SÓ a en_US, e a recusa vem antes de qualquer DELETE.
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(resposta([{ id: "900000000000001", name: "antigo", language: "en_US" }]));
+
+    await expect(
+      graphPartnerTemplateOps.remove({ ...ESCOPO, name: "antigo", language: "pt_BR" }),
+    ).rejects.toThrow(/graph_partner_template_variante_ausente/);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls.every(([url, init]) => init?.method !== "DELETE")).toBe(true);
+  });
+
+  it("⭐ edita a variante por ID — POST no nó dela, nunca na coleção", async () => {
+    const NOVOS = [{ type: "BODY", text: "Oi {{1}}" }];
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        resposta([
+          { id: "777", name: "boas_vindas", language: "pt_BR" },
+          { id: "888", name: "boas_vindas", language: "en_US" },
+          { id: "999", name: "outro", language: "pt_BR" },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ success: true, id: "777", name: "boas_vindas", category: "UTILITY" }),
+          { status: 200 },
+        ),
+      );
+
+    const r = await graphPartnerTemplateOps.update({
+      ...ESCOPO,
+      name: "boas_vindas",
+      language: "pt_BR",
+      patch: { components: NOVOS },
+    });
+
+    const [consulta] = fetchSpy.mock.calls[0]!;
+    expect(String(consulta)).toContain("&name=boas_vindas");
+    const [url, init] = fetchSpy.mock.calls[1]!;
+    // O caminho da edição é SÓ o id, sem o waba_id (OpenAPI `editar-template`).
+    expect(String(url)).toBe("https://cloud.example.test/v1/777");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toEqual({ components: NOVOS });
+    // O nó não devolve o idioma (ele identifica a variante e não muda): ele
+    // volta de quem chamou, que o escolheu na tela.
+    expect(r).toMatchObject({ name: "boas_vindas", language: "pt_BR" });
+  });
+
+  it("sem a variante escolhida a edição também não sai do lugar", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(resposta([{ id: "888", name: "boas_vindas", language: "en_US" }]));
+
+    await expect(
+      graphPartnerTemplateOps.update({
+        ...ESCOPO,
+        name: "boas_vindas",
+        language: "pt_BR",
+        patch: { components: [{ type: "BODY", text: "Oi" }] },
+      }),
+    ).rejects.toThrow(/graph_partner_template_variante_ausente/);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(
+      fetchSpy.mock.calls.every(([, init]) => (init as { method?: string } | undefined)?.method !== "POST"),
+    ).toBe(true);
   });
 
   it("pagina pelo `next` do mesmo host, e nunca leva o token para outro", async () => {
