@@ -31,9 +31,11 @@
  * mesmo dia, e sem trava a mensagem do ateliê sairia tantas vezes quantas a
  * varredura rodasse; com uma janela de horas, a segunda cobrança de um negócio
  * antigo (a de 60 dias DEPOIS do casamento) ficaria de fora. A consequência
- * está declarada no PR e no teste: **mudar a data depois do disparo não
- * ressuscita o aviso** — para aquele par (regra, negócio) a regra já cumpriu o
- * papel; uma segunda cobrança é uma regra nova.
+ * mudou na #1540: a chave passou a levar o VALOR da data
+ * (`regra:negócio:valor`), então **mudar a data rearma o aviso** — remarcou o
+ * casamento, a cobrança de 60 dias depois dele volta a existir. O que NÃO
+ * rearma é trocar só o formato do campo (`01/05/2026` → `2026-05-01` é a mesma
+ * data) e voltar à data já avisada: por aquele valor a regra já cumpriu o papel.
  *
  * ═══ O EVENTO É DIRIGIDO A UMA REGRA ═══
  *
@@ -69,10 +71,10 @@ import {
   GATILHO_DE_DATA_DO_FUNIL,
   casaNaData,
   chaveDeDisparo,
+  chaveDeDisparoComValor,
   configDoGatilhoDeData,
   diaAlvo,
   diaBrasileiro,
-  naoDisparados,
 } from "@/lib/automation/gatilho-de-data-do-funil";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { logger } from "@/lib/logger";
@@ -165,6 +167,10 @@ async function handle(req: NextRequest): Promise<Response> {
         .select("id, custom_fields")
         .eq("organization_id", org)
         .eq("pipeline_id", config.pipeline_id)
+        // Só NEGÓCIOS ABERTOS (#1540): avançar uma data de um ganho ou perdido
+        // mandava o time cobrar quem já saiu do funil. É o padrão — quem quiser
+        // avisar sobre fechados escreve uma regra nova quando isso existir.
+        .eq("status", "open")
         // O SQL ESTREITA; o TypeScript DECIDE. As duas formas que o produto
         // grava — o ISO do formulário (e o timestamp de quem entrou por API) e
         // o `dd/mm/aaaa` da importação — viram um superconjunto aqui, e
@@ -201,34 +207,58 @@ async function handle(req: NextRequest): Promise<Response> {
       if (casam.length === 0) continue;
       examinados += casam.length;
 
-      // Quem já disparou ESTA regra não dispara de novo — nem hoje, nem nunca.
+      // Quem já disparou ESTA regra COM ESTE VALOR não dispara de novo (#1540):
+      // a mesma data continua valendo um aviso, e uma data MOVIDA rearma o
+      // par (regra, negócio). Sem o valor na chave a trava era para sempre —
+      // remarcou o casamento, a cobrança de 60 dias depois dele nunca saía.
       const jaEmitidos = new Set<string>();
       for (let i = 0; i < casam.length; i += TAMANHO_DO_LOTE) {
         const lote = casam.slice(i, i + TAMANHO_DO_LOTE).map((l) => l.id as string);
         const { data: anteriores } = await admin
           .from("event_log")
-          .select("entity_id")
+          .select("entity_id, payload")
           .eq("organization_id", org)
           .eq("event_type", GATILHO_DE_DATA_DO_FUNIL)
           .eq("payload->>rule_id", regra.id)
           .in("entity_id", lote);
         for (const anterior of anteriores ?? []) {
-          jaEmitidos.add(chaveDeDisparo(regra.id, anterior.entity_id as string));
+          const valor = (anterior.payload as { valor?: unknown } | null)?.valor;
+          const leadId = anterior.entity_id as string;
+          if (valor === undefined || valor === null) {
+            // Linha anterior à #1540: sem valor não há como rearmar, e DESERDIR
+            // a trava antiga reemitiria o aviso de todo par já avisado no
+            // primeiro deploy. A regra antiga continua valendo para quem já
+            // disparou; o rearme vale para o que disparar daqui pra frente.
+            jaEmitidos.add(chaveDeDisparo(regra.id, leadId));
+            continue;
+          }
+          jaEmitidos.add(chaveDeDisparoComValor(regra.id, leadId, valor));
         }
       }
 
-      const novos = naoDisparados(
-        casam.map((l) => l.id as string),
-        jaEmitidos,
-        regra.id,
-      );
+      const novos = casam
+        .filter(
+          (lead) =>
+            !jaEmitidos.has(
+              chaveDeDisparoComValor(
+                regra.id,
+                lead.id as string,
+                (lead.custom_fields as CamposDoNegocio)?.[config.campo],
+              ),
+            ) &&
+            !jaEmitidos.has(chaveDeDisparo(regra.id, lead.id as string)),
+        )
+        .map((lead) => ({
+          id: lead.id as string,
+          valor: (lead.custom_fields as CamposDoNegocio)?.[config.campo] ?? null,
+        }));
       if (novos.length < casam.length) pular("ja_emitido", casam.length - novos.length);
 
-      for (const lead of novos) {
+      for (const candidato of novos) {
         const { error: erroEvento } = await admin.rpc("emit_event" as never, {
           p_event_type: GATILHO_DE_DATA_DO_FUNIL,
           p_entity_kind: "crm_lead",
-          p_entity_id: lead,
+          p_entity_id: candidato.id,
           // `rule_id` é o que faz o evento valer só para a regra que o pediu:
           // sem ele, a regra irmã de `dias` diferente rodaria junto.
           p_payload: {
@@ -238,6 +268,9 @@ async function handle(req: NextRequest): Promise<Response> {
             dias: config.dias,
             local_date: hojeLocal,
             date: alvo,
+            // O VALOR que casou — é ele quem entra na trava e permite o rearme
+            // quando a data muda (#1540).
+            valor: candidato.valor,
           },
           p_metadata: { actor_kind: "system", source: "cron/lead-date-field-due" },
           p_organization_id: org,
@@ -246,7 +279,7 @@ async function handle(req: NextRequest): Promise<Response> {
           logger.error("[lead-date-field-due] emit_event falhou", {
             organization_id: org,
             rule_id: regra.id,
-            lead_id: lead,
+            lead_id: candidato.id,
             error: erroEvento.message,
             requestId,
           });
