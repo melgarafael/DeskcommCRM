@@ -7,7 +7,7 @@
  * env-only. A Agenda ganhou a tela de configuração (0201) porque o app OAuth
  * dela é editado por um humano depois da instalação, num fluxo que já existia
  * antes em `.env`. Aqui não há esse histórico — a instalação nasce com ou sem
- * as três variáveis, e é a MESMA decisão de design de antes da 0201: sem elas,
+ * as credenciais OAuth (e developer token no caminho legado): sem elas,
  * o botão "Conectar Google Ads" some e a tela explica o que falta, sem quebrar
  * o resto do produto.
  *
@@ -15,6 +15,7 @@
  * vez de lançar. Quem chama decide o que fazer com a ausência.
  */
 
+import type { ApiDeConversaoGoogle } from "../types";
 import { env } from "@/lib/env";
 
 /** O caminho da rota de callback. Tem de estar registrado no console do Google. */
@@ -46,21 +47,26 @@ export function enderecoDeRetorno(urlDaAplicacao: string = env.NEXT_PUBLIC_APP_U
 }
 
 /** A configuração em vigor, ou `null` quando a instalação não tem app OAuth de Ads. */
-export function configuracaoDoGoogleAds(): AppDoGoogleAdsConfigurado | null {
+export function configuracaoDoGoogleAds(
+  api: ApiDeConversaoGoogle = "google_ads",
+): AppDoGoogleAdsConfigurado | null {
   const clientId = texto(env.GOOGLE_ADS_OAUTH_CLIENT_ID);
   const clientSecret = texto(env.GOOGLE_ADS_OAUTH_CLIENT_SECRET);
   const developerToken = texto(env.GOOGLE_ADS_DEVELOPER_TOKEN);
-  if (!clientId || !clientSecret || !developerToken) return null;
+  if (!clientId || !clientSecret || (api === "google_ads" && !developerToken)) return null;
   return { clientId, clientSecret, developerToken, redirectUri: enderecoDeRetorno() };
 }
 
 /** Conectar o Google Ads está disponível nesta instalação? */
-export function googleAdsEstaConfigurado(): boolean {
-  return configuracaoDoGoogleAds() !== null;
+export function googleAdsEstaConfigurado(api: ApiDeConversaoGoogle = "google_ads"): boolean {
+  return configuracaoDoGoogleAds(api) !== null;
 }
 
 /** O que falta, pelo nome — para a tela dizer em vez de só desabilitar o botão. */
-export function faltaParaConectarOGoogleAds(): string[] {
-  if (googleAdsEstaConfigurado()) return [];
-  return VARIAVEIS_DO_GOOGLE_ADS.filter((nome) => !texto(env[nome]));
+export function faltaParaConectarOGoogleAds(api: ApiDeConversaoGoogle = "google_ads"): string[] {
+  if (googleAdsEstaConfigurado(api)) return [];
+  return VARIAVEIS_DO_GOOGLE_ADS.filter(
+    (nome) =>
+      !(api === "data_manager" && nome === "GOOGLE_ADS_DEVELOPER_TOKEN") && !texto(env[nome]),
+  );
 }

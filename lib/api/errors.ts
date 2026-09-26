@@ -93,6 +93,7 @@ export const ApiErrorCodes = {
   // 422 — semântica
   unprocessable_entity: "unprocessable_entity",
   channel_without_session: "channel_without_session", // operação de sessão (reiniciar, parear) pedida a canal que não tem sessão no transporte — o oficial
+  janela_fechada: "janela_fechada", // POST /messages por token/agente com texto livre fora das 24h em canal com restrição (131047) — a saída é modelo aprovado (#1614)
   invalid_state_transition: "invalid_state_transition",
   invalid_owner: "invalid_owner", // novo dono não é membro ativo agent+ da org (bulk assign, G3-04)
   trigger_kind_not_implemented: "trigger_kind_not_implemented", // publish de followup-flow com kind sem motor de enrollment (stage_change/conversation_end)
@@ -196,6 +197,16 @@ export const ApiErrorCodes = {
   pipeline_no_lost_stage: "pipeline_no_lost_stage",
   // 404: o funil de destino não existe (ou não é desta organização).
   pipeline_not_found: "pipeline_not_found",
+  // ─── CAMPOS OBRIGATÓRIOS E MOTIVO DE GANHO (issue #1536) ───
+  //
+  // As duas recusas do núcleo novo, cada uma com a sua demanda: a primeira pede
+  // PREENCHER (o `details.faltando` nomeia chave e rótulo de cada campo — e
+  // quando o que falta é o motivo de ganho a chave é `won_reason`, um caso do
+  // mesmo contrato, não um código à parte), a segunda pede ESCOLHER da lista
+  // cadastrada (`settings.won_reasons`). Colapsá-las mandaria quem já informou
+  // escolher sem lista, e quem não informou digitar sem caminho.
+  required_fields_missing: "required_fields_missing",
+  won_reason_invalid: "won_reason_invalid",
 
   // ─── AVISO DE CASO NO WHATSAPP (migration 0292, onda 8) ───
   //

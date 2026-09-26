@@ -38,6 +38,7 @@ interface Props {
   channelSessions: ChannelSessionLite[];
   routerMembership?: { routerId: string; routerName: string } | null;
   readOnly?: boolean;
+  organizationTimezone?: string;
 }
 
 export function AgentTabs(props: Props) {
@@ -80,6 +81,7 @@ export function AgentTabs(props: Props) {
           materiais={props.materiais}
           routerMembership={props.routerMembership}
           readOnly={props.readOnly}
+          organizationTimezone={props.organizationTimezone}
         />
       </TabsContent>
 

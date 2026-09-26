@@ -106,7 +106,9 @@ describe("classificador anti-jailbreak — advisório de verdade", () => {
 
     const veredito = await classifyJailbreak(db, cfg, ids, { message: "quanto custa?" }, { log });
 
-    expect(veredito).toEqual({ flag: false, level: "none", reason: null });
+    // `falhou`: o `none` é o degrade, não um veredito — quem soma outro sinal
+    // ao dele (o Jev) precisa da diferença.
+    expect(veredito).toEqual({ flag: false, level: "none", reason: null, falhou: true });
     expect(warns.map((w) => w.msg)).toContain(
       "jailbreak: classificador falhou — turno segue sem sinal",
     );

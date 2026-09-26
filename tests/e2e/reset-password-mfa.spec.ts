@@ -12,7 +12,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./helpers/test";
 
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
 import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";

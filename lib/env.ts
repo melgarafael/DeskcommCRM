@@ -135,10 +135,13 @@ const schema = z.object({
   // instaláveis (import/install) usam `pg` cru (mesmo pool do agent-engine).
   SUPABASE_DB_URL: required("SUPABASE_DB_URL"),
   /**
-   * A conexão de DDL do KIT (install.sh/update.sh/backup.sh), não do app —
-   * declarada aqui só porque o `docker-compose.prod.yml` entrega o `.env`
-   * inteiro ao app e ao worker (`env_file`), e uma chave que chega ao processo
-   * merece estar no contrato em vez de ser um desconhecido tolerado.
+   * A conexão de DDL do KIT (install.sh/update.sh/backup.sh), não do app.
+   * O `docker-compose.prod.yml` entrega o `.env` inteiro ao app, ao worker e
+   * ao voice-agent (`env_file`), e desde o #1680 sobrescreve esta chave com
+   * vazio no `environment:` deles — no processo ela chega vazia. A declaração
+   * fica porque quem roda fora desse compose (dev local, `next start` à mão)
+   * ainda a recebe do `.env`, e uma chave que chega ao processo merece estar no
+   * contrato em vez de ser um desconhecido tolerado.
    *
    * NENHUM código de app pode lê-la: ela é o DONO do banco quando a instalação
    * é num Supabase próprio, e `SUPABASE_DB_URL` é a role menor de propósito
@@ -399,6 +402,13 @@ const schema = z.object({
    * respondendo 500 a tudo. Padrão 365, piso 90, decisão do dono (PR #1577).
    */
   PROSPECCAO_RETENTION_DAYS: z.string().optional().default(""),
+  /**
+   * Observações do Jev (migration 0421): o par Jev × mecanismo de hoje que o
+   * cartão compara, sem texto de cliente. `z.string()` pela MESMA razão das
+   * irmãs acima — quem interpreta é `lib/retencao/politica.ts`. Padrão 90, piso
+   * 30 (a janela da concordância).
+   */
+  JEV_OBSERVACOES_RETENTION_DAYS: z.string().optional().default(""),
 
   // LGPD export (S-08.04)
   LGPD_SIGNING_KEY: z.string().optional().default(""),

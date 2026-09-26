@@ -123,6 +123,14 @@ const CURATED_FIELDS: Record<TriggerEvent, CuratedField[]> = {
   "lead.created": LEAD_FIELDS,
   "lead.stage_changed": [...LEAD_FIELDS, STAGE_FIELD],
   "message.received": MESSAGE_FIELDS,
+  // O que a regra quer filtrar numa falha é o MOTIVO (só o 131047, só o
+  // timeout) e de QUEM é o contato — `event.erro.codigo` é o mesmo valor que a
+  // coluna `messages.error_code` grava, então quem compara com o webhook da
+  // Meta compara com o mesmo texto aqui.
+  "message.failed": [
+    { value: "event.erro.codigo", label: "Código do erro", op: "eq" },
+    { value: "contact.tags", label: "Tags do contato", op: "contains", lista: true },
+  ],
   "lead.tag_added": [...LEAD_FIELDS, TAG_ADDED_FIELD],
   "contact.tag_added": [TAG_ADDED_FIELD],
   "appointment.created": AGENDAMENTO_FIELDS,

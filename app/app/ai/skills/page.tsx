@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { temPonteiroCanonico } from "@/lib/ai/skills/ponteiro-canonico";
 import type { SkillsState } from "@/hooks/ai/useSkills";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { SkillsClient } from "./_client";
@@ -25,8 +26,8 @@ export default async function SkillsPage() {
     admin.from("skill_pointers").select("name, version_id").is("organization_id", null),
   ]);
 
-  const orgRows = orgPointers ?? [];
-  const platformRows = platformPointers ?? [];
+  const orgRows = (orgPointers ?? []).filter(temPonteiroCanonico);
+  const platformRows = (platformPointers ?? []).filter(temPonteiroCanonico);
   const versionIds = [...new Set([...orgRows, ...platformRows].map((p) => p.version_id))];
 
   const { data: versionsRaw } =

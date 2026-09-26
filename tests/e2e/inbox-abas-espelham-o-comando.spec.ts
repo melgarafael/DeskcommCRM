@@ -25,7 +25,7 @@
  * exatamente o defeito que passa por todo gate de tipo: a aba pediria filtro
  * nenhum e mostraria a lista inteira, parecendo funcionar.
  */
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/test";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { agenteAtende } from "../../lib/ai/agents/no-ar";

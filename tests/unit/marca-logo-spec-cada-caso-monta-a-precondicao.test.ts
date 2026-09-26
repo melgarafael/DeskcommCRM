@@ -74,13 +74,13 @@ const MEDICAO_DA_BARRA = /barraMostraLogoDe\(|logoDaBarra\(/;
 describe("marca-logo.spec.ts: cada caso monta a própria precondição", () => {
   const blocos = casos(SPEC);
 
-  it("a leitura da fonte acha os seis casos, e na ordem", () => {
+  it("a leitura da fonte acha os sete casos, e na ordem", () => {
     expect(
       blocos.map((c) => c.n),
       "a régua deste arquivo é a FONTE da spec: se ela mudou de forma a ponto de os " +
         "casos não serem mais reconhecidos, esta guarda está cega — e uma guarda cega " +
         "passa em tudo",
-    ).toEqual([1, 2, 3, 4, 5, 6]);
+    ).toEqual([1, 2, 3, 4, 5, 6, 7]);
   });
 
   it("não voltou para `mode: \"serial\"`", () => {

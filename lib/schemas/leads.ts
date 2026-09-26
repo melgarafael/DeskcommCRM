@@ -32,6 +32,25 @@ export const moveLeadSchema = z.object({
    * diferente da que o /lose devolve para o mesmo caso).
    */
   lost_reason: z.string().max(500).optional(),
+  /**
+   * O motivo do ganho, quando a etapa de destino fecha o negócio como ganho
+   * (issue #1536). Espelho do `lost_reason`: quem decide se é obrigatório é o
+   * funil (`settings.won_reason_required`), e a decisão mora em
+   * `lib/leads/campos-exigidos.ts` — aqui só se aceita o campo, e um motivo em
+   * branco é tratado lá como ausente.
+   */
+  won_reason: z.string().max(500).optional(),
+  /**
+   * Os campos que o diálogo de "campos obrigatórios" coletou (issue #1536).
+   *
+   * Entram NA MESMA escrita que muda a etapa — o mesmo desenho do
+   * `lost_reason` (#917): uma gravação separada teria janela (a etapa muda com
+   * o campo ainda vazio) e uma segunda janela de OCC (o PATCH mudaria o
+   * `updated_at` que o próprio arrasto acabou de usar). O servidor faz o merge
+   * com o que o lead já tem e valida o VALOR COMBINADO — é por isso que a
+   * segunda tentativa passa na mesma régua que a primeira recusou.
+   */
+  custom_fields: z.record(z.string(), z.unknown()).optional(),
 });
 export type MoveLeadInput = z.infer<typeof moveLeadSchema>;
 

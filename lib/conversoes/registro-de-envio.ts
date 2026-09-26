@@ -38,30 +38,53 @@ export interface RegistroDeEnvio {
   valorCentavos?: number | null;
   moeda?: string | null;
   detalhe?: string | null;
+  protocolo?: string | null;
+  solicitadoEm?: string | null;
+  ocorridoEm?: string;
+  googleActionId?: string;
 }
 
-/** Já foi reportada com sucesso? Guarda de idempotência, lida antes de tudo. */
+/** Leitura falha fechada: erro de banco nunca autoriza um segundo envio. */
+export async function lerRegistro(
+  admin: SupabaseClient,
+  organizationId: string,
+  leadId: string,
+  evento: NomeDoEvento,
+) {
+  const { data, error } = await admin
+    .from("ad_conversion_dispatches")
+    .select(
+      "status, platform, value_cents, currency, remote_request_id, remote_requested_at, event_occurred_at, google_action_id",
+    )
+    .eq("organization_id", organizationId)
+    .eq("lead_id", leadId)
+    .eq("event_name", evento)
+    .maybeSingle();
+  if (error) throw new Error("Não foi possível consultar o registro de conversão.");
+  return data as {
+    status: string;
+    platform: string;
+    value_cents: number | null;
+    currency: string | null;
+    remote_request_id?: string | null;
+    remote_requested_at?: string | null;
+    event_occurred_at?: string | null;
+    google_action_id?: string | null;
+  } | null;
+}
+
 export async function jaFoiEnviada(
   admin: SupabaseClient,
   organizationId: string,
   leadId: string,
   evento: NomeDoEvento,
 ): Promise<boolean> {
-  const { data } = await admin
-    .from("ad_conversion_dispatches")
-    .select("status")
-    .eq("organization_id", organizationId)
-    .eq("lead_id", leadId)
-    .eq("event_name", evento)
-    .maybeSingle();
-
-  return (data as { status?: string } | null)?.status === "sent";
+  return (await lerRegistro(admin, organizationId, leadId, evento))?.status === "sent";
 }
 
 /**
- * Grava o desfecho. Falha aqui NÃO derruba o envio que já aconteceu — mas é
- * contada, porque um livro-razão que perde linha em silêncio deixa de servir
- * para as três coisas que ele existe para fazer.
+ * Grava o desfecho. Falhas propagam para o drain reagendar; o identificador
+ * estável da venda protege uma nova tentativa após uma resposta já recebida.
  */
 export async function registraEnvio(
   admin: SupabaseClient,
@@ -79,6 +102,12 @@ export async function registraEnvio(
       value_cents: registro.valorCentavos ?? null,
       currency: registro.moeda ?? null,
       detail: registro.detalhe ?? null,
+      ...(registro.protocolo !== undefined ? { remote_request_id: registro.protocolo } : {}),
+      ...(registro.solicitadoEm !== undefined
+        ? { remote_requested_at: registro.solicitadoEm }
+        : {}),
+      ...(registro.ocorridoEm ? { event_occurred_at: registro.ocorridoEm } : {}),
+      ...(registro.googleActionId ? { google_action_id: registro.googleActionId } : {}),
       attempted_at: new Date().toISOString(),
     },
     { onConflict: "organization_id,lead_id,event_name" },
@@ -91,5 +120,6 @@ export async function registraEnvio(
       status: registro.status,
       error: error.message,
     });
+    throw new Error("Não foi possível persistir o resultado da conversão.");
   }
 }

@@ -18,7 +18,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { test, expect, type Locator, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "./helpers/test";
 
 import { VALORES_DE_WIRE_NA_TELA_PROIBIDOS } from "../support/enums-do-grafo";
 

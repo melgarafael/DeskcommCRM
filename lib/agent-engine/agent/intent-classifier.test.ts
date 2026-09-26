@@ -63,10 +63,13 @@ describe('parseIntentVerdict', () => {
     expect(parseIntentVerdict('{"intent":"none","confidence":0.2}', members)).toEqual({ intentName: null, confidence: 0.2 });
   });
   it('intenção que não existe no router é recusada (modelo alucinou)', () => {
-    expect(parseIntentVerdict('{"intent":"financeiro","confidence":0.95}', members)).toEqual({ intentName: null, confidence: 0 });
+    expect(parseIntentVerdict('{"intent":"financeiro","confidence":0.95}', members)).toEqual({ intentName: null, confidence: 0, falhou: true });
   });
   it('JSON inválido vira veredito nulo, sem throw', () => {
-    expect(parseIntentVerdict('desculpe, não sei', members)).toEqual({ intentName: null, confidence: 0 });
+    expect(parseIntentVerdict('desculpe, não sei', members)).toEqual({ intentName: null, confidence: 0, falhou: true });
+  });
+  it('JSON sem intenção não é resposta', () => {
+    expect(parseIntentVerdict('{"confidence":0.9}', members)).toEqual({ intentName: null, confidence: 0, falhou: true });
   });
   it('confiança fora de 0..1 é clampada', () => {
     expect(parseIntentVerdict('{"intent":"vendas","confidence":7}', members).confidence).toBe(1);

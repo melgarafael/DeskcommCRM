@@ -58,7 +58,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const code = url.searchParams.get("code");
   if (!code) return voltar(base, { erro: "sem_codigo" });
 
-  const app = configuracaoDoGoogleAds();
+  const app = configuracaoDoGoogleAds(estado.api);
   if (!app) return voltar(base, { erro: "google_ads_nao_configurado" });
 
   // 3. Troca — só depois do state confirmado.
@@ -89,6 +89,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       organization_id: estado.organizationId,
       platform: "google_ads",
       google_refresh_token_encrypted: cifrado,
+      google_api: estado.api,
       updated_by: estado.userId,
     },
     { onConflict: "organization_id,platform" },

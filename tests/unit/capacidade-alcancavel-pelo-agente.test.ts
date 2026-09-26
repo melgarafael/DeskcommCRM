@@ -109,6 +109,12 @@ const ESCRITA_QUE_E_TRABALHO_DE_ATENDENTE: ReadonlyArray<string> = [
   // `app/api/v1/conversation-tags` é leitura `viewer`; marcar conversa é trabalho
   // de atendente e o dano máximo é um filtro sujo, reversível na tela.
   "crm_manage_tags",
+  // `app/api/v1/conversations/[id]/drafts/` — POST exige `agent` (auth-dual).
+  // Paridade medida com a própria rota: quem integra e quem atende criam
+  // rascunho com o MESMO papel. O poder concedido é o MENOR possível — a tool
+  // grava uma linha que uma PESSOA precisa revisar e enviar (`consumed_at` só
+  // depois do clique); ela não envia nada ao cliente, então não muda a casa.
+  "crm_create_conversation_draft",
 ];
 
 function alcancavelPeloAgente(requiresRole: Role): boolean {

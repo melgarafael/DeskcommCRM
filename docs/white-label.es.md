@@ -1,4 +1,4 @@
-<!-- traduzido-de: docs/white-label.md@ca7f3c3481e2 -->
+<!-- traduzido-de: docs/white-label.md@909aa4197001 -->
 
 [🇧🇷 Português](white-label.md) · [🇺🇸 English](white-label.en.md) · 🇪🇸 Español
 
@@ -167,7 +167,7 @@ La **Resolución CD/ANPD nº 19/2024** volvió obligatorias las cláusulas contr
 
 Todo cliente tuyo que use un CRM extranjero realiza esa transferencia y necesita el artefacto contractual. Alojando en una VPS en Brasil, **el CRM en sí no transfiere datos fuera del país** — y, para él, la obligación no se aplica.
 
-⚠️ **La salvedad es la IA, y vale para casi toda instalación.** La frase de arriba solo es completa mientras ningún proveedor de IA extranjero esté activado. La atención automática envía la conversación al proveedor que el cliente conectó (Anthropic, OpenAI, Google, DeepSeek u OpenRouter, todos fuera de Brasil). Jev, cuando el administrador lo activa en IA › Proveedores, envía cada mensaje de los clientes a TypeSafe AI, en Estados Unidos, uno por vez y sin el resto de la conversación, después de borrar CPF, teléfono y correo electrónico. En esos flujos hay transferencia internacional, y las cláusulas estándar valen para ellos. Jev viene desactivado y pide el consentimiento de quien administra antes de enviar nada; la IA de atención, no.
+⚠️ **La salvedad es la IA, y vale para casi toda instalación.** La frase de arriba solo es completa mientras ningún proveedor de IA extranjero esté activado. La atención automática envía la conversación al proveedor que el cliente conectó (Anthropic, OpenAI, Google, DeepSeek u OpenRouter, todos fuera de Brasil). Jev, cuando el administrador lo activa en IA › Proveedores, envía cada mensaje de los clientes a TypeSafe AI, en Estados Unidos, uno por vez y sin el resto de la conversación, después de borrar CPF, teléfono y correo electrónico. Cada tarea de Jev tiene su finalidad — medir el clima de la conversación, notar intentos de manipular la atención automática y elegir qué agente atiende — y todas usan solo ese mensaje, por separado. Para elegir el agente, van junto las intenciones que la propia empresa registró en el enrutador (texto de ella, no del cliente). En esos flujos hay transferencia internacional, y las cláusulas estándar valen para ellos. Jev viene desactivado y pide el consentimiento de quien administra antes de enviar nada; la IA de atención, no.
 
 ⚠️ **No lo vendas como "servidor en Brasil = conformidad con la LGPD".** Eso es falso y un abogado lo desmonta en la primera pregunta: la conformidad depende de base legal, finalidad, seguridad y derechos del titular. El argumento correcto y defendible es el de arriba: sin transferencia internacional, no hay exigencia de cláusulas estándar.
 

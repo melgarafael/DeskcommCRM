@@ -479,6 +479,24 @@ export async function arquivarEtapa(
     );
   }
 
+  // ── POR QUE A RÉGUA DE CAMPOS OBRIGATÓRIOS (#1536) NÃO ENTRA AQUI ───────────
+  //
+  // Este UPDATE move N negócios de uma vez e é a ÚNICA porta de saída de uma
+  // etapa que está sendo arquivada (`validarArquivamento` recusa arquivar com
+  // negócio e sem destino). Aplicar `validaCamposExigidos` aqui seria decidir
+  // por N fichas diferentes, e a recusa não teria saída nenhuma: a tela de
+  // arquivamento não coleta campo de ficha, então o dono ficaria SEM COMO tirar
+  // a coluna do quadro — nem saberia qual dos cards travou a operação. Bloquear
+  // uma ação de CONFIGURAÇÃO por dado de ficha é decisão de produto nova, não
+  // conserto do buraco do #1536, e por isso fica registrado aqui em vez de
+  // imposto em silêncio (o CR do mantenedor aceita as duas saídas).
+  //
+  // O buraco em si fecha pelas portas de ENTRADA em etapa: arrasto, lote,
+  // botão ganhar/perder, MCP, agente, handoff e agendamento passam todos pela
+  // mesma régua, então o PRÓXIMO movimento destes cards — para uma etapa que
+  // exige — é coberto. A comparação "mesma etapa passa" também não vira buraco
+  // aqui: o destino deste UPDATE é SEMPRE outra etapa.
+  //
   // ⚠️ OS NEGÓCIOS ANDAM PRIMEIRO. Arquivar antes de mover deixaria os cards
   // apontando para uma coluna fora do quadro se a segunda escrita falhasse —
   // sumiço silencioso, o pior desfecho possível aqui.

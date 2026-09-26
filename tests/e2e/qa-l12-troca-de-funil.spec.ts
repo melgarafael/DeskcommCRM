@@ -9,7 +9,7 @@
  * MENOR papel que pode usá-lo (`agent`), porque a lista de destinos é uma
  * exceção deliberada à leitura de funis, que na gestão é `manager`+.
  */
-import { test } from "@playwright/test";
+import { test } from "./helpers/test";
 
 import {
   admin,

@@ -24,6 +24,7 @@ const reads: { table: string; columns: string; range: [number, number] }[] = [];
 class ReadQuery {
   columns = "";
   filters: [string, unknown][] = [];
+  inFilters: [string, unknown[]][] = [];
   page: [number, number] = [0, 1000];
   constructor(readonly table: string) {}
   select(columns: string) {
@@ -32,6 +33,10 @@ class ReadQuery {
   }
   eq(key: string, value: unknown) {
     this.filters.push([key, value]);
+    return this;
+  }
+  in(key: string, values: unknown[]) {
+    this.inFilters.push([key, values]);
     return this;
   }
   order() {
@@ -60,6 +65,7 @@ class ReadQuery {
     if (this.table === "prospecting_candidates" && failure) return { data: null, error: failure };
     const data = (rows[this.table] ?? [])
       .filter((row) => this.filters.every(([key, value]) => row[key] === value))
+      .filter((row) => this.inFilters.every(([key, values]) => values.includes(row[key])))
       .slice(this.page[0], this.page[1] + 1)
       .map((row) =>
         Object.fromEntries(
@@ -164,6 +170,86 @@ describe("LGPD: dados da prospecção no pedido de acesso", () => {
       [0, 499],
       [500, 999],
     ]);
+  });
+
+  it("pagina as propostas de campo do titular, sem teto", async () => {
+    // A fila de propostas é alimentada pela IA enquanto a conversa dura: um `limit`
+    // aqui entregaria um relatório de acesso incompleto — e em silêncio.
+    rows.contact_field_proposals = Array.from({ length: 501 }, (_, index) => ({
+      id: `proposta-${index}`,
+      organization_id: ORG,
+      contact_id: CONTACT,
+      campo: "phone_number",
+      valor_proposto: "+5511988887777",
+      valor_anterior: null,
+      conversation_id: "conversation-a",
+      trecho: "meu celular e esse",
+      status: "pending",
+      proposed_at: "2026-09-16T00:00:00Z",
+      decided_at: null,
+      motivo_recusa: null,
+    }));
+    const payload = await collectExportData(request);
+    expect(payload.contact_field_proposals).toHaveLength(501);
+    expect(payload.contact_field_proposals?.at(-1)?.id).toBe("proposta-500");
+    expect(
+      reads.filter((read) => read.table === "contact_field_proposals").map((read) => read.range),
+    ).toEqual([
+      [0, 499],
+      [500, 999],
+    ]);
+  });
+
+  it("entrega o rascunho e as propostas DO titular, nunca de outro contato ou de outro tenant", async () => {
+    // O gate de paridade só vê que a tabela é visitada; perder o filtro de contato
+    // entregaria ao titular o texto escrito para OUTRA pessoa — e nada reprovaria.
+    rows.conversations = [
+      { id: "conv-a", organization_id: ORG, contact_id: CONTACT },
+      { id: "conv-b", organization_id: ORG, contact_id: OTHER_CONTACT },
+    ];
+    const rascunho = (id: string, organization_id: string, conversation_id: string): Row => ({
+      id,
+      organization_id,
+      conversation_id,
+      body: `texto ${id}`,
+      source: "integracao",
+      consumed_at: null,
+      created_at: "2026-09-16T00:00:00Z",
+      created_by_api_token_id: "PRIVATE-TOKEN",
+      consumed_by_user_id: "PRIVATE-USER",
+    });
+    rows.conversation_drafts = [
+      rascunho("d-mine", ORG, "conv-a"),
+      rascunho("d-other-contact", ORG, "conv-b"),
+      rascunho("d-other-tenant", OTHER_ORG, "conv-a"),
+    ];
+    const proposta = (id: string, organization_id: string, contact_id: string): Row => ({
+      id,
+      organization_id,
+      contact_id,
+      campo: "email",
+      valor_proposto: "x@example.test",
+      valor_anterior: null,
+      conversation_id: "conv-a",
+      trecho: "meu email",
+      status: "pending",
+      proposed_at: "2026-09-16T00:00:00Z",
+      decided_at: null,
+      motivo_recusa: null,
+      proposed_by_agent_id: "PRIVATE-AGENT",
+      decided_by_user_id: "PRIVATE-USER",
+    });
+    rows.contact_field_proposals = [
+      proposta("p-mine", ORG, CONTACT),
+      proposta("p-other-contact", ORG, OTHER_CONTACT),
+      proposta("p-other-tenant", OTHER_ORG, CONTACT),
+    ];
+    const payload = await collectExportData(request);
+    expect(payload.conversation_drafts?.map((draft) => draft.id)).toEqual(["d-mine"]);
+    expect(payload.contact_field_proposals?.map((proposal) => proposal.id)).toEqual(["p-mine"]);
+    expect(
+      JSON.stringify([payload.conversation_drafts, payload.contact_field_proposals]),
+    ).not.toMatch(/PRIVATE|other-contact|other-tenant/);
   });
 
   it("sem titular mantém a seção vazia e não consulta registros pessoais", async () => {

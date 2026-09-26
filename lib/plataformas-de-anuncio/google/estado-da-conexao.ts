@@ -9,6 +9,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export interface EstadoDaConexaoGoogle {
+  qualificationStageId?: string | null;
+  qualificationActionId?: string | null;
+  api?: "google_ads" | "data_manager";
   temRefreshToken: boolean;
   habilitada: boolean;
   customerId: string | null;
@@ -23,7 +26,7 @@ export async function lerEstadoDaConexaoGoogle(
   const { data } = await admin
     .from("ad_platform_connections")
     .select(
-      "google_refresh_token_encrypted, google_customer_id, google_login_customer_id, google_conversion_action_id, enabled",
+      "google_refresh_token_encrypted, google_customer_id, google_login_customer_id, google_conversion_action_id, enabled, google_api, google_qualification_stage_id, google_qualification_action_id",
     )
     .eq("organization_id", organizationId)
     .eq("platform", "google_ads")
@@ -35,9 +38,15 @@ export async function lerEstadoDaConexaoGoogle(
     google_login_customer_id: string | null;
     google_conversion_action_id: string | null;
     enabled: boolean;
+    google_qualification_stage_id: string | null;
+    google_qualification_action_id: string | null;
+    google_api: "google_ads" | "data_manager";
   } | null;
 
   return {
+    qualificationStageId: linha?.google_qualification_stage_id ?? null,
+    qualificationActionId: linha?.google_qualification_action_id ?? null,
+    api: linha?.google_api ?? "data_manager",
     temRefreshToken: Boolean(linha?.google_refresh_token_encrypted),
     habilitada: linha?.enabled ?? false,
     customerId: linha?.google_customer_id ?? null,

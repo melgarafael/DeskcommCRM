@@ -72,6 +72,8 @@ export function negocio(id: string, stageId: string, over: Partial<LeadRow> = {}
 export interface PipelineRow {
   id: string;
   name: string;
+  /** settings do funil — é dele que `settingsDoFunil` lê (issue #1536). */
+  settings?: Record<string, unknown> | null;
   slug: string;
   description: string | null;
   position: number;
@@ -149,6 +151,47 @@ export interface Registro {
   };
 }
 
+/**
+ * Uma cláusula de `.or(...)` — o OU do PostgREST (`owner_user_id.is.null,
+ * owner_user_id.eq.<uuid>`).
+ */
+interface Clausula {
+  coluna: string;
+  op: "is" | "eq" | "neq";
+  valor: unknown;
+}
+
+/**
+ * Lê a expressão do `.or()`, ou LANÇA.
+ *
+ * ⚠️ LANÇAR É O PONTO. Um dublê que engole a cláusula que não entende devolve a
+ * linha que o filtro existia para excluir e o teste mede o dublê, não o código:
+ * foi assim que um vazamento de tenant passaria verde. Só as três formas que o
+ * repo usa estão implementadas (`.is.`, `.eq.`, `.neq.`); qualquer outra coisa
+ * para aqui, alto.
+ */
+function clausulasDoOu(expressao: string): Clausula[] {
+  return expressao.split(",").map((bruta) => {
+    const [coluna, op, ...resto] = bruta.trim().split(".");
+    if (!coluna || !op || resto.length !== 1 || (op !== "is" && op !== "eq" && op !== "neq")) {
+      throw new Error(`dublê: cláusula de .or() não suportada: "${bruta}"`);
+    }
+    const cru = resto[0]!;
+    if (op === "is" && cru !== "null") {
+      throw new Error(`dublê: .is("${coluna}", ...) só é suportado com null (veio "${cru}")`);
+    }
+    return { coluna, op, valor: op === "is" ? null : cru };
+  });
+}
+
+/** A cláusula casa a linha? `is null` inclui o `undefined` (coluna ausente é nula). */
+function casa(linha: Linha, clausula: Clausula): boolean {
+  const valor = linha[clausula.coluna];
+  if (clausula.op === "is") return valor === null || valor === undefined;
+  if (clausula.op === "eq") return valor === clausula.valor;
+  return valor !== null && valor !== undefined && valor !== clausula.valor;
+}
+
 export function makeDb(opts: DbOpts = {}): Registro {
   const registro: Registro = {
     // preenchido no fim, quando `builder` e `rpc` já existem
@@ -175,6 +218,7 @@ export function makeDb(opts: DbOpts = {}): Registro {
     const filtros: Array<[string, unknown]> = [];
     const pertinencias: Array<[string, unknown[]]> = [];
     const negacoes: Array<[string, unknown]> = [];
+    const disjuncoes: Clausula[][] = [];
     let patch: Record<string, unknown> | null = null;
     let nova: Record<string, unknown> | Record<string, unknown>[] | null = null;
     let colunas: string[] | null = null;
@@ -190,7 +234,12 @@ export function makeDb(opts: DbOpts = {}): Registro {
         .filter((r) => pertinencias.every(([c, vs]) => vs.includes(r[c])))
         // `neq` em SQL exclui NULL (`NULL <> v` nao e verdadeiro) — o duble
         // segue o banco, nao o JavaScript.
-        .filter((r) => negacoes.every(([c, v]) => r[c] !== null && r[c] !== undefined && r[c] !== v));
+        .filter((r) => negacoes.every(([c, v]) => r[c] !== null && r[c] !== undefined && r[c] !== v))
+        // `.or()` é OU entre as cláusulas da MESMA chamada e E com os outros
+        // filtros — a mesma combinação do PostgREST.
+        .filter((r) =>
+          disjuncoes.every((clausulas) => clausulas.some((clausula) => casa(r, clausula))),
+        );
 
     /**
      * Ordena, corta e projeta como o PostgREST faria.
@@ -308,6 +357,16 @@ export function makeDb(opts: DbOpts = {}): Registro {
       /** `.in(col, [...])` vira um filtro de pertinência, não de igualdade. */
       in: (c: string, vs: unknown[]) => {
         pertinencias.push([c, vs]);
+        return b;
+      },
+      /**
+       * `.or(expr)` — o caso real do repo é o "compartilhado OU próprio" da
+       * leitura de modelos de mensagem (`owner_user_id.is.null,owner_user_id.eq.<id>`),
+       * que é a policy da tabela repetida em SQL. Um `.or()` ignorado devolveria
+       * a linha pessoal de OUTRA pessoa e o teste do vazamento mediria o dublê.
+       */
+      or: (expressao: string) => {
+        disjuncoes.push(clausulasDoOu(expressao));
         return b;
       },
       /**

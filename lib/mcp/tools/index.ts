@@ -16,6 +16,7 @@ import {
   crmListConversations,
   crmGetConversation,
   crmGetConversationHistory,
+  crmCreateConversationDraft,
 } from "./conversations";
 import {
   crmListLeads,
@@ -151,6 +152,7 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmMoveLeadStage,
   crmSendWhatsappMessage,
   crmStartConversationAndSend,
+  crmCreateConversationDraft,
   crmAssignConversation,
   crmManageTags,
   // write — organizar a operação (W4)

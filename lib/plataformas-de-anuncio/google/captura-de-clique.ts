@@ -20,24 +20,28 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "@/lib/logger";
 import { criarClickRef as criarClickRefNaTabela, type ClickRefCriado } from "../captura-de-clique";
 
+import { lerIdentificadoresGoogle, type IdentificadoresGoogle } from "./identificadores";
+
 export type { ClickRefCriado };
 
 /** Cria o par token↔gclid. */
 export async function criarClickRef(
   admin: SupabaseClient,
   organizationId: string,
-  gclid: string,
+  clique: string | IdentificadoresGoogle,
   queryRaw: Record<string, string>,
 ): Promise<ClickRefCriado | null> {
+  const ids = lerIdentificadoresGoogle(typeof clique === "string" ? { gclid: clique } : clique);
+  if (!ids) return null;
   return criarClickRefNaTabela(admin, "google_ads_click_refs", organizationId, {
-    gclid,
+    gclid: ids.gclid ?? null,
+    gbraid: ids.gbraid ?? null,
+    wbraid: ids.wbraid ?? null,
     query_raw: queryRaw,
   });
 }
 
-export interface ClickRefCasado {
-  gclid: string;
-}
+export type ClickRefCasado = IdentificadoresGoogle;
 
 /**
  * Casa um token com um contato — a UPDATE condicional que garante que um
@@ -57,7 +61,7 @@ export async function casarClickRef(
     .eq("organization_id", organizationId)
     .eq("token", token)
     .is("matched_at", null)
-    .select("gclid")
+    .select("gclid, gbraid, wbraid")
     .maybeSingle();
 
   if (error) {
@@ -69,5 +73,7 @@ export async function casarClickRef(
     return null;
   }
   if (!data) return null;
-  return { gclid: (data as { gclid: string }).gclid };
+  return lerIdentificadoresGoogle(
+    Object.fromEntries(Object.entries(data).filter(([, v]) => v != null)),
+  );
 }

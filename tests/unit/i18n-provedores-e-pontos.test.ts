@@ -13,6 +13,7 @@
  */
 import { describe, expect, it } from "vitest";
 
+import { TAREFAS_DO_JEV } from "@/lib/ai/decisao/tarefas";
 import { PROVEDORES_COM_CHAVE } from "@/lib/ai/pontos/provedores";
 import { PAPEIS, PONTOS_DE_IA } from "@/lib/ai/pontos/registro";
 import { EXPLICACAO_DA_ORIGEM } from "@/lib/ai/pontos/resolver";
@@ -43,6 +44,12 @@ describe("espanhol dos textos que vêm de lista, não de literal", () => {
   it("todo papel — o título e a explicação de cada grupo do painel de provedores", () => {
     const textos = Object.values(PAPEIS).flatMap((p) => [p.rotulo, p.explicacao]);
     expect(textos.length, "a varredura não enxergou os papéis").toBeGreaterThan(5);
+    expect(semEspanhol(textos)).toEqual([]);
+  });
+
+  it("toda tarefa do Jev — o nome, o que muda quando ela decide e o que o diálogo avisa antes", () => {
+    const textos = TAREFAS_DO_JEV.flatMap((x) => [x.rotulo, x.oQueFaz, x.aoDecidir, x.aoDecidirNoPonto, x.aoConfirmarDecidir]);
+    expect(textos.length, "a varredura não enxergou as tarefas").toBeGreaterThan(8);
     expect(semEspanhol(textos)).toEqual([]);
   });
 

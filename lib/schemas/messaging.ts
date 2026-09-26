@@ -96,6 +96,17 @@ export const sendMessageSchema = z
      * o vocabulário do canal, que é justamente o que o seam existe para evitar.
      */
     reply_to_message_id: z.string().uuid().optional(),
+    /**
+     * Quem DECIDIU este envio, quando quem aperta é um token (#1613).
+     *
+     * O token é da organização, não de uma pessoa: sem este campo, a conversa
+     * perde que foi Fulano — do ERP, da agenda, do sistema de cobrança — que
+     * mandou a mensagem. O campo só CHEGA até o insert se a rota o validar
+     * (escopo `messages:on_behalf` no token + membro ativo desta org com papel
+     * de atendente ou acima): quem valida é a rota, porque o escopo mora na
+     * linha do token e o membership, no banco.
+     */
+    on_behalf_of_user_id: z.string().uuid().optional(),
   })
   .refine(
     (d) => {

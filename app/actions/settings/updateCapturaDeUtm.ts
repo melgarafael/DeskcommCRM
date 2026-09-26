@@ -36,6 +36,7 @@ export type UpdateCapturaDeUtmResult =
     };
 
 const entradaSchema = z.object({
+  plataforma: z.enum(["meta_ads", "google_ads"]).default("meta_ads"),
   // E.164 COM `+`, o mesmo formato de `contacts.phone_number`. A tela oferece
   // os números já conectados, mas aceitar digitação é de propósito: o número da
   // landing page não precisa ser um canal do CRM.
@@ -69,7 +70,7 @@ const entradaSchema = z.object({
   enabled: z.boolean(),
 });
 
-export type CapturaDeUtmInput = z.infer<typeof entradaSchema>;
+export type CapturaDeUtmInput = z.input<typeof entradaSchema>;
 
 export async function updateCapturaDeUtm(
   input: CapturaDeUtmInput,
@@ -91,16 +92,20 @@ export async function updateCapturaDeUtm(
 
   const admin = createAdminClient();
 
-  const { error } = await admin.from("meta_ads_landing_pages").upsert(
-    {
-      organization_id: activeOrg.orgId,
-      whatsapp_e164: parsed.data.whatsapp_e164,
-      message_template: parsed.data.message_template,
-      enabled: parsed.data.enabled,
-      updated_by: authUser.id,
-    },
-    { onConflict: "organization_id" },
-  );
+  const tabela =
+    parsed.data.plataforma === "google_ads" ? "google_ads_landing_pages" : "meta_ads_landing_pages";
+  const valores = {
+    organization_id: activeOrg.orgId,
+    whatsapp_e164: parsed.data.whatsapp_e164,
+    message_template: parsed.data.message_template,
+    enabled: parsed.data.enabled,
+    updated_by: authUser.id,
+  };
+  // Tabelas literais permitem conferir cada alvo de conflito contra o schema real.
+  const { error } =
+    tabela === "google_ads_landing_pages"
+      ? await admin.from("google_ads_landing_pages").upsert(valores, { onConflict: "organization_id" })
+      : await admin.from("meta_ads_landing_pages").upsert(valores, { onConflict: "organization_id" });
 
   if (error) return { ok: false, error: "erro_ao_gravar", details: error.message };
 
@@ -109,14 +114,18 @@ export async function updateCapturaDeUtm(
     action: "captura_de_utm.updated",
     actorUserId: authUser.id,
     organizationId: activeOrg.orgId,
-    resourceType: "meta_ads_landing_pages",
+    resourceType: tabela,
     resourceId: null,
     requestId: hdrs.get("x-request-id") ?? undefined,
     ip: hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? undefined,
     userAgent: hdrs.get("user-agent") ?? undefined,
     // O número vai no registro porque é ele que decide para onde o tráfego
     // pago é mandado — quem trocou, e para qual, é a pergunta de auditoria.
-    metadata: { enabled: parsed.data.enabled, whatsapp_e164: parsed.data.whatsapp_e164 },
+    metadata: {
+      plataforma: parsed.data.plataforma,
+      enabled: parsed.data.enabled,
+      whatsapp_e164: parsed.data.whatsapp_e164,
+    },
   });
 
   revalidatePath("/app/settings/conversoes");

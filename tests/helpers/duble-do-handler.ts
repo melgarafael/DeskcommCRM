@@ -8,6 +8,14 @@ export interface CapturasDoDubleDoHandler {
   filtros: Record<string, FiltroDoDuble[]>;
   inserts: Record<string, LinhaDoDuble[]>;
   selects: Record<string, string[]>;
+  /**
+   * Cada `rpc(nome, args)` chamada pelo handler, na ordem.
+   *
+   * Sem isto o teste do evento `message.failed` (#1614) só conseguiria provar
+   * que a chamada NÃO explodiu — e o que importa é QUAL evento saiu e com
+   * QUAL payload. Um capture por helper, não um fake novo por teste.
+   */
+  rpcs: { nome: string; args: Record<string, unknown> }[];
 }
 
 export interface OpcoesDoDubleDoHandler {
@@ -61,6 +69,7 @@ export function criarDubleDoHandler(opcoes: OpcoesDoDubleDoHandler): {
     },
     inserts: { messages: [] },
     selects: { conversations: [], messages: [], meta_templates: [], channel_sessions: [] },
+    rpcs: [],
   };
 
   let mensagem: LinhaDoDuble | null = null;
@@ -168,10 +177,13 @@ export function criarDubleDoHandler(opcoes: OpcoesDoDubleDoHandler): {
 
       throw new Error(`duble-do-handler: tabela inesperada '${tabela}'`);
     },
-    rpc: async () => ({
-      data: typeof opcoes.rpcData === "function" ? opcoes.rpcData() : opcoes.rpcData,
-      error: null,
-    }),
+    rpc: async (nome: string, args?: Record<string, unknown>) => {
+      capturas.rpcs.push({ nome, args: args ?? {} });
+      return {
+        data: typeof opcoes.rpcData === "function" ? opcoes.rpcData() : opcoes.rpcData,
+        error: null,
+      };
+    },
   };
 
   return { supabase: client as unknown as SupabaseClient, capturas };

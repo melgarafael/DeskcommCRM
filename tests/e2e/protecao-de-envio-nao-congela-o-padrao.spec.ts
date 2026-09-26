@@ -27,7 +27,7 @@
  * controle que o motor ignora. Por isso o segundo caso desliga o domingo de
  * verdade e cobra o `false` explícito no banco.
  */
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./helpers/test";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";

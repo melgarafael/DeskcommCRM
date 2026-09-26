@@ -33,6 +33,12 @@ export const ENTIDADE_ESPERADA_POR_GATILHO = {
   "lead.created": "crm_lead",
   "lead.stage_changed": "crm_lead",
   "message.received": "message",
+  // A entrega FALHOU depois de aceita — o 131047 que a Meta recusa pelo
+  // webhook de status, o timeout do transporte, o pré-voo do próprio envio.
+  // Gatilho novo porque quem integra via token não lê o nosso banco (#1614):
+  // sem ele, a linha virava `failed` sozinha e o sistema do lado de fora
+  // registrava "mensagem enviada" para uma mensagem que nunca chegou.
+  "message.failed": "message",
   "lead.tag_added": "crm_lead",
   "contact.tag_added": "contact",
   // O aniversário nasce do cron `contact-birthdays`, e não de uma ação de

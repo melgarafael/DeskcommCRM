@@ -2,6 +2,15 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 
+// A URL da tela. `modelo=<id>` é o link direto que a integração devolve —
+// "use o modelo X" — e sem ele quem recebe cai na lista e tem de caçar de qual
+// texto se falava.
+let busca = "";
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(busca),
+}));
+
 vi.mock("@/hooks/inbox/useMessageTemplates", () => ({
   useMessageTemplates: () => ({
     data: [
@@ -21,13 +30,52 @@ function wrap(ui: React.ReactNode) {
 
 describe("TemplatesClient", () => {
   it("lista templates e abre o form de novo", () => {
+    busca = "";
     render(wrap(<TemplatesClient canShare={true} currentUserId="u1" />));
     expect(screen.getByText("Meu Pessoal")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /novo template/i }));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
+  it("⭐ /app/templates?modelo=<id> abre aquele modelo, já preenchido", () => {
+    busca = "modelo=2";
+    render(wrap(<TemplatesClient canShare={true} currentUserId="u1" />));
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Política da Equipe")).toBeInTheDocument();
+    busca = "";
+  });
+
+  it("id que não existe na lista não abre nada sozinho", () => {
+    busca = "modelo=nao-existe";
+    render(wrap(<TemplatesClient canShare={true} currentUserId="u1" />));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    busca = "";
+  });
+
+  it("agent com o link de um COMPARTILHADO fica na lista: o form de edição não abre", () => {
+    // A RLS (message_templates_write) só deixa manager+ alterar o compartilhado;
+    // abrir o form aqui seria um Salvar que devolve "Template não encontrado.".
+    busca = "modelo=2";
+    render(wrap(<TemplatesClient canShare={false} currentUserId="u1" />));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByText("Política da Equipe")).toBeInTheDocument();
+    busca = "";
+  });
+
+  it("agent com o link do PRÓPRIO pessoal abre a edição", () => {
+    busca = "modelo=1";
+    render(wrap(<TemplatesClient canShare={false} currentUserId="u1" />));
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Meu Pessoal")).toBeInTheDocument();
+    busca = "";
+  });
+
   it("agent (não-manager) só vê ações no próprio pessoal, não no compartilhado nem no de outro", () => {
+    busca = "";
     render(wrap(<TemplatesClient canShare={false} currentUserId="u1" />));
     // 3 templates listados, mas só 1 editável → 1 par de ações editar/excluir.
     expect(screen.getByText("Meu Pessoal")).toBeInTheDocument();
@@ -38,6 +86,7 @@ describe("TemplatesClient", () => {
   });
 
   it("manager vê ações no próprio E no compartilhado, mas não no pessoal de outro", () => {
+    busca = "";
     render(wrap(<TemplatesClient canShare={true} currentUserId="u1" />));
     // próprio (u1) + compartilhado (null) editáveis; pessoal de u2 não → 2 pares.
     expect(screen.getAllByRole("button", { name: "Editar template" })).toHaveLength(2);

@@ -4,6 +4,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "@/lib/logger";
 import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
+import {
+  recusaDeCamposObrigatorios,
+  settingsDoFunil,
+  validaCamposExigidos,
+} from "@/lib/leads/campos-exigidos";
 import type { Transicao } from "@/lib/agenda/laco";
 
 /**
@@ -34,8 +39,17 @@ export interface ResultadoDoMovimentoDeAgendamento {
     | "lead_nao_encontrado"
     | "lead_fechado"
     | "conflito_humano"
+    /**
+     * A etapa de agendamento exige CAMPOS que o negócio não tem (issue #1536) —
+     * a MESMA régua do arrasto, do lote e do agente. Sem este rótulo, marcar um
+     * horário seria a porta de trás da exigência: duas respostas para a mesma
+     * pergunta, o defeito da #917 com outro nome.
+     */
+    | "campos_obrigatorios"
     | "falha_de_escrita"
     | "indisponivel";
+  /** Só quando `motivo` é `campos_obrigatorios` — o que falta, em frase. */
+  detalhe?: string;
 }
 
 export async function moverLeadParaEtapaDeAgendamento(
@@ -53,7 +67,9 @@ export async function moverLeadParaEtapaDeAgendamento(
 
   const { data: lead, error: erroLead } = await admin
     .from("crm_leads")
-    .select("id, pipeline_id, stage_id, contact_id, status")
+    // `custom_fields` e `won_reason` são lidos POR CAUSA da régua de campos
+    // obrigatórios (#1536): sem eles, `validaCamposExigidos` só veria ausência.
+    .select("id, pipeline_id, stage_id, contact_id, status, custom_fields, won_reason")
     .eq("id", input.leadId)
     .eq("organization_id", input.organizationId)
     .maybeSingle();
@@ -74,6 +90,8 @@ export async function moverLeadParaEtapaDeAgendamento(
     stage_id: string;
     contact_id: string | null;
     status: string;
+    custom_fields: Record<string, unknown> | null;
+    won_reason: string | null;
   };
 
   // Negócio já fechado (ganho/perdido) não volta a se mexer por causa de um
@@ -84,7 +102,7 @@ export async function moverLeadParaEtapaDeAgendamento(
 
   const { data: etapaData, error: erroEtapa } = await admin
     .from("crm_stages")
-    .select("id, name")
+    .select("id, name, is_won, is_lost")
     .eq("pipeline_id", leadRow.pipeline_id)
     .eq("slug", slugAlvo)
     .eq("is_archived", false)
@@ -101,7 +119,7 @@ export async function moverLeadParaEtapaDeAgendamento(
   if (!etapa && slugAlvo.includes("-")) {
     const { data: etapaLegada, error: erroLegada } = await admin
       .from("crm_stages")
-      .select("id, name")
+      .select("id, name, is_won, is_lost")
       .eq("pipeline_id", leadRow.pipeline_id)
       .eq("slug", slugAlvo.replace(/-/g, "_"))
       .eq("is_archived", false)
@@ -121,10 +139,44 @@ export async function moverLeadParaEtapaDeAgendamento(
   if (!etapa) {
     return { moveu: false, motivo: "sem_etapa_mapeada" };
   }
-  const etapaRow = etapa as { id: string; name: string };
+  const etapaRow = etapa as {
+    id: string;
+    name: string;
+    is_won?: boolean | null;
+    is_lost?: boolean | null;
+  };
 
   if (leadRow.stage_id === etapaRow.id) {
     return { moveu: false, motivo: "ja_esta_la" };
+  }
+
+  // ── A RÉGUA DE CAMPOS OBRIGATÓRIOS (issue #1536) ────────────────────────────
+  //
+  // Agendar também move `stage_id`, então a pergunta é a MESMA do arrasto, do
+  // lote e do agente (`validaCamposExigidos`): entrar nesta etapa exige campo
+  // que o negócio não tem? Sem esta linha, marcar um horário seria a porta de
+  // trás da régua — duas respostas para a mesma pergunta, o defeito da #917 com
+  // outro nome. A recusa não move, devolve o motivo e deixa `detalhe` com a
+  // frase do que falta. O rastro é o warn DESTE módulo: o chamador não lê o
+  // retorno.
+  const settings = await settingsDoFunil(admin, leadRow.pipeline_id);
+  const vereditoDeCampos = validaCamposExigidos({
+    lead: leadRow as unknown as Record<string, unknown>,
+    settingsDoFunil: settings,
+    destino: {
+      stageId: etapaRow.id,
+      desfecho: etapaRow.is_won ? "won" : etapaRow.is_lost ? "lost" : null,
+    },
+  });
+  if (vereditoDeCampos.faltando.length > 0) {
+    const detalhe = recusaDeCamposObrigatorios(vereditoDeCampos.faltando, null).mensagem;
+    // Nenhum chamador lê o retorno (só tratam exceção): este warn é o único rastro.
+    logger.warn("[appointment-stage-move] etapa exige campos; card não movido", {
+      lead_id: leadRow.id,
+      organization_id: input.organizationId,
+      detalhe,
+    });
+    return { moveu: false, motivo: "campos_obrigatorios", detalhe };
   }
 
   // Nome da origem só enfeita o texto da timeline — erro descartado de

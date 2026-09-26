@@ -114,9 +114,9 @@ grep -nE '(psql|pg_dump) "' hostgator-setup-kit/*.sh
 
 Duas consequências que valem saber antes de escolher onde declarar:
 
-- O `docker-compose.prod.yml` entrega o `.env` inteiro ao `app` e ao `worker`
-  (`env_file: .env`). Declarar `SUPABASE_DB_ADMIN_URL` ali a expõe aos
-  contêineres. Para não expor, passe-a só no comando:
+- O `docker-compose.prod.yml` entrega o `.env` inteiro ao `app`, ao `worker`
+  e, com telefonia, ao `voice-agent` (`env_file: .env`), e todo serviço que
+  recebe o `.env` a neutraliza no `environment:` — declará-la ali não a expõe. Para não deixá-la no arquivo, passe-a só no comando:
   `SUPABASE_DB_ADMIN_URL='...' bash hostgator-setup-kit/install.sh`.
 - Em compensação, o `update.sh` roda **sozinho** (cron do `agent.sh`) e é ele
   que entrega migration nova ao clone. Sem a chave no `.env`, cada atualização

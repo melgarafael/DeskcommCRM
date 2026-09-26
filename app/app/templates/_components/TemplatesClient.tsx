@@ -3,6 +3,7 @@
 import { useT } from "@/hooks/i18n/useT";
 import * as React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,36 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
   });
   const [formOpen, setFormOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<MessageTemplate | null>(null);
+  // Deep link: `/app/templates?modelo=<id>` abre aquele modelo. É o link que a
+  // integração devolve ("use o modelo X") e que a tela não tinha — sem ele, quem
+  // recebe a mensagem cai na lista e tem de caçar de qual texto se falava.
+  // `?.` porque o hook devolve null fora de um contexto de navegação (o que
+  // acontece em teste e em render estático), como no resto do repo.
+  const idDoModelo = useSearchParams()?.get("modelo") ?? null;
+  const [abertoPelaUrl, setAbertoPelaUrl] = React.useState(false);
+  // Só quem pode editar/apagar pela RLS vê as ações: o dono do pessoal, ou
+  // manager+ no compartilhado (owner null). Sem isto, um agent veria botões
+  // que o backend rejeita (404/nada apagado).
+  const canModify = React.useCallback(
+    (template: MessageTemplate) =>
+      template.owner_user_id === currentUserId || (template.owner_user_id === null && canShare),
+    [canShare, currentUserId],
+  );
+
+  React.useEffect(() => {
+    if (abertoPelaUrl || !idDoModelo) return;
+    // A lista chega depois: enquanto ela não tem o modelo pedido, NÃO marca como
+    // aberto — marcar aqui faria o link depender de o dado já estar em cache.
+    const alvo = templates?.find((template) => template.id === idDoModelo);
+    if (!alvo) return;
+    setAbertoPelaUrl(true);
+    // O link só abre a EDIÇÃO para quem pode editar — a mesma régua da lista.
+    // Um agent que recebe o link de um compartilhado fica na lista, onde o
+    // modelo está visível: abrir o form ali seria um Salvar que a RLS recusa.
+    if (!canModify(alvo)) return;
+    setEditing(alvo);
+    setFormOpen(true);
+  }, [abertoPelaUrl, idDoModelo, templates, canModify]);
 
   const openNew = () => {
     setEditing(null);
@@ -74,12 +105,6 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
       ) : (
         <ul className="space-y-2">
           {templates.map((template) => {
-            // Só quem pode editar/apagar pela RLS vê as ações: o dono do
-            // pessoal, ou manager+ no compartilhado (owner null). Sem isto, um
-            // agent veria botões que o backend rejeita (404/nada apagado).
-            const canModify =
-              template.owner_user_id === currentUserId ||
-              (template.owner_user_id === null && canShare);
             return (
               <li
                 key={template.id}
@@ -94,7 +119,7 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
                   </div>
                   <p className="line-clamp-2 text-sm text-muted-foreground">{template.body}</p>
                 </div>
-                {canModify && (
+                {canModify(template) && (
                   <div className="flex shrink-0 gap-1">
                     <Button
                       type="button"

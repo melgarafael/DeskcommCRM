@@ -27,6 +27,11 @@ const LEAD_PUBLIC_FIELDS = [
   "currency",
   "tags",
   "custom_fields",
+  // O motivo de ganho (issue #1536) — o critério de aceite é ele aparecer no
+  // envelope de webhook junto do resto do lead; `lost_reason` já saía por ser
+  // dado antigo, e o ganho nasce com a mesma exposição para a métrica do lado
+  // de fora não nascer vazia.
+  "won_reason",
   "source",
   "created_at",
 ] as const;

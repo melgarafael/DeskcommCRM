@@ -130,6 +130,37 @@ describe("resolveAuthDual", () => {
     expect(r.via).toBe("session");
     expect(validateBearerToken).not.toHaveBeenCalled();
   });
+
+  // #1613: o gate de `messages:on_behalf` na rota lê `scopes` daqui. Se o ramo
+  // do token não os devolver, a rota recusa todo "em nome de" com 403 — e os
+  // testes da rota não veem, porque mockam `resolveAuthDual` já com `scopes`.
+  it("no ramo do token, devolve os scopes e o id da linha do token", async () => {
+    vi.mocked(validateBearerToken).mockResolvedValue({
+      organizationId: ORG_DO_TOKEN,
+      scopes: ["mcp:write", "messages:on_behalf"],
+      role: "agent",
+      apiTokenId: "tok-1",
+      actor: { type: "api_token", id: "tok-1" },
+    } as never);
+
+    const r = await resolveAuthDual(req({ authorization: "Bearer dsk_abc" }), OPCOES);
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.scopes).toContain("messages:on_behalf");
+    expect(r.apiTokenId).toBe("tok-1");
+  });
+
+  it("a sessão não carrega scopes: campo condicionado a escopo fica fechado para a tela", async () => {
+    sessaoOk();
+
+    const r = await resolveAuthDual(req(), OPCOES);
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.scopes).toBeUndefined();
+    expect(r.apiTokenId).toBeUndefined();
+  });
 });
 
 describe("os caminhos de envio passam pelo proxy", () => {

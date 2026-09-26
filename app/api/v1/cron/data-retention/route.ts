@@ -66,6 +66,8 @@ import {
   RETENCAO_ESPELHO_AGENDA_DIAS_PISO,
   RETENCAO_FILA_DIAS_PADRAO,
   RETENCAO_FILA_DIAS_PISO,
+  RETENCAO_OBSERVACOES_DO_JEV_DIAS_PADRAO,
+  RETENCAO_OBSERVACOES_DO_JEV_DIAS_PISO,
   RETENCAO_PASSAGEM_DIAS_PADRAO,
   RETENCAO_PASSAGEM_DIAS_PISO,
   RETENCAO_PROSPECCAO_DIAS_PADRAO,
@@ -126,6 +128,10 @@ export interface ResultadoDaRetencao {
   prospeccao_apagada: number;
   lotes_prospeccao: number;
   prospeccao_tem_resto: boolean;
+  /** A observação do Jev vencida — rótulos, sem texto de cliente (migration 0421). */
+  observacoes_do_jev_apagadas: number;
+  lotes_observacoes_do_jev: number;
+  observacoes_do_jev_tem_resto: boolean;
   retencao_fila_dias: number;
   retencao_auditoria_dias: number;
   retencao_espelho_dias: number;
@@ -133,6 +139,7 @@ export interface ResultadoDaRetencao {
   retencao_passagem_dias: number;
   retencao_aviso_de_caso_dias: number;
   retencao_prospeccao_dias: number;
+  retencao_observacoes_do_jev_dias: number;
   /** Avisos de configuração — nunca ausentes em silêncio quando existem. */
   avisos: string[];
 }
@@ -148,7 +155,8 @@ export interface PodaDb {
       | "fn_expurgar_conversa_do_caso_vencida"
       | "fn_expurgar_passagens_vencidas"
       | "fn_expurgar_avisos_de_caso_vencidos"
-      | "fn_expurgar_prospeccao_vencida",
+      | "fn_expurgar_prospeccao_vencida"
+      | "fn_expurgar_observacoes_do_jev",
     args: { p_retencao_dias: number; p_limite: number },
   ): Promise<{ data: number | null; error: { message: string } | null }>;
 }
@@ -163,7 +171,8 @@ async function drenar(
     | "fn_expurgar_conversa_do_caso_vencida"
     | "fn_expurgar_passagens_vencidas"
     | "fn_expurgar_avisos_de_caso_vencidos"
-    | "fn_expurgar_prospeccao_vencida",
+    | "fn_expurgar_prospeccao_vencida"
+    | "fn_expurgar_observacoes_do_jev",
   dias: number,
 ): Promise<{ apagadas: number; lotes: number; temResto: boolean }> {
   let apagadas = 0;
@@ -199,6 +208,7 @@ export async function podarHistorico(
     PASSAGEM_RETENTION_DAYS?: string;
     CASE_ALERT_RETENTION_DAYS?: string;
     PROSPECCAO_RETENTION_DAYS?: string;
+    JEV_OBSERVACOES_RETENTION_DAYS?: string;
   },
 ): Promise<ResultadoDaRetencao> {
   const fila = interpretarRetencao(ambiente.JOB_QUEUE_RETENTION_DAYS, {
@@ -242,6 +252,12 @@ export async function podarHistorico(
     piso: RETENCAO_PROSPECCAO_DIAS_PISO,
   });
 
+  const observacoesDoJev = interpretarRetencao(ambiente.JEV_OBSERVACOES_RETENTION_DAYS, {
+    chave: "JEV_OBSERVACOES_RETENTION_DAYS",
+    padrao: RETENCAO_OBSERVACOES_DO_JEV_DIAS_PADRAO,
+    piso: RETENCAO_OBSERVACOES_DO_JEV_DIAS_PISO,
+  });
+
   const jobs = await drenar(db, "fn_podar_fila_de_jobs", fila.dias);
   const linhas = await drenar(db, "fn_expurgar_auditoria_vencida", auditoria.dias);
   const eventos = await drenar(db, "fn_expurgar_espelho_da_agenda", espelho.dias);
@@ -274,6 +290,9 @@ export async function podarHistorico(
   // reimportação. É a primeira poda da casa cujo dado é de uma pessoa que
   // NUNCA falou com a empresa, então as duas guardas são a regra, não enfeite.
   const prospeccaoDrenada = await drenar(db, "fn_expurgar_prospeccao_vencida", prospeccao.dias);
+  // Nona poda: as observações do Jev (0421). Padrão 90 / piso 30, a janela da
+  // concordância que o cartão mostra — o piso mora no CORPO da função.
+  const observacoesDrenadas = await drenar(db, "fn_expurgar_observacoes_do_jev", observacoesDoJev.dias);
 
   return {
     jobs_apagados: jobs.apagadas,
@@ -284,6 +303,7 @@ export async function podarHistorico(
     passagens_apagadas: passagens.apagadas,
     avisos_de_caso_apagados: avisosDeCaso.apagadas,
     prospeccao_apagada: prospeccaoDrenada.apagadas,
+    observacoes_do_jev_apagadas: observacoesDrenadas.apagadas,
     lotes_fila: jobs.lotes,
     lotes_auditoria: linhas.lotes,
     lotes_espelho: eventos.lotes,
@@ -291,6 +311,7 @@ export async function podarHistorico(
     lotes_passagens: passagens.lotes,
     lotes_avisos_de_caso: avisosDeCaso.lotes,
     lotes_prospeccao: prospeccaoDrenada.lotes,
+    lotes_observacoes_do_jev: observacoesDrenadas.lotes,
     fila_tem_resto: jobs.temResto,
     auditoria_tem_resto: linhas.temResto,
     espelho_tem_resto: eventos.temResto,
@@ -298,6 +319,7 @@ export async function podarHistorico(
     passagens_tem_resto: passagens.temResto,
     avisos_de_caso_tem_resto: avisosDeCaso.temResto,
     prospeccao_tem_resto: prospeccaoDrenada.temResto,
+    observacoes_do_jev_tem_resto: observacoesDrenadas.temResto,
     retencao_fila_dias: fila.dias,
     retencao_auditoria_dias: auditoria.dias,
     retencao_espelho_dias: espelho.dias,
@@ -305,6 +327,7 @@ export async function podarHistorico(
     retencao_passagem_dias: passagem.dias,
     retencao_aviso_de_caso_dias: avisoDeCaso.dias,
     retencao_prospeccao_dias: prospeccao.dias,
+    retencao_observacoes_do_jev_dias: observacoesDoJev.dias,
     avisos: [
       fila.aviso,
       auditoria.aviso,
@@ -313,6 +336,7 @@ export async function podarHistorico(
       passagem.aviso,
       avisoDeCaso.aviso,
       prospeccao.aviso,
+      observacoesDoJev.aviso,
     ].filter((a): a is string => a !== null),
   };
 }
@@ -350,7 +374,10 @@ export function houveEfeito(resultado: ResultadoDaRetencao): boolean {
     // candidato de prospecção vencido apagaria linhas e não deixaria registro.
     // Esta é a poda de dado de PESSOA que nunca falou com a empresa (0408) —
     // silenciar aqui seria apagar dado sensível sem trilha.
-    resultado.prospeccao_apagada > 0
+    resultado.prospeccao_apagada > 0 ||
+    // A nona, pela mesma razão: poda que apagou sem deixar trilha é
+    // encolhimento silencioso.
+    resultado.observacoes_do_jev_apagadas > 0
   );
 }
 
@@ -387,6 +414,7 @@ async function handle(req: NextRequest): Promise<Response> {
       PASSAGEM_RETENTION_DAYS: env.PASSAGEM_RETENTION_DAYS,
       CASE_ALERT_RETENTION_DAYS: env.CASE_ALERT_RETENTION_DAYS,
       PROSPECCAO_RETENTION_DAYS: env.PROSPECCAO_RETENTION_DAYS,
+      JEV_OBSERVACOES_RETENTION_DAYS: env.JEV_OBSERVACOES_RETENTION_DAYS,
     });
     // ── A cascata de anonimização que ficou pela metade ──────────────────
     //

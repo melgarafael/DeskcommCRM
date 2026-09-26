@@ -86,7 +86,7 @@ describe("cartão do Google Ads", () => {
       path.join(__dirname, "..", "..", "app", "app", "settings", "conversoes", "page.tsx"),
       "utf8",
     );
-    expect(fonte).toMatch(/configurado=\{googleAdsEstaConfigurado\(\)\}/);
-    expect(fonte).toMatch(/falta=\{faltaParaConectarOGoogleAds\(\)\}/);
+    expect(fonte).toMatch(/configurado=\{googleAdsEstaConfigurado\(estadoGoogle.api\)\}/);
+    expect(fonte).toMatch(/falta=\{faltaParaConectarOGoogleAds\(estadoGoogle.api\)\}/);
   });
 });

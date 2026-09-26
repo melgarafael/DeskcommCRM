@@ -382,6 +382,9 @@ const MEDIA_NOUN: Record<string, string> = {
   sticker: 'uma figurinha',
 };
 
+/** Como toda mídia enquadrada começa — `textoDoClienteNaUltimaMensagem` a reconhece por ela. */
+const INICIO_DA_MOLDURA_DE_MIDIA = '[Mídia do cliente:';
+
 /**
  * Enquadra o derivado de mídia como PERCEPÇÃO do agente (Onda 3, ajuste pós-prova).
  * Sem isto, o modelo via a transcrição/descrição mas respondia "não consigo ver
@@ -392,13 +395,34 @@ const MEDIA_NOUN: Record<string, string> = {
 export function frameMediaBody(type: string, caption: string | null, derived: string): string {
   const noun = MEDIA_NOUN[type] ?? 'uma mídia';
   const parts = [
-    `[Mídia do cliente: ele enviou ${noun} e o sistema já processou o conteúdo pra você. ` +
+    `${INICIO_DA_MOLDURA_DE_MIDIA} ele enviou ${noun} e o sistema já processou o conteúdo pra você. ` +
       `Trate o texto abaixo como se você mesma tivesse visto/ouvido — NUNCA responda que não ` +
       `consegue ver/ouvir mídia. Comente ou use o conteúdo naturalmente.]`,
   ];
   if (caption && caption.trim() !== '') parts.push(`Legenda do cliente: ${caption.trim()}`);
   parts.push(`Conteúdo: ${derived}`);
   return parts.join('\n');
+}
+
+/**
+ * O que o CLIENTE digitou na última mensagem dele, e nada que o sistema compôs
+ * em volta — `''` quando ela é mídia. É o dado que sai para um fornecedor sob o
+ * aceite "cada mensagem, sozinha" (o Jev, R4).
+ *
+ * O `body` de uma mídia no contexto é COMPOSTO (`corpoDaMensagem`): transcrição,
+ * descrição da imagem ou texto do PDF, e a moldura de instrução do agente. Isso é
+ * o que o sistema derivou, não o que o cliente mandou — nome, endereço e dado de
+ * saúde de um laudo iriam junto. A moldura é conferida além do `type` porque o
+ * derivado sobrevive à mídia apagada (a anonimização zera a mídia, não ele).
+ *
+ * ponytail: a legenda de uma mídia também fica de fora. Separá-la exigiria a
+ * coluna crua no contexto; e o classificador de sempre respondeu sobre o corpo
+ * composto, então comparar os dois ali não seria a mesma pergunta.
+ */
+export function textoDoClienteNaUltimaMensagem(messages: readonly LeadContextMessage[]): string {
+  const ultima = messages.findLast((m) => m.direction === 'inbound');
+  if (!ultima || ultima.type !== undefined || ultima.body.startsWith(INICIO_DA_MOLDURA_DE_MIDIA)) return '';
+  return ultima.body;
 }
 
 /** @internal exposto p/ teste — não usar fora de testes. */

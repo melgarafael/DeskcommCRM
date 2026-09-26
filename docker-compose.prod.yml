@@ -36,6 +36,8 @@ services:
     pull_policy: ${APP_PULL_POLICY:-always}
     restart: unless-stopped
     env_file: .env
+    environment:
+      SUPABASE_DB_ADMIN_URL: ""
     depends_on:
       srh:
         condition: service_started
@@ -99,6 +101,7 @@ services:
     environment:
       # dentro da rede do compose, o WAHA é o serviço 'waha' na porta interna 3000
       WAHA_API_BASE_URL: http://waha:3000
+      SUPABASE_DB_ADMIN_URL: ""
     networks:
       - internal
     healthcheck:
@@ -393,6 +396,9 @@ services:
       ARI_URL: "http://asterisk:8088"
       ARI_WS_URL: "ws://asterisk:8088/ari/events"
       ARI_APP: "voice-agent"
+      # Como no app e no worker: a conexão do dono do banco fica no .env só
+      # para o kit no host (update.sh do cron); nenhum código de workers/ a lê.
+      SUPABASE_DB_ADMIN_URL: ""
     logging: *default-logging
     networks: [internal]
 

@@ -9,7 +9,12 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { JEV_FALHOU_SEM_RESERVA, O_QUE_FAZER_DO_JEV } from "@/lib/ai/decisao/textos";
+import {
+  JEV_FALHOU_AO_LADO,
+  JEV_FALHOU_E_A_IA_COBRIU,
+  JEV_FALHOU_SEM_RESERVA,
+  O_QUE_FAZER_DO_JEV,
+} from "@/lib/ai/decisao/textos";
 import { PONTO_POR_ID } from "@/lib/ai/pontos/registro";
 import { EXPLICACAO_DA_ORIGEM } from "@/lib/ai/pontos/resolver";
 import { requireRole } from "@/lib/auth/require-role";
@@ -138,16 +143,92 @@ describe("GET /api/v1/ai/runs", () => {
     expect(falha.porQueEsteModelo).toBe(JEV_FALHOU_SEM_RESERVA);
   });
 
-  it("a linha do Jev diz o fato: decidiu, ou só observou", async () => {
+  it("a linha do Jev diz o fato: decidiu, só observou, ou foi um teste", async () => {
     linhas = [
       linha({ provider: "typesafe", model: "typesafe/jev-1.13.0", origem_da_escolha: "jev" }),
       linha({ provider: "typesafe", model: "typesafe/jev-1.13.0", origem_da_escolha: "jev_observacao" }),
+      linha({ purpose: "intent_router", provider: "typesafe", model: "typesafe/jev-1.13.0", origem_da_escolha: "jev_teste" }),
     ];
     const { corpo } = await pedir("?provider=typesafe");
     expect(corpo.data.execucoes.map((e: { porQueEsteModelo: string }) => e.porQueEsteModelo)).toEqual([
       "O Jev decidiu.",
-      "O Jev observou; quem decidiu foi a IA de sempre.",
+      "O Jev observou: a resposta dele ficou registrada para comparar, e não decidiu nada.",
+      // O clique em "Testar classificação" não entra na comparação (R5).
+      "Teste na tela do roteador — não entra na comparação.",
     ]);
+  });
+
+  it("a cobertura do roteador decidindo diz que a IA de sempre decidiu no lugar dele, sem inventar consequência", async () => {
+    linhas = [
+      linha({
+        purpose: "intent_router",
+        provider: "typesafe",
+        model: "typesafe/jev-1.13.0",
+        status: "erro",
+        error_code: "jev_provedor_indisponivel",
+        origem_da_escolha: "reserva_do_jev",
+        input_tokens: 0,
+        output_tokens: 0,
+        cost_cents: 0,
+      }),
+    ];
+    const { corpo } = await pedir("?provider=typesafe");
+    const [cobertura] = corpo.data.execucoes;
+    expect(PONTO_POR_ID.get("intent_router")?.sintomaDeFalha).toBeTruthy();
+    expect(cobertura.consequencia).toBeNull();
+    expect(cobertura.porQueEsteModelo).toBe(JEV_FALHOU_E_A_IA_COBRIU);
+    expect(cobertura.oQueFazer).toBe(O_QUE_FAZER_DO_JEV.jev_provedor_indisponivel);
+  });
+
+  it.each(["jev_sem_credencial", "jev_disjuntor_aberto"] as const)(
+    "a cobertura em que nada saiu para a rede (%s) diz o que houve",
+    async (codigo) => {
+      linhas = [
+        linha({
+          purpose: "intent_router",
+          provider: "typesafe",
+          model: "typesafe/jev-1.13.0",
+          status: "erro",
+          error_code: codigo,
+          origem_da_escolha: "reserva_do_jev",
+          input_tokens: 0,
+          output_tokens: 0,
+          cost_cents: 0,
+        }),
+      ];
+      const { corpo } = await pedir("?provider=typesafe");
+      const [cobertura] = corpo.data.execucoes;
+      expect(cobertura.consequencia).toBeNull();
+      expect(cobertura.porQueEsteModelo).toBe(JEV_FALHOU_E_A_IA_COBRIU);
+      expect(cobertura.oQueFazer).toBe(O_QUE_FAZER_DO_JEV[codigo]);
+    },
+  );
+
+  it("a falha do Jev na manipulação não afirma consequência: a IA de sempre seguiu decidindo", async () => {
+    // A linha que `lib/ai/decisao/manipulacao.ts` grava quando a chave é recusada
+    // (a mesma que `tests/invariants/jev-manipulacao-no-turno.test.ts` lê do banco).
+    linhas = [
+      linha({
+        purpose: "jailbreak_detect",
+        provider: "typesafe",
+        model: "typesafe/jev-1.13.0",
+        status: "erro",
+        error_code: "jev_credencial_invalida",
+        http_status: 401,
+        origem_da_escolha: "jev_observacao",
+        input_tokens: 0,
+        output_tokens: 0,
+        cost_cents: 0,
+      }),
+    ];
+    const { corpo } = await pedir();
+    const [falha] = corpo.data.execucoes;
+    // Controle: o ponto TEM sintoma de falha — é ele que a tela afirmava.
+    expect(PONTO_POR_ID.get("jailbreak_detect")?.sintomaDeFalha).toBeTruthy();
+    expect(falha.consequencia).toBeNull();
+    expect(falha.oQueFazer).toBe(O_QUE_FAZER_DO_JEV.jev_credencial_invalida);
+    expect(falha.porQueEsteModelo).toBe(JEV_FALHOU_AO_LADO);
+    expect(corpo.data.resumo.erros).toBe(1);
   });
 
   it("observação com a IA de sempre caída: a falha dela não afirma consequência que não houve", async () => {

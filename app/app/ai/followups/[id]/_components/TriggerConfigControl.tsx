@@ -199,7 +199,7 @@ function summaryLabel(
   if(cfg.kind === "appointment_no_show") return t("Gatilho: falta confirmada pela equipe");
   if (cfg.kind === "silence") {
     const minutes = (cfg.params as { threshold_minutes?: number } | undefined)?.threshold_minutes;
-    return `Gatilho: Silêncio${typeof minutes === "number" ? ` (${minutes} min)` : ""}`;
+    return `${t("Gatilho")}: ${t("Silêncio")}${typeof minutes === "number" ? ` (${minutes} min)` : ""}`;
   }
   if (cfg.kind === "inbound_after_silence") {
     const minutes = (cfg.params as { threshold_minutes?: number } | undefined)?.threshold_minutes;
@@ -223,7 +223,9 @@ function summaryLabel(
     // TIPO em vez de vazar o uuid — que é justamente o que esta tela não faz.
     // Com o funil junto, este rótulo passa a distinguir as homônimas: é a única
     // superfície que o dono lê uma semana depois, sem abrir nada.
-    return etapa ? `Gatilho: entrou em «${etapa.stageName}» em ${etapa.pipelineName}` : "Gatilho: Etapa do funil";
+    return etapa
+      ? `${t("Gatilho")}: ${t("entrou em")} «${etapa.stageName}» ${t("em")} ${etapa.pipelineName}`
+      : `${t("Gatilho")}: ${t("Etapa do funil")}`;
   }
   if (cfg.kind === "case_opened") return `${t("Gatilho")}: ${t("quando o agente pede ajuda")}`;
   if (cfg.kind === "webhook") return t("Disparado por uma automação em Webhooks");
@@ -231,7 +233,7 @@ function summaryLabel(
   if (cfg.kind === "manual" || cfg.kind === undefined) return `${t("Gatilho")}: ${t("Manual")}`;
   // conversation_end de dados antigos (API crua) — sem UI própria, mas mostrado
   // com transparência em vez de mentir "Manual".
-  return `Gatilho: ${String(cfg.kind)} (indisponível)`;
+  return `${t("Gatilho")}: ${String(cfg.kind)} (${t("indisponível")})`;
 }
 
 interface Props {

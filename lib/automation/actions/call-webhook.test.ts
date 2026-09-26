@@ -82,6 +82,51 @@ describe("executeCallWebhook", () => {
     await close();
   });
 
+  // Critério de aceite nº 4 (issue #1536): `won_reason` gravado APARECE no
+  // envelope de webhook — junto do resto do lead projetado, e sem abrir a
+  // linha inteira (o projeto existe justamente para não vazar organization_id,
+  // consent e source_metadata).
+  it("o envelope do webhook traz won_reason junto dos campos públicos do lead", async () => {
+    let body = "";
+    server = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (c) => chunks.push(c));
+      req.on("end", () => {
+        body = Buffer.concat(chunks).toString("utf8");
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      });
+    });
+    const { port, close } = await listen(server);
+
+    const ctx = baseCtx();
+    ctx.context = {
+      lead: {
+        id: "lead-1",
+        title: "Fulano",
+        status: "won",
+        won_reason: "Renovação anual",
+        organization_id: "org-1",
+        consent: "NAO_PODE_SAIR",
+      },
+    };
+
+    const result = await executeCallWebhook(
+      ctx,
+      { url: `http://127.0.0.1:${port}/hook` },
+      { skipUrlCheck: true },
+    );
+
+    expect(result.status).toBe("success");
+    const parsed = JSON.parse(body) as { data: { lead?: Record<string, unknown> } };
+    expect(parsed.data.lead?.won_reason).toBe("Renovação anual");
+    // O que o projeto existe para proteger continua fora.
+    expect(body).not.toContain("org-1");
+    expect(body).not.toContain("NAO_PODE_SAIR");
+
+    await close();
+  });
+
   it("com secret: header de assinatura HMAC-sha256 do body", async () => {
     let received: { headers: Record<string, string | string[] | undefined>; body: string } | undefined;
     server = createServer((req, res) => {

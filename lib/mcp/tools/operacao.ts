@@ -43,6 +43,8 @@ import {
 } from "@/lib/operacao/entradas-automaticas";
 import { listarMarcadores, listarTime } from "@/lib/operacao/marcadores-e-time";
 import {
+  CHAVE_DE_VALOR_MAX,
+  VALOR_DE_VARIAVEL_MAX,
   listarModelosDeMensagem,
   preencherModeloDeMensagem,
 } from "@/lib/operacao/modelos-de-mensagem";
@@ -213,19 +215,28 @@ export const crmListTags: McpToolDefinition<typeof listTagsShape> = {
 // respostas prontas
 // ---------------------------------------------------------------------------
 
-const listTemplatesShape = {};
+const listTemplatesShape = {
+  incluir_pessoais: z.boolean().default(false),
+};
 
 export const crmListMessageTemplates: McpToolDefinition<typeof listTemplatesShape> = {
   name: "crm_list_message_templates",
   description:
-    "Lista as respostas prontas da organização: título, corpo com as marcações {{...}}, " +
-    "atalho e se é compartilhada ou pessoal. Use quando a empresa já tiver decidido como diz algo, em vez de escrever do zero.",
+    "Lista as respostas prontas COMPARTILHADAS da organização: título, corpo com as marcações {{...}}, " +
+    "`variaveis` (as marcações que o corpo usa), o atalho e se é compartilhada ou pessoal. Use quando a " +
+    "empresa já tiver decidido como diz algo, em vez de escrever do zero. Os modelos PESSOAIS de cada " +
+    "atendente NÃO entram na lista — `incluir_pessoais` só mostra os do próprio usuário da chamada, e " +
+    "um token de integração não tem modelo pessoal nenhum.",
   inputSchema: listTemplatesShape,
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
-  handler: async (_input, ctx) => {
-    return { modelos: await listarModelosDeMensagem(deps(ctx)) };
+  handler: async (input, ctx) => {
+    return {
+      modelos: await listarModelosDeMensagem(deps(ctx), {
+        incluirPessoais: input.incluir_pessoais,
+      }),
+    };
   },
 };
 
@@ -233,23 +244,45 @@ const renderTemplateShape = {
   template_id: z.string().uuid(),
   contact_id: z.string().uuid().optional(),
   lead_id: z.string().uuid().optional(),
+  valores: z
+    .record(
+      z.string().regex(/^[a-z_]+$/).max(CHAVE_DE_VALOR_MAX),
+      z.string().max(VALOR_DE_VARIAVEL_MAX),
+    )
+    .optional()
+    .describe(
+      "Valores para as marcações que NÃO saem do contato nem do negócio — link do formulário, valor " +
+        "em aberto, número de protocolo: { link_formulario: \"https://…\" }. As chaves são as marcações " +
+        "que o modelo usa (veja `variaveis` em crm_list_message_templates).",
+    ),
 };
+
+/** Tira os VALORES do audit: o texto montado é do cliente, o log guarda quais variáveis vieram. */
+function redigirValores(args: Record<string, unknown>): Record<string, unknown> {
+  const valores = args.valores;
+  if (!valores || typeof valores !== "object") return args;
+  return { ...args, valores: Object.keys(valores).sort() };
+}
 
 export const crmRenderMessageTemplate: McpToolDefinition<typeof renderTemplateShape> = {
   name: "crm_render_message_template",
   description:
     "Preenche uma resposta pronta com os dados do contato/lead informados e devolve o TEXTO — não envia nada. " +
-    "Devolve também `lacunas`: as marcações que ficaram sem valor. Se vier lacuna, NÃO mande o texto como está: " +
-    "'Olá , tudo bem?' chega assim no cliente.",
+    "`valores` preenche o que só quem chama sabe (link, valor, protocolo); variável fora do formato, " +
+    "do contato/negócio ou que o modelo não usa é RECUSADA com o nome dela. Devolve também `lacunas`: as " +
+    "marcações que ficaram sem valor. Se vier lacuna, NÃO mande o texto como está: 'Olá , tudo bem?' chega " +
+    "assim no cliente.",
   inputSchema: renderTemplateShape,
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  redigirParaAuditoria: redigirValores,
   handler: async (input, ctx) => {
     return preencherModeloDeMensagem(deps(ctx), {
       templateId: input.template_id,
       contactId: input.contact_id,
       leadId: input.lead_id,
+      valores: input.valores,
     });
   },
 };

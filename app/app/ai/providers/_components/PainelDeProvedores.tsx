@@ -516,11 +516,11 @@ function CartaoDoPonto({
               reserva, ou como quem decide enquanto o Jev só observa. */}
           {oJevAqui && (
             <p className="mt-1 text-xs text-accent" data-testid={`jev-no-ponto-${ponto.id}`}>
-              {oJevAqui === "decide"
-                ? t("O Jev mede primeiro; o modelo abaixo é a reserva.")
-                : oJevAqui === "observacao"
-                  ? t("O Jev observa; o modelo abaixo ainda decide.")
-                  : t("O Jev mede sozinho: não há modelo de reserva.")}
+              {oJevAqui === "observacao"
+                ? t("O Jev observa; o modelo abaixo ainda decide.")
+                : oJevAqui === "sozinho"
+                  ? t("O Jev mede sozinho: não há modelo de reserva.")
+                  : t(oJevAqui.decide)}
             </p>
           )}
         </div>

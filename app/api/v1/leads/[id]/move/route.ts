@@ -24,6 +24,12 @@ import {
   recusaDeMotivoDaPerdaPeloBanco,
 } from "@/lib/leads/motivo-da-perda";
 import { RECUSA_DE_TROCA_DE_FUNIL } from "@/lib/leads/clonar-para-funil";
+import {
+  recusaDeCamposObrigatorios,
+  recusaDeMotivoDoGanho,
+  settingsDoFunil,
+  validaCamposExigidos,
+} from "@/lib/leads/campos-exigidos";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -76,7 +82,7 @@ export async function POST(
   // que decide se esta escrita precisa do motivo da perda (issue #917).
   const { data: stage, error: stageErr } = await supabase
     .from("crm_stages")
-    .select("id, pipeline_id, name, is_lost")
+    .select("id, pipeline_id, name, is_lost, is_won")
     .eq("id", input.stage_id)
     .maybeSingle();
 
@@ -93,6 +99,66 @@ export async function POST(
       422,
       { requestId, details: { use: "/api/v1/leads/{id}/clone" } },
     );
+  }
+
+  // ── A MESMA ETAPA É REORDENAÇÃO, NÃO ENTRADA (CR do mantenedor, #1536) ──────
+  //
+  // O card que já está NA coluna de destino não está ENTRANDO nela: arrastar
+  // dentro da própria coluna só troca a posição. A régua abaixo pergunta "este
+  // destino exige campos que o lead não tem?" e, sem esta comparação, respondia
+  // 422 para um movimento que não muda de etapa — na coluna exigente o card
+  // ficava preso sem ninguém conseguir reordená-lo, e com `won_reason_required`
+  // valia para TODO card antigo da coluna Ganho (o `won_reason` nasce `null`,
+  // então reordenar a coluna virava 422).
+  //
+  // Comparado AQUI, antes da régua, e não dentro dela: `campos-exigidos.ts`
+  // continua não sabendo nada sobre "mesma etapa" — quem sabe é esta rota, que
+  // é quem lê `lead.stage_id` ao lado do destino. As regras de vocabulário do
+  // ganho e da perda (#917) SEGUEM valendo: elas decidem sobre VALORES que a
+  // escrita traz, não sobre a entrada em si.
+  const mesmaEtapa = input.stage_id === lead.stage_id;
+
+  // ── OS CAMPOS OBRIGATÓRIOS (issue #1536) ────────────────────────────────────
+  //
+  // A mesma pergunta dos outros cinco caminhos, respondida pela MESMA função:
+  // este destino exige campos que o lead não tem? Decidido ANTES do update, pela
+  // mesma razão da perda abaixo — depois dele só existiria a linha recusada.
+  // `details.faltando` nomeia chave e rótulo de cada campo: é ele que a tela
+  // vira em diálogo (o único caminho onde dá para PREENCHER e tentar de novo).
+  const settings = await settingsDoFunil(supabase, lead.pipeline_id);
+  const vereditoDeCampos = mesmaEtapa
+    ? { faltando: [] }
+    : validaCamposExigidos({
+        lead: lead as Record<string, unknown>,
+        settingsDoFunil: settings,
+        destino: {
+          stageId: stage.id,
+          desfecho: stage.is_won ? "won" : stage.is_lost ? "lost" : null,
+        },
+        motivoDeGanho: input.won_reason ?? null,
+        customFieldsPropostos: input.custom_fields ?? null,
+      });
+  if (vereditoDeCampos.faltando.length > 0) {
+    const recusa = recusaDeCamposObrigatorios(vereditoDeCampos.faltando, user.idioma);
+    return fail(recusa.codigo, recusa.mensagem, 422, {
+      requestId,
+      details: { faltando: vereditoDeCampos.faltando },
+    });
+  }
+
+  // O MOTIVO DE GANHO (issue #1536): vocabulário do funil quando há lista, e
+  // obrigatoriedade opt-in (`settings.won_reason_required`) quando o funil pede.
+  if (stage.is_won) {
+    const recusaVocabulario = recusaDeMotivoDoGanho({
+      motivo: input.won_reason,
+      settingsDoFunil: settings,
+      idioma: user.idioma,
+    });
+    if (recusaVocabulario) {
+      return fail(recusaVocabulario.codigo, recusaVocabulario.mensagem, 422, {
+        requestId,
+      });
+    }
   }
 
   // ── O MOTIVO DA PERDA (issue #917) ──────────────────────────────────────────
@@ -119,6 +185,22 @@ export async function POST(
       position_in_stage: input.position_in_stage,
       updated_at: new Date().toISOString(),
       ...veredito.patch,
+      // O motivo de ganho sai NA MESMA escrita que muda a etapa — o mesmo
+      // desenho do motivo da perda (#917): uma segunda escrita teria janela.
+      ...(stage.is_won && input.won_reason?.trim()
+        ? { won_reason: input.won_reason.trim() }
+        : {}),
+      // O merge é AQUI, nunca num PATCH anterior: ver `custom_fields` em
+      // `moveLeadSchema` — dois writes teriam janela e uma segunda OCC.
+      ...(input.custom_fields
+        ? {
+            custom_fields: {
+              ...(((lead as { custom_fields?: Record<string, unknown> })
+                .custom_fields ?? {}) as Record<string, unknown>),
+              ...input.custom_fields,
+            },
+          }
+        : {}),
     })
     .eq("id", leadId)
     .eq("updated_at", input.expected_updated_at)

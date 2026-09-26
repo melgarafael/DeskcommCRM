@@ -26,6 +26,8 @@ import path from 'node:path';
 
 import type pg from 'pg';
 
+import { scrubMessage } from '@/lib/sentry/scrub';
+
 import type { Logger } from '../obs/logger';
 import type { ProviderRegistry } from '../edge/llm/providers';
 import { LlmBudgetExceededError, runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
@@ -185,7 +187,8 @@ export interface StageDivergence {
  * Grava a divergência classificador×modelo como candidato ao golden set (SalesGPT/blueprint
  * 7.6) — fs em RUNTIME (mkdir recursivo + writeFile), NÃO a tool Write, então o freeze do
  * golden não se aplica a este caminho executado. O arquivo é para CURADORIA HUMANA: carrega
- * o sinal (texto do lead — PII), então NUNCA é logado (regra dura 8) — só os NOMES dos
+ * o sinal (texto do lead — PII, redigido por `scrubMessage` antes de ir a disco), então
+ * NUNCA é logado (regra dura 8) — só os NOMES dos
  * estágios vão a log. Um arquivo por job: retry re-grava o mesmo candidato, não duplica.
  */
 export async function recordStageDivergenceCandidate(
@@ -212,8 +215,12 @@ export async function recordStageDivergenceCandidate(
     job_id: trace.jobId,
     suggested_stage: suggested,
     confirmed_stage: confirmed,
-    // sinal do turno (texto do lead — PII): fica no ARQUIVO de curadoria, jamais em log.
-    signal: trace.signal,
+    // sinal do turno (texto do lead — PII): fica no ARQUIVO de curadoria, jamais em log, e
+    // passa pelo redator antes de tocar o disco. Um CPF, telefone ou e-mail dentro deste
+    // arquivo sobrevive à cascata de anonimização, que alcança o banco e não o disco do
+    // contêiner. O que o redator NÃO tira é o corpo da mensagem — o candidato ir para uma
+    // tabela, com retenção e cascata, é o conserto inteiro.
+    signal: scrubMessage(trace.signal),
   };
   const file = path.join(dir, `stage-divergence_${trace.jobId}.json`);
   await writeFile(file, `${JSON.stringify(record, null, 2)}\n`, 'utf8');

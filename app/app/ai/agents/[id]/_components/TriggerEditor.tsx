@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useT } from "@/hooks/i18n/useT";
+import { FUSO_PADRAO } from "@/lib/tempo/fusos";
 
 export interface BusinessHoursValue {
   timezone: string;
@@ -35,6 +36,7 @@ interface Props {
   value: TriggerValue;
   onChange: (v: TriggerValue) => void;
   disabled?: boolean;
+  organizationTimezone?: string;
 }
 
 const WEEKDAYS = [
@@ -47,8 +49,10 @@ const WEEKDAYS = [
   { id: 6, label: "Sáb" },
 ];
 
-export function TriggerEditor({ value, onChange, disabled }: Props) {
+export function TriggerEditor({ value, onChange, disabled, organizationTimezone }: Props) {
   const t = useT();
+  const defaultTimezone = organizationTimezone ?? FUSO_PADRAO;
+
   function patchFilters(p: Partial<TriggerValue["filters"]>) {
     onChange({ ...value, filters: { ...value.filters, ...p } });
   }
@@ -59,7 +63,7 @@ export function TriggerEditor({ value, onChange, disabled }: Props) {
     patchFilters({
       business_hours: enabled
         ? bh ?? {
-            timezone: "America/Sao_Paulo",
+            timezone: defaultTimezone,
             start: "08:00",
             end: "20:00",
             weekdays: [1, 2, 3, 4, 5],

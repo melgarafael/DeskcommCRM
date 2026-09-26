@@ -280,6 +280,14 @@ const moveInputShape = {
   to_stage_id: z.string().uuid(),
   position_in_stage: z.number().finite().optional(),
   reason: z.string().max(500).optional(),
+  /**
+   * O motivo do ganho, quando o destino fecha o negócio como ganho (issue #1536).
+   * Obrigatório só se o funil ligar `won_reason_required`; sem lista cadastrada
+   * o texto é livre. A recusa (`required_fields_missing` /
+   * `won_reason_invalid`) volta como erro da tool, e o modelo pergunta ao
+   * cliente ou passa para o humano — nunca move calado.
+   */
+  won_reason: z.string().max(500).optional(),
 };
 
 export const crmMoveLeadStage: McpToolDefinition<typeof moveInputShape> = {
@@ -310,6 +318,7 @@ export const crmMoveLeadStage: McpToolDefinition<typeof moveInputShape> = {
         to_stage_id: input.to_stage_id,
         position_in_stage: input.position_in_stage,
         reason: input.reason,
+        won_reason: input.won_reason,
       },
     );
     return { lead };

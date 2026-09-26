@@ -98,6 +98,13 @@ export interface Message {
   // não conseguia nem NOMEAR o valor para exibi-lo (ver MessageBubble).
   sent_via: SentVia;
   sent_by_user_id: string | null;
+  /**
+   * Quem DECIDIU o envio quando o que apertou foi um token (#1613, migration
+   * 0416) — a pessoa "em nome de" quem a integração mandou. `null` em todo
+   * envio direto, e ausente nas linhas anteriores à coluna. O balão lê este
+   * campo junto de `metadata.sent_on_behalf` para dizer "Fulano · via {token}".
+   */
+  sent_on_behalf_of_user_id?: string | null;
   sent_at: string;
   delivered_at: string | null;
   read_at: string | null;

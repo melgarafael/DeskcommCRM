@@ -166,6 +166,27 @@ export const customFieldSchema = z.object({
     "url",
   ]),
   required: z.boolean().optional(),
+  /**
+   * QUANDO este campo passa a OBRIGAR (issue #1536).
+   *
+   * `required` continua com o significado antigo (destaca o campo no formulário);
+   * quem barra um movimento de etapa ou um encerramento é SÓ isto aqui — um funil
+   * sem `obrigatorio_em` se comporta exatamente como se comportava antes.
+   *
+   * - `etapas`: etapas do funil nas quais entrar já exige o valor preenchido;
+   * - `ao_ganhar`: exigido quando a escrita fecha o negócio como ganho;
+   * - `ao_perder`: exigido quando a escrita o deixa perdido.
+   *
+   * A decisão é do servidor (`lib/leads/campos-exigidos.ts`), não do schema: o
+   * schema só diz o que PODE ser exigido, e uma lista vazia significa "nunca".
+   */
+  obrigatorio_em: z
+    .object({
+      etapas: z.array(z.string().uuid()).max(50).optional(),
+      ao_ganhar: z.boolean().optional(),
+      ao_perder: z.boolean().optional(),
+    })
+    .optional(),
   options: z
     .array(z.object({ value: z.string().min(1), label: z.string().min(1) }))
     .optional(),
@@ -183,6 +204,15 @@ export const pipelineConfigPatchSchema = z.object({
     .optional(),
   fields: z.array(customFieldSchema).max(50).optional(),
   lost_reasons: z.array(z.string().min(1).max(80)).max(50).optional(),
+  /**
+   * O MOTIVO DE GANHO por funil (issue #1536) — espelho de `lost_reasons`.
+   * Sem lista cadastrada o motivo é texto livre; com lista, só o que está nela
+   * passa (`recusaDeMotivoDoGanho`, o equivalente do ganho à CHECK que o banco
+   * já tem para a perda — para o ganho não há trigger, então quem aplica é aqui).
+   */
+  won_reasons: z.array(z.string().min(1).max(80)).max(50).optional(),
+  /** Obrigatóriedade do motivo de ganho, opt-in por funil (padrão: não exigir). */
+  won_reason_required: z.boolean().optional(),
 });
 export type PipelineConfigPatch = z.infer<typeof pipelineConfigPatchSchema>;
 

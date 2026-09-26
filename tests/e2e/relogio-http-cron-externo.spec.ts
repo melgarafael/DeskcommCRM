@@ -46,7 +46,7 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/test";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { CAMINHO_DO_TICK } from "../../lib/relogio/tarefas";

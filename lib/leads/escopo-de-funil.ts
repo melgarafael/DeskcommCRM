@@ -135,6 +135,12 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   crm_resume_ai_attendance: "sem_funil",
   crm_save_org_memory: "sem_funil",
   crm_propose_contact_field: "sem_funil",
+  // Rascunho sugerido por integração (#1611): opera por `conversation_id`,
+  // nunca `lead_id`, e não mexe em estado de funil nenhum. A barreira é OUTRA,
+  // e é dela que a segurança depende: o RBAC da rota (agent+), o escopo
+  // `mcp:write` do token e o fato de a porta NÃO enviar nada — o texto fica
+  // guardado e quem atende é que clica em enviar.
+  crm_create_conversation_draft: "sem_funil",
   // Configuração da casa. Já não é alcançável pelo agente (papel acima do dele);
   // entram aqui para o teste de vacuidade não as acusar, e com a nota de que a
   // barreira delas é OUTRA.

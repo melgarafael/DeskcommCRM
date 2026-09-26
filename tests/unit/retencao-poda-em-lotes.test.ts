@@ -19,6 +19,8 @@ import {
   RETENCAO_FILA_DIAS_PADRAO,
   RETENCAO_PASSAGEM_DIAS_PADRAO,
   RETENCAO_FILA_DIAS_PISO,
+  RETENCAO_OBSERVACOES_DO_JEV_DIAS_PADRAO,
+  RETENCAO_OBSERVACOES_DO_JEV_DIAS_PISO,
   RETENCAO_PROSPECCAO_DIAS_PADRAO,
   RETENCAO_PROSPECCAO_DIAS_PISO,
   interpretarRetencao,
@@ -192,12 +194,28 @@ describe("podarHistorico — o laço de lotes", () => {
     // do piso é ELEVADO, como todas as irmãs — e o aviso acompanha.
     const { db, chamadas } = bancoQueDevolve({ fila: [0], auditoria: [0] });
     const r = await podarHistorico(db, { PROSPECCAO_RETENTION_DAYS: "5" });
-    const ultima = chamadas[chamadas.length - 1];
-    expect(ultima?.nome).toBe("fn_expurgar_prospeccao_vencida");
-    expect(ultima?.dias).toBe(RETENCAO_PROSPECCAO_DIAS_PISO);
+    // Pelo NOME, e não pela posição: a nona poda (0421) entrou depois dela.
+    const daProspeccao = chamadas.find((c) => c.nome === "fn_expurgar_prospeccao_vencida");
+    expect(daProspeccao?.dias).toBe(RETENCAO_PROSPECCAO_DIAS_PISO);
     expect(r.retencao_prospeccao_dias).toBe(RETENCAO_PROSPECCAO_DIAS_PISO);
     expect(r.avisos).toHaveLength(1);
     expect(r.avisos[0]).toContain("PROSPECCAO_RETENTION_DAYS");
+  });
+
+  it("drena as observações do Jev com o padrão 90 e eleva o knob de 7 ao piso 30 (0421)", async () => {
+    const semKnob = bancoQueDevolve({ fila: [0], auditoria: [0] });
+    await podarHistorico(semKnob.db, {});
+    expect(semKnob.chamadas.find((c) => c.nome === "fn_expurgar_observacoes_do_jev")?.dias).toBe(
+      RETENCAO_OBSERVACOES_DO_JEV_DIAS_PADRAO,
+    );
+
+    const { db, chamadas } = bancoQueDevolve({ fila: [0], auditoria: [0] });
+    const r = await podarHistorico(db, { JEV_OBSERVACOES_RETENTION_DAYS: "7" });
+    expect(chamadas.find((c) => c.nome === "fn_expurgar_observacoes_do_jev")?.dias).toBe(
+      RETENCAO_OBSERVACOES_DO_JEV_DIAS_PISO,
+    );
+    expect(r.retencao_observacoes_do_jev_dias).toBe(RETENCAO_OBSERVACOES_DO_JEV_DIAS_PISO);
+    expect(r.avisos).toEqual([expect.stringContaining("JEV_OBSERVACOES_RETENTION_DAYS")]);
   });
 
   it("erro do banco sobe — a poda não engole falha em silêncio", async () => {
@@ -246,6 +264,11 @@ describe("houveEfeito — as duas direções", () => {
     lotes_prospeccao: 0,
     prospeccao_tem_resto: false,
     retencao_prospeccao_dias: RETENCAO_PROSPECCAO_DIAS_PADRAO,
+    // Nona poda (migration 0421): as observações do Jev.
+    observacoes_do_jev_apagadas: 0,
+    lotes_observacoes_do_jev: 0,
+    observacoes_do_jev_tem_resto: false,
+    retencao_observacoes_do_jev_dias: RETENCAO_OBSERVACOES_DO_JEV_DIAS_PADRAO,
     avisos: [] as string[],
   };
 
@@ -267,6 +290,10 @@ describe("houveEfeito — as duas direções", () => {
     // que apaga dado de uma pessoa que NUNCA falou com a empresa: silenciar
     // aqui seria apagar dado sensível sem trilha.
     expect(houveEfeito({ ...base, prospeccao_apagada: 1 })).toBe(true);
+  });
+
+  it("...e apagou observação do Jev vencida → TAMBÉM audita (0421)", () => {
+    expect(houveEfeito({ ...base, observacoes_do_jev_apagadas: 1 })).toBe(true);
   });
 
   it("apagou job → audita; apagou auditoria → audita", () => {

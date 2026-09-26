@@ -55,6 +55,8 @@ const SCOPES: { id: string; label: string }[] = [
   { id: "leads:write", label: "Criar e editar leads" },
   { id: "messages:read", label: "Ler mensagens" },
   { id: "messages:write", label: "Enviar mensagens" },
+  // #1613: sem esta linha o escopo existia na rota e ninguém conseguia concedê-lo.
+  { id: "messages:on_behalf", label: "Integração pode enviar em nome de um atendente" },
   { id: "audit:read", label: "Ler o log de auditoria" },
 ];
 

@@ -85,6 +85,17 @@ export interface HandlerCtx {
   serviceOrigin?: ServiceOrigin;
   organization_id: string;
   actor: Actor;
+  /**
+   * Autoria "em nome de" (#1613): a PESSOA por cuja decisão o token envia.
+   *
+   * Vive no CTX, e não no input, de propósito: o mesmo input atravessa as tools
+   * MCP, que não têm escopo nenhum, e um campo gravável ali seria um envio
+   * forjado sem passar pelo gate `messages:on_behalf`. Quem preenche é
+   * `app/api/v1/messages/route.ts`, depois de validar o escopo do token e o
+   * membership do usuário; o handler recusa alto quando o input traz o campo e
+   * o ctx não — falha fechada, nunca grava por omissão.
+   */
+  onBehalfOf?: { userId: string; userName?: string | null; tokenName?: string | null };
   requestId: string;
   /**
    * Idioma de quem chamou, só quando é um usuário humano de verdade — as

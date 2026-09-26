@@ -5,6 +5,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "@/lib/logger";
 import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
+import {
+  recusaDeCamposObrigatorios,
+  settingsDoFunil,
+  validaCamposExigidos,
+} from "@/lib/leads/campos-exigidos";
 
 /**
  * Move o card do lead para a etapa do funil que o tenant marcou como destino
@@ -36,8 +41,19 @@ export interface ResultadoDoMovimentoDeHandoff {
     | "lead_nao_encontrado"
     | "lead_fechado"
     | "conflito_humano"
+    /**
+     * A etapa de handoff exige CAMPOS que o negócio não tem (issue #1536).
+     *
+     * A MESMA régua do arrasto e do agente (`validaCamposExigidos`), e o mesmo
+     * desenho da recusa: o card não anda, nada quebrou, e `detalhe` traz a
+     * frase com o que falta — é o que o chamador registra no log (aqui não há
+     * quadro aberto nem inbox: o handoff é best-effort e o rastro é o warn).
+     */
+    | "campos_obrigatorios"
     | "falha_de_escrita"
     | "indisponivel";
+  /** Só quando `motivo` é `campos_obrigatorios` — o que falta, em frase. */
+  detalhe?: string;
 }
 
 export async function moverLeadParaEtapaDeHandoff(
@@ -52,7 +68,9 @@ export async function moverLeadParaEtapaDeHandoff(
 ): Promise<ResultadoDoMovimentoDeHandoff> {
   const { data: lead, error: erroLead } = await admin
     .from("crm_leads")
-    .select("id, pipeline_id, stage_id, contact_id, status")
+    // `custom_fields` e `won_reason` são lidos POR CAUSA da régua de campos
+    // obrigatórios (#1536): sem eles, `validaCamposExigidos` só veria ausência.
+    .select("id, pipeline_id, stage_id, contact_id, status, custom_fields, won_reason")
     .eq("id", input.leadId)
     .eq("organization_id", input.organizationId)
     .maybeSingle();
@@ -73,6 +91,8 @@ export async function moverLeadParaEtapaDeHandoff(
     stage_id: string;
     contact_id: string | null;
     status: string;
+    custom_fields: Record<string, unknown> | null;
+    won_reason: string | null;
   };
 
   // Negócio já fechado (ganho/perdido) não volta a se mexer por causa de um
@@ -83,7 +103,7 @@ export async function moverLeadParaEtapaDeHandoff(
 
   const { data: etapaData, error: erroEtapa } = await admin
     .from("crm_stages")
-    .select("id, name")
+    .select("id, name, is_won, is_lost")
     .eq("pipeline_id", leadRow.pipeline_id)
     .eq("slug", SLUG_ETAPA_HANDOFF)
     .eq("is_archived", false)
@@ -100,7 +120,7 @@ export async function moverLeadParaEtapaDeHandoff(
   if (!etapa && SLUG_ETAPA_HANDOFF.includes("-")) {
     const { data: etapaLegada, error: erroLegada } = await admin
       .from("crm_stages")
-      .select("id, name")
+      .select("id, name, is_won, is_lost")
       .eq("pipeline_id", leadRow.pipeline_id)
       .eq("slug", SLUG_ETAPA_HANDOFF.replace(/-/g, "_"))
       .eq("is_archived", false)
@@ -120,10 +140,44 @@ export async function moverLeadParaEtapaDeHandoff(
   if (!etapa) {
     return { moveu: false, motivo: "sem_etapa_de_handoff" };
   }
-  const etapaRow = etapa as { id: string; name: string };
+  const etapaRow = etapa as {
+    id: string;
+    name: string;
+    is_won?: boolean | null;
+    is_lost?: boolean | null;
+  };
 
   if (leadRow.stage_id === etapaRow.id) {
     return { moveu: false, motivo: "ja_esta_la" };
+  }
+
+  // ── A RÉGUA DE CAMPOS OBRIGATÓRIOS (issue #1536) ────────────────────────────
+  //
+  // O handoff também grava `stage_id`, então também passa pela régua — sem ela,
+  // este seria um dos caminhos que movem sem exigir nada e "uma rota exige,
+  // outra não" voltaria a ser o defeito da #917. A recusa segue o desenho do
+  // resto do arquivo: o card não anda, `motivo` diz a verdade e `detalhe` leva
+  // a frase com o que falta. O rastro é o warn DESTE módulo: o orquestrador
+  // não lê o retorno.
+  // Fail-open de `settingsDoFunil` vale aqui como em todos os caminhos.
+  const settings = await settingsDoFunil(admin, leadRow.pipeline_id);
+  const vereditoDeCampos = validaCamposExigidos({
+    lead: leadRow as unknown as Record<string, unknown>,
+    settingsDoFunil: settings,
+    destino: {
+      stageId: etapaRow.id,
+      desfecho: etapaRow.is_won ? "won" : etapaRow.is_lost ? "lost" : null,
+    },
+  });
+  if (vereditoDeCampos.faltando.length > 0) {
+    const detalhe = recusaDeCamposObrigatorios(vereditoDeCampos.faltando, null).mensagem;
+    // Nenhum chamador lê o retorno (só tratam exceção): este warn é o único rastro.
+    logger.warn("[handoff-stage-move] etapa exige campos; card não movido", {
+      lead_id: leadRow.id,
+      organization_id: input.organizationId,
+      detalhe,
+    });
+    return { moveu: false, motivo: "campos_obrigatorios", detalhe };
   }
 
   // Nome da origem só enfeita o texto da timeline — erro descartado de

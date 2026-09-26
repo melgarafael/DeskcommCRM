@@ -41,6 +41,11 @@ import type { NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
+import {
+  emitirFalhaDeEntrega,
+  telefoneDoEmbed,
+  type EmbedDoContato,
+} from "@/lib/messaging/falha-de-entrega";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 
@@ -60,8 +65,10 @@ interface StuckMessage {
   id: string;
   organization_id: string;
   conversation_id: string;
+  contact_id: string | null;
   created_at: string;
   sent_via: string;
+  contacts: EmbedDoContato;
 }
 
 export interface RecoverResult {
@@ -86,7 +93,9 @@ export async function recoverStuckMessages(
   // que outro código atualiza faria a mensagem rejuvenescer e escapar do cron.
   const { data, error } = await admin
     .from("messages")
-    .select("id, organization_id, conversation_id, created_at, sent_via")
+    .select(
+      "id, organization_id, conversation_id, contact_id, created_at, sent_via, contacts:contact_id(phone_number)",
+    )
     .eq("direction", "outbound")
     .eq("status", "sending")
     .lt("created_at", cutoff)
@@ -100,6 +109,7 @@ export async function recoverStuckMessages(
   const porOrg = new Map<string, StuckMessage[]>();
   for (const m of stuck) porOrg.set(m.organization_id, [...(porOrg.get(m.organization_id) ?? []), m]);
 
+  const MOTIVO_DO_TIMEOUT = `Envio não confirmado em ${STUCK_AFTER_MS / 60000} min — marcada como falha por recover-stuck-messages.`;
   let marcadas = 0;
   const orgsComAviso: string[] = [];
 
@@ -113,7 +123,7 @@ export async function recoverStuckMessages(
       .update({
         status: "failed",
         error_code: "send_timeout",
-        error_message: `Envio não confirmado em ${STUCK_AFTER_MS / 60000} min — marcada como falha por recover-stuck-messages.`,
+        error_message: MOTIVO_DO_TIMEOUT,
         updated_at: now.toISOString(),
       })
       .in(
@@ -143,33 +153,27 @@ export async function recoverStuckMessages(
     // INSERT, então mudar o status não emite nada. Só as linhas que ESTE tick
     // realmente marcou — emitir pelas que a corrida levou seria evento de uma
     // falha que não houve.
+    // O MESMO contrato do envio e do webhook da Meta (`emitirFalhaDeEntrega`,
+    // #1614): quem integra assina um `message.failed` só, e a condição
+    // `event.erro.codigo = send_timeout` casa aqui como casa lá.
     const porMensagem = new Map(mensagens.map((m) => [m.id, m]));
     await Promise.all(
-      marcadasAgora.map(({ id }) =>
-        admin
-          .rpc("emit_event" as never, {
-            p_event_type: "message.failed",
-            p_entity_kind: "message",
-            p_entity_id: id,
-            p_payload: {
-              message_id: id,
-              conversation_id: porMensagem.get(id)?.conversation_id ?? null,
-              reason: "send_timeout",
-              stuck_after_ms: STUCK_AFTER_MS,
-            },
-            p_metadata: { source: "recover-stuck-messages", request_id: requestId },
-            p_organization_id: orgId,
-          } as never)
-          .then(({ error: emitErr }: { error: { message: string } | null }) => {
-            if (emitErr) {
-              logger.warn("[recover-stuck-messages] emit message.failed falhou", {
-                error: emitErr.message,
-                message_id: id,
-                requestId,
-              });
-            }
-          }),
-      ),
+      marcadasAgora.map(({ id }) => {
+        const m = porMensagem.get(id);
+        return emitirFalhaDeEntrega(admin, {
+          organizationId: orgId,
+          source: "recover-stuck-messages",
+          requestId,
+          falha: {
+            message_id: id,
+            conversation_id: m?.conversation_id ?? null,
+            contact_id: m?.contact_id ?? null,
+            contact: telefoneDoEmbed(m?.contacts),
+            sent_via: m?.sent_via ?? null,
+            erro: { codigo: "send_timeout", titulo: MOTIVO_DO_TIMEOUT },
+          },
+        });
+      }),
     );
 
     // Um aviso por org por rodada, não um por mensagem: quando um worker cai, o

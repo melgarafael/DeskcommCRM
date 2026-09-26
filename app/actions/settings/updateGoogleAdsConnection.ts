@@ -49,6 +49,13 @@ const entradaSchema = z.object({
     .optional(),
   conversion_action_id: z.string().trim().min(1).max(32).regex(/^\d+$/, "só dígitos"),
   enabled: z.boolean(),
+  qualification: z
+    .object({
+      stage_id: z.uuid().nullable(),
+      action_id: z.string().trim().min(1).max(32).regex(/^\d+$/).nullable(),
+    })
+    .refine((v) => Boolean(v.stage_id) === Boolean(v.action_id))
+    .optional(),
 });
 
 export type GoogleAdsConnectionInput = z.infer<typeof entradaSchema>;
@@ -73,6 +80,26 @@ export async function updateGoogleAdsConnection(
 
   const admin = createAdminClient();
 
+  const qualificacao = parsed.data.qualification;
+  if (qualificacao?.stage_id) {
+    if (qualificacao.action_id === parsed.data.conversion_action_id)
+      return {
+        ok: false,
+        error: "validation_failed",
+        details: "Use ações diferentes para qualificação e compra.",
+      };
+    const { data: etapa, error: erroEtapa } = await admin
+      .from("crm_stages")
+      .select("id")
+      .eq("organization_id", activeOrg.orgId)
+      .eq("id", qualificacao.stage_id)
+      .eq("is_won", false)
+      .eq("is_lost", false)
+      .maybeSingle();
+    if (erroEtapa) return { ok: false, error: "erro_ao_gravar" };
+    if (!etapa) return { ok: false, error: "validation_failed" };
+  }
+
   const loginCustomerId = parsed.data.login_customer_id?.trim() || null;
 
   // `update`, não `upsert`: a linha só existe depois do OAuth (a rota de
@@ -83,6 +110,12 @@ export async function updateGoogleAdsConnection(
   const { data, error } = await admin
     .from("ad_platform_connections")
     .update({
+      ...(qualificacao
+        ? {
+            google_qualification_stage_id: qualificacao.stage_id,
+            google_qualification_action_id: qualificacao.action_id,
+          }
+        : {}),
       google_customer_id: parsed.data.customer_id,
       google_login_customer_id: loginCustomerId,
       google_conversion_action_id: parsed.data.conversion_action_id,
@@ -115,6 +148,12 @@ export async function updateGoogleAdsConnection(
       platform: "google_ads",
       enabled: parsed.data.enabled,
       customer_id: parsed.data.customer_id,
+      ...(qualificacao
+        ? {
+            qualification_stage_id: qualificacao.stage_id,
+            qualification_action_id: qualificacao.action_id,
+          }
+        : {}),
       tem_login_customer_id: Boolean(loginCustomerId),
     },
   });

@@ -23,7 +23,7 @@
  */
 import { randomInt, randomUUID } from "node:crypto";
 
-import { test, type Page } from "@playwright/test";
+import { test, type Page } from "./helpers/test";
 
 import {
   abreConversa,

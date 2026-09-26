@@ -683,7 +683,13 @@ function TestPanel({
   // definição de padrão que volta pela porta dos fundos. A cerca em
   // `tests/unit/confianca-do-handoff-nao-e-similaridade.test.ts` passou a cobrir
   // `app/app/ai` por causa desta linha.
-  const confianca = result?.confidence ?? null;
+  //
+  // Decidindo (e com a IA de sempre respondendo), em produção vale a escolha do
+  // Jev — e este bloco diz o que ACONTECERIA, então lê inteiro o lado que vale.
+  // Lendo a intenção e a confiança da IA ao lado do agente do Jev, ele dizia
+  // "cairia no atendimento padrão" com o agente do Jev logo abaixo.
+  const vale = result?.jev?.decide ? result.jev : result;
+  const confianca = vale?.confidence ?? null;
   const abaixoDoMinimo =
     confianca !== null && result !== undefined && confianca < result.min_confidence;
   return (
@@ -721,9 +727,9 @@ function TestPanel({
           {!pending && <ArrowRight />}
         </Button>
         {result && (
-          <div className="rounded-md border border-border/60 p-3 text-sm">
+          <div className="rounded-md border border-border/60 p-3 text-sm" data-testid="teste-resultado">
             <p>
-              {t("Intenção")}: <span className="font-medium">{result.intent_name ?? t("nenhuma casou")}</span>
+              {t("Intenção")}: <span className="font-medium">{vale?.intent_name ?? t("nenhuma casou")}</span>
               {confianca !== null && (
                 <span className="ml-2 text-xs text-muted-foreground">
                   {t("confiança")} {(confianca * 100).toFixed(0)}%
@@ -738,11 +744,86 @@ function TestPanel({
             )}
             <p>
               {t("Agente que atenderia")}:{" "}
-              <span className="font-medium">{result.agent_name ?? t("nenhum (sem fallback)")}</span>
+              <span className="font-medium" data-testid="teste-agente-que-atenderia">
+                {vale?.agent_name ?? t("nenhum (sem fallback)")}
+              </span>
             </p>
           </div>
         )}
+        {result?.jev && <EscolhasLadoALado result={result} jev={result.jev} />}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * A escolha da IA de sempre e a do Jev, lado a lado, na mesma frase — é aqui que
+ * quem configura vê se os dois levariam o cliente ao MESMO agente antes de
+ * deixar o Jev decidir. Nada disto é gravado como comparação (só o atendimento
+ * de verdade conta no cartão do Jev).
+ */
+function EscolhasLadoALado({
+  result,
+  jev,
+}: {
+  result: RouterTestResult;
+  jev: NonNullable<RouterTestResult["jev"]>;
+}) {
+  const t = useT();
+  const porcento = (n: number) => `${(n * 100).toFixed(0)}%`;
+  const jevAbaixoDoMinimo = jev.intent_name !== null && jev.confidence !== null && jev.confidence < result.min_confidence;
+  // A mesma marca dos dois lados: decidindo, o bloco de cima lê só o Jev, e a
+  // escolha da IA abaixo do mínimo (que leva ao de reserva) ficava sem motivo.
+  const iaAbaixoDoMinimo =
+    result.intent_name !== null && result.confidence !== null && result.confidence < result.min_confidence;
+  return (
+    <div className="grid gap-2 sm:grid-cols-2" data-testid="teste-com-o-jev">
+      <div className="rounded-md border border-border/60 p-3 text-sm" data-testid="teste-escolha-da-ia">
+        <p className="text-xs text-muted-foreground">{t("Sua IA escolheu")}</p>
+        <p className="font-medium">
+          {result.confidence === null ? t("não respondeu") : (result.agent_name ?? t("nenhum (sem fallback)"))}
+        </p>
+        {result.confidence !== null && (
+          <p className="text-xs text-muted-foreground">
+            {result.intent_name ?? t("nenhuma intenção")} · {porcento(result.confidence)}
+            {iaAbaixoDoMinimo && ` — ${t("abaixo do mínimo")}`}
+          </p>
+        )}
+      </div>
+      <div className="rounded-md border border-border/60 p-3 text-sm" data-testid="teste-escolha-do-jev">
+        <p className="text-xs text-muted-foreground">{t("O Jev escolheu")}</p>
+        <p className="font-medium">
+          {jev.respondeu ? (jev.agent_name ?? t("nenhum (sem fallback)")) : t("não respondeu")}
+        </p>
+        {/* Sem motivo, "não respondeu" não levava a lugar nenhum: o porquê (a
+            chave, o crédito, o roteador sem intenções) está no cartão dele. */}
+        {!jev.respondeu && (
+          <Link className="text-xs underline underline-offset-4" href="/app/ai/providers">
+            {t("Ver o motivo no cartão do Jev")}
+          </Link>
+        )}
+        {jev.respondeu && jev.confidence !== null && (
+          <p className="text-xs text-muted-foreground">
+            {jev.intent_name ?? t("nenhuma intenção")} · {porcento(jev.confidence)}
+            {jevAbaixoDoMinimo && ` — ${t("abaixo do mínimo")}`}
+          </p>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground sm:col-span-2" data-testid="teste-quem-decide">
+        {jev.decide
+          ? t("O Jev decide esta tarefa: em produção, vale a escolha dele, e a sua IA fica de reserva.")
+          : jev.estado === "observando"
+            ? // Sem a resposta da IA não há "escolha da sua IA": vale a regra de sempre.
+              result.confidence === null
+              ? t(
+                  "O Jev só observa esta tarefa. Sem a resposta da sua IA, em produção vale a regra de sempre: o agente que já atendia a conversa ou o “Agente de fallback” do roteador.",
+                )
+              : t("O Jev só observa esta tarefa: em produção, vale a escolha da sua IA.")
+            : // Sem a resposta da IA, vale a regra de sempre, tenha o Jev respondido ou não (R2).
+              result.confidence === null
+              ? t("O Jev decide esta tarefa, mas sem a resposta da sua IA vale a regra de sempre — nunca só o Jev.")
+              : t("O Jev decide esta tarefa, mas não respondeu: em produção, a sua IA decidiria no lugar dele.")}
+      </p>
+    </div>
   );
 }

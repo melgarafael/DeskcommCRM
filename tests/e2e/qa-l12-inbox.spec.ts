@@ -12,7 +12,7 @@
  */
 import { randomUUID } from "node:crypto";
 
-import { test } from "@playwright/test";
+import { test } from "./helpers/test";
 import { randomInt } from "node:crypto";
 
 import {

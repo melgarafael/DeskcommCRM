@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { CredentialRow } from "@/hooks/ai/useCredentials";
 
 import { lerAmbiente } from "@/lib/instalacao/ambiente";
+import { fusoUtilizavel } from "@/lib/tempo/fusos";
 
 import { AgentForm } from "../[id]/_components/AgentForm";
 
@@ -56,6 +57,7 @@ export default async function NewAgentPage() {
         credentials={credentials}
         provedoresDaInstalacao={provedoresDaInstalacao()}
         channelSessions={channelSessions}
+        organizationTimezone={fusoUtilizavel(activeOrg.timezone)}
       />
     </div>
   );

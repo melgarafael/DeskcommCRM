@@ -16,6 +16,7 @@
  * `?erro=<código>`, nunca JSON — este endereço é aberto pelo navegador, num
  * clique de botão.
  */
+import { z } from "zod";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -41,7 +42,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!autorizado.ok) return autorizado.response;
   const { user, org } = autorizado;
 
-  const app = configuracaoDoGoogleAds();
+  const escolha = z
+    .enum(["google_ads", "data_manager"])
+    .safeParse(new URL(req.url).searchParams.get("api") ?? "data_manager");
+  if (!escolha.success) return voltarComErro("estado_invalido");
+  const api = escolha.data;
+  const app = configuracaoDoGoogleAds(api);
   if (!app) {
     // Não audita: não houve tentativa de conectar nada, e a instalação sem
     // chave não é um evento da organização — mesma régua do irmão da Agenda.
@@ -51,12 +57,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   let state: string;
   try {
     state = emitirEstado(
-      { organizationId: org.orgId, userId: user.id },
+      { organizationId: org.orgId, userId: user.id, api },
       { segredo: env.INTERNAL_SECRET, agora: new Date() },
     );
   } catch {
     return voltarComErro("estado_invalido");
   }
 
-  return NextResponse.redirect(montarUrlDeConsentimento(app, { state }));
+  return NextResponse.redirect(montarUrlDeConsentimento(app, { state, api }));
 }

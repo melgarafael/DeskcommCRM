@@ -18,6 +18,11 @@ export const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   "lead.created": "Quando entrar um contato novo (webhook)",
   "lead.stage_changed": "Quando um lead mudar de etapa",
   "message.received": "Quando chegar mensagem no WhatsApp",
+  // A frase é do ponto de vista de quem RECEBE o aviso: a falha é do envio, e
+  // é ela que manda o integrador verificar. "não for entregue" cobre os dois
+  // caminhos que emitem (recusa da plataforma e pré-voo), sem prometer que a
+  // causa é sempre a mesma.
+  "message.failed": "Quando uma mensagem não for entregue",
   "lead.tag_added": "Quando um lead ganhar uma tag",
   "contact.tag_added": "Quando um contato ganhar uma tag",
   // A frase evita "agendamento criado", que não diz ao operador o que ele vê na

@@ -12,7 +12,7 @@
  * Irmão dos dois formulários acima, e com o mesmo gate (admin + MFA na action).
  */
 
-import { useState, useTransition } from "react";
+import { useState, useSyncExternalStore, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -54,10 +54,12 @@ const EXEMPLO_DE_PARAMETROS =
  * Dockerfile — a URL colada na landing page apontaria para o lugar errado.
  * Mesma lição de `app/app/webhooks/_components/SourceDetail.tsx`.
  */
-function enderecoDeCaptura(slug: string): string {
-  const doBuild = process.env["NEXT_PUBLIC_APP_URL"] ?? "";
-  const base = typeof window !== "undefined" ? window.location.origin : doBuild;
-  return `${base}/api/v1/anuncios/meta/${slug}`;
+const assinarOrigem = () => () => {};
+const origemDoNavegador = () => window.location.origin;
+const origemNoServidor = () => "";
+
+function enderecoDeCaptura(slug: string, plataforma: "meta" | "google", origem: string): string {
+  return `${origem}/api/v1/anuncios/${plataforma}/${encodeURIComponent(slug)}`;
 }
 
 export function FormularioDeCapturaDeUtm({
@@ -65,7 +67,9 @@ export function FormularioDeCapturaDeUtm({
   idioma,
   slug,
   numerosConectados,
+  plataforma = "meta",
 }: {
+  plataforma?: "meta" | "google";
   estado: EstadoDaCaptura | null;
   idioma: Idioma;
   /** O apelido da organização na URL — é o `[org]` da rota pública. */
@@ -81,13 +85,15 @@ export function FormularioDeCapturaDeUtm({
   const [texto, setTexto] = useState(estado?.messageTemplate ?? TEXTO_PADRAO);
   const [habilitada, setHabilitada] = useState(estado?.habilitada ?? true);
 
-  const urlParaColar = `${enderecoDeCaptura(slug)}?${EXEMPLO_DE_PARAMETROS}`;
+  const origem = useSyncExternalStore(assinarOrigem, origemDoNavegador, origemNoServidor);
+  const urlParaColar = `${enderecoDeCaptura(slug, plataforma, origem)}${plataforma === "meta" ? `?${EXEMPLO_DE_PARAMETROS}` : ""}`;
   const podeSalvar = numero.trim().length >= 8 && texto.includes("{token}");
 
   function salvar(evento: React.FormEvent) {
     evento.preventDefault();
     startTransition(async () => {
       const resultado = await updateCapturaDeUtm({
+        plataforma: plataforma === "google" ? "google_ads" : "meta_ads",
         whatsapp_e164: numero,
         message_template: texto,
         enabled: habilitada,
@@ -109,10 +115,16 @@ export function FormularioDeCapturaDeUtm({
   }
 
   return (
-    <Card className="p-6">
+    <Card className="p-6" data-testid={`captura-${plataforma}`}>
       <form onSubmit={salvar} className="flex flex-col gap-5">
         <div className="flex flex-col gap-1">
-          <p className="font-medium">{t("Endereço de captura (sem script na página)")}</p>
+          <p className="font-medium">
+            {t(
+              plataforma === "google"
+                ? "Captura de origem do Google Ads"
+                : "Endereço de captura (sem script na página)",
+            )}
+          </p>
           <p className="text-sm text-muted-foreground">
             {t(
               "Em vez do link do WhatsApp, o botão da sua página aponta para este endereço. Ele guarda a origem, cria um código curto e abre o WhatsApp com esse código no texto — o visitante não vê nada além do botão de sempre.",
@@ -121,17 +133,17 @@ export function FormularioDeCapturaDeUtm({
         </div>
 
         <div className="flex flex-col gap-2">
-          <Label htmlFor="captura_numero">{t("Para qual WhatsApp mandar")}</Label>
+          <Label htmlFor={`${plataforma}_captura_numero`}>{t("Para qual WhatsApp mandar")}</Label>
           <Input
-            id="captura_numero"
-            list="captura_numeros_conectados"
+            id={`${plataforma}_captura_numero`}
+            list={`${plataforma}_captura_numeros_conectados`}
             value={numero}
             onChange={(e) => setNumero(e.target.value)}
             placeholder="+5511999999999"
           />
           {/* Os números conectados entram como SUGESTÃO, não como lista fechada:
               o número da landing page não precisa ser um canal do CRM. */}
-          <datalist id="captura_numeros_conectados">
+          <datalist id={`${plataforma}_captura_numeros_conectados`}>
             {numerosConectados.map((n) => (
               <option key={n} value={n} />
             ))}
@@ -144,32 +156,49 @@ export function FormularioDeCapturaDeUtm({
         </div>
 
         <div className="flex flex-col gap-2">
-          <Label htmlFor="captura_texto">{t("Texto que a pessoa vai enviar")}</Label>
+          <Label htmlFor={`${plataforma}_captura_texto`}>
+            {t("Texto que a pessoa vai enviar")}
+          </Label>
           <Input
-            id="captura_texto"
+            id={`${plataforma}_captura_texto`}
             value={texto}
             onChange={(e) => setTexto(e.target.value)}
             placeholder={TEXTO_PADRAO}
           />
           <p className="text-xs text-muted-foreground">
-            {t("Precisa conter o campo do código — é onde o código curto entra antes de abrir o WhatsApp.")}
+            {t(
+              "Precisa conter o campo do código — é onde o código curto entra antes de abrir o WhatsApp.",
+            )}
           </p>
         </div>
 
         <div className="flex items-center justify-between rounded-md border p-4">
           <div className="flex flex-col gap-1">
-            <Label htmlFor="captura_habilitada">{t("Endereço de captura ligado")}</Label>
+            <Label htmlFor={`${plataforma}_captura_habilitada`}>
+              {t("Endereço de captura ligado")}
+            </Label>
             <p className="text-xs text-muted-foreground">
               {t(
                 "Desligar faz o endereço parar de responder. Quem já usa o link do WhatsApp direto não é afetado.",
               )}
             </p>
           </div>
-          <Switch id="captura_habilitada" checked={habilitada} onCheckedChange={setHabilitada} />
+          <Switch
+            id={`${plataforma}_captura_habilitada`}
+            checked={habilitada}
+            onCheckedChange={setHabilitada}
+          />
         </div>
 
         <div className="rounded-md border p-4">
           <p className="text-sm font-medium">{t("Cole este endereço no botão da sua página")}</p>
+          {plataforma === "google" && (
+            <p className="mt-2 text-sm">
+              {t(
+                "O botão do site precisa repassar gclid, gbraid ou wbraid recebidos na página. Um endereço fixo sem esses parâmetros não identifica o clique. Mantenha o código na mensagem enviada ao WhatsApp.",
+              )}
+            </p>
+          )}
           <code className="mt-2 block overflow-x-auto rounded-md bg-muted/50 p-2 text-xs break-all">
             {urlParaColar}
           </code>

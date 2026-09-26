@@ -26,7 +26,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./helpers/test";
 import pg from "pg";
 
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
