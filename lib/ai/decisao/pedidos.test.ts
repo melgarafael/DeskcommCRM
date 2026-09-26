@@ -134,12 +134,18 @@ describe("o denominador: só onde o turno do agente rodaria", () => {
 });
 
 describe("o corte", () => {
-  it("0,9 é sim; 'Doy de baja la pauta?' (0,79) é não — negativo deliberado da regra", () => {
-    expect(CORTE_DO_PEDIDO).toBe(0.9);
-    expect(rotuloDoPedido(0.9)).toBe("sim");
-    expect(rotuloDoPedido(0.97)).toBe("sim");
-    expect(rotuloDoPedido(0.79)).toBe("nao");
-    expect(rotuloDoPedido(0.8999)).toBe("nao");
+  it("pessoa: 0,9; parar de receber: 0,8 — e 'Doy de baja la pauta?' (0,79) segue não, negativo deliberado da regra", () => {
+    expect(CORTE_DO_PEDIDO).toEqual({ humano: 0.9, opt_out: 0.8 });
+    expect(rotuloDoPedido("humano", 0.9)).toBe("sim");
+    expect(rotuloDoPedido("humano", 0.97)).toBe("sim");
+    expect(rotuloDoPedido("humano", 0.84)).toBe("nao");
+    expect(rotuloDoPedido("humano", 0.8999)).toBe("nao");
+    // Parar de receber: os pedidos naturais medidos com a chave real (0,84) contam,
+    // e o negativo deliberado da regra ("Doy de baja la pauta?", 0,79) não.
+    expect(rotuloDoPedido("opt_out", 0.84)).toBe("sim");
+    expect(rotuloDoPedido("opt_out", 0.8)).toBe("sim");
+    expect(rotuloDoPedido("opt_out", 0.79)).toBe("nao");
+    expect(rotuloDoPedido("opt_out", 0.02)).toBe("nao");
   });
 });
 

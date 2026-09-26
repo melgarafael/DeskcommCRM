@@ -86,13 +86,25 @@ export const TAREFAS_DOS_PEDIDOS = [TAREFA_DO_PEDIDO_DE_HUMANO, TAREFA_DO_PEDIDO
 export type IdDoPedido = (typeof TAREFAS_DOS_PEDIDOS)[number]["id"];
 
 /**
- * A probabilidade a partir da qual o Jev diz "é um pedido". Alto de propósito:
- * "Doy de baja la pauta?" (dar baixa numa pauta, não sair da lista) deu 0,79, e
- * é um NEGATIVO deliberado da regra de descadastro. Os pedidos de pessoa em
- * linguagem natural medidos ficaram entre 0,94 e 0,99, e os negativos em até
- * 0,40 — 0,9 separa os dois com folga dos dois lados.
+ * A probabilidade a partir da qual o Jev diz "é um pedido", POR PEDIDO — os dois
+ * erros não custam o mesmo.
+ *
+ * Pessoa, 0,9: os pedidos em linguagem natural medidos ficaram entre 0,94 e
+ * 0,99, e os negativos em até 0,40.
+ *
+ * Parar de receber, 0,8: medido com a chave real em 26/09 (instalação fresca),
+ * quatro pedidos naturais que a regra de hoje não pega deram 0,79 ("Chega dessas
+ * mensagens toda semana"), 0,84 ("Pode tirar meu número daí?"), 0,84 ("Parem
+ * com essas mensagens") e 0,97 ("não quero mais ser contatado") — com 0,9, três
+ * de quatro passavam calados. Deixar passar um descadastro custa caro (é direito
+ * do titular, e insistir é risco de banimento do número); um aviso a mais custa
+ * um olhar da equipe. O negativo deliberado da regra, "Doy de baja la pauta?"
+ * (dar baixa numa pauta, não sair da lista), deu 0,79 e fica de fora; os
+ * negativos comuns ("tem como parar a dor?") ficaram em 0,02.
+ * ponytail: calibrado com uma dúzia de frases; a observação existe para
+ * recalibrar com as mensagens de verdade de cada instalação.
  */
-export const CORTE_DO_PEDIDO = 0.9;
+export const CORTE_DO_PEDIDO = { humano: 0.9, opt_out: 0.8 } as const satisfies Record<IdDoPedido, number>;
 
 /** Por construção a regra de hoje disse não: é só onde o Jev é perguntado. */
 const A_REGRA_DISSE_NAO = "nao";
@@ -209,9 +221,9 @@ export function pedidosAPerguntar(config: ConfigDoJev, regraPegou: RegraPegou): 
   });
 }
 
-/** "sim" quando o Jev passa do corte. */
-export function rotuloDoPedido(noul: number): "sim" | "nao" {
-  return noul >= CORTE_DO_PEDIDO ? "sim" : "nao";
+/** "sim" quando o Jev passa do corte DAQUELE pedido. */
+export function rotuloDoPedido(id: IdDoPedido, noul: number): "sim" | "nao" {
+  return noul >= CORTE_DO_PEDIDO[id] ? "sim" : "nao";
 }
 
 /** A probabilidade de "sim", ou `null` quando a resposta não é uma. */
@@ -296,7 +308,7 @@ export async function observarPedidos(
 
     const respondidos = aPerguntar.flatMap(({ id, estado }) => {
       const noul = probabilidadeDoSim(r.respostas[id]);
-      return noul === null ? [] : [{ id, estado, noul, rotulo: rotuloDoPedido(noul) }];
+      return noul === null ? [] : [{ id, estado, noul, rotulo: rotuloDoPedido(id, noul) }];
     });
     if (respondidos.length < aPerguntar.length) {
       registrarFalha(alvo, "resposta_ilegivel", Date.now());
