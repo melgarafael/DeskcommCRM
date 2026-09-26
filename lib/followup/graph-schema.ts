@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { PRIORIDADES_DA_TAREFA } from '@/lib/tarefas/tipos';
+
 /**
  * Flow graph schema for the follow-up automation system.
  * Defines types and Zod validators for nodes, edges, and complete graphs.
@@ -15,6 +17,10 @@ export const NODE_TYPES = [
   'collect',
   'skill',
   'action',
+  // Lembrete interno (#1540): grava `crm_tasks` e NÃO envia mensagem. É a caixa
+  // que advocacia, saúde e serviços regulados precisam — o sistema lembra a
+  // equipe, a mensagem sai de uma pessoa.
+  'internal_task',
   'end',
 ] as const;
 export type NodeType = (typeof NODE_TYPES)[number];
@@ -245,6 +251,26 @@ export const actionConfigSchema = z.discriminatedUnion('mode', [
     template_id: z.string().uuid(),
   }),
 ]);
+
+/**
+ * Internal task node configuration (#1540) — os MESMOS campos da ação de
+ * automação `create_task`, de propósito: as duas portas criam a mesma tarefa,
+ * e campos diferentes virariam duas telas ensinando duas verdades.
+ *
+ * `atribuir_a` é nominal (`dono_do_lead`) porque o fluxo é publicado sem saber
+ * quem vai atender amanhã — o dono muda, o fluxo não.
+ */
+export const internalTaskConfigSchema = z.strictObject({
+  /** Título com `{{lead.title}}` e `{{contact.name}}`. */
+  titulo: z.string().min(1).max(200),
+  /** De quantos dias o prazo cai a partir do disparo. */
+  vence_em_dias: z.number().int().min(0).max(365),
+  atribuir_a: z.union([
+    z.literal('dono_do_lead'),
+    z.strictObject({ usuario_id: z.string().uuid() }),
+  ]),
+  prioridade: z.enum(PRIORIDADES_DA_TAREFA),
+});
 
 /**
  * One rule of a `condition` node. In `branching: 'per_check'` it IS a branch,
@@ -480,6 +506,17 @@ export const flowNodeSchema = z.discriminatedUnion('type', [
     }),
     config: actionConfigSchema,
   }),
+  // Internal task node (#1540): creates a CRM task, never sends a message
+  z.strictObject({
+    id: z.string().min(1),
+    type: z.literal('internal_task'),
+    label: z.string().min(1).max(60),
+    position: z.strictObject({
+      x: z.number(),
+      y: z.number(),
+    }),
+    config: internalTaskConfigSchema,
+  }),
   // End node: terminal state
   z.strictObject({
     id: z.string().min(1),
@@ -554,6 +591,13 @@ export const flowSettingsSchema = z.strictObject({
    * roteiro abandonado voltava a perguntar semanas depois (prova do #1130).
    */
   expira_em_horas: z.number().int().min(1).max(720).optional(),
+  /**
+   * SOMENTE INTERNO (#1540): o fluxo inteiro não fala com o cliente. A
+   * publicação (`validate-publish.ts`) recusa qualquer nó de ENVIO num fluxo
+   * com esta marca — é a garantia de que "só lembrete" não é uma intenção que
+   * alguém esquece de conferir antes de publicar.
+   */
+  somente_interno: z.boolean().optional(),
 });
 export type FlowSettings = z.infer<typeof flowSettingsSchema>;
 
