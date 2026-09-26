@@ -3745,8 +3745,48 @@ export const DICIONARIO: Traducoes = {
   "Abrir a conversa do pedido de": {
     es: "Abrir la conversación del pedido del",
   },
-  "Esta tarefa do Jev, por enquanto, só observa.": {
-    es: "Esta tarea de Jev, por ahora, solo observa.",
+  // O "Avisar a equipe" das tarefas em cascata e o aviso delas na Central (onda 3, bloco 3.2).
+  "Avisar a equipe": {
+    es: "Avisar al equipo",
+  },
+  "Avisa a equipe": {
+    es: "Avisa al equipo",
+  },
+  "Avisar a equipe?": {
+    es: "¿Avisar al equipo?",
+  },
+  "Agora o Jev avisa a equipe.": {
+    es: "Ahora Jev avisa al equipo.",
+  },
+  "Começou sozinha, só observando: ela só conta os pedidos até você escolher “Avisar a equipe”.": {
+    es: "Empezó sola, solo observando: solo cuenta los pedidos hasta que elijas “Avisar al equipo”.",
+  },
+  "Pedido para falar com uma pessoa, percebido pelo Jev": {
+    es: "Pedido de hablar con una persona, detectado por Jev",
+  },
+  "Pedido para parar de receber mensagens, percebido pelo Jev": {
+    es: "Pedido de dejar de recibir mensajes, detectado por Jev",
+  },
+  "Um cliente parece pedir para falar com uma pessoa": {
+    es: "Un cliente parece pedir hablar con una persona",
+  },
+  "Um cliente parece pedir para parar de receber mensagens": {
+    es: "Un cliente parece pedir dejar de recibir mensajes",
+  },
+  "O Jev percebeu o pedido na última mensagem do cliente, e a regra de hoje não o pegou: a conversa segue com o assistente. Abra a conversa e decida se alguém da equipe assume — o Jev não passa a conversa sozinho.": {
+    es: "Jev detectó el pedido en el último mensaje del cliente, y la regla de hoy no lo captó: la conversación sigue con el asistente. Abre la conversación y decide si alguien del equipo la asume; Jev no transfiere la conversación por su cuenta.",
+  },
+  "O Jev percebeu o pedido na última mensagem do cliente, e a regra de hoje não o pegou: nada foi bloqueado. Abra a conversa e decida se o contato deve deixar de receber mensagens — o Jev nunca bloqueia ninguém.": {
+    es: "Jev detectó el pedido en el último mensaje del cliente, y la regla de hoy no lo captó: no se bloqueó nada. Abre la conversación y decide si el contacto debe dejar de recibir mensajes; Jev nunca bloquea a nadie.",
+  },
+  "Abra a conversa e decida se alguém da equipe assume o atendimento.": {
+    es: "Abre la conversación y decide si alguien del equipo asume la atención.",
+  },
+  "Abra a conversa e decida se o contato deve deixar de receber mensagens.": {
+    es: "Abre la conversación y decide si el contacto debe dejar de recibir mensajes.",
+  },
+  "Abrir a conversa": {
+    es: "Abrir la conversación",
   },
   "A conta usa só as": { es: "El cálculo usa solo los" },
   "mensagens mais recentes do período.": { es: "mensajes más recientes del período." },

@@ -369,14 +369,17 @@ describe("o Jev nunca cala, bloqueia nem responde o cliente", () => {
   /**
    * Os pedidos do cliente (pessoa, parar de receber) são os que mais TENTAM o
    * Jev a agir: a regra de hoje, ao pegar os mesmos pedidos, passa a conversa e
-   * bloqueia o contato. O módulo dele escreve só nas tabelas do Jev, pela cadeia
-   * do supabase-js — e a regra de hoje, que mora no agent-engine, é chamada por
-   * quem o chama, nunca importada por ele.
+   * bloqueia o contato. O módulo dele escreve só nas tabelas do Jev e, em
+   * "Avisar a equipe", na Central, pela cadeia do supabase-js — e a regra de
+   * hoje, que mora no agent-engine, é chamada por quem o chama, nunca importada
+   * por ele.
    */
-  it("os pedidos do cliente escrevem só nas tabelas do Jev, e não importam a regra que passa a conversa (controle positivo)", () => {
+  it("os pedidos do cliente escrevem só nas tabelas do Jev e na Central, e não importam a regra que passa a conversa (controle positivo)", () => {
     const pedidos = modulosDoJev.find((m) => m.arquivo === "lib/ai/decisao/pedidos.ts")!;
     expect(pedidos.texto).toMatch(/\.from\("jev_observacoes"\)\.insert\(/);
     expect(pedidos.texto).toMatch(/\.from\("llm_calls"\)\.insert\(/);
+    // O efeito de "Avisar a equipe" é UM aviso — a única escrita fora das tabelas do Jev.
+    expect(pedidos.texto).toMatch(/\.from\("agent_inbox_items"\)\.insert\(/);
     expect(escritasNaConversa(pedidos.texto)).toEqual([]);
     expect(colunasQueCalam(pedidos.texto)).toEqual([]);
     expect(modulosImportados(pedidos.texto).filter((m) => m.includes("agent-engine/agent"))).toEqual([]);

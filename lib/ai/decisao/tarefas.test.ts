@@ -24,7 +24,6 @@ import {
   rotuloDaChamadaDoJev,
   TAREFA_DO_PEDIDO_DE_HUMANO,
   TAREFA_DO_PEDIDO_PARA_PARAR,
-  tarefaPodeDecidir,
 } from "@/lib/ai/decisao/tarefas";
 import { CONFERENCIA_DE_ENTRADA, CONFERENCIAS_DE_SAIDA } from "@/lib/ai/guardrails/lista-de-conferencia";
 import { PONTOS_DE_IA } from "@/lib/ai/pontos/registro";
@@ -83,10 +82,11 @@ describe("TAREFAS_DO_JEV", () => {
 
   /**
    * As em cascata acompanham uma REGRA sem IA: não têm ponto (nem cartão de
-   * ponto), respondem sim/não, cabem no aceite de cada mensagem, e ainda não
-   * decidem — o aviso que o `aoDecidir` delas descreve não existe nesta versão.
+   * ponto), respondem sim/não e cabem no aceite de cada mensagem. O `decidindo`
+   * delas é "Avisar a equipe": o que ele promete, na tela e no diálogo, é um
+   * aviso na Central — nunca passar a conversa nem bloquear.
    */
-  it("as tarefas em cascata: sem ponto, sim ou não, cada mensagem sozinha, e ainda só observam", () => {
+  it("as tarefas em cascata: sem ponto, sim ou não, cada mensagem sozinha, e decidir é só avisar", () => {
     const cascata = TAREFAS_DO_JEV.filter((t) => t.familia === "cascata");
     expect(cascata.map((t) => t.id)).toEqual([TAREFA_DO_PEDIDO_DE_HUMANO.id, TAREFA_DO_PEDIDO_PARA_PARAR.id]);
     for (const t of cascata) {
@@ -94,10 +94,11 @@ describe("TAREFAS_DO_JEV", () => {
       expect(t.aoDecidirNoPonto, t.id).toBeUndefined();
       expect(t.primitiva, t.id).toBe("noul");
       expect(t.alcance, t.id).toBe("mensagem");
-      expect(tarefaPodeDecidir(t), t.id).toBe(false);
+      for (const frase of [t.aoDecidir, t.aoConfirmarDecidir]) {
+        expect(frase, t.id).toContain("abre um aviso na Central");
+        expect(frase, t.id).toMatch(/nunca (passa a conversa|bloqueia)/);
+      }
     }
-    // As outras decidem como antes (controle).
-    expect(TAREFAS_DO_JEV.filter((t) => t.familia !== "cascata").every(tarefaPodeDecidir)).toBe(true);
     // E nascem observando para quem já tem o Jev ligado (R7), com o selo "Nova".
     const ligado = config({ ligado: true, modo: "decide", aceite: ACEITE });
     expect(cascata.map((t) => [estadoEfetivoDaTarefa(ligado, t), tarefaEhNova(ligado, t)])).toEqual([

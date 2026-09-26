@@ -20,8 +20,8 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * intenção ativo.
  *
  * PATCH liga, desliga, troca o modo do clima (`modo`, o nome da onda 1) e o
- * estado de uma tarefa (`tarefa` + `estado` — a em cascata ainda não aceita
- * `decidindo`). Ligar manda cada mensagem que o cliente
+ * estado de uma tarefa (`tarefa` + `estado` — na em cascata, `decidindo` é o
+ * "Avisar a equipe" da tela). Ligar manda cada mensagem que o cliente
  * escreve, uma de cada vez e sem o resto da conversa, a um fornecedor nos EUA, então exige chave validada e, na primeira
  * vez, o aceite explícito do administrador (LGPD, D6), que fica gravado com
  * quem e quando. O interruptor mora em `organizations.settings.jev`
@@ -52,7 +52,6 @@ import {
   TAREFA_DO_CLIMA,
   TAREFAS_DO_JEV,
   tarefaEhNova,
-  tarefaPodeDecidir,
   algumRoteadorQuePergunta,
   TAREFA_DA_MANIPULACAO,
   tarefaSemCamada,
@@ -549,12 +548,6 @@ export async function PATCH(req: NextRequest): Promise<Response> {
       : corpo.modo !== undefined
         ? { tarefa: TAREFA_DO_CLIMA.id, estado: ESTADO_DO_MODO[corpo.modo] }
         : null;
-  // A tarefa em cascata ainda não tem o que fazer decidindo (`tarefaPodeDecidir`):
-  // aceitar o pedido deixaria o cartão prometendo um aviso que não sai.
-  const tarefaPedida = pedido ? TAREFAS_DO_JEV.find((x) => x.id === pedido.tarefa) : undefined;
-  if (pedido?.estado === "decidindo" && tarefaPedida && !tarefaPodeDecidir(tarefaPedida)) {
-    return fail("jev_tarefa_so_observa", t("Esta tarefa do Jev, por enquanto, só observa."), 422, { requestId });
-  }
   const estadoAnterior = pedido ? estadoGravadoDaTarefa(atual, pedido.tarefa) : undefined;
   if (pedido && pedido.estado !== estadoAnterior) mudanca.tarefas = { [pedido.tarefa]: pedido.estado };
   if (corpo.ligado === false && atual.ligado) mudanca.ligado = false;

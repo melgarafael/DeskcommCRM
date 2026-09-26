@@ -40,7 +40,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { descreverErroDeValidacao } from "@/lib/ai/credenciais/erro-de-validacao";
 import type { EstadoDaTarefa } from "@/lib/ai/decisao/config";
 import { PROVEDOR_DO_JEV } from "@/lib/ai/decisao/credencial";
-import { TAREFA_DO_CLIMA, TAREFAS_DO_JEV, tarefaPodeDecidir } from "@/lib/ai/decisao/tarefas";
+import { TAREFA_DO_CLIMA, TAREFAS_DO_JEV } from "@/lib/ai/decisao/tarefas";
 import { O_QUE_FAZER_DO_JEV } from "@/lib/ai/decisao/textos";
 
 /** O corpo de `GET /api/v1/ai/jev` (`app/api/v1/ai/jev/route.ts`). */
@@ -223,6 +223,14 @@ function decideEmParte(d: DadosDoJev): boolean {
  * `aoDecidirNoPonto`) — o que decidir quer dizer muda de uma tarefa para outra.
  */
 const doRegistro = (tarefaId: string) => TAREFAS_DO_JEV.find((x) => x.id === tarefaId);
+
+/**
+ * A tarefa em cascata não decide nada no lugar da regra de hoje: o estado
+ * `decidindo` dela abre um aviso na Central, e a tela o chama "Avisar a
+ * equipe" — nunca "Deixar o Jev decidir", que prometeria passar a conversa ou
+ * bloquear o contato.
+ */
+const avisaAEquipe = (tarefaId: string) => doRegistro(tarefaId)?.familia === "cascata";
 
 /**
  * Como o Jev está no ponto `pontoId`, para a linha do cartão do ponto — pelo
@@ -563,7 +571,9 @@ function ProntoParaLigar({ dados, recarregar }: { dados: DadosDoJev; recarregar:
                     : tarefa.id === TAREFA_DO_CLIMA.id && climaSozinho
                       ? t("Decide sozinho")
                       : aoLigar === "decidindo"
-                        ? t("Decide")
+                        ? avisaAEquipe(tarefa.id)
+                          ? t("Avisa a equipe")
+                          : t("Decide")
                         : t("Só observa")}
                 )
               </span>
@@ -705,8 +715,7 @@ function Ligado({
         {tarefasDoCartao(dados).map((tarefa) => {
           const registro = doRegistro(tarefa.id);
           const aoDecidir = registro?.aoDecidir;
-          // A tarefa que a rota não aceita decidindo não ganha o botão.
-          const podeDecidir = registro === undefined || tarefaPodeDecidir(registro);
+          const avisa = avisaAEquipe(tarefa.id);
           const climaSozinho = estado === "sozinho" && tarefa.id === TAREFA_DO_CLIMA.id;
           const climaSemIa = tarefa.id === TAREFA_DO_CLIMA.id && !dados.tem_ia_de_sempre;
           return (
@@ -734,7 +743,9 @@ function Ligado({
                         ? t("Decide sozinho")
                         : tarefa.estado === "observando"
                           ? t("Só observa")
-                          : t("Decide")}
+                          : avisa
+                            ? t("Avisa a equipe")
+                            : t("Decide")}
                 </Badge>
               )}
               {/* "Nova": a tarefa é feminina. A chave "Novo" é a do agente novo. */}
@@ -745,7 +756,9 @@ function Ligado({
                 quer dizer, e "Manter só observando" (abaixo) o tira. */}
             {rodando && tarefa.novo && tarefa.estado === "observando" && (
               <p className="text-sm text-muted-foreground" data-testid={`jev-nova-${tarefa.id}`}>
-                {t("Começou sozinha, só observando: nada muda para o cliente até você deixar o Jev decidir.")}
+                {avisa
+                  ? t("Começou sozinha, só observando: ela só conta os pedidos até você escolher “Avisar a equipe”.")
+                  : t("Começou sozinha, só observando: nada muda para o cliente até você deixar o Jev decidir.")}
               </p>
             )}
 
@@ -806,13 +819,13 @@ function Ligado({
               <div className="flex flex-wrap items-center gap-3">
                 {/* Parada pela camada ou sem roteador, não há o que comparar antes
                     de decidir; e o clima sem a IA de sempre já decide sozinho. */}
-                {tarefa.estado === "observando" && !parada(tarefa) && !climaSozinho && podeDecidir && (
+                {tarefa.estado === "observando" && !parada(tarefa) && !climaSozinho && (
                   <Button
                     size="sm"
                     disabled={enviando}
                     onClick={() => setAConfirmar({ tarefa, aberto: true })}
                   >
-                    {t("Deixar o Jev decidir")}
+                    {avisa ? t("Avisar a equipe") : t("Deixar o Jev decidir")}
                   </Button>
                 )}
                 {/* Sem este caminho, quem deixou o Jev decidir só voltaria a
@@ -959,7 +972,12 @@ function Ligado({
       <ConfirmarDecidir
         pedido={aConfirmar}
         aoFechar={() => setAConfirmar((p) => p && { ...p, aberto: false })}
-        aoConfirmar={(tarefa) => void mudar(corpoDaMudanca(tarefa, "decidindo"), t("Agora o Jev decide."))}
+        aoConfirmar={(tarefa) =>
+          void mudar(
+            corpoDaMudanca(tarefa, "decidindo"),
+            avisaAEquipe(tarefa.id) ? t("Agora o Jev avisa a equipe.") : t("Agora o Jev decide."),
+          )
+        }
       />
     </div>
   );
@@ -982,11 +1000,12 @@ function ConfirmarDecidir({
   const t = useT();
   const tarefa = pedido?.tarefa ?? null;
   const efeito = tarefa ? doRegistro(tarefa.id)?.aoConfirmarDecidir : undefined;
+  const avisa = tarefa !== null && avisaAEquipe(tarefa.id);
   return (
     <AlertDialog open={pedido?.aberto === true} onOpenChange={(aberto) => !aberto && aoFechar()}>
       <AlertDialogContent data-testid="jev-confirmar-decidir" data-tarefa={tarefa?.id}>
         <AlertDialogHeader>
-          <AlertDialogTitle>{t("Deixar o Jev decidir?")}</AlertDialogTitle>
+          <AlertDialogTitle>{avisa ? t("Avisar a equipe?") : t("Deixar o Jev decidir?")}</AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-2">
               {tarefa && <p className="font-medium text-foreground">{t(tarefa.rotulo)}</p>}
@@ -997,7 +1016,9 @@ function ConfirmarDecidir({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
-          <AlertDialogAction onClick={() => tarefa && aoConfirmar(tarefa)}>{t("Deixar o Jev decidir")}</AlertDialogAction>
+          <AlertDialogAction onClick={() => tarefa && aoConfirmar(tarefa)}>
+            {avisa ? t("Avisar a equipe") : t("Deixar o Jev decidir")}
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

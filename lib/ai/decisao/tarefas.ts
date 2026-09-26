@@ -46,9 +46,10 @@ interface ComumDaTarefa {
    */
   aoDecidir: string;
   /**
-   * O que o diálogo de "Deixar o Jev decidir" diz ANTES do clique valer: o
-   * efeito concreto em produção, na língua de quem não é engenheiro. Um clique
-   * sem explicação mudava o atendimento de todas as mensagens seguintes.
+   * O que o diálogo de "Deixar o Jev decidir" (na cascata, "Avisar a equipe")
+   * diz ANTES do clique valer: o efeito concreto em produção, na língua de quem
+   * não é engenheiro. Um clique sem explicação mudava o atendimento de todas as
+   * mensagens seguintes.
    */
   aoConfirmarDecidir: string;
   /**
@@ -86,7 +87,9 @@ type OndeMora = { ponto: string; aoDecidirNoPonto: string } | { ponto?: undefine
  *  - `cascata`: o Jev só é perguntado onde a regra de hoje disse NÃO. Não há o
  *    que concordar — a regra, por construção, sempre disse não —, e o cartão
  *    mostra quantos pedidos ele PERCEBEU que ela deixou passar (`percebidos`,
- *    o fim da frase depois do "N pedidos").
+ *    o fim da frase depois do "N pedidos"). O estado `decidindo` dela se chama
+ *    "Avisar a equipe" na tela: o que ele faz é abrir um aviso na Central
+ *    (`./pedidos.ts`), nunca agir no lugar da regra.
  */
 type ComoConvive =
   | {
@@ -239,16 +242,6 @@ export const TAREFAS_DO_JEV: readonly TarefaDoJev[] = [
   TAREFA_DO_PEDIDO_DE_HUMANO,
   TAREFA_DO_PEDIDO_PARA_PARAR,
 ];
-
-/**
- * A tarefa pode ser posta decidindo NESTA versão? A em cascata ainda não: o
- * aviso na Central que o `aoDecidir` dela descreve ainda não existe, e decidir
- * não pode prometer o que não acontece. Até ele existir, nem o cartão oferece o
- * botão nem a rota aceita o pedido (`app/api/v1/ai/jev/route.ts`).
- */
-export function tarefaPodeDecidir(tarefa: Pick<TarefaDoJev, "familia">): boolean {
-  return tarefa.familia !== "cascata";
-}
 
 /**
  * A chamada que pergunta os dois pedidos (`./pedidos.ts`) precisa de um

@@ -34,14 +34,29 @@
  * já funciona. O disjuntor da conta (chave, crédito, limite de taxa) é o mesmo
  * das outras tarefas; o da pergunta recusada é desta chamada.
  *
+ * ═══ "AVISAR A EQUIPE" — O QUE O ESTADO DECIDINDO FAZ AQUI ═══
+ *
+ * Observando, ele só grava. Na tarefa que a empresa pôs em "Avisar a equipe"
+ * (o estado `decidindo`), o pedido percebido abre UM aviso na Central por
+ * conversa e pedido (`avisarAEquipe`), com o botão "Abrir a conversa" — e é
+ * tudo o que muda. O aviso não repete o que o cliente escreveu: a Central é
+ * lida pela organização inteira, e a conversa só por quem a enxerga; a frase
+ * fica na conversa, onde o botão leva quem pode lê-la. Ele fecha quando uma
+ * pessoa assume a conversa ou a encerra (o gatilho de atribuição, migration
+ * 0426), ou no "Marcar resolvido".
+ *
  * ═══ O QUE ELE NUNCA FAZ ═══
  *
- * Não passa a conversa, não cala, não bloqueia, não responde. Nesta versão ele
- * só grava: uma linha por pergunta em `jev_observacoes` e uma por chamada em
- * `llm_calls`. Sai só o que o cliente digitou na mensagem, passado pelo
- * `scrubMessage` (o aceite em vigor: cada mensagem, sozinha). Nunca lança.
+ * Não passa a conversa, não cala, não bloqueia, não responde — em estado
+ * nenhum. Grava uma linha por pergunta em `jev_observacoes`, uma por chamada em
+ * `llm_calls` e, avisando, o aviso. Sai só o que o cliente digitou na
+ * mensagem, passado pelo `scrubMessage` (o aceite em vigor: cada mensagem,
+ * sozinha). Nunca lança.
  */
+import type { InboxKind } from "@/lib/agent-engine/db/repository";
 import { costCents } from "@/lib/agent-engine/edge/llm/pricing";
+import { traduzir } from "@/lib/i18n/dicionario";
+import type { Idioma } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 import { scrubMessage } from "@/lib/sentry/scrub";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -95,6 +110,26 @@ const PERGUNTAS: Record<IdDoPedido, Pergunta> = {
     },
   },
 };
+
+/**
+ * O aviso de cada pedido na Central, em "Avisar a equipe". O texto é de quem
+ * decide o que fazer, e não repete o que o cliente escreveu (ver o cabeçalho).
+ * Gravado no idioma da organização: a Central mostra título e corpo como vieram.
+ */
+export const AVISOS_DOS_PEDIDOS = {
+  humano: {
+    kind: "jev_pedido_de_humano",
+    titulo: "Um cliente parece pedir para falar com uma pessoa",
+    corpo:
+      "O Jev percebeu o pedido na última mensagem do cliente, e a regra de hoje não o pegou: a conversa segue com o assistente. Abra a conversa e decida se alguém da equipe assume — o Jev não passa a conversa sozinho.",
+  },
+  opt_out: {
+    kind: "jev_parar_de_receber",
+    titulo: "Um cliente parece pedir para parar de receber mensagens",
+    corpo:
+      "O Jev percebeu o pedido na última mensagem do cliente, e a regra de hoje não o pegou: nada foi bloqueado. Abra a conversa e decida se o contato deve deixar de receber mensagens — o Jev nunca bloqueia ninguém.",
+  },
+} as const satisfies Record<IdDoPedido, { kind: InboxKind; titulo: string; corpo: string }>;
 
 /** O que a regra de hoje já pegou nesta mensagem. Quem chama roda a regra. */
 export type RegraPegou = Readonly<Record<IdDoPedido, boolean>>;
@@ -157,6 +192,8 @@ export interface EntradaDosPedidos {
   agentId: string | null;
   /** O que o cliente digitou. Só isso sai, e passado pelo `scrubMessage`. */
   mensagem: string;
+  /** O idioma da organização — o do aviso na Central. */
+  idioma: Idioma;
   config: ConfigDoJev;
   regraPegou: RegraPegou;
   turno: FatosDoTurno;
@@ -219,6 +256,7 @@ export async function observarPedidos(
       registrarSucesso(alvo);
     }
     await gravar(admin, e, respondidos, r);
+    await avisarAEquipe(admin, e, respondidos);
     return respondidos;
   } catch (erro) {
     logger.warn("Jev não pôde ser perguntado sobre os pedidos do cliente", {
@@ -284,14 +322,63 @@ async function gravar(
     }),
     latency_ms: r.latenciaMs,
     status: "ok",
-    // Ele só observa: quem decide o atendimento é a regra de hoje.
-    origem_da_escolha: "jev_observacao",
+    // Observando, a resposta dele só fica registrada. Avisando a equipe, é ela
+    // que decide se o aviso abre — o atendimento segue com a regra de hoje.
+    origem_da_escolha: respondidos.some((p) => p.estado === "decidindo") ? "jev" : "jev_observacao",
   });
   if (custoErr) {
     logger.warn("custo do Jev nos pedidos do cliente não foi gravado", {
       organization_id: e.organizationId,
       erro: custoErr.message.slice(0, 200),
     });
+  }
+}
+
+/**
+ * "Avisar a equipe": cada pedido percebido (passou do corte) numa tarefa em
+ * `decidindo` abre UM aviso na Central — um aberto por conversa e pedido.
+ *
+ * ponytail: busca e escrita em duas idas, sem trava — a corrida que `./aviso.ts`
+ * e `insertInboxItem` declaram: dois drains na mesma conversa no mesmo instante
+ * podem abrir dois avisos iguais. Um índice único parcial fecharia isso e
+ * quebraria o "Reabrir" de um aviso resolvido com outro aberto.
+ */
+async function avisarAEquipe(admin: Admin, e: EntradaDosPedidos, respondidos: readonly PedidoRespondido[]): Promise<void> {
+  for (const p of respondidos) {
+    if (p.estado !== "decidindo" || p.rotulo !== "sim") continue;
+    const aviso = AVISOS_DOS_PEDIDOS[p.id];
+    const { data: abertos, error: erroDaBusca } = await admin
+      .from("agent_inbox_items")
+      .select("id")
+      .eq("organization_id", e.organizationId)
+      .eq("kind", aviso.kind)
+      .eq("ref_kind", "conversation")
+      .eq("ref_id", e.conversationId)
+      .eq("status", "open")
+      .limit(1);
+    if (erroDaBusca) {
+      logger.warn("busca do aviso do pedido do cliente falhou — aviso não aberto", {
+        organization_id: e.organizationId,
+        erro: erroDaBusca.message.slice(0, 200),
+      });
+      continue;
+    }
+    if ((abertos ?? []).length > 0) continue;
+    const { error } = await admin.from("agent_inbox_items").insert({
+      organization_id: e.organizationId,
+      kind: aviso.kind,
+      severity: "warn",
+      title: traduzir(aviso.titulo, e.idioma),
+      body: traduzir(aviso.corpo, e.idioma),
+      ref_kind: "conversation",
+      ref_id: e.conversationId,
+    });
+    if (error) {
+      logger.warn("aviso do pedido do cliente na Central não foi gravado", {
+        organization_id: e.organizationId,
+        erro: error.message.slice(0, 200),
+      });
+    }
   }
 }
 

@@ -780,7 +780,8 @@ describe("CartaoDoJev — por tarefa", () => {
   /**
    * As tarefas em cascata não concordam com nada — o Jev só é perguntado onde a
    * regra de hoje disse não —: contam os pedidos que ele percebeu, com as
-   * conversas. E, nesta versão, só observam: o botão de decidir não aparece.
+   * conversas. O `decidindo` delas é "Avisar a equipe": um aviso na Central,
+   * nunca "Deixar o Jev decidir".
    */
   describe("as tarefas em cascata", () => {
     const HUMANO = {
@@ -836,7 +837,7 @@ describe("CartaoDoJev — por tarefa", () => {
       unmount();
     });
 
-    it("só observa: sem 'Deixar o Jev decidir', mas com pausar e manter", () => {
+    it("observando: o botão é 'Avisar a equipe', nunca 'Deixar o Jev decidir' — com pausar e manter", () => {
       montar(
         dados({
           config: { ligado: true, modo: "observacao" },
@@ -848,12 +849,52 @@ describe("CartaoDoJev — por tarefa", () => {
       );
       const linha = within(screen.getByTestId("jev-tarefa-humano"));
       expect(linha.queryByRole("button", { name: "Deixar o Jev decidir" })).toBeNull();
+      expect(linha.getByRole("button", { name: "Avisar a equipe" })).toBeInTheDocument();
       expect(linha.getByRole("button", { name: "Pausar esta tarefa" })).toBeInTheDocument();
       expect(linha.getByRole("button", { name: "Manter só observando" })).toBeInTheDocument();
-      // Controle: o clima, na mesma tela, oferece.
+      // A tarefa nova diz o que o selo quer dizer — sem prometer decisão.
+      expect(screen.getByTestId("jev-nova-humano")).toHaveTextContent("só conta os pedidos até você escolher “Avisar a equipe”");
+      // Controle: o clima, na mesma tela, decide.
       expect(
         within(screen.getByTestId("jev-tarefa-clima")).getByRole("button", { name: "Deixar o Jev decidir" }),
       ).toBeInTheDocument();
+    });
+
+    it.each([
+      ["humano", TAREFA_DO_PEDIDO_DE_HUMANO],
+      ["opt_out", TAREFA_DO_PEDIDO_PARA_PARAR],
+    ] as const)("%s: 'Avisar a equipe' pede confirmação com o efeito — e só o diálogo grava", async (id, registro) => {
+      montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [{ ...HUMANO, id, rotulo: registro.rotulo, oQueFaz: registro.oQueFaz }],
+        }),
+      );
+      fireEvent.click(within(screen.getByTestId(`jev-tarefa-${id}`)).getByRole("button", { name: "Avisar a equipe" }));
+      const dialogo = await screen.findByRole("alertdialog");
+      expect(dialogo).toHaveAttribute("data-tarefa", id);
+      expect(within(dialogo).getByRole("heading")).toHaveTextContent("Avisar a equipe?");
+      expect(dialogo).toHaveTextContent(registro.aoConfirmarDecidir);
+      expect(dialogo).not.toHaveTextContent("Deixar o Jev decidir");
+      expect(chamadas.filter((c) => c.metodo === "PATCH")).toEqual([]);
+      fireEvent.click(within(dialogo).getByRole("button", { name: "Avisar a equipe" }));
+      await waitFor(() => expect(recarregar).toHaveBeenCalledTimes(1));
+      expect(chamadas.filter((c) => c.metodo === "PATCH").map((c) => c.corpo)).toEqual([{ tarefa: id, estado: "decidindo" }]);
+    });
+
+    it("avisando: o selo diz 'Avisa a equipe', a frase diz o que acontece, e dá para voltar a só observar", () => {
+      montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [{ ...HUMANO, estado: "decidindo", novo: false, percebidos: { dias: 30, pedidos: 0, conversas: [] } }],
+        }),
+      );
+      const linha = screen.getByTestId("jev-tarefa-humano");
+      expect(linha).toHaveAttribute("data-estado", "decidindo");
+      expect(linha).toHaveTextContent("Avisa a equipe");
+      expect(linha).not.toHaveTextContent(/\bDecide\b/);
+      expect(screen.getByTestId("jev-decide-humano")).toHaveTextContent(TAREFA_DO_PEDIDO_DE_HUMANO.aoDecidir);
+      expect(within(linha).getByRole("button", { name: "Voltar a só observar" })).toBeInTheDocument();
     });
 
     it("fala espanhol com quem escolheu espanhol, no singular e no plural", () => {

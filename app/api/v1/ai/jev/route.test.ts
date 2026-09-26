@@ -866,19 +866,32 @@ describe("o Jev por tarefa na rota", () => {
     });
   });
 
-  it("PATCH: a tarefa em cascata ainda não aceita decidindo — só observar ou pausar", async () => {
+  /**
+   * O `decidindo` da tarefa em cascata é o "Avisar a equipe" da tela: o aviso
+   * na Central existe (`lib/ai/decisao/pedidos.ts`), e a rota aceita o pedido
+   * como o de qualquer tarefa — gravado, auditado, e sem mexer no clima.
+   */
+  it("PATCH: a tarefa em cascata aceita decidindo (Avisar a equipe), grava só ela e audita", async () => {
     estado.credenciais = [credencial()];
     estado.settings = { jev: { ligado: true, modo: "observacao", aceite: ACEITE_ANTIGO } };
     for (const tarefa of ["humano", "opt_out"]) {
-      const recusado = await mudar({ tarefa, estado: "decidindo" });
-      expect(recusado.status).toBe(422);
-      expect(recusado.corpo.error.code).toBe("jev_tarefa_so_observa");
+      const aceito = await mudar({ tarefa, estado: "decidindo" });
+      expect(aceito.status, tarefa).toBe(200);
+      expect(aceito.corpo.data.alterado, tarefa).toBe(true);
     }
-    expect((estado.settings.jev as Linha).tarefas).toBeUndefined();
-    expect(audit).not.toHaveBeenCalled();
-    // Pausar e observar seguem valendo.
-    expect((await mudar({ tarefa: "humano", estado: "desligada" })).status).toBe(200);
-    expect((estado.settings.jev as { tarefas: Linha }).tarefas).toMatchObject({ humano: { estado: "desligada" } });
+    expect(estado.settings.jev).toMatchObject({
+      modo: "observacao",
+      tarefas: { humano: { estado: "decidindo" }, opt_out: { estado: "decidindo" } },
+    });
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "ai.jev.tarefa_alterada",
+        metadata: expect.objectContaining({ tarefa: "opt_out", estado: "decidindo" }),
+      }),
+    );
+    // E volta a só observar pelo mesmo caminho.
+    expect((await mudar({ tarefa: "humano", estado: "observando" })).status).toBe(200);
+    expect((estado.settings.jev as { tarefas: Linha }).tarefas).toMatchObject({ humano: { estado: "observando" } });
   });
 
   it("PATCH de uma tarefa: grava só ela, espelha o clima no `modo` e audita com a tarefa", async () => {

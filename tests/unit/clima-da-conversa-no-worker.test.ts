@@ -47,6 +47,7 @@ vi.mock("@/lib/crypto/aes_gcm", () => ({
 import { generateObject } from "ai";
 
 import { registrarFalha } from "@/lib/ai/decisao/disjuntor";
+import { AVISOS_DOS_PEDIDOS } from "@/lib/ai/decisao/pedidos";
 import { AVISO_DO_JEV, O_QUE_FAZER_DO_JEV } from "@/lib/ai/decisao/textos";
 import { TITULOS_ANTIGOS_DO_AVISO_DO_JEV } from "@/lib/ai/decisao/textos";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -1013,6 +1014,44 @@ describe("os pedidos do cliente no worker de clima", () => {
     expect(resultado).toEqual({ skipped: false, sentiment_score: 0 });
     expect(banco.jev_observacoes?.map((l) => l.tarefa)).toEqual(["humano", "opt_out"]);
   });
+
+  /**
+   * "Avisar a equipe" pelo worker de verdade: o aviso sai na Central, no
+   * idioma da organização (lido aqui, no `locale` dela), na conversa — e a
+   * conversa e o contato ficam como estavam.
+   */
+  it.each(["pt-BR", "es"] as const)(
+    "humano em Avisar a equipe (%s): a frase natural abre UM aviso na Central, e nada muda na conversa",
+    async (idioma) => {
+      fornecedor(respostaPorPergunta({ humano: 0.97, opt_out: 0.03 }));
+      const c = jevLigado("decide");
+      const jev = (c.settings as { jev: Linha }).jev;
+      const cenario = { ...c, settings: { ...c.settings, jev: { ...jev, tarefas: { humano: { estado: "decidindo" } } } } };
+      const banco = comAgenteNoAr(cenario);
+      banco.organizations![0]!.locale = idioma;
+      const { resultado } = await rodar(cenario, banco);
+
+      expect(resultado.skipped, "o clima segue (controle)").toBe(false);
+      expect(banco.agent_inbox_items).toEqual([
+        expect.objectContaining({
+          organization_id: ORG,
+          kind: "jev_pedido_de_humano",
+          severity: "warn",
+          status: "open",
+          title: traduzir(AVISOS_DOS_PEDIDOS.humano.titulo, idioma),
+          ref_kind: "conversation",
+          ref_id: CONV,
+        }),
+      ]);
+      expect(JSON.stringify(banco.agent_inbox_items)).not.toContain("alguém de verdade");
+      expect(linhasDoJev(banco).find((l) => l.purpose === "jev_pedidos")).toMatchObject({ origem_da_escolha: "jev" });
+      // O Jev só avisou: a conversa e o contato são os de antes.
+      expect(banco.contacts).toEqual([{ id: CONTATO, organization_id: ORG, is_blocked: false }]);
+      expect(banco.conversations).toEqual([
+        { id: CONV, organization_id: ORG, channel_session_id: null, active_ai_agent_id: null, contact_id: CONTATO, is_group: false },
+      ]);
+    },
+  );
 
   it("Jev desligado: com o agente no ar, os pedidos também não saem", async () => {
     fornecedor(respostaPorPergunta({}));

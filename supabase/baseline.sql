@@ -10093,6 +10093,16 @@ alter table public.agent_inbox_items
     -- mesma constraint em N blocos quebra o `update.sh` de todo clone com
     -- vocabulário posterior (lição do #159).
     'canal_mudo_sem_numero',
+    -- (migration 0426) O Jev percebeu, numa mensagem em que a regra de hoje não
+    -- viu nada, um pedido para falar com uma pessoa ou para parar de receber
+    -- mensagens, e a empresa escolheu "Avisar a equipe". Um kind por pedido, e
+    -- não `other`: a Central dá rótulo e destino por kind, e o `other` não leva
+    -- a uma conversa (lib/ai/inbox-destino.ts); e o aviso é um por CONVERSA e
+    -- pedido. O Jev só abre o aviso — quem passa a conversa ou bloqueia é a
+    -- regra de hoje, ou uma pessoa. NESTA lista pelas razões de sempre (#159;
+    -- a janela do `midia-nao-lida.test.ts`).
+    'jev_pedido_de_humano',
+    'jev_parar_de_receber',
     'other'
   ));
 
@@ -38732,6 +38742,33 @@ revoke all    on function public.fn_expurgar_observacoes_do_jev(int,int) from pu
 revoke execute on function public.fn_expurgar_observacoes_do_jev(int,int) from anon;
 revoke execute on function public.fn_expurgar_observacoes_do_jev(int,int) from authenticated;
 grant  execute on function public.fn_expurgar_observacoes_do_jev(int,int) to service_role;
+
+-- ---- os avisos do Jev na Central fecham quando uma pessoa assume (migration 0426) ----
+--
+-- Os dois kinds novos entraram no bloco ÚNICO de `agent_inbox_items_kind_check`
+-- (o do `capabilities_missing`, migration 0105), não aqui: um segundo bloco da
+-- mesma constraint é o defeito do #159. Aqui fica só a função do gatilho de
+-- atribuição da conversa, derivada do corpo vigente (o da 0228, mais acima):
+-- a MESMA condição que já fecha o `routing_unassigned` — uma pessoa ficou com a
+-- conversa, ou ela saiu dos estados abertos — passa a fechar também o aviso do
+-- Jev daquela conversa. O resto do corpo é byte a byte o de antes. Racional
+-- inteiro na migration 0426.
+create or replace function public.fn_routing_assignment_changed()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ if new.assigned_to_user_id is not null or new.status not in('open','pending','claimed','ai_handling') then
+  update public.agent_inbox_items set status='resolved' where organization_id=new.organization_id
+   and kind='routing_unassigned' and ref_id=new.id and status<>'resolved';
+  update public.agent_inbox_items set status='resolved',resolved_at=now() where organization_id=new.organization_id
+   and kind in('jev_pedido_de_humano','jev_parar_de_receber') and ref_kind='conversation' and ref_id=new.id
+   and status<>'resolved';
+ elsif old.assigned_to_user_id is not null or old.status not in('open','pending','claimed','ai_handling') then
+  perform public.fn_request_channel_routing(new.organization_id,new.id);
+ end if;
+ return new;
+end;
+$$;
+revoke all on function public.fn_routing_assignment_changed() from public,anon,authenticated;
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --

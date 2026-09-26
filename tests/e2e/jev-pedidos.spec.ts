@@ -21,7 +21,11 @@
  *  - "me deixa em paz": a regra pega só como PROVÁVEL (não bloqueia o contato),
  *    e a chamada sai só com a pergunta de pessoa — a cascata vista com controle
  *    positivo na mesma mensagem, que "PARAR" não dá: com o contato bloqueado o
- *    turno nem rodaria, e nada seria perguntado de qualquer forma.
+ *    turno nem rodaria, e nada seria perguntado de qualquer forma;
+ *  - com o pedido de pessoa em "Avisar a equipe" (bloco 3.2), a frase natural
+ *    de um quarto cliente abre UM aviso na Central, com "Abrir a conversa"
+ *    levando a ela — e a conversa segue sem dono, sem silêncio e sem bloqueio,
+ *    no mesmo estado da conversa que o Jev só observou.
  *
  * O turno do agente só roda com um agente no ar no número: esta spec publica um
  * agente SÓ dela no número da entrada de mensagens, pelo service role, e o apaga
@@ -45,7 +49,15 @@ import { createClient } from "@supabase/supabase-js";
 
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 
-import { abrirOCartao, credsDoJev, drenar, escoarAFila, limparOJev, mandarMensagemDoCliente } from "./helpers/jev";
+import {
+  abrirOCartao,
+  clicarEEsperarAMudanca,
+  credsDoJev,
+  drenar,
+  escoarAFila,
+  limparOJev,
+  mandarMensagemDoCliente,
+} from "./helpers/jev";
 import { lerCreds, loginComoAdmin, type CredsE2E } from "./helpers/login-admin";
 
 const BASE_DO_JEV = process.env.JEV_API_BASE_URL ?? "";
@@ -63,8 +75,12 @@ const base = String(Date.now()).slice(-5);
 const CLIENTE_QUE_PARA = `${base}1`;
 const CLIENTE_QUE_PEDE_PESSOA = `${base}2`;
 const CLIENTE_EM_PAZ = `${base}3`;
+const CLIENTE_AVISADO = `${base}4`;
 const FRASE_NATURAL = `Quero falar com alguém de verdade aí, não com robô (${CLIENTE_QUE_PEDE_PESSOA})`;
 const FRASE_EM_PAZ = `Me deixa em paz (${CLIENTE_EM_PAZ})`;
+const FRASE_AVISADA = `Chama alguém de verdade pra mim, por favor, não quero robô (${CLIENTE_AVISADO})`;
+/** O título do aviso na Central (`AVISOS_DOS_PEDIDOS.humano.titulo`), em pt-BR. */
+const TITULO_DO_AVISO = "Um cliente parece pedir para falar com uma pessoa";
 
 const { url, serviceRole } = credenciaisSupabaseDeTeste();
 const admin = createClient(url, serviceRole, { auth: { persistSession: false } });
@@ -147,12 +163,34 @@ async function publicarUmAgenteNoNumero(sessao: string): Promise<void> {
   );
 }
 
-/** As observações dos pedidos desta organização: o "1 pedido" do cartão não pode herdar a rodada de antes. */
+/**
+ * As observações e os avisos dos pedidos desta organização: o "1 pedido" do
+ * cartão e o "UM aviso" da Central não podem herdar a rodada de antes.
+ */
 async function limparOsPedidos(): Promise<void> {
   await ok(
     admin.from("jev_observacoes").delete().eq("organization_id", orgId).in("tarefa", ["humano", "opt_out"]),
     "limpar as observações dos pedidos",
   );
+  await ok(
+    admin
+      .from("agent_inbox_items")
+      .delete()
+      .eq("organization_id", orgId)
+      .in("kind", ["jev_pedido_de_humano", "jev_parar_de_receber"]),
+    "limpar os avisos dos pedidos",
+  );
+}
+
+async function conversaDaMensagem(corpo: string): Promise<string> {
+  const { data, error } = await admin
+    .from("messages")
+    .select("conversation_id")
+    .eq("organization_id", orgId)
+    .eq("body", corpo)
+    .single();
+  if (error) throw new Error(`achar a conversa da mensagem: ${error.message}`);
+  return (data as { conversation_id: string }).conversation_id;
 }
 
 async function esperarAPerguntaSobre(page: Page, trecho: string): Promise<void> {
@@ -163,7 +201,8 @@ async function esperarAPerguntaSobre(page: Page, trecho: string): Promise<void> 
 }
 
 test.describe("Jev — os pedidos do cliente, pela tela", () => {
-  test.describe.configure({ timeout: 240_000 });
+  // Três esperas pelo dreno (até 90 s cada, no pior caso) e a Central: 6 min de teto.
+  test.describe.configure({ timeout: 360_000 });
 
   test.beforeAll(async () => {
     let alvo: URL;
@@ -342,6 +381,81 @@ test.describe("Jev — os pedidos do cliente, pela tela", () => {
         ).toBeVisible({ timeout: 5_000 });
       }).toPass({ timeout: 45_000, intervals: [1_000, 2_000, 3_000] });
       await expect(page.getByText("jev_pedidos", { exact: true })).toHaveCount(0);
+    });
+
+    await test.step("'Avisar a equipe' no pedido de pessoa: o diálogo diz o efeito antes de valer", async () => {
+      const cartao = await abrirOCartao(page);
+      const linha = cartao.getByTestId("jev-tarefa-humano");
+      await expect(linha.getByRole("button", { name: "Deixar o Jev decidir" })).toHaveCount(0);
+      await linha.getByRole("button", { name: "Avisar a equipe" }).click();
+      const dialogo = page.getByRole("alertdialog");
+      await expect(dialogo).toHaveAttribute("data-tarefa", "humano");
+      await expect(dialogo).toContainText("Avisar a equipe?");
+      await expect(dialogo).toContainText("abre um aviso na Central para alguém da equipe decidir. Ele nunca passa a conversa sozinho.");
+      await clicarEEsperarAMudanca(page, dialogo.getByRole("button", { name: "Avisar a equipe" }));
+      // O cartão se relê sozinho depois do clique — é a tela, e não a rota, que se prova.
+      await expect(page.getByTestId("jev-tarefa-humano")).toHaveAttribute("data-estado", "decidindo", { timeout: 15_000 });
+      await expect(page.getByTestId("jev-tarefa-humano")).toContainText("Avisa a equipe");
+      // O pedido de parar de receber segue só observando: cada tarefa, a sua escolha.
+      await expect(page.getByTestId("jev-tarefa-opt_out")).toHaveAttribute("data-estado", "observando");
+    });
+
+    await test.step("a frase natural de outro cliente abre UM aviso na Central, que leva à conversa", async () => {
+      await mandarMensagemDoCliente(page, FRASE_AVISADA, CLIENTE_AVISADO, 1);
+      await esperarAPerguntaSobre(page, FRASE_AVISADA);
+      const avisada = await conversaDaMensagem(FRASE_AVISADA);
+
+      const item = page.getByTestId("inbox-item").filter({ hasText: TITULO_DO_AVISO });
+      await expect(async () => {
+        await page.goto("/app/ai/inbox");
+        await expect(item).toHaveCount(1, { timeout: 5_000 });
+      }).toPass({ timeout: 45_000, intervals: [1_000, 2_000, 3_000] });
+      await expect(item).toContainText("Pedido para falar com uma pessoa, percebido pelo Jev");
+      await expect(item).toContainText("o Jev não passa a conversa sozinho");
+      // A Central é lida pela empresa inteira: o que o cliente escreveu fica na conversa.
+      await expect(item).not.toContainText("robô");
+      await expect(item.getByRole("link", { name: "Abrir a conversa" })).toHaveAttribute("href", `/app/inbox/${avisada}`);
+      await page.screenshot({ path: ".superpowers/evidence/jev/central-aviso-do-pedido.png", fullPage: true });
+    });
+
+    await test.step("a conversa avisada segue como a observada: sem dono, sem silêncio, sem bloqueio", async () => {
+      const avisada = await conversaDaMensagem(FRASE_AVISADA);
+      const { data, error } = await admin
+        .from("conversations")
+        .select("id, status, assigned_to_user_id, assignee_kind, bot_silenced_until, contact_id")
+        .in("id", [avisada, conversa]);
+      expect(error).toBeNull();
+      type Conversa = {
+        id: string;
+        status: string;
+        assigned_to_user_id: string | null;
+        assignee_kind: string | null;
+        bot_silenced_until: string | null;
+        contact_id: string;
+      };
+      const linhas = (data ?? []) as Conversa[];
+      const a = linhas.find((c) => c.id === avisada)!;
+      const o = linhas.find((c) => c.id === conversa)!;
+      expect(a.assigned_to_user_id).toBeNull();
+      expect(a.assignee_kind).not.toBe("user");
+      expect(a.bot_silenced_until).toBeNull();
+      // O mesmo caminho, a mesma mensagem natural — só o aviso de diferença.
+      expect(a.status).toBe(o.status);
+      const { data: contato, error: contatoErr } = await admin
+        .from("contacts")
+        .select("is_blocked, force_human")
+        .eq("id", a.contact_id)
+        .single();
+      expect(contatoErr).toBeNull();
+      expect(contato).toEqual({ is_blocked: false, force_human: false });
+      // Nenhuma passagem: o único aviso da conversa é o do Jev.
+      const { data: avisos, error: avisosErr } = await admin
+        .from("agent_inbox_items")
+        .select("kind, status")
+        .eq("organization_id", orgId)
+        .eq("ref_id", avisada);
+      expect(avisosErr).toBeNull();
+      expect(avisos).toEqual([{ kind: "jev_pedido_de_humano", status: "open" }]);
     });
   });
 });

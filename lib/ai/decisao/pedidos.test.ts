@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 import { detectHumanHandoffRequest } from "@/lib/agent-engine/agent/human-handoff";
 import { lerConfigDoJev } from "@/lib/ai/decisao/config";
 import {
+  AVISOS_DOS_PEDIDOS,
   CORTE_DO_PEDIDO,
   observarPedidos,
   pedidosAPerguntar,
@@ -21,6 +22,7 @@ import {
   type FatosDoTurno,
   type RegraPegou,
 } from "@/lib/ai/decisao/pedidos";
+import { DICIONARIO } from "@/lib/i18n/dicionario";
 import { ehOptOutProvavel, ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
 
 const ADMIN = "22222222-2222-4222-8222-222222222222";
@@ -105,20 +107,37 @@ describe("o corte", () => {
 
 type Linha = Record<string, unknown>;
 
-/** Um cliente admin de brinquedo: guarda o que se insere, e pode recusar uma tabela. */
-function adminFalso(recusar: Record<string, { code: string; message: string }> = {}) {
+/**
+ * Um cliente admin de brinquedo: guarda o que se insere, pode recusar uma
+ * tabela, e responde à busca pelos `abertos` que casam com os `eq`. Anota cada
+ * operação (`tabela.metodo`): qualquer outra — um `update`, um `delete` — nem
+ * existe aqui, lança, e o caso de R3 a vê pela ausência do aviso.
+ */
+function adminFalso(recusar: Record<string, { code: string; message: string }> = {}, abertos: Linha[] = []) {
   const inseridas: Record<string, Linha[]> = {};
+  const operacoes: string[] = [];
   const admin = {
-    from: (tabela: string) => ({
-      insert: async (linhas: Linha | Linha[]) => {
-        const erro = recusar[tabela];
-        if (erro) return { error: erro };
-        (inseridas[tabela] ??= []).push(...(Array.isArray(linhas) ? linhas : [linhas]));
-        return { error: null };
-      },
-    }),
+    from: (tabela: string) => {
+      const filtros: Array<[string, unknown]> = [];
+      const consulta = {
+        select: (_colunas: string) => (operacoes.push(`${tabela}.select`), consulta),
+        eq: (coluna: string, valor: unknown) => (filtros.push([coluna, valor]), consulta),
+        limit: async (_n: number) => ({
+          data: abertos.filter((l) => filtros.every(([c, v]) => l[c] === v)),
+          error: null,
+        }),
+        insert: async (linhas: Linha | Linha[]) => {
+          operacoes.push(`${tabela}.insert`);
+          const erro = recusar[tabela];
+          if (erro) return { error: erro };
+          (inseridas[tabela] ??= []).push(...(Array.isArray(linhas) ? linhas : [linhas]));
+          return { error: null };
+        },
+      };
+      return consulta;
+    },
   };
-  return { admin: admin as unknown as Parameters<typeof observarPedidos>[0], inseridas };
+  return { admin: admin as unknown as Parameters<typeof observarPedidos>[0], inseridas, operacoes };
 }
 
 function respostaComNoul(noul: Record<string, number>): Response {
@@ -142,6 +161,7 @@ function entrada(over: Partial<EntradaDosPedidos> = {}): EntradaDosPedidos {
     contactId: "55555555-5555-4555-8555-555555555555",
     agentId: "66666666-6666-4666-8666-666666666666",
     mensagem: "quero falar com alguém de verdade, meu telefone é (11) 98765-4321",
+    idioma: "pt-BR",
     config: LIGADO,
     regraPegou: { humano: false, opt_out: false },
     turno: TURNO_QUE_RODA,
@@ -268,5 +288,134 @@ describe("observarPedidos", () => {
     const r = await observarPedidos(admin, entrada(), deps(fetchImpl));
     expect(r.map((p) => p.id)).toEqual(["opt_out"]);
     expect(inseridas.jev_observacoes!.map((l) => l.tarefa)).toEqual(["opt_out"]);
+  });
+});
+
+// ── "Avisar a equipe": o estado decidindo das tarefas em cascata ─────────────
+
+const AVISANDO = (tarefas: Record<string, "decidindo" | "observando" | "desligada">) =>
+  lerConfigDoJev({
+    jev: {
+      ligado: true,
+      aceite: ACEITE,
+      tarefas: Object.fromEntries(Object.entries(tarefas).map(([id, estado]) => [id, { estado }])),
+    },
+  });
+
+describe("Avisar a equipe", () => {
+  it("o pedido percebido abre UM aviso na Central, na conversa, sem o que o cliente escreveu", async () => {
+    const { admin, inseridas } = adminFalso();
+    const fetchImpl = vi.fn().mockResolvedValue(respostaComNoul({ humano: 0.97, opt_out: 0.02 }));
+    const e = entrada({ config: AVISANDO({ humano: "decidindo" }) });
+    await observarPedidos(admin, e, deps(fetchImpl));
+
+    expect(inseridas.agent_inbox_items).toEqual([
+      {
+        organization_id: e.organizationId,
+        kind: "jev_pedido_de_humano",
+        severity: "warn",
+        title: AVISOS_DOS_PEDIDOS.humano.titulo,
+        body: AVISOS_DOS_PEDIDOS.humano.corpo,
+        ref_kind: "conversation",
+        ref_id: e.conversationId,
+      },
+    ]);
+    // A Central é lida pela organização inteira: nada do que o cliente escreveu vai para lá.
+    const doAviso = JSON.stringify(inseridas.agent_inbox_items);
+    expect(doAviso).not.toContain("alguém de verdade");
+    expect(doAviso).not.toContain("98765");
+    // A observação sai com o estado, e a linha de custo diz que a resposta dele decidiu o aviso.
+    expect(inseridas.jev_observacoes!.map((l) => [l.tarefa, l.estado, l.rotulo_jev])).toEqual([
+      ["humano", "decidindo", "sim"],
+      ["opt_out", "observando", "nao"],
+    ]);
+    expect(inseridas.llm_calls![0]).toMatchObject({ origem_da_escolha: "jev", status: "ok" });
+  });
+
+  it("no idioma da organização: a Central mostra o aviso como ele foi gravado", async () => {
+    const { admin, inseridas } = adminFalso();
+    const fetchImpl = vi.fn().mockResolvedValue(respostaComNoul({ humano: 0.02, opt_out: 0.95 }));
+    await observarPedidos(admin, entrada({ idioma: "es", config: AVISANDO({ opt_out: "decidindo" }) }), deps(fetchImpl));
+    const [aviso] = inseridas.agent_inbox_items!;
+    expect(aviso).toMatchObject({ kind: "jev_parar_de_receber" });
+    expect(aviso!.title).toBe(DICIONARIO[AVISOS_DOS_PEDIDOS.opt_out.titulo]?.es);
+    expect(aviso!.body).toBe(DICIONARIO[AVISOS_DOS_PEDIDOS.opt_out.corpo]?.es);
+  });
+
+  it.each([
+    ["observando, ele percebe e só conta", AVISANDO({}), 0.97],
+    ["abaixo do corte (0,79), nenhum aviso", AVISANDO({ humano: "decidindo" }), 0.79],
+  ])("%s", async (_caso, config, noul) => {
+    const { admin, inseridas } = adminFalso();
+    const fetchImpl = vi.fn().mockResolvedValue(respostaComNoul({ humano: noul, opt_out: 0.02 }));
+    await observarPedidos(admin, entrada({ config }), deps(fetchImpl));
+    expect(inseridas.jev_observacoes, "a pergunta saiu (controle)").toHaveLength(2);
+    expect(inseridas.agent_inbox_items).toBeUndefined();
+  });
+
+  it("observando, a linha de custo diz que ele só observou (controle da origem)", async () => {
+    const { admin, inseridas } = adminFalso();
+    const fetchImpl = vi.fn().mockResolvedValue(respostaComNoul({ humano: 0.97, opt_out: 0.02 }));
+    await observarPedidos(admin, entrada(), deps(fetchImpl));
+    expect(inseridas.llm_calls![0]).toMatchObject({ origem_da_escolha: "jev_observacao" });
+  });
+
+  it("um aviso aberto desta conversa e deste pedido basta: não abre outro — e a conversa vizinha ganha o dela", async () => {
+    const e = entrada({ config: AVISANDO({ humano: "decidindo" }) });
+    const aberto = {
+      organization_id: e.organizationId,
+      kind: "jev_pedido_de_humano",
+      ref_kind: "conversation",
+      ref_id: e.conversationId,
+      status: "open",
+    };
+    const { admin, inseridas } = adminFalso({}, [aberto]);
+    const resposta = () => respostaComNoul({ humano: 0.97, opt_out: 0.02 });
+    await observarPedidos(admin, e, deps(vi.fn().mockResolvedValue(resposta())));
+    expect(inseridas.agent_inbox_items).toBeUndefined();
+
+    const vizinha = "77777777-7777-4777-8777-777777777777";
+    await observarPedidos(admin, { ...e, conversationId: vizinha }, deps(vi.fn().mockResolvedValue(resposta())));
+    expect(inseridas.agent_inbox_items!.map((l) => l.ref_id)).toEqual([vizinha]);
+  });
+
+  it("o mesmo pedido de outro tipo na mesma conversa é outro aviso", async () => {
+    const e = entrada({ config: AVISANDO({ humano: "decidindo", opt_out: "decidindo" }) });
+    const { admin, inseridas } = adminFalso({}, [
+      { organization_id: e.organizationId, kind: "jev_pedido_de_humano", ref_kind: "conversation", ref_id: e.conversationId, status: "open" },
+    ]);
+    await observarPedidos(admin, e, deps(vi.fn().mockResolvedValue(respostaComNoul({ humano: 0.97, opt_out: 0.96 }))));
+    expect(inseridas.agent_inbox_items!.map((l) => l.kind)).toEqual(["jev_parar_de_receber"]);
+  });
+
+  /**
+   * R3 com os dois pedidos avisando: o que ele toca é só o que é dele e a
+   * Central — nem a conversa, nem o contato, nem mensagem. A cerca estática é
+   * `tests/unit/jev-nunca-cala-bloqueia-nem-responde.test.ts`; aqui, o caminho
+   * que roda.
+   */
+  it("R3: avisando, ele só lê e escreve as tabelas dele e a Central — e nunca lança", async () => {
+    const { admin, inseridas, operacoes } = adminFalso();
+    const fetchImpl = vi.fn().mockResolvedValue(respostaComNoul({ humano: 0.99, opt_out: 0.99 }));
+    const e = entrada({ config: AVISANDO({ humano: "decidindo", opt_out: "decidindo" }) });
+    const r = await observarPedidos(admin, e, deps(fetchImpl));
+    expect(r.map((p) => p.rotulo)).toEqual(["sim", "sim"]);
+    expect(inseridas.agent_inbox_items!.map((l) => l.kind)).toEqual(["jev_pedido_de_humano", "jev_parar_de_receber"]);
+    expect([...new Set(operacoes)].sort()).toEqual([
+      "agent_inbox_items.insert",
+      "agent_inbox_items.select",
+      "jev_observacoes.insert",
+      "llm_calls.insert",
+    ]);
+  });
+
+  it("a Central recusa a escrita: o aviso some, a observação e o custo ficam, e nada lança", async () => {
+    const { admin, inseridas } = adminFalso({ agent_inbox_items: { code: "23514", message: "check violation" } });
+    const fetchImpl = vi.fn().mockResolvedValue(respostaComNoul({ humano: 0.97, opt_out: 0.02 }));
+    const r = await observarPedidos(admin, entrada({ config: AVISANDO({ humano: "decidindo" }) }), deps(fetchImpl));
+    expect(r).toHaveLength(2);
+    expect(inseridas.jev_observacoes).toHaveLength(2);
+    expect(inseridas.llm_calls).toHaveLength(1);
+    expect(inseridas.agent_inbox_items).toBeUndefined();
   });
 });

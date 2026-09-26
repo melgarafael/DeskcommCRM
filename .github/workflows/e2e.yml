@@ -1084,7 +1084,9 @@ jobs:
       # no ar, o Jev não é perguntado) e apaga o agente, a chave, o
       # `settings.jev` e as observações dos pedidos no fim. Roda depois das
       # outras duas do Jev: escoa a fila antes de ligar, como a primeira.
-      # PREVISÃO, não medida: ~1,5 min.
+      # O bloco 3.2 acrescentou um quarto cliente e o aviso na Central ("Avisar
+      # a equipe"), que ela também apaga no fim.
+      # PREVISÃO, não medida: ~2 min.
       SPECS_PARTE_5: >-
         inbox-busca-e-filtros-dizem-a-verdade.spec.ts
         extensoes-da-instalacao.spec.ts

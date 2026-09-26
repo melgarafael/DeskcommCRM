@@ -91,6 +91,11 @@ export const KIND_LABEL = {
   // devia estar recebendo mensagem e não recebe, e é isso que faz alguém abrir
   // o aviso. O passo que conserta fica no corpo.
   followup_sem_agente: "Um follow-up está publicado e não está disparando",
+  // Diz QUEM percebeu: o pedido não foi visto pela regra de hoje, e o aviso é
+  // uma leitura do Jev — quem abre precisa saber que a conversa não foi passada
+  // nem o contato bloqueado. O que fazer vai no corpo.
+  jev_pedido_de_humano: "Pedido para falar com uma pessoa, percebido pelo Jev",
+  jev_parar_de_receber: "Pedido para parar de receber mensagens, percebido pelo Jev",
   other: "Aviso do assistente",
 } as const satisfies Record<InboxKind, string>;
 

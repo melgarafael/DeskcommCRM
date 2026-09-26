@@ -463,7 +463,8 @@ itens envelhecem em ritmos diferentes, e o cabeçalho passava a mentir por todos
   higieniza — não confie nele como única camada.
 - Não commite screenshot/dump com dado real de cliente.
 - Descadastro (STOP): quem bloqueia é só a regra de `lib/opt-out/deteccao.ts` (ou uma pessoa); o Jev
-  (`lib/ai/decisao/pedidos.ts`) só é perguntado onde ela disse não, e nunca bloqueia ninguém.
+  (`lib/ai/decisao/pedidos.ts`) só é perguntado onde ela disse não, e nunca bloqueia ninguém — no
+  máximo abre um aviso na Central ("Avisar a equipe").
 
 ## Packaging — se você tocou `Dockerfile*`, `docker-compose*.yml` ou `hostgator-setup-kit/`
 

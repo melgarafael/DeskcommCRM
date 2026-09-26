@@ -103,6 +103,15 @@ describe("destinos da Central", () => {
     expect(items[1]?.destination).toMatchObject({ href: "/app/connections?aba=parceiro&sub=templates", orientacao: expect.stringContaining("não identifica") });
     expect(items[2]?.destination.estado).toBe("sem_destino");
   });
+  it("o aviso do Jev leva à conversa como 'Abrir a conversa' — e só para quem a enxerga", async () => {
+    for (const kind of ["jev_pedido_de_humano", "jev_parar_de_receber"]) {
+      const [visivel] = await resolverDestinosDosAvisos(leitor().client, ORG, "agent", [aviso(kind)]);
+      expect(visivel?.destination, kind).toEqual({ estado: "disponivel", rotulo: "Abrir a conversa", href: `/app/inbox/${ID}` });
+      // A RLS da conversa decide: fora do alcance de quem lê, nem o link.
+      const [oculta] = await resolverDestinosDosAvisos(leitor([]).client, ORG, "agent", [aviso(kind)]);
+      expect(oculta?.destination.estado, kind).toBe("indisponivel");
+    }
+  });
   it("envio preso representa uma conversa, não todas", async () => {
     const [item] = await resolverDestinosDosAvisos(leitor().client, ORG, "agent", [aviso("message_send_stuck")]);
     expect(item?.destination).toMatchObject({ rotulo: "Abrir uma conversa afetada" });

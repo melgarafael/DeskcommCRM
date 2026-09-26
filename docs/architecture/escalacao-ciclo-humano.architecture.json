@@ -616,7 +616,7 @@
       "col": 7,
       "type": "service",
       "label": "worker de clima: os pedidos do cliente (lib/ai/decisao/pedidos.ts)",
-      "sublabel": "chamada própria, em paralelo à do clima — só onde a regra de hoje (pedido explícito de pessoa, palavras de passagem do agente, lib/opt-out/deteccao.ts) disse não e o turno do agente rodaria; corte 0,9; nunca passa a conversa, bloqueia ou cala"
+      "sublabel": "chamada própria, em paralelo à do clima — só onde a regra de hoje (pedido explícito de pessoa, palavras de passagem do agente, lib/opt-out/deteccao.ts) disse não e o turno do agente rodaria; corte 0,9; em 'Avisar a equipe' abre UM aviso por conversa e pedido; nunca passa a conversa, bloqueia ou cala"
     }
   ],
   "edges": [
@@ -1394,7 +1394,19 @@
       "id": "e124",
       "from": "jevPedidos",
       "to": "jevLlmCalls",
-      "label": "linha typesafe purpose jev_pedidos (jev_observacao) — o nome dela em Execuções é 'Perceber pedidos do cliente'"
+      "label": "linha typesafe purpose jev_pedidos (jev_observacao; jev em 'Avisar a equipe') — o nome dela em Execuções é 'Perceber pedidos do cliente'"
+    },
+    {
+      "id": "e125",
+      "from": "jevPedidos",
+      "to": "central",
+      "label": "'Avisar a equipe' (0426): kind jev_pedido_de_humano / jev_parar_de_receber, ref_kind conversation, warn — o corpo NÃO leva a frase do cliente: a Central entrega body a qualquer agent"
+    },
+    {
+      "id": "e126",
+      "from": "atribuir",
+      "to": "central",
+      "label": "trg_routing_assignment_changed (0426): uma pessoa assume, ou a conversa é encerrada — o aviso do Jev daquela conversa fecha (o laço de retorno dele)"
     }
   ],
   "cards": [

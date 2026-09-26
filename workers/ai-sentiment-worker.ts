@@ -44,7 +44,7 @@ import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
 import { logInvocation, type LogInvocationInput } from "@/lib/ai/log-invocation";
 import { DEFAULT_SENTIMENT_THRESHOLD, SENTIMENT_SYSTEM_PROMPT } from "@/lib/ai/prompts/sentiment";
 import type { EventRow } from "@/lib/event-log/dispatcher";
-import { normalizarIdioma } from "@/lib/i18n/idiomas";
+import { normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 import { ehOptOutProvavel, ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -276,6 +276,7 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
           agente: agent,
           config: configDoJev,
           mensagem: body,
+          idioma: normalizarIdioma(daOrg?.locale ?? null),
         })
       : Promise.resolve();
     try {
@@ -564,6 +565,7 @@ async function observarOsPedidosDoCliente(
     agente: (FatosDoAgente & { id: string; published_version_id?: string | null }) | null;
     config: ConfigDoJev;
     mensagem: string;
+    idioma: Idioma;
   },
 ): Promise<void> {
   try {
@@ -596,6 +598,7 @@ async function observarOsPedidosDoCliente(
       contactId: c.contactId,
       agentId: c.agente.id,
       mensagem: c.mensagem,
+      idioma: c.idioma,
       config: c.config,
       regraPegou: {
         humano:
