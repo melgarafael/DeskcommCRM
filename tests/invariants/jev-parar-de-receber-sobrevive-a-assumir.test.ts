@@ -1,5 +1,5 @@
 /**
- * O AVISO DE PARAR DE RECEBER NÃO SOME AO ASSUMIR (migration 0426, parte 3 —
+ * O AVISO DE PARAR DE RECEBER NÃO SOME AO ASSUMIR (migration 0433, parte 3 —
  * o conserto 3 da onda 3 do Jev).
  *
  * O aviso de parar de receber manda a equipe fazer DOIS passos: assumir a

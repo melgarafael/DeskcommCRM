@@ -1,5 +1,5 @@
 /**
- * O AVISO DO JEV NA CENTRAL, NO BANCO QUE O KIT INSTALA (migration 0426).
+ * O AVISO DO JEV NA CENTRAL, NO BANCO QUE O KIT INSTALA (migration 0433).
  *
  * Em "Avisar a equipe", o Jev abre na Central um aviso por conversa e pedido
  * (`lib/ai/decisao/pedidos.ts`), com um kind próprio. Duas coisas moram no banco
@@ -8,7 +8,7 @@
  *  1. O CHECK de `agent_inbox_items.kind` aceita os dois kinds. Sem eles, o
  *     insert do gravador é recusado num caminho que só loga — o aviso nunca
  *     aparece, e nada fica vermelho.
- *  2. O aviso FECHA pelo gatilho da 0426 (`trg_fechar_avisos_do_jev_da_conversa`),
+ *  2. O aviso FECHA pelo gatilho da 0433 (`trg_fechar_avisos_do_jev_da_conversa`),
  *     e só o da conversa certa: o `handoff` da mesma conversa e o aviso da
  *     vizinha ficam. Uma pessoa assumir fecha SÓ o de falar com uma pessoa — o
  *     de parar de receber pede à equipe assumir E pedir o PARAR, e segue aberto
