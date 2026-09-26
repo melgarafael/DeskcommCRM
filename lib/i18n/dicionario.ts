@@ -3668,17 +3668,17 @@ export const DICIONARIO: Traducoes = {
     es: "Decidiendo en parte: cada tarea de abajo dice si Jev decide o solo observa en ella.",
   },
   // As frases do cartão do Jev quando as tarefas em cascata rodam (CartaoDoJev.tsx, `fraseObservando`/`fraseDecidindo`).
-  "Observando — o Jev conta os pedidos do cliente que a regra de hoje deixa passar e avisa a equipe na Central. Ele não decide nada no atendimento.": {
-    es: "Observando: Jev cuenta los pedidos del cliente que la regla de hoy deja pasar y avisa al equipo en la Central. No decide nada en la atención.",
+  "Observando — o Jev conta as mensagens em que o cliente faz um pedido que a regra de hoje não reconheceu, e avisa a equipe na Central. Ele não decide nada no atendimento.": {
+    es: "Observando: Jev cuenta los mensajes en los que el cliente hace un pedido que la regla de hoy no reconoció y avisa al equipo en la Central. No decide nada en la atención.",
   },
-  "Observando — o Jev só conta os pedidos do cliente que a regra de hoje deixa passar. Nada muda no atendimento.": {
-    es: "Observando: Jev solo cuenta los pedidos del cliente que la regla de hoy deja pasar. Nada cambia en la atención.",
+  "Observando — o Jev só conta as mensagens em que o cliente faz um pedido que a regra de hoje não reconheceu. Nada muda no atendimento.": {
+    es: "Observando: Jev solo cuenta los mensajes en los que el cliente hace un pedido que la regla de hoy no reconoció. Nada cambia en la atención.",
   },
-  "Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele conta os que a regra de hoje deixa passar e avisa a equipe.": {
-    es: "Observando: donde Jev compara, tu IA de siempre todavía decide; compara los dos antes de dejar que Jev decida. En los pedidos del cliente, cuenta los que la regla de hoy deja pasar y avisa al equipo.",
+  "Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele conta as mensagens em que a regra de hoje não reconheceu o pedido, e avisa a equipe.": {
+    es: "Observando: donde Jev compara, tu IA de siempre todavía decide; compara los dos antes de dejar que Jev decida. En los pedidos del cliente, cuenta los mensajes en los que la regla de hoy no reconoció el pedido y avisa al equipo.",
   },
-  "Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele só conta os que a regra de hoje deixa passar.": {
-    es: "Observando: donde Jev compara, tu IA de siempre todavía decide; compara los dos antes de dejar que Jev decida. En los pedidos del cliente, solo cuenta los que la regla de hoy deja pasar.",
+  "Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele só conta as mensagens em que a regra de hoje não reconheceu o pedido.": {
+    es: "Observando: donde Jev compara, tu IA de siempre todavía decide; compara los dos antes de dejar que Jev decida. En los pedidos del cliente, solo cuenta los mensajes en los que la regla de hoy no reconoció el pedido.",
   },
   "Decidindo em parte — cada tarefa abaixo diz se o Jev decide, só observa ou avisa a equipe nela.": {
     es: "Decidiendo en parte: cada tarea de abajo dice si Jev decide, solo observa o avisa al equipo en ella.",
@@ -3719,11 +3719,11 @@ export const DICIONARIO: Traducoes = {
   "Perceber pedido para parar de receber mensagens": {
     es: "Detectar pedidos de dejar de recibir mensajes",
   },
-  "Lê a mensagem do cliente, sozinha, quando a regra de hoje não viu nela um pedido para falar com uma pessoa — e conta os pedidos que ela deixou passar. Ele nunca passa a conversa sozinho.": {
-    es: "Lee el mensaje del cliente, por separado, cuando la regla de hoy no vio en él un pedido de hablar con una persona, y cuenta los pedidos que ella dejó pasar. Nunca transfiere la conversación por su cuenta.",
+  "Lê a mensagem do cliente, sozinha, quando a regra de hoje não viu nela um pedido para falar com uma pessoa — e conta as mensagens com esse pedido que ela não reconheceu. Ele nunca passa a conversa sozinho.": {
+    es: "Lee el mensaje del cliente, por separado, cuando la regla de hoy no vio en él un pedido de hablar con una persona, y cuenta los mensajes con ese pedido que ella no reconoció. Nunca transfiere la conversación por su cuenta.",
   },
-  "Lê a mensagem do cliente, sozinha, quando a regra de hoje não viu nela um pedido para parar de receber mensagens — e conta os pedidos que ela deixou passar. Quem bloqueia o contato é só a regra de hoje, quando o próprio cliente manda PARAR.": {
-    es: "Lee el mensaje del cliente, por separado, cuando la regla de hoy no vio en él un pedido de dejar de recibir mensajes, y cuenta los pedidos que ella dejó pasar. Quien bloquea el contacto es solo la regla de hoy, cuando el propio cliente envía BAJA.",
+  "Lê a mensagem do cliente, sozinha, quando a regra de hoje não viu nela um pedido para parar de receber mensagens — e conta as mensagens com esse pedido que ela não reconheceu. Quem bloqueia o contato é só a regra de hoje, quando o próprio cliente manda PARAR.": {
+    es: "Lee el mensaje del cliente, por separado, cuando la regla de hoy no vio en él un pedido de dejar de recibir mensajes, y cuenta los mensajes con ese pedido que ella no reconoció. Quien bloquea el contacto es solo la regla de hoy, cuando el propio cliente envía BAJA.",
   },
   "Quando o Jev percebe um pedido para falar com uma pessoa que a regra não pegou, ele abre um aviso na Central para alguém da equipe decidir. Ele nunca passa a conversa sozinho.": {
     es: "Cuando Jev detecta un pedido de hablar con una persona que la regla no captó, abre un aviso en la Central para que alguien del equipo decida. Nunca transfiere la conversación por su cuenta.",
@@ -3737,26 +3737,45 @@ export const DICIONARIO: Traducoes = {
   "Quando o Jev perceber um pedido para parar de receber mensagens que a regra não pegou, ele abre um aviso na Central para alguém da equipe conferir. Quem bloqueia o contato é só a regra de hoje, quando o próprio cliente manda PARAR: o Jev nunca bloqueia ninguém.": {
     es: "Cuando Jev detecte un pedido de dejar de recibir mensajes que la regla no captó, abrirá un aviso en la Central para que alguien del equipo lo revise. Quien bloquea el contacto es solo la regla de hoy, cuando el propio cliente envía BAJA: Jev nunca bloquea a nadie.",
   },
-  // A frase dos pedidos percebidos, INTEIRA e no singular e no plural: montada
-  // de pedaços ("Nos últimos" + "pedido"), ela saía torta fora do português.
-  "Nos últimos {dias} dias, o Jev percebeu {n} pedido de falar com uma pessoa que a regra de hoje não pegou.": {
-    es: "En los últimos {dias} días, Jev detectó {n} pedido de hablar con una persona que la regla de hoy no captó.",
+  // A frase das mensagens percebidas, INTEIRA, para uma e várias (e, mais abaixo,
+  // nenhuma): montada de pedaços ("Nos últimos" + "pedido"), ela saía torta
+  // fora do português.
+  "Nos últimos {dias} dias, o Jev percebeu {n} mensagem pedindo para falar com uma pessoa em que a regra de hoje não reconheceu o pedido.": {
+    es: "En los últimos {dias} días, Jev detectó {n} mensaje que pide hablar con una persona en el que la regla de hoy no reconoció el pedido.",
   },
-  "Nos últimos {dias} dias, o Jev percebeu {n} pedidos de falar com uma pessoa que a regra de hoje não pegou.": {
-    es: "En los últimos {dias} días, Jev detectó {n} pedidos de hablar con una persona que la regla de hoy no captó.",
+  "Nos últimos {dias} dias, o Jev percebeu {n} mensagens pedindo para falar com uma pessoa em que a regra de hoje não reconheceu o pedido.": {
+    es: "En los últimos {dias} días, Jev detectó {n} mensajes que piden hablar con una persona en los que la regla de hoy no reconoció el pedido.",
   },
-  "Nos últimos {dias} dias, o Jev percebeu {n} pedido para parar de receber mensagens que a regra de hoje não pegou.": {
-    es: "En los últimos {dias} días, Jev detectó {n} pedido de dejar de recibir mensajes que la regla de hoy no captó.",
+  "Nos últimos {dias} dias, o Jev percebeu {n} mensagem pedindo para parar de receber mensagens em que a regra de hoje não reconheceu o pedido.": {
+    es: "En los últimos {dias} días, Jev detectó {n} mensaje que pide dejar de recibir mensajes en el que la regla de hoy no reconoció el pedido.",
   },
-  "Nos últimos {dias} dias, o Jev percebeu {n} pedidos para parar de receber mensagens que a regra de hoje não pegou.": {
-    es: "En los últimos {dias} días, Jev detectó {n} pedidos de dejar de recibir mensajes que la regla de hoy no captó.",
+  "Nos últimos {dias} dias, o Jev percebeu {n} mensagens pedindo para parar de receber mensagens em que a regra de hoje não reconheceu o pedido.": {
+    es: "En los últimos {dias} días, Jev detectó {n} mensajes que piden dejar de recibir mensajes en los que la regla de hoy no reconoció el pedido.",
+  },
+  "Nos últimos {dias} dias, o Jev ainda não percebeu nenhuma mensagem pedindo para falar com uma pessoa em que a regra de hoje não reconheceu o pedido.": {
+    es: "En los últimos {dias} días, Jev todavía no detectó ningún mensaje que pida hablar con una persona en el que la regla de hoy no haya reconocido el pedido.",
+  },
+  "Nos últimos {dias} dias, o Jev ainda não percebeu nenhuma mensagem pedindo para parar de receber mensagens em que a regra de hoje não reconheceu o pedido.": {
+    es: "En los últimos {dias} días, Jev todavía no detectó ningún mensaje que pida dejar de recibir mensajes en el que la regla de hoy no haya reconocido el pedido.",
+  },
+  "Nos pedidos do cliente, o Jev só conta as mensagens em que a regra de hoje não reconheceu o pedido — nada muda no atendimento.": {
+    es: "En los pedidos del cliente, Jev solo cuenta los mensajes en los que la regla de hoy no reconoció el pedido: nada cambia en la atención.",
+  },
+  "Nos pedidos do cliente, o Jev conta as mensagens em que a regra de hoje não reconheceu o pedido e avisa a equipe na Central — ele não decide nada no atendimento.": {
+    es: "En los pedidos del cliente, Jev cuenta los mensajes en los que la regla de hoy no reconoció el pedido y avisa al equipo en la Central: no decide nada en la atención.",
+  },
+  "Não roda agora: nenhum atendente automático está no ar — o Jev só é perguntado onde um atendente responderia. Publique um agente num número, ou tire um agente da pausa, em Agentes.": {
+    es: "No se ejecuta ahora: ningún agente automático está en línea; solo se le pregunta a Jev donde un agente respondería. Publica un agente en un número, o quita un agente de la pausa, en Agentes.",
+  },
+  "Não roda agora: quem conduz as conversas desta empresa é um sistema de fora. O Jev só é perguntado onde um atendente automático daqui responderia.": {
+    es: "No se ejecuta ahora: un sistema externo lleva las conversaciones de esta empresa. Solo se le pregunta a Jev donde un agente automático de aquí respondería.",
   },
   "Perceber pedidos do cliente": {
     es: "Detectar pedidos del cliente",
   },
   // O "por quê" da chamada dos pedidos em IA › Execuções (`PEDIDOS_DO_CLIENTE`).
-  "O Jev foi perguntado porque a regra de hoje não viu pedido nesta mensagem. Ele não bloqueia nem passa a conversa.": {
-    es: "Se le preguntó a Jev porque la regla de hoy no vio ningún pedido en este mensaje. Él no bloquea ni transfiere la conversación.",
+  "O Jev foi perguntado se esta mensagem traz um pedido que a regra de hoje não viu. Ele não bloqueia nem passa a conversa.": {
+    es: "Se le preguntó a Jev si este mensaje trae un pedido que la regla de hoy no vio. Él no bloquea ni transfiere la conversación.",
   },
   "O Jev não respondeu: valeu só a regra de hoje.": {
     es: "Jev no respondió: valió solo la regla de hoy.",

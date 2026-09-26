@@ -157,14 +157,17 @@ describe("GET /api/v1/ai/runs", () => {
     for (const texto of [ok.porQueEsteModelo, avisando.porQueEsteModelo, falha.porQueEsteModelo]) {
       expect(texto).not.toMatch(/decidiu|comparar|IA de sempre/);
     }
-    // A chamada sai em TODA mensagem em que a regra não viu pedido — quase
-    // todas são perguntas comuns. O porquê não pode pressupor que houve um
-    // pedido ("não reconheceu o pedido"): 100 linhas leriam como 100 pedidos
-    // perdidos, contra o "percebeu N pedidos" do cartão.
+    // A chamada sai em quase toda mensagem — quase todas são perguntas comuns.
+    // O porquê não pode pressupor que houve um pedido ("não reconheceu o
+    // pedido"): 100 linhas leriam como 100 pedidos perdidos. E ela sai também
+    // quando a regra pegou o OUTRO pedido ("quero falar com um atendente" é
+    // perguntado só sobre parar de receber): o porquê não pode dizer que a
+    // regra não viu pedido NENHUM. É uma pergunta sobre esta mensagem.
     for (const texto of [PEDIDOS_DO_CLIENTE.porQue, DICIONARIO[PEDIDOS_DO_CLIENTE.porQue]?.es ?? ""]) {
       expect(texto, "a tradução existe (controle)").not.toBe("");
       expect(texto).not.toMatch(/\bo pedido\b|\bel pedido\b|reconheceu|reconoció/i);
-      expect(texto).toMatch(/nesta mensagem|en este mensaje/);
+      expect(texto).not.toMatch(/não viu pedido|no vio ningún pedido|nenhum pedido|ningún pedido/i);
+      expect(texto).toMatch(/perguntado se esta mensagem|preguntó a Jev si este mensaje/);
     }
     // Controle: o purpose desconhecido segue saindo como está.
     expect(estranho.pontoRotulo).toBe("ponto_que_ninguem_conhece");

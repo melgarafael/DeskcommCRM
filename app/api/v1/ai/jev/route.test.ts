@@ -13,6 +13,8 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { haQuemAtendaAOrganizacao } from "@/lib/ai/agents/quem-atende-a-sessao";
 import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
 import { DEFAULT_SENTIMENT_THRESHOLD } from "@/lib/ai/prompts/sentiment";
 import { fail } from "@/lib/api/wrappers";
@@ -30,6 +32,9 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/ai/gateway-binding", () => ({ resolverModeloDoPonto: vi.fn() }));
+// O portão de quem atende fala `pg`, não o supabase-js: o dublê responde por ele.
+vi.mock("@/lib/agent-engine/db/request-pool", () => ({ getRequestPool: vi.fn(() => ({ query: vi.fn() })) }));
+vi.mock("@/lib/ai/agents/quem-atende-a-sessao", () => ({ haQuemAtendaAOrganizacao: vi.fn() }));
 
 const ORG = "22222222-2222-4222-8222-222222222222";
 const OUTRA_ORG = "99999999-9999-4999-8999-999999999999";
@@ -209,6 +214,7 @@ beforeEach(() => {
     modelId: "anthropic/claude-haiku-4-5",
     origem: "padrao",
   });
+  vi.mocked(haQuemAtendaAOrganizacao).mockResolvedValue(true);
 });
 
 async function ler() {
@@ -832,7 +838,7 @@ describe("o Jev por tarefa na rota", () => {
     const humano = d.por_tarefa.find((t: { id: string }) => t.id === "humano");
     expect(humano).toMatchObject({ estado: "observando", novo: true, observacao: null });
     expect(humano.percebidos.dias).toBe(30);
-    expect(humano.percebidos.pedidos).toBe(7);
+    expect(humano.percebidos.mensagens).toBe(7);
     expect(humano.percebidos.conversas.map((c: { href: string }) => c.href)).toEqual([
       "/app/inbox/c-1",
       "/app/inbox/c-2",
@@ -841,7 +847,7 @@ describe("o Jev por tarefa na rota", () => {
       "/app/inbox/c-5",
     ]);
     const optOut = d.por_tarefa.find((t: { id: string }) => t.id === "opt_out");
-    expect(optOut.percebidos).toMatchObject({ pedidos: 1, conversas: [{ href: "/app/inbox/c-8" }] });
+    expect(optOut.percebidos).toMatchObject({ mensagens: 1, conversas: [{ href: "/app/inbox/c-8" }] });
     // As outras tarefas não têm pedidos percebidos.
     expect(d.por_tarefa.find((t: { id: string }) => t.id === "manipulacao").percebidos).toBeNull();
     const lidas = estado.consultas.filter((c) => c.tabela === "jev_observacoes" && !c.head);
@@ -855,6 +861,38 @@ describe("o Jev por tarefa na rota", () => {
           c.gte.some(([col]) => col === "created_at"),
       ),
     ).toBe(true);
+  });
+
+  /**
+   * As tarefas de pedido só são perguntadas onde o atendimento automático
+   * rodaria (o worker: `haQuemAtendaASessao(..., { ignorarPausados: true })` e
+   * o modo externo fora). Numa empresa em que ele não roda em número nenhum,
+   * "Só observa" com "nenhuma mensagem" seria para sempre: a rota diz por quê,
+   * com a MESMA pergunta, sem fixar o número, e só para as de pedido.
+   */
+  it.each([
+    ["ninguém no ar sem pausa", {}, false, "ninguem_no_ar"],
+    ["o atendimento com um sistema de fora", { ai_dispatch_mode: "external" }, true, "externo"],
+    ["há quem atenda (controle)", {}, true, null],
+    ["o modo nativo dito por extenso, e há quem atenda (controle)", { ai_dispatch_mode: "native" }, true, null],
+  ] as const)("GET: nas tarefas de pedido, o motivo de não rodar — %s", async (_caso, settings, haQuem, motivo) => {
+    estado.settings = { jev: { ligado: true, aceite: ACEITE_ANTIGO }, ...settings };
+    vi.mocked(haQuemAtendaAOrganizacao).mockResolvedValue(haQuem);
+    const d = (await ler()).corpo.data;
+    const motivos = Object.fromEntries(d.por_tarefa.map((t: { id: string; sem_atendente: unknown }) => [t.id, t.sem_atendente]));
+    expect(motivos).toEqual({ clima: null, manipulacao: null, roteador: null, humano: motivo, opt_out: motivo });
+    // A organização é a da sessão, e a pergunta é a do portão do worker.
+    expect(vi.mocked(haQuemAtendaAOrganizacao).mock.calls.map(([, org]) => org)).toEqual([ORG]);
+  });
+
+  it("GET: sem saber se há quem atenda (o banco fora), o cartão não afirma 'Não roda'", async () => {
+    estado.settings = { jev: { ligado: true, aceite: ACEITE_ANTIGO } };
+    vi.mocked(getRequestPool).mockImplementationOnce(() => {
+      throw new Error("SUPABASE_DB_URL ausente");
+    });
+    const { status, corpo } = await ler();
+    expect(status).toBe(200);
+    expect(corpo.data.por_tarefa.find((t: { id: string }) => t.id === "humano").sem_atendente).toBeNull();
   });
 
   it("GET: a falha da chamada dos pedidos aparece com o nome dela, e não crua", async () => {

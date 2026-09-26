@@ -24,6 +24,9 @@
  * faz. O dreno segue nesse caso (o comportamento de sempre); o worker do Jev
  * não pergunta.
  *
+ * `haQuemAtendaAOrganizacao` é a mesma pergunta, sem pausados, em qualquer
+ * número: o "Não roda" das tarefas de pedido no cartão do Jev.
+ *
  * `ignorarPausados`: só o worker do Jev pede. Pausar pela tela grava só
  * `paused_at` — a versão segue publicada e o ponteiro fica —, então o portão
  * do dreno abre, e o turno sai na pausa (`inbound-turn.ts`, `pausedAt`) ANTES
@@ -33,36 +36,35 @@
  */
 import type pg from "pg";
 
-export async function haQuemAtendaASessao(
-  db: Pick<pg.Pool, "query">,
-  organizationId: string,
-  channelSessionId: string,
-  opcoes: { ignorarPausados?: boolean } = {},
-): Promise<boolean | null> {
-  const semPausa = (agente: string): string => (opcoes.ignorarPausados === true ? ` and ${agente}.paused_at is null` : "");
-  const { rows } = await db.query<{
-    tem_agente: boolean;
-    tem_roteador: boolean;
-  }>(
-    `select
+/**
+ * O SQL do portão, com o número como predicado: `= $2` (o número da conversa,
+ * o que o dreno pergunta) ou `is not null` (qualquer número da organização, o
+ * que o cartão do Jev pergunta). Um texto só para as duas perguntas — o de uma
+ * sessão sai byte a byte o que o dreno sempre mandou.
+ */
+function sqlDoPortao(doNumero: (coluna: string) => string, ignorarPausados: boolean): string {
+  const semPausa = (agente: string): string => (ignorarPausados ? ` and ${agente}.paused_at is null` : "");
+  return `select
        exists(
          select 1 from ai_agents a
          join ai_agent_versions v on v.id = a.published_version_id
          where a.organization_id = $1 and a.archived_at is null${semPausa("a")}
-           and v.status = 'published' and v.channel_session_id = $2
+           and v.status = 'published' and ${doNumero("v.channel_session_id")}
        ) as tem_agente,
        exists(
          select 1 from ai_routers r
          where r.organization_id = $1 and r.is_active
-           and r.channel_session_id = $2
+           and ${doNumero("r.channel_session_id")}
            and (
              -- O fallback e os membros contam pelo que PODEM EXECUTAR, não por
              -- existirem. A versão anterior media fallback_agent_id is not null
              -- e a existência de LINHA em ai_router_members — e as duas
-             -- sobrevivem à pausa do agente, que só limpa published_version_id.
-             -- Um roteador cujos membros foram todos pausados continuava
-             -- abrindo o portão: a organização pagava o classificador e o turno
-             -- inteiro por mensagem recebida, para responder pelo genérico.
+             -- sobrevivem a arquivar ou despublicar o agente. Um roteador cujos
+             -- membros não tinham mais versão publicada continuava abrindo o
+             -- portão: a organização pagava o classificador e o turno inteiro
+             -- por mensagem recebida, para responder pelo genérico. A pausa
+             -- pela tela NÃO limpa o ponteiro (grava só paused_at, e a versão
+             -- segue publicada): só quem pede ignorarPausados a lê.
              -- O predicado aqui é o MESMO que loadConversationAgentConfigById
              -- aplica na hora de executar (agent-config.ts) — é o que garante
              -- que o portão não promete um agente que o resolvedor vai recusar.
@@ -80,11 +82,45 @@ export async function haQuemAtendaASessao(
                  and ma.archived_at is null and mv.status = 'published'${semPausa("ma")}
              )
            )
-       ) as tem_roteador`,
-    [organizationId, channelSessionId],
-  );
+       ) as tem_roteador`;
+}
+
+async function responderOPortao(
+  db: Pick<pg.Pool, "query">,
+  texto: string,
+  parametros: string[],
+): Promise<boolean | null> {
+  const { rows } = await db.query<{ tem_agente: boolean; tem_roteador: boolean }>(texto, parametros);
   const cap = rows[0];
   return cap === undefined ? null : cap.tem_agente || cap.tem_roteador;
+}
+
+export async function haQuemAtendaASessao(
+  db: Pick<pg.Pool, "query">,
+  organizationId: string,
+  channelSessionId: string,
+  opcoes: { ignorarPausados?: boolean } = {},
+): Promise<boolean | null> {
+  return responderOPortao(
+    db,
+    sqlDoPortao((coluna) => `${coluna} = $2`, opcoes.ignorarPausados === true),
+    [organizationId, channelSessionId],
+  );
+}
+
+/**
+ * HÁ QUEM ATENDA EM ALGUM NÚMERO DA ORGANIZAÇÃO, sem os pausados? — o portão
+ * que o worker do Jev pede (`haQuemAtendaASessao(..., { ignorarPausados: true })`),
+ * sem fixar o número. É a pergunta do cartão do Jev para as tarefas de pedido
+ * (`app/api/v1/ai/jev/route.ts`): onde nenhum número tem quem atenda, o worker
+ * nunca as pergunta, e o cartão diz "Não roda" em vez de "Só observa" com
+ * "percebeu 0" para sempre. `null` quando o banco não devolve linha.
+ */
+export async function haQuemAtendaAOrganizacao(
+  db: Pick<pg.Pool, "query">,
+  organizationId: string,
+): Promise<boolean | null> {
+  return responderOPortao(db, sqlDoPortao((coluna) => `${coluna} is not null`, true), [organizationId]);
 }
 
 /**

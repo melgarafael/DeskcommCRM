@@ -779,9 +779,11 @@ describe("CartaoDoJev — por tarefa", () => {
 
   /**
    * As tarefas em cascata não concordam com nada — o Jev só é perguntado onde a
-   * regra de hoje disse não —: contam os pedidos que ele percebeu, com as
-   * conversas. O `decidindo` delas é "Avisar a equipe": um aviso na Central,
-   * nunca "Deixar o Jev decidir".
+   * regra de hoje disse não —: contam as MENSAGENS em que ele percebeu o pedido
+   * que a regra não reconheceu, com as conversas. A unidade é a mensagem: o
+   * worker pergunta antes da janela do turno, e a rajada com duas frases
+   * naturais conta duas. O `decidindo` delas é "Avisar a equipe": um aviso na
+   * Central, nunca "Deixar o Jev decidir".
    */
   describe("as tarefas em cascata", () => {
     const HUMANO = {
@@ -795,16 +797,16 @@ describe("CartaoDoJev — por tarefa", () => {
     } as const;
     const conversa = (n: number) => ({ href: `/app/inbox/c-${n}`, em: `2026-09-2${n}T14:3${n}:00.000Z` });
 
-    it("um pedido: singular, com o link para a conversa — e nenhuma concordância", () => {
+    it("uma mensagem: singular, com o link para a conversa — e nenhuma concordância", () => {
       montar(
         dados({
           config: { ligado: true, modo: "observacao" },
-          por_tarefa: [{ ...HUMANO, percebidos: { dias: 30, pedidos: 1, conversas: [conversa(1)] } }],
+          por_tarefa: [{ ...HUMANO, percebidos: { dias: 30, mensagens: 1, conversas: [conversa(1)] } }],
         }),
       );
       const frase = screen.getByTestId("jev-percebidos-humano");
       expect(frase).toHaveTextContent(
-        "Nos últimos 30 dias, o Jev percebeu 1 pedido de falar com uma pessoa que a regra de hoje não pegou.",
+        "Nos últimos 30 dias, o Jev percebeu 1 mensagem pedindo para falar com uma pessoa em que a regra de hoje não reconheceu o pedido.",
       );
       const links = within(screen.getByTestId("jev-percebidos-conversas-humano")).getAllByRole("link");
       expect(links.map((l) => l.getAttribute("href"))).toEqual(["/app/inbox/c-1"]);
@@ -812,27 +814,32 @@ describe("CartaoDoJev — por tarefa", () => {
       expect(screen.queryByTestId("jev-concordancia-humano")).toBeNull();
     });
 
-    it("vários pedidos: plural, e um link por conversa; nenhum pedido: sem links", () => {
+    it("várias mensagens: plural, e um link por conversa; nenhuma: frase própria, sem número e sem links", () => {
       const { unmount } = montar(
         dados({
           config: { ligado: true, modo: "observacao" },
           por_tarefa: [
-            { ...HUMANO, percebidos: { dias: 30, pedidos: 7, conversas: [conversa(1), conversa(2), conversa(3)] } },
+            { ...HUMANO, percebidos: { dias: 30, mensagens: 7, conversas: [conversa(1), conversa(2), conversa(3)] } },
             {
               ...HUMANO,
               id: "opt_out",
               rotulo: TAREFA_DO_PEDIDO_PARA_PARAR.rotulo,
               oQueFaz: TAREFA_DO_PEDIDO_PARA_PARAR.oQueFaz,
-              percebidos: { dias: 30, pedidos: 0, conversas: [] },
+              percebidos: { dias: 30, mensagens: 0, conversas: [] },
             },
           ],
         }),
       );
-      expect(screen.getByTestId("jev-percebidos-humano")).toHaveTextContent(/percebeu 7 pedidos de falar com uma pessoa/);
-      expect(within(screen.getByTestId("jev-percebidos-conversas-humano")).getAllByRole("link")).toHaveLength(3);
-      expect(screen.getByTestId("jev-percebidos-opt_out")).toHaveTextContent(
-        "Nos últimos 30 dias, o Jev percebeu 0 pedidos para parar de receber mensagens que a regra de hoje não pegou.",
+      expect(screen.getByTestId("jev-percebidos-humano")).toHaveTextContent(
+        "Nos últimos 30 dias, o Jev percebeu 7 mensagens pedindo para falar com uma pessoa em que a regra de hoje não reconheceu o pedido.",
       );
+      expect(within(screen.getByTestId("jev-percebidos-conversas-humano")).getAllByRole("link")).toHaveLength(3);
+      // Zero não é "percebeu 0": lia-se como defeito, e a frase é outra.
+      const nenhuma = screen.getByTestId("jev-percebidos-opt_out");
+      expect(nenhuma).toHaveTextContent(
+        "Nos últimos 30 dias, o Jev ainda não percebeu nenhuma mensagem pedindo para parar de receber mensagens em que a regra de hoje não reconheceu o pedido.",
+      );
+      expect(nenhuma).not.toHaveTextContent(/\b0\b/);
       expect(screen.queryByTestId("jev-percebidos-conversas-opt_out")).toBeNull();
       unmount();
     });
@@ -843,7 +850,7 @@ describe("CartaoDoJev — por tarefa", () => {
           config: { ligado: true, modo: "observacao" },
           por_tarefa: [
             { ...CLIMA, estado: "observando" },
-            { ...HUMANO, percebidos: { dias: 30, pedidos: 0, conversas: [] } },
+            { ...HUMANO, percebidos: { dias: 30, mensagens: 0, conversas: [] } },
           ],
         }),
       );
@@ -888,7 +895,7 @@ describe("CartaoDoJev — por tarefa", () => {
       montar(
         dados({
           config: { ligado: true, modo: "observacao" },
-          por_tarefa: [{ ...HUMANO, estado: "decidindo", novo: false, percebidos: { dias: 30, pedidos: 0, conversas: [] } }],
+          por_tarefa: [{ ...HUMANO, estado: "decidindo", novo: false, percebidos: { dias: 30, mensagens: 0, conversas: [] } }],
         }),
       );
       const linha = screen.getByTestId("jev-tarefa-humano");
@@ -912,7 +919,7 @@ describe("CartaoDoJev — por tarefa", () => {
       montar(
         dados({
           config: { ligado: true, modo: "observacao" },
-          por_tarefa: [...outras, { ...HUMANO, estado: "decidindo", novo: false, percebidos: { dias: 30, pedidos: 0, conversas: [] } }],
+          por_tarefa: [...outras, { ...HUMANO, estado: "decidindo", novo: false, percebidos: { dias: 30, mensagens: 0, conversas: [] } }],
         }),
       );
       expect(cartao()).toHaveAttribute("data-estado", "observando");
@@ -939,31 +946,31 @@ describe("CartaoDoJev — por tarefa", () => {
         "só os pedidos, observando",
         { ia: true, tarefas: [{ ...CLIMA, estado: "desligada" }, ...pedidos("observando")] },
         "observando",
-        "Observando — o Jev só conta os pedidos do cliente que a regra de hoje deixa passar. Nada muda no atendimento.",
+        "Observando — o Jev só conta as mensagens em que o cliente faz um pedido que a regra de hoje não reconheceu. Nada muda no atendimento.",
       ],
       [
         "só os pedidos, um avisando a equipe",
         { ia: true, tarefas: [{ ...CLIMA, estado: "desligada" }, ...pedidos("decidindo")] },
         "observando",
-        "Observando — o Jev conta os pedidos do cliente que a regra de hoje deixa passar e avisa a equipe na Central. Ele não decide nada no atendimento.",
+        "Observando — o Jev conta as mensagens em que o cliente faz um pedido que a regra de hoje não reconheceu, e avisa a equipe na Central. Ele não decide nada no atendimento.",
       ],
       [
         "só os pedidos, e sem a IA de sempre",
         { ia: false, tarefas: [{ ...CLIMA, estado: "desligada" }, ...pedidos("observando", "decidindo")] },
         "observando",
-        "Observando — o Jev conta os pedidos do cliente que a regra de hoje deixa passar e avisa a equipe na Central. Ele não decide nada no atendimento.",
+        "Observando — o Jev conta as mensagens em que o cliente faz um pedido que a regra de hoje não reconheceu, e avisa a equipe na Central. Ele não decide nada no atendimento.",
       ],
       [
         "o clima observando e os pedidos observando",
         { ia: true, tarefas: [{ ...CLIMA, estado: "observando" }, ...pedidos("observando")] },
         "observando",
-        "Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele só conta os que a regra de hoje deixa passar.",
+        "Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele só conta as mensagens em que a regra de hoje não reconheceu o pedido.",
       ],
       [
         "o clima observando e um pedido avisando",
         { ia: true, tarefas: [{ ...CLIMA, estado: "observando" }, ...pedidos("decidindo")] },
         "observando",
-        "Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele conta os que a regra de hoje deixa passar e avisa a equipe.",
+        "Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele conta as mensagens em que a regra de hoje não reconheceu o pedido, e avisa a equipe.",
       ],
       [
         "o clima decidindo e um pedido avisando",
@@ -995,7 +1002,7 @@ describe("CartaoDoJev — por tarefa", () => {
           config: { ligado: true, modo: "decide" },
           por_tarefa: [
             { ...CLIMA, estado: "decidindo" },
-            { ...HUMANO, estado: "decidindo", novo: false, percebidos: { dias: 30, pedidos: 0, conversas: [] } },
+            { ...HUMANO, estado: "decidindo", novo: false, percebidos: { dias: 30, mensagens: 0, conversas: [] } },
           ],
         }),
       );
@@ -1017,16 +1024,120 @@ describe("CartaoDoJev — por tarefa", () => {
       expect(screen.getByTestId("jev-ao-ligar")).toHaveTextContent(/Onde ele só observa/);
     });
 
+    /**
+     * O worker só pergunta os pedidos onde o atendimento automático rodaria. Numa
+     * empresa em que ele não roda em número nenhum — ninguém no ar sem pausa, ou
+     * o atendimento com um sistema de fora —, "Só observa" com "nenhuma
+     * mensagem" seria para sempre: a tarefa diz "Não roda", e por quê.
+     */
+    it.each([
+      ["ninguem_no_ar", /nenhum atendente automático está no ar — o Jev só é perguntado onde um atendente responderia/, true],
+      ["externo", /quem conduz as conversas desta empresa é um sistema de fora/, false],
+    ] as const)("sem atendimento automático (%s): 'Não roda' com o motivo, sem contar nem avisar", (motivo, frase, comLink) => {
+      montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [
+            { ...CLIMA, estado: "observando" },
+            { ...HUMANO, sem_atendente: motivo, percebidos: { dias: 30, mensagens: 0, conversas: [] } },
+          ],
+        }),
+      );
+      const linha = screen.getByTestId("jev-tarefa-humano");
+      expect(linha).toHaveTextContent("Não roda");
+      expect(linha).not.toHaveTextContent("Só observa");
+      const porQue = screen.getByTestId("jev-sem-atendente-humano");
+      expect(porQue).toHaveTextContent(frase);
+      expect(within(porQue).queryAllByRole("link").map((l) => l.getAttribute("href"))).toEqual(comLink ? ["/app/ai/agents"] : []);
+      // Nada do que só vale rodando: nem a contagem, nem "começou observando", nem avisar.
+      expect(screen.queryByTestId("jev-percebidos-humano")).toBeNull();
+      expect(screen.queryByTestId("jev-nova-humano")).toBeNull();
+      expect(within(linha).queryByRole("button", { name: "Avisar a equipe" })).toBeNull();
+      expect(within(linha).getByRole("button", { name: "Pausar esta tarefa" })).toBeInTheDocument();
+      // A tarefa parada não entra na frase do cartão: só o clima roda.
+      expect(screen.getByTestId("jev-tarefas").previousElementSibling).toHaveTextContent(
+        "Observando — a sua IA de sempre ainda decide. Compare os dois antes de deixar o Jev decidir.",
+      );
+    });
+
+    it("sem atendimento automático e só os pedidos ligados: o cartão diz que nada está rodando", () => {
+      montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [
+            { ...CLIMA, estado: "desligada" },
+            { ...HUMANO, sem_atendente: "ninguem_no_ar" },
+            { ...HUMANO, id: "opt_out", rotulo: TAREFA_DO_PEDIDO_PARA_PARAR.rotulo, sem_atendente: "ninguem_no_ar" },
+          ],
+        }),
+      );
+      expect(cartao()).toHaveAttribute("data-estado", "em_pausa");
+      expect(cartao()).toHaveTextContent(/nenhuma tarefa está rodando agora/);
+    });
+
+    it("controle: com quem atenda, a mesma tarefa só observa, conta e oferece avisar", () => {
+      montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [{ ...HUMANO, sem_atendente: null, percebidos: { dias: 30, mensagens: 0, conversas: [] } }],
+        }),
+      );
+      const linha = screen.getByTestId("jev-tarefa-humano");
+      expect(linha).toHaveTextContent("Só observa");
+      expect(screen.queryByTestId("jev-sem-atendente-humano")).toBeNull();
+      expect(screen.getByTestId("jev-percebidos-humano")).toBeInTheDocument();
+      expect(screen.getByTestId("jev-nova-humano")).toBeInTheDocument();
+      expect(within(linha).getByRole("button", { name: "Avisar a equipe" })).toBeInTheDocument();
+    });
+
+    /**
+     * A frase de ANTES de ligar é verdadeira para o que vai rodar, como a do
+     * cartão ligado: nos pedidos não há IA de sempre nem o que comparar, e com
+     * só eles rodando (o clima pausado) a frase de comparar era falsa por
+     * inteiro — sem a IA principal, contradizia a frase seguinte.
+     */
+    const ANTES_OBSERVA = "Onde ele só observa, a sua IA de sempre continua decidindo, e você compara os dois antes de deixar o Jev decidir.";
+    const ANTES_DECIDE =
+      "Onde ele decide, vale a escolha que você fez antes de desligá-lo; onde só observa, a sua IA de sempre continua decidindo, e você compara os dois antes de deixar o Jev decidir.";
+    const PEDIDOS_OBSERVAM = "Nos pedidos do cliente, o Jev só conta as mensagens em que a regra de hoje não reconheceu o pedido — nada muda no atendimento.";
+    const PEDIDOS_AVISAM =
+      "Nos pedidos do cliente, o Jev conta as mensagens em que a regra de hoje não reconheceu o pedido e avisa a equipe na Central — ele não decide nada no atendimento.";
+    const RELIGAR = "As tarefas pausadas continuam assim: depois de ligar o Jev, religue-as na lista que aparece aqui.";
+    const SEM_IA_RELIGADO = "Sem uma IA principal, o clima religado volta decidindo sozinho: não há com quem comparar nem quem cubra uma falha do Jev.";
+    type AoLigar = "observando" | "decidindo" | "desligada";
+    const aoLigar = (clima: AoLigar, humano: AoLigar, parar: AoLigar, extra: { semAtendente?: boolean } = {}) => [
+      { ...CLIMA, estado: clima, ao_ligar: clima },
+      { ...HUMANO, estado: humano, ao_ligar: humano, novo: false, ...(extra.semAtendente ? { sem_atendente: "ninguem_no_ar" as const } : {}) },
+      { ...PARAR, estado: parar, ao_ligar: parar, novo: false, ...(extra.semAtendente ? { sem_atendente: "ninguem_no_ar" as const } : {}) },
+    ];
+    it.each([
+      ["só os pedidos, observando (o clima pausado)", true, aoLigar("desligada", "observando", "observando"), [PEDIDOS_OBSERVAM, RELIGAR]],
+      ["só os pedidos, um avisando", true, aoLigar("desligada", "decidindo", "observando"), [PEDIDOS_AVISAM, RELIGAR]],
+      ["só os pedidos, sem a IA de sempre", false, aoLigar("desligada", "observando", "observando"), [PEDIDOS_OBSERVAM, RELIGAR, SEM_IA_RELIGADO]],
+      ["o clima observando e os pedidos observando", true, aoLigar("observando", "observando", "observando"), [ANTES_OBSERVA, PEDIDOS_OBSERVAM]],
+      ["o clima decidindo e um pedido avisando", true, aoLigar("decidindo", "observando", "decidindo"), [ANTES_DECIDE, PEDIDOS_AVISAM]],
+      ["o clima observando e os pedidos sem quem atenda", true, aoLigar("observando", "observando", "decidindo", { semAtendente: true }), [ANTES_OBSERVA]],
+    ] as const)("antes de ligar, com %s, a frase diz o que vai rodar", (_caso, ia, tarefas, frases) => {
+      montar(dados({ tem_ia_de_sempre: ia, por_tarefa: [...tarefas] }));
+      const texto = screen.getByTestId("jev-ao-ligar").textContent?.replace(/\s+/g, " ").trim() ?? "";
+      expect(texto).toBe(frases.join(" "));
+    });
+
+    it("antes de ligar, só o clima observando: a frase de sempre, sem a dos pedidos (controle)", () => {
+      montar(dados({ por_tarefa: [{ ...CLIMA, estado: "observando", ao_ligar: "observando" }] }));
+      expect(screen.getByTestId("jev-ao-ligar").textContent?.replace(/\s+/g, " ").trim()).toBe(ANTES_OBSERVA);
+    });
+
     it("fala espanhol com quem escolheu espanhol, no singular e no plural", () => {
       montar(
         dados({
           config: { ligado: true, modo: "observacao" },
-          por_tarefa: [{ ...HUMANO, percebidos: { dias: 30, pedidos: 1, conversas: [conversa(1)] } }],
+          por_tarefa: [{ ...HUMANO, percebidos: { dias: 30, mensagens: 1, conversas: [conversa(1)] } }],
         }),
         { idioma: "es" },
       );
       expect(screen.getByTestId("jev-percebidos-humano")).toHaveTextContent(
-        "En los últimos 30 días, Jev detectó 1 pedido de hablar con una persona que la regla de hoy no captó.",
+        "En los últimos 30 días, Jev detectó 1 mensaje que pide hablar con una persona en el que la regla de hoy no reconoció el pedido.",
       );
       expect(screen.getByTestId("jev-tarefa-humano")).toHaveTextContent("Detectar pedidos de hablar con una persona");
       cleanup();
@@ -1034,15 +1145,27 @@ describe("CartaoDoJev — por tarefa", () => {
       montar(
         dados({
           config: { ligado: true, modo: "observacao" },
-          por_tarefa: [{ ...HUMANO, percebidos: { dias: 30, pedidos: 7, conversas: [conversa(1)] } }],
+          por_tarefa: [{ ...HUMANO, percebidos: { dias: 30, mensagens: 7, conversas: [conversa(1)] } }],
         }),
         { idioma: "es" },
       );
       expect(screen.getByTestId("jev-percebidos-humano")).toHaveTextContent(
-        "En los últimos 30 días, Jev detectó 7 pedidos de hablar con una persona que la regla de hoy no captó.",
+        "En los últimos 30 días, Jev detectó 7 mensajes que piden hablar con una persona en los que la regla de hoy no reconoció el pedido.",
       );
       // O número segue em destaque, onde a tradução o pôs.
       expect(within(screen.getByTestId("jev-percebidos-humano")).getByText("7")).toHaveClass("font-medium");
+      cleanup();
+      // E o zero, com a frase própria dele, também inteira.
+      montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [{ ...HUMANO, percebidos: { dias: 30, mensagens: 0, conversas: [] } }],
+        }),
+        { idioma: "es" },
+      );
+      expect(screen.getByTestId("jev-percebidos-humano")).toHaveTextContent(
+        "En los últimos 30 días, Jev todavía no detectó ningún mensaje que pida hablar con una persona en el que la regla de hoy no haya reconocido el pedido.",
+      );
     });
   });
 

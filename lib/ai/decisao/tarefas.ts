@@ -86,11 +86,14 @@ type OndeMora = { ponto: string; aoDecidirNoPonto: string } | { ponto?: undefine
  *    liam "o Jev concordou com a sua IA de sempre", e o leigo não sabia no quê.
  *  - `cascata`: o Jev só é perguntado onde a regra de hoje disse NÃO. Não há o
  *    que concordar — a regra, por construção, sempre disse não —, e o cartão
- *    mostra quantos pedidos ele PERCEBEU que ela deixou passar (`percebidos`:
- *    a frase INTEIRA, no singular e no plural, com `{dias}` e `{n}` — frase
- *    montada de pedaços traduzidos sai torta em outro idioma). O estado `decidindo` dela se chama
- *    "Avisar a equipe" na tela: o que ele faz é abrir um aviso na Central
- *    (`./pedidos.ts`), nunca agir no lugar da regra.
+ *    mostra em quantas MENSAGENS ele percebeu o pedido que ela não reconheceu
+ *    (`percebidos`: a frase INTEIRA, para nenhuma, uma e várias, com `{dias}` e
+ *    `{n}` — frase montada de pedaços traduzidos sai torta em outro idioma). A
+ *    unidade é a mensagem, e não o pedido: o worker pergunta no
+ *    `message.received`, antes da janela do turno, e a rajada com duas frases
+ *    naturais conta duas (ver `app/api/v1/ai/jev/route.ts`). O estado
+ *    `decidindo` dela se chama "Avisar a equipe" na tela: o que ele faz é abrir
+ *    um aviso na Central (`./pedidos.ts`), nunca agir no lugar da regra.
  */
 type ComoConvive =
   | {
@@ -98,7 +101,7 @@ type ComoConvive =
       concordancia: { antes: string; depois: string };
       percebidos?: undefined;
     }
-  | { familia: "cascata"; percebidos: { um: string; varios: string }; concordancia?: undefined };
+  | { familia: "cascata"; percebidos: { nenhuma: string; uma: string; varias: string }; concordancia?: undefined };
 
 export type TarefaDoJev = ComumDaTarefa & OndeMora & ComoConvive;
 
@@ -210,12 +213,15 @@ export const TAREFA_DO_PEDIDO_DE_HUMANO = {
   aoConfirmarDecidir:
     "Quando o Jev perceber um pedido para falar com uma pessoa que a regra não pegou, ele abre um aviso na Central para alguém da equipe decidir. Ele nunca passa a conversa sozinho.",
   percebidos: {
-    um: "Nos últimos {dias} dias, o Jev percebeu {n} pedido de falar com uma pessoa que a regra de hoje não pegou.",
-    varios: "Nos últimos {dias} dias, o Jev percebeu {n} pedidos de falar com uma pessoa que a regra de hoje não pegou.",
+    nenhuma:
+      "Nos últimos {dias} dias, o Jev ainda não percebeu nenhuma mensagem pedindo para falar com uma pessoa em que a regra de hoje não reconheceu o pedido.",
+    uma: "Nos últimos {dias} dias, o Jev percebeu {n} mensagem pedindo para falar com uma pessoa em que a regra de hoje não reconheceu o pedido.",
+    varias:
+      "Nos últimos {dias} dias, o Jev percebeu {n} mensagens pedindo para falar com uma pessoa em que a regra de hoje não reconheceu o pedido.",
   },
   rotulo: "Perceber pedido para falar com uma pessoa",
   oQueFaz:
-    "Lê a mensagem do cliente, sozinha, quando a regra de hoje não viu nela um pedido para falar com uma pessoa — e conta os pedidos que ela deixou passar. Ele nunca passa a conversa sozinho.",
+    "Lê a mensagem do cliente, sozinha, quando a regra de hoje não viu nela um pedido para falar com uma pessoa — e conta as mensagens com esse pedido que ela não reconheceu. Ele nunca passa a conversa sozinho.",
 } as const satisfies TarefaDoJev;
 
 /**
@@ -234,12 +240,15 @@ export const TAREFA_DO_PEDIDO_PARA_PARAR = {
   aoConfirmarDecidir:
     "Quando o Jev perceber um pedido para parar de receber mensagens que a regra não pegou, ele abre um aviso na Central para alguém da equipe conferir. Quem bloqueia o contato é só a regra de hoje, quando o próprio cliente manda PARAR: o Jev nunca bloqueia ninguém.",
   percebidos: {
-    um: "Nos últimos {dias} dias, o Jev percebeu {n} pedido para parar de receber mensagens que a regra de hoje não pegou.",
-    varios: "Nos últimos {dias} dias, o Jev percebeu {n} pedidos para parar de receber mensagens que a regra de hoje não pegou.",
+    nenhuma:
+      "Nos últimos {dias} dias, o Jev ainda não percebeu nenhuma mensagem pedindo para parar de receber mensagens em que a regra de hoje não reconheceu o pedido.",
+    uma: "Nos últimos {dias} dias, o Jev percebeu {n} mensagem pedindo para parar de receber mensagens em que a regra de hoje não reconheceu o pedido.",
+    varias:
+      "Nos últimos {dias} dias, o Jev percebeu {n} mensagens pedindo para parar de receber mensagens em que a regra de hoje não reconheceu o pedido.",
   },
   rotulo: "Perceber pedido para parar de receber mensagens",
   oQueFaz:
-    "Lê a mensagem do cliente, sozinha, quando a regra de hoje não viu nela um pedido para parar de receber mensagens — e conta os pedidos que ela deixou passar. Quem bloqueia o contato é só a regra de hoje, quando o próprio cliente manda PARAR.",
+    "Lê a mensagem do cliente, sozinha, quando a regra de hoje não viu nela um pedido para parar de receber mensagens — e conta as mensagens com esse pedido que ela não reconheceu. Quem bloqueia o contato é só a regra de hoje, quando o próprio cliente manda PARAR.",
 } as const satisfies TarefaDoJev;
 
 export const TAREFAS_DO_JEV: readonly TarefaDoJev[] = [
@@ -261,12 +270,16 @@ export const TAREFAS_DO_JEV: readonly TarefaDoJev[] = [
  * O "por quê" da linha em Execuções também é dela (`porQue`, `porQueNaFalha`):
  * os textos de origem do Jev (`EXPLICACAO_DA_ORIGEM`, `JEV_FALHOU_AO_LADO`)
  * falam de decidir, comparar e da "IA de sempre" — e aqui ele não decide nada,
- * não há com o que comparar, e quem vale sem ele é a regra.
+ * não há com o que comparar, e quem vale sem ele é a regra. O `porQue` é uma
+ * PERGUNTA, e não uma afirmação sobre a mensagem: a chamada sai em quase toda
+ * mensagem (não pode pressupor que houve pedido) e também quando a regra pegou
+ * o OUTRO pedido ("quero falar com um atendente" é perguntado só sobre parar de
+ * receber — não pode dizer que a regra não viu pedido nenhum).
  */
 export const PEDIDOS_DO_CLIENTE = {
   purpose: "jev_pedidos",
   rotulo: "Perceber pedidos do cliente",
-  porQue: "O Jev foi perguntado porque a regra de hoje não viu pedido nesta mensagem. Ele não bloqueia nem passa a conversa.",
+  porQue: "O Jev foi perguntado se esta mensagem traz um pedido que a regra de hoje não viu. Ele não bloqueia nem passa a conversa.",
   porQueNaFalha: "O Jev não respondeu: valeu só a regra de hoje.",
 } as const;
 
@@ -373,4 +386,25 @@ export function algumRoteadorQuePergunta(roteadores: ReadonlyArray<{ intencoes?:
  */
 export function tarefaSemRoteador(tarefa: Pick<TarefaDoJev, "id">, temRoteadorQuePergunta: boolean): boolean {
   return tarefa.id === TAREFA_DO_ROTEADOR.id && !temRoteadorQuePergunta;
+}
+
+/**
+ * Por que o atendimento automático não roda em NENHUM número da organização —
+ * e com ele a regra de hoje: `externo`, o atendimento delegado a um sistema de
+ * fora (`ai_dispatch_mode = 'external'`, que o dreno descarta antes de tudo);
+ * `ninguem_no_ar`, nenhum número com um agente publicado e não pausado (nem um
+ * roteador ativo com um assim) — `haQuemAtendaAOrganizacao`. Lido por quem
+ * chama.
+ */
+export type SemAtendente = "externo" | "ninguem_no_ar";
+
+/**
+ * As tarefas em cascata só são perguntadas onde o turno rodaria
+ * (`./pedidos.ts`, `turnoRodaria`): sem atendimento automático em número
+ * nenhum, o worker nunca as pergunta, e "Só observa" com "nenhuma mensagem" no
+ * cartão seria para sempre. As outras tarefas têm os seus motivos
+ * (`tarefaSemCamada`, `tarefaSemRoteador`).
+ */
+export function tarefaSemAtendente(tarefa: Pick<TarefaDoJev, "familia">, motivo: SemAtendente | null): SemAtendente | null {
+  return tarefa.familia === "cascata" ? motivo : null;
 }

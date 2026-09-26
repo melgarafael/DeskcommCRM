@@ -109,10 +109,11 @@ export interface TarefaNoCartao {
   observacao?: Concordancia | null;
   /**
    * Só as tarefas em cascata, que o Jev responde onde a regra de hoje disse não:
-   * quantos pedidos ele percebeu que ela deixou passar, e as conversas dos mais
-   * recentes (o endereço já vem pronto da rota). Ausente na imagem anterior.
+   * em quantas MENSAGENS ele percebeu o pedido que ela não reconheceu, e as
+   * conversas das mais recentes (o endereço já vem pronto da rota). Ausente na
+   * imagem anterior.
    */
-  percebidos?: { dias: number; pedidos: number; conversas: Array<{ href: string; em: string }> } | null;
+  percebidos?: { dias: number; mensagens: number; conversas: Array<{ href: string; em: string }> } | null;
   /**
    * A camada de segurança que ela acompanha está desligada para a empresa: o
    * turno não pergunta, e ela não roda em estado nenhum. Ausente na imagem anterior.
@@ -123,10 +124,17 @@ export interface TarefaNoCartao {
    * escolhe agente, e ela não tem o que comparar. Ausente na imagem anterior.
    */
   sem_roteador?: boolean;
+  /**
+   * As de pedido numa empresa em que o atendimento automático não roda em
+   * número nenhum: ninguém no ar sem pausa, ou o atendimento com um sistema de
+   * fora. O worker só as pergunta onde ele roda. Ausente na imagem anterior.
+   */
+  sem_atendente?: "externo" | "ninguem_no_ar" | null;
 }
 
-/** Algo fora do Jev a impede de rodar em qualquer estado — a camada, ou o roteador. */
-const parada = (t: TarefaNoCartao) => t.sem_camada === true || t.sem_roteador === true;
+/** Algo fora do Jev a impede de rodar em qualquer estado — a camada, o roteador, ou quem atende. */
+const parada = (t: TarefaNoCartao) =>
+  t.sem_camada === true || t.sem_roteador === true || (t.sem_atendente !== undefined && t.sem_atendente !== null);
 
 /** A tarefa pode rodar agora — não está desligada nem parada. */
 const roda = (t: TarefaNoCartao) => t.estado !== "desligada" && !parada(t);
@@ -242,9 +250,9 @@ const decide = (t: TarefaNoCartao) => t.estado === "decidindo" && !avisaAEquipe(
 
 /**
  * As tarefas que rodam, pela família: as que o Jev compara com a IA de sempre,
- * e as em cascata, que só contam os pedidos que a regra de hoje deixa passar
- * (e, em "Avisar a equipe", abrem aviso). A frase do cartão não pode falar de
- * comparar nem da "sua IA de sempre" quando só estas rodam.
+ * e as em cascata, que só contam as mensagens com um pedido que a regra de hoje
+ * não reconheceu (e, em "Avisar a equipe", abrem aviso). A frase do cartão não
+ * pode falar de comparar nem da "sua IA de sempre" quando só estas rodam.
  */
 function oQueRoda(d: DadosDoJev): { comparam: number; cascata: number; avisando: boolean } {
   const rodando = tarefasDoCartao(d).filter(roda);
@@ -261,13 +269,13 @@ function fraseObservando(d: DadosDoJev, t: (texto: string) => string): string {
   const r = oQueRoda(d);
   if (r.comparam === 0) {
     return r.avisando
-      ? t("Observando — o Jev conta os pedidos do cliente que a regra de hoje deixa passar e avisa a equipe na Central. Ele não decide nada no atendimento.")
-      : t("Observando — o Jev só conta os pedidos do cliente que a regra de hoje deixa passar. Nada muda no atendimento.");
+      ? t("Observando — o Jev conta as mensagens em que o cliente faz um pedido que a regra de hoje não reconheceu, e avisa a equipe na Central. Ele não decide nada no atendimento.")
+      : t("Observando — o Jev só conta as mensagens em que o cliente faz um pedido que a regra de hoje não reconheceu. Nada muda no atendimento.");
   }
   if (r.cascata === 0) return t("Observando — a sua IA de sempre ainda decide. Compare os dois antes de deixar o Jev decidir.");
   return r.avisando
-    ? t("Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele conta os que a regra de hoje deixa passar e avisa a equipe.")
-    : t("Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele só conta os que a regra de hoje deixa passar.");
+    ? t("Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele conta as mensagens em que a regra de hoje não reconheceu o pedido, e avisa a equipe.")
+    : t("Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele só conta as mensagens em que a regra de hoje não reconheceu o pedido.");
 }
 
 /** A frase do cartão decidindo: "em parte" nomeia também quem só avisa a equipe. */
@@ -597,9 +605,14 @@ function ProntoParaLigar({ dados, recarregar }: { dados: DadosDoJev; recarregar:
   const doClima = tarefas.find(({ tarefa }) => tarefa.id === TAREFA_DO_CLIMA.id);
   const climaSozinho = !dados.tem_ia_de_sempre && doClima !== undefined && doClima.aoLigar !== "desligada";
   const climaPausadoSemIa = !dados.tem_ia_de_sempre && doClima?.aoLigar === "desligada";
-  const algumaDecide = tarefas.some(
-    ({ tarefa, aoLigar }) => aoLigar === "decidindo" && !parada(tarefa) && !avisaAEquipe(tarefa.id),
-  );
+  // O que vai rodar ao ligar, pela família — a frase é verdadeira para isso,
+  // como a do cartão ligado (`fraseObservando`): nos pedidos do cliente não há
+  // IA de sempre nem o que comparar, e com só eles rodando a frase de comparar
+  // era falsa por inteiro.
+  const vaoRodar = tarefas.filter(({ tarefa, aoLigar }) => aoLigar !== "desligada" && !parada(tarefa));
+  const comparam = vaoRodar.filter(({ tarefa }) => !avisaAEquipe(tarefa.id));
+  const pedidos = vaoRodar.filter(({ tarefa }) => avisaAEquipe(tarefa.id));
+  const algumaDecide = comparam.some(({ aoLigar }) => aoLigar === "decidindo");
   const algumaPausada = tarefas.some(({ aoLigar }) => aoLigar === "desligada");
 
   return (
@@ -634,13 +647,23 @@ function ProntoParaLigar({ dados, recarregar }: { dados: DadosDoJev; recarregar:
             ? t(
                 "Sem uma IA principal que meça o clima, o Jev já começa decidindo sozinho nessa tarefa: não há com quem comparar nem quem cubra uma falha dele.",
               )
-            : algumaDecide
+            : comparam.length === 0
+              ? null
+              : algumaDecide
+                ? t(
+                    "Onde ele decide, vale a escolha que você fez antes de desligá-lo; onde só observa, a sua IA de sempre continua decidindo, e você compara os dois antes de deixar o Jev decidir.",
+                  )
+                : t(
+                    "Onde ele só observa, a sua IA de sempre continua decidindo, e você compara os dois antes de deixar o Jev decidir.",
+                  )}{" "}
+          {pedidos.length > 0 &&
+            (pedidos.some(({ aoLigar }) => aoLigar === "decidindo")
               ? t(
-                  "Onde ele decide, vale a escolha que você fez antes de desligá-lo; onde só observa, a sua IA de sempre continua decidindo, e você compara os dois antes de deixar o Jev decidir.",
+                  "Nos pedidos do cliente, o Jev conta as mensagens em que a regra de hoje não reconheceu o pedido e avisa a equipe na Central — ele não decide nada no atendimento.",
                 )
               : t(
-                  "Onde ele só observa, a sua IA de sempre continua decidindo, e você compara os dois antes de deixar o Jev decidir.",
-                )}{" "}
+                  "Nos pedidos do cliente, o Jev só conta as mensagens em que a regra de hoje não reconheceu o pedido — nada muda no atendimento.",
+                ))}{" "}
           {algumaPausada &&
             t("As tarefas pausadas continuam assim: depois de ligar o Jev, religue-as na lista que aparece aqui.")}{" "}
           {climaPausadoSemIa &&
@@ -797,8 +820,9 @@ function Ligado({
             </div>
 
             {/* O selo sozinho não explicava nada e nunca sumia: diz o que ele
-                quer dizer, e "Manter só observando" (abaixo) o tira. */}
-            {rodando && tarefa.novo && tarefa.estado === "observando" && (
+                quer dizer, e "Manter só observando" (abaixo) o tira. Parada, ela
+                não observa nada — a linha do "Não roda" diz por quê. */}
+            {rodando && tarefa.novo && tarefa.estado === "observando" && !parada(tarefa) && (
               <p className="text-sm text-muted-foreground" data-testid={`jev-nova-${tarefa.id}`}>
                 {avisa
                   ? t("Começou sozinha, só observando: nada muda até você pedir para o Jev avisar a equipe.")
@@ -830,6 +854,26 @@ function Ligado({
                 </Link>
               </p>
             )}
+            {/* As de pedido só são perguntadas onde o atendimento automático
+                responderia: sem ele em número nenhum, "Só observa" com "nenhuma
+                mensagem" seria para sempre. */}
+            {rodando && tarefa.estado !== "desligada" && tarefa.sem_atendente === "ninguem_no_ar" && (
+              <p className="text-sm text-muted-foreground" data-testid={`jev-sem-atendente-${tarefa.id}`}>
+                {t(
+                  "Não roda agora: nenhum atendente automático está no ar — o Jev só é perguntado onde um atendente responderia. Publique um agente num número, ou tire um agente da pausa, em Agentes.",
+                )}{" "}
+                <Link className="underline underline-offset-4" href="/app/ai/agents">
+                  {t("Abrir os agentes")}
+                </Link>
+              </p>
+            )}
+            {rodando && tarefa.estado !== "desligada" && tarefa.sem_atendente === "externo" && (
+              <p className="text-sm text-muted-foreground" data-testid={`jev-sem-atendente-${tarefa.id}`}>
+                {t(
+                  "Não roda agora: quem conduz as conversas desta empresa é um sistema de fora. O Jev só é perguntado onde um atendente automático daqui responderia.",
+                )}
+              </p>
+            )}
 
             {rodando && roda(tarefa) && tarefa.estado === "decidindo" && aoDecidir !== undefined && (
               <p className="text-sm text-muted-foreground" data-testid={`jev-decide-${tarefa.id}`}>
@@ -841,7 +885,7 @@ function Ligado({
                 de deixar o Jev decidir. O clima conta "chamariam uma pessoa"; as
                 outras, o mesmo rótulo (em `jev_observacoes`). A em cascata não
                 concorda com nada — a regra de hoje sempre disse não onde ele foi
-                perguntado —, e conta os pedidos que ele percebeu. */}
+                perguntado —, e conta as mensagens em que ele percebeu o pedido. */}
             {rodando && roda(tarefa) && registro?.familia === "cascata" && tarefa.percebidos && (
               <PercebidosDaTarefa
                 tarefa={tarefa}
@@ -1119,13 +1163,14 @@ function ConcordanciaDaTarefa({
 }
 
 /**
- * "Nos últimos 30 dias, o Jev percebeu N pedidos … que a regra de hoje não
- * pegou." — e, quando há, as conversas dos mais recentes, para quem quer ver o
- * que o cliente disse. Cada link diz de quando é o pedido: cinco "Abrir
- * conversa" iguais não diriam qual é qual.
+ * "Nos últimos 30 dias, o Jev percebeu N mensagens pedindo … em que a regra de
+ * hoje não reconheceu o pedido." — e, quando há, as conversas das mais
+ * recentes, para quem quer ver o que o cliente disse. Cada link diz de quando é
+ * a mensagem: cinco "Abrir conversa" iguais não diriam qual é qual.
  *
- * A frase é traduzida INTEIRA (a do registro, no singular ou no plural) e só
- * então recebe os números: o `{n}` em destaque é onde a tradução o pôs.
+ * A frase é traduzida INTEIRA (a do registro, para nenhuma, uma ou várias) e só
+ * então recebe os números: o `{n}` em destaque é onde a tradução o pôs. O zero
+ * tem frase própria, sem número: "percebeu 0 mensagens" lia-se como defeito.
  */
 function PercebidosDaTarefa({
   tarefa,
@@ -1135,8 +1180,8 @@ function PercebidosDaTarefa({
 }: {
   tarefa: TarefaNoCartao;
   p: NonNullable<TarefaNoCartao["percebidos"]>;
-  /** A frase do registro, com `{dias}` e `{n}`. */
-  frase: { um: string; varios: string };
+  /** A frase do registro, com `{dias}` e `{n}` (a de nenhuma, só `{dias}`). */
+  frase: { nenhuma: string; uma: string; varias: string };
   formatar: (n: number) => string;
 }) {
   const t = useT();
@@ -1147,17 +1192,20 @@ function PercebidosDaTarefa({
     hour: "2-digit",
     minute: "2-digit",
   });
-  const [antes = "", depois = ""] = t(p.pedidos === 1 ? frase.um : frase.varios)
-    .replace("{dias}", formatar(p.dias))
-    .split("{n}");
+  const escolhida = p.mensagens === 0 ? frase.nenhuma : p.mensagens === 1 ? frase.uma : frase.varias;
+  const [antes = "", depois] = t(escolhida).replace("{dias}", formatar(p.dias)).split("{n}");
   return (
     <div className="space-y-1 text-sm">
       <p data-testid={`jev-percebidos-${tarefa.id}`}>
         {antes}
-        <span className="font-medium tabular-nums">{formatar(p.pedidos)}</span>
-        {depois}
+        {depois !== undefined && (
+          <>
+            <span className="font-medium tabular-nums">{formatar(p.mensagens)}</span>
+            {depois}
+          </>
+        )}
       </p>
-      {p.pedidos > 0 && p.conversas.length > 0 && (
+      {p.mensagens > 0 && p.conversas.length > 0 && (
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1" data-testid={`jev-percebidos-conversas-${tarefa.id}`}>
           <span className="text-muted-foreground">{t("Ver as conversas:")}</span>
           {p.conversas.map((c) => {

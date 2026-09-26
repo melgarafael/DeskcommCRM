@@ -89,10 +89,10 @@ async function montarCenario(nome: string): Promise<Cenario> {
 }
 
 /**
- * Cria um agente. `publicado: false` reproduz EXATAMENTE o que a pausa deixa
- * no banco — a versão existe e virou `superseded`, e `published_version_id`
- * ficou nulo. Criar o agente sem versão nenhuma seria um estado mais fácil, e
- * o portão poderia passar por um motivo que a pausa real não produz.
+ * Cria um agente. `publicado: false` reproduz o agente DESPUBLICADO: a versão
+ * virou `superseded` e `published_version_id` ficou nulo — não a pausa pela
+ * tela, que grava só `paused_at` (jev-pergunta-so-com-quem-nao-esta-pausado).
+ * Sem versão nenhuma o portão poderia passar por um motivo que o banco não tem.
  */
 async function criarAgente(
   sessionId: string,

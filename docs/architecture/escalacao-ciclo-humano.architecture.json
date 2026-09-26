@@ -1370,7 +1370,7 @@
       "id": "e120",
       "from": "jevObservacoes",
       "to": "jevRota",
-      "label": "concordância por tarefa, 30 dias, contada no banco — o laço de retorno da manipulação; nas tarefas em cascata, os pedidos percebidos e as conversas deles"
+      "label": "concordância por tarefa, 30 dias, contada no banco — o laço de retorno da manipulação; nas tarefas em cascata, as mensagens em que o Jev percebeu o pedido, as conversas delas, e o 'Não roda' onde nenhum número tem atendente automático no ar (haQuemAtendaAOrganizacao) ou o atendimento é de um sistema de fora"
     },
     {
       "id": "e121",
@@ -1406,7 +1406,7 @@
       "id": "e126",
       "from": "atribuir",
       "to": "central",
-      "label": "trg_fechar_avisos_do_jev_da_conversa (0426): uma pessoa assume, a conversa é passada a uma pessoa por qualquer caminho (last_handoff_at, robô calado) ou encerrada — o aviso do Jev daquela conversa fecha; trg_fechar_aviso_do_jev_ao_bloquear: o contato bloqueado fecha o de parar de receber (o laço de retorno dele)"
+      "label": "trg_fechar_avisos_do_jev_da_conversa (0426): encerrada, os dois avisos do Jev daquela conversa fecham; com uma pessoa (assumida, ou passada por qualquer caminho: last_handoff_at, robô calado), só o de falar com uma pessoa — o de parar de receber pede à equipe assumir E pedir o PARAR, e segue aberto; trg_fechar_aviso_do_jev_ao_bloquear: o contato bloqueado fecha o de parar de receber (o laço de retorno dele)"
     }
   ],
   "cards": [

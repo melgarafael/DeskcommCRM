@@ -56,7 +56,7 @@ describe("espanhol dos textos que vêm de lista, não de literal", () => {
       // Só com ponto: `jevNoPonto`, no cartão do ponto.
       ...(x.aoDecidirNoPonto !== undefined ? [x.aoDecidirNoPonto] : []),
       // A frase da concordância, ou — em cascata — a dos pedidos percebidos.
-      ...(x.concordancia !== undefined ? [x.concordancia.antes, x.concordancia.depois] : [x.percebidos.um, x.percebidos.varios]),
+      ...(x.concordancia !== undefined ? [x.concordancia.antes, x.concordancia.depois] : [x.percebidos.nenhuma, x.percebidos.uma, x.percebidos.varias]),
     ]);
     expect(textos.length, "a varredura não enxergou as tarefas").toBeGreaterThan(8);
     expect(semEspanhol(textos)).toEqual([]);
