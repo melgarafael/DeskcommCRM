@@ -42,8 +42,9 @@ import { logInvocation, type LogInvocationInput } from "@/lib/ai/log-invocation"
 import { DEFAULT_SENTIMENT_THRESHOLD, SENTIMENT_SYSTEM_PROMPT } from "@/lib/ai/prompts/sentiment";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
+import { aiDispatchModeSchema } from "@/lib/schemas/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { perguntarOsPedidosDoCliente } from "@/workers/ai-sentiment-worker.pedidos";
+import { aConversaAgora, perguntarOsPedidosDoCliente } from "@/workers/ai-sentiment-worker.pedidos";
 
 const SENTIMENT_MODEL = DEFAULT_CLASSIFIER_MODEL; // "anthropic/claude-haiku-4-5"
 const CLASSIFY_TIMEOUT_MS = 5_000;
@@ -140,7 +141,7 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     // ── Load message (programmatic org filter) ────────────────────────────
     const { data: message, error: msgErr } = await admin
       .from("messages")
-      .select("id, body, direction, conversation_id, organization_id, metadata")
+      .select("id, body, direction, conversation_id, organization_id, metadata, created_at")
       .eq("id", messageId)
       .eq("organization_id", event.organization_id)
       .maybeSingle();
@@ -264,7 +265,8 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     // Numa chamada PRÓPRIA ao Jev, começada aqui e esperada só no fim
     // (`finally`): corre EM PARALELO à do clima, nunca muda o desfecho dele, e o
     // dreno não segue com ela ainda no ar. Nunca rejeita. O aviso de "Avisar a
-    // equipe" sai no `finally`, depois de se saber o que o clima fez.
+    // equipe" sai no `finally`, depois de se saber o que o clima fez e de reler
+    // a conversa (`aConversaAgora`).
     const pedidos: Promise<PedidosObservados | null> = pedidosRodam
       ? perguntarOsPedidosDoCliente(admin, {
           organizationId: event.organization_id,
@@ -274,6 +276,12 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
           contactId: conversa?.contact_id ?? null,
           grupo: conversa?.is_group === true,
           iaPodeResponder: elegib?.permite === true,
+          // O dreno descarta o turno do modo externo antes de tudo (spec 14), e
+          // a regra de hoje não roda. O turno cedido ao follow-up de retorno
+          // (`deveCederTurnoAoRetorno`) fica declarado, não espelhado — ver a cola.
+          atendimentoExterno:
+            aiDispatchModeSchema.parse((daOrg?.settings as { ai_dispatch_mode?: unknown } | null | undefined)?.ai_dispatch_mode) ===
+            "external",
           agentId: agent?.id ?? null,
           config: configDoJev,
           mensagem: body,
@@ -539,7 +547,16 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
       return { skipped: false, sentiment_score: decisao.score };
     } finally {
       const observados = await pedidos;
-      if (observados) await avisarAEquipe(admin, observados, { chamouUmaPessoa: climaChamouUmaPessoa });
+      if (observados) {
+        await avisarAEquipe(admin, observados, { chamouUmaPessoa: climaChamouUmaPessoa }, () =>
+          aConversaAgora(
+            admin,
+            event.organization_id,
+            observados.entrada.conversationId,
+            (message.created_at as string | null | undefined) ?? null,
+          ),
+        );
+      }
     }
   } catch (err) {
     // Global catch: NEVER throw — must not break the bot path.

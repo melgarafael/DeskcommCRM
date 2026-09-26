@@ -2,10 +2,11 @@
  * OS PEDIDOS DO CLIENTE PERGUNTADOS AO JEV — a cascata, o denominador, o corte
  * e o que se grava.
  *
- * A regra de hoje entra aqui como ela é (`lib/opt-out/deteccao.ts` e a detecção
- * de pedido de pessoa do turno), para a cascata ser provada com as frases de
- * verdade, e não com um `true` escrito à mão. O caminho pelo worker de clima,
- * com a leitura dos fatos do turno, é `tests/unit/clima-da-conversa-no-worker.test.ts`.
+ * A regra de hoje entra aqui como ela é — a função que o worker roda
+ * (`regraDeHoje`, em `workers/ai-sentiment-worker.pedidos.ts`), e não uma cópia
+ * dela —, para a cascata ser provada com as frases de verdade, e não com um
+ * `true` escrito à mão. O caminho pelo worker de clima, com a leitura dos fatos
+ * do turno, é `tests/unit/clima-da-conversa-no-worker.test.ts`.
  */
 import { describe, expect, it, vi } from "vitest";
 
@@ -19,17 +20,19 @@ import {
   pedidosAPerguntar,
   rotuloDoPedido,
   turnoRodaria,
+  type AConversaAgora,
   type EntradaDosPedidos,
   type FatosDoTurno,
   type RegraPegou,
 } from "@/lib/ai/decisao/pedidos";
 import { DICIONARIO } from "@/lib/i18n/dicionario";
-import { ehOptOutProvavel, ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
+import { regraDeHoje as regraDoWorker } from "@/workers/ai-sentiment-worker.pedidos";
 
 const ADMIN = "22222222-2222-4222-8222-222222222222";
 const ACEITE = { em: "2026-09-23T12:00:00.000Z", por: ADMIN };
 const LIGADO = lerConfigDoJev({ jev: { ligado: true, aceite: ACEITE } });
 const TURNO_QUE_RODA: FatosDoTurno = {
+  atendimentoExterno: false,
   sessaoTemQuemAtenda: true,
   iaPodeResponder: true,
   contatoBloqueado: false,
@@ -38,15 +41,11 @@ const TURNO_QUE_RODA: FatosDoTurno = {
 };
 
 /**
- * A regra de hoje sobre a frase, como o worker a roda
- * (`workers/ai-sentiment-worker.pedidos.ts`, sem as palavras do agente): o
- * descadastro, pedido ou provável, também é regra de pessoa — no turno, ele
- * passa a conversa.
+ * A regra de hoje sobre UMA frase, sem mensagens anteriores sem resposta e sem
+ * as palavras do agente — a função do worker, a de verdade: o descadastro,
+ * pedido ou provável, também é regra de pessoa (no turno, ele passa a conversa).
  */
-function regraDeHoje(texto: string): RegraPegou {
-  const descadastro = ehPedidoDeOptOut(texto) || ehOptOutProvavel(texto);
-  return { humano: descadastro || detectHumanHandoffRequest(texto), opt_out: descadastro };
-}
+const regraDeHoje = (texto: string): RegraPegou => regraDoWorker([texto], []);
 
 const idsPerguntados = (texto: string, config = LIGADO) =>
   pedidosAPerguntar(config, regraDeHoje(texto)).map((p) => p.id);
@@ -80,6 +79,24 @@ describe("a cascata: o Jev só é perguntado onde a regra de hoje disse não", (
     expect(idsPerguntados("me deixa em paz, quero falar com um atendente")).toEqual([]);
   });
 
+  /**
+   * A rajada: o turno aplica a regra a TODAS as mensagens do cliente ainda sem
+   * resposta. O pedido que a regra pegou na 1ª não é um que ela deixou passar
+   * na 2ª — e a 2ª, sozinha, a regra não pega (controle).
+   */
+  it("a rajada: a regra pegou o pedido numa mensagem anterior sem resposta — a de pessoa não sai na seguinte", () => {
+    const rajada = ["quero falar com um atendente", "por favor, alguém de verdade"];
+    expect(regraDeHoje(rajada[1]!).humano, "a 2ª, sozinha, a regra não pega (controle)").toBe(false);
+    expect(regraDoWorker(rajada, [])).toEqual({ humano: true, opt_out: false });
+    expect(pedidosAPerguntar(LIGADO, regraDoWorker(rajada, [])).map((p) => p.id)).toEqual(["opt_out"]);
+    expect(regraDoWorker(["PARAR", "oi"], []), "o descadastro numa anterior pega os dois").toEqual({ humano: true, opt_out: true });
+  });
+
+  it("as palavras de passagem de quem pode atender contam em qualquer mensagem da rajada", () => {
+    expect(regraDoWorker(["chama o gerente", "rápido"], [])).toEqual({ humano: false, opt_out: false });
+    expect(regraDoWorker(["chama o gerente", "rápido"], ["gerente"])).toEqual({ humano: true, opt_out: false });
+  });
+
   it("tarefa pausada não pergunta; o Jev desligado não pergunta nada", () => {
     const soHumano = lerConfigDoJev({ jev: { ligado: true, aceite: ACEITE, tarefas: { opt_out: { estado: "desligada" } } } });
     expect(idsPerguntados("oi", soHumano)).toEqual(["humano"]);
@@ -100,7 +117,8 @@ describe("o denominador: só onde o turno do agente rodaria", () => {
   });
 
   it.each([
-    ["sem ninguém que atenda o número (o portão do dreno)", { sessaoTemQuemAtenda: false }],
+    ["com o atendimento delegado a um sistema de fora (o modo externo, que o dreno descarta)", { atendimentoExterno: true }],
+    ["sem ninguém que atenda o número (o portão do dreno, sem os pausados)", { sessaoTemQuemAtenda: false }],
     ["com pessoa no comando, conversa silenciada ou fora da lista do canal", { iaPodeResponder: false }],
     ["com o contato bloqueado", { contatoBloqueado: true }],
     ["com OUTRA conversa do contato com uma pessoa", { contatoComUmaPessoa: true }],
@@ -337,6 +355,8 @@ const AVISANDO = (tarefas: Record<string, "decidindo" | "observando" | "desligad
   });
 
 const CLIMA_NAO_CHAMOU = { chamouUmaPessoa: false };
+/** A conversa segue sem ninguém: nem assumida, nem encerrada, nem passada. */
+const LIVRE: AConversaAgora = { assumidaOuEncerrada: false, passadaAUmaPessoa: false };
 
 /** Pergunta, grava e avisa — o que o worker faz, na ordem dele. */
 async function observarEAvisar(
@@ -344,9 +364,10 @@ async function observarEAvisar(
   e: EntradaDosPedidos,
   noul: Record<string, number>,
   clima = CLIMA_NAO_CHAMOU,
+  lerAConversa: () => Promise<AConversaAgora | null> = async () => LIVRE,
 ) {
   const o = await observarPedidos(admin, e, deps(vi.fn().mockResolvedValue(respostaComNoul(noul))));
-  await avisarAEquipe(admin, o, clima);
+  await avisarAEquipe(admin, o, clima, lerAConversa);
   return o;
 }
 
@@ -448,17 +469,40 @@ describe("Avisar a equipe", () => {
       ref_id: e.conversationId,
       status: "resolved",
       resolved_at: "2026-09-20T00:00:00.000Z",
+      created_at: "2026-07-26T00:00:00.000Z",
     };
     const { admin, inseridas, avisos, operacoes } = adminFalso({}, [resolvido]);
+    const antes = Date.now();
     await observarEAvisar(admin, e, { humano: 0.97, opt_out: 0.02 });
     expect(inseridas.agent_inbox_items).toBeUndefined();
     expect(avisos).toEqual([expect.objectContaining({ ref_id: e.conversationId, status: "open", resolved_at: null })]);
     expect(operacoes).toContain("agent_inbox_items.update");
+    // A Central ordena e data pelo `created_at`: o pedido de agora não pode
+    // aparecer "há 2 meses", abaixo dos avisos mais novos.
+    expect(Date.parse(String(avisos[0]!.created_at)), "o aviso reaberto tem a data do pedido novo").toBeGreaterThanOrEqual(antes);
 
     const vizinha = "77777777-7777-4777-8777-777777777777";
     await observarEAvisar(admin, { ...e, conversationId: vizinha }, { humano: 0.97, opt_out: 0.02 });
     expect(inseridas.agent_inbox_items!.map((l) => l.ref_id)).toEqual([vizinha]);
     expect(avisos).toHaveLength(2);
+  });
+
+  it("o aviso ainda aberto e um pedido novo: ele sobe para a data de agora, sem abrir outro", async () => {
+    const e = entrada({ config: AVISANDO({ humano: "decidindo" }) });
+    const aberto = {
+      organization_id: e.organizationId,
+      kind: "jev_pedido_de_humano",
+      ref_kind: "conversation",
+      ref_id: e.conversationId,
+      status: "open",
+      created_at: "2026-07-26T00:00:00.000Z",
+    };
+    const { admin, avisos } = adminFalso({}, [aberto]);
+    const antes = Date.now();
+    await observarEAvisar(admin, e, { humano: 0.97, opt_out: 0.02 });
+    expect(avisos).toHaveLength(1);
+    expect(avisos[0]).toMatchObject({ status: "open" });
+    expect(Date.parse(String(avisos[0]!.created_at))).toBeGreaterThanOrEqual(antes);
   });
 
   it("o mesmo pedido de outro tipo na mesma conversa é outro aviso", async () => {
@@ -468,6 +512,49 @@ describe("Avisar a equipe", () => {
     ]);
     await observarEAvisar(admin, e, { humano: 0.97, opt_out: 0.96 });
     expect(inseridas.agent_inbox_items!.map((l) => l.kind)).toEqual(["jev_parar_de_receber"]);
+  });
+
+  /**
+   * O aviso é gravado depois do clima, e a conversa pode ter ido para uma pessoa
+   * nesse meio — o turno da rajada passou, alguém assumiu. O gatilho da 0426
+   * que o fecharia disparou quando ele ainda não existia: relida a conversa, o
+   * aviso de um pedido já atendido não nasce. As condições são as do gatilho:
+   * assumida ou encerrada vale para os dois; passada a uma pessoa, só para o de
+   * falar com uma pessoa (o de parar de receber fecha no bloqueio do contato).
+   */
+  it.each([
+    ["passada a uma pessoa depois da mensagem", { assumidaOuEncerrada: false, passadaAUmaPessoa: true }, ["jev_parar_de_receber"]],
+    ["assumida por alguém ou encerrada", { assumidaOuEncerrada: true, passadaAUmaPessoa: false }, []],
+    ["sem ninguém (controle)", LIVRE, ["jev_pedido_de_humano", "jev_parar_de_receber"]],
+    ["não deu para ler: o aviso abre (é informação)", null, ["jev_pedido_de_humano", "jev_parar_de_receber"]],
+  ] as const)("a conversa, relida antes do aviso, %s", async (_caso, conversa, kinds) => {
+    const { admin, inseridas } = adminFalso();
+    const e = entrada({ config: AVISANDO({ humano: "decidindo", opt_out: "decidindo" }) });
+    const o = await observarEAvisar(admin, e, { humano: 0.97, opt_out: 0.96 }, CLIMA_NAO_CHAMOU, async () => conversa);
+    expect(o.respondidos.map((p) => p.rotulo), "os dois pedidos passaram do corte (controle)").toEqual(["sim", "sim"]);
+    expect((inseridas.agent_inbox_items ?? []).map((l) => l.kind)).toEqual(kinds);
+    expect(inseridas.jev_observacoes, "a observação fica gravada do mesmo jeito").toHaveLength(2);
+  });
+
+  it("a conversa só é relida quando há o que avisar", async () => {
+    const lerAConversa = vi.fn(async () => LIVRE);
+    const { admin } = adminFalso();
+    await observarEAvisar(admin, entrada({ config: AVISANDO({ humano: "decidindo" }) }), { humano: 0.5, opt_out: 0.02 }, CLIMA_NAO_CHAMOU, lerAConversa);
+    expect(lerAConversa).not.toHaveBeenCalled();
+    await observarEAvisar(admin, entrada({ config: AVISANDO({ humano: "decidindo" }) }), { humano: 0.97, opt_out: 0.02 }, CLIMA_NAO_CHAMOU, lerAConversa);
+    expect(lerAConversa).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Só o 23505 é o retry do dreno. A observação que falhou por outro motivo
+   * não tem quem a recupere (o worker nunca lança, e o evento fecha): o Jev
+   * disse sim, e o aviso sai.
+   */
+  it("a observação falhou por outro motivo que não o retry: ainda é nova, e o aviso sai", async () => {
+    const { admin, inseridas } = adminFalso({ jev_observacoes: { code: "57014", message: "canceling statement due to statement timeout" } });
+    const o = await observarEAvisar(admin, entrada({ config: AVISANDO({ humano: "decidindo" }) }), { humano: 0.97, opt_out: 0.02 });
+    expect(o.nova).toBe(true);
+    expect(inseridas.agent_inbox_items!.map((l) => l.kind)).toEqual(["jev_pedido_de_humano"]);
   });
 
   /**

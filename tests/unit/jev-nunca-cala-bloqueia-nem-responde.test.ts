@@ -317,6 +317,9 @@ const alcanceDoJev = alcancados(modulosDoJev);
  */
 const COLA_DOS_PEDIDOS = "workers/ai-sentiment-worker.pedidos.ts";
 const LEITORES_DA_REGRA_DE_HOJE = new Set([
+  // O corpo de uma mensagem como o turno o lê (a transcrição de um áudio): a
+  // regra de hoje roda sobre ele nas mensagens da rajada. Função pura.
+  "corpoDaMensagem",
   "detectHumanHandoffRequest",
   "isLeadInHandoff",
   "matchesHandoffKeyword",

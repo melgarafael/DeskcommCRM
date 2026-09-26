@@ -23,6 +23,13 @@
  * `null` quando o banco não devolve linha — o que um `select exists(...)` não
  * faz. O dreno segue nesse caso (o comportamento de sempre); o worker do Jev
  * não pergunta.
+ *
+ * `ignorarPausados`: só o worker do Jev pede. Pausar pela tela grava só
+ * `paused_at` — a versão segue publicada e o ponteiro fica —, então o portão
+ * do dreno abre, e o turno sai na pausa (`inbound-turn.ts`, `pausedAt`) ANTES
+ * de a regra de hoje rodar. Sem a opção, o Jev contaria "pedidos que a regra
+ * deixou passar" onde ela nem foi consultada. O dreno chama sem a opção, e o
+ * SQL que ele manda sai idêntico ao de sempre: a pausa no dreno é outra frente.
  */
 import type pg from "pg";
 
@@ -30,7 +37,9 @@ export async function haQuemAtendaASessao(
   db: Pick<pg.Pool, "query">,
   organizationId: string,
   channelSessionId: string,
+  opcoes: { ignorarPausados?: boolean } = {},
 ): Promise<boolean | null> {
+  const semPausa = (agente: string): string => (opcoes.ignorarPausados === true ? ` and ${agente}.paused_at is null` : "");
   const { rows } = await db.query<{
     tem_agente: boolean;
     tem_roteador: boolean;
@@ -39,7 +48,7 @@ export async function haQuemAtendaASessao(
        exists(
          select 1 from ai_agents a
          join ai_agent_versions v on v.id = a.published_version_id
-         where a.organization_id = $1 and a.archived_at is null
+         where a.organization_id = $1 and a.archived_at is null${semPausa("a")}
            and v.status = 'published' and v.channel_session_id = $2
        ) as tem_agente,
        exists(
@@ -61,14 +70,14 @@ export async function haQuemAtendaASessao(
                select 1 from ai_agents fa
                join ai_agent_versions fv on fv.id = fa.published_version_id
                where fa.id = r.fallback_agent_id and fa.organization_id = $1
-                 and fa.archived_at is null and fv.status = 'published'
+                 and fa.archived_at is null and fv.status = 'published'${semPausa("fa")}
              )
              or exists (
                select 1 from ai_router_members m
                join ai_agents ma on ma.id = m.agent_id
                join ai_agent_versions mv on mv.id = ma.published_version_id
                where m.router_id = r.id and ma.organization_id = $1
-                 and ma.archived_at is null and mv.status = 'published'
+                 and ma.archived_at is null and mv.status = 'published'${semPausa("ma")}
              )
            )
        ) as tem_roteador`,

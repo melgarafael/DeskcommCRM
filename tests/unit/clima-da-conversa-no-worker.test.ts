@@ -251,16 +251,24 @@ async function drenar(): Promise<void> {
 }
 
 /**
- * O Postgres do dreno e do turno, de brinquedo: as três consultas que a cola
- * dos pedidos faz por ele, respondidas a partir do mesmo `banco`. O SQL de
- * verdade é provado contra um Postgres em
- * `tests/invariants/jev-pergunta-so-onde-o-dreno-atende.test.ts`.
+ * O Postgres do dreno e do turno, de brinquedo: as consultas que a cola dos
+ * pedidos faz por ele, respondidas a partir do mesmo `banco`. O SQL de verdade
+ * é provado contra um Postgres em
+ * `tests/invariants/jev-pergunta-so-onde-o-dreno-atende.test.ts`,
+ * `jev-pergunta-so-com-quem-nao-esta-pausado.test.ts` e
+ * `jev-regra-da-rajada-le-o-que-o-turno-le.test.ts`.
  */
 function fazerPool(banco: Banco) {
   const de = (t: string) => (banco[t] ?? []).filter((l) => l.organization_id === ORG);
-  /** O agente EXECUTA: não arquivado, com a versão apontada publicada — a pausa limpa o ponteiro. */
-  const versaoQueExecuta = (agenteId: unknown): Linha | null => {
-    const a = de("ai_agents").find((x) => x.id === agenteId && (x.archived_at ?? null) === null);
+  /**
+   * O agente EXECUTA: não arquivado, com a versão apontada publicada. Pausar
+   * pela tela NÃO limpa o ponteiro (só grava `paused_at`): o portão pedido
+   * sem os pausados — o SQL que fala de `paused_at` — os tira.
+   */
+  const versaoQueExecuta = (agenteId: unknown, semPausados = false): Linha | null => {
+    const a = de("ai_agents").find(
+      (x) => x.id === agenteId && (x.archived_at ?? null) === null && (!semPausados || (x.paused_at ?? null) === null),
+    );
     return (a && de("ai_agent_versions").find((v) => v.id === a.published_version_id && v.status === "published")) ?? null;
   };
   const roteadoresAtivos = (sessao: unknown) => de("ai_routers").filter((r) => r.is_active === true && r.channel_session_id === sessao);
@@ -269,18 +277,32 @@ function fazerPool(banco: Banco) {
       r.fallback_agent_id,
       ...(banco.ai_router_members ?? []).filter((m) => m.router_id === r.id).map((m) => m.agent_id),
     ]);
-  const naSessao = (sessao: unknown) => de("ai_agents").filter((a) => versaoQueExecuta(a.id)?.channel_session_id === sessao).map((a) => a.id);
+  const naSessao = (sessao: unknown, semPausados = false) =>
+    de("ai_agents").filter((a) => versaoQueExecuta(a.id, semPausados)?.channel_session_id === sessao).map((a) => a.id);
   return {
     query: async (sql: string, params: unknown[]) => {
       if (sql.includes("tem_agente")) {
         const [, sessao] = params;
+        const semPausados = sql.includes("paused_at");
         return {
           rows: [
             {
-              tem_agente: naSessao(sessao).length > 0,
-              tem_roteador: doRoteador(sessao).some((id) => versaoQueExecuta(id) !== null),
+              tem_agente: naSessao(sessao, semPausados).length > 0,
+              tem_roteador: doRoteador(sessao).some((id) => versaoQueExecuta(id, semPausados) !== null),
             },
           ],
+        };
+      }
+      // As mensagens do cliente depois da última resposta, na ordem do banco de brinquedo.
+      if (sql.includes("media_derived_text")) {
+        const [, conversa] = params;
+        const daConversa = de("messages").filter((m) => m.conversation_id === conversa);
+        const ultimaResposta = daConversa.map((m) => m.direction).lastIndexOf("outbound");
+        return {
+          rows: daConversa
+            .slice(ultimaResposta + 1)
+            .reverse()
+            .map((m) => ({ type: "text", body: m.body ?? null, media_url: null, media_storage_path: null, media_derived_text: null })),
         };
       }
       if (sql.includes("handoff_keywords")) {
@@ -939,6 +961,10 @@ function comAgenteNoAr(
       active_ai_agent_id: null,
       contact_id: CONTATO,
       is_group: false,
+      status: "open",
+      assigned_to_user_id: null,
+      bot_silenced_until: null,
+      last_handoff_at: null,
       ...over.conversa,
     },
   ];
@@ -947,6 +973,20 @@ function comAgenteNoAr(
   banco.ai_agents = [a];
   banco.ai_agent_versions = [v];
   return banco;
+}
+
+let seqDeMensagem = 0;
+/** Outra mensagem da mesma conversa, antes da do evento. */
+function mensagem(direction: "inbound" | "outbound", body: string): Linha {
+  seqDeMensagem += 1;
+  return {
+    id: `a0a0a0a0-0000-4000-8000-${String(seqDeMensagem).padStart(12, "0")}`,
+    organization_id: ORG,
+    conversation_id: CONV,
+    body,
+    direction,
+    metadata: {},
+  };
 }
 
 /** Responde cada pergunta pelo id: o clima na posição `nivel`, os pedidos pelo `noul`. */
@@ -1029,7 +1069,7 @@ describe("os pedidos do cliente no worker de clima", () => {
     });
     // O Jev só observou: nada no contato nem na conversa mudou.
     expect(banco.contacts).toEqual([{ id: CONTATO, organization_id: ORG, is_blocked: false }]);
-    expect(banco.conversations![0]).not.toHaveProperty("bot_silenced_until");
+    expect(banco.conversations![0]).toMatchObject({ bot_silenced_until: null, assigned_to_user_id: null, last_handoff_at: null });
   });
 
   it("a regra de descadastro pegou ('me deixa em paz'): nenhuma das duas sai — no turno, ela também passa a conversa", async () => {
@@ -1098,8 +1138,11 @@ describe("os pedidos do cliente no worker de clima", () => {
     ["conversa silenciada", { conversa: { bot_silenced_until: "2999-01-01T00:00:00.000Z" } }],
     ["contato passado para uma pessoa", { conversa: { contacts: { force_human: true } } }],
     ["conversa de grupo", { conversa: { is_group: true } }],
-    // A pausa limpa o ponteiro da versão publicada (é o que o dreno mede).
-    ["agente pausado", { agente: { paused_at: "2026-09-20T00:00:00.000Z", published_version_id: null } }],
+    // Pausar pela tela grava SÓ `paused_at`: a versão segue publicada e o
+    // ponteiro fica (`app/app/ai/agents/_actions.ts`). O dreno enfileira o
+    // turno, e ele sai na pausa antes de a regra de hoje rodar.
+    ["agente pausado pela tela (a versão segue publicada)", { agente: { paused_at: "2026-09-20T00:00:00.000Z" } }],
+    ["agente despublicado", { agente: { published_version_id: null } }],
     ["agente arquivado", { agente: { archived_at: "2026-09-20T00:00:00.000Z" } }],
     // O achado da revisão: o agente ÚNICO da empresa, publicado em OUTRO número.
     // O resolvedor do worker o elege (`unico_da_organizacao`), e o dreno pula o
@@ -1146,6 +1189,72 @@ describe("os pedidos do cliente no worker de clima", () => {
     banco.ai_agent_versions!.push(versaoDoOutro);
     banco.ai_routers = [{ id: "r-2", organization_id: ORG, is_active: true, channel_session_id: SESSAO, fallback_agent_id: null }];
     banco.ai_router_members = [{ router_id: "r-2", organization_id: ORG, agent_id: AGENTE }];
+    await rodar(cenario, banco);
+    expect(perguntasDosPedidos()).toEqual([["humano", "opt_out"]]);
+  });
+
+  /**
+   * O roteador do número só tem quem a tela pausou: o dreno enfileira o turno
+   * (a versão segue publicada), e ele sai na pausa antes de a regra de hoje
+   * rodar. O controle é o caso de cima, com o membro no ar.
+   */
+  it.each(["membro", "fallback"] as const)(
+    "o %s do roteador do número pausado pela tela, e ninguém mais: os pedidos não são perguntados",
+    async (papel) => {
+      fornecedor(respostaPorPergunta({ humano: 0.99 }));
+      const cenario = jevLigado("decide");
+      const banco = comAgenteNoAr(cenario, { sessaoDoAgente: OUTRO_NUMERO });
+      const [pausado, versaoDoPausado] = agente("16161616-1616-4616-8616-161616161616", "17171717-1717-4717-8717-171717171717", {
+        sessao: OUTRO_NUMERO,
+        paused_at: "2026-09-20T00:00:00.000Z",
+      });
+      banco.ai_agents!.push(pausado);
+      banco.ai_agent_versions!.push(versaoDoPausado);
+      banco.ai_routers = [
+        { id: "r-3", organization_id: ORG, is_active: true, channel_session_id: SESSAO, fallback_agent_id: papel === "fallback" ? pausado.id : null },
+      ];
+      banco.ai_router_members = papel === "membro" ? [{ router_id: "r-3", organization_id: ORG, agent_id: pausado.id }] : [];
+      const { banco: depois } = await rodar(cenario, banco);
+      expect(perguntasDosPedidos()).toEqual([]);
+      expect(doClima(), "o clima segue medindo (controle)").toHaveLength(1);
+      expect(depois.jev_observacoes ?? []).toEqual([]);
+    },
+  );
+
+  /**
+   * O modo externo (spec 14): a organização delegou o atendimento a um sistema
+   * de fora, e o dreno descarta o turno antes de tudo — a regra de hoje nunca
+   * roda, nem com um agente nativo publicado no número.
+   */
+  it("organização com o atendimento delegado a um sistema de fora: os pedidos não são perguntados", async () => {
+    fornecedor(respostaPorPergunta({ humano: 0.99 }));
+    const c = jevLigado("decide");
+    const cenario = { ...c, settings: { ...c.settings, ai_dispatch_mode: "external" } };
+    const { banco } = await rodar(cenario, comAgenteNoAr(cenario));
+    expect(perguntasDosPedidos()).toEqual([]);
+    expect(doClima(), "o clima segue medindo (controle)").toHaveLength(1);
+    expect(banco.jev_observacoes ?? []).toEqual([]);
+  });
+
+  /**
+   * A rajada: o dreno junta as mensagens seguidas do cliente num turno só, e o
+   * turno roda a regra sobre TODAS as que seguem sem resposta. O pedido que a
+   * regra pegou na 1ª não é um que ela deixou passar na 2ª.
+   */
+  it("a rajada: a regra pegou o pedido na mensagem anterior sem resposta — a pergunta de pessoa não sai nesta", async () => {
+    fornecedor(respostaPorPergunta({}));
+    const cenario = jevLigado("decide");
+    const banco = comAgenteNoAr(cenario, { corpo: "por favor, alguém de verdade" });
+    banco.messages.unshift(mensagem("inbound", "quero falar com um atendente"));
+    await rodar(cenario, banco);
+    expect(perguntasDosPedidos()).toEqual([["opt_out"]]);
+  });
+
+  it("controle da rajada: com uma resposta do nosso lado entre as duas, a anterior saiu do conjunto — a de pessoa sai", async () => {
+    fornecedor(respostaPorPergunta({}));
+    const cenario = jevLigado("decide");
+    const banco = comAgenteNoAr(cenario, { corpo: "por favor, alguém de verdade" });
+    banco.messages.unshift(mensagem("inbound", "quero falar com um atendente"), mensagem("outbound", "Um momento, por favor."));
     await rodar(cenario, banco);
     expect(perguntasDosPedidos()).toEqual([["humano", "opt_out"]]);
   });
@@ -1272,6 +1381,40 @@ describe("os pedidos do cliente no worker de clima", () => {
     await rodar(cenario, banco);
     expect(perguntasDosPedidos(), "perguntou de novo (controle)").toHaveLength(2);
     expect(banco.agent_inbox_items).toEqual([expect.objectContaining({ kind: "jev_pedido_de_humano", status: "resolved" })]);
+  });
+
+  /**
+   * O aviso é gravado no fim, depois do clima — e a conversa pode ter ido para
+   * uma pessoa enquanto o Jev respondia (o turno da rajada passou, alguém
+   * assumiu). O gatilho da 0426 disparou quando o aviso ainda não existia:
+   * relida a conversa, o aviso do pedido já atendido não nasce. A mudança é
+   * feita DURANTE a chamada dos pedidos — depois de o worker ler os fatos do
+   * turno, como na corrida de verdade.
+   */
+  const RECEBIDA_EM = "2026-09-26T10:00:00.000Z";
+  it.each([
+    ["passada a uma pessoa depois da mensagem", { last_handoff_at: "2026-09-26T10:00:05.000Z" }, ["jev_parar_de_receber"]],
+    ["com o robô calado", { bot_silenced_until: "2999-01-01T00:00:00.000Z" }, ["jev_parar_de_receber"]],
+    ["assumida por alguém da equipe", { assigned_to_user_id: "18181818-1818-4818-8818-181818181818" }, []],
+    ["encerrada", { status: "closed" }, []],
+    [
+      "passada a uma pessoa ANTES da mensagem, e o silêncio já vencido (controle)",
+      { last_handoff_at: "2026-09-25T10:00:00.000Z", bot_silenced_until: "2026-09-25T11:00:00.000Z" },
+      ["jev_pedido_de_humano", "jev_parar_de_receber"],
+    ],
+  ] as const)("Avisar a equipe, e a conversa %s enquanto o Jev respondia: só nasce o aviso do pedido ainda não atendido", async (_caso, mudanca, kinds) => {
+    const cenario = comPedidos({ humano: "decidindo", opt_out: "decidindo" });
+    const banco = comAgenteNoAr(cenario);
+    banco.messages[0]!.created_at = RECEBIDA_EM;
+    fornecedor(async (init) => {
+      const perguntas = (JSON.parse(String(init.body)) as { questions: object }).questions;
+      if (!("clima" in perguntas)) Object.assign(banco.conversations![0]!, mudanca);
+      return respostaPorPergunta({ humano: 0.97, opt_out: 0.96 })(init);
+    });
+    await rodar(cenario, banco);
+    expect(perguntasDosPedidos(), "os pedidos foram perguntados (controle)").toEqual([["humano", "opt_out"]]);
+    expect(banco.agent_inbox_items.map((l) => l.kind)).toEqual(kinds);
+    expect(banco.jev_observacoes!.map((l) => l.rotulo_jev), "a observação fica do mesmo jeito").toEqual(["sim", "sim"]);
   });
 
   it("Jev desligado: com o agente no ar, os pedidos também não saem", async () => {

@@ -22,7 +22,8 @@
  * ═══ SÓ ONDE O TURNO RODARIA ═══
  *
  * Perguntar numa conversa em que o agente nem responderia (ninguém atende o
- * número, uma pessoa no comando, contato bloqueado, grupo) contaria "pedidos
+ * número, ou só um agente pausado; o atendimento delegado a um sistema de
+ * fora; uma pessoa no comando, contato bloqueado, grupo) contaria "pedidos
  * percebidos" que ninguém deixou passar — a regra de hoje nem é consultada lá.
  * É `turnoRodaria`, com os fatos lidos por quem chama.
  *
@@ -144,9 +145,17 @@ export type RegraPegou = Readonly<Record<IdDoPedido, boolean>>;
 /** O que o turno do agente olha antes de responder — lido por quem chama. */
 export interface FatosDoTurno {
   /**
-   * O número da conversa tem quem a atenda: o MESMO portão do dreno do
-   * agent-engine (`haQuemAtendaASessao`, `lib/ai/agents/quem-atende-a-sessao.ts`).
-   * Onde ele diz não, o dreno pula o turno — e a regra de hoje nem roda.
+   * A organização delegou o atendimento a um sistema de fora
+   * (`settings.ai_dispatch_mode = 'external'`, spec 14): o dreno descarta o
+   * turno antes de tudo, e a regra de hoje nunca roda.
+   */
+  atendimentoExterno: boolean;
+  /**
+   * O número da conversa tem quem a atenda, e não pausado: o MESMO portão do
+   * dreno do agent-engine (`haQuemAtendaASessao`,
+   * `lib/ai/agents/quem-atende-a-sessao.ts`), sem os agentes pausados. Onde o
+   * dreno diz não, ele pula o turno; onde só há pausado, o turno sai na pausa —
+   * nos dois, a regra de hoje nem roda.
    */
   sessaoTemQuemAtenda: boolean;
   /**
@@ -169,7 +178,14 @@ export interface FatosDoTurno {
 
 /** Só onde o turno do agente rodaria o Jev é perguntado — ver o cabeçalho. */
 export function turnoRodaria(f: FatosDoTurno): boolean {
-  return f.sessaoTemQuemAtenda && f.iaPodeResponder && !f.contatoBloqueado && !f.contatoComUmaPessoa && !f.grupo;
+  return (
+    !f.atendimentoExterno &&
+    f.sessaoTemQuemAtenda &&
+    f.iaPodeResponder &&
+    !f.contatoBloqueado &&
+    !f.contatoComUmaPessoa &&
+    !f.grupo
+  );
 }
 
 export interface PedidoAPerguntar {
@@ -328,7 +344,10 @@ async function gravar(
     );
     // 23505: o retry do dreno perguntou de novo sobre a MESMA mensagem. A
     // primeira resposta fica; o custo da segunda entra abaixo, porque houve.
-    nova = error === null;
+    // Só o 23505 diz "não é nova": a observação que falhou por outro motivo
+    // (um erro de rede, um tempo esgotado) não tem retry que a recupere, e o
+    // Jev disse o que disse — o aviso ainda sai.
+    nova = error === null || error.code !== "23505";
     if (error && error.code !== "23505") {
       logger.warn("resposta do Jev sobre os pedidos do cliente não foi gravada", {
         organization_id: e.organizationId,
@@ -375,6 +394,19 @@ export interface OClimaDaMensagem {
 }
 
 /**
+ * A conversa no momento do aviso, lida por quem chama logo antes de ele abrir
+ * (`aConversaAgora`, na cola do worker: as colunas que calam a conversa não se
+ * leem num módulo do Jev). As duas perguntas são as do gatilho da 0426, que
+ * fecharia o aviso se ele já existisse.
+ */
+export interface AConversaAgora {
+  /** Uma pessoa ficou com ela, ou ela foi encerrada: os dois avisos nasceriam já atendidos. */
+  assumidaOuEncerrada: boolean;
+  /** Passada a uma pessoa depois da mensagem, ou com o robô calado: o de falar com uma pessoa nasceria já atendido. */
+  passadaAUmaPessoa: boolean;
+}
+
+/**
  * "Avisar a equipe": cada pedido percebido (passou do corte) numa tarefa em
  * `decidindo` abre UM aviso na Central por conversa e pedido. Nunca lança.
  *
@@ -383,20 +415,41 @@ export interface OClimaDaMensagem {
  *    execução já decidiu, e reabrir o que alguém resolveu seria ruído;
  *  - o pedido de pessoa, quando o clima da mesma mensagem já chamou uma pessoa:
  *    a conversa está indo para a equipe por outro caminho, e o aviso diria o
- *    que a Central já diz. A observação fica gravada do mesmo jeito.
+ *    que a Central já diz. A observação fica gravada do mesmo jeito;
+ *  - o pedido que a conversa já atendeu enquanto o Jev e o clima respondiam
+ *    (`lerAConversa`, só quando há o que avisar): o gatilho da 0426 fecharia o
+ *    aviso, mas disparou antes de ele existir.
  *
  * Um aviso por conversa e pedido é do BANCO: o índice único da 0426 em
  * (organização, kind, conversa), sem status. A escrita é um insert, e o 23505
  * dele quer dizer "este aviso já existe" — o pedido novo o reabre, como o
  * `routing_unassigned` faz (em SQL, pelo `on conflict` que o PostgREST não
  * sabe apontar para um índice parcial).
+ *
+ * O pedido novo põe o aviso na data de AGORA (`created_at`), aberto ou
+ * reaberto: a Central ordena e data os avisos por ela ("há 2 meses"), e o aviso
+ * existe para o cliente que está esperando agora. Para estes dois kinds,
+ * `created_at` é "quando o pedido mais recente chegou": nenhum gatilho o
+ * congela, e os outros leitores da coluna (a evolução conta só `handoff`; o
+ * relatório de LGPD, só os da agenda) não leem estes kinds.
  */
-export async function avisarAEquipe(admin: Admin, o: PedidosObservados, clima: OClimaDaMensagem): Promise<void> {
+export async function avisarAEquipe(
+  admin: Admin,
+  o: PedidosObservados,
+  clima: OClimaDaMensagem,
+  lerAConversa: () => Promise<AConversaAgora | null>,
+): Promise<void> {
   if (!o.nova) return;
   const e = o.entrada;
-  for (const p of o.respondidos) {
-    if (p.estado !== "decidindo" || p.rotulo !== "sim") continue;
-    if (p.id === "humano" && clima.chamouUmaPessoa) continue;
+  const aAvisar = o.respondidos.filter(
+    (p) => p.estado === "decidindo" && p.rotulo === "sim" && !(p.id === "humano" && clima.chamouUmaPessoa),
+  );
+  if (aAvisar.length === 0) return;
+  // `null`: não deu para ler, e o aviso abre (é informação; ver `aConversaAgora`).
+  const conversa = await lerAConversa().catch(() => null);
+  for (const p of aAvisar) {
+    if (conversa?.assumidaOuEncerrada === true) continue;
+    if (p.id === "humano" && conversa?.passadaAUmaPessoa === true) continue;
     const aviso = AVISOS_DOS_PEDIDOS[p.id];
     const texto = { title: traduzir(aviso.titulo, e.idioma), body: traduzir(aviso.corpo, e.idioma) };
     try {
@@ -418,7 +471,7 @@ export async function avisarAEquipe(admin: Admin, o: PedidosObservados, clima: O
       }
       const { error: erroAoReabrir } = await admin
         .from("agent_inbox_items")
-        .update({ status: "open", resolved_at: null, ...texto })
+        .update({ status: "open", resolved_at: null, created_at: new Date().toISOString(), ...texto })
         .eq("organization_id", e.organizationId)
         .eq("kind", aviso.kind)
         .eq("ref_kind", "conversation")
