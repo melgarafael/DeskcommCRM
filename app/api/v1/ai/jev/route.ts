@@ -12,12 +12,20 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * que vale agora, o que ela vira ao ligar o Jev (`ao_ligar`), se ela é nova —
  * começou sozinha e ninguém escolheu ainda — e a concordância dela com a IA de
  * sempre (`observacao`): a do clima, das notas em `messages.metadata`; a das
- * outras, de `jev_observacoes`. E o que a impede de rodar: `sem_camada`, a
- * tarefa acompanha uma camada de segurança que a organização desligou;
- * `sem_roteador`, a do roteador numa empresa sem roteador de intenção ativo.
+ * outras, de `jev_observacoes` — e, nas tarefas em cascata, que só são
+ * perguntadas onde a regra de hoje disse não, em quantas mensagens o Jev
+ * percebeu o pedido que ela não reconheceu (`percebidos`, uma linha de
+ * `jev_observacoes` por mensagem), com as conversas mais recentes. E o que a
+ * impede de rodar: `sem_camada`, a tarefa acompanha uma camada de segurança que
+ * a organização desligou; `sem_roteador`, a do roteador numa empresa sem
+ * roteador de intenção ativo; `sem_atendente`, as de pedido numa empresa em que
+ * o atendimento automático não roda em número nenhum (ninguém no ar sem pausa,
+ * ou o atendimento com um sistema de fora) — o worker só as pergunta onde ele
+ * roda.
  *
  * PATCH liga, desliga, troca o modo do clima (`modo`, o nome da onda 1) e o
- * estado de uma tarefa (`tarefa` + `estado`). Ligar manda cada mensagem que o cliente
+ * estado de uma tarefa (`tarefa` + `estado` — na em cascata, `decidindo` é o
+ * "Avisar a equipe" da tela). Ligar manda cada mensagem que o cliente
  * escreve, uma de cada vez e sem o resto da conversa, a um fornecedor nos EUA, então exige chave validada e, na primeira
  * vez, o aceite explícito do administrador (LGPD, D6), que fica gravado com
  * quem e quando. O interruptor mora em `organizations.settings.jev`
@@ -28,7 +36,9 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { camadasEfetivas } from "@/lib/agent-engine/guardrails/camadas-da-org";
+import { haQuemAtendaAOrganizacao } from "@/lib/ai/agents/quem-atende-a-sessao";
 import { credencialEmUsoPeloJev, PROVEDOR_DO_JEV } from "@/lib/ai/decisao/credencial";
 import {
   ESTADO_DO_MODO,
@@ -44,17 +54,21 @@ import {
   estadoAoLigar,
   estadoEfetivoDaTarefa,
   estadoGravadoDaTarefa,
+  rotuloDaChamadaDoJev,
   TAREFA_DO_CLIMA,
   TAREFAS_DO_JEV,
   tarefaEhNova,
   algumRoteadorQuePergunta,
   TAREFA_DA_MANIPULACAO,
+  tarefaSemAtendente,
   tarefaSemCamada,
   tarefaSemRoteador,
+  type SemAtendente,
 } from "@/lib/ai/decisao/tarefas";
 import { CODIGOS_SEM_REDE } from "@/lib/ai/decisao/textos";
 import { DEFAULT_CLASSIFIER_MODEL } from "@/lib/ai/gateway";
 import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
+import { REFERENCIAS_DE_AVISO } from "@/lib/ai/inbox-destino";
 import { PROVEDORES_DE_DECISAO } from "@/lib/ai/pontos/provedores";
 import { DEFAULT_SENTIMENT_THRESHOLD } from "@/lib/ai/prompts/sentiment";
 import { fail, ok } from "@/lib/api/wrappers";
@@ -62,6 +76,8 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { roleAtLeast } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { logger } from "@/lib/logger";
+import { aiDispatchModeSchema } from "@/lib/schemas/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -72,6 +88,8 @@ const [JEV] = PROVEDORES_DE_DECISAO;
 const DIAS_DOS_NUMEROS = 7;
 const DIAS_DA_CONCORDANCIA = 30;
 const MENSAGENS_COMPARADAS_MAX = 500;
+/** Quantas conversas o cartão oferece por tarefa em cascata — as mais recentes. */
+const CONVERSAS_PERCEBIDAS_MAX = 5;
 /** O teto de linhas por resposta do PostgREST (`max_rows` em `supabase/config.toml`). */
 const PAGINA = 1000;
 // ponytail: 50 páginas = 50 mil execuções do Jev numa semana; acima disso os
@@ -107,11 +125,26 @@ type Concordancia = {
   so_o_jev_alto?: number;
 };
 
+/**
+ * O que o cartão mostra de uma tarefa em cascata: em quantas MENSAGENS o Jev
+ * percebeu o pedido que a regra de hoje não reconheceu (a resposta dele passou
+ * do corte), e as conversas mais recentes delas. A unidade é a mensagem — uma
+ * linha de `jev_observacoes` por mensagem —, e não o pedido: o worker pergunta
+ * no `message.received`, antes da janela do turno, então duas frases naturais
+ * na mesma rajada contam duas, e a frase natural que chega antes de um pedido
+ * que a regra pega na mensagem seguinte conta uma. Por mensagem, as duas são
+ * verdade. O link sai pronto daqui: o navegador nunca monta endereço a partir
+ * de uma referência solta.
+ */
+type Percebidos = { dias: number; mensagens: number; conversas: Array<{ href: string; em: string }> };
+
 function porTarefa(
   c: ConfigDoJev,
   observacao: Readonly<Record<string, Concordancia>>,
+  percebidos: Readonly<Record<string, Percebidos>>,
   camadas: ReturnType<typeof camadasEfetivas>,
   temRoteadorQuePergunta: boolean,
+  semAtendente: SemAtendente | null,
 ) {
   return TAREFAS_DO_JEV.map((t) => ({
     id: t.id,
@@ -122,12 +155,16 @@ function porTarefa(
     ao_ligar: estadoAoLigar(c, t),
     novo: tarefaEhNova(c, t),
     observacao: observacao[t.id] ?? null,
+    percebidos: percebidos[t.id] ?? null,
     // A camada de segurança que ela acompanha está desligada: o turno não
     // pergunta, e "observando" sem mais nada prometeria uma comparação que nunca vem.
     sem_camada: tarefaSemCamada(t, camadas),
     // Sem roteador ativo que o Jev possa perguntar (nenhum, ou sem intenções, ou
     // com mais do que cabe), "observando" prometeria uma comparação que nunca vem.
     sem_roteador: tarefaSemRoteador(t, temRoteadorQuePergunta),
+    // As de pedido, onde o atendimento automático não roda em número nenhum: o
+    // worker nunca as pergunta, e "Só observa" com "percebeu 0" mentiria.
+    sem_atendente: tarefaSemAtendente(t, semAtendente),
   }));
 }
 
@@ -200,7 +237,7 @@ function numerosDaSemana(linhas: readonly LinhaDaSemana[]) {
       ? {
           motivo: falha.error_code,
           em: falha.created_at,
-          tarefa: TAREFAS_DO_JEV.find((t) => t.ponto === falha.purpose)?.rotulo ?? null,
+          tarefa: rotuloDaChamadaDoJev(falha.purpose),
         }
       : null,
   };
@@ -300,7 +337,9 @@ export async function GET(): Promise<Response> {
         .eq("tarefa", tarefa)
         .gte("created_at", desde);
     const porTarefa: Record<string, Concordancia> = {};
-    for (const t of TAREFAS_DO_JEV.filter((x) => x.id !== TAREFA_DO_CLIMA.id)) {
+    // As em cascata não têm concordância: por construção, a regra de hoje disse
+    // não em toda mensagem em que o Jev foi perguntado (`lerPercebidos`).
+    for (const t of TAREFAS_DO_JEV.filter((x) => x.id !== TAREFA_DO_CLIMA.id && x.familia !== "cascata")) {
       const daManipulacao = t.id === TAREFA_DA_MANIPULACAO.id;
       const [comparadas, concordaram, soDoJev] = await Promise.all([
         contar(t.id).not("concordou", "is", null),
@@ -320,7 +359,61 @@ export async function GET(): Promise<Response> {
     return { porTarefa, erro: null };
   };
 
-  const [orgRes, credsRes, semana, comparadasRes, iaDeSempre, percebidasRes, observacoes, camadasRes, roteadoresRes] = await Promise.all([
+  /**
+   * As tarefas em cascata: as mensagens em que o Jev percebeu o pedido (passou
+   * do corte) nos últimos 30 dias, contadas no banco, e as conversas das mais
+   * recentes. ponytail: as conversas saem das 50 linhas mais recentes; com mais
+   * de 50 mensagens seguidas da mesma conversa, as outras só aparecem depois.
+   */
+  const lerPercebidos = async (): Promise<{ porTarefa: Record<string, Percebidos>; erro: string | null }> => {
+    const desde = diasAtras(DIAS_DA_CONCORDANCIA);
+    const doJev = (tarefa: string) =>
+      db
+        .from("jev_observacoes")
+        .select("conversation_id, created_at", { count: "exact" })
+        .eq("organization_id", org.orgId)
+        .eq("tarefa", tarefa)
+        .eq("rotulo_jev", "sim")
+        .gte("created_at", desde)
+        .order("created_at", { ascending: false })
+        .limit(50);
+    const porTarefa: Record<string, Percebidos> = {};
+    for (const t of TAREFAS_DO_JEV.filter((x) => x.familia === "cascata")) {
+      const { data, count, error } = await doJev(t.id);
+      if (error) return { porTarefa, erro: error.message };
+      const conversas: Percebidos["conversas"] = [];
+      const vistas = new Set<string>();
+      for (const linha of data ?? []) {
+        if (linha.conversation_id === null || vistas.has(linha.conversation_id)) continue;
+        vistas.add(linha.conversation_id);
+        conversas.push({ href: REFERENCIAS_DE_AVISO.conversation.href(linha.conversation_id), em: linha.created_at });
+        if (conversas.length === CONVERSAS_PERCEBIDAS_MAX) break;
+      }
+      porTarefa[t.id] = { dias: DIAS_DA_CONCORDANCIA, mensagens: count ?? 0, conversas };
+    }
+    return { porTarefa, erro: null };
+  };
+
+  /**
+   * Há quem atenda, sem pausa, em algum número da organização? — o portão que
+   * o worker pergunta antes dos pedidos, sem fixar o número. `null` quando não
+   * deu para saber (sem `SUPABASE_DB_URL`, o banco fora): aí o cartão não
+   * afirma "Não roda" — dizer que algo está parado sem ter lido mandaria a
+   * pessoa consertar o que está funcionando.
+   */
+  const lerQuemAtende = async (): Promise<boolean | null> => {
+    try {
+      return await haQuemAtendaAOrganizacao(getRequestPool(), org.orgId);
+    } catch (erro) {
+      logger.warn("[ai/jev] não deu para saber se há quem atenda na organização", {
+        organization_id: org.orgId,
+        erro: erro instanceof Error ? erro.name : typeof erro,
+      });
+      return null;
+    }
+  };
+
+  const [orgRes, credsRes, semana, comparadasRes, iaDeSempre, percebidasRes, observacoes, percebidos, camadasRes, roteadoresRes, haQuemAtenda] = await Promise.all([
     db.from("organizations").select("settings").eq("id", org.orgId).maybeSingle(),
     db
       .from("ai_provider_credentials")
@@ -357,6 +450,7 @@ export async function GET(): Promise<Response> {
       .order("created_at", { ascending: false })
       .limit(PAGINA),
     lerObservacoes(),
+    lerPercebidos(),
     db.from("org_guardrail_layers").select("layer, enabled").eq("organization_id", org.orgId),
     // Com a contagem das intenções: o roteador ativo sem nenhuma (o estado logo
     // depois de criar um) ou com mais do que cabe nunca é perguntado ao Jev.
@@ -365,6 +459,7 @@ export async function GET(): Promise<Response> {
       .select("id, intencoes:ai_router_members(count)")
       .eq("organization_id", org.orgId)
       .eq("is_active", true),
+    lerQuemAtende(),
   ]);
 
   const erro =
@@ -374,6 +469,7 @@ export async function GET(): Promise<Response> {
     comparadasRes.error?.message ??
     percebidasRes.error?.message ??
     observacoes.erro ??
+    percebidos.erro ??
     camadasRes.error?.message ??
     roteadoresRes.error?.message;
   if (erro) return fail("query_failed", erro, 500, { requestId });
@@ -389,6 +485,12 @@ export async function GET(): Promise<Response> {
 
   const { numeros, ultima_falha } = numerosDaSemana(semana.linhas);
   const config = lerConfigDoJev(orgRes.data?.settings);
+  // O dreno descarta o turno do modo externo antes de tudo (spec 14), e o
+  // worker não pergunta os pedidos ali — o mesmo `aiDispatchModeSchema`.
+  const externo =
+    aiDispatchModeSchema.parse((orgRes.data?.settings as { ai_dispatch_mode?: unknown } | null | undefined)?.ai_dispatch_mode) ===
+    "external";
+  const semAtendente: SemAtendente | null = externo ? "externo" : haQuemAtenda === false ? "ninguem_no_ar" : null;
   const linhasDoClima = comparadasRes.data ?? [];
   const doClima: Concordancia = {
     ...concordancia(linhasDoClima),
@@ -415,8 +517,10 @@ export async function GET(): Promise<Response> {
       por_tarefa: porTarefa(
         config,
         { ...observacoes.porTarefa, [TAREFA_DO_CLIMA.id]: doClima },
+        percebidos.porTarefa,
         camadasEfetivas(camadasRes.data ?? []),
         algumRoteadorQuePergunta(roteadoresRes.data ?? []),
+        semAtendente,
       ),
       tem_ia_de_sempre: iaDeSempre !== null,
       numeros: {

@@ -13,7 +13,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { TAREFAS_DO_JEV } from "@/lib/ai/decisao/tarefas";
+import { PEDIDOS_DO_CLIENTE, TAREFAS_DO_JEV } from "@/lib/ai/decisao/tarefas";
 import { PROVEDORES_COM_CHAVE } from "@/lib/ai/pontos/provedores";
 import { PAPEIS, PONTOS_DE_IA } from "@/lib/ai/pontos/registro";
 import { EXPLICACAO_DA_ORIGEM } from "@/lib/ai/pontos/resolver";
@@ -47,10 +47,23 @@ describe("espanhol dos textos que vêm de lista, não de literal", () => {
     expect(semEspanhol(textos)).toEqual([]);
   });
 
-  it("toda tarefa do Jev — o nome, o que muda quando ela decide e o que o diálogo avisa antes", () => {
-    const textos = TAREFAS_DO_JEV.flatMap((x) => [x.rotulo, x.oQueFaz, x.aoDecidir, x.aoDecidirNoPonto, x.aoConfirmarDecidir]);
+  it("toda tarefa do Jev — o nome, o que muda quando ela decide, o que o diálogo avisa antes e o que o cartão conta", () => {
+    const textos = TAREFAS_DO_JEV.flatMap((x) => [
+      x.rotulo,
+      x.oQueFaz,
+      x.aoDecidir,
+      x.aoConfirmarDecidir,
+      // Só com ponto: `jevNoPonto`, no cartão do ponto.
+      ...(x.aoDecidirNoPonto !== undefined ? [x.aoDecidirNoPonto] : []),
+      // A frase da concordância, ou — em cascata — a dos pedidos percebidos.
+      ...(x.concordancia !== undefined ? [x.concordancia.antes, x.concordancia.depois] : [x.percebidos.nenhuma, x.percebidos.uma, x.percebidos.varias]),
+    ]);
     expect(textos.length, "a varredura não enxergou as tarefas").toBeGreaterThan(8);
     expect(semEspanhol(textos)).toEqual([]);
+  });
+
+  it("o nome e o porquê da chamada do Jev que não é de ponto nenhum, em IA › Execuções", () => {
+    expect(semEspanhol([PEDIDOS_DO_CLIENTE.rotulo, PEDIDOS_DO_CLIENTE.porQue, PEDIDOS_DO_CLIENTE.porQueNaFalha])).toEqual([]);
   });
 
   it("toda explicação de origem — o \"por que este modelo\" de IA › Execuções", () => {

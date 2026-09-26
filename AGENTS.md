@@ -462,6 +462,10 @@ itens envelhecem em ritmos diferentes, e o cabeçalho passava a mentir por todos
 - Nunca logue segredo, token, CPF, telefone ou e-mail. Sentry tem `beforeSend` que
   higieniza — não confie nele como única camada.
 - Não commite screenshot/dump com dado real de cliente.
+- Descadastro (STOP): quem bloqueia é só a regra de `lib/opt-out/deteccao.ts`, quando o próprio cliente
+  manda o STOP (não há bloqueio à mão no produto — `lib/channels/pos-entrada.ts` é o único escritor); o Jev
+  (`lib/ai/decisao/pedidos.ts`) só é perguntado onde ela disse não, e nunca bloqueia ninguém — no
+  máximo abre um aviso na Central ("Avisar a equipe").
 
 ## Packaging — se você tocou `Dockerfile*`, `docker-compose*.yml` ou `hostgator-setup-kit/`
 

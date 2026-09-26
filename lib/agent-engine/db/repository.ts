@@ -83,6 +83,16 @@ export type InboxKind =
   // `active` na tela, morto no motor. Quem abre e quem FECHA é o mesmo cron
   // (`followup-sem-agente`): o aviso some sozinho quando o vínculo aparece.
   | 'followup_sem_agente'
+  // (migration 0433) O Jev percebeu, onde a regra de hoje não viu nada, um
+  // pedido para falar com uma pessoa ou para parar de receber mensagens, e a
+  // empresa escolheu "Avisar a equipe" (`lib/ai/decisao/pedidos.ts`). Um por
+  // conversa e pedido (índice único), com `ref_kind='conversation'`. Os dois
+  // fecham com a conversa encerrada; o de falar com uma pessoa também quando
+  // ela fica com uma pessoa (assumida ou passada); o de parar de receber, não —
+  // ele pede assumir E o PARAR — e fecha quando o contato é bloqueado (gatilhos
+  // da 0433). O Jev só avisa.
+  | 'jev_pedido_de_humano'
+  | 'jev_parar_de_receber'
   | 'other';
 
 export interface InboxItemRow {

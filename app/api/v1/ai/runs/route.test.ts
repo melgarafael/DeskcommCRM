@@ -15,6 +15,8 @@ import {
   JEV_FALHOU_SEM_RESERVA,
   O_QUE_FAZER_DO_JEV,
 } from "@/lib/ai/decisao/textos";
+import { PEDIDOS_DO_CLIENTE } from "@/lib/ai/decisao/tarefas";
+import { DICIONARIO } from "@/lib/i18n/dicionario";
 import { PONTO_POR_ID } from "@/lib/ai/pontos/registro";
 import { EXPLICACAO_DA_ORIGEM } from "@/lib/ai/pontos/resolver";
 import { requireRole } from "@/lib/auth/require-role";
@@ -118,6 +120,57 @@ describe("GET /api/v1/ai/runs", () => {
       "Anthropic (Claude)",
       "fornecedor-que-saiu",
     ]);
+  });
+
+  /**
+   * A chamada do Jev que pergunta os pedidos do cliente não é ponto do registro
+   * (não há modelo para escolher ali): sem o nome dela, a tela mostraria
+   * `jev_pedidos`. A falha que pede ação dela não afirma consequência — nada no
+   * atendimento dependia do Jev. E o "por quê" é dela: os textos de origem do
+   * Jev falam de decidir, de comparar e da "IA de sempre", e aqui nenhum vale.
+   */
+  it("a chamada dos pedidos do cliente chega com nome de gente, com o porquê dela, e a falha sem consequência", async () => {
+    linhas = [
+      linha({ purpose: "jev_pedidos", provider: "typesafe", model: "typesafe/jev-1.13.0", origem_da_escolha: "jev_observacao" }),
+      linha({
+        purpose: "jev_pedidos",
+        provider: "typesafe",
+        status: "erro",
+        error_code: "jev_sem_credito",
+        origem_da_escolha: "jev_observacao",
+      }),
+      linha({ purpose: "ponto_que_ninguem_conhece" }),
+      // Avisando a equipe, a origem é `jev` — e mesmo assim ele não "decidiu" nada.
+      linha({ purpose: "jev_pedidos", provider: "typesafe", model: "typesafe/jev-1.13.0", origem_da_escolha: "jev" }),
+    ];
+    const { corpo } = await pedir();
+    const [ok, falha, estranho, avisando] = corpo.data.execucoes;
+    expect(ok.pontoRotulo).toBe("Perceber pedidos do cliente");
+    expect(ok.porQueEsteModelo).toBe(PEDIDOS_DO_CLIENTE.porQue);
+    expect(avisando.porQueEsteModelo).toBe(PEDIDOS_DO_CLIENTE.porQue);
+    expect(falha).toMatchObject({
+      pontoRotulo: "Perceber pedidos do cliente",
+      consequencia: null,
+      porQueEsteModelo: PEDIDOS_DO_CLIENTE.porQueNaFalha,
+      oQueFazer: O_QUE_FAZER_DO_JEV.jev_sem_credito,
+    });
+    for (const texto of [ok.porQueEsteModelo, avisando.porQueEsteModelo, falha.porQueEsteModelo]) {
+      expect(texto).not.toMatch(/decidiu|comparar|IA de sempre/);
+    }
+    // A chamada sai em quase toda mensagem — quase todas são perguntas comuns.
+    // O porquê não pode pressupor que houve um pedido ("não reconheceu o
+    // pedido"): 100 linhas leriam como 100 pedidos perdidos. E ela sai também
+    // quando a regra pegou o OUTRO pedido ("quero falar com um atendente" é
+    // perguntado só sobre parar de receber): o porquê não pode dizer que a
+    // regra não viu pedido NENHUM. É uma pergunta sobre esta mensagem.
+    for (const texto of [PEDIDOS_DO_CLIENTE.porQue, DICIONARIO[PEDIDOS_DO_CLIENTE.porQue]?.es ?? ""]) {
+      expect(texto, "a tradução existe (controle)").not.toBe("");
+      expect(texto).not.toMatch(/\bo pedido\b|\bel pedido\b|reconheceu|reconoció/i);
+      expect(texto).not.toMatch(/não viu pedido|no vio ningún pedido|nenhum pedido|ningún pedido/i);
+      expect(texto).toMatch(/perguntado se esta mensagem|preguntó a Jev si este mensaje/);
+    }
+    // Controle: o purpose desconhecido segue saindo como está.
+    expect(estranho.pontoRotulo).toBe("ponto_que_ninguem_conhece");
   });
 
   it("a reserva que cobriu o Jev não carrega consequência; a falha sem reserva carrega", async () => {

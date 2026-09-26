@@ -14,6 +14,7 @@ import type { NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { PROVEDOR_DO_JEV } from "@/lib/ai/decisao/credencial";
+import { PEDIDOS_DO_CLIENTE, rotuloDaChamadaDoJev } from "@/lib/ai/decisao/tarefas";
 import {
   JEV_FALHOU_AO_LADO,
   JEV_FALHOU_E_A_IA_COBRIU,
@@ -134,8 +135,9 @@ export async function GET(req: NextRequest): Promise<Response> {
     return {
       ...l,
       // O nome de gente do ponto. Sem isto a tela mostraria `flywheel_judge`, e
-      // o operador não tem por que saber o que é isso.
-      pontoRotulo: ponto?.rotulo ?? l.purpose,
+      // o operador não tem por que saber o que é isso. A chamada do Jev que não
+      // é de ponto nenhum (os pedidos do cliente) tem o nome dela.
+      pontoRotulo: ponto?.rotulo ?? rotuloDaChamadaDoJev(l.purpose) ?? l.purpose,
       // "typesafe" na coluna, "Jev (TypeSafe AI)" na tela.
       provedorRotulo: rotuloDoProvedor(l.provider) ?? l.provider,
       // A consequência daquele ponto falhar, que é o que liga uma linha de log
@@ -157,9 +159,14 @@ export async function GET(req: NextRequest): Promise<Response> {
           : null,
       oQueFazer: l.status === "erro" ? (O_QUE_FAZER[l.error_code ?? ""] ?? null) : null,
       // Nas linhas de falha do Jev, a frase da origem ("O Jev decidiu.", "O Jev
-      // observou…") seria falsa — ele não respondeu.
+      // observou…") seria falsa — ele não respondeu. A chamada dos pedidos do
+      // cliente tem as dela: ali ele não decide nem compara, e sem ele vale a regra.
       porQueEsteModelo:
-        l.status === "erro" && l.origem_da_escolha === "jev"
+        l.purpose === PEDIDOS_DO_CLIENTE.purpose
+          ? l.status === "erro"
+            ? PEDIDOS_DO_CLIENTE.porQueNaFalha
+            : PEDIDOS_DO_CLIENTE.porQue
+          : l.status === "erro" && l.origem_da_escolha === "jev"
           ? JEV_FALHOU_SEM_RESERVA
           : l.status === "erro" && l.origem_da_escolha === "jev_observacao"
             ? JEV_FALHOU_AO_LADO

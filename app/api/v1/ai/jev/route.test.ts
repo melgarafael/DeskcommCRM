@@ -13,6 +13,8 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { haQuemAtendaAOrganizacao } from "@/lib/ai/agents/quem-atende-a-sessao";
 import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
 import { DEFAULT_SENTIMENT_THRESHOLD } from "@/lib/ai/prompts/sentiment";
 import { fail } from "@/lib/api/wrappers";
@@ -30,6 +32,9 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/ai/gateway-binding", () => ({ resolverModeloDoPonto: vi.fn() }));
+// O portão de quem atende fala `pg`, não o supabase-js: o dublê responde por ele.
+vi.mock("@/lib/agent-engine/db/request-pool", () => ({ getRequestPool: vi.fn(() => ({ query: vi.fn() })) }));
+vi.mock("@/lib/ai/agents/quem-atende-a-sessao", () => ({ haQuemAtendaAOrganizacao: vi.fn() }));
 
 const ORG = "22222222-2222-4222-8222-222222222222";
 const OUTRA_ORG = "99999999-9999-4999-8999-999999999999";
@@ -49,6 +54,8 @@ interface Consulta {
   gte: Array<[string, unknown]>;
   range: [number, number] | null;
   patch: Linha | null;
+  /** `select(…, { head: true })`: só a contagem, sem linhas. */
+  head: boolean;
 }
 
 interface Estado {
@@ -73,7 +80,7 @@ const MAX_ROWS = 1000;
 function cliente(tipo: Consulta["cliente"]) {
   return {
     from(tabela: string) {
-      const c: Consulta = { cliente: tipo, tabela, eq: [], nao: [], neq: [], gte: [], range: null, patch: null };
+      const c: Consulta = { cliente: tipo, tabela, eq: [], nao: [], neq: [], gte: [], range: null, patch: null, head: false };
       estado.consultas.push(c);
       const linhasDaTabela = (): Linha[] => {
         const base =
@@ -96,7 +103,10 @@ function cliente(tipo: Consulta["cliente"]) {
         return c.range ? filtradas.slice(c.range[0], c.range[1] + 1) : filtradas.slice(0, MAX_ROWS);
       };
       const chain = {
-        select: () => chain,
+        select: (_colunas?: string, opcoes?: { head?: boolean }) => {
+          c.head = opcoes?.head === true;
+          return chain;
+        },
         not: (col: string, _op: string, v: unknown) => {
           c.nao.push([col, v]);
           return chain;
@@ -129,11 +139,12 @@ function cliente(tipo: Consulta["cliente"]) {
           if (c.patch) estado.settings = c.patch.settings as Linha;
           return { data: { settings: estado.settings }, error: null };
         },
-        // `jev_observacoes` é lida por contagem (`head`): o PostgREST devolve `count`, sem linhas.
+        // `jev_observacoes` é lida por contagem (`head`): o PostgREST devolve
+        // `count`, sem linhas; sem `head`, as linhas e a contagem.
         then: (ok: (r: unknown) => unknown, erro?: (e: unknown) => unknown) =>
           Promise.resolve(
             tabela === "jev_observacoes"
-              ? { data: null, count: linhasDaTabela().length, error: null }
+              ? { data: c.head ? null : linhasDaTabela(), count: linhasDaTabela().length, error: null }
               : { data: linhasDaTabela(), error: null },
           ).then(ok, erro),
       };
@@ -203,6 +214,7 @@ beforeEach(() => {
     modelId: "anthropic/claude-haiku-4-5",
     origem: "padrao",
   });
+  vi.mocked(haQuemAtendaAOrganizacao).mockResolvedValue(true);
 });
 
 async function ler() {
@@ -636,6 +648,9 @@ describe("o Jev por tarefa na rota", () => {
       expect.objectContaining({ id: "clima", ponto: "sentiment_classify", estado: "desligada", novo: false }),
       expect.objectContaining({ id: "manipulacao", ponto: "jailbreak_detect", estado: "desligada", novo: false }),
       expect.objectContaining({ id: "roteador", ponto: "intent_router", estado: "desligada", novo: false }),
+      // As em cascata não têm ponto: acompanham uma regra sem IA.
+      expect.objectContaining({ id: "humano", ponto: null, estado: "desligada", novo: false }),
+      expect.objectContaining({ id: "opt_out", ponto: null, estado: "desligada", novo: false }),
     ]);
 
     estado.settings = { jev: { ligado: true, modo: "decide", aceite: ACEITE_ANTIGO } };
@@ -730,6 +745,8 @@ describe("o Jev por tarefa na rota", () => {
       ["clima", false],
       ["manipulacao", false],
       ["roteador", false],
+      ["humano", false],
+      ["opt_out", false],
     ]);
     estado.camadas = [
       { organization_id: ORG, layer: "jailbreak", enabled: false },
@@ -739,6 +756,8 @@ describe("o Jev por tarefa na rota", () => {
       ["clima", false],
       ["manipulacao", true],
       ["roteador", false],
+      ["humano", false],
+      ["opt_out", false],
     ]);
   });
 
@@ -750,6 +769,8 @@ describe("o Jev por tarefa na rota", () => {
       ["clima", false],
       ["manipulacao", false],
       ["roteador", true],
+      ["humano", false],
+      ["opt_out", false],
     ]);
     // O ativo de OUTRA empresa não conta — o filtro é o da sessão.
     const intencoes = (n: number) => [{ count: n }];
@@ -758,6 +779,8 @@ describe("o Jev por tarefa na rota", () => {
       ["clima", false],
       ["manipulacao", false],
       ["roteador", true],
+      ["humano", false],
+      ["opt_out", false],
     ]);
     // Ativo, mas sem intenção nenhuma (o estado logo depois de criar um) ou com
     // mais do que cabe numa pergunta: o Jev nunca é perguntado, e "Só observa"
@@ -771,10 +794,142 @@ describe("o Jev por tarefa na rota", () => {
       ["clima", false],
       ["manipulacao", false],
       ["roteador", false],
+      ["humano", false],
+      ["opt_out", false],
     ]);
     // E o cartão segue dizendo que a tarefa observa: é o que ela faz quando há roteador.
     const roteador = (await ler()).corpo.data.por_tarefa.find((t: { id: string }) => t.id === "roteador");
     expect(roteador).toMatchObject({ estado: "observando", novo: true });
+  });
+
+  /**
+   * As tarefas em cascata não concordam com nada — o Jev só é perguntado onde a
+   * regra de hoje disse não —, e o cartão mostra os pedidos que ele PERCEBEU:
+   * a resposta dele passou do corte. Com as conversas mais recentes, sem
+   * repetir conversa, e o endereço pronto (o navegador não monta endereço).
+   */
+  it("GET: nas tarefas em cascata, os pedidos percebidos e as conversas deles — nunca uma concordância", async () => {
+    const obs = (tarefa: string, rotulo_jev: string, conversa: string, organization_id = ORG): Linha => ({
+      organization_id,
+      tarefa,
+      rotulo_jev,
+      rotulo_atual: "nao",
+      concordou: rotulo_jev === "nao",
+      conversation_id: conversa,
+      created_at: "2026-09-25T12:00:00.000Z",
+    });
+    estado.settings = { jev: { ligado: true, aceite: ACEITE_ANTIGO } };
+    estado.observacoes = [
+      // As mais recentes primeiro, como o `order` do banco devolve.
+      obs("humano", "sim", "c-1"),
+      obs("humano", "sim", "c-1"),
+      obs("humano", "sim", "c-2"),
+      obs("humano", "sim", "c-3"),
+      obs("humano", "sim", "c-4"),
+      obs("humano", "sim", "c-5"),
+      obs("humano", "sim", "c-6"),
+      // Abaixo do corte: não é pedido percebido.
+      obs("humano", "nao", "c-7"),
+      obs("opt_out", "sim", "c-8"),
+      obs("humano", "sim", "c-9", OUTRA_ORG),
+    ];
+
+    const d = (await ler()).corpo.data;
+    const humano = d.por_tarefa.find((t: { id: string }) => t.id === "humano");
+    expect(humano).toMatchObject({ estado: "observando", novo: true, observacao: null });
+    expect(humano.percebidos.dias).toBe(30);
+    expect(humano.percebidos.mensagens).toBe(7);
+    expect(humano.percebidos.conversas.map((c: { href: string }) => c.href)).toEqual([
+      "/app/inbox/c-1",
+      "/app/inbox/c-2",
+      "/app/inbox/c-3",
+      "/app/inbox/c-4",
+      "/app/inbox/c-5",
+    ]);
+    const optOut = d.por_tarefa.find((t: { id: string }) => t.id === "opt_out");
+    expect(optOut.percebidos).toMatchObject({ mensagens: 1, conversas: [{ href: "/app/inbox/c-8" }] });
+    // As outras tarefas não têm pedidos percebidos.
+    expect(d.por_tarefa.find((t: { id: string }) => t.id === "manipulacao").percebidos).toBeNull();
+    const lidas = estado.consultas.filter((c) => c.tabela === "jev_observacoes" && !c.head);
+    expect(lidas.length, "a leitura dos pedidos percebidos (controle positivo)").toBe(2);
+    expect(
+      lidas.every(
+        (c) =>
+          c.cliente === "sessao" &&
+          c.eq.some(([col, v]) => col === "organization_id" && v === ORG) &&
+          c.eq.some(([col, v]) => col === "rotulo_jev" && v === "sim") &&
+          c.gte.some(([col]) => col === "created_at"),
+      ),
+    ).toBe(true);
+  });
+
+  /**
+   * As tarefas de pedido só são perguntadas onde o atendimento automático
+   * rodaria (o worker: `haQuemAtendaASessao(..., { ignorarPausados: true })` e
+   * o modo externo fora). Numa empresa em que ele não roda em número nenhum,
+   * "Só observa" com "nenhuma mensagem" seria para sempre: a rota diz por quê,
+   * com a MESMA pergunta, sem fixar o número, e só para as de pedido.
+   */
+  it.each([
+    ["ninguém no ar sem pausa", {}, false, "ninguem_no_ar"],
+    ["o atendimento com um sistema de fora", { ai_dispatch_mode: "external" }, true, "externo"],
+    ["há quem atenda (controle)", {}, true, null],
+    ["o modo nativo dito por extenso, e há quem atenda (controle)", { ai_dispatch_mode: "native" }, true, null],
+  ] as const)("GET: nas tarefas de pedido, o motivo de não rodar — %s", async (_caso, settings, haQuem, motivo) => {
+    estado.settings = { jev: { ligado: true, aceite: ACEITE_ANTIGO }, ...settings };
+    vi.mocked(haQuemAtendaAOrganizacao).mockResolvedValue(haQuem);
+    const d = (await ler()).corpo.data;
+    const motivos = Object.fromEntries(d.por_tarefa.map((t: { id: string; sem_atendente: unknown }) => [t.id, t.sem_atendente]));
+    expect(motivos).toEqual({ clima: null, manipulacao: null, roteador: null, humano: motivo, opt_out: motivo });
+    // A organização é a da sessão, e a pergunta é a do portão do worker.
+    expect(vi.mocked(haQuemAtendaAOrganizacao).mock.calls.map(([, org]) => org)).toEqual([ORG]);
+  });
+
+  it("GET: sem saber se há quem atenda (o banco fora), o cartão não afirma 'Não roda'", async () => {
+    estado.settings = { jev: { ligado: true, aceite: ACEITE_ANTIGO } };
+    vi.mocked(getRequestPool).mockImplementationOnce(() => {
+      throw new Error("SUPABASE_DB_URL ausente");
+    });
+    const { status, corpo } = await ler();
+    expect(status).toBe(200);
+    expect(corpo.data.por_tarefa.find((t: { id: string }) => t.id === "humano").sem_atendente).toBeNull();
+  });
+
+  it("GET: a falha da chamada dos pedidos aparece com o nome dela, e não crua", async () => {
+    estado.settings = { jev: { ligado: true, aceite: ACEITE_ANTIGO } };
+    estado.llmCalls = [chamada({ purpose: "jev_pedidos", status: "erro", error_code: "jev_sem_credito" })];
+    expect((await ler()).corpo.data.ultima_falha).toMatchObject({
+      motivo: "jev_sem_credito",
+      tarefa: "Perceber pedidos do cliente",
+    });
+  });
+
+  /**
+   * O `decidindo` da tarefa em cascata é o "Avisar a equipe" da tela: o aviso
+   * na Central existe (`lib/ai/decisao/pedidos.ts`), e a rota aceita o pedido
+   * como o de qualquer tarefa — gravado, auditado, e sem mexer no clima.
+   */
+  it("PATCH: a tarefa em cascata aceita decidindo (Avisar a equipe), grava só ela e audita", async () => {
+    estado.credenciais = [credencial()];
+    estado.settings = { jev: { ligado: true, modo: "observacao", aceite: ACEITE_ANTIGO } };
+    for (const tarefa of ["humano", "opt_out"]) {
+      const aceito = await mudar({ tarefa, estado: "decidindo" });
+      expect(aceito.status, tarefa).toBe(200);
+      expect(aceito.corpo.data.alterado, tarefa).toBe(true);
+    }
+    expect(estado.settings.jev).toMatchObject({
+      modo: "observacao",
+      tarefas: { humano: { estado: "decidindo" }, opt_out: { estado: "decidindo" } },
+    });
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "ai.jev.tarefa_alterada",
+        metadata: expect.objectContaining({ tarefa: "opt_out", estado: "decidindo" }),
+      }),
+    );
+    // E volta a só observar pelo mesmo caminho.
+    expect((await mudar({ tarefa: "humano", estado: "observando" })).status).toBe(200);
+    expect((estado.settings.jev as { tarefas: Linha }).tarefas).toMatchObject({ humano: { estado: "observando" } });
   });
 
   it("PATCH de uma tarefa: grava só ela, espelha o clima no `modo` e audita com a tarefa", async () => {

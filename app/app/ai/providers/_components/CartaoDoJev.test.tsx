@@ -8,7 +8,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { TAREFA_DA_MANIPULACAO, TAREFA_DO_CLIMA, TAREFA_DO_ROTEADOR } from "@/lib/ai/decisao/tarefas";
+import {
+  TAREFA_DA_MANIPULACAO,
+  TAREFA_DO_CLIMA,
+  TAREFA_DO_PEDIDO_DE_HUMANO,
+  TAREFA_DO_PEDIDO_PARA_PARAR,
+  TAREFA_DO_ROTEADOR,
+} from "@/lib/ai/decisao/tarefas";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 
 import { CartaoDoJev, jevNoPonto, useDadosDoJev, type DadosDoJev } from "./CartaoDoJev";
@@ -769,6 +775,412 @@ describe("CartaoDoJev — por tarefa", () => {
       }),
     );
     expect(screen.getByTestId("jev-concordancia-manipulacao")).toHaveTextContent(/Só o Jev daria o alerta forte em 1 delas/);
+  });
+
+  /**
+   * As tarefas em cascata não concordam com nada — o Jev só é perguntado onde a
+   * regra de hoje disse não —: contam as MENSAGENS em que ele percebeu o pedido
+   * que a regra não reconheceu, com as conversas. A unidade é a mensagem: o
+   * worker pergunta antes da janela do turno, e a rajada com duas frases
+   * naturais conta duas. O `decidindo` delas é "Avisar a equipe": um aviso na
+   * Central, nunca "Deixar o Jev decidir".
+   */
+  describe("as tarefas em cascata", () => {
+    const HUMANO = {
+      id: "humano",
+      ponto: null,
+      rotulo: TAREFA_DO_PEDIDO_DE_HUMANO.rotulo,
+      oQueFaz: TAREFA_DO_PEDIDO_DE_HUMANO.oQueFaz,
+      estado: "observando",
+      novo: true,
+      observacao: null,
+    } as const;
+    const conversa = (n: number) => ({ href: `/app/inbox/c-${n}`, em: `2026-09-2${n}T14:3${n}:00.000Z` });
+
+    it("uma mensagem: singular, com o link para a conversa — e nenhuma concordância", () => {
+      montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [{ ...HUMANO, percebidos: { dias: 30, mensagens: 1, conversas: [conversa(1)] } }],
+        }),
+      );
+      const frase = screen.getByTestId("jev-percebidos-humano");
+      expect(frase).toHaveTextContent(
+        "Nos últimos 30 dias, o Jev percebeu 1 mensagem pedindo para falar com uma pessoa em que a regra de hoje não reconheceu o pedido.",
+      );
+      const links = within(screen.getByTestId("jev-percebidos-conversas-humano")).getAllByRole("link");
+      expect(links.map((l) => l.getAttribute("href"))).toEqual(["/app/inbox/c-1"]);
+      expect(links[0]).toHaveAccessibleName(/^Abrir a conversa do pedido de /);
+      expect(screen.queryByTestId("jev-concordancia-humano")).toBeNull();
+    });
+
+    it("várias mensagens: plural, e um link por conversa; nenhuma: frase própria, sem número e sem links", () => {
+      const { unmount } = montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [
+            { ...HUMANO, percebidos: { dias: 30, mensagens: 7, conversas: [conversa(1), conversa(2), conversa(3)] } },
+            {
+              ...HUMANO,
+              id: "opt_out",
+              rotulo: TAREFA_DO_PEDIDO_PARA_PARAR.rotulo,
+              oQueFaz: TAREFA_DO_PEDIDO_PARA_PARAR.oQueFaz,
+              percebidos: { dias: 30, mensagens: 0, conversas: [] },
+            },
+          ],
+        }),
+      );
+      expect(screen.getByTestId("jev-percebidos-humano")).toHaveTextContent(
+        "Nos últimos 30 dias, o Jev percebeu 7 mensagens pedindo para falar com uma pessoa em que a regra de hoje não reconheceu o pedido.",
+      );
+      expect(within(screen.getByTestId("jev-percebidos-conversas-humano")).getAllByRole("link")).toHaveLength(3);
+      // Zero não é "percebeu 0": lia-se como defeito, e a frase é outra.
+      const nenhuma = screen.getByTestId("jev-percebidos-opt_out");
+      expect(nenhuma).toHaveTextContent(
+        "Nos últimos 30 dias, o Jev ainda não percebeu nenhuma mensagem pedindo para parar de receber mensagens em que a regra de hoje não reconheceu o pedido.",
+      );
+      expect(nenhuma).not.toHaveTextContent(/\b0\b/);
+      expect(screen.queryByTestId("jev-percebidos-conversas-opt_out")).toBeNull();
+      unmount();
+    });
+
+    it("observando: o botão é 'Avisar a equipe', nunca 'Deixar o Jev decidir' — com pausar e manter", () => {
+      montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [
+            { ...CLIMA, estado: "observando" },
+            { ...HUMANO, percebidos: { dias: 30, mensagens: 0, conversas: [] } },
+          ],
+        }),
+      );
+      const linha = within(screen.getByTestId("jev-tarefa-humano"));
+      expect(linha.queryByRole("button", { name: "Deixar o Jev decidir" })).toBeNull();
+      expect(linha.getByRole("button", { name: "Avisar a equipe" })).toBeInTheDocument();
+      expect(linha.getByRole("button", { name: "Pausar esta tarefa" })).toBeInTheDocument();
+      expect(linha.getByRole("button", { name: "Manter só observando" })).toBeInTheDocument();
+      // A tarefa nova diz o que o selo quer dizer — sem prometer decisão.
+      expect(screen.getByTestId("jev-nova-humano")).toHaveTextContent(
+        "Começou sozinha, só observando: nada muda até você pedir para o Jev avisar a equipe.",
+      );
+      // Controle: o clima, na mesma tela, decide.
+      expect(
+        within(screen.getByTestId("jev-tarefa-clima")).getByRole("button", { name: "Deixar o Jev decidir" }),
+      ).toBeInTheDocument();
+    });
+
+    it.each([
+      ["humano", TAREFA_DO_PEDIDO_DE_HUMANO],
+      ["opt_out", TAREFA_DO_PEDIDO_PARA_PARAR],
+    ] as const)("%s: 'Avisar a equipe' pede confirmação com o efeito — e só o diálogo grava", async (id, registro) => {
+      montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [{ ...HUMANO, id, rotulo: registro.rotulo, oQueFaz: registro.oQueFaz }],
+        }),
+      );
+      fireEvent.click(within(screen.getByTestId(`jev-tarefa-${id}`)).getByRole("button", { name: "Avisar a equipe" }));
+      const dialogo = await screen.findByRole("alertdialog");
+      expect(dialogo).toHaveAttribute("data-tarefa", id);
+      expect(within(dialogo).getByRole("heading")).toHaveTextContent("Avisar a equipe?");
+      expect(dialogo).toHaveTextContent(registro.aoConfirmarDecidir);
+      expect(dialogo).not.toHaveTextContent("Deixar o Jev decidir");
+      expect(chamadas.filter((c) => c.metodo === "PATCH")).toEqual([]);
+      fireEvent.click(within(dialogo).getByRole("button", { name: "Avisar a equipe" }));
+      await waitFor(() => expect(recarregar).toHaveBeenCalledTimes(1));
+      expect(chamadas.filter((c) => c.metodo === "PATCH").map((c) => c.corpo)).toEqual([{ tarefa: id, estado: "decidindo" }]);
+    });
+
+    it("avisando: o selo diz 'Avisa a equipe', a frase diz o que acontece, e dá para voltar a só observar", () => {
+      montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [{ ...HUMANO, estado: "decidindo", novo: false, percebidos: { dias: 30, mensagens: 0, conversas: [] } }],
+        }),
+      );
+      const linha = screen.getByTestId("jev-tarefa-humano");
+      expect(linha).toHaveAttribute("data-estado", "decidindo");
+      expect(linha).toHaveTextContent("Avisa a equipe");
+      expect(linha).not.toHaveTextContent(/\bDecide\b/);
+      expect(screen.getByTestId("jev-decide-humano")).toHaveTextContent(TAREFA_DO_PEDIDO_DE_HUMANO.aoDecidir);
+      expect(within(linha).getByRole("button", { name: "Voltar a só observar" })).toBeInTheDocument();
+    });
+
+    /**
+     * O cartão inteiro não diz "Decide" onde o Jev só avisa: com o clima
+     * observando e o pedido de pessoa em "Avisar a equipe", o cliente não sente
+     * nada — o selo, a frase e o `data-estado` são os de quem observa. Só a
+     * linha da tarefa diz "Avisa a equipe".
+     */
+    it.each([
+      ["com o clima observando", [{ ...CLIMA, estado: "observando" }]],
+      ["sozinha", []],
+    ] as const)("avisando a equipe %s, o cartão diz que o Jev observa, e não que decide", (_caso, outras) => {
+      montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [...outras, { ...HUMANO, estado: "decidindo", novo: false, percebidos: { dias: 30, mensagens: 0, conversas: [] } }],
+        }),
+      );
+      expect(cartao()).toHaveAttribute("data-estado", "observando");
+      expect(cartao()).not.toHaveTextContent(/Decide em parte|Decidindo|Decide\b/);
+      expect(screen.getByTestId("jev-tarefas").previousElementSibling).toHaveTextContent(/^Observando — /);
+      expect(screen.getByTestId("jev-tarefa-humano")).toHaveTextContent("Avisa a equipe");
+    });
+
+    /**
+     * A frase de estado do cartão é verdadeira para o que DE FATO roda. Só as
+     * tarefas de pedidos rodando: não há o que comparar, e a "sua IA de sempre"
+     * pode nem existir — a frase fala só do que o Jev faz nelas. Com tarefas
+     * que comparam, a frase delas vale, e os pedidos ganham a sua. Decidindo em
+     * parte, a frase nomeia também quem só avisa a equipe.
+     */
+    const PARAR = { ...HUMANO, id: "opt_out", rotulo: TAREFA_DO_PEDIDO_PARA_PARAR.rotulo, oQueFaz: TAREFA_DO_PEDIDO_PARA_PARAR.oQueFaz };
+    const pedidos = (humano: "observando" | "decidindo", parar: "observando" | "decidindo" = "observando") => [
+      { ...HUMANO, estado: humano, novo: false },
+      { ...PARAR, estado: parar, novo: false },
+    ];
+    const frase = () => screen.getByTestId("jev-tarefas").previousElementSibling?.textContent ?? "";
+    it.each([
+      [
+        "só os pedidos, observando",
+        { ia: true, tarefas: [{ ...CLIMA, estado: "desligada" }, ...pedidos("observando")] },
+        "observando",
+        "Observando — o Jev só conta as mensagens em que o cliente faz um pedido que a regra de hoje não reconheceu. Nada muda no atendimento.",
+      ],
+      [
+        "só os pedidos, um avisando a equipe",
+        { ia: true, tarefas: [{ ...CLIMA, estado: "desligada" }, ...pedidos("decidindo")] },
+        "observando",
+        "Observando — o Jev conta as mensagens em que o cliente faz um pedido que a regra de hoje não reconheceu, e avisa a equipe na Central. Ele não decide nada no atendimento.",
+      ],
+      [
+        "só os pedidos, e sem a IA de sempre",
+        { ia: false, tarefas: [{ ...CLIMA, estado: "desligada" }, ...pedidos("observando", "decidindo")] },
+        "observando",
+        "Observando — o Jev conta as mensagens em que o cliente faz um pedido que a regra de hoje não reconheceu, e avisa a equipe na Central. Ele não decide nada no atendimento.",
+      ],
+      [
+        "o clima observando e os pedidos observando",
+        { ia: true, tarefas: [{ ...CLIMA, estado: "observando" }, ...pedidos("observando")] },
+        "observando",
+        "Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele só conta as mensagens em que a regra de hoje não reconheceu o pedido.",
+      ],
+      [
+        "o clima observando e um pedido avisando",
+        { ia: true, tarefas: [{ ...CLIMA, estado: "observando" }, ...pedidos("decidindo")] },
+        "observando",
+        "Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele conta as mensagens em que a regra de hoje não reconheceu o pedido, e avisa a equipe.",
+      ],
+      [
+        "o clima decidindo e um pedido avisando",
+        { ia: true, tarefas: [{ ...CLIMA, estado: "decidindo" }, ...pedidos("decidindo")] },
+        "decidindo",
+        "Decidindo em parte — cada tarefa abaixo diz se o Jev decide, só observa ou avisa a equipe nela.",
+      ],
+      [
+        "o clima decidindo e os pedidos só observando (controle)",
+        { ia: true, tarefas: [{ ...CLIMA, estado: "decidindo" }, ...pedidos("observando")] },
+        "decidindo",
+        "Decidindo em parte — cada tarefa abaixo diz se o Jev decide ou só observa nela.",
+      ],
+      [
+        "só o clima, observando (controle: a frase de sempre)",
+        { ia: true, tarefas: [{ ...CLIMA, estado: "observando" }] },
+        "observando",
+        "Observando — a sua IA de sempre ainda decide. Compare os dois antes de deixar o Jev decidir.",
+      ],
+    ] as const)("a frase do cartão, com %s, diz o que de fato roda", (_caso, c, estado, esperada) => {
+      montar(dados({ config: { ligado: true, modo: "observacao" }, tem_ia_de_sempre: c.ia, por_tarefa: [...c.tarefas] }));
+      expect(cartao()).toHaveAttribute("data-estado", estado);
+      expect(frase()).toBe(esperada);
+    });
+
+    it("com o clima decidindo, o pedido avisando conta como a parte que não decide (controle)", () => {
+      montar(
+        dados({
+          config: { ligado: true, modo: "decide" },
+          por_tarefa: [
+            { ...CLIMA, estado: "decidindo" },
+            { ...HUMANO, estado: "decidindo", novo: false, percebidos: { dias: 30, mensagens: 0, conversas: [] } },
+          ],
+        }),
+      );
+      expect(cartao()).toHaveAttribute("data-estado", "decidindo");
+      expect(cartao()).toHaveTextContent("Decide em parte");
+    });
+
+    it("antes de ligar, avisar a equipe não é 'Onde ele decide'", () => {
+      montar(
+        dados({
+          por_tarefa: [
+            { ...CLIMA, estado: "observando", ao_ligar: "observando" },
+            { ...HUMANO, estado: "decidindo", ao_ligar: "decidindo", novo: false },
+          ],
+        }),
+      );
+      expect(screen.getByTestId("jev-ao-ligar-humano")).toHaveTextContent("(Avisa a equipe)");
+      expect(screen.getByTestId("jev-ao-ligar")).not.toHaveTextContent(/Onde ele decide/);
+      expect(screen.getByTestId("jev-ao-ligar")).toHaveTextContent(/Onde ele só observa/);
+    });
+
+    /**
+     * O worker só pergunta os pedidos onde o atendimento automático rodaria. Numa
+     * empresa em que ele não roda em número nenhum — ninguém no ar sem pausa, ou
+     * o atendimento com um sistema de fora —, "Só observa" com "nenhuma
+     * mensagem" seria para sempre: a tarefa diz "Não roda", e por quê.
+     */
+    it.each([
+      ["ninguem_no_ar", /nenhum atendente automático está no ar — o Jev só é perguntado onde um atendente responderia/, true],
+      ["externo", /quem conduz as conversas desta empresa é um sistema de fora/, false],
+    ] as const)("sem atendimento automático (%s): 'Não roda' com o motivo, sem contar nem avisar", (motivo, frase, comLink) => {
+      montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [
+            { ...CLIMA, estado: "observando" },
+            { ...HUMANO, sem_atendente: motivo, percebidos: { dias: 30, mensagens: 0, conversas: [] } },
+          ],
+        }),
+      );
+      const linha = screen.getByTestId("jev-tarefa-humano");
+      expect(linha).toHaveTextContent("Não roda");
+      expect(linha).not.toHaveTextContent("Só observa");
+      const porQue = screen.getByTestId("jev-sem-atendente-humano");
+      expect(porQue).toHaveTextContent(frase);
+      expect(within(porQue).queryAllByRole("link").map((l) => l.getAttribute("href"))).toEqual(comLink ? ["/app/ai/agents"] : []);
+      // Nada do que só vale rodando: nem a contagem, nem "começou observando", nem avisar.
+      expect(screen.queryByTestId("jev-percebidos-humano")).toBeNull();
+      expect(screen.queryByTestId("jev-nova-humano")).toBeNull();
+      expect(within(linha).queryByRole("button", { name: "Avisar a equipe" })).toBeNull();
+      // Parada, ela não observa nada: "Manter só observando" prometeria o contrário.
+      expect(within(linha).queryByRole("button", { name: "Manter só observando" })).toBeNull();
+      expect(within(linha).getByRole("button", { name: "Pausar esta tarefa" })).toBeInTheDocument();
+      // A tarefa parada não entra na frase do cartão: só o clima roda.
+      expect(screen.getByTestId("jev-tarefas").previousElementSibling).toHaveTextContent(
+        "Observando — a sua IA de sempre ainda decide. Compare os dois antes de deixar o Jev decidir.",
+      );
+    });
+
+    it("sem atendimento automático e só os pedidos ligados: o cartão diz que nada está rodando", () => {
+      montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [
+            { ...CLIMA, estado: "desligada" },
+            { ...HUMANO, sem_atendente: "ninguem_no_ar" },
+            { ...HUMANO, id: "opt_out", rotulo: TAREFA_DO_PEDIDO_PARA_PARAR.rotulo, sem_atendente: "ninguem_no_ar" },
+          ],
+        }),
+      );
+      expect(cartao()).toHaveAttribute("data-estado", "em_pausa");
+      expect(cartao()).toHaveTextContent(/nenhuma tarefa está rodando agora/);
+    });
+
+    it("controle: com quem atenda, a mesma tarefa só observa, conta e oferece avisar", () => {
+      montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [{ ...HUMANO, sem_atendente: null, percebidos: { dias: 30, mensagens: 0, conversas: [] } }],
+        }),
+      );
+      const linha = screen.getByTestId("jev-tarefa-humano");
+      expect(linha).toHaveTextContent("Só observa");
+      expect(screen.queryByTestId("jev-sem-atendente-humano")).toBeNull();
+      expect(screen.getByTestId("jev-percebidos-humano")).toBeInTheDocument();
+      expect(screen.getByTestId("jev-nova-humano")).toBeInTheDocument();
+      expect(within(linha).getByRole("button", { name: "Avisar a equipe" })).toBeInTheDocument();
+    });
+
+    /**
+     * A frase de ANTES de ligar é verdadeira para o que vai rodar, como a do
+     * cartão ligado: nos pedidos não há IA de sempre nem o que comparar, e com
+     * só eles rodando (o clima pausado) a frase de comparar era falsa por
+     * inteiro — sem a IA principal, contradizia a frase seguinte.
+     */
+    const ANTES_OBSERVA = "Onde ele só observa, a sua IA de sempre continua decidindo, e você compara os dois antes de deixar o Jev decidir.";
+    const ANTES_DECIDE =
+      "Onde ele decide, vale a escolha que você fez antes de desligá-lo; onde só observa, a sua IA de sempre continua decidindo, e você compara os dois antes de deixar o Jev decidir.";
+    const PEDIDOS_OBSERVAM = "Nos pedidos do cliente, o Jev só conta as mensagens em que a regra de hoje não reconheceu o pedido — nada muda no atendimento.";
+    const PEDIDOS_AVISAM =
+      "Nos pedidos do cliente, o Jev conta as mensagens em que a regra de hoje não reconheceu o pedido e avisa a equipe na Central — ele não decide nada no atendimento.";
+    const RELIGAR = "As tarefas pausadas continuam assim: depois de ligar o Jev, religue-as na lista que aparece aqui.";
+    const SEM_IA_RELIGADO = "Sem uma IA principal, o clima religado volta decidindo sozinho: não há com quem comparar nem quem cubra uma falha do Jev.";
+    type AoLigar = "observando" | "decidindo" | "desligada";
+    const aoLigar = (clima: AoLigar, humano: AoLigar, parar: AoLigar, extra: { semAtendente?: boolean } = {}) => [
+      { ...CLIMA, estado: clima, ao_ligar: clima },
+      { ...HUMANO, estado: humano, ao_ligar: humano, novo: false, ...(extra.semAtendente ? { sem_atendente: "ninguem_no_ar" as const } : {}) },
+      { ...PARAR, estado: parar, ao_ligar: parar, novo: false, ...(extra.semAtendente ? { sem_atendente: "ninguem_no_ar" as const } : {}) },
+    ];
+    it.each([
+      ["só os pedidos, observando (o clima pausado)", true, aoLigar("desligada", "observando", "observando"), [PEDIDOS_OBSERVAM, RELIGAR]],
+      ["só os pedidos, um avisando", true, aoLigar("desligada", "decidindo", "observando"), [PEDIDOS_AVISAM, RELIGAR]],
+      ["só os pedidos, sem a IA de sempre", false, aoLigar("desligada", "observando", "observando"), [PEDIDOS_OBSERVAM, RELIGAR, SEM_IA_RELIGADO]],
+      ["o clima observando e os pedidos observando", true, aoLigar("observando", "observando", "observando"), [ANTES_OBSERVA, PEDIDOS_OBSERVAM]],
+      ["o clima decidindo e um pedido avisando", true, aoLigar("decidindo", "observando", "decidindo"), [ANTES_DECIDE, PEDIDOS_AVISAM]],
+      ["o clima observando e os pedidos sem quem atenda", true, aoLigar("observando", "observando", "decidindo", { semAtendente: true }), [ANTES_OBSERVA]],
+    ] as const)("antes de ligar, com %s, a frase diz o que vai rodar", (_caso, ia, tarefas, frases) => {
+      montar(dados({ tem_ia_de_sempre: ia, por_tarefa: [...tarefas] }));
+      const texto = screen.getByTestId("jev-ao-ligar").textContent?.replace(/\s+/g, " ").trim() ?? "";
+      expect(texto).toBe(frases.join(" "));
+    });
+
+    it("antes de ligar, a tarefa de pedido que não vai rodar diz por quê — e a que vai rodar não (controle)", () => {
+      montar(dados({ por_tarefa: [...aoLigar("observando", "observando", "observando", { semAtendente: true })] }));
+      expect(screen.getByTestId("jev-ao-ligar-humano")).toHaveTextContent("(Não roda)");
+      expect(screen.getByTestId("jev-ao-ligar-sem-atendente-humano")).toHaveTextContent(
+        /nenhum atendente automático está no ar — o Jev só é perguntado onde um atendente responderia/,
+      );
+      expect(screen.queryByTestId("jev-ao-ligar-sem-atendente-clima")).toBeNull();
+      cleanup();
+      montar(dados({ por_tarefa: [...aoLigar("observando", "observando", "observando")] }));
+      expect(screen.queryByTestId("jev-ao-ligar-sem-atendente-humano")).toBeNull();
+    });
+
+    it("antes de ligar, só o clima observando: a frase de sempre, sem a dos pedidos (controle)", () => {
+      montar(dados({ por_tarefa: [{ ...CLIMA, estado: "observando", ao_ligar: "observando" }] }));
+      expect(screen.getByTestId("jev-ao-ligar").textContent?.replace(/\s+/g, " ").trim()).toBe(ANTES_OBSERVA);
+    });
+
+    it("fala espanhol com quem escolheu espanhol, no singular e no plural", () => {
+      montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [{ ...HUMANO, percebidos: { dias: 30, mensagens: 1, conversas: [conversa(1)] } }],
+        }),
+        { idioma: "es" },
+      );
+      expect(screen.getByTestId("jev-percebidos-humano")).toHaveTextContent(
+        "En los últimos 30 días, Jev detectó 1 mensaje que pide hablar con una persona en el que la regla de hoy no reconoció el pedido.",
+      );
+      expect(screen.getByTestId("jev-tarefa-humano")).toHaveTextContent("Detectar pedidos de hablar con una persona");
+      cleanup();
+      // A frase é traduzida INTEIRA, no plural também — nenhum pedaço em português.
+      montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [{ ...HUMANO, percebidos: { dias: 30, mensagens: 7, conversas: [conversa(1)] } }],
+        }),
+        { idioma: "es" },
+      );
+      expect(screen.getByTestId("jev-percebidos-humano")).toHaveTextContent(
+        "En los últimos 30 días, Jev detectó 7 mensajes que piden hablar con una persona en los que la regla de hoy no reconoció el pedido.",
+      );
+      // O número segue em destaque, onde a tradução o pôs.
+      expect(within(screen.getByTestId("jev-percebidos-humano")).getByText("7")).toHaveClass("font-medium");
+      cleanup();
+      // E o zero, com a frase própria dele, também inteira.
+      montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [{ ...HUMANO, percebidos: { dias: 30, mensagens: 0, conversas: [] } }],
+        }),
+        { idioma: "es" },
+      );
+      expect(screen.getByTestId("jev-percebidos-humano")).toHaveTextContent(
+        "En los últimos 30 días, Jev todavía no detectó ningún mensaje que pida hablar con una persona en el que la regla de hoy no haya reconocido el pedido.",
+      );
+    });
   });
 
   it("o roteador diz que concordar é levar ao mesmo agente", () => {

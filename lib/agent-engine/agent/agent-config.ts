@@ -186,9 +186,7 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     maxSteps: r.max_steps,
     historyMessageWindow: r.history_message_window,
     historyTokenWindow: r.history_token_window,
-    handoffKeywords: (r.handoff_keywords ?? [])
-      .map((k) => k.toLowerCase().trim())
-      .filter((k) => k !== ''),
+    handoffKeywords: palavrasDePassagem(r.handoff_keywords),
     handoffToolEnabled: r.handoff_tool_enabled,
     splitMessages: r.split_messages,
     splitMaxChars: r.split_max_chars,
@@ -232,8 +230,8 @@ export async function loadPublishedAgentConfig(
      where a.organization_id = $1
        and a.archived_at is null
        -- is_active é semântica do rag_bot legado; para mcp_agent "ativo" =
-       -- published_version_id preenchido + não arquivado (mesmo critério do
-       -- dispatcher nativo do CRM — pausar = despublicar).
+       -- published_version_id preenchido + não arquivado. Pausar NÃO despublica
+       -- (grava só paused_at): o pausado vem aqui, e o turno sai no pausedAt.
        and v.status = 'published'
        and v.channel_session_id = $2
      order by a.priority desc, a.created_at asc
@@ -269,6 +267,15 @@ export async function loadPublishedAgentConfigById(
   const r = rows[0];
   if (r === undefined) return null;
   return mapAgentConfigRow(r);
+}
+
+/**
+ * `ai_agent_versions.handoff_keywords` como `matchesHandoffKeyword` as espera:
+ * minúsculas, sem espaço de borda, sem vazias. Exportada para quem lê a versão
+ * por outro caminho (o worker de clima, pelo cliente admin) casar igual ao turno.
+ */
+export function palavrasDePassagem(brutas: readonly string[] | null | undefined): string[] {
+  return (brutas ?? []).map((k) => k.toLowerCase().trim()).filter((k) => k !== '');
 }
 
 /**

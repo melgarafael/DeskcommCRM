@@ -609,6 +609,14 @@
       "type": "table",
       "label": "jev_observacoes (0421)",
       "sublabel": "por resposta do Jev: tarefa, estado, rótulo dele × rótulo de hoje, concordou (gerada), ponteiros sem FK, sem texto — poda de 90 dias no cron data-retention"
+    },
+    {
+      "id": "jevPedidos",
+      "lane": "motor",
+      "col": 7,
+      "type": "service",
+      "label": "worker de clima: os pedidos do cliente (lib/ai/decisao/pedidos.ts + workers/ai-sentiment-worker.pedidos.ts)",
+      "sublabel": "chamada própria, em paralelo à do clima — só onde a regra de hoje (pedido explícito de pessoa, palavras de passagem de quem pode atender, descadastro pedido ou provável) disse não e o turno do agente rodaria (o portão do dreno, haQuemAtendaASessao); corte 0,9; em 'Avisar a equipe' abre UM aviso por conversa e pedido (índice único), depois de saber o que o clima fez; nunca passa a conversa, bloqueia ou cala"
     }
   ],
   "edges": [
@@ -1362,7 +1370,43 @@
       "id": "e120",
       "from": "jevObservacoes",
       "to": "jevRota",
-      "label": "concordância por tarefa, 30 dias, contada no banco — o laço de retorno da manipulação"
+      "label": "concordância por tarefa, 30 dias, contada no banco — o laço de retorno da manipulação; nas tarefas em cascata, as mensagens em que o Jev percebeu o pedido, as conversas delas, e o 'Não roda' onde nenhum número tem atendente automático no ar (haQuemAtendaAOrganizacao) ou o atendimento é de um sistema de fora"
+    },
+    {
+      "id": "e121",
+      "from": "sentimento",
+      "to": "jevPedidos",
+      "label": "a mesma mensagem, com a regra de hoje rodada e os fatos do turno lidos (o portão do dreno para o número, elegibilidade, contato bloqueado ou com uma pessoa em outra conversa, grupo)"
+    },
+    {
+      "id": "e122",
+      "from": "jevPedidos",
+      "to": "jev",
+      "label": "observarPedidos: só as perguntas que a regra não pegou, numa chamada só, a mensagem sem o histórico, por scrubMessage"
+    },
+    {
+      "id": "e123",
+      "from": "jevPedidos",
+      "to": "jevObservacoes",
+      "label": "uma linha por pergunta: tarefa humano/opt_out, sim/não pelo corte, rótulo de hoje 'nao' por construção"
+    },
+    {
+      "id": "e124",
+      "from": "jevPedidos",
+      "to": "jevLlmCalls",
+      "label": "linha typesafe purpose jev_pedidos (jev_observacao; jev em 'Avisar a equipe') — o nome dela em Execuções é 'Perceber pedidos do cliente'"
+    },
+    {
+      "id": "e125",
+      "from": "jevPedidos",
+      "to": "central",
+      "label": "'Avisar a equipe' (0433): kind jev_pedido_de_humano / jev_parar_de_receber, ref_kind conversation, warn — o corpo NÃO leva a frase do cliente: a Central entrega body a qualquer agent"
+    },
+    {
+      "id": "e126",
+      "from": "atribuir",
+      "to": "central",
+      "label": "trg_fechar_avisos_do_jev_da_conversa (0433): encerrada, os dois avisos do Jev daquela conversa fecham; com uma pessoa (assumida, ou passada por qualquer caminho: last_handoff_at, robô calado), só o de falar com uma pessoa — o de parar de receber pede à equipe assumir E pedir o PARAR, e segue aberto; trg_fechar_aviso_do_jev_ao_bloquear: o contato bloqueado fecha o de parar de receber (o laço de retorno dele)"
     }
   ],
   "cards": [

@@ -1076,6 +1076,18 @@ jobs:
       # service role e apaga tudo no fim. Roda depois da `jev-decisoes-rapidas`
       # — as duas nunca disputam a porta, porque a parte roda uma spec por vez.
       # PREVISÃO, não medida: ~1 min.
+      #
+      # `jev-pedidos` entrou junto delas em 2026-09-26 (onda 3 do Jev, bloco
+      # 3.1), pelo mesmo motivo e com o mesmo isolamento: sobe o próprio dublê
+      # (a mesma porta 3996, com `DUBLE_JEV_RESPOSTAS` forçando a resposta das
+      # perguntas dos pedidos), manda as mensagens pela mesma entrada da
+      # `jev-decisoes-rapidas`, publica um agente SÓ dela no número (sem agente
+      # no ar, o Jev não é perguntado) e apaga o agente, a chave, o
+      # `settings.jev` e as observações dos pedidos no fim. Roda depois das
+      # outras duas do Jev: escoa a fila antes de ligar, como a primeira.
+      # O bloco 3.2 acrescentou um quarto cliente e o aviso na Central ("Avisar
+      # a equipe"), que ela também apaga no fim.
+      # PREVISÃO, não medida: ~2 min.
       SPECS_PARTE_5: >-
         inbox-busca-e-filtros-dizem-a-verdade.spec.ts
         extensoes-da-instalacao.spec.ts
@@ -1100,6 +1112,7 @@ jobs:
         olhar-telas-do-epico.spec.ts
         jev-decisoes-rapidas.spec.ts
         jev-roteador.spec.ts
+        jev-pedidos.spec.ts
         buffer-ssr-caixa-orfa.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
