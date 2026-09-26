@@ -661,6 +661,21 @@ export const NAV_CATALOG = [
     minRole: "viewer",
   },
   {
+    // Módulo opcional (ADR-0002), fonte `modulos_instalados` — a porta só existe
+    // depois que o administrador da instalação instala `honorarios` em
+    // `/admin/modulos`. Mesmo mecanismo genérico de `banco_externo` acima, só
+    // que a fonte é a TABELA, não a flag de `platform_config`; `deModuloDesligado`
+    // e este filtro não sabem a diferença, e não precisam saber.
+    href: "/app/honorarios",
+    label: "Honorários",
+    description: "O modelo de cobrança de cada caso e o calendário de parcelas.",
+    icon: "ChartBar",
+    group: "analise",
+    section: "Dinheiro",
+    minRole: "viewer",
+    modulo: "honorarios",
+  },
+  {
     href: "/app/metrics",
     label: "Desempenho",
     description: "Funil e performance por atendente nos últimos 30 dias.",

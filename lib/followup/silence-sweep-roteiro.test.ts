@@ -80,6 +80,7 @@ describe("runSilenceSweep", () => {
       ],
       loadSilentContactIds: async () => ["contato"],
       loadTriggerNode: async () => ({ id: "t", pedeAgente: false }),
+      loadContactIdsEmCooldown: async () => new Set(),
       insertEnrollment: insert,
     };
     const resumo = await runSilenceSweep({

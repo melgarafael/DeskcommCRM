@@ -195,6 +195,7 @@ cite cada um:
 | Contribuir: corrigir bug, abrir ou atualizar PR, migration, conflito com a `main`   | `deskcomm-contribuir`   |
 | Criar extensão/plugin/módulo de nicho, ou transformar um PR de nicho em pacote      | `deskcomm-extensao`     |
 | Escrever ou revisar código aqui                                                     | `deskcomm-doutrina`     |
+| Antes de começar qualquer implementação/melhoria nova: mapear doutrina, UI/UX e padrões de agente aplicáveis | `deskcomm-especialista` |
 
 O gate de arquitetura de qualquer peça que atende pessoas é a skill `sistema-vivo` (lei em
 [`docs/doctrine/sistema-vivo.md`](docs/doctrine/sistema-vivo.md)).
@@ -522,6 +523,7 @@ casar, mesmo que a pessoa não saiba que ele existe. Fora de um clone (ou num cl
 | o agente responde errado, passa tudo para humano, não usa a agenda; melhorar o prompt | `deskcomm-prompt` |
 | contribuir: corrigir bug, abrir ou atualizar PR, migration, conflito com a `main` | `deskcomm-contribuir` — que fica quieto quando `bash .agents/skills/deskcomm-contribuir/scripts/quem-sou.sh` responde `mantenedor` |
 | escrever ou revisar código aqui | `deskcomm-doutrina` (as três regras que mais custam) e `sistema-vivo` (o gate de arquitetura) |
+| antes de começar qualquer implementação/melhoria nova: mapear doutrina, UI/UX e padrões de agente aplicáveis | `deskcomm-especialista` |
 
 Os guias têm vitrine pública em [deskcomm.com.br/guias](https://www.deskcomm.com.br/guias) (pt-BR,
 en, es), escrita à mão no repositório `deskcomm-site` (`conteudo/guias.ts`). Guia criado,

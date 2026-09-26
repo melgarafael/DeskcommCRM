@@ -19,7 +19,12 @@ import type {
   ChaveDeOrcamentoDaInstalacao,
   ComportamentoDaInstalacao,
 } from "@/lib/instalacao/comportamento";
-import type { ModuloOpcional } from "@/lib/instalacao/modulos";
+import type { ModuloOpcional, MODULOS_OPCIONAIS_POR_FLAG } from "@/lib/instalacao/modulos";
+
+/** Só os módulos que esta tela liga/desliga — nunca "honorarios" (módulo de
+ * tabela, ADR-0002): `updateModuloDaInstalacao` não aceita esse valor, e o tipo
+ * aqui existe pra isso dar erro em build, não silenciosamente em runtime. */
+type ModuloPorFlag = (typeof MODULOS_OPCIONAIS_POR_FLAG)[number];
 
 /**
  * Cada interruptor salva na hora, sem botão de confirmar — mesmo desenho do
@@ -182,7 +187,7 @@ export function FormularioDeComportamento({ inicial }: { inicial: ComportamentoD
  * `.env`). Mesmo desenho do cartão de cima: salva no clique, volta no erro.
  */
 /** Cada módulo, como ele aparece aqui. O texto diz o que ligar ABRE, não só o nome. */
-const MODULOS_NA_TELA: ReadonlyArray<{ modulo: ModuloOpcional; id: string; rotulo: string; descricao: string }> = [
+const MODULOS_NA_TELA: ReadonlyArray<{ modulo: ModuloPorFlag; id: string; rotulo: string; descricao: string }> = [
   {
     modulo: "banco_externo",
     id: "modulo-banco-externo",
@@ -205,7 +210,7 @@ export function FormularioDeModulos({ ligados }: { ligados: readonly ModuloOpcio
   const [erro, setErro] = useState<string | null>(null);
   const [pendente, startTransition] = useTransition();
 
-  function trocar(modulo: ModuloOpcional, valor: boolean) {
+  function trocar(modulo: ModuloPorFlag, valor: boolean) {
     setErro(null);
     const alternar = (ligar: boolean) =>
       setEstado((atual) => {

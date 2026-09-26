@@ -148,4 +148,6 @@ export {
   GoogleLogo,
   MapPin,
   ArrowsOutSimple,
+  // /admin/modulos: módulo opcional com tabela própria (ADR-0002)
+  Stack,
 } from "@phosphor-icons/react/dist/ssr";

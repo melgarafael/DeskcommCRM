@@ -21,6 +21,7 @@ import {
   ArrowRight,
   Lock,
   PuzzlePiece,
+  Stack,
 } from "@/lib/ui/icons";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
@@ -97,6 +98,13 @@ const NAV_ITEMS: NavItem[] = [
   // (`lib/navigation/catalogo.ts`), de propósito: são duas vistas do mesmo
   // assunto, e ícones diferentes fariam parecer dois assuntos.
   { href: "/admin/extensoes", label: "Extensões", icon: PuzzlePiece },
+  // A PORTA QUE FALTAVA (achado da revisão do PR #1578): a tela existia e as
+  // rotas de honorários já apontavam o operador para cá na mensagem de erro
+  // ("instale em Configurações da instalação › Módulos"), mas só se chegava
+  // digitando a URL — a mesma classe de defeito que a entrada de cima corrigiu
+  // para Extensões, só que `tests/unit/navegacao-completude.test.ts` não cobre
+  // `/admin/**`, então nada acusava.
+  { href: "/admin/modulos", label: "Módulos", icon: Stack },
 ];
 
 interface AdminSidebarProps {

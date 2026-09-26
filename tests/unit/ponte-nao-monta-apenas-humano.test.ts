@@ -46,6 +46,13 @@ function contexto() {
 
 describe("a ponte do turno respeita `apenasHumano`", () => {
   const apenasHumano = TOOL_CATALOG.filter((t) => t.apenasHumano).map((t) => t.name);
+  // Capacidade de MÓDULO opcional (ADR-0002) some do turno quando o módulo não
+  // está instalado — `contexto()` abaixo não passa `modulosLigados`, então
+  // `deModuloDesligado` trata todo `modulo:` como desligado, de propósito
+  // (mesma regra de `deModuloDesligado`/`pickToolsFromMcp`). Contar isso à
+  // parte, e não estufar o "-3" fixo, é o que mantém este teste medindo o
+  // filtro cego que ele foi escrito para pegar, e não a soma dos dois efeitos.
+  const semModulo = TOOL_CATALOG.filter((t) => t.modulo).length;
 
   it("existe ao menos uma capacidade marcada (guarda de vacuidade)", () => {
     // Sem isto, remover a marca de todas faria o teste abaixo passar por
@@ -81,7 +88,9 @@ describe("a ponte do turno respeita `apenasHumano`", () => {
     });
     // Controle positivo: se o filtro derrubasse tudo, o teste acima passaria
     // vacuamente e o agente ficaria sem ferramenta nenhuma.
-    expect(Object.keys(montadas).length).toBeGreaterThan(allTools.length - apenasHumano.length - 3);
+    expect(Object.keys(montadas).length).toBeGreaterThan(
+      allTools.length - apenasHumano.length - semModulo - 3,
+    );
     expect(montadas).toHaveProperty("crm_search_contacts");
   });
 });
