@@ -240,10 +240,15 @@ function NomeDaEtapaNoQuadro({
 }) {
   const t = useT();
   const [rascunho, setRascunho] = useState(nome);
+  // O Escape desfoca, e o desfoque chama `confirmar` na MESMA tecla: o
+  // `rascunho` que ele lê ainda é o texto digitado, e sem esta marca o Escape
+  // salvava o que devia desfazer (medido em renomear-etapa-no-quadro.test.tsx).
+  const cancelado = useRef(false);
 
   function confirmar() {
     const limpo = rascunho.trim();
-    if (!limpo || limpo === nome) {
+    if (cancelado.current || !limpo || limpo === nome) {
+      cancelado.current = false;
       setRascunho(nome);
       return;
     }
@@ -261,7 +266,7 @@ function NomeDaEtapaNoQuadro({
       onKeyDown={(e) => {
         if (e.key === "Enter") e.currentTarget.blur();
         if (e.key === "Escape") {
-          setRascunho(nome);
+          cancelado.current = true;
           e.currentTarget.blur();
         }
       }}
