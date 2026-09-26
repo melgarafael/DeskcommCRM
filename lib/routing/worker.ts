@@ -167,7 +167,7 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
 
   const alreadyAssigned = Boolean(conv.assigned_to_user_id);
   let eligibles: Awaited<ReturnType<typeof loadEligibleAttendants>> = [];
-  if (!alreadyAssigned && config.mode === "round_robin") {
+  if (!alreadyAssigned && (config.mode === "round_robin" || config.mode === "load")) {
     try {
       eligibles = await loadEligibleAttendants(admin, orgId, now, {
         kind: "conversation_channel", channelSessionId: conv.channel_session_id,
