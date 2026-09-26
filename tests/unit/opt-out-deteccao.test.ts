@@ -47,6 +47,47 @@ const PEDE_PARA_SAIR = [
   "quero sair da lista",
   "quero cancelar a inscrição",
   "me descadastra aí",
+  // ─── As TRÊS formas que passavam batido (medido 24/09/2026) ───────────────
+  //
+  // O defeito: a lista de verbos tinha `remove|remova` mas não `remover`, o
+  // pronome `me` era OBRIGATÓRIO antes do verbo, e só "da lista" valia como
+  // destino. As três coisas juntas deixavam passar o jeito mais comum de pedir.
+  //
+  // INFINITIVO — "pode me remover da lista" é como se pede de fato.
+  "pode me remover da lista",
+  "me retirar da lista",
+  "me excluir da lista",
+  "me apagar da lista",
+  "gostaria de me remover da lista",
+  // OBJETO EXPLÍCITO — sem o pronome `me` antes do verbo.
+  "retire meu contato da lista",
+  "remova meu contato da lista",
+  "retire meu numero da lista",
+  "tira meu nome da lista",
+  "quero que remova meu contato da lista",
+  "pode remover meu numero da lista",
+  // DESTINO — o mesmo pedido, outro lugar.
+  "me tire do cadastro",
+  "remova meu numero do sistema",
+  "retire meu contato do cadastro",
+  // ─── IMPERATIVO NEGATIVO — a família inteira que faltava (24/09/2026) ─────
+  //
+  // O padrão `não me X mais` tinha lista PRÓPRIA e estreita, copiada à mão, em
+  // vez de usar a constante compartilhada. E a locução `entrar em contato` não
+  // existia em lista nenhuma — `entre` é de ENTRAR, não de comunicar.
+  //
+  // Medido com a função real, antes deste conserto: 8 destas 11 passavam.
+  "não entre mais em contato neste numero",
+  "nao entre em contato comigo",
+  "nao me contate mais",
+  "nao me contacte mais",
+  "nao me procure mais",
+  "nao me incomode mais",
+  "nao me escreva mais",
+  "nao me fale mais",
+  "nao me perturbe mais",
+  "nao me importune mais",
+  "nao volte a entrar em contato",
 ];
 
 /** Frases do dia a dia que usam a palavra e NÃO são pedido de descadastro. */
@@ -80,6 +121,38 @@ const NAO_PEDE_PARA_SAIR = [
   // colagem — o defeito da versão com `\b` ASCII, que já tinha sido corrigido
   "amanhã ele sairá do escritório e pararão as obras",
   "a obra pararia se chovesse",
+  // ─── Os invasores do conserto de 24/09/2026 ───────────────────────────────
+  //
+  // O conserto abriu os verbos (infinitivo), o objeto ("meu contato") e o
+  // destino ("do cadastro"). Cada abertura é uma porta nova para falso
+  // positivo, e estas são as frases que provam que ela ficou estreita:
+  // remover/apagar/tirar aparecem, mas o OBJETO não é a comunicação com o
+  // cliente. Nenhuma bloqueia.
+  "remove o produto do carrinho",
+  "tira meu nome do e-mail",
+  "remove meu contato do grupo",
+  "apaga a luz quando sair",
+  "retire o item da sacola",
+  "excluir minha conta do banco",
+  "me tira uma duvida",
+  "posso remover o produto",
+  "retirei o pedido ontem",
+  "vou remover o app",
+  "tira da lista de espera",
+  // ─── Os invasores do imperativo negativo ──────────────────────────────────
+  //
+  // A regra passou a usar a lista COMPLETA de verbos de comunicação. Mais
+  // verbos = mais superfície. Estas provam que o freio segurou:
+  "nao me mande mais boletos",
+  "nao me mande mais faturas por email",
+  "nao me envie mais os produtos errados",
+  "nao me mandem mais cobrancas duplicadas",
+  // A locução `entrar em contato` também é afirmativa na vida real: quem MARCA
+  // um contato não está pedindo para sair dele.
+  "nao vou poder entrar em contato hoje",
+  "vou entrar em contato amanha",
+  "quando voces vao entrar em contato?",
+  "nao consegui entrar em contato ontem",
   // vazios
   "",
   "   ",

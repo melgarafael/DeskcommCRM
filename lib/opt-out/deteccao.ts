@@ -111,15 +111,116 @@ export const PALAVRAS_DE_OPT_OUT: ReadonlySet<string> = new Set([
  * mandar mensagem" de "tem como parar a dor?".
  */
 const VERBOS_DE_COMUNICACAO =
-  "mandar|manda|mande|mandem|enviar|envia|envie|enviem|receber|recebe|escrever|escreve|" +
-  "chamar|chama|ligar|liga|perturbar|perturba|encher|enche|insistir|insiste|" +
+  // PORTUGUÊS — a lista vai completa POR FORMA, não por sorte: infinitivo
+  // (mandaR), 3ª pessoa do singular/plural (manda/mandam — quase todo pedido
+  // vem assim: "vocês me mandam"), imperativo (mande/mandem) e subjuntivo
+  // (mandes). A lista anterior tinha só algumas formas de cada verbo, e a
+  // assimetria era o defeito: "pode me REMOVER da lista" caía fora porque
+  // `remover` não estava lá, embora `remove` e `remova` estivessem.
+  "mandar|manda|mandam|mande|mandem|mandes|" +
+  "enviar|envia|enviam|envie|enviem|envies|" +
+  "escrever|escreve|escrevem|escreva|escrevam|escrevas|" +
+  "chamar|chama|chamam|chame|chamem|chames|" +
+  "ligar|liga|ligam|ligue|liguem|ligues|" +
+  "contatar|contata|contatam|contate|contatem|contates|" +
+  "contactar|contacta|contactam|contacte|contactem|contactes|" +
+  "procurar|procura|procuram|procure|procurem|procures|" +
+  "incomodar|incomoda|incomodam|incomode|incomodem|incomodes|" +
+  "importunar|importuna|importunam|importune|importunem|importunes|" +
+  "perturbar|perturba|perturbam|perturbe|perturbem|perturbes|" +
+  "encher|enche|enchem|encha|encham|enches|" +
+  "insistir|insiste|insistem|insista|insistam|insistas|" +
+  "falar|fala|falam|fale|falem|fales|" +
+  "receber|recebe|recebem|receba|recebam|recebas|" +
   // espanhol — mesma âncora, outra língua. Sem eles "no quiero recibir mas
   // mensajes" não casa nenhum padrão e o pedido se perde.
-  "recibir|recibe|escribir|escribe|escriban|molestar|molesta|llamar|llama|mandes|envien|" +
-  // `contactar` faltava — "no me contacten más" e "deja de contactarme" não
-  // casavam nenhum padrão, embora sejam pedido de descadastro tão direto
-  // quanto "no me escriba".
-  "contactar|contacta|contacte|contacten|contactes";
+  "recibir|recibe|reciben|reciban|recibas|" +
+  "escribir|escribe|escriben|escriban|escribas|" +
+  "llamar|llama|llaman|llamen|llames|" +
+  "molestar|molesta|molestan|moleste|molesten|molestes|" +
+  "mandes|manden|envies|envien|contactes|contacten";
+
+/**
+ * O QUE o cliente quer que seja removido — o OBJETO do verbo.
+ *
+ * "retire **meu contato** da lista", "apague **meu numero** do sistema".
+ * Inclui `nome` de propósito: "tira meu nome da lista" é pedido claro, e o
+ * objeto do verbo não é onde mora a ambiguidade.
+ */
+const ALVO_REMOVIDO =
+  "contato|contatos|contacto|contactos|" +
+  "numero|numeros|" +
+  "nome|nomes|" +
+  "telefone|telefonos|celular|celulares|" +
+  "whatsapp|zap|dados|cadastro";
+
+/**
+ * DE ONDE o cliente quer sair — o DESTINO.
+ *
+ * Aqui `nome` e `email` FICAM DE FORA, e a diferença é medida: como destino,
+ * "tira meu nome do e-mail" é mais provável ser pedido de correção de cadastro
+ * do que descadastro. Como objeto do verbo (a lista acima) ele é inequívoco.
+ * A mesma palavra muda de sentido conforme a posição — por isso são duas
+ * listas, e não uma.
+ *
+ * `cancelar` fica fora do verbo pelo mesmo motivo: "quero cancelar o pedido" e
+ * "posso cancelar a consulta de amanhã?" são do corpus NEGATIVO.
+ */
+const DE_ONDE =
+  "lista|listas|cadastro|cadastros|base|bases|sistema|sistemas|" +
+  "contatos|contactos|contato|contacto|" +
+  "numero|numeros|telefone|telefonos|celular|celulares|whatsapp|zap";
+
+/**
+ * Verbos de remoção, completos por forma: infinitivo (tiraR), 3ª pessoa
+ * (tira/tiram), imperativo (tire/tirem) e subjuntivo (tires). Mais o espanhol.
+ *
+ * A lista anterior tinha só algumas formas de cada verbo, e a assimetria era o
+ * defeito: "pode me REMOVER da lista" caía fora porque `remover` não estava lá,
+ * embora `remove` e `remova` estivessem.
+ */
+const VERBOS_DE_REMOCAO =
+  "tirar|tira|tiram|tire|tirem|tires|" +
+  "remover|remove|removem|remova|removam|removas|" +
+  "retirar|retira|retiram|retire|retirem|retires|" +
+  "excluir|exclui|excluem|exclua|excluam|excluas|" +
+  "apagar|apaga|apagam|apague|apaguem|apagues|" +
+  "deletar|deleta|deletam|delete|deletem|deletes|" +
+  "descartar|descarta|descartam|descarte|descartem|descartes|" +
+  "sacar|saca|sacame|sacarme|quitar|quita|quitame|quitarme|" +
+  "eliminar|elimina|eliminame|eliminarme|borrar|borra|borrame|borrarme";
+
+/** Possessivos e artigos que vêm entre o verbo e o alvo. */
+const DETERMINANTES_DO_ALVO =
+  "meu|minha|meus|minhas|o|a|os|as|nosso|nossa|seu|sua|seus|suas|mi|mis|tu|tus";
+
+/** A preposição que liga o alvo ao destino — `de la`/`del` são o espanhol. */
+const PREPOSICAO_DE_SAIDA =
+  "da|das|do|dos|de|dessa|deste|desta|desses|dessas|de\\s+la|de\\s+los|de\\s+las|del|from";
+
+/**
+ * Freio do destino: `lista de espera` NÃO é descadastro.
+ *
+ * O espanhol já tinha este parêntese e o português não — assimetria, não
+ * decisão. Quem escreve "tira da lista de espera" quer ser chamado, só não
+ * agora.
+ */
+const FREIO_DO_DESTINO = "(?!\\s+de\\s+(?:espera|precos|preco|interesse|convidados|casamento))";
+
+/**
+ * Como se pede para "parar de falar comigo" — a LOCUÇÃO, não o verbo.
+ *
+ * "não entre em contato" não tem verbo de comunicação: `entre` é de ENTRAR, e o
+ * pedido mora em `entrar em contato`. Medido: foi a forma que um cliente real
+ * usou ("não entre mais em contato neste número") e não casava padrão nenhum.
+ */
+const VERBOS_DE_ENTRADA_EM_CONTATO =
+  "entrar|entra|entram|entre|entrem|entres|" +
+  "voltar|volta|voltam|volte|voltem|voltes|" +
+  "fazer|faz|fazem|faca|facam|" +
+  "vir|vem|venha|venham|" +
+  // espanhol
+  "contactar|contacte|contacten|comunicar|comunique|comuniquen";
 
 /**
  * Objetos que aparecem depois de um verbo de comunicação mas NÃO são a
@@ -188,12 +289,73 @@ const FRASES_DE_OPT_OUT: readonly RegExp[] = [
   // resolvia no padrão de cessação ("parar de mandar o pedido"), e que ficou
   // sem ele aqui — conserto por instância, não por classe. Esta é a forma
   // mais COMUM das duas: "não me mande mais X" é como se reclama direto.
+  // ─── Imperativo negativo — "não me contate mais" ──────────────────────────
+  //
+  // Esta regra tinha a PRÓPRIA lista de verbos (`mande|manda|mandem|envie|
+  // envia|enviem|chame|chama|ligue|liga`), copiada à mão e mais estreita que a
+  // constante compartilhada. O resultado é que o pedido mais direto que existe
+  // passava batido — medido com a função real:
+  //
+  //   ❌ "não me contate mais"     ❌ "não me contacte mais"
+  //   ❌ "não me procure mais"     ❌ "não me incomode mais"
+  //   ❌ "não me escreva mais"     ❌ "não me falar mais"
+  //
+  // Agora usa a MESMA `VERBOS_DE_COMUNICACAO` do resto do arquivo, com o `me`
+  // opcional (o cliente escreve "não contate mais" tanto quanto "não me contate
+  // mais") e o freio de `OBJETOS_NAO_COMUNICATIVOS` que já protegia a forma
+  // "não me mande mais BOLETOS" — reclamação de cobrança, não descadastro.
   new RegExp(
-    `\\bnao\\s+me\\s+(?:mande|manda|mandem|envie|envia|enviem|chame|chama|ligue|liga)\\s+mais\\b` +
+    `\\bnao\\s+(?:me\\s+)?(?:${VERBOS_DE_COMUNICACAO})\\s+mais\\b` +
       `(?!\\s+(?:${DETERMINANTES_DE_OBJETO})?\\s*(?:${OBJETOS_NAO_COMUNICATIVOS})\\b)`,
     "u",
   ),
-  /\bme\s+(?:tira|tire|tirem|remove|remova|removam|retira|retire|exclui|exclua|apaga|apague)\s+(?:da|dessa|desta|de\s+sua|da\s+sua)\s+lista\b/u,
+  // "não entre em contato", "não volte a entrar em contato", "não faça contato".
+  // A locução, não o verbo: `entre` é de ENTRAR, e nenhuma lista de verbos de
+  // comunicação o pegaria. Medido: foi a frase que um cliente real usou
+  // ("não entre mais em contato neste número") e ela não casava nada.
+  new RegExp(
+    `\\bnao\\s+(?:${VERBOS_DE_ENTRADA_EM_CONTATO})\\s+(?:mais\\s+)?` +
+      `(?:em\\s+|a\\s+)?(?:entrar\\s+em\\s+)?(?:contato|contacto)\\b`,
+    "u",
+  ),
+  // ─── Remoção de um alvo — UMA régua para as três peças ────────────────────
+  //
+  //   [me]? + VERBO + [o que remover]? + preposição + DE ONDE
+  //
+  // Antes eram três padrões com listas escritas à mão, e cada um cobria uma
+  // combinação exata — o que deixava passar o jeito mais comum de pedir.
+  // Medido com a regex real, antes deste conserto:
+  //
+  //   ✅ "me tira da lista"                ❌ "pode me REMOVER da lista"
+  //   ✅ "me remova da lista"              ❌ "retire MEU CONTATO da lista"
+  //   ✅ "me retire da lista"              ❌ "remova meu numero da lista"
+  //   ✅ "me exclua da lista"              ❌ "me tire DO CADASTRO"
+  //
+  // As causas eram três, todas de lista incompleta:
+  //   1. INFINITIVO — havia `remove|remova|removam` e não `remover`.
+  //   2. OBJETO EXPLÍCITO — o pronome `me` era OBRIGATÓRIO antes do verbo, e
+  //      "retire MEU CONTATO da lista" não o tem.
+  //   3. DESTINO — só "da lista" valia; "do cadastro" e "do sistema" ficavam fora.
+  //
+  // ⚠️ `(?:(?:${CONST})\s+)?` — o grupo em volta da CONSTANTE é obrigatório.
+  // Sem ele, `\s+` casa só com a ÚLTIMA alternativa (a alternação tem
+  // precedência menor que a concatenação): `(?:lista|cadastro|nome\s+)` deixava
+  // "lista" sem o espaço, e o padrão inteiro parava de casar. Foi exatamente
+  // esse erro que fez a primeira versão deste conserto não pegar nada.
+  //
+  // Os invasores — cada abertura é uma porta nova para falso positivo — têm
+  // teste próprio e NENHUM bloqueia: "remove o produto do carrinho", "apaga a
+  // luz", "tira meu nome do e-mail", "remove meu contato do grupo", "excluir
+  // minha conta do banco", "tira da lista de espera".
+  new RegExp(
+    `\\b(?:me\\s+)?(?:${VERBOS_DE_REMOCAO})\\s+` +
+      `(?:(?:${DETERMINANTES_DO_ALVO})\\s+)?` +
+      `(?:(?:${ALVO_REMOVIDO})\\s+)?` +
+      `(?:${PREPOSICAO_DE_SAIDA})\\s+` +
+      `(?:${DE_ONDE})\\b` +
+      FREIO_DO_DESTINO,
+    "u",
+  ),
   /\bsair\s+d(?:a|essa|esta)\s+lista\b/u,
   /\bcancelar?\s+(?:a\s+)?(?:inscricao|assinatura)\b/u,
   /\b(?:me\s+)?descadastr\w*\b/u,
