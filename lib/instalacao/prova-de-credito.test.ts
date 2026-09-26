@@ -69,8 +69,32 @@ describe("montarRequisicaoDeProva", () => {
 });
 
 describe("classificarResposta", () => {
-  it("200 é a única forma de passar", () => {
+  it("200 passa", () => {
     expect(classificarResposta(200, "{}")).toEqual({ ok: true });
+  });
+
+  it("400 de 'limite de saída atingido' passa: a chave foi aceita e a cobrança atravessada (#1693)", () => {
+    // Corpo REAL da OpenAI, medido em 2026-09-26 com uma chave boa e o modelo
+    // curado padrão (gpt-5.6-terra, de raciocínio): com `max_completion_tokens: 1`
+    // ele gasta o único token pensando e a API recusa DEPOIS de começar a gerar.
+    const corpo = JSON.stringify({
+      error: {
+        message:
+          "Could not finish the message because max_tokens or model output limit was reached. Please try again with higher max_tokens.",
+        type: "invalid_request_error",
+        param: null,
+        code: null,
+      },
+    });
+    expect(classificarResposta(400, corpo)).toEqual({ ok: true });
+  });
+
+  it("outro 400 continua reprovando — só o 'limite de saída' prova a cobrança", () => {
+    const r = classificarResposta(
+      400,
+      '{"error":{"message":"Unsupported parameter: \'max_tokens\' is not supported with this model.","type":"invalid_request_error"}}',
+    );
+    expect(r.ok).toBe(false);
   });
 
   it("saldo/limite tem balde próprio — é o caso que o selo 'Validada' escondia", () => {

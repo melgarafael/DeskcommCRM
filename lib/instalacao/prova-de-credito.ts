@@ -145,6 +145,12 @@ export function montarRequisicaoDeProva(
 /** Traduz a resposta HTTP no mesmo vocabulário de erro do runtime. */
 export function classificarResposta(status: number, corpo: string): ResultadoDaProva {
   if (status >= 200 && status < 300) return { ok: true };
+  // O "limite de saída atingido" é a prova passando, não falhando (#1693). Um
+  // modelo de raciocínio (o curado padrão da OpenAI é um) gasta o único token
+  // pensando, e a API recusa DEPOIS de aceitar a chave e começar a gerar — ou
+  // seja, depois de atravessar a cobrança, que é tudo o que esta prova mede.
+  // Reprovar aqui dizia "falta crédito" a quem acabou de colar uma chave boa.
+  if (status === 400 && /output limit was reached/i.test(corpo)) return { ok: true };
   // `normalizarErro` lê `status` do objeto — é a régua canônica, compartilhada
   // com a tela de Execuções, e ela também redige a mensagem do provedor (que
   // pode ecoar header de autorização em endpoint próprio).
