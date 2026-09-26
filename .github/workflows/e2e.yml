@@ -1083,6 +1083,7 @@ jobs:
         agenda-primeira-pintura-no-fuso.spec.ts
         agenda-portao-de-hidratacao.spec.ts
         qa-l12-inbox.spec.ts
+        etapa-pela-conversa.spec.ts
         filtro-por-marcador-pela-tela.spec.ts
         funil-arquivado-volta-pela-tela.spec.ts
         followup-builder.spec.ts
