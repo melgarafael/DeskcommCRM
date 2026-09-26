@@ -96,10 +96,19 @@ LABEL org.opencontainers.image.source="https://github.com/melgarafael/DeskcommCR
 # (2026-09-13, três builds do mesmo fonte): versão nova → `apk add ffmpeg`
 # REEXECUTA (23–41s); mesma versão → CACHED (3s). Por isso a declaração E o uso
 # descem para depois do `apk add` e do `adduser`, junto da cópia do artefato.
+# KEEP_ALIVE_TIMEOUT (lido pelo `server.js` do standalone): quanto o servidor
+# segura uma conexão ociosa. O padrão do Node é 5 s — MENOR que o do proxy na
+# frente (Caddy reaproveita a conexão com o upstream por 2 min; Traefik, 90 s).
+# Quem fecha primeiro tem de ser o proxy: se é o servidor, o proxy manda a
+# próxima requisição num socket que acabou de morrer e o usuário leva 502 (o Go
+# só reenvia sozinho o que é idempotente — um POST não). 125 s passa dos dois.
+# O e2e sobe o servidor com o mesmo valor (`playwright.config.ts`), onde a
+# mesma corrida derrubava `page.request.get` com `socket hang up`.
 ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
-    NEXT_TELEMETRY_DISABLED=1
+    NEXT_TELEMETRY_DISABLED=1 \
+    KEEP_ALIVE_TIMEOUT=125000
 # ffmpeg: a derivação de vídeo (Onda 3.1) roda no processo do app — o cron
 # event-log-drain executa o media_derive handler, que chama `ffmpeg` via spawn
 # pra extrair áudio+frames. Sem o binário, todo vídeo recebido falha a derivação.
