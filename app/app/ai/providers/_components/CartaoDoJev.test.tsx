@@ -917,8 +917,76 @@ describe("CartaoDoJev — por tarefa", () => {
       );
       expect(cartao()).toHaveAttribute("data-estado", "observando");
       expect(cartao()).not.toHaveTextContent(/Decide em parte|Decidindo|Decide\b/);
-      expect(cartao()).toHaveTextContent("Observando — a sua IA de sempre ainda decide.");
+      expect(screen.getByTestId("jev-tarefas").previousElementSibling).toHaveTextContent(/^Observando — /);
       expect(screen.getByTestId("jev-tarefa-humano")).toHaveTextContent("Avisa a equipe");
+    });
+
+    /**
+     * A frase de estado do cartão é verdadeira para o que DE FATO roda. Só as
+     * tarefas de pedidos rodando: não há o que comparar, e a "sua IA de sempre"
+     * pode nem existir — a frase fala só do que o Jev faz nelas. Com tarefas
+     * que comparam, a frase delas vale, e os pedidos ganham a sua. Decidindo em
+     * parte, a frase nomeia também quem só avisa a equipe.
+     */
+    const PARAR = { ...HUMANO, id: "opt_out", rotulo: TAREFA_DO_PEDIDO_PARA_PARAR.rotulo, oQueFaz: TAREFA_DO_PEDIDO_PARA_PARAR.oQueFaz };
+    const pedidos = (humano: "observando" | "decidindo", parar: "observando" | "decidindo" = "observando") => [
+      { ...HUMANO, estado: humano, novo: false },
+      { ...PARAR, estado: parar, novo: false },
+    ];
+    const frase = () => screen.getByTestId("jev-tarefas").previousElementSibling?.textContent ?? "";
+    it.each([
+      [
+        "só os pedidos, observando",
+        { ia: true, tarefas: [{ ...CLIMA, estado: "desligada" }, ...pedidos("observando")] },
+        "observando",
+        "Observando — o Jev só conta os pedidos do cliente que a regra de hoje deixa passar. Nada muda no atendimento.",
+      ],
+      [
+        "só os pedidos, um avisando a equipe",
+        { ia: true, tarefas: [{ ...CLIMA, estado: "desligada" }, ...pedidos("decidindo")] },
+        "observando",
+        "Observando — o Jev conta os pedidos do cliente que a regra de hoje deixa passar e avisa a equipe na Central. Ele não decide nada no atendimento.",
+      ],
+      [
+        "só os pedidos, e sem a IA de sempre",
+        { ia: false, tarefas: [{ ...CLIMA, estado: "desligada" }, ...pedidos("observando", "decidindo")] },
+        "observando",
+        "Observando — o Jev conta os pedidos do cliente que a regra de hoje deixa passar e avisa a equipe na Central. Ele não decide nada no atendimento.",
+      ],
+      [
+        "o clima observando e os pedidos observando",
+        { ia: true, tarefas: [{ ...CLIMA, estado: "observando" }, ...pedidos("observando")] },
+        "observando",
+        "Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele só conta os que a regra de hoje deixa passar.",
+      ],
+      [
+        "o clima observando e um pedido avisando",
+        { ia: true, tarefas: [{ ...CLIMA, estado: "observando" }, ...pedidos("decidindo")] },
+        "observando",
+        "Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele conta os que a regra de hoje deixa passar e avisa a equipe.",
+      ],
+      [
+        "o clima decidindo e um pedido avisando",
+        { ia: true, tarefas: [{ ...CLIMA, estado: "decidindo" }, ...pedidos("decidindo")] },
+        "decidindo",
+        "Decidindo em parte — cada tarefa abaixo diz se o Jev decide, só observa ou avisa a equipe nela.",
+      ],
+      [
+        "o clima decidindo e os pedidos só observando (controle)",
+        { ia: true, tarefas: [{ ...CLIMA, estado: "decidindo" }, ...pedidos("observando")] },
+        "decidindo",
+        "Decidindo em parte — cada tarefa abaixo diz se o Jev decide ou só observa nela.",
+      ],
+      [
+        "só o clima, observando (controle: a frase de sempre)",
+        { ia: true, tarefas: [{ ...CLIMA, estado: "observando" }] },
+        "observando",
+        "Observando — a sua IA de sempre ainda decide. Compare os dois antes de deixar o Jev decidir.",
+      ],
+    ] as const)("a frase do cartão, com %s, diz o que de fato roda", (_caso, c, estado, esperada) => {
+      montar(dados({ config: { ligado: true, modo: "observacao" }, tem_ia_de_sempre: c.ia, por_tarefa: [...c.tarefas] }));
+      expect(cartao()).toHaveAttribute("data-estado", estado);
+      expect(frase()).toBe(esperada);
     });
 
     it("com o clima decidindo, o pedido avisando conta como a parte que não decide (controle)", () => {

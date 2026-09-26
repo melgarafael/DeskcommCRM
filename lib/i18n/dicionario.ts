@@ -3667,6 +3667,22 @@ export const DICIONARIO: Traducoes = {
   "Decidindo em parte — cada tarefa abaixo diz se o Jev decide ou só observa nela.": {
     es: "Decidiendo en parte: cada tarea de abajo dice si Jev decide o solo observa en ella.",
   },
+  // As frases do cartão do Jev quando as tarefas em cascata rodam (CartaoDoJev.tsx, `fraseObservando`/`fraseDecidindo`).
+  "Observando — o Jev conta os pedidos do cliente que a regra de hoje deixa passar e avisa a equipe na Central. Ele não decide nada no atendimento.": {
+    es: "Observando: Jev cuenta los pedidos del cliente que la regla de hoy deja pasar y avisa al equipo en la Central. No decide nada en la atención.",
+  },
+  "Observando — o Jev só conta os pedidos do cliente que a regra de hoje deixa passar. Nada muda no atendimento.": {
+    es: "Observando: Jev solo cuenta los pedidos del cliente que la regla de hoy deja pasar. Nada cambia en la atención.",
+  },
+  "Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele conta os que a regra de hoje deixa passar e avisa a equipe.": {
+    es: "Observando: donde Jev compara, tu IA de siempre todavía decide; compara los dos antes de dejar que Jev decida. En los pedidos del cliente, cuenta los que la regla de hoy deja pasar y avisa al equipo.",
+  },
+  "Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele só conta os que a regra de hoje deixa passar.": {
+    es: "Observando: donde Jev compara, tu IA de siempre todavía decide; compara los dos antes de dejar que Jev decida. En los pedidos del cliente, solo cuenta los que la regla de hoy deja pasar.",
+  },
+  "Decidindo em parte — cada tarefa abaixo diz se o Jev decide, só observa ou avisa a equipe nela.": {
+    es: "Decidiendo en parte: cada tarea de abajo dice si Jev decide, solo observa o avisa al equipo en ella.",
+  },
   // O que "Decide" quer dizer em cada tarefa: tomar o lugar ou somar o sinal.
   "O Jev mede primeiro; a sua IA de sempre só entra se ele não responder.": {
     es: "Jev mide primero; tu IA de siempre solo entra si él no responde.",

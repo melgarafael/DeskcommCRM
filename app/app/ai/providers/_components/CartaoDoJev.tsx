@@ -241,6 +241,44 @@ const avisaAEquipe = (tarefaId: string) => doRegistro(tarefaId)?.familia === "ca
 const decide = (t: TarefaNoCartao) => t.estado === "decidindo" && !avisaAEquipe(t.id);
 
 /**
+ * As tarefas que rodam, pela família: as que o Jev compara com a IA de sempre,
+ * e as em cascata, que só contam os pedidos que a regra de hoje deixa passar
+ * (e, em "Avisar a equipe", abrem aviso). A frase do cartão não pode falar de
+ * comparar nem da "sua IA de sempre" quando só estas rodam.
+ */
+function oQueRoda(d: DadosDoJev): { comparam: number; cascata: number; avisando: boolean } {
+  const rodando = tarefasDoCartao(d).filter(roda);
+  const cascata = rodando.filter((t) => avisaAEquipe(t.id));
+  return {
+    comparam: rodando.length - cascata.length,
+    cascata: cascata.length,
+    avisando: cascata.some((t) => t.estado === "decidindo"),
+  };
+}
+
+/** A frase do cartão observando — verdadeira para o que de fato roda. */
+function fraseObservando(d: DadosDoJev, t: (texto: string) => string): string {
+  const r = oQueRoda(d);
+  if (r.comparam === 0) {
+    return r.avisando
+      ? t("Observando — o Jev conta os pedidos do cliente que a regra de hoje deixa passar e avisa a equipe na Central. Ele não decide nada no atendimento.")
+      : t("Observando — o Jev só conta os pedidos do cliente que a regra de hoje deixa passar. Nada muda no atendimento.");
+  }
+  if (r.cascata === 0) return t("Observando — a sua IA de sempre ainda decide. Compare os dois antes de deixar o Jev decidir.");
+  return r.avisando
+    ? t("Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele conta os que a regra de hoje deixa passar e avisa a equipe.")
+    : t("Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele só conta os que a regra de hoje deixa passar.");
+}
+
+/** A frase do cartão decidindo: "em parte" nomeia também quem só avisa a equipe. */
+function fraseDecidindo(d: DadosDoJev, t: (texto: string) => string): string {
+  if (!decideEmParte(d)) return t("Decidindo — cada tarefa abaixo diz o que o Jev decide nela.");
+  return oQueRoda(d).avisando
+    ? t("Decidindo em parte — cada tarefa abaixo diz se o Jev decide, só observa ou avisa a equipe nela.")
+    : t("Decidindo em parte — cada tarefa abaixo diz se o Jev decide ou só observa nela.");
+}
+
+/**
  * Como o Jev está no ponto `pontoId`, para a linha do cartão do ponto — pelo
  * estado da tarefa dele. Decidindo, a linha é a da tarefa (`aoDecidirNoPonto`):
  * "o modelo abaixo é a reserva" só é verdade no clima.
@@ -697,12 +735,8 @@ function Ligado({
   return (
     <div className="mt-4 space-y-4">
       <p className="text-sm">
-        {estado === "observando" &&
-          t("Observando — a sua IA de sempre ainda decide. Compare os dois antes de deixar o Jev decidir.")}
-        {estado === "decidindo" &&
-          (decideEmParte(dados)
-            ? t("Decidindo em parte — cada tarefa abaixo diz se o Jev decide ou só observa nela.")
-            : t("Decidindo — cada tarefa abaixo diz o que o Jev decide nela."))}
+        {estado === "observando" && fraseObservando(dados, t)}
+        {estado === "decidindo" && fraseDecidindo(dados, t)}
         {estado === "sozinho" &&
           t(
             "Decidindo sozinho no clima — a empresa ainda não tem uma IA principal que meça o clima, então o Jev mede sem reserva. As outras tarefas dizem abaixo o que fazem.",

@@ -467,7 +467,11 @@ test.describe("Jev — os pedidos do cliente, pela tela", () => {
       // não sente nada, e o selo e a frase do cartão seguem os de quem observa.
       const oCartao = page.getByTestId("cartao-do-jev");
       await expect(oCartao).toHaveAttribute("data-estado", "observando");
-      await expect(oCartao).toContainText("Observando — a sua IA de sempre ainda decide.");
+      // A frase diz o que de fato roda: o clima compara com a IA de sempre, e
+      // nos pedidos o Jev só conta e avisa — não há o que comparar ali.
+      await expect(oCartao).toContainText(
+        "Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele conta os que a regra de hoje deixa passar e avisa a equipe.",
+      );
       await expect(oCartao).not.toContainText("Decide em parte");
       await expect(oCartao).not.toContainText("Decidindo");
       // O pedido de parar de receber segue só observando: cada tarefa, a sua escolha.
