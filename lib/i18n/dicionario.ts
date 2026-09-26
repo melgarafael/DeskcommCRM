@@ -3696,6 +3696,58 @@ export const DICIONARIO: Traducoes = {
   },
   "Só o Jev daria o alerta forte em": { es: "Solo Jev daría la alerta fuerte en" },
   "delas — é o que muda se você deixar o Jev decidir.": { es: "de ellos: es lo que cambia si dejas que Jev decida." },
+  // As tarefas em cascata do Jev: os pedidos do cliente (lib/ai/decisao/tarefas.ts, CartaoDoJev.tsx).
+  "Perceber pedido para falar com uma pessoa": {
+    es: "Detectar pedidos de hablar con una persona",
+  },
+  "Perceber pedido para parar de receber mensagens": {
+    es: "Detectar pedidos de dejar de recibir mensajes",
+  },
+  "Lê a mensagem do cliente, sozinha, quando a regra de hoje não viu nela um pedido para falar com uma pessoa — e conta os pedidos que ela deixou passar. Ele nunca passa a conversa sozinho.": {
+    es: "Lee el mensaje del cliente, por separado, cuando la regla de hoy no vio en él un pedido de hablar con una persona, y cuenta los pedidos que ella dejó pasar. Nunca transfiere la conversación por su cuenta.",
+  },
+  "Lê a mensagem do cliente, sozinha, quando a regra de hoje não viu nela um pedido para parar de receber mensagens — e conta os pedidos que ela deixou passar. Quem bloqueia continua sendo a regra de hoje ou uma pessoa.": {
+    es: "Lee el mensaje del cliente, por separado, cuando la regla de hoy no vio en él un pedido de dejar de recibir mensajes, y cuenta los pedidos que ella dejó pasar. Quien bloquea sigue siendo la regla de hoy o una persona.",
+  },
+  "Quando o Jev percebe um pedido para falar com uma pessoa que a regra não pegou, ele abre um aviso na Central para alguém da equipe decidir. Ele nunca passa a conversa sozinho.": {
+    es: "Cuando Jev detecta un pedido de hablar con una persona que la regla no captó, abre un aviso en la Central para que alguien del equipo decida. Nunca transfiere la conversación por su cuenta.",
+  },
+  "Quando o Jev perceber um pedido para falar com uma pessoa que a regra não pegou, ele abre um aviso na Central para alguém da equipe decidir. Ele nunca passa a conversa sozinho.": {
+    es: "Cuando Jev detecte un pedido de hablar con una persona que la regla no captó, abrirá un aviso en la Central para que alguien del equipo decida. Nunca transfiere la conversación por su cuenta.",
+  },
+  "Quando o Jev percebe um pedido para parar de receber mensagens que a regra não pegou, ele abre um aviso na Central. Quem bloqueia continua sendo a regra de hoje ou uma pessoa: o Jev nunca bloqueia ninguém.": {
+    es: "Cuando Jev detecta un pedido de dejar de recibir mensajes que la regla no captó, abre un aviso en la Central. Quien bloquea sigue siendo la regla de hoy o una persona: Jev nunca bloquea a nadie.",
+  },
+  "Quando o Jev perceber um pedido para parar de receber mensagens que a regra não pegou, ele abre um aviso na Central. Quem bloqueia continua sendo a regra de hoje ou uma pessoa: o Jev nunca bloqueia ninguém.": {
+    es: "Cuando Jev detecte un pedido de dejar de recibir mensajes que la regla no captó, abrirá un aviso en la Central. Quien bloquea sigue siendo la regla de hoy o una persona: Jev nunca bloquea a nadie.",
+  },
+  "de falar com uma pessoa que a regra de hoje não pegou.": {
+    es: "de hablar con una persona que la regla de hoy no captó.",
+  },
+  "para parar de receber mensagens que a regra de hoje não pegou.": {
+    es: "de dejar de recibir mensajes que la regla de hoy no captó.",
+  },
+  "Perceber pedidos do cliente": {
+    es: "Detectar pedidos del cliente",
+  },
+  "dias, o Jev percebeu": {
+    es: "días, Jev detectó",
+  },
+  "pedido": {
+    es: "pedido",
+  },
+  "pedidos": {
+    es: "pedidos",
+  },
+  "Ver as conversas:": {
+    es: "Ver las conversaciones:",
+  },
+  "Abrir a conversa do pedido de": {
+    es: "Abrir la conversación del pedido del",
+  },
+  "Esta tarefa do Jev, por enquanto, só observa.": {
+    es: "Esta tarea de Jev, por ahora, solo observa.",
+  },
   "A conta usa só as": { es: "El cálculo usa solo los" },
   "mensagens mais recentes do período.": { es: "mensajes más recientes del período." },
   "mensagens.": { es: "mensajes." },
@@ -7095,8 +7147,8 @@ export const DICIONARIO: Traducoes = {
   "o provedor de inteligência artificial contratado pelo operador, que recebe o trecho da conversa necessário para gerar a resposta ou avaliar a conversa;": {
     es: "el proveedor de inteligencia artificial contratado por el operador, que recibe el fragmento de la conversación necesario para generar la respuesta o evaluar la conversación;",
   },
-  "quando o operador liga o Jev (desligado por padrão), a TypeSafe AI, nos Estados Unidos, que recebe cada mensagem do cliente, sozinha e já sem CPF, telefone e e-mail, para avaliar se ele está irritado, se a mensagem tenta manipular o atendimento automático e a qual área da empresa ela se destina;": {
-    es: "cuando el operador activa Jev (desactivado por defecto), TypeSafe AI, en Estados Unidos, que recibe cada mensaje del cliente, por separado y ya sin CPF, teléfono ni correo, para evaluar si está molesto, si el mensaje intenta manipular la atención automática y a qué área de la empresa se dirige;",
+  "quando o operador liga o Jev (desligado por padrão), a TypeSafe AI, nos Estados Unidos, que recebe cada mensagem do cliente, sozinha e já sem CPF, telefone e e-mail, para avaliar se ele está irritado, se a mensagem tenta manipular o atendimento automático, a qual área da empresa ela se destina e se ela pede para falar com uma pessoa ou para parar de receber mensagens;": {
+    es: "cuando el operador activa Jev (desactivado por defecto), TypeSafe AI, en Estados Unidos, que recibe cada mensaje del cliente, por separado y ya sin CPF, teléfono ni correo, para evaluar si está molesto, si el mensaje intenta manipular la atención automática, a qué área de la empresa se dirige y si pide hablar con una persona o dejar de recibir mensajes;",
   },
   "o provedor de infraestrutura onde o servidor está hospedado.": {
     es: "el proveedor de infraestructura donde el servidor está alojado.",

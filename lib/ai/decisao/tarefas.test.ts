@@ -20,6 +20,11 @@ import {
   tarefaSemRoteador,
   TAREFA_DO_ROTEADOR,
   MEMBROS_NO_MAXIMO,
+  PEDIDOS_DO_CLIENTE,
+  rotuloDaChamadaDoJev,
+  TAREFA_DO_PEDIDO_DE_HUMANO,
+  TAREFA_DO_PEDIDO_PARA_PARAR,
+  tarefaPodeDecidir,
 } from "@/lib/ai/decisao/tarefas";
 import { CONFERENCIA_DE_ENTRADA, CONFERENCIAS_DE_SAIDA } from "@/lib/ai/guardrails/lista-de-conferencia";
 import { PONTOS_DE_IA } from "@/lib/ai/pontos/registro";
@@ -74,6 +79,37 @@ describe("TAREFAS_DO_JEV", () => {
     expect(
       comCamada.filter((t) => conferencias.find((c) => c.nome === t.ponto)?.camada !== t.camada).map((t) => t.id),
     ).toEqual([]);
+  });
+
+  /**
+   * As em cascata acompanham uma REGRA sem IA: não têm ponto (nem cartão de
+   * ponto), respondem sim/não, cabem no aceite de cada mensagem, e ainda não
+   * decidem — o aviso que o `aoDecidir` delas descreve não existe nesta versão.
+   */
+  it("as tarefas em cascata: sem ponto, sim ou não, cada mensagem sozinha, e ainda só observam", () => {
+    const cascata = TAREFAS_DO_JEV.filter((t) => t.familia === "cascata");
+    expect(cascata.map((t) => t.id)).toEqual([TAREFA_DO_PEDIDO_DE_HUMANO.id, TAREFA_DO_PEDIDO_PARA_PARAR.id]);
+    for (const t of cascata) {
+      expect(t.ponto, t.id).toBeUndefined();
+      expect(t.aoDecidirNoPonto, t.id).toBeUndefined();
+      expect(t.primitiva, t.id).toBe("noul");
+      expect(t.alcance, t.id).toBe("mensagem");
+      expect(tarefaPodeDecidir(t), t.id).toBe(false);
+    }
+    // As outras decidem como antes (controle).
+    expect(TAREFAS_DO_JEV.filter((t) => t.familia !== "cascata").every(tarefaPodeDecidir)).toBe(true);
+    // E nascem observando para quem já tem o Jev ligado (R7), com o selo "Nova".
+    const ligado = config({ ligado: true, modo: "decide", aceite: ACEITE });
+    expect(cascata.map((t) => [estadoEfetivoDaTarefa(ligado, t), tarefaEhNova(ligado, t)])).toEqual([
+      ["observando", true],
+      ["observando", true],
+    ]);
+  });
+
+  it("a chamada do Jev tem nome de gente: a do ponto pela tarefa, a dos pedidos pelo nome dela", () => {
+    expect(rotuloDaChamadaDoJev("sentiment_classify")).toBe(TAREFA_DO_CLIMA.rotulo);
+    expect(rotuloDaChamadaDoJev(PEDIDOS_DO_CLIENTE.purpose)).toBe(PEDIDOS_DO_CLIENTE.rotulo);
+    expect(rotuloDaChamadaDoJev("stage_classifier")).toBeNull();
   });
 
   it("tarefaSemCamada: só a camada desligada para a organização para a tarefa", () => {

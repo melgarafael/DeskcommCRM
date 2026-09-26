@@ -157,6 +157,8 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
   em vigor sem confiar nesta linha:
   `sed -n '/PALAVRAS_DE_OPT_OUT/,/^]/p' lib/opt-out/deteccao.ts | grep -E '^ *"'`, e as frases de controle em
   `tests/unit/opt-out-deteccao.test.ts`.
+  O Jev (`lib/ai/decisao/pedidos.ts`) só é perguntado onde esta regra disse não, e nunca bloqueia
+  ninguém: a regra continua a única que bloqueia (cerca: `tests/unit/jev-nunca-cala-bloqueia-nem-responde.test.ts`).
 - Mídia: subir pro Supabase Storage primeiro, passar URL ao WAHA (não inline base64)
 - Multi-device: assinar `message.any` (não só `message`); tratar `fromMe=true` sem duplicar
 - Grupos: SKIP CRM binding se `chatId.endsWith('@g.us')`. Sender é `p.author`, não `p.from`

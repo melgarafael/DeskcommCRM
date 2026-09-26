@@ -247,6 +247,52 @@ describe("chaveDaOrganizacao — a chave do Jev daquela empresa, e só dela", ()
       expect(banco.chamadas).toEqual([]);
     });
 
+    /**
+     * Sem ponto (as tarefas em cascata, `./pedidos.ts`), a chamada declara as
+     * tarefas pelas perguntas: a guarda vale para TODAS. Quem chama já tira a
+     * pergunta da tarefa pausada; aqui a conferência é de novo, e é a que vale.
+     */
+    describe("sem ponto: cada pergunta é de uma tarefa, e todas precisam estar rodando", () => {
+      const PEDIDOS = {
+        humano: { tipo: "noul", instrucao: "pede uma pessoa?" },
+        opt_out: { tipo: "noul", instrucao: "pede para parar?" },
+      } as const;
+
+      it("uma das tarefas pausada: nada sai, e a credencial nem é lida", async () => {
+        banco.settings = { jev: { ...LIGADO.jev, tarefas: { opt_out: { estado: "desligada" } } } };
+        banco.linha = CREDENCIAL;
+        const fetchImpl = vi.fn();
+        const r = await decidirNoPonto({ organizationId: ORG, estado: "x", perguntas: PEDIDOS }, { fetchImpl });
+        expect(r.ok === false && r.motivo).toBe("sem_credencial");
+        expect(fetchImpl).not.toHaveBeenCalled();
+        expect(banco.chamadas).not.toContainEqual(["from", "ai_provider_credentials"]);
+      });
+
+      it("as duas rodando (novas, observando): a chave sai (controle)", async () => {
+        banco.linha = CREDENCIAL;
+        const fetchImpl = vi.fn().mockResolvedValue(
+          ok({ model: "jev-1.13.0", answers: { humano: { type: "noul", noul: 0.9 }, opt_out: { type: "noul", noul: 0.1 } } }),
+        );
+        const r = await decidirNoPonto({ organizationId: ORG, estado: "x", perguntas: PEDIDOS }, { fetchImpl });
+        expect(r.ok).toBe(true);
+        expect((fetchImpl.mock.calls[0]![1] as RequestInit & { headers: Record<string, string> }).headers.Authorization).toBe(
+          "Bearer decifrada:cifra",
+        );
+      });
+
+      it("pergunta que não é de uma tarefa SEM ponto: nada sai, sem nem consultar o banco", async () => {
+        banco.linha = CREDENCIAL;
+        const fetchImpl = vi.fn();
+        // O clima tem ponto: sem o ponto, ele não passa pela guarda de tarefa sem ponto.
+        const comPonto = await decidirNoPonto({ organizationId: ORG, estado: "x", perguntas: { clima: PERGUNTAS.clima } }, { fetchImpl });
+        expect(comPonto.ok === false && comPonto.motivo).toBe("sem_credencial");
+        const semPergunta = await decidirNoPonto({ organizationId: ORG, estado: "x", perguntas: {} }, { fetchImpl });
+        expect(semPergunta.ok === false && semPergunta.motivo).toBe("sem_credencial");
+        expect(fetchImpl).not.toHaveBeenCalled();
+        expect(banco.chamadas).toEqual([]);
+      });
+    });
+
     it("tarefa observando ou decidindo: a chave sai (controle)", async () => {
       for (const estado of ["observando", "decidindo"]) {
         banco.settings = { jev: { ...LIGADO.jev, tarefas: { clima: { estado } } } };

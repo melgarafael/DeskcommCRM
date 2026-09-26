@@ -12,12 +12,16 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * que vale agora, o que ela vira ao ligar o Jev (`ao_ligar`), se ela é nova —
  * começou sozinha e ninguém escolheu ainda — e a concordância dela com a IA de
  * sempre (`observacao`): a do clima, das notas em `messages.metadata`; a das
- * outras, de `jev_observacoes`. E o que a impede de rodar: `sem_camada`, a
- * tarefa acompanha uma camada de segurança que a organização desligou;
- * `sem_roteador`, a do roteador numa empresa sem roteador de intenção ativo.
+ * outras, de `jev_observacoes` — e, nas tarefas em cascata, que só são
+ * perguntadas onde a regra de hoje disse não, quantos pedidos o Jev percebeu
+ * (`percebidos`), com as conversas mais recentes. E o que a impede de rodar:
+ * `sem_camada`, a tarefa acompanha uma camada de segurança que a organização
+ * desligou; `sem_roteador`, a do roteador numa empresa sem roteador de
+ * intenção ativo.
  *
  * PATCH liga, desliga, troca o modo do clima (`modo`, o nome da onda 1) e o
- * estado de uma tarefa (`tarefa` + `estado`). Ligar manda cada mensagem que o cliente
+ * estado de uma tarefa (`tarefa` + `estado` — a em cascata ainda não aceita
+ * `decidindo`). Ligar manda cada mensagem que o cliente
  * escreve, uma de cada vez e sem o resto da conversa, a um fornecedor nos EUA, então exige chave validada e, na primeira
  * vez, o aceite explícito do administrador (LGPD, D6), que fica gravado com
  * quem e quando. O interruptor mora em `organizations.settings.jev`
@@ -44,9 +48,11 @@ import {
   estadoAoLigar,
   estadoEfetivoDaTarefa,
   estadoGravadoDaTarefa,
+  rotuloDaChamadaDoJev,
   TAREFA_DO_CLIMA,
   TAREFAS_DO_JEV,
   tarefaEhNova,
+  tarefaPodeDecidir,
   algumRoteadorQuePergunta,
   TAREFA_DA_MANIPULACAO,
   tarefaSemCamada,
@@ -55,6 +61,7 @@ import {
 import { CODIGOS_SEM_REDE } from "@/lib/ai/decisao/textos";
 import { DEFAULT_CLASSIFIER_MODEL } from "@/lib/ai/gateway";
 import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
+import { REFERENCIAS_DE_AVISO } from "@/lib/ai/inbox-destino";
 import { PROVEDORES_DE_DECISAO } from "@/lib/ai/pontos/provedores";
 import { DEFAULT_SENTIMENT_THRESHOLD } from "@/lib/ai/prompts/sentiment";
 import { fail, ok } from "@/lib/api/wrappers";
@@ -72,6 +79,8 @@ const [JEV] = PROVEDORES_DE_DECISAO;
 const DIAS_DOS_NUMEROS = 7;
 const DIAS_DA_CONCORDANCIA = 30;
 const MENSAGENS_COMPARADAS_MAX = 500;
+/** Quantas conversas o cartão oferece por tarefa em cascata — as mais recentes. */
+const CONVERSAS_PERCEBIDAS_MAX = 5;
 /** O teto de linhas por resposta do PostgREST (`max_rows` em `supabase/config.toml`). */
 const PAGINA = 1000;
 // ponytail: 50 páginas = 50 mil execuções do Jev numa semana; acima disso os
@@ -107,9 +116,18 @@ type Concordancia = {
   so_o_jev_alto?: number;
 };
 
+/**
+ * O que o cartão mostra de uma tarefa em cascata: quantos pedidos o Jev
+ * percebeu que a regra de hoje deixou passar (a resposta dele passou do corte),
+ * e as conversas mais recentes deles. O link sai pronto daqui: o navegador
+ * nunca monta endereço a partir de uma referência solta.
+ */
+type Percebidos = { dias: number; pedidos: number; conversas: Array<{ href: string; em: string }> };
+
 function porTarefa(
   c: ConfigDoJev,
   observacao: Readonly<Record<string, Concordancia>>,
+  percebidos: Readonly<Record<string, Percebidos>>,
   camadas: ReturnType<typeof camadasEfetivas>,
   temRoteadorQuePergunta: boolean,
 ) {
@@ -122,6 +140,7 @@ function porTarefa(
     ao_ligar: estadoAoLigar(c, t),
     novo: tarefaEhNova(c, t),
     observacao: observacao[t.id] ?? null,
+    percebidos: percebidos[t.id] ?? null,
     // A camada de segurança que ela acompanha está desligada: o turno não
     // pergunta, e "observando" sem mais nada prometeria uma comparação que nunca vem.
     sem_camada: tarefaSemCamada(t, camadas),
@@ -200,7 +219,7 @@ function numerosDaSemana(linhas: readonly LinhaDaSemana[]) {
       ? {
           motivo: falha.error_code,
           em: falha.created_at,
-          tarefa: TAREFAS_DO_JEV.find((t) => t.ponto === falha.purpose)?.rotulo ?? null,
+          tarefa: rotuloDaChamadaDoJev(falha.purpose),
         }
       : null,
   };
@@ -300,7 +319,9 @@ export async function GET(): Promise<Response> {
         .eq("tarefa", tarefa)
         .gte("created_at", desde);
     const porTarefa: Record<string, Concordancia> = {};
-    for (const t of TAREFAS_DO_JEV.filter((x) => x.id !== TAREFA_DO_CLIMA.id)) {
+    // As em cascata não têm concordância: por construção, a regra de hoje disse
+    // não em toda mensagem em que o Jev foi perguntado (`lerPercebidos`).
+    for (const t of TAREFAS_DO_JEV.filter((x) => x.id !== TAREFA_DO_CLIMA.id && x.familia !== "cascata")) {
       const daManipulacao = t.id === TAREFA_DA_MANIPULACAO.id;
       const [comparadas, concordaram, soDoJev] = await Promise.all([
         contar(t.id).not("concordou", "is", null),
@@ -320,7 +341,42 @@ export async function GET(): Promise<Response> {
     return { porTarefa, erro: null };
   };
 
-  const [orgRes, credsRes, semana, comparadasRes, iaDeSempre, percebidasRes, observacoes, camadasRes, roteadoresRes] = await Promise.all([
+  /**
+   * As tarefas em cascata: os pedidos que o Jev percebeu (passou do corte) nos
+   * últimos 30 dias, contados no banco, e as conversas dos mais recentes.
+   * ponytail: as conversas saem das 50 linhas mais recentes; com mais de 50
+   * pedidos seguidos da mesma conversa, as outras só aparecem depois.
+   */
+  const lerPercebidos = async (): Promise<{ porTarefa: Record<string, Percebidos>; erro: string | null }> => {
+    const desde = diasAtras(DIAS_DA_CONCORDANCIA);
+    const doJev = (tarefa: string) =>
+      db
+        .from("jev_observacoes")
+        .select("conversation_id, created_at", { count: "exact" })
+        .eq("organization_id", org.orgId)
+        .eq("tarefa", tarefa)
+        .eq("rotulo_jev", "sim")
+        .gte("created_at", desde)
+        .order("created_at", { ascending: false })
+        .limit(50);
+    const porTarefa: Record<string, Percebidos> = {};
+    for (const t of TAREFAS_DO_JEV.filter((x) => x.familia === "cascata")) {
+      const { data, count, error } = await doJev(t.id);
+      if (error) return { porTarefa, erro: error.message };
+      const conversas: Percebidos["conversas"] = [];
+      const vistas = new Set<string>();
+      for (const linha of data ?? []) {
+        if (linha.conversation_id === null || vistas.has(linha.conversation_id)) continue;
+        vistas.add(linha.conversation_id);
+        conversas.push({ href: REFERENCIAS_DE_AVISO.conversation.href(linha.conversation_id), em: linha.created_at });
+        if (conversas.length === CONVERSAS_PERCEBIDAS_MAX) break;
+      }
+      porTarefa[t.id] = { dias: DIAS_DA_CONCORDANCIA, pedidos: count ?? 0, conversas };
+    }
+    return { porTarefa, erro: null };
+  };
+
+  const [orgRes, credsRes, semana, comparadasRes, iaDeSempre, percebidasRes, observacoes, percebidos, camadasRes, roteadoresRes] = await Promise.all([
     db.from("organizations").select("settings").eq("id", org.orgId).maybeSingle(),
     db
       .from("ai_provider_credentials")
@@ -357,6 +413,7 @@ export async function GET(): Promise<Response> {
       .order("created_at", { ascending: false })
       .limit(PAGINA),
     lerObservacoes(),
+    lerPercebidos(),
     db.from("org_guardrail_layers").select("layer, enabled").eq("organization_id", org.orgId),
     // Com a contagem das intenções: o roteador ativo sem nenhuma (o estado logo
     // depois de criar um) ou com mais do que cabe nunca é perguntado ao Jev.
@@ -374,6 +431,7 @@ export async function GET(): Promise<Response> {
     comparadasRes.error?.message ??
     percebidasRes.error?.message ??
     observacoes.erro ??
+    percebidos.erro ??
     camadasRes.error?.message ??
     roteadoresRes.error?.message;
   if (erro) return fail("query_failed", erro, 500, { requestId });
@@ -415,6 +473,7 @@ export async function GET(): Promise<Response> {
       por_tarefa: porTarefa(
         config,
         { ...observacoes.porTarefa, [TAREFA_DO_CLIMA.id]: doClima },
+        percebidos.porTarefa,
         camadasEfetivas(camadasRes.data ?? []),
         algumRoteadorQuePergunta(roteadoresRes.data ?? []),
       ),
@@ -490,6 +549,12 @@ export async function PATCH(req: NextRequest): Promise<Response> {
       : corpo.modo !== undefined
         ? { tarefa: TAREFA_DO_CLIMA.id, estado: ESTADO_DO_MODO[corpo.modo] }
         : null;
+  // A tarefa em cascata ainda não tem o que fazer decidindo (`tarefaPodeDecidir`):
+  // aceitar o pedido deixaria o cartão prometendo um aviso que não sai.
+  const tarefaPedida = pedido ? TAREFAS_DO_JEV.find((x) => x.id === pedido.tarefa) : undefined;
+  if (pedido?.estado === "decidindo" && tarefaPedida && !tarefaPodeDecidir(tarefaPedida)) {
+    return fail("jev_tarefa_so_observa", t("Esta tarefa do Jev, por enquanto, só observa."), 422, { requestId });
+  }
   const estadoAnterior = pedido ? estadoGravadoDaTarefa(atual, pedido.tarefa) : undefined;
   if (pedido && pedido.estado !== estadoAnterior) mudanca.tarefas = { [pedido.tarefa]: pedido.estado };
   if (corpo.ligado === false && atual.ligado) mudanca.ligado = false;

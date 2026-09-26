@@ -40,7 +40,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { descreverErroDeValidacao } from "@/lib/ai/credenciais/erro-de-validacao";
 import type { EstadoDaTarefa } from "@/lib/ai/decisao/config";
 import { PROVEDOR_DO_JEV } from "@/lib/ai/decisao/credencial";
-import { TAREFA_DO_CLIMA, TAREFAS_DO_JEV } from "@/lib/ai/decisao/tarefas";
+import { TAREFA_DO_CLIMA, TAREFAS_DO_JEV, tarefaPodeDecidir } from "@/lib/ai/decisao/tarefas";
 import { O_QUE_FAZER_DO_JEV } from "@/lib/ai/decisao/textos";
 
 /** O corpo de `GET /api/v1/ai/jev` (`app/api/v1/ai/jev/route.ts`). */
@@ -107,6 +107,12 @@ export interface TarefaNoCartao {
    * resposta da imagem anterior: lá só o clima a tinha, em `numeros.observacao`.
    */
   observacao?: Concordancia | null;
+  /**
+   * Só as tarefas em cascata, que o Jev responde onde a regra de hoje disse não:
+   * quantos pedidos ele percebeu que ela deixou passar, e as conversas dos mais
+   * recentes (o endereço já vem pronto da rota). Ausente na imagem anterior.
+   */
+  percebidos?: { dias: number; pedidos: number; conversas: Array<{ href: string; em: string }> } | null;
   /**
    * A camada de segurança que ela acompanha está desligada para a empresa: o
    * turno não pergunta, e ela não roda em estado nenhum. Ausente na imagem anterior.
@@ -697,7 +703,10 @@ function Ligado({
           decide sozinho e só se pausa; as outras seguem como sempre. */}
       <ul className="divide-y divide-border rounded-md border border-border" data-testid="jev-tarefas">
         {tarefasDoCartao(dados).map((tarefa) => {
-          const aoDecidir = doRegistro(tarefa.id)?.aoDecidir;
+          const registro = doRegistro(tarefa.id);
+          const aoDecidir = registro?.aoDecidir;
+          // A tarefa que a rota não aceita decidindo não ganha o botão.
+          const podeDecidir = registro === undefined || tarefaPodeDecidir(registro);
           const climaSozinho = estado === "sozinho" && tarefa.id === TAREFA_DO_CLIMA.id;
           const climaSemIa = tarefa.id === TAREFA_DO_CLIMA.id && !dados.tem_ia_de_sempre;
           return (
@@ -773,11 +782,22 @@ function Ligado({
 
             {/* A concordância de cada tarefa com a IA de sempre — o que se lê antes
                 de deixar o Jev decidir. O clima conta "chamariam uma pessoa"; as
-                outras, o mesmo rótulo (em `jev_observacoes`). */}
-            {rodando && roda(tarefa) && tarefa.estado === "observando" && !climaSozinho && concordanciaDa(tarefa, dados) !== null && (
+                outras, o mesmo rótulo (em `jev_observacoes`). A em cascata não
+                concorda com nada — a regra de hoje sempre disse não onde ele foi
+                perguntado —, e conta os pedidos que ele percebeu. */}
+            {rodando && roda(tarefa) && registro?.familia === "cascata" && tarefa.percebidos && (
+              <PercebidosDaTarefa
+                tarefa={tarefa}
+                p={tarefa.percebidos}
+                depois={registro.percebidos}
+                formatar={(n) => inteiro.format(n)}
+              />
+            )}
+            {rodando && roda(tarefa) && tarefa.estado === "observando" && !climaSozinho && registro?.familia !== "cascata" && concordanciaDa(tarefa, dados) !== null && (
               <ConcordanciaDaTarefa
                 tarefa={tarefa}
                 o={concordanciaDa(tarefa, dados)!}
+                frase={registro?.concordancia ?? TAREFA_DO_CLIMA.concordancia}
                 formatar={(n) => inteiro.format(n)}
               />
             )}
@@ -786,7 +806,7 @@ function Ligado({
               <div className="flex flex-wrap items-center gap-3">
                 {/* Parada pela camada ou sem roteador, não há o que comparar antes
                     de decidir; e o clima sem a IA de sempre já decide sozinho. */}
-                {tarefa.estado === "observando" && !parada(tarefa) && !climaSozinho && (
+                {tarefa.estado === "observando" && !parada(tarefa) && !climaSozinho && podeDecidir && (
                   <Button
                     size="sm"
                     disabled={enviando}
@@ -987,16 +1007,17 @@ function ConfirmarDecidir({
 function ConcordanciaDaTarefa({
   tarefa,
   o,
+  frase,
   formatar,
 }: {
   tarefa: TarefaNoCartao;
   o: Concordancia;
+  /** EM QUE os dois concordaram — a régua da tarefa, do registro. */
+  frase: { antes: string; depois: string };
   formatar: (n: number) => string;
 }) {
   const t = useT();
   const doClima = tarefa.id === TAREFA_DO_CLIMA.id;
-  // Cada tarefa diz EM QUE os dois concordaram — a régua dela, do registro.
-  const frase = (doRegistro(tarefa.id) ?? TAREFA_DO_CLIMA).concordancia;
   // O testid do clima é o da onda 1: as specs o leem.
   return (
     <p className="text-sm" data-testid={doClima ? "jev-concordancia" : `jev-concordancia-${tarefa.id}`}>
@@ -1029,6 +1050,61 @@ function ConcordanciaDaTarefa({
         </>
       )}
     </p>
+  );
+}
+
+/**
+ * "Nos últimos 30 dias, o Jev percebeu N pedidos … que a regra de hoje não
+ * pegou." — e, quando há, as conversas dos mais recentes, para quem quer ver o
+ * que o cliente disse. Cada link diz de quando é o pedido: cinco "Abrir
+ * conversa" iguais não diriam qual é qual.
+ */
+function PercebidosDaTarefa({
+  tarefa,
+  p,
+  depois,
+  formatar,
+}: {
+  tarefa: TarefaNoCartao;
+  p: NonNullable<TarefaNoCartao["percebidos"]>;
+  /** O fim da frase, do registro: de que pedido se trata. */
+  depois: string;
+  formatar: (n: number) => string;
+}) {
+  const t = useT();
+  const tagDoIdioma = useTagDeIdioma();
+  const quando = new Intl.DateTimeFormat(tagDoIdioma, {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return (
+    <div className="space-y-1 text-sm">
+      <p data-testid={`jev-percebidos-${tarefa.id}`}>
+        {t("Nos últimos")} {p.dias} {t("dias, o Jev percebeu")}{" "}
+        <span className="font-medium tabular-nums">{formatar(p.pedidos)}</span>{" "}
+        {p.pedidos === 1 ? t("pedido") : t("pedidos")} {t(depois)}
+      </p>
+      {p.pedidos > 0 && p.conversas.length > 0 && (
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1" data-testid={`jev-percebidos-conversas-${tarefa.id}`}>
+          <span className="text-muted-foreground">{t("Ver as conversas:")}</span>
+          {p.conversas.map((c) => {
+            const em = quando.format(new Date(c.em));
+            return (
+              <Link
+                key={c.href}
+                className="inline-block py-1 underline underline-offset-4"
+                href={c.href}
+                aria-label={`${t("Abrir a conversa do pedido de")} ${em}`}
+              >
+                {em}
+              </Link>
+            );
+          })}
+        </p>
+      )}
+    </div>
   );
 }
 

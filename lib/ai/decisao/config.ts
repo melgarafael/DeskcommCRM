@@ -66,6 +66,8 @@ const tarefasSchema = z.object({
   clima: tarefaGravadaSchema.optional().catch(tarefaIlegivel),
   manipulacao: tarefaGravadaSchema.optional().catch(tarefaIlegivel),
   roteador: tarefaGravadaSchema.optional().catch(tarefaIlegivel),
+  humano: tarefaGravadaSchema.optional().catch(tarefaIlegivel),
+  opt_out: tarefaGravadaSchema.optional().catch(tarefaIlegivel),
 });
 
 export const idDaTarefaSchema = tarefasSchema.keyof();

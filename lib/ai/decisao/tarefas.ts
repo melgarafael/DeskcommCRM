@@ -32,43 +32,25 @@ import {
   type TarefaGravada,
 } from "./config";
 
-export interface TarefaDoJev {
+interface ComumDaTarefa {
   id: IdDaTarefa;
-  /** O ponto do registro que ela substitui ou acompanha, quando há um. */
-  ponto?: string;
-  /** A pergunta que o Jev responde — a mesma do `decisaoRapida` do ponto. */
+  /** A pergunta que o Jev responde — com ponto, a mesma do `decisaoRapida` dele. */
   primitiva: "score" | "choice" | "noul";
   /** O que sai para o fornecedor. Maior que o aceite ⇒ desligada. */
   alcance: Alcance;
   /**
-   * Como ela convive com o que já existe: `substitui` (o Jev pode decidir no
-   * lugar do mecanismo de hoje), `soma` (decidindo, o sinal dele se SOMA ao do
-   * mecanismo de hoje e nunca o apaga), `cascata` (só pergunta onde a regra
-   * disse não) ou `novo` (não há mecanismo hoje).
-   */
-  familia: "substitui" | "soma" | "cascata" | "novo";
-  /**
-   * O que muda quando ela DECIDE, dito ao leigo: no cartão do Jev (`aoDecidir`)
-   * e no cartão do ponto, sobre o modelo que ele mostra logo abaixo
-   * (`aoDecidirNoPonto`). É por tarefa, e não pela família: o clima e o
-   * roteador são os dois `substitui`, e a IA de sempre é chamada só quando o
-   * Jev falha num, e a cada mensagem no outro. Uma frase por família fez o
-   * roteador herdar a do clima.
+   * O que muda quando ela DECIDE, dito ao leigo no cartão do Jev. É por tarefa,
+   * e não pela família: o clima e o roteador são os dois `substitui`, e a IA de
+   * sempre é chamada só quando o Jev falha num, e a cada mensagem no outro. Uma
+   * frase por família fez o roteador herdar a do clima.
    */
   aoDecidir: string;
-  aoDecidirNoPonto: string;
   /**
    * O que o diálogo de "Deixar o Jev decidir" diz ANTES do clique valer: o
    * efeito concreto em produção, na língua de quem não é engenheiro. Um clique
    * sem explicação mudava o atendimento de todas as mensagens seguintes.
    */
   aoConfirmarDecidir: string;
-  /**
-   * A frase da concordância no cartão, antes e depois do "X de Y": diz EM QUE
-   * os dois concordaram. Sem ela, a manipulação e o roteador liam "o Jev
-   * concordou com a sua IA de sempre", e o leigo não sabia no quê.
-   */
-  concordancia: { antes: string; depois: string };
   /**
    * A camada de segurança que ela ACOMPANHA, quando há uma: desligada para a
    * organização, o turno não pergunta nem à IA de sempre nem ao Jev, e a tarefa
@@ -77,12 +59,44 @@ export interface TarefaDoJev {
   camada?: CamadaSemantica;
   /**
    * Para quem não é engenheiro: vão à tela por `t()`. O `rotulo` é o nome do que
-   * o JEV faz, e pode diferir do nome do ponto; o `oQueFaz` é o `oQueOJevFaz` do
-   * registro, igual.
+   * o JEV faz, e pode diferir do nome do ponto; com ponto, o `oQueFaz` é o
+   * `oQueOJevFaz` do registro, igual.
    */
   rotulo: string;
   oQueFaz: string;
 }
+
+/**
+ * Onde ela mora. Com ponto (`lib/ai/pontos/registro.ts`), o cartão do ponto
+ * fala dela sobre o modelo que mostra logo abaixo (`aoDecidirNoPonto`). Sem
+ * ponto — uma regra sem IA que o Jev só acompanha —, não há cartão de ponto nem
+ * modelo para citar, e a frase não existe.
+ */
+type OndeMora = { ponto: string; aoDecidirNoPonto: string } | { ponto?: undefined; aoDecidirNoPonto?: undefined };
+
+/**
+ * Como ela convive com o que já existe, e o que o cartão mostra enquanto ela
+ * observa:
+ *
+ *  - `substitui` (o Jev pode decidir no lugar do mecanismo de hoje), `soma`
+ *    (decidindo, o sinal dele se SOMA ao do mecanismo de hoje e nunca o apaga)
+ *    e `novo` (não há mecanismo hoje): a CONCORDÂNCIA, antes e depois do "X de
+ *    Y" — diz EM QUE os dois concordaram. Sem ela, a manipulação e o roteador
+ *    liam "o Jev concordou com a sua IA de sempre", e o leigo não sabia no quê.
+ *  - `cascata`: o Jev só é perguntado onde a regra de hoje disse NÃO. Não há o
+ *    que concordar — a regra, por construção, sempre disse não —, e o cartão
+ *    mostra quantos pedidos ele PERCEBEU que ela deixou passar (`percebidos`,
+ *    o fim da frase depois do "N pedidos").
+ */
+type ComoConvive =
+  | {
+      familia: "substitui" | "soma" | "novo";
+      concordancia: { antes: string; depois: string };
+      percebidos?: undefined;
+    }
+  | { familia: "cascata"; percebidos: string; concordancia?: undefined };
+
+export type TarefaDoJev = ComumDaTarefa & OndeMora & ComoConvive;
 
 /**
  * O clima: a única tarefa da onda 1, e a única cujo estado também se chama
@@ -176,7 +190,84 @@ export const TAREFA_DO_ROTEADOR = {
     "Lê a última mensagem do cliente, sozinha, e escolhe entre as intenções do seu roteador qual agente deve atender.",
 } as const satisfies TarefaDoJev;
 
-export const TAREFAS_DO_JEV: readonly TarefaDoJev[] = [TAREFA_DO_CLIMA, TAREFA_DA_MANIPULACAO, TAREFA_DO_ROTEADOR];
+/**
+ * O pedido para falar com uma pessoa (`./pedidos.ts`). A regra de hoje é a do
+ * turno do agente: a detecção de pedido explícito e as palavras de passagem que
+ * o agente tem configuradas. É `cascata`: o Jev só é perguntado onde ela disse
+ * não, e nunca passa a conversa — quem passa é a regra, ou uma pessoa.
+ */
+export const TAREFA_DO_PEDIDO_DE_HUMANO = {
+  id: "humano",
+  primitiva: "noul",
+  alcance: "mensagem",
+  familia: "cascata",
+  aoDecidir:
+    "Quando o Jev percebe um pedido para falar com uma pessoa que a regra não pegou, ele abre um aviso na Central para alguém da equipe decidir. Ele nunca passa a conversa sozinho.",
+  aoConfirmarDecidir:
+    "Quando o Jev perceber um pedido para falar com uma pessoa que a regra não pegou, ele abre um aviso na Central para alguém da equipe decidir. Ele nunca passa a conversa sozinho.",
+  percebidos: "de falar com uma pessoa que a regra de hoje não pegou.",
+  rotulo: "Perceber pedido para falar com uma pessoa",
+  oQueFaz:
+    "Lê a mensagem do cliente, sozinha, quando a regra de hoje não viu nela um pedido para falar com uma pessoa — e conta os pedidos que ela deixou passar. Ele nunca passa a conversa sozinho.",
+} as const satisfies TarefaDoJev;
+
+/**
+ * O pedido para parar de receber mensagens (`./pedidos.ts`). A regra de hoje é
+ * `lib/opt-out/deteccao.ts` — a que bloqueia, na entrada da mensagem, e a que o
+ * turno usa para parar de responder. `cascata`: o Jev só é perguntado onde ela
+ * disse não, e nunca bloqueia ninguém.
+ */
+export const TAREFA_DO_PEDIDO_PARA_PARAR = {
+  id: "opt_out",
+  primitiva: "noul",
+  alcance: "mensagem",
+  familia: "cascata",
+  aoDecidir:
+    "Quando o Jev percebe um pedido para parar de receber mensagens que a regra não pegou, ele abre um aviso na Central. Quem bloqueia continua sendo a regra de hoje ou uma pessoa: o Jev nunca bloqueia ninguém.",
+  aoConfirmarDecidir:
+    "Quando o Jev perceber um pedido para parar de receber mensagens que a regra não pegou, ele abre um aviso na Central. Quem bloqueia continua sendo a regra de hoje ou uma pessoa: o Jev nunca bloqueia ninguém.",
+  percebidos: "para parar de receber mensagens que a regra de hoje não pegou.",
+  rotulo: "Perceber pedido para parar de receber mensagens",
+  oQueFaz:
+    "Lê a mensagem do cliente, sozinha, quando a regra de hoje não viu nela um pedido para parar de receber mensagens — e conta os pedidos que ela deixou passar. Quem bloqueia continua sendo a regra de hoje ou uma pessoa.",
+} as const satisfies TarefaDoJev;
+
+export const TAREFAS_DO_JEV: readonly TarefaDoJev[] = [
+  TAREFA_DO_CLIMA,
+  TAREFA_DA_MANIPULACAO,
+  TAREFA_DO_ROTEADOR,
+  TAREFA_DO_PEDIDO_DE_HUMANO,
+  TAREFA_DO_PEDIDO_PARA_PARAR,
+];
+
+/**
+ * A tarefa pode ser posta decidindo NESTA versão? A em cascata ainda não: o
+ * aviso na Central que o `aoDecidir` dela descreve ainda não existe, e decidir
+ * não pode prometer o que não acontece. Até ele existir, nem o cartão oferece o
+ * botão nem a rota aceita o pedido (`app/api/v1/ai/jev/route.ts`).
+ */
+export function tarefaPodeDecidir(tarefa: Pick<TarefaDoJev, "familia">): boolean {
+  return tarefa.familia !== "cascata";
+}
+
+/**
+ * A chamada que pergunta os dois pedidos (`./pedidos.ts`) precisa de um
+ * `purpose` na linha dela em `llm_calls`. Não é um ponto do registro: não há IA
+ * de sempre para escolher ali — a regra de hoje não usa modelo —, e um ponto
+ * sem chamador seria botão que não controla nada na tela de provedores. Quem
+ * dá nome de gente a ela em IA › Execuções e na "Última falha" do cartão é
+ * `rotuloDaChamadaDoJev`.
+ */
+export const PEDIDOS_DO_CLIENTE = { purpose: "jev_pedidos", rotulo: "Perceber pedidos do cliente" } as const;
+
+/**
+ * O nome de gente da chamada do Jev com este `purpose`: o da tarefa daquele
+ * ponto, ou o dos pedidos. `null` quando não é chamada do Jev.
+ */
+export function rotuloDaChamadaDoJev(purpose: string): string | null {
+  if (purpose === PEDIDOS_DO_CLIENTE.purpose) return PEDIDOS_DO_CLIENTE.rotulo;
+  return TAREFAS_DO_JEV.find((t) => t.ponto === purpose)?.rotulo ?? null;
+}
 
 /**
  * O estado que a EMPRESA escolheu para a tarefa, sem olhar o interruptor nem o

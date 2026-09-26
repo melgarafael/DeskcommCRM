@@ -308,6 +308,8 @@ describe("o Jev nunca cala, bloqueia nem responde o cliente", () => {
     const arquivos = modulosDoJev.map((m) => m.arquivo);
     expect(arquivos).toContain("lib/ai/decisao/clima.ts");
     expect(arquivos).toContain("lib/ai/decisao/aviso.ts");
+    // Os pedidos do cliente: o módulo do Jev mais perto de passar e de bloquear.
+    expect(arquivos).toContain("lib/ai/decisao/pedidos.ts");
     expect(arquivos.some((a) => a.endsWith(".test.ts")), "teste não é módulo do Jev").toBe(false);
   });
 
@@ -362,6 +364,22 @@ describe("o Jev nunca cala, bloqueia nem responde o cliente", () => {
     expect(escritas.join(" ")).toMatch(/insert into public\.jev_observacoes/);
     expect(escritas.join(" ")).toMatch(/insert into public\.llm_calls/);
     expect(escritasEmSqlCru(manipulacao.texto)).toEqual([]);
+  });
+
+  /**
+   * Os pedidos do cliente (pessoa, parar de receber) são os que mais TENTAM o
+   * Jev a agir: a regra de hoje, ao pegar os mesmos pedidos, passa a conversa e
+   * bloqueia o contato. O módulo dele escreve só nas tabelas do Jev, pela cadeia
+   * do supabase-js — e a regra de hoje, que mora no agent-engine, é chamada por
+   * quem o chama, nunca importada por ele.
+   */
+  it("os pedidos do cliente escrevem só nas tabelas do Jev, e não importam a regra que passa a conversa (controle positivo)", () => {
+    const pedidos = modulosDoJev.find((m) => m.arquivo === "lib/ai/decisao/pedidos.ts")!;
+    expect(pedidos.texto).toMatch(/\.from\("jev_observacoes"\)\.insert\(/);
+    expect(pedidos.texto).toMatch(/\.from\("llm_calls"\)\.insert\(/);
+    expect(escritasNaConversa(pedidos.texto)).toEqual([]);
+    expect(colunasQueCalam(pedidos.texto)).toEqual([]);
+    expect(modulosImportados(pedidos.texto).filter((m) => m.includes("agent-engine/agent"))).toEqual([]);
   });
 
   it("o import é seguido até quem envia e quem escreve, com a cadeia (sabotagem com código real)", () => {

@@ -609,6 +609,14 @@
       "type": "table",
       "label": "jev_observacoes (0421)",
       "sublabel": "por resposta do Jev: tarefa, estado, rótulo dele × rótulo de hoje, concordou (gerada), ponteiros sem FK, sem texto — poda de 90 dias no cron data-retention"
+    },
+    {
+      "id": "jevPedidos",
+      "lane": "motor",
+      "col": 7,
+      "type": "service",
+      "label": "worker de clima: os pedidos do cliente (lib/ai/decisao/pedidos.ts)",
+      "sublabel": "chamada própria, em paralelo à do clima — só onde a regra de hoje (pedido explícito de pessoa, palavras de passagem do agente, lib/opt-out/deteccao.ts) disse não e o turno do agente rodaria; corte 0,9; nunca passa a conversa, bloqueia ou cala"
     }
   ],
   "edges": [
@@ -1362,7 +1370,31 @@
       "id": "e120",
       "from": "jevObservacoes",
       "to": "jevRota",
-      "label": "concordância por tarefa, 30 dias, contada no banco — o laço de retorno da manipulação"
+      "label": "concordância por tarefa, 30 dias, contada no banco — o laço de retorno da manipulação; nas tarefas em cascata, os pedidos percebidos e as conversas deles"
+    },
+    {
+      "id": "e121",
+      "from": "sentimento",
+      "to": "jevPedidos",
+      "label": "a mesma mensagem, com a regra de hoje rodada e os fatos do turno lidos (agente no ar, elegibilidade, contato bloqueado, grupo)"
+    },
+    {
+      "id": "e122",
+      "from": "jevPedidos",
+      "to": "jev",
+      "label": "observarPedidos: só as perguntas que a regra não pegou, numa chamada só, a mensagem sem o histórico, por scrubMessage"
+    },
+    {
+      "id": "e123",
+      "from": "jevPedidos",
+      "to": "jevObservacoes",
+      "label": "uma linha por pergunta: tarefa humano/opt_out, sim/não pelo corte, rótulo de hoje 'nao' por construção"
+    },
+    {
+      "id": "e124",
+      "from": "jevPedidos",
+      "to": "jevLlmCalls",
+      "label": "linha typesafe purpose jev_pedidos (jev_observacao) — o nome dela em Execuções é 'Perceber pedidos do cliente'"
     }
   ],
   "cards": [

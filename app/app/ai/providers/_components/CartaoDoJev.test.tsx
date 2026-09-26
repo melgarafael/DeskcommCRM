@@ -8,7 +8,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { TAREFA_DA_MANIPULACAO, TAREFA_DO_CLIMA, TAREFA_DO_ROTEADOR } from "@/lib/ai/decisao/tarefas";
+import {
+  TAREFA_DA_MANIPULACAO,
+  TAREFA_DO_CLIMA,
+  TAREFA_DO_PEDIDO_DE_HUMANO,
+  TAREFA_DO_PEDIDO_PARA_PARAR,
+  TAREFA_DO_ROTEADOR,
+} from "@/lib/ai/decisao/tarefas";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 
 import { CartaoDoJev, jevNoPonto, useDadosDoJev, type DadosDoJev } from "./CartaoDoJev";
@@ -769,6 +775,100 @@ describe("CartaoDoJev — por tarefa", () => {
       }),
     );
     expect(screen.getByTestId("jev-concordancia-manipulacao")).toHaveTextContent(/Só o Jev daria o alerta forte em 1 delas/);
+  });
+
+  /**
+   * As tarefas em cascata não concordam com nada — o Jev só é perguntado onde a
+   * regra de hoje disse não —: contam os pedidos que ele percebeu, com as
+   * conversas. E, nesta versão, só observam: o botão de decidir não aparece.
+   */
+  describe("as tarefas em cascata", () => {
+    const HUMANO = {
+      id: "humano",
+      ponto: null,
+      rotulo: TAREFA_DO_PEDIDO_DE_HUMANO.rotulo,
+      oQueFaz: TAREFA_DO_PEDIDO_DE_HUMANO.oQueFaz,
+      estado: "observando",
+      novo: true,
+      observacao: null,
+    } as const;
+    const conversa = (n: number) => ({ href: `/app/inbox/c-${n}`, em: `2026-09-2${n}T14:3${n}:00.000Z` });
+
+    it("um pedido: singular, com o link para a conversa — e nenhuma concordância", () => {
+      montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [{ ...HUMANO, percebidos: { dias: 30, pedidos: 1, conversas: [conversa(1)] } }],
+        }),
+      );
+      const frase = screen.getByTestId("jev-percebidos-humano");
+      expect(frase).toHaveTextContent(
+        "Nos últimos 30 dias, o Jev percebeu 1 pedido de falar com uma pessoa que a regra de hoje não pegou.",
+      );
+      const links = within(screen.getByTestId("jev-percebidos-conversas-humano")).getAllByRole("link");
+      expect(links.map((l) => l.getAttribute("href"))).toEqual(["/app/inbox/c-1"]);
+      expect(links[0]).toHaveAccessibleName(/^Abrir a conversa do pedido de /);
+      expect(screen.queryByTestId("jev-concordancia-humano")).toBeNull();
+    });
+
+    it("vários pedidos: plural, e um link por conversa; nenhum pedido: sem links", () => {
+      const { unmount } = montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [
+            { ...HUMANO, percebidos: { dias: 30, pedidos: 7, conversas: [conversa(1), conversa(2), conversa(3)] } },
+            {
+              ...HUMANO,
+              id: "opt_out",
+              rotulo: TAREFA_DO_PEDIDO_PARA_PARAR.rotulo,
+              oQueFaz: TAREFA_DO_PEDIDO_PARA_PARAR.oQueFaz,
+              percebidos: { dias: 30, pedidos: 0, conversas: [] },
+            },
+          ],
+        }),
+      );
+      expect(screen.getByTestId("jev-percebidos-humano")).toHaveTextContent(/percebeu 7 pedidos de falar com uma pessoa/);
+      expect(within(screen.getByTestId("jev-percebidos-conversas-humano")).getAllByRole("link")).toHaveLength(3);
+      expect(screen.getByTestId("jev-percebidos-opt_out")).toHaveTextContent(
+        "Nos últimos 30 dias, o Jev percebeu 0 pedidos para parar de receber mensagens que a regra de hoje não pegou.",
+      );
+      expect(screen.queryByTestId("jev-percebidos-conversas-opt_out")).toBeNull();
+      unmount();
+    });
+
+    it("só observa: sem 'Deixar o Jev decidir', mas com pausar e manter", () => {
+      montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [
+            { ...CLIMA, estado: "observando" },
+            { ...HUMANO, percebidos: { dias: 30, pedidos: 0, conversas: [] } },
+          ],
+        }),
+      );
+      const linha = within(screen.getByTestId("jev-tarefa-humano"));
+      expect(linha.queryByRole("button", { name: "Deixar o Jev decidir" })).toBeNull();
+      expect(linha.getByRole("button", { name: "Pausar esta tarefa" })).toBeInTheDocument();
+      expect(linha.getByRole("button", { name: "Manter só observando" })).toBeInTheDocument();
+      // Controle: o clima, na mesma tela, oferece.
+      expect(
+        within(screen.getByTestId("jev-tarefa-clima")).getByRole("button", { name: "Deixar o Jev decidir" }),
+      ).toBeInTheDocument();
+    });
+
+    it("fala espanhol com quem escolheu espanhol, no singular e no plural", () => {
+      montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [{ ...HUMANO, percebidos: { dias: 30, pedidos: 1, conversas: [conversa(1)] } }],
+        }),
+        { idioma: "es" },
+      );
+      expect(screen.getByTestId("jev-percebidos-humano")).toHaveTextContent(
+        "En los últimos 30 días, Jev detectó 1 pedido de hablar con una persona que la regla de hoy no captó.",
+      );
+      expect(screen.getByTestId("jev-tarefa-humano")).toHaveTextContent("Detectar pedidos de hablar con una persona");
+    });
   });
 
   it("o roteador diz que concordar é levar ao mesmo agente", () => {

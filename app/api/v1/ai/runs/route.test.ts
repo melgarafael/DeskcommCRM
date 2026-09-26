@@ -120,6 +120,37 @@ describe("GET /api/v1/ai/runs", () => {
     ]);
   });
 
+  /**
+   * A chamada do Jev que pergunta os pedidos do cliente não é ponto do registro
+   * (não há modelo para escolher ali): sem o nome dela, a tela mostraria
+   * `jev_pedidos`. A falha que pede ação dela não afirma consequência — nada no
+   * atendimento dependia do Jev.
+   */
+  it("a chamada dos pedidos do cliente chega com nome de gente, e a falha dela sem consequência", async () => {
+    linhas = [
+      linha({ purpose: "jev_pedidos", provider: "typesafe", model: "typesafe/jev-1.13.0", origem_da_escolha: "jev_observacao" }),
+      linha({
+        purpose: "jev_pedidos",
+        provider: "typesafe",
+        status: "erro",
+        error_code: "jev_sem_credito",
+        origem_da_escolha: "jev_observacao",
+      }),
+      linha({ purpose: "ponto_que_ninguem_conhece" }),
+    ];
+    const { corpo } = await pedir();
+    const [ok, falha, estranho] = corpo.data.execucoes;
+    expect(ok.pontoRotulo).toBe("Perceber pedidos do cliente");
+    expect(falha).toMatchObject({
+      pontoRotulo: "Perceber pedidos do cliente",
+      consequencia: null,
+      porQueEsteModelo: JEV_FALHOU_AO_LADO,
+      oQueFazer: O_QUE_FAZER_DO_JEV.jev_sem_credito,
+    });
+    // Controle: o purpose desconhecido segue saindo como está.
+    expect(estranho.pontoRotulo).toBe("ponto_que_ninguem_conhece");
+  });
+
   it("a reserva que cobriu o Jev não carrega consequência; a falha sem reserva carrega", async () => {
     linhas = [
       linha({ origem_da_escolha: "reserva_do_jev" }),

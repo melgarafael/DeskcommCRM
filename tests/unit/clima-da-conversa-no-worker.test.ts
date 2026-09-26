@@ -345,7 +345,7 @@ const ACEITE = { em: "2026-09-23T12:00:00.000Z", por: "77777777-7777-4777-8777-7
 interface ChamadaAoJev {
   url: string;
   autorizacao: string | null;
-  corpo: { model: string; state: unknown };
+  corpo: { model: string; state: unknown; questions?: Record<string, unknown> };
 }
 
 let chamadasAoJev: ChamadaAoJev[] = [];
@@ -801,6 +801,224 @@ describe("o Jev por tarefa no worker de clima", () => {
     const { resultado } = await rodar({ ...c, credenciais: c.credenciais!.filter((l) => l.provider === "typesafe") });
     expect(chamadasAoJev).toHaveLength(0);
     expect(resultado).toEqual({ skipped: true, reason: "ai_gateway_key_missing" });
+  });
+});
+
+// ── Os pedidos do cliente ao lado do clima ───────────────────────────────────
+//
+// O worker pergunta ao Jev pelos pedidos do cliente (uma pessoa, parar de
+// receber mensagens) numa chamada PRÓPRIA, e só onde a regra de hoje disse não
+// e o turno do agente rodaria. A regra roda de verdade aqui: a frase decide.
+
+const AGENTE = "88888888-8888-4888-8888-888888888888";
+const VERSAO = "99999999-9999-4999-8999-999999999999";
+const CONTATO = "abababab-abab-4bab-8bab-abababababab";
+const FRASE_NATURAL = "quero falar com alguém de verdade aí, não com robô";
+
+/** O mundo em que o turno do agente rodaria: um agente no ar, o contato livre. */
+function comAgenteNoAr(
+  c: Cenario,
+  over: { corpo?: string; palavras?: string[]; contato?: Linha; conversa?: Linha; agente?: Linha } = {},
+): Banco {
+  const banco = montarBanco(c);
+  banco.messages[0]!.body = over.corpo ?? FRASE_NATURAL;
+  banco.conversations = [
+    {
+      id: CONV,
+      organization_id: ORG,
+      channel_session_id: null,
+      active_ai_agent_id: null,
+      contact_id: CONTATO,
+      is_group: false,
+      ...over.conversa,
+    },
+  ];
+  banco.contacts = [{ id: CONTATO, organization_id: ORG, is_blocked: false, ...over.contato }];
+  banco.ai_agents = [
+    {
+      id: AGENTE,
+      organization_id: ORG,
+      kind: "mcp_agent",
+      is_active: true,
+      paused_at: null,
+      published_version_id: VERSAO,
+      archived_at: null,
+      priority: 0,
+      created_at: "2026-09-01T00:00:00.000Z",
+      config: {},
+      ...over.agente,
+    },
+  ];
+  banco.ai_agent_versions = [{ id: VERSAO, organization_id: ORG, status: "published", handoff_keywords: over.palavras ?? [] }];
+  return banco;
+}
+
+/** Responde cada pergunta pelo id: o clima na posição `nivel`, os pedidos pelo `noul`. */
+function respostaPorPergunta(noul: Record<string, number>, nivel = 3) {
+  return async (init: RequestInit): Promise<Response> => {
+    const perguntas = (JSON.parse(String(init.body)) as { questions: Record<string, unknown> }).questions;
+    const answers: Record<string, unknown> = {};
+    if ("clima" in perguntas) {
+      answers.clima = { type: "score", score: nivel, confidence: 0.9, legend: {}, probabilities: { [String(nivel)]: 0.9 } };
+    }
+    for (const id of ["humano", "opt_out"]) {
+      if (id in perguntas) answers[id] = { type: "noul", noul: noul[id] ?? 0.1 };
+    }
+    return new Response(JSON.stringify({ model: "jev-1.13.0", answers, usage: { input_tokens: 400, output_tokens: 2 } }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+}
+
+const perguntasDosPedidos = () =>
+  chamadasAoJev.filter((c) => !("clima" in (c.corpo.questions ?? {}))).map((c) => Object.keys(c.corpo.questions ?? {}));
+const doClima = () => chamadasAoJev.filter((c) => "clima" in (c.corpo.questions ?? {}));
+
+describe("os pedidos do cliente no worker de clima", () => {
+  beforeEach(() => {
+    chamadasAoJev = [];
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("frase natural, agente no ar: os pedidos vão numa chamada PRÓPRIA, e o clima segue igual", async () => {
+    fornecedor(respostaPorPergunta({ humano: 0.97, opt_out: 0.03 }, 0));
+    const cenario = jevLigado("decide");
+    const { resultado, banco, rpcs } = await rodar(cenario, comAgenteNoAr(cenario));
+
+    // O clima: o mesmo desfecho de sem os pedidos (a nota do Jev decide e chama uma pessoa).
+    expect(resultado).toEqual({ skipped: false, sentiment_score: 0 });
+    expect(doClima()).toHaveLength(1);
+    expect(Object.keys(doClima()[0]!.corpo.questions!)).toEqual(["clima"]);
+    expect(alertas(rpcs)).toHaveLength(1);
+    // Os pedidos: outra chamada, com as duas perguntas, e só a mensagem.
+    expect(perguntasDosPedidos()).toEqual([["humano", "opt_out"]]);
+    const dosPedidos = chamadasAoJev.find((c) => !("clima" in (c.corpo.questions ?? {})))!;
+    expect(dosPedidos.corpo.state).toBe(FRASE_NATURAL);
+
+    expect(banco.jev_observacoes).toEqual([
+      expect.objectContaining({
+        organization_id: ORG,
+        tarefa: "humano",
+        estado: "observando",
+        conversation_id: CONV,
+        message_id: MSG,
+        rotulo_jev: "sim",
+        probabilidade_jev: 0.97,
+        rotulo_atual: "nao",
+      }),
+      expect.objectContaining({ tarefa: "opt_out", rotulo_jev: "nao", rotulo_atual: "nao" }),
+    ]);
+    expect(linhasDoJev(banco).map((l) => l.purpose).sort()).toEqual(["jev_pedidos", "sentiment_classify"]);
+    expect(linhasDoJev(banco).find((l) => l.purpose === "jev_pedidos")).toMatchObject({
+      agent_id: AGENTE,
+      contact_id: CONTATO,
+      origem_da_escolha: "jev_observacao",
+      status: "ok",
+    });
+    // O Jev só observou: nada no contato nem na conversa mudou.
+    expect(banco.contacts).toEqual([{ id: CONTATO, organization_id: ORG, is_blocked: false }]);
+    expect(banco.conversations![0]).not.toHaveProperty("bot_silenced_until");
+  });
+
+  it("a regra de descadastro pegou ('me deixa em paz'): a pergunta de parar de receber NÃO sai", async () => {
+    fornecedor(respostaPorPergunta({}));
+    const cenario = jevLigado("decide");
+    await rodar(cenario, comAgenteNoAr(cenario, { corpo: "me deixa em paz" }));
+    expect(perguntasDosPedidos()).toEqual([["humano"]]);
+  });
+
+  it("a palavra de passagem do agente (como o turno a lê) pegou: a pergunta de pessoa NÃO sai", async () => {
+    fornecedor(respostaPorPergunta({}));
+    const cenario = jevLigado("decide");
+    // Maiúscula e espaço, como a tela deixa gravar: o turno normaliza, e o worker também.
+    await rodar(cenario, comAgenteNoAr(cenario, { corpo: "chama o gerente por favor", palavras: [" Gerente "] }));
+    expect(perguntasDosPedidos()).toEqual([["opt_out"]]);
+  });
+
+  it("a regra pegou os dois: nenhuma chamada dos pedidos", async () => {
+    fornecedor(respostaPorPergunta({}));
+    const cenario = jevLigado("decide");
+    await rodar(cenario, comAgenteNoAr(cenario, { corpo: "me deixa em paz, quero falar com um atendente" }));
+    expect(perguntasDosPedidos()).toEqual([]);
+    expect(doClima(), "o clima segue medindo (controle)").toHaveLength(1);
+  });
+
+  it.each([
+    ["contato bloqueado", { contato: { is_blocked: true } }],
+    ["pessoa no comando da conversa", { conversa: { assignee_kind: "user" } }],
+    ["conversa silenciada", { conversa: { bot_silenced_until: "2999-01-01T00:00:00.000Z" } }],
+    ["contato passado para uma pessoa", { conversa: { contacts: { force_human: true } } }],
+    ["conversa de grupo", { conversa: { is_group: true } }],
+    ["agente pausado", { agente: { paused_at: "2026-09-20T00:00:00.000Z" } }],
+  ])("%s: o turno não rodaria, e os pedidos não são perguntados", async (_caso, over) => {
+    fornecedor(respostaPorPergunta({ humano: 0.99 }));
+    const cenario = jevLigado("decide");
+    const { banco } = await rodar(cenario, comAgenteNoAr(cenario, over));
+    expect(perguntasDosPedidos()).toEqual([]);
+    expect(doClima(), "o clima segue medindo (controle)").toHaveLength(1);
+    expect(banco.jev_observacoes ?? []).toEqual([]);
+  });
+
+  it("clima pausado e sem IA de sempre: os pedidos são perguntados, e o worker responde o de antes", async () => {
+    fornecedor(respostaPorPergunta({ humano: 0.95 }));
+    const c = jevLigado("decide", false);
+    const jev = (c.settings as { jev: Linha }).jev;
+    const cenario = { ...c, settings: { ...c.settings, jev: { ...jev, tarefas: { clima: { estado: "desligada" } } } } };
+    const { resultado, banco } = await rodar(cenario, comAgenteNoAr(cenario));
+    expect(resultado).toEqual({ skipped: true, reason: "ai_gateway_key_missing" });
+    expect(doClima()).toHaveLength(0);
+    expect(perguntasDosPedidos()).toEqual([["humano", "opt_out"]]);
+    expect(banco.jev_observacoes!.map((l) => [l.tarefa, l.rotulo_jev])).toEqual([
+      ["humano", "sim"],
+      ["opt_out", "nao"],
+    ]);
+  });
+
+  it("a chamada dos pedidos cai: o desfecho do clima não muda, e nada é observado", async () => {
+    fornecedor(async (init) =>
+      "clima" in (JSON.parse(String(init.body)) as { questions: object }).questions
+        ? respostaPorPergunta({}, 0)(init)
+        : new Response("{}", { status: 503 }),
+    );
+    const cenario = jevLigado("decide");
+    const { resultado, banco, rpcs } = await rodar(cenario, comAgenteNoAr(cenario));
+    expect(resultado).toEqual({ skipped: false, sentiment_score: 0 });
+    expect(alertas(rpcs)).toHaveLength(1);
+    expect(perguntasDosPedidos()).toEqual([["humano", "opt_out"]]);
+    expect(banco.jev_observacoes ?? []).toEqual([]);
+    expect(linhasDoJev(banco).map((l) => l.purpose)).toEqual(["sentiment_classify"]);
+  });
+
+  /**
+   * O dreno roda os handlers em série e segue para o próximo quando este
+   * devolve: com a chamada dos pedidos ainda no ar, ela ficaria solta (e, num
+   * processo que encerra depois de responder, perdida). O worker só devolve
+   * depois dela — aqui ela é a MAIS LENTA das duas, e nada é drenado depois.
+   */
+  it("o worker só devolve depois de gravar os pedidos, mesmo com a chamada deles mais lenta que a do clima", async () => {
+    fornecedor(async (init) => {
+      const perguntas = (JSON.parse(String(init.body)) as { questions: object }).questions;
+      if (!("clima" in perguntas)) await new Promise((r) => setTimeout(r, 40));
+      return respostaPorPergunta({ humano: 0.97 }, 0)(init);
+    });
+    const cenario = jevLigado("decide");
+    const banco = comAgenteNoAr(cenario);
+    vi.mocked(createAdminClient).mockReturnValue(
+      fazerAdmin(banco, []) as unknown as ReturnType<typeof createAdminClient>,
+    );
+    const resultado = await processSentiment(evento());
+    expect(resultado).toEqual({ skipped: false, sentiment_score: 0 });
+    expect(banco.jev_observacoes?.map((l) => l.tarefa)).toEqual(["humano", "opt_out"]);
+  });
+
+  it("Jev desligado: com o agente no ar, os pedidos também não saem", async () => {
+    fornecedor(respostaPorPergunta({}));
+    const cenario: Cenario = { settings: { llm: { provider: "anthropic" } }, credenciais: jevLigado("decide").credenciais };
+    await rodar(cenario, comAgenteNoAr(cenario));
+    expect(chamadasAoJev).toHaveLength(0);
   });
 });
 
