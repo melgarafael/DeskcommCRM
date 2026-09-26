@@ -32,12 +32,13 @@ import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 // Mesma lógica de `sentry.server.config.ts`/`sentry.edge.config.ts`
 // (reaproveitada, não duplicada): DSN resolvido por `resolveSentryDsn`,
 // amostragem de trace condicionada ao Sentry da comunidade via
-// `isCommunityDsn` (issue #100), e os hooks de scrub de `lib/sentry/scrub.ts`.
+// `isCommunityDsn` (issue #100), e a coleta restrita + scrub de
+// `lib/sentry/privacidade.ts`.
 // O `@sentry/nextjs` funciona fora do Next — aqui é só `Sentry.init` puro,
 // sem `instrumentation.ts` porque o worker não é um processo Next.
 import * as Sentry from "@sentry/nextjs";
 import { resolveSentryDsn, isCommunityDsn, DEFAULT_SENTRY_DSN } from "@/lib/sentry/dsn";
-import { sentryScrubHooks } from "@/lib/sentry/scrub";
+import { opcoesDePrivacidade } from "@/lib/sentry/privacidade";
 
 const sentryDsn = resolveSentryDsn(process.env.SENTRY_DSN);
 const sentryCommunity = isCommunityDsn(sentryDsn);
@@ -47,10 +48,9 @@ Sentry.init({
 
   // No Sentry da comunidade, só erro (issue #100). Ver isCommunityDsn().
   tracesSampleRate: sentryCommunity ? 0 : 1,
-  enableLogs: true,
-  sendDefaultPii: false,
 
-  ...sentryScrubHooks,
+  // Coleta restrita + scrub, num ponto só (Sentry 11 coleta amplo por default).
+  ...opcoesDePrivacidade,
 });
 
 // Transparência de telemetria (mesma mensagem de sentry.server.config.ts,
