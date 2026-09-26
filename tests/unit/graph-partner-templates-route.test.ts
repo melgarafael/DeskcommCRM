@@ -6,6 +6,12 @@ import type * as Canais from "@/lib/channels";
 /**
  * A rota de modelos do canal Datafy (recorte do #1130, @vgamkt): desligada por
  * padrão, com papel, corpo validado, organização da sessão e contrato derivado.
+ *
+ * Inclui o editar/apagar que a #1734 religou: a rota recusava os dois com 422
+ * porque o DELETE desta plataforma, por nome só, levava TODAS as variantes de
+ * idioma enquanto a tela apagaria uma (#1728). O alvo agora resolve o id da
+ * variante por nome+idioma, e a rota passa pela mesma `executarGestao` do outro
+ * parceiro — inclusive pela pergunta "onde este modelo está em uso?".
  */
 const h = vi.hoisted(() => ({
   role: vi.fn(),
@@ -18,6 +24,7 @@ const h = vi.hoisted(() => ({
   remove: vi.fn(),
   upserts: [] as Record<string, unknown>[],
   espelho: [] as Record<string, unknown>[],
+  tabelas: {} as Record<string, unknown[]>,
 }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: h.role }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
@@ -35,7 +42,12 @@ vi.mock("@/lib/supabase/admin", () => ({
       const q = {
         select: () => q,
         eq: () => q,
+        in: () => q,
+        not: () => q,
         order: () => q,
+        // O apagar tira a linha do espelho depois de falar com a plataforma
+        // (lib/channels/gestao-de-modelos.ts) — sem `delete` o mock estourava.
+        delete: () => q,
         maybeSingle: async () => ({
           data: { id: "sess-1", provider: "datafy", datafy_phone_number_id: "PN" },
           error: null,
@@ -45,7 +57,10 @@ vi.mock("@/lib/supabase/admin", () => ({
           return { error: null };
         },
         then: (ok: (r: unknown) => unknown) =>
-          ok({ data: tabela === "meta_templates" ? h.espelho : null, error: null }),
+          ok({
+            data: tabela === "meta_templates" ? h.espelho : (h.tabelas[tabela] ?? []),
+            error: null,
+          }),
       };
       return q;
     },
@@ -64,6 +79,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.upserts = [];
   h.espelho = [];
+  h.tabelas = {};
   h.ligado.mockReturnValue(true);
   h.role.mockResolvedValue({ ok: true, org: { orgId: "org-da-sessao" }, user: { id: "u-1", idioma: "pt-BR" } });
   h.find.mockResolvedValue({ id: "sess-1", archivedAt: null });
@@ -102,16 +118,68 @@ describe("rota de modelos do canal parceiro Graph", () => {
     expect(h.list).not.toHaveBeenCalled();
   });
 
-  it("⭐ editar e apagar não existem nesta rota: 422 e a plataforma não é tocada", async () => {
-    // O DELETE desta plataforma é por nome e leva TODAS as variantes de idioma,
-    // enquanto a tela apagaria uma só (#1728). Até existir o apagar por variante,
-    // a rota recusa — e o adapter tem update/remove para a recusa ser da ROTA.
+  it("⭐ editar e apagar miram a VARIANTE (nome + idioma) e passam pela gestão", async () => {
+    // Era 422 e a plataforma não era tocada: o DELETE desta plataforma, por
+    // nome só, apagava TODAS as variantes de idioma enquanto a tela apagaria
+    // uma (#1728). Desde a #1734 o alvo resolve o id da variante por
+    // nome+idioma antes de falar com a plataforma (#1734), e a rota usa a
+    // mesma `executarGestao` da rota do outro parceiro.
+    h.espelho = [{ id: "tpl-1", name: "boas_vindas", language: "pt_BR" }];
     const alvo = { name: "boas_vindas", language: "pt_BR" };
-    expect((await post({ acao: "apagar", ...alvo, confirmado: true })).status).toBe(422);
-    expect((await post({ acao: "editar", ...alvo, components: CORPO })).status).toBe(422);
+
+    const apagado = await post({ acao: "apagar", ...alvo, confirmado: true });
+    expect(apagado.status).toBe(200);
+    expect(h.remove).toHaveBeenCalledTimes(1);
+    expect(h.remove).toHaveBeenCalledWith({
+      organizationId: "org-da-sessao",
+      sessionRef: "PN",
+      name: "boas_vindas",
+      language: "pt_BR",
+    });
+    expect(h.audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "template.deleted",
+        actorUserId: "u-1",
+        organizationId: "org-da-sessao",
+        metadata: { name: "boas_vindas", language: "pt_BR" },
+      }),
+    );
+
+    const editado = await post({ acao: "editar", ...alvo, components: CORPO });
+    expect(editado.status).toBe(200);
+    expect(h.update).toHaveBeenCalledWith({
+      organizationId: "org-da-sessao",
+      sessionRef: "PN",
+      name: "boas_vindas",
+      language: "pt_BR",
+      patch: { components: CORPO },
+    });
+    expect(h.audit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "template.updated", actorUserId: "u-1" }),
+    );
+    // A organização é a da SESSÃO: um corpo mandando outra não muda o dono.
+    await post({ acao: "apagar", ...alvo, organization_id: "org-do-atacante", confirmado: true });
+    expect(h.remove).toHaveBeenLastCalledWith(
+      expect.objectContaining({ organizationId: "org-da-sessao" }),
+    );
+    expect(h.update.mock.calls[0]![0]).toMatchObject({ organizationId: "org-da-sessao" });
+    // Sem idioma não há variante que mirar — a chamada é 422 e nada é tocado.
+    h.remove.mockClear();
+    expect((await post({ acao: "apagar", name: "boas_vindas" })).status).toBe(422);
     expect(h.remove).not.toHaveBeenCalled();
-    expect(h.update).not.toHaveBeenCalled();
-    expect(h.list).not.toHaveBeenCalled();
+  });
+
+  it("apagar modelo em uso responde 409 com onde ele está, e não apaga", async () => {
+    h.espelho = [{ id: "tpl-1", name: "boas_vindas", language: "pt_BR" }];
+    h.tabelas.followup_flow_pointers = [
+      { name: "Remarketing", active_version_id: null, draft_graph: { t: "tpl-1" } },
+    ];
+    const r = await post({ acao: "apagar", name: "boas_vindas", language: "pt_BR" });
+    expect(r.status).toBe(409);
+    const j = (await r.json()) as { error: { code: string; details: { usos: string[] } } };
+    expect(j.error.code).toBe("template_in_use");
+    expect(j.error.details.usos).toEqual(["Follow-up «Remarketing»"]);
+    expect(h.remove).not.toHaveBeenCalled();
     expect(h.audit).not.toHaveBeenCalled();
   });
 
