@@ -125,7 +125,7 @@
     "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^9.12.0",
     "eslint-config-next": "^16.2.10",
-    "jsdom": "^30.1.1",
+    "jsdom": "30.0.1",
     "postcss": "^8.5.28",
     "prettier": "^3.9.9",
     "prettier-plugin-tailwindcss": "^0.8.1",
@@ -137,6 +137,7 @@
     "vitest": "^4.1.11"
   },
   "packageManager": "pnpm@9.15.9",
+  "//jsdom": "Fixado em 30.0.1 de propósito (sem ^). O jsdom 30.1 guarda a implementação do Blob num campo privado (#impl), e o ambiente jsdom do vitest (makeCompatBlob) lê o Blob pela 1ª símbolo da instância: com 30.1.x, URL.createObjectURL(file) e FormData/Request com File lançam `Cannot read properties of undefined (reading '_buffer')` — 4 casos da suíte (composer-attach x2, composer-colar-imagem, upload-templates-media-security). Upstream: vitest-dev/vitest#11336, aberta e sem conserto em nenhuma release (5.0.2 ainda quebra). Tire o pin quando o vitest instalado trouxer o conserto; o sinal é esses 4 casos verdes com jsdom 30.1+. Rastreio: melgarafael/DeskcommCRM#1745.",
   "pnpm": {
     "//overrides": "Pisos de versão para dependência TRANSITIVA com advisory. Não é atalho: `pnpm update <pkg>` só casa o padrão contra o package.json (hono/js-yaml/nanoid não estão lá, e não se movem), e `pnpm update` sem alvo reescreve 29 ranges diretas e arrasta 139 pacotes. Override é a única ferramenta que move transitiva sem arrastar o mundo. Os seletores com `@<major>` são LOAD-BEARING: o lock tem duas árvores de brace-expansion (1.x e 5.x) e duas de path-to-regexp (6.x e 8.x); sem o escopo, o override rebaixa a árvore nova para a antiga — em silêncio, com `pnpm audit` ainda verde.",
     "overrides": {
