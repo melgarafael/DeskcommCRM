@@ -23,9 +23,11 @@
  *     (`app/app/ai/agents/[id]/_actions.ts`) e publicar nunca religa. Todo
  *     agente criado pela tela e publicado ficava fora deste picker enquanto
  *     respondia no WhatsApp;
- *   - **oferecia quem não atende:** pausar limpa `published_version_id` e
- *     deixa `is_active` de pé, então o agente pausado seguia listado como
- *     destino de negócio.
+ *   - **oferecia quem não atende:** `is_active` fica de pé quando o agente é
+ *     pausado, então o agente pausado seguia listado como destino de negócio.
+ *     (Pausar limpava `published_version_id` quando este filtro foi trocado;
+ *     hoje grava só `paused_at`, e a versão segue publicada — por isso a
+ *     régua precisa ler a pausa, não o ponteiro.)
  *
  * A régua agora é `agenteAtende` (`lib/ai/agents/no-ar.ts`), a mesma da tela e
  * dos workers.

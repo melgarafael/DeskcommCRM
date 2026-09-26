@@ -730,10 +730,12 @@ async function buildContext(input: BuildContextInput): Promise<GuardDecision> {
   // O agente legado desta organização.
   //
   // `is_active` sozinho NÃO é "quem atende", e tratá-lo como se fosse era o
-  // buraco: pausar um `mcp_agent` limpa `published_version_id` e deixa
+  // buraco: pausar um `mcp_agent` limpava `published_version_id` e deixava
   // `is_active` de pé, então este SELECT continuava trazendo o agente que o dono
   // acabara de pausar — e a trava `engine_owns_reply` logo abaixo, que é
-  // ORG-WIDE, deixa de valer exatamente quando o último publicado é pausado.
+  // ORG-WIDE, deixava de valer exatamente quando o último publicado era pausado.
+  // (Hoje pausar grava só `paused_at` e a versão segue publicada; a régua lê a
+  // pausa, e não depende de qual das duas formas a pausa tem.)
   // Resultado medido em produção: pausar o agente o fazia VOLTAR a responder,
   // com o `system_prompt` do cadastro no lugar do da versão publicada.
   //
