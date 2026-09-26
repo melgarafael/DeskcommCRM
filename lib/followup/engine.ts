@@ -49,6 +49,7 @@ import {
   type AvisoRecuperacaoEsgotada,
 } from "./no-show-recuperacao-esgotada";
 import { interpolarDestino, persistirRespostaFollowupSupabase } from "./persistir-resposta";
+import { criarTarefaInterna as criarTarefaNoCrm } from "@/lib/tarefas/criar-tarefa";
 
 const MAX_STEPS = 80;
 const CLAIM_LEASE_SECONDS = 120;
@@ -132,6 +133,20 @@ export interface AdminClient {
   updateEnrollment(id: string, orgId: string, patch: EnrollmentPatch): Promise<void>;
   loadFlowPointerName(orgId: string, pointerId: string): Promise<string | null>;
   insertDeadInboxItem(item: { organization_id: string; title: string; body: string; ref_id: string }): Promise<void>;
+  /**
+   * Nó `internal_task` (#1540): grava a tarefa no CRM para o contato da
+   * inscrição. Opcional como os demais avisos deste adaptador — só a produção
+   * e os testes que exercitam o nó precisam dela; omitida, o nó AVANÇA sem
+   * criar tarefa (nunca trava o tick), e é isso que um teste de engine puro
+   * deve poder observar.
+   */
+  criarTarefaInterna?(item: {
+    organization_id: string;
+    contact_id: string;
+    enrollment_id: string;
+    /** O config do nó, já validado pelo `flowGraphSchema.parse`. */
+    config: Extract<FlowNode, { type: "internal_task" }>["config"];
+  }): Promise<void>;
   /**
    * Régua de recuperação de falta esgotada sem resposta — abre um item na
    * Central referenciando o COMPROMISSO. Opcional: só a produção precisa; os
@@ -375,6 +390,31 @@ async function applyResult(
     idempotency_key: idemKey,
   });
   const isReplay = !inserted;
+
+  // Nó `internal_task` (#1540): a tarefa nasce AQUI, depois do evento do passo
+  // ter sido gravado — o idempotency_key é a trava. Sem `isReplay`, o tick que
+  // reprocessa a inscrição criaria a segunda tarefa para o mesmo silêncio, e a
+  // diferença não se vê na tela (é só mais uma linha na lista).
+  if (result.kind === "advance" && !isReplay && node.type === "internal_task") {
+    try {
+      await db.criarTarefaInterna?.({
+        organization_id: enrollment.organization_id,
+        contact_id: enrollment.contact_id,
+        enrollment_id: enrollment.id,
+        config: node.config,
+      });
+    } catch (err) {
+      // Falha de gravação não pode reverter o avanço (o enrollment avançaria
+      // de novo no tick seguinte e tentaria a MESMA tarefa — a trava é o
+      // evento, que já está gravado). O warn é o que o suporte lê.
+      logger.warn("followup_internal_task_failed", {
+        organization_id: enrollment.organization_id,
+        enrollment_id: enrollment.id,
+        node_id: node.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   // Corrida clássica: completeTurn grava `action_sent` com a chave N:steps e
   // avança; um tick/inbound paralelo tenta `action_recheck` com a MESMA chave,
@@ -902,6 +942,41 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
         ref_id: item.ref_id,
       });
       if (error) throw new Error(error.message);
+    },
+    async criarTarefaInterna(item) {
+      // O negócio NÃO vem na inscrição (migration 0054 guarda o contato), então
+      // ele é resolvido aqui do mesmo jeito que `loadLeadFacts` resolve: o
+      // negócio mais recente do contato. Sem negócio a tarefa nasce só com o
+      // contato — e `dono_do_lead` sem dono é `sem_dono`, recusa registrada,
+      // nunca tarefa órfã na lista.
+      const { data: lead, error: leadErr } = await admin
+        .from("crm_leads")
+        .select("id")
+        .eq("organization_id", item.organization_id)
+        .eq("contact_id", item.contact_id)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (leadErr) throw new Error(leadErr.message);
+
+      const resultado = await criarTarefaNoCrm(admin, {
+        organizationId: item.organization_id,
+        titulo: item.config.titulo,
+        venceEmDias: item.config.vence_em_dias,
+        atribuirA: item.config.atribuir_a,
+        prioridade: item.config.prioridade,
+        leadId: (lead as { id: string } | null)?.id ?? null,
+        contactId: item.contact_id,
+        descricao: null,
+        origem: `followup:${item.enrollment_id}`,
+      });
+      if (!resultado.ok) {
+        logger.warn("followup_internal_task_skipped", {
+          organization_id: item.organization_id,
+          enrollment_id: item.enrollment_id,
+          motivo: resultado.codigo,
+        });
+      }
     },
     async abrirAvisoRecuperacaoEsgotada(item) {
       // ── A GUARDA DE ANONIMIZAÇÃO DESTA PORTA (issue #701) ──
