@@ -263,7 +263,12 @@ function fazerPool(banco: Banco) {
   /**
    * O agente EXECUTA: não arquivado, com a versão apontada publicada. Pausar
    * pela tela NÃO limpa o ponteiro (só grava `paused_at`): o portão pedido
-   * sem os pausados — o SQL que fala de `paused_at` — os tira.
+   * sem os pausados — o SQL cujo CÓDIGO filtra `paused_at is null` — os tira.
+   *
+   * O dublê lê o SQL sem os comentários `--`, como o Postgres lê. Um comentário
+   * dentro do SQL do portão já citou a coluna, e `includes("paused_at")` sobre o
+   * texto inteiro respondia "sem pausados" também para o SQL do dreno: tirar
+   * `{ ignorarPausados: true }` do worker deixava estes casos verdes.
    */
   const versaoQueExecuta = (agenteId: unknown, semPausados = false): Linha | null => {
     const a = de("ai_agents").find(
@@ -283,7 +288,7 @@ function fazerPool(banco: Banco) {
     query: async (sql: string, params: unknown[]) => {
       if (sql.includes("tem_agente")) {
         const [, sessao] = params;
-        const semPausados = sql.includes("paused_at");
+        const semPausados = sql.replace(/--.*$/gm, "").includes("paused_at is null");
         return {
           rows: [
             {
