@@ -3773,11 +3773,11 @@ export const DICIONARIO: Traducoes = {
   "Um cliente parece pedir para parar de receber mensagens": {
     es: "Un cliente parece pedir dejar de recibir mensajes",
   },
-  "O Jev percebeu o pedido na última mensagem do cliente, e a regra de hoje não o pegou: a conversa segue com o assistente. Abra a conversa e decida se alguém da equipe assume — o Jev não passa a conversa sozinho.": {
-    es: "Jev detectó el pedido en el último mensaje del cliente, y la regla de hoy no lo captó: la conversación sigue con el asistente. Abre la conversación y decide si alguien del equipo la asume; Jev no transfiere la conversación por su cuenta.",
+  "O Jev percebeu, numa mensagem do cliente, um pedido para falar com uma pessoa que a regra de hoje não reconheceu. Abra a conversa e confira se alguém da equipe já assumiu — o Jev não passa a conversa sozinho.": {
+    es: "Jev detectó, en un mensaje del cliente, un pedido de hablar con una persona que la regla de hoy no reconoció. Abre la conversación y verifica si alguien del equipo ya la asumió; Jev no transfiere la conversación por su cuenta.",
   },
-  "O Jev percebeu o pedido na última mensagem do cliente, e a regra de hoje não o pegou: nada foi bloqueado. Abra a conversa e decida se o contato deve deixar de receber mensagens — o Jev nunca bloqueia ninguém.": {
-    es: "Jev detectó el pedido en el último mensaje del cliente, y la regla de hoy no lo captó: no se bloqueó nada. Abre la conversación y decide si el contacto debe dejar de recibir mensajes; Jev nunca bloquea a nadie.",
+  "O Jev percebeu, numa mensagem do cliente, um pedido para parar de receber mensagens que a regra de hoje não reconheceu. Abra a conversa e decida se o contato deve deixar de receber mensagens — o Jev nunca bloqueia ninguém.": {
+    es: "Jev detectó, en un mensaje del cliente, un pedido de dejar de recibir mensajes que la regla de hoy no reconoció. Abre la conversación y decide si el contacto debe dejar de recibir mensajes; Jev nunca bloquea a nadie.",
   },
   "Abra a conversa e decida se alguém da equipe assume o atendimento.": {
     es: "Abre la conversación y decide si alguien del equipo asume la atención.",

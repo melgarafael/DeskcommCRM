@@ -38743,32 +38743,86 @@ revoke execute on function public.fn_expurgar_observacoes_do_jev(int,int) from a
 revoke execute on function public.fn_expurgar_observacoes_do_jev(int,int) from authenticated;
 grant  execute on function public.fn_expurgar_observacoes_do_jev(int,int) to service_role;
 
--- ---- os avisos do Jev na Central fecham quando uma pessoa assume (migration 0426) ----
+-- ---- os avisos do Jev na Central: um por conversa e pedido, e fecham sozinhos (migration 0426) ----
 --
--- Os dois kinds novos entraram no bloco ÚNICO de `agent_inbox_items_kind_check`
--- (o do `capabilities_missing`, migration 0105), não aqui: um segundo bloco da
--- mesma constraint é o defeito do #159. Aqui fica só a função do gatilho de
--- atribuição da conversa, derivada do corpo vigente (o da 0228, mais acima):
--- a MESMA condição que já fecha o `routing_unassigned` — uma pessoa ficou com a
--- conversa, ou ela saiu dos estados abertos — passa a fechar também o aviso do
--- Jev daquela conversa. O resto do corpo é byte a byte o de antes. Racional
--- inteiro na migration 0426.
-create or replace function public.fn_routing_assignment_changed()
+-- Os dois kinds entraram no bloco ÚNICO de `agent_inbox_items_kind_check` (o
+-- do `capabilities_missing`, migration 0105), não aqui: um segundo bloco da
+-- mesma constraint é o defeito do #159. Daqui para baixo, o texto é o MESMO da
+-- migration 0426 (partes 2 e 3), com o racional inteiro lá.
+-- 2. UM AVISO POR CONVERSA E PEDIDO, NO BANCO. Índice único parcial em
+--    (organização, kind, conversa) para os dois kinds do Jev, SEM status — o
+--    precedente é o `agent_inbox_routing_unique` do `routing_unassigned`. Com o
+--    status fora do índice, o "Reabrir" nunca encontra um segundo aberto, e o
+--    pedido novo sobre o mesmo aviso o REABRE em vez de abrir outro (o gravador,
+--    lib/ai/decisao/pedidos.ts, faz o insert e trata o 23505). A busca antes da
+--    escrita, que havia antes, deixava dois drenos simultâneos abrirem dois.
+--    Antes do índice, os repetidos saem (fica o aberto, e o mais novo): só o
+--    banco de quem rodou este PR antes do conserto os tem, mas o `update.sh`
+--    de qualquer clone não pode quebrar aqui.
+delete from public.agent_inbox_items a
+ using (
+   select id, row_number() over (
+            partition by organization_id, kind, ref_id
+            order by (status = 'open') desc, created_at desc, id desc
+          ) as n
+     from public.agent_inbox_items
+    where kind in ('jev_pedido_de_humano','jev_parar_de_receber')
+ ) d
+ where a.id = d.id and d.n > 1;
+create unique index if not exists agent_inbox_jev_pedido_unico
+  on public.agent_inbox_items (organization_id, kind, ref_id)
+  where kind in ('jev_pedido_de_humano','jev_parar_de_receber');
+
+-- 3. O AVISO FECHA QUANDO O PEDIDO FOI ATENDIDO, por qualquer caminho.
+--    Na conversa: uma pessoa ficou com ela, ou ela saiu dos estados abertos
+--    (os dois avisos); ou ela foi PASSADA a uma pessoa — `performHumanHandoff`
+--    (a regra de hoje, o descadastro ambíguo, a ferramenta
+--    `request_human_handoff` do modelo), o orquestrador do clima e a
+--    atribuição manual gravam `last_handoff_at` e calam o robô
+--    (`bot_silenced_until` no futuro) — e aí fecha o de falar com uma pessoa.
+--    No contato: bloqueado (`is_blocked` passa a true, pela regra de hoje ou
+--    por uma pessoa), fecha o de parar de receber de todas as conversas dele.
+--    Gatilhos próprios, e não o de atribuição da 0228: aquele só dispara em
+--    `assigned_to_user_id`/`status`, e a passagem nem sempre muda o status.
+--    Nenhum faz HTTP; os dois filtram a organização da própria linha.
+create or replace function public.fn_fechar_avisos_do_jev_da_conversa()
 returns trigger language plpgsql security definer set search_path=public as $$
 begin
  if new.assigned_to_user_id is not null or new.status not in('open','pending','claimed','ai_handling') then
-  update public.agent_inbox_items set status='resolved' where organization_id=new.organization_id
-   and kind='routing_unassigned' and ref_id=new.id and status<>'resolved';
-  update public.agent_inbox_items set status='resolved',resolved_at=now() where organization_id=new.organization_id
-   and kind in('jev_pedido_de_humano','jev_parar_de_receber') and ref_kind='conversation' and ref_id=new.id
-   and status<>'resolved';
- elsif old.assigned_to_user_id is not null or old.status not in('open','pending','claimed','ai_handling') then
-  perform public.fn_request_channel_routing(new.organization_id,new.id);
+  update public.agent_inbox_items set status='resolved',resolved_at=now()
+   where organization_id=new.organization_id and ref_kind='conversation' and ref_id=new.id
+     and kind in('jev_pedido_de_humano','jev_parar_de_receber') and status<>'resolved';
+ elsif (new.last_handoff_at is not null and new.last_handoff_at is distinct from old.last_handoff_at)
+    or (new.bot_silenced_until > now() and new.bot_silenced_until is distinct from old.bot_silenced_until) then
+  update public.agent_inbox_items set status='resolved',resolved_at=now()
+   where organization_id=new.organization_id and ref_kind='conversation' and ref_id=new.id
+     and kind='jev_pedido_de_humano' and status<>'resolved';
  end if;
  return new;
 end;
 $$;
-revoke all on function public.fn_routing_assignment_changed() from public,anon,authenticated;
+revoke all on function public.fn_fechar_avisos_do_jev_da_conversa() from public,anon,authenticated;
+drop trigger if exists trg_fechar_avisos_do_jev_da_conversa on public.conversations;
+create trigger trg_fechar_avisos_do_jev_da_conversa
+ after update of assigned_to_user_id,status,bot_silenced_until,last_handoff_at on public.conversations
+ for each row execute function public.fn_fechar_avisos_do_jev_da_conversa();
+
+create or replace function public.fn_fechar_aviso_do_jev_ao_bloquear()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ update public.agent_inbox_items set status='resolved',resolved_at=now()
+  where organization_id=new.organization_id and kind='jev_parar_de_receber' and ref_kind='conversation'
+    and status<>'resolved'
+    and ref_id in(select v.id from public.conversations v where v.organization_id=new.organization_id and v.contact_id=new.id);
+ return new;
+end;
+$$;
+revoke all on function public.fn_fechar_aviso_do_jev_ao_bloquear() from public,anon,authenticated;
+drop trigger if exists trg_fechar_aviso_do_jev_ao_bloquear on public.contacts;
+create trigger trg_fechar_aviso_do_jev_ao_bloquear
+ after update of is_blocked on public.contacts
+ for each row when (new.is_blocked and old.is_blocked is distinct from true)
+ execute function public.fn_fechar_aviso_do_jev_ao_bloquear();
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --

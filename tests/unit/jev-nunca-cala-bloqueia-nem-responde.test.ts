@@ -303,6 +303,63 @@ const modulosDoJev: Modulo[] = arquivosDeCodigo(["lib/ai/decisao"]).map((abs) =>
 }));
 const alcanceDoJev = alcancados(modulosDoJev);
 
+/**
+ * A COLA DOS PEDIDOS DO CLIENTE no worker de clima. Ela roda a regra de hoje,
+ * que mora no agent-engine, e por isso não pode morar em `lib/ai/decisao`: a
+ * regra 2 reprovaria o import. Mas é código que o Jev executa, e o mais perto
+ * de passar a conversa e de bloquear o contato — a regra que ela lê faz as
+ * duas coisas no turno. Então a cerca a varre inteira, com a regra 2 estreitada
+ * em vez de desligada: de quem envia, só os LEITORES abaixo, importados um a um
+ * pelo nome (não são seguidos: o módulo deles também passa a conversa, e é
+ * justamente o que não se chama). O resto dos imports é seguido como o do Jev,
+ * e a regra 3 vale no arquivo e em tudo o que ele alcança. A regra 1 não: ler
+ * `is_blocked` é o que a cola faz, e escrevê-lo já é a regra 3.
+ */
+const COLA_DOS_PEDIDOS = "workers/ai-sentiment-worker.pedidos.ts";
+const LEITORES_DA_REGRA_DE_HOJE = new Set([
+  "detectHumanHandoffRequest",
+  "isLeadInHandoff",
+  "matchesHandoffKeyword",
+  "palavrasDePassagem",
+]);
+
+/**
+ * Os imports da cola que alcançam quem envia sem ser só leitores nomeados, e o
+ * texto dela sem os imports permitidos — o que segue para `alcancados`.
+ */
+function importsDaCola(arquivo: string, texto: string): { proibidos: string[]; semOsLeitores: string } {
+  const fonte = fonteDe(texto);
+  const proibidos: string[] = [];
+  const permitidos: Array<[number, number]> = [];
+  for (const no of fonte.statements) {
+    if (!ts.isImportDeclaration(no) || no.importClause?.isTypeOnly === true || !ts.isStringLiteral(no.moduleSpecifier)) continue;
+    const mod = no.moduleSpecifier.text;
+    if (!QUEM_ENVIA.some((r) => r.test(moduloNoRepo(arquivo, mod)))) continue;
+    const ligacoes = no.importClause?.namedBindings;
+    const nomes =
+      ligacoes && ts.isNamedImports(ligacoes) && !no.importClause?.name
+        ? ligacoes.elements.filter((el) => !el.isTypeOnly).map((el) => (el.propertyName ?? el.name).text)
+        : null;
+    if (nomes !== null && nomes.every((n) => LEITORES_DA_REGRA_DE_HOJE.has(n))) {
+      permitidos.push([no.getStart(fonte), no.getEnd()]);
+    } else {
+      proibidos.push(`${mod} ${nomes === null ? "(default ou namespace)" : `{ ${nomes.join(", ")} }`}`);
+    }
+  }
+  let semOsLeitores = texto;
+  for (const [ini, fim] of permitidos.reverse()) semOsLeitores = semOsLeitores.slice(0, ini) + semOsLeitores.slice(fim);
+  return { proibidos, semOsLeitores };
+}
+
+/** Tudo o que reprova a cola: import além dos leitores, envio e escrita no que ela alcança. */
+function violacoesDaCola(texto: string): string[] {
+  const { proibidos, semOsLeitores } = importsDaCola(COLA_DOS_PEDIDOS, texto);
+  const alcance = alcancados([{ arquivo: COLA_DOS_PEDIDOS, texto: semOsLeitores }]);
+  return [...proibidos.map((p) => `import além dos leitores: ${p}`), ...violacoesDeEnvio(alcance), ...violacoesDeEscrita(alcance)];
+}
+
+const textoDaCola = readFileSync(COLA_DOS_PEDIDOS, "utf8");
+
 describe("o Jev nunca cala, bloqueia nem responde o cliente", () => {
   it("a varredura enxerga os módulos do Jev (controle positivo)", () => {
     const arquivos = modulosDoJev.map((m) => m.arquivo);
@@ -434,5 +491,48 @@ describe("o Jev nunca cala, bloqueia nem responde o cliente", () => {
 
   it("nada que o Jev executa escreve na mensagem, na conversa ou no contato", () => {
     expect(violacoesDeEscrita(alcanceDoJev)).toEqual([]);
+  });
+
+  it("a cola dos pedidos no worker só LÊ a regra de hoje e os fatos do turno — não passa, não bloqueia, não escreve", () => {
+    expect(violacoesDaCola(textoDaCola)).toEqual([]);
+
+    // Controle positivo: é a cola de verdade, ela importa do agent-engine (o que
+    // a regra 2 pura reprovaria) e a varredura passa pelos módulos que ela chama.
+    expect(textoDaCola).toMatch(/import \{ detectHumanHandoffRequest, isLeadInHandoff \} from "@\/lib\/agent-engine\/agent\/human-handoff"/);
+    expect(textoDaCola).toMatch(/\.from\("contacts"\)\s*\.select\("is_blocked"\)/);
+    expect(importsDaCola(COLA_DOS_PEDIDOS, textoDaCola).semOsLeitores).not.toContain("agent-engine/agent/");
+    const alcance = alcancados([{ arquivo: COLA_DOS_PEDIDOS, texto: importsDaCola(COLA_DOS_PEDIDOS, textoDaCola).semOsLeitores }]);
+    expect(alcance.map((m) => m.arquivo)).toEqual(
+      expect.arrayContaining(["lib/ai/decisao/pedidos.ts", "lib/ai/agents/quem-atende-a-sessao.ts", "lib/opt-out/deteccao.ts"]),
+    );
+  });
+
+  it("a cola reprova o que a faria agir (sabotagem sobre o texto dela)", () => {
+    const comImport = (antes: string, depois: string) => {
+      expect(textoDaCola, "o import que a sabotagem troca mudou — atualize o caso").toContain(antes);
+      return textoDaCola.replace(antes, depois);
+    };
+    const leitores = "import { detectHumanHandoffRequest, isLeadInHandoff }";
+    // Passar a conversa pela mesma porta de onde vêm os leitores: o import deixa
+    // de ser só de leitores, e o módulo inteiro passa a ser seguido — com a
+    // escrita da passagem junto.
+    const passar = violacoesDaCola(comImport(leitores, "import { detectHumanHandoffRequest, isLeadInHandoff, performHumanHandoff }"));
+    expect(passar[0]).toBe(
+      "import além dos leitores: @/lib/agent-engine/agent/human-handoff { detectHumanHandoffRequest, isLeadInHandoff, performHumanHandoff }",
+    );
+    expect(passar).toContain(`${COLA_DOS_PEDIDOS} → lib/agent-engine/agent/human-handoff.ts: SQL cru: update conversations`);
+    // O módulo inteiro, sem nomes: não se sabe o que ela chama.
+    expect(violacoesDaCola(`${textoDaCola}\nimport * as passagem from "@/lib/agent-engine/agent/human-handoff";`)[0]).toBe(
+      "import além dos leitores: @/lib/agent-engine/agent/human-handoff (default ou namespace)",
+    );
+    // Outro remetente, por outro caminho.
+    expect(violacoesDaCola(`${textoDaCola}\nimport { triggerHandoff } from "@/lib/ai/handoff/orchestrator";`).length).toBeGreaterThan(0);
+    // Bloquear o contato, pelo supabase-js e em SQL cru.
+    expect(
+      violacoesDaCola(`${textoDaCola}\nexport async function z(a: any) { await a.from("contacts").update({ is_blocked: true }).eq("id", "x"); }`),
+    ).toEqual([`${COLA_DOS_PEDIDOS}: update em contacts (linha ${textoDaCola.split("\n").length + 1})`]);
+    expect(
+      violacoesDaCola(`${textoDaCola}\nexport async function z(p: any) { await p.query("update public.conversations set bot_silenced_until = 'infinity'"); }`),
+    ).toEqual([`${COLA_DOS_PEDIDOS}: SQL cru: update public.conversations`]);
   });
 });

@@ -615,8 +615,8 @@
       "lane": "motor",
       "col": 7,
       "type": "service",
-      "label": "worker de clima: os pedidos do cliente (lib/ai/decisao/pedidos.ts)",
-      "sublabel": "chamada própria, em paralelo à do clima — só onde a regra de hoje (pedido explícito de pessoa, palavras de passagem do agente, lib/opt-out/deteccao.ts) disse não e o turno do agente rodaria; corte 0,9; em 'Avisar a equipe' abre UM aviso por conversa e pedido; nunca passa a conversa, bloqueia ou cala"
+      "label": "worker de clima: os pedidos do cliente (lib/ai/decisao/pedidos.ts + workers/ai-sentiment-worker.pedidos.ts)",
+      "sublabel": "chamada própria, em paralelo à do clima — só onde a regra de hoje (pedido explícito de pessoa, palavras de passagem de quem pode atender, descadastro pedido ou provável) disse não e o turno do agente rodaria (o portão do dreno, haQuemAtendaASessao); corte 0,9; em 'Avisar a equipe' abre UM aviso por conversa e pedido (índice único), depois de saber o que o clima fez; nunca passa a conversa, bloqueia ou cala"
     }
   ],
   "edges": [
@@ -1376,7 +1376,7 @@
       "id": "e121",
       "from": "sentimento",
       "to": "jevPedidos",
-      "label": "a mesma mensagem, com a regra de hoje rodada e os fatos do turno lidos (agente no ar, elegibilidade, contato bloqueado, grupo)"
+      "label": "a mesma mensagem, com a regra de hoje rodada e os fatos do turno lidos (o portão do dreno para o número, elegibilidade, contato bloqueado ou com uma pessoa em outra conversa, grupo)"
     },
     {
       "id": "e122",
@@ -1406,7 +1406,7 @@
       "id": "e126",
       "from": "atribuir",
       "to": "central",
-      "label": "trg_routing_assignment_changed (0426): uma pessoa assume, ou a conversa é encerrada — o aviso do Jev daquela conversa fecha (o laço de retorno dele)"
+      "label": "trg_fechar_avisos_do_jev_da_conversa (0426): uma pessoa assume, a conversa é passada a uma pessoa por qualquer caminho (last_handoff_at, robô calado) ou encerrada — o aviso do Jev daquela conversa fecha; trg_fechar_aviso_do_jev_ao_bloquear: o contato bloqueado fecha o de parar de receber (o laço de retorno dele)"
     }
   ],
   "cards": [

@@ -9,7 +9,7 @@
  * primeiro — ver o bloco "O Jev primeiro" no meio do arquivo. E, na mesma
  * mensagem, pergunta a ele pelos pedidos do cliente (uma pessoa, parar de
  * receber mensagens) onde a regra de hoje não os pegou — ver "Os pedidos do
- * cliente", logo antes.
+ * cliente", logo antes, e `./ai-sentiment-worker.pedidos.ts`.
  *
  * Design principles (CLAUDE.md):
  * - Service-role admin client bypasses RLS → EVERY query filters `organization_id`
@@ -22,19 +22,16 @@
 import { generateObject, type LanguageModel } from "ai";
 import { z } from "zod";
 
-import { matchesHandoffKeyword, palavrasDePassagem } from "@/lib/agent-engine/agent/agent-config";
-import { detectHumanHandoffRequest } from "@/lib/agent-engine/agent/human-handoff";
 import { costCents } from "@/lib/agent-engine/edge/llm/pricing";
 import { resolverAgenteDaConversa } from "@/lib/ai/agents/agente-da-conversa";
-import { agenteAtende, type FatosDoAgente } from "@/lib/ai/agents/no-ar";
 import { computeCost } from "@/lib/ai/cost";
 import { avisarNaCentral, fecharAvisoDoJev } from "@/lib/ai/decisao/aviso";
 import { MODELO_DO_JEV } from "@/lib/ai/decisao/cliente";
 import { medirClima, type ClimaMedido } from "@/lib/ai/decisao/clima";
-import { lerConfigDoJev, type ConfigDoJev } from "@/lib/ai/decisao/config";
+import { lerConfigDoJev } from "@/lib/ai/decisao/config";
 import { falhasSeguidas } from "@/lib/ai/decisao/disjuntor";
 import { CHAVES_DO_CLIMA, type MotorDoClima } from "@/lib/ai/decisao/metadados-do-clima";
-import { observarPedidos, TAREFAS_DOS_PEDIDOS } from "@/lib/ai/decisao/pedidos";
+import { avisarAEquipe, TAREFAS_DOS_PEDIDOS, type PedidosObservados } from "@/lib/ai/decisao/pedidos";
 import { estadoEfetivoDaTarefa, TAREFA_DO_CLIMA } from "@/lib/ai/decisao/tarefas";
 import { codigoDoErroDoJev } from "@/lib/ai/decisao/textos";
 import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
@@ -44,10 +41,9 @@ import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
 import { logInvocation, type LogInvocationInput } from "@/lib/ai/log-invocation";
 import { DEFAULT_SENTIMENT_THRESHOLD, SENTIMENT_SYSTEM_PROMPT } from "@/lib/ai/prompts/sentiment";
 import type { EventRow } from "@/lib/event-log/dispatcher";
-import { normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
-import { logger } from "@/lib/logger";
-import { ehOptOutProvavel, ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
+import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { perguntarOsPedidosDoCliente } from "@/workers/ai-sentiment-worker.pedidos";
 
 const SENTIMENT_MODEL = DEFAULT_CLASSIFIER_MODEL; // "anthropic/claude-haiku-4-5"
 const CLASSIFY_TIMEOUT_MS = 5_000;
@@ -159,6 +155,9 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     }
 
     // ── Guard: non-empty body ─────────────────────────────────────────────
+    // Os pedidos do cliente também ficam de fora aqui: um pedido por ÁUDIO chega
+    // com o corpo vazio, e a transcrição (que o turno lê) só é gravada depois
+    // (`workers/media-derive-worker.ts`). O Jev não é perguntado sobre ele.
     const body = (message.body ?? "").trim();
     if (!body) {
       return { skipped: true, reason: "empty_body" };
@@ -264,21 +263,26 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     //
     // Numa chamada PRÓPRIA ao Jev, começada aqui e esperada só no fim
     // (`finally`): corre EM PARALELO à do clima, nunca muda o desfecho dele, e o
-    // dreno não segue com ela ainda no ar. Nunca rejeita.
-    const pedidos: Promise<void> = pedidosRodam
-      ? observarOsPedidosDoCliente(admin, {
+    // dreno não segue com ela ainda no ar. Nunca rejeita. O aviso de "Avisar a
+    // equipe" sai no `finally`, depois de se saber o que o clima fez.
+    const pedidos: Promise<PedidosObservados | null> = pedidosRodam
+      ? perguntarOsPedidosDoCliente(admin, {
           organizationId: event.organization_id,
           messageId,
           conversationId: conversa?.id ?? null,
+          sessaoId: (conversa?.channel_session_id as string | null | undefined) ?? null,
           contactId: conversa?.contact_id ?? null,
           grupo: conversa?.is_group === true,
           iaPodeResponder: elegib?.permite === true,
-          agente: agent,
+          agentId: agent?.id ?? null,
           config: configDoJev,
           mensagem: body,
           idioma: normalizarIdioma(daOrg?.locale ?? null),
         })
-      : Promise.resolve();
+      : Promise.resolve(null);
+    // O clima desta mensagem chamou uma pessoa: o pedido de pessoa que o Jev
+    // perceber nela não vira aviso — a conversa já está indo para a equipe.
+    let climaChamouUmaPessoa = false;
     try {
       // O Jev ligado só para os pedidos, sem IA de linguagem: o clima não tem
       // quem o meça.
@@ -527,12 +531,15 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
             message_id: messageId,
             error: emitErr.message,
           });
+        } else {
+          climaChamouUmaPessoa = true;
         }
       }
 
       return { skipped: false, sentiment_score: decisao.score };
     } finally {
-      await pedidos;
+      const observados = await pedidos;
+      if (observados) await avisarAEquipe(admin, observados, { chamouUmaPessoa: climaChamouUmaPessoa });
     }
   } catch (err) {
     // Global catch: NEVER throw — must not break the bot path.
@@ -541,82 +548,6 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
       error: err instanceof Error ? err.message : String(err),
     });
     return { skipped: true, reason: "classify_failed" };
-  }
-}
-
-/**
- * Os pedidos do cliente ao Jev (`lib/ai/decisao/pedidos.ts`), com o que só o
- * worker lê: a REGRA DE HOJE — a mesma do turno do agente (a detecção de pedido
- * explícito de pessoa, as palavras de passagem da versão publicada do agente e
- * `lib/opt-out/deteccao.ts`), chamada daqui porque o módulo do Jev não pode
- * importar o agent-engine — e os fatos do turno. Leitura que falha pesa para
- * NÃO perguntar: sem saber se a regra pegou ou se o contato está bloqueado, o
- * Jev não opina. Nunca rejeita.
- */
-async function observarOsPedidosDoCliente(
-  admin: ReturnType<typeof createAdminClient>,
-  c: {
-    organizationId: string;
-    messageId: string;
-    conversationId: string | null;
-    contactId: string | null;
-    grupo: boolean;
-    iaPodeResponder: boolean;
-    agente: (FatosDoAgente & { id: string; published_version_id?: string | null }) | null;
-    config: ConfigDoJev;
-    mensagem: string;
-    idioma: Idioma;
-  },
-): Promise<void> {
-  try {
-    if (c.conversationId === null || c.agente === null) return;
-    const versaoId = c.agente.published_version_id ?? null;
-    const [contato, versao] = await Promise.all([
-      c.contactId === null
-        ? null
-        : admin
-            .from("contacts")
-            .select("is_blocked")
-            .eq("organization_id", c.organizationId)
-            .eq("id", c.contactId)
-            .maybeSingle(),
-      versaoId === null
-        ? null
-        : admin
-            .from("ai_agent_versions")
-            .select("handoff_keywords")
-            .eq("organization_id", c.organizationId)
-            .eq("id", versaoId)
-            .maybeSingle(),
-    ]);
-    const palavras =
-      versao === null ? [] : versao.error || !versao.data ? null : palavrasDePassagem(versao.data.handoff_keywords);
-    await observarPedidos(admin, {
-      organizationId: c.organizationId,
-      conversationId: c.conversationId,
-      messageId: c.messageId,
-      contactId: c.contactId,
-      agentId: c.agente.id,
-      mensagem: c.mensagem,
-      idioma: c.idioma,
-      config: c.config,
-      regraPegou: {
-        humano:
-          detectHumanHandoffRequest(c.mensagem) || palavras === null || matchesHandoffKeyword(c.mensagem, palavras),
-        opt_out: ehPedidoDeOptOut(c.mensagem) || ehOptOutProvavel(c.mensagem),
-      },
-      turno: {
-        agenteAtende: agenteAtende(c.agente),
-        iaPodeResponder: c.iaPodeResponder,
-        contatoBloqueado: contato === null || contato.error !== null || contato.data?.is_blocked !== false,
-        grupo: c.grupo,
-      },
-    });
-  } catch (erro) {
-    logger.warn("[ai-sentiment-worker] os pedidos do cliente não foram perguntados ao Jev", {
-      organization_id: c.organizationId,
-      erro: erro instanceof Error ? erro.name : typeof erro,
-    });
   }
 }
 

@@ -15,14 +15,14 @@
  * a pergunta do pedido que a regra já pegou nem sai. Por isso o rótulo de hoje
  * gravado ao lado do dele é sempre `nao`, e o cartão não mostra concordância —
  * mostra quantos pedidos ele percebeu que a regra deixou passar. Quem roda a
- * regra é quem chama (`workers/ai-sentiment-worker.ts`): a de pessoa mora no
- * agent-engine, e o que este módulo executa não pode importar de lá
+ * regra é quem chama (`workers/ai-sentiment-worker.pedidos.ts`): a de pessoa
+ * mora no agent-engine, e o que este módulo executa não pode importar de lá
  * (`tests/unit/jev-nunca-cala-bloqueia-nem-responde.test.ts`).
  *
  * ═══ SÓ ONDE O TURNO RODARIA ═══
  *
- * Perguntar numa conversa em que o agente nem responderia (sem agente no ar,
- * com uma pessoa no comando, contato bloqueado, grupo) contaria "pedidos
+ * Perguntar numa conversa em que o agente nem responderia (ninguém atende o
+ * número, uma pessoa no comando, contato bloqueado, grupo) contaria "pedidos
  * percebidos" que ninguém deixou passar — a regra de hoje nem é consultada lá.
  * É `turnoRodaria`, com os fatos lidos por quem chama.
  *
@@ -41,9 +41,11 @@
  * conversa e pedido (`avisarAEquipe`), com o botão "Abrir a conversa" — e é
  * tudo o que muda. O aviso não repete o que o cliente escreveu: a Central é
  * lida pela organização inteira, e a conversa só por quem a enxerga; a frase
- * fica na conversa, onde o botão leva quem pode lê-la. Ele fecha quando uma
- * pessoa assume a conversa ou a encerra (o gatilho de atribuição, migration
- * 0426), ou no "Marcar resolvido".
+ * fica na conversa, onde o botão leva quem pode lê-la. Ele fecha sozinho
+ * (gatilhos da migration 0426) quando a conversa é passada a uma pessoa por
+ * qualquer caminho — alguém assume, a passagem da regra, do clima ou do
+ * próprio modelo, ou ela é encerrada —, o de parar de receber também quando o
+ * contato é bloqueado; ou no "Marcar resolvido".
  *
  * ═══ O QUE ELE NUNCA FAZ ═══
  *
@@ -115,19 +117,24 @@ const PERGUNTAS: Record<IdDoPedido, Pergunta> = {
  * O aviso de cada pedido na Central, em "Avisar a equipe". O texto é de quem
  * decide o que fazer, e não repete o que o cliente escreveu (ver o cabeçalho).
  * Gravado no idioma da organização: a Central mostra título e corpo como vieram.
+ *
+ * O corpo só afirma o que segue verdade enquanto o aviso fica aberto: ele não
+ * diz com quem a conversa está, nem que nada foi bloqueado, nem "na última
+ * mensagem" — depois de aberto, uma pessoa pode assumir, a regra pode pegar a
+ * mensagem seguinte e outras mensagens chegam.
  */
 export const AVISOS_DOS_PEDIDOS = {
   humano: {
     kind: "jev_pedido_de_humano",
     titulo: "Um cliente parece pedir para falar com uma pessoa",
     corpo:
-      "O Jev percebeu o pedido na última mensagem do cliente, e a regra de hoje não o pegou: a conversa segue com o assistente. Abra a conversa e decida se alguém da equipe assume — o Jev não passa a conversa sozinho.",
+      "O Jev percebeu, numa mensagem do cliente, um pedido para falar com uma pessoa que a regra de hoje não reconheceu. Abra a conversa e confira se alguém da equipe já assumiu — o Jev não passa a conversa sozinho.",
   },
   opt_out: {
     kind: "jev_parar_de_receber",
     titulo: "Um cliente parece pedir para parar de receber mensagens",
     corpo:
-      "O Jev percebeu o pedido na última mensagem do cliente, e a regra de hoje não o pegou: nada foi bloqueado. Abra a conversa e decida se o contato deve deixar de receber mensagens — o Jev nunca bloqueia ninguém.",
+      "O Jev percebeu, numa mensagem do cliente, um pedido para parar de receber mensagens que a regra de hoje não reconheceu. Abra a conversa e decida se o contato deve deixar de receber mensagens — o Jev nunca bloqueia ninguém.",
   },
 } as const satisfies Record<IdDoPedido, { kind: InboxKind; titulo: string; corpo: string }>;
 
@@ -136,23 +143,33 @@ export type RegraPegou = Readonly<Record<IdDoPedido, boolean>>;
 
 /** O que o turno do agente olha antes de responder — lido por quem chama. */
 export interface FatosDoTurno {
-  /** Um agente NO AR atende a conversa (`agenteAtende`, `lib/ai/agents/no-ar.ts`). */
-  agenteAtende: boolean;
   /**
-   * A elegibilidade do turno deixa a IA responder (`decidirElegibilidade`,
-   * `lib/ai/elegibilidade/gate.ts`): sem pessoa no comando, sem silêncio, sem a
-   * trava da lista do canal.
+   * O número da conversa tem quem a atenda: o MESMO portão do dreno do
+   * agent-engine (`haQuemAtendaASessao`, `lib/ai/agents/quem-atende-a-sessao.ts`).
+   * Onde ele diz não, o dreno pula o turno — e a regra de hoje nem roda.
+   */
+  sessaoTemQuemAtenda: boolean;
+  /**
+   * A elegibilidade do turno deixa a IA responder nesta conversa
+   * (`decidirElegibilidade`, `lib/ai/elegibilidade/gate.ts`): sem pessoa no
+   * comando, sem silêncio, sem a trava da lista do canal.
    */
   iaPodeResponder: boolean;
   /** O contato já foi bloqueado pela regra de descadastro (ou por uma pessoa). */
   contatoBloqueado: boolean;
+  /**
+   * O contato foi passado a uma pessoa, ou QUALQUER conversa dele está com o
+   * robô calado (`isLeadInHandoff`): o turno vira no-op, e a elegibilidade
+   * desta conversa não vê a outra.
+   */
+  contatoComUmaPessoa: boolean;
   /** Conversa de grupo: o agente nunca atende grupo. */
   grupo: boolean;
 }
 
 /** Só onde o turno do agente rodaria o Jev é perguntado — ver o cabeçalho. */
 export function turnoRodaria(f: FatosDoTurno): boolean {
-  return f.agenteAtende && f.iaPodeResponder && !f.contatoBloqueado && !f.grupo;
+  return f.sessaoTemQuemAtenda && f.iaPodeResponder && !f.contatoBloqueado && !f.contatoComUmaPessoa && !f.grupo;
 }
 
 export interface PedidoAPerguntar {
@@ -207,23 +224,37 @@ export interface PedidoRespondido {
   rotulo: "sim" | "nao";
 }
 
+/** O que uma mensagem rendeu — a entrada de `avisarAEquipe`. */
+export interface PedidosObservados {
+  entrada: EntradaDosPedidos;
+  /** Vazio quando nada foi perguntado ou ele não respondeu. */
+  respondidos: PedidoRespondido[];
+  /**
+   * A observação desta mensagem foi gravada AGORA. Falso no retry do dreno
+   * sobre a mesma mensagem (23505): a primeira execução já decidiu o aviso, e
+   * uma segunda reabriria o que alguém acabou de resolver.
+   */
+  nova: boolean;
+}
+
 /**
- * Pergunta e grava. Devolve o que ele respondeu — vazio quando nada foi
- * perguntado (fora do turno, regra já pegou, tarefas pausadas) ou quando ele
- * não respondeu. Nunca lança.
+ * Pergunta e grava. O aviso de "Avisar a equipe" é o passo seguinte
+ * (`avisarAEquipe`), que quem chama dá depois de saber o que o clima da mesma
+ * mensagem fez. Nunca lança.
  */
 export async function observarPedidos(
   admin: Admin,
   e: EntradaDosPedidos,
   deps: DependenciasDoPonto = {},
-): Promise<PedidoRespondido[]> {
+): Promise<PedidosObservados> {
+  const nada: PedidosObservados = { entrada: e, respondidos: [], nova: false };
   try {
-    if (e.mensagem.trim() === "" || !turnoRodaria(e.turno)) return [];
+    if (e.mensagem.trim() === "" || !turnoRodaria(e.turno)) return nada;
     const aPerguntar = pedidosAPerguntar(e.config, e.regraPegou);
-    if (aPerguntar.length === 0) return [];
+    if (aPerguntar.length === 0) return nada;
 
     const alvo = { organizationId: e.organizationId, tarefa: PEDIDOS_DO_CLIENTE.purpose };
-    if (!podeTentar(alvo)) return [];
+    if (!podeTentar(alvo)) return nada;
 
     const perguntas: { [id in IdDoPedido]?: Pergunta } = {};
     for (const p of aPerguntar) perguntas[p.id] = p.pergunta;
@@ -240,7 +271,7 @@ export async function observarPedidos(
         });
       }
       if (r.exigeAcao) await gravarFalhaQuePedeAcao(admin, e, r);
-      return [];
+      return nada;
     }
 
     const respondidos = aPerguntar.flatMap(({ id, estado }) => {
@@ -255,15 +286,14 @@ export async function observarPedidos(
     } else {
       registrarSucesso(alvo);
     }
-    await gravar(admin, e, respondidos, r);
-    await avisarAEquipe(admin, e, respondidos);
-    return respondidos;
+    const nova = await gravar(admin, e, respondidos, r);
+    return { entrada: e, respondidos, nova };
   } catch (erro) {
     logger.warn("Jev não pôde ser perguntado sobre os pedidos do cliente", {
       organization_id: e.organizationId,
       erro: erro instanceof Error ? erro.name : typeof erro,
     });
-    return [];
+    return nada;
   }
 }
 
@@ -271,14 +301,16 @@ export async function observarPedidos(
  * Uma linha por pergunta em `jev_observacoes` (sem texto) e uma por chamada em
  * `llm_calls` (o custo, em Execuções). Pelo cliente admin, a pilha do worker:
  * são duas escritas, e não um comando só como no `pg.Pool` do turno — a de
- * custo sai mesmo quando a outra falha, porque a chamada custou.
+ * custo sai mesmo quando a outra falha, porque a chamada custou. Devolve se a
+ * observação entrou agora (ver `PedidosObservados.nova`).
  */
 async function gravar(
   admin: Admin,
   e: EntradaDosPedidos,
   respondidos: readonly PedidoRespondido[],
   r: { modelo: string; latenciaMs: number; uso: { tokensDeEntrada: number; tokensDeSaida: number } },
-): Promise<void> {
+): Promise<boolean> {
+  let nova = false;
   if (respondidos.length > 0) {
     const { error } = await admin.from("jev_observacoes").insert(
       respondidos.map((p) => ({
@@ -296,6 +328,7 @@ async function gravar(
     );
     // 23505: o retry do dreno perguntou de novo sobre a MESMA mensagem. A
     // primeira resposta fica; o custo da segunda entra abaixo, porque houve.
+    nova = error === null;
     if (error && error.code !== "23505") {
       logger.warn("resposta do Jev sobre os pedidos do cliente não foi gravada", {
         organization_id: e.organizationId,
@@ -332,51 +365,74 @@ async function gravar(
       erro: custoErr.message.slice(0, 200),
     });
   }
+  return nova;
+}
+
+/** O que o clima da MESMA mensagem fez, dito por quem mediu (o worker). */
+export interface OClimaDaMensagem {
+  /** Emitiu o alerta que passa a conversa a uma pessoa (`ai.sentiment_alert`). */
+  chamouUmaPessoa: boolean;
 }
 
 /**
  * "Avisar a equipe": cada pedido percebido (passou do corte) numa tarefa em
- * `decidindo` abre UM aviso na Central — um aberto por conversa e pedido.
+ * `decidindo` abre UM aviso na Central por conversa e pedido. Nunca lança.
  *
- * ponytail: busca e escrita em duas idas, sem trava — a corrida que `./aviso.ts`
- * e `insertInboxItem` declaram: dois drains na mesma conversa no mesmo instante
- * podem abrir dois avisos iguais. Um índice único parcial fecharia isso e
- * quebraria o "Reabrir" de um aviso resolvido com outro aberto.
+ * Não avisa:
+ *  - no retry do dreno sobre a mesma mensagem (`nova` falso): a primeira
+ *    execução já decidiu, e reabrir o que alguém resolveu seria ruído;
+ *  - o pedido de pessoa, quando o clima da mesma mensagem já chamou uma pessoa:
+ *    a conversa está indo para a equipe por outro caminho, e o aviso diria o
+ *    que a Central já diz. A observação fica gravada do mesmo jeito.
+ *
+ * Um aviso por conversa e pedido é do BANCO: o índice único da 0426 em
+ * (organização, kind, conversa), sem status. A escrita é um insert, e o 23505
+ * dele quer dizer "este aviso já existe" — o pedido novo o reabre, como o
+ * `routing_unassigned` faz (em SQL, pelo `on conflict` que o PostgREST não
+ * sabe apontar para um índice parcial).
  */
-async function avisarAEquipe(admin: Admin, e: EntradaDosPedidos, respondidos: readonly PedidoRespondido[]): Promise<void> {
-  for (const p of respondidos) {
+export async function avisarAEquipe(admin: Admin, o: PedidosObservados, clima: OClimaDaMensagem): Promise<void> {
+  if (!o.nova) return;
+  const e = o.entrada;
+  for (const p of o.respondidos) {
     if (p.estado !== "decidindo" || p.rotulo !== "sim") continue;
+    if (p.id === "humano" && clima.chamouUmaPessoa) continue;
     const aviso = AVISOS_DOS_PEDIDOS[p.id];
-    const { data: abertos, error: erroDaBusca } = await admin
-      .from("agent_inbox_items")
-      .select("id")
-      .eq("organization_id", e.organizationId)
-      .eq("kind", aviso.kind)
-      .eq("ref_kind", "conversation")
-      .eq("ref_id", e.conversationId)
-      .eq("status", "open")
-      .limit(1);
-    if (erroDaBusca) {
-      logger.warn("busca do aviso do pedido do cliente falhou — aviso não aberto", {
+    const texto = { title: traduzir(aviso.titulo, e.idioma), body: traduzir(aviso.corpo, e.idioma) };
+    try {
+      const { error } = await admin.from("agent_inbox_items").insert({
         organization_id: e.organizationId,
-        erro: erroDaBusca.message.slice(0, 200),
+        kind: aviso.kind,
+        severity: "warn",
+        ...texto,
+        ref_kind: "conversation",
+        ref_id: e.conversationId,
       });
-      continue;
-    }
-    if ((abertos ?? []).length > 0) continue;
-    const { error } = await admin.from("agent_inbox_items").insert({
-      organization_id: e.organizationId,
-      kind: aviso.kind,
-      severity: "warn",
-      title: traduzir(aviso.titulo, e.idioma),
-      body: traduzir(aviso.corpo, e.idioma),
-      ref_kind: "conversation",
-      ref_id: e.conversationId,
-    });
-    if (error) {
-      logger.warn("aviso do pedido do cliente na Central não foi gravado", {
+      if (error === null) continue;
+      if (error.code !== "23505") {
+        logger.warn("aviso do pedido do cliente na Central não foi gravado", {
+          organization_id: e.organizationId,
+          erro: error.message.slice(0, 200),
+        });
+        continue;
+      }
+      const { error: erroAoReabrir } = await admin
+        .from("agent_inbox_items")
+        .update({ status: "open", resolved_at: null, ...texto })
+        .eq("organization_id", e.organizationId)
+        .eq("kind", aviso.kind)
+        .eq("ref_kind", "conversation")
+        .eq("ref_id", e.conversationId);
+      if (erroAoReabrir) {
+        logger.warn("aviso do pedido do cliente na Central não foi reaberto", {
+          organization_id: e.organizationId,
+          erro: erroAoReabrir.message.slice(0, 200),
+        });
+      }
+    } catch (erro) {
+      logger.warn("aviso do pedido do cliente na Central falhou", {
         organization_id: e.organizationId,
-        erro: error.message.slice(0, 200),
+        erro: erro instanceof Error ? erro.name : typeof erro,
       });
     }
   }

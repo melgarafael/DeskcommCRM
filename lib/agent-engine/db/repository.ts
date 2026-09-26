@@ -86,8 +86,9 @@ export type InboxKind =
   // (migration 0426) O Jev percebeu, onde a regra de hoje não viu nada, um
   // pedido para falar com uma pessoa ou para parar de receber mensagens, e a
   // empresa escolheu "Avisar a equipe" (`lib/ai/decisao/pedidos.ts`). Um por
-  // conversa e pedido, com `ref_kind='conversation'`; fecha quando uma pessoa
-  // assume a conversa (o gatilho de atribuição). O Jev só avisa.
+  // conversa e pedido (índice único), com `ref_kind='conversation'`; fecha
+  // quando a conversa é passada a uma pessoa ou encerrada, e o de parar de
+  // receber também quando o contato é bloqueado (gatilhos da 0426). O Jev só avisa.
   | 'jev_pedido_de_humano'
   | 'jev_parar_de_receber'
   | 'other';

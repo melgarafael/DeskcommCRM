@@ -35,6 +35,10 @@ vi.mock("@/lib/env", () => ({
   },
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
+// O Postgres direto, que a cola dos pedidos usa para as MESMAS perguntas do
+// dreno e do turno (há quem atenda o número, a pessoa com o contato, as
+// palavras de passagem): de brinquedo, lido do mesmo banco (`fazerPool`).
+vi.mock("@/lib/agent-engine/db/request-pool", () => ({ getRequestPool: vi.fn() }));
 vi.mock("@/lib/ai/cost", () => ({ computeCost: vi.fn(async () => 1) }));
 vi.mock("ai", () => ({ generateObject: vi.fn() }));
 // A chave "cifrada" do banco de brinquedo é o próprio texto: o que se prova
@@ -46,6 +50,7 @@ vi.mock("@/lib/crypto/aes_gcm", () => ({
 
 import { generateObject } from "ai";
 
+import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { registrarFalha } from "@/lib/ai/decisao/disjuntor";
 import { AVISOS_DOS_PEDIDOS } from "@/lib/ai/decisao/pedidos";
 import { AVISO_DO_JEV, O_QUE_FAZER_DO_JEV } from "@/lib/ai/decisao/textos";
@@ -99,6 +104,21 @@ interface Consulta {
 /** Os `default` do schema que os casos leem de volta (`agent_inbox_items.status`). */
 const PADROES_DO_SCHEMA: Record<string, Linha> = { agent_inbox_items: { status: "open" } };
 
+/**
+ * Os índices únicos que os pedidos do cliente dizem respeitar: uma observação
+ * por tarefa e mensagem (0421) e um aviso do Jev por kind e conversa (0426).
+ * O insert que os viola volta 23505, como no banco.
+ */
+const UNICOS: Record<string, (a: Linha, b: Linha) => boolean> = {
+  jev_observacoes: (a, b) =>
+    a.organization_id === b.organization_id && a.tarefa === b.tarefa && a.message_id === b.message_id,
+  agent_inbox_items: (a, b) =>
+    String(a.kind).startsWith("jev_") &&
+    a.organization_id === b.organization_id &&
+    a.kind === b.kind &&
+    a.ref_id === b.ref_id,
+};
+
 function fazerAdmin(banco: Banco, rpcs: Linha[]) {
   const from = (tabela: string): Consulta => {
     const filtros: Array<(l: Linha) => boolean> = [];
@@ -120,6 +140,10 @@ function fazerAdmin(banco: Banco, rpcs: Linha[]) {
     };
     const executar = () => {
       if (modo === "insert") {
+        const unico = UNICOS[tabela];
+        if (unico && novas.some((n) => tabelaViva().some((l) => unico(l, n)))) {
+          return { data: null, error: { code: "23505", message: "duplicate key value violates unique constraint" } };
+        }
         tabelaViva().push(...novas);
         return { data: null, error: null };
       }
@@ -226,12 +250,72 @@ async function drenar(): Promise<void> {
   for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
 }
 
+/**
+ * O Postgres do dreno e do turno, de brinquedo: as três consultas que a cola
+ * dos pedidos faz por ele, respondidas a partir do mesmo `banco`. O SQL de
+ * verdade é provado contra um Postgres em
+ * `tests/invariants/jev-pergunta-so-onde-o-dreno-atende.test.ts`.
+ */
+function fazerPool(banco: Banco) {
+  const de = (t: string) => (banco[t] ?? []).filter((l) => l.organization_id === ORG);
+  /** O agente EXECUTA: não arquivado, com a versão apontada publicada — a pausa limpa o ponteiro. */
+  const versaoQueExecuta = (agenteId: unknown): Linha | null => {
+    const a = de("ai_agents").find((x) => x.id === agenteId && (x.archived_at ?? null) === null);
+    return (a && de("ai_agent_versions").find((v) => v.id === a.published_version_id && v.status === "published")) ?? null;
+  };
+  const roteadoresAtivos = (sessao: unknown) => de("ai_routers").filter((r) => r.is_active === true && r.channel_session_id === sessao);
+  const doRoteador = (sessao: unknown) =>
+    roteadoresAtivos(sessao).flatMap((r) => [
+      r.fallback_agent_id,
+      ...(banco.ai_router_members ?? []).filter((m) => m.router_id === r.id).map((m) => m.agent_id),
+    ]);
+  const naSessao = (sessao: unknown) => de("ai_agents").filter((a) => versaoQueExecuta(a.id)?.channel_session_id === sessao).map((a) => a.id);
+  return {
+    query: async (sql: string, params: unknown[]) => {
+      if (sql.includes("tem_agente")) {
+        const [, sessao] = params;
+        return {
+          rows: [
+            {
+              tem_agente: naSessao(sessao).length > 0,
+              tem_roteador: doRoteador(sessao).some((id) => versaoQueExecuta(id) !== null),
+            },
+          ],
+        };
+      }
+      if (sql.includes("handoff_keywords")) {
+        const [, sessao, conversa] = params;
+        const daCampanha = de("campaign_recipients")
+          .filter((r) => r.conversation_id === conversa)
+          .map((r) => (banco.campaigns ?? []).find((c) => c.id === r.campaign_id)?.agent_id);
+        const candidatos = new Set([...naSessao(sessao), ...doRoteador(sessao), ...daCampanha]);
+        return {
+          rows: [...candidatos].flatMap((id) => {
+            const v = versaoQueExecuta(id);
+            return v ? [{ handoff_keywords: (v.handoff_keywords as string[] | undefined) ?? [] }] : [];
+          }),
+        };
+      }
+      if (sql.includes("force_human")) {
+        const [, contato] = params;
+        const c = de("contacts").find((x) => x.id === contato);
+        const calada = de("conversations").some(
+          (v) => v.contact_id === contato && typeof v.bot_silenced_until === "string" && Date.parse(v.bot_silenced_until) > Date.now(),
+        );
+        return { rows: c ? [{ handoff: c.force_human === true || calada }] : [] };
+      }
+      throw new Error(`consulta inesperada ao Postgres: ${sql.slice(0, 80)}`);
+    },
+  };
+}
+
 /** `banco` entra por fora quando o caso roda o worker duas vezes no mesmo mundo. */
 async function rodar(c: Cenario, banco: Banco = montarBanco(c)) {
   const rpcs: Linha[] = [];
   vi.mocked(createAdminClient).mockReturnValue(
     fazerAdmin(banco, rpcs) as unknown as ReturnType<typeof createAdminClient>,
   );
+  vi.mocked(getRequestPool).mockReturnValue(fazerPool(banco) as unknown as ReturnType<typeof getRequestPool>);
   const resultado = await processSentiment(evento());
   await drenar();
   return { resultado, banco, rpcs };
@@ -814,12 +898,36 @@ describe("o Jev por tarefa no worker de clima", () => {
 const AGENTE = "88888888-8888-4888-8888-888888888888";
 const VERSAO = "99999999-9999-4999-8999-999999999999";
 const CONTATO = "abababab-abab-4bab-8bab-abababababab";
+/** O número da conversa, e outro número da mesma empresa. */
+const SESSAO = "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd";
+const OUTRO_NUMERO = "efefefef-efef-4fef-8fef-efefefefefef";
 const FRASE_NATURAL = "quero falar com alguém de verdade aí, não com robô";
 
-/** O mundo em que o turno do agente rodaria: um agente no ar, o contato livre. */
+/** Um agente (e a versão dele) — publicado no número da conversa, salvo quando dito. */
+function agente(id: string, versao: string, over: { sessao?: string; palavras?: string[] } & Linha = {}): [Linha, Linha] {
+  const { sessao = SESSAO, palavras = [], ...doAgente } = over;
+  return [
+    {
+      id,
+      organization_id: ORG,
+      kind: "mcp_agent",
+      is_active: true,
+      paused_at: null,
+      published_version_id: versao,
+      archived_at: null,
+      priority: 0,
+      created_at: "2026-09-01T00:00:00.000Z",
+      config: {},
+      ...doAgente,
+    },
+    { id: versao, organization_id: ORG, status: "published", channel_session_id: sessao, handoff_keywords: palavras },
+  ];
+}
+
+/** O mundo em que o turno do agente rodaria: um agente publicado no número da conversa, o contato livre. */
 function comAgenteNoAr(
   c: Cenario,
-  over: { corpo?: string; palavras?: string[]; contato?: Linha; conversa?: Linha; agente?: Linha } = {},
+  over: { corpo?: string; palavras?: string[]; contato?: Linha; conversa?: Linha; agente?: Linha; sessaoDoAgente?: string } = {},
 ): Banco {
   const banco = montarBanco(c);
   banco.messages[0]!.body = over.corpo ?? FRASE_NATURAL;
@@ -827,7 +935,7 @@ function comAgenteNoAr(
     {
       id: CONV,
       organization_id: ORG,
-      channel_session_id: null,
+      channel_session_id: SESSAO,
       active_ai_agent_id: null,
       contact_id: CONTATO,
       is_group: false,
@@ -835,22 +943,9 @@ function comAgenteNoAr(
     },
   ];
   banco.contacts = [{ id: CONTATO, organization_id: ORG, is_blocked: false, ...over.contato }];
-  banco.ai_agents = [
-    {
-      id: AGENTE,
-      organization_id: ORG,
-      kind: "mcp_agent",
-      is_active: true,
-      paused_at: null,
-      published_version_id: VERSAO,
-      archived_at: null,
-      priority: 0,
-      created_at: "2026-09-01T00:00:00.000Z",
-      config: {},
-      ...over.agente,
-    },
-  ];
-  banco.ai_agent_versions = [{ id: VERSAO, organization_id: ORG, status: "published", handoff_keywords: over.palavras ?? [] }];
+  const [a, v] = agente(AGENTE, VERSAO, { sessao: over.sessaoDoAgente, palavras: over.palavras, ...over.agente });
+  banco.ai_agents = [a];
+  banco.ai_agent_versions = [v];
   return banco;
 }
 
@@ -875,6 +970,19 @@ function respostaPorPergunta(noul: Record<string, number>, nivel = 3) {
 const perguntasDosPedidos = () =>
   chamadasAoJev.filter((c) => !("clima" in (c.corpo.questions ?? {}))).map((c) => Object.keys(c.corpo.questions ?? {}));
 const doClima = () => chamadasAoJev.filter((c) => "clima" in (c.corpo.questions ?? {}));
+
+/** O Jev ligado com as tarefas dos pedidos neste estado. */
+function comPedidos(tarefas: Record<string, string>, modo: "observacao" | "decide" = "decide"): Cenario {
+  const c = jevLigado(modo);
+  const jev = (c.settings as { jev: Linha }).jev;
+  return {
+    ...c,
+    settings: {
+      ...c.settings,
+      jev: { ...jev, tarefas: Object.fromEntries(Object.entries(tarefas).map(([id, estado]) => [id, { estado }])) },
+    },
+  };
+}
 
 describe("os pedidos do cliente no worker de clima", () => {
   beforeEach(() => {
@@ -924,11 +1032,19 @@ describe("os pedidos do cliente no worker de clima", () => {
     expect(banco.conversations![0]).not.toHaveProperty("bot_silenced_until");
   });
 
-  it("a regra de descadastro pegou ('me deixa em paz'): a pergunta de parar de receber NÃO sai", async () => {
+  it("a regra de descadastro pegou ('me deixa em paz'): nenhuma das duas sai — no turno, ela também passa a conversa", async () => {
     fornecedor(respostaPorPergunta({}));
     const cenario = jevLigado("decide");
     await rodar(cenario, comAgenteNoAr(cenario, { corpo: "me deixa em paz" }));
-    expect(perguntasDosPedidos()).toEqual([["humano"]]);
+    expect(perguntasDosPedidos()).toEqual([]);
+    expect(doClima(), "o clima segue medindo (controle)").toHaveLength(1);
+  });
+
+  it("a regra de pessoa pegou ('quero falar com um atendente'): só a de parar de receber sai", async () => {
+    fornecedor(respostaPorPergunta({}));
+    const cenario = jevLigado("decide");
+    await rodar(cenario, comAgenteNoAr(cenario, { corpo: "quero falar com um atendente" }));
+    expect(perguntasDosPedidos()).toEqual([["opt_out"]]);
   });
 
   it("a palavra de passagem do agente (como o turno a lê) pegou: a pergunta de pessoa NÃO sai", async () => {
@@ -936,6 +1052,35 @@ describe("os pedidos do cliente no worker de clima", () => {
     const cenario = jevLigado("decide");
     // Maiúscula e espaço, como a tela deixa gravar: o turno normaliza, e o worker também.
     await rodar(cenario, comAgenteNoAr(cenario, { corpo: "chama o gerente por favor", palavras: [" Gerente "] }));
+    expect(perguntasDosPedidos()).toEqual([["opt_out"]]);
+  });
+
+  /**
+   * O turno pode atender com outro agente que não o do número: um membro ou o
+   * fallback do roteador, ou o agente da campanha que criou a conversa. A
+   * palavra de passagem de QUALQUER um deles conta como a regra de hoje.
+   */
+  it.each([
+    ["do membro do roteador do número", "gerente", "chama o gerente por favor"],
+    ["do agente da campanha que criou a conversa", "dono", "quero falar com o dono"],
+  ])("a palavra de passagem %s pegou: a pergunta de pessoa NÃO sai", async (quem, palavra, corpo) => {
+    fornecedor(respostaPorPergunta({}));
+    const cenario = jevLigado("decide");
+    const banco = comAgenteNoAr(cenario, { corpo });
+    const [outro, versaoDoOutro] = agente("12121212-1212-4212-8212-121212121212", "13131313-1313-4313-8313-131313131313", {
+      sessao: OUTRO_NUMERO,
+      palavras: [palavra],
+    });
+    banco.ai_agents!.push(outro);
+    banco.ai_agent_versions!.push(versaoDoOutro);
+    if (quem.includes("roteador")) {
+      banco.ai_routers = [{ id: "r-1", organization_id: ORG, is_active: true, channel_session_id: SESSAO, fallback_agent_id: null }];
+      banco.ai_router_members = [{ router_id: "r-1", organization_id: ORG, agent_id: outro.id }];
+    } else {
+      banco.campaigns = [{ id: "camp-1", organization_id: ORG, agent_id: outro.id }];
+      banco.campaign_recipients = [{ organization_id: ORG, campaign_id: "camp-1", conversation_id: CONV }];
+    }
+    await rodar(cenario, banco);
     expect(perguntasDosPedidos()).toEqual([["opt_out"]]);
   });
 
@@ -953,7 +1098,14 @@ describe("os pedidos do cliente no worker de clima", () => {
     ["conversa silenciada", { conversa: { bot_silenced_until: "2999-01-01T00:00:00.000Z" } }],
     ["contato passado para uma pessoa", { conversa: { contacts: { force_human: true } } }],
     ["conversa de grupo", { conversa: { is_group: true } }],
-    ["agente pausado", { agente: { paused_at: "2026-09-20T00:00:00.000Z" } }],
+    // A pausa limpa o ponteiro da versão publicada (é o que o dreno mede).
+    ["agente pausado", { agente: { paused_at: "2026-09-20T00:00:00.000Z", published_version_id: null } }],
+    ["agente arquivado", { agente: { archived_at: "2026-09-20T00:00:00.000Z" } }],
+    // O achado da revisão: o agente ÚNICO da empresa, publicado em OUTRO número.
+    // O resolvedor do worker o elege (`unico_da_organizacao`), e o dreno pula o
+    // turno nesta conversa — a regra de hoje nem roda aqui.
+    ["o único agente publicado em OUTRO número", { sessaoDoAgente: OUTRO_NUMERO }],
+    ["conversa sem número", { conversa: { channel_session_id: null } }],
   ])("%s: o turno não rodaria, e os pedidos não são perguntados", async (_caso, over) => {
     fornecedor(respostaPorPergunta({ humano: 0.99 }));
     const cenario = jevLigado("decide");
@@ -961,6 +1113,41 @@ describe("os pedidos do cliente no worker de clima", () => {
     expect(perguntasDosPedidos()).toEqual([]);
     expect(doClima(), "o clima segue medindo (controle)").toHaveLength(1);
     expect(banco.jev_observacoes ?? []).toEqual([]);
+  });
+
+  /**
+   * O turno vira no-op quando QUALQUER conversa do contato está com o robô
+   * calado (`isLeadInHandoff`): a elegibilidade desta conversa não vê a outra.
+   */
+  it("outra conversa do MESMO contato está com uma pessoa (robô calado): os pedidos não são perguntados", async () => {
+    fornecedor(respostaPorPergunta({ humano: 0.99 }));
+    const cenario = jevLigado("decide");
+    const banco = comAgenteNoAr(cenario);
+    banco.conversations!.push({
+      id: "44444444-0000-4000-8000-000000000044",
+      organization_id: ORG,
+      channel_session_id: OUTRO_NUMERO,
+      contact_id: CONTATO,
+      bot_silenced_until: "2999-01-01T00:00:00.000Z",
+    });
+    await rodar(cenario, banco);
+    expect(perguntasDosPedidos()).toEqual([]);
+    expect(doClima(), "o clima segue medindo (controle)").toHaveLength(1);
+  });
+
+  it("roteador no número, com o membro publicado em outro número e sem agente resolvido: os pedidos SÃO perguntados", async () => {
+    fornecedor(respostaPorPergunta({ humano: 0.97 }));
+    const cenario = jevLigado("decide");
+    const banco = comAgenteNoAr(cenario, { sessaoDoAgente: OUTRO_NUMERO });
+    const [outro, versaoDoOutro] = agente("14141414-1414-4414-8414-141414141414", "15151515-1515-4515-8515-151515151515", {
+      sessao: OUTRO_NUMERO,
+    });
+    banco.ai_agents!.push(outro);
+    banco.ai_agent_versions!.push(versaoDoOutro);
+    banco.ai_routers = [{ id: "r-2", organization_id: ORG, is_active: true, channel_session_id: SESSAO, fallback_agent_id: null }];
+    banco.ai_router_members = [{ router_id: "r-2", organization_id: ORG, agent_id: AGENTE }];
+    await rodar(cenario, banco);
+    expect(perguntasDosPedidos()).toEqual([["humano", "opt_out"]]);
   });
 
   it("clima pausado e sem IA de sempre: os pedidos são perguntados, e o worker responde o de antes", async () => {
@@ -1010,6 +1197,7 @@ describe("os pedidos do cliente no worker de clima", () => {
     vi.mocked(createAdminClient).mockReturnValue(
       fazerAdmin(banco, []) as unknown as ReturnType<typeof createAdminClient>,
     );
+    vi.mocked(getRequestPool).mockReturnValue(fazerPool(banco) as unknown as ReturnType<typeof getRequestPool>);
     const resultado = await processSentiment(evento());
     expect(resultado).toEqual({ skipped: false, sentiment_score: 0 });
     expect(banco.jev_observacoes?.map((l) => l.tarefa)).toEqual(["humano", "opt_out"]);
@@ -1023,12 +1211,12 @@ describe("os pedidos do cliente no worker de clima", () => {
   it.each(["pt-BR", "es"] as const)(
     "humano em Avisar a equipe (%s): a frase natural abre UM aviso na Central, e nada muda na conversa",
     async (idioma) => {
+      // Clima 3: o clima desta mensagem não chama ninguém.
       fornecedor(respostaPorPergunta({ humano: 0.97, opt_out: 0.03 }));
-      const c = jevLigado("decide");
-      const jev = (c.settings as { jev: Linha }).jev;
-      const cenario = { ...c, settings: { ...c.settings, jev: { ...jev, tarefas: { humano: { estado: "decidindo" } } } } };
+      const cenario = comPedidos({ humano: "decidindo" });
       const banco = comAgenteNoAr(cenario);
       banco.organizations![0]!.locale = idioma;
+      const conversaAntes = structuredClone(banco.conversations);
       const { resultado } = await rodar(cenario, banco);
 
       expect(resultado.skipped, "o clima segue (controle)").toBe(false);
@@ -1047,11 +1235,44 @@ describe("os pedidos do cliente no worker de clima", () => {
       expect(linhasDoJev(banco).find((l) => l.purpose === "jev_pedidos")).toMatchObject({ origem_da_escolha: "jev" });
       // O Jev só avisou: a conversa e o contato são os de antes.
       expect(banco.contacts).toEqual([{ id: CONTATO, organization_id: ORG, is_blocked: false }]);
-      expect(banco.conversations).toEqual([
-        { id: CONV, organization_id: ORG, channel_session_id: null, active_ai_agent_id: null, contact_id: CONTATO, is_group: false },
-      ]);
+      expect(banco.conversations).toEqual(conversaAntes);
     },
   );
+
+  /**
+   * O clima da MESMA mensagem chamou uma pessoa (o alerta que passa a
+   * conversa): o pedido de pessoa não vira um segundo aviso dizendo o que o
+   * primeiro já diz. A observação fica, e o pedido de parar de receber avisa.
+   */
+  it("o clima desta mensagem chamou uma pessoa: o aviso de pessoa NÃO abre; o de parar de receber abre; as observações ficam", async () => {
+    fornecedor(respostaPorPergunta({ humano: 0.97, opt_out: 0.96 }, 0));
+    const cenario = comPedidos({ humano: "decidindo", opt_out: "decidindo" });
+    const { banco, rpcs } = await rodar(cenario, comAgenteNoAr(cenario));
+    expect(alertas(rpcs), "o clima chamou uma pessoa (controle)").toHaveLength(1);
+    expect(banco.agent_inbox_items.map((l) => l.kind)).toEqual(["jev_parar_de_receber"]);
+    expect(banco.jev_observacoes!.map((l) => [l.tarefa, l.rotulo_jev])).toEqual([
+      ["humano", "sim"],
+      ["opt_out", "sim"],
+    ]);
+  });
+
+  /**
+   * O retry do dreno sobre a MESMA mensagem pergunta de novo (e paga), mas não
+   * mexe no aviso: a observação volta 23505, e a primeira execução já decidiu.
+   * Quem resolveu o aviso entre as duas não o vê reabrir.
+   */
+  it("o retry do dreno sobre a mesma mensagem não reabre o aviso que alguém resolveu", async () => {
+    fornecedor(respostaPorPergunta({ humano: 0.97, opt_out: 0.03 }));
+    const cenario = comPedidos({ humano: "decidindo" });
+    const banco = comAgenteNoAr(cenario);
+    await rodar(cenario, banco);
+    expect(banco.agent_inbox_items).toHaveLength(1);
+    banco.agent_inbox_items[0]!.status = "resolved";
+
+    await rodar(cenario, banco);
+    expect(perguntasDosPedidos(), "perguntou de novo (controle)").toHaveLength(2);
+    expect(banco.agent_inbox_items).toEqual([expect.objectContaining({ kind: "jev_pedido_de_humano", status: "resolved" })]);
+  });
 
   it("Jev desligado: com o agente no ar, os pedidos também não saem", async () => {
     fornecedor(respostaPorPergunta({}));
