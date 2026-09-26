@@ -8,10 +8,12 @@
  *  1. O CHECK de `agent_inbox_items.kind` aceita os dois kinds. Sem eles, o
  *     insert do gravador é recusado num caminho que só loga — o aviso nunca
  *     aparece, e nada fica vermelho.
- *  2. O aviso FECHA quando uma pessoa assume a conversa ou ela é encerrada — o
- *     gatilho de atribuição (`fn_routing_assignment_changed`) — e só o da
- *     conversa certa: o `handoff` da mesma conversa e o aviso da vizinha ficam.
- *     E a IA seguir atendendo (`ai_handling`) não fecha nada.
+ *  2. O aviso FECHA pelo gatilho da 0426 (`trg_fechar_avisos_do_jev_da_conversa`),
+ *     e só o da conversa certa: o `handoff` da mesma conversa e o aviso da
+ *     vizinha ficam. Uma pessoa assumir fecha SÓ o de falar com uma pessoa — o
+ *     de parar de receber pede à equipe assumir E pedir o PARAR, e segue aberto
+ *     (`jev-parar-de-receber-sobrevive-a-assumir.test.ts`); a conversa encerrada
+ *     fecha. E a IA seguir atendendo (`ai_handling`) não fecha nada.
  *
  * Pelo SQL que o gravador escreve, e pelo `update` que a atribuição faz.
  */
@@ -52,7 +54,7 @@ describe("o aviso do Jev na Central", () => {
     expect(() => abrir("jev_pedido_inventado", GOV_CONV_UNASSIGNED)).toThrow(/agent_inbox_items_kind_check/);
   });
 
-  it("uma pessoa assume a conversa: os avisos do Jev DELA fecham; o handoff e a vizinha ficam", () => {
+  it("uma pessoa assume a conversa: o aviso de falar com uma pessoa DELA fecha; o de parar de receber, o handoff e a vizinha ficam", () => {
     limpar();
     for (const kind of KINDS) abrir(kind, GOV_CONV_UNASSIGNED);
     abrir("handoff", GOV_CONV_UNASSIGNED);
@@ -64,7 +66,7 @@ describe("o aviso do Jev na Central", () => {
 
     expect(avisosDa(GOV_CONV_UNASSIGNED)).toEqual([
       "handoff=open",
-      "jev_parar_de_receber=resolved+fim",
+      "jev_parar_de_receber=open",
       "jev_pedido_de_humano=resolved+fim",
     ]);
     expect(avisosDa(GOV_CONV_CLAIM)).toEqual(["jev_pedido_de_humano=open"]);
