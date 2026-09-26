@@ -12,6 +12,12 @@ import {
   GATILHO_DE_DATA_DO_FUNIL,
   configDoGatilhoDeData,
 } from "@/lib/automation/gatilho-de-data-do-funil";
+import {
+  GATILHO_ETAPA_PARADA,
+  GATILHO_SILENCIO,
+  configDaEtapaParada,
+  configDoSilencio,
+} from "@/lib/automation/gatilhos-de-tempo";
 
 /**
  * Os gatilhos que o motor reconhece, e a entidade que cada um tem que trazer.
@@ -54,6 +60,13 @@ export const ENTIDADE_ESPERADA_POR_GATILHO = {
   // não `lead`: é a entidade que os handlers desta feature emitem, e a que o
   // `buildContext` do motor sabe hidratar (o negócio, e o contato dele).
   "lead.date_field_due": "crm_lead",
+  // Os dois gatilhos por TEMPO (#1540): silêncio e etapa parada. Nascem do
+  // relógio, como o de data do funil — quem os emite é a varredura
+  // `cron/lead-time-triggers`, e a entidade é o NEGÓCIO que ficou parado.
+  // O `rule_id` no payload é o mesmo recorte do gatilho de data: sem ele, duas
+  // regras do mesmo gatilho com N diferentes disparariam juntas.
+  "lead.silent_for": "crm_lead",
+  "lead.stage_stale": "crm_lead",
 } as const;
 
 export type GatilhoDeAutomacao = keyof typeof ENTIDADE_ESPERADA_POR_GATILHO;
@@ -102,6 +115,23 @@ export const actionSchema = z.discriminatedUnion("type", [
     type: z.literal("start_message_flow"),
     config: z.object({ flow_pointer_id: z.string().uuid() }),
   }),
+  // #1540 — a ação que NUNCA fala com o cliente: grava `crm_tasks` e avisa o
+  // responsável. Advocacia, saúde e serviços regulados precisam do lembrete e
+  // não da mensagem; é a diferença entre o sistema lembrar a equipe e o
+  // sistema falar. Mesmos campos do nó `internal_task` dos fluxos.
+  z.object({
+    type: z.literal("create_task"),
+    config: z.object({
+      /** Título com `{{lead.title}}` e `{{contact.name}}`. */
+      titulo: z.string().min(1).max(200),
+      vence_em_dias: z.number().int().min(0).max(365),
+      atribuir_a: z.union([
+        z.literal("dono_do_lead"),
+        z.object({ usuario_id: z.string().uuid() }),
+      ]),
+      prioridade: z.enum(["low", "medium", "high", "urgent"]),
+    }),
+  }),
 ]);
 
 export const createWebhookSourceSchema = z.object({
@@ -138,13 +168,46 @@ export const createAutomationRuleSchema = z
      */
     trigger_config: z.record(z.string(), z.unknown()).optional(),
   })
-  .superRefine(exigirConfigDoGatilhoDeData);
+  .superRefine(exigirConfigDoGatilhoDeData)
+  .superRefine(exigirConfigDosGatilhosDeTempo);
 
 /**
  * O gatilho de data sem a configuração dele é uma regra que NUNCA dispara — a
  * varredura não sabe onde olhar. Recusar na porta é o único desfecho honesto:
  * aceitar calado produziria a tela dizendo "salvo" e o operador esperando.
  */
+/**
+ * Os gatilhos por TEMPO (#1540) sem a configuração deles: mesma recusa do
+ * gatilho de data, pela mesma razão — a varredura precisa saber N dias (e, no
+ * silêncio, de QUEM é o silêncio). Aceitar calado produziria regra salva que
+ * nunca dispara.
+ *
+ * Só roda para os dois gatilhos novos; os demais seguem com `{}` e voltam
+ * `true` sem custo.
+ */
+function exigirConfigDosGatilhosDeTempo(
+  regra: { trigger_event: string; trigger_config?: Record<string, unknown> },
+  ctx: z.RefinementCtx,
+): void {
+  if (regra.trigger_event === GATILHO_SILENCIO) {
+    if (configDoSilencio(regra.trigger_config)) return;
+    ctx.addIssue({
+      code: "custom",
+      path: ["trigger_config"],
+      message: "Escolha há quantos dias de silêncio e de quem é o silêncio (equipe, cliente ou qualquer).",
+    });
+    return;
+  }
+  if (regra.trigger_event === GATILHO_ETAPA_PARADA) {
+    if (configDaEtapaParada(regra.trigger_config)) return;
+    ctx.addIssue({
+      code: "custom",
+      path: ["trigger_config"],
+      message: "Escolha há quantos dias o negócio está parado na mesma etapa.",
+    });
+  }
+}
+
 function exigirConfigDoGatilhoDeData(
   regra: { trigger_event: string; trigger_config?: Record<string, unknown> },
   ctx: z.RefinementCtx,
@@ -178,6 +241,12 @@ export const updateAutomationRuleSchema = z
       path: ["trigger_config"],
       message: "Escolha o funil, o campo de data e em quantos dias avisar.",
     });
+  })
+  .superRefine((patch, ctx) => {
+    // O PATCH que troca o gatilho PARA um dos gatilhos por tempo, sem mandar a
+    // configuração, produz o mesmo calado da criação (#1540): regra salva que
+    // a varredura não sabe avaliar.
+    exigirConfigDosGatilhosDeTempo(patch as { trigger_event: string; trigger_config?: Record<string, unknown> }, ctx);
   });
 
 export type CreateWebhookSourceInput = z.infer<typeof createWebhookSourceSchema>;
