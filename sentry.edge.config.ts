@@ -3,7 +3,7 @@
 
 import * as Sentry from "@sentry/nextjs";
 import { resolveSentryDsn, isCommunityDsn } from "./lib/sentry/dsn";
-import { sentryScrubHooks } from "./lib/sentry/scrub";
+import { opcoesDePrivacidade } from "./lib/sentry/privacidade";
 
 const sentryDsn = resolveSentryDsn(process.env.SENTRY_DSN);
 
@@ -12,8 +12,7 @@ Sentry.init({
 
   // No Sentry da comunidade, só erro (issue #100). Ver isCommunityDsn().
   tracesSampleRate: isCommunityDsn(sentryDsn) ? 0 : 1,
-  enableLogs: true,
-  sendDefaultPii: false,
 
-  ...sentryScrubHooks,
+  // Coleta restrita + scrub, num ponto só (Sentry 11 coleta amplo por default).
+  ...opcoesDePrivacidade,
 });

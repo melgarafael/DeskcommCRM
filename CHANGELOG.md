@@ -8,6 +8,217 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.53.0] — 2026-09-26
+
+### Adicionado
+
+- **O aviso de compromisso por webhook traz horário, situação, tipo, local e negócios, e comparecimento e falta viram gatilho** Os gatilhos `appointment.*` passam a mandar no corpo o início, o fim, a situação, o tipo, o local, o link da reunião (quando houver) e os negócios ligados (`lead_ids`). Nada muda para quem já integra: as chaves antigas continuam com o mesmo nome e o mesmo tipo. Surgem dois gatilhos novos de regra, `appointment.completed` (compareceu) e `appointment.no_show` (faltou), que disparam uma vez por mudança de situação. A ação de webhook ganha a opção "Incluir o responsável no corpo", que vem desligada. Contribuição de @webtecnica (PR #1709, issue #1612).
+
+- **Funis podem exigir campos ao entrar numa etapa ou ao encerrar, e o motivo de ganho vira campo próprio** Na tela de funil, cada campo pode ser marcado como exigido ao entrar em etapas escolhidas, ao ganhar ou ao perder. Sem nenhuma marca, nada muda. Quem arrasta um card sem os dados recebe um diálogo que pede só o que falta. Quando o assistente de IA é barrado, aparece um aviso na Central. O motivo de ganho passa a ser um campo próprio do negócio, com lista e exigência opcionais por funil, e sai no webhook. Contribuição de @webtecnica (PR #1688, issue #1536).
+
+- **Mudar a etapa do negócio pela conversa, sem abrir o quadro do funil** O painel da conversa ganhou o seletor "Etapa do funil" no bloco "Leads
+  recentes": quando o cliente confirma pelo WhatsApp, quem atende passa o negócio
+  para a etapa seguinte (por exemplo, "Pedido confirmado") sem sair da conversa.
+  É o mesmo caminho do "Mover para…" do quadro, então a atividade, a auditoria e
+  o aviso da etapa na Central saem iguais. Etapa de perda continua pelo quadro,
+  onde se informa o motivo.
+
+  Contribuição de @jmpo (#1726).
+
+- **O follow-up manda modelo aprovado do WhatsApp e respeita o retorno combinado** O passo de mensagem pronta de um follow-up passa a oferecer, além dos textos de
+  Ajustes → Modelos, os modelos aprovados no WhatsApp — no canal oficial, o único
+  envio que chega ao cliente depois de 24 horas sem resposta. Antes, um passo apontado para um
+  modelo aprovado era publicado sem erro e falhava no primeiro disparo. A
+  mensagem escrita pela IA também passa a usar o modelo aprovado escolhido como
+  plano B quando a janela de 24 horas já fechou; até aqui esse campo era salvo e
+  nunca usado. Esse plano B só é exigido na publicação de quem tem conexão com
+  janela de 24 horas: quem conecta só por um canal sem janela segue publicando
+  sem ele.
+
+  E quando o assistente combina com o cliente um retorno numa data ("te escrevo
+  no dia 30"), o follow-up de silêncio não escreve por cima: o contato não entra
+  no fluxo enquanto o retorno está agendado, e quem já estava nele fica em espera
+  até um dia depois do retorno. O detalhe do follow-up mostra o motivo.
+
+  Contribuição de @jmpo (#1729).
+
+- **Os modelos do provedor intermediado se editam e se apagam pela tela, com prévia como no WhatsApp** Na aba de modelos do provedor intermediado, abrir um modelo mostra a prévia de
+  como ele chega ao cliente: o balão com o texto e os botões embaixo, cada um com
+  o ícone do tipo. Dois botões novos: **Editar**, que abre o formulário já
+  preenchido com o texto aprovado e a prévia ao lado (nome, idioma e categoria não
+  mudam, porque a plataforma não deixa), e **Apagar**, que pede confirmação. Se o
+  modelo estiver em uso num follow-up ou no prompt de um agente, o apagar mostra
+  onde antes de confirmar. Editar manda o modelo de novo para a revisão da
+  plataforma, e a Meta limita quantas vezes um modelo aprovado pode ser editado;
+  um nome apagado só pode ser reusado depois de 30 dias.
+
+  Contribuição de @jmpo (#1728).
+
+- **Motivos de perda com categoria, filtro por motivo e relatório de perdas** Em **Configurações › Funis**, cada motivo de perda ganha uma categoria (Cliente, Concorrência, Mérito, Nós, Ausência). No quadro, com a aba **Perdidos**, aparecem os filtros **Motivo** e **Categoria**, que viram link (`?motivo=`, `?categoria=`). Em **Métricas**, quem é gerente ou admin vê o relatório **Perdas**: por motivo, por categoria e pela etapa de onde o negócio saiu, com o valor separado por moeda (moedas nunca são somadas). Transferência entre funis não conta como perda. A tool MCP `crm_list_leads` aceita `lost_reason` e `lost_reason_category`.
+
+  A coluna nova `crm_leads.lost_from_stage_id` passa a ser gravada a partir desta versão. Perdas anteriores aparecem como "Etapa desconhecida", porque não há como saber a etapa delas sem inventar.
+
+  Não há ação para quem opera a VPS: funis com motivos só de texto continuam funcionando como antes e nenhum dado existente é reescrito.
+
+  Contribuição de @webtecnica (#1715).
+
+- **Chance de fechamento por etapa e previsão ponderada do funil** Em **Configurações › Funis**, cada etapa aberta ganha o campo **Chance de fechamento (0 a 100)**, calibrado por quem gere a equipe. Etapas de ganho e de perda valem 100 e 0 automaticamente. No quadro, cada coluna mostra o valor **ponderado** abaixo do total. Em **Métricas**, o painel **Previsão** mostra o valor bruto e o ponderado por mês de fechamento previsto e por moeda (moedas nunca são somadas); negócios sem data prevista e em etapa sem chance configurada aparecem à parte, em vez de sumirem como zero. A previsão respeita o que cada atendente pode ver. A API ganha `GET /api/v1/pipelines/{id}/forecast` e a tool MCP `crm_get_pipeline_forecast`; `crm_update_stage` e `crm_list_stages` passam a aceitar e devolver `win_probability`.
+
+  A coluna nova `crm_stages.win_probability` nasce vazia em todas as etapas: nada muda até alguém configurar a chance.
+
+  Não há ação para quem opera a VPS.
+
+  Contribuição de @webtecnica (#1716, issue #1535).
+
+- **O rascunho sugerido por integração passa a ser apagado 30 dias depois de vencer** O rascunho que outro sistema cria na conversa, o texto sugerido para revisar antes de enviar, guarda uma mensagem escrita para uma pessoa. Depois de vencido ele não abre nem pode ser usado, mas ficava guardado para sempre. Agora a limpeza diária (`data-retention`) apaga o rascunho 30 dias depois do vencimento (mínimo de 7), usado ou não. O que foi enviado continua na conversa, e a criação e o uso continuam na auditoria. Nada a fazer na VPS; o prazo muda com `DRAFT_RETENTION_DAYS` no `.env`. Contribuição de @webtecnica (#1719).
+
+- **A retenção de mídia passa a ser cumprida — arquivos vencidos e órfãos saem do armazenamento** A configuração «retenção de mídia» da organização existia no formulário e não
+  era cumprida por nada: todo áudio, foto, vídeo e PDF do WhatsApp ficava no
+  armazenamento para sempre, inclusive os de conversas já apagadas. Numa
+  instalação no Supabase gratuito isso chega ao limite de 1 GB, e o Supabase
+  restringe o projeto inteiro — login, mensagens e agente param juntos.
+
+  Agora, uma vez por dia, o CRM separa para remoção:
+
+  - o arquivo de mensagem mais antigo que a retenção da organização (mínimo 30
+    dias). A mensagem continua na conversa, com texto e horário; o arquivo aparece
+    como «Mídia indisponível». Se outra mensagem mais recente ainda usa o mesmo
+    arquivo (a foto de catálogo reenviada, por exemplo), ele fica;
+  - o arquivo que nenhuma mensagem ou contato usa mais (o rastro de conversa
+    apagada), depois de um dia de carência.
+
+  As imagens de cabeçalho de modelo nunca são tocadas. A remoção sai pela mesma
+  fila da anonimização da LGPD, com reintento. Quem precisa guardar mídia por mais
+  tempo aumenta a retenção em Configurações — o padrão segue 365 dias.
+
+  Na primeira rodada depois de atualizar, sai de uma vez o que já passou da
+  retenção de cada empresa; com o padrão de 365 dias, hoje isso só alcança
+  empresas que configuraram uma retenção menor.
+
+  Contribuição de @jmpo (#1731).
+
+- **Retomada de negócio perdido como novo negócio, por funil** **Retomada de negócio perdido como novo negócio, escolhida por funil.** O funil ganha `settings.reabertura` com dois modos: `mesmo_registro` (padrão, o comportamento de sempre) e `novo_negocio`. No segundo, mover um negócio encerrado para uma etapa aberta não o reabre — o arrasto, o lote, a IA, a automação e a tool MCP devolvem 409 `reabertura_cria_novo`, e a tela oferece "Retomar como novo negócio", que chama `POST /api/v1/leads/{id}/retomar`: nasce um lead novo com o mesmo contato, campos e tags copiados (o que se copia é configurável em `reabertura_campos`), `source = "retomada"` e `retomado_de_lead_id` apontando para o encerrado, que fica intacto, com o motivo dele. É por essa coluna que "quantas tentativas até fechar" passa a ser derivável. O clone entre funis também aceita origem encerrada nesse modo.
+
+  Liga-se em **Configurações › Funis**, na caixa "Negócio encerrado que volta abre um negócio novo". Retomar duas vezes a mesma origem devolve a retomada que já está aberta, e a etapa em que ela nasce aplica os campos obrigatórios do funil.
+
+  Não há ação para quem opera a VPS: a opção nasce desligada e nenhum dado existente é reescrito.
+
+  Contribuição de @webtecnica (#1712).
+
+- **A transcrição de áudio aceita idioma declarado e modelo melhor sem copiar a chave** Quem atende em espanhol ou português pode declarar o idioma dos áudios em
+  `TRANSCRIPTION_LANGUAGES` (por exemplo `es`) e trocar o modelo em
+  `TRANSCRIPTION_MODEL` (por exemplo `gpt-transcribe`) usando a mesma chave da
+  OpenAI já cadastrada na organização — antes, trocar o modelo exigia copiar a
+  chave para o `.env`. O motivo é medido: com o padrão, um áudio sem fala virava
+  "Thanks for watching!" e "ya es caro" virava "ya es claro", e o assistente
+  respondia ao que leu; com o idioma declarado e `gpt-transcribe`, os dois saem
+  certos e o áudio sem fala sai vazio. A tela de Provedores passa a mostrar o
+  modelo de transcrição que está em uso. Sem essas variáveis, nada muda. Sem a
+  chave própria, `TRANSCRIPTION_MODEL` só vale com `TRANSCRIPTION_BASE_URL` vazio:
+  quem já tinha o modelo de outro serviço (Groq, por exemplo) no `.env` segue com
+  `whisper-1` na OpenAI, como antes.
+
+  Contribuição de @jmpo (#1723).
+
+### Corrigido
+
+- **Repetir uma marcação devolve o compromisso já criado** Retries de uma mesma operação de agendamento passam a reutilizar o compromisso criado e a resposta registrada, tanto pela API quanto pelas ferramentas MCP e pelo runtime nativo do agente. Operações distintas continuam podendo criar compromissos distintos. Contribuição de @lucasa15 (#1735).
+
+- **O aviso ao cliente e o título na Central saem no idioma da organização quando a IA passa a conversa** Quando a IA passava a conversa para a equipe, o cliente recebia o aviso sempre
+  em português ("Esse caso é melhor resolvido por uma pessoa…"), mesmo numa
+  organização que atende em espanhol — e o aviso na Central aparecia com o título
+  em português. Agora os dois saem no idioma da organização: há frases próprias
+  em espanhol, e os demais idiomas seguem em português, como antes. Se o idioma
+  da organização não puder ser lido, o aviso sai mesmo assim, em português.
+
+  Contribuição de @jmpo (#1725).
+
+- **Com "responder em várias mensagens curtas" ligado, cada parágrafo vira uma bolha, na ordem certa** A opção do agente "Responder em várias mensagens curtas (como uma pessoa
+  digita)" dizia ao modelo para preferir várias mensagens a um texto único, e o
+  modelo mandava duas ou três de uma vez — que podiam chegar ao cliente fora de
+  ordem (a lista de dados de entrega embaralhada, por exemplo). Agora o agente
+  escreve uma resposta só e o sistema manda cada parágrafo como uma bolha, na
+  ordem e no ritmo de quem digita, como a tela já prometia; resposta curta, de
+  uma ideia só, continua saindo numa bolha só, em vez de virar saudação, resposta
+  e pergunta em três mensagens. O tamanho máximo por bolha passa a valer só para
+  o parágrafo que sozinho é longo demais: antes, parágrafos curtos eram juntados
+  até esse tamanho, e com o padrão quase nenhuma resposta era dividida, enquanto
+  com um valor baixo o resumo do pedido era cortado no meio de uma linha.
+  O teto de mensagens por turno (`MAX_SENDS_PER_TURN`, padrão 3) vale também para
+  as bolhas: o que passar dele segue junto na última, sem perder texto e na ordem.
+
+  Contribuição de @jmpo (#1724).
+
+- **O candidato ao golden set sai do disco e vira linha sem texto de cliente** Os candidatos de curadoria que o matcher de skills e o classificador de etapa gravavam em
+  `lib/agent-engine/golden-candidates/` deixam de existir como arquivo: agora são linhas em
+  `golden_candidates`, com o rótulo (skill + motivo, ou os dois estágios da divergência) e os
+  ponteiros do lead e do job — sem texto de cliente. Em desenvolvimento a pasta ficava dentro
+  do repositório, e em produção o JSON ia para o disco do contêiner, onde nenhuma tela lia,
+  se perdia a cada atualização de imagem e ficava fora da cascata de anonimização. A linha
+  nova é alcançada pela retenção (`fn_expurgar_candidatos_do_golden`, 90 dias, piso 30, no
+  cron `data-retention`); quem quiser ler a conversa abre a ficha pelo ponteiro. Nada muda na
+  operação de quem já roda o sistema.
+
+  Contribuição de @webtecnica (#1720, issue #1695).
+
+- **Candidato a golden set não grava o texto do cliente como ele chegou** Os arquivos de curadoria que o matcher de skills e o classificador de etapa gravam em
+  `lib/agent-engine/golden-candidates/` levavam a mensagem do cliente como ela chegou — CPF,
+  telefone e e-mail junto. A mensagem agora passa pelo mesmo redator da telemetria antes de
+  tocar o disco, e a pasta saiu do git: as duas portas por onde um `git add -A` publicava
+  conversa de cliente. Os candidatos que já estavam versionados foram removidos. Nada muda na
+  operação de quem já roda o sistema.
+
+  Contribuição de @hiro-nikaitou (#1708).
+
+- **Quando a conta de IA fica sem saldo, as respostas esperam a recarga em vez de se perder** Quando a conta do provedor de IA fica sem crédito, as respostas aos clientes
+  não são mais descartadas em dois minutos: ficam esperando e saem sozinhas
+  assim que o saldo é recarregado, por até 6 horas. Nesse intervalo aparece um
+  único aviso na Central dizendo que a IA está sem saldo e o que fazer; ele se
+  fecha sozinho quando a primeira resposta sai. Se alguém da equipe respondeu o
+  cliente enquanto a IA esperava, ela não repete a resposta. Na tela de
+  Execuções, essa recusa passa a aparecer como limite de uso ou saldo, e não
+  como erro desconhecido.
+
+  Contribuição de @jmpo (#1730).
+
+- **Mover um negócio para a etapa em que ele já está não é mais barrado por campos obrigatórios** Em funil que exige campos para entrar numa etapa, mover um negócio para a etapa em que ele
+  JÁ está — pelo assistente de IA ou por uma automação — era recusado com a frase dos campos
+  obrigatórios, mesmo sem nada mudar de etapa: o que muda ali é a posição dentro da coluna. A
+  tela já tratava esse gesto como reordenação; agora o caminho do MCP e o das automações
+  tratam igual. A mudança de etapa de verdade continua exigindo os campos.
+
+  Contribuição de @hiro-nikaitou (#1714).
+
+- **A previsão em Métricas mostra o valor certo em moeda sem centavos** No painel "Previsão" de Métricas, o valor ponderado e o bruto de cada mês — e os
+  dos negócios sem data ou sem chance definida — apareciam cem vezes maiores em
+  moeda sem centavos, como o guarani (₲125.000 saía "Gs. 12.500.000"). Agora o
+  painel escreve o valor do mesmo jeito que o quadro do funil ("Gs. 125.000").
+  Em real, dólar e demais moedas com centavos nada muda.
+
+  Diagnóstico de @jmpo (#1727).
+
+- **O quadro do funil cabe na tela, e o total da etapa em moeda sem centavos soma certo** Com uma etapa cheia de negócios, a barra para andar para o lado só aparecia no
+  fim da coluna mais comprida, e o nome da etapa sumia do alto no caminho. Agora o
+  quadro ocupa a altura da tela: a barra lateral fica sempre à vista no pé, e o
+  nome e o total de cada etapa ficam presos em cima enquanto os cards rolam.
+
+  O total no topo de cada etapa aparecia cem vezes maior em moeda sem centavos,
+  como o guarani (dois pedidos de ₲125.000 somavam "Gs. 25.000.000"). Ele passa a
+  somar certo, e o card, o total e o detalhe do negócio escrevem o valor do mesmo
+  jeito, na convenção da moeda ("Gs. 125.000").
+  A linha "ponderado" das etapas com chance calibrada passa a somar do mesmo
+  jeito que o total, sem sair cem vezes maior nessas moedas.
+
+  Contribuição de @jmpo (#1727).
+
+- **O seletor de modelo do atendente não oferece mais modelo de busca, e o fim do onboarding só diz que o atendente está no ar quando ele está** **Quatro correções de tela achadas numa jornada real de dono de clínica.** A lista de modelos do atendente (IA › Agentes › Modelo) deixa de oferecer o modelo de busca do material (Text Embedding), que não conversa: agora só aparecem modelos que usam as ferramentas do CRM, a mesma regra que o sistema já usava para escolher o modelo sozinho. Um agente novo passa a nascer no provedor de IA que a organização já usa, em vez de sempre em Anthropic.
+
+  O diálogo de publicar uma versão fala português: diz a empresa pelo nome, conta os caracteres a mais ou a menos do prompt e explica que a versão anterior continua no histórico; na primeira publicação, diz que é a primeira. E a última página do onboarding pergunta ao banco se há atendente publicado: quem pulou o passo da IA ou deixou o atendente em rascunho vê "Quase lá!" e o que falta, em vez de "Tudo pronto! Seu funcionário já está de pé".
+
+  Não há ação para quem opera a VPS: nenhum dado é reescrito.
+
+  Contribuição de @webtecnica (#1718, #1694).
+
 ## [1.52.0] — 2026-09-26
 
 ### Adicionado
@@ -8228,7 +8439,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.52.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.53.0...HEAD
+[1.53.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.52.0...v1.53.0
 [1.52.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.51.0...v1.52.0
 [1.51.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.50.0...v1.51.0
 [1.50.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.49.0...v1.50.0
