@@ -485,6 +485,7 @@ owner: Rafael Melgaço
 - **Regra**: GIVEN mídia em `whatsapp-media` bucket; WHEN `created_at < now() - tenant.media_retention_days` (default 365); THEN cron `prune-old-media` move pra cold storage S3 (ou deleta se `tenant.cold_storage_disabled=true`).
 - **Enforcement**: Cron diário.
 - **Override**: Tenant pode aumentar retenção (paga storage extra) ou diminuir (mín 90d em modo BPO; sem mín em modo SaaS futuro).
+- **Estado**: cumprida desde a migration 0432, **sem camada cold/S3** — o arquivo vencido é removido (a mensagem fica, com «Mídia indisponível»), com piso de 30 dias, o mesmo do formulário. Junto sai o arquivo órfão de conversa apagada. Quem enfileira é `fn_enfileirar_midia_vencida`, chamada pelo cron `media-retention`; quem remove é o `storage-redaction`, pela `storage_redaction_queue`. Para ver o horário em vigor: `grep -n media-retention docker/scheduler/entrypoint.sh`.
 
 ### B-04 — Quota de chamadas API por tenant: 100 RPS no MVP
 - **Origem**: Sub-PRD 01 §4.2

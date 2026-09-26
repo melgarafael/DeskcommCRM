@@ -42,8 +42,9 @@
  * `<img>` cru (a URL é de quem hospeda; `next/image` exige allowlist fechada em
  * build). Ou seja: o arquivo vai INTEIRO para o navegador em toda página, sem
  * redimensionamento. E a cota do Supabase é do CLIENTE — 1 GB no plano gratuito,
- * compartilhado com `whatsapp-media`, que não tem poda. Meio megabyte é folgado
- * para um logo e barato para a primeira pintura da tela de login.
+ * compartilhado com `whatsapp-media`, que só encolhe pela retenção de mídia da
+ * organização (`fn_enfileirar_midia_vencida`, migration 0432). Meio megabyte é
+ * folgado para um logo e barato para a primeira pintura da tela de login.
  */
 
 /** O bucket. Nome sem a marca do produto de propósito — ver `tests/unit/branding.test.ts`. */
