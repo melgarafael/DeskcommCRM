@@ -241,6 +241,36 @@ describe("chaveDaOrganizacao — a chave do Jev daquela empresa, e só dela", ()
       expect(banco.chamadas).not.toContainEqual(["from", "ai_provider_credentials"]);
     });
 
+    /**
+     * COM ponto, a guarda vale também para toda pergunta cuja chave é id de uma
+     * tarefa do Jev: o pedido de pessoa posto no pacote do clima (o que o
+     * cabeçalho de `./pedidos.ts` proíbe) não sai com a tarefa dele pausada.
+     */
+    it("com ponto, uma pergunta de OUTRA tarefa pausada no pacote: nada sai — e com ela rodando, sai (controle)", async () => {
+      const comPedido = {
+        ...PERGUNTAS,
+        humano: { tipo: "noul", instrucao: "pede uma pessoa?" },
+      } as const;
+      banco.settings = { jev: { ...LIGADO.jev, tarefas: { humano: { estado: "desligada" } } } };
+      banco.linha = CREDENCIAL;
+      const fetchImpl = vi.fn();
+      const r = await decidirNoPonto(
+        { ponto: PONTO_DO_CLIMA, organizationId: ORG, estado: "x", perguntas: comPedido },
+        { fetchImpl },
+      );
+      expect(r.ok === false && r.motivo).toBe("sem_credencial");
+      expect(fetchImpl).not.toHaveBeenCalled();
+      expect(banco.chamadas).not.toContainEqual(["from", "ai_provider_credentials"]);
+
+      banco.settings = LIGADO;
+      fetchImpl.mockResolvedValue(ok({ ...CORPO_OK, answers: { ...CORPO_OK.answers, humano: { type: "noul", noul: 0.2 } } }));
+      const rodando = await decidirNoPonto(
+        { ponto: PONTO_DO_CLIMA, organizationId: ORG, estado: "x", perguntas: comPedido },
+        { fetchImpl },
+      );
+      expect(rodando.ok).toBe(true);
+    });
+
     it("ponto sem tarefa do Jev: nada sai, sem nem consultar o banco", async () => {
       banco.linha = CREDENCIAL;
       expect(await chaveDaOrganizacao(ORG, "stage_classifier")).toBeNull();

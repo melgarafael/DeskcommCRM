@@ -187,7 +187,16 @@ export async function decidirNoPonto(
   }
   const { ponto } = entrada;
   const chaveDaChamada = (org: string): Promise<string | null> => {
-    if (ponto !== undefined) return chaveDaOrganizacao(org, ponto);
+    // Com ponto, a tarefa dele E toda pergunta cuja chave é id de uma tarefa do
+    // Jev: uma pergunta de outra tarefa posta no pacote do ponto (o que o
+    // pacote do clima nunca pode levar, `./pedidos.ts`) não sai com a tarefa
+    // dela pausada.
+    if (ponto !== undefined) {
+      return chaveDasTarefas(
+        org,
+        TAREFAS_DO_JEV.filter((t) => t.ponto === ponto || Object.hasOwn(perguntas, t.id)),
+      );
+    }
     const tarefas = tarefasDasPerguntas(perguntas);
     return tarefas === null ? Promise.resolve(null) : chaveDasTarefas(org, tarefas);
   };
