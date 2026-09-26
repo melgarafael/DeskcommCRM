@@ -640,7 +640,7 @@ test.describe("Jev — os pedidos do cliente, pela tela", () => {
       await page.goto("/app/ai/inbox");
       const item = page.getByTestId("inbox-item").filter({ hasText: TITULO_DO_AVISO_DE_PARAR });
       await item.getByRole("link", { name: "Abrir a conversa" }).click();
-      await expect(page).toHaveURL(new RegExp(`/app/inbox/${quemSai}`), { timeout: 30_000 });
+      await expect(page).toHaveURL(new RegExp(`/app/inbox(/|\\?id=)${quemSai}`), { timeout: 30_000 });
       await page.getByRole("button", { name: "Assumir", exact: true }).click();
       await expect(page.getByRole("button", { name: "Liberar", exact: true })).toBeVisible({ timeout: 30_000 });
       // Controle: assumiu de verdade — é o passo 1 do aviso.
