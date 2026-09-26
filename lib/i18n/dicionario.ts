@@ -10259,8 +10259,8 @@ export const DICIONARIO: Traducoes = {
   "Lista os assuntos que já foram passados para uma pessoa resolver, com o estado de cada um, para o agente não pedir duas vezes a mesma coisa.": {
     es: "Lista los asuntos que ya se pasaron a una persona para que los resuelva, con el estado de cada uno, para que el agente no pida dos veces lo mismo.",
   },
-  "Lista os compromissos com hora marcada de um cliente ou de um dia, com a situação de cada um: marcado, realizado ou desmarcado.": {
-    es: "Lista los compromisos con fecha y hora de un cliente o de un día, con el estado de cada uno: programado, realizado o cancelado.",
+  "Lista os compromissos com hora marcada de um cliente, de um dia ou de um período de até 62 dias, com a situação de cada um: marcado, realizado ou desmarcado.": {
+    es: "Lista los compromisos con fecha y hora de un cliente, de un día o de un período de hasta 62 días, con el estado de cada uno: programado, realizado o cancelado.",
   },
   "Lista os textos que a empresa compartilhou com a equipe para responder as situações de sempre, com o atalho de cada um e as variáveis que cada texto usa.": {
     es: "Lista los textos que la empresa compartió con el equipo para responder a las situaciones de siempre, con el atajo de cada uno y las variables que usa cada texto.",
