@@ -2,7 +2,7 @@
 
 import { useT } from "@/hooks/i18n/useT";
 import { usePrevisaoFunil } from "@/hooks/metrics/usePrevisaoFunil";
-import { formatCents } from "@/lib/money";
+import { formatValorDoNegocio } from "@/lib/money";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 /**
@@ -86,10 +86,10 @@ export function PrevisaoPanel() {
                   <td className="py-1 tabular-nums">{faixa.mes}</td>
                   <td className="py-1">{faixa.moeda}</td>
                   <td className="py-1 text-right tabular-nums">
-                    {formatCents(faixa.ponderado_cents, faixa.moeda)}
+                    {formatValorDoNegocio(faixa.ponderado_cents, faixa.moeda)}
                   </td>
                   <td className="py-1 text-right tabular-nums text-muted-foreground">
-                    {formatCents(faixa.bruto_cents, faixa.moeda)}
+                    {formatValorDoNegocio(faixa.bruto_cents, faixa.moeda)}
                   </td>
                   <td className="py-1 text-right tabular-nums">{faixa.n}</td>
                 </tr>
@@ -105,8 +105,8 @@ export function PrevisaoPanel() {
             </p>
             {data.sem_data.map((balde) => (
               <p key={`sem-data-${balde.moeda}`} className="tabular-nums">
-                {balde.moeda}: {formatCents(balde.ponderado_cents, balde.moeda)} ·{" "}
-                {t("bruto")} {formatCents(balde.bruto_cents, balde.moeda)} · {balde.n}{" "}
+                {balde.moeda}: {formatValorDoNegocio(balde.ponderado_cents, balde.moeda)} ·{" "}
+                {t("bruto")} {formatValorDoNegocio(balde.bruto_cents, balde.moeda)} · {balde.n}{" "}
                 {t("negócios")}
               </p>
             ))}
@@ -120,7 +120,7 @@ export function PrevisaoPanel() {
             </p>
             {data.sem_probabilidade.map((balde) => (
               <p key={`sem-prob-${balde.moeda}`} className="tabular-nums">
-                {balde.moeda}: {formatCents(balde.bruto_cents, balde.moeda)} · {balde.n}{" "}
+                {balde.moeda}: {formatValorDoNegocio(balde.bruto_cents, balde.moeda)} · {balde.n}{" "}
                 {t("negócios")}
               </p>
             ))}
