@@ -102,7 +102,7 @@ function linhaDe(coluna: string): HTMLElement {
   return linha;
 }
 
-/** [ia, criterio, mostrar, comparar] da linha. */
+/** [ia, criterio, mostrar, comparar, envio] da linha. */
 function caixas(coluna: string): boolean[] {
   return within(linhaDe(coluna))
     .getAllByRole("checkbox")
@@ -131,20 +131,21 @@ describe("ConfigurarCatalogo — configuração por coluna", () => {
 
   it("converte um mapeamento ANTIGO (papéis) para os checkboxes", () => {
     abrir();
-    // legenda antiga tinha `marca` → Mostrar marcado.
-    expect(caixas("marca")).toEqual([true, true, true, false]);
+    // legenda antiga tinha `marca` → Mostrar marcado. `envio` começa desmarcado.
+    expect(caixas("marca")).toEqual([true, true, true, false, false]);
     // `preco` era papel de comparação → Comparar marcado.
-    expect(caixas("preco")).toEqual([true, true, true, true]);
+    expect(caixas("preco")).toEqual([true, true, true, true, false]);
     // `cilindrada` era papel de comparação → Comparar marcado.
-    expect(caixas("cilindrada")).toEqual([true, true, false, true]);
+    expect(caixas("cilindrada")).toEqual([true, true, false, true, false]);
   });
 
   it("mapeamento NOVO nasce com o essencial marcado", () => {
     dtoAtual = null;
     abrir();
-    expect(caixas("preco")).toEqual([true, true, true, true]);
-    expect(caixas("descricao")).toEqual([false, false, false, false]);
-    expect(caixas("id")).toEqual([false, false, false, false]);
+    // `preco` está em ENVIO_PADRAO → Envio marcado.
+    expect(caixas("preco")).toEqual([true, true, true, true, true]);
+    expect(caixas("descricao")).toEqual([false, false, false, false, false]);
+    expect(caixas("id")).toEqual([false, false, false, false, false]);
   });
 
   it("salva enviando `colunas` e `col_similares`", async () => {

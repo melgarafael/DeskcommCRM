@@ -8524,6 +8524,19 @@ export const DICIONARIO: Traducoes = {
     {
       es: "Desactiva el límite para mostrar todas las alternativas candidatas. El límite no afecta a un modelo que existe cuando la opción de arriba está activada.",
     },
+  "Enviar TODAS as motos que casam o critério do pedido (ignora o limite e não pergunta “quer mais?”)":
+    {
+      es: "Enviar TODAS las motos que coinciden con el criterio del pedido (ignora el límite y no pregunta «¿quieres más?»)",
+    },
+  "Ligado: o motor envia todas as motos que casarem as colunas marcadas como “Critério de envio” no catálogo. Desligado: envia até o limite, completa com o mesmo perfil e pergunta se o cliente quer mais opções.":
+    {
+      es: "Activado: el motor envía todas las motos que coincidan con las columnas marcadas como «Criterio de envío» en el catálogo. Desactivado: envía hasta el límite, completa con el mismo perfil y pregunta si el cliente quiere más opciones.",
+    },
+  Envio: { es: "Envío" },
+  "Coluna de casamento do modo “Enviar todas que casam”":
+    { es: "Columna de coincidencia del modo «Enviar todas las que coinciden»" },
+  "Coluna de casamento quando o agente está no modo “enviar todas que casam”":
+    { es: "Columna de coincidencia cuando el agente está en el modo «enviar todas las que coinciden»" },
 
   // ─── Base de conhecimento / embeddings (telas ChaveDeConhecimento e StatusDaBase) ───
   "Provedor de embeddings": { es: "Proveedor de embeddings" },
