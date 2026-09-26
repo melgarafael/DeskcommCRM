@@ -214,9 +214,20 @@ export async function perguntarOsPedidosDoCliente(
  * ido para uma pessoa — o turno da rajada passou, alguém assumiu. O gatilho da
  * 0426 que fecharia o aviso já disparou quando ele ainda não existia, então o
  * aviso que nascesse ali ficaria aberto sobre um pedido já atendido. As
- * condições são as do gatilho: com uma pessoa (`assigned_to_user_id`) ou fora
- * dos estados abertos, os dois; passada a uma pessoa depois desta mensagem
- * (`last_handoff_at`) ou com o robô calado, o de falar com uma pessoa.
+ * condições são as do gatilho: fora dos estados abertos, os dois; com uma
+ * pessoa (`assigned_to_user_id`), passada a uma pessoa depois desta mensagem
+ * (`last_handoff_at`) ou com o robô calado, só o de falar com uma pessoa — o
+ * de parar de receber pede que a equipe assuma E peça o PARAR, e segue valendo
+ * com a conversa assumida.
+ *
+ * O silêncio durável é o literal `'infinity'`, que o supabase-js devolve como
+ * texto: lido como infinito, como `normalizarInstante`
+ * (`lib/ai/elegibilidade/gate.ts`) o lê — `Date.parse` daria NaN, e o robô
+ * calado para sempre pareceria falando. ponytail: a leitura dele numa linha, e
+ * não o import: o módulo dele alcança `lib/channels`, que a cerca desta cola
+ * (`tests/unit/jev-nunca-cala-bloqueia-nem-responde.test.ts`) reprova. Mover
+ * `normalizarInstante` para um módulo sem esse import é o passo, se um terceiro
+ * leitor aparecer.
  *
  * `null` quando não deu para ler — e aí o aviso abre: é informação, e perder o
  * pedido de um cliente esperando é pior que um aviso a mais, que o gatilho e o
@@ -245,11 +256,17 @@ export async function aConversaAgora(
       last_handoff_at: string | null;
     };
     const abertos: readonly string[] = OPEN_LOAD_STATUSES;
-    const caladoAte = c.bot_silenced_until === null ? null : Date.parse(c.bot_silenced_until);
+    const caladoAte =
+      c.bot_silenced_until === null
+        ? null
+        : c.bot_silenced_until === "infinity"
+          ? Number.POSITIVE_INFINITY
+          : Date.parse(c.bot_silenced_until);
     const passadaEm = c.last_handoff_at === null ? null : Date.parse(c.last_handoff_at);
     return {
-      assumidaOuEncerrada: c.assigned_to_user_id !== null || !abertos.includes(c.status),
-      passadaAUmaPessoa:
+      encerrada: !abertos.includes(c.status),
+      comUmaPessoa:
+        c.assigned_to_user_id !== null ||
         (caladoAte !== null && caladoAte > Date.now()) ||
         (passadaEm !== null && recebidaEm !== null && passadaEm >= Date.parse(recebidaEm)),
     };

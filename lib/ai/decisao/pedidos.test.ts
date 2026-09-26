@@ -360,8 +360,8 @@ const AVISANDO = (tarefas: Record<string, "decidindo" | "observando" | "desligad
   });
 
 const CLIMA_NAO_CHAMOU = { chamouUmaPessoa: false };
-/** A conversa segue sem ninguém: nem assumida, nem encerrada, nem passada. */
-const LIVRE: AConversaAgora = { assumidaOuEncerrada: false, passadaAUmaPessoa: false };
+/** A conversa segue sem ninguém: nem encerrada, nem com uma pessoa. */
+const LIVRE: AConversaAgora = { encerrada: false, comUmaPessoa: false };
 
 /** Pergunta, grava e avisa — o que o worker faz, na ordem dele. */
 async function observarEAvisar(
@@ -552,12 +552,14 @@ describe("Avisar a equipe", () => {
    * nesse meio — o turno da rajada passou, alguém assumiu. O gatilho da 0426
    * que o fecharia disparou quando ele ainda não existia: relida a conversa, o
    * aviso de um pedido já atendido não nasce. As condições são as do gatilho:
-   * assumida ou encerrada vale para os dois; passada a uma pessoa, só para o de
-   * falar com uma pessoa (o de parar de receber fecha no bloqueio do contato).
+   * encerrada vale para os dois; com uma pessoa (assumida ou passada), só para
+   * o de falar com uma pessoa — o de parar de receber pede que a equipe assuma
+   * E peça o PARAR, e fecha no bloqueio do contato.
    */
   it.each([
-    ["passada a uma pessoa depois da mensagem", { assumidaOuEncerrada: false, passadaAUmaPessoa: true }, ["jev_parar_de_receber"]],
-    ["assumida por alguém ou encerrada", { assumidaOuEncerrada: true, passadaAUmaPessoa: false }, []],
+    ["com uma pessoa (assumida ou passada depois da mensagem)", { encerrada: false, comUmaPessoa: true }, ["jev_parar_de_receber"]],
+    ["encerrada", { encerrada: true, comUmaPessoa: false }, []],
+    ["encerrada e com uma pessoa", { encerrada: true, comUmaPessoa: true }, []],
     ["sem ninguém (controle)", LIVRE, ["jev_pedido_de_humano", "jev_parar_de_receber"]],
     ["não deu para ler: o aviso abre (é informação)", null, ["jev_pedido_de_humano", "jev_parar_de_receber"]],
   ] as const)("a conversa, relida antes do aviso, %s", async (_caso, conversa, kinds) => {

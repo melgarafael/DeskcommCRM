@@ -14,7 +14,8 @@
  * O Jev só é perguntado onde a regra de hoje disse NÃO (`pedidosAPerguntar`):
  * a pergunta do pedido que a regra já pegou nem sai. Por isso o rótulo de hoje
  * gravado ao lado do dele é sempre `nao`, e o cartão não mostra concordância —
- * mostra quantos pedidos ele percebeu que a regra deixou passar. Quem roda a
+ * mostra em quantas MENSAGENS ele percebeu o pedido que a regra não reconheceu
+ * (uma linha por mensagem: a unidade é a mensagem, não o pedido). Quem roda a
  * regra é quem chama (`workers/ai-sentiment-worker.pedidos.ts`): a de pessoa
  * mora no agent-engine, e o que este módulo executa não pode importar de lá
  * (`tests/unit/jev-nunca-cala-bloqueia-nem-responde.test.ts`).
@@ -42,11 +43,14 @@
  * conversa e pedido (`avisarAEquipe`), com o botão "Abrir a conversa" — e é
  * tudo o que muda. O aviso não repete o que o cliente escreveu: a Central é
  * lida pela organização inteira, e a conversa só por quem a enxerga; a frase
- * fica na conversa, onde o botão leva quem pode lê-la. Ele fecha sozinho
- * (gatilhos da migration 0426) quando a conversa é passada a uma pessoa por
- * qualquer caminho — alguém assume, a passagem da regra, do clima ou do
- * próprio modelo, ou ela é encerrada —, o de parar de receber também quando o
- * contato é bloqueado; ou no "Marcar resolvido".
+ * fica na conversa, onde o botão leva quem pode lê-la. Os dois fecham sozinhos
+ * (gatilhos da migration 0426) quando a conversa é encerrada, e no "Marcar
+ * resolvido". O de falar com uma pessoa fecha também quando a conversa fica com
+ * uma pessoa por qualquer caminho — alguém assume, a passagem da regra, do
+ * clima ou do próprio modelo. O de parar de receber, não: o texto dele pede que
+ * a equipe assuma E peça ao cliente o PARAR, e fechar no primeiro passo sumiria
+ * com o lembrete de um pedido de descadastro antes do passo que o atende. Ele
+ * fecha quando o contato é bloqueado.
  *
  * ═══ O QUE ELE NUNCA FAZ ═══
  *
@@ -400,10 +404,14 @@ export interface OClimaDaMensagem {
  * fecharia o aviso se ele já existisse.
  */
 export interface AConversaAgora {
-  /** Uma pessoa ficou com ela, ou ela foi encerrada: os dois avisos nasceriam já atendidos. */
-  assumidaOuEncerrada: boolean;
-  /** Passada a uma pessoa depois da mensagem, ou com o robô calado: o de falar com uma pessoa nasceria já atendido. */
-  passadaAUmaPessoa: boolean;
+  /** Fora dos estados abertos: os dois avisos nasceriam já atendidos. */
+  encerrada: boolean;
+  /**
+   * Uma pessoa ficou com ela, foi passada a uma pessoa depois da mensagem, ou o
+   * robô está calado: o de falar com uma pessoa nasceria já atendido. O de parar
+   * de receber, não — ver o cabeçalho.
+   */
+  comUmaPessoa: boolean;
 }
 
 /**
@@ -448,8 +456,8 @@ export async function avisarAEquipe(
   // `null`: não deu para ler, e o aviso abre (é informação; ver `aConversaAgora`).
   const conversa = await lerAConversa().catch(() => null);
   for (const p of aAvisar) {
-    if (conversa?.assumidaOuEncerrada === true) continue;
-    if (p.id === "humano" && conversa?.passadaAUmaPessoa === true) continue;
+    if (conversa?.encerrada === true) continue;
+    if (p.id === "humano" && conversa?.comUmaPessoa === true) continue;
     const aviso = AVISOS_DOS_PEDIDOS[p.id];
     const texto = { title: traduzir(aviso.titulo, e.idioma), body: traduzir(aviso.corpo, e.idioma) };
     try {

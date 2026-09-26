@@ -1390,12 +1390,20 @@ describe("os pedidos do cliente no worker de clima", () => {
    * relida a conversa, o aviso do pedido já atendido não nasce. A mudança é
    * feita DURANTE a chamada dos pedidos — depois de o worker ler os fatos do
    * turno, como na corrida de verdade.
+   *
+   * O robô calado é o valor que o produto GRAVA: o silêncio durável é o
+   * literal `'infinity'`, que o supabase-js devolve como texto (e `Date.parse`
+   * lê como NaN); a pausa manual grava um instante de verdade. E assumir não
+   * impede o de parar de receber: o texto dele pede que a equipe assuma E peça
+   * o PARAR, e o gatilho da 0426 não o fecha ao assumir.
    */
   const RECEBIDA_EM = "2026-09-26T10:00:00.000Z";
+  const DAQUI_A_DUAS_HORAS = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
   it.each([
     ["passada a uma pessoa depois da mensagem", { last_handoff_at: "2026-09-26T10:00:05.000Z" }, ["jev_parar_de_receber"]],
-    ["com o robô calado", { bot_silenced_until: "2999-01-01T00:00:00.000Z" }, ["jev_parar_de_receber"]],
-    ["assumida por alguém da equipe", { assigned_to_user_id: "18181818-1818-4818-8818-181818181818" }, []],
+    ["com o robô calado para sempre ('infinity', o que a passagem grava)", { bot_silenced_until: "infinity" }, ["jev_parar_de_receber"]],
+    ["com o robô calado por duas horas (a pausa manual)", { bot_silenced_until: DAQUI_A_DUAS_HORAS }, ["jev_parar_de_receber"]],
+    ["assumida por alguém da equipe", { assigned_to_user_id: "18181818-1818-4818-8818-181818181818" }, ["jev_parar_de_receber"]],
     ["encerrada", { status: "closed" }, []],
     [
       "passada a uma pessoa ANTES da mensagem, e o silêncio já vencido (controle)",

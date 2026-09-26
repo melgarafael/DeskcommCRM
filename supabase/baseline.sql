@@ -38774,12 +38774,15 @@ create unique index if not exists agent_inbox_jev_pedido_unico
   where kind in ('jev_pedido_de_humano','jev_parar_de_receber');
 
 -- 3. O AVISO FECHA QUANDO O PEDIDO FOI ATENDIDO, por qualquer caminho.
---    Na conversa: uma pessoa ficou com ela, ou ela saiu dos estados abertos
---    (os dois avisos); ou ela foi PASSADA a uma pessoa — `performHumanHandoff`
---    (a regra de hoje, o descadastro ambíguo, a ferramenta
---    `request_human_handoff` do modelo), o orquestrador do clima e a
---    atribuição manual gravam `last_handoff_at` e calam o robô
---    (`bot_silenced_until` no futuro) — e aí fecha o de falar com uma pessoa.
+--    A conversa saiu dos estados abertos (encerrada): os dois avisos.
+--    A conversa ficou com uma pessoa — alguém assumiu, ou ela foi PASSADA:
+--    `performHumanHandoff` (a regra de hoje, o descadastro ambíguo, a
+--    ferramenta `request_human_handoff` do modelo), o orquestrador do clima e
+--    a atribuição manual gravam `last_handoff_at` e calam o robô
+--    (`bot_silenced_until` no futuro) — fecha SÓ o de falar com uma pessoa.
+--    O de parar de receber segue aberto aí: o texto dele pede que a equipe
+--    assuma E peça ao cliente o PARAR, e fechá-lo no primeiro passo sumiria
+--    com o lembrete de um pedido de descadastro antes do passo que o atende.
 --    No contato: bloqueado (`is_blocked` passa a true — o único escritor é o
 --    STOP do próprio cliente, na entrada da mensagem, lib/channels/pos-entrada.ts;
 --    ninguém da equipe bloqueia à mão), fecha o de parar de receber de todas
@@ -38790,11 +38793,12 @@ create unique index if not exists agent_inbox_jev_pedido_unico
 create or replace function public.fn_fechar_avisos_do_jev_da_conversa()
 returns trigger language plpgsql security definer set search_path=public as $$
 begin
- if new.assigned_to_user_id is not null or new.status not in('open','pending','claimed','ai_handling') then
+ if new.status not in('open','pending','claimed','ai_handling') then
   update public.agent_inbox_items set status='resolved',resolved_at=now()
    where organization_id=new.organization_id and ref_kind='conversation' and ref_id=new.id
      and kind in('jev_pedido_de_humano','jev_parar_de_receber') and status<>'resolved';
- elsif (new.last_handoff_at is not null and new.last_handoff_at is distinct from old.last_handoff_at)
+ elsif new.assigned_to_user_id is not null
+    or (new.last_handoff_at is not null and new.last_handoff_at is distinct from old.last_handoff_at)
     or (new.bot_silenced_until > now() and new.bot_silenced_until is distinct from old.bot_silenced_until) then
   update public.agent_inbox_items set status='resolved',resolved_at=now()
    where organization_id=new.organization_id and ref_kind='conversation' and ref_id=new.id
