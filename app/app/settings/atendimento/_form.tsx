@@ -45,6 +45,14 @@ const MODO_COPY: Record<RoutingMode, { titulo: string; corpo: string }> = {
       "primeiro. Quem recebe é sempre quem está há mais tempo sem receber — entre os que " +
       "estão disponíveis e dentro do horário. Ninguém escolhe, então não há fila furada.",
   },
+  load: {
+    titulo: "Vai para quem tem menos conversas na mão",
+    corpo:
+      "Cada cliente novo cai com quem está com MENOR número de conversas em aberto. Em caso " +
+      "de empate vale o rodízio — quem está há mais tempo sem receber leva. Entre os que estão " +
+      "disponíveis e dentro do horário, como nos outros modos. É o modo para time grande, " +
+      "onde deixar uma pessoa com tudo e outra parada custa caro.",
+  },
 };
 
 const VISIBILIDADE_COPY: Record<VisibilityMode, { titulo: string; corpo: string }> = {
@@ -164,7 +172,7 @@ export function AtendimentoForm({ initial }: { initial: AtendimentoConfig }) {
           ))}
         </div>
 
-        {form.mode === "round_robin" ? (
+        {form.mode !== "manual" ? (
           <div className="grid gap-4 border-t pt-4 sm:grid-cols-2">
             <div className="space-y-1">
               <Label htmlFor="max_retries">{t("Tentativas antes de desistir")}</Label>
