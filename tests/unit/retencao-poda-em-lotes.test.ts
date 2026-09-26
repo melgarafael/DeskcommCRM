@@ -23,6 +23,8 @@ import {
   RETENCAO_OBSERVACOES_DO_JEV_DIAS_PISO,
   RETENCAO_PROSPECCAO_DIAS_PADRAO,
   RETENCAO_PROSPECCAO_DIAS_PISO,
+  RETENCAO_RASCUNHO_DIAS_PADRAO,
+  RETENCAO_RASCUNHO_DIAS_PISO,
   interpretarRetencao,
 } from "@/lib/retencao/politica";
 
@@ -49,6 +51,13 @@ let respostaRpc: { data: number | null; error: { message: string } | null } = {
  * varredura faz é medido em `lgpd-varredura-completa-a-cascata.test.ts`.
  */
 let contatosAnonimizados: Array<{ id: string; organization_id: string }> = [];
+/**
+ * As linhas que o DELETE da décima poda (`conversation_drafts`) devolve nesta
+ * rodada. Vazio por padrão: os casos deste arquivo medem a PODA das irmãs, e um
+ * expurgo com trabalho a fazer mudaria a contagem de auditoria. O caso em que
+ * ele apaga está no fim deste arquivo — é o que prova `houveEfeito` contando.
+ */
+let rascunhosApagados: Array<{ id: string }> = [];
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     rpc: async () => respostaRpc,
@@ -60,7 +69,25 @@ vi.mock("@/lib/supabase/admin", () => ({
         then: (r: (v: unknown) => unknown) =>
           Promise.resolve({ data: contatosAnonimizados, error: null }).then(r),
       };
-      return { select: () => q, update: () => q };
+      // A superfície do DELETE da décima poda: `.delete().lt().select().order().limit()`.
+      // O dublê recusa `limit` sem `order` antes, como o PostgREST 12.2 recusa
+      // (400 PGRST109): tirar o `.order()` do handler reprova este arquivo.
+      let ordenado = false;
+      const apagando: Record<string, unknown> = {
+        lt: () => apagando,
+        select: () => apagando,
+        order: () => {
+          ordenado = true;
+          return apagando;
+        },
+        limit: () => {
+          if (!ordenado) throw new Error("PGRST109: A 'limit' was applied without an explicit 'order'");
+          return apagando;
+        },
+        then: (r: (v: unknown) => unknown) =>
+          Promise.resolve({ data: rascunhosApagados, error: null }).then(r),
+      };
+      return { select: () => q, update: () => q, delete: () => apagando };
     },
   }),
 }));
@@ -88,17 +115,33 @@ vi.mock("@/lib/supabase/admin", () => ({
 function bancoQueDevolve(sequencias: {
   fila: number[];
   auditoria: number[];
-}): { db: PodaDb; chamadas: { nome: string; dias: number; limite: number }[] } {
+  /** A décima poda (issue #1686) — um lote por posição, como as irmãs. */
+  rascunhos?: number[];
+}): {
+  db: PodaDb;
+  chamadas: { nome: string; dias: number; limite: number }[];
+  /** Os cortes que `apagarRascunhos` recebeu, em ordem — é a régua do relógio. */
+  cortes: string[];
+} {
   const chamadas: { nome: string; dias: number; limite: number }[] = [];
-  const restante = { fila: [...sequencias.fila], auditoria: [...sequencias.auditoria] };
+  const cortes: string[] = [];
+  const restante = {
+    fila: [...sequencias.fila],
+    auditoria: [...sequencias.auditoria],
+    rascunhos: [...(sequencias.rascunhos ?? [0])],
+  };
   const db: PodaDb = {
     async rpc(nome, args) {
       chamadas.push({ nome, dias: args.p_retencao_dias, limite: args.p_limite });
       const balde = nome === "fn_podar_fila_de_jobs" ? restante.fila : restante.auditoria;
       return { data: balde.shift() ?? 0, error: null };
     },
+    async apagarRascunhos(corte) {
+      cortes.push(corte);
+      return { data: restante.rascunhos.shift() ?? 0, error: null };
+    },
   };
-  return { db, chamadas };
+  return { db, chamadas, cortes };
 }
 
 describe("interpretarRetencao — o knob nunca derruba o produto", () => {
@@ -223,8 +266,91 @@ describe("podarHistorico — o laço de lotes", () => {
       async rpc() {
         return { data: null, error: { message: "permission denied for table api_audit_log" } };
       },
+      async apagarRascunhos() {
+        return { data: null, error: { message: "permission denied for table conversation_drafts" } };
+      },
     };
     await expect(podarHistorico(db, {})).rejects.toThrow(/permission denied/);
+  });
+});
+
+describe("a décima poda — o rascunho sugerido vencido (issue #1686)", () => {
+  it("sem knob, corta 30 dias atrás do VENCIMENTO e reporta o prazo", async () => {
+    // O relógio é `expires_at`, e isto se mede pelo CORTE: ele tem de estar ~30
+    // dias para trás, não "agora" (que seria cortar por `created_at` e apagar
+    // rascunho cuja janela ainda está aberta).
+    const { db, cortes } = bancoQueDevolve({ fila: [0], auditoria: [0] });
+    const antes = Date.now();
+    const r = await podarHistorico(db, {});
+
+    expect(cortes).toHaveLength(1);
+    const corte = Date.parse(cortes[0] as string);
+    const esperado = antes - RETENCAO_RASCUNHO_DIAS_PADRAO * 86_400_000;
+    expect(Math.abs(corte - esperado)).toBeLessThan(10_000);
+    expect(corte).toBeLessThan(antes - 29 * 86_400_000);
+
+    expect(r.retencao_rascunho_dias).toBe(RETENCAO_RASCUNHO_DIAS_PADRAO);
+    expect(r.rascunhos_apagados).toBe(0);
+    expect(r.lotes_rascunhos).toBe(1);
+    expect(r.rascunhos_tem_resto).toBe(false);
+    // `.env` intocado = caminho padrão de toda instalação: sem aviso.
+    expect(r.avisos).toEqual([]);
+  });
+
+  it("knob abaixo do piso é ELEVADO para 7, com aviso; lixo cai no padrão", async () => {
+    const baixo = bancoQueDevolve({ fila: [0], auditoria: [0] });
+    const elevado = await podarHistorico(baixo.db, { DRAFT_RETENTION_DAYS: "1" });
+    const corteElevado = Date.parse(baixo.cortes[0] as string);
+    expect(Math.abs(corteElevado - (Date.now() - RETENCAO_RASCUNHO_DIAS_PISO * 86_400_000))).toBeLessThan(
+      10_000,
+    );
+    expect(elevado.retencao_rascunho_dias).toBe(RETENCAO_RASCUNHO_DIAS_PISO);
+    expect(elevado.avisos).toEqual([expect.stringContaining("DRAFT_RETENTION_DAYS")]);
+
+    // "trezentos" é lixo, não escolha: cai no PADRÃO com aviso, nunca num
+    // número que o operador não escreveu.
+    const lixo = bancoQueDevolve({ fila: [0], auditoria: [0] });
+    const r = await podarHistorico(lixo.db, { DRAFT_RETENTION_DAYS: "trezentos" });
+    expect(r.retencao_rascunho_dias).toBe(RETENCAO_RASCUNHO_DIAS_PADRAO);
+    expect(r.avisos).toEqual([expect.stringContaining("DRAFT_RETENTION_DAYS")]);
+  });
+
+  it("para no lote incompleto e DECLARA resto quando o teto fecha", async () => {
+    const cheio = bancoQueDevolve({
+      fila: [0],
+      auditoria: [0],
+      rascunhos: Array.from({ length: MAX_LOTES + 3 }, () => TAMANHO_DO_LOTE),
+    });
+    const r = await podarHistorico(cheio.db, {});
+    expect(cheio.cortes).toHaveLength(MAX_LOTES);
+    expect(r.rascunhos_apagados).toBe(MAX_LOTES * TAMANHO_DO_LOTE);
+    expect(r.rascunhos_tem_resto).toBe(true);
+
+    const parcial = bancoQueDevolve({
+      fila: [0],
+      auditoria: [0],
+      rascunhos: [TAMANHO_DO_LOTE, 12],
+    });
+    const r2 = await podarHistorico(parcial.db, {});
+    expect(parcial.cortes).toHaveLength(2);
+    expect(r2.rascunhos_apagados).toBe(TAMANHO_DO_LOTE + 12);
+    expect(r2.rascunhos_tem_resto).toBe(false);
+    expect(r2.lotes_rascunhos).toBe(2);
+  });
+
+  it("erro do banco sobe — a décima poda também não engole falha", async () => {
+    // Mesmo contrato das irmãs: falha ABERTA na ação e ABERTA na informação.
+    // Uma poda que falha em silêncio vira "o rascunho não some e ninguém sabe
+    // por quê" seis meses depois.
+    const db: PodaDb = {
+      async rpc() {
+        return { data: 0, error: null };
+      },
+      async apagarRascunhos() {
+        return { data: null, error: { message: "permission denied for table conversation_drafts" } };
+      },
+    };
+    await expect(podarHistorico(db, {})).rejects.toThrow(/conversation_drafts/);
   });
 });
 
@@ -269,6 +395,11 @@ describe("houveEfeito — as duas direções", () => {
     lotes_observacoes_do_jev: 0,
     observacoes_do_jev_tem_resto: false,
     retencao_observacoes_do_jev_dias: RETENCAO_OBSERVACOES_DO_JEV_DIAS_PADRAO,
+    // Décima poda (issue #1686): o rascunho sugerido por integração vencido.
+    rascunhos_apagados: 0,
+    lotes_rascunhos: 0,
+    rascunhos_tem_resto: false,
+    retencao_rascunho_dias: RETENCAO_RASCUNHO_DIAS_PADRAO,
     avisos: [] as string[],
   };
 
@@ -294,6 +425,13 @@ describe("houveEfeito — as duas direções", () => {
 
   it("...e apagou observação do Jev vencida → TAMBÉM audita (0421)", () => {
     expect(houveEfeito({ ...base, observacoes_do_jev_apagadas: 1 })).toBe(true);
+  });
+
+  it("...e apagou rascunho vencido → TAMBÉM audita (issue #1686)", () => {
+    // A décima poda entra em `houveEfeito` NO MESMO commit em que entra no
+    // laço — a lição da quarta, da quinta e das demais. E é a única que apaga
+    // TEXTO escrito para uma pessoa: apagaria dado pessoal sem trilha.
+    expect(houveEfeito({ ...base, rascunhos_apagados: 1 })).toBe(true);
   });
 
   it("apagou job → audita; apagou auditoria → audita", () => {
@@ -377,6 +515,7 @@ describe("o handler HTTP — a falha entra na trilha, o vazio não", () => {
   beforeEach(() => {
     auditou.mockClear();
     contatosAnonimizados = [];
+    rascunhosApagados = [];
   });
 
   it("rodada que não apagou nada responde 200 e NÃO audita", async () => {
@@ -396,6 +535,21 @@ describe("o handler HTTP — a falha entra na trilha, o vazio não", () => {
     expect(auditou.mock.calls[0]?.[0]).toMatchObject({
       action: "retention.sweep_run",
       metadata: { jobs_apagados: 7 },
+    });
+  });
+
+  it("rodada que só apagou RASCUNHO vencido também AUDITA (issue #1686)", async () => {
+    // A décima poda entra no laço e no relatório; sem ela nesta asserção, uma
+    // rodada que só expurgasse rascunho apagaria TEXTO de uma pessoa sem deixar
+    // registro — o silêncio que a doutrina proíbe.
+    respostaRpc = { data: 0, error: null };
+    rascunhosApagados = [{ id: "rascunho-1" }];
+    const resposta = await GET(requisicaoAutorizada());
+    expect(resposta.status).toBe(200);
+    expect(auditou).toHaveBeenCalledTimes(1);
+    expect(auditou.mock.calls[0]?.[0]).toMatchObject({
+      action: "retention.sweep_run",
+      metadata: { rascunhos_apagados: 1, jobs_apagados: 0 },
     });
   });
 

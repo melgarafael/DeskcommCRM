@@ -75,6 +75,12 @@ const DONO_NO_SQL: Record<string, string> = {
  */
 const SEM_FUNCAO_NO_SQL: Record<string, string> = {
   CAPTACAO: "admin client",
+  // migration 0419 — o rascunho sugerido por integração (issue #1686). A décima
+  // poda do cron `data-retention` é um DELETE do admin client: a tabela nunca
+  // teve função de expurgo, então não há corpo onde enfiar o `greatest` do piso.
+  // A razão está escrita em `politica.ts`, ao lado da declaração — a captação é
+  // a mesma exceção, com a mesma frase.
+  RASCUNHO: "admin client",
 };
 
 function paresDeclarados(): string[] {

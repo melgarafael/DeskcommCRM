@@ -53,5 +53,23 @@ export async function GET(
     return fail("internal_error", "Erro ao listar modelos.", 500, { requestId });
   }
 
-  return ok({ models: data ?? [] }, { requestId });
+  // UM MODELO DE BUSCA NÃO É UM ATENDENTE.
+  //
+  // O catálogo é o mesmo que alimenta os pontos de índice/busca do RAG, então
+  // ele traz `text-embedding-3-small` — modelo que só converte texto em
+  // vetor. Era oferecido no seletor "Modelo" do agente (IA › Agentes › Modelo),
+  // e quem o escolhia ficava com um atendente mudo: embedding não conversa.
+  //
+  // `supports_tools` é a MESMA régua que `escolherModeloDoProvedor`
+  // (`lib/ai/agents/escolher-modelo.ts`) já usa para escolher o modelo do
+  // atendente e que `validarBinding` aplica no painel: sem ferramenta o modelo
+  // devolve texto plausível e nada chega ao funil. Filtrar aqui é filtrar em
+  // todos os seletôres — esta rota é a única fonte do `ModelPicker`.
+  //
+  // O filtro é em memória de propósito: são no máximo centenas de linhas, e
+  // assim o teste da rota enxerga a regra (um `eq` no banco o esconderia do
+  // dublê, que devolve a lista inteira).
+  const models = (data ?? []).filter((m) => m.supports_tools === true);
+
+  return ok({ models }, { requestId });
 }

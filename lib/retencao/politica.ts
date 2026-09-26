@@ -211,6 +211,37 @@ export const RETENCAO_OBSERVACOES_DO_JEV_DIAS_PADRAO = 90;
  */
 export const RETENCAO_OBSERVACOES_DO_JEV_DIAS_PISO = 30;
 
+/**
+ * 30 dias para o RASCUNHO SUGERIDO POR INTEGRAÇÃO já vencido
+ * (`conversation_drafts`, migration 0419 / issue #1611; expurgo pedido na #1686).
+ *
+ * O relógio é `expires_at`, NUNCA `created_at` — a mesma decisão do espelho da
+ * agenda, e pela mesma razão: a linha só responde enquanto a janela dela está
+ * aberta. Depois do vencimento o link `?rascunho=` não abre, `consumirRascunho`
+ * recusa (`lib/inbox/rascunho-sugerido.ts`) e o texto é proposta que NINGUÉM
+ * enviou. Trinta dias é o prazo de apurar "o link chegou, por que não abriu?";
+ * depois disso o que houve de operação está na trilha
+ * (`conversation.draft_created` / `conversation.draft_used`), que responde sem
+ * guardar o texto da pessoa de novo.
+ *
+ * Quem aplica é o cron `data-retention` (a décima poda), em lotes, com este piso
+ * aplicado NO TYPESCRIPT: a poda é um DELETE do admin client
+ * (`app/api/v1/cron/data-retention/route.ts`), não uma `security definer` — não
+ * há função onde enfiar o piso, e é a MESMA exceção declarada para a captação
+ * acima. Por isso a cerca `tests/unit/retencao-todo-piso-tem-dono.test.ts` a
+ * lista em `SEM_FUNCAO_NO_SQL`, com esta razão escrita aqui.
+ */
+export const RETENCAO_RASCUNHO_DIAS_PADRAO = 30;
+/**
+ * Piso de 7 dias CONTADOS DO VENCIMENTO — nunca do `created_at`.
+ *
+ * Sete dias é a janela em que "o link do rascunho não abriu" ainda é pergunta
+ * viva (o texto vale 24 h por padrão, `JANELA_PADRAO_HORAS`). Abaixo disso o
+ * knob viraria apagador de rastro de INCIDENTE; acima, nada se protegeria: a
+ * linha não tem leitor depois do vencimento, e apagá-la cedo ou tarde não muda
+ * o que a trilha de auditoria responde.
+ */
+export const RETENCAO_RASCUNHO_DIAS_PISO = 7;
 
 export interface RetencaoInterpretada {
   /** Dias a pedir ao banco. Nunca abaixo do piso, nunca `NaN`. */

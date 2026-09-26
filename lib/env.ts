@@ -409,6 +409,14 @@ const schema = z.object({
    * 30 (a janela da concordância).
    */
   JEV_OBSERVACOES_RETENTION_DAYS: z.string().optional().default(""),
+  /**
+   * Rascunho sugerido por integração JÁ VENCIDO (`conversation_drafts`,
+   * migration 0419, issue #1686). `z.string()` pela MESMA razão das irmãs
+   * acima — quem interpreta é `lib/retencao/politica.ts`, onde lixo resolve
+   * para o lado seguro. Padrão 30, piso 7, contados do `expires_at` (a linha
+   * só responde enquanto a janela dela está aberta).
+   */
+  DRAFT_RETENTION_DAYS: z.string().optional().default(""),
 
   // LGPD export (S-08.04)
   LGPD_SIGNING_KEY: z.string().optional().default(""),
