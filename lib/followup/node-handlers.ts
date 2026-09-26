@@ -830,6 +830,18 @@ export function processNode(input: {
       };
     }
 
+    case "internal_task": {
+      // Lembrete interno (#1540): este nó NÃO enfileira turno de envio — é a
+      // diferença inteira da feature. Ele avança, e quem grava a tarefa é o
+      // engine ao aplicar o `advance` (`criarTarefaInterna`), guardado pelo
+      // MESMO idempotency_key do evento do passo: replay do tick não cria a
+      // segunda tarefa, e um fluxo "somente interno" não tem mensagem nenhuma
+      // para sair.
+      const edge = selectEdge(edges, node.id, { type: "always" });
+      if (!edge) return { kind: "fail", error: `internal_task node "${node.id}" has no outbound edge` };
+      return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
+    }
+
     case "end": {
       if (node.config.outcome === "custom") {
         return { kind: "complete", outcome: null, cancel_reason: node.config.note };

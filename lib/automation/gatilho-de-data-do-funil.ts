@@ -181,6 +181,28 @@ export function chaveDeDisparo(regraId: string, leadId: string): string {
 }
 
 /**
+ * A MESMA chave com o VALOR da data no meio (#1540) — o rearme.
+ *
+ * O par `regra:lead` só dispara uma vez na vida do negócio: mudar a data depois
+ * do aviso não ressuscitava nada, e a operação perdia o segundo aviso em silêncio
+ * (a cobrança de 60 dias depois do casamento nunca saía quando o casamento era
+ * remarcado). Com o valor na chave, cada data nova é um episódio novo — e a
+ * mesma data continua disparando UMA vez.
+ *
+ * `valorNormalizado` é o ida-e-volta pelo calendário (`01/05/2026` e
+ * `2026-05-01` são o MESMO episódio): sem normalizar, editar só o formato do
+ * campo rearmaria o aviso sem mudar a data.
+ */
+export function chaveDeDisparoComValor(regraId: string, leadId: string, valor: unknown): string {
+  return `${regraId}:${leadId}:${valorNormalizado(valor)}`;
+}
+
+/** A data em `YYYY-MM-DD`, ou `""` para o que não é data (nunca casa). */
+export function valorNormalizado(valor: unknown): string {
+  return typeof valor === "string" ? somarDias(valor, 0) : "";
+}
+
+/**
  * Tira do lote quem já disparou ESTA regra.
  *
  * O `event_log` devolve os pares (regra, lead) já emitidos; o que sobra é o que

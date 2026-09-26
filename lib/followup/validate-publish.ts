@@ -30,6 +30,7 @@ export const PUBLISH_ERROR_CODES = [
   'cycle_without_wait',
   'max_steps_exceeded',
   'no_fora_da_superficie',
+  'interno_com_envio',
   'roteiro_ramificado',
   'campo_repetido',
   'roteiro_em_ciclo',
@@ -125,10 +126,43 @@ function cicloDoEncadeamento(
  * recusava em silêncio; a recusa aqui é o erro que a pessoa lê no editor.
  */
 export const NOS_DA_SUPERFICIE: Record<FollowupFlowSurface, readonly NodeType[]> = {
-  followup: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'end'],
-  crm_automation: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'end'],
+  followup: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'internal_task', 'end'],
+  crm_automation: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'internal_task', 'end'],
   atendimento: ['trigger', 'collect', 'skill', 'end'],
 };
+
+/**
+ * Os nós que ENVIAM mensagem ao cliente num follow-up (#1540).
+ *
+ * `action` é o envio (texto, IA ou template); `collect`/`skill` são de roteiro
+ * de atendimento — superfícies que não têm a marca "somente interno" e, num
+ * fluxo interno, já teriam sido recusadas por `no_fora_da_superficie`.
+ */
+const NOS_QUE_ENVIAM: readonly NodeType[] = ['action'];
+
+/**
+ * SOMENTE INTERNO (#1540): o fluxo marcou que não fala com o cliente, e tem nó
+ * de envio. Recusar na publicação é o único desfecho honesto — aceitar calado
+ * daria ao operador a tela dizendo "publicado" enquanto uma mensagem sairia
+ * para o cliente num fluxo que ele achava interno.
+ */
+function validarSomenteInterno(
+  graph: FlowGraph,
+  surface: FollowupFlowSurface,
+  errors: PublishValidationError[],
+): void {
+  if (surface === 'atendimento') return;
+  if (graph.settings?.somente_interno !== true) return;
+  const enviadores = new Set(NOS_QUE_ENVIAM);
+  for (const n of [...graph.nodes].sort(byId)) {
+    if (!enviadores.has(n.type)) continue;
+    errors.push({
+      node_id: n.id,
+      code: 'interno_com_envio',
+      message: `O fluxo é "somente interno" e a caixa "${n.label}" envia mensagem ao cliente — tire a marca "somente interno" ou troque a caixa por "Lembrete interno".`,
+    });
+  }
+}
 
 /** Regras do roteiro de atendimento que o grafo sozinho não carrega. */
 function validarSuperficie(
@@ -508,7 +542,9 @@ export function validateFlowForPublish(
 ): PublishValidationResult {
   const { nodes, edges } = graph;
   const errors: PublishValidationError[] = [];
-  validarSuperficie(graph, contexto.surface ?? 'followup', errors, contexto.roteiro);
+  const surface = contexto.surface ?? 'followup';
+  validarSuperficie(graph, surface, errors, contexto.roteiro);
+  validarSomenteInterno(graph, surface, errors);
   const etapas = contexto.etapas;
   const nomes: NomesDeValor = etapas ? { etapa: (id) => etapas.get(id)?.nome ?? null } : {};
   const nodesById = new Map(nodes.map((n) => [n.id, n]));

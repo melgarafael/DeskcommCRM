@@ -38,6 +38,7 @@ describe('graph-schema', () => {
         'collect',
         'skill',
         'action',
+        'internal_task',
         'end',
       ]);
     });

@@ -43,6 +43,9 @@ const TYPE_ORDER: Record<NodeType, number> = {
   repeat: 5,
   collect: 6,
   skill: 7,
+  // Lembrete interno (#1540) entra DEPOIS de tudo que o cliente vê — o layout
+  // automático ordena por papel no fluxo, e este nó é o epílogo.
+  internal_task: 10,
   action: 8,
   end: 9,
 };

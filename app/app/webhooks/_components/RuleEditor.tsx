@@ -27,6 +27,14 @@ import {
   GATILHO_DE_DATA_DO_FUNIL,
   configDoGatilhoDeData,
 } from "@/lib/automation/gatilho-de-data-do-funil";
+import {
+  DIRECOES_DO_SILENCIO,
+  GATILHO_ETAPA_PARADA,
+  GATILHO_SILENCIO,
+  configDaEtapaParada,
+  configDoSilencio,
+  type DirecaoDoSilencio,
+} from "@/lib/automation/gatilhos-de-tempo";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 import {
   useCreateAutomationRule,
@@ -153,6 +161,11 @@ const CURATED_FIELDS: Record<TriggerEvent, CuratedField[]> = {
   // campo de data em si NÃO entra como condição — quem o escolhe é a
   // configuração do gatilho, logo acima.
   "lead.date_field_due": LEAD_FIELDS,
+  // #1540 — gatilhos por TEMPO: o N e a direção são da CONFIGURAÇÃO do gatilho,
+  // não da condição. Como condição sobra o que a regra sempre quis filtrar —
+  // funil (via etapa/tags) e tags do contato.
+  "lead.silent_for": LEAD_FIELDS,
+  "lead.stage_stale": [...LEAD_FIELDS, STAGE_FIELD],
 };
 
 const OP_LABELS: Record<Op, string> = { eq: "é", neq: "não é", contains: "contém" };
@@ -175,6 +188,19 @@ interface ConfigDaData {
 
 const DIAS_PADRAO = "7";
 
+/**
+ * O que os gatilhos por TEMPO (#1540) guardam além do nome deles: N dias, de
+ * QUEM é o silêncio (só no `lead.silent_for`) e se a agenda protege.
+ *
+ * Mesmo desenho da `ConfigDaData` — o leitor é o MESMO que a varredura usa, e
+ * se ele não reconhecer o que está guardado a tela não inventa nada.
+ */
+interface ConfigDoTempo {
+  dias: string;
+  direcao: DirecaoDoSilencio;
+  proteger_pela_agenda: boolean;
+}
+
 export function RuleEditor({ open, onOpenChange, rule }: Props) {
   const t = useT();
   const isEdit = !!rule;
@@ -187,6 +213,11 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
     pipeline_id: "",
     campo: "",
     dias: DIAS_PADRAO,
+  });
+  const [configDoTempo, setConfigDoTempo] = React.useState<ConfigDoTempo>({
+    dias: DIAS_PADRAO,
+    direcao: "da_equipe",
+    proteger_pela_agenda: false,
   });
 
   const create = useCreateAutomationRule();
@@ -221,10 +252,20 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
           }
         : { pipeline_id: "", campo: "", dias: DIAS_PADRAO },
     );
+    const silencioGuardado = configDoSilencio(rule?.trigger_config);
+    const etapaGuardada = configDaEtapaParada(rule?.trigger_config);
+    const tempoGuardado = silencioGuardado ?? etapaGuardada;
+    setConfigDoTempo({
+      dias: tempoGuardado ? String(tempoGuardado.dias) : DIAS_PADRAO,
+      direcao: silencioGuardado ? silencioGuardado.direcao : "da_equipe",
+      proteger_pela_agenda: tempoGuardado ? tempoGuardado.proteger_pela_agenda : false,
+    });
   }, [open, rule]);
 
   const curatedFields = triggerEvent ? CURATED_FIELDS[triggerEvent] : [];
   const ehGatilhoDeData = triggerEvent === GATILHO_DE_DATA_DO_FUNIL;
+  const ehGatilhoDeTempo =
+    triggerEvent === GATILHO_SILENCIO || triggerEvent === GATILHO_ETAPA_PARADA;
   const camposDeData = camposDoFunil(
     (pipelinesRes?.data ?? []).find((p) => p.id === configDaData.pipeline_id)?.settings ?? null,
   ).filter((campo) => campo.type === "date");
@@ -280,7 +321,15 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
             campo: configDaData.campo,
             dias: configDaData.dias.trim() === "" ? Number.NaN : Number(configDaData.dias),
           }
-        : undefined,
+        : ehGatilhoDeTempo
+          ? {
+              // O mesmo cuidado do gatilho de data: campo vazio vira NaN e o
+              // schema recusa com a mensagem certa, em vez de gravar N=0.
+              dias: configDoTempo.dias.trim() === "" ? Number.NaN : Number(configDoTempo.dias),
+              ...(triggerEvent === GATILHO_SILENCIO ? { direcao: configDoTempo.direcao } : {}),
+              proteger_pela_agenda: configDoTempo.proteger_pela_agenda,
+            }
+          : undefined,
     };
     const parsed = createAutomationRuleSchema.safeParse(payload);
     if (!parsed.success) {
@@ -425,6 +474,86 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                     )}
                   </p>
                 ) : null}
+              </div>
+            ) : null}
+
+            {/* #1540 — os gatilhos por TEMPO: N dias, de quem é o silêncio, e a
+                proteção de agenda. Sem esta escolha a regra é salva e a
+                varredura não sabe onde olhar — por isso o schema da API também
+                a recusa. */}
+            {ehGatilhoDeTempo ? (
+              <div className="space-y-3 rounded-sm border border-border p-3">
+                <p className="text-sm text-muted-foreground">
+                  {triggerEvent === GATILHO_SILENCIO
+                    ? t(
+                        "O lembrete sai quando se passarem N dias sem mensagem na direção escolhida. Chegando mensagem nova, o relógio zera — e um novo silêncio de N dias gera outro lembrete. Nada é enviado ao cliente.",
+                      )
+                    : t(
+                        "O lembrete sai quando se passarem N dias com o card na mesma etapa. Mudando a etapa, o relógio zera. Nada é enviado ao cliente.",
+                      )}
+                </p>
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="w-40 space-y-1">
+                    <Label htmlFor="dias-do-tempo">{t("Depois de N dias")}</Label>
+                    <Input
+                      id="dias-do-tempo"
+                      type="number"
+                      inputMode="numeric"
+                      value={configDoTempo.dias}
+                      min={1}
+                      max={3650}
+                      onChange={(e) =>
+                        setConfigDoTempo((prev) => ({ ...prev, dias: e.target.value }))
+                      }
+                    />
+                  </div>
+
+                  {triggerEvent === GATILHO_SILENCIO ? (
+                    <div className="flex-1 basis-52 space-y-1">
+                      <Label>{t("Silêncio de")}</Label>
+                      <Select
+                        value={configDoTempo.direcao}
+                        onValueChange={(v) =>
+                          setConfigDoTempo((prev) => ({
+                            ...prev,
+                            direcao: v as DirecaoDoSilencio,
+                          }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={t("De quem é o silêncio")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {DIRECOES_DO_SILENCIO.map((direcao) => (
+                            <SelectItem key={direcao} value={direcao}>
+                              {t(
+                                direcao === "da_equipe"
+                                  ? "Da equipe (nós não falamos)"
+                                  : direcao === "do_cliente"
+                                    ? "Do cliente (ele não respondeu)"
+                                    : "De qualquer um",
+                              )}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : null}
+                </div>
+
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={configDoTempo.proteger_pela_agenda}
+                    onChange={(e) =>
+                      setConfigDoTempo((prev) => ({
+                        ...prev,
+                        proteger_pela_agenda: e.target.checked,
+                      }))
+                    }
+                  />
+                  {t("Não gerar lembrete quando o cliente tiver compromisso marcado")}
+                </label>
               </div>
             ) : null}
           </section>

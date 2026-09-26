@@ -105,6 +105,10 @@ CRONS="
 # a rodada só age naquela que marca a hora da varredura. Minuto diferente do
 # aniversário para as duas não disputarem a mesma batida num self-host pequeno.
 23 * * * *|60|api/v1/cron/lead-date-field-due
+# #1540 — silêncio e etapa parada: gatilhos por TEMPO (ausência de evento), então
+# rodam de hora em hora e a trava no event_log (regra:negócio:âncora) segura a
+# repetição enquanto a âncora não mudar.
+23 * * * *|60|api/v1/cron/lead-time-triggers
 # O canal mudo (doc 11, decisão B): varredura de banco, sem rede, com régua em
 # DIAS. Diária e de madrugada porque o estado que ela lê muda em dias — de 5 em
 # 5 minutos seriam 288 varreduras para nada, e o aviso chegaria na mesma hora.
