@@ -164,7 +164,15 @@ export default defineConfig({
   webServer: {
     // Produção (`next build` antes!): dev-server compila por rota (40-80s) e
     // Turbopack dev quebra cookies() fora do request scope — inviável p/ e2e.
-    command: `pnpm exec next start --port ${PORT}`,
+    // `--keepAliveTimeout`: o MESMO valor do `KEEP_ALIVE_TIMEOUT` do Dockerfile
+    // (lá está o porquê; `tests/unit/keep-alive-do-servidor.test.ts` prende os
+    // dois). Com o padrão do Node, o servidor fecha a conexão ociosa aos 6 s
+    // (5 s + 1 s de `keepAliveTimeoutBuffer`), e o `page.request` do Playwright
+    // — agente keep-alive SEM prazo de ociosidade — reaproveita o socket no
+    // instante em que ele morre: `ECONNRESET`/`socket hang up` num GET depois
+    // de ~6 s sem chamada de API (medido: 5988 e 5998 ms nas runs 36069450590 e
+    // 36188123417).
+    command: `pnpm exec next start --port ${PORT} --keepAliveTimeout 125000`,
     // O ambiente do servidor sob teste vem do `.env.e2e`, INJETADO aqui — e não
     // do `.env.local`, que num checkout de trabalho aponta para PRODUÇÃO.
     // Variável de ambiente real tem precedência sobre os arquivos `.env*` que o
