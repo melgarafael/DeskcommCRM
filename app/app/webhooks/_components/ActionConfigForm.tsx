@@ -32,7 +32,17 @@ export type ActionItem =
   | { type: "add_tag"; config: { tags: string[] } }
   | { type: "assign_owner"; config: { user_id: string } }
   | { type: "call_webhook"; config: { url: string; secret?: string; secret_enc?: string } }
-  | { type: "start_message_flow"; config: { flow_pointer_id: string } };
+  | { type: "start_message_flow"; config: { flow_pointer_id: string } }
+  // #1540 — o lembrete interno: mesmos campos do schema da API e do nó de fluxo.
+  | {
+      type: "create_task";
+      config: {
+        titulo: string;
+        vence_em_dias: number;
+        atribuir_a: "dono_do_lead" | { usuario_id: string };
+        prioridade: string;
+      };
+    };
 
 export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
   switch (type) {
@@ -50,6 +60,12 @@ export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
       return { type, config: { url: "" } };
     case "start_message_flow":
       return { type, config: { flow_pointer_id: "" } };
+    // #1540 — o lembrete interno: mesma forma que o schema da API exige.
+    case "create_task":
+      return {
+        type,
+        config: { titulo: "", vence_em_dias: 1, atribuir_a: "dono_do_lead", prioridade: "medium" },
+      };
   }
 }
 
@@ -334,6 +350,85 @@ function AssignOwnerForm({ config, onChange }: FormProps<{ user_id: string }>) {
   );
 }
 
+/**
+ * `create_task` (#1540) — o formulário do lembrete que NÃO vira mensagem.
+ *
+ * Atribuição nominal (`dono_do_lead`) é o padrão e continua sendo a opção que o
+ * operador mantém quando o dono do negócio muda; quem quiser fixar uma pessoa
+ * escolhe na lista dos atendentes ativos (mesma lista do `assign_owner`).
+ */
+function CreateTaskForm({
+  config,
+  onChange,
+}: FormProps<{
+  titulo: string;
+  vence_em_dias: number;
+  atribuir_a: "dono_do_lead" | { usuario_id: string };
+  prioridade: string;
+}>) {
+  const t = useT();
+  const { data: members } = useAssignableMembers(true);
+  const atribuido =
+    typeof config.atribuir_a === "object" ? config.atribuir_a.usuario_id : "dono_do_lead";
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      <div className="space-y-1 sm:col-span-2">
+        <Label>{t("Título da tarefa")}</Label>
+        <Input
+          value={config.titulo}
+          onChange={(e) => onChange({ ...config, titulo: e.target.value })}
+          placeholder={t("Ligar para {{contact.name}} sobre {{lead.title}}")}
+        />
+      </div>
+      <div className="space-y-1">
+        <Label>{t("Vence em (dias)")}</Label>
+        <Input
+          type="number"
+          min={0}
+          max={365}
+          value={config.vence_em_dias}
+          onChange={(e) => onChange({ ...config, vence_em_dias: Number(e.target.value) })}
+        />
+      </div>
+      <div className="space-y-1">
+        <Label>{t("Prioridade")}</Label>
+        <Select value={config.prioridade} onValueChange={(v) => onChange({ ...config, prioridade: v })}>
+          <SelectTrigger>
+            <SelectValue placeholder={t("Prioridade")} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="low">{t("Baixa")}</SelectItem>
+            <SelectItem value="medium">{t("Média")}</SelectItem>
+            <SelectItem value="high">{t("Alta")}</SelectItem>
+            <SelectItem value="urgent">{t("Urgente")}</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-1 sm:col-span-2">
+        <Label>{t("Atribuir a")}</Label>
+        <Select
+          value={atribuido}
+          onValueChange={(v) =>
+            onChange({ ...config, atribuir_a: v === "dono_do_lead" ? "dono_do_lead" : { usuario_id: v } })
+          }
+        >
+          <SelectTrigger>
+            <SelectValue placeholder={t("Dono do negócio")} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="dono_do_lead">{t("Dono do negócio")}</SelectItem>
+            {(members ?? []).map((m) => (
+              <SelectItem key={m.user_id} value={m.user_id}>
+                {m.full_name ?? m.user_id.slice(0, 8)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
+}
+
 function CallWebhookForm({
   config,
   onChange,
@@ -475,6 +570,13 @@ export function ActionConfigForm({
     case "start_message_flow":
       return (
         <StartMessageFlowForm
+          config={action.config}
+          onChange={(config) => onChange({ type: action.type, config })}
+        />
+      );
+    case "create_task":
+      return (
+        <CreateTaskForm
           config={action.config}
           onChange={(config) => onChange({ type: action.type, config })}
         />
