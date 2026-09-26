@@ -39,6 +39,7 @@ import {
   VINCULO_DE_AGENDAMENTO,
 } from "@/lib/agenda/tipos";
 import { ApiError } from "@/lib/api/types";
+import { comIdempotencia, hashDoCorpo } from "@/lib/api/idempotency";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
 import { roleAtLeast } from "@/lib/auth/types";
@@ -233,7 +234,59 @@ async function exigeDonoDoCompromisso(
   throw new ApiError(403, "appointment_do_colega", undefined, ctx.requestId, RECUSA_DO_COLEGA);
 }
 
+const ENDPOINT_IDEMPOTENCIA_AGENDA = "/api/v1/agenda/agendamentos";
+
+/**
+ * Cria o recibo no handler compartilhado, onde REST e MCP chegam ao mesmo
+ * efeito persistente. Requests externos fornecem a chave pelo header; o
+ * runtime interno deriva uma chave estável do job e do input validado. Claim
+ * muda a cada reclaim e boundary delimita autorização, por isso nenhum dos dois
+ * identifica a operação.
+ */
 export async function marcarAgendamentoHandler(
+  supabase: SB,
+  ctx: HandlerCtx,
+  input: MarcarInput,
+): Promise<Record<string, unknown>> {
+  const chave =
+    ctx.idempotencyKey ??
+    (ctx.sourceJobId ? `agent-job:${ctx.sourceJobId}:${hashDoCorpo(input)}` : null);
+  if (chave === null) return executarCriacaoDeAgendamento(supabase, ctx, input);
+
+  const desfecho = await comIdempotencia({
+    db: supabase,
+    organizationId: ctx.organization_id,
+    endpoint: ENDPOINT_IDEMPOTENCIA_AGENDA,
+    chave,
+    corpo: input,
+    executar: async () => ({
+      resposta: await executarCriacaoDeAgendamento(supabase, ctx, input),
+      status: 201,
+    }),
+  });
+
+  if (desfecho.tipo === "conflito") {
+    throw new ApiError(
+      409,
+      "idempotency_conflict",
+      undefined,
+      ctx.requestId,
+      "Esta chave de idempotência já foi usada com outro conteúdo.",
+    );
+  }
+  if (desfecho.tipo === "em_curso") {
+    throw new ApiError(
+      409,
+      "idempotency_in_progress",
+      undefined,
+      ctx.requestId,
+      "A mesma requisição ainda está em curso. Tente de novo em instantes.",
+    );
+  }
+  return desfecho.resposta;
+}
+
+async function executarCriacaoDeAgendamento(
   supabase: SB,
   ctx: HandlerCtx,
   input: MarcarInput,

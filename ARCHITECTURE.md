@@ -29,7 +29,7 @@ Detalhes: [`docs/specs/01-spec-platform-base.md`](docs/specs/01-spec-platform-ba
 - Wrappers `ok()` / `fail()` em `lib/api/wrappers.ts`.
 - Auth dual: cookie session (frontend) ou `Authorization: Bearer tok_...` (server-to-server).
 - `X-Request-Id` em toda response, injetado em `proxy.ts` e correlacionado com o audit log.
-- `Idempotency-Key` é o contrato para POSTs de criação; duas rotas gravam recibo (`lgpd/requests/[id]/approve` e `admin/tenants`) e existe o helper reutilizável `lib/api/idempotency.ts`, aplicado em `message-templates`. Ainda **não** cobre as demais rotas de criação, e não fecha a corrida entre requisições simultâneas com a mesma chave (exige mudança de schema — issue #778). Meça em vez de citar: `grep -rln 'Idempotency-Key' app/api/v1 --include='route.ts'`.
+- POSTs de criação podem usar `Idempotency-Key`; `lib/api/idempotency.ts` reserva a chave antes do efeito e reproduz o recibo em `idempotency_keys` por 24h. O helper é usado por mensagens, rascunhos, templates e pela criação de agendamentos. Agenda REST e MCP chegam ao mesmo handler; o runtime interno deriva a chave de `sourceJobId` e do hash do input validado. A reserva fecha a corrida entre chamadas simultâneas, com janela de 60s; se o processo morrer depois do efeito e antes de gravar o recibo, uma nova execução após a expiração ainda pode repetir o efeito. Meça os consumidores HTTP: `grep -rln 'Idempotency-Key' app/api/v1 --include='route.ts'`.
 - Detalhes: [`docs/specs/01-spec-platform-base.md`](docs/specs/01-spec-platform-base.md) §API.
 
 ## Fluxo de uma requisição
