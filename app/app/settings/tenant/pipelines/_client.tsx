@@ -18,6 +18,7 @@ import {
 import { updatePipelineConfig } from "@/app/actions/settings/updatePipelineConfig";
 import type { PipelineConfigPatch } from "@/lib/schemas/settings";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
+import { modoDeReabertura } from "@/lib/leads/reabertura";
 import { customFieldSchema, type CustomFieldDef } from "@/lib/schemas/settings";
 import { Plus, Trash } from "@/lib/ui/icons";
 import { AgentMappingSection, ancoraDoMapeamento } from "./_mapping";
@@ -196,6 +197,9 @@ function PipelineEditor({
   const [wonRequired, setWonRequired] = useState(
     (pipeline.settings as { won_reason_required?: unknown } | null)?.won_reason_required === true,
   );
+  const [retomaComoNovo, setRetomaComoNovo] = useState(
+    modoDeReabertura(pipeline.settings) === "novo_negocio",
+  );
   const [fields, setFields] = useState<CustomFieldDef[]>(camposDoFunil(pipeline.settings));
   const [isPending, startTransition] = useTransition();
 
@@ -247,6 +251,7 @@ function PipelineEditor({
       lost_reasons: reasons,
       won_reasons: wonReasons,
       won_reason_required: wonRequired,
+      reabertura: retomaComoNovo ? "novo_negocio" : "mesmo_registro",
     };
     startTransition(async () => {
       const r = await updatePipelineConfig(pipeline.id, patch);
@@ -300,6 +305,22 @@ function PipelineEditor({
           />
           {t("Exigir motivo de ganho ao fechar como ganho")}
         </label>
+      </div>
+
+      <div className="space-y-1">
+        <label className="flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={retomaComoNovo}
+            onChange={(e) => setRetomaComoNovo(e.target.checked)}
+          />
+          {t("Negócio encerrado que volta abre um negócio novo")}
+        </label>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Desligado, arrastar um negócio perdido ou ganho para uma etapa aberta reabre o mesmo negócio. Ligado, o encerrado fica como está e o quadro oferece criar uma nova tentativa com o mesmo contato.",
+          )}
+        </p>
       </div>
 
       <div className="space-y-2">

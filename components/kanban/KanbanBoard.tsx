@@ -5,7 +5,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBoard } from "@/hooks/kanban/useBoard";
-import { useMoveCard, type RecusaDeCampos } from "@/hooks/kanban/useMoveCard";
+import { useMoveCard, type RecusaDeCampos, type RetomadaPendente } from "@/hooks/kanban/useMoveCard";
 import { CamposObrigatoriosDialog } from "./CamposObrigatoriosDialog";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useAtRiskLeads } from "@/hooks/leads/useAtRiskLeads";
@@ -15,6 +15,7 @@ import type { Lead } from "@/lib/types/leads";
 import type { Pipeline, Stage } from "@/lib/kanban/types";
 import { StageColumn } from "./StageColumn";
 import { LeadDossier } from "./LeadDossier";
+import { RetomarComoNovoNegocioDialog } from "./RetomarComoNovoNegocioDialog";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 
 interface KanbanBoardProps {
@@ -88,7 +89,11 @@ export function KanbanBoard({
   // valores NA MESMA escrita que muda a etapa. O hook é o MESMO de antes —
   // esta opção só troca o destino do erro.
   const [recusaDeCampos, setRecusaDeCampos] = useState<RecusaDeCampos | null>(null);
-  const moveCard = useMoveCard(pipelineId, { onCamposFaltando: setRecusaDeCampos });
+  const [retomada, setRetomada] = useState<RetomadaPendente | null>(null);
+  const moveCard = useMoveCard(pipelineId, {
+    onCamposFaltando: setRecusaDeCampos,
+    onRetomada: setRetomada,
+  });
   const { data: members } = useAssignableMembers(true);
   const ownerNames = useMemo(
     () => new Map((members ?? []).map((m) => [m.user_id, m.full_name])),
@@ -301,6 +306,15 @@ export function KanbanBoard({
           });
         }}
       />
+      {retomada && (
+        <RetomarComoNovoNegocioDialog
+          open
+          onOpenChange={(v: boolean) => !v && setRetomada(null)}
+          leadId={retomada.leadId}
+          stageId={retomada.stageId}
+          pipelineId={pipelineId}
+        />
+      )}
     </DragDropContext>
   );
 }

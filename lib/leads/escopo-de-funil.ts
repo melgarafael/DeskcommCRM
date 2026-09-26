@@ -69,6 +69,9 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   // Não muda o card, mas pendura uma decisão humana nele — encher o funil da
   // Andrea de sugestões da IA é ocupar a atenção de quem cuida dele.
   crm_propose_reactivation: "funil_vem_do_lead",
+  // Cria o negócio NOVO no MESMO funil da origem (issue #1538): o `stage_id`
+  // opcional é recusado se for de outro funil, então o alvo é o funil do lead.
+  crm_retomar_lead: "funil_vem_do_lead",
 
   // ---- tocam o lead de lado: RETORNO INTERNO, não estado do card ----
   // ⚠️ Este comentário dizia "agenda", e a palavra passou a apontar para a coisa

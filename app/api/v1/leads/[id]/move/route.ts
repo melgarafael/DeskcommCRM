@@ -24,6 +24,7 @@ import {
   recusaDeMotivoDaPerdaPeloBanco,
 } from "@/lib/leads/motivo-da-perda";
 import { RECUSA_DE_TROCA_DE_FUNIL } from "@/lib/leads/clonar-para-funil";
+import { modoDeReabertura, recusaReabertura } from "@/lib/leads/reabertura";
 import {
   recusaDeCamposObrigatorios,
   recusaDeMotivoDoGanho,
@@ -78,8 +79,9 @@ export async function POST(
     return fail("not_found", t("Lead não encontrado."), 404, { requestId });
   }
 
-  // Fetch target stage to validate same pipeline (P-01) — e `is_lost`, que é o
-  // que decide se esta escrita precisa do motivo da perda (issue #917).
+  // Fetch target stage to validate same pipeline (P-01) — e `is_lost`/`is_won`,
+  // que decidem respectivamente o motivo da perda (#917) e se a escrita
+  // REABRIRIA um negócio encerrado (issue #1538).
   const { data: stage, error: stageErr } = await supabase
     .from("crm_stages")
     .select("id, pipeline_id, name, is_lost, is_won")
@@ -99,6 +101,34 @@ export async function POST(
       422,
       { requestId, details: { use: "/api/v1/leads/{id}/clone" } },
     );
+  }
+
+  // ── O FUNIL DECIDE SE ESTA ESCRITA REABRIRIA O NEGÓCIO (issue #1538) ───────
+  //
+  // O arrasto é UM dos quatro caminhos; os outros três (lote, IA, automação e
+  // MCP) passam pelo `moveLeadHandler`, que faz a MESMA pergunta com a mesma
+  // função. Em `mesmo_registro` — o padrão, e o de todo funil que não declarou
+  // nada — `recusaReabertura` devolve null e nada aqui muda.
+  //
+  // Vem ANTES da régua de campos: o card encerrado não reabre, então perguntar
+  // pelos campos da etapa seria abrir um diálogo para uma escrita que o 409
+  // abaixo recusa de qualquer jeito.
+  const settings = await settingsDoFunil(supabase, lead.pipeline_id);
+  const recusa = recusaReabertura({
+    modo: modoDeReabertura(settings),
+    statusAtual: (lead as { status?: string }).status,
+    etapaDestino: stage,
+    idioma: user.idioma,
+  });
+  if (recusa) {
+    // 409 e não 422: o board já trata 409 como "o servidor tem outro estado e
+    // a tela precisa se reconciliar com ele" — e aqui é exatamente isso, o
+    // negócio encerrado que continua encerrado. O `details.use` é o ponteiro
+    // para a porta que resolve, o mesmo formato do 422 do clone.
+    return fail(recusa.codigo, recusa.mensagem, 409, {
+      requestId,
+      details: { use: "/api/v1/leads/{id}/retomar", lead_id: leadId },
+    });
   }
 
   // ── A MESMA ETAPA É REORDENAÇÃO, NÃO ENTRADA (CR do mantenedor, #1536) ──────
@@ -125,7 +155,6 @@ export async function POST(
   // mesma razão da perda abaixo — depois dele só existiria a linha recusada.
   // `details.faltando` nomeia chave e rótulo de cada campo: é ele que a tela
   // vira em diálogo (o único caminho onde dá para PREENCHER e tentar de novo).
-  const settings = await settingsDoFunil(supabase, lead.pipeline_id);
   const vereditoDeCampos = mesmaEtapa
     ? { faltando: [] }
     : validaCamposExigidos({

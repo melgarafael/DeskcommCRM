@@ -39771,3 +39771,32 @@ end $$;
 -- a lista de erros benignos do update.sh, então a atualização não diz
 -- "atualizado" com módulo fora do ar. Instalação nova não tem módulo: no-op.
 do $f$ begin perform public.fn_conferir_modulos_instalados(); end $f$;
+
+-- ---- retomada de negócio encerrado guarda a cadeia de tentativas (migration 0425) ----
+--
+-- Aditiva e idempotente: a coluna nasce null em toda linha existente, a FK é
+-- `on delete set null` (apagar um negócio solta o ponteiro da tentativa nova, em
+-- vez de recusar a exclusão ou propagá-la) e o índice é parcial — só a linha que
+-- aponta para alguém é consultada pela cadeia "tentativas até ganhar".
+alter table public.crm_leads
+  add column if not exists retomado_de_lead_id uuid;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'fk_crm_leads_retomado_de_lead'
+      and conrelid = 'public.crm_leads'::regclass
+  ) then
+    alter table public.crm_leads
+      add constraint fk_crm_leads_retomado_de_lead
+      foreign key (retomado_de_lead_id)
+      references public.crm_leads(id)
+      on delete set null;
+  end if;
+end $$;
+
+create index if not exists idx_crm_leads_retomado_de_lead
+  on public.crm_leads (retomado_de_lead_id)
+  where retomado_de_lead_id is not null;

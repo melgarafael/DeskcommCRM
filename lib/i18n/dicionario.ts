@@ -63,6 +63,12 @@ export const DICIONARIO: Traducoes = {
   "Exigir motivo de ganho ao fechar como ganho": {
     es: "Exigir motivo al cerrar como ganado",
   },
+  "Negócio encerrado que volta abre um negócio novo": {
+    es: "Un negocio cerrado que vuelve abre un negocio nuevo",
+  },
+  "Desligado, arrastar um negócio perdido ou ganho para uma etapa aberta reabre o mesmo negócio. Ligado, o encerrado fica como está e o quadro oferece criar uma nova tentativa com o mesmo contato.": {
+    es: "Desactivado, arrastrar un negocio perdido o ganado a una etapa abierta reabre el mismo negocio. Activado, el cerrado queda como está y el tablero ofrece crear un nuevo intento con el mismo contacto.",
+  },
   "Motivo do ganho": { es: "Motivo del negocio ganado" },
   "Preencha os campos obrigatórios antes de continuar: {campos}.": {
     es: "Completa los campos obligatorios antes de continuar: {campos}.",
@@ -4355,6 +4361,12 @@ export const DICIONARIO: Traducoes = {
   "Se preencher, enviaremos uma assinatura para o outro sistema conferir que fomos nós.": {
     es: "Si lo completas, enviaremos una firma para que el otro sistema confirme que fuimos nosotros.",
   },
+  "Incluir o responsável no corpo": { es: "Incluir al responsable en el cuerpo" },
+  "Padrão: o aviso não diz quem atende. Ligue só se o outro sistema precisar do nome da equipe.": {
+    es: "Por defecto, el aviso no dice quién atiende. Actívalo solo si el otro sistema necesita el nombre del equipo.",
+  },
+  "Quando alguém comparecer ao compromisso": { es: "Cuando alguien asista a la cita" },
+  "Quando alguém faltar ao compromisso": { es: "Cuando alguien falte a la cita" },
   Sucesso: { es: "Éxito" },
   "Aguardando envio": { es: "Esperando envío" },
   "Essa ação não funcionou.": { es: "Esta acción no funcionó." },
@@ -9915,6 +9927,29 @@ export const DICIONARIO: Traducoes = {
   "Levado para outro funil": { es: "Movido a otro embudo" },
   // A TELA que faltava para a troca de funil — menu do card e o diálogo.
   "Levar para outro funil": { es: "Llevar a otro embudo" },
+  // ── Retomada como novo negócio (issue #1538) ──
+  "Retomar como novo negócio": { es: "Retomar como negocio nuevo" },
+  "Retomando…": { es: "Retomando…" },
+  "Este funil não reabre negócios encerrados. Retomar cria um negócio novo com o mesmo contato, copiando campos e tags, e guarda a ligação com este — o negócio original fica intacto, com o motivo dele.":
+    {
+      es: "Este embudo no reabre negocios cerrados. Retomar crea un negocio nuevo con el mismo contacto, copiando campos y etiquetas, y guarda el vínculo con este — el negocio original queda intacto, con su motivo.",
+    },
+  "Este funil retoma como novo negócio: mover um negócio encerrado para uma etapa aberta não o reabre. Use POST /api/v1/leads/{id}/retomar para criar a nova tentativa.":
+    {
+      es: "Este embudo retoma como negocio nuevo: mover un negocio cerrado a una etapa abierta no lo reabre. Usa POST /api/v1/leads/{id}/retomar para crear el nuevo intento.",
+    },
+  "Este negócio já está aberto: a retomada cria um negócio NOVO a partir de um encerrado. Para mudar de etapa, mova o negócio que já existe.":
+    {
+      es: "Este negocio ya está abierto: la retoma crea un negocio NUEVO a partir de uno cerrado. Para cambiar de etapa, mueve el negocio que ya existe.",
+    },
+  "A etapa escolhida não está disponível para a retomada: escolha uma etapa aberta deste funil.":
+    {
+      es: "La etapa elegida no está disponible para la retoma: elige una etapa abierta de este embudo.",
+    },
+  "Este funil não tem etapa aberta para receber a nova tentativa.":
+    {
+      es: "Este embudo no tiene etapa abierta para recibir el nuevo intento.",
+    },
   "Escolha o funil de destino": { es: "Elige el embudo de destino" },
   "Este é o único funil. Crie outro funil para poder levar o negócio até ele.": {
     es: "Este es el único embudo. Crea otro embudo para poder llevar el negocio hasta él.",

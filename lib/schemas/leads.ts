@@ -210,3 +210,17 @@ export const bulkLeadActionSchema = z.discriminatedUnion("action", [
   }),
 ]);
 export type BulkLeadActionInput = z.infer<typeof bulkLeadActionSchema>;
+
+
+/**
+ * retomarLeadSchema → POST /api/v1/leads/{id}/retomar (issue #1538).
+ *
+ * Só a etapa da NOVA tentativa, e é opcional: sem ela o handler escolhe a
+ * primeira etapa aberta do funil (a mesma decisão do clone sem `stage_id`).
+ * O lead de ORIGEM vem no caminho da URL, nunca no corpo — quem retoma é quem
+ * já apontou o dedo para aquele card.
+ */
+export const retomarLeadSchema = z.object({
+  stage_id: z.string().uuid().optional(),
+});
+export type RetomarLeadBody = z.infer<typeof retomarLeadSchema>;

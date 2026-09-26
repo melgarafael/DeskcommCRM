@@ -65,6 +65,10 @@ export async function updatePipelineConfig(
   if (parsed.data.won_reason_required !== undefined) {
     nextSettings.won_reason_required = parsed.data.won_reason_required;
   }
+  if (parsed.data.reabertura !== undefined) nextSettings.reabertura = parsed.data.reabertura;
+  if (parsed.data.reabertura_campos !== undefined) {
+    nextSettings.reabertura_campos = parsed.data.reabertura_campos;
+  }
 
   const { error } = await supabase
     .from("crm_pipelines")
@@ -85,6 +89,7 @@ export async function updatePipelineConfig(
       lost_reasons_count: parsed.data.lost_reasons?.length ?? null,
       won_reasons_count: parsed.data.won_reasons?.length ?? null,
       won_reason_required: parsed.data.won_reason_required ?? null,
+      reabertura: parsed.data.reabertura ?? null,
     },
   });
 

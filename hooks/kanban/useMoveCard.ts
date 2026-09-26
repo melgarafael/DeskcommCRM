@@ -21,6 +21,19 @@ interface MoveArgs {
   wonReason?: string;
 }
 
+/**
+ * O arrasto que o servidor RECUSOU por `reabertura_cria_novo` (issue #1538) e
+ * que tem porta: o funil é `novo_negocio`, o card encerrado continua encerrado,
+ * e a saída é criar a nova tentativa. Guardada AQUI, no próprio hook do arrasto,
+ * porque este é o único lugar que conhece os dois lados ao mesmo tempo — o card
+ * que foi arrastado e a etapa que ele tentou alcançar (a retomada nasce justamente
+ * na etapa em que o operador soltou o card).
+ */
+export interface RetomadaPendente {
+  leadId: string;
+  stageId: string;
+}
+
 /** O que a recusa `required_fields_missing` devolve para a tela abrir o diálogo. */
 export interface RecusaDeCampos {
   /** Os argumentos originais do move — o diálogo só acrescenta o que coletou. */
@@ -36,6 +49,12 @@ interface OpcoesDeMove {
    * hook) cai no `showApiError` de sempre.
    */
   onCamposFaltando?: (recusa: RecusaDeCampos) => void;
+  /**
+   * A recusa `reabertura_cria_novo` (issue #1538) também vira diálogo: o funil
+   * retoma como novo negócio, e a tela oferece criar a nova tentativa na etapa
+   * em que o card foi solto. Sem esta opção, cai no toast de sempre.
+   */
+  onRetomada?: (retomada: RetomadaPendente) => void;
 }
 
 export function useMoveCard(pipelineId: string, opcoes: OpcoesDeMove = {}) {
@@ -88,6 +107,14 @@ export function useMoveCard(pipelineId: string, opcoes: OpcoesDeMove = {}) {
       if (err instanceof ApiError && err.status === 409) {
         // Reconcile authoritative state — server already gave new updated_at.
         qc.invalidateQueries({ queryKey });
+      }
+      if (err instanceof ApiError && err.code === "reabertura_cria_novo" && opcoes.onRetomada) {
+        // NÃO toast: um "erro" genérico mentiria sobre uma recusa que tem
+        // porta. O diálogo É a resposta — e ele leva a etapa que o operador
+        // alvejou, para a retomada nascer no lugar certo. Vem ANTES do ramo de
+        // campos: o servidor recusa a reabertura antes da régua de campos.
+        opcoes.onRetomada({ leadId: args.leadId, stageId: args.stageId });
+        return;
       }
       // O DIAGNÓGOSTO em vez do toast (issue #1536): a recusa traz em
       // `details.faltando` chave e rótulo de cada campo — é a tela que sabe

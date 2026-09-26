@@ -137,3 +137,39 @@ describe("updateAutomationRuleSchema", () => {
     expect(r.success).toBe(true);
   });
 });
+
+
+describe("#1612: gatilhos de desfecho e o opt-in do responsável", () => {
+  it("aceita appointment.completed e appointment.no_show como trigger_event", () => {
+    for (const trigger_event of ["appointment.completed", "appointment.no_show"] as const) {
+      const r = createAutomationRuleSchema.safeParse({
+        name: "Aviso de desfecho",
+        trigger_event,
+        actions: [{ type: "call_webhook", config: { url: "https://example.com/hook" } }],
+      });
+      expect(r.success, trigger_event).toBe(true);
+    }
+  });
+
+  it("call_webhook aceita include_owner booleano", () => {
+    const r = createAutomationRuleSchema.safeParse({
+      name: "Regra",
+      trigger_event: "appointment.created",
+      actions: [
+        { type: "call_webhook", config: { url: "https://example.com/hook", include_owner: true } },
+      ],
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("recusa include_owner que não é booleano: opt-in malformado não é opt-in", () => {
+    const r = createAutomationRuleSchema.safeParse({
+      name: "Regra",
+      trigger_event: "appointment.created",
+      actions: [
+        { type: "call_webhook", config: { url: "https://example.com/hook", include_owner: "sim" } },
+      ],
+    });
+    expect(r.success).toBe(false);
+  });
+});

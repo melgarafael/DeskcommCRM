@@ -137,6 +137,13 @@ const CURATED_FIELDS: Record<TriggerEvent, CuratedField[]> = {
   "appointment.confirmed": AGENDAMENTO_FIELDS,
   "appointment.rescheduled": AGENDAMENTO_FIELDS,
   "appointment.cancelled": AGENDAMENTO_FIELDS,
+  // Mesmos campos dos irmãos (#1612): quem filtra o desfecho quer filtrar por
+  // QUEM é o contato e de QUEM é o atendimento — "só a Limpeza, e só quem tem
+  // a tag cliente". A situação em si NÃO vira condição: ela é o gatilho. Um
+  // gatilho "compareceu" com a condição "situação = compareceu" é uma regra
+  // que só pode ser verdadeira, e que parece filtro sem filtrar nada.
+  "appointment.completed": AGENDAMENTO_FIELDS,
+  "appointment.no_show": AGENDAMENTO_FIELDS,
   // O aniversário não tem campo próprio para filtrar: o que a organização quer
   // decidir é sobre QUEM faz aniversário, e não sobre a data. Por isso os campos
   // são os do contato — "só quem tem a tag cliente", tipicamente.

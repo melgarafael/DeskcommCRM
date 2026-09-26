@@ -72,6 +72,8 @@ const INALCANCAVEIS_CONHECIDAS: ReadonlyArray<string> = [];
 const ESCRITA_QUE_E_TRABALHO_DE_ATENDENTE: ReadonlyArray<string> = [
   // `app/api/v1/leads/` — POST exige `agent`. Um atendente cria negócio pela tela.
   "crm_create_lead",
+  // `app/api/v1/leads/[id]/retomar/` — POST exige `agent` (issue #1538).
+  "crm_retomar_lead",
   // `app/api/v1/leads/[id]/` — PATCH exige `agent`.
   "crm_update_lead",
   // `app/api/v1/leads/[id]/move/` — exige `agent`. Mover card é o trabalho do dia.

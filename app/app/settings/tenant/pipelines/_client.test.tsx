@@ -314,3 +314,32 @@ describe("editor de obrigatorio_em do funil (#1536)", () => {
     expect(antiga.closest("label")?.textContent).toContain("arquivada");
   });
 });
+
+describe("retomada de negócio encerrado (#1538)", () => {
+  beforeEach(() => vi.mocked(updatePipelineConfig).mockClear());
+  const salvar = () =>
+    fireEvent.click(screen.getByRole("button", { name: "Salvar vocabulário e campos" }));
+
+  it("nasce desligada e ligar grava `reabertura: novo_negocio` na porta única de escrita", () => {
+    render(<PipelinesClient pipelines={[FUNIL]} etapas={{}} podeEditarConfig />);
+    const caixa = screen.getByLabelText("Negócio encerrado que volta abre um negócio novo");
+    expect(caixa).not.toBeChecked();
+
+    fireEvent.click(caixa);
+    salvar();
+
+    expect(vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1].reabertura).toBe("novo_negocio");
+  });
+
+  it("funil já ligado abre marcado, e desligar volta a `mesmo_registro`", () => {
+    const ligado: PipelineRow = { ...FUNIL, settings: { ...FUNIL.settings, reabertura: "novo_negocio" } };
+    render(<PipelinesClient pipelines={[ligado]} etapas={{}} podeEditarConfig />);
+    const caixa = screen.getByLabelText("Negócio encerrado que volta abre um negócio novo");
+    expect(caixa).toBeChecked();
+
+    fireEvent.click(caixa);
+    salvar();
+
+    expect(vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1].reabertura).toBe("mesmo_registro");
+  });
+});

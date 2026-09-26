@@ -35,7 +35,12 @@ const DEPOIS_DA_ATIVIDADE = "2026-09-15T12:00:01.500Z";
  * `updated_at` de novo. Quem relê o lead antes da atividade devolve um valor
  * que já não vale — e o próximo arrastar do mesmo card cai na OCC (issue #916).
  */
-function bancoFalso(settingsDoFunil: unknown = null, stageExtra: Record<string, unknown> = {}) {
+function bancoFalso(
+  settingsDoFunil: unknown = null,
+  stageExtra: Record<string, unknown> = {},
+  /** `status` do lead (issue #1538); o padrão é aberto. */
+  statusDoLead = "open",
+) {
   const banco = { updatedAt: CARREGADO, stageId: STAGE_A, ultimoPatch: null as Record<string, unknown> | null };
   vi.mocked(emitLeadActivity).mockImplementation(async () => {
     banco.updatedAt = DEPOIS_DA_ATIVIDADE;
@@ -48,7 +53,7 @@ function bancoFalso(settingsDoFunil: unknown = null, stageExtra: Record<string, 
     pipeline_id: PIPELINE_ID,
     stage_id: banco.stageId,
     contact_id: null,
-    status: "open",
+    status: statusDoLead,
     updated_at: banco.updatedAt,
     custom_fields: {} as Record<string, unknown>,
     won_reason: null,
@@ -75,6 +80,8 @@ function bancoFalso(settingsDoFunil: unknown = null, stageExtra: Record<string, 
             id: (chain as { id?: string }).id,
             pipeline_id: PIPELINE_ID,
             name: "Etapa",
+            is_won: false,
+            is_lost: false,
             ...stageExtra,
           },
           error: null,
@@ -298,6 +305,68 @@ describe("POST /api/v1/leads/[id]/move", () => {
       { params: Promise.resolve({ id: LEAD_ID }) },
     );
     expect(response.status).toBe(422);
+  });
+});
+
+// ── A RETOMADA COMO NOVO NEGÓCIO (issue #1538) ────────────────────────────────
+//
+// O arrasto é o caminho QUATRO dos quatro (os outros três passam pelo
+// `moveLeadHandler`, que faz a mesma pergunta com a MESMA função). Aqui se mede
+// que a recusa existe, que ela devolve o código combinado com a tela e — o que
+// separa regra de enfeite — que o MESMO cenário num funil `mesmo_registro`
+// continua reabrindo como sempre.
+describe("POST /move num funil que retoma como novo negócio", () => {
+  it("encerrado → etapa aberta devolve 409 reabertura_cria_novo e NÃO mexe no card", async () => {
+    const falso = bancoFalso({ reabertura: "novo_negocio" }, {}, "lost");
+    vi.mocked(createClient).mockResolvedValue(falso as never);
+    const { POST } = await import("./route");
+
+    const response = await POST(
+      request({ stage_id: STAGE_B, position_in_stage: 1500, expected_updated_at: CARREGADO }),
+      { params: Promise.resolve({ id: LEAD_ID }) },
+    );
+
+    expect(response.status).toBe(409);
+    const corpo = (await response.json()) as { error: { code: string; details?: Record<string, unknown> } };
+    expect(corpo.error.code).toBe("reabertura_cria_novo");
+    // A porta que resolve viaja no details, como no 422 do clone.
+    expect(corpo.error.details?.use).toBe("/api/v1/leads/{id}/retomar");
+    // Nenhuma escrita: o card segue na etapa em que estava.
+    expect(falso.banco.stageId).toBe(STAGE_A);
+  });
+
+  it("etapa exigente não abre o diálogo de campos antes do 409: a recusa de reabertura vem primeiro", async () => {
+    const funil = {
+      reabertura: "novo_negocio",
+      fields: [
+        { key: "concorrente", label: "Concorrente", type: "text", obrigatorio_em: { etapas: [STAGE_B] } },
+      ],
+    };
+    vi.mocked(createClient).mockResolvedValue(bancoFalso(funil, {}, "lost") as never);
+    const { POST } = await import("./route");
+
+    const response = await POST(
+      request({ stage_id: STAGE_B, position_in_stage: 1500, expected_updated_at: CARREGADO }),
+      { params: Promise.resolve({ id: LEAD_ID }) },
+    );
+
+    expect(response.status).toBe(409);
+    const corpo = (await response.json()) as { error: { code: string } };
+    expect(corpo.error.code).toBe("reabertura_cria_novo");
+  });
+
+  it("mesmo cenário num funil mesmo_registro reabre, como antes da issue", async () => {
+    const falso = bancoFalso(null, {}, "lost");
+    vi.mocked(createClient).mockResolvedValue(falso as never);
+    const { POST } = await import("./route");
+
+    const response = await POST(
+      request({ stage_id: STAGE_B, position_in_stage: 1500, expected_updated_at: CARREGADO }),
+      { params: Promise.resolve({ id: LEAD_ID }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(falso.banco.stageId).toBe(STAGE_B);
   });
 });
 
