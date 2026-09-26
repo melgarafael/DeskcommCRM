@@ -12402,6 +12402,23 @@ export const DICIONARIO: Traducoes = {
   "Comandos pelo celular ligados — já valem no próximo atendimento.":
     { es: "Comandos desde el celular activados — ya valen en la próxima atención." },
   "Comandos pelo celular desligados.": { es: "Comandos desde el celular desactivados." },
+  // ─── #1540 — lembrete interno (cercas de espanhol) ───
+  "sem mensagem ao cliente": { es: "sin mensaje al cliente" },
+  "Título da tarefa": { es: "Título de la tarea" },
+  "Ligar para {{contact.name}} sobre {{lead.title}}": { es: "Llamar a {{contact.name}} sobre {{lead.title}}" },
+  "Vence em (dias)": { es: "Vence en (días)" },
+  "Atribuir a": { es: "Asignar a" },
+  "Dono do negócio": { es: "Dueño del negocio" },
+  "O lembrete sai quando se passarem N dias sem mensagem na direção escolhida. Chegando mensagem nova, o relógio zera — e um novo silêncio de N dias gera outro lembrete. Nada é enviado ao cliente.": { es: "El recordatorio sale cuando pasan N días sin mensaje en la dirección elegida. Llegando un mensaje nuevo, el reloj se reinicia — y un nuevo silencio de N días genera otro recordatorio. No se envía nada al cliente." },
+  "O lembrete sai quando se passarem N dias com o card na mesma etapa. Mudando a etapa, o relógio zera. Nada é enviado ao cliente.": { es: "El recordatorio sale cuando la tarjeta lleva N días en la misma etapa. Cambiando de etapa, el reloj se reinicia. No se envía nada al cliente." },
+  "Depois de N dias": { es: "Después de N días" },
+  "Silêncio de": { es: "Silencio de" },
+  "De quem é o silêncio": { es: "De quién es el silencio" },
+  "Não gerar lembrete quando o cliente tiver compromisso marcado": { es: "No generar recordatorio cuando el cliente tenga un compromiso marcado" },
+  "Quando ficar N dias sem mensagem": { es: "Cuando pasen N días sin mensaje" },
+  "Quando um lead ficar N dias na mesma etapa": { es: "Cuando un lead lleve N días en la misma etapa" },
+  "Criar tarefa interna (sem mensagem ao cliente)": { es: "Crear tarea interna (sin mensaje al cliente)" },
+
 };
 
 /**
