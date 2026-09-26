@@ -3,6 +3,7 @@ import type { FollowupFlowSurface } from './api-schemas';
 import { branchIdForCondition, nodeBranches } from './graph-schema';
 import { rotuloDoRamo } from './rotulo-do-ramo';
 import type { NomesDeValor } from './vocabulario';
+import { capabilitiesOf, transportaMensagem, type ChannelProvider } from '../channels/capabilities';
 
 /**
  * Structural publish validator for follow-up flow graphs.
@@ -64,6 +65,26 @@ export interface ContextoDoPublish {
    * sempre a última publicação do ciclo que o fecha, então conferir só nela basta.
    */
   roteiro?: RoteiroDoPublish;
+  /**
+   * Alguma conexão da organização só aceita modelo APROVADO com a janela de 24 h
+   * fechada? Só aí o plano B (`fallback_template_id`) de uma mensagem por IA
+   * depois de 24 h de espera tem o que fazer — em runtime ele só sai com a janela
+   * fechada (`janelaFechada` em followup-turn.ts). Num canal sem janela, exigi-lo
+   * travaria o publish: o seletor do plano B só oferece modelos aprovados, e esse
+   * canal não os tem. Ausente = exige (o comportamento de antes).
+   */
+  exigeModeloForaDaJanela?: boolean;
+}
+
+/**
+ * `true` quando algum dos providers das conexões da organização recusa texto
+ * livre fora da janela. Provider que esta imagem não conhece (ou que não manda
+ * mensagem) não conta: por ele não sai follow-up nenhum.
+ */
+export function algumCanalExigeModeloForaDaJanela(providers: readonly (string | null)[]): boolean {
+  return providers.some(
+    (p) => transportaMensagem(p) && !capabilitiesOf(p as ChannelProvider).freeformOutsideWindow
+  );
 }
 
 export interface RoteiroDoPublish {
@@ -564,7 +585,8 @@ export function validateFlowForPublish(
       nodesById,
       outEdges
     );
-    for (const id of [...longWaitNodeIds].sort()) {
+    const exigeModelo = contexto.exigeModeloForaDaJanela !== false;
+    for (const id of exigeModelo ? [...longWaitNodeIds].sort() : []) {
       errors.push({
         node_id: id,
         code: 'long_wait_needs_template',

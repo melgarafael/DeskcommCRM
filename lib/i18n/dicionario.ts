@@ -2093,7 +2093,17 @@ export const DICIONARIO: Traducoes = {
   "Mensagem escrita pela IA": { es: "Mensaje escrito por la IA" },
   "Modelo de mensagem pronto": { es: "Plantilla de mensaje predefinida" },
   "Instrução para a IA": { es: "Instrucción para la IA" },
-  "Se a IA não conseguir escrever, mandar este modelo": { es: "Si la IA no puede redactar el mensaje, enviar esta plantilla" },
+  "Se a janela de 24 horas já tiver fechado, mandar este modelo aprovado no lugar da IA": {
+    es: "Si la ventana de 24 horas ya se cerró, enviar esta plantilla aprobada en lugar de la IA",
+  },
+  "Nenhum modelo aprovado no WhatsApp ainda. Crie um em Conexões → Modelos e ele aparece aqui quando for aprovado.": {
+    es: "Todavía no hay plantillas aprobadas en WhatsApp. Crea una en Conexiones → Plantillas y aparecerá aquí cuando se apruebe.",
+  },
+  "Textos prontos": { es: "Textos predefinidos" },
+  "Aprovados no WhatsApp": { es: "Aprobadas en WhatsApp" },
+  "Depois de 24 horas sem resposta do cliente, só um modelo aprovado no WhatsApp chega até ele.": {
+    es: "Después de 24 horas sin respuesta del cliente, solo le llega una plantilla aprobada en WhatsApp.",
+  },
   "Modelo de mensagem": { es: "Plantilla de mensaje" },
   "Nota (opcional)": { es: "Nota (opcional)" },
   "Fluxo reprovado na validação — corrija os nós destacados.": {
@@ -6864,6 +6874,9 @@ export const DICIONARIO: Traducoes = {
   "Pediu ao agente para interpretar a resposta": { es: "Le pidió al agente que interpretara la respuesta" },
   "Conferiu se a mensagem já tinha saído": { es: "Verificó si el mensaje ya había salido" },
   "Mensagem enviada": { es: "Mensaje enviado" },
+  "Segurou o fluxo por causa de um retorno agendado": {
+    es: "Frenó el flujo por un regreso programado",
+  },
   "O agente interpretou a resposta": { es: "El agente interpretó la respuesta" },
   "Fluxo concluído": { es: "Flujo concluido" },
   "O fluxo parou de tentar": { es: "El flujo dejó de intentarlo" },

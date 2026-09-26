@@ -391,6 +391,17 @@ export function descreveEvento(
         ...motor,
       };
     }
+    case "held_by_return": {
+      // Como o adiamento pela janela: segurar NÃO é falhar. Sem esta linha o
+      // operador veria o fluxo parado por dias sem saber que ele está esperando
+      // o retorno que o agente combinou com o cliente.
+      const ate = quandoLegivel(p.next_eval_at, idioma);
+      return {
+        titulo: "Segurou o fluxo por causa de um retorno agendado",
+        detalhe: ate ? `volta a andar em ${ate}, um dia depois do retorno` : null,
+        ...motor,
+      };
+    }
     case "action_sent":
       return { titulo: "Mensagem enviada", detalhe: null, ...motor };
     case "ai_classified":

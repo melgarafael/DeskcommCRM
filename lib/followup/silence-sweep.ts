@@ -57,6 +57,7 @@ import {
   type FollowupGateDb,
   type NoDeGatilho,
 } from "./agent-followup-gate";
+import { contatosComRetornoVivo } from "./retorno-segura-o-fluxo";
 
 export interface SilencePointer {
   id: string;
@@ -72,6 +73,11 @@ export interface SilenceSweepDb {
   loadActiveSilencePointers(): Promise<SilencePointer[]>;
   /** Contact ids da org sem inbound desde `cutoffIso` (inclusive); `segments` vazio = todos. */
   loadSilentContactIds(orgId: string, cutoffIso: string, segments: string[]): Promise<string[]>;
+  /**
+   * Contatos com RETORNO agendado vivo — quem tem um "te escrevo no dia 30" a
+   * caminho não entra no fluxo de silêncio. Ver `retorno-segura-o-fluxo.ts`.
+   */
+  loadContatosComRetornoVivo(orgId: string): Promise<Set<string>>;
   /** Nó `trigger` do grafo pinado + se o fluxo pede agente; `null` se version/nó não existir. */
   loadTriggerNode(orgId: string, versionId: string): Promise<NoDeGatilho | null>;
   /** Insere o enrollment nascendo no nó trigger; `inserted:false` = 23505 (já vivo nesse pointer) → skip. */
@@ -91,6 +97,8 @@ export interface SilenceSweepSummary {
   pointers_gated_out: number;
   enrolled: number;
   skipped_existing: number;
+  /** Silenciosos que ficaram de fora porque já têm um retorno agendado. */
+  skipped_pending_return: number;
   /**
    * Pointers que FALHARAM nesta varredura (logados e pulados). Um pointer ruim
    * — de uma empresa só — não pode calar a varredura de todas as outras: antes,
@@ -112,6 +120,7 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
     pointers_gated_out: 0,
     enrolled: 0,
     skipped_existing: 0,
+    skipped_pending_return: 0,
     pointers_failed: 0,
   };
 
@@ -154,8 +163,14 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
       const cutoffIso = new Date(clock().getTime() - pointer.threshold_minutes * 60_000).toISOString();
       const contactIds = await db.loadSilentContactIds(pointer.organization_id, cutoffIso, pointer.segments);
       const nextEvalAt = clock().toISOString();
+      const comRetorno =
+        contactIds.length > 0 ? await db.loadContatosComRetornoVivo(pointer.organization_id) : new Set<string>();
 
       for (const contactId of contactIds) {
+        if (comRetorno.has(contactId)) {
+          summary.skipped_pending_return++;
+          continue;
+        }
         const { inserted } = await db.insertEnrollment({
           organization_id: pointer.organization_id,
           pointer_id: pointer.id,
@@ -317,6 +332,10 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
         origins.set(`${orgId}:${contactId}`, v.boundary);
       }
       return silentIds;
+    },
+
+    loadContatosComRetornoVivo(orgId) {
+      return contatosComRetornoVivo(admin, orgId);
     },
 
     async loadTriggerNode(orgId, versionId) {
