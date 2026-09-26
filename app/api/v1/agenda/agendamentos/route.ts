@@ -142,11 +142,11 @@ const cancelarSchema = z.object({
  * igual para a tela e para a IA.
  *
  * O recorte que a grade usa é `de`+`ate`, em INSTANTES. A tela é semanal e
- * mensal (seis semanas), então o filtro por `dia` não a serve — e ele tem um
- * corte em UTC que, para fuso negativo, não é o dia de quem olha: medido para
- * São Paulo, o "dia 12" pega três horas do dia 11 e perde as três últimas do 12.
- * Mandando instante, quem chama calcula os limites no fuso de APRESENTAÇÃO e
- * esta rota não precisa adivinhar em que fuso o dia foi pedido.
+ * mensal (seis semanas), então o filtro por `dia` não a serve — e ele corta no
+ * fuso da ORGANIZAÇÃO (desde a #1744; sem fuso legível, em UTC), que não é
+ * necessariamente o fuso de quem olha. Mandando instante, quem chama calcula os
+ * limites no fuso de APRESENTAÇÃO e esta rota não precisa adivinhar em que fuso
+ * o dia foi pedido.
  */
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
