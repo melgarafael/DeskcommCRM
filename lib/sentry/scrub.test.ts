@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { scrubMessage, scrubUrl, sentryScrubHooks } from "./scrub";
 
 // Issue #100. O que estes testes travam: com `tracesSampleRate: 1` e sem
-// `beforeSendTransaction`/`beforeSendSpan`/`beforeBreadcrumb`, a URL crua saía do
+// hooks de transação/span/breadcrumb, a URL crua saía do
 // servidor do self-hoster em 6 campos (transaction, request.url, url.full,
 // http.url, url.path, http.target). As rotas de webhook por tenant têm CREDENCIAL
 // no path, e na instalação padrão esse token é a credencial inteira da rota,
@@ -198,8 +198,10 @@ describe("sentryScrubHooks", () => {
     expect(JSON.stringify(event)).not.toContain(TOKEN);
   });
 
-  it("beforeSendTransaction limpa os atributos de trace — o canal que não tinha guarda", () => {
-    const event = sentryScrubHooks.beforeSendTransaction({
+  // No Sentry 11 não há mais evento de transação (o hook é no-op), mas o evento
+  // de ERRO ainda carrega `transaction` e `contexts.trace.data`.
+  it("beforeSend limpa o nome da transação e os atributos de trace do evento de erro", () => {
+    const event = sentryScrubHooks.beforeSend({
       transaction: `GET /api/v1/webhooks/in/${TOKEN}`,
       request: { url: urlComToken },
       contexts: {
@@ -219,13 +221,30 @@ describe("sentryScrubHooks", () => {
     expect(JSON.stringify(event)).not.toContain("deadbeef");
   });
 
-  it("beforeSendSpan limpa description e data", () => {
+  it("beforeSendSpan limpa name e attributes — o formato do span no Sentry 11", () => {
     const span = sentryScrubHooks.beforeSendSpan({
-      description: `GET ${urlComToken}`,
-      data: { "url.full": urlComToken },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
+      name: `GET ${urlComToken}`,
+      is_segment: true,
+      attributes: {
+        "url.full": urlComToken,
+        "http.request.header.x-canal-novo-api-key": ["chave-de-integracao-futura"],
+        "http.request.header.user-agent": ["Mozilla/5.0"],
+      },
+    });
     expect(JSON.stringify(span)).not.toContain(TOKEN);
+    expect(JSON.stringify(span)).not.toContain("chave-de-integracao-futura");
+    // Header que não é credencial fica: serve para depurar.
+    expect(span.attributes).toHaveProperty("http.request.header.user-agent");
+  });
+
+  it("beforeSend apaga corpo, cookies e usuário do evento", () => {
+    const event = sentryScrubHooks.beforeSend({
+      request: { url: "https://crm.exemplo.com/x", data: { cpf: "123" }, cookies: { a: "b" } },
+      user: { ip_address: "203.0.113.9" },
+    });
+    expect(event.request).not.toHaveProperty("data");
+    expect(event.request).not.toHaveProperty("cookies");
+    expect(event).not.toHaveProperty("user");
   });
 
   it("beforeBreadcrumb limpa a URL — o README prometia isso sem mecanismo", () => {

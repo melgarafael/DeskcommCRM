@@ -14,7 +14,7 @@
 /**
  * Tipos estruturais mínimos, em vez de importar de `@sentry/core`.
  *
- * `SpanJSON` e `TransactionEvent` não são reexportados por `@sentry/nextjs`, e o
+ * `StreamedSpanJSON` e `Event` não são reexportados por `@sentry/nextjs`, e o
  * `@sentry/core` é dependência TRANSITIVA — sob o node_modules estrito do pnpm ele
  * não resolve a partir da raiz. Importar dele funcionaria na máquina de quem tem
  * hoisting e quebraria no CI. Declarar só os campos que este arquivo toca mantém os
@@ -25,13 +25,21 @@ type EventLike = {
   // `unknown` de propósito nos campos que o Sentry tipa mais largo que string
   // (`query_string` é `string | Record<string,string> | Array<[string,string]>`).
   // A checagem de `typeof === "string"` acontece em runtime, logo abaixo.
-  request?: { url?: unknown; query_string?: unknown; headers?: unknown };
+  request?: {
+    url?: unknown;
+    query_string?: unknown;
+    headers?: unknown;
+    data?: unknown;
+    cookies?: unknown;
+  };
+  user?: unknown;
   transaction?: string;
   contexts?: { trace?: { data?: Record<string, unknown> } };
   message?: string;
   exception?: { values?: Array<{ value?: string }> };
 };
-type SpanLike = { description?: string; data?: Record<string, unknown> };
+/** Formato do span no Sentry 11 (streaming): `description` virou `name`, `data` virou `attributes`. */
+type SpanLike = { name?: string; attributes?: Record<string, unknown> };
 type BreadcrumbLike = { message?: string; data?: Record<string, unknown> };
 
 /**
@@ -42,8 +50,13 @@ type BreadcrumbLike = { message?: string; data?: Record<string, unknown> };
  * lista, e o arquivo passa a nomear provider — o que a doutrina de restrição de canal
  * proíbe fora de `lib/channels/` (`docs/doctrine/restricao-de-canal.md`). Casar pelo
  * que torna o header sensível cobre os dois casos de uma vez.
+ *
+ * Sensível é credencial OU endereço do titular: `x-forwarded-for`, `x-real-ip`,
+ * `cf-connecting-ip` e afins carregam o IP de quem acessou (a mesma lista que o
+ * guia do Sentry 11 usa como "default do v10": forwarded, -ip, remote-, via).
  */
-const SENSITIVE_HEADER = /authorization|cookie|api[-_]?key|token|secret|password|credential/i;
+const SENSITIVE_HEADER =
+  /authorization|cookie|api[-_]?key|token|secret|password|credential|forwarded|-ip\b|remote-|^via$/i;
 
 export function isSensitiveHeader(name: string): boolean {
   return SENSITIVE_HEADER.test(name);
@@ -133,8 +146,13 @@ export function scrubUrl(input: string): string {
   return scrubMessage(withoutQueryValues);
 }
 
-/** Atributos de span/trace que carregam URL crua na convenção OpenTelemetry. */
+/**
+ * Atributos de span/trace que carregam URL crua na convenção OpenTelemetry.
+ * `sentry.segment.name` é a cópia do nome do span raiz que o Sentry 11 põe em
+ * TODO span — limpar só o `name` deixava o token sair por ela (medido pelo SDK).
+ */
 const URL_ATTRIBUTES = [
+  "sentry.segment.name",
   "url.full",
   "url.path",
   "url.query",
@@ -151,6 +169,30 @@ function scrubAttributes(data: Record<string, unknown> | undefined): void {
   }
 }
 
+/**
+ * No span, header vira atributo `http.request.header.<nome>` (valor em array no
+ * Sentry 11). O mesmo padrão de `isSensitiveHeader` decide quais saem.
+ */
+const HEADER_ATTRIBUTE = /^http\.(request|response)\.header\.(.+)$/;
+
+/**
+ * Atributo de span que é dado do titular, e não metadado: o corpo (o
+ * `requestData` anexa `http.request.body.data` com o que houver no escopo, sem
+ * olhar `httpBodies` — medido pelo SDK), o usuário e o IP de quem acessou.
+ */
+const TITULAR_ATTRIBUTE = /^(http\.(request|response)\.body\.data|user\..+|client\.address)$/;
+
+function scrubSpanAttributes(attributes: Record<string, unknown> | undefined): void {
+  if (!attributes) return;
+  scrubAttributes(attributes);
+  for (const key of Object.keys(attributes)) {
+    const header = HEADER_ATTRIBUTE.exec(key)?.[2];
+    if ((header && isSensitiveHeader(header)) || TITULAR_ATTRIBUTE.test(key)) {
+      delete attributes[key];
+    }
+  }
+}
+
 function scrubHeaders(headers: unknown): void {
   if (!headers || typeof headers !== "object") return;
   const record = headers as Record<string, string>;
@@ -160,8 +202,9 @@ function scrubHeaders(headers: unknown): void {
 }
 
 /**
- * Limpa os campos que carregam URL em QUALQUER evento — erro ou transação.
- * O nome da transação entra aqui porque o `@sentry/node` puro não parametriza a
+ * Limpa os campos do evento de erro que carregam URL ou dado do titular. O
+ * evento de erro ainda traz `transaction` e `contexts.trace` no Sentry 11, e o
+ * nome da transação entra aqui porque o `@sentry/node` puro não parametriza a
  * rota; só o wrapper do Next parametriza, e nem todo caminho passa por ele.
  */
 function scrubEventUrls<T extends EventLike>(event: T): T {
@@ -173,7 +216,15 @@ function scrubEventUrls<T extends EventLike>(event: T): T {
     if (typeof event.request.query_string === "string") {
       event.request.query_string = scrubUrl(event.request.query_string);
     }
+    // Corpo e cookies não saem, nem se o SDK os anexar: o `requestData` do
+    // Sentry 11 anexa o corpo que estiver no escopo sem olhar `httpBodies`
+    // (que só barra a escrita) — medido em `privacidade.sdk.test.ts`.
+    delete event.request.data;
+    delete event.request.cookies;
   }
+  // Não chamamos `setUser`; o que chega aqui é o que o SDK INFERIU (IP). Se um
+  // dia for preciso identificar usuário no Sentry, é decisão de LGPD, não default.
+  delete event.user;
   if (typeof event.transaction === "string") {
     event.transaction = scrubUrl(event.transaction);
   }
@@ -182,33 +233,37 @@ function scrubEventUrls<T extends EventLike>(event: T): T {
 }
 
 /**
- * Os quatro hooks, prontos para espalhar dentro do `Sentry.init` de cada runtime.
- * Espalhar o objeto inteiro é o ponto: adicionar um hook aqui cobre servidor, edge
- * e cliente de uma vez, sem depender de alguém lembrar dos três arquivos.
+ * Os hooks, prontos para espalhar dentro do `Sentry.init` de cada runtime (via
+ * `opcoesDePrivacidade`, em `./privacidade`). Espalhar o objeto inteiro é o
+ * ponto: adicionar um hook aqui cobre todos os runtimes de uma vez.
+ *
+ * Não há `beforeSendTransaction`: no Sentry 11 o span é transmitido em
+ * streaming, não existe mais evento de transação, e o hook é no-op (MIGRATION.md
+ * 11.0.0, "Replacing `beforeSendTransaction`"). O que ele limpava — o nome da
+ * transação e a URL nos atributos — é o `name` e os `attributes` do span raiz,
+ * e o `beforeSendSpan` limpa todo span, raiz (`is_segment`) inclusive.
  */
 export const sentryScrubHooks = {
   beforeSend<T extends EventLike>(event: T): T {
     scrubEventUrls(event);
+    // `scrubUrl`, não só `scrubMessage`: mensagem de erro carrega URL (erro de
+    // fetch, de rota), e o token do path saía nela — medido pelo SDK.
     if (typeof event.message === "string") {
-      event.message = scrubMessage(event.message);
+      event.message = scrubUrl(event.message);
     }
     if (event.exception?.values) {
       for (const ex of event.exception.values) {
-        if (ex.value) ex.value = scrubMessage(ex.value);
+        if (ex.value) ex.value = scrubUrl(ex.value);
       }
     }
     return event;
   },
 
-  beforeSendTransaction<T extends EventLike>(event: T): T {
-    return scrubEventUrls(event);
-  },
-
   beforeSendSpan<T extends SpanLike>(span: T): T {
-    if (typeof span.description === "string") {
-      span.description = scrubUrl(span.description);
+    if (typeof span.name === "string") {
+      span.name = scrubUrl(span.name);
     }
-    scrubAttributes(span.data);
+    scrubSpanAttributes(span.attributes);
     return span;
   },
 

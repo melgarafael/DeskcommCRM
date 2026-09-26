@@ -4,7 +4,7 @@
 
 import * as Sentry from "@sentry/nextjs";
 import { resolveSentryDsn, isCommunityDsn, integracoesDoCliente } from "./lib/sentry/dsn";
-import { sentryScrubHooks } from "./lib/sentry/scrub";
+import { opcoesDePrivacidade } from "./lib/sentry/privacidade";
 
 const sentryDsn = resolveSentryDsn(
   typeof window !== "undefined" ? window.__PUBLIC_ENV__?.SENTRY_DSN : undefined,
@@ -28,14 +28,12 @@ Sentry.init({
   // ERRO continua, porque é o que explica o stack trace — e o replayIntegration()
   // sem argumentos já aplica maskAllText/blockAllMedia.
   tracesSampleRate: community ? 0 : 1,
-  enableLogs: true,
 
   replaysSessionSampleRate: community ? 0 : 0.1,
   replaysOnErrorSampleRate: 1.0,
 
-  sendDefaultPii: false,
-
-  ...sentryScrubHooks,
+  // Coleta restrita + scrub, num ponto só (Sentry 11 coleta amplo por default).
+  ...opcoesDePrivacidade,
 });
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
