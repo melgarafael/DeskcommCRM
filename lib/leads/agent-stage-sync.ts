@@ -1,5 +1,10 @@
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import type { RiskBucket } from "@/lib/leads/risk-radar";
+import {
+  recusaDeCamposObrigatorios,
+  settingsDoFunil,
+  validaCamposExigidos,
+} from "@/lib/leads/campos-exigidos";
 import { decideMotivoDaPerda, recusaDeMotivoDaPerdaPeloBanco } from "@/lib/leads/motivo-da-perda";
 
 /**
@@ -167,6 +172,18 @@ export interface ResultadoDaSincronizacao {
      * #917 era justamente o card NÃO andar em silêncio (ou estourar num 500).
      */
     | "perda_sem_motivo"
+    /**
+     * A etapa de destino exige CAMPOS que o negócio não tem (issue #1536) — o
+     * `obrigatorio_em` do funil, a MESMA régua dos outros cinco caminhos.
+     *
+     * Mesma família de `perda_sem_motivo`: o card não anda, nada quebrou, e o
+     * que falta é uma AÇÃO HUMANA (preencher o campo no dossiê). O `detalhe`
+     * carrega a frase com os rótulos do que falta, e é ele que o espelho mostra
+     * na Central. Sem este rótulo o agente seria o único caminho que move sem
+     * passar pela régua — duas respostas para a mesma pergunta, que é o defeito
+     * da #917 com outro nome.
+     */
+    | "campos_obrigatorios"
     | "falha_de_escrita"
     | "indisponivel";
   leadId?: string;
@@ -211,7 +228,12 @@ export async function sincronizaEstagioDoAgente(
   // Supabase indistinguível do estado normal de um contato sem negócio aberto.
   const { data: leadRows, error: erroLeads } = await admin
     .from("crm_leads")
-    .select("id, organization_id, pipeline_id, stage_id, status, created_at, last_activity_at")
+    .select(
+      // `custom_fields` e `won_reason` entram POR CAUSA da régua de campos
+      // obrigatórios (#1536): sem eles na leitura, `validaCamposExigidos` só
+      // veria `undefined` e recusaria movimento legítimo de um card preenchido.
+      "id, organization_id, pipeline_id, stage_id, status, created_at, last_activity_at, custom_fields, won_reason",
+    )
     .eq("organization_id", input.organizationId)
     .eq("contact_id", input.contactId);
   if (erroLeads) {
@@ -225,6 +247,8 @@ export async function sincronizaEstagioDoAgente(
     status: string;
     created_at: string;
     last_activity_at: string | null;
+    custom_fields: Record<string, unknown> | null;
+    won_reason: string | null;
   }>;
 
   const rota = resolveActiveLeadForContact(
@@ -268,7 +292,7 @@ export async function sincronizaEstagioDoAgente(
     // `is_lost` entra porque a decisão de perda (#917) é sobre esta coluna: sem
     // ela, etapa de perda é indistinguível de etapa comum e o agente escreveria a
     // etapa que o banco recusa — recusa que chega ao worker como falha de escrita.
-    .select("id, name, agent_stage_hint, is_archived, is_lost")
+    .select("id, name, agent_stage_hint, is_archived, is_lost, is_won")
     .eq("pipeline_id", lead.pipeline_id);
   // Mesmo motivo do SELECT acima: sem esta linha, banco fora = pipeline sem
   // hint nenhum = "sem_mapeamento", e o incidente se disfarça de configuração.
@@ -282,6 +306,44 @@ export async function sincronizaEstagioDoAgente(
     lead.stage_id,
   );
   if (!destino.move) return { moveu: false, motivo: destino.motivo, leadId: lead.id };
+
+  // ── A RÉGUA DE CAMPOS OBRIGATÓRIOS (issue #1536) ────────────────────────────
+  //
+  // ESTE arquivo grava `stage_id` direto (o UPDATE logo abaixo), então sem esta
+  // pergunta o assistente seria o ÚNICO caminho do produto que move o card sem
+  // passar pela régua que os outros cinco seguem — e "uma rota exige, outra não"
+  // é exatamente o defeito da #917 com outro nome.
+  //
+  // A resposta segue o PRECEDENTE DA PERDA do próprio arquivo (`perda_sem_motivo`):
+  // NÃO MOVE, devolve o motivo e deixa rastro. Nada é escrito — nem etapa, nem
+  // atividade —, e o `detalhe` vem pronto da MESMA função que os 422 das rotas
+  // falam ("Preencha os campos obrigatórios…: X, Y"), que é o que o espelho
+  // transforma em item de inbox acionável. `settingsDoFunil` é fail-open por
+  // decisão escrita em `campos-exigidos.ts`: leitura indisponível = nada exigido,
+  // como em todo o resto.
+  const settings = await settingsDoFunil(admin, lead.pipeline_id);
+  const etapasCandidatas = (stageRows ?? []) as Array<{
+    id: string;
+    is_lost?: boolean | null;
+    is_won?: boolean | null;
+  }>;
+  const etapaDeDestino = etapasCandidatas.find((s) => s.id === destino.stageId);
+  const vereditoDeCampos = validaCamposExigidos({
+    lead: lead as unknown as Record<string, unknown>,
+    settingsDoFunil: settings,
+    destino: {
+      stageId: destino.stageId,
+      desfecho: etapaDeDestino?.is_won ? "won" : etapaDeDestino?.is_lost ? "lost" : null,
+    },
+  });
+  if (vereditoDeCampos.faltando.length > 0) {
+    return {
+      moveu: false,
+      motivo: "campos_obrigatorios",
+      leadId: lead.id,
+      detalhe: recusaDeCamposObrigatorios(vereditoDeCampos.faltando, null).mensagem,
+    };
+  }
 
   // O erro DESTE select é descartado de propósito — e a diferença para os dois de
   // cima (onde descartar produziu o defeito de tratar banco fora como rotina) é

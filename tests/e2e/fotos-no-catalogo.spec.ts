@@ -25,7 +25,7 @@
  */
 import * as zlib from "node:zlib";
 
-import { test, expect, type Locator, type Page, type TestInfo } from "@playwright/test";
+import { test, expect, type Locator, type Page, type TestInfo } from "./helpers/test";
 
 import { lerCreds } from "./helpers/login-admin";
 

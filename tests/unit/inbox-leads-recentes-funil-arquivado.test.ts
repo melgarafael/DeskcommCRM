@@ -103,9 +103,14 @@ describe("crm-summary: leads recentes", () => {
     // Sem `!inner` o PostgREST real não derruba o lead: anula o embed.
     expect(banco.selects.join("|")).toContain("crm_pipelines!inner");
     // A etapa é o dado NOVO da linha (#943) e o dublê a serve da fixture, com
-    // ou sem o embed pedido: sem esta asserção, apagar `crm_stages(name)` do
+    // ou sem o embed pedido: sem esta asserção, apagar o embed da etapa do
     // `select` deixa o arquivo verde e a tela volta a dizer só o funil.
-    expect(banco.selects.join("|")).toContain("crm_stages(name)");
+    // Nomeado pela FK desde a 0426: `lost_from_stage_id` é a SEGUNDA FK de
+    // `crm_leads` para `crm_stages`, e o `crm_stages(name)` sem dica vira
+    // PGRST201 no PostgREST real — a rota inteira em 500 e o painel dizendo
+    // "Não consegui ler estes dados". O dublê não modela a ambiguidade; esta
+    // asserção é quem a vigia.
+    expect(banco.selects.join("|")).toContain("crm_stages!crm_leads_stage_id_fkey(name)");
     // Filtrar NO BANCO, antes do `limit(3)`, é a metade que o comentário da
     // rota declara — e que nenhuma asserção sobre o RESULTADO alcança, porque
     // com dois leads os dois arranjos devolvem a mesma lista. Mover o `.eq` do

@@ -44,7 +44,7 @@
  * tudo o que muda. O aviso não repete o que o cliente escreveu: a Central é
  * lida pela organização inteira, e a conversa só por quem a enxerga; a frase
  * fica na conversa, onde o botão leva quem pode lê-la. Os dois fecham sozinhos
- * (gatilhos da migration 0426) quando a conversa é encerrada, e no "Marcar
+ * (gatilhos da migration 0433) quando a conversa é encerrada, e no "Marcar
  * resolvido". O de falar com uma pessoa fecha também quando a conversa fica com
  * uma pessoa por qualquer caminho — alguém assume, a passagem da regra, do
  * clima ou do próprio modelo. O de parar de receber, não: o texto dele pede que
@@ -400,7 +400,7 @@ export interface OClimaDaMensagem {
 /**
  * A conversa no momento do aviso, lida por quem chama logo antes de ele abrir
  * (`aConversaAgora`, na cola do worker: as colunas que calam a conversa não se
- * leem num módulo do Jev). As duas perguntas são as do gatilho da 0426, que
+ * leem num módulo do Jev). As duas perguntas são as do gatilho da 0433, que
  * fecharia o aviso se ele já existisse.
  */
 export interface AConversaAgora {
@@ -425,10 +425,10 @@ export interface AConversaAgora {
  *    a conversa está indo para a equipe por outro caminho, e o aviso diria o
  *    que a Central já diz. A observação fica gravada do mesmo jeito;
  *  - o pedido que a conversa já atendeu enquanto o Jev e o clima respondiam
- *    (`lerAConversa`, só quando há o que avisar): o gatilho da 0426 fecharia o
+ *    (`lerAConversa`, só quando há o que avisar): o gatilho da 0433 fecharia o
  *    aviso, mas disparou antes de ele existir.
  *
- * Um aviso por conversa e pedido é do BANCO: o índice único da 0426 em
+ * Um aviso por conversa e pedido é do BANCO: o índice único da 0433 em
  * (organização, kind, conversa), sem status. A escrita é um insert, e o 23505
  * dele quer dizer "este aviso já existe" — o pedido novo o reabre, como o
  * `routing_unassigned` faz (em SQL, pelo `on conflict` que o PostgREST não

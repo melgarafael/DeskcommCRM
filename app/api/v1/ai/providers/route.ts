@@ -31,6 +31,7 @@ import { PAPEIS, PONTOS_DE_IA, PONTO_POR_ID } from "@/lib/ai/pontos/registro";
 import { PROVEDORES, ehProvedorSuportado } from "@/lib/ai/pontos/provedores";
 import { validarBinding } from "@/lib/ai/pontos/validar-binding";
 import { lerAmbiente } from "@/lib/instalacao/ambiente";
+import { modeloDeTranscricaoEmVigor } from "@/lib/messaging/media/transcription";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -167,7 +168,17 @@ export async function GET(): Promise<Response> {
       mandadoPeloAgente: agentePublicado !== null && PONTOS_DO_AGENTE_PUBLICADO.has(ponto.id),
       efetivo: {
         provider: decisao.provider,
-        modelId: decisao.modelId,
+        // O ponto fixo de transcrição declara `whisper-1`, mas `TRANSCRIPTION_MODEL`
+        // (o mesmo `.env` do worker) troca o modelo que roda: a tela anuncia o que
+        // roda, pela mesma função que o worker usa.
+        modelId:
+          ponto.id === "transcricao_de_audio"
+            ? modeloDeTranscricaoEmVigor({
+                model: process.env.TRANSCRIPTION_MODEL,
+                apiKey: process.env.TRANSCRIPTION_API_KEY,
+                baseUrl: process.env.TRANSCRIPTION_BASE_URL,
+              })
+            : decisao.modelId,
         credentialId: decisao.credentialId,
         baseUrl: decisao.baseUrl,
         origem: decisao.origem,

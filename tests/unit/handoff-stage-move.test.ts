@@ -29,6 +29,8 @@ interface Cenario {
   update: Resposta;
   rpcError?: { message: string } | null;
   etapaPorSlug?: (slug: string) => Resposta;
+  /** O `crm_pipelines.settings` que a régua de campos obrigatórios lê (#1536). */
+  funil?: Resposta;
 }
 
 function cenario(over: Partial<Cenario> = {}): Cenario {
@@ -77,6 +79,8 @@ function fakeAdmin(c: Cenario, rpcs: ChamadaRpc[] = []) {
           return b;
         },
         maybeSingle: () => {
+          if (tabela === "crm_pipelines")
+            return Promise.resolve(c.funil ?? { data: ETAPA_ORIGEM, error: null });
           if (tabela === "crm_leads") return Promise.resolve(c.lead);
           if (b._eqKeys.includes("slug")) {
             if (c.etapaPorSlug && b._slugVal) return Promise.resolve(c.etapaPorSlug(b._slugVal));
@@ -234,4 +238,57 @@ it("erro de banco na busca pelo slug legado é indisponibilidade, não 'sem_etap
   });
   const r = await mover(c);
   expect(r).toEqual({ moveu: false, motivo: "indisponivel" });
+});
+
+/* ── A RÉGUA DE CAMPOS OBRIGATÓRIOS NO HANDOFF (CR do mantenedor, #1536) ──── */
+
+/**
+ * O handoff também grava `stage_id`, então também pergunta a MESMA pergunta do
+ * arrasto (`validaCamposExigidos`). Sem esta prova o caminho ficaria de fora da
+ * "um teste por caminho" — e uma rota que exige, outra que não, é o defeito da
+ * #917 com outro nome. `obrigatorio_em.etapas` é UUID e `camposDoFunil`
+ * descarta o campo em id fora do formato, por isso a etapa de destino aqui é um
+ * UUID (os `s-handoff` dos dublês não passariam do parse).
+ */
+describe("moverLeadParaEtapaDeHandoff e a régua de campos obrigatórios", () => {
+  beforeEach(() => vi.mocked(emitLeadActivity).mockClear());
+
+  const ETAPA_UUID = "99999999-9999-4999-8999-999999999999";
+  const destinoExigente = () =>
+    cenario({
+      etapaDestino: { data: { ...ETAPA_HANDOFF, id: ETAPA_UUID }, error: null },
+      funil: {
+        data: {
+          settings: {
+            fields: [
+              {
+                key: "concorrente",
+                label: "Concorrente",
+                type: "text",
+                obrigatorio_em: { etapas: [ETAPA_UUID] },
+              },
+            ],
+          },
+        },
+        error: null,
+      },
+    });
+
+  it("não move: devolve `campos_obrigatorios` com o que falta, sem gravar nada", async () => {
+    const r = await mover(destinoExigente());
+
+    expect(r).toEqual({
+      moveu: false,
+      motivo: "campos_obrigatorios",
+      detalhe: expect.stringContaining("Concorrente"),
+    });
+    expect(vi.mocked(emitLeadActivity)).not.toHaveBeenCalled();
+  });
+
+  it("funil SEM a exigência (ou settings ilegível = fail-open) segue movendo como sempre", async () => {
+    const r = await mover(
+      cenario({ etapaDestino: { data: { ...ETAPA_HANDOFF, id: ETAPA_UUID }, error: null } }),
+    );
+    expect(r).toEqual({ moveu: true, motivo: "movido" });
+  });
 });

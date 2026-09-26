@@ -212,7 +212,7 @@ export async function perguntarOsPedidosDoCliente(
  * A conversa AGORA, lida logo antes de o aviso de "Avisar a equipe" abrir: o
  * aviso é gravado depois do clima (segundos), e nesse meio a conversa pode ter
  * ido para uma pessoa — o turno da rajada passou, alguém assumiu. O gatilho da
- * 0426 que fecharia o aviso já disparou quando ele ainda não existia, então o
+ * 0433 que fecharia o aviso já disparou quando ele ainda não existia, então o
  * aviso que nascesse ali ficaria aberto sobre um pedido já atendido. As
  * condições são as do gatilho: fora dos estados abertos, os dois; com uma
  * pessoa (`assigned_to_user_id`), passada a uma pessoa depois desta mensagem

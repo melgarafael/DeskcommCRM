@@ -24,7 +24,7 @@
  *    poderiam declarar o mesmo nome e o teste passaria pelas duas primeiras
  *    propriedades enquanto a aba continua sem servir para escolher.
  */
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/test";
 
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 

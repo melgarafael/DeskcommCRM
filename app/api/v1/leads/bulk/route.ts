@@ -23,6 +23,15 @@ import {
   decideMotivoDaPerda,
   recusaDeMotivoDaPerdaPeloBanco,
 } from "@/lib/leads/motivo-da-perda";
+import {
+  modoDeReabertura,
+  recusaReabertura,
+} from "@/lib/leads/reabertura";
+import {
+  recusaDeCamposObrigatorios,
+  settingsDoFunil,
+  validaCamposExigidos,
+} from "@/lib/leads/campos-exigidos";
 import { createClient } from "@/lib/supabase/server";
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -122,9 +131,14 @@ export async function POST(req: NextRequest): Promise<Response> {
   // `lost_reason` entra no select por causa da decisão de perda (issue #917): o
   // motivo que o negócio JÁ tem é metade da pergunta "esta escrita o deixa perdido
   // sem motivo?" — e perguntar card a card depois custaria N consultas.
+  // `status` e `pipeline_id` (já vinha) respondem a OUTRA pergunta, a da
+  // retomada (issue #1538): o lote não pode reabrir um negócio encerrado num
+  // funil `novo_negocio`, e sem o `status` não há como saber quem ficaria.
   const { data: scoped } = await supabase
     .from("crm_leads")
-    .select("id, organization_id, tags, stage_id, pipeline_id, contact_id, lost_reason")
+    .select(
+      "id, organization_id, tags, stage_id, pipeline_id, contact_id, lost_reason, custom_fields, won_reason, status",
+    )
     .eq("organization_id", organizationId)
     .in("id", input.lead_ids);
 
@@ -156,7 +170,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       // etapa de perda não é uma perda nova.
       const { data: etapaDeDestino, error: etapaErr } = await supabase
         .from("crm_stages")
-        .select("id, name, is_lost")
+        .select("id, name, is_lost, is_won")
         .eq("id", input.params.stage_id)
         .maybeSingle();
       if (etapaErr) return fail("internal_error", etapaErr.message, 500, { requestId });
@@ -183,6 +197,89 @@ export async function POST(req: NextRequest): Promise<Response> {
         return fail(recusaDoMotivo.codigo, recusaDoMotivo.mensagem, 422, {
           requestId,
           details: { lead_ids: leadsSemMotivo },
+        });
+      }
+
+      // ── O LOTE NÃO REABRE NEGÓCIO ENCERRADO (issue #1538) ───────────────────
+      //
+      // A função 0209 move o lote numa transação só, sem olhar `status`: para um
+      // funil `novo_negocio` isso reabriria os cards encerrados do lote. A
+      // recusa é ANTES da escrita, nomeando os cards, e devolve o MESMO 409
+      // `reabertura_cria_novo` do arrasto — um lote com um só card ofensor já
+      // derruba a operação inteira, e é o que o operador tem de saber (a porta
+      // que resolve é a mesma, `/retomar`, card a card).
+      //
+      // O lote pode cruzar funis, então o settings é POR FUNIL e cacheado — o
+      // MESMO cache serve a régua de campos logo abaixo.
+      const settingsPorFunil = new Map<string, unknown>();
+      for (const linha of visible) {
+        const funilId = (linha as { pipeline_id?: string | null }).pipeline_id ?? "";
+        if (!settingsPorFunil.has(funilId)) {
+          settingsPorFunil.set(funilId, await settingsDoFunil(supabase, funilId || null));
+        }
+      }
+      let recusaDeReabertura: { codigo: string; mensagem: string } | null = null;
+      const reabertosNoLote: string[] = [];
+      for (const linha of visible) {
+        const veredito = recusaReabertura({
+          modo: modoDeReabertura(settingsPorFunil.get(linha.pipeline_id ?? "")),
+          statusAtual: linha.status,
+          etapaDestino: etapaDeDestino,
+          idioma: user.idioma,
+        });
+        if (veredito) {
+          recusaDeReabertura ??= veredito;
+          reabertosNoLote.push(linha.id);
+        }
+      }
+      if (recusaDeReabertura) {
+        return fail(recusaDeReabertura.codigo, recusaDeReabertura.mensagem, 409, {
+          requestId,
+          details: { lead_ids: reabertosNoLote, use: "/api/v1/leads/{id}/retomar" },
+        });
+      }
+
+      // ── OS CAMPOS OBRIGATÓRIOS NO LOTE (issue #1536) ────────────────────────
+      //
+      // A mesma régua dos caminhos individuais, aqui por CARD: quem não passa
+      // é LISTADO, nunca movido em silêncio — e como `fn_mover_leads_em_lote` é
+      // uma transação só ("move todos ou não move nenhum"), um card que falharia
+      // derrubaria o lote inteiro depois de a função já começar. A recusa vem
+      // ANTES do RPC, nomeando os cards em `details.lead_ids` (o mesmo contrato
+      // da recusa de motivo da perda logo acima) e o que falta em
+      // `details.faltando`, por card.
+      // O lote pode cruzar funis: a régua é a do funil de CADA card (cache
+      // montado acima), nunca a do primeiro da lista.
+      const leadIdsSemCampos: string[] = [];
+      const faltandoPorCard: Record<string, { chave: string; rotulo: string }[]> = {};
+      for (const linha of visible) {
+        const funilId = (linha as { pipeline_id?: string | null }).pipeline_id ?? null;
+        const veredito = validaCamposExigidos({
+          lead: linha as unknown as Record<string, unknown>,
+          settingsDoFunil: settingsPorFunil.get(funilId ?? "") ?? null,
+          destino: {
+            stageId: etapaDeDestino.id,
+            desfecho: etapaDeDestino.is_won
+              ? "won"
+              : etapaDeDestino.is_lost
+                ? "lost"
+                : null,
+          },
+          motivoDeGanho: (linha as { won_reason?: string | null }).won_reason ?? null,
+        });
+        if (veredito.faltando.length > 0) {
+          leadIdsSemCampos.push(linha.id);
+          faltandoPorCard[linha.id] = veredito.faltando;
+        }
+      }
+      if (leadIdsSemCampos.length > 0) {
+        const recusa = recusaDeCamposObrigatorios(
+          Object.values(faltandoPorCard).flat(),
+          user.idioma,
+        );
+        return fail(recusa.codigo, recusa.mensagem, 422, {
+          requestId,
+          details: { lead_ids: leadIdsSemCampos, faltando: faltandoPorCard },
         });
       }
 

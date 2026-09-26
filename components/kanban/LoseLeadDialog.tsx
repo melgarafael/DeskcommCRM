@@ -14,21 +14,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useLoseLead } from "@/hooks/kanban/useUpdateLead";
 import { useMotivosDePerdaDoFunil } from "@/hooks/kanban/useMotivosDePerdaDoFunil";
-import { CANONICAL_LOST_REASONS } from "@/lib/schemas/leads";
-import type { CanonicalLostReason } from "@/lib/schemas/leads";
+import { rotuloDoMotivoDePerda } from "@/lib/schemas/leads";
 import { OUTRO, motivoDePerdaAceito, opcoesDeMotivoDePerda } from "@/lib/leads/motivos-de-perda-do-funil";
-
-const REASON_LABELS: Record<(typeof CANONICAL_LOST_REASONS)[number], string> = {
-  requested_by_customer: "Cliente solicitou cancelamento",
-  price: "Preço",
-  no_response: "Sem resposta do cliente",
-  product_unavailable: "Produto indisponível",
-  cancelled_by_store: "Cancelado pela loja",
-  cancelled_by_customer: "Cancelado pelo cliente",
-  payment_failed: "Falha no pagamento",
-  other: "Outro motivo",
-  moved_to_another_pipeline: "Levado para outro funil",
-};
 
 interface LoseLeadDialogProps {
   open: boolean;
@@ -135,7 +122,7 @@ export function LoseLeadDialog({
                   checked={reasonCode === opcao.valor}
                   onChange={(e) => setReasonCode(e.target.value)}
                 />
-                <span>{opcao.doFunil ? opcao.valor : t(REASON_LABELS[opcao.valor as CanonicalLostReason] ?? opcao.valor)}</span>
+                <span>{opcao.doFunil ? opcao.valor : t(rotuloDoMotivoDePerda(opcao.valor))}</span>
               </label>
             ))}
           </div>

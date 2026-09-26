@@ -1369,6 +1369,7 @@
   "Linha do tempo do aprendizado": "学习时间线",
   "Marcar resolvido": "标记为已解决",
   "Marcar todos resolvidos": "全部标记为已解决",
+  "Os mais graves primeiro; entre iguais, os mais recentes.": "最严重的排在最前；同等严重程度下，最新的在前。",
   "Não foi possível resolver todos os avisos. Confira a lista e tente novamente.": "无法解决所有提醒。请检查列表并重试。",
   "Falha ao resolver os avisos.": "解决提醒失败。",
   "Me avisar ao passar de": "超过以下值时提醒我",

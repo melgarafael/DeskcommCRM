@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 

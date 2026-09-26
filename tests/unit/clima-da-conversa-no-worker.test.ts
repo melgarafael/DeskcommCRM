@@ -106,7 +106,7 @@ const PADROES_DO_SCHEMA: Record<string, Linha> = { agent_inbox_items: { status: 
 
 /**
  * Os índices únicos que os pedidos do cliente dizem respeitar: uma observação
- * por tarefa e mensagem (0421) e um aviso do Jev por kind e conversa (0426).
+ * por tarefa e mensagem (0421) e um aviso do Jev por kind e conversa (0433).
  * O insert que os viola volta 23505, como no banco.
  */
 const UNICOS: Record<string, (a: Linha, b: Linha) => boolean> = {
@@ -1391,7 +1391,7 @@ describe("os pedidos do cliente no worker de clima", () => {
   /**
    * O aviso é gravado no fim, depois do clima — e a conversa pode ter ido para
    * uma pessoa enquanto o Jev respondia (o turno da rajada passou, alguém
-   * assumiu). O gatilho da 0426 disparou quando o aviso ainda não existia:
+   * assumiu). O gatilho da 0433 disparou quando o aviso ainda não existia:
    * relida a conversa, o aviso do pedido já atendido não nasce. A mudança é
    * feita DURANTE a chamada dos pedidos — depois de o worker ler os fatos do
    * turno, como na corrida de verdade.
@@ -1400,7 +1400,7 @@ describe("os pedidos do cliente no worker de clima", () => {
    * literal `'infinity'`, que o supabase-js devolve como texto (e `Date.parse`
    * lê como NaN); a pausa manual grava um instante de verdade. E assumir não
    * impede o de parar de receber: o texto dele pede que a equipe assuma E peça
-   * o PARAR, e o gatilho da 0426 não o fecha ao assumir.
+   * o PARAR, e o gatilho da 0433 não o fecha ao assumir.
    */
   const RECEBIDA_EM = "2026-09-26T10:00:00.000Z";
   const DAQUI_A_DUAS_HORAS = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();

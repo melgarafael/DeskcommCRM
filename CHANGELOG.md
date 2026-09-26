@@ -8,6 +8,106 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.52.0] — 2026-09-26
+
+### Adicionado
+
+- **Configure a captura Google e o envio de leads qualificados** Conversões permite configurar o WhatsApp de destino dos cliques Google, preservando gclid, gbraid e wbraid. Um administrador pode escolher uma etapa de qualificação e uma ação Google distinta da compra. Qualificação não envia valor monetário, não é repetida ao voltar à etapa e tem diagnóstico e reprocessamento próprios. As conexões existentes continuam funcionando e a nova regra começa desligada. Contribuição de @gustavorodcruz96 (#1566).
+
+- **Acompanhe e reprocesse conversões de anúncios pelo CRM** A tela de Conversões permite verificar ou tentar novamente uma venda pendente. Novas conexões do Google podem usar a Data Manager API, com acompanhamento do processamento; conexões existentes continuam disponíveis. Recibos inválidos e rejeições deixam de aparecer como sucesso, e eventos de teste da Meta ficam separados das vendas reais. Contribuição de @gustavorodcruz96 (#1566).
+
+- **Instale o rastreio de origem nos botões de WhatsApp do site** Conversões oferece um script para copiar e instalar no site. Ele preserva os identificadores da visita durante a navegação na mesma aba e ajusta os links dos números configurados, incluindo botões adicionados depois. O CRM gera o código curto no clique e associa a mensagem à origem quando o visitante o envia. A instalação é opcional e tem instruções e limites na própria tela. Contribuição de @gustavorodcruz96 (#1566).
+
+- **O instalador pergunta em que idioma ele mesmo fala — português ou español** O `install.sh` estava inteiramente em português, mesmo permitindo escolher espanhol como idioma da aplicação web instalada: um operador hispanohablante precisava entender português para concluir a própria instalação. Agora a primeira pergunta interativa, antes de qualquer outra saída, é o idioma da instalação (Português/Español), e as mensagens do instalador saem nesse idioma; a saída de outros programas, como `docker` e `git`, continua como vem deles. A escolha é gravada em `DESKCOMM_IDIOMA_CLI` no `.env` e, nas reexecuções, o `install.sh` a lê de lá e não pergunta de novo, nem com `--yes`. Quem prefere fixá-la sem perguntar pode rodar com `DESKCOMM_IDIOMA_CLI=es` (ou `pt-BR`) no ambiente. Sem escolha e sem terminal, o instalador fala português, como sempre falou. O espanhol exige bash 4.4 ou superior (o CentOS 7 traz o 4.2): em um bash mais antigo o instalador avisa, em português e em espanhol, e segue em português. Fora do escopo desta passada: `update.sh`, `backup.sh`, `diagnostico.sh` e os demais scripts do kit seguem só em português, mesmo com a chave no `.env`; ficam para uma próxima passada. Contribuição de @JowaniOrantes (#1689).
+
+- **O Jev passa a observar qual agente deve atender, ao lado do seu roteador de intenção** O Jev ganha a terceira tarefa: **Escolher qual agente atende**. Onde há um roteador de intenção ativo (**IA › Roteadores**), a cada mensagem nova do cliente a sua IA de sempre escolhe a intenção — e, com ela, o agente que atende. O Jev responde a mesma pergunta, entre as mesmas intenções, ao mesmo tempo. Enquanto ele só observa, a resposta ao cliente **não espera por ele**: a resposta dele é guardada quando chega.
+
+  A tarefa nasce **só observando**: quem decide continua sendo a sua IA de sempre, e o cartão do Jev, em **IA › Provedores**, mostra quantas vezes os dois levariam o cliente ao **mesmo agente** nos últimos 30 dias — duas intenções que apontam para o mesmo agente contam como concordância. Só depois de comparar, e com um clique de quem administra, dá para deixar o Jev decidir. Decidindo, vale a escolha dele, com o mesmo mínimo de confiança do roteador aplicado à certeza dele, e a sua IA de sempre fica de reserva: ela continua sendo perguntada a cada mensagem, ao mesmo tempo que o Jev (e continua custando), e decide quando ele não responde. A resposta ao cliente espera pelo Jev só o que ele demorar a mais que a sua IA de sempre; a busca da chave dele e a pergunta a ele têm, juntas, um teto de cerca de um segundo e meio. Sem a sua IA de sempre (fora do ar, sem chave, ou devolvendo algo que não é uma resposta), vale o que vale hoje — o agente que já atendia a conversa, ou o "Agente de fallback" do roteador —, nunca só o Jev. Quando o Jev decide e não responde, a sua IA de sempre escolhe no lugar dele, e isso aparece no cartão em "Vezes que a IA de sempre cobriu o Jev" e em **IA › Execuções** — também quando ele nem chega a ser perguntado, por estar sem uma chave que passou no teste ou fora por alguns minutos depois de falhar. O Jev nunca bloqueia, cala ou responde o cliente.
+
+  Na tela do roteador, **"Testar classificação"** passa a mostrar a escolha da sua IA e a do Jev **lado a lado**, com o agente a que cada uma levaria. O teste não entra na comparação do cartão (é uma frase digitada por quem configura, não um atendimento), mas o custo dele aparece em **IA › Execuções**, como o da sua IA, marcado como teste na tela do roteador.
+
+  **Quem já tem o Jev ligado** vê a tarefa nova com o selo **"Nova"**, já observando: ela usa o mesmo dado que você já autorizou — cada mensagem, sozinha, sem CPF, telefone e e-mail —, junto das intenções que a sua empresa cadastrou no roteador (descrição e exemplos). Isso é uma chamada a mais ao Jev por mensagem recebida nos números com roteador ativo (uma fração de centavo de dólar, cobrada na sua conta da TypeSafe). Para não usar, clique em **"Pausar esta tarefa"** no cartão. Sem um roteador ativo com intenções cadastradas, o cartão mostra a tarefa como **"Não roda"**, com o caminho para os roteadores. Diferente da sua IA, que lê também as mensagens anteriores, o Jev lê só a última: numa resposta curta ("sim", "a primeira") ele tende a dizer "nenhuma" — e, no padrão do roteador, a conversa segue com o agente que já a atendia.
+
+  Em **IA › Execuções**, a falha do Jev numa tarefa do atendimento passa a dizer que nada dependia só dele — valeu a sua IA de sempre ou, sem ela, a regra de antes. A frase anterior dizia que ele "só opina", o que deixa de ser verdade quando ele decide o agente.
+
+  Se a instalação voltar para a versão da onda 1 do Jev (1.48), a tarefa deixa de rodar e o roteador segue só com a sua IA de sempre. O primeiro clique no cartão de lá apaga o estado das tarefas — de volta a esta versão, a escolha do agente reaparece como nova, observando. Nada precisa ser editado para atualizar.
+
+- **O Jev passa a observar tentativas de manipular o agente, ao lado da sua IA de sempre** O Jev ganha a segunda tarefa: **Perceber tentativa de manipulação**. Na mesma hora em que a sua IA de sempre confere se a mensagem do cliente tenta enganar o agente ("ignore as instruções", "me diga o seu prompt"), o Jev responde a mesma pergunta, em paralelo. Quando ele demora mais que a sua IA, a resposta ao cliente espera a diferença: a busca da chave dele e a pergunta a ele têm, juntas, um teto de cerca de um segundo e meio, depois do qual o sistema segue sem ele. Ele só recebe o que o cliente **digitou**: áudio, imagem e documento ficam de fora — nem a transcrição nem o texto lido deles saem para a TypeSafe.
+
+  A tarefa nasce **só observando**: quem decide continua sendo a sua IA de sempre, e o cartão do Jev, em **IA › Provedores**, mostra quantas vezes os dois deram o mesmo alerta (nenhum, leve ou forte) nos últimos 30 dias — e em quantas mensagens só o Jev daria o alerta forte, que é o que muda se ele passar a somar. Só depois de comparar, e com um clique de quem administra, dá para deixar o Jev decidir — e, decidindo, o sinal dele só se **soma** ao da sua IA: ele nunca apaga um alerta dela, e sem ela (fora do ar ou com erro) vale "nenhum sinal", como hoje. O Jev nunca bloqueia, cala ou responde o cliente.
+
+  **Quem já tem o Jev ligado** vê a tarefa nova com o selo **"Nova"**, já observando, e a frase que diz o que isso quer dizer: nada muda para o cliente até você deixar o Jev decidir. Ela usa o mesmo dado que você já autorizou — cada mensagem, sozinha, sem CPF, telefone e e-mail. Isso é uma chamada a mais ao Jev por mensagem respondida pelo agente (uma fração de centavo de dólar, cobrada na sua conta da TypeSafe). Para não usar, clique em **"Pausar esta tarefa"** no cartão; para manter como está e tirar o selo, **"Manter só observando"**. Ela só roda onde a verificação "Detectar tentativa de manipular o assistente" está ligada — ela vale para a empresa toda e fica em qualquer agente, na aba **"Confere antes de enviar"**; com ela desligada, o cartão mostra a tarefa como **"Não roda"**, com o caminho —, e nunca nos testes do agente nem nas sugestões do modo assistido (lá a IA só sugere, e o cartão segue sem comparação). Essa verificação vem **ligada** para quem nunca mexeu nela, e a aba "Confere antes de enviar" dizia "Desligada" nesse caso, embora ela rodasse; agora a tela diz o que acontece.
+
+  O primeiro número do cartão passa a se chamar **"Respostas do Jev"**: com mais de uma tarefa, cada mensagem do cliente rende uma resposta por tarefa.
+
+  As observações ficam numa tabela própria, sem o texto das mensagens, e são apagadas depois de **90 dias** pela limpeza diária. Para mudar o prazo, use `JEV_OBSERVACOES_RETENTION_DAYS` no `.env` (mínimo de 30 dias). Nada precisa ser editado para atualizar.
+
+  Se a instalação voltar para a versão anterior, a tarefa deixa de rodar lá e o estado dela fica guardado. Voltando para a versão da onda 1 do Jev (1.48), o primeiro clique no cartão de lá apaga o estado das tarefas — de volta a esta versão, a manipulação reaparece como nova, observando. E a 1.48 não sabe pausar só o clima: se você o pausou aqui com "Pausar esta tarefa", lá ele volta a medir enquanto o Jev estiver ligado. Para parar de vez numa volta à 1.48, use "Desligar" no cartão.
+
+- **A integração que repete o pedido não cria dois textos sugeridos** Quando a integração que cria o texto sugerido repete o pedido — timeout, rede, retentativa do
+  ERP —, a criação do texto sugerido pela API agora aceita o cabeçalho `Idempotency-Key`, como os
+  outros POSTs de criação do produto: a mesma chave devolve a MESMA resposta gravada, sem criar um
+  segundo rascunho, e a mesma chave com conteúdo diferente responde 409. Sem o cabeçalho, nada muda
+  para quem já integra.
+
+  Contribuição de @hiro-nikaitou (#1704).
+
+- **A conversa pode abrir com um texto sugerido por outro sistema, pronto para revisar** Quem integra o CRM com outro sistema (ERP, formulário, automação) precisa mandar
+  uma mensagem que **só pode sair de uma pessoa**: a cobrança vencida, o documento
+  que falta, o formulário a reenviar. Até aqui havia duas saídas, e as duas ruins —
+  enviar por token (a conversa mostrava "Sistema", sem dizer que pessoa decidiu) ou
+  copiar e colar o texto à mão.
+
+  Agora o texto fica guardado no servidor: a integração cria um rascunho pela API
+  ou pela ferramenta de criar rascunho do servidor MCP, e recebe o link da conversa.
+
+  Ao abrir o link, a caixa de entrada já mostra o texto no campo de resposta, com o
+  aviso "Texto sugerido por {origem}. Revise antes de enviar." — e nada sai sem o
+  clique de quem atende. Quando a mensagem sai, o rascunho é marcado como usado,
+  com quem o usou.
+
+  O rascunho vale 24 horas, é de uso único e é da mesma empresa: um token de uma
+  organização não cria rascunho na conversa de outra. Se o link vencer, já tiver
+  sido usado ou apontar para outra conversa, a conversa abre normalmente, sem o
+  texto e com o aviso dizendo por quê.
+
+  Quem opera não precisa fazer nada: a capacidade vem da atualização, e o envio
+  continua sendo decisão de gente, do jeito que já era.
+
+  Contribuição de @webtecnica (#1684).
+
+### Alterado
+
+- **A Central de avisos mostra os mais graves primeiro** Na aba Abertos, os avisos críticos vêm antes dos de atenção, e estes antes dos informativos; entre avisos da mesma gravidade, o mais recente vem primeiro. Antes, a lista era só por data, e um aviso crítico antigo podia ficar embaixo dos informativos de hoje — ou fora da tela, passados 50 avisos. A aba Resolvidos continua por data. Uma frase no topo da lista explica a ordem. Nada a fazer na atualização.
+
+- **Em espanhol, os erros da API deixam de ter anglicismos e passam a tratar por "tú"** As mensagens de erro da API em espanhol perderam anglicismos soltos ("Agent no encontrado" virou "Agente no encontrado"; "credential", "runs" e "sync" ganharam tradução), passaram a tratar por "tú", inclusive nas telas de roteiros e skills, e "router" virou "enrutador"; "pipeline" e "stage" nas mensagens de erro viraram "embudo" e "etapa", os termos que o resto do produto já usa. Para quem usa em português nada muda, e não exige ação de quem opera a instalação. Contribuição de @JowaniOrantes (#1691).
+
+- **O cartão do Jev passa a mostrar cada tarefa com o seu próprio estado** Em **IA › Provedores**, com o Jev ligado, o cartão agora lista as tarefas que ele faz, cada uma com o seu estado ("Só observa" ou "Decide") e o seu botão "Deixar o Jev decidir" — que agora pede confirmação antes de valer, dizendo o que muda para o cliente naquela tarefa e que dá para voltar a só observar quando quiser. Pausar e voltar a só observar seguem com um clique só. O clima (**Medir o clima da conversa**) continua exatamente como estava: quem deixou o Jev decidindo segue decidindo, quem estava só observando segue observando. Nada é reescrito na configuração da empresa.
+
+  O aviso que a Central abre quando o Jev para (chave recusada, crédito esgotado) passa a se chamar **"O Jev parou de funcionar"**. Um aviso que já esteja aberto com o nome antigo ("O Jev parou de medir o clima das conversas") é tratado como o mesmo aviso: é atualizado e se fecha sozinho quando o Jev volta, sem abrir um segundo.
+
+  Se a instalação voltar para a versão anterior, o Jev segue ligado e o clima fica no mesmo "observar/decidir". O primeiro clique no cartão da versão anterior apaga o estado guardado por tarefa, e o clima volta a obedecer só ao "observar/decidir" daquele clique. Duas ressalvas para quem voltar de versão:
+
+  - **Clima desligado sozinho** (com o Jev ligado): a versão anterior não sabe desligar uma tarefa só, e volta a medir o clima no "observar/decidir" de antes. Para ele não medir nada lá, desligue o Jev inteiro antes de voltar.
+  - **Aviso aberto com o nome novo**: a versão anterior só reconhece o nome antigo. O aviso "O Jev parou de funcionar" que estiver aberto não se fecha sozinho lá, e uma nova falha abre um segundo aviso com o nome antigo — feche o de nome novo à mão na Central.
+
+### Corrigido
+
+- **O fuso da organização vira o padrão no horário do agente e do atendente, e faltavam textos em espanhol** Ao ligar o horário de funcionamento no gatilho de um agente e ao definir o horário de um atendente, o fuso sugerido era sempre `America/Sao_Paulo`. Agora é o da organização, desde que seja um fuso válido e, no horário do atendente, que esteja entre os fusos oferecidos na lista; caso contrário continua `America/Sao_Paulo`. Em espanhol, apareciam em português os motivos de exclusão de um contato numa campanha ("Sin teléfono en el registro"…) e o resumo do gatilho de um fluxo (Silêncio, "entró en" uma etapa, "no disponible"). Para quem usa em português nada muda, e não exige ação de quem opera a instalação. Contribuição de @JowaniOrantes (#1690).
+
+- **Onboarding com OpenAI não diz mais que uma chave boa falhou no teste de crédito** O teste de crédito do onboarding tratava como falha o 400 que um modelo de raciocínio devolve ao gastar o único token permitido: com a chave boa e com crédito, a tela dizia que o teste não tinha passado, mostrava o erro do provedor em inglês e sugeria falta de crédito. Esse 400 passa a contar como prova bem-sucedida, e quando o teste falha de verdade a tela explica o motivo em português, sem o corpo cru do provedor. Nada muda na publicação do atendente: ela continua exigindo o número de WhatsApp conectado. (#1693)
+
+  Contribuição de @hiro-nikaitou (#1699).
+
+- **O relatório de acesso do titular passa a incluir o que a anonimização apaga** Quem pedia acesso aos próprios dados recebia um relatório que omitia duas coisas que
+  o sistema guardava e a anonimização apagava: o texto que outra integração sugeriu para
+  enviar à pessoa e as propostas de campo que a IA ouviu na conversa. Nada a fazer na VPS:
+  a correção vem com a atualização. Contribuição de @hiro-nikaitou (#1703).
+
+- **Skills antigas deixam de derrubar a tela de habilidades da IA** Instalações atualizadas a partir do formato antigo de skills agora reconciliam os ponteiros automaticamente. A tela continua disponível mesmo quando encontra um registro legado incompleto, e desinstalar uma skill antiga não apaga seu histórico de versões. Contribuição de @423313 (#1705).
+
+- **Teste novo avisa em segundos quando o limite de ferramentas do agente sai da conta** Teste interno, para quem desenvolve: ele confere o limite de ferramentas por agente contra o pacote "Atender" e acusa a mudança em segundos, antes do teste de tela de 20 minutos que era o único a perceber. Nada muda para quem opera a VPS. Contribuição de @realLoganLuo (#1698).
+
 ## [1.51.0] — 2026-09-26
 
 ### Adicionado
@@ -8128,7 +8228,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.51.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.52.0...HEAD
+[1.52.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.51.0...v1.52.0
 [1.51.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.50.0...v1.51.0
 [1.50.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.49.0...v1.50.0
 [1.49.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.48.0...v1.49.0

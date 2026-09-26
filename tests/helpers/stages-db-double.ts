@@ -72,6 +72,8 @@ export function negocio(id: string, stageId: string, over: Partial<LeadRow> = {}
 export interface PipelineRow {
   id: string;
   name: string;
+  /** settings do funil — é dele que `settingsDoFunil` lê (issue #1536). */
+  settings?: Record<string, unknown> | null;
   slug: string;
   description: string | null;
   position: number;

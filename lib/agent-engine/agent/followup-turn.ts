@@ -28,6 +28,11 @@ import { getLeadContext, type LeadContext } from '../edge/crm/get-lead-context';
 import { WahaChannelAdapter } from '../edge/channel/waha-adapter';
 import { applySendOutcome } from '../edge/crm/send-message';
 import { runBeforeSend } from '../guardrails/before-send';
+import { definicaoNaConexao } from '@/lib/channels/linha-do-espelho';
+import { estadoDaJanela } from '@/lib/channels/janela';
+import { renderTemplateBody } from '@/lib/channels/meta/render-template';
+import { isStatusSendable } from '@/lib/channels/meta/template-binding';
+import { deriveTemplateContract } from '@/lib/channels/meta/template-contract';
 import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
 import { classifyPromise } from '../guardrails/promise/semantic';
 import { scheduleCronJob } from '../cron/scheduler';
@@ -82,8 +87,10 @@ export const followupTurnPayloadSchema = z
     prompt_hint: z.string().optional(),
     /** action mode `text` — enviado pela cadeia de guardrails, sem LLM. */
     fixed_body: z.string().min(1).max(4000).optional(),
-    /** action mode `template` — corpo em `message_templates`. */
+    /** action mode `template` — `message_templates` (texto) ou `meta_templates` (modelo aprovado do canal). */
     template_id: z.string().uuid().optional(),
+    /** action mode `ai_message` — modelo aprovado que sai no lugar da IA com a janela de 24 h fechada. */
+    fallback_template_id: z.string().uuid().optional(),
     volta_index: z.number().int().optional(),
     volta_total: z.number().int().optional(),
     classes: z.array(z.string()).optional(),
@@ -337,6 +344,7 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
         promptHint: payload.prompt_hint,
         fixedBody: payload.fixed_body,
         templateId: payload.template_id,
+        fallbackTemplateId: payload.fallback_template_id,
         voltaIndex: payload.volta_index,
         voltaTotal: payload.volta_total,
         classes: payload.classes,
@@ -414,6 +422,7 @@ async function runFlowDrivenTurn(
     promptHint: string | undefined;
     fixedBody: string | undefined;
     templateId: string | undefined;
+    fallbackTemplateId: string | undefined;
     voltaIndex: number | undefined;
     voltaTotal: number | undefined;
     classes: string[] | undefined;
@@ -434,10 +443,31 @@ async function runFlowDrivenTurn(
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: target.tenantId, lead_id: target.leadId, enrollment_id: enrollmentId });
 
   if (input.purpose === 'send_message') {
-    const body = await resolveFlowSendBody(pool, target.tenantId, input);
-    if (body !== null) {
+    let passo = await resolveFlowSendBody(pool, target.tenantId, target.channelSessionId, input);
+    // O PLANO B DA MENSAGEM POR IA. Com a janela de 24 h fechada, o canal recusa
+    // qualquer texto livre — o da IA inclusive —, e o passo terminava sem mandar
+    // nada. A tela prometia "se a IA não conseguir escrever, mandar este modelo"
+    // e o campo era gravado, validado e nunca lido. Só vale para modelo APROVADO
+    // do canal: um texto de `message_templates` seria recusado pela mesma janela,
+    // então nesse caso o turno segue para a IA como sempre seguiu.
+    if (
+      passo === null &&
+      input.fallbackTemplateId !== undefined &&
+      (await janelaFechada(pool, target, clock()))
+    ) {
+      passo = await resolveModeloAprovado(pool, target.tenantId, target.channelSessionId, input.fallbackTemplateId);
+    }
+    if (passo !== null && passo.tipo === 'recusado') {
+      runLog.info('passo do fluxo pulado — o modelo não pode sair', { motivo: passo.motivo });
+      await complete(pool, { jobId: job.id, jobClaim: claimOfJob(job), organizationId: target.tenantId, enrollmentId, nodeId, result: { kind: 'skipped', reason: passo.motivo } });
+      return;
+    }
+    if (passo !== null) {
       // Texto do operador: sem camada semântica (ver o cabeçalho de sendFixedOutbound).
-      const desfecho = await sendFixedOutbound(deps, job, pool, ctx, clock, target, body, false);
+      const desfecho = await sendFixedOutbound(
+        deps, job, pool, ctx, clock, target, passo.body, false,
+        passo.tipo === 'modelo_aprovado' ? passo.modelo : undefined,
+      );
       // TODO OS TRÊS DESFECHOS VOLTAM PARA O ENROLLMENT. O adiado era o que não
       // voltava, e o silêncio dele custava o enrollment inteiro: o motor ficava
       // rechecando um turno que ninguém ia fechar e, esgotado o orçamento do
@@ -568,18 +598,36 @@ function interpolarVoltaDoPayload(texto: string, index: number | undefined, tota
   return texto.replaceAll('{{volta}}', String(index)).replaceAll('{{voltas}}', String(total));
 }
 
+/**
+ * O que um passo de envio sem IA manda.
+ *
+ * `modelo_aprovado` carrega, além do corpo RENDERIZADO (é ele que os gates de
+ * conteúdo avaliam), o nome e o idioma que o canal precisa para disparar o modelo.
+ * `recusado` é configuração que não pode sair — o passo é pulado com o motivo, em
+ * vez de a fila re-tentar até matar a inscrição por algo que tempo não conserta.
+ */
+type PassoSemIa =
+  | { tipo: 'texto'; body: string }
+  | {
+      tipo: 'modelo_aprovado';
+      body: string;
+      modelo: { name: string; language: string; values: Record<string, string> };
+    }
+  | { tipo: 'recusado'; motivo: string };
+
 async function resolveFlowSendBody(
   pool: pg.Pool,
   tenantId: string,
+  channelSessionId: string,
   input: {
     fixedBody: string | undefined;
     templateId: string | undefined;
     voltaIndex: number | undefined;
     voltaTotal: number | undefined;
   },
-): Promise<string | null> {
+): Promise<PassoSemIa | null> {
   if (input.fixedBody !== undefined) {
-    return interpolarVoltaDoPayload(input.fixedBody, input.voltaIndex, input.voltaTotal);
+    return { tipo: 'texto', body: interpolarVoltaDoPayload(input.fixedBody, input.voltaIndex, input.voltaTotal) };
   }
   if (input.templateId === undefined) return null;
   const { rows } = await pool.query<{ body: string }>(
@@ -587,10 +635,99 @@ async function resolveFlowSendBody(
     [tenantId, input.templateId],
   );
   const body = rows[0]?.body;
-  if (body === undefined || body.length === 0) {
+  if (body !== undefined && body.length > 0) {
+    return { tipo: 'texto', body: interpolarVoltaDoPayload(body, input.voltaIndex, input.voltaTotal) };
+  }
+  // Não é texto pronto: pode ser um modelo APROVADO do canal. Até aqui o passo só
+  // lia `message_templates`, e um fluxo apontado para um modelo aprovado — o único
+  // envio que passa com a janela de 24 h fechada — morria neste `throw` no primeiro
+  // disparo, depois de o editor ter aceitado e publicado o grafo.
+  const aprovado = await resolveModeloAprovado(pool, tenantId, channelSessionId, input.templateId);
+  if (aprovado === null) {
     throw new Error('followup_turn sem modelo de mensagem — o template_id do passo não existe nesta organização');
   }
-  return interpolarVoltaDoPayload(body, input.voltaIndex, input.voltaTotal);
+  return aprovado;
+}
+
+/**
+ * Um modelo aprovado do canal (`meta_templates.id`), pronto para sair NESTA
+ * conexão. `null` = o id não é de modelo do canal nesta organização.
+ *
+ * O id aponta uma linha, mas quem vale é a definição da conexão da conversa
+ * (`definicaoNaConexao`, a mesma regra do `send_template` do agente): dois números
+ * podem espelhar o mesmo nome, e disparar a linha de outra conta é recusa certa.
+ *
+ * O fluxo não tem de onde tirar valor para variável, então modelo com `{{1}}` é
+ * recusado com o motivo — mandar o marcador cru ao cliente seria pior.
+ */
+async function resolveModeloAprovado(
+  pool: pg.Pool,
+  tenantId: string,
+  channelSessionId: string,
+  metaTemplateId: string,
+): Promise<PassoSemIa | null> {
+  const { rows } = await pool.query<{ name: string; language: string }>(
+    `select name, language from meta_templates where organization_id = $1 and id = $2 limit 1`,
+    [tenantId, metaTemplateId],
+  );
+  const alvo = rows[0];
+  if (alvo === undefined) return null;
+  const linha = await definicaoNaConexao<{ components: unknown; parameter_format: string; status: string }>(
+    pool,
+    ['components', 'parameter_format', 'status'],
+    { organizationId: tenantId, name: alvo.name, language: alvo.language, channelSessionId },
+  );
+  if (linha === null) {
+    return { tipo: 'recusado', motivo: `O modelo "${alvo.name}" não existe no número desta conversa.` };
+  }
+  if (!isStatusSendable(linha.status)) {
+    return {
+      tipo: 'recusado',
+      motivo: `O modelo "${alvo.name}" está ${linha.status} na plataforma — só modelo aprovado pode ser enviado.`,
+    };
+  }
+  const meta = { name: alvo.name, language: alvo.language, parameterFormat: linha.parameter_format };
+  const contrato = deriveTemplateContract({
+    name: alvo.name,
+    language: alvo.language,
+    parameter_format: linha.parameter_format,
+    components: linha.components as never,
+  });
+  if (contrato.slots.length > 0) {
+    return {
+      tipo: 'recusado',
+      motivo: `O modelo "${alvo.name}" tem variáveis, e o fluxo não tem de onde tirar os valores. Use um modelo sem variáveis.`,
+    };
+  }
+  return {
+    tipo: 'modelo_aprovado',
+    body: renderTemplateBody(linha.components, {}, meta),
+    modelo: { name: alvo.name, language: alvo.language, values: {} },
+  };
+}
+
+/**
+ * A janela de 24 h desta conversa está fechada? Mesmo insumo do gate da cadeia
+ * (`readLastInboundAt` em before-send.ts: a conversa do contato NESTE número) e a
+ * mesma conta (`estadoDaJanela`) — decidir aqui com outra régua faria o plano B
+ * sair quando a cadeia deixaria a IA passar, ou o contrário.
+ */
+async function janelaFechada(pool: pg.Pool, target: ReentrySendTarget, agora: Date): Promise<boolean> {
+  const { rows } = await pool.query<{ provider: string | null; last_inbound_at: Date | null }>(
+    `select s.provider,
+            (select c.last_inbound_at from conversations c
+              where c.organization_id = s.organization_id and c.contact_id = $3
+                and c.channel_session_id = s.id
+              order by c.last_inbound_at desc nulls last
+              limit 1) as last_inbound_at
+       from channel_sessions s
+      where s.organization_id = $1 and s.id = $2`,
+    [target.tenantId, target.channelSessionId, target.leadId],
+  );
+  const linha = rows[0];
+  if (linha === undefined) return false;
+  const ultimo = linha.last_inbound_at === null ? null : new Date(linha.last_inbound_at).toISOString();
+  return estadoDaJanela(linha.provider, ultimo, agora).tipo === 'fechada';
 }
 
 /**
@@ -630,6 +767,12 @@ async function sendFixedOutbound(
   body: string,
   /** `true` só na re-entrada por template — ver o cabeçalho. */
   comCamadaSemantica: boolean,
+  /**
+   * Presente = `body` é um modelo APROVADO do canal, já renderizado. A cadeia inteira
+   * continua valendo (stop, LGPD, horário); só o gate da janela de 24 h o deixa
+   * passar, que é o que um modelo aprovado é — como no `send_template` do agente.
+   */
+  modelo?: { name: string; language: string; values: Record<string, string> },
 ): Promise<EnvioFixoDesfecho> {
   const { tenantId, leadId, channelSessionId, conversationId } = target;
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId });
@@ -674,6 +817,7 @@ async function sendFixedOutbound(
     now: clock(),
     sleep: deps.sleep,
     lgpd: context.lgpd,
+    ...(modelo !== undefined ? { isTemplate: true } : {}),
     ...(deps.knobs.disclosureMode !== undefined ? { disclosureMode: deps.knobs.disclosureMode } : {}),
     ...(camadaSemanticaLigada
       ? {
@@ -687,7 +831,11 @@ async function sendFixedOutbound(
             ),
         }
       : {}),
-    send: (finalBody) => channel.send({ tenantId, leadId, jobId: job.id, jobClaim:claimOfJob(job), seq: 1, conversationId, body: finalBody }),
+    send: (finalBody) =>
+      channel.send({
+        tenantId, leadId, jobId: job.id, jobClaim: claimOfJob(job), seq: 1, conversationId, body: finalBody,
+        ...(modelo !== undefined ? { template: modelo } : {}),
+      }),
   });
 
   if (chain.status === 'vetoed') {

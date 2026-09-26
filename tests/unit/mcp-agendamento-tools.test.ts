@@ -393,3 +393,34 @@ describe('Meet no contrato do atendimento',()=>{
   expect(JSON.stringify(result)).toContain('https://meet.google.com/abc-defg-hij');expect(JSON.stringify(result)).not.toContain('old-link');
  });
 });
+
+describe("idempotência da marcação", () => {
+  it("encaminha a chave externa e o job estável ao handler compartilhado", async () => {
+    vi.clearAllMocks();
+    vi.mocked(idDoTipoPorSlug).mockResolvedValue({ id: "t-1", nome: "Consulta" });
+    vi.mocked(handlers.marcarAgendamentoHandler).mockResolvedValue({
+      id: "a-1",
+      status: "confirmed",
+      meeting_state: "none",
+      meeting_url: null,
+    });
+
+    await crmBookAppointment.handler(
+      {
+        event_type_slug: "consulta",
+        starts_at: "2026-09-01T14:00:00Z",
+        contact_id: "11111111-1111-4111-8111-111111111111",
+      },
+      {
+        ...ctx,
+        idempotencyKey: "00000000-0000-4000-8000-0000000000cc",
+        sourceJobId: "00000000-0000-4000-8000-0000000000bb",
+      },
+    );
+
+    expect(vi.mocked(handlers.marcarAgendamentoHandler).mock.calls[0]?.[1]).toMatchObject({
+      idempotencyKey: "00000000-0000-4000-8000-0000000000cc",
+      sourceJobId: "00000000-0000-4000-8000-0000000000bb",
+    });
+  });
+});

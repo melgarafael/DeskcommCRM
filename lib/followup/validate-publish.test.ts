@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { validateFlowForPublish } from './validate-publish';
+import { algumCanalExigeModeloForaDaJanela, validateFlowForPublish } from './validate-publish';
 import type { FlowGraph, FlowNode, FlowEdge } from './graph-schema';
+import { CHANNEL_CAPABILITIES, PROVIDERS_DE_MENSAGEM, PROVIDERS_SEM_MENSAGEM } from '../channels/capabilities';
 
 const pos = { x: 0, y: 0 };
 const TEMPLATE_ID = '00000000-0000-4000-8000-000000000000';
@@ -191,6 +192,32 @@ describe('validateFlowForPublish', () => {
       [edge('t1', 'w1', always()), edge('w1', 'a1', always()), edge('a1', 'e1', always())]
     );
     expect(validateFlowForPublish(g).ok).toBe(true);
+  });
+
+  // Revisão do #1729: o plano B só sai com a janela de 24 h fechada, e o seletor
+  // dele só oferece modelo aprovado. Numa organização cujos canais não têm janela,
+  // exigi-lo travava o publish de "espera 1 dia -> IA escreve".
+  it('does not flag long_wait_needs_template when no channel of the org has a 24h window', () => {
+    const g = graph(
+      [trigger('t1'), wait('w1', { mode: 'fixed', duration_ms: 90_000_000 }), actionAiMessage('a1'), end('e1')],
+      [edge('t1', 'w1', always()), edge('w1', 'a1', always()), edge('a1', 'e1', always())]
+    );
+    expect(validateFlowForPublish(g, { exigeModeloForaDaJanela: false }).ok).toBe(true);
+    const comJanela = validateFlowForPublish(g, { exigeModeloForaDaJanela: true });
+    expect(comJanela.ok).toBe(false);
+    if (!comJanela.ok) expect(comJanela.errors.map((e) => e.code)).toEqual(['long_wait_needs_template']);
+  });
+
+  it('algumCanalExigeModeloForaDaJanela: only a known message channel without freeform outside the window counts', () => {
+    // Pela matriz de capabilities, sem nomear provider (invariante 1 da restrição de canal).
+    const semJanela = PROVIDERS_DE_MENSAGEM.filter((p) => CHANNEL_CAPABILITIES[p].freeformOutsideWindow);
+    const comJanela = PROVIDERS_DE_MENSAGEM.filter((p) => !CHANNEL_CAPABILITIES[p].freeformOutsideWindow);
+    expect(semJanela.length).toBeGreaterThan(0);
+    expect(comJanela.length).toBeGreaterThan(0);
+    expect(algumCanalExigeModeloForaDaJanela([])).toBe(false);
+    expect(algumCanalExigeModeloForaDaJanela(semJanela)).toBe(false);
+    for (const p of comJanela) expect(algumCanalExigeModeloForaDaJanela([...semJanela, p])).toBe(true);
+    expect(algumCanalExigeModeloForaDaJanela([...PROVIDERS_SEM_MENSAGEM, 'provider_do_futuro', null])).toBe(false);
   });
 
   it('flags cycle_without_wait for a cycle containing no sufficient wait node', () => {

@@ -4,7 +4,7 @@
  * A tela de Configurações › Tags foi para o lote SEM NINGUÉM TER CLICADO nos
  * botões uma vez (J24 do mapa de jornadas). Aqui ela é clicada.
  */
-import { test } from "@playwright/test";
+import { test } from "./helpers/test";
 import { randomInt } from "node:crypto";
 
 import {

@@ -108,6 +108,14 @@ import {
 } from "@/lib/agent-engine/obs/metrics";
 import { rodarLoopDaFila } from "@/lib/agent-engine/queue/loop";
 import {
+  adiarAteORecarregar,
+  avisarFaltaDeSaldo,
+  deveEsperarSaldo,
+  encerrarAvisoDeFaltaDeSaldo,
+  esperouPorSaldo,
+  jaNaoHaOQueResponder,
+} from "@/lib/agent-engine/queue/espera-de-saldo";
+import {
   cancelJob,
   claimJobs,
   completeJob,
@@ -453,9 +461,27 @@ export async function startWorker(
         await handler(job, pool, { workerId });
         return;
       }
+      // Voltou de uma espera de saldo (`espera-de-saldo.ts`): se, enquanto a IA
+      // esperava, alguém do nosso lado já respondeu o cliente, não há o que
+      // responder — sair agora seria repetir quem já atendeu.
+      if (esperouPorSaldo(job) && (await jaNaoHaOQueResponder(pool, job))) {
+        await completeJob(pool, job.id, workerId, undefined, claimOfJob(job)?.acquired_at);
+        log.info("job encerrado: a conversa foi respondida enquanto a IA esperava saldo", {
+          job_id: job.id,
+          kind: job.kind,
+        });
+        return;
+      }
       await withServiceJob(pool, job, () => handler(job, pool, { workerId }));
       await completeJob(pool, job.id, workerId, undefined, claimOfJob(job)?.acquired_at);
       log.info("job concluído", { job_id: job.id, kind: job.kind });
+      if (esperouPorSaldo(job)) {
+        try {
+          await encerrarAvisoDeFaltaDeSaldo(pool, job.organization_id);
+        } catch (avisoErr) {
+          log.error("aviso de falta de saldo não foi encerrado", { job_id: job.id, error: errMsg(avisoErr) });
+        }
+      }
       try {
         const wrote = await recordRunMetrics(pool, job);
         if (wrote > 0) {
@@ -489,6 +515,31 @@ export async function startWorker(
             claimOfJob(job)?.acquired_at ?? null,
           ],
         );
+        return;
+      }
+      // Conta do provedor sem crédito: a resposta espera a recarga, sem gastar
+      // tentativa, até o teto de `espera-de-saldo.ts` — e a Central diz a causa.
+      // Passado o teto, segue o caminho comum abaixo (`failJob` → `job_dead`).
+      if (deveEsperarSaldo(job, err)) {
+        log.warn("provedor de IA sem saldo — resposta esperando a recarga", {
+          job_id: job.id,
+          kind: job.kind,
+          error: errMsg(err),
+        });
+        try {
+          await avisarFaltaDeSaldo(pool, job.organization_id, err);
+        } catch (avisoErr) {
+          log.error("aviso de falta de saldo não entrou na Central", { job_id: job.id, error: errMsg(avisoErr) });
+        }
+        try {
+          await adiarAteORecarregar(pool, job, workerId, err, claimOfJob(job)?.acquired_at);
+        } catch (adiarErr) {
+          log.error("espera de saldo indisponível — lease expira via reaper", {
+            job_id: job.id,
+            error: errMsg(adiarErr),
+          });
+          Sentry.captureException(adiarErr);
+        }
         return;
       }
       const terminal = err instanceof StaleServiceBoundaryError || ehVetoPermanenteDeNegocio(err);

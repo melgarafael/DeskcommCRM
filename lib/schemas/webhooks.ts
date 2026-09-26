@@ -48,6 +48,13 @@ export const ENTIDADE_ESPERADA_POR_GATILHO = {
   "appointment.confirmed": "calendar_appointment",
   "appointment.rescheduled": "calendar_appointment",
   "appointment.cancelled": "calendar_appointment",
+  // Desfecho (#1612): quem acompanha compromisso por webhook precisa saber se a
+  // pessoa VEIO — comparecimento e falta não eram gatilho, e a única fonte
+  // interna (`appointment.outcome_confirmed`) emite só para falta. Os dois
+  // nascem da transição, em `lib/agenda/laco.ts`, e a entidade é a mesma dos
+  // irmãos: o motor já sabe hidratar compromisso.
+  "appointment.completed": "calendar_appointment",
+  "appointment.no_show": "calendar_appointment",
   // O gatilho de DATA do funil (#989) também nasce do relógio, e não de uma
   // ação de alguém — quem o emite é a varredura `lead-date-field-due`, e a
   // entidade que ele traz é o NEGÓCIO dono do campo de data. É `crm_lead`, e
@@ -96,6 +103,16 @@ export const actionSchema = z.discriminatedUnion("type", [
       secret: z.string().max(200).optional(),
       // Ciphertext hex (round-trip do editor: GET devolve, PATCH preserva).
       secret_enc: z.string().max(4000).optional(),
+      /**
+       * Opt-in do RESPONSÁVEL (#1612, mesma régua proposta em #1528).
+       *
+       * Sem isto, o corpo não leva quem atende — nem `owner_user_id`, nem nome.
+       * O compromisso é dado interno do estúdio: quem integra pediu horário,
+       * status e tipo, não a identidade da equipe. Vazar por padrão seria
+       * transformar um dado protegido em detalhe acidental de payload; só sai
+       * quando quem monta a regra pede, na cara, na tela.
+       */
+      include_owner: z.boolean().optional(),
     }),
   }),
   z.object({

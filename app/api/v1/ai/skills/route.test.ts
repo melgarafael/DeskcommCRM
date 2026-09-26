@@ -21,12 +21,13 @@ const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 
 interface Stubs {
-  orgPointers?: Array<{ name: string; version_id: string; updated_at: string }>;
+  orgPointers?: Array<{ name: string; version_id: string | null; updated_at: string }>;
   orgPointersError?: unknown;
-  platformPointers?: Array<{ name: string; version_id: string }>;
+  platformPointers?: Array<{ name: string; version_id: string | null }>;
   platformPointersError?: unknown;
   versions?: Array<{ id: string; description: string; forked_from_version_id: string | null }>;
   versionsError?: unknown;
+  rejectNullVersionIds?: boolean;
 }
 
 function makeAdminStub(cfg: Stubs) {
@@ -48,7 +49,13 @@ function makeAdminStub(cfg: Stubs) {
           if (col === "organization_id") isNullOrg = true;
           return b;
         },
-        in() {
+        in(_column: string, values: unknown[]) {
+          if (cfg.rejectNullVersionIds && values.some((value) => value === null)) {
+            return Promise.resolve({
+              data: null,
+              error: { message: "invalid input syntax for type uuid" },
+            });
+          }
           return Promise.resolve({ data: cfg.versions ?? [], error: cfg.versionsError ?? null });
         },
         then(onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) {
@@ -117,8 +124,16 @@ describe("GET /api/v1/ai/skills", () => {
           { name: "reativacao-d30", version_id: "ver-plat-2" },
         ],
         versions: [
-          { id: "ver-org-1", description: "Explica frete (fork).", forked_from_version_id: "ver-plat-1" },
-          { id: "ver-plat-1", description: "Explica frete (plataforma).", forked_from_version_id: null },
+          {
+            id: "ver-org-1",
+            description: "Explica frete (fork).",
+            forked_from_version_id: "ver-plat-1",
+          },
+          {
+            id: "ver-plat-1",
+            description: "Explica frete (plataforma).",
+            forked_from_version_id: null,
+          },
           { id: "ver-plat-2", description: "Reativação D+30.", forked_from_version_id: null },
         ],
       }) as never,
@@ -128,7 +143,13 @@ describe("GET /api/v1/ai/skills", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       data: {
-        installed: Array<{ name: string; description: string; version_id: string; source: string; updated_at: string }>;
+        installed: Array<{
+          name: string;
+          description: string;
+          version_id: string;
+          source: string;
+          updated_at: string;
+        }>;
         catalog: Array<{ name: string; description: string }>;
       };
     };
@@ -142,7 +163,9 @@ describe("GET /api/v1/ai/skills", () => {
       },
     ]);
     // frete-gratis já instalada pela org → sai do catálogo; só reativacao-d30 sobra.
-    expect(body.data.catalog).toEqual([{ name: "reativacao-d30", description: "Reativação D+30." }]);
+    expect(body.data.catalog).toEqual([
+      { name: "reativacao-d30", description: "Reativação D+30." },
+    ]);
   });
 
   it("erro ao ler pointers da org → 500 internal_error", async () => {
@@ -153,5 +176,21 @@ describe("GET /api/v1/ai/skills", () => {
     const { GET } = await import("./route");
     const res = await GET(getReq());
     expect(res.status).toBe(500);
+  });
+
+  it("ponteiro legado sem version_id não derruba a listagem inteira", async () => {
+    mockAuthzOk();
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeAdminStub({
+        platformPointers: [{ name: "agendamento", version_id: null }],
+        rejectNullVersionIds: true,
+      }) as never,
+    );
+
+    const { GET } = await import("./route");
+    const res = await GET(getReq());
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ data: { installed: [], catalog: [] } });
   });
 });

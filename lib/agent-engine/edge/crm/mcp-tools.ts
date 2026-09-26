@@ -89,6 +89,7 @@ export async function buildMcpTurnTools(
   const boundary = currentExecutionBoundary();
   const claim = originJob ? claimOfJob(originJob) : undefined;
   const ctx: McpContext = {
+    sourceJobId: ids.jobId,
     ...(originJob?.id === ids.jobId && boundary && claim
       ? { meetingBooking: { sourceJobId: originJob.id, claim, boundary } }
       : {}),

@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 
-import { expect as expectBase, test, type BrowserContext, type Page } from "@playwright/test";
+import { expect as expectBase, test, type BrowserContext, type Page } from "./helpers/test";
 
 import {
   criarAtoresDasExtensoes,

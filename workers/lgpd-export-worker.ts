@@ -4,7 +4,8 @@
  * Pipeline (S-08.04):
  *   1. Load lgpd_requests row (programmatic org filter).
  *   2. Move status received -> processing, attempts++ (cap at 3).
- *   3. collectExportData → 8-table aggregator (PII-safe; no logs of bodies).
+ *   3. collectExportData → varredura das tabelas que a anonimização alcança (PII-safe).
+ *      Sem contagem fixa aqui: esta linha dizia "8 tabelas" muito depois de serem dezenas.
  *   4. Render PDF via @react-pdf/renderer (PT-BR, Art. 18 II).
  *   5. signPdfPades — STUB when LGPD_SIGNING_KEY missing (warning, no throw).
  *   6. Upload PDF + JSON to bucket `lgpd-exports/{org}/{request}/...`.

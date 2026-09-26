@@ -24,6 +24,13 @@ import {
   recusaDeMotivoDaPerdaPeloBanco,
 } from "@/lib/leads/motivo-da-perda";
 import { RECUSA_DE_TROCA_DE_FUNIL } from "@/lib/leads/clonar-para-funil";
+import { modoDeReabertura, recusaReabertura } from "@/lib/leads/reabertura";
+import {
+  recusaDeCamposObrigatorios,
+  recusaDeMotivoDoGanho,
+  settingsDoFunil,
+  validaCamposExigidos,
+} from "@/lib/leads/campos-exigidos";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -72,11 +79,12 @@ export async function POST(
     return fail("not_found", t("Lead não encontrado."), 404, { requestId });
   }
 
-  // Fetch target stage to validate same pipeline (P-01) — e `is_lost`, que é o
-  // que decide se esta escrita precisa do motivo da perda (issue #917).
+  // Fetch target stage to validate same pipeline (P-01) — e `is_lost`/`is_won`,
+  // que decidem respectivamente o motivo da perda (#917) e se a escrita
+  // REABRIRIA um negócio encerrado (issue #1538).
   const { data: stage, error: stageErr } = await supabase
     .from("crm_stages")
-    .select("id, pipeline_id, name, is_lost")
+    .select("id, pipeline_id, name, is_lost, is_won")
     .eq("id", input.stage_id)
     .maybeSingle();
 
@@ -93,6 +101,93 @@ export async function POST(
       422,
       { requestId, details: { use: "/api/v1/leads/{id}/clone" } },
     );
+  }
+
+  // ── O FUNIL DECIDE SE ESTA ESCRITA REABRIRIA O NEGÓCIO (issue #1538) ───────
+  //
+  // O arrasto é UM dos quatro caminhos; os outros três (lote, IA, automação e
+  // MCP) passam pelo `moveLeadHandler`, que faz a MESMA pergunta com a mesma
+  // função. Em `mesmo_registro` — o padrão, e o de todo funil que não declarou
+  // nada — `recusaReabertura` devolve null e nada aqui muda.
+  //
+  // Vem ANTES da régua de campos: o card encerrado não reabre, então perguntar
+  // pelos campos da etapa seria abrir um diálogo para uma escrita que o 409
+  // abaixo recusa de qualquer jeito.
+  const settings = await settingsDoFunil(supabase, lead.pipeline_id);
+  const recusa = recusaReabertura({
+    modo: modoDeReabertura(settings),
+    statusAtual: (lead as { status?: string }).status,
+    etapaDestino: stage,
+    idioma: user.idioma,
+  });
+  if (recusa) {
+    // 409 e não 422: o board já trata 409 como "o servidor tem outro estado e
+    // a tela precisa se reconciliar com ele" — e aqui é exatamente isso, o
+    // negócio encerrado que continua encerrado. O `details.use` é o ponteiro
+    // para a porta que resolve, o mesmo formato do 422 do clone.
+    return fail(recusa.codigo, recusa.mensagem, 409, {
+      requestId,
+      details: { use: "/api/v1/leads/{id}/retomar", lead_id: leadId },
+    });
+  }
+
+  // ── A MESMA ETAPA É REORDENAÇÃO, NÃO ENTRADA (CR do mantenedor, #1536) ──────
+  //
+  // O card que já está NA coluna de destino não está ENTRANDO nela: arrastar
+  // dentro da própria coluna só troca a posição. A régua abaixo pergunta "este
+  // destino exige campos que o lead não tem?" e, sem esta comparação, respondia
+  // 422 para um movimento que não muda de etapa — na coluna exigente o card
+  // ficava preso sem ninguém conseguir reordená-lo, e com `won_reason_required`
+  // valia para TODO card antigo da coluna Ganho (o `won_reason` nasce `null`,
+  // então reordenar a coluna virava 422).
+  //
+  // Comparado AQUI, antes da régua, e não dentro dela: `campos-exigidos.ts`
+  // continua não sabendo nada sobre "mesma etapa" — quem sabe é esta rota, que
+  // é quem lê `lead.stage_id` ao lado do destino. As regras de vocabulário do
+  // ganho e da perda (#917) SEGUEM valendo: elas decidem sobre VALORES que a
+  // escrita traz, não sobre a entrada em si.
+  const mesmaEtapa = input.stage_id === lead.stage_id;
+
+  // ── OS CAMPOS OBRIGATÓRIOS (issue #1536) ────────────────────────────────────
+  //
+  // A mesma pergunta dos outros cinco caminhos, respondida pela MESMA função:
+  // este destino exige campos que o lead não tem? Decidido ANTES do update, pela
+  // mesma razão da perda abaixo — depois dele só existiria a linha recusada.
+  // `details.faltando` nomeia chave e rótulo de cada campo: é ele que a tela
+  // vira em diálogo (o único caminho onde dá para PREENCHER e tentar de novo).
+  const vereditoDeCampos = mesmaEtapa
+    ? { faltando: [] }
+    : validaCamposExigidos({
+        lead: lead as Record<string, unknown>,
+        settingsDoFunil: settings,
+        destino: {
+          stageId: stage.id,
+          desfecho: stage.is_won ? "won" : stage.is_lost ? "lost" : null,
+        },
+        motivoDeGanho: input.won_reason ?? null,
+        customFieldsPropostos: input.custom_fields ?? null,
+      });
+  if (vereditoDeCampos.faltando.length > 0) {
+    const recusa = recusaDeCamposObrigatorios(vereditoDeCampos.faltando, user.idioma);
+    return fail(recusa.codigo, recusa.mensagem, 422, {
+      requestId,
+      details: { faltando: vereditoDeCampos.faltando },
+    });
+  }
+
+  // O MOTIVO DE GANHO (issue #1536): vocabulário do funil quando há lista, e
+  // obrigatoriedade opt-in (`settings.won_reason_required`) quando o funil pede.
+  if (stage.is_won) {
+    const recusaVocabulario = recusaDeMotivoDoGanho({
+      motivo: input.won_reason,
+      settingsDoFunil: settings,
+      idioma: user.idioma,
+    });
+    if (recusaVocabulario) {
+      return fail(recusaVocabulario.codigo, recusaVocabulario.mensagem, 422, {
+        requestId,
+      });
+    }
   }
 
   // ── O MOTIVO DA PERDA (issue #917) ──────────────────────────────────────────
@@ -119,6 +214,22 @@ export async function POST(
       position_in_stage: input.position_in_stage,
       updated_at: new Date().toISOString(),
       ...veredito.patch,
+      // O motivo de ganho sai NA MESMA escrita que muda a etapa — o mesmo
+      // desenho do motivo da perda (#917): uma segunda escrita teria janela.
+      ...(stage.is_won && input.won_reason?.trim()
+        ? { won_reason: input.won_reason.trim() }
+        : {}),
+      // O merge é AQUI, nunca num PATCH anterior: ver `custom_fields` em
+      // `moveLeadSchema` — dois writes teriam janela e uma segunda OCC.
+      ...(input.custom_fields
+        ? {
+            custom_fields: {
+              ...(((lead as { custom_fields?: Record<string, unknown> })
+                .custom_fields ?? {}) as Record<string, unknown>),
+              ...input.custom_fields,
+            },
+          }
+        : {}),
     })
     .eq("id", leadId)
     .eq("updated_at", input.expected_updated_at)

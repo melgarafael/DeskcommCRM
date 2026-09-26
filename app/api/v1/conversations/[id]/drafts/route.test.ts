@@ -22,36 +22,66 @@ vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn() }));
  * O banco é o MESMO dublê com predicado do teste das regras: a linha da
  * conversa só aparece se `organization_id` casar. É por isso que o caso
  * cross-tenant mede a rota, e não o mock.
+ *
+ * `idempotency_keys` entra no dublê porque o helper roda DE VERDADE aqui —
+ * mesmo critério do teste de `messages`: o que se mede é a integração entre a
+ * rota e `comIdempotencia`, e o número que decide o caso é a CONTAGEM de
+ * rascunhos, não a igualdade das respostas (um caminho que devolvesse o recibo
+ * gravado e criasse de novo passaria na igualdade e duplicaria o rascunho).
  */
 const ORG_A = "aaaaaaaa-0000-4000-8000-000000000001";
 const ORG_B = "bbbbbbbb-0000-4000-8000-000000000002";
 const CONV_A = "aaaaaaaa-1111-4000-8000-000000000001";
 const CONV_B = "bbbbbbbb-1111-4000-8000-000000000002";
 const USER = "aaaaaaaa-3333-4000-8000-000000000003";
+const CHAVE = "aaaaaaaa-2222-4000-8000-000000000010";
 
 type Linha = Record<string, unknown>;
 
 let drafts: Linha[] = [];
+let chaves: Linha[] = [];
 let inserts: number;
 
 function clienteFake(conversas: Linha[]) {
   function builder(tabela: string) {
     const filtros: Array<[string, unknown]> = [];
     let payload: Linha | null = null;
-    const linhas = () => (tabela === "conversation_drafts" ? drafts : conversas);
+    let patch: Linha | null = null;
+    let maiorQue: [string, unknown] | null = null;
+    const linhas = () =>
+      tabela === "conversation_drafts"
+        ? drafts
+        : tabela === "idempotency_keys"
+          ? chaves
+          : conversas;
+    const casa = (l: Linha) =>
+      filtros.every(([c, v]) => l[c] === v) &&
+      (maiorQue === null || String(l[maiorQue[0]]) > String(maiorQue[1]));
     const q = {
       select: () => q,
       insert: (v: Linha) => {
+        // O recibo é gravado no INSERT e ninguém chama `.select()` depois: o
+        // helper aguarda este retorno direto, então a linha entra aqui.
+        if (tabela === "idempotency_keys") {
+          chaves.push({ id: `chave-${chaves.length + 1}`, ...v });
+          return { error: null };
+        }
         payload = v;
         return q;
       },
-      update: () => q,
+      update: (v: Linha) => {
+        patch = v;
+        return q;
+      },
       eq: (c: string, v: unknown) => {
         filtros.push([c, v]);
         return q;
       },
       is: () => q,
-      gt: () => q,
+      gt: (c: string, v: unknown) => {
+        maiorQue = [c, v];
+        return q;
+      },
       maybeSingle: async () => {
         if (payload) {
           inserts += 1;
@@ -59,8 +89,17 @@ function clienteFake(conversas: Linha[]) {
           drafts.push(nova);
           return { data: { id: nova.id }, error: null };
         }
-        const alvo = linhas().find((l) => filtros.every(([c, v]) => l[c] === v)) ?? null;
+        const alvo = linhas().find(casa) ?? null;
         return { data: alvo, error: null };
+      },
+      // O recibo TERMINAL é gravado por um UPDATE aguardado direto, sem
+      // `maybeSingle`: é o `then` que aplica o patch na linha que casou.
+      then: (comOk: (v: unknown) => unknown, comErro: (e: unknown) => unknown) => {
+        if (patch) {
+          for (const l of linhas().filter(casa)) Object.assign(l, patch);
+          patch = null;
+        }
+        return Promise.resolve({ data: null, error: null }).then(comOk, comErro);
       },
     };
     return q;
@@ -68,10 +107,13 @@ function clienteFake(conversas: Linha[]) {
   return { from: builder } as unknown as SupabaseClient;
 }
 
-function req(url: string, body: unknown) {
+function req(url: string, body: unknown, chave?: string) {
   return new NextRequest(`http://localhost${url}`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...(chave === undefined ? {} : { "Idempotency-Key": chave }),
+    },
     body: JSON.stringify(body),
   });
 }
@@ -81,6 +123,7 @@ const contexto = (id = CONV_A) => ({ params: Promise.resolve({ id }) });
 beforeEach(() => {
   vi.clearAllMocks();
   drafts = [];
+  chaves = [];
   inserts = 0;
   vi.mocked(requireSupportWrite).mockResolvedValue(
     null as unknown as Awaited<ReturnType<typeof requireSupportWrite>>,
@@ -196,5 +239,68 @@ describe("POST /api/v1/conversations/[id]/drafts", () => {
 
     expect(resposta.status).toBe(422);
     expect(inserts).toBe(0);
+  });
+});
+
+describe("POST /api/v1/conversations/[id]/drafts — Idempotency-Key", () => {
+  const corpo = { texto: "Sua cobrança venceu hoje.", origem: "erp" };
+  const url = (id: string) => `/api/v1/conversations/${id}/drafts`;
+
+  it("mesma chave e mesmo corpo: DUAS chamadas, UM rascunho, a MESMA resposta", async () => {
+    const primeira = await POST(req(url(CONV_A), corpo, CHAVE), contexto());
+    const segunda = await POST(req(url(CONV_A), corpo, CHAVE), contexto());
+
+    expect(primeira.status).toBe(201);
+    expect(segunda.status).toBe(201);
+    expect(await segunda.json()).toEqual(await primeira.json());
+    // O número que decide: a integração que repete o pedido para de duplicar.
+    expect(inserts).toBe(1);
+    expect(drafts).toHaveLength(1);
+    // O replay não é uma segunda criação — a trilha não pode contar duas.
+    expect(audit).toHaveBeenCalledTimes(1);
+  });
+
+  it("mesma chave e corpo DIFERENTE: 409, e nada é criado", async () => {
+    const primeira = await POST(req(url(CONV_A), corpo, CHAVE), contexto());
+    const segunda = await POST(
+      req(url(CONV_A), { texto: "Outro texto.", origem: "erp" }, CHAVE),
+      contexto(),
+    );
+
+    expect(primeira.status).toBe(201);
+    expect(segunda.status).toBe(409);
+    const erro = (await segunda.json()) as { error: { code: string } };
+    expect(erro.error.code).toBe("idempotency_conflict");
+    expect(inserts).toBe(1);
+  });
+
+  it("mesma chave em OUTRA conversa: 409, e não o replay da primeira", async () => {
+    vi.mocked(resolveAuthDual).mockResolvedValue({
+      ok: true,
+      organizationId: ORG_A,
+      actor: { type: "user", id: USER },
+      supabase: clienteFake([
+        { id: CONV_A, organization_id: ORG_A },
+        { id: CONV_B, organization_id: ORG_A },
+      ]),
+      idioma: "pt-BR",
+      via: "token",
+      apiTokenId: "token-1",
+    } as unknown as Awaited<ReturnType<typeof resolveAuthDual>>);
+
+    const primeira = await POST(req(url(CONV_A), corpo, CHAVE), contexto());
+    const segunda = await POST(req(url(CONV_B), corpo, CHAVE), contexto(CONV_B));
+
+    expect(primeira.status).toBe(201);
+    expect(segunda.status).toBe(409);
+    expect(inserts).toBe(1);
+  });
+
+  it("chave que não é UUID: 400, e o efeito nem começa", async () => {
+    const resposta = await POST(req(url(CONV_A), corpo, "nao-e-uuid"), contexto());
+
+    expect(resposta.status).toBe(400);
+    expect(inserts).toBe(0);
+    expect(chaves).toHaveLength(0);
   });
 });

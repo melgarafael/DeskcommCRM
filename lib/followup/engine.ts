@@ -49,6 +49,8 @@ import {
   type AvisoRecuperacaoEsgotada,
 } from "./no-show-recuperacao-esgotada";
 import { interpolarDestino, persistirRespostaFollowupSupabase } from "./persistir-resposta";
+import { quandoDoRetornoVivo, reavaliarDepoisDoRetorno } from "./retorno-segura-o-fluxo";
+import { triggerConfigSchema } from "./api-schemas";
 
 const MAX_STEPS = 80;
 const CLAIM_LEASE_SECONDS = 120;
@@ -82,9 +84,19 @@ export interface FollowupJobRequest {
     purpose: "send_message" | "classify" | "plan_timing";
     /** action (mode 'ai_message') — Task 5.1: repassado ao turno pra virar o bloco de orientação. */
     prompt_hint?: string;
+    /**
+     * action (mode 'ai_message') — modelo APROVADO do canal (`meta_templates.id`) que
+     * sai no lugar da IA quando a janela de 24 h da conversa já fechou. Sem ele, fora
+     * da janela o canal recusa o texto livre e o passo não manda nada.
+     */
+    fallback_template_id?: string;
     /** action (mode 'text') — corpo pronto; o turno envia sem chamar o modelo. */
     fixed_body?: string;
-    /** action (mode 'template') — id em `message_templates`; o turno carrega o corpo e envia sem modelo. */
+    /**
+     * action (mode 'template') — id em `message_templates` (texto pronto) OU em
+     * `meta_templates` (modelo aprovado do canal, o único que sai com a janela de 24 h
+     * fechada). O turno resolve qual dos dois é e envia sem modelo de IA.
+     */
     template_id?: string;
     volta_index?: number;
     volta_total?: number;
@@ -102,6 +114,11 @@ export interface FollowupJobRequest {
 export interface AdminClient {
   assertServiceBoundary?(enrollment: EnrollmentRow): Promise<void>;
   assertAgenda?(enrollment:EnrollmentRow):Promise<void>;
+  /**
+   * Até quando um retorno agendado segura esta inscrição (ISO), ou `null` quando
+   * nada a segura. Só fluxo de silêncio — ver `retorno-segura-o-fluxo.ts`.
+   */
+  retornoQueSeguraOFluxo?(enrollment: EnrollmentRow): Promise<string | null>;
   claimDueEnrollments(limit: number, leaseSeconds: number): Promise<EnrollmentRow[]>;
   loadFlowGraph(orgId: string, versionId: string): Promise<FlowGraph | null>;
   loadLeadFacts(orgId: string, contactId: string): Promise<{
@@ -244,7 +261,10 @@ function turnPayloadExtras(
   events: EnrollmentEventRef[] = [],
 ): Partial<FollowupJobRequest["payload"]> {
   if (node.type === "action" && node.config.mode === "ai_message") {
-    return { prompt_hint: interpolarVolta(node.config.prompt_hint, events) };
+    return {
+      prompt_hint: interpolarVolta(node.config.prompt_hint, events),
+      ...(node.config.fallback_template_id ? { fallback_template_id: node.config.fallback_template_id } : {}),
+    };
   }
   if (node.type === "action" && node.config.mode === "text") {
     return { fixed_body: interpolarVolta(node.config.body, events) };
@@ -577,6 +597,26 @@ async function processEnrollment(
     return;
   }
 
+  // O RETORNO AGENDADO FALA PRIMEIRO. Com um "te escrevo no dia 30" a caminho, o
+  // fluxo de silêncio não insiste por cima: fica segurado até um dia depois do
+  // retorno. Resposta do cliente passa (quem reage ao que ele disse não é
+  // insistência) — e, no fluxo de silêncio, é o `cancel_on_reply` que decide.
+  if (inboundBodyOverride === undefined) {
+    const seguraAte = await db.retornoQueSeguraOFluxo?.(enrollment);
+    if (seguraAte) {
+      await db.insertEnrollmentEvent({
+        organization_id: enrollment.organization_id,
+        enrollment_id: enrollment.id,
+        node_id: enrollment.current_node_id,
+        event_type: "held_by_return",
+        payload: { next_eval_at: seguraAte },
+        idempotency_key: `${enrollment.current_node_id}:${enrollment.steps_taken}:retorno:${seguraAte}`,
+      });
+      await db.updateEnrollment(enrollment.id, enrollment.organization_id, { next_eval_at: seguraAte, claimed_until: null });
+      return;
+    }
+  }
+
 
   if (enrollment.steps_taken > MAX_STEPS) {
     await markDead(db, clock, enrollment, "max_steps");
@@ -781,6 +821,20 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
   const revisions=new Map<string,number>();
   return {
     async assertServiceBoundary(enrollment) { if(!revisions.has(enrollment.id) && enrollment.revision!==undefined) revisions.set(enrollment.id,enrollment.revision); await assertServiceBoundarySupabase(admin, enrollment.service_boundary ?? null); },
+    async retornoQueSeguraOFluxo(enrollment) {
+      const quando = await quandoDoRetornoVivo(admin, enrollment.organization_id, enrollment.contact_id);
+      if (quando === null) return null;
+      const { data, error } = await admin
+        .from("followup_flow_pointers")
+        .select("trigger_config")
+        .eq("organization_id", enrollment.organization_id)
+        .eq("id", enrollment.pointer_id)
+        .maybeSingle();
+      if (error) throw new Error(`pointer_query_failed: ${error.message}`);
+      const gatilho = triggerConfigSchema.safeParse((data as { trigger_config?: unknown } | null)?.trigger_config);
+      if (!gatilho.success || gatilho.data.kind !== "silence") return null;
+      return reavaliarDepoisDoRetorno(quando);
+    },
     async assertAgenda(enrollment){await assertAgendaEffectSupabase(admin,{organizationId:enrollment.organization_id,contactId:enrollment.contact_id,enrollmentId:enrollment.id,nodeId:enrollment.current_node_id});},
     async claimDueEnrollments(limit, leaseSeconds) {
       const { data, error } = await admin.rpc("fn_claim_due_followup_enrollments", {

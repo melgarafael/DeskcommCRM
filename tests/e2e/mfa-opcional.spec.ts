@@ -14,7 +14,7 @@
  */
 import { randomUUID } from "node:crypto";
 
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./helpers/test";
 import { createClient } from "@supabase/supabase-js";
 
 const svc = createClient(

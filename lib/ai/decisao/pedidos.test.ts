@@ -151,7 +151,7 @@ const KINDS_DO_JEV = new Set(["jev_pedido_de_humano", "jev_parar_de_receber"]);
 
 /**
  * Um cliente admin de brinquedo: guarda o que se insere, pode recusar uma
- * tabela, e imita o índice único da 0426 — um aviso do Jev por organização,
+ * tabela, e imita o índice único da 0433 — um aviso do Jev por organização,
  * kind e conversa, QUALQUER que seja o status: o segundo insert volta 23505.
  * Anota cada operação (`tabela.metodo`), e o `update` só existe na Central.
  */
@@ -489,7 +489,7 @@ describe("Avisar a equipe", () => {
   });
 
   /**
-   * Um aviso por conversa e pedido é do banco (o índice único da 0426, sem
+   * Um aviso por conversa e pedido é do banco (o índice único da 0433, sem
    * status): o insert do segundo volta 23505, e o pedido novo REABRE o que
    * existe — o resolvido volta a aberto, e o aberto fica como está.
    */
@@ -549,7 +549,7 @@ describe("Avisar a equipe", () => {
 
   /**
    * O aviso é gravado depois do clima, e a conversa pode ter ido para uma pessoa
-   * nesse meio — o turno da rajada passou, alguém assumiu. O gatilho da 0426
+   * nesse meio — o turno da rajada passou, alguém assumiu. O gatilho da 0433
    * que o fecharia disparou quando ele ainda não existia: relida a conversa, o
    * aviso de um pedido já atendido não nasce. As condições são as do gatilho:
    * encerrada vale para os dois; com uma pessoa (assumida ou passada), só para

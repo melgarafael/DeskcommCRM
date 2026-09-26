@@ -60,7 +60,12 @@ const DEPOIS_DO_MOVE = "2026-09-15T12:00:01.000Z";
 const DEPOIS_DA_ATIVIDADE = "2026-09-15T12:00:01.500Z";
 
 /** Banco falso com a cascata real: gravar a atividade troca o `updated_at`. */
-function bancoFalso(statusDepoisDoUpdate = "open") {
+function bancoFalso(
+  statusDepoisDoUpdate = "open",
+  settingsDoFunil: unknown = null,
+  /** Colunas extras da etapa de destino (`is_won`, por exemplo). */
+  stageExtra: Record<string, unknown> = {},
+) {
   const banco = { updatedAt: CARREGADO, stageId: ETAPA_A, status: "open" };
   vi.mocked(emitLeadActivity).mockImplementation(async () => {
     banco.updatedAt = DEPOIS_DA_ATIVIDADE;
@@ -76,9 +81,18 @@ function bancoFalso(statusDepoisDoUpdate = "open") {
     status: banco.status,
     lost_reason: null,
     updated_at: banco.updatedAt,
+    custom_fields: {} as Record<string, unknown>,
+    won_reason: null,
   });
 
   const from = (tabela: string) => {
+    if (tabela === "crm_pipelines") {
+      const chain: Record<string, unknown> = {};
+      chain.select = () => chain;
+      chain.eq = () => chain;
+      chain.maybeSingle = async () => ({ data: { settings: settingsDoFunil }, error: null });
+      return chain;
+    }
     if (tabela === "crm_stages") {
       const chain: Record<string, unknown> = {};
       chain.select = () => chain;
@@ -95,6 +109,7 @@ function bancoFalso(statusDepoisDoUpdate = "open") {
           pipeline_id: FUNIL,
           name: "Etapa",
           is_lost: false,
+          ...stageExtra,
         },
         error: null,
       });
@@ -161,6 +176,48 @@ describe("moveLeadHandler", () => {
     expect(devolvido.updated_at).toBe(DEPOIS_DA_ATIVIDADE);
   });
 
+  // ── CAMPOS OBRIGATÓRIOS (issue #1536) ──────────────────────────────────────
+  //
+  // O caminho 4 dos SEIS: `crm_move_lead_stage` (MCP) e as ações de automação
+  // escrevem etapa por ESTE handler, então a recusa dele É a recusa da tool — o
+  // servidor MCP devolve `isError` com a frase, e o modelo pergunta ao cliente
+  // ou passa para o humano em vez de mover calado.
+  const CAMPOS_EXIGIDOS = {
+    fields: [
+      {
+        key: "concorrente",
+        label: "Concorrente",
+        type: "text",
+        obrigatorio_em: { etapas: [ETAPA_B] },
+      },
+    ],
+  };
+
+  it("etapa que exige campo vazio: ApiError 422 required_fields_missing com o faltando", async () => {
+    await expect(
+      moveLeadHandler(bancoFalso("open", CAMPOS_EXIGIDOS) as never, ctx, LEAD, {
+        to_stage_id: ETAPA_B,
+      }),
+    ).rejects.toMatchObject({
+      status: 422,
+      code: "required_fields_missing",
+      details: { faltando: [{ chave: "concorrente", rotulo: "Concorrente" }] },
+    });
+  });
+
+  it("funil sem obrigatorio_em continua movendo (controle do critério 3)", async () => {
+    const devolvido = (await moveLeadHandler(
+      bancoFalso("open", {
+        fields: [{ key: "concorrente", label: "Concorrente", type: "text", required: true }],
+      }) as never,
+      ctx,
+      LEAD,
+      { to_stage_id: ETAPA_B },
+    )) as { stage_id: string };
+
+    expect(devolvido.stage_id).toBe(ETAPA_B);
+  });
+
   it("o evento `lead.stage_changed` leva o status que o gatilho do UPDATE escreveu", async () => {
     // O `status` do emit_event lia a RELEITURA. Com ela no fim, ler dali seria
     // amarrar o evento à ordem da releitura — e o valor já está no retorno do
@@ -181,5 +238,58 @@ describe("moveLeadHandler", () => {
         p_payload: expect.objectContaining({ status: "won" }),
       }),
     );
+  });
+
+  // ── A MESMA ETAPA PASSA ────────────────────────────────────────────────────
+  //
+  // "Mover" para a coluna onde o negócio JÁ está é REORDENAÇÃO, não entrada: o
+  // card não entra na etapa exigente, só muda de posição dentro dela. A rota do
+  // quadro compara o destino com `lead.stage_id` antes da régua; este handler —
+  // o escritor de etapa de tudo que NÃO é o quadro — não comparava, e a MESMA
+  // reordenação recusava com `required_fields_missing`. O campo é exigido nas
+  // DUAS etapas de propósito: o mesmo objeto de configuração serve de controle
+  // do caso negativo logo abaixo.
+  const EXIGENTE_NAS_DUAS = {
+    fields: [
+      {
+        key: "concorrente",
+        label: "Concorrente",
+        type: "text",
+        obrigatorio_em: { etapas: [ETAPA_A, ETAPA_B] },
+      },
+    ],
+  };
+
+  it("mesma etapa passa: reordenar dentro da coluna exigente não cai na régua", async () => {
+    const devolvido = (await moveLeadHandler(
+      bancoFalso("open", EXIGENTE_NAS_DUAS) as never,
+      ctx,
+      LEAD,
+      { to_stage_id: ETAPA_A, position_in_stage: 1500 },
+    )) as { stage_id: string };
+
+    // A escrita aconteceu (a posição muda) — o negócio não foi devolvido.
+    expect(devolvido.stage_id).toBe(ETAPA_A);
+  });
+
+  it("a mudança de etapa de verdade continua barrada (o atalho não vira buraco)", async () => {
+    await expect(
+      moveLeadHandler(bancoFalso("open", EXIGENTE_NAS_DUAS) as never, ctx, LEAD, {
+        to_stage_id: ETAPA_B,
+      }),
+    ).rejects.toMatchObject({ status: 422, code: "required_fields_missing" });
+  });
+
+  it("mesma etapa na coluna Ganho: `won_reason_required` não trava a reordenação", async () => {
+    // O negócio antigo da coluna tem `won_reason` nulo — exigir o motivo DELE ao
+    // reordenar tornaria o ganho impossível de reordenar para sempre.
+    const devolvido = (await moveLeadHandler(
+      bancoFalso("open", { won_reason_required: true }, { is_won: true }) as never,
+      ctx,
+      LEAD,
+      { to_stage_id: ETAPA_A, position_in_stage: 2500 },
+    )) as { stage_id: string };
+
+    expect(devolvido.stage_id).toBe(ETAPA_A);
   });
 });

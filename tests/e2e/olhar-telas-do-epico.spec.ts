@@ -15,7 +15,7 @@
  *
  * Uma tela sadia provada TAMBÉM é resultado: a captura fica versionada.
  */
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./helpers/test";
 import fs from "node:fs";
 import path from "node:path";
 import { afirmarAdminDeTenantPuro } from "./utils/precondicao";

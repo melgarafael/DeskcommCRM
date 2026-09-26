@@ -26,6 +26,10 @@ export interface LeadFilters {
   valueCentsMin?: number | null;
   valueCentsMax?: number | null;
   overdueOnly?: boolean;
+  /** O `lost_reason` exato do card — filtro de perda (issue #1537). */
+  lostReason?: string;
+  /** A categoria do motivo de perda (issue #1537), resolvida no funil. */
+  lostCategory?: string;
 }
 
 /**
@@ -48,6 +52,8 @@ export function filtersFromParams(
     tag: tag ?? undefined,
     search: search ?? undefined,
     overdueOnly: sp.get("overdue") === "1" || undefined,
+    lostReason: sp.get("motivo") ?? undefined,
+    lostCategory: sp.get("categoria") ?? undefined,
   };
 }
 
@@ -58,10 +64,26 @@ export function filtersToParams(f: LeadFilters): string {
   if (f.tag) p.set("tag", f.tag);
   if (f.search?.trim()) p.set("q", f.search.trim());
   if (f.overdueOnly) p.set("overdue", "1");
+  if (f.lostReason) p.set("motivo", f.lostReason);
+  if (f.lostCategory) p.set("categoria", f.lostCategory);
   return p.toString();
 }
 
-export function applyFilters(leads: Lead[], f: LeadFilters): Lead[] {
+/**
+ * `contexto` é o que a tela sabe e o lead não: a categoria NÃO é coluna, ela
+ * sai do `settings.lost_reasons` do funil (`lib/leads/motivos-de-perda-do-funil.ts`).
+ * Sem contexto, filtrar por categoria não acha nada — que é o comportamento
+ * honesto: sem configuração não há o que agrupar.
+ */
+export interface ContextoDosFiltros {
+  categoriaDo?: (motivo: string) => string | undefined;
+}
+
+export function applyFilters(
+  leads: Lead[],
+  f: LeadFilters,
+  contexto?: ContextoDosFiltros,
+): Lead[] {
   const today = new Date().toISOString().slice(0, 10);
   const search = f.search?.trim().toLowerCase() ?? "";
 
@@ -81,6 +103,16 @@ export function applyFilters(leads: Lead[], f: LeadFilters): Lead[] {
       }
     }
     if (f.status && f.status !== "all" && l.status !== f.status) return false;
+    // Motivo/categoria só existem em negócio PERDIDO (issue #1537). Escolher um
+    // deles é pedir perdas: sem isso, o filtro combinado com a aba "Ganhos"
+    // devolvia lista vazia sem dizer por quê.
+    if ((f.lostReason || f.lostCategory) && l.status !== "lost") return false;
+    if (f.lostReason && l.lost_reason !== f.lostReason) return false;
+    if (f.lostCategory) {
+      const motivo = l.lost_reason?.trim() ?? "";
+      const categoria = motivo ? contexto?.categoriaDo?.(motivo) : undefined;
+      if (categoria !== f.lostCategory) return false;
+    }
     // As TRÊS caixas de marcador (negócio, contato, conversa) — ver
     // lib/kanban/marcadores-do-card.ts. Só `l.tags` deixava o marcador escrito
     // no contato ou na conversa sem casar card nenhum.

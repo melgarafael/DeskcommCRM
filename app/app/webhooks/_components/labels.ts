@@ -32,6 +32,11 @@ export const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   "appointment.confirmed": "Quando um horário pendente for confirmado",
   "appointment.rescheduled": "Quando um horário for remarcado",
   "appointment.cancelled": "Quando um horário for cancelado",
+  // O desfecho (#1612): a frase diz o que a EQUIPE registrou na tela —
+  // "compareceu" e "faltou" são os botões Realizado/Faltou do histórico, e
+  // usar outro vocabulário aqui faria o operador procurar o gatilho que já viu.
+  "appointment.completed": "Quando alguém comparecer ao compromisso",
+  "appointment.no_show": "Quando alguém faltar ao compromisso",
   "contact.birthday": "No aniversário de um contato",
   // A frase diz o que a regra vê ("uma data do funil"), e não o que o operador
   // escreveu — o campo é escolhido embaixo, e o mesmo rótulo serve para "data

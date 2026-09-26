@@ -222,6 +222,11 @@ const schema = z.object({
   TRANSCRIPTION_API_KEY: z.string().optional().default(""),
   TRANSCRIPTION_BASE_URL: z.string().optional().default(""),
   TRANSCRIPTION_MODEL: z.string().optional().default(""),
+  // Idiomas esperados no áudio, ISO-639-1 separados por vírgula ("es" ou
+  // "pt,es"). Vazio = o serviço detecta sozinho. Vale com a chave acima E com a
+  // da OpenAI da organização — assim como `TRANSCRIPTION_MODEL`. Leitura
+  // tolerante em `idiomasDaTranscricao` (grafia errada não derruba o worker).
+  TRANSCRIPTION_LANGUAGES: z.string().optional().default(""),
   // Endereço da API do Jev (TypeSafe AI). Vazio é ausente: vale
   // https://api.typesafe.ai. Existe para o dublê do e2e — a CHAVE nunca vem
   // daqui, é por organização (BYOK). Quem lê é `baseDaApiDoJev()`, em
@@ -409,6 +414,21 @@ const schema = z.object({
    * 30 (a janela da concordância).
    */
   JEV_OBSERVACOES_RETENTION_DAYS: z.string().optional().default(""),
+  /**
+   * Rascunho sugerido por integração JÁ VENCIDO (`conversation_drafts`,
+   * migration 0419, issue #1686). `z.string()` pela MESMA razão das irmãs
+   * acima — quem interpreta é `lib/retencao/politica.ts`, onde lixo resolve
+   * para o lado seguro. Padrão 30, piso 7, contados do `expires_at` (a linha
+   * só responde enquanto a janela dela está aberta).
+   */
+  DRAFT_RETENTION_DAYS: z.string().optional().default(""),
+  /**
+   * Candidatos ao golden set (migration 0428, issue #1695): rótulo de near-miss
+   * e de divergência, sem texto de cliente. `z.string()` pela MESMA razão das
+   * irmãs acima — quem interpreta é `lib/retencao/politica.ts`. Padrão 90, piso
+   * 30 (a janela em que um near-miss ainda é curável).
+   */
+  GOLDEN_CANDIDATES_RETENTION_DAYS: z.string().optional().default(""),
 
   // LGPD export (S-08.04)
   LGPD_SIGNING_KEY: z.string().optional().default(""),

@@ -22,6 +22,7 @@ import { lerOcupacaoExterna } from "@/lib/agenda/ocupacao-externa";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import type { Actor } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
+import { chaveDaRequisicao } from "@/lib/api/idempotency";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -292,7 +293,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
-  return despachar(req, marcarSchema, marcarAgendamentoHandler, 201);
+  return despachar(req, marcarSchema, marcarAgendamentoHandler, 201, true);
 }
 
 export async function PATCH(req: NextRequest): Promise<Response> {
@@ -334,10 +335,11 @@ async function despachar<T>(
   schema: z.ZodType<T>,
   handler: (
     supabase: Awaited<ReturnType<typeof createClient>>,
-    ctx: { organization_id: string; actor: Actor; requestId: string },
+    ctx: { organization_id: string; actor: Actor; requestId: string; idempotencyKey?: string },
     input: T,
   ) => Promise<Record<string, unknown>>,
   status: 200 | 201,
+  aceitaIdempotencyKey = false,
 ): Promise<Response> {
   const requestId = randomUUID();
 
@@ -360,6 +362,11 @@ async function despachar<T>(
   const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const { supabase, organizationId, actor } = authz;
 
+  const idempotencyKey = aceitaIdempotencyKey ? chaveDaRequisicao(req) : null;
+  if (idempotencyKey !== null && !z.string().uuid().safeParse(idempotencyKey).success) {
+    return fail("validation_failed", "Idempotency-Key deve ser UUID", 400, { requestId });
+  }
+
   const tetoEstourado = await tetoDeEscritaDoToken(authz, "agenda", requestId);
   if (tetoEstourado) return tetoEstourado;
 
@@ -380,6 +387,7 @@ async function despachar<T>(
         organization_id: organizationId,
         actor,
         requestId,
+        ...(idempotencyKey !== null ? { idempotencyKey } : {}),
       },
       parsed.data,
     );

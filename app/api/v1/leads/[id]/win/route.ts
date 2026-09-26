@@ -22,7 +22,7 @@ import { createClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const supportDenied = await requireSupportWrite();
@@ -36,6 +36,15 @@ export async function POST(
   const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
   if (!authz.ok) return authz.response;
 
+  // O MOTIVO DE GANHO (issue #1536): corpo opcional. Body vazio/ausente é o
+  // contrato antigo — ganhar sem motivo continua valendo, salvo quando o funil
+  // liga `settings.won_reason_required` (aí a recusa vem de `encerraDemanda`).
+  const corpo = await req.json().catch(() => ({}));
+  const wonReason =
+    typeof (corpo as { won_reason?: unknown }).won_reason === "string"
+      ? ((corpo as { won_reason: string }).won_reason as string)
+      : null;
+
   try {
     const { lead } = await encerraDemanda(
       supabase,
@@ -45,7 +54,7 @@ export async function POST(
         requestId,
         idioma: authz.user.idioma,
       },
-      { leadId, desfecho: "won" },
+      { leadId, desfecho: "won", motivo: wonReason },
     );
     return ok(lead, { requestId });
   } catch (err) {

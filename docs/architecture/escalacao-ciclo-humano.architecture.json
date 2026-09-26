@@ -1400,13 +1400,13 @@
       "id": "e125",
       "from": "jevPedidos",
       "to": "central",
-      "label": "'Avisar a equipe' (0426): kind jev_pedido_de_humano / jev_parar_de_receber, ref_kind conversation, warn — o corpo NÃO leva a frase do cliente: a Central entrega body a qualquer agent"
+      "label": "'Avisar a equipe' (0433): kind jev_pedido_de_humano / jev_parar_de_receber, ref_kind conversation, warn — o corpo NÃO leva a frase do cliente: a Central entrega body a qualquer agent"
     },
     {
       "id": "e126",
       "from": "atribuir",
       "to": "central",
-      "label": "trg_fechar_avisos_do_jev_da_conversa (0426): encerrada, os dois avisos do Jev daquela conversa fecham; com uma pessoa (assumida, ou passada por qualquer caminho: last_handoff_at, robô calado), só o de falar com uma pessoa — o de parar de receber pede à equipe assumir E pedir o PARAR, e segue aberto; trg_fechar_aviso_do_jev_ao_bloquear: o contato bloqueado fecha o de parar de receber (o laço de retorno dele)"
+      "label": "trg_fechar_avisos_do_jev_da_conversa (0433): encerrada, os dois avisos do Jev daquela conversa fecham; com uma pessoa (assumida, ou passada por qualquer caminho: last_handoff_at, robô calado), só o de falar com uma pessoa — o de parar de receber pede à equipe assumir E pedir o PARAR, e segue aberto; trg_fechar_aviso_do_jev_ao_bloquear: o contato bloqueado fecha o de parar de receber (o laço de retorno dele)"
     }
   ],
   "cards": [

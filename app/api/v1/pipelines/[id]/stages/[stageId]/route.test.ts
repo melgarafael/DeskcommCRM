@@ -200,6 +200,54 @@ describe("PATCH /api/v1/pipelines/[id]/stages/[stageId]", () => {
     expect(db.escritas).toEqual([]);
   });
 
+  it("definir a chance de fechamento da etapa → um update só, com os filtros de tenant", async () => {
+    authOk();
+    const db = makeDb({ stages: funil() });
+    const { PATCH } = await import("./route");
+    const res = await PATCH(reqPatch({ win_probability: 40 }), ctx());
+
+    expect(res.status).toBe(200);
+    expect(db.escritas).toHaveLength(1);
+    expect(db.escritas[0]?.patch).toEqual(comAutoria({ win_probability: 40 }));
+    expect(db.escritas[0]?.filtros).toContainEqual(["id", "e2"]);
+    expect(db.escritas[0]?.filtros).toContainEqual(["organization_id", ORG_ID]);
+    expect(db.escritas[0]?.filtros).toContainEqual(["pipeline_id", PIPE]);
+    // Ganho e perda não ganham número junto: valem 100 e 0 na regra.
+    expect(db.escritas[0]?.patch).not.toHaveProperty("is_won");
+    expect(db.escritas[0]?.patch).not.toHaveProperty("is_lost");
+  });
+
+  it("limpar a calibração → win_probability null no update, não ausente", async () => {
+    authOk();
+    const db = makeDb({ stages: funil() });
+    const { PATCH } = await import("./route");
+    const res = await PATCH(reqPatch({ win_probability: null }), ctx());
+
+    expect(res.status).toBe(200);
+    expect(db.escritas).toHaveLength(1);
+    expect(db.escritas[0]?.patch).toEqual(comAutoria({ win_probability: null }));
+  });
+
+  it("chance fora de 0 a 100 → 422 do Zod e nenhuma escrita", async () => {
+    authOk();
+    const db = makeDb({ stages: funil() });
+    const { PATCH } = await import("./route");
+    const res = await PATCH(reqPatch({ win_probability: 150 }), ctx());
+
+    expect(res.status).toBe(422);
+    expect(db.escritas).toEqual([]);
+  });
+
+  it("chance que não é número inteiro → 422 e nenhuma escrita", async () => {
+    authOk();
+    const db = makeDb({ stages: funil() });
+    const { PATCH } = await import("./route");
+    const res = await PATCH(reqPatch({ win_probability: 37.5 }), ctx());
+
+    expect(res.status).toBe(422);
+    expect(db.escritas).toEqual([]);
+  });
+
   /**
    * ⭐ `uniq_crm_stages_pipeline_won` é imediato: marcar «Proposta» antes de
    * liberar «Pago» é 23505 cru na cara do usuário. As marcas de início/fim do

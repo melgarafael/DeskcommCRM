@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./helpers/test";
 
 test.describe("error pages", () => {
   test("/404 renders PT-BR copy", async ({ page }) => {

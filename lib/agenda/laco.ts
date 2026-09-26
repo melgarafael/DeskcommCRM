@@ -85,10 +85,22 @@ export function atividadeDaTransicao(
  * vira compromisso, e é o gancho de "mandar a confirmação para a cliente".
  * Reaproveitar a função da timeline aqui apagaria o gatilho mais útil dos três.
  *
- * `completed` e `no_show` ficam de fora porque já têm emissor próprio:
- * `appointment.outcome_confirmed`, consumido por
- * `lib/followup/gatilho-presenca.handler.ts`. Dois eventos para o mesmo fato
- * fariam a regra rodar duas vezes.
+ * `completed` e `no_show` (#1612) saem AQUI, da TRANSIÇÃO — e não de
+ * `appointment.outcome_confirmed`, que continua existindo e continua sendo
+ * consumido só pelo acompanhamento de presença
+ * (`lib/followup/gatilho-presenca.handler.ts`).
+ *
+ * Medido em `fn_appointment_change` (baseline): o RPC emite
+ * `appointment.outcome_confirmed` SOMENTE quando `a.status='no_show'` — nunca
+ * para `completed`. Tomar aquele evento como fonte dos dois gatilhos novos
+ * deixaria `appointment.completed` para sempre mudo: o comparecimento
+ * registrado pela tela e pela tool `crm_set_appointment_outcome` não teria
+ * aviso nenhum, e é justamente o caso de "coloque na agenda do outro sistema".
+ *
+ * Dois eventos para o mesmo fato só fariam a regra rodar duas vezes se uma
+ * regra pudesse assinar OS DOIS — e ela não pode: um gatilho por evento. O que
+ * muda é o consumidor de cada um, e ele é diferente de propósito
+ * (seguimento de presença × regra do estúdio).
  */
 export function gatilhoDaTransicao(de: SituacaoAnterior, para: Transicao): string | null {
   if (de === null) {
@@ -104,6 +116,16 @@ export function gatilhoDaTransicao(de: SituacaoAnterior, para: Transicao): strin
       return "appointment.rescheduled";
     case "cancelled":
       return "appointment.cancelled";
+    // O desfecho nasce da TRANSIÇÃO, que só existe quando o status MUDOU de
+    // fato. O guard de "uma vez cada" (#1612) é do handler
+    // (`input.status !== atual.status` em `atualizarAgendamento`), NÃO do tipo:
+    // lá `atual.status` entra por cast em `SituacaoAnterior`, então uma
+    // correção `completed → no_show` chega aqui e emite `appointment.no_show`
+    // — uma vez por transição real, que é o comportamento certo.
+    case "completed":
+      return "appointment.completed";
+    case "no_show":
+      return "appointment.no_show";
     default:
       return null;
   }

@@ -20,7 +20,7 @@ import { mkdirSync } from "node:fs";
 import { createServer } from "node:http";
 
 import { createClient } from "@supabase/supabase-js";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/test";
 
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 

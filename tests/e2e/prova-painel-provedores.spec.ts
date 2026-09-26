@@ -14,7 +14,7 @@
  *  - F1/F3: a catraca recusa modelo sem ferramentas no ponto que cria o lead;
  *  - F2: a tela de execuções abre e responde "está tudo bem?".
  */
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/test";
 
 import { PONTOS_DE_IA } from "@/lib/ai/pontos/registro";
 

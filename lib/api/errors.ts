@@ -197,6 +197,23 @@ export const ApiErrorCodes = {
   pipeline_no_lost_stage: "pipeline_no_lost_stage",
   // 404: o funil de destino não existe (ou não é desta organização).
   pipeline_not_found: "pipeline_not_found",
+  // 409 (issue #1538): o funil é `novo_negocio` e a escrita reabriria um
+  // negócio encerrado. Os QUATRO caminhos (arrasto, lote, IA/automação, MCP)
+  // devolvem este mesmo código, e a tela o reconhece para oferecer a retomada.
+  reabertura_cria_novo: "reabertura_cria_novo",
+  // 422: chamaram `/retomar` num negócio que continua ABERTO — não há o que
+  // retomar, e criar aí duplicaria o card que já está no quadro.
+  reabertura_lead_aberto: "reabertura_lead_aberto",
+  // ─── CAMPOS OBRIGATÓRIOS E MOTIVO DE GANHO (issue #1536) ───
+  //
+  // As duas recusas do núcleo novo, cada uma com a sua demanda: a primeira pede
+  // PREENCHER (o `details.faltando` nomeia chave e rótulo de cada campo — e
+  // quando o que falta é o motivo de ganho a chave é `won_reason`, um caso do
+  // mesmo contrato, não um código à parte), a segunda pede ESCOLHER da lista
+  // cadastrada (`settings.won_reasons`). Colapsá-las mandaria quem já informou
+  // escolher sem lista, e quem não informou digitar sem caminho.
+  required_fields_missing: "required_fields_missing",
+  won_reason_invalid: "won_reason_invalid",
 
   // ─── AVISO DE CASO NO WHATSAPP (migration 0292, onda 8) ───
   //

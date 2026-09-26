@@ -10,7 +10,7 @@
  * Pré-requisitos: Supabase local com Mailpit + app `next start` (ver README
  * da suíte / playwright.config.ts).
  */
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./helpers/test";
 
 import { waitForEmail, extractAuthConfirmLink, uniqueEmail } from "./helpers/auth";
 

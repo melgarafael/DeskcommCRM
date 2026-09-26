@@ -2,7 +2,7 @@
  * Jornada: admin cola uma chave de IA e entende o resultado sem ler código.
  * Antes, o card mostrava `auth_failed_401` e a lista de modelos colada por vírgula.
  */
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./helpers/test";
 
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 

@@ -107,6 +107,8 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const gatilho = triggerConfigSchema.safeParse(modelo.gatilho({ stageId: parsed.data.stage_id }));
   const grafo = flowGraphSchema.safeParse(modelo.grafo);
+  // Sem contexto de conexão: o modelo do catálogo tem de ser publicável em
+  // QUALQUER organização, inclusive a que tem canal com janela de 24 h.
   const publicavel = grafo.success ? validateFlowForPublish(grafo.data) : null;
   if (!gatilho.success || !grafo.success || (publicavel && !publicavel.ok)) {
     return fail(

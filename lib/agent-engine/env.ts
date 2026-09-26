@@ -189,8 +189,15 @@ const envSchema = z.object({
   PRUNE_TOOL_RESULTS_WINDOW_TURNS: z.coerce.number().int().positive().default(4),
   PRUNE_TOOL_RESULTS_MIN_RESULT_TOKENS: z.coerce.number().int().positive().default(200),
   // Skills situacionais — near-misses viram candidatos ao golden set (curadoria
-  // humana; escrita por fs em runtime, gitignored).
-  GOLDEN_CANDIDATES_DIR: z.string().min(1).default('lib/agent-engine/golden-candidates'),
+  // humana). Desde a #1695 o candidato é uma LINHA em `golden_candidates` (só
+  // rótulo, sem texto de cliente, com retenção) e não mais um JSON escrito em
+  // disco: `false` desliga a gravação. A chave antiga, `GOLDEN_CANDIDATES_DIR`,
+  // saiu junto com o disco — o diretório que ela nomeava não é escrito por
+  // ninguém, e uma chave morta no `.env` mentiria para quem chegasse depois.
+  GOLDEN_CANDIDATES_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
   // Classificadores auxiliares (modelo BARATO; sem valor = default da org).
   STAGE_CLASSIFIER_MODEL: z.string().min(1).optional(),
   JAILBREAK_CLASSIFIER_MODEL: z.string().min(1).optional(),

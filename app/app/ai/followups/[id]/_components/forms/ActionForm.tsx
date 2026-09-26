@@ -6,7 +6,9 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -14,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { actionConfigSchema } from "@/lib/followup/graph-schema";
 import { MODOS_DA_ACAO, opcoes, type ModoDaAcao } from "@/lib/followup/vocabulario";
 import { useMessageTemplates } from "@/hooks/inbox/useMessageTemplates";
+import { useModelosAprovadosDoFluxo } from "@/hooks/followup/useModelosAprovadosDoFluxo";
 import { useT } from "@/hooks/i18n/useT";
 
 import type { ConfigOf } from "./shared";
@@ -23,30 +26,45 @@ import type { ConfigOf } from "./shared";
  * mão. Trata os três estados em vez de fingir que a lista sempre chega:
  * carregando, vazia e erro — porque um seletor vazio sem explicação é o mesmo
  * beco sem saída que o campo de UUID era, só que mais bonito.
+ *
+ * Duas origens, em grupos separados: os textos prontos (Ajustes → Modelos) e os
+ * modelos APROVADOS no WhatsApp. A diferença não é cosmética: com a janela de
+ * 24 h fechada, só o aprovado chega ao cliente — por isso o plano B da mensagem
+ * por IA (`soAprovados`) só oferece esse grupo.
  */
 function SeletorDeModelo({
   id,
   valor,
   onChange,
   permiteVazio,
+  soAprovados,
 }: {
   id: string;
   valor: string;
   onChange: (templateId: string) => void;
   permiteVazio: boolean;
+  soAprovados: boolean;
 }) {
   const t = useT();
-  const { data: modelos, isLoading, isError } = useMessageTemplates();
+  const textos = useMessageTemplates();
+  const aprovados = useModelosAprovadosDoFluxo();
+  const prontos = soAprovados ? [] : (textos.data ?? []);
+  const doCanal = aprovados.data ?? [];
 
-  if (isLoading) return <p className="text-xs text-text-muted">{t("Carregando seus modelos…")}</p>;
-  if (isError) {
+  if ((!soAprovados && textos.isLoading) || aprovados.isLoading) {
+    return <p className="text-xs text-text-muted">{t("Carregando seus modelos…")}</p>;
+  }
+  if ((soAprovados || textos.isError) && aprovados.isError) {
     return (
       <p className="text-xs text-error-fg">
         {t("Não consegui carregar seus modelos de mensagem. Recarregue a página.")}
       </p>
     );
   }
-  if (!modelos?.length) {
+  // O plano B é OPCIONAL: sem modelo aprovado, o seletor continua de pé com
+  // "Nenhum" e diz o que falta — trocá-lo por uma frase faria o campo sumir da
+  // tela justamente para quem ainda não tem modelo, e nada explicaria onde ele foi.
+  if (!soAprovados && prontos.length === 0 && doCanal.length === 0) {
     return (
       <p className="text-xs text-text-muted">
         {t("Você ainda não tem modelos de mensagem. Crie um em Ajustes → Modelos e ele aparece aqui.")}
@@ -55,23 +73,47 @@ function SeletorDeModelo({
   }
 
   const SEM_MODELO = "__nenhum__";
+  const escolhido = doCanal.find((m) => m.id === valor);
   return (
-    <Select
-      value={valor === "" ? SEM_MODELO : valor}
-      onValueChange={(v) => onChange(v === SEM_MODELO ? "" : v)}
-    >
-      <SelectTrigger id={id}>
-        <SelectValue placeholder={t("Escolha um modelo")} />
-      </SelectTrigger>
-      <SelectContent>
-        {permiteVazio && <SelectItem value={SEM_MODELO}>{t("Nenhum")}</SelectItem>}
-        {modelos.map((m) => (
-          <SelectItem key={m.id} value={m.id}>
-            {m.title}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <div className="space-y-2">
+      <Select
+        value={valor === "" ? SEM_MODELO : valor}
+        onValueChange={(v) => onChange(v === SEM_MODELO ? "" : v)}
+      >
+        <SelectTrigger id={id}>
+          <SelectValue placeholder={t("Escolha um modelo")} />
+        </SelectTrigger>
+        <SelectContent>
+          {permiteVazio && <SelectItem value={SEM_MODELO}>{t("Nenhum")}</SelectItem>}
+          {prontos.length > 0 && (
+            <SelectGroup>
+              <SelectLabel>{t("Textos prontos")}</SelectLabel>
+              {prontos.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.title}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          )}
+          {doCanal.length > 0 && (
+            <SelectGroup>
+              <SelectLabel>{t("Aprovados no WhatsApp")}</SelectLabel>
+              {doCanal.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.name} ({m.language})
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          )}
+        </SelectContent>
+      </Select>
+      {escolhido && <p className="whitespace-pre-line text-xs text-text-muted">{escolhido.texto}</p>}
+      {soAprovados && doCanal.length === 0 && (
+        <p className="text-xs text-text-muted">
+          {t("Nenhum modelo aprovado no WhatsApp ainda. Crie um em Conexões → Modelos e ele aparece aqui quando for aprovado.")}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -176,11 +218,14 @@ export function ActionForm({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="action-fallback">{t("Se a IA não conseguir escrever, mandar este modelo")}</Label>
+            <Label htmlFor="action-fallback">
+              {t("Se a janela de 24 horas já tiver fechado, mandar este modelo aprovado no lugar da IA")}
+            </Label>
             <SeletorDeModelo
               id="action-fallback"
               valor={fallbackTemplateId}
               permiteVazio
+              soAprovados
               onChange={(v) => {
                 setFallbackTemplateId(v);
                 commit({ mode, ...fields, fallbackTemplateId: v });
@@ -195,11 +240,15 @@ export function ActionForm({
             id="action-template-id"
             valor={templateId}
             permiteVazio={false}
+            soAprovados={false}
             onChange={(v) => {
               setTemplateId(v);
               commit({ mode, ...fields, templateId: v });
             }}
           />
+          <p className="text-xs text-text-muted">
+            {t("Depois de 24 horas sem resposta do cliente, só um modelo aprovado no WhatsApp chega até ele.")}
+          </p>
         </div>
       )}
       {error && <p className="text-xs text-error-fg">{error}</p>}

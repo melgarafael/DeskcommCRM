@@ -5,7 +5,8 @@ import { useT } from "@/hooks/i18n/useT";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBoard } from "@/hooks/kanban/useBoard";
-import { useMoveCard } from "@/hooks/kanban/useMoveCard";
+import { useMoveCard, type RecusaDeCampos, type RetomadaPendente } from "@/hooks/kanban/useMoveCard";
+import { CamposObrigatoriosDialog } from "./CamposObrigatoriosDialog";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useAtRiskLeads } from "@/hooks/leads/useAtRiskLeads";
 import { useReactivations } from "@/hooks/leads/useReactivations";
@@ -14,6 +15,7 @@ import type { Lead } from "@/lib/types/leads";
 import type { Pipeline, Stage } from "@/lib/kanban/types";
 import { StageColumn } from "./StageColumn";
 import { LeadDossier } from "./LeadDossier";
+import { RetomarComoNovoNegocioDialog } from "./RetomarComoNovoNegocioDialog";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 
 interface KanbanBoardProps {
@@ -53,7 +55,7 @@ function groupLeadsByStage(stages: Stage[], leads: Lead[]): Map<string, Lead[]> 
 
 function BoardSkeleton() {
   return (
-    <div className="flex gap-3 overflow-x-auto p-4">
+    <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-4">
       {[0, 1, 2].map((c) => (
         <div
           key={c}
@@ -82,7 +84,16 @@ export function KanbanBoard({
   const t = useT();
   const useExternal = stagesProp !== undefined && leadsProp !== undefined;
   const queryResult = useBoard(useExternal ? null : pipelineId);
-  const moveCard = useMoveCard(pipelineId);
+  // A RECUSA DE CAMPOS ABRE DIÁLOGO, não toast (issue #1536): o 422 traz em
+  // `details.faltando` o que falta, o diálogo coleta, e o reenvio leva os
+  // valores NA MESMA escrita que muda a etapa. O hook é o MESMO de antes —
+  // esta opção só troca o destino do erro.
+  const [recusaDeCampos, setRecusaDeCampos] = useState<RecusaDeCampos | null>(null);
+  const [retomada, setRetomada] = useState<RetomadaPendente | null>(null);
+  const moveCard = useMoveCard(pipelineId, {
+    onCamposFaltando: setRecusaDeCampos,
+    onRetomada: setRetomada,
+  });
   const { data: members } = useAssignableMembers(true);
   const ownerNames = useMemo(
     () => new Map((members ?? []).map((m) => [m.user_id, m.full_name])),
@@ -245,7 +256,24 @@ export function KanbanBoard({
 
   return (
     <DragDropContext onDragEnd={handleDragEnd}>
-      <div className="flex h-full gap-3 overflow-x-auto p-4">
+      {/* UM contêiner de rolagem só, nos dois eixos. Rolar cada coluna por
+          conta própria seria o desenho "Trello", mas o @hello-pangea/dnd não
+          suporta Droppable rolável dentro de outro contêiner rolável ("nested
+          scroll containers are currently not supported") — o arraste perderia
+          a rolagem automática. Com o quadro como único pai rolável, o arraste
+          continua inteiro, e o cabeçalho de cada etapa fica preso em cima
+          (`sticky` em StageColumn). `items-start` + `min-h-full` na coluna: a
+          coluna curta ocupa a altura toda (dá para soltar card no vazio) e a
+          comprida cresce com os cards, com o fundo acompanhando.
+          Sem padding no ALTO, e é de propósito: o `sticky` prende o cabeçalho
+          na borda do conteúdo do contêiner, então um `pt-4` deixava uma faixa
+          de 16px acima dele por onde os cards apareciam rolando (medido no e2e
+          "o quadro cabe na tela"). O respiro até os filtros vem do `gap-4` da
+          página. */}
+      <div
+        className="flex min-h-0 flex-1 items-start gap-3 overflow-auto px-4 pb-4"
+        data-quadro-do-funil
+      >
         {data.stages.map((stage) => (
           <StageColumn
             key={stage.id}
@@ -274,6 +302,34 @@ export function KanbanBoard({
             data.stages.find((s) => s.id === leadDoDossie.stage_id)?.name ?? "—"
           }
           ownerNames={ownerNames}
+        />
+      )}
+
+      <CamposObrigatoriosDialog
+        open={recusaDeCampos !== null}
+        onOpenChange={(aberto) => {
+          if (!aberto) setRecusaDeCampos(null);
+        }}
+        recusa={recusaDeCampos}
+        isPending={moveCard.isPending}
+        onConfirmar={({ customFields, wonReason }) => {
+          if (!recusaDeCampos) return;
+          const { args } = recusaDeCampos;
+          setRecusaDeCampos(null);
+          moveCard.mutate({
+            ...args,
+            customFields,
+            ...(wonReason !== undefined ? { wonReason } : {}),
+          });
+        }}
+      />
+      {retomada && (
+        <RetomarComoNovoNegocioDialog
+          open
+          onOpenChange={(v: boolean) => !v && setRetomada(null)}
+          leadId={retomada.leadId}
+          stageId={retomada.stageId}
+          pipelineId={pipelineId}
         />
       )}
     </DragDropContext>

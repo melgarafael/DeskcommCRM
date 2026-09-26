@@ -435,9 +435,24 @@ export interface ChannelTemplateOps {
   update(input: ChannelTenantScope & {
     sessionRef: string;
     name: string;
+    /**
+     * OBRIGATÓRIO: com variantes de idioma, o PATCH por nome do provedor
+     * intermediado exige `language` no corpo (changelog de 28/08/2026) — sem ele
+     * a chamada falha, ou pior, edita a variante errada. Um modelo sem variantes
+     * aceita o idioma que ele tem, então mandar sempre é o caminho sem armadilha.
+     */
+    language: string;
     patch: Partial<Pick<ChannelTemplateDraft, "components" | "category">>;
   }): Promise<ChannelTemplate>;
+  /**
+   * ⚠️ `language` é OBRIGATÓRIO aqui por segurança, não por exigência da API:
+   * no provedor intermediado, DELETE por nome SEM idioma apaga TODAS as
+   * variantes (changelog de 28/08/2026). A assinatura obriga quem chama (a
+   * gestão de modelos da tela, `lib/channels/gestao-de-modelos.ts`) a dizer
+   * QUAL variante morre — apagar todas de uma vez é decisão que merece um
+   * método próprio, não um parâmetro esquecido.
+   */
   remove(
-    input: ChannelTenantScope & { sessionRef: string; name: string; language?: string },
+    input: ChannelTenantScope & { sessionRef: string; name: string; language: string },
   ): Promise<void>;
 }
