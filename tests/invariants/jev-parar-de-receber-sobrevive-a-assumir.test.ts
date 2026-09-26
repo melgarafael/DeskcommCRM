@@ -16,12 +16,12 @@
  *  - a conversa encerrada fecha os dois;
  *  - o contato bloqueado segue fechando o de parar de receber (o outro gatilho).
  *
- * ⚠️ Contradiz, de propósito, o caso CONGELADO
- * `tests/invariants/jev-aviso-na-central.test.ts` — "uma pessoa assume a
- * conversa: os avisos do Jev DELA fecham; o handoff e a vizinha ficam" —, que
- * espera `jev_parar_de_receber=resolved+fim` depois de assumir. O congelamento
- * (`loop/hooks/freeze-invariants.sh`) não tem válvula para esta mudança; o
- * caso antigo é a sobra declarada do PR.
+ * O caso irmão de `tests/invariants/jev-aviso-na-central.test.ts` ("uma pessoa
+ * assume a conversa…") esperava `jev_parar_de_receber=resolved+fim` depois de
+ * assumir, e os dois eram mutuamente exclusivos. Ele passou a esperar `open`
+ * junto com esta decisão (commit 1bb2823b8), com a razão da válvula escrita:
+ * aquele arquivo nasceu neste mesmo PR e não é invariante congelado da main.
+ * Os dois agora dizem a mesma coisa.
  */
 import { beforeAll, describe, expect, it } from "vitest";
 

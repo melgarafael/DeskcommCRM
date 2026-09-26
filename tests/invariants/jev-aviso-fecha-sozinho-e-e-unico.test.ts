@@ -3,10 +3,10 @@
  * e 3 — o conserto da revisão da onda 3).
  *
  * O CHECK dos dois kinds e o fechamento quando uma pessoa assume ou a conversa
- * é encerrada estão em `jev-aviso-na-central.test.ts` — cujo comentário ainda
- * atribui o fechamento a `fn_routing_assignment_changed`: o arquivo é
- * congelado, e quem fecha agora é `trg_fechar_avisos_do_jev_da_conversa`, o
- * gatilho próprio da 0426. Aqui, o que só um Postgres real prova do resto:
+ * é encerrada estão em `jev-aviso-na-central.test.ts` (quem fecha é
+ * `trg_fechar_avisos_do_jev_da_conversa`, o gatilho próprio da 0426; assumir
+ * fecha só o de falar com uma pessoa). Aqui, o que só um Postgres real prova
+ * do resto:
  *
  *  1. O aviso FECHA quando o pedido foi atendido por qualquer caminho, e só o
  *     da conversa certa: a conversa PASSADA a uma pessoa (a escrita do

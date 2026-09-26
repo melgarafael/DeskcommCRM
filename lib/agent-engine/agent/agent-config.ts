@@ -230,8 +230,8 @@ export async function loadPublishedAgentConfig(
      where a.organization_id = $1
        and a.archived_at is null
        -- is_active é semântica do rag_bot legado; para mcp_agent "ativo" =
-       -- published_version_id preenchido + não arquivado (mesmo critério do
-       -- dispatcher nativo do CRM — pausar = despublicar).
+       -- published_version_id preenchido + não arquivado. Pausar NÃO despublica
+       -- (grava só paused_at): o pausado vem aqui, e o turno sai no pausedAt.
        and v.status = 'published'
        and v.channel_session_id = $2
      order by a.priority desc, a.created_at asc
