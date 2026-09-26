@@ -48,6 +48,12 @@ const PARES: Array<{
   arquivo: string;
   simbolo: string;
 }> = [
+  // Cadências de e-mail (0426) — as tuplas moram em lib/cadencias/vocabulario.ts.
+  { tabela: "email_cadences", coluna: "status", arquivo: "lib/cadencias/vocabulario.ts", simbolo: "STATUS_DA_CADENCIA" },
+  { tabela: "email_cadence_enrollments", coluna: "status", arquivo: "lib/cadencias/vocabulario.ts", simbolo: "STATUS_DA_INSCRICAO" },
+  { tabela: "email_cadence_enrollments", coluna: "origem", arquivo: "lib/cadencias/vocabulario.ts", simbolo: "ORIGENS_DA_INSCRICAO" },
+  { tabela: "email_cadence_enrollments", coluna: "motivo_parada", arquivo: "lib/cadencias/vocabulario.ts", simbolo: "MOTIVOS_DE_PARADA" },
+  { tabela: "email_cadence_events", coluna: "tipo", arquivo: "lib/cadencias/vocabulario.ts", simbolo: "TIPOS_DE_EVENTO_DA_CADENCIA" },
   {
     tabela: "ad_platform_connections",
     coluna: "google_api",

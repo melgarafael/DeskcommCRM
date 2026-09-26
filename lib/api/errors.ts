@@ -253,6 +253,14 @@ export const ApiErrorCodes = {
   campanha_conteudo_invalido: "campanha_conteudo_invalido", // 422: texto vazio ou variável que não existe
   campanha_base_legal_invalida: "campanha_base_legal_invalida", // 422: interesse legítimo sem referência da LIA
 
+  // ─── Cadências de e-mail (migration 0428) ───
+  cadencia_nao_encontrada: "cadencia_nao_encontrada", // 404
+  cadencia_nao_editavel: "cadencia_nao_editavel", // 409: ativa não edita passos/configuração, só pausa
+  cadencia_estado_invalido: "cadencia_estado_invalido", // 409: transição de status que não existe
+  cadencia_sem_passos: "cadencia_sem_passos", // 422: ativar exige ao menos um passo válido
+  cadencia_lead_indisponivel: "cadencia_lead_indisponivel", // 409: lead de outra org, ou sem e-mail exigido
+  cadencia_inscricao_existente: "cadencia_inscricao_existente", // 409: mesmo lead já está nesta cadência
+
   // 500 / upstream
   internal_error: "internal_error",
   upstream_unavailable: "upstream_unavailable",

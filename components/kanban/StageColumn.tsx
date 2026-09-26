@@ -1,6 +1,6 @@
 "use client";
 import { Droppable } from "@hello-pangea/dnd";
-import { useRef, type CSSProperties } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { cn } from "@/lib/utils";
 import type { Lead } from "@/lib/types/leads";
@@ -34,6 +34,9 @@ interface StageColumnProps {
   onSelectMany?: (leadIds: string[], marcar: boolean) => void;
   /** Abrir o dossiê — atravessa o board até o card, como `pulses`. */
   onOpen?: (leadId: string) => void;
+  /** `manager`+ — mesmo corte de papel da rota que renomeia a etapa. */
+  podeRenomear?: boolean;
+  onRenomear?: (nome: string) => void;
 }
 
 export function StageColumn({
@@ -48,6 +51,8 @@ export function StageColumn({
   pulses,
   onSelectMany,
   onOpen,
+  podeRenomear = false,
+  onRenomear,
 }: StageColumnProps) {
   const t = useT();
   const totalCents = leads.reduce((sum, l) => sum + (l.value_cents ?? 0), 0);
@@ -139,9 +144,15 @@ export function StageColumn({
           style={accentStyle}
           aria-hidden
         />
-        <h2 className="flex-1 truncate text-sm font-semibold text-text">
-          {stage.name}
-        </h2>
+        {podeRenomear && onRenomear ? (
+          // `key` pelo nome: remonta (e descarta o rascunho) quando o nome
+          // GRAVADO muda — mesmo contrato de `NomeDaEtapa` em Configurações,
+          // para uma edição feita em outra aba não ficar escondida atrás de
+          // um rascunho velho aqui.
+          <NomeDaEtapaNoQuadro key={stage.name} nome={stage.name} onConfirmar={onRenomear} />
+        ) : (
+          <h2 className="flex-1 truncate text-sm font-semibold text-text">{stage.name}</h2>
+        )}
         <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-medium tabular-nums text-text-muted">
           {selecionadosAqui > 0 ? `${selecionadosAqui}/${leads.length}` : leads.length}
         </span>
@@ -198,5 +209,55 @@ export function StageColumn({
         )}
       </Droppable>
     </div>
+  );
+}
+
+/**
+ * O nome da etapa, editado no lugar — direto no cabeçalho da coluna.
+ *
+ * Mesmo contrato de `NomeDaEtapa` (Configurações › Funis, que chama a MESMA
+ * rota `PATCH /api/v1/pipelines/:id/stages/:stageId`): salva ao CONFIRMAR
+ * (Enter ou sair do campo), nunca a cada tecla — um PATCH por caractere
+ * dispararia a validação de nome duplicado no meio da digitação. O rascunho é
+ * local; o `key={stage.name}` de quem chama remonta o campo quando o nome
+ * GRAVADO muda, então uma edição feita em outra aba não fica escondida atrás
+ * de um rascunho velho.
+ */
+function NomeDaEtapaNoQuadro({
+  nome,
+  onConfirmar,
+}: {
+  nome: string;
+  onConfirmar: (nome: string) => void;
+}) {
+  const t = useT();
+  const [rascunho, setRascunho] = useState(nome);
+
+  function confirmar() {
+    const limpo = rascunho.trim();
+    if (!limpo || limpo === nome) {
+      setRascunho(nome);
+      return;
+    }
+    onConfirmar(limpo);
+  }
+
+  return (
+    <input
+      value={rascunho}
+      maxLength={80}
+      aria-label={`${t("Nome da etapa")} «${nome}»`}
+      data-testid="nome-etapa-quadro"
+      onChange={(e) => setRascunho(e.target.value)}
+      onBlur={confirmar}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          setRascunho(nome);
+          e.currentTarget.blur();
+        }
+      }}
+      className="min-w-0 flex-1 truncate rounded-sm bg-transparent px-1 py-0.5 text-sm font-semibold text-text outline-hidden hover:bg-surface focus:bg-surface"
+    />
   );
 }

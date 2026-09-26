@@ -215,6 +215,18 @@ export const NAV_CATALOG = [
     // campanha é montada de vez em quando, não aberta todo dia.
   },
   {
+    // Cadência de e-mail por segmento (módulo do fork). Só no hub, pelo mesmo
+    // motivo das Campanhas: é montada de vez em quando, e o sidebar está no
+    // limite medido pelo e2e de navegação.
+    href: "/app/cadencias",
+    label: "Cadências",
+    description: "Sequências de e-mail por segmento, com parada automática quando o lead responde.",
+    icon: "EnvelopeSimple",
+    group: "crm",
+    minRole: "manager",
+    section: "O dia a dia da venda",
+  },
+  {
     href: "/app/contacts",
     label: "Contatos",
     description: "As pessoas do outro lado da conversa e seu histórico.",

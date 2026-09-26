@@ -901,6 +901,16 @@ export const AUDIT_ACTIONS = [
   // o dado que importa quando alguém pergunta "por que este cliente voltou a
   // receber?".
   "contact.unblocked",
+
+  // Cadências de e-mail (migration 0428). Montar/editar rascunho não audita —
+  // nada saiu dele, mesmo critério de `campaign.*`. O que muda o que sai para o
+  // lead audita: criar, mudar de estado e a inscrição/remoção manual.
+  "cadencia.created",
+  "cadencia.activated",
+  "cadencia.paused",
+  "cadencia.deleted",
+  "cadencia.lead_inscrito",
+  "cadencia.lead_removido",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

@@ -148,4 +148,12 @@ export {
   GoogleLogo,
   MapPin,
   ArrowsOutSimple,
+  // cadências de e-mail (construtor vertical em /app/cadencias)
+  Hourglass,
+  Lightning,
+  Minus,
+  CursorClick,
+  StopCircle,
+  CheckSquare,
+  ArrowLeft,
 } from "@phosphor-icons/react/dist/ssr";
