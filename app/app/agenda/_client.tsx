@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { EntradaDaAgenda } from "@/components/agenda/EntradaDaAgenda";
 import { EnderecoDaMarcacao } from "@/components/agenda/EnderecoDaMarcacao";
@@ -201,8 +201,48 @@ export function AgendaClient({
   // "Atendimento", "Consulta", "Reunião", só "Atendimento" era alcançável pela
   // tela. As categorias existiam no banco, no seed e na API — e a tela oferecia
   // uma. Achado escrevendo a spec de marcar, não lendo o código.
-  const [tipoId, setTipoId] = React.useState<string | null>(() => tiposIniciais[0]?.id ?? null);
+  // ⚠️ E O TIPO ESCOLHIDO ERA SÓ ESTADO DO REACT — o outro lado do mesmo achado.
+  // A escolha na grade ia para um `useState` sem URL, sem armazenamento e sem
+  // leitor de query nenhuma: no F5 ela morria e a grade voltava ao primeiro tipo
+  // em ordem alfabética (#1657). Quem estava olhando "Avaliação" recarregava e
+  // via "Atendimento" — e, sem jornada publicada para o primeiro, a tela inteira
+  // dizia "a jornada de atendimento ainda não foi publicada". Evidência na
+  // issue: as runs 36061761510 e 36164033754, que acharam o defeito pelo aviso
+  // nascendo entre duas leituras de bounding box no e2e do arraste (#1656).
+  //
+  // O tipo passa a viver na URL (`?tipo=`), no mesmo formato do `?id=` da Inbox
+  // (#1629). LER no inicializador, e não num efeito: o servidor pinta a página
+  // com a MESMA query que o cliente lê, então primeira pintura e recarregamento
+  // concordam — sem um piscar voltando ao primeiro tipo. `?tipo=` de um tipo já
+  // desativado cai no `?? tiposIniciais[0]` da linha seguinte, que é o
+  // comportamento de sempre para quem não escolheu nada.
+  const busca = useSearchParams();
+  const caminho = usePathname();
+  const [tipoId, setTipoId] = React.useState<string | null>(
+    () => busca.get("tipo") ?? tiposIniciais[0]?.id ?? null,
+  );
   const tipo = tiposIniciais.find((t) => t.id === tipoId) ?? tiposIniciais[0] ?? null;
+  /**
+   * ESCOLHER O TIPO GRAVA NA URL — a outra metade do `useState` acima.
+   *
+   * `window.history.replaceState` e não `router.replace`, pela razão medida na
+   * Inbox (#1629): a History API troca a query SEM pedir um novo Server
+   * Component a cada clique — e esta rota tem cinco consultas de servidor atrás
+   * dela (`page.tsx`), que rodariam a cada troca de tipo. `replace` e não
+   * `push`: trocar de tipo não é uma navegação nova, e com `push` o "voltar"
+   * do navegador acumularia um passo por clique.
+   */
+  const escolherTipo = React.useCallback(
+    (id: string) => {
+      setTipoId(id);
+      const parametros = new URLSearchParams(busca.toString());
+      if (id) parametros.set("tipo", id);
+      else parametros.delete("tipo");
+      const query = parametros.toString();
+      window.history.replaceState(null, "", query ? `${caminho}?${query}` : caminho);
+    },
+    [busca, caminho],
+  );
   const endereco = enderecoEditado ?? tipo?.localDetalhes ?? "";
   const [visao, setVisao] = React.useState<VisaoDaAgenda>("semana");
   /**
@@ -684,7 +724,7 @@ export function AgendaClient({
                       data-testid={`tipo-${opcao.id}`}
                       aria-pressed={opcao.id === tipo?.id}
                       onClick={() => {
-                        setTipoId(opcao.id);
+                        escolherTipo(opcao.id);
                         // Tipo novo, local novo — senão a Sala 2 do tipo anterior
                         // viaja para um atendimento online que não tem sala.
                         setEnderecoEditado(null);
@@ -1093,7 +1133,7 @@ export function AgendaClient({
         recorte={recorteDaGrade}
         tipos={tiposIniciais.map((t) => ({ id: t.id, nome: t.nome, duracaoMin: t.duracaoMin }))}
         tipo={tipo ? { id: tipo.id, duracaoMin: tipo.duracaoMin } : null}
-        onEscolherTipo={setTipoId}
+        onEscolherTipo={escolherTipo}
         // SEGUNDA PORTA: o clique num bloco livre da grade. Sem `onMarcarEm`, a
         // `AgendaInterativa` não monta a interação, e a grade volta a ser o que
         // ela é para quem só lê — uma leitura, sem bloco clicável.
@@ -1113,8 +1153,16 @@ export function AgendaClient({
            o detalhe só abria por `?compromisso=`, que apenas o Histórico e o Radar
            linkavam. Reusa o MESMO parâmetro que `EntradaDaAgenda` já lê — e `push`,
            não `replace`, porque é o que o Histórico faz com `<Link>` e é o que faz
-           o botão voltar do celular fechar o detalhe. */
-        onAbrirAgendamento={(id) => router.push(`/app/agenda?compromisso=${id}`)}
+           o botão voltar do celular fechar o detalhe. E o `?tipo=` vai JUNTO:
+           sem ele, abrir um card trocava a URL por só `?compromisso=`, o fecho
+           não achava tipo nenhum para manter e o F5 seguinte voltava ao
+           primeiro (#1657). */
+        onAbrirAgendamento={(id) => {
+          const parametros = new URLSearchParams();
+          if (tipo) parametros.set("tipo", tipo.id);
+          parametros.set("compromisso", id);
+          router.push(`/app/agenda?${parametros.toString()}`);
+        }}
         className="min-h-0 flex-1"
       />
     </div>

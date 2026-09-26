@@ -21,7 +21,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { carregaEtapasCitadas } from "@/lib/followup/etapas-citadas";
 import type { FollowupFlowSurface } from "@/lib/followup/api-schemas";
 import { moduloLigado } from "@/lib/instalacao/modulos";
-import { proximosDoGrafo, validateFlowForPublish, type RoteiroDoPublish } from "@/lib/followup/validate-publish";
+import {
+  algumCanalExigeModeloForaDaJanela,
+  proximosDoGrafo,
+  validateFlowForPublish,
+  type RoteiroDoPublish,
+} from "@/lib/followup/validate-publish";
 import { publishFollowupFlowVersion } from "@/lib/followup/publish";
 import type { FlowGraph } from "@/lib/followup/graph-schema";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -201,7 +206,24 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
       ),
     };
   }
-  const validation = validateFlowForPublish(graph, { etapas: citadas.etapas, surface, roteiro });
+  // O plano B da mensagem por IA só existe para canal com janela de 24 h. Uma
+  // organização só com canal sem janela não tem modelo aprovado para escolher,
+  // e exigir o plano B dela travaria o publish (revisão do #1729).
+  const { data: conexoes, error: conexoesErr } = await admin
+    .from("channel_sessions")
+    .select("provider")
+    .eq("organization_id", activeOrg.orgId)
+    .is("archived_at", null);
+  if (conexoesErr) return fail("internal_error", conexoesErr.message, 500, { requestId });
+  const exigeModeloForaDaJanela = algumCanalExigeModeloForaDaJanela(
+    (conexoes ?? []).map((c) => c.provider as string | null),
+  );
+  const validation = validateFlowForPublish(graph, {
+    etapas: citadas.etapas,
+    surface,
+    roteiro,
+    exigeModeloForaDaJanela,
+  });
   if (!validation.ok) {
     return fail("validation_failed", t("Fluxo reprovado na validação de publish."), 422, {
       requestId,

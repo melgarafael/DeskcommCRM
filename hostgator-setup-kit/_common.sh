@@ -2,6 +2,12 @@
 # Helpers compartilhados pelos scripts do kit. Sourced, não executado direto.
 set -euo pipefail
 
+# Idioma da CLI (t(), IDIOMA_CLI) — ver o cabeçalho de _i18n.sh. Sourced aqui
+# porque update.sh e os demais scripts do kit sourceiam _common.sh sem passar
+# por install.sh; instalação já em andamento no mesmo processo (install.sh)
+# mantém a escolha, já exportada em DESKCOMM_IDIOMA_CLI.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_i18n.sh"
+
 COMPOSE="docker-compose.prod.yml"
 COMPOSE_TRAEFIK="docker-compose.traefik.yml"
 COMPOSE_NPM="docker-compose.npm.yml"
@@ -28,12 +34,12 @@ arquitetura_suportada_pelo_kit() {
 
 verificar_arquitetura_do_kit() {
   local arch
-  arch="$(uname -m 2>/dev/null || printf 'desconhecida')"
+  arch="$(uname -m 2>/dev/null || t "desconhecida")"
   arquitetura_suportada_pelo_kit "$arch" && return 0
 
   printf '%s\n' \
-    "✖ Este servidor usa arquitetura '$arch', mas as imagens publicadas do DeskcommCRM hoje são linux/amd64." \
-    "  Use uma VPS x86_64/amd64. Repetir o download não resolve; ARM64 só será suportado quando houver imagens multi-arquitetura." >&2
+    "✖ $(t "Este servidor usa arquitetura '{1}', mas as imagens publicadas do DeskcommCRM hoje são linux/amd64." "$arch")" \
+    "  $(t '  Use uma VPS x86_64/amd64. Repetir o download não resolve; ARM64 só será suportado quando houver imagens multi-arquitetura.' | sed 's/^  //')" >&2
   return 1
 }
 
@@ -174,6 +180,63 @@ sincronizar_smtp_do_gotrue() {
   set_env_var "$env_sb" SMTP_SENDER_NAME "$(valor_compose "${nome:-${APP_NAME:-DeskcommCRM}}")"
 }
 
+# ── `so_convite` fecha o caminho DIRETO do GoTrue (#1653) ────────────────────
+#
+# O CRM já recusava cadastro sem convite na tela, na server action e na volta do
+# Google, mas o GoTrue continuava aceitando `POST /auth/v1/signup` — com a anon
+# key que vai para o navegador. A instalação que escolheu "só convite" acumulava
+# conta que ninguém autorizou, e o dono não tinha porta para fechar.
+#
+# A única trava que fecha esse caminho é o `disable_signup` do próprio GoTrue, e
+# ele NÃO tem API de configuração no self-hosted: medido no fonte
+# supabase/auth v2.196.0, as rotas `/admin` são audit, users, generate_link, sso
+# e oauth — nenhuma de config. Então o valor mora no `.env` do Supabase, na
+# chave OFICIAL `DISABLE_SIGNUP`: o compose do Supabase no ref pinado já a
+# mapeia (`GOTRUE_DISABLE_SIGNUP: ${DISABLE_SIGNUP}`) e o `.env.example` dele a
+# traz como `false`. Uma variável nossa ao lado seria sombra: o override passaria
+# a ignorar a oficial, e quem fechou o cadastro pela receita do Supabase seria
+# reaberto em silêncio.
+#
+# Quem manda é o modo que o APP enxerga, na mesma precedência de
+# lib/auth/politica-de-cadastro.ts: a linha de `platform_settings` (a tela de
+# `/admin/cadastro`); sem linha, o piso `SIGNUP_MODE` do `.env` do CRM; valor
+# irreconhecível no piso vale `aberto`. `so_convite` → true, os outros → false.
+# Usar `aberto` quando falta a linha deixaria justamente a instalação que
+# declarou `SIGNUP_MODE=so_convite` com o CRM fechado e o GoTrue aberto.
+#
+# Idempotente, e quem chama só reinicia o `auth` quando o arquivo MUDOU. Devolve
+# 1 (sem tocar em nada) quando o valor já é o do modo, quando o banco não
+# respondeu ou quando a coluna ainda não existe (instalação anterior à 0253):
+# reabrir ou fechar o cadastro de uma instalação por causa de um soluço do
+# banco seria o mesmo defeito que o memo pegajoso de `modoDeCadastro()` existe
+# para evitar. "Banco falhou" e "sem linha" são respostas diferentes: a primeira
+# não mexe, a segunda cai no piso.
+sincronizar_signup_mode_do_gotrue() {
+  local env_sb modo alvo atual
+  env_sb="$(dir_do_supabase)/.env"
+  [ -f "$env_sb" ] || return 1
+  modo="$(psql_run -tA -c "select signup_mode from public.platform_settings where id = 1" 2>/dev/null)" || return 1
+  modo="$(printf '%s' "$modo" | tr -d '[:space:]')"
+  if [ -z "$modo" ]; then
+    modo="$(sed -n 's/^SIGNUP_MODE=//p' "${PROJECT_DIR:-$PWD}/.env" 2>/dev/null | tail -n 1 | tr -d "\"' \t\r")"
+    case "$modo" in aberto|com_aprovacao|so_convite) ;; *) modo=aberto ;; esac
+  fi
+  case "$modo" in
+    so_convite) alvo=true ;;
+    aberto|com_aprovacao) alvo=false ;;
+    *) return 1 ;;
+  esac
+  atual="$(sed -n 's/^DISABLE_SIGNUP=//p' "$env_sb" | tail -n 1 | tr -d "\"' \t\r")"
+  [ "$atual" = "$alvo" ] && return 1
+  set_env_var "$env_sb" DISABLE_SIGNUP "$alvo"
+  if [ "$alvo" = true ]; then
+    c_ylw "Cadastro direto no Supabase: FECHADO (a instalação está em 'só convite'; convites seguem funcionando)."
+  else
+    c_ylw "Cadastro direto no Supabase: ABERTO (acompanha o modo '$modo' da instalação)."
+  fi
+  return 0
+}
+
 # ── O update.sh leva o Supabase até a versão pinada ──────────────────────────
 #
 # O `update.sh` oficial do Supabase faz o merge de três vias dos arquivos dele
@@ -183,17 +246,30 @@ sincronizar_smtp_do_gotrue() {
 atualizar_supabase_single_server() {
   local dir atual
   dir="$(dir_do_supabase)"
-  [ -f "$dir/.env" ] || { c_red "⛔ Modo single-server sem $dir/.env — rode install-single-server.sh."; return 1; }
+  [ -f "$dir/.env" ] || { c_red "⛔ $(t "Modo single-server sem {1}/.env — rode install-single-server.sh." "$dir")"; return 1; }
   cp "$KIT_DIR/supabase-single-server.override.yml" "$dir/docker-compose.deskcomm.yml" || return 1
   set_env_var "$dir/.env" COMPOSE_PROJECT_NAME "$(projeto_do_supabase)"
   atual="$(sed -n 's/^ref=//p' "$dir/.supabase-version" 2>/dev/null | tail -1)"
   if [ "$atual" != "$SUPABASE_REF" ]; then
-    step "Atualizando o Supabase desta VPS (${atual:-desconhecida} → $SUPABASE_REF)"
+    step "$(t "Atualizando o Supabase desta VPS ({1} → {2})" "${atual:-$(t "desconhecida")}" "$SUPABASE_REF")"
     if ! (cd "$dir" && env -i PATH="$PATH" HOME="${HOME:-/root}" sh update.sh --to "$SUPABASE_REF" --yes); then
-      c_ylw "⚠ O Supabase não foi atualizado; segue na versão ${atual:-anterior}. A próxima atualização tenta de novo."
+      c_ylw "$(t "⚠ O Supabase não foi atualizado; segue na versão {1}. A próxima atualização tenta de novo." "${atual:-$(t "anterior")}")"
     fi
   fi
-  dc_supabase up -d --wait
+  dc_supabase up -d --wait || return 1
+  # #1653 — a sincronização do modo de cadastro mora AQUI, no corpo desta
+  # função, e não numa linha do update.sh. Na atualização que traz este
+  # conserto, quem executa é o update.sh ANTIGO: o bash segue lendo o arquivo
+  # que abriu, e uma linha nova no texto do update.sh nunca roda (medido: o
+  # `git checkout` troca o inode e o script antigo vai até o fim). O que o
+  # update.sh antigo faz depois do checkout é reler este `_common.sh` e chamar
+  # esta função — em toda versão com single-server (desde a v1.42.0) —, então
+  # é o corpo NOVO dela que roda já na primeira atualização. Falha aqui é
+  # aviso, não saída 1: o CRM segue atualizável.
+  if sincronizar_signup_mode_do_gotrue; then
+    dc_supabase up -d --no-deps auth >/dev/null 2>&1 || c_ylw "⚠ Não consegui reiniciar o auth do Supabase com o modo de cadastro (#1653)."
+  fi
+  return 0
 }
 
 # Nome FÍSICO do volume que guarda as sessões do WAHA. `docker compose config
@@ -339,7 +415,7 @@ veredito_da_imagem_do_app() {  # veredito_da_imagem_do_app <versão alvo> <vers�
 
 pausar_o_que_fala_com_o_banco() {
   PARADOS="$(supabase_local_containers)"
-  c_ylw "Pausando o sistema para mexer no banco com segurança."
+  c_ylw "$(t "Pausando o sistema para mexer no banco com segurança.")"
   dc stop app worker scheduler >/dev/null 2>&1 || true
   if [ -n "$PARADOS" ]; then
     # shellcheck disable=SC2086
@@ -396,10 +472,10 @@ religar_o_supabase() {
       ainda_fora="$resta"
     fi
     if [ -n "$ainda_fora" ]; then
-      c_red "⛔ PEÇAS DO BANCO NÃO VOLTARAM depois da atualização:"
+      c_red "$(t "⛔ PEÇAS DO BANCO NÃO VOLTARAM depois da atualização:")"
       for c in $ainda_fora; do c_red "   • $c"; done
-      c_red "   Enquanto elas estiverem paradas, o CRM não consegue ler nem gravar."
-      c_ylw "   Para subir à mão:  docker start $ainda_fora"
+      c_red "$(t "   Enquanto elas estiverem paradas, o CRM não consegue ler nem gravar.")"
+      c_ylw "$(t "   Para subir à mão:  docker start {1}" "$ainda_fora")"
     fi
     PARADOS=""
   fi
@@ -415,7 +491,7 @@ restaurar_servicos() {
   # que custou um dia inteiro nesta instalação, com o funil vazio e a
   # atualização dizendo "concluída com sucesso".
   if [ -n "${REGRAS_FALTANDO:-}" ]; then
-    c_red "   O CRM segue PARADO de propósito. Resolva as regras antes de subir."
+    c_red "$(t "   O CRM segue PARADO de propósito. Resolva as regras antes de subir.")"
     # ⚠️ O aviso de manutenção NÃO desce aqui, de propósito. Com regra faltando o
     # CRM não volta, e a página é a única coisa que explica isso a quem tentar
     # abrir o sistema — melhor que um erro de conexão sem autor.
@@ -458,19 +534,19 @@ construir_aqui_e_subir() {  # construir_aqui_e_subir [versão alvo] → 0 se sub
   [ -n "$versao" ] && export APP_VERSION="$versao"
   # O aviso vem ANTES da construção, e não depois: são 15 a 25 minutos de tela
   # parada, e sem ele o dono conclui que travou e mata o script no meio.
-  c_ylw "⚠ As imagens prontas desta versão não servem para esta VPS."
-  c_ylw "  O motivo mais comum é a arquitetura dela ser diferente da das imagens"
-  c_ylw "  publicadas: o registro responde que não tem manifest para a arquitetura"
-  c_ylw "  daqui. Não é problema da sua VPS nem do seu acesso."
-  c_ylw "  Vou construir as três imagens aqui, do código desta versão."
-  c_ylw "  Leva de 15 a 25 minutos e a tela fica sem novidade nesse tempo —"
-  c_ylw "  não é travamento, pode deixar rodando."
+  c_ylw "$(t "⚠ As imagens prontas desta versão não servem para esta VPS.")"
+  c_ylw "$(t "  O motivo mais comum é a arquitetura dela ser diferente da das imagens")"
+  c_ylw "$(t "  publicadas: o registro responde que não tem manifest para a arquitetura")"
+  c_ylw "$(t "  daqui. Não é problema da sua VPS nem do seu acesso.")"
+  c_ylw "$(t "  Vou construir as três imagens aqui, do código desta versão.")"
+  c_ylw "$(t "  Leva de 15 a 25 minutos e a tela fica sem novidade nesse tempo —")"
+  c_ylw "$(t "  não é travamento, pode deixar rodando.")"
   if ! dc -f "$COMPOSE_BUILD" build; then
-    c_red "✖ A construção das imagens aqui falhou (o erro está logo acima)."
+    c_red "$(t "✖ A construção das imagens aqui falhou (o erro está logo acima).")"
     return 1
   fi
   if ! dc -f "$COMPOSE_BUILD" up -d; then
-    c_red "✖ As imagens foram construídas, mas os serviços não subiram."
+    c_red "$(t "✖ As imagens foram construídas, mas os serviços não subiram.")"
     return 1
   fi
   return 0
@@ -620,10 +696,10 @@ garantir_rede_do_proxy() {
     local rede
     rede="${PROXY_NETWORK_NAME:-proxy_network}"
     docker network inspect "$rede" >/dev/null 2>&1 && return 0
-    die "A rede Docker '$rede' (a do Nginx Proxy Manager) não existe.
+    die "$(t "A rede Docker '{1}' (a do Nginx Proxy Manager) não existe.
 Rode 'docker network ls', identifique a rede do seu NPM (Settings > a que o
 contêiner dele já está conectado) e ponha PROXY_NETWORK_NAME=<nome> no .env
-antes de tentar de novo."
+antes de tentar de novo." "$rede")"
   fi
   [ "${REVERSE_PROXY:-caddy}" = "traefik" ] || return 0
   local nossa drv erro
@@ -640,28 +716,28 @@ antes de tentar de novo."
     # stacks é um caso conhecido). Sem repassar a resposta dele, a mensagem
     # mandaria repetir à mão o comando que acabou de falhar.
     if ! erro="$(docker network create "$TRAEFIK_NETWORK" 2>&1 >/dev/null)"; then
-      die "Não consegui criar a rede Docker '$TRAEFIK_NETWORK'. O Docker respondeu:
-  ${erro}"
+      die "$(t "Não consegui criar a rede Docker '{1}'. O Docker respondeu:
+  {2}" "$TRAEFIK_NETWORK" "$erro")"
     fi
-    c_dim "  (rede '$TRAEFIK_NETWORK' criada — é por ela que o Traefik alcança o CRM)"
+    c_dim "$(t '  (rede '"'"'{1}'"'"' criada — é por ela que o Traefik alcança o CRM)' "$TRAEFIK_NETWORK")"
     ;;
   inexistente)
-    die "A rede Docker '$TRAEFIK_NETWORK' não existe.
+    die "$(t "A rede Docker '{1}' não existe.
 Rode 'docker network ls', identifique a rede do seu Traefik e ponha
-TRAEFIK_NETWORK=<nome> no .env antes de tentar de novo."
+TRAEFIK_NETWORK=<nome> no .env antes de tentar de novo." "$TRAEFIK_NETWORK")"
     ;;
   driver_errado)
     # Mandar quem está em modo host "procurar a rede do seu Traefik" é mandar
     # procurar o que não existe: em modo host ele não está em rede nenhuma do
     # Docker. Para esse caso a saída é apagar a linha e deixar o kit decidir —
     # ele cria a bridge do projeto sozinho.
-    die "A rede '$TRAEFIK_NETWORK' tem driver '$drv', e o app precisa
+    die "$(t "A rede '{1}' tem driver '{2}', e o app precisa
 de uma bridge para o Traefik alcançar o contêiner. Se o seu Traefik roda em modo
 host (é o caso quando 'docker ps' não mostra porta publicada nele), APAGUE a linha
-TRAEFIK_NETWORK do .env: o kit cria e usa a rede '$nossa'.
+TRAEFIK_NETWORK do .env: o kit cria e usa a rede '{3}'.
 Senão, rode 'docker network ls' e ponha a bridge certa em TRAEFIK_NETWORK no .env.
 Se for uma overlay do Swarm, ela precisa ter sido criada com --attachable —
-sem isso um contêiner de compose comum não consegue entrar nela."
+sem isso um contêiner de compose comum não consegue entrar nela." "$TRAEFIK_NETWORK" "$drv" "$nossa")"
     ;;
   esac
 }
@@ -690,7 +766,7 @@ step()  { printf '\n'; paint 1 "▶ $*"; }
 resposta_sim() {
   local r
   r="$(printf '%s' "${1:-}" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
-  case "$r" in s|sim|y|yes) return 0;; *) return 1;; esac
+  case "$r" in s|sim|si|sí|sÍ|y|yes) return 0;; *) return 1;; esac
 }
 
 # Saúde do app pela rota que ele responde de verdade, não pela porta. A porta
@@ -833,8 +909,8 @@ load_env() {
 enter_project() {
   if [ -f "$COMPOSE" ]; then :;
   elif [ -f "deskcommcrm/$COMPOSE" ]; then cd deskcommcrm;
-  else die "Não achei $COMPOSE. Rode a partir da pasta do projeto."; fi
-  [ -f .env ] || die "Falta o .env (rode install.sh primeiro)."
+  else die "$(t "Não achei {1}. Rode a partir da pasta do projeto." "$COMPOSE")"; fi
+  [ -f .env ] || die "$(t "Falta o .env (rode install.sh primeiro).")"
   load_env .env
   PROJECT_DIR="$(pwd)"
 }
@@ -981,7 +1057,7 @@ reaplicar_baseline() {
       # passada, sem disputa" em cima de duas coisas que ninguém mediu. Silêncio.
       return 1
     fi
-    c_ylw "• parte do banco não aplicou (disputa com o app no ar ou conexão instável) — aplicando de novo, é seguro (passada $((BASELINE_PASSADAS + 1)) de $tentativas). O que não aplicou:"
+    c_ylw "$(t "• parte do banco não aplicou (disputa com o app no ar ou conexão instável) — aplicando de novo, é seguro (passada {1} de {2}). O que não aplicou:" "$((BASELINE_PASSADAS + 1))" "$tentativas")"
     listar_erros_do_banco "$BASELINE_INESPERADO" 10 "    "
     sleep "$((espera * BASELINE_PASSADAS))"
     BASELINE_PASSADAS=$((BASELINE_PASSADAS + 1))
@@ -1348,7 +1424,7 @@ set_env_var() {
 # `_common.sh` roda sob `set -euo pipefail`, e o consumidor resolve o UUID numa
 # ATRIBUIÇÃO: `uid="$(owner_id_by_email "$EMAIL")"`. O status da atribuição é o
 # da substituição, então uma função que devolve não-zero mata o script ALI — na
-# linha de cima do `[ -n "$uid" ] || die "Usuário não encontrado."`, que nunca
+# linha de cima do `[ -n "$uid" ] || die "$(t "Usuário não encontrado.")"`, que nunca
 # chega a rodar. E o `grep` devolve 1 justamente quando não casa ninguém, que é
 # o caso em que a mensagem existe para falar.
 #
@@ -1431,12 +1507,12 @@ setup_event_log_drain_cron() {
   if [ "$(basename "$0")" = update.sh ] && [ -z "${DESKCOMM_AGENT_REPORT:-}" ]; then
     trocar_segredo_do_cron_vazado || true
   fi
-  command -v crontab >/dev/null 2>&1 || { c_ylw "⚠ 'crontab' não encontrado — instale o pacote 'cron' e rode de novo pra ativar as automações."; return 0; }
+  command -v crontab >/dev/null 2>&1 || { c_ylw "$(t "⚠ 'crontab' não encontrado — instale o pacote 'cron' e rode de novo pra ativar as automações.")"; return 0; }
 
   local secret="${INTERNAL_CRON_SECRET:-}"
   [ -n "$secret" ] || secret="${INTERNAL_SECRET:-}"
-  [ -n "$secret" ] || { c_ylw "⚠ falta INTERNAL_SECRET/INTERNAL_CRON_SECRET — não ativei o cron das automações."; return 0; }
-  [ -n "${NEXT_PUBLIC_APP_URL:-}" ] || { c_ylw "⚠ falta NEXT_PUBLIC_APP_URL — não ativei o cron das automações."; return 0; }
+  [ -n "$secret" ] || { c_ylw "$(t "⚠ falta INTERNAL_SECRET/INTERNAL_CRON_SECRET — não ativei o cron das automações.")"; return 0; }
+  [ -n "${NEXT_PUBLIC_APP_URL:-}" ] || { c_ylw "$(t "⚠ falta NEXT_PUBLIC_APP_URL — não ativei o cron das automações.")"; return 0; }
 
   local url_drain="${NEXT_PUBLIC_APP_URL}/api/v1/cron/event-log-drain"
   local marcador; marcador="$(cron_tag drain)"
@@ -1449,7 +1525,7 @@ setup_event_log_drain_cron() {
 
   local cabecalho="${PROJECT_DIR:-$PWD}/.env.cron-drain"
   gravar_cabecalho_do_cron "$cabecalho" "$secret" \
-    || { c_ylw "⚠ não consegui gravar ${cabecalho} — não ativei o cron das automações."; return 0; }
+    || { c_ylw "$(t "⚠ não consegui gravar {1} — não ativei o cron das automações." "$cabecalho")"; return 0; }
 
   # A linha legada (com o Bearer escrito nela) sai pela assinatura da URL.
   # ⚠️ Numa instalação existente isso só acontece a partir do update SEGUINTE ao
@@ -1490,7 +1566,7 @@ setup_event_log_drain_cron() {
   # Stdin vazio para o `cron_merge` é exatamente o que "sem crontab prévio" deve
   # produzir — o comportamento não muda, só o status.
   ( { crontab -l 2>/dev/null || true; } | cron_merge "$marcador" "$url_drain" "$cron_line" ) | crontab -
-  c_grn "✓ automações ativas (cron do event-log-drain, a cada minuto)"
+  c_grn "$(t "✓ automações ativas (cron do event-log-drain, a cada minuto)")"
 
   if [ "$first_time" = 1 ]; then
     # 1ª ativação do cron (inclusive numa instalação já existente que nunca
@@ -1499,11 +1575,11 @@ setup_event_log_drain_cron() {
     # (ex.: webhook de dias/semanas atrás) — surpresa indesejada pro dono do
     # CRM. Marcamos como 'done' só os realmente velhos (>7 dias); os recentes
     # continuam 'pending' e processam normalmente no próximo drain.
-    step "Higienizando eventos pendentes antigos (1ª ativação do cron)"
+    step "$(t "Higienizando eventos pendentes antigos (1ª ativação do cron)")"
     psql_run -c "update event_log set status='done', updated_at=now() where status='pending' and created_at < now() - interval '7 days';" \
       >/dev/null 2>&1 \
-      && c_grn "✓ eventos pendentes com mais de 7 dias marcados como concluídos" \
-      || c_ylw "⚠ não consegui higienizar eventos antigos — confira manualmente a tabela event_log se necessário."
+      && c_grn "$(t "✓ eventos pendentes com mais de 7 dias marcados como concluídos")" \
+      || c_ylw "$(t "⚠ não consegui higienizar eventos antigos — confira manualmente a tabela event_log se necessário.")"
   fi
 }
 
@@ -1586,11 +1662,11 @@ trocar_segredo_do_cron_vazado() {
   novo="$(openssl rand -hex 32 2>/dev/null)" || novo=""
   if [ -z "$novo" ]; then
     [ -n "$tem_cadeado" ] && exec 8>&-
-    c_ylw "⚠ não consegui gerar a senha nova das rotinas — tento de novo na próxima atualização."
+    c_ylw "$(t "⚠ não consegui gerar a senha nova das rotinas — tento de novo na próxima atualização.")"
     return 1
   fi
 
-  step "Trocando a senha interna das rotinas (a antiga ficou no log do sistema)"
+  step "$(t "Trocando a senha interna das rotinas (a antiga ficou no log do sistema)")"
   set_env_var "$envfile" "$chave" "$novo"
   export "${chave}=${novo}"
   if ! dc up -d >/dev/null 2>&1; then
@@ -1598,19 +1674,19 @@ trocar_segredo_do_cron_vazado() {
     export "${chave}=${velho}"
     dc up -d >/dev/null 2>&1 || true
     [ -n "$tem_cadeado" ] && exec 8>&-
-    c_ylw "⚠ não consegui reiniciar o app com a senha nova — mantive a antiga e tento de novo na próxima atualização."
+    c_ylw "$(t "⚠ não consegui reiniciar o app com a senha nova — mantive a antiga e tento de novo na próxima atualização.")"
     return 1
   fi
   wait_app_healthy 20 3 >/dev/null \
-    || c_ylw "⚠ o app ainda não respondeu depois da troca — a senha nova já está no .env e segue valendo."
+    || c_ylw "$(t "⚠ o app ainda não respondeu depois da troca — a senha nova já está no .env e segue valendo.")"
   gravar_cabecalho_do_cron "${dir}/.env.cron-drain" "$novo" || true
   : > "$marca" 2>/dev/null || true
   [ -n "$tem_cadeado" ] && exec 8>&-
   SEGREDO_DO_CRON_TROCADO=1
 
-  c_grn "✓ senha interna das rotinas trocada — a que ficou gravada no log do sistema não abre mais nada"
-  c_ylw "  Recomendado (não obrigatório): apagar os logs antigos, onde a senha velha aparece."
-  c_ylw "  Numa VPS Ubuntu/Debian, como root:"
+  c_grn "$(t "✓ senha interna das rotinas trocada — a que ficou gravada no log do sistema não abre mais nada")"
+  c_ylw "$(t "  Recomendado (não obrigatório): apagar os logs antigos, onde a senha velha aparece.")"
+  c_ylw "$(t "  Numa VPS Ubuntu/Debian, como root:")"
   c_ylw "    sudo truncate -s 0 /var/log/syslog && sudo rm -f /var/log/syslog.*"
   c_ylw "    sudo journalctl --rotate && sudo journalctl --vacuum-time=1s"
   return 0
@@ -1623,10 +1699,10 @@ trocar_segredo_do_cron_vazado() {
 # sempre. Chamada por install.sh e update.sh (bloco 7) — re-rodar não duplica
 # a linha do crontab.
 setup_update_agent_cron() {
-  command -v crontab >/dev/null 2>&1 || { c_ylw "⚠ 'crontab' não encontrado — o botão de atualizar pela tela não vai funcionar."; return 0; }
+  command -v crontab >/dev/null 2>&1 || { c_ylw "$(t "⚠ 'crontab' não encontrado — o botão de atualizar pela tela não vai funcionar.")"; return 0; }
   local secret="${INTERNAL_CRON_SECRET:-${INTERNAL_SECRET:-}}"
-  [ -n "$secret" ] || { c_ylw "⚠ falta INTERNAL_SECRET — não ativei o agente de atualização."; return 0; }
-  [ -n "${NEXT_PUBLIC_APP_URL:-}" ] || { c_ylw "⚠ falta NEXT_PUBLIC_APP_URL — não ativei o agente de atualização."; return 0; }
+  [ -n "$secret" ] || { c_ylw "$(t "⚠ falta INTERNAL_SECRET — não ativei o agente de atualização.")"; return 0; }
+  [ -n "${NEXT_PUBLIC_APP_URL:-}" ] || { c_ylw "$(t "⚠ falta NEXT_PUBLIC_APP_URL — não ativei o agente de atualização.")"; return 0; }
 
   # `cd` explícito: o agent.sh chama enter_project(), que acha o projeto pelo
   # DIRETÓRIO CORRENTE. No cron o CWD é o home do dono do crontab — sem o cd,
@@ -1640,7 +1716,7 @@ setup_update_agent_cron() {
   # Mesmo motivo do drain acima, e é por isso que o conserto é nos DOIS: a
   # primeira instalação passa pelos dois blocos na mesma rodada.
   ( { crontab -l 2>/dev/null || true; } | cron_merge "$marcador" "$legado" "$cron_line" ) | crontab -
-  c_grn "✓ atualização pela tela ativa (agente a cada 5 minutos)"
+  c_grn "$(t "✓ atualização pela tela ativa (agente a cada 5 minutos)")"
 }
 
 # Garante a chave de cifra dos segredos (webhooks/Nuvemshop) e a semeia no
@@ -1656,7 +1732,7 @@ ensure_encryption_key() {
   if [ -z "$key" ]; then
     key="$(openssl rand -hex 32)"
     printf '\nNUVEMSHOP_OAUTH_ENCRYPTION_KEY=%s\n' "$key" >> "$envfile"
-    c_grn "✓ chave de cifra dos segredos gerada e gravada no .env"
+    c_grn "$(t "✓ chave de cifra dos segredos gerada e gravada no .env")"
   fi
   export NUVEMSHOP_OAUTH_ENCRYPTION_KEY="$key"
 
@@ -1664,8 +1740,8 @@ ensure_encryption_key() {
   # permite configurar a chave via parâmetro de banco).
   psql_run -c "insert into private.app_secrets (name, value) values ('nuvemshop_oauth_key', '${key}') on conflict (name) do update set value = excluded.value, updated_at = now();" \
     >/dev/null 2>&1 \
-    && c_grn "✓ chave de cifra ativa no banco (segredos de webhook são guardados cifrados)" \
-    || c_ylw "⚠ não consegui semear a chave de cifra no banco — segredos de webhook não poderão ser salvos até rodar update.sh de novo."
+    && c_grn "$(t "✓ chave de cifra ativa no banco (segredos de webhook são guardados cifrados)")" \
+    || c_ylw "$(t "⚠ não consegui semear a chave de cifra no banco — segredos de webhook não poderão ser salvos até rodar update.sh de novo.")"
 }
 
 # ── A ÚLTIMA RELEASE ESTÁVEL PUBLICADA ──────────────────────────────────────

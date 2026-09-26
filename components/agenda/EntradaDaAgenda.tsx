@@ -30,7 +30,15 @@ export function EntradaDaAgenda({
       key={params.get("compromisso")}
       podeEditar={podeEditar}
       id={params.get("compromisso")}
-      onClose={() => router.replace("/app/agenda")}
+      onClose={() => {
+        // O `?tipo=` escolhido na grade ATRAVESSA o fecho do detalhe: sem
+        // esta linha, abrir um compromisso e fechar apagava a query inteira —
+        // inclusive o tipo — e o F5 seguinte voltava ao primeiro (#1657).
+        // Os demais parâmetros continuam fora, como sempre: fechar é voltar
+        // para a agenda limpa.
+        const tipo = params.get("tipo");
+        router.replace(tipo ? `/app/agenda?tipo=${encodeURIComponent(tipo)}` : "/app/agenda");
+      }}
     />
   );
 }

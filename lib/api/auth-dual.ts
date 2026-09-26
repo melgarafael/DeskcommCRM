@@ -53,6 +53,18 @@ export type AuthDual =
       idioma?: Idioma;
       /** Por onde a identidade entrou. Útil para audit e para decidir texto de erro. */
       via: "session" | "token";
+      /**
+       * Escopos do Bearer (`api_tokens.scopes`), só no modo token (#1613).
+       *
+       * É onde mora o gate de um escopo EXTRA da rota — `messages:on_behalf`,
+       * por exemplo. A sessão de navegador não tem escopos e este campo fica
+       * `undefined`, então um campo condicionado a escopo é recusado para quem
+       * entra pela tela: o caminho que não pode existir é a tela gravar "em
+       * nome de" sem que ninguém tenha concedido nada.
+       */
+      scopes?: string[];
+      /** Id da linha do token (`api_tokens.id`) — o `actor_api_token_id` do audit. */
+      apiTokenId?: string;
     }
   | { ok: false; response: Response };
 
@@ -122,6 +134,8 @@ export async function resolveAuthDual(
       actor: auth.actor,
       supabase: createAdminClient(),
       via: "token",
+      scopes: auth.scopes,
+      apiTokenId: auth.apiTokenId,
     };
   }
 

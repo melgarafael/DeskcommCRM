@@ -105,6 +105,9 @@ porque:
   entrega o `.env` inteiro ao app e ao worker —, e o que existe hoje é um gate que proíbe o código do
   app de usá-la (`tests/unit/env-ddl-fora-do-app.test.ts`). O argumento desta decisão é o anterior:
   a provisionadora não dá ao app nenhuma DDL que ele possa escolher.
+  *Nota de 2026-09-25:* desde o #1680 o `docker-compose.prod.yml` sobrescreve a chave com vazio em
+  todo serviço com `env_file` (app, worker e voice-agent), e o mesmo teste vigia isso. O argumento
+  desta decisão continua sendo o anterior: a neutralização é uma cerca a mais, não a que o sustenta.
 - **Um invariante novo reprova** função provisionadora com parâmetro, com `execute` concedido a
   qualquer papel além de `service_role`, ou com corpo que referencie tabela de fora do módulo.
 

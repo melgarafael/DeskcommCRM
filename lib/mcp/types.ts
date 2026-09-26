@@ -15,6 +15,10 @@ import type { Role } from "@/lib/auth/types";
 export interface McpContext {
   /** Somente o runtime in-process fornece o job original, nunca o cliente MCP. */
   meetingBooking?: MeetingBookingContext;
+  /** Chave `Idempotency-Key` da requisição MCP externa, quando enviada. */
+  idempotencyKey?: string;
+  /** Job estável do runtime in-process; nunca vem dos argumentos da tool. */
+  sourceJobId?: string;
   organizationId: string;
   role: Role;
   actor: Actor;

@@ -18,15 +18,13 @@
  *
  * Misses de matching ('devia ter usado a skill X e não usou') viram candidatos ao golden
  * set (blueprint 3.3): um `probe_keyword` que dispara SEM o `any_keyword` do hard-match é um
- * near-miss — o runtime grava o trace em GOLDEN_CANDIDATES_DIR (fs em runtime, não a tool
- * Write) para curadoria humana. O sinal (texto do lead, PII) vai ao ARQUIVO de curadoria,
- * mas NUNCA a log (regra dura 8).
+ * near-miss — o runtime grava o candidato como LINHA em `golden_candidates` (migration 0428,
+ * issue #1695), nunca como arquivo em disco. A linha leva SÓ rótulo (skill + motivo) e os
+ * ponteiros do lead e do job: o texto do cliente (PII) não vai nem a disco nem a log
+ * (regra dura 8) — quem quiser ler a conversa abre a ficha pelo ponteiro.
  *
  * tenant_id é fonte confiável (row do job); skill de um tenant NUNCA vaza para outro.
  */
-import { mkdir, writeFile } from 'node:fs/promises';
-import path from 'node:path';
-
 import { z } from 'zod';
 
 import type { Queryable } from '../queue/queue';
@@ -319,40 +317,49 @@ export function recentInboundSignal(
 }
 
 /**
- * Grava os near-misses como candidatos ao golden set (blueprint 3.3) — fs em RUNTIME
- * (mkdir recursivo + writeFile), NÃO a tool Write, então o freeze do golden não se aplica
- * a este caminho executado. O arquivo é para CURADORIA HUMANA: carrega o sinal (texto do
- * lead), então NUNCA é logado (regra dura 8) — só a CONTAGEM e os nomes das skills vão a log.
- * Um arquivo por (skill, job): retry re-grava o mesmo candidato, não acumula duplicata.
+ * Grava os near-misses como candidatos ao golden set (blueprint 3.3) — LINHA em
+ * `golden_candidates` (migration 0428, issue #1695), não arquivo em disco: o
+ * JSON no disco do contêiner era lido por nenhuma tela, morria a cada atualização
+ * da imagem e ficava fora da cascata de anonimização da LGPD.
+ *
+ * A linha leva SÓ rótulo (skill, motivo) e ponteiros (`lead_id`, `job_id`) — sem
+ * o texto do lead, que é PII: a conversa que a curadoria lê fica atrás do
+ * ponteiro, na ficha que a cascata já alcança. Log leva só a CONTAGEM e os nomes
+ * das skills (regra dura 8). Um registro por (skill, job): o `on conflict do
+ * nothing` dos índices parciais faz o retry regravar o mesmo candidato, sem
+ * acumular duplicata. Falha de banco NÃO derruba o turno — candidato é telemetria
+ * de curadoria, não caminho do atendimento.
  */
 export async function recordSkillMissCandidates(
-  dir: string,
-  trace: { tenantId: string; leadId: string; jobId: string; signal: string; candidates: readonly SkillMissCandidate[] },
+  db: Queryable,
+  trace: {
+    tenantId: string;
+    leadId: string;
+    jobId: string;
+    candidates: readonly SkillMissCandidate[];
+  },
   log: Logger,
 ): Promise<void> {
   if (trace.candidates.length === 0) {
     return;
   }
-  await mkdir(dir, { recursive: true });
-  for (const c of trace.candidates) {
-    const record = {
-      recorded_at: new Date().toISOString(),
-      source: 'skill_match_miss',
-      note:
-        `devia ter usado a skill '${c.skill}' e não usou (near-miss de matching: ${c.reason}) — ` +
-        'candidato ao golden set para curadoria humana (blueprint 3.3).',
-      tenant_id: trace.tenantId,
-      lead_id: trace.leadId,
-      job_id: trace.jobId,
-      expected_skill: c.skill,
-      reason: c.reason,
-      // sinal do turno (texto do lead — PII): fica no ARQUIVO de curadoria, jamais em log.
-      signal: trace.signal,
-    };
-    const file = path.join(dir, `skill-miss_${c.skill}_${trace.jobId}.json`);
-    await writeFile(file, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
+  try {
+    for (const c of trace.candidates) {
+      await db.query(
+        `insert into public.golden_candidates
+           (organization_id, lead_id, job_id, fonte, skill, motivo)
+         values ($1, $2, $3, 'skill_match_miss', $4, $5)
+         on conflict do nothing`,
+        [trace.tenantId, trace.leadId, trace.jobId, c.skill, c.reason],
+      );
+    }
+  } catch (erro) {
+    log.warn('candidato ao golden set não gravado (skill match miss)', {
+      skills: trace.candidates.map((c) => c.skill),
+      erro: erro instanceof Error ? erro.message : String(erro),
+    });
+    return;
   }
-  // PII fora do log: só contagem e nomes das skills (não o sinal).
   log.info('candidatos ao golden set registrados (skill match miss)', {
     count: trace.candidates.length,
     skills: trace.candidates.map((c) => c.skill),

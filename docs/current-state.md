@@ -369,3 +369,8 @@ Duas lições que valem para quem mantiver este documento:
 2. **Este arquivo apodrece rápido.** O repo moveu 556 commits em poucos dias. Trate as datas
    do frontmatter como prazo de validade, não como enfeite — e prefira reconferir os números
    com os comandos citados a confiar na tabela.
+
+
+### Conversões de anúncios: confirmação e reprocessamento
+
+A integração de vendas oferece Data Manager nas novas autorizações do Google, preserva conexões anteriores e acompanha protocolos assíncronos. Configurações → Conversões mostra falhas temporárias, teste Meta e pendências com ação de reprocessamento. Contratos, limites e roteiro de piloto: [conversões de anúncios](runbooks/conversoes-de-anuncios.md). Captura web completa e eventos por etapa não fazem parte desta entrega.

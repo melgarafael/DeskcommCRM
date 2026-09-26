@@ -21,6 +21,14 @@ import type { LoadedRouter, RouterMember } from './router-config';
 export interface IntentVerdict {
   intentName: string | null;
   confidence: number;
+  /**
+   * A saída não era uma resposta: sem JSON, JSON inválido, sem intenção, ou uma
+   * intenção fora da lista. O roteamento de hoje a lê como "nenhuma" (sticky ou
+   * `no_match`), e isso não muda; o que muda é que ninguém a trata como uma
+   * escolha da IA — o Jev decidindo não vale no lugar dela (R2), como na
+   * manipulação (`classifyJailbreak`, `falhou`).
+   */
+  falhou?: true;
 }
 
 /** Mensagem de contexto anterior à atual — só pra desambiguar, nunca o alvo da classificação. */
@@ -84,7 +92,7 @@ export function buildClassifierPrompt(
  * agentId que o parse inventou.
  */
 export function parseIntentVerdict(text: string, members: RouterMember[]): IntentVerdict {
-  const nullVerdict: IntentVerdict = { intentName: null, confidence: 0 };
+  const nullVerdict: IntentVerdict = { intentName: null, confidence: 0, falhou: true };
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
   if (start === -1 || end <= start) return nullVerdict;
@@ -102,9 +110,8 @@ export function parseIntentVerdict(text: string, members: RouterMember[]): Inten
     ? Math.min(1, Math.max(0, raw.confidence))
     : 0;
 
-  if (typeof raw.intent !== 'string' || raw.intent === 'none') {
-    return { intentName: null, confidence };
-  }
+  if (typeof raw.intent !== 'string') return nullVerdict;
+  if (raw.intent === 'none') return { intentName: null, confidence };
   const known = members.some((m) => m.intentName === raw.intent);
   if (!known) return nullVerdict;
 

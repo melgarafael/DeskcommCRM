@@ -16,6 +16,7 @@ ser fonte sem ninguém decidir isso.
 
 | arquivo | escopo |
 |---|---|
+| `conversoes-de-anuncios.architecture.json` | venda, entrega, protocolo assíncrono, pendências e reprocessamento |
 | `prospeccao-nativa.architecture.json` | busca comercial, fila gradual, configuração conversacional persistente, sandbox e assistente de voz opcional |
 | `pre-go-live-whatsapp.architecture.json` | modo de teste por canal (issue #573): configuração administrativa, gate compartilhado, releitura no envio e validação pelo Inbox |
 | `app-da-meta-da-instalacao.architecture.json` | App da Meta da instalação (issue #850, migration 0257) — 10 peças, 12 arestas; a tela `/admin/meta` que grava a chave e mostra o token uma vez, o resolvedor que serve o par inteiro de UMA fonte (banco, com o `.env` de reserva) e por que Conexões só mostra o token quando ele veio do `.env` |

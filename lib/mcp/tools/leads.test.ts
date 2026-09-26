@@ -21,7 +21,7 @@ import { z } from "zod";
 
 import { updateLeadSchema } from "@/lib/schemas/leads";
 
-import { crmUpdateLead } from "./leads";
+import { crmMoveLeadStage, crmUpdateLead } from "./leads";
 
 /** O mesmo caminho do handler: tira `lead_id`, entrega o resto ao schema. */
 function comoOHandlerFaz(entrada: Record<string, unknown>) {
@@ -78,5 +78,25 @@ describe("crm_update_lead — campos personalizados do funil", () => {
 
     expect(saida.tags).toEqual(["controlado"]);
     expect(saida.custom_fields).toBeUndefined();
+  });
+});
+
+
+describe("crm_move_lead_stage — motivo de ganho (#1536)", () => {
+  it("declara won_reason no shape da tool (sem isto, o valor é descartado antes do schema)", () => {
+    const doShape = z.object(crmMoveLeadStage.inputSchema).parse({
+      lead_id: LEAD_ID,
+      to_stage_id: LEAD_ID,
+      won_reason: "Renovação anual",
+    });
+    expect(doShape).toMatchObject({ won_reason: "Renovação anual" });
+  });
+
+  it("segue aceitando sem won_reason — o movimento comum não muda", () => {
+    const doShape = z.object(crmMoveLeadStage.inputSchema).parse({
+      lead_id: LEAD_ID,
+      to_stage_id: LEAD_ID,
+    });
+    expect(doShape).not.toHaveProperty("won_reason");
   });
 });

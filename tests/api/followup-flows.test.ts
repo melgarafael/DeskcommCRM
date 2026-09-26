@@ -65,7 +65,7 @@ const INVALID_GRAPH: FlowGraph = {
 
 type Row = Record<string, unknown>;
 
-function makeDb(pointers: Row[], versions: Row[], stages: Row[] = []) {
+function makeDb(pointers: Row[], versions: Row[], stages: Row[] = [], conexoes: Row[] = []) {
   const tables: Record<string, Row[]> = {
     followup_flow_pointers: pointers,
     followup_flow_versions: versions,
@@ -74,6 +74,9 @@ function makeDb(pointers: Row[], versions: Row[], stages: Row[] = []) {
     // apagada/arquivada = fluxo `active` que nunca matricula ninguém). Sem esta
     // tabela no mock, o caso positivo do `stage_change` não teria como existir.
     crm_stages: stages,
+    // O publish lê os providers das conexões: o plano B da IA só é exigido de
+    // quem tem canal com janela de 24 h (revisão do #1729).
+    channel_sessions: conexoes,
   };
 
   function builder(table: string) {
@@ -90,6 +93,7 @@ function makeDb(pointers: Row[], versions: Row[], stages: Row[] = []) {
       return (
         filters.every(([k, v]) => {
           if (v instanceof Set) return v.has(row[k]);
+          if (v === null) return (row[k] ?? null) === null;
           return valor(k) === v;
         }) && negados.every(([k, v]) => valor(k) !== v)
       );
@@ -185,6 +189,10 @@ function makeDb(pointers: Row[], versions: Row[], stages: Row[] = []) {
       },
       neq(col: string, val: unknown) {
         negados.push([col, val]);
+        return b;
+      },
+      is(col: string, val: null) {
+        filters.push([col, val]);
         return b;
       },
       in(col: string, vals: unknown[]) {
@@ -531,6 +539,46 @@ describe("POST /api/v1/ai/followup-flows/:id/publish", () => {
     expect(body.error.details.errors).toEqual([
       { node_id: "orphan", code: "unreachable_node", message: expect.any(String) },
     ]);
+  });
+
+  describe("plano B da IA depois de 24 h de espera (revisão do #1729)", () => {
+    const PID = "33333333-3333-4333-8333-333333333333";
+    const ESPERA_LONGA: FlowGraph = {
+      nodes: [
+        trigger("t1"),
+        { id: "w1", type: "wait", label: "w1", position: pos, config: { mode: "fixed", duration_ms: 90_000_000 } },
+        { id: "a1", type: "action", label: "a1", position: pos, config: { mode: "ai_message", prompt_hint: "oi" } },
+        end("e1"),
+      ],
+      edges: [edge("x1", "t1", "w1"), edge("x2", "w1", "a1"), edge("x3", "a1", "e1")],
+    };
+    const ponteiro = () => [{ id: PID, organization_id: ORG_ID, status: "draft", draft_graph: ESPERA_LONGA }];
+
+    it("organização só com canal sem janela publica sem plano B", async () => {
+      const db = makeDb(ponteiro(), [], [], [
+        { organization_id: ORG_ID, provider: "waha", archived_at: null },
+        // Arquivada e de OUTRA organização: nenhuma das duas pode pesar.
+        { organization_id: ORG_ID, provider: "meta_cloud", archived_at: "2026-09-01T00:00:00Z" },
+        { organization_id: OTHER_ORG_ID, provider: "meta_cloud", archived_at: null },
+      ]);
+      session("manager", db);
+      const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+      const res = await POST(req("POST"), ctx(PID));
+      expect(res.status).toBe(200);
+    });
+
+    it("organização com canal de janela de 24 h continua exigindo o plano B", async () => {
+      const db = makeDb(ponteiro(), [], [], [
+        { organization_id: ORG_ID, provider: "waha", archived_at: null },
+        { organization_id: ORG_ID, provider: "meta_cloud", archived_at: null },
+      ]);
+      session("manager", db);
+      const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+      const res = await POST(req("POST"), ctx(PID));
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { error: { details: { errors: Array<{ code: string }> } } };
+      expect(body.error.details.errors.map((e) => e.code)).toEqual(["long_wait_needs_template"]);
+    });
   });
 
   it("draft_graph válido → cria version, pointer vira active com active_version_id", async () => {

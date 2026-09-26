@@ -18,6 +18,7 @@ import { coberturaDoFunil, type EtapaDoMapa } from "@/lib/leads/agent-mapping";
 import type { CoberturaPorFunil } from "./_components/FunisDoAgente";
 import { lerAmbiente } from "@/lib/instalacao/ambiente";
 import { escolherVersoesDaTela } from "@/lib/ai/agents/versoes-da-tela";
+import { fusoUtilizavel } from "@/lib/tempo/fusos";
 
 export const dynamic = "force-dynamic";
 
@@ -234,6 +235,7 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
         materiais={materiais}
         routerMembership={routerMembership}
         readOnly={readOnly}
+        organizationTimezone={fusoUtilizavel(activeOrg.timezone)}
       />
     </div>
   );

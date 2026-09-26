@@ -108,11 +108,11 @@ function makeAdminStub() {
                 // Vem do banco como STRING — é a origem exata do defeito.
                 model: "anthropic/claude-sonnet-4-6",
                 system_prompt: "Você é um atendente.",
-                // Sem RAG neste stub, a confiança é 0 e o guard G3 desviaria
-                // para handoff — o que provaria o LLM respondendo, mas pararia
-                // antes do dispatch. Zerar o limiar deixa o caminho completo
+                // Sem RAG neste stub não há citação, logo não há MEDIDA de
+                // similaridade: `checkG3` recebe `null` e a comparação de
+                // limiar nem acontece. É isso que deixa o caminho completo
                 // (resposta → persistência → message.send_requested) visível.
-                config: { confidence_threshold: 0 },
+                config: {},
                 guardrails: {},
                 active_kb_version_id: "99999999-9999-4999-8999-999999999999",
                 is_active: true,

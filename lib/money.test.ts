@@ -7,6 +7,7 @@ import {
   MOEDAS_SERVIDAS,
   MOEDA_PADRAO,
   simboloDaMoeda,
+  formatValorDoNegocio,
 } from "./money";
 
 describe("parseReaisToCents", () => {
@@ -164,5 +165,23 @@ describe("MOEDAS_SERVIDAS — a lista que a tela oferece", () => {
 
   it("e o padrão de quem não escolheu segue sendo o real", () => {
     expect(MOEDA_PADRAO).toBe("BRL");
+  });
+});
+
+describe("formatValorDoNegocio — a régua do negócio é ×100 em qualquer moeda", () => {
+  const semNbsp = (t: string) => t.replace(/[\u00a0\u202f]/g, " ");
+
+  it("⭐ guarani: 12.500.000 no negócio é ₲125.000, não cem vezes mais", () => {
+    expect(semNbsp(formatValorDoNegocio(12_500_000, "PYG"))).toBe("Gs. 125.000");
+    expect(semNbsp(formatValorDoNegocio(25_000_000, "PYG"))).toBe("Gs. 250.000");
+  });
+
+  it("em moeda de duas casas coincide com formatCents", () => {
+    expect(semNbsp(formatValorDoNegocio(24990, "BRL"))).toBe(semNbsp(formatCents(24990, "BRL")));
+  });
+
+  it("sem centavos é o formato do card: real continua como sempre foi", () => {
+    expect(semNbsp(formatValorDoNegocio(125_000, "BRL", { semCentavos: true }))).toBe("R$ 1.250");
+    expect(semNbsp(formatValorDoNegocio(12_500_000, "PYG", { semCentavos: true }))).toBe("Gs. 125.000");
   });
 });

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type * as ModuloDeTranscricao from "@/lib/messaging/media/transcription";
+
 /**
  * Issue #855 — o worker de mídia ignorava a `base_url` do binding de visão.
  *
@@ -151,7 +153,10 @@ vi.mock("ai", () => ({
   generateText: vi.fn(async () => ({ text: "descrição de mentira" })),
 }));
 
-vi.mock("@/lib/messaging/media/transcription", () => ({
+vi.mock("@/lib/messaging/media/transcription", async (importOriginal) => ({
+  // As funções puras (modelo e idiomas em vigor) seguem REAIS: o worker as usa
+  // para montar o que vai ao provedor, e é isso que os casos conferem.
+  ...(await importOriginal<typeof ModuloDeTranscricao>()),
   // A referência é resolvida na CHAMADA, não na fábrica: `vi.mock` é içado para
   // o topo do arquivo e um `const` de módulo ainda não existe nesse momento.
   apiTranscriptionProvider: (cfg: unknown) => provedorDeTranscricaoMock(cfg),
@@ -161,7 +166,7 @@ vi.mock("@/lib/messaging/media/transcription", () => ({
 // —, e não pelo `process.env` cru: `vi.stubEnv` já não alcança esse caminho. O
 // módulo real continua inteiro; só as três chaves da transcrição passam a vir
 // de um objeto que cada caso controla.
-const transcricaoDoEnv = vi.hoisted(() => ({ apiKey: "", baseUrl: "", model: "" }));
+const transcricaoDoEnv = vi.hoisted(() => ({ apiKey: "", baseUrl: "", model: "", languages: "" }));
 vi.mock("@/lib/env", async (importOriginal) => {
   const real = await importOriginal<{ env: Env }>();
   return {
@@ -175,6 +180,9 @@ vi.mock("@/lib/env", async (importOriginal) => {
       },
       get TRANSCRIPTION_MODEL() {
         return transcricaoDoEnv.model;
+      },
+      get TRANSCRIPTION_LANGUAGES() {
+        return transcricaoDoEnv.languages;
       },
       get IA_DESTINOS_INTERNOS_PERMITIDOS() {
         return destinosInternosDoEnv.valor;
@@ -190,7 +198,7 @@ vi.mock("@/lib/env", async (importOriginal) => {
  * serviço nenhum", que segue transcrevendo pela chave da OpenAI.
  */
 function comTranscricaoNoEnv(t: Partial<typeof transcricaoDoEnv> = {}): void {
-  Object.assign(transcricaoDoEnv, { apiKey: "", baseUrl: "", model: "" }, t);
+  Object.assign(transcricaoDoEnv, { apiKey: "", baseUrl: "", model: "", languages: "" }, t);
 }
 
 import { deriveMessageMedia } from "@/workers/media-derive-worker";
@@ -316,7 +324,66 @@ describe("worker de mídia: base_url do binding de visão (#855)", () => {
       apiKey: "chave-do-servico",
       baseUrl: "https://api.groq.com/openai/v1",
       model: "whisper-large-v3",
+      languages: [],
     });
+  });
+
+  // Trocar `whisper-1` por um modelo melhor da própria OpenAI não pode exigir
+  // copiar a chave da organização para o `.env`: modelo e idioma do ambiente
+  // valem também no caminho de sempre (sem TRANSCRIPTION_API_KEY).
+  it("sem serviço próprio, modelo e idioma do .env vão para a transcrição com a chave da organização", async () => {
+    comTranscricaoNoEnv({ model: "gpt-transcribe", languages: "es" });
+    linhaDaMensagem = {
+      ...linhaDaMensagem,
+      type: "audio",
+      media_mime: "audio/ogg",
+      media_storage_path: "org1/conv1/msg1.ogg",
+    };
+
+    await deriveMessageMedia(eventRow());
+
+    expect(provedorDeTranscricaoMock).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "gpt-transcribe", languages: ["es"] }),
+    );
+    expect(provedorDeTranscricaoMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ baseUrl: expect.anything() }),
+    );
+  });
+
+  // Um `.env` antigo com o modelo do Groq e sem a chave própria transcrevia com
+  // whisper-1 pela OpenAI. O update não pode passar a pedir `whisper-large-v3`
+  // à OpenAI: o modelo do `.env` só vale nesse caminho sem BASE_URL.
+  it("modelo e BASE_URL de outro serviço sem a chave própria: segue whisper-1 na OpenAI", async () => {
+    comTranscricaoNoEnv({ model: "whisper-large-v3", baseUrl: "https://api.groq.com/openai/v1" });
+    linhaDaMensagem = {
+      ...linhaDaMensagem,
+      type: "audio",
+      media_mime: "audio/ogg",
+      media_storage_path: "org1/conv1/msg1.ogg",
+    };
+
+    await deriveMessageMedia(eventRow());
+
+    expect(provedorDeTranscricaoMock).toHaveBeenCalledWith(expect.objectContaining({ model: "whisper-1" }));
+    expect(provedorDeTranscricaoMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ baseUrl: expect.anything() }),
+    );
+  });
+
+  it("sem nada no .env, a transcrição segue com whisper-1 e sem idioma — o comportamento de sempre", async () => {
+    comTranscricaoNoEnv();
+    linhaDaMensagem = {
+      ...linhaDaMensagem,
+      type: "audio",
+      media_mime: "audio/ogg",
+      media_storage_path: "org1/conv1/msg1.ogg",
+    };
+
+    await deriveMessageMedia(eventRow());
+
+    expect(provedorDeTranscricaoMock).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "whisper-1", languages: [] }),
+    );
   });
 
   it("recusa endereço de metadados no binding da visão e não manda a chave", async () => {

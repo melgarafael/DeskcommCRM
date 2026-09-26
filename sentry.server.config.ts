@@ -4,7 +4,7 @@
 
 import * as Sentry from "@sentry/nextjs";
 import { resolveSentryDsn, isCommunityDsn, DEFAULT_SENTRY_DSN } from "./lib/sentry/dsn";
-import { sentryScrubHooks } from "./lib/sentry/scrub";
+import { opcoesDePrivacidade } from "./lib/sentry/privacidade";
 
 const sentryDsn = resolveSentryDsn(process.env.SENTRY_DSN);
 const community = isCommunityDsn(sentryDsn);
@@ -14,10 +14,9 @@ Sentry.init({
 
   // No Sentry da comunidade, só erro (issue #100). Ver isCommunityDsn().
   tracesSampleRate: community ? 0 : 1,
-  enableLogs: true,
-  sendDefaultPii: false,
 
-  ...sentryScrubHooks,
+  // Coleta restrita + scrub, num ponto só (Sentry 11 coleta amplo por default).
+  ...opcoesDePrivacidade,
 });
 
 // Transparência de telemetria: uma linha no boot dizendo o que está ativo e como

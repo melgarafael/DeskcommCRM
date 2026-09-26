@@ -12,7 +12,7 @@ import {
 } from "@/lib/ai/pontos/provedores";
 import { credentialStatus, useCredentialsList, type CredentialRow } from "@/hooks/ai/useCredentials";
 import { credencialEmUsoPeloJev } from "@/lib/ai/decisao/credencial";
-import { AO_EXCLUIR_A_CHAVE_DO_JEV } from "@/lib/ai/decisao/textos";
+import { avisoAoExcluirAChaveDoJev } from "@/lib/ai/decisao/textos";
 import { useT } from "@/hooks/i18n/useT";
 import { CredentialCard } from "./CredentialCard";
 import { AddCredentialDialog } from "./AddCredentialDialog";
@@ -69,13 +69,14 @@ export function CredentialsList({
   // lista que a tela relê: trocar a chave tira a linha "Usada em" enquanto a
   // nova é testada (ela não sai para a rede) e a devolve quando passa.
   const doJev = jev ? credencialEmUsoPeloJev(credentials) : null;
-  const avisoAoExcluirOJev = !doJev
-    ? undefined
-    : credencialEmUsoPeloJev(credentials.filter((c) => c.id !== doJev.id))
-      ? AO_EXCLUIR_A_CHAVE_DO_JEV.outraChave
-      : jev?.temIaPrincipal
-        ? AO_EXCLUIR_A_CHAVE_DO_JEV.iaPrincipalAssume
-        : AO_EXCLUIR_A_CHAVE_DO_JEV.climaPara;
+  const avisoAoExcluirOJev =
+    !doJev || !jev
+      ? undefined
+      : avisoAoExcluirAChaveDoJev({
+          temOutraChave: credencialEmUsoPeloJev(credentials.filter((c) => c.id !== doJev.id)) !== null,
+          tarefas: jev.tarefas,
+          temIaPrincipal: jev.temIaPrincipal,
+        });
 
   // Só a chave do Jev não faz o atendimento funcionar: ele decide, não conversa.
   // Sem este aviso a tela sairia do estado vazio e pareceria pronta. Mas quem

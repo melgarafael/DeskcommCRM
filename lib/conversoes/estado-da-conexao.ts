@@ -28,7 +28,9 @@ export interface EstadoDaConexao {
 }
 
 export interface PendenciaDeEnvio {
+  plataforma: string;
   leadId: string;
+  evento: string;
   status: string;
   motivo: string | null;
   detalhe: string | null;
@@ -83,7 +85,9 @@ export async function lerPendencias(
 ): Promise<PendenciaDeEnvio[]> {
   const { data } = await admin
     .from("ad_conversion_dispatches")
-    .select("lead_id, status, reason, detail, value_cents, attempted_at, crm_leads(title)")
+    .select(
+      "lead_id, event_name, platform, status, reason, detail, value_cents, attempted_at, crm_leads(title)",
+    )
     .eq("organization_id", organizationId)
     .neq("status", "sent")
     .order("attempted_at", { ascending: false })
@@ -92,6 +96,8 @@ export async function lerPendencias(
   return ((data ?? []) as unknown[]).map((linha) => {
     const l = linha as {
       lead_id: string;
+      event_name: string;
+      platform: string;
       status: string;
       reason: string | null;
       detail: string | null;
@@ -102,6 +108,8 @@ export async function lerPendencias(
     const lead = Array.isArray(l.crm_leads) ? l.crm_leads[0] : l.crm_leads;
     return {
       leadId: l.lead_id,
+      evento: l.event_name ?? "Purchase",
+      plataforma: l.platform,
       status: l.status,
       motivo: l.reason,
       detalhe: l.detail,
@@ -132,18 +140,24 @@ export async function contaEnviadas(
  * manda a pessoa procurar um defeito que não existe.
  */
 export const MOTIVO_LEGIVEL: Record<string, string> = {
+  aguardando_processamento:
+    "A plataforma recebeu o envio. A confirmação será consultada automaticamente.",
+  processamento_demorado:
+    "A plataforma não concluiu em 24 horas. Consulte o gerenciador e use o botão para verificar novamente.",
+  reprocessamento_solicitado: "Reprocessamento agendado. Acompanhe o resultado nesta tela.",
+  nova_tentativa_agendada: "Falha temporária. Uma nova tentativa foi agendada automaticamente.",
+  evento_de_teste:
+    "Evento recebido em modo de teste. Desative o teste antes de reportar a venda real.",
   sem_valor:
-    "A venda fechou sem valor preenchido. A plataforma exige valor e moeda em uma compra — preencha o valor do negócio e ele será reportado na próxima passagem.",
+    "A venda fechou sem valor preenchido. A plataforma exige valor e moeda em uma compra — preencha o valor do negócio e use o botão de reprocessamento.",
   sem_conexao:
     "Nenhuma conta de anúncios conectada nesta organização. Preencha o formulário acima.",
-  conexao_desabilitada:
-    "A conexão existe mas está desligada. Ligue o envio no formulário acima.",
+  conexao_desabilitada: "A conexão existe mas está desligada. Ligue o envio no formulário acima.",
   credencial_incompleta:
     "Falta o identificador do destino ou o token. Complete o formulário acima.",
   cifra_indisponivel:
     "Esta instalação está sem a chave mestra de criptografia — quem instalou o sistema precisa configurá-la. Reconectar pela tela não resolve.",
   plataforma_sem_transporte:
     "O lead veio de uma plataforma para a qual ainda não sabemos reportar conversão.",
-  recusado_pela_plataforma:
-    "A plataforma recusou o envio. O detalhe ao lado é a resposta dela.",
+  recusado_pela_plataforma: "A plataforma recusou o envio. O detalhe ao lado é a resposta dela.",
 };

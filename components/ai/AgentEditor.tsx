@@ -322,7 +322,15 @@ export function AgentEditor({ agentId, initialData, readOnly = false }: Props) {
 
         <TabsContent value="rag">
           <Card className="space-y-4 p-4">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            {/* Havia um terceiro campo aqui — o limiar de confiança, com o
+                rótulo em inglês, prometendo passar a conversa para uma
+                pessoa quando a resposta ficasse abaixo dele. Saiu
+                (issue #1660): o único leitor da chave era o bloco G3 do
+                worker legado, inalcançável desde que
+                `elegivelParaWorkerLegado()` passou a devolver `false`
+                (07/09). Botão que não controla nada é pior que botão
+                ausente — ver tests/unit/controle-confidence-threshold-nao-miente.test.ts. */}
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div className="space-y-1">
                 <Label>Top K (1–20)</Label>
                 <Input
@@ -349,24 +357,10 @@ export function AgentEditor({ agentId, initialData, readOnly = false }: Props) {
                   disabled={disabled}
                 />
               </div>
-              <div className="space-y-1">
-                <Label>Confidence threshold (0–1)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  max={1}
-                  value={formState.config.confidence_threshold}
-                  onChange={(e) =>
-                    patchConfig({ confidence_threshold: Number(e.target.value) })
-                  }
-                  disabled={disabled}
-                />
-              </div>
             </div>
             <p className="text-xs text-muted-foreground">
               {t(
-                "Top K = quantos trechos buscar. Similarity threshold = mínimo de relevância (cosine). Confidence = limiar abaixo do qual o agent escala para humano.",
+                "Top K = quantos trechos buscar. Similarity threshold = mínimo de relevância (cosine).",
               )}
             </p>
           </Card>

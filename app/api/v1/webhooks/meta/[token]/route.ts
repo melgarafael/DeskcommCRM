@@ -37,6 +37,11 @@ import { statusUpdate } from "@/lib/channels/meta/status-update";
 import { ingestMetaEcho, ingestMetaInbound } from "@/lib/channels/meta/ingest";
 import { metaSessionByWebhookToken } from "@/lib/channels/meta/session";
 import { logger } from "@/lib/logger";
+import {
+  emitirFalhaDeEntrega,
+  telefoneDoEmbed,
+  type EmbedDoContato,
+} from "@/lib/messaging/falha-de-entrega";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -176,6 +181,53 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
         .eq("waba_id", e.wabaId)
         .eq("name", e.templateName)
         .eq("language", e.templateLanguage);
+    } else if (e.status === "failed") {
+      // A recusa da plataforma chega DEPOIS do 200 (131047 fora da janela,
+      // 131026 número não registrado, 132015 template pausado). O evento inteiro
+      // vira colunas como no ramo de baixo — e a falha emite `message.failed`
+      // para quem integra (#1614), que até aqui não tinha gatilho nenhum.
+      //
+      // `.neq("status", "failed")` é o "uma vez": a Meta reentrega o mesmo
+      // status enquanto não recebe 2xx, e cada reentegra seria mais um aviso
+      // para o sistema do integrador sobre a MESMA falha. Só a primeira
+      // atualiza uma linha, e só a primeira devolve linha — `linha` é o gatilho
+      // da emissão, então 0 linhas = 0 eventos.
+      const { data: linha } = await admin
+        .from("messages")
+        .update(statusUpdate(e, now))
+        .eq("organization_id", session.organizationId)
+        .eq("external_id", e.externalId)
+        .neq("status", "failed")
+        .select(
+          "id, conversation_id, contact_id, sent_via, error_code, error_message, contacts:contact_id(phone_number)",
+        )
+        .maybeSingle();
+      if (linha) {
+        const falha = linha as {
+          id: string;
+          conversation_id: string | null;
+          contact_id: string | null;
+          sent_via: string | null;
+          error_code: string | null;
+          error_message: string | null;
+          // FK de N para 1: o PostgREST devolve OBJETO em tempo de execução,
+          // embora a tipagem gerada diga lista. `telefoneDoEmbed` aceita os dois.
+          contacts: EmbedDoContato;
+        };
+        await emitirFalhaDeEntrega(admin, {
+          organizationId: session.organizationId,
+          source: "meta-status-webhook",
+          requestId,
+          falha: {
+            message_id: falha.id,
+            conversation_id: falha.conversation_id,
+            contact_id: falha.contact_id,
+            contact: telefoneDoEmbed(falha.contacts),
+            sent_via: falha.sent_via,
+            erro: { codigo: falha.error_code ?? "", titulo: falha.error_message },
+          },
+        });
+      }
     } else {
       // O evento inteiro vira colunas, não só `status`: quando a Meta ACEITA o
       // template e reprova a entrega depois, o motivo só existe aqui. Ver

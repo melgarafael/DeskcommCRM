@@ -22,7 +22,7 @@ Stack canônica (major; a versão exata é o `package.json`):
 
 Next.js 16 (App Router, Turbopack) · React 19 · TypeScript 6 estrito · Tailwind 4 (config em CSS) ·
 shadcn/ui (`new-york`) · Supabase (Postgres + Auth + Realtime + Storage) · Zod 4 · Vitest 4 ·
-Playwright 1 · Sentry 10 · WAHA 2026.7.2 (engine NOWEB) · Upstash Redis · Vercel AI Gateway
+Playwright 1 · Sentry 11 · WAHA 2026.7.2 (engine NOWEB) · Upstash Redis · Vercel AI Gateway
 (`@ai-sdk/anthropic|openai|google`).
 
 > As majors acima são verificadas contra o `package.json` por
@@ -304,7 +304,8 @@ server; segredo em query string; `throw` cru na borda da API.
   `react-hooks`, `typescript-eslint`. `next lint` foi removido no Next 16 — o script chama o CLI.
 - **Prettier** com `prettier-plugin-tailwindcss`; classes Tailwind em ordem canônica.
 - **Tailwind 4** — configuração em CSS (`app/globals.css`), não em `tailwind.config.js`.
-- **Sentry** — `beforeSend` higieniza PII; `tunnelRoute: "/monitoring"` evita ad-blocker.
+- **Sentry** — coleta restrita (`dataCollection`) + scrub num ponto só, `lib/sentry/privacidade.ts`,
+  provado pelo envelope do SDK em `privacidade.sdk.test.ts`; `tunnelRoute: "/monitoring"` evita ad-blocker.
 - **Packaging (não-negociável; lei em [`docs/doctrine/packaging.md`](docs/doctrine/packaging.md))** —
   nenhum serviço de `docker-compose.prod.yml` constrói na máquina do cliente: todo serviço declara
   `image:` de imagem publicada, e `build:` existe só ao lado, como escape. Serviço `build:`-only é

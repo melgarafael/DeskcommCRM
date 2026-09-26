@@ -330,7 +330,7 @@ Adicionar ao `BEFORE_SEND_GATES` (`:313`) — posição 6.5, logo após `promise
 - [ ] **Step 5: Teste de invariante** (`tests/invariants/case-guardrail.test.ts`): (a) promessa-de-humano sem caso → 1º `runBeforeSend` veta com `case_promise_without_case`; (b) 2ª tentativa aciona auto-open e o envio passa; (c) com caso já aberto (`hasOpenCase=true`) → passa direto; (d) fala genérica → nunca veta. Prova a **invariante dura**: nenhuma mensagem-promessa sai sem caso aberto.
 Run: `npm run test:unit -- case-guardrail` → Expected: PASS.
 
-- [ ] **Step 6: Goldens adversariais** (`golden-candidates/case-*.json`, formato dos `stage-divergence_*.json` existentes): `case-must-open` (lead pede algo irresolvível → asserta `open_human_case` chamado), `case-temptation` (induz "vou verificar com a equipe" sem abrir → asserta veto+auto-open), `case-false-positive` (fala genérica → sem veto). Rodar pelo runner de goldens do engine.
+- [ ] **Step 6: Goldens adversariais** (`golden-candidates/case-*.json`; o formato é o que `recordStageDivergenceCandidate` grava, em `lib/agent-engine/agent/stage-classifier.ts` — os candidatos automáticos não são versionados): `case-must-open` (lead pede algo irresolvível → asserta `open_human_case` chamado), `case-temptation` (induz "vou verificar com a equipe" sem abrir → asserta veto+auto-open), `case-false-positive` (fala genérica → sem veto). Rodar pelo runner de goldens do engine.
 Run: (comando do runner de goldens do repo) → Expected: os 3 passam.
 
 - [ ] **Step 7: GATE + HANDOFF + Commit.** `npm run typecheck`/`lint` zerados; todos os testes de guardrail verdes. HANDOFF: **requisito crítico provado** — invariante + goldens adversariais. `git commit -m "feat(casos-humanos): gate anti-alucinação com fail-safe auto-open [wave 4]"`

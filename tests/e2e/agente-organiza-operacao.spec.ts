@@ -37,7 +37,7 @@ import * as http from "node:http";
 import type { AddressInfo } from "node:net";
 import * as path from "node:path";
 
-import { test, expect, type Locator, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "./helpers/test";
 import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
 
 const APP_URL = `http://localhost:${process.env.E2E_PORT ?? "3001"}`;

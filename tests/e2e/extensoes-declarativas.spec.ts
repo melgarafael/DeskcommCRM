@@ -9,7 +9,7 @@ import {
   type Page,
   type Request,
   type Response,
-} from "@playwright/test";
+} from "./helpers/test";
 
 import {
   criarAtoresDasExtensoes,

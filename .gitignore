@@ -58,6 +58,16 @@ supabase/.branches/
 # Epic executor (skill artifacts)
 .epic-executor/
 
+# Candidatos a golden set (F3-09/F3-11): os DOIS caminhos que os gravam em runtime — o
+# near-miss do matcher de skills e a divergência do classificador de etapa — escrevem o
+# TEXTO do lead no arquivo, para curadoria humana. É registro de dado do titular, não
+# artefato do produto: versionado, um `git add -A` publica conversa de cliente no repo, e no
+# clone de todo mundo, de onde ela não sai mais. A curadoria é local.
+# Ignora os dois prefixos que o engine grava, e não a pasta: a spec 15 (§11.1) reserva este
+# diretório para os goldens, que são curados à mão e não carregam texto de cliente.
+lib/agent-engine/golden-candidates/skill-miss_*.json
+lib/agent-engine/golden-candidates/stage-divergence_*.json
+
 # Claude Code harness artifacts (scheduled tasks lock, etc)
 # gov-loop: agents/ e commands/ são maquinaria versionada do loop e PRECISAM
 # viajar com o repo (merge de gov/setup → main); o resto de .claude/ segue local.

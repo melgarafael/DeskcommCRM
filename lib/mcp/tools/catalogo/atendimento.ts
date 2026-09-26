@@ -130,4 +130,25 @@ export const TOOLS_ATENDIMENTO = declararTools([
     pacotes: ["vender"],
     apenasHumano: true,
   },
+  {
+    name: "crm_create_conversation_draft",
+    category: "write",
+    rotulo: "Deixar texto sugerido para a pessoa revisar",
+    explicacao:
+      "Guarda um texto vindo de outro sistema (ERP, formulário) na conversa, para a pessoa que atende revisar e enviar. " +
+      "Nada sai para o cliente por conta desta ação: o texto aparece no campo de resposta com o aviso de origem, " +
+      "e só o clique de quem atende manda a mensagem.",
+    oQueToca: "Atendimento",
+    // `atencao`, não `critico`: a ação em si não alcança o cliente — ela prepara
+    // uma sugestão que uma pessoa precisa confirmar. O peso do envio continua
+    // sendo do `crm_send_whatsapp_message`, que segue `critico`.
+    risco: "atencao",
+    // "escalar", não "atender": o texto é deixado para uma PESSOA revisar e
+    // enviar, que é a jornada "Passar para um humano". E "atender" é o pacote
+    // que encosta no teto por agente: cada capacidade a mais ali é uma vaga que
+    // o dono precisa liberar para ligar a jornada — o mesmo motivo que tirou
+    // `crm_propose_contact_field` daqui. A conta que isso quebra está no e2e
+    // `capacidades-do-agente.spec.ts` (comentário de `TOOLS_DO_SEED`).
+    pacotes: ["escalar"],
+  },
 ]);

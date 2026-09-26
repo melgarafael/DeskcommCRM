@@ -72,6 +72,11 @@ export const ApiErrorCodes = {
   state_conflict: "state_conflict",
   invalid_state: "invalid_state", // resposta a um agent_case que saiu de awaiting_human (spec 15 §7)
   tenant_already_exists: "tenant_already_exists",
+  // POST /api/v1/settings/api-tokens quando a organização já está no teto de
+  // tokens ATIVOS (migration 0415, issue #1448). O corpo devolve a MESMA
+  // mensagem que o gatilho levantou — com o limite e a instrução de revogar um
+  // token para liberar espaço —, então quem lê sabe o que fazer sem perguntar.
+  api_token_teto_atingido: "api_token_teto_atingido",
   // POST /api/v1/contacts com telefone já cadastrado na mesma organização
   // (índice uniq_contacts_org_phone). O corpo traz `details.contact_id` para a
   // tela oferecer o contato existente em vez de só mostrar que deu erro.
@@ -88,6 +93,7 @@ export const ApiErrorCodes = {
   // 422 — semântica
   unprocessable_entity: "unprocessable_entity",
   channel_without_session: "channel_without_session", // operação de sessão (reiniciar, parear) pedida a canal que não tem sessão no transporte — o oficial
+  janela_fechada: "janela_fechada", // POST /messages por token/agente com texto livre fora das 24h em canal com restrição (131047) — a saída é modelo aprovado (#1614)
   invalid_state_transition: "invalid_state_transition",
   invalid_owner: "invalid_owner", // novo dono não é membro ativo agent+ da org (bulk assign, G3-04)
   trigger_kind_not_implemented: "trigger_kind_not_implemented", // publish de followup-flow com kind sem motor de enrollment (stage_change/conversation_end)
@@ -191,6 +197,23 @@ export const ApiErrorCodes = {
   pipeline_no_lost_stage: "pipeline_no_lost_stage",
   // 404: o funil de destino não existe (ou não é desta organização).
   pipeline_not_found: "pipeline_not_found",
+  // 409 (issue #1538): o funil é `novo_negocio` e a escrita reabriria um
+  // negócio encerrado. Os QUATRO caminhos (arrasto, lote, IA/automação, MCP)
+  // devolvem este mesmo código, e a tela o reconhece para oferecer a retomada.
+  reabertura_cria_novo: "reabertura_cria_novo",
+  // 422: chamaram `/retomar` num negócio que continua ABERTO — não há o que
+  // retomar, e criar aí duplicaria o card que já está no quadro.
+  reabertura_lead_aberto: "reabertura_lead_aberto",
+  // ─── CAMPOS OBRIGATÓRIOS E MOTIVO DE GANHO (issue #1536) ───
+  //
+  // As duas recusas do núcleo novo, cada uma com a sua demanda: a primeira pede
+  // PREENCHER (o `details.faltando` nomeia chave e rótulo de cada campo — e
+  // quando o que falta é o motivo de ganho a chave é `won_reason`, um caso do
+  // mesmo contrato, não um código à parte), a segunda pede ESCOLHER da lista
+  // cadastrada (`settings.won_reasons`). Colapsá-las mandaria quem já informou
+  // escolher sem lista, e quem não informou digitar sem caminho.
+  required_fields_missing: "required_fields_missing",
+  won_reason_invalid: "won_reason_invalid",
 
   // ─── AVISO DE CASO NO WHATSAPP (migration 0292, onda 8) ───
   //

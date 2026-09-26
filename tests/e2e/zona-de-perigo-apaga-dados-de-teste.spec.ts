@@ -32,7 +32,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./helpers/test";
 
 const RAIZ = path.resolve(__dirname, "../..");
 const CREDS_PATH = path.join(RAIZ, ".e2e-creds.json");
@@ -185,7 +185,12 @@ test("o admin zera os dados da sua organização pela tela — e a vizinha não 
   await expect(page.getByText(z.org_a_contato)).toHaveCount(0);
 
   await page.goto(`/app/pipelines/${z.org_a_funil_id}`);
-  await expect(page.getByText(z.org_a_etapa).first()).toBeVisible({ timeout: 30_000 });
+  // Quem entra é admin: para ele o nome da etapa é o campo editável do
+  // cabeçalho (#1738), e `getByText` não lê o valor de um <input>.
+  await expect(page.getByRole("textbox", { name: `«${z.org_a_etapa}»` }).first()).toHaveValue(
+    z.org_a_etapa,
+    { timeout: 30_000 },
+  );
   await expect(page.getByText(z.org_a_lead)).toHaveCount(0);
 
   // ── A prova pela TELA: a vizinha continua inteira ───────────────────────

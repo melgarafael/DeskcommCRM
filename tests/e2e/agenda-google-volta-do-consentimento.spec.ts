@@ -27,7 +27,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/test";
 
 const CALLBACK = "/api/v1/agenda/google/callback";
 const RAIZ = process.cwd();

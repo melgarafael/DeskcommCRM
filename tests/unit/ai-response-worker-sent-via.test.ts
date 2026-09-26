@@ -32,8 +32,10 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Env do self-host padrão: só a chave da Anthropic (o que o install.sh exige).
-// Sem chave de embedding o RAG é pulado, então a confiança é 0 — é isso que
-// deixa o gatilho G3 controlável só pelo `confidence_threshold` do agente.
+// Sem chave de embedding não há citação, logo não há medida de similaridade e
+// o G3 não desviaria por limiar. Aqui isso é até irrelevante: o worker legado
+// NUNCA chega no G3 — ele skipa antes (issue #1660), e é esse skip que os
+// casos abaixo provam.
 const envMock: Record<string, string> = {
   ANTHROPIC_API_KEY: "sk-ant-teste",
   AI_GATEWAY_API_KEY: "",
@@ -102,7 +104,7 @@ interface LinhaInserida {
  * modelo, APLICA a constraint de `sent_via` em `messages` — devolvendo o mesmo
  * formato de erro do PostgREST (código 23514) que o worker recebe do banco.
  */
-function makeAdminStub(confidenceThreshold: number) {
+function makeAdminStub() {
   const inserted: LinhaInserida[] = [];
 
   const from = (table: string) => {
@@ -133,7 +135,7 @@ function makeAdminStub(confidenceThreshold: number) {
                 organization_id: ORG_ID,
                 model: "anthropic/claude-sonnet-4-6",
                 system_prompt: "Você é um atendente.",
-                config: { confidence_threshold: confidenceThreshold },
+                config: {},
                 guardrails: {},
                 active_kb_version_id: "99999999-9999-4999-8999-999999999999",
                 is_active: true,
@@ -238,8 +240,8 @@ const eventRow = {
 let fetchOriginal: typeof globalThis.fetch;
 
 /** Instala o stub e devolve o registro de inserts para asserção. */
-function prepararWorker(confidenceThreshold: number): LinhaInserida[] {
-  const { stub, inserted } = makeAdminStub(confidenceThreshold);
+function prepararWorker(): LinhaInserida[] {
+  const { stub, inserted } = makeAdminStub();
   vi.mocked(createAdminClient).mockReturnValue(
     stub as unknown as ReturnType<typeof createAdminClient>,
   );
@@ -278,11 +280,13 @@ describe("ai-response-worker — a linha outbound cabe na constraint de sent_via
     expect(SENT_VIA_PERMITIDOS).not.toContain("bot");
   });
 
-  it.each([0,1])("limiar G3 %s não cria rascunho/outbound do motor retirado",async threshold=>{
-    const inserted=prepararWorker(threshold);
-    const result=await processMessageReceived(eventRow);
-    expect(result).toMatchObject({status:"skipped",reason:"agent_inactive_or_missing"});
-    expect(inserted.filter(i=>i.table==='messages'&&i.row.direction==='outbound')).toEqual([]);
-    expect(inserted.filter(i=>i.table==='event_log'&&i.row.event_type==='message.send_requested')).toEqual([]);
+  it("o worker legado skipa antes do G3 e não cria rascunho/outbound", async () => {
+    const inserted = prepararWorker();
+    const result = await processMessageReceived(eventRow);
+    expect(result).toMatchObject({ status: "skipped", reason: "agent_inactive_or_missing" });
+    expect(inserted.filter((i) => i.table === "messages" && i.row.direction === "outbound")).toEqual([]);
+    expect(
+      inserted.filter((i) => i.table === "event_log" && i.row.event_type === "message.send_requested"),
+    ).toEqual([]);
   });
 });

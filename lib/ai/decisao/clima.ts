@@ -42,6 +42,7 @@ import { scrubMessage } from "@/lib/sentry/scrub";
 import type { MotivoComRede } from "./cliente";
 import { podeTentar, registrarFalha, registrarSucesso } from "./disjuntor";
 import { decidirNoPonto, type DependenciasDoPonto } from "./ponto";
+import { TAREFA_DO_CLIMA } from "./tarefas";
 
 /**
  * A escala, ORDENADA do pior ao melhor — a ordem É o contrato do `score`, porque o
@@ -104,7 +105,8 @@ export async function medirClima(
   deps: DependenciasDoPonto = {},
 ): Promise<ClimaMedido> {
   const inicio = Date.now();
-  if (!podeTentar(entrada.organizationId, inicio)) {
+  const alvo = { organizationId: entrada.organizationId, tarefa: TAREFA_DO_CLIMA.id };
+  if (!podeTentar(alvo, inicio)) {
     return { ok: false, motivo: "disjuntor_aberto", exigeAcao: false, defeitoNosso: false, tentouRede: false, latenciaMs: 0 };
   }
 
@@ -125,7 +127,7 @@ export async function medirClima(
   const latenciaMs = r.latenciaMs ?? Date.now() - inicio;
 
   if (!r.ok) {
-    registrarFalha(entrada.organizationId, r.motivo, Date.now(), r.retryAfterMs);
+    registrarFalha(alvo, r.motivo, Date.now(), r.retryAfterMs);
     if (r.motivo === "sem_credencial" || r.motivo === "disjuntor_aberto") {
       return { ok: false, motivo: r.motivo, exigeAcao: false, defeitoNosso: false, tentouRede: false, latenciaMs };
     }
@@ -150,11 +152,11 @@ export async function medirClima(
   ) {
     // Fora da escala = contrato mudou. Normalizar assim mesmo produziria um número
     // plausível e errado, e o limiar de handoff passaria a disparar por régua trocada.
-    registrarFalha(entrada.organizationId, "resposta_ilegivel", Date.now());
+    registrarFalha(alvo, "resposta_ilegivel", Date.now());
     return { ok: false, motivo: "resposta_ilegivel", exigeAcao: false, defeitoNosso: false, tentouRede: true, latenciaMs };
   }
 
-  registrarSucesso(entrada.organizationId);
+  registrarSucesso(alvo);
   return {
     ok: true,
     score01: resposta.score / teto,

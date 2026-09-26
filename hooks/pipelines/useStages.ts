@@ -37,6 +37,11 @@ export interface PatchDeEtapa {
   is_won?: boolean;
   is_lost?: boolean;
   depois_de?: string | null;
+  /**
+   * Probabilidade de ganho da etapa, 0–100. `null` limpa a calibração — e a
+   * previsão volta a reportar a etapa no balde "sem probabilidade".
+   */
+  win_probability?: number | null;
 }
 
 function useReler(pipelineId: string) {

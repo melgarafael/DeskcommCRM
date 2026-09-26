@@ -191,7 +191,8 @@ export PATH="$WORK/bin:$PATH"
 # ── Instalação de mentira: repo git + kit + .env ─────────────────────────────
 PROJ="$WORK/deskcommcrm"
 mkdir -p "$PROJ/hostgator-setup-kit" "$PROJ/supabase"
-cp "$REPO_ROOT/hostgator-setup-kit/_common.sh" "$REPO_ROOT/hostgator-setup-kit/update.sh" \
+cp "$REPO_ROOT/hostgator-setup-kit/_common.sh" "$REPO_ROOT/hostgator-setup-kit/_i18n.sh" \
+   "$REPO_ROOT/hostgator-setup-kit/update.sh" \
    "$REPO_ROOT/hostgator-setup-kit/agent.sh" "$REPO_ROOT/hostgator-setup-kit/manutencao.sh" \
    "$PROJ/hostgator-setup-kit/"
 # O aviso de manutencao entra no fixture porque o `update.sh` o carrega com
@@ -676,7 +677,7 @@ s = s.replace(nova, velha)
 # deste caso nem alcançaria a prova da permissão 600.
 grava = '''  local cabecalho="${PROJECT_DIR:-$PWD}/.env.cron-drain"
   gravar_cabecalho_do_cron "$cabecalho" "$secret" \\
-    || { c_ylw "⚠ não consegui gravar ${cabecalho} — não ativei o cron das automações."; return 0; }
+    || { c_ylw "$(t "⚠ não consegui gravar {1} — não ativei o cron das automações." "$cabecalho")"; return 0; }
 '''
 assert s.count(grava) == 1, "o bloco que grava o cabeçalho mudou de forma: %d" % s.count(grava)
 s = s.replace(grava, "")

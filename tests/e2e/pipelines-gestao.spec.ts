@@ -20,7 +20,7 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./helpers/test";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 const EVIDENCIA = path.join(process.cwd(), ".superpowers", "evidence");
@@ -105,8 +105,12 @@ test.describe("gestão de funis", () => {
     // ---- o funil nasce com as quatro colunas (senão o quadro é morto) ----
     await linhaDoFunil(page, NOME).getByRole("link").click();
     await page.waitForURL(/\/app\/pipelines\//);
+    // Quem cria funil é manager+: para ele o nome da etapa é o campo editável
+    // do cabeçalho (#1738), e `getByText` não lê o valor de um <input>.
     for (const coluna of ["Novo", "Em andamento", "Ganho", "Perdido"]) {
-      await expect(page.getByText(coluna, { exact: true }).first()).toBeVisible();
+      const nome = page.getByRole("textbox", { name: `«${coluna}»` }).first();
+      await expect(nome).toHaveValue(coluna);
+      await expect(nome).toBeVisible();
     }
     await page.screenshot({ path: path.join(EVIDENCIA, "funis-02-quadro-novo.png"), fullPage: true });
 

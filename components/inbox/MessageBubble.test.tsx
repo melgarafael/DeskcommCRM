@@ -246,6 +246,43 @@ describe("MessageBubble — rótulo de origem", () => {
     expect(screen.getByText("Sistema")).toBeInTheDocument();
     expect(screen.queryByText("IA")).not.toBeInTheDocument();
   });
+
+  it("em nome de (#1613) nomeia a PESSOA e a integração, em vez de 'Sistema'", () => {
+    // O token é da organização, mas quem decidiu o envio foi uma pessoa no
+    // outro sistema (#1613). Os nomes vêm GRAVADOS em
+    // `metadata.sent_on_behalf` porque o balão não faz join: sem a coluna e
+    // sem os nomes na linha, este caso não teria o que mostrar.
+    render(
+      <MessageBubble
+        message={msg({
+          sent_via: "system",
+          sent_on_behalf_of_user_id: "pessoa-1",
+          metadata: {
+            sent_on_behalf: {
+              user_id: "pessoa-1",
+              user_name: "Fulano da Silva",
+              token_name: "ERP Externo",
+            },
+          },
+        })}
+      />,
+    );
+    expect(screen.getByText("Fulano da Silva · via ERP Externo")).toBeInTheDocument();
+    expect(screen.queryByText("Sistema")).not.toBeInTheDocument();
+  });
+
+  it("em nome de sem nome de token não promete a integração que não se sabe", () => {
+    render(
+      <MessageBubble
+        message={msg({
+          sent_via: "system",
+          sent_on_behalf_of_user_id: "pessoa-1",
+          metadata: { sent_on_behalf: { user_id: "pessoa-1", user_name: "Fulano", token_name: null } },
+        })}
+      />,
+    );
+    expect(screen.getByText("Fulano")).toBeInTheDocument();
+  });
 });
 
 describe("MessageBubble — contenção de layout e quebra de palavras (#1451)", () => {

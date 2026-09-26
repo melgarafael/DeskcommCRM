@@ -181,13 +181,17 @@ export const zernioTemplateOps: ChannelTemplateOps = {
    * sem avisar, e negar uma edição que a plataforma teria aceito. O erro sobe
    * com o texto dela, que é o que diz ao operador o que fazer.
    */
-  async update({ organizationId, sessionRef, name, patch }): Promise<ChannelTemplate> {
+  async update({ organizationId, sessionRef, name, language, patch }): Promise<ChannelTemplate> {
     const j = await call<{ template?: RawTemplate; data?: RawTemplate }>(
       { organizationId, sessionRef },
       `/v1/whatsapp/templates/${encodeURIComponent(name)}`,
       {
         method: "PATCH",
         body: {
+          // Sempre, não só quando há variantes: o provedor exige com variantes e
+          // aceita sem — mandar sempre é o único caminho que nunca edita a
+          // variante errada (changelog 28/08).
+          language,
           ...(patch.components ? { components: paraEscrita(patch.components) } : {}),
           ...(patch.category ? { category: patch.category } : {}),
         },
@@ -200,7 +204,9 @@ export const zernioTemplateOps: ChannelTemplateOps = {
     await call<unknown>(
       { organizationId, sessionRef },
       `/v1/whatsapp/templates/${encodeURIComponent(name)}`,
-      { method: "DELETE", ...(language ? { query: { language } } : {}) },
+      // `language` SEMPRE vai: desde 28/08, DELETE por nome sem idioma apaga
+      // TODAS as variantes — e a assinatura agora obriga o chamador a escolher.
+      { method: "DELETE", query: { language } },
     );
   },
 };

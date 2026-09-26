@@ -114,6 +114,20 @@ export function fusoUtilizavel(...candidatos: (string | null | undefined)[]): st
 }
 
 /**
+ * O fuso INICIAL de um formulário que só oferece `FUSOS_OFERECIDOS` (um
+ * <select>): o da organização, se estiver entre as opções; senão `FUSO_PADRAO`.
+ *
+ * `fusoUtilizavel` responde "o runtime aceita?", e isso não basta aqui: um fuso
+ * válido que não está na lista (`America/Chihuahua`) não teria <option> no
+ * <select>, e a tela mostraria outro fuso enquanto o estado guarda esse. Fora da
+ * lista, cai no padrão — o mesmo que o formulário sempre sugeriu.
+ */
+export function fusoOferecidoOuPadrao(tz: string | null | undefined): string {
+  const candidato = tz?.trim() ?? "";
+  return FUSOS_OFERECIDOS.some((f) => f.codigo === candidato) ? candidato : FUSO_PADRAO;
+}
+
+/**
  * O fuso dito como gente fala, para a tela: "Manaus" de `America/Manaus`,
  * "Buenos Aires" de `America/Argentina/Buenos_Aires`. Fuso sem barra volta como
  * veio (nunca string vazia).

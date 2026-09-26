@@ -14,6 +14,8 @@ const h = vi.hoisted(() => ({
   ligado: vi.fn(),
   create: vi.fn(),
   list: vi.fn(),
+  update: vi.fn(),
+  remove: vi.fn(),
   upserts: [] as Record<string, unknown>[],
   espelho: [] as Record<string, unknown>[],
 }));
@@ -25,7 +27,7 @@ vi.mock("@/lib/channels/graph-parceiro/credentials", () => ({ canalGraphParceiro
 vi.mock("@/lib/channels/graph-parceiro/session", () => ({ findGraphPartnerSession: h.find }));
 vi.mock("@/lib/channels", async (original) => ({
   ...(await original<typeof Canais>()),
-  getAdapter: () => ({ templates: { create: h.create, list: h.list } }),
+  getAdapter: () => ({ templates: { create: h.create, list: h.list, update: h.update, remove: h.remove } }),
 }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
@@ -98,6 +100,19 @@ describe("rota de modelos do canal parceiro Graph", () => {
     }
     expect(h.create).not.toHaveBeenCalled();
     expect(h.list).not.toHaveBeenCalled();
+  });
+
+  it("⭐ editar e apagar não existem nesta rota: 422 e a plataforma não é tocada", async () => {
+    // O DELETE desta plataforma é por nome e leva TODAS as variantes de idioma,
+    // enquanto a tela apagaria uma só (#1728). Até existir o apagar por variante,
+    // a rota recusa — e o adapter tem update/remove para a recusa ser da ROTA.
+    const alvo = { name: "boas_vindas", language: "pt_BR" };
+    expect((await post({ acao: "apagar", ...alvo, confirmado: true })).status).toBe(422);
+    expect((await post({ acao: "editar", ...alvo, components: CORPO })).status).toBe(422);
+    expect(h.remove).not.toHaveBeenCalled();
+    expect(h.update).not.toHaveBeenCalled();
+    expect(h.list).not.toHaveBeenCalled();
+    expect(h.audit).not.toHaveBeenCalled();
   });
 
   it("criar usa a organização da SESSÃO (não do corpo), audita com o autor e sincroniza com hash real", async () => {

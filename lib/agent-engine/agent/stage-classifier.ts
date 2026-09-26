@@ -13,20 +13,18 @@
  * daemon/test/stage-classifier.test.ts (whitelist do fonte). O classificador SUGERE; quem
  * grava é a F2-10.
  *
- * Divergência classificador×modelo (o classifier sugeriu X, o modelo confirmou Y≠Y via
- * update_lead_state) vira candidato ao golden set — gravado por fs em RUNTIME (mkdir +
- * writeFile, NÃO a tool Write que o hook de freeze bloqueia), mesmo padrão da F3-09. O
- * trace carrega o sinal do turno (texto do lead — PII) para curadoria; log só leva os
- * NOMES dos estágios (regra dura 8).
+ * Divergência classificador×modelo (o classifier sugeriu X, o modelo confirmou Y≠X via
+ * update_lead_state) vira candidato ao golden set — LINHA em `golden_candidates`
+ * (migration 0428, issue #1695), mesmo destino da F3-09. A linha leva SÓ os dois estágios
+ * e os ponteiros (lead_id, job_id): o sinal do turno (texto do lead — PII) não vai nem a
+ * disco nem ao banco aqui, e log só leva os NOMES dos estágios (regra dura 8).
  *
  * tenant_id/lead_id vêm da ROW do job (closure do run), nunca do payload (regra dura 1).
  */
-import { mkdir, writeFile } from 'node:fs/promises';
-import path from 'node:path';
-
 import type pg from 'pg';
 
 import type { Logger } from '../obs/logger';
+import type { Queryable } from '../queue/queue';
 import type { ProviderRegistry } from '../edge/llm/providers';
 import { LlmBudgetExceededError, runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
 import type { LlmResolveOverride } from '../edge/llm/credentials';
@@ -182,42 +180,45 @@ export interface StageDivergence {
 }
 
 /**
- * Grava a divergência classificador×modelo como candidato ao golden set (SalesGPT/blueprint
- * 7.6) — fs em RUNTIME (mkdir recursivo + writeFile), NÃO a tool Write, então o freeze do
- * golden não se aplica a este caminho executado. O arquivo é para CURADORIA HUMANA: carrega
- * o sinal (texto do lead — PII), então NUNCA é logado (regra dura 8) — só os NOMES dos
- * estágios vão a log. Um arquivo por job: retry re-grava o mesmo candidato, não duplica.
+ * Grava a divergência classificador×modelo como candidato ao golden set
+ * (SalesGPT/blueprint 7.6) — LINHA em `golden_candidates` (migration 0428, issue
+ * #1695), não arquivo no disco do contêiner: o JSON era lido por nenhuma tela,
+ * morria a cada atualização da imagem e ficava fora da cascata de anonimização.
+ *
+ * A linha é para CURADORIA HUMANA e guarda os dois ESTÁGIOS mais os ponteiros —
+ * quem quiser ler o sinal do turno abre a conversa pela ficha, que já está no
+ * alcance da cascata. Nunca é logado o sinal (regra dura 8): só os nomes dos
+ * estágios. Um registro por job (`on conflict do nothing` no índice parcial):
+ * retry regravou, não duplica. Falha de banco não derruba o turno.
  */
 export async function recordStageDivergenceCandidate(
-  dir: string,
+  db: Queryable,
   trace: {
     tenantId: string;
     leadId: string;
     jobId: string;
-    signal: string;
     divergence: StageDivergence;
   },
   log: Logger,
 ): Promise<void> {
   const { suggested, confirmed } = trace.divergence;
-  await mkdir(dir, { recursive: true });
-  const record = {
-    recorded_at: new Date().toISOString(),
-    source: 'stage_classifier_divergence',
-    note:
-      `divergência classificador×modelo: o classificador sugeriu "${suggested}" e o modelo confirmou ` +
-      `"${confirmed}" via update_lead_state — candidato ao golden set para curadoria humana (SalesGPT).`,
-    tenant_id: trace.tenantId,
-    lead_id: trace.leadId,
-    job_id: trace.jobId,
-    suggested_stage: suggested,
-    confirmed_stage: confirmed,
-    // sinal do turno (texto do lead — PII): fica no ARQUIVO de curadoria, jamais em log.
-    signal: trace.signal,
-  };
-  const file = path.join(dir, `stage-divergence_${trace.jobId}.json`);
-  await writeFile(file, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
-  // PII fora do log: só os nomes dos estágios (não o sinal).
+  try {
+    await db.query(
+      `insert into public.golden_candidates
+         (organization_id, lead_id, job_id, fonte, estagio_sugerido, estagio_confirmado)
+       values ($1, $2, $3, 'stage_classifier_divergence', $4, $5)
+       on conflict do nothing`,
+      [trace.tenantId, trace.leadId, trace.jobId, suggested, confirmed],
+    );
+  } catch (erro) {
+    log.warn('candidato ao golden set não gravado (divergência de estágio)', {
+      suggested,
+      confirmed,
+      erro: erro instanceof Error ? erro.message : String(erro),
+    });
+    return;
+  }
+  // PII fora do log: só os nomes dos estágios (nunca o sinal).
   log.info('candidato ao golden set registrado (divergência de estágio classificador×modelo)', {
     suggested,
     confirmed,

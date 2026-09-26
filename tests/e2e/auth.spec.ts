@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./helpers/test";
 import AxeBuilder from "@axe-core/playwright";
 
 test.describe("auth flow", () => {

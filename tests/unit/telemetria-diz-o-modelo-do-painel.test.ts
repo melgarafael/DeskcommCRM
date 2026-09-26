@@ -96,7 +96,7 @@ function makeAdminStub() {
                 organization_id: ORG_ID,
                 model: MODELO_DO_AGENTE,
                 system_prompt: "Você é um atendente.",
-                config: { confidence_threshold: 0 },
+                config: {},
                 guardrails: {},
                 active_kb_version_id: "99999999-9999-4999-8999-999999999999",
                 is_active: true,

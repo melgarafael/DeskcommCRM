@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { createClientDeEntradaComGoogle } from "@/lib/supabase/server";
 import { urlDeRetornoDoGoogle } from "@/lib/auth/entrada-com-google";
+import { estadoDoProvedorGoogle } from "@/lib/auth/provedor-google";
 import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
 
@@ -34,12 +35,30 @@ export type SignInWithGoogleResult = {
  * exatamente a instrução "não redirecione o navegador" — o oposto do que
  * queremos numa página que acabou de receber um clique.
  *
+ * ─── Por que há uma leitura de settings ANTES do redirect (issue #1652) ─────
+ *
+ * O ramo `google_indisponivel` abaixo esperava um `error` do `signInWithOAuth`
+ * dizendo "provider is not enabled". Medido: esse `error` NUNCA vem. O auth-js
+ * monta a URL do `/authorize` localmente (`_getUrlForProvider`) e devolve
+ * `{ data: { url } }, error: null` — inclusive com o provedor desligado. Quem
+ * recusa é o `/authorize`, já no navegador, e a recusa é uma página de JSON
+ * cru (`{"code":400,…,"msg":"Unsupported provider: provider is not enabled"}`)
+ * para onde a pessoa é mandada fora do CRM e sem caminho de volta.
+ *
+ * Por isso a conferência é `estadoDoProvedorGoogle()` (lib/auth/provedor-google):
+ * `GET /auth/v1/settings`, público, com a anon key — a mesma resposta que o
+ * GoTrue usa para decidir se aceita o `/authorize`. `desligado` devolve
+ * `google_indisponivel` ANTES de montar a URL; `desconhecido` (rede, corpo
+ * inesperado, resposta ≠ 200) segue o comportamento de sempre, para a leitura
+ * nunca bloquear por engano quem tem o provedor ligado.
+ *
  * ─── Por que não há limite de tentativas aqui ───────────────────────────────
  *
- * Esta chamada NÃO fala com o GoTrue: o auth-js monta a URL do `/authorize`
- * localmente (`_getUrlForProvider`) e devolve. Não há orçamento a gastar nem
- * conta a proteger — quem gasta é a volta, no `/auth/callback`, e lá o
- * `code` é de uso único e assinado pelo GoTrue.
+ * O `signInWithOAuth` de baixo NÃO fala com o GoTrue: o auth-js monta a URL do
+ * `/authorize` localmente e devolve. Não há orçamento a gastar nem conta a
+ * proteger na ida — quem gasta é a volta, no `/auth/callback`, e lá o `code` é
+ * de uso único e assinado pelo GoTrue. A única fala com o GoTrue antes do
+ * redirect é a leitura de settings, que é um GET sem estado e sem teto.
  *
  * Em caso de erro, devolve discriminador para a tela mostrar (o Google pode não
  * estar habilitado na instalação). No sucesso, `redirect()` não retorna: o
@@ -50,6 +69,22 @@ export async function signInWithGoogle(
 ): Promise<SignInWithGoogleResult> {
   const hdrs = await headers();
   const requestId = hdrs.get("x-request-id");
+
+  // Antes de qualquer coisa: o GoTrue só diria "provider is not enabled" lá na
+  // frente, com o navegador já fora do CRM (issue #1652). Aqui a recusa ainda
+  // cabe dentro da tela, embaixo do botão.
+  //
+  // SEM linha de auditoria neste ramo. Esta action é pública e sem limite de
+  // tentativas: com o provedor desligado, cada chamada anônima gravaria 1 linha
+  // em `api_audit_log` — tabela append-only com piso de expurgo de 90 dias.
+  // Mesma doutrina de `app/auth/callback/route.ts` (os ramos antes do gate) e de
+  // `app/api/v1/agenda/google/callback/route.ts`: auditoria só depois de quem
+  // chama provar alguma coisa. Aqui ninguém provou nada; a tela diz o motivo.
+  const estado = await estadoDoProvedorGoogle();
+  if (estado === "desligado") {
+    return { ok: false, error: "google_indisponivel" };
+  }
+
   const supabase = await createClientDeEntradaComGoogle();
 
   const { data, error } = await supabase.auth.signInWithOAuth({

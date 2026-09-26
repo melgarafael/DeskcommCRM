@@ -11,6 +11,10 @@
  * precisa de três campos, e arrastar o payload cru para dentro do caminho de
  * envio só criaria chance de ele vazar para um log ou para o fio.
  */
+import {
+  lerIdentificadoresGoogle,
+  type IdentificadoresGoogle,
+} from "@/lib/plataformas-de-anuncio/google/identificadores";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ehPlataformaConhecida } from "@/lib/plataformas-de-anuncio/registry";
@@ -21,6 +25,7 @@ export interface AtribuicaoParaEnvio {
   /** `ad_source_id` — o `ctwa_clid`, o clique que abriu a conversa. */
   cliqueDeOrigem: string;
   telefone: string | null;
+  identificadoresGoogle?: IdentificadoresGoogle;
 }
 
 export type LeituraDeAtribuicao =
@@ -41,13 +46,14 @@ export async function lerAtribuicao(
 ): Promise<LeituraDeAtribuicao> {
   if (!contactId) return { temAtribuicao: false, motivo: "sem_contato" };
 
-  const { data } = await admin
+  const { data, error } = await admin
     .from("contacts")
     .select("phone_number, source_metadata")
     .eq("id", contactId)
     .eq("organization_id", organizationId)
     .maybeSingle();
 
+  if (error) throw new Error("Não foi possível ler a origem do contato.");
   if (!data) return { temAtribuicao: false, motivo: "sem_contato" };
 
   const linha = data as { phone_number: string | null; source_metadata: unknown };
@@ -69,10 +75,20 @@ export async function lerAtribuicao(
     return { temAtribuicao: false, motivo: "plataforma_desconhecida" };
   }
 
+  const bruto =
+    meta.ad_raw && typeof meta.ad_raw === "object" ? (meta.ad_raw as Record<string, unknown>) : {};
+  const ids =
+    meta.ad_platform === "google_ads"
+      ? lerIdentificadoresGoogle(bruto.click_identifiers ?? { gclid: clique })
+      : null;
+  if (meta.ad_platform === "google_ads" && !ids)
+    return { temAtribuicao: false, motivo: "sem_atribuicao" };
+
   return {
     temAtribuicao: true,
     atribuicao: {
       plataforma: meta.ad_platform,
+      ...(ids ? { identificadoresGoogle: ids } : {}),
       cliqueDeOrigem: clique,
       // Só dígitos: a plataforma exige E.164 sem `+` nem separadores ANTES do
       // hash. Normalizar depois do hash seria tarde — o hash já estaria errado.

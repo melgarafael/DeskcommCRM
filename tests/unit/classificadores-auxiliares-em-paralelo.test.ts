@@ -29,12 +29,23 @@ import { describe, expect, it } from "vitest";
 import ts from "typescript";
 
 const INBOUND = join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts");
-const CLASSIFICADORES = ["classifyStage", "classifyJailbreak"] as const;
+/**
+ * O Jev na camada anti-manipulação (`perguntarManipulacaoAoJev`) entra na lista:
+ * ele é "latência adicional zero" só enquanto for elemento do MESMO array — o
+ * turno espera o mais lento dos três, nunca a soma.
+ */
+const CLASSIFICADORES = ["classifyStage", "classifyJailbreak", "perguntarManipulacaoAoJev"] as const;
 
 /**
  * Para cada chamada a um classificador, devolve o `Promise.all` que a contém
  * como elemento de array (direto ou por um ternário), ou `null` se ela é
  * esperada sozinha.
+ *
+ * Também vale a chamada guardada numa `const` que é elemento do array — é assim
+ * que o turno segura a promessa do Jev para gravar o custo dele quando o teto de
+ * gasto derruba o classificador de sempre (R8). A promessa já corre desde a
+ * `const`, então só conta se NINGUÉM a espera antes do `Promise.all`: um
+ * `await` dela antes é a mesma espera em série, com outro nome.
  */
 function paralelismoDosClassificadores(texto: string) {
   const ast = ts.createSourceFile("inbound.ts", texto, ts.ScriptTarget.Latest, true);
@@ -65,13 +76,42 @@ function paralelismoDosClassificadores(texto: string) {
       }
       const array = atual.parent;
       const chamada = array && ts.isArrayLiteralExpression(array) ? array.parent : undefined;
+      const guardadaEm =
+        ts.isVariableDeclaration(atual.parent) &&
+        ts.isIdentifier(atual.parent.name) &&
+        ts.isVariableDeclarationList(atual.parent.parent) &&
+        (atual.parent.parent.flags & ts.NodeFlags.Const) !== 0
+          ? atual.parent
+          : null;
       achados.push({
         nome: node.expression.text,
-        promiseAll: chamada && ePromiseAll(chamada) ? chamada : null,
+        promiseAll:
+          chamada && ePromiseAll(chamada)
+            ? chamada
+            : guardadaEm
+              ? promiseAllDaConst((guardadaEm.name as ts.Identifier).text, guardadaEm.end)
+              : null,
       });
     }
     ts.forEachChild(node, visit);
   };
+  /** O `Promise.all` que recebe a `const` como elemento — `null` se ela é esperada antes dele. */
+  function promiseAllDaConst(nome: string, desde: number): ts.CallExpression | null {
+    let achado: ts.CallExpression | null = null;
+    let esperadaAntes = false;
+    const procurar = (n: ts.Node) => {
+      if (ts.isIdentifier(n) && n.text === nome && n.pos >= desde) {
+        const pai = n.parent;
+        if (ts.isArrayLiteralExpression(pai) && ePromiseAll(pai.parent)) achado ??= pai.parent;
+        // Em ordem de fonte: um `await` visto antes do array é espera em série.
+        else if (ts.isAwaitExpression(pai) && achado === null) esperadaAntes = true;
+      }
+      ts.forEachChild(n, procurar);
+    };
+    procurar(ast);
+    return esperadaAntes ? null : achado;
+  }
+
   visit(ast);
   return achados;
 }
@@ -84,7 +124,7 @@ describe("classificadores auxiliares do turno — em paralelo, nunca em série",
     expect(achados.map((a) => a.nome).sort()).toEqual([...CLASSIFICADORES].sort());
   });
 
-  it("os dois são elementos do MESMO Promise.all", () => {
+  it("todos são elementos do MESMO Promise.all", () => {
     const achados = paralelismoDosClassificadores(fonte);
     expect(achados.every((a) => a.promiseAll !== null)).toBe(true);
     expect(new Set(achados.map((a) => a.promiseAll)).size).toBe(1);
@@ -100,9 +140,19 @@ describe("classificadores auxiliares do turno — em paralelo, nunca em série",
     ]);
   });
 
+  it("controle negativo: a promessa guardada numa const e esperada ANTES do Promise.all é acusada", () => {
+    const ancora = "    const [stageResultado, jailbreakVerdict, manipulacaoDoJev] = await Promise.all([";
+    const sabotado = fonte.replace(ancora, `    await perguntaAoJev;\n${ancora}`);
+    expect(sabotado).not.toBe(fonte);
+    const achados = paralelismoDosClassificadores(sabotado);
+    expect(achados.filter((a) => a.promiseAll === null).map((a) => a.nome)).toEqual([
+      "perguntarManipulacaoAoJev",
+    ]);
+  });
+
   it("controle negativo: dois Promise.all separados (um por classificador) são acusados", () => {
     const sabotado = fonte.replace(
-      "const [stageResultado, jailbreakVerdict] = await Promise.all([",
+      "const [stageResultado, jailbreakVerdict, manipulacaoDoJev] = await Promise.all([",
       "const [stageResultado] = await Promise.all([",
     );
     expect(sabotado).not.toBe(fonte);

@@ -181,6 +181,16 @@ export interface OrgLlmConfig {
    * ABERTO na informação de falhar em silêncio.
    */
   orcamentoIndisponivelPorque: string | null;
+  /**
+   * O endereço da PRÓPRIA credencial, e só o provedor personalizado (#1642) tem
+   * um (`ai_provider_credentials.base_url`). `null` nos nativos: o endpoint deles
+   * é intrínseco.
+   *
+   * Lido numa query SEPARADA e só quando o provider é `custom`: o resolvedor
+   * nunca pode cair por schema atrasado num clone que ainda não aplicou a 0413,
+   * e nenhum provedor nativo paga o preço de uma coluna nova.
+   */
+  baseUrl: string | null;
 }
 
 // Leitura DEFENSIVA de organizations.settings->'llm' (jsonb livre): campo com
@@ -327,11 +337,12 @@ export async function resolveOrgLlmConfig(
   // senão a mais recente ativa/validada do provider. Sempre escopada pela org.
   const { rows: credRows } = override?.credentialId
     ? await db.query<{
+        id: string;
         api_key_encrypted: unknown;
         api_key_iv: unknown;
         api_key_tag: unknown;
       }>(
-        `select api_key_encrypted, api_key_iv, api_key_tag
+        `select id, api_key_encrypted, api_key_iv, api_key_tag
          from ai_provider_credentials
          where organization_id = $1 and id = $2
            and is_active and validated_at is not null
@@ -339,11 +350,12 @@ export async function resolveOrgLlmConfig(
         [organizationId, override.credentialId],
       )
     : await db.query<{
+        id: string;
         api_key_encrypted: unknown;
         api_key_iv: unknown;
         api_key_tag: unknown;
       }>(
-        `select api_key_encrypted, api_key_iv, api_key_tag
+        `select id, api_key_encrypted, api_key_iv, api_key_tag
          from ai_provider_credentials
          where organization_id = $1 and provider = $2
            and is_active and validated_at is not null
@@ -377,9 +389,28 @@ export async function resolveOrgLlmConfig(
     throw new LlmNotConfiguredError();
   }
 
+  // O ENDEREÇO do provedor personalizado (#1642), na mesma linha da chave que
+  // acima. Query separada e condicionada ao provider: se o clone ainda não
+  // aplicou a 0413, só este caminho novo sente a falta (o erro vira `null` e o
+  // registry recusa a chamada com a frase certa) — os quatro nativos seguem sem
+  // tocar numa coluna que ainda não existe.
+  let baseUrl: string | null = null;
+  if (provider === "custom" && cred !== undefined) {
+    try {
+      const { rows: urlRows } = await db.query<{ base_url: string | null }>(
+        `select base_url from ai_provider_credentials where id = $1 and organization_id = $2 limit 1`,
+        [cred.id, organizationId],
+      );
+      baseUrl = urlRows[0]?.base_url ?? null;
+    } catch {
+      baseUrl = null;
+    }
+  }
+
   return {
     provider,
     apiKey,
+    baseUrl,
     origemDaChave,
     defaultModel: settings.default_model ?? null,
     params: settings.params,

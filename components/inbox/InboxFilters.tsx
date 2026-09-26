@@ -1,7 +1,7 @@
 "use client";
 import { useT } from "@/hooks/i18n/useT";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { MagnifyingGlass } from "@/lib/ui/icons";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CaretLeft, CaretRight, MagnifyingGlass } from "@/lib/ui/icons";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -67,6 +67,40 @@ interface Props {
 export function InboxFilters({ value, onChange }: Props) {
   const t = useT();
   const [searchInput, setSearchInput] = useState(value.search);
+  const tabsListRef = useRef<HTMLDivElement>(null);
+  const [moreTabs, setMoreTabs] = useState({ left: false, right: false });
+  const updateMoreTabs = useCallback(() => {
+    const list = tabsListRef.current;
+    if (!list) return;
+    const maxScroll = Math.max(0, list.scrollWidth - list.clientWidth);
+    const next = { left: list.scrollLeft > 1, right: list.scrollLeft < maxScroll - 1 };
+    setMoreTabs((previous) =>
+      previous.left === next.left && previous.right === next.right ? previous : next,
+    );
+  }, []);
+  useEffect(() => {
+    const list = tabsListRef.current;
+    if (!list) return;
+    const centerSelectedTab = () => {
+      // Deixar a aba só na borda esconde as vizinhas. Centralizar mostra o
+      // contexto dos dois lados, salvo nas extremidades naturais da faixa.
+      const selected = list.querySelector<HTMLElement>('[role="tab"][data-state="active"]');
+      if (selected) {
+        const selectedCenter =
+          selected.getBoundingClientRect().left - list.getBoundingClientRect().left +
+          list.scrollLeft + selected.offsetWidth / 2;
+        const maxScroll = Math.max(0, list.scrollWidth - list.clientWidth);
+        list.scrollLeft = Math.max(0, Math.min(maxScroll, selectedCenter - list.clientWidth / 2));
+      }
+      updateMoreTabs();
+    };
+    centerSelectedTab();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(centerSelectedTab);
+    observer.observe(list);
+    list.querySelectorAll<HTMLElement>('[role="tab"]').forEach((tab) => observer.observe(tab));
+    return () => observer.disconnect();
+  }, [value.tab, updateMoreTabs]);
   /**
    * O campo escuta o valor de FORA — e só ele.
    *
@@ -128,6 +162,10 @@ export function InboxFilters({ value, onChange }: Props) {
   const tabs = activeOrg
     ? visibleInboxTabs(activeOrg.role, activeOrg.visibility_mode)
     : INBOX_TABS.map((t) => t.value);
+  const moveTab = (direction: -1 | 1) => {
+    const next = tabs[tabs.indexOf(value.tab) + direction];
+    if (next) onChange({ ...value, tab: next });
+  };
   const countFor: Partial<Record<InboxTab, number>> = {
     // `fila` é o nome novo; `unassigned` é o alias que a rota versionada mantém.
     // O `??` cobre a janela em que a página ainda lê um cache de react-query
@@ -364,31 +402,61 @@ export function InboxFilters({ value, onChange }: Props) {
         )}
       </div>
 
-      {/* Faixa sublinhada, não caixa cinza: cinco abas num grid de 280px
-          espremiam "Fechadas" contra "Automático" até os rótulos se tocarem. */}
+      {/* As setas aparecem só quando há abas fora da área visível; a faixa e o
+          sublinhado continuam com a altura compacta do Inbox. */}
       <Tabs
         value={value.tab}
         onValueChange={(v) => onChange({ ...value, tab: v as InboxTab })}
         className="px-3"
       >
-        <TabsList className="h-auto w-full justify-between gap-2 rounded-none bg-transparent p-0 [scrollbar-width:none]">
-          {tabs.map((tab) => {
-            const meta = INBOX_TABS.find((t) => t.value === tab)!;
-            const count = countFor[tab];
-            return (
-              <TabsTrigger
-                key={tab}
-                value={tab}
-                className="-mb-px shrink-0 gap-1 rounded-none border-b-2 border-transparent px-0 pb-2 pt-1 text-xs font-medium text-text-muted data-[state=active]:border-accent data-[state=active]:bg-transparent data-[state=active]:text-text data-[state=active]:shadow-none"
-              >
-                {t(meta.label)}
-                {typeof count === "number" && count > 0 && (
-                  <span className="text-[11px] tabular-nums text-text-subtle">{count}</span>
-                )}
-              </TabsTrigger>
-            );
-          })}
-        </TabsList>
+        <div className="flex items-center gap-1">
+          {moreTabs.left ? (
+            <button
+              type="button"
+              onClick={() => moveTab(-1)}
+              aria-label={t("Aba anterior")}
+              className="flex w-4 shrink-0 items-center justify-center text-text-muted hover:text-text focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <CaretLeft size={13} aria-hidden />
+            </button>
+          ) : (
+            <span className="w-4 shrink-0" aria-hidden />
+          )}
+          <TabsList
+            ref={tabsListRef}
+            onScroll={updateMoreTabs}
+            className="h-auto min-w-0 flex-1 justify-between gap-2 rounded-none bg-transparent p-0 [scrollbar-width:none]"
+          >
+            {tabs.map((tab) => {
+              const meta = INBOX_TABS.find((t) => t.value === tab)!;
+              const count = countFor[tab];
+              return (
+                <TabsTrigger
+                  key={tab}
+                  value={tab}
+                  className="shrink-0 gap-1 rounded-none border-b-2 border-transparent px-0 pb-2 pt-1 text-xs font-medium text-text-muted data-[state=active]:border-accent data-[state=active]:bg-transparent data-[state=active]:text-text data-[state=active]:shadow-none"
+                >
+                  {t(meta.label)}
+                  {typeof count === "number" && count > 0 && (
+                    <span className="text-[11px] tabular-nums text-text-subtle">{count}</span>
+                  )}
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+          {moreTabs.right ? (
+            <button
+              type="button"
+              onClick={() => moveTab(1)}
+              aria-label={t("Próxima aba")}
+              className="flex w-4 shrink-0 items-center justify-center text-text-muted hover:text-text focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <CaretRight size={13} aria-hidden />
+            </button>
+          ) : (
+            <span className="w-4 shrink-0" aria-hidden />
+          )}
+        </div>
       </Tabs>
     </div>
   );

@@ -14,7 +14,12 @@ import type { NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { PROVEDOR_DO_JEV } from "@/lib/ai/decisao/credencial";
-import { JEV_FALHOU_SEM_RESERVA, O_QUE_FAZER_DO_JEV } from "@/lib/ai/decisao/textos";
+import {
+  JEV_FALHOU_AO_LADO,
+  JEV_FALHOU_E_A_IA_COBRIU,
+  JEV_FALHOU_SEM_RESERVA,
+  O_QUE_FAZER_DO_JEV,
+} from "@/lib/ai/decisao/textos";
 import { rotuloDoProvedor } from "@/lib/ai/pontos/provedores";
 import { PONTO_POR_ID } from "@/lib/ai/pontos/registro";
 import { EXPLICACAO_DA_ORIGEM, type OrigemDaEscolha } from "@/lib/ai/pontos/resolver";
@@ -134,24 +139,35 @@ export async function GET(req: NextRequest): Promise<Response> {
       // "typesafe" na coluna, "Jev (TypeSafe AI)" na tela.
       provedorRotulo: rotuloDoProvedor(l.provider) ?? l.provider,
       // A consequência daquele ponto falhar, que é o que liga uma linha de log
-      // a algo que a pessoa já viu acontecer no negócio dela. Só em `erro`: a
-      // linha da reserva que cobriu o Jev sai `ok` (nada se perdeu), e a do Jev
-      // só sai `erro` quando ninguém mediu — aí a consequência é real.
-      // `jev_cobriu` é a exceção do `erro`: a IA de sempre caiu em observação,
-      // mas a nota do Jev já estava na mão e decidiu — nada se perdeu.
+      // a algo que a pessoa já viu acontecer no negócio dela. Só em `erro`, e
+      // só quando alguém ficou sem decisão. Não ficou em dois casos:
+      //  - `jev_cobriu`: a IA de sempre caiu em observação, mas a nota do Jev
+      //    já estava na mão e decidiu;
+      //  - `jev_observacao`: o Jev falhou numa tarefa do turno (a manipulação,
+      //    o roteador) — o turno seguiu como sem ele;
+      //  - `reserva_do_jev` numa linha de erro: o roteador decidindo, e a IA de
+      //    sempre escolheu o agente no lugar do Jev.
+      // A falha do Jev com origem `jev` é a do clima sem reserva: aí é real.
       consequencia:
-        l.status === "erro" && l.origem_da_escolha !== "jev_cobriu"
+        l.status === "erro" &&
+        l.origem_da_escolha !== "jev_cobriu" &&
+        l.origem_da_escolha !== "jev_observacao" &&
+        l.origem_da_escolha !== "reserva_do_jev"
           ? (ponto?.sintomaDeFalha ?? null)
           : null,
       oQueFazer: l.status === "erro" ? (O_QUE_FAZER[l.error_code ?? ""] ?? null) : null,
-      // A linha de falha do Jev só existe quando ninguém mediu: "O Jev decidiu"
-      // seria falso justamente nela.
+      // Nas linhas de falha do Jev, a frase da origem ("O Jev decidiu.", "O Jev
+      // observou…") seria falsa — ele não respondeu.
       porQueEsteModelo:
-        l.origem_da_escolha === "jev" && l.status === "erro"
+        l.status === "erro" && l.origem_da_escolha === "jev"
           ? JEV_FALHOU_SEM_RESERVA
-          : l.origem_da_escolha
-            ? (EXPLICACAO_DA_ORIGEM[l.origem_da_escolha as OrigemDaEscolha] ?? null)
-            : null,
+          : l.status === "erro" && l.origem_da_escolha === "jev_observacao"
+            ? JEV_FALHOU_AO_LADO
+            : l.status === "erro" && l.origem_da_escolha === "reserva_do_jev"
+              ? JEV_FALHOU_E_A_IA_COBRIU
+            : l.origem_da_escolha
+              ? (EXPLICACAO_DA_ORIGEM[l.origem_da_escolha as OrigemDaEscolha] ?? null)
+              : null,
     };
   });
 

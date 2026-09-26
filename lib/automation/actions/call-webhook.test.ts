@@ -82,6 +82,51 @@ describe("executeCallWebhook", () => {
     await close();
   });
 
+  // Critério de aceite nº 4 (issue #1536): `won_reason` gravado APARECE no
+  // envelope de webhook — junto do resto do lead projetado, e sem abrir a
+  // linha inteira (o projeto existe justamente para não vazar organization_id,
+  // consent e source_metadata).
+  it("o envelope do webhook traz won_reason junto dos campos públicos do lead", async () => {
+    let body = "";
+    server = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (c) => chunks.push(c));
+      req.on("end", () => {
+        body = Buffer.concat(chunks).toString("utf8");
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      });
+    });
+    const { port, close } = await listen(server);
+
+    const ctx = baseCtx();
+    ctx.context = {
+      lead: {
+        id: "lead-1",
+        title: "Fulano",
+        status: "won",
+        won_reason: "Renovação anual",
+        organization_id: "org-1",
+        consent: "NAO_PODE_SAIR",
+      },
+    };
+
+    const result = await executeCallWebhook(
+      ctx,
+      { url: `http://127.0.0.1:${port}/hook` },
+      { skipUrlCheck: true },
+    );
+
+    expect(result.status).toBe("success");
+    const parsed = JSON.parse(body) as { data: { lead?: Record<string, unknown> } };
+    expect(parsed.data.lead?.won_reason).toBe("Renovação anual");
+    // O que o projeto existe para proteger continua fora.
+    expect(body).not.toContain("org-1");
+    expect(body).not.toContain("NAO_PODE_SAIR");
+
+    await close();
+  });
+
   it("com secret: header de assinatura HMAC-sha256 do body", async () => {
     let received: { headers: Record<string, string | string[] | undefined>; body: string } | undefined;
     server = createServer((req, res) => {
@@ -298,4 +343,110 @@ describe("executeCallWebhook", () => {
     await close();
     await closeTarget();
   }, 15_000);
+
+  // ─── #1612: o responsável é OPT-IN ────────────────────────────────────────
+  const OWNER = "99999999-0000-4000-8000-000000000099";
+  const COMPROMISSO = {
+    appointment_id: "fff00000-0000-4000-8000-00000000000f",
+    inicio: "2026-09-02T13:00:00.000Z",
+    fim: "2026-09-02T13:30:00.000Z",
+    situacao: "confirmed",
+  };
+
+  function ctxDeCompromisso(): ActionCtx {
+    return {
+      ...baseCtx({
+        event_type: "appointment.created",
+        entity_kind: "calendar_appointment",
+        entity_id: COMPROMISSO.appointment_id,
+        payload: { ...COMPROMISSO },
+      }),
+      context: { appointment: { id: COMPROMISSO.appointment_id, owner_user_id: OWNER } },
+    };
+  }
+
+  async function corpoRecebido(
+    ctx: ActionCtx,
+    config: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    let body = "";
+    server = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (c) => chunks.push(c));
+      req.on("end", () => {
+        body = Buffer.concat(chunks).toString("utf8");
+        res.writeHead(200);
+        res.end("ok");
+      });
+    });
+    const { port, close } = await listen(server);
+    const result = await executeCallWebhook(ctx, { url: `http://127.0.0.1:${port}/hook`, ...config }, {
+      skipUrlCheck: true,
+    });
+    await close();
+    expect(result.status).toBe("success");
+    return JSON.parse(body).data as Record<string, unknown>;
+  }
+
+  it("sem include_owner, o responsável não aparece no corpo (#1612)", async () => {
+    const data = await corpoRecebido(ctxDeCompromisso(), {});
+
+    // O compromisso e o horário SAEM (é o ponto da issue); quem atende, não.
+    expect(data.inicio).toBe(COMPROMISSO.inicio);
+    expect(data.situacao).toBe("confirmed");
+    expect(data).not.toHaveProperty("owner");
+    expect(data).not.toHaveProperty("owner_user_id");
+  });
+
+  it("com include_owner: true, o responsável aparece — o opt-in abre a chave", async () => {
+    const data = await corpoRecebido(ctxDeCompromisso(), { include_owner: true });
+
+    expect(data.inicio).toBe(COMPROMISSO.inicio);
+    expect(data.owner).toEqual({ id: OWNER });
+  });
+
+  it("o endereço e o link saem da linha ATUAL do compromisso, não do evento", async () => {
+    const ctx = ctxDeCompromisso();
+    ctx.context = {
+      appointment: {
+        id: COMPROMISSO.appointment_id,
+        location_kind: "google_meet",
+        location_details: "Sala 2",
+        meeting_state: "ready",
+        meeting_url: "https://meet.google.com/abc-defg-hij",
+      },
+    };
+
+    const data = await corpoRecebido(ctx, {});
+
+    expect(data.local).toEqual({ tipo: "google_meet", descricao: "Sala 2" });
+    expect(data.meeting_url).toBe("https://meet.google.com/abc-defg-hij");
+  });
+
+  it("compromisso já anonimizado ou com Meet cancelado: nada do que o banco anulou vai para fora", async () => {
+    const ctx = ctxDeCompromisso();
+    ctx.context = {
+      appointment: {
+        id: COMPROMISSO.appointment_id,
+        location_kind: "google_meet",
+        location_details: null,
+        meeting_state: "cancelled",
+        meeting_url: "https://meet.google.com/abc-defg-hij",
+      },
+    };
+
+    const data = await corpoRecebido(ctx, {});
+
+    expect(data.local).toEqual({ tipo: "google_meet", descricao: null });
+    expect(data).not.toHaveProperty("meeting_url");
+  });
+
+  it("include_owner num compromisso SEM dono: a chave não nasce com null vazio", async () => {
+    const ctx = ctxDeCompromisso();
+    ctx.context = { appointment: { id: COMPROMISSO.appointment_id, owner_user_id: null } };
+
+    const data = await corpoRecebido(ctx, { include_owner: true });
+
+    expect(data).not.toHaveProperty("owner");
+  });
 });

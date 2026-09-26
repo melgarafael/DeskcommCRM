@@ -17,7 +17,11 @@ import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { deriveMediaText, type DeriveDeps } from "@/lib/messaging/media/derive";
 import { TIPOS_DERIVAVEIS } from "@/lib/messaging/media/derivable";
 import { deriveVideoText } from "@/lib/messaging/media/video-derive";
-import { apiTranscriptionProvider } from "@/lib/messaging/media/transcription";
+import {
+  apiTranscriptionProvider,
+  idiomasDaTranscricao,
+  modeloDeTranscricaoEmVigor,
+} from "@/lib/messaging/media/transcription";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { motivoDaRecusaDeDestino } from "@/lib/automation/destinos-internos-autorizados";
@@ -477,8 +481,22 @@ function buildDeriveDeps(
   // `model`, e o worker nunca os passava: quem tinha Groq/Whisper próprio
   // continuava batendo em api.openai.com com `whisper-1`. Sem
   // `TRANSCRIPTION_API_KEY` o comportamento é exatamente o de antes.
+  //
+  // `TRANSCRIPTION_MODEL` e `TRANSCRIPTION_LANGUAGES` valem TAMBÉM aqui, com a
+  // chave da OpenAI da organização: trocar `whisper-1` por um modelo melhor da
+  // própria OpenAI não pode exigir copiar a chave para o `.env`. O MODELO só
+  // vale aqui com `TRANSCRIPTION_BASE_URL` vazio (ver `modeloDeTranscricaoEmVigor`).
+  const idiomas = idiomasDaTranscricao(env.TRANSCRIPTION_LANGUAGES);
   const transcricaoPadrao: DeriveDeps["transcriber"] = openaiKey
-    ? apiTranscriptionProvider({ apiKey: openaiKey })
+    ? apiTranscriptionProvider({
+        apiKey: openaiKey,
+        model: modeloDeTranscricaoEmVigor({
+          model: env.TRANSCRIPTION_MODEL,
+          apiKey: env.TRANSCRIPTION_API_KEY,
+          baseUrl: env.TRANSCRIPTION_BASE_URL,
+        }),
+        languages: idiomas,
+      })
     : semTranscricao;
   // O endereço do serviço de transcrição vem do .env da instalação e a chamada
   // leva a chave no cabeçalho: mesma recusa do endereço da visão, e antes de a
@@ -517,6 +535,7 @@ function buildDeriveDeps(
           apiKey: chaveDeTranscricao,
           baseUrl: env.TRANSCRIPTION_BASE_URL || undefined,
           model: env.TRANSCRIPTION_MODEL || undefined,
+          languages: idiomas,
         }),
       )
     : transcricaoPadrao;

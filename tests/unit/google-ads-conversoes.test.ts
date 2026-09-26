@@ -142,7 +142,10 @@ describe("estado (state assinado)", () => {
     const agora = new Date("2026-01-01T00:00:00Z");
     let state = "";
     for (let i = 0; i < 10_000 && !state.endsWith("00"); i++) {
-      state = emitirEstado({ organizationId: ORG, userId: USER }, { segredo: SEGREDO, agora, nonce: `n${i}` });
+      state = emitirEstado(
+        { organizationId: ORG, userId: USER },
+        { segredo: SEGREDO, agora, nonce: `n${i}` },
+      );
     }
     expect(state.endsWith("00"), "nenhum nonce produziu assinatura terminada em 00").toBe(true);
     const adulterado = adulterar(state);
@@ -151,11 +154,10 @@ describe("estado (state assinado)", () => {
 
   it("recusa quando assinado com OUTRO segredo", () => {
     const agora = new Date("2026-01-01T00:00:00Z");
-    const state = emitirEstado(
-      { organizationId: ORG, userId: USER },
-      { segredo: SEGREDO, agora },
-    );
-    expect(verificarEstado(state, { segredo: "outro-segredo-bem-diferente-0000", agora })).toBeNull();
+    const state = emitirEstado({ organizationId: ORG, userId: USER }, { segredo: SEGREDO, agora });
+    expect(
+      verificarEstado(state, { segredo: "outro-segredo-bem-diferente-0000", agora }),
+    ).toBeNull();
   });
 
   it("lança com segredo curto demais", () => {
@@ -188,7 +190,10 @@ describe("classificaErro", () => {
   });
 
   it("token/argumento inválido é permanente — precisa de alguém mexer na configuração", () => {
-    const r = INTERNOS.classificaErro(401, { status: "UNAUTHENTICATED", message: "token inválido" });
+    const r = INTERNOS.classificaErro(401, {
+      status: "UNAUTHENTICATED",
+      message: "token inválido",
+    });
     expect(r.tipo).toBe("permanente");
   });
 });
@@ -255,6 +260,7 @@ describe("lerCredencial — ramo google_ads", () => {
     if (r.ok) {
       expect(r.credencial.accessToken).toBe("");
       expect(r.credencial.google).toEqual({
+        api: "google_ads",
         refreshToken: "refresh-token-decifrado",
         customerId: "1234567890",
         loginCustomerId: "5555555555",

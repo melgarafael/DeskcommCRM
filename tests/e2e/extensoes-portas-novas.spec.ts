@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { expect as expectBase, test, type Page } from "@playwright/test";
+import { expect as expectBase, test, type Page } from "./helpers/test";
 
 import { criarAtoresDasExtensoes, type AtoresDasExtensoes } from "./fixtures/catalogo-extensoes";
 

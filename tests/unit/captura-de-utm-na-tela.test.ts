@@ -69,6 +69,14 @@ beforeEach(() => {
 });
 
 describe("updateCapturaDeUtm", () => {
+  it("configura a captura Google com a organização da sessão", async () => {
+    expect(await updateCapturaDeUtm({ ...ENTRADA, plataforma: "google_ads" })).toEqual({
+      ok: true,
+    });
+    expect(upserts[0]?.tabela).toBe("google_ads_landing_pages");
+    expect(upserts[0]?.valores.organization_id).toBe(ORG);
+  });
+
   it("grava a configuração e registra quem mudou o número", async () => {
     const resultado = await updateCapturaDeUtm(ENTRADA);
 

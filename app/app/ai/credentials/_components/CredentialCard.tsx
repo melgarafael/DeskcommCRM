@@ -48,8 +48,8 @@ interface Props {
    * trava a exclusão como `usageCount`: excluir desliga o Jev, e o diálogo avisa.
    */
   usadaEm?: readonly string[];
-  /** A frase do diálogo de exclusão para a chave do Jev em uso (ver `page.tsx`). */
-  avisoAoExcluir?: string;
+  /** As frases do diálogo de exclusão para a chave do Jev em uso (`avisoAoExcluirAChaveDoJev`). */
+  avisoAoExcluir?: readonly string[];
 }
 
 const STATUS_LABEL: Record<CredentialStatus, string> = {
@@ -256,7 +256,7 @@ export function CredentialCard({ credential, canWrite, usageCount, usadaEm = [],
                   antiga ("agents vão falhar") descrevia um caso que não chega
                   aqui. O que sobra é o irreversível — e, na chave do Jev, que
                   não trava, o efeito de excluí-la (a rota o desliga). */}
-              {avisoAoExcluir && <>{t(avisoAoExcluir)} </>}
+              {avisoAoExcluir && <>{avisoAoExcluir.map((frase) => t(frase)).join(" ")} </>}
               {t("Esta ação não pode ser desfeita.")}
             </AlertDialogDescription>
           </AlertDialogHeader>

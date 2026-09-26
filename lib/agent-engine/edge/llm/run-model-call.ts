@@ -665,7 +665,10 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       // `decisao.baseUrl` só é preenchido quando o painel apontou um endpoint
       // (gateway OpenAI-compatível, ou modelo local). Providers canônicos
       // ignoram o terceiro argumento e vão ao endpoint intrínseco.
-      model: factory(config.apiKey, model, decisao.baseUrl ?? undefined),
+      // `config.baseUrl` é o da PRÓPRIA credencial e só o provedor personalizado
+      // (#1642) tem um: o endereço nasce junto da chave, então o agente
+      // publicado nele alcança o mesmo gateway que a tela testou ao salvar.
+      model: factory(config.apiKey, model, decisao.baseUrl ?? config.baseUrl ?? undefined),
       system: prefix.system,
       messages: input.messages,
       abortSignal: input.abortSignal,
@@ -843,7 +846,11 @@ export function normalizarErro(err: unknown): {
     codigo = 'credencial_recusada';
   } else if (status === 404 || /model.*not.*found|does not exist/i.test(bruto)) {
     codigo = 'modelo_inexistente';
-  } else if (status === 429 || /rate.?limit|quota|insufficient.*credit/i.test(bruto)) {
+  } else if (status === 429 || /rate.?limit|quota|insufficient.*credit|credit balance is too low/i.test(bruto)) {
+    // A Anthropic diz "sem crédito" com 400 ("Your credit balance is too low…"),
+    // o mesmo status de um pedido malformado — só a frase distingue. Sem ela a
+    // tela de Execuções mostrava "erro desconhecido" no caso mais fácil de
+    // resolver (recarregar). A espera pela recarga é da fila: `espera-de-saldo.ts`.
     codigo = 'limite_ou_saldo';
   } else if ((status !== null && status >= 500) || /timeout|ECONNREFUSED|fetch failed|network/i.test(bruto)) {
     codigo = 'provedor_indisponivel';

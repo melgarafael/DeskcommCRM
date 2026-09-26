@@ -136,7 +136,9 @@ export function ConexoesShell({
               <CanalGraphParceiroClient />
             </TabsContent>
             <TabsContent value="templates" className="mt-0">
-              <TemplatesParceiroClient rota={rotaDeTemplates("graph")} />
+              {/* Sem editar/apagar: nesta plataforma o DELETE é por nome e leva
+                  todas as variantes de idioma, e a tela apagaria uma só (#1728). */}
+              <TemplatesParceiroClient rota={rotaDeTemplates("graph")} gerenciar={false} />
             </TabsContent>
           </Tabs>
         </TabsContent>

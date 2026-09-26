@@ -56,10 +56,25 @@ let bancoDoCron: { cliente: ClienteDaCascata } | null = null;
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => {
     const cascata = bancoDoCron?.cliente as unknown as { from: (t: string) => unknown };
+    // A DÉCIMA poda (issue #1686) também chama `from`, e pela MESMA regra do
+    // `rpc` logo acima: o que este arquivo mede é a varredura, e o poda não
+    // pode cair junto quando a cascata explode — é exatamente a asserção do
+    // caso ⭐ lá embaixo. Por isso `conversation_drafts` tem superfície própria
+    // aqui, sem passar por `bancoDoCron.cliente` (a que o caso faz explodir).
+    const rascunhosVazios = () => {
+      const q: Record<string, unknown> = {
+        lt: () => q,
+        select: () => q,
+        order: () => q,
+        limit: () => q,
+        then: (r: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(r),
+      };
+      return { delete: () => q };
+    };
     return {
       // Poda sem nada a fazer: o que este arquivo mede é a varredura.
       rpc: async () => ({ data: 0, error: null }),
-      from: (t: string) => cascata.from(t),
+      from: (t: string) => (t === "conversation_drafts" ? rascunhosVazios() : cascata.from(t)),
     };
   },
 }));
@@ -104,11 +119,18 @@ function banco(linhas: Linha[]) {
       const casar = (
         filtros: Array<[string, unknown]>,
         dentro: [string, string[]] | null,
+        faixas: Array<[string, string]> = [],
       ): Linha[] =>
         linhas.filter((l) => {
           if ((l.id.split(":")[0] ?? "") !== tabela) return false;
           for (const [col, val] of filtros) {
             if ((l as unknown as Record<string, unknown>)[col] !== val) return false;
+          }
+          // `.lt()` da DÉCIMA poda (issue #1686): o corte do rascunho vencido.
+          // `expires_at` é ISO-8601, e em ISO o lexical É o cronológico.
+          for (const [col, val] of faixas) {
+            const atual = (l as unknown as Record<string, string | undefined>)[col];
+            if (atual === undefined || !(atual < val)) return false;
           }
           // O `.in()` da cascata vem em DUAS colunas — `id` no UPDATE das
           // atividades, `contact_id` na detecção em bloco. Um dublê que
@@ -122,10 +144,11 @@ function banco(linhas: Linha[]) {
         });
 
       const construir = (
-        modo: "select" | "update",
+        modo: "select" | "update" | "delete",
         patch: Record<string, unknown>,
       ) => {
         const filtros: Array<[string, unknown]> = [];
+        const faixas: Array<[string, string]> = [];
         let dentro: [string, string[]] | null = null;
         let teto: number | null = null;
         const q: Record<string, unknown> = {
@@ -133,20 +156,36 @@ function banco(linhas: Linha[]) {
             filtros.push([col, val]);
             return q;
           },
+          lt: (col: string, val: string) => {
+            faixas.push([col, val]);
+            return q;
+          },
           in: (col: string, vals: string[]) => {
             dentro = [col, vals];
             return q;
           },
+          select: () => q,
+          order: () => q,
           limit: (n: number) => {
             teto = n;
             return q;
           },
           then: (r: (v: unknown) => unknown) => {
-            let achadas = casar(filtros, dentro);
+            let achadas = casar(filtros, dentro, faixas);
             if (teto !== null) achadas = achadas.slice(0, teto);
             if (modo === "update") {
               aplicar(tabela, patch, achadas);
               return Promise.resolve({ error: null }).then(r);
+            }
+            if (modo === "delete") {
+              // A décima poda apaga MESMO: sem remover da lista, "rodar duas
+              // vezes" mediria dublê amnésico em vez de idempotência — a
+              // segunda passada devolveria as mesmas linhas.
+              for (const alvo of achadas) {
+                const i = linhas.indexOf(alvo);
+                if (i >= 0) linhas.splice(i, 1);
+              }
+              return Promise.resolve({ data: achadas, error: null }).then(r);
             }
             return Promise.resolve({ data: achadas, error: null }).then(r);
           },
@@ -157,6 +196,7 @@ function banco(linhas: Linha[]) {
       return {
         select: () => construir("select", {}),
         update: (patch: Record<string, unknown>) => construir("update", patch),
+        delete: () => construir("delete", {}),
       };
     },
   } as unknown as ClienteDaCascata;

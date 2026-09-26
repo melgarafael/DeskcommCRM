@@ -5,7 +5,7 @@
  * autorização e seus parâmetros) e o que a TELA diz. Que o Google DESENHE o
  * seletor de contas é dedução a partir da documentação dele — fica NÃO MEDIDO.
  */
-import { test } from "@playwright/test";
+import { test } from "./helpers/test";
 
 import {
   abreConversa,

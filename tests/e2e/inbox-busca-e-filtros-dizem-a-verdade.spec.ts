@@ -27,7 +27,7 @@
  * O caminho feliz é o que teste manual já cobre. O que paga é provocar a falha:
  * uma letra só, espaço duplo, termo inexistente, filtro que zera a lista.
  */
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/test";
 
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 

@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./helpers/test";
 import { createClient } from "@supabase/supabase-js";
 import { metadataInicialDoCanal } from "../../lib/ai/elegibilidade/pre-go-live";
 

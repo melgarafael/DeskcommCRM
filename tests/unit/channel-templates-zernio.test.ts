@@ -171,6 +171,7 @@ describe("update e remove", () => {
       organizationId: ORG,
       sessionRef: "acc_1",
       name: "t",
+      language: "es",
       patch: { components: [{ type: "BODY", text: "novo" }] },
     });
     expect((corpo().components as { type: string }[])[0]!.type).toBe("body");
@@ -179,7 +180,7 @@ describe("update e remove", () => {
 
   it("remove usa DELETE e escapa o nome na URL", async () => {
     responde({ success: true });
-    await zernioTemplateOps.remove({ organizationId: ORG, sessionRef: "acc_1", name: "a/b" });
+    await zernioTemplateOps.remove({ organizationId: ORG, sessionRef: "acc_1", name: "a/b", language: "es" });
     expect(ultima().init.method).toBe("DELETE");
     expect(ultima().url).toContain("a%2Fb");
   });
@@ -193,7 +194,7 @@ describe("erros da plataforma", () => {
       400,
     );
     await expect(
-      zernioTemplateOps.update({ organizationId: ORG, sessionRef: "acc_1", name: "t", patch: { category: "UTILITY" } }),
+      zernioTemplateOps.update({ organizationId: ORG, sessionRef: "acc_1", name: "t", language: "es", patch: { category: "UTILITY" } }),
     ).rejects.toThrow(/can only be edited/);
   });
 
@@ -214,5 +215,25 @@ describe("erros da plataforma", () => {
       /zernio_not_configured/,
     );
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("o changelog de 28/08 do provedor", () => {
+  it("o PATCH leva `language` no corpo — com variantes, editar sem idioma acerta a errada", async () => {
+    responde({ template: {} });
+    await zernioTemplateOps.update({
+      organizationId: ORG,
+      sessionRef: "acc_1",
+      name: "promo",
+      language: "es",
+      patch: { category: "UTILITY" },
+    });
+    expect(corpo().language).toBe("es");
+  });
+
+  it("o DELETE sempre nomeia a variante — sem idioma, a API apaga TODAS", async () => {
+    responde({ success: true });
+    await zernioTemplateOps.remove({ organizationId: ORG, sessionRef: "acc_1", name: "promo", language: "es" });
+    expect(ultima().url).toContain("language=es");
   });
 });

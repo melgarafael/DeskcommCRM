@@ -74,8 +74,8 @@ export function ehIdentificadorTecnico(valor: string): boolean {
  *  - `name` é a coluna editável pela pessoa: "Novo contato" e "Editar contato"
  *    gravam nela, o CSV a preenche pela coluna `nome`, e é ela que
  *    `lib/contacts/proposta-de-dado.ts` escreve quando um humano APROVA uma
- *    proposta (`CAMPOS_PROPONIVEIS = ["email", "name", "phone_number"]` —
- *    `display_name` não está na lista).
+ *    proposta (`CAMPOS_PROPONIVEIS = ["email", "name", "phone_number",
+ *    "birthdate"]` — `display_name` não está na lista).
  *  - `display_name` é escrito pela INGESTÃO (`fn_upsert_wa_contact`, a partir do
  *    `pushName` do aparelho). Nenhum formulário do produto o edita: a única
  *    aparição dele nas telas de contato é um `<dd>` de exibição em
@@ -88,6 +88,19 @@ export function ehIdentificadorTecnico(valor: string): boolean {
  *
  * Inverter a ordem aqui, portanto, não é trocar uma linha: pediria antes dar
  * editor a `display_name`, e aí a ficha teria dois campos chamados "nome".
+ *
+ * ─── A RESSALVA DO pushName (issue #1546) ──────
+ *
+ * Quando `name` está vazio, o que sobra é o `display_name` — o pushName do
+ * aparelho, que nem sempre é nome de gente: nome de empresa, apelido,
+ * "Máquina do Zé". Quem TRATA a pessoa pelo nome (o agente, na saudação e no
+ * lembrete) tem de PEDIR o nome completo antes de usá-lo como se fosse o dele.
+ *
+ * O fallback, aqui, continua o mesmo — e de propósito: inverter a ordem ou
+ * descartar o pushName "por segurança" apagaria o nome que a própria pessoa
+ * escolheu no perfil, e apagar identidade de gente é pior do que chamar alguém
+ * por apelido. Quem decide o que fazer com o rótulo é quem chama; este módulo
+ * só diz como a pessoa aparece na tela.
  */
 export function nomeDoContato(c: ContatoNomeavel | null | undefined): string | null {
   if (!c) return null;

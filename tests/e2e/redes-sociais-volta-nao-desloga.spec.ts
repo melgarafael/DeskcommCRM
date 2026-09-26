@@ -1,7 +1,7 @@
 import * as http from "node:http";
 import type { AddressInfo } from "node:net";
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./helpers/test";
 
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 

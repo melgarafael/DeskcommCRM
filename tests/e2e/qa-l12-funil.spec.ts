@@ -7,7 +7,7 @@
  *  · #911 — excluir pelo menu do próprio card, no desktop e no TOQUE
  *  · #948 — tag em lote oferecendo as tags que já existem
  */
-import { test } from "@playwright/test";
+import { test } from "./helpers/test";
 
 import {
   admin,

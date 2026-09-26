@@ -37,6 +37,9 @@ describe("gatilhos de automação", () => {
           ["pending", "confirmed"],
           ["confirmed", "rescheduled"],
           ["confirmed", "cancelled"],
+          // O desfecho (#1612): os dois gatilhos novos, nascidos da transição.
+          ["confirmed", "completed"],
+          ["confirmed", "no_show"],
         ] as const
       )
         .map(([de, para]) => gatilhoDaTransicao(de, para))

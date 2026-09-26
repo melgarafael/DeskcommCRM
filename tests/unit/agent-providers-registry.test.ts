@@ -12,6 +12,9 @@ describe("createDefaultRegistry", () => {
     const reg = createDefaultRegistry();
     expect(Object.keys(reg).sort()).toEqual([
       "anthropic",
+      // Provedor personalizado (#1642): endpoint do operador, sem endpoint
+      // canônico — a factory recusa a chamada quando falta o endereço.
+      "custom",
       "deepseek",
       "google",
       "openai",

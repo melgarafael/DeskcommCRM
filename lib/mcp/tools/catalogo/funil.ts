@@ -45,6 +45,20 @@ export const TOOLS_FUNIL = declararTools([
     pacotes: ["vender", "organizar"],
   },
   {
+    name: "crm_get_pipeline_forecast",
+    category: "read",
+    rotulo: "Ver a previsão do funil",
+    explicacao:
+      "Mostra quanto deve entrar e quando: os negócios abertos somados por moeda e por mês, com a chance de fechamento que cada etapa tem, e à parte o que ainda não tem data nem chance definida.",
+    oQueToca: "Funil de vendas",
+    risco: "seguro",
+    // Leitura GERENCIAL (quanto entra e quando), não passo de venda: o agente
+    // que atende não precisa dela para mover o cliente, e no pacote padrão do
+    // onboarding ela ocupava a vaga que deixa uma segunda jornada caber no teto
+    // (tests/unit/pacote-reserva-vaga-da-critica.test.ts).
+    pacotes: ["organizar"],
+  },
+  {
     name: "crm_create_lead",
     category: "write",
     rotulo: "Criar oportunidade no funil",
@@ -73,5 +87,18 @@ export const TOOLS_FUNIL = declararTools([
     oQueToca: "Funil de vendas",
     risco: "atencao",
     pacotes: ["vender"],
+  },
+  {
+    name: "crm_retomar_lead",
+    category: "write",
+    rotulo: "Retomar negócio encerrado como novo",
+    explicacao:
+      "Abre uma nova tentativa para um negócio perdido ou ganho, no mesmo funil e com o mesmo contato, sem alterar o negócio original.",
+    oQueToca: "Funil de vendas",
+    risco: "atencao",
+    // "reter", como `crm_propose_reactivation`: é o cliente que voltou depois
+    // de uma perda. Em "vender" ela entraria no agente que nasce no onboarding
+    // e estouraria o teto dos outros pacotes (pacote-reserva-vaga-da-critica).
+    pacotes: ["reter"],
   },
 ]);

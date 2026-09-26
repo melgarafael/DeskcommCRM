@@ -17,15 +17,8 @@
  * minuto (uma venda por vez), então o custo de sempre renovar é desprezível
  * perto do risco de um cache que expira no meio de um envio.
  *
- * ─── `partialFailure: false`, de propósito ──────────────────────────────────
- *
- * A API aceita lotes com falha parcial por item, cujo erro vem numa estrutura
- * `protobuf.Any` que exige decodificação própria para ler o motivo de cada
- * item. Como este transporte manda SEMPRE um item por chamada (uma venda),
- * não existe "falha parcial" que fazer sentido: com `partialFailure: false`,
- * qualquer rejeição vira um erro HTTP no formato padrão de erro do Google
- * (`error.code`/`error.status`/`error.message`), que é o que `classificaErro`
- * lê. Trocar para lote exigiria reescrever a leitura de erro inteira.
+ * Upload legado exige partialFailure=true e inspeção do resultado por item.
+ * Conexões novas podem usar Data Manager, com protocolo consultado pelo worker.
  *
  * ─── O que este arquivo NÃO valida: a idade do evento ───────────────────────
  *
@@ -37,6 +30,9 @@
  * `message` dele) em vez de adivinhar um teto e escondê-lo do operador atrás
  * de um `sem_atribuicao` que não existe.
  */
+import { z } from "zod";
+import { identificadorParaUpload } from "./identificadores";
+import { enviarDataManager, consultarDataManager } from "./data-manager";
 import { logger } from "@/lib/logger";
 import { configuracaoDoGoogleAds } from "./config";
 import { renovarToken } from "./token";
@@ -125,10 +121,62 @@ function classificaErro(status: number, corpo: ErroDoGoogle): ResultadoDeEnvio {
   return { tipo: "permanente", detalhe: corpo.message ?? `HTTP ${status} sem corpo legível` };
 }
 
+const respostaUpload = z.object({
+  partialFailureError: z
+    .object({
+      code: z.number().optional(),
+      details: z
+        .array(
+          z
+            .object({
+              errors: z.array(z.object({ errorCode: z.record(z.string(), z.string()) })).optional(),
+            })
+            .passthrough(),
+        )
+        .optional(),
+    })
+    .optional(),
+  results: z.array(z.object({ conversionAction: z.string().min(1).optional() })).optional(),
+});
+
+export function lerResultadoDoUpload(bruto: unknown): ResultadoDeEnvio {
+  const lida = respostaUpload.safeParse(bruto);
+  if (!lida.success)
+    return {
+      tipo: "transitorio",
+      detalhe: "Google devolveu uma resposta inválida; envio não confirmado.",
+    };
+  const erro = lida.data.partialFailureError;
+  if (erro && (erro.code || erro.details?.length)) {
+    const codigos =
+      erro.details?.flatMap((d) => d.errors ?? []).flatMap((e) => Object.values(e.errorCode)) ?? [];
+    const transitorio = codigos.some((c) =>
+      [
+        "INTERNAL_ERROR",
+        "RESOURCE_EXHAUSTED",
+        "RESOURCE_TEMPORARILY_EXHAUSTED",
+        "UNAVAILABLE",
+      ].includes(c),
+    );
+    const motivo = codigos
+      .filter((c) => /^[A-Z_]+$/.test(c))
+      .join(", ")
+      .slice(0, 300);
+    return {
+      tipo: transitorio ? "transitorio" : "permanente",
+      detalhe: `Google rejeitou a conversão: ${motivo || "consulte os diagnósticos da conta"}.`,
+    };
+  }
+  if (lida.data.results?.length !== 1 || !lida.data.results[0]?.conversionAction)
+    return { tipo: "transitorio", detalhe: "Google não confirmou o resultado da conversão." };
+  return { tipo: "ok" };
+}
+
 async function enviar(
   credencial: CredencialDeConversao,
   conversao: ConversaoOffline,
 ): Promise<ResultadoDeEnvio> {
+  if (credencial.google?.api === "data_manager") return enviarDataManager(credencial, conversao);
   const google = credencial.google;
   if (!google) {
     // Inalcançável em uso normal: `credenciais.ts` só monta este campo para
@@ -157,16 +205,22 @@ async function enviar(
   const corpo = {
     conversions: [
       {
-        gclid: conversao.cliqueDeOrigem,
+        ...identificadorParaUpload(
+          conversao.identificadoresGoogle ?? { gclid: conversao.cliqueDeOrigem },
+        ),
         conversionAction: `customers/${customerId}/conversionActions/${google.conversionActionId}`,
         conversionDateTime: formatarDataDeConversao(conversao.ocorridoEm),
-        conversionValue: conversao.valorCentavos / 100,
-        currencyCode: conversao.moeda.toUpperCase(),
+        ...(conversao.valorCentavos !== null
+          ? {
+              conversionValue: conversao.valorCentavos / 100,
+              currencyCode: conversao.moeda.toUpperCase(),
+            }
+          : {}),
         // Dedup do lado do Google — mesmo papel do `event_id` da Meta.
         orderId: conversao.eventoId,
       },
     ],
-    partialFailure: false,
+    partialFailure: true,
   };
 
   const url = `${ENDERECO_BASE}/${VERSAO_DA_API_DO_GOOGLE_ADS}/customers/${customerId}:uploadClickConversions`;
@@ -193,7 +247,9 @@ async function enviar(
     };
   }
 
-  if (resposta.ok) return { tipo: "ok" };
+  if (resposta.ok) {
+    return lerResultadoDoUpload(await resposta.json().catch(() => null));
+  }
 
   const texto = await resposta.text().catch(() => "");
   const corpoErro = lerCorpoDeErro(resposta.status, texto);
@@ -210,7 +266,13 @@ async function enviar(
 export const transporteGoogle: TransporteDeConversao = {
   plataforma: "google_ads",
   enviar,
+  consultar: consultarDataManager,
 };
 
 /** Exportados para o teste vigiar as regras sem falar com a rede. */
-export const INTERNOS = { formatarDataDeConversao, classificaErro, lerCorpoDeErro, soDigitos } as const;
+export const INTERNOS = {
+  formatarDataDeConversao,
+  classificaErro,
+  lerCorpoDeErro,
+  soDigitos,
+} as const;

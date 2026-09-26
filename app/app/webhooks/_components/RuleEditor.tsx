@@ -123,12 +123,27 @@ const CURATED_FIELDS: Record<TriggerEvent, CuratedField[]> = {
   "lead.created": LEAD_FIELDS,
   "lead.stage_changed": [...LEAD_FIELDS, STAGE_FIELD],
   "message.received": MESSAGE_FIELDS,
+  // O que a regra quer filtrar numa falha é o MOTIVO (só o 131047, só o
+  // timeout) e de QUEM é o contato — `event.erro.codigo` é o mesmo valor que a
+  // coluna `messages.error_code` grava, então quem compara com o webhook da
+  // Meta compara com o mesmo texto aqui.
+  "message.failed": [
+    { value: "event.erro.codigo", label: "Código do erro", op: "eq" },
+    { value: "contact.tags", label: "Tags do contato", op: "contains", lista: true },
+  ],
   "lead.tag_added": [...LEAD_FIELDS, TAG_ADDED_FIELD],
   "contact.tag_added": [TAG_ADDED_FIELD],
   "appointment.created": AGENDAMENTO_FIELDS,
   "appointment.confirmed": AGENDAMENTO_FIELDS,
   "appointment.rescheduled": AGENDAMENTO_FIELDS,
   "appointment.cancelled": AGENDAMENTO_FIELDS,
+  // Mesmos campos dos irmãos (#1612): quem filtra o desfecho quer filtrar por
+  // QUEM é o contato e de QUEM é o atendimento — "só a Limpeza, e só quem tem
+  // a tag cliente". A situação em si NÃO vira condição: ela é o gatilho. Um
+  // gatilho "compareceu" com a condição "situação = compareceu" é uma regra
+  // que só pode ser verdadeira, e que parece filtro sem filtrar nada.
+  "appointment.completed": AGENDAMENTO_FIELDS,
+  "appointment.no_show": AGENDAMENTO_FIELDS,
   // O aniversário não tem campo próprio para filtrar: o que a organização quer
   // decidir é sobre QUEM faz aniversário, e não sobre a data. Por isso os campos
   // são os do contato — "só quem tem a tag cliente", tipicamente.

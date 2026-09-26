@@ -3,7 +3,7 @@
 import { useT } from "@/hooks/i18n/useT";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useMemo, useState } from "react";
-import { FUSOS_OFERECIDOS } from "@/lib/tempo/fusos";
+import { FUSOS_OFERECIDOS, fusoOferecidoOuPadrao } from "@/lib/tempo/fusos";
 
 import {
   useAttendants,
@@ -187,16 +187,19 @@ function ScheduleDialog({
   onOpenChange,
   onSave,
   isPending,
+  organizationTimezone,
 }: {
   attendant: Attendant;
   open: boolean;
   onOpenChange: (o: boolean) => void;
   onSave: (windows: ScheduleWindow[], timezone: string) => void;
   isPending: boolean;
+  organizationTimezone?: string;
 }) {
   const t = useT();
   const initial = attendant.availability?.schedule;
-  const [timezone, setTimezone] = useState(initial?.timezone || "America/Sao_Paulo");
+  const defaultTimezone = fusoOferecidoOuPadrao(organizationTimezone);
+  const [timezone, setTimezone] = useState(initial?.timezone || defaultTimezone);
   const [windows, setWindows] = useState<ScheduleWindow[]>(initial?.windows ?? []);
 
   return (
@@ -430,9 +433,10 @@ function RoutingCard({ canManage }: { canManage: boolean }) {
 
 interface Props {
   canManage: boolean;
+  organizationTimezone?: string;
 }
 
-export function AttendantsClient({ canManage }: Props) {
+export function AttendantsClient({ canManage, organizationTimezone }: Props) {
   const t = useT();
   const avail = useAttendants();
   const patch = useUpdateAvailability();
@@ -584,6 +588,7 @@ export function AttendantsClient({ canManage }: Props) {
           open={!!scheduleFor}
           onOpenChange={(o) => !o && setScheduleFor(null)}
           isPending={patch.isPending}
+          organizationTimezone={organizationTimezone}
           onSave={(windows, timezone) =>
             patch.mutate(
               { userId: scheduleFor.userId, patch: { schedule: { timezone, windows } } },

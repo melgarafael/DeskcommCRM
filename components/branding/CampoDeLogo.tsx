@@ -29,6 +29,19 @@
  * banco — a função da marca substitui o objeto inteiro e apagaria o logo. Juntar
  * os dois no mesmo botão significaria segurar bytes em memória do navegador até
  * alguém clicar em Salvar, e perder o arquivo em toda navegação acidental.
+ *
+ * ── Por que o arquivo é AJUSTADO aqui antes de subir (issue #1655) ───────────
+ *
+ * O teto de 512 KB não sai: o logo vai inteiro para o navegador em toda página,
+ * sem `next/image` para redimensioná-lo (ver `lib/branding/logo.ts`). O que
+ * mudou é QUANDO a pessoa descobre isso. Antes, o PNG de estúdio — 1536×1024 com
+ * o logo ocupando só o meio, 2 MB — atravessava a rede e voltava recusado, e quem
+ * não sabe recortar imagem travava na tela ou subia um JPG de fundo branco, que
+ * vira caixa branca no tema escuro. Agora `ajustarLogo` recorta a margem
+ * transparente e, se ainda não couber, reduz a largura, tudo neste `<canvas>`
+ * (ver `lib/branding/ajuste-de-logo.ts` e `lib/branding/lona-do-navegador.ts`).
+ * O servidor continua recebendo só arquivo de até 512 KB — e continua sendo ele
+ * quem aplica o teto de verdade.
  */
 
 import { useRef, useState, useSyncExternalStore, useTransition } from "react";
@@ -37,7 +50,9 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { ajustarLogo } from "@/lib/branding/ajuste-de-logo";
 import { melhorFrenteSobre } from "@/lib/branding/contraste";
+import { lonaDoNavegador } from "@/lib/branding/lona-do-navegador";
 import { TAMANHO_MAXIMO_DO_LOGO } from "@/lib/branding/logo";
 import { REGUA_DO_PRODUTO } from "@/lib/branding/regua-do-produto";
 import { useT } from "@/hooks/i18n/useT";
@@ -95,6 +110,19 @@ const ERRO_EM_PORTUGUES: Record<string, string> = {
   mfa_required: "Confirme o segundo fator nesta sessão e tente de novo.",
   rate_limited: "Muitas trocas seguidas. Tente de novo em alguns minutos.",
 };
+
+/**
+ * A frase da recusa por teto — a MESMA que a rota responde.
+ *
+ * Este texto é a chave do dicionário (`lib/i18n/dicionario.ts`), com tradução
+ * para os outros idiomas: escrever qualquer outra frase aqui faria a recusa no
+ * navegador dizer uma coisa e a do servidor, outra. A recusa acontece aqui
+ * SOMENTE quando o ajuste já tentou o recorte e a escada de larguras até o piso
+ * e nada coube — o teto continua de pé, e o servidor continua sendo quem o
+ * aplica de verdade (`app/api/v1/marca/logo/route.ts`).
+ */
+const RAZAO_DO_TETO =
+  "O logo precisa ter até 512 KB. Arquivo maior vai inteiro para o navegador em toda página.";
 
 export function CampoDeLogo({
   escopo,
@@ -221,9 +249,35 @@ export function CampoDeLogo({
     );
   }
 
-  async function enviar(arquivo: File, tema: "claro" | "escuro" = "claro") {
+  async function enviar(arquivoEscolhido: File, tema: "claro" | "escuro" = "claro") {
     setEnviando(true);
     try {
+      /**
+       * O AJUSTE, AQUI E ANTES DO `FormData` — e não no servidor.
+       *
+       * O caso que trava a pessoa na tela (issue #1655): PNG de 1536×1024 com o
+       * logo ocupando só o meio, 2 MB. `ajustarLogo` recorta a margem 100%
+       * transparente no `<canvas>` deste navegador e, se ainda não couber, desce
+       * a largura pela escada 800 → 640 → 512 — sem decodificar bytes no
+       * servidor, que continua recebendo só arquivo de até 512 KB.
+       *
+       * A ordem dos três desfechos importa e está medida em
+       * `tests/unit/campo-de-logo-ajusta-antes-de-subir.test.tsx`:
+       *   - arquivo já dentro do teto → vai INTACTO (bytes idênticos aos que a
+       *     pessoa escolheu; nenhum reencode troca nitidez por nada);
+       *   - arquivo ajustado → sobe o ajustado, e a prévia abaixo mostra o
+       *     resultado porque é ele que o servidor grava e devolve;
+       *   - nem no piso coube → recusa AQUI, com a frase da rota, em vez de
+       *     subir megabytes para receber a recusa de volta;
+       *   - o motor indisponível (ambiente sem `createImageBitmap`) NÃO recusa:
+       *     manda o original e quem decide é o servidor, como antes.
+       */
+      const { arquivo, recusar } = await ajustarLogo(arquivoEscolhido, lonaDoNavegador);
+      if (recusar) {
+        toast.error(t(RAZAO_DO_TETO));
+        return;
+      }
+
       const corpo = new FormData();
       corpo.set("escopo", escopo);
       corpo.set("tema", tema);

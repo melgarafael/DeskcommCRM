@@ -48,7 +48,7 @@
  */
 import { randomUUID } from "node:crypto";
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./helpers/test";
 import { createClient } from "@supabase/supabase-js";
 
 const URL_SUPABASE = process.env.NEXT_PUBLIC_SUPABASE_URL!;

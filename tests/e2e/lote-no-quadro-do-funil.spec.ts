@@ -31,7 +31,7 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "./helpers/test";
 import { createClient } from "@supabase/supabase-js";
 
 import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
@@ -474,6 +474,60 @@ test.describe("Quadro do funil — agir em vários cards de uma vez", () => {
       page.locator("[data-lote-selecionados]").getByRole("button", { name: /respons[áa]vel/i }),
       "controle positivo: para manager o botão existe",
     ).toBeVisible();
+  });
+
+  /**
+   * O QUADRO CABE NA TELA. A página rolava com a janela: com uma etapa cheia, a
+   * barra de rolagem lateral só aparecia no pé da coluna mais comprida, e o nome
+   * da etapa sumia do alto no caminho (pedido de quem opera, 25/09/2026). Agora
+   * quem rola é o quadro, nos dois eixos, e o cabeçalho da etapa fica preso.
+   *
+   * 820×600 de propósito: com a barra lateral do app aberta, duas etapas de
+   * 20rem não cabem lado a lado, e a etapa de origem tem mais cards do que a
+   * altura do quadro — as duas rolagens existem, e o teste diz isso antes de
+   * medir (senão "a barra está à vista" passaria por não haver barra).
+   */
+  test.describe("o quadro cabe na tela", () => {
+    test.use({ viewport: { width: 820, height: 600 } });
+
+    test("a barra lateral fica no pé da tela e o nome da etapa não some ao rolar", async ({ page }) => {
+      await login(page, creds.users.manager!.email, creds.password);
+      await page.goto(`/app/pipelines/${pipelineId}`);
+      await expect(page.getByText(TITULO(1), { exact: true })).toBeVisible({ timeout: 30_000 });
+
+      const quadro = page.locator("[data-quadro-do-funil]");
+      const medida = await quadro.evaluate((el) => ({
+        pe: el.getBoundingClientRect().bottom,
+        janela: window.innerHeight,
+        rolaDeLado: el.scrollWidth > el.clientWidth,
+        rolaParaBaixo: el.scrollHeight > el.clientHeight,
+        paginaRola: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+      }));
+      expect(medida.rolaDeLado, "fixture: em 820px as duas etapas não cabem lado a lado").toBe(true);
+      expect(medida.rolaParaBaixo, "fixture: a etapa de origem passa da altura do quadro").toBe(true);
+      expect(medida.pe, "o pé do quadro — onde mora a barra lateral — está dentro da tela").toBeLessThanOrEqual(
+        medida.janela,
+      );
+      expect(medida.paginaRola, "quem rola é o quadro, não a página").toBeLessThanOrEqual(2);
+
+      await quadro.evaluate((el) => {
+        el.scrollTop = el.scrollHeight;
+      });
+      const cabecalho = coluna(page, etapaOrigemId).locator("[data-cabecalho-da-etapa]");
+      // Quem entra aqui é manager: para ele o nome da etapa é o campo
+      // editável do cabeçalho (#1738), não um <h2>. É o nome que tem de
+      // ficar à vista, qualquer que seja o elemento que o carrega.
+      const nomeDaEtapa = cabecalho.getByTestId("nome-etapa-quadro");
+      await expect(nomeDaEtapa).toHaveValue("Origem");
+      await expect(nomeDaEtapa).toBeInViewport();
+      const topoDoCabecalho = (await cabecalho.boundingBox())!.y;
+      const topoDoQuadro = (await quadro.boundingBox())!.y;
+      expect(
+        Math.abs(topoDoCabecalho - topoDoQuadro),
+        "rolado até o fim, o cabeçalho continua preso no alto do quadro",
+      ).toBeLessThanOrEqual(2);
+      await captura(page, "08-quadro-cabe-na-tela");
+    });
   });
 
   /**

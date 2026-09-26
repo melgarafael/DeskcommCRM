@@ -69,7 +69,7 @@ chmod +x "$WORK/bin/"*
 novo_projeto() {  # novo_projeto <nome> <legado:0|1|sem-drain>
   local p="$WORK/$1"
   mkdir -p "$p/proj/hostgator-setup-kit" "$p/log"
-  cp "$KIT/_common.sh" "$KIT/agent.sh" "$p/proj/hostgator-setup-kit/"
+  cp "$KIT/_common.sh" "$KIT/_i18n.sh" "$KIT/agent.sh" "$p/proj/hostgator-setup-kit/"
   : > "$p/proj/docker-compose.prod.yml"
   printf 'INTERNAL_SECRET="segredo-do-scheduler-9z9z"\nINTERNAL_CRON_SECRET="%s"\nNEXT_PUBLIC_APP_URL="%s"\n' "$VELHA" "$URL" > "$p/proj/.env"
   case "$2" in

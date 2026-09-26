@@ -45,7 +45,9 @@ describe("o verificador de PKCE da entrada com Google viaja de volta", () => {
     );
     // E o cliente de sempre continua Strict: o que fica frouxo é o verificador
     // de uso único, nunca o cookie de sessão.
-    expect(FONTE_DO_CLIENTE).toMatch(/export async function createClient\(\)[\s\S]{0,120}?"strict"/);
+    expect(FONTE_DO_CLIENTE).toMatch(
+      /export async function createClient\(\)[\s\S]{0,120}?"strict"/,
+    );
   });
 
   it("a action de ida usa esse cliente — e não o de sessão", () => {
@@ -65,6 +67,47 @@ describe("o verificador de PKCE da entrada com Google viaja de volta", () => {
     // Sem isto o `proxy` responde 307 para `/login` antes de a rota existir, e
     // o fluxo nunca completa — medido em produção com o callback da agenda.
     expect(isPublicPath(CAMINHO_DO_RETORNO_DO_GOOGLE)).toBe(true);
+  });
+
+  it("os destinos que EXIGEM sessão saem pela ponte, nunca por 302 — e o cookie segue Strict", () => {
+    // ─── O defeito que este caso existe para não deixar voltar (issue #1646) ──
+    //
+    // A falha fecha em `/login`, tela pública: um 302 para lá funciona. O SUCESSO
+    // vai para tela que exige sessão, e ali o 302 é o defeito — ele continua a
+    // cadeia de navegação começada em `accounts.google.com`, o cookie de sessão é
+    // `sameSite: "strict"` e não viaja num initiator cross-site. O `proxy.ts` manda
+    // para `/login?next=%2Fapp` com a sessão já criada: o login não falhou, pareceu.
+    //
+    // Consertar a INSTÂNCIA é trocar uma das cinco saídas. A sexta nasce com o
+    // defeito de novo, e nenhum teste que só olhe o DESTINO a pega — o destino não
+    // muda; muda quem inicia a navegação. Por isso a varredura é do CÓDIGO: o que
+    // sobra em `redirectTo` só pode ser tela pública.
+    const saidasPorRedirect = [
+      ...FONTE_DO_CALLBACK.matchAll(/return\s+redirectTo\(([^;]*?)\);/gs),
+    ].map((m) => m[1]!);
+    expect(
+      saidasPorRedirect.length,
+      "nenhum `return redirectTo(...)` encontrado — o regex quebrou, e um caso que mede o vazio passa",
+    ).toBeGreaterThan(0);
+    for (const argumento of saidasPorRedirect) {
+      expect(
+        argumento,
+        `\`redirectTo(${argumento})\` sai da volta do Google por 302. Se o destino EXIGE ` +
+          "sessão, o salto continua na cadeia cross-site do provedor e o cookie Strict " +
+          "não viaja: use `paraTelaAutenticada(...)`, que entrega a ponte same-origin " +
+          "(issue #1646).",
+      ).toMatch(/\/(login|team\/accept-invite)/);
+    }
+
+    // O sucesso entra pela ponte — e a ponte NÃO pode ter vindo acompanhada de
+    // cookie mais permissivo: o que fica frouxo nesta volta é só o verificador de
+    // PKCE da IDA (caso acima), nunca o cookie de sessão.
+    expect(FONTE_DO_CALLBACK).toMatch(/paraTelaAutenticada\(safeNext\(next, "\/app"\)\)/);
+    expect(FONTE_DO_CALLBACK).toMatch(/respostaDePonte\(/);
+    expect(
+      FONTE_DO_CALLBACK,
+      "a volta autenticada não afrouxa cookie nenhum: quem precisa viajar é o initiator, não o cookie",
+    ).not.toMatch(/sameSite:\s*"lax"/);
   });
 });
 

@@ -157,6 +157,84 @@ const FECHOS = {
 } as const;
 
 /**
+ * OS MESMOS avisos em espanhol. O cliente lê a frase no idioma da ORGANIZAÇÃO
+ * (`organizations.locale`) — a conversa com ele acontece nesse idioma, e um
+ * aviso em português no meio de uma venda em espanhol é a própria prova de que
+ * ali tem um robô. Medido numa loja em espanhol (26/09/2026): o cliente irritado
+ * recebeu "Esse caso é melhor resolvido por uma pessoa…" no meio do pedido.
+ *
+ * Espanhol NEUTRO (tú, sem voseo): este texto serve a toda organização em `es`.
+ * "Consulta", e não "pedido": numa loja, "pedido" é a compra.
+ */
+const ABERTURAS_ES: Record<MotivoDoAviso, readonly string[]> = {
+  suspeita_de_opt_out: [
+    "Entendido. Dejo de enviarte mensajes automáticos por aquí.",
+    "Listo, anotado: no se envían más mensajes automáticos a este número.",
+    "¡Ok! Detengo ahora mismo los envíos automáticos de este canal.",
+  ],
+  pediu_humano: [
+    "¡Claro! Ya estoy llamando a alguien del equipo para que siga contigo.",
+    "Sin problema: acabo de avisar a una persona del equipo para que continúe desde aquí.",
+    "Perfecto. Pasé tu conversación a una persona del equipo.",
+  ],
+  orcamento_de_ia: [
+    "Voy a pasar tu atención a una persona del equipo.",
+    "A partir de aquí te atiende alguien del equipo.",
+    "Estoy transfiriendo esta conversación a una persona del equipo.",
+  ],
+  outro: [
+    "Esto lo resuelve mejor una persona del equipo. Ya les avisé.",
+    "Prefiero no arriesgarme: pasé tu consulta a una persona del equipo.",
+    "Voy a pedir ayuda a alguien del equipo para que lo vea contigo.",
+  ],
+};
+
+const FECHOS_ES = {
+  sem_equipe: [
+    "Tu consulta quedó registrada y el equipo te responde lo antes posible.",
+    "Dejé todo anotado; te respondemos apenas podamos.",
+    "Ya quedó registrado, y alguien te responde en la primera oportunidad.",
+  ],
+  fora_de_expediente: [
+    "En este momento no hay nadie disponible, pero tu consulta quedó registrada.",
+    "Ahora no hay nadie libre; dejé tu consulta anotada para el equipo.",
+    "No hay una persona disponible en este instante: tu conversación quedó en la cola.",
+  ],
+  com_equipe: [
+    "Solo espera un momento aquí en la conversación.",
+    "Quédate por aquí, que ya te responden.",
+    "Espera un momento en esta conversación, por favor.",
+  ],
+} as const;
+
+interface TextosDoAviso {
+  aberturas: Record<MotivoDoAviso, readonly string[]>;
+  fechos: { sem_equipe: readonly string[]; fora_de_expediente: readonly string[]; com_equipe: readonly string[] };
+  fechoDoOptOut: string;
+}
+
+const TEXTOS: Record<"pt" | "es", TextosDoAviso> = {
+  pt: {
+    aberturas: ABERTURAS,
+    fechos: FECHOS,
+    fechoDoOptOut: "Encaminhei seu pedido para uma pessoa da equipe confirmar.",
+  },
+  es: {
+    aberturas: ABERTURAS_ES,
+    fechos: FECHOS_ES,
+    fechoDoOptOut: "Le pasé tu pedido a una persona del equipo para que lo confirme.",
+  },
+};
+
+/**
+ * `organizations.locale` → o conjunto de frases. Idioma sem frases próprias (ou
+ * ausente) segue em português, que é o comportamento de antes desta tabela.
+ */
+function textosDoIdioma(idioma: string | null | undefined): TextosDoAviso {
+  return (idioma ?? "").trim().toLowerCase().startsWith("es") ? TEXTOS.es : TEXTOS.pt;
+}
+
+/**
  * Variante DETERMINÍSTICA por lead: sha256(lead_id) → uint32 → módulo.
  *
  * É a MESMA regra de `pickReentryVariant` (`lib/agent-engine/agent/reentry-template.ts`),
@@ -186,22 +264,24 @@ export function textoDoAviso(
   motivo: MotivoDoAviso,
   quem: QuemPodeAssumir | null,
   leadId: string,
+  idioma: string | null = null,
 ): string {
-  const abertura = variante(leadId, ABERTURAS[motivo]);
+  const textos = textosDoIdioma(idioma);
+  const abertura = variante(leadId, textos.aberturas[motivo]);
 
   if (motivo === "suspeita_de_opt_out") {
     // Sem fecho de expediente: quem pediu para parar não está esperando
     // atendimento, então "aguarde um instante" seria a resposta errada à
     // pergunta que ele fez.
-    return `${abertura} Encaminhei seu pedido para uma pessoa da equipe confirmar.`;
+    return `${abertura} ${textos.fechoDoOptOut}`;
   }
 
   const fecho =
     quem === null || quem.total === 0
-      ? variante(leadId, FECHOS.sem_equipe)
+      ? variante(leadId, textos.fechos.sem_equipe)
       : quem.disponiveis === 0
-        ? variante(leadId, FECHOS.fora_de_expediente)
-        : variante(leadId, FECHOS.com_equipe);
+        ? variante(leadId, textos.fechos.fora_de_expediente)
+        : variante(leadId, textos.fechos.com_equipe);
 
   return `${abertura} ${fecho}`;
 }

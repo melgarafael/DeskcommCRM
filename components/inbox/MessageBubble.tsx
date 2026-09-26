@@ -135,6 +135,23 @@ export function MessageBubble({
   // par é vigiado nas duas direções por tests/unit/rotulo-de-origem-tem-emissor.
   const senderLabel = (() => {
     if (!isOutbound) return null;
+    // #1613: a autoria "em nome de" sobe a MESA. Quem apertou foi o token, mas
+    // quem decidiu foi uma pessoa no outro sistema — sem este ramo a conversa
+    // leria "Sistema" e perderia quem mandou. Os nomes vêm GRAVADOS na própria
+    // linha (`metadata.sent_on_behalf`, escrito pelo handler), porque o balão
+    // não faz join: o que não está na linha não aparece em lugar nenhum.
+    const emNomeDe = message.sent_on_behalf_of_user_id
+      ? (message.metadata?.sent_on_behalf as
+          | { user_name?: string | null; token_name?: string | null }
+          | undefined)
+      : undefined;
+    if (emNomeDe) {
+      const nome = emNomeDe.user_name?.trim() || t("Atendente");
+      // "Fulano · via {token}": só a palavra "via" passa por `t()`; os nomes
+      // são dado do operador e saem como cadastrados — traduzir nome próprio é
+      // o mesmo erro de #1046.
+      return emNomeDe.token_name ? `${nome} · ${t("via")} ${emNomeDe.token_name}` : nome;
+    }
     if (message.sent_via === "ai") return "IA";
     // A REGRA falou, e não a IA: texto fixo de automação, follow-up ou lembrete
     // de agenda (#652). O ramo passou a existir porque o valor passou a ser

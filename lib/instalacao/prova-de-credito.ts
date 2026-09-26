@@ -110,6 +110,20 @@ export function montarRequisicaoDeProva(
         headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
         body: { model: modelo, max_tokens: 16, messages: msg },
       };
+    // Provedor personalizado (#1642): a instalação não coleta o endereço no
+    // install.sh, então sem `baseUrl` não há para onde provar — `null` é a
+    // leitura honesta de "não sei testar isto aqui", e não um ok por omissão
+    // (fail-closed, a mesma régua do `default` abaixo).
+    case "custom":
+      if (!baseUrl) return null;
+      return {
+        url: `${baseUrl.replace(/\/+$/, "")}/chat/completions`,
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        // `max_tokens: 16` e não 1: modelos da OpenAI atrás de um gateway
+        // recusam menos que 16 (medido na Requesty), e este é um gateway
+        // qualquer — o custo de 16 tokens é irrelevante e o risco, nenhum.
+        body: { model: modelo, max_tokens: 16, messages: msg },
+      };
     case "google":
       return {
         url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
@@ -128,9 +142,16 @@ export function montarRequisicaoDeProva(
   }
 }
 
+/** A frase que o provedor devolve ao gastar o único token da prova: um modelo de
+ * raciocínio gasta-o pensando. É a prova DANDO CERTO — chave recusada é 401 e
+ * modelo inexistente é 404, então este 400 prova a cobrança atravessada. */
+export const LIMITE_DE_SAIDA_ATINGIDO = "max_tokens or model output limit was reached";
+
 /** Traduz a resposta HTTP no mesmo vocabulário de erro do runtime. */
 export function classificarResposta(status: number, corpo: string): ResultadoDaProva {
   if (status >= 200 && status < 300) return { ok: true };
+  // Ver `LIMITE_DE_SAIDA_ATINGIDO`: este 400 é a prova passando, não a chave falhando.
+  if (status === 400 && corpo.toLowerCase().includes(LIMITE_DE_SAIDA_ATINGIDO)) return { ok: true };
   // `normalizarErro` lê `status` do objeto — é a régua canônica, compartilhada
   // com a tela de Execuções, e ela também redige a mensagem do provedor (que
   // pode ecoar header de autorização em endpoint próprio).

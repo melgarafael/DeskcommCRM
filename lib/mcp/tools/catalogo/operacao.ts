@@ -81,7 +81,7 @@ export const TOOLS_OPERACAO = declararTools([
     category: "write",
     rotulo: "Renomear ou reordenar uma etapa",
     explicacao:
-      "Troca o nome de uma coluna do funil, muda o lugar dela na ordem ou define em qual delas o negócio é dado como fechado ou perdido.",
+      "Troca o nome de uma coluna do funil, muda o lugar dela na ordem, define em qual delas o negócio é dado como fechado ou perdido e ajusta a chance de fechamento que a previsão do funil usa.",
     oQueToca: "Funil de vendas",
     risco: "atencao",
     pacotes: ["organizar"],
@@ -117,7 +117,7 @@ export const TOOLS_OPERACAO = declararTools([
     category: "read",
     rotulo: "Ver as respostas prontas",
     explicacao:
-      "Lista os textos que a empresa já escreveu para responder as situações de sempre, com o atalho de cada um.",
+      "Lista os textos que a empresa compartilhou com a equipe para responder as situações de sempre, com o atalho de cada um e as variáveis que cada texto usa.",
     oQueToca: "Respostas prontas",
     risco: "seguro",
     pacotes: ["atender", "organizar"],
@@ -127,7 +127,7 @@ export const TOOLS_OPERACAO = declararTools([
     category: "read",
     rotulo: "Preencher uma resposta pronta",
     explicacao:
-      "Pega uma resposta pronta e troca as lacunas pelos dados do cliente, avisando se sobrou alguma sem preencher. Não envia nada.",
+      "Pega uma resposta pronta e troca as lacunas pelos dados do cliente e pelos valores que o sistema de fora informar, avisando se sobrou alguma sem preencher. Não envia nada.",
     oQueToca: "Respostas prontas",
     risco: "seguro",
     pacotes: ["atender", "organizar"],

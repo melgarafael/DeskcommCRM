@@ -18,7 +18,7 @@
  * 4. o caminho para a tela da empresa existe e CHEGA — quem precisa instalar
  *    tem de sair daqui sabendo para onde ir.
  */
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/test";
 
 import { lerCreds, loginComoAdmin, loginComoDono } from "./helpers/login-admin";
 import { afirmarDonoDoServidor } from "./utils/precondicao";

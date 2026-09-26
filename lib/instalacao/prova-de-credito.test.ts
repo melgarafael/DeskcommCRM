@@ -8,8 +8,11 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
+import { DICIONARIO } from "@/lib/i18n/dicionario";
+import { EXPLICACAO_POR_BALDE, explicacaoParaQuemInstala } from "@/lib/instalacao/explicacao-da-falha";
 import {
   classificarResposta,
+  LIMITE_DE_SAIDA_ATINGIDO,
   montarRequisicaoDeProva,
   provarSaldo,
 } from "@/lib/instalacao/prova-de-credito";
@@ -19,8 +22,17 @@ describe("montarRequisicaoDeProva", () => {
   it("sabe cobrar TODOS os provedores que a lista oferece", () => {
     // Se a lista ganhar um provedor e este módulo não souber testá-lo, o
     // diagnóstico ficaria mudo justamente para quem escolheu o mais novo.
+    // `custom` nasce com o endereço na credencial: sem ele a prova não tem
+    // para onde ir, e recusar é o comportamento certo — mas a lista dos
+    // OUTROS segue medida sem endereço nenhum.
     const semProva = IDS_DE_PROVEDOR.filter(
-      (id) => montarRequisicaoDeProva(id, "k", "m") === null,
+      (id) =>
+        montarRequisicaoDeProva(
+          id,
+          "k",
+          "m",
+          id === "custom" ? "https://gw.exemplo/v1" : undefined,
+        ) === null,
     );
     expect(semProva).toEqual([]);
   });
@@ -28,7 +40,12 @@ describe("montarRequisicaoDeProva", () => {
   it("é uma GERAÇÃO, não uma listagem — é o que o provedor cobra", () => {
     // O ponto do arquivo inteiro: listar modelos passa com saldo zero.
     for (const id of IDS_DE_PROVEDOR) {
-      const req = montarRequisicaoDeProva(id, "k", "modelo-x");
+      const req = montarRequisicaoDeProva(
+        id,
+        "k",
+        "modelo-x",
+        id === "custom" ? "https://gw.exemplo/v1" : undefined,
+      );
       expect(req, id).not.toBeNull();
       expect(req!.url, `${id} está batendo num endpoint de catálogo`).not.toMatch(/\/models$/);
     }
@@ -83,6 +100,46 @@ describe("classificarResposta", () => {
     const r = classificarResposta(404, "model not found");
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.codigo).toBe("modelo_inexistente");
+  });
+
+  it("o 400 de teto de saída é a prova PASSANDO: a chave foi aceita e o modelo gerou", () => {
+    // O modelo curado padrão é de raciocínio: gasta o único token pensando e este
+    // 400 já provou o que a prova queria provar (a cobrança atravessou).
+    // O corpo é o REAL do provedor, montado a partir da constante — assim o caso
+    // acompanha a frase que o módulo reconhece.
+    const teto = JSON.stringify({ error: { message: `Could not finish the message because ${LIMITE_DE_SAIDA_ATINGIDO}. Please try again with higher max_tokens.`, type: "invalid_request_error", param: null, code: null } });
+    expect(classificarResposta(400, teto)).toEqual({ ok: true });
+  });
+
+  it("e é SÓ esse 400 — o resto continua falha, com o balde certo", () => {
+    // A guarda não pode virar "qualquer 400 passa": `max_tokens` sozinho aparece
+    // em recusa de PARÂMETRO, e casar por ele daria sucesso a uma chave que não
+    // funciona.
+    for (const [nome, status, corpo, esperado] of [
+      ["400 outro motivo", 400, '{"error":{"message":"Unsupported parameter: \'temperature\' is not supported with this model."}}', "erro_desconhecido"],
+      ["400 quase a frase", 400, '{"error":{"message":"Unsupported parameter: max_tokens is not supported with this model."}}', "erro_desconhecido"],
+      ["401 chave inválida", 401, '{"error":{"message":"Incorrect API key provided"}}', "credencial_recusada"],
+      ["429 sem saldo", 429, '{"error":{"message":"insufficient_quota"}}', "limite_ou_saldo"],
+    ] as const) {
+      const r = classificarResposta(status, corpo);
+      expect(r.ok, nome).toBe(false);
+      if (!r.ok) expect(r.codigo, nome).toBe(esperado);
+    }
+  });
+});
+
+describe("explicacaoParaQuemInstala", () => {
+  it("tem espanhol, não fala a língua do engenheiro e nunca é o corpo do provedor", () => {
+    // As frases chegam à tela por `t(variável)`, e o guarda de tela só enxerga
+    // `t("literal")`: sem estas linhas, frase nova sairia em português numa
+    // instalação em espanhol sem gate nenhum reclamar. Mesmo desenho de
+    // `lib/ai/decisao/textos.test.ts`.
+    const frases = [...Object.values(EXPLICACAO_POR_BALDE), explicacaoParaQuemInstala("balde_novo")];
+    expect(frases.length, "controle positivo").toBe(5);
+    expect(frases.filter((f) => !DICIONARIO[f]?.es), "frase sem espanhol").toEqual([]);
+    expect(frases.filter((f) => /[{}\[\]"]|max_tokens|invalid_request_error/.test(f))).toEqual([]);
+    expect(frases.filter((f) => /\b(400|401|402|403|429|5\d\d|HTTP|status|timeout|token|prompt|API|JSON)\b/i.test(f))).toEqual([]);
+    expect(explicacaoParaQuemInstala("limite_ou_saldo")).not.toBe(explicacaoParaQuemInstala("credencial_recusada"));
   });
 });
 

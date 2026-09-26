@@ -181,7 +181,12 @@ type Arquivamento = {
 // varre o texto-fonte, então `sm:${...}` montado por interpolação NÃO gera CSS.
 // E o prefixo é o certo de qualquer jeito — no celular a linha empilha e largura
 // fixa espremeria os controles.
-const LARGURA = { ordem: "sm:w-[76px]", papel: "sm:w-56", arquivar: "sm:w-[104px]" } as const;
+const LARGURA = {
+  chance: "sm:w-[124px]",
+  ordem: "sm:w-[76px]",
+  papel: "sm:w-56",
+  arquivar: "sm:w-[104px]",
+} as const;
 
 /**
  * O texto de cada rótulo, em UM lugar só — porque ele aparece em DOIS.
@@ -192,6 +197,7 @@ const LARGURA = { ordem: "sm:w-[76px]", papel: "sm:w-56", arquivar: "sm:w-[104px
  */
 export const ROTULO = {
   nome: "Nome da coluna (clique para renomear)",
+  chance: "Chance de fechamento (0 a 100)",
   ordem: "Ordem",
   papel: "O que acontece nesta coluna",
 } as const;
@@ -350,6 +356,7 @@ export function StagesSection({
       >
         <span className="w-6 shrink-0" />
         <span className="min-w-0 flex-1">{t(ROTULO.nome)}</span>
+        <span className={`${LARGURA.chance} shrink-0`}>{t(ROTULO.chance)}</span>
         <span className={`${LARGURA.ordem} shrink-0 text-center`}>{t(ROTULO.ordem)}</span>
         <span className={`${LARGURA.papel} shrink-0`}>{t(ROTULO.papel)}</span>
         <span className={`${LARGURA.arquivar} shrink-0`} />
@@ -384,6 +391,21 @@ export function StagesSection({
                     etapa={etapa}
                     desabilitado={ocupado}
                     aoConfirmar={(nome) => aplicar(etapa.id, { name: nome })}
+                  />
+                </div>
+
+                {/* A calibração da previsão (issue #1535). Ganho e perda valem
+                    100 e 0 NA REGRA, então o campo fica desabilitado ali —
+                    digitar um número seria uma promessa que a regra ignora. */}
+                <div className={`${LARGURA.chance} shrink-0 space-y-1`}>
+                  <span className="block text-xs font-medium text-text-muted sm:hidden">
+                    {t(ROTULO.chance)}
+                  </span>
+                  <ProbabilidadeDaEtapa
+                    key={`prob-${etapa.id}-${etapa.win_probability ?? "sem"}`}
+                    etapa={etapa}
+                    desabilitado={ocupado}
+                    aoConfirmar={(valor) => aplicar(etapa.id, { win_probability: valor })}
                   />
                 </div>
 
@@ -701,6 +723,82 @@ export function StagesSection({
  * muda (`key` da `li`), então uma edição feita em outra aba não fica escondida
  * atrás de um rascunho velho.
  */
+/**
+ * A probabilidade de ganho da etapa, editada no lugar (0–100).
+ *
+ * Mesmo contrato do nome: salva ao CONFIRMAR (Enter ou sair do campo), nunca a
+ * cada tecla. Vazio = sem calibração — e limpar é um valor legítimo, não um
+ * apagão acidental: a previsão passa a reportar a etapa no balde "sem
+ * probabilidade" em vez de somar zero.
+ *
+ * `key` na linha de cima remonta o campo quando o valor GRAVADO muda, então uma
+ * edição de outra aba não fica escondida atrás de um rascunho velho.
+ */
+function ProbabilidadeDaEtapa({
+  etapa,
+  desabilitado,
+  aoConfirmar,
+}: {
+  etapa: EtapaDoFunil;
+  desabilitado: boolean;
+  aoConfirmar: (valor: number | null) => void;
+}) {
+  const t = useT();
+  const [rascunho, setRascunho] = useState(
+    etapa.win_probability == null ? "" : String(etapa.win_probability),
+  );
+  // Ganho e perda valem 100 e 0 na regra (`lib/leads/previsao.ts`): o número
+  // gravado ali seria lido por ninguém e entenderia mal quem lê a tela.
+  const fixa = etapa.is_won || etapa.is_lost;
+
+  function confirmar() {
+    const bruto = rascunho.trim().replace(/%$/, "");
+    if (bruto === "") {
+      if (etapa.win_probability != null) aoConfirmar(null);
+      else setRascunho("");
+      return;
+    }
+    const numero = Number(bruto);
+    if (!Number.isInteger(numero) || numero < 0 || numero > 100) {
+      setRascunho(etapa.win_probability == null ? "" : String(etapa.win_probability));
+      toast.error(t("A chance de fechamento vai de 0 a 100."));
+      return;
+    }
+    if (numero === etapa.win_probability) return;
+    aoConfirmar(numero);
+  }
+
+  return (
+    <Input
+      type="number"
+      min={0}
+      max={100}
+      step={1}
+      inputMode="numeric"
+      value={rascunho}
+      disabled={desabilitado || fixa}
+      placeholder={fixa ? (etapa.is_won ? "100" : "0") : "—"}
+      title={
+        fixa
+          ? t("Etapa de fechamento ou de perda: a chance vale 100 e 0 na regra, sem calibração.")
+          : t(ROTULO.chance)
+      }
+      aria-label={`${t(ROTULO.chance)} «${etapa.name}»`}
+      data-testid={`probabilidade-${etapa.id}`}
+      onChange={(e) => setRascunho(e.target.value)}
+      onBlur={confirmar}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          setRascunho(etapa.win_probability == null ? "" : String(etapa.win_probability));
+          e.currentTarget.blur();
+        }
+      }}
+      className="w-full"
+    />
+  );
+}
+
 function NomeDaEtapa({
   etapa,
   desabilitado,

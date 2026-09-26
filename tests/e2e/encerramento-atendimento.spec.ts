@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { mkdirSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./helpers/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 
 const credentials = credenciaisSupabaseDeTeste();

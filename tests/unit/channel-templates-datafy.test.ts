@@ -95,7 +95,12 @@ describe("modelos do parceiro Graph-compatível", () => {
       new Response(JSON.stringify({ success: true }), { status: 200 }),
     );
 
-    await graphPartnerTemplateOps.remove({ ...ESCOPO, name: "antigo" });
+    // `language` é obrigatório no contrato desde o changelog de 28/08 do
+    // provedor intermediado: lá, apagar por nome SEM idioma apaga TODAS as
+    // variantes, e a assinatura obriga quem chama a dizer QUAL morre. O adapter
+    // do Graph ignora o campo — o que se mede aqui é a URL —, mas o contrato é
+    // um só para todos os canais.
+    await graphPartnerTemplateOps.remove({ ...ESCOPO, name: "antigo", language: "pt_BR" });
 
     const [url, init] = fetchSpy.mock.calls[0]!;
     expect(String(url)).toContain("/message_templates?name=antigo");

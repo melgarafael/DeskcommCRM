@@ -13,6 +13,10 @@
  *                          outro; 403 sem nenhum. É o que valida a chave.
  *   POST /v1/systemone   → 200 { model, answers, usage }. Para `score`, a
  *                          posição na escala (0..n-1) vem de DUBLE_JEV_SCORE.
+ *                          DUBLE_JEV_RESPOSTAS (JSON, id da pergunta → resposta
+ *                          no formato do fornecedor) troca a resposta das
+ *                          perguntas que nomeia — é como a spec força uma
+ *                          discordância; as outras seguem o padrão acima.
  *
  * E GRAVA cada chamada num arquivo JSON (DUBLE_JEV_ARQUIVO), que a spec LÊ
  * para provar que o Jev foi chamado e com o quê. Grava o corpo (é por ele que
@@ -41,6 +45,28 @@ if (!ARQUIVO) {
   console.error("[duble-jev] DUBLE_JEV_ARQUIVO é obrigatório: é por ele que a spec prova a chamada");
   process.exit(2);
 }
+
+/**
+ * Respostas forçadas por id de pergunta. Ilegível derruba o dublê na subida: um
+ * mapa ignorado em silêncio faria a spec provar o padrão achando que provou a
+ * discordância.
+ */
+function lerRespostasForcadas() {
+  const cru = process.env.DUBLE_JEV_RESPOSTAS;
+  if (!cru) return {};
+  let lido;
+  try {
+    lido = JSON.parse(cru);
+  } catch {
+    lido = null;
+  }
+  if (lido === null || typeof lido !== "object" || Array.isArray(lido)) {
+    console.error("[duble-jev] DUBLE_JEV_RESPOSTAS precisa ser um objeto JSON: id da pergunta → resposta");
+    process.exit(2);
+  }
+  return lido;
+}
+const RESPOSTAS_FORCADAS = lerRespostasForcadas();
 
 /** @type {Array<{t: string, metodo: string, caminho: string, autorizado: boolean, corpo: unknown}>} */
 const chamadas = [];
@@ -123,7 +149,10 @@ const servidor = http.createServer(async (req, res) => {
     if (metodo === "POST" && url.pathname === "/v1/systemone") {
       const perguntas = corpo && typeof corpo === "object" ? (corpo.questions ?? {}) : {};
       const answers = Object.fromEntries(
-        Object.entries(perguntas).map(([id, p]) => [id, responderPergunta(p)]),
+        Object.entries(perguntas).map(([id, p]) => [
+          id,
+          Object.hasOwn(RESPOSTAS_FORCADAS, id) ? RESPOSTAS_FORCADAS[id] : responderPergunta(p),
+        ]),
       );
       const estado = typeof corpo?.state === "string" ? corpo.state : JSON.stringify(corpo?.state ?? "");
       return responder(res, 200, {

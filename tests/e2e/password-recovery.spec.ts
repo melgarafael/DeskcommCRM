@@ -7,7 +7,7 @@
  * 4. define a senha nova → volta ao login com banner de sucesso
  * 5. prova: senha ANTIGA falha, senha NOVA entra
  */
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./helpers/test";
 import { createClient } from "@supabase/supabase-js";
 
 import {
