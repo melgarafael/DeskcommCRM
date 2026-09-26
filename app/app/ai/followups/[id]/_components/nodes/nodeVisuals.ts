@@ -1,6 +1,6 @@
 import type { ComponentType } from "react";
 
-import { Play, Clock, GitBranch, Brain, ChatCircle, ArrowsClockwise, PaperPlaneTilt, Flag, Question, PuzzlePiece } from "@/lib/ui/icons";
+import { Bell, Play, Clock, GitBranch, Brain, ChatCircle, ArrowsClockwise, PaperPlaneTilt, Flag, Question, PuzzlePiece } from "@/lib/ui/icons";
 import type { FlowNode, NodeType } from "@/lib/followup/graph-schema";
 import { RESULTADOS_DO_FIM } from "@/lib/followup/vocabulario";
 import { NOS_DA_SUPERFICIE } from "@/lib/followup/validate-publish";
@@ -151,6 +151,20 @@ export const NODE_VISUALS: Record<NodeType, NodeVisual> = {
     defaultLabel: "Enviar mensagem",
     defaultConfig: () => configPadraoDaAcao(),
   },
+  internal_task: {
+    type: "internal_task",
+    paletteLabel: "Lembrete interno",
+    icon: Bell,
+    chipClassName: "bg-warning-bg text-warning-fg",
+    borderClassName: "border-l-warning",
+    defaultLabel: "Criar tarefa (só interno)",
+    defaultConfig: () => ({
+      titulo: "Ligar para {{contact.name}}",
+      vence_em_dias: 1,
+      atribuir_a: "dono_do_lead",
+      prioridade: "medium",
+    }),
+  },
   end: {
     type: "end",
     paletteLabel: "Fim",
@@ -241,6 +255,11 @@ export function describeNodeConfig(
       if (c.mode === "ai_message") return c.prompt_hint;
       if (c.mode === "text") return c.body;
       return t("Template fixo");
+    }
+    case "internal_task": {
+      const c = config as ConfigOf<"internal_task">;
+      const prazo = c.vence_em_dias === 0 ? t("hoje") : `+${c.vence_em_dias}d`;
+      return `${c.titulo} · ${prazo} · ${t("sem mensagem ao cliente")}`;
     }
     case "end": {
       const c = config as ConfigOf<"end">;
