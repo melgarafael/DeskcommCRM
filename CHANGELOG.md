@@ -23,6 +23,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   o aviso da etapa na Central saem iguais. Etapa de perda continua pelo quadro,
   onde se informa o motivo.
 
+  Contribuição de @jmpo (#1726).
+
 - **O follow-up manda modelo aprovado do WhatsApp e respeita o retorno combinado** O passo de mensagem pronta de um follow-up passa a oferecer, além dos textos de
   Ajustes → Modelos, os modelos aprovados no WhatsApp — no canal oficial, o único
   envio que chega ao cliente depois de 24 horas sem resposta. Antes, um passo apontado para um
@@ -120,7 +122,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ### Corrigido
 
-- **Repetir uma marcação devolve o compromisso já criado** Retries de uma mesma operação de agendamento passam a reutilizar o compromisso criado e a resposta registrada, tanto pela API quanto pelas ferramentas MCP e pelo runtime nativo do agente. Operações distintas continuam podendo criar compromissos distintos. Contribuição de @lucasa15.
+- **Repetir uma marcação devolve o compromisso já criado** Retries de uma mesma operação de agendamento passam a reutilizar o compromisso criado e a resposta registrada, tanto pela API quanto pelas ferramentas MCP e pelo runtime nativo do agente. Operações distintas continuam podendo criar compromissos distintos. Contribuição de @lucasa15 (#1735).
 
 - **O aviso ao cliente e o título na Central saem no idioma da organização quando a IA passa a conversa** Quando a IA passava a conversa para a equipe, o cliente recebia o aviso sempre
   em português ("Esse caso é melhor resolvido por uma pessoa…"), mesmo numa
@@ -128,6 +130,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   em português. Agora os dois saem no idioma da organização: há frases próprias
   em espanhol, e os demais idiomas seguem em português, como antes. Se o idioma
   da organização não puder ser lido, o aviso sai mesmo assim, em português.
+
+  Contribuição de @jmpo (#1725).
 
 - **Com "responder em várias mensagens curtas" ligado, cada parágrafo vira uma bolha, na ordem certa** A opção do agente "Responder em várias mensagens curtas (como uma pessoa
   digita)" dizia ao modelo para preferir várias mensagens a um texto único, e o
@@ -155,12 +159,16 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   cron `data-retention`); quem quiser ler a conversa abre a ficha pelo ponteiro. Nada muda na
   operação de quem já roda o sistema.
 
+  Contribuição de @webtecnica (#1720, issue #1695).
+
 - **Candidato a golden set não grava o texto do cliente como ele chegou** Os arquivos de curadoria que o matcher de skills e o classificador de etapa gravam em
   `lib/agent-engine/golden-candidates/` levavam a mensagem do cliente como ela chegou — CPF,
   telefone e e-mail junto. A mensagem agora passa pelo mesmo redator da telemetria antes de
   tocar o disco, e a pasta saiu do git: as duas portas por onde um `git add -A` publicava
   conversa de cliente. Os candidatos que já estavam versionados foram removidos. Nada muda na
   operação de quem já roda o sistema.
+
+  Contribuição de @hiro-nikaitou (#1708).
 
 - **Quando a conta de IA fica sem saldo, as respostas esperam a recarga em vez de se perder** Quando a conta do provedor de IA fica sem crédito, as respostas aos clientes
   não são mais descartadas em dois minutos: ficam esperando e saem sozinhas
@@ -171,11 +179,15 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   Execuções, essa recusa passa a aparecer como limite de uso ou saldo, e não
   como erro desconhecido.
 
+  Contribuição de @jmpo (#1730).
+
 - **Mover um negócio para a etapa em que ele já está não é mais barrado por campos obrigatórios** Em funil que exige campos para entrar numa etapa, mover um negócio para a etapa em que ele
   JÁ está — pelo assistente de IA ou por uma automação — era recusado com a frase dos campos
   obrigatórios, mesmo sem nada mudar de etapa: o que muda ali é a posição dentro da coluna. A
   tela já tratava esse gesto como reordenação; agora o caminho do MCP e o das automações
   tratam igual. A mudança de etapa de verdade continua exigindo os campos.
+
+  Contribuição de @hiro-nikaitou (#1714).
 
 - **A previsão em Métricas mostra o valor certo em moeda sem centavos** No painel "Previsão" de Métricas, o valor ponderado e o bruto de cada mês — e os
   dos negócios sem data ou sem chance definida — apareciam cem vezes maiores em
