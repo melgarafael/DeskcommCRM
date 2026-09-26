@@ -4,10 +4,12 @@
  * Duas tarefas novas do Jev acompanham uma REGRA sem IA: pedir para falar com
  * uma pessoa e pedir para parar de receber mensagens. O Jev só é perguntado
  * onde a regra de hoje disse NÃO (a cascata), numa chamada própria do worker de
- * clima, e só observa: o cartão conta os pedidos que ele percebeu e leva às
- * conversas. A prova de que ele foi perguntado — e do QUÊ — é o dublê
- * (`scripts/duble-jev-e2e.mjs`), que grava cada chamada; a resposta dele é
- * forçada por `DUBLE_JEV_RESPOSTAS` (pessoa 0,97; parar 0,02).
+ * clima, e só observa: o cartão conta as MENSAGENS em que ele percebeu o pedido
+ * que a regra não reconheceu, e leva às conversas. A prova de que ele foi
+ * perguntado — e do QUÊ — é o dublê (`scripts/duble-jev-e2e.mjs`), que grava
+ * cada chamada; a resposta dele é forçada por `DUBLE_JEV_RESPOSTAS` (pessoa
+ * 0,97; parar 0,02) e, só na mensagem de quem pede para sair, por
+ * `DUBLE_JEV_RESPOSTAS_POR_TRECHO` (pessoa 0,02; parar 0,97).
  *
  * As mensagens chegam pelo webhook do WhatsApp (a mesma porta da
  * `jev-decisoes-rapidas`), cada uma de um cliente diferente:
@@ -16,8 +18,10 @@
  *    a pergunta de parar de receber NUNCA sai para esta mensagem;
  *  - a frase natural ("alguém de verdade, não com robô"): a regra não pega
  *    nenhum dos dois, as duas perguntas saem, o Jev percebe o pedido de pessoa,
- *    e o cartão mostra "percebeu 1 pedido" com o link para a conversa — que
- *    segue do jeito que estava (o Jev não passa nem bloqueia nada);
+ *    e o cartão mostra "percebeu 1 mensagem pedindo…" com o link para a
+ *    conversa — que segue do jeito que estava (o Jev não passa nem bloqueia
+ *    nada); antes dela, "ainda não percebeu nenhuma mensagem…" (o zero tem
+ *    frase própria);
  *  - "quero falar com um atendente": a regra de pessoa pega, e a chamada sai só
  *    com a pergunta de parar de receber — a cascata vista com controle
  *    positivo na mesma mensagem, que "PARAR" não dá: com o contato bloqueado o
@@ -30,7 +34,13 @@
  *    continua dizendo que o Jev observa (ele só avisa: o cliente não sente
  *    nada), e a frase natural de outro cliente abre UM aviso na Central, com
  *    "Abrir a conversa" levando a ela — e a conversa segue sem dono, sem
- *    silêncio e sem bloqueio, no mesmo estado da conversa que o Jev só observou.
+ *    silêncio e sem bloqueio, no mesmo estado da conversa que o Jev só observou;
+ *  - com o pedido de parar de receber também em "Avisar a equipe", o pedido
+ *    natural de sair ("apaguem meu telefone do cadastro", que a regra de hoje
+ *    não reconhece) abre UM aviso na Central com o que a equipe pode fazer
+ *    ("…peça que ele responda PARAR…", "O Jev nunca bloqueia ninguém.") — e
+ *    assumir a conversa PELA TELA não o fecha: ele pede os dois passos, e só o
+ *    bloqueio, o encerramento ou "Marcar resolvido" o fecham.
  *
  * O turno do agente só roda com um agente publicado no número (o portão do
  * dreno, que o worker de clima também consulta): esta spec publica um agente SÓ
@@ -90,12 +100,25 @@ const CLIENTE_QUE_PEDE_PESSOA = `${base}2`;
 const CLIENTE_EM_PAZ = `${base}3`;
 const CLIENTE_AVISADO = `${base}4`;
 const CLIENTE_DO_ATENDENTE = `${base}5`;
+const CLIENTE_QUE_SAI = `${base}6`;
 const FRASE_NATURAL = `Quero falar com alguém de verdade aí, não com robô (${CLIENTE_QUE_PEDE_PESSOA})`;
 const FRASE_EM_PAZ = `Me deixa em paz (${CLIENTE_EM_PAZ})`;
 const FRASE_AVISADA = `Chama alguém de verdade pra mim, por favor, não quero robô (${CLIENTE_AVISADO})`;
 const FRASE_DO_ATENDENTE = `Quero falar com um atendente (${CLIENTE_DO_ATENDENTE})`;
+/**
+ * Um pedido de sair que a regra de hoje NÃO reconhece (`ehPedidoDeOptOut` e
+ * `ehOptOutProvavel` dizem não — medido com as funções reais): é onde o Jev é
+ * perguntado sobre parar de receber.
+ */
+const FRASE_QUE_SAI = `Por favor, apaguem meu telefone do cadastro de vocês (${CLIENTE_QUE_SAI})`;
 /** O título do aviso na Central (`AVISOS_DOS_PEDIDOS.humano.titulo`), em pt-BR. */
 const TITULO_DO_AVISO = "Um cliente parece pedir para falar com uma pessoa";
+/** O de parar de receber (`AVISOS_DOS_PEDIDOS.opt_out.titulo`). */
+const TITULO_DO_AVISO_DE_PARAR = "Um cliente parece pedir para parar de receber mensagens";
+/** Só na mensagem de quem pede para sair: ele pede isso, e não uma pessoa. */
+const RESPOSTAS_POR_TRECHO = {
+  [FRASE_QUE_SAI]: { humano: { type: "noul", noul: 0.02 }, opt_out: { type: "noul", noul: 0.97 } },
+};
 
 const { url, serviceRole } = credenciaisSupabaseDeTeste();
 const admin = createClient(url, serviceRole, { auth: { persistSession: false } });
@@ -231,8 +254,9 @@ async function esperarAPerguntaSobre(page: Page, trecho: string): Promise<void> 
 }
 
 test.describe("Jev — os pedidos do cliente, pela tela", () => {
-  // Três esperas pelo dreno (até 90 s cada, no pior caso) e a Central: 6 min de teto.
-  test.describe.configure({ timeout: 360_000 });
+  // Cinco esperas pelo dreno (até 90 s cada, no pior caso — na prática segundos)
+  // e a Central: 8 min de teto.
+  test.describe.configure({ timeout: 480_000 });
 
   test.beforeAll(async () => {
     let alvo: URL;
@@ -252,6 +276,7 @@ test.describe("Jev — os pedidos do cliente, pela tela", () => {
         DUBLE_JEV_CHAVE: CHAVE_DO_DUBLE,
         DUBLE_JEV_ARQUIVO: ARQUIVO_DE_CHAMADAS,
         DUBLE_JEV_RESPOSTAS: JSON.stringify(RESPOSTAS_DO_JEV),
+        DUBLE_JEV_RESPOSTAS_POR_TRECHO: JSON.stringify(RESPOSTAS_POR_TRECHO),
       },
       stdio: "inherit",
     });
@@ -325,7 +350,10 @@ test.describe("Jev — os pedidos do cliente, pela tela", () => {
         await expect(linha).toContainText("Nova");
         await expect(linha.getByRole("button", { name: "Deixar o Jev decidir" })).toHaveCount(0);
       }
-      await expect(cartao.getByTestId("jev-percebidos-humano")).toContainText("percebeu 0 pedidos de falar com uma pessoa");
+      // O zero tem frase própria: "percebeu 0" lia-se como defeito.
+      await expect(cartao.getByTestId("jev-percebidos-humano")).toContainText(
+        "Nos últimos 30 dias, o Jev ainda não percebeu nenhuma mensagem pedindo para falar com uma pessoa em que a regra de hoje não reconheceu o pedido.",
+      );
     });
 
     await test.step("PARAR e a frase natural chegam pelo WhatsApp; só a natural leva as perguntas", async () => {
@@ -346,7 +374,7 @@ test.describe("Jev — os pedidos do cliente, pela tela", () => {
       ).toEqual([]);
     });
 
-    const conversa = await test.step("o cartão mostra 1 pedido percebido, com a conversa", async () => {
+    const conversa = await test.step("o cartão mostra 1 mensagem com o pedido percebido, com a conversa", async () => {
       const { data, error } = await admin
         .from("messages")
         .select("conversation_id")
@@ -359,7 +387,7 @@ test.describe("Jev — os pedidos do cliente, pela tela", () => {
       await expect(async () => {
         const cartao = await abrirOCartao(page);
         await expect(cartao.getByTestId("jev-percebidos-humano")).toContainText(
-          "percebeu 1 pedido de falar com uma pessoa que a regra de hoje não pegou.",
+          "Nos últimos 30 dias, o Jev percebeu 1 mensagem pedindo para falar com uma pessoa em que a regra de hoje não reconheceu o pedido.",
           { timeout: 3_000 },
         );
       }).toPass({ timeout: 30_000, intervals: [1_000, 2_000, 3_000] });
@@ -368,7 +396,9 @@ test.describe("Jev — os pedidos do cliente, pela tela", () => {
         "href",
         `/app/inbox/${id}`,
       );
-      await expect(cartao.getByTestId("jev-percebidos-opt_out")).toContainText("percebeu 0 pedidos");
+      await expect(cartao.getByTestId("jev-percebidos-opt_out")).toContainText(
+        "ainda não percebeu nenhuma mensagem pedindo para parar de receber mensagens",
+      );
       await page.screenshot({ path: ".superpowers/evidence/jev/cartao-pedidos-percebidos.png", fullPage: true });
       return id;
     });
@@ -402,9 +432,11 @@ test.describe("Jev — os pedidos do cliente, pela tela", () => {
       await mandarMensagemDoCliente(page, FRASE_EM_PAZ, CLIENTE_EM_PAZ, 1);
       await esperarOClimaSobre(page, FRASE_EM_PAZ);
       expect(dosPedidos(FRASE_EM_PAZ), "o Jev foi perguntado sobre um pedido que a regra já passou").toEqual([]);
-      // O dublê diz 0,97 a toda pergunta de pessoa: segue UM pedido percebido.
+      // O dublê diz 0,97 a toda pergunta de pessoa: segue UMA mensagem percebida.
       const cartao = await abrirOCartao(page);
-      await expect(cartao.getByTestId("jev-percebidos-humano")).toContainText("percebeu 1 pedido de falar com uma pessoa");
+      await expect(cartao.getByTestId("jev-percebidos-humano")).toContainText(
+        "percebeu 1 mensagem pedindo para falar com uma pessoa",
+      );
     });
 
     await test.step("Execuções mostra a chamada com o nome dela, e não crua", async () => {
@@ -470,7 +502,7 @@ test.describe("Jev — os pedidos do cliente, pela tela", () => {
       // A frase diz o que de fato roda: o clima compara com a IA de sempre, e
       // nos pedidos o Jev só conta e avisa — não há o que comparar ali.
       await expect(oCartao).toContainText(
-        "Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele conta os que a regra de hoje deixa passar e avisa a equipe.",
+        "Observando — onde o Jev compara, a sua IA de sempre ainda decide: compare os dois antes de deixar o Jev decidir. Nos pedidos do cliente, ele conta as mensagens em que a regra de hoje não reconheceu o pedido, e avisa a equipe.",
       );
       await expect(oCartao).not.toContainText("Decide em parte");
       await expect(oCartao).not.toContainText("Decidindo");
@@ -536,6 +568,96 @@ test.describe("Jev — os pedidos do cliente, pela tela", () => {
         .eq("ref_id", avisada);
       expect(avisosErr).toBeNull();
       expect(avisos).toEqual([{ kind: "jev_pedido_de_humano", status: "open" }]);
+    });
+
+    await test.step("'Avisar a equipe' no pedido de parar de receber: o diálogo diz que o Jev nunca bloqueia", async () => {
+      const cartao = await abrirOCartao(page);
+      const linha = cartao.getByTestId("jev-tarefa-opt_out");
+      await linha.getByRole("button", { name: "Avisar a equipe" }).click();
+      const dialogo = page.getByRole("alertdialog");
+      await expect(dialogo).toHaveAttribute("data-tarefa", "opt_out");
+      await expect(dialogo).toContainText(
+        "Quem bloqueia o contato é só a regra de hoje, quando o próprio cliente manda PARAR: o Jev nunca bloqueia ninguém.",
+      );
+      await clicarEEsperarAMudanca(page, dialogo.getByRole("button", { name: "Avisar a equipe" }));
+      await expect(page.getByTestId("jev-tarefa-opt_out")).toHaveAttribute("data-estado", "decidindo", { timeout: 15_000 });
+      await expect(page.getByTestId("cartao-do-jev")).toHaveAttribute("data-estado", "observando");
+    });
+
+    const quemSai = await test.step("o pedido natural de sair abre UM aviso na Central, com o que a equipe pode fazer", async () => {
+      await mandarMensagemDoCliente(page, FRASE_QUE_SAI, CLIENTE_QUE_SAI, 1);
+      await esperarAPerguntaSobre(page, FRASE_QUE_SAI);
+      // A regra de hoje não reconheceu nenhum dos dois: as duas perguntas saem.
+      expect(dosPedidos(FRASE_QUE_SAI).every((q) => q.join() === "humano,opt_out")).toBe(true);
+      const id = await conversaDaMensagem(FRASE_QUE_SAI);
+
+      const item = page.getByTestId("inbox-item").filter({ hasText: TITULO_DO_AVISO_DE_PARAR });
+      await expect(async () => {
+        await page.goto("/app/ai/inbox");
+        await expect(item).toHaveCount(1, { timeout: 5_000 });
+      }).toPass({ timeout: 45_000, intervals: [1_000, 2_000, 3_000] });
+      await expect(item).toContainText("Pedido para parar de receber mensagens, percebido pelo Jev");
+      // O que a equipe pode fazer de verdade: assumir e pedir o PARAR — quem bloqueia é a regra.
+      await expect(item).toContainText(
+        "Se o cliente quer mesmo parar de receber mensagens, assuma o atendimento para o assistente parar de responder e peça que ele responda PARAR — é assim que o contato fica bloqueado. O Jev nunca bloqueia ninguém.",
+      );
+      // A Central é lida pela empresa inteira: o que o cliente escreveu fica na conversa.
+      await expect(item).not.toContainText("cadastro");
+      await expect(item.getByRole("link", { name: "Abrir a conversa" })).toHaveAttribute("href", `/app/inbox/${id}`);
+      await page.screenshot({ path: ".superpowers/evidence/jev/central-aviso-de-parar-de-receber.png", fullPage: true });
+
+      // Só o aviso de parar: o dublê disse que ela não pede uma pessoa. E o Jev não bloqueou.
+      const { data: avisos, error: avisosErr } = await admin
+        .from("agent_inbox_items")
+        .select("kind, status")
+        .eq("organization_id", orgId)
+        .eq("ref_id", id);
+      expect(avisosErr).toBeNull();
+      expect(avisos).toEqual([{ kind: "jev_parar_de_receber", status: "open" }]);
+      const { data: conv } = await admin.from("conversations").select("contact_id").eq("id", id).single();
+      const { data: contato } = await admin
+        .from("contacts")
+        .select("is_blocked")
+        .eq("id", (conv as { contact_id: string }).contact_id)
+        .single();
+      expect(contato).toEqual({ is_blocked: false });
+      return id;
+    });
+
+    await test.step("o cartão conta por mensagem, no singular e no plural", async () => {
+      const cartao = await abrirOCartao(page);
+      await expect(cartao.getByTestId("jev-percebidos-opt_out")).toContainText(
+        "Nos últimos 30 dias, o Jev percebeu 1 mensagem pedindo para parar de receber mensagens em que a regra de hoje não reconheceu o pedido.",
+      );
+      // A frase natural e a avisada: duas mensagens com o pedido de pessoa.
+      await expect(cartao.getByTestId("jev-percebidos-humano")).toContainText(
+        "Nos últimos 30 dias, o Jev percebeu 2 mensagens pedindo para falar com uma pessoa em que a regra de hoje não reconheceu o pedido.",
+      );
+      await page.screenshot({ path: ".superpowers/evidence/jev/cartao-mensagens-percebidas.png", fullPage: true });
+    });
+
+    await test.step("assumir a conversa pela tela NÃO fecha o aviso de parar de receber — falta o PARAR", async () => {
+      await page.goto("/app/ai/inbox");
+      const item = page.getByTestId("inbox-item").filter({ hasText: TITULO_DO_AVISO_DE_PARAR });
+      await item.getByRole("link", { name: "Abrir a conversa" }).click();
+      await expect(page).toHaveURL(new RegExp(`/app/inbox/${quemSai}`), { timeout: 30_000 });
+      await page.getByRole("button", { name: "Assumir", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Liberar", exact: true })).toBeVisible({ timeout: 30_000 });
+      // Controle: assumiu de verdade — é o passo 1 do aviso.
+      const { data: conv } = await admin.from("conversations").select("assigned_to_user_id").eq("id", quemSai).single();
+      expect((conv as { assigned_to_user_id: string | null }).assigned_to_user_id).not.toBeNull();
+
+      await page.goto("/app/ai/inbox");
+      await expect(page.getByTestId("inbox-item").filter({ hasText: TITULO_DO_AVISO_DE_PARAR })).toHaveCount(1, {
+        timeout: 15_000,
+      });
+      const { data: avisos } = await admin
+        .from("agent_inbox_items")
+        .select("kind, status")
+        .eq("organization_id", orgId)
+        .eq("ref_id", quemSai);
+      expect(avisos).toEqual([{ kind: "jev_parar_de_receber", status: "open" }]);
+      await page.screenshot({ path: ".superpowers/evidence/jev/central-parar-segue-depois-de-assumir.png", fullPage: true });
     });
   });
 });

@@ -69,13 +69,13 @@ async function subir(extra: Record<string, string>): Promise<string> {
   throw new Error("o dublê não subiu");
 }
 
-async function perguntar(base: string): Promise<Record<string, unknown>> {
+async function perguntar(base: string, state = "quero cancelar"): Promise<Record<string, unknown>> {
   const res = await fetch(`${base}/v1/systemone`, {
     method: "POST",
     headers: { authorization: `Bearer ${CHAVE}`, "content-type": "application/json" },
     body: JSON.stringify({
       model: "jev-1.13.0",
-      state: "quero cancelar",
+      state,
       questions: {
         clima: { type: "score", criteria: ["a", "b", "c", "d", "e"] },
         manipulacao: { type: "choice", criteria: { none: "nada", high: "tentou" } },
@@ -113,4 +113,37 @@ describe("dublê do Jev: DUBLE_JEV_RESPOSTAS", () => {
       expect(r.stderr).toContain("DUBLE_JEV_RESPOSTAS");
     },
   );
+});
+
+/**
+ * Uma spec com duas mensagens que pedem coisas diferentes (a de falar com uma
+ * pessoa e a de parar de receber, em `tests/e2e/jev-pedidos.spec.ts`) precisa
+ * que o dublê responda cada uma: o mapa por trecho vale só na chamada cuja
+ * mensagem o contém, e por cima do mapa geral.
+ */
+describe("dublê do Jev: DUBLE_JEV_RESPOSTAS_POR_TRECHO", () => {
+  const ALTO = { type: "choice", choice: "high", confidence: 0.9, probabilities: { none: 0.1, high: 0.9 } };
+  const NENHUM = { type: "choice", choice: "none", confidence: 0.9, probabilities: { none: 0.9, high: 0.1 } };
+
+  it("a mensagem com o trecho recebe a do trecho, por cima da geral; a outra, a geral", async () => {
+    const base = await subir({
+      DUBLE_JEV_RESPOSTAS: JSON.stringify({ manipulacao: NENHUM }),
+      DUBLE_JEV_RESPOSTAS_POR_TRECHO: JSON.stringify({ "(123456)": { manipulacao: ALTO } }),
+    });
+    const doTrecho = await perguntar(base, "apaguem meu cadastro (123456)");
+    expect(doTrecho.manipulacao).toEqual(ALTO);
+    expect(doTrecho.clima, "a pergunta que o trecho não nomeia segue o padrão").toMatchObject({ type: "score", score: 3 });
+    expect((await perguntar(base, "outra mensagem (654321)")).manipulacao).toEqual(NENHUM);
+  });
+
+  it("mapa por trecho ilegível derruba o dublê na subida", async () => {
+    const porta = await portaLivre();
+    const r = spawnSync(process.execPath, [SCRIPT], {
+      env: ambiente(porta, { DUBLE_JEV_RESPOSTAS_POR_TRECHO: "[]" }),
+      encoding: "utf8",
+      timeout: 10_000,
+    });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain("DUBLE_JEV_RESPOSTAS_POR_TRECHO");
+  });
 });
