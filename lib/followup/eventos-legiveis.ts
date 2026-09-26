@@ -132,6 +132,8 @@ const TIPO_DO_NO: Record<FlowNode["type"], string> = {
   collect: "Pergunta",
   skill: "Skill",
   action: "Mensagem",
+  // #1540 — não é "Mensagem": é o passo que NÃO fala com o cliente.
+  internal_task: "Lembrete interno",
   end: "Fim",
 };
 
@@ -196,6 +198,10 @@ export function resumoDoNo(node: FlowNode): NoDoDossie {
               ? "envia um texto fixo"
               : "envia uma mensagem de modelo pronto",
       };
+    case "internal_task": {
+      const prazo = node.config.vence_em_dias === 0 ? "hoje" : `em ${node.config.vence_em_dias} dia(s)`;
+      return { ...base, resumo: `cria a tarefa "${node.config.titulo}" para ${prazo} — sem mensagem ao cliente` };
+    }
     case "end":
       return { ...base, resumo: `encerra — ${DESFECHO[node.config.outcome] ?? node.config.outcome}` };
   }
