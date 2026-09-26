@@ -110,6 +110,12 @@ export const PUBLIC_PATHS: RegExp[] = [
   // método é a própria rota, como sempre foi.
   /^\/api\/v1\/agenda\/agendamentos$/,
   /^\/api\/v1\/conversations\/open-with-contact$/,
+  // CRIAÇÃO DE RASCUNHO SUGERIDO SERVER-TO-SERVER (issue #1611). Mesma
+  // dualidade da linha acima: sessão OU Bearer `dsk_…` com escopo `mcp:write`,
+  // resolvida por `lib/api/auth-dual.ts` DENTRO da rota
+  // (`app/api/v1/conversations/[id]/drafts/route.ts`). O `GET`/leitura do
+  // rascunho é da sessão do atendente (caixa de entrada) e NÃO entra aqui.
+  /^\/api\/v1\/conversations\/[^/]+\/drafts$/,
   // Upload outbound: primeiro passo do envio de MÍDIA por token. Sem ele, o
   // cartão de fidelidade (a única das automações que não é texto) não teria
   // como sair depois do corte de gateway.

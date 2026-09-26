@@ -79,6 +79,8 @@ async function enviar(
   credencial: CredencialDeConversao,
   conversao: ConversaoOffline,
 ): Promise<ResultadoDeEnvio> {
+  if (conversao.evento !== "Purchase" || conversao.valorCentavos === null)
+    return { tipo: "permanente", detalhe: "Este transporte aceita apenas compras com valor." };
   const idadeMs = Date.now() - conversao.ocorridoEm.getTime();
   if (idadeMs > IDADE_MAXIMA_MS) {
     const dias = Math.floor(idadeMs / (24 * 60 * 60 * 1000));
@@ -141,7 +143,18 @@ async function enviar(
     };
   }
 
-  if (resposta.ok) return { tipo: "ok" };
+  if (resposta.ok) {
+    const corpo: unknown = await resposta.json().catch(() => null);
+    if (
+      corpo &&
+      typeof corpo === "object" &&
+      "events_received" in corpo &&
+      corpo.events_received === 1
+    ) {
+      return { tipo: "ok" };
+    }
+    return { tipo: "transitorio", detalhe: "A plataforma não confirmou o recebimento do evento." };
+  }
 
   const texto = await resposta.text().catch(() => "");
   let codigo: number | null = null;
@@ -160,7 +173,7 @@ async function enviar(
     leadId: conversao.leadId,
   });
 
-  if (resposta.status >= 500) {
+  if (resposta.status === 429 || resposta.status >= 500) {
     return { tipo: "transitorio", detalhe: `${resposta.status}: ${mensagem}` };
   }
   return classifica4xx(codigo, mensagem);

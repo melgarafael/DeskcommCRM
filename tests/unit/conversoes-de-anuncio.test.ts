@@ -115,7 +115,7 @@ describe("as duas portas do fechamento", () => {
     );
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response("{}", { status: 200 }));
+      .mockResolvedValue(new Response('{"events_received":1}', { status: 200 }));
 
     const r = await conversaoDeVendaHandler.handle(evento("lead.stage_changed"));
 
@@ -171,7 +171,7 @@ describe("a mesma venda nunca é contada duas vezes", () => {
     let corpoEnviado = "";
     vi.spyOn(globalThis, "fetch").mockImplementation(async (_u, init) => {
       corpoEnviado = String((init as RequestInit).body);
-      return new Response("{}", { status: 200 });
+      return new Response('{"events_received":1}', { status: 200 });
     });
 
     await conversaoDeVendaHandler.handle(evento("lead.won"));
@@ -248,7 +248,7 @@ describe("a física da falha decide o tratamento", () => {
     expect(r.status).toBe("retry");
     expect(r.retry_at).toBeTruthy();
     // Instabilidade que se resolve sozinha não pode virar alarme na tela.
-    expect(upserts).toHaveLength(0);
+    expect(upserts.at(-1)?.valores.reason).toBe("nova_tentativa_agendada");
   });
 
   it("recusa por credencial vira erro registrado, não retry infinito", async () => {
@@ -267,7 +267,7 @@ describe("a física da falha decide o tratamento", () => {
 
     const r = await conversaoDeVendaHandler.handle(evento("lead.won"));
 
-    expect(r.status).toBe("error");
+    expect(r.status).toBe("skipped");
     expect(upserts.at(-1)?.valores).toMatchObject({
       status: "error",
       reason: "recusado_pela_plataforma",
@@ -312,7 +312,7 @@ describe("o transporte", () => {
     let corpo = "";
     vi.spyOn(globalThis, "fetch").mockImplementation(async (_u, init) => {
       corpo = String((init as RequestInit).body);
-      return new Response("{}", { status: 200 });
+      return new Response('{"events_received":1}', { status: 200 });
     });
 
     await transporteMeta.enviar(
@@ -371,4 +371,85 @@ describe("a matriz de plataformas é exaustiva", () => {
     expect(r.detail).toBe("sem_conexao");
     expect(upserts.at(-1)?.valores).toMatchObject({ reason: "sem_conexao" });
   });
+});
+
+describe("confirmação e recuperação", () => {
+  it("evento de teste não impede o envio posterior da venda real", async () => {
+    vi.mocked(createAdminClient).mockReturnValue(
+      fakeAdmin({
+        crm_leads: leadGanho,
+        contacts: contatoComAnuncio,
+        ad_platform_connections: { ...conexaoAtiva, test_event_code: "TEST" },
+      }) as never,
+    );
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response('{"events_received":1}', { status: 200 }),
+    );
+    expect((await conversaoDeVendaHandler.handle(evento("lead.won"))).status).toBe("skipped");
+    expect(upserts.at(-1)?.valores).toMatchObject({ status: "skipped", reason: "evento_de_teste" });
+  });
+  it("escuta o reprocessamento sem emitir outro lead.won", () => {
+    expect(conversaoDeVendaHandler.events).toContain("ad_conversion.retry_requested");
+  });
+  it("falha de leitura do registro não autoriza envio", async () => {
+    const base = fakeAdmin({
+      crm_leads: leadGanho,
+      contacts: contatoComAnuncio,
+      ad_platform_connections: conexaoAtiva,
+    });
+    const from = base.from.bind(base);
+    base.from = (tabela) => {
+      const query = from(tabela);
+      if (tabela === "ad_conversion_dispatches")
+        query.maybeSingle = async () => ({ data: null, error: { message: "offline" } }) as never;
+      return query;
+    };
+    vi.mocked(createAdminClient).mockReturnValue(base as never);
+    const fetch = vi.spyOn(globalThis, "fetch");
+    expect((await conversaoDeVendaHandler.handle(evento("lead.won"))).status).toBe("retry");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it.each(["won", "open"])(
+    "protocolo pendente consulta mesmo com negócio %s e origem alterada",
+    async (status) => {
+      const transporte = transporteDe("google_ads")!;
+      const consultar = vi.spyOn(transporte, "consultar").mockResolvedValue({ tipo: "ok" });
+      const enviar = vi.spyOn(transporte, "enviar");
+      vi.mocked(createAdminClient).mockReturnValue(
+        fakeAdmin({
+          crm_leads: { ...leadGanho, status, value_cents: null },
+          contacts: {
+            ...contatoComAnuncio,
+            source_metadata: { ad_platform: "meta_ads", ad_source_id: "outro-clique" },
+          },
+          ad_platform_connections: {
+            ...conexaoAtiva,
+            google_api: "data_manager",
+            google_refresh_token_encrypted: "encrypted",
+            google_customer_id: "1234567890",
+            google_conversion_action_id: "42",
+          },
+          ad_conversion_dispatches: {
+            status: "skipped",
+            platform: "google_ads",
+            value_cents: 12000,
+            currency: "BRL",
+            remote_request_id: "protocolo",
+            remote_requested_at: new Date().toISOString(),
+          },
+        }) as never,
+      );
+      expect(
+        (await conversaoDeVendaHandler.handle(evento("ad_conversion.retry_requested"))).status,
+      ).toBe("ok");
+      expect(consultar).toHaveBeenCalledWith(expect.anything(), "protocolo");
+      expect(enviar).not.toHaveBeenCalled();
+      expect(upserts.at(-1)?.valores).toMatchObject({
+        status: "sent",
+        platform: "google_ads",
+        value_cents: 12000,
+        currency: "BRL",
+      });
+    },
+  );
 });

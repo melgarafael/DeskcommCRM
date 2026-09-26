@@ -151,3 +151,21 @@ describe("pipelineConfigPatchSchema", () => {
     expect(r.success).toBe(true);
   });
 });
+
+describe("pipelineConfigPatchSchema — reabertura (#1538)", () => {
+  it("aceita os dois modos e a lista de campos copiáveis", () => {
+    for (const reabertura of ["mesmo_registro", "novo_negocio"]) {
+      expect(pipelineConfigPatchSchema.safeParse({ reabertura }).success).toBe(true);
+    }
+    expect(
+      pipelineConfigPatchSchema.safeParse({ reabertura_campos: ["tags", "value_cents"] }).success,
+    ).toBe(true);
+  });
+
+  it("recusa modo desconhecido e campo fora da lista", () => {
+    expect(pipelineConfigPatchSchema.safeParse({ reabertura: "NOVO_NEGOCIO" }).success).toBe(false);
+    expect(pipelineConfigPatchSchema.safeParse({ reabertura_campos: ["external_id"] }).success).toBe(
+      false,
+    );
+  });
+});

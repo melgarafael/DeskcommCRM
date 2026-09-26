@@ -19,6 +19,7 @@ import {
   createLeadHandler,
   updateLeadHandler,
   moveLeadHandler,
+  retomarLeadHandler,
 } from "@/app/api/v1/leads/_handler";
 import { createLeadSchema, updateLeadSchema } from "@/lib/schemas/leads";
 import { resolveUserNames } from "./_users";
@@ -280,6 +281,14 @@ const moveInputShape = {
   to_stage_id: z.string().uuid(),
   position_in_stage: z.number().finite().optional(),
   reason: z.string().max(500).optional(),
+  /**
+   * O motivo do ganho, quando o destino fecha o negócio como ganho (issue #1536).
+   * Obrigatório só se o funil ligar `won_reason_required`; sem lista cadastrada
+   * o texto é livre. A recusa (`required_fields_missing` /
+   * `won_reason_invalid`) volta como erro da tool, e o modelo pergunta ao
+   * cliente ou passa para o humano — nunca move calado.
+   */
+  won_reason: z.string().max(500).optional(),
 };
 
 export const crmMoveLeadStage: McpToolDefinition<typeof moveInputShape> = {
@@ -310,7 +319,49 @@ export const crmMoveLeadStage: McpToolDefinition<typeof moveInputShape> = {
         to_stage_id: input.to_stage_id,
         position_in_stage: input.position_in_stage,
         reason: input.reason,
+        won_reason: input.won_reason,
       },
+    );
+    return { lead };
+  },
+};
+
+
+// ---------------------------------------------------------------------------
+// retomar como novo negócio (issue #1538)
+// ---------------------------------------------------------------------------
+
+const retomarInputShape = {
+  lead_id: z.string().uuid(),
+  /**
+   * A etapa da NOVA tentativa, no MESMO funil do negócio original. Sem ela o
+   * handler escolhe a primeira etapa aberta do funil.
+   */
+  stage_id: z.string().uuid().optional(),
+};
+
+export const crmRetomarLead: McpToolDefinition<typeof retomarInputShape> = {
+  name: "crm_retomar_lead",
+  description:
+    "Retoma um negócio ENCERRADO (perdido ou ganho) como um negócio NOVO no mesmo funil, com o mesmo contato, " +
+    "source='retomada' e retomado_de_lead_id apontando para o original — que NÃO é alterado (status e motivo ficam intactos). " +
+    "É o que fazer quando o cliente volta depois de uma venda fechada e a equipe quer uma nova tentativa registrada: " +
+    "em funis com reabertura 'novo_negocio', o crm_move_lead_stage devolve 409 reabertura_cria_novo e esta é a porta que resolve. " +
+    "O negócio original precisa estar encerrado; um negócio ABERTO é recusado (reabertura_lead_aberto).",
+  inputSchema: retomarInputShape,
+  category: "write",
+  requiresRole: "agent",
+  requiresScope: "mcp:write",
+  handler: async (input, ctx) => {
+    const lead = await retomarLeadHandler(
+      ctx.supabase,
+      {
+        organization_id: ctx.organizationId,
+        actor: ctx.actor,
+        requestId: ctx.requestId,
+      },
+      input.lead_id,
+      { stage_id: input.stage_id },
     );
     return { lead };
   },

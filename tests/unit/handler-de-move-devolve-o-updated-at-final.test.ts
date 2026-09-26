@@ -60,7 +60,7 @@ const DEPOIS_DO_MOVE = "2026-09-15T12:00:01.000Z";
 const DEPOIS_DA_ATIVIDADE = "2026-09-15T12:00:01.500Z";
 
 /** Banco falso com a cascata real: gravar a atividade troca o `updated_at`. */
-function bancoFalso(statusDepoisDoUpdate = "open") {
+function bancoFalso(statusDepoisDoUpdate = "open", settingsDoFunil: unknown = null) {
   const banco = { updatedAt: CARREGADO, stageId: ETAPA_A, status: "open" };
   vi.mocked(emitLeadActivity).mockImplementation(async () => {
     banco.updatedAt = DEPOIS_DA_ATIVIDADE;
@@ -76,9 +76,18 @@ function bancoFalso(statusDepoisDoUpdate = "open") {
     status: banco.status,
     lost_reason: null,
     updated_at: banco.updatedAt,
+    custom_fields: {} as Record<string, unknown>,
+    won_reason: null,
   });
 
   const from = (tabela: string) => {
+    if (tabela === "crm_pipelines") {
+      const chain: Record<string, unknown> = {};
+      chain.select = () => chain;
+      chain.eq = () => chain;
+      chain.maybeSingle = async () => ({ data: { settings: settingsDoFunil }, error: null });
+      return chain;
+    }
     if (tabela === "crm_stages") {
       const chain: Record<string, unknown> = {};
       chain.select = () => chain;
@@ -159,6 +168,48 @@ describe("moveLeadHandler", () => {
 
     expect(devolvido.stage_id).toBe(ETAPA_B);
     expect(devolvido.updated_at).toBe(DEPOIS_DA_ATIVIDADE);
+  });
+
+  // ── CAMPOS OBRIGATÓRIOS (issue #1536) ──────────────────────────────────────
+  //
+  // O caminho 4 dos SEIS: `crm_move_lead_stage` (MCP) e as ações de automação
+  // escrevem etapa por ESTE handler, então a recusa dele É a recusa da tool — o
+  // servidor MCP devolve `isError` com a frase, e o modelo pergunta ao cliente
+  // ou passa para o humano em vez de mover calado.
+  const CAMPOS_EXIGIDOS = {
+    fields: [
+      {
+        key: "concorrente",
+        label: "Concorrente",
+        type: "text",
+        obrigatorio_em: { etapas: [ETAPA_B] },
+      },
+    ],
+  };
+
+  it("etapa que exige campo vazio: ApiError 422 required_fields_missing com o faltando", async () => {
+    await expect(
+      moveLeadHandler(bancoFalso("open", CAMPOS_EXIGIDOS) as never, ctx, LEAD, {
+        to_stage_id: ETAPA_B,
+      }),
+    ).rejects.toMatchObject({
+      status: 422,
+      code: "required_fields_missing",
+      details: { faltando: [{ chave: "concorrente", rotulo: "Concorrente" }] },
+    });
+  });
+
+  it("funil sem obrigatorio_em continua movendo (controle do critério 3)", async () => {
+    const devolvido = (await moveLeadHandler(
+      bancoFalso("open", {
+        fields: [{ key: "concorrente", label: "Concorrente", type: "text", required: true }],
+      }) as never,
+      ctx,
+      LEAD,
+      { to_stage_id: ETAPA_B },
+    )) as { stage_id: string };
+
+    expect(devolvido.stage_id).toBe(ETAPA_B);
   });
 
   it("o evento `lead.stage_changed` leva o status que o gatilho do UPDATE escreveu", async () => {

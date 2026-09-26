@@ -28,10 +28,13 @@ import { describe, expect, it } from "vitest";
  * oitava tabela redigida entraria sem ninguém acrescentá-la aqui, e o teste
  * ficaria verde por não medir. As duas pontas saem da fonte:
  *
- *   redação → toda função do baseline cujo nome case /redact|redigir/, pelos
- *             alvos de `update <tabela> set` no corpo dela
+ *   limpeza → toda função do baseline cujo nome case /redact|redigir|anonimiz|apagar/,
+ *             pelos alvos de `update <tabela> set` E de `delete from <tabela>` no corpo dela
  *   export  → os `.from("<tabela>")` de `lib/lgpd/export-collector.ts`
  *
+ * O `delete from` entrou DEPOIS: a varredura nasceu só de `update ... set`, em
+ * função com `redact|redigir` no nome — e a anonimização que APAGA se chama
+ * `fn_apagar_...`.
  * ═══ O que este teste NÃO prova ═══
  *
  * Que o conteúdo exportado seja suficiente — só que a tabela é VISITADA.
@@ -43,11 +46,12 @@ const RAIZ = path.resolve(__dirname, "../..");
 const BASELINE = fs.readFileSync(path.join(RAIZ, "supabase/baseline.sql"), "utf8");
 const COLETOR = fs.readFileSync(path.join(RAIZ, "lib/lgpd/export-collector.ts"), "utf8");
 
-/** Corpos de função cujo NOME anuncia redação — no dump vêm com identificador entre aspas. */
-function corposDeRedacao(): string[] {
+/** Corpos de função cujo NOME anuncia limpeza de dado pessoal — redigir OU apagar.
+ *  No dump vêm com identificador entre aspas. */
+function corposDeLimpeza(): string[] {
   const corpos: string[] = [];
   const abre =
-    /create or replace function\s+"?public"?\.\s*"?([a-z_]*(?:redact|redigir)[a-z_]*)"?/gi;
+    /create or replace function\s+"?public"?\.\s*"?([a-z_]*(?:redact|redigir|anonimiz|apagar)[a-z_]*)"?/gi;
   for (const m of BASELINE.matchAll(abre)) {
     const inicio = m.index ?? 0;
     // O corpo termina no primeiro `$$;` depois da abertura. Os dumps deste repo
@@ -58,11 +62,14 @@ function corposDeRedacao(): string[] {
   return corpos;
 }
 
-function tabelasRedigidas(): string[] {
+/** Tabelas que a limpeza alcança: `update <t> set` (redige) ou `delete from <t>` (apaga). */
+function tabelasDeLimpeza(): string[] {
   const alvos = new Set<string>();
-  for (const corpo of corposDeRedacao()) {
-    for (const m of corpo.matchAll(/\bupdate\s+(?:"?public"?\.)?"?([a-z_]+)"?\s+set\b/gi)) {
-      const t = m[1];
+  for (const corpo of corposDeLimpeza()) {
+    for (const m of corpo.matchAll(
+      /\b(?:update\s+(?:"?public"?\.)?"?([a-z_]+)"?\s+set|delete\s+from\s+(?:"?public"?\.)?"?([a-z_]+)"?)/gi,
+    )) {
+      const t = m[1] ?? m[2];
       if (t !== undefined) alvos.add(t);
     }
   }
@@ -81,24 +88,27 @@ describe("LGPD: o export alcança tudo que a redação alcança", () => {
     // Sem isto, um regex que deixe de casar devolve dois conjuntos vazios e a
     // asserção abaixo fica verde — o modo de falha que este repo já pagou várias
     // vezes. E o número tem de ser plausível: a redação move mais que 3 tabelas.
-    expect(tabelasRedigidas().length).toBeGreaterThan(3);
+    expect(tabelasDeLimpeza().length).toBeGreaterThan(3);
     expect(tabelasExportadas().length).toBeGreaterThan(3);
+    expect(tabelasDeLimpeza()).toContain("conversation_drafts");
+    expect(tabelasDeLimpeza()).toContain("contact_field_proposals");
   });
 
   it("CONTROLE: a varredura da redação enxerga a tabela que o trigger 0184 acrescentou", () => {
     // `calendar_appointments` não é redigida pelo cascade e sim por um trigger
     // separado (0184). Se a sonda só olhasse a função principal, ela sumiria — e
     // o teste passaria justamente sobre o caso que o motivou.
-    expect(tabelasRedigidas()).toContain("calendar_appointments");
+    expect(tabelasDeLimpeza()).toContain("calendar_appointments");
   });
 
-  it("toda tabela que a redação apaga é visitada pelo export", () => {
+  it("toda tabela que a anonimização limpa é visitada pelo export", () => {
     const exportadas = new Set(tabelasExportadas());
-    const faltando = tabelasRedigidas().filter((t) => !exportadas.has(t));
+    const faltando = tabelasDeLimpeza().filter((t) => !exportadas.has(t));
     expect(
       faltando,
-      "Estas tabelas são redigidas quando o titular pede anonimização e NÃO são " +
-        "coletadas quando ele pede acesso (Art. 18 II). O que se apaga a pedido " +
+      "Estas tabelas são limpas quando o titular pede anonimização (redigidas ou " +
+        "APAGADAS) e NÃO são coletadas quando ele pede acesso (Art. 18 II). O que " +
+        "se apaga a pedido " +
         "dele é o que se entrega a pedido dele — acrescente o bloco em " +
         "`lib/lgpd/export-collector.ts`, espelhando o de `crm_lead_activities`:\n" +
         faltando.map((f) => `  ${f}`).join("\n"),

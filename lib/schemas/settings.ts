@@ -166,11 +166,44 @@ export const customFieldSchema = z.object({
     "url",
   ]),
   required: z.boolean().optional(),
+  /**
+   * QUANDO este campo passa a OBRIGAR (issue #1536).
+   *
+   * `required` continua com o significado antigo (destaca o campo no formulário);
+   * quem barra um movimento de etapa ou um encerramento é SÓ isto aqui — um funil
+   * sem `obrigatorio_em` se comporta exatamente como se comportava antes.
+   *
+   * - `etapas`: etapas do funil nas quais entrar já exige o valor preenchido;
+   * - `ao_ganhar`: exigido quando a escrita fecha o negócio como ganho;
+   * - `ao_perder`: exigido quando a escrita o deixa perdido.
+   *
+   * A decisão é do servidor (`lib/leads/campos-exigidos.ts`), não do schema: o
+   * schema só diz o que PODE ser exigido, e uma lista vazia significa "nunca".
+   */
+  obrigatorio_em: z
+    .object({
+      etapas: z.array(z.string().uuid()).max(50).optional(),
+      ao_ganhar: z.boolean().optional(),
+      ao_perder: z.boolean().optional(),
+    })
+    .optional(),
   options: z
     .array(z.object({ value: z.string().min(1), label: z.string().min(1) }))
     .optional(),
 });
 export type CustomFieldDef = z.infer<typeof customFieldSchema>;
+
+/** Os campos que a retomada de negócio encerrado pode copiar (issue #1538). */
+export const CAMPOS_COPIAVEIS_NA_RETOMADA = [
+  "custom_fields",
+  "tags",
+  "description",
+  "value_cents",
+  "currency",
+  "expected_close_date",
+  "owner_user_id",
+  "owner_agent_id",
+] as const;
 
 export const pipelineConfigPatchSchema = z.object({
   vocabulary: z
@@ -183,6 +216,24 @@ export const pipelineConfigPatchSchema = z.object({
     .optional(),
   fields: z.array(customFieldSchema).max(50).optional(),
   lost_reasons: z.array(z.string().min(1).max(80)).max(50).optional(),
+  /**
+   * O MOTIVO DE GANHO por funil (issue #1536) — espelho de `lost_reasons`.
+   * Sem lista cadastrada o motivo é texto livre; com lista, só o que está nela
+   * passa (`recusaDeMotivoDoGanho`, o equivalente do ganho à CHECK que o banco
+   * já tem para a perda — para o ganho não há trigger, então quem aplica é aqui).
+   */
+  won_reasons: z.array(z.string().min(1).max(80)).max(50).optional(),
+  /** Obrigatóriedade do motivo de ganho, opt-in por funil (padrão: não exigir). */
+  won_reason_required: z.boolean().optional(),
+  /**
+   * O que acontece quando um negócio ENCERRADO volta (issue #1538). Ausente é
+   * `mesmo_registro`, o comportamento de antes: reabre o mesmo negócio. Com
+   * `novo_negocio`, mover o encerrado para etapa aberta é recusado e a saída é
+   * a retomada (`lib/leads/reabertura.ts`).
+   */
+  reabertura: z.enum(["mesmo_registro", "novo_negocio"]).optional(),
+  /** O que a retomada copia da origem; ausente é o piso (`custom_fields` e tags). */
+  reabertura_campos: z.array(z.enum(CAMPOS_COPIAVEIS_NA_RETOMADA)).max(8).optional(),
 });
 export type PipelineConfigPatch = z.infer<typeof pipelineConfigPatchSchema>;
 

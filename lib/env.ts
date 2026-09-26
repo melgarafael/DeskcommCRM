@@ -402,6 +402,13 @@ const schema = z.object({
    * respondendo 500 a tudo. Padrão 365, piso 90, decisão do dono (PR #1577).
    */
   PROSPECCAO_RETENTION_DAYS: z.string().optional().default(""),
+  /**
+   * Observações do Jev (migration 0421): o par Jev × mecanismo de hoje que o
+   * cartão compara, sem texto de cliente. `z.string()` pela MESMA razão das
+   * irmãs acima — quem interpreta é `lib/retencao/politica.ts`. Padrão 90, piso
+   * 30 (a janela da concordância).
+   */
+  JEV_OBSERVACOES_RETENTION_DAYS: z.string().optional().default(""),
 
   // LGPD export (S-08.04)
   LGPD_SIGNING_KEY: z.string().optional().default(""),

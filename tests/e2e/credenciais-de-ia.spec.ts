@@ -2,13 +2,17 @@
  * Jornada: admin cola uma chave de IA e entende o resultado sem ler código.
  * Antes, o card mostrava `auth_failed_401` e a lista de modelos colada por vírgula.
  */
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./helpers/test";
 
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 
 let creds = lerCreds();
 
 test.describe("Chaves de acesso à IA", () => {
+  // O login pode esperar até 30 s pela próxima janela TOTP antes de abrir a tela.
+  // Reserve também os 15 s da validação e a limpeza, sem ampliar o polling abaixo.
+  test.setTimeout(60_000);
+
   test("[P0] chave inválida vira frase legível, e a tela diz onde pegar outra", async ({ page }) => {
     creds = await loginComoAdmin(page, creds);
     await page.goto("/app/ai/credentials");

@@ -618,6 +618,7 @@ jobs:
       # pela própria spec, em loopback, com SQLite e PID exclusivos.
       EXTENSIONS_LOCAL_CATALOG_ORIGIN: "http://127.0.0.1:56331"
       SPECS_PARTE_1: >-
+        conversoes-reprocessamento.spec.ts
         pre-go-live-whatsapp.spec.ts
         smoke.spec.ts auth.spec.ts error-pages.spec.ts
         icone-da-marca.spec.ts
@@ -970,6 +971,7 @@ jobs:
         zona-de-perigo-apaga-dados-de-teste.spec.ts
         email-da-instalacao-pela-tela.spec.ts
         central-avisos-resolver-em-lote.spec.ts
+        central-por-gravidade.spec.ts
         voz-desligada-por-padrao.spec.ts
         voz-primeiro-pareamento.spec.ts
         qa-titulos-das-telas.spec.ts
@@ -1066,6 +1068,14 @@ jobs:
       # `JEV_API_BASE_URL` que o `.env.e2e` grava), semeia a entrada de mensagens
       # com o seed da `conversa-vira-lead` e apaga a chave e o `settings.jev` que
       # criou, antes e depois. PREVISÃO, não medida: ~1,5 min de Playwright.
+      #
+      # `jev-roteador` entrou junto dela em 2026-09-25 (onda 2 do Jev, bloco
+      # 2.2), pelo mesmo motivo e com o mesmo isolamento: sobe o próprio dublê
+      # (a mesma porta 3996, com `DUBLE_JEV_RESPOSTAS` forçando a escolha do
+      # Jev), semeia um número, dois agentes e um roteador ativo SÓ dela pelo
+      # service role e apaga tudo no fim. Roda depois da `jev-decisoes-rapidas`
+      # — as duas nunca disputam a porta, porque a parte roda uma spec por vez.
+      # PREVISÃO, não medida: ~1 min.
       SPECS_PARTE_5: >-
         inbox-busca-e-filtros-dizem-a-verdade.spec.ts
         extensoes-da-instalacao.spec.ts
@@ -1088,6 +1098,7 @@ jobs:
         suporte-temporario.spec.ts
         olhar-telas-do-epico.spec.ts
         jev-decisoes-rapidas.spec.ts
+        jev-roteador.spec.ts
         buffer-ssr-caixa-orfa.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───

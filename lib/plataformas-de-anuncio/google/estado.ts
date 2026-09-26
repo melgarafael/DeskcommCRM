@@ -18,11 +18,14 @@
 
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
+import type { ApiDeConversaoGoogle } from "../types";
+
 export const VALIDADE_DO_ESTADO_MS = 10 * 60 * 1000;
 
 const TAMANHO_MINIMO_DO_SEGREDO = 16;
 
 export interface EstadoDaConexaoDeAds {
+  api: ApiDeConversaoGoogle;
   organizationId: string;
   userId: string;
   nonce: string;
@@ -44,7 +47,7 @@ function conferirSegredo(segredo: string): string {
 }
 
 export function emitirEstado(
-  dados: { organizationId: string; userId: string },
+  dados: { organizationId: string; userId: string; api?: ApiDeConversaoGoogle },
   opcoes: { segredo: string; agora: Date; nonce?: string; validadeMs?: number },
 ): string {
   const segredo = conferirSegredo(opcoes.segredo);
@@ -54,12 +57,14 @@ export function emitirEstado(
     throw new Error("state precisa de organizationId e userId");
   }
   if (organizationId.includes(".") || userId.includes(".")) {
-    throw new Error("organizationId/userId com ponto: o separador da carga do state não sobreviveria");
+    throw new Error(
+      "organizationId/userId com ponto: o separador da carga do state não sobreviveria",
+    );
   }
 
   const nonce = opcoes.nonce?.trim() || randomBytes(16).toString("hex");
   const expira = opcoes.agora.getTime() + (opcoes.validadeMs ?? VALIDADE_DO_ESTADO_MS);
-  const carga = `${organizationId}.${userId}.${nonce}.${expira}`;
+  const carga = `${organizationId}.${userId}.${nonce}.${expira}.${dados.api ?? "google_ads"}`;
   const assinatura = assinar(carga, segredo).toString("hex");
   return `${Buffer.from(carga, "utf8").toString("base64url")}.${assinatura}`;
 }
@@ -94,11 +99,12 @@ export function verificarEstado(
   if (!timingSafeEqual(recebida, esperada)) return null;
 
   const campos = carga.split(".");
-  if (campos.length !== 4) return null;
-  const [organizationId, userId, nonce, expiraTexto] = campos;
+  if (campos.length !== 4 && campos.length !== 5) return null;
+  const [organizationId, userId, nonce, expiraTexto, api = "google_ads"] = campos;
+  if (api !== "google_ads" && api !== "data_manager") return null;
   const expiraEmMs = Number(expiraTexto);
   if (!organizationId || !userId || !nonce || !Number.isFinite(expiraEmMs)) return null;
   if (opcoes.agora.getTime() > expiraEmMs) return null;
 
-  return { organizationId, userId, nonce, expiraEmMs };
+  return { organizationId, userId, nonce, expiraEmMs, api };
 }

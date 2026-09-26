@@ -192,6 +192,25 @@ export const RETENCAO_AVISO_DE_CASO_DIAS_PISO = 30;
 export const RETENCAO_PROSPECCAO_DIAS_PADRAO = 365;
 export const RETENCAO_PROSPECCAO_DIAS_PISO = 90;
 
+/**
+ * 90 dias para as OBSERVAÇÕES DO JEV (`jev_observacoes`, migration 0421).
+ *
+ * A linha não guarda texto de cliente — só os rótulos do Jev e do mecanismo de
+ * hoje e se concordaram. Ela existe para uma pergunta só: "posso deixar o Jev
+ * decidir esta tarefa?", respondida pela concordância recente. Três meses é
+ * folga sobre a janela que o cartão mostra.
+ *
+ * Quem aplica é `fn_expurgar_observacoes_do_jev` (0421), em lotes pelo cron
+ * `data-retention`, com o piso no CORPO da função, como as irmãs.
+ */
+export const RETENCAO_OBSERVACOES_DO_JEV_DIAS_PADRAO = 90;
+/**
+ * Piso de 30 dias: a janela da concordância no cartão
+ * (`app/api/v1/ai/jev/route.ts`). Abaixo dela o cartão continuaria dizendo
+ * "nos últimos 30 dias" contando menos do que isso.
+ */
+export const RETENCAO_OBSERVACOES_DO_JEV_DIAS_PISO = 30;
+
 
 export interface RetencaoInterpretada {
   /** Dias a pedir ao banco. Nunca abaixo do piso, nunca `NaN`. */

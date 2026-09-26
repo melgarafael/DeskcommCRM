@@ -45,11 +45,23 @@ export type OrigemDaEscolha =
   | "variavel_de_ambiente"
   | "herdado_de_quem_chamou"
   | "padrao_da_organizacao"
-  /** O Jev mediu e a nota dele decidiu. Também a linha de falha do Jev (ver Execuções). */
+  /** O Jev mediu e a nota dele decidiu. Também a linha de falha do clima sem reserva (ver Execuções). */
   | "jev"
-  /** Observação: o Jev mediu ao lado da IA de sempre, e quem decidiu foi ela. */
+  /**
+   * O Jev respondeu e a resposta dele não decidiu nada: a IA de sempre decidiu,
+   * ou, sem ela, a regra de antes. Também a linha de falha do Jev numa tarefa do
+   * turno (a manipulação, o roteador): o turno seguiu como sem ele (ver Execuções).
+   */
   | "jev_observacao"
-  /** O Jev estava ligado e não respondeu: a IA de sempre mediu no lugar dele. */
+  /**
+   * O clique em "Testar classificação" do roteador: custou (R8), mas não
+   * atendeu ninguém nem entra na comparação (R5).
+   */
+  | "jev_teste"
+  /**
+   * O Jev estava ligado e não respondeu: a IA de sempre mediu no lugar dele. No
+   * roteador decidindo, é a linha de ERRO do Jev que a leva (`lib/ai/decisao/roteador.ts`).
+   */
   | "reserva_do_jev"
   /** Observação: a IA de sempre falhou, e a nota do Jev, já medida, decidiu. */
   | "jev_cobriu";
@@ -65,7 +77,11 @@ export const EXPLICACAO_DA_ORIGEM: Record<OrigemDaEscolha, string> = {
   // Duas origens, uma por desfecho: a frase única ("se ele está em observação,
   // quem decide é…") não dizia o que aconteceu NAQUELA mensagem.
   jev: "O Jev decidiu.",
-  jev_observacao: "O Jev observou; quem decidiu foi a IA de sempre.",
+  // Não "quem decidiu foi a IA de sempre": a mesma origem vale quando ela
+  // falhou (valeu a regra de antes). O que é verdade nas duas é que ele não
+  // decidiu. O clique de teste, que não entra na comparação, tem a sua.
+  jev_observacao: "O Jev observou: a resposta dele ficou registrada para comparar, e não decidiu nada.",
+  jev_teste: "Teste na tela do roteador — não entra na comparação.",
   reserva_do_jev: "O Jev não respondeu; a IA de sempre mediu no lugar dele.",
   jev_cobriu: "A IA de sempre falhou, mas o Jev já tinha medido esta mensagem: nada se perdeu.",
 };

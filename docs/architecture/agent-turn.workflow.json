@@ -303,6 +303,30 @@
       "type": "service",
       "label": "Entrega da resposta aprovada",
       "sublabel": "Texto autorizado, fronteira e aquisição originais; recibo e liquidação recuperáveis, sem novo LLM"
+    },
+    {
+      "id": "jevRoteador",
+      "lane": "router",
+      "col": 2,
+      "type": "external",
+      "label": "Jev no roteador",
+      "sublabel": "lib/ai/decisao/roteador.ts — a mesma escolha, só a última mensagem, em paralelo ao classificador; observando o turno não espera; decidindo vale a dele (min_confidence sobre a probabilidade), com a IA de sempre de reserva; sem ela, nunca o Jev (R2)"
+    },
+    {
+      "id": "jevObservacoesRoteador",
+      "lane": "router",
+      "col": 3,
+      "type": "database",
+      "label": "jev_observacoes (roteador)",
+      "sublabel": "o par: agente a que o Jev levaria × agente a que a IA de sempre levou — mesmo agente final = concordou; + custo em llm_calls (intent_router, typesafe)"
+    },
+    {
+      "id": "jevCartaoRoteador",
+      "lane": "router",
+      "col": 4,
+      "type": "frontend",
+      "label": "Cartão do Jev (/app/ai/providers)",
+      "sublabel": "'Escolher qual agente atende': concordou em X de Y (30 dias); 'Não roda' sem roteador ativo; 'Deixar o Jev decidir' por tarefa"
     }
   ],
   "edges": [
@@ -705,6 +729,44 @@
       "to": "reply_review",
       "label": "envio, falha ou contexto obsoleto aparecem na conversa",
       "route": "drop"
+    },
+    {
+      "id": "routerconfig-jevroteador",
+      "from": "routerconfig",
+      "to": "jevRoteador",
+      "label": "as intenções (1 a 254) viram as opções da escolha; a mesma régua de sticky e min_confidence (destinoDoVeredito)"
+    },
+    {
+      "id": "jevroteador-turn",
+      "from": "jevRoteador",
+      "to": "turn",
+      "label": "decidindo: a escolha dele decide o agente do turno",
+      "variant": "dashed"
+    },
+    {
+      "id": "routerscreen-jevroteador",
+      "from": "routerscreen",
+      "to": "jevRoteador",
+      "label": "Testar classificação: as duas escolhas lado a lado, sem observação (R5)"
+    },
+    {
+      "id": "jevroteador-observacoes",
+      "from": "jevRoteador",
+      "to": "jevObservacoesRoteador",
+      "label": "gravado quando ele responde, depois de o turno seguir"
+    },
+    {
+      "id": "observacoes-cartao",
+      "from": "jevObservacoesRoteador",
+      "to": "jevCartaoRoteador",
+      "label": "concordância por tarefa, contada no banco — o laço de retorno"
+    },
+    {
+      "id": "cartao-jevroteador",
+      "from": "jevCartaoRoteador",
+      "to": "jevRoteador",
+      "label": "Deixar o Jev decidir / Pausar esta tarefa (settings.jev.tarefas.roteador)",
+      "variant": "emphasis"
     }
   ],
   "cards": [

@@ -43,7 +43,7 @@
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/test";
 
 import { lerCreds, loginComoAdmin, loginComoDono } from "./helpers/login-admin";
 import { afirmarDonoDoServidor } from "./utils/precondicao";

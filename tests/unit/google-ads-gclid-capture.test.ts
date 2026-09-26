@@ -5,6 +5,7 @@
  * outra organização.
  */
 import { describe, expect, it, vi } from "vitest";
+import { lerAtribuicao } from "@/lib/conversoes/leitura-da-atribuicao";
 
 import {
   casarClickRef,
@@ -192,5 +193,43 @@ describe("extrairEEstamparAtribuicaoGoogle", () => {
       "texto com [ref:ZZZZZZ] que não existe",
     );
     expect(rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe("identificador preservado do WhatsApp ao envio", () => {
+  it.each(["gbraid", "wbraid"])("mantém %s no contato e na leitura da conversão", async (tipo) => {
+    let metadata: Record<string, unknown> = {};
+    const admin = {
+      from: (tabela: string) => {
+        const q = {
+          update: () => q,
+          select: () => q,
+          eq: () => q,
+          is: () => q,
+          maybeSingle: async () => ({
+            error: null,
+            data:
+              tabela === "google_ads_click_refs"
+                ? { gclid: null, gbraid: null, wbraid: null, [tipo]: "clique-braid" }
+                : { phone_number: null, source_metadata: metadata },
+          }),
+        };
+        return q;
+      },
+      rpc: async (_fn: string, params: { p_metadata: Record<string, unknown> }) => {
+        metadata = params.p_metadata;
+        return { error: null };
+      },
+    };
+    await extrairEEstamparAtribuicaoGoogle(admin as never, ORG, CONTATO, "Olá [ref:7K9M2Q]");
+    expect(await lerAtribuicao(admin as never, ORG, CONTATO)).toEqual({
+      temAtribuicao: true,
+      atribuicao: {
+        plataforma: "google_ads",
+        cliqueDeOrigem: "clique-braid",
+        telefone: null,
+        identificadoresGoogle: { [tipo]: "clique-braid" },
+      },
+    });
   });
 });

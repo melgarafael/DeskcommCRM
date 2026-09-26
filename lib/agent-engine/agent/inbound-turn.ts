@@ -43,6 +43,7 @@ import { withFields, type Logger } from '../obs/logger';
 import {
   corpoDaMensagem,
   getLeadContext,
+  textoDoClienteNaUltimaMensagem,
   type CorpoDaMensagemRow,
   type LeadContext,
   type LeadContextMessage,
@@ -190,6 +191,13 @@ import {
   type JailbreakLevel,
 } from '../guardrails/jailbreak/classifier';
 import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
+import {
+  nivelFinalDaManipulacao,
+  perguntarManipulacaoAoJev,
+  registrarManipulacaoDoJev,
+  type ManipulacaoDoJev,
+} from '@/lib/ai/decisao/manipulacao';
+import type { DependenciasDoPonto } from '@/lib/ai/decisao/ponto';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
@@ -1249,6 +1257,12 @@ export interface InboundTurnDeps {
    * anti-ban observável no artefato de trace de forma determinística.
    */
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * O Jev no turno — na camada anti-manipulação e no roteador de intenção.
+   * Injetável só para teste (chave e `fetch` dublês). Default = a chave da
+   * organização e o egress com allowlist (`lib/ai/decisao/ponto.ts`).
+   */
+  jev?: DependenciasDoPonto;
 }
 
 /** Checkpoint mais recente do lead — a memória que atravessa sessões. */
@@ -2252,7 +2266,7 @@ async function executarTurnoDoAgente(
         channelSessionId: input.channelSessionId,
         conversationId: input.conversationId,
         inbound: liveJob().kind === 'inbound_turn',
-      }, { log: runLog });
+      }, { log: runLog, jev: deps.jev });
   const agentConfig = routed.config;
   if (
     !preview &&
@@ -2366,6 +2380,11 @@ async function executarTurnoDoAgente(
           [tenantId, input.conversationId, agentConfig.agentId, routed.intentName],
         );
       }
+      // A intenção e a confiança que ROTEARAM — do classificador, ou do Jev
+      // quando a tarefa do roteador dele decide (`resolve-turn-agent.ts`). Quem
+      // decidiu mora em `llm_calls` do mesmo `job_id` (purpose `intent_router`,
+      // `origem_da_escolha = 'jev'`); o único leitor desta tabela
+      // (`app/api/v1/ai/evolution`) conta roteamento, não quem o fez.
       await pool.query(
         `insert into ai_router_decisions
            (organization_id, router_id, conversation_id, intent_name, confidence, agent_id, outcome, job_id)
@@ -4161,7 +4180,52 @@ async function executarTurnoDoAgente(
     // concorrente entre turnos de leads diferentes), nenhuma decisão de
     // guardrail depende de ordem entre os dois, e o `jailbreak` segue sem vetar
     // o inbound — só flagra o turno no trace.
-    const [stageResultado, jailbreakVerdict] = await Promise.all([
+    //
+    // A TERCEIRA perna é o Jev na mesma pergunta do jailbreak
+    // (`lib/ai/decisao/manipulacao.ts`), e só existe onde ela tem com quem
+    // comparar e o que medir: a camada ligada para a organização, fora da
+    // prévia — simulação não vira concordância (R5) — e no turno da mensagem
+    // NOVA (`inbound_turn`): o `case_reply_turn` responde a ação de um humano
+    // sobre uma mensagem que o turno dela já perguntou. A tarefa desligada, o
+    // interruptor e o aceite são conferidos lá dentro. Em paralelo, o turno só
+    // espera por ele o que ele passar do mais lento dos dois.
+    //
+    // O Jev recebe o que o CLIENTE digitou, e não o `skillSignal`: numa mídia, o
+    // `skillSignal` leva a transcrição, a descrição ou o texto do PDF e a moldura
+    // de instrução do agente, que o aceite ("cada mensagem, sozinha") não cobre
+    // (R4). Mídia fica de fora da pergunta dele.
+    const manipulacaoLigada = camadaLigada(camadas.jailbreak, deps.knobs.jailbreak !== undefined);
+    const perguntaAoJev =
+      manipulacaoLigada && !preview && job?.kind === 'inbound_turn'
+        ? perguntarManipulacaoAoJev(
+            pool,
+            {
+              organizationId: tenantId,
+              mensagem: textoDoClienteNaUltimaMensagem(effectiveContext.messages),
+              contactId: leadId || null,
+              jobId: job.id,
+            },
+            deps.jev,
+          )
+        : Promise.resolve(null);
+    const gravarOJev = async (
+      doJev: ManipulacaoDoJev | null,
+      nivelDaIa: JailbreakLevel | null,
+      nivelFinal: JailbreakLevel,
+    ): Promise<void> => {
+      if (doJev === null) return;
+      await registrarManipulacaoDoJev(pool, {
+        organizationId: tenantId,
+        contactId: leadId || null,
+        conversationId: input.conversationId || null,
+        messageId: input.inboundMessageId ?? null,
+        jobId: job?.id ?? null,
+        jev: doJev,
+        nivelDaIa,
+        nivelFinal,
+      });
+    };
+    const [stageResultado, jailbreakVerdict, manipulacaoDoJev] = await Promise.all([
       deps.knobs.stageClassifier !== undefined
         ? classifyStage(
             pool,
@@ -4179,7 +4243,7 @@ async function executarTurnoDoAgente(
       // skillSignal já é a última inbound). Roda pelo seam agnóstico (modelo BARATO, budget
       // checado nele). NÃO veta o inbound — só FLAGRA o turno no trace; flag/level não são PII
       // (a mensagem/reason nunca vão a log). A correlação com promessa fora de tabela escala no fim.
-      camadaLigada(camadas.jailbreak, deps.knobs.jailbreak !== undefined)
+      manipulacaoLigada
         ? classifyJailbreak(
             pool,
             deps.llmCfg,
@@ -4193,23 +4257,37 @@ async function executarTurnoDoAgente(
             { registry: deps.registry, log: runLog },
           )
         : Promise.resolve(null),
-    ]);
+      perguntaAoJev,
+    ]).catch(async (err: unknown) => {
+      // O teto de orçamento derruba o classificador de sempre (`LlmBudgetExceededError`
+      // sobe para a escolta do turno), mas não o Jev (R8): a chamada dele já saiu
+      // e foi cobrada, e o custo entra em `llm_calls` — a observação vai sem par,
+      // porque a IA de sempre não decidiu. `perguntaAoJev` nunca rejeita.
+      await gravarOJev(await perguntaAoJev, null, 'none');
+      throw err;
+    });
 
     stageSuggestion = stageResultado;
     if (stageSuggestion !== null) {
       stageHintBlock = renderStageHint(stageSuggestion, currentStage);
     }
 
-    if (jailbreakVerdict !== null) {
-      jailbreakLevel = jailbreakVerdict.level;
-      if (jailbreakVerdict.flag) {
-        // trace do turno: só flag/level (não PII) — a mensagem e o reason nunca são logados.
-        runLog.warn('jailbreak: sinal detectado na mensagem do lead', {
-          jailbreak_flag: true,
-          jailbreak_level: jailbreakVerdict.level,
-        });
-      }
+    // Observando, vale o nível da IA de sempre; decidindo, o maior dos dois; e
+    // sem veredito da IA de sempre, `none` — nunca o Jev no lugar dela (R2).
+    jailbreakLevel = nivelFinalDaManipulacao(jailbreakVerdict, manipulacaoDoJev);
+    if (jailbreakLevel !== 'none') {
+      // trace do turno: só flag/level (não PII) — a mensagem e o reason nunca são logados.
+      runLog.warn('jailbreak: sinal detectado na mensagem do lead', {
+        jailbreak_flag: true,
+        jailbreak_level: jailbreakLevel,
+        ...(jailbreakLevel !== jailbreakVerdict?.level ? { jailbreak_somado_pelo_jev: true } : {}),
+      });
     }
+    await gravarOJev(
+      manipulacaoDoJev,
+      jailbreakVerdict === null || jailbreakVerdict.falhou ? null : jailbreakVerdict.level,
+      jailbreakLevel,
+    );
 
     // Spec 16 §4: a projeção arma quando NENHUMA ferramenta de catálogo entrou —
     // é exatamente o turno em que os ids do contexto não têm uso, e portanto o
@@ -4850,6 +4928,57 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
   return async (job: JobRow, pool: pg.Pool, ctx: { workerId: string }): Promise<void> => {
     const payload = inboundTurnPayloadSchema.parse(job.payload);
     if (!job.contact_id) throw new Error('reply_without_contact');
+    // AS TRAVAS VÊM ANTES DE ESCOLHER O AGENTE, e é aqui que elas precisam estar.
+    //
+    // Escolher o agente pergunta à IA de sempre e, com a tarefa do roteador do
+    // Jev rodando, manda a mensagem ao Jev — um fornecedor nos EUA, com aceite
+    // próprio — e grava a observação. Com as travas depois, a conversa que
+    // nenhum agente vai atender (lead em handoff, `force_human`, bot
+    // silenciado, dono humano, número fora da lista de teste no pré-go-live)
+    // saía mesmo assim: o drain só barra a conversa não elegível quando NÃO há
+    // agente assistido (`canAssist`, drain.ts), e o operador que limitou a IA a
+    // números de teste via a mensagem de cliente real ir para fora.
+    //
+    // O ASSISTIDO também passa por aqui: o drain desliga o gate quando a org
+    // tem agente assistido publicado no canal — de propósito, o rascunho é o
+    // produto do modo assistido e barrar no drain o mataria —, e o ramo
+    // assistido abaixo devolve ANTES de `runAgentTurn`, onde moram as mesmas
+    // duas guardas. Sem elas aqui, conversa com dono humano recebia rascunho.
+    //
+    // ponytail: o caminho automático refaz as duas em `runAgentTurn` (que
+    // também serve follow-up e caso) — duas consultas a mais por turno, contra
+    // a IA de sempre e o Jev que elas poupam numa conversa calada.
+    if (await isLeadInHandoff(pool, job.organization_id, job.contact_id)) {
+      deps.log.info('turno pulado — lead em handoff humano (bot silenciado)', {
+        job_id: job.id,
+        conversation_id: payload.conversation_id,
+      });
+      return;
+    }
+    try {
+      const elegib = await decidirElegibilidadeDaConversa(pool, {
+        organizationId: job.organization_id,
+        conversationId: payload.conversation_id,
+        agora: deps.clock?.() ?? new Date(),
+        ttlMs: deps.knobs.allowlistTtlMs ?? ALLOWLIST_TTL_MS_PADRAO,
+      });
+      if (elegib !== null && !elegib.permite) {
+        deps.log.info('turno pulado — conversa não elegível para IA', {
+          job_id: job.id,
+          conversation_id: payload.conversation_id,
+          motivo: elegib.motivo,
+        });
+        return;
+      }
+    } catch (err) {
+      // Degrada ABERTO, igual ao gêmeo de `runAgentTurn`: falha da consulta
+      // não pode calar um agente cuja conversa está liberada. Quem barra de
+      // verdade — handoff — já rodou acima e falha fechado.
+      deps.log.warn('checagem de elegibilidade falhou — seguindo', {
+        job_id: job.id,
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+      });
+    }
     const resolvedAgent = await resolveConversationTurn(pool, deps.llmCfg, {
       tenantId: job.organization_id,
       leadId: job.contact_id,
@@ -4857,54 +4986,11 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
       conversationId: payload.conversation_id,
       channelSessionId: payload.channel_session_id,
       inbound: true,
-    }, { log: deps.log });
+    }, { log: deps.log, jev: deps.jev });
     const operationAgent = resolvedAgent.config;
     if (operationAgent?.operationMode === 'assisted') {
-      // O GATE VALE TAMBÉM NO ASSISTIDO, e é aqui que ele precisa estar.
-      //
-      // O drain desliga a checagem antes de enfileirar quando a org tem agente
-      // assistido publicado no canal (`canAssist`, drain.ts) — de propósito: o
-      // rascunho é o produto do modo assistido, e barrar no drain o mataria. Só
-      // que este ramo devolve ANTES de `runAgentTurn`, onde moram as duas
-      // guardas (isLeadInHandoff + decidirElegibilidadeDaConversa). Resultado
-      // medido: conversa com dono humano (`assignee_kind`), com `force_human`
-      // ou com o bot silenciado (`bot_silenced_until`) recebia rascunho assim
-      // mesmo — o gêmeo do fluxo automático não alcança este caminho.
-      //
-      // Fica no ramo, não antes dele: o caminho automático já refaz as duas
-      // checagens em `runAgentTurn`, e antecipá-las custaria duas queries por
-      // turno sem mudar nenhum desfecho.
-      if (await isLeadInHandoff(pool, job.organization_id, job.contact_id)) {
-        deps.log.info('rascunho pulado — lead em handoff humano (bot silenciado)', {
-          job_id: job.id,
-          conversation_id: payload.conversation_id,
-        });
-        return;
-      }
-      try {
-        const elegib = await decidirElegibilidadeDaConversa(pool, {
-          organizationId: job.organization_id,
-          conversationId: payload.conversation_id,
-          agora: new Date(),
-          ttlMs: deps.knobs.allowlistTtlMs ?? ALLOWLIST_TTL_MS_PADRAO,
-        });
-        if (elegib !== null && !elegib.permite) {
-          deps.log.info('rascunho pulado — conversa não elegível para IA', {
-            job_id: job.id,
-            conversation_id: payload.conversation_id,
-            motivo: elegib.motivo,
-          });
-          return;
-        }
-      } catch (err) {
-        // Degrada ABERTO, igual ao gêmeo de `runAgentTurn`: falha da consulta
-        // não pode calar um assistido cuja conversa está liberada. Quem barra
-        // de verdade — handoff — já rodou acima e falha fechado.
-        deps.log.warn('checagem de elegibilidade falhou — seguindo para o rascunho', {
-          job_id: job.id,
-          error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
-        });
-      }
+      // As travas do assistido (handoff e elegibilidade) já rodaram acima, antes
+      // de escolher o agente.
       // #1648 — AS DETERMINÍSTICAS ANTES DO RASCUNHO. Este ramo devolvia
       // antes das detecções de STOP/opt-out e de pedido de humano: o contato
       // escrevia "SAIR" e nada era registrado, os follow-ups agendados seguiam

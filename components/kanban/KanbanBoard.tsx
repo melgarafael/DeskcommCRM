@@ -5,7 +5,8 @@ import { useT } from "@/hooks/i18n/useT";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBoard } from "@/hooks/kanban/useBoard";
-import { useMoveCard } from "@/hooks/kanban/useMoveCard";
+import { useMoveCard, type RecusaDeCampos, type RetomadaPendente } from "@/hooks/kanban/useMoveCard";
+import { CamposObrigatoriosDialog } from "./CamposObrigatoriosDialog";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useAtRiskLeads } from "@/hooks/leads/useAtRiskLeads";
 import { useReactivations } from "@/hooks/leads/useReactivations";
@@ -14,6 +15,7 @@ import type { Lead } from "@/lib/types/leads";
 import type { Pipeline, Stage } from "@/lib/kanban/types";
 import { StageColumn } from "./StageColumn";
 import { LeadDossier } from "./LeadDossier";
+import { RetomarComoNovoNegocioDialog } from "./RetomarComoNovoNegocioDialog";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 
 interface KanbanBoardProps {
@@ -82,7 +84,16 @@ export function KanbanBoard({
   const t = useT();
   const useExternal = stagesProp !== undefined && leadsProp !== undefined;
   const queryResult = useBoard(useExternal ? null : pipelineId);
-  const moveCard = useMoveCard(pipelineId);
+  // A RECUSA DE CAMPOS ABRE DIÁLOGO, não toast (issue #1536): o 422 traz em
+  // `details.faltando` o que falta, o diálogo coleta, e o reenvio leva os
+  // valores NA MESMA escrita que muda a etapa. O hook é o MESMO de antes —
+  // esta opção só troca o destino do erro.
+  const [recusaDeCampos, setRecusaDeCampos] = useState<RecusaDeCampos | null>(null);
+  const [retomada, setRetomada] = useState<RetomadaPendente | null>(null);
+  const moveCard = useMoveCard(pipelineId, {
+    onCamposFaltando: setRecusaDeCampos,
+    onRetomada: setRetomada,
+  });
   const { data: members } = useAssignableMembers(true);
   const ownerNames = useMemo(
     () => new Map((members ?? []).map((m) => [m.user_id, m.full_name])),
@@ -274,6 +285,34 @@ export function KanbanBoard({
             data.stages.find((s) => s.id === leadDoDossie.stage_id)?.name ?? "—"
           }
           ownerNames={ownerNames}
+        />
+      )}
+
+      <CamposObrigatoriosDialog
+        open={recusaDeCampos !== null}
+        onOpenChange={(aberto) => {
+          if (!aberto) setRecusaDeCampos(null);
+        }}
+        recusa={recusaDeCampos}
+        isPending={moveCard.isPending}
+        onConfirmar={({ customFields, wonReason }) => {
+          if (!recusaDeCampos) return;
+          const { args } = recusaDeCampos;
+          setRecusaDeCampos(null);
+          moveCard.mutate({
+            ...args,
+            customFields,
+            ...(wonReason !== undefined ? { wonReason } : {}),
+          });
+        }}
+      />
+      {retomada && (
+        <RetomarComoNovoNegocioDialog
+          open
+          onOpenChange={(v: boolean) => !v && setRetomada(null)}
+          leadId={retomada.leadId}
+          stageId={retomada.stageId}
+          pipelineId={pipelineId}
         />
       )}
     </DragDropContext>

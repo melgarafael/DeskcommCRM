@@ -37,9 +37,10 @@ describe("API Central projeta destinos com sessão", () => {
     const response = await GET(new NextRequest("http://localhost/api/v1/ai/inbox"));
     expect(response.status).toBe(200);
     expect((await response.json()).data.items[0].destination.estado).toBe("indisponivel");
-    expect(calls.filter(c => c[0] === "admin")).toEqual([["admin", "agent_inbox_items"], ["admin", "agent_inbox_items"]]);
+    // Fila aberta: uma consulta por gravidade + a contagem de abertos.
+    expect(calls.filter(c => c[0] === "admin")).toEqual(Array(4).fill(["admin", "agent_inbox_items"]));
     expect(calls).toContainEqual(["authenticated", "conversations"]);
-    expect(calls.filter(c => c[0] === "organization_id")).toEqual(Array(3).fill(["organization_id", org]));
+    expect(calls.filter(c => c[0] === "organization_id")).toEqual(Array(5).fill(["organization_id", org]));
     expect(requireRole).toHaveBeenCalledWith("agent", expect.any(Object));
     expect(audit).not.toHaveBeenCalled();
   });
@@ -58,5 +59,53 @@ describe("API Central projeta destinos com sessão", () => {
     expect(response.status).toBe(200);
     expect(calls).toContainEqual(["organization_id", org]);
     expect(audit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ action: "ai.inbox_item_status_changed", organizationId: org, actorUserId: "actor", resourceId: id, metadata: { status } }));
+  });
+});
+
+describe("Central: fila aberta por gravidade", () => {
+  // Cada consulta devolve só as linhas da gravidade filtrada, em ordem de data
+  // desc — o que o Postgres faria. A pergunta é o que a ROTA monta com isso.
+  const linhas = [
+    { id: "info-nova", severity: "info", created_at: "2026-09-26T10:00:00Z" },
+    { id: "warn-nova", severity: "warn", created_at: "2026-09-26T09:00:00Z" },
+    { id: "warn-velha", severity: "warn", created_at: "2026-09-20T09:00:00Z" },
+    { id: "critico-velho", severity: "critical", created_at: "2026-09-01T09:00:00Z" },
+  ].map(l => ({ ...l, kind: "handoff", ref_kind: null, ref_id: null, status: "open" }));
+  const consultas: Record<string, string>[] = [];
+  function banco() {
+    return { from() {
+      const filtros: Record<string, string> = {};
+      let teto = Infinity;
+      const chain = {
+        select: () => chain, order: () => chain,
+        limit: (n: number) => { teto = n; return chain; },
+        eq: (k: string, v: string) => { filtros[k] = v; return chain; },
+        in: () => chain,
+        then: (resolve: (d: unknown) => unknown) => {
+          consultas.push(filtros);
+          const data = linhas.filter(l => !filtros.severity || l.severity === filtros.severity).slice(0, teto);
+          return Promise.resolve({ data, error: null, count: linhas.length }).then(resolve);
+        },
+      }; return chain;
+    } };
+  }
+  beforeEach(() => {
+    consultas.length = 0;
+    vi.mocked(createAdminClient).mockReturnValue(banco() as unknown as ReturnType<typeof createAdminClient>);
+  });
+  const ids = async (qs: string) =>
+    ((await (await GET(new NextRequest(`http://localhost/api/v1/ai/inbox${qs}`))).json()).data.items as { id: string }[]).map(i => i.id);
+
+  it("crítico antigo sai acima de aviso novo; entre iguais, o mais recente", async () => {
+    expect(await ids("")).toEqual(["critico-velho", "warn-nova", "warn-velha", "info-nova"]);
+  });
+  it("o limite corta por baixo: o crítico mais antigo nunca fica de fora", async () => {
+    expect(await ids("?limit=2")).toEqual(["critico-velho", "warn-nova"]);
+  });
+  it("resolvidos seguem histórico: uma consulta, mais recente primeiro, sem filtro de gravidade", async () => {
+    await ids("?status=resolved");
+    const daLista = consultas.filter(c => c.status === "resolved");
+    expect(daLista).toHaveLength(1);
+    expect(daLista[0]).not.toHaveProperty("severity");
   });
 });

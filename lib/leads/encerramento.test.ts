@@ -30,16 +30,20 @@ type Row = Record<string, unknown>;
 function makeDb({
   leads = [],
   stages = [],
+  pipelines = [],
   updateError,
 }: {
   leads?: Row[];
   stages?: Row[];
+  /** Linhas de `crm_pipelines` — é de lá que vem o `settings` do funil (#1536). */
+  pipelines?: Row[];
   /** Simula o `error` que o Postgres devolveria no UPDATE de `crm_leads`. */
   updateError?: { code?: string; message?: string };
 } = {}) {
   const tables: Record<string, Row[]> = {
     crm_leads: leads,
     crm_stages: stages,
+    crm_pipelines: pipelines,
     crm_lead_activities: [],
   };
   const updates: Row[] = [];
@@ -262,6 +266,132 @@ describe("encerraDemanda", () => {
         motivo: "Lead optou em outra solução",
       }),
     ).rejects.toMatchObject({ code: "lost_reason_invalid", status: 422 });
+  });
+
+  // ── CAMPOS OBRIGATÓRIOS E MOTIVO DE GANHO (issue #1536) ────────────────────
+  //
+  // O caminho 3 dos SEIS (o botão ganhar/perder — e com ele `/win`, `/lose`,
+  // `crm_close_demand` e o fecho da ação, que todos passam por esta função).
+  const FUNIL_EXIGENTE = [
+    {
+      id: PIPELINE,
+      organization_id: ORG,
+      settings: {
+        won_reason_required: true,
+        won_reasons: ["Renovação"],
+        fields: [
+          {
+            key: "concorrente",
+            label: "Concorrente",
+            type: "text",
+            obrigatorio_em: { ao_perder: true },
+          },
+        ],
+      },
+    },
+  ];
+
+  it("fecho como PERDIDO sem o campo exigido: 422 required_fields_missing e nenhum update", async () => {
+    const db = makeDb({
+      leads: [baseLead({ custom_fields: {} })],
+      stages: baseStages(),
+      pipelines: FUNIL_EXIGENTE,
+    });
+
+    await expect(
+      encerraDemanda(db.client as never, ctx, {
+        leadId: LEAD,
+        desfecho: "lost",
+        motivo: "price",
+      }),
+    ).rejects.toMatchObject({
+      code: "required_fields_missing",
+      status: 422,
+      details: { faltando: [{ chave: "concorrente", rotulo: "Concorrente" }] },
+    });
+    expect(db.updates).toEqual([]);
+  });
+
+  it("mesmo fecho com o campo preenchido passa (controle negativo do anterior)", async () => {
+    const db = makeDb({
+      leads: [baseLead({ custom_fields: { concorrente: "ACME" } })],
+      stages: baseStages(),
+      pipelines: FUNIL_EXIGENTE,
+    });
+
+    const result = await encerraDemanda(db.client as never, ctx, {
+      leadId: LEAD,
+      desfecho: "lost",
+      motivo: "price",
+    });
+    expect(result.lead).toMatchObject({ status: "lost" });
+    expect(db.updates[0]).toMatchObject({ lost_reason: "price" });
+  });
+
+  it("ganho com motivo exigido ausente: o `won_reason` é o faltando do MESMO contrato", async () => {
+    const db = makeDb({
+      leads: [baseLead()],
+      stages: baseStages(),
+      pipelines: FUNIL_EXIGENTE,
+    });
+
+    await expect(
+      encerraDemanda(db.client as never, ctx, { leadId: LEAD, desfecho: "won" }),
+    ).rejects.toMatchObject({
+      code: "required_fields_missing",
+      status: 422,
+      details: { faltando: [{ chave: "won_reason", rotulo: "Motivo do ganho" }] },
+    });
+    expect(db.updates).toEqual([]);
+  });
+
+  it("ganho com o motivo exigido: grava won_reason NA MESMA escrita que fecha", async () => {
+    const db = makeDb({
+      leads: [baseLead()],
+      stages: baseStages(),
+      pipelines: FUNIL_EXIGENTE,
+    });
+
+    const result = await encerraDemanda(db.client as never, ctx, {
+      leadId: LEAD,
+      desfecho: "won",
+      motivo: "Renovação",
+    });
+
+    expect(result.lead).toMatchObject({ status: "won", won_reason: "Renovação" });
+    expect(db.updates[0]).toMatchObject({ won_reason: "Renovação", stage_id: WON_STAGE });
+  });
+
+  it("motivo de ganho fora da lista do funil: 422 won_reason_invalid antes do update", async () => {
+    const db = makeDb({
+      leads: [baseLead()],
+      stages: baseStages(),
+      pipelines: FUNIL_EXIGENTE,
+    });
+
+    await expect(
+      encerraDemanda(db.client as never, ctx, {
+        leadId: LEAD,
+        desfecho: "won",
+        motivo: "Mentira comercial",
+      }),
+    ).rejects.toMatchObject({ code: "won_reason_invalid", status: 422 });
+    expect(db.updates).toEqual([]);
+  });
+
+  it("ganho SEM exigência e sem lista segue como hoje: fecha sem motivo nenhum (critério 3)", async () => {
+    const db = makeDb({
+      leads: [baseLead()],
+      stages: baseStages(),
+      pipelines: [{ id: PIPELINE, organization_id: ORG, settings: {} }],
+    });
+
+    const result = await encerraDemanda(db.client as never, ctx, {
+      leadId: LEAD,
+      desfecho: "won",
+    });
+    expect(result.lead).toMatchObject({ status: "won" });
+    expect(db.updates[0]).not.toHaveProperty("won_reason");
   });
 
   it("mantém 500 internal_error para um erro de banco que não é sobre o motivo da perda", async () => {

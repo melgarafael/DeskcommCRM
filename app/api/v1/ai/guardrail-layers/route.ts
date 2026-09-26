@@ -32,27 +32,11 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { roleAtLeast } from "@/lib/auth/types";
-import { CAMADAS_SEMANTICAS } from "@/lib/agent-engine/guardrails/camadas-da-org";
+import { CAMADAS_SEMANTICAS, padraoDasCamadasNoAmbiente } from "@/lib/agent-engine/guardrails/camadas-da-org";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
-
-/**
- * O padrão do ambiente, como o servidor web consegue enxergá-lo.
- *
- * ⚠️ O worker é OUTRO processo, com o SEU `.env` — este valor é a melhor leitura
- * disponível aqui, não a verdade absoluta do motor. A tela usa isto só para
- * dizer de onde a decisão vem quando a organização não escolheu; assim que ela
- * escolhe, a linha vence e a ambiguidade acaba. Prometer mais que isso seria
- * inventar precisão.
- */
-function padraoDoAmbiente(): Record<string, boolean> {
-  return {
-    promessa_semantica: process.env.PROMISE_SEMANTIC_ENABLED === "true",
-    jailbreak: (process.env.JAILBREAK_CLASSIFIER_MODEL ?? "") !== "",
-  };
-}
 
 export async function GET(): Promise<Response> {
   const authz = await requireRole("manager", { resource: "ai_guardrail_layers" });
@@ -68,7 +52,9 @@ export async function GET(): Promise<Response> {
   if (error) return fail("read_failed", error.message, 500);
 
   const escolhido = new Map((data ?? []).map((r) => [r.layer as string, r.enabled as boolean]));
-  const padrao = padraoDoAmbiente();
+  // O padrão como o WORKER o monta — ver `padraoDasCamadasNoAmbiente`. A tela usa
+  // isto só para dizer de onde a decisão vem quando a organização não escolheu.
+  const padrao = padraoDasCamadasNoAmbiente();
 
   return ok({
     camadas: CAMADAS_SEMANTICAS.map((layer) => ({

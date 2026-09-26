@@ -74,4 +74,17 @@ export const TOOLS_FUNIL = declararTools([
     risco: "atencao",
     pacotes: ["vender"],
   },
+  {
+    name: "crm_retomar_lead",
+    category: "write",
+    rotulo: "Retomar negócio encerrado como novo",
+    explicacao:
+      "Abre uma nova tentativa para um negócio perdido ou ganho, no mesmo funil e com o mesmo contato, sem alterar o negócio original.",
+    oQueToca: "Funil de vendas",
+    risco: "atencao",
+    // "reter", como `crm_propose_reactivation`: é o cliente que voltou depois
+    // de uma perda. Em "vender" ela entraria no agente que nasce no onboarding
+    // e estouraria o teto dos outros pacotes (pacote-reserva-vaga-da-critica).
+    pacotes: ["reter"],
+  },
 ]);

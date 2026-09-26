@@ -108,6 +108,58 @@ describe("PainelDeProvedores — o Jev no painel", () => {
     );
   });
 
+  it("a manipulação decidindo: o cartão do ponto diz que o Jev SOMA, e não que o modelo virou reserva", async () => {
+    const ponto = PROVEDORES.pontos[0]!;
+    const jailbreak = { ...ponto, id: "jailbreak_detect", rotulo: "Barrar tentativa de manipulação", papel: "proteger" };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const data =
+          url === "/api/v1/ai/jev"
+            ? {
+                ...jev(true),
+                por_tarefa: [
+                  { id: "manipulacao", ponto: "jailbreak_detect", rotulo: "x", oQueFaz: "x", estado: "decidindo", novo: false },
+                ],
+              }
+            : { ...PROVEDORES, pontos: [jailbreak] };
+        return new Response(JSON.stringify({ data }), { status: 200 });
+      }),
+    );
+    montar();
+    await screen.findByTestId("cartao-do-jev");
+    fireEvent.click(screen.getByTestId("avancado-proteger"));
+    expect(screen.getByTestId("jev-no-ponto-jailbreak_detect")).toHaveTextContent(
+      "O modelo abaixo decide; o Jev soma o sinal dele, sem nunca apagar o do modelo.",
+    );
+  });
+
+  it("o roteador decidindo: o modelo do ponto segue chamado a cada mensagem, e não 'o Jev mede primeiro'", async () => {
+    const ponto = PROVEDORES.pontos[0]!;
+    const roteador = { ...ponto, id: "intent_router", rotulo: "Escolher qual agente atende", papel: "entender" };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const data =
+          url === "/api/v1/ai/jev"
+            ? {
+                ...jev(true),
+                por_tarefa: [
+                  { id: "roteador", ponto: "intent_router", rotulo: "x", oQueFaz: "x", estado: "decidindo", novo: false },
+                ],
+              }
+            : { ...PROVEDORES, pontos: [roteador] };
+        return new Response(JSON.stringify({ data }), { status: 200 });
+      }),
+    );
+    montar();
+    await screen.findByTestId("cartao-do-jev");
+    fireEvent.click(screen.getByTestId("avancado-entender"));
+    const linha = screen.getByTestId("jev-no-ponto-intent_router");
+    expect(linha).not.toHaveTextContent(/mede primeiro/);
+    expect(linha).toHaveTextContent("o modelo abaixo continua sendo chamado a cada mensagem");
+  });
+
   it("com o Jev desligado, o cartão do ponto não fala dele", async () => {
     jevLigado = false;
     montar();

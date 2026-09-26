@@ -106,6 +106,95 @@ describe("create_or_move_lead — pontuação/classificação nunca bloqueia o E
   });
 });
 
+// ── CAMINHO 6 dos campos obrigatórios (issue #1536) ─────────────────────────
+//
+// Esta ação delega o move ao `moveLeadHandler` e o fecho a `encerraDemanda` —
+// os dois já testados —, mas o critério pede teste POR CAMINHO: a promessa é
+// que a recusa da régua sobreviva à camada da automação (que engole erro em
+// `status: failed` em vez de 422) e o lead NÃO mude de etapa em silêncio.
+// `obrigatorio_em.etapas` é `z.string().uuid()` — um id literal seria
+// DESCARTADO por `camposDoFunil` (o parse falha e o campo some), então a etapa
+// de destino deste teste é um UUID, como na instalação de verdade.
+const ETAPA_PROPOSTA_UUID = "77777777-7777-4777-8777-777777777777";
+
+describe("create_or_move_lead — a régua de campos obrigatórios chega aqui (#1536)", () => {
+  it("etapa de destino com campo exigido vazio: a ação falha e o lead continua na origem", async () => {
+    const db = makeDb({
+      contacts: [{ id: "contato-1", organization_id: ORG_ID }],
+      pipelines: [
+        funilRow({
+          id: PIPE,
+          name: "funil comercial imobiliário",
+          settings: {
+            fields: [
+              {
+                key: "concorrente",
+                label: "Concorrente",
+                type: "text",
+                obrigatorio_em: { etapas: [ETAPA_PROPOSTA_UUID] },
+              },
+            ],
+          },
+        }),
+      ],
+      stages: [
+        ETAPA_ORIGEM,
+        etapa({ id: ETAPA_PROPOSTA_UUID, name: "Proposta enviada", position: 3000 }),
+      ],
+      leads: [negocio("lead-1", "novo")],
+    });
+    const action = getAction("create_or_move_lead");
+
+    const resultado = await action!.execute(
+      ctxComLead({}, db.client as unknown as ActionCtx["admin"]),
+      { pipeline_id: PIPE, stage_id: ETAPA_PROPOSTA_UUID },
+    );
+
+    // A automação reporta `failed` com a FRASE da recusa — é o que a aba
+    // Atividade mostra ao operador, e sem ela o erro vira um sucesso calado.
+    expect(resultado.status).toBe("failed");
+    expect(JSON.stringify(resultado)).toContain("Concorrente");
+    // E a prova de que nada foi movido.
+    expect(db.tabelas.crm_leads.find((l) => l.id === "lead-1")?.stage_id).toBe("novo");
+  });
+
+  it("mesma ação com o campo preenchido: move (controle positivo)", async () => {
+    const db = makeDb({
+      contacts: [{ id: "contato-1", organization_id: ORG_ID }],
+      pipelines: [
+        funilRow({
+          id: PIPE,
+          name: "funil comercial imobiliário",
+          settings: {
+            fields: [
+              {
+                key: "concorrente",
+                label: "Concorrente",
+                type: "text",
+                obrigatorio_em: { etapas: [ETAPA_PROPOSTA_UUID] },
+              },
+            ],
+          },
+        }),
+      ],
+      stages: [
+        ETAPA_ORIGEM,
+        etapa({ id: ETAPA_PROPOSTA_UUID, name: "Proposta enviada", position: 3000 }),
+      ],
+      leads: [negocio("lead-1", "novo", { custom_fields: { concorrente: "ACME" } } as never)],
+    });
+    const action = getAction("create_or_move_lead");
+
+    const resultado = await action!.execute(
+      ctxComLead({ concorrente: "ACME" }, db.client as unknown as ActionCtx["admin"]),
+      { pipeline_id: PIPE, stage_id: ETAPA_PROPOSTA_UUID },
+    );
+
+    expect(resultado).toEqual({ type: "create_or_move_lead", status: "success", detail: { moved: "lead-1" } });
+    expect(db.tabelas.crm_leads.find((l) => l.id === "lead-1")?.stage_id).toBe(ETAPA_PROPOSTA_UUID);
+  });
+});
+
 describe("create_or_move_lead — pontuação/classificação nunca bloqueia a CRIAÇÃO", () => {
   it("contato com custom_fields de classe D no contexto: cria o lead normalmente", async () => {
     const db = makeDb({ contacts: [{ id: "contato-1", organization_id: ORG_ID }],

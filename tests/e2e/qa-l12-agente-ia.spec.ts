@@ -11,7 +11,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { test } from "@playwright/test";
+import { test } from "./helpers/test";
 
 import { admin, captura, creds, expect, registra, type Creds } from "./qa-l12-comum";
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";

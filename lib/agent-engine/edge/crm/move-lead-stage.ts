@@ -42,6 +42,15 @@ export type MirrorReason =
    * marque como perdido e informe o motivo (o banco recusa motivo que o agente invente).
    */
   | 'perda_sem_motivo'
+  /**
+   * A etapa de destino exige CAMPOS que o negócio não tem (issue #1536).
+   *
+   * ⚠️ FORA de MIRROR_WARN_ONLY, pelo MESMO motivo de `perda_sem_motivo`: não é
+   * incidente (nada quebrou, a régua funcionou) e não é estado que se resolve
+   * sozinho — o card parou num funil que pede dado, e o dono precisa saber QUAL
+   * dado falta. O `detalhe` vem de `recusaDeCamposObrigatorios`, com os rótulos.
+   */
+  | 'campos_obrigatorios'
   | 'crm_error'
   | 'crm_unavailable';
 
@@ -155,6 +164,26 @@ export function avisoDoEspelhoRecusado(input: {
     };
   }
 
+  if (motivo === 'campos_obrigatorios') {
+    // ── A ETAPA DE DESTINO EXIGE CAMPOS (issue #1536) ────────────────────────
+    // O assistente avançou o funil dele para uma etapa do funil do cliente que
+    // declara `obrigatorio_em` — e o negócio não tem o campo preenchido. É o
+    // mesmo desenho da perda sem motivo: nada quebrou, a régua funcionou, o card
+    // não andou e o que falta é uma AÇÃO DO HUMANO (preencher no dossiê).
+    // Warn silencioso deixaria o card parado sem ninguém saber por quê; aviso de
+    // incidente mandaria o dono procurar um defeito que não existe. O `detalhe`
+    // é a frase da própria régua, com os rótulos do que falta.
+    return {
+      title: 'O assistente quis mover um negócio — o funil exige campos antes',
+      body:
+        `O assistente concluiu que este negócio deveria ir para "${etapaDeDestino}", ` +
+        `mas o seu funil exige o preenchimento de alguns campos antes de entrar nela. ` +
+        `${detalhe} Ninguém mexeu no card: ele continua onde estava. Abra o negócio, ` +
+        `preencha o que falta no dossiê e mova o card normalmente.`,
+      dedupe: DEDUPE_DO_ESPELHO,
+    };
+  }
+
   if (MIRROR_WARN_ONLY.has(motivo)) return null;
 
   return {
@@ -244,6 +273,12 @@ export async function mirrorLeadStageToCrm(
       perda_sem_motivo: {
         reason: 'perda_sem_motivo',
         detail: 'a etapa de destino fecha o negócio como perdido, e perder exige um motivo que o assistente não pode escolher',
+      },
+      // O `detalhe` do sync VENCE (linha abaixo) — ele já vem com os rótulos do
+      // que falta, tirados da mesma função que monta os 422 das rotas.
+      campos_obrigatorios: {
+        reason: 'campos_obrigatorios',
+        detail: 'a etapa de destino exige campos que o negócio não tem preenchidos',
       },
       ambiguo: {
         reason: 'not_configured',

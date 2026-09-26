@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
-import { PipelinesClient, type PipelineRow } from "./_client";
+import { PipelinesClient, type EtapaDoFunil, type PipelineRow } from "./_client";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +40,20 @@ export default async function PipelinesSettingsPage() {
     .order("position");
 
   const pipelines = (data ?? []) as PipelineRow[];
+
+  // AS ETAPAS DE CADA FUNIL entram para o editor de `obrigatorio_em` (#1536):
+  // sem elas a tela não tem o que oferecer como "exigir ao entrar aqui". A
+  // leitura é a mesma da página (mesmo cliente, mesma organização) e vem PRONTA
+  // do servidor: o editor não espera rede nenhuma para renderizar.
+  const { data: etapas } = await supabase
+    .from("crm_stages")
+    .select("id, pipeline_id, name, is_archived")
+    .eq("organization_id", activeOrg.orgId)
+    .order("position", { ascending: true });
+  const etapasPorFunil: Record<string, EtapaDoFunil[]> = {};
+  for (const e of (etapas ?? []) as Array<EtapaDoFunil & { pipeline_id: string }>) {
+    (etapasPorFunil[e.pipeline_id] ??= []).push(e);
+  }
   const idioma = user.idioma;
 
   return (
@@ -56,7 +70,11 @@ export default async function PipelinesSettingsPage() {
           .
         </p>
       </header>
-      <PipelinesClient pipelines={pipelines} podeEditarConfig={podeEditarConfig} />
+      <PipelinesClient
+        pipelines={pipelines}
+        etapas={etapasPorFunil}
+        podeEditarConfig={podeEditarConfig}
+      />
     </div>
   );
 }

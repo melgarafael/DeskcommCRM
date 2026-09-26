@@ -43,15 +43,16 @@
  * `form-atendimento`) e o seu boundary é o raiz (`app/app/loading.tsx`) — um
  * dos seis `loading.tsx` que a issue mediu em `origin/main`.
  *
- * O que este arquivo NÃO faz: descobrir a CAUSA raiz do reveal sumido — isso
- * precisa do passo seguinte que este guard torna possível (um run vermelho aqui
- * já nasce com o anexo do estado-ssr e do instrumento na mão).
+ * A causa, medida depois (cabeçalho de `helpers/test.ts`): a caixa não era
+ * órfã — o React ENFILEIRA a revelação para depois do `load`, e o teste lia o
+ * documento no meio dela. O `page.goto` do `test` da suíte agora espera a
+ * revelação; se a caixa nunca sair, é ele quem reprova, com o nome da issue.
  */
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./helpers/test";
 
 import { caixasSemRevelador, REVELADOR_DE_CAIXA } from "./helpers/caixa-ssr";
 import { instalarInstrumento } from "./helpers/instrumento-da-pagina";

@@ -1,0 +1,254 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Conversões de anúncios",
+    "subtitle": "Da venda ao diagnóstico e ao reprocessamento",
+    "output": "conversoes-de-anuncios.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "tela",
+      "label": "Tela"
+    },
+    {
+      "id": "motor",
+      "label": "Motor"
+    },
+    {
+      "id": "dados",
+      "label": "Dados"
+    }
+  ],
+  "mainPath": ["funil", "eventos", "handler", "transporte", "registro", "tela", "retry"],
+  "nodes": [
+    {
+      "id": "origem",
+      "lane": "dados",
+      "col": 0,
+      "type": "component",
+      "label": "Origem do contato"
+    },
+    {
+      "id": "funil",
+      "lane": "tela",
+      "col": 1,
+      "type": "component",
+      "label": "Negócio ganho com valor"
+    },
+    {
+      "id": "eventos",
+      "lane": "motor",
+      "col": 2,
+      "type": "component",
+      "label": "event_log"
+    },
+    {
+      "id": "handler",
+      "lane": "motor",
+      "col": 3,
+      "type": "component",
+      "label": "conversoes.venda"
+    },
+    {
+      "id": "conexao",
+      "lane": "dados",
+      "col": 4,
+      "type": "component",
+      "label": "ad_platform_connections"
+    },
+    {
+      "id": "transporte",
+      "lane": "motor",
+      "col": 5,
+      "type": "component",
+      "label": "Meta / Google Ads / Data Manager"
+    },
+    {
+      "id": "registro",
+      "lane": "dados",
+      "col": 6,
+      "type": "component",
+      "label": "ad_conversion_dispatches"
+    },
+    {
+      "id": "tela",
+      "lane": "tela",
+      "col": 7,
+      "type": "component",
+      "label": "Configurações → Conversões"
+    },
+    {
+      "id": "retry",
+      "lane": "motor",
+      "col": 8,
+      "type": "component",
+      "label": "RPC e rota de reprocessamento"
+    },
+    {
+      "id": "audit",
+      "lane": "dados",
+      "col": 9,
+      "type": "component",
+      "label": "api_audit_log"
+    },
+    {
+      "id": "auditoria",
+      "lane": "tela",
+      "col": 10,
+      "type": "component",
+      "label": "Histórico de auditoria"
+    },
+    {
+      "id": "captura",
+      "lane": "motor",
+      "col": 0,
+      "type": "component",
+      "label": "Captura Google → referência → contato"
+    },
+    {
+      "id": "qualificacao",
+      "lane": "motor",
+      "col": 3,
+      "type": "component",
+      "label": "conversoes.qualificacao"
+    },
+    {
+      "id": "site",
+      "lane": "tela",
+      "col": 0,
+      "type": "component",
+      "label": "Site: URL e botão WhatsApp"
+    },
+    {
+      "id": "script",
+      "lane": "motor",
+      "col": 1,
+      "type": "component",
+      "label": "Script público v1: origem da visita"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "from": "origem",
+      "to": "handler",
+      "label": "identificador do clique"
+    },
+    {
+      "id": "e1",
+      "from": "funil",
+      "to": "eventos",
+      "label": "won / stage_changed"
+    },
+    {
+      "id": "e2",
+      "from": "eventos",
+      "to": "handler",
+      "label": "dreno"
+    },
+    {
+      "id": "e3",
+      "from": "conexao",
+      "to": "handler",
+      "label": "credencial por organização"
+    },
+    {
+      "id": "e4",
+      "from": "handler",
+      "to": "transporte",
+      "label": "enviar ou consultar protocolo"
+    },
+    {
+      "id": "e5",
+      "from": "transporte",
+      "to": "registro",
+      "label": "resultado pelo handler"
+    },
+    {
+      "id": "e6",
+      "from": "registro",
+      "to": "tela",
+      "label": "pendências e contador"
+    },
+    {
+      "id": "e7",
+      "from": "tela",
+      "to": "retry",
+      "label": "pedido de administrador"
+    },
+    {
+      "id": "e8",
+      "from": "retry",
+      "to": "eventos",
+      "label": "retry_requested"
+    },
+    {
+      "id": "e9",
+      "from": "retry",
+      "to": "audit",
+      "label": "somente se agendou"
+    },
+    {
+      "id": "e10",
+      "from": "audit",
+      "to": "auditoria",
+      "label": "histórico"
+    },
+    {
+      "id": "e11",
+      "from": "tela",
+      "to": "conexao",
+      "label": "OAuth e configuração"
+    },
+    {
+      "id": "e12",
+      "from": "tela",
+      "to": "captura",
+      "label": "WhatsApp e mensagem por organização"
+    },
+    {
+      "id": "e13",
+      "from": "captura",
+      "to": "origem",
+      "label": "gclid / gbraid / wbraid"
+    },
+    {
+      "id": "e14",
+      "from": "eventos",
+      "to": "qualificacao",
+      "label": "stage_changed / retry_requested"
+    },
+    {
+      "id": "e15",
+      "from": "qualificacao",
+      "to": "handler",
+      "label": "envio compartilhado sem valor"
+    },
+    {
+      "id": "e16",
+      "from": "conexao",
+      "to": "qualificacao",
+      "label": "etapa e ação opcionais"
+    },
+    {
+      "id": "e17",
+      "from": "site",
+      "to": "script",
+      "label": "identificadores e navegação"
+    },
+    {
+      "id": "e18",
+      "from": "tela",
+      "to": "script",
+      "label": "snippet das capturas salvas"
+    },
+    {
+      "id": "e19",
+      "from": "script",
+      "to": "captura",
+      "label": "clique no número configurado"
+    }
+  ]
+}

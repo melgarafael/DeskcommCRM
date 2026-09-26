@@ -267,6 +267,11 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     sintomaDeFalha:
       "A conversa cai sempre no mesmo agente, ou em nenhum — como se os roteadores que você configurou não existissem.",
     registraEm: "llm_calls",
+    decisaoRapida: {
+      primitiva: "choice",
+      oQueOJevFaz:
+        "Lê a última mensagem do cliente, sozinha, e escolhe entre as intenções do seu roteador qual agente deve atender.",
+    },
   },
   {
     id: "stage_classifier",
@@ -364,6 +369,11 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     sintomaDeFalha:
       "O agente passa a aceitar instruções de estranhos e pode falar em nome da empresa coisas que você nunca autorizou.",
     registraEm: "llm_calls",
+    decisaoRapida: {
+      primitiva: "choice",
+      oQueOJevFaz:
+        "Percebe, na mensagem do cliente, quem tenta enganar o agente para ele fugir das suas regras — e soma esse sinal ao da sua IA de sempre, sem nunca apagá-lo.",
+    },
   },
   {
     id: "promise_semantic",
@@ -572,9 +582,6 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
 export const PONTO_POR_ID: ReadonlyMap<string, PontoDeIa> = new Map(
   PONTOS_DE_IA.map((p) => [p.id, p]),
 );
-
-/** Onde o Jev trabalha: o cartão dele lista, e a chave dele diz "Usada em". */
-export const PONTOS_DO_JEV: readonly PontoDeIa[] = PONTOS_DE_IA.filter((p) => p.decisaoRapida);
 
 /**
  * Os pontos agrupados como a tela mostra. A ordem dentro de cada papel é a de

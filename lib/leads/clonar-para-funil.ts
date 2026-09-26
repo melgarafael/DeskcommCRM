@@ -22,6 +22,7 @@
  * `app/api/v1/leads/[id]/clone/route.ts`.
  */
 import type { CreateLeadInput } from "@/lib/schemas";
+import { type ModoReabertura } from "@/lib/leads/reabertura";
 
 /** O negócio de origem, como a rota o lê do banco. */
 export interface OrigemParaClonar {
@@ -91,13 +92,19 @@ export type ResultadoDaEtapa =
  *
  * Mesmo funil não é troca — é `/move`, que preserva a posição no quadro e não
  * encerra nada; passar por aqui fecharia o negócio como perdido para reabri-lo ao
- * lado. E negócio já encerrado não é clonado: a origem seria reescrita de `won`
- * para `lost` (perda de dado, não conveniência), e reabrir um negócio fechado é
- * decisão de produto que esta correção não toma.
+ * lado. E negócio já encerrado não é clonado POR PADRÃO: a origem seria
+ * reescrita de `won` para `lost` (perda de dado, não conveniência).
+ *
+ * A exceção é a `moda` do funil (issue #1538): num funil `novo_negocio`, levar
+ * um encerrado para OUTRO funil é exatamente "abrir uma nova tentativa" — e aí
+ * a rota já sabe que não deve reencerrar a origem (o `status` e o motivo dela
+ * ficam intactos). `modo` é opcional: sem ele, quem chama está fora do escopo
+ * desta issue e a recusa de antes continua valendo.
  */
 export function recusaTrocaDeFunil(
   origem: { pipeline_id: string; status: string },
   pipelineDestinoId: string,
+  modo?: ModoReabertura,
 ): Recusa | null {
   if (origem.pipeline_id === pipelineDestinoId) {
     return {
@@ -106,7 +113,7 @@ export function recusaTrocaDeFunil(
       texto: "O negócio já está neste funil. Para trocar de etapa use /api/v1/leads/[id]/move.",
     };
   }
-  if (origem.status !== "open") {
+  if (origem.status !== "open" && modo !== "novo_negocio") {
     return {
       status: 422,
       code: "lead_not_open",
@@ -200,6 +207,8 @@ export function montaPayloadDoClone(
   custom_fields: Record<string, unknown>;
   source_metadata: Record<string, unknown>;
   dono_herdado: true;
+  /** `null` para origem aberta; o id da origem quando a clonagem É a retomada. */
+  retomado_de_lead_id: string | null;
 } {
   const dono: { owner_user_id?: string; owner_agent_id?: string } = {};
   if (origem.owner_user_id) dono.owner_user_id = origem.owner_user_id;
@@ -228,6 +237,12 @@ export function montaPayloadDoClone(
         pipeline_id: origem.pipeline_id,
       },
     },
+    // Origem ABERTA = troca de funil de sempre (a P-01), sem cadeia nenhuma.
+    // Origem ENCERRADA = a nova tentativa que o funil `novo_negocio` autoriza
+    // (issue #1538): o clone passa a apontar para ela, e "tentativas até
+    // ganhar" continua derivável por `retomado_de_lead_id` também quando a
+    // retomada troca de funil.
+    retomado_de_lead_id: origem.status !== "open" ? origem.id : null,
   };
 }
 

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./helpers/test";
 
 /**
  * A aba do navegador — o único pedaço da marca que aparece em TODA tela,

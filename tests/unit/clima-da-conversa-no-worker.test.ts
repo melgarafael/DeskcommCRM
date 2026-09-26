@@ -48,6 +48,7 @@ import { generateObject } from "ai";
 
 import { registrarFalha } from "@/lib/ai/decisao/disjuntor";
 import { AVISO_DO_JEV, O_QUE_FAZER_DO_JEV } from "@/lib/ai/decisao/textos";
+import { TITULOS_ANTIGOS_DO_AVISO_DO_JEV } from "@/lib/ai/decisao/textos";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { EventRow } from "@/lib/event-log/dispatcher";
@@ -757,5 +758,93 @@ describe("o aviso do Jev na Central", () => {
     const { banco: depois } = await rodar(cenario, banco);
     expect(depois.agent_inbox_items).toHaveLength(1);
     expect(depois.agent_inbox_items[0]!.title).toBe(AVISO_DO_JEV.titulo);
+  });
+});
+
+// ── O Jev por tarefa (onda 2) ───────────────────────────────────────────────
+//
+// O worker lê o estado da TAREFA do clima, não mais o `modo` direto. Sem
+// `tarefas.clima` gravado, o estado é o `modo` (os casos acima provam que nada
+// mudou); com ele, o gravado manda.
+describe("o Jev por tarefa no worker de clima", () => {
+  beforeEach(() => {
+    chamadasAoJev = [];
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const comTarefa = (modo: "observacao" | "decide", estado: string): Cenario => {
+    const c = jevLigado(modo);
+    const jev = (c.settings as { jev: Linha }).jev;
+    return { ...c, settings: { ...c.settings, jev: { ...jev, tarefas: { clima: { estado } } } } };
+  };
+
+  it("clima gravado decidindo vence o `modo` de observação: a nota do Jev vale", async () => {
+    fornecedor(async () => respostaDoJev(0));
+    const { resultado } = await rodar(comTarefa("observacao", "decidindo"));
+    expect(resultado).toEqual({ skipped: false, sentiment_score: 0 });
+    expect(generateObject).not.toHaveBeenCalled();
+  });
+
+  it("clima desligado com o interruptor ligado: nada sai para o Jev, a IA de sempre mede", async () => {
+    fornecedor(async () => respostaDoJev(0));
+    const { resultado, banco } = await rodar(comTarefa("decide", "desligada"));
+    expect(chamadasAoJev).toHaveLength(0);
+    expect(resultado).toEqual({ skipped: false, sentiment_score: 0.2 });
+    expect(linhasDoJev(banco)).toHaveLength(0);
+  });
+
+  it("clima desligado e sem IA de sempre: ninguém mede, como com o Jev desligado", async () => {
+    fornecedor(async () => respostaDoJev(0));
+    const c = comTarefa("decide", "desligada");
+    const { resultado } = await rodar({ ...c, credenciais: c.credenciais!.filter((l) => l.provider === "typesafe") });
+    expect(chamadasAoJev).toHaveLength(0);
+    expect(resultado).toEqual({ skipped: true, reason: "ai_gateway_key_missing" });
+  });
+});
+
+// O aviso saiu do worker (`lib/ai/decisao/aviso.ts`) e mudou de título. O
+// aberto numa instalação que atualizou tem o título ANTIGO: ele é o mesmo aviso.
+describe("o aviso do Jev com o título antigo", () => {
+  beforeEach(() => {
+    chamadasAoJev = [];
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const avisoAntigo = (titulo: string): Linha => ({
+    organization_id: ORG,
+    kind: "other",
+    severity: "critical",
+    status: "open",
+    title: titulo,
+    body: "texto da versão anterior",
+  });
+
+  it("o título mudou de fato (senão os casos abaixo não provam nada)", () => {
+    expect(TITULOS_ANTIGOS_DO_AVISO_DO_JEV).not.toContain(AVISO_DO_JEV.titulo);
+    expect(TITULOS_ANTIGOS_DO_AVISO_DO_JEV.length).toBeGreaterThan(0);
+  });
+
+  it.each(["pt-BR", "es"] as const)("aberto com o título antigo (%s), fecha quando o Jev volta a medir", async (idioma) => {
+    fornecedor(async () => respostaDoJev(4));
+    const cenario = jevLigado("decide");
+    const banco = montarBanco(cenario);
+    banco.agent_inbox_items.push(avisoAntigo(traduzir(TITULOS_ANTIGOS_DO_AVISO_DO_JEV[0]!, idioma)));
+    const { banco: depois } = await rodar(cenario, banco);
+    expect(depois.agent_inbox_items).toHaveLength(1);
+    expect(depois.agent_inbox_items[0]).toMatchObject({ status: "resolved" });
+  });
+
+  it("aberto com o título antigo, o Jev falha de novo: vira o aviso de agora, sem abrir um segundo", async () => {
+    fornecedor(async () => new Response("{}", { status: 402 }));
+    const cenario = jevLigado("decide");
+    const banco = montarBanco(cenario);
+    banco.agent_inbox_items.push(avisoAntigo(TITULOS_ANTIGOS_DO_AVISO_DO_JEV[0]!));
+    const { banco: depois } = await rodar(cenario, banco);
+    expect(depois.agent_inbox_items).toHaveLength(1);
+    expect(depois.agent_inbox_items[0]).toMatchObject({ title: AVISO_DO_JEV.titulo, status: "open" });
   });
 });

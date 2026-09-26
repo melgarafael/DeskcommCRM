@@ -42,6 +42,10 @@ interface Consulta {
   cliente: "admin" | "sessao";
   tabela: string;
   eq: Array<[string, unknown]>;
+  /** `.not(col, "is", valor)` — só `jev_observacoes` os aplica (as outras leituras não dependem deles aqui). */
+  nao: Array<[string, unknown]>;
+  /** `.neq(col, valor)` — idem; como no SQL, o nulo não passa. */
+  neq: Array<[string, unknown]>;
   gte: Array<[string, unknown]>;
   range: [number, number] | null;
   patch: Linha | null;
@@ -52,6 +56,11 @@ interface Estado {
   credenciais: Linha[];
   llmCalls: Linha[];
   mensagens: Linha[];
+  observacoes: Linha[];
+  /** `org_guardrail_layers`. */
+  camadas: Linha[];
+  /** `ai_routers`. */
+  roteadores: Linha[];
   consultas: Consulta[];
 }
 
@@ -64,7 +73,7 @@ const MAX_ROWS = 1000;
 function cliente(tipo: Consulta["cliente"]) {
   return {
     from(tabela: string) {
-      const c: Consulta = { cliente: tipo, tabela, eq: [], gte: [], range: null, patch: null };
+      const c: Consulta = { cliente: tipo, tabela, eq: [], nao: [], neq: [], gte: [], range: null, patch: null };
       estado.consultas.push(c);
       const linhasDaTabela = (): Linha[] => {
         const base =
@@ -72,13 +81,26 @@ function cliente(tipo: Consulta["cliente"]) {
             ? estado.credenciais
             : tabela === "llm_calls"
               ? estado.llmCalls
-              : estado.mensagens;
+              : tabela === "jev_observacoes"
+                ? estado.observacoes.filter(
+                    (l) =>
+                      c.nao.every(([col, v]) => l[col] !== v) &&
+                      c.neq.every(([col, v]) => l[col] !== null && l[col] !== undefined && l[col] !== v),
+                  )
+                : tabela === "org_guardrail_layers"
+                  ? estado.camadas
+                  : tabela === "ai_routers"
+                    ? estado.roteadores
+                    : estado.mensagens;
         const filtradas = base.filter((l) => c.eq.every(([col, v]) => !(col in l) || l[col] === v));
         return c.range ? filtradas.slice(c.range[0], c.range[1] + 1) : filtradas.slice(0, MAX_ROWS);
       };
       const chain = {
         select: () => chain,
-        not: () => chain,
+        not: (col: string, _op: string, v: unknown) => {
+          c.nao.push([col, v]);
+          return chain;
+        },
         or: () => chain,
         gte: (col: string, v: unknown) => {
           c.gte.push([col, v]);
@@ -88,6 +110,10 @@ function cliente(tipo: Consulta["cliente"]) {
         limit: () => chain,
         eq: (col: string, v: unknown) => {
           c.eq.push([col, v]);
+          return chain;
+        },
+        neq: (col: string, v: unknown) => {
+          c.neq.push([col, v]);
           return chain;
         },
         range: (de: number, ate: number) => {
@@ -103,8 +129,13 @@ function cliente(tipo: Consulta["cliente"]) {
           if (c.patch) estado.settings = c.patch.settings as Linha;
           return { data: { settings: estado.settings }, error: null };
         },
+        // `jev_observacoes` é lida por contagem (`head`): o PostgREST devolve `count`, sem linhas.
         then: (ok: (r: unknown) => unknown, erro?: (e: unknown) => unknown) =>
-          Promise.resolve({ data: linhasDaTabela(), error: null }).then(ok, erro),
+          Promise.resolve(
+            tabela === "jev_observacoes"
+              ? { data: null, count: linhasDaTabela().length, error: null }
+              : { data: linhasDaTabela(), error: null },
+          ).then(ok, erro),
       };
       return chain;
     },
@@ -127,6 +158,7 @@ function credencial(over: Linha = {}): Linha {
 
 function chamada(over: Linha = {}): Linha {
   return {
+    purpose: "sentiment_classify",
     provider: "typesafe",
     status: "ok",
     origem_da_escolha: "jev",
@@ -146,6 +178,9 @@ beforeEach(() => {
     credenciais: [],
     llmCalls: [],
     mensagens: [],
+    observacoes: [],
+    camadas: [],
+    roteadores: [],
     consultas: [],
   };
   vi.mocked(requireRole).mockImplementation(async (min) =>
@@ -202,7 +237,7 @@ describe("GET /api/v1/ai/jev", () => {
       erro_de_validacao: null,
     });
     expect(d.config).toEqual({ ligado: false, modo: "observacao", aceite: null });
-    expect(d.tarefas.map((t: { id: string }) => t.id)).toEqual(["sentiment_classify"]);
+    expect(d.tarefas.map((t: { id: string }) => t.id)).toEqual(["sentiment_classify", "jailbreak_detect", "intent_router"]);
     expect(d.tem_ia_de_sempre).toBe(true);
     expect(d.numeros).toEqual({
       dias: 7,
@@ -303,7 +338,55 @@ describe("GET /api/v1/ai/jev", () => {
     expect(corpo.data.ultima_falha).toEqual({
       motivo: "jev_credencial_invalida",
       em: "2026-09-22T13:00:00.000Z",
+      tarefa: "Medir o clima da conversa",
     });
+  });
+
+  /**
+   * O roteador decidindo: quando o Jev não responde, a IA de sempre escolhe o
+   * agente, e a linha de erro do Jev leva `reserva_do_jev`. Sem ela o cartão
+   * dizia zero coberturas com o Jev estourando o teto em parte das mensagens.
+   */
+  it("a cobertura do roteador decidindo conta em 'Vezes que a IA de sempre cobriu o Jev'", async () => {
+    estado.llmCalls = [
+      chamada({
+        purpose: "intent_router",
+        status: "erro",
+        error_code: "jev_provedor_indisponivel",
+        origem_da_escolha: "reserva_do_jev",
+        cost_cents: 0,
+      }),
+      // Controle: a falha observando (a IA decidiu de qualquer jeito) não é cobertura.
+      chamada({ purpose: "intent_router", status: "erro", error_code: "jev_credencial_invalida", origem_da_escolha: "jev_observacao" }),
+    ];
+    const { corpo } = await ler();
+    expect(corpo.data.numeros.reservas).toBe(1);
+    expect(corpo.data.numeros.decisoes, "a falha não é uma resposta do Jev").toBe(0);
+  });
+
+  /**
+   * Sem chave ou com o disjuntor aberto, nada sai para a rede — mas decidindo a
+   * IA de sempre cobre do mesmo jeito, e isso conta. Só não é a "Última falha":
+   * a linha mais nova tomaria o lugar da que abriu o disjuntor, que diz o que fazer.
+   */
+  it("a cobertura sem rede conta como reserva, e não esconde a falha que abriu o disjuntor", async () => {
+    const semRede = (error_code: string, created_at: string) =>
+      chamada({ purpose: "intent_router", status: "erro", error_code, origem_da_escolha: "reserva_do_jev", cost_cents: 0, latency_ms: null, created_at });
+    estado.llmCalls = [
+      chamada({
+        purpose: "intent_router",
+        status: "erro",
+        error_code: "jev_limite_de_taxa",
+        origem_da_escolha: "reserva_do_jev",
+        cost_cents: 0,
+        created_at: "2026-09-22T13:00:00.000Z",
+      }),
+      semRede("jev_disjuntor_aberto", "2026-09-22T13:01:00.000Z"),
+      semRede("jev_sem_credencial", "2026-09-22T13:02:00.000Z"),
+    ];
+    const { corpo } = await ler();
+    expect(corpo.data.numeros.reservas).toBe(3);
+    expect(corpo.data.ultima_falha).toMatchObject({ motivo: "jev_limite_de_taxa", em: "2026-09-22T13:00:00.000Z" });
   });
 
   it("nenhuma medição com preço: o custo é desconhecido, não um zero ao lado de N decisões", async () => {
@@ -352,6 +435,25 @@ describe("GET /api/v1/ai/jev", () => {
     const { corpo } = await ler();
     expect(corpo.data.numeros.decisoes).toBe(1);
     expect(corpo.data.ultima_falha).toBeNull();
+  });
+
+  it("a medida de uma tarefa não supera a falha de OUTRA: o clima medindo não apaga a pergunta recusada da manipulação", async () => {
+    estado.llmCalls = [
+      chamada({
+        purpose: "jailbreak_detect",
+        status: "erro",
+        error_code: "jev_contrato_invalido",
+        created_at: "2026-09-22T11:00:00.000Z",
+      }),
+      chamada({ created_at: "2026-09-22T12:00:00.000Z" }),
+    ];
+    const { corpo } = await ler();
+    // Diz QUAL tarefa parou: o disjuntor da pergunta recusada é por tarefa.
+    expect(corpo.data.ultima_falha).toEqual({
+      motivo: "jev_contrato_invalido",
+      em: "2026-09-22T11:00:00.000Z",
+      tarefa: "Perceber tentativa de manipulação",
+    });
   });
 
   it("pagina: mais de 1000 execuções na semana contam todas", async () => {
@@ -525,5 +627,228 @@ describe("PATCH /api/v1/ai/jev", () => {
   it("corpo sem nada a mudar é recusado", async () => {
     expect((await mudar({})).status).toBe(422);
     expect((await mudar({ aceite_lgpd: true })).status).toBe(422);
+  });
+});
+
+describe("o Jev por tarefa na rota", () => {
+  it("GET: cada tarefa com o estado que vale agora — o clima, pelo `modo`, sem nada gravado", async () => {
+    expect((await ler()).corpo.data.por_tarefa).toEqual([
+      expect.objectContaining({ id: "clima", ponto: "sentiment_classify", estado: "desligada", novo: false }),
+      expect.objectContaining({ id: "manipulacao", ponto: "jailbreak_detect", estado: "desligada", novo: false }),
+      expect.objectContaining({ id: "roteador", ponto: "intent_router", estado: "desligada", novo: false }),
+    ]);
+
+    estado.settings = { jev: { ligado: true, modo: "decide", aceite: ACEITE_ANTIGO } };
+    const [clima] = (await ler()).corpo.data.por_tarefa;
+    expect(clima).toMatchObject({ id: "clima", estado: "decidindo", novo: false, rotulo: "Medir o clima da conversa" });
+  });
+
+  it("GET: com o Jev desligado, `ao_ligar` diz como cada tarefa volta — o clima desligado não volta pelo `modo`", async () => {
+    estado.settings = { jev: { ligado: false, modo: "decide", aceite: ACEITE_ANTIGO } };
+    expect((await ler()).corpo.data.por_tarefa[0]).toMatchObject({ estado: "desligada", ao_ligar: "decidindo" });
+
+    estado.settings = {
+      jev: { ligado: false, modo: "decide", aceite: ACEITE_ANTIGO, tarefas: { clima: { estado: "desligada" } } },
+    };
+    expect((await ler()).corpo.data.por_tarefa[0]).toMatchObject({ estado: "desligada", ao_ligar: "desligada" });
+  });
+
+  it("GET: `tarefas` continua na forma da onda 1 (a página aberta durante a atualização a lê)", async () => {
+    expect((await ler()).corpo.data.tarefas).toEqual([
+      expect.objectContaining({ id: "sentiment_classify", rotulo: "Medir o clima da conversa" }),
+      expect.objectContaining({ id: "jailbreak_detect", rotulo: "Perceber tentativa de manipulação" }),
+      expect.objectContaining({ id: "intent_router", rotulo: "Escolher qual agente atende" }),
+    ]);
+  });
+
+  it("GET: a manipulação, nova, começa observando sozinha com o Jev ligado no aceite de cada mensagem (R7)", async () => {
+    estado.settings = { jev: { ligado: true, modo: "decide", aceite: ACEITE_ANTIGO } };
+    const manipulacao = (await ler()).corpo.data.por_tarefa.find((t: { id: string }) => t.id === "manipulacao");
+    // O clima decidindo não faz a tarefa nova decidir.
+    expect(manipulacao).toMatchObject({ estado: "observando", novo: true });
+  });
+
+  /**
+   * A concordância das tarefas novas vem de `jev_observacoes`, contada no banco.
+   * "Sem par" (`concordou` nulo: a IA de sempre não decidiu) fica fora do
+   * denominador, e a linha de outra organização fora de tudo.
+   */
+  /**
+   * O clima conta as 500 mensagens mais recentes; as outras tarefas, os 30 dias
+   * inteiros no banco. Lado a lado, "X de 500" lia-se como "mediu menos".
+   */
+  it("GET: a concordância do clima declara o teto da amostra quando bate nele — e só então", async () => {
+    estado.settings = { jev: { ligado: true, aceite: ACEITE_ANTIGO } };
+    estado.mensagens = Array.from({ length: 500 }, () => ({ nota: 0.9, nota_do_jev: 0.8 }));
+    const cheia = (await ler()).corpo.data.por_tarefa.find((t: { id: string }) => t.id === "clima");
+    expect(cheia.observacao).toMatchObject({ comparadas: 500, teto_da_amostra: 500 });
+    estado.mensagens = Array.from({ length: 499 }, () => ({ nota: 0.9, nota_do_jev: 0.8 }));
+    const abaixo = (await ler()).corpo.data.por_tarefa.find((t: { id: string }) => t.id === "clima");
+    expect(abaixo.observacao).not.toHaveProperty("teto_da_amostra");
+  });
+
+  it("GET: a concordância da manipulação sai de jev_observacoes, sem par fora da conta", async () => {
+    const obs = (concordou: boolean | null, organization_id = ORG, rotulos: Linha = {}): Linha => ({
+      organization_id,
+      tarefa: "manipulacao",
+      concordou,
+      rotulo_jev: "none",
+      rotulo_atual: concordou === null ? null : "none",
+      ...rotulos,
+    });
+    estado.settings = { jev: { ligado: true, aceite: ACEITE_ANTIGO } };
+    estado.observacoes = [
+      obs(true),
+      obs(true),
+      // Só o Jev deu o forte: é o que decidir muda na manipulação.
+      obs(false, ORG, { rotulo_jev: "high", rotulo_atual: "low" }),
+      // Sem par: não conta em nada.
+      obs(null, ORG, { rotulo_jev: "high" }),
+      obs(true, OUTRA_ORG),
+    ];
+
+    const d = (await ler()).corpo.data;
+    const manipulacao = d.por_tarefa.find((t: { id: string }) => t.id === "manipulacao");
+    expect(manipulacao.observacao).toEqual({ dias: 30, comparadas: 3, concordaram: 2, so_o_jev_alto: 1 });
+    // O roteador não tem essa conta: decidir nele troca a escolha, não soma alerta.
+    const roteador = d.por_tarefa.find((t: { id: string }) => t.id === "roteador");
+    expect(roteador.observacao).not.toHaveProperty("so_o_jev_alto");
+    // A do clima continua sendo a das notas, também em `numeros` (a forma da onda 1).
+    const clima = d.por_tarefa.find((t: { id: string }) => t.id === "clima");
+    expect(clima.observacao).toEqual(d.numeros.observacao);
+    const lidas = estado.consultas.filter((c) => c.tabela === "jev_observacoes");
+    expect(lidas.every((c) => c.cliente === "sessao" && c.eq.some(([col, v]) => col === "organization_id" && v === ORG))).toBe(true);
+    expect(lidas.every((c) => c.gte.some(([col]) => col === "created_at"))).toBe(true);
+  });
+
+  it("GET: a manipulação com a camada anti-manipulação desligada pela organização diz que não roda", async () => {
+    estado.settings = { jev: { ligado: true, aceite: ACEITE_ANTIGO } };
+    const semCamada = async () =>
+      (await ler()).corpo.data.por_tarefa.map((t: { id: string; sem_camada: boolean }) => [t.id, t.sem_camada]);
+    // Sem escolha da organização, vale o padrão do worker: a camada roda.
+    expect(await semCamada()).toEqual([
+      ["clima", false],
+      ["manipulacao", false],
+      ["roteador", false],
+    ]);
+    estado.camadas = [
+      { organization_id: ORG, layer: "jailbreak", enabled: false },
+      { organization_id: OUTRA_ORG, layer: "jailbreak", enabled: true },
+    ];
+    expect(await semCamada()).toEqual([
+      ["clima", false],
+      ["manipulacao", true],
+      ["roteador", false],
+    ]);
+  });
+
+  it("GET: o roteador, numa empresa sem roteador de intenção ativo, diz que não roda", async () => {
+    estado.settings = { jev: { ligado: true, aceite: ACEITE_ANTIGO } };
+    const semRoteador = async () =>
+      (await ler()).corpo.data.por_tarefa.map((t: { id: string; sem_roteador: boolean }) => [t.id, t.sem_roteador]);
+    expect(await semRoteador()).toEqual([
+      ["clima", false],
+      ["manipulacao", false],
+      ["roteador", true],
+    ]);
+    // O ativo de OUTRA empresa não conta — o filtro é o da sessão.
+    const intencoes = (n: number) => [{ count: n }];
+    estado.roteadores = [{ organization_id: OUTRA_ORG, is_active: true, id: "r-outra", intencoes: intencoes(2) }];
+    expect(await semRoteador()).toEqual([
+      ["clima", false],
+      ["manipulacao", false],
+      ["roteador", true],
+    ]);
+    // Ativo, mas sem intenção nenhuma (o estado logo depois de criar um) ou com
+    // mais do que cabe numa pergunta: o Jev nunca é perguntado, e "Só observa"
+    // prometeria uma comparação que nunca vem.
+    estado.roteadores.push({ organization_id: ORG, is_active: true, id: "r-vazio", intencoes: intencoes(0) });
+    expect((await semRoteador())[2]).toEqual(["roteador", true]);
+    estado.roteadores.push({ organization_id: ORG, is_active: true, id: "r-cheio", intencoes: intencoes(255) });
+    expect((await semRoteador())[2]).toEqual(["roteador", true]);
+    estado.roteadores.push({ organization_id: ORG, is_active: true, id: "r-nossa", intencoes: intencoes(2) });
+    expect(await semRoteador()).toEqual([
+      ["clima", false],
+      ["manipulacao", false],
+      ["roteador", false],
+    ]);
+    // E o cartão segue dizendo que a tarefa observa: é o que ela faz quando há roteador.
+    const roteador = (await ler()).corpo.data.por_tarefa.find((t: { id: string }) => t.id === "roteador");
+    expect(roteador).toMatchObject({ estado: "observando", novo: true });
+  });
+
+  it("PATCH de uma tarefa: grava só ela, espelha o clima no `modo` e audita com a tarefa", async () => {
+    estado.settings = { jev: { ligado: true, modo: "observacao", aceite: ACEITE_ANTIGO } };
+    const { status, corpo } = await mudar({ tarefa: "clima", estado: "decidindo" });
+
+    expect(status).toBe(200);
+    expect(corpo.data.alterado).toBe(true);
+    expect(estado.settings.jev).toMatchObject({
+      ligado: true,
+      modo: "decide",
+      aceite: ACEITE_ANTIGO,
+      tarefas: { clima: { estado: "decidindo", alterado_por: USUARIO } },
+    });
+    expect(audit).toHaveBeenCalledTimes(1);
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "ai.jev.tarefa_alterada",
+        organizationId: ORG,
+        metadata: expect.objectContaining({
+          tarefa: "clima",
+          estado: "decidindo",
+          estado_anterior: "observando",
+          modo: "decide",
+          modo_anterior: "observacao",
+        }),
+      }),
+    );
+  });
+
+  it("PATCH de uma tarefa já naquele estado não escreve nem audita", async () => {
+    estado.settings = { jev: { ligado: true, modo: "decide", aceite: ACEITE_ANTIGO } };
+    const { status, corpo } = await mudar({ tarefa: "clima", estado: "decidindo" });
+    expect(status).toBe(200);
+    expect(corpo.data.alterado).toBe(false);
+    expect(escritas()).toEqual([]);
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("trocar o `modo` depois de gravar por tarefa leva a tarefa junto", async () => {
+    estado.settings = { jev: { ligado: true, modo: "observacao", aceite: ACEITE_ANTIGO } };
+    await mudar({ tarefa: "clima", estado: "decidindo" });
+    await mudar({ modo: "observacao" });
+    expect(estado.settings.jev).toMatchObject({ modo: "observacao", tarefas: { clima: { estado: "observando" } } });
+    expect(audit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        action: "ai.jev.modo_alterado",
+        metadata: expect.objectContaining({ tarefa: "clima", estado_anterior: "decidindo" }),
+      }),
+    );
+  });
+
+  it.each([
+    ["tarefa sem estado", { tarefa: "clima" }],
+    ["estado sem tarefa", { estado: "decidindo" }],
+    ["tarefa e `modo` juntos", { tarefa: "clima", estado: "decidindo", modo: "decide" }],
+    ["tarefa que não existe", { tarefa: "futura", estado: "observando" }],
+    ["estado que não existe", { tarefa: "clima", estado: "turbo" }],
+  ])("%s é recusado, sem escrever", async (_caso, corpo) => {
+    estado.settings = { jev: { ligado: true, modo: "observacao", aceite: ACEITE_ANTIGO } };
+    expect((await mudar(corpo)).status).toBe(422);
+    expect(escritas()).toEqual([]);
+  });
+
+  it("gerente não muda tarefa", async () => {
+    papel = "manager";
+    estado.settings = { jev: { ligado: true, modo: "observacao", aceite: ACEITE_ANTIGO } };
+    expect((await mudar({ tarefa: "clima", estado: "decidindo" })).status).toBe(403);
+    expect(escritas()).toEqual([]);
+  });
+
+  it("o aceite novo grava o alcance que o texto da tela descreve: cada mensagem, sozinha", async () => {
+    estado.credenciais = [credencial()];
+    await mudar({ ligado: true, aceite_lgpd: true });
+    expect((estado.settings.jev as Linha).aceite).toMatchObject({ por: USUARIO, alcance: "mensagem" });
   });
 });

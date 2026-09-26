@@ -4,13 +4,16 @@
  * Irmão declarado de `lib/agenda/google/oauth.ts` — mesmas três armadilhas
  * (sem `prompt=consent` não vem `refresh_token`; a renovação não repete o
  * `refresh_token`; `expires_in` é relativo, não absoluto), mesma cura para
- * cada uma. O que muda é o escopo: um só, `adwords`, porque não há nada
- * intermediário entre "pode reportar conversão" e "não pode" nesta API — ao
- * contrário do Calendar, que separa `events` de `readonly`.
+ * cada uma. Pede o escopo da API escolhida: `adwords` nas conexões legadas
+ * ou `datamanager` na nova autorização. A escolha viaja no state assinado.
  *
  * Sem rede, sem `process.env` e sem relógio próprio — ver o cabeçalho do
  * irmão para o porquê.
  */
+
+import type { ApiDeConversaoGoogle } from "../types";
+
+export const ESCOPO_DATA_MANAGER = "https://www.googleapis.com/auth/datamanager";
 
 export const ESCOPO_OBRIGATORIO = "https://www.googleapis.com/auth/adwords";
 
@@ -32,18 +35,26 @@ export interface AppDoGoogleAds {
  * chama transforma isto no cartão "conectar o Google Ads ainda não está
  * configurado".
  */
-export function montarUrlDeConsentimento(app: AppDoGoogleAds, opcoes: { state: string }): string {
+export function montarUrlDeConsentimento(
+  app: AppDoGoogleAds,
+  opcoes: { state: string; api?: ApiDeConversaoGoogle },
+): string {
   const clientId = app.clientId?.trim();
   const redirectUri = app.redirectUri?.trim();
-  if (!clientId) throw new Error("GOOGLE_ADS_OAUTH_CLIENT_ID ausente: não há app OAuth para pedir consentimento");
-  if (!redirectUri) throw new Error("redirect_uri ausente: o Google exige o endereço de retorno registrado");
-  if (!opcoes.state?.trim()) throw new Error("state ausente: sem ele o retorno do Google não é verificável");
+  if (!clientId)
+    throw new Error(
+      "GOOGLE_ADS_OAUTH_CLIENT_ID ausente: não há app OAuth para pedir consentimento",
+    );
+  if (!redirectUri)
+    throw new Error("redirect_uri ausente: o Google exige o endereço de retorno registrado");
+  if (!opcoes.state?.trim())
+    throw new Error("state ausente: sem ele o retorno do Google não é verificável");
 
   const parametros = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: ESCOPO_OBRIGATORIO,
+    scope: opcoes.api === "data_manager" ? ESCOPO_DATA_MANAGER : ESCOPO_OBRIGATORIO,
     // Sem `offline` não vem refresh_token nenhum; sem `consent` ele some na
     // segunda vez — mesma armadilha 1 do irmão da Agenda.
     access_type: "offline",
@@ -76,14 +87,22 @@ function texto(v: unknown): string | null {
 /** Lê a resposta do endpoint de token — mesma disciplina do irmão: nunca lança. */
 export function lerRespostaDeToken(bruto: unknown, opcoes: { agora: Date }): LeituraDeToken {
   if (typeof bruto !== "object" || bruto === null) {
-    return { ok: false, motivo: "resposta_invalida", detalhe: `resposta não é objeto: ${typeof bruto}` };
+    return {
+      ok: false,
+      motivo: "resposta_invalida",
+      detalhe: `resposta não é objeto: ${typeof bruto}`,
+    };
   }
   const r = bruto as Record<string, unknown>;
 
   const erro = texto(r.error);
   if (erro) {
     const descricao = texto(r.error_description);
-    return { ok: false, motivo: "erro_do_google", detalhe: descricao ? `${erro}: ${descricao}` : erro };
+    return {
+      ok: false,
+      motivo: "erro_do_google",
+      detalhe: descricao ? `${erro}: ${descricao}` : erro,
+    };
   }
 
   const accessToken = texto(r.access_token);
@@ -91,7 +110,8 @@ export function lerRespostaDeToken(bruto: unknown, opcoes: { agora: Date }): Lei
     return { ok: false, motivo: "sem_access_token", detalhe: "resposta sem `access_token`" };
   }
 
-  const expiresInBruto = typeof r.expires_in === "string" ? Number(r.expires_in.trim()) : r.expires_in;
+  const expiresInBruto =
+    typeof r.expires_in === "string" ? Number(r.expires_in.trim()) : r.expires_in;
   const expiresIn =
     typeof expiresInBruto === "number" && Number.isFinite(expiresInBruto) ? expiresInBruto : null;
   const expiraEm =

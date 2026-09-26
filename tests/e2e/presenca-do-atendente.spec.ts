@@ -22,7 +22,7 @@
  * cria a linha e acorda o roteamento. O ciclo longo fica para o invariante e
  * para o teste unitário da rota, que medem sem relógio de parede.
  */
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/test";
 
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 

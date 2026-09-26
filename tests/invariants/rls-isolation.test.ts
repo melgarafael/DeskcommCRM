@@ -133,6 +133,17 @@ beforeAll(() => {
             values (v_org, v_conv, v_sess, v_contact, 'text', 'inbound', 'rls invariant probe');
         end if;
 
+        -- migration 0419 — o rascunho sugerido por integração (#1611): o TEXTO
+        -- que outro sistema escreveu para esta pessoa, guardado ANTES de alguém
+        -- clicar em enviar. Vazar a linha entregaria ao vizinho a mensagem que a
+        -- empresa ainda não mandou — e a leitura da inbox é pela sessão do
+        -- atendente, por isso a policy precisa valer nos dois sentidos.
+        if not exists (select 1 from public.conversation_drafts where organization_id = v_org) then
+          insert into public.conversation_drafts
+            (organization_id, conversation_id, body, source, expires_at)
+          values (v_org, v_conv, 'RLS invariant rascunho sugerido', 'erp', now() + interval '24 hours');
+        end if;
+
         -- 0227: sugestões contêm texto privado da conversa. Os dois tenants
         -- recebem uma linha real, com todos os FKs e a fronteira canônica.
         -- A prova abaixo usa JWT authenticated; não é só inspeção de policy.
@@ -630,6 +641,13 @@ export const TABLES = [
   "campaigns",
   "campaign_templates",
   "campaign_channel_sessions",
+  // migration 0419 (issue #1611) — o rascunho sugerido por integração. Guarda o
+  // TEXTO que um outro sistema escreveu sobre uma pessoa da conversa, antes de
+  // alguém clicar em enviar: vazar a linha entregaria ao vizinho a mensagem que
+  // a empresa ainda não mandou. A leitura é da SESSÃO do atendente (a caixa de
+  // entrada abre por `?rascunho=`), então o `agent` semeado aqui é controle
+  // positivo legítimo e a policy `for all` cobre também o UPDATE do consumo.
+  "conversation_drafts",
 ] as const;
 
 describe("RLS tenant isolation (fn_user_org_ids pattern)", () => {

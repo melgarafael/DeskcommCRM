@@ -1,3 +1,5 @@
+import type { IdentificadoresGoogle } from "./google/identificadores";
+
 /**
  * O vocabulário AGNÓSTICO do eixo de plataformas de anúncio.
  *
@@ -42,10 +44,12 @@
  * REPORTAR. Os dois conjuntos coincidem hoje e não têm por que coincidir sempre
  * — existe plataforma que atribui e não recebe conversão de volta.
  */
+export type ApiDeConversaoGoogle = "google_ads" | "data_manager";
+
 export type PlataformaDeAnuncio = "meta_ads" | "google_ads";
 
-/** Só `Purchase` hoje. `Lead` é a Fase 2 e entra quando `lead.created` for consumido. */
-export type NomeDoEvento = "Purchase";
+/** Venda e qualificação são resultados distintos e deduplicados separadamente. */
+export type NomeDoEvento = "Purchase" | "QualifiedLead";
 
 /**
  * Uma conversão pronta para sair — no formato da CASA, não no da plataforma.
@@ -74,9 +78,10 @@ export interface ConversaoOffline {
   ocorridoEm: Date;
   /** O clique que originou a conversa — `ad_source_id` do contato (0164). */
   cliqueDeOrigem: string;
+  identificadoresGoogle?: IdentificadoresGoogle;
   /** E.164 sem `+`, ainda EM CLARO: o hash é responsabilidade do transporte. */
   telefone: string | null;
-  valorCentavos: number;
+  valorCentavos: number | null;
   moeda: string;
 }
 
@@ -99,8 +104,9 @@ export interface ConversaoOffline {
  */
 export type ResultadoDeEnvio =
   | { tipo: "ok"; detalhe?: string }
+  | { tipo: "processando"; protocolo: string; detalhe: string }
   | { tipo: "transitorio"; detalhe: string; tentarEmMs?: number }
-  | { tipo: "permanente"; detalhe: string };
+  | { tipo: "permanente"; detalhe: string; rejeicaoConfirmada?: boolean };
 
 /**
  * As credenciais que o transporte precisa, já decifradas.
@@ -119,6 +125,7 @@ export interface CredencialDeConversao {
   /** Preenchido = envio marcado como teste, não conta para otimização. */
   testEventCode: string | null;
   google?: {
+    api?: ApiDeConversaoGoogle;
     /** Decifrado; NUNCA o access token — esse é derivado a cada envio. */
     refreshToken: string;
     customerId: string;
@@ -131,10 +138,8 @@ export interface CredencialDeConversao {
 /** O contrato que todo transporte de conversão cumpre. */
 export interface TransporteDeConversao {
   plataforma: PlataformaDeAnuncio;
-  enviar(
-    credencial: CredencialDeConversao,
-    conversao: ConversaoOffline,
-  ): Promise<ResultadoDeEnvio>;
+  consultar?(credencial: CredencialDeConversao, protocolo: string): Promise<ResultadoDeEnvio>;
+  enviar(credencial: CredencialDeConversao, conversao: ConversaoOffline): Promise<ResultadoDeEnvio>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -33,7 +33,7 @@ export function credencial(extra: Partial<CredentialRow> = {}): CredentialRow {
 
 export function montar(
   row: CredentialRow,
-  props: { canWrite?: boolean; usageCount?: number; usadaEm?: string[]; avisoAoExcluir?: string } = {},
+  props: { canWrite?: boolean; usageCount?: number; usadaEm?: string[]; avisoAoExcluir?: string[] } = {},
 ) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -55,7 +55,7 @@ describe("CredentialCard — chave do Jev", () => {
   it("diz onde a chave trabalha e avisa, antes de excluir, que o Jev será desligado", () => {
     montar(credencial({ provider: "typesafe", label: "Jev" }), {
       usadaEm: ["Medir o clima da conversa"],
-      avisoAoExcluir: AO_EXCLUIR_A_CHAVE_DO_JEV.iaPrincipalAssume,
+      avisoAoExcluir: [AO_EXCLUIR_A_CHAVE_DO_JEV.usada, AO_EXCLUIR_A_CHAVE_DO_JEV.climaComIa],
     });
     expect(screen.getByTestId("credencial-usada-em")).toHaveTextContent(
       "Usada em: Medir o clima da conversa",

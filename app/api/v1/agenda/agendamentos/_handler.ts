@@ -23,6 +23,11 @@ import type { Json } from "@/lib/database.types";
  * A recusa sai como `ApiError`: a rota a traduz em `fail()`, a tool a traduz
  * para o modelo, e nenhum dos dois reimplementa a decisão.
  */
+import {
+  payloadDoAviso,
+  type RecorteDoCompromisso,
+  type TipoDoAtendimento,
+} from "@/lib/agenda/aviso-do-compromisso";
 import { coletaOQueOcupa, horariosLivresDaOrg } from "@/lib/agenda/consulta";
 import { colide } from "@/lib/agenda/horarios-livres";
 import {
@@ -948,19 +953,38 @@ async function fecharOLaco(
   // organização (`fn_role_at_least`, que também cobre a sessão de suporte).
   // Serve igual aos dois chamadores — o mesmo `registraFalhaDeAtividade` logo
   // abaixo já emite assim. A organização vem do contexto autenticado.
+  // O NEGÓCIO do contato LIDO ANTES do emit — é o mesmo que a timeline vai
+  // ancorar logo abaixo, e `lead_ids` no corpo do aviso quer exatamente ele.
+  // Ler a mesma pergunta duas vezes seria uma pergunta a mais por evento.
+  const leadId = args.contactId ? await leadAtivoDoContato(supabase, ctx, args.contactId) : null;
+
   if (args.gatilho) {
+    // As linhas que o corpo do aviso carrega (#1612): o horário, a situação, o
+    // local e o tipo. A linha é LIDA AQUI, depois de gravada, e não repassada
+    // pelo chamador — `marcarAgendamento` devolve um recorte de colunas para a
+    // resposta HTTP, e confiar nele daria um payload que muda de forma conforme
+    // quem chamou. O banco é a fonte, depois da escrita.
+    const compromisso = await compromissoParaOAviso(supabase, ctx, args.appointmentId);
+    const tipo = compromisso?.event_type_id
+      ? await tipoDoCompromisso(supabase, ctx, compromisso.event_type_id)
+      : null;
+    const leadIds = await leadIdsDoCompromisso(supabase, ctx, args.appointmentId, leadId);
+
     const { error } = await supabase.rpc("emit_event", {
       p_organization_id: ctx.organization_id,
       p_event_type: args.gatilho,
       p_entity_kind: ENTIDADE_DO_AGENDAMENTO,
       p_entity_id: args.appointmentId,
-      p_payload: {
-        appointment_id: args.appointmentId,
-        contact_id: args.contactId,
-        event_type_name: args.nomeDoTipo,
-        time_zone: args.fusoDoCompromisso,
+      p_payload: payloadDoAviso({
+        appointmentId: args.appointmentId,
+        contactId: args.contactId,
         transicao: args.transicao,
-      },
+        fuso: args.fusoDoCompromisso,
+        nomeDoTipo: args.nomeDoTipo,
+        compromisso,
+        tipo,
+        leadIds,
+      }),
       // `request_id` sem o prefixo `rule:` de propósito: ele correlaciona com o
       // audit log e NÃO aciona o anti-loop do motor, que só barra o que uma
       // regra causou.
@@ -975,8 +999,6 @@ async function fecharOLaco(
       });
     }
   }
-
-  const leadId = args.contactId ? await leadAtivoDoContato(supabase, ctx, args.contactId) : null;
 
   // ⚠️ ANTES do early-return de `!args.atividade`. Confirmar um agendamento
   // pendente é `atividade: null` (nada novo pra timeline — `atividadeDaTransicao`
@@ -1040,7 +1062,85 @@ async function fecharOLaco(
 }
 
 /**
- * O negócio ativo do contato — pela MESMA régua do resto do produto.
+ * O recorte da linha que o corpo do aviso carrega (#1612) — lido DEPOIS da
+  * gravação, com o filtro de organização do resto do handler.
+  *
+  * Falha não é erro: devolver `null` deixa os campos novos do payload em `null`
+  * e o evento SAI MESMO ASSIM. O aviso já existia antes destes campos; perder a
+  * emissão inteira por causa de uma coluna seria trocar um payload pobre por
+  * nenhum payload.
+  */
+ async function compromissoParaOAviso(
+   supabase: SB,
+   ctx: HandlerCtx,
+   appointmentId: string,
+ ): Promise<RecorteDoCompromisso | null> {
+   const { data } = await supabase
+     .from("calendar_appointments")
+     .select("starts_at, ends_at, status, location_kind, event_type_id")
+     .eq("organization_id", ctx.organization_id)
+     .eq("id", appointmentId)
+     .maybeSingle();
+   return (data as RecorteDoCompromisso | null) ?? null;
+ }
+
+ /**
+  * O TIPO de atendimento — `slug` e `name` de `calendar_event_types`.
+  *
+  * O `slug` entra agora no payload (#1612): é o identificador estável que
+  * renomear não muda (migration do `calendar_event_types`), e é o que um
+  * sistema do lado de fora usa para casar "Manutenção" sem depender do nome
+  * que alguém digitou. O `event_type_name` continua saindo — é o que as
+  * condições de regra existentes leem.
+  */
+ async function tipoDoCompromisso(
+   supabase: SB,
+   ctx: HandlerCtx,
+   eventTypeId: unknown,
+ ): Promise<TipoDoAtendimento | null> {
+   if (typeof eventTypeId !== "string" || !eventTypeId) return null;
+   const { data } = await supabase
+     .from("calendar_event_types")
+     .select("slug, name")
+     .eq("organization_id", ctx.organization_id)
+     .eq("id", eventTypeId)
+     .maybeSingle();
+   return (data as TipoDoAtendimento | null) ?? null;
+ }
+
+ /**
+  * Os negócios do compromisso, em `lead_ids` (#1612).
+  *
+  * Duas fontes, e as duas existem de verdade: os VÍNCULOS já gravados (um
+  * compromisso pode estar ligado a mais de um negócio) e o negócio ATIVO do
+  * contato, que no nascer do compromisso ainda não tem vínculo — o `crm_lead_links`
+  * é escrito logo abaixo, DEPOIS do emit. Sem a segunda fonte,
+  * `appointment.created` sairia sempre com a lista vazia, que é o campo mais
+  * útil de todos justamente no gatilho mais usado.
+  */
+ async function leadIdsDoCompromisso(
+   supabase: SB,
+   ctx: HandlerCtx,
+   appointmentId: string,
+   leadAtivo: string | null,
+ ): Promise<string[]> {
+   const { data } = await supabase
+     .from("crm_lead_links")
+     .select("lead_id")
+     .eq("organization_id", ctx.organization_id)
+     .eq("target_kind", ALVO_DE_VINCULO_DO_AGENDAMENTO)
+     .eq("target_id", appointmentId);
+
+   const vinculados = (Array.isArray(data) ? data : [])
+     .map((linha) => (linha as { lead_id?: unknown }).lead_id)
+     .filter((id): id is string => typeof id === "string" && !!id);
+   const todos = leadAtivo ? [...vinculados, leadAtivo] : vinculados;
+   // Sem duplicata: o vínculo e o ativo costumam ser o MESMO negócio, e uma
+   // lista com o id duas vezes faz o receptor somar dois sistemas do mesmo lead.
+   return todos.filter((id, i) => todos.indexOf(id) === i);
+ }
+
+ /** O negócio ativo do contato — pela MESMA régua do resto do produto.
  *
  * `resolveActiveLeadForContact` distingue três desfechos que um `limit(2)` não
  * distingue: roteou, `no_open_lead` e `ambiguous_open_leads`. Os dois últimos

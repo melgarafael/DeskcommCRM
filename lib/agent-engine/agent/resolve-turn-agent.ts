@@ -58,16 +58,19 @@
  */
 import type pg from 'pg';
 
+import { consultarJevNoRoteador } from '@/lib/ai/decisao/roteador';
+import type { DependenciasDoPonto } from '@/lib/ai/decisao/ponto';
+
 import type { Logger } from '../obs/logger';
 import type { LlmEdgeConfig } from '../edge/llm/run-model-call';
 import { agenteDaCampanhaDaConversa } from './agente-da-campanha';
-import { loadActiveRouter, type RouterMember } from './router-config';
+import { loadActiveRouter, type LoadedRouter, type RouterMember } from './router-config';
 import {
   loadPublishedAgentConfig,
   loadPublishedAgentConfigById,
   type PublishedAgentConfig,
 } from './agent-config';
-import { classifyIntent, type ClassifierContextMessage } from './intent-classifier';
+import { classifyIntent, type ClassifierContextMessage, type IntentVerdict } from './intent-classifier';
 
 /**
  * Janela de contexto passada ao CLASSIFICADOR, não confundir com
@@ -109,6 +112,77 @@ export interface ResolveTurnAgentDeps {
   loadPublishedAgentConfigById?: typeof loadPublishedAgentConfigById;
   loadPublishedAgentConfig?: typeof loadPublishedAgentConfig;
   classifyIntent?: typeof classifyIntent;
+  /** O Jev ao lado do classificador (`lib/ai/decisao/roteador.ts`). */
+  consultarJev?: typeof consultarJevNoRoteador;
+  /** Chave e `fetch` do Jev — dublês só no teste. Default: a chave da organização e o egress com allowlist. */
+  jev?: DependenciasDoPonto;
+}
+
+/**
+ * Regras 2 a 5 sobre UM veredito, sem carregar agente nenhum: o membro que ele
+ * escolhe (e com que desfecho), ou o caminho da reserva. É a régua única do
+ * roteamento — o turno a aplica ao veredito que decide, e a observação do Jev
+ * a aplica aos DOIS vereditos para saber se levariam ao mesmo agente.
+ *
+ * Um `intentName` fora de `router.members` não casa com ninguém: vale como
+ * "nenhuma". O classificador de sempre e o Jev já recusam intenção inventada;
+ * isto só impede que um veredito torto vire exceção no meio do turno.
+ */
+export type DestinoDoVeredito =
+  | {
+      membro: RouterMember;
+      outcome: 'sticky' | 'classified' | 'reclassified';
+      intentName: string | null;
+      confidence: number | null;
+    }
+  | { membro: null; outcome: 'no_match' | 'classifier_failed'; confidence: number | null };
+
+export function destinoDoVeredito(
+  router: LoadedRouter,
+  stickyMember: RouterMember | undefined,
+  stickyIntent: string | null,
+  verdict: IntentVerdict | null,
+): DestinoDoVeredito {
+  // regra 4: classificador falhou — um `null` é informação mais pobre que
+  // "sem sinal", nunca deve derrubar a stickiness (review T4 finding 1).
+  if (verdict === null) {
+    if (stickyMember !== undefined) {
+      return { membro: stickyMember, outcome: 'sticky', intentName: stickyIntent, confidence: null };
+    }
+    return { membro: null, outcome: 'classifier_failed', confidence: null };
+  }
+
+  const casado =
+    verdict.intentName !== null && verdict.confidence >= router.minConfidence
+      ? router.members.find((m) => m.intentName === verdict.intentName)
+      : undefined;
+
+  if (stickyMember !== undefined) {
+    // regra 2: só troca se a intenção vier DIFERENTE da sticky, com confiança.
+    if (casado === undefined || verdict.intentName === stickyIntent) {
+      return { membro: stickyMember, outcome: 'sticky', intentName: stickyIntent, confidence: verdict.confidence };
+    }
+    return { membro: casado, outcome: 'reclassified', intentName: verdict.intentName, confidence: verdict.confidence };
+  }
+
+  // sem sticky (regra 3).
+  if (casado !== undefined) {
+    return { membro: casado, outcome: 'classified', intentName: verdict.intentName, confidence: verdict.confidence };
+  }
+  return { membro: null, outcome: 'no_match', confidence: verdict.confidence };
+}
+
+/**
+ * O agente a que o destino leva, para comparar o Jev com a IA de sempre: o do
+ * membro, senão o de reserva do roteador, senão `fallback` — o publicado da
+ * sessão, o mesmo para os dois lados.
+ * ponytail: sem carregar a versão publicada (regra 7). Um membro sem versão
+ * publicada cai na reserva no turno e conta aqui pelo id dele; os dois lados
+ * erram igual, e só o caso "um escolheu esse membro, o outro a reserva" sai
+ * como discordância. Carregar os dois agentes a cada turno custaria mais que isso.
+ */
+export function agenteDoDestino(router: LoadedRouter, destino: DestinoDoVeredito): string {
+  return destino.membro?.agentId ?? router.fallbackAgentId ?? 'fallback';
 }
 
 export async function resolveTurnAgent(
@@ -121,6 +195,8 @@ export async function resolveTurnAgent(
     channelSessionId: string;
     conversationId: string;
     signal: string | null;
+    /** A mensagem de onde o `signal` saiu — amarra a observação do Jev a ela. */
+    signalMessageId?: string | null;
     stickyAgentId: string | null;
     stickyIntent: string | null;
     /** Mensagens anteriores ao signal, mais antiga → mais recente. Default []. */
@@ -132,6 +208,7 @@ export async function resolveTurnAgent(
   const _loadAgentById = deps.loadPublishedAgentConfigById ?? loadPublishedAgentConfigById;
   const _loadAgentBySession = deps.loadPublishedAgentConfig ?? loadPublishedAgentConfig;
   const _classifyIntent = deps.classifyIntent ?? classifyIntent;
+  const _consultarJev = deps.consultarJev ?? consultarJevNoRoteador;
 
   try {
     // ─── Degrau 0: a campanha que criou esta conversa ───
@@ -253,6 +330,20 @@ export async function resolveTurnAgent(
       return resolveFallback('no_match', null);
     }
 
+    // O Jev pergunta o mesmo, AO MESMO TEMPO (onda 2 do Jev, bloco 2.2): só a
+    // mensagem, sem o contexto (R4). Observando, o turno não espera por ele.
+    const jev = _consultarJev(
+      db,
+      {
+        organizationId: input.tenantId,
+        mensagem: input.signal,
+        membros: router.members,
+        contactId: input.leadId,
+        jobId: input.jobId,
+      },
+      deps.jev,
+    );
+
     // classifica — inclusive com sticky ativo, pra detectar troca de assunto (regra 2).
     const verdict = await _classifyIntent(
       db,
@@ -268,33 +359,31 @@ export async function resolveTurnAgent(
       { log: deps.log },
     );
 
-    // regra 4: classificador falhou — um `null` é informação mais pobre que
-    // "sem sinal", nunca deve derrubar a stickiness (review T4 finding 1).
-    if (verdict === null) {
-      if (stickyMember !== undefined) {
-        return loadMatchedOrFallback('sticky', stickyMember, input.stickyIntent, null);
-      }
-      return resolveFallback('classifier_failed', null);
-    }
+    // Decidindo, vale a escolha do Jev, e a IA de sempre é a reserva. Sem a IA
+    // de sempre (a chamada falhou, a saída não era resposta, ou a empresa não
+    // tem uma), vale a regra de hoje, nunca o Jev (R2) — e aí nem se espera por
+    // ele. A saída ilegível segue sendo "nenhuma" para o roteamento de hoje
+    // (sticky ou `no_match`); só não conta como a IA ter respondido: um modelo
+    // que nunca devolve JSON deixaria o Jev rotear sozinho, sem alarme.
+    const iaRespondeu = verdict !== null && verdict.falhou !== true;
+    const estadoDoJev = iaRespondeu ? await jev.estado : null;
+    const doJev = estadoDoJev === 'decidindo' ? await jev.escolha : null;
+    const destino = destinoDoVeredito(router, stickyMember, input.stickyIntent, doJev?.veredito ?? verdict);
 
-    if (stickyMember !== undefined) {
-      const changedSubject =
-        verdict.intentName !== null && verdict.intentName !== input.stickyIntent && verdict.confidence >= router.minConfidence;
-      if (!changedSubject) {
-        return loadMatchedOrFallback('sticky', stickyMember, input.stickyIntent, verdict.confidence);
-      }
-      const newMember = router.members.find((m) => m.intentName === verdict.intentName);
-      // newMember sempre definido: classifyIntent só devolve intentName que bateu em router.members.
-      return loadMatchedOrFallback('reclassified', newMember!, verdict.intentName, verdict.confidence);
-    }
+    jev.observar({
+      conversationId: input.conversationId,
+      messageId: input.signalMessageId ?? null,
+      rotuloDe: (v) => agenteDoDestino(router, destinoDoVeredito(router, stickyMember, input.stickyIntent, v)),
+      // Sem resposta da IA não há par: a linha fica sem o lado dela, fora da concordância.
+      vereditoDaIa: iaRespondeu ? verdict : null,
+      decidiu: doJev !== null,
+      // Decidindo, sem a escolha dele, valeu a da IA de sempre: é cobertura, e ela deixa rastro.
+      aIaCobriu: estadoDoJev === 'decidindo' && doJev === null,
+    });
 
-    // sem sticky (regra 3).
-    if (verdict.intentName !== null && verdict.confidence >= router.minConfidence) {
-      const member = router.members.find((m) => m.intentName === verdict.intentName);
-      return loadMatchedOrFallback('classified', member!, verdict.intentName, verdict.confidence);
-    }
-
-    return resolveFallback('no_match', verdict.confidence);
+    return destino.membro !== null
+      ? loadMatchedOrFallback(destino.outcome, destino.membro, destino.intentName, destino.confidence)
+      : resolveFallback(destino.outcome, destino.confidence);
   } catch (err) {
     deps.log.warn('resolve-turn-agent: erro inesperado no router — turno cai no fluxo sem router', {
       error: err instanceof Error ? err.message : String(err),
@@ -355,6 +444,7 @@ export async function resolveConversationTurn(
   return resolveTurnAgent(db, llmCfg, {
     ...input,
     signal,
+    signalMessageId: signalRow?.id ?? null,
     recentMessages,
     stickyAgentId: rows[0]?.active_ai_agent_id ?? null,
     stickyIntent: rows[0]?.active_intent ?? null,

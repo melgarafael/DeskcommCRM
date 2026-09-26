@@ -32,7 +32,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./helpers/test";
 
 const RAIZ = path.resolve(__dirname, "../..");
 const CREDS_PATH = path.join(RAIZ, ".e2e-creds.json");
