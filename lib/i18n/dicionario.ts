@@ -8537,6 +8537,18 @@ export const DICIONARIO: Traducoes = {
     { es: "Columna de coincidencia del modo «Enviar todas las que coinciden»" },
   "Coluna de casamento quando o agente está no modo “enviar todas que casam”":
     { es: "Columna de coincidencia cuando el agente está en el modo «enviar todas las que coinciden»" },
+  "Como preencher (Nome · Foto · Similares · IA · Critério · Mostrar · Comparar · Envio · Ordem)":
+    {
+      es: "Cómo completar (Nombre · Foto · Similares · IA · Criterio · Mostrar · Comparar · Envío · Orden)",
+    },
+  "Diga o que o agente deve fazer com cada coluna: enviar à IA, usar como critério, mostrar no texto, comparar e casar no modo “enviar todas”.":
+    {
+      es: "Indica qué debe hacer el agente con cada columna: enviar a la IA, usar como criterio, mostrar en el texto, comparar y coincidir en el modo «enviar todas».",
+    },
+  "— coluna de casamento do modo “Enviar todas que casam” (interruptor na tela do agente). Quando ligado, o motor envia TODAS as motos que casarem estas colunas com o pedido do cliente, sem limite e sem perguntar “quer mais?”. Sem nenhuma marcada, usa as colunas de “Critério da IA”.":
+    {
+      es: "— columna de coincidencia del modo «Enviar todas las que coinciden» (interruptor en la pantalla del agente). Cuando está activado, el motor envía TODAS las motos que coincidan con estas columnas y el pedido del cliente, sin límite y sin preguntar «¿quieres más?». Si no hay ninguna marcada, usa las columnas de «Criterio de la IA».",
+    },
 
   // ─── Base de conhecimento / embeddings (telas ChaveDeConhecimento e StatusDaBase) ───
   "Provedor de embeddings": { es: "Proveedor de embeddings" },

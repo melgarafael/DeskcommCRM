@@ -351,14 +351,14 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
         <DialogHeader>
           <DialogTitle>{t("Catálogo do agente — “")}{tabela.nome}{t("”")}</DialogTitle>
           <DialogDescription>
-            {t("Diga o que o agente deve fazer com cada coluna: enviar à IA, usar como critério, mostrar no texto e comparar.")}
+            {t("Diga o que o agente deve fazer com cada coluna: enviar à IA, usar como critério, mostrar no texto, comparar e casar no modo “enviar todas”.")}
           </DialogDescription>
         </DialogHeader>
 
         {/* LEGENDA — explica os controles para quem não é técnico. */}
         <details className="rounded-md border border-border/60 bg-muted/30 p-3 text-xs">
           <summary className="cursor-pointer font-medium">
-            {t("Como preencher (Nome · Foto · Similares · IA · Critério · Mostrar · Comparar · Ordem)")}
+            {t("Como preencher (Nome · Foto · Similares · IA · Critério · Mostrar · Comparar · Envio · Ordem)")}
           </summary>
           <div className="mt-2 space-y-2 text-muted-foreground">
             <p>
@@ -388,6 +388,10 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
             <p>
               <span className="font-medium text-foreground">{t("Comparar")}</span>{" "}
               {t("— o motor usa esta coluna para ordenar as motos semelhantes (número → mais próximo; texto → mais parecido).")}
+            </p>
+            <p>
+              <span className="font-medium text-foreground">{t("Envio")}</span>{" "}
+              {t("— coluna de casamento do modo “Enviar todas que casam” (interruptor na tela do agente). Quando ligado, o motor envia TODAS as motos que casarem estas colunas com o pedido do cliente, sem limite e sem perguntar “quer mais?”. Sem nenhuma marcada, usa as colunas de “Critério da IA”.")}
             </p>
             <p>
               <span className="font-medium text-foreground">{t("Ordem")}</span>{" "}
