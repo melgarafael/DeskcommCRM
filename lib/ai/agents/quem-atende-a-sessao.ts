@@ -40,7 +40,8 @@ import type pg from "pg";
  * O SQL do portão, com o número como predicado: `= $2` (o número da conversa,
  * o que o dreno pergunta) ou `is not null` (qualquer número da organização, o
  * que o cartão do Jev pergunta). Um texto só para as duas perguntas — o de uma
- * sessão sai byte a byte o que o dreno sempre mandou.
+ * sessão, sem `ignorarPausados`, pergunta ao banco o mesmo que o dreno sempre
+ * perguntou (os comentários dentro do SQL mudaram; os predicados, não).
  */
 function sqlDoPortao(doNumero: (coluna: string) => string, ignorarPausados: boolean): string {
   const semPausa = (agente: string): string => (ignorarPausados ? ` and ${agente}.paused_at is null` : "");

@@ -639,6 +639,21 @@ function ProntoParaLigar({ dados, recarregar }: { dados: DadosDoJev; recarregar:
                 )
               </span>
               <span className="text-muted-foreground"> — {t(tarefa.oQueFaz)}</span>
+              {/* Antes de ligar também: "Não roda" sem o porquê deixava o leigo
+                  sem saber o que fazer — é a primeira impressão de quem ainda
+                  não publicou um agente. */}
+              {aoLigar !== "desligada" && tarefa.sem_atendente === "ninguem_no_ar" && (
+                <span className="text-muted-foreground" data-testid={`jev-ao-ligar-sem-atendente-${tarefa.id}`}>
+                  {" "}
+                  {t("Não roda agora: nenhum atendente automático está no ar — o Jev só é perguntado onde um atendente responderia. Publique um agente num número, ou tire um agente da pausa, em Agentes.")}
+                </span>
+              )}
+              {aoLigar !== "desligada" && tarefa.sem_atendente === "externo" && (
+                <span className="text-muted-foreground" data-testid={`jev-ao-ligar-sem-atendente-${tarefa.id}`}>
+                  {" "}
+                  {t("Não roda agora: quem conduz as conversas desta empresa é um sistema de fora. O Jev só é perguntado onde um atendente automático daqui responderia.")}
+                </span>
+              )}
             </li>
           ))}
         </ul>
@@ -930,8 +945,9 @@ function Ligado({
                     {t("Voltar a só observar")}
                   </Button>
                 )}
-                {/* Grava o estado que já vale: o selo "Nova" sai, e nada muda. */}
-                {tarefa.novo && tarefa.estado === "observando" && (
+                {/* Grava o estado que já vale: o selo "Nova" sai, e nada muda.
+                    Parada, ela não observa nada — o botão prometeria o contrário. */}
+                {tarefa.novo && tarefa.estado === "observando" && !parada(tarefa) && (
                   <Button
                     size="sm"
                     variant="outline"

@@ -1053,6 +1053,8 @@ describe("CartaoDoJev — por tarefa", () => {
       expect(screen.queryByTestId("jev-percebidos-humano")).toBeNull();
       expect(screen.queryByTestId("jev-nova-humano")).toBeNull();
       expect(within(linha).queryByRole("button", { name: "Avisar a equipe" })).toBeNull();
+      // Parada, ela não observa nada: "Manter só observando" prometeria o contrário.
+      expect(within(linha).queryByRole("button", { name: "Manter só observando" })).toBeNull();
       expect(within(linha).getByRole("button", { name: "Pausar esta tarefa" })).toBeInTheDocument();
       // A tarefa parada não entra na frase do cartão: só o clima roda.
       expect(screen.getByTestId("jev-tarefas").previousElementSibling).toHaveTextContent(
@@ -1121,6 +1123,18 @@ describe("CartaoDoJev — por tarefa", () => {
       montar(dados({ tem_ia_de_sempre: ia, por_tarefa: [...tarefas] }));
       const texto = screen.getByTestId("jev-ao-ligar").textContent?.replace(/\s+/g, " ").trim() ?? "";
       expect(texto).toBe(frases.join(" "));
+    });
+
+    it("antes de ligar, a tarefa de pedido que não vai rodar diz por quê — e a que vai rodar não (controle)", () => {
+      montar(dados({ por_tarefa: [...aoLigar("observando", "observando", "observando", { semAtendente: true })] }));
+      expect(screen.getByTestId("jev-ao-ligar-humano")).toHaveTextContent("(Não roda)");
+      expect(screen.getByTestId("jev-ao-ligar-sem-atendente-humano")).toHaveTextContent(
+        /nenhum atendente automático está no ar — o Jev só é perguntado onde um atendente responderia/,
+      );
+      expect(screen.queryByTestId("jev-ao-ligar-sem-atendente-clima")).toBeNull();
+      cleanup();
+      montar(dados({ por_tarefa: [...aoLigar("observando", "observando", "observando")] }));
+      expect(screen.queryByTestId("jev-ao-ligar-sem-atendente-humano")).toBeNull();
     });
 
     it("antes de ligar, só o clima observando: a frase de sempre, sem a dos pedidos (controle)", () => {
