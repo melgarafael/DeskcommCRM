@@ -76,6 +76,14 @@ const listInputShape = {
   stage_id: z.string().uuid().optional(),
   status: z.enum(["open", "won", "lost"]).optional(),
   owner_user_id: z.string().uuid().optional(),
+  /** `lost_reason` exato do negócio perdido (issue #1537). */
+  lost_reason: z.string().min(1).max(500).optional(),
+  /**
+   * Categoria do motivo de perda (issue #1537) — resolve pela mesma régua do
+   * relatório "Perdas" (`motivosDaCategoria`). Recomendado junto com
+   * `pipeline_id`: sem escopo de funil a lista é a união dos funis da org.
+   */
+  lost_reason_category: z.string().min(1).max(40).optional(),
   limit: z.number().int().min(1).max(100).default(20),
   cursor: z.string().optional(),
 };
@@ -102,6 +110,8 @@ export const crmListLeads: McpToolDefinition<typeof listInputShape> = {
         stage_id: input.stage_id,
         status: input.status,
         owner_user_id: input.owner_user_id,
+        lost_reason: input.lost_reason,
+        lost_reason_category: input.lost_reason_category,
         limit: input.limit,
         cursor: input.cursor,
       },

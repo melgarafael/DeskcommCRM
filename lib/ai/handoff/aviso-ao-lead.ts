@@ -106,10 +106,24 @@ export async function avisarLeadDoCrm(
   input: AvisoDoCrmInput,
 ): Promise<DesfechoDoAvisoDoCrm> {
   try {
+    // O aviso sai no idioma da ORGANIZAÇÃO (ver `textoDoAviso`). A leitura que
+    // falha não pode derrubar o aviso: sem idioma, sai em português, como antes.
+    let idioma: string | null = null;
+    try {
+      const { data: org } = await admin
+        .from("organizations")
+        .select("locale")
+        .eq("id", input.organizationId)
+        .maybeSingle();
+      idioma = (org as { locale?: string | null } | null)?.locale ?? null;
+    } catch {
+      idioma = null;
+    }
     const body = textoDoAviso(
       motivoDoAviso(input.reason),
       await quemPodeAssumir(admin, input.organizationId),
       input.contactId,
+      idioma,
     );
     const mensagem = await sendMessageHandler(
       admin,

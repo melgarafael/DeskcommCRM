@@ -29,6 +29,11 @@ import { rotuloDoPasso, type EtapaDoMapa } from "@/lib/leads/agent-mapping";
 
 /** O que a tela sabe de cada etapa ao editá-la. Inclui as arquivadas — quem filtra é este módulo. */
 export interface EtapaEditavel extends EtapaDoMapa {
+  /**
+   * Probabilidade de ganho, 0–100 (migration 0426), opcional porque as regras
+   * de nome/papel/ordem deste arquivo nunca a leem — quem lê é a previsão.
+   */
+  win_probability?: number | null;
   slug: string;
   position: number;
   is_archived: boolean;

@@ -201,3 +201,62 @@ describe("a conta do spinning — por que o gate é desarmado para o aviso", () 
     }
   });
 });
+
+// Medido numa loja em espanhol (26/09/2026): a organização atende em espanhol e
+// o cliente irritado recebeu "Esse caso é melhor resolvido por uma pessoa…" no
+// meio do pedido. O aviso sai no idioma da ORGANIZAÇÃO.
+describe("o aviso sai no idioma da organização", () => {
+  const PALAVRAS_EM_PORTUGUES = /\b(você|seu|sua|equipe|atendente|não|já|ninguém|pedido ficou|aguarde|fica por aqui)\b/i;
+
+  it("organização em espanhol: nenhuma palavra em português, em nenhum motivo nem estado", () => {
+    for (const motivo of MOTIVOS) {
+      for (const estado of ESTADOS) {
+        for (let i = 0; i < 30; i++) {
+          const t = textoDoAviso(motivo, estado.quem, randomUUID(), "es");
+          expect(t, `${motivo} / ${estado.rotulo}`).not.toMatch(PALAVRAS_EM_PORTUGUES);
+        }
+      }
+    }
+  });
+
+  it("o estado da equipe muda o fecho em espanhol como muda em português", () => {
+    expect(textoDoAviso("outro", { disponiveis: 0, total: 0 }, LEAD, "es")).toMatch(/registrad|anotado|primera oportunidad/i);
+    expect(textoDoAviso("outro", { disponiveis: 0, total: 3 }, LEAD, "es")).toMatch(/no hay/i);
+    expect(textoDoAviso("outro", { disponiveis: 2, total: 3 }, LEAD, "es")).toMatch(/espera|quédate/i);
+  });
+
+  it("quem pediu para parar, em espanhol, não recebe convite para esperar", () => {
+    for (const estado of ESTADOS) {
+      const t = textoDoAviso("suspeita_de_opt_out", estado.quem, LEAD, "es");
+      expect(t, estado.rotulo).toMatch(/dejo de|no se envían|detengo/i);
+      expect(t, estado.rotulo).not.toMatch(/espera|cola/i);
+    }
+  });
+
+  it("em espanhol também há ao menos 3 redações por motivo e estado", () => {
+    for (const motivo of MOTIVOS) {
+      for (const estado of ESTADOS) {
+        const textos = new Set(
+          Array.from({ length: 60 }, () => textoDoAviso(motivo, estado.quem, randomUUID(), "es")),
+        );
+        expect(textos.size, `${motivo} / ${estado.rotulo}`).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
+  it("o aviso em espanhol também não cabe na isenção do spinning (o desarme segue necessário)", () => {
+    for (const m of MOTIVOS) {
+      const t = normalizeCopy(textoDoAviso(m, null, LEAD, "es"));
+      expect(t.length, m).toBeGreaterThan(SPINNING_DEFAULTS.allowlistMaxLength);
+    }
+  });
+
+  it("locale espanhol com região vale; sem locale ou idioma sem frases segue em português", () => {
+    const es = textoDoAviso("pediu_humano", null, LEAD, "es");
+    expect(textoDoAviso("pediu_humano", null, LEAD, "es-MX")).toBe(es);
+    const pt = textoDoAviso("pediu_humano", null, LEAD);
+    expect(textoDoAviso("pediu_humano", null, LEAD, null)).toBe(pt);
+    expect(textoDoAviso("pediu_humano", null, LEAD, "pt-BR")).toBe(pt);
+    expect(pt).not.toBe(es);
+  });
+});

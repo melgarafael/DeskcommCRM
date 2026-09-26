@@ -846,7 +846,11 @@ export function normalizarErro(err: unknown): {
     codigo = 'credencial_recusada';
   } else if (status === 404 || /model.*not.*found|does not exist/i.test(bruto)) {
     codigo = 'modelo_inexistente';
-  } else if (status === 429 || /rate.?limit|quota|insufficient.*credit/i.test(bruto)) {
+  } else if (status === 429 || /rate.?limit|quota|insufficient.*credit|credit balance is too low/i.test(bruto)) {
+    // A Anthropic diz "sem crédito" com 400 ("Your credit balance is too low…"),
+    // o mesmo status de um pedido malformado — só a frase distingue. Sem ela a
+    // tela de Execuções mostrava "erro desconhecido" no caso mais fácil de
+    // resolver (recarregar). A espera pela recarga é da fila: `espera-de-saldo.ts`.
     codigo = 'limite_ou_saldo';
   } else if ((status !== null && status >= 500) || /timeout|ECONNREFUSED|fetch failed|network/i.test(bruto)) {
     codigo = 'provedor_indisponivel';

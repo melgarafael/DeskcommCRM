@@ -77,7 +77,8 @@ export const crmListStages: McpToolDefinition<typeof listStagesShape> = {
   name: "crm_list_stages",
   description:
     "Lista as etapas ativas de um pipeline, na ordem do quadro, com id, name, slug, position, " +
-    "is_won/is_lost e a autoria da última mudança de configuração (last_change_actor_kind: user|ai|system). " +
+    "is_won/is_lost, win_probability (probabilidade de ganho 0-100 ou null quando a etapa nao foi " +
+    "calibrada) e a autoria da última mudança de configuração (last_change_actor_kind: user|ai|system). " +
     "Use antes de mover um lead ou de criar etapa nova, para não duplicar coluna existente.",
   inputSchema: listStagesShape,
   category: "read",
@@ -124,12 +125,20 @@ const updateStageShape = {
   is_lost: z.boolean().optional(),
   /** Id da etapa VIZINHA DA ESQUERDA; `null` = primeira coluna. Não é posição numérica. */
   after_stage_id: z.string().uuid().nullable().optional(),
+  /**
+   * Probabilidade de GANHO da etapa, 0–100 (migration 0426). `null` limpa a
+   * calibração: a previsão volta a reportar a etapa no balde "sem
+   * probabilidade" em vez de somar zero em silêncio.
+   */
+  win_probability: z.number().int().min(0).max(100).nullable().optional(),
 };
 
 export const crmUpdateStage: McpToolDefinition<typeof updateStageShape> = {
   name: "crm_update_stage",
   description:
-    "Renomeia, reordena ou muda o papel de desfecho (is_won/is_lost) de uma etapa. " +
+    "Renomeia, reordena, calibra a probabilidade de ganho (win_probability, 0-100; null limpa a " +
+    "calibração e a previsão passa a reportar a etapa sem probabilidade) ou muda o papel de desfecho " +
+    "(is_won/is_lost) de uma etapa. " +
     "after_stage_id é o id da etapa VIZINHA DA ESQUERDA (null = primeira coluna), não um número de posição. " +
     "Mover a marcação de ganho/perda para outra etapa é permitido; REMOVÊ-LA sem substituta não é — " +
     "o pipeline ficaria sem onde fechar negócio.",
@@ -143,6 +152,7 @@ export const crmUpdateStage: McpToolDefinition<typeof updateStageShape> = {
     if (input.is_won !== undefined) pedido.is_won = input.is_won;
     if (input.is_lost !== undefined) pedido.is_lost = input.is_lost;
     if (input.after_stage_id !== undefined) pedido.depois_de = input.after_stage_id;
+    if (input.win_probability !== undefined) pedido.win_probability = input.win_probability;
     if (Object.keys(pedido).length === 0) {
       throw new ApiError(
         422,

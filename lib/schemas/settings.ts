@@ -215,7 +215,29 @@ export const pipelineConfigPatchSchema = z.object({
     })
     .optional(),
   fields: z.array(customFieldSchema).max(50).optional(),
-  lost_reasons: z.array(z.string().min(1).max(80)).max(50).optional(),
+  /**
+   * Os motivos de perda do funil (issue #1537): texto puro continua valendo —
+   * nenhum funil existente precisa migrar dado — e quem quiser agrupar no
+   * relatório "Perdas" grava `{ label, categoria }`. O rótulo é o mesmo de
+   * antes (mesmo teto de 80 caracteres); a categoria é opcional e cabe em 40.
+   *
+   * O trigger `fn_validate_lost_reason_required` lê o `label` dos objetos e o
+   * texto dos strings — a mesma régua, dois formatos. Gravar só o texto e
+   * filtrar depois por prefixo faria o filtro virar busca, que é a alternativa
+   * que a issue descarta.
+   */
+  lost_reasons: z
+    .array(
+      z.union([
+        z.string().min(1).max(80),
+        z.object({
+          label: z.string().min(1).max(80),
+          categoria: z.string().min(1).max(40).optional(),
+        }),
+      ]),
+    )
+    .max(50)
+    .optional(),
   /**
    * O MOTIVO DE GANHO por funil (issue #1536) — espelho de `lost_reasons`.
    * Sem lista cadastrada o motivo é texto livre; com lista, só o que está nela

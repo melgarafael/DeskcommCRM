@@ -95,7 +95,70 @@ export const CANONICAL_LOST_REASONS = [
    */
   "moved_to_another_pipeline",
 ] as const;
+
+/**
+ * O rótulo legível de cada motivo canônico (em pt-BR; a tela passa por `t()`).
+ * Mora aqui, ao lado da lista, para o diálogo de perda, o filtro do quadro e o
+ * relatório "Perdas" (#1537) mostrarem o MESMO texto — e nunca a chave crua.
+ */
+export const ROTULO_DO_MOTIVO_CANONICO: Record<(typeof CANONICAL_LOST_REASONS)[number], string> = {
+  requested_by_customer: "Cliente solicitou cancelamento",
+  price: "Preço",
+  no_response: "Sem resposta do cliente",
+  product_unavailable: "Produto indisponível",
+  cancelled_by_store: "Cancelado pela loja",
+  cancelled_by_customer: "Cancelado pelo cliente",
+  payment_failed: "Falha no pagamento",
+  other: "Outro motivo",
+  moved_to_another_pipeline: "Levado para outro funil",
+};
+
+/** O rótulo pt-BR do motivo: o do canônico, ou o próprio texto do motivo do funil. */
+export function rotuloDoMotivoDePerda(motivo: string): string {
+  return (ROTULO_DO_MOTIVO_CANONICO as Record<string, string | undefined>)[motivo] ?? motivo;
+}
 export type CanonicalLostReason = (typeof CANONICAL_LOST_REASONS)[number];
+
+/**
+ * As categorias com que o relatório "Perdas" e o filtro do quadro agrupam
+ * (issue #1537).
+ *
+ * São as do PRODUTO: o funil atribui categoria a cada motivo em
+ * `settings.lost_reasons` (`{ label, categoria }`). `moved_to_another_pipeline` fica de fora de propósito — é motivo de
+ * SISTEMA (a troca de funil encerra a origem) e a migration 0266 já o exclui
+ * de `fn_attendant_metrics`; categoriá-lo seria abrir a porta de contar
+ * transferência como perda comercial.
+ */
+export const CATEGORIAS_DE_PERDA = ["Cliente", "Concorrência", "Mérito", "Nós", "Ausência"] as const;
+export type CategoriaDePerda = (typeof CATEGORIAS_DE_PERDA)[number];
+
+/**
+ * A categoria PADRÃO de cada motivo canônico (issue #1537): o motivo já nasce
+ * agrupado sem que ninguém cadastre nada, e o funil pode SOBRESCREVER gravando
+ * `{ label, categoria }` em `settings.lost_reasons`.
+ *
+ * `other` não tem categoria de propósito: sem saber o que aconteceu, a tela
+ * estaria inventando informação que o relatório repete como fato.
+ *
+ * Os rótulos são a pergunta "de quem foi a ação que perdeu o negócio":
+ * `price` é "Nós" porque quem manda no preço é a casa (perdemos no preço que
+ * pedimos), `no_response` é a ausência do outro lado, `cancelled_by_customer`
+ * e `requested_by_customer` são o cliente.
+ */
+export const CATEGORIA_PADRAO_DO_MOTIVO: Partial<Record<CanonicalLostReason, CategoriaDePerda>> = {
+  requested_by_customer: "Cliente",
+  cancelled_by_customer: "Cliente",
+  payment_failed: "Cliente",
+  price: "Nós",
+  product_unavailable: "Nós",
+  cancelled_by_store: "Nós",
+  no_response: "Ausência",
+};
+
+/** A categoria de um valor gravado em `lost_reason`, se o produto tem uma. */
+export function categoriaPadraoDoMotivo(valor: string): CategoriaDePerda | undefined {
+  return CATEGORIA_PADRAO_DO_MOTIVO[valor.trim() as CanonicalLostReason];
+}
 
 /**
  * loseLeadSchema accepts canonical reasons OR any string (pipeline-extended).

@@ -45,7 +45,7 @@ export const dynamic = "force-dynamic";
  * arquivado no banco, antes do `limit(3)` — `pipeline_id` é NOT NULL.
  */
 const LEAD_COLS =
-  "id, title, status, value_cents, currency, updated_at, pipeline_id, custom_fields, crm_pipelines!inner(name, settings, is_archived), crm_stages(name)";
+  "id, title, status, value_cents, currency, updated_at, pipeline_id, custom_fields, crm_pipelines!inner(name, settings, is_archived), crm_stages!crm_leads_stage_id_fkey(name)";
 const ORDER_COLS = "id, external_id, status, total_cents, currency, created_at";
 /** Acompanha o que a timeline mostra — `reason` e `actor_kind` inclusive. */
 /**

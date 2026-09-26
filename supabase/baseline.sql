@@ -164,10 +164,23 @@ begin
   elsif v_is_lost then
     new.status := 'lost';
     new.closed_at := coalesce(new.closed_at, now());
+    -- #1537: DE QUEM ERA a etapa que este negócio deixou — a perda sem a
+    -- etapa de origem não diz em que momento o funil vazou. Só na transição:
+    -- um card já perdido arrastado entre etapas de perda mantém a origem
+    -- verdadeira (a etapa ABERTA em que morreu), e reabrir não a herda.
+    -- Todo caminho de perda MOVE a etapa (quadro, 0209 em lote, 0263 em lote,
+    -- encerramento) e este gatilho é o único escritor de `status` (P-02), então
+    -- a transição de status SEM troca de etapa não existe para escrever aqui.
+    if tg_op = 'UPDATE' and old.status is distinct from 'lost' then
+      new.lost_from_stage_id := coalesce(new.lost_from_stage_id, old.stage_id);
+    end if;
   else
     if tg_op = 'UPDATE' and old.status in ('won','lost') then
       new.status := 'open';
       new.closed_at := null;
+      -- #1537: reabriu — a origem da perda passada não pertence a um negócio
+      -- que voltou a ser aberto. Se morrer de novo, nasce a nova origem.
+      new.lost_from_stage_id := null;
     end if;
   end if;
   return new;
@@ -27037,8 +27050,17 @@ begin
       raise exception 'lost_reason_required' using errcode = '22023';
     end if;
 
+    -- #1537: `settings.lost_reasons` aceita texto puro E `{ label, categoria }`.
+    -- O que o trigger compara é o RÓTULO nos dois formatos: `jsonb_array_elements_text`
+    -- de um objeto devolveria o JSON inteiro e recusaria com 22023 um motivo que
+    -- a própria tela acabou de oferecer. `#>> '{}'` desembrulha o string.
     select coalesce(
-      array(select jsonb_array_elements_text(settings->'lost_reasons')), '{}'::text[]
+      array(
+        select case when jsonb_typeof(e) = 'object'
+                    then nullif(e ->> 'label', '')
+                    else nullif(e #>> '{}', '') end
+          from jsonb_array_elements(settings->'lost_reasons') as t(e)
+      ), '{}'::text[]
     ) into v_pipeline_extra
     from public.crm_pipelines where id = new.pipeline_id;
 
@@ -39800,3 +39822,47 @@ end $$;
 create index if not exists idx_crm_leads_retomado_de_lead
   on public.crm_leads (retomado_de_lead_id)
   where retomado_de_lead_id is not null;
+
+-- ---- em que etapa o negócio morreu (migration 0426, #1537) ----
+--
+-- Aditiva e idempotente: a coluna nasce `null` em toda linha existente (nenhuma
+-- perda anterior tem origem registrada — derivar retroativamente seria inventar
+-- dado) e a FK é `on delete set null` (apagar a etapa solta o ponteiro em vez de
+-- recusar a exclusão do funil). Quem PREENCHE é o gatilho
+-- `fn_crm_lead_close_on_stage`, redefinido acima no corpo que o banco usa.
+alter table public.crm_leads
+  add column if not exists lost_from_stage_id uuid;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'fk_crm_leads_lost_from_stage'
+      and conrelid = 'public.crm_leads'::regclass
+  ) then
+    alter table public.crm_leads
+      add constraint fk_crm_leads_lost_from_stage
+      foreign key (lost_from_stage_id)
+      references public.crm_stages(id)
+      on delete set null;
+  end if;
+end $$;
+
+-- ---- probabilidade de ganho por etapa (migration 0427) ----
+--
+-- Aditiva e idempotente: a coluna nasce null em toda linha existente, e null
+-- significa "esta etapa não tem probabilidade calibrada" — que a regra de
+-- previsão reporta à parte (balde "sem probabilidade"), nunca some como zero
+-- em silêncio. `is_won`/`is_lost` valem 100 e 0 na regra
+-- (`lib/leads/previsao.ts`), não gravado: gravar aqui seria um segundo lugar
+-- para a mesma verdade divergir.
+alter table public.crm_stages
+  add column if not exists win_probability smallint;
+
+alter table public.crm_stages
+  drop constraint if exists crm_stages_win_probability_range;
+
+alter table public.crm_stages
+  add constraint crm_stages_win_probability_range
+  check (win_probability is null or win_probability between 0 and 100);

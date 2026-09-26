@@ -113,7 +113,9 @@ async function lerFunil(
     // A autoria entra na MESMA leitura que a tela de etapas já faz. Uma segunda
     // consulta só para ela seria um round-trip por render numa tela de
     // configuração — e um caminho a mais para a lista e a autoria divergirem.
-    .select("id, name, is_won, is_lost, agent_stage_hint, last_change_actor_kind, last_change_at")
+    .select(
+      "id, name, is_won, is_lost, win_probability, agent_stage_hint, last_change_actor_kind, last_change_at",
+    )
     .eq("organization_id", orgId)
     .eq("pipeline_id", pipelineId)
     .eq("is_archived", false)

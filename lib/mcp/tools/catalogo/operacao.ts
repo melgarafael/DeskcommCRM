@@ -81,7 +81,7 @@ export const TOOLS_OPERACAO = declararTools([
     category: "write",
     rotulo: "Renomear ou reordenar uma etapa",
     explicacao:
-      "Troca o nome de uma coluna do funil, muda o lugar dela na ordem ou define em qual delas o negócio é dado como fechado ou perdido.",
+      "Troca o nome de uma coluna do funil, muda o lugar dela na ordem, define em qual delas o negócio é dado como fechado ou perdido e ajusta a chance de fechamento que a previsão do funil usa.",
     oQueToca: "Funil de vendas",
     risco: "atencao",
     pacotes: ["organizar"],

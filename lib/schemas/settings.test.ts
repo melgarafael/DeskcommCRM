@@ -169,3 +169,42 @@ describe("pipelineConfigPatchSchema — reabertura (#1538)", () => {
     );
   });
 });
+
+describe("pipelineConfigPatchSchema — motivos de perda com categoria (#1537)", () => {
+  it("continua aceitando lost_reasons só de texto — nenhum funil migra dado", () => {
+    const r = pipelineConfigPatchSchema.safeParse({ lost_reasons: ["Preço", "Sem perfil"] });
+    expect(r.success).toBe(true);
+  });
+
+  it("aceita { label, categoria } junto de texto puro na mesma lista", () => {
+    const r = pipelineConfigPatchSchema.safeParse({
+      lost_reasons: ["Adiou", { label: "Não tinha o perfil", categoria: "Mérito" }],
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.lost_reasons?.[1]).toEqual({ label: "Não tinha o perfil", categoria: "Mérito" });
+  });
+
+  it("recusa rótulo vazio/longo e categoria fora do teto", () => {
+    expect(pipelineConfigPatchSchema.safeParse({ lost_reasons: [{ label: "" }] }).success).toBe(false);
+    expect(
+      pipelineConfigPatchSchema.safeParse({ lost_reasons: [{ label: "x".repeat(81) }] }).success,
+    ).toBe(false);
+    expect(
+      pipelineConfigPatchSchema.safeParse({ lost_reasons: [{ label: "ok", categoria: "" }] }).success,
+    ).toBe(false);
+    expect(
+      pipelineConfigPatchSchema.safeParse({ lost_reasons: [{ label: "ok", categoria: "x".repeat(41) }] })
+        .success,
+    ).toBe(false);
+  });
+
+  it("recusa objeto sem label e o teto de 50 motivos continua valendo", () => {
+    expect(pipelineConfigPatchSchema.safeParse({ lost_reasons: [{ categoria: "Cliente" }] }).success).toBe(
+      false,
+    );
+    expect(
+      pipelineConfigPatchSchema.safeParse({ lost_reasons: Array.from({ length: 51 }, (_, i) => `m${i}`) })
+        .success,
+    ).toBe(false);
+  });
+});

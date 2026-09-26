@@ -38,6 +38,7 @@ import {
   decideMotivoDaPerda,
   recusaDeMotivoDaPerdaPeloBanco,
 } from "@/lib/leads/motivo-da-perda";
+import { motivosDaCategoria } from "@/lib/leads/motivos-de-perda-do-funil";
 import type { CreateLeadInput, UpdateLeadInput } from "@/lib/schemas";
 import { ehCorrecaoDeMovimentoDaIa } from "@/lib/leads/correcao-humana";
 
@@ -242,6 +243,10 @@ export interface ListLeadsQuery {
   stage_id?: string;
   status?: "open" | "won" | "lost";
   owner_user_id?: string;
+  /** `lost_reason` exato (issue #1537) — o filtro de perda por motivo. */
+  lost_reason?: string;
+  /** Categoria do motivo de perda (issue #1537), resolvida no funil. */
+  lost_reason_category?: string;
   limit?: number;
   cursor?: string | null;
 }
@@ -295,6 +300,28 @@ export async function listLeadsHandler(
   if (q.stage_id) query = query.eq("stage_id", q.stage_id);
   if (q.status) query = query.eq("status", q.status);
   if (q.owner_user_id) query = query.eq("owner_user_id", q.owner_user_id);
+  // #1537 — perda por motivo e por categoria. A categoria NÃO é coluna: ela
+  // sai do `settings.lost_reasons` do funil, então o caminho é achar os rótulos
+  // da categoria e filtrar por eles. Só os PERDIDOS têm motivo que valha; um
+  // filtro de categoria sozinho não força status (quem quer "Cliente" pode
+  // querer em qualquer aba), mas `lost_reason` em lead aberto não existe.
+  if (q.lost_reason) query = query.eq("lost_reason", q.lost_reason);
+  if (q.lost_reason_category) {
+    const { data: funis, error: funisErr } = await supabase
+      .from("crm_pipelines")
+      .select("id, settings")
+      .eq("organization_id", ctx.organization_id);
+    if (funisErr) throw new ApiError(500, "internal_error", undefined, ctx.requestId, funisErr.message);
+    const escopados = q.pipeline_id
+      ? (funis ?? []).filter((f) => f.id === q.pipeline_id)
+      : (funis ?? []);
+    const permitidos = motivosDaCategoria(
+      escopados.map((f) => ({ settings: f.settings })),
+      q.lost_reason_category,
+    );
+    if (permitidos.length === 0) return { leads: [], cursor: null, has_more: false };
+    query = query.in("lost_reason", permitidos);
+  }
 
   if (q.cursor) {
     const c = decLeadCursor(q.cursor);

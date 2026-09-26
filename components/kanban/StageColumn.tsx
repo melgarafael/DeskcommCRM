@@ -63,6 +63,17 @@ export function StageColumn({
   // só cobre a coluna sem nenhum lead com valor — onde o total nem aparece.
   const moedaDoTotal = leads.find((l) => l.value_cents != null)?.currency ?? MOEDA_PADRAO;
 
+  // A linha "ponderado" (issue #1535): o que ESTA coluna representa quando a
+  // etapa tem chance calibrada. Ganho e perda valem 100 e 0 NA REGRA
+  // (`lib/leads/previsao.ts`), não na coluna. `null` = etapa sem calibração, e
+  // aí a linha não aparece: exibir "R$ 0,00" seria um número que ninguém
+  // calibrou lendo como uma promessa de zero.
+  const probDaColuna = stage.is_won ? 100 : stage.is_lost ? 0 : stage.win_probability ?? null;
+  const ponderadoCents =
+    probDaColuna === null
+      ? null
+      : leads.reduce((sum, l) => sum + Math.round(((l.value_cents ?? 0) * probDaColuna) / 100), 0);
+
   const idsVisiveis = leads.map((l) => l.id);
   const selecionadosAqui = idsVisiveis.filter((id) => selectedLeadIds?.has(id)).length;
   const todosSelecionados = idsVisiveis.length > 0 && selecionadosAqui === idsVisiveis.length;
@@ -139,6 +150,11 @@ export function StageColumn({
       {totalCents > 0 && (
         <div className="border-b border-border px-3 py-1.5 text-[11px] tabular-nums text-text-muted">
           {formatCents(totalCents, moedaDoTotal)}
+          {ponderadoCents !== null && (
+            <span className="ml-2">
+              · {t("ponderado")} {formatCents(ponderadoCents, moedaDoTotal)}
+            </span>
+          )}
         </div>
       )}
 

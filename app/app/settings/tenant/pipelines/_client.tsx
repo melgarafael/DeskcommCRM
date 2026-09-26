@@ -19,6 +19,7 @@ import { updatePipelineConfig } from "@/app/actions/settings/updatePipelineConfi
 import type { PipelineConfigPatch } from "@/lib/schemas/settings";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 import { modoDeReabertura } from "@/lib/leads/reabertura";
+import { CATEGORIAS_DE_PERDA } from "@/lib/schemas/leads";
 import { customFieldSchema, type CustomFieldDef } from "@/lib/schemas/settings";
 import { Plus, Trash } from "@/lib/ui/icons";
 import { AgentMappingSection, ancoraDoMapeamento } from "./_mapping";
@@ -115,10 +116,34 @@ export function comGatilho(
   return normalizaObrigatorioEm({ ...regra, [gatilho]: marcado });
 }
 
+/**
+ * Os RÓTULOS cadastrados (issue #1537): `lost_reasons` aceita texto puro E
+ * `{ label, categoria }`, e esta caixa é sempre rótulo — o objeto é guardado
+ * aqui embaixo, na hora de salvar.
+ */
 function readLostReasons(settings: Record<string, unknown> | null): string[] {
   if (!settings) return [];
   const r = (settings as { lost_reasons?: unknown }).lost_reasons;
-  return Array.isArray(r) ? (r as string[]) : [];
+  if (!Array.isArray(r)) return [];
+  return r
+    .map((item) => (typeof item === "string" ? item : (item as { label?: unknown })?.label))
+    .filter((v): v is string => typeof v === "string");
+}
+
+/** Rótulo → categoria gravada (issue #1537). Sem categoria é ausência, não "". */
+function readCategorias(settings: Record<string, unknown> | null): Record<string, string> {
+  const saida: Record<string, string> = {};
+  if (!settings) return saida;
+  const r = (settings as { lost_reasons?: unknown }).lost_reasons;
+  if (!Array.isArray(r)) return saida;
+  for (const item of r) {
+    if (typeof item !== "object" || item === null) continue;
+    const { label, categoria } = item as { label?: unknown; categoria?: unknown };
+    if (typeof label === "string" && typeof categoria === "string" && categoria.trim()) {
+      saida[label.trim()] = categoria.trim();
+    }
+  }
+  return saida;
 }
 
 
@@ -194,6 +219,9 @@ function PipelineEditor({
   const [lost, setLost] = useState(v.lost ?? "Perdido");
   const [reasonsText, setReasonsText] = useState(readLostReasons(pipeline.settings).join(", "));
   const [wonReasonsText, setWonReasonsText] = useState(readWonReasons(pipeline.settings).join(", "));
+  const [categorias, setCategorias] = useState<Record<string, string>>(() =>
+    readCategorias(pipeline.settings),
+  );
   const [wonRequired, setWonRequired] = useState(
     (pipeline.settings as { won_reason_required?: unknown } | null)?.won_reason_required === true,
   );
@@ -239,6 +267,13 @@ function PipelineEditor({
       .split(",")
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
+    // #1537: motivo com categoria vira `{ label, categoria }`; sem categoria
+    // continua string pura — formato que todo funil já tem e que o trigger
+    // aceita igual.
+    const motivosComCategoria = reasons.map((rotulo) => {
+      const categoria = categorias[rotulo];
+      return categoria ? { label: rotulo, categoria } : rotulo;
+    });
 
     const wonReasons = wonReasonsText
       .split(",")
@@ -248,7 +283,7 @@ function PipelineEditor({
     const patch: PipelineConfigPatch = {
       vocabulary: { lead, deal, won, lost },
       fields: ok,
-      lost_reasons: reasons,
+      lost_reasons: motivosComCategoria,
       won_reasons: wonReasons,
       won_reason_required: wonRequired,
       reabertura: retomaComoNovo ? "novo_negocio" : "mesmo_registro",
@@ -260,6 +295,11 @@ function PipelineEditor({
     });
   }
 
+
+  const motivosDaCaixa = reasonsText
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
 
   return (
     <div className="space-y-4 border-t border-border pt-6">
@@ -287,6 +327,49 @@ function PipelineEditor({
       <div className="space-y-1">
         <Label className="text-xs">{t("Motivos de perda (separados por vírgula)")}</Label>
         <Input value={reasonsText} onChange={(e) => setReasonsText(e.target.value)} />
+        {/*
+          #1537 — a categoria de CADA motivo, não um campo só: é ela que o
+          relatório "Perdas" e o filtro do quadro agrupam. Só aparece para
+          motivo já escrito na caixa de cima: a lista continua sendo texto e a
+          ordem continua sendo a do texto; o que muda é que cada item ganhou
+          um campo. `__sem__` porque o Select recusa value="".
+        */}
+        {motivosDaCaixa.map((motivo) => {
+          const opcoes = [
+            ...new Set([
+              ...CATEGORIAS_DE_PERDA,
+              ...(categorias[motivo] ? [categorias[motivo]] : []),
+            ]),
+          ];
+          return (
+            <div key={motivo} className="flex items-center gap-2">
+              <span className="w-56 truncate text-xs text-muted-foreground">{motivo}</span>
+              <Select
+                value={categorias[motivo] ?? "__sem__"}
+                onValueChange={(valor) =>
+                  setCategorias((atual) => {
+                    const proximo = { ...atual };
+                    if (valor === "__sem__") delete proximo[motivo];
+                    else proximo[motivo] = valor;
+                    return proximo;
+                  })
+                }
+              >
+                <SelectTrigger className="h-8 w-56 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__sem__">{t("Sem categoria")}</SelectItem>
+                  {opcoes.map((categoria) => (
+                    <SelectItem key={categoria} value={categoria}>
+                      {categoria}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          );
+        })}
       </div>
 
       <div className="space-y-1">

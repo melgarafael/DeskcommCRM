@@ -24,6 +24,11 @@ export interface EtapaDoFunil {
   name: string;
   is_won: boolean;
   is_lost: boolean;
+  /**
+   * Probabilidade de ganho da etapa, 0–100 (migration 0426). `null` = etapa
+   * sem calibração. `undefined` em leituras antigas em cache.
+   */
+  win_probability?: number | null;
   /** Quem mexeu nesta etapa por último (migration 0101). `null` antes dela. */
   last_change_actor_kind?: string | null;
   last_change_at?: string | null;
