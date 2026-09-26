@@ -71,7 +71,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { nomeDoContato, type ContatoNomeavel } from "@/lib/contacts/rotulo-do-contato";
 
-import { diaLocalISO } from "./fuso";
+import { diaLocalISO, instanteDe } from "./fuso";
 import { horariosLivres, type ExcecaoDeData, type Slot } from "./horarios-livres";
 import { lerJornadaDoBanco } from "./jornada";
 import {
@@ -498,6 +498,29 @@ export interface AgendamentoListado {
   donoId: string | null;
   contatoId: string | null;
   contatoNome: string | null;
+  /**
+   * O TIPO DE ATENDIMENTO de que o compromisso nasceu (`calendar_event_types`).
+   *
+   * `null` quando a linha não tem tipo — bloqueio do Google e compromisso
+   * marcado antes do cadastro do tipo. Inventar um aqui faria um calendário
+   * externo mostrar "Consulta" para um bloco que ninguém marcou. (issue #1744)
+   */
+  tipo?: { slug: string; nome: string } | null;
+  /**
+   * COMO e ONDE se atende — o mesmo par `location_kind`/`location_details` que
+   * `lib/agenda/locais.ts` rotula na tela. Entrego os VALORES, não o rótulo:
+   * quem lê é um integrante externo que tem o próprio vocabulário, e o rótulo
+   * em português seria uma tradução a menos para ele. (issue #1744)
+   */
+  local?: { tipo: string | null; descricao: string | null };
+  /**
+   * Negócios do funil vinculados a este compromisso (`crm_lead_links`,
+   * `target_kind='appointment'` — DECISÃO 6: não há `lead_id` na linha).
+   *
+   * Custa uma consulta extra, então é OPÇÃO: a grade da tela não publica o
+   * vínculo e não paga o preço de quem publica. (issue #1744)
+   */
+  leadIds?: string[];
 }
 
 export interface ParametrosDaLista {
@@ -531,17 +554,42 @@ export interface ParametrosDaLista {
   ate?: string | null;
   ownerUserId?: string | null;
   situacao?: SituacaoDoAgendamento | null;
+  /**
+   * Cursor opaco devolvido em `proximo` — retoma DEPOIS do último item da
+   * página anterior, pelo par `(starts_at, id)`. Um UUID não bastaria: dois
+   * compromissos no mesmo minuto têm o mesmo `starts_at`, e só o id desempata.
+   * (issue #1744)
+   */
+  depoisDe?: string | null;
+  /**
+   * Traz `leadIds`. Custa uma consulta extra por página, então só quem publica
+   * o vínculo liga isto — a grade da tela continua sem pagar por ele.
+   */
+  comLeadIds?: boolean;
   limite: number;
 }
 
 export type ResultadoDaLista =
-  | { ok: true; agendamentos: AgendamentoListado[] }
+  | {
+      ok: true;
+      agendamentos: AgendamentoListado[];
+      /**
+       * Cursor para a PRÓXIMA página — `null` quando não sobrou nada além do
+       * `limite`. É o que um calendário externo repassa no `depois_de` para
+       * seguir lendo sem repetir item nem pular nenhum. (issue #1744)
+       */
+      proximo?: string | null;
+    }
   | {
       ok: false;
       // `alvo_nao_e_lead`: o id veio no parâmetro `lead_id` e não é um negócio
       // do funil — quase sempre um id de CONTATO, que é o que o contexto do
       // turno chama de `lead_id`. Ver o ramo que o emite. (issue #509)
-      codigo: "erro_interno" | "sem_alvo" | "alvo_nao_e_lead";
+      //
+      // `janela_invalida` e `cursor_invalido` são erro de QUEM CHAMA, como os
+      // dois de cima: a janela passou do teto, veio invertida ou incompleta, ou
+      // o cursor não é um que esta função emitiu. (issue #1744)
+      codigo: "erro_interno" | "sem_alvo" | "alvo_nao_e_lead" | "janela_invalida" | "cursor_invalido";
       motivoParaOperador: string;
       motivoParaCliente: string;
     };
@@ -559,11 +607,156 @@ function contatoDoEmbed(
   return nomeDoContato(Array.isArray(c) ? (c[0] ?? null) : c);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// O CURSOR DA LISTAGEM (issue #1744)
+//
+// `depois_de` é o par `(starts_at, id)` do ÚLTIMO item da página anterior, e é
+// opaco de propósito: o formato é interno, e trocá-lo um dia não pode quebrar
+// quem já guardou um cursor. base64url de JSON é o mesmo desenho do cursor de
+// `listLeadsHandler` (`app/api/v1/leads/_handler.ts`) — duas formas diferentes
+// para a mesma ideia seria a terceira lista da qual o repo avisa.
+//
+// O `id` não é enfeite: a ordenação é por `starts_at` e dois compromissos no
+// mesmo minuto empatam. Sem o desempate, a página seguinte recomeçaria do
+// primeiro dos empatados e o integrante leria o mesmo item duas vezes.
+// ─────────────────────────────────────────────────────────────────────────────
+export interface CursorDaLista {
+  inicio: string;
+  id: string;
+}
+
+export function codificarCursorDaLista(c: CursorDaLista): string {
+  return Buffer.from(JSON.stringify(c), "utf8").toString("base64url");
+}
+
+export function decodificarCursorDaLista(bruto: string): CursorDaLista | null {
+  try {
+    const c = JSON.parse(Buffer.from(bruto, "base64url").toString("utf8")) as Partial<CursorDaLista>;
+    if (typeof c.inicio !== "string" || typeof c.id !== "string") return null;
+    if (Number.isNaN(new Date(c.inicio).getTime())) return null;
+    return { inicio: c.inicio, id: c.id };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * O fuso da organização (`organizations.timezone`) — o que decide qual é o
+ * "dia 12" para quem olha a agenda.
+ *
+ * `null` é a resposta de quem NÃO SABE, e é sempre seguro: sem fuso, `dia`
+ * continua cortando em UTC como sempre cortou (comportamento antigo, não um
+ * palpite). Falha de leitura e fuso ausente caem no mesmo ramo de propósito —
+ * um `dia` errado por fuso desconhecido é ruim, um `dia` errado por engano é
+ * pior, e o integrante que precisa de recorte exato tem `de`/`ate`.
+ */
+async function fusoDaOrganizacao(
+  supabase: SupabaseClient,
+  organizationId: string,
+): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from("organizations")
+      .select("timezone")
+      .eq("id", organizationId)
+      .maybeSingle();
+    if (error) return null;
+    const tz = (data as { timezone?: unknown } | null)?.timezone;
+    return typeof tz === "string" && tz.trim() ? tz.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * O intervalo UTC de um dia CIVIL no fuso dado — `[início do dia, início do
+ * próximo dia)`.
+ *
+ * O segundo limite é o início do dia SEGUINTE calculado no MESMO fuso, e não
+ * `início + 24h`: no dia do horário de verão o dia tem 23 ou 25 horas, e somar
+ * 24 à fecharia uma hora cedo ou deixaria uma hora a mais na lista.
+ *
+ * `null` quando o fuso é inexistente (`instanteDe` lança `RangeError`) — quem
+ * chama cai no corte em UTC.
+ */
+function janelaDoDiaNoFuso(dia: string, fuso: string): { de: string; ate: string } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dia);
+  if (!m) return null;
+  const [ano, mes, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  // O dia seguinte no calendário GREGORIANO (e não `+ 86400000`), para que a
+  // virada de mês e de ano se resolva sozinhas antes de virar parede.
+  const seguinte = new Date(Date.UTC(ano, mes - 1, d + 1));
+  try {
+    const de = instanteDe({ ano, mes, dia: d }, fuso);
+    const ate = instanteDe(
+      {
+        ano: seguinte.getUTCFullYear(),
+        mes: seguinte.getUTCMonth() + 1,
+        dia: seguinte.getUTCDate(),
+      },
+      fuso,
+    );
+    if (Number.isNaN(de.getTime()) || Number.isNaN(ate.getTime())) return null;
+    return { de: de.toISOString(), ate: ate.toISOString() };
+  } catch {
+    return null;
+  }
+}
+
 export async function listaAgendamentos(
   supabase: SupabaseClient,
   organizationId: string,
   params: ParametrosDaLista,
 ): Promise<ResultadoDaLista> {
+  // ─── A JANELA, ANTES DE QUALQUER COISA (issue #1744) ──────────────────────
+  //
+  // `de`/`ate` são INSTANTES e dispensam qualquer outro recorte: com os dois, a
+  // listagem da organização inteira é permitida (é o `temAlvo` de baixo). Mas
+  // a janela é também o único caminho que varre semanas de uma vez, então ela é
+  // a única que pode virar uma varredura de ano inteiro por erro de chamada —
+  // por isso o teto é checado AQUI, e não em cada porta: rota e ferramenta MCP
+  // chamam esta mesma função, e uma régua por fora daria duas respostas.
+  const veioPeriodo = params.de !== undefined && params.de !== null
+    || params.ate !== undefined && params.ate !== null;
+  if (veioPeriodo) {
+    const de = params.de ? new Date(params.de) : null;
+    const ate = params.ate ? new Date(params.ate) : null;
+    const inteiro = (d: Date | null): d is Date => d !== null && !Number.isNaN(d.getTime());
+    if (!inteiro(de) || !inteiro(ate)) {
+      return {
+        ok: false,
+        codigo: "janela_invalida",
+        motivoParaOperador:
+          "período incompleto ou inválido: `de` e `ate` vêm JUNTOS, como instantes ISO " +
+          "(ex.: 2026-09-01T00:00:00Z).",
+        motivoParaCliente:
+          "Preciso do início e do fim do período. Pergunte qual intervalo a pessoa quer ver e " +
+          "mande os dois, com data e hora.",
+      };
+    }
+    if (ate.getTime() <= de.getTime()) {
+      return {
+        ok: false,
+        codigo: "janela_invalida",
+        motivoParaOperador: "`ate` é anterior (ou igual) a `de`: o período tem de ir do início para o fim.",
+        motivoParaCliente:
+          "O fim do período ficou antes do começo. Pergunte de novo qual intervalo a pessoa quer ver.",
+      };
+    }
+    if (ate.getTime() - de.getTime() > MAXIMO_DE_DIAS * 86_400_000) {
+      return {
+        ok: false,
+        codigo: "janela_invalida",
+        motivoParaOperador:
+          `o período pedido passa de ${MAXIMO_DE_DIAS} dias. Pergunte um intervalo menor — ` +
+          "uma semana por chamada é o que um calendário desenha.",
+        motivoParaCliente:
+          `Esse intervalo é grande demais para uma consulta só. Divida em partes de até ` +
+          `${MAXIMO_DE_DIAS} dias e leia uma por vez.`,
+      };
+    }
+  }
+
   const temAlvo = Boolean(
     params.contactId || params.leadId || params.dia || params.ownerUserId || (params.de && params.ate),
   );
@@ -639,21 +832,62 @@ export async function listaAgendamentos(
     }
   }
 
+  // O `+ 1` é o truque do `has_more` de sempre: vendo uma linha a mais do que
+  // o `limite` eu sei que sobrou página, sem contar tudo. A folga é cortada na
+  // montagem da resposta, então quem chama continua recebendo no máximo `limite`.
   let q = supabase
     .from("calendar_appointments")
     .select(
-      "id, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, contacts(name, display_name)",
+      "id, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name)",
     )
     .eq("organization_id", organizationId)
     .order("starts_at", { ascending: true })
-    .limit(params.limite);
+    // O DESEMPATE por `id` é o que faz o cursor ser determinístico: sem ele,
+    // dois compromissos no mesmo instante trocam de lugar entre uma página e
+    // outra e a paginação pula ou repete item. (issue #1744)
+    .order("id", { ascending: true })
+    .limit(params.limite + 1);
 
   if (idsPorLead) q = q.in("id", idsPorLead);
   if (params.contactId) q = q.eq("contact_id", params.contactId);
   if (params.ownerUserId) q = q.eq("owner_user_id", params.ownerUserId);
   if (params.situacao) q = q.eq("status", params.situacao);
-  if (params.dia) {
-    q = q.gte("starts_at", `${params.dia}T00:00:00Z`).lt("starts_at", `${params.dia}T23:59:59.999Z`);
+  if (params.depoisDe) {
+    const cursor = decodificarCursorDaLista(params.depoisDe);
+    if (!cursor) {
+      return {
+        ok: false,
+        codigo: "cursor_invalido",
+        motivoParaOperador:
+          "`depois_de` não é um cursor que esta listagem emitiu. Passe `proximo` exatamente como veio, " +
+          "ou comece a leitura sem cursor.",
+        motivoParaCliente:
+          "A leitura parou no meio e eu não consegui continuar de onde parei. Comece de novo do início.",
+      };
+    }
+    q = q.or(
+      `starts_at.gt.${cursor.inicio},and(starts_at.eq.${cursor.inicio},id.gt.${cursor.id})`,
+    );
+  }
+  if (params.dia && !(params.de && params.ate)) {
+    // ─── O DIA É DA ORGANIZAÇÃO, E NÃO DE UTC (issue #1744) ────────────────
+    //
+    // O corte em UTC estava escrito no próprio código: em São Paulo três horas
+    // do dia ANTERIOR entravam e as três últimas do dia pedido ficavam de fora
+    // — um compromisso das 22h sumia da lista do próprio dia. Agora o `dia` é
+    // um dia CIVIL no `organizations.timezone`, e o filtro é o intervalo UTC
+    // equivalente.
+    //
+    // Sem fuso legível (coluna vazia, fuso inválido, client que não lê a org)
+    // o comportamento É o antigo, em UTC — degradar para o que existia é
+    // melhor do que adivinhar, e `de`/`ate` continua sendo o recorte exato.
+    const fuso = await fusoDaOrganizacao(supabase, organizationId);
+    const janela = fuso ? janelaDoDiaNoFuso(params.dia, fuso) : null;
+    if (janela) {
+      q = q.gte("starts_at", janela.de).lt("starts_at", janela.ate);
+    } else {
+      q = q.gte("starts_at", `${params.dia}T00:00:00Z`).lt("starts_at", `${params.dia}T23:59:59.999Z`);
+    }
   }
   // O período vence o dia quando os dois vêm: quem manda instante está pedindo
   // recorte exato, e sobrepor o corte grosseiro do `dia` devolveria a interseção
@@ -690,27 +924,74 @@ export async function listaAgendamentos(
     };
   }
 
+  const linhas = data ?? [];
+  const temMais = linhas.length > params.limite;
+  const pagina = temMais ? linhas.slice(0, params.limite) : linhas;
+  const ultima = pagina[pagina.length - 1];
+
+  // O vínculo com o negócio é uma segunda tabela (DECISÃO 6), então é uma
+  // segunda consulta — paga só por quem pediu, e nunca quando a página veio
+  // vazia (uma consulta contra `in ()` não diria nada).
+  let vinculosPorAlvo: Map<string, string[]> | null = null;
+  if (params.comLeadIds && pagina.length > 0) {
+    const { data: vinculos, error: erroVinculos } = await supabase
+      .from("crm_lead_links")
+      .select("lead_id, target_id")
+      .eq("organization_id", organizationId)
+      .eq("target_kind", "appointment")
+      .in("target_id", pagina.map((l) => String(l.id)));
+    if (erroVinculos) {
+      // Vínculo é cortesia: a listagem não pode morrer por ele. Sem mapa, os
+      // itens saem com `leadIds` vazio — que é o que a tela da grade já mostra.
+      vinculosPorAlvo = null;
+    } else {
+      vinculosPorAlvo = new Map();
+      for (const v of vinculos ?? []) {
+        const alvo = String((v as { target_id: unknown }).target_id);
+        const lead = String((v as { lead_id: unknown }).lead_id);
+        const lista = vinculosPorAlvo.get(alvo) ?? [];
+        lista.push(lead);
+        vinculosPorAlvo.set(alvo, lista);
+      }
+    }
+  }
+
   return {
     ok: true,
-    agendamentos: (data ?? []).map((l) => ({
-      id: String(l.id),
-      titulo: String(l.title),
-      meetingState: l.meeting_state,
-      meetingUrl: l.meeting_state === "ready" ? l.meeting_url : null,
-      revision:Number(l.revision),
-      iniciaEm: String(l.starts_at),
-      terminaEm: String(l.ends_at),
-      fuso: String(l.time_zone),
-      situacao: String(l.status),
-      donoId: l.owner_user_id ? String(l.owner_user_id) : null,
-      contatoId: l.contact_id ? String(l.contact_id) : null,
-      // O ID sozinho não serve a nenhum dos dois consumidores: a grade precisa do
-      // nome para dizer "com quem", e o AGENTE recebia um uuid cru onde devia
-      // dizer "você já tem consulta marcada, Maria". Mesma coluna que a tela do
-      // produto lê, e a MESMA decisão de nome — `lib/contacts/rotulo-do-contato.ts`,
-      // não um precedente copiado de outro arquivo.
-      contatoNome: contatoDoEmbed(l.contacts),
-    })),
+    agendamentos: pagina.map((l) => {
+      // O embed chega objeto ou array conforme o gerador de tipos — o mesmo
+      // aviso de `contatoDoEmbed`, aqui de novo porque é o MESMO embed.
+      const tipo = (Array.isArray(l.calendar_event_types)
+        ? (l.calendar_event_types[0] ?? null)
+        : (l.calendar_event_types ?? null)) as { name?: unknown; slug?: unknown } | null;
+      const texto = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v : null);
+      return {
+        id: String(l.id),
+        titulo: String(l.title),
+        meetingState: l.meeting_state,
+        meetingUrl: l.meeting_state === "ready" ? l.meeting_url : null,
+        revision:Number(l.revision),
+        iniciaEm: String(l.starts_at),
+        terminaEm: String(l.ends_at),
+        fuso: String(l.time_zone),
+        situacao: String(l.status),
+        donoId: l.owner_user_id ? String(l.owner_user_id) : null,
+        contatoId: l.contact_id ? String(l.contact_id) : null,
+        // O ID sozinho não serve a nenhum dos dois consumidores: a grade precisa do
+        // nome para dizer "com quem", e o AGENTE recebia um uuid cru onde devia
+        // dizer "você já tem consulta marcada, Maria". Mesma coluna que a tela do
+        // produto lê, e a MESMA decisão de nome — `lib/contacts/rotulo-do-contato.ts`,
+        // não um precedente copiado de outro arquivo.
+        contatoNome: contatoDoEmbed(l.contacts),
+        tipo: tipo ? { slug: texto(tipo.slug) ?? "", nome: texto(tipo.name) ?? "" } : null,
+        local: { tipo: texto(l.location_kind), descricao: texto(l.location_details) },
+        leadIds: vinculosPorAlvo?.get(String(l.id)) ?? [],
+      } satisfies AgendamentoListado;
+    }),
+    proximo:
+      temMais && ultima
+        ? codificarCursorDaLista({ inicio: String(ultima.starts_at), id: String(ultima.id) })
+        : null,
   };
 }
 

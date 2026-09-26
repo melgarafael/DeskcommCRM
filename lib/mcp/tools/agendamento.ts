@@ -37,6 +37,7 @@ import {
 import { ApiError } from "@/lib/api/types";
 import { SITUACOES_DO_AGENDAMENTO } from "@/lib/agenda/tipos";
 import type { McpContext, McpToolDefinition } from "@/lib/mcp/types";
+import { resolveUserNames } from "./_users";
 
 /** Teto do horizonte pedido — espelha o da rota, e o excesso é erro de chamada. */
 const DIAS_PADRAO = 14;
@@ -383,7 +384,41 @@ const listarShape = {
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional()
-    .describe("um dia específico, no formato AAAA-MM-DD"),
+    .describe(
+      "um dia civil, no formato AAAA-MM-DD, contado NO FUSO DA ORGANIZAÇÃO — 22h de São Paulo " +
+        "é daquele dia. Para um recorte com hora exata, prefira `de` + `ate`.",
+    ),
+  /**
+   * ⚠️ `de`/`ate` são INSTANTES, e é isso que resolve o fuso na origem: quem
+   * chama calcula os limites no fuso em que está olhando e manda o instante,
+   * sem o servidor precisar adivinhar. Mesma escolha do `GET` da grade
+   * (`app/api/v1/agenda/agendamentos/route.ts`) — duas portas, uma régua.
+   */
+  de: z
+    .string()
+    .datetime({ offset: true })
+    .optional()
+    .describe(
+      "início do PERÍODO, como instante ISO com fuso (ex.: 2026-09-01T00:00:00-03:00). Com " +
+        "`ate`, lista a agenda INTEIRA da organização no intervalo — nenhum outro recorte é " +
+        "preciso. Os dois vêm juntos; a janela aceita no máximo " +
+        `${MAXIMO_DE_DIAS} dias.`,
+    ),
+  ate: z
+    .string()
+    .datetime({ offset: true })
+    .optional()
+    .describe(
+      `fim do PERÍODO, como instante ISO com fuso. Vem sempre junto com \`de\`, e a janela ` +
+        `aceita no máximo ${MAXIMO_DE_DIAS} dias — mais que isso é recusado.`,
+    ),
+  depois_de: z
+    .string()
+    .optional()
+    .describe(
+      "cursor da PRÓXIMA página: é o valor de `proximo` da resposta anterior, passado como " +
+        "está. Só use quando `proximo` vier preenchido; sem cursor, a leitura começa do início.",
+    ),
   owner_user_id: z.string().uuid().optional(),
   /**
    * ⚠️ A constante, NUNCA os literais. `SITUACOES_DO_AGENDAMENTO` é a fonte
@@ -398,10 +433,13 @@ const listarShape = {
 export const crmListAppointments: McpToolDefinition<typeof listarShape> = {
   name: "crm_list_appointments",
   description:
-    "Lista os compromissos com HORA MARCADA de um cliente, ou de um dia da equipe, com a " +
-    "situação de cada um. Informe pelo menos um recorte: contact_id, lead_id, dia ou " +
-    "owner_user_id — sem recorte a chamada é recusada, porque varrer a agenda inteira não " +
-    "responde pergunta nenhuma. " +
+    "Lista os compromissos com HORA MARCADA de um cliente, de um dia da equipe ou de um " +
+    "PERÍODO, com a situação de cada um. Informe pelo menos um recorte: contact_id, lead_id, " +
+    "dia, owner_user_id ou o PAR de+ate — sem recorte a chamada é recusada. O par de+ate é o " +
+    "único que dispensa os outros: com os dois informados a listagem cobre a agenda INTEIRA da " +
+    `organização no intervalo, em janelas de até ${MAXIMO_DE_DIAS} dias (uma semana por chamada ` +
+    "é o que um calendário desenha). A paginação é pelo cursor: quando a resposta trouxer " +
+    "`proximo` preenchido, chame de novo passando-o em `depois_de` até ele vir `null`. " +
     "NÃO CONFUNDA COM `crm_list_followups`, que lista os RETORNOS — as vezes em que nós " +
     "decidimos voltar a falar, sem nada combinado com o cliente. Aqui é o que foi combinado " +
     "COM ele e ocupa o tempo de um atendente. O mesmo cliente pode ter os dois. " +
@@ -418,6 +456,14 @@ export const crmListAppointments: McpToolDefinition<typeof listarShape> = {
       dia: input.dia ?? null,
       ownerUserId: input.owner_user_id ?? null,
       situacao: input.situacao ?? null,
+      // O PERÍODO e o CURSOR passam inteiros — quem define teto, fuso e
+      // continuidade é a regra, não a porta (issue #1744).
+      de: input.de ?? null,
+      ate: input.ate ?? null,
+      depoisDe: input.depois_de ?? null,
+      // O vínculo com o negócio É parte do que um calendário mostra, então esta
+      // porta paga a consulta extra que a grade da tela não paga.
+      comLeadIds: true,
       limite: input.limite ?? 20,
     });
 
@@ -425,6 +471,16 @@ export const crmListAppointments: McpToolDefinition<typeof listarShape> = {
     if (!r.ok) {
       return { compromissos: [], motivo: r.codigo, mensagem: r.motivoParaCliente };
     }
+
+    // O NOME DO RESPONSÁVEL segue a mesma regra de exposição de #1528: sai pelo
+    // helper (`lib/mcp/tools/_users.ts`), que devolve SÓ o `full_name` — nunca
+    // e-mail, telefone ou o `user_metadata` inteiro — e é não-crítico: falha de
+    // lookup devolve `null`, não derruba a leitura. Montar nome à mão aqui seria
+    // uma segunda fonte de verdade sobre quem é uma pessoa.
+    const nomes = await resolveUserNames(
+      ctx.supabase,
+      r.agendamentos.map((a) => a.donoId),
+    );
 
     return {
       compromissos: r.agendamentos.map((a) => ({
@@ -436,9 +492,24 @@ export const crmListAppointments: McpToolDefinition<typeof listarShape> = {
         situacao: a.situacao,
         meet_state: a.meetingState,
         meeting_url: a.meetingState === "ready" ? a.meetingUrl : null,
+        // O RÓTULO DO CONTATO nunca é montado aqui: vem de `nomeDoContato` por
+        // `contatoDoEmbed` (`lib/contacts/rotulo-do-contato.ts`), a mesma decisão
+        // de nome que a tela do produto usa.
+        // `contato_id`/`atendente_id` ficam AO LADO dos objetos: são a forma que
+        // esta ferramenta devolvia antes da #1744, e um integrador que já as lê
+        // não pode passar a receber `undefined` em silêncio.
         contato_id: a.contatoId,
         atendente_id: a.donoId,
+        contato: { id: a.contatoId, nome: a.contatoNome },
+        atendente: {
+          id: a.donoId,
+          nome: a.donoId ? (nomes.get(a.donoId) ?? null) : null,
+        },
+        tipo: a.tipo ?? null,
+        local: a.local ?? { tipo: null, descricao: null },
+        lead_ids: a.leadIds ?? [],
       })),
+      proximo: r.proximo ?? null,
     };
   },
 };

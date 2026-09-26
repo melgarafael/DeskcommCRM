@@ -190,7 +190,7 @@ export const TOOLS_AGENDAMENTO = declararTools([
     category: "read",
     rotulo: "Ver os compromissos marcados",
     explicacao:
-      "Lista os compromissos com hora marcada de um cliente ou de um dia, com a situação de cada um: marcado, realizado ou desmarcado.",
+      "Lista os compromissos com hora marcada de um cliente, de um dia ou de um período de até 62 dias, com a situação de cada um: marcado, realizado ou desmarcado.",
     oQueToca: "Agenda da equipe",
     risco: "seguro",
     pacotes: ["vender"],

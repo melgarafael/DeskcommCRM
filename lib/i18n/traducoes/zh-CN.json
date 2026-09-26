@@ -5075,7 +5075,7 @@
   "Lista as oportunidades de venda de um funil, com a etapa em que cada uma está e quem é o responsável por ela.": "列出某个销售漏斗中的销售商机，以及每个商机所处阶段和负责人。",
   "Lista as pessoas do time e o que cada uma pode fazer aqui dentro, para o agente saber para quem passar um atendimento.": "列出团队成员及每个人在此可执行的操作，让 AI 智能体知道可将接待转给谁。",
   "Lista os assuntos que já foram passados para uma pessoa resolver, com o estado de cada um, para o agente não pedir duas vezes a mesma coisa.": "列出已转给人工处理的事项及各自状态，让 AI 智能体不会重复请求同一件事。",
-  "Lista os compromissos com hora marcada de um cliente ou de um dia, com a situação de cada um: marcado, realizado ou desmarcado.": "列出某客户或某天有具体时间的预约，以及各自状态：已预约、已完成或已取消。",
+  "Lista os compromissos com hora marcada de um cliente, de um dia ou de um período de até 62 dias, com a situação de cada um: marcado, realizado ou desmarcado.": "列出某客户、某天或最长 62 天内某一时段有具体时间的预约，以及各自状态：已预约、已完成或已取消。",
   "Lista os textos que a empresa compartilhou com a equipe para responder as situações de sempre, com o atalho de cada um e as variáveis que cada texto usa.": "列出企业与团队共享的、用于应对常见情况的回复文本，以及各自的快捷方式和每个文本使用的变量。",
   "Listar conversas": "列出对话",
   "Lê as mensagens já trocadas com o cliente, para o agente responder sem pedir que ele repita o que já contou.": "读取与客户已交换的消息，让 AI 智能体无需让对方重复已说过的内容即可回复。",

@@ -142,16 +142,20 @@ const cancelarSchema = z.object({
  * igual para a tela e para a IA.
  *
  * O recorte que a grade usa é `de`+`ate`, em INSTANTES. A tela é semanal e
- * mensal (seis semanas), então o filtro por `dia` não a serve — e ele tem um
- * corte em UTC que, para fuso negativo, não é o dia de quem olha: medido para
- * São Paulo, o "dia 12" pega três horas do dia 11 e perde as três últimas do 12.
- * Mandando instante, quem chama calcula os limites no fuso de APRESENTAÇÃO e
- * esta rota não precisa adivinhar em que fuso o dia foi pedido.
+ * mensal (seis semanas), então o filtro por `dia` não a serve — e ele corta no
+ * fuso da ORGANIZAÇÃO (desde a #1744; sem fuso legível, em UTC), que não é
+ * necessariamente o fuso de quem olha. Mandando instante, quem chama calcula os
+ * limites no fuso de APRESENTAÇÃO e esta rota não precisa adivinhar em que fuso
+ * o dia foi pedido.
  */
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
-  // `viewer`: olhar a agenda é o menor privilégio desta feature.
+  // `viewer`: olhar a agenda é o menor privilégio desta feature. E SEGUE
+  // SÓ-SESSÃO — `requireRole` não lê Bearer, e abrir isto a token é decisão de
+  // produto, não de implementação (a própria suíte da rota trava este estado;
+  // ver o cabeçalho de `GET … continua só-sessão` em `route.test.ts`). Quem
+  // integra agenda por token continua saindo pela ferramenta MCP.
   const authz = await requireRole("viewer", { requestId, resource: "agenda" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
@@ -188,13 +192,15 @@ export async function GET(req: NextRequest): Promise<Response> {
   });
 
   if (!resultado.ok) {
-    // ⚠️ DUAS DAS TRÊS RECUSAS SÃO ERRO DE QUEM CHAMA — e o `else` de antes
+    // ⚠️ QUATRO DAS CINCO RECUSAS SÃO ERRO DE QUEM CHAMA — e o `else` de antes
     // chamava todas de falha do servidor.
     //
-    // `sem_alvo` (falta recorte) e `alvo_nao_e_lead` (o `lead_id` veio com o id
-    // de um CONTATO — a confusão medida em #509) são consulta malformada: o
-    // servidor está inteiro, e 500 diz ao cliente server-to-server que a culpa é
-    // nossa. Pior: acorda o Sentry por requisição malformada, que é ruído.
+    // `sem_alvo` (falta recorte), `alvo_nao_e_lead` (o `lead_id` veio com o id
+    // de um CONTATO — a confusão medida em #509), `janela_invalida` (período
+    // invertido, incompleto ou acima do teto) e `cursor_invalido` são consulta
+    // malformada: o servidor está inteiro, e 500 diz ao cliente server-to-server
+    // que a culpa é nossa. Pior: acorda o Sentry por requisição malformada, que
+    // é ruído.
     //
     // O mapa é explícito — mesmo desenho de `CODIGO_DA_RECUSA` em `_handler.ts`
     // — porque status e código andam juntos, e a indexação pelo código faz o
@@ -202,6 +208,8 @@ export async function GET(req: NextRequest): Promise<Response> {
     const recusa = {
       sem_alvo: { status: 422, code: "agenda_listagem_sem_recorte" },
       alvo_nao_e_lead: { status: 422, code: "agenda_listagem_alvo_nao_e_lead" },
+      janela_invalida: { status: 422, code: "agenda_listagem_janela_invalida" },
+      cursor_invalido: { status: 422, code: "agenda_listagem_cursor_invalido" },
       erro_interno: { status: 500, code: "internal_error" },
     } as const;
     const { status, code } = recusa[resultado.codigo];
