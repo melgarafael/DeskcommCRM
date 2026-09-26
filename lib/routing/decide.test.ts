@@ -110,15 +110,61 @@ describe("decideRouting — os 5 cenários do acceptance", () => {
     expect(action).toEqual({ kind: "skip", reason: "manual_mode" });
   });
 
-  it("modo 'load' (inalcançável no schema) ⇒ skip defensivo, no-op", () => {
+  it("modo desconhecido ⇒ skip defensivo, no-op (nunca roteia o que a tela não oferece)", () => {
     const action = decideRouting({
-      mode: "load",
+      mode: "telefone",
       alreadyAssigned: false,
       eligibles: [cand("agent", null)],
       config,
       attempts: 0,
       now: NOW,
     });
-    expect(action).toEqual({ kind: "skip", reason: "unsupported_mode:load" });
+    expect(action).toEqual({ kind: "skip", reason: "unsupported_mode:telefone" });
+  });
+});
+
+describe("modo load — roteia por menor carga (issue #1539)", () => {
+  const configLoad = routingConfigSchema.parse({ mode: "load" });
+
+  const decidir = (eligibles: RoutingCandidate[]) =>
+    decideRouting({
+      mode: "load",
+      alreadyAssigned: false,
+      eligibles,
+      config: configLoad,
+      attempts: 0,
+      now: NOW,
+    });
+
+  it("o schema ACEITA o modo load (era o 'inalcável' pós-MVP do G1-06b)", () => {
+    expect(configLoad.mode).toBe("load");
+  });
+
+  it("cargas 3 e 1 ⇒ a conversa vai para o de carga 1 (critério de aceite)", () => {
+    // Ana tem UM e acabou de receber; Bruno tem TRÊS e nunca recebeu. O rodízio
+    // puxaria para o Bruno (nunca-atribuído tem prioridade) — o CONTRÁRIO do que
+    // o modo load decide, e é por isso que este caso discrimina de verdade:
+    // quem rotear isto por rodízio cai aqui vermelho.
+    const action = decidir([cand("ana", 9000, 1), cand("bruno", null, 3)]);
+    expect(action).toEqual({ kind: "assign", userId: "ana" });
+  });
+
+  it("empate de carga ⇒ desempate pelo rodízio (quem há mais tempo sem receber)", () => {
+    const action = decidir([cand("recebeu-agora", 5000, 2), cand("sem-receber", 1000, 2)]);
+    expect(action).toEqual({ kind: "assign", userId: "sem-receber" });
+  });
+
+  it("três cargas distintas => o de MENOR carga ganha, mesmo sendo o último da lista", () => {
+    const action = decidir([cand("carga-3", null, 3), cand("folgado", null, 1), cand("carga-2", null, 2)]);
+    expect(action).toEqual({ kind: "assign", userId: "folgado" });
+  });
+
+  it("sem elegível ⇒ requeue com backoff da config (mesma régua do round_robin)", () => {
+    const action = decidir([]);
+    expect(action.kind).toBe("requeue");
+    if (action.kind === "requeue") {
+      expect(action.attempts).toBe(1);
+      expect(new Date(action.nextAttemptAt).getTime()).toBe(NOW.getTime() + 60_000);
+    }
   });
 });

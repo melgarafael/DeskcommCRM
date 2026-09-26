@@ -5213,6 +5213,15 @@ export const DICIONARIO: Traducoes = {
   "Cliente 1 vai para o atendente A, cliente 2 para o B, e ao acabar a lista volta ao primeiro. Quem recebe é sempre quem está há mais tempo sem receber — entre os que estão disponíveis e dentro do horário. Ninguém escolhe, então não há fila furada.": {
     es: "El cliente 1 va al asesor A, el cliente 2 al B y, al terminar la lista, vuelve al primero. Siempre recibe quien lleva más tiempo sin recibir, entre los que están disponibles y dentro de su horario. Nadie elige, así que nadie se salta la fila.",
   },
+  "Vai para quem tem menos conversas na mão": {
+    es: "Va a quien tiene menos conversaciones",
+  },
+  "Menor carga (quem tem menos conversas na mão)": {
+    es: "Menor carga (quien tiene menos conversaciones)",
+  },
+  "Cada cliente novo cai com quem está com MENOR número de conversas em aberto. Em caso de empate vale o rodízio — quem está há mais tempo sem receber leva. Entre os que estão disponíveis e dentro do horário, como nos outros modos. É o modo para time grande, onde deixar uma pessoa com tudo e outra parada custa caro.": {
+    es: "Cada cliente nuevo cae con quien tiene MENOR número de conversaciones abiertas. En caso de empate vale la rotación — quien lleva más tiempo sin recibir la lleva. Entre quienes están disponibles y dentro del horario, como en los demás modos. Es el modo para equipos grandes, donde dejar a una persona con todo y a otra parada sale caro.",
+  },
   "Todos veem tudo": { es: "Todos ven todo" },
   "Qualquer atendente abre a conversa e o negócio de qualquer colega.": {
     es: "Cualquier asesor puede abrir la conversación y el negocio de cualquier colega.",
