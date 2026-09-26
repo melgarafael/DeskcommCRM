@@ -38,6 +38,7 @@
  * próprio schema (Zod) e dos tipos de `node-handlers.ts` — nenhuma cópia à mão.
  */
 import type { z } from "zod";
+import type { PrioridadeDaTarefa } from "@/lib/tarefas/tipos";
 
 import type { TriggerConfig } from "./api-schemas";
 import { conditionLabel } from "./edge-condition-options";
@@ -511,6 +512,16 @@ export const MODOS_DA_ACAO: Record<ModoDaAcao, string> = {
   text: "Texto fixo",
   ai_message: "Mensagem escrita pela IA",
   template: "Modelo de mensagem pronto",
+};
+
+// ─── prioridade da tarefa (ação create_task, #1540) ────────────────────────
+
+/** Wire de prioridade da tarefa — rótulos do formulário e do card. */
+export const PRIORIDADES_DA_TAREFA: Record<PrioridadeDaTarefa, string> = {
+  low: "Baixa",
+  medium: "Média",
+  high: "Alta",
+  urgent: "Urgente",
 };
 
 // ─── pergunta do fluxo de atendimento (nó collect) ───────────────────────
