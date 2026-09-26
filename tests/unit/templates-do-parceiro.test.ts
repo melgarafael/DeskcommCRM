@@ -89,6 +89,18 @@ describe("os elos que somem sem barulho", () => {
     expect(fonte).toMatch(/Modelos do parceiro/);
   });
 
+  it("a aba Graph GERENCIA modelo — o gerenciar={false} saiu (#1734)", () => {
+    // Ele existia porque o DELETE desta plataforma, por nome só, apagava TODAS
+    // as variantes de idioma enquanto a tela apagaria uma (#1728). Desde a
+    // #1734 o alvo resolve o id da variante por nome+idioma, então a aba usa o
+    // MESMO cliente do outro parceiro, sem apagar botão.
+    const fonte = readFileSync("components/connections/ConexoesShell.tsx", "utf8");
+    expect(fonte).toContain('<TemplatesParceiroClient rota={rotaDeTemplates("graph")} />');
+    expect(fonte, "a aba Graph ainda entrega o cliente com gerenciar desligado").not.toContain(
+      "gerenciar={false}",
+    );
+  });
+
   it("a rota passa pelo SEAM, e não fala com a plataforma direto", () => {
     const fonte = readFileSync("app/api/v1/channels/partner/templates/route.ts", "utf8");
     expect(fonte).toMatch(/adapter\.templates\.list/);

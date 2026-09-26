@@ -136,9 +136,11 @@ export function ConexoesShell({
               <CanalGraphParceiroClient />
             </TabsContent>
             <TabsContent value="templates" className="mt-0">
-              {/* Sem editar/apagar: nesta plataforma o DELETE é por nome e leva
-                  todas as variantes de idioma, e a tela apagaria uma só (#1728). */}
-              <TemplatesParceiroClient rota={rotaDeTemplates("graph")} gerenciar={false} />
+              {/* Editar e apagar valem aqui como no outro parceiro: desde a
+                  #1734 o alvo resolve o id da variante (nome + idioma) antes de
+                  falar com a plataforma, então a tela apaga UMA tradução, não
+                  todas (#1728 era este o motivo de ficar desligado). */}
+              <TemplatesParceiroClient rota={rotaDeTemplates("graph")} />
             </TabsContent>
           </Tabs>
         </TabsContent>
