@@ -29,13 +29,16 @@ import { Plus } from "@/lib/ui/icons";
 import type { LeadFilters } from "@/lib/kanban/filters";
 import { applyFilters, filtersFromParams, filtersToParams } from "@/lib/kanban/filters";
 import { categoriaDoMotivo } from "@/lib/leads/motivos-de-perda-do-funil";
+import { ROLE_RANK, type Role } from "@/lib/auth/types";
 
 export function PipelinePageClient({
   pipelineId,
   initialName,
+  role,
 }: {
   pipelineId: string;
   initialName: string;
+  role: Role;
 }) {
   const t = useT();
   const { data, isLoading, error, pulses, realtimeStatus, seguranca } = useBoard(pipelineId);
@@ -150,6 +153,7 @@ export function PipelinePageClient({
           selectedIds={selectedIds}
           onSelectionChange={setSelectedIds}
           leadInicial={searchParams.get("lead")}
+          podeRenomearEtapa={ROLE_RANK[role] >= ROLE_RANK.manager}
         />
       )}
       <BulkActionBar
