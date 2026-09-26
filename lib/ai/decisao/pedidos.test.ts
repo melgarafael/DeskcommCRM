@@ -8,10 +8,14 @@
  * `true` escrito à mão. O caminho pelo worker de clima, com a leitura dos fatos
  * do turno, é `tests/unit/clima-da-conversa-no-worker.test.ts`.
  */
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { detectHumanHandoffRequest } from "@/lib/agent-engine/agent/human-handoff";
 import { lerConfigDoJev } from "@/lib/ai/decisao/config";
+import { TAREFA_DO_PEDIDO_PARA_PARAR } from "@/lib/ai/decisao/tarefas";
+import { POLITICAS_DE_AVISO } from "@/lib/ai/inbox-destino";
 import {
   AVISOS_DOS_PEDIDOS,
   avisarAEquipe,
@@ -26,6 +30,7 @@ import {
   type RegraPegou,
 } from "@/lib/ai/decisao/pedidos";
 import { DICIONARIO } from "@/lib/i18n/dicionario";
+import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
 import { regraDeHoje as regraDoWorker } from "@/workers/ai-sentiment-worker.pedidos";
 
 const ADMIN = "22222222-2222-4222-8222-222222222222";
@@ -409,6 +414,34 @@ describe("Avisar a equipe", () => {
     for (const aviso of Object.values(AVISOS_DOS_PEDIDOS)) {
       for (const texto of [aviso.titulo, aviso.corpo, DICIONARIO[aviso.corpo]?.es ?? ""]) {
         expect(texto).not.toMatch(/segue com o assistente|nada foi bloqueado|última mensagem|sigue con el asistente|nada fue bloqueado|último mensaje/i);
+      }
+    }
+  });
+
+  /**
+   * Não há bloqueio à mão no produto: o único escritor do bloqueio é o STOP do
+   * próprio cliente (`lib/channels/pos-entrada.ts`; a tela do contato diz o
+   * mesmo). Nenhum texto do pedido de parar de receber — o aviso, a orientação
+   * da Central, a linha e o diálogo do cartão — pode prometer que uma pessoa
+   * bloqueia. O aviso diz o que a equipe PODE fazer: pedir ao cliente a palavra
+   * que a regra bloqueia — e a palavra citada, em cada idioma, é uma que ela de
+   * fato bloqueia.
+   */
+  it("o pedido de parar de receber não promete bloqueio por uma pessoa, e cita uma palavra que a regra de fato bloqueia", () => {
+    const zh = JSON.parse(readFileSync("lib/i18n/traducoes/zh-CN.json", "utf8")) as Record<string, string>;
+    const t = TAREFA_DO_PEDIDO_PARA_PARAR;
+    const comAPalavra = [AVISOS_DOS_PEDIDOS.opt_out.corpo, t.aoDecidir, t.aoConfirmarDecidir, t.oQueFaz];
+    const semPessoa = [...comAPalavra, POLITICAS_DE_AVISO.jev_parar_de_receber.orientacao];
+    for (const pt of semPessoa) {
+      for (const texto of [pt, DICIONARIO[pt]?.es, zh[pt]]) {
+        expect(texto, `a tradução de "${pt.slice(0, 40)}…" existe (controle)`).toBeTruthy();
+        expect(texto).not.toMatch(/pessoa|persona|人工/i);
+      }
+    }
+    for (const pt of comAPalavra) {
+      for (const texto of [pt, DICIONARIO[pt]?.es ?? "", zh[pt] ?? ""]) {
+        const palavra = /\b[A-Z]{4,}\b/.exec(texto)?.[0] ?? "";
+        expect(ehPedidoDeOptOut(palavra), `"${palavra}" em: ${texto.slice(0, 60)}…`).toBe(true);
       }
     }
   });

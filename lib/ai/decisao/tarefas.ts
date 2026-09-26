@@ -230,16 +230,16 @@ export const TAREFA_DO_PEDIDO_PARA_PARAR = {
   alcance: "mensagem",
   familia: "cascata",
   aoDecidir:
-    "Quando o Jev percebe um pedido para parar de receber mensagens que a regra não pegou, ele abre um aviso na Central. Quem bloqueia continua sendo a regra de hoje ou uma pessoa: o Jev nunca bloqueia ninguém.",
+    "Quando o Jev percebe um pedido para parar de receber mensagens que a regra não pegou, ele abre um aviso na Central para alguém da equipe conferir. Quem bloqueia o contato é só a regra de hoje, quando o próprio cliente manda PARAR: o Jev nunca bloqueia ninguém.",
   aoConfirmarDecidir:
-    "Quando o Jev perceber um pedido para parar de receber mensagens que a regra não pegou, ele abre um aviso na Central. Quem bloqueia continua sendo a regra de hoje ou uma pessoa: o Jev nunca bloqueia ninguém.",
+    "Quando o Jev perceber um pedido para parar de receber mensagens que a regra não pegou, ele abre um aviso na Central para alguém da equipe conferir. Quem bloqueia o contato é só a regra de hoje, quando o próprio cliente manda PARAR: o Jev nunca bloqueia ninguém.",
   percebidos: {
     um: "Nos últimos {dias} dias, o Jev percebeu {n} pedido para parar de receber mensagens que a regra de hoje não pegou.",
     varios: "Nos últimos {dias} dias, o Jev percebeu {n} pedidos para parar de receber mensagens que a regra de hoje não pegou.",
   },
   rotulo: "Perceber pedido para parar de receber mensagens",
   oQueFaz:
-    "Lê a mensagem do cliente, sozinha, quando a regra de hoje não viu nela um pedido para parar de receber mensagens — e conta os pedidos que ela deixou passar. Quem bloqueia continua sendo a regra de hoje ou uma pessoa.",
+    "Lê a mensagem do cliente, sozinha, quando a regra de hoje não viu nela um pedido para parar de receber mensagens — e conta os pedidos que ela deixou passar. Quem bloqueia o contato é só a regra de hoje, quando o próprio cliente manda PARAR.",
 } as const satisfies TarefaDoJev;
 
 export const TAREFAS_DO_JEV: readonly TarefaDoJev[] = [
@@ -266,7 +266,7 @@ export const TAREFAS_DO_JEV: readonly TarefaDoJev[] = [
 export const PEDIDOS_DO_CLIENTE = {
   purpose: "jev_pedidos",
   rotulo: "Perceber pedidos do cliente",
-  porQue: "O Jev foi perguntado só porque a regra de hoje não reconheceu o pedido. Ele não bloqueia nem passa a conversa.",
+  porQue: "O Jev foi perguntado porque a regra de hoje não viu pedido nesta mensagem. Ele não bloqueia nem passa a conversa.",
   porQueNaFalha: "O Jev não respondeu: valeu só a regra de hoje.",
 } as const;
 

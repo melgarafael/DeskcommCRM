@@ -5,8 +5,9 @@
 -- falar com uma pessoa, e parar de receber mensagens. Quando a empresa escolhe
 -- "Avisar a equipe" numa dessas tarefas, ele abre UM aviso na Central por
 -- conversa e pedido — e só isso: nunca passa a conversa, nunca cala o agente,
--- nunca bloqueia o contato, nunca responde o cliente. Quem passa e quem bloqueia
--- continua sendo a regra de hoje, ou uma pessoa.
+-- nunca bloqueia o contato, nunca responde o cliente. Quem passa a conversa
+-- continua sendo a regra de hoje ou uma pessoa; quem bloqueia o contato é só a
+-- regra de hoje, quando o próprio cliente manda o STOP.
 --
 -- O QUE ESTA MIGRATION FAZ, em três partes:
 --
@@ -100,8 +101,10 @@ create unique index if not exists agent_inbox_jev_pedido_unico
 --    `request_human_handoff` do modelo), o orquestrador do clima e a
 --    atribuição manual gravam `last_handoff_at` e calam o robô
 --    (`bot_silenced_until` no futuro) — e aí fecha o de falar com uma pessoa.
---    No contato: bloqueado (`is_blocked` passa a true, pela regra de hoje ou
---    por uma pessoa), fecha o de parar de receber de todas as conversas dele.
+--    No contato: bloqueado (`is_blocked` passa a true — o único escritor é o
+--    STOP do próprio cliente, na entrada da mensagem, lib/channels/pos-entrada.ts;
+--    ninguém da equipe bloqueia à mão), fecha o de parar de receber de todas
+--    as conversas dele.
 --    Gatilhos próprios, e não o de atribuição da 0228: aquele só dispara em
 --    `assigned_to_user_id`/`status`, e a passagem nem sempre muda o status.
 --    Nenhum faz HTTP; os dois filtram a organização da própria linha.

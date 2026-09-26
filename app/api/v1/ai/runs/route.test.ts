@@ -16,6 +16,7 @@ import {
   O_QUE_FAZER_DO_JEV,
 } from "@/lib/ai/decisao/textos";
 import { PEDIDOS_DO_CLIENTE } from "@/lib/ai/decisao/tarefas";
+import { DICIONARIO } from "@/lib/i18n/dicionario";
 import { PONTO_POR_ID } from "@/lib/ai/pontos/registro";
 import { EXPLICACAO_DA_ORIGEM } from "@/lib/ai/pontos/resolver";
 import { requireRole } from "@/lib/auth/require-role";
@@ -155,6 +156,15 @@ describe("GET /api/v1/ai/runs", () => {
     });
     for (const texto of [ok.porQueEsteModelo, avisando.porQueEsteModelo, falha.porQueEsteModelo]) {
       expect(texto).not.toMatch(/decidiu|comparar|IA de sempre/);
+    }
+    // A chamada sai em TODA mensagem em que a regra não viu pedido — quase
+    // todas são perguntas comuns. O porquê não pode pressupor que houve um
+    // pedido ("não reconheceu o pedido"): 100 linhas leriam como 100 pedidos
+    // perdidos, contra o "percebeu N pedidos" do cartão.
+    for (const texto of [PEDIDOS_DO_CLIENTE.porQue, DICIONARIO[PEDIDOS_DO_CLIENTE.porQue]?.es ?? ""]) {
+      expect(texto, "a tradução existe (controle)").not.toBe("");
+      expect(texto).not.toMatch(/\bo pedido\b|\bel pedido\b|reconheceu|reconoció/i);
+      expect(texto).toMatch(/nesta mensagem|en este mensaje/);
     }
     // Controle: o purpose desconhecido segue saindo como está.
     expect(estranho.pontoRotulo).toBe("ponto_que_ninguem_conhece");

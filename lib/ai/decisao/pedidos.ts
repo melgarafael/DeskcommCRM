@@ -135,7 +135,7 @@ export const AVISOS_DOS_PEDIDOS = {
     kind: "jev_parar_de_receber",
     titulo: "Um cliente parece pedir para parar de receber mensagens",
     corpo:
-      "O Jev percebeu, numa mensagem do cliente, um pedido para parar de receber mensagens que a regra de hoje não reconheceu. Abra a conversa e decida se o contato deve deixar de receber mensagens — o Jev nunca bloqueia ninguém.",
+      "O Jev percebeu, numa mensagem do cliente, um pedido para parar de receber mensagens que a regra de hoje não reconheceu. Abra a conversa e confira. Se o cliente quer mesmo parar de receber mensagens, assuma o atendimento para o assistente parar de responder e peça que ele responda PARAR — é assim que o contato fica bloqueado. O Jev nunca bloqueia ninguém.",
   },
 } as const satisfies Record<IdDoPedido, { kind: InboxKind; titulo: string; corpo: string }>;
 
@@ -164,7 +164,7 @@ export interface FatosDoTurno {
    * comando, sem silêncio, sem a trava da lista do canal.
    */
   iaPodeResponder: boolean;
-  /** O contato já foi bloqueado pela regra de descadastro (ou por uma pessoa). */
+  /** O contato já foi bloqueado — pelo STOP do próprio cliente, o único caminho do bloqueio no produto. */
   contatoBloqueado: boolean;
   /**
    * O contato foi passado a uma pessoa, ou QUALQUER conversa dele está com o

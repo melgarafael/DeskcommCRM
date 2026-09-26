@@ -10098,9 +10098,9 @@ alter table public.agent_inbox_items
     -- mensagens, e a empresa escolheu "Avisar a equipe". Um kind por pedido, e
     -- não `other`: a Central dá rótulo e destino por kind, e o `other` não leva
     -- a uma conversa (lib/ai/inbox-destino.ts); e o aviso é um por CONVERSA e
-    -- pedido. O Jev só abre o aviso — quem passa a conversa ou bloqueia é a
-    -- regra de hoje, ou uma pessoa. NESTA lista pelas razões de sempre (#159;
-    -- a janela do `midia-nao-lida.test.ts`).
+    -- pedido. O Jev só abre o aviso — quem passa a conversa é a regra de hoje
+    -- ou uma pessoa, e quem bloqueia é só o STOP do próprio cliente. NESTA
+    -- lista pelas razões de sempre (#159; a janela do `midia-nao-lida.test.ts`).
     'jev_pedido_de_humano',
     'jev_parar_de_receber',
     'other'
@@ -38780,8 +38780,10 @@ create unique index if not exists agent_inbox_jev_pedido_unico
 --    `request_human_handoff` do modelo), o orquestrador do clima e a
 --    atribuição manual gravam `last_handoff_at` e calam o robô
 --    (`bot_silenced_until` no futuro) — e aí fecha o de falar com uma pessoa.
---    No contato: bloqueado (`is_blocked` passa a true, pela regra de hoje ou
---    por uma pessoa), fecha o de parar de receber de todas as conversas dele.
+--    No contato: bloqueado (`is_blocked` passa a true — o único escritor é o
+--    STOP do próprio cliente, na entrada da mensagem, lib/channels/pos-entrada.ts;
+--    ninguém da equipe bloqueia à mão), fecha o de parar de receber de todas
+--    as conversas dele.
 --    Gatilhos próprios, e não o de atribuição da 0228: aquele só dispara em
 --    `assigned_to_user_id`/`status`, e a passagem nem sempre muda o status.
 --    Nenhum faz HTTP; os dois filtram a organização da própria linha.

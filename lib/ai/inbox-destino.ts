@@ -99,7 +99,7 @@ export const POLITICAS_DE_AVISO = {
   // O Jev percebeu o pedido NA conversa (`lib/ai/decisao/pedidos.ts`): o botão
   // leva a ela, onde está o que o cliente escreveu — a Central não o repete.
   jev_pedido_de_humano: { refs: ["conversation"], orientacao: "Abra a conversa e decida se alguém da equipe assume o atendimento." },
-  jev_parar_de_receber: { refs: ["conversation"], orientacao: "Abra a conversa e decida se o contato deve deixar de receber mensagens." },
+  jev_parar_de_receber: { refs: ["conversation"], orientacao: "Abra a conversa e confira se o cliente quer mesmo parar de receber mensagens." },
   other: { refs: ["lead", "channel_session", "appointment", "ai_agent"], orientacao: "Confira a situação descrita neste aviso com a pessoa responsável." },
 } satisfies Record<InboxKind, Politica>;
 

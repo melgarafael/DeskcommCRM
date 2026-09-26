@@ -3706,8 +3706,8 @@ export const DICIONARIO: Traducoes = {
   "Lê a mensagem do cliente, sozinha, quando a regra de hoje não viu nela um pedido para falar com uma pessoa — e conta os pedidos que ela deixou passar. Ele nunca passa a conversa sozinho.": {
     es: "Lee el mensaje del cliente, por separado, cuando la regla de hoy no vio en él un pedido de hablar con una persona, y cuenta los pedidos que ella dejó pasar. Nunca transfiere la conversación por su cuenta.",
   },
-  "Lê a mensagem do cliente, sozinha, quando a regra de hoje não viu nela um pedido para parar de receber mensagens — e conta os pedidos que ela deixou passar. Quem bloqueia continua sendo a regra de hoje ou uma pessoa.": {
-    es: "Lee el mensaje del cliente, por separado, cuando la regla de hoy no vio en él un pedido de dejar de recibir mensajes, y cuenta los pedidos que ella dejó pasar. Quien bloquea sigue siendo la regla de hoy o una persona.",
+  "Lê a mensagem do cliente, sozinha, quando a regra de hoje não viu nela um pedido para parar de receber mensagens — e conta os pedidos que ela deixou passar. Quem bloqueia o contato é só a regra de hoje, quando o próprio cliente manda PARAR.": {
+    es: "Lee el mensaje del cliente, por separado, cuando la regla de hoy no vio en él un pedido de dejar de recibir mensajes, y cuenta los pedidos que ella dejó pasar. Quien bloquea el contacto es solo la regla de hoy, cuando el propio cliente envía BAJA.",
   },
   "Quando o Jev percebe um pedido para falar com uma pessoa que a regra não pegou, ele abre um aviso na Central para alguém da equipe decidir. Ele nunca passa a conversa sozinho.": {
     es: "Cuando Jev detecta un pedido de hablar con una persona que la regla no captó, abre un aviso en la Central para que alguien del equipo decida. Nunca transfiere la conversación por su cuenta.",
@@ -3715,11 +3715,11 @@ export const DICIONARIO: Traducoes = {
   "Quando o Jev perceber um pedido para falar com uma pessoa que a regra não pegou, ele abre um aviso na Central para alguém da equipe decidir. Ele nunca passa a conversa sozinho.": {
     es: "Cuando Jev detecte un pedido de hablar con una persona que la regla no captó, abrirá un aviso en la Central para que alguien del equipo decida. Nunca transfiere la conversación por su cuenta.",
   },
-  "Quando o Jev percebe um pedido para parar de receber mensagens que a regra não pegou, ele abre um aviso na Central. Quem bloqueia continua sendo a regra de hoje ou uma pessoa: o Jev nunca bloqueia ninguém.": {
-    es: "Cuando Jev detecta un pedido de dejar de recibir mensajes que la regla no captó, abre un aviso en la Central. Quien bloquea sigue siendo la regla de hoy o una persona: Jev nunca bloquea a nadie.",
+  "Quando o Jev percebe um pedido para parar de receber mensagens que a regra não pegou, ele abre um aviso na Central para alguém da equipe conferir. Quem bloqueia o contato é só a regra de hoje, quando o próprio cliente manda PARAR: o Jev nunca bloqueia ninguém.": {
+    es: "Cuando Jev detecta un pedido de dejar de recibir mensajes que la regla no captó, abre un aviso en la Central para que alguien del equipo lo revise. Quien bloquea el contacto es solo la regla de hoy, cuando el propio cliente envía BAJA: Jev nunca bloquea a nadie.",
   },
-  "Quando o Jev perceber um pedido para parar de receber mensagens que a regra não pegou, ele abre um aviso na Central. Quem bloqueia continua sendo a regra de hoje ou uma pessoa: o Jev nunca bloqueia ninguém.": {
-    es: "Cuando Jev detecte un pedido de dejar de recibir mensajes que la regla no captó, abrirá un aviso en la Central. Quien bloquea sigue siendo la regla de hoy o una persona: Jev nunca bloquea a nadie.",
+  "Quando o Jev perceber um pedido para parar de receber mensagens que a regra não pegou, ele abre um aviso na Central para alguém da equipe conferir. Quem bloqueia o contato é só a regra de hoje, quando o próprio cliente manda PARAR: o Jev nunca bloqueia ninguém.": {
+    es: "Cuando Jev detecte un pedido de dejar de recibir mensajes que la regla no captó, abrirá un aviso en la Central para que alguien del equipo lo revise. Quien bloquea el contacto es solo la regla de hoy, cuando el propio cliente envía BAJA: Jev nunca bloquea a nadie.",
   },
   // A frase dos pedidos percebidos, INTEIRA e no singular e no plural: montada
   // de pedaços ("Nos últimos" + "pedido"), ela saía torta fora do português.
@@ -3739,8 +3739,8 @@ export const DICIONARIO: Traducoes = {
     es: "Detectar pedidos del cliente",
   },
   // O "por quê" da chamada dos pedidos em IA › Execuções (`PEDIDOS_DO_CLIENTE`).
-  "O Jev foi perguntado só porque a regra de hoje não reconheceu o pedido. Ele não bloqueia nem passa a conversa.": {
-    es: "Se le preguntó a Jev solo porque la regla de hoy no reconoció el pedido. Él no bloquea ni transfiere la conversación.",
+  "O Jev foi perguntado porque a regra de hoje não viu pedido nesta mensagem. Ele não bloqueia nem passa a conversa.": {
+    es: "Se le preguntó a Jev porque la regla de hoy no vio ningún pedido en este mensaje. Él no bloquea ni transfiere la conversación.",
   },
   "O Jev não respondeu: valeu só a regra de hoje.": {
     es: "Jev no respondió: valió solo la regla de hoy.",
@@ -3782,14 +3782,14 @@ export const DICIONARIO: Traducoes = {
   "O Jev percebeu, numa mensagem do cliente, um pedido para falar com uma pessoa que a regra de hoje não reconheceu. Abra a conversa e confira se alguém da equipe já assumiu — o Jev não passa a conversa sozinho.": {
     es: "Jev detectó, en un mensaje del cliente, un pedido de hablar con una persona que la regla de hoy no reconoció. Abre la conversación y verifica si alguien del equipo ya la asumió; Jev no transfiere la conversación por su cuenta.",
   },
-  "O Jev percebeu, numa mensagem do cliente, um pedido para parar de receber mensagens que a regra de hoje não reconheceu. Abra a conversa e decida se o contato deve deixar de receber mensagens — o Jev nunca bloqueia ninguém.": {
-    es: "Jev detectó, en un mensaje del cliente, un pedido de dejar de recibir mensajes que la regla de hoy no reconoció. Abre la conversación y decide si el contacto debe dejar de recibir mensajes; Jev nunca bloquea a nadie.",
+  "O Jev percebeu, numa mensagem do cliente, um pedido para parar de receber mensagens que a regra de hoje não reconheceu. Abra a conversa e confira. Se o cliente quer mesmo parar de receber mensagens, assuma o atendimento para o assistente parar de responder e peça que ele responda PARAR — é assim que o contato fica bloqueado. O Jev nunca bloqueia ninguém.": {
+    es: "Jev detectó, en un mensaje del cliente, un pedido de dejar de recibir mensajes que la regla de hoy no reconoció. Abre la conversación y revísala. Si el cliente de verdad quiere dejar de recibir mensajes, asume la atención para que el asistente deje de responder y pídele que responda BAJA: así el contacto queda bloqueado. Jev nunca bloquea a nadie.",
   },
   "Abra a conversa e decida se alguém da equipe assume o atendimento.": {
     es: "Abre la conversación y decide si alguien del equipo asume la atención.",
   },
-  "Abra a conversa e decida se o contato deve deixar de receber mensagens.": {
-    es: "Abre la conversación y decide si el contacto debe dejar de recibir mensajes.",
+  "Abra a conversa e confira se o cliente quer mesmo parar de receber mensagens.": {
+    es: "Abre la conversación y revisa si el cliente de verdad quiere dejar de recibir mensajes.",
   },
   "Abrir a conversa": {
     es: "Abrir la conversación",
