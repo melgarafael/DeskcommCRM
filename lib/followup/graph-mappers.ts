@@ -73,6 +73,8 @@ export function toFlowNode(n: RFNode): FlowNode {
       return { ...shared, type, config: n.data.config as ConfigOf<"repeat"> };
     case "action":
       return { ...shared, type, config: n.data.config as ConfigOf<"action"> };
+    case "internal_task":
+      return { ...shared, type, config: n.data.config as ConfigOf<"internal_task"> };
     case "end":
       return { ...shared, type, config: n.data.config as ConfigOf<"end"> };
     case "collect":
