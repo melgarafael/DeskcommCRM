@@ -495,6 +495,11 @@ export const crmListAppointments: McpToolDefinition<typeof listarShape> = {
         // O RÓTULO DO CONTATO nunca é montado aqui: vem de `nomeDoContato` por
         // `contatoDoEmbed` (`lib/contacts/rotulo-do-contato.ts`), a mesma decisão
         // de nome que a tela do produto usa.
+        // `contato_id`/`atendente_id` ficam AO LADO dos objetos: são a forma que
+        // esta ferramenta devolvia antes da #1744, e um integrador que já as lê
+        // não pode passar a receber `undefined` em silêncio.
+        contato_id: a.contatoId,
+        atendente_id: a.donoId,
         contato: { id: a.contatoId, nome: a.contatoNome },
         atendente: {
           id: a.donoId,

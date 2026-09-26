@@ -159,6 +159,19 @@ describe("a resposta tem o que um calendário mostra (issue #1744)", () => {
     expect(r.proximo).toBeNull();
   });
 
+  it("⭐ as chaves antigas contato_id/atendente_id seguem na resposta (compatibilidade)", async () => {
+    vi.mocked(listaAgendamentos).mockResolvedValue({ ok: true, agendamentos: [ITEM] });
+
+    const r = (await crmListAppointments.handler({ contact_id: CONTATO }, ctx)) as {
+      compromissos: Array<Record<string, unknown>>;
+    };
+
+    // `toMatchObject` acima não reprova chave a menos: esta asserção é a que vê
+    // um integrador que lia a forma anterior à #1744 passar a receber `undefined`.
+    expect(r.compromissos[0]?.contato_id).toBe(CONTATO);
+    expect(r.compromissos[0]?.atendente_id).toBe(DONO);
+  });
+
   it("⭐ o nome do atendente vem do helper — e SÓ o nome sai", async () => {
     vi.mocked(listaAgendamentos).mockResolvedValue({ ok: true, agendamentos: [ITEM] });
 
