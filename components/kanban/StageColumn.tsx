@@ -155,7 +155,11 @@ export function StageColumn({
               // GRAVADO muda — mesmo contrato de `NomeDaEtapa` em Configurações,
               // para uma edição feita em outra aba não ficar escondida atrás de
               // um rascunho velho aqui.
-              <NomeDaEtapaNoQuadro key={stage.name} nome={stage.name} onConfirmar={onRenomear} />
+              // Dentro do <h2>: a coluna segue sendo título para quem navega
+              // por leitor de tela, com ou sem permissão de renomear.
+              <h2 className="flex min-w-0 flex-1">
+                <NomeDaEtapaNoQuadro key={stage.name} nome={stage.name} onConfirmar={onRenomear} />
+              </h2>
             ) : (
               <h2 className="flex-1 truncate text-sm font-semibold text-text">{stage.name}</h2>
             )}
