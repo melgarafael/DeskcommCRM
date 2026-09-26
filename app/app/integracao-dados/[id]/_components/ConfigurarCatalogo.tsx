@@ -77,6 +77,8 @@ const CRITERIO_PADRAO = [
 ];
 const MOSTRAR_PADRAO = ["ano", "cor", "preco", "quilometragem"];
 const COMPARAR_PADRAO = ["cilindrada", "preco"];
+/** C-090: colunas de casamento do modo "enviar todas que casam" (default: igual a Comparar). */
+const ENVIO_PADRAO = ["cilindrada", "preco"];
 const ORDEM_PADRAO: Record<string, number> = { nome: 1, versao: 1, cilindrada: 2, preco: 3 };
 
 export interface TabelaParaCatalogo {
@@ -102,6 +104,8 @@ interface Linha {
   mostrar: boolean;
   /** O motor usa para ordenar as semelhantes. */
   comparar: boolean;
+  /** C-090: coluna de casamento do modo "enviar todas que casam". */
+  envio: boolean;
   /** Prioridade (1 = mais importante); 1 também compõe o nome. */
   ordem: string;
 }
@@ -152,6 +156,7 @@ function montarLinhas(
         criterio: c?.criterio ?? false,
         mostrar: c?.mostrar ?? false,
         comparar: c?.comparar ?? false,
+        envio: c?.envio ?? false,
         ordem: c?.ordem !== undefined ? String(c.ordem) : "",
       };
     });
@@ -166,6 +171,7 @@ function montarLinhas(
         criterio: c?.criterio ?? false,
         mostrar: c?.mostrar ?? false,
         comparar: c?.comparar ?? false,
+        envio: c?.envio ?? false,
         ordem: c?.ordem !== undefined ? String(c.ordem) : "",
       };
     });
@@ -177,6 +183,7 @@ function montarLinhas(
     criterio: CRITERIO_PADRAO.includes(coluna),
     mostrar: MOSTRAR_PADRAO.includes(coluna),
     comparar: COMPARAR_PADRAO.includes(coluna),
+    envio: ENVIO_PADRAO.includes(coluna),
     ordem: ORDEM_PADRAO[coluna] !== undefined ? String(ORDEM_PADRAO[coluna]) : "",
   }));
 }
@@ -272,6 +279,7 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
             criterio: CRITERIO_PADRAO.includes(col),
             mostrar: MOSTRAR_PADRAO.includes(col),
             comparar: COMPARAR_PADRAO.includes(col),
+            envio: ENVIO_PADRAO.includes(col),
             ordem: ORDEM_PADRAO[col] !== undefined ? String(ORDEM_PADRAO[col]) : "",
           };
         }),
@@ -319,6 +327,7 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
         criterio: l.criterio,
         mostrar: l.mostrar,
         comparar: l.comparar,
+        envio: l.envio,
         ...(l.ordem.trim() !== "" ? { ordem: Number(l.ordem) } : {}),
         compoe_nome: l.ordem.trim() === "1",
         prefixo_nome: prefixo !== "" && l.coluna === prefixo,
@@ -526,18 +535,19 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
         </div>
 
         <div className="flex max-h-[42vh] flex-col gap-2 overflow-y-auto rounded-md border border-border/60 p-3">
-          <div className="grid grid-cols-[3rem_3rem_3.5rem_3.5rem_1fr_3.5rem] items-center gap-2 text-xs font-semibold text-muted-foreground">
+          <div className="grid grid-cols-[3rem_3rem_3.5rem_3.5rem_3.5rem_1fr_3.5rem] items-center gap-2 text-xs font-semibold text-muted-foreground">
             <span title={t("Enviar o valor para a IA (contexto)")}>IA</span>
             <span title={t("A IA pode usar como filtro")}>{t("Critério")}</span>
             <span title={t("Aparece no texto junto da foto")}>{t("Mostrar")}</span>
             <span title={t("O motor ordena as semelhantes por esta coluna")}>{t("Comparar")}</span>
+            <span title={t("Coluna de casamento do modo “Enviar todas que casam”")}>{t("Envio")}</span>
             <span>{t("Coluna")}</span>
             <span title={t("Prioridade (1 = mais importante)")}>{t("Ordem")}</span>
           </div>
           {linhas.map((linha, i) => (
             <div
               key={linha.coluna}
-              className="grid grid-cols-[3rem_3rem_3.5rem_3.5rem_1fr_3.5rem] items-center gap-2"
+              className="grid grid-cols-[3rem_3rem_3.5rem_3.5rem_3.5rem_1fr_3.5rem] items-center gap-2"
             >
               <input
                 type="checkbox"
@@ -566,6 +576,13 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
                 checked={linha.comparar}
                 title={t("Usar esta coluna para ordenar as motos semelhantes")}
                 onChange={(e) => atualizar(i, { comparar: e.target.checked })}
+              />
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={linha.envio}
+                title={t("Coluna de casamento quando o agente está no modo “enviar todas que casam”")}
+                onChange={(e) => atualizar(i, { envio: e.target.checked })}
               />
               <span className="truncate font-mono text-xs" title={linha.coluna}>
                 {linha.coluna}

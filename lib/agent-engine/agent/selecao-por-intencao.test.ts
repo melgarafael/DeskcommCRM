@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { CatalogoMapeamento } from '@/lib/external-db/catalogo';
 
 import type { MotoDoCatalogo } from './fotos-do-catalogo';
-import { querAlternativa, selecionarPorIntencao } from './selecao-por-intencao';
+import { filtrarPorHipoteses, querAlternativa, selecionarPorIntencao } from './selecao-por-intencao';
 
 const MAPEAMENTO: CatalogoMapeamento = {
   connectionId: 'c1',
@@ -338,5 +338,172 @@ describe('selecionarPorIntencao', () => {
       mapeamento: MAPEAMENTO,
     });
     expect(r.motos).toEqual([]);
+  });
+});
+
+describe('filtrarPorHipoteses (C-089)', () => {
+  it('filtra por marca (texto) e cilindrada (faixa)', () => {
+    const passou = filtrarPorHipoteses(
+      CATALOGO,
+      [{ marca: 'HONDA', categoria: 'Street' }],
+      { cilindrada: { min: 100, max: 170 } },
+      30,
+    );
+    // Honda street com cc ≤170: Pop 110 (110), Biz 125 (125), CG 160 (160). CB 300 fora.
+    expect(passou.map((m) => m.nome).sort()).toEqual([
+      'HONDA Biz 125',
+      'HONDA CG 160',
+      'HONDA Pop 110',
+    ]);
+  });
+
+  it('sem hipótese/faixa válida → lista vazia (filtro é ignorado pelo chamador)', () => {
+    expect(filtrarPorHipoteses(CATALOGO, [], {}, 30)).toEqual([]);
+    expect(filtrarPorHipoteses(CATALOGO, [{}, { marca: '' }], {}, 30)).toEqual([]);
+  });
+
+  it('filtro que zera → lista vazia (não inventa resultado)', () => {
+    const passou = filtrarPorHipoteses(CATALOGO, [{ marca: 'DUCATI' }], {}, 30);
+    expect(passou).toEqual([]);
+  });
+});
+
+describe('selecionarPorIntencao com hipóteses/faixas (C-089)', () => {
+  const estoqueGrande: MotoDoCatalogo[] = [
+    ...CATALOGO,
+    moto('BMW S 1000 RR', { categoria: 'Esportivas', cilindrada: '999', marca: 'BMW', preco: '95000' }),
+    moto('SUZUKI V-Strom DL 1000', { categoria: 'Adventure', cilindrada: '1037', marca: 'SUZUKI', preco: '29900' }),
+  ];
+
+  it('"CB 50" (inexistente): hipóteses pequenas NÃO trazem a BMW 1000 nem a V-Strom 1000', () => {
+    const r = selecionarPorIntencao({
+      termoBase: 'quero uma cb 50',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: estoqueGrande,
+      mapeamento: MAPEAMENTO,
+      quantidade: 3,
+      filtrarPorComparacao: true,
+      hipoteses: [{ marca: 'HONDA', categoria: 'Street' }, { cilindrada: '125', marca: 'HONDA' }],
+      faixas: { cilindrada: { min: 100, max: 170 } },
+    });
+    const nomes = r.motos.map((m) => m.nome);
+    expect(nomes).not.toContain('BMW S 1000 RR');
+    expect(nomes).not.toContain('SUZUKI V-Strom DL 1000');
+    expect(r.filtrados).toBeGreaterThan(0);
+  });
+
+  it('filtro que zera cai no ranking (fallback) — nunca vazio', () => {
+    const r = selecionarPorIntencao({
+      termoBase: 'quero uma cb 50',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: CATALOGO,
+      mapeamento: MAPEAMENTO,
+      quantidade: 3,
+      filtrarPorComparacao: true,
+      hipoteses: [{ marca: 'DUCATI' }],
+      faixas: {},
+    });
+    expect(r.filtrados).toBe(0);
+    expect(r.motos.length).toBeGreaterThan(0);
+  });
+
+  it('C-089: filtro que casa 1 moto COMPLETA até N com as mais próximas', () => {
+    // Hipótese específica casa só a Biz 125; o motor deve completar até 3.
+    const r = selecionarPorIntencao({
+      termoBase: 'quero uma biz',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: CATALOGO,
+      mapeamento: MAPEAMENTO,
+      quantidade: 3,
+      filtrarPorComparacao: true,
+      hipoteses: [{ nome: 'Biz 125' }],
+      faixas: {},
+    });
+    expect(r.filtrados).toBe(1);
+    expect(r.motos.map((m) => m.nome)).toContain('HONDA Biz 125');
+    // Completou até N (3), sem repetir.
+    expect(r.motos.length).toBe(3);
+    expect(new Set(r.motos.map((m) => m.nome)).size).toBe(r.motos.length);
+  });
+
+  it('C-089: completar prioriza o MESMO PERFIL (marca/categoria)', () => {
+    // Catálogo com Honda (mesmo perfil) e perfis alheios (scooter/BMW).
+    const mapaPerfil: CatalogoMapeamento = {
+      ...MAPEAMENTO,
+      colunas: [
+        ...(MAPEAMENTO.colunas ?? []),
+        { coluna: 'marca', comparar: true, ordem: 3 },
+      ],
+    };
+    const catalogo: MotoDoCatalogo[] = [
+      moto('HONDA Biz 125', { categoria: 'Street', cilindrada: '125', marca: 'HONDA', preco: '14500' }),
+      moto('HONDA CG 160', { categoria: 'Street', cilindrada: '160', marca: 'HONDA', preco: '12000' }),
+      moto('YAMAHA XMax 250', { categoria: 'Scooter', cilindrada: '250', marca: 'YAMAHA', preco: '31900' }),
+      moto('BMW G 310 R', { categoria: 'Roadster', cilindrada: '313', marca: 'BMW', preco: '22990' }),
+    ];
+    const r = selecionarPorIntencao({
+      termoBase: 'quero uma cb 50',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: catalogo,
+      mapeamento: mapaPerfil,
+      quantidade: 3,
+      filtrarPorComparacao: true,
+      // Perfil: HONDA / Street (a IA entendeu "CB 50" como Honda street pequena).
+      hipoteses: [{ marca: 'HONDA', categoria: 'Street' }],
+      faixas: {},
+    });
+    // A 1ª (filtro) casa o perfil; o completar traz SÓ o mesmo perfil (HONDA) e
+    // NÃO completa com perfil alheio (XMax scooter / BMW roadster).
+    const nomes = r.motos.map((m) => m.nome);
+    expect(nomes[0]).toBe('HONDA Biz 125');
+    expect(nomes).toContain('HONDA CG 160');
+    expect(nomes).not.toContain('YAMAHA XMax 250');
+    expect(nomes).not.toContain('BMW G 310 R');
+  });
+
+  it('C-089: temMaisOpcoes quando sobra moto fora do corte', () => {
+    const r = selecionarPorIntencao({
+      termoBase: 'quero uma honda',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: CATALOGO,
+      mapeamento: MAPEAMENTO,
+      quantidade: 1,
+      filtrarPorComparacao: true,
+      hipoteses: [{ marca: 'HONDA' }],
+      faixas: {},
+    });
+    expect(r.motos.length).toBe(1);
+    expect(r.temMaisOpcoes).toBe(true);
+  });
+
+  it('C-090: enviarTodasQueCasam devolve TODAS as que casam (sem teto, sem paginar)', () => {
+    const r = selecionarPorIntencao({
+      termoBase: 'quero uma honda',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: CATALOGO,
+      mapeamento: MAPEAMENTO,
+      quantidade: 1, // teto baixo, ignorado pelo toggle
+      filtrarPorComparacao: true,
+      hipoteses: [{ marca: 'HONDA' }],
+      faixas: {},
+      enviarTodasQueCasam: true,
+    });
+    // Todas as Honda do CATALOGO, independente do teto 1.
+    expect(r.motos.length).toBeGreaterThan(1);
+    expect(r.motos.every((m) => m.valores?.marca === 'HONDA')).toBe(true);
+    // Já mandou tudo: não há "mais opções".
+    expect(r.temMaisOpcoes).toBe(false);
   });
 });

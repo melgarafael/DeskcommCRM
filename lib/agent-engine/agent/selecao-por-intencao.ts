@@ -26,6 +26,7 @@ import {
 } from '@/lib/external-db/catalogo';
 
 import { normalizarNomeDeMoto, type MotoDoCatalogo } from './fotos-do-catalogo';
+import type { FaixasDoPedido, HipoteseDeMoto } from './extrair-criterios';
 import { numeroDaCelula } from './similaridade';
 import { escolherComReferencia } from './similaridade-referencia';
 
@@ -75,12 +76,169 @@ export interface EntradaSelecaoPorIntencao {
    * decide é o chamador; aqui só se obedece.
    */
   todasSeEspecificacao?: boolean;
+  /**
+   * Hipóteses devolvidas pela IA (configurações de motos parecidas). Viram
+   * FILTRO quando `filtrarPorComparacao` estiver ligado.
+   */
+  hipoteses?: readonly HipoteseDeMoto[];
+  /**
+   * Faixas/intervalos devolvidos pela IA (cc/preço/…). Viram FILTRO numérico.
+   */
+  faixas?: FaixasDoPedido;
+  /**
+   * Ligar o FILTRO por hipóteses/faixas (decisão do dono, 2026-09-26). Só as
+   * colunas com valor/faxa filtram; colunas sem dado do cliente não filtram.
+   * Se o filtro zerar, cai no comportamento de ranking (fallback garantido).
+   */
+  filtrarPorComparacao?: boolean;
+  /** Tolerância (%) para casar número da hipótese × moto (cc/preço). Default 30. */
+  toleranciaPct?: number;
+  /**
+   * C-090: interruptor "Enviar todas as motos que casam". Ligado = ignora o teto
+   * N, não completa e não pagina — devolve TODAS as que casaram o filtro.
+   */
+  enviarTodasQueCasam?: boolean;
 }
 
 export interface ResultadoSelecaoPorIntencao {
   motos: MotoDoCatalogo[];
   preferencias: Record<string, 'menor' | 'maior'>;
   criterios: Record<string, string | number>;
+  /** Quantos candidatos o filtro por comparação manteve (0 = filtro ignorado). */
+  filtrados: number;
+  /** Sobrou moto parecida fora do corte? (o turno pergunta "quer ver mais?"). */
+  temMaisOpcoes: boolean;
+  /** Perfil interpretado pela IA (marcas/categorias) — para a fila de opções. */
+  perfil: { marcas: string[]; categorias: string[] };
+}
+
+/** Perfil interpretado pela IA: marcas e categorias das hipóteses + faixas. */
+export interface PerfilDaIA {
+  marcas: Set<string>;
+  categorias: Set<string>;
+}
+
+/** Extrai o perfil (marcas/categorias) das hipóteses e faixas da IA. */
+export function perfilDaIA(
+  hipoteses: readonly HipoteseDeMoto[],
+  faixas: FaixasDoPedido,
+): PerfilDaIA {
+  const marcas = new Set<string>();
+  const categorias = new Set<string>();
+  for (const h of hipoteses) {
+    for (const campo of ['marca'] as const) {
+      const v = h[campo];
+      if (typeof v === 'string' && v.trim() !== '') marcas.add(normalizarNomeDeMoto(v));
+    }
+    for (const campo of ['categoria', 'tipo'] as const) {
+      const v = h[campo];
+      if (typeof v === 'string' && v.trim() !== '') categorias.add(normalizarNomeDeMoto(v));
+    }
+  }
+  // Faixas de marca/categoria (quando a IA devolve lista, ex.: {categoria:["Naked"]}).
+  const faixaMarca = faixas.marca;
+  if (Array.isArray(faixaMarca)) {
+    for (const v of faixaMarca) if (typeof v === 'string' && v.trim() !== '') marcas.add(normalizarNomeDeMoto(v));
+  }
+  const faixaCat = faixas.categoria;
+  if (Array.isArray(faixaCat)) {
+    for (const v of faixaCat) if (typeof v === 'string' && v.trim() !== '') categorias.add(normalizarNomeDeMoto(v));
+  }
+  return { marcas, categorias };
+}
+
+/**
+ * A moto casa o perfil da IA? Marca igual OU categoria contida (o catálogo traz
+ * "Street, Naked" e a IA pode devolver "Naked"). Perfil vazio ⇒ true (sem
+ * restrição — não exclui nada).
+ */
+export function casaPerfil(moto: MotoDoCatalogo, perfil: PerfilDaIA): boolean {
+  if (perfil.marcas.size === 0 && perfil.categorias.size === 0) return true;
+  const marca = normalizarNomeDeMoto(moto.valores?.marca ?? '');
+  if (marca !== '' && perfil.marcas.has(marca)) return true;
+  const categoria = normalizarNomeDeMoto(moto.valores?.categoria ?? moto.valores?.tipo ?? '');
+  if (categoria !== '') {
+    for (const c of perfil.categorias) {
+      if (categoria.includes(c) || c.includes(categoria)) return true;
+    }
+  }
+  return false;
+}
+
+/** A célula da moto numérica? (usa o mesmo critério do ranking). */
+function valorNumerico(valor: string | undefined): number | null {
+  if (valor === undefined || valor === '') return null;
+  return numeroDaCelula(valor);
+}
+
+/**
+ * A moto casa UMA hipótese? Casa quando TODAS as colunas preenchidas na hipótese
+ * batem: número → dentro de ±tolerância; texto → contém o token (normalizado).
+ * Hipótese sem coluna alguma nunca casa (evita "filtro vazio").
+ */
+function casaHipotese(
+  moto: MotoDoCatalogo,
+  hipotese: HipoteseDeMoto,
+  toleranciaPct: number,
+): boolean {
+  const entradas = Object.entries(hipotese).filter(
+    ([, v]) => typeof v === 'string' && v.trim() !== '',
+  );
+  if (entradas.length === 0) return false;
+  for (const [coluna, alvo] of entradas) {
+    const celula = moto.valores?.[coluna];
+    if (celula === undefined || celula === '') return false;
+    const alvoNum = valorNumerico(alvo as string);
+    const celulaNum = valorNumerico(celula);
+    if (alvoNum !== null && celulaNum !== null) {
+      const margem = Math.max(1, (Math.abs(alvoNum) * toleranciaPct) / 100);
+      if (Math.abs(celulaNum - alvoNum) > margem) return false;
+    } else if (!normalizarNomeDeMoto(celula).includes(normalizarNomeDeMoto(alvo as string))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** A moto casa TODAS as faixas presentes (números fora do intervalo reprovam). */
+function casaFaixas(moto: MotoDoCatalogo, faixas: FaixasDoPedido): boolean {
+  let avaliou = false;
+  for (const [coluna, faixa] of Object.entries(faixas)) {
+    if (typeof faixa !== 'object' || faixa === null) continue;
+    const f = faixa as { min?: unknown; max?: unknown };
+    const celula = valorNumerico(moto.valores?.[coluna]);
+    if (celula === null) continue; // coluna não numérica/ausente não reprova
+    if (typeof f.min === 'number' && celula < f.min) return false;
+    if (typeof f.max === 'number' && celula > f.max) return false;
+    avaliou = true;
+  }
+  return avaliou;
+}
+
+/**
+ * FILTRA os candidatos por hipóteses/faixas devolvidas pela IA (decisão do dono,
+ * 2026-09-26). Só as colunas COM valor/faxa filtram. Uma moto entra se casar
+ * QUALQUER hipótese E todas as faixas. Nunca lança. Lista vazia = filtro ignorado
+ * (o chamador cai no ranking) — nunca zera a resposta.
+ */
+export function filtrarPorHipoteses(
+  candidatos: readonly MotoDoCatalogo[],
+  hipoteses: readonly HipoteseDeMoto[],
+  faixas: FaixasDoPedido,
+  toleranciaPct: number,
+): MotoDoCatalogo[] {
+  const temHipoteses = hipoteses.some(
+    (h) => Object.values(h).some((v) => typeof v === 'string' && v.trim() !== ''),
+  );
+  const temFaixas = Object.keys(faixas).length > 0;
+  if (!temHipoteses && !temFaixas) return [];
+  const saida = candidatos.filter((moto) => {
+    const passaFaixas = temFaixas ? casaFaixas(moto, faixas) : true;
+    if (!passaFaixas) return false;
+    if (!temHipoteses) return true;
+    return hipoteses.some((h) => casaHipotese(moto, h, toleranciaPct));
+  });
+  return saida;
 }
 
 /**
@@ -151,6 +309,31 @@ export function selecionarPorIntencao(
     }
   }
 
+  // FILTRO por hipóteses/faixas da IA (só no PEDIDO; no modo alternativa a âncora
+  // é a moto atual). As motos que passam ganham PRIORIDADE; se derem menos que N,
+  // o motor COMPLETA com as mais próximas (nunca responde vazio, nunca manda o
+  // catálogo inteiro). É a regra do dono: modelo inexistente → N alternativas.
+  let filtrados = 0;
+  let preferidos: Set<MotoDoCatalogo> | null = null;
+  const perfil = perfilDaIA(input.hipoteses ?? [], input.faixas ?? {});
+  if (
+    input.filtrarPorComparacao === true &&
+    !alternativo &&
+    ((input.hipoteses?.length ?? 0) > 0 || Object.keys(input.faixas ?? {}).length > 0)
+  ) {
+    const passou = filtrarPorHipoteses(
+      candidatos,
+      input.hipoteses ?? [],
+      input.faixas ?? {},
+      // Tolerância de cilindrada/preço para casar hipótese × moto real.
+      input.toleranciaPct ?? 30,
+    );
+    if (passou.length > 0) {
+      preferidos = new Set(passou);
+      filtrados = passou.length;
+    }
+  }
+
   const extras = Object.values(criterios)
     .map(String)
     .filter((s) => s.trim() !== '')
@@ -160,16 +343,20 @@ export function selecionarPorIntencao(
   const criteriosColunas = colunasComparacao.filter((c) => preferencias[c] === undefined);
 
   // Teto: `todasSeEspecificacao` (modelo existe) OU `aplicarLimite: false`
-  // (toggle B desligado) abrem o teto e devolvem TODAS as candidatas. O teto é o
-  // próprio catálogo — `escolherComReferencia` recebe o tamanho (nunca
-  // "quantidade livre"). A fonte do número é a config do AGENTE, passada pelo
-  // chamador; o default cai no `similaresQtd` do mapeamento (retrocompatível).
-  const semTeto = input.todasSeEspecificacao === true || input.aplicarLimite === false;
+  // (toggle B desligado) abrem o teto e devolvem TODAS as candidatas. C-090: o
+  // interruptor "enviar todas que casam" também abre o teto — manda tudo que casou.
+  const semTeto =
+    input.todasSeEspecificacao === true ||
+    input.aplicarLimite === false ||
+    (input.enviarTodasQueCasam === true && preferidos !== null);
   const quantidade = semTeto
     ? Math.max(candidatos.length, 1)
     : Math.max(1, input.quantidade ?? input.mapeamento.similaresQtd ?? 3);
-  const motos = escolherComReferencia(termoFinal, candidatos, {
-    quantidade,
+  const basePreferida =
+    preferidos !== null ? candidatos.filter((m) => preferidos!.has(m)) : candidatos;
+  const quantidadeBase = semTeto ? Math.max(basePreferida.length, 1) : quantidade;
+  const motos = escolherComReferencia(termoFinal, basePreferida, {
+    quantidade: quantidadeBase,
     criteriosColunas,
     // No modo ALTERNATIVA a reserva por `moto_similar` NÃO se aplica: o cliente
     // não está pedindo uma moto pelo nome, e casar o termo (que inclui a objeção
@@ -179,7 +366,39 @@ export function selecionarPorIntencao(
     colunaSimilares: alternativo ? null : colunaDeSimilares(input.mapeamento),
     ...(Object.keys(preferencias).length > 0 ? { preferencias } : {}),
   });
-  return { motos, preferencias, criterios };
+  // COMPLETA até N SOMENTE com o MESMO PERFIL (decisão do dono, 2026-09-26):
+  // mesma marca OU categoria das hipóteses/faixas. NÃO completa com perfil alheio
+  // (era o defeito: "CB 250" trazia XMax/scooter/BMW). Se casou menos que N e não
+  // há mais motos do perfil, o envio fica com as que casam — e o turno PERGUNTA
+  // se o cliente quer ver as demais (temMaisOpcoes). C-090: o modo "enviar todas
+  // que casam" NÃO completa (já mandou tudo que casou).
+  if (preferidos !== null && !semTeto && motos.length < quantidade) {
+    const jaTem = new Set(motos);
+    const complemento = candidatos
+      .filter((m) => !jaTem.has(m))
+      .filter((m) => casaPerfil(m, perfil));
+    if (complemento.length > 0) {
+      const resto = escolherComReferencia(termoFinal, complemento, {
+        quantidade: quantidade - motos.length,
+        criteriosColunas,
+        colunaSimilares: colunaDeSimilares(input.mapeamento),
+        ...(Object.keys(preferencias).length > 0 ? { preferencias } : {}),
+      });
+      motos.push(...resto);
+    }
+  }
+  // Sobrou moto parecida fora do corte? O turno usa isto para perguntar ao cliente
+  // se quer ver mais opções (regra do dono, 2026-09-26).
+  const temMaisOpcoes =
+    preferidos !== null && !semTeto && candidatos.length > motos.length;
+  return {
+    motos,
+    preferencias,
+    criterios,
+    filtrados,
+    temMaisOpcoes,
+    perfil: { marcas: [...perfil.marcas], categorias: [...perfil.categorias] },
+  };
 }
 
 /**
@@ -196,6 +415,20 @@ export function querAlternativa(mensagem: string): boolean {
   const n = normalizarNomeDeMoto(mensagem);
   if (n === '') return false;
   return /\b(caro|barat\w*|desconto|preco|mais nova|mais novo|outra|outro|mud(ei|ar|ou|ando)|diferente|troc\w*|mais opcoes|outras motos|ver mais|alternativa|parecid\w*|semelhant\w*)\b/.test(
+    n,
+  );
+}
+
+/**
+ * C-089: o cliente pediu para ver MAIS opções do que já foi oferecido?
+ * ("quero ver mais", "tem mais opções?", "mostra as outras"). Diferente de
+ * `querAlternativa` (que é "quero algo diferente"): aqui o motor CONTINUA a
+ * fila de opções pendentes do pedido atual, sem repetir e sem reclassificar.
+ */
+export function querMaisOpcoes(mensagem: string): boolean {
+  const n = normalizarNomeDeMoto(mensagem);
+  if (n === '') return false;
+  return /\b(mais opcoes|mais motos|outras opcoes|outras motos|ver mais|mostra mais|tem mais|quais outras|as demais|as outras|mais alternativas|mais alguma|mais alguma opcao|restantes)\b/.test(
     n,
   );
 }

@@ -194,6 +194,24 @@ export function CatalogoDoAgente({ agentId, inicial, disabled, aoSalvar }: Props
             "Desligue o limite para mostrar todas as alternativas candidatas. O limite não afeta um modelo que existe quando a opção acima está ligada.",
           )}
         </p>
+        <div className="flex items-center gap-2 border-t border-border/60 pt-3">
+          <Switch
+            id="cat-enviar-todas"
+            checked={cfg.enviar_todas_que_casam}
+            onCheckedChange={(v) => setCfg((c) => ({ ...c, enviar_todas_que_casam: v }))}
+            disabled={disabled}
+          />
+          <Label htmlFor="cat-enviar-todas">
+            {t(
+              "Enviar TODAS as motos que casam o critério do pedido (ignora o limite e não pergunta “quer mais?”)",
+            )}
+          </Label>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Ligado: o motor envia todas as motos que casarem as colunas marcadas como “Critério de envio” no catálogo. Desligado: envia até o limite, completa com o mesmo perfil e pergunta se o cliente quer mais opções.",
+          )}
+        </p>
       </div>
 
       <div className="flex justify-end">

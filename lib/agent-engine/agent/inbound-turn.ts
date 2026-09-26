@@ -170,6 +170,7 @@ import {
   motoEscolhidaPeloCliente,
   salvarCatalogoDaConversa,
   type CatalogoDaConversa,
+  type FilaDeOpcoes,
 } from './catalogo-da-conversa';
 import { renderBlocoDeEstado } from './estado-do-atendimento';
 import {
@@ -181,12 +182,14 @@ import {
   type FaseObjecao,
 } from './objecao-de-valor';
 import { extrairCriterios } from './extrair-criterios';
+import type { FaixasDoPedido, HipoteseDeMoto } from './extrair-criterios';
 import { carregarCatalogoDoBanco, mesclarMotos } from './catalogo-do-banco';
-import { querAlternativa, selecionarPorIntencao } from './selecao-por-intencao';
+import { casaPerfil, querAlternativa, querMaisOpcoes, selecionarPorIntencao } from './selecao-por-intencao';
 import {
   carregarCatalogoMapeamento,
   colunaDeSimilares,
   colunasDoCatalogo,
+  colunasDeEnvio,
   criteriosDaIA,
   legendaParaExibicao,
   renderBlocoCatalogo,
@@ -2633,11 +2636,22 @@ async function executarTurnoDoAgente(
   // moto de REFERÊNCIA quando ele ofereceu UMA só (pedido específico) — mais
   // robusto do que depender de o modelo ter consultado uma só.
   let motosOferecidasNesteTurno: MotoDoCatalogo[] = [];
+  // C-089: o filtro casou mais motos do que as oferecidas? O bloco do turno
+  // instrui a IA a PERGUNTAR se o cliente quer ver mais opções (regra do dono).
+  let temMaisOpcoesNesteTurno = false;
+  // C-089: fila de opções pendentes a persistir no catálogo da conversa.
+  let opcoesParaSalvar: FilaDeOpcoes | null | undefined = undefined;
+  // Motos apresentadas que precisam ser persistidas (consumo da fila).
+  const motosApresentadasParaSalvar: MotoDoCatalogo[] = [];
   // Critérios que a IA mandou na chamada da ferramenta (ex.: {marca:"Yamaha",
   // categoria:"Naked"}). O motor GUARDA e usa para ordenar as semelhantes —
   // vale para qualquer coluna de critério. É o 2º passo feito pelo motor, sem
   // depender de a IA chamar a ferramenta de novo.
   const criteriosDoTurno: Record<string, string | number> = {};
+  // Hipóteses + faixas devolvidas pela IA (formato novo, 2026-09-26): viram FILTRO
+  // sobre o catálogo. Vazias ⇒ comportamento antigo (só ranking).
+  let hipotesesDoTurno: HipoteseDeMoto[] = [];
+  let faixasDoTurno: FaixasDoPedido = {};
   // Intenção classificada pela pergunta dirigida: 'pedido' | 'alternativa' | null.
   let intencaoDoTurno: 'pedido' | 'alternativa' | null = null;
   // TRAVA anti-loop: a pergunta dirigida à IA roda NO MÁXIMO UMA VEZ por turno.
@@ -2666,7 +2680,14 @@ async function executarTurnoDoAgente(
   // lê nem grava (não é uma conversa real).
   const catalogoDaConversa: CatalogoDaConversa =
     preview !== undefined
-      ? { motos: [], detalhadas: [], escolhida: null, referencia: null, objecao: null }
+      ? {
+          motos: [],
+          detalhadas: [],
+          escolhida: null,
+          referencia: null,
+          objecao: null,
+          opcoes: null,
+        }
       : await carregarCatalogoDaConversa(pool, tenantId, input.conversationId);
   // C-071: OBJEÇÃO DE VALOR — a fase do turno sai da mensagem + do estado
   // guardado (`persuadir` na 1ª objeção; `checar` quando ela persiste). Serve
@@ -3543,6 +3564,29 @@ async function executarTurnoDoAgente(
           ) {
             const termoBase = mensagemDoJob && mensagemDoJob.trim() !== '' ? mensagemDoJob : body;
             const msgCliente = mensagemDoJob ?? body;
+            // C-089: o cliente pediu "mais opções"? Consome a FILA pendente do
+            // pedido atual (as que casaram o filtro mas ficaram fora do teto N).
+            // Não repete; se a fila acabou, segue o fluxo normal (ranking).
+            if (
+              querMaisOpcoes(msgCliente) &&
+              catalogoDaConversa.opcoes !== null &&
+              catalogoDaConversa.opcoes.pendentes.length > 0
+            ) {
+              const fila = catalogoDaConversa.opcoes;
+              const cfg = agentConfig?.catalogConfig;
+              const tetoQtd = cfg?.usar_limite_quantidade === false ? fila.pendentes.length : (cfg?.similares_qtd ?? 3);
+              const lote = fila.pendentes.slice(0, Math.max(1, tetoQtd));
+              const restantes = fila.pendentes.slice(lote.length);
+              opcoesParaSalvar = { ...fila, pendentes: restantes };
+              motosOferecidasNesteTurno = [...lote];
+              temMaisOpcoesNesteTurno = restantes.length > 0;
+              for (const moto of lote) {
+                if (!catalogoDoTurno.some((m) => m.nome === moto.nome)) catalogoDoTurno.push(moto);
+              }
+              // Persiste o que saiu (para a escolha do próximo turno casar).
+              motosApresentadasParaSalvar.push(...lote);
+              return planoDeFotosDasMotos(lote, 1, legendaConfig);
+            }
             // MECANISMO (pergunta dirigida): roda quando o pedido não casou nenhuma
             // moto do catálogo OU quando há moto atual E a mensagem sugere querer
             // algo diferente. O pré-filtro `querAlternativa` evita consultar o
@@ -3558,9 +3602,19 @@ async function executarTurnoDoAgente(
                 (motoAtual !== null && querAlternativa(msgCliente)));
             // A ferramenta de semelhantes já decidiu — não precisa classificar.
             if (!ofereceuSimilaresNesteTurno && precisaClassificar && !extraiuCriteriosNesteTurno) {
-              const colunasCriterio = criteriosDaIA(mapeamento);
+              // C-090: com o interruptor "enviar todas que casam" ligado, o
+              // casamento usa as colunas "Critério de envio"; senão, as de
+              // "Critério da IA" (comportamento atual).
+              const colunasCriterio =
+                agentConfig?.catalogConfig?.enviar_todas_que_casam === true
+                  ? colunasDeEnvio(mapeamento)
+                  : criteriosDaIA(mapeamento);
               if (colunasCriterio.length > 0) {
                 extraiuCriteriosNesteTurno = true;
+                // O ESTOQUE enviado à IA: o catálogo do turno e/ou o guardado da
+                // conversa — a IA escolhe entre MOTOS REAIS (decisão do dono,
+                // 2026-09-26). Nunca consultamos a internet.
+                const estoqueParaIA = mesclarMotos(catalogoDoTurno, catalogoDaConversa.motos);
                 const extraidos = await extrairCriterios(
                   pool,
                   deps.llmCfg,
@@ -3570,31 +3624,37 @@ async function executarTurnoDoAgente(
                     jobId: job?.id ?? null,
                     model: agentConfig?.model ?? '',
                     provider: agentConfig?.provider ?? null,
-                    // A moto atual entra como contexto para o classificador saber
-                    // do que o cliente está falando ("Achei caro" → alternativa).
+                    // A moto atual entra como contexto SÓ no modo alternativa (para
+                    // o classificador saber que o cliente quer algo DIFERENTE dela).
+                    // No PEDIDO, ela NÃO entra: era a causa de a IA copiar o nome
+                    // errado (ex.: "CBX 250" no pedido "CB 250") — medido ao vivo.
                     mensagem:
-                      motoAtual !== null
+                      motoAtual !== null && intencaoDoTurno === 'alternativa'
                         ? `${msgCliente}\n(moto atual da conversa: ${motoAtual.nome})`
                         : msgCliente,
                     colunas: colunasCriterio,
                     // Valores possíveis vêm do catálogo do turno e, quando o modelo
                     // não consultou, do catálogo guardado da conversa — sem isso a
                     // pergunta dirigida ficaria sem os valores de cada coluna.
-                    valores: valoresDasColunas(
-                      mesclarMotos(catalogoDoTurno, catalogoDaConversa.motos),
-                      colunasCriterio,
-                    ),
+                    valores: valoresDasColunas(estoqueParaIA, colunasCriterio),
+                    // As motos reais do estoque vão no prompt: a IA diz quais têm
+                    // configuração parecida com o que o cliente quis.
+                    estoque: estoqueParaIA,
                   },
                   { log: runLog },
                 );
                 runLog.info('catalog: critérios extraídos pela IA (pergunta dirigida)', {
                   intencao: extraidos.intencao,
                   criterios: extraidos.criterios,
+                  hipoteses: extraidos.hipoteses.length,
+                  faixas: Object.keys(extraidos.faixas),
                 });
                 intencaoDoTurno = extraidos.intencao;
                 for (const [coluna, valor] of Object.entries(extraidos.criterios)) {
                   criteriosDoTurno[coluna] = valor;
                 }
+                hipotesesDoTurno = extraidos.hipoteses;
+                faixasDoTurno = extraidos.faixas;
               }
             }
             // Candidatos: o catálogo consultado pelo modelo neste turno. No modo
@@ -3620,14 +3680,15 @@ async function executarTurnoDoAgente(
             // Regra do dono (2026-09-25): MODELO que EXISTE → todas as unidades
             // que casam (toggle A `especificacao_mostra_todas`); modelo que NÃO
             // existe → N alternativas (toggle B `usar_limite_quantidade`).
-            // "Existe" = a consulta do MODELO trouxe unidades para o pedido e o
-            // turno não é objeção nem foi classificado como alternativa — antes
-            // o teste exigia >1 nome completo citado no TEXTO e quase nunca
-            // disparava (medido ao vivo: mostrava só 3 com mais em estoque).
+            // "Existe" (refeito 2026-09-26): o pedido casou um subconjunto REAL de
+            // motos, não basta o catálogo do turno ter linhas — sem isto, uma
+            // consulta ampla (ou o fallback sem filtro) abria "todas" e o motor
+            // devolvia o catálogo inteiro (medido: "CB 250" → 23 motos).
             const pedidoDeModeloExistente =
               catalogoDoTurno.length > 0 &&
               intencaoDoTurno !== 'alternativa' &&
-              !ehObjecaoMsg;
+              !ehObjecaoMsg &&
+              motosCitadasNoTexto(msgCliente, catalogoDoTurno).length > 0;
             // Fonte ÚNICA da quantidade: a config do AGENTE (`ai_agents.config.
             // catalog`), não mais o `catalog_mappings`.
             const cfgCatalogo = agentConfig?.catalogConfig;
@@ -3642,6 +3703,16 @@ async function executarTurnoDoAgente(
               aplicarLimite: cfgCatalogo?.usar_limite_quantidade !== false,
               todasSeEspecificacao:
                 pedidoDeModeloExistente && cfgCatalogo?.especificacao_mostra_todas !== false,
+              // FILTRO por hipóteses/faixas da IA (decisão do dono, 2026-09-26):
+              // só quando o pedido NÃO casou um modelo existente — aí valem as
+              // alternativas parecidas (N), nunca o catálogo inteiro.
+              hipoteses: hipotesesDoTurno,
+              faixas: faixasDoTurno,
+              filtrarPorComparacao: !pedidoDeModeloExistente && intencaoDoTurno !== 'alternativa',
+              toleranciaPct: cfgCatalogo?.tolerancia_preco_pct ?? 30,
+              // C-090: interruptor "enviar todas as motos que casam" (config do
+              // agente). Ligado → manda tudo que casou, sem teto/paginação.
+              enviarTodasQueCasam: cfgCatalogo?.enviar_todas_que_casam === true,
             });
             if (selecao.motos.length > 0) {
               // Persiste as motos oferecidas (inclusive as buscadas no banco) no
@@ -3651,13 +3722,45 @@ async function executarTurnoDoAgente(
                 if (!catalogoDoTurno.some((m) => m.nome === moto.nome)) catalogoDoTurno.push(moto);
               }
               motosOferecidasNesteTurno = [...selecao.motos];
-              return planoDeFotosDasMotos(selecao.motos, undefined, legendaConfig);
+              temMaisOpcoesNesteTurno = selecao.temMaisOpcoes;
+              // C-089: guarda a FILA das que casaram mas ficaram fora do teto N,
+              // para o próximo "quero ver mais opções" consumir sem repetir. O
+              // MESMO PERFIL (marca/categoria) vai primeiro; depois as demais.
+              if (selecao.temMaisOpcoes) {
+                const jaEnviadas = new Set(selecao.motos.map((m) => m.nome));
+                const perfil = selecao.perfil;
+                const pendentesBrutos = candidatos.filter((m) => !jaEnviadas.has(m.nome));
+                const perfilSet = {
+                  marcas: new Set(perfil.marcas),
+                  categorias: new Set(perfil.categorias),
+                };
+                const mesmoPerfil = pendentesBrutos.filter((m) =>
+                  casaPerfil(m, perfilSet),
+                );
+                const demais = pendentesBrutos.filter((m) => !mesmoPerfil.includes(m));
+                opcoesParaSalvar = {
+                  marcas: perfil.marcas,
+                  categorias: perfil.categorias,
+                  pendentes: [...mesmoPerfil, ...demais],
+                };
+              } else {
+                opcoesParaSalvar = null;
+              }
+              // Apresentação de SEMELHANTES: 1 foto por moto. Só quando o cliente
+              // pediu um MODELO que EXISTE (e veio 1 unidade) faz sentido mandar
+              // todas as fotos dela — como na escolha. Sem isto, um filtro que
+              // casava 1 só moto mandava as 8 fotos dela com 7 bolhas sem legenda.
+              return planoDeFotosDasMotos(
+                selecao.motos,
+                pedidoDeModeloExistente ? undefined : 1,
+                legendaConfig,
+              );
             }
             // Fallback (comportamento anterior): pedido novo que casa por nome.
             const doPedido = motosCitadasNoTexto(mensagemDoJob ?? '', catalogoDoTurno);
             if (doPedido.length > 0) {
               motosOferecidasNesteTurno = doPedido;
-              return planoDeFotosDasMotos(doPedido, undefined, legendaConfig);
+              return planoDeFotosDasMotos(doPedido, 1, legendaConfig);
             }
           } else if (catalogoDoTurno.length > 0) {
             const doPedido = motosCitadasNoTexto(mensagemDoJob ?? '', catalogoDoTurno);
@@ -3725,20 +3828,23 @@ async function executarTurnoDoAgente(
         if (
           preview === undefined &&
           (catalogoDoTurno.length > 0 ||
+            motosApresentadasParaSalvar.length > 0 ||
             motoDetalhadaNome !== null ||
             escolhaParaSalvar !== undefined ||
-            objecaoParaSalvar !== undefined)
+            objecaoParaSalvar !== undefined ||
+            opcoesParaSalvar !== undefined)
         ) {
           void salvarCatalogoDaConversa(
             pool,
             tenantId,
             input.conversationId,
             catalogoDaConversa,
-            catalogoDoTurno,
+            [...motosApresentadasParaSalvar, ...catalogoDoTurno],
             motoDetalhadaNome,
             escolhaParaSalvar,
             referenciaParaSalvar,
             objecaoParaSalvar,
+            opcoesParaSalvar,
           );
         }
         const fotos = fotosDeclaradas;
@@ -3869,6 +3975,16 @@ async function executarTurnoDoAgente(
             if (cfg?.pergunta_separada === false) {
               introducao = [introducao, final].filter((s) => s.trim() !== '').join('\n\n');
               final = '';
+            }
+            // C-089: o motor GARANTE a pergunta de mais opções (o modelo lite a
+            // ignora com frequência). Só quando o filtro deixou motos parecidas de
+            // fora (temMaisOpcoesNesteTurno). Determinístico, não depende do LLM.
+            if (temMaisOpcoesNesteTurno) {
+              const perguntaMais = 'Quer que eu te mostre mais opções?';
+              const jaPergunta = /mais op[çc]/i.test(final) || /mais op[çc]/i.test(introducao);
+              if (!jaPergunta) {
+                final = final.trim() === '' ? perguntaMais : `${final}\n\n${perguntaMais}`;
+              }
             }
 
             if (agrupar) {
@@ -4909,6 +5025,11 @@ async function executarTurnoDoAgente(
       faseObjecaoTurno !== null ? renderBlocoObjecao(faseObjecaoTurno) : '',
       stageHintBlock,
       splitHint,
+      // C-089: o filtro casou mais motos do que as oferecidas — o cliente deve ser
+      // convidado a ver as demais. Determinístico (motor), por-lead.
+      temMaisOpcoesNesteTurno
+        ? '## Mais opções disponíveis\nSe apresentou algumas motos parecidas, mas AINDA HÁ outras que combinam com o pedido. Feche o turno perguntando, de forma natural, se o cliente quer ver mais opções (não liste os nomes).'
+        : '',
       caseAwaitingLeadBlock,
       preview?.feedback ? '## Revisão humana deste atendimento\n' + preview.feedback : '',
     ].filter((b) => b !== '');

@@ -31,6 +31,8 @@ export interface ColunaConfigDTO {
   mostrar: boolean;
   /** O motor usa para ordenar as semelhantes. */
   comparar: boolean;
+  /** C-090: coluna de casamento do modo "enviar todas que casam". */
+  envio?: boolean;
   /** Prioridade (1 = mais importante). */
   ordem?: number;
   /** Entra no nome exibido (ex.: nome + versão). */

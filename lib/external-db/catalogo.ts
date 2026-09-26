@@ -227,6 +227,12 @@ export interface ColunaConfig {
   mostrar?: boolean;
   /** O motor usa para ORDENAR as semelhantes. */
   comparar?: boolean;
+  /**
+   * C-090: coluna de CASAMENTO do modo "Enviar todas que casam" (toggle do
+   * agente). Define o que conta como "moto que casa o pedido" quando o
+   * interruptor está ligado. Independente de `comparar`/`criterio`.
+   */
+  envio?: boolean;
   /** Prioridade (1 = mais importante). */
   ordem?: number;
   /** Entra no nome exibido/casável (ex.: `nome` + `versao`). */
@@ -250,6 +256,7 @@ export function colunasConfiguradas(bruto: unknown): ColunaConfig[] {
       criterio: o.criterio === true,
       mostrar: o.mostrar === true,
       comparar: o.comparar === true,
+      envio: o.envio === true,
       ordem:
         typeof o.ordem === 'number' && Number.isFinite(o.ordem) ? o.ordem : undefined,
       compoeNome: o.compoe_nome === true,
@@ -267,6 +274,7 @@ export function serializarColunasConfig(config: readonly ColunaConfig[]): unknow
     criterio: c.criterio === true,
     mostrar: c.mostrar === true,
     comparar: c.comparar === true,
+    ...(c.envio !== undefined ? { envio: c.envio === true } : {}),
     ...(c.ordem !== undefined ? { ordem: c.ordem } : {}),
     compoe_nome: c.compoeNome === true,
     prefixo_nome: c.prefixoNome === true,
@@ -342,12 +350,23 @@ export function criteriosDaIA(m: CatalogoMapeamento): string[] {
 }
 
 /** Colunas marcadas para COMPARAR, na ordem de prioridade (menor `ordem` 1º). */
-export function colunasDeComparacao(m: CatalogoMapeamento): string[] {
-  return configEfetiva(m)
+export function colunasDeComparacao(m: CatalogoMapeamento): string[] {  return configEfetiva(m)
     .filter((c) => c.comparar === true)
     .map((c, i) => ({ c, i }))
     .sort((a, b) => (a.c.ordem ?? 99) - (b.c.ordem ?? 99) || a.i - b.i)
     .map((x) => x.c.coluna);
+}
+
+/**
+ * C-090: colunas marcadas como "Critério de envio" (casamento do modo "enviar
+ * todas que casam"). Sem nenhuma marcada, cai nas colunas de "Critério da IA"
+ * (retrocompatível). Remove a coluna de referência (só o motor usa).
+ */
+export function colunasDeEnvio(m: CatalogoMapeamento): string[] {
+  const config = configEfetiva(m);
+  const marcadas = config.filter((c) => c.envio === true).map((c) => c.coluna);
+  const base = marcadas.length > 0 ? marcadas : criteriosDaIA(m);
+  return semReferencia(base, m);
 }
 
 /** A coluna de REFERÊNCIA de similares (ex.: `moto_similar`), ou null. */

@@ -120,6 +120,8 @@ export const salvarCatalogoSchema = z
             criterio: z.boolean().default(false),
             mostrar: z.boolean().default(false),
             comparar: z.boolean().default(false),
+            // C-090: coluna de casamento do modo "enviar todas que casam".
+            envio: z.boolean().default(false),
             ordem: z.number().int().min(1).max(9).optional(),
             compoe_nome: z.boolean().default(false),
           })

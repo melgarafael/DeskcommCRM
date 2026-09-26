@@ -63,6 +63,22 @@ export interface CatalogoDaConversa {
    * `null` quando não há objeção em andamento.
    */
   objecao: EstadoObjecao | null;
+  /**
+   * C-089: fila de OPÇÕES do pedido atual — as motos parecidas que casaram o
+   * filtro mas ficaram FORA do envio (por causa do teto N). O próximo "quero ver
+   * mais opções" consome daqui, sem repetir e mantendo o perfil. `null` quando
+   * não há fila.
+   */
+  opcoes: FilaDeOpcoes | null;
+}
+
+/** Fila de opções pendentes do pedido atual (C-089). */
+export interface FilaDeOpcoes {
+  /** Perfil interpretado pela IA (marcas/categorias) — para priorizar o mesmo. */
+  marcas: string[];
+  categorias: string[];
+  /** Motos que casaram mas não foram enviadas, na ordem de preferência. */
+  pendentes: MotoDoCatalogo[];
 }
 
 const VAZIO: CatalogoDaConversa = {
@@ -71,7 +87,19 @@ const VAZIO: CatalogoDaConversa = {
   escolhida: null,
   referencia: null,
   objecao: null,
+  opcoes: null,
 };
+
+function ehFilaDeOpcoes(valor: unknown): valor is FilaDeOpcoes {
+  if (typeof valor !== 'object' || valor === null) return false;
+  const f = valor as { marcas?: unknown; categorias?: unknown; pendentes?: unknown };
+  return (
+    Array.isArray(f.marcas) &&
+    Array.isArray(f.categorias) &&
+    Array.isArray(f.pendentes) &&
+    f.pendentes.every(ehMoto)
+  );
+}
 
 /** Teto de motos guardadas por conversa — estado efêmero, não acervo. */
 export const MAX_MOTOS_GUARDADAS = 40;
@@ -118,6 +146,7 @@ export async function carregarCatalogoDaConversa(
       escolhida?: unknown;
       referencia?: unknown;
       objecao?: unknown;
+      opcoes?: unknown;
     };
     return {
       motos: Array.isArray(obj.motos) ? obj.motos.filter(ehMoto) : [],
@@ -127,6 +156,7 @@ export async function carregarCatalogoDaConversa(
       escolhida: ehMoto(obj.escolhida) ? obj.escolhida : null,
       referencia: ehMoto(obj.referencia) ? obj.referencia : null,
       objecao: ehEstadoObjecao(obj.objecao) ? obj.objecao : null,
+      opcoes: ehFilaDeOpcoes(obj.opcoes) ? obj.opcoes : null,
     };
   } catch {
     return VAZIO;
@@ -155,6 +185,7 @@ export async function salvarCatalogoDaConversa(
   escolhida: MotoDoCatalogo | null | undefined = undefined,
   referencia: MotoDoCatalogo | null | undefined = undefined,
   objecao: EstadoObjecao | null | undefined = undefined,
+  opcoes: FilaDeOpcoes | null | undefined = undefined,
 ): Promise<void> {
   try {
     const vistas = new Set<string>();
@@ -177,6 +208,8 @@ export async function salvarCatalogoDaConversa(
       referencia === undefined ? atual.referencia : referencia;
     const objecaoFinal: EstadoObjecao | null =
       objecao === undefined ? atual.objecao : objecao;
+    const opcoesFinal: FilaDeOpcoes | null =
+      opcoes === undefined ? atual.opcoes : opcoes;
     await db.query(
       `update conversations
           set metadata = jsonb_set(
@@ -195,6 +228,7 @@ export async function salvarCatalogoDaConversa(
           escolhida: escolhidaFinal,
           referencia: referenciaFinal,
           objecao: objecaoFinal,
+          opcoes: opcoesFinal,
         }),
       ],
     );

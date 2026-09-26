@@ -66,6 +66,14 @@ export const catalogConfigSchema = z
     pergunta_separada: z.boolean().default(true),
     /** O motor anexa foto quando o modelo esquece. */
     enviar_foto_automatica: z.boolean().default(true),
+    /**
+     * C-090 (decisão do dono, 2026-09-26): interruptor "Enviar todas as motos
+     * que casam o critério". Desligado (default) = modo curado atual (N
+     * alternativas + mesmo perfil + pergunta "quer ver mais?"). Ligado = envia
+     * TODAS as motos que casarem o critério de envio (colunas "Critério de
+     * envio"), sem teto N, sem completar e sem paginar.
+     */
+    enviar_todas_que_casam: z.boolean().default(false),
   })
   .strict();
 
