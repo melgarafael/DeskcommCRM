@@ -56,14 +56,14 @@ describe("espanhol dos textos que vêm de lista, não de literal", () => {
       // Só com ponto: `jevNoPonto`, no cartão do ponto.
       ...(x.aoDecidirNoPonto !== undefined ? [x.aoDecidirNoPonto] : []),
       // A frase da concordância, ou — em cascata — a dos pedidos percebidos.
-      ...(x.concordancia !== undefined ? [x.concordancia.antes, x.concordancia.depois] : [x.percebidos]),
+      ...(x.concordancia !== undefined ? [x.concordancia.antes, x.concordancia.depois] : [x.percebidos.um, x.percebidos.varios]),
     ]);
     expect(textos.length, "a varredura não enxergou as tarefas").toBeGreaterThan(8);
     expect(semEspanhol(textos)).toEqual([]);
   });
 
-  it("o nome da chamada do Jev que não é de ponto nenhum, em IA › Execuções", () => {
-    expect(semEspanhol([PEDIDOS_DO_CLIENTE.rotulo])).toEqual([]);
+  it("o nome e o porquê da chamada do Jev que não é de ponto nenhum, em IA › Execuções", () => {
+    expect(semEspanhol([PEDIDOS_DO_CLIENTE.rotulo, PEDIDOS_DO_CLIENTE.porQue, PEDIDOS_DO_CLIENTE.porQueNaFalha])).toEqual([]);
   });
 
   it("toda explicação de origem — o \"por que este modelo\" de IA › Execuções", () => {

@@ -200,8 +200,8 @@ function estadoDoJev(d: DadosDoJev): Estado {
     if (!d.tem_ia_de_sempre && clima && clima.estado !== "desligada") return "sozinho";
     // A tarefa parada pela camada não mede nada: não faz o cartão observar nem decidir.
     const rodando = tarefas.filter(roda);
-    if (rodando.some((t) => t.estado === "decidindo")) return "decidindo";
-    if (rodando.some((t) => t.estado === "observando")) return "observando";
+    if (rodando.some(decide)) return "decidindo";
+    if (rodando.length > 0) return "observando";
     return "em_pausa";
   }
   if (!d.chave.existe) return "sem_chave";
@@ -215,7 +215,7 @@ function estadoDoJev(d: DadosDoJev): Estado {
  * decidindo é o caminho natural depois do selo "Novo" e de um clique.
  */
 function decideEmParte(d: DadosDoJev): boolean {
-  return tarefasDoCartao(d).some((t) => roda(t) && t.estado === "observando");
+  return tarefasDoCartao(d).some((t) => roda(t) && !decide(t));
 }
 
 /**
@@ -231,6 +231,14 @@ const doRegistro = (tarefaId: string) => TAREFAS_DO_JEV.find((x) => x.id === tar
  * bloquear o contato.
  */
 const avisaAEquipe = (tarefaId: string) => doRegistro(tarefaId)?.familia === "cascata";
+
+/**
+ * A tarefa DECIDE algo no lugar do mecanismo de hoje. A em cascata, avisando a
+ * equipe, não: o cliente não sente nada, e o estado do cartão inteiro (selo,
+ * frase, texto de antes de ligar) a conta como quem não decide. Só a linha
+ * dela diz "Avisa a equipe".
+ */
+const decide = (t: TarefaNoCartao) => t.estado === "decidindo" && !avisaAEquipe(t.id);
 
 /**
  * Como o Jev está no ponto `pontoId`, para a linha do cartão do ponto — pelo
@@ -551,7 +559,9 @@ function ProntoParaLigar({ dados, recarregar }: { dados: DadosDoJev; recarregar:
   const doClima = tarefas.find(({ tarefa }) => tarefa.id === TAREFA_DO_CLIMA.id);
   const climaSozinho = !dados.tem_ia_de_sempre && doClima !== undefined && doClima.aoLigar !== "desligada";
   const climaPausadoSemIa = !dados.tem_ia_de_sempre && doClima?.aoLigar === "desligada";
-  const algumaDecide = tarefas.some(({ tarefa, aoLigar }) => aoLigar === "decidindo" && !parada(tarefa));
+  const algumaDecide = tarefas.some(
+    ({ tarefa, aoLigar }) => aoLigar === "decidindo" && !parada(tarefa) && !avisaAEquipe(tarefa.id),
+  );
   const algumaPausada = tarefas.some(({ aoLigar }) => aoLigar === "desligada");
 
   return (
@@ -757,7 +767,7 @@ function Ligado({
             {rodando && tarefa.novo && tarefa.estado === "observando" && (
               <p className="text-sm text-muted-foreground" data-testid={`jev-nova-${tarefa.id}`}>
                 {avisa
-                  ? t("Começou sozinha, só observando: ela só conta os pedidos até você escolher “Avisar a equipe”.")
+                  ? t("Começou sozinha, só observando: nada muda até você pedir para o Jev avisar a equipe.")
                   : t("Começou sozinha, só observando: nada muda para o cliente até você deixar o Jev decidir.")}
               </p>
             )}
@@ -802,7 +812,7 @@ function Ligado({
               <PercebidosDaTarefa
                 tarefa={tarefa}
                 p={tarefa.percebidos}
-                depois={registro.percebidos}
+                frase={registro.percebidos}
                 formatar={(n) => inteiro.format(n)}
               />
             )}
@@ -1079,17 +1089,20 @@ function ConcordanciaDaTarefa({
  * pegou." — e, quando há, as conversas dos mais recentes, para quem quer ver o
  * que o cliente disse. Cada link diz de quando é o pedido: cinco "Abrir
  * conversa" iguais não diriam qual é qual.
+ *
+ * A frase é traduzida INTEIRA (a do registro, no singular ou no plural) e só
+ * então recebe os números: o `{n}` em destaque é onde a tradução o pôs.
  */
 function PercebidosDaTarefa({
   tarefa,
   p,
-  depois,
+  frase,
   formatar,
 }: {
   tarefa: TarefaNoCartao;
   p: NonNullable<TarefaNoCartao["percebidos"]>;
-  /** O fim da frase, do registro: de que pedido se trata. */
-  depois: string;
+  /** A frase do registro, com `{dias}` e `{n}`. */
+  frase: { um: string; varios: string };
   formatar: (n: number) => string;
 }) {
   const t = useT();
@@ -1100,12 +1113,15 @@ function PercebidosDaTarefa({
     hour: "2-digit",
     minute: "2-digit",
   });
+  const [antes = "", depois = ""] = t(p.pedidos === 1 ? frase.um : frase.varios)
+    .replace("{dias}", formatar(p.dias))
+    .split("{n}");
   return (
     <div className="space-y-1 text-sm">
       <p data-testid={`jev-percebidos-${tarefa.id}`}>
-        {t("Nos últimos")} {p.dias} {t("dias, o Jev percebeu")}{" "}
-        <span className="font-medium tabular-nums">{formatar(p.pedidos)}</span>{" "}
-        {p.pedidos === 1 ? t("pedido") : t("pedidos")} {t(depois)}
+        {antes}
+        <span className="font-medium tabular-nums">{formatar(p.pedidos)}</span>
+        {depois}
       </p>
       {p.pedidos > 0 && p.conversas.length > 0 && (
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1" data-testid={`jev-percebidos-conversas-${tarefa.id}`}>

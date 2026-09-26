@@ -10,7 +10,7 @@
  * forçada por `DUBLE_JEV_RESPOSTAS` (pessoa 0,97; parar 0,02).
  *
  * As mensagens chegam pelo webhook do WhatsApp (a mesma porta da
- * `jev-decisoes-rapidas`), de três clientes diferentes:
+ * `jev-decisoes-rapidas`), cada uma de um cliente diferente:
  *
  *  - "PARAR": a regra de descadastro pega (e bloqueia o contato na entrada) —
  *    a pergunta de parar de receber NUNCA sai para esta mensagem;
@@ -18,20 +18,33 @@
  *    nenhum dos dois, as duas perguntas saem, o Jev percebe o pedido de pessoa,
  *    e o cartão mostra "percebeu 1 pedido" com o link para a conversa — que
  *    segue do jeito que estava (o Jev não passa nem bloqueia nada);
- *  - "me deixa em paz": a regra pega só como PROVÁVEL (não bloqueia o contato),
- *    e a chamada sai só com a pergunta de pessoa — a cascata vista com controle
+ *  - "quero falar com um atendente": a regra de pessoa pega, e a chamada sai só
+ *    com a pergunta de parar de receber — a cascata vista com controle
  *    positivo na mesma mensagem, que "PARAR" não dá: com o contato bloqueado o
  *    turno nem rodaria, e nada seria perguntado de qualquer forma;
- *  - com o pedido de pessoa em "Avisar a equipe" (bloco 3.2), a frase natural
- *    de um quarto cliente abre UM aviso na Central, com "Abrir a conversa"
- *    levando a ela — e a conversa segue sem dono, sem silêncio e sem bloqueio,
- *    no mesmo estado da conversa que o Jev só observou.
+ *  - "me deixa em paz": a regra de descadastro pega como PROVÁVEL (não bloqueia
+ *    o contato, mas no turno cala o agente e passa a conversa a uma pessoa), e
+ *    NENHUMA das duas perguntas sai — a do clima sai (controle de que a
+ *    mensagem passou pelo worker);
+ *  - com o pedido de pessoa em "Avisar a equipe" (bloco 3.2), o cartão inteiro
+ *    continua dizendo que o Jev observa (ele só avisa: o cliente não sente
+ *    nada), e a frase natural de outro cliente abre UM aviso na Central, com
+ *    "Abrir a conversa" levando a ela — e a conversa segue sem dono, sem
+ *    silêncio e sem bloqueio, no mesmo estado da conversa que o Jev só observou.
  *
- * O turno do agente só roda com um agente no ar no número: esta spec publica um
- * agente SÓ dela no número da entrada de mensagens, pelo service role, e o apaga
- * no fim — com a maior prioridade, para ser ele (sem palavras de passagem) quem
- * atende. O agent-worker não sobe no CI; quem pergunta ao Jev é o worker de
- * clima, no dreno do event_log.
+ * O turno do agente só roda com um agente publicado no número (o portão do
+ * dreno, que o worker de clima também consulta): esta spec publica um agente SÓ
+ * dela no número da entrada de mensagens, pelo service role, e o apaga no fim.
+ * As palavras de passagem dele são as do padrão ("falar com humano",
+ * "atendente", "pessoa real"), que as frases naturais não contêm. O
+ * agent-worker não sobe no CI; quem pergunta ao Jev é o worker de clima, no
+ * dreno do event_log.
+ *
+ * O selo do cartão só pode dizer "Decide" onde o Jev decide — e a diferença
+ * entre "observando" e "decidindo" só existe com a IA de sempre da empresa
+ * (sem ela, o cartão fica "sozinho" antes e depois). Por isso, antes de
+ * "Avisar a equipe", a spec cadastra uma IA de sempre de chave falsa, como a
+ * `jev-roteador`, e a apaga no fim.
  *
  * Precondições: `pnpm e2e:env` (JEV_API_BASE_URL apontando para a porta do
  * dublê, que esta spec sobe e derruba sozinha) e o app buildado.
@@ -76,9 +89,11 @@ const CLIENTE_QUE_PARA = `${base}1`;
 const CLIENTE_QUE_PEDE_PESSOA = `${base}2`;
 const CLIENTE_EM_PAZ = `${base}3`;
 const CLIENTE_AVISADO = `${base}4`;
+const CLIENTE_DO_ATENDENTE = `${base}5`;
 const FRASE_NATURAL = `Quero falar com alguém de verdade aí, não com robô (${CLIENTE_QUE_PEDE_PESSOA})`;
 const FRASE_EM_PAZ = `Me deixa em paz (${CLIENTE_EM_PAZ})`;
 const FRASE_AVISADA = `Chama alguém de verdade pra mim, por favor, não quero robô (${CLIENTE_AVISADO})`;
+const FRASE_DO_ATENDENTE = `Quero falar com um atendente (${CLIENTE_DO_ATENDENTE})`;
 /** O título do aviso na Central (`AVISOS_DOS_PEDIDOS.humano.titulo`), em pt-BR. */
 const TITULO_DO_AVISO = "Um cliente parece pedir para falar com uma pessoa";
 
@@ -94,7 +109,7 @@ interface Chamada {
 let duble: ChildProcess | null = null;
 let creds: CredsE2E;
 let orgId = "";
-const semeado = { agente: randomUUID(), versao: randomUUID() };
+const semeado = { agente: randomUUID(), versao: randomUUID(), iaDeSempre: "" };
 
 function chamadasAoJev(): Chamada[] {
   if (!fs.existsSync(ARQUIVO_DE_CHAMADAS)) return [];
@@ -193,6 +208,21 @@ async function conversaDaMensagem(corpo: string): Promise<string> {
   return (data as { conversation_id: string }).conversation_id;
 }
 
+/**
+ * A mensagem passou pelo worker de clima: a pergunta do clima sobre ela chegou
+ * ao dublê. O dreno roda o worker dentro do pedido, e o worker só devolve depois
+ * da chamada dos pedidos — quando `drenar` volta, o que ia sair já saiu.
+ */
+async function esperarOClimaSobre(page: Page, trecho: string): Promise<void> {
+  await expect(async () => {
+    await drenar(page);
+    expect(
+      perguntasSobre(trecho).filter((q) => q.includes("clima")),
+      `o dublê ainda não recebeu a pergunta do clima sobre "${trecho}"`,
+    ).not.toEqual([]);
+  }).toPass({ timeout: 90_000, intervals: [2_000, 3_000, 5_000] });
+}
+
 async function esperarAPerguntaSobre(page: Page, trecho: string): Promise<void> {
   await expect(async () => {
     await drenar(page);
@@ -245,6 +275,9 @@ test.describe("Jev — os pedidos do cliente, pela tela", () => {
     duble?.kill("SIGTERM");
     fs.rmSync(ARQUIVO_DE_CHAMADAS, { force: true });
     if (orgId) {
+      if (semeado.iaDeSempre) {
+        await ok(admin.from("ai_provider_credentials").delete().eq("id", semeado.iaDeSempre), "apagar a IA de sempre");
+      }
       // O agente leva a versão junto (cascade); o número é o da entrada, e fica.
       await ok(admin.from("ai_agents").delete().eq("id", semeado.agente), "apagar o agente");
       await limparOsPedidos();
@@ -359,17 +392,19 @@ test.describe("Jev — os pedidos do cliente, pela tela", () => {
       expect(contato).toEqual({ is_blocked: false, force_human: false });
     });
 
-    await test.step("'me deixa em paz': a regra pega o provável, e só a pergunta de pessoa sai", async () => {
+    await test.step("'quero falar com um atendente': a regra de pessoa pega, e só a pergunta de parar de receber sai", async () => {
+      await mandarMensagemDoCliente(page, FRASE_DO_ATENDENTE, CLIENTE_DO_ATENDENTE, 1);
+      await esperarAPerguntaSobre(page, FRASE_DO_ATENDENTE);
+      expect(dosPedidos(FRASE_DO_ATENDENTE).every((q) => q.join() === "opt_out"), "a pergunta de pessoa saiu").toBe(true);
+    });
+
+    await test.step("'me deixa em paz': a regra pega o provável — que no turno passa a conversa —, e NENHUMA pergunta dos pedidos sai", async () => {
       await mandarMensagemDoCliente(page, FRASE_EM_PAZ, CLIENTE_EM_PAZ, 1);
-      await esperarAPerguntaSobre(page, FRASE_EM_PAZ);
-      expect(dosPedidos(FRASE_EM_PAZ).every((q) => q.join() === "humano"), "a pergunta de parar de receber saiu").toBe(true);
-      // O dublê diz 0,97 a toda pergunta de pessoa: agora são dois — e o plural.
-      await expect(async () => {
-        const cartao = await abrirOCartao(page);
-        await expect(cartao.getByTestId("jev-percebidos-humano")).toContainText("percebeu 2 pedidos de falar com uma pessoa", {
-          timeout: 3_000,
-        });
-      }).toPass({ timeout: 30_000, intervals: [1_000, 2_000, 3_000] });
+      await esperarOClimaSobre(page, FRASE_EM_PAZ);
+      expect(dosPedidos(FRASE_EM_PAZ), "o Jev foi perguntado sobre um pedido que a regra já passou").toEqual([]);
+      // O dublê diz 0,97 a toda pergunta de pessoa: segue UM pedido percebido.
+      const cartao = await abrirOCartao(page);
+      await expect(cartao.getByTestId("jev-percebidos-humano")).toContainText("percebeu 1 pedido de falar com uma pessoa");
     });
 
     await test.step("Execuções mostra a chamada com o nome dela, e não crua", async () => {
@@ -383,8 +418,40 @@ test.describe("Jev — os pedidos do cliente, pela tela", () => {
       await expect(page.getByText("jev_pedidos", { exact: true })).toHaveCount(0);
     });
 
+    // Ver o cabeçalho: sem a IA de sempre, o cartão fica "sozinho" antes e
+    // depois do clique, e o selo do cartão não teria como errar.
+    await test.step("a IA de sempre da empresa: uma chave de conversa cadastrada e validada", async () => {
+      const criou = await page.request.post("/api/v1/ai/credentials", {
+        data: {
+          provider: "anthropic",
+          label: `IA de sempre ${base}`,
+          api_key: "sk-ant-e2e-ia-de-sempre-0000000000000000000000",
+        },
+      });
+      expect(criou.status(), "a IA de sempre não foi cadastrada").toBe(201);
+      semeado.iaDeSempre = ((await criou.json()) as { data: { id: string } }).data.id;
+      await expect(async () => {
+        const { data } = await admin
+          .from("ai_provider_credentials")
+          .select("validated_at, validation_error")
+          .eq("id", semeado.iaDeSempre)
+          .single();
+        const linha = data as { validated_at: string | null; validation_error: string | null } | null;
+        expect(linha?.validation_error ?? linha?.validated_at, "o teste de fundo da chave ainda não terminou").toBeTruthy();
+      }).toPass({ timeout: 30_000, intervals: [1_000, 2_000] });
+      await ok(
+        admin
+          .from("ai_provider_credentials")
+          .update({ validated_at: new Date().toISOString(), validation_error: null } as never)
+          .eq("id", semeado.iaDeSempre),
+        "marcar a IA de sempre como validada",
+      );
+    });
+
     await test.step("'Avisar a equipe' no pedido de pessoa: o diálogo diz o efeito antes de valer", async () => {
       const cartao = await abrirOCartao(page);
+      // Controle: com a IA de sempre, o cartão observa — e é esse selo que o clique não pode trocar.
+      await expect(cartao).toHaveAttribute("data-estado", "observando");
       const linha = cartao.getByTestId("jev-tarefa-humano");
       await expect(linha.getByRole("button", { name: "Deixar o Jev decidir" })).toHaveCount(0);
       await linha.getByRole("button", { name: "Avisar a equipe" }).click();
@@ -396,6 +463,13 @@ test.describe("Jev — os pedidos do cliente, pela tela", () => {
       // O cartão se relê sozinho depois do clique — é a tela, e não a rota, que se prova.
       await expect(page.getByTestId("jev-tarefa-humano")).toHaveAttribute("data-estado", "decidindo", { timeout: 15_000 });
       await expect(page.getByTestId("jev-tarefa-humano")).toContainText("Avisa a equipe");
+      // O CARTÃO, e não só a linha: avisar a equipe não é decidir — o cliente
+      // não sente nada, e o selo e a frase do cartão seguem os de quem observa.
+      const oCartao = page.getByTestId("cartao-do-jev");
+      await expect(oCartao).toHaveAttribute("data-estado", "observando");
+      await expect(oCartao).toContainText("Observando — a sua IA de sempre ainda decide.");
+      await expect(oCartao).not.toContainText("Decide em parte");
+      await expect(oCartao).not.toContainText("Decidindo");
       // O pedido de parar de receber segue só observando: cada tarefa, a sua escolha.
       await expect(page.getByTestId("jev-tarefa-opt_out")).toHaveAttribute("data-estado", "observando");
     });
@@ -412,6 +486,8 @@ test.describe("Jev — os pedidos do cliente, pela tela", () => {
       }).toPass({ timeout: 45_000, intervals: [1_000, 2_000, 3_000] });
       await expect(item).toContainText("Pedido para falar com uma pessoa, percebido pelo Jev");
       await expect(item).toContainText("o Jev não passa a conversa sozinho");
+      // O aviso fica aberto por dias: não afirma com quem a conversa está.
+      await expect(item).not.toContainText("segue com o assistente");
       // A Central é lida pela empresa inteira: o que o cliente escreveu fica na conversa.
       await expect(item).not.toContainText("robô");
       await expect(item.getByRole("link", { name: "Abrir a conversa" })).toHaveAttribute("href", `/app/inbox/${avisada}`);

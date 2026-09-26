@@ -3721,23 +3721,29 @@ export const DICIONARIO: Traducoes = {
   "Quando o Jev perceber um pedido para parar de receber mensagens que a regra não pegou, ele abre um aviso na Central. Quem bloqueia continua sendo a regra de hoje ou uma pessoa: o Jev nunca bloqueia ninguém.": {
     es: "Cuando Jev detecte un pedido de dejar de recibir mensajes que la regla no captó, abrirá un aviso en la Central. Quien bloquea sigue siendo la regla de hoy o una persona: Jev nunca bloquea a nadie.",
   },
-  "de falar com uma pessoa que a regra de hoje não pegou.": {
-    es: "de hablar con una persona que la regla de hoy no captó.",
+  // A frase dos pedidos percebidos, INTEIRA e no singular e no plural: montada
+  // de pedaços ("Nos últimos" + "pedido"), ela saía torta fora do português.
+  "Nos últimos {dias} dias, o Jev percebeu {n} pedido de falar com uma pessoa que a regra de hoje não pegou.": {
+    es: "En los últimos {dias} días, Jev detectó {n} pedido de hablar con una persona que la regla de hoy no captó.",
   },
-  "para parar de receber mensagens que a regra de hoje não pegou.": {
-    es: "de dejar de recibir mensajes que la regla de hoy no captó.",
+  "Nos últimos {dias} dias, o Jev percebeu {n} pedidos de falar com uma pessoa que a regra de hoje não pegou.": {
+    es: "En los últimos {dias} días, Jev detectó {n} pedidos de hablar con una persona que la regla de hoy no captó.",
+  },
+  "Nos últimos {dias} dias, o Jev percebeu {n} pedido para parar de receber mensagens que a regra de hoje não pegou.": {
+    es: "En los últimos {dias} días, Jev detectó {n} pedido de dejar de recibir mensajes que la regla de hoy no captó.",
+  },
+  "Nos últimos {dias} dias, o Jev percebeu {n} pedidos para parar de receber mensagens que a regra de hoje não pegou.": {
+    es: "En los últimos {dias} días, Jev detectó {n} pedidos de dejar de recibir mensajes que la regla de hoy no captó.",
   },
   "Perceber pedidos do cliente": {
     es: "Detectar pedidos del cliente",
   },
-  "dias, o Jev percebeu": {
-    es: "días, Jev detectó",
+  // O "por quê" da chamada dos pedidos em IA › Execuções (`PEDIDOS_DO_CLIENTE`).
+  "O Jev foi perguntado só porque a regra de hoje não reconheceu o pedido. Ele não bloqueia nem passa a conversa.": {
+    es: "Se le preguntó a Jev solo porque la regla de hoy no reconoció el pedido. Él no bloquea ni transfiere la conversación.",
   },
-  "pedido": {
-    es: "pedido",
-  },
-  "pedidos": {
-    es: "pedidos",
+  "O Jev não respondeu: valeu só a regra de hoje.": {
+    es: "Jev no respondió: valió solo la regla de hoy.",
   },
   "Ver as conversas:": {
     es: "Ver las conversaciones:",
@@ -3758,8 +3764,8 @@ export const DICIONARIO: Traducoes = {
   "Agora o Jev avisa a equipe.": {
     es: "Ahora Jev avisa al equipo.",
   },
-  "Começou sozinha, só observando: ela só conta os pedidos até você escolher “Avisar a equipe”.": {
-    es: "Empezó sola, solo observando: solo cuenta los pedidos hasta que elijas “Avisar al equipo”.",
+  "Começou sozinha, só observando: nada muda até você pedir para o Jev avisar a equipe.": {
+    es: "Empezó sola, solo observando: nada cambia hasta que le pidas a Jev que avise al equipo.",
   },
   "Pedido para falar com uma pessoa, percebido pelo Jev": {
     es: "Pedido de hablar con una persona, detectado por Jev",

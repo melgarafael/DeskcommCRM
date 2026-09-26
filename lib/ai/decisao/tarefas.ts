@@ -86,8 +86,9 @@ type OndeMora = { ponto: string; aoDecidirNoPonto: string } | { ponto?: undefine
  *    liam "o Jev concordou com a sua IA de sempre", e o leigo não sabia no quê.
  *  - `cascata`: o Jev só é perguntado onde a regra de hoje disse NÃO. Não há o
  *    que concordar — a regra, por construção, sempre disse não —, e o cartão
- *    mostra quantos pedidos ele PERCEBEU que ela deixou passar (`percebidos`,
- *    o fim da frase depois do "N pedidos"). O estado `decidindo` dela se chama
+ *    mostra quantos pedidos ele PERCEBEU que ela deixou passar (`percebidos`:
+ *    a frase INTEIRA, no singular e no plural, com `{dias}` e `{n}` — frase
+ *    montada de pedaços traduzidos sai torta em outro idioma). O estado `decidindo` dela se chama
  *    "Avisar a equipe" na tela: o que ele faz é abrir um aviso na Central
  *    (`./pedidos.ts`), nunca agir no lugar da regra.
  */
@@ -97,7 +98,7 @@ type ComoConvive =
       concordancia: { antes: string; depois: string };
       percebidos?: undefined;
     }
-  | { familia: "cascata"; percebidos: string; concordancia?: undefined };
+  | { familia: "cascata"; percebidos: { um: string; varios: string }; concordancia?: undefined };
 
 export type TarefaDoJev = ComumDaTarefa & OndeMora & ComoConvive;
 
@@ -208,7 +209,10 @@ export const TAREFA_DO_PEDIDO_DE_HUMANO = {
     "Quando o Jev percebe um pedido para falar com uma pessoa que a regra não pegou, ele abre um aviso na Central para alguém da equipe decidir. Ele nunca passa a conversa sozinho.",
   aoConfirmarDecidir:
     "Quando o Jev perceber um pedido para falar com uma pessoa que a regra não pegou, ele abre um aviso na Central para alguém da equipe decidir. Ele nunca passa a conversa sozinho.",
-  percebidos: "de falar com uma pessoa que a regra de hoje não pegou.",
+  percebidos: {
+    um: "Nos últimos {dias} dias, o Jev percebeu {n} pedido de falar com uma pessoa que a regra de hoje não pegou.",
+    varios: "Nos últimos {dias} dias, o Jev percebeu {n} pedidos de falar com uma pessoa que a regra de hoje não pegou.",
+  },
   rotulo: "Perceber pedido para falar com uma pessoa",
   oQueFaz:
     "Lê a mensagem do cliente, sozinha, quando a regra de hoje não viu nela um pedido para falar com uma pessoa — e conta os pedidos que ela deixou passar. Ele nunca passa a conversa sozinho.",
@@ -229,7 +233,10 @@ export const TAREFA_DO_PEDIDO_PARA_PARAR = {
     "Quando o Jev percebe um pedido para parar de receber mensagens que a regra não pegou, ele abre um aviso na Central. Quem bloqueia continua sendo a regra de hoje ou uma pessoa: o Jev nunca bloqueia ninguém.",
   aoConfirmarDecidir:
     "Quando o Jev perceber um pedido para parar de receber mensagens que a regra não pegou, ele abre um aviso na Central. Quem bloqueia continua sendo a regra de hoje ou uma pessoa: o Jev nunca bloqueia ninguém.",
-  percebidos: "para parar de receber mensagens que a regra de hoje não pegou.",
+  percebidos: {
+    um: "Nos últimos {dias} dias, o Jev percebeu {n} pedido para parar de receber mensagens que a regra de hoje não pegou.",
+    varios: "Nos últimos {dias} dias, o Jev percebeu {n} pedidos para parar de receber mensagens que a regra de hoje não pegou.",
+  },
   rotulo: "Perceber pedido para parar de receber mensagens",
   oQueFaz:
     "Lê a mensagem do cliente, sozinha, quando a regra de hoje não viu nela um pedido para parar de receber mensagens — e conta os pedidos que ela deixou passar. Quem bloqueia continua sendo a regra de hoje ou uma pessoa.",
@@ -250,8 +257,18 @@ export const TAREFAS_DO_JEV: readonly TarefaDoJev[] = [
  * sem chamador seria botão que não controla nada na tela de provedores. Quem
  * dá nome de gente a ela em IA › Execuções e na "Última falha" do cartão é
  * `rotuloDaChamadaDoJev`.
+ *
+ * O "por quê" da linha em Execuções também é dela (`porQue`, `porQueNaFalha`):
+ * os textos de origem do Jev (`EXPLICACAO_DA_ORIGEM`, `JEV_FALHOU_AO_LADO`)
+ * falam de decidir, comparar e da "IA de sempre" — e aqui ele não decide nada,
+ * não há com o que comparar, e quem vale sem ele é a regra.
  */
-export const PEDIDOS_DO_CLIENTE = { purpose: "jev_pedidos", rotulo: "Perceber pedidos do cliente" } as const;
+export const PEDIDOS_DO_CLIENTE = {
+  purpose: "jev_pedidos",
+  rotulo: "Perceber pedidos do cliente",
+  porQue: "O Jev foi perguntado só porque a regra de hoje não reconheceu o pedido. Ele não bloqueia nem passa a conversa.",
+  porQueNaFalha: "O Jev não respondeu: valeu só a regra de hoje.",
+} as const;
 
 /**
  * O nome de gente da chamada do Jev com este `purpose`: o da tarefa daquele

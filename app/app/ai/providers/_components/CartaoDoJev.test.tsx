@@ -853,7 +853,9 @@ describe("CartaoDoJev — por tarefa", () => {
       expect(linha.getByRole("button", { name: "Pausar esta tarefa" })).toBeInTheDocument();
       expect(linha.getByRole("button", { name: "Manter só observando" })).toBeInTheDocument();
       // A tarefa nova diz o que o selo quer dizer — sem prometer decisão.
-      expect(screen.getByTestId("jev-nova-humano")).toHaveTextContent("só conta os pedidos até você escolher “Avisar a equipe”");
+      expect(screen.getByTestId("jev-nova-humano")).toHaveTextContent(
+        "Começou sozinha, só observando: nada muda até você pedir para o Jev avisar a equipe.",
+      );
       // Controle: o clima, na mesma tela, decide.
       expect(
         within(screen.getByTestId("jev-tarefa-clima")).getByRole("button", { name: "Deixar o Jev decidir" }),
@@ -897,6 +899,56 @@ describe("CartaoDoJev — por tarefa", () => {
       expect(within(linha).getByRole("button", { name: "Voltar a só observar" })).toBeInTheDocument();
     });
 
+    /**
+     * O cartão inteiro não diz "Decide" onde o Jev só avisa: com o clima
+     * observando e o pedido de pessoa em "Avisar a equipe", o cliente não sente
+     * nada — o selo, a frase e o `data-estado` são os de quem observa. Só a
+     * linha da tarefa diz "Avisa a equipe".
+     */
+    it.each([
+      ["com o clima observando", [{ ...CLIMA, estado: "observando" }]],
+      ["sozinha", []],
+    ] as const)("avisando a equipe %s, o cartão diz que o Jev observa, e não que decide", (_caso, outras) => {
+      montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [...outras, { ...HUMANO, estado: "decidindo", novo: false, percebidos: { dias: 30, pedidos: 0, conversas: [] } }],
+        }),
+      );
+      expect(cartao()).toHaveAttribute("data-estado", "observando");
+      expect(cartao()).not.toHaveTextContent(/Decide em parte|Decidindo|Decide\b/);
+      expect(cartao()).toHaveTextContent("Observando — a sua IA de sempre ainda decide.");
+      expect(screen.getByTestId("jev-tarefa-humano")).toHaveTextContent("Avisa a equipe");
+    });
+
+    it("com o clima decidindo, o pedido avisando conta como a parte que não decide (controle)", () => {
+      montar(
+        dados({
+          config: { ligado: true, modo: "decide" },
+          por_tarefa: [
+            { ...CLIMA, estado: "decidindo" },
+            { ...HUMANO, estado: "decidindo", novo: false, percebidos: { dias: 30, pedidos: 0, conversas: [] } },
+          ],
+        }),
+      );
+      expect(cartao()).toHaveAttribute("data-estado", "decidindo");
+      expect(cartao()).toHaveTextContent("Decide em parte");
+    });
+
+    it("antes de ligar, avisar a equipe não é 'Onde ele decide'", () => {
+      montar(
+        dados({
+          por_tarefa: [
+            { ...CLIMA, estado: "observando", ao_ligar: "observando" },
+            { ...HUMANO, estado: "decidindo", ao_ligar: "decidindo", novo: false },
+          ],
+        }),
+      );
+      expect(screen.getByTestId("jev-ao-ligar-humano")).toHaveTextContent("(Avisa a equipe)");
+      expect(screen.getByTestId("jev-ao-ligar")).not.toHaveTextContent(/Onde ele decide/);
+      expect(screen.getByTestId("jev-ao-ligar")).toHaveTextContent(/Onde ele só observa/);
+    });
+
     it("fala espanhol com quem escolheu espanhol, no singular e no plural", () => {
       montar(
         dados({
@@ -909,6 +961,20 @@ describe("CartaoDoJev — por tarefa", () => {
         "En los últimos 30 días, Jev detectó 1 pedido de hablar con una persona que la regla de hoy no captó.",
       );
       expect(screen.getByTestId("jev-tarefa-humano")).toHaveTextContent("Detectar pedidos de hablar con una persona");
+      cleanup();
+      // A frase é traduzida INTEIRA, no plural também — nenhum pedaço em português.
+      montar(
+        dados({
+          config: { ligado: true, modo: "observacao" },
+          por_tarefa: [{ ...HUMANO, percebidos: { dias: 30, pedidos: 7, conversas: [conversa(1)] } }],
+        }),
+        { idioma: "es" },
+      );
+      expect(screen.getByTestId("jev-percebidos-humano")).toHaveTextContent(
+        "En los últimos 30 días, Jev detectó 7 pedidos de hablar con una persona que la regla de hoy no captó.",
+      );
+      // O número segue em destaque, onde a tradução o pôs.
+      expect(within(screen.getByTestId("jev-percebidos-humano")).getByText("7")).toHaveClass("font-medium");
     });
   });
 
