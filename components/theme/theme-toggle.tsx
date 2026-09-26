@@ -10,7 +10,7 @@ import { useT } from "@/hooks/i18n/useT";
 /**
  * ⚠️ O ATALHO `mod+shift+l` MORA AQUI DENTRO, e por isso ele só existe onde
  * este componente está montado. Até 20/09/2026 o `ThemeToggle` só era montado
- * pelo `components/shell/TopBar.tsx` (a casca do tenant), o que deixava TODA a
+ * pelo `components/shell/UserMenu.tsx` (a casca do tenant), o que deixava TODA a
  * superfície de Admin Plataforma sem botão e sem atalho: quem entrava direto
  * lá — e o `install.sh` cria o dono como platform admin, então é onde muita
  * gente cai primeiro — ficava preso ao tema que estivesse valendo, sem

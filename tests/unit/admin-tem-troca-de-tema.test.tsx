@@ -1,7 +1,7 @@
 /**
  * O Admin Plataforma tem como trocar de tema — e por que isso merece catraca.
  *
- * Até 20/09/2026 o `ThemeToggle` só era montado por `components/shell/TopBar.tsx`,
+ * Até 20/09/2026 o `ThemeToggle` só era montado por `components/shell/UserMenu.tsx`,
  * a casca do TENANT. Medido na época, a superfície inteira de admin
  * (`app/(admin)`, `app/admin`, `components/admin`) tinha ZERO ocorrência de
  * `ThemeToggle`, `useTheme`, `setTheme` ou `data-theme`.
