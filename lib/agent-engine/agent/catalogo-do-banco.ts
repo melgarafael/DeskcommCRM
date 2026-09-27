@@ -21,6 +21,7 @@ import { abrirAcesso } from '@/lib/external-db/acesso';
 import {
   colunaDeSimilares,
   colunasDeComparacao,
+  colunasDeEnvio,
   colunasParaConsulta,
   criteriosDaIA,
   type CatalogoMapeamento,
@@ -78,13 +79,15 @@ export async function carregarCatalogoDoBanco(
     );
     if (permitidas === null) return [];
 
-    // Projeção: colunas de papel + comparação + critério + legenda + referência.
-    // É o que garante que o motor tenha o valor de TODA coluna que usa por dentro
-    // (ex.: `moto_similar`) e de toda coluna que vai na legenda.
+    // Projeção: colunas de papel + comparação + critério + legenda + referência
+    // + ENVIO. As de "Envio" (C-090/C-092) precisam vir SEMPRE: o casamento do
+    // modo "enviar todas que casam" / "não completar" depende delas (ex.:
+    // `categoria`, `potencia`). Sem elas o filtro não casa — medido ao vivo.
     const colSimilares = colunaDeSimilares(mapeamento);
     const desejadas = [
       ...colunasParaConsulta(mapeamento),
       ...colunasDeComparacao(mapeamento),
+      ...colunasDeEnvio(mapeamento),
       ...criteriosDaIA(mapeamento),
       ...(mapeamento.legenda ?? []),
       ...(colSimilares !== null ? [colSimilares] : []),

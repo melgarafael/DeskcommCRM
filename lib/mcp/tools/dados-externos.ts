@@ -233,7 +233,7 @@ export const crmDescribeExternalData: McpToolDefinition<typeof descreverInputSha
 // ---------------------------------------------------------------------------
 
 const COLUNAS_DO_MAPEAMENTO =
-  "table_name, schema_name, col_nome, col_versao, col_ano, col_cor, col_km, col_preco, col_imagem, col_estoque, col_cilindrada, col_tipo, legenda";
+  "table_name, schema_name, col_nome, col_versao, col_ano, col_cor, col_km, col_preco, col_imagem, col_estoque, col_cilindrada, col_tipo, legenda, colunas";
 
 interface CatalogoDoMapeamento {
   /** Colunas do catálogo configurado, presentes na tabela consultada. */
@@ -244,6 +244,11 @@ interface CatalogoDoMapeamento {
   colSimilares: string | null;
   /** Colunas marcadas como "Critério da IA" (a IA pode filtrar por elas). */
   criterios: string[];
+  /**
+   * Colunas marcadas como "Envio" (C-090/C-092): o motor as precisa para casar
+   * no modo "enviar todas que casam" / "não completar". Entram SEMPRE na projeção.
+   */
+  envio: string[];
 }
 
 /**
@@ -274,9 +279,9 @@ async function catalogoDoMapeamento(
       .maybeSingle();
     data = (resposta.data ?? null) as Record<string, unknown> | null;
   } catch {
-    return { colunas: [], ordemPorNome: null, colSimilares: null, criterios: [] };
+    return { colunas: [], ordemPorNome: null, colSimilares: null, criterios: [], envio: [] };
   }
-  if (data === null) return { colunas: [], ordemPorNome: null, colSimilares: null, criterios: [] };
+  if (data === null) return { colunas: [], ordemPorNome: null, colSimilares: null, criterios: [], envio: [] };
 
   const candidatas = [
     data.col_nome,
@@ -323,7 +328,22 @@ async function catalogoDoMapeamento(
         ),
       ]
     : [];
-  return { colunas, ordemPorNome, colSimilares, criterios };
+  // Colunas "Envio" (C-090/C-092): o casamento depende delas — precisam estar
+  // sempre na projeção para o motor filtrar (ex.: `categoria`, `potencia`).
+  const envio = Array.isArray(data.colunas)
+    ? [
+        ...new Set(
+          (data.colunas as unknown[])
+            .map((c) =>
+              c !== null && typeof c === "object" && (c as { envio?: unknown }).envio === true
+                ? (c as { coluna?: unknown }).coluna
+                : null,
+            )
+            .filter((c): c is string => typeof c === "string" && c !== "" && permitidas.has(c)),
+        ),
+      ]
+    : [];
+  return { colunas, ordemPorNome, colSimilares, criterios, envio };
 }
 
 const consultarInputShape = {
@@ -495,6 +515,12 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
       if (ordemDoPedido === undefined && mapeamento.ordemPorNome !== null) {
         ordemDoPedido = { coluna: mapeamento.ordemPorNome, desc: false };
       }
+    }
+    // As colunas "Critério da IA" e "Envio" precisam vir SEMPRE no resultado: o
+    // motor casa/ordena por elas (C-090/C-092). Sem incluí-las, o filtro recebe
+    // as motos sem `categoria`/`potencia` e não casa — medido ao vivo.
+    for (const extra of [...mapeamento.criterios, ...mapeamento.envio]) {
+      if (!colunasDoPedido.includes(extra)) colunasDoPedido.push(extra);
     }
     // A coluna de REFERÊNCIA precisa vir SEMPRE (o motor a usa por dentro para
     // achar a moto real que cita o pedido). Ela é REDIGIDA do resultado antes de
