@@ -3,7 +3,13 @@ import { describe, expect, it } from 'vitest';
 import type { CatalogoMapeamento } from '@/lib/external-db/catalogo';
 
 import type { MotoDoCatalogo } from './fotos-do-catalogo';
-import { filtrarPorHipoteses, querAlternativa, selecionarPorIntencao } from './selecao-por-intencao';
+import {
+  casaPerfil,
+  filtrarPorHipoteses,
+  perfilDaIA,
+  querAlternativa,
+  selecionarPorIntencao,
+} from './selecao-por-intencao';
 
 const MAPEAMENTO: CatalogoMapeamento = {
   connectionId: 'c1',
@@ -539,5 +545,60 @@ describe('selecionarPorIntencao com hipóteses/faixas (C-089)', () => {
     expect(comToggle.motos[0]!.nome).toBe('HONDA Biz 125');
     // Ainda sinaliza que há outras fora do corte (pergunta "quer mais?").
     expect(comToggle.temMaisOpcoes).toBe(true);
+  });
+});
+
+describe('categoria composta (ex.: "Adventure / Trilha") casa por CONTEÚDO', () => {
+  const XRE = moto('HONDA XRE 190', {
+    categoria: 'Adventure / Trilha',
+    cilindrada: '184',
+    marca: 'HONDA',
+    preco: '22500',
+  });
+  const CATALOGO_CAT: MotoDoCatalogo[] = [
+    XRE,
+    moto('HONDA Biz 125', { categoria: 'Scooter', cilindrada: '125', marca: 'HONDA', preco: '14500' }),
+    moto('YAMAHA XTZ 150 Crosser', {
+      categoria: 'Trail, On-Off Road',
+      cilindrada: '149',
+      marca: 'YAMAHA',
+      preco: '19990',
+    }),
+  ];
+
+  it('casaPerfil: "Adventure" casa "Adventure / Trilha" (e vice-versa)', () => {
+    expect(casaPerfil(XRE, perfilDaIA([{ categoria: 'Adventure' }], {}))).toBe(true);
+    expect(casaPerfil(XRE, perfilDaIA([{ categoria: 'Trilha' }], {}))).toBe(true);
+    expect(casaPerfil(XRE, perfilDaIA([{ categoria: 'Adventure / Trilha' }], {}))).toBe(true);
+    // Categoria alheia não casa.
+    expect(casaPerfil(XRE, perfilDaIA([{ categoria: 'Scooter' }], {}))).toBe(false);
+  });
+
+  it('filtro: hipótese "Adventure" traz a moto "Adventure / Trilha"', () => {
+    const passou = filtrarPorHipoteses(CATALOGO_CAT, [{ categoria: 'Adventure' }], {}, 30);
+    expect(passou.map((m) => m.nome)).toContain('HONDA XRE 190');
+    expect(passou.map((m) => m.nome)).not.toContain('HONDA Biz 125');
+  });
+
+  it('filtro: hipótese "Trilha" também encontra (conteúdo parcial)', () => {
+    const passou = filtrarPorHipoteses(CATALOGO_CAT, [{ categoria: 'Trilha' }], {}, 30);
+    expect(passou.map((m) => m.nome)).toContain('HONDA XRE 190');
+  });
+
+  it('selecionarPorIntencao: "quero uma adventure" traz as de Adventure, não as Scooter', () => {
+    const r = selecionarPorIntencao({
+      termoBase: 'quero uma adventure',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: CATALOGO_CAT,
+      mapeamento: MAPEAMENTO,
+      quantidade: 3,
+      filtrarPorComparacao: true,
+      hipoteses: [{ categoria: 'Adventure' }],
+      faixas: {},
+    });
+    expect(r.motos.map((m) => m.nome)).toContain('HONDA XRE 190');
+    expect(r.motos.map((m) => m.nome)).not.toContain('HONDA Biz 125');
   });
 });
