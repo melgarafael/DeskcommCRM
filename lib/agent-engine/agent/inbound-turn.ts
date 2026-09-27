@@ -3713,6 +3713,8 @@ async function executarTurnoDoAgente(
               // C-090: interruptor "enviar todas as motos que casam" (config do
               // agente). Ligado → manda tudo que casou, sem teto/paginação.
               enviarTodasQueCasam: cfgCatalogo?.enviar_todas_que_casam === true,
+              // C-092: "não completar quando faltar" — envia só as que casam.
+              naoCompletarFaltando: cfgCatalogo?.nao_completar_faltando === true,
             });
             if (selecao.motos.length > 0) {
               // Persiste as motos oferecidas (inclusive as buscadas no banco) no

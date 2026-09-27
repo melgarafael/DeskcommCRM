@@ -98,6 +98,13 @@ export interface EntradaSelecaoPorIntencao {
    * N, não completa e não pagina — devolve TODAS as que casaram o filtro.
    */
   enviarTodasQueCasam?: boolean;
+  /**
+   * C-092 (decisão do dono, 2026-09-27): interruptor "Não completar quando
+   * faltar". Ligado = quando o filtro casa MENOS que N, envia SÓ as que casam
+   * (sem complemento). Ex.: N=8, casaram 4 → envia 4, não completa até 8.
+   * Não afeta o modo "enviar todas que casam" (que já manda tudo que casou).
+   */
+  naoCompletarFaltando?: boolean;
 }
 
 export interface ResultadoSelecaoPorIntencao {
@@ -371,8 +378,14 @@ export function selecionarPorIntencao(
   // (era o defeito: "CB 250" trazia XMax/scooter/BMW). Se casou menos que N e não
   // há mais motos do perfil, o envio fica com as que casam — e o turno PERGUNTA
   // se o cliente quer ver as demais (temMaisOpcoes). C-090: o modo "enviar todas
-  // que casam" NÃO completa (já mandou tudo que casou).
-  if (preferidos !== null && !semTeto && motos.length < quantidade) {
+  // que casam" NÃO completa (já mandou tudo que casou). C-092: o interruptor
+  // `naoCompletarFaltando` desliga o complemento — envia só as que casam.
+  if (
+    preferidos !== null &&
+    !semTeto &&
+    input.naoCompletarFaltando !== true &&
+    motos.length < quantidade
+  ) {
     const jaTem = new Set(motos);
     const complemento = candidatos
       .filter((m) => !jaTem.has(m))

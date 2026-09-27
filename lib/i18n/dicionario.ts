@@ -8537,8 +8537,7 @@ export const DICIONARIO: Traducoes = {
     { es: "Columna de coincidencia del modo «Enviar todas las que coinciden»" },
   "Coluna de casamento quando o agente está no modo “enviar todas que casam”":
     { es: "Columna de coincidencia cuando el agente está en el modo «enviar todas las que coinciden»" },
-  "Como preencher (Nome · Foto · Similares · IA · Critério · Mostrar · Comparar · Envio · Ordem)":
-    {
+  "Como preencher (Nome · Foto · Similares · IA · Critério · Mostrar · Comparar · Envio · Ordem)":    {
       es: "Cómo completar (Nombre · Foto · Similares · IA · Criterio · Mostrar · Comparar · Envío · Orden)",
     },
   "Diga o que o agente deve fazer com cada coluna: enviar à IA, usar como critério, mostrar no texto, comparar e casar no modo “enviar todas”.":
@@ -8548,6 +8547,14 @@ export const DICIONARIO: Traducoes = {
   "— coluna de casamento do modo “Enviar todas que casam” (interruptor na tela do agente). Quando ligado, o motor envia TODAS as motos que casarem estas colunas com o pedido do cliente, sem limite e sem perguntar “quer mais?”. Sem nenhuma marcada, usa as colunas de “Critério da IA”.":
     {
       es: "— columna de coincidencia del modo «Enviar todas las que coinciden» (interruptor en la pantalla del agente). Cuando está activado, el motor envía TODAS las motos que coincidan con estas columnas y el pedido del cliente, sin límite y sin preguntar «¿quieres más?». Si no hay ninguna marcada, usa las columnas de «Criterio de la IA».",
+    },
+  "Não completar quando faltar: enviar só as motos que casam o critério (sem “lixo”)":
+    {
+      es: "No completar cuando falten: enviar solo las motos que coinciden con el criterio (sin «relleno»)",
+    },
+  "Ligado: se o limite é 8 mas só 4 motos casam, envia as 4 — não completa para chegar a 8. Desligado: completa até o limite com motos do mesmo perfil.":
+    {
+      es: "Activado: si el límite es 8 pero solo 4 motos coinciden, envía las 4 — no completa para llegar a 8. Desactivado: completa hasta el límite con motos del mismo perfil.",
     },
 
   // ─── Base de conhecimento / embeddings (telas ChaveDeConhecimento e StatusDaBase) ───

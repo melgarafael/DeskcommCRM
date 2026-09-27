@@ -74,6 +74,13 @@ export const catalogConfigSchema = z
      * envio"), sem teto N, sem completar e sem paginar.
      */
     enviar_todas_que_casam: z.boolean().default(false),
+    /**
+     * C-092 (decisão do dono, 2026-09-27): interruptor "Não completar quando
+     * faltar". Desligado (default) = quando o filtro casa menos que N, completa
+     * até N com o mesmo perfil. Ligado = envia SÓ as que casam (sem complemento):
+     * se N=8 e casaram 4, envia 4 — sem "lixo".
+     */
+    nao_completar_faltando: z.boolean().default(false),
   })
   .strict();
 

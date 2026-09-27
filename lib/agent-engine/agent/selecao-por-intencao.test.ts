@@ -506,4 +506,38 @@ describe('selecionarPorIntencao com hipóteses/faixas (C-089)', () => {
     // Já mandou tudo: não há "mais opções".
     expect(r.temMaisOpcoes).toBe(false);
   });
+
+  it('C-092: naoCompletarFaltando envia só as que casam (não completa até N)', () => {
+    // Só 1 moto casa ("Biz 125"); N=3. Sem o toggle, completaria até 3.
+    const semToggle = selecionarPorIntencao({
+      termoBase: 'quero uma biz',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: CATALOGO,
+      mapeamento: MAPEAMENTO,
+      quantidade: 3,
+      filtrarPorComparacao: true,
+      hipoteses: [{ nome: 'Biz 125' }],
+      faixas: {},
+    });
+    const comToggle = selecionarPorIntencao({
+      termoBase: 'quero uma biz',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: CATALOGO,
+      mapeamento: MAPEAMENTO,
+      quantidade: 3,
+      filtrarPorComparacao: true,
+      hipoteses: [{ nome: 'Biz 125' }],
+      faixas: {},
+      naoCompletarFaltando: true,
+    });
+    expect(semToggle.motos.length).toBe(3); // completou (comportamento atual)
+    expect(comToggle.motos.length).toBe(1); // só a que casou
+    expect(comToggle.motos[0]!.nome).toBe('HONDA Biz 125');
+    // Ainda sinaliza que há outras fora do corte (pergunta "quer mais?").
+    expect(comToggle.temMaisOpcoes).toBe(true);
+  });
 });

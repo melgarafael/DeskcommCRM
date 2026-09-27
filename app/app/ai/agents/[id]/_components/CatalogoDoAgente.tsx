@@ -212,6 +212,24 @@ export function CatalogoDoAgente({ agentId, inicial, disabled, aoSalvar }: Props
             "Ligado: o motor envia todas as motos que casarem as colunas marcadas como “Critério de envio” no catálogo. Desligado: envia até o limite, completa com o mesmo perfil e pergunta se o cliente quer mais opções.",
           )}
         </p>
+        <div className="flex items-center gap-2 border-t border-border/60 pt-3">
+          <Switch
+            id="cat-nao-completar"
+            checked={cfg.nao_completar_faltando}
+            onCheckedChange={(v) => setCfg((c) => ({ ...c, nao_completar_faltando: v }))}
+            disabled={disabled}
+          />
+          <Label htmlFor="cat-nao-completar">
+            {t(
+              "Não completar quando faltar: enviar só as motos que casam o critério (sem “lixo”)",
+            )}
+          </Label>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Ligado: se o limite é 8 mas só 4 motos casam, envia as 4 — não completa para chegar a 8. Desligado: completa até o limite com motos do mesmo perfil.",
+          )}
+        </p>
       </div>
 
       <div className="flex justify-end">
