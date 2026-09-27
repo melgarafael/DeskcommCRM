@@ -63,19 +63,46 @@ function camposDaConfig(): string[] {
   return [...src.slice(ini, fim).matchAll(/^ {2}(\w+)\??:/gm)].map((m) => m[1]!);
 }
 
+/**
+ * Mapa campo → arquivos que o leem, numa ÚNICA varredura.
+ *
+ * ─── Por que uma chamada só ─────────────────────────────────────────────────
+ * A versão anterior fazia um `git grep` POR CAMPO (35 campos → 35 processos
+ * `git`, ~1s de startup cada dentro do vitest): ~35s, muito acima do
+ * `testTimeout` de 15s. O deploy então releitava a suíte inteira e travava por
+ * LENTIDÃO — não por defeito. Aqui há UM `git grep` e o casamento é em memória.
+ */
+let mapaCache: Map<string, string[]> | null = null;
+function mapaDeConsumidores(): Map<string, string[]> {
+  if (mapaCache !== null) return mapaCache;
+  const campos = camposDaConfig();
+  const mapa = new Map<string, string[]>(campos.map((c) => [c, []]));
+  let saida = "";
+  try {
+    saida = execFileSync("git", ["grep", "-l", "-e", "agentConfig", "--", "lib", "workers", "app"], {
+      cwd: RAIZ,
+      encoding: "utf8",
+      maxBuffer: 32 * 1024 * 1024,
+    });
+  } catch {
+    mapaCache = mapa; // `git grep` sai 1 quando não acha — ausência, não falha.
+    return mapa;
+  }
+  const arquivos = saida
+    .split("\n")
+    .filter((f) => f !== "" && !f.includes("agent-config"))
+    .map((rel) => ({ rel, src: readFileSync(path.join(RAIZ, rel), "utf8") }));
+  for (const campo of campos) {
+    const re = new RegExp(`agentConfig\\??\\.${campo}\\b`);
+    for (const { rel, src } of arquivos) if (re.test(src)) mapa.get(campo)!.push(rel);
+  }
+  mapaCache = mapa;
+  return mapa;
+}
+
 /** Arquivos que leem o campo, fora do próprio módulo que o carrega. */
 function consumidoresDe(campo: string): string[] {
-  try {
-    const saida = execFileSync(
-      "git",
-      ["grep", "-l", "-e", `agentConfig.${campo}`, "-e", `agentConfig?.${campo}`, "--", "lib", "workers", "app"],
-      { cwd: RAIZ, encoding: "utf8" },
-    );
-    return saida.split("\n").filter((f) => f !== "" && !f.includes("agent-config"));
-  } catch {
-    // `git grep` sai com 1 quando não encontra nada — ausência, não falha.
-    return [];
-  }
+  return mapaDeConsumidores().get(campo) ?? [];
 }
 
 describe("knobs da versão publicada", () => {
