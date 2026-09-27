@@ -475,3 +475,27 @@ export function querMaisOpcoes(mensagem: string): boolean {
     n,
   );
 }
+
+/**
+ * C-097: o cliente está PEDINDO/QUERENDO uma moto? (para o extrator rodar SEMPRE
+ * que houver pedido — antes só rodava quando o modelo já tinha consultado o
+ * catálogo e não casado, o que deixava pedidos no 1º turno sem classificação).
+ *
+ * Conservador de propósito: exige um TERMO de moto/produto OU um VERBO de
+ * pedido. Acenos ("ok", "obrigado", "bom dia") não disparam.
+ */
+export function querMoto(mensagem: string): boolean {
+  const n = normalizarNomeDeMoto(mensagem);
+  if (n === '') return false;
+  // Verbo de pedido/interesse explícito.
+  const verbo =
+    /\b(quero|queria|quer|procur\w*|preciso|busc\w*|buscar|tem|tens|teria|mostr\w*|ver|ve|gostaria|interess\w*|indic\w*|suger\w*|opcoes|opcao|disponivel|disponiveis|comprar|adquirir)\b/.test(
+      n,
+    );
+  // Termo de moto / atributo / categoria.
+  const termo =
+    /\b(moto|motos|modelo|modelos|cilindrada|cc|categoria|naked|street|scooter|trail|adventure|trilha|sport|esportiv\w*|custom|roadster|touring|seminova\w*|honda|yamaha|suzuki|bajaj|bmw|kawasaki|biz|factor|titan|fan|cg|cb|cbx|xre|xtz|crosser|fazer|dominar|v-?strom|boulevard|xmax|neo|twister|tener\w*)\b/.test(
+      n,
+    );
+  return verbo || termo;
+}

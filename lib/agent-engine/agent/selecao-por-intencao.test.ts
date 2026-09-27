@@ -8,6 +8,7 @@ import {
   filtrarPorHipoteses,
   perfilDaIA,
   querAlternativa,
+  querMoto,
   selecionarPorIntencao,
 } from './selecao-por-intencao';
 
@@ -97,6 +98,30 @@ describe('querAlternativa (pré-filtro)', () => {
   it('não dispara em turnos sem necessidade de consultar o catálogo', () => {
     for (const frase of ['obrigado', 'ok', 'beleza', 'bom dia', 'vou financiar', 'quanto fica?']) {
       expect(querAlternativa(frase), frase).toBe(false);
+    }
+  });
+});
+
+describe('querMoto (C-097)', () => {
+  it('dispara em pedido/interesse por moto', () => {
+    for (const frase of [
+      'quero uma moto',
+      'queria ver as motos',
+      'procuro uma naked',
+      'tem alguma 300?',
+      'me mostra as opções',
+      'quero uma adventure',
+      'tem honda?',
+      'alguma scooter disponível',
+      'gostaria de ver modelos',
+    ]) {
+      expect(querMoto(frase), frase).toBe(true);
+    }
+  });
+
+  it('NÃO dispara em acenos/conversa que não pede moto', () => {
+    for (const frase of ['obrigado', 'ok', 'beleza', 'bom dia', 'vou financiar', 'quanto fica?', 'sim', 'não']) {
+      expect(querMoto(frase), frase).toBe(false);
     }
   });
 });

@@ -184,7 +184,7 @@ import {
 import { extrairCriterios } from './extrair-criterios';
 import type { FaixasDoPedido, HipoteseDeMoto } from './extrair-criterios';
 import { carregarCatalogoDoBanco, mesclarMotos } from './catalogo-do-banco';
-import { casaPerfil, querAlternativa, querMaisOpcoes, selecionarPorIntencao } from './selecao-por-intencao';
+import { casaPerfil, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
 import {
   carregarCatalogoMapeamento,
   colunaDeSimilares,
@@ -3598,9 +3598,15 @@ async function executarTurnoDoAgente(
             // — primeiro a IA persuade; só a ferramenta `crm_offer_similar_motos`
             // (ou um pedido explícito de diferente) dispara a busca.
             const ehObjecaoMsg = ehObjecaoValor(msgCliente);
+            // C-097: o extrator roda SEMPRE que o cliente pede/quer uma moto
+            // (`querMoto`), não só quando o modelo já consultou o catálogo. Antes,
+            // um pedido no 1º turno (modelo não consultou) ficava sem classificação
+            // e o modelo decidia sozinho — resposta pior. `querMoto` é conservador
+            // (acenos como "ok"/"obrigado" não disparam).
             const precisaClassificar =
               !ehObjecaoMsg &&
-              ((catalogoDoTurno.length > 0 && semMotoDoPedido) ||
+              (querMoto(msgCliente) ||
+                (catalogoDoTurno.length > 0 && semMotoDoPedido) ||
                 (motoAtual !== null && querAlternativa(msgCliente)));
             // A ferramenta de semelhantes já decidiu — não precisa classificar.
             if (!ofereceuSimilaresNesteTurno && precisaClassificar && !extraiuCriteriosNesteTurno) {
