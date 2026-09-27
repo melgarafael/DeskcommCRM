@@ -3654,8 +3654,9 @@ async function executarTurnoDoAgente(
                 runLog.info('catalog: critérios extraídos pela IA (pergunta dirigida)', {
                   intencao: extraidos.intencao,
                   criterios: extraidos.criterios,
-                  hipoteses: extraidos.hipoteses.length,
-                  faixas: Object.keys(extraidos.faixas),
+                  principal: extraidos.principal,
+                  hipoteses: extraidos.hipoteses,
+                  faixas: extraidos.faixas,
                 });
                 intencaoDoTurno = extraidos.intencao;
                 for (const [coluna, valor] of Object.entries(extraidos.criterios)) {
