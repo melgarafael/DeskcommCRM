@@ -124,6 +124,10 @@ export const salvarCatalogoSchema = z
             envio: z.boolean().default(false),
             ordem: z.number().int().min(1).max(9).optional(),
             compoe_nome: z.boolean().default(false),
+            // PREFIXO do nome, em maiúsculas (ex.: `marca` → "YAMAHA FZ 15").
+            // A tela envia este campo desde a config por coluna; sem ele aqui o
+            // `.strict()` REJEITAVA o salvamento ("Campos inválidos").
+            prefixo_nome: z.boolean().default(false),
           })
           .strict(),
       )

@@ -105,8 +105,45 @@ describe("salvarCatalogoSchema", () => {
     expect(r.ordem).toEqual({ cilindrada: 1, preco: 2 });
   });
 
-  it("aceita `legenda` como NOMES de coluna (qualquer coluna, mesmo sem papel)", () => {
-    expect(salvarCatalogoSchema.parse({ ...BASE, legenda: ["ano", "preco"] }).legenda).toEqual([
+  it("aceita o payload REAL da tela por coluna (envio + prefixo_nome) — não rejeitar", () => {
+    // O `.strict()` rejeitava `prefixo_nome` (a tela envia desde a config por
+    // coluna) → "Campos inválidos" ao salvar. Este é o payload exato.
+    const r = salvarCatalogoSchema.safeParse({
+      ...BASE,
+      col_similares: "moto_similar",
+      busca_operador: "contem",
+      colunas: [
+        {
+          coluna: "nome",
+          ia: true,
+          criterio: true,
+          mostrar: false,
+          comparar: true,
+          envio: true,
+          ordem: 1,
+          compoe_nome: true,
+          prefixo_nome: false,
+        },
+        {
+          coluna: "marca",
+          ia: true,
+          criterio: true,
+          mostrar: false,
+          comparar: true,
+          envio: false,
+          compoe_nome: false,
+          prefixo_nome: true,
+        },
+      ],
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.colunas[0]).toMatchObject({ envio: true, prefixo_nome: false });
+      expect(r.data.colunas[1]).toMatchObject({ envio: false, prefixo_nome: true });
+    }
+  });
+
+  it("aceita `legenda` como NOMES de coluna (qualquer coluna, mesmo sem papel)", () => {    expect(salvarCatalogoSchema.parse({ ...BASE, legenda: ["ano", "preco"] }).legenda).toEqual([
       "ano",
       "preco",
     ]);
