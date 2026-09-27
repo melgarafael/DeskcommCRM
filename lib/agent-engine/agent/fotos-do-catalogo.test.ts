@@ -236,7 +236,7 @@ describe('legendaDaMoto / formatarPreco', () => {
       preco: '28990.00',
     });
     expect(legenda).toBe(
-      'CB 300 F Twister 2025\nCor: Vermelho\nQuilometragem: 4500 km\nPreço: R$ 28.990,00',
+      'CB 300 F Twister 2025\nCor: Vermelho\nQuilometragem: 4.500 km\nPreço: R$ 28.990,00',
     );
   });
 
@@ -265,7 +265,7 @@ describe('legendaDaMoto / formatarPreco', () => {
     expect(legendaDaMoto(moto, campos(['preco']))).toBe('Biz 125 Flex\nPreço: R$ 14.500,00');
     // Tudo mostrado, inclusive tipo e cilindrada.
     expect(legendaDaMoto(moto, campos(['ano', 'cor', 'km', 'preco', 'tipo', 'cilindrada']))).toBe(
-      'Biz 125 Flex 2021\nCor: Marrom\nQuilometragem: 29000 km\nPreço: R$ 14.500,00\nTipo: Scooter\nCilindrada: 125 cc',
+      'Biz 125 Flex 2021\nCor: Marrom\nQuilometragem: 29.000 km\nPreço: R$ 14.500,00\nTipo: Scooter\nCilindrada: 125 cc',
     );
     // Coluna SEM papel (ex.: marca, potencia) sai como "Nome da coluna: valor".
     expect(

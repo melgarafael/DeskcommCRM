@@ -2652,6 +2652,8 @@ async function executarTurnoDoAgente(
   // sobre o catálogo. Vazias ⇒ comportamento antigo (só ranking).
   let hipotesesDoTurno: HipoteseDeMoto[] = [];
   let faixasDoTurno: FaixasDoPedido = {};
+  // C-096: coluna que o cliente enfatizou (o motor prioriza por ela).
+  let principalDoTurno: string | null = null;
   // Intenção classificada pela pergunta dirigida: 'pedido' | 'alternativa' | null.
   let intencaoDoTurno: 'pedido' | 'alternativa' | null = null;
   // TRAVA anti-loop: a pergunta dirigida à IA roda NO MÁXIMO UMA VEZ por turno.
@@ -3655,6 +3657,7 @@ async function executarTurnoDoAgente(
                 }
                 hipotesesDoTurno = extraidos.hipoteses;
                 faixasDoTurno = extraidos.faixas;
+                principalDoTurno = extraidos.principal;
               }
             }
             // Candidatos: o catálogo consultado pelo modelo neste turno. No modo
@@ -3715,6 +3718,8 @@ async function executarTurnoDoAgente(
               enviarTodasQueCasam: cfgCatalogo?.enviar_todas_que_casam === true,
               // C-092: "não completar quando faltar" — envia só as que casam.
               naoCompletarFaltando: cfgCatalogo?.nao_completar_faltando === true,
+              // C-096: atributo principal (bônus no casamento + 1º no ranking).
+              principal: principalDoTurno,
             });
             if (selecao.motos.length > 0) {
               // Persiste as motos oferecidas (inclusive as buscadas no banco) no

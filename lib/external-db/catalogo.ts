@@ -381,9 +381,39 @@ export interface CampoDaMoto {
 }
 
 /**
+ * Sinônimos de NOME de coluna → papel. Usado quando os campos antigos de papel
+ * (`col_preco`, `col_km`…) estão vazios — o que acontece quando o mapeamento usa
+ * só a config nova (`colunas[]`). Sem isto, a legenda perdia o rótulo formatado
+ * (Preço com R$, Quilometragem com km) e caía no nome cru da coluna — medido.
+ */
+const PAPEL_POR_NOME_DE_COLUNA: ReadonlyArray<readonly [PapelColuna, readonly string[]]> = [
+  ['preco', ['preco', 'preço', 'valor', 'preco_de_tabela_fipe']],
+  ['km', ['quilometragem', 'km', 'odometro', 'hodometro']],
+  ['cilindrada', ['cilindrada', 'cc', 'cubicagem']],
+  ['ano', ['ano', 'ano_fabricacao', 'ano_modelo']],
+  ['cor', ['cor']],
+  ['versao', ['versao', 'versão']],
+  ['estoque', ['estoque', 'quantidade', 'qtd']],
+  ['imagem', ['imagem_url', 'imagem', 'foto', 'fotos']],
+  ['tipo', ['categoria', 'tipo']],
+];
+
+/** Descobre o papel de uma coluna pelo NOME (fallback da config antiga). */
+function papelPeloNome(coluna: string): PapelColuna | null {
+  const c = coluna.trim().toLowerCase();
+  for (const [papel, nomes] of PAPEL_POR_NOME_DE_COLUNA) {
+    if (nomes.includes(c)) return papel;
+  }
+  return null;
+}
+
+/**
  * Converte o `legenda` (nomes de coluna) em campos de exibição, descobrindo o
  * PAPEL de cada coluna para o rótulo/formatação. Coluna sem papel sai como
  * `null` (o motor usa o próprio nome da coluna).
+ *
+ * O papel vem do campo antigo (`col_preco`…) quando existe; senão, do NOME da
+ * coluna (config nova), para a legenda manter a formatação (R$, km).
  */
 export function legendaParaExibicao(m: CatalogoMapeamento): CampoDaMoto[] {
   // Fonte: a config nova (`mostrar` por coluna); sem ela, a `legenda` antiga.
@@ -394,7 +424,10 @@ export function legendaParaExibicao(m: CatalogoMapeamento): CampoDaMoto[] {
     .map((c) => c.coluna);
   const efetivas = colunas.length > 0 ? colunas : (m.legenda ?? []);
   return efetivas.map((coluna) => {
-    const papel = PAPEIS_COLUNA.find((p) => colunaDoPapel(m, p) === coluna) ?? null;
+    const papel =
+      PAPEIS_COLUNA.find((p) => colunaDoPapel(m, p) === coluna) ??
+      papelPeloNome(coluna) ??
+      null;
     return { coluna, papel };
   });
 }

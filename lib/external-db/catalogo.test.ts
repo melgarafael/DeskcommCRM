@@ -262,6 +262,30 @@ describe('configEfetiva / comparação por coluna (migration 0251)', () => {
     expect(config[0]?.ia).toBe(true);
     expect(config[1]?.ordem).toBe(2);
   });
+
+  it('legendaParaExibicao resolve o PAPEL pelo NOME da coluna (config nova sem col_*)', () => {
+    // Caso REAL: o mapeamento usa só `colunas[]`; os campos `col_preco`/`col_km`
+    // ficam nulos. A legenda precisa manter o papel (Preço/Quilometragem) para
+    // formatar com R$ e milhar — antes caía no nome cru ("Preco").
+    const novo: CatalogoMapeamento = {
+      ...BASE,
+      colPreco: null,
+      colKm: null,
+      colunas: [
+        { coluna: 'nome', ia: true, criterio: true, compoeNome: true, ordem: 1 },
+        { coluna: 'cor', ia: true, criterio: true, mostrar: true },
+        { coluna: 'preco', ia: true, criterio: true, mostrar: true },
+        { coluna: 'quilometragem', ia: true, criterio: true, mostrar: true },
+        { coluna: 'potencia', ia: true, mostrar: true },
+      ],
+    };
+    const campos = legendaParaExibicao(novo);
+    const porColuna = new Map(campos.map((c) => [c.coluna, c.papel]));
+    expect(porColuna.get('preco')).toBe('preco');
+    expect(porColuna.get('quilometragem')).toBe('km');
+    expect(porColuna.get('cor')).toBe('cor');
+    expect(porColuna.get('potencia')).toBeNull(); // coluna sem papel
+  });
 });
 
 describe('renderBlocoCatalogo — critérios amplos (F3)', () => {

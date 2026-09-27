@@ -57,10 +57,11 @@ describe('parseCriterios', () => {
     expect(r.criterios).toEqual({ cilindrada: '300' });
   });
 
-  it('lê o formato NOVO: hipóteses + faixas', () => {
+  it('lê o formato NOVO: hipóteses + faixas + principal', () => {
     const r = parseCriterios(
       JSON.stringify({
         intencao: 'pedido',
+        principal: 'cilindrada',
         hipoteses: [
           { nome: 'CB 250', marca: 'HONDA', cilindrada: '250' },
           { nome: 'CB 300', marca: 'HONDA', cilindrada: '293.5' },
@@ -74,6 +75,7 @@ describe('parseCriterios', () => {
     expect(r.hipoteses[0]).toMatchObject({ nome: 'CB 250', marca: 'HONDA' });
     expect(r.faixas.cilindrada).toEqual({ min: 125, max: 300 });
     expect(r.faixas.preco).toEqual({ min: 9000, max: 20000 });
+    expect(r.principal).toBe('cilindrada');
   });
 
   it('ignora hipóteses com colunas não permitidas', () => {

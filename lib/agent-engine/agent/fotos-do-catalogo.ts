@@ -298,6 +298,14 @@ export function formatarPreco(preco: string | undefined): string | undefined {
   return `R$ ${numero.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+/** Formata quilometragem "104000" → "104.000" (separador de milhar BR). */
+export function formatarKm(km: string | undefined): string | undefined {
+  if (km === undefined) return undefined;
+  const numero = Number(km.replace(/[^0-9.,-]/g, '').replace(/\.(?=\d{3}\b)/g, '').replace(',', '.'));
+  if (!Number.isFinite(numero)) return km;
+  return numero.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+}
+
 /** Lê o valor de um campo: da coluna marcada (C-067) ou do campo tipado pelo papel. */
 function valorDoCampo(moto: MotoDoCatalogo, campo: CampoDaMoto): string | undefined {
   if (campo.coluna !== '' && moto.valores?.[campo.coluna] !== undefined) {
@@ -338,9 +346,13 @@ function montarLegenda(moto: MotoDoCatalogo, campos: readonly CampoDaMoto[]): st
       if (preco) linhas.push(`Preço: ${preco}`);
       continue;
     }
+    if (campo.papel === 'km') {
+      const km = formatarKm(valor);
+      linhas.push(`Quilometragem: ${km} km`);
+      continue;
+    }
     const rotulo = ROTULO_POR_PAPEL[campo.papel ?? ''] ?? humanizarColuna(campo.coluna);
-    const sufixo = campo.papel === 'km' ? ' km' : '';
-    linhas.push(`${rotulo}: ${valor}${sufixo}`);
+    linhas.push(`${rotulo}: ${valor}`);
   }
   return linhas.join('\n');
 }

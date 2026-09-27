@@ -347,20 +347,56 @@ describe('selecionarPorIntencao', () => {
   });
 });
 
-describe('filtrarPorHipoteses (C-089)', () => {
-  it('filtra por marca (texto) e cilindrada (faixa)', () => {
+describe('filtrarPorHipoteses (C-089 → C-096 OR pontuado)', () => {
+  it('OR: casa por marca OU categoria OU faixa — quem casa mais sobe', () => {
     const passou = filtrarPorHipoteses(
       CATALOGO,
       [{ marca: 'HONDA', categoria: 'Street' }],
       { cilindrada: { min: 100, max: 170 } },
       30,
     );
-    // Honda street com cc ≤170: Pop 110 (110), Biz 125 (125), CG 160 (160). CB 300 fora.
-    expect(passou.map((m) => m.nome).sort()).toEqual([
-      'HONDA Biz 125',
-      'HONDA CG 160',
-      'HONDA Pop 110',
-    ]);
+    // OR: TODAS as Honda entram (casam a marca), inclusive a CB 300 (Naked). As
+    // que casam MAIS critérios (Biz/CG/Pop: Honda+Street+cc) vêm ANTES da CB 300
+    // (só Honda). Nunca descarta por causa de uma coluna que não bate.
+    const nomes = passou.map((m) => m.nome);
+    expect(nomes).toContain('HONDA CB 300');
+    // As 3 primeiras casam Honda+Street+faixa; a CB 300 fica por último.
+    expect(nomes.slice(0, 3).sort()).toEqual(['HONDA Biz 125', 'HONDA CG 160', 'HONDA Pop 110']);
+    expect(nomes[nomes.length - 1]).toBe('HONDA CB 300');
+  });
+
+  it('OR: categoria diferente mas preço parecido ENTRA (caso do dono)', () => {
+    const catalogo: MotoDoCatalogo[] = [
+      moto('HONDA Biz 125', { categoria: 'Scooter', cilindrada: '125', marca: 'HONDA', preco: '14500' }),
+      moto('HONDA CB 300', { categoria: 'Naked', cilindrada: '300', marca: 'HONDA', preco: '15000' }),
+    ];
+    // Pedido: categoria Street + preço ~15k. A Biz é Scooter (não bate categoria)
+    // mas o preço bate → ENTRA. A CB 300 bate preço → ENTRA.
+    const passou = filtrarPorHipoteses(
+      catalogo,
+      [{ categoria: 'Street' }],
+      { preco: { min: 14000, max: 16000 } },
+      30,
+    );
+    const nomes = passou.map((m) => m.nome);
+    expect(nomes).toContain('HONDA Biz 125');
+    expect(nomes).toContain('HONDA CB 300');
+  });
+
+  it('principal vale bônus: quem casa o principal sobe', () => {
+    const catalogo: MotoDoCatalogo[] = [
+      moto('HONDA Biz 125', { categoria: 'Scooter', cilindrada: '125', marca: 'HONDA', preco: '14500' }),
+      moto('YAMAHA Factor 150', { categoria: 'Street', cilindrada: '150', marca: 'YAMAHA', preco: '12990' }),
+    ];
+    // Principal = preco. Ambas casam algo; a que casa preço (Biz, ~14,5k) sobe.
+    const passou = filtrarPorHipoteses(
+      catalogo,
+      [{ marca: 'HONDA' }],
+      { preco: { min: 14000, max: 15000 } },
+      30,
+      'preco',
+    );
+    expect(passou[0]!.nome).toBe('HONDA Biz 125'); // casa marca + preço (principal)
   });
 
   it('sem hipótese/faixa válida → lista vazia (filtro é ignorado pelo chamador)', () => {

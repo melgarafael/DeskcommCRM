@@ -105,6 +105,11 @@ export interface EntradaSelecaoPorIntencao {
    * Não afeta o modo "enviar todas que casam" (que já manda tudo que casou).
    */
   naoCompletarFaltando?: boolean;
+  /**
+   * C-096: coluna que o cliente ENFATIZOU (ex.: "preco" para "quero barata").
+   * O motor prioriza por ela no casamento/ordenação. `null` = sem destaque.
+   */
+  principal?: string | null;
 }
 
 export interface ResultadoSelecaoPorIntencao {
@@ -179,73 +184,89 @@ function valorNumerico(valor: string | undefined): number | null {
 }
 
 /**
- * A moto casa UMA hipótese? Casa quando TODAS as colunas preenchidas na hipótese
- * batem: número → dentro de ±tolerância; texto → contém o token (normalizado).
- * Hipótese sem coluna alguma nunca casa (evita "filtro vazio").
+ * C-096: a moto casa UMA coluna contra o alvo? Número → dentro de ±tolerância;
+ * texto → contém (normalizado). Base da pontuação do OR.
  */
-function casaHipotese(
-  moto: MotoDoCatalogo,
-  hipotese: HipoteseDeMoto,
-  toleranciaPct: number,
-): boolean {
-  const entradas = Object.entries(hipotese).filter(
-    ([, v]) => typeof v === 'string' && v.trim() !== '',
-  );
-  if (entradas.length === 0) return false;
-  for (const [coluna, alvo] of entradas) {
-    const celula = moto.valores?.[coluna];
-    if (celula === undefined || celula === '') return false;
-    const alvoNum = valorNumerico(alvo as string);
-    const celulaNum = valorNumerico(celula);
-    if (alvoNum !== null && celulaNum !== null) {
-      const margem = Math.max(1, (Math.abs(alvoNum) * toleranciaPct) / 100);
-      if (Math.abs(celulaNum - alvoNum) > margem) return false;
-    } else if (!normalizarNomeDeMoto(celula).includes(normalizarNomeDeMoto(alvo as string))) {
-      return false;
-    }
+function casaColuna(moto: MotoDoCatalogo, coluna: string, alvo: string, toleranciaPct: number): boolean {
+  const celula = moto.valores?.[coluna];
+  if (celula === undefined || celula === '') return false;
+  const alvoNum = valorNumerico(alvo);
+  const celulaNum = valorNumerico(celula);
+  if (alvoNum !== null && celulaNum !== null) {
+    const margem = Math.max(1, (Math.abs(alvoNum) * toleranciaPct) / 100);
+    return Math.abs(celulaNum - alvoNum) <= margem;
   }
-  return true;
+  return normalizarNomeDeMoto(celula).includes(normalizarNomeDeMoto(alvo));
 }
 
-/** A moto casa TODAS as faixas presentes (números fora do intervalo reprovam). */
-function casaFaixas(moto: MotoDoCatalogo, faixas: FaixasDoPedido): boolean {
-  let avaliou = false;
-  for (const [coluna, faixa] of Object.entries(faixas)) {
-    if (typeof faixa !== 'object' || faixa === null) continue;
-    const f = faixa as { min?: unknown; max?: unknown };
-    const celula = valorNumerico(moto.valores?.[coluna]);
-    if (celula === null) continue; // coluna não numérica/ausente não reprova
-    if (typeof f.min === 'number' && celula < f.min) return false;
-    if (typeof f.max === 'number' && celula > f.max) return false;
-    avaliou = true;
-  }
-  return avaliou;
+/** A coluna numérica da moto está dentro da faixa {min,max}? */
+function casaFaixaColuna(moto: MotoDoCatalogo, coluna: string, faixa: unknown): boolean {
+  if (typeof faixa !== 'object' || faixa === null) return false;
+  const f = faixa as { min?: unknown; max?: unknown };
+  const celula = valorNumerico(moto.valores?.[coluna] ?? '');
+  if (celula === null) return false;
+  if (typeof f.min === 'number' && celula < f.min) return false;
+  if (typeof f.max === 'number' && celula > f.max) return false;
+  return typeof f.min === 'number' || typeof f.max === 'number';
 }
 
 /**
- * FILTRA os candidatos por hipóteses/faixas devolvidas pela IA (decisão do dono,
- * 2026-09-26). Só as colunas COM valor/faxa filtram. Uma moto entra se casar
- * QUALQUER hipótese E todas as faixas. Nunca lança. Lista vazia = filtro ignorado
- * (o chamador cai no ranking) — nunca zera a resposta.
+ * C-096: pontua uma moto contra hipóteses + faixas + coluna principal.
+ *
+ * REGRA DO DONO (2026-09-27): o casamento é OR — a moto entra se bater em PELO
+ * MENOS UMA coluna, e sobe conforme bate em MAIS. NUNCA é descartada por uma
+ * coluna que não bate. O `principal` (o que o cliente enfatizou) vale bônus alto.
+ */
+export function pontuarPorCriterios(
+  moto: MotoDoCatalogo,
+  hipoteses: readonly HipoteseDeMoto[],
+  faixas: FaixasDoPedido,
+  toleranciaPct: number,
+  principal: string | null,
+): { pontos: number; colunasCasadas: number } {
+  let pontos = 0;
+  const colunasOk = new Set<string>();
+  const marca = (coluna: string): void => {
+    colunasOk.add(coluna);
+    pontos += 10;
+    if (principal !== null && coluna === principal) pontos += 50;
+  };
+  for (const hip of hipoteses) {
+    for (const [coluna, alvo] of Object.entries(hip)) {
+      if (typeof alvo !== 'string' || alvo.trim() === '') continue;
+      if (casaColuna(moto, coluna, alvo, toleranciaPct)) marca(coluna);
+    }
+  }
+  for (const [coluna, faixa] of Object.entries(faixas)) {
+    if (casaFaixaColuna(moto, coluna, faixa)) marca(coluna);
+  }
+  if (colunasOk.size >= 2) pontos += colunasOk.size * 5; // bônus de combinação
+  return { pontos, colunasCasadas: colunasOk.size };
+}
+
+/**
+ * FILTRA/PONTUA os candidatos por hipóteses/faixas (decisão do dono, 2026-09-27):
+ * OR pontuado. Devolve as motos com pontos > 0, da MAIOR pontuação para a menor.
+ * Quem não casa nada NÃO entra. Lista vazia = filtro ignorado (o chamador cai no
+ * ranking) — nunca zera a resposta forçadamente.
  */
 export function filtrarPorHipoteses(
   candidatos: readonly MotoDoCatalogo[],
   hipoteses: readonly HipoteseDeMoto[],
   faixas: FaixasDoPedido,
   toleranciaPct: number,
+  principal: string | null = null,
 ): MotoDoCatalogo[] {
-  const temHipoteses = hipoteses.some(
-    (h) => Object.values(h).some((v) => typeof v === 'string' && v.trim() !== ''),
+  const temHipoteses = hipoteses.some((h) =>
+    Object.values(h).some((v) => typeof v === 'string' && v.trim() !== ''),
   );
   const temFaixas = Object.keys(faixas).length > 0;
   if (!temHipoteses && !temFaixas) return [];
-  const saida = candidatos.filter((moto) => {
-    const passaFaixas = temFaixas ? casaFaixas(moto, faixas) : true;
-    if (!passaFaixas) return false;
-    if (!temHipoteses) return true;
-    return hipoteses.some((h) => casaHipotese(moto, h, toleranciaPct));
-  });
-  return saida;
+  return candidatos
+    .map((moto, i) => ({ moto, i, ...pontuarPorCriterios(moto, hipoteses, faixas, toleranciaPct, principal) }))
+    .filter((x) => x.pontos > 0)
+    .sort((a, b) => b.pontos - a.pontos || a.i - b.i)
+    .map((x) => x.moto);
 }
 
 /**
@@ -334,6 +355,8 @@ export function selecionarPorIntencao(
       input.faixas ?? {},
       // Tolerância de cilindrada/preço para casar hipótese × moto real.
       input.toleranciaPct ?? 30,
+      // C-096: coluna principal (o que o cliente enfatizou) — bônus no casamento.
+      input.principal ?? null,
     );
     if (passou.length > 0) {
       preferidos = new Set(passou);
@@ -348,6 +371,13 @@ export function selecionarPorIntencao(
   const termoFinal = extras !== '' ? `${input.termoBase} ${extras}` : input.termoBase;
 
   const criteriosColunas = colunasComparacao.filter((c) => preferencias[c] === undefined);
+  // C-096: o atributo PRINCIPAL (o que o cliente enfatizou) vira a 1ª coluna de
+  // ordenação; as demais seguem a ordem configurada. Sem principal, igual a hoje.
+  const principal = input.principal ?? null;
+  const colunasRanking =
+    principal !== null && principal !== ''
+      ? [principal, ...criteriosColunas.filter((c) => c !== principal)]
+      : criteriosColunas;
 
   // Teto: `todasSeEspecificacao` (modelo existe) OU `aplicarLimite: false`
   // (toggle B desligado) abrem o teto e devolvem TODAS as candidatas. C-090: o
@@ -364,7 +394,7 @@ export function selecionarPorIntencao(
   const quantidadeBase = semTeto ? Math.max(basePreferida.length, 1) : quantidade;
   const motos = escolherComReferencia(termoFinal, basePreferida, {
     quantidade: quantidadeBase,
-    criteriosColunas,
+    criteriosColunas: colunasRanking,
     // No modo ALTERNATIVA a reserva por `moto_similar` NÃO se aplica: o cliente
     // não está pedindo uma moto pelo nome, e casar o termo (que inclui a objeção
     // e a âncora) contra as referências traria "reservas" espúrias (medido ao
@@ -393,7 +423,7 @@ export function selecionarPorIntencao(
     if (complemento.length > 0) {
       const resto = escolherComReferencia(termoFinal, complemento, {
         quantidade: quantidade - motos.length,
-        criteriosColunas,
+        criteriosColunas: colunasRanking,
         colunaSimilares: colunaDeSimilares(input.mapeamento),
         ...(Object.keys(preferencias).length > 0 ? { preferencias } : {}),
       });

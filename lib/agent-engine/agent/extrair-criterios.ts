@@ -60,11 +60,16 @@ export interface CriteriosExtraidos {
   hipoteses: HipoteseDeMoto[];
   /** Intervalos aceitáveis por coluna (cilindrada/preço/categoria/marca…). */
   faixas: FaixasDoPedido;
+  /**
+   * C-096: coluna que o cliente ENFATIZOU ("preco" em "quero barata"; "categoria"
+   * em "quero Naked"). O motor prioriza por ela. `null` = sem destaque.
+   */
+  principal: string | null;
 }
 
 /** Formato vazio (nunca lança). */
 export function criteriosVazios(): CriteriosExtraidos {
-  return { intencao: null, criterios: {}, hipoteses: [], faixas: {} };
+  return { intencao: null, criterios: {}, hipoteses: [], faixas: {}, principal: null };
 }
 
 /** Quantas motos do estoque entram no prompt (evita estourar o contexto). */
@@ -104,6 +109,7 @@ export function buildCriteriosPrompt(
     .join('\n');
   const exemplo = JSON.stringify({
     intencao: 'pedido',
+    principal: colunas[1] ?? colunas[0] ?? 'categoria',
     hipoteses: [
       Object.fromEntries(colunas.slice(0, 3).map((c) => [c, valores?.[c]?.[0] ?? `<valor de ${c}>`])),
     ],
@@ -125,9 +131,11 @@ export function buildCriteriosPrompt(
     'Intenções possíveis:',
     '- "pedido": o cliente pede/quer uma moto (por nome, marca, cilindrada, estilo…).',
     '- "alternativa": o cliente está falando de uma moto e quer algo DIFERENTE dela (ex.: achou caro, quer outra cor/ano/marca, quer mais barata).',
-    'Devolva TRÊS blocos:',
+    'Devolva os blocos:',
+    '- "principal": a coluna que o cliente MAIS enfatizou, entre as colunas de critério (ex.: "preco" em "quero uma barata"; "categoria" em "quero uma Naked"; "cilindrada" em "quero uma 300"). Se não houver destaque, use null.',
     '- "hipoteses": lista de configurações concretas prováveis (ex.: {"nome":"CB 250","marca":"HONDA","categoria":"Naked","cilindrada":"250"}). Inclua variações plausíveis (o cliente pode ter errado a cilindrada/modelo).',
     '- "faixas": intervalos aceitáveis (ex.: {"cilindrada":{"min":125,"max":300},"preco":{"min":9000,"max":20000}}). Use quando o pedido for vago.',
+    'REGRA DE OURO do casamento: uma moto NÃO precisa bater em tudo. Ela deve ser oferecida se bater em PELO MENOS UMA coluna (categoria OU preço OU cilindrada OU marca…), e sobe de prioridade quanto MAIS colunas bater e se bater no "principal". NUNCA descarte por causa de uma coluna que não bate.',
     'Para uma PREFERÊNCIA de ordem numa coluna (mais barata, mais nova, menos km), use o valor "menor" ou "maior" em "criterios" (ex.: {"preco":"menor"} = mais barata que a atual).',
     'Colunas de critério:',
     lista,
@@ -140,7 +148,7 @@ export function buildCriteriosPrompt(
     'Mensagem do cliente:',
     mensagem,
     '',
-    'Agora responda com o JSON preenchido (mesmo formato do exemplo): "intencao", "hipoteses" e "faixas".',
+    'Agora responda com o JSON preenchido (mesmo formato do exemplo): "intencao", "principal", "hipoteses" e "faixas".',
     'NUNCA devolva vazio: se não tiver certeza do modelo, preencha "faixas" com um intervalo amplo.',
     JSON_INSTRUCTION,
   ].join('\n');
@@ -232,7 +240,20 @@ export function parseCriterios(
     }
   }
 
-  return { intencao, criterios, hipoteses, faixas: parseFaixas(obj.faixas, colunasPermitidas) };
+  // C-096: coluna principal (só se for uma coluna permitida).
+  const principalBruto = obj.principal;
+  const principal =
+    typeof principalBruto === 'string' && colunasPermitidas.includes(principalBruto.trim())
+      ? principalBruto.trim()
+      : null;
+
+  return {
+    intencao,
+    criterios,
+    hipoteses,
+    faixas: parseFaixas(obj.faixas, colunasPermitidas),
+    principal,
+  };
 }
 
 export interface ExtrairCriteriosDeps {
