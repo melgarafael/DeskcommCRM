@@ -3597,7 +3597,10 @@ async function executarTurnoDoAgente(
             // C-071: numa OBJEÇÃO DE VALOR não se oferece semelhantes automaticamente
             // — primeiro a IA persuade; só a ferramenta `crm_offer_similar_motos`
             // (ou um pedido explícito de diferente) dispara a busca.
-            const ehObjecaoMsg = ehObjecaoValor(msgCliente);
+            // C-098: "barata"/"mais barata" só é OBJEÇÃO quando há moto atual
+            // (o cliente reclama do preço DELA). Sem moto atual, é um PEDIDO
+            // ("quero uma moto barata") e deve classificar normalmente.
+            const ehObjecaoMsg = ehObjecaoValor(msgCliente) && motoAtual !== null;
             // C-097: o extrator roda SEMPRE que o cliente pede/quer uma moto
             // (`querMoto`), não só quando o modelo já consultou o catálogo. Antes,
             // um pedido no 1º turno (modelo não consultou) ficava sem classificação
