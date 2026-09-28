@@ -6,6 +6,7 @@ import type { MotoDoCatalogo } from './fotos-do-catalogo';
 import {
   casaPerfil,
   filtrarPorHipoteses,
+  pedePrecoSemValor,
   perfilDaIA,
   querAlternativa,
   querMoto,
@@ -98,6 +99,19 @@ describe('querAlternativa (pré-filtro)', () => {
   it('não dispara em turnos sem necessidade de consultar o catálogo', () => {
     for (const frase of ['obrigado', 'ok', 'beleza', 'bom dia', 'vou financiar', 'quanto fica?']) {
       expect(querAlternativa(frase), frase).toBe(false);
+    }
+  });
+});
+
+describe('pedePrecoSemValor (C-100)', () => {
+  it('true quando fala de preço SEM número', () => {
+    for (const f of ['qual o preco?', 'quanto custa?', 'ta caro', 'quero uma moto barata', 'tem como melhorar o valor?']) {
+      expect(pedePrecoSemValor(f), f).toBe(true);
+    }
+  });
+  it('false quando cita número ou não fala de preço', () => {
+    for (const f of ['quero uma moto ate 15000', 'tem algo por 10 mil', 'quero uma cb 300', 'boa noite']) {
+      expect(pedePrecoSemValor(f), f).toBe(false);
     }
   });
 });

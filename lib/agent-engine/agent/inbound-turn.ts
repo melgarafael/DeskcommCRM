@@ -184,7 +184,7 @@ import {
 import { extrairCriterios } from './extrair-criterios';
 import type { FaixasDoPedido, HipoteseDeMoto } from './extrair-criterios';
 import { carregarCatalogoDoBanco, mesclarMotos } from './catalogo-do-banco';
-import { casaPerfil, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
+import { casaPerfil, pedePrecoSemValor, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
 import {
   carregarCatalogoMapeamento,
   colunaDeSimilares,
@@ -5046,6 +5046,12 @@ async function executarTurnoDoAgente(
       faseObjecaoTurno !== null ? renderBlocoObjecao(faseObjecaoTurno) : '',
       stageHintBlock,
       splitHint,
+      // C-100: o cliente pede por preço SEM citar valor (ex.: "qual o preço?") e
+      // NÃO há moto atual — o motor instrui a IA a PERGUNTAR/confirmar a faixa,
+      // em vez de inventar. Determinístico.
+      currentInboundText !== null && motoAtualDaConversa === null && pedePrecoSemValor(currentInboundText)
+        ? '## Perguntar a faixa de preço\nO cliente falou de preço/orçamento SEM citar um valor. NÃO invente faixa nem ofereça motos por chute: pergunte de forma natural qual a faixa de preço (ou o valor aproximado) que ele procura, e ofereça confirmar as opções dentro dela. Não liste nomes de motos neste turno.'
+        : '',
       // C-089: o filtro casou mais motos do que as oferecidas — o cliente deve ser
       // convidado a ver as demais. Determinístico (motor), por-lead.
       temMaisOpcoesNesteTurno

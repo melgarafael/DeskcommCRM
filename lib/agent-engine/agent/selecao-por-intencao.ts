@@ -232,10 +232,24 @@ export function pontuarPorCriterios(
     if (principal !== null && coluna === principal) pontos += 50;
   };
   for (const hip of hipoteses) {
-    for (const [coluna, alvo] of Object.entries(hip)) {
-      if (typeof alvo !== 'string' || alvo.trim() === '') continue;
-      if (casaColuna(moto, coluna, alvo, toleranciaPct)) marca(coluna);
+    const entradas = Object.entries(hip).filter(
+      ([, v]) => typeof v === 'string' && v.trim() !== '',
+    );
+    if (entradas.length === 0) continue;
+    let casouHip = 0;
+    for (const [coluna, alvo] of entradas) {
+      if (casaColuna(moto, coluna, alvo as string, toleranciaPct)) {
+        marca(coluna);
+        casouHip += 1;
+      }
     }
+    // C-100: a HIPÓTESE como BLOCO — casar quase toda (ou toda) vale muito mais
+    // que casar 1 coluna solta. Sem isso, uma moto que casa só `preco` (qualquer
+    // uma) empatava com a que é de fato parecida. NÃO exclui ninguém (OR segue).
+    const proporcao = casouHip / entradas.length;
+    if (casouHip >= 2) pontos += 15 * casouHip;
+    if (proporcao === 1) pontos += 40;
+    else if (proporcao >= 0.5) pontos += 20;
   }
   for (const [coluna, faixa] of Object.entries(faixas)) {
     if (casaFaixaColuna(moto, coluna, faixa)) marca(coluna);
@@ -484,6 +498,20 @@ export function querMaisOpcoes(mensagem: string): boolean {
  * Conservador de propósito: exige um TERMO de moto/produto OU um VERBO de
  * pedido. Acenos ("ok", "obrigado", "bom dia") não disparam.
  */
+/**
+ * C-100: o cliente pede por PREÇO/valor SEM citar um número? (ex.: "qual o preço?",
+ * "quanto custa?", "tá caro"). Nesse caso o motor INSTRUI a IA a perguntar/confirmar
+ * a faixa, em vez de inventar.
+ */
+export function pedePrecoSemValor(mensagem: string): boolean {
+  const n = normalizarNomeDeMoto(mensagem);
+  if (n === '') return false;
+  const falaDePreco = /\b(preco|valor|quanto custa|quanto fica|orcamento|faixa de preco|barat\w*|caro|custa)\b/.test(n);
+  if (!falaDePreco) return false;
+  const temNumero = /\b\d{3,}\b|\bmil\b|\bk\b/.test(n);
+  return !temNumero;
+}
+
 export function querMoto(mensagem: string): boolean {
   const n = normalizarNomeDeMoto(mensagem);
   if (n === '') return false;
