@@ -482,6 +482,12 @@ export const AUDIT_ACTIONS = [
   // banco externo o agente usa para montar a apresentação. Auditado porque muda
   // o que o agente LÊ do dado de terceiro.
   "external_db_catalog.updated",
+  // A limpeza total de um contato a pedido do próprio cliente ou do atendente
+  // (C-104). São dois códigos porque a autoria muda a pergunta que se faz
+  // depois: "o cliente pediu para esquecer" e "um atendente apagou o cadastro"
+  // pedem investigações diferentes. O metadata NUNCA leva telefone nem nome.
+  "contact.erased_by_customer",
+  "contact.erased_by_agent",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

@@ -52,6 +52,7 @@ import { FunisDoAgente, type CoberturaPorFunil } from "./FunisDoAgente";
 import { PublishConfirmDialog } from "./PublishConfirmDialog";
 import { CatalogoDoAgente } from "./CatalogoDoAgente";
 import { ComandosDoCelular } from "./ComandosDoCelular";
+import { LimpezaDaConversa } from "./LimpezaDaConversa";
 import {
   saveAgentDraftAction,
   publishAgentAction,
@@ -1110,6 +1111,22 @@ export function AgentForm(props: Props) {
                   aceita_comandos_celular?: unknown;
                   comando_ligar?: unknown;
                   comando_desligar?: unknown;
+                }
+              }
+              disabled={disabled}
+            />
+          )}
+
+          {/* Limpeza de conversa (C-104): o cliente apaga pelo WhatsApp e/ou o
+              atendente apaga pela tela. Salva em `ai_agents.config`. */}
+          {isEdit && (
+            <LimpezaDaConversa
+              agentId={props.agent.id}
+              configInicial={
+                (props.agent.config ?? {}) as {
+                  aceita_limpeza_cliente?: unknown;
+                  permite_limpeza_atendente?: unknown;
+                  comando_limpar?: unknown;
                 }
               }
               disabled={disabled}

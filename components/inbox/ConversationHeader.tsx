@@ -5,7 +5,18 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { JanelaSelo } from "@/components/inbox/JanelaSelo";
-import { Phone, ArrowRight } from "@/lib/ui/icons";
+import { Phone, ArrowRight, Trash } from "@/lib/ui/icons";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
+import { useApagarDadosDoContato } from "@/hooks/contacts/useApagarDadosDoContato";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
@@ -23,6 +34,14 @@ import { phoneForDisplay } from "@/lib/channels/phone-variants";
 
 interface Props {
   conversation: ConversationWithContact;
+  /**
+   * C-104: o botão "Limpar conversa" aparece? Vem da config do agente publicado
+   * (`ai_agents.config.permite_limpeza_atendente`), lida no servidor. Esconder o
+   * botão NÃO é a trava — a rota recheca a mesma flag.
+   */
+  podeLimparConversa?: boolean;
+  /** Chamado depois de apagar, para o inbox soltar a conversa selecionada. */
+  onLimpar?: () => void;
 }
 
 /**
@@ -51,9 +70,11 @@ const STATUS_LABEL: Record<string, string> = {
   archived: "Arquivada",
 };
 
-export function ConversationHeader({ conversation }: Props) {
+export function ConversationHeader({ conversation, podeLimparConversa, onLimpar }: Props) {
   const t = useT();
   const { user } = useAuth();
+  const apagar = useApagarDadosDoContato();
+  const [limparOpen, setLimparOpen] = useState(false);
   const claim = useClaimConversation();
   const release = useReleaseConversation();
   const close = useCloseConversation();
@@ -320,6 +341,26 @@ export function ConversationHeader({ conversation }: Props) {
             Abaixo de 1280 o painel não existe, e aí esta é a única porta para o
             contato — por isso a condição é a mesma do painel, e não um valor
             escolhido à parte. Não é esconder ação; é não repeti-la. */}
+        {/* LIMPAR CONVERSA (C-104). Só aparece quando o agente publicado liga
+            `permite_limpeza_atendente`. Apaga TUDO do contato — contato,
+            conversas, mensagens, interesses —, como o `limpar-tudo.sh`. Fica
+            discreto (ícone com rótulo que some no aperto) porque é destrutivo e
+            exige a confirmação do diálogo. */}
+        {podeLimparConversa && c?.id && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-destructive hover:text-destructive"
+            title={t("Limpar conversa")}
+            aria-label={t("Limpar conversa")}
+            data-testid="limpar-conversa"
+            disabled={apagar.isPending}
+            onClick={() => setLimparOpen(true)}
+          >
+            <Trash size={16} weight="regular" aria-hidden />
+            <span className="ml-1 hidden sm:inline">{t("Limpar conversa")}</span>
+          </Button>
+        )}
         {c?.id && (
           <Button asChild size="sm" variant="ghost" className="xl:hidden">
             <Link href={`/app/contacts/${c.id}`} className="flex items-center gap-1">
@@ -329,6 +370,40 @@ export function ConversationHeader({ conversation }: Props) {
           </Button>
         )}
       </div>
+      {podeLimparConversa && c?.id && (
+        <AlertDialog open={limparOpen} onOpenChange={setLimparOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t("Apagar tudo deste contato?")}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t(
+                  "Apaga o contato, as conversas, as mensagens e os interesses. O próximo contato começa do zero e esta ação não pode ser desfeita.",
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={apagar.isPending}>{t("Cancelar")}</AlertDialogCancel>
+              <Button
+                variant="destructive"
+                data-testid="confirmar-limpar-conversa"
+                disabled={apagar.isPending}
+                onClick={() => {
+                  if (!c?.id) return;
+                  apagar.mutate(c.id, {
+                    onSuccess: () => {
+                      setLimparOpen(false);
+                      toast.success(t("Conversa apagada."));
+                      onLimpar?.();
+                    },
+                  });
+                }}
+              >
+                {apagar.isPending ? t("Apagando…") : t("Apagar tudo")}
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
       <ReassignDialog
         conversationId={conversation.id}
         open={reassignOpen}

@@ -111,9 +111,18 @@ function parseFilterParam(v: string | null): InboxTab {
 
 interface InboxLayoutProps {
   initialSelectedId?: string | null;
+  /**
+   * C-104: o atendente pode apagar o contato pela conversa? Lido no servidor
+   * (`app/app/inbox/page.tsx`) da config do agente publicado e repassado ao
+   * header. Default `false`: sem a flag, o botão não existe.
+   */
+  podeLimparConversa?: boolean;
 }
 
-export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {}) {
+export function InboxLayout({
+  initialSelectedId = null,
+  podeLimparConversa = false,
+}: InboxLayoutProps = {}) {
   const t = useT();
   const { activeOrg, user } = useAuth();
   const supportReadonly = user.support?.access_mode === "support_readonly";
@@ -467,7 +476,11 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
         )}
         {selectedConversation ? (
           <>
-            <ConversationHeader conversation={selectedConversation} />
+            <ConversationHeader
+              conversation={selectedConversation}
+              podeLimparConversa={podeLimparConversa}
+              onLimpar={() => handleSelect(null)}
+            />
             <div className="min-h-0 flex-1 overflow-hidden">
               <ChatThread conversationId={selectedConversation.id} onResponder={setRespondendo} />
             </div>

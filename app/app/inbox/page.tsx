@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { InboxLayout } from "@/components/inbox/InboxLayout";
+import { configDeLimpezaDoAgente } from "@/lib/escalacao/limpeza-de-conversa";
+import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -35,5 +37,17 @@ export default async function InboxPage({
     );
   }
   const { id } = await searchParams;
-  return <InboxLayout initialSelectedId={id ?? null} />;
+
+  // C-104: a limpeza pelo atendente é decisão do agente publicado. Lida AQUI,
+  // no servidor, para o botão nem nascer desligado — e a rota recheca a mesma
+  // flag, porque esconder botão não é controle de acesso.
+  const supabase = await createClient();
+  const limpeza = await configDeLimpezaDoAgente(supabase, activeOrg.orgId);
+
+  return (
+    <InboxLayout
+      initialSelectedId={id ?? null}
+      podeLimparConversa={limpeza.permiteAtendente}
+    />
+  );
 }

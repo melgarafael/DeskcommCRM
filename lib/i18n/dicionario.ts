@@ -8716,6 +8716,42 @@ export const DICIONARIO: Traducoes = {
   "A skill é carregada quando o cliente escreve uma destas palavras.":
     { es: "La skill se carga cuando el cliente escribe una de estas palabras." },
   linhas: { es: "líneas" },
+
+  // ─── Limpeza de conversa (C-104) — cartão do agente + botão da conversa ───
+  "Limpeza de conversa": { es: "Limpieza de conversación" },
+  "Apaga tudo o que o CRM guarda de um cliente: o contato da lista, a conversa, as mensagens e os interesses. A ação é irreversível e o próximo contato começa do zero.":
+    {
+      es: "Borra todo lo que el CRM guarda de un cliente: el contacto de la lista, la conversación, los mensajes y los intereses. La acción es irreversible y el próximo contacto empieza de cero.",
+    },
+  "O cliente pode apagar os próprios dados pelo WhatsApp":
+    { es: "El cliente puede borrar sus propios datos por WhatsApp" },
+  "Comando para apagar (a mensagem inteira)": { es: "Comando para borrar (el mensaje completo)" },
+  "Salvar comando": { es: "Guardar comando" },
+  "Voltar ao padrão (#limpar)": { es: "Volver al estándar (#limpiar)" },
+  "O comando precisa de um texto.": { es: "El comando necesita un texto." },
+  "O atendente pode apagar pela tela da conversa":
+    { es: "El agente puede borrar desde la pantalla de la conversación" },
+  "Pode ser uma palavra ou um emoji. Só conta quando a mensagem inteira é o comando. O cliente verá a mensagem que enviou.":
+    {
+      es: "Puede ser una palabra o un emoji. Solo cuenta cuando el mensaje completo es el comando. El cliente verá el mensaje que envió.",
+    },
+  "Limpeza pedida pelo cliente ligada — já vale no próximo atendimento.":
+    { es: "Limpieza pedida por el cliente activada — ya rige en la próxima atención." },
+  "Limpeza pedida pelo cliente desligada.":
+    { es: "Limpieza pedida por el cliente desactivada." },
+  "Limpeza pela conversa ligada — o botão aparece no atendimento.":
+    { es: "Limpieza desde la conversación activada — el botón aparece en la atención." },
+  "Limpeza pela conversa desligada.": { es: "Limpieza desde la conversación desactivada." },
+  "Comando de limpeza salvo — já vale no próximo atendimento.":
+    { es: "Comando de limpieza guardado — ya rige en la próxima atención." },
+  "Limpar conversa": { es: "Limpiar conversación" },
+  "Apagar tudo deste contato?": { es: "¿Borrar todo de este contacto?" },
+  "Apaga o contato, as conversas, as mensagens e os interesses. O próximo contato começa do zero e esta ação não pode ser desfeita.":
+    {
+      es: "Borra el contacto, las conversaciones, los mensajes y los intereses. El próximo contacto empieza de cero y esta acción no se puede deshacer.",
+    },
+  "Conversa apagada.": { es: "Conversación borrada." },
+  "Apagar tudo": { es: "Borrar todo" },
 };
 
 /**

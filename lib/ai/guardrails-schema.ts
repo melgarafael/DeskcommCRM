@@ -114,6 +114,23 @@ export const agentConfigSchema = z.object({
   comando_ligar: z.string().trim().min(1).max(32).default("#on"),
   /** A SEQUÊNCIA que DESLIGA a IA (C-077). Default `#off`. */
   comando_desligar: z.string().trim().min(1).max(32).default("#off"),
+  /**
+   * O CLIENTE pode pedir, por mensagem no WhatsApp, o apagamento total dos dados
+   * dele (contato, conversa, mensagens, interesses, lead, fluxo)? (C-104)
+   *
+   * `false` (default do produto) = o ingest trata a mensagem como texto comum e
+   * o agente responde normalmente. Ligado, a mensagem inteira que casa
+   * `comando_limpar` apaga o cadastro E não vira turno do agente.
+   */
+  aceita_limpeza_cliente: z.boolean().default(false),
+  /** A SEQUÊNCIA que dispara a limpeza pedida pelo CLIENTE. Default `#limpar`. */
+  comando_limpar: z.string().trim().min(1).max(32).default("#limpar"),
+  /**
+   * O ATENDENTE pode apagar os dados do cliente pela tela da conversa (C-104)?
+   * `false` (default). O botão some e a rota recusa: é a mesma trava nas duas
+   * pontas, porque esconder botão não é controle de acesso.
+   */
+  permite_limpeza_atendente: z.boolean().default(false),
 });
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 
@@ -127,6 +144,9 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
   aceita_comandos_celular: false,
   comando_ligar: "#on",
   comando_desligar: "#off",
+  aceita_limpeza_cliente: false,
+  comando_limpar: "#limpar",
+  permite_limpeza_atendente: false,
 };
 
 // ---------------------------------------------------------------------------

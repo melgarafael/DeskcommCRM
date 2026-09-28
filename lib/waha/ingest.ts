@@ -20,8 +20,14 @@ import {
   pausarIaPorAtendimentoManual,
 } from "@/lib/escalacao/atendimento-manual";
 import { configDeComandosDoAgente, lerComandoDeControle } from "@/lib/escalacao/comando-de-canal";
+import {
+  configDeLimpezaDoAgente,
+  lerComandoDeLimpeza,
+} from "@/lib/escalacao/limpeza-de-conversa";
 import { reativarAutomaticoNaConversa } from "@/lib/escalacao/retomada";
+import { apagarDadosDoContato } from "@/lib/settings/apagar-dados-do-contato";
 import { getWahaClient } from "@/lib/waha/client";
+import { sendWAHA } from "@/lib/waha/send";
 import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { estamparAtribuicaoDoContato } from "@/lib/leads/atribuicao-de-anuncio";
@@ -642,6 +648,64 @@ async function handleInbound(
 
   const conversationId = await upsertConversation(admin, session.organization_id, contactId, session.id);
   if (!conversationId) return;
+
+  // ── PEDIDO DE LIMPEZA DO PRÓPRIO CLIENTE (C-104) ───────────────────────────
+  //
+  // O cliente manda a sequência configurada (default `#limpar`) e o cadastro
+  // inteiro some: contato, conversa, mensagens, interesses, lead, fluxo, fila.
+  // O próximo inbound recria o cadastro do zero — que é exatamente o que o
+  // `limpar-tudo.sh <telefone>` fazia à mão.
+  //
+  // A checagem vem ANTES do insert da mensagem e de `aplicarEfeitosPosEntrada`:
+  // o pedido de limpeza não é fala de atendimento e NÃO pode virar turno do
+  // agente. A mensagem também não é gravada, porque o contato some logo abaixo.
+  //
+  // FAIL-CLOSED: `configDeLimpezaDoAgente` já devolve `aceitaCliente: false` em
+  // qualquer falha de leitura ou sem agente publicado.
+  //
+  // A leitura da config é pulada quando a mensagem não PODE ser o comando: o
+  // schema limita a sequência a 32 caracteres, então uma mensagem maior nunca é
+  // comando. Sem esta guarda, toda mensagem de cliente pagaria uma consulta a
+  // `ai_agents` — e o inbound é o caminho de maior volume.
+  const podeSerComando =
+    typeof texto === "string" && texto.length > 0 && texto.length <= 32;
+  const limpeza = podeSerComando
+    ? await configDeLimpezaDoAgente(admin, session.organization_id)
+    : null;
+  if (limpeza?.aceitaCliente && lerComandoDeLimpeza(texto, limpeza.sequencia)) {
+    const resultado = await apagarDadosDoContato(admin, {
+      organizationId: session.organization_id,
+      contactId,
+    });
+
+    // Auditoria SEM PII: o telefone e o nome NUNCA entram no metadata.
+    await audit({
+      action: "contact.erased_by_customer",
+      organizationId: session.organization_id,
+      resourceType: "contact",
+      requestId,
+      metadata: { ok: resultado.ok, counts: resultado.counts },
+    });
+
+    // Confirmação best-effort, pelo mesmo transporte do `revogarComando`: uma
+    // falha em avisar NÃO pode desfazer a limpeza nem derrubar o webhook.
+    const sessionName = session.waha_session_name;
+    if (sessionName) {
+      try {
+        await sendWAHA({
+          sessionName,
+          chatId,
+          text: "Pronto: apaguei seus dados e esta conversa. Quando quiser falar de novo, é só me chamar.",
+        });
+      } catch (err) {
+        logger.warn("[waha.ingest] não consegui confirmar a limpeza pedida pelo cliente", {
+          organization_id: session.organization_id,
+          detail: err instanceof Error ? err.message.slice(0, 160) : "erro",
+        });
+      }
+    }
+    return;
+  }
 
   const now = new Date().toISOString();
   const { data: insertedMessage, error: insertErr } = await admin
