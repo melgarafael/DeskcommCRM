@@ -18,8 +18,8 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import {
   agentPatchSchema,
   AGENT_CONFIG_DEFAULTS,
-  type AgentConfig,
 } from "@/lib/ai/guardrails-schema";
+import { mesclarConfigDoAgente } from "@/lib/ai/mesclar-config-do-agente";
 
 export const dynamic = "force-dynamic";
 
@@ -181,13 +181,15 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   if (priorityPatch !== null) update.priority = priorityPatch;
 
   if (patch.config !== undefined) {
-    const currentConfigRaw = (existing.config ?? {}) as Record<string, unknown>;
-    const merged: AgentConfig = {
-      ...AGENT_CONFIG_DEFAULTS,
-      ...currentConfigRaw,
-      ...patch.config,
-    } as AgentConfig;
-    update.config = merged;
+    // Só as chaves enviadas mudam — `agentConfigSchema.partial()` preenche
+    // defaults dos campos ausentes, então espalhar o parseado inteiro apagaria
+    // o que não veio. Ver o cabeçalho de `mesclar-config-do-agente.ts`.
+    update.config = mesclarConfigDoAgente({
+      atual: (existing.config ?? {}) as Record<string, unknown>,
+      padroes: AGENT_CONFIG_DEFAULTS as unknown as Record<string, unknown>,
+      enviadas: (rawBody as { config?: Record<string, unknown> } | null)?.config ?? null,
+      parseadas: patch.config as Record<string, unknown>,
+    });
   }
 
   if (Object.keys(update).length === 0) {
