@@ -27,7 +27,6 @@ import {
 import { reativarAutomaticoNaConversa } from "@/lib/escalacao/retomada";
 import { apagarDadosDoContato } from "@/lib/settings/apagar-dados-do-contato";
 import { getWahaClient } from "@/lib/waha/client";
-import { sendWAHA } from "@/lib/waha/send";
 import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { estamparAtribuicaoDoContato } from "@/lib/leads/atribuicao-de-anuncio";
@@ -687,23 +686,11 @@ async function handleInbound(
       metadata: { ok: resultado.ok, counts: resultado.counts },
     });
 
-    // Confirmação best-effort, pelo mesmo transporte do `revogarComando`: uma
-    // falha em avisar NÃO pode desfazer a limpeza nem derrubar o webhook.
-    const sessionName = session.waha_session_name;
-    if (sessionName) {
-      try {
-        await sendWAHA({
-          sessionName,
-          chatId,
-          text: "Pronto: apaguei seus dados e esta conversa. Quando quiser falar de novo, é só me chamar.",
-        });
-      } catch (err) {
-        logger.warn("[waha.ingest] não consegui confirmar a limpeza pedida pelo cliente", {
-          organization_id: session.organization_id,
-          detail: err instanceof Error ? err.message.slice(0, 160) : "erro",
-        });
-      }
-    }
+    // ⚠️ NÃO se envia resposta de confirmação. Medido: qualquer mensagem que o
+    // bot mande volta como eco (`fromMe`) e o ingest a trata como envio novo,
+    // recriando contato + conversa com a confirmação. Ou seja, responder
+    // desfazia o "apagar o contato" — o cliente reaparecia na lista vazio. A
+    // exclusão tem de ser SILENCIOSA para ser total.
     return;
   }
 

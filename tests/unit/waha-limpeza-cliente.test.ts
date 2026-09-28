@@ -23,14 +23,12 @@ vi.mock("@/lib/channels/health", () => ({ sincronizarSaudeDaConexao: vi.fn(async
 vi.mock("@/lib/channels/pos-entrada", () => ({
   aplicarEfeitosPosEntrada: vi.fn(async () => {}),
 }));
-vi.mock("@/lib/waha/send", () => ({ sendWAHA: vi.fn(async () => null) }));
 vi.mock("@/lib/settings/apagar-dados-do-contato", () => ({
   apagarDadosDoContato: vi.fn(async () => ({ ok: true, counts: { contacts: 1 }, falhas: [] })),
 }));
 
 import { audit } from "@/lib/audit";
 import { apagarDadosDoContato } from "@/lib/settings/apagar-dados-do-contato";
-import { sendWAHA } from "@/lib/waha/send";
 import { dispatchWahaEvent, type WahaEnvelope } from "@/lib/waha/ingest";
 
 const ORG = "org-1";
@@ -105,7 +103,6 @@ function cfgCliente(ligado: boolean) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(sendWAHA).mockResolvedValue(null);
   vi.mocked(apagarDadosDoContato).mockResolvedValue({
     ok: true,
     counts: { contacts: 1 },
@@ -114,7 +111,7 @@ beforeEach(() => {
 });
 
 describe("C-104 · limpeza pedida pelo cliente", () => {
-  it("ligado + comando exato → apaga o contato, confirma e NÃO grava mensagem", async () => {
+  it("ligado + comando exato → apaga o contato e NÃO grava mensagem (exclusão silenciosa)", async () => {
     const cap: Captura = { insertedMessages: [] };
     await dispatchWahaEvent(makeAdmin(cap, cfgCliente(true)), SESSION, inbound("#limpar"), "req-1");
 
@@ -123,10 +120,9 @@ describe("C-104 · limpeza pedida pelo cliente", () => {
       organizationId: ORG,
       contactId: "contact-1",
     });
+    // Nem a mensagem do cliente nem uma resposta nossa podem ser gravadas — a
+    // exclusão só é total se for SILENCIOSA (responder recria o contato no eco).
     expect(cap.insertedMessages).toEqual([]);
-    expect(sendWAHA).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionName: "default", chatId: "5511999999999@c.us" }),
-    );
     expect(audit).toHaveBeenCalledWith(
       expect.objectContaining({ action: "contact.erased_by_customer", organizationId: ORG }),
     );
