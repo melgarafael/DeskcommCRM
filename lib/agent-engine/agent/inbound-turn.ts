@@ -3610,13 +3610,17 @@ async function executarTurnoDoAgente(
                 (motoAtual !== null && querAlternativa(msgCliente)));
             // A ferramenta de semelhantes já decidiu — não precisa classificar.
             if (!ofereceuSimilaresNesteTurno && precisaClassificar && !extraiuCriteriosNesteTurno) {
-              // C-090: com o interruptor "enviar todas que casam" ligado, o
-              // casamento usa as colunas "Critério de envio"; senão, as de
-              // "Critério da IA" (comportamento atual).
-              const colunasCriterio =
-                agentConfig?.catalogConfig?.enviar_todas_que_casam === true
-                  ? colunasDeEnvio(mapeamento)
-                  : criteriosDaIA(mapeamento);
+              // C-090/C-098: com "enviar todas que casam" ligado, o casamento usa
+              // as colunas "Critério de envio"; somamos as de "Critério da IA"
+              // (ex.: `ano`) para a IA poder classificar por elas também.
+              const colunasCriterio = [
+                ...new Set([
+                  ...(agentConfig?.catalogConfig?.enviar_todas_que_casam === true
+                    ? colunasDeEnvio(mapeamento)
+                    : []),
+                  ...criteriosDaIA(mapeamento),
+                ]),
+              ];
               if (colunasCriterio.length > 0) {
                 extraiuCriteriosNesteTurno = true;
                 // O ESTOQUE enviado à IA: o catálogo do turno e/ou o guardado da

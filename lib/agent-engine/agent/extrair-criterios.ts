@@ -107,13 +107,21 @@ export function buildCriteriosPrompt(
         : `- ${c}`;
     })
     .join('\n');
+  // Exemplo DINÂMICO: usa valores REAIS do estoque, sem cravar números (um
+  // exemplo com preço fixo ancorava a IA a inventar faixas — C-098). Mostra o
+  // formato de `hipoteses` (valor exato) e `faixas` (só o intervalo EXPLÍCITO).
+  const colunasExemplo = colunas.slice(0, 4);
+  const hipoteseExemplo = Object.fromEntries(
+    colunasExemplo.map((c) => [c, valores?.[c]?.[0] ?? `<valor real de ${c} no estoque>`]),
+  );
+  const principalExemplo = colunas.includes('categoria')
+    ? 'categoria'
+    : (colunas[0] ?? 'categoria');
   const exemplo = JSON.stringify({
     intencao: 'pedido',
-    principal: colunas[1] ?? colunas[0] ?? 'categoria',
-    hipoteses: [
-      Object.fromEntries(colunas.slice(0, 3).map((c) => [c, valores?.[c]?.[0] ?? `<valor de ${c}>`])),
-    ],
-    faixas: { cilindrada: { min: 125, max: 300 }, preco: { min: 9000, max: 20000 } },
+    principal: principalExemplo,
+    hipoteses: [hipoteseExemplo],
+    faixas: {},
   });
   const estoqueBlock =
     estoque !== undefined && estoque.length > 0
@@ -133,10 +141,14 @@ export function buildCriteriosPrompt(
     '- "alternativa": o cliente está falando de uma moto e quer algo DIFERENTE dela (ex.: achou caro, quer outra cor/ano/marca, quer mais barata).',
     'Devolva os blocos:',
     '- "principal": a coluna que o cliente MAIS enfatizou, entre as colunas de critério (ex.: "preco" em "quero uma barata"; "categoria" em "quero uma Naked"; "cilindrada" em "quero uma 300"). Se não houver destaque, use null.',
-    '- "hipoteses": lista de configurações concretas prováveis (ex.: {"nome":"CB 250","marca":"HONDA","categoria":"Naked","cilindrada":"250"}). Inclua variações plausíveis (o cliente pode ter errado a cilindrada/modelo).',
-    '- "faixas": intervalos aceitáveis (ex.: {"cilindrada":{"min":125,"max":300},"preco":{"min":9000,"max":20000}}). Use quando o pedido for vago.',
-    'REGRA DE OURO do casamento: uma moto NÃO precisa bater em tudo. Ela deve ser oferecida se bater em PELO MENOS UMA coluna (categoria OU preço OU cilindrada OU marca…), e sobe de prioridade quanto MAIS colunas bater e se bater no "principal". NUNCA descarte por causa de uma coluna que não bate.',
-    'Para uma PREFERÊNCIA de ordem numa coluna (mais barata, mais nova, menos km), use o valor "menor" ou "maior" em "criterios" (ex.: {"preco":"menor"} = mais barata que a atual).',
+    '- "hipoteses": lista de configurações concretas prováveis, com os VALORES EXATOS citados ou deduzidos do pedido (ex.: {"nome":"CB 250","marca":"HONDA","categoria":"Naked","cilindrada":"250","ano":"2020"}). Inclua variações plausíveis (o cliente pode ter errado a cilindrada/modelo).',
+    '- "faixas": SOMENTE intervalos que o cliente DEU EXPLICITAMENTE (ex.: "até 15 mil" → {"preco":{"min":0,"max":15000}}; "de 2018 a 2022" → {"ano":{"min":2018,"max":2022}}). Se o cliente NÃO citou um número/intervalo para uma coluna, NÃO crie faixa para ela — deixe "faixas": {}.',
+    'REGRAS DE PRECISÃO (obrigatórias):',
+    '1) NUNCA invente faixa. Só preencha "faixas" com o que o cliente disse ou com limite decorrente do modelo que ELE citou.',
+    '2) Se o cliente citou UM valor (ex.: "uma 300", "ano 2018", "uns 15 mil"), coloque esse valor em "hipoteses" daquela coluna — NÃO monte faixa. O sistema calcula a margem.',
+    '3) Para "mais nova"/"mais antiga"/"mais barata"/"mais cara", use "menor"/"maior" em "criterios".',
+    '4) Ano: só preencha quando o cliente citar o ano ou algo que o determine (ex.: "modelo novo", "a partir de 2020"). Não deduza ano de um modelo sem o cliente indicar.',
+    'REGRA DE OURO do casamento: uma moto NÃO precisa bater em tudo. Ela deve ser oferecida se bater em PELO MENOS UMA coluna (categoria OU preço OU cilindrada OU marca OU ano…), e sobe de prioridade quanto MAIS colunas bater e se bater no "principal". NUNCA descarte por causa de uma coluna que não bate.',
     'Colunas de critério:',
     lista,
     'IMPORTANTE: use SOMENTE estas colunas e valores que façam sentido para o ESTOQUE. NUNCA copie',
@@ -149,7 +161,7 @@ export function buildCriteriosPrompt(
     mensagem,
     '',
     'Agora responda com o JSON preenchido (mesmo formato do exemplo): "intencao", "principal", "hipoteses" e "faixas".',
-    'NUNCA devolva vazio: se não tiver certeza do modelo, preencha "faixas" com um intervalo amplo.',
+    'NUNCA devolva vazio: se não tiver certeza do modelo, inclua VÁRIAS "hipoteses" plausíveis (com valores reais do estoque). Só use "faixas" quando o cliente deu o número.',
     JSON_INSTRUCTION,
   ].join('\n');
 }
