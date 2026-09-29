@@ -14,4 +14,4 @@ RFC 4648 §5) server action ↔ navegador preservando `challenge`/`user.id`/
 `excludeCredentials` em round-trip.
 
 Login sem senha (fase 2) e a decisão de produto (UV no servidor, sign count,
-troca de celular) ficam para o PR de continuação. Crédito: @webtecnica
+troca de celular) ficam para o PR de continuação. Crédito: @webtecnica (#1930)
