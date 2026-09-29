@@ -139,10 +139,12 @@ export async function GET(req: NextRequest): Promise<Response> {
     // `tests/unit/fila-tem-uma-definicao-so.test.ts` e
     // `tests/invariants/gov-5b-inbox-scope-counts.test.ts`, porque um badge que conta o
     // que a aba não mostra manda o atendente procurar trabalho que não existe.
-    countExact().in("comando_da_conversa", comandosDaFila(automaticoDaOrg)),
+    // (migration 0491): usa cached_comando (coluna com índice) em vez de
+    // comando_da_conversa (campo calculado sem índice) para evitar full scan.
+    countExact().in("cached_comando", comandosDaFila(automaticoDaOrg)),
     // A aba "Automático". Antes ela pedia `status='ai_handling'`, escrito por UM
     // caminho só em produção — por isso vivia quase vazia.
-    countExact().eq("comando_da_conversa", "automatico"),
+    countExact().eq("cached_comando", "automatico"),
     countExact()
       .eq("assigned_to_user_id", user.id)
       .not("status", "in", `(${CONVERSATION_TERMINAL_STATUSES.join(",")})`),

@@ -46,7 +46,7 @@ export async function getQueueStatus(
     .from("conversations")
     .select("awaiting_since")
     .eq("organization_id", organizationId)
-    .in("comando_da_conversa", naFila);
+    .in("cached_comando", naFila);
 
   const rows = (queueRows ?? []) as Array<{ awaiting_since: string | null }>;
   const queueSize = rows.length;
@@ -86,7 +86,7 @@ export async function getQueuePositions(
     .from("conversations")
     .select("id")
     .eq("organization_id", organizationId)
-    .in("comando_da_conversa", naFila)
+    .in("cached_comando", naFila)
     .order(ORDEM_DA_ESPERA.coluna, ORDEM_DA_ESPERA.opcoes)
     .order("id", { ascending: true });
 
@@ -119,7 +119,7 @@ export async function getQueuePosition(
     .from("conversations")
     .select("id", { count: "exact", head: true })
     .eq("organization_id", organizationId)
-    .in("comando_da_conversa", naFila)
+    .in("cached_comando", naFila)
     .lte("awaiting_since", ref);
   return count ?? 1;
 }

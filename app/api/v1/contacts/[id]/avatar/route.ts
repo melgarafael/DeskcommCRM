@@ -84,11 +84,18 @@ export async function GET(
 
   // Response.redirect() devolve headers imutáveis — não dá pra anexar o
   // Cache-Control depois. Por isso o 307 é montado à mão.
+  //
+  // `Referrer-Policy: no-referrer` impede o browser de enviar cookies do
+  // domínio da app ao seguir o redirect cross-origin para `supabase.co`. Sem
+  // isso, o Storage responde `Access-Control-Allow-Origin: *` — incompatível
+  // com credenciais pela spec CORS — e a foto é bloqueada (#CORS-storage). A
+  // URL assinada já carrega autenticação própria (token JWT na query string).
   return new Response(null, {
     status: 307,
     headers: {
       Location: signed.signedUrl,
       "Cache-Control": `private, max-age=${BROWSER_CACHE_SECONDS}`,
+      "Referrer-Policy": "no-referrer",
     },
   });
 }
