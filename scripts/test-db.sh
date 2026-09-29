@@ -470,6 +470,15 @@ echo "==> modo UPDATE: re-aplicando baseline.sql COM ON_ERROR_STOP=1 (idempotên
 aplicar_baseline
 echo "    ✓ update ok (zero erro na re-aplicação)"
 
+# A conferência de isolamento do KIT, contra o banco que acabou de receber o
+# baseline — a do update.sh deste checkout, a da última release publicada (é a que
+# roda do disco de quem atualiza) e a da v1.63.0, última sem filtro por tabela.
+# Por que essas três: cabeçalho de scripts/conferir-isolamento-do-kit.sh. Sem
+# este passo o #1578 passou pelos cinco checks e travou toda atualização da
+# v1.61.0 à v1.63.0 (issue #1909).
+echo "==> conferência de isolamento do update.sh (checkout, última release, v1.63.0)"
+bash "$ROOT/scripts/conferir-isolamento-do-kit.sh" "$CONTAINER" "$TEMPLATE"
+
 echo "==> banco \`postgres\` a partir do molde (o setupFile o recria a cada arquivo)"
 # Criar aqui, ALÉM do reset por arquivo, tem dois motivos medidos:
 #  - `docker exec … psql -d postgres` (o que se digita para depurar o container)
