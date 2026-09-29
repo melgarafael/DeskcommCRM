@@ -17,6 +17,7 @@ export const appointmentSnapshotSchema = z.object({
   owner_user_id: z.uuid(),
   contact_id: z.uuid().nullable(),
   title: z.string(),
+  notes: z.string().nullable(),
   description: z.string().nullable(),
   starts_at: z.string(),
   ends_at: z.string(),

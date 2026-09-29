@@ -84,6 +84,30 @@ describe("paraEventoDoGoogle", () => {
     );
   });
 
+  it("sem observação, a anotação interna vira descrição — e só então (#511)", () => {
+    // A observação publicável tem prioridade e nunca é engolida pela anotação.
+    expect(
+      paraEventoDoGoogle(
+        agendamento({ description: "Primeira consulta", notes: "Resumo do assistente" }),
+      ).description,
+    ).toBe("Primeira consulta");
+    // Sem descrição, o `notes` — o resumo que a IA grava — espelha no Google,
+    // senão o calendário nasce sem texto nenhum para o que é gravado e lido.
+    expect(
+      paraEventoDoGoogle(agendamento({ description: null, notes: "Resumo do assistente" }))
+        .description,
+    ).toBe("Resumo do assistente");
+    // O espelho também preenche o caso da observação só de espaços.
+    expect(
+      paraEventoDoGoogle(agendamento({ description: "   ", notes: "Resumo do assistente" }))
+        .description,
+    ).toBe("Resumo do assistente");
+    // E, sem descrição nem anotação, o campo continua ausente — nunca vazio.
+    expect(
+      paraEventoDoGoogle(agendamento({ description: null, notes: null })),
+    ).not.toHaveProperty("description");
+  });
+
   it("traduz os cinco status nossos nos três do Google", () => {
     const de = (status: AgendamentoParaGoogle["status"]) => paraEventoDoGoogle(agendamento({ status })).status;
     expect(de("pending")).toBe("tentative");

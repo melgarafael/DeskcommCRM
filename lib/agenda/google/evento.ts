@@ -144,6 +144,13 @@ export interface AgendamentoParaGoogle {
   organization_id: string;
   title: string;
   description?: string | null;
+  /**
+   * A anotação INTERNA do compromisso — o resumo que o assistente grava ao
+   * marcar (`#511`). Fica no CRM por padrão; só sobe para o calendário do
+   * Google como `description` quando a observação publicável (`description`)
+   * está vazia, para o calendário não nascer sem texto nenhum.
+   */
+  notes?: string | null;
   /** ISO-8601. É instante, não hora de parede. */
   starts_at: string;
   ends_at: string;
@@ -358,7 +365,12 @@ export function paraEventoDoGoogle(a: AgendamentoParaGoogle): CorpoDeEventoDoGoo
     },
   };
 
-  const descricao = a.description?.trim();
+  // A observação publicável (o que quem atende digitou NA HORA de marcar) tem
+  // prioridade. Quando ela está vazia, o `notes` — o resumo que a IA grava —
+  // é espelhado como descrição, porque é só o que existe no CRM sobre o
+  // compromisso e o Google receber o evento sem texto nenhum é o "gravado mas
+  // não lido" do #511 migrado para o calendário também.
+  const descricao = a.description?.trim() || a.notes?.trim();
   if (descricao) corpo.description = descricao;
   const local = localDoEvento(a);
   if (local) corpo.location = local;
