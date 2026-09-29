@@ -184,11 +184,13 @@ export async function listConversationsHandler(
   // estados de espera numa consulta só, em vez de filtrar em memória o que a
   // página já truncou.
   if (q.status && q.status.length > 0) query = query.in("status", q.status);
-  // O filtro de QUEM MANDA (migration 0203). Vai no banco, e não em memória, para
-  // o cursor de paginação continuar valendo: filtrar depois de paginar devolveria
-  // páginas curtas e um "carregar mais" que às vezes não traz nada.
+  // O filtro de QUEM MANDA (migration 0491): usa a coluna materializada
+  // `cached_comando` (com índice em organization_id + cached_comando +
+  // last_message_at) em vez do campo calculado `comando_da_conversa` (função
+  // PostgREST sem índice que fazia 1+2N subselects em contacts por página).
+  // A coluna é mantida por trigger — ver migration 0491.
   if (q.comando && q.comando.length > 0) {
-    query = query.in("comando_da_conversa", q.comando);
+    query = query.in("cached_comando", q.comando);
   }
   // Depois do `status` de propósito: pedir um status terminal E `exclude_finished`
   // é contradição, e a resposta certa para uma contradição é lista vazia — não

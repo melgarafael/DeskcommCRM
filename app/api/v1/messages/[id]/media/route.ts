@@ -12,6 +12,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { fail } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { logger } from "@/lib/logger";
 import {
   CHANNEL_SESSION_REF_COLUMNS,
   DEFAULT_CHANNEL_PROVIDER,
@@ -73,10 +74,18 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     if (!signErr && signed?.signedUrl) {
       const response = NextResponse.redirect(signed.signedUrl, 302);
       response.headers.set("X-Request-Id", requestId);
+      // A URL assinada já carrega autenticação própria (token JWT na query string).
+      // `Referrer-Policy: no-referrer` impede o browser de enviar cookies do domínio
+      // da app ao seguir o redirect cross-origin para `supabase.co`. Sem isso, o
+      // Storage responde `Access-Control-Allow-Origin: *` — incompatível com
+      // credenciais pela spec CORS — e o browser bloqueia a mídia (#CORS-storage).
+      response.headers.set("Referrer-Policy", "no-referrer");
+      // Cache privado: autorização é por sessão (organization_id na consulta acima).
+      response.headers.set("Cache-Control", "private, max-age=3540");
       return response;
     }
     if (signErr) {
-      console.error("[messages.media] createSignedUrl failed", signErr.message);
+      logger.error("[messages.media] createSignedUrl failed", { message_id: messageId, erro: signErr.message });
     }
   }
 
