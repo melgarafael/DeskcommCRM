@@ -27,10 +27,10 @@ export interface PromiseTable {
   /**
    * Condições comerciais AUTORIZADAS pela organização (issue #1954) — frases
    * LITERAIS da oferta oficial (ex.: "teste de 7 dias, sem cartão"). Quando a
-   * mensagem candidata reproduz uma delas, o gate semântico NÃO veta: a frase
-   * não é promessa improvisada pela IA, é a oferta pública da empresa. Mesmo
-   * mecanismo dos outros knobs (ponteiro versionado, sem regex livre — match por
-   * texto literal normalizado). Sem a lista = comportamento atual (gate veta).
+   * mensagem candidata reproduz uma delas, ela é REMOVIDA do corpo antes de o
+   * classificador semântico julgar (o modelo vê só o resto). Mesmo mecanismo dos
+   * outros knobs (ponteiro versionado, sem regex livre — match por texto literal
+   * normalizado). Sem a lista = comportamento atual (gate veta).
    */
   condicoesAutorizadas?: string[];
 }
@@ -78,6 +78,11 @@ export function validatePromiseTable(values: unknown): PromiseTable {
         throw new Error(
           `tabela de promessa inválida: condição autorizada excede ${MAX_CONDICAO_AUTORIZADA_LEN} caracteres`,
         );
+      }
+      // Item 3 do review (#1954): mínimo 3 palavras evita o coringa de 1 caractere/palavra
+      // ("a", "grátis") que, mascarado como condição autorizada, derruba o gate de vez.
+      if (item.trim().split(/\s+/).length < 3) {
+        throw new Error("tabela de promessa inválida: condição autorizada precisa de ao menos 3 palavras");
       }
       items.push(item.trim());
     }

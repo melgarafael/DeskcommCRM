@@ -149,27 +149,39 @@ export function normalizarCondicaoAutorizada(texto: string): string {
 }
 
 /**
- * Decide se a CANDIDATA reproduz literalmente uma condição comercial AUTORIZADA pela org.
- * Retorna a condição que casou (normalizada) ou null. Sem regex livre: match por substring
- * da condição normalizada dentro do corpo normalizado — quem vai ao cliente não é a promessa
- * improvisada pela IA, é a oferta declarada pelo operador. `suspectPhrase` é a da candidata;
- * a condição autorizada pode ser frase mais longa que a contém (o classificador destacou um
- * trecho). Sem nada marcado na tabela → null (gate veta como hoje).
+ * MASCARA as condições comerciais AUTORIZADAS da org no corpo DA CANDIDATA que vai ao
+ * classificador semântico de promessa (#1954) — NÃO é uma exceção no gate.
+ *
+ * Por quê mascarar em vez de vetar/passar: esta guarda existe para a IA não prometer o
+ * que a empresa não autorizou. Se o gate adotasse "passa se a frase destacada reproduz a
+ * oferta", uma mensagem que junta a oferta AUTORIZADA + uma promessa NOVA sairia junto
+ * (o classificador destaca só o trecho autorizado e a promessa extra passa de carona).
+ * Mascarando a oferta ANTES da classificação, o modelo julga só o resto: se houver
+ * promessa além da oferta, ela fica visível e o gate veta; se a mensagem for SÓ a oferta,
+ * o resto não é promessa e passa. O gate contínua com exceção ZERO.
+ *
+ * Regras de máscara (sem regex livre, espelhando a tabela versionada):
+ *  - cada condição é normalizada (caixa/acento) e comparada como iguaLdade literal por
+ *    substring da base — não stemmer, não termo parcial esparso;
+ *  - a ocorrência da condição no corpo é substituída por ESPAÇOS do mesmo comprimento
+ *    (preserva o resto da frase intacto — sem acento, alinhamento re-fito pela caixa
+ *    baixa, mas irrelevante p/ decidir se o RESTO promete);
+ *  - sem lista ou sem ocorrência → corpo inalterado (comportamento atual).
  */
-export function condicaoAutorizadaCobre(
+export function mascararCondicoesAutorizadas(
   candidate: string,
-  suspectPhrase: string | null,
   condicoesAutorizadas: readonly string[] | undefined,
-): string | null {
-  if (!condicoesAutorizadas || condicoesAutorizadas.length === 0) return null;
-  const alvo = normalizarCondicaoAutorizada(suspectPhrase ?? candidate);
-  if (alvo === '') return null;
+): string {
+  if (!condicoesAutorizadas || condicoesAutorizadas.length === 0) return candidate;
+  const base = normalizarCondicaoAutorizada(candidate);
+  let restante = base;
   for (const condicao of condicoesAutorizadas) {
     const normalizada = normalizarCondicaoAutorizada(condicao);
     if (normalizada === '') continue;
-    if (normalizada.includes(alvo) || alvo.includes(normalizada)) {
-      return condicao;
+    // Remove TODAS as ocorrências da condição (o classificador julga só o que sobra).
+    while (restante.includes(normalizada)) {
+      restante = restante.replace(normalizada, ' '.repeat(normalizada.length));
     }
   }
-  return null;
+  return restante;
 }

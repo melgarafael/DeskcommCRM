@@ -184,7 +184,7 @@ import { instrucaoDeBolhas, sendInBubbles, splitForSend } from './split-message'
 import type { DisclosureMode } from '../guardrails/disclosure/template';
 import { decidePromise } from '../guardrails/promise/engine';
 import { loadPromiseTable } from '../guardrails/promise/table';
-import { classifyPromise } from '../guardrails/promise/semantic';
+import { classifyPromise, mascararCondicoesAutorizadas } from '../guardrails/promise/semantic';
 import { expectativaDeAtendimento } from '@/lib/escalacao/disponibilidade';
 import {
   montarBriefingDaPassagem,
@@ -2573,7 +2573,10 @@ async function executarTurnoDoAgente(
           deps.llmCfg,
           { tenantId, leadId: leadId || null, jobId: job?.id },
           {
-            candidate,
+            // #1954: MASCARA as condições comerciais autorizadas da org antes de o classificador
+            // julgar — ele vê só o resto. Promessa além da oferta fica visível → gate veta;
+            // oferta sozinha → resto não é promessa → passa. Gate continua com exceção ZERO.
+            candidate: mascararCondicoesAutorizadas(candidate, promiseTable?.condicoesAutorizadas),
             ...argsAux(deps.knobs.promiseSemantic?.model),
           },
           { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },

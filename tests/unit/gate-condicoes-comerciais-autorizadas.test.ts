@@ -1,16 +1,20 @@
 /**
  * Condições comerciais AUTORIZADAS na promise_table (issue #1954).
  *
- * O que está em jogo: o classificador semântico de promessa (F4-02) veta frases
- * em texto livre que pareçam promessa/compromisso. Quando a frase é a OFERTA
- * OFICIAL da organização ("teste de 7 dias, sem cartão", "demonstração de 15
- * minutos"), o veto é falso-positivo: corta da resposta a condição pública da
- * empresa e deixa o lead sem saber que não será cobrado.
+ * Guarda semântica de promessa (F4-02): o classificador veta em texto livre o que
+ * parece promessa. Quando a frase é a OFERTA OFICIAL da organização, isso é
+ * falso-positivo. O desenho (dois complementos, desenhados com o mantenedor):
  *
- * A cura (não regex livre, MESMO mecanismo dos outros knobs da promise_table —
- * lista versionada por ponteiro): se a frase destacada do corpo reproduz
- * literalmente uma `condicaoAutorizada` declarada pela org, o gate semântico
- * NÃO veta. Sem condição declarada = comportamento atual (veta).
+ *  1. `mascararCondicoesAutorizadas` — as condições declaradas são REMOVIDAS do corpo
+ *     DA CANDIDATA antes de o classificador julgar. Ele vê só o resto: promessa além
+ *     da oferta fica visível → gate veta; oferta sozinha → o resto não é promessa e
+ *     passa. O gate `semanticPromiseGate` PERMANECE com exceção zero.
+ *  2. `validatePromiseTable` — condição autorizada com mínimo de 3 palavras (evita o
+ *     coringa de 1 caractere/palavra).
+ *
+ * Os testes da tabela A–G são os casos que o mantenedor mediu contra a primeira
+ * versão (que usava match/substring no gate) e que o mascaramento passa a tratar
+ * corretamente: o resíduo que for promessa continua sendo veto.
  */
 import { describe, expect, it } from "vitest";
 
@@ -20,8 +24,10 @@ import {
 } from "@/lib/agent-engine/guardrails/before-send";
 import { PACING_DEFAULTS } from "@/lib/agent-engine/pacing/defaults";
 import { SPINNING_DEFAULTS } from "@/lib/agent-engine/spinning/defaults";
-import { condicaoAutorizadaCobre } from "@/lib/agent-engine/guardrails/promise/semantic";
+import { mascararCondicoesAutorizadas } from "@/lib/agent-engine/guardrails/promise/semantic";
 import { validatePromiseTable } from "@/lib/agent-engine/guardrails/promise/table";
+
+const CONDICAO = "teste de 7 dias, sem cartão";
 
 function baseCtx(overrides: Partial<GateContext> = {}): GateContext {
   return {
@@ -46,75 +52,72 @@ function baseCtx(overrides: Partial<GateContext> = {}): GateContext {
   };
 }
 
-describe("condicaoAutorizadaCobre — match literal normalizado, sem regex livre", () => {
-  it("cobre quando a frase destacada reproduz literalmente a condição (diferença só de caixa/acento)", () => {
-    const c = condicaoAutorizadaCobre(
-      "O teste é de 7 dias, sem cartão, e não cobra nada no fim.",
-      "Teste de 7 dias, sem cartão",
-      ["teste de 7 dias, sem cartão"],
+describe("mascararCondicoesAutorizadas — remove a oferta, deixa a promessa visível (tabela A–G do mantenedor)", () => {
+  it("A: condição + promessa NOVA → a promessa fica visível para o classificador vetar", () => {
+    const masc = mascararCondicoesAutorizadas(
+      "teste de 7 dias, sem cartão e desconto de 50% garantido",
+      [CONDICAO],
     );
-    expect(c).toBe("teste de 7 dias, sem cartão");
+    expect(masc).not.toContain("teste de 7 dias, sem cartao");
+    expect(masc).toContain("desconto de 50% garantido");
   });
 
-  it("cobre quando a condição autorizada é frase mais longa que a suspeita (contém)", () => {
-    const c = condicaoAutorizadaCobre(
-      "Sobre a demonstração de 15 minutos, tudo bem.",
-      "demonstração de 15 minutos",
-      ["demonstração de 15 minutos é gratuita e sem compromisso"],
+  it("B: sintoma de suspeita nula — deixa o pedaço que promete no restante", () => {
+    const masc = mascararCondicoesAutorizadas(
+      "teste de 7 dias, sem cartão. E te dou o 1o mês de graça.",
+      [CONDICAO],
     );
-    expect(c).toBe("demonstração de 15 minutos é gratuita e sem compromisso");
+    expect(masc).not.toContain("teste de 7 dias, sem cartao");
+    expect(masc).toContain("1o mes de graca");
   });
 
-  it("NÃO cobre sem lista — comportamento atual (gate veta)", () => {
-    expect(condicaoAutorizadaCobre("ganho você de graça", "ganho você de graça", undefined)).toBeNull();
+  it("C: duas promessas na mesma mensagem — a segunda fica visível", () => {
+    const masc = mascararCondicoesAutorizadas(
+      "teste de 7 dias, sem cartão e entrego amanhã de graça",
+      [CONDICAO],
+    );
+    expect(masc).not.toContain("teste de 7 dias, sem cartao");
+    expect(masc).toContain("entrego amanha de graca");
   });
 
-  it("NÃO cobre promessa que não está na lista autorizada", () => {
-    const c = condicaoAutorizadaCobre(
-      "te dou 50% de desconto de graça hoje",
-      "50% de desconto de graça",
-      ["teste de 7 dias, sem cartão"],
+  it("D: condição longa — só a condição COMPLETA mascara, trecho curto avulso não", () => {
+    const longa = "demonstração de 15 minutos é gratuita e sem compromisso";
+    const masc = mascararCondicoesAutorizadas("Sobre o sem compromisso, tudo bem?", [longa]);
+    expect(masc).toContain("sem compromisso");
+  });
+
+  it("G: coringa de 1 caractere/palavra falha a validação (nunca vira condição)", () => {
+    expect(() => validatePromiseTable({ condicoesAutorizadas: ["a"] })).toThrow(/3 palavras/);
+    expect(() => validatePromiseTable({ condicoesAutorizadas: ["grátis"] })).toThrow(/3 palavras/);
+  });
+
+  it("sem lista → corpo inalterado (comportamento atual)", () => {
+    const corpo = "te dou desconto de 80% de graça";
+    expect(mascararCondicoesAutorizadas(corpo, undefined)).toBe(corpo);
+  });
+
+  it("sem ocorrência da condição → corpo inalterado", () => {
+    const corpo = "te dou 50% de desconto hoje";
+    expect(mascararCondicoesAutorizadas(corpo, [CONDICAO])).toBe(corpo);
+  });
+
+  it("caixa/acento diferentes ainda mascaram (normaliza antes de comparar)", () => {
+    const masc = mascararCondicoesAutorizadas(
+      "O TESTE É DE 7 DIAS, SEM CARTÃO, e você não paga nada.",
+      ["Teste de 7 dias, sem cartão"],
     );
-    expect(c).toBeNull();
+    expect(masc).not.toContain("teste de 7 dias, sem cartao");
   });
 });
 
-describe("semanticPromiseGate — a oferta oficial declarada NÃO veta; o resto veta como hoje", () => {
-  it("⭐ passa quando a frase suspeita é coberta por uma condição autorizada da org (caso da issue)", () => {
+describe("semanticPromiseGate — exceção ZERO: veta sempre que o classificador acha promessa", () => {
+  it("veta quando o classificador destacou promessa, mesmo com condição autorizada declarada", () => {
     const v = semanticPromiseGate.evaluate(
       baseCtx({
-        body: "O teste é de 7 dias, sem cartão, e não cobra nada no fim.",
-        semanticPromise: { isPromise: true, suspectPhrase: "teste de 7 dias, sem cartão" },
+        body: "teste de 7 dias, sem cartão e desconto de 50% garantido",
+        semanticPromise: { isPromise: true, suspectPhrase: "desconto de 50% garantido" },
         promise: {
-          table: { condicoesAutorizadas: ["teste de 7 dias, sem cartão"] },
-          versionId: "v1",
-        },
-      }),
-    );
-    expect(v.pass).toBe(true);
-  });
-
-  it("passa COM caixa/acento diferentes (oferta declarada 'Teste de 7 dias, sem cartão')", () => {
-    const v = semanticPromiseGate.evaluate(
-      baseCtx({
-        body: "O TESTE É DE 7 DIAS, SEM CARTÃO, e você não paga nada.",
-        semanticPromise: { isPromise: true, suspectPhrase: "TESTE DE 7 DIAS, SEM CARTÃO" },
-        promise: {
-          table: { condicoesAutorizadas: ["Teste de 7 dias, sem cartão"] },
-          versionId: "v1",
-        },
-      }),
-    );
-    expect(v.pass).toBe(true);
-  });
-
-  it("veta ético quando há lista mas a frase NÃO está coberta (promessa fora da oferta)", () => {
-    const v = semanticPromiseGate.evaluate(
-      baseCtx({
-        body: "te dou desconto de 80% de graça",
-        semanticPromise: { isPromise: true, suspectPhrase: "desconto de 80% de graça" },
-        promise: {
-          table: { condicoesAutorizadas: ["teste de 7 dias, sem cartão"] },
+          table: { condicoesAutorizadas: [CONDICAO] },
           versionId: "v1",
         },
       }),
@@ -124,7 +127,18 @@ describe("semanticPromiseGate — a oferta oficial declarada NÃO veta; o resto 
     expect(v.code).toBe("promise_semantic");
   });
 
-  it("sem tabela (org não fiscaliza): veta como hoje — nunca passa por vacuidade", () => {
+  it("sem promessa → passa", () => {
+    const v = semanticPromiseGate.evaluate(
+      baseCtx({
+        body: "bom dia, tudo bem?",
+        semanticPromise: { isPromise: false, suspectPhrase: null },
+        promise: { table: { condicoesAutorizadas: [CONDICAO] }, versionId: "v1" },
+      }),
+    );
+    expect(v.pass).toBe(true);
+  });
+
+  it("sem tabela (org não fiscaliza) → veta como antes", () => {
     const v = semanticPromiseGate.evaluate(
       baseCtx({
         body: "te dou 1000 de graça",
@@ -138,10 +152,15 @@ describe("semanticPromiseGate — a oferta oficial declarada NÃO veta; o resto 
   });
 });
 
-describe("validatePromiseTable — aceita condicoesAutorizadas, rejeita shaped errado", () => {
-  it("aceita a lista e a normaliza (trim)", () => {
-    const t = validatePromiseTable({ condicoesAutorizadas: [" teste de 7 dias ", "demo 15min"] });
-    expect(t.condicoesAutorizadas).toEqual(["teste de 7 dias", "demo 15min"]);
+describe("validatePromiseTable — condicoesAutorizadas válida para mascarar", () => {
+  it("aceita e normaliza (trim)", () => {
+    const t = validatePromiseTable({
+      condicoesAutorizadas: [" teste de 7 dias, sem cartão ", "demonstração de 15 minutos é gratuita"],
+    });
+    expect(t.condicoesAutorizadas).toEqual([
+      "teste de 7 dias, sem cartão",
+      "demonstração de 15 minutos é gratuita",
+    ]);
   });
 
   it("rejeita não-array", () => {
@@ -151,8 +170,13 @@ describe("validatePromiseTable — aceita condicoesAutorizadas, rejeita shaped e
   });
 
   it("rejeita item vazio", () => {
-    expect(() => validatePromiseTable({ condicoesAutorizadas: ["ok", "  "] })).toThrow(
+    expect(() => validatePromiseTable({ condicoesAutorizadas: ["ok legal isso daqui", "  "] })).toThrow(
       /condicoesAutorizadas/,
     );
+  });
+
+  it("rejeita condição com menos de 3 palavras (coringa)", () => {
+    expect(() => validatePromiseTable({ condicoesAutorizadas: ["grátis"] })).toThrow(/3 palavras/);
+    expect(() => validatePromiseTable({ condicoesAutorizadas: ["a"] })).toThrow(/3 palavras/);
   });
 });
