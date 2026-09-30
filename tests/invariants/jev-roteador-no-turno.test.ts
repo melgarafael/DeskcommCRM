@@ -373,8 +373,11 @@ describe("contexto do roteador sob o aceite da organização", () => {
     const c = await cenario({ jev: { ...config.jev, contexto_roteador: { em: "2026-09-29T12:00:00.000Z", por: ADMIN, versao: 1 } } });
     const alheia = await cenario(settingsDoJev());
     const outraConversa = randomUUID();
+    const outroContato = randomUUID();
+    await pool.query("insert into contacts (id, organization_id, name, phone_number) values ($1,$2,'Outro contato',$3)",
+      [outroContato, c.org, "+5511900000423"]);
     await pool.query(`insert into conversations (id, organization_id, contact_id, channel_session_id, status, is_group)
-      values ($1, $2, $3, $4, 'ai_handling', false)`, [outraConversa, c.org, c.contato, c.sessao]);
+      values ($1, $2, $3, $4, 'ai_handling', false)`, [outraConversa, c.org, outroContato, c.sessao]);
     async function anterior(alvo: Cenario, corpo: string, segundos: number, direction = "outbound") {
       await pool.query(`insert into messages (id, organization_id, conversation_id, channel_session_id, contact_id,
         type, direction, status, body, sent_via, sent_at)
@@ -382,7 +385,7 @@ describe("contexto do roteador sob o aceite da organização", () => {
         [randomUUID(), alvo.org, alvo.conversa, alvo.sessao, alvo.contato, direction, corpo, segundos]);
     }
     await anterior(alheia, "segredo de outra empresa", 1);
-    await anterior({ ...c, conversa: outraConversa }, "segredo de outra conversa", 1);
+    await anterior({ ...c, conversa: outraConversa, contato: outroContato }, "segredo de outra conversa", 1);
     await anterior(c, "velha demais", 60);
     await anterior(c, "Quero comprar", 50, "inbound");
     await anterior(c, "Prefere a primeira ou a segunda?", 40);
