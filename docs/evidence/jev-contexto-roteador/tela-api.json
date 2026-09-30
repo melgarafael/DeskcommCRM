@@ -1,0 +1,33 @@
+{
+  "mensagem": "Quero me matricular na academia.",
+  "resultados": {
+    "ui-router-result": {
+      "intent_name": "Quer se matricular",
+      "confidence": 0.98,
+      "min_confidence": 0.6,
+      "agent_name": "Matrículas — Novas matrículas",
+      "jev": {
+        "estado": "decidindo",
+        "respondeu": true,
+        "intent_name": "Quer se matricular",
+        "confidence": 1,
+        "agent_name": "Matrículas — Novas matrículas",
+        "decide": true
+      }
+    },
+    "api-router-result": {
+      "intent_name": "Quer se matricular",
+      "confidence": 0.98,
+      "min_confidence": 0.6,
+      "agent_name": "Matrículas — Novas matrículas",
+      "jev": {
+        "estado": "decidindo",
+        "respondeu": true,
+        "intent_name": "Quer se matricular",
+        "confidence": 1,
+        "agent_name": "Matrículas — Novas matrículas",
+        "decide": true
+      }
+    }
+  }
+}
