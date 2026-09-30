@@ -20,3 +20,5 @@ verde em qualquer dia e em qualquer fuso do runner, e reprovaria se alguém
 voltasse a calcular a semana sem ler o fuso pedido.
 
 Refs #1350.
+
+Contribuição de @webtecnica (#2046).
