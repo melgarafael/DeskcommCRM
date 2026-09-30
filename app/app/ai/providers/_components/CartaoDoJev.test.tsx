@@ -1000,6 +1000,7 @@ describe("histórico específico do roteador", () => {
   it("histórico autorizado pode ser revogado mesmo com o Jev desligado", async () => {
     render(<CartaoDoJev dados={dados({ config: { ligado: false, contexto_roteador: { em: "2026-09-29T12:00:00Z", por: "admin", versao: 1 } } })} erro={null} recarregar={recarregar} />);
     expect(screen.getByTestId("jev-contexto-roteador")).toHaveTextContent("Histórico autorizado");
+    expect(screen.getByText(/conforme a autorização de histórico registrada separadamente/)).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Desativar histórico do roteador" }));
     await waitFor(() => expect(recarregar).toHaveBeenCalled());
     expect(chamadas[0]?.corpo).toEqual({ contexto_roteador: false });

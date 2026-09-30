@@ -633,9 +633,11 @@ function ProntoParaLigar({ dados, recarregar }: { dados: DadosDoJev; recarregar:
 
       <div className="rounded-md border border-border p-3 text-sm">
         <p>
-          {t(
-            "Ao ligar, cada mensagem que o cliente manda vai para a TypeSafe AI, nos Estados Unidos, uma de cada vez e sem o resto da conversa, para o Jev avaliar. Antes de sair, o sistema apaga CPF, telefone e e-mail do texto. Com o Jev desligado, nada é enviado.",
-          )}
+          {dados.config.contexto_roteador != null
+            ? t("Ao ligar, as mensagens dos clientes vão para a TypeSafe AI, nos Estados Unidos. No roteador, também serão enviadas até quatro mensagens anteriores, incluindo respostas de atendentes, conforme a autorização de histórico registrada separadamente. CPF, telefone e e-mail reconhecidos são ocultados em cada texto. Com o Jev desligado, nada é enviado.")
+            : t(
+                "Ao ligar, cada mensagem que o cliente manda vai para a TypeSafe AI, nos Estados Unidos, uma de cada vez e sem o resto da conversa, para o Jev avaliar. Antes de sair, o sistema apaga CPF, telefone e e-mail do texto. Com o Jev desligado, nada é enviado.",
+              )}
         </p>
         {aceite === null ? (
           <div className="mt-3 flex items-start gap-2">
