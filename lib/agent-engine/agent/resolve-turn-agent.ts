@@ -58,6 +58,8 @@
  */
 import type pg from 'pg';
 
+import { CLASSIFIER_CONTEXT_MESSAGES, contextoDoClassificador } from '@/lib/ai/classifier-context';
+
 import { consultarJevNoRoteador } from '@/lib/ai/decisao/roteador';
 import type { DependenciasDoPonto } from '@/lib/ai/decisao/ponto';
 
@@ -72,14 +74,6 @@ import {
 } from './agent-config';
 import { classifyIntent, type ClassifierContextMessage, type IntentVerdict } from './intent-classifier';
 
-/**
- * Janela de contexto passada ao CLASSIFICADOR, não confundir com
- * `context_message_window` do agente (esse alimenta o modelo que conversa
- * com o lead). Curta de propósito: o classificador roda em todo turno,
- * inclusive sticky (regra 2 abaixo) — histórico completo pagaria caro por
- * turno pra resolver só ambiguidade de resposta curta.
- */
-const CLASSIFIER_CONTEXT_MESSAGES = 4;
 
 export interface TurnAgentResolution {
   config: PublishedAgentConfig | null; // null ⇒ turno segue no genérico (comportamento atual)
@@ -330,13 +324,15 @@ export async function resolveTurnAgent(
       return resolveFallback('no_match', null);
     }
 
-    // O Jev pergunta o mesmo, AO MESMO TEMPO (onda 2 do Jev, bloco 2.2): só a
-    // mensagem, sem o contexto (R4). Observando, o turno não espera por ele.
+    // O Jev pergunta em paralelo, com contexto recente somente sob aceite específico.
+    // Observando, o turno não espera por ele.
+    const recentMessages = contextoDoClassificador(input.recentMessages ?? []);
     const jev = _consultarJev(
       db,
       {
         organizationId: input.tenantId,
         mensagem: input.signal,
+        recentMessages,
         membros: router.members,
         contactId: input.leadId,
         jobId: input.jobId,
@@ -354,7 +350,7 @@ export async function resolveTurnAgent(
         jobId: input.jobId,
         router,
         signal: input.signal,
-        recentMessages: input.recentMessages ?? [],
+        recentMessages,
       },
       { log: deps.log },
     );

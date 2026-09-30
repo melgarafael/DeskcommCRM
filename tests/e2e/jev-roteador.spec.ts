@@ -275,6 +275,27 @@ test.describe("Jev no roteador — Testar classificação, pela tela", () => {
       expect(ligou.status(), "o Jev não ligou").toBe(200);
     });
 
+    await test.step("autorizar e revogar o histórico pela tela, com persistência e sem mudar a tarefa", async () => {
+      const cartao = await abrirOCartao(page);
+      const contexto = cartao.getByTestId("jev-contexto-roteador");
+      await expect(contexto).toContainText("Histórico desativado");
+      await contexto.getByRole("button", { name: "Usar histórico no roteador", exact: true }).click();
+      await expect(page.getByRole("alertdialog")).toContainText("incluindo respostas de atendentes");
+      await page.getByRole("button", { name: "Cancelar", exact: true }).click();
+      await expect(contexto).toContainText("Histórico desativado");
+      await contexto.getByRole("button", { name: "Usar histórico no roteador", exact: true }).click();
+      await page.getByRole("button", { name: "Autorizar histórico do roteador", exact: true }).click();
+      await expect(contexto).toContainText("Histórico autorizado");
+      await abrirOCartao(page);
+      await expect(contexto).toContainText("Histórico autorizado");
+      await expect(cartao.getByTestId("jev-tarefa-roteador")).toHaveAttribute("data-estado", "observando");
+      await page.screenshot({ path: test.info().outputPath("jev-contexto-autorizado.png"), fullPage: true });
+      await contexto.getByRole("button", { name: "Desativar histórico do roteador", exact: true }).click();
+      await expect(contexto).toContainText("Histórico desativado");
+      const leitura = await page.request.get("/api/v1/ai/jev");
+      expect((await leitura.json()).data.config.contexto_roteador).toBeNull();
+    });
+
     await test.step("o cartão: três tarefas, e a do roteador nova, só observando (R7)", async () => {
       const cartao = await abrirOCartao(page);
       // Recém-ligado com a IA de sempre cadastrada (a do seed, de chave falsa): observando.

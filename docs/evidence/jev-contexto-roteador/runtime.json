@@ -1,0 +1,60 @@
+{
+  "version": "a4be5d2",
+  "outcome": "classified",
+  "intencao": "Visita ou aula experimental",
+  "confianca": 0.99,
+  "agente_publicado": true,
+  "fixture_agente_publicado_transacional": true,
+  "state_enviado": {
+    "historico": [
+      {
+        "autor": "cliente",
+        "texto": "Gostaria de experimentar antes de decidir."
+      },
+      {
+        "autor": "agente",
+        "texto": "Você quer conhecer uma aula antes da matrícula?"
+      },
+      {
+        "autor": "cliente",
+        "texto": "Quero testar. Meu telefone fictício: [PHONE]; e-mail [EMAIL]"
+      },
+      {
+        "autor": "agente",
+        "texto": "Você quer marcar uma aula experimental?"
+      }
+    ],
+    "mensagem_atual": "Sim"
+  },
+  "observacoes": [
+    {
+      "estado": "decidindo",
+      "probabilidade_jev": "0.99",
+      "mesmo_agente": true
+    }
+  ],
+  "chamadas": [
+    {
+      "provider": "anthropic",
+      "model": "claude-sonnet-5",
+      "status": "ok",
+      "origem": "padrao_da_organizacao",
+      "input_tokens": 991,
+      "output_tokens": 29,
+      "cost_cents": "0.2272",
+      "latency_ms": 2695
+    },
+    {
+      "provider": "typesafe",
+      "model": "typesafe/jev-1.13.0",
+      "status": "ok",
+      "origem": "jev",
+      "input_tokens": 948,
+      "output_tokens": 84,
+      "cost_cents": "0.0039816",
+      "latency_ms": 312
+    }
+  ],
+  "logs": [],
+  "fixtures_removidas": true
+}

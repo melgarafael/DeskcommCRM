@@ -57,6 +57,7 @@ export interface DadosDoJev {
     ligado: boolean;
     modo: "observacao" | "decide";
     aceite: { em: string; por: string } | null;
+    contexto_roteador?: { em: string; por: string; versao: 1 } | null;
   };
   tarefas: Array<{ id: string; rotulo: string; oQueOJevFaz: string }>;
   /**
@@ -356,10 +357,56 @@ export function CartaoDoJev({
 
       {ligado && <Ligado dados={dados} estado={estado} recarregar={recarregar} />}
 
+      {dados.config.contexto_roteador !== undefined && (
+        <ContextoDoRoteador dados={dados} recarregar={recarregar} />
+      )}
+
       {!dados.pode_editar && estado !== "sem_chave" && (
         <p className="mt-3 text-xs text-muted-foreground">{t("Só quem administra a empresa pode mudar o Jev.")}</p>
       )}
     </Card>
+  );
+}
+
+/** Aceite específico; mantém o controle disponível mesmo com o Jev desligado. */
+function ContextoDoRoteador({ dados, recarregar }: { dados: DadosDoJev; recarregar: () => Promise<void> }) {
+  const t = useT();
+  const { mudar, enviando } = useMudarOJev(recarregar);
+  const [confirmando, setConfirmando] = useState(false);
+  const ativo = dados.config.contexto_roteador != null;
+  return (
+    <div className="mt-4 space-y-2 border-t border-border pt-3" data-testid="jev-contexto-roteador">
+      <p className="text-sm font-medium">{t("Contexto para escolher qual agente atende")}</p>
+      <p className="text-sm text-muted-foreground">
+        {ativo
+          ? t("Histórico autorizado: ao rotear, o Jev recebe até quatro mensagens anteriores, de clientes e atendentes, além da mensagem atual.")
+          : t("Histórico desativado: ao rotear, o Jev recebe só a mensagem atual do cliente.")}
+      </p>
+      <p className="text-xs text-muted-foreground">{t("O histórico ajuda a interpretar respostas curtas. A IA de sempre continua sendo chamada e cobrada; o contexto também pode aumentar o custo do Jev.")}</p>
+      {dados.pode_editar && (
+        <Button size="sm" variant="outline" disabled={enviando} onClick={() => ativo
+          ? void mudar({ contexto_roteador: false }, t("O histórico do roteador foi desativado."))
+          : setConfirmando(true)}>
+          {ativo ? t("Desativar histórico do roteador") : t("Usar histórico no roteador")}
+        </Button>
+      )}
+      <AlertDialog open={confirmando} onOpenChange={setConfirmando}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Usar histórico no roteador?")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("Você autoriza enviar à TypeSafe AI, nos Estados Unidos, até quatro mensagens anteriores desta conversa, incluindo respostas de atendentes, junto da mensagem atual. Telefones, e-mails e CPFs reconhecidos são ocultados; outros dados podem permanecer no texto. O histórico serve apenas para escolher qual agente atende. Isso não liga o Jev nem muda quais tarefas decidem. Você pode desativar esta opção quando quiser.")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
+            <AlertDialogAction disabled={enviando} onClick={() => void mudar(
+              { contexto_roteador: true, aceite_contexto_roteador: true }, t("O histórico do roteador foi autorizado."),
+            )}>{t("Autorizar histórico do roteador")}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }
 
@@ -586,9 +633,11 @@ function ProntoParaLigar({ dados, recarregar }: { dados: DadosDoJev; recarregar:
 
       <div className="rounded-md border border-border p-3 text-sm">
         <p>
-          {t(
-            "Ao ligar, cada mensagem que o cliente manda vai para a TypeSafe AI, nos Estados Unidos, uma de cada vez e sem o resto da conversa, para o Jev avaliar. Antes de sair, o sistema apaga CPF, telefone e e-mail do texto. Com o Jev desligado, nada é enviado.",
-          )}
+          {dados.config.contexto_roteador != null
+            ? t("Ao ligar, as mensagens dos clientes vão para a TypeSafe AI, nos Estados Unidos. No roteador, também serão enviadas até quatro mensagens anteriores, incluindo respostas de atendentes, conforme a autorização de histórico registrada separadamente. CPF, telefone e e-mail reconhecidos são ocultados em cada texto. Com o Jev desligado, nada é enviado.")
+            : t(
+                "Ao ligar, cada mensagem que o cliente manda vai para a TypeSafe AI, nos Estados Unidos, uma de cada vez e sem o resto da conversa, para o Jev avaliar. Antes de sair, o sistema apaga CPF, telefone e e-mail do texto. Com o Jev desligado, nada é enviado.",
+              )}
         </p>
         {aceite === null ? (
           <div className="mt-3 flex items-start gap-2">

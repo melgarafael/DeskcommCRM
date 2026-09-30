@@ -236,7 +236,7 @@ describe("GET /api/v1/ai/jev", () => {
       rotulo: null,
       erro_de_validacao: null,
     });
-    expect(d.config).toEqual({ ligado: false, modo: "observacao", aceite: null });
+    expect(d.config).toEqual({ ligado: false, modo: "observacao", aceite: null, contexto_roteador: null });
     expect(d.tarefas.map((t: { id: string }) => t.id)).toEqual(["sentiment_classify", "jailbreak_detect", "intent_router"]);
     expect(d.tem_ia_de_sempre).toBe(true);
     expect(d.numeros).toEqual({
@@ -850,5 +850,44 @@ describe("o Jev por tarefa na rota", () => {
     estado.credenciais = [credencial()];
     await mudar({ ligado: true, aceite_lgpd: true });
     expect((estado.settings.jev as Linha).aceite).toMatchObject({ por: USUARIO, alcance: "mensagem" });
+  });
+});
+
+
+describe("aceite específico do contexto do roteador", () => {
+  it("o aceite antigo, mesmo com alcance conversa, não autoriza o histórico automaticamente", async () => {
+    estado.settings.jev = { ligado: true, aceite: { ...ACEITE_ANTIGO, alcance: "conversa" } };
+    const { status } = await mudar({ contexto_roteador: true });
+    expect(status).toBe(422);
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("admin autoriza, GET mostra, repetir é idempotente e revogar exige novo aceite", async () => {
+    const antes = structuredClone(estado.settings);
+    const r = await mudar({ contexto_roteador: true, aceite_contexto_roteador: true });
+    expect(r.status).toBe(200);
+    expect(r.corpo.data.config.contexto_roteador).toMatchObject({ por: USUARIO, versao: 1 });
+    expect(r.corpo.data.config.ligado).toBe(false);
+    expect(estado.settings.branding).toEqual(antes.branding);
+    expect(estado.settings.llm).toEqual(antes.llm);
+    const get = await GET();
+    expect((await get.json()).data.config.contexto_roteador).toEqual(r.corpo.data.config.contexto_roteador);
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: ORG,
+      metadata: expect.objectContaining({ contexto_roteador: true, aceite_contexto_registrado: true }),
+    }));
+    expect((await mudar({ contexto_roteador: true })).corpo.data.alterado).toBe(false);
+    const revogado = await mudar({ contexto_roteador: false });
+    expect(revogado.corpo.data.config.contexto_roteador).toBeNull();
+    expect((await mudar({ contexto_roteador: true })).status).toBe(422);
+  });
+
+  it("gerente não autoriza histórico e corpo não escolhe outra organização", async () => {
+    papel = "manager";
+    expect((await mudar({ contexto_roteador: true, aceite_contexto_roteador: true })).status).toBe(403);
+    papel = "admin";
+    expect((await mudar({ contexto_roteador: true, aceite_contexto_roteador: true, organization_id: OUTRA_ORG })).status).toBe(422);
+    expect((await mudar({ aceite_contexto_roteador: true })).status).toBe(422);
+    expect(audit).not.toHaveBeenCalled();
   });
 });

@@ -1,0 +1,37 @@
+{
+  "fase": "revogado",
+  "versao": "a4be5d2",
+  "limiar": 0.6,
+  "resultados": [
+    {
+      "id": "sim-experimental",
+      "historico": [
+        [
+          "inbound",
+          "Quero experimentar antes de decidir."
+        ],
+        [
+          "outbound",
+          "Você quer marcar uma aula experimental?"
+        ]
+      ],
+      "atual": "Sim",
+      "esperado": "Visita ou aula experimental",
+      "fase": "revogado",
+      "estado": "decidindo",
+      "jev": {
+        "estado": "decidindo",
+        "veredito": {
+          "intentName": null,
+          "confidence": 0.8
+        },
+        "confianca": 0.76,
+        "modelo": "jev-1.13.0",
+        "tokensDeEntrada": 755,
+        "tokensDeSaida": 80,
+        "latenciaMs": 248
+      },
+      "state_enviado": "Sim"
+    }
+  ]
+}
