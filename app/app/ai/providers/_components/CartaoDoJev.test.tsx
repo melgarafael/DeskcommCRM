@@ -986,13 +986,13 @@ describe("CartaoDoJev — sem a IA de sempre, as tarefas seguem com a linha dela
 describe("histórico específico do roteador", () => {
   it("só envia o aceite depois da confirmação; cancelar não muda nada", async () => {
     render(<CartaoDoJev dados={dados({ config: { contexto_roteador: null } })} erro={null} recarregar={recarregar} />);
-    fireEvent.click(screen.getByRole("button", { name: "Usar histórico no roteador", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Usar histórico no roteador" }));
     expect(screen.getByRole("alertdialog")).toHaveTextContent("incluindo respostas de atendentes");
     expect(chamadas).toHaveLength(0);
-    fireEvent.click(screen.getByRole("button", { name: "Cancelar", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
     expect(chamadas).toHaveLength(0);
-    fireEvent.click(screen.getByRole("button", { name: "Usar histórico no roteador", exact: true }));
-    fireEvent.click(screen.getByRole("button", { name: "Autorizar histórico do roteador", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Usar histórico no roteador" }));
+    fireEvent.click(screen.getByRole("button", { name: "Autorizar histórico do roteador" }));
     await waitFor(() => expect(recarregar).toHaveBeenCalled());
     expect(chamadas[0]?.corpo).toEqual({ contexto_roteador: true, aceite_contexto_roteador: true });
   });
@@ -1008,6 +1008,6 @@ describe("histórico específico do roteador", () => {
   it("somente leitura mostra o estado sem oferecer alterações", () => {
     render(<CartaoDoJev dados={dados({ config: { contexto_roteador: null }, pode_editar: false })} erro={null} recarregar={recarregar} />);
     expect(screen.getByTestId("jev-contexto-roteador")).toHaveTextContent("Histórico desativado");
-    expect(screen.queryByRole("button", { name: "Usar histórico no roteador", exact: true })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Usar histórico no roteador" })).toBeNull();
   });
 });
