@@ -1,0 +1,10 @@
+{
+  "lib/ai/classifier-context.ts": "5ecd28413f8632d912719d0a4f6ef575010ec4f291d59155d330f0af7672d0d6",
+  "lib/ai/decisao/config.ts": "c7c13c7801aff8616429a817874b0b42e0661b71a6eb29989bdaad434443f223",
+  "lib/ai/decisao/pool.ts": "6f094a7c5b7a5af1a6cd02170397047b3801ad15322252aa441ba9d5dac34977",
+  "lib/ai/decisao/roteador.ts": "a976c93da1d29ca771e9819e8ea1d6e8f27ea3296a320328ad6d0a38413a538b",
+  "lib/agent-engine/agent/intent-classifier.ts": "64346eb9b8299ab8c8e9dbdf7cbf009c6205d4e19703b4b78f9cb2b9592dd7ca",
+  "lib/agent-engine/agent/resolve-turn-agent.ts": "293da1624e952cfc8e58651c4da749fa124a2a0bd84d0e6b9e3f8599ea7ac37d",
+  "app/api/v1/ai/jev/route.ts": "e4611d99e50ac58e2b6bf9679ce6eb75efdd25a3d90f12ced4755e7ddd92bcb9",
+  "app/app/ai/providers/_components/CartaoDoJev.tsx": "f356c470c892e75ff700bc899953333ff1a8c0fcad5954a5a1d5ee4893b761c4"
+}

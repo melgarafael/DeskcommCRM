@@ -1,0 +1,346 @@
+{
+  "fase": "depois",
+  "versao": "6a2a8b0",
+  "limiar": 0.6,
+  "resultados": [
+    {
+      "id": "matricula-explicita",
+      "historico": [],
+      "atual": "Quero me matricular na academia.",
+      "esperado": "Quer se matricular",
+      "fase": "depois",
+      "estado": "decidindo",
+      "jev": {
+        "estado": "decidindo",
+        "veredito": {
+          "intentName": "Quer se matricular",
+          "confidence": 1
+        },
+        "confianca": 1,
+        "modelo": "jev-1.13.0",
+        "tokensDeEntrada": 763,
+        "tokensDeSaida": 84,
+        "latenciaMs": 313
+      },
+      "tradicional": {
+        "intentName": "Quer se matricular",
+        "confidence": 0.98
+      },
+      "state_enviado": "Quero me matricular na academia."
+    },
+    {
+      "id": "sim-experimental",
+      "historico": [
+        [
+          "inbound",
+          "Quero experimentar antes de decidir."
+        ],
+        [
+          "outbound",
+          "Você quer marcar uma aula experimental?"
+        ]
+      ],
+      "atual": "Sim",
+      "esperado": "Visita ou aula experimental",
+      "fase": "depois",
+      "estado": "decidindo",
+      "jev": {
+        "estado": "decidindo",
+        "veredito": {
+          "intentName": "Visita ou aula experimental",
+          "confidence": 0.99
+        },
+        "confianca": 0.99,
+        "modelo": "jev-1.13.0",
+        "tokensDeEntrada": 883,
+        "tokensDeSaida": 84,
+        "latenciaMs": 258
+      },
+      "tradicional": {
+        "intentName": "Visita ou aula experimental",
+        "confidence": 0.97
+      },
+      "state_enviado": {
+        "historico": [
+          {
+            "autor": "cliente",
+            "texto": "Quero experimentar antes de decidir."
+          },
+          {
+            "autor": "agente",
+            "texto": "Você quer marcar uma aula experimental?"
+          }
+        ],
+        "mensagem_atual": "Sim"
+      }
+    },
+    {
+      "id": "amanha-visita",
+      "historico": [
+        [
+          "inbound",
+          "Gostaria de conhecer o espaço."
+        ],
+        [
+          "outbound",
+          "Qual dia você prefere para visitar a academia?"
+        ]
+      ],
+      "atual": "Amanhã",
+      "esperado": "Visita ou aula experimental",
+      "fase": "depois",
+      "estado": "decidindo",
+      "jev": {
+        "estado": "decidindo",
+        "veredito": {
+          "intentName": "Visita ou aula experimental",
+          "confidence": 0.97
+        },
+        "confianca": 0.96,
+        "modelo": "jev-1.13.0",
+        "tokensDeEntrada": 890,
+        "tokensDeSaida": 84,
+        "latenciaMs": 249
+      },
+      "tradicional": {
+        "intentName": "Visita ou aula experimental",
+        "confidence": 0.95
+      },
+      "state_enviado": {
+        "historico": [
+          {
+            "autor": "cliente",
+            "texto": "Gostaria de conhecer o espaço."
+          },
+          {
+            "autor": "agente",
+            "texto": "Qual dia você prefere para visitar a academia?"
+          }
+        ],
+        "mensagem_atual": "Amanhã"
+      }
+    },
+    {
+      "id": "plano-anual",
+      "historico": [
+        [
+          "inbound",
+          "Quanto custa o plano mensal?"
+        ],
+        [
+          "outbound",
+          "Posso explicar os valores dos planos mensal e anual."
+        ]
+      ],
+      "atual": "E o anual?",
+      "esperado": "Planos e valores",
+      "fase": "depois",
+      "estado": "decidindo",
+      "jev": {
+        "estado": "decidindo",
+        "veredito": {
+          "intentName": "Planos e valores",
+          "confidence": 1
+        },
+        "confianca": 1,
+        "modelo": "jev-1.13.0",
+        "tokensDeEntrada": 890,
+        "tokensDeSaida": 83,
+        "latenciaMs": 233
+      },
+      "tradicional": {
+        "intentName": "Planos e valores",
+        "confidence": 0.95
+      },
+      "state_enviado": {
+        "historico": [
+          {
+            "autor": "cliente",
+            "texto": "Quanto custa o plano mensal?"
+          },
+          {
+            "autor": "agente",
+            "texto": "Posso explicar os valores dos planos mensal e anual."
+          }
+        ],
+        "mensagem_atual": "E o anual?"
+      }
+    },
+    {
+      "id": "horario-manha",
+      "historico": [
+        [
+          "inbound",
+          "Quero saber os horários da natação."
+        ],
+        [
+          "outbound",
+          "Você procura aula de manhã ou de tarde?"
+        ]
+      ],
+      "atual": "De manhã",
+      "esperado": "Modalidades e horários",
+      "fase": "depois",
+      "estado": "decidindo",
+      "jev": {
+        "estado": "decidindo",
+        "veredito": {
+          "intentName": "Modalidades e horários",
+          "confidence": 0.99
+        },
+        "confianca": 0.98,
+        "modelo": "jev-1.13.0",
+        "tokensDeEntrada": 889,
+        "tokensDeSaida": 84,
+        "latenciaMs": 251
+      },
+      "tradicional": {
+        "intentName": "Modalidades e horários",
+        "confidence": 0.95
+      },
+      "state_enviado": {
+        "historico": [
+          {
+            "autor": "cliente",
+            "texto": "Quero saber os horários da natação."
+          },
+          {
+            "autor": "agente",
+            "texto": "Você procura aula de manhã ou de tarde?"
+          }
+        ],
+        "mensagem_atual": "De manhã"
+      }
+    },
+    {
+      "id": "mudanca-de-assunto",
+      "historico": [
+        [
+          "inbound",
+          "Quanto custa o plano mensal?"
+        ],
+        [
+          "outbound",
+          "Vamos falar dos valores da mensalidade."
+        ]
+      ],
+      "atual": "Agora quero saber quais os horários da hidroginástica.",
+      "esperado": "Modalidades e horários",
+      "fase": "depois",
+      "estado": "decidindo",
+      "jev": {
+        "estado": "decidindo",
+        "veredito": {
+          "intentName": "Modalidades e horários",
+          "confidence": 1
+        },
+        "confianca": 1,
+        "modelo": "jev-1.13.0",
+        "tokensDeEntrada": 899,
+        "tokensDeSaida": 84,
+        "latenciaMs": 234
+      },
+      "tradicional": {
+        "intentName": "Modalidades e horários",
+        "confidence": 0.97
+      },
+      "state_enviado": {
+        "historico": [
+          {
+            "autor": "cliente",
+            "texto": "Quanto custa o plano mensal?"
+          },
+          {
+            "autor": "agente",
+            "texto": "Vamos falar dos valores da mensalidade."
+          }
+        ],
+        "mensagem_atual": "Agora quero saber quais os horários da hidroginástica."
+      }
+    },
+    {
+      "id": "confirmacao-matricula",
+      "historico": [
+        [
+          "inbound",
+          "Já decidi que vou começar a treinar."
+        ],
+        [
+          "outbound",
+          "Você quer fazer sua matrícula agora?"
+        ]
+      ],
+      "atual": "Quero sim",
+      "esperado": "Quer se matricular",
+      "fase": "depois",
+      "estado": "decidindo",
+      "jev": {
+        "estado": "decidindo",
+        "veredito": {
+          "intentName": "Quer se matricular",
+          "confidence": 1
+        },
+        "confianca": 1,
+        "modelo": "jev-1.13.0",
+        "tokensDeEntrada": 889,
+        "tokensDeSaida": 84,
+        "latenciaMs": 234
+      },
+      "tradicional": {
+        "intentName": "Quer se matricular",
+        "confidence": 0.97
+      },
+      "state_enviado": {
+        "historico": [
+          {
+            "autor": "cliente",
+            "texto": "Já decidi que vou começar a treinar."
+          },
+          {
+            "autor": "agente",
+            "texto": "Você quer fazer sua matrícula agora?"
+          }
+        ],
+        "mensagem_atual": "Quero sim"
+      }
+    },
+    {
+      "id": "fora-do-escopo",
+      "historico": [
+        [
+          "outbound",
+          "Como posso ajudar?"
+        ]
+      ],
+      "atual": "Qual a capital da Noruega?",
+      "esperado": null,
+      "fase": "depois",
+      "estado": "decidindo",
+      "jev": {
+        "estado": "decidindo",
+        "veredito": {
+          "intentName": null,
+          "confidence": 0.97
+        },
+        "confianca": 0.97,
+        "modelo": "jev-1.13.0",
+        "tokensDeEntrada": 863,
+        "tokensDeSaida": 80,
+        "latenciaMs": 328
+      },
+      "tradicional": {
+        "intentName": null,
+        "confidence": 0.98
+      },
+      "state_enviado": {
+        "historico": [
+          {
+            "autor": "agente",
+            "texto": "Como posso ajudar?"
+          }
+        ],
+        "mensagem_atual": "Qual a capital da Noruega?"
+      }
+    }
+  ]
+}
