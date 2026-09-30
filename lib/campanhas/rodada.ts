@@ -32,6 +32,7 @@
  *
  * Nunca lança para o cron: uma campanha quebrada não pode derrubar a rodada.
  */
+import { organizacoesParadas } from "@/lib/tenants/estado";
 import { randomUUID } from "node:crypto";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -97,11 +98,10 @@ export async function rodarUmaRodadaDeCampanha(
   admin: SupabaseClient,
   agora: Date = new Date(),
 ): Promise<ResultadoDaRodada> {
-  // Organização SUSPENSA não prospecta. A decisão é a mesma da fila do agente:
-  // `= 'suspended'` e não `<> 'active'`, porque o CHECK aceita também 'redacted'
-  // e 'archived', e desligá-los seria mudança que ninguém pediu.
-  const { data: suspensas } = await admin.from("organizations").select("id").eq("status", "suspended");
-  const idsSuspensas = (suspensas ?? []).map((o) => (o as { id: string }).id);
+  // Organização que não opera não prospecta. A regra é UMA para o sistema
+  // inteiro (`lib/tenants/estado.ts`): só `active` opera — a mesma que a RLS, a
+  // fila do agente e o dreno de eventos aplicam desde a migration 0492.
+  const idsSuspensas = await organizacoesParadas(admin);
 
   const promovidas = await promoverAgendadas(admin, idsSuspensas, agora);
 

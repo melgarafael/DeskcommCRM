@@ -1,4 +1,5 @@
 import type { InterfaceSettings } from "@/lib/navigation/interface";
+import type { EstadoDaOrganizacao } from "@/lib/tenants/estado";
 import type { Idioma } from "@/lib/i18n/idiomas";
 import type { ModuloOpcional } from "@/lib/instalacao/modulos";
 import type { CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
@@ -88,6 +89,13 @@ export interface UserOrgMembership {
    * então quem usa passa por `fusoValido` e cai em `FUSO_PADRAO`.
    */
   timezone?: string | null;
+  /**
+   * `organizations.status`. Só `active` opera (`lib/tenants/estado.ts`): o
+   * vínculo com uma organização suspensa continua na lista — é por ele que a
+   * aplicação sabe mostrar "conta suspensa" em vez de "você não pertence a
+   * nenhuma empresa" —, mas `resolveActiveOrg` nunca a devolve como ativa.
+   */
+  status?: EstadoDaOrganizacao;
   /**
    * Moeda e país da organização (`organizations.currency` / `.country`).
    *

@@ -3123,3 +3123,27 @@ o CI só publica artefato em falha). Medido no run 36309605444, parte 3, head
 | J34.3 | Termo em 2 de 4 mensagens (uma em maiúsculas) | contador "Resultados nas mensagens carregadas: 2"; as 2 bolhas com o anel no `box-shadow` COMPUTADO (`0 0 0 4px`, cor ≠ fundo), uma enviada e uma recebida; as outras 2 sem anel | PASS — anel `rgb(28, 26, 22) 0 0 0 4px` sobre recebida `rgb(245, 243, 238)` e enviada `rgb(80, 109, 72)`; sem anel nas outras |
 | J34.4 | Esc fecha | campo, contador e marcas somem; o foco volta à lupa | PASS |
 | J34.5 | Trocar de conversa pela lista, sem recarregar | a conversa B (que tem o termo) abre sem campo, sem contador e sem marca; abrir a busca nela começa vazia | PASS |
+
+## J37 — Gestão de tenants pelo admin da plataforma `[P1]` (2026-09-29)
+
+Suspender, corrigir o e-mail de acesso, reativar, editar e excluir um tenant pela
+tela de `/admin/tenants/<id>`, com um membro do tenant logado ao mesmo tempo.
+Spec: `tests/e2e/admin-gestao-de-tenants.spec.ts` (job e2e, parte 5; cria o próprio
+tenant e o próprio login e se desfaz deles). Evidência: `evidence/admin-gestao-de-tenants/01-tenant-ativo.png`, `evidence/admin-gestao-de-tenants/02-tenant-suspenso.png`, `evidence/admin-gestao-de-tenants/03-membro-ve-conta-suspensa.png`, `evidence/admin-gestao-de-tenants/04-email-corrigido.png`, `evidence/admin-gestao-de-tenants/05-membro-de-volta.png`, `evidence/admin-gestao-de-tenants/06-dados-editados.png`, `evidence/admin-gestao-de-tenants/07-confirmacao-da-exclusao.png`, `evidence/admin-gestao-de-tenants/08-lista-depois-da-exclusao.png`. Medido localmente em 29/09/2026, Supabase
+local do `baseline.sql` (pg15), `next build` + `next start`, sem chave de IA e sem
+Redis: `1 passed (42.9s)`. A transação da exclusão e o corte da RLS têm prova
+própria em `tests/invariants/gestao-de-tenants.test.ts`.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J37.1 | Tenant ativo | cabeçalho com o nome; o e-mail de login do membro na lista; sem "Excluir tenant", com a instrução "suspenda-o primeiro" | PASS |
+| J37.2 | Suspender com motivo | faixa com o motivo; "Excluir tenant" aparece | PASS |
+| J37.3 | O membro logado depois da suspensão | a próxima navegação cai em `/account-suspended`; `GET /api/v1/contacts` → `403 tenant_suspended` | PASS |
+| J37.4 | Corrigir o e-mail de acesso | a lista mostra o novo; o login com o NOVO entra (e cai na tela de suspensão); o login com o ANTIGO é recusado | PASS |
+| J37.5 | Reativar com motivo | banco volta a `active`; o membro entra em `/app` | PASS |
+| J37.6 | Editar dados | o nome novo aparece no cabeçalho e está gravado no banco | PASS |
+| J37.7 | Excluir | aviso de irreversível; botão travado com identificador errado; com o certo, a organização some do banco, a lápide `organization.deleted` fica na auditoria e o login que só pertencia a ela é removido | PASS |
+
+Não provado pela tela: o desligamento externo da exclusão (WAHA, Meta, Nuvemshop),
+porque o tenant de teste não tem canal conectado — medido por unidade em
+`lib/tenants/exclusao.test.ts`.

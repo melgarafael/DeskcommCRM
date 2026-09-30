@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
-import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
+import { organizacaoEscolhida, requireAuth, resolveActiveOrg } from "@/lib/auth/server";
+import { organizacaoOpera } from "@/lib/tenants/estado";
 import { loadOnboardingState } from "@/app/actions/onboarding/_shared";
 import { Stepper } from "./_components/Stepper";
 import { OutrasOrganizacoes } from "./_components/OutrasOrganizacoes";
@@ -23,6 +24,12 @@ export default async function OnboardingLayout({ children }: { children: React.R
   // Sem organização o onboarding não tem o que mostrar — mas mandar para
   // `/login` fechava o círculo: quem entrasse de novo voltaria para cá. A saída
   // é a tela que CRIA a organização que falta.
+  // Empresa suspensa não é "sem organização": `/get-started` ofereceria criar
+  // outra no lugar da que foi suspensa.
+  if (!activeOrg) {
+    const escolhida = await organizacaoEscolhida(user);
+    if (escolhida && !organizacaoOpera(escolhida.status)) redirect("/account-suspended");
+  }
   if (!activeOrg) redirect("/get-started");
 
   const { state, onboardedAt } = await loadOnboardingState(activeOrg.orgId);

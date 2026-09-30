@@ -6,6 +6,9 @@ import { createClient } from "@/lib/supabase/server";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { loadAuthUser, organizacaoEscolhida } from "@/lib/auth/server";
+import { organizacaoOpera } from "@/lib/tenants/estado";
+import { OutrasOrganizacoes } from "@/app/onboarding/_components/OutrasOrganizacoes";
 
 export const metadata = {
   title: "Conta suspensa",
@@ -33,6 +36,17 @@ export default async function AccountSuspendedPage() {
     (user?.user_metadata?.locale as string | undefined) ?? null,
   );
 
+  // Quem também participa de uma empresa ATIVA não fica preso aqui: a saída é a
+  // mesma troca de organização do seletor do topo (`setActiveOrg`), que só
+  // aceita organização ativa.
+  // A tela de suspensão não pode cair por causa desta leitura: sem ela, só não
+  // oferece a troca de empresa.
+  const authUser = user ? await loadAuthUser().catch(() => null) : null;
+  const escolhida = authUser ? await organizacaoEscolhida(authUser) : null;
+  const outras = (authUser?.organizations ?? [])
+    .filter((o) => organizacaoOpera(o.status) && o.organization_id !== escolhida?.organization_id)
+    .map((o) => ({ id: o.organization_id, nome: o.organization_name }));
+
   return (
     <IdiomaProvider locale={idioma}>
       <main className="flex min-h-screen items-center justify-center p-8">
@@ -56,6 +70,16 @@ export default async function AccountSuspendedPage() {
                 idioma,
               )}
             </p>
+          )}
+          {outras.length > 0 && (
+            <div className="space-y-2 pt-2">
+              <p className="text-sm text-muted-foreground">
+                {traduzir("Você também participa de outras empresas que seguem ativas.", idioma)}
+              </p>
+              <div className="flex justify-center">
+                <OutrasOrganizacoes outras={outras} />
+              </div>
+            </div>
           )}
           <div className="pt-2">
             <Button asChild variant="outline">

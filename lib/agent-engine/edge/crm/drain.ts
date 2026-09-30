@@ -12,6 +12,7 @@
  *   - grupos @g.us: skip (regra dura nº 12) — evento marcado done sem job;
  *   - eventos 'processing' órfãos (crash do worker) voltam a 'pending' por timeout.
  */
+import { organizacaoOpera } from '@/lib/tenants/estado';
 import { z } from 'zod';
 import type pg from 'pg';
 
@@ -216,10 +217,20 @@ async function processEvent(
 
   // Spec 14: org em modo 'external' tem agente EXTERNO como dono da conversa —
   // o engine não responde por cima. Evento é consumido (done) sem job.
-  const { rows: modeRows } = await pool.query<{ mode: string | null }>(
-    `select settings->>'ai_dispatch_mode' as mode from organizations where id = $1`,
+  const { rows: modeRows } = await pool.query<{ mode: string | null; status: string | null }>(
+    `select settings->>'ai_dispatch_mode' as mode, status from organizations where id = $1`,
     [event.organization_id],
   );
+  // Organização suspensa: a mensagem que chegou já está gravada (a ingestão não
+  // para), mas o agente NÃO responde — nem agora nem na reativação. Consumir o
+  // evento sem criar turno é o que impede uma enxurrada de respostas atrasadas
+  // no dia em que a empresa volta (lib/tenants/estado.ts).
+  if (!organizacaoOpera(modeRows[0]?.status ?? null)) {
+    log.info('drain: organização suspensa — mensagem guardada, sem turno do agente', {
+      event_id: event.id,
+    });
+    return 'processado';
+  }
   if (modeRows[0]?.mode === 'external') {
     log.info('drain: org em modo external (spec 14) — evento pulado', { event_id: event.id });
     return 'processado';

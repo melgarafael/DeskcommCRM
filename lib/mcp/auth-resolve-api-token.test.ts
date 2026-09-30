@@ -59,6 +59,8 @@ interface LinhaDoToken {
   revoked_at: string | null;
   expires_at: string | null;
   created_by: string;
+  /** Embed de `organizations(status)` — a organização dona do token. */
+  organizations?: { status: string } | null;
 }
 
 function linhaViva(patch: Partial<LinhaDoToken> = {}): LinhaDoToken {
@@ -390,5 +392,36 @@ describe("validateBearerToken — a tradução para MCP não mudou", () => {
       erro,
       "um erro de infraestrutura foi convertido em recusa de autenticação — o 500 desapareceu e virou 401",
     ).not.toBeInstanceOf(McpAuthError);
+  });
+});
+
+describe("organização suspensa (migration 0492)", () => {
+  it("token vivo de organização SUSPENSA é `tenant_suspended`", async () => {
+    armar(achou(linhaViva({ organizations: { status: "suspended" } })));
+    expect(await reasonDe(PLAINTEXT)).toBe("tenant_suspended");
+  });
+
+  it("vira 403 (não 401): o token é válido, a organização é que está parada", async () => {
+    armar(achou(linhaViva({ organizations: { status: "suspended" } })));
+    const r = await recusaMcp(`Bearer ${PLAINTEXT}`);
+    expect(r.httpStatus).toBe(403);
+    expect(r.mcpCode).toBe(-32002);
+  });
+
+  it("token revogado de organização suspensa continua respondendo como revogado", async () => {
+    armar(
+      achou(
+        linhaViva({
+          revoked_at: "2026-09-01T10:00:00.000Z",
+          organizations: { status: "suspended" },
+        }),
+      ),
+    );
+    expect(await reasonDe(PLAINTEXT)).toBe("revoked");
+  });
+
+  it("controle: a mesma linha com organização ATIVA resolve", async () => {
+    armar(achou(linhaViva({ organizations: { status: "active" } })));
+    await expect(resolveApiToken(PLAINTEXT)).resolves.toMatchObject({ organizationId: ORG_ID });
   });
 });

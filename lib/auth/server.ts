@@ -16,6 +16,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { empresaExigeMfa, exigeCadastroDeMfa } from "@/lib/auth/politica-mfa";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
+import { organizacaoOpera } from "@/lib/tenants/estado";
 import type { AuthUser, Role, UserOrgMembership, ActiveOrg } from "./types";
 
 const ACTIVE_ORG_COOKIE = "active_org";
@@ -43,6 +44,7 @@ interface OrgJoin {
   timezone: string | null;
   currency: string | null;
   country: string | null;
+  status?: string | null;
 }
 
 /** O mesmo `organizations`, alcançado por outro embed: só as portas da EMPRESA. */
@@ -73,7 +75,7 @@ async function localeDaOrgAtiva(memberships: UserOrgMembership[]): Promise<strin
  * da organização ativa, o sorteio decide TAMBÉM em que língua o sistema abre.
  * As duas coisas andam juntas: não tire a ordenação de lá sem resolver isto.
  */
-function escolherMembroAtivo(
+export function escolherMembroAtivo(
   memberships: UserOrgMembership[],
   cookieOrg: string | undefined,
 ): UserOrgMembership | null {
@@ -82,7 +84,22 @@ function escolherMembroAtivo(
     const achado = memberships.find((o) => o.organization_id === cookieOrg);
     if (achado) return achado;
   }
-  return memberships[0] ?? null;
+  // Sem cookie, a primeira organização que OPERA: quem pertence a uma suspensa
+  // e a uma ativa entra na ativa, em vez de parar na tela de suspensão por
+  // causa da ordem da lista. Só quando todas estão paradas a escolha cai na
+  // primeira — e aí o layout mostra a suspensão, que é a verdade.
+  return memberships.find((o) => organizacaoOpera(o.status)) ?? memberships[0] ?? null;
+}
+
+/**
+ * A organização que a pessoa ESCOLHEU (cookie → primeira que opera), sem
+ * filtrar pelo estado. É o que o layout usa para distinguir "conta suspensa" de
+ * "sem organização" quando `resolveActiveOrg` devolve `null`.
+ */
+export async function organizacaoEscolhida(authUser: AuthUser): Promise<UserOrgMembership | null> {
+  if (authUser.support) return null;
+  const store = await cookies();
+  return escolherMembroAtivo(authUser.organizations, store.get(ACTIVE_ORG_COOKIE)?.value);
 }
 
 /**
@@ -189,7 +206,7 @@ export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
           // issue #1341 acabou de engordar), e o alias traz só as portas da EMPRESA.
           // `timezone` veio do main (fuso da organização nas listas, #1290) e convive
           // com o alias: um embed por relação, sem renomear o que já existia.
-          "organization_id, role, interface_settings, accepted_at, organizations(display_name, locale, timezone, currency, country), interface_da_empresa:organizations(interface_settings)",
+          "organization_id, role, interface_settings, accepted_at, organizations(display_name, locale, timezone, currency, country, status), interface_da_empresa:organizations(interface_settings)",
         )
         .eq("user_id", user.id)
         .is("revoked_at", null)
@@ -230,14 +247,35 @@ export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
   }
 
   const rows = (rawMemberships ?? []) as RawMembershipRow[];
+  const primeiro = <T>(v: T | T[] | null): T | null => (Array.isArray(v) ? (v[0] ?? null) : v);
+
+  // A organização SUSPENSA sai do alcance da RLS (migration 0492): o embed dela
+  // volta nulo, mas o vínculo continua na lista. Para essas — e só essas — o
+  // estado e o nome vêm pelo service role, filtrados pelos ids do próprio
+  // vínculo do usuário (fonte confiável). Sem isto, a pessoa de uma empresa
+  // suspensa veria "—" e cairia na tela de "sem organização".
+  const foraDoAlcance = rows
+    .filter((r) => !primeiro(r.organizations))
+    .map((r) => r.organization_id);
+  const paradas = new Map<string, OrgJoin>();
+  if (foraDoAlcance.length > 0) {
+    const { data: orgsParadas, error: paradasErro } = await createAdminClient()
+      .from("organizations")
+      .select("id, display_name, locale, timezone, currency, country, status")
+      .in("id", foraDoAlcance);
+    if (paradasErro) {
+      throw new Error(`auth_permissions_unavailable: ${paradasErro.message}`);
+    }
+    for (const o of (orgsParadas ?? []) as (OrgJoin & { id: string })[]) paradas.set(o.id, o);
+  }
+
   const memberships: UserOrgMembership[] = rows.map((row) => {
-    const orgs = row.organizations;
-    const org = Array.isArray(orgs) ? (orgs[0] ?? null) : orgs;
-    const empresas = row.interface_da_empresa;
-    const empresa = Array.isArray(empresas) ? (empresas[0] ?? null) : empresas;
+    const org = primeiro(row.organizations) ?? paradas.get(row.organization_id) ?? null;
+    const empresa = primeiro(row.interface_da_empresa);
     return {
       organization_id: row.organization_id,
       organization_name: org?.display_name ?? "—",
+      status: (org?.status as UserOrgMembership["status"] | undefined) ?? undefined,
       role: row.role as Role,
       // EMPRESA ∩ VÍNCULO (migration 0367): a empresa escolhe o universo de
       // portas da instalação, o vínculo escolhe menos dentro dele. Até aqui o
@@ -312,6 +350,11 @@ export const resolveActiveOrg = cache(async (authUser: AuthUser): Promise<Active
   const store = await cookies();
   const ativo = escolherMembroAtivo(authUser.organizations, store.get(ACTIVE_ORG_COOKIE)?.value);
   if (!ativo) return null;
+  // Organização que não opera NUNCA é a ativa. Todo consumidor desta função —
+  // rotas via `requireRole`, server actions, layouts — já trata `null` como
+  // "sem organização", então o corte vale em todos de uma vez, inclusive nos
+  // que gravam pelo service role e não passam pela RLS.
+  if (!organizacaoOpera(ativo.status)) return null;
   return {
     orgId: ativo.organization_id,
     name: ativo.organization_name,

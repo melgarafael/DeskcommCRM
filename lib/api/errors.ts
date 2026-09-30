@@ -33,6 +33,8 @@ export const ApiErrorCodes = {
   forbidden: "forbidden",
   forbidden_role: "forbidden_role",
   forbidden_tenant: "forbidden_tenant",
+  /** A organização existe e a pessoa pertence a ela, mas ela está suspensa (`lib/tenants/estado.ts`). */
+  tenant_suspended: "tenant_suspended",
   lgpd_anonymization_irreversible: "lgpd_anonymization_irreversible",
 
   // 404

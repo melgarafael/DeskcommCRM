@@ -50,6 +50,14 @@ const ORG: TenantOrganization = {
   suspended_at: null,
   created_at: "2026-01-01T12:00:00.000Z",
   settings: { plan: "pro" },
+  suspended_reason: null,
+  country: "BR",
+  timezone: "America/Sao_Paulo",
+  locale: "pt-BR",
+  currency: "BRL",
+  media_retention_days: 180,
+  dpo_email: null,
+  privacy_policy_url: null,
 };
 
 const COUNTS: TenantCounts = {

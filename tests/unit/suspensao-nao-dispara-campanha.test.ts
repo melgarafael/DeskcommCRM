@@ -39,6 +39,7 @@ function fakeAdmin(opts: { suspensas: string[]; campanhas: unknown[] }) {
         return b;
       },
       eq: () => b,
+      neq: () => b,
       lte: () => b,
       or: () => b,
       order: () => b,

@@ -1088,6 +1088,7 @@ jobs:
       SPECS_PARTE_5: >-
         extensoes-da-instalacao.spec.ts
         admin-credencial-google.spec.ts
+        admin-gestao-de-tenants.spec.ts
         agenda-primeira-pintura-no-fuso.spec.ts
         agenda-portao-de-hidratacao.spec.ts
         etapa-pela-conversa.spec.ts

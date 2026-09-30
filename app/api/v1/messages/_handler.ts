@@ -50,6 +50,7 @@ import { sendTemplateForSession } from "@/lib/channels/meta/send-template-for-se
 import { emitirFalhaDeEntrega } from "@/lib/messaging/falha-de-entrega";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { organizacaoAtiva } from "@/lib/tenants/estado";
 import type { Message } from "@/lib/types/messaging";
 
 type SB = SupabaseClient;
@@ -369,6 +370,20 @@ export async function sendMessageHandler(
   ctx: HandlerCtx,
   input: SendMessageInput,
 ): Promise<Message> {
+  // ORGANIZAÇÃO SUSPENSA NÃO FALA COM NINGUÉM. Este handler é a porta de saída
+  // de todo envio (tela, API, agente, campanha, follow-up, automação, MCP), então
+  // a recusa mora aqui e vale para todos. Vem antes de qualquer outra guarda:
+  // nada do que segue importa se a empresa está parada. Com client de sessão a
+  // RLS já esconde a organização suspensa, e a leitura vazia também recusa.
+  if (!(await organizacaoAtiva(supabase, ctx.organization_id))) {
+    throw new ApiError(
+      403,
+      "tenant_suspended",
+      undefined,
+      ctx.requestId,
+      traduzir("Esta organização está suspensa: nenhuma mensagem sai.", ctx.idioma ?? "pt-BR"),
+    );
+  }
   if (ctx.prospectingDelivery) await assertProspectingDelivery(supabase, ctx.prospectingDelivery);
   if (ctx.meetingDelivery) await assertMeetingDeliverySupabase(supabase, ctx.meetingDelivery);
   if (ctx.approvedReply) await assertApprovedReplySupabase(supabase, ctx.approvedReply);

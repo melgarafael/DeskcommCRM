@@ -20,6 +20,9 @@ vi.mock("@/lib/auth/server", () => ({
   mfaEmDivida: vi.fn(async () => false),
   loadAuthUser: vi.fn(),
   resolveActiveOrg: vi.fn(),
+  // Sem organização ativa, `requireRole` pergunta qual foi a ESCOLHIDA para
+  // distinguir "empresa suspensa" de "sem empresa" — aqui, nenhuma.
+  organizacaoEscolhida: vi.fn(async () => null),
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));

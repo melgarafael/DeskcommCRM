@@ -129,6 +129,10 @@ const CLAIM_SQL = `
     select distinct on (coalesce(j.contact_id, j.id)) j.id
     from job_queue j
     where j.status = 'pending' and j.run_after <= now()
+      -- Organização suspensa não roda nada (lib/tenants/estado.ts): o job fica
+      -- 'pending', intacto, e volta à fila quando a empresa é reativada.
+      and not exists (select 1 from organizations o
+                      where o.id = j.organization_id and o.status <> 'active')
       and (j.contact_id is null
            or not exists (select 1 from job_queue r
                           where r.contact_id = j.contact_id and r.status = 'running'))
@@ -208,7 +212,12 @@ export async function faltaParaOProximoJob(pool: Pool): Promise<number | null> {
                    )::int
             end as falta_ms
        from job_queue
-      where status = 'pending'`,
+      where status = 'pending'
+        -- O MESMO filtro do claim: sem ele, um job vencido de organização
+        -- suspensa diria "tem trabalho agora" para sempre, e o loop voltaria
+        -- ao ritmo curto sem nunca conseguir claimar nada (a issue #258 de volta).
+        and not exists (select 1 from organizations o
+                        where o.id = job_queue.organization_id and o.status <> 'active')`,
   );
   return rows[0]?.falta_ms ?? null;
 }

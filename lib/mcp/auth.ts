@@ -20,6 +20,7 @@ import { registrarFalhaDeToken, tokenFailureLimited } from "@/lib/auth/rate-limi
 import type { Role } from "@/lib/auth/types";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { organizacaoOpera } from "@/lib/tenants/estado";
 
 export interface McpAuthResult {
   organizationId: string;
@@ -87,7 +88,13 @@ export function extractBearer(authHeader: string | null): string | null {
 /** Por que um `dsk_...` não validou — neutro, sem código MCP nem HTTP status. */
 export class ApiTokenError extends Error {
   constructor(
-    public readonly reason: "malformed" | "not_found" | "revoked" | "expired" | "lookup_failed",
+    public readonly reason:
+      | "malformed"
+      | "not_found"
+      | "revoked"
+      | "expired"
+      | "lookup_failed"
+      | "tenant_suspended",
     message: string,
   ) {
     super(message);
@@ -130,7 +137,7 @@ export async function resolveApiToken(plaintext: string): Promise<ResolvedApiTok
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("api_tokens")
-    .select("id, organization_id, scopes, revoked_at, expires_at, created_by")
+    .select("id, organization_id, scopes, revoked_at, expires_at, created_by, organizations(status)")
     .eq("token_hash", hashLiteral)
     .maybeSingle();
 
@@ -145,6 +152,13 @@ export async function resolveApiToken(plaintext: string): Promise<ResolvedApiTok
   }
   if (data.expires_at && new Date(data.expires_at) < new Date()) {
     throw new ApiTokenError("expired", "Token expired.");
+  }
+  // O token é da organização, e organização que não opera não recebe chamada —
+  // nem por integração (`lib/tenants/estado.ts`). Vem DEPOIS de revogado/expirado:
+  // um token morto continua respondendo como morto.
+  const org = Array.isArray(data.organizations) ? data.organizations[0] : data.organizations;
+  if (!organizacaoOpera((org as { status?: string } | null)?.status ?? null)) {
+    throw new ApiTokenError("tenant_suspended", "Organization suspended.");
   }
 
   supabase
@@ -194,13 +208,17 @@ export async function validateBearerToken(
     resolved = await resolveApiToken(plaintext);
   } catch (err) {
     if (err instanceof ApiTokenError) {
-      if (err.reason !== "lookup_failed") {
+      // Organização suspensa não é chute: o token é válido e não debita o balde.
+      if (err.reason !== "lookup_failed" && err.reason !== "tenant_suspended") {
         // Chute (malformado/desconhecido) debita o balde por ORIGEM; token real
         // e morto (revogado/expirado) debita só o do valor apresentado — ver
         // `registrarFalhaDeToken`. `lookup_failed` é falha NOSSA: não debita.
         await registrarFalhaDeToken(plaintext, {
           contaNoIp: err.reason === "malformed" || err.reason === "not_found",
         });
+      }
+      if (err.reason === "tenant_suspended") {
+        throw new McpAuthError(-32002, 403, err.message);
       }
       throw new McpAuthError(
         err.reason === "lookup_failed" ? -32603 : -32001,

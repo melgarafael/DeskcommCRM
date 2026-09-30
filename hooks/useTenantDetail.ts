@@ -17,8 +17,17 @@ export interface TenantOrganization {
   status: "active" | "suspended" | "redacted";
   onboarded_at: string | null;
   suspended_at: string | null;
+  suspended_reason: string | null;
   created_at: string;
   settings: Record<string, unknown> | null;
+  // Dados cadastrais editáveis (os mesmos de Configurações › Empresa).
+  country: string | null;
+  timezone: string | null;
+  locale: string | null;
+  currency: string | null;
+  media_retention_days: number | null;
+  dpo_email: string | null;
+  privacy_policy_url: string | null;
 }
 
 export interface TenantCounts {

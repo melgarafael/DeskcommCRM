@@ -9,7 +9,7 @@ import { audit } from "@/lib/audit";
 import { tenantSchema, type TenantInput } from "@/lib/schemas/settings";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
-import { paisesOferecidos } from "@/lib/legal/perfil-do-pais";
+import { gravarDadosCadastrais } from "@/lib/tenants/dados-cadastrais";
 
 export type UpdateTenantResult =
   | { ok: true }
@@ -55,32 +55,11 @@ export async function updateTenant(input: TenantInput): Promise<UpdateTenantResu
   const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
   const userAgent = hdrs.get("user-agent") ?? null;
 
-  // O país só entra se tiver PERFIL REVISADO (issue #1033): `paisesOferecidos()`
-  // é a lista que o seletor mostra, e é ela que a gravação confere. Sem esta
-  // guarda, um PATCH à mão gravaria um país cujo documento legal ninguém
-  // revisou, e o PDF de acesso passaria a não citar lei nenhuma — ou, pior,
-  // citaria a brasileira para um titular de outro país.
-  const pais = parsed.data.country ?? null;
-  if (pais !== null && !paisesOferecidos().some((p) => p.codigo === pais)) {
-    return { ok: false, error: `País sem perfil revisado: ${pais}` };
-  }
-
-  const { error } = await supabase
-    .from("organizations")
-    .update({
-      display_name: parsed.data.display_name,
-      legal_name: parsed.data.legal_name,
-      cnpj: parsed.data.cnpj ?? null,
-      country: pais,
-      timezone: parsed.data.timezone,
-      locale: parsed.data.locale,
-      currency: parsed.data.currency,
-      media_retention_days: parsed.data.media_retention_days,
-      dpo_email: parsed.data.dpo_email ?? null,
-      privacy_policy_url: parsed.data.privacy_policy_url ?? null,
-    })
-    .eq("id", activeOrg.orgId);
-  if (error) return { ok: false, error: error.message };
+  // País revisado, CNPJ único e a lista de colunas: a gravação mora em
+  // `lib/tenants/dados-cadastrais.ts`, compartilhada com a gestão de tenants do
+  // admin da plataforma.
+  const gravado = await gravarDadosCadastrais(supabase, activeOrg.orgId, parsed.data);
+  if (!gravado.ok) return { ok: false, error: gravado.erro };
 
   await audit({
     action: "org.updated",

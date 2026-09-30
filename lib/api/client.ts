@@ -313,6 +313,11 @@ async function request<T>(
         if (res.status === 403 && e.code === "no_active_org") {
           pedirDecisaoAoServidor();
         }
+        // A empresa foi suspensa com a tela aberta: a próxima chamada leva à
+        // tela que explica, em vez de cada botão falhar com um toast solto.
+        if (res.status === 403 && e.code === "tenant_suspended" && typeof window !== "undefined") {
+          window.location.assign("/account-suspended");
+        }
         throw new ApiError(
           res.status,
           e.code ?? synthesizeCode(res.status),

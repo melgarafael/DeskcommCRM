@@ -96,6 +96,10 @@ function dublarAdmin(
         registro.filtros.push(["or", "", v]);
         return self;
       },
+      not: (c: string, op: string, v: unknown) => {
+        registro.filtros.push(["not", `${c}:${op}`, v]);
+        return self;
+      },
       in: (c: string, v: unknown) => {
         registro.filtros.push(["in", c, v]);
         return self;
@@ -125,6 +129,12 @@ function dublarAdmin(
         // A Central responde pelo que ELA tem — devolver `linhas` aqui faria o
         // dedupe enxergar um evento como se fosse aviso aberto, e o teste do
         // aviso passaria por engano.
+        // Organizações paradas (lib/tenants/estado.ts): nenhuma neste cenário —
+        // devolver `linhas` aqui faria o dreno excluir os próprios eventos.
+        if (tabela === "organizations") {
+          resolve({ data: [], error: null });
+          return;
+        }
         if (tabela === "agent_inbox_items") {
           resolve({
             data: typeof avisoAberto === "function" ? avisoAberto(chamadas) : avisoAberto,
