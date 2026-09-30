@@ -196,6 +196,7 @@ export async function listConversationsHandler(
   if (q.exclude_finished) {
     query = query.not("status", "in", `(${CONVERSATION_TERMINAL_STATUSES.join(",")})`);
   }
+  if (q.contact_id) query = query.eq("contact_id", q.contact_id);
   if (q.channel_session_id) query = query.eq("channel_session_id", q.channel_session_id);
   // A aba "Grupos" (Task 10). `undefined` (ausente) = sem filtro, a lista
   // mostra tudo, como hoje — checagem explícita contra `undefined`, e não

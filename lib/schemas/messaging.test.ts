@@ -79,6 +79,17 @@ describe("sendMessageSchema", () => {
 });
 
 describe("listConversationsQuerySchema", () => {
+  it("aceita filtro por UUID do contato", () => {
+    const contactId = "11111111-1111-4111-8111-111111111111";
+    const r = listConversationsQuerySchema.safeParse({ contact_id: contactId });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.contact_id).toBe(contactId);
+  });
+
+  it("rejeita filtro por contato inválido", () => {
+    expect(listConversationsQuerySchema.safeParse({ contact_id: "invalid" }).success).toBe(false);
+  });
+
   it("aceita assigned_to='me'", () => {
     const r = listConversationsQuerySchema.safeParse({ assigned_to: "me" });
     expect(r.success).toBe(true);

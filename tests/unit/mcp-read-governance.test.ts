@@ -11,7 +11,8 @@
  *    independente e comparada;
  *  - LGPD: só id + nome do usuário no payload; nunca email/telefone/metadata.
  */
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
 
 // env.ts valida process.env no import; corta os chains client→env (os handlers só
 // recebem o ctx.supabase stub, nunca criam client real).
@@ -21,11 +22,19 @@ vi.mock("@/lib/audit", () => ({
   audit: vi.fn().mockResolvedValue(undefined),
   isServiceRoleConfigured: () => false,
 }));
+vi.mock("@/lib/api/auth-dual", () => ({ resolveAuthDual: vi.fn() }));
+vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
+vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn() }));
+vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: vi.fn() }));
 
 import {
   crmListConversations,
   crmGetConversation,
+  crmGetConversationHistory,
 } from "@/lib/mcp/tools/conversations";
+import { GET as listLeads } from "@/app/api/v1/leads/route";
+import { resolveAuthDual } from "@/lib/api/auth-dual";
+import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { crmListLeads, crmGetLead } from "@/lib/mcp/tools/leads";
 import type { McpContext } from "@/lib/mcp/types";
 import { comandoDaConversa } from "@/lib/inbox/comando-da-conversa";
@@ -67,10 +76,7 @@ const QUEUE_ROWS = [
 /** Ordem canônica do inbox (G5-03): awaiting_since ASC, id ASC. */
 function inboxOrder(rows: Array<{ id: string; awaiting_since: string }>): string[] {
   return [...rows]
-    .sort(
-      (a, b) =>
-        a.awaiting_since.localeCompare(b.awaiting_since) || a.id.localeCompare(b.id),
-    )
+    .sort((a, b) => a.awaiting_since.localeCompare(b.awaiting_since) || a.id.localeCompare(b.id))
     .map((r) => r.id);
 }
 
@@ -78,26 +84,34 @@ interface Q {
   table: string;
   select: string | null;
   terminal: "maybeSingle" | "then";
+  eqs: Array<[string, unknown]>;
+  limit?: number;
 }
 type Resolver = (q: Q) => { data?: unknown; error?: unknown };
 
 function makeSupabase(resolve: Resolver) {
   const from = (table: string) => {
-    const q: Q = { table, select: null, terminal: "then" };
+    const q: Q = { table, select: null, terminal: "then", eqs: [] };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chain: any = {
       select: (cols: string) => {
         q.select = cols;
         return chain;
       },
-      eq: () => chain,
+      eq: (column: string, value: unknown) => {
+        q.eqs.push([column, value]);
+        return chain;
+      },
       is: () => chain,
       in: () => chain,
       or: () => chain,
       contains: () => chain,
       ilike: () => chain,
       order: () => chain,
-      limit: () => chain,
+      limit: (value: number) => {
+        q.limit = value;
+        return chain;
+      },
       maybeSingle: () => Promise.resolve(resolve({ ...q, terminal: "maybeSingle" })),
       then: (res: (v: unknown) => unknown) =>
         Promise.resolve(resolve({ ...q, terminal: "then" })).then(res),
@@ -110,7 +124,10 @@ function makeSupabase(resolve: Resolver) {
       admin: {
         getUserById: (id: string) =>
           Promise.resolve({
-            data: id in USER_NAMES ? { user: { user_metadata: { full_name: USER_NAMES[id] } } } : { user: null },
+            data:
+              id in USER_NAMES
+                ? { user: { user_metadata: { full_name: USER_NAMES[id] } } }
+                : { user: null },
             error: null,
           }),
       },
@@ -296,7 +313,12 @@ describe("crm_list_conversations — coerência queue_position ↔ inbox", () =>
   it("as 3 conversas na fila recebem a posição da ordem do inbox (awaiting_since ASC, id ASC)", async () => {
     // Handler de list retorna as 3 conversas da fila.
     const rows = QUEUE_ROWS.map((r) =>
-      convRow({ id: r.id, status: "open", assigned_to_user_id: null, last_inbound_at: r.last_inbound_at }),
+      convRow({
+        id: r.id,
+        status: "open",
+        assigned_to_user_id: null,
+        last_inbound_at: r.last_inbound_at,
+      }),
     );
     const resolve: Resolver = (q) => {
       if (q.table === "conversations" && q.select === "id") {
@@ -322,16 +344,32 @@ describe("crm_list_conversations — coerência queue_position ↔ inbox", () =>
   });
 
   it("shape aditivo: campos antigos preservados, novos presentes", async () => {
-    const rows = [convRow({ id: CONV_OLD, status: "claimed", assigned_to_user_id: USER_B, assignee_kind: "user", tags: ["x"] })];
+    const rows = [
+      convRow({
+        id: CONV_OLD,
+        status: "claimed",
+        assigned_to_user_id: USER_B,
+        assignee_kind: "user",
+        tags: ["x"],
+      }),
+    ];
     const res = (await crmListConversations.handler(
       { limit: 10 } as Parameters<typeof crmListConversations.handler>[0],
-      makeCtx((q) =>
-        q.select === "id" ? { data: [], error: null } : { data: rows, error: null },
-      ),
+      makeCtx((q) => (q.select === "id" ? { data: [], error: null } : { data: rows, error: null })),
     )) as { conversations: Array<Record<string, unknown>> };
     const c = res.conversations[0]!;
     // antigos:
-    for (const k of ["id", "contact_id", "channel", "status", "assigned_to_user_id", "last_message_preview", "last_message_at", "unread_count", "is_group"]) {
+    for (const k of [
+      "id",
+      "contact_id",
+      "channel",
+      "status",
+      "assigned_to_user_id",
+      "last_message_preview",
+      "last_message_at",
+      "unread_count",
+      "is_group",
+    ]) {
       expect(c).toHaveProperty(k);
     }
     // novos:
@@ -345,6 +383,72 @@ describe("crm_list_conversations — coerência queue_position ↔ inbox", () =>
 // ---------------------------------------------------------------------------
 // crm_get_lead / crm_list_leads — owner_user_name, stage, tags
 // ---------------------------------------------------------------------------
+
+describe("leitura de contexto externo", () => {
+  it("filtra o contato no banco antes da paginação e preserva o cursor", async () => {
+    const wanted = "dddddddd-0000-4000-8000-000000000001";
+    const rows = [
+      convRow({ id: CONV_NEW, status: "closed" }),
+      convRow({ id: CONV_MID, contact_id: wanted, status: "closed" }),
+      convRow({ id: CONV_OLD, contact_id: wanted, status: "closed" }),
+    ];
+    const ctx = makeCtx((q) => {
+      expect(q.eqs).toContainEqual(["organization_id", ORG]);
+      const filtered = rows.filter((row) => q.eqs.every(([key, value]) => row[key] === value));
+      return { data: filtered.slice(0, q.limit), error: null };
+    });
+    const result = (await crmListConversations.handler({ contact_id: wanted, limit: 1 }, ctx)) as {
+      conversations: Array<{ id: string }>;
+      has_more: boolean;
+      cursor: string | null;
+    };
+    expect(result.conversations.map((row) => row.id)).toEqual([CONV_MID]);
+    expect(result.has_more).toBe(true);
+    expect(result.cursor).toEqual(expect.any(String));
+  });
+
+  it.each(["Quero conversar amanhã.", null])(
+    "entrega a transcrição (%s) sem endereço de mídia nem metadados privados",
+    async (transcript) => {
+      const ctx = makeCtx((q) => {
+        expect(q.table).toBe("messages");
+        expect(q.select?.split(", ")).toContain("media_derived_text");
+        expect(q.eqs).toContainEqual(["organization_id", ORG]);
+        expect(q.eqs).toContainEqual(["conversation_id", CONV_OLD]);
+        return {
+          data: [
+            {
+              id: "aaaaaaaa-0000-4000-8000-000000000010",
+              direction: "inbound",
+              type: "audio",
+              body: "[audio]",
+              media_derived_text: transcript,
+              media_url: "https://private.invalid/audio.ogg",
+              media_storage_path: "private/audio.ogg",
+              metadata: { token: "private" },
+              sent_via: "external_device",
+              sent_at: new Date(now).toISOString(),
+              status: "received",
+            },
+          ],
+          error: null,
+        };
+      });
+      const result = (await crmGetConversationHistory.handler(
+        { conversation_id: CONV_OLD, limit: 20 },
+        ctx,
+      )) as {
+        messages: Array<Record<string, unknown>>;
+        has_more: boolean;
+      };
+      expect(result.messages[0]).toMatchObject({ body: "[audio]", media_derived_text: transcript });
+      expect(result.messages[0]).not.toHaveProperty("media_url");
+      expect(result.messages[0]).not.toHaveProperty("media_storage_path");
+      expect(result.messages[0]).not.toHaveProperty("metadata");
+      expect(result.has_more).toBe(false);
+    },
+  );
+});
 
 function leadRow(over: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -376,6 +480,102 @@ function leadResolver(rows: Array<Record<string, unknown>>): Resolver {
     return { data: rows, error: null };
   };
 }
+
+describe("GET leads — leitura autenticada e isolamento", () => {
+  beforeEach(() => {
+    vi.mocked(resolveAuthDual).mockReset();
+    vi.mocked(checkRateLimit).mockReset();
+    vi.mocked(checkRateLimit).mockResolvedValue({
+      allowed: true,
+      count: 1,
+      limit: 60,
+      window_sec: 60,
+    });
+  });
+
+  function authorize(resolve: Resolver) {
+    const ctx = makeCtx(resolve);
+    vi.mocked(resolveAuthDual).mockResolvedValue({
+      ok: true,
+      organizationId: ORG,
+      actor: ctx.actor,
+      supabase: ctx.supabase,
+      via: "token",
+      apiTokenId: "tok",
+      scopes: ["mcp:read"],
+    });
+  }
+
+  it("usa a organização autenticada em leads e contatos, sem aceitar org da query", async () => {
+    const contactId = "dddddddd-0000-4000-8000-000000000001";
+    authorize((q) => {
+      expect(q.eqs).toContainEqual(["organization_id", ORG]);
+      return {
+        data:
+          q.table === "contacts"
+            ? [{ id: contactId, name: "Contato de teste", phone_number: "+5500000000000" }]
+            : [leadRow({ contact_id: contactId })],
+        error: null,
+      };
+    });
+    const response = await listLeads(
+      new NextRequest("http://localhost/api/v1/leads?organization_id=foreign"),
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.data[0].contact.id).toBe(contactId);
+    expect(body.meta).toEqual({ cursor: null, has_more: false });
+    expect(resolveAuthDual).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ role: "agent", scope: "mcp:read" }),
+    );
+    expect(checkRateLimit).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([401, 403])("recusa autenticação ou escopo (%i) sem ler o banco", async (status) => {
+    vi.mocked(resolveAuthDual).mockResolvedValue({
+      ok: false,
+      response: new Response(null, { status }),
+    });
+    expect((await listLeads(new NextRequest("http://localhost/api/v1/leads"))).status).toBe(status);
+    expect(checkRateLimit).not.toHaveBeenCalled();
+  });
+
+  it.each(["limit=0", "limit=101", "status=invalid", "cursor="])(
+    "valida %s antes de consultar",
+    async (query) => {
+      authorize(() => {
+        throw new Error("não deve consultar");
+      });
+      expect(
+        (await listLeads(new NextRequest(`http://localhost/api/v1/leads?${query}`))).status,
+      ).toBe(422);
+    },
+  );
+
+  it("recusa excesso do token antes de consumir a cota da organização", async () => {
+    authorize(() => {
+      throw new Error("não deve consultar");
+    });
+    vi.mocked(checkRateLimit).mockResolvedValue({
+      allowed: false,
+      count: 61,
+      limit: 60,
+      window_sec: 60,
+    });
+    const response = await listLeads(new NextRequest("http://localhost/api/v1/leads"));
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("60");
+    expect(checkRateLimit).toHaveBeenCalledTimes(1);
+  });
+
+  it("não expõe erro interno ou credenciais do banco", async () => {
+    authorize(() => ({ data: null, error: { message: "private-database-detail" } }));
+    const response = await listLeads(new NextRequest("http://localhost/api/v1/leads"));
+    expect(response.status).toBe(500);
+    expect(await response.text()).not.toContain("private-database-detail");
+  });
+});
 
 describe("crm_get_lead / crm_list_leads — governança + shape", () => {
   it("get: com owner ⇒ owner_user_name + stage{id,name} + tags; shape antigo intacto", async () => {

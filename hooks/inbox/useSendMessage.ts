@@ -59,6 +59,7 @@ export function useSendMessage() {
         error_message: null,
         body: args.body ?? null,
         media_url: args.media_url ?? null,
+        media_derived_text: null,
         media_mime: args.media_mime ?? null,
         media_size_bytes: null,
         media_storage_path: null,

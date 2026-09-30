@@ -237,6 +237,7 @@ export const CONVERSATION_TERMINAL_STATUSES = ["closed", "archived"] as const;
 export const CONVERSATION_QUEUE_STATUSES = ["open", "pending"] as const;
 
 export const listConversationsQuerySchema = z.object({
+  contact_id: z.string().uuid().optional(),
   /**
    * Um status, ou vários separados por vírgula (`?status=open,pending`).
    *
