@@ -17,7 +17,8 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { fail } from "@/lib/api/wrappers";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, orgAtivaSemPortao } from "@/lib/auth/server";
+import { respostaDeOrgSuspensa } from "@/lib/api/org-nao-operante";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -52,7 +53,9 @@ export async function GET(
   const { id } = await ctx.params;
 
   const authUser = await loadAuthUser();
-  const activeOrg = authUser ? await resolveActiveOrg(authUser) : null;
+  const activeOrg = authUser ? await orgAtivaSemPortao(authUser) : null;
+  const recusaSuspensao = respostaDeOrgSuspensa(activeOrg, requestId);
+  if (recusaSuspensao) return recusaSuspensao;
   if (!activeOrg) {
     return fail("no_active_org", "No active organization.", 403, { requestId });
   }

@@ -28,7 +28,8 @@ import { roteiaProximasAcoes, type EstadoDoContato } from "@/lib/leads/next-acti
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isServiceRoleConfigured } from "@/lib/audit";
-import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
+import { requireAuth, orgAtivaSemPortao } from "@/lib/auth/server";
+import { respostaDeOrgSuspensa } from "@/lib/api/org-nao-operante";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -63,7 +64,9 @@ export async function GET(req: NextRequest): Promise<Response> {
   void req;
 
   const user = await requireAuth();
-  const activeOrg = await resolveActiveOrg(user);
+  const activeOrg = await orgAtivaSemPortao(user);
+  const recusaSuspensao = respostaDeOrgSuspensa(activeOrg, requestId);
+  if (recusaSuspensao) return recusaSuspensao;
   if (!activeOrg) {
     return fail("forbidden", traduzir("sem organização ativa", user.idioma), 403, { requestId });
   }

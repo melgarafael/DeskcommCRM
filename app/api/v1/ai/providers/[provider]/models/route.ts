@@ -8,7 +8,8 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, orgAtivaSemPortao } from "@/lib/auth/server";
+import { respostaDeOrgSuspensa } from "@/lib/api/org-nao-operante";
 import { createClient } from "@/lib/supabase/server";
 import { ehProvedorSuportado } from "@/lib/ai/pontos/provedores";
 
@@ -35,7 +36,9 @@ export async function GET(
 
   const authUser = await loadAuthUser();
   if (!authUser) return fail("unauthenticated", "Auth required.", 401, { requestId });
-  const activeOrg = await resolveActiveOrg(authUser);
+  const activeOrg = await orgAtivaSemPortao(authUser);
+  const recusaSuspensao = respostaDeOrgSuspensa(activeOrg, requestId);
+  if (recusaSuspensao) return recusaSuspensao;
   if (!activeOrg) {
     return fail("forbidden_tenant", "Sem organização ativa.", 403, { requestId });
   }

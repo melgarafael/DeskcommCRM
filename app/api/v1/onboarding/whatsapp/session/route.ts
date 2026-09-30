@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { ok, fail } from "@/lib/api/wrappers";
-import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, mfaEmDivida, orgAtivaSemPortao } from "@/lib/auth/server";
+import { respostaDeOrgSuspensa } from "@/lib/api/org-nao-operante";
 import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createClient } from "@/lib/supabase/server";
@@ -12,7 +13,9 @@ import { loadOnboardingChannel } from "@/lib/channels/onboarding-session";
 export async function GET(): Promise<Response> {
   const requestId = randomUUID();
   const user = await loadAuthUser(); if (!user) return fail("unauthenticated", "Sessão expirada", 401, { requestId });
-  const org = await resolveActiveOrg(user); if (!org) return fail("tenant_not_found", "Sem organização ativa", 404, { requestId });
+  const org = await orgAtivaSemPortao(user); if (!org) return fail("tenant_not_found", "Sem organização ativa", 404, { requestId });
+  const recusaSuspensao = respostaDeOrgSuspensa(org, requestId);
+  if (recusaSuspensao) return recusaSuspensao;
   if (await mfaEmDivida()) return fail("mfa_required", "Confirme a verificação em duas etapas.", 403, { requestId });
   const waha = getWahaClient(); if (!waha) return ok({ status: "WAHA_NOT_CONFIGURED", session: null }, { requestId });
   try {

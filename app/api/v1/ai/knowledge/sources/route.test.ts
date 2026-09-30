@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, orgAtivaSemPortao } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
 import type { AuthUser } from "@/lib/auth/types";
 
@@ -17,7 +17,7 @@ import type { AuthUser } from "@/lib/auth/types";
 vi.mock("@/lib/auth/server", () => ({
   mfaEmDivida: vi.fn(async () => false),
   loadAuthUser: vi.fn(),
-  resolveActiveOrg: vi.fn(),
+  orgAtivaSemPortao: vi.fn(),
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
@@ -65,10 +65,11 @@ beforeEach(() => {
       { organization_id: ORG_ID, organization_name: "Org", role: "manager" },
     ],
   } as AuthUser);
-  vi.mocked(resolveActiveOrg).mockResolvedValue({
+  vi.mocked(orgAtivaSemPortao).mockResolvedValue({
     orgId: ORG_ID,
     name: "Org",
     role: "manager",
+    org_status: "active",
   } as never);
 });
 

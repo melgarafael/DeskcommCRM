@@ -11,7 +11,8 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, orgAtivaSemPortao } from "@/lib/auth/server";
+import { respostaDeOrgSuspensa } from "@/lib/api/org-nao-operante";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { CONVERSATION_TERMINAL_STATUSES } from "@/lib/schemas";
 import { orgTemAutomatico } from "@/lib/ai/agents/org-tem-automatico";
@@ -80,7 +81,9 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
 
   const authUser = await loadAuthUser();
-  const activeOrg = authUser ? await resolveActiveOrg(authUser) : null;
+  const activeOrg = authUser ? await orgAtivaSemPortao(authUser) : null;
+  const recusaSuspensao = respostaDeOrgSuspensa(activeOrg, requestId);
+  if (recusaSuspensao) return recusaSuspensao;
   if (!activeOrg) {
     return fail(
       "no_active_org",

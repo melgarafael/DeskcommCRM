@@ -16,12 +16,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
-vi.mock("@/lib/auth/server", () => ({ loadAuthUser: vi.fn(), resolveActiveOrg: vi.fn() }));
+vi.mock("@/lib/auth/server", () => ({ loadAuthUser: vi.fn(), orgAtivaSemPortao: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 
 import { requireRole } from "@/lib/auth/require-role";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, orgAtivaSemPortao } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
 import { GET as getRetention } from "@/app/api/v1/conversations/[id]/retention/route";
 import { retentionCopy } from "@/lib/inbox/retention-copy";
@@ -75,7 +75,7 @@ beforeEach(() => {
     org: { orgId: ORG, name: "Org", role: "admin" },
   } as never);
   vi.mocked(loadAuthUser).mockResolvedValue({ idioma: "pt-BR" } as never);
-  vi.mocked(resolveActiveOrg).mockResolvedValue({ orgId: ORG } as never);
+  vi.mocked(orgAtivaSemPortao).mockResolvedValue({ orgId: ORG, org_status: "active" } as never);
 });
 
 afterEach(() => {

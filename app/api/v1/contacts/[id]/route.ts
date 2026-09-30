@@ -12,7 +12,8 @@ import { type NextRequest } from "next/server";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail, noContent } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, orgAtivaSemPortao } from "@/lib/auth/server";
+import { respostaDeOrgSuspensa } from "@/lib/api/org-nao-operante";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { contactPatchSchemaDoPais, validateRequest } from "@/lib/schemas";
 import { perfilDaOrganizacao } from "@/lib/legal/perfil-do-pais";
@@ -40,7 +41,9 @@ export async function GET(
 
   const authUser = await loadAuthUser();
   const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
-  const activeOrg = authUser ? await resolveActiveOrg(authUser) : null;
+  const activeOrg = authUser ? await orgAtivaSemPortao(authUser) : null;
+  const recusaSuspensao = respostaDeOrgSuspensa(activeOrg, requestId);
+  if (recusaSuspensao) return recusaSuspensao;
   if (!activeOrg) {
     return fail("no_active_org", t("No active organization."), 403, { requestId });
   }

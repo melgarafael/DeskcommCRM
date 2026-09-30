@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, orgAtivaSemPortao } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 import type { AuthUser } from "@/lib/auth/types";
@@ -40,7 +40,7 @@ import type { AuthUser } from "@/lib/auth/types";
 
 vi.mock("@/lib/auth/server", () => ({
   loadAuthUser: vi.fn(),
-  resolveActiveOrg: vi.fn(),
+  orgAtivaSemPortao: vi.fn(),
   mfaEmDivida: vi.fn(async () => false),
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
@@ -154,7 +154,7 @@ function usuarioDonoDoServidor(): AuthUser {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(resolveActiveOrg).mockResolvedValue({ orgId: ORG_ID, name: "Org", role: "admin" } as never);
+  vi.mocked(orgAtivaSemPortao).mockResolvedValue({ orgId: ORG_ID, name: "Org", role: "admin", org_status: "active" } as never);
 });
 
 describe("POST /api/v1/marca/logo — escopo organizacao nunca toca platform_branding", () => {
@@ -185,7 +185,7 @@ describe("POST /api/v1/marca/logo — escopo organizacao nunca toca platform_bra
     vi.mocked(loadAuthUser).mockResolvedValue({
       ...usuarioAdminDeOrganizacao(), is_platform_admin: true, platform_admin_scope: "support_readonly",
     } as AuthUser);
-    vi.mocked(resolveActiveOrg).mockResolvedValue({ orgId: ORG_ID, name: "Org", role: "viewer" } as never);
+    vi.mocked(orgAtivaSemPortao).mockResolvedValue({ orgId: ORG_ID, name: "Org", role: "viewer", org_status: "active" } as never);
     const espiao = criarAdminEspiao();
     vi.mocked(createAdminClient).mockReturnValue(espiao.client as never);
     const form = new FormData();

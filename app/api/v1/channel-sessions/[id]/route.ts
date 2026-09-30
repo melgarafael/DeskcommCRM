@@ -24,7 +24,8 @@ import type { NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
 import { ok, fail } from "@/lib/api/wrappers";
-import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, mfaEmDivida, orgAtivaSemPortao } from "@/lib/auth/server";
+import { respostaDeOrgSuspensa } from "@/lib/api/org-nao-operante";
 import { requireRole } from "@/lib/auth/require-role";
 import { CHANNEL_PROVIDER_WAHA } from "@/lib/channels/capabilities";
 import { resolverSaudeDaConexaoRemovida } from "@/lib/channels/health";
@@ -159,7 +160,9 @@ export async function GET(
 
   const user = await loadAuthUser();
   if (!user) return fail("unauthenticated", "Auth required.", 401, { requestId });
-  const activeOrg = await resolveActiveOrg(user);
+  const activeOrg = await orgAtivaSemPortao(user);
+  const recusaSuspensao = respostaDeOrgSuspensa(activeOrg, requestId);
+  if (recusaSuspensao) return recusaSuspensao;
   if (!activeOrg) return fail("forbidden_tenant", "Nenhuma organização ativa.", 403, { requestId });
 
   const supabase = await createClient();

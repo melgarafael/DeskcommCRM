@@ -15,9 +15,10 @@ const mocks = vi.hoisted(() => ({
 const org = "22222222-2222-4222-8222-222222222222";
 vi.mock("@/lib/auth/server", () => ({
   loadAuthUser: async () => mocks.user,
-  resolveActiveOrg: async () => ({
+  orgAtivaSemPortao: async () => ({
     orgId: "22222222-2222-4222-8222-222222222222",
     role: mocks.role,
+    org_status: "active",
   }),
   mfaEmDivida: async () => false,
 }));

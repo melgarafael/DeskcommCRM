@@ -23,7 +23,8 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  */
 import { NextResponse } from "next/server";
 
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, orgAtivaSemPortao } from "@/lib/auth/server";
+import { respostaDeOrgSuspensa } from "@/lib/api/org-nao-operante";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
 import { createClient } from "@/lib/supabase/server";
 
@@ -39,7 +40,9 @@ export async function GET(
 
   const user = await loadAuthUser();
   if (!user) return new NextResponse(null, { status: 401 });
-  const activeOrg = await resolveActiveOrg(user);
+  const activeOrg = await orgAtivaSemPortao(user);
+  const recusaSuspensao = respostaDeOrgSuspensa(activeOrg);
+  if (recusaSuspensao) return recusaSuspensao;
   if (!activeOrg) return new NextResponse(null, { status: 403 });
 
   const supabase = await createClient();

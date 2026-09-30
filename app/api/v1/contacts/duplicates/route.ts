@@ -16,7 +16,8 @@
 import { randomUUID } from "node:crypto";
 
 import { ok, fail } from "@/lib/api/wrappers";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, orgAtivaSemPortao } from "@/lib/auth/server";
+import { respostaDeOrgSuspensa } from "@/lib/api/org-nao-operante";
 import {
   encontrarContatosDuplicados,
   principalSugerido,
@@ -45,7 +46,9 @@ export async function GET(): Promise<Response> {
   if (!user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
-  const org = await resolveActiveOrg(user);
+  const org = await orgAtivaSemPortao(user);
+  const recusaSuspensao = respostaDeOrgSuspensa(org, requestId);
+  if (recusaSuspensao) return recusaSuspensao;
   if (!org) {
     const t = (texto: string) => traduzir(texto, user.idioma);
     return fail("forbidden_tenant", t("Organização ativa não resolvida."), 403, { requestId });

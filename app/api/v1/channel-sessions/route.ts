@@ -13,8 +13,9 @@ import type { NextRequest } from "next/server";
 import { connectWahaChannel, ChannelConnectionError } from "@/lib/channels/connect-waha";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { mfaEmDivida } from "@/lib/auth/server";
+import { respostaDeOrgSuspensa } from "@/lib/api/org-nao-operante";
 import { ok, fail } from "@/lib/api/wrappers";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, orgAtivaSemPortao } from "@/lib/auth/server";
 import { requireRole } from "@/lib/auth/require-role";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
 import { PROVIDERS_DE_MENSAGEM } from "@/lib/channels/capabilities";
@@ -32,7 +33,9 @@ export async function GET(): Promise<Response> {
   const requestId = randomUUID();
   const user = await loadAuthUser();
   if (!user) return fail("unauthenticated", "Auth required.", 401, { requestId });
-  const activeOrg = await resolveActiveOrg(user);
+  const activeOrg = await orgAtivaSemPortao(user);
+  const recusaSuspensao = respostaDeOrgSuspensa(activeOrg, requestId);
+  if (recusaSuspensao) return recusaSuspensao;
   if (!activeOrg) return fail("forbidden_tenant", "Nenhuma organização ativa.", 403, { requestId });
 
   const supabase = await createClient();
