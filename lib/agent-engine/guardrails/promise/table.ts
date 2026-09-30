@@ -24,6 +24,15 @@ export interface PromiseTable {
   maxDiscountPercent?: number;
   /** Teto de parcelas: parcelamento candidato ACIMA disso → veto. */
   maxInstallments?: number;
+  /**
+   * Condições comerciais AUTORIZADAS pela organização (issue #1954) — frases
+   * LITERAIS da oferta oficial (ex.: "teste de 7 dias, sem cartão"). Quando a
+   * mensagem candidata reproduz uma delas, o gate semântico NÃO veta: a frase
+   * não é promessa improvisada pela IA, é a oferta pública da empresa. Mesmo
+   * mecanismo dos outros knobs (ponteiro versionado, sem regex livre — match por
+   * texto literal normalizado). Sem a lista = comportamento atual (gate veta).
+   */
+  condicoesAutorizadas?: string[];
 }
 
 export interface LoadedPromiseTable {
@@ -32,7 +41,11 @@ export interface LoadedPromiseTable {
   versionId: string;
 }
 
-/** Valida o shape do jsonb antes de publicar: só números finitos ≥ 0 nos campos conhecidos. */
+/** Valida o shape do jsonb antes de publicar: só números finitos ≥ 0 nos campos conhecidos
+ *  e a lista de condições autorizadas como array de strings não-vazias (limitado), sem regex. */
+const MAX_CONDICOES_AUTORIZADAS = 50;
+const MAX_CONDICAO_AUTORIZADA_LEN = 300;
+
 export function validatePromiseTable(values: unknown): PromiseTable {
   if (typeof values !== 'object' || values === null || Array.isArray(values)) {
     throw new Error('tabela de promessa inválida: esperado objeto de valores permitidos');
@@ -46,6 +59,29 @@ export function validatePromiseTable(values: unknown): PromiseTable {
       throw new Error(`tabela de promessa inválida: '${key}' deve ser número finito ≥ 0`);
     }
     table[key] = v;
+  }
+  if (o.condicoesAutorizadas !== undefined) {
+    if (!Array.isArray(o.condicoesAutorizadas)) {
+      throw new Error("tabela de promessa inválida: 'condicoesAutorizadas' deve ser um array de strings");
+    }
+    if (o.condicoesAutorizadas.length > MAX_CONDICOES_AUTORIZADAS) {
+      throw new Error(
+        `tabela de promessa inválida: 'condicoesAutorizadas' excede ${MAX_CONDICOES_AUTORIZADAS} itens`,
+      );
+    }
+    const items: string[] = [];
+    for (const item of o.condicoesAutorizadas) {
+      if (typeof item !== 'string' || item.trim() === '') {
+        throw new Error("tabela de promessa inválida: 'condicoesAutorizadas' aceita só string não-vazia");
+      }
+      if (item.length > MAX_CONDICAO_AUTORIZADA_LEN) {
+        throw new Error(
+          `tabela de promessa inválida: condição autorizada excede ${MAX_CONDICAO_AUTORIZADA_LEN} caracteres`,
+        );
+      }
+      items.push(item.trim());
+    }
+    table.condicoesAutorizadas = items;
   }
   return table;
 }

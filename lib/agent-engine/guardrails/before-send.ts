@@ -56,7 +56,7 @@ import type { SpinningKnobs } from '../spinning/defaults';
 import { decidePromise } from './promise/engine';
 import { loadPromiseTable } from './promise/table';
 import type { PromiseTable } from './promise/table';
-import { renderSemanticPromiseVeto } from './promise/semantic';
+import { renderSemanticPromiseVeto, condicaoAutorizadaCobre } from './promise/semantic';
 import type { PromiseClassification } from './promise/semantic';
 import {
   bodyContainsDisclosure,
@@ -373,6 +373,20 @@ export const semanticPromiseGate: Gate = {
   name: 'semantic_promise',
   evaluate: (ctx) => {
     if (ctx.semanticPromise === null || !ctx.semanticPromise.isPromise) return { pass: true };
+    // #1954 — oferta oficial declarada pela org na promise_table: se a frase destacada
+    // (ou o corpo) reproduz literalmente uma condição autorizada, NÃO veta — é a condição
+    // comercial da empresa, não uma promessa improvisada pela IA. Sem lista = veta como hoje.
+    const condicaoAutorizada = condicaoAutorizadaCobre(
+      ctx.body,
+      ctx.semanticPromise.suspectPhrase,
+      ctx.promise.table?.condicoesAutorizadas,
+    );
+    if (condicaoAutorizada !== null) {
+      return {
+        pass: true,
+        reason: `condição comercial autorizada: "${condicaoAutorizada}"`,
+      };
+    }
     return {
       pass: false,
       code: 'promise_semantic',

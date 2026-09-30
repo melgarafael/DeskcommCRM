@@ -133,3 +133,43 @@ export function renderSemanticPromiseVeto(suspectPhrase: string | null): string 
     'não autorizada antes de reenviar.'
   );
 }
+
+/**
+ * Normaliza um texto para comparação LITERAL de condições autorizadas (#1954): caixa
+ * baixa e acentos removidos. Não é stemmer nem regex livre — só iguala o que difere por
+ * caixa/acento, que é o humano declarando a oferta oficial ("Teste de 7 dias" vs
+ * "teste de 7 dias"). O acento importa: "12 dias" ≠ "1,2 dias" (formas distintas ficam
+ * longe); só a mesma base com caixa/acento diferente casa.
+ */
+export function normalizarCondicaoAutorizada(texto: string): string {
+  return texto
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('pt-BR');
+}
+
+/**
+ * Decide se a CANDIDATA reproduz literalmente uma condição comercial AUTORIZADA pela org.
+ * Retorna a condição que casou (normalizada) ou null. Sem regex livre: match por substring
+ * da condição normalizada dentro do corpo normalizado — quem vai ao cliente não é a promessa
+ * improvisada pela IA, é a oferta declarada pelo operador. `suspectPhrase` é a da candidata;
+ * a condição autorizada pode ser frase mais longa que a contém (o classificador destacou um
+ * trecho). Sem nada marcado na tabela → null (gate veta como hoje).
+ */
+export function condicaoAutorizadaCobre(
+  candidate: string,
+  suspectPhrase: string | null,
+  condicoesAutorizadas: readonly string[] | undefined,
+): string | null {
+  if (!condicoesAutorizadas || condicoesAutorizadas.length === 0) return null;
+  const alvo = normalizarCondicaoAutorizada(suspectPhrase ?? candidate);
+  if (alvo === '') return null;
+  for (const condicao of condicoesAutorizadas) {
+    const normalizada = normalizarCondicaoAutorizada(condicao);
+    if (normalizada === '') continue;
+    if (normalizada.includes(alvo) || alvo.includes(normalizada)) {
+      return condicao;
+    }
+  }
+  return null;
+}
