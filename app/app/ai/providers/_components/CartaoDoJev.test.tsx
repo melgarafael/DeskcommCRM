@@ -981,3 +981,33 @@ describe("CartaoDoJev — sem a IA de sempre, as tarefas seguem com a linha dela
     expect(cartao()).toHaveTextContent(/nenhuma tarefa está rodando agora/);
   });
 });
+
+
+describe("histórico específico do roteador", () => {
+  it("só envia o aceite depois da confirmação; cancelar não muda nada", async () => {
+    render(<CartaoDoJev dados={dados({ config: { contexto_roteador: null } })} erro={null} recarregar={recarregar} />);
+    fireEvent.click(screen.getByRole("button", { name: "Usar histórico no roteador", exact: true }));
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("incluindo respostas de atendentes");
+    expect(chamadas).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar", exact: true }));
+    expect(chamadas).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Usar histórico no roteador", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Autorizar histórico do roteador", exact: true }));
+    await waitFor(() => expect(recarregar).toHaveBeenCalled());
+    expect(chamadas[0]?.corpo).toEqual({ contexto_roteador: true, aceite_contexto_roteador: true });
+  });
+
+  it("histórico autorizado pode ser revogado mesmo com o Jev desligado", async () => {
+    render(<CartaoDoJev dados={dados({ config: { ligado: false, contexto_roteador: { em: "2026-09-29T12:00:00Z", por: "admin", versao: 1 } } })} erro={null} recarregar={recarregar} />);
+    expect(screen.getByTestId("jev-contexto-roteador")).toHaveTextContent("Histórico autorizado");
+    fireEvent.click(screen.getByRole("button", { name: "Desativar histórico do roteador" }));
+    await waitFor(() => expect(recarregar).toHaveBeenCalled());
+    expect(chamadas[0]?.corpo).toEqual({ contexto_roteador: false });
+  });
+
+  it("somente leitura mostra o estado sem oferecer alterações", () => {
+    render(<CartaoDoJev dados={dados({ config: { contexto_roteador: null }, pode_editar: false })} erro={null} recarregar={recarregar} />);
+    expect(screen.getByTestId("jev-contexto-roteador")).toHaveTextContent("Histórico desativado");
+    expect(screen.queryByRole("button", { name: "Usar histórico no roteador", exact: true })).toBeNull();
+  });
+});

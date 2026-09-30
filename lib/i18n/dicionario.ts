@@ -37,6 +37,22 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "quando o operador liga o Jev (desligado por padrão), a TypeSafe AI, nos Estados Unidos, recebe cada mensagem do cliente para avaliar o clima, tentativas de manipulação e qual agente deve atender. Com autorização separada, o roteador também envia até quatro mensagens anteriores da conversa, incluindo respostas de atendentes. CPF, telefone e e-mail reconhecidos são ocultados em cada texto;": { es: "cuando el operador activa Jev (desactivado por defecto), TypeSafe AI, en Estados Unidos, recibe cada mensaje del cliente para evaluar el ánimo, intentos de manipulación y qué agente debe atender. Con autorización separada, el enrutador también envía hasta cuatro mensajes anteriores de la conversación, incluidas respuestas de agentes de atención. Se ocultan CPF, teléfonos y correos reconocidos en cada texto;" },
+  // Contexto opcional do roteador do Jev.
+  "Contexto para escolher qual agente atende": { es: "Contexto para elegir qué agente atiende" },
+  "Histórico autorizado: ao rotear, o Jev recebe até quatro mensagens anteriores, de clientes e atendentes, além da mensagem atual.": { es: "Historial autorizado: al asignar el agente, Jev recibe hasta cuatro mensajes anteriores, de clientes y agentes de atención, además del mensaje actual." },
+  "Histórico desativado: ao rotear, o Jev recebe só a mensagem atual do cliente.": { es: "Historial desactivado: al asignar el agente, Jev recibe solo el mensaje actual del cliente." },
+  "O histórico ajuda a interpretar respostas curtas. A IA de sempre continua sendo chamada e cobrada; o contexto também pode aumentar o custo do Jev.": { es: "El historial ayuda a interpretar respuestas cortas. La IA habitual sigue siendo consultada y cobrada; el contexto también puede aumentar el costo de Jev." },
+  "O histórico do roteador foi desativado.": { es: "Se desactivó el historial del enrutador." },
+  "Desativar histórico do roteador": { es: "Desactivar historial del enrutador" },
+  "Usar histórico no roteador": { es: "Usar historial en el enrutador" },
+  "Usar histórico no roteador?": { es: "¿Usar historial en el enrutador?" },
+  "Você autoriza enviar à TypeSafe AI, nos Estados Unidos, até quatro mensagens anteriores desta conversa, incluindo respostas de atendentes, junto da mensagem atual. Telefones, e-mails e CPFs reconhecidos são ocultados; outros dados podem permanecer no texto. O histórico serve apenas para escolher qual agente atende. Isso não liga o Jev nem muda quais tarefas decidem. Você pode desativar esta opção quando quiser.": { es: "Autorizas enviar a TypeSafe AI, en Estados Unidos, hasta cuatro mensajes anteriores de esta conversación, incluidas respuestas de agentes de atención, junto con el mensaje actual. Se ocultan los teléfonos, correos y CPF reconocidos; otros datos pueden permanecer en el texto. El historial sirve solo para elegir qué agente atiende. Esto no activa Jev ni cambia qué tareas deciden. Puedes desactivar esta opción cuando quieras." },
+  "O histórico do roteador foi autorizado.": { es: "Se autorizó el historial del enrutador." },
+  "Autorizar histórico do roteador": { es: "Autorizar historial del enrutador" },
+  "Para usar o histórico no roteador, confirme o envio das mensagens recentes à TypeSafe AI.": { es: "Para usar el historial en el enrutador, confirma el envío de los mensajes recientes a TypeSafe AI." },
+  "Lê a mensagem atual do cliente e escolhe qual agente deve atender. Com autorização específica, usa também o contexto recente da conversa.": { es: "Lee el mensaje actual del cliente y elige qué agente debe atender. Con autorización específica, también usa el contexto reciente de la conversación." },
+
   // ─── EMPRESAS, PESSOAS E IMPORTAÇÃO (metade B2B do #1621, de @renatofortal) ───
   "Arquivo": {"es": "Archivo"},
   "Atualizado": {"es": "Actualizado"},

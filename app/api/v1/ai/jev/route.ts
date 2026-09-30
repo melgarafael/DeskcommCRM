@@ -16,6 +16,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * tarefa acompanha uma camada de segurança que a organização desligou;
  * `sem_roteador`, a do roteador numa empresa sem roteador de intenção ativo.
  *
+ * O contexto recente do roteador tem aceite próprio (`contexto_roteador`), revogável.
  * PATCH liga, desliga, troca o modo do clima (`modo`, o nome da onda 1) e o
  * estado de uma tarefa (`tarefa` + `estado`). Ligar manda cada mensagem que o cliente
  * escreve, uma de cada vez e sem o resto da conversa, a um fornecedor nos EUA, então exige chave validada e, na primeira
@@ -248,7 +249,7 @@ function irritadosPercebidos(linhas: ReadonlyArray<{ conversa: unknown; nota_do_
 }
 
 function configPublica(c: ConfigDoJev) {
-  return { ligado: c.ligado, modo: c.modo, aceite: c.aceite };
+  return { ligado: c.ligado, modo: c.modo, aceite: c.aceite, contexto_roteador: c.contexto_roteador ?? null };
 }
 
 function diasAtras(dias: number): string {
@@ -440,6 +441,8 @@ const corpoDoPatch = z
     modo: z.enum(["observacao", "decide"]).optional(),
     /** A caixa marcada na tela. Só pesa ao ligar pela primeira vez. */
     aceite_lgpd: z.literal(true).optional(),
+    contexto_roteador: z.boolean().optional(),
+    aceite_contexto_roteador: z.literal(true).optional(),
     tarefa: idDaTarefaSchema.optional(),
     estado: z.enum(ESTADOS_DA_TAREFA).optional(),
   })
@@ -450,8 +453,11 @@ const corpoDoPatch = z
   .refine((c) => c.modo === undefined || c.tarefa === undefined, {
     message: "informe `modo` ou `tarefa`, não os dois",
   })
-  .refine((c) => c.ligado !== undefined || c.modo !== undefined || c.tarefa !== undefined, {
-    message: "informe `ligado`, `modo` ou `tarefa`",
+  .refine((c) => c.aceite_contexto_roteador === undefined || c.contexto_roteador === true, {
+    message: "aceite de contexto exige ativar o contexto do roteador",
+  })
+  .refine((c) => c.ligado !== undefined || c.modo !== undefined || c.tarefa !== undefined || c.contexto_roteador !== undefined, {
+    message: "informe `ligado`, `modo`, `tarefa` ou `contexto_roteador`",
   });
 
 export async function PATCH(req: NextRequest): Promise<Response> {
@@ -527,6 +533,16 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     mudanca.ligado = true;
   }
 
+  // Aceite separado: não amplia o alcance das outras tarefas nem muda quem decide.
+  if (corpo.contexto_roteador === true && atual.contexto_roteador == null) {
+    if (corpo.aceite_contexto_roteador !== true) {
+      return fail("jev_exige_aceite", t("Para usar o histórico no roteador, confirme o envio das mensagens recentes à TypeSafe AI."), 422, { requestId });
+    }
+    mudanca.contexto_roteador = { em: new Date().toISOString(), por: user.id, versao: 1 };
+  } else if (corpo.contexto_roteador === false && atual.contexto_roteador != null) {
+    mudanca.contexto_roteador = null;
+  }
+
   // Pedir o estado que já vale não é mutação: sem escrita e sem auditoria.
   if (Object.keys(mudanca).length === 0) {
     return ok({ config: configPublica(atual), alterado: false }, { requestId });
@@ -561,6 +577,12 @@ export async function PATCH(req: NextRequest): Promise<Response> {
         ? { tarefa: pedido.tarefa, estado: pedido.estado, estado_anterior: estadoAnterior ?? null }
         : {}),
       aceite_registrado: mudanca.aceite !== undefined,
+      ...(mudanca.contexto_roteador !== undefined ? {
+        ...(pedido === null ? { tarefa: "roteador" } : {}),
+        contexto_roteador: mudanca.contexto_roteador !== null,
+        contexto_roteador_anterior: atual.contexto_roteador != null,
+        aceite_contexto_registrado: mudanca.contexto_roteador !== null,
+      } : {}),
     },
   });
 

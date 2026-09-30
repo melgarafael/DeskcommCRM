@@ -94,7 +94,7 @@ export default async function PrivacyPage() {
           </li>
           <li>
             {t(
-              "quando o operador liga o Jev (desligado por padrão), a TypeSafe AI, nos Estados Unidos, que recebe cada mensagem do cliente, sozinha e já sem CPF, telefone e e-mail, para avaliar se ele está irritado, se a mensagem tenta manipular o atendimento automático e a qual área da empresa ela se destina;",
+              "quando o operador liga o Jev (desligado por padrão), a TypeSafe AI, nos Estados Unidos, recebe cada mensagem do cliente para avaliar o clima, tentativas de manipulação e qual agente deve atender. Com autorização separada, o roteador também envia até quatro mensagens anteriores da conversa, incluindo respostas de atendentes. CPF, telefone e e-mail reconhecidos são ocultados em cada texto;",
             )}
           </li>
           <li>{t("o provedor de infraestrutura onde o servidor está hospedado.")}</li>

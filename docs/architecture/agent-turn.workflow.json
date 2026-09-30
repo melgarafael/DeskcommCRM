@@ -310,7 +310,7 @@
       "col": 2,
       "type": "external",
       "label": "Jev no roteador",
-      "sublabel": "lib/ai/decisao/roteador.ts — a mesma escolha, só a última mensagem, em paralelo ao classificador; observando o turno não espera; decidindo vale a dele (min_confidence sobre a probabilidade), com a IA de sempre de reserva; sem ela, nunca o Jev (R2)"
+      "sublabel": "lib/ai/decisao/roteador.ts — a mesma escolha, a mensagem atual e até quatro anteriores com aceite específico, em paralelo ao classificador; observando o turno não espera; decidindo vale a dele (min_confidence sobre a probabilidade), com a IA de sempre de reserva; sem ela, nunca o Jev (R2)"
     },
     {
       "id": "jevObservacoesRoteador",
@@ -765,7 +765,7 @@
       "id": "cartao-jevroteador",
       "from": "jevCartaoRoteador",
       "to": "jevRoteador",
-      "label": "Deixar o Jev decidir / Pausar esta tarefa (settings.jev.tarefas.roteador)",
+      "label": "Deixar o Jev decidir / Pausar esta tarefa (settings.jev.tarefas.roteador); autorizar/revogar histórico (settings.jev.contexto_roteador)",
       "variant": "emphasis"
     }
   ],
