@@ -16,5 +16,5 @@ habilitada e que o escopo opcional de criação de espaços tenha sido concedido
 nascendo o Meet "confiável" de sempre — a opção só passa a valer quando as duas
 condições se encontram.
 
-Contribuição de @webtecnica (<PR>).
+Contribuição de @webtecnica (#2089).
 
