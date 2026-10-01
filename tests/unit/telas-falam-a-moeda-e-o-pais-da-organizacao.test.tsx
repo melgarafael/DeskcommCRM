@@ -219,9 +219,14 @@ describe("o documento e o exemplo de telefone seguem o país da organização", 
  * do embed não o derrubaria — e a tela cairia no padrão em produção.
  */
 describe("a organização ativa leva moeda e país ao cliente", () => {
-  it("o embed da membership pede as duas colunas", () => {
+  it("a consulta de organizations pede as duas colunas", () => {
+    // Deixou de ser um embed `organizations(...)` dentro do select de
+    // `user_organizations` em 01/10/2026 (bug do PostgREST nesse embed, só
+    // para o role `authenticated` — ver o comentário ao lado de `orgIds` em
+    // lib/auth/server.ts) e virou uma consulta própria a `organizations`.
     const fonte = readFileSync("lib/auth/server.ts", "utf8");
-    expect(fonte).toMatch(/organizations\(display_name, locale, timezone, currency, country, status, suspended_kind\)/);
+    expect(fonte).toMatch(/\.from\("organizations"\)[\s\S]{0,200}\bcurrency\b/);
+    expect(fonte).toMatch(/\.from\("organizations"\)[\s\S]{0,200}\bcountry\b/);
     expect(fonte).toContain("currency: org?.currency ?? null");
     expect(fonte).toContain("country: org?.country ?? null");
   });

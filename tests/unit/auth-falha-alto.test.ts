@@ -17,9 +17,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * autorização e é infraestrutura.
  */
 
-const consultas: { platformAdmins: unknown; memberships: unknown } = {
+const consultas: { platformAdmins: unknown; memberships: unknown; organizations: unknown } = {
   platformAdmins: { data: null, error: null },
   memberships: { data: [], error: null },
+  organizations: { data: [], error: null },
 };
 
 // `get` entrou junto com a cadeia de idioma (usuário → organização): o
@@ -52,7 +53,12 @@ vi.mock("@/lib/supabase/server", () => ({
       }),
     },
     from: (tabela: string) => {
-      const alvo = tabela === "platform_admins" ? "platformAdmins" : "memberships";
+      const alvo =
+        tabela === "platform_admins"
+          ? "platformAdmins"
+          : tabela === "organizations"
+            ? "organizations"
+            : "memberships";
       const resultado = () => consultas[alvo as keyof typeof consultas];
       const chain = {
         select: () => chain,
@@ -68,6 +74,10 @@ vi.mock("@/lib/supabase/server", () => ({
             ? { maybeSingle: async () => resultado() }
             : { ...chain, then: chain.then },
         order: () => ({ ...chain, then: chain.then }),
+        // Busca separada de `organizations` (não embutida no select de
+        // `user_organizations`) — ver o comentário em lib/auth/server.ts sobre
+        // o bug do PostgREST para o role `authenticated`.
+        in: () => ({ ...chain, then: chain.then }),
         maybeSingle: async () => resultado(),
         then: (r: (v: unknown) => unknown) => Promise.resolve(resultado()).then(r),
       };
@@ -81,6 +91,7 @@ const { loadAuthUser, resolveActiveOrg } = await import("@/lib/auth/server");
 beforeEach(() => {
   consultas.platformAdmins = { data: null, error: null };
   consultas.memberships = { data: [], error: null };
+  consultas.organizations = { data: [], error: null };
 });
 
 describe("loadAuthUser — falha de permissão não vira 'sem organização'", () => {
@@ -120,7 +131,11 @@ describe("loadAuthUser — falha de permissão não vira 'sem organização'", (
 
   it("usuário com organização resolve normalmente", async () => {
     consultas.memberships = {
-      data: [{ organization_id: "o1", role: "admin", organizations: { display_name: "Acme" } }],
+      data: [{ organization_id: "o1", role: "admin" }],
+      error: null,
+    };
+    consultas.organizations = {
+      data: [{ id: "o1", display_name: "Acme", locale: null }],
       error: null,
     };
     const u = await loadAuthUser();
@@ -154,7 +169,11 @@ describe("loadAuthUser — falha de permissão não vira 'sem organização'", (
   it("traz status e tipo de suspensão da org e o scope do platform admin", async () => {
     consultas.platformAdmins = { data: { user_id: "u1", scope: "support_readonly", revoked_at: null }, error: null };
     consultas.memberships = {
-      data: [{ organization_id: "o1", role: "admin", organizations: { display_name: "Acme", status: "suspended", suspended_kind: "cobranca" } }],
+      data: [{ organization_id: "o1", role: "admin" }],
+      error: null,
+    };
+    consultas.organizations = {
+      data: [{ id: "o1", display_name: "Acme", status: "suspended", suspended_kind: "cobranca" }],
       error: null,
     };
     const u = await loadAuthUser();
@@ -171,18 +190,19 @@ describe("loadAuthUser — falha de permissão não vira 'sem organização'", (
    */
   it("a organização ATIVA leva a moeda e o país até o cliente", async () => {
     consultas.memberships = {
+      data: [{ organization_id: "o1", role: "admin" }],
+      error: null,
+    };
+    consultas.organizations = {
       data: [
         {
-          organization_id: "o1",
-          role: "admin",
-          organizations: {
-            display_name: "Stolia",
-            locale: "pt-BR",
-            timezone: "Europe/Lisbon",
-            currency: "EUR",
-            country: "PT",
-            status: "active",
-          },
+          id: "o1",
+          display_name: "Stolia",
+          locale: "pt-BR",
+          timezone: "Europe/Lisbon",
+          currency: "EUR",
+          country: "PT",
+          status: "active",
         },
       ],
       error: null,

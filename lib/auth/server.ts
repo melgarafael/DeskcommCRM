@@ -27,18 +27,10 @@ interface RawMembershipRow {
   role: string;
   /** Só para ORDENAR — a lista decide qual organização fica ativa sem cookie. */
   accepted_at?: string | null;
-  organizations: OrgJoin | OrgJoin[] | null;
-  /**
-   * As portas da EMPRESA, por embed PRÓPRIO (`organizations.interface_settings`,
-   * migration 0367). Ficam fora de `organizations(display_name, locale)` de
-   * propósito: aquele embed é o que a membership SEMPRE trouxe — nome e IDIOMA da
-   * empresa, lidos em toda navegação — e um jsonb novo ali faria a escolha de menu
-   * mexer no caminho de quem só precisa saber em que língua desenhar a tela.
-   */
-  interface_da_empresa: OrgJoinEmpresa | OrgJoinEmpresa[] | null;
 }
 
 interface OrgJoin {
+  id: string;
   display_name: string;
   locale: string | null;
   timezone: string | null;
@@ -46,10 +38,7 @@ interface OrgJoin {
   country: string | null;
   status?: string;
   suspended_kind?: string | null;
-}
-
-/** O mesmo `organizations`, alcançado por outro embed: só as portas da EMPRESA. */
-interface OrgJoinEmpresa {
+  /** As portas da EMPRESA (migration 0367) — ver `combinarInterfaces` abaixo. */
   interface_settings?: unknown;
 }
 
@@ -188,21 +177,34 @@ export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
         .maybeSingle(),
       supabase
         .from("user_organizations")
-        .select(
-          // Dois embeds do MESMO `organizations`, como manda o PostgREST quando a
-          // mesma relação aparece duas vezes: `organizations(...)` continua sendo
-          // o que a membership sempre trouxe (nome, IDIOMA e FUSO da empresa — o
-          // idioma decide a tela inteira e não pode depender de um embed que a
-          // issue #1341 acabou de engordar), e o alias traz só as portas da EMPRESA.
-          // `timezone` veio do main (fuso da organização nas listas, #1290) e convive
-          // com o alias: um embed por relação, sem renomear o que já existia.
-          "organization_id, role, interface_settings, accepted_at, organizations(display_name, locale, timezone, currency, country, status, suspended_kind), interface_da_empresa:organizations(interface_settings)",
-        )
+        .select("organization_id, role, interface_settings, accepted_at")
         .eq("user_id", user.id)
         .is("revoked_at", null)
         .order("accepted_at", { ascending: true, nullsFirst: true })
         .order("organization_id", { ascending: true }),
     ]);
+
+  // ⚠️ CONSULTA SEPARADA DE PROPÓSITO — não volte a embutir `organizations(...)`
+  // no select acima (nem um, nem dois embeds da mesma relação). O PostgREST, só
+  // para o role `authenticated` (nunca para `service_role`), devolvia `column
+  // organizations_1.interface_settings does not exist` para esse embed
+  // específico — confirmado em 01/10/2026 que é bug da camada PostgREST: a
+  // mesma consulta roda limpa direto no Postgres (RLS simulada via `set local
+  // role authenticated` + `request.jwt.claims`) e via REST com `service_role`.
+  // Um restart do projeto Supabase não resolveu. Buscar as organizações à parte
+  // evita o embed e contorna o bug — e, como é uma consulta só, também carrega
+  // `interface_settings` da EMPRESA (migration 0367) sem precisar do segundo
+  // embed `interface_da_empresa:organizations(...)` que existia antes.
+  const orgIds = [...new Set((rawMemberships ?? []).map((r) => r.organization_id))];
+  const { data: orgsRows, error: orgsErro } =
+    orgIds.length > 0
+      ? await supabase
+          .from("organizations")
+          .select(
+            "id, display_name, locale, timezone, currency, country, status, suspended_kind, interface_settings",
+          )
+          .in("id", orgIds)
+      : { data: [] as OrgJoin[], error: null };
 
   /**
    * FALHA ALTO, não baixo.
@@ -222,11 +224,11 @@ export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
    * parece uma decisão de autorização e é um defeito de infra. Melhor estourar e
    * mostrar erro do que renderizar uma UI mentirosa.
    */
-  if (paErro || membErro) {
-    const detalhe = (paErro ?? membErro)!;
+  if (paErro || membErro || orgsErro) {
+    const detalhe = (paErro ?? membErro ?? orgsErro)!;
     logger.error("[auth] não foi possível resolver permissões do usuário", {
       user_id: user.id,
-      onde: paErro ? "platform_admins" : "user_organizations",
+      onde: paErro ? "platform_admins" : membErro ? "user_organizations" : "organizations",
       code: detalhe.code,
       message: detalhe.message,
     });
@@ -236,12 +238,10 @@ export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
     );
   }
 
+  const orgsPorId = new Map((orgsRows ?? []).map((o) => [o.id, o]));
   const rows = (rawMemberships ?? []) as RawMembershipRow[];
   const memberships: UserOrgMembership[] = rows.map((row) => {
-    const orgs = row.organizations;
-    const org = Array.isArray(orgs) ? (orgs[0] ?? null) : orgs;
-    const empresas = row.interface_da_empresa;
-    const empresa = Array.isArray(empresas) ? (empresas[0] ?? null) : empresas;
+    const org = orgsPorId.get(row.organization_id) ?? null;
     return {
       organization_id: row.organization_id,
       organization_name: org?.display_name ?? "—",
@@ -249,7 +249,7 @@ export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
       // EMPRESA ∩ VÍNCULO (migration 0367): a empresa escolhe o universo de
       // portas da instalação, o vínculo escolhe menos dentro dele. Até aqui o
       // vínculo decidia sozinho, então a escolha da empresa não existia.
-      interface_settings: combinarInterfaces(empresa?.interface_settings, row.interface_settings),
+      interface_settings: combinarInterfaces(org?.interface_settings, row.interface_settings),
       locale: org?.locale ?? null,
       timezone: org?.timezone ?? null,
       currency: org?.currency ?? null,

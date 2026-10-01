@@ -7111,7 +7111,7 @@ begin
   end if;
 
   select v.id, v.organization_id, v.agent_id, v.status, v.provider, v.model,
-         v.credential_id, v.channel_session_id, v.provisioning_origin
+         v.credential_id, v.channel_session_id
     into v_version
   from public.ai_agent_versions v
   where v.id = p_version_id
@@ -7123,11 +7123,6 @@ begin
   if v_version.agent_id <> p_agent_id or v_version.organization_id <> p_org_id then
     raise exception 'version_not_found' using errcode = 'P0001';
   end if;
-  if p_expected_provenance is not null and (
-    p_expected_provenance not in('onboarding','legacy_reconciliation') or
-    v_version.provisioning_origin is distinct from p_expected_provenance or
-    (select count(*) from public.ai_agent_versions own_version where own_version.organization_id=p_org_id and own_version.agent_id=p_agent_id)<>1
-  ) then raise exception 'existing_version_requires_review' using errcode='P0001';end if;
   if v_version.status not in ('draft', 'superseded') then
     raise exception 'version_invalid_state' using errcode = 'P0001';
   end if;
@@ -14906,15 +14901,13 @@ begin
   end if;
 
   if v_relkind not in ('i', 'I') or v_tabela is distinct from 'job_queue' then
-    raise exception
-      'o nome idx_job_queue_running já está tomado em public (relkind=%, tabela=%). '
-      'Nome de índice é único por SCHEMA, então o create index if not exists desta '
-      'atualização vira no-op silencioso e o claim da fila continua varrendo a tabela '
-      'inteira a cada rodada. Não apago o objeto porque ele não é nosso: renomeie-o e '
-      'rode a atualização de novo.', v_relkind, coalesce(v_tabela, '(nenhuma)');
+    raise exception using message = format(
+      $msg$o nome idx_job_queue_running já está tomado em public (relkind=%s, tabela=%s). Nome de índice é único por SCHEMA, então o create index if not exists desta atualização vira no-op silencioso e o claim da fila continua varrendo a tabela inteira a cada rodada. Não apago o objeto porque ele não é nosso: renomeie-o e rode a atualização de novo.$msg$,
+      v_relkind, coalesce(v_tabela, '(nenhuma)')
+    );
   end if;
 
-  if v_def !~ 'USING btree \(status\)' or v_def !~ 'WHERE \(status = ''running''' then
+  if v_def !~ $rx1$USING btree \(status\)$rx1$ or v_def !~ $rx2$WHERE \(status = 'running'$rx2$ then
     execute 'drop index public.idx_job_queue_running';
   end if;
 end

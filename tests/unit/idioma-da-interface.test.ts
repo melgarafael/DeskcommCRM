@@ -109,27 +109,30 @@ describe("os elos que somem sem barulho", () => {
     // para preencher o próprio formulário. Sem este caso, ele volta a ser
     // decorativo no dia em que alguém "simplificar" o resolvedor.
     const servidor = readFileSync("lib/auth/server.ts", "utf8");
-    // ⚠️ ESTA CERCA FOI AFROUXADA EM 2026-09-20, e o que ela perdeu está escrito
+    // ⚠️ ESTA CERCA MUDOU DE FORMA EM 01/10/2026, e o que ela perdeu está escrito
     // aqui para o próximo não afrouxar mais um degrau sem saber o que sobra.
     //
-    // Era `/organizations\(display_name, locale\)/` — a lista INTEIRA, na ordem.
-    // Quando o embed ganhou `timezone` (a Agenda passou a abrir a semana no fuso
-    // de quem olha), esta cerca reprovou um ACRÉSCIMO, que é o contrário do que
-    // ela existe para vigiar.
+    // Era um embed `organizations(...)` dentro do select de `user_organizations`
+    // — e deixou de ser: o PostgREST devolvia `column organizations_1.
+    // interface_settings does not exist` para esse embed, só para o role
+    // `authenticated` (nunca para `service_role` nem direto no Postgres com a
+    // RLS simulada) — ver o comentário ao lado de `orgIds` em lib/auth/server.ts.
+    // A busca da organização virou uma consulta PRÓPRIA a `organizations`.
     //
-    //   o que ela guarda HOJE: o embed da membership traz uma coluna chamada
-    //     `locale`. Medido nos dois sentidos — tirar `locale` da consulta deixa
-    //     este caso vermelho; acrescentar coluna nova o mantém verde.
-    //   o que a versão antiga pegava a mais: só a ORDEM e a lista exata das
-    //     colunas. Nenhuma dessas duas é propriedade do produto: trocar a ordem
-    //     do `select` não muda o que chega à sessão, e a lista fechada só
-    //     produzia alarme em quem acrescentava.
-    //   o que NENHUMA das duas pega: um `locale` que venha de um embed ANINHADO
-    //     (`organizations(display_name, outra(locale))`) satisfaria o padrão sem
-    //     ser a coluna da organização. É o limite conhecido desta sonda — quem
+    //   o que ela guarda HOJE: existe uma consulta a `.from("organizations")`
+    //     cujo `.select(...)` pede uma coluna chamada `locale`, e o valor lido
+    //     dali (`org?.locale`) chega à membership. Medido nos dois sentidos —
+    //     tirar `locale` da consulta ou parar de ler `org?.locale` deixa este
+    //     caso vermelho; acrescentar coluna nova em qualquer um dos selects o
+    //     mantém verde.
+    //   o que NENHUMA versão desta sonda pega: um `locale` que venha de outro
+    //     lugar com o mesmo nome de variável. É o limite conhecido dela — quem
     //     precisar fechá-lo tem de ler o valor, não o texto do arquivo.
     expect(servidor, "a membership deixou de trazer o idioma da organização").toMatch(
-      /organizations\((?=[^)]*\blocale\b)[^)]*\)/,
+      /\.from\("organizations"\)[\s\S]{0,160}\blocale\b/,
+    );
+    expect(servidor, "a membership deixou de trazer o idioma da organização").toMatch(
+      /org\?\.locale/,
     );
     expect(servidor, "o idioma da sessão parou de cair na organização").toMatch(
       /locale \?\? \(await localeDaOrgAtiva\(memberships\)\)/,
