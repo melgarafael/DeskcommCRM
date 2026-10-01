@@ -33,6 +33,12 @@ const COLUNAS: Record<string, readonly string[]> = {
   custo: ["custo", "preco de custo", "preço de custo", "compra", "costo", "coste", "precio de costo", "precio de coste"],
   marca: ["marca", "fabricante"],
   categoria: ["categoria", "tipo", "departamento"],
+  // Classificação própria da loja (migration 0501) — independente de
+  // marca/categoria. As formas cobrem a exportação típica de ERP (ex.
+  // "Desc. Grupo", "Desc Gru Pai", "Desc Segment").
+  segmento: ["segmento", "segment", "desc segment", "desc. segment"],
+  grupo_pai: ["grupo pai", "grupo principal", "categoria pai", "desc gru pai", "desc. gru pai"],
+  grupo: ["grupo", "subgrupo", "subcategoria", "desc. grupo", "desc grupo"],
   quantidade: ["quantidade", "estoque", "qtd", "qtde", "qty", "cantidad", "existencias", "stock"],
 };
 
@@ -116,6 +122,9 @@ export interface LinhaImportada {
   custo_cents: number | null;
   marca?: string;
   categoria?: string;
+  segmento?: string;
+  grupo_pai?: string;
+  grupo?: string;
   quantidade: number;
   controla_estoque: boolean;
 }
@@ -131,6 +140,15 @@ export interface ResultadoDaLeitura {
   erros: ErroDaLinha[];
   /** Colunas que a planilha trouxe e este importador não conhece. */
   colunasIgnoradas: string[];
+  /**
+   * A planilha não trouxe coluna de preço — um cadastro mestre (SKU, nome,
+   * classificação) sem lista de preço, caso real de loja onde o preço varia
+   * por cliente/negociação. Toda linha nasce com `preco_cents: 0`, que o
+   * catálogo e o agente leem como "sob consulta" (nunca como grátis — ver
+   * `crm_search_products`). A rota de import usa este flag para marcar os
+   * produtos NOVOS como inativos até alguém precificar e ativar pela tela.
+   */
+  semColunaDePreco: boolean;
 }
 
 export function lerPlanilha(
@@ -151,25 +169,25 @@ export function lerPlanilha(
   });
 
   const campos = new Set(mapa.values());
-  // Sem nome ou sem preço não há catálogo — e dizer isso ANTES de processar 300
-  // linhas é o que evita um relatório com 300 erros iguais.
-  const faltando = ["nome", "preco"].filter((c) => !campos.has(c));
+  // Sem nome não há catálogo — e dizer isso ANTES de processar 300 linhas é o
+  // que evita um relatório com 300 erros iguais.
+  //
+  // ⚠️ Preço NÃO é mais obrigatório aqui (era, até a migration 0501). Loja
+  // onde o preço varia por cliente manda um cadastro mestre — SKU, nome,
+  // classificação — sem lista de preço nenhuma, e recusar esse arquivo inteiro
+  // por "falta coluna de preço" empurra quem tem esse caso real para um CSV
+  // com preço inventado, que é exatamente o que este arquivo existe para
+  // impedir. Sem a coluna, toda linha nasce `preco_cents: 0` (sob consulta) e
+  // a rota de import marca os produtos NOVOS como inativos (`semColunaDePreco`
+  // abaixo) até alguém precificar.
+  const semColunaDePreco = !campos.has("preco");
+  const faltando = ["nome"].filter((c) => !campos.has(c));
   if (faltando.length > 0) {
-    // A recusa NOMEIA a coluna que falta, uma frase por combinação. Quem tem
-    // `nome` e não tem preço, se ler "precisa de uma coluna de nome e de
-    // preço", vai procurar a coluna que já tem — e o arquivo dele fica parado
-    // na primeira tela do catálogo. A frase inteira é a chave de tradução: em
-    // espanhol a ordem das palavras não é a mesma, e montar por pedaços
-    // entregaria frase torta.
-    const pedido =
-      faltando.length === 2
-        ? _t("A planilha precisa de uma coluna de nome e de preço. Encontrei: ")
-        : faltando[0] === "nome"
-          ? _t("A planilha precisa de uma coluna de nome. Encontrei: ")
-          : _t("A planilha precisa de uma coluna de preço. Encontrei: ");
     return {
       erro:
-        pedido + (cabecalho.filter((c) => c.trim()).join(", ") || _t("nenhuma coluna")) + ".",
+        _t("A planilha precisa de uma coluna de nome. Encontrei: ") +
+        (cabecalho.filter((c) => c.trim()).join(", ") || _t("nenhuma coluna")) +
+        ".",
     };
   }
 
@@ -192,15 +210,25 @@ export function lerPlanilha(
       continue;
     }
 
-    const preco_cents = precoParaCentavos(valor("preco"));
-    if (preco_cents === null) {
-      // O valor cru entra na mensagem: quem vai corrigir precisa achar a célula.
-      erros.push({
-        linha: numeroNaPlanilha,
-        motivo:
-          _t("preço não reconhecido (") + `"${valor("preco")}"` + ")" + _t(" — escreva assim: 5.499,00"),
-      });
-      continue;
+    // Sem coluna de preço, nenhuma célula para ler: toda linha é "sob
+    // consulta" (0). Com a coluna presente, a regra de sempre — não ler é
+    // erro, nunca um chute.
+    let preco_cents = 0;
+    if (!semColunaDePreco) {
+      const lido = precoParaCentavos(valor("preco"));
+      if (lido === null) {
+        // O valor cru entra na mensagem: quem vai corrigir precisa achar a célula.
+        erros.push({
+          linha: numeroNaPlanilha,
+          motivo:
+            _t("preço não reconhecido (") +
+            `"${valor("preco")}"` +
+            ")" +
+            _t(" — escreva assim: 5.499,00"),
+        });
+        continue;
+      }
+      preco_cents = lido;
     }
 
     const custoTexto = valor("custo");
@@ -261,10 +289,13 @@ export function lerPlanilha(
       custo_cents,
       ...(valor("marca") ? { marca: valor("marca") } : {}),
       ...(valor("categoria") ? { categoria: valor("categoria") } : {}),
+      ...(valor("segmento") ? { segmento: valor("segmento") } : {}),
+      ...(valor("grupo_pai") ? { grupo_pai: valor("grupo_pai") } : {}),
+      ...(valor("grupo") ? { grupo: valor("grupo") } : {}),
       quantidade,
       controla_estoque: temColunaEstoque,
     });
   }
 
-  return { produtos, erros, colunasIgnoradas };
+  return { produtos, erros, colunasIgnoradas, semColunaDePreco };
 }

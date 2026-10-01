@@ -80,3 +80,16 @@ describe("crm_search_products — preço na convenção da moeda", () => {
     expect(semNbsp(resultado.produtos[0]!.preco)).toBe("R$ 249,90");
   });
 });
+
+describe("crm_search_products — produto sem preço cadastrado (sob consulta)", () => {
+  it("nunca diz R$ 0,00: devolve 'sob consulta' e avisa o modelo para não inventar valor", async () => {
+    const resultado = (await crmSearchProducts.handler(
+      { termo: "iphone", limite: 8, somente_disponiveis: true },
+      ctxCom([{ ...PRODUTO_MXN, moeda: "BRL", preco_cents: 0 }]),
+    )) as RespostaBusca & { mensagem: string };
+
+    expect(resultado.produtos[0]!.preco).toBe("sob consulta");
+    expect(resultado.produtos[0]!.preco).not.toContain("0,00");
+    expect(resultado.mensagem).toContain("sob consulta");
+  });
+});

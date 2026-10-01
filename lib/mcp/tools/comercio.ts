@@ -108,8 +108,20 @@ const TAMANHO_DA_PAGINA = 1000;
  */
 const PAGINAS_MAXIMAS = 10;
 
-export function avisosDaBusca(input: { empate: boolean; ignorados: readonly string[] }): string {
+export function avisosDaBusca(input: {
+  empate: boolean;
+  ignorados: readonly string[];
+  /** Algum produto do topo veio sem preço cadastrado (`preco_cents === 0`, sob consulta). */
+  semPreco?: boolean;
+}): string {
   const avisos: string[] = [];
+  if (input.semPreco) {
+    avisos.push(
+      "este produto não tem preço fixo cadastrado — o valor varia por cliente/negociação. " +
+        "NÃO diga 'R$ 0,00' nem invente um valor: diga que o preço é sob consulta e que a " +
+        "equipe confirma.",
+    );
+  }
   if (input.ignorados.length > 0) {
     avisos.push(
       `não há produto com ${input.ignorados.join(" nem ")} no catálogo desta loja. ` +
@@ -170,6 +182,9 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
     "catálogo INTEIRO: se a resposta disser que a varredura foi parcial, não afirme que a loja não " +
     "tem — diga que vai confirmar com a equipe. Em qualquer caso, não invente preço e nunca " +
     "invente um valor que você lembra. " +
+    "Se `preco` vier \"sob consulta\", o produto NÃO TEM preço fixo cadastrado (varia por " +
+    "cliente/negociação) — nunca diga R$ 0,00 nem invente um valor: diga que é sob consulta e " +
+    "que a equipe confirma. " +
     "Produto com `fotos` tem foto cadastrada: ao apresentá-lo, passe o `codigo` dele em " +
     "`produto_codigo` no send_message, e a foto vai junto com o texto.",
   inputSchema: produtosInputShape,
@@ -219,7 +234,8 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
       const { data: lote, error, count } = await ctx.supabase
         .from("catalog_products")
         .select(
-          "id, codigo, nome, descricao, marca, categoria, preco_cents, moeda, controla_estoque, quantidade, ativo, fotos",
+          "id, codigo, nome, descricao, marca, categoria, segmento, grupo_pai, grupo, " +
+            "preco_cents, moeda, controla_estoque, quantidade, ativo, fotos",
           { count: "exact" },
         )
         .eq("organization_id", ctx.organizationId)
@@ -258,6 +274,9 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
       descricao: string | null;
       marca: string | null;
       categoria: string | null;
+      segmento: string | null;
+      grupo_pai: string | null;
+      grupo: string | null;
       preco_cents: number;
       moeda: string;
       controla_estoque: boolean;
@@ -319,15 +338,23 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
     // casa o Pro e o Pro Max igualmente, e a diferença entre eles é o preço.
     const empate = topo.length > 1 && topo[0]!.nota === topo[1]!.nota;
 
-    const mensagem = avisosDaBusca({ empate, ignorados });
+    const semPreco = topo.some(({ produto }) => produto.preco_cents === 0);
+    const mensagem = avisosDaBusca({ empate, ignorados, semPreco });
 
     return {
       produtos: topo.map(({ produto }) => ({
         codigo: produto.codigo,
         nome: produto.nome,
-        preco: formatCents(produto.preco_cents, produto.moeda),
+        // `preco_cents: 0` é SOB CONSULTA (cadastro sem lista de preço — o
+        // preço varia por cliente), nunca "grátis". O texto já avisa o
+        // modelo; o número cru (`preco_cents`) também sai como 0 de
+        // propósito, para não inventar um `null` que o schema não promete.
+        preco: produto.preco_cents === 0 ? "sob consulta" : formatCents(produto.preco_cents, produto.moeda),
         preco_cents: produto.preco_cents,
         ...(produto.marca ? { marca: produto.marca } : {}),
+        ...(produto.segmento ? { segmento: produto.segmento } : {}),
+        ...(produto.grupo_pai ? { grupo_pai: produto.grupo_pai } : {}),
+        ...(produto.grupo ? { grupo: produto.grupo } : {}),
         ...(produto.descricao ? { descricao: produto.descricao } : {}),
         disponivel: !produto.controla_estoque || produto.quantidade > 0,
         // Quantas fotos, e não quais: o caminho é vocabulário interno e a URL

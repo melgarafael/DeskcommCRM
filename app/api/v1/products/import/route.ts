@@ -52,6 +52,8 @@ interface ResumoDaImportacao {
   atualizados: number;
   erros: ErroDaLinha[];
   colunas_ignoradas: string[];
+  /** A planilha não trouxe preço — os produtos CRIADOS nasceram inativos. */
+  sem_coluna_de_preco: boolean;
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -126,6 +128,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         atualizados: 0,
         erros: lido.erros,
         colunas_ignoradas: lido.colunasIgnoradas,
+        sem_coluna_de_preco: lido.semColunaDePreco,
       } satisfies ResumoDaImportacao,
       { requestId },
     );
@@ -212,13 +215,29 @@ export async function POST(req: NextRequest): Promise<Response> {
     custo_cents: p.custo_cents,
     marca: p.marca ?? null,
     categoria: p.categoria ?? null,
+    segmento: p.segmento ?? null,
+    grupo_pai: p.grupo_pai ?? null,
+    grupo: p.grupo ?? null,
     controla_estoque: p.controla_estoque,
     quantidade: p.quantidade,
     origem: "planilha",
   });
 
+  // ⚠️ `ativo: false` só entra aqui, e só em quem NASCE agora. Planilha sem
+  // coluna de preço é cadastro mestre (preço varia por cliente, caso real da
+  // loja) — o produto não pode ficar visível ao agente com `preco_cents: 0`
+  // antes de alguém precificar e ativar pela tela. Produto que JÁ existia
+  // nunca tem `ativo` tocado por reimport (mesma proteção de `descricao` e
+  // `imagem_url`, comentário no topo do arquivo): reimportar a planilha de
+  // classificação não pode desativar um produto que alguém já precificou.
   const paraGravar = aceitos.map((p) =>
-    antigos.has(p.codigo) ? base(p) : { ...base(p), moeda },
+    antigos.has(p.codigo)
+      ? base(p)
+      : {
+          ...base(p),
+          moeda,
+          ...(lido.semColunaDePreco ? { ativo: false } : {}),
+        },
   );
 
   /** Grava um grupo de shape uniforme, em lotes, com reteste linha a linha no que falhar. */
@@ -281,6 +300,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       atualizados,
       erros,
       colunas_ignoradas: lido.colunasIgnoradas,
+      sem_coluna_de_preco: lido.semColunaDePreco,
     } satisfies ResumoDaImportacao,
     { requestId },
   );

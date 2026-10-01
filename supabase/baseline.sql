@@ -45418,3 +45418,23 @@ comment on column public.ai_agent_versions.inbound_debounce_ms is
 alter table public.ai_agent_versions
   add constraint ai_agent_versions_inbound_debounce_ms_check
   check (inbound_debounce_ms is null or (inbound_debounce_ms >= 0 and inbound_debounce_ms <= 60000));
+
+-- ---- segmento e grupos (pai/filho) no catálogo (migration 0501) ----
+-- 0501: classificação própria da loja no catálogo — `segmento`, `grupo_pai` e
+-- `grupo`, vocabulário ABERTO (sem CHECK), ao lado de `marca`/`categoria` que
+-- seguem existindo sem uso obrigatório. Cada organização usa os próprios
+-- rótulos (ex.: Segmento "Halloween" > Grupo Pai "Cosmético" > Grupo
+-- "Maquiagem"). Sem função nova (nada a revogar de anon).
+alter table public.catalog_products
+  add column if not exists segmento text,
+  add column if not exists grupo_pai text,
+  add column if not exists grupo text;
+
+create index if not exists catalog_products_org_segmento_idx
+  on public.catalog_products (organization_id, segmento);
+
+create index if not exists catalog_products_org_grupo_pai_idx
+  on public.catalog_products (organization_id, grupo_pai);
+
+create index if not exists catalog_products_org_grupo_idx
+  on public.catalog_products (organization_id, grupo);

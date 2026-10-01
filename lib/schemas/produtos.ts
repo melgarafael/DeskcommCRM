@@ -97,6 +97,13 @@ export const produtoCreateSchema = z.object({
   descricao: z.string().trim().max(2000).optional(),
   marca: z.string().trim().max(80).optional(),
   categoria: z.string().trim().max(80).optional(),
+  // Classificação própria da loja (migration 0501) — independente de
+  // marca/categoria, vocabulário aberto (cada organização usa os próprios
+  // rótulos). `grupo` é filho de `grupo_pai` quando a loja usa os dois níveis;
+  // nada aqui impõe a hierarquia, é convenção de quem cadastra.
+  segmento: z.string().trim().max(80).optional(),
+  grupo_pai: z.string().trim().max(80).optional(),
+  grupo: z.string().trim().max(80).optional(),
   preco_cents: z.number().int().min(0, "preço não pode ser negativo"),
   // ⚠️ `moeda` NÃO entra aqui de propósito, e a ausência é a regra.
   //
@@ -131,6 +138,9 @@ export interface Produto {
   descricao: string | null;
   marca: string | null;
   categoria: string | null;
+  segmento: string | null;
+  grupo_pai: string | null;
+  grupo: string | null;
   preco_cents: number;
   moeda: string;
   custo_cents: number | null;
@@ -146,5 +156,6 @@ export interface Produto {
 
 /** As colunas que a tela e a rota leem — uma lista, não duas. */
 export const COLUNAS_DO_PRODUTO =
-  "id, codigo, nome, descricao, marca, categoria, preco_cents, moeda, custo_cents, " +
+  "id, codigo, nome, descricao, marca, categoria, segmento, grupo_pai, grupo, " +
+  "preco_cents, moeda, custo_cents, " +
   "controla_estoque, quantidade, ativo, origem, imagem_url, fotos, updated_at";

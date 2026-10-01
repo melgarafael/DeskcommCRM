@@ -66,31 +66,16 @@ describe("lerPlanilha — mensagens de erro passam por t()", () => {
 /**
  * A RECUSA DIZ QUAL COLUNA FALTA — e isso vale nos DOIS idiomas.
  *
- * ─── O defeito que este bloco guarda ────────────────────────────────────────
- *
- * A mensagem era montada com o que de fato faltava
- * (`faltando.map(...).join(" e de ")`). Ao virar chave de tradução ela virou
- * uma frase FIXA: "precisa de uma coluna de nome e de preço", dita também para
- * quem já tinha a coluna `nome` e só não tinha a de preço.
- *
- * Quem recebe esse texto vai conferir a coluna `nome` — que está lá —, não
- * encontra o erro que a mensagem descreve, e desiste do arquivo. É a primeira
- * tela do catálogo, e o idioma majoritário do produto é o português: a
- * tradução não pode custar informação a quem já usava o sistema.
- *
- * ─── Por que o caso "faltam as duas" está aqui mesmo não discriminando ──────
- *
- * Ele passa nas duas versões, de propósito: é o par do «não faça X». Sem ele,
- * "sempre diga só uma coluna" satisfaria os outros dois casos e quebraria a
- * frase de quem manda uma planilha sem cabeçalho nenhum.
+ * ⚠️ Preço deixou de ser obrigatório na migration 0501: loja onde o preço
+ * varia por cliente manda um cadastro mestre (SKU, nome, classificação) sem
+ * lista de preço, e recusar esse arquivo inteiro empurrava quem tem esse caso
+ * real para inventar um preço só para passar pela validação — o oposto do que
+ * este módulo existe para impedir. Hoje só `nome` é obrigatório; a ausência de
+ * `preco` vira `semColunaDePreco: true` (abaixo), nunca erro.
  */
 const ES: Record<string, string> = {
   "A planilha precisa de uma coluna de nome. Encontrei: ":
     "La planilla necesita una columna de nombre. Encontré: ",
-  "A planilha precisa de uma coluna de preço. Encontrei: ":
-    "La planilla necesita una columna de precio. Encontré: ",
-  "A planilha precisa de uma coluna de nome e de preço. Encontrei: ":
-    "La planilla necesita una columna de nombre y de precio. Encontré: ",
 };
 const espanhol = (texto: string): string => ES[texto] ?? texto;
 
@@ -101,32 +86,33 @@ function recusa(csv: string, t?: (s: string) => string): string {
 }
 
 describe("lerPlanilha — a recusa nomeia a coluna que falta", () => {
-  it("tem nome, falta preço: pede PREÇO e não menciona a coluna que já existe", () => {
-    const erro = recusa("nome,marca\nCafé,Melitta\n");
-    expect(erro).toBe("A planilha precisa de uma coluna de preço. Encontrei: nome, marca.");
-    // A asserção que reprova a frase fixa: ela pediria "nome e de preço".
-    expect(erro).not.toContain("coluna de nome");
-  });
-
-  it("tem preço, falta nome: pede NOME", () => {
-    const erro = recusa("preco,marca\n9.90,Melitta\n");
-    expect(erro).toBe("A planilha precisa de uma coluna de nome. Encontrei: preco, marca.");
-    expect(erro).not.toContain("de preço");
-  });
-
-  it("faltam as duas: pede as duas", () => {
+  it("sem nome: recusa a planilha inteira", () => {
     const erro = recusa("marca,categoria\nMelitta,Café\n");
-    expect(erro).toBe(
-      "A planilha precisa de uma coluna de nome e de preço. Encontrei: marca, categoria.",
-    );
+    expect(erro).toBe("A planilha precisa de uma coluna de nome. Encontrei: marca, categoria.");
   });
 
-  it("em espanhol, a coluna que falta continua sendo a nomeada", () => {
-    // A intenção do PR #600 — quem usa espanhol lê espanhol — sobrevive ao
-    // conserto: o que não podia sobreviver era perder QUAL coluna falta.
-    const erro = recusa("nome,marca\nCafé,Melitta\n", espanhol);
-    expect(erro).toBe("La planilla necesita una columna de precio. Encontré: nome, marca.");
-    expect(erro).not.toContain("de nombre");
+  it("em espanhol, a recusa de nome continua traduzida", () => {
+    const erro = recusa("marca,categoria\nMelitta,Café\n", espanhol);
+    expect(erro).toBe("La planilla necesita una columna de nombre. Encontré: marca, categoria.");
+  });
+});
+
+describe("lerPlanilha — planilha sem coluna de preço (cadastro mestre)", () => {
+  it("aceita a planilha, sem recusar, quando falta só a coluna de preço", () => {
+    const csv = "nome,marca\nCafé,Melitta\n";
+    const resultado = lerPlanilha(csv);
+    if ("erro" in resultado) throw new Error("não deveria recusar a planilha inteira");
+    expect(resultado.semColunaDePreco).toBe(true);
+    expect(resultado.produtos).toHaveLength(1);
+    expect(resultado.produtos[0]!.preco_cents).toBe(0);
+  });
+
+  it("com a coluna de preço presente, semColunaDePreco é false", () => {
+    const csv = "nome,preco\nCafé,9.90\n";
+    const resultado = lerPlanilha(csv);
+    if ("erro" in resultado) throw new Error("não deveria recusar a planilha inteira");
+    expect(resultado.semColunaDePreco).toBe(false);
+    expect(resultado.produtos[0]!.preco_cents).toBe(990);
   });
 });
 
@@ -148,6 +134,9 @@ describe("lerPlanilha — todo apelido de coluna cai no seu campo", () => {
     custo: { ancora: "nome;preco", celula: "8,50", le: (p) => p.custo_cents, esperado: 850 },
     marca: { ancora: "nome;preco", celula: "Melitta", le: (p) => p.marca, esperado: "Melitta" },
     categoria: { ancora: "nome;preco", celula: "Bebidas", le: (p) => p.categoria, esperado: "Bebidas" },
+    segmento: { ancora: "nome;preco", celula: "Regular", le: (p) => p.segmento, esperado: "Regular" },
+    grupo_pai: { ancora: "nome;preco", celula: "Cosmético", le: (p) => p.grupo_pai, esperado: "Cosmético" },
+    grupo: { ancora: "nome;preco", celula: "Maquiagem", le: (p) => p.grupo, esperado: "Maquiagem" },
     quantidade: {
       ancora: "nome;preco",
       celula: "7",
@@ -166,6 +155,9 @@ describe("lerPlanilha — todo apelido de coluna cai no seu campo", () => {
     ...["custo", "preco de custo", "preço de custo", "compra"].map((a) => ["custo", a] as const),
     ...["marca", "fabricante"].map((a) => ["marca", a] as const),
     ...["categoria", "tipo", "departamento"].map((a) => ["categoria", a] as const),
+    ...["segmento", "segment", "desc segment"].map((a) => ["segmento", a] as const),
+    ...["grupo pai", "grupo principal", "desc gru pai"].map((a) => ["grupo_pai", a] as const),
+    ...["grupo", "subgrupo", "subcategoria", "desc. grupo"].map((a) => ["grupo", a] as const),
     ...["quantidade", "estoque", "qtd", "qtde", "qty"].map((a) => ["quantidade", a] as const),
     // es — como o Excel escreve, com acento e caixa. Os quatro primeiros grupos
     // já valiam por coincidirem com o português (Código, Categoría, Marca, Compra…).
