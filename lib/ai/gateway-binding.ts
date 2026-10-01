@@ -26,7 +26,11 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { LanguageModel } from "ai";
 
-import { DEEPSEEK_ENDPOINT, REQUESTY_ENDPOINT } from "@/lib/agent-engine/edge/llm/providers";
+import {
+  CHEAPERINFERENCE_ENDPOINT,
+  DEEPSEEK_ENDPOINT,
+  REQUESTY_ENDPOINT,
+} from "@/lib/agent-engine/edge/llm/providers";
 import { fetchParaDestinoDaOrganizacao } from "@/lib/automation/destinos-internos-autorizados";
 import { decryptKey, byteaToBuffer } from "@/lib/crypto/aes_gcm";
 import { logger } from "@/lib/logger";
@@ -179,6 +183,7 @@ async function lerBinding(
  * `resolveLanguageModel` faz ao rotear pelo prefixo. A OpenRouter é a exceção
  * porque é agregadora — lá o prefixo é parte do endereço e vai inteiro.
  * A Requesty também é agregadora, e segue a mesma regra.
+ * A Cheaper Inference também: os ids dela já vêm sem prefixo e vão inteiros.
  *
  * O `null` é o freio do PR #151: id de outro provedor não vira chamada com a
  * chave da organização, vira queda para `resolveLanguageModel`, que sabe achar
@@ -187,7 +192,12 @@ async function lerBinding(
 function idParaOProvider(provider: string, id: string): string | null {
   // Os roteadores levam o prefixo inteiro — inclusive o provedor personalizado
   // (#1642), que serve id de QUALQUER fabricante atrás do próprio endpoint.
-  if (provider === "openrouter" || provider === "requesty" || provider === "custom")
+  if (
+    provider === "openrouter" ||
+    provider === "requesty" ||
+    provider === "custom" ||
+    provider === "cheaperinference"
+  )
     return id;
   if (!id.includes("/")) return id;
   if (id.startsWith(`${provider}/`)) return id.slice(provider.length + 1);
@@ -309,6 +319,7 @@ async function padraoDaOrganizacao(
     llm.provider === "openrouter" ||
     llm.provider === "requesty" ||
     llm.provider === "custom" ||
+    llm.provider === "cheaperinference" ||
     defaultModel.startsWith(`${llm.provider}/`)
       ? defaultModel
       : `${llm.provider}/${defaultModel}`;
@@ -557,6 +568,8 @@ function instanciar(
       return createOpenAI({ apiKey, baseURL: baseUrl ?? DEEPSEEK_ENDPOINT })(modelId);
     case "requesty":
       return createOpenAI({ apiKey, baseURL: baseUrl ?? REQUESTY_ENDPOINT }).chat(modelId); // ver providers.ts
+    case "cheaperinference":
+      return createOpenAI({ apiKey, baseURL: baseUrl ?? CHEAPERINFERENCE_ENDPOINT }).chat(modelId); // ver providers.ts
     // Provedor personalizado (#1642): endpoint do operador. Sem `baseUrl` não
     // há onde ir — `null` deixa o chamador cair no padrão COM AVISO, que é o
     // contrato deste switch; inventar um endpoint seria mandar a chave do

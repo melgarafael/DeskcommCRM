@@ -12,6 +12,7 @@ describe("createDefaultRegistry", () => {
     const reg = createDefaultRegistry();
     expect(Object.keys(reg).sort()).toEqual([
       "anthropic",
+      "cheaperinference",
       // Provedor personalizado (#1642): endpoint do operador, sem endpoint
       // canônico — a factory recusa a chamada quando falta o endereço.
       "custom",
@@ -30,10 +31,12 @@ describe("createDefaultRegistry", () => {
     expect(() => reg.openrouter!("k", "meta-llama/llama-3.3-70b-instruct")).not.toThrow();
     expect(() => reg.deepseek!("k", "deepseek-flash")).not.toThrow();
     expect(() => reg.requesty!("k", "openai/gpt-4o-mini")).not.toThrow();
+    expect(() => reg.cheaperinference!("k", "gpt-5.4-mini")).not.toThrow();
     // Endpoint próprio (gateway compatível, ou modelo local no roteiro).
     expect(() => reg.openrouter!("k", "x/y", "https://gateway.exemplo/v1")).not.toThrow();
     expect(() => reg.deepseek!("k", "deepseek-flash", "https://gateway.exemplo/v1")).not.toThrow();
     expect(() => reg.requesty!("k", "openai/gpt-4o-mini", "https://gateway.exemplo/v1")).not.toThrow();
+    expect(() => reg.cheaperinference!("k", "gpt-5.4-mini", "https://gateway.exemplo/v1")).not.toThrow();
   });
 
   it("openrouter fala Chat Completions, nunca o endpoint /responses", () => {

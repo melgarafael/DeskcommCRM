@@ -2865,6 +2865,9 @@ export const DICIONARIO: Traducoes = {
   "Uma chave só para centenas de modelos de vários fabricantes, com a opção de manter o tráfego na Europa. Bom para comparar modelos sem abrir conta em cada provedor.": {
     es: "Una sola clave para cientos de modelos de varios fabricantes, con la opción de mantener el tráfico en Europa. Útil para comparar modelos sin abrir una cuenta con cada proveedor.",
   },
+  "Uma chave só para modelos de vários fabricantes (OpenAI, Anthropic, Google, DeepSeek e outros), com ids sem prefixo. Bom para comparar modelos sem abrir conta em cada provedor.": {
+    es: "Una sola clave para modelos de varios fabricantes (OpenAI, Anthropic, Google, DeepSeek y otros), con ids sin prefijo. Útil para comparar modelos sin abrir una cuenta con cada proveedor.",
+  },
   "Não conversa com o cliente: toma decisões rápidas e baratas — como perceber se o cliente está irritado — geralmente em menos de um segundo. Trabalha junto com a sua IA principal.": {
     es: "No conversa con el cliente: toma decisiones rápidas y baratas, como notar si el cliente está molesto, normalmente en menos de un segundo. Trabaja junto con tu IA principal.",
   },

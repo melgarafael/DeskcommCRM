@@ -44749,6 +44749,44 @@ on conflict (provider, model_id) do update set
   supports_tools = excluded.supports_tools,
   supports_vision = excluded.supports_vision;
 
+-- ---- Catálogo da Cheaper Inference (migration 0501) ----
+--
+-- Roteador OpenAI-compatível, como a Requesty, com ids SEM prefixo de
+-- fabricante, verificados em `GET https://api.cheaperinference.com/v1/models`
+-- (com a chave); preço do mesmo endpoint convertido para CENTAVOS por milhão.
+-- `supports_vision` entra junto porque num roteador é o catálogo que diz se o
+-- modelo enxerga imagem. Não insere em `ai_pricing`; o backfill 0113 acima cria
+-- a linha por `model_id` na próxima reaplicação (update.sh), e o preço é
+-- resolvido só por `model_id`, sem provider. Racional inteiro na migration 0501.
+insert into public.ai_models
+  (provider, model_id, display_name, description, context_window,
+   input_price_per_million_cents, output_price_per_million_cents,
+   supports_tools, supports_vision)
+values
+  ('cheaperinference', 'gpt-5.4-mini', 'GPT-5.4 mini (Cheaper Inference)',
+   'Barato e rápido, bom para atendimento de volume. Enxerga imagem.',
+   400000, 53, 315, true, true),
+  ('cheaperinference', 'gpt-5.4', 'GPT-5.4 (Cheaper Inference)',
+   'Mais capaz que o mini, com contexto longo. Enxerga imagem.',
+   1000000, 175, 1050, true, true),
+  ('cheaperinference', 'gemini-3.1-pro', 'Gemini 3.1 Pro (Cheaper Inference)',
+   'Contexto muito longo. Enxerga imagem.',
+   1048576, 170, 1020, true, true),
+  ('cheaperinference', 'claude-sonnet-5', 'Claude Sonnet 5 (Cheaper Inference)',
+   'Segue bem instruções longas e usa as ferramentas do CRM. Enxerga imagem.',
+   1000000, 140, 700, true, true),
+  ('cheaperinference', 'deepseek-v4-flash', 'DeepSeek V4 Flash (Cheaper Inference)',
+   'O de menor custo do catálogo, para atendimento de volume. Não enxerga imagem.',
+   1000000, 9, 36, true, false)
+on conflict (provider, model_id) do update set
+  display_name = excluded.display_name,
+  description = excluded.description,
+  context_window = excluded.context_window,
+  input_price_per_million_cents = excluded.input_price_per_million_cents,
+  output_price_per_million_cents = excluded.output_price_per_million_cents,
+  supports_tools = excluded.supports_tools,
+  supports_vision = excluded.supports_vision;
+
 -- ---- menu lateral por EMPRESA (migration 0367, issue #1341) ----
 --
 -- `organizations.interface_settings` é a escolha da EMPRESA: o universo de portas

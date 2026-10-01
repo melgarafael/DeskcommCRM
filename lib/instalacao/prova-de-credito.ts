@@ -21,6 +21,7 @@
 import { normalizarErro } from "@/lib/agent-engine/edge/llm/run-model-call";
 import {
   cabecalhosDeAtribuicaoOpenRouter,
+  CHEAPERINFERENCE_ENDPOINT,
   DEEPSEEK_ENDPOINT,
   OPENROUTER_ENDPOINT,
   REQUESTY_ENDPOINT,
@@ -107,6 +108,15 @@ export function montarRequisicaoDeProva(
       // modelo mais barato do catálogo da Requesty é justamente da OpenAI.
       return {
         url: `${baseUrl ?? REQUESTY_ENDPOINT}/chat/completions`,
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        body: { model: modelo, max_tokens: 16, messages: msg },
+      };
+    case "cheaperinference":
+      // OpenAI-compatível, roteador como a Requesty. `max_tokens: 16` pela
+      // mesma folga: o catálogo tem modelos de vários fabricantes, e os da
+      // OpenAI atrás de um roteador podem recusar menos que 16.
+      return {
+        url: `${baseUrl ?? CHEAPERINFERENCE_ENDPOINT}/chat/completions`,
         headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
         body: { model: modelo, max_tokens: 16, messages: msg },
       };

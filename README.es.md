@@ -264,7 +264,7 @@ Toda pantalla tiene puerta en la navegación — el CI reprueba una pantalla que
 | **WhatsApp** | WAHA Plus (motor NOWEB) + Meta Cloud API | QR para empezar rápido; canal oficial para escalar |
 | **Colas** | Tabla `event_log` + workers (cron) | Un trigger de base nunca hace HTTP |
 | **Rate limit** | Upstash Redis (sliding window) | Serverless, el free tier alcanza |
-| **IA** | Vercel AI SDK v7 — OpenRouter, Requesty, Anthropic, OpenAI y Google | El instalador pregunta cuál; se cambia después desde la pantalla |
+| **IA** | Vercel AI SDK v7 — OpenRouter, Requesty, Cheaper Inference, Anthropic, OpenAI y Google | El instalador pregunta cuál; se cambia después desde la pantalla |
 | **Validación** | Zod | Input externo, env, payloads |
 | **Observabilidad** | Sentry (scrub en error, transacción, span y breadcrumb) | Telemetría opt-in en la instalación |
 | **Hosting** | Cualquier VPS con Docker (HostGator/SP en la alianza) | App + WhatsApp + workers en tu propia máquina |

@@ -62,6 +62,13 @@ export const DEEPSEEK_ENDPOINT = 'https://api.deepseek.com';
 export const REQUESTY_ENDPOINT = 'https://router.requesty.ai/v1';
 
 /**
+ * A Cheaper Inference é um roteador OpenAI-compatível como a Requesty: uma
+ * chave dá acesso a modelos de vários fabricantes. Os ids vêm SEM prefixo de
+ * fabricante (`gpt-5.4-mini`, `claude-sonnet-5`). Mesma fábrica, sem SDK novo.
+ */
+export const CHEAPERINFERENCE_ENDPOINT = 'https://api.cheaperinference.com/v1';
+
+/**
  * Cabeçalhos OPCIONAIS de atribuição da OpenRouter.
  *
  * A doc deles chama `HTTP-Referer` e `X-Title` de "optional headers to identify
@@ -301,6 +308,15 @@ export function createDefaultRegistry(opts?: {
      */
     requesty: (apiKey, modelId, baseUrl) => {
       const endpoint = baseUrl ?? REQUESTY_ENDPOINT;
+      return createOpenAI({ apiKey, baseURL: endpoint, fetch: contain(endpoint) }).chat(modelId);
+    },
+    /**
+     * Cheaper Inference: roteador OpenAI-compatível, pelo mesmo caminho da
+     * Requesty — `base_url` próprio (a allowlist do egress segue o endpoint
+     * escolhido) e `.chat()`, porque Chat Completions serve qualquer família.
+     */
+    cheaperinference: (apiKey, modelId, baseUrl) => {
+      const endpoint = baseUrl ?? CHEAPERINFERENCE_ENDPOINT;
       return createOpenAI({ apiKey, baseURL: endpoint, fetch: contain(endpoint) }).chat(modelId);
     },
     /**

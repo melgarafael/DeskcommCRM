@@ -31,6 +31,7 @@ import { generateText, stepCountIs, type LanguageModel, type StopCondition, type
 // Repetir a URL aqui criaria dois lugares para consertar quando ela mudar.
 import {
   cabecalhosDeAtribuicaoOpenRouter,
+  CHEAPERINFERENCE_ENDPOINT,
   DEEPSEEK_ENDPOINT,
   OPENROUTER_ENDPOINT,
   REQUESTY_ENDPOINT,
@@ -201,6 +202,9 @@ export function buildModel(
     // Requesty: roteador OpenAI-compatível, pelo mesmo `.chat()` do registry.
     case "requesty":
       return createOpenAI({ apiKey, baseURL: REQUESTY_ENDPOINT }).chat(modelId);
+    // Cheaper Inference: roteador OpenAI-compatível, pelo mesmo `.chat()` do registry.
+    case "cheaperinference":
+      return createOpenAI({ apiKey, baseURL: CHEAPERINFERENCE_ENDPOINT }).chat(modelId);
     // Provedor personalizado (#1642): o endereço vem da credencial, junto da
     // chave. SEM endereço a chamada é RECUSADA — ensaio que fosse para a
     // OpenAI com a chave de um gateway privado diria que o produto não

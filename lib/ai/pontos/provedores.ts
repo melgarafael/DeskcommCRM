@@ -107,6 +107,16 @@ export const PROVEDORES = [
     prefixoDaChave: "rqsty-…",
   },
   {
+    id: "cheaperinference",
+    rotulo: "Cheaper Inference",
+    quandoUsar:
+      "Uma chave só para modelos de vários fabricantes (OpenAI, Anthropic, Google, DeepSeek e outros), com ids sem prefixo. Bom para comparar modelos sem abrir conta em cada provedor.",
+    aceitaEndpointProprio: true,
+    catalogoSincronizavel: true,
+    ondePegarAChave: "https://cheaperinference.com/signup",
+    prefixoDaChave: "ci_live_…",
+  },
+  {
     id: "custom",
     rotulo: "Provedor personalizado (compatível com OpenAI)",
     quandoUsar:
