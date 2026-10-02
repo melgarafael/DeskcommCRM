@@ -37,11 +37,12 @@ const MENSAGEM = "meu pedido não chegou, me liga no 11 98765-4321";
 
 const log: Logger = { info: () => undefined, warn: () => undefined, error: () => undefined };
 
-function settingsDoJev(estado?: "observando" | "decidindo" | "desligada") {
+function settingsDoJev(estado?: "observando" | "decidindo" | "desligada", modoRoteador?: "comparacao" | "sob_demanda") {
   return {
     jev: {
       ligado: true,
       aceite: { em: "2026-09-01T12:00:00.000Z", por: ADMIN },
+      ...(modoRoteador ? { modo_roteador: modoRoteador } : {}),
       ...(estado ? { tarefas: { roteador: { estado } } } : {}),
     },
   };
@@ -309,6 +310,36 @@ describe("o Jev no roteador, pelo caminho do turno", () => {
     expect(await chamadasDoJev(c.org)).toEqual([expect.objectContaining({ origem_da_escolha: "jev" })]);
   });
 
+  it("sob demanda: o turno real escolhe o Jev sem consultar o classificador convencional", async () => {
+    const c = await cenario(settingsDoJev("decidindo", "sob_demanda"));
+    const jev = jevDuble("suporte");
+    const ia = iaDeSempre({ intentName: "vendas", confidence: 0.99 });
+    const r = await turno(c, { classifyIntent: ia, jev: jev.deps });
+    expect(r.config?.agentId).toBe(c.agentes.suporte);
+    expect(ia).not.toHaveBeenCalled();
+    const { rows } = await pool.query(
+      `select modo, origem, motivo_reserva, custo_tradicional_cents::float8 as custo_tradicional_cents
+       from public.jev_router_decisions where organization_id=$1 and message_id=$2`,
+      [c.org, c.mensagem],
+    );
+    expect(rows).toEqual([expect.objectContaining({ modo: "jev_sob_demanda", origem: "jev",
+      motivo_reserva: null, custo_tradicional_cents: 0 })]);
+  });
+
+  it("sob demanda: falha do Jev aciona e registra a reserva tradicional uma vez", async () => {
+    const c = await cenario(settingsDoJev("decidindo", "sob_demanda"));
+    const ia = iaDeSempre({ intentName: "vendas", confidence: 0.95 });
+    const r = await turno(c, { classifyIntent: ia, jev: jevDuble("suporte", { nuncaResponde: true }).deps });
+    expect(r.config?.agentId).toBe(c.agentes.vendas);
+    expect(ia).toHaveBeenCalledOnce();
+    const { rows } = await pool.query(
+      `select modo, origem, motivo_reserva from public.jev_router_decisions
+       where organization_id=$1 and message_id=$2`,
+      [c.org, c.mensagem],
+    );
+    expect(rows).toEqual([expect.objectContaining({ modo: "jev_sob_demanda", origem: "reserva", motivo_reserva: "falha_jev" })]);
+  });
+
   it("decidindo, e o Jev passa do teto: a IA de sempre cobre, e o turno espera no máximo o teto dele", async () => {
     const c = await cenario(settingsDoJev("decidindo"));
     const jev = jevDuble("suporte", { nuncaResponde: true });
@@ -363,5 +394,53 @@ describe("o Jev no roteador, pelo caminho do turno", () => {
     await vi.waitFor(async () => expect(await chamadasDoJev(c.org)).toHaveLength(2), { timeout: 5_000, interval: 50 });
     // A primeira resposta fica.
     expect(await observacoes(c.org)).toEqual([expect.objectContaining({ rotulo_jev: c.agentes.suporte })]);
+  });
+});
+
+
+describe("contexto do roteador sob o aceite da organização", () => {
+  it("envia a mesma janela da IA convencional, sem mensagens de outra conversa ou organização; revogar retira o histórico", async () => {
+    const config = settingsDoJev("decidindo");
+    const c = await cenario({ jev: { ...config.jev, contexto_roteador: { em: "2026-09-29T12:00:00.000Z", por: ADMIN, versao: 1 } } });
+    const alheia = await cenario(settingsDoJev());
+    const outraConversa = randomUUID();
+    const outroContato = randomUUID();
+    await pool.query("insert into contacts (id, organization_id, name, phone_number) values ($1,$2,'Outro contato',$3)",
+      [outroContato, c.org, "+5511900000423"]);
+    await pool.query(`insert into conversations (id, organization_id, contact_id, channel_session_id, status, is_group)
+      values ($1, $2, $3, $4, 'ai_handling', false)`, [outraConversa, c.org, outroContato, c.sessao]);
+    async function anterior(alvo: Cenario, corpo: string, segundos: number, direction = "outbound") {
+      await pool.query(`insert into messages (id, organization_id, conversation_id, channel_session_id, contact_id,
+        type, direction, status, body, sent_via, sent_at)
+        values ($1,$2,$3,$4,$5,'text',$6,'delivered',$7,'external_device',now() - $8 * interval '1 second')`,
+        [randomUUID(), alvo.org, alvo.conversa, alvo.sessao, alvo.contato, direction, corpo, segundos]);
+    }
+    await anterior(alheia, "segredo de outra empresa", 1);
+    await anterior({ ...c, conversa: outraConversa, contato: outroContato }, "segredo de outra conversa", 1);
+    await anterior(c, "velha demais", 60);
+    await anterior(c, "Quero comprar", 50, "inbound");
+    await anterior(c, "Prefere a primeira ou a segunda?", 40);
+    await anterior(c, "meu e-mail é cliente@example.com", 30, "inbound");
+    await anterior(c, "Confirmar a primeira opção?", 20);
+    await pool.query("update messages set body='a primeira' where id=$1", [c.mensagem]);
+    const jev = jevDuble("vendas");
+    const ia = iaDeSempre({ intentName: "vendas", confidence: 0.95 });
+    const resultado = await turno(c, { classifyIntent: ia, jev: jev.deps });
+    expect(resultado.config?.agentId).toBe(c.agentes.vendas);
+    const input = (ia.mock.calls[0] as unknown as [unknown, unknown, { recentMessages: Array<{ direction: string; body: string }> }])[2];
+    expect(input.recentMessages.map((m) => m.body)).toEqual([
+      "Quero comprar", "Prefere a primeira ou a segunda?", "meu e-mail é cliente@example.com", "Confirmar a primeira opção?",
+    ]);
+    const state = jev.pedidos[0]!.state as { historico: Array<{ autor: string; texto: string }>; mensagem_atual: string };
+    expect(state.mensagem_atual).toBe("a primeira");
+    expect(state.historico.map((m) => m.autor)).toEqual(["cliente", "agente", "cliente", "agente"]);
+    expect(state.historico[0]!.texto).toBe(input.recentMessages[0]!.body);
+    expect(state.historico[3]!.texto).toBe(input.recentMessages[3]!.body);
+    expect(JSON.stringify(state)).not.toMatch(/segredo|velha demais|cliente@example.com/);
+    await pool.query("update organizations set settings=$2 where id=$1", [c.org, JSON.stringify(config)]);
+    const revogado = jevDuble("vendas");
+    await turno(c, { classifyIntent: ia, jev: revogado.deps });
+    expect(revogado.pedidos[0]!.state).toBe("a primeira");
+    await esperarObservacao(c.org);
   });
 });

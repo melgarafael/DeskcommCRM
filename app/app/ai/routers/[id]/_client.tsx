@@ -107,6 +107,8 @@ export function RouterEditorClient({
   // Uma chave só para os dois campos: escolher modelo sem levar o provedor junto
   // manda o id para o provedor da ORG, e a classificação falha sempre.
   const [classifier, setClassifier] = React.useState(() => classifierKeyFrom(router.config));
+  const [contextMessageCount, setContextMessageCount] = React.useState(() =>
+    typeof router.config?.context_message_count === "number" ? router.config.context_message_count : 4);
   const [draftMembers, setDraftMembers] = React.useState<DraftMember[]>(() =>
     members.map((m) => ({ ...m, key: m.id })),
   );
@@ -130,6 +132,7 @@ export function RouterEditorClient({
       isActive: router.is_active,
       fallbackAgentId: router.fallback_agent_id ?? "",
       classifier: classifierKeyFrom(router.config),
+      contextMessageCount: typeof router.config?.context_message_count === "number" ? router.config.context_message_count : 4,
       members: members.map(({ agent_id, intent_name, intent_description, examples, flow_pointer_id }) => ({
         agent_id,
         intent_name,
@@ -156,6 +159,7 @@ export function RouterEditorClient({
     isActive !== baseline.isActive ||
     fallbackAgentId !== baseline.fallbackAgentId ||
     classifier !== baseline.classifier ||
+    contextMessageCount !== baseline.contextMessageCount ||
     JSON.stringify(currentMembers) !== JSON.stringify(baseline.members);
 
   const memberErrors = draftMembers.map((m) => {
@@ -209,7 +213,8 @@ export function RouterEditorClient({
         name !== baseline.name ||
         isActive !== baseline.isActive ||
         fallbackAgentId !== baseline.fallbackAgentId ||
-        classifier !== baseline.classifier
+        classifier !== baseline.classifier ||
+        contextMessageCount !== baseline.contextMessageCount
       ) {
         const [provider, modelId] = classifier.split("::");
         await updateRouter.mutateAsync({
@@ -218,10 +223,12 @@ export function RouterEditorClient({
           fallback_agent_id: fallbackAgentId || null,
           // O PATCH mescla `config` com a existente, então mandar só estes dois
           // campos preserva sticky/min_confidence.
-          config:
-            classifier === AUTO
+          config: {
+            ...(classifier === AUTO
               ? { classifier_model: null, classifier_provider: null }
-              : { classifier_model: modelId, classifier_provider: provider },
+              : { classifier_model: modelId, classifier_provider: provider }),
+            context_message_count: contextMessageCount,
+          },
         });
       }
       if (JSON.stringify(currentMembers) !== JSON.stringify(baseline.members)) {
@@ -342,6 +349,16 @@ export function RouterEditorClient({
                       "Só aparecem modelos de provedores com chave cadastrada aqui. Se a conta do provedor estiver sem crédito, a identificação falha e tudo cai no fallback.",
                     )}
               </p>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="router-context-count">{t("Mensagens anteriores para o roteamento")}</Label>
+              <Input id="router-context-count" type="number" min={0} max={16} step={1}
+                value={contextMessageCount} disabled={!canManage}
+                onChange={(e) => setContextMessageCount(Math.max(0, Math.min(16, Number(e.target.value) || 0)))} />
+              <p className="text-xs text-muted-foreground">{t("Além da mensagem atual; inclui cliente e atendente.")}</p>
+              <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">{t("Como funciona")}</summary>
+                {t("A mesma janela vale para os modelos em comparação e para a reserva. O JEV só recebe histórico com autorização específica em Provedores de IA. Mais mensagens podem aumentar custo e demora.")}
+              </details>
             </div>
           </Card>
 
@@ -781,7 +798,7 @@ function EscolhasLadoALado({
       <div className="rounded-md border border-border/60 p-3 text-sm" data-testid="teste-escolha-da-ia">
         <p className="text-xs text-muted-foreground">{t("Sua IA escolheu")}</p>
         <p className="font-medium">
-          {result.confidence === null ? t("não respondeu") : (result.agent_name ?? t("nenhum (sem fallback)"))}
+          {result.ia_consultada === false ? t("Não foi necessário consultar a IA tradicional.") : result.confidence === null ? t("não respondeu") : (result.agent_name ?? t("nenhum (sem fallback)"))}
         </p>
         {result.confidence !== null && (
           <p className="text-xs text-muted-foreground">
@@ -810,7 +827,11 @@ function EscolhasLadoALado({
         )}
       </div>
       <p className="text-xs text-muted-foreground sm:col-span-2" data-testid="teste-quem-decide">
-        {jev.decide
+        {result.modo_roteador === "sob_demanda" && jev.estado === "decidindo"
+          ? jev.decide
+            ? t("O JEV decidiu sozinho; a IA tradicional não foi chamada.")
+            : t("O JEV precisou de reserva. A IA tradicional foi consultada; sem resposta válida, valem as regras de fallback do roteador.")
+          : jev.decide
           ? t("O Jev decide esta tarefa: em produção, vale a escolha dele, e a sua IA fica de reserva.")
           : jev.estado === "observando"
             ? // Sem a resposta da IA não há "escolha da sua IA": vale a regra de sempre.

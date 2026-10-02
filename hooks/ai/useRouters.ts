@@ -46,6 +46,8 @@ export interface RouterDetailState {
 }
 
 export interface RouterTestResult {
+  ia_consultada?: boolean;
+  modo_roteador?: "comparacao" | "sob_demanda";
   intent_name: string | null;
   /**
    * `null` quando NÃO houve veredito — não é zero. O tipo importa mais que a
@@ -68,7 +70,7 @@ export interface RouterTestResult {
     confidence: number | null;
     agent_id: string | null;
     agent_name: string | null;
-    /** Em produção valeria a escolha dele (decidindo, e com a IA de sempre respondendo). */
+    /** Em produção valeria a escolha dele, conforme o modo de roteamento salvo. */
     decide: boolean;
   } | null;
 }

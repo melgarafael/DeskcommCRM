@@ -40,7 +40,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { descreverErroDeValidacao } from "@/lib/ai/credenciais/erro-de-validacao";
 import type { EstadoDaTarefa } from "@/lib/ai/decisao/config";
 import { PROVEDOR_DO_JEV } from "@/lib/ai/decisao/credencial";
-import { TAREFA_DO_CLIMA, TAREFAS_DO_JEV, tarefaPodeDecidir } from "@/lib/ai/decisao/tarefas";
+import { ROTEADOR_SOB_DEMANDA, TAREFA_DO_CLIMA, TAREFAS_DO_JEV, tarefaPodeDecidir } from "@/lib/ai/decisao/tarefas";
 import { O_QUE_FAZER_DO_JEV } from "@/lib/ai/decisao/textos";
 
 /** O corpo de `GET /api/v1/ai/jev` (`app/api/v1/ai/jev/route.ts`). */
@@ -56,7 +56,9 @@ export interface DadosDoJev {
   config: {
     ligado: boolean;
     modo: "observacao" | "decide";
+    modo_roteador?: "comparacao" | "sob_demanda";
     aceite: { em: string; por: string } | null;
+    contexto_roteador?: { em: string; por: string; versao: 1 | 2 } | null;
   };
   tarefas: Array<{ id: string; rotulo: string; oQueOJevFaz: string }>;
   /**
@@ -330,7 +332,8 @@ export function jevNoPonto(
   // A IA de sempre é a do clima (`tem_ia_de_sempre`), e só o clima decide sem ela (DEC-012 #5).
   if (!d.tem_ia_de_sempre && tarefa.id === TAREFA_DO_CLIMA.id) return "sozinho";
   if (tarefa.estado !== "decidindo") return "observacao";
-  const frase = doRegistro(tarefa.id)?.aoDecidirNoPonto;
+  const frase = tarefa.id === "roteador" && d.config.modo_roteador === "sob_demanda"
+    ? ROTEADOR_SOB_DEMANDA : doRegistro(tarefa.id)?.aoDecidirNoPonto;
   return frase === undefined ? null : { decide: frase };
 }
 
@@ -453,10 +456,62 @@ export function CartaoDoJev({
 
       {ligado && <Ligado dados={dados} estado={estado} recarregar={recarregar} />}
 
+      {dados.config.contexto_roteador !== undefined && (
+        <ContextoDoRoteador dados={dados} recarregar={recarregar} />
+      )}
+
       {!dados.pode_editar && estado !== "sem_chave" && (
         <p className="mt-3 text-xs text-muted-foreground">{t("Só quem administra a empresa pode mudar o Jev.")}</p>
       )}
     </Card>
+  );
+}
+
+/** Aceite específico; mantém o controle disponível mesmo com o Jev desligado. */
+function ContextoDoRoteador({ dados, recarregar }: { dados: DadosDoJev; recarregar: () => Promise<void> }) {
+  const t = useT();
+  const { mudar, enviando } = useMudarOJev(recarregar);
+  const [confirmando, setConfirmando] = useState(false);
+  const ativo = dados.config.contexto_roteador != null;
+  const antigo = dados.config.contexto_roteador?.versao === 1;
+  return (
+    <div className="mt-4 space-y-2 border-t border-border pt-3" data-testid="jev-contexto-roteador">
+      <p className="text-sm font-medium">{t("Contexto para escolher qual agente atende")}</p>
+      <p className="text-sm text-muted-foreground">
+        {ativo
+          ? antigo
+            ? t("Histórico autorizado anteriormente: o Jev recebe até quatro mensagens anteriores. Amplie a autorização para usar mais.")
+            : t("Histórico autorizado: o Jev recebe até 16 mensagens anteriores, conforme o limite do roteador.")
+          : t("Histórico desativado: ao rotear, o Jev recebe só a mensagem atual do cliente.")}
+      </p>
+      <p className="text-xs text-muted-foreground">{t("O histórico ajuda a interpretar respostas curtas. Mais mensagens podem aumentar custo e tempo.")}</p>
+      {dados.pode_editar && (
+        <div className="flex flex-wrap gap-2">
+          {antigo && <Button size="sm" variant="outline" disabled={enviando} onClick={() => setConfirmando(true)}>{t("Ampliar autorização do histórico")}</Button>}
+          <Button size="sm" variant="outline" disabled={enviando} onClick={() => ativo
+            ? void mudar({ contexto_roteador: false }, t("O histórico do roteador foi desativado."))
+            : setConfirmando(true)}>
+            {ativo ? t("Desativar histórico do roteador") : t("Usar histórico no roteador")}
+          </Button>
+        </div>
+      )}
+      <AlertDialog open={confirmando} onOpenChange={setConfirmando}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Usar histórico no roteador?")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("Você autoriza enviar à TypeSafe AI, nos Estados Unidos, até 16 mensagens anteriores desta conversa, incluindo respostas de atendentes, junto da mensagem atual. O limite é ajustado no roteador. Telefones, e-mails e CPFs reconhecidos são ocultados; outros dados podem permanecer no texto. O histórico serve apenas para escolher qual agente atende. Isso não liga o Jev nem muda quais tarefas decidem. Você pode desativar esta opção quando quiser.")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
+            <AlertDialogAction disabled={enviando} onClick={() => void mudar(
+              { contexto_roteador: true, aceite_contexto_roteador: true }, t("O histórico do roteador foi autorizado."),
+            )}>{t("Autorizar histórico do roteador")}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }
 
@@ -736,9 +791,13 @@ function ProntoParaLigar({ dados, recarregar }: { dados: DadosDoJev; recarregar:
 
       <div className="rounded-md border border-border p-3 text-sm">
         <p>
-          {t(
-            "Ao ligar, cada mensagem que o cliente manda vai para a TypeSafe AI, nos Estados Unidos, uma de cada vez e sem o resto da conversa, para o Jev avaliar. Antes de sair, o sistema apaga CPF, telefone e e-mail do texto. Com o Jev desligado, nada é enviado.",
-          )}
+          {dados.config.contexto_roteador != null
+            ? dados.config.contexto_roteador.versao === 1
+              ? t("Ao ligar, as mensagens dos clientes vão para a TypeSafe AI, nos Estados Unidos. A autorização antiga do roteador permite até quatro mensagens anteriores. Amplie-a separadamente para usar mais. CPF, telefone e e-mail reconhecidos são ocultados em cada texto.")
+              : t("Ao ligar, as mensagens dos clientes vão para a TypeSafe AI, nos Estados Unidos. O roteador pode enviar até 16 mensagens anteriores, conforme o limite configurado e a autorização separada. CPF, telefone e e-mail reconhecidos são ocultados em cada texto.")
+            : t(
+                "Ao ligar, cada mensagem que o cliente manda vai para a TypeSafe AI, nos Estados Unidos, uma de cada vez e sem o resto da conversa, para o Jev avaliar. Antes de sair, o sistema apaga CPF, telefone e e-mail do texto. Com o Jev desligado, nada é enviado.",
+              )}
         </p>
         {aceite === null ? (
           <div className="mt-3 flex items-start gap-2">
@@ -844,7 +903,8 @@ function Ligado({
       <ul className="divide-y divide-border rounded-md border border-border" data-testid="jev-tarefas">
         {tarefasDoCartao(dados).map((tarefa) => {
           const registro = doRegistro(tarefa.id);
-          const aoDecidir = registro?.aoDecidir;
+          const aoDecidir = tarefa.id === "roteador" && dados.config.modo_roteador === "sob_demanda"
+            ? ROTEADOR_SOB_DEMANDA : registro?.aoDecidir;
           const avisa = avisaAEquipe(tarefa.id);
           const climaSozinho = estado === "sozinho" && tarefa.id === TAREFA_DO_CLIMA.id;
           const climaSemIa = tarefa.id === TAREFA_DO_CLIMA.id && !dados.tem_ia_de_sempre;
@@ -1058,6 +1118,21 @@ function Ligado({
                 )}
               </div>
             )}
+            {tarefa.id === "roteador" && tarefa.estado === "decidindo" && rodando && (
+              <div className="mt-2 space-y-1 text-xs" data-testid="jev-modo-roteador">
+                <label htmlFor="jev-router-mode" className="block font-medium">{t("Como o roteador consulta as IAs")}</label>
+                <select id="jev-router-mode" className="block rounded-md border bg-background p-2 text-sm"
+                  value={dados.config.modo_roteador ?? "comparacao"} disabled={!dados.pode_editar || enviando}
+                  onChange={(e) => void mudar({ modo_roteador: e.target.value }, t("Modo do roteador salvo."))}>
+                  <option value="comparacao">{t("Comparar JEV e IA tradicional")}</option>
+                  <option value="sob_demanda">{t("JEV; IA tradicional só como reserva")}</option>
+                </select>
+                <p className="text-muted-foreground">{dados.config.modo_roteador === "sob_demanda"
+                  ? t("A IA tradicional só é chamada se o JEV falhar ou estiver inseguro.")
+                  : t("As duas IAs respondem; a escolha do JEV decide.")}</p>
+                <Link href="/app/ai/runs?tab=roteamento" className="underline underline-offset-4">{t("Ver resultados do roteamento")}</Link>
+              </div>
+            )}
             {dados.pode_editar && rodando && tarefa.estado === "desligada" && climaSemIa && (
               <p className="text-xs text-muted-foreground" data-testid="jev-religar-clima-sozinho">
                 {t(
@@ -1141,6 +1216,7 @@ function Ligado({
       </div>
 
       <ConfirmarDecidir
+        modoRoteador={dados.config.modo_roteador}
         pedido={aConfirmar}
         aoFechar={() => setAConfirmar((p) => p && { ...p, aberto: false })}
         aoConfirmar={(tarefa) =>
@@ -1160,17 +1236,20 @@ function Ligado({
  * o caminho de volta.
  */
 function ConfirmarDecidir({
+  modoRoteador,
   pedido,
   aoFechar,
   aoConfirmar,
 }: {
+  modoRoteador?: "comparacao" | "sob_demanda";
   pedido: { tarefa: TarefaNoCartao; aberto: boolean } | null;
   aoFechar: () => void;
   aoConfirmar: (tarefa: TarefaNoCartao) => void;
 }) {
   const t = useT();
   const tarefa = pedido?.tarefa ?? null;
-  const efeito = tarefa ? doRegistro(tarefa.id)?.aoConfirmarDecidir : undefined;
+  const efeito = tarefa?.id === "roteador" && modoRoteador === "sob_demanda"
+    ? ROTEADOR_SOB_DEMANDA : tarefa ? doRegistro(tarefa.id)?.aoConfirmarDecidir : undefined;
   const avisa = tarefa !== null && avisaAEquipe(tarefa.id);
   return (
     <AlertDialog open={pedido?.aberto === true} onOpenChange={(aberto) => !aberto && aoFechar()}>

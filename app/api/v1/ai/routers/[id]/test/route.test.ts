@@ -111,8 +111,9 @@ function ctx() {
 }
 
 /** O Jev no clique de teste: o estado da tarefa e a escolha dele. */
-function jevCom(estado: EstadoDaTarefa, escolha: EscolhaDoJev | null) {
+function jevCom(estado: EstadoDaTarefa, escolha: EscolhaDoJev | null, modo: "comparacao" | "sob_demanda" = "comparacao") {
   vi.mocked(consultarJevNoRoteador).mockReturnValue({
+    modo: Promise.resolve(modo),
     estado: Promise.resolve(estado),
     escolha: Promise.resolve(escolha),
     observar: vi.fn(),
@@ -172,6 +173,8 @@ describe("POST /api/v1/ai/routers/:id/test", () => {
       data: { intent_name: string | null; confidence: number; agent_id: string | null; agent_name: string | null };
     };
     expect(body.data).toEqual({
+      ia_consultada: true,
+      modo_roteador: "comparacao",
       intent_name: "vendas",
       confidence: 0.92,
       min_confidence: 0.6,
@@ -251,6 +254,8 @@ describe("POST /api/v1/ai/routers/:id/test", () => {
     // membro "vendas" — confidence 0.4 < min_confidence 0.6 cai no fallback,
     // igual à produção (resolve-turn-agent.ts:193).
     expect(body.data).toEqual({
+      ia_consultada: true,
+      modo_roteador: "comparacao",
       intent_name: "vendas",
       confidence: 0.4,
       min_confidence: 0.6,
@@ -365,6 +370,27 @@ describe("POST /api/v1/ai/routers/:id/test", () => {
       const d = await testar();
       expect(d.jev).toMatchObject({ estado: "decidindo", agent_id: SUPORTE, decide: true });
     });
+
+    it("sob demanda: Jev confiável decide sem chamar nem cobrar a IA tradicional", async () => {
+      roteadorComDoisMembros();
+      jevCom("decidindo", escolhaDoJev("suporte", 0.91, "decidindo"), "sob_demanda");
+      const d = await testar();
+      expect(classifyIntent).not.toHaveBeenCalled();
+      expect(d).toMatchObject({ ia_consultada: false, modo_roteador: "sob_demanda", confidence: null });
+      expect(d.jev).toMatchObject({ agent_id: SUPORTE, decide: true });
+    });
+
+    it.each([null, escolhaDoJev("suporte", 0.4, "decidindo"), escolhaDoJev("inventada", 0.99, "decidindo"), escolhaDoJev(null, 0.99, "decidindo")])(
+      "sob demanda: ausência ou intenção não confiável chama a reserva uma vez (%j)", async (escolha) => {
+        roteadorComDoisMembros();
+        jevCom("decidindo", escolha, "sob_demanda");
+        vi.mocked(classifyIntent).mockResolvedValue({ intentName: "vendas", confidence: 0.8 });
+        const d = await testar();
+        expect(classifyIntent).toHaveBeenCalledOnce();
+        expect(d).toMatchObject({ ia_consultada: true, agent_id: AGENT_ID });
+        expect(d.jev).toMatchObject({ decide: false });
+      },
+    );
 
     it("decidindo, sem a sua IA (R2): vale a regra de sempre, nunca só o Jev", async () => {
       roteadorComDoisMembros();

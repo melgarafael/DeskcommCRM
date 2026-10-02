@@ -58,12 +58,15 @@
  */
 import type pg from 'pg';
 
+import { CLASSIFIER_CONTEXT_MESSAGES, MAX_CLASSIFIER_CONTEXT_MESSAGES, contextoDoClassificador } from '@/lib/ai/classifier-context';
+
 import { consultarJevNoRoteador } from '@/lib/ai/decisao/roteador';
 import type { DependenciasDoPonto } from '@/lib/ai/decisao/ponto';
 
 import type { Logger } from '../obs/logger';
 import type { LlmEdgeConfig } from '../edge/llm/run-model-call';
 import { agenteDaCampanhaDaConversa } from './agente-da-campanha';
+import { registrarDecisaoDoRoteador } from './router-decision-log';
 import { loadActiveRouter, type LoadedRouter, type RouterMember } from './router-config';
 import {
   loadPublishedAgentConfig,
@@ -72,14 +75,6 @@ import {
 } from './agent-config';
 import { classifyIntent, type ClassifierContextMessage, type IntentVerdict } from './intent-classifier';
 
-/**
- * Janela de contexto passada ao CLASSIFICADOR, não confundir com
- * `context_message_window` do agente (esse alimenta o modelo que conversa
- * com o lead). Curta de propósito: o classificador roda em todo turno,
- * inclusive sticky (regra 2 abaixo) — histórico completo pagaria caro por
- * turno pra resolver só ambiguidade de resposta curta.
- */
-const CLASSIFIER_CONTEXT_MESSAGES = 4;
 
 export interface TurnAgentResolution {
   config: PublishedAgentConfig | null; // null ⇒ turno segue no genérico (comportamento atual)
@@ -116,6 +111,7 @@ export interface ResolveTurnAgentDeps {
   consultarJev?: typeof consultarJevNoRoteador;
   /** Chave e `fetch` do Jev — dublês só no teste. Default: a chave da organização e o egress com allowlist. */
   jev?: DependenciasDoPonto;
+  registrarDecisao?: typeof registrarDecisaoDoRoteador;
 }
 
 /**
@@ -136,6 +132,13 @@ export type DestinoDoVeredito =
       confidence: number | null;
     }
   | { membro: null; outcome: 'no_match' | 'classifier_failed'; confidence: number | null };
+
+/** Mesma condição para dispensar a reserva no turno e na prévia do painel. */
+export function vereditoConfiavelDoRoteador(router: LoadedRouter, verdict: IntentVerdict | null): boolean {
+  return verdict !== null && verdict.falhou !== true && verdict.intentName !== null &&
+    verdict.confidence >= router.minConfidence &&
+    router.members.some((m) => m.intentName === verdict.intentName);
+}
 
 export function destinoDoVeredito(
   router: LoadedRouter,
@@ -204,6 +207,7 @@ export async function resolveTurnAgent(
   },
   deps: ResolveTurnAgentDeps,
 ): Promise<TurnAgentResolution> {
+  const inicioDoRoteamento = Date.now();
   const _loadActiveRouter = deps.loadActiveRouter ?? loadActiveRouter;
   const _loadAgentById = deps.loadPublishedAgentConfigById ?? loadPublishedAgentConfigById;
   const _loadAgentBySession = deps.loadPublishedAgentConfig ?? loadPublishedAgentConfig;
@@ -330,13 +334,16 @@ export async function resolveTurnAgent(
       return resolveFallback('no_match', null);
     }
 
-    // O Jev pergunta o mesmo, AO MESMO TEMPO (onda 2 do Jev, bloco 2.2): só a
-    // mensagem, sem o contexto (R4). Observando, o turno não espera por ele.
+    // O Jev pergunta em paralelo, com contexto recente somente sob aceite específico.
+    // Observando, o turno não espera por ele.
+    const recentMessages = contextoDoClassificador(input.recentMessages ?? [], router.contextMessageCount ?? CLASSIFIER_CONTEXT_MESSAGES);
     const jev = _consultarJev(
       db,
       {
         organizationId: input.tenantId,
         mensagem: input.signal,
+        recentMessages,
+        contextMessageCount: router.contextMessageCount ?? CLASSIFIER_CONTEXT_MESSAGES,
         membros: router.members,
         contactId: input.leadId,
         jobId: input.jobId,
@@ -344,20 +351,23 @@ export async function resolveTurnAgent(
       deps.jev,
     );
 
-    // classifica — inclusive com sticky ativo, pra detectar troca de assunto (regra 2).
-    const verdict = await _classifyIntent(
-      db,
-      llmCfg,
-      {
-        tenantId: input.tenantId,
-        leadId: input.leadId,
-        jobId: input.jobId,
-        router,
-        signal: input.signal,
-        recentMessages: input.recentMessages ?? [],
-      },
+    // Em comparação, a classificação convencional começa em paralelo com o Jev.
+    // Sob demanda, só há esta chamada se o Jev não trouxer intenção confiável.
+    const modo = await (jev.modo ?? Promise.resolve('comparacao'));
+    const estadoLido = await jev.estado;
+    const limiteConsentido = await (jev.contextoMaximo ?? Promise.resolve(null));
+    const contextoTradicional = estadoLido !== 'desligada' && limiteConsentido === 4
+      ? contextoDoClassificador(recentMessages, 4) : recentMessages;
+    const classificar = () => _classifyIntent(
+      db, llmCfg,
+      { tenantId: input.tenantId, leadId: input.leadId, jobId: input.jobId, router, signal: input.signal!, recentMessages: contextoTradicional },
       { log: deps.log },
     );
+    const independente = modo === 'sob_demanda' && estadoLido === 'decidindo';
+    const comparacao = independente ? null : classificar();
+    const escolhaIndependente = independente ? await jev.escolha : null;
+    const jevConfiavel = vereditoConfiavelDoRoteador(router, escolhaIndependente?.veredito ?? null);
+    const verdict = comparacao !== null ? await comparacao : jevConfiavel ? null : await classificar();
 
     // Decidindo, vale a escolha do Jev, e a IA de sempre é a reserva. Sem a IA
     // de sempre (a chamada falhou, a saída não era resposta, ou a empresa não
@@ -366,8 +376,10 @@ export async function resolveTurnAgent(
     // (sticky ou `no_match`); só não conta como a IA ter respondido: um modelo
     // que nunca devolve JSON deixaria o Jev rotear sozinho, sem alarme.
     const iaRespondeu = verdict !== null && verdict.falhou !== true;
-    const estadoDoJev = iaRespondeu ? await jev.estado : null;
-    const doJev = estadoDoJev === 'decidindo' ? await jev.escolha : null;
+    const estadoDoJev = independente ? 'decidindo' : iaRespondeu ? await jev.estado : null;
+    const doJev = independente
+      ? jevConfiavel ? escolhaIndependente : null
+      : estadoDoJev === 'decidindo' ? await jev.escolha : null;
     const destino = destinoDoVeredito(router, stickyMember, input.stickyIntent, doJev?.veredito ?? verdict);
 
     jev.observar({
@@ -375,15 +387,38 @@ export async function resolveTurnAgent(
       messageId: input.signalMessageId ?? null,
       rotuloDe: (v) => agenteDoDestino(router, destinoDoVeredito(router, stickyMember, input.stickyIntent, v)),
       // Sem resposta da IA não há par: a linha fica sem o lado dela, fora da concordância.
-      vereditoDaIa: iaRespondeu ? verdict : null,
+      // Reservas são uma amostra selecionada por falha/baixa confiança, não
+      // um par comparativo. Também ficam fora do indicador antigo do cartão.
+      vereditoDaIa: !independente && iaRespondeu ? verdict : null,
       decidiu: doJev !== null,
       // Decidindo, sem a escolha dele, valeu a da IA de sempre: é cobertura, e ela deixa rastro.
-      aIaCobriu: estadoDoJev === 'decidindo' && doJev === null,
+      aIaCobriu: estadoDoJev === 'decidindo' && doJev === null && iaRespondeu,
     });
 
-    return destino.membro !== null
+    const resultado = await (destino.membro !== null
       ? loadMatchedOrFallback(destino.outcome, destino.membro, destino.intentName, destino.confidence)
-      : resolveFallback(destino.outcome, destino.confidence);
+      : resolveFallback(destino.outcome, destino.confidence));
+    const motivoReserva = !independente || jevConfiavel ? null
+      : escolhaIndependente === null ? 'falha_jev'
+      : escolhaIndependente.veredito.intentName === null ? 'sem_intencao'
+      : escolhaIndependente.veredito.confidence < router.minConfidence ? 'baixa_confianca'
+      : 'intencao_invalida';
+    await (deps.registrarDecisao ?? registrarDecisaoDoRoteador)(db, {
+      organizationId: input.tenantId, routerId: router.id, conversationId: input.conversationId,
+      messageId: input.signalMessageId ?? null, jobId: input.jobId,
+      modo: independente ? 'jev_sob_demanda' : estadoLido === 'decidindo' ? 'jev_comparacao' : 'tradicional_comparacao',
+      contextMessageCount: contextoTradicional.length,
+      origem: independente ? doJev ? 'jev' : 'reserva' : doJev ? 'jev' : 'tradicional',
+      motivoReserva,
+      intentJev: escolhaIndependente?.veredito.intentName ?? doJev?.veredito.intentName ?? null,
+      intentTradicional: verdict?.intentName ?? null,
+      jev: escolhaIndependente ?? doJev,
+      jevSolicitado: estadoLido !== 'desligada',
+      chamouTradicional: comparacao !== null || !jevConfiavel,
+      resultado,
+      tempoTotalMs: Date.now() - inicioDoRoteamento,
+    });
+    return resultado;
   } catch (err) {
     deps.log.warn('resolve-turn-agent: erro inesperado no router — turno cai no fluxo sem router', {
       error: err instanceof Error ? err.message : String(err),
@@ -436,7 +471,7 @@ export async function resolveConversationTurn(
       `select direction,body from messages
        where organization_id=$1 and conversation_id=$2 and body is not null and id<>$3
        order by sent_at desc,created_at desc,id desc limit $4`,
-      [input.tenantId, input.conversationId, signalRow.id, CLASSIFIER_CONTEXT_MESSAGES],
+      [input.tenantId, input.conversationId, signalRow.id, MAX_CLASSIFIER_CONTEXT_MESSAGES],
     );
     recentMessages = contextRows.reverse();
   }
