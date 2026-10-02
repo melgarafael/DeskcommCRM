@@ -31,19 +31,22 @@ function poolFalso(
   eventos: Eventos,
   opcoes: { ligado?: boolean; falharNoEstilo?: boolean } = {},
 ) {
+  // A preferência é lida pelo POOL, antes de o envio tomar conexão (a conferência
+  // de promessa começa junto, fora do lock). Responder nos dois lugares faz o
+  // teste medir a ORDEM, e não a porta por onde a consulta passou.
+  const estilo = (s: string): { rows: unknown[] } | null => {
+    if (!s.includes("org_guardrail_layers")) return null;
+    eventos.push("le_estilo");
+    if (opcoes.falharNoEstilo === true) throw new Error("db indisponível");
+    return {
+      rows: opcoes.ligado === true ? [{ layer: "estilo:sem_travessao_longo", enabled: true }] : [],
+    };
+  };
   const client = {
     query: vi.fn(async (sql: string): Promise<{ rows: unknown[] }> => {
       const s = String(sql).toLowerCase().trim();
-      if (s.includes("org_guardrail_layers")) {
-        eventos.push("le_estilo");
-        if (opcoes.falharNoEstilo === true) throw new Error("db indisponível");
-        return {
-          rows:
-            opcoes.ligado === true
-              ? [{ layer: "estilo:sem_travessao_longo", enabled: true }]
-              : [],
-        };
-      }
+      const doEstilo = estilo(s);
+      if (doEstilo !== null) return doEstilo;
       if (s.includes("pg_advisory_xact_lock")) eventos.push("lock");
       if (s === "begin") eventos.push("begin");
       if (s === "commit") eventos.push("commit");
@@ -57,7 +60,7 @@ function poolFalso(
       eventos.push("connect");
       return client;
     }),
-    query: vi.fn().mockResolvedValue({ rows: [{ id: "trace-1" }] }),
+    query: vi.fn(async (sql: string) => estilo(String(sql).toLowerCase().trim()) ?? { rows: [{ id: "trace-1" }] }),
   };
   return { pool: pool as unknown as pg.Pool, client };
 }
@@ -131,7 +134,10 @@ describe("o ajuste de estilo alcança o texto que sai", () => {
 
     // A ordem é o contrato: ler depois do `begin` faz uma falha aqui abortar a
     // transação, e a consulta seguinte morre com 25P02 dizendo outra coisa.
-    expect(eventos.indexOf("le_estilo")).toBeGreaterThan(eventos.indexOf("connect"));
+    // Desde que a conferência de promessa saiu do lock, a leitura acontece
+    // antes até de tomar conexão — o corpo estilizado é o que ela classifica.
+    expect(eventos.indexOf("le_estilo")).toBeGreaterThan(-1);
+    expect(eventos.indexOf("le_estilo")).toBeLessThan(eventos.indexOf("connect"));
     expect(eventos.indexOf("le_estilo")).toBeLessThan(eventos.indexOf("begin"));
   });
 

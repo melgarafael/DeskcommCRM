@@ -133,3 +133,24 @@ export function renderSemanticPromiseVeto(suspectPhrase: string | null): string 
     'não autorizada antes de reenviar.'
   );
 }
+
+/**
+ * Uma classificação por CORPO EXATO, enquanto a função memoizada viver — o
+ * turno cria uma por turno. Os fail-safes de vocabulário e de promessa re-rodam
+ * a cadeia `before_send` com o mesmo texto, e cada passagem pagava uma chamada
+ * de modelo nova para a mesma frase. Falha sai do memo: a próxima passagem tenta
+ * de novo, como antes.
+ */
+export function memoizarPorCandidata(
+  classificar: (candidata: string) => Promise<PromiseClassification>,
+): (candidata: string) => Promise<PromiseClassification> {
+  const pedidas = new Map<string, Promise<PromiseClassification>>();
+  return (candidata) => {
+    const jaPedida = pedidas.get(candidata);
+    if (jaPedida !== undefined) return jaPedida;
+    const pedida = classificar(candidata);
+    pedidas.set(candidata, pedida);
+    pedida.catch(() => pedidas.delete(candidata));
+    return pedida;
+  };
+}
