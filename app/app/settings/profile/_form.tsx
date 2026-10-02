@@ -16,22 +16,12 @@ import {
 import { updateProfile } from "@/app/actions/settings/updateProfile";
 import { useT } from "@/hooks/i18n/useT";
 import { IDIOMAS_VISIVEIS } from "@/lib/i18n/registro";
+import { FUSOS_HORARIOS } from "@/lib/geografia/opcoes";
 import {
   profileSchema,
   SEM_PREFERENCIA_DE_IDIOMA,
   type Locale,
 } from "@/lib/schemas/settings";
-
-const TIMEZONES = [
-  "Africa/Luanda",
-  "America/Sao_Paulo",
-  "America/Manaus",
-  "America/Belem",
-  "America/Recife",
-  "America/Fortaleza",
-  "Europe/Lisbon",
-  "UTC",
-];
 
 interface Props {
   email: string;
@@ -123,7 +113,7 @@ export function ProfileForm({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {TIMEZONES.map((tz) => (
+                {FUSOS_HORARIOS.map((tz) => (
                   <SelectItem key={tz} value={tz}>
                     {tz}
                   </SelectItem>

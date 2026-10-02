@@ -26,6 +26,7 @@ import { describe, expect, it } from "vitest";
  * que aceita qualquer cliente e não passa pela tela.
  */
 import { DICIONARIO } from "@/lib/i18n/dicionario";
+import { FUSOS_HORARIOS, PAISES_DE_OPERACAO } from "@/lib/geografia/opcoes";
 import { availabilityScheduleSchema } from "@/lib/schemas/routing";
 import { FUSOS_OFERECIDOS, FUSO_PADRAO, fusoValido } from "@/lib/tempo/fusos";
 
@@ -67,6 +68,20 @@ describe("todo fuso oferecido é utilizável", () => {
 
   it("Assunção está na lista — é o fuso deste país", () => {
     expect(FUSOS_OFERECIDOS.map((f) => f.codigo)).toContain("America/Asuncion");
+  });
+
+  it("usa todos os fusos IANA disponíveis no runtime", () => {
+    expect(FUSOS_HORARIOS.length).toBeGreaterThan(400);
+    expect(FUSOS_HORARIOS).toContain("America/Guayaquil");
+    expect(FUSOS_HORARIOS).toContain("UTC");
+  });
+});
+
+describe("países de operação", () => {
+  it("oferece os 249 países ISO com Equador e nomes em espanhol", () => {
+    expect(PAISES_DE_OPERACAO).toHaveLength(249);
+    expect(PAISES_DE_OPERACAO).toContainEqual({ codigo: "EC", nome: "Ecuador" });
+    expect(PAISES_DE_OPERACAO).toContainEqual({ codigo: "BR", nome: "Brasil" });
   });
 });
 
@@ -116,18 +131,19 @@ describe("os fusos OFERECIDOS — a lista, não o padrão", () => {
    * caso, a oferta some numa refatoração e ninguém percebe.
    */
   it("oferece Luanda, e a tela da empresa também", () => {
-    expect(FUSOS_OFERECIDOS.map((f) => f.codigo)).toContain("Africa/Luanda");
+    expect(FUSOS_HORARIOS).toContain("Africa/Luanda");
     const formulario = readFileSync("app/app/settings/tenant/_form.tsx", "utf8");
-    expect(formulario).toContain("Africa/Luanda");
+    expect(formulario).toContain("FUSOS_HORARIOS.map");
   });
 
   // As quatro listas são três fontes: `FUSOS_OFERECIDOS` (jornada e janela de
   // envio) e as duas escritas à mão, da empresa e do perfil. Lisboa faltava
   // nas três — e o assistente de boas-vindas já a oferecia.
   it("oferece Lisboa nas três fontes", () => {
+    expect(FUSOS_HORARIOS).toContain("Europe/Lisbon");
     expect(FUSOS_OFERECIDOS.map((f) => f.codigo)).toContain("Europe/Lisbon");
     for (const arquivo of ["app/app/settings/tenant/_form.tsx", "app/app/settings/profile/_form.tsx"]) {
-      expect(readFileSync(arquivo, "utf8"), arquivo).toContain('"Europe/Lisbon"');
+      expect(readFileSync(arquivo, "utf8"), arquivo).toContain("FUSOS_HORARIOS.map");
     }
   });
 
@@ -135,7 +151,9 @@ describe("os fusos OFERECIDOS — a lista, não o padrão", () => {
   // que a varredura de `t("...")` literal não enxerga. Luanda entrou sem
   // tradução e ninguém viu; este caso reprova o próximo rótulo sem entrada.
   it("todo rótulo oferecido tem entrada no dicionário", () => {
-    const semEntrada = FUSOS_OFERECIDOS.filter((f) => !DICIONARIO[f.rotulo]?.es).map((f) => f.rotulo);
+    const semEntrada = FUSOS_OFERECIDOS
+      .filter((f) => f.rotulo !== f.codigo && !DICIONARIO[f.rotulo]?.es)
+      .map((f) => f.rotulo);
     expect(semEntrada).toEqual([]);
   });
 

@@ -1,12 +1,14 @@
 "use server";
 
 import { supportWriteError } from "@/lib/impersonate/support";
+import type { Json } from "@/lib/database.types";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
 import { tenantSchema, type TenantInput } from "@/lib/schemas/settings";
+import { PAISES_DE_OPERACAO } from "@/lib/geografia/opcoes";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK, escreveComoPlatformAdmin } from "@/lib/auth/types";
 import { paisesOferecidos } from "@/lib/legal/perfil-do-pais";
@@ -64,6 +66,23 @@ export async function updateTenant(input: TenantInput): Promise<UpdateTenantResu
   if (pais !== null && !paisesOferecidos().some((p) => p.codigo === pais)) {
     return { ok: false, error: `País sem perfil revisado: ${pais}` };
   }
+  const paisOperacao = parsed.data.operating_country ?? "BR";
+  if (!PAISES_DE_OPERACAO.some((item) => item.codigo === paisOperacao)) {
+    return { ok: false, error: `País de operação inválido: ${paisOperacao}` };
+  }
+
+  const { data: organizationSettings, error: settingsError } = await supabase
+    .from("organizations")
+    .select("settings")
+    .eq("id", activeOrg.orgId)
+    .maybeSingle();
+  if (settingsError) return { ok: false, error: settingsError.message };
+  const currentSettings =
+    organizationSettings?.settings &&
+    typeof organizationSettings.settings === "object" &&
+    !Array.isArray(organizationSettings.settings)
+      ? (organizationSettings.settings as Record<string, Json>)
+      : {};
 
   const { error } = await supabase
     .from("organizations")
@@ -78,6 +97,10 @@ export async function updateTenant(input: TenantInput): Promise<UpdateTenantResu
       media_retention_days: parsed.data.media_retention_days,
       dpo_email: parsed.data.dpo_email ?? null,
       privacy_policy_url: parsed.data.privacy_policy_url ?? null,
+      settings: {
+        ...currentSettings,
+        operating_country: paisOperacao,
+      },
     })
     .eq("id", activeOrg.orgId);
   if (error) return { ok: false, error: error.message };

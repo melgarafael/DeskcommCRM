@@ -16,6 +16,7 @@ import {
 import { updateTenant } from "@/app/actions/settings/updateTenant";
 import { useT } from "@/hooks/i18n/useT";
 import { IDIOMAS_VISIVEIS } from "@/lib/i18n/registro";
+import { FUSOS_HORARIOS, PAISES_DE_OPERACAO } from "@/lib/geografia/opcoes";
 import { MOEDAS_SERVIDAS, simboloDaMoeda, type MoedaServida } from "@/lib/money";
 import { paisesOferecidos } from "@/lib/legal/perfil-do-pais";
 import { tenantSchema, type Locale, type TenantInput } from "@/lib/schemas/settings";
@@ -23,17 +24,6 @@ import { tenantSchema, type Locale, type TenantInput } from "@/lib/schemas/setti
 interface Props {
   initial: TenantInput;
 }
-
-const TIMEZONES = [
-  "Africa/Luanda",
-  "America/Sao_Paulo",
-  "America/Manaus",
-  "America/Belem",
-  "America/Recife",
-  "America/Fortaleza",
-  "Europe/Lisbon",
-  "UTC",
-];
 
 export function TenantForm({ initial }: Props) {
   const t = useT();
@@ -104,7 +94,7 @@ export function TenantForm({ initial }: Props) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {TIMEZONES.map((tz) => (
+                {FUSOS_HORARIOS.map((tz) => (
                   <SelectItem key={tz} value={tz}>
                     {tz}
                   </SelectItem>
@@ -169,6 +159,27 @@ export function TenantForm({ initial }: Props) {
               {t(
                 "De onde saem o documento do contato, a lei citada no documento de acesso e o prazo em dias úteis. Só aparecem países com a lei revisada — a lista é curta de propósito.",
               )}
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="operating_country">{t("País de operação")}</Label>
+            <Select
+              value={form.operating_country ?? "BR"}
+              onValueChange={(v) => set("operating_country", v)}
+            >
+              <SelectTrigger id="operating_country">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PAISES_DE_OPERACAO.map((pais) => (
+                  <SelectItem key={pais.codigo} value={pais.codigo}>
+                    {pais.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {t("Referência de localização da empresa; não altera a jurisdição legal nem os documentos.")}
             </p>
           </div>
           <div className="space-y-2">
