@@ -19,6 +19,7 @@ import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireRole } from "@/lib/auth/require-role";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -56,6 +57,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const { user } = authz;
 
   const supabase = await createClient();
+  // `lead_state` é server-only na VPS: leitura e limpeza da próxima ação vão
+  // pelo serviço. `row.organization_id` foi lida sob RLS acima (`crm_leads`),
+  // então é fonte confiável para o filtro.
+  const admin = createAdminClient();
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -90,7 +95,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     );
   }
 
-  const { data: estado, error: estadoErr } = await supabase
+  const { data: estado, error: estadoErr } = await admin
     .from("lead_state")
     .select("next_action, next_action_seq")
     .eq("organization_id", row.organization_id)
@@ -137,7 +142,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // Decidida é decidida: a proposta sai de cena nos dois casos, senão o card
   // continuaria pedindo a mesma decisão que a pessoa acabou de tomar. O que
   // ficou registrado foi a DECISÃO, na timeline.
-  const { error: limpaErr } = await supabase
+  const { error: limpaErr } = await admin
     .from("lead_state")
     .update({ next_action: null })
     .eq("organization_id", row.organization_id)

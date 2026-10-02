@@ -25,6 +25,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -59,6 +60,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const { decision, proposal_id } = parsed.data;
 
   const supabase = await createClient();
+  // `cron_jobs` é server-only na VPS: conferir e agendar o retorno vai pelo
+  // serviço. `orgId` vem de `requireRole` — fonte confiável.
+  const admin = createAdminClient();
 
   // O UPDATE condicional É a trava: `status = 'pending'` no WHERE. Ler-e-depois-
   // escrever deixaria a janela em que o watcher vence a proposta no meio.
@@ -122,7 +126,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // mas o raro acontece quando o agente agenda ENTRE a proposta e o clique.
   let envioAgendado = false;
   if (decision === "accept" && contactId) {
-    const { data: pendente } = await supabase
+    const { data: pendente } = await admin
       .from("cron_jobs")
       .select("id")
       .eq("organization_id", orgId)
@@ -133,7 +137,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       .gt("next_run_at", new Date().toISOString())
       .maybeSingle();
     if (!pendente) {
-      const { error: cronErr } = await supabase.from("cron_jobs").insert({
+      const { error: cronErr } = await admin.from("cron_jobs").insert({
         organization_id: orgId,
         contact_id: contactId,
         kind: "at",

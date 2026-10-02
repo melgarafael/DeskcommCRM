@@ -73,7 +73,8 @@ export async function GET(req: NextRequest): Promise<Response> {
   // ── PENDENTES ────────────────────────────────────────────────────────────
   const [{ data: estados, error: estadosErr }, { data: candidatos, error: candErr }] =
     await Promise.all([
-      supabase
+      // `lead_state` é server-only na VPS: lido pelo serviço, filtrado pela org.
+      createAdminClient()
         .from("lead_state")
         .select("contact_id, next_action, next_action_seq, updated_at")
         .eq("organization_id", orgId)

@@ -25,8 +25,10 @@ import {
 } from "@/lib/leads/next-action";
 import type { LeadCandidate } from "@/lib/leads/active-lead";
 import { anexarDadosDoContato, type LinhaDoContatoNoQuadro } from "@/lib/kanban/dados-do-contato";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { buscaEmLotes } from "@/lib/supabase/em-lotes";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { BoardData, Pipeline, Stage } from "@/lib/kanban/types";
 import type { Lead } from "@/lib/types/leads";
 
@@ -132,9 +134,12 @@ async function withOwnerAgents(
  * Falha aqui NÃO derruba o board: o aviso é importante, mas menos que a tela
  * abrir. O erro sobe para o Sentry pelo caminho normal de exceção não tratada
  * do handler — o que não pode é o usuário perder o board por causa do aviso.
+ *
+ * Recebe o client de SERVIÇO: `agent_inbox_items` é server-only na VPS. A
+ * organização vem do pipeline lido sob RLS no GET, então é confiável.
  */
 async function avisaAmbiguas(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  admin: SupabaseClient,
   organizationId: string,
   ambiguas: PropostaAmbigua[],
 ): Promise<void> {
@@ -143,7 +148,7 @@ async function avisaAmbiguas(
   const { data: jaAbertos } = await buscaEmLotes(
     ambiguas.map((a) => a.contact_id),
     (lote) =>
-      supabase
+      admin
         .from("agent_inbox_items")
         .select("ref_id")
         .eq("organization_id", organizationId)
@@ -169,7 +174,7 @@ async function avisaAmbiguas(
     }));
   if (novos.length === 0) return;
 
-  await supabase.from("agent_inbox_items").insert(novos);
+  await admin.from("agent_inbox_items").insert(novos);
 }
 
 /**
@@ -373,8 +378,13 @@ async function withMarcadoresDoContato(
   };
 }
 
+/**
+ * Recebe o client de SERVIÇO: `lead_state` e `agent_inbox_items` são server-only
+ * na VPS, e pela sessão a próxima ação nunca aparecia no quadro. A organização
+ * vem do pipeline lido sob RLS no GET, então é confiável.
+ */
 async function withNextActions(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  admin: SupabaseClient,
   organizationId: string,
   leads: Lead[],
   defaultPipelineId: string | null,
@@ -387,7 +397,7 @@ async function withNextActions(
   const [{ data: estados, error: estadosErr }, { data: candidatos, error: candErr }] =
     await Promise.all([
       buscaEmLotes(contactIds, (lote) =>
-        supabase
+        admin
           .from("lead_state")
           .select("contact_id, next_action, next_action_seq, updated_at")
           .eq("organization_id", organizationId)
@@ -395,7 +405,7 @@ async function withNextActions(
           .not("next_action", "is", null),
       ),
       buscaEmLotes(contactIds, (lote) =>
-        supabase
+        admin
           .from("crm_leads")
           .select(
             "id, organization_id, pipeline_id, status, last_activity_at, created_at, contact_id",
@@ -421,7 +431,7 @@ async function withNextActions(
   // de negócios abertos AGORA, e é aqui que esse olhar acontece. Fazer no
   // momento da escrita da proposta perderia o caso em que o segundo negócio
   // nasce depois dela.
-  await avisaAmbiguas(supabase, organizationId, ambiguas);
+  await avisaAmbiguas(admin, organizationId, ambiguas);
 
   if (porLead.size === 0) return { leads, error: null };
 
@@ -491,7 +501,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .maybeSingle();
 
   const leadsComAcao = await withNextActions(
-    supabase,
+    createAdminClient(),
     (pipeline as Pipeline).organization_id,
     leadsWithOwner.leads,
     (pipelinePadrao as { id: string } | null)?.id ?? null,
