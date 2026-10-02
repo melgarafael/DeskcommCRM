@@ -401,7 +401,7 @@ export const semanticPromiseGate: Gate = {
  * Gate anti-alucinação de casos humanos (spec 15 §10.2, Wave 4) — a garantia DURA da
  * invariante "o lead nunca recebe promessa-de-humano sem caso aberto". Off (`casesEnabled`
  * false) ou já há caso (`hasOpenCase`/`openedCaseThisTurn` — a IA abriu um NESTE turno) =
- * no-op. Só veta quando o detector determinístico (`detectHumanPromise`) acha uma promessa
+ * no-op. Só veta quando ALGUMA das duas camadas — o detector léxico (`detectHumanPromise`) ou o sinal semântico (`ctx.semanticPromise?.prometeuRetornoHumano`) — acha uma promessa
  * clara na candidata E nenhum caso existe. O fail-safe de 2ª camada (auto-abre caso e
  * re-roda a cadeia) vive na orquestração do `send_message` (inbound-turn.ts), não aqui — o
  * gate em si é síncrono/puro como os demais. Posição 6.5 de `BEFORE_SEND_GATES` (logo após
@@ -414,7 +414,15 @@ export const casePromiseGate: Gate = {
   evaluate: (ctx) => {
     if (!ctx.casesEnabled) return { pass: true };
     if (ctx.hasOpenCase || ctx.openedCaseThisTurn) return { pass: true };
-    if (!detectHumanPromise(ctx.body, ctx.humanPromiseExtraTargets)) return { pass: true };
+    // Lê os DOIS sinais, em OU — e o OU é o ponto. Exigir os dois faria o conserto
+    // não consertar nada: o léxico é o filtro BARATO e continua valendo sozinho
+    // (roda sem chamada de modelo, e pega as duas frases que nomeiam o alvo colado
+    // ao verbo); o semântico pega as outras cinco — as 5 de 7 que a medição de
+    // 2026-09-16 flagrou vazando. O `?.` é obrigatório: o fixture de
+    // `tests/invariants/case-guardrail.test.ts` passa `semanticPromise: null`.
+    const lexico = detectHumanPromise(ctx.body, ctx.humanPromiseExtraTargets);
+    const semantico = ctx.semanticPromise?.prometeuRetornoHumano === true;
+    if (!lexico && !semantico) return { pass: true };
     return {
       pass: false,
       code: 'case_promise_without_case',
