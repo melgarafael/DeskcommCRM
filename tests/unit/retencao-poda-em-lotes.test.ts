@@ -407,6 +407,24 @@ describe("houveEfeito — as duas direções", () => {
     lotes_candidatos_do_golden: 0,
     candidatos_do_golden_tem_resto: false,
     retencao_candidatos_do_golden_dias: RETENCAO_CANDIDATOS_GOLDEN_DIAS_PADRAO,
+    // Da décima segunda à décima quinta (migration 0526): as tabelas da IA. O
+    // que elas apagam é medido em `retencao-das-tabelas-da-ia.test.ts`.
+    telemetria_de_ia_apagada: 0,
+    lotes_telemetria_de_ia: 0,
+    telemetria_de_ia_tem_resto: false,
+    retencao_telemetria_de_ia_dias: 400,
+    ritmo_de_envio_apagado: 0,
+    lotes_ritmo_de_envio: 0,
+    ritmo_de_envio_tem_resto: false,
+    retencao_ritmo_de_envio_dias: 2,
+    copias_enviadas_apagadas: 0,
+    lotes_copias_enviadas: 0,
+    copias_enviadas_tem_resto: false,
+    retencao_copias_enviadas_dias: 30,
+    checkpoints_apagados: 0,
+    lotes_checkpoints: 0,
+    checkpoints_tem_resto: false,
+    retencao_checkpoints_dias: 180,
     avisos: [] as string[],
   };
 

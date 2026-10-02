@@ -60,6 +60,14 @@ import {
   RETENCAO_AUDITORIA_DIAS_PISO,
   RETENCAO_CANDIDATOS_GOLDEN_DIAS_PADRAO,
   RETENCAO_CANDIDATOS_GOLDEN_DIAS_PISO,
+  RETENCAO_CHECKPOINTS_DIAS_PADRAO,
+  RETENCAO_CHECKPOINTS_DIAS_PISO,
+  RETENCAO_COPIAS_ENVIADAS_DIAS_PADRAO,
+  RETENCAO_COPIAS_ENVIADAS_DIAS_PISO,
+  RETENCAO_RITMO_DE_ENVIO_DIAS_PADRAO,
+  RETENCAO_RITMO_DE_ENVIO_DIAS_PISO,
+  RETENCAO_TELEMETRIA_DE_IA_DIAS_PADRAO,
+  RETENCAO_TELEMETRIA_DE_IA_DIAS_PISO,
   RETENCAO_AVISO_DE_CASO_DIAS_PADRAO,
   RETENCAO_AVISO_DE_CASO_DIAS_PISO,
   RETENCAO_CONVERSA_DO_CASO_DIAS_PADRAO,
@@ -145,6 +153,26 @@ export interface ResultadoDaRetencao {
   candidatos_do_golden_apagados: number;
   lotes_candidatos_do_golden: number;
   candidatos_do_golden_tem_resto: boolean;
+  /** A telemetria da IA vencida — llm_calls, metrics, skill_activations, ai_router_decisions (0526). */
+  telemetria_de_ia_apagada: number;
+  lotes_telemetria_de_ia: number;
+  telemetria_de_ia_tem_resto: boolean;
+  retencao_telemetria_de_ia_dias: number;
+  /** O ritmo de envio vencido — pacing_ledger, menos a última linha de cada número (0526). */
+  ritmo_de_envio_apagado: number;
+  lotes_ritmo_de_envio: number;
+  ritmo_de_envio_tem_resto: boolean;
+  retencao_ritmo_de_envio_dias: number;
+  /** As cópias enviadas vencidas — outbound_copies, menos a janela do anti-repetição (0526). */
+  copias_enviadas_apagadas: number;
+  lotes_copias_enviadas: number;
+  copias_enviadas_tem_resto: boolean;
+  retencao_copias_enviadas_dias: number;
+  /** Os checkpoints superados — nunca o último da fronteira nem o de job vivo (0526). */
+  checkpoints_apagados: number;
+  lotes_checkpoints: number;
+  checkpoints_tem_resto: boolean;
+  retencao_checkpoints_dias: number;
   retencao_fila_dias: number;
   retencao_auditoria_dias: number;
   retencao_espelho_dias: number;
@@ -171,7 +199,11 @@ export interface PodaDb {
       | "fn_expurgar_avisos_de_caso_vencidos"
       | "fn_expurgar_prospeccao_vencida"
       | "fn_expurgar_observacoes_do_jev"
-      | "fn_expurgar_candidatos_do_golden",
+      | "fn_expurgar_candidatos_do_golden"
+      | "fn_expurgar_telemetria_de_ia_vencida"
+      | "fn_expurgar_ritmo_de_envio_vencido"
+      | "fn_expurgar_copias_enviadas_vencidas"
+      | "fn_expurgar_checkpoints_superados",
     args: { p_retencao_dias: number; p_limite: number },
   ): Promise<{ data: number | null; error: { message: string } | null }>;
   /**
@@ -199,7 +231,11 @@ async function drenar(
     | "fn_expurgar_avisos_de_caso_vencidos"
     | "fn_expurgar_prospeccao_vencida"
     | "fn_expurgar_observacoes_do_jev"
-    | "fn_expurgar_candidatos_do_golden",
+    | "fn_expurgar_candidatos_do_golden"
+    | "fn_expurgar_telemetria_de_ia_vencida"
+    | "fn_expurgar_ritmo_de_envio_vencido"
+    | "fn_expurgar_copias_enviadas_vencidas"
+    | "fn_expurgar_checkpoints_superados",
   dias: number,
 ): Promise<{ apagadas: number; lotes: number; temResto: boolean }> {
   let apagadas = 0;
@@ -270,6 +306,10 @@ export async function podarHistorico(
     JEV_OBSERVACOES_RETENTION_DAYS?: string;
     DRAFT_RETENTION_DAYS?: string;
     GOLDEN_CANDIDATES_RETENTION_DAYS?: string;
+    AI_TELEMETRY_RETENTION_DAYS?: string;
+    PACING_LEDGER_RETENTION_DAYS?: string;
+    OUTBOUND_COPIES_RETENTION_DAYS?: string;
+    LEAD_CHECKPOINT_RETENTION_DAYS?: string;
   },
 ): Promise<ResultadoDaRetencao> {
   const fila = interpretarRetencao(ambiente.JOB_QUEUE_RETENTION_DAYS, {
@@ -331,6 +371,30 @@ export async function podarHistorico(
     piso: RETENCAO_CANDIDATOS_GOLDEN_DIAS_PISO,
   });
 
+  const telemetriaDeIa = interpretarRetencao(ambiente.AI_TELEMETRY_RETENTION_DAYS, {
+    chave: "AI_TELEMETRY_RETENTION_DAYS",
+    padrao: RETENCAO_TELEMETRIA_DE_IA_DIAS_PADRAO,
+    piso: RETENCAO_TELEMETRIA_DE_IA_DIAS_PISO,
+  });
+
+  const ritmoDeEnvio = interpretarRetencao(ambiente.PACING_LEDGER_RETENTION_DAYS, {
+    chave: "PACING_LEDGER_RETENTION_DAYS",
+    padrao: RETENCAO_RITMO_DE_ENVIO_DIAS_PADRAO,
+    piso: RETENCAO_RITMO_DE_ENVIO_DIAS_PISO,
+  });
+
+  const copiasEnviadas = interpretarRetencao(ambiente.OUTBOUND_COPIES_RETENTION_DAYS, {
+    chave: "OUTBOUND_COPIES_RETENTION_DAYS",
+    padrao: RETENCAO_COPIAS_ENVIADAS_DIAS_PADRAO,
+    piso: RETENCAO_COPIAS_ENVIADAS_DIAS_PISO,
+  });
+
+  const checkpoints = interpretarRetencao(ambiente.LEAD_CHECKPOINT_RETENTION_DAYS, {
+    chave: "LEAD_CHECKPOINT_RETENTION_DAYS",
+    padrao: RETENCAO_CHECKPOINTS_DIAS_PADRAO,
+    piso: RETENCAO_CHECKPOINTS_DIAS_PISO,
+  });
+
   const jobs = await drenar(db, "fn_podar_fila_de_jobs", fila.dias);
   const linhas = await drenar(db, "fn_expurgar_auditoria_vencida", auditoria.dias);
   const eventos = await drenar(db, "fn_expurgar_espelho_da_agenda", espelho.dias);
@@ -375,6 +439,16 @@ export async function podarHistorico(
   // Padrão 90 / piso 30, a janela em que o near-miss ainda é curável — o piso mora no
   // CORPO da função, como nas irmãs. A linha é rótulo, sem texto de cliente.
   const candidatosDrenados = await drenar(db, "fn_expurgar_candidatos_do_golden", candidatosDoGolden.dias);
+  // Da décima segunda à décima quinta: as tabelas append-only da IA (0526). As
+  // guardas de cada uma — a última linha do número no ritmo, a janela do
+  // anti-repetição nas cópias, o último checkpoint da fronteira e o de job vivo
+  // — moram no CORPO das funções, como o piso. `event_log` não entra: é o
+  // livro-razão de idempotência dos gatilhos de tempo, e podá-lo reenviaria
+  // WhatsApp.
+  const telemetriaDrenada = await drenar(db, "fn_expurgar_telemetria_de_ia_vencida", telemetriaDeIa.dias);
+  const ritmoDrenado = await drenar(db, "fn_expurgar_ritmo_de_envio_vencido", ritmoDeEnvio.dias);
+  const copiasDrenadas = await drenar(db, "fn_expurgar_copias_enviadas_vencidas", copiasEnviadas.dias);
+  const checkpointsDrenados = await drenar(db, "fn_expurgar_checkpoints_superados", checkpoints.dias);
 
   return {
     jobs_apagados: jobs.apagadas,
@@ -408,6 +482,22 @@ export async function podarHistorico(
     lotes_rascunhos: rascunhosDrenados.lotes,
     rascunhos_tem_resto: rascunhosDrenados.temResto,
     candidatos_do_golden_tem_resto: candidatosDrenados.temResto,
+    telemetria_de_ia_apagada: telemetriaDrenada.apagadas,
+    lotes_telemetria_de_ia: telemetriaDrenada.lotes,
+    telemetria_de_ia_tem_resto: telemetriaDrenada.temResto,
+    retencao_telemetria_de_ia_dias: telemetriaDeIa.dias,
+    ritmo_de_envio_apagado: ritmoDrenado.apagadas,
+    lotes_ritmo_de_envio: ritmoDrenado.lotes,
+    ritmo_de_envio_tem_resto: ritmoDrenado.temResto,
+    retencao_ritmo_de_envio_dias: ritmoDeEnvio.dias,
+    copias_enviadas_apagadas: copiasDrenadas.apagadas,
+    lotes_copias_enviadas: copiasDrenadas.lotes,
+    copias_enviadas_tem_resto: copiasDrenadas.temResto,
+    retencao_copias_enviadas_dias: copiasEnviadas.dias,
+    checkpoints_apagados: checkpointsDrenados.apagadas,
+    lotes_checkpoints: checkpointsDrenados.lotes,
+    checkpoints_tem_resto: checkpointsDrenados.temResto,
+    retencao_checkpoints_dias: checkpoints.dias,
     retencao_fila_dias: fila.dias,
     retencao_auditoria_dias: auditoria.dias,
     retencao_espelho_dias: espelho.dias,
@@ -429,6 +519,10 @@ export async function podarHistorico(
       observacoesDoJev.aviso,
       rascunho.aviso,
       candidatosDoGolden.aviso,
+      telemetriaDeIa.aviso,
+      ritmoDeEnvio.aviso,
+      copiasEnviadas.aviso,
+      checkpoints.aviso,
     ].filter((a): a is string => a !== null),
   };
 }
@@ -478,7 +572,12 @@ export function houveEfeito(resultado: ResultadoDaRetencao): boolean {
     // A décima primeira, pela mesma razão das dez: uma rodada que só apagou
     // candidato ao golden set vencido apagaria linha sem deixar registro —
     // encolhimento silencioso.
-    resultado.candidatos_do_golden_apagados > 0
+    resultado.candidatos_do_golden_apagados > 0 ||
+    // As quatro da 0526, pela mesma razão: o predicado esquecido é mudo.
+    resultado.telemetria_de_ia_apagada > 0 ||
+    resultado.ritmo_de_envio_apagado > 0 ||
+    resultado.copias_enviadas_apagadas > 0 ||
+    resultado.checkpoints_apagados > 0
   );
 }
 
@@ -534,6 +633,10 @@ async function handle(req: NextRequest): Promise<Response> {
       JEV_OBSERVACOES_RETENTION_DAYS: env.JEV_OBSERVACOES_RETENTION_DAYS,
       DRAFT_RETENTION_DAYS: env.DRAFT_RETENTION_DAYS,
       GOLDEN_CANDIDATES_RETENTION_DAYS: env.GOLDEN_CANDIDATES_RETENTION_DAYS,
+      AI_TELEMETRY_RETENTION_DAYS: env.AI_TELEMETRY_RETENTION_DAYS,
+      PACING_LEDGER_RETENTION_DAYS: env.PACING_LEDGER_RETENTION_DAYS,
+      OUTBOUND_COPIES_RETENTION_DAYS: env.OUTBOUND_COPIES_RETENTION_DAYS,
+      LEAD_CHECKPOINT_RETENTION_DAYS: env.LEAD_CHECKPOINT_RETENTION_DAYS,
     });
     // ── A cascata de anonimização que ficou pela metade ──────────────────
     //

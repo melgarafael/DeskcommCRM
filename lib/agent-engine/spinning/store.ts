@@ -90,8 +90,8 @@ export async function loadRecentCopies(
 /**
  * Registra uma copy efetivamente enviada — SEAM da cadeia de envio (F2-13), após o
  * accept do CRM. Normaliza e guarda o hash aqui (a mesma normalização do gate).
- * ponytail: cresce sem poda, como pacing_ledger; só as últimas N importam — job de
- * limpeza por retenção é o upgrade path se o volume pesar.
+ * A poda é `fn_expurgar_copias_enviadas_vencidas` (migration 0526, cron
+ * `data-retention`), que nunca apaga as últimas `windowSize` do número.
  */
 export async function recordCopy(
   db: Queryable,

@@ -263,6 +263,64 @@ export const RETENCAO_CANDIDATOS_GOLDEN_DIAS_PADRAO = 90;
  */
 export const RETENCAO_CANDIDATOS_GOLDEN_DIAS_PISO = 30;
 
+/**
+ * 400 dias para a TELEMETRIA DA IA (`llm_calls`, `metrics`, `skill_activations`,
+ * `ai_router_decisions` — migration 0526), um prazo para as quatro.
+ *
+ * A tela que mais olha para trás olha 90 dias (`MAX_RANGE_DAYS` em
+ * `app/api/v1/ai/usage` e `app/api/v1/ai/evolution`); o orçamento olha o mês
+ * corrente. Pouco mais de um ano deixa comparar o mesmo mês do ano anterior.
+ *
+ * Quem aplica é `fn_expurgar_telemetria_de_ia_vencida`, com o piso no CORPO. Ela
+ * NUNCA apaga `llm_calls` com `legacy_invocation_id`: o backfill da 0130, que o
+ * `update.sh` reaplica, recopiaria a linha de `ai_invocations` a cada atualização.
+ */
+export const RETENCAO_TELEMETRIA_DE_IA_DIAS_PADRAO = 400;
+/** Piso de 100 dias: acima da janela de 90 que as telas de uso e evolução mostram. */
+export const RETENCAO_TELEMETRIA_DE_IA_DIAS_PISO = 100;
+
+/**
+ * 2 dias para o RITMO DE ENVIO (`pacing_ledger`, migration 0526) — o padrão É o
+ * piso, porque nenhum leitor olha mais longe.
+ *
+ * `loadPacingState` e `lerEstadoDoPacing` perguntam o último envio do número e
+ * quantos saíram desde a meia-noite local (no máximo 24 h atrás). A função
+ * `fn_expurgar_ritmo_de_envio_vencido` NUNCA apaga a última linha de cada número,
+ * em nenhuma idade — é dela que o espaçamento do próximo envio mede. Subir o
+ * knob só serve a quem quer investigar à mão os envios de dias passados.
+ */
+export const RETENCAO_RITMO_DE_ENVIO_DIAS_PADRAO = 2;
+/** Piso de 2 dias: o dobro do dia local, a janela mais longa que o ritmo lê. */
+export const RETENCAO_RITMO_DE_ENVIO_DIAS_PISO = 2;
+
+/**
+ * 30 dias para as CÓPIAS ENVIADAS (`outbound_copies`, migration 0526), e nunca
+ * as últimas `windowSize` do número.
+ *
+ * O gate anti-template-idêntico (`loadRecentCopies`) lê as últimas `windowSize`
+ * do número (20, ou o knob de `channel_knobs.spinning_knobs`), sem olhar a
+ * idade. `fn_expurgar_copias_enviadas_vencidas` guarda o MAIOR entre isso e o
+ * prazo. A tabela guarda texto enviado sem `contact_id` — fora da cascata de
+ * LGPD —, então guardar menos é também apagar menos texto de pessoa sem dono.
+ */
+export const RETENCAO_COPIAS_ENVIADAS_DIAS_PADRAO = 30;
+/** Piso de 7 dias: o que o operador investiga depois de um alerta de número. */
+export const RETENCAO_COPIAS_ENVIADAS_DIAS_PISO = 7;
+
+/**
+ * 180 dias para o CHECKPOINT SUPERADO (`lead_checkpoints`, migration 0526).
+ *
+ * Só sai o que já não é o último da sua fronteira (conversa, revisão do
+ * atendimento, demanda e revisão dela — o recorte de `latestCheckpoint`) e não
+ * é lido por job `pending`/`running` (nem pelo próprio `job_id`, nem pelo
+ * `origin_job_id` do Operador). O checkpoint vigente de cada atendimento fica
+ * para sempre; o que se poda é o resumo de turnos que um resumo mais novo já
+ * substituiu. Quem aplica é `fn_expurgar_checkpoints_superados`, piso no CORPO.
+ */
+export const RETENCAO_CHECKPOINTS_DIAS_PADRAO = 180;
+/** Piso de 30 dias: o turno de um mês atrás ainda é investigável por inteiro. */
+export const RETENCAO_CHECKPOINTS_DIAS_PISO = 30;
+
 export interface RetencaoInterpretada {
   /** Dias a pedir ao banco. Nunca abaixo do piso, nunca `NaN`. */
   readonly dias: number;

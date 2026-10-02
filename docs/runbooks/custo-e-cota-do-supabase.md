@@ -70,10 +70,10 @@ ajustar os intervalos, meça o `app` separadamente antes de mexer em mais nada.
 
 ## 4. Espaço em disco é outra cota (e ela não se resolve com intervalo)
 
-O plano free também limita o **banco** (500 MB), e `job_queue` e `api_audit_log`
-são as duas tabelas que crescem sem ninguém escrever nelas de propósito. Se o
-seu aperto for de espaço e não de tráfego, comece medindo — o ranking abaixo diz
-qual das duas (se alguma) é o seu problema:
+O plano free também limita o **banco** (500 MB), e `job_queue`, `api_audit_log`
+e as tabelas que a IA grava a cada turno (§4.2) crescem sem ninguém escrever
+nelas de propósito. Se o seu aperto for de espaço e não de tráfego, comece
+medindo — o ranking abaixo diz qual delas (se alguma) é o seu problema:
 
 ```bash
 psql "$SUPABASE_DB_URL" -c \
@@ -105,14 +105,16 @@ docker compose -f docker-compose.prod.yml exec app \
   http://localhost:3000/api/v1/cron/data-retention
 ```
 
-A resposta do `curl` traz `fila_tem_resto` / `auditoria_tem_resto`. **`true`
-significa que o teto por invocação foi atingido e sobrou trabalho para a rodada
+A resposta do `curl` traz um campo `*_tem_resto` por tabela podada
+(`fila_tem_resto`, `auditoria_tem_resto`, `telemetria_de_ia_tem_resto`,
+`ritmo_de_envio_tem_resto`, `copias_enviadas_tem_resto`, `checkpoints_tem_resto`
+e os demais). **`true` em qualquer um significa que o teto por invocação foi atingido e sobrou trabalho para a rodada
 seguinte** — normal na primeira poda de uma instalação antiga, e nada a fazer
 além de esperar (ou disparar o `curl` acima algumas vezes).
 
-### 4.2. As duas alavancas, e o que cada uma custa
+### 4.2. As alavancas, e o que cada uma custa
 
-Ambas são opcionais e vivem no `.env`; os defaults funcionam sem editar nada.
+Todas são opcionais e vivem no `.env`; os defaults funcionam sem editar nada.
 
 | chave | default | o que faz |
 |---|---|---|
@@ -128,12 +130,25 @@ retenção volta a receber o aviso de "sou um assistente virtual", e o gate LGPD
 volta a exigir base legal no primeiro toque de prospecção — os dois erram para o
 lado de proteger a mais.
 
+As tabelas que a IA grava a cada turno (migration 0526) têm alavanca própria, no
+mesmo cron e com o piso também dentro do banco:
+
+| chave | default | o que faz |
+|---|---|---|
+| `AI_TELEMETRY_RETENTION_DAYS` | `400` | `llm_calls`, `metrics`, `skill_activations`, `ai_router_decisions`. Piso de **100** dias. |
+| `PACING_LEDGER_RETENTION_DAYS` | `2` | `pacing_ledger`. Piso de **2**; o último envio de cada número nunca sai. |
+| `OUTBOUND_COPIES_RETENTION_DAYS` | `30` | `outbound_copies`. Piso de **7**; as últimas que o anti-repetição compara nunca saem. |
+| `LEAD_CHECKPOINT_RETENTION_DAYS` | `180` | `lead_checkpoints` já superados. Piso de **30**; o vigente de cada atendimento nunca sai. |
+
+`event_log` não tem poda, de propósito: é o livro-razão que impede os gatilhos
+de tempo de reenviarem WhatsApp.
+
 O piso do audit não é sugestão de estilo: ele mora **dentro** de
 `fn_expurgar_auditoria_vencida`, então nem quem tem a chave de serviço apaga
 rastro com menos de 90 dias por esse caminho. A função não aceita organização,
 ator, ação nem id — só idade.
 
-Depois de mudar qualquer uma das duas:
+Depois de mudar qualquer uma delas:
 
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env up -d app scheduler
@@ -147,11 +162,12 @@ as linhas novas ocuparem os buracos. O cron **não** roda `VACUUM FULL` de
 propósito: ele trava a tabela e exige o dobro do tamanho em disco livre, e fazer
 isso sozinho de madrugada num banco de cliente é pior que a cota apertada. Se
 você precisa do espaço de volta AGORA e aceita a janela de indisponibilidade
-daquela tabela:
+daquela tabela, rode para cada tabela que o ranking de §4 apontou (por exemplo
+`job_queue`, `api_audit_log`, `llm_calls`, `metrics`, `pacing_ledger`), uma de
+cada vez:
 
 ```bash
-psql "$SUPABASE_DB_URL" -c "vacuum (full, analyze) public.job_queue;"
-psql "$SUPABASE_DB_URL" -c "vacuum (full, analyze) public.api_audit_log;"
+psql "$SUPABASE_DB_URL" -c "vacuum (full, analyze) public.<tabela>;"
 ```
 
 Quanto está morto e ainda não foi reaproveitado, antes de decidir:
