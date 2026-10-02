@@ -1,5 +1,5 @@
 ---
-impacto: problema_corrigido
+impacto: nada_mudou
 secao: corrigido
 titulo: O agente passou a incluir o e-mail do convidado na reunião marcada (guest_email)
 ---
