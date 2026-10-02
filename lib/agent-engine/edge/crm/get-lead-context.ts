@@ -17,6 +17,7 @@ import { deriveLgpdFromContact, type LgpdInput } from '../../guardrails/lgpd/leg
 import { isoLocalComOffset } from '@/lib/tempo/agora';
 import { logger } from '@/lib/logger';
 import { nomeDoContato } from '@/lib/contacts/rotulo-do-contato';
+import { negocioDoContato, type NegocioNoContexto } from './negocio-do-contato';
 
 /**
  * Heurística conservadora de contagem: ~3,5 chars/token para pt-br (BPE real fica
@@ -105,6 +106,15 @@ export interface LeadContext {
    * precisa dele.
    */
   contact_id?: string;
+  /**
+   * O NEGÓCIO (card do funil) desta pessoa — é ESTE id que as ferramentas do CRM
+   * querem em `lead_id` (ver `negocio-do-contato.ts`). `null` = sem negócio
+   * aberto; `{ id: null, aviso }` = mais de um e não dá para escolher.
+   *
+   * Opcional no tipo pelo mesmo motivo de `contact_id`: os fixtures de
+   * `tests/invariants/**` são congelados. A produção sempre preenche.
+   */
+  negocio?: NegocioNoContexto | null;
   contact: {
     name: string | null;
     phone: string | null;
@@ -313,6 +323,19 @@ export async function getLeadContext(
      where d.organization_id=$1 and dc.conversation_id=$2 and d.fechada_em is not null limit 5`,
     [input.tenantId, conversationId]);
 
+  // Best-effort, como a proposta acima: o negócio é complemento do contexto. Se a
+  // consulta falhar, o agente fica como estava antes desta correção (sem o id do
+  // card); deixar a falha subir deixaria a pessoa SEM RESPOSTA por um dado opcional.
+  let negocio: NegocioNoContexto | null = null;
+  try {
+    negocio = await negocioDoContato(db, input.tenantId, input.leadId);
+  } catch (err) {
+    logger.warn('lead-context: negócio do contato não resolvido — contexto segue sem ele', {
+      organizationId: input.tenantId,
+      erro: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   const context = fitToBudget(
     {
       previous_service: { label: 'Histórico encerrado. Desfechos anteriores não são tarefas ou compromissos pendentes.', outcomes: previousOutcomes.map((d) => d.desfecho) },
@@ -327,6 +350,7 @@ export async function getLeadContext(
       // acertar; as descrições das ferramentas apontam para ela.
       lead_id: input.leadId,
       contact_id: input.leadId,
+      negocio,
       contact: {
         name: nomeDoContato(contact),
         phone: contact.phone_number,

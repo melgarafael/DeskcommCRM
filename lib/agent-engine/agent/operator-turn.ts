@@ -44,7 +44,7 @@ import { checkpointDoJob } from './inbound-turn';
 import { declaracaoDoTurnoSchema, promessasEmAberto, type DeclaracaoDoTurno } from './declaracao';
 import { loadPublishedAgentConfigById } from './agent-config';
 import { isLeadInHandoff } from './human-handoff';
-import { resolveActiveLeadForContact, type LeadCandidate } from '@/lib/leads/active-lead';
+import { negocioDoContato } from '../edge/crm/negocio-do-contato';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { renderAgora } from '@/lib/tempo/agora';
 import { insertInboxItem } from '../db/repository';
@@ -177,15 +177,11 @@ export async function cardDoFunil(
   log: Pick<Logger, 'warn'>,
 ): Promise<string | null> {
   try {
-    const { rows } = await pool.query<LeadCandidate>(
-      `select l.id, l.organization_id, l.pipeline_id, l.status,
-              l.last_activity_at, l.created_at
-         from crm_leads l
-        where l.organization_id = $1 and l.contact_id = $2`,
-      [tenantId, contactId],
-    );
-    const alvo = resolveActiveLeadForContact(rows);
-    return alvo.routed ? alvo.leadId : null;
+    // A consulta e a regra moram em `negocioDoContato`, a MESMA que entrega o
+    // negócio ao Conversador. Duas cópias deixariam os dois papéis discordarem
+    // sobre qual é o card da pessoa. Ambíguo (`id: null`) ou nenhum = `null`.
+    const negocio = await negocioDoContato(pool, tenantId, contactId);
+    return negocio?.id ?? null;
   } catch (err) {
     log.warn('card do funil não resolvido — o briefing do operador segue sem lead_id', {
       error: (err instanceof Error ? err.message : String(err)).slice(0, 120),

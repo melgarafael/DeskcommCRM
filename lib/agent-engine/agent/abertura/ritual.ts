@@ -102,6 +102,16 @@ export function ritualBlocks(
       ? ['## Compromissos já marcados deste contato', compromissosBlock, '']
       : []),
     '## Contexto do lead (contato + últimas mensagens)',
+    // O contexto chama a PESSOA de `lead_id` (issue #509) e o modelo acreditava:
+    // mandava esse id para `crm_update_lead`, que quer o NEGÓCIO, e nada era
+    // gravado no card. Só quando o contexto vai cru — projetado, `negocio` nem
+    // chega ao modelo, e citar o id aqui seria vazá-lo por outra porta.
+    ...(!projeta && context.negocio?.id
+      ? [
+          `Para as ferramentas do CRM que pedem lead_id (consultar, atualizar campos ou mover o negócio), use negocio.id = "${context.negocio.id}". ` +
+            'Os campos lead_id e contact_id deste contexto são o ID da PESSOA e não servem para essas ferramentas.',
+        ]
+      : []),
     // Campo de cadastro VAZIO não é prova de que a informação não existe.
     //
     // `contact.email: null` chegava como fato, e o modelo o lia com autoridade
