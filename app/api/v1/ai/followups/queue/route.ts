@@ -28,6 +28,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { situacaoDoRetorno } from "@/lib/followup/retorno";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -211,7 +212,8 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
 
   // --- fonte 2: promessas (cron_jobs kind='at' + job_kind='followup_turn') ---
-  let promiseQuery = supabase
+  // `cron_jobs` é server-only na VPS: as promessas da fila vêm pelo serviço.
+  let promiseQuery = createAdminClient()
     .from("cron_jobs")
     .select(
       "id, contact_id, next_run_at, enabled, cancelled_at, payload, contacts:contact_id(id, name, display_name, phone_number)",

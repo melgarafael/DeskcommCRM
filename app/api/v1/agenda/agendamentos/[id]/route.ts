@@ -61,8 +61,9 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
       requestId,
     });
   const delivery = meetingDeliverySchema.safeParse(data.meeting_delivery);
+  // `job_queue` é server-only na VPS: o estado do envio do link vai pelo serviço.
   const deliveryJob = delivery.success && delivery.data.state === "queued" && data.meeting_delivery_job_id
-    ? await db.from("job_queue").select("status").eq("organization_id",org).eq("id",data.meeting_delivery_job_id).maybeSingle()
+    ? await createAdminClient().from("job_queue").select("status").eq("organization_id",org).eq("id",data.meeting_delivery_job_id).maybeSingle()
     : {data:null,error:null};
   if (deliveryJob.error) return fail("internal_error","Não foi possível conferir o envio do link.",500,{requestId});
   const deliveryState = delivery.success ? delivery.data.state === "queued" && !["pending","running"].includes(deliveryJob.data?.status ?? "") ? "failed" : delivery.data.state : "none";

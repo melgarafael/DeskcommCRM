@@ -14,6 +14,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,9 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
 
   const since = new Date(Date.now() - RETENTION_LOOKBACK_MS).toISOString();
-  const { data: traces, error: traceErr } = await supabase
+  // `before_send_traces` e `channel_knobs` são server-only na VPS: o aviso de
+  // "mensagem retida" nunca aparecia pela sessão. Filtrados pela org ativa.
+  const { data: traces, error: traceErr } = await createAdminClient()
     .from("before_send_traces")
     .select("id, created_at, vetoed_gate, vetoed_code")
     .eq("organization_id", activeOrg.orgId)
@@ -74,7 +77,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // Knobs do número (coluna NULL = default conservador do engine) — a UI usa o
   // contexto pra dizer QUAL janela segurou o envio, não a genérica.
   const [{ data: knobs }, { data: orgRow }, { data: ultimaSaida }] = await Promise.all([
-    supabase
+    createAdminClient()
       .from("channel_knobs")
       .select("window_start_hour, window_end_hour, allow_sunday, timezone")
       .eq("organization_id", activeOrg.orgId)
