@@ -95,6 +95,7 @@ function db(
             return q;
           },
           in: () => q,
+          not: () => q,
           limit: () => q,
           maybeSingle: async () => ({ data: contato, error: null }),
           then: (r: (v: { data: unknown; error: null }) => unknown) => {

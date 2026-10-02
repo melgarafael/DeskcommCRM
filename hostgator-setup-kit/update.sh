@@ -726,11 +726,11 @@ step "Conferindo se o app voltou no ar"
 ok=""
 wait_app_healthy 20 3 >/dev/null && ok=1
 if [ -n "$ok" ]; then
-  # O marcador que a guarda de ARM lê (#1778). Instalação ARM nova é recusada,
-  # então toda instalação ARM que existe veio de antes do marcador e só seria
-  # reconhecida pelo contêiner — que um `down` sem `-v` apaga. Gravar aqui, com
-  # o app saudável, fecha esse caso a partir desta atualização. Falhar em
-  # gravar não desfaz nada: a guarda segue caindo no sinal do contêiner.
+  # O marcador que a guarda de arquitetura lê (#1778). Instalações antigas só
+  # seriam reconhecidas pelo contêiner — que um `down` sem `-v` apaga. Gravar
+  # aqui, com o app saudável, fecha esse caso a partir desta atualização.
+  # Falhar em gravar não desfaz nada: a guarda segue caindo no sinal do
+  # contêiner para arquiteturas que ainda não têm imagens publicadas.
   marcar_instalacao_feita "$TARGET_TAG" || true
   if [ -n "$BANCO_INCOMPLETO" ]; then
     c_ylw "⚠ App no ar e saudável, mas o banco NÃO terminou limpo — o que fazer está no fim desta saída."

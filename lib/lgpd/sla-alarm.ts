@@ -116,7 +116,10 @@ export async function triggerSlaAlarm(
       const shortId = request.id.slice(0, 8);
       const orgName = escapeHtml(organizationName || marca.nome);
       const appUrl = env.NEXT_PUBLIC_APP_URL;
-      const requestUrl = `${appUrl}/app/lgpd/requests/${request.id}`;
+      // Porta neutra, não `/app` nem o hub: a empresa pode ser suspensa ou
+      // reativada entre o envio e o clique, e quem decide é o clique
+      // (`app/lgpd/pedido/[id]/route.ts`).
+      const requestUrl = `${appUrl}/lgpd/pedido/${request.id}`;
 
       const subject = `[LGPD] Solicitação ${shortId} próxima do vencimento`;
 

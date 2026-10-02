@@ -62,6 +62,7 @@ function montar(sobre: { interacao?: InteracaoDaGrade; agendamentos?: Agendament
       visao="dia"
       ancora={new Date(`${DIA}T12:00:00`)}
       agora={AGORA}
+      fuso={Intl.DateTimeFormat().resolvedOptions().timeZone}
       pessoas={PESSOAS}
       agendamentos={sobre.agendamentos ?? []}
       interacao={sobre.interacao}

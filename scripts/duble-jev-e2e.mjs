@@ -17,6 +17,11 @@
  *                          no formato do fornecedor) troca a resposta das
  *                          perguntas que nomeia — é como a spec força uma
  *                          discordância; as outras seguem o padrão acima.
+ *                          DUBLE_JEV_RESPOSTAS_POR_TRECHO (JSON, trecho da
+ *                          mensagem → { id da pergunta → resposta }) vale só
+ *                          para a chamada cujo `state` contém o trecho, e por
+ *                          cima das duas acima: uma spec com duas mensagens que
+ *                          pedem coisas diferentes responde cada uma.
  *
  * E GRAVA cada chamada num arquivo JSON (DUBLE_JEV_ARQUIVO), que a spec LÊ
  * para provar que o Jev foi chamado e com o quê. Grava o corpo (é por ele que
@@ -47,12 +52,12 @@ if (!ARQUIVO) {
 }
 
 /**
- * Respostas forçadas por id de pergunta. Ilegível derruba o dublê na subida: um
- * mapa ignorado em silêncio faria a spec provar o padrão achando que provou a
- * discordância.
+ * Um mapa JSON de uma variável de ambiente. Ilegível derruba o dublê na subida:
+ * um mapa ignorado em silêncio faria a spec provar o padrão achando que provou
+ * a discordância.
  */
-function lerRespostasForcadas() {
-  const cru = process.env.DUBLE_JEV_RESPOSTAS;
+function lerMapa(variavel, oQue) {
+  const cru = process.env[variavel];
   if (!cru) return {};
   let lido;
   try {
@@ -61,12 +66,13 @@ function lerRespostasForcadas() {
     lido = null;
   }
   if (lido === null || typeof lido !== "object" || Array.isArray(lido)) {
-    console.error("[duble-jev] DUBLE_JEV_RESPOSTAS precisa ser um objeto JSON: id da pergunta → resposta");
+    console.error(`[duble-jev] ${variavel} precisa ser um objeto JSON: ${oQue}`);
     process.exit(2);
   }
   return lido;
 }
-const RESPOSTAS_FORCADAS = lerRespostasForcadas();
+const RESPOSTAS_FORCADAS = lerMapa("DUBLE_JEV_RESPOSTAS", "id da pergunta → resposta");
+const RESPOSTAS_POR_TRECHO = lerMapa("DUBLE_JEV_RESPOSTAS_POR_TRECHO", "trecho da mensagem → { id da pergunta → resposta }");
 
 /** @type {Array<{t: string, metodo: string, caminho: string, autorizado: boolean, corpo: unknown}>} */
 const chamadas = [];
@@ -148,13 +154,18 @@ const servidor = http.createServer(async (req, res) => {
 
     if (metodo === "POST" && url.pathname === "/v1/systemone") {
       const perguntas = corpo && typeof corpo === "object" ? (corpo.questions ?? {}) : {};
+      const estado = typeof corpo?.state === "string" ? corpo.state : JSON.stringify(corpo?.state ?? "");
+      const doTrecho = Object.entries(RESPOSTAS_POR_TRECHO).find(([trecho]) => estado.includes(trecho))?.[1] ?? {};
       const answers = Object.fromEntries(
         Object.entries(perguntas).map(([id, p]) => [
           id,
-          Object.hasOwn(RESPOSTAS_FORCADAS, id) ? RESPOSTAS_FORCADAS[id] : responderPergunta(p),
+          Object.hasOwn(doTrecho, id)
+            ? doTrecho[id]
+            : Object.hasOwn(RESPOSTAS_FORCADAS, id)
+              ? RESPOSTAS_FORCADAS[id]
+              : responderPergunta(p),
         ]),
       );
-      const estado = typeof corpo?.state === "string" ? corpo.state : JSON.stringify(corpo?.state ?? "");
       return responder(res, 200, {
         model: MODELO,
         answers,

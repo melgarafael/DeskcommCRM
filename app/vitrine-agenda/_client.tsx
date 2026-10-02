@@ -171,6 +171,11 @@ export function VitrineDaAgenda() {
           visao={visao}
           ancora={ANCORA}
           agora={ANCORA}
+          // VITRINE DE DEMONSTRAÇÃO: não há organização por trás destes dados
+          // de mentira, então não há fuso de organização a respeitar. O fuso
+          // resolvido do próprio navegador deixa o desenho exatamente onde
+          // estava — e é o correto para quem olha a vitrine do próprio aparelho.
+          fuso={Intl.DateTimeFormat().resolvedOptions().timeZone}
           pessoas={PESSOAS}
           agendamentos={visiveis}
           className="h-[560px]"
@@ -214,6 +219,7 @@ export function VitrineDaAgenda() {
           agendamentos={AGENDAMENTOS}
           pessoas={PESSOAS}
           agora={ANCORA}
+          fuso={Intl.DateTimeFormat().resolvedOptions().timeZone}
           className="h-[420px]"
         />
       </Secao>

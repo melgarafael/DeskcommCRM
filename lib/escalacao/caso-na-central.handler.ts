@@ -123,6 +123,7 @@ async function handle(row: EventRow): Promise<HandlerResult> {
 
 export const casoNaCentralHandler: EventHandler = {
   key: CONSUMER_KEY,
+  naOrgParada: "roda",
   events: ["ai.case_opened", "ai.case_closed"],
   handle,
 };

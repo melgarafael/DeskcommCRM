@@ -16,6 +16,7 @@ import { enviarTextoFixoPendente } from "@/lib/followup/enviar-texto-fixo";
 import type { EnrollmentRow } from "@/lib/followup/node-handlers";
 import { createSupabaseSilenceSweepDb, runSilenceSweep } from "@/lib/followup/silence-sweep";
 import { logger } from "@/lib/logger";
+import { idsDeOrgsParadas } from "@/lib/organizacao/operante";
 import { runRoutingWorker } from "@/lib/routing/worker";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -43,12 +44,12 @@ async function enfileirarFollowup(job: FollowupJobRequest): Promise<void> {
  * batido. Aqui lemos a última inbound (gêmeos de telefone inclusive) e
  * avançamos quem já respondeu.
  */
-async function aplicarRespostasQueChegaram(admin: SupabaseClient, deps: TickDeps): Promise<number> {
-  const { data, error } = await admin
-    .from("followup_enrollments")
-    .select("*")
-    .in("status", ["waiting_reply"])
-    .limit(40);
+export async function aplicarRespostasQueChegaram(admin: SupabaseClient, deps: TickDeps): Promise<number> {
+  // Org parada não avança fluxo (migration 0501 — o claim do motor também a pula).
+  const paradas = await idsDeOrgsParadas(admin);
+  let consulta = admin.from("followup_enrollments").select("*").in("status", ["waiting_reply"]);
+  if (paradas.length > 0) consulta = consulta.not("organization_id", "in", `(${paradas.join(",")})`);
+  const { data, error } = await consulta.limit(40);
   if (error) throw new Error(error.message);
   let n = 0;
   for (const row of data ?? []) {

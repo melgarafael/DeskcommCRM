@@ -61,11 +61,35 @@ export function useCreateWebhookSource() {
   });
 }
 
+/**
+ * `secret` entra pelo MESMO caminho de `is_active` (a rota é um PATCH só), e o
+ * corpo é o que sobra depois do `id` — enumerar campo a campo já congelou esta
+ * mutação em `{ is_active }` e deixou a tela sem como mandar o segredo.
+ * O plaintext passa por aqui de ida e NUNCA volta: a resposta traz só
+ * `has_secret`.
+ *
+ * ⚠️ `gcTime: 0` É PARTE DA PROMESSA, NÃO AFINAÇÃO DE MEMÓRIA.
+ *
+ * O TanStack guarda as `variables` de cada mutação no `MutationCache` do
+ * `QueryClient` — que é singleton da aplicação (`app/providers.tsx`) — pelo
+ * `gcTime` padrão de 5 minutos. Com o segredo dentro das `variables`, a tela
+ * pode ter descartado o valor e ele seguir legível por `getMutationCache()`
+ * durante esses minutos, para qualquer código que rode na página. Zerando,
+ * a mutação sai do cache assim que termina, e o único lugar onde o plaintext
+ * sobrevive passa a ser o estado local que o componente apaga ao fechar.
+ */
 export function useUpdateWebhookSource() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, is_active }: { id: string; is_active: boolean }) =>
-      apiClient.patch<{ data: WebhookSourceRow }>(`/api/v1/webhook-sources/${id}`, { is_active }),
+    gcTime: 0,
+    mutationFn: async ({
+      id,
+      ...patch
+    }: {
+      id: string;
+      is_active?: boolean;
+      secret?: string | null;
+    }) => apiClient.patch<{ data: WebhookSourceRow }>(`/api/v1/webhook-sources/${id}`, patch),
     onError: showApiError,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: SOURCES_KEY });

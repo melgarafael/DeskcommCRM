@@ -60,6 +60,7 @@ function silenciadaAte(patch: Record<string, unknown>): Date {
  */
 function iaCaladaEm(ate: Date, quando: Date): boolean {
   const d = decidirElegibilidade({
+    orgStatus: "active",
     modo: "open",
     forceHuman: false,
     botSilencedUntil: normalizarInstante(ate.toISOString()),

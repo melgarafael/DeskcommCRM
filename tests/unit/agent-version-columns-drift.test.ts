@@ -122,3 +122,44 @@ describe("versionCreateSchema aceita as flags por-agente que a tela edita", () =
     });
   });
 });
+
+/**
+ * O SELECT e o schema iguais ainda não bastam: a server action da tela monta os
+ * INSERTs de versão campo a campo. `inbound_debounce_ms` (#1856) entrou só no
+ * PATCH de rascunho existente e ficou fora dos três INSERTs — salvar um agente
+ * publicado, reverter pelo Histórico e criar pela tela gravavam NULL, e a janela
+ * voltava calada para a env. Este bloco lê cada `.insert({ ... })` encadeado em
+ * `.from("ai_agent_versions")` da action e cobra a coluna em todos.
+ */
+function insertsDeVersao(source: string): string[] {
+  const blocos: string[] = [];
+  const re = /\.from\("ai_agent_versions"\)\s*\.insert\(\{/g;
+  for (let m = re.exec(source); m !== null; m = re.exec(source)) {
+    let i = m.index + m[0].length;
+    let nivel = 1;
+    for (; i < source.length && nivel > 0; i++) {
+      if (source[i] === "{") nivel++;
+      else if (source[i] === "}") nivel--;
+    }
+    blocos.push(source.slice(m.index, i));
+  }
+  return blocos;
+}
+
+describe("INSERTs de versão da tela levam a janela de rajada", () => {
+  it("o extrator acusa um INSERT sem a coluna (controle positivo)", () => {
+    const sem = 'admin.from("ai_agent_versions").insert({ split_max_chars: 1, followup: { a: 1 } })';
+    const blocos = insertsDeVersao(sem);
+    expect(blocos).toHaveLength(1);
+    expect(blocos[0]).toContain("split_max_chars");
+    expect(blocos[0]).not.toContain("inbound_debounce_ms");
+  });
+
+  it("todo INSERT de ai_agent_versions em _actions.ts grava inbound_debounce_ms", () => {
+    const source = readFileSync(join(ROOT, "app/app/ai/agents/[id]/_actions.ts"), "utf8");
+    const blocos = insertsDeVersao(source);
+    expect(blocos.length).toBeGreaterThan(0);
+    const semColuna = blocos.filter((b) => !b.includes("inbound_debounce_ms"));
+    expect(semColuna.map((b) => b.slice(0, 200))).toEqual([]);
+  });
+});

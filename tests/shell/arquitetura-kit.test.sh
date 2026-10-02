@@ -69,32 +69,61 @@ SH
 }
 
 for nome in install.sh update.sh; do
-  rodar_como "$nome" aarch64
-  rc="$(cat "$TMP/rc-$nome-aarch64")"
-  out="$(cat "$TMP/out-$nome-aarch64")"
+  rodar_como "$nome" riscv64
+  rc="$(cat "$TMP/rc-$nome-riscv64")"
+  out="$(cat "$TMP/out-$nome-riscv64")"
 
   if [ "$rc" -eq 0 ]; then
-    printf '✗ %s aceitou aarch64\n' "$nome"; fail=1
-  elif ! printf '%s' "$out" | grep -q 'aarch64'; then
+    printf '✗ %s aceitou riscv64\n' "$nome"; fail=1
+  elif ! printf '%s' "$out" | grep -q 'riscv64'; then
     printf '✗ %s recusou sem dizer a arquitetura encontrada\n' "$nome"; fail=1
-  elif ! printf '%s' "$out" | grep -q 'linux/amd64'; then
-    printf '✗ %s recusou sem dizer qual imagem existe hoje\n' "$nome"; fail=1
-  elif ! printf '%s' "$out" | grep -q 'x86_64/amd64'; then
-    printf '✗ %s recusou sem orientar a arquitetura de VPS suportada\n' "$nome"; fail=1
+  elif ! printf '%s' "$out" | grep -q 'linux/amd64 e linux/arm64'; then
+    printf '✗ %s recusou sem dizer quais imagens estão disponíveis\n' "$nome"; fail=1
+  elif ! printf '%s' "$out" | grep -q 'x86_64/amd64 ou ARM64/aarch64'; then
+    printf '✗ %s recusou sem orientar as arquiteturas de VPS suportadas\n' "$nome"; fail=1
   elif printf '%s' "$out" | grep -q 'DEPOIS_DA_GUARDA'; then
     printf '✗ %s continuou depois da recusa\n' "$nome"; fail=1
   else
-    printf '✓ %s recusa ARM64 com a causa correta\n' "$nome"
+    printf '✓ %s recusa riscv64 com a causa correta\n' "$nome"
   fi
 done
 
 for cmd in docker curl git; do
   if [ -e "$TMP/tocou-$cmd" ]; then
-    printf '✗ a guarda tocou em %s antes de recusar ARM64\n' "$cmd"; fail=1
+    printf '✗ a guarda tocou em %s antes de recusar riscv64\n' "$cmd"; fail=1
   else
-    printf '✓ _common.sh recusa ARM64 antes de tocar em %s\n' "$cmd"
+    printf '✓ _common.sh recusa riscv64 antes de tocar em %s\n' "$cmd"
   fi
 done
+
+# Contrapeso: ARM64 agora atravessa a guarda sem consultar Docker nem tentar
+# construir imagem na VPS; a seleção de WAHA fica a cargo do instalador.
+for arch in aarch64 arm64; do
+  rodar_como install.sh "$arch"
+  rc="$(cat "$TMP/rc-install.sh-$arch")"
+  out="$(cat "$TMP/out-install.sh-$arch")"
+  if [ "$rc" -ne 0 ] || ! printf '%s' "$out" | grep -q 'DEPOIS_DA_GUARDA'; then
+    printf '✗ ARM64 (%s) deveria atravessar a guarda\n' "$arch"; fail=1
+  else
+    printf '✓ ARM64 (%s) atravessa a guarda\n' "$arch"
+  fi
+
+  imagem_waha="$(cd "$TMP" && env FAKE_ARCH="$arch" PATH="$TMP/bin:$PATH" \
+    bash -c '. "$1"; imagem_waha_padrao_para_host' _ "$COMMON")"
+  if [ "$imagem_waha" != 'devlikeapro/waha:noweb-arm-2026.7.2' ]; then
+    printf '✗ ARM64 (%s) escolheu WAHA inesperado: %s\n' "$arch" "$imagem_waha"; fail=1
+  else
+    printf '✓ ARM64 (%s) escolhe WAHA NOWEB ARM64 pinado\n' "$arch"
+  fi
+done
+
+imagem_waha="$(cd "$TMP" && env FAKE_ARCH=x86_64 PATH="$TMP/bin:$PATH" \
+  bash -c '. "$1"; imagem_waha_padrao_para_host' _ "$COMMON")"
+if [ "$imagem_waha" != 'devlikeapro/waha:latest-2026.7.2' ]; then
+  printf '✗ x86_64 escolheu WAHA inesperado: %s\n' "$imagem_waha"; fail=1
+else
+  printf '✓ x86_64 mantém o WAHA NOWEB pinado atual\n'
+fi
 
 # Contrapeso: a guarda não pode transformar o requisito amd64 numa recusa geral.
 rodar_como update.sh x86_64

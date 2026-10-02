@@ -1,5 +1,6 @@
 "use client";
 import { useT } from "@/hooks/i18n/useT";
+import { MARCADOR_NAO_LIDA } from "@/lib/messaging/media/derivable";
 import type { Message } from "@/lib/types/messaging";
 
 import { AudioPlayer } from "./AudioPlayer";
@@ -21,8 +22,23 @@ export function MediaRenderer({ message }: { message: Message }) {
       return <ImageMedia messageId={message.id} alt={t("Imagem recebida")} />;
     case "sticker":
       return <StickerMedia messageId={message.id} />;
-    case "audio":
-      return <AudioPlayer messageId={message.id} isOutbound={isOutbound} />;
+    case "audio": {
+      const pronto = message.media_derived_status === "ready";
+      const transcricao = message.media_derived_text?.trim();
+      return (
+        <div className="flex flex-col gap-2">
+          <AudioPlayer messageId={message.id} isOutbound={isOutbound} />
+          {pronto && transcricao && transcricao !== MARCADOR_NAO_LIDA ? (
+            <p
+              data-testid="transcricao-de-audio"
+              className="text-sm leading-relaxed opacity-80"
+            >
+              {transcricao}
+            </p>
+          ) : null}
+        </div>
+      );
+    }
     case "video":
       return <VideoMedia messageId={message.id} />;
     case "contact":

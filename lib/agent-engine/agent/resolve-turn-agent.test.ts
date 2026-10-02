@@ -26,6 +26,7 @@ function fakeConfig(agentId: string): PublishedAgentConfig {
     proposalAiDraftEnabled: true,
     splitMessages: false,
     splitMaxChars: 900,
+    inboundDebounceMs: null,
     multimodalInput: false,
     casesEnabled: false,
     toolIds: [],
@@ -344,8 +345,24 @@ describe('resolveTurnAgent', () => {
 });
 
 describe('resolveConversationTurn — contexto curto do classificador', () => {
+  type SignalRowMock = {
+    id: string;
+    body: string | null;
+    type?: string;
+    media_url?: string | null;
+    media_storage_path?: string | null;
+    media_derived_text?: string | null;
+  };
+  type ContextoMock = {
+    direction: string;
+    body: string;
+    type?: string;
+    media_url?: string | null;
+    media_storage_path?: string | null;
+    media_derived_text?: string | null;
+  };
   /** Banco falso por consulta: conversa com agente fixo, a última inbound e o contexto (mais recente primeiro, como o SQL devolve). */
-  function fakeDb(signalRow: { id: string; body: string | null } | null, contextoDesc: { direction: string; body: string }[]) {
+  function fakeDb(signalRow: SignalRowMock | null, contextoDesc: ContextoMock[]) {
     return {
       query: vi.fn(async (sql: string, _values: unknown[]) => {
         if (sql.includes('from conversations')) return { rows: [{ active_ai_agent_id: 'agent-vendas', active_intent: 'vendas' }] };
@@ -354,7 +371,7 @@ describe('resolveConversationTurn — contexto curto do classificador', () => {
       }),
     };
   }
-  function deps() {
+  function deps(consultarJev?: ReturnType<typeof vi.fn>) {
     const classifyIntent = vi.fn().mockResolvedValue({ intentName: 'vendas', confidence: 0.9 });
     return {
       classifyIntent,
@@ -362,6 +379,7 @@ describe('resolveConversationTurn — contexto curto do classificador', () => {
         loadActiveRouter: vi.fn().mockResolvedValue(router()),
         loadPublishedAgentConfigById: idAwareLoader(),
         classifyIntent,
+        consultarJev,
       }),
     };
   }
@@ -401,12 +419,73 @@ describe('resolveConversationTurn — contexto curto do classificador', () => {
     expect(classifyIntent).not.toHaveBeenCalled();
   });
 
-  it('inbound sem texto (mídia) não consulta contexto: o classificador nem roda', async () => {
-    const db = fakeDb({ id: 'msg-audio', body: null }, []);
+  it('áudio transcrito classifica: o sinal vira o texto composto da transcrição', async () => {
+    const db = fakeDb(
+      { id: 'msg-audio', body: null, type: 'audio', media_storage_path: 'p0', media_derived_text: 'Que dia você teria vaga para a consulta?' },
+      [],
+    );
+    const { classifyIntent, deps: d } = deps();
+    await resolveConversationTurn(db as never, {} as never, { ...baseInput, inbound: true }, d);
+    expect(classifyIntent).toHaveBeenCalled();
+    const args = classifyIntent.mock.calls[0]![2];
+    expect(args.signal).toContain('Que dia você teria vaga para a consulta?');
+  });
+
+  it('áudio sem transcrição, como hoje, mantém o agente sticky: o classificador nem roda', async () => {
+    const db = fakeDb({ id: 'msg-audio', body: null, type: 'audio', media_storage_path: 'p0' }, []);
     const { classifyIntent, deps: d } = deps();
     await resolveConversationTurn(db as never, {} as never, { ...baseInput, inbound: true }, d);
     expect(db.query.mock.calls.some(([q]) => q.includes('id<>$3'))).toBe(false);
     expect(classifyIntent).not.toHaveBeenCalled();
+  });
+
+  it('o contexto curto inclui a transcrição de uma mídia anterior', async () => {
+    const db = fakeDb(
+      { id: 'msg-audio', body: null, type: 'audio', media_storage_path: 'p0', media_derived_text: 'Quero marcar uma consulta' },
+      [
+        { direction: 'outbound', body: 'Qual data prefere?' },
+        { direction: 'inbound', body: 'x', type: 'audio', media_storage_path: 'p1', media_derived_text: 'Pode ser amanhã' },
+      ],
+    );
+    const { classifyIntent, deps: d } = deps();
+    await resolveConversationTurn(db as never, {} as never, { ...baseInput, inbound: true }, d);
+    const recent = classifyIntent.mock.calls[0]![2].recentMessages;
+    // mais antiga primeiro; a mídia anterior está composta pela transcrição.
+    expect(recent).toEqual([
+      { direction: 'inbound', body: expect.stringContaining('Pode ser amanhã') },
+      { direction: 'outbound', body: 'Qual data prefere?' },
+    ]);
+  });
+
+  it('texto digitado não muda: o sinal é o próprio corpo e o Jev recebe o corpo', async () => {
+    const consultarJev = vi.fn().mockReturnValue({
+      estado: Promise.resolve('desligada'),
+      escolha: Promise.resolve(null),
+      observar: vi.fn(),
+    });
+    const db = fakeDb({ id: 'msg-texto', body: 'Quero marcar uma consulta' }, []);
+    const { classifyIntent, deps: d } = deps(consultarJev);
+    await resolveConversationTurn(db as never, {} as never, { ...baseInput, inbound: true }, d);
+    expect(classifyIntent.mock.calls[0]![2].signal).toBe('Quero marcar uma consulta');
+    const entrada = consultarJev.mock.calls[0]![1] as unknown as { mensagem: string };
+    expect(entrada.mensagem).toBe('Quero marcar uma consulta');
+  });
+
+  it('para áudio transcrito o Jev recebe só o texto digitado (vazio), nunca a transcrição (R4)', async () => {
+    const consultarJev = vi.fn().mockReturnValue({
+      estado: Promise.resolve('desligada'),
+      escolha: Promise.resolve(null),
+      observar: vi.fn(),
+    });
+    const db = fakeDb(
+      { id: 'msg-audio', body: null, type: 'audio', media_storage_path: 'p0', media_derived_text: 'Que dia tem vaga?' },
+      [],
+    );
+    const { deps: d } = deps(consultarJev);
+    await resolveConversationTurn(db as never, {} as never, { ...baseInput, inbound: true }, d);
+    expect(consultarJev).toHaveBeenCalled();
+    const entrada = consultarJev.mock.calls[0]![1] as unknown as { mensagem: string };
+    expect(entrada.mensagem).toBe('');
   });
 });
 

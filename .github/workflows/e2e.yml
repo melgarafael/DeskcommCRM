@@ -1075,6 +1075,36 @@ jobs:
       # — as duas nunca disputam a porta, porque a parte roda uma spec por vez.
       # PREVISÃO, não medida: ~1 min.
       #
+      # `jev-pedidos` entrou junto delas em 2026-09-26 (onda 3 do Jev, bloco
+      # 3.1), pelo mesmo motivo e com o mesmo isolamento: sobe o próprio dublê
+      # (a mesma porta 3996, com `DUBLE_JEV_RESPOSTAS` forçando a resposta das
+      # perguntas dos pedidos), manda as mensagens pela mesma entrada da
+      # `jev-decisoes-rapidas`, publica um agente SÓ dela no número (sem agente
+      # no ar, o Jev não é perguntado) e apaga o agente, a chave, o
+      # `settings.jev` e as observações dos pedidos no fim. Roda depois das
+      # outras duas do Jev: escoa a fila antes de ligar, como a primeira.
+      # O bloco 3.2 acrescentou um quarto cliente e o aviso na Central ("Avisar
+      # a equipe"), que ela também apaga no fim.
+      # PREVISÃO, não medida: ~2 min.
+      #
+      # `jev-followup` entrou junto delas em 2026-09-26 (onda 4.1 do Jev, a
+      # tarefa que lê a resposta ao follow-up e só observa), pelo mesmo motivo e
+      # com o mesmo isolamento: sobe o próprio dublê (a mesma porta 3996, só para
+      # a chave passar no teste), publica dois follow-ups SÓ dela pelas rotas do
+      # construtor (um Classificar de uma saída, o controle, e um de duas) e os
+      # desativa no fim, com a chave e o `settings.jev`. A vizinhança aqui
+      # importa, e é o cuidado que ela exige: a ordem é por CAMINHO, então
+      # `followup-builder`, `-journey`, `-dossie` e `-queue` rodam antes dela, e a
+      # `followup-builder` deixa publicado um Classificar de DUAS saídas — que
+      # tiraria a tarefa do "Não roda" que ela mede primeiro. Por isso ela
+      # desativa, pela rota de desativar, todo follow-up ativo com Classificar de
+      # duas saídas ou mais, e cancela, pela rota de cancelar, toda inscrição viva
+      # numa versão com ele, antes de medir. Nenhuma spec depois dela nesta parte
+      # fala de follow-up (`grep -c followup` em `jev-pedidos`, `jev-roteador`,
+      # `marca-logo`, `olhar-telas-do-epico`, `qa-l12-*` e `suporte-temporario`:
+      # zero em todas, medido em 2026-09-26).
+      # PREVISÃO, não medida: ~1 min.
+      #
       # `contadores-do-menu` entrou aqui em 2026-09-27 pela folga da parte (a
       # maior, acima). Semeia o próprio canal, contato, conversa escalada e caso
       # pelo service role e apaga tudo no fim, então não depende de vizinha.
@@ -1106,6 +1136,8 @@ jobs:
         olhar-telas-do-epico.spec.ts
         jev-decisoes-rapidas.spec.ts
         jev-roteador.spec.ts
+        jev-pedidos.spec.ts
+        jev-followup.spec.ts
         buffer-ssr-caixa-orfa.spec.ts
         contadores-do-menu.spec.ts
         honorarios-instalar-e-pagar.spec.ts
@@ -1150,10 +1182,17 @@ jobs:
       # entre ~1240s e ~1320s, isto é, ~2 a 3 min abaixo do orçamento.
       #
       # NÃO MEDIDO até aquele run: se as 11 specs passam na vizinhança nova.
+      #
+      # `suspensao-administrativa` entrou em 2026-09-29 (PR 1 da cobrança do
+      # revendedor) na PARTE_6, a de menor previsão (857s). Semeia as próprias
+      # orgs, pessoas, token, fonte de captação e pedido de LGPD pelo service
+      # role e apaga tudo no fim; não depende de seed de passo nem de vizinha.
+      # PREVISÃO, não medida: ~1,5 min de caso.
       SPECS_PARTE_6: >-
         agenda-google-meet.spec.ts
         agenda-presenca-recuperacao.spec.ts
         filtro-por-marcador-pela-tela.spec.ts
+        fonte-de-captacao-assina-os-envios.spec.ts
         inbox-busca-e-filtros-dizem-a-verdade.spec.ts
         painel-de-configuracao-da-instalacao.spec.ts
         protecao-de-envio-nao-congela-o-padrao.spec.ts
@@ -1162,6 +1201,7 @@ jobs:
         recursos-opcionais.spec.ts
         redes-sociais-volta-nao-desloga.spec.ts
         sons-dos-avisos.spec.ts
+        suspensao-administrativa.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #
@@ -1637,8 +1677,79 @@ jobs:
           # que é o org id do DEFAULT_SENTRY_DSN (lib/sentry/dsn.ts:17).
           SENTRY_DSN: "off"
 
+      # ─── O browser não pesa; o espelho do apt é que pesa ───────────────────
+      #
+      # "Instalar o browser" levou de 27 s a 425 s por parte no run
+      # 36757657107 (main e8e291217) — e o browser não tem nada com isso. Os
+      # TRÊS downloads do Playwright (Chrome for Testing, FFmpeg, headless
+      # shell) custaram 8–9 s em TODAS as seis partes. O que variou foi o
+      # `apt-get` do `--with-deps`, baixando os mesmos 32–35 MB de .deb (xvfb,
+      # mesa, fontes) do `azure.archive.ubuntu.com`:
+      #
+      #   parte 6: 34,9 MB em 2 s   (14,6 MB/s)
+      #   parte 3: 32,1 MB em 8 s   (3,9 MB/s)
+      #   parte 1: 32,1 MB em 150 s (214 kB/s)
+      #   parte 2: 32,1 MB em 204 s (158 kB/s)
+      #   parte 5: 34,9 MB em 380 s (91,7 kB/s)
+      #   parte 4: 34,9 MB em 398 s (87,6 kB/s)
+      #
+      # Mesmo espelho, mesmo minuto, velocidade de 87 kB/s a 14 MB/s: é sorteio,
+      # e o sorteio comia até 6,6 min de um orçamento de 24. Cachear
+      # `~/.cache/ms-playwright` (o palpite óbvio) compraria 8 s e pagaria
+      # ~300 MB de cota de cache por chave — não entra.
+      #
+      # O que entra: o apt passa a guardar os .deb numa pasta do usuário, e ela
+      # vai para o `actions/cache`. Com a pasta restaurada, o `apt-get` acha os
+      # arquivos já baixados, confere o hash de cada um contra o índice recém-
+      # atualizado, e só desce o que mudou de versão. Nenhum pacote deixa de
+      # ser instalado — o `--with-deps` roda igual, só sem a fila do espelho.
+      #
+      # Chave: imagem do runner (`ImageOS`-`ImageVersion`) + versão do
+      # Playwright. A imagem nova (semanal) renova a chave e, pelo
+      # `restore-keys`, parte dos .deb da anterior; versão nova do Playwright
+      # pode mudar a LISTA de pacotes, por isso também renova.
+      # ponytail: a pasta acumula versões velhas entre imagens (só o que mudou,
+      # ~dezenas de MB); se um dia pesar, `apt-get autoclean` antes de salvar.
+      #
+      # Só em máquina do GitHub: no executor próprio o runner é um contêiner
+      # com apt e `sudo` próprios, e lá o passo segue como era (NÃO MEDIDO se
+      # o espelho pesa naquela máquina).
+      - name: Apontar o cache do apt para uma pasta cacheável
+        if: runner.environment == 'github-hosted'
+        id: debs
+        run: |
+          set -euo pipefail
+          pasta="$HOME/.cache/playwright-apt"
+          mkdir -p "$pasta/partial"
+          printf 'Dir::Cache::Archives "%s/";\nAPT::Keep-Downloaded-Packages "true";\n' "$pasta" \
+            | sudo tee /etc/apt/apt.conf.d/99-debs-do-playwright >/dev/null
+          pw=$(pnpm exec playwright --version | awk '{print $2}')
+          : "${ImageOS:?runner do GitHub sem ImageOS — a chave do cache ficaria sem a imagem}"
+          : "${ImageVersion:?runner do GitHub sem ImageVersion}"
+          echo "prefixo=playwright-apt-${ImageOS}-pw${pw}-" >> "$GITHUB_OUTPUT"
+          echo "imagem=${ImageVersion}" >> "$GITHUB_OUTPUT"
+
+      - name: Restaurar os .deb do browser
+        if: runner.environment == 'github-hosted'
+        id: debs-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/playwright-apt/*.deb
+          key: ${{ steps.debs.outputs.prefixo }}${{ steps.debs.outputs.imagem }}
+          restore-keys: ${{ steps.debs.outputs.prefixo }}
+
       - name: Instalar o browser
         run: pnpm exec playwright install --with-deps chromium
+
+      # Salva logo depois de instalar, e não no fim do job: o `actions/cache`
+      # comum só grava se o job passar, e a parte que estoura o teto — a que
+      # mais precisa do cache na rodada seguinte — nunca gravaria.
+      - name: Guardar os .deb do browser
+        if: runner.environment == 'github-hosted' && steps.debs-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/playwright-apt/*.deb
+          key: ${{ steps.debs.outputs.prefixo }}${{ steps.debs.outputs.imagem }}
 
       # `.env.local` é CÓPIA do `.env.e2e`, não uma terceira redação dele.
       #

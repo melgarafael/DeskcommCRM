@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { audit } from "@/lib/audit";
 import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { ROLE_RANK, escreveComoPlatformAdmin } from "@/lib/auth/types";
 import { supportWriteError } from "@/lib/impersonate/support";
 import { normalizarUtm } from "@/lib/leads/origem-do-site";
 import { linkSchema, type LinkInput } from "@/lib/plataformas-de-anuncio/rastreio/contrato";
@@ -20,7 +20,7 @@ export async function salvarLinkRastreavel(
   if (supportWriteError(user.support))
     return { ok: false, error: "Esta sessão de suporte não permite alterações." };
   const org = await resolveActiveOrg(user);
-  if (!org || (!(user.is_platform_admin && !user.support) && ROLE_RANK[org.role] < ROLE_RANK.admin))
+  if (!org || (!(escreveComoPlatformAdmin(user) && !user.support) && ROLE_RANK[org.role] < ROLE_RANK.admin))
     return { ok: false, error: "Somente administradores podem alterar os links." };
   if (await mfaEmDivida()) return { ok: false, error: "Confirme a verificação em duas etapas." };
   const { id, ...fields } = parsed.data;

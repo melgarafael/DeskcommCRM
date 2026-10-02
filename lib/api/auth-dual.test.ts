@@ -119,6 +119,16 @@ describe("resolveAuthDual", () => {
     expect(requireRole).not.toHaveBeenCalled();
   });
 
+  it("token de org suspensa responde 403 org_suspended", async () => {
+    vi.mocked(validateBearerToken).mockRejectedValue(new McpAuthError(-32002, 403, "Organization suspended.", "org_suspended"));
+    const r = await resolveAuthDual(req({ authorization: "Bearer dsk_x_y" }), OPCOES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.response.status).toBe(403);
+      expect((await r.response.json()).error.code).toBe("org_suspended");
+    }
+  });
+
   it("sem Authorization, usa a sessão", async () => {
     sessaoOk();
 

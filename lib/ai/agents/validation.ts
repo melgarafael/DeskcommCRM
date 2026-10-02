@@ -169,6 +169,15 @@ const versionShapeSchema = z
     // pelo pacing anti-ban. Defaults espelham a migration 0059.
     split_messages: z.boolean().default(false),
     split_max_chars: z.number().int().min(80).max(4000).default(600),
+    /**
+     * Janela de coalescência de rajada inbound para ESTE agente (ms).
+     *
+     * `null`/ausente = usa o `INBOUND_DEBOUNCE_MS` da instalação (comportamento
+     * de sempre — regressão zero). 0 desliga a coalescência de rajada para o
+     * agente (job imediato). 1..60000 define a janela, com TETO de 60s para
+     * ninguém travar o atendimento sem querer (#1856).
+     */
+    inbound_debounce_ms: z.number().int().min(0).max(60000).nullable().optional(),
     followup: followupConfigSchema,
     // ── Papel OPERADOR (spec 16 §3.2) ───────────────────────────────────────
     // Todos com `.default(...)`, e é o que mantém retrocompatível: agent e

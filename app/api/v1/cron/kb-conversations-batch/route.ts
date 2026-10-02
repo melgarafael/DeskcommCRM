@@ -20,6 +20,7 @@ import { audit } from "@/lib/audit";
 import { ingestConversationsBatch } from "@/lib/ai/rag/ingest/conversations";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { idsDeOrgsParadas } from "@/lib/organizacao/operante";
 
 export const dynamic = "force-dynamic";
 
@@ -50,12 +51,21 @@ export async function GET(req: NextRequest): Promise<Response> {
     return fail("internal_error", agentErr.message, 500, { requestId });
   }
 
+  // Organização parada (suspensa, redigida, arquivada) não gasta embedding: o
+  // provedor cobra por token, e quem paga é o dono da instalação.
+  let paradas: Set<string>;
+  try {
+    paradas = new Set(await idsDeOrgsParadas(admin));
+  } catch (err) {
+    return fail("internal_error", err instanceof Error ? err.message : String(err), 500, { requestId });
+  }
+
   const agents = (agentRows ?? []) as AgentRow[];
   // Pick one agent per org (first active wins) to avoid double-ingesting.
   const seenOrgs = new Set<string>();
   const unique: AgentRow[] = [];
   for (const a of agents) {
-    if (seenOrgs.has(a.organization_id)) continue;
+    if (seenOrgs.has(a.organization_id) || paradas.has(a.organization_id)) continue;
     seenOrgs.add(a.organization_id);
     unique.push(a);
   }

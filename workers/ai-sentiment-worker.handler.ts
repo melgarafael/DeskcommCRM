@@ -13,6 +13,7 @@ export const AI_SENTIMENT_HANDLER_KEY = "ai-sentiment-worker.v1";
 
 export const aiSentimentHandler: EventHandler = {
   key: AI_SENTIMENT_HANDLER_KEY,
+  naOrgParada: "pula",
   events: ["message.received"],
   async handle(row): Promise<HandlerResult> {
     const result = await processSentiment(row);

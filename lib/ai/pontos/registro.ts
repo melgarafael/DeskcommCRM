@@ -359,14 +359,22 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
   {
     id: "followup_classify",
     rotulo: "Ler a resposta ao follow-up",
+    // As saídas são as que a empresa criou no passo "Classificar (IA)", não uma
+    // lista fixa: "aceitou, recusou ou pediu para falar depois" prometia classes
+    // que o fluxo pode nem ter.
     oQueFaz:
-      "Entende se o cliente aceitou, recusou ou pediu para falar depois, e encaminha o fluxo conforme isso.",
+      "Lê a resposta do cliente à mensagem do follow-up e diz em qual das saídas que você criou no fluxo ela se encaixa — o fluxo segue por essa saída.",
     papel: "entender",
     exige: {},
     emissor: "lib/agent-engine/agent/followup-flow-classify.ts",
     sintomaDeFalha:
       "O follow-up trava no mesmo passo: o cliente respondeu, mas o fluxo não segue para lugar nenhum.",
     registraEm: "llm_calls",
+    decisaoRapida: {
+      primitiva: "choice",
+      oQueOJevFaz:
+        "Lê a resposta do cliente à mensagem do follow-up, sozinha, e diz em qual das saídas que você criou no fluxo ela se encaixa.",
+    },
   },
   {
     id: "followup_decide_timing",

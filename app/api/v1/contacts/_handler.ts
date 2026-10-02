@@ -821,6 +821,9 @@ export async function deleteContactHandler(
   // contagem existe para saber disso antes de apagar o histórico, e é por isso
   // que ela vem antes da chamada que apaga — depois não há mais como desfazer.
   const vinculos: string[] = [];
+  // A contagem crua por tabela é o que a tela traduz e pluraliza; `vinculos`
+  // (texto em pt-BR) segue igual ao da auditoria.
+  const por_tabela: Record<string, number> = {};
   for (const vinculo of VINCULOS_RESTRICT_NAO_APAGADOS) {
     const { count, error } = await supabase
       .from(vinculo.tabela)
@@ -834,7 +837,10 @@ export async function deleteContactHandler(
       // mensagem apagada não volta.
       throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
     }
-    if ((count ?? 0) > 0) vinculos.push(`${count} ${vinculo.rotulo}`);
+    if ((count ?? 0) > 0) {
+      vinculos.push(`${count} ${vinculo.rotulo}`);
+      por_tabela[vinculo.tabela] = count ?? 0;
+    }
   }
 
   if (vinculos.length > 0) {
@@ -854,7 +860,7 @@ export async function deleteContactHandler(
     throw new ApiError(
       409,
       "state_conflict",
-      undefined,
+      { vinculos, por_tabela },
       ctx.requestId,
       traduzir("Não foi possível excluir: o contato ainda tem registros vinculados.", ctx.idioma ?? "pt-BR"),
     );

@@ -23,6 +23,7 @@ import {
   type DecisaoDeElegibilidade,
 } from "../../lib/ai/elegibilidade/gate";
 import { lerModoDeAcessoDaIa } from "../../lib/ai/elegibilidade/pre-go-live";
+import { STATUS_OPERANTE } from "../../lib/organizacao/operante";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Tipos
@@ -147,6 +148,8 @@ function estado(
   agora: Date,
 ) {
   return montarEstadoDeElegibilidade({
+    // O preflight simula as regras do canal e do contato; a organização não é a variável aqui.
+    orgStatus: STATUS_OPERANTE,
     aiGate: par.ai_gate,
     aiGateMode: par.ai_gate_mode,
     forceHuman: r.force_human,

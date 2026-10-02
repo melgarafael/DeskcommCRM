@@ -38,6 +38,7 @@ export async function POST(
     requestId,
     resource: "lgpd_requests",
     allowPlatformAdmin: true,
+    permiteOrgSuspensa: true,
   });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);

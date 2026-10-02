@@ -108,16 +108,21 @@ fi
 # `populacao=` ANTES do `if`: o hook roda com `set -u`, e uma variável nunca
 # atribuída aborta o script inteiro — o hook saía com 1 SEM mensagem nenhuma,
 # que é o pior formato de falha possível num guard.
-populacao=""
+# A população vai para um ARQUIVO, nunca para uma variável: no clone do mantenedor
+# (29/09/2026) ela tinha ~1,29 M linhas (~112 MB), e o teste de vazio que havia aqui,
+# `${populacao// /}`, é uma substituição de padrão do bash — quadrática no tamanho da
+# string. O hook não terminava em 45 min. O grep lê o arquivo direto.
+populacao="$(mktemp)" || { echo "pre-commit BLOQUEADO: mktemp falhou — a população de migrations não pôde ser medida. Correção orientada pelo dono: DESKCOMM_GOV_MIGRATION_EDIT=1." >&2; exit 1; }
+trap 'rm -f "$populacao"' EXIT
 if declare -F pop_migrations >/dev/null 2>&1; then
   # O HEAD entra SEMPRE: `pop_refs_de_outrem` tira a ref cujo SHA é o do HEAD (a
   # #1155), e sem devolvê-lo aqui a migration que a PRÓPRIA branch já commitou
   # sumia da conta — a segunda 0411 e o carimbo repetido passavam calados, e a
   # dica de próximo livre apontava para o número da branch. O próprio arquivo
   # encenado não é acusado: o `grep -vE " <nome>$"` abaixo o tira.
-  populacao="$(pop_migrations $refs HEAD 2>/dev/null || true)"
+  { pop_migrations $refs HEAD 2>/dev/null || true; } >"$populacao" || { echo "pre-commit BLOQUEADO: não foi possível gravar a população de migrations em $populacao. Correção orientada pelo dono: DESKCOMM_GOV_MIGRATION_EDIT=1." >&2; exit 1; }
 fi
-if [ -z "${populacao// /}" ] && [ -z "${populacao//$'\n'/}" ]; then
+if ! grep -q . "$populacao"; then
   if ! declare -F pop_migrations >/dev/null 2>&1; then
     fallback=""
     for ref in $refs HEAD; do
@@ -129,7 +134,7 @@ if [ -z "${populacao// /}" ] && [ -z "${populacao//$'\n'/}" ]; then
       # fosse o primeiro da ref.
       [ -n "$arquivos" ] && fallback="${fallback}$(awk -v r="$ref" '{ print r, $0 }' <<<"$arquivos")"$'\n'
     done
-    populacao="$fallback"
+    printf '%s' "$fallback" >"$populacao"
     echo "pre-commit AVISO: scripts/migration-populacao.sh AUSENTE — NNNN medido sobre ${refs//$'\n'/ }. Quem mede a população inteira (main do produto ∪ PRs abertos): pnpm checar:colisao-de-migration (#1273)" >&2
   elif [ -z "$base" ]; then
     echo "pre-commit AVISO: nenhuma migration resolvida na população ($base e as refs do clone) — a unicidade de NNNN NÃO foi medida (#1273). Rode: pnpm checar:colisao-de-migration" >&2
@@ -145,12 +150,12 @@ while IFS= read -r path; do
     exit 1
   fi
   # O MESMO arquivo nesta população é o PR de quem roda: não é colisão.
-  conflict=$(grep -E "^[A-Za-z0-9_./-]+ [0-9]{14}_${nnnn}_.+\.sql$" <<<"$populacao" \
+  conflict=$(grep -E "^[A-Za-z0-9_./-]+ [0-9]{14}_${nnnn}_.+\.sql$" "$populacao" \
     | grep -vE " ${fname}\$" || true)
   if [ -n "$conflict" ]; then
     echo "pre-commit BLOQUEADO: sequência NNNN=$nnnn de '$fname' já existe em: $(awk '{printf "%s(%s) ", $1, $2}' <<<"$conflict" | sed 's/ $//')" >&2
     if declare -F pop_dica_proximo_livre >/dev/null 2>&1; then
-      pop_dica_proximo_livre "$nnnn" "$base" "$populacao" >&2
+      pop_dica_proximo_livre "$nnnn" "$base" "$(cut -d' ' -f2- "$populacao" | LC_ALL=C sort -u)" >&2
     else
       echo "Para o próximo número livre (main do produto ∪ PRs abertos): pnpm checar:colisao-de-migration" >&2
     fi
@@ -194,7 +199,7 @@ while IFS= read -r path; do
   [ -z "$ts" ] && continue
   grep -qw "$ts" <<<"$DIVIDA_DE_TIMESTAMP" && continue
 
-  conflict=$(grep -E "^[A-Za-z0-9_./-]+ ${ts}_[0-9]{4}_.+\.sql$" <<<"$populacao" \
+  conflict=$(grep -E "^[A-Za-z0-9_./-]+ ${ts}_[0-9]{4}_.+\.sql$" "$populacao" \
     | grep -vE " ${fname}\$" || true)
   if [ -n "$conflict" ]; then
     echo "pre-commit BLOQUEADO: o TIMESTAMP $ts de '$fname' já existe em: $(awk '{printf "%s(%s) ", $1, $2}' <<<"$conflict" | sed 's/ $//')" >&2

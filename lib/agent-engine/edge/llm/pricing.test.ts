@@ -110,13 +110,59 @@ describe("costCents — id que a tabela não conhece volta NULL", () => {
     ["claude-sonnet-50"],
     ["claude-opus-4-9"],
     ["claude-opus-48"],
-    // Id com prefixo de provider (formato do gateway/OpenRouter e do Bedrock) não
-    // é o que este seam registra em llm_calls — e vale NULL, não um chute.
-    ["anthropic/claude-sonnet-5"],
+    // Mesmo com o recorte do prefixo tolerado, modelo que não casa em NENHUM
+    // formato continua NULL — o recorte não inventa preço (armadilha 3).
+    ["anthropic/claude-sonnet-50"],
+    ["anthropic/claude-opus-4-9"],
+    // Prefixo de provider com PONTO (formato Bedrock) não é o que este seam
+    // registra em llm_calls — e vale NULL, não um chute. A barra (`anthropic/…`,
+    // OpenRouter) já é tolerada e coberta nos testes do PR #1880.
     ["anthropic.claude-sonnet-5"],
   ])("%s → null", (model) => {
     expect(costCents(model, { ...NADA, inputTokens: 1_000_000 })).toBeNull();
     expect(precoDoModelo(model)).toBeUndefined();
+  });
+});
+
+describe("costCents — id com prefixo provider/ (formato OpenRouter)", () => {
+  // Issue #1880: o OpenRouter devolve o id com o prefixo `anthropic/…`, e a
+  // tabela de preços é indexada sem ele. Custo NULL em toda chamada do agente →
+  // llm_calls.cost_cents nulo → budget soma coalesce(cost_cents, 0) → teto cego.
+  it.each([
+    // modelo, entrada, saída, leitura de cache, gravação 5m, gravação 1h
+    ["anthropic/claude-sonnet-5", 200, 1000, 20, 250, 400],
+    ["anthropic/claude-sonnet-4-6", 300, 1500, 30, 375, 600],
+    ["anthropic/claude-haiku-4-5", 100, 500, 10, 125, 200],
+    ["anthropic/claude-opus-5", 500, 2500, 50, 625, 1000],
+  ])("%s custa como o id sem prefixo", (model, cIn, cOut, cLeitura, cGrav5m, cGrav1h) => {
+    expect(entrada(model)).toBeCloseTo(cIn, 6);
+    expect(saida(model)).toBeCloseTo(cOut, 6);
+    expect(leituraDeCache(model)).toBeCloseTo(cLeitura, 6);
+    expect(gravacaoDeCache(model, "5m")).toBeCloseTo(cGrav5m, 6);
+    expect(gravacaoDeCache(model, "1h")).toBeCloseTo(cGrav1h, 6);
+  });
+
+  it("sufixo de data do vendor é tolerado mesmo com o prefixo provider/", () => {
+    expect(entrada("anthropic/claude-opus-4-1-20250805")).toBeCloseTo(1500, 6);
+    expect(entrada("anthropic/claude-sonnet-4-5-20250929")).toBeCloseTo(300, 6);
+  });
+
+  it("o TTL do cache continua respeitando o knob com prefixo", () => {
+    expect(gravacaoDeCache("anthropic/claude-sonnet-5", "5m")).toBeCloseTo(250, 6);
+    expect(gravacaoDeCache("anthropic/claude-sonnet-5", "1h")).toBeCloseTo(400, 6);
+  });
+
+  it("a conversa real com prefixo deixa de ser null", () => {
+    const turnoReal: TokenUsage = {
+      inputTokens: 359_369,
+      outputTokens: 4_070,
+      cacheReadTokens: 294_128,
+      cacheWriteTokens: 0,
+    };
+    const custo = costCents("anthropic/claude-sonnet-5", turnoReal);
+    expect(custo).not.toBeNull();
+    expect(custo).toBeGreaterThan(22);
+    expect(custo).toBeLessThan(24);
   });
 });
 

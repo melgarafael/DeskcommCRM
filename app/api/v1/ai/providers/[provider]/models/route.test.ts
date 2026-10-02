@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, orgAtivaSemPortao } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
 import type { AuthUser } from "@/lib/auth/types";
 
@@ -23,7 +23,7 @@ import type { AuthUser } from "@/lib/auth/types";
  * dublê, não do código.
  */
 
-vi.mock("@/lib/auth/server", () => ({ loadAuthUser: vi.fn(), resolveActiveOrg: vi.fn() }));
+vi.mock("@/lib/auth/server", () => ({ loadAuthUser: vi.fn(), orgAtivaSemPortao: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 
 const ORG_ID = "33333333-3333-4333-8333-333333333333";
@@ -95,10 +95,11 @@ function autorizado() {
     is_platform_admin: false,
     idioma: "pt-BR",
   } as unknown as AuthUser);
-  vi.mocked(resolveActiveOrg).mockResolvedValue({
+  vi.mocked(orgAtivaSemPortao).mockResolvedValue({
     orgId: ORG_ID,
     role: "admin",
-  } as unknown as Awaited<ReturnType<typeof resolveActiveOrg>>);
+    org_status: "active",
+  } as unknown as Awaited<ReturnType<typeof orgAtivaSemPortao>>);
 }
 
 function listar(provider = "openai") {

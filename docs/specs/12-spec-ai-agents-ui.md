@@ -99,7 +99,7 @@ Adiciona item "Agentes IA" na sidebar principal, entre "Pipelines" e "Configura�
 | Duplicar | `POST /agents/:id:duplicate` | — | `ai_agent.duplicated` |
 | Renomear | `PATCH /agents/:id` (modal inline) | — | `ai_agent.renamed` |
 | Pausar | `POST /agents/:id:pause` | "Tem certeza? Agente para de responder" | `ai_agent.paused` |
-| Despausar | `POST /agents/:id:publish` (republica versão atual) | — | `ai_agent.republished` |
+| Despausar | `unpauseAgentAction` (limpa `paused_at`; a versão nunca deixou de estar publicada) | — | `ai_agent.updated` (`metadata.unpaused`) |
 | Arquivar | `DELETE /agents/:id` | "Esta ação é reversível por 30 dias" | `ai_agent.archived` |
 
 ---
@@ -123,9 +123,9 @@ Adiciona item "Agentes IA" na sidebar principal, entre "Pipelines" e "Configura�
 - "Salvar rascunho" cria nova versão `status='draft'` (sem afetar produção).
 - "Publicar v4" só fica habilitado se há draft com diferenças vs versão publicada e validações passam.
 - Indicador de status no header é um Badge:
-  - 🟢 `published_version_id != null && draft inexistente` — só publicado
-  - 🟡 `published_version_id != null && draft existente` — publicado + draft pendente ("v3 publicada, v4 em rascunho")
-  - ⚪ `published_version_id == null` — pausado/nunca publicado
+  - 🟢 `published_version_id != null && paused_at == null && draft inexistente` — só publicado
+  - 🟡 `published_version_id != null && paused_at == null && draft existente` — publicado + draft pendente ("v3 publicada, v4 em rascunho")
+  - ⚪ `paused_at != null` (pausado: grava só `paused_at`, a versão segue publicada e `published_version_id` fica) ou `published_version_id == null` (nunca publicado). A régua viva é `estadoDoAgente` em `lib/ai/agents/no-ar.ts`
   - 🔴 versão tem invalidez (credential deletada, session offline) — bloqueia publish
 
 ### 3.2 Tab: Configuração (form principal)

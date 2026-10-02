@@ -149,7 +149,16 @@ describe("deleteContactHandler", () => {
     const { deleteContactHandler } = await import("@/app/api/v1/contacts/_handler");
     await expect(
       deleteContactHandler(clienteFalso({ vinculos: 1 }) as never, ctxFalso(), CONTATO),
-    ).rejects.toMatchObject({ status: 409, code: "state_conflict" });
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "state_conflict",
+      // #1925: o 409 entrega o QUE barrou em `details.vinculos`, para a tela
+      // montar a frase e o link para a Agenda em vez do texto genérico fixo.
+      details: {
+        vinculos: ["1 compromisso(s) na agenda"],
+        por_tabela: { calendar_appointments: 1 },
+      },
+    });
     // O ponto da issue: nada foi apagado antes de saber que a ficha não sai.
     expect(chamadas).toEqual([]);
     expect(rpcs.some((r) => r.nome === FUNCAO)).toBe(false);

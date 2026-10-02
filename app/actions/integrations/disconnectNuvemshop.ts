@@ -1,5 +1,7 @@
 "use server";
 
+import { escreveComoPlatformAdmin } from "@/lib/auth/types";
+
 /**
  * Server Action: mark the active org's Nuvemshop integration as disconnected.
  *
@@ -26,7 +28,7 @@ export async function disconnectNuvemshop(): Promise<DisconnectResult> {
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) return { ok: false, error: "no_active_org" };
 
-  if (activeOrg.role !== "admin" && !user.is_platform_admin) {
+  if (activeOrg.role !== "admin" && !escreveComoPlatformAdmin(user)) {
     return { ok: false, error: "forbidden" };
   }
 

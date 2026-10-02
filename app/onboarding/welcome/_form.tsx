@@ -36,7 +36,13 @@ const FUSOS: { id: string; cidade: string }[] = [
   { id: "UTC", cidade: "Outro (horário universal)" },
 ];
 
-export function WelcomeForm({ defaultOrgName }: { defaultOrgName: string }) {
+export function WelcomeForm({
+  defaultOrgName,
+  orgId,
+}: {
+  defaultOrgName: string;
+  orgId: string;
+}) {
   const t = useT();
   const [displayName, setDisplayName] = useState(defaultOrgName);
   const [oQueFaz, setOQueFaz] = useState("");
@@ -115,6 +121,10 @@ export function WelcomeForm({ defaultOrgName }: { defaultOrgName: string }) {
           </SelectContent>
         </Select>
         <input type="hidden" name="timezone" value={timezone} />
+        {/* A org para a qual ESTA aba foi aberta. No submit, o server action
+            resolve por ela (validada como membership), não pela org ativa do
+            momento — que outra aba pode ter trocado. */}
+        <input type="hidden" name="organization_id" value={orgId} />
         <p className="text-xs text-muted-foreground">
           {t("Decide o horário em que seu funcionário pode falar com clientes.")}
         </p>

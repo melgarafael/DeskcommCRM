@@ -19,6 +19,7 @@ export const AI_HANDOFF_FROM_SENTIMENT_KEY = "ai-handoff-from-sentiment.v1";
 
 export const aiHandoffFromSentimentHandler: EventHandler = {
   key: AI_HANDOFF_FROM_SENTIMENT_KEY,
+  naOrgParada: "pula",
   events: ["ai.sentiment_alert"],
   async handle(row): Promise<HandlerResult> {
     const messageId =

@@ -260,3 +260,24 @@ describe("o aviso sai no idioma da organização", () => {
     expect(pt).not.toBe(es);
   });
 });
+
+describe("o aviso não usa travessão (#1881)", () => {
+  /**
+   * Há marca cuja regra de estilo proíbe travessão em texto ao cliente, e esta
+   * frase é fixa: a organização não tem como editá-la. Percorre todo motivo,
+   * todo estado e os dois idiomas, com leads bastantes para sortear todas as
+   * variantes.
+   */
+  it("nenhuma redação, em português ou espanhol, leva —", () => {
+    for (const idioma of ["pt-BR", "es"]) {
+      for (const motivo of MOTIVOS) {
+        for (const estado of ESTADOS) {
+          for (let i = 0; i < 200; i++) {
+            const t = textoDoAviso(motivo, estado.quem, `lead-${i}`, idioma);
+            expect(t, `${idioma} / ${motivo} / ${estado.rotulo}`).not.toContain("—");
+          }
+        }
+      }
+    }
+  });
+});

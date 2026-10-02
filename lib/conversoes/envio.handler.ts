@@ -412,6 +412,7 @@ async function handle(row: EventRow): Promise<HandlerResult> {
 
 export const conversaoDeVendaHandler: EventHandler = {
   key: CONSUMER_KEY,
+  naOrgParada: "pula",
   // As duas portas. Ver o cabeçalho: `lead.stage_changed` cobre o arrasto no
   // kanban E o mover em lote, e o `status` do payload não é confiável em nenhum.
   events: ["lead.won", "lead.stage_changed", "ad_conversion.retry_requested"],

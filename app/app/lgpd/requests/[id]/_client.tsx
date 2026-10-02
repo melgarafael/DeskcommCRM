@@ -19,6 +19,8 @@ import type { LgpdRequestStatus, LgpdRequestType } from "@/hooks/useLgpdRequests
 
 interface Props {
   id: string;
+  /** Volta para a lista. O hub de `/account-suspended` passa o próprio endereço (ver `RequestsTable`). */
+  hrefDaLista?: string;
 }
 
 const TYPE_LABELS: Record<LgpdRequestType, string> = {
@@ -46,7 +48,7 @@ const STATUS_VARIANT: Record<
   pending_review: "secondary",
 };
 
-export function LgpdRequestDetail({ id }: Props) {
+export function LgpdRequestDetail({ id, hrefDaLista = "/app/lgpd/requests" }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const { data, isLoading, error } = useLgpdRequest(id);
@@ -83,7 +85,7 @@ export function LgpdRequestDetail({ id }: Props) {
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" asChild className="-ml-2 gap-1 text-muted-foreground">
-            <Link href="/app/lgpd/requests">
+            <Link href={hrefDaLista}>
               <CaretLeft size={14} aria-hidden />
               {t("Solicitações")}
             </Link>

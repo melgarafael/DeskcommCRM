@@ -38,6 +38,7 @@ const XISTAO: PerfilDoPais = {
     valida: (valor) => /^\d{9}[A-Z]{2}\d{3}$/.test(valor),
     normaliza: (valor) => valor.toUpperCase().replace(/[^0-9A-Z]/g, ""),
   },
+  telefoneExemplo: "+999000000000",
   lei: { nome: "Lei do Xistão", numero: "Lei nº 1/2020", artigo: "Art. 5º", revisada: false },
   calendario: { feriados: [], rotulo: "feriados do Xistão" },
   padroesDePii: [
@@ -63,6 +64,7 @@ const REVISADOLANDIA: PerfilDoPais = {
     valida: (valor) => /^\d{9}$/.test(valor),
     normaliza: (valor) => valor.replace(/\D/g, ""),
   },
+  telefoneExemplo: "+999000000000",
   lei: { nome: "Lei de Revisadolândia", numero: "Lei nº 2/2021", artigo: "Art. 9º", revisada: true },
   calendario: { feriados: [], rotulo: "feriados de Revisadolândia" },
   padroesDePii: [],

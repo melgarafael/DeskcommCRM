@@ -184,6 +184,8 @@ interface FormState {
   cases_enabled: boolean;
   split_messages: boolean;
   split_max_chars: number;
+  /** Janela de rajada (ms) do agente. `null` = usa a env da instalação. */
+  inbound_debounce_ms: number | null;
   followup: FollowupValue;
   // Papel OPERADOR (spec 16 §3.2) — o que mexe no sistema depois da conversa.
   operator_enabled: boolean;
@@ -284,6 +286,7 @@ export function buildState(args: {
     cases_enabled: version?.cases_enabled ?? false,
     split_messages: version?.split_messages ?? false,
     split_max_chars: version?.split_max_chars ?? 600,
+    inbound_debounce_ms: version?.inbound_debounce_ms ?? null,
     followup: version?.followup
       ? {
           ...DEFAULT_FOLLOWUP,
@@ -347,6 +350,7 @@ function toVersionPayload(s: FormState) {
     cases_enabled: s.cases_enabled,
     split_messages: s.split_messages,
     split_max_chars: s.split_max_chars,
+    inbound_debounce_ms: s.inbound_debounce_ms,
     followup: s.followup,
     operator_enabled: s.operator_enabled,
     // "" (não escolheu) → null (herda o do Conversador). São o mesmo conceito em
@@ -1059,6 +1063,42 @@ export function AgentForm(props: Props) {
                   }
                   disabled={disabled}
                 />
+              </div>
+              <div className="col-span-2 space-y-1">
+                <Label htmlFor="inbound_debounce_ms">
+                  {t("Esperar antes de responder (segundos)")}
+                </Label>
+                <Input
+                  id="inbound_debounce_ms"
+                  type="number"
+                  min={0}
+                  max={60}
+                  step={1}
+                  placeholder={t("Vazio = padrão da instalação")}
+                  value={
+                    form.inbound_debounce_ms === null
+                      ? ""
+                      : String(Math.round(form.inbound_debounce_ms / 1000))
+                  }
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    // Vazio = usa a env da instalação (campo null). A UI fala em
+                    // SEGUNDOS; o banco e o worker falam em ms (conversão aqui,
+                    // num ponto só). Teto de 60s no campo espelha o do worker.
+                    patch({
+                      inbound_debounce_ms:
+                        raw === ""
+                          ? null
+                          : Math.round(Math.max(0, Math.min(60, Number(raw))) * 1000),
+                    });
+                  }}
+                  disabled={disabled}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "Mensagens do mesmo contato dentro desse tempo viram uma resposta só. Vazio usa a janela padrão da instalação (máximo 60 segundos).",
+                  )}
+                </p>
               </div>
             </div>
           </Card>

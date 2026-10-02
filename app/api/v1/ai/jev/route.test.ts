@@ -13,6 +13,9 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { haQuemAtendaAOrganizacao } from "@/lib/ai/agents/quem-atende-a-sessao";
+import { TAREFA_DO_FOLLOWUP } from "@/lib/ai/decisao/tarefas";
 import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
 import { DEFAULT_SENTIMENT_THRESHOLD } from "@/lib/ai/prompts/sentiment";
 import { fail } from "@/lib/api/wrappers";
@@ -30,6 +33,9 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/ai/gateway-binding", () => ({ resolverModeloDoPonto: vi.fn() }));
+// O portão de quem atende fala `pg`, não o supabase-js: o dublê responde por ele.
+vi.mock("@/lib/agent-engine/db/request-pool", () => ({ getRequestPool: vi.fn(() => ({ query: vi.fn() })) }));
+vi.mock("@/lib/ai/agents/quem-atende-a-sessao", () => ({ haQuemAtendaAOrganizacao: vi.fn() }));
 
 const ORG = "22222222-2222-4222-8222-222222222222";
 const OUTRA_ORG = "99999999-9999-4999-8999-999999999999";
@@ -49,6 +55,8 @@ interface Consulta {
   gte: Array<[string, unknown]>;
   range: [number, number] | null;
   patch: Linha | null;
+  /** `select(…, { head: true })`: só a contagem, sem linhas. */
+  head: boolean;
 }
 
 interface Estado {
@@ -61,6 +69,10 @@ interface Estado {
   camadas: Linha[];
   /** `ai_routers`. */
   roteadores: Linha[];
+  /** `followup_flow_pointers`, com a versão ativa embutida (`versao: { graph }`). */
+  fluxos: Linha[];
+  /** `followup_flow_versions` com inscrição que ainda anda — o que o `!inner` devolve (`graph`). */
+  versoesEmCurso: Linha[];
   consultas: Consulta[];
 }
 
@@ -73,7 +85,7 @@ const MAX_ROWS = 1000;
 function cliente(tipo: Consulta["cliente"]) {
   return {
     from(tabela: string) {
-      const c: Consulta = { cliente: tipo, tabela, eq: [], nao: [], neq: [], gte: [], range: null, patch: null };
+      const c: Consulta = { cliente: tipo, tabela, eq: [], nao: [], neq: [], gte: [], range: null, patch: null, head: false };
       estado.consultas.push(c);
       const linhasDaTabela = (): Linha[] => {
         const base =
@@ -91,12 +103,19 @@ function cliente(tipo: Consulta["cliente"]) {
                   ? estado.camadas
                   : tabela === "ai_routers"
                     ? estado.roteadores
-                    : estado.mensagens;
+                    : tabela === "followup_flow_pointers"
+                      ? estado.fluxos
+                      : tabela === "followup_flow_versions"
+                        ? estado.versoesEmCurso
+                        : estado.mensagens;
         const filtradas = base.filter((l) => c.eq.every(([col, v]) => !(col in l) || l[col] === v));
         return c.range ? filtradas.slice(c.range[0], c.range[1] + 1) : filtradas.slice(0, MAX_ROWS);
       };
       const chain = {
-        select: () => chain,
+        select: (_colunas?: string, opcoes?: { head?: boolean }) => {
+          c.head = opcoes?.head === true;
+          return chain;
+        },
         not: (col: string, _op: string, v: unknown) => {
           c.nao.push([col, v]);
           return chain;
@@ -129,11 +148,12 @@ function cliente(tipo: Consulta["cliente"]) {
           if (c.patch) estado.settings = c.patch.settings as Linha;
           return { data: { settings: estado.settings }, error: null };
         },
-        // `jev_observacoes` é lida por contagem (`head`): o PostgREST devolve `count`, sem linhas.
+        // `jev_observacoes` é lida por contagem (`head`): o PostgREST devolve
+        // `count`, sem linhas; sem `head`, as linhas e a contagem.
         then: (ok: (r: unknown) => unknown, erro?: (e: unknown) => unknown) =>
           Promise.resolve(
             tabela === "jev_observacoes"
-              ? { data: null, count: linhasDaTabela().length, error: null }
+              ? { data: c.head ? null : linhasDaTabela(), count: linhasDaTabela().length, error: null }
               : { data: linhasDaTabela(), error: null },
           ).then(ok, erro),
       };
@@ -181,6 +201,8 @@ beforeEach(() => {
     observacoes: [],
     camadas: [],
     roteadores: [],
+    fluxos: [],
+    versoesEmCurso: [],
     consultas: [],
   };
   vi.mocked(requireRole).mockImplementation(async (min) =>
@@ -203,6 +225,7 @@ beforeEach(() => {
     modelId: "anthropic/claude-haiku-4-5",
     origem: "padrao",
   });
+  vi.mocked(haQuemAtendaAOrganizacao).mockResolvedValue(true);
 });
 
 async function ler() {
@@ -237,7 +260,12 @@ describe("GET /api/v1/ai/jev", () => {
       erro_de_validacao: null,
     });
     expect(d.config).toEqual({ ligado: false, modo: "observacao", aceite: null });
-    expect(d.tarefas.map((t: { id: string }) => t.id)).toEqual(["sentiment_classify", "jailbreak_detect", "intent_router"]);
+    expect(d.tarefas.map((t: { id: string }) => t.id)).toEqual([
+      "sentiment_classify",
+      "jailbreak_detect",
+      "intent_router",
+      "followup_classify",
+    ]);
     expect(d.tem_ia_de_sempre).toBe(true);
     expect(d.numeros).toEqual({
       dias: 7,
@@ -636,6 +664,10 @@ describe("o Jev por tarefa na rota", () => {
       expect.objectContaining({ id: "clima", ponto: "sentiment_classify", estado: "desligada", novo: false }),
       expect.objectContaining({ id: "manipulacao", ponto: "jailbreak_detect", estado: "desligada", novo: false }),
       expect.objectContaining({ id: "roteador", ponto: "intent_router", estado: "desligada", novo: false }),
+      // As em cascata não têm ponto: acompanham uma regra sem IA.
+      expect.objectContaining({ id: "humano", ponto: null, estado: "desligada", novo: false }),
+      expect.objectContaining({ id: "opt_out", ponto: null, estado: "desligada", novo: false }),
+      expect.objectContaining({ id: "followup", ponto: "followup_classify", estado: "desligada", novo: false }),
     ]);
 
     estado.settings = { jev: { ligado: true, modo: "decide", aceite: ACEITE_ANTIGO } };
@@ -658,6 +690,7 @@ describe("o Jev por tarefa na rota", () => {
       expect.objectContaining({ id: "sentiment_classify", rotulo: "Medir o clima da conversa" }),
       expect.objectContaining({ id: "jailbreak_detect", rotulo: "Perceber tentativa de manipulação" }),
       expect.objectContaining({ id: "intent_router", rotulo: "Escolher qual agente atende" }),
+      expect.objectContaining({ id: "followup_classify", rotulo: "Ler a resposta ao follow-up" }),
     ]);
   });
 
@@ -730,6 +763,9 @@ describe("o Jev por tarefa na rota", () => {
       ["clima", false],
       ["manipulacao", false],
       ["roteador", false],
+      ["humano", false],
+      ["opt_out", false],
+      ["followup", false],
     ]);
     estado.camadas = [
       { organization_id: ORG, layer: "jailbreak", enabled: false },
@@ -739,6 +775,9 @@ describe("o Jev por tarefa na rota", () => {
       ["clima", false],
       ["manipulacao", true],
       ["roteador", false],
+      ["humano", false],
+      ["opt_out", false],
+      ["followup", false],
     ]);
   });
 
@@ -750,6 +789,9 @@ describe("o Jev por tarefa na rota", () => {
       ["clima", false],
       ["manipulacao", false],
       ["roteador", true],
+      ["humano", false],
+      ["opt_out", false],
+      ["followup", false],
     ]);
     // O ativo de OUTRA empresa não conta — o filtro é o da sessão.
     const intencoes = (n: number) => [{ count: n }];
@@ -758,6 +800,9 @@ describe("o Jev por tarefa na rota", () => {
       ["clima", false],
       ["manipulacao", false],
       ["roteador", true],
+      ["humano", false],
+      ["opt_out", false],
+      ["followup", false],
     ]);
     // Ativo, mas sem intenção nenhuma (o estado logo depois de criar um) ou com
     // mais do que cabe numa pergunta: o Jev nunca é perguntado, e "Só observa"
@@ -771,10 +816,265 @@ describe("o Jev por tarefa na rota", () => {
       ["clima", false],
       ["manipulacao", false],
       ["roteador", false],
+      ["humano", false],
+      ["opt_out", false],
+      ["followup", false],
     ]);
     // E o cartão segue dizendo que a tarefa observa: é o que ela faz quando há roteador.
     const roteador = (await ler()).corpo.data.por_tarefa.find((t: { id: string }) => t.id === "roteador");
     expect(roteador).toMatchObject({ estado: "observando", novo: true });
+  });
+
+  /**
+   * A do follow-up só roda onde algum follow-up PUBLICADO tem o passo
+   * "Classificar (IA)": sem ele ninguém lê resposta, e "Só observa" com "ainda
+   * não há mensagens medidas" seria para sempre.
+   */
+  it("GET: a do follow-up, sem follow-up publicado com o passo \"Classificar (IA)\", diz que não roda", async () => {
+    estado.settings = { jev: { ligado: true, aceite: ACEITE_ANTIGO } };
+    const grafo = (...tipos: string[]) => ({
+      versao: {
+        graph: { nodes: tipos.map((type, i) => ({ id: `n${i}`, type, config: { classes: ["quer", "não quer"] } })) },
+      },
+    });
+    const semFluxo = async () =>
+      (await ler()).corpo.data.por_tarefa.find((t: { id: string }) => t.id === "followup").sem_fluxo;
+
+    expect(await semFluxo()).toBe(true);
+    // O de OUTRA empresa não conta; o nosso sem o passo, ou sem versão ativa, também não.
+    estado.fluxos = [
+      { organization_id: OUTRA_ORG, status: "active", ...grafo("trigger", "ai_classify") },
+      { organization_id: ORG, status: "active", ...grafo("trigger", "action", "end") },
+      { organization_id: ORG, status: "active", versao: null },
+    ];
+    expect(await semFluxo()).toBe(true);
+    estado.fluxos.push({ organization_id: ORG, status: "active", ...grafo("trigger", "action", "ai_classify") });
+    expect(await semFluxo()).toBe(false);
+    // Só a do follow-up tem esse motivo.
+    const outras = (await ler()).corpo.data.por_tarefa.filter((t: { id: string }) => t.id !== "followup");
+    expect(outras.every((t: { sem_fluxo: boolean }) => t.sem_fluxo === false)).toBe(true);
+    // A leitura é a da sessão, da organização dela, e só do publicado.
+    const lidas = estado.consultas.filter((c) => c.tabela === "followup_flow_pointers");
+    expect(lidas.length, "a leitura dos follow-ups (controle positivo)").toBeGreaterThan(0);
+    expect(
+      lidas.every(
+        (c) =>
+          c.cliente === "sessao" &&
+          c.eq.some(([col, v]) => col === "organization_id" && v === ORG) &&
+          c.eq.some(([col, v]) => col === "status" && v === "active"),
+      ),
+    ).toBe(true);
+  });
+
+  /**
+   * Desativar um follow-up não encerra as inscrições dele, e publicar outra
+   * versão não as muda de versão: o motor segue levando-as ao passo, e cada
+   * resposta vai ao Jev. "Não roda" ali seria a frase tranquilizadora falsa
+   * numa tela de transferência para fora do país.
+   */
+  it("GET: a do follow-up RODA enquanto houver inscrição andando numa versão com o passo, mesmo sem follow-up publicado", async () => {
+    estado.settings = { jev: { ligado: true, aceite: ACEITE_ANTIGO } };
+    const versao = (...tipos: string[]) => ({
+      graph: { nodes: tipos.map((type, i) => ({ id: `n${i}`, type, config: { classes: ["quer", "não quer"] } })) },
+    });
+    const semFluxo = async () =>
+      (await ler()).corpo.data.por_tarefa.find((t: { id: string }) => t.id === "followup").sem_fluxo;
+
+    // O follow-up foi desativado (nenhum publicado); a inscrição segue na versão com o passo.
+    estado.versoesEmCurso = [{ organization_id: ORG, ...versao("trigger", "action", "end") }];
+    expect(await semFluxo()).toBe(true);
+    estado.versoesEmCurso.push({ organization_id: ORG, ...versao("trigger", "action", "ai_classify") });
+    expect(await semFluxo()).toBe(false);
+
+    // A leitura é a da sessão, da organização dela, só das inscrições que ainda andam.
+    const lidas = estado.consultas.filter((c) => c.tabela === "followup_flow_versions");
+    expect(lidas.length, "a leitura das versões em curso (controle positivo)").toBeGreaterThan(0);
+    expect(
+      lidas.every(
+        (c) =>
+          c.cliente === "sessao" &&
+          c.eq.some(([col, v]) => col === "organization_id" && v === ORG) &&
+          c.nao.some(([col, v]) => col === "inscricoes.status" && v === "(completed,cancelled,dead)"),
+      ),
+    ).toBe(true);
+  });
+
+  it("GET: a concordância do follow-up sai de jev_observacoes, sem a conta do alerta forte", async () => {
+    estado.settings = { jev: { ligado: true, aceite: ACEITE_ANTIGO } };
+    estado.observacoes = [
+      { organization_id: ORG, tarefa: "followup", concordou: true, rotulo_jev: "quer", rotulo_atual: "quer" },
+      { organization_id: ORG, tarefa: "followup", concordou: false, rotulo_jev: "quer", rotulo_atual: "não quer" },
+      // Sem par (a IA de sempre não classificou): fora da conta.
+      { organization_id: ORG, tarefa: "followup", concordou: null, rotulo_jev: "quer", rotulo_atual: null },
+      { organization_id: OUTRA_ORG, tarefa: "followup", concordou: true, rotulo_jev: "quer", rotulo_atual: "quer" },
+    ];
+    const followup = (await ler()).corpo.data.por_tarefa.find((t: { id: string }) => t.id === "followup");
+    expect(followup.observacao).toEqual({ dias: 30, comparadas: 2, concordaram: 1 });
+    expect(followup).toMatchObject({ estado: "observando", novo: true, percebidos: null });
+  });
+
+  /**
+   * As tarefas em cascata não concordam com nada — o Jev só é perguntado onde a
+   * regra de hoje disse não —, e o cartão mostra os pedidos que ele PERCEBEU:
+   * a resposta dele passou do corte. Com as conversas mais recentes, sem
+   * repetir conversa, e o endereço pronto (o navegador não monta endereço).
+   */
+  it("GET: nas tarefas em cascata, os pedidos percebidos e as conversas deles — nunca uma concordância", async () => {
+    const obs = (tarefa: string, rotulo_jev: string, conversa: string, organization_id = ORG): Linha => ({
+      organization_id,
+      tarefa,
+      rotulo_jev,
+      rotulo_atual: "nao",
+      concordou: rotulo_jev === "nao",
+      conversation_id: conversa,
+      created_at: "2026-09-25T12:00:00.000Z",
+    });
+    estado.settings = { jev: { ligado: true, aceite: ACEITE_ANTIGO } };
+    estado.observacoes = [
+      // As mais recentes primeiro, como o `order` do banco devolve.
+      obs("humano", "sim", "c-1"),
+      obs("humano", "sim", "c-1"),
+      obs("humano", "sim", "c-2"),
+      obs("humano", "sim", "c-3"),
+      obs("humano", "sim", "c-4"),
+      obs("humano", "sim", "c-5"),
+      obs("humano", "sim", "c-6"),
+      // Abaixo do corte: não é pedido percebido.
+      obs("humano", "nao", "c-7"),
+      obs("opt_out", "sim", "c-8"),
+      obs("humano", "sim", "c-9", OUTRA_ORG),
+    ];
+
+    const d = (await ler()).corpo.data;
+    const humano = d.por_tarefa.find((t: { id: string }) => t.id === "humano");
+    expect(humano).toMatchObject({ estado: "observando", novo: true, observacao: null });
+    expect(humano.percebidos.dias).toBe(30);
+    expect(humano.percebidos.mensagens).toBe(7);
+    expect(humano.percebidos.conversas.map((c: { href: string }) => c.href)).toEqual([
+      "/app/inbox/c-1",
+      "/app/inbox/c-2",
+      "/app/inbox/c-3",
+      "/app/inbox/c-4",
+      "/app/inbox/c-5",
+    ]);
+    const optOut = d.por_tarefa.find((t: { id: string }) => t.id === "opt_out");
+    expect(optOut.percebidos).toMatchObject({ mensagens: 1, conversas: [{ href: "/app/inbox/c-8" }] });
+    // As outras tarefas não têm pedidos percebidos.
+    expect(d.por_tarefa.find((t: { id: string }) => t.id === "manipulacao").percebidos).toBeNull();
+    const lidas = estado.consultas.filter((c) => c.tabela === "jev_observacoes" && !c.head);
+    expect(lidas.length, "a leitura dos pedidos percebidos (controle positivo)").toBe(2);
+    expect(
+      lidas.every(
+        (c) =>
+          c.cliente === "sessao" &&
+          c.eq.some(([col, v]) => col === "organization_id" && v === ORG) &&
+          c.eq.some(([col, v]) => col === "rotulo_jev" && v === "sim") &&
+          c.gte.some(([col]) => col === "created_at"),
+      ),
+    ).toBe(true);
+  });
+
+  /**
+   * As tarefas de pedido só são perguntadas onde o atendimento automático
+   * rodaria (o worker: `haQuemAtendaASessao(..., { ignorarPausados: true })` e
+   * o modo externo fora). Numa empresa em que ele não roda em número nenhum,
+   * "Só observa" com "nenhuma mensagem" seria para sempre: a rota diz por quê,
+   * com a MESMA pergunta, sem fixar o número, e só para as de pedido.
+   */
+  it.each([
+    ["ninguém no ar sem pausa", {}, false, "ninguem_no_ar"],
+    ["o atendimento com um sistema de fora", { ai_dispatch_mode: "external" }, true, "externo"],
+    ["há quem atenda (controle)", {}, true, null],
+    ["o modo nativo dito por extenso, e há quem atenda (controle)", { ai_dispatch_mode: "native" }, true, null],
+  ] as const)("GET: nas tarefas de pedido, o motivo de não rodar — %s", async (_caso, settings, haQuem, motivo) => {
+    estado.settings = { jev: { ligado: true, aceite: ACEITE_ANTIGO }, ...settings };
+    vi.mocked(haQuemAtendaAOrganizacao).mockResolvedValue(haQuem);
+    const d = (await ler()).corpo.data;
+    const motivos = Object.fromEntries(d.por_tarefa.map((t: { id: string; sem_atendente: unknown }) => [t.id, t.sem_atendente]));
+    expect(motivos).toEqual({ clima: null, manipulacao: null, roteador: null, humano: motivo, opt_out: motivo, followup: null });
+    // A organização é a da sessão, e a pergunta é a do portão do worker.
+    expect(vi.mocked(haQuemAtendaAOrganizacao).mock.calls.map(([, org]) => org)).toEqual([ORG]);
+  });
+
+  it("GET: sem saber se há quem atenda (o banco fora), o cartão não afirma 'Não roda'", async () => {
+    estado.settings = { jev: { ligado: true, aceite: ACEITE_ANTIGO } };
+    vi.mocked(getRequestPool).mockImplementationOnce(() => {
+      throw new Error("SUPABASE_DB_URL ausente");
+    });
+    const { status, corpo } = await ler();
+    expect(status).toBe(200);
+    expect(corpo.data.por_tarefa.find((t: { id: string }) => t.id === "humano").sem_atendente).toBeNull();
+  });
+
+  it("GET: a falha da chamada dos pedidos aparece com o nome dela, e não crua", async () => {
+    estado.settings = { jev: { ligado: true, aceite: ACEITE_ANTIGO } };
+    estado.llmCalls = [chamada({ purpose: "jev_pedidos", status: "erro", error_code: "jev_sem_credito" })];
+    expect((await ler()).corpo.data.ultima_falha).toMatchObject({
+      motivo: "jev_sem_credito",
+      tarefa: "Perceber pedidos do cliente",
+    });
+  });
+
+  /**
+   * O `decidindo` da tarefa em cascata é o "Avisar a equipe" da tela: o aviso
+   * na Central existe (`lib/ai/decisao/pedidos.ts`), e a rota aceita o pedido
+   * como o de qualquer tarefa — gravado, auditado, e sem mexer no clima.
+   */
+  it("PATCH: a tarefa em cascata aceita decidindo (Avisar a equipe), grava só ela e audita", async () => {
+    estado.credenciais = [credencial()];
+    estado.settings = { jev: { ligado: true, modo: "observacao", aceite: ACEITE_ANTIGO } };
+    for (const tarefa of ["humano", "opt_out"]) {
+      const aceito = await mudar({ tarefa, estado: "decidindo" });
+      expect(aceito.status, tarefa).toBe(200);
+      expect(aceito.corpo.data.alterado, tarefa).toBe(true);
+    }
+    expect(estado.settings.jev).toMatchObject({
+      modo: "observacao",
+      tarefas: { humano: { estado: "decidindo" }, opt_out: { estado: "decidindo" } },
+    });
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "ai.jev.tarefa_alterada",
+        metadata: expect.objectContaining({ tarefa: "opt_out", estado: "decidindo" }),
+      }),
+    );
+    // E volta a só observar pelo mesmo caminho.
+    expect((await mudar({ tarefa: "humano", estado: "observando" })).status).toBe(200);
+    expect((estado.settings.jev as { tarefas: Linha }).tarefas).toMatchObject({ humano: { estado: "observando" } });
+  });
+
+  /**
+   * A do follow-up só observa nesta versão: a saída dela move o cliente no
+   * fluxo. `decidindo` é recusado com código próprio e a frase de leigo do
+   * cartão — sem escrever nem auditar —, e observar e pausar seguem valendo.
+   */
+  it("PATCH: decidindo na do follow-up é recusado (422, jev_tarefa_so_observa), sem escrever nem auditar", async () => {
+    estado.settings = { jev: { ligado: true, modo: "observacao", aceite: ACEITE_ANTIGO } };
+    const recusado = await mudar({ tarefa: "followup", estado: "decidindo" });
+    expect(recusado.status).toBe(422);
+    expect(recusado.corpo.error.code).toBe("jev_tarefa_so_observa");
+    expect(recusado.corpo.error.message).toBe(TAREFA_DO_FOLLOWUP.soObserva);
+    expect(escritas()).toEqual([]);
+    expect(audit).not.toHaveBeenCalled();
+
+    // Pausar e voltar a observar seguem valendo.
+    expect((await mudar({ tarefa: "followup", estado: "desligada" })).status).toBe(200);
+    expect((estado.settings.jev as { tarefas: Linha }).tarefas).toMatchObject({ followup: { estado: "desligada" } });
+    expect((await mudar({ tarefa: "followup", estado: "observando" })).status).toBe(200);
+    // E as outras seguem aceitando decidir (controle).
+    expect((await mudar({ tarefa: "roteador", estado: "decidindo" })).status).toBe(200);
+  });
+
+  it("PATCH: a recusa de decidir no follow-up sai no idioma de quem pede", async () => {
+    estado.settings = { jev: { ligado: true, modo: "observacao", aceite: ACEITE_ANTIGO } };
+    vi.mocked(requireRole).mockResolvedValueOnce({
+      ok: true,
+      user: { id: USUARIO, idioma: "es" },
+      org: { orgId: ORG, role: "admin" },
+    } as unknown as Awaited<ReturnType<typeof requireRole>>);
+    const recusado = await mudar({ tarefa: "followup", estado: "decidindo" });
+    expect(recusado.status).toBe(422);
+    expect(recusado.corpo.error.message).toMatch(/^En esta versión, Jev solo observa esta tarea/);
   });
 
   it("PATCH de uma tarefa: grava só ela, espelha o clima no `modo` e audita com a tarefa", async () => {

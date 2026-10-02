@@ -4,11 +4,27 @@ import { apiClient } from "@/lib/api/client";
 import { ApiError, type ApiErrorBody } from "@/lib/api/types";
 import { randomId } from "@/lib/random-id";
 
+export interface ComparativoSkill {
+  descricao_mudou: boolean;
+  matcher_mudou: boolean;
+  any_adicionadas: string[];
+  any_removidas: string[];
+  corpo_mudou: boolean;
+  linhas_adicionadas: number;
+  linhas_removidas: number;
+  mudou_em: Array<"descricao" | "matcher" | "corpo">;
+  resumo: string;
+}
+
 export interface InstalledSkill {
   name: string;
   description: string;
   version_id: string;
   source: "manual" | "catalog";
+  /** True quando o catálogo publicou versão nova depois da cópia da org (só p/ source 'catalog'). */
+  versao_nova_catalogo: boolean;
+  /** Comparativo (o que mudou) entre a cópia da org e a versão nova do catálogo; null quando não há versão nova. */
+  comparativo: ComparativoSkill | null;
   updated_at: string;
 }
 export interface CatalogSkill {

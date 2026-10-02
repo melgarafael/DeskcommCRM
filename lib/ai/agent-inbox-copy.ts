@@ -94,8 +94,16 @@ export const KIND_LABEL = {
   // devia estar recebendo mensagem e não recebe, e é isso que faz alguém abrir
   // o aviso. O passo que conserta fica no corpo.
   followup_sem_agente: "Um follow-up está publicado e não está disparando",
+  // Diz QUEM percebeu: o pedido não foi visto pela regra de hoje, e o aviso é
+  // uma leitura do Jev — quem abre precisa saber que a conversa não foi passada
+  // nem o contato bloqueado. O que fazer vai no corpo.
+  jev_pedido_de_humano: "Pedido para falar com uma pessoa, percebido pelo Jev",
+  jev_parar_de_receber: "Pedido para parar de receber mensagens, percebido pelo Jev",
   proposta_travada: "Uma proposta ficou presa em envio e voltou a rascunho",
   proposta_pronta_para_revisao: "Uma proposta está pronta para revisão",
+  // Igual ao `title` que fn_reativar_organizacao grava: diz o que a pessoa tem
+  // de FAZER agora — as conversas que chegaram durante a suspensão ficaram sem resposta.
+  org_reativada: "A conta foi reativada — há conversas para revisar",
   other: "Aviso do assistente",
 } as const satisfies Record<InboxKind, string>;
 

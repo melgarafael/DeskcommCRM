@@ -33,6 +33,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MAX_CONTATOS_EXAMINADOS,
   MAX_CONTATOS_POR_VARREDURA,
+  MENSAGEM_REDIGIDA,
+  NOTA_REDIGIDA,
   SUFIXO_ANONIMIZADO,
   type ClienteDaCascata,
   completarRedacaoDoContato,
@@ -90,6 +92,19 @@ interface Linha {
   title?: string | null;
   payload?: unknown;
   is_anonymized?: boolean;
+  headline?: string;
+  body?: string | null;
+  tool_calls?: unknown;
+  social_identity?: unknown;
+  next_action?: string | null;
+  qualification?: unknown;
+  status?: string | null;
+  next_eval_at?: string | null;
+  claimed_until?: string | null;
+  completed_at?: string | null;
+  cancel_reason?: string | null;
+  embedding?: unknown;
+  media_derived_text?: string | null;
 }
 
 interface Escrita {
@@ -120,6 +135,7 @@ function banco(linhas: Linha[]) {
         filtros: Array<[string, unknown]>,
         dentro: [string, string[]] | null,
         faixas: Array<[string, string]> = [],
+        naoNulos: string[] = [],
       ): Linha[] =>
         linhas.filter((l) => {
           if ((l.id.split(":")[0] ?? "") !== tabela) return false;
@@ -131,6 +147,12 @@ function banco(linhas: Linha[]) {
           for (const [col, val] of faixas) {
             const atual = (l as unknown as Record<string, string | undefined>)[col];
             if (atual === undefined || !(atual < val)) return false;
+          }
+          // `.not(col, "is", null)` do passo da transcrição (0497). Ignorá-lo
+          // faria a mensagem já limpa voltar como resíduo e mascararia a idempotência.
+          for (const col of naoNulos) {
+            const atual = (l as unknown as Record<string, unknown>)[col];
+            if (atual === null || atual === undefined) return false;
           }
           // O `.in()` da cascata vem em DUAS colunas — `id` no UPDATE das
           // atividades, `contact_id` na detecção em bloco. Um dublê que
@@ -149,6 +171,7 @@ function banco(linhas: Linha[]) {
       ) => {
         const filtros: Array<[string, unknown]> = [];
         const faixas: Array<[string, string]> = [];
+        const naoNulos: string[] = [];
         let dentro: [string, string[]] | null = null;
         let teto: number | null = null;
         const q: Record<string, unknown> = {
@@ -164,6 +187,10 @@ function banco(linhas: Linha[]) {
             dentro = [col, vals];
             return q;
           },
+          not: (col: string) => {
+            naoNulos.push(col);
+            return q;
+          },
           select: () => q,
           order: () => q,
           limit: (n: number) => {
@@ -171,7 +198,7 @@ function banco(linhas: Linha[]) {
             return q;
           },
           then: (r: (v: unknown) => unknown) => {
-            let achadas = casar(filtros, dentro, faixas);
+            let achadas = casar(filtros, dentro, faixas, naoNulos);
             if (teto !== null) achadas = achadas.slice(0, teto);
             if (modo === "update") {
               aplicar(tabela, patch, achadas);
@@ -366,9 +393,25 @@ describe("varredura: a retomada acontece sem ninguém clicar", () => {
 
 describe("a unidade que as duas bocas compartilham", () => {
   it("houveRedacao distingue trabalho feito de nada a fazer", () => {
-    expect(houveRedacao({ leadsRedigidas: [], atividadesRedigidas: 0, tabelas: [], falhas: [] })).toBe(false);
-    expect(houveRedacao({ leadsRedigidas: ["x"], atividadesRedigidas: 0, tabelas: [], falhas: [] })).toBe(true);
-    expect(houveRedacao({ leadsRedigidas: [], atividadesRedigidas: 1, tabelas: [], falhas: [] })).toBe(true);
+    const vazio: Parameters<typeof houveRedacao>[0] = {
+      leadsRedigidas: [],
+      atividadesRedigidas: 0,
+      memoriasRedigidas: 0,
+      runsRedigidas: 0,
+      estadosRedigidos: 0,
+      socialIdentidadeRedigida: false,
+      transcricoesRedigidas: 0,
+      tabelas: [],
+      falhas: [],
+    };
+    expect(houveRedacao(vazio)).toBe(false);
+    expect(houveRedacao({ ...vazio, leadsRedigidas: ["x"] })).toBe(true);
+    expect(houveRedacao({ ...vazio, atividadesRedigidas: 1 })).toBe(true);
+    expect(houveRedacao({ ...vazio, memoriasRedigidas: 1 })).toBe(true);
+    expect(houveRedacao({ ...vazio, runsRedigidas: 1 })).toBe(true);
+    expect(houveRedacao({ ...vazio, estadosRedigidos: 1 })).toBe(true);
+    expect(houveRedacao({ ...vazio, socialIdentidadeRedigida: true })).toBe(true);
+    expect(houveRedacao({ ...vazio, transcricoesRedigidas: 1 })).toBe(true);
   });
 
   it("⭐ `tabelas` lista só o que foi tocado — não o literal das três", async () => {
@@ -382,6 +425,196 @@ describe("a unidade que as duas bocas compartilham", () => {
 
     expect(r.tabelas, "afirmou ter redigido tabelas que não tocou").toEqual([]);
     expect(alvo.escritas).toEqual([]);
+  });
+
+  it("⭐ o legado da IA é redigido junto com leads/atividades (#1957)", async () => {
+    // A cascata fechava a ficha do contato mas deixava a MEMÓRIA do agente, os
+    // ARGUMENTOS das ferramentas, o ESTADO da lead e a IDENTIDADE SOCIAL com PII.
+    // Aqui os quatro entram de uma vez, com um contato sem resíduo de lead para
+    // provar que a varredura atinge essas fontes mesmo quando o resto já estava.
+    alvo = banco([
+      contatoAnonimizado(),
+      { id: "crm_leads:1", organization_id: ORG, contact_id: "contacts:a", title: `Ok${SUFIXO_ANONIMIZADO}` },
+      { id: "crm_lead_activities:1", organization_id: ORG, contact_id: "contacts:a", payload: { redacted: true } },
+      { id: "lead_notes:1", organization_id: ORG, contact_id: "contacts:a", headline: "Lembrete: maria pediu orçamento", body: "Falou com o João sobre o telhado" },
+      { id: "ai_agent_runs:1", organization_id: ORG, contact_id: "contacts:a", tool_calls: [{ tool_name: "crm_buscar_contato", args: { termo: "Maria Souza" } }] },
+      { id: "lead_state:1", organization_id: ORG, contact_id: "contacts:a", next_action: "Ligar para Maria", qualification: { nome: "Maria" } },
+    ]);
+
+    const r = await varrerRedacoesIncompletas(alvo.cliente);
+
+    expect(r.completados).toHaveLength(1);
+    const resultado = r.completados[0]!.resultado;
+    expect(resultado.memoriasRedigidas).toBe(1);
+    expect(resultado.runsRedigidas).toBe(1);
+    expect(resultado.estadosRedigidos).toBe(1);
+    // O contato não declarou social_identity, então não é tocado por essa fonte.
+    expect(resultado.socialIdentidadeRedigida).toBe(false);
+
+    // Estado FINAL, não só a intenção — nada das quatro fontes guarda PII.
+    expect(alvo.linhas.find((l) => l.id === "lead_notes:1")!.headline).toBe(NOTA_REDIGIDA);
+    expect(alvo.linhas.find((l) => l.id === "lead_notes:1")!.body).toBe(NOTA_REDIGIDA);
+    expect(alvo.linhas.find((l) => l.id === "ai_agent_runs:1")!.tool_calls).toEqual([
+      { tool_name: "crm_buscar_contato", redacted: true, tool_calls: [] },
+    ]);
+    expect(alvo.linhas.find((l) => l.id === "lead_state:1")!.next_action).toBeNull();
+    expect(alvo.linhas.find((l) => l.id === "lead_state:1")!.qualification).toEqual({});
+  });
+
+  it("⭐ contato com apenas identidade social residual é alcançado (#1957)", async () => {
+    // Um contato cuja ÚNICA coisa pendente é o `social_identity` não deve
+    // escapar: depois do pedido, a identidade social precisa sumir também.
+    alvo = banco([
+      contatoAnonimizado(),
+      { id: "crm_leads:1", organization_id: ORG, contact_id: "contacts:a", title: `Ok${SUFIXO_ANONIMIZADO}` },
+      { id: "crm_lead_activities:1", organization_id: ORG, contact_id: "contacts:a", payload: { redacted: true } },
+      { id: "contacts:a", organization_id: ORG, is_anonymized: true, social_identity: { instagram: "@maria" } },
+    ]);
+
+    const r = await varrerRedacoesIncompletas(alvo.cliente);
+
+    expect(r.completados).toHaveLength(1);
+    expect(r.completados[0]!.resultado.socialIdentidadeRedigida).toBe(true);
+    // Depois do pedido, NENHUMA linha do contato retém identidade social.
+    for (const linha of alvo.linhas.filter((l) => l.id === "contacts:a")) {
+      expect(linha.social_identity).toBeNull();
+    }
+  });
+
+  it("⭐ a segunda passada não redige as fontes novas mais de uma vez (#1957)", async () => {
+    alvo = banco([
+      contatoAnonimizado(),
+      { id: "lead_notes:1", organization_id: ORG, contact_id: "contacts:a", headline: "nome", body: "telefone" },
+      { id: "ai_agent_runs:1", organization_id: ORG, contact_id: "contacts:a", tool_calls: [{ tool_name: "x", args: { a: 1 } }] },
+      { id: "lead_state:1", organization_id: ORG, contact_id: "contacts:a", next_action: "ação", qualification: { q: 1 } },
+    ]);
+
+    await varrerRedacoesIncompletas(alvo.cliente);
+    const escritasDaPrimeira = alvo.escritas.length;
+
+    const segunda = await varrerRedacoesIncompletas(alvo.cliente);
+
+    expect(segunda.completados, "a segunda passada redigiu de novo o que já estava redigido").toEqual([]);
+    expect(alvo.escritas.length, "rescreveu as fontes novas na segunda passada").toBe(escritasDaPrimeira);
+  });
+
+  it("⭐ tool_calls redigido guarda QUAIS ferramentas rodaram e apaga o que a pessoa disse (#1957)", async () => {
+    // A forma real (lib/ai/runtime/serialize.ts): passos com o texto do modelo e
+    // chamadas com argumentos e resultado. Apagar tudo apagaria também a trilha
+    // de quais ferramentas o agente usou — que não identifica ninguém.
+    alvo = banco([
+      contatoAnonimizado(),
+      {
+        id: "ai_agent_runs:1",
+        organization_id: ORG,
+        contact_id: "contacts:a",
+        tool_calls: [
+          {
+            step: 0,
+            text: "Oi Maria, vou buscar seu pedido",
+            finish_reason: "tool-calls",
+            tokens_in: 10,
+            tokens_out: 5,
+            tool_calls: [
+              { tool_name: "crm_buscar_contato", args: { termo: "Maria Souza" }, result: { telefone: "5511999999999" } },
+            ],
+          },
+          { step: 1, text: "Pronto, Maria", tool_calls: [] },
+        ],
+      },
+    ]);
+
+    await varrerRedacoesIncompletas(alvo.cliente);
+
+    const run = alvo.linhas.find((l) => l.id === "ai_agent_runs:1")!;
+    expect(run.tool_calls).toEqual([
+      { step: 0, redacted: true, tool_calls: [{ tool_name: "crm_buscar_contato" }] },
+      { step: 1, redacted: true, tool_calls: [] },
+    ]);
+    expect(JSON.stringify(run.tool_calls), "sobrou texto da pessoa no registro da run").not.toMatch(/Maria|5511/);
+  });
+
+  it("⭐ run com tool_calls vazio de nascença não é reescrita (#1957)", async () => {
+    // `ai_agent_runs.tool_calls` é `not null default '[]'`: uma run que nunca
+    // chamou ferramenta nasce com `[]`. O marcador de redação NÃO é o vácuo
+    // (senão reescreveria para sempre), é o array-sentinela — aqui provamos
+    // que o `[]` legítimo passa intocado.
+    alvo = banco([
+      contatoAnonimizado(),
+      { id: "lead_notes:1", organization_id: ORG, contact_id: "contacts:a", headline: "x", body: "y" },
+      { id: "ai_agent_runs:1", organization_id: ORG, contact_id: "contacts:a", tool_calls: [] },
+    ]);
+
+    await varrerRedacoesIncompletas(alvo.cliente);
+    const run = alvo.linhas.find((l) => l.id === "ai_agent_runs:1")!;
+    expect(run.tool_calls, "reescreveu uma run que nunca teve argumentos").toEqual([]);
+  });
+});
+
+describe("a transcrição da mídia sai junto (0497, triagem do #1988)", () => {
+  // O banco redige o body da mensagem na virada de is_anonymized; a transcrição
+  // (`media_derived_text`) ficava. A varredura é quem alcança a que o
+  // `media-derive-worker` grava DEPOIS da anonimização — nenhum gatilho dispara ali.
+  const audio = (sufixo: string, over: Partial<Linha> = {}): Linha => ({
+    id: `messages:${sufixo}`,
+    organization_id: ORG,
+    contact_id: "contacts:a",
+    body: MENSAGEM_REDIGIDA,
+    media_derived_text: "oi, aqui é a Maria, meu CPF é 123",
+    ...over,
+  });
+
+  it("⭐ mensagem anonimizada que guardou a transcrição: a varredura apaga", async () => {
+    alvo = banco([contatoAnonimizado(), audio("1")]);
+
+    const r = await varrerRedacoesIncompletas(alvo.cliente);
+
+    expect(r.completados).toHaveLength(1);
+    expect(r.completados[0]!.resultado.transcricoesRedigidas).toBe(1);
+    expect(r.completados[0]!.resultado.tabelas).toContain("messages:media_derived_text");
+    expect(alvo.linhas.find((l) => l.id === "messages:1")!.media_derived_text).toBeNull();
+  });
+
+  it("⭐ poupa quem voltou a escrever, o vizinho e a outra org", async () => {
+    alvo = banco([
+      contatoAnonimizado(),
+      // body de verdade: mensagem NOVA de quem voltou (religado pelo LID).
+      audio("nova", { body: null, media_derived_text: "voltei, quero o orçamento" }),
+      // mesmo body-sentinela, mas de OUTRO contato da mesma org, não anonimizado.
+      audio("vizinho", { contact_id: "contacts:b" }),
+      // mesmo contact_id em OUTRA org — só existe se algo já vazou.
+      audio("outra-org", { organization_id: OUTRA_ORG }),
+    ]);
+
+    const r = await varrerRedacoesIncompletas(alvo.cliente);
+
+    expect(r.completados).toEqual([]);
+    expect(alvo.linhas.find((l) => l.id === "messages:nova")!.media_derived_text).toBe("voltei, quero o orçamento");
+    expect(alvo.linhas.find((l) => l.id === "messages:vizinho")!.media_derived_text).not.toBeNull();
+    expect(alvo.linhas.find((l) => l.id === "messages:outra-org")!.media_derived_text).not.toBeNull();
+  });
+
+  it("⭐ idempotente: a segunda passada não escreve nada", async () => {
+    alvo = banco([contatoAnonimizado(), audio("1"), audio("2")]);
+
+    const primeira = await varrerRedacoesIncompletas(alvo.cliente);
+    expect(primeira.completados[0]!.resultado.transcricoesRedigidas).toBe(2);
+    const escritas = alvo.escritas.length;
+
+    const segunda = await varrerRedacoesIncompletas(alvo.cliente);
+
+    expect(segunda.completados).toEqual([]);
+    expect(alvo.escritas.length).toBe(escritas);
+  });
+
+  it("a rota (completarRedacaoDoContato) apaga pelo mesmo passo", async () => {
+    alvo = banco([contatoAnonimizado(), audio("1")]);
+
+    const r = await completarRedacaoDoContato(alvo.cliente, { id: "contacts:a", organizationId: ORG });
+
+    expect(r.transcricoesRedigidas).toBe(1);
+    expect(houveRedacao(r)).toBe(true);
+    expect(alvo.linhas.find((l) => l.id === "messages:1")!.media_derived_text).toBeNull();
   });
 });
 

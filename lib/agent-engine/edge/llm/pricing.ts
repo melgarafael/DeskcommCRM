@@ -27,8 +27,11 @@
  *      (`claude-sonnet-50`, `claude-opus-4-9`) — e custo errado não-nulo é pior
  *      que custo desconhecido, porque não acende o sinal de gasto incompleto.
  *
- * Por isso o match é EXATO, com uma única tolerância: o sufixo de data do vendor
- * (`claude-opus-4-1-20250805`). Id que a tabela não conhece volta NULL, que é o
+ * Por isso o match é EXATO, com duas tolerâncias: o sufixo de data do vendor
+ * (`claude-opus-4-1-20250805`) e o prefixo `provider/` do OpenRouter
+ * (`anthropic/claude-sonnet-5`) — este último recortado até a primeira barra,
+ * na mesma ordem da tolerância do sufixo, para um id com prefixo+sufixo também
+ * casar (issue #1880). Id que a tabela não conhece volta NULL, que é o
  * contrato escrito acima.
  */
 
@@ -107,10 +110,19 @@ export interface TokenUsage {
  * `startsWith` antigo deixava passar silenciosamente.
  */
 export function precoDoModelo(model: string): Preco | undefined {
+  // O OpenRouter devolve o id com o prefixo `provider/` (`anthropic/claude-…`);
+  // a tabela é indexada sem ele. Recorta até a primeira barra e tenta de novo,
+  // na MESMA ordem da tolerância do sufixo de data, para um id com prefixo+sufixo
+  // (`anthropic/claude-sonnet-5-20250929`) casar também. O id completo segue
+  // tentado PRIMEIRO: um id que a tabela conheça com barra vence o recorte.
+  const semPrefixo = model.includes("/") ? model.slice(model.indexOf("/") + 1) : model;
   return (
     USD_PER_MTOK[model] ??
-    USD_PER_MTOK[model.replace(/-\d{8}$/, '')] ??
-    USD_PER_MTOK[model.replace(/-\d{4}-\d{2}-\d{2}$/, '')]
+    USD_PER_MTOK[model.replace(/-\d{8}$/, "")] ??
+    USD_PER_MTOK[model.replace(/-\d{4}-\d{2}-\d{2}$/, "")] ??
+    USD_PER_MTOK[semPrefixo] ??
+    USD_PER_MTOK[semPrefixo.replace(/-\d{8}$/, "")] ??
+    USD_PER_MTOK[semPrefixo.replace(/-\d{4}-\d{2}-\d{2}$/, "")]
   );
 }
 

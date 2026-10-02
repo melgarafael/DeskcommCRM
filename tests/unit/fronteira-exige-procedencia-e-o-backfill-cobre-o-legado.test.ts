@@ -82,6 +82,7 @@ function conversaLegada(contactId: string, comCarimbo: boolean) {
       phone_number: "+5585999990000",
     },
     sessao: { metadata },
+    organizations: { status: "active" },
   };
 }
 

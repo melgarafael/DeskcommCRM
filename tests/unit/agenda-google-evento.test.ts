@@ -216,6 +216,32 @@ describe("paraEventoDoGoogle", () => {
       paraEventoDoGoogle(agendamento({ participantes: [{ email: "  " }] })),
     ).toThrow(/participante sem e-mail/);
   });
+
+  // ─── A CERCA (#1959) ────────────────────────────────────────────────────
+  // `AgendamentoParaGoogle` não tem `notes`, mas o `sync-executor.ts` chama esta
+  // função com `{ ...a, ... }` — o snapshot inteiro. Se o snapshot voltar a
+  // carregar `notes`, ele CHEGA aqui em tempo de execução, e o TypeScript não
+  // acusa nada (nem se os dois tipos ganharem o campo: medido). A cerca é de
+  // runtime. O caso sem observação é o que importa: foi exatamente o
+  // `a.description?.trim() || a.notes?.trim()` da #1959.
+  it.each([
+    ["com observação visível", "Primeira consulta", "Primeira consulta"],
+    ["sem observação (null)", null, undefined],
+    ["com observação em branco", "   ", undefined],
+  ])("⚠️ nunca vaza a anotação INTERNA (notes) para o Google — %s", (_rotulo, description, esperada) => {
+    const comNotaInterna = {
+      ...agendamento({ description }),
+      notes: "queixa clínica: paciente com ansiedade e dor torácica recorrente",
+    } as unknown as AgendamentoParaGoogle;
+    const corpo = paraEventoDoGoogle(comNotaInterna);
+    expect(corpo.description).toBe(esperada);
+    // Nenhum campo do corpo pode carregar o texto interno — pega também um
+    // espalhamento (`...a`) que criasse uma chave nova.
+    const serializa = JSON.stringify(corpo);
+    expect(serializa).not.toContain("queixa clínica");
+    expect(serializa).not.toContain("dor torácica");
+    expect("notes" in corpo).toBe(false);
+  });
 });
 
 // ─── VOLTA ─────────────────────────────────────────────────────────────────

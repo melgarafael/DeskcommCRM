@@ -13,7 +13,7 @@ Este kit sobe o **DeskcommCRM** no seu servidor VPS da HostGator. Você tem dois
 > ```
 
 > **Outra hospedagem?** O kit é feito para a HostGator (é a parceria do projeto e o caminho
-> testado de ponta a ponta), mas roda em qualquer VPS **x86_64/amd64** com Docker. Se a sua já vem com um
+> testado de ponta a ponta), mas roda em qualquer VPS **x86_64/amd64 ou ARM64/aarch64** com Docker. Se a sua já vem com um
 > **proxy reverso próprio** ocupando as portas 80/443 — caso de Hostinger, Coolify, Dokploy
 > e CapRover —, o instalador **detecta isso sozinho** e publica o CRM através dele, em vez
 > de tentar subir um Caddy que não caberia. Ver
@@ -104,9 +104,11 @@ Owner/Admin. Não dá para hospedar vários clientes numa conta só.
 
 ## Requisitos do VPS
 
-- **Arquitetura x86_64/amd64.** As imagens oficiais publicadas atualmente são `linux/amd64`.
-  VPS ARM64/aarch64 ainda não são suportadas pelo kit; use uma VPS x86_64/amd64 enquanto
-  não houver imagens multi-arquitetura.
+- **Arquitetura x86_64/amd64 ou ARM64/aarch64.** As imagens DeskcommCRM são publicadas para
+  `linux/amd64` e `linux/arm64`; o instalador seleciona a variante oficial ARM64 NOWEB do WAHA.
+  O modo com Supabase self-hosted na mesma VPS também funciona em ARM64: a versão upstream
+  fixada pelo kit (`self-hosted/v0.8.1`) e as imagens dos seus 11 serviços têm manifestos
+  `linux/arm64`. Ao atualizar `SUPABASE_REF`, confira de novo os manifestos de todas as imagens.
 - **4 GB RAM recomendados.** A imagem é pré-buildada, então o servidor não compila nada e a
   stack SOBE com 2 GB — mas operar é outra coisa: são 7 contêineres, e o WAHA consome
   ~150 MB por sessão de WhatsApp além de ~300 MB de overhead do Node. Com 2 GB você roda

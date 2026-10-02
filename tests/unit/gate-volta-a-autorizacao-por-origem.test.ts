@@ -79,6 +79,7 @@ function decisaoDoMotor(
 ) {
   return decidirElegibilidade(
     montarEstadoDeElegibilidade({
+      orgStatus: "active",
       aiGate: metadata.ai_gate,
       aiGateMode: metadata.ai_gate_mode,
       forceHuman: false,

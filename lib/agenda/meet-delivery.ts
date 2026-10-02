@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { STATUS_OPERANTE } from "@/lib/organizacao/operante";
 import { decidirElegibilidade, montarEstadoDeElegibilidade, ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
 import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 import type { JobClaim } from "@/lib/agent-engine/queue/claim";
@@ -34,6 +35,10 @@ function requirePolicy(raw: unknown): { humanCommand: boolean; contactId: string
   const p = requireCurrentPolicy(raw);
   if (p.human_command === true) return { humanCommand: true, contactId: p.contact_id, channelSessionId: p.channel_session_id };
   const result = decidirElegibilidade(montarEstadoDeElegibilidade({
+    // `current: true` só sai de `fn_meet_delivery_current`, que já exige a
+    // organização operante (join organizations status='active'): quando a
+    // política chega aqui, a org ESTAVA operante na mesma leitura.
+    orgStatus: STATUS_OPERANTE,
     aiGate: p.ai_gate, forceHuman: p.force_human, assigneeKind: p.assignee_kind ?? null,
     botSilencedUntil: p.bot_silenced_until, aiAuthorizedAt: p.ai_authorized_at,
     agora: new Date(), ttlMs: ttlDaAutorizacaoMs(process.env),

@@ -94,10 +94,11 @@ worker:
 ### 2. Publicação é ato do CI, e carrega procedência
 
 Imagem nossa só existe se saiu de `.github/workflows/publish-image.yml`. Ela carrega os labels
-OCI — no mínimo `source`, `revision`, `version`, `licenses` — e é construída para `linux/amd64`.
+OCI — no mínimo `source`, `revision`, `version`, `licenses` — e é construída para `linux/amd64` e `linux/arm64`.
 
-- **Por quê:** duas razões distintas. **(a) Arquitetura:** um `docker build` num Mac ARM produz
-  imagem que não roda na VPS amd64 do cliente, e a falha aparece só no `up -d` dele. **(b)
+- **Por quê:** duas razões distintas. **(a) Arquitetura:** um `docker build` local pode produzir
+  imagem para a plataforma errada; o CI publica manifestos linux/amd64 e linux/arm64 e os testa
+  em runners nativos, antes de qualquer cliente chegar ao `up -d`. **(b)
   Rastreabilidade:** sem `org.opencontainers.image.revision` não existe resposta para "que
   código está rodando neste cliente?", e o suporte vira adivinhação.
 - **Verificação:** o job **`imagens-ok`** de `publish-image.yml` reprova quando qualquer uma

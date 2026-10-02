@@ -65,7 +65,10 @@ const CORPO_DO_AVISO =
  */
 const FRASES_DE_SEM_SALDO: ReadonlyArray<{ padrao: RegExp; provedor: 'anthropic' | 'openai' }> = [
   { padrao: /credit balance is too low/i, provedor: 'anthropic' },
-  { padrao: /insufficient_quota|exceeded your current quota/i, provedor: 'openai' },
+  // "You have no credits remaining. Add credits to continue using the API…" —
+  // a frase que a OpenAI devolveu numa VPS em set/2026 (5–10/09 e 21/09). Sem
+  // ela a espera não acontecia: ~102 mil chamadas recusadas e 17 mil `job_dead`.
+  { padrao: /insufficient_quota|exceeded your current quota|no credits remaining/i, provedor: 'openai' },
 ];
 
 /** As mensagens do erro e das causas (o SDK às vezes embrulha o erro do provedor). */

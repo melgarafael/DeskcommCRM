@@ -13,6 +13,7 @@ import {
 } from "@/lib/event-log/aviso-de-evento-morto";
 import { dispatchEvent, getRegisteredHandlers, type EventRow } from "@/lib/event-log/dispatcher";
 import { logger } from "@/lib/logger";
+import { ehOperante } from "@/lib/organizacao/operante";
 
 const MAX_ATTEMPTS = 5;
 
@@ -69,8 +70,13 @@ function backoffAt(attempts: number): string {
  * mídia aberta já não o cala (`aviso-de-evento-morto.ts`, "as duas famílias").
  *
  * Fire-and-forget: falhar ao avisar não pode derrubar o dreno.
+ *
+ * Exportada (além de `drainEventLog`) porque é ELA que a corrida da issue #880
+ * atravessa: o cron `event-log-drain` e o drain-loop do worker chamam este
+ * dreno ao mesmo tempo, e os dois passam por aqui. O teste da corrida entra por
+ * esta função — `tests/unit/aviso-event-dead-concorrente-abre-uma-vez.test.ts`.
  */
-async function avisarEventoMorto(
+export async function avisarEventoMorto(
   admin: SupabaseClient,
   row: Pick<EventRow, "id" | "organization_id" | "event_type" | "attempts">,
   motivo: string,
@@ -108,6 +114,14 @@ async function avisarEventoMorto(
       body,
     });
     if (error) {
+      // `23505` é o outro dreno chegando primeiro: o índice único parcial
+      // `agent_inbox_event_dead_aberto_unico` (migration 0491) recusou a segunda
+      // linha, e recusar é o que este aviso PROMETE — um por organização e por
+      // família. Antes do índice os dois passavam pelo "não existe" e os dois
+      // inseriam (issue #880); agora quem chega segundo recebe `23505`, que é o
+      // mesmo desfecho de ter encontrado o aviso aberto na consulta de cima, e
+      // não uma falha do dreno.
+      if (error.code === "23505") return;
       logger.error("[event-log.drain] aviso de evento morto recusado", {
         event_id: row.id,
         error: error.message,
@@ -255,6 +269,33 @@ export async function drainEventLog(
     return summary;
   }
 
+  // ─── ORGANIZAÇÃO PARADA ────────────────────────────────────────────────────
+  //
+  // Uma consulta por lote, `in (...)`, ANTES de reclamar qualquer linha. Org
+  // que não volta da leitura conta como parada (falha fechada). Se a LEITURA
+  // falha, o lote inteiro espera o próximo tique: consumir às cegas marcaria
+  // `skipped` para sempre o handler "pula" de uma org operante.
+  const orgIds = [...new Set((rows ?? []).map((r) => (r as { organization_id: string }).organization_id))];
+  const parados = new Set<string>();
+  if (orgIds.length) {
+    const { data: orgs, error: orgErr } = await admin
+      .from("organizations")
+      .select("id, status")
+      .in("id", orgIds);
+    if (orgErr) {
+      logger.error("[event-log.drain] status das organizações indisponível — lote adiado", {
+        error: orgErr.message,
+      });
+      return summary;
+    }
+    const operantes = new Set(
+      ((orgs ?? []) as Array<{ id: string; status: string | null }>)
+        .filter((o) => ehOperante(o.status))
+        .map((o) => o.id),
+    );
+    for (const id of orgIds) if (!operantes.has(id)) parados.add(id);
+  }
+
   for (const raw of rows ?? []) {
     const row = raw as unknown as EventRow;
     summary.scanned += 1;
@@ -268,7 +309,7 @@ export async function drainEventLog(
       .select("id");
     if (!claimed?.length) continue;
 
-    const results = await dispatchEvent(row);
+    const results = await dispatchEvent(row, { orgParada: parados.has(row.organization_id) });
 
     const okKeys = results
       .filter((r) => r.status === "ok" || r.status === "skipped")

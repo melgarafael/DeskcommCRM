@@ -11,7 +11,8 @@ import { PACING_DEFAULTS } from "@/lib/agent-engine/pacing/defaults";
 import { janelaDeEnvioAberta } from "@/lib/agent-engine/pacing/engine";
 import { fusoDaJanela } from "@/lib/agent-engine/pacing/store";
 import { ok, fail } from "@/lib/api/wrappers";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser } from "@/lib/auth/server";
+import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
 
@@ -39,7 +40,9 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   const authUser = await loadAuthUser();
   const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
-  const activeOrg = authUser ? await resolveActiveOrg(authUser) : null;
+  const ativa = await orgAtivaDaApi(authUser, requestId);
+  if (!ativa.ok) return ativa.response;
+  const activeOrg = ativa.org;
   if (!activeOrg) {
     return fail("no_active_org", t("No active organization."), 403, { requestId });
   }
@@ -76,7 +79,9 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const [{ data: knobs }, { data: orgRow }, { data: ultimaSaida }] = await Promise.all([
     supabase
       .from("channel_knobs")
-      .select("window_start_hour, window_end_hour, allow_sunday, timezone")
+      .select(
+        "window_start_hour, window_end_hour, resposta_start_hour, resposta_end_hour, allow_sunday, timezone",
+      )
       .eq("organization_id", activeOrg.orgId)
       .eq("channel_session_id", conv.channel_session_id)
       .maybeSingle(),
@@ -96,9 +101,18 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // O MESMO fuso que o motor usa para decidir (`fusoDaJanela`): override do
   // canal → fuso da organização → padrão. Antes esta rota caía direto em São
   // Paulo e o aviso dizia "fora da janela" com a hora de outra cidade.
+  //
+  // A retenção que esta rota explica é a da RESPOSTA do assistente (a Inbox
+  // mostra "Resposta segurada pela proteção do número"). Então o contexto e o
+  // "aberta agora" usam a janela de RESPOSTA, com a mesma herança coluna a
+  // coluna de `effectiveKnobs` (#1984): `resposta_*` ?? `window_*` ?? default.
+  const respostaStartHour =
+    knobs?.resposta_start_hour ?? knobs?.window_start_hour ?? PACING_DEFAULTS.respostaStartHour;
+  const respostaEndHour =
+    knobs?.resposta_end_hour ?? knobs?.window_end_hour ?? PACING_DEFAULTS.respostaEndHour;
   const context = {
-    window_start_hour: knobs?.window_start_hour ?? PACING_DEFAULTS.windowStartHour,
-    window_end_hour: knobs?.window_end_hour ?? PACING_DEFAULTS.windowEndHour,
+    window_start_hour: respostaStartHour,
+    window_end_hour: respostaEndHour,
     allow_sunday: knobs?.allow_sunday ?? PACING_DEFAULTS.allowSunday,
     timezone: fusoDaJanela(knobs?.timezone, (orgRow as { timezone?: string | null } | null)?.timezone),
   };
@@ -108,13 +122,23 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   //   - "fora da janela" com a janela ABERTA agora é mentira — o próximo turno
   //     reavalia com a janela aberta.
   const saiuDepoisEm = (ultimaSaida as { created_at?: string } | null)?.created_at ?? null;
-  const janelaAbertaAgora = janelaDeEnvioAberta(new Date(), {
-    ...PACING_DEFAULTS,
-    windowStartHour: context.window_start_hour,
-    windowEndHour: context.window_end_hour,
-    allowSunday: context.allow_sunday,
-    timezone: context.timezone,
-  });
+  const janelaAbertaAgora = janelaDeEnvioAberta(
+    new Date(),
+    {
+      ...PACING_DEFAULTS,
+      // O `resposta=true` faz `janelaDoPacing` ler `respostaStartHour`/
+      // `respostaEndHour` — o par que esta rota calculou com a herança coluna a
+      // coluna. Deixá-los nos defaults espelharia 7h-22h em vez do inherited.
+      respostaStartHour,
+      respostaEndHour,
+      allowSunday: context.allow_sunday,
+      timezone: context.timezone,
+    },
+    // O envio retido aqui é a RESPOSTA do agente — avalia a janela de resposta
+    // (#1984). Sem isto, com a janela de resposta aberta e a de disparo fechada
+    // a 3h, o aviso diria "fora da janela" para uma resposta que o motor deixaria sair.
+    true,
+  );
   const vigentes = (traces ?? []).filter(
     (tr) =>
       (saiuDepoisEm === null || Date.parse(tr.created_at) > Date.parse(saiuDepoisEm)) &&

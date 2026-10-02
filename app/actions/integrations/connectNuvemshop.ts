@@ -1,5 +1,7 @@
 "use server";
 
+import { escreveComoPlatformAdmin } from "@/lib/auth/types";
+
 /**
  * Server Action: start the Nuvemshop OAuth flow for the active org.
  *
@@ -29,7 +31,7 @@ export async function connectNuvemshop(): Promise<ConnectResult> {
 
   // Only `admin` can wire up integrations (RBAC). `manager`/`agent`/`viewer`
   // see the UI read-only.
-  if (activeOrg.role !== "admin" && !user.is_platform_admin) {
+  if (activeOrg.role !== "admin" && !escreveComoPlatformAdmin(user)) {
     return { ok: false, error: "forbidden" };
   }
 

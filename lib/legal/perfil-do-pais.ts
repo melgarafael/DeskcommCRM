@@ -129,6 +129,14 @@ export interface PerfilDoPais {
   /** Nome do país como o operador o lê. */
   nome: string;
   documento: DocumentoDoTitular;
+  /**
+   * Um telefone DESTE país em E.164, para o exemplo dos formulários.
+   *
+   * Mora aqui porque o campo é o mesmo em toda tela e o exemplo não é: o
+   * `+5511999998888` escrito em duro em `NewContactDialog` ensinava DDI
+   * brasileiro a quem cadastra cliente em Lisboa. País novo declara o seu.
+   */
+  telefoneExemplo: string;
   /** `null` quando o país ainda não tem lei revisada para citar. */
   lei: LeiCitada | null;
   calendario: CalendarioDeDiasUteis;
@@ -174,6 +182,7 @@ const PERFIL_BR: PerfilDoPais = {
   codigo: "BR",
   nome: "Brasil",
   documento: DOCUMENTO_BR,
+  telefoneExemplo: "+5511999998888",
   lei: {
     nome: "LGPD",
     numero: "Lei nº 13.709/2018",

@@ -40,6 +40,7 @@ import {
   lerNumerosDeTeste,
   numeroPodeTestar,
 } from "./pre-go-live";
+import { ehOperante } from "@/lib/organizacao/operante";
 
 /** Valores aceitos em `channel_sessions.metadata.ai_gate`. */
 export const AI_GATE_MODES = ["open", "allowlist"] as const;
@@ -55,6 +56,13 @@ export function lerModoDoGate(raw: unknown): AiGateMode {
 }
 
 export interface EstadoDeElegibilidade {
+  /**
+   * `organizations.status` da conversa. Organização não operante (suspensa,
+   * redigida, arquivada ou status que ainda não existe) vence todos os vetos —
+   * a régua é única, `lib/organizacao/operante.ts`. Obrigatório de propósito:
+   * montador novo que esquecer a organização não compila.
+   */
+  orgStatus: string | null;
   /** `channel_sessions.metadata.ai_gate` já normalizado. */
   modo: AiGateMode;
   /** `contacts.force_human` — a trava irrevogável pelo agente (regra dura 2). */
@@ -76,6 +84,7 @@ export interface EstadoDeElegibilidade {
 }
 
 export type MotivoDeElegibilidade =
+  | "org_nao_operante"
   | "gate_aberto"
   | "force_human"
   | "conversa_silenciada"
@@ -110,6 +119,9 @@ function silenciadoAgora(until: Date | number | null, agora: Date): boolean {
  * autorização positiva.
  */
 export function decidirElegibilidade(e: EstadoDeElegibilidade): DecisaoDeElegibilidade {
+  if (!ehOperante(e.orgStatus)) {
+    return { permite: false, motivo: "org_nao_operante", bloqueioPorAllowlist: false };
+  }
   if (e.forceHuman) {
     return { permite: false, motivo: "force_human", bloqueioPorAllowlist: false };
   }
@@ -179,6 +191,8 @@ export function normalizarInstante(v: Date | string | number | null | undefined)
  */
 export function montarEstadoDeElegibilidade(raw: {
   aiGate: unknown;
+  /** `organizations.status`; obrigatório como CHAVE — quem monta tem de dizer de onde leu. */
+  orgStatus: string | null | undefined;
   aiGateMode?: unknown;
   aiTestPhoneNumbers?: unknown;
   contactPhoneNumber?: string | null;
@@ -194,6 +208,7 @@ export function montarEstadoDeElegibilidade(raw: {
   const preGoLive = modo === "allowlist" && raw.aiGateMode === AI_GATE_PRE_GO_LIVE;
   const numerosDeTeste = lerNumerosDeTeste({ ai_test_phone_numbers: raw.aiTestPhoneNumbers });
   return {
+    orgStatus: raw.orgStatus ?? null,
     modo,
     forceHuman: raw.forceHuman === true,
     botSilencedUntil: normalizarInstante(raw.botSilencedUntil),

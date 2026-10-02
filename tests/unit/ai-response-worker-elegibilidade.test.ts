@@ -65,6 +65,7 @@ function makeAdminStub(opts: ConvOpts, queried: string[]) {
     bot_silenced_until: null,
     last_handoff_at: null,
     assignee_kind: "ai",
+    organizations: { status: "active" },
     contacts: {
       id: CONTACT_ID,
       display_name: null,

@@ -42,6 +42,7 @@ import { decidePacing, dayStartInTz } from "@/lib/agent-engine/pacing/engine";
 import { loadChannelKnobs, loadPacingState, recordSend } from "@/lib/agent-engine/pacing/store";
 import { beginServiceAtOrigin } from "@/lib/atendimento/origem";
 import { logger } from "@/lib/logger";
+import { OrgNaoOperanteError, idsDeOrgsParadas } from "@/lib/organizacao/operante";
 
 import { motivoParaExcluir, recusouMarketing } from "./elegibilidade";
 import { hashDoEndereco } from "./exclusoes";
@@ -97,13 +98,16 @@ export async function rodarUmaRodadaDeCampanha(
   admin: SupabaseClient,
   agora: Date = new Date(),
 ): Promise<ResultadoDaRodada> {
-  // Organização SUSPENSA não prospecta. A decisão é a mesma da fila do agente:
-  // `= 'suspended'` e não `<> 'active'`, porque o CHECK aceita também 'redacted'
-  // e 'archived', e desligá-los seria mudança que ninguém pediu.
-  const { data: suspensas } = await admin.from("organizations").select("id").eq("status", "suspended");
-  const idsSuspensas = (suspensas ?? []).map((o) => (o as { id: string }).id);
+  // Organização que não OPERA (suspensa, redigida ou arquivada) não dispara
+  // campanha: disparo em massa custa ao dono da instalação e sai para fora. A
+  // régua é a única do produto, `lib/organizacao/operante.ts`. O comentário que
+  // morava aqui dizia que `= 'suspended'` era "a mesma decisão da fila do
+  // agente"; a fila nunca filtrou status (o `CLAIM_SQL` de
+  // `lib/agent-engine/queue/queue.ts` não olha `organizations`), e quem fecha a
+  // fila é `fn_suspender_organizacao`, que falha os jobs pendentes.
+  const idsParadas = await idsDeOrgsParadas(admin);
 
-  const promovidas = await promoverAgendadas(admin, idsSuspensas, agora);
+  const promovidas = await promoverAgendadas(admin, idsParadas, agora);
 
   let consulta = admin
     .from("campaigns")
@@ -111,10 +115,15 @@ export async function rodarUmaRodadaDeCampanha(
     .eq("status", "running")
     .order("started_at", { ascending: true })
     .limit(NUMEROS_POR_RODADA * 3);
-  if (idsSuspensas.length > 0) {
-    consulta = consulta.not("organization_id", "in", `(${idsSuspensas.join(",")})`);
+  if (idsParadas.length > 0) {
+    consulta = consulta.not("organization_id", "in", `(${idsParadas.join(",")})`);
   }
-  const { data: campanhas } = await consulta;
+  const { data: campanhas, error: falhaDaBusca } = await consulta;
+  if (falhaDaBusca) {
+    // Sem isto a falha virava "nada_a_fazer": indistinguível de rodada vazia.
+    logger.warn("[campanha] busca das campanhas em andamento falhou", { motivo: falhaDaBusca.message });
+    return { ...VAZIA, promovidas, detalhe: "busca_falhou" };
+  }
   // `as unknown as`: a lista de colunas é montada por concatenação, e o tipo
   // gerado do PostgREST só sabe inferir literal — o mesmo caminho que
   // `lib/asaas/*` já usa para tabela que ainda não está em `database.types.ts`.
@@ -160,7 +169,7 @@ export async function rodarUmaRodadaDeCampanha(
 /** `scheduled` cuja hora chegou vira `running`. */
 async function promoverAgendadas(
   admin: SupabaseClient,
-  idsSuspensas: string[],
+  idsParadas: string[],
   agora: Date,
 ): Promise<number> {
   let consulta = admin
@@ -168,8 +177,8 @@ async function promoverAgendadas(
     .update({ status: "running", started_at: agora.toISOString() })
     .eq("status", "scheduled")
     .lte("scheduled_at", agora.toISOString());
-  if (idsSuspensas.length > 0) {
-    consulta = consulta.not("organization_id", "in", `(${idsSuspensas.join(",")})`);
+  if (idsParadas.length > 0) {
+    consulta = consulta.not("organization_id", "in", `(${idsParadas.join(",")})`);
   }
   const { data, error } = await consulta.select("id");
   if (error) {
@@ -472,19 +481,45 @@ async function rodarUmaCampanha(
       detalhe: `enviado:${status ?? "?"}:${escolha.motivo}`,
     };
   } catch (err) {
-    const motivoErro = err instanceof Error ? err.message : String(err);
     logger.warn("[campanha] envio falhou", { campanha: campanha.id, destinatario: alvo.id });
+    return { enviadas: 0, pulados: 0, concluidas: 0, detalhe: await registrarExcecaoDoEnvio(admin, alvo.id, err) };
+  }
+}
+
+/**
+ * O que a exceção do envio faz com o destinatário já reservado (`sending`).
+ * Exportada para o teste: o caminho inteiro da rodada precisa de ritmo, canal
+ * e pool.
+ *
+ * Organização parada entre a leitura da rodada e o envio (`OrgNaoOperanteError`
+ * da porta de saída) NÃO é falha do destinatário: ele volta a `pending` e sai
+ * na reativação, no ritmo da campanha. Marcar `send_exception` o tiraria da
+ * campanha para sempre por algo que não é dele.
+ */
+export async function registrarExcecaoDoEnvio(
+  admin: SupabaseClient,
+  destinatarioId: string,
+  err: unknown,
+): Promise<string> {
+  if (err instanceof OrgNaoOperanteError) {
     await admin
       .from("campaign_recipients")
-      .update({
-        status: "failed",
-        last_error_code: "send_exception",
-        last_error_detail: motivoErro.slice(0, 300),
-      })
-      .eq("id", alvo.id)
+      .update({ status: "pending", sending_at: null })
+      .eq("id", destinatarioId)
       .eq("status", "sending");
-    return { enviadas: 0, pulados: 0, concluidas: 0, detalhe: "falhou" };
+    return "org_nao_operante";
   }
+  const motivoErro = err instanceof Error ? err.message : String(err);
+  await admin
+    .from("campaign_recipients")
+    .update({
+      status: "failed",
+      last_error_code: "send_exception",
+      last_error_detail: motivoErro.slice(0, 300),
+    })
+    .eq("id", destinatarioId)
+    .eq("status", "sending");
+  return "falhou";
 }
 
 /**

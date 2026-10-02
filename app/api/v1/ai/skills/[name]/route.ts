@@ -157,9 +157,12 @@ export async function PUT(
   if (!pointer) {
     return fail("not_found", t("Skill não está instalada nesta organização."), 404, { requestId });
   }
+  // `forked_from_version_id` desce junto: a cópia editada continua sendo cópia da
+  // MESMA versão de plataforma (não vira manual), senão o aviso de versão nova
+  // some no 1º edit — `temVersaoNovaNoCatalogo` precisa do vínculo pra comparar.
   const { data: atual, error: verErr } = await admin
     .from("skill_versions")
-    .select("manifest")
+    .select("manifest, forked_from_version_id")
     .eq("id", pointer.version_id)
     .maybeSingle();
   if (verErr) {
@@ -196,6 +199,10 @@ export async function PUT(
       description: parsed.data.description,
       body: parsed.data.body,
       matcher: parsed.data.matcher,
+      // Preserva o vínculo com o catálogo da cópia anterior: uma cópia editada
+      // continua devedora da MESMA versão de plataforma, então o aviso de versão
+      // nova segue valendo após o 1º edit (antes virava manual e nunca mais avisava).
+      forkedFromVersionId: atual?.forked_from_version_id ?? null,
     });
     await setSkillPointer(pool, { tenantId: org.orgId, name, versionId: version.id });
     versionId = version.id;

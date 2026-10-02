@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
 import { MessageBubble } from "@/components/inbox/MessageBubble";
+import { MARCADOR_NAO_LIDA } from "@/lib/messaging/media/derivable";
 import type { Message } from "@/lib/types/messaging";
 
 function msg(over: Partial<Message>): Message {
@@ -53,6 +54,33 @@ describe("MediaRenderer", () => {
   it("document (e tipos desconhecidos) → DocumentCard", () => {
     render(<MediaRenderer message={msg({ type: "document", media_mime: "application/pdf" })} />);
     expect(screen.getByRole("link", { name: /baixar pdf/i })).toBeInTheDocument();
+  });
+});
+
+describe("MediaRenderer — transcrição do áudio no balão (#2057)", () => {
+  const audio = (over: Partial<Message>) =>
+    render(<MediaRenderer message={msg({ type: "audio", ...over })} />);
+
+  it("'ready' com texto mostra a transcrição abaixo do player", () => {
+    audio({ media_derived_status: "ready", media_derived_text: "  oi, quero agendar  " });
+    expect(screen.getByTestId("transcricao-de-audio")).toHaveTextContent("oi, quero agendar");
+  });
+  it.each([
+    ["sem derivação", { media_derived_status: null, media_derived_text: null }],
+    ["'ready' sem texto", { media_derived_status: "ready", media_derived_text: "   " }],
+    ["'failed'", { media_derived_status: "failed", media_derived_text: "texto qualquer" }],
+    ["'skipped'", { media_derived_status: "skipped", media_derived_text: "texto qualquer" }],
+  ] as const)("%s esconde o bloco", (_, over) => {
+    audio(over);
+    expect(screen.queryByTestId("transcricao-de-audio")).not.toBeInTheDocument();
+  });
+  it("o aviso de mídia não lida, mesmo com 'ready', não aparece como transcrição", () => {
+    audio({ media_derived_status: "ready", media_derived_text: MARCADOR_NAO_LIDA });
+    expect(screen.queryByTestId("transcricao-de-audio")).not.toBeInTheDocument();
+  });
+  it("no balão enviado o texto herda a cor do balão (sem text-muted-foreground)", () => {
+    audio({ direction: "outbound", media_derived_status: "ready", media_derived_text: "enviado" });
+    expect(screen.getByTestId("transcricao-de-audio").className).not.toMatch(/text-muted-foreground/);
   });
 });
 

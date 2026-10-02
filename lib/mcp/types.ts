@@ -43,6 +43,12 @@ export interface McpToolDefinition<TInput extends z.ZodRawShape = z.ZodRawShape>
    */
   requiresScope: "mcp:read" | "mcp:write";
   /**
+   * Atende token de empresa SUSPENSA (`McpAuthResult.orgSuspensa`). Só a
+   * privacidade (LGPD nunca é bloqueada — decisão do dono, 30/09); a cerca
+   * `tests/unit/org-suspensa-so-nas-rotas-permitidas.test.ts` vigia onde aparece.
+   */
+  permiteOrgSuspensa?: true;
+  /**
    * Limpa os args ANTES da auditoria (os dois ingressos: runtime e `/api/mcp`).
    *
    * Existe porque `auditMcpToolCall` grava os args em `api_audit_log.metadata` e

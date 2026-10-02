@@ -141,6 +141,11 @@ const envSchema = z.object({
   // Coalescência de rajada inbound: mensagens do MESMO contato dentro desta
   // janela viram UM job (responder em rajada é gatilho de ban). 0 = sem debounce.
   INBOUND_DEBOUNCE_MS: z.coerce.number().int().min(0).default(8_000),
+  // Resposta obsoleta: o cliente escreveu de novo enquanto o turno pensava → a
+  // resposta desatualizada não sai e o turno seguinte responde a tudo junto,
+  // enquanto a mensagem mais antiga sem resposta tiver menos que isto. 0 = desliga.
+  // Ver `respostaFicouObsoleta` (agent/turno-ja-respondido.ts).
+  RESPOSTA_OBSOLETA_TETO_MS: z.coerce.number().int().min(0).default(120_000),
   // Circuito de saúde do número — ritmo do ticker (block/response rate por número).
   NUMBER_HEALTH_INTERVAL_MS: z.coerce.number().int().positive().default(300_000),
   // Cron persistente por contato — knobs, nunca constantes.

@@ -137,6 +137,9 @@ describe("o canal `stable` move em bloco", () => {
       // `deskcomm-scheduler` construíam e publicavam sem que nenhum job as
       // executasse — e o canal `stable` andava sobre um laço morto.
       "imagens-de-fundo-sobem",
+      // #1938: `stable` copia o índice multi-arquitetura, que só existe depois
+      // que as duas pernas de cada imagem foram unidas.
+      "juntar-manifestos",
     ]);
   });
 

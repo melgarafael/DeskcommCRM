@@ -148,6 +148,7 @@ async function enviarParaUsuario(
 
 export const webPushInboundHandler: EventHandler = {
   key: WEB_PUSH_INBOUND_KEY,
+  naOrgParada: "pula",
   events: [
     "message.received",
     "message.group_received",

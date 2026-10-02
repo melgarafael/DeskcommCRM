@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, win32 } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -42,6 +42,22 @@ import {
  */
 
 const RAIZ = join(__dirname, "..", "..");
+
+/**
+ * O caminho que a varredura entrega AO COMPARAR, sempre com `/`.
+ *
+ * `relative` devolve o caminho no dialeto do SO: no Linux é
+ * `components/connections/ChannelAiAccess.tsx`, no Windows é
+ * `components\connections\ChannelAiAccess.tsx`. Os literais de
+ * `USO_COMO_CHAVE` são escritos com `/`, então o par cru só casa por acaso no
+ * Linux — na Windows `liberados.has(par)` dá falso, o uso legítimo é acusado
+ * como vazamento e este arquivo reprova por um motivo que não existe. É a
+ * COMPARAÇÃO que se normaliza; a allowlist continua escrita do jeito que a
+ * leitora do repo escreve caminho.
+ */
+function separadorPosix(relativo: string): string {
+  return relativo.replaceAll("\\", "/");
+}
 
 /**
  * Onde o código APARECE legitimamente, e por quê.
@@ -150,6 +166,43 @@ describe("o motivo da passagem tem frase em português", () => {
     ).toEqual([]);
   });
 
+  it("CONTROLE DE PLATAFORMA: o par arquivo→código é o mesmo no Windows e no Linux", () => {
+    // O mesmo controle do outro arquivo da issue, pelo motivo do mesmo defeito:
+    // `relative` devolve o caminho no dialeto do SO, e o par é comparado com
+    // literais escritos com `/`. A comparação acontece em `liberados.has(par)`, e
+    // um par que não casa vira FALSO VAZAMENTO — o caso reprova acusando código
+    // cru em tela onde o uso é legítimo. `win32.relative` monta o formato do
+    // Windows aqui, no CI do Linux, para que isso seja medido e não suposto.
+    const raizWindows = "C:\\deskcomm";
+    const raizLinux = "/srv/deskcomm";
+    const esperado = "components/connections/ChannelAiAccess.tsx";
+
+    const parWindows = separadorPosix(
+      win32.relative(raizWindows, win32.join(raizWindows, "components", "connections", "ChannelAiAccess.tsx")),
+    );
+    const parLinux = separadorPosix(
+      relative(raizLinux, join(raizLinux, "components", "connections", "ChannelAiAccess.tsx")),
+    );
+
+    const liberados = new Set(USO_COMO_CHAVE.map((u) => `${u.arquivo} → ${u.codigo}`));
+    expect(parWindows, "o par do Windows precisa casar com o literal da allowlist").toBe(esperado);
+    expect(parLinux, "o par do Linux não pode ter mudado de forma").toBe(esperado);
+    expect(
+      liberados.has(`${parWindows} → pre_go_live`),
+      "o uso legítimo tem de ser liberado com o par do Windows",
+    ).toBe(true);
+    expect(
+      liberados.has(`${parLinux} → pre_go_live`),
+      "o uso legítimo tem de ser liberado com o par do Linux",
+    ).toBe(true);
+    // NEGATIVO: sem normalizar, o par do Windows não entraria na allowlist e o
+    // caso acima acusaria vazamento falso.
+    expect(
+      win32.relative(raizWindows, win32.join(raizWindows, "components", "connections", "ChannelAiAccess.tsx")),
+      "controle negativo: se isto casasse, a normalização seria inútil e o defeito voltaria",
+    ).not.toBe(esperado);
+  });
+
   it("nenhum código cru do vocabulário aparece em `app/`, `components/` ou `hooks/`", () => {
     const arquivos = arquivosDeTela();
     // Sem esta guarda, um erro de caminho devolveria lista vazia e o caso
@@ -166,7 +219,7 @@ describe("o motivo da passagem tem frase em português", () => {
         // `caso_escalado_em`, e `sem_telefone` não pode casar num nome de
         // variável que contenha o trecho.
         if (!new RegExp(`\\b${codigo}\\b`, "u").test(fonte)) continue;
-        const par = `${relative(RAIZ, arquivo)} → ${codigo}`;
+        const par = `${separadorPosix(relative(RAIZ, arquivo))} → ${codigo}`;
         if (!liberados.has(par)) vazamentos.push(par);
       }
     }

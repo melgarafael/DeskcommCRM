@@ -18,6 +18,7 @@ export const CAMPANHA_RESPOSTA_HANDLER_KEY = "campanha-resposta.v1";
 
 export const campanhaRespostaHandler: EventHandler = {
   key: CAMPANHA_RESPOSTA_HANDLER_KEY,
+  naOrgParada: "roda",
   events: ["message.received"],
   async handle(row): Promise<HandlerResult> {
     const contactId = typeof row.payload.contact_id === "string" ? row.payload.contact_id : null;

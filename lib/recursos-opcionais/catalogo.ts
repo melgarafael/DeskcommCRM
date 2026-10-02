@@ -444,7 +444,7 @@ const DA_EMPRESA: RecursoOpcional[] = [
   {
     id: "protecao_de_envio",
     nome: "Proteção de envio por número",
-    oQueFaz: "Janela, ritmo, teto diário, envio aos domingos e aquecimento de cada número.",
+    oQueFaz: "Janelas de resposta e de disparo, ritmo, teto diário, envio aos domingos e aquecimento de cada número.",
     nivel: "organizacao",
     padrao: "varia",
     quemDecide: "admin",

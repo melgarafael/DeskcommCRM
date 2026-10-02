@@ -15,14 +15,17 @@
 import { z } from 'zod';
 import type pg from 'pg';
 
+import { loadConversationAgentConfig } from '../../agent/agent-config';
 import { insertInboxItem } from '../../db/repository';
 import type { Logger } from '../../obs/logger';
 import { enqueueJob } from '../../queue/queue';
-import { decidirRajada } from './debounce';
+import { decidirRajada, debounceEfetivo } from './debounce';
 import { avisoDeEventoMorto, IA_QUE_NAO_RESPONDEU } from '@/lib/event-log/aviso-de-evento-morto';
 import { TIPOS_DERIVAVEIS, DERIVACAO_TERMINADA } from '@/lib/messaging/media/derivable';
+import { haQuemAtendaASessao } from '@/lib/ai/agents/quem-atende-a-sessao';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 import { deveCederTurnoAoRetorno } from '@/lib/followup/ceder-turno-ao-retorno';
+import { ehOperante } from '@/lib/organizacao/operante';
 
 const DRAIN_CONSUMER = 'agent-engine';
 
@@ -197,6 +200,45 @@ const TETO_ESPERA_DERIVACAO_MS = 120_000;
 
 type DesfechoEvento = 'processado' | 'adiar';
 
+/**
+ * Janela de rajada EFETIVA para o evento: a configurada na versão do agente
+ * desta conversa (#1856), com o `INBOUND_DEBOUNCE_MS` da instalação como
+ * default e clamp no teto de 60s (`debounceEfetivo`).
+ *
+ * A resolução é a de `loadConversationAgentConfig` — o `active_ai_agent_id` da
+ * conversa quando há dono explícito, senão o agente publicado da sessão. NÃO é
+ * a resolução completa do turno (`resolveTurnAgent`: router, classificador,
+ * campanha): numa conversa que o turno entregaria a outro agente sem torná-lo
+ * dono, vale a janela do agente da sessão (ou a env). Com o campo vazio
+ * (default de toda instalação) o valor vira o da env — regressão zero.
+ *
+ * Falha da consulta NÃO derruba o evento: degrada para a env, como a checagem
+ * de elegibilidade acima. A janela é afinação, não motivo para retry.
+ */
+async function debounceDoEvento(
+  pool: pg.Pool,
+  event: EventRow,
+  p: { conversation_id: string; channel_session_id: string },
+  padraoInstalacao: number,
+  log: Logger,
+): Promise<number> {
+  try {
+    const agentConfig = await loadConversationAgentConfig(
+      pool,
+      event.organization_id,
+      p.conversation_id,
+      p.channel_session_id,
+    );
+    return debounceEfetivo(agentConfig?.inboundDebounceMs ?? null, padraoInstalacao);
+  } catch (err) {
+    log.warn('drain: janela de rajada do agente não resolveu — usando a da instalação', {
+      event_id: event.id,
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+    });
+    return padraoInstalacao;
+  }
+}
+
 async function processEvent(
   pool: pg.Pool,
   event: EventRow,
@@ -214,12 +256,19 @@ async function processEvent(
   }
   const p = parsed.data;
 
-  // Spec 14: org em modo 'external' tem agente EXTERNO como dono da conversa —
-  // o engine não responde por cima. Evento é consumido (done) sem job.
-  const { rows: modeRows } = await pool.query<{ mode: string | null }>(
-    `select settings->>'ai_dispatch_mode' as mode from organizations where id = $1`,
+  // Organização parada (suspensa, redigida, arquivada) não gera turno: o evento
+  // é consumido sem job. Vai na MESMA consulta do modo externo — uma ida ao banco
+  // por evento, não duas — e vem ANTES do `canAssist`, que desliga o gate.
+  const { rows: modeRows } = await pool.query<{ mode: string | null; status: string | null }>(
+    `select settings->>'ai_dispatch_mode' as mode, status from organizations where id = $1`,
     [event.organization_id],
   );
+  if (!ehOperante(modeRows[0]?.status)) {
+    log.info('drain: organização não operante — evento consumido sem job', { event_id: event.id });
+    return 'processado';
+  }
+  // Spec 14: org em modo 'external' tem agente EXTERNO como dono da conversa —
+  // o engine não responde por cima. Evento é consumido (done) sem job.
   if (modeRows[0]?.mode === 'external') {
     log.info('drain: org em modo external (spec 14) — evento pulado', { event_id: event.id });
     return 'processado';
@@ -258,51 +307,12 @@ async function processEvent(
   // EXISTÊNCIA da linha deixava o portão aberto para um roteador cujos membros
   // foram todos pausados — exatamente o caso que o parágrafo acima diz estar
   // cobrindo, entrando pela outra porta.
-  const { rows: capacidade } = await pool.query<{
-    tem_agente: boolean;
-    tem_roteador: boolean;
-  }>(
-    `select
-       exists(
-         select 1 from ai_agents a
-         join ai_agent_versions v on v.id = a.published_version_id
-         where a.organization_id = $1 and a.archived_at is null
-           and v.status = 'published' and v.channel_session_id = $2
-       ) as tem_agente,
-       exists(
-         select 1 from ai_routers r
-         where r.organization_id = $1 and r.is_active
-           and r.channel_session_id = $2
-           and (
-             -- O fallback e os membros contam pelo que PODEM EXECUTAR, não por
-             -- existirem. A versão anterior media fallback_agent_id is not null
-             -- e a existência de LINHA em ai_router_members — e as duas
-             -- sobrevivem à pausa do agente, que só limpa published_version_id.
-             -- Um roteador cujos membros foram todos pausados continuava
-             -- abrindo o portão: a organização pagava o classificador e o turno
-             -- inteiro por mensagem recebida, para responder pelo genérico.
-             -- O predicado aqui é o MESMO que loadConversationAgentConfigById
-             -- aplica na hora de executar (agent-config.ts) — é o que garante
-             -- que o portão não promete um agente que o resolvedor vai recusar.
-             exists (
-               select 1 from ai_agents fa
-               join ai_agent_versions fv on fv.id = fa.published_version_id
-               where fa.id = r.fallback_agent_id and fa.organization_id = $1
-                 and fa.archived_at is null and fv.status = 'published'
-             )
-             or exists (
-               select 1 from ai_router_members m
-               join ai_agents ma on ma.id = m.agent_id
-               join ai_agent_versions mv on mv.id = ma.published_version_id
-               where m.router_id = r.id and ma.organization_id = $1
-                 and ma.archived_at is null and mv.status = 'published'
-             )
-           )
-       ) as tem_roteador`,
-    [event.organization_id, p.channel_session_id],
-  );
-  const cap = capacidade[0];
-  if (cap !== undefined && !cap.tem_agente && !cap.tem_roteador) {
+  //
+  // A pergunta mora em `haQuemAtendaASessao` porque o worker de clima faz a
+  // MESMA antes de perguntar ao Jev pelos pedidos do cliente: ele só conta um
+  // pedido que a regra de hoje deixou passar onde este turno rodaria.
+  const haQuem = await haQuemAtendaASessao(pool, event.organization_id, p.channel_session_id);
+  if (haQuem === false) {
     log.info('drain: nenhum agente publicado para a sessão — turno pulado (sem gasto)', {
       event_id: event.id,
       channel_session_id: p.channel_session_id,
@@ -485,7 +495,7 @@ async function processEvent(
   const rajada = await decidirRajada(
     pool,
     { organizationId: event.organization_id, contactId: p.contact_id },
-    knobs.debounceMs,
+    await debounceDoEvento(pool, event, p, knobs.debounceMs, log),
   );
   if (rajada.tipo === 'coalescido') {
     log.info('drain: rajada coalescida em job pendente', {

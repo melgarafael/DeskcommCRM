@@ -214,6 +214,7 @@ function rowState(id: string): {
 const calls: string[] = [];
 registerHandler({
   key: "test-drain-handler",
+  naOrgParada: "roda",
   events: ["test.drain_case"],
   async handle(row: EventRow): Promise<HandlerResult> {
     calls.push(row.id);
@@ -233,6 +234,7 @@ registerHandler({
 // outro sempre pede retry (+1h) — cobre o mix retry+error num mesmo tick.
 registerHandler({
   key: "test-drain-multi-err",
+  naOrgParada: "roda",
   events: ["test.drain_multi"],
   async handle(): Promise<HandlerResult> {
     return { consumer_key: "test-drain-multi-err", status: "error", detail: "multi-boom" };
@@ -240,6 +242,7 @@ registerHandler({
 });
 registerHandler({
   key: "test-drain-multi-retry",
+  naOrgParada: "roda",
   events: ["test.drain_multi"],
   async handle(): Promise<HandlerResult> {
     return {
@@ -254,6 +257,7 @@ registerHandler({
 // retry_at — cobre o fallback de backoff (senão busy-loop a cada tick).
 registerHandler({
   key: "test-drain-retry-no-backoff",
+  naOrgParada: "roda",
   events: ["test.drain_retry_no_backoff"],
   async handle(): Promise<HandlerResult> {
     return { consumer_key: "test-drain-retry-no-backoff", status: "retry" };

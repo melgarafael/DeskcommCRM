@@ -36,8 +36,8 @@ descrito nas skills `deskcomm-cliente-novo` e `deskcomm-metricas`.
 
 1. **Unidade de cobrança: retainer por cliente operado** (dono do produto, 2026-09-13). O trabalho
    imediato é **este console**, não um medidor de consumo — cobro por consumo exigiria construir
-   medidor → fatura antes do primeiro real, e não existe nenhuma tabela de plano, fatura ou
-   assinatura no schema.
+   medidor → fatura antes do primeiro real, e o schema não tem tabela que fature o operador (a
+   régua está na brecha "Faturamento e planos" da doutrina, §3).
 2. **O software permanece MIT e completo.** O que se cobra é a operação (invariantes 1 e 2 da
    doutrina). Nada aqui fica atrás de pagamento para quem opera sozinho.
 3. **A marca do cliente é do cliente.** `platform_branding` é da instalação,
@@ -88,7 +88,10 @@ descrito nas skills `deskcomm-cliente-novo` e `deskcomm-metricas`.
 **Dentro:** carteira por cliente (custo do período, saúde, agente publicado e sua versão); entrada
 auditada; aplicação de pacote de agente; registro de aceite por cliente.
 
-**Fora (de propósito):** faturamento/planos/cotas (§1.2 decisão 1); console de revenda; SOC 2, ISO
+**Fora (de propósito):** faturamento/planos/cotas do operador (§1.2 decisão 1) — o console segue
+sem faturamento mesmo com a cobrança do revendedor
+([ADR-0004](../adr/0004-cobranca-do-revendedor.md)), que é o dono da instalação cobrando as empresas
+que atende e não fatura retainer; console de revenda; SOC 2, ISO
 27001, multi-região e idioma adicional (fora de escopo por decisão escrita no
 `docs/prd/00-prd-master.md` §7.4); substituir `lib/agent-engine/` (proibido pela §4 da doutrina).
 

@@ -148,7 +148,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   for (let i = 0; i < dataRows.length; i++) {
     const linha = i + 2; // 1-based contando o cabeçalho — bate com o editor de planilhas.
-    const { contato, motivo } = mapLinha(dataRows[i]!, indices, t, doc);
+    const { contato, motivo } = mapLinha(dataRows[i]!, indices, t, doc, perfil.telefoneExemplo);
     if (motivo !== null) {
       errors.push({ linha, motivo });
       continue;

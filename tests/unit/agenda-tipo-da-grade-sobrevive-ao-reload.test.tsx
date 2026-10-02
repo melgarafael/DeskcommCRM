@@ -186,6 +186,7 @@ function montar() {
   const tela = () => (
     <QueryClientProvider client={cliente}>
       <AgendaClient
+        fusoDaAgenda="America/Sao_Paulo"
         fusoDeApresentacao="America/Sao_Paulo"
         hojeNaOrganizacao="2026-09-16"
         googleConfigurado={false}

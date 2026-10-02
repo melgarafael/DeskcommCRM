@@ -95,7 +95,9 @@ async function avisarMensagemPerdida(admin: Admin, linha: LinhaArquivada, tentat
       title,
       body,
     });
-    if (error) {
+    // `23505` é outra rodada chegando primeiro ao índice único parcial da 0491
+    // (issue #880): o aviso já está aberto, que é o desfecho que se queria.
+    if (error && error.code !== "23505") {
       logger.error("[webhook-replay] aviso na Central falhou", {
         organization_id: linha.organization_id,
         detail: error.message,

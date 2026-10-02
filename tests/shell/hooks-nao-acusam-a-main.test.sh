@@ -976,5 +976,62 @@ tripla "$m" 20260910040000_0414_livre.sql
 r=$(rodar "$m" check-migration-triple.sh)
 assert_exit "$(exit_de "$r")" 0 "MIG-CONTROLE: e um número de fato livre passa"
 
+# ── check-migration-triple.sh · população GRANDE termina (os dois hooks) ─────────
+# Medido em 29/09/2026 no clone do mantenedor: ~5.788 refs de outrem → ~1,29 M linhas
+# (~112 MB) de população, e o hook não terminava em 45 min. A causa era o teste de
+# vazio `${populacao// /}`: a substituição de padrão do bash é quadrática no tamanho da
+# string (medido aqui: 25 mil linhas → 18 s só nessa linha; 100 mil → ~400 s o hook).
+# A população agora vive num ARQUIVO e o grep lê o arquivo. O fixture tem ~300 mil
+# linhas (500 migrations × 600 refs para o mesmo commit — `pop_migrations` emite uma
+# linha por ref) e o LIMITE é folgado para máquina lenta: o hook de antes estoura
+# qualquer limite razoável aqui, o de agora leva ~1 s. O fixture foi dimensionado para o
+# antigo estourar TAMBÉM em locale C (LANG vazio), onde ele termina em ~10 s com 100 mil
+# linhas e o caso passaria sem vigiar; em UTF-8 o antigo é bem mais lento. Rodam os DOIS hooks: o do
+# contribuidor tinha a mesma linha.
+printf '\ncheck-migration-triple.sh — população grande termina (mantenedor e contribuidor)\n'
+LIMITE_S=30
+rodar_com_limite() { # $1 = clone, $2 = caminho do hook relativo ao clone
+  local d=$1 h=$2 pid t=0 rc out="$TMP/saida-com-limite"
+  ( cd "$d" && exec bash "$h" ) >"$out" 2>&1 & pid=$!
+  while kill -0 "$pid" 2>/dev/null && [ "$t" -lt "$LIMITE_S" ]; do sleep 1; t=$((t+1)); done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+    printf 'não terminou em %ss\n__EXIT__estourou\n' "$LIMITE_S"; return
+  fi
+  wait "$pid"; rc=$?
+  printf '%s\n__EXIT__%s\n' "$(cat "$out")" "$rc"
+}
+g="$TMP/mig-grande"; mkdir -p "$g/supabase/migrations" "$g/scripts" "$g/loop/hooks" "$g/contrib"
+git -C "$g" init -q -b main
+cp "$RAIZ/scripts/migration-populacao.sh" "$g/scripts/"
+cp "$HOOKS_ORIGEM/check-migration-triple.sh" "$g/loop/hooks/"
+cp "$RAIZ/.agents/skills/deskcomm-contribuir/scripts/hooks/check-migration-triple.sh" "$g/contrib/"
+printf -- '-- baseline\n' > "$g/supabase/baseline.sql"
+printf '| base |\n' > "$g/supabase/migrations/MANIFEST.md"
+commitar "$g" "base"
+git -C "$g" checkout -q -b outra
+for i in $(seq 1 500); do : > "$g/supabase/migrations/$(printf '2026010100%04d_%04d_m.sql' "$i" "$i")"; done
+commitar "$g" "500 migrations"
+c_outra=$(git -C "$g" rev-parse HEAD)
+git -C "$g" checkout -q main
+seq 1 600 | awk -v c="$c_outra" '{ printf "create refs/heads/r%05d %s\n", $1, c }' | git -C "$g" update-ref --stdin
+linhas=$( cd "$g" && bash -c '. scripts/migration-populacao.sh; pop_migrations $(pop_refs_de_outrem "") HEAD | wc -l' | tr -d ' ')
+if [ "${linhas:-0}" -ge 300000 ]; then ok "MIG-GRANDE: a população do fixture tem $linhas linhas (premissa do volume)"
+else falha "MIG-GRANDE: população >= 300000 linhas" "veio ${linhas:-nada} — o caso não estressa o hook"; fi
+tripla "$g" 20990101000000_9999_livre.sql
+for h in loop/hooks/check-migration-triple.sh contrib/check-migration-triple.sh; do
+  r=$(rodar_com_limite "$g" "$h")
+  assert_exit "$(exit_de "$r")" 0 "MIG-GRANDE ($h): número livre passa em menos de ${LIMITE_S}s"
+done
+git -C "$g" rm -q --cached supabase/migrations/20990101000000_9999_livre.sql
+rm -f "$g/supabase/migrations/20990101000000_9999_livre.sql"
+tripla "$g" 20990101000001_0001_colide.sql
+for h in loop/hooks/check-migration-triple.sh contrib/check-migration-triple.sh; do
+  r=$(rodar_com_limite "$g" "$h")
+  assert_exit "$(exit_de "$r")" 1 "MIG-GRANDE ($h): NNNN tomado segue BLOQUEADO em menos de ${LIMITE_S}s"
+  assert_contains "$(saida_de "$r")" "r00200(20260101000001_0001_m.sql)" "MIG-GRANDE ($h): e o dono é nomeado"
+  assert_contains "$(saida_de "$r")" "próximo livre 0501" "MIG-GRANDE ($h): e a dica mede o teto da MESMA população"
+done
+
 printf '\nhooks-nao-acusam-a-main: %s casos, %s falha(s)\n' "$casos" "$falhas"
 [ "$falhas" -eq 0 ] || exit 1

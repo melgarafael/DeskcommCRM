@@ -214,6 +214,13 @@ class ConsultaPg<T> implements PromiseLike<RespostaFalsa<T[]>> {
       this.filtros.push(["<>", coluna, valor]);
       return this;
     }
+    // `.not(col, "is", null)` — nasceu pela cascata de LGPD (0497), que só
+    // apaga a transcrição de mensagem que AINDA a tem. Um `is not` que não
+    // filtrasse faria a varredura parecer idempotente sem ser.
+    if (operador === "is") {
+      this.filtros.push(["is not", coluna, valor]);
+      return this;
+    }
     return naoImplementado(`not(${operador})`);
   }
 
@@ -292,6 +299,7 @@ class ConsultaPg<T> implements PromiseLike<RespostaFalsa<T[]>> {
     const onde = this.filtros.map(([op, c, v]) => {
       // `is` não gasta placeholder: a palavra entra inline.
       if (op === "is") return `"${c}" is ${literalDeIs(v)}`;
+      if (op === "is not") return `"${c}" is not ${literalDeIs(v)}`;
       valores.push(v);
       // `= any` recebe o array inteiro num placeholder só; os demais operadores
       // são infixos comuns.
@@ -463,6 +471,13 @@ class AtualizacaoPg<T> implements PromiseLike<RespostaFalsa<unknown>> {
       this.filtros.push(["<>", coluna, valor]);
       return this;
     }
+    // `.not(col, "is", null)` — nasceu pela cascata de LGPD (0497), que só
+    // apaga a transcrição de mensagem que AINDA a tem. Um `is not` que não
+    // filtrasse faria a varredura parecer idempotente sem ser.
+    if (operador === "is") {
+      this.filtros.push(["is not", coluna, valor]);
+      return this;
+    }
     return naoImplementado(`not(${operador})`);
   }
 
@@ -481,6 +496,7 @@ class AtualizacaoPg<T> implements PromiseLike<RespostaFalsa<unknown>> {
     const onde = this.filtros.map(([op, c, v]) => {
       // `is` não gasta placeholder: a palavra entra inline.
       if (op === "is") return `"${c}" is ${literalDeIs(v)}`;
+      if (op === "is not") return `"${c}" is not ${literalDeIs(v)}`;
       valores.push(v);
       if (op === "not = any") return `not ("${c}" = any($${valores.length}))`;
       return `"${c}" ${op} $${valores.length}`;

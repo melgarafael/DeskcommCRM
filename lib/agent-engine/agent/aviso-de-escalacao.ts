@@ -152,6 +152,11 @@ export async function avisarLeadDaEscalacao(
       channelSessionId: ids.channelSessionId,
       body,
       optedOutThisTurn: opts.optedOutThisTurn,
+      // O aviso de escalação RESponde a quem escreveu e pediu pessoa — é um
+      // turno de resposta (#1984), então a janela que vale é a de `resposta_*`,
+      // não a de disparo. Sem isto, com a janela de resposta aberta a 3h, o
+      // aviso seria vetado pelo `outside_window` da janela de disparo fechada.
+      resposta: true,
       // Ver `GateContext.spinningEnforced`: com o gate armado, a terceira pessoa
       // a ser escalada na mesma janela do número receberia silêncio — pelo
       // guardrail. Este é o ÚNICO chamador que o desarma.

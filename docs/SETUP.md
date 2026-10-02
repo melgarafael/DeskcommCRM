@@ -231,7 +231,7 @@ No menu lateral → **Storage** → **New bucket**:
 
 ## 3. WAHA — WhatsApp
 
-**O que é:** Servidor que se conecta ao WhatsApp e expõe API HTTP. O default fixo é `devlikeapro/waha:latest-2026.7.2`, engine NOWEB. A prova local desta versão criou duas sessões CORE simultâneas até `SCAN_QR_CODE`; não houve pairing nem envio real. Versão/engine e pós-condição da operação determinam a compatibilidade; o tier sozinho não bloqueia um segundo número.
+**O que é:** Servidor que se conecta ao WhatsApp e expõe API HTTP. O instalador fixa a imagem NOWEB por arquitetura: `devlikeapro/waha:latest-2026.7.2` em x86 e `devlikeapro/waha:noweb-arm-2026.7.2` em ARM64. A prova local desta versão criou duas sessões CORE simultâneas até `SCAN_QR_CODE`; não houve pairing nem envio real. Versão/engine e pós-condição da operação determinam a compatibilidade; o tier sozinho não bloqueia um segundo número.
 
 ### Passo 1 — gerar a API key (plaintext + hash)
 

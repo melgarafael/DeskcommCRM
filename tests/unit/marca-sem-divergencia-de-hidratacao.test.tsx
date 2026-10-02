@@ -244,7 +244,6 @@ describe("catraca: `branding()` é server-only", () => {
     const esperados = [
       "app/(public)/login/page.tsx",
       "app/(public)/signup/page.tsx",
-      "app/onboarding/layout.tsx",
       "lib/legal/operador.ts",
     ];
     const vistos = varridos.filter(chamaBranding).map((f) => relativoEmBarraNormal(RAIZ, f));

@@ -126,7 +126,17 @@ const ALL = "__ALL__";
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function RequestsTable() {
+export function RequestsTable({
+  baseDoPedido = "/app/lgpd/requests/",
+}: {
+  /**
+   * Prefixo do "Ver". O hub de `/account-suspended` passa o próprio endereço:
+   * o detalhe em `/app/lgpd/requests/[id]` mora sob o layout de `/app`, que
+   * devolve a empresa suspensa ao hub. String e não função, porque o hub é
+   * Server Component e função não atravessa para o cliente.
+   */
+  baseDoPedido?: string;
+} = {}) {
   const t = useT();
   const [status, setStatus] = useState<LgpdRequestStatus | undefined>();
   const [type, setType] = useState<LgpdRequestType | undefined>();
@@ -318,7 +328,7 @@ export function RequestsTable() {
                     </TableCell>
                     <TableCell>
                       <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs">
-                        <Link href={`/app/lgpd/requests/${r.id}`}>{t("Ver")}</Link>
+                        <Link href={`${baseDoPedido}${r.id}`}>{t("Ver")}</Link>
                       </Button>
                     </TableCell>
                   </TableRow>

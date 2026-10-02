@@ -3,7 +3,7 @@
 import { headers } from "next/headers";
 
 import { audit } from "@/lib/audit";
-import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
+import { escritaDeAdminOuRecusa } from "@/lib/auth/escritaDeAdminOuRecusa";
 import { invalidarMarcaDaInstalacao } from "@/lib/branding/instalacao";
 import { normalizarHex } from "@/lib/branding/rampa";
 import { platformBrandingSchema, type PlatformBrandingInput } from "@/lib/schemas/settings";
@@ -42,7 +42,7 @@ export type UpdateBrandingResult =
  * tabela não é tenant-aware — o filtro equivalente é `id = 1`, que a constraint
  * `platform_branding_singleton` torna o único valor possível.
  *
- * ── Por que `requirePlatformAdmin()` e não `loadAuthUser()` + a flag ─────────
+ * ── Por que `requirePlatformAdminEscrita()` e não `loadAuthUser()` + a flag ─────────
  *
  * Server Action NÃO é rota: não passa por `requireRole` (cujo `mfaEmDivida` tem
  * um call site só, `lib/auth/require-role.ts`, que serve apenas `/api/v1`) e não
@@ -53,13 +53,15 @@ export type UpdateBrandingResult =
  * por organização, aqui o banco NÃO tem como fechar o buraco — a escrita vai
  * pelo `service_role`, e o Postgres não enxerga o AAL de uma sessão do GoTrue.
  *
- * `requirePlatformAdmin()` já checa as três coisas (JWT, linha ativa em
+ * `requirePlatformAdminEscrita()` já checa as três coisas (JWT, linha ativa em
  * `platform_admins`, e `aal2` quando `mfa_required`) e é o MESMO gate do layout
  * de `/admin` — então, para quem chega pela tela, nada muda: essa pessoa já
  * passou por ele para ver o formulário. O que muda é o caminho que não passa
- * pela tela. Ele redireciona em vez de devolver `{ ok: false }`, e o formulário
- * não embrulha a chamada em `try/catch`, então o `NEXT_REDIRECT` sobe para o
- * runtime como deve.
+ * pela tela. Quem não é platform admin é redirecionado, e o formulário não
+ * embrulha a chamada em `try/catch`, então o `NEXT_REDIRECT` sobe para o runtime
+ * como deve. Só-leitura e MFA pendente voltam como `{ ok: false, error }` pelo
+ * `escritaDeAdminOuRecusa()`, para a tela dizer o motivo em vez de cair no
+ * error boundary.
  *
  * ── Por que NÃO emite `event_log` ───────────────────────────────────────────
  *
@@ -77,7 +79,9 @@ export async function updateBranding(
     return { ok: false, error: "validation_failed", details: parsed.error.flatten() };
   }
 
-  const { user: authUser } = await requirePlatformAdmin();
+  const escrita = await escritaDeAdminOuRecusa();
+  if (!escrita.ok) return escrita;
+  const { user: authUser } = escrita.ctx;
 
   const hdrs = await headers();
   const requestId = hdrs.get("x-request-id");
