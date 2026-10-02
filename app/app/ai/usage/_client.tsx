@@ -18,6 +18,15 @@ interface Props {
   };
 }
 
+/** Custo por turno costuma ficar abaixo de um centavo: duas casas mostrariam US$ 0,00. */
+function formatCentsUSDFino(cents: number): string {
+  return (cents / 100).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 4,
+  });
+}
+
 function StatCard({
   label,
   value,
@@ -38,8 +47,8 @@ function StatCard({
 
 function StatSkeletons() {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      {Array.from({ length: 4 }).map((_, i) => (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {Array.from({ length: 6 }).map((_, i) => (
         <Card key={i} className="p-4">
           <Skeleton className="h-3 w-24" />
           <Skeleton className="mt-2 h-8 w-32" />
@@ -86,16 +95,45 @@ export function UsageDashboardClient({ agents, initial }: Props) {
         </>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <StatCard
               label={t("Custo no período")}
               // DÓLAR: esta tela mostrava o MESMO número em duas moedas — o card de
               // orçamento logo acima em US$ e este StatCard em R$, dois centímetros abaixo.
               value={formatCentsUSD(q.data.totals.cost_cents)}
             />
+            {/*
+              Este card se chamava "Atendimentos com IA" e contava linhas de
+              `llm_calls` — CHAMADAS ao modelo. Um turno do agente faz várias
+              (ferramentas, classificadores), então o número inflava o volume de
+              atendimento. Os turnos têm o card ao lado.
+            */}
             <StatCard
-              label={t("Atendimentos com IA")}
+              label={t("Chamadas de IA")}
               value={q.data.totals.invocations.toLocaleString("pt-BR")}
+              hint={t("cada resposta do agente pode fazer várias")}
+            />
+            {/*
+              Turno = um job distinto com chamada `agent_turn` que deu certo, e
+              o custo dele é o do job inteiro mesmo com filtro. `llm_calls.job_id`
+              vira null quando a poda da fila apaga o job, então o turno antigo
+              deixa de contar — o hint diz isso em vez de esconder.
+            */}
+            <StatCard
+              label={t("Turnos do agente")}
+              value={q.data.totals.agent_turns.toLocaleString("pt-BR")}
+              hint={
+                q.data.totals.avg_cost_per_turn_cents === null
+                  ? t("sem turnos no período")
+                  : `${t("custo médio por turno:")} ${formatCentsUSDFino(q.data.totals.avg_cost_per_turn_cents)} · ${t("conta só os turnos que a fila ainda guarda (padrão: 90 dias)")}`
+              }
+            />
+            <StatCard
+              label={t("Taxa de cache")}
+              value={`${(q.data.totals.cache_hit_rate * 100).toLocaleString("pt-BR", {
+                maximumFractionDigits: 1,
+              })}%`}
+              hint={t("do texto enviado à IA veio do cache, que custa bem menos")}
             />
             <StatCard
               label={t("Passaram para uma pessoa")}
@@ -103,13 +141,15 @@ export function UsageDashboardClient({ agents, initial }: Props) {
               hint={t("quanto mais alto, mais a IA precisou de ajuda")}
             />
             {/*
-              "p95" quer dizer: em 95 das 100 respostas o tempo foi ATÉ isso.
-              É a medida honesta para tempo de resposta (a média esconde os
-              casos ruins), mas o rótulo não pode ser a sigla — quem lê a tela
-              precisa saber o que fazer com o número, não decorar estatística.
+              "p95" quer dizer: em 95 das 100 chamadas o tempo foi ATÉ isso. É a
+              medida honesta (a média esconde os casos ruins), mas o rótulo não
+              pode ser a sigla. E é o tempo de UMA chamada ao modelo — um turno
+              do agente encadeia várias, então isto não é o tempo que o cliente
+              esperou pela resposta. O rótulo antigo, "Tempo de resposta",
+              prometia o segundo e media o primeiro.
             */}
             <StatCard
-              label={t("Tempo de resposta")}
+              label={t("Tempo de uma chamada à IA")}
               value={`${(q.data.totals.p95_latency_ms / 1000).toLocaleString("pt-BR", {
                 maximumFractionDigits: 1,
               })} s`}

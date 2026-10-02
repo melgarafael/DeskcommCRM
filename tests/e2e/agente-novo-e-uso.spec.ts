@@ -177,9 +177,20 @@ test.describe("Olhar o consumo de IA", () => {
     await page.goto("/app/ai/usage");
     await expect(page.getByRole("heading", { name: /uso de ia/i })).toBeVisible();
 
-    // Os quatro cartões do topo existem e trazem número, não traço.
-    for (const rotulo of [/custo no período/i, /atendimentos com ia/i]) {
+    // Os cartões do topo existem e nomeiam o que medem. "Atendimentos com IA"
+    // contava CHAMADAS ao modelo e "Tempo de resposta" media UMA chamada — os
+    // rótulos antigos não podem voltar (migration 0523 e a tela honesta).
+    for (const rotulo of [
+      /custo no período/i,
+      /chamadas de ia/i,
+      /turnos do agente/i,
+      /taxa de cache/i,
+      /tempo de uma chamada à ia/i,
+    ]) {
       await expect(page.getByText(rotulo).first()).toBeVisible();
+    }
+    for (const antigo of [/atendimentos com ia/i, /^tempo de resposta$/i]) {
+      await expect(page.getByText(antigo)).toHaveCount(0);
     }
 
     // Nada de NaN/undefined vazando para a tela — o defeito clássico de
