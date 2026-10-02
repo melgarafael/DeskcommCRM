@@ -76,6 +76,12 @@ export interface DemandaSemProximoPasso {
   aberta_em: string;
   horas_aberta: number;
   origem: string;
+  /**
+   * Conversa VIGENTE da demanda (via `demanda_conversas`) — o deep-link que a
+   * tela abre para `#parte1` da #2035. `null` quando a demanda não tem conversa
+   * (o item cai na ficha do contato).
+   */
+  conversation_id: string | null;
 }
 
 /**
@@ -387,6 +393,30 @@ export async function carregaRadarDeRisco(
     demandasVisiveis = demandasVisiveis.filter(d => d.lead_id ? visibleLeads.has(d.lead_id) : visibleLeadless.has(d.id));
   }
 
+  // #2035 (Parte 1) — o deep-link do item. A conversa VIGENTE da demanda sai
+  // de `demanda_conversas` (mesma fonte da visibilidade acima); sem conversation,
+  // o item cai na ficha do contato. Prefere uma conversa ABERTA (qualquer uma
+  // serve para o link do inbox); sem nenhuma aberta, a última linha que achou
+  // (a conversa arquivada ainda é o lugar onde o atendimento aconteceu).
+  const STATUS_ABERTOS_DA_CONVERSA = new Set(["open", "pending", "claimed", "ai_handling"]);
+  const conversaPorDemanda = new Map<string, { id: string; aberta: boolean }>();
+  if (demandasVisiveis.length > 0) {
+    const { data: links, error: linksErr } = await admin
+      .from("demanda_conversas")
+      .select("demanda_id, conversation_id, conversations(status)")
+      .eq("organization_id", organizationId)
+      .in("demanda_id", demandasVisiveis.map((d) => d.id));
+    if (linksErr) throw new Error(`radar_demanda_conversa_failed: ${linksErr.message}`);
+    for (const l of links ?? []) {
+      const status = ((l.conversations as { status?: string } | null)?.status) ?? null;
+      const aberta = status !== null && STATUS_ABERTOS_DA_CONVERSA.has(status);
+      const prev = conversaPorDemanda.get(l.demanda_id);
+      if (!prev || (aberta && !prev.aberta)) {
+        conversaPorDemanda.set(l.demanda_id, { id: l.conversation_id, aberta });
+      }
+    }
+  }
+
   const semProximoPasso: DemandaSemProximoPasso[] = demandasVisiveis.map((d) => {
     // O join do PostgREST vem como ARRAY mesmo em relação um-para-um.
     const rel = d.contacts as unknown as ContatoNomeavel[] | ContatoNomeavel | null;
@@ -400,6 +430,7 @@ export async function carregaRadarDeRisco(
         (now.getTime() - new Date(d.aberta_em as string).getTime()) / 3_600_000,
       ),
       origem: d.origem as string,
+      conversation_id: conversaPorDemanda.get(d.id as string)?.id ?? null,
     };
   });
 

@@ -44327,6 +44327,65 @@ create trigger trg_fechar_aviso_do_jev_ao_bloquear
  execute function public.fn_fechar_aviso_do_jev_ao_bloquear();
 
 notify pgrst, 'reload schema';
+
+-- ---------------------------------------------------------------------------
+-- ---- a demanda aberta pelo caso encerra com o caso (migration 0502, #2035) ----
+-- O caso de escalação por handoff abre uma demanda (origem='handoff',
+-- agent_case_id preenchido). Quando o caso chega a `resolved`/`cancelled`, a
+-- demanda ligada fechava SEMPRE aberta (`em_atendimento`, fechada_em nulo),
+-- e nada a alcançava: o fecho por conversa (0138) só dispara em
+-- resolved/closed, e `fn_demanda_encerrar` exige ator humano e revisão. Aqui a
+-- garantia é da TABELA (mesma razão da 0148): qualquer UPDATE que leve o caso
+-- ao desfecho fecha a demanda que ele abriu. `escalated` NÃO fecha — o
+-- problema do contato segue em trabalho. Guarda `fechada_em is null` =
+-- idempotente; `organization_id` sempre de `new` = tenant-safe.
+create or replace function public.fn_demanda_fecha_com_caso()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_estado  text;
+  v_desfecho text;
+begin
+  if new.status = 'resolved' then
+    v_estado   := 'resolvida';
+    v_desfecho := 'resolvida';
+  elsif new.status = 'cancelled' then
+    v_estado   := 'encerrada';
+    v_desfecho := 'nao_procede';
+  else
+    -- 'awaiting_human','awaiting_lead' e 'escalated' não encerram a demanda.
+    return new;
+  end if;
+
+  update public.demandas
+     set estado          = v_estado,
+         desfecho        = v_desfecho,
+         proximo_passo   = null,
+         proximo_passo_em = null,
+         fechada_em      = clock_timestamp(),
+         updated_at      = clock_timestamp()
+   where organization_id = new.organization_id
+     and agent_case_id   = new.id
+     and fechada_em is null;
+
+  return new;
+end;
+$fn$;
+revoke execute on function public.fn_demanda_fecha_com_caso() from public, anon;
+revoke execute on function public.fn_demanda_fecha_com_caso() from authenticated;
+drop trigger if exists trg_demanda_fecha_com_caso on public.agent_cases;
+create trigger trg_demanda_fecha_com_caso
+  after update of status on public.agent_cases
+  for each row
+  when (old.status is distinct from new.status
+        and new.status in ('resolved','cancelled'))
+  execute function public.fn_demanda_fecha_com_caso();
+
+notify pgrst, 'reload schema';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
