@@ -78,6 +78,17 @@ export const ApiErrorCodes = {
   // POST /admin/tenants/[id]/reactivate sobre suspensão por falta de pagamento:
   // a saída é "Dar prazo" ou "Tornar isenta", nunca o "Reativar" genérico.
   suspensao_de_cobranca: "suspensao_de_cobranca",
+  // Rotas do dono da cobrança (spec da cobrança do revendedor §7e, §7g).
+  // PATCH de plano que muda preço ou intervalo com assinante (em plano_id ou
+  // plano_agendado_id): a saída é arquivar e criar outro.
+  plano_com_assinantes: "plano_com_assinantes",
+  // Troca de plano com a assinatura em dívida (em_atraso/cancelada) ou com o
+  // teste grátis vencido sem pagamento.
+  pagamento_pendente: "pagamento_pendente",
+  // Limite do plano: o gatilho de assentos ou de canais recusou (PT402,
+  // `details` = { recurso, limite }), ou a troca de plano não cabe no uso
+  // (`details.excedente`). Spec cobrança §5.
+  plan_limit_reached: "plan_limit_reached",
   // POST /admin/tenants/[id]/suspend|reactivate quando o descarte da fila bate
   // na trava do aviso do Meet (`appointment_notice_busy`, 40001): outra escrita
   // do mesmo contato está em curso. Nada foi gravado; tentar de novo resolve.
@@ -104,6 +115,7 @@ export const ApiErrorCodes = {
 
   // 422 — semântica
   unprocessable_entity: "unprocessable_entity",
+  plano_invalido: "plano_invalido", // plano inexistente, arquivado, de outro intervalo, ou cobrança desligada
   channel_without_session: "channel_without_session", // operação de sessão (reiniciar, parear) pedida a canal que não tem sessão no transporte — o oficial
   janela_fechada: "janela_fechada", // POST /messages por token/agente com texto livre fora das 24h em canal com restrição (131047) — a saída é modelo aprovado (#1614)
   invalid_state_transition: "invalid_state_transition",

@@ -283,3 +283,19 @@ export function situacaoDoRetorno(row: {
   if (row.cancelled_at !== null) return "cancelado";
   return row.enabled ? "agendado" : "disparado";
 }
+
+/**
+ * O status que a fila de IA › Follow-ups mostra para uma promessa. `enabled=false`
+ * com `last_error='org_nao_operante'` é o disparo único que o scheduler DESLIGOU
+ * porque a empresa estava parada: não foi entregue, e "concluída" diria o contrário.
+ */
+export function statusDaPromessaNaFila(row: {
+  enabled: boolean;
+  cancelled_at: string | null;
+  last_error: string | null;
+}): "agendada" | "concluída" | "cancelada" | "não disparada" {
+  const situacao = situacaoDoRetorno(row);
+  if (situacao === "cancelado") return "cancelada";
+  if (situacao === "agendado") return "agendada";
+  return row.last_error === "org_nao_operante" ? "não disparada" : "concluída";
+}

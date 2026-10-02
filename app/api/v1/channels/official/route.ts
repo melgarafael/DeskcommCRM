@@ -42,6 +42,7 @@ import { metadataInicialDoCanal } from "@/lib/ai/elegibilidade/pre-go-live";
 import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { basePublicaDoWebhookMeta } from "@/lib/webhooks/url-publica";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { traduzirLimiteDoPlano } from "@/lib/cobranca/limites";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -319,6 +320,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   if (error) {
+    // Ressuscitar ou criar o canal acima do plano: o gatilho de canais recusa (spec cobrança §5).
+    const limite = traduzirLimiteDoPlano(error, authz.user.idioma);
+    if (limite) return fail(limite.code, limite.message, 409, { requestId, details: limite.details });
     return fail("internal_error", error.message ?? "channel_session_write_failed", 500, {
       requestId,
     });

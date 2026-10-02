@@ -91,6 +91,8 @@ const STATUS: Record<string, { rotulo: string; tom: TomDoStatus }> = {
   agendada: { rotulo: "Agendada", tom: "info" },
   "concluída": { rotulo: "Concluída", tom: "neutral" },
   cancelada: { rotulo: "Cancelada", tom: "neutral" },
+  // Desligada porque a empresa estava parada (scheduler: last_error=org_nao_operante).
+  "não disparada": { rotulo: "Não disparada", tom: "warning" },
 };
 
 export function rotuloDoStatus(status: string, t: (texto: string) => string = (texto) => texto): string {

@@ -26,7 +26,18 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import { decidirOrcamento } from "@/lib/agent-engine/edge/llm/orcamento";
+import {
+  decidirOrcamento,
+  SQL_ORCAMENTO,
+  TITULO_TETO_DO_PLANO,
+} from "@/lib/agent-engine/edge/llm/orcamento";
+
+// Credencial BYOK dublê: sem a chave de cifra no ambiente de teste, a
+// decifragem real lançaria antes de o gate rodar.
+vi.mock("@/lib/crypto/aes_gcm", async (original) => ({
+  ...(await original<typeof import("@/lib/crypto/aes_gcm")>()),
+  decryptKey: () => "sk-da-organizacao",
+}));
 import {
   runModelCall,
   LlmBudgetExceededError,
@@ -58,6 +69,10 @@ interface Estado {
   gate?: Record<string, unknown> | "erro" | "vazio";
   /** O `left join` levanta 42703 (clone cujo `update.sh` engoliu o apêndice). */
   resolvedorQuebrado?: boolean;
+  /** O statement do teto do PLANO. Ausente = sem teto (a cobrança desligada). */
+  plano?: { teto: number | null; gasto?: string } | "42883";
+  /** A organização tem credencial própria: a chave NÃO é a da instalação. */
+  byok?: boolean;
 }
 
 function poolFalso(estado: Estado) {
@@ -67,6 +82,15 @@ function poolFalso(estado: Estado) {
 
   const query = vi.fn(async (sql: string, params: unknown[] = []) => {
     sqls.push(sql);
+    if (sql.includes("fn_limite_do_plano")) {
+      if (estado.plano === "42883") {
+        throw Object.assign(new Error("function public.fn_limite_do_plano(uuid, text) does not exist"), {
+          code: "42883",
+        });
+      }
+      const p = estado.plano ?? { teto: null };
+      return { rows: [{ teto: p.teto, gasto: p.teto === null ? null : (p.gasto ?? "0") }] };
+    }
     // ⚠️ A ORDEM DESTES RAMOS É LOAD-BEARING: o statement do gate TAMBÉM contém
     // `insert into agent_inbox_items` (a CTE `avisa`), e a query joinada também
     // contém `settings->'llm'`. Casar pelo pedaço mais específico primeiro.
@@ -99,7 +123,13 @@ function poolFalso(estado: Estado) {
       return { rows: [{ llm: { provider: "anthropic", default_model: "claude-padrao" } }] };
     }
     if (sql.includes("ai_purpose_bindings")) return { rows: [] };
-    if (sql.includes("ai_provider_credentials")) return { rows: [] };
+    if (sql.includes("ai_provider_credentials")) {
+      return {
+        rows: estado.byok
+          ? [{ id: "cred-1", api_key_encrypted: Buffer.alloc(1), api_key_iv: Buffer.alloc(1), api_key_tag: Buffer.alloc(1) }]
+          : [],
+      };
+    }
     if (sql.includes("insert into agent_inbox_items")) {
       inboxInserts.push(params);
       return { rows: [] };
@@ -228,8 +258,10 @@ describe("o gate de orçamento lê ai_budgets e executa o veredito", () => {
       expect(r.lancou).toBe(SENTINELA);
       // O atalho de custo: com 'off' em 100% das organizações no dia do
       // upgrade, o caminho de orçamento faz estritamente MENOS trabalho que o
-      // `assertBudget` de antes, que ia ao banco somar llm_calls.
-      expect(r.sqls.some((s) => s.includes("fn_gasto_de_ia_do_mes"))).toBe(false);
+      // `assertBudget` de antes, que ia ao banco somar llm_calls. (O statement
+      // do teto do PLANO roda, mas sem teto não soma nada — ver o invariante
+      // tests/invariants/teto-do-plano.test.ts.)
+      expect(r.sqls).not.toContain(SQL_ORCAMENTO);
     });
 
     it("organização SEM linha em ai_budgets SEGUE (o left join devolve nulos)", async () => {
@@ -237,7 +269,7 @@ describe("o gate de orçamento lê ai_budgets e executa o veredito", () => {
         config: { modo: null, teto: null, efetivo_em: null, limiar_pct: null },
       });
       expect(r.lancou).toBe(SENTINELA);
-      expect(r.sqls.some((s) => s.includes("fn_gasto_de_ia_do_mes"))).toBe(false);
+      expect(r.sqls).not.toContain(SQL_ORCAMENTO);
     });
 
     /**
@@ -327,6 +359,76 @@ describe("o gate de orçamento lê ai_budgets e executa o veredito", () => {
       expect(r.sqls.filter((s) => s.includes("settings->'llm'")).length).toBeGreaterThanOrEqual(2);
       const aviso = r.linhas.find((l) => l.nivel === "warn");
       expect(JSON.stringify(aviso?.campos)).toMatch(/42703/);
+    });
+  });
+
+  /**
+   * O TETO DE IA DO PLANO (spec da cobrança §5, decisão D-9). O bolso do dono
+   * da instalação: vem ANTES do orçamento da org, que o `modo 'off'` dela não
+   * desliga; só a chave da instalação o consulta; e o interruptor de emergência
+   * desliga os dois.
+   */
+  describe("o teto de IA do plano", () => {
+    const ESTOURADO = { teto: 1000, gasto: "1500.0000" };
+
+    it("⭐ estourado com a chave da instalação BLOQUEIA, mesmo com o orçamento da org em 'off'", async () => {
+      const r = await chamar({ config: { modo: "off" }, plano: ESTOURADO });
+      expect(r.lancou).toBeInstanceOf(LlmBudgetExceededError);
+      expect((r.lancou as Error).message).toMatch(/plano/);
+      expect(r.invocacoes).toEqual([]);
+      const sqlDoItem = r.sqls.find((s) => s.startsWith("insert into agent_inbox_items"));
+      expect(sqlDoItem).toMatch(/'plano'/);
+      expect(sqlDoItem, "o dedup não olha o ref_kind: o aviso da org calaria o do plano").toMatch(
+        /and ref_kind = 'plano'/,
+      );
+      expect((r.inboxInserts[0] as unknown[])[1]).toBe(TITULO_TETO_DO_PLANO);
+      expect(r.llmCallInserts[0] as unknown[]).toContain("orcamento_esgotado");
+      expect(r.sqls).not.toContain(SQL_ORCAMENTO);
+    });
+
+    it("abaixo do teto do plano, o orçamento da org continua decidindo (e bloqueia com o item DELE)", async () => {
+      const r = await chamar({ plano: { teto: 5000, gasto: "100" } });
+      expect(r.lancou).toBeInstanceOf(LlmBudgetExceededError);
+      const sqlDoItem = r.sqls.find((s) => s.startsWith("insert into agent_inbox_items"));
+      expect(sqlDoItem).toMatch(/and ref_kind = 'ai_budget'/);
+    });
+
+    it("AI_BUDGET_ENFORCEMENT=off desliga o teto do plano e nem o consulta (D-9)", async () => {
+      const r = await chamar({ plano: ESTOURADO }, { budgetEnforcement: "off" });
+      expect(r.lancou).toBe(SENTINELA);
+      expect(r.sqls.some((s) => s.includes("fn_limite_do_plano"))).toBe(false);
+    });
+
+    it("BYOK: a chave da organização nunca consulta o teto do plano", async () => {
+      const r = await chamar({ byok: true, config: { modo: "off" }, plano: ESTOURADO });
+      expect(r.lancou).toBe(SENTINELA);
+      expect(r.sqls.some((s) => s.includes("fn_limite_do_plano"))).toBe(false);
+    });
+
+    it("purpose isento segue mesmo com o plano estourado", async () => {
+      const r = await chamar({ config: { modo: "off" }, plano: ESTOURADO }, {}, { purpose: "connection_test" });
+      expect(r.lancou).toBe(SENTINELA);
+    });
+
+    it("⭐ 42883 na consulta do teto: o orçamento da org CONTINUA aplicado, a causa vai ao log, e SQL_CONFIG_COM_ORCAMENTO não mudou", async () => {
+      const r = await chamar({ plano: "42883" });
+      // O modo 'bloquear' de ai_budgets segue valendo: o erro do plano não
+      // derrubou o orçamento que já existia (spec §5 — o motivo de a consulta
+      // do plano ser PRÓPRIA, e não pendurada no left join da config).
+      expect(r.lancou).toBeInstanceOf(LlmBudgetExceededError);
+      expect(r.sqls.find((s) => s.startsWith("insert into agent_inbox_items"))).toMatch(/'ai_budget'/);
+      const aviso = r.linhas.find((l) => l.nivel === "warn" && l.msg.includes("teto do plano"));
+      expect(aviso, "o teto do plano falhou em SILÊNCIO").toBeDefined();
+      expect(JSON.stringify(aviso?.campos)).toMatch(/42883/);
+      const config = r.sqls.find((s) => s.includes("left join ai_budgets"));
+      expect(config).toBeDefined();
+      expect(config).not.toMatch(/fn_limite_do_plano/);
+      expect(r.sqls.filter((s) => s.includes("settings->'llm'"))).toHaveLength(1);
+    });
+
+    it("42883 com o orçamento da org em 'off': a chamada SEGUE (falha aberta)", async () => {
+      const r = await chamar({ config: { modo: "off" }, plano: "42883" });
+      expect(r.lancou).toBe(SENTINELA);
     });
   });
 

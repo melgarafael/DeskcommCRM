@@ -25,13 +25,23 @@ import { scrubMessage } from '@/lib/sentry/scrub';
 
 import type { Logger } from '../../obs/logger';
 import { decidirParaOSeam } from './binding-do-ponto';
-import { resolveOrgLlmConfig, type LlmEdgeConfig, type OrcamentoDaOrg } from './credentials';
+import {
+  resolveOrgLlmConfig,
+  type LlmEdgeConfig,
+  type OrcamentoDaOrg,
+  type OrigemDaChaveLlm,
+} from './credentials';
 import {
   AVISO_CORPO,
   AVISO_TITULO,
   BLOQUEIO_TITULO,
+  CORPO_TETO_DO_PLANO,
   corpoDoBloqueio,
   decidirOrcamento,
+  decidirTetoDoPlano,
+  lerTetoDoPlano,
+  MOTIVO_TETO_DO_PLANO,
+  TITULO_TETO_DO_PLANO,
   normalizarModoDeOrcamento,
   LIMIAR_PADRAO_PCT,
   SQL_ORCAMENTO,
@@ -69,8 +79,11 @@ export class LlmBudgetExceededError extends Error {
    * REPONTAMENTO da fila é da onda seguinte; o rótulo entra aqui, com o erro.
    */
   readonly terminal = true;
-  constructor() {
-    super('orçamento mensal de IA da organização atingido — chamada recusada antes de sair byte para o provedor; ajuste o teto em Uso de IA › Orçamento, desligue a proteção, ou aguarde a virada do mês (agent_inbox_items kind=budget_exceeded)');
+  /** `motivo` só muda no teto do PLANO (`MOTIVO_TETO_DO_PLANO`); o padrão é o do orçamento da org. */
+  constructor(
+    motivo = 'orçamento mensal de IA da organização atingido — chamada recusada antes de sair byte para o provedor; ajuste o teto em Uso de IA › Orçamento, desligue a proteção, ou aguarde a virada do mês (agent_inbox_items kind=budget_exceeded)',
+  ) {
+    super(motivo);
   }
 }
 
@@ -290,23 +303,73 @@ interface LinhaDoOrcamento {
  * Erro na leitura do orçamento NUNCA bloqueia: o cliente não pode perder o
  * agente porque uma query falhou. Mas a causa vai para o log, nomeada — a frase
  * tranquilizadora sozinha é o que faz um defeito viver meses.
+ *
+ * Ordem (spec da cobrança §5): chave de emergência → teto do PLANO → orçamento da org.
  */
-async function aplicarOrcamento(d: {
+/** O que o gate recebe do seam. */
+interface EntradaDoGate {
   db: pg.Pool;
   organizationId: string;
   /** Só para o atalho de custo. A decisão usa o snapshot de `SQL_ORCAMENTO`. */
   orcamentoDaConfig: OrcamentoDaOrg;
   orcamentoIndisponivelPorque: string | null;
   chave: ChaveDeOrcamento;
+  /** De QUEM é a chave carregada — o teto do plano só vincula a da instalação. */
+  origemDaChave: OrigemDaChaveLlm;
   purpose: string;
   provider: string;
   model: string;
   origem: string;
   input: RunModelCallInput;
   log?: Logger;
-}): Promise<void> {
-  const comum = { organization_id: d.organizationId, purpose: d.purpose };
+}
 
+async function aplicarOrcamento(d: EntradaDoGate): Promise<void> {
+  const comum = { organization_id: d.organizationId, purpose: d.purpose };
+  const inicio = Date.now();
+
+  // (1) A alavanca de emergência vem antes dos DOIS tetos. Decisão D-9 da
+  // cobrança do revendedor: o interruptor único do dono da instalação desliga
+  // também o teto do plano — é o bolso dele que os dois protegem.
+  if (d.chave === 'off') {
+    return;
+  }
+
+  // (2) O TETO DO PLANO, antes do orçamento da org: o `modo 'off'` dela não
+  // desliga o que o dono da instalação vende. Só a chave da instalação consulta
+  // (a chave própria é paga pela empresa). Consulta PRÓPRIA, e não pendurada em
+  // `SQL_CONFIG_COM_ORCAMENTO`: o catch de lá troca para a query legada em
+  // qualquer erro e desliga o orçamento de toda org — a função nova falhando
+  // levaria junto o orçamento que já existe.
+  if (d.origemDaChave === 'chave_da_instalacao') {
+    const plano = await lerTetoDoPlano(d.db, d.organizationId);
+    if ('indisponivel' in plano) {
+      d.log?.warn('llm: teto do plano não pôde ser lido — a chamada SEGUE sem ele', {
+        ...comum,
+        causa: plano.indisponivel,
+      });
+    } else if (
+      decidirTetoDoPlano({
+        tetoUsdCents: plano.tetoUsdCents,
+        gastoUsdCents: plano.gastoUsdCents,
+        origemDaChave: d.origemDaChave,
+        purpose: d.purpose,
+        chave: d.chave,
+      }).acao === 'bloquear'
+    ) {
+      await recusarPorTeto(d, {
+        refKind: 'plano',
+        titulo: TITULO_TETO_DO_PLANO,
+        corpo: CORPO_TETO_DO_PLANO,
+        erro: new LlmBudgetExceededError(MOTIVO_TETO_DO_PLANO),
+        gastoCents: plano.gastoUsdCents,
+        tetoCents: plano.tetoUsdCents ?? 0,
+        inicio,
+      });
+    }
+  }
+
+  // (3) O orçamento da ORGANIZAÇÃO — o de sempre.
   if (d.orcamentoIndisponivelPorque !== null) {
     d.log?.warn('llm: orçamento não pôde ser lido — a chamada SEGUE sem teto', {
       ...comum,
@@ -314,11 +377,10 @@ async function aplicarOrcamento(d: {
     });
     return;
   }
-  if (d.orcamentoDaConfig.modo === 'off' || d.chave === 'off') {
+  if (d.orcamentoDaConfig.modo === 'off') {
     return;
   }
 
-  const inicio = Date.now();
   let linha: LinhaDoOrcamento | undefined;
   try {
     const { rows } = await d.db.query<LinhaDoOrcamento>(SQL_ORCAMENTO, [
@@ -370,45 +432,75 @@ async function aplicarOrcamento(d: {
     return;
   }
 
-  const erro = new LlmBudgetExceededError();
-  // `ref_kind`/`ref_id` existem para que ALGUÉM possa fechar este item: o
-  // insert anterior não gravava ref nenhum, e por isso nenhum auto-resolvedor
-  // o alcançava — virava o mês, a IA voltava, e o alerta crítico continuava
-  // aceso. Estado falso é pior que ausente, porque quem lê age sobre ele.
+  await recusarPorTeto(d, {
+    refKind: 'ai_budget',
+    titulo: BLOQUEIO_TITULO,
+    corpo: corpoDoBloqueio(gastoCents, tetoCents),
+    erro: new LlmBudgetExceededError(),
+    gastoCents,
+    tetoCents,
+    inicio,
+  });
+}
+
+/**
+ * Executa a recusa de UM dos dois tetos: item na Central, linha de erro em
+ * `llm_calls`, log e o `throw`.
+ *
+ * `ref_kind`/`ref_id` existem para que ALGUÉM possa fechar o item: o insert de
+ * antes não gravava ref nenhum, e nenhum auto-resolvedor o alcançava. E o dedup
+ * olha o `ref_kind` (spec da cobrança §5): sem ele, o item aberto do plano
+ * calaria o do orçamento da org, e vice-versa. `refKind` é uma união fechada,
+ * por isso entra literal no SQL.
+ */
+async function recusarPorTeto(
+  d: EntradaDoGate,
+  r: {
+    refKind: 'ai_budget' | 'plano';
+    titulo: string;
+    corpo: string;
+    erro: LlmBudgetExceededError;
+    gastoCents: number;
+    tetoCents: number;
+    inicio: number;
+  },
+): Promise<never> {
   await d.db.query(
     `insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
-     select $1, 'budget_exceeded', 'critical', $2, $3, 'ai_budget', $1
+     select $1, 'budget_exceeded', 'critical', $2, $3, '${r.refKind}', $1
      where not exists (
        select 1 from agent_inbox_items
        where organization_id = $1 and kind = 'budget_exceeded' and status = 'open'
+         and ref_kind = '${r.refKind}'
      )`,
-    [d.organizationId, BLOQUEIO_TITULO, corpoDoBloqueio(gastoCents, tetoCents)],
+    [d.organizationId, r.titulo, r.corpo],
   );
-  // A recusa vira LINHA em llm_calls. A tela /app/ai/runs nasceu porque
-  // "llm_calls só registrava sucesso — a tabela ficava vazia exatamente no caso
-  // que precisava de explicação", e o único caso em que o agente para DE
-  // PROPÓSITO era justamente o que continuava invisível: o `throw` de antes
-  // caía fora do `try` que grava a falha. É o irmão que não foi replantado
-  // quando a 0128 consertou a classe.
+  // A recusa vira LINHA em llm_calls: a tela /app/ai/runs nasceu porque
+  // "llm_calls só registrava sucesso", e o único caso em que o agente para DE
+  // PROPÓSITO continuava invisível.
   await registrarFalha(d.db, {
     input: d.input,
     purpose: d.purpose,
     provider: d.provider,
     model: d.model,
     origem: d.origem,
-    latencyMs: Date.now() - inicio,
-    erro,
+    latencyMs: Date.now() - r.inicio,
+    erro: r.erro,
   }).catch(() => {
     // Gravar a recusa não pode impedir a recusa.
   });
-  d.log?.warn('llm: chamada recusada por orçamento', {
-    ...comum,
-    provider: d.provider,
-    model: d.model,
-    gasto_cents: gastoCents,
-    teto_cents: tetoCents,
-  });
-  throw erro;
+  d.log?.warn(
+    r.refKind === 'plano' ? 'llm: chamada recusada pelo teto de IA do plano' : 'llm: chamada recusada por orçamento',
+    {
+      organization_id: d.organizationId,
+      purpose: d.purpose,
+      provider: d.provider,
+      model: d.model,
+      gasto_cents: r.gastoCents,
+      teto_cents: r.tetoCents,
+    },
+  );
+  throw r.erro;
 }
 
 /**
@@ -662,6 +754,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     // boot faria o kill switch da tela só valer depois de reiniciar o worker
     // (issue #1034). Sem banco lido nesta vida do processo, isto é o de hoje.
     chave: chaveDeOrcamentoDaInstalacao(cfg.budgetEnforcement ?? 'on'),
+    origemDaChave: config.origemDaChave,
     purpose,
     provider: config.provider,
     model,

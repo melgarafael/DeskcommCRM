@@ -217,9 +217,26 @@ const MODULOS_NA_TELA: ReadonlyArray<{ modulo: ModuloPorFlag; id: string; rotulo
     descricao:
       "Ligado, cada empresa ganha no CRM o cadastro de Empresas (razão social e CNPJ, com os dados públicos preenchidos pela BrasilAPI), as Pessoas que decidem dentro delas, com vários telefones, e a importação de planilha CSV ou Excel. Consultar um CNPJ manda o número para a BrasilAPI. Desligado, as telas e o menu somem.",
   },
+  {
+    modulo: "cobranca",
+    id: "modulo-cobranca",
+    rotulo: "Cobrança dos seus clientes",
+    descricao:
+      "Ligado, você cria planos e cobra as empresas hospedadas aqui, com teste grátis e suspensão automática de quem não paga. Empresas que já existem ficam isentas; você escolhe quem passa a pagar. Desligado, os limites dos planos deixam de valer e as empresas suspensas por falta de pagamento são liberadas; nada é cancelado no provedor de pagamento.",
+  },
 ];
 
-export function FormularioDeModulos({ ligados }: { ligados: readonly ModuloOpcional[] }) {
+export function FormularioDeModulos({
+  ligados,
+  escondidos,
+  suspensasPorCobranca,
+}: {
+  ligados: readonly ModuloOpcional[];
+  /** Módulos que ainda não se ligam nesta versão e estão desligados: ficam sem interruptor. */
+  escondidos: readonly ModuloOpcional[];
+  /** Spec da cobrança §7(h): quantas o desligar libera. `null` = a contagem falhou. */
+  suspensasPorCobranca: number | null;
+}) {
   const t = useT();
   const [estado, setEstado] = useState<ReadonlySet<ModuloOpcional>>(new Set(ligados));
   const [erro, setErro] = useState<string | null>(null);
@@ -239,7 +256,15 @@ export function FormularioDeModulos({ ligados }: { ligados: readonly ModuloOpcio
       const r = await updateModuloDaInstalacao({ modulo, ligado: valor });
       if (!r.ok) {
         alternar(!valor);
-        setErro(t(ehRecusaDeEscrita(r.error) ? MENSAGEM_DA_RECUSA_DE_ESCRITA[r.error] : "Não deu para salvar. Tente de novo em instantes."));
+        setErro(
+          t(
+            ehRecusaDeEscrita(r.error)
+              ? MENSAGEM_DA_RECUSA_DE_ESCRITA[r.error]
+              : r.error === "liberacao_falhou"
+                ? "A cobrança continua ligada: não deu para liberar as empresas suspensas por falta de pagamento, e nada foi mudado. Tente desligar de novo em instantes."
+                : "Não deu para salvar. Tente de novo em instantes.",
+          ),
+        );
       }
     });
   }
@@ -255,13 +280,20 @@ export function FormularioDeModulos({ ligados }: { ligados: readonly ModuloOpcio
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {MODULOS_NA_TELA.map((m) => (
+        {MODULOS_NA_TELA.filter((m) => !escondidos.includes(m.modulo)).map((m) => (
           <div key={m.modulo} className="flex items-start justify-between gap-4 rounded-lg border p-4">
             <div className="space-y-1">
               <Label htmlFor={m.id} className="text-base">
                 {t(m.rotulo)}
               </Label>
               <p className="text-sm text-muted-foreground">{t(m.descricao)}</p>
+              {m.modulo === "cobranca" && estado.has("cobranca") && suspensasPorCobranca !== 0 && (
+                <p className="text-sm text-warning-fg">
+                  {suspensasPorCobranca === null
+                    ? t("Não deu para contar as empresas suspensas por falta de pagamento. Desligar libera todas.")
+                    : `${t("Empresas suspensas por falta de pagamento que serão liberadas ao desligar:")} ${suspensasPorCobranca}`}
+                </p>
+              )}
             </div>
             <Switch
               id={m.id}

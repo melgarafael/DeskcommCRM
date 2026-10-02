@@ -7,6 +7,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
+import { traduzirLimiteDoPlano } from "@/lib/cobranca/limites";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import {
   SOCIAL_NETWORKS,
@@ -180,6 +181,9 @@ export async function POST(req: Request) {
     });
     return ok(result, { requestId, headers });
   } catch (error) {
+    const limite = traduzirLimiteDoPlano(error, auth.user.idioma);
+    if (limite)
+      return fail(limite.code, limite.message, 409, { requestId, headers, details: limite.details });
     return failure(error, requestId);
   }
 }

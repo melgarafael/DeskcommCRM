@@ -28,10 +28,14 @@ import {
   AVISO_CORPO,
   AVISO_TITULO,
   BLOQUEIO_TITULO,
+  CORPO_TETO_DO_PLANO,
   corpoDoBloqueio,
   decidirOrcamento,
+  decidirTetoDoPlano,
   HANDOFF_REASON_ORCAMENTO,
+  TITULO_TETO_DO_PLANO,
 } from "@/lib/agent-engine/edge/llm/orcamento";
+import type { OrigemDaChaveLlm } from "@/lib/agent-engine/edge/llm/credentials";
 import { computeCost } from "@/lib/ai/cost";
 import { silencioVigente } from "@/lib/inbox/comando-da-conversa";
 import { logInvocation } from "@/lib/ai/log-invocation";
@@ -183,34 +187,6 @@ export async function processMessageReceived(row: EventRow): Promise<ProcessResu
     };
   }
 
-  // ── Teto de gasto (IA-02) — mesma decisão e mesma régua que o engine aplica.
-  //
-  // ⚠️ A POSIÇÃO É LOAD-BEARING, e ela mudou. O veto morava dentro de
-  // `buildContext`, e `processMessageReceived` faz `return` no primeiro skip —
-  // então ele barrava G1 ("quero falar com um atendente"), G4 legal (menção a
-  // Procon/advogado) e G4 stage ANTES de qualquer um deles rodar. Enquanto as
-  // flags `is_throttled`/`is_disabled` não tinham escritor vivo isso era letra
-  // morta; a partir do momento em que o teto vincula de verdade, um lead que
-  // PEDE um humano receberia silêncio. Pedido explícito de humano e menção legal
-  // são determinísticos e custam ZERO token — não há razão para um teto de GASTO
-  // barrá-los. Mesma razão pela qual o guard de modelo-sem-provedor, logo abaixo,
-  // também fica depois de G1/G4.
-  const veto = await vetoPorTetoDeGasto({
-    orgId: ctx.organization_id,
-    conversationId: ctx.conversation_id,
-    serviceBoundary: ctx.serviceBoundary,
-    leadId,
-  });
-  if (veto !== null) {
-    logger.info("[ai-response-worker] skip", {
-      reason: veto.reason,
-      detail: veto.detail,
-      conversation_id: conversationId,
-      message_id: messageId,
-    });
-    return { status: "skipped", reason: veto.reason, detail: veto.detail };
-  }
-
   // Mesma armadilha que quebrava o ai-sentiment-worker, e aqui ela é mais cara:
   // este é o worker que RESPONDE O CLIENTE. `ctx.agent.model` é uma string vinda
   // do banco (ai_agents.model), e no AI SDK string com barra é roteada pelo
@@ -242,6 +218,37 @@ export async function processMessageReceived(row: EventRow): Promise<ProcessResu
       reason: "ai_gateway_key_missing",
       detail: `nenhuma chave configurada atende o modelo "${ctx.agent.model}"`,
     };
+  }
+
+  // ── Teto de gasto (IA-02) — mesma decisão e mesma régua que o engine aplica.
+  //
+  // ⚠️ A POSIÇÃO É LOAD-BEARING, e ela mudou. O veto morava dentro de
+  // `buildContext`, e `processMessageReceived` faz `return` no primeiro skip —
+  // então ele barrava G1 ("quero falar com um atendente"), G4 legal (menção a
+  // Procon/advogado) e G4 stage ANTES de qualquer um deles rodar. Enquanto as
+  // flags `is_throttled`/`is_disabled` não tinham escritor vivo isso era letra
+  // morta; a partir do momento em que o teto vincula de verdade, um lead que
+  // PEDE um humano receberia silêncio. Pedido explícito de humano e menção legal
+  // são determinísticos e custam ZERO token — não há razão para um teto de GASTO
+  // barrá-los. Mesma razão pela qual o guard de modelo-sem-provedor, logo abaixo,
+  // também fica depois de G1/G4.
+  const veto = await vetoPorTetoDeGasto({
+    orgId: ctx.organization_id,
+    conversationId: ctx.conversation_id,
+    serviceBoundary: ctx.serviceBoundary,
+    leadId,
+    // O teto de IA do PLANO só vincula a chave da instalação (spec cobrança §5):
+    // é por isso que a resolução do modelo agora vem antes deste veto.
+    origemDaChave: resolvido.origem === "padrao" ? "chave_da_instalacao" : "credencial_da_organizacao",
+  });
+  if (veto !== null) {
+    logger.info("[ai-response-worker] skip", {
+      reason: veto.reason,
+      detail: veto.detail,
+      conversation_id: conversationId,
+      message_id: messageId,
+    });
+    return { status: "skipped", reason: veto.reason, detail: veto.detail };
   }
 
   // Daqui para baixo, o modelo RESOLVIDO pelo painel é o que vai para o provedor
@@ -405,6 +412,7 @@ async function vetoPorTetoDeGasto(alvo: {
   orgId: string;
   conversationId: string;
   leadId: string | null;
+  origemDaChave: OrigemDaChaveLlm;
 }): Promise<SkipDecision | null> {
   const orgId = alvo.orgId;
   let status: BudgetStatus;
@@ -421,11 +429,25 @@ async function vetoPorTetoDeGasto(alvo: {
     return null;
   }
 
-  // Retorno mais cedo de todos: no dia 1 toda organização está em 'off', e nem
-  // a consulta do aviso chega a sair.
-  if (status.enforcement_mode === "off") return null;
+  // A alavanca de emergência desliga os DOIS tetos (decisão D-9 da cobrança) —
+  // a mesma ordem de `aplicarOrcamento` no engine.
+  if (status.enforcement_env === "off") return null;
 
   const admin = createAdminClient();
+
+  // O TETO DE IA DO PLANO vem antes do orçamento da org, e só vincula a chave
+  // da instalação (spec cobrança §5).
+  if (alvo.origemDaChave === "chave_da_instalacao") {
+    const vetoDoPlano = await vetoPorTetoDoPlano(admin, alvo, {
+      gastoCents: status.current_month_consumed_cents,
+      chave: status.enforcement_env,
+    });
+    if (vetoDoPlano !== null) return vetoDoPlano;
+  }
+
+  // Retorno mais cedo do orçamento da org: no dia 1 toda organização está em
+  // 'off', e nem a consulta do aviso chega a sair.
+  if (status.enforcement_mode === "off") return null;
   // "Neste mês", e não "aberto": fechar o aviso à mão não pode virar bypass
   // permanente do bloqueio — é a mesma régua da CTE `avisado_antes`.
   //
@@ -480,6 +502,7 @@ async function vetoPorTetoDeGasto(alvo: {
       severity: "warn",
       title: AVISO_TITULO,
       body: AVISO_CORPO,
+      refKind: "ai_budget",
     });
     logger.warn("[ai-response] gasto de IA passou do aviso — a resposta SEGUE", {
       organization_id: orgId,
@@ -495,6 +518,7 @@ async function vetoPorTetoDeGasto(alvo: {
     severity: "critical",
     title: BLOQUEIO_TITULO,
     body: corpoDoBloqueio(status.current_month_consumed_cents, status.monthly_limit_cents),
+    refKind: "ai_budget",
   });
 
   // ── A CONVERSA VAI PARA A FILA HUMANA, IGUAL AO ENGINE ────────────────────
@@ -514,25 +538,90 @@ async function vetoPorTetoDeGasto(alvo: {
   //
   // Nunca lança (contrato do orquestrador), então uma falha aqui não impede a
   // recusa — mas ela é logada lá dentro.
+  return devolverAoHumanoPorTeto(alvo, {
+    source: "teto_de_gasto",
+    gastoCents: status.current_month_consumed_cents,
+    tetoCents: status.monthly_limit_cents,
+  });
+}
+
+/**
+ * O teto de IA do PLANO no caminho legado — espelho do passo (2) de
+ * `aplicarOrcamento`. Ler o teto falhou → segue: o orçamento da org continua
+ * aplicado logo depois, pelo chamador.
+ */
+async function vetoPorTetoDoPlano(
+  admin: ReturnType<typeof createAdminClient>,
+  alvo: {
+    serviceBoundary?: ServiceBoundary;
+    orgId: string;
+    conversationId: string;
+    leadId: string | null;
+    origemDaChave: OrigemDaChaveLlm;
+  },
+  leitura: { gastoCents: number; chave: BudgetStatus["enforcement_env"] },
+): Promise<SkipDecision | null> {
+  const { data, error } = await admin.rpc("fn_limite_do_plano", {
+    p_org: alvo.orgId,
+    p_recurso: "ia_usd_cents",
+  });
+  if (error) {
+    logger.warn("[ai-response] teto do plano não pôde ser lido — a resposta SEGUE sem ele", {
+      organization_id: alvo.orgId,
+      causa: `${error.code ?? "sem_sqlstate"}: ${error.message}`,
+    });
+    return null;
+  }
+  const tetoCents = typeof data === "number" ? data : null;
+  const veredito = decidirTetoDoPlano({
+    tetoUsdCents: tetoCents,
+    gastoUsdCents: leitura.gastoCents,
+    origemDaChave: alvo.origemDaChave,
+    purpose: "agent_turn",
+    chave: leitura.chave,
+  });
+  if (veredito.acao === "seguir") return null;
+
+  await abrirItemDeOrcamento(admin, alvo.orgId, {
+    kind: "budget_exceeded",
+    severity: "critical",
+    title: TITULO_TETO_DO_PLANO,
+    body: CORPO_TETO_DO_PLANO,
+    refKind: "plano",
+  });
+  return devolverAoHumanoPorTeto(alvo, {
+    source: "teto_do_plano",
+    gastoCents: leitura.gastoCents,
+    tetoCents: tetoCents ?? 0,
+  });
+}
+
+/**
+ * A saída comum dos dois tetos: a conversa vai para a FILA HUMANA, igual ao
+ * engine. Sem isto, os dois caminhos dariam respostas OPOSTAS ao mesmo
+ * veredito — e o alerta aberto, que promete fila humana, mentiria.
+ * `triggerHandoff` é o irmão local de `performHumanHandoff` (este worker não
+ * pode importar o engine) e nunca lança.
+ */
+async function devolverAoHumanoPorTeto(
+  alvo: { serviceBoundary?: ServiceBoundary; orgId: string; conversationId: string; leadId: string | null },
+  teto: { source: "teto_de_gasto" | "teto_do_plano"; gastoCents: number; tetoCents: number },
+): Promise<SkipDecision> {
   await triggerHandoff({
     conversationId: alvo.conversationId,
     serviceBoundary: alvo.serviceBoundary,
-    organizationId: orgId,
+    organizationId: alvo.orgId,
     reason: HANDOFF_REASON_ORCAMENTO,
     origem: "legado_teto",
     leadId: alvo.leadId,
-    metadata: {
-      source: "teto_de_gasto",
-      gasto_cents: status.current_month_consumed_cents,
-      teto_cents: status.monthly_limit_cents,
-    },
+    metadata: { source: teto.source, gasto_cents: teto.gastoCents, teto_cents: teto.tetoCents },
   });
-
   logger.warn("[ai-response] resposta recusada pelo teto de gasto — conversa na fila humana", {
-    organization_id: orgId,
+    organization_id: alvo.orgId,
     conversation_id: alvo.conversationId,
-    gasto_cents: status.current_month_consumed_cents,
-    teto_cents: status.monthly_limit_cents,
+    fonte: teto.source,
+    gasto_cents: teto.gastoCents,
+    teto_cents: teto.tetoCents,
   });
   return skip("budget_exceeded");
 }
@@ -550,13 +639,15 @@ async function vetoPorTetoDeGasto(alvo: {
 async function abrirItemDeOrcamento(
   admin: ReturnType<typeof createAdminClient>,
   orgId: string,
-  item: { kind: string; severity: string; title: string; body: string },
+  item: { kind: string; severity: string; title: string; body: string; refKind: "ai_budget" | "plano" },
 ): Promise<void> {
   const { count, error: erroDaBusca } = await admin
     .from("agent_inbox_items")
     .select("id", { count: "exact", head: true })
     .eq("organization_id", orgId)
     .eq("kind", item.kind)
+    // Dedup por teto: o item do plano não cala o da org, nem o contrário.
+    .eq("ref_kind", item.refKind)
     .eq("status", "open");
   if (erroDaBusca) {
     logger.warn("[ai-response] dedupe do item de orçamento falhou — item não aberto", {
@@ -574,7 +665,7 @@ async function abrirItemDeOrcamento(
     severity: item.severity,
     title: item.title,
     body: item.body,
-    ref_kind: "ai_budget",
+    ref_kind: item.refKind,
     ref_id: orgId,
   });
   if (error) {
@@ -596,7 +687,9 @@ async function retratarItensDeOrcamento(
     .update({ status: "resolved" })
     .eq("organization_id", orgId)
     .eq("status", "open")
-    .in("kind", ["budget_exceeded", "budget_warning"]);
+    .in("kind", ["budget_exceeded", "budget_warning"])
+    // O mesmo recorte da CTE `retrata`: nunca o item do teto do PLANO.
+    .or("ref_kind.is.null,ref_kind.eq.ai_budget");
   if (error) {
     logger.warn("[ai-response] retrato dos itens de orçamento falhou", {
       organization_id: orgId,

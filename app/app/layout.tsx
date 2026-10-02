@@ -21,6 +21,9 @@ import {
   ImpersonateBanner,
 } from "@/components/app/ImpersonateBanner";
 import { ConexaoCaidaBanner } from "@/components/app/ConexaoCaidaBanner";
+import { FaixaDoTesteGratis } from "@/components/cobranca/FaixaDoTesteGratis";
+import { diasDeTesteRestantes } from "@/lib/cobranca/faixa";
+import { logger } from "@/lib/logger";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 import { listarConexoesCaidas, type ConexaoCaida } from "@/lib/channels/health";
 import { VoiceCallProvider } from "@/components/voice/VoiceCallContext";
@@ -61,6 +64,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // EPIC-02: gate /app/* on completed onboarding.
   // EPIC-11: gate /app/* on org not being suspended (S-11.08).
   let conexoesCaidas: ConexaoCaida[] = [];
+  let diasDeTeste: number | null = null;
   let enrolled = false;
   let needsMfaGate = false;
 
@@ -135,6 +139,25 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       // Mesma linha de `settings` já lida acima — nenhuma consulta a mais.
       capacidades_ligadas: capacidadesLigadas(orgRow?.settings, modulos),
     };
+
+    // A faixa do teste grátis (spec da cobrança §9): uma consulta a mais SÓ com
+    // a cobrança ligada e para o admin. Falha aberta na INFORMAÇÃO: sem a
+    // leitura, nenhuma faixa — o que ela diz não trava nada.
+    if (modulos.includes("cobranca") && roleAtLeast(activeOrg.role, "admin")) {
+      const { data, error } = await admin
+        .from("cobranca_assinaturas")
+        .select("estado, trial_ate")
+        .eq("organization_id", activeOrg.orgId)
+        .maybeSingle();
+      if (error) {
+        logger.warn("app: assinatura ilegível — sem faixa de teste grátis", {
+          organization_id: activeOrg.orgId,
+          codigo: error.code,
+        });
+      } else {
+        diasDeTeste = diasDeTesteRestantes(data, new Date());
+      }
+    }
 
     // `marcaDaInstalacao()` é memoizada por TTL no PROCESSO (`lib/branding/
     // instalacao.ts`), e a derivação da cor é cacheada por régua+semente em
@@ -262,6 +285,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <EstiloDaMarcaDaOrganizacao css={cssDaOrganizacao} />
         <ImpersonateBanner impersonating={impersonating} />
         <ConexaoCaidaBanner caidas={conexoesCaidas} />
+        {diasDeTeste !== null && <FaixaDoTesteGratis dias={diasDeTeste} />}
         {needsMfaGate ? (
           // Gate always mounted for MFA-required roles; it latches the blocking
           // decision client-side so the enroll Server Action's revalidation

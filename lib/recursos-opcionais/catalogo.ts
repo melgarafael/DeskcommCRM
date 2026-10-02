@@ -30,7 +30,7 @@
  * quem desenha passa por `t()`/`traduzir()`.
  */
 import type { Role } from "@/lib/auth/types";
-import { MODULOS_OPCIONAIS, MODULOS_OPCIONAIS_POR_FLAG, type ModuloOpcional } from "@/lib/instalacao/modulos";
+import { MODULOS_OPCIONAIS, MODULOS_OPCIONAIS_POR_FLAG, MODULOS_SO_DA_INSTALACAO, type ModuloOpcional } from "@/lib/instalacao/modulos";
 import { NAV_CATALOG, type NavMetadata } from "@/lib/navigation/catalogo";
 import { vendaPeloCanalLigada } from "@/lib/conversoes/venda-pelo-canal";
 import { lerConfigDoJev } from "@/lib/ai/decisao/config";
@@ -116,6 +116,10 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
   honorarios: {
     nome: "Honorários",
     oQueFaz: "Contratos de honorários com parcelas e o controle do que já foi pago.",
+  },
+  cobranca: {
+    nome: "Cobrança dos seus clientes",
+    oQueFaz: "Você cria planos e cobra as empresas desta instalação, com teste grátis e suspensão de quem não paga.",
   },
 };
 
@@ -592,6 +596,15 @@ export const RECURSOS_OPCIONAIS: readonly RecursoOpcional[] = [
   ...DA_EMPRESA,
   ...DE_CADA_AGENTE,
 ];
+
+/**
+ * Os módulos que a EMPRESA vê em Configurações › Recursos opcionais: todos os da
+ * instalação, menos os que são decisão só de quem administra o servidor
+ * (`MODULOS_SO_DA_INSTALACAO`).
+ */
+export const MODULOS_DA_EMPRESA: readonly RecursoOpcional[] = RECURSOS_OPCIONAIS.filter(
+  (r) => r.nivel === "instalacao" && !!r.modulo && !MODULOS_SO_DA_INSTALACAO.includes(r.modulo),
+);
 
 /**
  * O estado de um recurso. NUNCA lança: leitura que explode vira `nao_lido`,

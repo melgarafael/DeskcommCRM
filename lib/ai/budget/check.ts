@@ -161,6 +161,10 @@ export async function getBudgetStatus(orgId: string): Promise<BudgetStatus> {
       .select("id", { count: "exact", head: true })
       .eq("organization_id", orgId)
       .eq("kind", "budget_exceeded")
+      // Só o orçamento da ORG e o legado sem referência: a mesma régua do
+      // retratarAvisos de app/api/v1/ai/budget/route.ts. O aviso do teto do
+      // PLANO (ref_kind='plano') não é deste card nem se destrava por ele.
+      .or("ref_kind.is.null,ref_kind.eq.ai_budget")
       .eq("status", "open"),
     // O furo de medição, medido onde ele aparece: chamada do mês sem custo
     // conhecido. `idx_llm_calls_org_time (organization_id, created_at)` serve o

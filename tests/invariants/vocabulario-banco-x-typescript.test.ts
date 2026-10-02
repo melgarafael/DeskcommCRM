@@ -434,6 +434,52 @@ const PARES: Array<{
     arquivo: "lib/organizacao/operante.ts",
     simbolo: "TIPOS_DE_SUSPENSAO",
   },
+  {
+    tabela: "cobranca_planos",
+    coluna: "intervalo",
+    // lib/cobranca/vocabulario.ts. Os sete pares da cobrança nascem no MESMO
+    // commit da migration 0510.
+    arquivo: "lib/cobranca/vocabulario.ts",
+    simbolo: "INTERVALOS",
+  },
+  {
+    tabela: "cobranca_planos",
+    coluna: "moeda",
+    // O CHECK é escrito como `= any (array[...])` para o extrator abaixo o ler
+    // como DEFINIÇÃO de vocabulário (um `= 'BRL'` solto não casa).
+    arquivo: "lib/cobranca/vocabulario.ts",
+    simbolo: "MOEDAS",
+  },
+  {
+    tabela: "cobranca_assinaturas",
+    coluna: "estado",
+    arquivo: "lib/cobranca/vocabulario.ts",
+    simbolo: "ESTADOS_DA_ASSINATURA",
+  },
+  {
+    tabela: "cobranca_assinaturas",
+    coluna: "provedor",
+    arquivo: "lib/cobranca/vocabulario.ts",
+    simbolo: "PROVEDORES_DE_COBRANCA",
+  },
+  {
+    tabela: "cobranca_assinaturas",
+    coluna: "modo",
+    arquivo: "lib/cobranca/vocabulario.ts",
+    simbolo: "MODOS",
+  },
+  {
+    tabela: "cobranca_assinaturas",
+    coluna: "ultimo_aviso",
+    arquivo: "lib/cobranca/vocabulario.ts",
+    simbolo: "AVISOS_DA_REGUA",
+  },
+  {
+    tabela: "cobranca_assinaturas",
+    coluna: "ultimo_erro",
+    arquivo: "lib/cobranca/vocabulario.ts",
+    simbolo: "ERROS_DE_LEITURA",
+  },
 ];
 
 /** Tira um nível de parênteses externos, se ele envolver a expressão inteira. */

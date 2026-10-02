@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { encryptWebhookSecret, decryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { metadataInicialDoCanal } from "@/lib/ai/elegibilidade/pre-go-live";
+import { lerLimiteEstourado } from "@/lib/cobranca/limites";
 import { inboxSupported, SOCIAL_PROVIDER } from "./catalog";
 import { listSocialAccounts, socialRequest, SocialError } from "./client";
 
@@ -158,6 +159,8 @@ export async function connectSocialInbox(
       })
       .select("id")
       .single();
+    // Limite de números do plano (spec cobrança §5): sobe CRU para a rota dizer o número.
+    if (lerLimiteEstourado(error)) throw error;
     if (error || !data)
       throw new SocialError(
         "Não foi possível criar o canal. Atualize a lista antes de tentar novamente.",

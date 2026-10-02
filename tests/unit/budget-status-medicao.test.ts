@@ -70,6 +70,7 @@ function fazerAdmin(opts: {
       eq: (...a: unknown[]) => registra("eq", a),
       is: (...a: unknown[]) => registra("is", a),
       gte: (...a: unknown[]) => registra("gte", a),
+      or: (...a: unknown[]) => registra("or", a),
       maybeSingle: async () => ({ data: tabela === "ai_budgets" ? LINHA : null, error: null }),
       then: (res: (v: unknown) => unknown) =>
         Promise.resolve(
@@ -175,5 +176,19 @@ describe("o número exibido é o número que decide", () => {
     expect((await getBudgetStatus(ORG)).blocked_now).toBe(true);
     instalar({ itensBloqueio: 0 });
     expect((await getBudgetStatus(ORG)).blocked_now).toBe(false);
+  });
+
+  it("`blocked_now` fala só do orçamento da ORG: o aviso do teto do PLANO não entra na conta", async () => {
+    // O budget_exceeded com ref_kind='plano' (cobrança) não é deste card: contá-lo
+    // mandaria o admin mexer num teto que não destrava nada, e o PATCH do
+    // orçamento devolveria blocked_now:false com a IA ainda parada pelo plano.
+    // Mesma régua do retratarAvisos da rota.
+    const filtros = instalar({ itensBloqueio: 0 });
+    await getBudgetStatus(ORG);
+    const bloqueio = filtros["agent_inbox_items"] ?? [];
+    expect(bloqueio.some((f) => f.metodo === "eq" && f.args[0] === "kind" && f.args[1] === "budget_exceeded")).toBe(true);
+    expect(bloqueio.filter((f) => f.metodo === "or").map((f) => f.args[0])).toEqual([
+      "ref_kind.is.null,ref_kind.eq.ai_budget",
+    ]);
   });
 });
