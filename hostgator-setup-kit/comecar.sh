@@ -13,7 +13,7 @@
 #
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/melgarafael/DeskcommCRM.git}"
+REPO_URL="${REPO_URL:-https://github.com/rgisjr/DeskcommCRM.git}"
 # Link de parceria com a HostGator. Mesma URL e mesmo rótulo do README: uma
 # promessa só, num lugar só — duas redações da mesma oferta viram duas ofertas.
 VPS_URL="https://www.hostgator.com.br/52708-141-3-52.html"
