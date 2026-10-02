@@ -152,6 +152,16 @@ declare `REVERSE_PROXY=traefik` no `.env` — aí a escolha é sua e ele segue s
 | `reset-mfa.sh` | Remove o MFA de um usuário travado |
 | `healthcheck.sh` | Diagnóstico dos serviços |
 
+> ⚠️ **Um dump do `backup.sh` não restaura por cima de um banco que já existe.** O dump sai
+> com `--no-owner --no-privileges` e **sem `--clean`**: ele não tem `DROP` nem `TRUNCATE`, e
+> os `CREATE TABLE` não têm `IF NOT EXISTS`. Num banco que já tem o schema, o `restore.sh`
+> roda o `psql` com `-v ON_ERROR_STOP=1 --single-transaction` e **falha de propósito na
+> primeira instrução** — sem alterar nada —, em vez de seguir por cima de ~2.800 erros
+> "already exists" e imprimir "✓ banco restaurado" sobre um banco que não restaurou. Para
+> voltar um backup num banco populado, esvazie o schema da aplicação antes de rodar o
+> restore, ou restaure num banco novo. (Restaurar por cima "limpo" exigiria gerar o dump com
+> `--clean --if-exists`, o que muda o formato do dump — decisão do mantenedor, issue #2120.)
+
 ## Automações e webhooks
 
 O `install.sh` (e o `update.sh`, a cada atualização) já ativa sozinho um cron que roda todo minuto e "puxa" a fila de eventos pendentes (`/api/v1/cron/event-log-drain`) — é isso que faz uma automação disparar de verdade no seu servidor (ex.: enviar uma mensagem de WhatsApp quando um pedido muda de status). **Sem esse cron, as automações ficam paradas na fila e nunca rodam** — é um requisito, não um extra.

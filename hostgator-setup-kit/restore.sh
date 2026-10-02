@@ -2,6 +2,14 @@
 # Restaura o banco a partir de um dump gerado pelo backup.sh.
 # CUIDADO: sobrescreve o schema/dados atuais do banco.
 #
+# ⚠ O dump do backup.sh sai SEM --clean: não traz DROP/TRUNCATE nem IF NOT
+# EXISTS. Num banco que JÁ tem o schema ele não restaura por cima — e este
+# script FALHA de propósito nesse caso (psql com -v ON_ERROR_STOP=1
+# --single-transaction), deixando o banco exatamente como estava, em vez de
+# dizer "✓ banco restaurado" sobre ~2.800 erros "already exists" (#2120).
+# Restaurar por cima exige esvaziar o schema antes, ou um dump gerado com
+# --clean --if-exists — decisão do mantenedor, fora deste conserto.
+#
 #   bash hostgator-setup-kit/restore.sh backups/db-20260702-030000.sql.gz
 source "$(dirname "$0")/_common.sh"
 enter_project
@@ -10,12 +18,19 @@ DUMP="${1:-}"
 [ -n "$DUMP" ] && [ -f "$DUMP" ] || die "Uso: restore.sh <arquivo-db-*.sql.gz>"
 
 c_ylw "⚠ Isto vai SOBRESCREVER o banco em $NEXT_PUBLIC_SUPABASE_URL."
+c_ylw "⚠ O dump do backup.sh sai SEM --clean: num banco que JÁ tem esse schema, este restore"
+c_ylw "   FALHA de propósito e não altera nada — ele não restaura por cima de um banco existente."
 read -r -p "Digite 'RESTAURAR' para confirmar: " a
 [ "$a" = "RESTAURAR" ] || die "Cancelado."
 
 step "Restaurando $DUMP"
+# #2120: sem -v ON_ERROR_STOP=1 o psql SEGUE depois de cada "already exists",
+# sai com 0 e o `&&` desta linha imprime o ✓ sobre um banco que não restaurou.
+# --single-transaction fecha a restauração inteira numa transação: ou aplica
+# tudo, ou desfaz tudo — nunca um banco meio-antigo meio-novo.
 gunzip -c "$DUMP" | pg_container -i postgres:17-alpine psql "$(url_do_schema)" \
-  && c_grn "✓ banco restaurado" || die "Falha na restauração — veja o log acima."
+  -v ON_ERROR_STOP=1 --single-transaction \
+  && c_grn "✓ banco restaurado" || die "Falha na restauração — nada foi alterado no banco. Veja o log acima."
 
 # Restaura o estado das sessões do WhatsApp (WAHA) se o snapshot emparelhado existir
 WAHA_TAR="${DUMP/db-/waha-}"
