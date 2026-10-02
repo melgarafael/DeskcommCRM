@@ -23,6 +23,7 @@ vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async (
 import { requireRole } from "@/lib/auth/require-role";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { GET as getRetention } from "@/app/api/v1/conversations/[id]/retention/route";
 import { retentionCopy } from "@/lib/inbox/retention-copy";
 import { cidadeDoFuso } from "@/lib/tempo/fusos";
@@ -53,14 +54,17 @@ function cliente(porTabela: Record<string, unknown>) {
 }
 
 async function retencoes(tabelas: Record<string, unknown>) {
-  vi.mocked(createClient).mockResolvedValue(
-    cliente({
-      conversations: { id: "c", contact_id: "k", channel_session_id: CANAL },
-      channel_knobs: null,
-      organizations: { timezone: "America/Sao_Paulo" },
-      ...tabelas,
-    }),
-  );
+  const db = cliente({
+    conversations: { id: "c", contact_id: "k", channel_session_id: CANAL },
+    channel_knobs: null,
+    organizations: { timezone: "America/Sao_Paulo" },
+    ...tabelas,
+  });
+  vi.mocked(createClient).mockResolvedValue(db);
+  // `before_send_traces` e `channel_knobs` são lidos pelo client de SERVIÇO
+  // (tabelas server-only na VPS) — mesmo dublê, para o teste continuar
+  // exercitando o cenário combinado de ambos os clients.
+  vi.mocked(createAdminClient).mockReturnValue(db);
   const res = await getRetention(new NextRequest("http://localhost/api/v1/conversations/c/retention"), {
     params: Promise.resolve({ id: "c" }),
   });

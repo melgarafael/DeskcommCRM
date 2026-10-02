@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
  * "Leads recentes" do painel do Inbox mostrava lead de funil ARQUIVADO (issue #943).
@@ -24,6 +25,7 @@ import { createClient } from "@/lib/supabase/server";
  */
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/users/nome-do-atendente", () => ({ nomesDosAtendentes: async () => new Map() }));
 
 const ORG = "org-1";
@@ -89,6 +91,9 @@ describe("crm-summary: leads recentes", () => {
       ],
     });
     vi.mocked(createClient).mockResolvedValue(banco as never);
+    // `lead_notes` (e `prospecting_candidates`) são lidas pelo client de
+    // SERVIÇO: mesmo dublê, que devolve lista vazia para tabela não citada.
+    vi.mocked(createAdminClient).mockReturnValue(banco as never);
 
     const { GET } = await import("@/app/api/v1/contacts/[id]/crm-summary/route");
     const res = await GET(new NextRequest(`http://x/api/v1/contacts/${CONTATO}/crm-summary`), {
