@@ -24,7 +24,7 @@ import {
 import { rotuloDoProvedor } from "@/lib/ai/pontos/provedores";
 import { PONTO_POR_ID } from "@/lib/ai/pontos/registro";
 import { EXPLICACAO_DA_ORIGEM, type OrigemDaEscolha } from "@/lib/ai/pontos/resolver";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -106,8 +106,11 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
   const { purpose, status, provider, limit: limite } = filtros.data;
 
-  const db = await createClient();
-  let q = db
+  // Pelo SERVIÇO, e não pela sessão: na VPS `authenticated` não tem leitura em
+  // `llm_calls` (tabela server-only do baseline), e a tela mostrava "0 execuções"
+  // com centenas no banco. O filtro de organização abaixo é a cerca de tenancy.
+  const admin = createAdminClient();
+  let q = admin
     .from("llm_calls")
     .select(
       "id, purpose, provider, model, status, error_code, error_message, http_status, origem_da_escolha, input_tokens, output_tokens, cost_cents, latency_ms, created_at",

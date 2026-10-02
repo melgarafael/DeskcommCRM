@@ -45,7 +45,7 @@ import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { runsListQuerySchema } from "@/lib/ai/agents/validation";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -171,12 +171,13 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   }
   const q = parsed.data;
 
-  const supabase = await createClient();
-  let query = supabase
+  // Pelo serviço: `llm_calls` é server-only na VPS (ver app/api/v1/ai/runs/route.ts).
+  const admin = createAdminClient();
+  let query = admin
     .from("llm_calls")
     .select(CALL_COLUMNS)
-    // `organization_id` explícito mesmo com RLS: é a convenção do repo e o que
-    // sobrevive a alguém trocar o client por um admin um dia.
+    // `organization_id` explícito e obrigatório: o client de serviço ignora a
+    // RLS, então este filtro é a única cerca de tenancy para esta consulta.
     .eq("organization_id", activeOrg.orgId)
     .eq("agent_id", id)
     .order("created_at", { ascending: false })

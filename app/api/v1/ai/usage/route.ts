@@ -17,6 +17,7 @@ import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { aggregateUsage, type InvocationRow } from "@/lib/ai/usage/aggregate";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -83,6 +84,9 @@ export async function GET(req: NextRequest): Promise<Response> {
   const toIso = endOfUtcDay(range.to).toISOString();
 
   const supabase = await createClient();
+  // `llm_calls` é server-only na VPS: a leitura de uso vai pelo serviço. As
+  // demais consultas desta rota continuam na sessão.
+  const admin = createAdminClient();
 
   // ---- 1. llm_calls: a ÚNICA tabela de telemetria (migration 0130) ---------
   //
@@ -92,7 +96,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   // esquecesse mentia (foi assim que esta tela mostrou ZERO custo com o
   // dinheiro saindo). A 0130 fez o backfill; `ai_invocations` é histórico e
   // ninguém mais escreve nela.
-  let invQ = supabase
+  let invQ = admin
     .from("llm_calls")
     .select("created_at, purpose, cost_cents, input_tokens, output_tokens, latency_ms, agent_id")
     .eq("organization_id", activeOrg.orgId)

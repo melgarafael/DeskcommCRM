@@ -308,12 +308,14 @@ export async function GET(): Promise<Response> {
   const { org } = authz;
 
   const db = await createClient();
+  // `llm_calls` é server-only na VPS: os números do Jev leem pelo serviço.
+  const admin = createAdminClient();
 
   const lerSemana = async (): Promise<{ linhas: LinhaDaSemana[]; erro: string | null }> => {
     const linhas: LinhaDaSemana[] = [];
     const desde = diasAtras(DIAS_DOS_NUMEROS);
     for (let pagina = 0; pagina < PAGINAS_MAX; pagina++) {
-      const { data, error } = await db
+      const { data, error } = await admin
         .from("llm_calls")
         .select("purpose, provider, status, origem_da_escolha, error_code, cost_cents, latency_ms, created_at")
         .eq("organization_id", org.orgId)
