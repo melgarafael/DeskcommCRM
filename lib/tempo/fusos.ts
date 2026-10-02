@@ -23,36 +23,32 @@
  * si mesma, se alguém acrescentar um código errado aqui.
  */
 
-/**
- * Fusos oferecidos, agrupados pelo que este público usa.
- *
- * Não é a lista IANA inteira (são centenas). Faltar um é um pedido de uma
- * linha; oferecer trezentos faz o operador procurar o dele numa lista que não
- * termina — e a busca é justamente onde ele digita errado.
- */
-export const FUSOS_OFERECIDOS: { codigo: string; rotulo: string }[] = [
-  { codigo: "America/Asuncion", rotulo: "Assunção (Paraguai)" },
-  { codigo: "America/Argentina/Buenos_Aires", rotulo: "Buenos Aires (Argentina)" },
-  { codigo: "America/Montevideo", rotulo: "Montevidéu (Uruguai)" },
-  { codigo: "America/Santiago", rotulo: "Santiago (Chile)" },
-  { codigo: "America/La_Paz", rotulo: "La Paz (Bolívia)" },
-  { codigo: "America/Lima", rotulo: "Lima (Peru)" },
-  { codigo: "America/Bogota", rotulo: "Bogotá (Colômbia)" },
-  { codigo: "America/Mexico_City", rotulo: "Cidade do México (México)" },
-  { codigo: "America/Sao_Paulo", rotulo: "São Paulo (Brasil)" },
-  { codigo: "America/Manaus", rotulo: "Manaus (Brasil)" },
-  { codigo: "America/Belem", rotulo: "Belém (Brasil)" },
-  { codigo: "America/Recife", rotulo: "Recife (Brasil)" },
-  { codigo: "America/Fortaleza", rotulo: "Fortaleza (Brasil)" },
-  // Fora da América do Sul, e de propósito: quem instala em Angola fala
-  // português e usava a lista inteira errada. Aditivo — `FUSO_PADRAO` segue
-  // `America/Sao_Paulo`, então ninguém que já escolheu muda de relógio.
-  { codigo: "Africa/Luanda", rotulo: "Luanda (Angola)" },
-  // Mesmo motivo, em Portugal: sem Lisboa, quem opera lá ficava entre um fuso
-  // do Brasil e UTC — e UTC erra uma hora no verão europeu.
-  { codigo: "Europe/Lisbon", rotulo: "Lisboa (Portugal)" },
-  { codigo: "UTC", rotulo: "UTC" },
-];
+import { FUSOS_HORARIOS } from "@/lib/geografia/opcoes";
+
+const ROTULOS_CONHECIDOS: Record<string, string> = {
+  "Africa/Luanda": "Luanda (Angola)",
+  "America/Asuncion": "Assunção (Paraguai)",
+  "America/Argentina/Buenos_Aires": "Buenos Aires (Argentina)",
+  "America/Montevideo": "Montevidéu (Uruguai)",
+  "America/Santiago": "Santiago (Chile)",
+  "America/La_Paz": "La Paz (Bolívia)",
+  "America/Lima": "Lima (Peru)",
+  "America/Bogota": "Bogotá (Colômbia)",
+  "America/Guayaquil": "Quito e Guayaquil (Equador)",
+  "America/Mexico_City": "Cidade do México (México)",
+  "America/Sao_Paulo": "São Paulo (Brasil)",
+  "America/Manaus": "Manaus (Brasil)",
+  "America/Belem": "Belém (Brasil)",
+  "America/Recife": "Recife (Brasil)",
+  "America/Fortaleza": "Fortaleza (Brasil)",
+  "Europe/Lisbon": "Lisboa (Portugal)",
+  UTC: "UTC",
+};
+
+export const FUSOS_OFERECIDOS = FUSOS_HORARIOS.map((codigo) => ({
+  codigo,
+  rotulo: ROTULOS_CONHECIDOS[codigo] ?? codigo,
+}));
 
 /**
  * O fuso de quem ainda não escolheu — e o mesmo valor das outras duas pontas:

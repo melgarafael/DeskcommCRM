@@ -1407,6 +1407,11 @@ export const DICIONARIO: Traducoes = {
   "Nome completo": { es: "Nombre completo" },
   "Trocar email — em breve.": { es: "Cambiar email — próximamente." },
   "Fuso horário": { es: "Zona horaria" },
+  "País de operação": { es: "País de operación" },
+  "Referência de localização da empresa; não altera a jurisdição legal nem os documentos.": {
+    es: "Referencia de ubicación de la empresa; no cambia la jurisdicción legal ni sus documentos.",
+  },
+  "Quito e Guayaquil (Equador)": { es: "Quito y Guayaquil (Ecuador)" },
   "Avatar URL": { es: "URL de avatar" },
   "Upload de arquivo — em breve. Cole uma URL pública.": {
     es: "La carga de archivos llegará pronto. Pega una URL pública.",
@@ -9904,6 +9909,7 @@ export const DICIONARIO: Traducoes = {
   // passariam no CI e cairiam no português na tela em espanhol.
   "Moeda": { es: "Moneda" },
   "País": { es: "País" },
+  "Quito e Guayaquil (Equador)": { es: "Quito y Guayaquil (Ecuador)" },
   "De onde saem o documento do contato, a lei citada no documento de acesso e o prazo em dias úteis. Só aparecem países com a lei revisada — a lista é curta de propósito.": {
     es: "De aquí salen el documento del contacto, la ley citada en el documento de acceso y el plazo en días hábiles. Solo aparecen países con la ley revisada: la lista es corta a propósito.",
   },

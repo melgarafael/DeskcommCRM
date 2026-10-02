@@ -106,6 +106,12 @@ export const tenantSchema = z.object({
     .nullable()
     .optional()
     .or(z.literal("").transform(() => null)),
+  operating_country: z
+    .string()
+    .regex(/^[A-Z]{2}$/)
+    .nullable()
+    .optional()
+    .or(z.literal("").transform(() => null)),
   timezone: z.string().min(1).max(64),
   locale: z.enum(LOCALES),
   currency: z.enum(MOEDAS),

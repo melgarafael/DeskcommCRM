@@ -4,6 +4,7 @@ import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { PAISES_DE_OPERACAO } from "@/lib/geografia/opcoes";
 import { moedaServidaOu } from "@/lib/money";
 import { createClient } from "@/lib/supabase/server";
 import { ZonaDePerigoDaOrganizacao } from "./_danger-zone";
@@ -17,6 +18,7 @@ interface OrgRow {
   legal_name: string;
   cnpj: string | null;
   country: string | null;
+  settings: unknown;
   timezone: string;
   locale: string;
   currency: string;
@@ -39,13 +41,22 @@ export default async function TenantSettingsPage() {
   const { data } = await supabase
     .from("organizations")
     .select(
-      "display_name, legal_name, cnpj, country, timezone, locale, currency, media_retention_days, dpo_email, privacy_policy_url, interface_settings",
+      "display_name, legal_name, cnpj, country, settings, timezone, locale, currency, media_retention_days, dpo_email, privacy_policy_url, interface_settings",
     )
     .eq("id", activeOrg.orgId)
     .maybeSingle();
 
   const row = (data ?? null) as OrgRow | null;
   const idioma = user.idioma;
+  const settings =
+    row?.settings && typeof row.settings === "object" && !Array.isArray(row.settings)
+      ? (row.settings as Record<string, unknown>)
+      : {};
+  const operatingCountry =
+    typeof settings.operating_country === "string" &&
+    PAISES_DE_OPERACAO.some((pais) => pais.codigo === settings.operating_country)
+      ? settings.operating_country
+      : row?.country ?? "BR";
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
@@ -67,6 +78,7 @@ export default async function TenantSettingsPage() {
             // lei, mesmo calendário; o que muda é a linha deixar de depender
             // do default implícito.
             country: row.country ?? "BR",
+            operating_country: operatingCountry,
             timezone: row.timezone,
             // `en-US` saiu da lista (nunca teve tradução). Uma linha antiga
             // com ele cai no padrão em vez de quebrar a tela.

@@ -229,7 +229,7 @@ function ScheduleDialog({
             >
               {FUSOS_OFERECIDOS.map((f) => (
                 <option key={f.codigo} value={f.codigo}>
-                  {f.rotulo} — {f.codigo}
+                  {f.rotulo === f.codigo ? f.codigo : `${f.rotulo} — ${f.codigo}`}
                 </option>
               ))}
             </select>

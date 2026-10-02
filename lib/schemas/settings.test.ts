@@ -53,6 +53,8 @@ describe("tenantSchema", () => {
       display_name: "Acme",
       legal_name: "Acme LTDA",
       cnpj: "12345678000190",
+      country: "BR",
+      operating_country: "EC",
       timezone: "America/Sao_Paulo",
       locale: "pt-BR",
       currency: "BRL",
@@ -61,6 +63,24 @@ describe("tenantSchema", () => {
       privacy_policy_url: "https://acme.com/privacy",
     });
     expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.country).toBe("BR");
+      expect(r.data.operating_country).toBe("EC");
+    }
+  });
+
+  it("rejects an invalid operational country code", () => {
+    const r = tenantSchema.safeParse({
+      display_name: "Acme",
+      legal_name: "Acme",
+      country: "BR",
+      operating_country: "Ecuador",
+      timezone: "America/Guayaquil",
+      locale: "pt-BR",
+      currency: "BRL",
+      media_retention_days: 90,
+    });
+    expect(r.success).toBe(false);
   });
 
   it("rejects too-low retention", () => {
