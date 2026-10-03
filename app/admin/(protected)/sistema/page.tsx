@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { criarSessaoPkce } from "@/lib/ai/pontos/pkce-da-assinatura";
 import { LinhaDoRecurso } from "@/components/recursos-opcionais/LinhaDoRecurso";
 import { loadAuthUser } from "@/lib/auth/server";
 import { carregarComportamentoDaInstalacao } from "@/lib/instalacao/comportamento-servidor";
@@ -14,6 +15,7 @@ import {
 } from "@/lib/recursos-opcionais/catalogo";
 import { detectarServidor } from "@/lib/recursos-opcionais/estado";
 
+import { PainelDeLoginCodex } from "./_login-codex";
 import { FormularioDeComportamento, FormularioDeModulos } from "./_form";
 
 export const metadata = { title: "Recursos opcionais" };
@@ -76,6 +78,12 @@ export default async function Page() {
   ]);
   const fontes = { modulos: ligados, settings: null, servidor };
 
+  // O par PKCE de ESTA renderização: o link mostrado e o verifier que o campo de
+  // colagem vai enviar viajam juntos. O `state` amarra o código colado ao link
+  // que a tela mostrou, e nenhum dos dois é segredo — o segredo é o token, que
+  // nasce só depois da troca, cifrado (`lib/ai/credenciais/login-codex.ts`).
+  const loginCodex = criarSessaoPkce();
+
   // Os módulos que NÃO se ligam por interruptor aqui (módulo de tabela, ADR-0002)
   // aparecem com o caminho de onde se instalam — saem do catálogo, sem lista escrita.
   const modulosDeOutraTela = RECURSOS_OPCIONAIS.filter(
@@ -106,6 +114,7 @@ export default async function Page() {
           {traduzir("Módulos", idioma)}
         </h2>
         <FormularioDeModulos ligados={ligados} />
+        <PainelDeLoginCodex url={loginCodex.url} codeVerifier={loginCodex.codeVerifier} />
         {modulosDeOutraTela.length > 0 && (
           <ul className="space-y-3">
             {modulosDeOutraTela.map((r) => {

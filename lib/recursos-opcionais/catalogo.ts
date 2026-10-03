@@ -118,6 +118,11 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Honorários",
     oQueFaz: "Contratos de honorários com parcelas e o controle do que já foi pago.",
   },
+  login_codex: {
+    nome: "Login do Codex por assinatura",
+    oQueFaz:
+      "Conecta a assinatura do ChatGPT (o mesmo login do Codex) como caminho de IA desta instalação, com a chave de API da organização como reserva. Desligado por padrão.",
+  },
 };
 
 /**
