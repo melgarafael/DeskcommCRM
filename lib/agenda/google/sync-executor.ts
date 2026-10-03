@@ -30,6 +30,8 @@ import {
 } from "./sync-store";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { classificarErroDoGoogle, type OperacaoNoGoogle } from "./erros";
+import { deveCriarEspacoAberto } from "./oauth";
+import { meetAbertoLigado } from "@/lib/schemas/settings";
 
 /** A operação do Google que corresponde ao método HTTP usado na publicação. */
 const OPERACAO_POR_METODO: Record<PendingWrite["method"], OperacaoNoGoogle> = {
@@ -124,6 +126,36 @@ export async function tokenForConnection(db: SupabaseClient, org: string, connec
   const token = await decryptWebhookSecret(db, data.oauth_access_token_encrypted);
   if (!token) throw new Error("Reconecte a conta Google para continuar.");
   return token;
+}
+
+/**
+ * O gate de #2063: a reunião nasce aberta SÓ quando a organização ligou a opção
+ * (off por padrão) E a conexão tem o escopo opcional. Ler opção + escopo é um
+ * caminho frio (sem o gate, nada muda); erro de leitura vale como "desligado"
+ * — falha fechada, mesma disciplina do resto do executor.
+ */
+export async function decidirEspacoAberto(
+  db: SupabaseClient,
+  org: string,
+  connectionId: string | null,
+): Promise<boolean> {
+  if (!connectionId) return false;
+  try {
+    const [{ data: orgRow }, conn] = await Promise.all([
+      db.from("organizations").select("settings").eq("id", org).maybeSingle(),
+      db
+        .from("calendar_connections")
+        .select("scopes")
+        .eq("organization_id", org)
+        .eq("id", connectionId)
+        .maybeSingle(),
+    ]);
+    const ligada = meetAbertoLigado((orgRow as { settings?: unknown } | null)?.settings);
+    const escopos = (conn as { scopes?: string[] | null } | null)?.scopes ?? [];
+    return deveCriarEspacoAberto({ ligada }, escopos);
+  } catch {
+    return false;
+  }
 }
 export interface ExecuteOptions {
   transport?: GoogleFetch;
@@ -514,6 +546,25 @@ export async function reconcileAppointment(
             url: null,
             error: a.meeting_allowed_types === null ? "unknown" : "unsupported",
           });
+          // Espaço aberto (#2063): quando a organização ligou a opção E a
+          // conexão tem o escopo, o Meet nasce via `spaces.create` (accessType
+          // OPEN) e o link é gravado como `ready` direto — sem pedir ao
+          // Calendar um `conferenceData.createRequest`, que nasceria "confiável".
+          // O link entra pelo campo `location` do evento (mesmo ramo do
+          // `video_link` — ver `localDoEvento`), não como conferenceData.
+        } else if (await decidirEspacoAberto(db, org, a.google_connection_id)) {
+          try {
+            const { meetingUri } = await api.criarEspacoAberto();
+            await saveMeeting({ state: "ready", received: true, url: meetingUri, error: null });
+            body = { ...(body ?? {}), location: meetingUri };
+          } catch (e) {
+            // Recusa da API do Meet (desativada, escopo ausente, 403, cota)
+            // vira falha — nunca o corpo do Google vai para a memória. Quem
+            // preferir o Meet "confiável" do Calendar como fallback é decisão
+            // de produto ainda não tomada; aqui falha por padrão.
+            await saveMeeting({ state: "failed", received: false, url: null, error: "google_failure" });
+            return;
+          }
         } else {
           conferenceRequestId = a.meeting_request_id;
           body = {

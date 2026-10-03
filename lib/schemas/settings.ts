@@ -390,3 +390,31 @@ export function colegasPodemMexerNaAgendaLigado(settings: unknown): boolean {
       : undefined;
   return raiz?.colegas_podem_mexer_na_agenda !== false;
 }
+
+/**
+ * A opção "MEET ABERTO" (#2063) — reunião criada pelo CRM com o link que
+ * qualquer um com o link entra, sem "pedir para participar".
+ *
+ * RÉGUA "SÓ O `true` EXPLÍCITO LIGA", como `settings.crm.cliente_pela_agenda`:
+ * a opção NASCE DESLIGADA em toda organização que já instalou, e o risco é
+ * parte do desenho — quem tiver o link entra sem pedir. Ausente, `false`, a
+ * string `"true"` ou qualquer lixo é desligado.
+ *
+ * Mora em chave PRÓPRIA de topo (`settings.google_meet_acesso_aberto`), no
+ * mesmo espírito de `colegas_podem_mexer_na_agenda`: NÃO fica em
+ * `settings.agenda`, porque `fn_agenda_settings` SUBSTITUI o objeto `agenda`
+ * inteiro e recusa chave que não as duas que conhece — a chave seria apagada na
+ * primeira vez que um Gerente salvasse os prazos.
+ *
+ * Nunca lança: um jsonb torto não pode derrubar Configurações.
+ */
+export const AVISO_MEET_ABERTO =
+  "Aviso: com esta opção ligada, qualquer pessoa com o link entra na reunião sem pedir para participar.";
+
+export function meetAbertoLigado(settings: unknown): boolean {
+  const raiz =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : undefined;
+  return raiz?.google_meet_acesso_aberto === true;
+}
