@@ -42,6 +42,15 @@ describe("configPasskeyDoAmbiente — não oferecer provider que só sabe falhar
     expect(c).toEqual({ disponivel: true, rpId: "crm.exemplo.com", rpOrigins: [] });
   });
 
+  it('flag diferente de "true" não liga — "false" e "TRUE" mantêm desligado', () => {
+    for (const v of ["false", "TRUE", "1", ""]) {
+      expect(
+        configPasskeyDoAmbiente({ [ENV_PASSKEY_LIGADO]: v, [ENV_RP_ID]: "crm.exemplo.com" })
+          .disponivel,
+      ).toBe(false);
+    }
+  });
+
   it("origens opcionais; presentes, são separadas por vírgula/espaço", () => {
     const c = configPasskeyDoAmbiente({
       [ENV_PASSKEY_LIGADO]: "true",
