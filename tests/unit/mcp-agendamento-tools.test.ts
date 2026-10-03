@@ -39,6 +39,7 @@ const {
   crmFindFreeSlots,
   crmListAppointments,
   crmBookAppointment,
+  crmFindAndBookAppointment,
   crmRescheduleAppointment,
   crmCancelAppointment,
 } = await import("@/lib/mcp/tools/agendamento");
@@ -392,6 +393,116 @@ describe('Meet no contrato do atendimento',()=>{
   const result=await crmListAppointments.handler({contact_id:'contact'},ctx);
   expect(JSON.stringify(result)).toContain('https://meet.google.com/abc-defg-hij');expect(JSON.stringify(result)).not.toContain('old-link');
  });
+});
+
+describe("guest_email nas ferramentas de marcação (#2062)", () => {
+  // `Meet no contrato` (acima) não limpa mocks — sem o beforeEach, a chamada do
+  // `crmBookAppointment` dele vazaria para o primeiro caso aqui e o contador de
+  // chamadas do handler viraria 2.
+  beforeEach(() => vi.clearAllMocks());
+
+  it("crm_book_appointment SEM guest_email não pede o campo ao handler — e não é erro", async () => {
+    vi.mocked(idDoTipoPorSlug).mockResolvedValue({ id: "t-1", nome: "Consulta" });
+    vi.mocked(handlers.marcarAgendamentoHandler).mockResolvedValue({
+      id: "a-1",
+      status: "confirmed",
+      meeting_state: null,
+      meeting_url: null,
+    });
+    await crmBookAppointment.handler(
+      { event_type_slug: "consulta", starts_at: "2026-09-01T14:00:00Z", contact_id: "c-1" },
+      ctx,
+    );
+    expect(handlers.marcarAgendamentoHandler).toHaveBeenCalledTimes(1);
+    const input = vi.mocked(handlers.marcarAgendamentoHandler).mock.calls[0]![2];
+    expect(input).not.toHaveProperty("guest_email");
+    // E o campo fica ausente do contrato de entrada, não presente-porém-nulo.
+    expect(crmBookAppointment.inputSchema).not.toHaveProperty("guest_email_obrigatorio");
+  });
+
+  it("crm_book_appointment repassa guest_email válido ao handler, que já o grava", async () => {
+    vi.mocked(idDoTipoPorSlug).mockResolvedValue({ id: "t-1", nome: "Consulta" });
+    vi.mocked(handlers.marcarAgendamentoHandler).mockResolvedValue({
+      id: "a-1",
+      status: "confirmed",
+      meeting_state: null,
+      meeting_url: null,
+    });
+    await crmBookAppointment.handler(
+      {
+        event_type_slug: "consulta",
+        starts_at: "2026-09-01T14:00:00Z",
+        contact_id: "c-1",
+        guest_email: "acompanhante@exemplo.com",
+      },
+      ctx,
+    );
+    expect(vi.mocked(handlers.marcarAgendamentoHandler).mock.calls[0]![2]).toMatchObject({
+      guest_email: "acompanhante@exemplo.com",
+    });
+  });
+
+  it("crm_book_appointment REJEITA guest_email que não é e-mail, antes do handler", async () => {
+    // O zod valida no parse da porta MCP, então o handler nunca vê string inválida.
+    expect(() => crmBookAppointment.inputSchema.guest_email!.parse("não-e-email")).toThrow();
+    expect(() =>
+      crmBookAppointment.inputSchema.guest_email!.parse("oi@exemplo.com"),
+    ).not.toThrow();
+  });
+
+  it("crm_find_and_book_appointment repassa guest_email ao handler de marcação", async () => {
+    // Slot do SUCESSO em UTC: 14:00Z é 14:00 local → a ferramenta acha e marca.
+    vi.mocked(horariosLivresDaOrg).mockResolvedValue({ ...SUCESSO, fusoDaRegra: "UTC" });
+    vi.mocked(idDoTipoPorSlug).mockResolvedValue({ id: "t-1", nome: "Consulta" });
+    vi.mocked(handlers.marcarAgendamentoHandler).mockResolvedValue({
+      id: "a-1",
+      status: "confirmed",
+      meeting_state: null,
+      meeting_url: null,
+    });
+    const r = (await crmFindAndBookAppointment.handler(
+      {
+        event_type_slug: "consulta",
+        dia: "2026-09-01",
+        horario: "14:00",
+        contact_id: "c-1",
+        guest_email: "outro@exemplo.com",
+      },
+      ctx,
+    )) as { marcado: boolean };
+    expect(r.marcado).toBe(true);
+    expect(vi.mocked(handlers.marcarAgendamentoHandler).mock.calls[0]![2]).toMatchObject({
+      guest_email: "outro@exemplo.com",
+    });
+  });
+
+  it("crm_find_and_book_appointment SEM guest_email: para marcado sem o campo no input do handler", async () => {
+    vi.mocked(horariosLivresDaOrg).mockResolvedValue({ ...SUCESSO, fusoDaRegra: "UTC" });
+    vi.mocked(idDoTipoPorSlug).mockResolvedValue({ id: "t-1", nome: "Consulta" });
+    vi.mocked(handlers.marcarAgendamentoHandler).mockResolvedValue({
+      id: "a-1",
+      status: "confirmed",
+      meeting_state: null,
+      meeting_url: null,
+    });
+    const r = (await crmFindAndBookAppointment.handler(
+      { event_type_slug: "consulta", dia: "2026-09-01", horario: "14:00", contact_id: "c-1" },
+      ctx,
+    )) as { marcado: boolean };
+    expect(r.marcado).toBe(true);
+    expect(vi.mocked(handlers.marcarAgendamentoHandler).mock.calls[0]![2]).not.toHaveProperty(
+      "guest_email",
+    );
+  });
+
+  it("crm_find_and_book_appointment REJEITA guest_email inválido", async () => {
+    expect(() =>
+      crmFindAndBookAppointment.inputSchema.guest_email!.parse("x"),
+    ).toThrow();
+    expect(() =>
+      crmFindAndBookAppointment.inputSchema.guest_email!.parse("confidente@exemplo.com"),
+    ).not.toThrow();
+  });
 });
 
 describe("idempotência da marcação", () => {

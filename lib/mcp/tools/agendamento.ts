@@ -589,6 +589,16 @@ const marcarShape = {
     .max(300)
     .optional()
     .describe("endereço ou local DESTE compromisso. Vazio apaga o que o tipo sugeriu."),
+  guest_email: z
+    .string()
+    .email()
+    .max(320)
+    .optional()
+    .describe(
+      "e-mail de um CONVIDADO EXTERNO ao compromisso (acompanhante, responsável, outro participante). " +
+        "NÃO é o e-mail de quem é atendido: o contato entra no convite do Google pelo e-mail da ficha, " +
+        "quando ele existe. Este campo é para a OUTRA pessoa, e é ela que aparece na reunião.",
+    ),
 };
 
 export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
@@ -640,6 +650,7 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
           ...(input.location_details !== undefined
             ? { location_details: input.location_details }
             : {}),
+          ...(input.guest_email !== undefined ? { guest_email: input.guest_email } : {}),
         },
       );
       /**
@@ -705,6 +716,7 @@ async function marcarHorario(
     ownerUserId?: string;
     title?: string;
     notes?: string;
+    guestEmail?: string;
   },
 ): Promise<unknown> {
   return crmBookAppointment.handler(
@@ -715,6 +727,7 @@ async function marcarHorario(
       ...(args.ownerUserId !== undefined ? { owner_user_id: args.ownerUserId } : {}),
       ...(args.title !== undefined ? { title: args.title } : {}),
       ...(args.notes !== undefined ? { notes: args.notes } : {}),
+      ...(args.guestEmail !== undefined ? { guest_email: args.guestEmail } : {}),
     },
     ctx,
   );
@@ -740,6 +753,16 @@ const consultarEMarcarShape = {
   owner_user_id: z.string().uuid().optional(),
   title: z.string().min(1).max(200).optional(),
   notes: z.string().max(2000).optional(),
+  guest_email: z
+    .string()
+    .email()
+    .max(320)
+    .optional()
+    .describe(
+      "e-mail de um CONVIDADO EXTERNO ao compromisso (acompanhante, responsável, outro participante). " +
+        "NÃO é o e-mail de quem é atendido: o contato entra no convite do Google pelo e-mail da ficha, " +
+        "quando ele existe. Este campo é para a OUTRA pessoa, e é ela que aparece na reunião.",
+    ),
 };
 
 /**
@@ -841,6 +864,7 @@ export const crmFindAndBookAppointment: McpToolDefinition<typeof consultarEMarca
       ...(input.owner_user_id !== undefined ? { ownerUserId: input.owner_user_id } : {}),
       ...(input.title !== undefined ? { title: input.title } : {}),
       ...(input.notes !== undefined ? { notes: input.notes } : {}),
+      ...(input.guest_email !== undefined ? { guestEmail: input.guest_email } : {}),
     });
 
     const recusado =
