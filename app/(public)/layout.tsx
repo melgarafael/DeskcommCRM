@@ -5,13 +5,13 @@ import { createClient } from "@/lib/supabase/server";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 
 /**
- * A casca das telas de acesso — login, cadastro, recuperação, MFA.
+ * A casca das telas de acesso — login, cadastro, recuperação, MFA, confirmar acesso.
  *
  * ── Por que o LOGO mora aqui, e não em `login/page.tsx` ───────────────────────
  *
- * São seis telas no grupo `(public)`, e todas são "antes de entrar": quem instala
+ * São sete telas no grupo `(public)`, e todas são "antes de entrar": quem instala
  * o produto para clientes mostra a marca dele exatamente aí. Um `<img>` por
- * página seriam seis cópias que divergem na primeira vez que alguém mexer numa
+ * página seriam sete cópias que divergem na primeira vez que alguém mexer numa
  * só — e a que ficaria para trás é sempre a que ninguém abre (recuperação de
  * senha, cadastro de MFA), que é justamente onde o cliente do revendedor
  * aparece sozinho e sem contexto.

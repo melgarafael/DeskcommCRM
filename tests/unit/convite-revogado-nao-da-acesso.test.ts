@@ -113,8 +113,15 @@ describe("porta 2 — /auth/confirm não transforma revogado em dono de tenant",
   });
 
   async function confirmar() {
-    const { GET } = await import("@/app/auth/confirm/route");
-    return GET(new NextRequest("http://localhost:3000/auth/confirm?type=signup&token_hash=abc"));
+    // O POST do botão "Continuar" é quem gasta o token (o GET só leva à tela).
+    const { POST } = await import("@/app/auth/confirm/route");
+    return POST(
+      new NextRequest("http://localhost:3000/auth/confirm", {
+        method: "POST",
+        body: new URLSearchParams("type=signup&token_hash=abc"),
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+      }),
+    );
   }
 
   it("⭐ convite revogado NÃO vira organização própria — a troca silenciosa", async () => {

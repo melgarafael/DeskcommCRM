@@ -218,6 +218,12 @@ sem quebrar nada.
    projeto Supabase de produção estava com ela gravada: quem seguiu a receita
    reproduziu o defeito.
 
+   O link abre a tela **Confirmar acesso**, com o botão **Continuar**, e é de
+   propósito: o token é de uso único, e verificadores de link (Safe Links do
+   Hotmail/Outlook, gateways de e-mail corporativos) abrem cada link na entrega.
+   Quando abrir o link já gastava o token, essas pessoas recebiam "link inválido
+   ou expirado" no próprio clique. Quem gasta o token agora é o botão.
+
 4. **SMTP próprio** (Authentication → SMTP): o sender embutido do Supabase tem
    limite baixo (~2 e-mails/h) — configure Resend/SES/etc. para produção.
    Isto é sobre VOLUME de envio: editar o corpo do e-mail **não** exige SMTP

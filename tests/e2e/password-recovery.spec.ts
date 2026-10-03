@@ -13,6 +13,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   waitForEmail,
   extractAuthConfirmLink,
+  seguirLinkDeAcesso,
   uniqueEmail,
   loadEnvLocal,
 } from "./helpers/auth";
@@ -79,7 +80,7 @@ test("recuperar senha: forgot → e-mail → nova senha → login com a nova", a
   // 3. Abre o e-mail real e segue o link de recovery
   const html = await waitForEmail(email, "Redefinir senha");
   const link = extractAuthConfirmLink(html, baseURL!);
-  await page.goto(link);
+  await seguirLinkDeAcesso(page, link);
   await expect(page).toHaveURL(/\/login\/reset/);
 
   // 4. Define a senha nova

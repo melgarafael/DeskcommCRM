@@ -58,18 +58,81 @@ import { env } from "@/lib/env";
  * Fluxo canônico do @supabase/ssr: verifyOtp/exchangeCodeForSession grava os
  * cookies de sessão via cookies() do next/headers; o Next anexa os Set-Cookie
  * ao redirect retornado.
+ *
+ * ── ABRIR O LINK NÃO GASTA O TOKEN ──────────────────────────────────────────
+ *
+ * O `token_hash` é de uso único, e quem abre o link primeiro fica com ele.
+ * Medido numa instalação real em 2026-10-03, nos logs do Supabase Auth: ~12 s
+ * depois de cada e-mail de recuperação para um endereço Hotmail, um `verify`
+ * com 200 consumia o token — o verificador de links da Microsoft visitando o
+ * link na entrega — e o clique de verdade caía em `One-time token not found`.
+ * O mesmo vale para convite e confirmação de cadastro, e para qualquer filtro
+ * corporativo que pré-visite links (Safe Links, gateways de e-mail, antivírus).
+ *
+ * Por isso o GET com `token_hash` NÃO chama o provedor: leva a
+ * `/login/continuar`, que mostra um botão. Quem gasta o token é o POST desse
+ * botão — verificador automático segue link, não aperta botão de formulário.
+ * O formato `code` segue no GET como antes, e esta proteção NÃO o alcança: no
+ * template padrão o link do e-mail aponta para o `/auth/v1/verify` do GoTrue,
+ * que gasta o OTP lá, antes de redirecionar para cá com o `code` — um
+ * verificador que abra esse link gasta o OTP fora do nosso alcance (não
+ * medido; é a leitura do caminho descrito no início deste comentário). O
+ * conserto para esse formato é o mesmo de sempre: subir os templates
+ * customizados (`hostgator-setup-kit/marca-emails.sh`), que trocam o link pelo
+ * `token_hash` e caem na proteção acima.
  */
 export async function GET(request: NextRequest) {
   const url = request.nextUrl;
   const tokenHash = url.searchParams.get("token_hash");
   const code = url.searchParams.get("code");
-  const type = url.searchParams.get("type") as EmailOtpType | null;
+  const type = url.searchParams.get("type");
+
+  if (tokenHash && type) {
+    const continuar = new URL("/login/continuar", env.NEXT_PUBLIC_APP_URL);
+    continuar.searchParams.set("type", type);
+    continuar.searchParams.set("token_hash", tokenHash);
+    return NextResponse.redirect(continuar);
+  }
+
+  return confirmar({ tokenHash: null, code, type: type as EmailOtpType | null, request, status: 307 });
+}
+
+/** O botão "Continuar" de `/login/continuar` — o único caminho que gasta o `token_hash`. */
+export async function POST(request: NextRequest) {
+  const form = await request.formData().catch(() => null);
+  const campo = (nome: string) => {
+    const valor = form?.get(nome);
+    return typeof valor === "string" && valor.length > 0 ? valor : null;
+  };
+  // 303 e não 307: o 307 repetiria o POST no destino (`/login/reset`, `/app`…).
+  return confirmar({
+    tokenHash: campo("token_hash"),
+    code: null,
+    type: campo("type") as EmailOtpType | null,
+    request,
+    status: 303,
+  });
+}
+
+async function confirmar({
+  tokenHash,
+  code,
+  type,
+  request,
+  status,
+}: {
+  tokenHash: string | null;
+  code: string | null;
+  type: EmailOtpType | null;
+  request: NextRequest;
+  status: 303 | 307;
+}) {
   const requestId = request.headers.get("x-request-id");
 
   // NUNCA usar url.origin aqui: é derivado do header Host, que o proxy/container
   // pode entregar como o bind interno (ex.: 0.0.0.0:3000) em vez do domínio
   // público — o link de recovery quebra silenciosamente para o usuário final.
-  const redirectTo = (path: string) => NextResponse.redirect(new URL(path, env.NEXT_PUBLIC_APP_URL));
+  const redirectTo = (path: string) => NextResponse.redirect(new URL(path, env.NEXT_PUBLIC_APP_URL), status);
 
   if (!(tokenHash && type) && !code) {
     return redirectTo("/login?error=link_invalido");
