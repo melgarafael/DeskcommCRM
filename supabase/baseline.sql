@@ -27879,8 +27879,13 @@ begin
     or p_manifest->>'publisher' is distinct from v_op.publisher or p_manifest->>'name' is distinct from v_op.name
     or p_manifest->>'version' is distinct from v_op.version
     or p_manifest->'dependencies' <> '[]'::jsonb or p_manifest->'data' <> '{"mode":"none"}'::jsonb
-    or (p_manifest - array['format_version','profile','dependencies','data','configuration','contributions'])
-      is distinct from (v_op.entry - array['sha256','byte_length']) then
+    -- 0511: projeta os dois lados sobre as chaves que a ENTRADA do catálogo anuncia. Comparar os
+    -- complementos fazia todo campo de vitrine da 0282 (publisher_label, homepage, repository,
+    -- tags, published_at) divergir, e nenhuma entrada do catálogo oficial instalava.
+    or exists (
+      select 1 from unnest(array['publisher','name','version','license','host_api','display','permissions']) k
+      where p_manifest->k is distinct from v_op.entry->k
+    ) then
     raise exception using errcode='P0001',message='extension_artifact_mismatch';
   end if;
   if v_op.status='completed' then
@@ -32161,8 +32166,13 @@ begin
     or p_manifest->>'publisher' is distinct from v_op.publisher or p_manifest->>'name' is distinct from v_op.name
     or p_manifest->>'version' is distinct from v_op.version
     or p_manifest->'dependencies' <> '[]'::jsonb or p_manifest->'data' <> '{"mode":"none"}'::jsonb
-    or (p_manifest - array['format_version','profile','dependencies','data','configuration','contributions'])
-      is distinct from (v_op.entry - array['sha256','byte_length']) then
+    -- 0511: projeta os dois lados sobre as chaves que a ENTRADA do catálogo anuncia. Comparar os
+    -- complementos fazia todo campo de vitrine da 0282 (publisher_label, homepage, repository,
+    -- tags, published_at) divergir, e nenhuma entrada do catálogo oficial instalava.
+    or exists (
+      select 1 from unnest(array['publisher','name','version','license','host_api','display','permissions']) k
+      where p_manifest->k is distinct from v_op.entry->k
+    ) then
     raise exception using errcode='P0001',message='extension_artifact_mismatch';
   end if;
   if v_op.status='completed' then
