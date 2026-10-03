@@ -227,6 +227,23 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
       "é a guarda do contrato acima: este teste é o que reprova quem renomear o header. Trocar a string aqui para 'limpar a marca' desarmaria a única proteção que o contrato tem",
     marcas: ["x-deskcomm-event", "x-deskcomm-signature", "x-deskcomm-signature", "x-deskcomm-signature"],
   },
+  // ─── PASSKEY (WebAuthn) — o contrato deste módulo com o GoTrue ───────────
+  "lib/auth/passkey-config.ts": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "nomes das envs de RP do WebAuthn que este módulo lê e que o GoTrue precisa receber idênticas. Renomear uma delas não derruba build nenhum: o operador já configurado simplesmente deixa de ver a opção passkey, porque esta ponte não acha a RP no env e a ponta do GoTrue (GOTRUE_MFA_WEB_AUTHN_*) fica com outra chave — o sintoma pra ele é MFA sumindo sem explicação",
+    marcas: [
+      "deskcomm_mfa_webauthn_enroll_enabled",
+      "deskcomm_mfa_webauthn_rp_id",
+      "deskcomm_mfa_webauthn_rp_origins",
+    ],
+  },
+  "lib/auth/passkey-config.test.ts": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "é a guarda do contrato acima: este teste é o que reprova quem renomear a env de origens. Trocar a string aqui para 'limpar a marca' desarmaria a única proteção contra uma RP aceitando origem que não é a do app",
+    marcas: ["deskcomm", "deskcomm_mfa_webauthn_rp_origins"],
+  },
   "lib/mcp/server.ts": {
     categoria: "PROTOCOLO",
     motivo:
