@@ -1013,6 +1013,11 @@ export const AUDIT_ACTIONS = [
   // A identidade da Página/WABA que a Meta exige no Purchase de clique-para-WhatsApp
   // (#2098): gravada pela tela de Conversões, em `organizations.settings.conversions`.
   "conversions.meta_identity_updated",
+
+  // O operador baixou o histórico de UMA conversa em PDF (issue #1982): o gesto
+  // auditável é a saída de dados — QUANTAS linhas saíram, não o que elas dizem
+  // (o corpo da mensagem não vai para log nem para metadata, LGPD).
+  "conversation.exported",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
