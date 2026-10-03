@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { requireRole } from "@/lib/auth/require-role";
+import { comandaDoGanho } from "@/lib/financeiro/comanda-do-ganho";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { createClient } from "@/lib/supabase/server";
 
@@ -15,6 +16,12 @@ vi.mock("@/lib/leads/activity-emitter", () => ({
 vi.mock("@/lib/leads/activity-write-failure", () => ({
   registraFalhaDeAtividade: vi.fn(async () => undefined),
 }));
+// A conta a receber do ganho (#1477) tem teste próprio em
+// `lib/financeiro/comanda-do-ganho.test.ts`; aqui se mede só o GATILHO: a rota
+// chama (ou não) a função, com que entrada.
+vi.mock("@/lib/financeiro/comanda-do-ganho", () => ({
+  comandaDoGanho: vi.fn(async () => ({ estado: "ignorado", motivo: "sem_valor_valido" })),
+}));
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
@@ -22,6 +29,7 @@ const LEAD_ID = "33333333-3333-4333-8333-333333333333";
 const PIPELINE_ID = "44444444-4444-4444-8444-444444444444";
 const STAGE_A = "55555555-5555-4555-8555-555555555555";
 const STAGE_B = "66666666-6666-4666-8666-666666666666";
+const CONTACT_ID = "77777777-7777-4777-8777-777777777777";
 
 const CARREGADO = "2026-09-15T12:00:00.000Z";
 /** O `updated_at` depois do UPDATE do move. */
@@ -41,7 +49,12 @@ function bancoFalso(
   /** `status` do lead (issue #1538); o padrão é aberto. */
   statusDoLead = "open",
 ) {
-  const banco = { updatedAt: CARREGADO, stageId: STAGE_A, ultimoPatch: null as Record<string, unknown> | null };
+  const banco = {
+    updatedAt: CARREGADO,
+    stageId: STAGE_A,
+    status: statusDoLead,
+    ultimoPatch: null as Record<string, unknown> | null,
+  };
   vi.mocked(emitLeadActivity).mockImplementation(async () => {
     banco.updatedAt = DEPOIS_DA_ATIVIDADE;
     return { ok: true } as never;
@@ -52,8 +65,10 @@ function bancoFalso(
     organization_id: ORG_ID,
     pipeline_id: PIPELINE_ID,
     stage_id: banco.stageId,
-    contact_id: null,
-    status: statusDoLead,
+    contact_id: CONTACT_ID,
+    title: "Pedido de customização",
+    value_cents: 150_000,
+    status: banco.status,
     updated_at: banco.updatedAt,
     custom_fields: {} as Record<string, unknown>,
     won_reason: null,
@@ -101,6 +116,10 @@ function bancoFalso(
             select: () => escrita,
             maybeSingle: async () => {
               banco.stageId = valores.stage_id;
+              // O gatilho `fn_crm_lead_close_on_stage` (P-02): a rota nunca
+              // escreve `status`, o banco é quem fecha — este falso espelha.
+              if (stageExtra.is_won === true) banco.status = "won";
+              else if (stageExtra.is_lost === true) banco.status = "lost";
               banco.updatedAt = DEPOIS_DO_MOVE;
               banco.ultimoPatch = valores;
               return { data: { id: LEAD_ID }, error: null };
@@ -305,6 +324,52 @@ describe("POST /api/v1/leads/[id]/move", () => {
       { params: Promise.resolve({ id: LEAD_ID }) },
     );
     expect(response.status).toBe(422);
+  });
+
+  // ── A CONTA A RECEBER DO GANHO (issue #1477) ──────────────────────────────
+  //
+  // O que a issue pede: mover o card para a etapa de ganho dispara UMA vez o
+  // lançamento, com o valor e o contato que já estão no negócio; uma etapa que
+  // não é ganho não dispara nada. O que a função faz com essa entrada (comanda,
+  // item com o valor, vínculo e a trava de idempotência) é medido em
+  // `lib/financeiro/comanda-do-ganho.test.ts` — aqui se mede o GATILHO.
+  it("fechar como ganho dispara UMA vez a conta a receber, com valor e contato do negócio", async () => {
+    const falso = bancoFalso(null, { is_won: true });
+    vi.mocked(createClient).mockResolvedValue(falso as never);
+    const { POST } = await import("./route");
+
+    const response = await POST(
+      request({ stage_id: STAGE_B, position_in_stage: 1500, expected_updated_at: CARREGADO }),
+      { params: Promise.resolve({ id: LEAD_ID }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(comandaDoGanho).toHaveBeenCalledTimes(1);
+    const chamada = vi.mocked(comandaDoGanho).mock.calls[0];
+    expect(chamada).toBeDefined();
+    if (!chamada) throw new Error("comandaDoGanho não foi chamada");
+    expect(chamada[0]).toBe(falso);
+    expect(chamada[1]).toMatchObject({
+      organizationId: ORG_ID,
+      leadId: LEAD_ID,
+      contactId: CONTACT_ID,
+      valorCents: 150_000,
+      titulo: "Pedido de customização",
+      userId: USER_ID,
+    });
+  });
+
+  it("etapa que NÃO é ganho não lança nada", async () => {
+    vi.mocked(createClient).mockResolvedValue(bancoFalso() as never);
+    const { POST } = await import("./route");
+
+    const response = await POST(
+      request({ stage_id: STAGE_B, position_in_stage: 1500, expected_updated_at: CARREGADO }),
+      { params: Promise.resolve({ id: LEAD_ID }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(comandaDoGanho).not.toHaveBeenCalled();
   });
 });
 
