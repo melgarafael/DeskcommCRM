@@ -33528,167 +33528,30 @@ comment on table public.account_plans is
   'Classificação do lançamento, com direção (in/out) que o sistema de origem tinha e não usava.';
 
 
--- ---- comanda, financeiro, comissão e fidelidade (migration 0351) ----
--- A COMANDA E O QUE ELA MOVE — segunda e última camada do módulo financeiro.
+-- ---- comanda, financeiro, comissão e fidelidade (migration 0351, reestruturada na 0487) ----
+-- O bloco do módulo financeiro/comanda. As CINCO TABELAS (`sales`, `sale_items`,
+-- `commission_rules`, `commissions`, `loyalty_ledger`) deixaram este arquivo e
+-- nascem em `fn_financeiro_provisionar()` (0487, ADR-0002 D2); o que fica aqui são
+-- `financial_entries` (do caixa, núcleo) e as funções de negócio reescritas para
+-- compilar sem as tabelas (ADR-0002 D7).
 --
--- Cinco tabelas e uma função. A função é o ponto: finalizar uma comanda faz
--- SEIS coisas numa única transação — marca a venda, gera comissão por item,
--- lança a entrada na conta que a forma de pagamento determina, dá o ponto de
--- fidelidade e conclui o agendamento. Não são módulos vizinhos; é o corpo da
--- mesma transação, e é por isso que nascem juntos.
+-- ⚠️ AS CINCO TABELAS DA COMANDA SAÍRAM DAQUI (migration 0487, ADR-0002 D2).
 --
--- ═══ OS INVARIANTES, E POR QUE CADA UM ═══
+-- `sales`, `sale_items`, `commission_rules`, `commissions` e `loyalty_ledger`
+-- não nascem mais por este arquivo: passaram a ser criadas por
+-- `public.fn_financeiro_provisionar()`, que entra mais abaixo, e a provisionadora
+-- só é chamada onde o módulo está INSTALADO na instalação (`fn_modulo_instalar`,
+-- D3; e `fn_reaplicar_modulos_instalados` a cada atualização, D6).
 --
--- 1. NADA É APAGADO. Comanda cancela, conta inativa, item sai por cancelamento
---    da comanda. `delete` em linha de dinheiro é reescrever o passado.
--- 2. SALDO É SEMPRE DERIVADO. Não existe coluna de saldo em lugar nenhum —
---    nem na conta, nem no cliente. Saldo gravado e lançamentos divergem no
---    primeiro estorno, e a divergência não dá sinal.
--- 3. ESTORNO É CONTRA-LANÇAMENTO, nunca exclusão. Duas linhas que se somam a
---    zero contam a história; uma linha apagada não conta nada.
--- 4. A COMISSÃO É RESOLVIDA NA INCLUSÃO DO ITEM e gravada na linha. A
---    finalização NÃO recalcula: mudar a regra de comissão amanhã não pode
---    mexer no que já foi combinado ontem.
--- 5. A NUMERAÇÃO NÃO REINICIA. Sequência por organização, monotônica.
--- 6. LANÇAMENTO PAGO É IMUTÁVEL. Trigger recusa UPDATE que mexa em valor,
---    conta ou data depois de `paid_at`.
-
--- ─── a comanda ───────────────────────────────────────────────────────────────
-create table if not exists public.sales (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
-
-  -- Número visível, por organização. `bigint` e não `serial`: a sequência é
-  -- própria de cada tenant (ver `fn_proximo_numero_de_comanda`), e um serial
-  -- global vazaria o volume de um cliente para outro.
-  number bigint not null,
-
-  contact_id uuid references public.contacts(id) on delete set null,
-  -- Quem atendeu. `set null` porque a pessoa pode sair da equipe e a venda
-  -- continua tendo acontecido.
-  attendant_user_id uuid references auth.users(id) on delete set null,
-  appointment_id uuid references public.calendar_appointments(id) on delete set null,
-
-  status text not null default 'open'
-    check (status in ('open', 'finalized', 'cancelled')),
-
-  -- Desconto da COMANDA, separado do desconto de item. Fidelidade e comissão
-  -- incidem sobre o item, nunca sobre este — senão um desconto de caixa
-  -- reduziria o prêmio de quem atendeu.
-  discount_cents bigint not null default 0 check (discount_cents >= 0),
-  total_cents bigint not null default 0,
-  currency text not null default 'BRL' check (char_length(currency) = 3),
-
-  payment_method_id uuid references public.payment_methods(id) on delete restrict,
-
-  notes text,
-  finalized_at timestamptz,
-  cancelled_at timestamptz,
-  cancel_reason text,
-  -- Estornada: a comanda continua finalizada e ganha o contra-lançamento.
-  reversed_at timestamptz,
-  reverse_reason text,
-
-  created_by_user_id uuid references auth.users(id) on delete set null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-
-  -- Finalizar exige forma de pagamento: é ela que diz em que conta o dinheiro
-  -- cai. Sem isso, a entrada não teria destino — e o CHECK diz isso no schema,
-  -- não numa validação que alguém pode esquecer de chamar.
-  constraint sales_finalizada_tem_forma
-    check (status <> 'finalized' or payment_method_id is not null)
-);
-
-create unique index if not exists sales_org_numero_key on public.sales (organization_id, number);
-create index if not exists sales_org_status_idx on public.sales (organization_id, status, created_at desc);
-create index if not exists sales_org_contato_idx on public.sales (organization_id, contact_id);
-create index if not exists sales_appointment_idx on public.sales (appointment_id)
-  where appointment_id is not null;
-
--- ─── o item ──────────────────────────────────────────────────────────────────
-create table if not exists public.sale_items (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
-  -- `cascade` aqui e só aqui: item não existe fora da comanda, e comanda não é
-  -- apagada (cancela). O cascade só dispara se a ORGANIZAÇÃO inteira sair.
-  sale_id uuid not null references public.sales(id) on delete cascade,
-
-  -- O que foi feito. `event_type_id` porque, neste produto, o catálogo de
-  -- serviços JÁ é `calendar_event_types` — criar uma tabela de serviços ao lado
-  -- seria a segunda fonte da mesma verdade.
-  event_type_id uuid references public.calendar_event_types(id) on delete restrict,
-  -- Congelado na inclusão: o nome muda, a linha da venda não.
-  description text not null,
-
-  attendant_user_id uuid references auth.users(id) on delete set null,
-
-  quantity integer not null default 1 check (quantity > 0),
-  unit_price_cents bigint not null check (unit_price_cents >= 0),
-  discount_cents bigint not null default 0 check (discount_cents >= 0),
-  total_cents bigint not null,
-
-  -- ⚠️ RESOLVIDA NA INCLUSÃO e gravada aqui. A finalização não recalcula:
-  -- mudar a regra amanhã não mexe no que já foi combinado ontem.
-  commission_percent numeric(5, 2) not null default 0
-    check (commission_percent >= 0 and commission_percent <= 100),
-
-  created_at timestamptz not null default now()
-);
-
-create index if not exists sale_items_sale_idx on public.sale_items (sale_id);
-create index if not exists sale_items_org_idx on public.sale_items (organization_id, created_at desc);
-
--- ─── a regra de comissão ─────────────────────────────────────────────────────
+-- O que fica NESTE bloco são as FUNÇÕES de negócio — e elas são reescritas para
+-- compilar SEM as tabelas (ADR-0002 D7: `record`, nunca `tabela%rowtype`, e SQL
+-- dinâmico onde a relação pode não existir). Medido em Postgres 15 descartável:
+-- `language sql` e `%rowtype` NÃO compilam contra relação inexistente; plpgsql
+-- com `record` compila.
 --
--- Precedência: (pessoa + serviço) → (pessoa) → (serviço). A mais específica
--- vence, e é por isso que as três colunas são nullable com um índice único por
--- combinação — não há linha "curinga" mágica, há ausência.
-create table if not exists public.commission_rules (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
-
-  attendant_user_id uuid references auth.users(id) on delete cascade,
-  event_type_id uuid references public.calendar_event_types(id) on delete cascade,
-
-  percent numeric(5, 2) not null check (percent >= 0 and percent <= 100),
-
-  created_at timestamptz not null default now(),
-
-  -- Pelo menos um dos dois: uma regra sem pessoa E sem serviço seria a regra
-  -- "de tudo", que é o default da organização e mora em outro lugar.
-  constraint commission_rules_tem_alvo
-    check (attendant_user_id is not null or event_type_id is not null)
-);
-
--- `coalesce` no índice: NULL não colide com NULL numa UNIQUE, e sem isto duas
--- regras "só para a Ana" passariam as duas, em silêncio.
-create unique index if not exists commission_rules_alvo_key on public.commission_rules (
-  organization_id,
-  coalesce(attendant_user_id, '00000000-0000-0000-0000-000000000000'::uuid),
-  coalesce(event_type_id, '00000000-0000-0000-0000-000000000000'::uuid)
-);
-
--- ─── a comissão gerada ───────────────────────────────────────────────────────
-create table if not exists public.commissions (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
-  sale_item_id uuid not null references public.sale_items(id) on delete cascade,
-  attendant_user_id uuid not null references auth.users(id) on delete restrict,
-
-  percent numeric(5, 2) not null,
-  amount_cents bigint not null,
-
-  status text not null default 'pending' check (status in ('pending', 'paid', 'reversed')),
-  paid_at timestamptz,
-  reversed_at timestamptz,
-
-  created_at timestamptz not null default now()
-);
-
-create unique index if not exists commissions_item_key on public.commissions (sale_item_id);
-create index if not exists commissions_org_pessoa_idx
-  on public.commissions (organization_id, attendant_user_id, status);
+-- `financial_entries` PERMANECE aqui, e é do CAIXO (núcleo já liberado, ADR D9),
+-- não da comanda. A consequência aceita é a coluna `sale_id`: a FK para
+-- `public.sales` só existe onde o módulo está instalado.
 
 -- ─── o lançamento financeiro ─────────────────────────────────────────────────
 create table if not exists public.financial_entries (
@@ -33697,7 +33560,14 @@ create table if not exists public.financial_entries (
 
   account_id uuid not null references public.financial_accounts(id) on delete restrict,
   account_plan_id uuid references public.account_plans(id) on delete restrict,
-  sale_id uuid references public.sales(id) on delete set null,
+  -- ⚠️ SEM FK para `public.sales`, e a linha passa a ser `uuid` puro: a tabela da
+  -- comanda saiu do baseline (migration 0487, ADR-0002 D2) e uma FK para uma
+  -- relação que só existe depois da instalação do módulo quebraria o
+  -- `create table` do caixa em TODO banco onde o módulo não está instalado.
+  -- A FK é devolvida por `fn_financeiro_provisionar()`, que a cria no lugar
+  -- (`financeiro_sale_id_fkey`) onde o módulo está — e é a provisionadora que
+  -- fica com o efeito de um `on delete set null` coerente.
+  sale_id uuid,
 
   direction text not null check (direction in ('in', 'out')),
   -- SEMPRE positivo; quem dá o sinal é `direction`. Valor negativo com direção
@@ -33729,37 +33599,6 @@ create index if not exists financial_entries_conta_idx
   on public.financial_entries (organization_id, account_id, status);
 create index if not exists financial_entries_sale_idx
   on public.financial_entries (sale_id) where sale_id is not null;
-
--- ─── o livro-razão da fidelidade ─────────────────────────────────────────────
---
--- LEDGER, não saldo. O saldo do cliente é `sum(points)` e nunca uma coluna:
--- guardar o saldo faria o primeiro estorno divergir em silêncio.
-create table if not exists public.loyalty_ledger (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
-  contact_id uuid not null references public.contacts(id) on delete cascade,
-
-  -- Assinado: ganhar é positivo, resgatar é negativo. Uma coluna de "tipo" ao
-  -- lado seria a segunda forma de dizer o mesmo sinal.
-  points integer not null,
-  reason text not null,
-
-  sale_id uuid references public.sales(id) on delete set null,
-  sale_item_id uuid references public.sale_items(id) on delete set null,
-
-  -- Idempotência do ganho: finalizar a mesma comanda duas vezes não dá ponto
-  -- em dobro. A UNIQUE parcial é a garantia, não a boa intenção de quem chama.
-  idempotency_key text,
-
-  created_by_user_id uuid references auth.users(id) on delete set null,
-  created_at timestamptz not null default now()
-);
-
-create unique index if not exists loyalty_ledger_idem_key
-  on public.loyalty_ledger (organization_id, idempotency_key)
-  where idempotency_key is not null;
-create index if not exists loyalty_ledger_contato_idx
-  on public.loyalty_ledger (organization_id, contact_id, created_at desc);
 
 -- ─── lançamento pago é imutável ──────────────────────────────────────────────
 create or replace function public.fn_lancamento_pago_e_imutavel()
@@ -33795,13 +33634,33 @@ create trigger trg_financial_entries_imutavel
 -- vazamento que o comentário abaixo diz querer evitar. A varredura
 -- `tests/invariants/definer-membership-varredura.test.ts` mede isso.
 create or replace function public.fn_proximo_numero_de_comanda(p_org uuid)
-returns bigint language sql stable set search_path = public as $$
+returns bigint language plpgsql stable set search_path = public as $fn$
+-- ⚠️ `plpgsql` e NÃO `language sql`, por D7 da ADR-0002: `public.sales` é do
+-- módulo e não existe onde ele não está instalado, e a forma `language sql` é
+-- validada na CRIAÇÃO — medido em Postgres 15 descartável: ela recusa com
+-- `relation "public.sales" does not exist` (compilação da função). `plpgsql`
+-- compila sem a tabela e só falha se alguém CHAMAR onde o módulo não está, que
+-- é o caso em que a rota de comanda nem existe.
+--
+-- O `security invoker` (o default) e NÃO definer é de propósito: ela só LÊ
+-- `public.sales`, e a RLS daquela tabela já é a cerca — com a sessão de quem
+-- chama, o `max(number)` só enxerga a própria organização. Definer aqui
+-- responderia a qualquer usuário logado qual é o número da próxima comanda de
+-- QUALQUER organização, que é o volume de vendas do vizinho.
+declare v_numero bigint;
+begin
+  if to_regclass('public.sales') is null then
+    raise exception 'modulo_nao_instalado' using errcode = 'P0001',
+      hint = 'O módulo financeiro não está instalado nesta instalação.';
+  end if;
   -- `coalesce(max)+1` sob o lock da transação de quem chama. Uma sequence do
   -- Postgres seria global e vazaria volume entre tenants; e o buraco de uma
   -- sequence (números pulados no rollback) faria a numeração de uma comanda
   -- parecer que houve venda cancelada onde não houve.
-  select coalesce(max(number), 0) + 1 from public.sales where organization_id = p_org;
-$$;
+  execute 'select coalesce(max(number), 0) + 1 from public.sales where organization_id = $1'
+    into v_numero using p_org;
+  return v_numero;
+end $fn$;
 revoke execute on function public.fn_proximo_numero_de_comanda(uuid) from public, anon;
 grant execute on function public.fn_proximo_numero_de_comanda(uuid) to authenticated, service_role;
 
@@ -33814,7 +33673,12 @@ create or replace function public.fn_finalizar_comanda(
 )
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare
-  v_sale       public.sales%rowtype;
+  -- ⚠️ `record` e NÃO `public.sales%rowtype`, por D7 da ADR-0002: a tabela é do
+  -- módulo e não existe onde ele não está instalado, e `%rowtype` é resolvido na
+  -- CRIAÇÃO da função (medido em Postgres 15: `relation does not exist`).
+  -- `record` não é um afrouxo: os campos são lidos por nome, e a função só roda
+  -- onde a comanda existe — o guard logo abaixo recusa o resto.
+  v_sale       record;
   v_conta      uuid;
   v_plano      uuid;
   v_total      bigint;
@@ -33823,6 +33687,10 @@ declare
 begin
   if auth.uid() is null or not public.fn_role_at_least(p_org, 'agent') then
     raise exception 'comanda_forbidden' using errcode = '42501';
+  end if;
+  if to_regclass('public.sales') is null then
+    raise exception 'modulo_nao_instalado' using errcode = 'P0001',
+      hint = 'O módulo financeiro não está instalado nesta instalação.';
   end if;
 
   -- FOR UPDATE: duas finalizações simultâneas da mesma comanda geravam
@@ -33934,12 +33802,18 @@ grant execute on function public.fn_finalizar_comanda(uuid, uuid, uuid, integer)
 create or replace function public.fn_estornar_comanda(p_org uuid, p_sale uuid, p_motivo text)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare
-  v_sale   public.sales%rowtype;
-  v_orig   public.financial_entries%rowtype;
+  -- ⚠️ `record` e NÃO `%rowtype`, por D7 da ADR-0002 (medido: `%rowtype` contra
+  -- tabela do módulo ausente faz a CRIAÇÃO da função falhar).
+  v_sale   record;
+  v_orig   record;
   v_novo   uuid;
 begin
   if auth.uid() is null or not public.fn_role_at_least(p_org, 'manager') then
     raise exception 'estorno_forbidden' using errcode = '42501';
+  end if;
+  if to_regclass('public.sales') is null then
+    raise exception 'modulo_nao_instalado' using errcode = 'P0001',
+      hint = 'O módulo financeiro não está instalado nesta instalação.';
   end if;
 
   select * into v_sale from public.sales
@@ -33997,12 +33871,17 @@ end $$;
 revoke execute on function public.fn_estornar_comanda(uuid, uuid, text) from public, anon;
 grant execute on function public.fn_estornar_comanda(uuid, uuid, text) to authenticated;
 
--- ─── RLS nas cinco ───────────────────────────────────────────────────────────
+-- ─── RLS da que ficou: o lançamento financeiro ───────────────────────────────
+--
+-- ⚠️ A lista encolheu de seis para uma (migration 0487, ADR-0002 D2). As cinco
+-- tabelas da comanda saíram do baseline, e a RLS delas passa a ser aplicada pela
+-- `fn_financeiro_provisionar()`, que termina em `fn_proteger_modulo_provisionado()`
+-- (migration 0325) na mesma transação em que as cria. Aqui sobra só
+-- `financial_entries`, que é do CAIXO e continua no núcleo.
 do $$
 declare t text;
 begin
-  foreach t in array array['sales', 'sale_items', 'commission_rules', 'commissions',
-                           'financial_entries', 'loyalty_ledger'] loop
+  foreach t in array array['financial_entries'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists tenant_isolation_%I_all on public.%I', t, t);
     execute format($f$
@@ -34019,38 +33898,27 @@ begin
   end loop;
 end $$;
 
-comment on table public.sales is
-  'A comanda. Cancela, nunca apaga. `number` é sequencial por organização e não reinicia.';
-comment on table public.loyalty_ledger is
-  'Livro-razão de fidelidade. O saldo do cliente é sum(points) — NUNCA uma coluna.';
+-- Os comentários das tabelas da comanda foram para o corpo da provisionadora,
+-- onde as tabelas nascem — `comment on table` aqui as recriaria num banco sem o
+-- módulo, e a 0487 explica por que.
 comment on function public.fn_finalizar_comanda(uuid, uuid, uuid, integer) is
   'As seis coisas numa transação: venda, comissão por item, entrada na conta da forma de pagamento, ponto de fidelidade e conclusão do agendamento. Idempotente sob FOR UPDATE.';
 
 
 -- ---- uma comanda por agendamento (migration 0352) ----
+-- ⚠️ Este bloco ficou VAZIO de propósito (migration 0487, ADR-0002 D2).
+--
 -- A rota consulta antes de abrir, e isso resolve o toque repetido, não a
 -- corrida: duas requisições simultâneas passam pelas duas consultas antes de
 -- qualquer insert. Duas comandas abertas para o mesmo atendimento não dão erro
 -- nenhum — são faturadas separadamente, e o cliente paga duas vezes.
 --
--- Parcial nas duas pontas: comanda avulsa é a maioria e não se exclui entre si;
--- comanda cancelada deixa de valer, senão cancelar por engano trancaria o
--- agendamento para sempre.
-update public.sales s
-   set appointment_id = null
- where s.appointment_id is not null
-   and s.status <> 'cancelled'
-   and exists (
-     select 1 from public.sales anterior
-      where anterior.appointment_id = s.appointment_id
-        and anterior.organization_id = s.organization_id
-        and anterior.status <> 'cancelled'
-        and (anterior.created_at, anterior.id) < (s.created_at, s.id)
-   );
-
-create unique index if not exists sales_agendamento_unico_idx
-  on public.sales (organization_id, appointment_id)
-  where appointment_id is not null and status <> 'cancelled';
+-- A garantia (o índice único parcial) e a limpeza dos duplicados que já existem
+-- foram para o corpo de `fn_financeiro_provisionar()` e para o `do` guardado por
+-- `to_regclass` no apêndice desta migration. Nenhum dos dois pode ficar aqui:
+-- a tabela da comanda não nasce mais por este arquivo, e um `update`/`create index`
+-- aqui quebraria a instalação de quem não tem o módulo — que é a razão de o
+-- arquivo existir.
 
 -- ---- relatório financeiro (migrations 0353 + 0356 + 0444) ----
 -- Agrega NO BANCO: o PostgREST corta em 1000 linhas sem avisar, e somar na
@@ -34070,10 +33938,52 @@ create or replace function public.fn_relatorio_financeiro(
   p_ate date
 )
 returns jsonb
-language sql
+language plpgsql
 stable
 set search_path = public
-as $$
+as $fn$
+-- ⚠️ `plpgsql` e NÃO `language sql`, por D7 da ADR-0002: as tabelas da comanda
+-- (`sales`, `commissions`, `sale_items`) saíram do baseline e só existem onde o
+-- módulo está instalado, e a forma `language sql` é validada na CRIAÇÃO
+-- (medido em Postgres 15: `relation does not exist`).
+--
+-- O relatório tem DUAS fontes — o caixa (`financial_entries`, do núcleo) e a
+-- comanda. Onde o módulo não está instalado, o relatório não some: ele devolve o
+-- MESMO formato com as seções da comanda vazias e o caixa fechado. Um relatório
+-- que volta `null` faria a tela quebrar num banco sem o módulo, e um relatório
+-- que fingisse "R$ 0,00 em comandas" seria mentira de negócio.
+declare v jsonb;
+begin
+  if to_regclass('public.sales') is null then
+    return jsonb_build_object(
+      'de', p_de,
+      'ate', p_ate,
+      'entradas_cents', coalesce((
+        select sum(amount_cents) from public.financial_entries
+         where organization_id = p_org and status = 'paid' and direction = 'in'
+           and entry_date between p_de and p_ate), 0),
+      'saidas_cents', coalesce((
+        select sum(amount_cents) from public.financial_entries
+         where organization_id = p_org and status = 'paid' and direction = 'out'
+           and entry_date between p_de and p_ate), 0),
+      'saldo_cents', coalesce((
+        select sum(case when direction = 'in' then amount_cents else -amount_cents end)
+          from public.financial_entries
+         where organization_id = p_org and status = 'paid'
+           and entry_date between p_de and p_ate), 0),
+      'comandas_finalizadas', 0,
+      'comandas_estornadas', 0,
+      'faturado_cents', 0,
+      'ticket_medio_cents', 0,
+      'por_forma', '[]'::jsonb,
+      'por_profissional', '[]'::jsonb,
+      'por_servico', '[]'::jsonb,
+      'por_cliente', '[]'::jsonb,
+      'por_moeda', '{}'::jsonb
+    );
+  end if;
+
+  execute $q$
   with lancamentos as (
     select direction, amount_cents, currency
       from public.financial_entries
@@ -34248,32 +34158,29 @@ as $$
         from moedas m
     ), '{}'::jsonb)
   );
-$$;
+  $q$ into v;
+  return v;
+end $fn$;
 
 revoke execute on function public.fn_relatorio_financeiro(uuid, date, date) from public, anon;
 grant  execute on function public.fn_relatorio_financeiro(uuid, date, date) to authenticated, service_role;
 
 -- ---- regra de comissao inativa (migration 0354) ----
--- A regra entra no catálogo financeiro genérico, que espera `is_active`.
--- Antes disto não havia porta nenhuma para cadastrar uma regra, e toda
--- comissão nascia 0% em toda instalação. Inativar e não apagar preserva a
--- resposta a "por que aquela comanda saiu com este percentual".
--- `name` é o rótulo que a pessoa lê na lista ("Ana em manicure"). Ele é
--- redundante com os dois alvos, e a redundância é deliberada: o catálogo
--- genérico exige um nome em toda entidade, e derivá-lo no servidor produziria um
--- texto que ninguém pode corrigir quando ficar ambíguo.
-alter table public.commission_rules
-  add column if not exists name text not null default 'Regra de comissão';
-
-alter table public.commission_rules
-  add column if not exists is_active boolean not null default true;
-
-create index if not exists commission_rules_org_ativas_idx
-  on public.commission_rules (organization_id, event_type_id, attendant_user_id)
-  where is_active;
-
-comment on column public.commission_rules.is_active is
-  'Regra em vigor. Inativa em vez de apagar: o percentual já aplicado está congelado no item, e o que se perderia é a resposta a "por que aquela comanda saiu com este percentual".';
+-- ⚠️ Este bloco ficou VAZIO de propósito (migration 0487, ADR-0002 D2).
+--
+-- A regra entra no catálogo financeiro genérico, que espera `is_active`. Antes
+-- disto não havia porta nenhuma para cadastrar uma regra, e toda comissão nascia
+-- 0% em toda instalação. Inativar e não apagar preserva a resposta a "por que
+-- aquela comanda saiu com este percentual". `name` é o rótulo que a pessoa lê na
+-- lista ("Ana em manicure"). Ele é redundante com os dois alvos, e a redundância
+-- é deliberada: o catálogo genérico exige um nome em toda entidade, e derivá-lo
+-- no servidor produziria um texto que ninguém pode corrigir quando ficar
+-- ambíguo.
+--
+-- As duas colunas, o índice e o comentário foram para o corpo de
+-- `fn_financeiro_provisionar()`, junto do resto da comanda. Aqui não podem
+-- ficar: `alter table` sobre uma tabela que este arquivo não cria mais falha na
+-- instalação de quem não tem o módulo — o `relation does not exist` medido.
 
 -- ---- saldo de fidelidade (migration 0355) ----
 -- O saldo é sum(points) do livro-razão, somado NO BANCO: o PostgREST corta em
@@ -34282,15 +34189,27 @@ comment on column public.commission_rules.is_active is
 -- compensam.
 create or replace function public.fn_saldo_de_fidelidade(p_org uuid, p_contact uuid)
 returns integer
-language sql
+language plpgsql
 stable
 set search_path = public
-as $$
-  select coalesce(sum(points), 0)::integer
-    from public.loyalty_ledger
-   where organization_id = p_org
-     and contact_id = p_contact;
-$$;
+as $fn$
+-- ⚠️ `plpgsql` e NÃO `language sql`, por D7 da ADR-0002: `loyalty_ledger` é do
+-- módulo e não existe onde ele não está instalado, e a forma `language sql` é
+-- validada na CRIAÇÃO (medido em Postgres 15: `relation does not exist`).
+declare v_saldo integer;
+begin
+  if to_regclass('public.loyalty_ledger') is null then
+    raise exception 'modulo_nao_instalado' using errcode = 'P0001',
+      hint = 'O módulo financeiro não está instalado nesta instalação.';
+  end if;
+  -- A soma é NO BANCO, não no app: o PostgREST corta em 1000 linhas sem avisar,
+  -- e saldo truncado vira prêmio negado a quem tinha direito. Por CLIENTE, nunca
+  -- agregado — o total geral esconde erros que se compensam.
+  execute 'select coalesce(sum(points), 0)::integer from public.loyalty_ledger
+            where organization_id = $1 and contact_id = $2'
+    into v_saldo using p_org, p_contact;
+  return v_saldo;
+end $fn$;
 
 revoke execute on function public.fn_saldo_de_fidelidade(uuid, uuid) from public, anon;
 grant  execute on function public.fn_saldo_de_fidelidade(uuid, uuid) to authenticated, service_role;
@@ -42898,6 +42817,338 @@ create trigger trg_lgpd_secoes_de_modulo
   for each row
   when (new.is_anonymized and not old.is_anonymized)
   execute function public.fn_lgpd_redigir_secoes_de_modulo();
+-- ---- a provisionadora do financeiro entra no schema (migration 0487) ----
+--
+-- CÓPIA LITERAL do bloco da migration 0487 que cria
+-- `public.fn_financeiro_provisionar()` — e é cópia por geração, não por mão:
+-- `tests/unit/apendice-do-baseline-nao-diverge-da-cadeia.test.ts` compara o
+-- corpo das funções escritas à mão no apêndice com a última definição da cadeia,
+-- e divergência ali é o defeito que o arquivo existe para pegar (a 0224
+-- sobrescreveu um conserto e nenhum gate viu).
+--
+-- A POSIÇÃO É SEMÂNTICA, e o motivo está no próprio arquivo: a marca da
+-- VARREDURA anon (migration 0116) é o ÚLTIMO bloco do baseline, e
+-- `tests/unit/varredura-anon-e-o-ultimo-bloco.test.ts` cobra isso no texto.
+-- Nenhuma função pode ser criada DEPOIS dela, porque o `alter default
+-- privileges … to anon` do dump continua valendo e a função nasceria com
+-- `anon` no ACL sem nada depois para tirar.
+--
+-- ⚠️ O que muda em quem ATUALIZA: as cinco tabelas da comanda deixam de ser
+-- criadas por este arquivo e passam a ser criadas por esta função, que só é
+-- chamada onde o módulo está INSTALADO (`fn_modulo_instalar`, D3). Em banco sem
+-- o módulo, o `create table` da comanda simplesmente não acontece — que é a
+-- condição 2 do dono, e é a diferença entre este PR e o estado anterior.
+--
+-- O SQL é o MESMO da migration, e a razão é a D6: a função é idempotente e o
+-- kit reaplica o baseline inteiro na instalação e em cada atualização.
+
+create or replace function public.fn_financeiro_provisionar()
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $f$
+begin
+
+  -- ─── a comanda ───────────────────────────────────────────────────────────────
+  create table if not exists public.sales (
+    id uuid primary key default gen_random_uuid(),
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+
+    -- Número visível, por organização. `bigint` e não `serial`: a sequência é
+    -- própria de cada tenant (ver `fn_proximo_numero_de_comanda`), e um serial
+    -- global vazaria o volume de um cliente para outro.
+    number bigint not null,
+
+    contact_id uuid references public.contacts(id) on delete set null,
+    -- Quem atendeu. `set null` porque a pessoa pode sair da equipe e a venda
+    -- continua tendo acontecido.
+    attendant_user_id uuid references auth.users(id) on delete set null,
+    appointment_id uuid references public.calendar_appointments(id) on delete set null,
+
+    status text not null default 'open'
+      check (status in ('open', 'finalized', 'cancelled')),
+
+    -- Desconto da COMANDA, separado do desconto de item. Fidelidade e comissão
+    -- incidem sobre o item, nunca sobre este — senão um desconto de caixa
+    -- reduziria o prêmio de quem atendeu.
+    discount_cents bigint not null default 0 check (discount_cents >= 0),
+    total_cents bigint not null default 0,
+    currency text not null default 'BRL' check (char_length(currency) = 3),
+
+    payment_method_id uuid references public.payment_methods(id) on delete restrict,
+
+    notes text,
+    finalized_at timestamptz,
+    cancelled_at timestamptz,
+    cancel_reason text,
+    -- Estornada: a comanda continua finalizada e ganha o contra-lançamento.
+    reversed_at timestamptz,
+    reverse_reason text,
+
+    created_by_user_id uuid references auth.users(id) on delete set null,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+
+    -- Finalizar exige forma de pagamento: é ela que diz em que conta o dinheiro
+    -- cai. Sem isso, a entrada não teria destino — e o CHECK diz isso no schema,
+    -- não numa validação que alguém pode esquecer de chamar.
+    constraint sales_finalizada_tem_forma
+      check (status <> 'finalized' or payment_method_id is not null)
+  );
+
+  create unique index if not exists sales_org_numero_key on public.sales (organization_id, number);
+  create index if not exists sales_org_status_idx on public.sales (organization_id, status, created_at desc);
+  create index if not exists sales_org_contato_idx on public.sales (organization_id, contact_id);
+  create index if not exists sales_appointment_idx on public.sales (appointment_id)
+    where appointment_id is not null;
+
+  -- ─── o item ──────────────────────────────────────────────────────────────────
+  create table if not exists public.sale_items (
+    id uuid primary key default gen_random_uuid(),
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+    -- `cascade` aqui e só aqui: item não existe fora da comanda, e comanda não é
+    -- apagada (cancela). O cascade só dispara se a ORGANIZAÇÃO inteira sair.
+    sale_id uuid not null references public.sales(id) on delete cascade,
+
+    -- O que foi feito. `event_type_id` porque, neste produto, o catálogo de
+    -- serviços JÁ é `calendar_event_types` — criar uma tabela de serviços ao lado
+    -- seria a segunda fonte da mesma verdade.
+    event_type_id uuid references public.calendar_event_types(id) on delete restrict,
+    -- Congelado na inclusão: o nome muda, a linha da venda não.
+    description text not null,
+
+    attendant_user_id uuid references auth.users(id) on delete set null,
+
+    quantity integer not null default 1 check (quantity > 0),
+    unit_price_cents bigint not null check (unit_price_cents >= 0),
+    discount_cents bigint not null default 0 check (discount_cents >= 0),
+    total_cents bigint not null,
+
+    -- ⚠️ RESOLVIDA NA INCLUSÃO e gravada aqui. A finalização não recalcula:
+    -- mudar a regra amanhã não mexe no que já foi combinado ontem.
+    commission_percent numeric(5, 2) not null default 0
+      check (commission_percent >= 0 and commission_percent <= 100),
+
+    created_at timestamptz not null default now()
+  );
+
+  create index if not exists sale_items_sale_idx on public.sale_items (sale_id);
+  create index if not exists sale_items_org_idx on public.sale_items (organization_id, created_at desc);
+
+  -- ─── a regra de comissão ─────────────────────────────────────────────────────
+  --
+  -- Precedência: (pessoa + serviço) → (pessoa) → (serviço). A mais específica
+  -- vence, e é por isso que as três colunas são nullable com um índice único por
+  -- combinação — não há linha "curinga" mágica, há ausência.
+  create table if not exists public.commission_rules (
+    id uuid primary key default gen_random_uuid(),
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+
+    attendant_user_id uuid references auth.users(id) on delete cascade,
+    event_type_id uuid references public.calendar_event_types(id) on delete cascade,
+
+    percent numeric(5, 2) not null check (percent >= 0 and percent <= 100),
+
+    created_at timestamptz not null default now(),
+
+    -- Pelo menos um dos dois: uma regra sem pessoa E sem serviço seria a regra
+    -- "de tudo", que é o default da organização e mora em outro lugar.
+    constraint commission_rules_tem_alvo
+      check (attendant_user_id is not null or event_type_id is not null)
+  );
+
+  -- `coalesce` no índice: NULL não colide com NULL numa UNIQUE, e sem isto duas
+  -- regras "só para a Ana" passariam as duas, em silêncio.
+  create unique index if not exists commission_rules_alvo_key on public.commission_rules (
+    organization_id,
+    coalesce(attendant_user_id, '00000000-0000-0000-0000-000000000000'::uuid),
+    coalesce(event_type_id, '00000000-0000-0000-0000-000000000000'::uuid)
+  );
+
+  -- ─── a comissão gerada ───────────────────────────────────────────────────────
+  create table if not exists public.commissions (
+    id uuid primary key default gen_random_uuid(),
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+    sale_item_id uuid not null references public.sale_items(id) on delete cascade,
+    attendant_user_id uuid not null references auth.users(id) on delete restrict,
+
+    percent numeric(5, 2) not null,
+    amount_cents bigint not null,
+
+    status text not null default 'pending' check (status in ('pending', 'paid', 'reversed')),
+    paid_at timestamptz,
+    reversed_at timestamptz,
+
+    created_at timestamptz not null default now()
+  );
+
+  create unique index if not exists commissions_item_key on public.commissions (sale_item_id);
+  create index if not exists commissions_org_pessoa_idx
+    on public.commissions (organization_id, attendant_user_id, status);
+
+  -- ─── o livro-razão da fidelidade ─────────────────────────────────────────────
+  --
+  -- LEDGER, não saldo. O saldo do cliente é `sum(points)` e nunca uma coluna:
+  -- guardar o saldo faria o primeiro estorno divergir em silêncio.
+  create table if not exists public.loyalty_ledger (
+    id uuid primary key default gen_random_uuid(),
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+    contact_id uuid not null references public.contacts(id) on delete cascade,
+
+    -- Assinado: ganhar é positivo, resgatar é negativo. Uma coluna de "tipo" ao
+    -- lado seria a segunda forma de dizer o mesmo sinal.
+    points integer not null,
+    reason text not null,
+
+    sale_id uuid references public.sales(id) on delete set null,
+    sale_item_id uuid references public.sale_items(id) on delete set null,
+
+    -- Idempotência do ganho: finalizar a mesma comanda duas vezes não dá ponto
+    -- em dobro. A UNIQUE parcial é a garantia, não a boa intenção de quem chama.
+    idempotency_key text,
+
+    created_by_user_id uuid references auth.users(id) on delete set null,
+    created_at timestamptz not null default now()
+  );
+
+  create unique index if not exists loyalty_ledger_idem_key
+    on public.loyalty_ledger (organization_id, idempotency_key)
+    where idempotency_key is not null;
+  create index if not exists loyalty_ledger_contato_idx
+    on public.loyalty_ledger (organization_id, contact_id, created_at desc);
+  -- 0354 — a regra de comissão entra no catálogo, e para isso INATIVA em vez de
+  -- sumir: o percentual já aplicado está congelado no item, então apagar perderia
+  -- a resposta a "por que aquela comanda saiu com este percentual".
+  alter table public.commission_rules
+    add column if not exists name text not null default 'Regra de comissão';
+
+  alter table public.commission_rules
+    add column if not exists is_active boolean not null default true;
+
+  comment on column public.commission_rules.is_active is
+    'Regra em vigor. Inativa em vez de apagar: o percentual já aplicado está congelado no item, e o que se perderia é a resposta a "por que aquela comanda saiu com este percentual".';
+
+  create index if not exists commission_rules_org_ativas_idx
+    on public.commission_rules (organization_id, event_type_id, attendant_user_id)
+    where is_active;
+
+  -- 0352 — uma comanda por agendamento. PARCIAL nas duas condições: comanda avulsa
+  -- é a maioria e não se exclui de comanda de agendamento, e comanda cancelada
+  -- deixa de valer (sem isto, cancelar por engano trancaria o agendamento para
+  -- sempre, sem conserto pela tela).
+  create unique index if not exists sales_agendamento_unico_idx
+    on public.sales (organization_id, appointment_id)
+    where appointment_id is not null and status <> 'cancelled';
+
+  -- Os comentários das tabelas da comanda moram AQUI, e não no bloco do RLS do
+  -- núcleo: `comment on table` no baseline recriaria as tabelas num banco onde o
+  -- módulo não está instalado — que é exatamente o que a D2 proíbe.
+  comment on table public.sales is
+    'A comanda. Cancela, nunca apaga. `number` é sequencial por organização e não reinicia.';
+  comment on table public.loyalty_ledger is
+    'Livro-razão de fidelidade. O saldo do cliente é sum(points) — NUNCA uma coluna.';
+
+  -- A FK que o caixa perdeu: `financial_entries` é do NÚCLEO e fica no baseline,
+  -- mas apontava para `sales`, que é do módulo. Onde o módulo está instalado, o
+  -- vínculo volta a ser constraint, com o mesmo `on delete set null` que a 0351
+  -- declarava. O nome é conferido antes porque a provisionadora roda a cada
+  -- atualização (D6) e `add constraint` repetido seria erro.
+  if to_regclass('public.financial_entries') is not null
+     and not exists (
+       select 1 from pg_constraint
+        where conname = 'financeiro_sale_id_fkey'
+          and conrelid = 'public.financial_entries'::regclass
+     )
+  then
+    alter table public.financial_entries
+      add constraint financeiro_sale_id_fkey
+      foreign key (sale_id) references public.sales(id) on delete set null;
+  end if;
+
+  -- ── RLS das cinco tabelas, declarada por ESTA função (#1906 + D5) ──────────
+  -- A rotina 0325 (`fn_proteger_tabelas_de_organizacao`) só enxerga tabela com
+  -- RLS DESLIGADA: ligando aqui a decisão do módulo prevalece, e o `revoke` de
+  -- `anon` vem junto porque é a MESMA rotina que o faria — se ela não enxerga a
+  -- tabela, ela não faz por nós.
+  --
+  -- Cada `create policy` deste corpo ocupa DUAS linhas de propósito (issue
+  -- #1906): a conferência antiga do `update.sh` (v1.39.0 a v1.63.0) casava o
+  -- nome da policy e o `on public.` na MESMA linha e abortava a atualização
+  -- de quem tem o módulo instalado. É a quebra entre as duas linhas que tira
+  -- a regra do olhar daquela varredura sem tirar a regra da tabela.
+  alter table public.sales enable row level security;
+  revoke all on public.sales from anon;
+  drop policy if exists tenant_isolation_sales_all on public.sales;
+  create policy tenant_isolation_sales_all
+    on public.sales for all
+    using (organization_id in (select * from public.fn_user_org_ids()))
+    with check (organization_id in (select * from public.fn_user_org_ids()));
+
+  alter table public.sale_items enable row level security;
+  revoke all on public.sale_items from anon;
+  drop policy if exists tenant_isolation_sale_items_all on public.sale_items;
+  create policy tenant_isolation_sale_items_all
+    on public.sale_items for all
+    using (organization_id in (select * from public.fn_user_org_ids()))
+    with check (organization_id in (select * from public.fn_user_org_ids()));
+
+  alter table public.commission_rules enable row level security;
+  revoke all on public.commission_rules from anon;
+  drop policy if exists tenant_isolation_commission_rules_all on public.commission_rules;
+  create policy tenant_isolation_commission_rules_all
+    on public.commission_rules for all
+    using (organization_id in (select * from public.fn_user_org_ids()))
+    with check (organization_id in (select * from public.fn_user_org_ids()));
+
+  alter table public.commissions enable row level security;
+  revoke all on public.commissions from anon;
+  drop policy if exists tenant_isolation_commissions_all on public.commissions;
+  create policy tenant_isolation_commissions_all
+    on public.commissions for all
+    using (organization_id in (select * from public.fn_user_org_ids()))
+    with check (organization_id in (select * from public.fn_user_org_ids()));
+
+  alter table public.loyalty_ledger enable row level security;
+  revoke all on public.loyalty_ledger from anon;
+  drop policy if exists tenant_isolation_loyalty_ledger_all on public.loyalty_ledger;
+  create policy tenant_isolation_loyalty_ledger_all
+    on public.loyalty_ledger for all
+    using (organization_id in (select * from public.fn_user_org_ids()))
+    with check (organization_id in (select * from public.fn_user_org_ids()));
+
+    -- D5: a proteção na MESMA transação. Sem esta linha a tabela nasce com a anon
+    -- key podendo ler tudo — `baseline.sql:4748` dá, por
+    -- `alter default privileges`, privilégio total a `anon` no que nasce depois.
+    perform public.fn_proteger_modulo_provisionado();
+  end
+$f$;
+revoke execute on function public.fn_financeiro_provisionar() from public, anon, authenticated;
+grant execute on function public.fn_financeiro_provisionar() to service_role;
+
+comment on function public.fn_financeiro_provisionar() is
+  'Provisiona o schema do módulo financeiro/comanda (ADR-0002 D2): as cinco tabelas da comanda, que saem do baseline e nascem na instalação do módulo. Sem parâmetro e com EXECUTE só de service_role (D4); termina em fn_proteger_modulo_provisionado() para a tabela nascer protegida na mesma transação (D5).';
+
+-- A DEDUPE da 0352, guardada por `to_regclass`: onde a tabela não existe, o
+-- comando é no-op; onde existe, garante que `sales_agendamento_unico_idx` (dentro
+-- da provisionadora) possa nascer num banco que já rodou a 0351 sem ele.
+do $dedupe$
+begin
+  if to_regclass('public.sales') is not null then
+    update public.sales s
+       set appointment_id = null
+     where s.appointment_id is not null
+       and s.status <> 'cancelled'
+       and exists (
+         select 1 from public.sales anterior
+          where anterior.appointment_id = s.appointment_id
+            and anterior.organization_id = s.organization_id
+            and anterior.status <> 'cancelled'
+            and (anterior.created_at, anterior.id) < (s.created_at, s.id)
+       );
+  end if;
+end
+$dedupe$;
 
 -- ---- Exclusão de contato com turno de follow-up: ficha inteira (migration 0488) ----
 -- Issue #1862: a rota apagava `messages`, `conversations` e `contacts` em três
