@@ -64,6 +64,12 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
   const msg = data as MessageMediaRow | null;
   if (!msg?.media_url) return { consumer_key, status: "skipped", detail: "no media_url" };
   if (msg.media_storage_path) return { consumer_key, status: "skipped", detail: "already stored" };
+  // A retenção marcou `metadata.media_status='expired'` (migration 0526): a mídia
+  // foi retirada por política, nem `media_url` nem `media_storage_path` devem
+  // voltar. NÃO tentar baixar de novo do provedor o que expirou (#1534).
+  if ((msg.metadata as Record<string, unknown> | null)?.media_status === "expired") {
+    return { consumer_key, status: "skipped", detail: "expired by retention" };
+  }
 
   const markStatus = async (media_status: "stored" | "failed", patch: Record<string, unknown> = {}) => {
     const { error: updErr } = await admin

@@ -57,15 +57,34 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // Filtro explícito de organization_id por doutrina (defense-in-depth).
   const { data: msg, error } = await supabase
     .from("messages")
-    .select("id, media_url, media_mime, media_storage_path, channel_session_id")
+    .select("id, media_url, media_mime, media_storage_path, metadata, channel_session_id")
     .eq("id", messageId)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (error) {
     return fail("internal_error", t("Erro ao buscar mensagem."), 500, { requestId });
   }
-  if (!msg || (!msg.media_storage_path && !msg.media_url)) {
+  if (!msg) {
     return fail("not_found", t("Mensagem sem mídia."), 404, { requestId });
+  }
+  if (!msg.media_storage_path && !msg.media_url) {
+    // A mídia foi podada pela retenção (o marcador `expired` da migration 0526 é
+    // a prova escrita). 404 seria "não há o que servir" e deixaria a tela cair
+    // no aviso genérico; 410 diz a verdade — o recurso EXISTIU e foi retirado
+    // por política. O aceite do #1534 manda a rota NÃO buscar de novo do
+    // provedor o que expirou: aqui nem um nem outro caminho roda, porque não há
+    // `media_url` para o fallback seguir.
+    const meta = (msg.metadata ?? {}) as Record<string, unknown>;
+    const expirada = meta.media_status === "expired";
+    const dias = typeof meta.media_retention_days === "number" ? meta.media_retention_days : null;
+    return fail(
+      expirada ? "media_expired" : "not_found",
+      expirada && dias !== null
+        ? t("Mídia apagada pela política de retenção ({n} dias)").replace("{n}", String(dias))
+        : t("Mídia apagada pela política de retenção."),
+      expirada ? 410 : 404,
+      { requestId },
+    );
   }
 
   if (msg.media_storage_path) {

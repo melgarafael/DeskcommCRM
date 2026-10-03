@@ -110,6 +110,13 @@ export const tenantSchema = z.object({
   locale: z.enum(LOCALES),
   currency: z.enum(MOEDAS),
   media_retention_days: z.coerce.number().int().min(30).max(3650),
+  /**
+   * OPT-IN da retenção de mídia (issue #1534, migration 0526). `false` na
+   * organização existente (ela só começa a expirar depois de ligar e confirmar
+   * na tela); `true` na nova. A aplicação é a do banco, mas o botão que o liga
+   * vive aqui: sem este campo a tela prometeria o que a coluna não grava.
+   */
+  media_retention_enforced: z.boolean(),
   dpo_email: z
     .string()
     .email()

@@ -17,6 +17,7 @@ import type { Message } from "@/lib/types/messaging";
 import { lerRemetenteDeGrupo, rotuloDoRemetente } from "@/lib/messaging/remetente-de-grupo";
 import { CitationButton } from "@/components/ai/CitationButton";
 import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
+import { MediaUnavailable } from "@/components/inbox/media/MediaUnavailable";
 import { ContactCard } from "@/components/inbox/media/ContactCard";
 import { LocationCard } from "@/components/inbox/media/LocationCard";
 import { localizacaoDaMensagem } from "@/lib/messaging/localizacao";
@@ -100,6 +101,23 @@ export function MessageBubble({
   const time = format(new Date(message.sent_at), "HH:mm", { locale: localeDaData });
   const isFailed = message.status === "failed";
   const hasMedia = Boolean(message.media_url || message.media_storage_path);
+  // A retenção marcou `metadata.media_status = 'expired'` (migration 0526) e a
+  // poda anulou os DOIS campos — a partir daí `hasMedia` é false e esta mensagem
+  // de mídia perde o render. O aviso é o do issue #1534.
+  const mediaExpirada = (message.metadata as Record<string, unknown> | null)?.media_status === "expired";
+  // O texto do aviso carrega os DIAS que a organização configurou — a 0526
+  // guarda `media_retention_days` (já com o piso de 30) junto do marcador,
+  // porque a bolha não tem acesso à configuração da organização e "por política"
+  // sem o número é uma promessa sem medida. Sem o campo (mensagem marcada por
+  // uma versão anterior), o aviso genérico.
+  const diasDaRetencao = (() => {
+    const meta = message.metadata as Record<string, unknown> | null;
+    return typeof meta?.media_retention_days === "number" ? meta.media_retention_days : null;
+  })();
+  const avisoDeExpiracao =
+    diasDaRetencao !== null
+      ? t("Mídia apagada pela política de retenção ({n} dias)").replace("{n}", String(diasDaRetencao))
+      : t("Mídia apagada pela política de retenção.");
   const isContact = message.type === "contact";
   // Pino com coordenadas: o cartão substitui o corpo, que é só o mesmo link em texto.
   const localizacao = localizacaoDaMensagem(message);
@@ -378,7 +396,13 @@ export function MessageBubble({
               </div>
             )}
 
-            {isContact && !hasMedia && (
+            {!hasMedia && mediaExpirada && (
+              <div className={cn(message.body && "mb-1")}>
+                <MediaUnavailable kind={avisoDeExpiracao} />
+              </div>
+            )}
+
+            {isContact && !hasMedia && !mediaExpirada && (
               <div className={cn(message.body && isContact && "mb-1")}>
                 <ContactCard message={message} />
               </div>
