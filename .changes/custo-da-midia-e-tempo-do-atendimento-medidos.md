@@ -1,0 +1,10 @@
+---
+impacto: capacidade_nova
+secao: adicionado
+titulo: O gasto de IA com fotos, áudios e vídeos passa a aparecer em Uso de IA e em Execuções
+---
+Até aqui, descrever a foto que o cliente mandou, transcrever o áudio dele e ler os quadros de um vídeo eram chamadas pagas que não deixavam rastro: não entravam na tela de Uso de IA, não apareciam em Execuções e não contavam para o teto de orçamento. Agora cada uma dessas chamadas grava uma linha, nos pontos "Ver a imagem do cliente" e "Ouvir o áudio do cliente", e a que falha no provedor também aparece em Execuções, como erro. A imagem aparece com tokens e custo quando o modelo está na tabela de preços do sistema. O áudio aparece com a contagem e o tempo de cada chamada, mas sem valor, porque a transcrição é cobrada por minuto e esse preço o sistema ainda não conhece; por isso o áudio não conta para o teto, e também não acende o aviso de "preço do modelo desconhecido" no cartão de Uso de IA. Quando a leitura é recusada antes de sair (endereço não aceito, ou chave da instalação num endereço da empresa), nada é gravado, porque nada foi cobrado.
+
+As fotos e os quadros de vídeo passam a somar no gasto do mês, e é essa soma que decide a parada da IA. Não é custo novo, é custo que já existia e não aparecia. Mas, se você ligou "Parar a IA ao chegar no limite" com um valor escolhido olhando o número antigo, a IA pode parar mais cedo no mês do que parava, sobretudo onde os clientes mandam muita foto. Você é avisado na Central antes da parada; ainda assim, vale conferir o limite em Uso de IA depois de atualizar. A leitura de foto em si não é barrada pelo limite: ela continua acontecendo, e sendo contada, depois que a IA parou.
+
+O worker também passa a gravar, para cada atendimento, quanto ele esperou na fila e quanto durou. O novo guia `docs/runbooks/medir-custo-e-latencia-da-ia.md` traz as consultas prontas: custo e cache por ponto, atendimentos por dia e custo médio de cada um, e o tempo até a primeira resposta da IA, com a espera proposital antes de responder (a janela que aguarda o cliente terminar de escrever e a pausa que imita digitação) separada da demora de verdade.

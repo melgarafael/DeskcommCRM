@@ -22,6 +22,7 @@ vi.mock("@/lib/logger", () => ({
 }));
 
 import { getBudgetStatus } from "@/lib/ai/budget/check";
+import { PONTO_TRANSCRICAO_DE_AUDIO } from "@/lib/ai/pontos/registro";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -68,6 +69,7 @@ function fazerAdmin(opts: {
     const chain: any = {
       select: (...a: unknown[]) => registra("select", a),
       eq: (...a: unknown[]) => registra("eq", a),
+      neq: (...a: unknown[]) => registra("neq", a),
       is: (...a: unknown[]) => registra("is", a),
       gte: (...a: unknown[]) => registra("gte", a),
       maybeSingle: async () => ({ data: tabela === "ai_budgets" ? LINHA : null, error: null }),
@@ -128,6 +130,25 @@ describe("o furo de medição é medido, não presumido", () => {
       expect(inicio.getUTCMonth()).toBe(agora.getUTCMonth());
       expect(inicio.getUTCFullYear()).toBe(agora.getUTCFullYear());
     });
+  });
+
+  it("não conta como modelo sem preço a transcrição nem a falha", async () => {
+    // As duas gravam `cost_cents` nulo por construção: a transcrição é cobrada
+    // por minuto e sem tokens, a falha não cobrou token nenhum. Contá-las fazia
+    // o card dizer "o produto não sabe o preço do modelo em uso... a parada pode
+    // não acontecer" a toda organização que recebeu um áudio no mês — com o
+    // modelo do turno precificado e a parada funcionando.
+    const filtros = instalar({ chamadasSemPreco: 0 });
+    await getBudgetStatus(ORG);
+    const llm = filtros["llm_calls"] ?? [];
+    expect(
+      llm.some((f) => f.metodo === "neq" && f.args[0] === "purpose" && f.args[1] === PONTO_TRANSCRICAO_DE_AUDIO),
+      "a transcrição entra na contagem e acende o aviso de modelo sem preço",
+    ).toBe(true);
+    expect(
+      llm.some((f) => f.metodo === "eq" && f.args[0] === "status" && f.args[1] === "ok"),
+      "a linha de falha entra na contagem e acende o aviso de modelo sem preço",
+    ).toBe(true);
   });
 
   it("com chamadas sem preço no mês, o contrato avisa", async () => {

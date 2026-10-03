@@ -484,8 +484,8 @@ export async function startWorker(
         }
       }
       try {
-        const wrote = await recordRunMetrics(pool, job);
-        if (wrote > 0) {
+        const llmCalls = await recordRunMetrics(pool, job);
+        if (llmCalls > 0) {
           await evaluateCacheHitAlert(pool, job.organization_id, cacheAlertKnobs);
         }
       } catch (metricsErr) {

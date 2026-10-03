@@ -9,6 +9,9 @@ import type pg from "pg";
 
 import { extractPdfText } from "@/lib/ai/rag/extractors/pdf";
 import { visaoEmVigor } from "@/lib/ai/pontos/capacidade-em-vigor";
+import { PONTO_TRANSCRICAO_DE_AUDIO, PONTO_VISAO_DE_IMAGEM } from "@/lib/ai/pontos/registro";
+import { costCents } from "@/lib/agent-engine/edge/llm/pricing";
+import { normalizarErro } from "@/lib/agent-engine/edge/llm/run-model-call";
 import { resolveOrgLlmConfig, type LlmEdgeConfig } from "@/lib/agent-engine/edge/llm/credentials";
 import { createDefaultRegistry } from "@/lib/agent-engine/edge/llm/providers";
 import { createPool } from "@/lib/agent-engine/db/pool";
@@ -21,6 +24,7 @@ import {
   apiTranscriptionProvider,
   idiomasDaTranscricao,
   modeloDeTranscricaoEmVigor,
+  type TranscriptionProvider,
 } from "@/lib/messaging/media/transcription";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -469,18 +473,47 @@ function buildDeriveDeps(
       await avisarMidiaNaoLida(orgId, "imagem", `o provedor ${llm.provider} não está disponível nesta instalação`);
       return MARCADOR_NAO_LIDA;
     }
-    const res = await generateText({
-      model: factory(llm.apiKey, llm.defaultModel ?? "", baseUrlDaVisao ?? undefined),
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "Descreva objetivamente esta imagem em 1-2 frases, em português, para um atendente de vendas entender o que o cliente enviou." },
-            // AI SDK v7: file part com mediaType (o antigo image part é deprecated).
-            { type: "file", data: buffer, mediaType: mime.split(";")[0]! },
-          ],
-        },
-      ],
+    const modelo = llm.defaultModel ?? "";
+    const inicio = Date.now();
+    let res: Awaited<ReturnType<typeof generateText>>;
+    try {
+      res = await generateText({
+        model: factory(llm.apiKey, modelo, baseUrlDaVisao ?? undefined),
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Descreva objetivamente esta imagem em 1-2 frases, em português, para um atendente de vendas entender o que o cliente enviou." },
+              // AI SDK v7: file part com mediaType (o antigo image part é deprecated).
+              { type: "file", data: buffer, mediaType: mime.split(";")[0]! },
+            ],
+          },
+        ],
+      });
+    } catch (err) {
+      registrarChamadaDeMidia(admin, orgId, () =>
+        linhaDeFalha(err, { purpose: PONTO_VISAO_DE_IMAGEM, provider: llm.provider, model: modelo, inicio }),
+      );
+      throw err;
+    }
+    registrarChamadaDeMidia(admin, orgId, () => {
+      const uso = {
+        inputTokens: res.usage.inputTokens ?? 0,
+        outputTokens: res.usage.outputTokens ?? 0,
+        cacheReadTokens: res.usage.inputTokenDetails.cacheReadTokens ?? 0,
+        cacheWriteTokens: res.usage.inputTokenDetails.cacheWriteTokens ?? 0,
+      };
+      return {
+        purpose: PONTO_VISAO_DE_IMAGEM,
+        provider: llm.provider,
+        model: modelo,
+        input_tokens: uso.inputTokens,
+        output_tokens: uso.outputTokens,
+        cache_read_tokens: uso.cacheReadTokens,
+        cache_write_tokens: uso.cacheWriteTokens,
+        cost_cents: costCents(modelo, uso),
+        latency_ms: Date.now() - inicio,
+      };
     });
     return res.text;
   };
@@ -509,16 +542,20 @@ function buildDeriveDeps(
   // própria OpenAI não pode exigir copiar a chave para o `.env`. O MODELO só
   // vale aqui com `TRANSCRIPTION_BASE_URL` vazio (ver `modeloDeTranscricaoEmVigor`).
   const idiomas = idiomasDaTranscricao(env.TRANSCRIPTION_LANGUAGES);
+  const modeloPadraoDeTranscricao = modeloDeTranscricaoEmVigor({
+    model: env.TRANSCRIPTION_MODEL,
+    apiKey: env.TRANSCRIPTION_API_KEY,
+    baseUrl: env.TRANSCRIPTION_BASE_URL,
+  });
   const transcricaoPadrao: DeriveDeps["transcriber"] = openaiKey
-    ? apiTranscriptionProvider({
-        apiKey: openaiKey,
-        model: modeloDeTranscricaoEmVigor({
-          model: env.TRANSCRIPTION_MODEL,
-          apiKey: env.TRANSCRIPTION_API_KEY,
-          baseUrl: env.TRANSCRIPTION_BASE_URL,
+    ? comCustoRegistrado(
+        apiTranscriptionProvider({
+          apiKey: openaiKey,
+          model: modeloPadraoDeTranscricao,
+          languages: idiomas,
         }),
-        languages: idiomas,
-      })
+        { admin, orgId, provider: "openai", model: modeloPadraoDeTranscricao },
+      )
     : semTranscricao;
   // O endereço do serviço de transcrição vem do .env da instalação e a chamada
   // leva a chave no cabeçalho: mesma recusa do endereço da visão, e antes de a
@@ -553,12 +590,22 @@ function buildDeriveDeps(
   const chaveDeTranscricao = env.TRANSCRIPTION_API_KEY;
   const transcriber: DeriveDeps["transcriber"] = chaveDeTranscricao
     ? transcriberDeServico(
-        apiTranscriptionProvider({
-          apiKey: chaveDeTranscricao,
-          baseUrl: env.TRANSCRIPTION_BASE_URL || undefined,
-          model: env.TRANSCRIPTION_MODEL || undefined,
-          languages: idiomas,
-        }),
+        comCustoRegistrado(
+          apiTranscriptionProvider({
+            apiKey: chaveDeTranscricao,
+            baseUrl: env.TRANSCRIPTION_BASE_URL || undefined,
+            model: env.TRANSCRIPTION_MODEL || undefined,
+            languages: idiomas,
+          }),
+          {
+            admin,
+            orgId,
+            // serviço compatível de terceiro: o nome do provedor não é sabido,
+            // e chute viraria estatística (mesma regra de log-invocation.ts)
+            provider: env.TRANSCRIPTION_BASE_URL ? "desconhecido" : "openai",
+            model: env.TRANSCRIPTION_MODEL || "whisper-1",
+          },
+        ),
       )
     : transcricaoPadrao;
   return {
@@ -567,6 +614,134 @@ function buildDeriveDeps(
     extractPdf: extractPdfText,
     // Onda 3.1: vídeo → ffmpeg (áudio+frames) reusando transcrição e visão da org.
     deriveVideo: (buffer) => deriveVideoText(buffer, { transcriber, describeImage }),
+  };
+}
+
+/** A linha de `llm_calls` de uma chamada deste worker, sem a organização. */
+interface ChamadaDeMidia {
+  purpose: typeof PONTO_VISAO_DE_IMAGEM | typeof PONTO_TRANSCRICAO_DE_AUDIO;
+  provider: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  /** null = preço desconhecido; 0 diria "grátis" à tela de uso e ao teto. */
+  cost_cents: number | null;
+  latency_ms: number;
+  /** Ausente = `ok`. */
+  status?: "erro";
+  error_code?: string;
+  error_message?: string;
+  http_status?: number | null;
+}
+
+/**
+ * A linha de uma chamada que SAIU e falhou no provedor. Sem ela a tabela que
+ * explica ficava vazia justo no caso que precisa de explicação (a mesma lição
+ * de `registrarFalha` em `run-model-call.ts`, cuja classificação é reusada para
+ * as duas telas darem o mesmo nome ao mesmo erro).
+ */
+function linhaDeFalha(
+  err: unknown,
+  d: { purpose: ChamadaDeMidia["purpose"]; provider: string; model: string; inicio: number },
+): ChamadaDeMidia {
+  return {
+    purpose: d.purpose,
+    provider: d.provider,
+    model: d.model,
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    cost_cents: null,
+    latency_ms: Date.now() - d.inicio,
+    status: "erro",
+    ...normalizarErro(err),
+  };
+}
+
+/**
+ * Grava em `llm_calls` uma chamada que JÁ saiu — visão, transcrição e os frames
+ * de vídeo, que passam pelas mesmas deps —, deu certo ou falhou. Sem esta linha
+ * o gasto de mídia ficava fora da tela de uso e do teto de orçamento, que leem
+ * `llm_calls`, e a falha ficava fora de Execuções.
+ *
+ * Insert direto, não `logInvocation`: o `InvocationKind` de lá espelha o CHECK
+ * de `ai_invocations` (invariante de vocabulário), e `llm_calls.purpose` não
+ * tem CHECK. Fire-and-forget: a linha de custo nunca derruba a derivação — e
+ * por isso a montagem também fica dentro do try.
+ */
+function registrarChamadaDeMidia(
+  admin: ReturnType<typeof createAdminClient>,
+  orgId: string,
+  montar: () => ChamadaDeMidia,
+): void {
+  try {
+    const linha = montar();
+    void Promise.resolve(
+      admin.from("llm_calls").insert({ organization_id: orgId, status: "ok", ...linha }),
+    ).then(
+      ({ error }) => {
+        if (error) {
+          logger.warn("[media-derive] o banco recusou a linha de custo", {
+            organization_id: orgId,
+            purpose: linha.purpose,
+            error: error.message,
+          });
+        }
+      },
+      (err: unknown) => {
+        logger.warn("[media-derive] não consegui gravar a linha de custo", {
+          organization_id: orgId,
+          purpose: linha.purpose,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      },
+    );
+  } catch (err) {
+    logger.warn("[media-derive] não consegui montar a linha de custo", {
+      organization_id: orgId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
+ * Embrulha o provedor que de fato chama o serviço pago. As recusas (sem chave,
+ * destino não aceito) ficam FORA deste embrulho, então não gravam linha.
+ * Transcrição é cobrada por minuto e o serviço não devolve tokens: o custo fica
+ * null, nunca 0, até existir preço por minuto.
+ */
+function comCustoRegistrado(
+  servico: TranscriptionProvider,
+  ctx: { admin: ReturnType<typeof createAdminClient>; orgId: string; provider: string; model: string },
+): TranscriptionProvider {
+  return {
+    transcribe: async (audio, mime) => {
+      const inicio = Date.now();
+      let texto: string;
+      try {
+        texto = await servico.transcribe(audio, mime);
+      } catch (err) {
+        registrarChamadaDeMidia(ctx.admin, ctx.orgId, () =>
+          linhaDeFalha(err, { purpose: PONTO_TRANSCRICAO_DE_AUDIO, provider: ctx.provider, model: ctx.model, inicio }),
+        );
+        throw err;
+      }
+      registrarChamadaDeMidia(ctx.admin, ctx.orgId, () => ({
+        purpose: PONTO_TRANSCRICAO_DE_AUDIO,
+        provider: ctx.provider,
+        model: ctx.model,
+        input_tokens: 0,
+        output_tokens: 0,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        cost_cents: null,
+        latency_ms: Date.now() - inicio,
+      }));
+      return texto;
+    },
   };
 }
 

@@ -1092,12 +1092,16 @@ Regra: resposta que não **nomeia o artefato concreto** não conta.
    num produto self-host, e um número que deriva sozinho. É decisão do dono do produto; o
    mínimo honesto (o rótulo dizer a unidade real) entra neste commit porque armar um teto
    contra um número lido 5x errado é estrangulamento por outra porta.
-2. **Gasto multimodal continua fora de qualquer teto.**
-   `workers/media-derive-worker.ts:238` chama `generateText` direto, sem `runModelCall`, e não
-   grava `llm_calls`. Transcrição de áudio e leitura de imagem/PDF — o normal de quem usa
-   WhatsApp, que é o canal primário — gastam dinheiro que nenhum teto vê e que não aparece na
-   tela. Se um dia entrar, entra como **degrau de aviso**, nunca bloqueio surpresa, porque a
-   condição 6 protege.
+2. **Gasto multimodal: a visão SOMA no teto, mas não é barrada por ele; a transcrição nem
+   soma.** (Atualizado depois deste design: o texto original dizia que o worker de mídia não
+   gravava `llm_calls`.) O worker grava uma linha por chamada que saiu, nos pontos
+   `visao_de_imagem` e `transcricao_de_audio`. A visão (foto e quadros de vídeo) leva custo
+   pela tabela de preços e entra em `fn_gasto_de_ia_do_mes` — logo, aproxima o teto do turno.
+   Mas o worker chama `generateText` direto, sem `runModelCall`, e não consulta o gate: depois
+   do teto, a mídia segue sendo lida e paga. A transcrição grava `cost_cents` nulo (cobrança
+   por minuto, sem preço conhecido) e não aproxima o teto. Para conferir na fonte:
+   `grep -n "PONTO_VISAO_DE_IMAGEM\|PONTO_TRANSCRICAO_DE_AUDIO\|cost_cents" workers/media-derive-worker.ts`.
+   A soma nova chega como **degrau de aviso** antes de bloquear, porque a condição 7 protege.
 3. **Modelo sem preço não consome teto.** `pricing.ts:14-19,34-37` casa por prefixo contra
    três chaves Claude e devolve `null` fora delas (o docstring diz isso com todas as letras).
    Id de OpenRouter vem prefixado por vendor (`anthropic/claude-…`, formato documentado em

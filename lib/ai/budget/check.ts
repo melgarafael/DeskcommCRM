@@ -34,6 +34,7 @@ import {
   type ChaveDeOrcamento,
   type ModoDeOrcamento,
 } from "@/lib/agent-engine/edge/llm/orcamento";
+import { PONTO_TRANSCRICAO_DE_AUDIO } from "@/lib/ai/pontos/registro";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -57,7 +58,8 @@ export interface BudgetStatus {
   enforcement_effective_at: string | null;
   /**
    * Há chamadas de IA NESTE MÊS cujo custo o produto não sabe calcular
-   * (`llm_calls.cost_cents is null`).
+   * (`llm_calls.cost_cents is null` numa linha `ok` que não é de transcrição —
+   * o porquê das duas exclusões está na consulta, em `getBudgetStatus`).
    *
    * ⚠️ É O FURO DEBAIXO DA PROTEÇÃO INTEIRA, e por isso ele é um campo do
    * contrato e não uma nota num doc. `pricing.ts` casa o `model` por id EXATO
@@ -165,11 +167,18 @@ export async function getBudgetStatus(orgId: string): Promise<BudgetStatus> {
     // O furo de medição, medido onde ele aparece: chamada do mês sem custo
     // conhecido. `idx_llm_calls_org_time (organization_id, created_at)` serve o
     // filtro; `head: true` não traz linha nenhuma.
+    //
+    // Duas linhas têm `cost_cents` nulo sem que o modelo seja desconhecido, e o
+    // aviso diria a quem lê que é: a de FALHA (o provedor recusou, zero token
+    // cobrado) e a de transcrição, cobrada por minuto e sem tokens — toda
+    // instalação de WhatsApp que recebe um áudio acenderia o aviso.
     admin
       .from("llm_calls")
       .select("id", { count: "exact", head: true })
       .eq("organization_id", orgId)
       .is("cost_cents", null)
+      .eq("status", "ok")
+      .neq("purpose", PONTO_TRANSCRICAO_DE_AUDIO)
       .gte("created_at", inicioDoMesUtc()),
   ]);
 

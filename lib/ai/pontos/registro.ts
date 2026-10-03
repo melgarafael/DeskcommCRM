@@ -170,6 +170,14 @@ export interface PontoDeIa {
   };
 }
 
+/**
+ * Ids dos dois pontos que gravam em `llm_calls` FORA do seam, por insert direto
+ * do worker de mídia — constante, para o `purpose` gravado e o id daqui não
+ * divergirem (a tela de Execuções rotula a linha pelo id).
+ */
+export const PONTO_TRANSCRICAO_DE_AUDIO = "transcricao_de_audio";
+export const PONTO_VISAO_DE_IMAGEM = "visao_de_imagem";
+
 export const PONTOS_DE_IA: readonly PontoDeIa[] = [
   {
     id: "agent_preview",
@@ -520,7 +528,7 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
 
   // ───────────────────────────── Ver e ouvir ───────────────────────────────
   {
-    id: "transcricao_de_audio",
+    id: PONTO_TRANSCRICAO_DE_AUDIO,
     rotulo: "Ouvir o áudio do cliente",
     oQueFaz: "Transforma o áudio que o cliente mandou em texto que o agente lê.",
     papel: "perceber",
@@ -546,10 +554,10 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     },
     sintomaDeFalha:
       "O cliente manda áudio e o agente responde como se não tivesse recebido nada.",
-    registraEm: "nenhum",
+    registraEm: "llm_calls",
   },
   {
-    id: "visao_de_imagem",
+    id: PONTO_VISAO_DE_IMAGEM,
     rotulo: "Ver a imagem do cliente",
     oQueFaz:
       "Descreve a foto, o print ou o comprovante que o cliente enviou, para o agente saber do que se trata.",
@@ -558,7 +566,7 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     emissor: "workers/media-derive-worker.ts",
     sintomaDeFalha:
       "O cliente manda uma foto do produto ou um comprovante e o agente age como se a imagem não existisse.",
-    registraEm: "nenhum",
+    registraEm: "llm_calls",
   },
 
   // ────────────────────────── Melhorar e testar ────────────────────────────
