@@ -44382,6 +44382,42 @@ end; $$;
 
 revoke execute on function public.fn_service_status(uuid,uuid,text,bigint) from public,anon,authenticated;
 grant execute on function public.fn_service_status(uuid,uuid,text,bigint) to service_role;
+-- ---- classificador do roteador nasce "Automático" (migration 0530) ----
+--
+-- `ai_routers.config` semeava `'classifier_model', 'claude-haiku-4-5'`: id fixo
+-- do Anthropic num produto multi-provedor. Numa organização configurada na
+-- OpenRouter, ele vencia o padrão da organização (precedência 3 de
+-- `decidirBinding`, `lib/ai/pontos/resolver.ts`) e ia para o endpoint errado —
+-- medido em 2026-10-02: 400 `claude-haiku-4-5 is not a valid model ID`, três
+-- vezes, e TODO turno caía no fallback do roteador. Na OpenRouter o modelo é
+-- `anthropic/claude-haiku-4.5`, com PONTO (catálogo público, 464 ids).
+--
+-- O default perde só `classifier_model` (`sticky` e `min_confidence` ficam): o
+-- roteador nasce em "Automático" e o seam resolve pelo painel de provedores,
+-- senão pelo padrão da organização. A cura só alcança a linha com a forma exata
+-- do seed E que quebrava: `classifier_model = 'claude-haiku-4-5'` (o único id
+-- semeado — `anthropic/claude-haiku-4-5` é escolha válida da Requesty, 0410),
+-- `classifier_provider` ausente (a tela grava os dois juntos) e organização fora
+-- do Anthropic (regra de `llmSettingsSchema`: provedor ausente, não-texto ou
+-- vazio vale 'anthropic'; lá o alias resolve, 0104, e o Haiku fica). Texto da
+-- cura idêntico ao da migration; o invariante executa ESTE bloco. Idempotente;
+-- não cria função, mas entra antes da varredura como todo apêndice.
+
+alter table public.ai_routers
+  alter column config set default jsonb_build_object(
+    'sticky', true,
+    'min_confidence', 0.6);
+
+update public.ai_routers r
+set config = r.config - 'classifier_model'
+from public.organizations o
+where o.id = r.organization_id
+  and r.config->>'classifier_model' = 'claude-haiku-4-5'
+  and coalesce(r.config->>'classifier_provider', '') = ''
+  and coalesce(
+        case when jsonb_typeof(o.settings->'llm'->'provider') = 'string'
+             then nullif(o.settings->'llm'->>'provider', '') end,
+        'anthropic') <> 'anthropic';
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
