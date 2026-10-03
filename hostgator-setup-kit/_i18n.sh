@@ -273,6 +273,8 @@ y, si de verdad es un Traefik, pon REVERSE_PROXY=traefik en el .env y vuelve a e
   ["  Rode 'bash hostgator-setup-kit/update.sh' quando a próxima versão sair."]="  Ejecuta 'bash hostgator-setup-kit/update.sh' cuando salga la próxima versión."
   ["⚠ Não consegui descobrir a última versão publicada (rede?)."]="⚠ No pude averiguar la última versión publicada (¿red?)."
   ["  Instalando pelo canal 'latest'. Depois rode: bash hostgator-setup-kit/update.sh"]="  Instalando por el canal 'latest'. Después ejecuta: bash hostgator-setup-kit/update.sh"
+  ["✖ Não há release numérica completa para ARM64, ou a WAHA escolhida não oferece ARM64."]="✖ No hay una release numérica completa para ARM64, o la WAHA elegida no ofrece ARM64."
+  ["  Confira registry, visibilidade das quatro imagens e WAHA_IMAGE; depois repita."]="  Revisa el registry, la visibilidad de las cuatro imágenes y WAHA_IMAGE; después repite."
 
   # ── install.sh: FIELDS[] — los prompts de la entrevista, vía field_at() ──
   ["Domínio do CRM (ex: crm.suaempresa.com.br)"]="Dominio del CRM (ej: crm.tuempresa.com.mx)"

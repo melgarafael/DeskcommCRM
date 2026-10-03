@@ -244,17 +244,20 @@ check "contêiner de OUTRO programa na mesma VPS → a instalação NÃO é real
 check "e riscv64 é recusada (rc=$RC, e != 0)" test "$RC" -ne 0
 check "a recusa é a do #1042" grep -q 'Use uma VPS x86_64/amd64 ou ARM64/aarch64' "$WORK/guarda.out"
 
-# Um `docker` que não responde (fora do PATH, daemon parado, sem permissão no
-# socket) devolve vazio, e vazio é "não achei" — a resposta que manda RECUSAR.
+# Um `docker` que não responde (daemon parado, sem permissão no socket) devolve
+# vazio, e vazio é "não achei" — a resposta que manda RECUSAR. Simulamos socket
+# indisponível: em hosts com Docker instalado em /usr/bin, PATH=/usr/bin:/bin
+# sozinho não o remove e este teste poderia perguntar ao daemon real.
 # O contrário seria adivinhar instalação a partir de um Docker que não falou.
 R3B="$WORK/caso3b"; mkdir -p "$R3B"; montar_pasta "$R3B/deskcommcrm" 0
 guarda "$R3B" riscv64
 : > "$DOCKER_LOG"
 ( cd "$R3B" && env -i PATH="/usr/bin:/bin" HOME="${HOME:-/root}" FAKE_ARCH=riscv64 \
+    DOCKER_HOST=unix:///tmp/deskcomm-teste-socket-inexistente.sock \
     bash -c '. "$0"
              if instalacao_real_do_kit_aqui; then echo REAL; else echo NOVA; fi' "$COMMON" \
 ) > "$WORK/sem-docker.txt" 2>&1
-check "sem docker no PATH, a instalação NÃO é inventada" \
+check "sem daemon Docker, a instalação NÃO é inventada" \
   grep -q '^NOVA$' "$WORK/sem-docker.txt"
 
 # Sem `.env` não há nem nome de projeto para procurar — e a pasta nem é uma

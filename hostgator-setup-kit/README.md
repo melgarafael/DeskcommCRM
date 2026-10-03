@@ -108,7 +108,9 @@ Owner/Admin. Não dá para hospedar vários clientes numa conta só.
   `linux/amd64` e `linux/arm64`; o instalador seleciona a variante oficial ARM64 NOWEB do WAHA.
   O modo com Supabase self-hosted na mesma VPS também funciona em ARM64: a versão upstream
   fixada pelo kit (`self-hosted/v0.8.1`) e as imagens dos seus 11 serviços têm manifestos
-  `linux/arm64`. Ao atualizar `SUPABASE_REF`, confira de novo os manifestos de todas as imagens.
+  `linux/arm64` na ref atualmente validada. O pré-voo descobre e testa a lista inteira
+  novamente a cada instalação; não presume que continuará com 11 serviços. Para Oracle
+  Ampere A1, siga o [runbook ARM64](../docs/runbooks/oracle-arm64.md).
 - **4 GB RAM recomendados.** A imagem é pré-buildada, então o servidor não compila nada e a
   stack SOBE com 2 GB — mas operar é outra coisa: são 7 contêineres, e o WAHA consome
   ~150 MB por sessão de WhatsApp além de ~300 MB de overhead do Node. Com 2 GB você roda
@@ -151,6 +153,12 @@ declare `REVERSE_PROXY=traefik` no `.env` — aí a escolha é sua e ele segue s
 | `reset-password.sh` | Redefine senha de um usuário |
 | `reset-mfa.sh` | Remove o MFA de um usuário travado |
 | `healthcheck.sh` | Diagnóstico dos serviços |
+| `preflight-upgrade.sh` | Sonda uma release numérica de um kit novo antes de usar o updater antigo |
+
+No ARM64, o instalador e o updater recusam antecipadamente uma release cujas quatro
+imagens do CRM ou a WAHA efetiva não tenham variante nativa. No single-server,
+também sondam as imagens fixadas do Supabase. O pré-voo não prova chamada de voz,
+entrega WhatsApp ou restauração de dados: essas jornadas exigem teste real.
 
 ## Automações e webhooks
 

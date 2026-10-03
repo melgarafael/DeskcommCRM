@@ -39,7 +39,7 @@ Se a resposta for "o cliente", a peça está errada e vira imagem publicada.
 
 | | **Nosso** | **Upstream** |
 |---|---|---|
-| Exemplos | `deskcommcrm`, `deskcomm-worker` | WAHA, Redis, Caddy, `serverless-redis-http`, `postgres` |
+| Exemplos | `deskcommcrm`, `deskcomm-worker`, `deskcomm-scheduler`, `deskcomm-voice-agent` | WAHA, Redis, Caddy, `serverless-redis-http`, `postgres` |
 | Quem constrói | nosso CI, uma vez por versão | terceiro, fora do nosso controle |
 | O que fazemos | publicamos com procedência e versão | **referenciamos com tag pinada** (ver ressalva) |
 | O que **nunca** fazemos | publicar da máquina de um dev | republicar, embalar ou copiar |
@@ -102,8 +102,12 @@ OCI — no mínimo `source`, `revision`, `version`, `licenses` — e é constru�
   Rastreabilidade:** sem `org.opencontainers.image.revision` não existe resposta para "que
   código está rodando neste cliente?", e o suporte vira adivinhação.
 - **Verificação:** o job **`imagens-ok`** de `publish-image.yml` reprova quando qualquer uma
-  das três imagens não constrói. Ele existe porque a matriz gera um nome de check por imagem,
-  e exigir os três pelo nome faria uma quarta imagem, um dia, escapar do gate em silêncio.
+  das quatro imagens não constrói. Ele existe porque a matriz gera um nome de check por imagem;
+  exigir nomes individuais deixaria uma imagem nova escapar do gate em silêncio. A promoção
+  de `stable` também exige o índice AMD64 e ARM64 das quatro imagens, e o PR sobe o
+  voice-agent em runner nativo. A ref fixada do Supabase single-server é conferida quando
+  ela muda (`preflight_supabase_da_ref`), não na promoção: uma falha de rede ou do upstream
+  ali seguraria a release de todos. Um manifesto prova distribuição, não chamada real.
 
   > **Ativado.** `imagens-ok` **é** required check da `main`. Medido em 2026-08-14:
   >
@@ -137,14 +141,23 @@ OCI — no mínimo `source`, `revision`, `version`, `licenses` — e é constru�
 Duas exceções, ambas deliberadas e ambas com aviso na tela — porque falhar fechado aqui
 seria recusar instalar por não conseguir resolver um número:
 
-1. **Sem rede ou sem tag no remoto**, cai em `latest` e avisa. Trocar previsibilidade por
-   disponibilidade é o negócio errado numa instalação que já começou.
+1. **Legado AMD64 sem rede ou sem tag no remoto** pode cair em `latest` com aviso para
+   recuperação. Em instalação/upgrade ARM64 novo, a ausência de release numérica e
+   manifesto compatível **recusa antes de alterar** a instalação: emulação e build local
+   não são saídas silenciosas. Não confunda o fallback legado com o caminho Oracle.
 2. **Quem preenche o `.env` à mão** a partir do template recebe `stable` — o piso seguro
    para quem não vai rodar a entrevista. `--yes` com o template preserva esse valor.
 
-O que **nenhum** caminho faz é pinar numa versão sem antes conferir que as três imagens
+O que **nenhum** caminho faz é pinar numa versão sem antes conferir que as quatro imagens
 existem lá: a tag do git nasce minutos antes das imagens, e `deskcomm-worker:1.2.1` nunca
 vai existir porque a v1.2.1 é anterior à criação desse pacote.
+
+Em `linux/arm64`, o kit confere as quatro imagens próprias **e a WAHA efetiva** antes
+do backup/checkout/banco. No single-server, descobre os serviços da ref oficial
+fixada do Supabase e sonda cada imagem na plataforma, sem presumir contagem estática.
+WAHA Plus/customizada continua decisão de quem a opera. Para um primeiro upgrade
+feito a partir de kit antigo, use `preflight-upgrade.sh` da release de destino antes
+do updater antigo; o procedimento está no [runbook Oracle](../runbooks/oracle-arm64.md).
 
 - **Por quê:** três consequências de uma só causa. **(a)** A versão do cliente para de mudar
   por acidente — um `up -d` rodado à mão semanas depois não troca o app sob o banco. **(b)**
@@ -165,7 +178,7 @@ vai existir porque a v1.2.1 é anterior à criação desse pacote.
   meses sem nenhum. `hostgator-setup-kit/test-validators.sh` roda o `install.sh` de verdade
   contra um remoto local com tags conhecidas e cobra o `.env` pinado na maior delas (a ordem
   alfabética escolheria `v1.9.0` sobre `v1.10.0` — erro que só apareceria na décima release).
-  `tests/shell/update-guard.test.sh` prova que o `update.sh` grava as **três** imagens na
+  `tests/shell/update-guard.test.sh` prova que o `update.sh` grava as **quatro** imagens na
   mesma versão, no `.env`, sem duplicar chave.
 
 ### 4. Tag de versão é imutável; canal é móvel
@@ -379,6 +392,10 @@ Um bump de versão **não pode** exigir:
 
 ## Checklist de release
 
+O corte e a tag são gerados pelo CI a partir do PR de release, conforme
+[`versionamento.md`](versionamento.md). **Não** execute `git tag` ou
+`gh release create` manualmente para publicar esta mudança.
+
 Verificável, na ordem. Nenhum item é "conferir se está tudo bem".
 
 A sonda do registry vem primeiro porque os itens 3 e 6 dependem dela — e porque `curl` cru no
@@ -412,19 +429,22 @@ do banco. É o passo que mais trava na estreia de uma imagem nova.
 [ ] 4. Os pins upstream foram revisitados: `waha`, `srh`, `redis`, `caddy`, `postgres`.
        Bumpar ou confirmar que ficam — congelar sem revisar é como o `srh` ficou
        três versões atrás sem ninguém decidir isso
-[ ] 5. `git tag vX.Y.Z && git push origin vX.Y.Z` — a partir de um commit da `main`
+[ ] 5. PR de release aprovado e merged na `main`; o CI cria `vX.Y.Z` a partir
+       desse commit, conforme `docs/doctrine/versionamento.md`
 [ ] 6. O run de publicação ficou verde:
        gh run list --workflow=publish-image.yml --limit 3
-[ ] 7. As TRÊS imagens existem E são públicas nesta versão:
-       for i in deskcommcrm deskcomm-worker deskcomm-scheduler; do
-         echo "$i: $(ghcr_status $i X.Y.Z)"; done      → 200 nas três
+[ ] 7. As QUATRO imagens existem E são públicas nesta versão, com AMD64 e ARM64:
+       for i in deskcommcrm deskcomm-worker deskcomm-scheduler deskcomm-voice-agent; do
+         echo "$i: $(ghcr_status $i X.Y.Z)"; done      → 200 nas quatro
+       Para cada uma, `docker buildx imagetools inspect` deve listar as duas plataformas.
        403 em alguma? Torne o pacote público ANTES de seguir
 [ ] 8. A imagem reporta a versão certa:
        docker run --rm ghcr.io/melgarafael/deskcommcrm:X.Y.Z \
          node -e 'console.log(process.env.APP_VERSION)'   → X.Y.Z
-[ ] 9. `gh release create vX.Y.Z` com as notas do CHANGELOG
-[ ] 10. SÓ AGORA: `stable` e X.Y.Z são o MESMO digest, nas três imagens:
-        for i in deskcommcrm deskcomm-worker deskcomm-scheduler; do
+[ ] 9. O workflow de release gerou a GitHub Release e o CHANGELOG da versão;
+       não crie uma segunda release manualmente
+[ ] 10. SÓ AGORA: `stable` e X.Y.Z são o MESMO digest, nas quatro imagens:
+        for i in deskcommcrm deskcomm-worker deskcomm-scheduler deskcomm-voice-agent; do
           for t in X.Y.Z stable; do
             echo -n "$i:$t "; docker buildx imagetools inspect \
               ghcr.io/melgarafael/$i:$t --format '{{.Manifest.Digest}}'; done; done
@@ -432,7 +452,7 @@ do banco. É o passo que mais trava na estreia de uma imagem nova.
         Não bateu? Alguma coisa republicou depois do push da tag. NÃO siga:
         um canal apontando para build diferente da versão é o invariante 3
         quebrado dentro de casa.
-[ ] 11. Apagar tags de branch dos três pacotes — `docs-doutrina-packaging` e
+[ ] 11. Apagar tags de branch dos quatro pacotes — `docs-doutrina-packaging` e
         qualquer outra que tenha nascido de um `workflow_dispatch` de ensaio.
         Tag de branch é artefato de trabalho: se ficar, vira canal órfão que
         alguém pina por engano achando que é release, e ela nunca mais se move.
@@ -474,7 +494,7 @@ parque instalado** percorre, e é o único que a suíte de CI não exercita.
 |---|---|---|
 | CI (mecânico) | `imagens-ok` em `publish-image.yml` | imagem quebrada **reprova o merge** — é required check da `main`. Meça antes de confiar: `gh api repos/melgarafael/DeskcommCRM/branches/main/protection --jq '.required_status_checks.contexts'` |
 | CI (mecânico) | `tests/unit/packaging-artefato-do-cliente.test.ts` | serviço `build:`-only, pin upstream solto, `pull_policy` trocado e versão que mente reprovam |
-| CI (mecânico) | `tests/shell/update-guard.test.sh` | atualização que não pina as três imagens reprova |
+| CI (mecânico) | `tests/shell/update-guard.test.sh` | atualização que não pina as quatro imagens reprova |
 | CI (mecânico) | `hostgator-setup-kit/test-validators.sh` | instalação que nasce em tag móvel reprova |
 | Gate de sessão | item 15 do Definition of Done (`CLAUDE.md`) | nenhuma task de imagem/compose/kit fecha sem responder |
 | Revisão | bloco de packaging em `CONTRIBUTING.md` | contribuidor externo sabe a régua antes do PR |
