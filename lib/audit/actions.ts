@@ -1013,6 +1013,14 @@ export const AUDIT_ACTIONS = [
   // A identidade da Página/WABA que a Meta exige no Purchase de clique-para-WhatsApp
   // (#2098): gravada pela tela de Conversões, em `organizations.settings.conversions`.
   "conversions.meta_identity_updated",
+
+  // O servidor MCP externo registrado pela instalação (#2147): gravado (ou
+  // apagado, com `registrado: false` no metadata) em
+  // `organizations.settings.mcp_externo`. É mutação de TENANT — o endereço que
+  // o agente passa a consultar vem de uma pessoa com poder para instalar —, e
+  // por isso vai com `organization_id` e `resource_id` = uuid da org. A CHAVE
+  // do servidor nunca entra aqui: o metadata traz endpoint e forma.
+  "org.mcp_externo_registrado",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

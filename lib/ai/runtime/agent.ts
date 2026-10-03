@@ -49,6 +49,7 @@ import { sendFinalResponse } from "./finalize";
 import { finalizeHandoff } from "./handoff";
 import { loadHistoryWithBudget } from "./history";
 import { mintEphemeralToken, revokeEphemeralToken } from "./mcp_token";
+import { carregarServidorMcpExterno } from "@/lib/mcp/servidor-externo/carregar";
 import { pickToolsFromMcp, type RuntimeHandoffSignal } from "./tools";
 import { modulosLigados } from "@/lib/instalacao/modulos";
 import { capacidadesDaOrganizacao } from "@/lib/organizacao/capacidades";
@@ -504,6 +505,10 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
       supabase: admin,
     };
     const handoffSignal: RuntimeHandoffSignal = { triggered: false };
+    // #2147 — servidor MCP externo que a instalação registrou. `null` quando
+    // não há registro (ou o servidor não respondeu): o turno nem abre rede, e
+    // as ferramentas de antes continuam sendo as únicas.
+    const servidorExterno = await carregarServidorMcpExterno(admin, run.organization_id);
     const tools = pickToolsFromMcp({
       supabase: admin,
       ctx,
@@ -516,6 +521,7 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
       modulosLigados: await modulosLigados(admin),
       capacidadesLigadas: await capacidadesDaOrganizacao(admin, run.organization_id),
       handoffSignal,
+      ...(servidorExterno ? { servidorMcpExterno: servidorExterno } : {}),
     });
 
     // 8) Load history with budget.

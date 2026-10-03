@@ -233,6 +233,12 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
       "nome do servidor MCP, que o cliente (Claude Desktop e afins) grava na própria configuração. Renomear derruba as conexões já configuradas de quem usa",
     marcas: ["deskcomm-crm"],
   },
+  "lib/mcp/servidor-externo/chamada.ts": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "clientInfo do handshake `initialize` do MCP que este cliente manda ao servidor REMOTO: ele registra quem conectou e é comum haver regra de acesso por identificação do cliente lá do lado. Não é texto de interface — a tela nunca mostra — e renomear muda a identidade reportada no fio do protocolo",
+    marcas: ["deskcomm-crm"],
+  },
   "lib/supabase/admin.ts": {
     categoria: "PROTOCOLO",
     motivo:

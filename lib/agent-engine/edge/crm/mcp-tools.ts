@@ -19,6 +19,7 @@ import { claimOfJob } from '@/lib/agent-engine/queue/claim';
  */
 import type { Tool } from 'ai';
 
+import { carregarServidorMcpExterno } from '@/lib/mcp/servidor-externo/carregar';
 import { pickToolsFromMcp, type RuntimeHandoffSignal } from '@/lib/ai/runtime/tools';
 import { mintEphemeralToken, revokeEphemeralToken } from '@/lib/ai/runtime/mcp_token';
 import { IDS_DO_HARNESS, motivoDoHarness } from '@/lib/mcp/tools/ferramentas-do-harness';
@@ -126,6 +127,10 @@ export async function buildMcpTurnTools(
   // O engine não usa o sinal de handoff da ponte (a tool está bloqueada) — dummy.
   const handoffSignal: RuntimeHandoffSignal = { triggered: false };
 
+  // #2147 — servidor MCP externo registrado pela instalação; `null` = sem
+  // registro e nenhuma chamada de rede.
+  const servidorExterno = await carregarServidorMcpExterno(cfg.supabase, ids.organizationId);
+
   const tools = pickToolsFromMcp({
     supabase: cfg.supabase,
     ctx,
@@ -143,6 +148,7 @@ export async function buildMcpTurnTools(
     modulosLigados: await modulosLigados(cfg.supabase),
     capacidadesLigadas: await capacidadesDaOrganizacao(cfg.supabase, ids.organizationId),
     ...(ids.contactId ? { contatoDoTurno: ids.contactId } : {}),
+    ...(servidorExterno ? { servidorMcpExterno: servidorExterno } : {}),
   });
 
   return {
