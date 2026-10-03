@@ -16,6 +16,8 @@
  *  já dispara via evento `ai.sentiment_alert` emitido pelo sentiment worker.)
  */
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 import {
@@ -32,6 +34,77 @@ export function checkG1(body: string): boolean {
 export function checkG4Legal(body: string): boolean {
   if (!body) return false;
   return G4_LEGAL_REGEX.test(body);
+}
+
+/**
+ * A PREFERÊNCIA DA ORGANIZAÇÃO sobre o G4 jurídico — `organizations.settings.handoff.g4_juridico`.
+ *
+ * Guardada em `organizations.settings` (jsonb) porque é o mecanismo que o repo
+ * JÁ usa por organização (`settings.jev`, `settings.llm`, `settings.proposals`,
+ * `settings.routing`, …) — nada de migration nova para um booleano (medido na
+ * #2097; ver `lib/ai/decisao/config.ts`, que documenta o mesmo argumento).
+ *
+ * SÓ o `false` booleano desliga. Ausente, string `"false"`, número, objeto
+ * torto ou `settings` que não é objeto = LIGADO: quem não configurou nada
+ * continua com exatamente o resultado de hoje, e um valor escrito errado não
+ * pode silenciar o gate. É o mesmo "falha fechada" de `capacidadesLigadas`.
+ *
+ * Pura — não consulta banco; a leitura é `checkG4LegalNaOrganizacao`.
+ */
+export function g4JuridicoLigado(settings: unknown): boolean {
+  const raiz =
+    settings !== null && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : null;
+  const handoff =
+    raiz?.handoff !== null && typeof raiz?.handoff === "object" && !Array.isArray(raiz.handoff)
+      ? (raiz.handoff as Record<string, unknown>)
+      : null;
+  return handoff?.g4_juridico !== false;
+}
+
+/**
+ * G4 com a preferência da organização (#2097) — é ela quem o worker chama.
+ *
+ * A ordem das checagens NÃO muda: a mesma gate, o mesmo texto, o mesmo motivo
+ * de handoff (`legal_mention`). O que muda é quem decide se ela vale.
+ *
+ * Duas decisões de desenho, ambas medidas:
+ *
+ * 1. **O regex roda ANTES do banco.** `G4_LEGAL_REGEX.test` é de custo zero, e
+ *    a grande maioria das mensagens não tem vocabulário jurídico — nesses casos
+ *    NENHUMA leitura extra acontece, então o custo por mensagem é o de antes.
+ * 2. **Não li = ligado.** Erro de banco, linha ausente ou exceção voltam
+ *    `true` (o resultado de hoje): uma leitura recusada não pode transformar
+ *    "menção a Procon" em resposta automática da IA por acidente — é o lado
+ *    conservador da mesma falha fechada de `capacidadesDaOrganizacao`, mas no
+ *    sentido inverso porque aqui o estado padrão é o comportamento atual.
+ *
+ * `db` é passado (e não construído aqui) para o teste unitário poder usar um
+ * banco falso; no worker é o `createAdminClient()` de sempre — service role,
+ * com o filtro `.eq("id", …)` que já isola a organização.
+ */
+export async function checkG4LegalNaOrganizacao(
+  db: SupabaseClient,
+  organizationId: string,
+  body: string,
+): Promise<boolean> {
+  if (!checkG4Legal(body)) return false;
+  try {
+    const { data, error } = await db
+      .from("organizations")
+      .select("settings")
+      .eq("id", organizationId)
+      .maybeSingle();
+    if (error) return true;
+    return g4JuridicoLigado((data as { settings?: unknown } | null)?.settings);
+  } catch (err) {
+    logger.warn("[handoff] checkG4LegalNaOrganizacao falhou — mantendo o G4 ligado", {
+      organization_id: organizationId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return true;
+  }
 }
 
 export interface CheckG3Input {

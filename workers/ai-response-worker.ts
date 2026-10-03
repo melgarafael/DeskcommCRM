@@ -40,7 +40,7 @@ import { renderSystemPrompt } from "@/lib/ai/render-system-prompt";
 import { triggerHandoff } from "@/lib/ai/handoff/orchestrator";
 import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
 import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
-import { checkG1, checkG3, checkG4Legal, checkG4Stage } from "@/lib/ai/handoff/triggers";
+import { checkG1, checkG3, checkG4LegalNaOrganizacao, checkG4Stage } from "@/lib/ai/handoff/triggers";
 import type {
   BotContext,
   BotResponse,
@@ -148,7 +148,11 @@ export async function processMessageReceived(row: EventRow): Promise<ProcessResu
     return { status: "skipped", reason: "handoff_g1_requested_human" };
   }
 
-  if (checkG4Legal(ctx.inbound_body)) {
+  // A preferência é da ORGANIZAÇÃO (#2097): quem não configurou nada continua
+  // com o G4 ligado e cai em handoff exatamente como antes — só o `false`
+  // explícito em `organizations.settings.handoff.g4_juridico` desliga. A ordem
+  // das checagens e o motivo de handoff não mudam.
+  if (await checkG4LegalNaOrganizacao(createAdminClient(), ctx.organization_id, ctx.inbound_body)) {
     await triggerHandoff({
       conversationId: ctx.conversation_id,
       serviceBoundary: ctx.serviceBoundary,
