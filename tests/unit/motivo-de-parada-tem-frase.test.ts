@@ -110,6 +110,13 @@ const ORIGENS: DeclaracaoDeOrigem[] = [
       "a recusa da tarefa (sem alvo, sem dono, título vazio, falha de gravação) chega à tela pelo `reason` do resultado; os códigos possíveis são quatro e estão escritos no tipo ResultadoDaTarefa",
     produtor: { arquivo: "lib/tarefas/criar-tarefa.ts" },
   },
+  {
+    arquivo: "lib/automation/actions/apply-task-plan.ts",
+    expressao: "resultado.codigo",
+    porque:
+      "a recusa do PLANO de tarefas (#1752 — plano inexistente, sem alvo, sem dono, título vazio, falha de gravação) chega à tela pelo `reason` do resultado; os códigos possíveis estão escritos no tipo CodigoDaAplicacao",
+    produtor: { arquivo: "lib/tarefas/plano.ts" },
+  },
 ];
 
 describe("o mapa de frases e o código que emite os motivos não podem divergir", () => {

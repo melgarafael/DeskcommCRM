@@ -144,6 +144,16 @@ export type ActivityType =
   | "task_created"
   | "task_completed"
   /**
+   * O PLANO de tarefas (#1752) aplicado ao negócio — a sequência reutilizável
+   * (`organizations.settings.task_plans`) que virou N tarefas de uma vez.
+   *
+   * A linha é DUAS coisas: o "foi aplicado" que quem abre o card lê, e a MARCA
+   * de idempotência que `lib/tarefas/plano.ts` consulta antes de criar — sem
+   * coluna `plan_id` em `crm_tasks` (migration), esta é a única identidade
+   * exata de "este plano já rodou aqui" que o banco guarda.
+   */
+  | "task_plan_applied"
+  /**
    * DOIS CADASTROS DA MESMA PESSOA VIRARAM UM. Emitido por
    * `fn_mesclar_contatos` (migration 0215) em cada negócio que o contato
    * vencedor passou a ter — inclusive nos que ELE não tinha e herdou do
@@ -275,6 +285,7 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   voice_call_unanswered: "Chamada de voz sem resposta",
   task_created: "Tarefa combinada",
   task_completed: "Tarefa concluída",
+  task_plan_applied: "Plano de tarefas aplicado",
   // Rótulo com OBJETO e sem jargão de banco: "Mesclado" sozinho é palavra de
   // engenheiro. O que aconteceu, para quem lê a timeline do negócio, é que dois
   // cadastros da mesma pessoa viraram um — e é por isso que este negócio pode

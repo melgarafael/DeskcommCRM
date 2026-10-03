@@ -13860,6 +13860,10 @@ export const DICIONARIO: Traducoes = {
   "A tarefa não foi criada: o banco recusou a gravação. Tente de novo em alguns minutos; se persistir, abra a tarefa na agenda para ver o detalhe.": {
     es: "La tarea no se creó: la base de datos rechazó el registro. Inténtelo de nuevo en unos minutos; si persiste, abra la tarea en la agenda para ver el detalle.",
   },
+  // #1752 — a recusa do plano de tarefas (mesma frase de MOTIVO_DA_PARADA).
+  "O plano não foi aplicado: o plano escolhido nesta regra não existe mais na lista da organização. Abra a automação e escolha outro plano.": {
+    es: "El plan no se aplicó: el plan elegido en esta regla ya no existe en la lista de la organización. Abra la automatización y elija otro plan.",
+  },
 
   // ─── PREVISÃO PONDERADA DO FUNIL (issue #1535) ───
   "Previsão": { es: "Previsión" },
