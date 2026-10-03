@@ -90,6 +90,11 @@ Se faltar Docker, o instalador pergunta e instala sozinho.
 | **IA** | Uma chave de **OpenRouter**, **Anthropic** ou **OpenAI** — o instalador pergunta qual você quer |
 | **WhatsApp** | Seu número, conectado por QR code no onboarding (ou o canal oficial da Meta) |
 
+O instalador também atende VPS ARM64/aarch64, como a Oracle Ampere A1, e escolhe a imagem
+NOWEB oficial do WAHA compatível com essa arquitetura. Vale para os dois caminhos: com Supabase
+externo e com o Supabase na mesma VPS (as imagens do Supabase self-hosted fixadas pelo kit também
+são publicadas para `linux/arm64`). Nada é compilado na VPS.
+
 > 💡 **O Supabase pode ser criado pelo próprio instalador.** Exporte um
 > `SUPABASE_ACCESS_TOKEN` antes de rodar e ele cria o projeto, espera o banco ficar saudável,
 > busca as 4 credenciais e descobre o host do pooler testando conexão real — sem copiar e colar.

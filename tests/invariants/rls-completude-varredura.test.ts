@@ -245,6 +245,14 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "orçamento, criativo e performance de quem anuncia.",
   },
   {
+    tabela: "map_provider_credentials",
+    razao:
+      "tests/invariants/credencial-de-mapas-e-server-side.test.ts — privilégio " +
+      "NENHUM para anon e authenticated, `permission denied` sob `set role`, RLS " +
+      "ligada, zero policies, `organization_id` NOT NULL com FK em cascata. Guarda " +
+      "a chave do Google da organização (0504), que só o servidor lê.",
+  },
+  {
     tabela: "ad_conversion_dispatches",
     razao:
       "tests/invariants/credencial-de-anuncios-e-server-side.test.ts — mesmo " +
@@ -278,6 +286,15 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "anon/authenticated. O servidor aplica organization_id às regras por etapa. " +
       "tests/invariants/google-regras-etapa-isoladas.test.ts também prova a FK " +
       "composta que recusa etapa de outra organização.",
+  },
+  {
+    tabela: "meta_ads_conversion_rules",
+    razao:
+      "tests/invariants/captura-de-clique-e-server-side.test.ts — RLS ligada, " +
+      "zero policies, privilégios revogados e permission denied sob set role " +
+      "anon/authenticated. O servidor aplica organization_id às regras por etapa " +
+      "da Meta (0524). tests/invariants/meta-regras-etapa-isoladas.test.ts prova a " +
+      "FK composta que recusa etapa de outra organização.",
   },
   {
     tabela: "ad_tracking_links",

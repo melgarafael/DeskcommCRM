@@ -16,7 +16,8 @@
 import { randomUUID } from "node:crypto";
 
 import { ok, fail } from "@/lib/api/wrappers";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser } from "@/lib/auth/server";
+import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import {
   encontrarContatosDuplicados,
   principalSugerido,
@@ -45,7 +46,9 @@ export async function GET(): Promise<Response> {
   if (!user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
-  const org = await resolveActiveOrg(user);
+  const ativa = await orgAtivaDaApi(user, requestId);
+  if (!ativa.ok) return ativa.response;
+  const org = ativa.org;
   if (!org) {
     const t = (texto: string) => traduzir(texto, user.idioma);
     return fail("forbidden_tenant", t("Organização ativa não resolvida."), 403, { requestId });

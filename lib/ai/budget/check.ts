@@ -60,10 +60,10 @@ export interface BudgetStatus {
    * (`llm_calls.cost_cents is null`).
    *
    * ⚠️ É O FURO DEBAIXO DA PROTEÇÃO INTEIRA, e por isso ele é um campo do
-   * contrato e não uma nota num doc. `pricing.ts` casa o `model` por PREFIXO
-   * contra três chaves (`claude-sonnet-4`, `claude-haiku-4`, `claude-opus-4`) e
-   * devolve `null` fora delas — id de gateway (`anthropic/claude-sonnet-4-6`) ou
-   * da OpenRouter (`z-ai/glm-4.7`) não casa nenhuma. A régua trata custo nulo
+   * contrato e não uma nota num doc. `pricing.ts` casa o `model` por id EXATO
+   * (tolerando o sufixo de data e o prefixo `provider/`, #1929) e devolve `null`
+   * para modelo fora da tabela — id da OpenRouter como `z-ai/glm-4.7` segue sem
+   * preço. A régua trata custo nulo
    * como zero (`coalesce`), então nessas instalações o gasto medido é MENOR que
    * o real — no limite, zero: o teto nunca dispara e o card mostra "US$ 0,00
    * gastos" enquanto o dinheiro sai.

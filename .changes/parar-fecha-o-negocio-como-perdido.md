@@ -1,0 +1,6 @@
+---
+impacto: capacidade_nova
+secao: adicionado
+titulo: Quem responde PARAR tem o negócio aberto fechado sozinho, com o motivo "Pediu para não receber mensagens"
+---
+Quando um contato respondia PARAR (ou outra palavra de saída), o sistema já bloqueava o contato na hora, mas o negócio dele ficava aberto na etapa de origem até alguém arrastá-lo à mão para "Perdido". Enquanto isso o card continuava contando como demanda viva e sujando o radar de risco. Agora, junto com o bloqueio, cada negócio aberto do contato é encerrado como perdido com um motivo novo e próprio, "Pediu para não receber mensagens" — e não "Cliente solicitou cancelamento", porque pedir silêncio não é cancelar. O fechamento vale para todo negócio aberto do contato, inclusive pedido que já passou de "Pago"; reabrir continua sendo manual, e desbloquear o contato não reabre o card. O motivo conta como perda no painel e nas métricas do atendente, aparece no relatório de perdas na categoria "Cliente" e também pode ser escolhido à mão na janela de perder. Se o funil não tiver etapa de perdido, o negócio fica como estava e o motivo vai para o log; a mensagem entra do mesmo jeito. Não é preciso fazer nada na instalação: a atualização já aplica a mudança no banco.

@@ -195,6 +195,23 @@ export function instanteDe(paredePedida: HoraDeParede, fuso: string): Date {
   return new Date(Math.max(primeiro, segundo));
 }
 
+/**
+ * O instante, redesenhado como se o NAVEGADOR estivesse no fuso pedido.
+ *
+ * Existe só para reusar `format` — e o `locale` da tela — sem depender de
+ * `date-fns-tz`, que este repositório não instala. `format` lê o relógio local,
+ * então devolvemos uma data cujo relógio local já é o parede do fuso alvo.
+ * Com os dois fusos iguais — a maioria, e o CI inteiro — é a própria data.
+ *
+ * Era isto que faltava no painel: a grade desenhava no fuso da organização e a
+ * confirmação lia o navegador, então quem clicava em 10:00 liu "às 09:00" ao
+ * confirmar. Duas horas diferentes para o mesmo agendamento, na mesma tela.
+ */
+export function dataDeParede(instante: Date, fuso: string): Date {
+  const p = partesNoFuso(instante, fuso);
+  return new Date(p.ano, p.mes - 1, p.dia, p.hora, p.minuto, p.segundo);
+}
+
 /** O dia local (`YYYY-MM-DD`) daquele instante — a régua que casa com a exceção por data. */
 export function diaLocalISO(instante: Date, fuso: string): string {
   const p = partesNoFuso(instante, fuso);

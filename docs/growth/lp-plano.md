@@ -364,6 +364,12 @@ Três colunas de apoio:
 
 Sem tabela de planos — não temos planos. Um bloco só, honesto.
 
+> ⚠️ **De quem é esta promessa.** "Não existe cobrança por usuário" e "não temos planos" são
+> promessas **do projeto** sobre o software: nem o mantenedor nem uma versão paga cobram por
+> pessoa. Quem instala e revende pode cobrar os próprios clientes com planos que limitam pessoas —
+> é a instalação dele, não a nossa ([ADR-0004](../adr/0004-cobranca-do-revendedor.md)). Esta seção
+> fala com quem instala para si; não estenda a promessa ao cliente final de um revendedor.
+
 ---
 
 ## 12. FAQ CITÁVEL

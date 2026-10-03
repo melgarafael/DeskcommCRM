@@ -77,7 +77,7 @@ export interface RunAgentResult {
   tool_calls?: ReturnType<typeof serializeSteps>;
   tokens_in?: number;
   tokens_out?: number;
-  cost_cents?: number;
+  cost_cents?: number | null;
   latency_ms?: number;
   steps_count?: number;
   abort_reason?: string;
@@ -551,7 +551,11 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
       });
-      if (cost > version.cost_budget_cents) {
+      // Preço desconhecido (`null`) não estoura o limite por chamada: sem
+      // número não se compara contra o teto — e também não é contado como 0
+      // (grátis), o custo segue `null` para quem reporta. Semântica do seam
+      // `pricing.ts`: coalesce(null, 0) no somatório.
+      if (cost !== null && cost > version.cost_budget_cents) {
         abortReason = "cost_budget_exceeded";
         return true;
       }

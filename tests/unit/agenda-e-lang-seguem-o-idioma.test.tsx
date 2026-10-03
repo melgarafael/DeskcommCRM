@@ -23,6 +23,7 @@ function gradeComFalhaDeCarga(locale: "pt-BR" | "es") {
         visao: "dia",
         ancora: new Date(2026, 8, 14, 12),
         agora: new Date(2026, 8, 14, 8),
+        fuso: Intl.DateTimeFormat().resolvedOptions().timeZone,
         pessoas: [],
         agendamentos: [],
         interacao: { horariosPorDia: {}, motivo: "erro", duracaoMin: 30, onMarcarEm: () => {} },

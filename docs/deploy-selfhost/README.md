@@ -102,7 +102,26 @@ grant usage on schema public to agent_worker;
 grant select, insert, update, delete on all tables in schema public to agent_worker;
 grant usage, select on all sequences in schema public to agent_worker;
 grant execute on all functions in schema public to agent_worker;
+
+-- Funções e tabelas criadas por migration FUTURA nascem sem os grants acima;
+-- só os objetos que já existem no momento deste bloco os recebem. O
+-- `update.sh` re-aplica o `baseline.sql`, que re-emite default privileges só
+-- para postgres/anon/authenticated/service_role — agent_worker fica de fora.
+-- Espelhe a mesma convenção (`FOR ROLE "postgres"`) para que todo objeto que
+-- o dono criar a partir daqui já nasça alcançável pelo worker:
+alter default privileges for role "postgres" in schema public grant execute on functions to agent_worker;
+alter default privileges for role "postgres" in schema public grant usage, select on sequences to agent_worker;
+alter default privileges for role "postgres" in schema public grant select, insert, update, delete on tables to agent_worker;
+
+-- A auditoria é só-inclusão para todo papel: o worker grava e lê
+-- `api_audit_log`, nunca altera nem apaga. O `baseline.sql` reafirma isto a
+-- cada `update.sh` (migration 0525), com o nome que o papel tiver.
+revoke update, delete, truncate on table public.api_audit_log from agent_worker;
 ```
+Se o papel do **dono** na sua instalação não for `postgres` (ex.: você usa um
+superusuário com outro nome), troque `for role "postgres"` pelo nome dele nas
+linhas `alter default privileges` — é quem o `baseline.sql` roda como, e é esse
+papel que o default ACL segue.
 
 Aponte `SUPABASE_DB_URL` do `.env` para ela — e deixe a conexão do **dono** em
 `SUPABASE_DB_ADMIN_URL`. Antes isto era uma recomendação sem encaixe: o

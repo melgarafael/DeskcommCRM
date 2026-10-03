@@ -471,6 +471,7 @@ owner: Rafael Melgaço
 - **Regra**: GIVEN qualquer ação que consome recurso (mensagem enviada/recebida, chamada LLM, storage usage); WHEN ocorre; THEN entrada em `usage_events` com `tenant_id`, `metric_type`, `quantity`, `cost_cents` (calculado), `recorded_at`.
 - **Enforcement**: Workers de cada subsistema (WhatsApp send/recv, IA invocation, storage upload).
 - **Exceção**: Nenhuma.
+- **Estado**: **não construída.** A tabela `usage_events` não existe (`grep -c usage_events supabase/baseline.sql`). O custo por organização que existe é o de IA, em `llm_calls.cost_cents` (B-02). A cobrança do revendedor ([ADR-0004](../adr/0004-cobranca-do-revendedor.md)) cobra plano fixo, não consumo, e não depende desta regra; para o operador de agentes, a unidade decidida é retainer, não consumo (`docs/doctrine/operacao-de-agentes.md` §0).
 
 ### B-02 — Custo de IA é rateado por tenant
 - **Origem**: Sub-PRD 05 §3.9 + IA-10
@@ -478,6 +479,7 @@ owner: Rafael Melgaço
 - **Regra**: GIVEN invocação LLM via Vercel AI Gateway; WHEN o evento de billing chega do Gateway; THEN o custo é atribuído ao `tenant_id` do agent que originou a chamada.
 - **Enforcement**: Worker de billing IA.
 - **Exceção**: Custos administrativos da plataforma (super-admin testando, suporte) são debitados ao tenant `internal_deskcomm`.
+- **Estado**: cumprida por outro mecanismo. Não há evento de billing vindo do Gateway nem worker de billing: o próprio runtime grava o custo de cada chamada em `llm_calls.cost_cents`, com o `organization_id` de onde ela roda (`lib/agent-engine/edge/llm/run-model-call.ts`, `lib/ai/log-invocation.ts`), em centavos de **dólar**, e `fn_gasto_de_ia_do_mes` é a única soma (vigiada por `tests/unit/orcamento-uma-regua-de-gasto.test.ts`). A exceção não existe: não há tenant `internal_deskcomm` (`grep -rn internal_deskcomm lib app workers supabase/baseline.sql`). É essa soma que o teto de IA do plano do revendedor consome ([ADR-0004](../adr/0004-cobranca-do-revendedor.md)).
 
 ### B-03 — Storage de mídia tem retenção configurável por tenant
 - **Origem**: PRD-Mestre §7.3
@@ -493,6 +495,7 @@ owner: Rafael Melgaço
 - **Regra**: GIVEN tenant fazendo chamadas via API; WHEN ultrapassa 100 RPS; THEN próxima chamada retorna 429 com `Retry-After` e `X-RateLimit-*` headers.
 - **Enforcement**: Upstash Redis sliding window.
 - **Override**: Cliente enterprise pode contratar plano com RPS maior; ajuste em `tenants.rate_limit_config`.
+- **Estado**: **não cumprida como escrita.** A coluna `organizations.rate_limit_rps` (padrão 100) existe no schema e nada a lê; `tenants.rate_limit_config` não existe; nenhum teto de 100 RPS por organização é aplicado. O teto real da API é de escrita, por token e por organização, numa janela fixa (`grep -n 'TETO_\|JANELA_' lib/mcp/rate-limit.ts`), aplicado rota a rota por quem chama `tetoDeEscritaDoToken` (`lib/api/auth-dual.ts`) ou o contador de `/api/v1/messages`; nem toda rota com Bearer o chama (`grep -rlE 'tetoDeEscritaDoToken|TETO_DE_ESCRITA' app/api`). A cobrança do revendedor ([ADR-0004](../adr/0004-cobranca-do-revendedor.md)) não vende nem limita RPS; o desenho dela prevê remover a coluna sem leitor (`grep -n rate_limit_rps supabase/baseline.sql` diz se ela ainda existe).
 
 ### B-05 — Sync inicial Nuvemshop respeita rate limit do upstream
 - **Origem**: Sub-PRD 06 §3.11

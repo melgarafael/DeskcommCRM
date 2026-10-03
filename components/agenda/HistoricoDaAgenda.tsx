@@ -17,6 +17,7 @@ import { corDaTrilha } from "./paleta";
 import { ROTULO_DA_SITUACAO } from "@/lib/agenda/tipos";
 
 import type { Agendamento, Pessoa, SituacaoDoAgendamento } from "./tipos";
+import { dataDeParede } from "@/lib/agenda/fuso";
 
 /**
  * As quatro divisões do histórico.
@@ -95,6 +96,7 @@ export function HistoricoDaAgenda({
   agendamentos,
   pessoas,
   agora,
+  fuso,
   onRemarcar,
   onCancelar,
   onRealizado,
@@ -105,6 +107,12 @@ export function HistoricoDaAgenda({
   agendamentos: Agendamento[];
   pessoas: Pessoa[];
   agora: Date;
+  /**
+   * O fuso RESOLVIDO da organização. Sem ele a lista imprime o relógio do
+   * navegador e diverge da grade ao lado — a mesma tela dizendo duas horas
+   * para o mesmo compromisso (issue #1362, e2e `:171`).
+   */
+  fuso: string;
   onRemarcar?: (id: string) => void;
   onCancelar?: (id: string) => void;
   /**
@@ -210,12 +218,12 @@ export function HistoricoDaAgenda({
                   />
                   <div className="w-28 shrink-0">
                     <div className="text-sm font-medium tabular-nums first-letter:uppercase">
-                      {format(comeca, t("d 'de' MMM"), { locale: localeDaData })}
+                      {format(dataDeParede(comeca, fuso), t("d 'de' MMM"), { locale: localeDaData })}
                     </div>
                     <div className="text-[11px] text-text-muted tabular-nums">
-                      {format(comeca, "HH:mm")}
+                      {format(dataDeParede(comeca, fuso), "HH:mm")}
                       {" – "}
-                      {format(new Date(a.termina), "HH:mm")}
+                      {format(dataDeParede(new Date(a.termina), fuso), "HH:mm")}
                     </div>
                   </div>
                   <div className="min-w-0 flex-1">

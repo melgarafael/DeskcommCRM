@@ -12,6 +12,7 @@ export const RAG_INDEXER_HANDLER_KEY = "rag-indexer.v1";
 
 export const ragIndexerHandler: EventHandler = {
   key: RAG_INDEXER_HANDLER_KEY,
+  naOrgParada: "pula",
   events: ["nuvemshop.product_synced", "knowledge_source.updated"],
   handle: processRagIndexer,
 };

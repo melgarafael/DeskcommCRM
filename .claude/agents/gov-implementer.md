@@ -43,7 +43,8 @@ código) + `docs/specs/` — este agente só existe pra executar dentro dela.
 - **Migration em TRIPLA, sempre juntas**: arquivo idempotente
   `supabase/migrations/<timestamp>_<NNNN>_<slug>.sql` + apêndice idempotente em
   `supabase/baseline.sql` (bloco `-- ---- <coisa> (migration NNNN) ----`) + linha
-  em `supabase/migrations/MANIFEST.md` + `lib/database.types.ts` regenerado.
+  `-- manifest: <descrição>` no cabeçalho do `.sql` (o `MANIFEST.md` é histórico) +
+  `lib/database.types.ts` regenerado.
   O próximo `NNNN` é medido sobre a POPULAÇÃO da pergunta — a main do
   PRODUTO (o remoto que aponta para `melgarafael/DeskcommCRM`, com qualquer
   nome) mais `refs/heads` E `refs/remotes`, nunca só as branches locais: a cadeia

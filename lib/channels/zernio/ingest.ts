@@ -41,7 +41,7 @@ import {
 
 import { aplicarEfeitosPosEntrada } from "../pos-entrada";
 
-import { completarLocalizacao } from "./localizacao";
+import { completarLocalizacao, pedirNovaBuscaDoPino, pinoFicouSemCoordenadas } from "./localizacao";
 import { parseZernioInbound, type ZernioIdentity, type ZernioInboundMessage } from "./webhook";
 
 export interface ZernioIngestResult {
@@ -203,6 +203,9 @@ export async function ingestZernioInbound(
           inseridaNaExistente,
         );
       }
+      if (!input.socialMessage && pinoFicouSemCoordenadas(msg)) {
+        await pedirNovaBuscaDoPino(admin, input.organizationId, inseridaNaExistente, msg);
+      }
       await efeitosDaEntrada(
         admin,
         input,
@@ -277,6 +280,9 @@ export async function ingestZernioInbound(
   await marcarConversa(admin, input.organizationId, conversationId, msg);
   if (msg.attachments[0]?.url) {
     await pedirPersistenciaDaMidia(admin, input.organizationId, conversationId, inserted);
+  }
+  if (!input.socialMessage && pinoFicouSemCoordenadas(msg)) {
+    await pedirNovaBuscaDoPino(admin, input.organizationId, inserted, msg);
   }
   await efeitosDaEntrada(admin, input, msg, contactId, conversationId, inserted);
 

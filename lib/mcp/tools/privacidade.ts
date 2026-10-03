@@ -37,6 +37,8 @@ export const crmListPrivacyRequests: McpToolDefinition<typeof inputShape> = {
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  // LGPD nunca é bloqueada: o prazo do titular corre com a empresa suspensa.
+  permiteOrgSuspensa: true,
   handler: async (input, ctx) => {
     let q = ctx.supabase
       .from("lgpd_requests")

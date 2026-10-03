@@ -507,6 +507,31 @@ async function registrarRecusaDeEnderecoSemChave(d: {
   return erro;
 }
 
+/**
+ * A CAUDA DO LAÇO DE TOOLS TAMBÉM VAI PARA O CACHE (só Anthropic, só laço).
+ *
+ * O prefixo estável (tools + system) já tem breakpoints de 1 h. Mas numa resposta
+ * com laço de tools cada passo reenvia a abertura (checkpoint, contexto do lead,
+ * histórico, mensagem) e os resultados dos passos anteriores — e isso ficava
+ * DEPOIS do último breakpoint, cobrado a preço cheio em todo passo. Medido numa
+ * instalação real (27/09/2026): ~3,5 passos por resposta, ~12 mil tokens sem
+ * cache por passo, 46% do custo da resposta.
+ *
+ * `cache_control` no nível do pedido põe um breakpoint automático no fim da
+ * conversa: o passo 2 em diante lê do cache o que o passo anterior já mandou. TTL
+ * de 5 min: os passos de uma resposta são segundos, e 5 min custa menos para
+ * escrever que 1 h. É o 3º de 4 breakpoints, e o de 1 h vem antes do de 5 min,
+ * como a API exige. Fora do laço (um passo só) não entra: escrever sem reler
+ * só encarece.
+ */
+export function cacheDaCauda(
+  provider: string,
+  maxSteps: number | undefined,
+): { providerOptions?: { anthropic: { cacheControl: { type: 'ephemeral'; ttl: '5m' } } } } {
+  if (provider !== 'anthropic' || maxSteps === undefined || maxSteps <= 1) return {};
+  return { providerOptions: { anthropic: { cacheControl: { type: 'ephemeral', ttl: '5m' } } } };
+}
+
 export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunModelCallInput, deps: RunModelCallDeps = {}) {
   // O knob do raciocínio da DeepSeek entra pela fábrica: `deepseekThinking` só é
   // lido pela fábrica `deepseek`, então os outros provedores não têm como mudar.
@@ -685,6 +710,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       maxOutputTokens: input.maxOutputTokens === undefined
         ? maxOutputTokens
         : Math.min(maxOutputTokens ?? Infinity, input.maxOutputTokens),
+      ...cacheDaCauda(config.provider, input.maxSteps),
     });
   } catch (err) {
     // ─── A LINHA QUE FALTAVA ────────────────────────────────────────────────
@@ -846,7 +872,7 @@ export function normalizarErro(err: unknown): {
     codigo = 'credencial_recusada';
   } else if (status === 404 || /model.*not.*found|does not exist/i.test(bruto)) {
     codigo = 'modelo_inexistente';
-  } else if (status === 429 || /rate.?limit|quota|insufficient.*credit|credit balance is too low/i.test(bruto)) {
+  } else if (status === 429 || /rate.?limit|quota|insufficient.*credit|credit balance is too low|no credits remaining/i.test(bruto)) {
     // A Anthropic diz "sem crédito" com 400 ("Your credit balance is too low…"),
     // o mesmo status de um pedido malformado — só a frase distingue. Sem ela a
     // tela de Execuções mostrava "erro desconhecido" no caso mais fácil de

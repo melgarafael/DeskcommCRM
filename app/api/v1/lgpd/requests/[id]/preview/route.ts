@@ -33,7 +33,8 @@ export async function GET(
   const authz = await requireRole("admin", {
     requestId,
     resource: "lgpd_requests",
-    allowPlatformAdmin: true,
+    allowPlatformAdmin: "leitura",
+    permiteOrgSuspensa: true,
   });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
@@ -107,6 +108,9 @@ export async function GET(
       ...m,
       // Mask message body if it contains likely PII patterns — keep structural info
       body: m.body ? "[masked]" : null,
+      // A transcrição/OCR da mídia é o mesmo conteúdo do titular em outra forma:
+      // mascara pela mesma régua do `body`, senão o spread acima a entrega crua.
+      media_derived_text: m.media_derived_text ? "[masked]" : null,
     })),
     leads: payload.leads.slice(0, SAMPLE_LIMIT),
     orders: payload.orders.slice(0, SAMPLE_LIMIT),

@@ -247,11 +247,22 @@ const DECISOES: Record<string, Decisao> = {
     caminho: "gatilho",
     razao: "0174: captured_name/captured_email/captured_phone (o payload cru de captação) zerados por gatilho — a entrada na dívida do invariante irmão é o aviso de que este instrumento não lia gatilho.",
   },
-  // ── manter: a linha e o conteúdo ficam, por decisão ───────────────────────
   ai_agent_runs: {
-    decidida: "manter",
-    razao: "Resultado da execução do agente: status, código de erro e ids das mensagens trocadas. Nenhum campo guarda nome, telefone ou corpo de mensagem — o texto da pessoa mora em messages/conversations, que a cascata redige.",
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao: "0494 (#1964): a LINHA fica (status, erro, tokens, ids das mensagens: é a trilha do que o agente fez), mas tool_calls — texto do modelo, argumentos e resultados das ferramentas, com nome e trechos do que a pessoa escreveu — é redigido na virada de is_anonymized pelo gatilho fn_redigir_conversas_ao_anonimizar (fn_lgpd_redigir_tool_calls preserva o nome das ferramentas e apaga o resto, `redacted = true` em todo passo), a MESMA porta que o desenho da 0391 e que a app já usava em lib/lgpd/cascata.ts passo 6.",
   },
+  lead_notes: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao: "DÍVIDA PARCIAL QUITADA na 0494 (#1964): headline/body são texto livre do agente SOBRE a pessoa (e embedding é derivado dele). A virada de is_anonymized redige os dois (→ `(anonimizado)`, `embedding` → null) pelo gatilho fn_redigir_conversas_ao_anonimizar — a mesma porta da 0391 e a mesma régua que a app usava em lib/lgpd/cascata.ts passo 5. O irmão (lgpd-cascata-alcanca-quem-guarda-pessoa) mantém a entrada na dívida porque o instrumento dele só lê fn_lgpd_cascade_redact_contact + trg_reply_redact, não este gatilho — a dívida lá sai no dia em que aquele instrumento derivar também os gatilhos de contacts, no desenho da 0391.",
+  },
+  lead_state: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao: "0494 (#1964): a LINHA e o estágio ficam (é o estado do negócio), mas next_action (texto) e qualification (jsonb) — texto livre que cita a pessoa — são zerados na virada de is_anonymized pelo gatilho fn_redigir_conversas_ao_anonimizar (a porta da 0391 que a app já usava em lib/lgpd/cascata.ts passo 7).",
+  },
+  // ── manter: a linha e o conteúdo ficam, por decisão ───────────────────────
   before_send_traces: {
     decidida: "manter",
     razao: "Traço de decisão do gate de envio (vetoed_gate/vetoed_code) para auditoria de POR QUE a mensagem não saiu; é código de vocabulário, não o conteúdo enviado — o corpo mora em messages.",
@@ -267,14 +278,6 @@ const DECISOES: Record<string, Decisao> = {
   google_ads_click_refs: {
     decidida: "manter",
     razao: "gclid/token de clique da plataforma e a query de aterrissagem — identificador de campanha que existe para casar o clique ao contato. Sem nome, telefone ou e-mail; apagar desfaria a atribuição da conversão.",
-  },
-  lead_notes: {
-    decidida: "manter",
-    razao: "⚠️ DÍVIDA CONHECIDA, não conforto: headline/body são texto livre do agente SOBRE a pessoa e hoje NENHUM caminho os redige (mesma entrada em DIVIDA_LGPD_CONHECIDA do invariante irmão). Esta entrada vira `redigir`+`cascata` no MESMO commit que acrescentar o passo — e o irmão tira a dívida naquele commit.",
-  },
-  lead_state: {
-    decidida: "manter",
-    razao: "Estágio, qualificação e próxima ação do funil: vocabulário fechado do motor, sem texto escrito sobre a pessoa — redigir apagaria o estado do negócio sem proteger ninguém.",
   },
   lead_state_transitions: {
     decidida: "manter",

@@ -22,7 +22,7 @@ it('org em ai_dispatch_mode=external: evento vira done SEM enfileirar job', asyn
   const query = vi.fn().mockImplementation((sql: string) => {
     calls.push(sql);
     if (sql.includes('returning e.id')) return { rows: [event] };            // claim
-    if (sql.includes("ai_dispatch_mode")) return { rows: [{ mode: 'external' }] }; // guard
+    if (sql.includes("ai_dispatch_mode")) return { rows: [{ mode: 'external', status: 'active' }] }; // guard
     if (sql.includes('is_group')) return { rows: [{ is_group: false }] };
     return { rows: [] };                                                      // reaper / done
   });
@@ -30,6 +30,23 @@ it('org em ai_dispatch_mode=external: evento vira done SEM enfileirar job', asyn
   // o guard TEM que consultar o modo (garante FAIL antes da implementação)...
   expect(calls.some((s) => s.includes('ai_dispatch_mode'))).toBe(true);
   // ...e nenhum job pode ser enfileirado (enqueueJob nunca roda).
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
+  expect(calls.some((s) => s.includes("status = 'done'"))).toBe(true);
+});
+
+it('org não operante: evento vira done SEM job, antes de qualquer outra consulta', async () => {
+  const calls: string[] = [];
+  const query = vi.fn().mockImplementation((sql: string) => {
+    calls.push(sql);
+    if (sql.includes('returning e.id')) return { rows: [event] };
+    if (sql.includes('ai_dispatch_mode')) return { rows: [{ mode: null, status: 'suspended' }] };
+    if (sql.includes('is_group')) return { rows: [{ is_group: false }] };
+    if (sql.includes('tem_agente')) return { rows: [{ tem_agente: true, tem_roteador: false }] };
+    return { rows: [] };
+  });
+  await drainTick({ query } as unknown as pg.Pool, knobs, log);
+  expect(calls.find((s) => s.includes('ai_dispatch_mode'))).toMatch(/\bstatus\b/);
+  expect(calls.some((s) => s.includes('is_group')), 'parou antes de ler a conversa').toBe(false);
   expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
   expect(calls.some((s) => s.includes("status = 'done'"))).toBe(true);
 });
@@ -55,7 +72,7 @@ function poolFalso(
   const query = vi.fn().mockImplementation((sql: string) => {
     calls.push(sql);
     if (sql.includes('returning e.id')) return { rows: [eventoDeAudio(Number(process.env.__ESPERA__ ?? 0))] };
-    if (sql.includes('ai_dispatch_mode')) return { rows: [{ mode: null }] };
+    if (sql.includes('ai_dispatch_mode')) return { rows: [{ mode: null, status: 'active' }] };
     if (sql.includes('is_group')) return { rows: [{ is_group: false }] };
     if (sql.includes('tem_agente')) return { rows: [capacidade] };
     // A consulta real filtra por TIPOS_DERIVAVEIS — linha de texto não entra. O
@@ -214,7 +231,7 @@ it('coalescência exclui job em hold (held_run_after) — sessão morta não seq
   const query = vi.fn().mockImplementation((sql: string) => {
     calls.push(sql);
     if (sql.includes('returning e.id')) return { rows: [eventoDeAudio(0)] };
-    if (sql.includes('ai_dispatch_mode')) return { rows: [{ mode: null }] };
+    if (sql.includes('ai_dispatch_mode')) return { rows: [{ mode: null, status: 'active' }] };
     if (sql.includes('is_group')) return { rows: [{ is_group: false }] };
     if (sql.includes('tem_agente')) return { rows: [{ tem_agente: true, tem_roteador: false }] };
     if (sql.includes('media_derived_status')) return { rows: [{ type: 'text', media_derived_status: null }] };
@@ -293,13 +310,14 @@ function poolElegibilidade(
     aiAuthorizedAt?: string | null;
     forceHuman?: boolean;
     assigneeKind?: string | null;
+    orgStatus?: string | null;
   } = {},
 ) {
   const inboundId = '44444444-4444-4444-8444-444444444444';
   const query = vi.fn().mockImplementation((sql: string) => {
     calls.push(sql);
     if (sql.includes('returning e.id')) return { rows: [{ ...event, created_at: new Date().toISOString() }] };
-    if (sql.includes('ai_dispatch_mode')) return { rows: [{ mode: null }] };
+    if (sql.includes('ai_dispatch_mode')) return { rows: [{ mode: null, status: 'active' }] };
     if (sql.includes('is_group')) return { rows: [{ is_group: false }] };
     if (sql.includes('tem_agente')) return { rows: [{ tem_agente: true, tem_roteador: false }] };
     if (sql.includes("direction = 'inbound'")) {
@@ -319,6 +337,7 @@ function poolElegibilidade(
             bot_silenced_until: null,
             ai_authorized_at: opts.aiAuthorizedAt ?? null,
             phone_number: opts.phoneNumber ?? null,
+            org_status: opts.orgStatus === undefined ? 'active' : opts.orgStatus,
           },
         ],
       };
@@ -335,6 +354,15 @@ it('evento superado por inbound mais recente: turno pulado, sem job, sem gasto',
   expect(calls.some((s) => s.includes("direction = 'inbound'"))).toBe(true);
   expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
   expect(calls.some((s) => s.includes("status = 'done'"))).toBe(true);
+});
+
+it('gate: organização não operante na leitura de elegibilidade → turno pulado, sem job', async () => {
+  const calls: string[] = [];
+  await drainTick(poolElegibilidade(calls, { orgStatus: 'suspended' }), knobs, log);
+  const consulta = calls.find((s) => s.includes('channel_metadata'));
+  expect(consulta, 'a consulta de elegibilidade não rodou').toBeDefined();
+  expect(consulta).toMatch(/join organizations o on o\.id = cv\.organization_id/);
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
 });
 
 it("gate 'allowlist' + contato NÃO autorizado: turno pulado, sem job, sem gasto", async () => {

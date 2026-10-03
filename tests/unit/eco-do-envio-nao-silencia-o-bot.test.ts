@@ -371,3 +371,67 @@ describe("eco do envio da automação — reconhecido como nosso (#652)", () => 
   });
 });
 
+
+/**
+ * O ECO DO ENVIO ASSINADO (#2066, PR #2079).
+ *
+ * Com a assinatura do emissor ligada, o que vai ao canal é `*Nome*\ntexto`,
+ * mas `messages.body` guarda só `texto` (a assinatura é do canal, não do
+ * histórico). O eco do WhatsApp devolve o que SAIU — com a linha do nome. Pela
+ * igualdade exata, o eco do próprio envio assinado deixava de casar com a linha
+ * em voo e era lido como "o atendente respondeu pelo celular": a IA, assinando
+ * as próprias respostas, se calava depois de cada uma delas.
+ */
+describe("eco do envio assinado — a linha do nome não esconde o eco (#2066)", () => {
+  it("⭐ envio da IA em voo + eco com a assinatura da IA: o bot NÃO é pausado", async () => {
+    const { admin, conversa } = banco([emVoo()]);
+
+    await dispatchWahaEvent(
+      admin as never,
+      SESSION as never,
+      envelope(eco(`*Assistente Virtual*\n${TEXTO}`)),
+      "req-2066-1",
+    );
+
+    expect(
+      conversa.bot_silenced_until,
+      "a IA assinou a própria resposta e o eco dela calou a IA — a linha do nome escondeu o eco",
+    ).toBeNull();
+  });
+
+  it("⭐ envio do atendente em voo + eco com o nome dele: o bot NÃO é pausado", async () => {
+    const { admin, conversa } = banco([emVoo({ sent_via: "user" })]);
+
+    await dispatchWahaEvent(
+      admin as never,
+      SESSION as never,
+      envelope(eco(`*Carlos Gaban*\n${TEXTO}`)),
+      "req-2066-2",
+    );
+
+    expect(conversa.bot_silenced_until).toBeNull();
+  });
+
+  it("CONTROLE: eco SEM assinatura continua casando pela igualdade de sempre", async () => {
+    const { admin, conversa } = banco([emVoo()]);
+
+    await dispatchWahaEvent(admin as never, SESSION as never, envelope(eco(TEXTO)), "req-2066-3");
+
+    expect(conversa.bot_silenced_until).toBeNull();
+  });
+
+  it("CONTROLE: linha de nome + texto DIFERENTE do envio em voo ainda silencia", async () => {
+    // Tirar a assinatura não pode virar "qualquer mensagem com negrito é eco":
+    // o resto do texto continua tendo de ser o MESMO da linha em voo.
+    const { admin, conversa } = banco([emVoo()]);
+
+    await dispatchWahaEvent(
+      admin as never,
+      SESSION as never,
+      envelope(eco("*Carlos Gaban*\noi, respondi pelo celular")),
+      "req-2066-4",
+    );
+
+    expect(conversa.bot_silenced_until).not.toBeNull();
+  });
+});

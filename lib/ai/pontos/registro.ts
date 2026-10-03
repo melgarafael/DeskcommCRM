@@ -359,14 +359,22 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
   {
     id: "followup_classify",
     rotulo: "Ler a resposta ao follow-up",
+    // As saídas são as que a empresa criou no passo "Classificar (IA)", não uma
+    // lista fixa: "aceitou, recusou ou pediu para falar depois" prometia classes
+    // que o fluxo pode nem ter.
     oQueFaz:
-      "Entende se o cliente aceitou, recusou ou pediu para falar depois, e encaminha o fluxo conforme isso.",
+      "Lê a resposta do cliente à mensagem do follow-up e diz em qual das saídas que você criou no fluxo ela se encaixa — o fluxo segue por essa saída.",
     papel: "entender",
     exige: {},
     emissor: "lib/agent-engine/agent/followup-flow-classify.ts",
     sintomaDeFalha:
       "O follow-up trava no mesmo passo: o cliente respondeu, mas o fluxo não segue para lugar nenhum.",
     registraEm: "llm_calls",
+    decisaoRapida: {
+      primitiva: "choice",
+      oQueOJevFaz:
+        "Lê a resposta do cliente à mensagem do follow-up, sozinha, e diz em qual das saídas que você criou no fluxo ela se encaixa.",
+    },
   },
   {
     id: "followup_decide_timing",
@@ -390,6 +398,18 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     emissor: "lib/agent-engine/agent/flow-validate.ts",
     sintomaDeFalha:
       "Dado errado entra no cadastro do cliente (ex.: o modelo grava a resposta na pergunta errada) ou o cliente fica sem a pergunta seguinte.",
+    registraEm: "llm_calls",
+  },
+  {
+    id: "conversion_value_from_conversation",
+    rotulo: "Ler o valor da venda na conversa",
+    oQueFaz:
+      "Quando um negócio vindo de anúncio da Meta é ganho sem valor preenchido, lê a conversa e acha o valor e o produto vendidos, para a compra ser reportada à Meta. Só aceita valor que aparece escrito na conversa.",
+    papel: "entender",
+    exige: { tools: true },
+    emissor: "lib/conversoes/valor-da-conversa.ts",
+    sintomaDeFalha:
+      "A venda vinda de anúncio fica como pendência 'sem valor' em Configurações › Conversões, e a Meta não recebe a compra até alguém preencher o valor do negócio.",
     registraEm: "llm_calls",
   },
 

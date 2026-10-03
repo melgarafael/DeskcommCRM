@@ -237,7 +237,14 @@ interface Deps {
 export async function mirrorLeadStageToCrm(
   _db: Queryable,
   cfg: CrmEdgeConfig,
-  input: { tenantId: string; leadId: string; toStage: LeadStage; reason?: string },
+  input: {
+    tenantId: string;
+    leadId: string;
+    toStage: LeadStage;
+    reason?: string;
+    /** Funis autorizados na versão publicada; ausente só no caminho legado. */
+    pipelineIds?: readonly string[];
+  },
   deps: Deps = {},
 ): Promise<MirrorResult> {
   const sync = deps.sync ?? sincronizaEstagioDoAgente;
@@ -249,6 +256,7 @@ export async function mirrorLeadStageToCrm(
       organizationId: input.tenantId,
       contactId: input.leadId,
       passo: input.toStage,
+      ...(input.pipelineIds !== undefined ? { escopoDeFunis: input.pipelineIds } : {}),
     });
 
     if (r.moveu || r.motivo === 'ja_esta_la') return { ok: true };

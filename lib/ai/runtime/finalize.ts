@@ -22,7 +22,7 @@ export interface FinalizeRunInput {
   status: RunStatus;
   tokensIn?: number;
   tokensOut?: number;
-  costCents?: number;
+  costCents?: number | null;
   latencyMs?: number;
   stepsCount?: number;
   toolCalls?: SerializedStep[];
@@ -44,7 +44,9 @@ export async function finalizeRun(input: FinalizeRunInput): Promise<void> {
   };
   if (input.tokensIn !== undefined) updateRow.tokens_in = input.tokensIn;
   if (input.tokensOut !== undefined) updateRow.tokens_out = input.tokensOut;
-  if (input.costCents !== undefined) updateRow.cost_cents = input.costCents;
+  // Custo desconhecido (null) fica fora do UPDATE: `cost_cents` é NOT NULL
+  // DEFAULT 0, e gravar null faria o UPDATE inteiro falhar em silêncio.
+  if (input.costCents != null) updateRow.cost_cents = input.costCents;
   if (input.latencyMs !== undefined) updateRow.latency_ms = input.latencyMs;
   if (input.stepsCount !== undefined) updateRow.steps_count = input.stepsCount;
   if (input.toolCalls !== undefined) updateRow.tool_calls = input.toolCalls;
@@ -78,7 +80,7 @@ export async function finalizeRun(input: FinalizeRunInput): Promise<void> {
       status: input.status,
       tokens_in: input.tokensIn ?? 0,
       tokens_out: input.tokensOut ?? 0,
-      cost_cents: input.costCents ?? 0,
+      cost_cents: input.costCents ?? null,
       latency_ms: input.latencyMs ?? null,
       steps_count: input.stepsCount ?? 0,
       abort_reason: input.abortReason ?? null,
@@ -104,7 +106,7 @@ export async function finalizeRun(input: FinalizeRunInput): Promise<void> {
       error_code: input.errorCode ?? null,
       tokens_in: input.tokensIn ?? 0,
       tokens_out: input.tokensOut ?? 0,
-      cost_cents: input.costCents ?? 0,
+      cost_cents: input.costCents ?? null,
       latency_ms: input.latencyMs ?? null,
       steps_count: input.stepsCount ?? 0,
       is_dry_run: input.isDryRun ?? false,

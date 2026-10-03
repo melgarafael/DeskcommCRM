@@ -92,7 +92,7 @@ function bancoComFila(fila: LinhaPresa[]) {
       return { rows: fila.filter((l) => vocabulario.includes(l.sent_via)).map((l) => ({ ...l })) };
     }
     if (/select\s+s\.metadata/i.test(sql)) {
-      return { rows: fila.length === 0 ? [] : [{ metadata: {}, phone_number: "+5531999998888" }] };
+      return { rows: fila.length === 0 ? [] : [{ metadata: {}, phone_number: "+5531999998888", operante: true }] };
     }
     return { rows: [] };
   });
@@ -170,3 +170,26 @@ describe("resgate da fila — a mensagem da AUTOMAÇÃO é alcançada (#652)", (
   });
 });
 
+
+describe("redrive × organização parada", () => {
+  it("org não operante: a mensagem vira failed/org_suspensa e nada sai para o WAHA", async () => {
+    const send = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response());
+    const query = vi.fn()
+      .mockResolvedValueOnce({ rows: [{
+        id: "message-test", organization_id: "org-test", body: "Resposta de teste",
+        waha_session_name: "session-test", phone_number: "+5511999998888",
+        wa_identity: null, wa_lid: null, is_group: false, group_chat_id: null,
+      }] })
+      .mockResolvedValueOnce({ rows: [{ n: "0" }] })
+      .mockResolvedValueOnce({ rows: [{ metadata: {}, phone_number: "+5511999998888", operante: false }] })
+      .mockResolvedValue({ rows: [] });
+
+    expect(await redriveQueued({ query } as unknown as pg.Pool, {
+      wahaBaseUrl: "http://127.0.0.1:9999", wahaApiKey: "test-key",
+      intervalMs: 1, redriveMinAgeMs: 0, redriveBatchSize: 10, redriveSpacingMs: 0,
+    }, createLogger())).toBe(0);
+    expect(send).not.toHaveBeenCalled();
+    expect(query.mock.calls[2]?.[0]).toContain("public.fn_org_operante(m.organization_id)");
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("error_code = 'org_suspensa'"), ["message-test", "org-test"]);
+  });
+});

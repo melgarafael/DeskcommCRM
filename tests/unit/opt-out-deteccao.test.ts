@@ -16,7 +16,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { ehOptOutProvavel, ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
+import { comecaComPalavraDeSaida, ehOptOutProvavel, ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
 
 /** Pedidos de descadastro que PRECISAM ser respeitados (bloqueiam o contato). */
 const PEDE_PARA_SAIR = [
@@ -511,5 +511,54 @@ describe("o runtime do agente usa a MESMA regra da ingestão", () => {
     const { detectAmbiguousOptOut } = await import("@/lib/agent-engine/agent/human-handoff");
     expect(detectAmbiguousOptOut("tem como parar a dor?")).toBe(false);
     expect(detectAmbiguousOptOut("posso sair antes das 15h?")).toBe(false);
+  });
+});
+
+
+describe("comecaComPalavraDeSaida — qual frase o cliente lê quando a IA sai de campo", () => {
+  it("'Parar não é daqui' começa com a palavra de saída — o caso medido em produção", () => {
+    expect(comecaComPalavraDeSaida("Parar não é daqui")).toBe(true);
+    // ...e NÃO autoriza bloqueio: é por isso que ele ficou sem bloqueio.
+    expect(ehPedidoDeOptOut("Parar não é daqui")).toBe(false);
+  });
+
+  it("as palavras que o rodapé das abordagens oferece, em qualquer caixa e com pontuação", () => {
+    for (const t of ["PARAR", "parar.", "¿Parar?", "Pare de me mandar", "STOP!", "Baja", "  stop  "]) {
+      expect(comecaComPalavraDeSaida(t), t).toBe(true);
+    }
+  });
+
+  it("só o INÍCIO conta: pergunta de paciente e conversa comum não casam", () => {
+    for (const t of [
+      "tem como parar a dor?",
+      "quero saber se dá para parar o tratamento",
+      "oi, tudo bem?",
+      "não paro de pensar nisso",
+      "",
+      "   ",
+      "123 !!!",
+    ]) {
+      expect(comecaComPalavraDeSaida(t), t).toBe(false);
+    }
+  });
+
+  it("nenhuma frase de controle do corpus casa — o mesmo lado negativo que protege o bloqueio", () => {
+    // Sem isto, "pare de mandar o pedido nesse endereco" (cliente irritado com a
+    // entrega, candidato natural a `low_sentiment`) lia "Encerro os envios
+    // automáticos deste canal agora mesmo".
+    const casam = [...NAO_PEDE_PARA_SAIR, ...ESPANHOL_NAO_PEDE].filter((t) => comecaComPalavraDeSaida(t));
+    expect(casam).toEqual([]);
+    for (const t of [
+      "Parar de tomar o remédio faz mal?",
+      "Parar o tratamento agora é ruim?",
+      "Pare de doer o dente, quando?",
+    ]) {
+      expect(comecaComPalavraDeSaida(t), t).toBe(false);
+    }
+  });
+
+  it("texto ausente é falso, sem lançar", () => {
+    expect(comecaComPalavraDeSaida(null)).toBe(false);
+    expect(comecaComPalavraDeSaida(undefined)).toBe(false);
   });
 });

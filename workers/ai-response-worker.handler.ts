@@ -14,6 +14,7 @@ export const AI_RESPONSE_HANDLER_KEY = "ai-response-worker.v1";
 
 export const aiResponseHandler: EventHandler = {
   key: AI_RESPONSE_HANDLER_KEY,
+  naOrgParada: "pula",
   events: ["message.received"],
   async handle(row): Promise<HandlerResult> {
     const result = await processMessageReceived(row);

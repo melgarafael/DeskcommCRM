@@ -45,6 +45,7 @@ vi.mock("@/lib/auth/server", () => ({
   loadAuthUser: async () => PLATFORM_ADMIN,
   requireAuth: async () => PLATFORM_ADMIN,
   resolveActiveOrg: async () => ({ orgId: ORG, name: "Org", role: estado.papelDaMembresia }),
+  orgAtivaSemPortao: async () => ({ orgId: ORG, name: "Org", role: estado.papelDaMembresia, org_status: "active" }),
   mfaEmDivida: async () => false,
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ rpc }) }));

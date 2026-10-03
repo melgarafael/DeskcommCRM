@@ -232,6 +232,47 @@ describe("PATCH /conversations/[id] — arquivar (#923)", () => {
     expect(acoesAuditadas()).not.toContain("conversation.archived");
   });
 
+  // Migration 0514: revisão obsoleta sai como PT409 (recusa permanente), não 40001.
+  // Os dois códigos têm de dar 409 — o banco e a imagem do app não sobem juntos.
+  it("revisão obsoleta (PT409) → 409 e nenhum evento de arquivamento", async () => {
+    const state = stubState({
+      erroRpc: { code: "PT409", message: "service_stale" },
+    });
+    agentSession(state);
+    const { PATCH } = await import("@/app/api/v1/conversations/[id]/route");
+
+    const res = await PATCH(patchReq({ status: "archived", expected_revision: 3 }), params);
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("conflict");
+    expect(body.error.message).toBe("O atendimento mudou. Atualize e tente novamente.");
+    expect(acoesAuditadas()).not.toContain("conversation.archived");
+  });
+
+  it("POST /close com revisão obsoleta (PT409) → 409, sem auditar o fechamento", async () => {
+    const state = stubState({
+      erroRpc: { code: "PT409", message: "service_stale" },
+    });
+    agentSession(state);
+    const { POST } = await import("@/app/api/v1/conversations/[id]/close/route");
+
+    const res = await POST(
+      new NextRequest(`http://localhost/api/v1/conversations/${CONV_ID}/close`, {
+        method: "POST",
+        body: JSON.stringify({ expected_revision: 3 }),
+        headers: { "content-type": "application/json" },
+      }),
+      params,
+    );
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("conflict");
+    expect(rpcDoStatus(state)?.args).toMatchObject({ p_status: "closed", p_expected: 3 });
+    expect(acoesAuditadas()).not.toContain("conversation.closed");
+  });
+
   it("sem escrita de suporte → 403, sem RPC e sem auditoria", async () => {
     const state = stubState();
     agentSession(state);

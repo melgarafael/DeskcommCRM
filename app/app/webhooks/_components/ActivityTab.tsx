@@ -102,6 +102,8 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   no_target: "O evento que disparou a regra não trouxe um lead nem um contato para etiquetar.",
   no_lead_or_contact: "O evento que disparou a regra não trouxe um lead para criar ou mover.",
   cross_pipeline_move_not_allowed: "Mover um lead para outro funil está desligado nesta organização.",
+  lead_already_transferred_in_event:
+    "Outra regra deste mesmo evento já levou o lead para outro funil. Vale a primeira regra; esta não transfere de novo.",
   flow_not_active:
     "O funil escolhido não está ativo, então a inscrição não foi feita. Ative o funil ou escolha outro na automação.",
   live_enrollment_exists: "O contato já está em um funil ativo — esta ação não inscreve duas vezes.",

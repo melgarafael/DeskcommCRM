@@ -21,6 +21,7 @@ interface LinhaDeElegibilidade {
   bot_silenced_until: Date | string | null;
   ai_authorized_at: Date | string | null;
   phone_number: string | null;
+  org_status: string | null;
 }
 
 /**
@@ -38,8 +39,10 @@ export async function decidirElegibilidadeDaConversa(
        cv.assignee_kind             as assignee_kind,
        cv.bot_silenced_until        as bot_silenced_until,
        ct.ai_authorized_at          as ai_authorized_at,
-       ct.phone_number              as phone_number
+       ct.phone_number              as phone_number,
+       o.status                     as org_status
      from conversations cv
+     join organizations o on o.id = cv.organization_id
      join contacts ct
        on ct.id = cv.contact_id and ct.organization_id = cv.organization_id
      join channel_sessions cs
@@ -52,6 +55,7 @@ export async function decidirElegibilidadeDaConversa(
 
   return decidirElegibilidade(
     montarEstadoDeElegibilidade({
+      orgStatus: r.org_status,
       aiGate: r.channel_metadata?.ai_gate,
       aiGateMode: r.channel_metadata?.ai_gate_mode,
       aiTestPhoneNumbers: r.channel_metadata?.ai_test_phone_numbers,

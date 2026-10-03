@@ -180,15 +180,21 @@ interface SetupMetadata {
   proposal_hash?: string;
   prepared_only?: boolean;
 }
+// Colunas em que `null` na linha do banco é o mesmo que ausente na versão montada: o hash
+// gravado na criação parte do objeto parseado (sem a chave), e a conferência parte da
+// linha lida (com `null`). Sem esta lista os dois hashes divergem e o setup recusa com
+// "O rascunho foi alterado" — o que a 0498 (inbound_debounce_ms) fez nas 5 specs de
+// tests/invariants/prospecting-agent-setup.test.ts.
+// ponytail: lista explícita; coluna nullable nova em ai_agent_versions entra aqui (#2004).
+const NULO_E_AUSENTE = new Set(["trigger_config", "inbound_debounce_ms"]);
+
 function versionHash(row: Record<string, unknown>) {
   const keys = Object.keys(versionCreateSchema.shape);
   return hash(
     versionCreateSchema.parse(
       Object.fromEntries(
         keys
-          .filter(
-            (key) => row[key] !== undefined && !(key === "trigger_config" && row[key] === null),
-          )
+          .filter((key) => row[key] !== undefined && !(NULO_E_AUSENTE.has(key) && row[key] === null))
           .map((key) => [key, row[key]]),
       ),
     ),

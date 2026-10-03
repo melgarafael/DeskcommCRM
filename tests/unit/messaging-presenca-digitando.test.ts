@@ -19,6 +19,7 @@ vi.mock("@/lib/waha/client", async (original) => ({
   getWahaClient: () => clienteDoTransporte,
 }));
 
+import { getAdapter } from "@/lib/channels";
 import { sinalizarDigitando } from "@/lib/messaging/presenca";
 
 interface LinhaDeConversa {
@@ -31,19 +32,42 @@ interface LinhaDeConversa {
 }
 
 let linha: LinhaDeConversa | null = null;
-/** Todo par (coluna, valor) que a leitura filtrou — a prova do escopo de tenant. */
-let filtros: Array<[string, unknown]> = [];
+/** `external_id` da última mensagem do cliente; `undefined` = conversa sem mensagem recebida. */
+let ultimaDoCliente: string | null | undefined = "wamid.DO-CLIENTE";
+/** Todo par (coluna, valor) que cada leitura filtrou, por tabela — a prova do escopo de tenant. */
+let filtros: Record<string, Array<[string, unknown]>> = {};
+/** Os argumentos de `not`, `order` e `limit`, por tabela: a ordem e o limite são o que escolhe "a última". */
+let modificadores: Record<string, unknown[][]> = {};
 
 function supabaseDeTeste(): never {
-  const chain = {
-    select: () => chain,
-    eq: (col: string, val: unknown) => {
-      filtros.push([col, val]);
-      return chain;
-    },
-    maybeSingle: async () => ({ data: linha, error: null }),
+  const cadeia = (tabela: string) => {
+    filtros[tabela] ??= [];
+    const chain = {
+      select: () => chain,
+      eq: (col: string, val: unknown) => {
+        filtros[tabela]!.push([col, val]);
+        return chain;
+      },
+      not: (...args: unknown[]) => {
+        (modificadores[tabela] ??= []).push(["not", ...args]);
+        return chain;
+      },
+      order: (...args: unknown[]) => {
+        (modificadores[tabela] ??= []).push(["order", ...args]);
+        return chain;
+      },
+      limit: (...args: unknown[]) => {
+        (modificadores[tabela] ??= []).push(["limit", ...args]);
+        return chain;
+      },
+      maybeSingle: async () =>
+        tabela === "messages"
+          ? { data: ultimaDoCliente === undefined ? null : { external_id: ultimaDoCliente }, error: null }
+          : { data: linha, error: null },
+    };
+    return chain;
   };
-  return { from: () => chain } as never;
+  return { from: cadeia } as never;
 }
 
 const CONVERSA_NORMAL: LinhaDeConversa = {
@@ -63,7 +87,10 @@ beforeEach(() => {
   setPresence.mockClear();
   clienteDoTransporte = { setPresence };
   linha = structuredClone(CONVERSA_NORMAL);
-  filtros = [];
+  ultimaDoCliente = "wamid.DO-CLIENTE";
+  filtros = {};
+  modificadores = {};
+  vi.restoreAllMocks();
 });
 
 describe("sinalizarDigitando", () => {
@@ -79,8 +106,8 @@ describe("sinalizarDigitando", () => {
     // mão, de fonte confiável. Sem esta linha, um id de conversa vazado
     // acenderia "digitando" no número de outro tenant.
     await sinalizarDigitando(supabaseDeTeste(), { organizationId: "org-1", conversationId: "conv-1" });
-    expect(filtros).toContainEqual(["organization_id", "org-1"]);
-    expect(filtros).toContainEqual(["id", "conv-1"]);
+    expect(filtros.conversations).toContainEqual(["organization_id", "org-1"]);
+    expect(filtros.conversations).toContainEqual(["id", "conv-1"]);
   });
 
   it("sessão que não está WORKING não recebe chamada de presença", async () => {
@@ -112,17 +139,82 @@ describe("sinalizarDigitando", () => {
 
   it("canal que não sabe sinalizar presença é no-op", async () => {
     // O adapter do canal intermediado não implementa `signalTyping`. Quem chama
-    // testa a presença do método — nunca pergunta QUAL provider é.
+    // testa a presença do método — nunca pergunta QUAL provider é. (Este caso
+    // usava o canal oficial, que passou a sinalizar.)
     linha!.channel_sessions = {
-      provider: "meta_cloud",
+      provider: "zernio",
       waha_session_name: null,
-      meta_phone_number_id: "123456",
-      zernio_account_id: null,
+      meta_phone_number_id: null,
+      zernio_account_id: "conta-1",
       status: "WORKING",
     };
+    expect(getAdapter("zernio").signalTyping).toBeUndefined();
     await expect(
       sinalizarDigitando(supabaseDeTeste(), { organizationId: "org-1", conversationId: "conv-1" }),
     ).resolves.toBeUndefined();
     expect(setPresence).not.toHaveBeenCalled();
+    expect(filtros.messages).toBeUndefined();
+  });
+});
+
+describe("sinalizarDigitando — a mensagem que se está respondendo", () => {
+  const SESSAO_OFICIAL = {
+    provider: "meta_cloud",
+    waha_session_name: null,
+    meta_phone_number_id: "123456",
+    zernio_account_id: null,
+    status: "WORKING",
+  };
+
+  it("o canal oficial recebe o external_id da última mensagem do cliente", async () => {
+    // Na Cloud API o "digitando" é da MENSAGEM recebida (`message_id`), não da
+    // conversa: sem o id o canal não tem o que sinalizar.
+    linha!.channel_sessions = { ...SESSAO_OFICIAL };
+    const sinal = vi.spyOn(getAdapter("meta_cloud"), "signalTyping").mockResolvedValue(undefined);
+
+    await sinalizarDigitando(supabaseDeTeste(), { organizationId: "org-1", conversationId: "conv-1" });
+
+    expect(sinal).toHaveBeenCalledTimes(1);
+    expect(sinal).toHaveBeenCalledWith({
+      organizationId: "org-1",
+      sessionRef: "123456",
+      recipient: "5527999998888",
+      inboundExternalId: "wamid.DO-CLIENTE",
+    });
+  });
+
+  it("a busca da última mensagem é escopada por organização, conversa e direção", async () => {
+    linha!.channel_sessions = { ...SESSAO_OFICIAL };
+    vi.spyOn(getAdapter("meta_cloud"), "signalTyping").mockResolvedValue(undefined);
+
+    await sinalizarDigitando(supabaseDeTeste(), { organizationId: "org-1", conversationId: "conv-1" });
+
+    expect(filtros.messages).toContainEqual(["organization_id", "org-1"]);
+    expect(filtros.messages).toContainEqual(["conversation_id", "conv-1"]);
+    expect(filtros.messages).toContainEqual(["direction", "inbound"]);
+  });
+
+  it("pega a MAIS RECENTE pela hora da mensagem, uma só, sem reação nem sistema", async () => {
+    // Crescente pegaria a primeira mensagem da conversa (a Meta recusa ler a de
+    // mais de 30 dias); sem o limite, `maybeSingle` erra em toda conversa com
+    // duas mensagens e o indicador morre calado. Reação não é mensagem a responder.
+    linha!.channel_sessions = { ...SESSAO_OFICIAL };
+    vi.spyOn(getAdapter("meta_cloud"), "signalTyping").mockResolvedValue(undefined);
+
+    await sinalizarDigitando(supabaseDeTeste(), { organizationId: "org-1", conversationId: "conv-1" });
+
+    expect(modificadores.messages?.[0]).toEqual(["not", "type", "in", "(reaction,system)"]);
+    expect(modificadores.messages?.[1]).toEqual(["order", "sent_at", { ascending: false, nullsFirst: false }]);
+    expect(modificadores.messages).toContainEqual(["limit", 1]);
+  });
+
+  it("conversa sem mensagem recebida chega ao canal com null — quem decide é o canal", async () => {
+    linha!.channel_sessions = { ...SESSAO_OFICIAL };
+    ultimaDoCliente = undefined;
+    const sinal = vi.spyOn(getAdapter("meta_cloud"), "signalTyping").mockResolvedValue(undefined);
+
+    await sinalizarDigitando(supabaseDeTeste(), { organizationId: "org-1", conversationId: "conv-1" });
+
+    expect(sinal).toHaveBeenCalledWith(expect.objectContaining({ inboundExternalId: null }));
   });
 });

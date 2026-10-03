@@ -14,6 +14,8 @@
  */
 import type pg from 'pg';
 
+import { extrairObjetoJsonDoTexto } from '@/lib/agent-engine/texto/extrair-json-do-texto';
+
 import type { Logger } from '../obs/logger';
 import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
 import type { LoadedRouter, RouterMember } from './router-config';
@@ -85,26 +87,19 @@ export function buildClassifierPrompt(
 }
 
 /**
- * Parse tolerante (padrão de flywheel/live.ts): indexOf('{')/lastIndexOf('}') +
- * JSON.parse em try/catch. NUNCA lança — qualquer saída inesperada do modelo
+ * Parse tolerante via `extrairJsonDoTexto` (cerca de código, prosa em volta e
+ * repetição do objeto). NUNCA lança — qualquer saída inesperada do modelo
  * vira { intentName: null, confidence: 0 }. Intenção fora de `members` é
  * recusada (defesa contra alucinação): o chamador não pode rotear pra um
  * agentId que o parse inventou.
  */
 export function parseIntentVerdict(text: string, members: RouterMember[]): IntentVerdict {
   const nullVerdict: IntentVerdict = { intentName: null, confidence: 0, falhou: true };
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start === -1 || end <= start) return nullVerdict;
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text.slice(start, end + 1));
-  } catch {
+  const parsed = extrairObjetoJsonDoTexto(text);
+  if (parsed === null || typeof parsed !== 'object') {
     return nullVerdict;
   }
-  if (typeof parsed !== 'object' || parsed === null) return nullVerdict;
-
   const raw = parsed as { intent?: unknown; confidence?: unknown };
   const confidence = typeof raw.confidence === 'number' && !Number.isNaN(raw.confidence)
     ? Math.min(1, Math.max(0, raw.confidence))

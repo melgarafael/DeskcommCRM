@@ -329,10 +329,17 @@ export interface ChannelAdapter {
    * LANÇA quando o transporte recusa, e é de propósito: a decisão de engolir é
    * de quem chama (o indicador é decoração; a mensagem é o produto), e engolir
    * aqui esconderia de todo chamador futuro que a chamada nem chega.
+   *
+   * `inboundExternalId` é o `messages.external_id` da última mensagem que o
+   * cliente mandou nesta conversa, ou `null` quando não há. Há canal que não
+   * acende presença por conversa, e sim "respondendo a esta mensagem" — o
+   * oficial é assim, e sem o id ele não tem o que sinalizar. Quem não precisa
+   * ignora o campo.
    */
   signalTyping?(input: ChannelTenantScope & {
     sessionRef: string;
     recipient: string;
+    inboundExternalId: string | null;
   }): Promise<void>;
 
   /**

@@ -23,6 +23,7 @@ import { apiClient } from "@/lib/api/client";
 import { toast } from "sonner";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { activityLabel, actorLabel, actorShape } from "@/lib/leads/activity-vocabulary";
+import { soChavesAlteradas } from "@/lib/leads/custom-fields-so-diff";
 import { ConversationTagsEditor } from "./ConversationTagsEditor";
 import { ContactTagsEditor } from "./ContactTagsEditor";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
@@ -32,6 +33,7 @@ import { useEditLead } from "@/hooks/kanban/useUpdateLead";
 import { useBulkAction } from "@/hooks/kanban/useBulkAction";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { PROXIMO_PASSO_DA_MENSAGEM_NOVA } from "@/lib/atendimento/proximo-passo-padrao";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 
@@ -475,14 +477,21 @@ function CamposDoFunil({
   const t = useT();
   const edit = useEditLead(pipelineId);
   const [customFields, setCustomFields] = useState(valores);
+  // A RÉGUA do diff (issue #2132): o valor carregado quando o painel abriu.
+  // Só o que a pessoa mudar daqui vai viajar — o merge é do servidor.
+  const [camposCarregados, setCamposCarregados] = useState(valores);
 
   if (fieldDefs.length === 0) {
     return <p className="text-xs text-muted-foreground">{t("Este funil não tem campos extras.")}</p>;
   }
 
   async function salvar() {
+    const payload = soChavesAlteradas(camposCarregados, customFields);
     try {
-      await edit.mutateAsync({ leadId, patch: { custom_fields: customFields } });
+      await edit.mutateAsync({ leadId, patch: { custom_fields: payload } });
+      // O que acabou de gravar vira a nova régua: o próximo salvamento não
+      // reenvia este, e uma limpeza alheia no intervalo não é atropelada.
+      setCamposCarregados({ ...customFields });
       toast.success(t("Campos atualizados"));
       onSalvo();
     } catch {
@@ -773,13 +782,15 @@ export function CRMSidePanel({ conversation }: Props) {
                       {t(ESTADO_LEGIVEL[d.estado] ?? d.estado)}
                     </span>
                     <span className="shrink-0 tabular-nums text-muted-foreground">
-                      {t("há")} {horasDesde(d.aberta_em)}h
+                      {t("há {tempo}").replace("{tempo}", `${horasDesde(d.aberta_em)}h`)}
                     </span>
                   </div>
                   {/* O invariante 4 na frase, não só na cor: quem enxerga mal
                       cor precisa ler a mesma informação. */}
                   <div className={cn("mt-0.5", semPasso ? "font-medium" : "text-muted-foreground")}>
-                    {d.proximo_passo ?? t("Sem próximo passo definido")}
+                    {d.proximo_passo === PROXIMO_PASSO_DA_MENSAGEM_NOVA
+                      ? t("Responder à nova mensagem do cliente")
+                      : (d.proximo_passo ?? t("Sem próximo passo definido"))}
                   </div>
                   {/* A SAÍDA. Sem ela esta seção só denunciava: o atendente via o
                       vazamento e tinha de sair da tela para resolver — peça que

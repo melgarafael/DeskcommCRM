@@ -1,4 +1,5 @@
 import { ApiError } from "@/lib/api/types";
+import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Queryable } from "../../queue/queue";
@@ -56,6 +57,11 @@ export async function sendWithLedger(
     try {
       message = await send(key, existing?.id ?? key);
     } catch (error) {
+      // Organização parada NÃO é veto do contato. Gravar `vetoed` faria o dono
+      // do job ler `blocked` — e no agent-engine `blocked` cancela TODOS os
+      // follow-ups do contato como opt-out irrevogável (`applySendOutcome`).
+      // Sobe como está: `terminal: true` encerra o job sem tocar no contato.
+      if (error instanceof OrgNaoOperanteError) throw error;
       if (error instanceof ApiError && error.status === 403) {
         await store.update(input.tenantId, key, "vetoed", null, "handler 403");
         return { kind: "blocked", idempotencyKey: key };

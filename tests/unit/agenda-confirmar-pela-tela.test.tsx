@@ -71,6 +71,7 @@ function montar(agendamentos: Agendamento[], onConfirmar?: (id: string) => void)
       agendamentos={agendamentos}
       pessoas={PESSOAS}
       agora={AGORA}
+      fuso="America/Sao_Paulo"
       {...(onConfirmar ? { onConfirmar } : {})}
     />,
   );

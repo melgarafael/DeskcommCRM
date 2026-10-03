@@ -78,7 +78,14 @@ function ag(
 }
 
 function montar(agendamentos: Agendamento[], agora: Date = AGORA) {
-  return render(<HistoricoDaAgenda agendamentos={agendamentos} pessoas={PESSOAS} agora={agora} />);
+  return render(
+    <HistoricoDaAgenda
+      agendamentos={agendamentos}
+      pessoas={PESSOAS}
+      agora={agora}
+      fuso="America/Sao_Paulo"
+    />,
+  );
 }
 
 function contador(aba: AbaDoHistorico): number {
@@ -289,6 +296,7 @@ describe("histórico da agenda — a repartição nas quatro abas", () => {
         agendamentos={linhas}
         pessoas={PESSOAS}
         agora={new Date(AGORA.getTime() + 60 * 60_000)}
+        fuso="America/Sao_Paulo"
       />,
     );
 

@@ -677,13 +677,26 @@ export async function updateLeadHandler(
     patch.expected_close_date = input.expected_close_date;
   }
   if (input.tags !== undefined) patch.tags = input.tags;
-  if (input.custom_fields !== undefined) {
-    const prev =
-      existing.custom_fields && typeof existing.custom_fields === "object" && !Array.isArray(existing.custom_fields)
-        ? (existing.custom_fields as Record<string, unknown>)
-        : {};
-    patch.custom_fields = { ...prev, ...input.custom_fields };
-  }
+  // ⛔ `custom_fields` NÃO ENTRA NO `patch`, e a ausência é o conserto.
+  //
+  // Isto era `patch.custom_fields = { ...prev, ...input.custom_fields }`, com
+  // `prev` vindo do SELECT lá de cima. Duas escritas simultâneas com chaves
+  // DIFERENTES perdiam uma: a segunda lia `prev` antes de a primeira gravar e
+  // sobrescrevia a coluna inteira com a versão velha mais a chave dela. Sem
+  // erro, sem log, o dado some.
+  //
+  // O PostgREST não sabe dizer `custom_fields = custom_fields || $1` — só sabe
+  // mandar um valor pronto, que é justamente o valor calculado da leitura
+  // velha. Então o merge foi para onde a trava de linha existe: a migration
+  // 0502 (`fn_lead_anotar_campos`), chamada LOGO APÓS o `update` abaixo.
+  //
+  // ⚠️ POR QUE DEPOIS, E NÃO ANTES: o `update` é quem prova que o lead existe e
+  // é desta organização (o 404). Anotar antes gravaria campo num lead que a
+  // requisição ainda vai recusar.
+  //
+  // O que a auditoria vai comparar (ver `camposDaAuditoria` mais abaixo) é o
+  // merge LOCAL, só para saber se esta requisição mudou algum campo. Ele nunca
+  // é gravado.
 
   // O filtro entra AQUI TAMBÉM, e não só no SELECT acima: entre ler e escrever
   // há uma janela, e defesa que depende de uma leitura anterior é defesa que
@@ -714,11 +727,46 @@ export async function updateLeadHandler(
     );
   }
 
+  // O MERGE ATÔMICO. `updated` já provou que o lead existe e é da organização,
+  // e `ctx.organization_id` vem de fonte confiável — nunca do body. A função
+  // roda com a chave de serviço (é a única a ter EXECUTE), então o filtro de
+  // organização é o argumento `p_org`.
+  if (input.custom_fields !== undefined) {
+    const { data: mesclados, error: anotarErr } = await createAdminClient().rpc(
+      "fn_lead_anotar_campos",
+      { p_org: ctx.organization_id, p_lead: leadId, p_campos: input.custom_fields },
+    );
+    if (anotarErr) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, anotarErr.message);
+    }
+    // A resposta é o que EXISTE no banco, não o que esta requisição mandou: sob
+    // concorrência as duas coisas diferem, e é a do banco que vale.
+    (updated as Record<string, unknown>).custom_fields =
+      (mesclados as Record<string, unknown> | null) ?? {};
+  }
+
   const a = actorAuditPayload(ctx.actor);
   // O QUE MUDOU, nao o que foi enviado: o formulario do dossie manda o form
   // inteiro a cada salvamento, entao `Object.keys(input)` acusava cinco campos
   // quando a pessoa mexeu em um. Detalhe em lib/leads/campos-alterados.ts.
-  const fields = camposAlterados(patch, existing as Record<string, unknown>);
+  //
+  // `custom_fields` entra por fora porque não passou pelo `patch`: quem mescla é
+  // o banco. Sem esta linha, anotar um campo do funil não deixaria rastro na
+  // auditoria nem na timeline — invisível é pior que errado. A pergunta é a
+  // mesma de antes ("esta requisição mudou algum campo?"), respondida contra o
+  // que ESTA requisição leu (`existing`) e não contra o que outra escrita
+  // concorrente gravou: senão a chave do vizinho apareceria como minha.
+  // ⛔ `patch` NÃO é tocado: já foi enviado ao banco, e escrever nele depois é
+  // confundir "o que pedi" com "o que ficou".
+  const camposDaAuditoria: Record<string, unknown> = { ...patch };
+  if (input.custom_fields !== undefined) {
+    const anteriores =
+      existing.custom_fields && typeof existing.custom_fields === "object" && !Array.isArray(existing.custom_fields)
+        ? (existing.custom_fields as Record<string, unknown>)
+        : {};
+    camposDaAuditoria.custom_fields = { ...anteriores, ...input.custom_fields };
+  }
+  const fields = camposAlterados(camposDaAuditoria, existing as Record<string, unknown>);
 
   // A EDIÇÃO HUMANA ENTRA NA TIMELINE (wave 6). Antes disto, mexer num campo
   // era invisível: a IA deixava rastro e o humano não — meia continuidade
@@ -747,9 +795,14 @@ export async function updateLeadHandler(
     // reason é RENDERIZADO NA TELA e vai junto em captura, exportação e ticket
     // de suporte; o §9 proíbe PII nova em log, reason ou evidence.
     //
-    // Quem precisa do valor anterior tem `api_audit_log`, que já registra a
-    // mutação SOB CONTROLE DE ACESSO. Duplicar aqui criaria um segundo lugar
-    // com o mesmo dado e menos proteção.
+    // O valor anterior NÃO é guardado em lugar nenhum — nem aqui, nem no
+    // `api_audit_log`, que registra `lead.updated` com só `{ fields }` (os
+    // NOMES dos campos, nunca o antes-e-depois). Pôr lá o valor do título ou
+    // de `custom_fields` também seria PII fora do alcance da proteção: o audit
+    // é append-only e a anonimização da LGPD (lib/lgpd/cascata.ts) não o
+    // alcança. Guardar o antes-e-depois só de campos tipados sem PII é
+    // pergunta aberta na #1755, sem decisão. Hoje, quem precisa do valor
+    // anterior não tem onde buscar.
     //
     // NÃO confunda com a atividade de autorização vencida (wave 4), que mostra
     // antes-e-depois DE PROPÓSITO: lá o texto é a proposta do PRÓPRIO AGENTE,

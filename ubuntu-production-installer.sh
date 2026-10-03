@@ -46,8 +46,8 @@ Serviços locais em Docker:
   app, worker, scheduler, WAHA, Redis, adaptador Redis HTTP, Caddy e Supabase
   self-hosted (Postgres, Auth, REST, Realtime e Storage).
 
-Requisitos: VPS amd64 com no mínimo 4 GB de RAM (8 GB recomendados) e DNS do
-domínio apontando para ela.
+Requisitos: VPS x86_64/amd64 ou ARM64/aarch64, com no mínimo 4 GB de RAM
+(8 GB recomendados) e DNS do domínio apontando para ela.
 EOF
 }
 
@@ -79,8 +79,8 @@ main() {
     || die "Distribuição não suportada (${PRETTY_NAME:-desconhecida}). Em outro Linux, use diretamente hostgator-setup-kit/install.sh."
 
   case "$(uname -m)" in
-    x86_64|amd64) ;;
-    *) die "Arquitetura $(uname -m) não suportada pelas imagens de produção publicadas (linux/amd64)." ;;
+    x86_64|amd64|aarch64|arm64) ;;
+    *) die "Arquitetura $(uname -m) não suportada pelas imagens de produção publicadas (linux/amd64 e linux/arm64)." ;;
   esac
 
   [[ -f "$KIT_INSTALLER" ]] || die "Instalador canônico não encontrado em $KIT_INSTALLER. Execute este arquivo dentro do repositório completo."

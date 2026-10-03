@@ -11,7 +11,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, orgAtivaSemPortao, resolveActiveOrg } from "@/lib/auth/server";
 import { audit } from "@/lib/audit";
 import { createClient } from "@/lib/supabase/server";
 import type { AuthUser } from "@/lib/auth/types";
@@ -19,6 +19,7 @@ import type { AuthUser } from "@/lib/auth/types";
 vi.mock("@/lib/auth/server", () => ({
   loadAuthUser: vi.fn(),
   resolveActiveOrg: vi.fn(),
+  orgAtivaSemPortao: vi.fn(),
   // Sessão sem dívida de MFA: estes testes medem RBAC, não o gate de
   // segundo fator (que tem suíte própria em require-role-mfa.test.ts).
   mfaEmDivida: vi.fn(async () => false),
@@ -88,6 +89,7 @@ function adminSession(state: StubState) {
   };
   vi.mocked(loadAuthUser).mockResolvedValue(user);
   vi.mocked(resolveActiveOrg).mockResolvedValue({ orgId: ORG_ID, name: "Org", role: "admin" });
+  vi.mocked(orgAtivaSemPortao).mockResolvedValue({ orgId: ORG_ID, name: "Org", role: "admin", org_status: "active" });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   vi.mocked(createClient).mockResolvedValue(makeSupabaseStub(state) as any);
 }

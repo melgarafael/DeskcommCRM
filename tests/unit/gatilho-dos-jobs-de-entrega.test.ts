@@ -86,15 +86,21 @@ const GATILHO_ESPERADO: Record<string, { condicao: string | null; efeito: string
       "Ela é SEM `if:` de propósito — pulada, ela deixaria `build-and-push` pulado junto " +
       "e o `imagens-ok` leria `skipped` como reprovação.",
   },
-  // Em pull_request ele só construía e descartava as MESMAS três imagens que os
-  // dois jobs `*-sobe` já constroem — 3 builds Docker por push de PR sem medir
+  // Em pull_request ele só construía e descartava as MESMAS quatro imagens que os
+  // dois jobs `*-sobe` já constroem — 4 builds Docker por push de PR sem medir
   // nada a mais. A condição tira só o PR; o `imagens-ok` exige `success` dele
   // em todo outro evento e aceita `skipped` só em pull_request.
   "publish-image.yml::build-and-push": {
     condicao: "github.event_name != 'pull_request'",
     efeito:
-      "Este job PUBLICA as três imagens no GHCR — é o artefato que o self-hoster instala. " +
+      "Este job PUBLICA as quatro imagens no GHCR — é o artefato que o self-hoster instala. " +
       "Desligá-lo faz a tag existir sem imagem por trás dela.",
+  },
+  "publish-image.yml::juntar-manifestos": {
+    condicao: "github.event_name != 'pull_request'",
+    efeito:
+      "Este job junta os builds nativos AMD64 e ARM64 em cada tag que o cliente puxa. " +
+      "Desligá-lo deixa as tags finais sem um manifesto multi-arquitetura utilizável.",
   },
   // A condição só é falsa em pull_request que não alcança imagem nenhuma
   // (scripts/pr-mexe-na-imagem.sh); fora de PR o output é sempre `sim`. O

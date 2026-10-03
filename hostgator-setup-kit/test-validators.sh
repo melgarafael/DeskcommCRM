@@ -55,7 +55,17 @@ fail=0
 # `SUPABASE_ACCESS_TOKEN=` já faz por chamada lá embaixo.
 # O passo do CI não exporta chave de IA (env: só VERIFY_INICIO e PNPM_HOME) e o
 # mesmo SHA passou na re-execução: isto hermetiza a suíte para quem roda com
-# chave no terminal, mas não é a causa da intermitência da #1570, que segue aberta.
+# chave no terminal, mas NÃO é a causa da intermitência da #1570.
+# A causa medida é o cano das asserções. Com `set -o pipefail` (topo do
+# arquivo), `printf '%s' "$saida" | grep -q X` reprova quando o `grep -q` acha a
+# frase e sai ANTES de o `printf` terminar de escrever: o `printf` leva SIGPIPE
+# (status 141), o pipefail faz o pipeline inteiro falhar, e o `!` lê isso como
+# "a frase não está lá". Medido em 02/10/2026 (ubuntu:24.04, bash 5.2, 1 CPU),
+# sobre a SAÍDA REAL deste caso: taxas baixas e variáveis pelo cano (de 1 a 6
+# em 6000, conforme a asserção), sempre com status 141/0, e zero em 6000 com
+# here-string.
+# Por isso toda asserção `grep -q` deste arquivo lê a variável por `<<<"$var"`
+# — sem cano, não há quem leve SIGPIPE. Não volte ao `printf | grep -q`.
 export ANTHROPIC_API_KEY= OPENAI_API_KEY= OPENROUTER_API_KEY= AI_GATEWAY_API_KEY=
 
 # ── Sandbox: a suíte NÃO pode escrever no crontab da máquina de quem a roda ──
@@ -77,13 +87,11 @@ crontab -l >"$CRONTAB_REAL_ANTES" 2>/dev/null || : >"$CRONTAB_REAL_ANTES"
 
 # dublar_uname_amd64 <diretório bin do sandbox>
 #
-# O `_common.sh` recusa, logo que é carregado, todo install.sh/update.sh que não
-# roda em amd64 — a imagem publicada é só linux/amd64. Os cenários que executam
-# esses scripts de verdade medem o INSTALADOR, não o processador de quem roda a
-# suíte: sem este dublê, num Mac Apple Silicon (`arm64`) todos eles paravam na
-# guarda (medido: 22 asserções vermelhas, a maioria "inconclusivo"). A recusa de
-# ARM tem prova própria em tests/shell/arquitetura-kit.test.sh. Só `uname -m` é
-# dublado; qualquer outro uso vai ao `uname` real.
+# Os cenários abaixo medem o instalador, não o processador de quem roda a
+# suíte. Fixamos o ambiente em x86_64 para que os fixtures e valores de imagem
+# desses casos permaneçam determinísticos; a aceitação de ARM64 tem prova
+# própria em tests/shell/arquitetura-kit.test.sh. Só `uname -m` é dublado;
+# qualquer outro uso vai ao `uname` real.
 UNAME_REAL="$(command -v uname)"
 dublar_uname_amd64() {
   cat > "$1/uname" <<STUB
@@ -111,7 +119,7 @@ ok() {
   if [ $rc -eq 0 ]; then
     printf '  ✗ %s  (esperava rejeitar, aceitou)\n' "$desc"; fail=1; return
   fi
-  if [ -n "$want" ] && ! printf '%s' "$out" | grep -qi -- "$want"; then
+  if [ -n "$want" ] && ! grep -qi -- "$want" <<<"$out"; then
     printf '  ✗ %s  (rejeitou, mas pelo motivo errado)\n     esperava falar de: %s\n     disse: %s\n' \
       "$desc" "$want" "$(printf '%s' "$out" | head -1)"; fail=1; return
   fi
@@ -165,7 +173,7 @@ sburl_ok() {  # sburl_ok <descrição> <pass|reject> <url> [trecho esperado]...
   fi
   if [ $rc -eq 0 ]; then printf '  ✗ %s  (esperava rejeitar, aceitou)\n' "$desc"; fail=1; return; fi
   for want in "$@"; do
-    if ! printf '%s' "$out" | grep -qi -- "$want"; then
+    if ! grep -qi -- "$want" <<<"$out"; then
       printf '  ✗ %s  (rejeitou, mas a mensagem não fala de: %s)\n     disse: %s\n' \
         "$desc" "$want" "$(printf '%s' "$out" | head -1)"; fail=1; return
     fi
@@ -240,7 +248,7 @@ db_ok() {  # db_ok <descrição> <pass|reject> <NEXT_PUBLIC_SUPABASE_URL> <strin
     return
   fi
   if [ $rc -eq 0 ]; then printf '  ✗ %s  (esperava rejeitar, aceitou)\n' "$desc"; fail=1; return; fi
-  if [ -n "$want" ] && ! printf '%s' "$out" | grep -qi -- "$want"; then
+  if [ -n "$want" ] && ! grep -qi -- "$want" <<<"$out"; then
     printf '  ✗ %s  (rejeitou, mas pelo motivo errado)\n     disse: %s\n' "$desc" "$(printf '%s' "$out" | head -1)"; fail=1; return
   fi
   if [ "$tocou" = sim ]; then
@@ -327,7 +335,7 @@ rede_morta() {  # rede_morta <descrição> <pass|reject> <validador> <valor> [tr
     printf '  ✗ %s  (esperava barrar, seguiu)\n' "$desc"; fail=1; return
   fi
   for want in "$@"; do
-    if ! printf '%s' "$out" | grep -qi -- "$want"; then
+    if ! grep -qi -- "$want" <<<"$out"; then
       printf '  ✗ %s  (a mensagem não fala de: %s)\n     disse: %s\n' \
         "$desc" "$want" "$(printf '%s' "$out" | head -1)"; fail=1; return
     fi
@@ -450,7 +458,7 @@ PROV
   # Sem esta checagem o teste passaria por VACUIDADE: se o install.sh morresse
   # antes do bloco (stub quebrado, refactor movendo o trecho), nada executaria o
   # veneno e o silêncio seria lido como aprovação.
-  if ! printf '%s' "$saida" | grep -q "credenciais entraram sozinhas"; then
+  if ! grep -q "credenciais entraram sozinhas" <<<"$saida"; then
     printf '  ✗ o install.sh não chegou ao bloco do Supabase — teste inconclusivo, não verde\n'; exit 1
   fi
   if [ -e "$MARCA" ]; then
@@ -880,7 +888,7 @@ CRONTAB_VIZINHO='0 8 * * * /root/trend-radar/run_full_vps.sh
 cron_ok() {  # cron_ok <descrição> <esperado_no_resultado> <marcador> <legado> <linha_nova>
   local desc="$1" espera="$2" marcador="$3" legado="$4" nova="$5" out
   out="$(printf '%s\n' "$CRONTAB_VIZINHO" | cron_merge "$marcador" "$legado" "$nova")"
-  if printf '%s' "$out" | grep -qF -e "$espera"; then printf '  ✓ %s\n' "$desc"
+  if grep -qF -e "$espera" <<<"$out"; then printf '  ✓ %s\n' "$desc"
   else printf '  ✗ %s\n     sumiu do crontab: %s\n' "$desc" "$espera"; fail=1; fi
 }
 NOVO_TAG='# deskcomm:/root/instalacao-nova'
@@ -993,7 +1001,7 @@ echo "provisionamento do Supabase: senha do banco"
 saida="$(SUPABASE_ACCESS_TOKEN=token-invalido-de-teste SUPABASE_ORG_ID=org-de-teste \
          SUPABASE_PROVISION_STATE="$SUITE_TMP/senha-do-teste.env" \
          bash ./supabase-provision.sh "Projeto de Teste" sa-east-1 2>&1 || true)"
-if printf '%s' "$saida" | grep -q 'Criando o projeto'; then
+if grep -q 'Criando o projeto' <<<"$saida"; then
   printf '  ✓ o script passa da geração da senha e chega ao passo de criar\n'
 else
   printf '  ✗ o script MORREU antes de criar o projeto (o defeito voltou)\n'
@@ -1201,14 +1209,14 @@ if [ $rc_me -ne 0 ]; then
 else
   printf '  ✓ sem token: sai 0 (a instalação continua)\n'
 fi
-if printf '%s' "$saida_me" | grep -q 'SUPABASE_ACCESS_TOKEN'; then
+if grep -q 'SUPABASE_ACCESS_TOKEN' <<<"$saida_me"; then
   printf '  ✓ sem token: diz qual é a chave que falta\n'
 else
   printf '  ✗ sem token: a mensagem não nomeia SUPABASE_ACCESS_TOKEN\n'; fail=1
 fi
 # O passo manual tem de ensinar `&`. Foi um `?` nesta mesma receita (na doc de
 # deploy) que gravou o link quebrado no projeto de produção.
-if printf '%s' "$saida_me" | grep -q '{{ .RedirectTo }}&token_hash'; then
+if grep -q '{{ .RedirectTo }}&token_hash' <<<"$saida_me"; then
   printf '  ✓ sem token: o passo manual ensina o separador & (nunca ?)\n'
 else
   printf '  ✗ sem token: o passo manual não mostra o link com &\n'; fail=1
@@ -1218,7 +1226,7 @@ fi
 #     o certo é ensinar o caminho do GoTrue, não tentar um PATCH que não existe.
 saida_me="$(SUPABASE_ACCESS_TOKEN=sbp_de_teste NEXT_PUBLIC_SUPABASE_URL=https://supabase.meucliente.com.br \
             bash ./marca-emails.sh --env /dev/null 2>&1)"; rc_me=$?
-if [ $rc_me -eq 0 ] && printf '%s' "$saida_me" | grep -q 'GOTRUE_MAILER_TEMPLATES'; then
+if [ $rc_me -eq 0 ] && grep -q 'GOTRUE_MAILER_TEMPLATES' <<<"$saida_me"; then
   printf '  ✓ Supabase próprio: sai 0 e manda para o caminho do GoTrue\n'
 else
   printf '  ✗ Supabase próprio: rc=%s, mensagem sem GOTRUE_MAILER_TEMPLATES\n' "$rc_me"; fail=1
@@ -2172,7 +2180,7 @@ STUB
   saida="$(rodar install.sh --yes)"
   unset DUBLE_GHCR REPO_URL
 
-  if ! printf '%s' "$saida" | grep -q "construídas neste servidor"; then
+  if ! grep -q "construídas neste servidor" <<<"$saida"; then
     printf '  ✗ com as imagens inalcançáveis, o instalador não avisou que ia construir aqui\n'
     printf '     silêncio aqui é o defeito: o dono não descobre que duas peças saíram do fonte local.\n'
     exit 1
@@ -2227,7 +2235,7 @@ STUB
     saida="$(cd "$raiz/crmia" && env PATH="$raiz/bin:$PATH" DOCKER_LOG="$raiz/docker.log" \
       CRONTAB_SANDBOX="$CRONTAB_SANDBOX" bash "$raiz/install.sh" --yes 2>&1 || true \
       | sed -E 's/\x1b\[[0-9;]*m//g')"
-    if printf '%s' "$saida" | grep -q 'comando não encontrado\|command not found'; then
+    if grep -q 'comando não encontrado\|command not found' <<<"$saida"; then
       printf '  ✗ %s — o instalador chamou um comando que não existe:\n' "$desc"
       printf '%s\n' "$saida" | grep 'comando não encontrado\|command not found' | head -2 | sed 's/^/       /'
       exit 1
@@ -2301,20 +2309,21 @@ STUB
     : > "$VPS_LOG"
     (cd "$VPS_PROJ" && env PATH="$VPS_RAIZ/bin:$PATH" DOCKER_LOG="$VPS_LOG" \
       CRONTAB_SANDBOX="$CRONTAB_SANDBOX" SUPABASE_ACCESS_TOKEN= \
+      ANTHROPIC_API_KEY= OPENAI_API_KEY= OPENROUTER_API_KEY= AI_GATEWAY_API_KEY= \
       bash "$VPS_RAIZ/install.sh" --yes 2>&1 || true) | sed -E 's/\x1b\[[0-9;]*m//g'
   }
 
   saida="$(rodar_sem_ia)"
 
   # A marca do defeito: com o campo obrigatório, o instalador morre aqui.
-  if printf '%s' "$saida" | grep -q 'exige .env preenchido'; then
+  if grep -q 'exige .env preenchido' <<<"$saida"; then
     printf '  ✗ o instalador ainda morre sem chave de IA — o campo do provedor não é `opcional`\n'
     printf '     %s\n' "$(printf '%s' "$saida" | grep -m1 'exige .env preenchido')"
     exit 1
   fi
   # CONTROLE POSITIVO: "não morreu" só significa alguma coisa se a instalação
   # chegou ao fim; sem esta âncora, um install que parasse antes passaria.
-  if ! printf '%s' "$saida" | grep -q 'Instalação concluída'; then
+  if ! grep -q 'Instalação concluída' <<<"$saida"; then
     printf '  ✗ a instalação sem chave de IA não chegou à tela final — cenário inconclusivo, não verde\n'
     printf '     última linha: %s\n' "$(printf '%s' "$saida" | grep -v '^$' | tail -1)"
     exit 1
@@ -2340,10 +2349,13 @@ STUB
   # "Instalação concluída"), como no caso do Site URL: é a única tela que a
   # pessoa lê inteira, e um aviso no meio do log de dez minutos não conta.
   rabo="${saida##*Instalação concluída}"
-  if ! printf '%s' "$rabo" | grep -q 'A IA ainda não atende'; then
-    printf '  ✗ a tela final não avisa que a IA ainda não atende\n'; exit 1
+  if ! grep -q 'A IA ainda não atende' <<<"$rabo"; then
+    printf '  ✗ a tela final não avisa que a IA ainda não atende\n'
+    printf '     últimas linhas da saída:\n'
+    printf '%s\n' "$saida" | grep -v '^$' | tail -15 | sed 's/^/       /'
+    exit 1
   fi
-  if ! printf '%s' "$rabo" | grep -q 'IA › Credenciais'; then
+  if ! grep -q 'IA › Credenciais' <<<"$rabo"; then
     printf '  ✗ o aviso da tela final não diz ONDE cadastrar a chave (IA › Credenciais)\n'; exit 1
   fi
   printf '  ✓ sem chave de IA: instala, .env inteiro, e a tela final dá o caminho de volta\n'
@@ -2354,13 +2366,13 @@ STUB
   # de `provedor_ok` logo acima.
   printf '%s\n' "$BASE_ENV" > "$VPS_PROJ/.env"
   saida="$(rodar_sem_ia)"
-  if ! printf '%s' "$saida" | grep -q 'Instalação concluída'; then
+  if ! grep -q 'Instalação concluída' <<<"$saida"; then
     printf '  ✗ (controle) a segunda rodada, com chave, não chegou à tela final — cenário inconclusivo\n'
     exit 1
   fi
-  rabo="${saida##*Instalação concluída}"
-  if printf '%s' "$rabo" | grep -q 'A IA ainda não atende'; then
-    printf '  ✗ com a chave presente, a tela final avisou que falta chave de IA\n'; exit 1
+  if grep -q 'A IA ainda não atende' <<<"$saida"; then
+    printf '  ✗ com a chave presente, a tela final avisou que falta chave de IA\n'
+    printf '     (o instalador recebeu a chave do .env mas o aviso da pendência saiu mesmo assim)\n'; exit 1
   fi
   printf '  ✓ com a chave presente, o lembrete não aparece (o aviso não é ruído permanente)\n'
 ) || fail=1
@@ -2482,14 +2494,14 @@ STUB
   # achar: a recusa nomeia o contêiner encontrado e ensina a saída.
   saida="$(rodar install.sh --yes)"
   chegou_na_deteccao || exit 1
-  if printf '%s' "$saida" | grep -q 'já estão ocupadas'; then
+  if grep -q 'já estão ocupadas' <<<"$saida"; then
     printf '  ✗ caiu no painel genérico: a varredura de modo host não achou o Traefik\n'
     printf '     %s\n' "$(printf '%s' "$saida" | grep -m1 'já estão ocupadas')"; exit 1
   fi
-  if ! printf '%s' "$saida" | grep -q "traefik-hostinger"; then
+  if ! grep -q "traefik-hostinger" <<<"$saida"; then
     printf '  ✗ a recusa não nomeia o Traefik encontrado — quem lê não sabe o que confirmar\n'; exit 1
   fi
-  if ! printf '%s' "$saida" | grep -q 'REVERSE_PROXY=traefik'; then
+  if ! grep -q 'REVERSE_PROXY=traefik' <<<"$saida"; then
     printf '  ✗ a recusa não ensina a saída (REVERSE_PROXY=traefik no .env)\n'; exit 1
   fi
   if grep -qE '^TRAEFIK_NETWORK=' "$PROJ/.env"; then
@@ -2505,7 +2517,7 @@ STUB
   # um terminal, e prender o teste à prosa é prender o comportamento à redação.
   saida="$(rodar install.sh "" "" "s${RESTO_DAS_PERGUNTAS}")"
   chegou_na_deteccao || exit 1
-  if ! printf '%s' "$saida" | grep -q 'traefik-hostinger'; then
+  if ! grep -q 'traefik-hostinger' <<<"$saida"; then
     printf '  ✗ o instalador nem mostrou o que encontrou antes de agir\n'; exit 1
   fi
   # A rede é EXTERNA no compose: se não existir, o `up -d` morre em "declared as
@@ -2551,7 +2563,7 @@ STUB
   # explícita no .env já é a resposta, inclusive em --yes.
   saida="$(rodar install.sh --yes "REVERSE_PROXY='traefik'")"
   chegou_na_deteccao || exit 1
-  if printf '%s' "$saida" | grep -q 'Não consegui descobrir a rede'; then
+  if grep -q 'Não consegui descobrir a rede' <<<"$saida"; then
     printf '  ✗ com REVERSE_PROXY=traefik no .env o instalador morre sem achar a rede\n'; exit 1
   fi
   if ! grep -qx 'TRAEFIK_NETWORK="crmhost_teste_proxy"' "$PROJ/.env"; then
@@ -2599,16 +2611,16 @@ STUB
 
   # 1. Recusa. O sintoma do defeito era instalar em silêncio; qualquer coisa que
   #    não seja parar aqui é o defeito de volta.
-  if ! printf '%s' "$saida" | grep -q 'Já existe um DeskcommCRM NO AR'; then
+  if ! grep -q 'Já existe um DeskcommCRM NO AR' <<<"$saida"; then
     printf '  ✗ NÃO recusou a instalação por cima da que está no ar\n'
     printf '     últimas linhas: %s\n' "$(printf '%s' "$saida" | tail -3 | tr '\n' ' ')"; exit 1
   fi
   # 2. Nomeia a árvore do OUTRO — sem isso quem lê não sabe qual pasta usar.
-  if ! printf '%s' "$saida" | grep -q '/root/DeskcommCRM'; then
+  if ! grep -q '/root/DeskcommCRM' <<<"$saida"; then
     printf '  ✗ a recusa não diz ONDE está a instalação que já existe\n'; exit 1
   fi
   # 3. Ensina a saída acionável (atualizar a que existe).
-  if ! printf '%s' "$saida" | grep -q 'update.sh'; then
+  if ! grep -q 'update.sh' <<<"$saida"; then
     printf '  ✗ a recusa não ensina o caminho (update.sh na pasta que já existe)\n'; exit 1
   fi
   # 4. Recusou de verdade: não pode ter subido nada. `up -d` depois da recusa
@@ -2640,7 +2652,7 @@ STUB2
   chmod +x "$VPS_RAIZ/bin/docker"
   saida="$(rodar install.sh --yes)"
   chegou_na_deteccao || exit 1
-  if printf '%s' "$saida" | grep -q 'Já existe um DeskcommCRM NO AR'; then
+  if grep -q 'Já existe um DeskcommCRM NO AR' <<<"$saida"; then
     printf '  ✗ bloqueou a RE-EXECUÇÃO legítima (mesma árvore) — o kit manda rodar de novo\n'; exit 1
   fi
   printf '  ✓ e a re-execução de dentro da própria árvore continua passando\n'
@@ -2677,7 +2689,7 @@ exit 0
 STUB
   saida="$(rodar install.sh --yes)"
   chegou_na_deteccao || exit 1
-  if printf '%s' "$saida" | grep -q 'paro aqui em vez de chutar'; then
+  if grep -q 'paro aqui em vez de chutar' <<<"$saida"; then
     printf '  ✗ recusou uma eleição que TEM prova (a coluna Ports diz quem publica)\n'; exit 1
   fi
   if ! grep -qx 'TRAEFIK_NETWORK="coolify"' "$VPS_PROJ/.env"; then
@@ -2892,7 +2904,7 @@ STUB
   saida="$(rodar install.sh --yes)"
 
   # Vacuidade: sem o ramo de schema existente, não há re-aplicação para medir.
-  if ! printf '%s' "$saida" | grep -q "schema já existe"; then
+  if ! grep -q "schema já existe" <<<"$saida"; then
     printf '  ✗ o install.sh não entrou no ramo de schema existente — teste inconclusivo, não verde\n'; exit 1
   fi
   n="$(grep -c -- '-f /b.sql' "$VPS_LOG")"
@@ -2900,11 +2912,11 @@ STUB
     printf '  ✗ esperava o baseline aplicado 2 vezes (deadlock, depois limpo); foram %s\n' "$n"; exit 1
   fi
   printf '  ✓ o deadlock da 1ª passada fez o install.sh aplicar o baseline de novo\n'
-  if ! printf '%s' "$saida" | grep -q "✓ schema re-aplicado"; then
+  if ! grep -q "✓ schema re-aplicado" <<<"$saida"; then
     printf '  ✗ a 2ª passada saiu limpa e a tela não disse ✓ schema re-aplicado:\n'
     printf '%s\n' "$saida" | grep -iE "schema|banco|deadlock" | sed 's/^/       /'; exit 1
   fi
-  if printf '%s' "$saida" | grep -q "NÃO são os esperados"; then
+  if grep -q "NÃO são os esperados" <<<"$saida"; then
     printf '  ✗ o deadlock da 1ª passada virou aviso, embora a 2ª tenha curado\n'; exit 1
   fi
   printf '  ✓ e o veredito é o da última passada: ✓ schema re-aplicado, sem aviso\n'
@@ -2936,14 +2948,14 @@ STUB
   export BASELINE_ESPERA_S=0
   saida="$(rodar install.sh --yes)"
 
-  if ! printf '%s' "$saida" | grep -q "schema já existe"; then
+  if ! grep -q "schema já existe" <<<"$saida"; then
     printf '  ✗ o install.sh não entrou no ramo de schema existente — teste inconclusivo, não verde\n'; exit 1
   fi
-  if ! printf '%s' "$saida" | grep -q "Erros no banco que NÃO são os esperados"; then
+  if ! grep -q "Erros no banco que NÃO são os esperados" <<<"$saida"; then
     printf '  ✗ a lista grande não chegou ao aviso de banco\n'; exit 1
   fi
   # A linha seguinte ao bloco do schema: se ela saiu, o instalador sobreviveu ao aviso.
-  if ! printf '%s' "$saida" | grep -q "verificação:"; then
+  if ! grep -q "verificação:" <<<"$saida"; then
     printf '  ✗ o instalador morreu no aviso de banco (a verificação de tabelas, logo depois, não saiu)\n'
     printf '%s\n' "$saida" | grep -iE "schema|banco|erro" | tail -5 | sed 's/^/       /'; exit 1
   fi
@@ -2988,21 +3000,21 @@ NEXT_PUBLIC_APP_URL='https://crm.exemplo.com.br'"
   dois="$(rodar update.sh "" "$extra")"
 
   # CONTROLE POSITIVO: sem chegar ao fim, a ausência do aviso não mede nada.
-  if ! printf '%s' "$um" | grep -q 'Atualização concluída'; then
+  if ! grep -q 'Atualização concluída' <<<"$um"; then
     printf '  ✗ o update.sh não chegou ao fim — cenário inconclusivo, não verde\n'
     printf '     última linha: %s\n' "$(printf '%s' "$um" | sed -E 's/\x1b\[[0-9;]*m//g' | grep -v '^$' | tail -1)"
     exit 1
   fi
-  if ! printf '%s' "$um" | grep -q 'URL Configuration'; then
+  if ! grep -q 'URL Configuration' <<<"$um"; then
     printf '  ✗ a 1ª atualização passou calada pelo Site URL — quem já instalou não fica sabendo\n'
     printf '     (o Site URL dele está em localhost:3000 e ninguém consegue redefinir a senha)\n'
     exit 1
   fi
   # O domínio PREENCHIDO, não um placeholder.
-  if ! printf '%s' "$um" | grep -q 'https://crm.exemplo.com.br/auth/confirm'; then
+  if ! grep -q 'https://crm.exemplo.com.br/auth/confirm' <<<"$um"; then
     printf '  ✗ o aviso não traz o domínio preenchido — quem lê não sabe o que escrever\n'; exit 1
   fi
-  if printf '%s' "$dois" | grep -q 'URL Configuration'; then
+  if grep -q 'URL Configuration' <<<"$dois"; then
     printf '  ✗ a 2ª atualização repetiu o aviso — atualização que resmunga ensina a ignorar a saída\n'; exit 1
   fi
   printf '  ✓ a 1ª atualização avisa (com o domínio preenchido) e a 2ª fica calada\n'
@@ -3116,7 +3128,7 @@ NEXT_PUBLIC_APP_URL='https://crm.exemplo.com.br'")"
   if grep -q -E '^compose .* up -d$' "$VPS_LOG"; then
     printf '  ✗ o update.sh subiu a stack mesmo com a rede do NPM ausente\n'; exit 1
   fi
-  if ! printf '%s' "$saida" | grep -q 'PROXY_NETWORK_NAME'; then
+  if ! grep -q 'PROXY_NETWORK_NAME' <<<"$saida"; then
     printf '  ✗ a morte não ensina a saída (PROXY_NETWORK_NAME no .env)\n'
     printf '     saída: %s\n' "$(printf '%s' "$saida" | tail -3)"; exit 1
   fi
@@ -3277,7 +3289,7 @@ cron_vazio() (
     bash -c 'set -euo pipefail; . "$1/_common.sh"; psql_run() { :; }
              setup_event_log_drain_cron; setup_update_agent_cron; echo CHEGOU-AO-FIM' _ "$VPS_RAIZ" 2>&1)" \
     && rc=0 || rc=$?
-  if [ $rc -ne 0 ] || ! printf '%s' "$out" | grep -q CHEGOU-AO-FIM; then
+  if [ $rc -ne 0 ] || ! grep -q CHEGOU-AO-FIM <<<"$out"; then
     printf '  ✗ agendar o cron numa VPS sem crontab derrubou o script (saída %s)\n' "$rc"; return 1
   fi
   if [ "$(grep -c '# deskcomm:' "$sandbox" 2>/dev/null)" != 2 ]; then
@@ -3341,7 +3353,7 @@ STUB
 
   # CONTROLE POSITIVO: se a instalação nem chegou ao fim, a ausência do bloco
   # abaixo não significa nada — seria sonda cega lida como aprovação.
-  if ! printf '%s' "$saida" | grep -q "Instalação concluída"; then
+  if ! grep -q "Instalação concluída" <<<"$saida"; then
     printf '  ✗ a instalação não chegou à tela final — cenário inconclusivo, não verde\n'; exit 1
   fi
 
@@ -3353,11 +3365,11 @@ STUB
   # "avisou onde a pessoa está olhando".
   rabo="${saida##*Instalação concluída}"
   faltou=""
-  printf '%s' "$rabo" | grep -q "URL Configuration" || faltou="${faltou} URL-Configuration"
-  printf '%s' "$rabo" | grep -q "Site URL" || faltou="${faltou} Site-URL"
+  grep -q "URL Configuration" <<<"$rabo" || faltou="${faltou} URL-Configuration"
+  grep -q "Site URL" <<<"$rabo" || faltou="${faltou} Site-URL"
   # O domínio PREENCHIDO, não um placeholder: quem instala não deve ter de
   # descobrir qual endereço escrever.
-  printf '%s' "$rabo" | grep -q "https://crm.exemplo.com.br/auth/confirm" \
+  grep -q "https://crm.exemplo.com.br/auth/confirm" <<<"$rabo" \
     || faltou="${faltou} Redirect-URL-com-o-dominio"
   if [ -n "$faltou" ]; then
     printf '  ✗ a tela final não avisa o que falta para os e-mails de acesso funcionarem:%s\n' "$faltou"
@@ -3443,7 +3455,7 @@ STUB
 
   # CONTROLE POSITIVO: se o dublê não levou o script até o caminho VERDE, a
   # ausência de pendência abaixo não mede nada — mediria um script que morreu.
-  if ! printf '%s' "$saida" | grep -q 'CONFERIDOS'; then
+  if ! grep -q 'CONFERIDOS' <<<"$saida"; then
     printf '  ✗ o dublê não levou o script ao caminho verde — cenário inconclusivo, não verde\n'
     printf '     (rc=%s, última linha: %s)\n' "$rc" \
       "$(printf '%s' "$saida" | sed -E 's/\x1b\[[0-9;]*m//g' | grep -v '^$' | tail -1)"

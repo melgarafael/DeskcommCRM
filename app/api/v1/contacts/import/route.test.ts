@@ -208,6 +208,7 @@ describe("POST /api/v1/contacts/import — a planilha segue o PAÍS da organiza�
   const PERFIL_DO_XISTAO: PerfilDoPais = {
     codigo: "XI",
     nome: "Xistão",
+    telefoneExemplo: "+999000000000",
     documento: {
       rotulo: "Bilhete",
       exemplo: "123456789XI000",

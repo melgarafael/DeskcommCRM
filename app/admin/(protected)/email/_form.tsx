@@ -11,6 +11,7 @@ import { CampoEditavel, type LinhaDaInstalacao } from "@/components/admin/CampoD
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useT } from "@/hooks/i18n/useT";
+import { MENSAGEM_DA_RECUSA_DE_ESCRITA, ehRecusaDeEscrita } from "@/lib/auth/recusa-de-escrita-de-admin";
 import type { SmtpSecurity } from "@/lib/email/config";
 import type { Idioma } from "@/lib/i18n/idiomas";
 
@@ -87,6 +88,10 @@ export function FormularioDeSmtp({
         toast.success(t("Servidor de e-mail conectado e autenticado."));
         return;
       }
+      if ("error" in r) {
+        toast.error(t(MENSAGEM_DA_RECUSA_DE_ESCRITA[r.error]));
+        return;
+      }
       // Três desfechos, três frases: "não deu" mandaria o operador conferir as
       // quatro coisas de uma vez. É a mesma lição do `dominio_nao_verificado`
       // da Resend — erro que não nomeia a causa vira caça ao fantasma.
@@ -103,7 +108,7 @@ export function FormularioDeSmtp({
     iniciar(async () => {
       const r = await updateSmtp(form);
       if (!r.ok) {
-        toast.error(t(r.error));
+        toast.error(t(ehRecusaDeEscrita(r.error) ? MENSAGEM_DA_RECUSA_DE_ESCRITA[r.error] : r.error));
         return;
       }
       toast.success(t("Servidor de e-mail salvo."));

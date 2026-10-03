@@ -92,7 +92,14 @@ else
   tem_base="$(echo "$diff_nomes" | grep -cx 'supabase/baseline.sql' || true)"
   tem_mani="$(echo "$diff_nomes" | grep -cx 'supabase/migrations/MANIFEST.md' || true)"
   [ "$tem_base" = 1 ] && ok "migration nova COM apêndice no baseline.sql" || trava "migration nova SEM apêndice em supabase/baseline.sql — o kit self-host aplica só o baseline; sem ele a mudança não chega em quem instalou"
-  [ "$tem_mani" = 1 ] && ok "migration nova COM linha no MANIFEST.md" || trava "migration nova SEM linha em supabase/migrations/MANIFEST.md"
+  sem_desc=""
+  for m in $migs; do
+    git show "HEAD:$m" 2>/dev/null | grep -E '^-- manifest:[[:space:]]*[^[:space:]]' >/dev/null || sem_desc="$sem_desc $m"
+  done
+  if [ -z "$sem_desc" ]; then ok "migration nova COM descrição (\`-- manifest:\` no .sql)"
+  elif [ "$tem_mani" = 1 ]; then ok "migration nova COM linha no MANIFEST.md (jeito antigo; prefira \`-- manifest:\` no .sql)"
+  else trava "migration nova SEM descrição:$sem_desc — ponha uma linha \`-- manifest: <o quê e por quê>\` no cabeçalho do .sql (não no MANIFEST.md)"
+  fi
   # A POPULAÇÃO da unicidade: a main do PRODUTO (o remoto que aponta para
   # melgarafael/DeskcommCRM, com qualquer nome) mais `refs/heads` E
   # `refs/remotes` (#1273). O `origin/main` de antes, num clone de fork, é a main

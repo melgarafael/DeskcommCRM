@@ -18,6 +18,7 @@ import { sendEmail } from "@/lib/email/roteador";
 import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
 import { valorDaInstalacao } from "@/lib/instalacao/config";
+import { diasAtePrazo, diasDeAtraso, prazoEmBr } from "./sla";
 import type { LgpdRequest } from "./types";
 
 export type AlarmThreshold = "data_request_d5" | "redact_d10";
@@ -68,13 +69,21 @@ export async function triggerSlaAlarm(
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  // 2. Compute days overdue (best-effort; MVP uses calendar days as approx)
+  // 2. Dias de atraso — contados em DIAS CIVIS, no eixo em que o prazo foi
+  //    contado. Ver `lib/lgpd/sla.ts`: `due_at` é a meia-noite UTC de um dia
+  //    útil, e o prazo vai até o FIM desse dia.
+  //
+  //    A versão anterior (`Math.round((now - due_at) / 86_400_000)`) errava por
+  //    dois motivos somados: media milissegundos — que a oeste de UTC já são o
+  //    dia seguinte — e arredondava meio dia para cima. Efeito medido em São
+  //    Paulo, prazo no dia 05/10: às 09h de 05/10 (12h UTC) o e-mail dizia
+  //    "1 dia(s) em atraso" ao lado de "o prazo vence em 04/10, 21:00" — dois
+  //    números que não podem estar certos ao mesmo tempo, e o primeiro é o que
+  //    o DPO lê.
   // ──────────────────────────────────────────────────────────────────────────
-  const dueAtMs = new Date(request.due_at).getTime();
-  const nowMs = Date.now();
-  const daysOverdue = Math.round((nowMs - dueAtMs) / 86_400_000);
+  const daysOverdue = diasDeAtraso(request.due_at, new Date());
 
-  const daysToDue = -daysOverdue; // negative = overdue
+  const daysToDue = diasAtePrazo(request.due_at, new Date()); // negativo = atrasado
 
   // ──────────────────────────────────────────────────────────────────────────
   // 3. Sentry warning — zero PII in payload
@@ -116,7 +125,10 @@ export async function triggerSlaAlarm(
       const shortId = request.id.slice(0, 8);
       const orgName = escapeHtml(organizationName || marca.nome);
       const appUrl = env.NEXT_PUBLIC_APP_URL;
-      const requestUrl = `${appUrl}/app/lgpd/requests/${request.id}`;
+      // Porta neutra, não `/app` nem o hub: a empresa pode ser suspensa ou
+      // reativada entre o envio e o clique, e quem decide é o clique
+      // (`app/lgpd/pedido/[id]/route.ts`).
+      const requestUrl = `${appUrl}/lgpd/pedido/${request.id}`;
 
       const subject = `[LGPD] Solicitação ${shortId} próxima do vencimento`;
 
@@ -125,12 +137,11 @@ export async function triggerSlaAlarm(
           ? "D+5 (acesso a dados)"
           : "D+10 (anonimização/exclusão)";
 
-      const dueFmt = new Date(request.due_at).toLocaleString("pt-BR", {
-        timeZone: "America/Sao_Paulo",
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-      });
+      // A DATA vem do dia civil que a coluna guarda, não do instante com fuso:
+      // `toLocaleString` com `timeZone: America/Sao_Paulo` devolvia o dia
+      // ANTERIOR (a meia-noite UTC do dia 05 é 21:00 do dia 04 em São Paulo).
+      // Ver `prazoEmBr` — e, junto, `diaDoPrazo`.
+      const dueFmt = prazoEmBr(request.due_at) ?? new Date(request.due_at).toISOString().slice(0, 10);
 
       // `#dc2626` FICA, e não vira o accent: é semântica de ALERTA, não marca.
       // Um atraso que aparece em verde-sálvia porque o revendedor escolheu

@@ -40,7 +40,7 @@ São conclusões de leitura de código.
 | `/api/v1/cron/*` (9 rotas) | `Bearer INTERNAL_CRON_SECRET\|INTERNAL_SECRET`, **fail-closed** | ❌ |
 | `/api/internal/*` | `x-internal-secret` ou `Bearer INTERNAL_SECRET`, comparação em tempo constante | ❌ |
 | `/api/mcp` | `Bearer tok_...` validado contra `api_tokens` (hash SHA256) | ❌ |
-| `/account-suspended`, `/403`, `/404`, `/500`, `/503`, `/admin/forbidden` | — | ❌ |
+| `/403`, `/404`, `/500`, `/503`, `/admin/forbidden` | — | ❌ |
 
 **Leitura:** a autenticação de cada superfície está bem construída — HMAC com
 `timingSafeEqual` em 6 módulos distintos, crons fail-closed, bearer só via header

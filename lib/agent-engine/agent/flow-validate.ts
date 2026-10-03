@@ -43,6 +43,7 @@ import type { ProviderRegistry } from '../edge/llm/providers';
 import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
 import { respostaTemLastro, valorBateComTipo } from '@/lib/followup/captura-do-fluxo';
 import type { ContactFlowFieldType } from '@/lib/followup/graph-schema';
+import { extrairObjetoJsonDoTexto } from '@/lib/agent-engine/texto/extrair-json-do-texto';
 import type { AuxModelArgs } from './aux-model-args';
 
 /** O que o validador enxerga de uma pergunta do fluxo. */
@@ -133,16 +134,11 @@ export function montarMensagemDoValidador(
   ].join('\n');
 }
 
-/** Extrai o JSON do modelo (tolerante a prosa/cerca em volta). */
+/** Extrai o JSON do modelo (tolerante a prosa/cerca em volta e a JSON REPETIDO). */
 export function parseLeituraDoValidador(texto: string): { respostas: RespostaDoFluxo[] } | null {
-  const m = /\{[\s\S]*\}/.exec(texto);
-  if (m === null) return null;
-  let obj: Record<string, unknown>;
-  try {
-    obj = JSON.parse(m[0]) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
+  const bruto = extrairObjetoJsonDoTexto(texto);
+  if (bruto === null || typeof bruto !== 'object') return null;
+  const obj = bruto as Record<string, unknown>;
   // Formato novo: { respostas: [{campo, valor}] }.
   if (Array.isArray(obj.respostas)) {
     const respostas = obj.respostas

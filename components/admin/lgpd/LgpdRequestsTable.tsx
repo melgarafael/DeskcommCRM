@@ -4,7 +4,7 @@ import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 
 import type { Locale } from "date-fns";
 import Link from "next/link";
-import { formatDistanceToNow, differenceInHours } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,6 +23,7 @@ import type {
   AdminLgpdStatus,
   AdminLgpdRequestType,
 } from "@/hooks/useAdminLGPDRequests";
+import { contagemDoPrazo } from "@/lib/lgpd/contagem-do-prazo";
 import { useT } from "@/hooks/i18n/useT";
 
 // ---------------------------------------------------------------------------
@@ -41,21 +42,10 @@ function relativeDate(iso: string, locale: Locale): string {
   }
 }
 
-function countdownLabel(
-  dueAt: string | null,
-  status: AdminLgpdStatus,
-  t: (texto: string) => string = (texto) => texto,
-): string {
-  const terminal = new Set<AdminLgpdStatus>(["completed", "failed"]);
-  if (terminal.has(status) || !dueAt) return "—";
-  const now = new Date();
-  const due = new Date(dueAt);
-  const hours = differenceInHours(due, now);
-  if (hours < 0) return `${Math.abs(hours)}h ${t("em atraso")}`;
-  if (hours < 24) return `${hours}h ${t("restantes")}`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ${t("restantes")}`;
-}
+// A frase da coluna "Vence em" é `contagemDoPrazo`, de `lib/lgpd/`: ela decide um
+// número de compliance e mora com a aritmética de `due_at`. Aqui ficava, e
+// ancorava no INSTANTE — o que fazia a coluna dizer "12h em atraso" às nove da
+// manhã do dia em que o prazo vencia. Causa e medição no cabeçalho de lá.
 
 const TYPE_LABELS: Record<AdminLgpdRequestType, string> = {
   redact: "Anonimização cliente",
@@ -208,7 +198,7 @@ export function LgpdRequestsTable({
                   {relativeDate(row.received_at, localeDaData)}
                 </TableCell>
                 <TableCell className="text-xs whitespace-nowrap">
-                  {countdownLabel(row.due_at, row.status, t)}
+                  {contagemDoPrazo(row.due_at, row.status, t)}
                 </TableCell>
                 <TableCell>
                   <Badge variant={RISK_VARIANT[row.risk_level]} className="text-[10px]">

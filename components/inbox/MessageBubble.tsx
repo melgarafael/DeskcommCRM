@@ -374,7 +374,7 @@ export function MessageBubble({
           <>
             {hasMedia && (
               <div className={cn(message.body && "mb-1")}>
-                <MediaRenderer message={message} />
+                <MediaRenderer message={message} agora={agora} />
               </div>
             )}
 

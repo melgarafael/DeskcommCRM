@@ -4,6 +4,7 @@ import {
   AI_ALLOWLIST_TTL_DAYS_DEFAULT,
   decidirElegibilidade,
   lerModoDoGate,
+  montarEstadoDeElegibilidade,
   ttlDaAutorizacaoMs,
   type EstadoDeElegibilidade,
 } from "./gate";
@@ -12,6 +13,7 @@ const AGORA = new Date("2026-08-27T12:00:00Z");
 const DIA = 24 * 60 * 60 * 1000;
 
 const base: EstadoDeElegibilidade = {
+  orgStatus: "active",
   modo: "open",
   forceHuman: false,
   botSilencedUntil: null,
@@ -173,5 +175,44 @@ describe("ttlDaAutorizacaoMs", () => {
   });
   it("respeita o valor configurado", () => {
     expect(ttlDaAutorizacaoMs({ AI_ALLOWLIST_TTL_DAYS: "7" })).toBe(7 * DIA);
+  });
+});
+
+describe("decidirElegibilidade — organização não operante vence tudo", () => {
+  it.each(["suspended", "redacted", "archived", "status_que_ainda_nao_existe", null])(
+    "orgStatus %s → nega com org_nao_operante, antes de force_human, silêncio, dono humano e allowlist",
+    (orgStatus) => {
+      const d = decidirElegibilidade({
+        ...base,
+        orgStatus,
+        modo: "allowlist",
+        forceHuman: true,
+        botSilencedUntil: new Date(AGORA.getTime() + DIA),
+        assigneeKind: "user",
+        aiAuthorizedAt: AGORA,
+      });
+      expect(d).toEqual({ permite: false, motivo: "org_nao_operante", bloqueioPorAllowlist: false });
+    },
+  );
+
+  it("org active não muda nada (controle): gate aberto segue permitindo", () => {
+    expect(decidirElegibilidade({ ...base, orgStatus: "active" }).motivo).toBe("gate_aberto");
+  });
+});
+
+describe("montarEstadoDeElegibilidade — a org viaja", () => {
+  it("orgStatus ausente vira null, e null é não operante (falha fechada)", () => {
+    const e = montarEstadoDeElegibilidade({
+      aiGate: null,
+      forceHuman: false,
+      assigneeKind: null,
+      botSilencedUntil: null,
+      aiAuthorizedAt: null,
+      orgStatus: undefined,
+      agora: AGORA,
+      ttlMs: DIA,
+    });
+    expect(e.orgStatus).toBeNull();
+    expect(decidirElegibilidade(e).motivo).toBe("org_nao_operante");
   });
 });

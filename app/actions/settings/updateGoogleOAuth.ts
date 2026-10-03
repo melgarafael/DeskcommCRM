@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { invalidarCredencialDoGoogle } from "@/lib/agenda/google/config";
 import { audit } from "@/lib/audit";
-import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
+import { escritaDeAdminOuRecusa } from "@/lib/auth/escritaDeAdminOuRecusa";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
 
@@ -65,7 +65,9 @@ const entradaSchema = z.object({
 export type GoogleOAuthInput = z.infer<typeof entradaSchema>;
 
 export async function updateGoogleOAuth(input: GoogleOAuthInput): Promise<UpdateGoogleOAuthResult> {
-  const { user: authUser } = await requirePlatformAdmin();
+  const escrita = await escritaDeAdminOuRecusa();
+  if (!escrita.ok) return escrita;
+  const { user: authUser } = escrita.ctx;
 
   const parsed = entradaSchema.safeParse(input);
   if (!parsed.success) {

@@ -245,6 +245,15 @@ describe("normalizaData", () => {
   });
 });
 
+describe("o exemplo de telefone do erro vem do país da organização", () => {
+  it("país com outro DDI não recebe o exemplo brasileiro", () => {
+    const { indices } = mapHeader(["Nome", "Telefone", "Email", "Tags"]);
+    const { motivo } = mapLinha(["Ana", "912", "", ""], indices, undefined, undefined, "+351912345678");
+    expect(motivo).toContain("+351912345678");
+    expect(motivo).not.toContain("+5511999998888");
+  });
+});
+
 describe("mapLinha", () => {
   const indices = mapHeader(["Nome", "Telefone", "Email", "Tags"]).indices;
 
@@ -295,8 +304,8 @@ describe("mapHeader / mapLinha — mensagens de erro passam por t()", () => {
     "cabeçalho sem coluna de telefone nem e-mail": "CABECERA SIN COLUMNA DE TELÉFONO NI E-MAIL",
     "e-mail inválido: ": "E-MAIL INVÁLIDO: ",
     "telefone inválido: ": "TELÉFONO INVÁLIDO: ",
-    " (use DDI+DDD+número, ex.: +5511999998888)":
-      " (USA CÓDIGO DE PAÍS+CÓDIGO DE ÁREA+NÚMERO, EJ.: +5511999998888)",
+    " (use o número com o código do país, por exemplo ":
+      " (USA EL NÚMERO CON EL CÓDIGO DEL PAÍS, POR EJEMPLO ",
     "linha sem telefone nem e-mail": "LÍNEA SIN TELÉFONO NI E-MAIL",
   };
   const gritar = (texto: string): string => DICIONARIO_FAKE[texto] ?? texto;
@@ -319,7 +328,7 @@ describe("mapHeader / mapLinha — mensagens de erro passam por t()", () => {
   it("mapLinha: telefone inválido traduz por completo, incluindo o texto após o valor cru", () => {
     const { motivo } = mapLinha(["Ana", "123", "", ""], indices, gritar);
     expect(motivo).toBe(
-      'TELÉFONO INVÁLIDO: "123" (USA CÓDIGO DE PAÍS+CÓDIGO DE ÁREA+NÚMERO, EJ.: +5511999998888)',
+      'TELÉFONO INVÁLIDO: "123" (USA EL NÚMERO CON EL CÓDIGO DEL PAÍS, POR EJEMPLO +5511999998888)',
     );
   });
 
@@ -330,7 +339,9 @@ describe("mapHeader / mapLinha — mensagens de erro passam por t()", () => {
 
   it("mapLinha: sem t, comportamento idêntico ao de antes (degrada para o texto original)", () => {
     const { motivo } = mapLinha(["Ana", "123", "", ""], indices);
-    expect(motivo).toBe('telefone inválido: "123" (use DDI+DDD+número, ex.: +5511999998888)');
+    expect(motivo).toBe(
+      'telefone inválido: "123" (use o número com o código do país, por exemplo +5511999998888)',
+    );
   });
 });
 

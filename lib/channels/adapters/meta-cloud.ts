@@ -267,6 +267,56 @@ export const metaCloudAdapter: ChannelAdapter = {
     return { buffer, mime };
   },
 
+  /**
+   * "digitando…" no aparelho do cliente, antes da 1ª bolha do turno da IA.
+   *
+   * Aqui o indicador não é da conversa, é da MENSAGEM que se está respondendo:
+   * a Graph pede o `message_id` recebido e, no mesmo pedido, marca essa
+   * mensagem como lida. Não existe "digitando" sem o "lido" — é um corpo só,
+   * `status: "read"` com `typing_indicator`. O indicador some quando a resposta
+   * sai ou em 25 s, o que vier antes.
+   *
+   * Sem mensagem do cliente para responder, ou sem credencial para a sessão, é
+   * NOOP, não erro — o mesmo critério do outro canal com o transporte ausente:
+   * o produto não para por causa de um indicador decorativo. Recusa da Graph
+   * LANÇA, como manda o contrato: quem decide engolir é quem chama.
+   */
+  async signalTyping(
+    input: ChannelTenantScope & { sessionRef: string; recipient: string; inboundExternalId: string | null },
+  ): Promise<void> {
+    if (!input.inboundExternalId) return;
+    const creds = await resolveMetaCreds(createAdminClient(), {
+      organizationId: input.organizationId,
+      phoneNumberId: input.sessionRef,
+    });
+    if (!creds) return;
+
+    const res = await fetch(`${graphBaseUrl()}/${creds.phoneNumberId}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${creds.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        status: "read",
+        message_id: input.inboundExternalId,
+        typing_indicator: { type: "text" },
+      }),
+      // Teto curto de propósito: no início do turno ninguém espera esta chamada
+      // (`acenderDigitando`), mas antes da 1ª bolha `esperarComoHumano` a aguarda
+      // — uma Graph pendurada seguraria a mensagem, que é o produto, por causa
+      // do indicador, que é decoração.
+      signal: AbortSignal.timeout(5_000),
+    });
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: { code?: number; message?: string };
+    };
+    if (!res.ok || body.error) {
+      throw new Error(`meta_${body.error?.code ?? res.status}: ${body.error?.message ?? `http_${res.status}`}`);
+    }
+  },
+
   async send(envelope: OutboundEnvelope): Promise<{ externalId: string | null }> {
     // Sessão primeiro, env como fallback. O `sessionRef` do canal oficial É o
     // `phone_number_id` (ver `resolveSessionRef`), então ele é a chave da busca.

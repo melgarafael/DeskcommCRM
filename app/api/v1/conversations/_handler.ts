@@ -491,8 +491,11 @@ export async function patchConversationHandler(
       p_org: ctx.organization_id, p_conversation: conversationId, p_status: input.status,
       p_expected: input.expected_revision ?? observed.service_revision,
     });
-    if (statusError) throw new ApiError(statusError.code === "40001" ? 409 : statusError.code === "P0002" ? 404 : 500,
-      statusError.code === "40001" ? "conflict" : statusError.code === "P0002" ? "not_found" : "internal_error", undefined, ctx.requestId, statusError.message);
+    // PT409: revisão obsoleta (migration 0514). 40001: contato trocou no meio, ou banco anterior à 0514.
+    const conflito = statusError?.code === "PT409" || statusError?.code === "40001";
+    if (statusError) throw new ApiError(conflito ? 409 : statusError.code === "P0002" ? 404 : 500,
+      conflito ? "conflict" : statusError.code === "P0002" ? "not_found" : "internal_error", undefined, ctx.requestId,
+      conflito ? traduzir("O atendimento mudou. Atualize e tente novamente.", ctx.idioma ?? "pt-BR") : statusError.message);
   }
   if (input.tags !== undefined) {
     update.tags = input.tags;

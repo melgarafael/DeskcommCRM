@@ -136,6 +136,19 @@ describe("marcaDaSaida — as duas classes", () => {
     expect(marca.accent).not.toBe(ACCENT_DO_PRODUTO);
   });
 
+  it("divergência: nome do BANCO vence o do `.env` quando os dois existem", async () => {
+    // O caso do PR #1944: o onboard configura a marca no banco (Administração ›
+    // Marca) e o `.env` seguiu com o valor da instalação. O resolvedor decide só
+    // por `marcaDaSaida(null)` — banco acima, `.env` como piso.
+    const { marcaDaSaida } = await carregar();
+    linhaDaInstalacao = { app_name: "Marca Configurada na Tela", accent_hex: "#2563eb" };
+    vi.stubEnv("APP_NAME", "Nome Velho do Arquivo");
+
+    const marca = await marcaDaSaida(null);
+    expect(marca.nome).toBe("Marca Configurada na Tela");
+    expect(marca.origens.nome).toBe("banco");
+  });
+
   it("classe A (com organização) põe a marca da ORGANIZAÇÃO acima da instalação", async () => {
     const { marcaDaSaida } = await carregar();
     linhaDaInstalacao = { app_name: "Vendas Turbo", accent_hex: "#2563eb" };

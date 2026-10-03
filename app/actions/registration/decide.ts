@@ -5,7 +5,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { audit } from "@/lib/audit";
-import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
+import { escritaDeAdminOuRecusa } from "@/lib/auth/escritaDeAdminOuRecusa";
+import type { RecusaDeEscritaDeAdmin } from "@/lib/auth/recusa-de-escrita-de-admin";
 import { ensureTenantForUser } from "@/lib/auth/provision";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -16,7 +17,8 @@ const entradaSchema = z.object({
 
 export type DecideRegistrationResult =
   | { ok: true }
-  | { ok: false; error: "invalid_input" | "not_found" | "account_unavailable" | "write_failed" };
+  | { ok: false; error: "invalid_input" | "not_found" | "account_unavailable" | "write_failed" }
+  | RecusaDeEscritaDeAdmin;
 
 /**
  * O administrador da INSTALAÇÃO aprova ou recusa um pedido de empresa nova
@@ -34,7 +36,9 @@ export type DecideRegistrationResult =
 export async function decideRegistrationRequest(
   input: z.input<typeof entradaSchema>,
 ): Promise<DecideRegistrationResult> {
-  const { user } = await requirePlatformAdmin();
+  const escrita = await escritaDeAdminOuRecusa();
+  if (!escrita.ok) return escrita;
+  const { user } = escrita.ctx;
 
   const parsed = entradaSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "invalid_input" };

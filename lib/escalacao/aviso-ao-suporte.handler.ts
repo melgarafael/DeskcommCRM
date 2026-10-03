@@ -37,6 +37,7 @@ export const AVISO_DE_CASO_HANDLER_KEY = "escalacao-aviso-ao-suporte.v1";
 
 export const avisoDeCasoAoSuporteHandler: EventHandler = {
   key: AVISO_DE_CASO_HANDLER_KEY,
+  naOrgParada: "pula",
   events: [EVENTO_CASO_ABERTO, EVENTO_CASO_FECHADO],
   async handle(row): Promise<HandlerResult> {
     try {

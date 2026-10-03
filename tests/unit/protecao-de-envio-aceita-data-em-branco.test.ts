@@ -296,6 +296,63 @@ describe("PUT /api/v1/ai/pacing — erro do banco diz QUAL campo recusou", () =>
   });
 });
 
+describe("PUT /api/v1/ai/pacing — janela de resposta (0495)", () => {
+  it("0 e 24 é aceito: é assim que se declara responder a qualquer hora", async () => {
+    authOk();
+    const db = makeDb(null);
+    const { PUT } = await import("@/app/api/v1/ai/pacing/route");
+    const res = await PUT(put(corpoDaTela({ resposta_start_hour: 0, resposta_end_hour: 24 })));
+
+    expect(res.status).toBe(200);
+    expect(db.knobs).toMatchObject({ resposta_start_hour: 0, resposta_end_hour: 24 });
+  });
+
+  it("janela de resposta invertida é recusada com 422 e nada é gravado", async () => {
+    authOk();
+    const db = makeDb(null);
+    const { PUT } = await import("@/app/api/v1/ai/pacing/route");
+    const res = await PUT(put(corpoDaTela({ resposta_start_hour: 22, resposta_end_hour: 7 })));
+
+    // 22h-7h o motor lê como "nunca responde"; a tela tem de recusar na hora.
+    expect(res.status).toBe(422);
+    expect(db.upserts).toHaveLength(0);
+  });
+});
+
+describe("PUT /api/v1/ai/pacing — atraso humano (0499): mínimo acima do máximo é 422, não 500", () => {
+  it("mínimo sozinho acima do teto padrão (7500) é recusado, em vez de ignorado pelo clamp", async () => {
+    authOk();
+    const db = makeDb(null);
+    const { PUT } = await import("@/app/api/v1/ai/pacing/route");
+    const res = await PUT(put(corpoDaTela({ atraso_minimo_ms: 9000 })));
+
+    expect(res.status).toBe(422);
+    expect(db.upserts).toHaveLength(0);
+  });
+
+  it("mínimo e máximo gravados invertidos são recusados antes do CHECK do banco", async () => {
+    authOk();
+    const db = makeDb(null);
+    const { PUT } = await import("@/app/api/v1/ai/pacing/route");
+    const res = await PUT(put(corpoDaTela({ atraso_minimo_ms: 5000, atraso_maximo_ms: 3000 })));
+    const corpo = await res.json();
+
+    expect(res.status).toBe(422);
+    expect(corpo.error.message).toContain("5000");
+    expect(db.upserts).toHaveLength(0);
+  });
+
+  it("par coerente continua sendo gravado (a guarda não virou bloqueio)", async () => {
+    authOk();
+    const db = makeDb(null);
+    const { PUT } = await import("@/app/api/v1/ai/pacing/route");
+    const res = await PUT(put(corpoDaTela({ atraso_minimo_ms: 3000, atraso_maximo_ms: 3000 })));
+
+    expect(res.status).toBe(200);
+    expect(db.knobs).toMatchObject({ atraso_minimo_ms: 3000, atraso_maximo_ms: 3000 });
+  });
+});
+
 describe("A TELA e o texto que ela promete", () => {
   it("o texto de ajuda não promete rejuvenescer um número cuja data já está salva", () => {
     const sheet = readFileSync(

@@ -127,11 +127,10 @@ services:
     # precisar de multi-número/retry/S3 (licença paga).
     #
     # Tag PINADA: `devlikeapro/waha` sem tag é `:latest`, e o `dc pull` do
-    # update.sh entregava ao cliente qualquer versão que o upstream tivesse
-    # publicado — inclusive uma nunca testada por nós, no meio de uma
-    # atualização. `latest-2026.7.2` é o mesmo digest de `latest` hoje
-    # (65e593e30bb7…), então o pin não muda um bit; muda quem escolhe quando
-    # o WhatsApp do cliente troca de motor. Bumpar faz parte do release.
+    # update.sh entregaria ao cliente qualquer versão que o upstream tivesse
+    # publicado. O instalador grava `latest-2026.7.2` em x86 e
+    # `noweb-arm-2026.7.2` em ARM64; as duas tags fixam a versão NOWEB.
+    # Bumpar faz parte do release.
     image: ${WAHA_IMAGE:-devlikeapro/waha:latest-2026.7.2}
     restart: unless-stopped
     environment:

@@ -1,10 +1,20 @@
 import { NextRequest } from "next/server";
 import { beforeEach, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ insertError: { code: "", message: "" }, audit: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  insertError: { code: "", message: "" },
+  audit: vi.fn(),
+  escrita: vi.fn(async () => ({ user: { id: "owner" }, platformAdmin: { user_id: "owner", scope: "full", mfa_required: false } })),
+}));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
 vi.mock("@/lib/auth/server", () => ({
   loadAuthUser: async () => ({ id: "owner", is_platform_admin: true }),
+  mfaEmDivida: async () => false,
+}));
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/auth/requirePlatformAdmin", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth/requirePlatformAdmin")>()),
+  requirePlatformAdminEscrita: mocks.escrita,
 }));
 vi.mock("@/lib/audit", () => ({ audit: mocks.audit }));
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }));
@@ -67,4 +77,13 @@ it("não disfarça falha de infraestrutura como conflito de extensão", async ()
   );
   expect(response.status).toBe(500);
   expect((await response.json()).error.message).not.toContain("Abra Extensões");
+});
+
+it("support_readonly não dispara atualização: 403 forbidden_scope, nada gravado", async () => {
+  const { EscritaDePlatformAdminNegada } = await import("@/lib/auth/requirePlatformAdmin");
+  mocks.escrita.mockRejectedValueOnce(new EscritaDePlatformAdminNegada("forbidden_scope", "somente leitura"));
+  const response = await POST(new NextRequest("http://localhost/api/v1/system/update", { method: "POST" }));
+  expect(response.status).toBe(403);
+  expect((await response.json()).error.code).toBe("forbidden_scope");
+  expect(mocks.audit).not.toHaveBeenCalled();
 });

@@ -40,12 +40,16 @@ let arquivoPendente: Record<string, unknown>[] = [];
 let avisoAberto = false;
 /** Quando true, todo UPDATE devolve erro — o banco está fora. */
 let updateFalha = false;
+/** Erro que o INSERT de `agent_inbox_items` devolve (ex.: o índice único da 0491). */
+let insertAvisoErro: { code: string; message: string } | null = null;
 
 function consulta(tabela: string, op: Op["op"], valores?: Record<string, unknown>) {
   const registro: Op = { tabela, op, filtros: [], ...(valores ? { valores } : {}) };
   ops.push(registro);
   const resultado = () => {
     if (op === "update") return { data: null, error: updateFalha ? { message: "down" } : null };
+    if (op === "insert" && tabela === "agent_inbox_items" && insertAvisoErro)
+      return { data: null, error: insertAvisoErro };
     if (op === "insert") return { data: { id: `${tabela}-novo` }, error: null };
     if (tabela === "webhook_events_log") return { data: arquivoPendente, error: null };
     if (tabela === "agent_inbox_items") return { data: avisoAberto ? { id: "aviso-1" } : null, error: null };
@@ -142,6 +146,7 @@ beforeEach(() => {
   arquivoPendente = [];
   avisoAberto = false;
   updateFalha = false;
+  insertAvisoErro = null;
   vi.spyOn(logger, "warn").mockImplementation(() => undefined);
   vi.spyOn(logger, "error").mockImplementation(() => undefined);
 });
@@ -246,6 +251,22 @@ describe("cron webhook-replay", () => {
     avisoAberto = true;
     await replay();
     expect(avisosAbertos()).toEqual([]);
+  });
+
+  it("outra rodada abriu o aviso no meio (23505 do índice da 0491) → desfecho normal, sem erro no log", async () => {
+    arquivoPendente = [linha("l1", MAX_TENTATIVAS - 1)];
+    roteiro = ["transitoria"];
+    insertAvisoErro = { code: "23505", message: "duplicate key value violates unique constraint" };
+    await replay();
+    expect(logger.error).not.toHaveBeenCalledWith("[webhook-replay] aviso na Central falhou", expect.anything());
+  });
+
+  it("controle: outro erro no insert do aviso continua indo para o log", async () => {
+    arquivoPendente = [linha("l1", MAX_TENTATIVAS - 1)];
+    roteiro = ["transitoria"];
+    insertAvisoErro = { code: "57014", message: "timeout" };
+    await replay();
+    expect(logger.error).toHaveBeenCalledWith("[webhook-replay] aviso na Central falhou", expect.anything());
   });
 
   it("arquivo sem corpo (a retenção já limpou) → `dead` com aviso, sem chamar a ingestão", async () => {

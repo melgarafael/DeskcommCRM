@@ -35,6 +35,18 @@ services:
       # comportamento de sempre para .env que não tem a chave.
       GOTRUE_DISABLE_SIGNUP: "${DISABLE_SIGNUP:-false}"
 
+      # #2109 — os dois modelos de e-mail de acesso. O molde padrão do GoTrue
+      # devolve a sessão no FRAGMENTO da URL (`/auth/v1/verify`), e fragmento
+      # não chega ao servidor: `app/auth/confirm` cai em
+      # `/login?error=link_invalido` e a recuperação de senha não fecha. As
+      # chaves vêm do `.env` do Supabase, escritas pelo
+      # `install-single-server.sh`; sem este mapeamento elas não chegariam ao
+      # contêiner, porque o compose oficial só mapeia `GOTRUE_SMTP_*` e
+      # `GOTRUE_MAILER_URLPATHS_*`. Default vazio = o molde padrão do GoTrue,
+      # o comportamento de sempre para um `.env` que nunca passou por aqui.
+      GOTRUE_MAILER_TEMPLATES_CONFIRMATION: "${GOTRUE_MAILER_TEMPLATES_CONFIRMATION:-}"
+      GOTRUE_MAILER_TEMPLATES_RECOVERY: "${GOTRUE_MAILER_TEMPLATES_RECOVERY:-}"
+
   rest:
     container_name: !reset null
 

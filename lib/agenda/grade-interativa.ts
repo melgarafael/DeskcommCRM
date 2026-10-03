@@ -34,6 +34,9 @@
  */
 
 /** A régua da camada de marcação, em minutos. Ver o cabeçalho. */
+import { partesNoFuso } from "@/lib/agenda/fuso";
+
+/** A régua da camada de marcação, em minutos. Ver o cabeçalho. */
 export const PASSO_DA_CELULA_MIN = 30;
 
 /** Um horário oferecido pela rota — a mesma forma que o painel de marcação usa. */
@@ -53,10 +56,23 @@ export interface HorarioPublicado {
  */
 export type MotivoDaGradeTravada = "sem-jornada" | "erro" | "sem-vaga";
 
-/** O minuto do dia (desde a meia-noite local) que um horário publicado ocupa. */
-function minutoDoDia(iso: string): number {
-  const d = new Date(iso);
-  return d.getHours() * 60 + d.getMinutes();
+/**
+ * O minuto do dia (desde a meia-noite) que um horário publicado ocupa.
+ *
+ * ⚠️ ERA `d.getHours()` — o relógio do NAVEGADOR. Com a grade agora desenhada no
+ * fuso da organização, esta conta ficou sendo a ÚNICA do arquivo ainda lida no
+ * fuso errado, e ela alimenta as três portas: `horarioNaCelula` (em que linha a
+ * célula cai), `alvoDoArraste` (para onde o card solto pode ir) e
+ * `publicadoVizinho` (para onde a seta pula).
+ *
+ * O sintoma é o pior tipo: nada falha. Com o navegador em outro fuso que a org,
+ * `rotulo` (já no fuso da apresentação) dizia "10:00" enquanto a linha calculada
+ * aqui era a das 09:00 — e no arraste a tolerância de 30 min não alcançava o
+ * publicado, devolvia `null` e o fantasma nem aparecia.
+ */
+function minutoDoDia(iso: string, fuso: string): number {
+  const p = partesNoFuso(new Date(iso), fuso);
+  return p.hora * 60 + p.minuto;
 }
 
 /**
@@ -70,12 +86,13 @@ function minutoDoDia(iso: string): number {
 export function horarioNaCelula(
   publicados: readonly HorarioPublicado[],
   celulaMinuto: number,
+  fuso: string,
   passoMin: number = PASSO_DA_CELULA_MIN,
 ): HorarioPublicado | null {
   let escolhido: HorarioPublicado | null = null;
   let melhor = Number.POSITIVE_INFINITY;
   for (const h of publicados) {
-    const m = minutoDoDia(h.instante);
+    const m = minutoDoDia(h.instante, fuso);
     if (m < celulaMinuto || m >= celulaMinuto + passoMin) continue;
     if (m < melhor) {
       melhor = m;
@@ -103,12 +120,13 @@ export function horarioNaCelula(
 export function alvoDoArraste(
   publicados: readonly HorarioPublicado[],
   minutoAlvo: number,
+  fuso: string,
   toleranciaMin: number = PASSO_DA_CELULA_MIN,
 ): HorarioPublicado | null {
   let escolhido: HorarioPublicado | null = null;
   let melhor = Number.POSITIVE_INFINITY;
   for (const h of publicados) {
-    const distancia = Math.abs(minutoDoDia(h.instante) - minutoAlvo);
+    const distancia = Math.abs(minutoDoDia(h.instante, fuso) - minutoAlvo);
     if (distancia > toleranciaMin) continue;
     if (distancia < melhor) {
       melhor = distancia;
@@ -140,11 +158,12 @@ export function publicadoVizinho(
   publicados: readonly HorarioPublicado[],
   minutoAtual: number,
   direcao: 1 | -1,
+  fuso: string,
 ): HorarioPublicado | null {
   let escolhido: HorarioPublicado | null = null;
   let melhor = Number.POSITIVE_INFINITY;
   for (const h of publicados) {
-    const distancia = (minutoDoDia(h.instante) - minutoAtual) * direcao;
+    const distancia = (minutoDoDia(h.instante, fuso) - minutoAtual) * direcao;
     // Estritamente adiante: `> 0` e não `>= 0`, senão o horário em que já
     // estamos seria sempre o vizinho e a seta nunca sairia do lugar.
     if (distancia <= 0) continue;

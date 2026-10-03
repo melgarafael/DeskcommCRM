@@ -19,6 +19,7 @@ import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { classificarLeadInicial, type ResultadoClassificacaoInicial } from "@/lib/leads/classificacao-inicial";
 import type { CreateLeadInput } from "@/lib/schemas";
 import { mapInboundPayload, verifyInboundSignature, type FieldMap } from "@/lib/webhooks/inbound";
+import { HEADER_ASSINATURA_DE_ENTRADA } from "@/lib/webhooks/assinatura";
 import { encontrarContatoPorTelefoneComNome } from "@/lib/channels/contato-por-telefone";
 import {
   buildContactConsentGrant,
@@ -33,7 +34,8 @@ import {
   mapRdStationPayload,
   type RdStationMapped,
 } from "@/lib/webhooks/rdstation";
-import { origemDaPagina, registrarCaptacao } from "@/lib/webhooks/captacao";
+import { isElementorPayload, mapElementorPayload, type ElementorMapped } from "@/lib/webhooks/elementor";
+import { origemDaPagina, registrarCaptacao, type MotivoDaRecusa } from "@/lib/webhooks/captacao";
 import { ipDoClienteParaInet } from "@/lib/http/ip-do-cliente";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { ApiError } from "@/lib/api/types";
@@ -124,30 +126,42 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     sourceName: (source.name as string) ?? "Fonte sem nome",
   };
 
-  const sigHeader = req.headers.get("x-deskcomm-signature");
-  // secret cifrado at-rest (migration 0041). Decrypt falhou (chave da GUC
-  // ausente/trocada)? Precedente WAHA: pula a validação em vez de derrubar a
-  // captação — secret aqui é defesa opcional, não gate de disponibilidade.
+  const sigHeader = req.headers.get(HEADER_ASSINATURA_DE_ENTRADA);
+  // secret cifrado at-rest (migration 0041). A fonte que TEM segredo exige
+  // assinatura; se esta instalação não consegue decifrá-lo (chave mestra
+  // ausente/trocada, dado corrompido), não há como conferir — e o que não se
+  // confere não entra. Mesma regra da autenticação do WAHA
+  // (lib/waha/webhook-auth.ts): falha FECHADA. O operador vê o motivo em
+  // "Leads recebidos" e recadastra a assinatura da fonte.
   let sourceSecret: string | null = null;
-  let hmacSkipped = false;
+  let recusa: MotivoDaRecusa | null = null;
   if (source.secret_encrypted) {
     sourceSecret = await decryptWebhookSecret(admin, source.secret_encrypted as unknown as string);
-    if (sourceSecret === null) hmacSkipped = true;
+    if (sourceSecret === null) {
+      logger.error("[webhooks.in] segredo da fonte não decifra — captação recusada até recadastrar a assinatura", {
+        organizationId: source.organization_id,
+        webhookSourceId: source.id,
+        requestId,
+      });
+      recusa = "assinatura_indecifravel";
+    } else if (!verifyInboundSignature(rawBody, sigHeader, sourceSecret)) {
+      recusa = "assinatura_invalida";
+    }
   }
-  const validSignature = sourceSecret ? verifyInboundSignature(rawBody, sigHeader, sourceSecret) : null;
-  if (sourceSecret && !validSignature) {
+  if (recusa) {
     await audit({
       action: "webhook.inbound_invalid_signature",
       organizationId: source.organization_id,
       resourceType: "webhook_source",
       resourceId: source.id,
       requestId,
+      metadata: { reason: recusa },
     });
     await registrarCaptacao(admin, {
       ...fonteDaCaptacao,
       ...origemDaCaptacao,
       outcome: "recusado",
-      rejectReason: "assinatura_invalida",
+      rejectReason: recusa,
     });
     return fail("unauthenticated", "invalid_signature", 401, { requestId });
   }
@@ -167,10 +181,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     raw_body: rawBody,
     payload_parsed: payload,
     signature_header: sigHeader ?? null,
-    // hmacSkipped (decrypt indisponível) conta como "não validado mas aceito",
-    // igual ao webhook WAHA — o feed da UI não pinta de vermelho.
-    valid_signature: validSignature ?? true,
-    event_type: hmacSkipped ? "lead_capture.received_hmac_skipped" : "lead_capture.received",
+    // Daqui só passa fonte sem segredo ou assinatura que conferiu.
+    valid_signature: true,
+    event_type: "lead_capture.received",
     external_id: null,
     status: "received",
     attempts: 0,
@@ -191,6 +204,15 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   const rdStationMapped: RdStationMapped | null =
     respondiMapped === null && isRdStationPayload(payload)
       ? mapRdStationPayload(payload)
+      : null;
+
+  // Elementor Pro manda `fields[<id>][value]` (colchetes, uma linha por
+  // propriedade) — mesmo problema: nenhuma chave de topo chama `nome`. Fica por
+  // último na precedência porque a detecção é por forma estrita, e nenhum
+  // payload é de duas origens.
+  const elementorMapped: ElementorMapped | null =
+    respondiMapped === null && rdStationMapped === null && isElementorPayload(payload)
+      ? mapElementorPayload(payload)
       : null;
 
   // Idempotência (spec §5): `external_id` é campo reservado do envio — quem
@@ -257,10 +279,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   // O `respondiMapped ??` é do PR #326: sem ele o payload aninhado do Respondi
   // volta a cair no mapeador genérico, que é o defeito que aquele PR conserta.
   // O `rdStationMapped ??` é a mesma figura para o envelope `leads[]` do RD
-  // Station (achado 2026-09-08). Ordem: Respondi, RD Station, genérico.
+  // Station (achado 2026-09-08), e o `elementorMapped ??` para os campos em
+  // colchetes do Elementor. Ordem: Respondi, RD Station, Elementor, genérico.
   const mapped =
     respondiMapped ??
     rdStationMapped ??
+    elementorMapped ??
     mapInboundPayload(externalId ? payloadForMapping : payload, fieldMap);
   if (!mapped.phone) {
     const rawPhone = findRawPhoneIfUnnormalized(payload, fieldMap);

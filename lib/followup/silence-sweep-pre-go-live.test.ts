@@ -51,10 +51,17 @@ function conversa(contactId: string, phoneNumber: string) {
       phone_number: phoneNumber,
     },
     sessao: { metadata },
+    organizations: { status: "active" },
   };
 }
 
 describe("sweep de silêncio no pré-go-live", () => {
+  it("org não operante: nenhum candidato, nem o número de teste", async () => {
+    const parada = { ...conversa("tester", "+5585987654321"), organizations: { status: "suspended" } };
+    const db = createSupabaseSilenceSweepDb(supabaseComConversas([parada]));
+    await expect(db.loadSilentContactIds("org", "2026-09-02T10:00:00.000Z", [])).resolves.toEqual([]);
+  });
+
   it("só cria candidato para o número de teste do canal", async () => {
     const db = createSupabaseSilenceSweepDb(
       supabaseComConversas([

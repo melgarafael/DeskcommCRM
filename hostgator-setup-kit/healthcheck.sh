@@ -56,8 +56,10 @@ step "E-mails de acesso (confirmar conta e redefinir senha)"
 # O conserto é apontar `GOTRUE_MAILER_TEMPLATES_*` para a rota do app. Como o
 # GoTrue não é serviço deste compose (o kit sobe app, worker, scheduler, waha,
 # redis, srh e caddy — o Supabase próprio fica FORA), o kit não tem como
-# escrever essa configuração. O que ele pode, e é o que faz aqui, é MEDIR o
-# estado e dizer as duas linhas exatas. Silêncio aqui seria o `return` mudo que
+# escrever essa configuração. A exceção é o modo single-server, em que o
+# Supabase é do kit: lá o install-single-server.sh e o update.sh gravam as duas
+# chaves (gravar_modelos_do_gotrue, _common.sh — #2109). Para o resto, o que o
+# kit pode, e é o que faz aqui, é MEDIR o estado e dizer as duas linhas exatas. Silêncio aqui seria o `return` mudo que
 # o invariante 6(c) do Sistema Vivo proíbe.
 case "${NEXT_PUBLIC_SUPABASE_URL:-}" in
   https://*.supabase.co*)

@@ -46,7 +46,7 @@ export interface OpcoesDoDubleDoHandler {
    * — um vermelho que denunciaria o stub, não o código.
    */
   indiceUnicoMensagem?: boolean;
-  /** Linha de `organizations` lida pelo aviso ao lead. Padrão: `{ settings: {} }`. */
+  /** Linha de `organizations` lida pelo aviso ao lead, pela guarda de agenda e pelo assert de org operante. Padrão: `{ settings: {}, status: "active" }`. */
   organizacao?: LinhaDoDuble;
   /** Linhas de `calendar_appointments` lidas pela guarda de agenda. Padrão: `[]`. */
   agenda?: LinhaDoDuble[];
@@ -261,8 +261,10 @@ export function criarDubleDoHandler(
       }
 
       if (tabela === "organizations") {
-        // Lido pelo aviso ao lead (idioma da organização) e pela guarda de
-        // agenda. Padrão `{ settings: {} }`, que é o que os casos legados devolviam.
+        // Lido pelo aviso ao lead (idioma da organização), pela guarda de agenda
+        // e pelo `assertOrgOperante` do topo do handler. Padrão operante: sem o
+        // `status`, todo caso legado viraria 403 `org_suspended`.
+        const padrao = { settings: {}, status: "active" };
         const cadeia = {
           select: (colunas = "") => {
             capturas.selects.organizations!.push(colunas);
@@ -272,11 +274,8 @@ export function criarDubleDoHandler(
             capturas.filtros.organizations!.push({ coluna, valor });
             return cadeia;
           },
-          maybeSingle: async () => ({
-            data: opcoes.organizacao ?? { settings: {} },
-            error: null,
-          }),
-          single: async () => ({ data: opcoes.organizacao ?? { settings: {} }, error: null }),
+          maybeSingle: async () => ({ data: opcoes.organizacao ?? padrao, error: null }),
+          single: async () => ({ data: opcoes.organizacao ?? padrao, error: null }),
         };
         return cadeia;
       }

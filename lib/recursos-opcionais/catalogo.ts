@@ -36,6 +36,7 @@ import { vendaPeloCanalLigada } from "@/lib/conversoes/venda-pelo-canal";
 import { lerConfigDoJev } from "@/lib/ai/decisao/config";
 import { capacidadesLigadas, type CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
 import { conversaFicaComQuemAtendeu } from "@/lib/schemas/routing";
+import { configAssinatura } from "@/lib/messaging/assinatura";
 
 /** Quem decide: o servidor inteiro, a empresa, cada agente, ou o arquivo do servidor. */
 export type NivelDoRecurso = "instalacao" | "organizacao" | "agente" | "servidor";
@@ -345,6 +346,19 @@ const DA_EMPRESA: RecursoOpcional[] = [
     ler: peloSettings((s) => s.visibility_mode === "own" || s.visibility_mode === "own_and_unassigned"),
   },
   {
+    id: "assinatura_do_emissor",
+    nome: "Quem fala aparece na mensagem",
+    oQueFaz: "Põe o nome do atendente ou da IA em negrito na linha de cima da mensagem ao cliente.",
+    nivel: "organizacao",
+    padrao: "desligado",
+    quemDecide: "manager",
+    href: "/app/settings/atendimento",
+    ler: peloSettings((s) => {
+      const c = configAssinatura(s);
+      return c.humanos || c.ia;
+    }),
+  },
+  {
     id: "etapa_move_o_card",
     nome: "Para onde o card vai em cada passo",
     oQueFaz: "Diz ao agente para qual etapa do funil levar o negócio quando qualifica ou agenda.",
@@ -444,7 +458,7 @@ const DA_EMPRESA: RecursoOpcional[] = [
   {
     id: "protecao_de_envio",
     nome: "Proteção de envio por número",
-    oQueFaz: "Janela, ritmo, teto diário, envio aos domingos e aquecimento de cada número.",
+    oQueFaz: "Janelas de resposta e de disparo, ritmo, teto diário, envio aos domingos e aquecimento de cada número.",
     nivel: "organizacao",
     padrao: "varia",
     quemDecide: "admin",
@@ -513,6 +527,16 @@ const DA_EMPRESA: RecursoOpcional[] = [
       const familia = objeto(f.settings.base_de_conhecimento)?.familia;
       return familia === "google" ? "ligado" : familia === "openai" ? "desligado" : "nao_verificado";
     },
+  },
+  {
+    id: "mapas",
+    nome: "Endereço aproximado do pino",
+    oQueFaz: "Com uma chave do Google, o pino de localização do cliente chega com rua e cidade aproximadas.",
+    nivel: "organizacao",
+    padrao: "desligado",
+    quemDecide: "admin",
+    // A chave mora em `map_provider_credentials`, e esta lista não lê chave: o estado fica na tela.
+    href: "/app/ai/providers",
   },
   {
     id: "teto_de_gasto",

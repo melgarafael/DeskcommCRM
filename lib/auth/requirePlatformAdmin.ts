@@ -17,7 +17,11 @@
  * runtime, and we have access to AAL state).
  */
 import { redirect } from "next/navigation";
+import type { NextResponse } from "next/server";
 import type { User } from "@supabase/supabase-js";
+import { fail, type ApiError } from "@/lib/api/wrappers";
+import { EscritaDePlatformAdminNegada } from "@/lib/auth/recusa-de-escrita-de-admin";
+import { mfaEmDivida } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
 
 export interface PlatformAdminInfo {
@@ -68,4 +72,44 @@ export async function requirePlatformAdmin(): Promise<PlatformAdminContext> {
       mfa_required: paRow.mfa_required,
     },
   };
+}
+
+// A classe mora no módulo sem `next/*` para o formulário ler a mesma frase.
+export { EscritaDePlatformAdminNegada };
+
+/**
+ * `requirePlatformAdmin()` + o que a ESCRITA exige e a leitura não:
+ * `scope === 'full'` (o `support_readonly` lê o painel e nada muda) e sessão sem
+ * dívida de MFA (quem TEM fator prova nesta sessão).
+ *
+ * `requirePlatformAdmin` devolvia o scope sem impor; só `admin/tenants` POST e as
+ * rotas de extensões conferiam. A cerca `tests/unit/admin-escrita-exige-scope-full.test.ts`
+ * exige este helper em todo handler de escrita e em toda server action de admin.
+ *
+ * Mantém o contrato de `requirePlatformAdmin` (quem não é platform admin é
+ * REDIRECIONADO); as duas recusas novas LANÇAM `EscritaDePlatformAdminNegada`.
+ */
+export async function requirePlatformAdminEscrita(): Promise<PlatformAdminContext> {
+  const ctx = await requirePlatformAdmin();
+  if (ctx.platformAdmin.scope !== "full") {
+    throw new EscritaDePlatformAdminNegada("forbidden_scope");
+  }
+  if (await mfaEmDivida()) {
+    throw new EscritaDePlatformAdminNegada("mfa_required");
+  }
+  return ctx;
+}
+
+/**
+ * Resposta de rota para o que `requirePlatformAdminEscrita` lançou. A recusa
+ * nomeada vira o seu código; o resto (redirect de quem não é platform admin,
+ * sessão ilegível) vira o 403 `forbidden` que as rotas de admin já davam.
+ */
+export function falhaDaEscritaDePlatformAdmin(
+  err: unknown,
+  requestId?: string,
+  mensagemDeRecusa = "Platform admin required",
+): NextResponse<ApiError> {
+  if (err instanceof EscritaDePlatformAdminNegada) return fail(err.code, err.message, 403, { requestId });
+  return fail("forbidden", mensagemDeRecusa, 403, { requestId });
 }

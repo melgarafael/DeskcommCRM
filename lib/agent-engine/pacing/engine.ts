@@ -41,6 +41,19 @@ export interface PacingInput {
    * Omitir = `true`: nenhum chamador existente muda de comportamento.
    */
   banRisk?: boolean;
+  /**
+   * Esta decisão é para a RESPOSTA do agente (o cliente escreveu e espera
+   * resposta) ou para o DISPARO (envio em massa / retomada de conversa parada)?
+   *
+   * ⚠️ `true` (resposta) lê `resposta*`; `false`/omitido (disparo) lê
+   * `window*`. Default `false` porque TODO chamador existente é disparo ou
+   * não-POSTO — o `pacingGate` precisa declarar a resposta explicitamente para
+   * a separação valer, e é o que a torna visível numa revisão de código.
+   *
+   * Responder e disparar são riscos diferentes: 50 mensagens de madrugada
+   * levam o número ao banimento; uma resposta para quem escreveu às 3h é o serviço.
+   */
+  resposta?: boolean;
   /** [0,1) — injetável nos testes; default Math.random. */
   rng?: () => number;
 }
@@ -57,16 +70,20 @@ export function decidePacing(input: PacingInput): PacingDecision {
   const { now, knobs, state, crmDailyLimit } = input;
   const rng = input.rng ?? Math.random;
   const banRisk = input.banRisk ?? true; // default preserva o comportamento atual
+  const resposta = input.resposta ?? false; // default = disparo (janela restritiva)
   const wall = wallClock(now, knobs.timezone);
+  // Resposta lê `resposta*`, disparo lê `window*`. Coluna vazia já chega aqui
+  // preenchida com a de disparo (`loadChannelKnobs`, 0495).
+  const janela = janelaDoPacing(knobs, resposta);
 
-  if (!insideWindow(wall, knobs)) {
-    const nextAllowedAt = addMs(nextWindowOpen(now, knobs), jitterOf(rng, knobs));
+  if (!insideWindow(wall, knobs, janela)) {
+    const nextAllowedAt = addMs(nextWindowOpen(now, knobs, janela), jitterOf(rng, knobs));
     return {
       allow: false,
       code: 'outside_window',
       nextAllowedAt,
       reason:
-        `fora da janela de envio (${knobs.windowStartHour}h-${knobs.windowEndHour}h` +
+        `fora da janela de ${resposta ? 'resposta' : 'envio'} (${janela.start}h-${janela.end}h` +
         `${knobs.allowSunday ? '' : ', sem domingo'}, ${knobs.timezone}); ` +
         `agende para ${formatInTz(nextAllowedAt, knobs.timezone)} (abertura da janela + jitter)`,
     };
@@ -197,38 +214,75 @@ export function dayStartInTz(instant: Date, timezone: string): Date {
  * inteiro em vez de gastar uma chamada de modelo cujo texto o gate vetaria na
  * saída (ver `inbound-turn.ts`). O gate de envio continua sendo o que decide de
  * verdade: isto é só o atalho barato, sem tocar em caps nem em throttle.
+ *
+ * `resposta` separa as janelas: o turno inbound é RESPOSTA (lê `resposta*`) e
+ * o disparo/retomada é `false` (lê `window*`). Omitir = disparo, que é o
+ * comportamento de todo chamador anterior a 0495.
  */
-export function janelaDeEnvioAberta(now: Date, knobs: PacingKnobs): boolean {
-  return insideWindow(wallClock(now, knobs.timezone), knobs);
+export function janelaDeEnvioAberta(
+  now: Date,
+  knobs: PacingKnobs,
+  resposta = false,
+): boolean {
+  return insideWindow(wallClock(now, knobs.timezone), knobs, janelaDoPacing(knobs, resposta));
 }
 
 /** Próxima abertura da janela + jitter — o instante para o qual se adia. */
 export function proximaAberturaDaJanela(
   now: Date,
   knobs: PacingKnobs,
+  resposta = false,
   rng: () => number = Math.random,
 ): Date {
-  return addMs(nextWindowOpen(now, knobs), jitterOf(rng, knobs));
+  return addMs(
+    nextWindowOpen(now, knobs, janelaDoPacing(knobs, resposta)),
+    jitterOf(rng, knobs),
+  );
 }
 
-function insideWindow(wall: Wall, knobs: PacingKnobs): boolean {
+/** Qual janela de [start, end) vale para esta decisão: a da RESPOSTA ou a do DISPARO. */
+function janelaDoPacing(
+  knobs: PacingKnobs,
+  resposta: boolean,
+): { start: number; end: number } {
+  if (!resposta) return { start: knobs.windowStartHour, end: knobs.windowEndHour };
+  return { start: knobs.respostaStartHour, end: knobs.respostaEndHour };
+}
+
+function insideWindow(
+  wall: Wall,
+  knobs: PacingKnobs,
+  janela: { start: number; end: number },
+): boolean {
   if (!knobs.allowSunday && wall.weekday === 'Sun') return false;
-  return wall.h >= knobs.windowStartHour && wall.h < knobs.windowEndHour;
+  return wall.h >= janela.start && wall.h < janela.end;
 }
 
 /** Próxima abertura de janela ESTRITAMENTE depois de `now` (pula domingo se evitado). */
-function nextWindowOpen(now: Date, knobs: PacingKnobs): Date {
+function nextWindowOpen(
+  now: Date,
+  knobs: PacingKnobs,
+  janela: { start: number; end: number } = { start: knobs.windowStartHour, end: knobs.windowEndHour },
+): Date {
   const w = wallClock(now, knobs.timezone);
   for (let add = 0; ; add += 1) {
     // Date.UTC normaliza overflow de dia/mês em instantFromWall.
-    const candidate = instantFromWall(w.y, w.mo, w.d + add, knobs.windowStartHour, knobs.timezone);
+    const candidate = instantFromWall(w.y, w.mo, w.d + add, janela.start, knobs.timezone);
     if (candidate.getTime() <= now.getTime()) continue;
     if (!knobs.allowSunday && wallClock(candidate, knobs.timezone).weekday === 'Sun') continue;
     return candidate;
   }
 }
 
-/** Abertura do PRÓXIMO dia permitido (cap diário reseta na meia-noite local). */
+/**
+ * Abertura do PRÓXIMO dia permitido (cap diário reseta na meia-noite local).
+ *
+ * Usa a janela de DISPARO, não a de resposta, de propósito: cap diário é
+ * proteção anti-ban e vale para qualquer envio. Se o cap for atingido às 3h por
+ * causa de uma resposta a quem escreveu, o "amanhã" que se anuncia é o
+ * reaparecimento do número às 7h, e isso é a única coisa que faz sentido
+ * dizer a quem pagou.
+ */
 function nextDayOpen(now: Date, knobs: PacingKnobs): Date {
   const w = wallClock(now, knobs.timezone);
   for (let add = 1; ; add += 1) {

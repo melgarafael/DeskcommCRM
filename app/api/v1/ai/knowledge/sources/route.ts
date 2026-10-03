@@ -16,8 +16,8 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { requireRole } from "@/lib/auth/require-role";
+import { loadAuthUser } from "@/lib/auth/server";
+import { orgAtivaDaApi, requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { parseFaqMarkdown } from "@/lib/ai/rag/ingest/faq";
@@ -78,7 +78,9 @@ export async function GET(_req: NextRequest): Promise<Response> {
   if (!authUser) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
-  const activeOrg = await resolveActiveOrg(authUser);
+  const ativa = await orgAtivaDaApi(authUser, requestId);
+  if (!ativa.ok) return ativa.response;
+  const activeOrg = ativa.org;
   if (!activeOrg) {
     return fail("forbidden", "Nenhuma organização ativa.", 403, { requestId });
   }

@@ -37,7 +37,27 @@ const RAIZ = path.resolve(__dirname, "../..");
 interface Creds {
   password: string;
   users: Record<string, { email: string } | undefined>;
-  agenda?: { tipo_nome: string; tipo_slug: string };
+  agenda?: { tipo_nome: string; tipo_slug: string; fuso?: string };
+}
+
+/**
+ * `HH:mm` de um instante na hora de parede de UM FUSO.
+ *
+ * ⚠️ Não usar `date.toTimeString()` aqui: ele lê o relógio do NAVEGADOR que
+ * roda o teste (UTC no runner do CI), e a grade — corretamente, desde a #1362 —
+ * desenha e rotula no fuso da ORGANIZAÇÃO. Comparar rótulo em fuso da org com
+ * `toTimeString` em fuso do navegador reprova com a diferença de horas (o teste
+ * mediu "12:30" para um "09:30" em América/São_Paulo). Quem lê o instante tem
+ * de formatar no MESMO fuso que produziu o rótulo que ele compara.
+ */
+function rotuloNoFuso(instante: Date, fuso: string): string {
+  const fmt = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: fuso,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  return fmt.format(instante);
 }
 
 function lerCreds(): Creds {
@@ -303,7 +323,17 @@ test("arrastar um card remarca — e o horário novo sobrevive ao reload", async
     "o alvo do arraste é o mesmo bloco de origem — a semana só tem uma vaga e o caso não prova nada",
   ).not.toBe(testidOrigem);
 
-  await alvo.scrollIntoViewIfNeeded();
+  // ⚠️ QUEM TEM DE ESTAR NA TELA É O CARD, não (só) o alvo.
+  //
+  // No fuso da organização o alvo (o primeiro bloco livre, vizinho do card) fica
+  // logo abaixo dele; mas se o card nasce perto do topo do expediente, a âncora
+  // da semana pode deixá-lo DEBAIXO do cabeçalho fixo (ou a rolagem para o alvo
+  // pode jogá-lo para fora da dobra). Nesses casos `caixaCard.y > 0` ainda passa,
+  // e o `pointerdown` em `caixaCard.y + 4` acerta o cabeçalho ou o vazio — o
+  // gesto não começa, o fantasma nunca nasce, e a falha lê "element(s) not
+  // found". Centralizar o CARD garante um ponto de aperto real; o alvo (mesma
+  // coluna, um bloco abaixo) vem junto na mesma rolagem.
+  await card.evaluate((el) => el.scrollIntoView({ block: "center" }));
   const caixaCard = (await card.boundingBox())!;
   const caixaAlvo = (await alvo.boundingBox())!;
   // Sem os dois na tela ao mesmo tempo não há gesto de ponteiro possível — e a
@@ -351,7 +381,13 @@ test("arrastar um card remarca — e o horário novo sobrevive ao reload", async
         );
         const corpo = (await r.json()) as { data?: Array<{ id: string; iniciaEm: string }> };
         const alvoNaApi = (corpo.data ?? []).find((a) => a.id === id);
-        return alvoNaApi ? new Date(alvoNaApi.iniciaEm).toTimeString().slice(0, 5) : "ausente";
+        // ⚠️ Formatar o instante no fuso da ORGANIZAÇÃO, não no do navegador
+        // (`toTimeString()`): a grade rotula no fuso da org (#1362), então a
+        // leitura da API tem de usar o MESMO relógio senão a comparação acusa
+        // +3h (o teste mediu "12:30" para um "09:30" em América/São_Paulo).
+        return alvoNaApi
+          ? rotuloNoFuso(new Date(alvoNaApi.iniciaEm), creds.agenda!.fuso ?? "UTC")
+          : "ausente";
       },
       { timeout: 20_000, message: "o servidor não registrou o horário novo" },
     )
@@ -446,11 +482,18 @@ test("arrastar para fora da disponibilidade é RECUSADO e o card volta", async (
   const distanciaAntes = await distanciaAoBloco();
 
   const bloqueado = blocoBloqueado(page);
-  await bloqueado.scrollIntoViewIfNeeded();
-  const caixaBloqueada = (await bloqueado.boundingBox())!;
-  // Depois de rolar, a caixa do card mudou de lugar na tela — o arraste tem de
-  // partir de onde ele ESTÁ agora, não de onde estava antes do scroll.
+  // ⚠️ QUEM TEM DE ESTAR NA TELA AO APERTAR É O CARD, não o bloqueado.
+  //
+  // A primeira versão rolava só o `bloqueado` e depois lia a caixa do card
+  // (que mora logo acima dele). Quando o card já estava no fim da dobra, esse
+  // scroll o empurrava para FORA da viewport: o `pointerdown` saía num `y`
+  // maior que a altura da tela, o gesto nunca começava, e o fantasma nunca
+  // nascia ("element(s) not found"). Centralizar o CARD, depois reler as duas
+  // caixas, garante que o aperto acerta o card — e o alvo bloqueado é lido na
+  // MESMA rolagem, para onde o ponteiro vai.
+  await card.evaluate((el) => el.scrollIntoView({ block: "center" }));
   const caixaCard = (await card.boundingBox())!;
+  const caixaBloqueada = (await bloqueado.boundingBox())!;
 
   await page.mouse.move(caixaCard.x + caixaCard.width / 2, caixaCard.y + 4);
   await page.mouse.down();

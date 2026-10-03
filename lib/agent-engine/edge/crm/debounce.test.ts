@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import type pg from 'pg';
 
-import { decidirRajada, janelaDeRajada } from './debounce';
+import { decidirRajada, janelaDeRajada, debounceEfetivo, TETO_DEBOUNCE_MS } from './debounce';
 
 const alvo = { organizationId: 'org1', contactId: 'contato1' };
 /** Instante fixo: a janela é aritmética e o teste não depende do relógio. */
@@ -69,4 +69,30 @@ it('job em hold não recebe carona — a consulta precisa excluir held_run_after
 it('janelaDeRajada: sem debounce não há janela; com debounce a janela é agora + janela', () => {
   expect(janelaDeRajada(0, AGORA)).toBeUndefined();
   expect(janelaDeRajada(750, AGORA)?.getTime()).toBe(AGORA + 750);
+});
+
+// ── Leitor de debounce configurável por agente (issue #1856) ────────────
+const ENV = 8_000;
+
+it('debounceEfetivo: campo vazio (null) usa o default da instalação — regressão zero', () => {
+  expect(debounceEfetivo(null, ENV)).toBe(ENV);
+  expect(debounceEfetivo(undefined, ENV)).toBe(ENV);
+});
+
+it('debounceEfetivo: campo preenchido vence o default', () => {
+  expect(debounceEfetivo(20_000, ENV)).toBe(20_000);
+});
+
+it('debounceEfetivo: 0 desliga a coalescência — não herda nem clampa', () => {
+  expect(debounceEfetivo(0, ENV)).toBe(0);
+});
+
+it('debounceEfetivo: teto de 60s — valor ACIMA do teto é clamado no limite', () => {
+  expect(TETO_DEBOUNCE_MS).toBe(60_000);
+  expect(debounceEfetivo(60_000, ENV)).toBe(60_000);
+  expect(debounceEfetivo(90_000, ENV)).toBe(60_000);
+});
+
+it('debounceEfetivo: valor NEGATIVO (dado sujo) clampa para 0, não quebra', () => {
+  expect(debounceEfetivo(-5, ENV)).toBe(0);
 });

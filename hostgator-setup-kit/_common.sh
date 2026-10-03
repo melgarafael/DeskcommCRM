@@ -18,37 +18,60 @@ COMPOSE_NPM="docker-compose.npm.yml"
 COMPOSE_BUILD="docker-compose.build.yml"
 
 # ── Arquitetura das imagens publicadas ───────────────────────────────────────
-# O registry publica hoje somente linux/amd64. Sem esta guarda, ARM64 chega até
-# o pull e morre com "no matching manifest"; o update.sh traduzia isso como
-# pacote ainda publicando/privado, um diagnóstico que manda repetir algo que
-# nunca vai funcionar nessa máquina.
+# O CI publica app, worker, scheduler e agente de voz em linux/amd64 e
+# linux/arm64. O instalador escolhe também a imagem oficial WAHA NOWEB ARM64;
+# Redis, Caddy e SRH já publicam manifestos ARM64. Sem reconhecer a arquitetura
+# aqui, uma VPS A1 seria recusada antes de chegar ao fluxo que já tem imagens
+# nativas para ela.
 #
 # A decisão fica pura no argumento para os testes simularem a arquitetura sem
 # depender do runner. A leitura de `uname -m` é o único ponto ligado ao host.
 arquitetura_suportada_pelo_kit() {
   case "${1:-}" in
-    x86_64|amd64) return 0 ;;
+    x86_64|amd64|aarch64|arm64) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+# WAHA publica NOWEB em tags distintas por arquitetura. O instalador grava
+# essa referência no .env; `enter_project` também cobre um .env antigo sem a
+# variável. A tag é fixa e corresponde à mesma versão funcional em ambas.
+imagem_waha_padrao_para_host() {
+  case "$(uname -m 2>/dev/null || true)" in
+    aarch64|arm64) printf '%s' 'devlikeapro/waha:noweb-arm-2026.7.2' ;;
+    *)             printf '%s' 'devlikeapro/waha:latest-2026.7.2' ;;
+  esac
+}
+
+# Quem já roda em ARM (#1266) tem no .env o WAHA que o install.sh antigo
+# gravava — `devlikeapro/waha` e, desde 13/08/2026, `latest-2026.7.2` —, e os
+# dois índices só têm linux/amd64. Troca SÓ esses valores conhecidos (e o vazio,
+# em que o default do compose seria o amd64); qualquer outra escolha do
+# operador, WAHA Plus inclusive, fica intacta. Pura no argumento, como a de cima.
+waha_amd64_conhecido_em_arm() {  # waha_amd64_conhecido_em_arm <arquitetura> <WAHA_IMAGE do .env> → 0 = trocar
+  case "${1:-}" in aarch64|arm64) ;; *) return 1 ;; esac
+  case "${2:-}" in
+    ""|devlikeapro/waha|devlikeapro/waha:latest|devlikeapro/waha:latest-2026.7.2) return 0 ;;
+  esac
+  return 1
 }
 
 # ── JÁ EXISTE UMA INSTALAÇÃO REAL AQUI? (#1266, corrigido pelo #1778) ───────
 #
 # A guarda do #1042 vivia no TOPO dos dois scripts, e por isso matava antes de
 # chegar ao `construir_aqui_e_subir` (#1060/#1143) — a recuperação por build
-# local que existe exatamente para a VPS cuja arquitetura não bate com a das
-# imagens publicadas. As duas mudanças tinham teste verde isoladamente e
-# ninguém rodou as duas juntas: o resultado foi um `exit 1` na PRIMEIRA linha,
-# que deixava quem já tinha uma instalação ARM funcionando PERMANENTEMENTE sem
-# poder rodar `update.sh` de novo, e sem bandeira nenhuma.
+# local para uma arquitetura sem imagem publicada. As duas mudanças tinham
+# teste verde isoladamente e ninguém rodou as duas juntas: o resultado foi um
+# `exit 1` na PRIMEIRA linha, que deixava uma instalação existente nessa
+# arquitetura sem poder rodar `update.sh` de novo, e sem bandeira nenhuma.
 #
 # O sinal NÃO pode ser o estado do DIRETÓRIO. "compose + `.env`" chega junto
 # numa instalação NOVA: o `.env` pode ter sido copiado de outra máquina, gerado
 # por automação, ou deixado por uma rodada anterior do `--yes` que parou no
-# meio. Com esse critério, um `install.sh --yes` numa VPS ARM NOVA com o `.env`
-# já preenchido passava pela guarda como se fosse instalação existente e ia
-# construir as imagens na própria VPS (15–25 min) — exatamente o que a guarda
-# do #1042 existe para impedir. E o `.env` sozinho nunca provou nada: o
+# meio. Com esse critério, um `install.sh --yes` numa VPS de arquitetura sem
+# imagem publicada e com o `.env` já preenchido passava pela guarda como se
+# fosse instalação existente e ia construir as imagens na própria VPS (15–25
+# min) — exatamente o que a guarda do #1042 existe para impedir. E o `.env` sozinho nunca provou nada: o
 # `git clone` de uma instalação nova pode trazer um `.env` de exemplo.
 #
 # O sinal do DIRETÓRIO entra como CONDIÇÃO, nunca como prova: sem compose nem
@@ -141,14 +164,17 @@ marcar_instalacao_feita() {  # marcar_instalacao_feita [versão]
   chmod 600 "$marca" 2>/dev/null || true
 }
 
-# Ecoa: amd64 | recuperar | nova
+# Ecoa: amd64 | arm64 | recuperar | nova
 #
 # A decisão é PURA no que recebe: `uname` e a leitura do disco ficam fora, para
 # o teste simular as três respostas sem depender do runner nem de um diretório
 # de verdade. Quem traduz em mensagem é `verificar_arquitetura_do_kit`.
 veredito_da_arquitetura() {  # veredito_da_arquitetura <arquitetura> [0=nova | 1=instalação existente]
   local arch="${1:-}" existe="${2:-0}"
-  arquitetura_suportada_pelo_kit "$arch" && { printf 'amd64'; return 0; }
+  case "$arch" in
+    x86_64|amd64) printf 'amd64'; return 0 ;;
+    aarch64|arm64) printf 'arm64'; return 0 ;;
+  esac
   [ "$existe" = 1 ] && { printf 'recuperar'; return 0; }
   printf 'nova'
 }
@@ -157,17 +183,17 @@ verificar_arquitetura_do_kit() {
   local arch existe=0
   arch="$(uname -m 2>/dev/null || t "desconhecida")"
   # O sinal de "instalação real" SÓ é perguntado quando a arquitetura não é
-  # suportada. Em amd64 o veredito já é `amd64` e a guarda atravessa, então
-  # perguntar seria trabalho inútil — e, com o critério do #1778, trabalho que
-  # chama o `docker` no TOPO do install.sh, antes de qualquer passo do
-  # instalador. A seção 4 do teste de #1778 mede isso: em x86_64 a guarda não
-  # fala com o Docker.
+  # suportada. Em amd64 ou arm64 o veredito já está definido e a guarda
+  # atravessa, então perguntar seria trabalho inútil — e, com o critério do
+  # #1778, trabalho que chama o `docker` no TOPO do install.sh, antes de
+  # qualquer passo do instalador. A seção 4 do teste de #1778 mede isso em
+  # x86_64.
   if ! arquitetura_suportada_pelo_kit "$arch"; then
     instalacao_real_do_kit_aqui && existe=1
   fi
 
   case "$(veredito_da_arquitetura "$arch" "$existe")" in
-    amd64) return 0 ;;
+    amd64|arm64) return 0 ;;
     recuperar)
       # O update.sh relê este arquivo depois do checkout da versão nova, e a
       # guarda roda de novo no topo: sem esta trava o dono lia o mesmo aviso
@@ -180,15 +206,15 @@ verificar_arquitetura_do_kit() {
       # recusa logo abaixo). O aviso vai para o STDERR, como a recusa: o
       # agent.sh manda a saída do update.sh para arquivo e o dono lê o fim dela.
       printf '%s\n' \
-        "⚠ $(t "Este servidor usa arquitetura '{1}', e as imagens publicadas do DeskcommCRM são só linux/amd64." "$arch")" \
+        "⚠ $(t "Este servidor usa arquitetura '{1}', e as imagens publicadas do DeskcommCRM são linux/amd64 e linux/arm64." "$arch")" \
         "  $(t "Como esta instalação JÁ EXISTE, sigo em frente: as imagens da versão alvo serão construídas nesta própria VPS.")" \
-        "  $(t "Leva de 15 a 25 minutos. Uma instalação NOVA nesta arquitetura precisaria de imagens multi-arquitetura, que o DeskcommCRM ainda não publica.")" >&2
+        "  $(t "Leva de 15 a 25 minutos. Uma instalação NOVA exige x86_64/amd64 ou ARM64/aarch64 com imagens publicadas.")" >&2
       return 0 ;;
   esac
 
   printf '%s\n' \
-    "✖ $(t "Este servidor usa arquitetura '{1}', mas as imagens publicadas do DeskcommCRM hoje são linux/amd64." "$arch")" \
-    "  $(t '  Use uma VPS x86_64/amd64. Repetir o download não resolve; ARM64 só será suportado quando houver imagens multi-arquitetura.' | sed 's/^  //')" >&2
+    "✖ $(t "Este servidor usa arquitetura '{1}', mas o DeskcommCRM não publica imagens para ela (linux/amd64 e linux/arm64 estão disponíveis)." "$arch")" \
+    "  $(t '  Use uma VPS x86_64/amd64 ou ARM64/aarch64. Repetir o download não resolve.' | sed 's/^  //')" >&2
   return 1
 }
 
@@ -220,7 +246,17 @@ unset _deskcomm_chamador
 # o override subiria o Caddy e ele iria bater de frente com o proxy da hospedagem.
 dc() {
   if [ "${SINGLE_SERVER:-0}" = "1" ]; then
-    docker compose -f "$COMPOSE" -f docker-compose.single-server.yml "$@"
+    # #2099: o single-server também respeita o proxy da hospedagem. Os dois
+    # ramos eram `if SINGLE_SERVER` → return ANTES do seletor, então o
+    # docker-compose.traefik.yml (ou npm) nunca entrava aqui: o Caddy do
+    # single-server subia e perdia o bind das 80/443 para o Traefik/NPM que já
+    # estava lá. Junta os dois: o overlay do proxy vem DEPOIS do overlay do
+    # single-server, e o padrão (sem a variável) continua só o single-server.
+    case "${REVERSE_PROXY:-caddy}" in
+    traefik) docker compose -f "$COMPOSE" -f docker-compose.single-server.yml -f "$COMPOSE_TRAEFIK" "$@" ;;
+    npm)     docker compose -f "$COMPOSE" -f docker-compose.single-server.yml -f "$COMPOSE_NPM" "$@" ;;
+    *)       docker compose -f "$COMPOSE" -f docker-compose.single-server.yml "$@" ;;
+    esac
     return
   fi
   case "${REVERSE_PROXY:-caddy}" in
@@ -235,7 +271,14 @@ dc() {
 # próprio dono derrubaria o site seguindo a instrução do kit.
 dc_files() {
   if [ "${SINGLE_SERVER:-0}" = "1" ]; then
-    printf -- '-f %s -f %s' "$COMPOSE" docker-compose.single-server.yml
+    # #2099: mesma junção de dc() — a lista de -f tem de bater com o que dc()
+    # realmente roda, ou a mensagem ensinaria o dono a omitir o overlay do
+    # proxy e ele derrubaria o site seguindo a instrução do kit.
+    case "${REVERSE_PROXY:-caddy}" in
+    traefik) printf -- '-f %s -f %s -f %s' "$COMPOSE" docker-compose.single-server.yml "$COMPOSE_TRAEFIK" ;;
+    npm)     printf -- '-f %s -f %s -f %s' "$COMPOSE" docker-compose.single-server.yml "$COMPOSE_NPM" ;;
+    *)       printf -- '-f %s -f %s' "$COMPOSE" docker-compose.single-server.yml ;;
+    esac
     return
   fi
   case "${REVERSE_PROXY:-caddy}" in
@@ -261,6 +304,9 @@ pg_container() {
 # A versão do Supabase self-hosted é UMA, e mora aqui: o instalador a instala e
 # o update.sh leva quem já instalou até ela (atualizar_supabase_single_server).
 # Sem `readonly`: o update.sh relê este arquivo depois do checkout.
+# Esta ref foi conferida em ARM64: todas as 11 imagens do compose oficial têm
+# manifesto linux/arm64. Antes de atualizar a ref, confira as imagens novamente;
+# o update automático também precisa continuar funcionando na VPS A1.
 SUPABASE_REF="self-hosted/v0.8.1"
 
 dir_do_supabase() { printf '%s/.runtime/supabase' "${PROJECT_DIR:-$PWD}"; }
@@ -386,6 +432,42 @@ sincronizar_signup_mode_do_gotrue() {
   return 0
 }
 
+# ── E-mails de acesso: o GoTrue busca o MOLDE no app (#2109) ────────────────
+#
+# O molde padrão do GoTrue linka para `/auth/v1/verify`, e o clique em "esqueci
+# a senha" termina em `/login?error=link_invalido` (diagnóstico na #2109). As
+# rotas `/email-templates/recovery` e `/email-templates/confirmation` do app
+# emitem o link com `token_hash`, que `app/auth/confirm` sabe fechar.
+#
+# O compose oficial do Supabase não mapeia estas chaves para o serviço `auth`
+# (só `GOTRUE_SMTP_*` e `GOTRUE_MAILER_URLPATHS_*`), então elas valem DUAS
+# vezes: no .env do Supabase, que o compose interpola, e no
+# `supabase-single-server.override.yml`, que as entrega ao contêiner.
+#
+# Chamada pelo install-single-server.sh (com o domínio que ele recebeu) e por
+# atualizar_supabase_single_server (sem domínio: sai do SITE_URL que o
+# instalador gravou como https://DOMINIO). Valor já presente — no .env do
+# Supabase ou no ambiente — manda: nada sobrescreve um molde que o operador já
+# apontou. Sem URL https para montar o caminho, não grava nada: um molde
+# apontado para `localhost` seria pior que o padrão.
+gravar_modelos_do_gotrue() {  # gravar_modelos_do_gotrue <.env do Supabase> [https://DOMINIO]
+  local env_sb="$1" base="${2:-}" chave caminho valor
+  [ -f "$env_sb" ] || return 0
+  [ -n "$base" ] || base="$(valor_do_env "$env_sb" SITE_URL)"
+  case "$base" in https://?*) base="${base%/}" ;; *) return 0 ;; esac
+  for chave in GOTRUE_MAILER_TEMPLATES_CONFIRMATION GOTRUE_MAILER_TEMPLATES_RECOVERY; do
+    [ -n "$(valor_do_env "$env_sb" "$chave")" ] && continue
+    case "$chave" in
+      *CONFIRMATION) caminho=/email-templates/confirmation ;;
+      *) caminho=/email-templates/recovery ;;
+    esac
+    valor="${!chave:-}"
+    [ -n "$valor" ] || valor="${base}${caminho}"
+    set_env_var "$env_sb" "$chave" "$valor"
+  done
+  return 0
+}
+
 # ── O update.sh leva o Supabase até a versão pinada ──────────────────────────
 #
 # O `update.sh` oficial do Supabase faz o merge de três vias dos arquivos dele
@@ -405,6 +487,10 @@ atualizar_supabase_single_server() {
       c_ylw "$(t "⚠ O Supabase não foi atualizado; segue na versão {1}. A próxima atualização tenta de novo." "${atual:-$(t "anterior")}")"
     fi
   fi
+  # #2109 — no corpo desta função, e não numa linha do update.sh, pelo mesmo
+  # motivo do #1653 logo abaixo. Antes do `up -d --wait`: o compose recria o
+  # auth com o ambiente novo, sem reinício à parte.
+  gravar_modelos_do_gotrue "$dir/.env"
   dc_supabase up -d --wait || return 1
   # #1653 — a sincronização do modo de cadastro mora AQUI, no corpo desta
   # função, e não numa linha do update.sh. Na atualização que traz este
@@ -1061,6 +1147,10 @@ enter_project() {
   else die "$(t "Não achei {1}. Rode a partir da pasta do projeto." "$COMPOSE")"; fi
   [ -f .env ] || die "$(t "Falta o .env (rode install.sh primeiro).")"
   load_env .env
+  if [ -z "${WAHA_IMAGE:-}" ]; then
+    WAHA_IMAGE="$(imagem_waha_padrao_para_host)"
+    export WAHA_IMAGE
+  fi
   PROJECT_DIR="$(pwd)"
 }
 
@@ -1478,6 +1568,19 @@ gravar_imagens() {
   # não no `stable` móvel do default do compose.
   set_env_var "$envfile" VOICE_AGENT_IMAGE       "${IMG_VOICE_AGENT}:${versao}"
   set_env_var "$envfile" VOICE_AGENT_PULL_POLICY "$politica"
+  # O WAHA de quem já roda em ARM mora AQUI, e não numa linha do update.sh: é
+  # esta função que o update.sh ANTIGO chama depois de reler o kit, então é
+  # assim que a troca chega já na atualização que a traz. O export vale porque
+  # o compose prefere a variável do ambiente (que o enter_project exportou com o
+  # valor velho) à do .env.
+  local waha_atual
+  waha_atual="$(sed -n 's/^WAHA_IMAGE=//p' "$envfile" 2>/dev/null | tail -1 | tr -d "\"'")"
+  if waha_amd64_conhecido_em_arm "$(uname -m 2>/dev/null || true)" "$waha_atual"; then
+    WAHA_IMAGE="$(imagem_waha_padrao_para_host)"
+    export WAHA_IMAGE
+    set_env_var "$envfile" WAHA_IMAGE "$WAHA_IMAGE"
+    c_ylw "$(t "  (WAHA trocado para a variante oficial ARM64: {1})" "$WAHA_IMAGE")"
+  fi
 }
 
 # ── Os segredos da chamada de voz, no .env de quem já tinha instalado ────────

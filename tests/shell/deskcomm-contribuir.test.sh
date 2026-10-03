@@ -115,12 +115,18 @@ git add supabase/migrations/20260909100000_0201_nova.sql
 saida="$(git commit -q -m "migration sem tripla" 2>&1)"; code=$?
 assert_exit "$code" 1 "migration sem baseline/MANIFEST é bloqueada"
 assert_contains "$saida" "sem apêndice em supabase/baseline.sql" "a mensagem nomeia o baseline"
-assert_contains "$saida" "sem linha em supabase/migrations/MANIFEST.md" "a mensagem nomeia o MANIFEST (acumula, não para no primeiro)"
+assert_contains "$saida" "sem descrição" "a mensagem cobra a descrição (acumula, não para no primeiro)"
+assert_contains "$saida" "-- manifest:" "a mensagem ensina a linha do cabeçalho"
 printf -- '-- apêndice 0201\n' >> supabase/baseline.sql
-printf '| `20260909100000` | `0201_nova` |\n' >> supabase/migrations/MANIFEST.md
+printf -- '-- manifest:   \nselect 2;\n' > supabase/migrations/20260909100000_0201_nova.sql
+git add -A
+saida="$(git commit -q -m "manifest vazio" 2>&1)"; code=$?
+assert_exit "$code" 1 "\`-- manifest:\` sem texto não conta como descrição"
+printf -- '-- manifest: a nova coisa e por quê\nselect 2;\n' > supabase/migrations/20260909100000_0201_nova.sql
 git add -A
 saida="$(git commit -q -m "migration com tripla" 2>&1)"; code=$?
-assert_exit "$code" 0 "tripla completa com número livre passa"
+assert_exit "$code" 0 "tripla completa (descrição no cabeçalho, MANIFEST.md intocado) passa"
+assert_exit "$(git diff --name-only HEAD~1 HEAD -- supabase/migrations/MANIFEST.md | wc -l | tr -d ' ')" 0 "o commit aceito não tocou o MANIFEST.md"
 # colisão de NNNN e de timestamp com a origin/main
 printf 'select 3;\n' > supabase/migrations/20260101120000_0200_colide.sql
 printf -- '-- x\n' >> supabase/baseline.sql; printf '| x | `0200_colide` |\n' >> supabase/migrations/MANIFEST.md

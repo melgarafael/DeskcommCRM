@@ -45,6 +45,9 @@ vi.mock("@/hooks/contacts/useContactList", () => ({
   useContactList: (filtros: { search?: string }) => busca(filtros),
 }));
 
+vi.mock("@/hooks/auth/AuthProvider", () => ({
+  useActiveOrg: () => ({ currency: "BRL", country: null }),
+}));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";

@@ -121,6 +121,7 @@ async function handle(row: EventRow): Promise<HandlerResult> {
 
 export const conversaoDeQualificacaoHandler: EventHandler = {
   key: KEY,
+  naOrgParada: "pula",
   events: ["lead.stage_changed", "ad_conversion.retry_requested"],
   handle,
 };

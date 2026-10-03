@@ -75,6 +75,7 @@ import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { moldeDoDegrau } from "@/lib/agenda/lembretes";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { OrgNaoOperanteError, STATUS_OPERANTE, ehOperante, statusDaOrgEmbutida } from "@/lib/organizacao/operante";
 
 export const dynamic = "force-dynamic";
 
@@ -104,6 +105,8 @@ interface CompromissoAVencer {
   location_details: string | null;
   reminder_sent_offsets_minutes: number[] | null;
   calendar_event_types: TipoDoCompromisso | TipoDoCompromisso[] | null;
+  /** Status da org embutido — quem decide é `ehOperante`, não uma lista de ids. */
+  organizations?: { status?: string | null } | Array<{ status?: string | null }> | null;
 }
 
 /** O join do PostgREST devolve objeto ou array conforme a cardinalidade inferida. */
@@ -266,9 +269,12 @@ async function handle(req: NextRequest): Promise<Response> {
     .from("calendar_appointments")
     .select(
       "id, organization_id, contact_id, title, starts_at, location_details, reminder_sent_offsets_minutes, " +
-        "calendar_event_types!inner(name, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_template_name, reminder_body, reminder_bodies, location_details)",
+        "calendar_event_types!inner(name, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_template_name, reminder_body, reminder_bodies, location_details), organizations:organization_id!inner(status)",
     )
     .eq("status", "confirmed")
+    // Org parada sai no banco, ANTES do `limit`: filtrar só em memória a deixaria
+    // ocupar a janela da varredura enquanto a org segue parada.
+    .eq("organizations.status", STATUS_OPERANTE)
     .eq("calendar_event_types.reminder_enabled", true)
     .not("contact_id", "is", null)
     // ⚠️ NÃO se filtra por `reminder_sent_at is null` aqui, e a ausência é a
@@ -290,6 +296,12 @@ async function handle(req: NextRequest): Promise<Response> {
     logger.error("[agenda-reminder] consulta falhou", { error: error.message, requestId });
     return fail("internal_error", "Falha ao buscar compromissos.", 500, { requestId });
   }
+
+  // Organização parada (suspensa, redigida, arquivada) não recebe lembrete: é
+  // mensagem que sai para o cliente dela (spec §1.3, "nada roda e nada sai").
+  // O corte já saiu no banco (o embed `!inner` + o filtro de status, acima);
+  // o `ehOperante` mais abaixo é cinto. Nunca uma lista de ids de paradas negada
+  // na URL — ela cortaria em `max_rows` sem aviso.
 
   const linhas = (data ?? []) as unknown as CompromissoAVencer[];
   let enviados = 0;
@@ -320,6 +332,14 @@ async function handle(req: NextRequest): Promise<Response> {
 
     // ⚠️ organization_id SEMPRE da linha do compromisso — ver o cabeçalho.
     const org = linha.organization_id;
+
+    // Antes do contato e da conversa: org parada não abre conversa nem carimba
+    // o compromisso. Na reativação, o degrau que ainda estiver na janela sai
+    // normalmente; o que venceu parado não volta (reativação sem rajada).
+    if (!ehOperante(statusDaOrgEmbutida(linha.organizations))) {
+      pular("org_nao_operante");
+      continue;
+    }
 
     const { data: contato } = await admin
       .from("contacts")
@@ -425,6 +445,12 @@ async function handle(req: NextRequest): Promise<Response> {
         .eq("organization_id", org);
       enviados += 1;
     } catch (err) {
+      // A org parou entre a leitura da rodada e o envio: não é erro, é a
+      // suspensão (a porta de saída lança OrgNaoOperanteError).
+      if (err instanceof OrgNaoOperanteError) {
+        pular("org_nao_operante");
+        continue;
+      }
       const mensagem = err instanceof Error ? err.message : String(err);
       logger.error("[agenda-reminder] envio falhou", { appointmentId: linha.id, error: mensagem, requestId });
       pular("erro_no_envio");

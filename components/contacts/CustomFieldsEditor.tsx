@@ -4,7 +4,9 @@
  * input certo por tipo. Usado pelo dossiê e pelo painel do inbox, via
  * `LeadFieldsForm`.
  */
+import { useActiveOrg } from "@/hooks/auth/AuthProvider";
 import { Input } from "@/components/ui/input";
+import { perfilDoPais } from "@/lib/legal/perfil-do-pais";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -49,6 +51,9 @@ interface Props {
 
 export function CustomFieldsEditor({ fields, value, onChange, disabled, className }: Props) {
   const t = useT();
+  // O campo é do mesmo caminho do contato: o exemplo segue o país da
+  // organização, e não o DDI brasileiro em duro.
+  const telefoneExemplo = perfilDoPais(useActiveOrg()?.country).telefoneExemplo;
   function set(key: string, v: unknown) {
     onChange({ ...value, [key]: v });
   }
@@ -190,7 +195,7 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
                 <Input
                   id={id}
                   type="tel"
-                  placeholder="+5511999998888"
+                  placeholder={telefoneExemplo}
                   value={typeof v === "string" ? v : ""}
                   onChange={(e) => set(f.key, e.target.value)}
                   disabled={disabled}

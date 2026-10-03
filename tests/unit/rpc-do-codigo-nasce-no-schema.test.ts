@@ -20,7 +20,7 @@
  *
  * 1. COMENTÁRIO. Sem descartar comentário o gate nasce VERMELHO por falso
  *    ausente: `fn_admin_ai_budget_warning_count` aparece em
- *    `app/api/v1/admin/dashboard/kpis/route.ts:81` só como `//`, a chamada saiu
+ *    `app/api/v1/admin/dashboard/kpis/route.ts:93` só como `//`, a chamada saiu
  *    no 4aa65590e e a função não existe (zero ocorrências em `supabase/` e zero
  *    em `lib/database.types.ts`). A segunda menção é comentário de bloco, já
  *    inofensiva: `fn_encrypt_oauth` em
@@ -486,7 +486,12 @@ describe("todo `.rpc(\"nome\")` do código nasce no schema versionado", () => {
     const nomes = new Set(chamadas.map((c) => c.nome));
 
     // `//` — a menção existe no arquivo e NÃO pode virar chamada.
-    const linha = ler("app/api/v1/admin/dashboard/kpis/route.ts").split("\n")[80] ?? "";
+    //
+    // ⚠️ ÍNDICE DE LINHA, e é de propósito (dito no cabeçalho): a sonda mede que a
+    // menção está num COMENTÁRIO. Editar acima desta linha no `kpis/route.ts`
+    // desloca o índice e este caso fica vermelho pedindo a atualização — foi o que
+    // aconteceu no recorte do KPI de LGPD, que subiu a menção da 81 para a 93.
+    const linha = ler("app/api/v1/admin/dashboard/kpis/route.ts").split("\n")[92] ?? "";
     expect(linha, "a menção de controle mudou de lugar — atualize este teste e o cabeçalho").toContain(
       "fn_admin_ai_budget_warning_count",
     );

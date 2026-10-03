@@ -34,6 +34,11 @@ export interface StageRow {
   agent_stage_hint: string | null;
   pipeline_id: string;
   organization_id: string;
+  /**
+   * Janela de "esfriando" em horas (issue #1532). `null` = etapa anterior à
+   * configuração, o estado que o radar trata como padrão de 24 h.
+   */
+  expected_duration_hours: number | null;
 }
 
 export function etapa(over: Partial<StageRow> & { id: string; name: string }): StageRow {
@@ -46,6 +51,7 @@ export function etapa(over: Partial<StageRow> & { id: string; name: string }): S
     agent_stage_hint: null,
     pipeline_id: PIPE,
     organization_id: ORG_ID,
+    expected_duration_hours: null,
     ...over,
   };
 }

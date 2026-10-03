@@ -84,6 +84,19 @@ export const REGISTRO_DE_IDIOMAS = [
     nivel: "em_construcao",
     mantenedor: null,
   },
+  {
+    codigo: "en",
+    nomeNativo: "English",
+    rotuloCurto: "EN",
+    // `en` e não `en-US`, pela mesma razão do `es`: com a tag pura o navegador
+    // resolve pela região de quem lê (data, número), em vez de impor os EUA.
+    tagBcp47: "en",
+    subtagsDoNavegador: ["en"],
+    // Catálogo em `lib/i18n/traducoes/en.json`. Aparece quando o leitor do
+    // catálogo (fatia 4 do PROG-022) existir e o nível for promovido.
+    nivel: "em_construcao",
+    mantenedor: null,
+  },
 ] as const satisfies readonly IdiomaRegistrado[];
 
 export type IdiomaDoRegistro = (typeof REGISTRO_DE_IDIOMAS)[number];

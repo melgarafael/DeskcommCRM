@@ -376,3 +376,183 @@ describe("a porta: o handler real de inbound_turn", () => {
     expect(rows[0]?.ok).toBe(true);
   });
 });
+
+describe("resposta obsoleta: o cliente escreveu de novo enquanto o turno pensava?", () => {
+  // A régua compara com `now()`, então os instantes são relativos ao relógio real.
+  const haSegundos = (s: number): string => new Date(Date.now() - s * 1000).toISOString();
+  const TETO = 120_000;
+
+  /** Job em andamento que anotou ter visto até `vistoAte`. */
+  async function turnoEmAndamento(vistoAte: string | null): Promise<string> {
+    return turnoTerminado({ vistoAte });
+  }
+
+  it("o caso medido — leu os cumprimentos, a pergunta chegou durante o turno: não envia", async () => {
+    await inbound("Oi", haSegundos(40));
+    await inbound("Boa tarde", haSegundos(36));
+    const job = await turnoEmAndamento(haSegundos(36));
+    await inbound("Eu precisava comprar um pneu para a minha D01", haSegundos(15));
+    expect(await m.regua.respostaFicouObsoleta(pool, alvo(job), TETO)).toBe(true);
+  });
+
+  it("nada chegou depois da leitura: envia", async () => {
+    await inbound("Oi", haSegundos(40));
+    const job = await turnoEmAndamento(haSegundos(40));
+    expect(await m.regua.respostaFicouObsoleta(pool, alvo(job), TETO)).toBe(false);
+  });
+
+  it("cliente sem resposta há mais que o teto: envia mesmo desatualizada (silêncio é pior)", async () => {
+    await inbound("Oi", haSegundos(300));
+    const job = await turnoEmAndamento(haSegundos(300));
+    await inbound("alguém aí?", haSegundos(10));
+    expect(await m.regua.respostaFicouObsoleta(pool, alvo(job), TETO)).toBe(false);
+  });
+
+  it("o teto conta desde a última resposta nossa, não desde a primeira mensagem da conversa", async () => {
+    await inbound("mensagem de ontem", haSegundos(86_400));
+    await turnoTerminado({ vistoAte: haSegundos(86_400), envio: { status: "accepted", em: haSegundos(86_000) } });
+    await inbound("Oi de novo", haSegundos(30));
+    const job = await turnoEmAndamento(haSegundos(30));
+    await inbound("queria marcar revisão", haSegundos(5));
+    expect(await m.regua.respostaFicouObsoleta(pool, alvo(job), TETO)).toBe(true);
+  });
+
+  it("mensagem nova em OUTRA conversa do contato não torna esta obsoleta", async () => {
+    await inbound("Oi", haSegundos(40));
+    const job = await turnoEmAndamento(haSegundos(40));
+    await inbound("em outro número", haSegundos(5), OUTRA_CONV);
+    expect(await m.regua.respostaFicouObsoleta(pool, alvo(job), TETO)).toBe(false);
+  });
+
+  it("job sem anotação (follow-up, ou anterior à mudança) nunca é obsoleto", async () => {
+    await inbound("Oi", haSegundos(40));
+    const job = await turnoEmAndamento(null);
+    await inbound("pergunta", haSegundos(5));
+    expect(await m.regua.respostaFicouObsoleta(pool, alvo(job), TETO)).toBe(false);
+  });
+
+  it("teto 0 desliga a régua", async () => {
+    await inbound("Oi", haSegundos(40));
+    const job = await turnoEmAndamento(haSegundos(40));
+    await inbound("pergunta", haSegundos(5));
+    expect(await m.regua.respostaFicouObsoleta(pool, alvo(job), 0)).toBe(false);
+  });
+});
+
+describe("resposta obsoleta — a porta: o handler real não envia o que ficou desatualizado", () => {
+  const haSegundos = (s: number): string => new Date(Date.now() - s * 1000).toISOString();
+
+  /**
+   * Modelo fake: na 1ª chamada a pergunta do cliente CHEGA (como no caso medido,
+   * durante os 10–40 s do modelo) e ele pede `send_message`; depois encerra.
+   */
+  function modeloQueDemora(resultados: unknown[]) {
+    let chamadas = 0;
+    return async (opts: { prompt?: unknown }) => {
+      for (const msg of (opts.prompt ?? []) as Array<{ content?: unknown }>) {
+        if (!Array.isArray(msg.content)) continue;
+        for (const parte of msg.content as Array<Record<string, unknown>>) {
+          if (parte.type === "tool-result") resultados.push(parte.output ?? parte);
+        }
+      }
+      chamadas += 1;
+      if (chamadas === 1) {
+        await inbound("Eu precisava comprar um pneu para a minha D01", new Date().toISOString());
+        return {
+          content: [
+            {
+              type: "tool-call" as const,
+              toolCallId: "c1",
+              toolName: "send_message",
+              input: JSON.stringify({ body: "Tudo bem também! Como posso te ajudar?" }),
+            },
+          ],
+          finishReason: { unified: "tool-calls" as const, raw: undefined },
+          usage: USO,
+          warnings: [],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({ commitments: [], objections: [], next_action: null, rolling_summary: "t" }),
+          },
+        ],
+        finishReason: { unified: "stop" as const, raw: undefined },
+        usage: USO,
+        warnings: [],
+      };
+    };
+  }
+
+  async function rodar(tetoMs: number): Promise<unknown[]> {
+    const resultados: unknown[] = [];
+    await inbound("Oi", haSegundos(20));
+    const msg = await inbound("Tudo bem?", haSegundos(15));
+    const { job } = await m.queue.enqueueJob(pool, ORG, {
+      kind: "inbound_turn",
+      leadId: CONTACT,
+      payload: {
+        conversation_id: CONV,
+        contact_id: CONTACT,
+        channel_session_id: SESSION,
+        inbound_message_id: msg,
+        crm_event_id: crypto.randomUUID(),
+      },
+      maxAttempts: 1,
+    });
+    const [claimed] = await m.queue.claimJobs(pool, { workerId: "obs", maxConcurrency: 1 });
+    expect(claimed?.id).toBe(job.id);
+    const handler = m.createInboundTurnHandler({
+      crmCfg: { supabase: {} as never },
+      llmCfg: { anthropicApiKey: "fake" } as never,
+      knobs: {
+        historyLimit: 10,
+        maxContextTokens: 1000,
+        notesIndexMaxTokens: 500,
+        maxSteps: 12,
+        queuedRetryDelayMs: 1000,
+        respostaObsoletaTetoMs: tetoMs,
+        breaker: {
+          exactFailureWarn: 2,
+          exactFailureBlock: 5,
+          sameToolFailureWarn: 3,
+          sameToolFailureHalt: 8,
+          noProgressWarn: 3,
+          noProgressBlock: 5,
+        },
+      },
+      log: m.createLogger(),
+      registry: m.createFakeRegistry(modeloQueDemora(resultados) as never),
+      channel: () =>
+        ({
+          channel: "captura",
+          send: async () => {
+            enviados += 1;
+            return { kind: "sent" as const, idempotencyKey: `k${enviados}`, messageId: `m${enviados}` };
+          },
+          sessionHealth: async () => ({ healthy: true, status: "WORKING" }),
+          capabilities: () => ({ freeform: true, media: true, audio: true }),
+          costPerMessage: () => ({ currency: "BRL", cents: 0 }),
+        }) as never,
+      clock: () => new Date("2026-07-28T18:00:00Z"),
+      sleep: async () => {},
+    });
+    await handler(claimed!, pool, { workerId: "obs" });
+    await m.queue.completeJob(pool, claimed!.id, "obs");
+    return resultados;
+  }
+
+  it("a pergunta chegou enquanto o modelo pensava: a resposta desatualizada não sai", async () => {
+    const resultados = await rodar(120_000);
+    expect(enviados).toBe(0);
+    expect(JSON.stringify(resultados)).toContain("resposta_obsoleta");
+  });
+
+  it("controle: com a régua desligada, a mesma cena envia (é o defeito de antes)", async () => {
+    await rodar(0);
+    expect(enviados).toBe(1);
+  });
+});
+

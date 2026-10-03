@@ -36,7 +36,12 @@ source "$KIT_DIR/_i18n.sh"
 # numa, mexa na outra.
 dc() {
   if [ "${SINGLE_SERVER:-0}" = "1" ]; then
-    docker compose -f "$COMPOSE" -f docker-compose.single-server.yml "$@"
+    # #2099: o overlay do proxy da hospedagem entra também no single-server.
+    case "${REVERSE_PROXY:-caddy}" in
+    traefik) docker compose -f "$COMPOSE" -f docker-compose.single-server.yml -f "$COMPOSE_TRAEFIK" "$@" ;;
+    npm)     docker compose -f "$COMPOSE" -f docker-compose.single-server.yml -f "$COMPOSE_NPM" "$@" ;;
+    *)       docker compose -f "$COMPOSE" -f docker-compose.single-server.yml "$@" ;;
+    esac
     return
   fi
   case "${REVERSE_PROXY:-caddy}" in
@@ -47,7 +52,11 @@ dc() {
 }
 dc_files() {
   if [ "${SINGLE_SERVER:-0}" = "1" ]; then
-    printf -- '-f %s -f %s' "$COMPOSE" docker-compose.single-server.yml
+    case "${REVERSE_PROXY:-caddy}" in
+    traefik) printf -- '-f %s -f %s -f %s' "$COMPOSE" docker-compose.single-server.yml "$COMPOSE_TRAEFIK" ;;
+    npm)     printf -- '-f %s -f %s -f %s' "$COMPOSE" docker-compose.single-server.yml "$COMPOSE_NPM" ;;
+    *)       printf -- '-f %s -f %s' "$COMPOSE" docker-compose.single-server.yml ;;
+    esac
     return
   fi
   case "${REVERSE_PROXY:-caddy}" in
@@ -1781,12 +1790,9 @@ esac
   printf '# Sem isto o número segue pareado no volume e MUDO até alguém abrir a tela\n'
   printf '# e clicar Reconectar — nada entra nem sai nesse meio-tempo.\n'
   envq WHATSAPP_RESTART_ALL_SESSIONS "${WHATSAPP_RESTART_ALL_SESSIONS:-True}"
-  # PINADA. Sem a tag, `devlikeapro/waha` é `:latest`, e esta linha gravava isso
-  # no .env de todo cliente — por cima do default pinado do compose, que então
-  # nunca chegava a ninguém. O `dc pull` de cada update entregava qualquer versão
-  # que o upstream tivesse publicado, sem ninguém ter testado.
-  # `latest-2026.7.2` é o mesmo digest de `latest` hoje (65e593e30bb7…).
-  envq WAHA_IMAGE "${WAHA_IMAGE:-devlikeapro/waha:latest-2026.7.2}"
+  # WAHA publica variantes x86 e ARM separadas para NOWEB. O padrão acompanha
+  # uname -m; uma WAHA_IMAGE escolhida pelo operador continua prevalecendo.
+  envq WAHA_IMAGE "${WAHA_IMAGE:-$(imagem_waha_padrao_para_host)}"
   envq WAHA_DEFAULT_ENGINE "${WAHA_DEFAULT_ENGINE:-NOWEB}"
   envq UPSTASH_REDIS_REST_URL "http://srh:80"
   envq UPSTASH_REDIS_REST_TOKEN "$UPSTASH_REDIS_REST_TOKEN"
@@ -2278,8 +2284,9 @@ setup_update_agent_cron
 # "instalação nova" de "instalação que já está no ar", e ela não pode usar
 # "tem compose e tem `.env`" como prova: o `.env` chega pronto numa instalação
 # NOVA (copiado, gerado por automação, ou deixado por um `--yes` que parou no
-# meio), e com esse critério uma VPS ARM nova começava a instalação construindo
-# as imagens na própria VPS — o que a guarda existe para impedir.
+# meio), e com esse critério uma VPS numa arquitetura sem imagens publicadas
+# começava a instalação construindo as imagens na própria VPS — o que a guarda
+# existe para impedir.
 #
 # O marcador vai aqui, e não antes, porque só a partir daqui é verdade que a
 # instalação EXISTE: os contêineres subiram e o app respondeu. Gravar antes
@@ -2290,7 +2297,7 @@ setup_update_agent_cron
 # contêiner, que é o mesmo que ela usava para quem instalou numa versão
 # anterior.
 if [ "${APP_SAUDAVEL:-0}" = 1 ]; then
-  marcar_instalacao_feita "$VERSAO_ALVO" || c_ylw "$(t "⚠ Não consegui gravar o marcador desta instalação (arquivo .deskcomm-instalado). O CRM está no ar; numa VPS ARM a atualização pode pedir a VPS x86_64 até o marcador existir.")"
+  marcar_instalacao_feita "$VERSAO_ALVO" || c_ylw "$(t "⚠ Não consegui gravar o marcador desta instalação (arquivo .deskcomm-instalado). O CRM está no ar; numa arquitetura sem imagens publicadas, a atualização pode pedir uma VPS suportada até o marcador existir.")"
 fi
 
 # ── Final ───────────────────────────────────────────────────────────────────

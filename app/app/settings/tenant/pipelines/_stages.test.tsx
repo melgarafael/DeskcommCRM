@@ -26,6 +26,7 @@ vi.mock("sonner", () => ({
 }));
 
 import { apiClient } from "@/lib/api/client";
+import { toast } from "sonner";
 import {
   StagesSection,
   contagemDeNegocios,
@@ -634,5 +635,142 @@ describe("StagesSection — a etapa que avisa na Central (migration 0440)", () =
     await user.click(chave);
     await waitFor(() => expect(apiClient.patch).toHaveBeenCalledTimes(1));
     expect(vi.mocked(apiClient.patch).mock.calls[0]![1]).toEqual({ avisar_na_central: false });
+  });
+});
+
+describe("StagesSection — a janela de esfriando, em dias e horas (#1532)", () => {
+  /** A primeira etapa, já com uma janela gravada (ou sem nenhuma). */
+  function comJanela(horas: number | null) {
+    const etapas = ETAPAS.map((e) => (e.id === "e1" ? { ...e, expected_duration_hours: horas } : e));
+    vi.mocked(apiClient.get).mockResolvedValue({ data: estado({}, etapas) });
+  }
+
+  it("2 dias e 6 horas vão como 54 horas, num PATCH só — passar de um campo ao outro não grava", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: { etapas: [] } });
+    comJanela(null);
+    montar();
+    const dias = await screen.findByTestId("janela-dias-e1");
+
+    await user.click(dias);
+    await user.type(dias, "2");
+    await user.tab();
+    // O foco foi para as horas do MESMO par: gravar aqui mandaria 48 h, um valor que ninguém digitou.
+    expect(screen.getByTestId("janela-horas-e1")).toHaveFocus();
+    expect(apiClient.patch).not.toHaveBeenCalled();
+
+    await user.type(screen.getByTestId("janela-horas-e1"), "6");
+    await user.tab();
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(apiClient.patch).mock.calls[0]).toEqual([
+      `/api/v1/pipelines/${PIPE}/stages/e1`,
+      { expected_duration_hours: 54 },
+    ]);
+  });
+
+  it("esvaziar os dois campos de uma janela gravada manda null — a etapa volta ao padrão", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: { etapas: [] } });
+    comJanela(48);
+    montar();
+    const dias = await screen.findByTestId("janela-dias-e1");
+    expect(dias).toHaveValue(2);
+
+    await user.clear(dias);
+    await user.tab();
+    await user.clear(screen.getByTestId("janela-horas-e1"));
+    await user.tab();
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(apiClient.patch).mock.calls[0]![1]).toEqual({ expected_duration_hours: null });
+  });
+
+  it.each([
+    ["0 dias e 0 horas", "0", "0"],
+    ["366 dias", "366", ""],
+  ])("%s fica fora da régua: não grava e avisa", async (_rotulo, d, h) => {
+    const user = userEvent.setup();
+    comJanela(null);
+    montar();
+    const dias = await screen.findByTestId("janela-dias-e1");
+
+    await user.type(dias, d);
+    await user.tab();
+    if (h) await user.type(screen.getByTestId("janela-horas-e1"), h);
+    await user.tab();
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
+    expect(apiClient.patch).not.toHaveBeenCalled();
+    expect(screen.getByTestId("janela-dias-e1")).toHaveValue(null);
+  });
+
+  it("Escape desfaz o rascunho e não grava", async () => {
+    const user = userEvent.setup();
+    comJanela(48);
+    montar();
+    const dias = await screen.findByTestId("janela-dias-e1");
+
+    await user.clear(dias);
+    await user.type(dias, "5");
+    await user.keyboard("{Escape}");
+    expect(apiClient.patch).not.toHaveBeenCalled();
+    expect(screen.getByTestId("janela-dias-e1")).toHaveValue(2);
+  });
+});
+
+describe("StagesSection — Escape descarta o rascunho do nome e da chance (#2164)", () => {
+  it("no nome: Escape desfaz o rascunho e NÃO manda PATCH", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: { etapas: [] } });
+    montar();
+    const campo = await screen.findByTestId("nome-e1");
+
+    await user.clear(campo);
+    await user.type(campo, "Carrinho abandonadoX");
+    await user.keyboard("{Escape}");
+    // O blur que o Escape dispara roda ANTES do setState do rascunho: sem a
+    // marca `descartando`, o confirmar grava "Carrinho abandonadoX".
+    expect(apiClient.patch).not.toHaveBeenCalled();
+    expect(screen.getByTestId("nome-e1")).toHaveValue("Carrinho abandonado");
+  });
+
+  it("na chance: Escape desfaz o rascunho e NÃO manda PATCH", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: { etapas: [] } });
+    montar();
+    const campo = await screen.findByTestId("probabilidade-e1");
+
+    await user.type(campo, "40");
+    await user.keyboard("{Escape}");
+    expect(apiClient.patch).not.toHaveBeenCalled();
+    expect(screen.getByTestId("probabilidade-e1")).toHaveValue(null);
+  });
+
+  it("controle: sem Escape, Enter no nome segue gravando", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: { etapas: [] } });
+    montar();
+    const campo = await screen.findByTestId("nome-e1");
+
+    await user.clear(campo);
+    await user.type(campo, "Primeira consulta{Enter}");
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(apiClient.patch).mock.calls[0]).toEqual([
+      `/api/v1/pipelines/${PIPE}/stages/e1`,
+      { name: "Primeira consulta" },
+    ]);
+  });
+
+  it("controle: sem Escape, sair do campo da chance segue gravando", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: { etapas: [] } });
+    montar();
+    const campo = await screen.findByTestId("probabilidade-e1");
+
+    await user.type(campo, "40");
+    await user.tab();
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(apiClient.patch).mock.calls[0]).toEqual([
+      `/api/v1/pipelines/${PIPE}/stages/e1`,
+      { win_probability: 40 },
+    ]);
   });
 });

@@ -522,3 +522,41 @@ export function ehOptOutProvavel(texto: string | null | undefined): boolean {
   const normalizado = normalizarTexto(texto.trim());
   return FRASES_AMBIGUAS_DE_OPT_OUT.some((re) => re.test(normalizado));
 }
+
+/**
+ * As palavras de saída que o rodapé das abordagens OFERECE ao cliente ("Responda
+ * PARAR" e suas versões). Subconjunto de `PALAVRAS_DE_OPT_OUT` — o vocabulário
+ * continua num lugar só; aqui só se escolhe quais dessas palavras, no INÍCIO da
+ * mensagem, já dizem a que ela veio.
+ */
+const PALAVRAS_DE_SAIDA_DO_RODAPE: ReadonlySet<string> = new Set(["parar", "pare", "stop", "baja"]);
+
+/**
+ * A mensagem COMEÇA com a palavra de saída? ("Parar não é daqui", "Pare de me
+ * mandar", "STOP!")
+ *
+ * NÃO autoriza bloqueio — para isso só há `ehPedidoDeOptOut`, e ele exige a
+ * palavra sozinha ou uma frase inteira: "Parar não é daqui" não passa nele, e é
+ * por isso que este contato ficou sem bloqueio e recebeu o texto de "passei seu
+ * pedido para um atendente humano". Serve a UMA decisão: qual frase o cliente lê
+ * quando a IA sai de campo por outro motivo (clima ruim) logo depois de uma
+ * mensagem assim — quem começa a resposta com "parar" não quer ouvir sobre
+ * atendente, quer ouvir que o pedido foi entendido.
+ *
+ * Só o INÍCIO conta: "tem como parar a dor?" é uma pergunta de paciente, não um
+ * pedido de saída (o mesmo cuidado de `FRASES_DE_OPT_OUT`).
+ */
+export function comecaComPalavraDeSaida(texto: string | null | undefined): boolean {
+  if (!texto) return false;
+  const normalizado = normalizarTexto(texto.trim());
+  const primeira = normalizado.match(/[a-z]+/u)?.[0];
+  if (primeira === undefined) return false;
+  if (!PALAVRAS_DE_SAIDA_DO_RODAPE.has(primeira) || !PALAVRAS_DE_OPT_OUT.has(primeira)) return false;
+  // "Pare de mandar o pedido nesse endereço", "Parar de tomar o remédio faz mal?":
+  // "<palavra> de …" e pergunta já têm dono — a regra de cessação com objeto
+  // de comunicação. Delega a ela em vez de decidir pela primeira palavra.
+  if (/^[^a-z]*[a-z]+\s+de\b/u.test(normalizado) || normalizado.includes("?")) {
+    return ehOptOutProvavel(texto);
+  }
+  return true;
+}

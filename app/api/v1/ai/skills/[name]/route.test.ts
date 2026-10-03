@@ -117,7 +117,7 @@ describe("DELETE /api/v1/ai/skills/[name]", () => {
 
 function makeAdminGetStub(input: {
   pointer: { version_id: string; updated_at: string } | null;
-  version?: { id: string; name: string; description: string; body: string; matcher: unknown; manifest?: unknown[] } | null;
+  version?: { id: string; name: string; description: string; body: string; matcher: unknown; manifest?: unknown[]; forked_from_version_id?: string | null } | null;
 }) {
   return {
     from(table: string) {
@@ -183,11 +183,19 @@ describe("GET /api/v1/ai/skills/[name]", () => {
 });
 
 /** Skill instalada na org, versão atual sem arquivos de pacote (o caso editável). */
-function mockSkillInstalada(manifest: unknown[] = []) {
+function mockSkillInstalada(manifest: unknown[] = [], forkedFrom: string | null = null) {
   vi.mocked(createAdminClient).mockReturnValue(
     makeAdminGetStub({
       pointer: { version_id: "v1", updated_at: "2026-09-19T00:00:00Z" },
-      version: { id: "v1", name: "catalogo", description: "d", body: "b", matcher: { any_keywords: ["x"] }, manifest },
+      version: {
+        id: "v1",
+        name: "catalogo",
+        description: "d",
+        body: "b",
+        matcher: { any_keywords: ["x"] },
+        manifest,
+        forked_from_version_id: forkedFrom,
+      },
     }) as never,
   );
 }
@@ -208,9 +216,9 @@ describe("PUT /api/v1/ai/skills/[name]", () => {
   it("salva nova versão e move o ponteiro; audita ai.skill_saved", async () => {
     mockAuthzOk();
     mockSkillInstalada();
-    vi.mocked(insertSkillVersion).mockResolvedValue({ id: "v2" } as never);
+    const version = { id: "v2" } as never;
+    vi.mocked(insertSkillVersion).mockResolvedValue(version);
     vi.mocked(setSkillPointer).mockResolvedValue(undefined as never);
-
     const { PUT } = await import("./route");
     const res = await PUT(reqPut("catalogo", BODY_VALIDO), { params: Promise.resolve({ name: "catalogo" }) });
 
@@ -219,7 +227,7 @@ describe("PUT /api/v1/ai/skills/[name]", () => {
     expect(body.data).toEqual({ name: "catalogo", version_id: "v2" });
     expect(vi.mocked(insertSkillVersion)).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ tenantId: ORG_ID, name: "catalogo", body: BODY_VALIDO.body }),
+      expect.objectContaining({ tenantId: ORG_ID, name: "catalogo", body: BODY_VALIDO.body, forkedFromVersionId: null }),
     );
     expect(vi.mocked(setSkillPointer)).toHaveBeenCalledWith(
       expect.anything(),
@@ -253,6 +261,25 @@ describe("PUT /api/v1/ai/skills/[name]", () => {
     const body = (await res.json()) as { error: { message: string } };
     expect(body.error.message).toContain("201 linhas");
     expect(insertSkillVersion).not.toHaveBeenCalled();
+  });
+
+  it("cópia de catálogo editada preserva o vínculo forked_from_version_id na versão nova", async () => {
+    mockAuthzOk();
+    // A versão atual da cópia veio do catálogo (fork de "vplat-2"). Editar NÃO pode
+    // romper o vínculo: sem o fix, a 1ª edição grava a cópia como manual e o aviso de
+    // versão nova some pra sempre.
+    mockSkillInstalada([], "vplat-2");
+    vi.mocked(insertSkillVersion).mockResolvedValue({ id: "v2" } as never);
+    vi.mocked(setSkillPointer).mockResolvedValue(undefined as never);
+
+    const { PUT } = await import("./route");
+    const res = await PUT(reqPut("catalogo", BODY_VALIDO), { params: Promise.resolve({ name: "catalogo" }) });
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(insertSkillVersion)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ forkedFromVersionId: "vplat-2" }),
+    );
   });
 
   it("falha do banco ao gravar → 500 sem a mensagem do driver", async () => {

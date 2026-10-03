@@ -27,6 +27,7 @@ import { decidirPreGoLiveDoCanalViaSupabase } from "@/lib/ai/elegibilidade/consu
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { assertOrgOperante } from "@/lib/organizacao/operante";
 import {
   CHANNEL_SESSION_REF_COLUMNS,
   DEFAULT_CHANNEL_PROVIDER,
@@ -48,7 +49,9 @@ import {
 import type { ListMessagesQuery, SendMessageInput } from "@/lib/schemas";
 import { sendTemplateForSession } from "@/lib/channels/meta/send-template-for-session";
 import { emitirFalhaDeEntrega } from "@/lib/messaging/falha-de-entrega";
+import { aplicarAssinatura, configAssinatura, linhaDeAssinatura } from "@/lib/messaging/assinatura";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
+import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Message } from "@/lib/types/messaging";
 
@@ -178,7 +181,7 @@ export function origemDaMensagem(actor: Actor): "user" | "ai" | "automation" | "
 }
 
 const MSG_COLS =
-  "id, organization_id, conversation_id, channel_session_id, contact_id, external_id, type, direction, status, ack, error_code, error_message, body, media_url, media_mime, media_size_bytes, media_storage_path, sent_via, sent_by_user_id, sent_on_behalf_of_user_id, sent_at, delivered_at, read_at, metadata, edited_at, revoked_at, reply_to_message_id, created_at";
+  "id, organization_id, conversation_id, channel_session_id, contact_id, external_id, type, direction, status, ack, error_code, error_message, body, media_url, media_mime, media_size_bytes, media_storage_path, media_derived_text, media_derived_status, sent_via, sent_by_user_id, sent_on_behalf_of_user_id, sent_at, delivered_at, read_at, metadata, edited_at, revoked_at, reply_to_message_id, created_at";
 
 /**
  * `Actor.type` → o vocabulário de `messages.sent_via` (o CHECK da coluna:
@@ -369,6 +372,10 @@ export async function sendMessageHandler(
   ctx: HandlerCtx,
   input: SendMessageInput,
 ): Promise<Message> {
+  // Organização parada (suspensa, redigida, arquivada) não envia nada. Esta é a
+  // porta de saída de TODOS os chamadores, e fecha a corrida de quem passou pelo
+  // gate antes da suspensão. O erro é terminal (`terminal: true`).
+  await assertOrgOperante(supabase, ctx.organization_id);
   if (ctx.prospectingDelivery) await assertProspectingDelivery(supabase, ctx.prospectingDelivery);
   if (ctx.meetingDelivery) await assertMeetingDeliverySupabase(supabase, ctx.meetingDelivery);
   if (ctx.approvedReply) await assertApprovedReplySupabase(supabase, ctx.approvedReply);
@@ -551,6 +558,38 @@ export async function sendMessageHandler(
 
   let outboundBody = input.body ?? null;
   let outboundMetadata: Record<string, unknown> = { ...(input.metadata ?? {}) };
+
+  // ─── Assinatura do emissor (#2066) ─────────────────────────────────────────
+  // Opt-in por organização (`organizations.settings.assinatura_mensagens`). A
+  // assinatura entra SÓ no texto enviado ao canal (corpo de texto e legenda de
+  // mídia) — o que fica gravado em `messages.body` é o que o emissor escreveu
+  // (insertRow abaixo usa `input.body`). Automação e sistemas externos
+  // (`automation`/`system`) ficam de fora, como o relato pede. Humano ganha o
+  // nome do atendente com iniciais em maiúsculo; a IA, o nome configurável.
+  const origemDoEmissor = origemDaMensagem(ctx.actor);
+  let assinatura: string | null = null;
+  if (origemDoEmissor === "user" || origemDoEmissor === "ai") {
+    const { data: orgAssinatura } = await supabase
+      .from("organizations")
+      .select("settings")
+      .eq("id", ctx.organization_id)
+      .maybeSingle();
+    const configAss = configAssinatura(orgAssinatura?.settings);
+    const coberta =
+      (origemDoEmissor === "user" && configAss.humanos) ||
+      (origemDoEmissor === "ai" && configAss.ia);
+    if (coberta) {
+      let nomeDoAtendente: string | null = null;
+      if (origemDoEmissor === "user" && ctx.actor.type === "user") {
+        nomeDoAtendente = (await nomesDosAtendentes([ctx.actor.id])).get(ctx.actor.id) ?? null;
+      }
+      assinatura = linhaDeAssinatura(configAss, origemDoEmissor, nomeDoAtendente);
+    }
+  }
+
+  /** O corpo com a assinatura, quando ela se aplica a esta origem e há texto. */
+  const corpoDoCanal = (texto: string | null): string | null =>
+    aplicarAssinatura(assinatura, texto) ?? null;
 
   if (input.type === "contact") {
     const sharedId = input.metadata?.shared_contact_id;
@@ -965,7 +1004,7 @@ export async function sendMessageHandler(
             url: signed.signedUrl,
             mime: input.media_mime ?? "application/octet-stream",
             filename,
-            caption: input.body ?? null,
+            caption: corpoDoCanal(input.body ?? null),
           },
           // O id que a PLATAFORMA conhece, lido da linha citada agora — não uma
           // cópia guardada no envio, que poderia divergir da linha.
@@ -991,7 +1030,7 @@ export async function sendMessageHandler(
           media: {
             url: input.media_url,
             mime: input.media_mime ?? "application/octet-stream",
-            caption: input.body ?? null,
+            caption: corpoDoCanal(input.body ?? null),
           },
           replyToExternalId: citada?.external_id ?? null,
         }));
@@ -1033,7 +1072,7 @@ export async function sendMessageHandler(
           to: chatId,
           providerConversationId: c.provider_conversation_id,
           kind: input.type,
-          body: input.body ?? "",
+          body: corpoDoCanal(input.body ?? "") ?? "",
           replyToExternalId: citada?.external_id ?? null,
         }));
       }

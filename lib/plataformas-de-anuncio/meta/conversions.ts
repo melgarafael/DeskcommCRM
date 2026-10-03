@@ -21,8 +21,9 @@
  *
  * 3. Identidade. Para conversão vinda de anúncio clique-para-WhatsApp, o
  *    `ctwa_clid` é o que liga a venda ao clique — é ele que carrega a atribuição,
- *    e o telefone hasheado só reforça. Sem o clique não há o que reportar, e é
- *    isso que o chamador chama de `sem_atribuicao`.
+ *    e o telefone hasheado só reforça. A exceção é quem veio de anúncio para
+ *    uma PÁGINA (UTM da Meta, sem clique): aí o telefone é a identidade, e a
+ *    origem declarada muda (ver abaixo). Sem nenhum dos dois, é recusa.
  *
  * ─── Por que `business_messaging` e não `website` ───────────────────────────
  *
@@ -81,8 +82,16 @@ async function enviar(
   credencial: CredencialDeConversao,
   conversao: ConversaoOffline,
 ): Promise<ResultadoDeEnvio> {
-  if (conversao.evento !== "Purchase" || conversao.valorCentavos === null)
-    return { tipo: "permanente", detalhe: "Este transporte aceita apenas compras com valor." };
+  // Dois formatos e só dois: a compra, que exige valor (regra 1), e o evento de
+  // ETAPA, que sai com o nome padrão escolhido na regra e sem valor — o negócio
+  // ainda não foi vendido, e um valor ali ensinaria receita que não existiu.
+  const ehCompra = conversao.evento === "Purchase";
+  const nomeNoFio = ehCompra ? "Purchase" : conversao.eventoNaPlataforma?.trim();
+  if (ehCompra ? conversao.valorCentavos === null : !nomeNoFio)
+    return {
+      tipo: "permanente",
+      detalhe: "Este transporte aceita compras com valor ou eventos de etapa com o nome da Meta.",
+    };
   const idadeMs = Date.now() - conversao.ocorridoEm.getTime();
   if (idadeMs > IDADE_MAXIMA_MS) {
     const dias = Math.floor(idadeMs / (24 * 60 * 60 * 1000));
@@ -94,28 +103,44 @@ async function enviar(
     };
   }
 
-  const userData: Record<string, unknown> = {
-    ctwa_clid: conversao.cliqueDeOrigem,
-  };
+  // Com clique: anúncio clique-para-WhatsApp, `business_messaging` + `ctwa_clid`.
+  // Sem clique: a pessoa veio de anúncio para a PÁGINA e a venda fechou no CRM.
+  // `business_messaging` sem `ctwa_clid` é recusado, e `website` exige dados do
+  // navegador que o CRM não tem — `system_generated` é a origem declarada para
+  // venda registrada em sistema, casada pelo telefone em hash.
+  const comClique = conversao.cliqueDeOrigem.trim() !== "";
+  if (!comClique && !conversao.telefone) {
+    return {
+      tipo: "permanente",
+      detalhe:
+        "Sem o clique do anúncio e sem telefone no contato, a Meta não tem como reconhecer o cliente.",
+    };
+  }
+
+  const userData: Record<string, unknown> = comClique ? { ctwa_clid: conversao.cliqueDeOrigem } : {};
   // Array de propósito: o formato aceita múltiplos valores por campo, e mandar
   // string crua onde ele espera lista é aceito com aviso e ignorado no match.
   if (conversao.telefone) userData.ph = [hash(conversao.telefone)];
 
+  const customData: Record<string, unknown> = {};
+  if (ehCompra && conversao.valorCentavos !== null) {
+    customData.value = conversao.valorCentavos / 100;
+    customData.currency = conversao.moeda.toUpperCase();
+  }
+
   const corpo: Record<string, unknown> = {
     data: [
       {
-        event_name: conversao.evento,
+        event_name: nomeNoFio,
         // Segundos, não milissegundos. Em ms o evento cai a ~55 mil anos no
         // futuro, e a resposta é 200 — some sem erro.
         event_time: Math.floor(conversao.ocorridoEm.getTime() / 1000),
         event_id: conversao.eventoId,
-        action_source: "business_messaging",
-        messaging_channel: "whatsapp",
+        ...(comClique
+          ? { action_source: "business_messaging", messaging_channel: "whatsapp" }
+          : { action_source: "system_generated" }),
         user_data: userData,
-        custom_data: {
-          value: conversao.valorCentavos / 100,
-          currency: conversao.moeda.toUpperCase(),
-        },
+        ...(Object.keys(customData).length > 0 ? { custom_data: customData } : {}),
       },
     ],
   };

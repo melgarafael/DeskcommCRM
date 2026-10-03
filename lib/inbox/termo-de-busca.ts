@@ -66,7 +66,30 @@ export function normalizarTermoDeBusca(bruto: string): string {
  * piso veio consertar, reintroduzido por outra porta.
  *
  * O piso em caracteres crus não pega esse caso: `", ,"` tem 3 caracteres.
+ *
+ * O PARÊNTESE entra aqui pelos MESMOS dois motivos:
+ *
+ * - `normalizarTermoDeBusca` colapsa `\s,;` — parêntese não é separador, então
+ *   `"()"` vira 2 caracteres e passa um piso qualquer.
+ * - `termoSeguroParaOr` (o `or=` da inbox) troca `()` por `*`: `"()"` vira `**`,
+ *   o PostgREST vira `%%%%`, e a busca devolve a LISTA INTEIRA — o defeito que a
+ *   #1892 consertou no handler de contatos e que este módulo torna régua única,
+ *   valendo também para o schema (`lib/schemas/messaging.ts`) e a tela
+ *   (`components/inbox/InboxLayout.tsx`), que leem daqui.
+ *
+ * O `replace` NO PISO não muda o termo que vai ao banco — ele só decide se vale
+ * consultar. O parêntese que sobra (ex. um telefone `(15) 99259-4261`) continua
+ * vindo atrás dele e segue funcionando, como os controles abaixo provam.
+ *
+ * O ASTERISCO entra aqui pela mesma porta do parêntese (#1935): a pessoa pode
+ * digitar `*` (por exemplo `s*` pensando em curinga de nome). `normalizarTermoDeBusca`
+ * não colapsa `*` (não é separador), então `"**"` passa o piso; e `termoSeguroParaOr`
+ * NÃO escapa `*` — no `or=` do PostgREST, `*` vira `%`, e `**` vira `%%`: a lista
+ * inteira de volta, o mesmo defeito que o piso veio consertar. Tirá-lo do piso é
+ * seguro porque um `*` SEM homem no termo não significa nada para a busca — ele
+ * só ia ao banco para virar curinga e casar tudo.
  */
 export function buscaValeConsulta(bruto: string): boolean {
-  return normalizarTermoDeBusca(bruto).length >= PISO_DA_BUSCA;
+  const semLixo = bruto.replace(/[()*]/g, " ");
+  return normalizarTermoDeBusca(semLixo).length >= PISO_DA_BUSCA;
 }

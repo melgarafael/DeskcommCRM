@@ -36,6 +36,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
 import { randomId } from "@/lib/random-id";
+import type { Citation } from "@/lib/ai/citations/types";
 import type { CaseChatAuthorKind } from "@/lib/ai/conversa-do-caso/vocabulario";
 
 /** Uma linha de `agent_case_chat_messages`, como o GET a projeta. */
@@ -134,12 +135,19 @@ export function useCaseChat(caseId: string | null) {
 export function useAskCase() {
   const qc = useQueryClient();
   return useMutation({
+    // A resposta do POST carrega os trechos do acervo ligados à pergunta (F3
+    // da #1869); a tela os abre no painel logo depois de perguntar. Opcional:
+    // o replay do mesmo `turn_id` (retry de 429/503 do `apiClient`) não os traz.
     mutationFn: ({ id, pergunta }: { id: string; pergunta: string }) =>
-      apiClient.post<unknown>(
-        `/api/v1/ai/cases/${id}/chat`,
-        { turn_id: randomId(), pergunta },
-        { timeoutMs: 90_000 },
-      ),
+      apiClient
+        .post<{
+          data: { turn_id: string; citacoes?: Citation[] };
+        }>(
+          `/api/v1/ai/cases/${id}/chat`,
+          { turn_id: randomId(), pergunta },
+          { timeoutMs: 90_000 },
+        )
+        .then((r) => r.data),
     onSettled: (_data, _erro, vars) => {
       qc.invalidateQueries({ queryKey: ["ai-case-chat", vars.id] });
     },

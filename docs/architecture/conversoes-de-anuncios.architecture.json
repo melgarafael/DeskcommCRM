@@ -123,6 +123,13 @@
       "label": "conversoes.qualificacao"
     },
     {
+      "id": "etapa-meta",
+      "lane": "motor",
+      "col": 4,
+      "type": "component",
+      "label": "conversoes.etapa_meta"
+    },
+    {
       "id": "site",
       "lane": "tela",
       "col": 0,
@@ -156,6 +163,13 @@
       "col": 1,
       "type": "component",
       "label": "ad_tracking_links + click_refs"
+    },
+    {
+      "id": "regras-meta",
+      "lane": "dados",
+      "col": 5,
+      "type": "component",
+      "label": "meta_ads_conversion_rules"
     }
   ],
   "edges": [
@@ -320,6 +334,30 @@
       "from": "refs",
       "to": "links",
       "label": "métricas retidas / corrigir ou desativar"
+    },
+    {
+      "id": "meta-etapa-evento",
+      "from": "eventos",
+      "to": "etapa-meta",
+      "label": "stage_changed / retry_requested"
+    },
+    {
+      "id": "meta-etapa-regra",
+      "from": "regras-meta",
+      "to": "etapa-meta",
+      "label": "evento padrão por etapa"
+    },
+    {
+      "id": "meta-etapa-envio",
+      "from": "etapa-meta",
+      "to": "handler",
+      "label": "envio compartilhado sem valor"
+    },
+    {
+      "id": "meta-etapa-tela",
+      "from": "tela",
+      "to": "regras-meta",
+      "label": "O que cada etapa informa à Meta"
     }
   ]
 }

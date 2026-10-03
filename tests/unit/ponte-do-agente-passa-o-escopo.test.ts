@@ -88,3 +88,14 @@ describe("todo montador de ferramentas do turno passa o escopo", () => {
     ).toEqual([]);
   });
 });
+
+describe("o espelho de etapa recebe o escopo do agente publicado", () => {
+  it("o turno não omite os funis ao chamar mirrorLeadStageToCrm", () => {
+    const fonte = readFileSync(resolve(RAIZ, "lib/agent-engine/agent/inbound-turn.ts"), "utf8");
+    const chamada = fonte.match(/const mirror = await mirrorLeadStageToCrm\([\s\S]*?\n\s*\}\);/);
+    expect(chamada, "o turno não chama o espelho do CRM").not.toBeNull();
+    expect(chamada?.[0], "o espelho ignoraria os funis autorizados na versão publicada").toMatch(
+      /pipelineIds: agentConfig\.pipelineIds/,
+    );
+  });
+});

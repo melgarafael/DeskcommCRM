@@ -15,7 +15,10 @@ export interface RoutingCandidate {
   userId: string;
   /** Fato persistido relido no claim, sem confundir com defaults do parser. */
   scheduleSnapshot?: Json;
-  /** Conversas abertas atribuídas (carga atual) — desempate no modo round_robin. */
+  /**
+   * Conversas abertas atribuídas (carga atual). É a CHAVE do modo `load`
+   * (#1539) e o desempate secundário do modo round_robin.
+   */
   currentLoad: number;
   /** Epoch ms da última atribuição recebida; null = nunca (prioridade máxima no rodízio). */
   lastAssignedAt: number | null;
@@ -56,6 +59,19 @@ export function selectRoundRobin(eligibles: RoutingCandidate[]): string | null {
   return sorted[0]?.userId ?? null;
 }
 
+/**
+ * Modo `load` (#1539): entre os elegíveis, o de MENOR `currentLoad` leva a
+ * conversa. O empate de carga cai no MESMO rodízio do modo round_robin — quem
+ * está há mais tempo sem receber vem primeiro —, e o userId fecha o desempate,
+ * para o resultado ser determinístico (critério de aceite: cargas 3 e 1 ⇒ a de
+ * 1; duas cargas iguais ⇒ a mesma resposta a cada rodada).
+ */
+export function selectByLoad(eligibles: RoutingCandidate[]): string | null {
+  if (eligibles.length === 0) return null;
+  const menor = Math.min(...eligibles.map((c) => c.currentLoad));
+  return selectRoundRobin(eligibles.filter((c) => c.currentLoad === menor));
+}
+
 export function decideRouting(input: DecideRoutingInput): RoutingAction {
   // Idempotência (acceptance 3): conversa que já ganhou dono não é reatribuída.
   if (input.alreadyAssigned) return { kind: "skip", reason: "already_assigned" };
@@ -63,11 +79,13 @@ export function decideRouting(input: DecideRoutingInput): RoutingAction {
   // Modo manual (acceptance 5): worker não roteia.
   if (input.mode === "manual") return { kind: "skip", reason: "manual_mode" };
 
-  // 'load' é INALCANÇÁVEL: routingConfigSchema só permite manual|round_robin
-  // (G5-01). Tratado defensivamente como no-op (post-MVP), nunca dead code real.
-  if (input.mode !== "round_robin") return { kind: "skip", reason: `unsupported_mode:${input.mode}` };
+  // Fora da lista de ROUTING_MODES (defensivo): roteia só o que a tela deixa
+  // escolher. 'load' deixou de ser no-op e passou a rotear pela issue #1539.
+  if (input.mode !== "round_robin" && input.mode !== "load") {
+    return { kind: "skip", reason: `unsupported_mode:${input.mode}` };
+  }
 
-  const picked = selectRoundRobin(input.eligibles);
+  const picked = input.mode === "load" ? selectByLoad(input.eligibles) : selectRoundRobin(input.eligibles);
   if (picked) return { kind: "assign", userId: picked };
 
   // Sem elegível (acceptance 4): re-agenda com backoff da config (não hardcoded).

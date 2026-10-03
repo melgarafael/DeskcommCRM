@@ -3,7 +3,7 @@
  * Next (`./ponto.ts` lê a chave pelo cliente admin do Supabase).
  *
  * Duas coisas, iguais para toda tarefa que o turno pergunta (a manipulação, o
- * roteador): ler o estado da tarefa na organização, e gravar a linha de erro da
+ * roteador, a resposta ao follow-up): ler o estado da tarefa na organização, e gravar a linha de erro da
  * falha que pede ação. Nenhuma das duas lança: o turno é o atendimento do
  * cliente.
  */

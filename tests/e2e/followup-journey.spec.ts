@@ -565,6 +565,36 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
     expect(classifyJob!.payload.node_id).toBe(classifyId);
     expect(classifyJob!.payload.classes).toEqual(["positivo"]);
 
+    // [INJETADO] O worker pega o job de classificar logo depois do envio, e o
+    // lead ainda não respondeu: o turno devolve `awaiting_reply`
+    // (followup-turn.ts) e a ponte grava SÓ o rastro da espera — nem passo,
+    // nem avanço. Antes do conserto, este job concluía `no_reply` e o fluxo
+    // saía por "sem resposta" segundos depois do envio.
+    runHelper(["complete-turn", creds.org_id, enrollmentId, classifyId, JSON.stringify({ kind: "awaiting_reply" })]);
+    const aindaEsperando = runHelper(["get-enrollment", enrollmentId]) as EnrollmentRow;
+    expect(aindaEsperando).toMatchObject({ current_node_id: classifyId, status: "waiting_reply", steps_taken: 6 });
+    expect(runHelper(["list-events", enrollmentId]) as string[]).toContain("classify_waiting");
+
+    // [REAL UI] O operador abre o dossiê pela fila (clique no contato) e lê
+    // que o fluxo ESPERA a resposta — não que travou.
+    await page.goto("/app/ai/followups");
+    await page.getByRole("tab", { name: "Fila" }).click();
+    await page.getByLabel("Buscar contato").fill(seed.contactName);
+    const rowEsperando = page
+      .locator('[data-testid="queue-row"]', { hasText: seed.contactName })
+      .filter({ hasText: flowName });
+    await expect(rowEsperando).toBeVisible({ timeout: 30_000 });
+    await rowEsperando.getByTestId("queue-abrir-dossie").click();
+    await page.waitForURL(new RegExp(`/app/ai/followups/enrollments/${enrollmentId}`));
+    const historia = page.getByTestId("dossie-timeline");
+    await expect(historia).toContainText("Esperando a resposta do cliente", { timeout: 30_000 });
+    await expect(historia).toContainText("o fluxo segue sem a resposta");
+    await expect(historia).not.toContainText("classify_waiting");
+    await page.screenshot({
+      path: path.join(ARTIFACTS_DIR, "followup-8.3-035-dossie-esperando-resposta.png"),
+      fullPage: true,
+    });
+
     runHelper([
       "simulate-inbound",
       creds.org_id,
@@ -615,7 +645,8 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
     expect(completed.outcome).toBe("converted");
     expect(completed.completed_at).toBeTruthy();
 
-      await page.reload();
+      // `goto`, não `reload`: a página aberta agora é o dossiê (passo 6).
+      await page.goto("/app/ai/followups");
       await page.getByRole("tab", { name: "Fila" }).click();
       await page.getByLabel("Buscar contato").fill(seed.contactName);
       const finalRow = page

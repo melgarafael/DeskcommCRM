@@ -386,9 +386,13 @@ export function mapLinha(
   indices: Record<string, number>,
   t?: (text: string) => string,
   documento?: DocumentoDoTitular,
+  /** O exemplo de telefone do PAÍS da organização; sem ele, a mensagem de erro
+   *  ensinava o DDI brasileiro a quem importa uma planilha de Lisboa. */
+  telefoneExemplo?: string,
 ): { contato: LinhaNormalizada; motivo: string | null } {
   const _t = t || ((x) => x);
   const doc = documento ?? perfilDoPais(null).documento;
+  const exemploDeTelefone = telefoneExemplo ?? perfilDoPais(null).telefoneExemplo;
   const get = (campo: string): string => {
     const idx = indices[campo];
     return idx === undefined ? "" : (cells[idx] ?? "").trim();
@@ -418,7 +422,8 @@ export function mapLinha(
         motivo:
           _t("telefone inválido: ") +
           `"${phoneRaw}"` +
-          _t(" (use DDI+DDD+número, ex.: +5511999998888)"),
+          _t(" (use o número com o código do país, por exemplo ") +
+          `${exemploDeTelefone})`,
       };
     }
     contato.phone_number = phone;

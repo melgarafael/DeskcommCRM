@@ -26,7 +26,7 @@ O procedimento completo está em [`doctrine/packaging.md`](doctrine/packaging.md
 - [ ] `CHANGELOG.md` tem a seção da versão, dizendo o que muda **para quem já instalou**
 - [ ] Nenhuma variável nova é obrigatória sem default (`git diff` em `.env.example` e `lib/env.ts`)
 - [ ] Mudança de schema saiu como **tripla**: `supabase/migrations/` + apêndice idempotente no
-      `supabase/baseline.sql` + linha no `MANIFEST.md`. **O kit aplica só o baseline** — o que
+      `supabase/baseline.sql` + linha `-- manifest:` no cabeçalho do `.sql`. **O kit aplica só o baseline** — o que
       não chegar lá não chega a ninguém
 
       Schema antes de código, e não o contrário: em 2026-08-04 o ambiente do mantenedor

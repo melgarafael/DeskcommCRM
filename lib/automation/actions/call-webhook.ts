@@ -349,8 +349,8 @@ export async function executeCallWebhook(
   };
   // secret_enc (cifrado at-rest, migration 0041) tem precedência; config.secret
   // plaintext fica só como legado pré-retrofit. Decrypt indisponível (chave da
-  // GUC ausente) → envia SEM assinatura em vez de falhar a entrega — espelho do
-  // hmacSkipped do inbound.
+  // GUC ausente) → envia SEM assinatura em vez de falhar a entrega; quem recebe
+  // e exige assinatura recusa do lado de lá.
   let secret: string | null = typeof config.secret === "string" && config.secret ? config.secret : null;
   if (typeof config.secret_enc === "string" && config.secret_enc) {
     secret = await decryptWebhookSecret(ctx.admin, config.secret_enc);

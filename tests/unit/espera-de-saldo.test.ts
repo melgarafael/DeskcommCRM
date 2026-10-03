@@ -42,6 +42,15 @@ describe("qual erro é falta de saldo", () => {
     expect(provedorSemSaldo(new Error('429 {"error":{"code":"insufficient_quota"}}'))).toBe("openai");
   });
 
+  it("a frase 'no credits remaining' da OpenAI, embrulhada no RetryError do SDK", () => {
+    // Texto exato gravado em llm_calls numa VPS (set/2026), que caía em `erro_desconhecido`.
+    const retry = new Error(
+      "Failed after 3 attempts. Last error: AI_APICallError: You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.",
+    );
+    expect(provedorSemSaldo(retry)).toBe("openai");
+    expect(normalizarErro(retry).error_code).toBe("limite_ou_saldo");
+  });
+
   it("reconhece o erro do provedor embrulhado pelo SDK", () => {
     expect(provedorSemSaldo(new Error("Failed after 3 attempts", { cause: new Error(ANTHROPIC) }))).toBe(
       "anthropic",

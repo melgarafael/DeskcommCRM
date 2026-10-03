@@ -49,7 +49,10 @@
  */
 import type { Logger } from '../obs/logger';
 
-/** Ver o cabeçalho: a parcela que não depende do tamanho do texto. */
+/**
+ * Ver o cabeçalho: a parcela que não depende do tamanho do texto.
+ * É o DEFAULT — quem configura por conexão (channel_knobs 0499) recebe outro.
+ */
 export const ATRASO_NOTAR_MS = 900;
 
 /** ≈45 caracteres/s — rápido de propósito; ver o cabeçalho. */
@@ -61,14 +64,34 @@ export const ATRASO_MINIMO_MS = 1200;
 /** Acima disto o silêncio lê como queda, não como digitação. */
 export const ATRASO_MAXIMO_MS = 7500;
 
+/** Os quatro números do atraso humano — o default é o do código de antes. */
+export interface AtrasoHumanoKnobs {
+  atrasoNotarMs?: number;
+  msPorCaractere?: number;
+  atrasoMinimoMs?: number;
+  atrasoMaximoMs?: number;
+}
+
+/** Os quatro números com o default do módulo preenchido (NULL/ausente = valor de antes). */
+export function atrasoHumanoEfetivo(knobs: AtrasoHumanoKnobs | undefined): Required<AtrasoHumanoKnobs> {
+  return {
+    atrasoNotarMs: knobs?.atrasoNotarMs ?? ATRASO_NOTAR_MS,
+    msPorCaractere: knobs?.msPorCaractere ?? MS_POR_CARACTERE,
+    atrasoMinimoMs: knobs?.atrasoMinimoMs ?? ATRASO_MINIMO_MS,
+    atrasoMaximoMs: knobs?.atrasoMaximoMs ?? ATRASO_MAXIMO_MS,
+  };
+}
+
 /**
  * Quanto esperar antes de mandar `texto`, em ms. Pura — é o que a torna
- * testável sem relógio e sem canal.
+ * testável sem relógio e sem canal. `knobs` opcional: sem eles vale
+ * EXATAMENTE o comportamento histórico (regressão zero).
  */
-export function calcularAtrasoHumano(texto: string): number {
+export function calcularAtrasoHumano(texto: string, knobs?: AtrasoHumanoKnobs): number {
+  const ef = atrasoHumanoEfetivo(knobs);
   const comprimento = (texto ?? '').trim().length;
-  const bruto = ATRASO_NOTAR_MS + MS_POR_CARACTERE * comprimento;
-  return Math.min(ATRASO_MAXIMO_MS, Math.max(ATRASO_MINIMO_MS, bruto));
+  const bruto = ef.atrasoNotarMs + ef.msPorCaractere * comprimento;
+  return Math.min(ef.atrasoMaximoMs, Math.max(ef.atrasoMinimoMs, bruto));
 }
 
 export interface EsperaHumanaArgs {
@@ -78,6 +101,11 @@ export interface EsperaHumanaArgs {
   processamentoMs?: number;
   sleep: (ms: number) => Promise<void>;
   log: Logger;
+  /**
+   * Os quatro números do atraso por conexão (channel_knobs 0499). Omitir =
+   * comportamento histórico (defaults de atraso-humano.ts).
+   */
+  knobs?: AtrasoHumanoKnobs;
   /**
    * Acende o "digitando…" no aparelho do cliente. OPCIONAL: canal que não sabe
    * sinalizar presença simplesmente espera, e o ganho principal (não responder
@@ -101,7 +129,7 @@ export async function esperarComoHumano(args: EsperaHumanaArgs): Promise<number>
   const gasto = args.processamentoMs ?? 0;
   const ms = Math.max(
     0,
-    calcularAtrasoHumano(args.texto) - (Number.isFinite(gasto) ? Math.max(0, gasto) : 0),
+    calcularAtrasoHumano(args.texto, args.knobs) - (Number.isFinite(gasto) ? Math.max(0, gasto) : 0),
   );
 
   // O cliente já esperou o alvo: não acrescentar presença decorativa nem sleep.

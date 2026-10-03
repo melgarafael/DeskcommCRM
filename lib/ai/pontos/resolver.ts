@@ -50,7 +50,7 @@ export type OrigemDaEscolha =
   /**
    * O Jev respondeu e a resposta dele não decidiu nada: a IA de sempre decidiu,
    * ou, sem ela, a regra de antes. Também a linha de falha do Jev numa tarefa do
-   * turno (a manipulação, o roteador): o turno seguiu como sem ele (ver Execuções).
+   * turno (a manipulação, o roteador, a resposta ao follow-up): o turno seguiu como sem ele (ver Execuções).
    */
   | "jev_observacao"
   /**

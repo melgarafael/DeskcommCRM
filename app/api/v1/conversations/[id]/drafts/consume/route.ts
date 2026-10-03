@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
-import { resolveAuthDual } from "@/lib/api/auth-dual";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
@@ -40,6 +40,11 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     scope: "mcp:write",
   });
   if (!authz.ok) return authz.response;
+  // Fora de PUBLIC_PATHS hoje: o proxy recusa Bearer sem cookie antes daqui.
+  // O teto é defesa em profundidade e passa a valer no dia em que a rota
+  // entrar na lista — mesmo teto das irmãs que já usam resolveAuthDual.
+  const teto = await tetoDeEscritaDoToken(authz, "drafts.consume", requestId);
+  if (teto) return teto;
   const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const { id } = await ctx.params;

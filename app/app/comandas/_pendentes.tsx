@@ -19,7 +19,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useT } from "@/hooks/i18n/useT";
-import { formatCents } from "@/lib/money";
+import { formatCents, formatSomaPorMoeda, somaPorMoeda } from "@/lib/money";
 
 export type Pendente = {
   appointment_id: string;
@@ -28,6 +28,17 @@ export type Pendente = {
   contact_id: string | null;
   service_name: string | null;
   suggested_price_cents: number | null;
+  /**
+   * A moeda do preço sugerido (#1531).
+   *
+   * Hoje a rota de pendentes NÃO devolve moeda: `calendar_event_types` não tem
+   * coluna de moeda (0358) e todo preço nasce na da organização, então a linha
+   * vem sem `currency` e a tela usa `moeda` (a da organização). O campo existe
+   * porque é o contrato que impede a tela de somar dois centavos de moedas
+   * diferentes no dia em que ele passar a chegar — somar sem olhar é
+   * justamente o defeito da issue.
+   */
+  currency?: string | null;
 };
 
 export type FormaDePagamento = { id: string; name: string; account_id: string | null };
@@ -35,12 +46,20 @@ export type FormaDePagamento = { id: string; name: string; account_id: string | 
 export function AtendimentosSemComanda({
   pendentes,
   formas,
+  moeda,
   podeLancar,
   pendenteDeEnvio,
   onFaturar,
 }: {
   pendentes: Pendente[];
   formas: FormaDePagamento[];
+  /**
+   * A moeda da organização (#1531): é a de TODO preço sugerido de hoje
+   * (`calendar_event_types` não tem coluna de moeda — 0358) e a régua do
+   * total. Nada aqui escreve `"BRL"` em duro: uma organização em euro vivia
+   * mostrando `R$` no balcão por causa dessa string.
+   */
+  moeda: string;
   podeLancar: boolean;
   pendenteDeEnvio: boolean;
   onFaturar: (corpo: { appointment_ids: string[]; payment_method_id: string }) => void;
@@ -61,9 +80,17 @@ export function AtendimentosSemComanda({
   };
 
   const faturaveis = pendentes.filter((p) => p.suggested_price_cents !== null);
-  const total = pendentes
-    .filter((p) => marcados.has(p.appointment_id))
-    .reduce((acc, p) => acc + (p.suggested_price_cents ?? 0), 0);
+  const marcadosComPreco = pendentes.filter(
+    (p) => marcados.has(p.appointment_id) && p.suggested_price_cents !== null,
+  );
+  // SOMA POR MOEDA (#1531): R$ 5.000,00 mais 5.000,00 € não são 10.000 de
+  // nada. Cada moeda no seu balde, lado a lado, sem conversão — com uma moeda
+  // só o texto é exatamente o de antes.
+  const total = somaPorMoeda(
+    marcadosComPreco,
+    (p) => p.suggested_price_cents,
+    (p) => p.currency ?? moeda,
+  );
 
   const escolhida = formas.find((f) => f.id === formaId);
 
@@ -97,7 +124,7 @@ export function AtendimentosSemComanda({
                 {semPreco ? (
                   <span className="text-xs text-danger">{t("sem preço no serviço")}</span>
                 ) : (
-                  formatCents(p.suggested_price_cents ?? 0, "BRL")
+                  formatCents(p.suggested_price_cents ?? 0, p.currency ?? moeda)
                 )}
               </span>
             </li>
@@ -132,7 +159,10 @@ export function AtendimentosSemComanda({
               })
             }
           >
-            {t("Faturar")} {marcados.size > 0 ? `(${formatCents(total, "BRL")})` : ""}
+            {t("Faturar")}{" "}
+            {total.size > 0
+              ? `(${formatSomaPorMoeda(total, formatCents, { primeira: moeda })})`
+              : ""}
           </Button>
 
           {/*

@@ -48,6 +48,12 @@ const BASELINE = path.join(RAIZ, "supabase/baseline.sql");
  */
 const PLAYBOOK_FALA_DE: Record<string, string[]> = {
   agendamento: [
+    // O PRIMEIRO passo da cadeia (#1019): sem o `slug` que esta ferramenta devolve,
+    // `crm_find_free_slots` não tem o `event_type_slug` que ela EXIGE — e o corpo que a
+    // 0191 publicou não a nomeava em nenhuma linha (medido: zero ocorrências em
+    // `supabase/`). Citar é pré-condição de ensinar a ordem; o caso logo abaixo é quem
+    // cobra a ordem.
+    "crm_list_event_types",
     "crm_find_free_slots",
     "crm_book_appointment",
     "crm_reschedule_appointment",
@@ -188,5 +194,57 @@ describe("playbook semeado cita a ferramenta que fala da mesma ação", () => {
         "fazer à mão o que ele tem capacidade de fazer — ou, pior, manda o CONTRÁRIO. " +
         "⚠️ Citar não é concordar: este gate pega a OMISSÃO, não a contradição.",
     ).toEqual([]);
+  });
+});
+
+/**
+ * A ORDEM da cadeia (#1019) — citar não é ensinar a sequência.
+ *
+ * O gate acima cobra que o playbook NOMEIE a ferramenta. Este cobra o que a issue
+ * mediu faltar: o corpo semeado pela 0191 começava o meio da cadeia — mandava
+ * consultar `crm_find_free_slots` sem dizer de onde vem o `event_type_slug` que ela
+ * EXIGE, e o passo 2 ainda mandava responder "vou confirmar e te retorno" com
+ * handoff. Medido no relato: 7 chamadas de `crm_list_event_types` com sucesso e ZERO
+ * de `crm_find_free_slots` no `api_audit_log`.
+ *
+ * A régua de CONDIÇÃO é a mesma dos blocos residentes (`blocosDeAgendaResidentes`):
+ * todo nome de ferramenta novo tem de estar dentro de um "se você a tem". Este texto
+ * é org-wide, servido por keyword, e não sabe quais capacidades o agente tem ligadas
+ * — nomear ferramenta ausente faz o modelo tentar chamá-la.
+ */
+describe("o playbook da agenda ensina os DOIS passos da cadeia (#1019)", () => {
+  const corpo = playbooksSemeados().get("agendamento") ?? "";
+
+  it("CONTROLE: o playbook existe no baseline", () => {
+    expect(corpo.length).toBeGreaterThan(200);
+  });
+
+  it("nomeia o primeiro passo e o `slug` que liga um ao outro", () => {
+    expect(corpo).toContain("crm_list_event_types");
+    expect(corpo).toContain("event_type_slug");
+    expect(corpo).toContain("no MESMO TURNO");
+    // o primeiro passo entra CONDICIONADO — ver a régua no docblock acima
+    expect(corpo).toContain("Se `crm_list_event_types` também estiver na sua mão");
+    // o passo 1 também: a condição é TER a ferramenta, não só faltar o `slug`
+    expect(corpo).toContain("e `crm_list_event_types` está na sua mão");
+  });
+
+  it("manda chamar a consulta de horários ANTES de responder, não depois da lista", () => {
+    expect(corpo).toContain("chame\n  `crm_find_free_slots` com o `event_type_slug` dele ANTES de responder");
+  });
+
+  it("a cadeia continua até a marcação, com o `starts_at` que a consulta devolveu", () => {
+    expect(corpo).toContain("crm_book_appointment");
+    expect(corpo).toContain("`starts_at` que `crm_find_free_slots` devolveu");
+    // agente só de consulta não tem a marcação: a ordem de gravar vem condicionada
+    expect(corpo).toContain("e `crm_book_appointment` está na sua mão");
+  });
+
+  it("o desfecho do handoff continua CONDICIONADO a não ter a ferramenta", () => {
+    // Critério (c): nada aqui ativa ferramenta sem permissão. "Vou confirmar e te
+    // retorno" + handoff continua sendo o caminho de quem NÃO tem a ferramenta — o
+    // que mudou foi ele deixar de ser o caminho de quem tem.
+    expect(corpo).toContain("- SE você não tem a ferramenta → não invente");
+    expect(corpo).toContain("- Você não tem essa ferramenta → aí sim:");
   });
 });

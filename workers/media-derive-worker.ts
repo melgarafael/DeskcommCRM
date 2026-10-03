@@ -15,7 +15,7 @@ import { createPool } from "@/lib/agent-engine/db/pool";
 import { env } from "@/lib/env";
 import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { deriveMediaText, type DeriveDeps } from "@/lib/messaging/media/derive";
-import { TIPOS_DERIVAVEIS } from "@/lib/messaging/media/derivable";
+import { MARCADOR_NAO_LIDA, TIPOS_DERIVAVEIS } from "@/lib/messaging/media/derivable";
 import { deriveVideoText } from "@/lib/messaging/media/video-derive";
 import {
   apiTranscriptionProvider,
@@ -26,6 +26,7 @@ import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { motivoDaRecusaDeDestino } from "@/lib/automation/destinos-internos-autorizados";
 import { DETALHE_TECNICO } from "@/lib/event-log/aviso-de-evento-morto";
+import { MENSAGEM_REDIGIDA } from "@/lib/lgpd/cascata";
 
 export const MEDIA_DERIVE_CONSUMER_KEY = "media_derive_v1";
 const DRAIN_MAX_ATTEMPTS = 5; // espelho de lib/event-log/drain.ts
@@ -249,9 +250,30 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
     const deps = buildDeriveDeps(llm, openaiKey, row.organization_id, admin, baseUrlDaVisao, chaveEhDaInstalacao);
 
     const text = await deriveMediaText(msg.type, buffer, msg.media_mime ?? "application/octet-stream", deps);
-    await admin.from("messages")
+
+    // ─── LGPD: nunca gravar transcrição em mensagem já redigida (#1991) ────
+    //
+    // A anonimização apaga o body (vira `'[mensagem anonimizada]'`) e zera a
+    // mídia. Se a virada acontece ENTRE a leitura desta mensagem e esta
+    // gravação, a linha já está redigida — e este UPDATE regravaria o
+    // `media_derived_text` que a cascata LGPD mandou zerar (a varredura diária
+    // do passo 9 só alcança em D+1). A guarda `body IS DISTINCT FROM '[...]'`
+    // faz o PostgREST casar ZERO linhas; conferimos o resultado para não
+    // devolver "ok" sobre uma escrita que o banco recusou.
+    //
+    // `isdistinct`, nunca `neq`: áudio sem legenda tem body NULL, e
+    // `NULL <> '...'` é NULL — o `neq` recusaria TODA nota de voz.
+    const { data: gravados, error: erroDaGravacao } = await admin
+      .from("messages")
       .update({ media_derived_text: text, media_derived_status: "ready" })
-      .eq("id", msg.id).eq("organization_id", msg.organization_id);
+      .eq("id", msg.id)
+      .eq("organization_id", msg.organization_id)
+      .filter("body", "isdistinct", MENSAGEM_REDIGIDA)
+      .select("id");
+    if (erroDaGravacao) return { consumer_key, status: "error", detail: erroDaGravacao.message };
+    if (!gravados || gravados.length === 0) {
+      return { consumer_key, status: "skipped", detail: "message_redacted" };
+    }
     return { consumer_key, status: "ok" };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
@@ -548,16 +570,9 @@ function buildDeriveDeps(
   };
 }
 
-/**
- * O texto que substitui a string vazia quando a mídia não pôde ser lida.
- *
- * Não é cosmético: o agente recebe este texto como derivado da mensagem, então
- * ele passa a SABER que chegou algo que não conseguiu interpretar, em vez de
- * concluir que a mensagem veio vazia. A diferença aparece na resposta ao
- * cliente — "não consegui abrir sua foto, pode me dizer o que é?" no lugar de
- * um silêncio que parece descaso.
- */
-export const MARCADOR_NAO_LIDA = "[o cliente enviou uma mídia que não consegui interpretar]";
+// Mora em lib/messaging/media/derivable.ts (sem import nenhum) porque o balão
+// da inbox também precisa dele para não exibir o aviso como transcrição.
+export { MARCADOR_NAO_LIDA };
 
 /**
  * Abre UM aviso na Central por organização enquanto o problema durar.

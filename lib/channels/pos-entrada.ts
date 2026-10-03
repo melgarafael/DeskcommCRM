@@ -39,7 +39,9 @@
  * dentro, com log, e o seguinte roda mesmo assim.
  */
 import { audit } from "@/lib/audit";
+import { encerraDemanda } from "@/lib/leads/encerramento";
 import { garantirLeadDaConversa } from "@/lib/leads/nascimento-do-lead";
+import type { CanonicalLostReason } from "@/lib/schemas/leads";
 import {
   ehAPrimeiraMensagemDoContato,
   estamparOrigemDaPagina,
@@ -264,6 +266,94 @@ async function aplicarOptOut(admin: Admin, entrada: EntradaDeMensagem): Promise<
       organization_id: entrada.organizationId,
       contact_id: entrada.contactId,
       origem: entrada.origem,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+    });
+    // Sem o bloqueio gravado não há o que fechar: o contato segue recebendo, e
+    // fechar o negócio de quem o sistema não conseguiu proteger esconderia o
+    // problema no funil em vez de deixá-lo no log.
+    return;
+  }
+
+  await fecharNegociosAbertosDeQuemPediuParar(admin, entrada);
+}
+
+/**
+ * Motivo canônico de perda (`CANONICAL_LOST_REASONS`, migration 0513): "Pediu
+ * para não receber mensagens". Não é `requested_by_customer` ("Cliente solicitou
+ * cancelamento") — pedir silêncio não é cancelar (decisão do dono, doc 85).
+ */
+const MOTIVO_DA_PERDA_POR_OPT_OUT = "opted_out_of_messages" satisfies CanonicalLostReason;
+
+/**
+ * Quem pediu para parar não é mais uma oportunidade: o negócio aberto dele vira
+ * "Perdido — Pediu para não receber mensagens". Inclusive pedido já pago — o
+ * dono escolheu fechar TODO negócio aberto (opção B, não B').
+ *
+ * Medido em produção: os dois opt-outs de um dia bloquearam o contato um segundo
+ * depois do "parar" (`contact.blocked`, sem usuário), mas o negócio ficou aberto
+ * na etapa de origem até um operador arrastá-lo à mão minutos depois. Enquanto
+ * isso o card seguia contando como demanda viva e sujando o radar de risco.
+ *
+ * Roda DEPOIS do bloqueio gravado e ANTES do nascimento do lead (o passo 2 já
+ * recusa contato bloqueado, então não nasce card novo para quem acabou de sair).
+ * Usa `encerraDemanda` — a mesma regra do botão "perdido" e da IA —, que é
+ * idempotente, filtra `organization_id`, grava a timeline e a auditoria.
+ *
+ * NUNCA lança: a mensagem já entrou e o bloqueio já foi gravado; uma falha aqui
+ * (funil sem etapa de perdido, por exemplo) fica no log e não derruba a ingestão.
+ */
+async function fecharNegociosAbertosDeQuemPediuParar(
+  admin: Admin,
+  entrada: EntradaDeMensagem,
+): Promise<void> {
+  try {
+    const { data, error } = await admin
+      .from("crm_leads")
+      .select("id")
+      .eq("organization_id", entrada.organizationId)
+      .eq("contact_id", entrada.contactId)
+      .eq("status", "open");
+    if (error) {
+      logger.warn("pos-entrada: negócios do contato que pediu para parar não lidos", {
+        organization_id: entrada.organizationId,
+        contact_id: entrada.contactId,
+        detail: error.message.slice(0, 160),
+      });
+      return;
+    }
+    for (const lead of (data ?? []) as Array<{ id: string }>) {
+      try {
+        await encerraDemanda(
+          admin,
+          {
+            organization_id: entrada.organizationId,
+            // `webhook_source`, como o nascimento do lead: a mensagem chegou pelo
+            // canal e o produto agiu — não foi uma pessoa. A timeline traduz para
+            // "sistema".
+            actor: { type: "webhook_source", id: "canal-inbound" },
+            requestId: entrada.requestId ?? `opt-out:${entrada.conversationId}`,
+          },
+          {
+            leadId: lead.id,
+            desfecho: "lost",
+            motivo: MOTIVO_DA_PERDA_POR_OPT_OUT,
+            razaoNaTimeline: "O cliente pediu para não receber mais mensagens",
+            payloadNaTimeline: { conversation_id: entrada.conversationId },
+          },
+        );
+      } catch (err) {
+        logger.warn("pos-entrada: negócio de quem pediu para parar não foi fechado", {
+          organization_id: entrada.organizationId,
+          contact_id: entrada.contactId,
+          lead_id: lead.id,
+          detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+        });
+      }
+    }
+  } catch (err) {
+    logger.warn("pos-entrada: fechamento dos negócios de quem pediu para parar falhou", {
+      organization_id: entrada.organizationId,
+      contact_id: entrada.contactId,
       detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
     });
   }

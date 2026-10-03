@@ -22,6 +22,7 @@ import { EstadoDaMarca } from "./_estado";
 import { avisosDaMarca, type DistanciaAteSuaCor } from "@/lib/branding/linguagem";
 import { TiraDeTons, type ItemDaLegenda } from "@/components/branding/TiraDeTons";
 import { useT } from "@/hooks/i18n/useT";
+import { MENSAGEM_DA_RECUSA_DE_ESCRITA } from "@/lib/auth/recusa-de-escrita-de-admin";
 
 export interface MarcaGravada {
   readonly app_name: string | null;
@@ -60,6 +61,7 @@ interface Props {
 
 /** Mensagem por código de recusa da server action. */
 const ERRO_EM_PORTUGUES: Record<string, string> = {
+  ...MENSAGEM_DA_RECUSA_DE_ESCRITA,
   validation_failed: "Algum campo não está no formato esperado.",
   unauthenticated: "Sua sessão expirou. Entre de novo para salvar.",
   forbidden_role: "Só quem administra a instalação pode mudar a marca.",

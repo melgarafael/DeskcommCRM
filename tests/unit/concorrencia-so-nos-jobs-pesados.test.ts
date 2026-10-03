@@ -27,7 +27,7 @@ const PESADOS: Record<string, string[]> = {
   "ci.yml": ["verify-parte", "invariants-majors"],
   "e2e.yml": ["e2e-parte"],
   "perf.yml": ["build-and-size"],
-  "publish-image.yml": ["build-and-push", "imagem-do-app-sobe", "imagens-de-fundo-sobem"],
+  "publish-image.yml": ["build-and-push", "juntar-manifestos", "imagem-do-app-sobe", "imagens-de-fundo-sobem"],
 };
 const SEM_GRUPO: Record<string, string[]> = {
   "ci.yml": ["verify", "invariants", "invariants-alcance"],

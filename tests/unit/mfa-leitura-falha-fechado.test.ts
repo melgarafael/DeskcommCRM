@@ -16,13 +16,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { requireRole } from "@/lib/auth/require-role";
-import { isMfaEnrolled, loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
+import { isMfaEnrolled, loadAuthUser, mfaEmDivida, orgAtivaSemPortao, resolveActiveOrg } from "@/lib/auth/server";
 import type { AuthUser } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 
 vi.mock("@/lib/auth/server", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/auth/server")>();
-  return { ...real, loadAuthUser: vi.fn(), resolveActiveOrg: vi.fn() };
+  return { ...real, loadAuthUser: vi.fn(), resolveActiveOrg: vi.fn(), orgAtivaSemPortao: vi.fn() };
 });
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({
@@ -44,6 +44,7 @@ function preparar(listFactors: () => Promise<unknown>): void {
     organizations: [],
   } as unknown as AuthUser);
   vi.mocked(resolveActiveOrg).mockResolvedValue({ orgId: ORG_ID, name: "Org", role: "admin" });
+  vi.mocked(orgAtivaSemPortao).mockResolvedValue({ orgId: ORG_ID, name: "Org", role: "admin", org_status: "active" });
   vi.mocked(createClient).mockResolvedValue({
     rpc: vi.fn(async () => ({ data: "admin", error: null })),
     auth: {

@@ -24,6 +24,20 @@
  * Os dois sentidos, porque só um deles pegaria metade dos casos:
  *   - linha do MANIFEST sem arquivo ⇒ registro fantasma (o defeito acima);
  *   - arquivo sem linha no MANIFEST ⇒ mudança de schema que ninguém registrou.
+ *
+ * ## A segunda fonte: o cabeçalho da própria migration (02/10/2026)
+ *
+ * Migration nova NÃO acrescenta mais linha no MANIFEST: a descrição vive numa
+ * linha `-- manifest: <o quê e por quê>` dentro do próprio `.sql`. O motivo é
+ * medido: todo PR com migration acrescentava UMA linha no FIM da mesma tabela,
+ * o `merge=union` do `.gitattributes` só vale para o git local, e o GitHub
+ * ignora driver de merge — cada migration que entrava na main deixava todos os
+ * outros PRs com migration CONFLICTING (#2009, #2049, #2078, #2080, #2091,
+ * #2137 no mesmo dia). Um arquivo por migration não tem com quem conflitar.
+ *
+ * "Registrada" passa a ser: linha no MANIFEST (histórico, e PR antigo ainda em
+ * voo) OU cabeçalho com descrição não vazia. Nos dois ao mesmo tempo, não:
+ * duas fontes para o mesmo fato divergem.
  */
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -96,6 +110,22 @@ function nomesDoManifest(): string[] {
     .map((m) => m[1]!);
 }
 
+/**
+ * A descrição que a migration carrega no próprio arquivo. Só conta com texto
+ * depois dos dois-pontos: `-- manifest:` vazio é migration sem descrição.
+ */
+const CABECALHO = /^-- manifest:[ \t]*(\S.*)$/m;
+
+/** `0522_slug` → descrição, para as migrations que se descrevem no cabeçalho. */
+function descricoesDoCabecalho(): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const f of readdirSync(DIR).filter((f) => f.endsWith(".sql"))) {
+    const m = CABECALHO.exec(readFileSync(join(DIR, f), "utf8"));
+    if (m) out.set(f.slice(0, -4).replace(/^\d{14}_/, ""), m[1]!.trim());
+  }
+  return out;
+}
+
 /** `20260805120000_0104_slug.sql` → `0104_slug`. */
 function nomesDeMigration(): string[] {
   return readdirSync(DIR)
@@ -134,14 +164,23 @@ describe("MANIFEST × arquivos de migration", () => {
     ).toEqual([]);
   });
 
-  it("toda migration tem linha no MANIFEST", () => {
-    const registrados = new Set(nomesDoManifest());
+  it("toda migration tem descrição — no cabeçalho `-- manifest:` ou (histórico) no MANIFEST", () => {
+    const registrados = new Set([...nomesDoManifest(), ...descricoesDoCabecalho().keys()]);
     const semRegistro = nomesDeMigration()
       .filter((f) => !registrados.has(f))
       .filter((f) => !DIVERGENCIAS_CONHECIDAS.semLinha.includes(f as never));
     expect(
       semRegistro,
-      "mudança de schema sem linha no MANIFEST — a tripla da doutrina ficou incompleta",
+      "migration sem descrição — ponha uma linha `-- manifest: <o quê e por quê>` no cabeçalho do .sql (NÃO acrescente linha no MANIFEST.md: é o arquivo que conflitava em todo PR)",
+    ).toEqual([]);
+  });
+
+  it("nenhuma migration se descreve nos dois lugares (uma fonte só)", () => {
+    const noManifest = new Set(nomesDoManifest());
+    const nosDois = [...descricoesDoCabecalho().keys()].filter((n) => noManifest.has(n));
+    expect(
+      nosDois,
+      "descrita no cabeçalho E no MANIFEST — apague a linha do MANIFEST.md e fique com o `-- manifest:` do .sql",
     ).toEqual([]);
   });
 

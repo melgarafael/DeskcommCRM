@@ -4,7 +4,10 @@
 # Commit que ADICIONA supabase/migrations/*.sql precisa, no MESMO commit:
 #   1. mudança em supabase/baseline.sql (apêndice idempotente — é o que o kit
 #      self-host aplica; migration que não chega lá não chega em quem instalou)
-#   2. linha em supabase/migrations/MANIFEST.md
+#   2. descrição: uma linha `-- manifest: <o quê e por quê>` no próprio .sql
+#      (o MANIFEST.md é histórico e não recebe linha nova — era o arquivo que
+#      fazia todo PR com migration conflitar; linha nele ainda passa, para PR
+#      aberto antes de 02/10/2026)
 # E o NNNN e o TIMESTAMP do nome novo não podem existir na POPULAÇÃO que os
 # mediu: a main do PRODUTO (o remoto que aponta para melgarafael/DeskcommCRM, com
 # qualquer nome) mais as outras refs do clone. Colisão é o defeito nº 1 da
@@ -105,9 +108,17 @@ if ! grep -qx 'supabase/baseline.sql' <<<"$staged"; then
   echo "  O kit self-host aplica SÓ o baseline: sem o apêndice, a mudança não chega em quem instalou numa VPS." >&2
   falhou=1
 fi
+# Sem `grep -q`: com `pipefail`, o -q fecha o cano cedo, o `git show` morre de
+# SIGPIPE e um .sql COM descrição seria lido como sem.
 if ! grep -qx 'supabase/migrations/MANIFEST.md' <<<"$staged"; then
-  echo "pre-commit BLOQUEADO: migration nova sem linha em supabase/migrations/MANIFEST.md no MESMO commit." >&2
-  falhou=1
+  while IFS= read -r p; do
+    [ -z "$p" ] && continue
+    if ! git show ":$p" 2>/dev/null | grep -E '^-- manifest:[[:space:]]*[^[:space:]]' >/dev/null; then
+      echo "pre-commit BLOQUEADO: '$p' sem descrição — ponha uma linha \`-- manifest: <o quê e por quê>\` no cabeçalho do .sql." >&2
+      echo "  NÃO acrescente linha no supabase/migrations/MANIFEST.md: ele é histórico, e era o arquivo que fazia todo PR com migration conflitar." >&2
+      falhou=1
+    fi
+  done <<<"$novas"
 fi
 
 if declare -F pop_refs_de_outrem >/dev/null 2>&1; then
@@ -125,16 +136,21 @@ fi
 # `populacao=` ANTES do `if`: o hook roda com `set -u`, e uma variável nunca
 # atribuída aborta o script inteiro — o hook saía com 1 SEM mensagem nenhuma,
 # que é o pior formato de falha possível num guard.
-populacao=""
+# A população vai para um ARQUIVO, nunca para uma variável: no clone do mantenedor
+# (29/09/2026) ela tinha ~1,29 M linhas (~112 MB), e o teste de vazio que havia aqui,
+# `${populacao// /}`, é uma substituição de padrão do bash — quadrática no tamanho da
+# string. O hook não terminava em 45 min. O grep lê o arquivo direto.
+populacao="$(mktemp)" || { echo "pre-commit BLOQUEADO: mktemp falhou — a população de migrations não pôde ser medida. Correção orientada pelo dono: DESKCOMM_GOV_MIGRATION_EDIT=1." >&2; exit 1; }
+trap 'rm -f "$populacao"' EXIT
 if declare -F pop_migrations >/dev/null 2>&1; then
   # O HEAD entra SEMPRE: `pop_refs_de_outrem` tira a ref cujo SHA é o do HEAD (a
   # #1155), e sem devolvê-lo aqui a migration que a PRÓPRIA branch já commitou
   # sumia da conta — a segunda 0411 e o carimbo repetido passavam calados, e a
   # dica de próximo livre apontava para o número da branch. O próprio arquivo
   # encenado não é acusado: o `grep -vE " <nome>$"` abaixo o tira.
-  populacao="$(pop_migrations $refs HEAD 2>/dev/null || true)"
+  { pop_migrations $refs HEAD 2>/dev/null || true; } >"$populacao" || { echo "pre-commit BLOQUEADO: não foi possível gravar a população de migrations em $populacao. Correção orientada pelo dono: DESKCOMM_GOV_MIGRATION_EDIT=1." >&2; exit 1; }
 fi
-if [ -z "${populacao// /}" ] && [ -z "${populacao//$'\n'/}" ]; then
+if ! grep -q . "$populacao"; then
   # A biblioteca não está (clone antigo, cópia da skill de versão anterior) ou
   # não achou migration nenhuma. Mede o que a versão anterior media e DIZ.
   if ! declare -F pop_migrations >/dev/null 2>&1; then
@@ -148,7 +164,7 @@ if [ -z "${populacao// /}" ] && [ -z "${populacao//$'\n'/}" ]; then
       # fosse o primeiro da ref.
       [ -n "$arquivos" ] && fallback="${fallback}$(awk -v r="$ref" '{ print r, $0 }' <<<"$arquivos")"$'\n'
     done
-    populacao="$fallback"
+    printf '%s' "$fallback" >"$populacao"
     echo "pre-commit AVISO: scripts/migration-populacao.sh AUSENTE — unicidade de NNNN medida sobre ${refs//$'\n'/ } (a população da pergunta: main do produto ∪ PRs abertos). Quem mede a inteira: pnpm checar:colisao-de-migration (#1273)" >&2
   elif [ -z "${base}" ]; then
     echo "pre-commit AVISO: Nenhuma migration resolvida na população ($base e as refs do clone) — a unicidade de NNNN NÃO foi medida (#1273). Rode: pnpm checar:colisao-de-migration" >&2
@@ -170,13 +186,13 @@ while IFS= read -r caminho; do
   # A âncora é a do NOME CANÔNICO e o `grep` roda sobre a LINHA INTEIRA ("<ref>
   # <nome>"), para o dono poder ser nomeado: "já existe em <ref>" sem o ref é
   # "tomada" apontando para o nada, que é a armadilha da #1155.
-  donos_n="$(grep -E "^[A-Za-z0-9_./-]+ [0-9]{14}_${nnnn}_.+\.sql$" <<<"$populacao" | grep -vE " ${nome}\$" || true)"
-  donos_t="$(grep -E "^[A-Za-z0-9_./-]+ ${ts}_[0-9]{4}_.+\.sql$" <<<"$populacao" | grep -vE " ${nome}\$" || true)"
+  donos_n="$(grep -E "^[A-Za-z0-9_./-]+ [0-9]{14}_${nnnn}_.+\.sql$" "$populacao" | grep -vE " ${nome}\$" || true)"
+  donos_t="$(grep -E "^[A-Za-z0-9_./-]+ ${ts}_[0-9]{4}_.+\.sql$" "$populacao" | grep -vE " ${nome}\$" || true)"
   if [ -n "$donos_n" ]; then
     onde="$(awk '{printf "%s(%s) ", $1, $2}' <<<"$donos_n" | sed 's/ $//')"
     echo "pre-commit BLOQUEADO: NNNN=$nnnn de '$nome' já existe em: $onde" >&2
     if declare -F pop_dica_proximo_livre >/dev/null 2>&1; then
-      pop_dica_proximo_livre "$nnnn" "$base" "$populacao" >&2
+      pop_dica_proximo_livre "$nnnn" "$base" "$(cut -d' ' -f2- "$populacao" | LC_ALL=C sort -u)" >&2
     else
       echo "  Para o próximo número livre (main do produto ∪ PRs abertos): pnpm checar:colisao-de-migration" >&2
     fi

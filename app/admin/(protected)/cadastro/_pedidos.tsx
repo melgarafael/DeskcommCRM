@@ -6,9 +6,11 @@ import { decideRegistrationRequest } from "@/app/actions/registration/decide";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useT } from "@/hooks/i18n/useT";
+import { MENSAGEM_DA_RECUSA_DE_ESCRITA } from "@/lib/auth/recusa-de-escrita-de-admin";
 import type { PedidoPendente } from "@/lib/auth/registration-requests";
 
 const ERROS: Record<string, string> = {
+  ...MENSAGEM_DA_RECUSA_DE_ESCRITA,
   not_found: "Este pedido já foi decidido.",
   account_unavailable: "A conta deste pedido não existe mais ou ainda não confirmou o e-mail.",
 };

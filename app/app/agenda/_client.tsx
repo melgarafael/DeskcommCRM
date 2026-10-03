@@ -23,6 +23,7 @@ import { EmptyAgenda } from "@/components/empty";
 import { rotuloDoLocal } from "@/lib/agenda/locais";
 import { ancoraAoFecharPainel } from "@/lib/agenda/ancora-depois-de-marcar";
 import { ancoraLocalDoDia } from "@/lib/agenda/semana-semente";
+import { dataDeParede, diaLocalISO, partesNoFuso } from "@/lib/agenda/fuso";
 import { janelaDoMesVisivel } from "@/lib/agenda/janela-do-mes-visivel";
 import { recorteDaGrade as recorteDaGradeDe } from "@/lib/agenda/recorte-da-grade";
 import { resolverResponsavelDoPainel } from "@/lib/agenda/responsavel-do-painel";
@@ -74,6 +75,7 @@ const VISOES: Array<{ id: VisaoDaAgenda; rotulo: string }> = [
  * imports sem querer.
  */
 export function AgendaClient({
+  fusoDaAgenda,
   fusoDeApresentacao,
   hojeNaOrganizacao,
   usuarioId,
@@ -86,6 +88,12 @@ export function AgendaClient({
   agendamentosIniciais,
   podeMarcar,
 }: {
+  /**
+   * O fuso RESOLVIDO da organização (`fusoUtilizavel(activeOrg.timezone)`,
+   * calculado em `page.tsx`). É a régua da grade: sem ele a agenda desenha
+   * hora de parede no relógio do navegador (issue #1362).
+   */
+  fusoDaAgenda: string;
   fusoDeApresentacao: string | null;
   /**
    * A data de HOJE no fuso da ORGANIZAÇÃO, resolvida pelo servidor
@@ -347,11 +355,20 @@ export function AgendaClient({
     const mapa: Record<string, Array<{ instante: string; rotulo: string }>> = {};
     for (const s of horarios?.slots ?? []) {
       const d = new Date(s.inicio);
-      const chave = format(d, "yyyy-MM-dd");
-      (mapa[chave] ??= []).push({ instante: s.inicio, rotulo: format(d, "HH:mm") });
+      // A CHAVE E O RÓTULO SAEM DO FUSO DA ORGANIZAÇÃO: o slot das 09:00 da
+      // clínica é daquele dia e daquela hora PARA ELA, não para quem está
+      // olhando (issue #1362). O lookup em `PainelDeMarcacao` continua batendo,
+      // porque ele indexa pela data de calendário da mesma âncora.
+      const chave = diaLocalISO(d, fusoDaAgenda);
+      const p = partesNoFuso(d, fusoDaAgenda);
+      const dois = (n: number) => String(n).padStart(2, "0");
+      (mapa[chave] ??= []).push({
+        instante: s.inicio,
+        rotulo: `${dois(p.hora)}:${dois(p.minuto)}`,
+      });
     }
     return mapa;
-  }, [horarios]);
+  }, [horarios, fusoDaAgenda]);
 
   // OS AGENDAMENTOS SÃO REAIS, e agora TAMBÉM se atualizam sem recarregar.
   //
@@ -855,6 +872,10 @@ export function AgendaClient({
                 fontesDefasadas={horarios?.fontes_defasadas}
                 googleCoberturaParcial={horarios?.google_cobertura_parcial}
                 onMesVisivel={onMesVisivel}
+                // `data` do React Query é da chave ATUAL (sem `placeholderData`),
+                // então chegou = é do `mesDoPainel`. É o que deixa o painel saber
+                // "este mês acabou" em vez de "ainda carregando".
+                mesCarregado={horarios ? mesDoPainel : null}
                 horarioInicial={horarioEscolhido ?? undefined}
                 // O ENCAIXE é desta tela, e só dela: aqui quem marca é uma
                 // pessoa da equipe com sessão, que é exatamente o ator a quem a
@@ -969,7 +990,11 @@ export function AgendaClient({
                 const alvo = todos.find((a) => a.id === cancelandoId);
                 if (!alvo) return t("Este agendamento não está mais na lista.");
                 const quem = alvo.quemSeraAtendido ? ` ${t("de")} ${alvo.quemSeraAtendido}` : "";
-                return `${alvo.titulo}${quem}, ${format(new Date(alvo.comeca), t("d 'de' MMMM 'às' HH:mm"), { locale: localeDaData })}.`;
+                return `${alvo.titulo}${quem}, ${format(
+                  dataDeParede(new Date(alvo.comeca), fusoDaAgenda),
+                  t("d 'de' MMMM 'às' HH:mm"),
+                  { locale: localeDaData },
+                )}.`;
               })()}
             </p>
             <label
@@ -1052,6 +1077,9 @@ export function AgendaClient({
         agendamentos={agendamentosAcionaveis}
         pessoas={pessoas}
         agora={new Date()}
+        // Mesma régua da grade ao lado: sem isto a lista imprime o relógio do
+        // navegador e a MESMA tela diz duas horas para o mesmo compromisso.
+        fuso={fusoDaAgenda}
         className="max-h-[320px]"
         // ⚠️ ESTAS DUAS PROPS FALTAVAM, e a ausência tinha cara de permissão.
         // `HistoricoDaAgenda` usa `disabled={!onRemarcar}`; sem elas os botões
@@ -1125,6 +1153,7 @@ export function AgendaClient({
           proposta de remarcação, o otimismo com volta atrás) mora em
           `AgendaInterativa`; aqui fica só o que esta tela já sabia. */}
       <AgendaInterativa
+        fuso={fusoDaAgenda}
         visao={visao}
         ancora={ancora}
         agora={new Date()}
@@ -1140,7 +1169,13 @@ export function AgendaClient({
         onMarcarEm={
           podeMarcar
             ? (instante) => {
-                setHorarioEscolhido({ instante, rotulo: format(new Date(instante), "HH:mm") });
+                setHorarioEscolhido({
+                  instante,
+                  // HH:mm no MESMO fuso em que a grade desenhou o clique: sem
+                  // isto o resumo guardava a hora do NAVEGADOR e não batia com
+                  // a célula que a pessoa acabou de escolher.
+                  rotulo: format(dataDeParede(new Date(instante), fusoDaAgenda), "HH:mm"),
+                });
                 setRemarcandoId(null);
                 // `abrirMarcacao` e não `setMarcando(true)`: clicar num bloco
                 // livre abre uma marcação NOVA, e ela nasce com o vínculo da rota.

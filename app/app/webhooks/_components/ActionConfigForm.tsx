@@ -20,6 +20,8 @@ import { usePipelines, usePipelineStages } from "@/hooks/webhooks/useWebhookSour
 import { useAgentsList } from "@/hooks/ai/useAgents";
 import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSessions";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
+import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
+import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 import { apiClient } from "@/lib/api/client";
 import type { FollowupFlowPointerRow } from "@/hooks/followup/useFollowupFlows";
 
@@ -146,6 +148,13 @@ function SendWhatsappForm({
   const t = useT();
   const { data: sessions } = useChannelSessions();
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  // Os campos cadastrados no funil (Configurações › Funis) viram botões: quem
+  // monta a mensagem clica em "Serviço" em vez de adivinhar o nome interno. O
+  // token é só a chave — `renderTemplate` a resolve em `lead.custom_fields`.
+  const pipeline = useDefaultPipeline(true);
+  const camposDoFormulario = camposDoFunil(pipeline.data?.pipeline.settings ?? null)
+    .filter((f) => !TEMPLATE_VARS.some((v) => v.token === `{{${f.key}}}`))
+    .map((f) => ({ token: `{{${f.key}}}`, label: f.label }));
 
   const insertVar = (token: string) => {
     const el = textareaRef.current;
@@ -188,7 +197,7 @@ function SendWhatsappForm({
       <div className="space-y-1">
         <Label>{t("Mensagem")}</Label>
         <div className="flex flex-wrap gap-1">
-          {TEMPLATE_VARS.map((v) => (
+          {[...TEMPLATE_VARS, ...camposDoFormulario].map((v) => (
             <Button
               key={v.token}
               type="button"

@@ -159,9 +159,11 @@ describe("transição real de atendimento", () => {
     expect(routing[0].next_attempt_at.getTime()).toBeLessThan(pending[0].next_attempt_at.getTime());
   });
   it("CAS de close obsoleto não fecha nova revisão; escopo forjado é recusado", async () => {
+    // PT409, não 40001 (migration 0514): revisão obsoleta é recusa PERMANENTE, e
+    // 40001 vira HTTP 500 na REST, que é reexecutado sem fim no self-hosted.
     await expect(
       pool.query("select fn_service_status($1,$2,'closed',1)", [GOV_ORG, conversation]),
-    ).rejects.toMatchObject({ code: "40001" });
+    ).rejects.toMatchObject({ code: "PT409", message: "service_stale" });
     await expect(
       pool.query("select fn_service_status($1,$2,'closed',null)", [randomUUID(), conversation]),
     ).rejects.toMatchObject({ code: "P0002" });

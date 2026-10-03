@@ -24,6 +24,39 @@ describe('mirrorLeadStageToCrm', () => {
     });
   });
 
+  it('respeita os funis da versão publicada — sem funil autorizado o card não se move', async () => {
+    const sync = vi.fn().mockResolvedValue({
+      moveu: false, motivo: 'fora_do_escopo', detalhe: 'nenhum funil liberado para este assistente',
+    });
+
+    const r = await mirrorLeadStageToCrm(
+      db, cfg as never,
+      { tenantId: 'org-1', leadId: 'contato-1', toStage: 'qualified', pipelineIds: [] },
+      { sync },
+    );
+
+    expect(sync).toHaveBeenCalledWith(cfg.supabase, {
+      organizationId: 'org-1', contactId: 'contato-1', passo: 'qualified', escopoDeFunis: [],
+    });
+    expect(r).toMatchObject({ ok: false, reason: 'fora_do_escopo' });
+  });
+
+  it('leva ao sincronizador somente os funis que o agente publicado pode alterar', async () => {
+    const sync = vi.fn().mockResolvedValue({ moveu: true, motivo: 'movido' });
+
+    const r = await mirrorLeadStageToCrm(
+      db, cfg as never,
+      { tenantId: 'org-1', leadId: 'contato-1', toStage: 'qualified', pipelineIds: ['funil-comercial'] },
+      { sync },
+    );
+
+    expect(r).toEqual({ ok: true });
+    expect(sync).toHaveBeenCalledWith(cfg.supabase, {
+      organizationId: 'org-1', contactId: 'contato-1', passo: 'qualified',
+      escopoDeFunis: ['funil-comercial'],
+    });
+  });
+
   it('estágio já ocupado é sucesso, não falha', async () => {
     const sync = vi.fn().mockResolvedValue({ moveu: false, motivo: 'ja_esta_la' });
     const r = await mirrorLeadStageToCrm(

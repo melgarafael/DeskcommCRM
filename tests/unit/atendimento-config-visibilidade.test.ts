@@ -91,12 +91,14 @@ describe("config de atendimento — routing + visibilidade na mesma porta", () =
     // O contrato v1 já estava publicado. Se o corpo de antes deixasse de valer,
     // a mudança seria quebra de API disfarçada de feature nova.
     const antigo = { mode: "round_robin", max_retries: 3, backoff_seconds: 30 };
-    // O corpo antigo não conhece o prazo de devolução nem "a conversa fica com
-    // quem atendeu": no PATCH eles ficam OMITIDOS (e a mescla preserva o que
-    // vale), no schema do jsonb eles têm o padrão (null e false).
+    // O corpo antigo não conhece o prazo de devolução, "a conversa fica com
+    // quem atendeu" nem o prazo do silêncio manual: no PATCH eles ficam
+    // OMITIDOS (e a mescla preserva o que vale), no schema do jsonb eles têm o
+    // padrão (null, false e null).
     const {
       handoff_return_after_minutes: _padrao,
       conversation_stays_with_attendant: _fica,
+      manual_reply_silence_minutes: _silencio,
       ...semPrazo
     } = routingConfigSchema.parse(antigo);
     expect(atendimentoConfigPatchSchema.parse(antigo)).toEqual(semPrazo);
@@ -126,5 +128,26 @@ describe("config de atendimento — routing + visibilidade na mesma porta", () =
     expect(() =>
       atendimentoConfigPatchSchema.parse({ mode: "manual", max_retries: 5, backoff_seconds: 60, handoff_return_after_minutes: 1441 }),
     ).toThrow();
+  });
+
+  it("corpo SEM manual_reply_silence_minutes preserva o prazo do silêncio que já valia", () => {
+    const atual = { routing: { mode: "manual", manual_reply_silence_minutes: 15 } };
+    const proximo = proximoSettings(atual, { mode: "round_robin", max_retries: 5, backoff_seconds: 60 });
+    expect(
+      (proximo.routing as { manual_reply_silence_minutes: number | null }).manual_reply_silence_minutes,
+      "cliente que só conhece roteamento não pode voltar a clínica para 60 min por omissão",
+    ).toBe(15);
+  });
+
+  it("manual_reply_silence_minutes: grava o valor, null volta ao padrão, fora da faixa é recusado", () => {
+    const atual = { routing: { mode: "manual" } };
+    const base = { mode: "manual", max_retries: 5, backoff_seconds: 60 };
+    const com15 = proximoSettings(atual, { ...base, manual_reply_silence_minutes: 15 });
+    expect((com15.routing as { manual_reply_silence_minutes: unknown }).manual_reply_silence_minutes).toBe(15);
+    const nulo = proximoSettings(com15, { ...base, manual_reply_silence_minutes: null });
+    expect((nulo.routing as { manual_reply_silence_minutes: unknown }).manual_reply_silence_minutes).toBeNull();
+    for (const fora of [4, 1441, 7.5]) {
+      expect(() => atendimentoConfigPatchSchema.parse({ ...base, manual_reply_silence_minutes: fora })).toThrow();
+    }
   });
 });

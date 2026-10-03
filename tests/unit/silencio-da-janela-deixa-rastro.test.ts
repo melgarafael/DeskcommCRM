@@ -190,7 +190,7 @@ describe("o turno realmente CHAMA o aviso — nas duas direções", () => {
     // Se a resolução migrar para um cron ou para outro ponto do turno, o laço
     // deixa de fechar onde foi aberto e volta a depender de varredura.
     const gate = turno.slice(
-      turno.indexOf("janelaDeEnvioAberta(agora, knobs)"),
+      turno.indexOf("janelaDeEnvioAberta(agora, knobs"),
       turno.indexOf("Fase 3: stickiness do router"),
     );
     expect(gate).toContain("avisarJanelaFechada");
