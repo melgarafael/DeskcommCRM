@@ -1,6 +1,7 @@
 "use client";
 import { useRef, useState, type KeyboardEvent } from "react";
 import { toast } from "sonner";
+import { format } from "date-fns";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -24,9 +25,11 @@ import {
   useEditarEtapa,
   type PatchDeEtapa,
 } from "@/hooks/pipelines/useStages";
+import { useTaxasDasEtapas } from "@/hooks/pipelines/useWinRates";
 import { LEAD_STAGES, type LeadStage } from "@/lib/agent-engine/agent/lead-state";
 import { ApiError } from "@/lib/api/types";
 import { ROTULO_DO_PASSO } from "@/lib/leads/agent-mapping";
+import type { TaxaDaEtapa } from "@/lib/metrics/taxa-da-etapa";
 import { Archive, CaretDown, CaretUp, Plus, Warning } from "@/lib/ui/icons";
 import { SeloDeAutoria } from "@/components/operacao/SeloDeAutoria";
 import { useT } from "@/hooks/i18n/useT";
@@ -203,6 +206,103 @@ export const ROTULO = {
   papel: "O que acontece nesta coluna",
 } as const;
 
+/**
+ * A frase da taxa histórica (issue #1753) — a CONTAGEM com a amostra à vista.
+ *
+ * Três formas, e as três são honestas com o que a conta sabe:
+ *
+ * - `total: 0` → «sem dados». NUNCA «0%»: zero porcento afirmaria «já
+ *   passaram 20 e nenhum fechou», que é o oposto do silêncio — e é o número
+ *   que a previsão usaria para derrubar a etapa para perto de perda.
+ * - com amostra pequena → a fração aparece (é dado), mas o convite não: com 7
+ *   casos, arredondar é chute com cara de regra (`MINIMO_DE_CASOS`).
+ * - com amostra suficiente → a fração e a régua, para quem opera decidir.
+ *
+ * O `ganhos`/`total` sai daqui como frase, não como «40%» solto: toda medida
+ * publicada vem com a amostra (doutrina `sistema-vivo`, §medida do propósito).
+ */
+export function fraseDaTaxa(
+  taxa: TaxaDaEtapa,
+  t: (texto: string) => string = (texto) => texto,
+): string {
+  if (taxa.total === 0 || taxa.percentual === null) {
+    return t("Sem dados no período — nenhum negócio encerrado passou por esta etapa.");
+  }
+  const passaram = `${contagemDeNegocios(taxa.total, t)} ${
+    taxa.total === 1
+      ? t("encerrado passou por esta etapa")
+      : t("encerrados passaram por esta etapa")
+  }`;
+  const fechamento = `${taxa.ganhos} ${
+    taxa.ganhos === 1 ? t("foi ganho") : t("foram ganhos")
+  } (${taxa.percentual}%)`;
+  const veredito = taxa.sugestao === null ? ` ${t("Poucos casos para sugerir.")}` : "";
+  return `${passaram}; ${fechamento}.${veredito}`;
+}
+
+/**
+ * A ORIGEM do número, sem a qual «39%» é um chute que ninguém consegue
+ * contestar. Data numérica em vez de «12 meses»: o texto não envelhece quando
+ * a janela muda por query string, e `dd/MM/yyyy` é o mesmo em pt e em es.
+ */
+export function periodoDaTaxa(
+  inicio: string,
+  fim: string,
+  t: (texto: string) => string = (texto) => texto,
+): string {
+  return t("Período: de {inicio} a {fim}")
+    .replace("{inicio}", format(new Date(inicio), "dd/MM/yyyy"))
+    .replace("{fim}", format(new Date(fim), "dd/MM/yyyy"));
+}
+
+/**
+ * A contagem ao lado do campo de probabilidade, com o convite só quando a
+ * amostra sustenta.
+ *
+ * ⚠️ NADA GRAVA SOZINHO — este componente só CHAMA `aoAceitar`, que é o
+ * mesmo `aplicar(etapa.id, { win_probability })` de digitar no campo. A
+ * decisão continua sendo de quem opera, e é por isso que a proposta não toca
+ * em `crm_lead_scores` nem em nenhuma outra tabela.
+ */
+function SugestaoDeTaxa({
+  taxa,
+  inicio,
+  fim,
+  truncado,
+  desabilitado,
+  aoAceitar,
+}: {
+  taxa: TaxaDaEtapa;
+  inicio: string;
+  fim: string;
+  /** A leitura bateu o teto da rota: o número é parte do período, não todo. */
+  truncado: boolean;
+  desabilitado: boolean;
+  aoAceitar: (valor: number) => void;
+}) {
+  const t = useT();
+  const sugestao = taxa.sugestao;
+  return (
+    <div className="space-y-1">
+      <p className="text-xs leading-snug text-text-muted" data-testid={`taxa-${taxa.etapa_id}`}>
+        {fraseDaTaxa(taxa, t)} {periodoDaTaxa(inicio, fim, t)}
+        {truncado ? ` ${t("Amostra limitada: este número cobre só parte do período.")}` : ""}
+      </p>
+      {sugestao !== null ? (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={desabilitado}
+          data-testid={`usar-taxa-${taxa.etapa_id}`}
+          onClick={() => aoAceitar(sugestao)}
+        >
+          {t("Usar {chance}%?").replace("{chance}", String(sugestao))}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 export function StagesSection({
   pipelineId,
   ancoraMapeamento,
@@ -213,6 +313,11 @@ export function StagesSection({
 }) {
   const t = useT();
   const consulta = useAgentMapping(pipelineId);
+  const taxas = useTaxasDasEtapas(pipelineId);
+  // Confere o FORMATO antes de confiar: esta chave pode receber o corpo de
+  // outra leitura parada no cache, e corpo errado não pode virar «sem dados» na
+  // tela do gestor.
+  const corpoDasTaxas = taxas.data && Array.isArray(taxas.data.taxas) ? taxas.data : null;
   const criar = useCriarEtapa(pipelineId);
   const editar = useEditarEtapa(pipelineId);
   const arquivar = useArquivarEtapa(pipelineId);
@@ -366,6 +471,7 @@ export function StagesSection({
       <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
         {etapas.map((etapa, i) => {
           const passo = passos.get(etapa.id) ?? null;
+          const taxa = corpoDasTaxas?.taxas.find((linha) => linha.etapa_id === etapa.id) ?? null;
           const erroDaLinha = erro?.etapaId === etapa.id ? erro.texto : null;
           const confirmandoAqui = confirmacao?.etapaId === etapa.id ? confirmacao : null;
           const arquivandoAqui = arquivamento?.etapaId === etapa.id ? arquivamento : null;
@@ -408,6 +514,19 @@ export function StagesSection({
                     desabilitado={ocupado}
                     aoConfirmar={(valor) => aplicar(etapa.id, { win_probability: valor })}
                   />
+                  {/* Ganho e perda valem 100 e 0 NA REGRA, então não há
+                      calibração a sugerir ali — a contagem também não diria
+                      nada que a própria coluna já não diga. */}
+                  {corpoDasTaxas && taxa && !etapa.is_won && !etapa.is_lost ? (
+                    <SugestaoDeTaxa
+                      taxa={taxa}
+                      inicio={corpoDasTaxas.inicio}
+                      fim={corpoDasTaxas.fim}
+                      truncado={corpoDasTaxas.truncado}
+                      desabilitado={ocupado}
+                      aoAceitar={(valor) => aplicar(etapa.id, { win_probability: valor })}
+                    />
+                  ) : null}
                 </div>
 
                 {/* No empilhado o rótulo vai EM CIMA, como os outros dois: ao

@@ -8639,6 +8639,21 @@ export const DICIONARIO: Traducoes = {
   "Encerrar: não retomar este negócio": { es: "Cerrar: no retomar este negocio" },
   "Encerrar": { es: "Cerrar" },
   "Probabilidade": { es: "Probabilidad" },
+  // ─── Taxa histórica de ganho por etapa (#1753) ───────────────────────────
+  "Sem dados no período — nenhum negócio encerrado passou por esta etapa.": {
+    es: "Sin datos en el período: ningún negocio cerrado pasó por esta etapa.",
+  },
+  "encerrado passou por esta etapa": { es: "cerrado pasó por esta etapa" },
+  "encerrados passaram por esta etapa": { es: "cerrados pasaron por esta etapa" },
+  "foi ganho": { es: "fue ganado" },
+  "foram ganhos": { es: "fueron ganados" },
+  "Poucos casos para sugerir.": { es: "Pocos casos para sugerir." },
+  "Usar {chance}%?": { es: "¿Usar {chance}%?" },
+  "Período: de {inicio} a {fim}": { es: "Período: del {inicio} al {fim}" },
+  "Amostra limitada: este número cobre só parte do período.": {
+    es: "Muestra limitada: esta cifra cubre solo una parte del período.",
+  },
+  "Falha ao ler o histórico de etapas.": { es: "Error al leer el historial de etapas." },
   "Ver o porquê.": { es: "Ver el porqué." },
   "ver a mensagem": { es: "ver el mensaje" },
   "registro que sustenta": { es: "registro que sustenta" },

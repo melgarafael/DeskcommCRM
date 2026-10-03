@@ -86,6 +86,21 @@ function montar() {
   );
 }
 
+/**
+ * Só as leituras do FUNIL, fora a conta das demais.
+ *
+ * A tela lê mais de uma coisa hoje: o mapeamento do funil e, desde a #1753, a
+ * taxa histórica de ganho por etapa. Contar `apiClient.get` inteiro faria um
+ * número certo de releituras virar errado no dia em que a tela ganhar
+ * qualquer leitura nova — e o que estes testes querem provar é que o funil foi
+ * relido, não quantas consultas a página faz.
+ */
+function leiturasDoFunil() {
+  return vi
+    .mocked(apiClient.get)
+    .mock.calls.filter(([rota]) => String(rota).includes("/agent-mapping"));
+}
+
 /** Abre um seletor e devolve os rótulos oferecidos. */
 async function opcoesNaTela(user: ReturnType<typeof userEvent.setup>, testid: string) {
   await user.click(screen.getByTestId(testid));
@@ -255,7 +270,7 @@ describe("StagesSection — renomear, criar e reordenar", () => {
       { name: "Retorno" },
     ]);
     // Releitura: a etapa nova precisa aparecer sem F5.
-    await waitFor(() => expect(apiClient.get).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(leiturasDoFunil()).toHaveLength(2));
   });
 
   it("subir uma coluna manda a VIZINHA DA ESQUERDA, não um número de posição", async () => {
@@ -358,7 +373,7 @@ describe("StagesSection — a marcação de fechamento", () => {
     );
     // E releu o servidor: reenviar sobre um funil que mudou é o que o 409 pede
     // para evitar.
-    await waitFor(() => expect(apiClient.get).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(leiturasDoFunil()).toHaveLength(2));
   });
 
   /**
@@ -772,5 +787,131 @@ describe("StagesSection — Escape descarta o rascunho do nome e da chance (#216
       `/api/v1/pipelines/${PIPE}/stages/e1`,
       { win_probability: 40 },
     ]);
+  });
+});
+
+describe("taxa histórica por etapa — a contagem ao lado do campo (#1753)", () => {
+  /**
+   * A proposta não é modelo: é CONTAR quantos dos que passaram por cada etapa
+   * foram ganhos, mostrar a conta ao gestor e deixar a decisão de gravar com
+   * quem opera. Aqui se mede o que a tela faz com esse número:
+   *
+   * (a) mostra G/N na etapa CERTA, com o período de onde o número veio;
+   * (b) etapa sem histórico diz «sem dados» e nunca «0%»;
+   * (c) abaixo da amostra (`MINIMO_DE_CASOS`) a fração aparece e o convite some;
+   * (d) o convite grava pelo MESMO caminho de digitar no campo — nada de rota
+   *     nova de escrita, nada de `crm_lead_scores`.
+   *
+   * Os dados vêm da rota `win-rates`; as outras leituras seguem devolvendo o
+   * funil, e é por isso que o mock despacha pela URL — um corpo de outra rota
+   * parado nesta chave não pode virar «sem dados» na tela.
+   */
+  const ETAPAS_TAXA: EtapaDoFunil[] = [
+    { id: "e1", name: "Novo", is_won: false, is_lost: false },
+    { id: "e2", name: "Proposta", is_won: false, is_lost: false },
+    { id: "e5", name: "Sem histórico", is_won: false, is_lost: false },
+    { id: "e3", name: "Pago", is_won: true, is_lost: false },
+    { id: "e4", name: "Cancelado", is_won: false, is_lost: true },
+  ];
+
+  const RESPOSTA = {
+    inicio: "2025-10-03T12:00:00.000Z",
+    fim: "2026-10-03T12:00:00.000Z",
+    dias: 365,
+    truncado: false,
+    minimo_de_casos: 10,
+    taxas: [
+      { etapa_id: "e1", total: 20, ganhos: 8, percentual: 40, sugestao: 40 },
+      { etapa_id: "e2", total: 7, ganhos: 3, percentual: 43, sugestao: null },
+      { etapa_id: "e5", total: 0, ganhos: 0, percentual: null, sugestao: null },
+    ],
+  };
+
+  function montarTaxa(resposta: typeof RESPOSTA = RESPOSTA) {
+    vi.mocked(apiClient.get).mockImplementation((async (rota: string) =>
+      rota.includes("/win-rates")
+        ? { data: resposta }
+        : { data: estado({}, ETAPAS_TAXA) }) as never);
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    return render(
+      <QueryClientProvider client={qc}>
+        <StagesSection pipelineId={PIPE} ancoraMapeamento={`mapeamento-${PIPE}`} />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("lê a taxa pela rota nova, e não pela leitura do funil", async () => {
+    montarTaxa();
+    await screen.findByTestId("taxa-e1");
+    const urls = vi.mocked(apiClient.get).mock.calls.map(([rota]) => String(rota));
+    expect(urls.some((u) => u.includes(`/api/v1/pipelines/${PIPE}/stages/win-rates`))).toBe(true);
+  });
+
+  it("mostra G/N na etapa certa, com a origem do número (o período)", async () => {
+    montarTaxa();
+    const linha = await screen.findByTestId("taxa-e1");
+    expect(linha).toHaveTextContent(
+      "20 negócios encerrados passaram por esta etapa; 8 foram ganhos (40%).",
+    );
+    expect(linha).toHaveTextContent("Período: de 03/10/2025 a 03/10/2026");
+    // A etapa certa: a de Proposta (e2) tem a conta DELA, não esta.
+    expect(screen.getByTestId("taxa-e2")).toHaveTextContent("7 negócios");
+    expect(screen.getByTestId("taxa-e2")).not.toHaveTextContent("20 negócios");
+  });
+
+  it("abaixo da amostra a contagem fica e o convite some", async () => {
+    montarTaxa();
+    const linha = await screen.findByTestId("taxa-e2");
+    expect(linha).toHaveTextContent(
+      "7 negócios encerrados passaram por esta etapa; 3 foram ganhos (43%). Poucos casos para sugerir.",
+    );
+    expect(screen.queryByTestId("usar-taxa-e2")).not.toBeInTheDocument();
+    expect(screen.getByTestId("usar-taxa-e1")).toBeInTheDocument();
+  });
+
+  it("etapa sem histórico diz «sem dados», nunca 0%", async () => {
+    montarTaxa();
+    const semDados = await screen.findByTestId("taxa-e5");
+    expect(semDados).toHaveTextContent(
+      "Sem dados no período — nenhum negócio encerrado passou por esta etapa.",
+    );
+    expect(semDados).not.toHaveTextContent("0%");
+    expect(screen.queryByTestId("usar-taxa-e5")).not.toBeInTheDocument();
+  });
+
+  it("leitura truncada avisa que o número é amostra", async () => {
+    montarTaxa({ ...RESPOSTA, truncado: true });
+    expect(await screen.findByTestId("taxa-e1")).toHaveTextContent(
+      "Amostra limitada: este número cobre só parte do período.",
+    );
+  });
+
+  it("ganho e perda não recebem sugestão: lá a chance vale 100 e 0 na regra", async () => {
+    montarTaxa();
+    await screen.findByTestId("taxa-e1");
+    expect(screen.queryByTestId("taxa-e3")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("taxa-e4")).not.toBeInTheDocument();
+  });
+
+  it("aceitar grava pelo caminho de edição que já existe — e só assim", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: { etapas: [] } });
+    montarTaxa();
+
+    // Antes de clicar: nenhum PATCH.
+    await screen.findByTestId("taxa-e1");
+    expect(apiClient.patch).not.toHaveBeenCalled();
+
+    await user.click(await screen.findByTestId("usar-taxa-e1"));
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(apiClient.patch).mock.calls[0]).toEqual([
+      `/api/v1/pipelines/${PIPE}/stages/e1`,
+      { win_probability: 40 },
+    ]);
+    // A escrita é a MESMA de digitar no campo: uma rota só, sem caminho novo.
+    const urls = vi.mocked(apiClient.patch).mock.calls.map(([rota]) => String(rota));
+    expect(new Set(urls).size).toBe(1);
   });
 });
