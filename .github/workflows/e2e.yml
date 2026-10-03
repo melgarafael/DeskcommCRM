@@ -985,6 +985,7 @@ jobs:
         presenca-do-atendente.spec.ts
         trunk-sip-config.spec.ts
         fotos-no-catalogo.spec.ts
+        catalogo-busca-no-catalogo-inteiro.spec.ts
 
       # ─── PARTE 4 — a spec de VPS fresca, e quem pode entrar ao lado dela ───
       #
