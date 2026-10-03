@@ -227,6 +227,9 @@ function montarBanco(c: Cenario): Banco {
         organization_id: ORG,
         channel_session_id: c.sessaoDaConversa,
         active_ai_agent_id: c.agenteGrudado ?? null,
+        // O embed que o portão de elegibilidade lê: sem status a empresa não
+        // opera, e o worker pula antes de classificar (a régua do handoff).
+        organizations: { status: "active" },
       },
     ],
     ai_agents: c.somenteLegado === true ? [clinica] : [clinica, tecnica],
