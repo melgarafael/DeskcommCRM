@@ -140,6 +140,21 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/api\/v1\/ai\/agents\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/versions$/i,
   /^\/api\/v1\/prospecting$/,
   /^\/api\/v1\/agenda\/tipos$/,
+  // VERSÃO, PUBLICAÇÃO E TESTE DO AGENTE SERVER-TO-SERVER (issue #2052).
+  // Mesma dualidade das linhas acima: sessão OU Bearer `dsk_…`, resolvidos por
+  // `lib/api/auth-dual.ts` DENTRO de cada rota (a org sai da linha do token e
+  // nunca do path). O token precisa de `mcp:read`/`mcp:write` E de papel admin
+  // (`tokenRole`), porque trocar o prompt em vigor e publicar versão é poder de
+  // administração — a sessão continua com o rank de sempre.
+  //
+  // Os dois segmentos são FORMA DE UUID, nunca `[^/]+`: `/api/v1/ai/agents/`
+  // tem irmão literal (`assignable`) e um segmento solto daria carona a ele e a
+  // qualquer outro sub-path que ainda é só-sessão. Âncora `$` em todos: nenhum
+  // caminho futuro nasce público de carona.
+  /^\/api\/v1\/ai\/agents\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  /^\/api\/v1\/ai\/agents\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/publish$/i,
+  /^\/api\/v1\/ai\/agents\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/versions\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  /^\/api\/v1\/ai\/agents\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/versions\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/test$/i,
   /^\/_next\//,
   /^\/favicon\.ico$/,
   // O ícone da aba (`app/icon.tsx`), que o `<head>` de TODA página pede —

@@ -8,10 +8,9 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { versionPatchSchema } from "@/lib/ai/agents/validation";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -25,23 +24,28 @@ const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 type Ctx = { params: Promise<{ id: string; vid: string }> };
 
-export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
+export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const requestId = randomUUID();
   const { id, vid } = await ctx.params;
   if (!UUID_RX.test(id) || !UUID_RX.test(vid)) {
     return fail("invalid_request", "ids inválidos.", 400, { requestId });
   }
 
-  const authz = await requireRole("manager", { requestId, resource: "ai_agents" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_agents",
+    role: "manager",
+    scope: "mcp:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
+  const { organizationId, supabase } = authz;
 
-  const supabase = await createClient();
   const { data, error } = await supabase
     .from("ai_agent_versions")
     .select(VERSION_COLUMNS)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .eq("agent_id", id)
     .eq("id", vid)
     .maybeSingle();
@@ -61,10 +65,20 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     return fail("invalid_request", "ids inválidos.", 400, { requestId });
   }
 
-  const authz = await requireRole("admin", { requestId, resource: "ai_agents" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_agents",
+    role: "admin",
+    scope: "mcp:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user: authUser, org: activeOrg } = authz;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
+  const { organizationId, actor } = authz;
+
+  const teto = await tetoDeEscritaDoToken(authz, "ai_agents", requestId);
+  if (teto) return teto;
+  const authUserId = actor.type === "user" ? actor.id : null;
 
   let raw: unknown;
   try {
@@ -89,7 +103,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     .from("ai_agent_versions")
     .select("id, status, agent_id, organization_id, followup")
     .eq("id", vid)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .eq("agent_id", id)
     .maybeSingle();
 
@@ -139,7 +153,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     .from("ai_agent_versions")
     .update(update)
     .eq("id", vid)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .select(VERSION_COLUMNS)
     .single();
 
@@ -149,8 +163,9 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   void audit({
     action: "ai_agent.version_updated",
-    actorUserId: authUser.id,
-    organizationId: activeOrg.orgId,
+    actorUserId: authUserId,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: organizationId,
     resourceType: "ai_agent_version",
     resourceId: vid,
     requestId,

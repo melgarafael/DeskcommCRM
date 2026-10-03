@@ -49,6 +49,12 @@ const SCOPES: { id: string; label: string }[] = [
   // O papel viaja junto dos escopos (ver lib/mcp/auth.ts) e também não
   // aparecia em lugar nenhum da interface.
   { id: "role:manager", label: "Tratar o token como gerente (necessário p/ criar e atribuir)" },
+  // #2052: as portas de configuração cobram `tokenRole: "admin"` no token
+  // (`lib/api/auth-dual.ts`), e o papel do token SAI DESTES escopos
+  // (`lib/mcp/auth.ts`, `scopesRole` — sem nada aqui o padrão é `agent`).
+  // Sem esta linha o escopo existia na rota e ninguém conseguia concedê-lo:
+  // todo Bearer de configuração fechava em 403 `forbidden_role`.
+  { id: "role:admin", label: "Tratar o token como administrador (necessário p/ configurar o CRM)" },
   { id: "contacts:read", label: "Ler contatos" },
   { id: "contacts:write", label: "Criar e editar contatos" },
   { id: "leads:read", label: "Ler leads" },

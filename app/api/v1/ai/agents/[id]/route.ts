@@ -9,10 +9,9 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 import {
@@ -34,7 +33,7 @@ const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // GET
 // ---------------------------------------------------------------------------
 
-export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
@@ -42,17 +41,22 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("invalid_request", "id inválido.", 400, { requestId });
   }
 
-  const authz = await requireRole("manager", { requestId, resource: "ai_agents" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_agents",
+    role: "manager",
+    scope: "mcp:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
+  const { organizationId, supabase } = authz;
 
-  const supabase = await createClient();
   const { data, error } = await supabase
     .from("ai_agents")
     .select(AGENT_COLUMNS)
     .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
 
   if (error) {
@@ -80,10 +84,19 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     return fail("invalid_request", "id inválido.", 400, { requestId });
   }
 
-  const authz = await requireRole("admin", { requestId, resource: "ai_agents" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_agents",
+    role: "admin",
+    scope: "mcp:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
+  const { organizationId } = authz;
+
+  const teto = await tetoDeEscritaDoToken(authz, "ai_agents", requestId);
+  if (teto) return teto;
 
   let rawBody: unknown;
   try {
@@ -125,7 +138,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     .from("ai_agents")
     .select(AGENT_COLUMNS)
     .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
 
   if (loadErr) {
@@ -198,7 +211,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     .from("ai_agents")
     .update(update)
     .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .select(AGENT_COLUMNS)
     .single();
 
@@ -213,7 +226,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
 // DELETE — soft delete (is_active=false). 409 se is_default=true.
 // ---------------------------------------------------------------------------
 
-export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+export async function DELETE(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
@@ -224,10 +237,20 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response
     return fail("invalid_request", "id inválido.", 400, { requestId });
   }
 
-  const authz = await requireRole("admin", { requestId, resource: "ai_agents" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_agents",
+    role: "admin",
+    scope: "mcp:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user: authUser, org: activeOrg } = authz;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
+  const { organizationId, actor } = authz;
+
+  const teto = await tetoDeEscritaDoToken(authz, "ai_agents", requestId);
+  if (teto) return teto;
+  const authUserId = actor.type === "user" ? actor.id : null;
 
   const admin = createAdminClient();
 
@@ -235,7 +258,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response
     .from("ai_agents")
     .select("id, is_default, is_active, kind, archived_at")
     .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
 
   if (loadErr) {
@@ -264,7 +287,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response
     .from("ai_agents")
     .update(patch)
     .eq("id", id)
-    .eq("organization_id", activeOrg.orgId);
+    .eq("organization_id", organizationId);
 
   if (updErr) {
     return fail("internal_error", "Erro ao desativar agent.", 500, { requestId });
@@ -272,8 +295,9 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response
 
   void audit({
     action: "ai_agent.archived",
-    actorUserId: authUser.id,
-    organizationId: activeOrg.orgId,
+    actorUserId: authUserId,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: organizationId,
     resourceType: "ai_agent",
     resourceId: id,
     requestId,

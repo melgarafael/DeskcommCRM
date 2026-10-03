@@ -28,9 +28,9 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { testRunSchema } from "@/lib/ai/agents/validation";
 import { avaliarRespostaDeTeste } from "@/lib/ai/agents/avaliar-resposta-de-teste";
@@ -89,10 +89,20 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     return fail("invalid_request", "ids inválidos.", 400, { requestId });
   }
 
-  const authz = await requireRole("admin", { requestId, resource: "ai_agents" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_agents",
+    role: "admin",
+    scope: "mcp:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user: authUser, org: activeOrg } = authz;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
+  const { organizationId, actor } = authz;
+
+  const teto = await tetoDeEscritaDoToken(authz, "ai_agents_test", requestId);
+  if (teto) return teto;
+  const authUserId = actor.type === "user" ? actor.id : null;
 
   let raw: unknown;
   try {
@@ -116,7 +126,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       "id, agent_id, organization_id, system_prompt, provider, model, channel_session_id, max_steps, token_budget, cost_budget_cents, tool_ids",
     )
     .eq("id", vid)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .eq("agent_id", id)
     .maybeSingle();
 
@@ -127,7 +137,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   const { data: runRow, error: runErr } = await admin
     .from("ai_agent_runs")
     .insert({
-      organization_id: activeOrg.orgId,
+      organization_id: organizationId,
       agent_id: id,
       agent_version_id: vid,
       conversation_id: null,
@@ -150,7 +160,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   try {
     const result = await testAgentVersion(getRequestPool(), requestTurnDeps(), {
-      organizationId: activeOrg.orgId,
+      organizationId: organizationId,
       agentId: id,
       versionId: vid,
       runId: runRow.id,
@@ -176,7 +186,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     // `await` não olhava `error`, ao contrário do INSERT logo acima): a linha
     // nascia `running` e morria `running`, em toda instalação, para sempre.
     // Medido numa VPS v1.20.0: 16 execuções, 16 linhas em `running`.
-    await atualizarRun(admin, activeOrg.orgId, runRow.id, requestId, {
+    await atualizarRun(admin, organizationId, runRow.id, requestId, {
       status: "completed",
       completed_at: new Date().toISOString(),
       latency_ms: Date.now() - startedAt.getTime(),
@@ -199,10 +209,10 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       run_id: runRow.id,
       agent_id: id,
       version_id: vid,
-      organization_id: activeOrg.orgId,
+      organization_id: organizationId,
       error: mensagem,
     });
-    await atualizarRun(admin, activeOrg.orgId, runRow.id, requestId, {
+    await atualizarRun(admin, organizationId, runRow.id, requestId, {
       status: "failed",
       completed_at: new Date().toISOString(),
       latency_ms: Date.now() - startedAt.getTime(),
@@ -221,8 +231,9 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   void audit({
     action: "ai_agent.tested",
-    actorUserId: authUser.id,
-    organizationId: activeOrg.orgId,
+    actorUserId: authUserId,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: organizationId,
     resourceType: "ai_agent_version",
     resourceId: vid,
     requestId,
