@@ -104,7 +104,8 @@ export const AGENT_ACTOR_ID = 'agent-engine';
 /**
  * Envia UMA mensagem do turno pelo handler do app. Intenção exactly-once,
  * entrega at-least-once: throws (transporte) deixam o ledger em 'requested' —
- * o retry reconcilia por `messages.metadata.idempotency_key` antes de reenviar.
+ * o retry reconcilia pela PK (`messages.id` = chave) antes de reenviar, com
+ * `messages.metadata.idempotency_key` só como reserva para linha antiga.
  */
 export async function sendTurnMessage(
   db: Queryable,

@@ -21,7 +21,7 @@
 import type pg from 'pg';
 
 import { sessionHealthMetrics, type SessionHealthMetric } from '../edge/crm/session-watchdog';
-import type { JobRow } from '../queue/queue';
+import type { JobRow, Queryable } from '../queue/queue';
 
 /** nome da métrica de 1ª classe do caching — âncora do alerta e dos testes */
 export const CACHE_RATIO_METRIC = 'run_cache_read_ratio';
@@ -173,6 +173,22 @@ export interface MetricsSnapshot {
   sends: { requested: number; accepted: number; queued: number; vetoed: number; failed: number };
   /** saúde por sessão WAHA (F2-14) */
   sessions: SessionHealthMetric[];
+}
+
+/**
+ * Fila viva para o `/healthz`, que o docker consulta a cada 30s. Cada subselect desce
+ * pelo índice parcial do seu status (`idx_job_queue_claim`, `idx_job_queue_running`);
+ * agrupar por status varria a fila inteira, 90 dias de jobs terminais, para devolver
+ * duas contagens. `dead` não tem índice parcial e fica no snapshot do `/metrics`.
+ */
+export async function profundidadeDaFilaViva(
+  db: Queryable,
+): Promise<{ pending: number; running: number }> {
+  const { rows } = await db.query<{ pending: number; running: number }>(
+    `select (select count(*)::int from job_queue where status = 'pending') as pending,
+            (select count(*)::int from job_queue where status = 'running') as running`,
+  );
+  return { pending: rows[0]?.pending ?? 0, running: rows[0]?.running ?? 0 };
 }
 
 /** Snapshot agregado do GET /metrics — leitura pura, nada é mutado. */
