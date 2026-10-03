@@ -24,7 +24,7 @@ import { PONTO_POR_ID } from '@/lib/ai/pontos/registro';
 import { scrubMessage } from '@/lib/sentry/scrub';
 
 import type { Logger } from '../../obs/logger';
-import { decidirParaOSeam } from './binding-do-ponto';
+import { decidirParaOSeam, marcarEconomicoQueFalhou } from './binding-do-ponto';
 import { resolveOrgLlmConfig, type LlmEdgeConfig, type OrcamentoDaOrg } from './credentials';
 import {
   AVISO_CORPO,
@@ -559,6 +559,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
             model: input.model,
           },
     padraoDaOrganizacao: { provider: padrao.provider, defaultModel: padrao.defaultModel },
+    modelosHabilitados: padrao.enabledModels,
   }, deps.log ? { log: deps.log } : {});
 
   // Só re-resolve a credencial quando a decisão aponta para OUTRA que não a já
@@ -584,16 +585,20 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       })
     : padrao;
 
-  const model = decisao.modelId;
-  if (model === null || model === undefined) {
+  const modeloDecidido = decisao.modelId;
+  if (modeloDecidido === null || modeloDecidido === undefined) {
     throw new Error(
       'modelo LLM não definido — configure o ponto no painel de provedores, ' +
         'organizations.settings.llm.default_model, ou passe input.model',
     );
   }
-  if (config.enabledModels.length > 0 && !config.enabledModels.includes(model)) {
-    throw new LlmModelNotEnabledError(model);
+  if (config.enabledModels.length > 0 && !config.enabledModels.includes(modeloDecidido)) {
+    throw new LlmModelNotEnabledError(modeloDecidido);
   }
+  // `model`/`origem` podem mudar UMA vez: quando o modelo econômico do
+  // classificador falha, a chamada se repete no modelo de antes (ver abaixo).
+  let model = modeloDecidido;
+  let origem = decisao.origem;
   const factory = registry[config.provider];
   if (factory === undefined) {
     throw new LlmProviderUnknownError(config.provider);
@@ -680,20 +685,17 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     cacheTtl: cfg.cacheTtl ?? '1h',
   });
 
-  const startedAt = Date.now();
-  let result: Awaited<ReturnType<typeof generateText>>;
-  try {
-    input.abortSignal?.throwIfAborted();
-    // `system` aceita SystemModelMessage (com providerOptions de cache) — igual
-    // em v6 e v7 (smoke prova que o cacheControl continua virando cache_control).
-    result = await generateText({
+  // `system` aceita SystemModelMessage (com providerOptions de cache) — igual
+  // em v6 e v7 (smoke prova que o cacheControl continua virando cache_control).
+  const chamar = (modelo: string) =>
+    generateText({
       // `decisao.baseUrl` só é preenchido quando o painel apontou um endpoint
       // (gateway OpenAI-compatível, ou modelo local). Providers canônicos
       // ignoram o terceiro argumento e vão ao endpoint intrínseco.
       // `config.baseUrl` é o da PRÓPRIA credencial e só o provedor personalizado
       // (#1642) tem um: o endereço nasce junto da chave, então o agente
       // publicado nele alcança o mesmo gateway que a tela testou ao salvar.
-      model: factory(config.apiKey, model, decisao.baseUrl ?? config.baseUrl ?? undefined),
+      model: factory(config.apiKey, modelo, decisao.baseUrl ?? config.baseUrl ?? undefined),
       system: prefix.system,
       messages: input.messages,
       abortSignal: input.abortSignal,
@@ -712,40 +714,90 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
         : Math.min(maxOutputTokens ?? Infinity, input.maxOutputTokens),
       ...cacheDaCauda(config.provider, input.maxSteps),
     });
-  } catch (err) {
-    // ─── A LINHA QUE FALTAVA ────────────────────────────────────────────────
-    //
-    // Até aqui o INSERT em llm_calls vivia só DEPOIS desta chamada, sem `try`
-    // em volta. Provedor recusou a chave, modelo não existe, conta sem saldo? A
-    // exceção subia e NADA ficava gravado. A tabela que deveria explicar era
-    // justamente a que ficava vazia no caso que precisa de explicação — e é a
-    // causa direta de "o agente não responde e não aparece erro em lugar
-    // nenhum".
-    //
-    // Grava e RELANÇA: quem chama continua decidindo o que fazer com a falha
-    // (o worker reagenda, o dry-run mostra na tela). Engolir aqui trocaria uma
-    // falha invisível por uma silenciosa, que é pior.
+
+  // ─── A LINHA QUE FALTAVA ──────────────────────────────────────────────────
+  //
+  // Até aqui o INSERT em llm_calls vivia só DEPOIS desta chamada, sem `try`
+  // em volta. Provedor recusou a chave, modelo não existe, conta sem saldo? A
+  // exceção subia e NADA ficava gravado. A tabela que deveria explicar era
+  // justamente a que ficava vazia no caso que precisa de explicação — e é a
+  // causa direta de "o agente não responde e não aparece erro em lugar
+  // nenhum".
+  //
+  // Grava e RELANÇA: quem chama continua decidindo o que fazer com a falha
+  // (o worker reagenda, o dry-run mostra na tela). Engolir aqui trocaria uma
+  // falha invisível por uma silenciosa, que é pior.
+  // `coberta`: a falha vai ser repetida no modelo de reserva. Ela ainda vira
+  // linha em llm_calls (é a régua de quanto o econômico falha), mas com origem
+  // própria e em `warn` — o erro de verdade só existe se a reserva também cair.
+  const registrarAFalha = async (inicio: number, err: unknown, coberta = false) => {
     await registrarFalha(db, {
       input,
       purpose,
       provider: config.provider,
       model,
-      origem: decisao.origem,
-      latencyMs: Date.now() - startedAt,
+      origem: coberta ? 'economico_coberto_pela_reserva' : origem,
+      latencyMs: Date.now() - inicio,
       erro: err,
     }).catch(() => {
       // O log da falha não pode causar uma segunda falha. Se o próprio INSERT
       // de erro falhar, o erro ORIGINAL é o que interessa a quem chamou.
     });
-    deps.log?.error('llm: chamada falhou', {
+    const campos = {
       organization_id: input.tenantId,
       purpose,
       provider: config.provider,
       model,
-      origem_da_escolha: decisao.origem,
+      origem_da_escolha: coberta ? 'economico_coberto_pela_reserva' : origem,
       ...normalizarErro(err),
+    };
+    if (coberta) deps.log?.warn('llm: chamada falhou', campos);
+    else deps.log?.error('llm: chamada falhou', campos);
+  };
+
+  let startedAt = Date.now();
+  let result: Awaited<ReturnType<typeof generateText>>;
+  try {
+    input.abortSignal?.throwIfAborted();
+    result = await chamar(model);
+  } catch (err) {
+    // O modelo econômico do classificador foi RECUSADO pelo provedor: repete
+    // UMA vez no modelo que valia antes dele. Só para a recusa que é do
+    // MODELO — não existe para esta chave (404) ou o acesso a ele foi negado
+    // (403). Instabilidade (5xx, 429) não troca de modelo: o classificador já
+    // degrada sozinho, como degradava no modelo do agente, e repetir dobraria a
+    // espera justo quando o provedor está mal. Orçamento nunca se repete.
+    // Resposta fora do formato também não é coberta — por isso só entram no
+    // degrau econômico pontos que degradam sem repetir o turno.
+    const reserva = decisao.reserva;
+    const { error_code: codigoDaFalha, http_status: statusDaFalha } = normalizarErro(err);
+    const recusaDoModelo = codigoDaFalha === 'modelo_inexistente' || statusDaFalha === 403;
+    const vaiParaAReserva =
+      reserva !== undefined &&
+      recusaDoModelo &&
+      !(err instanceof LlmBudgetExceededError) &&
+      input.abortSignal?.aborted !== true &&
+      (config.enabledModels.length === 0 || config.enabledModels.includes(reserva.modelId));
+    await registrarAFalha(startedAt, err, vaiParaAReserva);
+    if (!vaiParaAReserva || reserva === undefined) throw err;
+    // Os próximos turnos desta organização param de tentar este econômico por
+    // um tempo — senão cada classificação pagaria a recusa antes da reserva.
+    marcarEconomicoQueFalhou(input.tenantId, config.provider, model, Date.now());
+    deps.log?.warn('llm: o modelo econômico falhou — repetindo no modelo de antes', {
+      organization_id: input.tenantId,
+      purpose,
+      modelo_economico: model,
+      modelo_de_reserva: reserva.modelId,
     });
-    throw err;
+    model = reserva.modelId;
+    origem = reserva.origem;
+    startedAt = Date.now();
+    try {
+      result = await chamar(model);
+    } catch (errDaReserva) {
+      await registrarAFalha(startedAt, errDaReserva);
+      throw errDaReserva;
+    }
   }
   const latencyMs = Date.now() - startedAt;
 
@@ -781,7 +833,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       usage.cacheWriteTokens,
       cost,
       latencyMs,
-      decisao.origem,
+      origem,
       input.agentId ?? null,
     ],
   );
@@ -795,7 +847,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     // POR QUE este modelo, e não só QUAL: é a diferença entre um log que
     // confirma o que aconteceu e um que explica uma configuração que não
     // pegou. Vira coluna em llm_calls na frente de logs.
-    origem_da_escolha: decisao.origem,
+    origem_da_escolha: origem,
     ...usage,
     cost_cents: cost,
     latency_ms: latencyMs,
@@ -817,7 +869,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     costCents: cost,
     latencyMs,
     /** De onde veio a escolha — o painel lê isto para explicar cada ponto. */
-    origem: decisao.origem,
+    origem,
     avisos: decisao.avisos,
   };
 }

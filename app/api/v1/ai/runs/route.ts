@@ -148,13 +148,16 @@ export async function GET(req: NextRequest): Promise<Response> {
       //  - `jev_observacao`: o Jev falhou numa tarefa do turno (a manipulação,
       //    o roteador, a resposta ao follow-up) — o turno seguiu como sem ele;
       //  - `reserva_do_jev` numa linha de erro: o roteador decidindo, e a IA de
-      //    sempre escolheu o agente no lugar do Jev.
+      //    sempre escolheu o agente no lugar do Jev;
+      //  - `economico_coberto_pela_reserva`: o modelo econômico foi recusado e a
+      //    mesma chamada se repetiu no modelo de antes.
       // A falha do Jev com origem `jev` é a do clima sem reserva: aí é real.
       consequencia:
         l.status === "erro" &&
         l.origem_da_escolha !== "jev_cobriu" &&
         l.origem_da_escolha !== "jev_observacao" &&
-        l.origem_da_escolha !== "reserva_do_jev"
+        l.origem_da_escolha !== "reserva_do_jev" &&
+        l.origem_da_escolha !== "economico_coberto_pela_reserva"
           ? (ponto?.sintomaDeFalha ?? null)
           : null,
       oQueFazer: l.status === "erro" ? (O_QUE_FAZER[l.error_code ?? ""] ?? null) : null,
