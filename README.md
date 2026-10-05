@@ -125,6 +125,10 @@ Caddy que não caberia. Num caso específico — proxy em `--network host`, como
 ele **pergunta em vez de adivinhar**, porque publicar atrás do proxy errado instala "com
 sucesso" um site mudo. Detalhes em [`hostgator-setup-kit/README.md`](hostgator-setup-kit/README.md#vps-que-já-vem-com-proxy-próprio-hostinger-coolify-dokploy).
 
+### ☁️ Deploy com 1 clique
+
+[![Deploy on RepoCloud](https://d16t0pc4846x52.cloudfront.net/deploylobe.svg)](https://repocloud.io/details/Deskcomm/)
+
 ### Primeiro acesso
 
 Abra `https://<seu-domínio>` (o cadeado leva ~1 min pra aparecer), entre com o admin, e tenha o
