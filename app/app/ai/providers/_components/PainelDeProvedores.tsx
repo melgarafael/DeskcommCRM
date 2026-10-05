@@ -40,6 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useT } from "@/hooks/i18n/useT";
 
 import { CartaoDoJev, jevNoPonto, useDadosDoJev, type DadosDoJev } from "./CartaoDoJev";
@@ -363,18 +364,19 @@ function CartaoDoPadrao({ dados, aoSalvar }: { dados: Dados; aoSalvar: () => Pro
               </p>
             </>
           ) : (
-            <Select value={modelId} onValueChange={setModelId}>
-              <SelectTrigger data-testid="padrao-modelo">
-                <SelectValue placeholder={t("escolha")} />
-              </SelectTrigger>
-              <SelectContent>
-                {modelosDoProvedor.map((m) => (
-                  <SelectItem key={m.model_id} value={m.model_id}>
-                    {m.display_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              data-testid="padrao-modelo"
+              options={modelosDoProvedor.map((m) => ({
+                value: m.model_id,
+                label: m.display_name,
+                keywords: [m.model_id],
+              }))}
+              value={modelId}
+              onValueChange={setModelId}
+              placeholder={t("escolha")}
+              searchPlaceholder={t("Buscar modelo…")}
+              emptyMessage={t("Nenhum modelo encontrado")}
+            />
           )}
         </div>
 
@@ -612,36 +614,36 @@ function CartaoDoPonto({
                 </p>
               </>
             ) : (
-              <Select value={modelId} onValueChange={setModelId}>
-                <SelectTrigger data-testid={`modelo-${ponto.id}`}>
-                  <SelectValue placeholder={t("escolha")} />
-                </SelectTrigger>
-                <SelectContent>
-                  {modelosDoProvider.map((m) => (
-                    <SelectItem key={m.model_id} value={m.model_id}>
-                      {m.display_name}
-                      {ponto.exige.tools && !m.supports_tools ? ` — ${t("sem ferramentas")}` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                data-testid={`modelo-${ponto.id}`}
+                options={modelosDoProvider.map((m) => ({
+                  value: m.model_id,
+                  label:
+                    m.display_name +
+                    (ponto.exige.tools && !m.supports_tools ? ` — ${t("sem ferramentas")}` : ""),
+                  keywords: [m.model_id],
+                }))}
+                value={modelId}
+                onValueChange={setModelId}
+                placeholder={t("escolha")}
+                searchPlaceholder={t("Buscar modelo…")}
+                emptyMessage={t("Nenhum modelo encontrado")}
+              />
             )}
           </div>
 
           <div>
             <Label className="text-xs">{t("Chave")}</Label>
-            <Select value={credentialId} onValueChange={setCredentialId}>
-              <SelectTrigger data-testid={`chave-${ponto.id}`}>
-                <SelectValue placeholder={t("da instalação")} />
-              </SelectTrigger>
-              <SelectContent>
-                {credsDoProvider.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.label} ••{c.api_key_last4 ?? "??"}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              data-testid={`chave-${ponto.id}`}
+              options={credsDoProvider.map((c) => ({
+                value: c.id,
+                label: `${c.label} ••${c.api_key_last4 ?? "??"}`,
+              }))}
+              value={credentialId}
+              onValueChange={setCredentialId}
+              placeholder={t("da instalação")}
+            />
           </div>
 
           {aceitaEndpointProprio && (

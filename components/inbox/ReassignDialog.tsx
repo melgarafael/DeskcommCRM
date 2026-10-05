@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -170,23 +171,17 @@ export function ReassignDialog({
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="reassign-target">{t("Transferir para")}</Label>
-            <Select value={toUserId} onValueChange={setToUserId}>
-              <SelectTrigger id="reassign-target" className="w-full">
-                <SelectValue
-                  placeholder={members.isLoading ? t("Carregando atendentes…") : t("Escolha o atendente")}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {options.map((m) => (
-                  <SelectItem key={m.user_id} value={m.user_id}>
-                    {m.full_name ?? `${t("Atendente")} ${m.user_id.slice(0, 8)}`}
-                    <span className="ml-1 text-muted-foreground">
-                      · {t(ROLE_LABEL[m.role] ?? m.role)}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              id="reassign-target"
+              className="w-full"
+              options={options.map((m) => ({
+                value: m.user_id,
+                label: `${m.full_name ?? `${t("Atendente")} ${m.user_id.slice(0, 8)}`} · ${t(ROLE_LABEL[m.role] ?? m.role)}`,
+              }))}
+              value={toUserId}
+              onValueChange={setToUserId}
+              placeholder={members.isLoading ? t("Carregando atendentes…") : t("Escolha o atendente")}
+            />
             {!members.isLoading && options.length === 0 && (
               <p className="text-xs text-muted-foreground">
                 {t("Nenhum outro atendente disponível nesta organização.")}

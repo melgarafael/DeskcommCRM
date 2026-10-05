@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
@@ -315,24 +316,24 @@ export function RouterEditorClient({
             <h3 className="text-sm font-medium">{t("Modelo que identifica a intenção")}</h3>
             <div className="space-y-1">
               <Label htmlFor="router-classifier">{t("Modelo do classificador")}</Label>
-              <Select
+              <SearchableSelect
+                id="router-classifier"
+                options={[
+                  { value: AUTO, label: t("Automático — usa o provedor da organização") },
+                  ...classifierModels.map((m) => ({
+                    value: `${m.provider}::${m.model_id}`,
+                    label:
+                      `${m.display_name} · ${m.provider}` +
+                      (m.origem === "plataforma" ? ` (${t("chave desta instalação")})` : ""),
+                    keywords: [m.model_id],
+                  })),
+                ]}
                 value={classifier}
                 onValueChange={setClassifier}
                 disabled={!canManage || classifierModels.length === 0}
-              >
-                <SelectTrigger id="router-classifier">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={AUTO}>{t("Automático — usa o provedor da organização")}</SelectItem>
-                  {classifierModels.map((m) => (
-                    <SelectItem key={`${m.provider}::${m.model_id}`} value={`${m.provider}::${m.model_id}`}>
-                      {m.display_name} · {m.provider}
-                      {m.origem === "plataforma" ? ` (${t("chave desta instalação")})` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                searchPlaceholder={t("Buscar modelo…")}
+                emptyMessage={t("Nenhum modelo encontrado")}
+              />
               <p className="text-xs text-muted-foreground">
                 {classifierModels.length === 0
                   ? t(

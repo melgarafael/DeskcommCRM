@@ -1,13 +1,8 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import type { OpcaoDeSelecao } from "@/lib/ui/filtrar-opcoes";
 import { Label } from "@/components/ui/label";
 import { useT } from "@/hooks/i18n/useT";
 import {
@@ -58,41 +53,40 @@ export function CredentialPicker({
   // Sem nenhuma das duas origens não há o que escolher — e é aí que o atalho
   // para cadastrar precisa aparecer.
   const semOpcao = filtered.length === 0 && !instalacaoTemChave;
+  const opcoes: OpcaoDeSelecao[] = [
+    // A chave do `.env` é o caso MAIS COMUM do produto — quem instala pelo
+    // kit cola a chave no terminal e nunca abre a tela de Credenciais. O
+    // runtime sempre soube usá-la; só esta tela não deixava escolhê-la, e o
+    // resultado era um editor onde o dono não conseguia salvar nada.
+    ...(instalacaoTemChave
+      ? [{ value: CHAVE_DA_INSTALACAO, label: `${t("A chave desta instalação")} (${provider})` }]
+      : []),
+    ...filtered.map((c) => ({
+      value: c.id,
+      label: `${c.label} · …${c.api_key_last4 ?? "????"} · ${t(STATUS_LABEL[credentialStatus(c)])}`,
+    })),
+    ...(semOpcao
+      ? [
+          {
+            value: "__none__",
+            label: `${t("Nenhuma credencial")} ${provider} ${t("cadastrada")}`,
+            disabled: true,
+          },
+        ]
+      : []),
+  ];
 
   return (
     <div className="space-y-1">
       <Label htmlFor={id}>{t("Chave de acesso")}</Label>
-      <Select value={value || undefined} onValueChange={onChange} disabled={disabled}>
-        <SelectTrigger id={id}>
-          <SelectValue placeholder={t("Escolha uma chave")} />
-        </SelectTrigger>
-        <SelectContent>
-          {/*
-            A chave do `.env` é o caso MAIS COMUM do produto — quem instala pelo
-            kit cola a chave no terminal e nunca abre a tela de Credenciais. O
-            runtime sempre soube usá-la; só esta tela não deixava escolhê-la, e o
-            resultado era um editor onde o dono não conseguia salvar nada.
-          */}
-          {instalacaoTemChave ? (
-            <SelectItem value={CHAVE_DA_INSTALACAO}>
-              {t("A chave desta instalação")} ({provider})
-            </SelectItem>
-          ) : null}
-          {filtered.map((c) => {
-            const st = credentialStatus(c);
-            return (
-              <SelectItem key={c.id} value={c.id}>
-                {c.label} · …{c.api_key_last4 ?? "????"} · {t(STATUS_LABEL[st])}
-              </SelectItem>
-            );
-          })}
-          {semOpcao ? (
-            <SelectItem value="__none__" disabled>
-              {t("Nenhuma credencial")} {provider} {t("cadastrada")}
-            </SelectItem>
-          ) : null}
-        </SelectContent>
-      </Select>
+      <SearchableSelect
+        id={id}
+        options={opcoes}
+        value={value || undefined}
+        onValueChange={onChange}
+        disabled={disabled}
+        placeholder={t("Escolha uma chave")}
+      />
       {semOpcao ? (
         <p className="text-xs text-muted-foreground">
           <Link

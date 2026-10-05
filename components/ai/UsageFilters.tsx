@@ -8,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useT } from "@/hooks/i18n/useT";
@@ -81,20 +82,18 @@ export function UsageFilters({ agents, initial }: Props) {
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <div className="space-y-1">
-        <Label className="text-xs text-muted-foreground">{t("Agente")}</Label>
-        <Select value={agentId} onValueChange={setAgentId}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_AGENTS}>{t("Todos")}</SelectItem>
-            {agents.map((a) => (
-              <SelectItem key={a.id} value={a.id}>
-                {a.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Label htmlFor="uso-filtro-agente" className="text-xs text-muted-foreground">
+          {t("Agente")}
+        </Label>
+        <SearchableSelect
+          id="uso-filtro-agente"
+          options={[
+            { value: ALL_AGENTS, label: t("Todos") },
+            ...agents.map((a) => ({ value: a.id, label: a.name })),
+          ]}
+          value={agentId}
+          onValueChange={setAgentId}
+        />
       </div>
 
       <div className="space-y-1">

@@ -30,7 +30,7 @@ import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
 import { useEditLead } from "@/hooks/kanban/useUpdateLead";
 import { useBulkAction } from "@/hooks/kanban/useBulkAction";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { cn } from "@/lib/utils";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
@@ -443,18 +443,15 @@ function EtapaDoNegocio({ lead, onMovido }: { lead: LeadRow; onMovido: () => voi
       <label className="block text-xs font-medium text-text" htmlFor={`etapa-${lead.id}`}>
         {t("Etapa do funil")}
       </label>
-      <Select value={lead.stage_id} onValueChange={(v) => void escolher(v)} disabled={mover.isPending}>
-        <SelectTrigger id={`etapa-${lead.id}`} className="h-8 w-full text-xs" data-testid="inbox-etapa-select">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {etapas.map((e) => (
-            <SelectItem key={e.id} value={e.id} className="text-xs">
-              {e.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <SearchableSelect
+        id={`etapa-${lead.id}`}
+        className="h-8 w-full text-xs"
+        data-testid="inbox-etapa-select"
+        options={etapas.map((e) => ({ value: e.id, label: e.name }))}
+        value={lead.stage_id}
+        onValueChange={(v) => void escolher(v)}
+        disabled={mover.isPending}
+      />
     </div>
   );
 }

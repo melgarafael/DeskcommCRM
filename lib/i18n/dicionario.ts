@@ -37,6 +37,9 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  // ─── CAIXAS DE SELEÇÃO COM BUSCA ───
+  "Buscar modelo…": {"es": "Buscar modelo…"},
+  "Nenhum modelo encontrado": {"es": "No se encontró ningún modelo"},
   // ─── EMPRESAS, PESSOAS E IMPORTAÇÃO (metade B2B do #1621, de @renatofortal) ───
   "Arquivo": {"es": "Archivo"},
   "Atualizado": {"es": "Actualizado"},

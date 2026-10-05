@@ -10,7 +10,7 @@ Localização: `components/ui/`. Os 14 instalados (ver `ls components/ui/`):
 
 `avatar` · `badge` · `button` · `card` · `dialog` · `dropdown-menu` · `input` · `label` · `scroll-area` · `separator` · `sheet` · `skeleton` · `sonner` · `tabs` · `textarea`
 
-Próximas adições previstas (não instalados ainda): `tooltip`, `select`, `command`, `popover`, `toggle`, `progress`. Quando chegarem, atualizar este doc.
+Próximas adições previstas (não instalados ainda): `command`, `toggle`, `progress`. Quando chegarem, atualizar este doc. (`tooltip`, `select` e `popover` já estão em `components/ui/`.)
 
 ---
 
@@ -294,3 +294,28 @@ Badge especializada para tags livres (cliente VIP, frete-grátis, etc.). Cor neu
 4. **Badge não compete com texto.** Use no máx 2 badges adjacentes; se mais, vira lista vertical.
 5. **Modal não chama Modal.** Se um Dialog precisa abrir outro Dialog, repense fluxo (provavelmente é Sheet → Dialog ou wizard).
 6. **Tooltip nunca contém ação.** Tooltip é informação read-only. Se precisa de ação, é Popover.
+
+## SearchableSelect — caixa de seleção com busca
+
+`components/ui/searchable-select.tsx`. Use no lugar do `Select` sempre que a lista vier de dado (modelos de IA, atendentes, etapas, credenciais, agentes). A busca só aparece a partir de 8 opções (`MINIMO_PARA_BUSCA`), então lista curta fica igual ao `Select`.
+
+```tsx
+<Label htmlFor="model">{t("Modelo")}</Label>
+<SearchableSelect
+  id="model"
+  options={models.map((m) => ({ value: m.model_id, label: m.display_name, keywords: [m.model_id] }))}
+  value={value || undefined}
+  onValueChange={setValue}
+  placeholder={t("Selecione um modelo")}
+  searchPlaceholder={t("Buscar modelo…")}
+  emptyMessage={t("Nenhum modelo encontrado")}
+/>
+```
+
+- `label` é o que aparece e o que a busca procura. `keywords` é o que a pessoa digita mas não lê (o id técnico). O `value` não entra na busca.
+- A busca ignora acento, caixa e pontuação, e aceita as palavras em qualquer ordem ("4 sonnet" acha "Claude Sonnet 4.6").
+- Teclado: setas, Home/End, Enter escolhe, Esc fecha. Uma letra digitada no gatilho fechado abre a caixa já buscando por ela.
+- Papéis ARIA iguais aos do `Select` (`combobox` / `option`): teste pela tela, não por detalhe do Radix.
+- Valor fora da lista aparece cru no gatilho, em vez de deixá-lo em branco.
+- Sem grupos (`SelectGroup`/`SelectLabel`). Lista agrupada continua no `Select` até alguém precisar disso de verdade.
+- A cerca `tests/unit/selecao-longa-tem-busca.test.ts` impede caixa nova de lista dinâmica sem busca e lista o que ainda falta migrar.
