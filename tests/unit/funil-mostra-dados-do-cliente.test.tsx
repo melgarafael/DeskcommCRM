@@ -23,11 +23,12 @@ import { join } from "node:path";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const podeCriarContato = vi.hoisted(() => vi.fn(() => true));
 const useContact = vi.hoisted(() => vi.fn());
 const mutateAsync = vi.hoisted(() => vi.fn());
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
 
-vi.mock("@/hooks/auth/AuthProvider", () => ({ usePermission: () => true, useActiveOrg: () => ({ country: null }) }));
+vi.mock("@/hooks/auth/AuthProvider", () => ({ usePermission: podeCriarContato, useActiveOrg: () => ({ country: null }) }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (texto: string) => texto }));
 vi.mock("@/hooks/contacts/useContact", () => ({ useContact }));
 vi.mock("@/hooks/contacts/useUpdateContact", () => ({
@@ -67,6 +68,7 @@ const CONTATO = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  podeCriarContato.mockReturnValue(true);
   useContact.mockReturnValue({ data: { data: CONTATO }, isLoading: false, isError: false });
   mutateAsync.mockResolvedValue({ data: CONTATO });
 });
@@ -140,6 +142,11 @@ describe("ContatoNoCard", () => {
 });
 
 describe("ContatoDoNegocio — as abas do dossiê", () => {
+  it("somente leitura não oferece criação", () => {
+    podeCriarContato.mockReturnValue(false);
+    comQuery(<ContatoDoNegocio contactId={null} pipelineId="p-1" lead={{ id: "lead-1", title: "Pessoa" } as never} />);
+    expect(screen.queryByRole("button", { name: "Criar contato" })).not.toBeInTheDocument();
+  });
   it("cria pela ficha, mostra o contato e mantém o card como alvo único", async () => {
     const lead = { id: "lead-1", title: "Ana Souza", description: "nota preservada", custom_fields: { phone_number: "+5511999998888" }, tags: ["rede"] };
     const fetch = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(_init?.method === "POST" ? { data: { contact: CONTATO, action: "created" } } : { data: [] }), { status: 201 }));

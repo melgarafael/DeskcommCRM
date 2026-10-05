@@ -65,7 +65,7 @@ export function ContatoDoNegocio({ contactId, pipelineId, leadId, lead }: Props)
   const qc = useQueryClient();
   const [criando, setCriando] = useState(false);
   const [criado, setCriado] = useState<{ leadId: string; contactId: string } | null>(null);
-  const idVinculado = contactId ?? (criado?.leadId === leadId ? criado?.contactId : null);
+  const idVinculado = contactId ?? (criado?.leadId === (lead?.id ?? leadId) ? criado?.contactId : null);
   const iniciais = lead ? dadosDoCardParaContato(lead) : undefined;
   return (
     <>
@@ -82,6 +82,7 @@ export function ContatoDoNegocio({ contactId, pipelineId, leadId, lead }: Props)
           {criando && lead && (
             <>
               <NewContactDialog
+                key={lead.id}
                 open={criando}
                 onOpenChange={setCriando}
                 leadId={lead.id}
