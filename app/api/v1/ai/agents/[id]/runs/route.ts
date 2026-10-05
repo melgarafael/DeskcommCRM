@@ -118,7 +118,13 @@ export function paraLinhaDeExecucao(c: LlmCallRow): Record<string, unknown> {
     // zero seria uma afirmação falsa sobre o turno.
     steps_count: null,
     tool_calls: null,
-    is_dry_run: false,
+    // `agent_preview` NÃO quer dizer teste: o rascunho do modo assistido
+    // (`reply-drafts.ts`, `kind: "assisted"`) grava o mesmo purpose sobre conversa
+    // real com contato real. O que separa o ensaio é o contato: o sandbox roda com
+    // `contactId: null` (`TurnPreview.contactId` — "null means a scenario"), e é
+    // isso que chega a `llm_calls.contact_id`. Versão e run do teste não estão em
+    // `llm_calls`.
+    is_dry_run: c.purpose === "agent_preview" && c.contact_id === null,
     started_at: c.created_at,
     completed_at: c.created_at,
     created_at: c.created_at,

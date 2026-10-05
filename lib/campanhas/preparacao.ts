@@ -98,6 +98,7 @@ async function classificar(
     organizationId: entrada.organizationId,
     filtro: entrada.filtro,
     agora: entrada.agora,
+    corpo: entrada.corpo,
   });
   const jaEmCampanha = await contatosJaEmCampanha(
     admin,
@@ -113,7 +114,7 @@ async function classificar(
     // A saudação NÃO é resolvida aqui: ela é da hora do envio. O token fica no
     // corpo congelado e o despacho o troca — ver `rodada.ts`.
     renderizar: (c: CandidatoDaAudiencia) => {
-      const r = renderizar(entrada.corpo, { nome: c.nome });
+      const r = renderizar(entrada.corpo, { nome: c.nome, lead: c.lead, contato: c.contato });
       return { texto: r.texto, faltando: r.faltando };
     },
   });

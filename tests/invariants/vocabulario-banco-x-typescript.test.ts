@@ -434,6 +434,16 @@ const PARES: Array<{
     arquivo: "lib/organizacao/operante.ts",
     simbolo: "TIPOS_DE_SUSPENSAO",
   },
+  {
+    tabela: "before_send_traces",
+    coluna: "tipo_envio",
+    // lib/agent-engine/guardrails/before-send.ts → TipoDeEnvio. Migration 0535
+    // (#2227, #2112): o trace diz se o envio vetado era resposta ou disparo, e a
+    // rota de retenção escolhe a janela por ele. `null` (linha anterior à 0535)
+    // passa no CHECK e é lido como resposta.
+    arquivo: "lib/agent-engine/guardrails/before-send.ts",
+    simbolo: "TipoDeEnvio",
+  },
 ];
 
 /** Tira um nível de parênteses externos, se ele envolver a expressão inteira. */

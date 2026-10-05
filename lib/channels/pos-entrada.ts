@@ -39,6 +39,7 @@
  * dentro, com log, e o seguinte roda mesmo assim.
  */
 import { audit } from "@/lib/audit";
+import { idsDosCanaisDesativados } from "@/lib/channels/desativado";
 import { encerraDemanda } from "@/lib/leads/encerramento";
 import { garantirLeadDaConversa } from "@/lib/leads/nascimento-do-lead";
 import type { CanonicalLostReason } from "@/lib/schemas/leads";
@@ -418,6 +419,29 @@ async function abrirDemanda(admin: Admin, entrada: EntradaDeMensagem): Promise<v
  */
 async function pedirDespachoDoAgente(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
   if (!entrada.messageId) return;
+
+  // Canal desativado pelo operador nunca acorda o agente: a entrega foi gravada
+  // (quarentena), mas não gera turno, fila nem gasto. Uma ida curta, antes do
+  // `emit_event` — o ponto mais barato da cadeia, comum aos canais.
+  // Falha para dentro de propósito: se a leitura falhar, despacha — as
+  // barreiras de baixo (drain, elegibilidade, turno) também leem o flag, e a
+  // ingestão nunca pode virar 500 por causa de um passo de efeito.
+  try {
+    const idsOff = await idsDosCanaisDesativados(admin, entrada.organizationId);
+    if (idsOff.includes(entrada.channelSessionId)) {
+      logger.info("pos-entrada: canal desativado — despacho pulado", {
+        organization_id: entrada.organizationId,
+        conversation_id: entrada.conversationId,
+        origem: entrada.origem,
+      });
+      return;
+    }
+  } catch (err) {
+    logger.warn("pos-entrada: leitura de canais desativados falhou — despachando", {
+      organization_id: entrada.organizationId,
+      detail: err instanceof Error ? err.message.slice(0, 120) : "unknown",
+    });
+  }
 
   const { error } = await admin.rpc("emit_event" as never, {
     p_event_type: "ai_agent.dispatch_requested",

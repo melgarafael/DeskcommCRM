@@ -153,9 +153,12 @@ describe("guardrail de promessa — parsePromiseClassification (#2124, leitor 6 
       '{"isPromise": false, "suspectPhrase": null}',
     ].join("\n");
 
-    expect(parsePromiseClassification(texto, log)).toEqual({
+    expect(parsePromiseClassification(texto, "Esse ajuste te dou de graça.", log)).toEqual({
       isPromise: true,
       suspectPhrase: "te dou de graça",
+      // A cópia lida não traz a Pergunta 2 (#1873) → degrada ao léxico, que não vê retorno.
+      prometeuRetornoHumano: false,
+      retornoSoDoAssistente: false,
     });
     // Leu JSON de verdade: nenhum warn de parse-fail (o recorte antigo avisava
     // `invalid_json` aqui porque o span abrangia as duas cópias).
@@ -165,9 +168,14 @@ describe("guardrail de promessa — parsePromiseClassification (#2124, leitor 6 
   it("saída sem JSON continua caindo no fail-open de hoje, com o mesmo warn", () => {
     const semJson = vi.fn();
     const logSemJson: Logger = { info: vi.fn(), warn: semJson, error: vi.fn() };
-    expect(parsePromiseClassification("sem veredito nenhum", logSemJson)).toEqual({
+    // A candidata é uma que o LÉXICO pega: sem veredito, `isPromise` continua
+    // fail-open, mas o retorno humano degrada ao léxico (#1873) e fica `true`.
+    const candidataQueOLexicoPega = "Vou encaminhar para o responsável e te retorno.";
+    expect(parsePromiseClassification("sem veredito nenhum", candidataQueOLexicoPega, logSemJson)).toEqual({
       isPromise: false,
       suspectPhrase: null,
+      prometeuRetornoHumano: true,
+      retornoSoDoAssistente: false,
     });
     expect(semJson).toHaveBeenCalledWith(
       expect.stringContaining('fail-open p/ "sem promessa"'),
@@ -178,9 +186,11 @@ describe("guardrail de promessa — parsePromiseClassification (#2124, leitor 6 
     // critério de antes ({…} havia para o regex gordo, mas não parseava).
     const invalido = vi.fn();
     const logInvalido: Logger = { info: vi.fn(), warn: invalido, error: vi.fn() };
-    expect(parsePromiseClassification("isto aqui não fecha: {quebrado}", logInvalido)).toEqual({
+    expect(parsePromiseClassification("isto aqui não fecha: {quebrado}", "Bom dia!", logInvalido)).toEqual({
       isPromise: false,
       suspectPhrase: null,
+      prometeuRetornoHumano: false,
+      retornoSoDoAssistente: false,
     });
     expect(invalido).toHaveBeenCalledWith(
       expect.stringContaining('fail-open p/ "sem promessa"'),

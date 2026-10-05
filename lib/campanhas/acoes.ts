@@ -24,6 +24,7 @@ import { baseLegalValida, motivoParaExcluir, recusouMarketing } from "./elegibil
 import { ehStatusDaCampanha, podeTransitar } from "./maquina-de-estados";
 import { prepararCampanha } from "./preparacao";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
+import { camposDoDestinatario } from "./consulta-de-audiencia";
 import { renderizar } from "./renderizador";
 import type { StatusDaCampanha } from "./tipos";
 
@@ -429,9 +430,17 @@ export async function testarAcao(
     };
   }
 
+  // Os campos personalizados que o TEXTO usa entram aqui pelo MESMO caminho da
+  // prévia: teste que não resolvia `{{lead.gancho}}` reprovaria o texto que o
+  // envio manda certo.
+  const campos = await camposDoDestinatario(admin, {
+    organizationId: c.organization_id,
+    contactId: linha.id,
+    corpo: c.message_body ?? "",
+  });
   const render = renderizar(
     c.message_body ?? "",
-    { nome: nomeDoContato(linha) },
+    { nome: nomeDoContato(linha), ...campos },
     { agora, fuso },
   );
   if (render.faltando.length > 0) {

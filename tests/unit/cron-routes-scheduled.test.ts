@@ -67,12 +67,15 @@ describe("rotas de cron × agendamento no self-host", () => {
 
   it("todo agendamento aponta para uma rota que existe", () => {
     // A direção contrária: linha de crontab para rota apagada bate 404 a cada
-    // minuto, em silêncio, porque o `curl -fsS` manda tudo para /dev/null.
+    // minuto. O `curl -fsS` manda o CORPO para /dev/null, mas o status vai
+    // para o STDERR e o `||` do entrypoint reporta a rota — ver
+    // tests/shell/scheduler-entrypoint.test.sh (#1109): era o silêncio daqui
+    // para baixo que escondia um cron quebrado.
     const orfas = rotasAgendadas().filter((r) => !rotasNoCodigo().includes(r));
     expect(
       orfas,
       `Crontab agenda rota(s) que não existem mais: ${orfas.join(", ")}. ` +
-        `O curl silencia o 404 e ninguém percebe.`,
+        `O scheduler logaria o erro toda rodada, mas ninguém teria o que ler sem esta cerca.`,
     ).toEqual([]);
   });
 });

@@ -40,6 +40,20 @@ function followupWhen(iso: string, t: (texto: string) => string): string {
   return `${t("em")} ${Math.round(hours / 24)}d`;
 }
 
+/**
+ * #2035 (Parte 1) — o destino do item "demanda aberta sem próximo passo".
+ * Com conversa, abre a conversa VIGENTE da demanda no inbox; sem conversa, cai
+ * na ficha do contato (onde o painel de demandas lista a demanda). Função pura,
+ * testada à parte.
+ */
+export function destinoDaDemandaSemPasso(demanda: {
+  conversation_id: string | null;
+  contact_id: string;
+}): string {
+  if (demanda.conversation_id) return `/app/inbox?id=${demanda.conversation_id}`;
+  return `/app/contacts/${demanda.contact_id}`;
+}
+
 export function RiskRadarList() {
   const t = useT();
   const { data, isLoading } = useAtRiskLeads();
@@ -100,7 +114,13 @@ export function RiskRadarList() {
           <ul className="flex flex-col gap-1">
             {semPasso.slice(0, 8).map((d) => (
               <li key={d.id} className="flex items-baseline justify-between gap-3 text-xs">
-                <span className="truncate">{d.contact_name ?? t("Contato sem nome")}</span>
+                <Link
+                  href={destinoDaDemandaSemPasso(d)}
+                  className="truncate hover:underline"
+                  data-testid="radar-sem-passo-link"
+                >
+                  {d.contact_name ?? t("Contato sem nome")}
+                </Link>
                 <span className="shrink-0 tabular-nums text-muted-foreground">
                   {t("aberta há")} {d.horas_aberta}h
                 </span>

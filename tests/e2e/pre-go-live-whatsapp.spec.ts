@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { test, expect } from "./helpers/test";
 import { createClient } from "@supabase/supabase-js";
 import { metadataInicialDoCanal } from "../../lib/ai/elegibilidade/pre-go-live";
-import { nomeDaSessaoCabeNoWaha } from "../../lib/channels/nome-da-sessao";
+import { nomeDaSessaoCabeNoWaha, nomeDaSessaoNovo } from "../../lib/channels/nome-da-sessao";
 
 // Banco e auth reais, sem interceptar a API da feature. Não envia WhatsApp real.
 test.use({ locale: "pt-BR" });
@@ -25,11 +25,13 @@ test("admin configura testes, remove número, confirma abertura e volta a restri
   const orgId = org!.id;
   // Esta spec cobre a configuração do canal após onboarding, não o wizard.
   expect((await admin.from("organizations").update({ onboarded_at: new Date().toISOString() }).eq("id", orgId)).error).toBeNull();
-  // Este spec monta o nome à mão (#686) e nunca chama o gerador: o que ele
-  // monta tem de caber no que o WAHA aceita, senão a prova de tela continua
-  // passando ao lado do mesmo defeito que o invariante passava.
-  const sessao = `prego_${suffix}`;
+  // Este spec passa a montar o nome com o MESMO gerador que o banco usa (#686):
+  // o que ele inserir tem de caber no que o WAHA aceita e ter o formato real,
+  // senão a prova de tela continua passando ao lado do mesmo defeito que o
+  // invariante passava. O banco recusa acima do teto antes do insert sair.
+  const sessao = nomeDaSessaoNovo(orgId);
   expect(nomeDaSessaoCabeNoWaha(sessao)).toBe(true);
+  expect(sessao).toMatch(/^org_[0-9a-f]{8}_[0-9a-f]{32}$/);
   const { data: channel, error } = await admin.from("channel_sessions").insert({
     organization_id: orgId, display_name: "Canal de validação", waha_session_name: sessao,
     webhook_secret_encrypted: "\\x00", metadata: metadataInicialDoCanal(), status: "STOPPED",

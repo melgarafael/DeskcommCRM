@@ -27,6 +27,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { motivoDaRecusaDeDestino } from "@/lib/automation/destinos-internos-autorizados";
 import { DETALHE_TECNICO } from "@/lib/event-log/aviso-de-evento-morto";
 import { MENSAGEM_REDIGIDA } from "@/lib/lgpd/cascata";
+import { avaliarPedidosFalados } from "@/workers/media-derive-worker.pedidos";
 
 export const MEDIA_DERIVE_CONSUMER_KEY = "media_derive_v1";
 const DRAIN_MAX_ATTEMPTS = 5; // espelho de lib/event-log/drain.ts
@@ -55,7 +56,20 @@ interface MessageRow {
   media_derived_status: string | null;
   /** Onde o motivo do `failed` mora: sem ele o operador vê o estado sem a causa. */
   metadata: Record<string, unknown> | null;
+  /** Só a mensagem ENTRADA do cliente vira pedido (#2233) — ver o guard lá embaixo. */
+  direction: string | null;
+  /** Áudio do atendente não é pedido nenhum: `user` e `external_device` são gente. */
+  sent_via: string | null;
+  /** Quando a mensagem entrou, para `aConversaAgora` comparar com o handoff. */
+  created_at: string | null;
 }
+
+/**
+ * Os `sent_via` de quem é PESSOA (mesma lista da consulta da #2210: quem
+ * responde do inbox ou do celular). Um áudio mandado pelo atendente não é
+ * pedido de nada — é conversa nossa entrando no histórico.
+ */
+const ENVIADO_POR_PESSOA: ReadonlySet<string> = new Set(["user", "external_device"]);
 
 export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> {
   const consumer_key = MEDIA_DERIVE_CONSUMER_KEY;
@@ -65,7 +79,9 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("messages")
-    .select("id, organization_id, conversation_id, type, media_mime, media_storage_path, media_derived_status, metadata")
+    .select(
+      "id, organization_id, conversation_id, type, media_mime, media_storage_path, media_derived_status, metadata, direction, sent_via, created_at",
+    )
     .eq("id", messageId)
     .eq("organization_id", row.organization_id)
     .maybeSingle();
@@ -383,6 +399,37 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
       messageId: msg.id,
       requestId: row.id,
     });
+    // ─── O pedido DITO no áudio, agora que ele virou texto (#2233) ──────────
+    //
+    // A cascata da onda 3 sobre a transcrição — a regra de hoje e, só onde ela
+    // disse não, o Jev —, que é o que faz um "não quero mais receber" falado
+    // ser tratado como o escrito. Aqui e não na ingestão: o `body` do áudio
+    // chegou vazio, e é o caminho que grava o bloqueio quem não o enxergava.
+    //
+    // Só ÁUDIO, só ENTRADA e nunca áudio do atendente (`user` /
+    // `external_device`): imagem e documento derivam DESCRIÇÃO, não fala, e
+    // rolar a regra sobre "o cliente mandou um comprovante" seria caçar
+    // palavra em texto que ninguém disse. A mensagem redigida já ficou de fora
+    // em cima: a gravação acima só escreve quando `body` não é a linha
+    // anonimizada (#1991 / #2191), e é depois dela que este caminho roda.
+    //
+    // Nada aqui bloqueia, passa, cala ou responde — só o aviso na Central
+    // (ver `./media-derive-worker.pedidos.ts`), e uma falha vira log: o áudio
+    // já virou texto, que era o que a derivação existia para conseguir.
+    if (
+      msg.type === "audio" &&
+      msg.direction === "inbound" &&
+      !ENVIADO_POR_PESSOA.has(msg.sent_via ?? "") &&
+      text.trim() !== ""
+    ) {
+      await avaliarPedidosFalados(admin, {
+        organizationId: msg.organization_id,
+        messageId: msg.id,
+        conversationId: msg.conversation_id,
+        transcricao: text,
+        recebidaEm: msg.created_at ?? null,
+      });
+    }
     return { consumer_key, status: "ok" };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);

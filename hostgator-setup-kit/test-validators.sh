@@ -2360,6 +2360,19 @@ STUB
   fi
   printf '  ✓ sem chave de IA: instala, .env inteiro, e a tela final dá o caminho de volta\n'
 
+  # O MESMO rabo lembra o caminho do ENVIO de e-mail (issue #1110): sem Resend
+  # nem SMTP, o convite e o PDF de LGPD não saem, e a tela final diz onde ligar.
+  if ! grep -q 'O envio de e-mail ainda não funciona' <<<"$rabo"; then
+    printf '  ✗ a tela final não avisa que o envio de e-mail ainda não funciona\n'
+    printf '     últimas linhas da saída:\n'
+    printf '%s\n' "$saida" | grep -v '^$' | tail -15 | sed 's/^/       /'
+    exit 1
+  fi
+  if ! grep -q 'Admin → E-mail' <<<"$rabo"; then
+    printf '  ✗ o aviso da tela final não diz ONDE configurar o envio (Admin → E-mail)\n'; exit 1
+  fi
+  printf '  ✓ sem Resend/SMTP: a tela final dá o caminho do envio de e-mail\n'
+
   # ── O outro lado: com a chave, o aviso NÃO aparece ────────────────────────
   # Sem isto, um `pendencia_da_ia` que imprimisse sempre passaria no caso acima
   # e viraria ruído em toda instalação que já tem chave — inclusive nas rodadas
@@ -2375,6 +2388,22 @@ STUB
     printf '     (o instalador recebeu a chave do .env mas o aviso da pendência saiu mesmo assim)\n'; exit 1
   fi
   printf '  ✓ com a chave presente, o lembrete não aparece (o aviso não é ruído permanente)\n'
+
+  # ── O outro lado do e-mail: com a Resend no .env, o aviso NÃO aparece ─────
+  # Mesma régua do controle da IA: um `pendencia_do_email` que imprimisse sempre
+  # viraria ruído em toda instalação que já manda e-mail.
+  printf '%s\nRESEND_API_KEY=%s\nRESEND_FROM_EMAIL=%s\n' \
+    "$BASE_ENV" "'re-teste'" "'eu@exemplo.com.br'" > "$VPS_PROJ/.env"
+  saida="$(rodar_sem_ia)"
+  if ! grep -q 'Instalação concluída' <<<"$saida"; then
+    printf '  ✗ (controle do e-mail) a rodada com Resend não chegou à tela final — cenário inconclusivo\n'
+    exit 1
+  fi
+  if grep -q 'O envio de e-mail ainda não funciona' <<<"$saida"; then
+    printf '  ✗ com a Resend no .env, a tela final avisou que falta envio de e-mail\n'
+    printf '     (o instalador recebeu a chave do .env mas o aviso da pendência saiu mesmo assim)\n'; exit 1
+  fi
+  printf '  ✓ com a Resend no .env, o lembrete do envio não aparece\n'
 ) || fail=1
 rm -rf "$TMP_SEM_IA"
 

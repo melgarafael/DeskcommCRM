@@ -58,12 +58,12 @@ const semAvisoDoJevAberto = new Set<string>();
  * também caiu. O texto sai no idioma da organização porque a Central mostra o
  * corpo como veio.
  *
- * ponytail: busca e escrita em duas idas, sem trava. Dois drains medindo a mesma
- * organização no mesmo instante podem abrir dois avisos iguais — a mesma corrida
- * que `abrirItemDeOrcamento` (ai-response-worker) declara. Aviso repetido é
- * ruído; ausente seria o Jev parado sem nada na tela. Fecha de vez só com
- * índice único parcial (org, título) em `kind='other' and status='open'`, que é
- * migration e exige antes deduplicar os avisos abertos de todo clone.
+ * ponytail: busca e escrita em duas idas. Dois drenos medindo a mesma
+ * organização no mesmo instante podem se encontrar no índice único parcial
+ * `agent_inbox_other_por_titulo_aberto_unico` (migration 0539), que sustenta a
+ * chave (org, título) deste grão: quem chega segundo recebe `23505`, que o
+ * insert abaixo trata como "já havia aviso" — esta função nunca lança. Antes da
+ * 0539 a corrida abria dois avisos iguais.
  */
 export async function avisarNaCentral(
   admin: Admin,

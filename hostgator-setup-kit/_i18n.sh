@@ -296,7 +296,7 @@ y, si de verdad es un Traefik, pon REVERSE_PROXY=traefik en el .env y vuelve a e
   ["Idioma do sistema — 1) Português  2) Español (Enter = Português)"]="Idioma del sistema — 1) Português  2) Español (Enter = Português)"
   ["Cor da sua marca em hex, ex.: #7a5cd6 (Enter usa a cor do sistema)"]="Color de tu marca en hex, ej.: #7a5cd6 (Enter usa el color del sistema)"
   ["E-mail de suporte que SEUS clientes veem (Enter pula)"]="Correo de soporte que ven TUS clientes (Enter lo salta)"
-  ["Chave da Resend — envia convite e e-mail de LGPD (resend.com/api-keys, Enter pula)"]="Clave de Resend — envía invitación y correo de LGPD (resend.com/api-keys, Enter la salta)"
+  ["Chave da Resend — envia convite e e-mail de LGPD (resend.com/api-keys; Enter pula: dá para configurar depois, em Admin → E-mail)"]="Clave de Resend — envía invitación y correo de LGPD (resend.com/api-keys; Enter la salta: puedes configurarlo después, en Admin → E-mail)"
   ["Remetente dos e-mails, de um domínio verificado na Resend (Enter pula)"]="Remitente de los correos, de un dominio verificado en Resend (Enter lo salta)"
 
   # ── install.sh: entrevista y pantalla de confirmación ────────────────────
@@ -407,6 +407,17 @@ identifica su red y pon TRAEFIK_NETWORK=<nombre> en el .env antes de volver a in
   ["ainda não funciona é o agente: ele responde quando uma credencial existir."]="todavía no funciona es el agente: responderá en cuanto exista una credencial."
   ["Quando tiver a chave da {1}, cadastre em:"]="Cuando tengas la clave de {1}, regístrala en:"
   ["A chave fica CIFRADA no banco — não precisa mexer no .env nem reiniciar nada."]="La clave queda CIFRADA en la base de datos — no hace falta tocar el .env ni reiniciar nada."
+
+  # ── install.sh: pendencia_do_email() ─────────────────────────────────────
+  ["O envio de e-mail ainda não funciona"]="El envío de correo todavía no funciona"
+  ["Você deixou a chave da Resend para depois e não preencheu um SMTP. O CRM"]="Dejaste la clave de Resend para después y no completaste un SMTP. El CRM"
+  ["está no ar; o que não sai é o convite para a equipe e o e-mail com o PDF"]="está activo; lo que no sale es la invitación para el equipo y el correo con el PDF"
+  ["de LGPD."]="de LGPD."
+  ["Para ligar, cadastre em Admin → E-mail o servidor SMTP próprio ou o"]="Para activarlo, registra en Admin → E-mail el servidor SMTP propio o el"
+  ["serviço externo (Resend). O que a tela salva fica CIFRADO no banco e"]="servicio externo (Resend). Lo que la pantalla guarda queda CIFRADO en la base de datos y"
+  ["prevalece sobre o .env."]="prevalece sobre el .env."
+  ["No SEU Supabase, os e-mails de acesso (senha, cadastro) também saem pelo"]="En TU Supabase, los correos de acceso (contraseña, registro) también salen por el"
+  ["SMTP do CRM. Depois de salvar na tela, rode:"]="SMTP del CRM. Después de guardar en la pantalla, ejecuta:"
 
   # ── install.sh: creación del admin, arranque de la stack, healthcheck ───
   ["✓ dono criado e promovido a super-admin"]="✓ dueño creado y promovido a super-admin"

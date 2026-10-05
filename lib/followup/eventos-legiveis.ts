@@ -428,7 +428,18 @@ export function descreveEvento(
         ...motor,
       };
     }
-    case "turn_discarded":
+    case "turn_discarded": {
+      // Duas origens, um event_type: a suspensão da CONTA (migration 0501) e o
+      // descarte durante a PAUSA da INSCRIÇÃO (#2262). O motivo decide a frase
+      // — uma linha que aponta a causa errada é pior que uma linha genérica,
+      // porque não parece errada.
+      if (texto(p.motivo) === "inscricao_pausada") {
+        return {
+          titulo: "O envio deste passo foi descartado porque a inscrição está pausada",
+          detalhe: "sai num envio novo quando a inscrição for retomada",
+          ...motor,
+        };
+      }
       // A suspensão da conta tirou o turno da fila antes de ele rodar
       // (migration 0501). Sem esta linha o dossiê mostrava um código cru logo
       // antes de um segundo "Pediu ao agente para escrever a mensagem".
@@ -437,6 +448,7 @@ export function descreveEvento(
         detalhe: "sai num envio novo quando a conta for reativada",
         ...motor,
       };
+    }
     case "held_by_return": {
       // Como o adiamento pela janela: segurar NÃO é falhar. Sem esta linha o
       // operador veria o fluxo parado por dias sem saber que ele está esperando

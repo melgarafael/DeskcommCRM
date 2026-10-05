@@ -2770,8 +2770,10 @@ export type Database = {
           intent_description: string
           intent_name: string
           organization_id: string
+          pipeline_id: string | null
           position: number
           router_id: string
+          stage_id: string | null
           updated_at: string
         }
         Insert: {
@@ -2783,8 +2785,10 @@ export type Database = {
           intent_description: string
           intent_name: string
           organization_id: string
+          pipeline_id?: string | null
           position?: number
           router_id: string
+          stage_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -2796,8 +2800,10 @@ export type Database = {
           intent_description?: string
           intent_name?: string
           organization_id?: string
+          pipeline_id?: string | null
           position?: number
           router_id?: string
+          stage_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -2828,6 +2834,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "ai_routers"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_router_members_pipeline_mesma_org"
+            columns: ["organization_id", "pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "crm_pipelines"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "ai_router_members_stage_mesma_org"
+            columns: ["organization_id", "stage_id"]
+            isOneToOne: false
+            referencedRelation: "crm_stages"
+            referencedColumns: ["organization_id", "id"]
           },
         ]
       }
@@ -3183,6 +3203,7 @@ export type Database = {
           id: string
           job_id: string
           organization_id: string
+          tipo_envio: string | null
           trace: Json
           vetoed_code: string | null
           vetoed_gate: string | null
@@ -3194,6 +3215,7 @@ export type Database = {
           id?: string
           job_id: string
           organization_id: string
+          tipo_envio?: string | null
           trace: Json
           vetoed_code?: string | null
           vetoed_gate?: string | null
@@ -3205,6 +3227,7 @@ export type Database = {
           id?: string
           job_id?: string
           organization_id?: string
+          tipo_envio?: string | null
           trace?: Json
           vetoed_code?: string | null
           vetoed_gate?: string | null
@@ -3302,6 +3325,7 @@ export type Database = {
           rescheduled_from_id: string | null
           source: string
           starts_at: string
+          starts_at_marked_at: string | null
           status: string
           time_zone: string
           title: string
@@ -3368,6 +3392,7 @@ export type Database = {
           rescheduled_from_id?: string | null
           source?: string
           starts_at: string
+          starts_at_marked_at?: string | null
           status?: string
           time_zone?: string
           title: string
@@ -3434,6 +3459,7 @@ export type Database = {
           rescheduled_from_id?: string | null
           source?: string
           starts_at?: string
+          starts_at_marked_at?: string | null
           status?: string
           time_zone?: string
           title?: string

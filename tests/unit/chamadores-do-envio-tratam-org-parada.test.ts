@@ -27,6 +27,8 @@ const CHAMADORES: Record<string, string> = {
   "app/api/v1/proposals/[id]/send/route.ts":
     "o catch devolve a proposta a rascunho; nada fica gravado como enviado, e a pessoa reenvia depois",
   "lib/ai/handoff/aviso-ao-lead.ts": "devolve avisado:false; é aviso de um instante, sem fila nem estado que sobreviva",
+  "lib/agent-engine/agent/aviso-fora-do-horario.ts":
+    "propaga ao chamador; o inbound-turn engole e só perde o aviso — nada gravado, sem retentativa, e o turno da org parada já é negado antes",
   "lib/ai/runtime/finalize.ts": "devolve null ao turno; o gate já nega a org parada antes de existir turno",
   "lib/automation/actions/send-ai-message.ts": "o desfecho vira failed na execução da regra; registro do instante, sem retentativa",
   "lib/automation/actions/send-whatsapp.ts": "o desfecho vira failed na execução da regra; registro do instante, sem retentativa",

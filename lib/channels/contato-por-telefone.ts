@@ -97,6 +97,22 @@ export async function encontrarContatoPorTelefone(
   return (linha as { id: string; phone_number: string } | null) ?? null;
 }
 
+/**
+ * Como `encontrarContatoPorTelefone`, mas trazendo `is_blocked` NA MESMA
+ * consulta (bloqueado na ligação é recusado). Sem consulta extra:
+ * só a coluna a mais no `select` de `buscarPorVariantes`.
+ */
+export async function encontrarContatoPorTelefoneComBloqueio(
+  admin: SupabaseClient,
+  orgId: string,
+  rawPhone: string,
+): Promise<{ id: string; phone_number: string | null; is_blocked: boolean | null } | null> {
+  const linha = await buscarPorVariantes(admin, orgId, rawPhone, "id, phone_number, is_blocked");
+  return (
+    (linha as { id: string; phone_number: string | null; is_blocked: boolean | null } | null) ?? null
+  );
+}
+
 /** Como `encontrarContatoPorTelefone`, mas trazendo o nome de quem já existia. */
 export async function encontrarContatoPorTelefoneComNome(
   admin: SupabaseClient,

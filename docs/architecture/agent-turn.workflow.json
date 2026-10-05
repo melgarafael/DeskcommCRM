@@ -310,7 +310,7 @@
       "col": 2,
       "type": "external",
       "label": "Jev no roteador",
-      "sublabel": "lib/ai/decisao/roteador.ts — a mesma escolha, só a última mensagem, em paralelo ao classificador; observando o turno não espera; decidindo vale a dele (min_confidence sobre a probabilidade), com a IA de sempre de reserva; sem ela, nunca o Jev (R2)"
+      "sublabel": "lib/ai/decisao/roteador.ts — só a mensagem atual (R4; o histórico espera a TypeSafe, DEC-012); comparação paralela ou Jev primeiro com a IA de sempre só em reserva, e só onde a empresa a tem (R2); min_confidence e sticky preservados"
     },
     {
       "id": "jevObservacoesRoteador",
@@ -326,7 +326,23 @@
       "col": 4,
       "type": "frontend",
       "label": "Cartão do Jev (/app/ai/providers)",
-      "sublabel": "'Escolher qual agente atende': concordou em X de Y (30 dias); 'Não roda' sem roteador ativo; 'Deixar o Jev decidir' por tarefa"
+      "sublabel": "'Escolher qual agente atende': concordou em X de Y (30 dias); modo comparação ou sob demanda quando decide; link para resultados"
+    },
+    {
+      "id": "jevDecisoesRoteador",
+      "lane": "router",
+      "col": 3,
+      "type": "database",
+      "label": "jev_router_decisions",
+      "sublabel": "uma decisão por mensagem; modo, origem, motivo da reserva, contexto, custo, tempo e revisão humana, sem texto da conversa"
+    },
+    {
+      "id": "jevResultadosRoteador",
+      "lane": "router",
+      "col": 4,
+      "type": "frontend",
+      "label": "IA › Execuções › Roteamento",
+      "sublabel": "até 500 casos; custo e latência por modo, concordância separada de acurácia revisada; administrador marca acerto"
     }
   ],
   "edges": [
@@ -765,8 +781,27 @@
       "id": "cartao-jevroteador",
       "from": "jevCartaoRoteador",
       "to": "jevRoteador",
-      "label": "Deixar o Jev decidir / Pausar esta tarefa (settings.jev.tarefas.roteador)",
+      "label": "Deixar o Jev decidir / Pausar; comparação ou sob demanda (settings.jev.modo_roteador), só com a IA de sempre",
       "variant": "emphasis"
+    },
+    {
+      "id": "turn-jevdecisoesroteador",
+      "from": "turn",
+      "to": "jevDecisoesRoteador",
+      "label": "registra a decisão e o motivo da reserva depois de resolver o turno"
+    },
+    {
+      "id": "jevdecisoes-resultados",
+      "from": "jevDecisoesRoteador",
+      "to": "jevResultadosRoteador",
+      "label": "lê casos, custos e revisões por organização"
+    },
+    {
+      "id": "resultados-jevconfig",
+      "from": "jevResultadosRoteador",
+      "to": "jevCartaoRoteador",
+      "label": "resultado permite escolher o modo e rever o comportamento",
+      "variant": "dashed"
     },
     {
       "id": "evidencias-comerciais-gates",

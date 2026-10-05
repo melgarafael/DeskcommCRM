@@ -21,7 +21,7 @@
 
 import { embedText } from "@/lib/ai/embed";
 import { modeloDeEmbedding, resolverChaveDeEmbedding } from "@/lib/ai/embeddings/chave";
-import { anonymize, detectResidualPii, padroesDePii } from "@/lib/ai/anonymize";
+import { anonymize, detectResidualPii, padroesDaIngestao } from "@/lib/ai/anonymize";
 import { perfilDaOrganizacao } from "@/lib/legal/perfil-do-pais";
 import { chunkText, computeContentHash } from "@/lib/ai/rag/chunker";
 import {
@@ -201,8 +201,9 @@ export async function ingestConversationsBatch(
 
   // O perfil do PAÍS da organização (issue #1033): o mesmo conjunto de padrões
   // anonimiza e vigia. Resolvido UMA vez por rodada — ler por conversa daria o
-  // mesmo resultado e uma consulta por conversa.
-  const padroes = padroesDePii([await perfilDaOrganizacao(admin, organizationId)]);
+  // mesmo resultado e uma consulta por conversa. O Brasil vai por baixo de
+  // qualquer país: ver `padroesDaIngestao`.
+  const padroes = padroesDaIngestao(await perfilDaOrganizacao(admin, organizationId));
 
   for (const conv of conversations) {
     // Defense in depth: re-check org id.

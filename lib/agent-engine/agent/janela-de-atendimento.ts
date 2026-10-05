@@ -153,3 +153,48 @@ export function msAteAJanelaAbrir(janela: JanelaDeAtendimento, agora: Date): num
 
   return null; // inalcançável com weekdays não-vazio; falha aberta por precaução
 }
+
+/**
+ * Início do PERÍODO FECHADO vigente — o instante em que a janela passou de
+ * aberta para fechada, o mais recente que já aconteceu (#1926).
+ *
+ * É a régua de "uma vez por contato por período fechado": o aviso de fora do
+ * horário só vale de novo quando a janela ABRIU e FECHOU outra vez. Sem esta
+ * função o critério viraria "desde a última mensagem", que não é período nenhum
+ * — quem escreve às 22h01 receberia outro aviso às 22h40.
+ *
+ * A conta é em minutos de relógio de parede, como `msAteAJanelaAbrir`: o Brasil
+ * não tem DST hoje e o job reavalia a cada turno, então uma virada de horário
+ * desloca o alvo em no máximo 1h em vez de pular o período.
+ *
+ * `null` = não deu para determinar (fuso/torto/sem candidato em 8 dias) — quem
+ * chama NÃO envia aviso, porque sem régua não dá para prometer "só uma vez".
+ */
+export function inicioDoPeriodoFechado(janela: JanelaDeAtendimento, agora: Date): Date | null {
+  let local: { dia: number; minutos: number };
+  try {
+    local = relogioLocal(janela.timezone, agora);
+  } catch {
+    return null; // falha aberta: sem relógio local não há período
+  }
+
+  const fim = minutosDe(janela.end);
+  if (fim === null) return null;
+
+  // Volta até 8 dias (um ciclo inteiro + 1) procurando o último dia da janela
+  // cujo FECHAMENTO (end) já passou. `minutosDesdeOFechamento < 0` no primeiro
+  // candidato = a janela fecha HOJE mais tarde (ou ainda não abriu hoje).
+  for (let voltas = 0; voltas <= 7; voltas += 1) {
+    const dia = (local.dia - voltas + 14) % 7;
+    if (!janela.weekdays.includes(dia)) continue;
+    const minutosDesdeOFechamento = local.minutos - fim + voltas * 24 * 60;
+    if (minutosDesdeOFechamento < 0) continue;
+    // Base no MINUTO cheio: `relogioLocal` conta minutos inteiros, e somar isso
+    // a um `agora` com segundos fazia o início herdar os segundos — a chave do
+    // aviso mudava a cada mensagem e o "uma vez por período" nunca casava.
+    const agoraNoMinuto = Math.floor(agora.getTime() / 60_000) * 60_000;
+    return new Date(agoraNoMinuto - minutosDesdeOFechamento * 60_000);
+  }
+
+  return null;
+}

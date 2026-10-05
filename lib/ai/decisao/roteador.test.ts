@@ -408,3 +408,19 @@ describe("o que se grava", () => {
     aviso.mockRestore();
   });
 });
+
+describe("o histórico do Jev espera a TypeSafe (DEC-012, escolha 2)", () => {
+  it("mesmo com um aceite de histórico gravado e mensagens anteriores à mão, sai só a mensagem atual", async () => {
+    const aceiteGravado = { em: "2026-09-29T12:00:00.000Z", por: ADMIN, versao: 2 };
+    const { pool } = poolCom({ jev: { ...LIGADO.jev, contexto_roteador: aceiteGravado } });
+    const fetchImpl = vi.fn().mockResolvedValue(respostaCom("vendas"));
+    // O que o turno do PR original passava: o adaptador não tem mais onde pô-lo.
+    const anteriores = { recentMessages: [{ direction: "inbound", body: "Quero comprar" }], contextMessageCount: 4 };
+    const jev = consultarJevNoRoteador(pool, { ...entrada(novaOrg(), "a primeira"), ...anteriores } as never, {
+      buscarChave: async () => "tsk_x", fetchImpl,
+    });
+    await jev.escolha;
+    const corpo = JSON.parse(String(fetchImpl.mock.calls[0]![1].body));
+    expect(corpo.state).toBe("a primeira");
+  });
+});

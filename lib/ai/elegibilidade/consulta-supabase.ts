@@ -67,6 +67,7 @@ export async function decidirElegibilidadeDaConversaViaSupabase(
   return decidirElegibilidade(
     montarEstadoDeElegibilidade({
       orgStatus: row.organizations?.status ?? null,
+      canalDesativado: row.channel_sessions?.metadata?.["disabled"] ?? null,
       aiGate: row.channel_sessions?.metadata?.["ai_gate"] ?? null,
       aiGateMode: row.channel_sessions?.metadata?.["ai_gate_mode"] ?? null,
       aiTestPhoneNumbers: row.channel_sessions?.metadata?.["ai_test_phone_numbers"] ?? null,

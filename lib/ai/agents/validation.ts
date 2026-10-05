@@ -37,6 +37,10 @@ const triggerConfigSchema = z
             start: z.string(),
             end: z.string(),
             weekdays: z.array(z.number().int().min(0).max(6)),
+            // Aviso de fora do horário (#1926). Sem esta linha o Zod descarta o
+            // campo ao salvar e o aviso nunca liga pela tela. O teto é o mesmo
+            // de TAMANHO_MAXIMO_DO_TEXTO em aviso-fora-do-horario.ts.
+            notice: z.string().max(1000).nullable().optional(),
           })
           .nullable()
           .optional()

@@ -81,9 +81,11 @@ describe("os leitores leem a resposta inteira dentro de array, como o recorte an
   it("guardrail de promessa — lê a promessa em array, sem warn", () => {
     const warn = vi.fn();
     const log: Logger = { info: vi.fn(), warn, error: vi.fn() };
-    expect(parsePromiseClassification(RESPOSTA_EM_ARRAY('{"isPromise":true,"suspectPhrase":"x"}'), log)).toEqual({
+    expect(parsePromiseClassification(RESPOSTA_EM_ARRAY('{"isPromise":true,"suspectPhrase":"x"}'), "x", log)).toEqual({
       isPromise: true,
       suspectPhrase: "x",
+      prometeuRetornoHumano: false,
+      retornoSoDoAssistente: false,
     });
     expect(warn).not.toHaveBeenCalled();
   });
@@ -91,7 +93,12 @@ describe("os leitores leem a resposta inteira dentro de array, como o recorte an
   it("guardrail de promessa — array sem objeto é fail-open COM o warn", () => {
     const warn = vi.fn();
     const log: Logger = { info: vi.fn(), warn, error: vi.fn() };
-    expect(parsePromiseClassification("[1,2]", log)).toEqual({ isPromise: false, suspectPhrase: null });
+    expect(parsePromiseClassification("[1,2]", "x", log)).toEqual({
+      isPromise: false,
+      suspectPhrase: null,
+      prometeuRetornoHumano: false,
+      retornoSoDoAssistente: false,
+    });
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('fail-open p/ "sem promessa"'), {
       event: "promise_semantic_parse_fail",
       reason: "no_json",

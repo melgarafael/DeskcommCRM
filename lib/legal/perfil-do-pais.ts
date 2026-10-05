@@ -33,6 +33,31 @@
  *     países do que a lista oferece; é o que permite preparar o trabalho sem
  *     publicar o que ninguém revisou.
  *
+ * ─── Portugal: revisão feita por IA, por delegação do dono (doc 88) ───────
+ *
+ * Em 2026-10-05 a citação `RGPD art. 15.º (Regulamento (UE) 2016/679)` foi
+ * conferida por revisão AUTOMATIZADA, feita por IA por delegação do dono do
+ * produto (doc 88 das decisões; issues #1033 e #1946). NÃO é parecer jurídico
+ * e não houve advogado em Portugal. Fontes conferidas: o RGPD em português no
+ * JO L 119 de 4.5.2016 (repositório de publicações da UE, com as retificações
+ * do JO L 127/2018 e do JO L 74/2021, que não tocam os arts. 12.º, 15.º, 17.º
+ * e 20.º) e a reprodução da PGR Lisboa; a Lei n.º 58/2019 (nada nela muda o
+ * art. 15.º); as Guidelines 01/2022 do EDPB. O prazo do produto (7 e 15 dias
+ * úteis, calendário português) foi simulado de 2026 a 2030 e nunca passa do
+ * mês do art. 12.º, n.º 3.
+ *
+ * Por isso o perfil leva `revisadaPorIa` — a tela declara a natureza da
+ * revisão a quem responde pelo documento — e `rotuloNoDocumento: "Direito
+ * exercido"`: no RGPD, "base legal" é o art. 6.º (licitude), e o art. 15.º é
+ * o direito que o titular exerceu.
+ *
+ * Ressalva da Nuvemshop, reconferida em 2026-10-05: a Nuvemshop não abre loja
+ * em Portugal, e os 3 webhooks dela são o único caminho que cria pedido de
+ * titular (vigiado por `tests/unit/so-a-nuvemshop-cria-pedido-de-titular`).
+ * Uma organização portuguesa com loja Nuvemshop BRASILEIRA alcança o fluxo; aí
+ * o titular é brasileiro e as duas leis podem valer — citar o RGPD não é
+ * falso, mas é incompleto.
+ *
  * ─── A separação documento × forma (regra adotada do #928) ────────────────
  *
  * Não se inventa dígito verificador. País com checksum público documentado
@@ -115,6 +140,34 @@ export interface LeiCitada {
    * o documento não cita esta lei (ver cabeçalho).
    */
   revisada: boolean;
+  /**
+   * A revisão foi feita por IA, sem advogado local. A tela de Configurações
+   * declara isso a quem responde pelo documento (ver o cabeçalho).
+   */
+  revisadaPorIa?: true;
+  /**
+   * Como o documento de acesso rotula a citação. Ausente = "Base legal", o
+   * rótulo de sempre — o Brasil não declara este campo, e por isso o
+   * `data.json` brasileiro não ganha chave nova.
+   */
+  rotuloNoDocumento?: string;
+}
+
+/**
+ * A autoridade de supervisão do país — a alínea f) do art. 15.º, n.º 1.
+ *
+ * Mora no PERFIL, e não no módulo do art. 15.º, porque é propriedade do país:
+ * trocar de país troca a autoridade junto com a lei e com o calendário (mesma
+ * razão de `lei`, `calendario` e `padroesDePii`). Um país sem autoridade
+ * revisada não declara o campo, e o relatório não emite a alínea f) — a mesma
+ * régua de `lei.revisada`: a lei errada, ou a autoridade errada, é pior do que
+ * não citar.
+ */
+export interface AutoridadeDeSupervisao {
+  /** Como a autoridade é conhecida, já com a sigla: "Comissão Nacional de Proteção de Dados (CNPD)". */
+  nome: string;
+  /** Onde o titular reclama. Site oficial, não buscado em runtime. */
+  site: string;
 }
 
 export interface CalendarioDeDiasUteis {
@@ -140,6 +193,14 @@ export interface PerfilDoPais {
   telefoneExemplo: string;
   /** `null` quando o país ainda não tem lei revisada para citar. */
   lei: LeiCitada | null;
+  /**
+   * A autoridade a quem o titular reclama (art. 15.º, n.º 1, al. f)). Ausente
+   * em países cuja citação não foi revisada — e o Brasil, cujo documento segue
+   * a LGPD (art. 18, II) e não a lista do RGPD, não declara este campo: a
+   * regra byte a byte do doc 88 (`tests/fixtures/lgpd-brasil-antes-do-doc88/`)
+   * é o que trava o PDF brasileiro.
+   */
+  autoridadeDeSupervisao?: AutoridadeDeSupervisao;
   calendario: CalendarioDeDiasUteis;
   /** Padrões PRÓPRIOS do país; e-mail/telefone são universais e moram fora. */
   padroesDePii: readonly PadraoDePiiDoPais[];
@@ -249,7 +310,18 @@ const PERFIL_PT: PerfilDoPais = {
     nome: "RGPD",
     numero: "Regulamento (UE) 2016/679",
     artigo: "art. 15.º",
-    revisada: false,
+    // Revisada por IA em 2026-10-05, por delegação do dono (doc 88) — não é
+    // parecer jurídico. Registro completo no cabeçalho deste arquivo.
+    revisada: true,
+    revisadaPorIa: true,
+    rotuloNoDocumento: "Direito exercido",
+  },
+  // Alínea f) do art. 15.º, n.º 1: a autoridade portuguesa. Conferida em
+  // 2026-10-05 na fonte primária (site oficial da CNPD) junto com o resto da
+  // revisão do doc 88; a mesma ressalva vale — revisão por IA, sem advogado.
+  autoridadeDeSupervisao: {
+    nome: "Comissão Nacional de Proteção de Dados (CNPD)",
+    site: "https://www.cnpd.pt",
   },
   calendario: {
     feriados: HOLIDAYS_PT_ISO,

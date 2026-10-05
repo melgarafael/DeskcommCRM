@@ -62,6 +62,13 @@ export interface LeadRow {
   pipeline_id: string;
   organization_id: string;
   contact_id: string | null;
+  /**
+   * #2032 — a rota `win-rates` lê estes DOIS para medir a etapa ATUAL:
+   * `stage_changed_at` é o carimbo da 0071 e `created_at` é a reserva dele.
+   * Opcional aqui porque a maioria dos testes não mede tempo de etapa.
+   */
+  stage_changed_at?: string | null;
+  created_at?: string;
 }
 
 export function negocio(id: string, stageId: string, over: Partial<LeadRow> = {}): LeadRow {

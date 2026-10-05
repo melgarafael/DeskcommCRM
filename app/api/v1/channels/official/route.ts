@@ -166,7 +166,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           // `smb_message_echoes`: o que a empresa manda pelo app WhatsApp Business
           // num número em coexistência. Sem coexistência a Meta não o envia, então
           // assinar é inofensivo para quem não usa.
-          fields: ["messages", "message_template_status_update", "smb_message_echoes"],
+          // `smb_app_state_sync`: o que a empresa faz no ENDEREÇO do app (contato
+          // criado/editado), que vira cadastro no CRM. Mesma régua: sem
+          // coexistência a Meta não envia.
+          fields: [
+            "messages",
+            "message_template_status_update",
+            "smb_message_echoes",
+            "smb_app_state_sync",
+          ],
         }
       : null,
     /**

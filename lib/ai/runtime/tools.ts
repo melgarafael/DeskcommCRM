@@ -28,6 +28,7 @@ import { recusaDeCapacidadeParaOModelo } from "@/lib/mcp/recusa-para-o-modelo";
 import type { McpContext, McpToolDefinition } from "@/lib/mcp/types";
 import { resolveActiveLeadForContact, type LeadCandidate } from "@/lib/leads/active-lead";
 import { podeChamarFerramenta, recusaParaOModelo } from "@/lib/leads/escopo-de-funil";
+import { escritaCabeNoTurno } from "./escopo-das-escritas";
 
 export interface RuntimeHandoffSignal {
   triggered: boolean;
@@ -234,9 +235,35 @@ function wrapMcpTool(
         ensureScope(input.auth.scopes, def.requiresScope);
         ensureRole(input.auth.role, def.requiresRole);
 
+        // ── DE QUEM É O REGISTRO QUE ESTA ESCRITA ALCANÇA — do contato do turno
+        //
+        // `write` E `handoff`: a passagem também age sobre uma conversa. A regra
+        // e o mapa campo → dono moram em `escopo-das-escritas.ts`; o `lead_id`
+        // segue com a guarda logo abaixo. Sem contato do turno, nada muda.
+        if (input.contatoDoTurno && def.category !== "read") {
+          const escopo = await escritaCabeNoTurno(
+            input.supabase,
+            input.ctx.organizationId,
+            input.contatoDoTurno,
+            def.name,
+            argsRecord,
+          );
+          if (!escopo.permitido) {
+            void auditMcpToolCall({
+              ctx: input.ctx,
+              toolName: def.name,
+              args: argsAudit,
+              durationMs: Date.now() - startedAt,
+              success: false,
+              errorMessage: `contato_da_conversa:${escopo.motivo}`,
+            });
+            return escopo;
+          }
+        }
+
         // ── DE QUE NEGÓCIO É ESTA ESCRITA — do contato da conversa ──────────
         //
-        // Só ESCRITA: `crm_list_followups`, `crm_list_appointments` e irmãs têm
+        // Só ESCRITA (`write` e `handoff`): `crm_list_followups`, `crm_list_appointments` e irmãs têm
         // `lead_id` e são leituras; trocar ali faria o modelo perguntar por um
         // negócio e receber outro. Só com contato do turno — que o turno de
         // atendimento E o do Operador recebem (`operator-turn.ts` passa
@@ -251,7 +278,7 @@ function wrapMcpTool(
         // abrindo; quem é de outro cliente é recusado com o motivo em texto.
         if (
           input.contatoDoTurno &&
-          def.category === "write" &&
+          def.category !== "read" &&
           typeof argsRecord.lead_id === "string"
         ) {
           const alvo = await negocioDaEscritaDoTurno(

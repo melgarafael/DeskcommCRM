@@ -340,6 +340,28 @@ async function handleCallStatus(
   }
 }
 
+/**
+ * Bloqueado na ligação (WaCalls): a linha continua gravada, mas chamada de
+ * bloqueado não abre aviso na Central, e a PERDIDA não carimba a timeline (a
+ * atendida aconteceu e fica). Fail-open: erro de leitura devolve `false` (segue como hoje) —
+ * nunca se suprime aviso no escuro.
+ */
+async function contatoEstaBloqueado(
+  pool: pg.Pool,
+  organizationId: string,
+  contactId: string,
+): Promise<boolean> {
+  try {
+    const { rows } = await pool.query<{ is_blocked: boolean | null }>(
+      `select is_blocked from contacts where organization_id = $1 and id = $2`,
+      [organizationId, contactId],
+    );
+    return rows[0]?.is_blocked === true;
+  } catch {
+    return false;
+  }
+}
+
 async function handleCallEnded(
   pool: pg.Pool,
   sess: WacallsSessionMap,
@@ -396,7 +418,20 @@ async function handleCallEnded(
   // mesmo clique (ver `POLITICAS_DE_AVISO` em `lib/ai/inbox-destino.ts`).
   // Chamada de número que não casou com contato nenhum entra sem referência —
   // o telefone está no título, e o aviso continua sendo aviso.
-  if (!atendida && recebida) {
+  //
+  // Bloqueado não abre aviso (a linha continua gravada acima): ligar de volta
+  // para ele já é recusado com 403.
+  // SABOTAGEM: remover o `&& !bloqueado` abaixo = teste de bloqueado vermelho.
+  const bloqueado = row.contact_id
+    ? await contatoEstaBloqueado(pool, sess.organizationId, row.contact_id)
+    : false;
+  if (bloqueado) {
+    log.info('wacalls: call-ended de bloqueado, sem aviso', {
+      contact_id: row.contact_id,
+      answered: atendida,
+    });
+  }
+  if (!atendida && recebida && !bloqueado) {
     await pool.query(
       `insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
        values ($1, 'voice_call_missed', 'warn', $2, $3, $4, $5)`,
@@ -426,7 +461,12 @@ async function handleCallEnded(
     ],
   );
 
-  if (row.contact_id) {
+  // Bloqueado: a ligação ATENDIDA aconteceu e fica no histórico; só a
+  // perdida de bloqueado é não-interação e não carimba a timeline.
+  // SABOTAGEM: tirar o `!atendida` = `voz-atendida-de-bloqueado` vermelho;
+  // tirar a guarda inteira = caso bloqueado de `voz-recusa-bloqueado` vermelho.
+  const recusadaDeBloqueado = bloqueado && recebida && !atendida;
+  if (row.contact_id && !recusadaDeBloqueado) {
     const result = await emitAgentActivityForContact({
       pool,
       organizationId: sess.organizationId,

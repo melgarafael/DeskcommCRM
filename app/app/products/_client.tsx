@@ -8,9 +8,12 @@ import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { useT } from "@/hooks/i18n/useT";
 import { Button } from "@/components/ui/button";
 import { apiClient } from "@/lib/api/client";
+import { queryDaTela } from "@/lib/catalogo/busca-da-tela";
 import { MAXIMO_DE_FOTOS } from "@/lib/catalogo/fotos";
 import { formatCents } from "@/lib/money";
 import { precoParaCentavos, type Produto } from "@/lib/schemas/produtos";
+
+import { EdicaoDoProduto } from "./_edicao";
 
 interface Textos {
   titulo: string;
@@ -209,18 +212,41 @@ function FotosDoProduto({ produto, urls }: { produto: Produto; urls: Record<stri
 
 export function ProdutosClient({
   inicial,
+  total,
+  pagina,
+  porPagina,
+  buscaInicial,
   urlsDasFotos,
   podeEditar,
   textos,
 }: {
+  /** A página atual, já filtrada no servidor (ver `lib/catalogo/busca-da-tela.ts`). */
   inicial: Produto[];
+  /** Quantos produtos casam com a busca no catálogo INTEIRO, não só nesta página. */
+  total: number;
+  pagina: number;
+  porPagina: number;
+  buscaInicial: string;
   urlsDasFotos: Record<string, string>;
   podeEditar: boolean;
   textos: Textos;
 }) {
   const t = useT();
   const router = useRouter();
-  const [busca, setBusca] = React.useState("");
+  const [busca, setBusca] = React.useState(buscaInicial);
+  const [carregando, iniciarNavegacao] = React.useTransition();
+
+  // A URL pode mudar sem passar pela caixa: Voltar/Avançar do navegador, ou um
+  // link. A página não remonta quando só as searchParams mudam, então a caixa
+  // precisa acompanhar — senão o debounce abaixo via a caixa diferente da URL e
+  // mandava de volta para a busca antiga. Quando a URL muda POR CAUSA da caixa
+  // (o termo já é o mesmo, sem os espaços das pontas), nada a fazer: reescrever
+  // a caixa tiraria o espaço que a pessoa acabou de digitar.
+  const [buscaDaUrl, setBuscaDaUrl] = React.useState(buscaInicial);
+  if (buscaInicial !== buscaDaUrl) {
+    setBuscaDaUrl(buscaInicial);
+    if (busca.trim() !== buscaInicial) setBusca(buscaInicial);
+  }
   const [criando, setCriando] = React.useState(false);
   const [rascunho, setRascunho] = React.useState<Rascunho>(VAZIO);
   const [salvando, setSalvando] = React.useState(false);
@@ -228,14 +254,27 @@ export function ProdutosClient({
   const [resumo, setResumo] = React.useState<ResumoDaImportacao | null>(null);
   const arquivoRef = React.useRef<HTMLInputElement>(null);
   const [fotosAbertas, setFotosAbertas] = React.useState<string | null>(null);
+  const [editando, setEditando] = React.useState<string | null>(null);
 
-  const filtrados = React.useMemo(() => {
-    const q = busca.trim().toLowerCase();
-    if (q === "") return inicial;
-    return inicial.filter((p) =>
-      [p.nome, p.codigo, p.marca ?? "", p.categoria ?? ""].join(" ").toLowerCase().includes(q),
-    );
-  }, [inicial, busca]);
+  // A busca vai à URL — e a URL, ao servidor, que procura no catálogo INTEIRO.
+  // Antes ela filtrava no navegador só os 500 que a página tinha trazido.
+  const irPara = React.useCallback(
+    (termo: string, novaPagina: number) => {
+      const destino = queryDaTela(termo, novaPagina) || "?";
+      iniciarNavegacao(() => router.replace(destino, { scroll: false }));
+    },
+    [router],
+  );
+
+  React.useEffect(() => {
+    if (busca.trim() === buscaInicial) return;
+    // Espera a pessoa parar de digitar: cada consulta conta o catálogo inteiro.
+    const timer = window.setTimeout(() => irPara(busca, 1), 350);
+    return () => window.clearTimeout(timer);
+  }, [busca, buscaInicial, irPara]);
+
+  const primeiro = total === 0 ? 0 : (pagina - 1) * porPagina + 1;
+  const ultimo = Math.min(pagina * porPagina, total);
 
   async function salvar() {
     const corpo = doRascunho(rascunho, t);
@@ -480,14 +519,22 @@ export function ProdutosClient({
         </div>
       ) : null}
 
-      {filtrados.length === 0 ? (
+      {inicial.length === 0 && buscaInicial !== "" ? (
+        <div className="rounded-lg border border-dashed p-8 text-center" data-testid="produtos-busca-vazia">
+          <p className="font-medium">{t("Nenhum produto encontrado para essa busca")}</p>
+        </div>
+      ) : inicial.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center" data-testid="produtos-vazio">
           <p className="font-medium">{textos.vazio}</p>
           <p className="mt-1 text-sm text-muted-foreground">{textos.vazioDica}</p>
         </div>
       ) : (
-        <ul className="divide-y rounded-lg border" data-testid="lista-produtos">
-          {filtrados.map((p) => {
+        <ul
+          className={`divide-y rounded-lg border ${carregando ? "opacity-60" : ""}`}
+          aria-busy={carregando}
+          data-testid="lista-produtos"
+        >
+          {inicial.map((p) => {
             const capa = p.fotos?.[0] ? urlsDasFotos[p.fotos[0]] : undefined;
             return (
             <li key={p.id} data-testid={`produto-${p.codigo}`}>
@@ -516,6 +563,15 @@ export function ProdutosClient({
                   <Button
                     variant="ghost"
                     size="sm"
+                    onClick={() => setEditando((v) => (v === p.id ? null : p.id))}
+                    aria-expanded={editando === p.id}
+                    data-testid={`editar-${p.codigo}`}
+                  >
+                    {t("Editar")}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => setFotosAbertas((v) => (v === p.id ? null : p.id))}
                     aria-expanded={fotosAbertas === p.id}
                     data-testid={`abrir-fotos-${p.codigo}`}
@@ -536,11 +592,47 @@ export function ProdutosClient({
             {podeEditar && fotosAbertas === p.id ? (
               <FotosDoProduto produto={p} urls={urlsDasFotos} />
             ) : null}
+            {podeEditar && editando === p.id ? (
+              // `key` porque o painel fica na MESMA posição do DOM ao trocar de
+              // produto: sem ela o React reaproveita o estado e o formulário
+              // abriria preenchido com o produto anterior.
+              <EdicaoDoProduto key={p.id} produto={p} aoFechar={() => setEditando(null)} />
+            ) : null}
             </li>
             );
           })}
         </ul>
       )}
+
+      {total > 0 ? (
+        <div className="mt-3 flex items-center justify-between text-sm text-muted-foreground" data-testid="paginacao-produtos">
+          <span className="tabular-nums" data-testid="contagem-produtos">
+            {primeiro}–{ultimo} {t("de")} {total}
+          </span>
+          {total > porPagina ? (
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={pagina <= 1 || carregando}
+                onClick={() => irPara(busca, pagina - 1)}
+                data-testid="pagina-anterior"
+              >
+                {t("Página anterior")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={ultimo >= total || carregando}
+                onClick={() => irPara(busca, pagina + 1)}
+                data-testid="proxima-pagina"
+              >
+                {t("Próxima página")}
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

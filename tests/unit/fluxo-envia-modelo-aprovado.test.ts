@@ -124,6 +124,10 @@ function fakePool(c: Cenario) {
       };
     }
     if (/from conversations/.test(sql)) return { rows: [{ id: CONVERSA, channel_session_id: CANAL, archived_at: null }] };
+    // A inscrição viva que o handler consulta ANTES do envio (guard da #1913).
+    if (sql.includes("select current_node_id, status from followup_enrollments")) {
+      return { rows: [{ current_node_id: "passo", status: "active" }] };
+    }
     return { rows: [] };
   });
   return { query } as never;

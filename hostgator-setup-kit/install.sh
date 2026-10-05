@@ -1377,7 +1377,7 @@ FIELDS=(
   # comportamento de sempre para quem não tem marca própria.
   "APP_ACCENT_HEX|Cor da sua marca em hex, ex.: #7a5cd6 (Enter usa a cor do sistema)||v_hex||opcional"
   "SUPPORT_EMAIL|E-mail de suporte que SEUS clientes veem (Enter pula)||v_email||opcional"
-  "RESEND_API_KEY|Chave da Resend — envia convite e e-mail de LGPD (resend.com/api-keys, Enter pula)|||secret|opcional"
+  "RESEND_API_KEY|Chave da Resend — envia convite e e-mail de LGPD (resend.com/api-keys; Enter pula: dá para configurar depois, em Admin → E-mail)|||secret|opcional"
   "RESEND_FROM_EMAIL|Remetente dos e-mails, de um domínio verificado na Resend (Enter pula)||v_email||opcional"
 )
 
@@ -2126,6 +2126,50 @@ $(c_ylw "  ─── $(t "A IA ainda não atende — falta cadastrar a chave") �
 PEND
 }
 
+# ── A pendência do ENVIO de e-mail, quando nada ficou no .env ───────────────
+# A issue #1110 registrou a ponta que o #714 deixou visível: o campo da Resend é
+# `opcional` desde então, mas quem pulava terminava sem saber que o caminho de
+# volta existe. A tela final é a única que a pessoa lê inteira (mesma régua do
+# `pendencia_da_ia`), e o aviso diz ONDE configurar e O QUE ainda não sai.
+#
+# Critério: nenhum remetente DE AMBIENTE — nem a chave da Resend, nem o host do
+# SMTP. Quem cadastrou pela tela `/admin/email` (banco, que PREVALECE sobre o
+# .env) reconhece o aviso e ignora; o kit não lê o banco aqui.
+#
+# A topologia muda o que falar: num Supabase PRÓPRIO o GoTrue usa o SMTP do CRM
+# para "esqueci a senha" e confirmação de cadastro, então a tela só alcança o
+# login por e-mail depois do `update.sh`. Na nuvem, esses e-mails são do
+# Supabase e o que falta é só o envio do produto.
+pendencia_do_email() {
+  [ -n "${RESEND_API_KEY:-}" ] && return 0
+  [ -n "${SMTP_HOST:-}" ] && return 0
+
+  cat <<PEND
+
+$(c_ylw "  ─── $(t "O envio de e-mail ainda não funciona") ─────────────────────")
+
+  $(t "Você deixou a chave da Resend para depois e não preencheu um SMTP. O CRM")
+  $(t "está no ar; o que não sai é o convite para a equipe e o e-mail com o PDF")
+  $(t "de LGPD.")
+
+  $(t "Para ligar, cadastre em Admin → E-mail o servidor SMTP próprio ou o")
+  $(t "serviço externo (Resend). O que a tela salva fica CIFRADO no banco e")
+  $(t "prevalece sobre o .env.")
+PEND
+
+  case "${NEXT_PUBLIC_SUPABASE_URL:-}" in
+    https://*.supabase.co*) return 0 ;;
+  esac
+
+  cat <<PEND
+
+  $(t "No SEU Supabase, os e-mails de acesso (senha, cadastro) também saem pelo")
+  $(t "SMTP do CRM. Depois de salvar na tela, rode:")
+
+      bash hostgator-setup-kit/update.sh
+PEND
+}
+
 PENDENCIA_EMAIL="$(mktemp)"
 PENDENCIA_ARQUIVO="$PENDENCIA_EMAIL" \
   SUPABASE_ACCESS_TOKEN="${SUPABASE_ACCESS_TOKEN:-}" \
@@ -2425,6 +2469,7 @@ $(c_grn " $(t "Instalação concluída!")")
 $(c_grn "═══════════════════════════════════════════════════════")
 
 $(pendencia_dos_emails)
+$(pendencia_do_email)
 $(pendencia_da_ia)
   1. $(t "Acesse:")  https://${DOMAIN}
      $(t "(o SSL leva ~1min pra emitir no primeiro acesso)")

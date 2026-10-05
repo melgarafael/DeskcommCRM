@@ -56,7 +56,12 @@ export interface BrasilApiClientOpts {
   fetchFn?: typeof fetch;
 }
 
-export function createBrasilApiClient(opts: BrasilApiClientOpts = {}) {
+/** Contrato do cliente — o que o handler de lookup injeta no teste. */
+export interface BrasilApiClient {
+  lookupCnpj(normalizedCnpj: string): Promise<BrasilApiResult>;
+}
+
+export function createBrasilApiClient(opts: BrasilApiClientOpts = {}): BrasilApiClient {
   const baseUrl = (opts.baseUrl ?? DEFAULT_BASE).replace(/\/$/, "");
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const fetchFn = opts.fetchFn ?? fetch;

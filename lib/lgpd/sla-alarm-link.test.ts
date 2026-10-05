@@ -48,6 +48,7 @@ async function alarmar() {
     organizationDpoEmail: "dpo@empresa.test",
     organizationName: "Empresa B",
     marca: { nome: "CRM", accent: "#000000", accentFg: "#ffffff" } as never,
+    country: null,
   });
 }
 

@@ -158,7 +158,7 @@ describe("duplicateAgentWithVersion", () => {
     expect(versao.row.system_prompt).toBe("rascunho novo");
   });
 
-  it("rag_bot legado não tem versão e ainda assim duplica", async () => {
+  it("rag_bot legado sem versão nasce mcp_agent + v1 draft, não casca", async () => {
     const ragBot = { ...AGENTE_MCP, kind: "rag_bot" };
     const { db, inserts } = makeDb({ agent: ragBot });
 
@@ -170,8 +170,44 @@ describe("duplicateAgentWithVersion", () => {
     });
 
     expect(res.ok).toBe(true);
-    expect(inserts.find((i) => i.table === "ai_agent_versions")).toBeUndefined();
-    expect(inserts.find((i) => i.table === "ai_agents")).toBeDefined();
+
+    // Antes (#1357): `kind: "rag_bot"` e NENHUMA linha em `ai_agent_versions` —
+    // um clone que os dois runtimes resolvem por `published_version_id` não
+    // enxergam. Duplicar clonava um mudo.
+    const agente = inserts.find((i) => i.table === "ai_agents")!;
+    expect(agente.row.kind).toBe("mcp_agent");
+
+    const versao = inserts.find((i) => i.table === "ai_agent_versions");
+    expect(versao, "sem a v1 a cópia é a casca que este módulo existe para não produzir").toBeDefined();
+    expect(versao!.row.status).toBe("draft");
+    expect(versao!.row.version_number).toBe(1);
+    // A ponte do formato legado: `model` vira provider/modelo e os dois nulos
+    // que o corpo legado nunca teve.
+    expect(versao!.row.provider).toBe("anthropic");
+    expect(versao!.row.model).toBe("claude-sonnet-4-6");
+    expect(versao!.row.credential_id).toBeNull();
+    expect(versao!.row.channel_session_id).toBeNull();
+    expect(versao!.row.system_prompt).toBe("prompt do agente");
+    // Não é cópia de versão nenhuma — a origem não tinha.
+    if (!res.ok) throw new Error(`duplicacao falhou: ${res.message ?? res.error}`);
+    expect(res.sourceVersionId).toBeNull();
+  });
+
+  it("rag_bot legado com prompt que a v1 recusa: recusa sem gravar, não lança", async () => {
+    // Prompt abaixo do mínimo da versão (10) só existe escrito direto no banco;
+    // `mcpAgentDraftRecords` usa `parse`, e sem a guarda a ZodError escapava.
+    const ragBot = { ...AGENTE_MCP, kind: "rag_bot", system_prompt: "curto" };
+    const { db, inserts } = makeDb({ agent: ragBot });
+
+    const res = await duplicateAgentWithVersion(db, {
+      orgId: ORG,
+      agentId: "agent-1",
+      actorUserId: ACTOR,
+      requireVersion: false,
+    });
+
+    expect(res).toMatchObject({ ok: false, error: "agent_insert_failed" });
+    expect(inserts).toHaveLength(0);
   });
 
   it("rota da API: mcp_agent sem versão é conflito, não casca", async () => {

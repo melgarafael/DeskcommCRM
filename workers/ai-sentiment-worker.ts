@@ -499,6 +499,13 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
         [CHAVES_DO_CLIMA.nota]: decisao.score,
         sentiment_latency_ms: decisao.latenciaMs,
         [CHAVES_DO_CLIMA.motor]: decisao.engine,
+        // O limiar COM O QUAL esta nota foi cortada (#2219): é o do agente da
+        // conversa, e não o default. A concordância do cartão do Jev lê daqui —
+        // sem gravá-lo, um agente em 0,1 tinha a conta dele medida contra 0,3.
+        // Vai junto com a nota (não só no alerta) porque as mensagens ACIMA do
+        // limiar também entram na concordância, e são justamente as que o
+        // alerta não emite.
+        [CHAVES_DO_CLIMA.limiar]: threshold,
         ...(clima?.ok
           ? { [CHAVES_DO_CLIMA.notaDoJev]: clima.score01, [CHAVES_DO_CLIMA.modeloDoJev]: clima.modelo }
           : {}),

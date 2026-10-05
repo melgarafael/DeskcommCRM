@@ -48,10 +48,17 @@ interface TestResponse {
     candidates?: Array<{ body: string; trace: Array<{ gate: string; verdict: string }> }>;
     proposals?: Array<{ tool: string; arguments: unknown }>;
     impediments?: Array<{ code: string; message: string }>;
+    /**
+     * Não bloqueiam o teste: dizem o que impediria o ENVIO real agora (ex.: fora
+     * do horário). Ver `gatesDoSandbox` em lib/agent-engine/agent/preview.ts.
+     */
+    warnings?: Array<{ code: string; message: string }>;
     restrictions?: string[];
     /** Ver lib/ai/agents/avaliar-resposta-de-teste.ts. */
     guardrails?: {
       passou: boolean;
+      /** false = não havia texto para avaliar (teste sem resposta). */
+      avaliado?: boolean;
       categorias: string[];
       termos: string[];
       naoAvaliados: Array<{ gate: string; porque: string }>;
@@ -63,16 +70,16 @@ interface TestResponse {
  * O que as verificações disseram sobre a resposta — e o que elas NÃO puderam
  * dizer.
  *
- * Antes disto, o teste mostrava a resposta e mais nada: nenhum gate a examinava
- * (o runtime desta tela não importa a cadeia), então o usuário publicava achando
- * que tinha visto o comportamento real. Mostrar "não verificado" em voz alta é o
- * conserto — silêncio que parece aprovação foi o defeito.
+ * Este componente mostra o resultado da checagem textual suplementar. O motor
+ * de prévia executa verificações próprias com contexto simulado; nenhuma delas
+ * é prova de que o envio real esteja liberado.
  */
 function Verificacoes({ g }: { g: NonNullable<TestResponse["data"]["guardrails"]> }) {
   const t = useT();
   return (
     <div className="space-y-2" data-testid="teste-verificacoes">
-      {g.passou ? (
+      {/* Sem texto não há veredito: nem "limpo", nem "vazou". */}
+      {g.avaliado === false ? null : g.passou ? (
         <p
           data-testid="teste-vazamento-limpo"
           className="rounded-md border border-border/60 bg-muted/40 p-2 text-xs"
@@ -94,26 +101,11 @@ function Verificacoes({ g }: { g: NonNullable<TestResponse["data"]["guardrails"]
         </div>
       )}
 
-      {/*
-        A lista do que NÃO foi checado. Ela é o que separa este conserto de uma
-        mentira mais bonita: as verificações que dependem do turno real não podem
-        ser avaliadas aqui, e inventá-las daria um veredito com aparência de
-        prova. O usuário precisa saber a diferença entre "passou em tudo" e
-        "passou no que dava para checar sem uma conversa de verdade".
-
-        (O texto dizia "os seis gates" enquanto a lista renderizava nove — número
-        que já foi verdade para um subconjunto e envelheceu. A contagem agora sai
-        da própria lista, logo abaixo, e não de prosa.)
-
-        Esta lista responde "o que este teste NÃO checou"; a aba "Confere antes de
-        enviar" responde "o que é checado, e o que cada uma protege". São
-        perguntas diferentes, e por isso há um ponteiro em vez de uma cópia — as
-        duas saem da mesma cadeia, cada uma com o seu teste de casamento.
-      */}
+      {/* Esta lista descreve somente o alcance da checagem textual adicional. */}
       <details className="text-xs text-muted-foreground">
         <summary className="cursor-pointer" data-testid="teste-nao-verificado">
-          {t("O teste não consegue verificar tudo (")}
-          {g.naoAvaliados.length} {t("verificações ficam de fora)")}
+          {t("A checagem textual não reavalia todas as regras (")}
+          {g.naoAvaliados.length} {t("verificações fora desta camada)")}
         </summary>
         <ul className="mt-2 space-y-1 pl-4">
           {g.naoAvaliados.map((n) => (
@@ -122,7 +114,7 @@ function Verificacoes({ g }: { g: NonNullable<TestResponse["data"]["guardrails"]
         </ul>
         <p className="mt-2">
           {t(
-            "Estas só acontecem numa conversa real, com um cliente de verdade do outro lado. Para ver a lista inteira do que é conferido — e o que cada verificação protege — abra a aba",
+            "O motor de prévia pode executar algumas dessas verificações com dados simulados e fazer chamadas ao modelo. Isso não comprova liberação para envio real. Para ver as regras de envio, abra a aba",
           )}{" "}
           <span className="font-medium text-foreground">{t("Confere antes de enviar")}</span>.
         </p>
@@ -324,6 +316,16 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
                       {JSON.stringify(candidate.trace, null, 2)}
                     </pre>
                   </details>
+                ))}
+                {result.warnings?.map((x, i) => (
+                  <p
+                    role="status"
+                    key={`aviso-${i}`}
+                    data-testid="teste-aviso-de-envio"
+                    className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2"
+                  >
+                    {x.message}
+                  </p>
                 ))}
                 {result.impediments?.map((x, i) => (
                   <p role="status" key={i}>

@@ -72,6 +72,10 @@ const pool = {
     if (sql.includes("d.fechada_em::text")) return { rows: [{ ...boundary, status: "open", demanda_fechada_em: null }] };
     if (sql.includes("'action_sent'")) return { rows: [{ fechado_em: envioFechadoEm }] };
     if (/from conversations c/.test(sql)) return { rows: [{ channel_session_id: "canal-1", archived_at: null }] };
+    // A inscrição viva que o handler consulta ANTES do envio (guard da #1913).
+    if (sql.includes("select current_node_id, status from followup_enrollments")) {
+      return { rows: [{ current_node_id: "c1", status: "active" }] };
+    }
     return { rows: [] };
   }),
 } as never;

@@ -34,6 +34,7 @@ export const crmSearchContacts: McpToolDefinition<typeof searchInputShape> = {
   requiresRole: "agent",
   requiresScope: "mcp:read",
   handler: async (input, ctx) => {
+    const doTurno = ctx.contatoDoTurno;
     const result = await listContactsHandler(
       ctx.supabase,
       {
@@ -46,6 +47,10 @@ export const crmSearchContacts: McpToolDefinition<typeof searchInputShape> = {
         limit: input.limit,
         cursor: input.cursor,
       },
+      // O escopo vai NA CONSULTA, antes do limite: filtrar a página depois
+      // devolvia vazio quando o contato do turno não estava entre os primeiros
+      // que casavam com o termo.
+      doTurno,
     );
 
     // ── A CONVERSA É COM ALGUÉM (#2158) ─────────────────────────────────────
@@ -72,7 +77,6 @@ export const crmSearchContacts: McpToolDefinition<typeof searchInputShape> = {
     //
     // A paginação morre junto: `cursor`/`has_more` descrevem a varredura da
     // ORGANIZAÇÃO, e a próxima página voltaria a ser varredura.
-    const doTurno = ctx.contatoDoTurno;
     const visiveis = doTurno ? result.contacts.filter((c) => c.id === doTurno) : result.contacts;
 
     return {

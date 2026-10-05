@@ -155,6 +155,38 @@ export const AVISOS_DOS_PEDIDOS = {
   },
 } as const satisfies Record<IdDoPedido, { kind: InboxKind; titulo: string; corpo: string }>;
 
+/**
+ * O aviso de cada pedido quando quem o percebeu foi a REGRA DE HOJE sobre a
+ * transcrição de um áudio (#2233) — o mesmo kind, e por isso o mesmo índice
+ * único da 0500: um só aviso por conversa e pedido, seja ele quem o abriu.
+ *
+ * O TEXTO é outro, e não por capricho: o de cima afirma que o Jev percebeu o
+ * que a regra não reconheceu, e aqui foi exatamente o contrário. Dizer o
+ * contrário do que aconteceu é o modo de a Central mentir para quem a lê.
+ *
+ * O corpo também diz a REGRA deste caminho — a transcrição de um áudio não
+ * bloqueia o contato, porque o bloqueio continua sendo do texto que o cliente
+ * digita, na entrada da mensagem (`lib/opt-out/deteccao.ts`) —, e nunca
+ * repete a transcrição: a Central é lida pela organização inteira. Diz a
+ * regra, e não "nada foi bloqueado": como os irmãos de cima, o corpo fica
+ * aberto por dias e não afirma estado que muda depois de ele abrir (o cliente
+ * pode responder PARAR no minuto seguinte).
+ */
+export const AVISOS_DA_REGRA = {
+  humano: {
+    kind: "jev_pedido_de_humano",
+    titulo: "Um cliente pediu para falar com uma pessoa num áudio",
+    corpo:
+      "A regra de hoje reconheceu, na transcrição de um áudio do cliente, um pedido para falar com uma pessoa. Abra a conversa e confira se alguém da equipe já assumiu — a transcrição não passa a conversa nem cala o assistente.",
+  },
+  opt_out: {
+    kind: "jev_parar_de_receber",
+    titulo: "Um cliente pediu para parar de receber mensagens num áudio",
+    corpo:
+      "A regra de hoje reconheceu, na transcrição de um áudio do cliente, um pedido para parar de receber mensagens. Abra a conversa e confira. A transcrição de um áudio não bloqueia o contato: se o cliente quiser mesmo parar de receber, assuma o atendimento para o assistente parar de responder e peça que ele responda PARAR — é assim que o contato fica bloqueado.",
+  },
+} as const satisfies Record<IdDoPedido, { kind: InboxKind; titulo: string; corpo: string }>;
+
 /** O que a regra de hoje já pegou nesta mensagem. Quem chama roda a regra. */
 export type RegraPegou = Readonly<Record<IdDoPedido, boolean>>;
 
@@ -470,44 +502,88 @@ export async function avisarAEquipe(
   for (const p of aAvisar) {
     if (conversa?.encerrada === true) continue;
     if (p.id === "humano" && conversa?.comUmaPessoa === true) continue;
-    const aviso = AVISOS_DOS_PEDIDOS[p.id];
-    const texto = { title: traduzir(aviso.titulo, e.idioma), body: traduzir(aviso.corpo, e.idioma) };
-    try {
-      const { error } = await admin.from("agent_inbox_items").insert({
+    await gravarAvisoNaCentral(admin, e, AVISOS_DOS_PEDIDOS[p.id]);
+  }
+}
+
+/**
+ * O aviso que a REGRA DE HOJE abriu sobre a transcrição de um áudio (#2233).
+ *
+ * Fora do `estado` da tarefa, de propósito: quem decidiu o que fazer com este
+ * pedido foi a própria empresa, ao abrir a campanha — a regra que bloqueia o
+ * contato por texto roda em QUALQUER estado, inclusive com a tarefa do Jev
+ * desligada, e o áudio não pode ser o único caminho em que ela não avisa
+ * ninguém. Nada aqui passa, cala nem bloqueia: só o aviso, com o mesmo portão
+ * do Jev (`turnoRodaria`, conferido por quem chama) e as mesmas duas travas do
+ * gatilho da 0500 — conversa encerrada não nasce atendida, e o pedido de
+ * pessoa não avisa o que a Central já diz quando a conversa está com uma
+ * pessoa.
+ *
+ * Um aviso por conversa e pedido é do BANCO (índice único da 0500): o retry
+ * do worker de mídia que reabra este caminho reabre o aviso que existe.
+ */
+export async function avisarPelaRegra(
+  admin: Admin,
+  e: { organizationId: string; conversationId: string; idioma: Idioma },
+  ids: readonly IdDoPedido[],
+  lerAConversa: () => Promise<AConversaAgora | null>,
+): Promise<void> {
+  if (ids.length === 0) return;
+  const conversa = await lerAConversa().catch(() => null);
+  for (const id of ids) {
+    if (conversa?.encerrada === true) continue;
+    if (id === "humano" && conversa?.comUmaPessoa === true) continue;
+    await gravarAvisoNaCentral(admin, e, AVISOS_DA_REGRA[id]);
+  }
+}
+
+/**
+ * UM insert na Central por aviso, ou o reabre quando o índice único da 0500 já
+ * o tem (23505) — o mesmo caminho dos dois abridores, porque a regra do banco
+ * (um aviso por organização, kind e conversa) é uma só, seja o Jev ou a regra
+ * quem chegue primeiro. Nunca lança.
+ */
+async function gravarAvisoNaCentral(
+  admin: Admin,
+  e: { organizationId: string; conversationId: string; idioma: Idioma },
+  aviso: { kind: InboxKind; titulo: string; corpo: string },
+): Promise<void> {
+  const texto = { title: traduzir(aviso.titulo, e.idioma), body: traduzir(aviso.corpo, e.idioma) };
+  try {
+    const { error } = await admin.from("agent_inbox_items").insert({
+      organization_id: e.organizationId,
+      kind: aviso.kind,
+      severity: "warn",
+      ...texto,
+      ref_kind: "conversation",
+      ref_id: e.conversationId,
+    });
+    if (error === null) return;
+    if (error.code !== "23505") {
+      logger.warn("aviso do pedido do cliente na Central não foi gravado", {
         organization_id: e.organizationId,
-        kind: aviso.kind,
-        severity: "warn",
-        ...texto,
-        ref_kind: "conversation",
-        ref_id: e.conversationId,
+        erro: error.message.slice(0, 200),
       });
-      if (error === null) continue;
-      if (error.code !== "23505") {
-        logger.warn("aviso do pedido do cliente na Central não foi gravado", {
-          organization_id: e.organizationId,
-          erro: error.message.slice(0, 200),
-        });
-        continue;
-      }
-      const { error: erroAoReabrir } = await admin
-        .from("agent_inbox_items")
-        .update({ status: "open", resolved_at: null, created_at: new Date().toISOString(), ...texto })
-        .eq("organization_id", e.organizationId)
-        .eq("kind", aviso.kind)
-        .eq("ref_kind", "conversation")
-        .eq("ref_id", e.conversationId);
-      if (erroAoReabrir) {
-        logger.warn("aviso do pedido do cliente na Central não foi reaberto", {
-          organization_id: e.organizationId,
-          erro: erroAoReabrir.message.slice(0, 200),
-        });
-      }
-    } catch (erro) {
-      logger.warn("aviso do pedido do cliente na Central falhou", {
+      return;
+    }
+    const { error: erroAoReabrir } = await admin
+      .from("agent_inbox_items")
+      .update({ status: "open", resolved_at: null, created_at: new Date().toISOString(), ...texto })
+      .eq("organization_id", e.organizationId)
+      .eq("kind", aviso.kind)
+      .eq("ref_kind", "conversation")
+      .eq("ref_id", e.conversationId);
+    if (erroAoReabrir) {
+      logger.warn("aviso do pedido do cliente na Central não foi reaberto", {
         organization_id: e.organizationId,
-        erro: erro instanceof Error ? erro.name : typeof erro,
+        erro: erroAoReabrir.message.slice(0, 200),
       });
     }
+  } catch (erro) {
+    logger.warn("aviso do pedido do cliente na Central falhou", {
+      organization_id: e.organizationId,
+      erro: erro instanceof Error ? erro.name : typeof erro,
+    });
   }
 }
 

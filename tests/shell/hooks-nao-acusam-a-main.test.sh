@@ -77,6 +77,10 @@
 #   check-migration-triple.sh
 #     8. o NNNN e o timestamp já COMMITADOS na própria branch contam (MIG-PROPRIA), e a
 #        guarda contra a main e contra outra branch segue de pé (MIG-CONTROLE).
+#     9. e o critério de aceite da #374 nas DUAS metades, pelo caminho de produção:
+#        um `git merge origin/main` de verdade que traz migration da main passa
+#        (MIG-MERGE) e, NO MESMO ARQUIVO, criar a migration com número já usado segue
+#        bloqueado (MIG-CRIA). Sem a segunda, a primeira se provaria desligando o guard.
 #
 # Controle de vivacidade: os casos 2, 3, 4, 5, 6 e 7 são as asserções POSITIVAS (A, B+, D,
 # D2, R1, R1-LIMPO, R-VELHO, FECHADO-SEM-BASE, FURO-A, FURO-A-MH, FURO-B, COLEGA-DEL, MODO,
@@ -975,6 +979,60 @@ git -C "$m" reset -q --hard HEAD
 tripla "$m" 20260910040000_0414_livre.sql
 r=$(rodar "$m" check-migration-triple.sh)
 assert_exit "$(exit_de "$r")" 0 "MIG-CONTROLE: e um número de fato livre passa"
+
+# ── check-migration-triple.sh · o CRITÉRIO DE ACEITE DA #374, NAS DUAS METADES ──────
+# A issue pede as duas direções JUNTAS neste arquivo: (1) um `git merge origin/main` que
+# traz migration da main passa pelo dispatcher sem ser bloqueado, e (2) quem CRIA uma
+# migration com número já usado continua sendo barrado. Sem a (2), o conserto seria
+# "desligar o hook" e a metade (1) ficaria verde sozinha.
+#
+# Aqui é o CAMINHO DE PRODUÇÃO, não encenação de índice: `git merge` de verdade chama
+# `pre-merge-commit`, que executa o MESMO dispatcher do commit (rota do #1225). Medido
+# em 04/10/2026 sobre origin/main@711bd2705 — com os guards de ANTES da #374 os dois
+# casos abaixo ficam vermelhos (sabotagem: `loop/hooks/check-migration-triple.sh` sem o
+# filtro por `origin/main`, e `loop/hooks/freeze-invariants.sh` de antes de 5eda2d033).
+printf '\ncheck-migration-triple.sh — o merge da main, criterio da #374 (as duas metades)\n'
+principal_mig="$TMP/principal_mig"; mkdir -p "$principal_mig/supabase/migrations" "$principal_mig/scripts"
+git -C "$principal_mig" init -q -b main
+cp "$RAIZ/scripts/migration-populacao.sh" "$principal_mig/scripts/"
+printf -- '-- baseline\n' > "$principal_mig/supabase/baseline.sql"
+printf '| base |\n' > "$principal_mig/supabase/migrations/MANIFEST.md"
+printf 'select 1;\n' > "$principal_mig/supabase/migrations/20260801000000_0410_da_main.sql"
+commitar "$principal_mig" "base com a 0410"
+BASE_MIG=$(git -C "$principal_mig" rev-parse HEAD)
+# uma branch de COLEGA que já tem OUTRO arquivo com o MESMO NNNN 0500 — é o cenário em
+# que o filtro por `origin/main` é o que separa "veio da main" de colisão de verdade
+# (sem o filtro, o merge acusa a dona; com ele, só sai da conta o que a main não tem).
+git -C "$principal_mig" checkout -q -b colega
+printf 'select 1;\n' > "$principal_mig/supabase/migrations/20260802000000_0500_do_colega.sql"
+printf -- '-- apendice do colega\n' >> "$principal_mig/supabase/baseline.sql"
+printf '| `20260802000000_0500_do_colega.sql` |\n' >> "$principal_mig/supabase/migrations/MANIFEST.md"
+commitar "$principal_mig" "o colega publica outro arquivo com NNNN 0500"
+git -C "$principal_mig" checkout -q main
+# a main ANDA e publica a 0500 com a tripla inteira
+printf 'select 1;\n' > "$principal_mig/supabase/migrations/20260803000000_0500_da_main.sql"
+printf -- '-- apendice 0500\n' >> "$principal_mig/supabase/baseline.sql"
+printf '| `20260803000000_0500_da_main.sql` |\n' >> "$principal_mig/supabase/migrations/MANIFEST.md"
+commitar "$principal_mig" "a main publica a 0500"
+
+# (1) a branch mergeia a main: o dispatcher roda e NÃO pode acusar o que veio de lá
+mm="$TMP/mm"; preparar "$mm" "$principal_mig" "$BASE_MIG"
+# o `preparar` copia `*.sh` + `pre-commit`; a ROTA DO MERGE é o `pre-merge-commit`
+# (#1225) e sem ele o git chama nenhum hook — o caso passaria sem medir nada.
+cp "$HOOKS_ORIGEM/pre-merge-commit" "$mm/loop/hooks/" && chmod +x "$mm/loop/hooks/pre-merge-commit"
+assert_exit "$(test -x "$mm/loop/hooks/pre-merge-commit" && echo 0 || echo 1)" 0 "MIG-MERGE: premissa — a rota do merge está ARMADA no fixture"
+saida_merge=$( cd "$mm" && git merge --no-edit origin/main 2>&1 ); rc_merge=$?
+assert_exit "$rc_merge" 0 "MIG-MERGE: git merge origin/main trazendo a 0500 da main NÃO é bloqueado"
+assert_exit "$(git -C "$mm" rev-list --parents -n1 HEAD 2>/dev/null | wc -w | tr -d ' ')" 3 "MIG-MERGE: e o commit é um MERGE de verdade (2 pais)"
+assert_contains "$(git -C "$mm" ls-tree -r --name-only HEAD -- supabase/migrations)" "20260803000000_0500_da_main.sql" "MIG-MERGE: e a migration da main chegou ao HEAD"
+assert_contains "$saida_merge" "Merge made by" "MIG-MERGE: e a saída é a de um merge concluído (não uma recusa do hook)"
+
+# (2) no MESMO arquivo: quem CRIA o número já usado segue barrado, pelo caminho de produção
+mm2="$TMP/mm2"; preparar "$mm2" "$principal_mig" "$BASE_MIG"
+tripla "$mm2" 20260804000000_0500_a_minha.sql
+r=$(commitar_pelo_dispatcher "$mm2" "crio a 0500 de novo")
+assert_exit "$(exit_de "$r")" 1 "MIG-CRIA: criar migration com NNNN=0500 já usado segue BLOQUEADO"
+assert_contains "$(saida_de "$r")" "sequência NNNN=0500" "MIG-CRIA: e a mensagem nomeia a sequência acusada"
 
 # ── check-migration-triple.sh · população GRANDE termina (os dois hooks) ─────────
 # Medido em 29/09/2026 no clone do mantenedor: ~5.788 refs de outrem → ~1,29 M linhas

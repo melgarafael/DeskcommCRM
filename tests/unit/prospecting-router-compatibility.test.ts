@@ -69,10 +69,10 @@ beforeEach(() => {
   mocks.support.mockResolvedValue(null);
   mocks.guard.mockResolvedValue({ ok: true, user: { id, idioma: "pt" }, org: { orgId: id } });
 });
-function request() {
+function request(members: Record<string, unknown>[] = [member]) {
   return new NextRequest("http://localhost/api/v1/ai/routers/test/members", {
     method: "PUT",
-    body: JSON.stringify({ members: [member] }),
+    body: JSON.stringify({ members }),
   });
 }
 it("uses the transactional shared lock when a DB URL is configured", async () => {
@@ -81,8 +81,15 @@ it("uses the transactional shared lock when a DB URL is configured", async () =>
   mocks.pool.mockReturnValue({ connect: async () => db });
   const response = await PUT(request(), { params: Promise.resolve({ id }) });
   expect(response.status).toBe(200);
-  // O schema completa `flow_pointer_id` (null) — o vínculo com o roteiro (#1573, B2).
-  expect(mocks.write).toHaveBeenCalledWith(db, id, id, [{ ...member, flow_pointer_id: null }], "replace");
+  // O schema completa `flow_pointer_id` (null) — o vínculo com o roteiro (#1573, B2) —
+  // e o destino da intenção (#2155): sem destino, só roteia o agente.
+  expect(mocks.write).toHaveBeenCalledWith(
+    db,
+    id,
+    id,
+    [{ ...member, flow_pointer_id: null, pipeline_id: null, stage_id: null }],
+    "replace",
+  );
   expect(db.query.mock.calls.map(([sql]) => sql)).toEqual(["begin", "commit"]);
   expect(mocks.admin).not.toHaveBeenCalled();
 });
@@ -108,4 +115,24 @@ it("validates tenant membership before any HTTP mutation", async () => {
     "member_agent_not_found",
   );
   expect(db.mutations).toEqual([]);
+});
+it("answers 422, not 500, when the destination pipeline is not of this organization (#2155)", async () => {
+  vi.stubEnv("SUPABASE_DB_URL", "postgresql://local-test");
+  const db = { query: vi.fn().mockResolvedValue({ rows: [] }), release: vi.fn() };
+  mocks.pool.mockReturnValue({ connect: async () => db });
+  // A FK composta da 0542 recusa funil de outra empresa com 23503.
+  mocks.write.mockRejectedValueOnce(Object.assign(new Error("fk"), { code: "23503" }));
+  const response = await PUT(request([{ ...member, pipeline_id: id }]), {
+    params: Promise.resolve({ id }),
+  });
+  expect(response.status).toBe(422);
+  expect(db.query.mock.calls.map(([sql]) => sql)).toEqual(["begin", "rollback"]);
+});
+it("refuses a destination stage without its pipeline before touching the database (#2155)", async () => {
+  vi.stubEnv("SUPABASE_DB_URL", "postgresql://local-test");
+  const response = await PUT(request([{ ...member, stage_id: id }]), {
+    params: Promise.resolve({ id }),
+  });
+  expect(response.status).toBe(422);
+  expect(mocks.pool).not.toHaveBeenCalled();
 });

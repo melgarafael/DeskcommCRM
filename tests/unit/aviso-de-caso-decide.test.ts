@@ -345,6 +345,16 @@ describe("aviso ao suporte — o que impede o envio", () => {
     expect(estado.patches.at(-1)).toMatchObject({ erro_codigo: "canal_nao_aceita_aviso_livre" });
   });
 
+  it("canal PAUSADO pelo operador não envia: falha com o código próprio e avisa na Central (#2318)", async () => {
+    const { deps, estado } = monta({
+      canal: { id: CANAL, status: "WORKING", archived_at: null, aceitaMensagemLivre: true, desativado: true },
+    });
+    await aplicaAvisoDeCaso(deps, evento());
+    expect(estado.enviados).toHaveLength(0);
+    expect(estado.patches.at(-1)).toMatchObject({ status: "falhou", erro_codigo: "canal_desativado" });
+    expect(estado.central).toHaveLength(1);
+  });
+
   it("canal fora do ar é RETRY, não falha — ele volta sozinho", async () => {
     const { deps, estado } = monta({
       canal: { id: CANAL, status: "STOPPED", archived_at: null, aceitaMensagemLivre: true },

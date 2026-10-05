@@ -34,7 +34,8 @@ services:
       WHATSAPP_HOOK_URL: ${WAHA_HOOK_BASE_URL:-http://host.docker.internal:3003}/api/v1/webhooks/waha
       WHATSAPP_HOOK_EVENTS: "message.any,message.ack,message.edited,message.revoked,session.status,state.change"
       # HMAC SHA512 do payload, validado server-side via crypto.timingSafeEqual.
-      WHATSAPP_HOOK_HMAC: ${WAHA_HMAC_SECRET}
+      # Nome EXATO da doc do WAHA (events#hmac-authentication): sem o _KEY ele ignora.
+      WHATSAPP_HOOK_HMAC_KEY: ${WAHA_HMAC_SECRET}
       # Engine NOWEB por default (mais leve, ~150MB; estável). O env é
       # WHATSAPP_DEFAULT_ENGINE — WAHA_DEFAULT_ENGINE NÃO existe no WAHA e caía
       # silenciosamente no default WEBJS (browser, trava a sessão).

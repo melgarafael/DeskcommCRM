@@ -39,6 +39,7 @@ const {
   crmFindFreeSlots,
   crmListAppointments,
   crmBookAppointment,
+  crmFindAndBookAppointment,
   crmRescheduleAppointment,
   crmCancelAppointment,
 } = await import("@/lib/mcp/tools/agendamento");
@@ -392,6 +393,242 @@ describe('Meet no contrato do atendimento',()=>{
   const result=await crmListAppointments.handler({contact_id:'contact'},ctx);
   expect(JSON.stringify(result)).toContain('https://meet.google.com/abc-defg-hij');expect(JSON.stringify(result)).not.toContain('old-link');
  });
+});
+
+describe("guest_email nas ferramentas de marcação (#2062)", () => {
+  // `Meet no contrato` (acima) não limpa mocks — sem o beforeEach, a chamada do
+  // `crmBookAppointment` dele vazaria para o primeiro caso aqui e o contador de
+  // chamadas do handler viraria 2.
+  beforeEach(() => vi.clearAllMocks());
+
+  /**
+   * Dublê com DUAS organizações, que respeita o filtro `organization_id`: é o que
+   * faz o caso "membro de outra empresa" medir alguma coisa. Uma consulta que
+   * esquecesse o filtro enxergaria a `org-2` e deixaria o e-mail dela passar.
+   */
+  const MEMBROS: Record<string, Array<{ user_id: string; email: string; revoked_at: string | null }>> = {
+    "org-1": [
+      { user_id: "u-1", email: "Consultora@Empresa.com", revoked_at: null },
+      { user_id: "u-3", email: "ex-socio@empresa.com", revoked_at: "2026-01-01T00:00:00Z" },
+    ],
+    "org-2": [{ user_id: "u-2", email: "vendedor@outra.com", revoked_at: null }],
+  };
+  const EMAIL_POR_ID = new Map(
+    Object.values(MEMBROS).flat().map((m) => [m.user_id, m.email] as const),
+  );
+  function supabaseDaEquipe(): SupabaseClient {
+    return {
+      from: (tabela: string) => {
+        expect(tabela).toBe("user_organizations");
+        const filtros: Record<string, unknown> = {};
+        const q = {
+          select: () => q,
+          eq: (coluna: string, valor: unknown) => ((filtros[coluna] = valor), q),
+          is: (coluna: string, valor: unknown) => ((filtros[coluna] = valor), q),
+          then: (ok: (r: unknown) => unknown) =>
+            Promise.resolve({
+              data: Object.entries(MEMBROS)
+                .filter(([org]) => !("organization_id" in filtros) || org === filtros.organization_id)
+                .flatMap(([, ms]) => ms)
+                .filter((m) => !("revoked_at" in filtros) || m.revoked_at === filtros.revoked_at)
+                .map((m) => ({ user_id: m.user_id })),
+              error: null,
+            }).then(ok),
+        };
+        return q;
+      },
+      auth: {
+        admin: {
+          getUserById: async (id: string) => ({
+            data: { user: { id, email: EMAIL_POR_ID.get(id) } },
+            error: null,
+          }),
+        },
+      },
+    } as unknown as SupabaseClient;
+  }
+  const ctxDaEquipe: McpContext = { ...ctx, supabase: supabaseDaEquipe() };
+
+  function marcaConfirmado() {
+    vi.mocked(idDoTipoPorSlug).mockResolvedValue({ id: "t-1", nome: "Consulta" });
+    vi.mocked(handlers.marcarAgendamentoHandler).mockResolvedValue({
+      id: "a-1",
+      status: "confirmed",
+      meeting_state: null,
+      meeting_url: null,
+    });
+  }
+  const PEDIDO = { event_type_slug: "consulta", starts_at: "2026-09-01T14:00:00Z", contact_id: "c-1" };
+
+  it("membro da equipe passa, sem diferenciar maiúsculas (decisão do #2077)", async () => {
+    marcaConfirmado();
+    const r = (await crmBookAppointment.handler(
+      { ...PEDIDO, guest_email: "CONSULTORA@empresa.COM" },
+      ctxDaEquipe,
+    )) as { marcado: boolean };
+    expect(r.marcado).toBe(true);
+    expect(handlers.marcarAgendamentoHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it("e-mail de fora da equipe é recusado e NADA é marcado", async () => {
+    marcaConfirmado();
+    const r = (await crmBookAppointment.handler(
+      { ...PEDIDO, guest_email: "cliente.ditou@gmail.com" },
+      ctxDaEquipe,
+    )) as { marcado: boolean; motivo: string };
+    expect(r).toMatchObject({ marcado: false, motivo: "convidado_fora_da_equipe" });
+    expect(handlers.marcarAgendamentoHandler).not.toHaveBeenCalled();
+  });
+
+  it("membro de OUTRA empresa recusa igual a desconhecido — a conferência é da org do turno", async () => {
+    marcaConfirmado();
+    const deOutra = await crmBookAppointment.handler(
+      { ...PEDIDO, guest_email: "vendedor@outra.com" },
+      ctxDaEquipe,
+    );
+    const desconhecido = await crmBookAppointment.handler(
+      { ...PEDIDO, guest_email: "ninguem@lugar-nenhum.com" },
+      ctxDaEquipe,
+    );
+    expect(deOutra).toMatchObject({ marcado: false, motivo: "convidado_fora_da_equipe" });
+    // Mesma resposta: a recusa não revela que o e-mail existe noutra organização.
+    expect(deOutra).toEqual(desconhecido);
+    expect(handlers.marcarAgendamentoHandler).not.toHaveBeenCalled();
+  });
+
+  it("membro REVOGADO não é mais da equipe", async () => {
+    marcaConfirmado();
+    const r = await crmBookAppointment.handler(
+      { ...PEDIDO, guest_email: "ex-socio@empresa.com" },
+      ctxDaEquipe,
+    );
+    expect(r).toMatchObject({ marcado: false, motivo: "convidado_fora_da_equipe" });
+  });
+
+  it("crm_find_and_book_appointment recusa e-mail de fora pelo MESMO caminho", async () => {
+    vi.mocked(horariosLivresDaOrg).mockResolvedValue({ ...SUCESSO, fusoDaRegra: "UTC" });
+    marcaConfirmado();
+    const r = await crmFindAndBookAppointment.handler(
+      {
+        event_type_slug: "consulta",
+        dia: "2026-09-01",
+        horario: "14:00",
+        contact_id: "c-1",
+        guest_email: "cliente.ditou@gmail.com",
+      },
+      ctxDaEquipe,
+    );
+    expect(r).toMatchObject({ marcado: false, motivo: "convidado_fora_da_equipe" });
+    expect(handlers.marcarAgendamentoHandler).not.toHaveBeenCalled();
+    // O horário segue LIVRE — a recusa foi do convidado. Sem ele na lista, o
+    // agente ofereceria outro horário ao cliente em vez de remarcar sem o campo.
+    expect((r as { horarios: Array<{ inicio: string }> }).horarios.map((h) => h.inicio)).toContain(
+      "2026-09-01T14:00:00.000Z",
+    );
+  });
+
+  it("crm_book_appointment SEM guest_email não pede o campo ao handler — e não é erro", async () => {
+    vi.mocked(idDoTipoPorSlug).mockResolvedValue({ id: "t-1", nome: "Consulta" });
+    vi.mocked(handlers.marcarAgendamentoHandler).mockResolvedValue({
+      id: "a-1",
+      status: "confirmed",
+      meeting_state: null,
+      meeting_url: null,
+    });
+    await crmBookAppointment.handler(
+      { event_type_slug: "consulta", starts_at: "2026-09-01T14:00:00Z", contact_id: "c-1" },
+      ctx,
+    );
+    expect(handlers.marcarAgendamentoHandler).toHaveBeenCalledTimes(1);
+    const input = vi.mocked(handlers.marcarAgendamentoHandler).mock.calls[0]![2];
+    expect(input).not.toHaveProperty("guest_email");
+    // E o campo fica ausente do contrato de entrada, não presente-porém-nulo.
+    expect(crmBookAppointment.inputSchema).not.toHaveProperty("guest_email_obrigatorio");
+  });
+
+  it("crm_book_appointment repassa guest_email válido ao handler, que já o grava", async () => {
+    vi.mocked(idDoTipoPorSlug).mockResolvedValue({ id: "t-1", nome: "Consulta" });
+    vi.mocked(handlers.marcarAgendamentoHandler).mockResolvedValue({
+      id: "a-1",
+      status: "confirmed",
+      meeting_state: null,
+      meeting_url: null,
+    });
+    await crmBookAppointment.handler(
+      {
+        event_type_slug: "consulta",
+        starts_at: "2026-09-01T14:00:00Z",
+        contact_id: "c-1",
+        guest_email: "consultora@empresa.com",
+      },
+      ctxDaEquipe,
+    );
+    expect(vi.mocked(handlers.marcarAgendamentoHandler).mock.calls[0]![2]).toMatchObject({
+      guest_email: "consultora@empresa.com",
+    });
+  });
+
+  it("crm_book_appointment REJEITA guest_email que não é e-mail, antes do handler", async () => {
+    // O zod valida no parse da porta MCP, então o handler nunca vê string inválida.
+    expect(() => crmBookAppointment.inputSchema.guest_email!.parse("não-e-email")).toThrow();
+    expect(() =>
+      crmBookAppointment.inputSchema.guest_email!.parse("oi@exemplo.com"),
+    ).not.toThrow();
+  });
+
+  it("crm_find_and_book_appointment repassa guest_email ao handler de marcação", async () => {
+    // Slot do SUCESSO em UTC: 14:00Z é 14:00 local → a ferramenta acha e marca.
+    vi.mocked(horariosLivresDaOrg).mockResolvedValue({ ...SUCESSO, fusoDaRegra: "UTC" });
+    vi.mocked(idDoTipoPorSlug).mockResolvedValue({ id: "t-1", nome: "Consulta" });
+    vi.mocked(handlers.marcarAgendamentoHandler).mockResolvedValue({
+      id: "a-1",
+      status: "confirmed",
+      meeting_state: null,
+      meeting_url: null,
+    });
+    const r = (await crmFindAndBookAppointment.handler(
+      {
+        event_type_slug: "consulta",
+        dia: "2026-09-01",
+        horario: "14:00",
+        contact_id: "c-1",
+        guest_email: "consultora@empresa.com",
+      },
+      ctxDaEquipe,
+    )) as { marcado: boolean };
+    expect(r.marcado).toBe(true);
+    expect(vi.mocked(handlers.marcarAgendamentoHandler).mock.calls[0]![2]).toMatchObject({
+      guest_email: "consultora@empresa.com",
+    });
+  });
+
+  it("crm_find_and_book_appointment SEM guest_email: para marcado sem o campo no input do handler", async () => {
+    vi.mocked(horariosLivresDaOrg).mockResolvedValue({ ...SUCESSO, fusoDaRegra: "UTC" });
+    vi.mocked(idDoTipoPorSlug).mockResolvedValue({ id: "t-1", nome: "Consulta" });
+    vi.mocked(handlers.marcarAgendamentoHandler).mockResolvedValue({
+      id: "a-1",
+      status: "confirmed",
+      meeting_state: null,
+      meeting_url: null,
+    });
+    const r = (await crmFindAndBookAppointment.handler(
+      { event_type_slug: "consulta", dia: "2026-09-01", horario: "14:00", contact_id: "c-1" },
+      ctx,
+    )) as { marcado: boolean };
+    expect(r.marcado).toBe(true);
+    expect(vi.mocked(handlers.marcarAgendamentoHandler).mock.calls[0]![2]).not.toHaveProperty(
+      "guest_email",
+    );
+  });
+
+  it("crm_find_and_book_appointment REJEITA guest_email inválido", async () => {
+    expect(() =>
+      crmFindAndBookAppointment.inputSchema.guest_email!.parse("x"),
+    ).toThrow();
+    expect(() =>
+      crmFindAndBookAppointment.inputSchema.guest_email!.parse("confidente@exemplo.com"),
+    ).not.toThrow();
+  });
 });
 
 describe("idempotência da marcação", () => {

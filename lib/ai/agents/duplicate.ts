@@ -13,6 +13,10 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { mcpAgentDraftRecords } from "./create-draft";
+import { corpoLegadoComoCorpoDeCriacao } from "./legado-para-versao";
+import { agentMcpCreateSchema } from "./validation";
+
 export const DUPLICATE_AGENT_COLUMNS =
   "id, organization_id, name, description, model, system_prompt, is_active, is_default, kind, priority, published_version_id, archived_at, config, guardrails, active_kb_version_id, created_at, updated_at";
 
@@ -41,7 +45,8 @@ export type DuplicateAgentResult =
        * Versão de ORIGEM que foi clonada — não a nova. Existe para o audit poder
        * responder "cópia de qual versão?", que `version` (a nova) não responde.
        *
-       * `null` quando não havia versão a copiar (rag_bot legado).
+       * `null` quando a origem era legada SEM versão nenhuma: a cópia nasceu
+       * pelo caminho da criação (#1357), então não há versão de origem que citar.
        */
       sourceVersionId: string | null;
     }
@@ -141,25 +146,68 @@ export async function duplicateAgentWithVersion(
 
   const src = srcAgent as Record<string, unknown>;
   const isMcp = src.kind === "mcp_agent";
-  const srcVersion = isMcp ? await pickSourceVersion(admin, orgId, agentId) : null;
 
-  // A rota da API trata "sem versão" como 409; o botão da lista precisa seguir
-  // duplicando o rag_bot legado, que não tem versão nenhuma por natureza.
-  if (isMcp && !srcVersion && requireVersion) {
+  // A escolha da versão é por VERSÃO, não por `kind` (#1357): um `rag_bot` que
+  // já passou pela recuperação legada TEM versão e ela é a fonte da cópia.
+  const srcVersion = await pickSourceVersion(admin, orgId, agentId);
+
+  // Origem legada SEM versão nenhuma: era o único caso que copiava a CASCA —
+  // `kind: src.kind ?? "rag_bot"`, `is_active: false` e nenhuma linha em
+  // `ai_agent_versions`, isto é, um clone que os dois runtimes não enxergam
+  // (ambos resolvem o agente por `published_version_id`). Ele nasce agora pelo
+  // MESMO caminho de criar: mcp_agent + v1 draft montada das colunas legadas.
+  const origemLegadaSemVersao = !isMcp && !srcVersion;
+
+  // A rota da API trata "mcp_agent sem versão" como conflito: a verdade de um
+  // mcp_agent vive nas versões, e uma sem nenhuma é estado quebrado — não tem
+  // o que clonar. O legado não cai aqui porque dele ainda dá para montar a v1.
+  if (!srcVersion && !origemLegadaSemVersao && requireVersion) {
     return { ok: false, error: "no_version_to_duplicate" };
   }
+
+  const nomeDaCopia = `${String(src.name)} (cópia)`.slice(0, 120);
+
+  // Para a origem legada a RECEITA é a da criação canônica (`mcpAgentDraftRecords`),
+  // não uma reimplementação: os defaults de budgets/handoff/follow-up/operador
+  // saem do MESMO `versionShapeSchema` pelo qual a tela cria uma v1. O resultado
+  // é emendado com o que duplicar copia de verdade (config, guardrails, acervo).
+  // `safeParse` antes da receita: `mcpAgentDraftRecords` usa `parse`, que LANÇA,
+  // e uma linha legada escrita direto no banco (prompt com menos de 10
+  // caracteres) faria a duplicação estourar ZodError em vez de recusar.
+  const corpoLegado = origemLegadaSemVersao
+    ? agentMcpCreateSchema.safeParse(
+        corpoLegadoComoCorpoDeCriacao({
+          system_prompt: (src.system_prompt as string | null) ?? null,
+          model: (src.model as string | null) ?? null,
+          name: nomeDaCopia,
+          description: (src.description as string | null) ?? null,
+          priority: (src.priority as number | null) ?? 0,
+        }),
+      )
+    : null;
+  if (corpoLegado && !corpoLegado.success) {
+    return { ok: false, error: "agent_insert_failed", message: corpoLegado.error.message };
+  }
+  const receitaLegada = corpoLegado
+    ? mcpAgentDraftRecords({ orgId, userId: actorUserId }, corpoLegado.data)
+    : null;
 
   const { data: newAgent, error: agentErr } = await admin
     .from("ai_agents")
     .insert({
       organization_id: orgId,
-      name: `${String(src.name)} (cópia)`.slice(0, 120),
-      description: src.description,
-      model: src.model,
-      system_prompt: src.system_prompt,
-      kind: src.kind ?? "rag_bot",
+      name: receitaLegada ? receitaLegada.agent.name : nomeDaCopia,
+      description: receitaLegada ? receitaLegada.agent.description : src.description,
+      model: receitaLegada ? receitaLegada.agent.model : src.model,
+      system_prompt: receitaLegada ? receitaLegada.agent.system_prompt : src.system_prompt,
+      // A origem legada SEM versão vira `mcp_agent` junto com a v1 que a
+      // acompanha (#1357): um `rag_bot` sem versão é invisível para o CRM e para
+      // o agent-engine — copiar esse estado era clonar um mudo. Um `rag_bot` que
+      // JÁ TEM versão continua sendo copiado como `rag_bot`, com a v1 rascunho.
+      kind: receitaLegada ? "mcp_agent" : (src.kind ?? "rag_bot"),
       priority: src.priority ?? 0,
       // Cópia nasce fora do ar: sem published_version_id, nenhum runtime a enxerga.
+      // Para a origem legada vale o mesmo — a v1 nasce como DRAFT, não publicada.
       is_active: isMcp ? true : false,
       is_default: false,
       config: src.config ?? {},
@@ -174,21 +222,29 @@ export async function duplicateAgentWithVersion(
     return { ok: false, error: "agent_insert_failed", message: agentErr?.message };
   }
 
-  if (!srcVersion)
-    return {
-      ok: true,
-      agent: newAgent as Record<string, unknown>,
-      version: null,
-      sourceVersionId: null,
-    };
+  // Origem legada: a v1 nasce da RECEITA da criação canônica. Origem com versão:
+  // a v1 é a cópia da versão de origem (draft mais recente; sem draft, a publicada).
+  // Nos DOIS casos há versão — o branch que devolvia casca sem `ai_agent_versions`
+  // saiu (#1357).
+  // Uma só origem de conteúdo, dois casos: a RECEITA da criação canônica
+  // (origem legada sem versão, montada pelo `versionShapeSchema`) e a versão
+  // de origem (cópia). Nos dois o payload sai de `versionPayloadFrom` — a
+  // lista explícita de colunas de conteúdo — então a cerca de
+  // `tests/unit/agent-version-columns-drift.test.ts` cobra o MESMO alvo dos
+  // dois casos, como cobrava antes de #1357. `id`, `organization_id`,
+  // `agent_id`, `version_number`, `status` e `created_by` não vêm daqui: são
+  // do objeto literal do insert logo abaixo.
+  const origemDaVersao: Record<string, unknown> = receitaLegada
+    ? (receitaLegada.version as Record<string, unknown>)
+    : (srcVersion as Record<string, unknown>);
 
   const { data: newVersion, error: versionErr } = await admin
     .from("ai_agent_versions")
     .insert({
+      ...versionPayloadFrom(origemDaVersao),
       organization_id: orgId,
       agent_id: (newAgent as { id: string }).id,
       version_number: 1,
-      ...versionPayloadFrom(srcVersion),
       status: "draft",
       created_by: actorUserId,
     })
@@ -208,6 +264,6 @@ export async function duplicateAgentWithVersion(
     ok: true,
     agent: newAgent as Record<string, unknown>,
     version: newVersion as Record<string, unknown>,
-    sourceVersionId: (srcVersion as { id: string }).id,
+    sourceVersionId: srcVersion ? (srcVersion as { id: string }).id : null,
   };
 }

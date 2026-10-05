@@ -146,6 +146,14 @@ describe("aplicaAvisoDeProposta", () => {
     expect(ultima.audita).toHaveBeenCalledWith(expect.objectContaining({ action: "proposal.aviso_whatsapp_falhou" }));
   });
 
+  it("canal PAUSADO pelo operador: não envia, não tenta de novo e audita a falha (#2318)", async () => {
+    const canal = { id: "canal-1", status: "WORKING", archived_at: null, aceitaMensagemLivre: true, desativado: true };
+    const { d, envia, audita } = deps({ canal });
+    expect(await aplicaAvisoDeProposta(d, evento())).toMatchObject({ status: "skipped", detail: "canal_desativado" });
+    expect(envia).not.toHaveBeenCalled();
+    expect(audita).toHaveBeenCalledWith(expect.objectContaining({ action: "proposal.aviso_whatsapp_falhou" }));
+  });
+
   it("espaçamento anti-bloqueio: tenta de novo quando o pacing libera", async () => {
     const liberaEm = new Date("2026-09-26T12:00:07.000Z");
     const { d, envia } = deps({ pacing: { liberado: false, motivo: "espacamento", liberaEm } });

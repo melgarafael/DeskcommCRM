@@ -17,7 +17,7 @@ import { updateTenant } from "@/app/actions/settings/updateTenant";
 import { useT } from "@/hooks/i18n/useT";
 import { IDIOMAS_VISIVEIS } from "@/lib/i18n/registro";
 import { MOEDAS_SERVIDAS, simboloDaMoeda, type MoedaServida } from "@/lib/money";
-import { paisesOferecidos } from "@/lib/legal/perfil-do-pais";
+import { paisesOferecidos, perfilDoPais } from "@/lib/legal/perfil-do-pais";
 import { tenantSchema, type Locale, type TenantInput } from "@/lib/schemas/settings";
 import { FUSOS_OFERECIDOS } from "@/lib/tempo/fusos";
 
@@ -163,6 +163,20 @@ export function TenantForm({ initial }: Props) {
                 "De onde saem o documento do contato, a lei citada no documento de acesso e o prazo em dias úteis. Só aparecem países com a lei revisada — a lista é curta de propósito.",
               )}
             </p>
+            {/* Quem responde pelo documento precisa saber que a revisão foi
+                feita por IA (doc 88). O texto fala de Portugal: só o perfil PT
+                declara `revisadaPorIa`, e um teste prende isso. */}
+            {perfilDoPais(form.country).lei?.revisadaPorIa && (
+              <p
+                role="note"
+                data-testid="aviso-revisao-por-ia"
+                className="rounded-md border border-warning bg-warning-bg p-3 text-xs text-warning-fg"
+              >
+                {t(
+                  "A citação do RGPD (artigo 15.º do Regulamento (UE) 2016/679) foi conferida contra o texto oficial numa revisão feita por IA, sem advogado em Portugal. Os prazos do sistema (7 e 15 dias úteis) são mais curtos que o prazo legal de um mês, e o relatório de acesso ainda não traz todas as informações do art. 15.º. Trocar o país muda a regra do documento do contato: a partir daí, CPF enviado por API, importação ou integração é recusado como NIF inválido. O sistema não substitui o seu encarregado da proteção de dados: confirme com ele os textos enviados aos titulares, sobretudo nas campanhas de marketing, que em Portugal, em regra, exigem consentimento prévio (Lei 41/2004, art. 13.º-A).",
+                )}
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="media_retention_days">{t("Retenção de mídia (dias)")}</Label>

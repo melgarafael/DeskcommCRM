@@ -14,12 +14,14 @@ import { computeDueAt } from "@/lib/lgpd/sla";
 import { contactCreateSchemaDoPais } from "@/lib/schemas/contacts";
 
 describe("perfil de Portugal (issue #1946)", () => {
-  it("Portugal está no registro, mas o seletor só o oferece com a lei revisada (#1033)", () => {
+  it("Portugal está no registro E no seletor, com a lei revisada (doc 88)", () => {
+    // INVERTIDO DE PROPÓSITO no PR do doc 88: até 2026-10-05 este caso provava
+    // PT FORA da lista. A revisão da citação foi feita por IA, por delegação do
+    // dono, e registrada no cabeçalho de `lib/legal/perfil-do-pais.ts`.
     expect(Object.keys(PERFIS_DO_PAIS)).toContain("PT");
     const codigos = paisesOferecidos().map((p) => p.codigo);
     expect(codigos).toContain("BR");
-    // Preparar sem publicar: com `lei.revisada === false`, PT fica fora da lista.
-    expect(codigos).not.toContain("PT");
+    expect(codigos).toContain("PT");
   });
 
   it("o perfil PT não decai para o Brasil quando pedido por código", () => {
@@ -65,24 +67,54 @@ describe("perfil de Portugal (issue #1946)", () => {
     }
   });
 
-  it("a lei é o RGPD (UE) 2016/679, art. 15, ainda fora de revisão", () => {
+  it("a lei é o RGPD (UE) 2016/679, art. 15.º, revisada por IA e citada no formato comum", () => {
+    // INVERTIDO DE PROPÓSITO no PR do doc 88 (era `revisada` false e citação null).
     const lei = perfilDoPais("PT").lei;
     expect(lei?.nome).toBe("RGPD");
-    expect(lei?.numero).toContain("2016/679");
-    expect(lei?.artigo).toContain("15");
-    expect(lei?.revisada).toBe(false);
-    // sem revisão o documento NÃO cita a lei (nem cai na LGPD): antes de revisar
-    // é melhor não afirmar citação nenhuma do que afirmar a lei errada.
-    expect(citacaoDaLei(perfilDoPais("PT"))).toBeNull();
+    expect(lei?.revisada).toBe(true);
+    // A tela declara a quem responde pelo documento que a revisão foi feita por IA.
+    expect(lei?.revisadaPorIa).toBe(true);
+    // No RGPD "base legal" é o art. 6.º; o art. 15.º é o direito exercido.
+    expect(lei?.rotuloNoDocumento).toBe("Direito exercido");
+    // A string exata: o formatador é o mesmo do Brasil e não muda de forma.
+    expect(citacaoDaLei(perfilDoPais("PT"))).toBe("RGPD art. 15.º (Regulamento (UE) 2016/679)");
+  });
+
+  it("só Portugal declara revisão por IA — o aviso da tela fala de RGPD e NIF", () => {
+    // O aviso de `app/app/settings/tenant/_form.tsx` é texto de Portugal. Um
+    // segundo país revisado por IA mostraria esse texto errado: ele precisa do
+    // seu, e este caso reprova até lá.
+    const porIa = Object.values(PERFIS_DO_PAIS)
+      .filter((p) => p.lei?.revisadaPorIa)
+      .map((p) => p.codigo);
+    expect(porIa).toEqual(["PT"]);
+    // O Brasil não ganha campo novo: é o que mantém o seu data.json igual.
+    expect(perfilDoPais("BR").lei).toEqual({
+      nome: "LGPD",
+      numero: "Lei nº 13.709/2018",
+      artigo: "Art. 18, II",
+      revisada: true,
+    });
   });
 
   it("checksum público NÃO abre a porta da lista sem a lei revisada", () => {
     // A regra do #1033 (decisão 25): país entra no seletor com citação revisada
-    // ou não entra. Ter documento com dígito de controlo não muda isso.
-    const pt = perfilDoPais("PT");
-    expect(pt.documento.confereDigito).toBe(true);
-    expect(pt.lei?.revisada).toBe(false);
-    expect(paisesOferecidos().some((p) => p.codigo === "PT")).toBe(false);
+    // ou não entra. Ter documento com dígito de controlo não muda isso. Com
+    // Portugal revisado, a prova passa a usar um país sintético.
+    const sintetico = {
+      ...perfilDoPais("PT"),
+      codigo: "QZ",
+      nome: "Quiztão",
+      lei: { ...perfilDoPais("PT").lei!, revisada: false },
+    };
+    PERFIS_DO_PAIS.QZ = sintetico;
+    try {
+      expect(sintetico.documento.confereDigito).toBe(true);
+      expect(paisesOferecidos().some((p) => p.codigo === "QZ")).toBe(false);
+      expect(citacaoDaLei(sintetico)).toBeNull();
+    } finally {
+      delete PERFIS_DO_PAIS.QZ;
+    }
   });
 
   it("padroesDePii declara NIF e código postal 1234-567", () => {

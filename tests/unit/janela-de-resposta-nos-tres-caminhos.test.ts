@@ -87,8 +87,10 @@ async function retencoes(tabelas: Record<string, unknown>) {
   const res = await getRetention(new NextRequest("http://localhost/api/v1/conversations/c/retention"), {
     params: Promise.resolve({ id: "c" }),
   });
-  const corpo = (await res.json()) as { data: { retentions: Array<{ vetoed_code: string }> } };
-  return corpo.data.retentions;
+  const corpo = (await res.json()) as {
+    data: { retentions: Array<{ vetoed_code: string }>; context: { window_start_hour: number; window_end_hour: number } };
+  };
+  return corpo.data;
 }
 
 /** Resposta 0-24, disparo 7-22 — o par que separa os dois tipos a 3h. */
@@ -115,7 +117,7 @@ describe("retenção: o 'aberta agora' usa a janela da RESPOSTA", () => {
     // Janela de disparo (7-22) fechada às 3h; janela de resposta (0-24) aberta.
     // resposta=outside_window 03:00, agora 03:00, nada enviado depois.
     vi.useFakeTimers({ now: new Date("2026-09-20T06:00:00Z"), toFake: ["Date"] }); // 03h em São Paulo
-    const r = await retencoes({
+    const { retentions: r } = await retencoes({
       ...JANELAS,
       before_send_traces: [{ vetoed_code: "outside_window", created_at: "2026-09-20T06:00:00Z" }],
       messages: null,
@@ -130,7 +132,7 @@ describe("retenção: o 'aberta agora' usa a janela da RESPOSTA", () => {
     // usasse window_*, reportaria "resolvida"; como ela usa a janela de RESPOSTA,
     // o aviso fica — prova que o discriminador é a janela de resposta, não a de disparo.
     vi.useFakeTimers({ now: new Date("2026-09-20T14:00:00Z"), toFake: ["Date"] }); // 11h em São Paulo
-    const r = await retencoes({
+    const { retentions: r } = await retencoes({
       channel_knobs: {
         window_start_hour: 7,
         window_end_hour: 22,
@@ -144,6 +146,85 @@ describe("retenção: o 'aberta agora' usa a janela da RESPOSTA", () => {
       messages: null,
     });
     expect(r.map((t) => t.vetoed_code)).toEqual(["outside_window"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 1b. O TIPO do envio (#2112, coluna `before_send_traces.tipo_envio`) — cada
+//     veto é julgado pela janela do SEU tipo, não sempre pela de resposta.
+// ---------------------------------------------------------------------------
+describe("retenção: o tipo do envio decide qual janela avalia", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.mocked(loadAuthUser).mockResolvedValue({ idioma: "pt-BR" } as never);
+    vi.mocked(orgAtivaSemPortao).mockResolvedValue({ orgId: ORG, org_status: "active" } as never);
+  });
+
+  it("disparo retido às 3h NÃO é resolvido pela janela de RESPOSTA aberta", async () => {
+    // Resposta 0-24 aberta às 3h; disparo 7-22 fechado. O trace sem tipo (caso
+    // de cima) some; o MESMO veto com `tipo_envio: 'disparo'` fica — era tratado
+    // como resposta e o aviso dizia "resolvida" sobre um disparo ainda preso.
+    vi.useFakeTimers({ now: new Date("2026-09-20T06:00:00Z"), toFake: ["Date"] }); // 03h São Paulo
+    const { retentions: r, context } = await retencoes({
+      ...JANELAS,
+      before_send_traces: [
+        {
+          vetoed_code: "outside_window",
+          created_at: "2026-09-20T06:00:00Z",
+          tipo_envio: "disparo",
+        },
+      ],
+      messages: null,
+    });
+    expect(r.map((t) => t.vetoed_code)).toEqual(["outside_window"]);
+    // E a copy da tela nomeia a janela DELE (7h-22h), não a de resposta.
+    expect(context.window_start_hour).toBe(7);
+    expect(context.window_end_hour).toBe(22);
+  });
+
+  it("disparo some quando a janela de DISPARO abre, mesmo com a de resposta fechada", async () => {
+    // Resposta [0-6] fechada às 11h; disparo [7-22] aberto. Se a rota ainda
+    // julgasse pelo tipo errado, o disparo continuaria "retido" à toa.
+    vi.useFakeTimers({ now: new Date("2026-09-20T14:00:00Z"), toFake: ["Date"] }); // 11h São Paulo
+    const { retentions: r } = await retencoes({
+      channel_knobs: {
+        window_start_hour: 7,
+        window_end_hour: 22,
+        resposta_start_hour: 0,
+        resposta_end_hour: 6,
+        allow_sunday: true,
+        timezone: "America/Sao_Paulo",
+      },
+      organizations: { timezone: "America/Sao_Paulo" },
+      before_send_traces: [
+        {
+          vetoed_code: "outside_window",
+          created_at: "2026-09-20T14:00:00Z",
+          tipo_envio: "disparo",
+        },
+      ],
+      messages: null,
+    });
+    expect(r).toEqual([]);
+  });
+
+  it("trace legado (tipo_envio nulo) continua contando como RESPOSTA", async () => {
+    // Linha anterior à 0535: sem tipo gravado, o sentido de antes — resposta.
+    vi.useFakeTimers({ now: new Date("2026-09-20T06:00:00Z"), toFake: ["Date"] }); // 03h São Paulo
+    const { retentions: r, context } = await retencoes({
+      ...JANELAS,
+      before_send_traces: [
+        {
+          vetoed_code: "outside_window",
+          created_at: "2026-09-20T06:00:00Z",
+          tipo_envio: null,
+        },
+      ],
+      messages: null,
+    });
+    expect(r).toEqual([]);
+    expect(context.window_start_hour).toBe(0);
+    expect(context.window_end_hour).toBe(24);
   });
 });
 

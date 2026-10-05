@@ -27,10 +27,15 @@ describe("Upload de mídia para templates (POST /api/v1/channels/partner/templat
     const formData = new FormData();
     formData.append("file", new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], "teste.png", { type: "image/png" }));
 
+    // Sem `body` no construtor: com jsdom 30.1+ o `Request` de compatibilidade
+    // do vitest tentaria converter o `File` do jsdom lendo o interno que o
+    // novo jsdom escondeu (`_buffer`/`#impl` — #1745). Os outros dois testes
+    // deste arquivo já entregam o corpo por `req.formData`; o 403 por
+    // `requireRole` acontece antes de ler o corpo, mas o padrão fica igual.
     const req = new NextRequest("http://localhost/api/v1/channels/partner/templates/media", {
       method: "POST",
-      body: formData,
     });
+    req.formData = async () => formData;
 
     const res = await POST(req);
     expect(res.status).toBe(403);

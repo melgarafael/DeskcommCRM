@@ -231,6 +231,14 @@ jobs:
 
       - name: Typecheck
         if: matrix.parte == 1
+        # O tsc do projeto inteiro passou a encostar no teto padrão do V8
+        # (~4 GB): em 03/10 a main (run 37160218266) e os PRs #2229 e #2238
+        # morreram com "JavaScript heap out of memory" (exit 134) neste passo,
+        # com Mark-Compact em 4028 MB, e a rodada seguinte da mesma árvore
+        # passou. O runner público tem 16 GB; 6 GB dá folga sem esconder
+        # crescimento — se voltar a estourar, é o tsconfig que cresceu.
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: pnpm typecheck
 
       # Na parte 2, não na 1: o porquê e a conta estão no cabeçalho do job.
