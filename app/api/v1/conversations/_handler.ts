@@ -9,6 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
+import { idsDosCanaisDesativados } from "@/lib/channels/desativado";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { CONVERSATION_TERMINAL_STATUSES } from "@/lib/schemas";
 import type {
@@ -197,6 +198,13 @@ export async function listConversationsHandler(
     query = query.not("status", "in", `(${CONVERSATION_TERMINAL_STATUSES.join(",")})`);
   }
   if (q.channel_session_id) query = query.eq("channel_session_id", q.channel_session_id);
+  // Canal desativado nunca entra na inbox (quarentena): exclui as conversas
+  // dele aqui e nos badges, mantendo o acesso direto por id para auditoria e
+  // suporte. Reativou, reaparecem sem reimportar nada.
+  const idsDesativados = await idsDosCanaisDesativados(supabase, ctx.organization_id);
+  if (idsDesativados.length > 0) {
+    query = query.not("channel_session_id", "in", `(${idsDesativados.join(",")})`);
+  }
   // ── O CONTATO, NO PRÓPRIO `WHERE` (#2184) ──────────────────────────────
   //
   // `crm_list_conversations` filtrava o contato DEPOIS do handler devolver a

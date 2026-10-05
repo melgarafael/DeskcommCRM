@@ -107,6 +107,7 @@ export async function enviarAvisoDeTeste(
     return recusa("indeterminado");
   }
   if (!canal || canal.archived_at) return recusa("canal_arquivado");
+  if (canal.desativado) return recusa("canal_desativado");
   if (!canal.aceitaMensagemLivre) return recusa("canal_nao_aceita_aviso_livre");
   // No motor, canal parado vira `retry` por até ~30 min. Aqui não: há alguém
   // esperando a resposta na tela, e "vou tentar de novo em 5 minutos" não é

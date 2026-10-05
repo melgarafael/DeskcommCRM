@@ -1,6 +1,7 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
- * GET  /api/v1/products — o catálogo da organização ativa.
+ * GET  /api/v1/products — o catálogo da organização ativa. `?busca=` filtra no
+ *      servidor; `?pagina=N` (opcional) devolve 50 por página com `meta.total`.
  * POST /api/v1/products — cadastra um produto.
  *
  * Escrita exige `manager`: preço de venda não se altera com papel de leitura, e
@@ -13,6 +14,13 @@ import { type NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import {
+  FAIXA_ALEM_DO_FIM,
+  filtroDaBuscaDoCatalogo,
+  intervaloDaPagina,
+  paginaPedida,
+  PRODUTOS_POR_PAGINA,
+} from "@/lib/catalogo/busca-da-tela";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { COLUNAS_DO_PRODUTO, produtoCreateSchema } from "@/lib/schemas/produtos";
 import { createClient } from "@/lib/supabase/server";
@@ -25,26 +33,66 @@ export async function GET(req: NextRequest): Promise<Response> {
   const authz = await requireRole("viewer", { requestId, resource: "catalog_products" });
   if (!authz.ok) return authz.response;
 
-  const busca = req.nextUrl.searchParams.get("busca")?.trim() ?? "";
+  const params = req.nextUrl.searchParams;
+  const filtro = filtroDaBuscaDoCatalogo(params.get("busca"));
+  // Paginação é OPCIONAL: sem `pagina`, a resposta é a de sempre (até 500
+  // linhas, sem `meta`) — o seletor de produtos da proposta lê esta rota assim.
+  // `?pagina=` inválido (`0`, `abc`) conta como ausente: responder `meta.pagina:
+  // 1` para uma URL que pediu outra coisa seria a resposta mentir sobre a pergunta.
+  const pedida = paginaPedida(params.get("pagina"));
+  const paginado = pedida !== null;
+  const pagina = pedida ?? 1;
+
+  // Termo digitado abaixo do piso (`"c"`, `", ,"`, `"()"`) NÃO vai ao banco e
+  // devolve lista vazia — o desfecho da busca de contatos
+  // (`app/api/v1/contacts/_handler.ts`). Sem esta guarda, `filtro === null`
+  // consultava SEM filtro, e o seletor de produtos da proposta, que busca a
+  // cada tecla, mostrava até 500 produtos sem relação com a primeira letra.
+  if (filtro === null && (params.get("busca")?.trim() ?? "") !== "") {
+    if (!paginado) return ok([], { requestId });
+    return ok([], { requestId, meta: { total: 0, pagina, por_pagina: PRODUTOS_POR_PAGINA, has_more: false } });
+  }
+
   const supabase = await createClient();
 
   let q = supabase
     .from("catalog_products")
-    .select(COLUNAS_DO_PRODUTO)
+    .select(COLUNAS_DO_PRODUTO, paginado ? { count: "exact" } : undefined)
     .eq("organization_id", authz.org.orgId);
 
-  // A busca da TELA é substring simples, de propósito: quem opera a loja digita
-  // o nome como cadastrou. A busca por token (que tolera "ifone") é a do
-  // AGENTE, em `lib/catalogo/busca.ts`, e ela responde a outra pergunta.
-  if (busca !== "") q = q.or(`nome.ilike.%${busca}%,codigo.ilike.%${busca}%,marca.ilike.%${busca}%`);
+  // A régua do termo (vírgula, parêntese, `%`, termo só de pontuação) mora em
+  // `filtroDaBuscaDoCatalogo` — a mesma que a tela usa.
+  if (filtro) q = q.or(filtro);
 
-  const { data, error } = await q
-    .order("ativo", { ascending: false })
-    .order("nome")
-    .limit(500);
+  q = q.order("ativo", { ascending: false }).order("nome").order("id");
+  const { data, error, count } = paginado ? await q.range(...intervaloDaPagina(pagina)) : await q.limit(500);
 
+  if (paginado && error?.code === FAIXA_ALEM_DO_FIM) {
+    // Página além da última: o PostgREST responde 416, não lista vazia. A
+    // resposta diz quantos há, para quem chamou voltar a uma página que existe.
+    let contagem = supabase
+      .from("catalog_products")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", authz.org.orgId);
+    if (filtro) contagem = contagem.or(filtro);
+    const { count: agora } = await contagem;
+    return ok([], {
+      requestId,
+      meta: { total: agora ?? null, pagina, por_pagina: PRODUTOS_POR_PAGINA, has_more: false },
+    });
+  }
   if (error) return fail("internal_error", "Erro ao listar os produtos.", 500, { requestId });
-  return ok(data ?? [], { requestId });
+  if (!paginado) return ok(data ?? [], { requestId });
+  const total = count ?? null;
+  return ok(data ?? [], {
+    requestId,
+    meta: {
+      total,
+      pagina,
+      por_pagina: PRODUTOS_POR_PAGINA,
+      has_more: total !== null && pagina * PRODUTOS_POR_PAGINA < total,
+    },
+  });
 }
 
 export async function POST(req: NextRequest): Promise<Response> {

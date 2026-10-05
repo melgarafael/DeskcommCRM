@@ -343,13 +343,14 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
 
     const boundary = parseServiceBoundary(job.payload.service_boundary);
     await requireCurrentServiceBoundary(pool, boundary);
-    const { rows: targetRows } = await pool.query<{ channel_session_id: string; archived_at: string | null }>(
-      `select c.channel_session_id, to_jsonb(cs)->>'archived_at' as archived_at from conversations c
+    const { rows: targetRows } = await pool.query<{ channel_session_id: string; archived_at: string | null; canal_desativado: string | null }>(
+      `select c.channel_session_id, to_jsonb(cs)->>'archived_at' as archived_at, to_jsonb(cs)->'metadata'->>'disabled' as canal_desativado from conversations c
        join channel_sessions cs on cs.id=c.channel_session_id and cs.organization_id=c.organization_id
        where c.organization_id=$1 and c.id=$2 and c.contact_id=$3`,
       [tenantId, boundary!.conversation_id, leadId]);
     if (!targetRows[0]) throw new Error('conversa de origem indisponível');
     if (targetRows[0].archived_at) throw new Error('canal arquivado');
+    if (targetRows[0].canal_desativado === 'true') throw new Error('canal desativado');
     const target: ReentrySendTarget = { tenantId, leadId, conversationId: boundary!.conversation_id, channelSessionId: targetRows[0]!.channel_session_id };
 
     // A INSCRIÇÃO PRECISA ESTAR VIVA ANTES DE QUALQUER EFEITO. O turno já

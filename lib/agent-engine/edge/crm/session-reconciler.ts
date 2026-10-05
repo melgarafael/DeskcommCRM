@@ -29,6 +29,7 @@ import type pg from 'pg';
 
 import { parseWahaMessageId, wahaEchoExternalIds } from '@/lib/waha/message-id';
 import { lerNumerosDeTeste, numeroPodeTestar, preGoLiveAtivo } from '@/lib/ai/elegibilidade/pre-go-live';
+import { canalDesativado } from '@/lib/channels/desativado';
 
 import type { Logger } from '../../obs/logger';
 
@@ -390,6 +391,20 @@ export async function redriveQueued(
           [m.id, m.organization_id],
         );
         log.info('watchdog: reenvio bloqueado — organização não operante', { message_id: m.id });
+        continue;
+      }
+      // Canal PAUSADO pelo operador: a fila de antes da pausa não sai por aqui.
+      // `failed` e não `queued`, o mesmo desfecho que o `messages/_handler`
+      // grava: deixá-la na fila faria o resgate mandar tudo de uma vez quando o
+      // operador retomasse o canal.
+      if (canalDesativado(atual.metadata)) {
+        await pool.query(
+          `update messages set status = 'failed', error_code = 'channel_disabled',
+             error_message = 'Este canal está desativado. Reative-o na Central de Conexões para voltar a enviar.'
+           where id = $1 and organization_id = $2 and status = 'queued'`,
+          [m.id, m.organization_id],
+        );
+        log.info('watchdog: reenvio bloqueado — canal pausado', { message_id: m.id });
         continue;
       }
       if (preGoLiveAtivo(atual.metadata) && !numeroPodeTestar(atual.phone_number ?? '', lerNumerosDeTeste(atual.metadata))) {

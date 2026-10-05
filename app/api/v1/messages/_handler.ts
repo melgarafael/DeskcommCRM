@@ -36,6 +36,7 @@ import {
   type ChannelSessionRef,
 } from "@/lib/channels";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
+import { canalDesativado } from "@/lib/channels/desativado";
 import { conferirDefinicao } from "@/lib/channels/conferir-definicao";
 import { estadoDaJanela } from "@/lib/channels/janela";
 import { isMediaPathOwnedBy } from "@/lib/messaging/media/upload-validation";
@@ -397,7 +398,7 @@ export async function sendMessageHandler(
   // envio com 42703. Sem a coluna, nada está arquivado — e a consulta sem ela é a
   // consulta certa (ver lib/channels/archived).
   const convSelect = (comArchived: boolean) =>
-    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, provider_conversation_id, last_inbound_at, contacts:contact_id(phone_number, wa_identity, wa_lid, is_blocked), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
+    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, provider_conversation_id, last_inbound_at, contacts:contact_id(phone_number, wa_identity, wa_lid, is_blocked), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status, metadata${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
   //
   // O filtro por `organization_id` NÃO é redundância com a RLS — é a única
   // proteção que existe na metade dos chamadores. Este handler é a porta de
@@ -466,7 +467,7 @@ export async function sendMessageHandler(
       wa_lid: string | null;
       is_blocked: boolean;
     } | null;
-    channel_sessions: (ChannelSessionRef & { status: string; archived_at?: string | null }) | null;
+    channel_sessions: (ChannelSessionRef & { status: string; metadata?: Record<string, unknown> | null; archived_at?: string | null }) | null;
   };
   const c = conv as unknown as Joined;
 
@@ -862,6 +863,22 @@ export async function sendMessageHandler(
         status: "failed",
         error_code: "channel_archived",
         error_message: "Este número foi excluído da Central de Conexões.",
+      })
+      .eq("id", message.id)
+      .select(MSG_COLS)
+      .maybeSingle();
+    if (updated) message = updated as unknown as Message;
+  } else if (canalDesativado(c.channel_sessions?.metadata)) {
+    // Canal DESATIVADO pelo operador: a lei é não entrar na inbox — e ela vale
+    // nos dois sentidos. `failed` terminal como no arquivado (fila implicaria
+    // "vai sair quando der", e por este canal não sai enquanto desligado).
+    // Reativar volta a enviar sem reimportar nada.
+    const { data: updated } = await supabase
+      .from("messages")
+      .update({
+        status: "failed",
+        error_code: "channel_disabled",
+        error_message: "Este canal está desativado. Reative-o na Central de Conexões para voltar a enviar.",
       })
       .eq("id", message.id)
       .select(MSG_COLS)

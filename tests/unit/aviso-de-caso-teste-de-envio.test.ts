@@ -157,6 +157,21 @@ describe("as recusas, cada uma com o seu código", () => {
     });
   });
 
+  it("canal PAUSADO pelo operador: o teste também não sai por ele (#2318)", async () => {
+    const d = deps({
+      db: {
+        carregaCanal: vi.fn(async () => ({ ...canalSaudavel, desativado: true })),
+        marcaDaOrganizacao: vi.fn(),
+        destinoEhDaPropriaOrganizacao: vi.fn(),
+      },
+    } as Partial<DepsDoAvisoDeTeste>);
+    await expect(enviarAvisoDeTeste(d.deps, entrada)).resolves.toMatchObject({
+      enviado: false,
+      codigo: "canal_desativado",
+    });
+    expect(d.enviados).toHaveLength(0);
+  });
+
   it("canal fora do ar — e o teste NÃO fica esperando 24 h como o aviso real", async () => {
     const d = deps({
       db: {

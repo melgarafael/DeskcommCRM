@@ -61,7 +61,16 @@ function produto(over: Partial<Produto> = {}): Produto {
 
 function tela(produtos: Produto[], podeEditar = true) {
   return render(
-    <ProdutosClient inicial={produtos} urlsDasFotos={{}} podeEditar={podeEditar} textos={TEXTOS} />,
+    <ProdutosClient
+      inicial={produtos}
+      total={produtos.length}
+      pagina={1}
+      porPagina={produtos.length}
+      buscaInicial=""
+      urlsDasFotos={{}}
+      podeEditar={podeEditar}
+      textos={TEXTOS}
+    />,
   );
 }
 

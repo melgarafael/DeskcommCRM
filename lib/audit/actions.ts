@@ -253,6 +253,11 @@ export const AUDIT_ACTIONS = [
   // `lib/channels/reactivate.ts` — o único caminho de volta, e é o que faz a
   // frase acima valer para os DOIS casos em vez de para o que lembraram.
   "channel.reactivated",
+  // Toggle de pausa por canal: desligado não entra na inbox (quarentena), mas
+  // continua listado — diferente de `archived`, que exclui. Duas ações para a
+  // trilha dizer nos dois sentidos, como `archived`/`reactivated`.
+  "channel.disabled",
+  "channel.enabled",
   // Chamada de voz WhatsApp (WaCalls, spec 18) — pareamento do segundo
   // dispositivo vinculado, opt-in por org. Admin only.
   //
