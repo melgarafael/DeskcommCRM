@@ -27,6 +27,7 @@ const useContact = vi.hoisted(() => vi.fn());
 const mutateAsync = vi.hoisted(() => vi.fn());
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
 
+vi.mock("@/hooks/auth/AuthProvider", () => ({ usePermission: () => true, useActiveOrg: () => ({ country: null }) }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (texto: string) => texto }));
 vi.mock("@/hooks/contacts/useContact", () => ({ useContact }));
 vi.mock("@/hooks/contacts/useUpdateContact", () => ({
@@ -70,7 +71,7 @@ beforeEach(() => {
   mutateAsync.mockResolvedValue({ data: CONTATO });
 });
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("ContatoNoCard", () => {
   it("não renderiza nada quando o negócio não tem dado de contato", () => {
@@ -139,6 +140,21 @@ describe("ContatoNoCard", () => {
 });
 
 describe("ContatoDoNegocio — as abas do dossiê", () => {
+  it("cria pela ficha, mostra o contato e mantém o card como alvo único", async () => {
+    const lead = { id: "lead-1", title: "Ana Souza", description: "nota preservada", custom_fields: { phone_number: "+5511999998888" }, tags: ["rede"] };
+    const fetch = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(_init?.method === "POST" ? { data: { contact: CONTATO, action: "created" } } : { data: [] }), { status: 201 }));
+    vi.stubGlobal("fetch", fetch);
+    const { cliente } = comQuery(<ContatoDoNegocio contactId={null} pipelineId="p-1" leadId="lead-1" lead={lead as never} />);
+    const invalidar = vi.spyOn(cliente, "invalidateQueries");
+    fireEvent.click(screen.getByRole("button", { name: "Criar contato" }));
+    expect(screen.getByLabelText("Nome")).toHaveValue("Ana Souza");
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Criar contato" }));
+    await waitFor(() => expect(screen.getByTestId("contato-do-negocio")).toBeInTheDocument());
+    expect(useContact).toHaveBeenCalledWith("c-1");
+    expect(fetch).toHaveBeenCalledWith("/api/v1/leads/lead-1/contact", expect.objectContaining({ method: "POST" }));
+    expect(fetch.mock.calls.some((call) => String(call[0]).includes("conversations"))).toBe(false);
+    expect(invalidar).toHaveBeenCalledWith({ queryKey: ["kanban-board", "p-1"] });
+  });
   it("negócio sem contato vinculado avisa, sem consultar nada", () => {
     comQuery(<ContatoDoNegocio contactId={null} pipelineId="p-1" />);
 

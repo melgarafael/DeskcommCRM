@@ -10118,6 +10118,11 @@ export type Database = {
       }
     }
     Functions: {
+      fn_create_contact_for_lead: {
+        Args: { p_organization_id: string; p_lead_id: string; p_contact: Json }
+        Returns: Json
+      }
+
       fn_channel_routing_claim: {
         Args: {
           p_channel: string

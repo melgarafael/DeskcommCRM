@@ -2177,3 +2177,21 @@ Estratégia de consolidação: 1 canal `org-{id}-conversations` agrega INSERT/UP
 - `docs/specs/01-spec-platform-base.md` — auth, audit, API conventions
 - `docs/specs/02-spec-customer-360.md` — schema crm_*, fractional indexing
 - `docs/specs/03-spec-whatsapp-waha.md` — conversations, messages, sessões
+
+### Contato criado a partir do negócio
+
+Na seção Contato do dossiê, um negócio sem vínculo oferece **Criar contato** a usuários agent+.
+O diálogo reaproveita o cadastro de contatos e permite revisar nome, e-mail, telefone e tags.
+Identificadores rotulados nos campos/descrição alimentam o formulário; vários telefones exigem
+escolha humana, e números locais não ganham DDD por inferência. A descrição original permanece
+consultável no diálogo e no card.
+
+`POST /api/v1/leads/[id]/contact` resolve a organização pela sessão, valida pelo país da organização
+ e chama `fn_create_contact_for_lead`. A função respeita RLS e acompanhamento somente leitura,
+trava o negócio e cria/vincula em uma transação. Ela altera apenas `contact_id`; título, estágio,
+notas e campos personalizados permanecem. Telefone duplicado ou card já vinculado retornam 409,
+sem associação automática. Este caminho não chama `ensureConversation` nem emite o evento de
+automação `contact.created`; a criação normal em Contatos conserva seu comportamento.
+A auditoria registra criação e vínculo com `from/to`. Sucesso atualiza a seção de contato e
+invalida o quadro. Erro mantém o formulário e a mensagem para correção. Não há configuração,
+follow-up ou tela adicional: a porta é o dossiê já acessível pelo funil.

@@ -151,6 +151,7 @@ export function LeadDossier({
             contactId={lead.contact_id}
             pipelineId={pipelineId}
             leadId={lead.id}
+            lead={lead}
           />
         </section>
 

@@ -37,6 +37,11 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Já existe um contato com estes identificadores. Confira o cadastro.": { es: "Ya existe un contacto con estos identificadores. Revisa el registro." },
+  "Contato criado e vinculado": { es: "Contacto creado y vinculado" },
+  "Dados do negócio para conferência": { es: "Datos del negocio para revisar" },
+  "Este negócio já tem contato vinculado. Atualize a ficha.": { es: "Este negocio ya tiene un contacto vinculado. Actualiza la ficha." },
+  "Negócio inválido.": { es: "Negocio no válido." },
   // ─── EMPRESAS, PESSOAS E IMPORTAÇÃO (metade B2B do #1621, de @renatofortal) ───
   "Arquivo": {"es": "Archivo"},
   "Atualizado": {"es": "Actualizado"},

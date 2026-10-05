@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "diagram_type": "fluxo",
+  "meta": {
+    "titulo": "Criar contato no negócio existente",
+    "pergunta": "Como cadastrar a pessoa preservando a ficha do negócio?",
+    "resumo": "O atendente revisa os identificadores do card e salva criação e vínculo na mesma transação, sem abrir atendimento."
+  },
+  "lanes": [
+    { "id": "humano", "label": "Atendente" },
+    { "id": "borda", "label": "API" },
+    { "id": "dados", "label": "Banco" }
+  ],
+  "mainPath": ["card", "rota", "rpc", "contato"],
+  "nodes": [
+    {
+      "id": "card",
+      "lane": "humano",
+      "col": 1,
+      "type": "frontend",
+      "label": "ContatoDoNegocio / NewContactDialog",
+      "sublabel": "Criar contato · revisar dados do card"
+    },
+    {
+      "id": "rota",
+      "lane": "borda",
+      "col": 2,
+      "type": "api",
+      "label": "POST /leads/[id]/contact",
+      "sublabel": "agent+ · organização da sessão · Zod"
+    },
+    {
+      "id": "rpc",
+      "lane": "dados",
+      "col": 3,
+      "type": "regra",
+      "label": "fn_create_contact_for_lead",
+      "sublabel": "RLS · trava o card · INSERT e UPDATE atômicos"
+    },
+    {
+      "id": "contato",
+      "lane": "dados",
+      "col": 4,
+      "type": "tabela",
+      "label": "contacts + crm_leads.contact_id",
+      "sublabel": "preserva estágio, notas e campos do card"
+    },
+    {
+      "id": "audit",
+      "lane": "dados",
+      "col": 4,
+      "type": "tabela",
+      "label": "api_audit_log",
+      "sublabel": "contact.created e lead.updated com from/to"
+    }
+  ],
+  "edges": [
+    { "id": "e1", "from": "card", "to": "rota", "label": "dados revisados" },
+    { "id": "e2", "from": "rota", "to": "rpc", "label": "criação e vínculo" },
+    { "id": "e3", "from": "rpc", "to": "contato", "label": "commit único" },
+    { "id": "e4", "from": "rota", "to": "audit", "label": "rastro da mutação" },
+    { "id": "e5", "from": "contato", "to": "card", "label": "dados do contato e quadro atualizado" }
+  ],
+  "cards": [
+    {
+      "titulo": "Laço de retorno",
+      "texto": "Duplicidade ou vínculo já existente devolvem 409 e mantêm o formulário para revisão. O banco reverte a criação se o vínculo falhar. Não há follow-up: esta ação cadastral não abre atendimento."
+    }
+  ]
+}

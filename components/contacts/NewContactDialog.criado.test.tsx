@@ -72,7 +72,9 @@ const CORPO_DA_ROTA: ApiSuccess<CreateContactResult> = {
 };
 
 function envolver(ui: ReactNode) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
   return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
 }
 
@@ -99,7 +101,12 @@ describe("NewContactDialog · onCriado", () => {
     const onCriado = vi.fn();
     const user = userEvent.setup();
     envolver(
-      <NewContactDialog open onOpenChange={vi.fn()} nomeInicial="Joana Prado" onCriado={onCriado} />,
+      <NewContactDialog
+        open
+        onOpenChange={vi.fn()}
+        nomeInicial="Joana Prado"
+        onCriado={onCriado}
+      />,
     );
 
     await user.type(screen.getByLabelText(/Telefone/i), "+5511999998888");
@@ -137,5 +144,70 @@ describe("NewContactDialog · onCriado", () => {
 
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     expect(onCriado).not.toHaveBeenCalled();
+  });
+  it("cria e vincula pelo endpoint do negócio, com dados revisáveis", async () => {
+    const onCriado = vi.fn();
+    const user = userEvent.setup();
+    envolver(
+      <NewContactDialog
+        open
+        onOpenChange={vi.fn()}
+        leadId="lead-1"
+        nomeInicial="Joana Prado"
+        dadosIniciais={{
+          phone_number: "+5511999998888",
+          email: "joana@example.com",
+          tags: ["rede"],
+        }}
+        referenciaDoCard="Telefone original 1: 9999-8888"
+        onCriado={onCriado}
+      />,
+    );
+    expect(screen.getByLabelText("Nome")).toHaveValue("Joana Prado");
+    expect(screen.getByLabelText("Email")).toHaveValue("joana@example.com");
+    expect(screen.getByText("Telefone original 1: 9999-8888")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Criar contato" }));
+    await waitFor(() => expect(onCriado).toHaveBeenCalledTimes(1));
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/v1/leads/lead-1/contact",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("duplicidade conserva os dados e não anuncia vínculo ou fecha o diálogo", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              error: { code: "contact_exists", message: "Já existe um contato com este telefone." },
+            }),
+            { status: 409 },
+          ),
+      ),
+    );
+    const onCriado = vi.fn();
+    const fechar = vi.fn();
+    const user = userEvent.setup();
+    envolver(
+      <NewContactDialog
+        open
+        onOpenChange={fechar}
+        leadId="lead-1"
+        nomeInicial="Joana Prado"
+        dadosIniciais={{ phone_number: "+5511999998888" }}
+        onCriado={onCriado}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Criar contato" }));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Criar contato" })).not.toBeDisabled(),
+    );
+    expect(onCriado).not.toHaveBeenCalled();
+    expect(fechar).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Nome")).toHaveValue("Joana Prado");
   });
 });

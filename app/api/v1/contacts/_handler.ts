@@ -463,6 +463,7 @@ export async function createContactHandler(
   supabase: SB,
   ctx: HandlerCtx,
   input: ContactCreate,
+  linkedLeadId?: string,
 ): Promise<CreateContactResult> {
   const a = actorAuditPayload(ctx.actor);
   const insertRow: Record<string, unknown> = {
@@ -486,13 +487,25 @@ export async function createContactHandler(
     if (enc) insertRow.cpf_encrypted = enc;
   }
 
-  const { data: created, error: insErr } = await supabase
-    .from("contacts")
-    .insert(insertRow)
-    .select(SELECT_COLS)
-    .single();
+  const { data: created, error: insErr } = linkedLeadId
+    ? await supabase.rpc("fn_create_contact_for_lead", {
+        p_organization_id: ctx.organization_id,
+        p_lead_id: linkedLeadId,
+        p_contact: insertRow,
+      })
+    : await supabase.from("contacts").insert(insertRow).select(SELECT_COLS).single();
 
   if (insErr) {
+    if (insErr.code === "PT404") throw new ApiError(404, "not_found", undefined, ctx.requestId);
+    if (insErr.code === "PT409")
+      throw new ApiError(
+        409,
+        "conflict",
+        undefined,
+        ctx.requestId,
+        traduzir("Este negócio já tem contato vinculado. Atualize a ficha.", ctx.idioma ?? "pt-BR"),
+      );
+    if (insErr.code === "42501") throw new ApiError(403, "forbidden", undefined, ctx.requestId);
     // 409 quando o telefone já é de um contato vivo desta organização: o índice
     // parcial `uniq_contacts_org_phone` (organization_id, phone_number) barra o
     // insert com 23505. E-mail e CPF também têm trava única na tabela, então o
@@ -517,11 +530,15 @@ export async function createContactHandler(
         );
       }
     }
+    if (linkedLeadId && insErr.code === "23505") {
+      throw new ApiError(409, "contact_exists", undefined, ctx.requestId,
+        traduzir("Já existe um contato com estes identificadores. Confira o cadastro.", ctx.idioma ?? "pt-BR"));
+    }
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, insErr.message);
   }
 
   const contact = created as Contact;
-  if (contact.phone_number) {
+  if (!linkedLeadId && contact.phone_number) {
     try {
       const sessionId = await sessaoProntaParaEnvio(supabase, ctx.organization_id);
       if (sessionId) {
@@ -532,23 +549,24 @@ export async function createContactHandler(
     }
   }
 
-  await supabase
-    .rpc("emit_event", {
-      p_event_type: "contact.created",
-      p_entity_kind: "contact",
-      p_entity_id: contact.id,
-      p_payload: {
-        source: contact.source,
-        has_email: !!contact.email,
-        has_phone: !!contact.phone_number,
-        has_cpf: !!contact.cpf_hash,
-      },
-      p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
-      p_organization_id: contact.organization_id,
-    })
-    .then(({ error }) => {
-      if (error) console.error("[contacts.create] emit_event failed", error.message);
-    });
+  if (!linkedLeadId)
+    await supabase
+      .rpc("emit_event", {
+        p_event_type: "contact.created",
+        p_entity_kind: "contact",
+        p_entity_id: contact.id,
+        p_payload: {
+          source: contact.source,
+          has_email: !!contact.email,
+          has_phone: !!contact.phone_number,
+          has_cpf: !!contact.cpf_hash,
+        },
+        p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
+        p_organization_id: contact.organization_id,
+      })
+      .then(({ error }) => {
+        if (error) console.error("[contacts.create] emit_event failed", error.message);
+      });
 
   await audit({
     action: "contact.created",
@@ -557,9 +575,23 @@ export async function createContactHandler(
     resourceType: "contact",
     resourceId: contact.id,
     requestId: ctx.requestId,
-    metadata: { ...a.metadataActor, source: contact.source },
+    metadata: {
+      ...a.metadataActor,
+      source: contact.source,
+      ...(linkedLeadId ? { lead_id: linkedLeadId } : {}),
+    },
   });
 
+  if (linkedLeadId)
+    await audit({
+      action: "lead.updated",
+      actorUserId: a.actorUserId,
+      organizationId: ctx.organization_id,
+      resourceType: "lead",
+      resourceId: linkedLeadId,
+      requestId: ctx.requestId,
+      metadata: { ...a.metadataActor, from: { contact_id: null }, to: { contact_id: contact.id } },
+    });
   return { contact, action: "created" };
 }
 

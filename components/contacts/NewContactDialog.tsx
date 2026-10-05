@@ -40,6 +40,9 @@ interface Props {
    * trocar o termo com o diálogo já montado remonta com `key`.
    */
   nomeInicial?: string;
+  dadosIniciais?: { email?: string; phone_number?: string; tags?: string[] };
+  leadId?: string;
+  referenciaDoCard?: string | null;
   /**
    * Recebe o contato recém-criado. Existe para quem abriu o diálogo NO MEIO de
    * outro fluxo (marcar um horário, por exemplo) poder seguir com ele já
@@ -48,14 +51,28 @@ interface Props {
   onCriado?: (contato: Contact) => void;
 }
 
-export function NewContactDialog({ open, onOpenChange, nomeInicial, onCriado }: Props) {
+export function NewContactDialog({
+  open,
+  onOpenChange,
+  nomeInicial,
+  onCriado,
+  dadosIniciais,
+  leadId,
+  referenciaDoCard,
+}: Props) {
   const t = useT();
   const perfil = perfilDoPais(useActiveOrg()?.country);
-  const create = useCreateContact();
+  const create = useCreateContact(leadId);
   const [serverError, setServerError] = useState<string | null>(null);
 
   const form = useForm<FormShape>({
-    defaultValues: { name: nomeInicial ?? "", email: "", phone_number: "", cpf: "", tagsRaw: "" },
+    defaultValues: {
+      name: nomeInicial ?? "",
+      email: dadosIniciais?.email ?? "",
+      phone_number: dadosIniciais?.phone_number ?? "",
+      cpf: "",
+      tagsRaw: dadosIniciais?.tags?.join(", ") ?? "",
+    },
   });
 
   async function onSubmit(values: FormShape) {
@@ -82,7 +99,7 @@ export function NewContactDialog({ open, onOpenChange, nomeInicial, onCriado }: 
 
     try {
       const resposta = await create.mutateAsync(parsed.data as ContactCreate);
-      toast.success(t("Contato criado"));
+      toast.success(t(leadId ? "Contato criado e vinculado" : "Contato criado"));
       form.reset();
       onOpenChange(false);
       // `.data` é o envelope do `ok()`, e dentro dele mora `{ contact, action }`.
@@ -91,8 +108,9 @@ export function NewContactDialog({ open, onOpenChange, nomeInicial, onCriado }: 
       // silêncio. Quem garante que este caminho não volta a errar é o tipo do
       // hook, ligado ao retorno da rota.
       if (resposta?.data?.contact) onCriado?.(resposta.data.contact);
-    } catch {
-      // error toast already handled by hook
+    } catch (err) {
+      // O toast do hook também avisa, mas a correção precisa continuar visível.
+      setServerError(err instanceof Error ? err.message : t("Dados inválidos"));
     }
   }
 
@@ -105,6 +123,12 @@ export function NewContactDialog({ open, onOpenChange, nomeInicial, onCriado }: 
             {t("Preencha pelo menos um identificador (email ou telefone).")}
           </DialogDescription>
         </DialogHeader>
+        {referenciaDoCard && (
+          <details className="text-xs text-text-muted">
+            <summary>{t("Dados do negócio para conferência")}</summary>
+            <p className="max-h-36 overflow-auto whitespace-pre-wrap">{referenciaDoCard}</p>
+          </details>
+        )}
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">{t("Nome")}</Label>
@@ -134,9 +158,7 @@ export function NewContactDialog({ open, onOpenChange, nomeInicial, onCriado }: 
             <Label htmlFor="tagsRaw">{t("Tags (separadas por vírgula)")}</Label>
             <Input id="tagsRaw" placeholder="vip, recompra" {...form.register("tagsRaw")} />
           </div>
-          {serverError && (
-            <p className="text-sm text-error-fg">{serverError}</p>
-          )}
+          {serverError && <p className="text-sm text-error-fg">{serverError}</p>}
           <DialogFooter>
             <Button
               type="button"

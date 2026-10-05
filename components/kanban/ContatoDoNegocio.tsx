@@ -1,6 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { NewContactDialog } from "@/components/contacts/NewContactDialog";
+import { usePermission } from "@/hooks/auth/AuthProvider";
+import { dadosDoCardParaContato } from "@/lib/leads/dados-do-card-para-contato";
+import type { Lead } from "@/lib/types/leads";
 import { useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -30,6 +34,7 @@ import type { Contact } from "@/lib/types/contacts";
 interface Props {
   contactId: string | null;
   pipelineId: string;
+  lead?: Lead;
   /**
    * A âncora das pessoas relacionadas (#1506 F1). Opcional de propósito: quem
    * só tem o contato (card, testes do dossiê) não consulta rota nenhuma —
@@ -54,14 +59,43 @@ interface Props {
  * As PESSOAS RELACIONADAS são só leitura nesta fatia: escrever (adicionar,
  * remover, dar papel) é a F2 da mesma issue, com `POST`/`DELETE` nesta rota.
  */
-export function ContatoDoNegocio({ contactId, pipelineId, leadId }: Props) {
+export function ContatoDoNegocio({ contactId, pipelineId, leadId, lead }: Props) {
   const t = useT();
+  const podeCriar = usePermission("contact.create");
+  const qc = useQueryClient();
+  const [criando, setCriando] = useState(false);
+  const [criado, setCriado] = useState<{ leadId: string; contactId: string } | null>(null);
+  const idVinculado = contactId ?? (criado?.leadId === leadId ? criado?.contactId : null);
+  const iniciais = lead ? dadosDoCardParaContato(lead) : undefined;
   return (
     <>
-      {contactId ? (
-        <ContatoVinculado contactId={contactId} pipelineId={pipelineId} />
+      {idVinculado ? (
+        <ContatoVinculado contactId={idVinculado} pipelineId={pipelineId} />
       ) : (
-        <p className="text-xs text-text-muted">{t("Este negócio não tem contato vinculado.")}</p>
+        <div className="space-y-2">
+          <p className="text-xs text-text-muted">{t("Este negócio não tem contato vinculado.")}</p>
+          {lead && podeCriar && (
+            <Button size="sm" variant="outline" onClick={() => setCriando(true)}>
+              {t("Criar contato")}
+            </Button>
+          )}
+          {criando && lead && (
+            <>
+              <NewContactDialog
+                open={criando}
+                onOpenChange={setCriando}
+                leadId={lead.id}
+                nomeInicial={lead.title}
+                dadosIniciais={iniciais}
+                referenciaDoCard={lead.description}
+                onCriado={(contato) => {
+                  setCriado({ leadId: lead.id, contactId: contato.id });
+                  qc.invalidateQueries({ queryKey: chaveDoQuadro(pipelineId) });
+                }}
+              />
+            </>
+          )}
+        </div>
       )}
       <PessoasRelacionadas leadId={leadId ?? null} />
     </>
