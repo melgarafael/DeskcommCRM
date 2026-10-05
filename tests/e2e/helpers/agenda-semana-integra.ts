@@ -274,7 +274,8 @@ export async function escolherDiaDesenhado(page: Page, dias: readonly string[]):
   // varredura feita antes disso leria "nenhum dia da semana desenhada" onde há.
   await expect(
     page.locator('[data-testid^="dia-"][data-disponivel="true"]').first(),
-    "nenhum dia disponível no painel — o seed da agenda não deixou jornada publicada",
+    "nenhum dia disponível no painel — o seed da agenda não deixou jornada publicada, ou o " +
+      "painel abriu num mês sem vaga (fim de mês: ver `agenda-painel-abre-no-mes-com-vaga.test.tsx`)",
   ).toBeVisible({ timeout: 20_000 });
 
   let candidatos = await disponiveis();
@@ -371,8 +372,9 @@ async function diasCheios(page: Page): Promise<string[]> {
 
   await expect(
     page.locator('[data-testid^="dia-"][data-disponivel="true"]').first(),
-    "nenhum dia disponível — o seed da agenda não deixou jornada publicada, e sem " +
-      "dia clicável a coluna de horários nunca abre (o defeito ficaria invisível)",
+    "nenhum dia disponível — o seed da agenda não deixou jornada publicada, ou o painel " +
+      "abriu num mês sem vaga (fim de mês: ver `agenda-painel-abre-no-mes-com-vaga.test.tsx`); " +
+      "sem dia clicável a coluna de horários nunca abre (o defeito ficaria invisível)",
   ).toBeVisible({ timeout: 20_000 });
 
   const cheios = await varrer();

@@ -381,7 +381,14 @@ async function aplicarOrcamento(d: {
      where not exists (
        select 1 from agent_inbox_items
        where organization_id = $1 and kind = 'budget_exceeded' and status = 'open'
-     )`,
+     )
+     -- on conflict SEM ALVO pela mesma razão do statement do orçamento
+     -- (SQL_ORCAMENTO): a forma com alvo exige que o índice da 0540 já exista,
+     -- e um clone fora de ordem falharia aqui com 42P10 — trocando a RECUSA (o
+     -- erro lançado abaixo) por um erro de banco. Sem alvo, se outro processo
+     -- abriu o mesmo item entre a guarda e o insert, a linha não entra e a
+     -- recusa continua valendo.
+     on conflict do nothing`,
     [d.organizationId, BLOQUEIO_TITULO, corpoDoBloqueio(gastoCents, tetoCents)],
   );
   // A recusa vira LINHA em llm_calls. A tela /app/ai/runs nasceu porque
@@ -505,6 +512,31 @@ async function registrarRecusaDeEnderecoSemChave(d: {
 
   d.log?.warn('llm: chamada recusada — endereço escolhido pela empresa com a chave da instalação', comum);
   return erro;
+}
+
+/**
+ * A CAUDA DO LAÇO DE TOOLS TAMBÉM VAI PARA O CACHE (só Anthropic, só laço).
+ *
+ * O prefixo estável (tools + system) já tem breakpoints de 1 h. Mas numa resposta
+ * com laço de tools cada passo reenvia a abertura (checkpoint, contexto do lead,
+ * histórico, mensagem) e os resultados dos passos anteriores — e isso ficava
+ * DEPOIS do último breakpoint, cobrado a preço cheio em todo passo. Medido numa
+ * instalação real (27/09/2026): ~3,5 passos por resposta, ~12 mil tokens sem
+ * cache por passo, 46% do custo da resposta.
+ *
+ * `cache_control` no nível do pedido põe um breakpoint automático no fim da
+ * conversa: o passo 2 em diante lê do cache o que o passo anterior já mandou. TTL
+ * de 5 min: os passos de uma resposta são segundos, e 5 min custa menos para
+ * escrever que 1 h. É o 3º de 4 breakpoints, e o de 1 h vem antes do de 5 min,
+ * como a API exige. Fora do laço (um passo só) não entra: escrever sem reler
+ * só encarece.
+ */
+export function cacheDaCauda(
+  provider: string,
+  maxSteps: number | undefined,
+): { providerOptions?: { anthropic: { cacheControl: { type: 'ephemeral'; ttl: '5m' } } } } {
+  if (provider !== 'anthropic' || maxSteps === undefined || maxSteps <= 1) return {};
+  return { providerOptions: { anthropic: { cacheControl: { type: 'ephemeral', ttl: '5m' } } } };
 }
 
 export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunModelCallInput, deps: RunModelCallDeps = {}) {
@@ -685,6 +717,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       maxOutputTokens: input.maxOutputTokens === undefined
         ? maxOutputTokens
         : Math.min(maxOutputTokens ?? Infinity, input.maxOutputTokens),
+      ...cacheDaCauda(config.provider, input.maxSteps),
     });
   } catch (err) {
     // ─── A LINHA QUE FALTAVA ────────────────────────────────────────────────

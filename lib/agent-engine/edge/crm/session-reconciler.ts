@@ -29,6 +29,7 @@ import type pg from 'pg';
 
 import { parseWahaMessageId, wahaEchoExternalIds } from '@/lib/waha/message-id';
 import { lerNumerosDeTeste, numeroPodeTestar, preGoLiveAtivo } from '@/lib/ai/elegibilidade/pre-go-live';
+import { canalDesativado } from '@/lib/channels/desativado';
 
 import type { Logger } from '../../obs/logger';
 
@@ -370,8 +371,8 @@ export async function redriveQueued(
       // A lista pode mudar enquanto a mensagem espera ou entre itens do lote.
       // Este redrive fala direto com o WAHA, portanto também precisa da guarda
       // do sink. Falha de leitura cai no catch e NÃO envia.
-      const { rows: acesso } = await pool.query<{ metadata: unknown; phone_number: string | null }>(
-        `select s.metadata, c.phone_number
+      const { rows: acesso } = await pool.query<{ metadata: unknown; phone_number: string | null; operante: boolean }>(
+        `select s.metadata, c.phone_number, public.fn_org_operante(m.organization_id) as operante
          from messages m
          join channel_sessions s on s.id = m.channel_session_id and s.organization_id = m.organization_id
          join contacts c on c.id = m.contact_id and c.organization_id = m.organization_id
@@ -380,6 +381,32 @@ export async function redriveQueued(
       );
       const atual = acesso[0];
       if (!atual) continue;
+      // Organização parada não fala: o resgate direto ao WAHA não pode ser a
+      // porta dos fundos da suspensão. Mesmo desfecho que a suspensão grava.
+      if (atual.operante !== true) {
+        await pool.query(
+          `update messages set status = 'failed', error_code = 'org_suspensa',
+             error_message = 'Envio automático bloqueado: a organização está suspensa.'
+           where id = $1 and organization_id = $2 and status = 'queued'`,
+          [m.id, m.organization_id],
+        );
+        log.info('watchdog: reenvio bloqueado — organização não operante', { message_id: m.id });
+        continue;
+      }
+      // Canal PAUSADO pelo operador: a fila de antes da pausa não sai por aqui.
+      // `failed` e não `queued`, o mesmo desfecho que o `messages/_handler`
+      // grava: deixá-la na fila faria o resgate mandar tudo de uma vez quando o
+      // operador retomasse o canal.
+      if (canalDesativado(atual.metadata)) {
+        await pool.query(
+          `update messages set status = 'failed', error_code = 'channel_disabled',
+             error_message = 'Este canal está desativado. Reative-o na Central de Conexões para voltar a enviar.'
+           where id = $1 and organization_id = $2 and status = 'queued'`,
+          [m.id, m.organization_id],
+        );
+        log.info('watchdog: reenvio bloqueado — canal pausado', { message_id: m.id });
+        continue;
+      }
       if (preGoLiveAtivo(atual.metadata) && !numeroPodeTestar(atual.phone_number ?? '', lerNumerosDeTeste(atual.metadata))) {
         await pool.query(
           `update messages set status = 'failed', error_code = 'pre_go_live',

@@ -17,7 +17,7 @@ type Context = { params: Promise<{ id: string }> };
 /** Só administradores podem ler os telefones de teste ou mudar o alcance da IA. */
 export async function GET(_req: NextRequest, { params }: Context): Promise<Response> {
   const requestId = randomUUID();
-  const auth = await requireRole("admin", { requestId, resource: "channel_sessions", allowPlatformAdmin: true });
+  const auth = await requireRole("admin", { requestId, resource: "channel_sessions", allowPlatformAdmin: "leitura" });
   if (!auth.ok) return auth.response;
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) return fail("validation_failed", "Canal inválido.", 422, { requestId });

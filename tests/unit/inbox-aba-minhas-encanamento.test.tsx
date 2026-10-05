@@ -79,7 +79,7 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/auth/server", () => ({
   mfaEmDivida: vi.fn(async () => false),
   loadAuthUser: async () => ({ id: "user-1" }),
-  resolveActiveOrg: async () => ({ orgId: "org-1" }),
+  orgAtivaSemPortao: async () => ({ orgId: "org-1", org_status: "active" }),
 }));
 
 const { GET } = await import("@/app/api/v1/conversations/route");

@@ -6,8 +6,10 @@ import {
   occupancyEventCount,
   pisoDoInboundDaEspera,
   processNode,
+  rechecksOciososDaAcao,
   resolveWaitPhase,
   selectEdge,
+  turnoDaAcaoDescartado,
   type EnrollmentRow,
   type LeadFacts,
 } from "./node-handlers";
@@ -1171,5 +1173,30 @@ describe("processNode — repeat", () => {
       repeatTotal: null,
     });
     expect(result).toMatchObject({ kind: "advance", next_node_id: "de-novo" });
+  });
+});
+
+describe("turno descartado pela suspensão (migration 0501)", () => {
+  const ev = (event_type: string, node_id = "a1") => ({ node_id, event_type, idempotency_key: null, payload: {} });
+
+  it("o último turno descartado e não substituído pede um turno novo", () => {
+    const eventos = [ev("turn_enqueued"), ev("action_recheck"), ev("turn_discarded")];
+    expect(turnoDaAcaoDescartado(eventos, "a1")).toBe(true);
+  });
+
+  it("depois do turno novo, a estadia volta a esperar por ele", () => {
+    const eventos = [ev("turn_enqueued"), ev("turn_discarded"), ev("turn_enqueued"), ev("action_recheck")];
+    expect(turnoDaAcaoDescartado(eventos, "a1")).toBe(false);
+  });
+
+  it("descarte de outra estadia (outro nó no meio) não vale", () => {
+    const eventos = [ev("turn_discarded"), ev("node_advanced", "w1"), ev("turn_enqueued")];
+    expect(turnoDaAcaoDescartado(eventos, "a1")).toBe(false);
+  });
+
+  it("o dead-man recomeça no descarte: o turno novo tem o orçamento inteiro", () => {
+    const antes = [ev("turn_enqueued"), ...Array.from({ length: 13 }, () => ev("action_recheck"))];
+    expect(rechecksOciososDaAcao(antes, "a1")).toBe(14);
+    expect(rechecksOciososDaAcao([...antes, ev("turn_discarded"), ev("turn_enqueued")], "a1")).toBe(1);
   });
 });

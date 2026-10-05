@@ -234,6 +234,10 @@ export type ProvideCaseUpdateResult = { ok: true } | { ok: false; error: { code:
  * evento 'lead_provided' (actor_kind='lead' — a info veio do lead, não do
  * agente nem do humano). De qualquer outro estado é no-op: {ok:false,
  * error.code:'invalid_case_state'}.
+ *
+ * O caso tem de ser DA CONVERSA do turno (`ids.conversationId`): o `case_id`
+ * vem do modelo, e caso de outra conversa cai na mesma resposta de estado
+ * errado — sem alterar nada e sem distinguir os dois.
  */
 export async function provideCaseUpdate(
   db: pg.Pool,
@@ -245,13 +249,14 @@ export async function provideCaseUpdate(
        update agent_cases
           set status = 'awaiting_human', updated_at = now()
         where organization_id = $1 and id = $2 and status = 'awaiting_lead'
+          and conversation_id = $4
         returning id
      )
      insert into agent_case_events (organization_id, case_id, kind, actor_kind, body)
      select $1, id, 'lead_provided', 'lead', $3
        from updated
      returning case_id`,
-    [ids.tenantId, input.caseId, input.info],
+    [ids.tenantId, input.caseId, input.info, ids.conversationId],
   );
 
   if (rows.length === 0) {

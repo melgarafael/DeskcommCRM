@@ -52,6 +52,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { marcaDaOrigem, origemDeCampanhaDaConversa } from "@/lib/campanhas/origem-do-lead";
 
 import { logger } from "@/lib/logger";
+import { ORIGEM_DO_WHATSAPP } from "@/lib/channels/origem-do-negocio";
 
 import { lerClientePelaAgenda } from "@/lib/contacts/cliente-pela-agenda";
 import { ehIdentificadorTecnico, rotuloDoContato, SEM_NOME } from "@/lib/contacts/rotulo-do-contato";
@@ -92,11 +93,9 @@ export interface OrigemDoNascimento {
   motivo: string;
 }
 
-const ORIGEM_PADRAO: OrigemDoNascimento = {
-  rotulo: "WhatsApp",
-  source: "whatsapp",
-  motivo: "primeira mensagem recebida no WhatsApp",
-};
+// Um texto só para a origem padrão: o mesmo objeto que a ingestão usa quando
+// a conversa é de WhatsApp (`lib/channels/origem-do-negocio.ts`).
+const ORIGEM_PADRAO: OrigemDoNascimento = ORIGEM_DO_WHATSAPP;
 
 /**
  * Por que um lead NÃO nasceu. Cada motivo é registrado — silêncio não distingue

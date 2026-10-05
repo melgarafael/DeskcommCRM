@@ -90,7 +90,13 @@ export function routingPgSupabase(pool: pg.Pool) {
         };
         const field = (s: string) => {
           const match = /^([a-z_]+)->>([a-z_]+)$/.exec(s);
-          return match ? `${identifier(match[1]!)}->>'${match[2]}'` : identifier(s);
+          if (match) return `${identifier(match[1]!)}->>'${match[2]}'`;
+          // Filtro no recurso embutido `conversations!inner(...)` (histórico do rodízio em
+          // eligibles.ts): o inner join do PostgREST vira subconsulta pela FK conversation_id.
+          const embutido = /^conversations\.([a-z_]+)$/.exec(s);
+          return embutido
+            ? `(select j.${identifier(embutido[1]!)} from "conversations" j where j.id=${identifier(this.table)}."conversation_id")`
+            : identifier(s);
         };
         const where = this.conditions.length
           ? " where " +

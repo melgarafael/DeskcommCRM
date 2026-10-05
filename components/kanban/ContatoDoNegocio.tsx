@@ -13,6 +13,7 @@ import { useContact } from "@/hooks/contacts/useContact";
 import { useUpdateContact } from "@/hooks/contacts/useUpdateContact";
 import { useT } from "@/hooks/i18n/useT";
 import { chaveDoQuadro } from "@/hooks/kanban/useBoard";
+import { useContatosRelacionados } from "@/hooks/leads/useContatosRelacionados";
 import {
   aplicarLinks,
   EXEMPLO_DE_LINK,
@@ -29,11 +30,18 @@ import type { Contact } from "@/lib/types/contacts";
 interface Props {
   contactId: string | null;
   pipelineId: string;
+  /**
+   * A âncora das pessoas relacionadas (#1506 F1). Opcional de propósito: quem
+   * só tem o contato (card, testes do dossiê) não consulta rota nenhuma —
+   * `useContatosRelacionados` segura a chamada sem `leadId`.
+   */
+  leadId?: string | null;
 }
 
 /**
  * Os dados do CLIENTE dentro do dossiê do negócio: telefone e e-mail numa aba,
- * links (Instagram, site, Google Meu Negócio…) na outra.
+ * links (Instagram, site, Google Meu Negócio…) na outra, e ABAIXO do principal
+ * as outras pessoas do mesmo negócio (#1506 F1).
  *
  * Telefone e e-mail são LEITURA aqui, de propósito: o telefone exige E.164 e
  * passa por normalização e checagem de duplicidade no cadastro do contato, e
@@ -42,15 +50,22 @@ interface Props {
  *
  * Os LINKS são editáveis aqui: não têm regra além de "ser um endereço http(s)",
  * e são o dado que o funil mais precisa preencher de passagem.
+ *
+ * As PESSOAS RELACIONADAS são só leitura nesta fatia: escrever (adicionar,
+ * remover, dar papel) é a F2 da mesma issue, com `POST`/`DELETE` nesta rota.
  */
-export function ContatoDoNegocio({ contactId, pipelineId }: Props) {
+export function ContatoDoNegocio({ contactId, pipelineId, leadId }: Props) {
   const t = useT();
-  if (!contactId) {
-    return (
-      <p className="text-xs text-text-muted">{t("Este negócio não tem contato vinculado.")}</p>
-    );
-  }
-  return <ContatoVinculado contactId={contactId} pipelineId={pipelineId} />;
+  return (
+    <>
+      {contactId ? (
+        <ContatoVinculado contactId={contactId} pipelineId={pipelineId} />
+      ) : (
+        <p className="text-xs text-text-muted">{t("Este negócio não tem contato vinculado.")}</p>
+      )}
+      <PessoasRelacionadas leadId={leadId ?? null} />
+    </>
+  );
 }
 
 function ContatoVinculado({ contactId, pipelineId }: { contactId: string; pipelineId: string }) {
@@ -82,6 +97,50 @@ function ContatoVinculado({ contactId, pipelineId }: { contactId: string; pipeli
         <FormularioDeLinks key={contato.updated_at} contato={contato} pipelineId={pipelineId} />
       </TabsContent>
     </Tabs>
+  );
+}
+
+/**
+ * As outras pessoas do negócio (#1506 F1): a lista que faltava embaixo do
+ * contato principal.
+ *
+ * Sumida por padrão, e não "vazia": negócio sem relacionado não ganha um título
+ * de seção pendurado no dossiê, e quem carrega a tela não vê nem um piscar de
+ * lista vazia antes de a resposta chegar. O erro NÃO some — ele é a única coisa
+ * que a pessoa tem a ler quando a rota falha.
+ *
+ * O `papel` vem do `metadata` escrito pelo atendente (texto livre, F2 limita a
+ * 40) e o nome vem do cadastro: dado de quem usou o produto, não frase de
+ * interface, então os dois saem como vieram em qualquer idioma.
+ */
+function PessoasRelacionadas({ leadId }: { leadId: string | null }) {
+  const t = useT();
+  const { data, isLoading, isError } = useContatosRelacionados(leadId);
+  if (isError) {
+    return (
+      <p className="mt-2 text-xs text-destructive">
+        {t("Não consegui carregar as pessoas relacionadas.")}
+      </p>
+    );
+  }
+  if (isLoading) return null;
+  const pessoas = data?.data ?? [];
+  if (pessoas.length === 0) return null;
+  return (
+    <div className="mt-3 space-y-1" data-testid="pessoas-relacionadas">
+      <p className="text-[11px] font-medium tracking-wide text-text-muted uppercase">
+        {t("Pessoas relacionadas")}
+      </p>
+      <ul className="space-y-1">
+        {pessoas.map((pessoa) => (
+          <li key={pessoa.contact_id} className="flex flex-wrap items-baseline gap-x-2 text-xs">
+            <span className="min-w-0 truncate">{pessoa.nome ?? "—"}</span>
+            {pessoa.papel && <span className="text-text-muted">({pessoa.papel})</span>}
+            {pessoa.anonimizado && <span className="text-text-muted">{t("Anonimizado")}</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

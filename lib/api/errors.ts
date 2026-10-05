@@ -33,6 +33,11 @@ export const ApiErrorCodes = {
   forbidden: "forbidden",
   forbidden_role: "forbidden_role",
   forbidden_tenant: "forbidden_tenant",
+  // Conta da empresa suspensa (spec da cobrança §4): sessão, token `dsk_` e MCP.
+  // Só LGPD e cobrança passam, por `requireRole({ permiteOrgSuspensa: true })`.
+  org_suspended: "org_suspended",
+  // Platform admin `support_readonly` tentando ESCREVER (`requirePlatformAdminEscrita`).
+  forbidden_scope: "forbidden_scope",
   lgpd_anonymization_irreversible: "lgpd_anonymization_irreversible",
 
   // 404
@@ -70,6 +75,13 @@ export const ApiErrorCodes = {
   // retentar depois resolve, enquanto conflito manda trocar a chave.
   idempotency_in_progress: "idempotency_in_progress",
   state_conflict: "state_conflict",
+  // POST /admin/tenants/[id]/reactivate sobre suspensão por falta de pagamento:
+  // a saída é "Dar prazo" ou "Tornar isenta", nunca o "Reativar" genérico.
+  suspensao_de_cobranca: "suspensao_de_cobranca",
+  // POST /admin/tenants/[id]/suspend|reactivate quando o descarte da fila bate
+  // na trava do aviso do Meet (`appointment_notice_busy`, 40001): outra escrita
+  // do mesmo contato está em curso. Nada foi gravado; tentar de novo resolve.
+  retry_later: "retry_later",
   invalid_state: "invalid_state", // resposta a um agent_case que saiu de awaiting_human (spec 15 §7)
   tenant_already_exists: "tenant_already_exists",
   // POST /api/v1/settings/api-tokens quando a organização já está no teto de

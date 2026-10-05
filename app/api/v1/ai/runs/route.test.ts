@@ -15,17 +15,19 @@ import {
   JEV_FALHOU_SEM_RESERVA,
   O_QUE_FAZER_DO_JEV,
 } from "@/lib/ai/decisao/textos";
-import { PEDIDOS_DO_CLIENTE } from "@/lib/ai/decisao/tarefas";
+import { CONFERENCIA_DE_CAMPO, PEDIDOS_DO_CLIENTE } from "@/lib/ai/decisao/tarefas";
 import { DICIONARIO } from "@/lib/i18n/dicionario";
 import { PONTO_POR_ID } from "@/lib/ai/pontos/registro";
 import { EXPLICACAO_DA_ORIGEM } from "@/lib/ai/pontos/resolver";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 import { GET } from "./route";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 
 const ORG = "22222222-2222-4222-8222-222222222222";
 
@@ -74,12 +76,15 @@ beforeEach(() => {
     },
     then: (resolve: (r: unknown) => unknown) => resolve({ data: linhas, error: null }),
   };
-  vi.mocked(createClient).mockResolvedValue({
+  const db = {
     from: (tabela: string) => {
       expect(tabela).toBe("llm_calls");
       return chain;
     },
-  } as unknown as Awaited<ReturnType<typeof createClient>>);
+  };
+  vi.mocked(createClient).mockResolvedValue(db as unknown as Awaited<ReturnType<typeof createClient>>);
+  // `llm_calls` é lido pelo client de SERVIÇO (tabela server-only na VPS).
+  vi.mocked(createAdminClient).mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
 });
 
 async function pedir(query = "") {
@@ -171,6 +176,27 @@ describe("GET /api/v1/ai/runs", () => {
     }
     // Controle: o purpose desconhecido segue saindo como está.
     expect(estranho.pontoRotulo).toBe("ponto_que_ninguem_conhece");
+  });
+
+  it("a conferência de campo do negócio (#2234) chega com nome de gente e o porquê dela, no sucesso e na falha", async () => {
+    linhas = [
+      linha({ purpose: CONFERENCIA_DE_CAMPO.purpose, provider: "typesafe", model: "typesafe/jev-1.13.0", origem_da_escolha: "jev" }),
+      linha({
+        purpose: CONFERENCIA_DE_CAMPO.purpose,
+        provider: "typesafe",
+        status: "erro",
+        error_code: "jev_sem_credito",
+        origem_da_escolha: "jev_observacao",
+      }),
+    ];
+    const { corpo } = await pedir();
+    const [ok, falha] = corpo.data.execucoes;
+    expect(ok).toMatchObject({ pontoRotulo: CONFERENCIA_DE_CAMPO.rotulo, porQueEsteModelo: CONFERENCIA_DE_CAMPO.porQue });
+    expect(falha).toMatchObject({
+      pontoRotulo: CONFERENCIA_DE_CAMPO.rotulo,
+      consequencia: null,
+      porQueEsteModelo: CONFERENCIA_DE_CAMPO.porQueNaFalha,
+    });
   });
 
   it("a reserva que cobriu o Jev não carrega consequência; a falha sem reserva carrega", async () => {

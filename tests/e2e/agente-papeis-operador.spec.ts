@@ -140,16 +140,24 @@ test.describe("A aba do papel que organiza o sistema", () => {
     const itens = painel.locator('[data-testid^="item-conferencia-"]');
     await expect(itens).toHaveCount([...CONFERENCIAS_DE_SAIDA, CONFERENCIA_DE_ENTRADA].length);
 
-    // EXATAMENTE DOIS interruptores de CONFERÊNCIA — um por camada que custa
-    // dinheiro. Este caso já afirmou ZERO, e a mudança é deliberada: enquanto o
-    // motor lia só o `.env`, um controle aqui seria a tela gravando o que o
-    // código ignora. Depois que a 0142 criou a escolha por organização e os três
-    // pontos de consumo passaram a lê-la, o interruptor deixou de ser decorativo.
+    // Um interruptor de CONFERÊNCIA por item que tem ESCOLHA na lista — e só
+    // esses. O número também é DERIVADO: era o literal `2` (as duas camadas que
+    // consultam modelo e custam por mensagem), e o #2321 (@hampikamayuq) trouxe
+    // a terceira escolha legítima, a afirmação clínica, que não custa nada e vem
+    // DESLIGADA — ligar acrescenta proteção, não tira. O literal reprovou no
+    // e2e, noutro job, como o `12` dos itens já tinha reprovado (#420).
     //
-    // As outras nove seguem sem controle, e é isso que a contagem exata guarda:
-    // uma conferência a mais com interruptor é alguém oferecendo desligar o que
-    // protege o número do cliente.
-    await expect(painel.locator('[data-testid^="conferencia-"][role="switch"]')).toHaveCount(2);
+    // A guarda que o literal fazia continua, agora na lista: um item com
+    // `escolha: null` é o que "não se desliga", e a tela não pode desenhar
+    // interruptor nele. E as camadas PAGAS seguem sendo exatamente as que se
+    // declaram `consultaModelo` — quem quiser oferecer desligar uma proteção
+    // fixa tem de mudar a lista, à vista, em vez de só o número daqui.
+    const comEscolha = [...CONFERENCIAS_DE_SAIDA, CONFERENCIA_DE_ENTRADA].filter((c) => c.escolha !== null);
+    expect(
+      comEscolha.filter((c) => c.escolha?.consultaModelo).length,
+      "as camadas pagas (que consultam modelo) continuam sendo duas",
+    ).toBe(2);
+    await expect(painel.locator('[data-testid^="conferencia-"][role="switch"]')).toHaveCount(comEscolha.length);
 
     // E a contagem TOTAL continua cercada, por categoria em vez de por número.
     // Ancorar só nas conferências abriria a porta que este caso existe para

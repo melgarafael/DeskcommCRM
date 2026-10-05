@@ -70,8 +70,9 @@ export interface Lead {
    *
    * Ausente é estado LEGÍTIMO e comum: lead criado à mão ou por webhook não tem
    * contato, e contato sem conversa existe. O card precisa saber a diferença
-   * entre "não há conversa" e "ainda não carregou" — por isso `undefined` e não
-   * um objeto vazio.
+   * entre "não há conversa" e "ainda não carregou": a rota do quadro devolve
+   * `null` para contato SEM conversa (o card mostra "Abrir conversa", #1993) e
+   * deixa ausente (`undefined`) para lead sem contato. Nunca um objeto vazio.
    */
   conversa?: {
     id: string;

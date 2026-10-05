@@ -12,6 +12,7 @@ export const LGPD_EXPORT_HANDLER_KEY = "lgpd-export-worker.v1";
 
 export const lgpdExportHandler: EventHandler = {
   key: LGPD_EXPORT_HANDLER_KEY,
+  naOrgParada: "roda",
   events: ["lgpd.data_request_received"],
   async handle(row) {
     return processLgpdExport(row);

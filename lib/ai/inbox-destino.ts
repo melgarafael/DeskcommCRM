@@ -124,8 +124,19 @@ export const POLITICAS_DE_AVISO = {
     refs: ["proposal"],
     orientacao: "A IA rascunhou esta proposta — confirme o modelo sugerido (ou escolha outro) e confira se todos os itens têm preço antes de enviar.",
   },
-  // `agent_case`: o caso que a IA abriu, na Central no instante da abertura
-  // (`lib/escalacao/caso-na-central.handler.ts`).
+  // A revisão depois da reativação (`fn_reativar_organizacao`). Nasce SEM
+  // referência: o aviso é sobre N conversas, não sobre uma, e com
+  // `ref_kind='organization'` o resolvedor não chegaria ao Inbox. O Inbox não
+  // tem parâmetro de aba na URL (`app/app/inbox/page.tsx` só lê `id` e
+  // `rascunho`), por isso o botão leva ao Inbox e a orientação nomeia as abas.
+  // As DUAS: numa empresa com IA, a conversa sem dono e sem silêncio é
+  // classificada como `automatico` (comando-da-conversa.ts) e só cai na Fila
+  // quando a empresa não tem atendimento automático.
+  org_reativada: {
+    refs: [],
+    orientacao: "A IA não respondeu nem vai responder sozinha às conversas que chegaram durante a suspensão. Abra o Inbox e procure-as nas abas Fila e Automático.",
+    geral: { papel: "agent", href: "/app/inbox", rotulo: "Abrir o Inbox" },
+  },
   other: { refs: ["lead", "channel_session", "appointment", "ai_agent", "ai_provider_credential", "agent_case"], orientacao: "Confira a situação descrita neste aviso com a pessoa responsável." },
 } satisfies Record<InboxKind, Politica>;
 

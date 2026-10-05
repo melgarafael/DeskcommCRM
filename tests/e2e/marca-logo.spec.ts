@@ -737,6 +737,95 @@ test.describe("o logo subido pela tela chega à tela", () => {
    */
   test.setTimeout(180_000);
 
+  test("o CSS personalizado salvo na tela aparece no login e pode ser removido", async ({
+    page,
+    browser,
+  }) => {
+    const secret = creds.dono_totp?.secret;
+    expect(secret, "sem `dono_totp` no .e2e-creds.json — rode seed-e2e-credentials.ts").toBeTruthy();
+    await loginComTotp(page, creds.users.dono!.email, secret!);
+    await page.goto("/admin/marca");
+
+    const editor = page.locator("#custom_css");
+    await expect(editor).toBeVisible();
+    await editor.fill(".text-muted-foreground { color: rgb(1, 2, 3); }");
+    await page.getByRole("button", { name: "Salvar CSS", exact: true }).click();
+    await expect(page.getByText("CSS personalizado salvo.")).toBeVisible({ timeout: 15_000 });
+
+    const visitante = await browser.newContext();
+    try {
+      const paginaLogin = await visitante.newPage();
+      await paginaLogin.goto("/login");
+      // `toContainText` lê o texto VISÍVEL, e o Playwright ignora o conteúdo de
+      // <style>: o elemento estava lá com a folha inteira e a asserção recebia "".
+      // O texto da folha se lê pelo DOM; o efeito, pela cor computada abaixo.
+      await expect
+        .poll(() =>
+          paginaLogin.locator("#marca-css-personalizado").evaluate((element) => element.textContent ?? ""),
+        )
+        .toContain(":root:root .text-muted-foreground");
+      await expect
+        .poll(() =>
+          paginaLogin.locator(".text-muted-foreground").first().evaluate((element) =>
+            getComputedStyle(element).color,
+          ),
+        )
+        .toBe("rgb(1, 2, 3)");
+    } finally {
+      await visitante.close();
+      await page.goto("/admin/marca");
+      await page.locator("#custom_css").fill("");
+      await page.getByRole("button", { name: "Salvar CSS", exact: true }).click();
+      await expect(page.getByText("CSS personalizado salvo.")).toBeVisible({ timeout: 15_000 });
+    }
+  });
+
+  /**
+   * O cruzamento com verdade INDEPENDENTE. O texto sob "Entrar" e o título da
+   * aba passaram a ler a MESMA pilha (`marcaDaSaida(null)` → `marcaDaInstalacao()`),
+   * então `icone-da-marca.spec.ts`, que compara um com o outro, fica verde com o
+   * resolvedor compartilhado quebrado. Aqui a verdade é o literal que ESTE caso
+   * digita na tela de marca, e o login de quem não entrou tem de mostrá-lo.
+   */
+  test("o nome trocado em /admin/marca chega ao login e à aba de quem não entrou", async ({
+    page,
+    browser,
+  }) => {
+    const secret = creds.dono_totp?.secret;
+    expect(secret, "sem `dono_totp` no .e2e-creds.json — rode seed-e2e-credentials.ts").toBeTruthy();
+    const nome = `Marca E2E ${Date.now().toString(36)}`;
+    const hidratado = page.locator("[data-campo-de-logo='instalacao'][data-hidratado]");
+
+    await loginComTotp(page, creds.users.dono!.email, secret!);
+    await page.goto("/admin/marca");
+    await expect(hidratado, "o formulário de marca não hidratou").toBeVisible({ timeout: 15_000 });
+    const anterior = await page.locator("#app_name").inputValue();
+
+    try {
+      await page.locator("#app_name").fill(nome);
+      await page.getByRole("button", { name: "Salvar", exact: true }).click();
+      await expect(page.getByText("Marca salva.")).toBeVisible({ timeout: 15_000 });
+
+      const visitante = await browser.newContext();
+      try {
+        const login = await visitante.newPage();
+        await login.goto("/login");
+        await expect(login).toHaveTitle(`Entrar · ${nome}`);
+        await expect(login.getByText(nome, { exact: true }).first()).toBeVisible();
+      } finally {
+        await visitante.close();
+      }
+    } finally {
+      // O nome volta pela TELA, nunca por SQL: quem invalida o memo da marca é
+      // o código do produto (`invalidarMarcaDaInstalacao`).
+      await page.goto("/admin/marca");
+      await expect(hidratado).toBeVisible({ timeout: 15_000 });
+      await page.locator("#app_name").fill(anterior);
+      await page.getByRole("button", { name: "Salvar", exact: true }).click();
+      await expect(page.getByText("Marca salva.")).toBeVisible({ timeout: 15_000 });
+    }
+  });
+
   test("(1) o dono do servidor sobe o logo e ele aparece na barra lateral", async ({ page }) => {
     // ESTE CASO NÃO USA `subirLogoDaCamada`, de propósito: a subida é o que ele
     // MEDE, e a ordem na FONTE importa — `tests/unit/marca-logo-spec-ancora-a-rota.test.ts`
@@ -1231,6 +1320,13 @@ test.describe("o logo subido pela tela chega à tela", () => {
     try {
       const pagina = await contexto.newPage();
       await loginComTotp(pagina, creds.users.dono!.email, creds.dono_totp!.secret);
+      await pagina.goto("/admin/marca");
+      const cssPersonalizado = pagina.locator("#custom_css");
+      if ((await cssPersonalizado.inputValue()) !== "") {
+        await cssPersonalizado.fill("");
+        await pagina.getByRole("button", { name: "Salvar CSS", exact: true }).click();
+        await expect(pagina.getByText("CSS personalizado salvo.")).toBeVisible({ timeout: 15_000 });
+      }
       await removerLogoSeHouver(pagina, "/app/settings/marca", "organizacao");
       await removerLogoSeHouver(pagina, "/admin/marca", "instalacao");
     } finally {

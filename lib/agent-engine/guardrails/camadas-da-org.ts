@@ -1,5 +1,12 @@
 /**
- * AS DUAS CAMADAS DE SEGURANÇA QUE CUSTAM DINHEIRO, ESCOLHIDAS POR ORGANIZAÇÃO.
+ * AS CAMADAS DE SEGURANÇA QUE SÃO ESCOLHA DA ORGANIZAÇÃO.
+ *
+ * Duas custam dinheiro (`promessa_semantica`, `jailbreak`: consultam um modelo por
+ * mensagem). A terceira, `afirmacao_clinica`, não custa nada e é escolha por outra
+ * razão: ela só faz sentido em negócio de saúde, e fora dele barraria frases normais
+ * (numa loja de cosméticos, "passe o creme hidratante"). Por isso nasce desligada e não tem
+ * variável de ambiente — quem é de saúde liga em Segurança. O detector está em
+ * `./afirmacao-clinica.ts`.
  *
  * ## O que estava errado
  *
@@ -36,7 +43,7 @@ import type pg from 'pg';
  * quebraria o `update.sh` dele se houvesse constraint. Em troca, o emissor usa
  * esta constante e nunca string literal.
  */
-export const CAMADAS_SEMANTICAS = ['promessa_semantica', 'jailbreak'] as const;
+export const CAMADAS_SEMANTICAS = ['promessa_semantica', 'jailbreak', 'afirmacao_clinica'] as const;
 
 export type CamadaSemantica = (typeof CAMADAS_SEMANTICAS)[number];
 
@@ -44,7 +51,11 @@ export type CamadaSemantica = (typeof CAMADAS_SEMANTICAS)[number];
 export type EscolhaDeCamadas = Record<CamadaSemantica, boolean | null>;
 
 /** Nenhuma escolha — o estado de toda organização antes de alguém clicar. */
-export const SEM_ESCOLHA: EscolhaDeCamadas = { promessa_semantica: null, jailbreak: null };
+export const SEM_ESCOLHA: EscolhaDeCamadas = {
+  promessa_semantica: null,
+  jailbreak: null,
+  afirmacao_clinica: null,
+};
 
 /**
  * A precedência, isolada em função pura para ser testável sem banco.
@@ -108,13 +119,20 @@ export function escolhaDasLinhas(rows: ReadonlyArray<{ layer: string; enabled: b
  *    instalação (`promessaSemanticaDaInstalacao`), que esta leitura não vê —
  *    alinhar quando a tela de Segurança precisar dizer isso.
  *
+ *  - `afirmacao_clinica`: desligada. Não há variável de ambiente — a camada só faz
+ *    sentido em negócio de saúde, então quem decide é a organização, nunca a instalação.
+ *
  * ⚠️ O worker é outro processo, com o SEU `.env`: fora dele, isto é a melhor
  * leitura disponível. Assim que a organização escolhe, a linha vence.
  */
 export function padraoDasCamadasNoAmbiente(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): Record<CamadaSemantica, boolean> {
-  return { promessa_semantica: env.PROMISE_SEMANTIC_ENABLED === 'true', jailbreak: true };
+  return {
+    promessa_semantica: env.PROMISE_SEMANTIC_ENABLED === 'true',
+    jailbreak: true,
+    afirmacao_clinica: false,
+  };
 }
 
 /** O que vale para a organização, fora do worker: a escolha dela, ou o padrão do ambiente. */
@@ -126,5 +144,6 @@ export function camadasEfetivas(
   return {
     promessa_semantica: camadaLigada(escolha.promessa_semantica, padrao.promessa_semantica),
     jailbreak: camadaLigada(escolha.jailbreak, padrao.jailbreak),
+    afirmacao_clinica: camadaLigada(escolha.afirmacao_clinica, padrao.afirmacao_clinica),
   };
 }

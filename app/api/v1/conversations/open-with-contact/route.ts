@@ -8,7 +8,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
-import { resolveAuthDual } from "@/lib/api/auth-dual";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { openSharedContactConversation } from "@/lib/messaging/open-shared-contact-conversation";
@@ -34,6 +34,11 @@ export async function POST(req: NextRequest): Promise<Response> {
     scope: "mcp:write",
   });
   if (!authz.ok) return authz.response;
+  // Rota que aceita Bearer (PUBLIC_PATHS): sem estrangulamento a montante, o
+  // que não for contado aqui não é contado em lugar nenhum — mesmo teto das
+  // irmãs que já aplicam sobre resolveAuthDual.
+  const teto = await tetoDeEscritaDoToken(authz, "conversations.open", requestId);
+  if (teto) return teto;
   // O ramo do token não carrega idioma de usuário: cai no padrão do produto.
   const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 

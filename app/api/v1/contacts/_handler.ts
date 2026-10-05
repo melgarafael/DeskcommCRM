@@ -29,7 +29,8 @@ import type {
 } from "@/lib/schemas";
 import { contactListQuerySchema } from "@/lib/schemas";
 import { arrayDeUmValorParaOr } from "@/lib/inbox/marcador-da-conversa";
-import { buscaValeConsulta, normalizarTermoDeBusca } from "@/lib/inbox/termo-de-busca";
+import { buscaValeConsulta } from "@/lib/inbox/termo-de-busca";
+import { padraoRegexDeBusca } from "@/lib/contacts/busca-regex";
 
 type SB = SupabaseClient;
 
@@ -93,6 +94,12 @@ export async function listContactsHandler(
   supabase: SB,
   ctx: HandlerCtx,
   raw: ContactListQueryParams,
+  /**
+   * Só este contato — o escopo do turno do agente (`crm_search_contacts`).
+   * Fora do `raw` de propósito: não é parâmetro da rota HTTP, e vai no WHERE,
+   * antes do limite.
+   */
+  soContato?: string,
 ): Promise<ListContactsResult> {
   const q: ContactListQuery = contactListQuerySchema.parse(raw);
 
@@ -155,25 +162,44 @@ export async function listContactsHandler(
     .limit(q.limit + 1);
 
   if (q.search && termoDeTexto !== undefined) {
-    // ─── Duas normalizações, em ordem, com responsabilidades diferentes ─────
-    // É a MESMA composição da busca de conversas
-    // (`conversations/_handler.ts:297`, `termoSeguroParaOr(normalizarTermoDeBusca(...))`):
+    // ─── O padrão sai em regex, não em LIKE (#1835, F2) ─────────────────────
+    // A composição continua a MESMA da busca de conversas
+    // (`conversations/_handler.ts:297`, `termoSeguroParaOr(normalizarTermoDeBusca(...))`)
+    // e continua sendo a régua única de `lib/inbox/termo-de-busca.ts` — o que
+    // muda é o DESTINO do padrão:
     //
     //   normalizarTermoDeBusca → como a PESSOA digitou: espaço duplo, vírgula e
     //                            ponto e vírgula colapsam num curinga só, então
-    //                            "Paulo  Lima" e "Paulo Jr" achem o "Paulo Lima Jr"
+    //                            "Paulo  Lima" e "Paulo Jr" acham o "Paulo Lima Jr"
     //                            e "Silva, Maria" não exige mais adjacência
-    //   saneamento de `%`/`_`  → gramática do LIKE: curinga digitado é literal
+    //   padraoRegexDeBusca     → o curinga vira `.*`, o `%`/`_` digitado continua
+    //                            literal, e a LETRA com grafias vira classe
+    //                            (`jo[aáàâãä]o`) — é ela que faz "Joao" achar
+    //                            "João" e "João" achar "Joao"
+    //
+    // Por que regex e não `ilike` (a parte medida da F2): `ILIKE` dobra a CAIXA,
+    // não o ACENTO — `lower("Á") = "á"`, que não é `"a"` —, e o banco não tem
+    // `unaccent` nenhum (`git grep unaccent origin/main -- supabase/` = 0) para
+    // chamar do lado de lá. Sem coluna materializada (migração + backfill + gatilho,
+    // a F2 que ficou de fora do #1892), a comparação de acento é NOSSA dos dois
+    // lados: o termo normalizado aqui, a coluna virando classe no padrão. O
+    // operador `imatch` (`~*`) resolve a caixa. Medido contra o PostgREST real
+    // (docker postgrest/postgrest:latest + postgres:17) antes de escrever esta
+    // linha: um só `or=` com as quatro colunas em `imatch` + as variantes de
+    // telefone em `ilike` devolve as seis linhas certas.
     //
     // Os PARÊNTESES saem ANTES da régua: são delimitador do DSL do `.or()` do
-    // PostgREST (um "(" sem fechar derrubaria o filtro inteiro com HTTP 400) e
-    // a normalização não os conhece — tirá-los depois deixaria `Paulo* Jr` com
-    // espaço solto, que não casa nada. Mesmo escape de sempre, mesmo defeito de
-    // sempre: um nome com vírgula injetaria condição extra no `.or()`.
-    const s = normalizarTermoDeBusca(termoDeTexto).replace(/[%_]/g, (m) => `\\${m}`);
+    // PostgREST (um "(" sem fechar derrubaria o filtro inteiro com HTTP 400 — no
+    // regex o Postgres devolve `2201B parentheses () not balanced`) e a régua não
+    // os conhece — tirá-los depois deixaria `Paulo* Jr` com espaço solto, que não
+    // casa nada. A VÍRGULA também não passa: `normalizarTermoDeBusca` usa ela
+    // como separador, e uma vírgula que sobrasse splitaria o `.or()` em duas
+    // condições (medido: `PGRST100 failed to parse logic tree`). Um nome com
+    // vírgula continua sem injetar condição nenhuma.
+    const s = padraoRegexDeBusca(termoDeTexto);
     const digits = q.search.replace(/\D/g, "");
     const orParts = [
-      `name.ilike.%${s}%`,
+      `name.imatch.${s}`,
       // ⚠️ `display_name` ESTAVA DE FORA, e é a coluna que a tela MOSTRA.
       //
       // Contato que entra pelo WhatsApp nasce só com `display_name` (o pushName);
@@ -192,9 +218,9 @@ export async function listContactsHandler(
       // um retorno para "Cliente Retorno E2E", o modelo chamou esta busca, levou
       // zero resultados para um contato que EXISTE, e desistiu — a demanda
       // morreria por uma coluna faltando no OR.
-      `display_name.ilike.%${s}%`,
-      `email.ilike.%${s}%`,
-      `phone_number.ilike.%${s}%`,
+      `display_name.imatch.${s}`,
+      `email.imatch.${s}`,
+      `phone_number.imatch.${s}`,
     ];
     if (digits.length >= 8) {
       // 10/11 dígitos sem DDI: no Brasil é DDD+local. Sem o 55, `3284793302`
@@ -230,6 +256,7 @@ export async function listContactsHandler(
     query = query.contains("tags", q.tag);
   }
   if (q.source) query = query.eq("source", q.source);
+  if (soContato) query = query.eq("id", soContato);
 
   if (q.cursor) {
     const c = decodeCursor(q.cursor);
@@ -788,11 +815,17 @@ const VINCULOS_RESTRICT_NAO_APAGADOS: ReadonlyArray<{ tabela: string; rotulo: st
   { tabela: "calendar_appointments", rotulo: "compromisso(s) na agenda" },
 ];
 
-export async function deleteContactHandler(
+/**
+ * A ficha precisa existir DENTRO da organização de quem chama — o mesmo 404 da
+ * exclusão. É a porta também da pré-checagem de vínculos (#1925): sem o filtro
+ * por organização, um id alheio responderia "sem vínculos" e a tela diria que é
+ * seguro excluir algo que quem chamou nem enxerga.
+ */
+async function contatoExistente(
   supabase: SB,
   ctx: HandlerCtx,
   contactId: string,
-): Promise<{ id: string }> {
+): Promise<void> {
   const { data: existing, error: selErr } = await supabase
     .from("contacts")
     .select("id, organization_id")
@@ -812,14 +845,21 @@ export async function deleteContactHandler(
       traduzir("Contato não encontrado.", ctx.idioma ?? "pt-BR"),
     );
   }
+}
 
-  const a = actorAuditPayload(ctx.actor);
-
-  // Pré-checagem dos vínculos que barram o DELETE da ficha (issue #752).
-  //
-  // Só CONTA: quem recusa continua sendo o banco, com o 23503 do RESTRICT. A
-  // contagem existe para saber disso antes de apagar o histórico, e é por isso
-  // que ela vem antes da chamada que apaga — depois não há mais como desfazer.
+/**
+ * Pré-checagem dos vínculos que barram o DELETE da ficha (issue #752), que a
+ * pré-checagem da tela e a exclusão compartilham (#1925).
+ *
+ * Só CONTA: quem recusa continua sendo o banco, com o 23503 do RESTRICT. A
+ * contagem existe para saber disso antes de apagar o histórico, e é por isso
+ * que ela vem antes da chamada que apaga — depois não há mais como desfazer.
+ */
+async function contarVinculosRestrict(
+  supabase: SB,
+  ctx: HandlerCtx,
+  contactId: string,
+): Promise<{ vinculos: string[]; por_tabela: Record<string, number> }> {
   const vinculos: string[] = [];
   // A contagem crua por tabela é o que a tela traduz e pluraliza; `vinculos`
   // (texto em pt-BR) segue igual ao da auditoria.
@@ -842,6 +882,37 @@ export async function deleteContactHandler(
       por_tabela[vinculo.tabela] = count ?? 0;
     }
   }
+  return { vinculos, por_tabela };
+}
+
+/**
+ * O que a exclusão VAI encontrar, apurado sem apagar nada: a pré-checagem que o
+ * diálogo "Excluir contato?" consulta antes do clique (issue #1925).
+ *
+ * Reusa as duas funções acima de propósito: uma lista própria de vínculos para a
+ * tela viraria uma segunda verdade — dia em que uma FK RESTRICT nova entrar em
+ * `VINCULOS_RESTRICT_NAO_APAGADOS`, o diálogo avisaria de um bloqueio que não
+ * existe e ficaria quieto sobre outro.
+ */
+export async function vinculosDoContatoHandler(
+  supabase: SB,
+  ctx: HandlerCtx,
+  contactId: string,
+): Promise<{ vinculos: string[]; por_tabela: Record<string, number> }> {
+  await contatoExistente(supabase, ctx, contactId);
+  return contarVinculosRestrict(supabase, ctx, contactId);
+}
+
+export async function deleteContactHandler(
+  supabase: SB,
+  ctx: HandlerCtx,
+  contactId: string,
+): Promise<{ id: string }> {
+  await contatoExistente(supabase, ctx, contactId);
+
+  const a = actorAuditPayload(ctx.actor);
+
+  const { vinculos, por_tabela } = await contarVinculosRestrict(supabase, ctx, contactId);
 
   if (vinculos.length > 0) {
     // O 409 é o MESMO do caminho de FK (mesma causa, mesmo tratamento no

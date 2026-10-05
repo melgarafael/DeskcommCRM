@@ -166,6 +166,52 @@ source .env && curl -s -H "Authorization: Bearer ${INTERNAL_SECRET}" "${NEXT_PUB
 
 Resposta esperada: `{"data":{"scanned":N,...}}` (N pode ser 0 se não houver eventos na fila — o importante é receber esse formato, não um erro de autenticação ou de conexão).
 
+## CA do Supabase e TLS verificado (issue #829)
+
+Quem exige verificação TLS (`sslmode=verify-full`, Node com `rejectUnauthorized: true`) falha com
+`SELF_SIGNED_CERT_IN_CHAIN` na conexão com o pooler do Supabase: a cadeia dele não está na trust
+store padrão do servidor. A correção **nunca é desligar a verificação** — é declarar a CA oficial
+com UMA chave no `.env`:
+
+```bash
+mkdir -p /root/certs
+curl -fsSL -o /root/certs/prod-ca-2021.crt \
+  https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt
+```
+
+```bash
+# no .env do projeto
+SUPABASE_SSL_ROOT_CERT=/root/certs/prod-ca-2021.crt
+```
+
+O valor é o caminho **desta máquina (host)**, fora do checkout. Com a chave declarada e o arquivo
+existindo, o kit entrega a mesma CA aos três consumidores da issue:
+
+| consumidor | como recebe |
+|---|---|
+| runtime (`app`, `worker`, `scheduler`) | overlay `docker-compose.supabase-ca.yml` — volume `:ro` + `NODE_EXTRA_CA_CERTS`; o `dc()` do kit só acrescenta o overlay com a CA pronta |
+| clientes Postgres efêmeros (`docker run postgres:17-alpine psql`, `pg_dump`, baseline, backup/restore) | `pg_container()` monta o arquivo `:ro` e exporta `PGSSLROOTCERT` |
+| diagnóstico | `healthcheck.sh` roda `select 1` com `sslmode=verify-full` + `sslrootcert` |
+
+Confira com o diagnóstico do kit:
+
+```bash
+bash hostgator-setup-kit/healthcheck.sh
+# com a CA:  ✓ TLS do banco verificado (sslmode=verify-full com a CA de SUPABASE_SSL_ROOT_CERT)
+# sem ela:   (opcional) SUPABASE_SSL_ROOT_CERT não declarada no .env — nada a verificar.
+```
+
+Idempotente (pode rodar quantas vezes quiser), sem segredo em log (o kit nunca imprime a connection
+string), e a verificação de cadeia e de hostname continua ligada nos dois sentidos. A instalação que
+não declara a chave continua com o comportamento de antes; o healthcheck só mostra uma linha
+informativa, e no single-server diz que o passo não se aplica.
+
+Um efeito para quem **declara** a CA: na libpq, `PGSSLROOTCERT` apontando para um arquivo que existe
+faz `sslmode=require` se comportar como `verify-ca`. Nos psql do kit (instalação, atualização,
+backup), uma connection string com `require` passa a verificar a cadeia — e uma CA errada faz esses
+comandos falharem fechado. Sem `sslmode` na string, vale o padrão da libpq (`prefer`), que não
+verifica certificado — e isso não muda.
+
 ## Suporte
 
 Problemas comuns e como resolver estão no `CLAUDE.md` (seção "Quando der problema").

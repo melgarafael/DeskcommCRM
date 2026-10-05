@@ -25,7 +25,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useCreateLead } from "@/hooks/kanban/useCreateLead";
+import type { RespostaCriacaoDeLead } from "@/hooks/kanban/useCreateLead";
 import type { Stage } from "@/lib/kanban/types";
+import {
+  AVISO_NEGOCIO_ABERTO_EXISTENTE,
+  negocioAbertoNoQuadro,
+  type NegocioAbertoExistente,
+} from "@/lib/leads/negocio-aberto-duplicado";
+import type { Lead } from "@/lib/types/leads";
 import { createLeadSchema, type CreateLeadInput } from "@/lib/schemas/leads";
 import { MOEDA_PADRAO, parseReaisToCents, simboloDaMoeda } from "@/lib/money";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
@@ -51,6 +58,17 @@ interface Props {
   contactId?: string | null;
   /** Depois do INSERT — o inbox relê o resumo para o lead novo aparecer no formulário. */
   onCreated?: () => void;
+  /**
+   * Negócios do funil, para a pergunta de duplicidade ANTES de criar (#1751).
+   *
+   * É o quadro que a página de funil já tem em mãos — sem rede, sem atraso no
+   * clique. Quem abre pelo Inbox recebe só o `contactId` e não tem esta lista:
+   * ali a conferência prévia não acontece, e quem avisa é a `meta.avisos` da
+   * resposta (o fallback aqui embaixo). Mesmo funil é filtrado DUAS vezes —
+   * aqui e em `negocioAbertoNoQuadro` — porque a duplicidade é mesmo contato +
+   * mesmo funil + aberto, e depender de quem chama é como a regra se perde.
+   */
+  leads?: Lead[];
 }
 
 function defaultStageId(stages: Stage[]): string {
@@ -64,6 +82,7 @@ export function NewLeadDialog({
   pipelineId,
   stages,
   contactId,
+  leads,
   onCreated,
 }: Props) {
   const t = useT();
@@ -74,6 +93,17 @@ export function NewLeadDialog({
   const initialStage = useMemo(() => defaultStageId(stages), [stages]);
   // Quem abre o diálogo já sabendo o contato (Inbox) não escolhe de novo.
   const [contato, setContato] = useState<Contact | null>(null);
+  // ─── O AVISO DE NEGÓCIO ABERTO DUPLICADO (issue #1751) ─────────────────────
+  //
+  // Guarda TAMBÉM os valores do formulário: quem chega aqui já preencheu tudo,
+  // e confirmar tem de criar sem pedir para digitar de novo. `null` = não há
+  // nada pendente. Declarado ANTES do bloco de reset abaixo, que o limpa —
+  // use-before-declaration em render é ReferenceError, não linter.
+  const [aviso, setAviso] = useState<{
+    existente: NegocioAbertoExistente;
+    valores: FormShape;
+  } | null>(null);
+
   // O contato é o único campo deste diálogo que cria VÍNCULO, e o componente
   // NÃO desmonta ao fechar: o funil o mantém montado enquanto há dados
   // (`app/app/pipelines/[id]/_client.tsx`). Sem esquecê-lo, quem escolheu um
@@ -87,7 +117,12 @@ export function NewLeadDialog({
   const [estavaAberto, setEstavaAberto] = useState(open);
   if (open !== estavaAberto) {
     setEstavaAberto(open);
-    if (!open) setContato(null);
+    // O aviso morre junto com o diálogo: reabrir para um contato novo não pode
+    // reapresentar a pendência de quem desistiu no meio.
+    if (!open) {
+      setContato(null);
+      setAviso(null);
+    }
   }
 
   const form = useForm<FormShape>({
@@ -108,7 +143,38 @@ export function NewLeadDialog({
     }
   }, [initialStage, form]);
 
+  /**
+   * O submit normal. ANTES de qualquer chamada de rede vem a pergunta de
+   * duplicidade (#1751) — se já houver um negócio aberto deste contato NESTE
+   * funil, o diálogo para aqui com o link na mão e nada é criado. Quem decide
+   * se o segundo nasce é a pessoa, não o banco: a 0256 proíbe o bloqueio.
+   */
   async function onSubmit(values: FormShape) {
+    const idDoContato = contactId ?? contato?.id ?? null;
+    const existente = negocioAbertoNoQuadro(leads ?? [], {
+      pipelineId,
+      contactId: idDoContato,
+    });
+    if (existente) {
+      setAviso({ existente, valores: values });
+      return;
+    }
+    await gravar(values, false);
+  }
+
+  /** Quem confirmou o aviso: cria sem perguntar de novo (a pergunta já foi). */
+  async function confirmarAviso() {
+    if (!aviso) return;
+    const { valores } = aviso;
+    setAviso(null);
+    await gravar(valores, true);
+  }
+
+  /**
+   * A criação de fato. `avisoJaMostrado` é quem sabe se a pessoa JÁ viu a
+   * duplicidade — é a única forma de não dizer a mesma coisa duas vezes.
+   */
+  async function gravar(values: FormShape, avisoJaMostrado: boolean) {
     const tags = values.tagsRaw
       .split(",")
       .map((s) => s.trim())
@@ -149,7 +215,33 @@ export function NewLeadDialog({
     }
 
     try {
-      await create.mutateAsync(parsed.data as CreateLeadInput);
+      const resposta = await create.mutateAsync(parsed.data as CreateLeadInput);
+      // ─── O AVISO QUE CHEGA JUNTO COM A RESPOSTA (#1751) ────────────────────
+      //
+      // É o caminho em que NÃO dá para perguntar antes: o diálogo aberto pelo
+      // Inbox recebe só o `contactId`, sem a lista de negócios do funil. A API
+      // avisa sem recusar (a 0256 proíbe o bloqueio), e a tela traduz esse
+      // `meta.avisos` no mesmo link do aviso prévio — nunca em silêncio.
+      //
+      // `avisoJaMostrado` evita a segunda chamada de quem já confirmou o aviso
+      // no diálogo: a mesma duplicidade contada duas vezes ensina a ignorar.
+      const meta = (resposta as RespostaCriacaoDeLead | null | undefined)?.meta;
+      const avisos = meta?.avisos ?? [];
+      if (!avisoJaMostrado && avisos.includes(AVISO_NEGOCIO_ABERTO_EXISTENTE)) {
+        const existente = meta?.negocio_aberto_existente;
+        toast.warning(t("Este contato já tem um negócio aberto neste funil."), {
+          description: existente ? (
+            <a
+              href={`/app/pipelines/${pipelineId}?lead=${existente.id}`}
+              target="_blank"
+              rel="noreferrer"
+              className="underline"
+            >
+              {existente.title}
+            </a>
+          ) : undefined,
+        });
+      }
       toast.success(t("Lead criado"));
       onCreated?.();
       form.reset({
@@ -161,6 +253,7 @@ export function NewLeadDialog({
         expected_close_date: "",
       });
       setContato(null);
+      setAviso(null);
       onOpenChange(false);
     } catch {
       // toast already shown
@@ -278,6 +371,41 @@ export function NewLeadDialog({
               {...form.register("tagsRaw")}
             />
           </div>
+
+          {/* O AVISO SEM BLOQUEIO (#1751): aparece quando já existe negócio
+              aberto deste contato NESTE funil. Ele não recusa nada — só para o
+              clique e pergunta, com o link para quem já está no quadro. Recusar
+              ("Não criar") fecha a pendência sem TOCAR na rede: nada é criado. */}
+          {aviso && (
+            <div
+              role="alert"
+              className="rounded-md border border-amber-300 bg-amber-100 p-3 text-sm text-amber-950"
+            >
+              <p className="font-medium">
+                {t("Este contato já tem um negócio aberto neste funil.")}
+              </p>
+              <p className="mt-1">{t("Abrir mesmo assim?")}</p>
+              {/* O link é o próprio título do negócio — dado do banco, não
+                  texto de interface: traduzir seria mentir sobre o que a pessoa
+                  vai abrir. */}
+              <a
+                href={`/app/pipelines/${pipelineId}?lead=${aviso.existente.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-1 inline-block underline"
+              >
+                {aviso.existente.title}
+              </a>
+              <div className="mt-3 flex justify-end gap-2">
+                <Button type="button" variant="ghost" onClick={() => setAviso(null)}>
+                  {t("Não criar")}
+                </Button>
+                <Button type="button" onClick={() => void confirmarAviso()}>
+                  {t("Criar mesmo assim")}
+                </Button>
+              </div>
+            </div>
+          )}
 
           <DialogFooter>
             <Button

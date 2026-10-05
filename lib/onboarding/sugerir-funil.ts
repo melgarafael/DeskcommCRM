@@ -18,6 +18,7 @@
  * e-commerce que o gatilho semeou, que é exatamente o defeito que este passo
  * existe para consertar.
  */
+import { extrairObjetoJsonDoTexto } from "@/lib/agent-engine/texto/extrair-json-do-texto";
 import {
   normalizarProposta,
   validarProposta,
@@ -114,20 +115,17 @@ export function pedidoDeSugestao(
  * Acha o JSON no que o modelo devolveu.
  *
  * Instrução de formato não é garantia de formato: modelos cercam o objeto em
- * ```json, abrem com "Claro! Aqui está:" e fecham com uma explicação. Recortar
- * do primeiro `{` ao último `}` atravessa os três casos sem depender de o
- * provedor suportar saída estruturada — e a OpenRouter serve 400 modelos com
- * suportes diferentes.
+ * ```json, abrem com "Claro! Aqui está:" e fecham com uma explicação — e alguns
+ * REPETEM o objeto inteiro no meio da prosa. Recortar do primeiro `{` ao último
+ * `}` (o parser antigo) atravessava os três casos de prosa, mas morria na
+ * repetição: o recorte abrangia as DUAS cópias e o `JSON.parse` lançava. Sem
+ * depender de o provedor suportar saída estruturada — a OpenRouter serve 400
+ * modelos com suportes diferentes —, a leitura passa a ser a do parser robusto
+ * `extrairJsonDoTexto`: primeiro objeto JSON parseável, nunca lança, `null`
+ * quando não há nenhum (o desfecho de falha de quem chama não muda).
  */
 export function extrairJson(texto: string): unknown {
-  const inicio = texto.indexOf("{");
-  const fim = texto.lastIndexOf("}");
-  if (inicio === -1 || fim <= inicio) return null;
-  try {
-    return JSON.parse(texto.slice(inicio, fim + 1));
-  } catch {
-    return null;
-  }
+  return extrairObjetoJsonDoTexto(texto);
 }
 
 /** De onde veio o quadro que a tela vai mostrar. A tela DIZ isto à pessoa. */

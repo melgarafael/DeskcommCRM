@@ -104,20 +104,29 @@ function Conferencia({
                 {estado === undefined
                   ? t("carregando…")
                   : estado.escolha === null
-                    ? `${estado.efetivo ? t("Ligada") : t("Desligada")} ${t("— vem da configuração do servidor")}`
+                    ? c.escolha.consultaModelo
+                      ? `${estado.efetivo ? t("Ligada") : t("Desligada")} ${t("— vem da configuração do servidor")}`
+                      : estado.efetivo
+                        ? t("Ligada")
+                        : t("Desligada")
                     : estado.escolha
                       ? t("Ligada por você")
                       : t("Desligada por você")}
               </span>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {t("Custa")} {t(c.escolha.custo)}
-              {t(". O modelo usado se escolhe em")}{" "}
-              <a className="underline underline-offset-2" href="/app/ai/providers">
-                {t("Provedores de IA")}
-              </a>
-              .
-            </p>
+            {c.escolha.consultaModelo ? (
+              <p className="text-xs text-muted-foreground">
+                {t("Custa")} {t(c.escolha.custo)}
+                {t(". O modelo usado se escolhe em")}{" "}
+                <a className="underline underline-offset-2" href="/app/ai/providers">
+                  {t("Provedores de IA")}
+                </a>
+                .
+              </p>
+            ) : (
+              // Sem modelo, sem link para Provedores: a camada não usa nenhum.
+              <p className="text-xs text-muted-foreground">{t(c.escolha.custo)}</p>
+            )}
           </div>
         )}
       </div>

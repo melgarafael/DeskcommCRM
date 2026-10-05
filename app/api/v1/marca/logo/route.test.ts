@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, orgAtivaSemPortao } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 import type { AuthUser } from "@/lib/auth/types";
@@ -40,9 +40,24 @@ import type { AuthUser } from "@/lib/auth/types";
 
 vi.mock("@/lib/auth/server", () => ({
   loadAuthUser: vi.fn(),
-  resolveActiveOrg: vi.fn(),
+  orgAtivaSemPortao: vi.fn(),
   mfaEmDivida: vi.fn(async () => false),
 }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/auth/requirePlatformAdmin", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/auth/requirePlatformAdmin")>();
+  const { loadAuthUser: usuarioDoCaso } = await import("@/lib/auth/server");
+  return {
+    ...real,
+    // Segue o usuário do caso: o dono do servidor passa; os demais levam o
+    // redirect que o helper real faria. Scope e MFA: lib/auth/requirePlatformAdmin.test.ts.
+    requirePlatformAdminEscrita: async () => {
+      const u = await usuarioDoCaso();
+      if (!u?.is_platform_admin) throw new Error("NEXT_REDIRECT;/admin/forbidden");
+      return { user: { id: u.id }, platformAdmin: { user_id: u.id, scope: "full", mfa_required: false } };
+    },
+  };
+});
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({
   checkRateLimit: vi.fn(async () => ({ allowed: true })),
@@ -139,7 +154,7 @@ function usuarioDonoDoServidor(): AuthUser {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(resolveActiveOrg).mockResolvedValue({ orgId: ORG_ID, name: "Org", role: "admin" } as never);
+  vi.mocked(orgAtivaSemPortao).mockResolvedValue({ orgId: ORG_ID, name: "Org", role: "admin", org_status: "active" } as never);
 });
 
 describe("POST /api/v1/marca/logo — escopo organizacao nunca toca platform_branding", () => {
@@ -165,6 +180,21 @@ describe("POST /api/v1/marca/logo — escopo organizacao nunca toca platform_bra
     // Controle POSITIVO: a escrita aconteceu pelo caminho certo — sem isto,
     // "não chamou platform_branding" seria indistinguível de "não escreveu nada".
     expect(espiao.rpcChamadas.map((r) => r.nome)).toContain("fn_definir_logo_por_tema_da_organizacao");
+  });
+  it("platform admin support_readonly, viewer na org, NÃO troca o logo da organização", async () => {
+    vi.mocked(loadAuthUser).mockResolvedValue({
+      ...usuarioAdminDeOrganizacao(), is_platform_admin: true, platform_admin_scope: "support_readonly",
+    } as AuthUser);
+    vi.mocked(orgAtivaSemPortao).mockResolvedValue({ orgId: ORG_ID, name: "Org", role: "viewer", org_status: "active" } as never);
+    const espiao = criarAdminEspiao();
+    vi.mocked(createAdminClient).mockReturnValue(espiao.client as never);
+    const form = new FormData();
+    form.set("escopo", "organizacao");
+    form.set("file", arquivoPng());
+    const { POST } = await import("./route");
+    const res = await POST(new NextRequest("http://localhost/api/v1/marca/logo", { method: "POST", body: form }));
+    expect(res.status).toBe(403);
+    expect(espiao.fromChamadas).toHaveLength(0);
   });
 });
 

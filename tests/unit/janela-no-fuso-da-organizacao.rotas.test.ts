@@ -10,14 +10,18 @@ import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { requireRole } from "@/lib/auth/require-role";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, orgAtivaSemPortao } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
-vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
+// `orgAtivaDaApi` REAL (sobre o `orgAtivaSemPortao` mockado): é ela que decide o 403 da org suspensa.
+vi.mock("@/lib/auth/require-role", async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  requireRole: vi.fn(),
+}));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
-vi.mock("@/lib/auth/server", () => ({ loadAuthUser: vi.fn(), resolveActiveOrg: vi.fn() }));
+vi.mock("@/lib/auth/server", () => ({ loadAuthUser: vi.fn(), orgAtivaSemPortao: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 
@@ -56,7 +60,7 @@ beforeEach(() => {
     org: { orgId: ORG, name: "Org", role: "admin" },
   } as never);
   vi.mocked(loadAuthUser).mockResolvedValue({ idioma: "pt-BR" } as never);
-  vi.mocked(resolveActiveOrg).mockResolvedValue({ orgId: ORG } as never);
+  vi.mocked(orgAtivaSemPortao).mockResolvedValue({ orgId: ORG, org_status: "active" } as never);
 });
 
 describe("o fuso da organização chega à tela", () => {

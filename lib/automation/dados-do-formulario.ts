@@ -25,6 +25,7 @@ import type { OrigemDaAbordagem } from "@/lib/agent-engine/agent/abordagem-de-fo
  * quem a produz é `lib/prospecting/worker.ts`.
  */
 import type { ActionCtx } from "@/lib/automation/types";
+import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 
 export interface DadosParaAbordagem {
   dados: Record<string, string>;
@@ -64,13 +65,36 @@ function texto(valor: unknown): string | null {
 function acrescentar(
   destino: Record<string, string>,
   origem: Record<string, unknown> | null | undefined,
+  rotulos?: Map<string, string>,
 ): void {
   if (!origem) return;
   for (const [chave, valor] of Object.entries(origem)) {
     const v = texto(valor);
     if (v === null) continue;
-    if (!(chave in destino)) destino[chave] = v;
+    // O rótulo cadastrado no funil ("Serviço") diz ao modelo o que o dado é; a
+    // chave crua do formulário (`servico`, `campo_7`) não diz.
+    const nome = rotulos?.get(chave) ?? chave;
+    if (!(nome in destino)) destino[nome] = v;
   }
+}
+
+/**
+ * `key → label` dos campos cadastrados no funil do lead (Configurações › Funis).
+ * Nunca lança: sem funil, sem definição ou com a leitura falhando, devolve vazio
+ * e o modelo recebe a chave crua, que é o que recebia antes.
+ */
+async function rotulosDoFunil(ctx: ActionCtx, pipelineId: string | undefined): Promise<Map<string, string>> {
+  const rotulos = new Map<string, string>();
+  if (!pipelineId) return rotulos;
+  const { data } = await ctx.admin
+    .from("crm_pipelines")
+    .select("settings")
+    .eq("organization_id", ctx.organizationId)
+    .eq("id", pipelineId)
+    .maybeSingle();
+  const settings = (data as { settings?: Record<string, unknown> | null } | null)?.settings ?? null;
+  for (const campo of camposDoFunil(settings)) rotulos.set(campo.key, campo.label);
+  return rotulos;
 }
 
 /**
@@ -92,7 +116,12 @@ function acrescentarContato(
 
 export async function dadosDoFormularioDoContexto(ctx: ActionCtx): Promise<DadosParaAbordagem> {
   const lead = ctx.context.lead as
-    | { id?: string; custom_fields?: Record<string, unknown>; source_metadata?: Record<string, unknown> }
+    | {
+        id?: string;
+        pipeline_id?: string;
+        custom_fields?: Record<string, unknown>;
+        source_metadata?: Record<string, unknown>;
+      }
     | undefined;
   const contact = ctx.context.contact as
     | { name?: string | null; phone_number?: string | null; email?: string | null }
@@ -100,6 +129,7 @@ export async function dadosDoFormularioDoContexto(ctx: ActionCtx): Promise<Dados
 
   const dados: Record<string, string> = {};
   acrescentarContato(dados, contact as Record<string, unknown> | undefined);
+  const rotulos = await rotulosDoFunil(ctx, lead?.pipeline_id);
 
   if (lead?.id) {
     // A captação mais recente deste lead. `maybeSingle` com limit 1: um lead
@@ -118,13 +148,13 @@ export async function dadosDoFormularioDoContexto(ctx: ActionCtx): Promise<Dados
       | { fields: Record<string, unknown>; utm: Record<string, string>; source_name: string }
       | null;
     if (captura) {
-      acrescentar(dados, captura.fields);
+      acrescentar(dados, captura.fields, rotulos);
       acrescentar(dados, captura.utm);
       return { dados, origem: captura.source_name, origemDaAbordagem: "formulario" };
     }
   }
 
-  acrescentar(dados, lead?.custom_fields);
+  acrescentar(dados, lead?.custom_fields, rotulos);
   acrescentar(dados, lead?.source_metadata);
   return { dados, origem: null, origemDaAbordagem: "automacao" };
 }

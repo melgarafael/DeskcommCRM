@@ -1,8 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+import type * as ModuloDeEnv from "@/lib/env";
 
 import { modelCapabilities } from "@/lib/agent-engine/edge/llm/capabilities";
 import { decidirBinding } from "@/lib/ai/pontos/resolver";
 import { enxergaImagem, visaoEmVigor } from "@/lib/ai/pontos/capacidade-em-vigor";
+import {
+  decidirTranscricao,
+  type DecisaoDeTranscricao,
+} from "@/lib/messaging/media/escada-de-transcricao";
 
 /**
  * A TELA E O MOTOR RESPONDEM A MESMA COISA SOBRE "ESTE MODELO ENXERGA IMAGEM?".
@@ -70,34 +76,158 @@ describe("o que o motor NÃO conhece continua vindo do catálogo", () => {
   });
 });
 
-describe("ponto FIXO anuncia o que ele mesmo usa", () => {
-  /**
-   * A tela mostrava `claude-sonnet-5` em "Ouvir o áudio do cliente", com
-   * "usando o padrão da organização" — ao lado do próprio texto do ponto, que
-   * diz "usa o padrão de transcrição da OpenAI". A mesma tela afirmando duas
-   * coisas incompatíveis sobre o mesmo ponto.
-   *
-   * A causa: um ponto `fixo` percorria a cadeia de resolução dos pontos de
-   * CONVERSA e caía no último degrau. Modelo de conversa não transcreve áudio —
-   * anunciar um ali manda quem opera caçar problema que não existe.
-   */
-  it("transcricao_de_audio anuncia whisper, e não o modelo de conversa da org", () => {
-    const d = decidirBinding({
-      pontoId: "transcricao_de_audio",
-      binding: null,
-      agentePublicado: null,
-      modeloDeAmbiente: undefined,
-      padraoDaOrganizacao: { provider: "anthropic", defaultModel: "claude-sonnet-5" },
+/**
+ * ═══ A ESCADA DE TRANSCRIÇÃO: A TELA ANUNCIA O DEGRAU QUE VAI RODAR (#2190) ══
+ *
+ * Depois da #2189 quem ouve o áudio é uma ESCADA
+ * (`lib/messaging/media/escada-de-transcricao.ts`): serviço da instalação →
+ * chave OpenAI → modelo de conversa da ORGANIZAÇÃO que declare `audio` → nada,
+ * com motivo. A organização da issue — Gemini com a chave do Google, SEM conta
+ * OpenAI — transcreve pelo próprio modelo de conversa.
+ *
+ * Mas o registro continuava com `usa: { provider: "openai", modelId: "whisper-1" }`,
+ * então a tela anunciava `whisper-1` (e "exige uma chave desse serviço") para
+ * quem não tem chave nenhuma da OpenAI. Aviso falso pior que aviso nenhum: é a
+ * mesma lição do cabeçalho deste arquivo, virada do avesso — empurra quem opera
+ * a cadastrar uma conta que já existe, ou a concluir que o áudio não é ouvido.
+ *
+ * A régua aqui é a MESMA do resto do arquivo: dois lados, um por origem de
+ * verdade. O motor é `decidirTranscricao`; a tela é `decidirBinding` lhe
+ * passando o que a escada decidiu. Reprova nos dois sentidos — a tela
+ * anunciando coisa diferente do motor, e alguém voltando a GRAVAR um provider
+ * no ponto (registro) ou a decidir sozinho na rota.
+ */
+// A escada lê os TRANSCRIPTION_* pela régua `env` (`lib/env.ts`), a mesma da
+// guarda de destino do worker (#855/#964). Travá-los vazios aqui é o que faz o
+// teste medir o código, e não o `.env.local` da máquina onde roda.
+vi.mock("@/lib/env", async (importOriginal) => {
+  const real = await importOriginal<typeof ModuloDeEnv>();
+  return {
+    env: {
+      ...real.env,
+      TRANSCRIPTION_API_KEY: "",
+      TRANSCRIPTION_MODEL: "",
+      TRANSCRIPTION_BASE_URL: "",
+      TRANSCRIPTION_LANGUAGES: "",
+    },
+  };
+});
+
+/** A organização da #2190: Gemini com chave do Google, sem conta OpenAI. */
+const ORG_GEMINI = { provider: "google", defaultModel: "gemini-3.5-flash" } as const;
+const PADRAO_ANTHROPIC = { provider: "anthropic", defaultModel: "claude-sonnet-5" } as const;
+
+const GEMINI = {
+  provider: "google",
+  apiKey: "chave-google-de-controle",
+  modelId: "gemini-3.5-flash",
+} as const;
+
+/** O motor, com o mesmo formato de entrada que o worker passa. */
+const comChaveOpenai = () =>
+  decidirTranscricao({ conversa: GEMINI, chaveOpenai: async () => "chave-openai-de-controle" });
+
+/** O que a TELA anuncia no ponto, dados os mesmos dados que o motor tem. */
+function tela(
+  escada: DecisaoDeTranscricao | null | undefined,
+  padrao: { provider: string; defaultModel: string | null } = ORG_GEMINI,
+) {
+  return decidirBinding({
+    pontoId: "transcricao_de_audio",
+    binding: null,
+    agentePublicado: null,
+    modeloDeAmbiente: undefined,
+    padraoDaOrganizacao: padrao,
+    transcricao: escada,
+  });
+}
+
+describe("a tela e o motor concordam sobre quem OUVE o áudio", () => {
+  it("org SEM chave OpenAI e modelo de conversa com audio → a tela anuncia o MODELO DA ORG", async () => {
+    const escada = await decidirTranscricao({
+      conversa: GEMINI,
+      chaveOpenai: async () => null,
     });
 
-    expect(d.modelId).toBe("whisper-1");
-    expect(d.origem).toBe("fixo_do_produto");
-    expect(d.modelId, "voltou a anunciar o modelo de conversa").not.toBe("claude-sonnet-5");
+    // Sem este controle o caso abaixo não mediria nada: é preciso que o motor
+    // tenha caído no degrau da organização, que é o defeito da issue.
+    expect(escada.origem, "o motor não escolheu o degrau da organização").toBe(
+      "modelo_da_organizacao",
+    );
+
+    const d = tela(escada);
+    expect(d.modelId, "a tela voltou a anunciar whisper-1").not.toBe("whisper-1");
+    expect(d.provider, "a tela anunciou o provedor errado").toBe(escada.anuncio.provider);
+    expect(d.modelId, "a tela divergiu do motor").toBe(escada.anuncio.modelId);
+    expect(d.modelId).toBe("gemini-3.5-flash");
   });
 
-  it("o ponto fixo ignora até um binding salvo — a escolha do painel não se aplica", () => {
+  it("org COM chave OpenAI → a tela continua anunciando whisper-1 (ninguém troca de fornecedor)", async () => {
+    // Controle: apagar o whisper-1 de vez também seria mentira — para quem tem
+    // chave OpenAI, o degrau OpenAI é o que roda, e sempre foi.
+    const escada = await comChaveOpenai();
+    expect(escada.origem).toBe("padrao_openai_compativel");
+    const d = tela(escada);
+    expect(d.modelId).toBe("whisper-1");
+    expect(d.modelId).toBe(escada.anuncio.modelId);
+  });
+
+  it("sem ninguém que transcreva → a tela não anuncia modelo nenhum, e dá o motivo", async () => {
+    // Modelo de conversa SEM capacidade `audio` e sem chave OpenAI: a escada
+    // devolve `nada` com motivo, e a tela não pode prometer whisper-1 nem o
+    // modelo de conversa que não vai ser chamado.
+    const escada = await decidirTranscricao({
+      conversa: { provider: "anthropic", apiKey: "chave-anthropic-de-controle", modelId: "claude-sonnet-5" },
+      chaveOpenai: async () => null,
+    });
+    expect(escada.origem).toBe("nada");
+
+    const d = tela(escada, PADRAO_ANTHROPIC);
+    expect(d.modelId, "a tela prometeu um caminho que ninguém vai usar").toBeNull();
+    expect(d.modelId).not.toBe("whisper-1");
+    expect(d.modelId).not.toBe("claude-sonnet-5");
+    expect(d.motivo ?? "", "sem o motivo da escada o operador vê '—' e não sabe o que fazer").toMatch(/\S/);
+  });
+
+  it("sem a escada na entrada, o resolvedor não ganha whisper-1 de presente", async () => {
+    // É a forma de reprovar a VOLTA do `usa: { provider: "openai", ... }` no
+    // registro: quem chama o resolvedor sem ter decidido a escada não tem o
+    // que anunciar, e "—" é a única resposta honesta.
+    const d = tela(null);
+    expect(d.modelId).toBeNull();
+    expect(d.modelId, "o ponto voltou a fixar provider/modelo próprio").not.toBe("whisper-1");
+  });
+
+  it("a rota alimenta a escada, e o registro parou de fixar um provider", async () => {
+    // Varredura de fonte (mesmo padrão do bloco do roteador, mais abaixo): o
+    // caso acima provaria a FUNÇÃO, e o conserto mora no call site — é numa
+    // linha da rota e numa linha do registro que a mentira volta a morar.
+    const ler = async (p: string) => (await import("node:fs")).readFileSync(p, "utf8");
+
+    const rota = await ler("app/api/v1/ai/providers/route.ts");
+    expect(rota, "a rota deixou de decidir a transcrição pela escada").toMatch(/decidirTranscricao\(/);
+    expect(
+      rota,
+      "a rota voltou a anunciar o degrau OpenAI por conta própria, como se fosse o único caminho",
+    ).not.toMatch(/modeloDeTranscricaoEmVigor/);
+
+    const registro = await ler("lib/ai/pontos/registro.ts");
+    const ponto = registro.slice(
+      registro.indexOf('id: "transcricao_de_audio"'),
+      registro.indexOf('id: "visao_de_imagem"'),
+    );
+    expect(ponto, "o recorte do ponto saiu vazio").toContain("transcricao_de_audio");
+    expect(ponto, "o ponto deixou de declarar que quem decide é a escada").toMatch(
+      /escada:\s*"transcricao"/,
+    );
+    expect(ponto, "o ponto voltou a fixar um provider/modelo próprio").not.toMatch(/\busa:/);
+  });
+});
+
+describe("ponto FIXO anuncia o que ele mesmo usa", () => {
+  it("o ponto fixo ignora até um binding salvo — a escada do painel não se aplica", async () => {
     // Controle: alguém pode ter um binding antigo gravado para este ponto. Ele
-    // não pode ressuscitar o comportamento errado.
+    // não pode ressuscitar o comportamento errado nem atropelar a escada.
     const d = decidirBinding({
       pontoId: "transcricao_de_audio",
       binding: {
@@ -111,8 +241,10 @@ describe("ponto FIXO anuncia o que ele mesmo usa", () => {
       agentePublicado: null,
       modeloDeAmbiente: undefined,
       padraoDaOrganizacao: { provider: "anthropic", defaultModel: "claude-sonnet-5" },
+      transcricao: await comChaveOpenai(),
     });
     expect(d.modelId).toBe("whisper-1");
+    expect(d.modelId, "a escolha do painel entrou no ponto fixo").not.toBe("gpt-5.6-sol");
   });
 
   it("ponto NÃO fixo segue a cadeia normal (controle positivo)", () => {

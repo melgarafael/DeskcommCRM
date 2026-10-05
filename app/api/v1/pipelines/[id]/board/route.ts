@@ -314,7 +314,10 @@ async function withConversas(
       const marcadores = marcadoresPorContato.get(lead.contact_id);
       return {
         ...lead,
-        ...(conversa ? { conversa } : {}),
+        // `null`, nunca ausente: contato sem conversa é "não há conversa", e é
+        // assim que o card e o dossiê sabem mostrar "Abrir conversa" (#1993).
+        // Ausente (`undefined`) fica para o lead SEM contato, que sai acima.
+        conversa: conversa ?? null,
         // Vazio não vira campo, como `contact_tags`: o payload não engorda.
         ...(marcadores && marcadores.size > 0 ? { conversation_tags: [...marcadores] } : {}),
       };

@@ -3,6 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 
 import { useT } from "@/hooks/i18n/useT";
+import { distanciaDoPrazo } from "@/lib/lgpd/contagem-do-prazo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -94,31 +95,14 @@ function fmtRelative(iso: string, t: (texto: string) => string): string {
   }
 }
 
-function fmtDistance(
-  iso: string | null,
-  t: (texto: string) => string,
-): { label: string; urgent: boolean } {
-  if (!iso) return { label: "—", urgent: false };
-  try {
-    const now = Date.now();
-    const due = new Date(iso).getTime();
-    const diffMs = due - now;
-    const urgent = diffMs < 2 * 24 * 60 * 60 * 1000;
-    if (diffMs < 0) {
-      const overMs = Math.abs(diffMs);
-      const overD = Math.floor(overMs / 86_400_000);
-      return { label: overD > 0 ? `${overD}${t("d atrasado")}` : t("atrasado hoje"), urgent: true };
-    }
-    const diffD = Math.floor(diffMs / 86_400_000);
-    if (diffD < 1) {
-      const diffH = Math.floor(diffMs / 3_600_000);
-      return { label: `${t("em")} ${diffH}h`, urgent };
-    }
-    return { label: `${t("em")} ${diffD}d`, urgent };
-  } catch {
-    return { label: iso, urgent: false };
-  }
-}
+// O rótulo da coluna "Vence em" e o sinal de urgência que pinta a linha vêm de
+// `distanciaDoPrazo`, em `lib/lgpd/contagem-do-prazo.ts`.
+//
+// Aqui ficava `fmtDistance`, e ela media a distância até o INÍCIO do dia do
+// prazo: medido, 23 horas dizendo "atrasado hoje" com o prazo ainda por vencer.
+// A conta mora em `lib/` para que o teste meça a conta que a TELA faz — um teste
+// que reescreve a fórmula no próprio arquivo de teste mede a si mesmo, e foi
+// assim que uma regressão de um dia passou verde no #2170.
 
 // ── Select options ────────────────────────────────────────────────────────────
 
@@ -126,7 +110,17 @@ const ALL = "__ALL__";
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function RequestsTable() {
+export function RequestsTable({
+  baseDoPedido = "/app/lgpd/requests/",
+}: {
+  /**
+   * Prefixo do "Ver". O hub de `/account-suspended` passa o próprio endereço:
+   * o detalhe em `/app/lgpd/requests/[id]` mora sob o layout de `/app`, que
+   * devolve a empresa suspensa ao hub. String e não função, porque o hub é
+   * Server Component e função não atravessa para o cliente.
+   */
+  baseDoPedido?: string;
+} = {}) {
   const t = useT();
   const [status, setStatus] = useState<LgpdRequestStatus | undefined>();
   const [type, setType] = useState<LgpdRequestType | undefined>();
@@ -275,7 +269,7 @@ export function RequestsTable() {
               </TableRow>
             ) : (
               rows.map((r) => {
-                const due = fmtDistance(r.due_at, t);
+                const due = distanciaDoPrazo(r.due_at, t);
                 const subject = r.external_customer_id
                   ? r.external_customer_id.slice(0, 16)
                   : r.contact_id
@@ -318,7 +312,7 @@ export function RequestsTable() {
                     </TableCell>
                     <TableCell>
                       <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs">
-                        <Link href={`/app/lgpd/requests/${r.id}`}>{t("Ver")}</Link>
+                        <Link href={`${baseDoPedido}${r.id}`}>{t("Ver")}</Link>
                       </Button>
                     </TableCell>
                   </TableRow>

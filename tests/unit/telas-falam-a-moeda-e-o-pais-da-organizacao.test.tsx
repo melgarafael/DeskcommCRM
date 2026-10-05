@@ -221,7 +221,7 @@ describe("o documento e o exemplo de telefone seguem o país da organização", 
 describe("a organização ativa leva moeda e país ao cliente", () => {
   it("o embed da membership pede as duas colunas", () => {
     const fonte = readFileSync("lib/auth/server.ts", "utf8");
-    expect(fonte).toMatch(/organizations\(display_name, locale, timezone, currency, country\)/);
+    expect(fonte).toMatch(/organizations\(display_name, locale, timezone, currency, country, status, suspended_kind\)/);
     expect(fonte).toContain("currency: org?.currency ?? null");
     expect(fonte).toContain("country: org?.country ?? null");
   });

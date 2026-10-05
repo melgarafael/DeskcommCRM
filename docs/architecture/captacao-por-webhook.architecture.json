@@ -1,0 +1,358 @@
+{
+  "schema_version": 1,
+  "diagram_type": "fluxo",
+  "meta": {
+    "titulo": "Captação por webhook: do formulário do site ao campo usado na mensagem",
+    "pergunta": "O que chega de um formulário, como o CRM o entende, onde fica, quem vê e onde o campo volta a ser usado?",
+    "resumo": "Um formulário manda dados por um endereço com token. A rota escolhe o adaptador pela forma do envio, grava o lead e o histórico da captação, e a equipe vê o painel. O campo pode ser cadastrado no funil, e daí volta como rótulo no painel, no card do lead, nos botões da automação e na entrada da IA."
+  },
+  "lanes": [
+    {
+      "id": "entrada",
+      "label": "O que chega do site"
+    },
+    {
+      "id": "entendimento",
+      "label": "Como o CRM entende"
+    },
+    {
+      "id": "dados",
+      "label": "Onde fica guardado"
+    },
+    {
+      "id": "humano",
+      "label": "O que a equipe vê e faz"
+    },
+    {
+      "id": "uso",
+      "label": "Onde o campo é usado"
+    }
+  ],
+  "mainPath": [
+    "formulario",
+    "rota",
+    "elementor",
+    "lead",
+    "painel",
+    "cadastrar",
+    "acao",
+    "definicoes",
+    "chips",
+    "template",
+    "mensagem"
+  ],
+  "nodes": [
+    {
+      "id": "formulario",
+      "lane": "entrada",
+      "col": 1,
+      "type": "external",
+      "label": "Formulário do site",
+      "sublabel": "Elementor Pro · JetFormBuilder · RD Station · Respondi · Zapier/n8n"
+    },
+    {
+      "id": "rota",
+      "lane": "entendimento",
+      "col": 1,
+      "type": "route",
+      "label": "POST /api/v1/webhooks/in/[token]",
+      "sublabel": "a organização vem do token do path, nunca do corpo"
+    },
+    {
+      "id": "respondi",
+      "lane": "entendimento",
+      "col": 2,
+      "type": "lib",
+      "label": "lib/webhooks/respondi.ts",
+      "sublabel": "detecção estrita da forma do Respondi"
+    },
+    {
+      "id": "rdstation",
+      "lane": "entendimento",
+      "col": 3,
+      "type": "lib",
+      "label": "lib/webhooks/rdstation.ts",
+      "sublabel": "envelope leads[] do RD Station"
+    },
+    {
+      "id": "elementor",
+      "lane": "entendimento",
+      "col": 4,
+      "type": "lib",
+      "label": "lib/webhooks/elementor.ts",
+      "sublabel": "fields[id][value]: nome, telefone e e-mail pelo TIPO do campo"
+    },
+    {
+      "id": "generico",
+      "lane": "entendimento",
+      "col": 5,
+      "type": "lib",
+      "label": "lib/webhooks/inbound.ts",
+      "sublabel": "mapeador genérico; descarta as chaves internas da plataforma"
+    },
+    {
+      "id": "captacao",
+      "lane": "dados",
+      "col": 1,
+      "type": "table",
+      "label": "webhook_lead_captures",
+      "sublabel": "o que chegou, inclusive o recusado, com o motivo"
+    },
+    {
+      "id": "lead",
+      "lane": "dados",
+      "col": 2,
+      "type": "table",
+      "label": "crm_leads.custom_fields",
+      "sublabel": "o valor de cada campo, pela chave do formulário"
+    },
+    {
+      "id": "definicoes",
+      "lane": "dados",
+      "col": 3,
+      "type": "table",
+      "label": "crm_pipelines.settings.fields",
+      "sublabel": "a definição: chave, rótulo e tipo — fonte única"
+    },
+    {
+      "id": "painel",
+      "lane": "humano",
+      "col": 1,
+      "type": "frontend",
+      "label": "CapturaDetail",
+      "sublabel": "Webhooks › Leads recebidos: o rótulo no lugar da chave"
+    },
+    {
+      "id": "cadastrar",
+      "lane": "humano",
+      "col": 2,
+      "type": "frontend",
+      "label": "CadastrarCampo",
+      "sublabel": "Cadastrar como campo do lead: rótulo e tipo sugeridos"
+    },
+    {
+      "id": "acao",
+      "lane": "humano",
+      "col": 3,
+      "type": "service",
+      "label": "updatePipelineConfig",
+      "sublabel": "server action: admin, organização, schema; lê fresco, grava inteiro e audita (pipeline.config_updated)"
+    },
+    {
+      "id": "cartao",
+      "lane": "humano",
+      "col": 4,
+      "type": "frontend",
+      "label": "card do lead",
+      "sublabel": "rótulo e tipo vêm da definição"
+    },
+    {
+      "id": "chips",
+      "lane": "uso",
+      "col": 1,
+      "type": "frontend",
+      "label": "ActionConfigForm",
+      "sublabel": "campos do funil viram botões de inserir"
+    },
+    {
+      "id": "template",
+      "lane": "uso",
+      "col": 2,
+      "type": "lib",
+      "label": "renderTemplate",
+      "sublabel": "{{servico}} resolve lead.custom_fields.servico"
+    },
+    {
+      "id": "ia",
+      "lane": "uso",
+      "col": 3,
+      "type": "lib",
+      "label": "dados-do-formulario.ts",
+      "sublabel": "a IA recebe o rótulo cadastrado, não a chave crua"
+    },
+    {
+      "id": "mensagem",
+      "lane": "uso",
+      "col": 4,
+      "type": "service",
+      "label": "sendMessageHandler",
+      "sublabel": "a mensagem ao cliente, com as guardas de envio"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "formulario",
+      "to": "rota",
+      "label": "POST: form-urlencoded ou JSON"
+    },
+    {
+      "id": "e2",
+      "from": "rota",
+      "to": "respondi",
+      "label": "forma detectada primeiro"
+    },
+    {
+      "id": "e3",
+      "from": "rota",
+      "to": "rdstation",
+      "label": "depois, se não for Respondi"
+    },
+    {
+      "id": "e4",
+      "from": "rota",
+      "to": "elementor",
+      "label": "depois, se não for nenhum dos dois"
+    },
+    {
+      "id": "e5",
+      "from": "rota",
+      "to": "generico",
+      "label": "por último: chave de topo"
+    },
+    {
+      "id": "e6",
+      "from": "rota",
+      "to": "captacao",
+      "label": "registra tudo que chegou, também a recusa"
+    },
+    {
+      "id": "e7",
+      "from": "rota",
+      "to": "lead",
+      "label": "cria o lead com os campos mapeados"
+    },
+    {
+      "id": "e8",
+      "from": "captacao",
+      "to": "painel",
+      "label": "lista Leads recebidos, com campos crus"
+    },
+    {
+      "id": "e9",
+      "from": "painel",
+      "to": "cadastrar",
+      "label": "campo ainda sem definição"
+    },
+    {
+      "id": "e10",
+      "from": "cadastrar",
+      "to": "acao",
+      "label": "fields = leitura fresca do funil + o campo novo"
+    },
+    {
+      "id": "e11",
+      "from": "acao",
+      "to": "definicoes",
+      "label": "grava settings.fields"
+    },
+    {
+      "id": "e13",
+      "from": "definicoes",
+      "to": "painel",
+      "label": "LAÇO: a próxima captação já aparece com o rótulo"
+    },
+    {
+      "id": "e14",
+      "from": "definicoes",
+      "to": "cartao",
+      "label": "rótulo e tipo do campo"
+    },
+    {
+      "id": "e15",
+      "from": "lead",
+      "to": "cartao",
+      "label": "o valor"
+    },
+    {
+      "id": "e16",
+      "from": "definicoes",
+      "to": "chips",
+      "label": "os campos cadastrados viram botões"
+    },
+    {
+      "id": "e17",
+      "from": "chips",
+      "to": "template",
+      "label": "o token inserido é só a chave"
+    },
+    {
+      "id": "e18",
+      "from": "lead",
+      "to": "template",
+      "label": "custom_fields no contexto da automação"
+    },
+    {
+      "id": "e19",
+      "from": "template",
+      "to": "mensagem",
+      "label": "texto final da ação de WhatsApp"
+    },
+    {
+      "id": "e20",
+      "from": "captacao",
+      "to": "ia",
+      "label": "fields da captação mais recente do lead"
+    },
+    {
+      "id": "e21",
+      "from": "definicoes",
+      "to": "ia",
+      "label": "chave → rótulo"
+    },
+    {
+      "id": "e22",
+      "from": "ia",
+      "to": "mensagem",
+      "label": "primeira mensagem escrita pela IA"
+    },
+    {
+      "id": "e12",
+      "from": "respondi",
+      "to": "rota",
+      "label": "devolve nome, telefone, e-mail e consentimento"
+    },
+    {
+      "id": "e23",
+      "from": "rdstation",
+      "to": "rota",
+      "label": "devolve o lead normalizado do 1º item de leads[]"
+    },
+    {
+      "id": "e24",
+      "from": "elementor",
+      "to": "rota",
+      "label": "devolve o lead normalizado: nome, telefone, e-mail, campos por id e o nome do formulário"
+    },
+    {
+      "id": "e25",
+      "from": "generico",
+      "to": "rota",
+      "label": "devolve o lead mapeado pela chave de topo"
+    },
+    {
+      "id": "e26",
+      "from": "rota",
+      "to": "formulario",
+      "label": "200 com lead_id, ou 303 para redirect_to"
+    }
+  ],
+  "cards": [
+    {
+      "titulo": "Por que um adaptador por ferramenta",
+      "texto": "O mapeador genérico só lê chave de topo. Elementor (fields[id][value]), RD Station (leads[]) e Respondi (form/respondent) mandam os dados em camadas, e o genérico os descartava: nome, telefone e e-mail davam nulo e a rota recusava com 400. Cada ferramenta tem a forma detectada de modo estrito e um normalizador próprio, chamado antes do genérico e sem tocá-lo."
+    },
+    {
+      "titulo": "Por que o cadastro do campo mora no funil, e não na fonte",
+      "texto": "Doutrina DIRC: a definição (chave, rótulo, tipo) já vive em crm_pipelines.settings.fields e é lida pelo card do lead, pelo Kanban, pelas mensagens e pela IA. Duplicá-la na fonte do webhook criaria duas verdades. O painel da captação só acrescenta uma definição ali, pela mesma server action da tela de Funis."
+    },
+    {
+      "titulo": "Não-ligação declarada",
+      "texto": "O rótulo que o Elementor manda ('Selecione o serviço…') NÃO é guardado: webhook_lead_captures não tem coluna para isso e acrescentar uma exige migration (migration + baseline + MANIFEST) com teste de banco. A tela sugere o rótulo a partir do nome do campo e o tipo a partir do valor."
+    },
+    {
+      "titulo": "Limites conhecidos",
+      "texto": "Os botões de campo na ação de WhatsApp usam o funil PADRÃO da organização, não o funil específico da regra. Variável ausente vira vazio (comportamento que já existia). O mapeador de chaves (resolveField) lê o protótipo: {{constructor}} já imprimia 'function Object()' antes desta mudança e continua imprimindo."
+    }
+  ]
+}

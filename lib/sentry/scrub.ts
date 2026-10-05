@@ -127,6 +127,26 @@ function apagarCpfETelefone(trecho: string): string {
 const CREDENTIAL_PATH =
   /(\/api\/v1\/webhooks\/[^/?#\s]+\/|\/team\/accept-invite\/)[^/?#\s]+/g;
 
+/** Parâmetro de query (ou de fragmento) que carrega credencial: `token_hash`, `code`… */
+const CREDENTIAL_PARAM = /token|code|secret|password|otp|^sig$/i;
+
+/**
+ * A URL carrega credencial: no path (as rotas acima) ou num parâmetro com nome de
+ * credencial. É o critério de quem NÃO pode gravar a URL crua (o Replay, em
+ * `./replay`), não de quem a redige — `scrubUrl` apaga todo valor de query.
+ */
+export function urlComCredencial(input: string): boolean {
+  if (input.search(CREDENTIAL_PATH) >= 0) return true;
+  let url: URL;
+  try {
+    url = new URL(input, "http://x");
+  } catch {
+    return false;
+  }
+  const nomes = [...url.searchParams.keys(), ...new URLSearchParams(url.hash.slice(1)).keys()];
+  return nomes.some((nome) => CREDENTIAL_PARAM.test(nome));
+}
+
 /**
  * Redige credencial de path e valor de query string, preservando as CHAVES da query.
  *
@@ -198,6 +218,10 @@ function scrubHeaders(headers: unknown): void {
   const record = headers as Record<string, string>;
   for (const key of Object.keys(record)) {
     if (isSensitiveHeader(key)) delete record[key];
+    // O `Referer` é a URL da página anterior — com o token dela, se tinha um.
+    else if (/^referer$/i.test(key) && typeof record[key] === "string") {
+      record[key] = scrubUrl(record[key]);
+    }
   }
 }
 
@@ -271,9 +295,12 @@ export const sentryScrubHooks = {
     if (typeof breadcrumb.message === "string") {
       breadcrumb.message = scrubUrl(breadcrumb.message);
     }
-    const url = breadcrumb.data?.url;
-    if (typeof url === "string" && breadcrumb.data) {
-      breadcrumb.data.url = scrubUrl(url);
+    // `from`/`to` são da navegação (troca de rota): a rota de onde se saiu pode
+    // ter o token no path.
+    const data = breadcrumb.data;
+    for (const campo of ["url", "from", "to"]) {
+      const valor = data?.[campo];
+      if (data && typeof valor === "string") data[campo] = scrubUrl(valor);
     }
     return breadcrumb;
   },

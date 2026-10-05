@@ -23,12 +23,23 @@
  * solicitação tinha sido processada pelo DeskcommCRM. O campo agora é
  * obrigatório e resolvido — não sobra fallback porque `marcaDaSaida` já desce
  * até o padrão do produto por conta própria.
+ *
+ * ── O texto depende do PAÍS da organização (doc 88) ─────────────────────────
+ *
+ * O Brasil recebe o texto de sempre, byte a byte. Fora do Brasil o e-mail sai
+ * em pt-PT, sem LGPD, citando a lei do país só quando o perfil tem citação
+ * revisada (`citacaoDaLei`), e com o prazo do link no fuso da organização e o
+ * nome do fuso escrito. Antes, com Portugal no seletor, o PDF citaria o RGPD e
+ * este e-mail diria "LGPD Lei nº 13.709/2018" ao mesmo titular.
+ * ponytail: o ramo não-BR é pt-PT; quando entrar país que não fala português,
+ * ele vira ramo por idioma.
  */
 
 import { createHash } from "node:crypto";
 
 import { NEUTROS_DE_SAIDA, type MarcaDeSaida } from "@/lib/branding/saida";
 import { sendEmail } from "@/lib/email/roteador";
+import { citacaoDaLei, PAIS_PADRAO, type PerfilDoPais } from "@/lib/legal/perfil-do-pais";
 
 export class EmailNotConfigured extends Error {
   constructor() {
@@ -55,10 +66,52 @@ interface SendArgs {
   expiresAt: Date;
   /** A marca de quem PROCESSOU a solicitação. Obrigatória — ver o cabeçalho. */
   marca: MarcaDeSaida;
+  /** O país da organização decide a lei e o idioma do texto. */
+  perfil: PerfilDoPais;
+  /**
+   * Fuso IANA da organização; só é lido fora do Brasil. A chave é obrigatória
+   * (o valor pode ser `undefined`) para quem chama não a esquecer calado.
+   */
+  fuso: string | undefined;
+}
+
+interface Mensagem {
+  subject: string;
+  html: string;
+  text: string;
 }
 
 export async function sendExportEmail(args: SendArgs): Promise<{ messageId: string }> {
   const shortId = args.requestId.slice(0, 8);
+  const { subject, html, text } =
+    args.perfil.codigo === PAIS_PADRAO
+      ? mensagemDoBrasil(args, shortId)
+      : mensagemForaDoBrasil(args, shortId);
+
+  const result = await sendEmail({
+    to: args.to,
+    subject,
+    html,
+    text,
+    fromName: args.marca.nome,
+    tags: [
+      { name: "kind", value: "lgpd_export" },
+      { name: "request_short", value: shortId },
+    ],
+  });
+
+  if (!result.ok) {
+    if (result.error === "not_configured") {
+      throw new EmailNotConfigured();
+    }
+    throw new EmailSendFailed(result.details ?? result.error ?? "unknown");
+  }
+
+  return { messageId: result.id ?? "unknown" };
+}
+
+/** O texto de sempre, byte a byte — o Brasil não muda (doc 88). */
+function mensagemDoBrasil(args: SendArgs, shortId: string): Mensagem {
   const orgName = escapeHtml(args.marca.nome);
   const expiresFmt = args.expiresAt.toLocaleString("pt-BR", {
     timeZone: "America/Sao_Paulo",
@@ -93,26 +146,62 @@ O link expira em ${expiresFmt}.
 Se você não solicitou este relatório, ignore este email.
 Base legal: LGPD Lei nº 13.709/2018, Art. 18, II.`;
 
-  const result = await sendEmail({
-    to: args.to,
-    subject,
-    html,
-    text,
-    fromName: args.marca.nome,
-    tags: [
-      { name: "kind", value: "lgpd_export" },
-      { name: "request_short", value: shortId },
-    ],
-  });
+  return { subject, html, text };
+}
 
-  if (!result.ok) {
-    if (result.error === "not_configured") {
-      throw new EmailNotConfigured();
-    }
-    throw new EmailSendFailed(result.details ?? result.error ?? "unknown");
+/**
+ * Fora do Brasil: pt-PT, sem LGPD. A linha do direito exercido só existe com
+ * citação revisada — país sem revisão não cita lei nenhuma, nem a brasileira.
+ */
+function mensagemForaDoBrasil(args: SendArgs, shortId: string): Mensagem {
+  const orgName = escapeHtml(args.marca.nome);
+  const citacao = citacaoDaLei(args.perfil);
+  const expiresFmt = expiraEm(args.expiresAt, args.fuso);
+  const direito = citacao ? `Direito exercido: acesso aos dados pessoais, ${citacao}.` : null;
+
+  const subject = `Pedido de acesso aos seus dados pessoais #${shortId}`;
+
+  const html = `<!doctype html>
+<html lang="pt-PT">
+<body style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:${NEUTROS_DE_SAIDA.texto};line-height:1.5;max-width:560px;margin:0 auto;padding:24px;">
+  <h2 style="margin:0 0 12px;font-size:18px;">Pedido de acesso aos seus dados pessoais #${shortId}</h2>
+  <p>Olá,</p>
+  <p>O seu pedido de acesso aos dados pessoais foi tratado por <strong>${orgName}</strong>.</p>
+  <p>O relatório está disponível na ligação abaixo. Por razões de segurança, a ligação expira em <strong>${expiresFmt}</strong>.</p>
+  <p style="margin:24px 0;">
+    <a href="${args.signedUrl}" style="background:${args.marca.accent};color:${args.marca.accentFg};padding:10px 18px;border-radius:6px;text-decoration:none;display:inline-block;">Descarregar relatório</a>
+  </p>
+  <p style="font-size:12px;color:${NEUTROS_DE_SAIDA.suave};">Se não fez este pedido, ignore este e-mail.</p>${
+    direito ? `\n  <p style="font-size:12px;color:${NEUTROS_DE_SAIDA.suave};">${escapeHtml(direito)}</p>` : ""
   }
+</body>
+</html>`;
 
-  return { messageId: result.id ?? "unknown" };
+  const text = `Pedido de acesso aos seus dados pessoais #${shortId}, tratado por ${args.marca.nome}.
+
+O relatório está disponível em:
+${args.signedUrl}
+
+A ligação expira em ${expiresFmt}.
+
+Se não fez este pedido, ignore este e-mail.${direito ? `\n${direito}` : ""}`;
+
+  return { subject, html, text };
+}
+
+/**
+ * O prazo do link no fuso da organização, com o NOME do fuso escrito. Um fuso
+ * que o `Intl` recusa não pode derrubar a entrega ao titular: cai em UTC, que
+ * continua verdadeiro porque o nome do fuso vai junto.
+ */
+function expiraEm(quando: Date, fuso: string | undefined): string {
+  const formato = (timeZone: string) =>
+    quando.toLocaleString("pt-PT", { timeZone, timeZoneName: "short" });
+  try {
+    return formato(fuso ?? "UTC");
+  } catch {
+    return formato("UTC");
+  }
 }
 
 /**

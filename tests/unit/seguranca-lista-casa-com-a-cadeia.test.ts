@@ -85,7 +85,9 @@ describe("a lista da tela casa com a cadeia que roda", () => {
           `${c.nome} não pode ser desligada e não diz por quê`,
         ).toBeGreaterThan(30);
       } else {
-        expect(c.escolha.custo, `${c.nome} é configurável e não diz o custo`).toMatch(/consulta/i);
+        expect(c.escolha.custo, `${c.nome} é configurável e não diz o custo`).toMatch(
+          c.escolha.consultaModelo ? /consulta/i : /não custa/i,
+        );
       }
     }
   });

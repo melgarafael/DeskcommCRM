@@ -38,6 +38,24 @@ import {
 export const ENTIDADE_ESPERADA_POR_GATILHO = {
   "lead.created": "crm_lead",
   "lead.stage_changed": "crm_lead",
+  // Os quatro do ENCAMENTO (#1528), que nascem do trigger do banco
+  // `fn_emit_event_on_lead_change`: ele reage ao UPDATE de `crm_leads.status`
+  // e de `owner_user_id`/`owner_agent_id`, então valem para TODOS os caminhos
+  // que terminam naquele UPDATE — arrastar o card, o botão Ganhou/Perdeu, o
+  // mover em lote, o `crm_close_demand` da IA e o mover do `create_or_move_lead`
+  // — com o MESMO payload, porque há UM emissor, não um por caminho. Criar o
+  // negócio já ganho/perdido ou já com dono NÃO emite: o trigger só reage a
+  // UPDATE (retorna cedo no INSERT). Antes disto,
+  // arrastar disparava `lead.stage_changed` e o botão não disparava regra
+  // nenhuma: o fato era o mesmo e o webhook dependia do botão.
+  // A entidade que a REGRA enxerga é `crm_lead` (o que o `buildContext`
+  // hidrata); o `entity_kind` gravado no `event_log` é `'lead'` — o `fn_log_event`
+  // deriva do `split_part` do event_type —, e o motor aceita um como sinônimo
+  // do outro SÓ para os quatro (`GATILHOS_DO_TRIGGER_DE_LEAD` logo abaixo).
+  "lead.won": "crm_lead",
+  "lead.lost": "crm_lead",
+  "lead.reopened": "crm_lead",
+  "lead.assigned": "crm_lead",
   "message.received": "message",
   // A entrega FALHOU depois de aceita — o 131047 que a Meta recusa pelo
   // webhook de status, o timeout do transporte, o pré-voo do próprio envio.
@@ -77,6 +95,61 @@ export const ENTIDADE_ESPERADA_POR_GATILHO = {
 } as const;
 
 export type GatilhoDeAutomacao = keyof typeof ENTIDADE_ESPERADA_POR_GATILHO;
+
+/**
+ * Os gatilhos cujo `entity_kind` no `event_log` é `'lead'`: os quatro que o
+ * trigger `fn_emit_event_on_lead_change` grava via `fn_log_event`, que deriva a
+ * entidade do `split_part` do event_type.
+ *
+ * O motor trata `'lead'` como sinônimo de `'crm_lead'` SÓ para estes. É a
+ * diferença entre fazer a regra de ganho rodar e voltar a rodar em duplicata o
+ * `lead.stage_changed` legado — a linha antiga do trigger (entity_kind='lead')
+ * e a que o `moveLeadHandler` já emite com `crm_lead` são o MESMO fato para o
+ * guard, e rodar as duas entregaria o webhook duas vezes.
+ */
+export const GATILHOS_DO_TRIGGER_DE_LEAD = [
+  "lead.won",
+  "lead.lost",
+  "lead.reopened",
+  "lead.assigned",
+] as const satisfies readonly GatilhoDeAutomacao[];
+
+/**
+ * As ações que regravam o status ou o dono do lead — vetadas nos gatilhos acima.
+ *
+ * Esses eventos nascem do trigger com `metadata '{}'`, e o anti-laço do motor só
+ * reconhece `caused_by_rule`. Uma regra "responsável mudou → atribuir" ou
+ * "ganhou → mover para etapa aberta" regrava o lead, o trigger emite o próximo
+ * evento, e duas regras opostas se realimentam sem fim (cada volta dobra os
+ * eventos). Critério de aceite da #1528: "regra lead.assigned → assign_owner não
+ * entra em laço".
+ *
+ * ponytail: veto inteiro, não detecção de laço. Cai quando o item 5 da #1528
+ * existir (GUC `app.caused_by_rule` copiada pelo trigger para `metadata`).
+ */
+export const ACOES_QUE_REGRAVAM_O_LEAD = ["assign_owner", "create_or_move_lead"] as const;
+
+export const MENSAGEM_DO_LACO_DE_LEAD =
+  "Neste gatilho a automação não pode atribuir responsável nem mover o lead: a própria mudança dispararia a automação de novo, sem fim.";
+
+/** As ações da regra que fechariam laço com o gatilho dela (vazio = regra segura). */
+export function acoesQueFechamLaco(
+  triggerEvent: string | undefined,
+  actions: readonly { type: string }[] | undefined,
+): string[] {
+  if (!triggerEvent || !(GATILHOS_DO_TRIGGER_DE_LEAD as readonly string[]).includes(triggerEvent)) return [];
+  return (actions ?? [])
+    .map((a) => a.type)
+    .filter((t) => (ACOES_QUE_REGRAVAM_O_LEAD as readonly string[]).includes(t));
+}
+
+function recusarLacoDeLead(
+  regra: { trigger_event?: string; actions?: readonly { type: string }[] },
+  ctx: z.RefinementCtx,
+): void {
+  if (!acoesQueFechamLaco(regra.trigger_event, regra.actions).length) return;
+  ctx.addIssue({ code: "custom", path: ["actions"], message: MENSAGEM_DO_LACO_DE_LEAD });
+}
 
 export const TRIGGER_EVENTS = Object.keys(ENTIDADE_ESPERADA_POR_GATILHO) as [
   GatilhoDeAutomacao,
@@ -186,7 +259,8 @@ export const createAutomationRuleSchema = z
     trigger_config: z.record(z.string(), z.unknown()).optional(),
   })
   .superRefine(exigirConfigDoGatilhoDeData)
-  .superRefine(exigirConfigDosGatilhosDeTempo);
+  .superRefine(exigirConfigDosGatilhosDeTempo)
+  .superRefine(recusarLacoDeLead);
 
 /**
  * O gatilho de data sem a configuração dele é uma regra que NUNCA dispara — a
@@ -264,7 +338,10 @@ export const updateAutomationRuleSchema = z
     // configuração, produz o mesmo calado da criação (#1540): regra salva que
     // a varredura não sabe avaliar.
     exigirConfigDosGatilhosDeTempo(patch as { trigger_event: string; trigger_config?: Record<string, unknown> }, ctx);
-  });
+  })
+  // Só vê o laço quando o PATCH traz gatilho E ações; o PATCH parcial é
+  // conferido contra a regra gravada na rota.
+  .superRefine(recusarLacoDeLead);
 
 export type CreateWebhookSourceInput = z.infer<typeof createWebhookSourceSchema>;
 export type UpdateWebhookSourceInput = z.infer<typeof updateWebhookSourceSchema>;

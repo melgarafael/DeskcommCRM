@@ -98,6 +98,31 @@ check "sai com código 1" test "$RC" -eq 1
 check "explica o motivo na saída" grep -q "INTERNAL_SECRET" "$TMP/saida"
 check "não deixou crontab pela metade" test ! -s "$TMP/crontab"
 
+echo "scheduler: uma falha de cron não some em silêncio (#1109)"
+# Reexecuta o entrypoint (o bloco acima deixou o crontab vazio) e troca o
+# `curl` por um dublê que FALHA como um 401 de verdade: `-f` sai 22 e `-S`
+# imprime o status para o STDERR.
+RC="$(rodar 'segredo-simples')"
+check "gerou o crontab de novo" test "$RC" -eq 0
+printf '#!/bin/sh\necho "curl: (22) The requested URL returned error: 401" >&2\nexit 22\n' > "$TMP/bin/curl"
+chmod +x "$TMP/bin/curl"
+LINHA_FALHA="$(grep -m1 'sync-model-catalog' "$TMP/crontab")"
+# Roda a linha INTEIRA, exatamente como o `sh -c` do crond roda — sem cortar o
+# `||` que é o objeto deste bloco.
+if [ -n "$LINHA_FALHA" ]; then
+  PATH="$TMP/bin:$PATH" sh -c "${LINHA_FALHA#* * * * * }" >"$TMP/falha.out" 2>"$TMP/falha.err"
+else
+  printf 'sem linha de sync-model-catalog no crontab\n' >"$TMP/falha.err"
+fi
+check "o STDOUT continua descartado (o corpo da resposta não vaza pro log)" \
+  test ! -s "$TMP/falha.out"
+check "o status do 401 chega ao STDERR (era isto que o 2>&1 engolia)" \
+  grep -q 'returned error: 401' "$TMP/falha.err"
+check "a mensagem nomeia a rota que falhou" \
+  grep -q 'sync-model-catalog' "$TMP/falha.err"
+check "a mensagem diz o que o operador deve conferir" \
+  grep -q 'INTERNAL_SECRET' "$TMP/falha.err"
+
 if [ "$fail" -eq 0 ]; then
   echo "OK — todas as provas passaram."
 else

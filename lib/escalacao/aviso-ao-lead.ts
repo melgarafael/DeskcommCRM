@@ -119,7 +119,7 @@ const ABERTURAS: Record<MotivoDoAviso, readonly string[]> = {
   ],
   pediu_humano: [
     "Claro! Já estou chamando alguém da equipe para falar com você.",
-    "Sem problema — acabei de acionar uma pessoa do time para continuar daqui.",
+    "Sem problema. Acabei de acionar uma pessoa do time para continuar daqui.",
     "Perfeito. Passei sua conversa para um atendente humano agora.",
   ],
   orcamento_de_ia: [
@@ -146,7 +146,7 @@ const FECHOS = {
   fora_de_expediente: [
     "No momento ninguém está disponível, mas seu pedido ficou registrado.",
     "Agora não tem ninguém livre; deixei sua solicitação anotada para o time.",
-    "Não há atendente disponível neste instante — sua conversa entrou na fila.",
+    "Não há atendente disponível neste instante; sua conversa entrou na fila.",
   ],
   /** Há gente elegível: pode convidar a aguardar. */
   com_equipe: [

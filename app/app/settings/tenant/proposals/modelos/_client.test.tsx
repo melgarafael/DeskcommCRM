@@ -3,6 +3,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ModelosDeProposta } from "./_client";
+import { ApiError } from "@/lib/api/types";
+import { showApiError } from "@/components/feedback/ApiErrorToast";
 
 const get = vi.hoisted(() => vi.fn());
 const post = vi.hoisted(() => vi.fn());
@@ -138,5 +140,25 @@ describe("ModelosDeProposta", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Fechar" }));
     await waitFor(() => expect(screen.queryByText("Modelo «Portal» salvo.")).toBeNull());
+  });
+
+  it("com as propostas desligadas (404 not_found) mostra estado próprio com o caminho, não fica em Carregando…", async () => {
+    // A rota responde 404 `not_found` quando `settings.proposals.enabled`
+    // está desligado (lib/propostas/porta.ts). Antes do conserto, a tela
+    // mostrava o toast cru "Not found." e ficava em "Carregando…" para sempre.
+    get.mockRejectedValue(new ApiError(404, "not_found", undefined, "req-1889", "Not found."));
+    render(<ModelosDeProposta />);
+
+    expect(await screen.findByText(/propostas estão desligadas/i)).toBeInTheDocument();
+    expect(screen.queryByText("Carregando…")).toBeNull();
+    expect(screen.getByRole("link", { name: /Configurações › Propostas/ })).toBeInTheDocument();
+  });
+
+  it("um erro que NÃO é not_found segue mostrando o erro via showApiError, não o estado de desligado", async () => {
+    get.mockRejectedValue(new ApiError(500, "internal_error", undefined, "req-1889", "Erro inesperado."));
+    render(<ModelosDeProposta />);
+
+    await waitFor(() => expect(showApiError).toHaveBeenCalled());
+    expect(screen.queryByText(/propostas estão desligadas/i)).toBeNull();
   });
 });

@@ -43,7 +43,9 @@ async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   let auth;
   try {
-    auth = await validateBearerToken(req.headers.get("authorization"));
+    // Empresa suspensa entra marcada: o servidor só deixa a privacidade
+    // responder (LGPD nunca é bloqueada — decisão do dono, 30/09).
+    auth = await validateBearerToken(req.headers.get("authorization"), { permiteOrgSuspensa: true });
   } catch (err) {
     if (err instanceof McpAuthError) {
       return jsonRpcError(err.mcpCode, err.message, err.httpStatus);

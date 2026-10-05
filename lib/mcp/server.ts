@@ -16,7 +16,7 @@ import type { ModuloOpcional } from "@/lib/instalacao/modulos";
 import type { CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { auditMcpToolCall } from "./audit";
-import { ensureRole, ensureScope, type McpAuthResult } from "./auth";
+import { McpAuthError, ensureRole, ensureScope, type McpAuthResult } from "./auth";
 import { verificarTetoMcp } from "./rate-limit";
 import { allTools } from "./tools";
 import { deCapacidadeDesligada, deModuloDesligado } from "./tools/catalog";
@@ -94,6 +94,17 @@ export function createMcpServer(
           // `catch` abaixo é quem AUDITA, e recusa sem rastro em
           // `api_audit_log` faria "o agente parou" virar mistério.
           await verificarTetoMcp(auth, tool.category);
+          // Empresa suspensa: só a privacidade responde (LGPD nunca é
+          // bloqueada). Depois do teto — a integração em laço não escreve
+          // auditoria sem freio — e antes de tudo que custa.
+          if (auth.orgSuspensa && !tool.permiteOrgSuspensa) {
+            throw new McpAuthError(
+              -32002,
+              403,
+              "Organization suspended: only privacy (LGPD) tools answer until the account is reactivated.",
+              "org_suspended",
+            );
+          }
           ensureScope(auth.scopes, tool.requiresScope);
           ensureRole(auth.role, tool.requiresRole);
 

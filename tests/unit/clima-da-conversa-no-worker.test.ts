@@ -51,10 +51,12 @@ vi.mock("@/lib/crypto/aes_gcm", () => ({
 import { generateObject } from "ai";
 
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { NIVEIS_DE_CLIMA } from "@/lib/ai/decisao/clima";
 import { registrarFalha } from "@/lib/ai/decisao/disjuntor";
 import { AVISOS_DOS_PEDIDOS } from "@/lib/ai/decisao/pedidos";
 import { AVISO_DO_JEV, O_QUE_FAZER_DO_JEV } from "@/lib/ai/decisao/textos";
 import { TITULOS_ANTIGOS_DO_AVISO_DO_JEV } from "@/lib/ai/decisao/textos";
+import { DEFAULT_SENTIMENT_THRESHOLD } from "@/lib/ai/prompts/sentiment";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { EventRow } from "@/lib/event-log/dispatcher";
@@ -93,6 +95,7 @@ interface Consulta {
   is(coluna: string, valor: unknown): Consulta;
   in(coluna: string, valores: unknown[]): Consulta;
   not(coluna: string, operador: string, valor: unknown): Consulta;
+  filter(coluna: string, operador: string, valor: unknown): Consulta;
   gte(coluna: string, valor: unknown): Consulta;
   order(coluna: string, opcoes?: { ascending?: boolean }): Consulta;
   limit(n: number): Consulta;
@@ -174,6 +177,12 @@ function fazerAdmin(banco: Banco, rpcs: Linha[]) {
       is: (col, val) => (filtros.push((l) => (l[col] ?? null) === val), c),
       in: (col, vals) => (filtros.push((l) => vals.includes(l[col])), c),
       not: (col, _op, val) => (filtros.push((l) => (l[col] ?? null) !== val), c),
+      // Só o operador que o worker usa: `isdistinct` casa NULL (é `IS DISTINCT
+      // FROM`), e um operador desconhecido explode em vez de casar tudo calado.
+      filter: (col, op, val) => {
+        if (op !== "isdistinct") throw new Error(`filter não emulado: ${op}`);
+        return (filtros.push((l) => (l[col] ?? null) !== val), c);
+      },
       gte: (col, val) => (filtros.push((l) => (l[col] as never) >= (val as never)), c),
       order: (col, opcoes) => ((ordem = { coluna: col, asc: opcoes?.ascending !== false }), c),
       limit: (n) => ((limite = n), c),
@@ -202,7 +211,7 @@ interface Cenario {
 
 function montarBanco(c: Cenario): Banco {
   return {
-    organizations: [{ id: ORG, settings: c.settings ?? {}, locale: "pt-BR" }],
+    organizations: [{ id: ORG, status: "active", settings: c.settings ?? {}, locale: "pt-BR" }],
     ai_provider_credentials: c.credenciais ?? [],
     ai_purpose_bindings: c.bindings ?? [],
     messages: [
@@ -527,6 +536,32 @@ const linhasDoJev = (b: Banco) => b.llm_calls.filter((l) => l.provider === "type
 const linhasDaIaDeSempre = (b: Banco) => b.llm_calls.filter((l) => l.provider !== "typesafe");
 const alertas = (rpcs: Linha[]) => rpcs.filter((r) => r["p_event_type"] === "ai.sentiment_alert");
 
+describe("LGPD: a nota não volta para uma mensagem anonimizada durante a medição", () => {
+  // A corrida: o worker lê a mensagem, o contato é anonimizado enquanto o
+  // modelo classifica (body vira o sentinela, metadata vira `{}`), e o UPDATE
+  // regravaria a foto antiga da metadata mais a nota. O controle do caminho
+  // vivo é o primeiro caso do D12, que afirma a nota gravada.
+  it("lê → anonimiza → grava: metadata continua `{}`", async () => {
+    const banco = montarBanco({
+      settings: { llm: { provider: "anthropic" } },
+      credenciais: [credencial(CRED_ANTHROPIC, "anthropic", "sk-ant-da-tela")],
+    });
+    banco.messages[0]!.metadata = { push_name: "Maria Silva" };
+    vi.mocked(generateObject).mockImplementationOnce((async () => {
+      Object.assign(banco.messages[0]!, { body: "[mensagem anonimizada]", metadata: {} });
+      return {
+        object: { sentiment_score: 0.2, reasoning_short: "cliente repetindo o pedido" },
+        usage: { inputTokens: 40, outputTokens: 12 },
+      };
+    }) as unknown as typeof generateObject);
+
+    await rodar({}, banco);
+
+    expect(generateObject).toHaveBeenCalledTimes(1);
+    expect(banco.messages[0]!.metadata).toEqual({});
+  });
+});
+
 describe("o Jev no worker de clima", () => {
   beforeEach(() => {
     chamadasAoJev = [];
@@ -572,6 +607,93 @@ describe("o Jev no worker de clima", () => {
     // A passagem para humano sabe que foi o Jev (D11).
     expect(alertas(rpcs)).toHaveLength(1);
     expect(alertas(rpcs)[0]!["p_payload"]).toMatchObject({ sentiment_score: 0, sentiment_engine: "jev" });
+  });
+
+  /**
+   * Issue #2219, ponta 1: com o Jev decidindo, a nota vem da ESCALA de
+   * `NIVEIS_DE_CLIMA` (`score / 4`), não do `SENTIMENT_SYSTEM_PROMPT` — o
+   * prompt novo do #2216 não alcança este caminho. As duas pontas da escala,
+   * aqui no desfecho que o worker emite: o nível de RELATO (0.5) não pode
+   * escalar, o de INSATISFAÇÃO COM O ATENDIMENTO (0.25) tem de escalar.
+   */
+  it("escala do Jev: relatar o problema não vira 'reclamando' — nenhuma passagem para humano", async () => {
+    const nivel = NIVEIS_DE_CLIMA.findIndex((texto) => texto.includes("Fui bloqueado na Uber"));
+    expect(nivel, "a âncora de relato sumiu da escala do Jev").toBeGreaterThanOrEqual(0);
+    const nota = nivel / (NIVEIS_DE_CLIMA.length - 1);
+    expect(
+      nota,
+      `a âncora de relato vale ${nota} e o corte é ${DEFAULT_SENTIMENT_THRESHOLD}: a escala não distingue relato de reclamação`,
+    ).toBeGreaterThanOrEqual(DEFAULT_SENTIMENT_THRESHOLD);
+
+    fornecedor(async () => respostaDoJev(nivel));
+    const { resultado, banco, rpcs } = await rodar(jevLigado("decide"));
+
+    expect(resultado, `o worker desistiu: ${resultado.reason ?? "-"}`).toMatchObject({
+      skipped: false,
+      sentiment_score: nota,
+    });
+    expect(generateObject, "a IA de sempre não roda com o Jev decidindo").not.toHaveBeenCalled();
+    expect(
+      alertas(rpcs),
+      `o relato do problema foi cortado em ${nota} contra o limiar ${DEFAULT_SENTIMENT_THRESHOLD} e a conversa passou para uma pessoa`,
+    ).toHaveLength(0);
+    expect(banco.messages[0]!.metadata).toMatchObject({
+      sentiment_score: nota,
+      sentiment_engine: "jev",
+      sentiment_threshold: DEFAULT_SENTIMENT_THRESHOLD,
+    });
+  });
+
+  it("escala do Jev: a insatisfação COM O ATENDIMENTO continua acionando a passagem", async () => {
+    // A outra ponta do conserto: empurrar tudo para o neutro para não escalar
+    // relato apagaria a passagem de quem realmente brigou com o atendimento.
+    const nivel = NIVEIS_DE_CLIMA.findIndex((texto) => texto.toLowerCase().includes("insatisfeito com o atendimento"));
+    expect(nivel, "a âncora de insatisfação sumiu da escala do Jev").toBeGreaterThanOrEqual(0);
+    const nota = nivel / (NIVEIS_DE_CLIMA.length - 1);
+    expect(nota).toBeLessThan(DEFAULT_SENTIMENT_THRESHOLD);
+
+    fornecedor(async () => respostaDoJev(nivel));
+    const { resultado, rpcs } = await rodar(jevLigado("decide"));
+
+    expect(resultado, `o worker desistiu: ${resultado.reason ?? "-"}`).toMatchObject({
+      skipped: false,
+      sentiment_score: nota,
+    });
+    expect(alertas(rpcs), "um cliente insatisfeito com o atendimento deixou de ser avisado").toHaveLength(1);
+    expect(alertas(rpcs)[0]!["p_payload"]).toMatchObject({ sentiment_score: nota, sentiment_engine: "jev" });
+  });
+
+  /**
+   * Issue #2219, ponta 2: o limiar por agente do #2216 tem de ir PARA a
+   * `messages.metadata` da decisão — é de lá que `concordancia()` e
+   * `irritadosPercebidos()` leem. Sem esta chave, um agente em 0,1 tinha a
+   * concordância dele medida contra 0,3.
+   */
+  it("grava na mensagem o limiar por agente usado na decisão, e o padrão quando o agente não tem o seu", async () => {
+    const cenario = jevLigado("decide");
+
+    const comAgente = montarBanco(cenario);
+    comAgente.ai_agents![0]!.config = { sentiment_threshold: 0.1 };
+    fornecedor(async () => respostaDoJev(0));
+    const primeiro = await rodar(cenario, comAgente);
+    expect(primeiro.resultado, `o worker desistiu: ${primeiro.resultado.reason ?? "-"}`).toMatchObject({
+      skipped: false,
+      sentiment_score: 0,
+    });
+    expect(
+      primeiro.banco.messages[0]!.metadata,
+      "a mensagem não guarda o limiar com o qual foi cortada — a concordância volta a medir contra o fixo",
+    ).toMatchObject({ sentiment_threshold: 0.1 });
+    // O alerta declara o MESMO número (isso já valia): os dois têm de bater.
+    expect(alertas(primeiro.rpcs)[0]!["p_metadata"]).toMatchObject({ threshold: 0.1 });
+
+    // Controle: agente sem `sentiment_threshold` gravado — o padrão do produto.
+    const padrao = montarBanco(cenario);
+    const segundo = await rodar(cenario, padrao);
+    expect(segundo.resultado, `o worker desistiu: ${segundo.resultado.reason ?? "-"}`).toMatchObject({ skipped: false });
+    expect(segundo.banco.messages[0]!.metadata).toMatchObject({
+      sentiment_threshold: DEFAULT_SENTIMENT_THRESHOLD,
+    });
   });
 
   it("modo observação: os dois medem, a IA de sempre decide, as duas notas ficam guardadas", async () => {
@@ -984,6 +1106,9 @@ function comAgenteNoAr(
       assigned_to_user_id: null,
       bot_silenced_until: null,
       last_handoff_at: null,
+      // O embed `organizations:organization_id(status)` que o portão de
+      // elegibilidade lê (spec cobrança §4): sem status, a régua falha fechada.
+      organizations: { status: "active" },
       ...over.conversa,
     },
   ];
@@ -1168,6 +1293,8 @@ describe("os pedidos do cliente no worker de clima", () => {
     // turno nesta conversa — a regra de hoje nem roda aqui.
     ["o único agente publicado em OUTRO número", { sessaoDoAgente: OUTRO_NUMERO }],
     ["conversa sem número", { conversa: { channel_session_id: null } }],
+    // A empresa suspensa: o portão veta o turno (`org_nao_operante`), então o Jev não pergunta.
+    ["empresa suspensa", { conversa: { organizations: { status: "suspended" } } }],
   ])("%s: o turno não rodaria, e os pedidos não são perguntados", async (_caso, over) => {
     fornecedor(respostaPorPergunta({ humano: 0.99 }));
     const cenario = jevLigado("decide");

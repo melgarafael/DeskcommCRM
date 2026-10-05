@@ -6,6 +6,8 @@
  */
 import type pg from 'pg';
 
+import { extrairJsonDoTexto } from '@/lib/agent-engine/texto/extrair-json-do-texto';
+
 import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
 import type { Logger } from '../obs/logger';
 import { aggregateFollowupOutcomes, type FlowOutcomeStat } from '../../followup/outcome-stats';
@@ -115,10 +117,9 @@ function distillerPrompt(missingFacts: string[]): string {
 }
 
 function parseJson<T>(text: string): T {
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start === -1 || end <= start) throw new Error('saída do modelo sem JSON');
-  return JSON.parse(text.slice(start, end + 1)) as T;
+  const valor = extrairJsonDoTexto(text);
+  if (valor === null) throw new Error('saída do modelo sem JSON');
+  return valor as T;
 }
 
 

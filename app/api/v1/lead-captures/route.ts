@@ -33,7 +33,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const authz = await requireRole("manager", {
     requestId,
     resource: "lead_captures",
-    allowPlatformAdmin: true,
+    allowPlatformAdmin: "leitura",
   });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);

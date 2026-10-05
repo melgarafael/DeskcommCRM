@@ -75,7 +75,7 @@ When finishing an epic:
      is a warning, so it passes green; the check is human
    - New env vars in `.env.example` **and** `lib/env.ts`, with a default that does not break a fresh install
    - Schema change shipped as a **triple**: file in `supabase/migrations/`, idempotent appendix
-     in `supabase/baseline.sql` and a line in `MANIFEST.md`. The self-host kit applies **only the baseline** —
+     in `supabase/baseline.sql` and a `-- manifest: <what and why>` line in the `.sql` header (not in `MANIFEST.md`, which is history). The self-host kit applies **only the baseline** —
      a migration that never gets there never reaches whoever installed on a VPS. No CI job checks this
    - **If you touched `Dockerfile*`, `docker-compose*.yml` or `hostgator-setup-kit/`:** the change
      reaches people who **already** installed. Law in [`docs/doctrine/packaging.md`](docs/doctrine/packaging.md).

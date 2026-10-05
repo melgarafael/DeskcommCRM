@@ -54,7 +54,7 @@ function arquivosQueEscrevemAtividade(): string[] {
     try {
       saida = execFileSync(
         "grep",
-        ["-rl", "--include=*.ts", "--include=*.tsx", marca, ...PASTAS],
+        ["-rl", "--include=*.ts", "--include=*.tsx", "--exclude=*.test.ts", "--exclude=*.test.tsx", marca, ...PASTAS],
         { cwd: RAIZ, encoding: "utf8" },
       );
     } catch {

@@ -12,6 +12,8 @@
  * corpo legível. COMO cada canal obtém as coordenadas mora na pasta dele.
  */
 
+import { textoDoEnderecoAproximado, type EnderecoAproximado } from "@/lib/mapas/geocodificacao";
+
 export interface Localizacao {
   latitude: number;
   longitude: number;
@@ -19,6 +21,25 @@ export interface Localizacao {
   nome?: string | null;
   /** Endereço escrito, quando o WhatsApp o anexou ao pino. */
   endereco?: string | null;
+  /**
+   * Rua, cidade e região que o Google deu para as coordenadas, quando a
+   * organização cadastrou a chave de Mapas (`lib/mapas/credencial.ts`).
+   * APROXIMADO por natureza: quem lê confirma com o cliente.
+   */
+  aproximado?: EnderecoAproximado | null;
+}
+
+const CAMPOS_DO_APROXIMADO = ["rua", "cidade", "regiao"] as const;
+
+function lerAproximado(bruto: unknown): EnderecoAproximado | null {
+  if (!bruto || typeof bruto !== "object") return null;
+  const o = bruto as Record<string, unknown>;
+  const lido: EnderecoAproximado = {};
+  for (const campo of CAMPOS_DO_APROXIMADO) {
+    const v = texto(o[campo]);
+    if (v) lido[campo] = v;
+  }
+  return Object.keys(lido).length > 0 ? lido : null;
 }
 
 function numero(v: unknown): number | null {
@@ -46,11 +67,13 @@ export function lerLocalizacao(bruto: unknown): Localizacao | null {
   if (latitude === 0 && longitude === 0) return null;
   const nome = texto(o.name ?? o.nome);
   const endereco = texto(o.address ?? o.endereco);
+  const aproximado = lerAproximado(o.aproximado);
   return {
     latitude,
     longitude,
     ...(nome ? { nome } : {}),
     ...(endereco ? { endereco } : {}),
+    ...(aproximado ? { aproximado } : {}),
   };
 }
 
@@ -63,9 +86,18 @@ export function linkDoMapa(loc: Localizacao): string {
  * O `body` da mensagem de localização. É o que o agente lê e o que aparece na
  * prévia da lista de conversas — então leva o link, que é a parte útil, e o
  * nome/endereço quando houver. Sem palavra de idioma: o pino já diz o que é.
+ *
+ * O endereço aproximado sai marcado "(aprox.)" — a mesma abreviação em
+ * português e em espanhol —, para o agente confirmar em vez de afirmar.
+ * Os NOMES vêm no idioma da organização (`idiomaDaConsulta`); a marca, que é
+ * gravada uma vez no corpo, é a mesma nos dois idiomas que o registro serve
+ * hoje. Na tela, o cartão do pino a traduz para quem olha (`LocationCard`).
  */
 export function corpoDaLocalizacao(loc: Localizacao): string {
-  const partes = [loc.nome, loc.endereco].filter((p): p is string => Boolean(p));
+  const aproximado = loc.aproximado ? textoDoEnderecoAproximado(loc.aproximado) : "";
+  const partes = [loc.nome, loc.endereco, aproximado ? `${aproximado} (aprox.)` : null].filter(
+    (p): p is string => Boolean(p),
+  );
   return `📍 ${[...partes, linkDoMapa(loc)].join(" — ")}`;
 }
 

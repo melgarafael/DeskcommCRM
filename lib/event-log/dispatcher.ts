@@ -48,11 +48,25 @@ export interface HandlerResult {
   detail?: string;
 }
 
+/** `detail` do `skipped` de um handler "pula" numa organização parada. */
+export const DETALHE_DA_ORG_PARADA = "org_nao_operante";
+
 export interface EventHandler {
   /** Stable key recorded in `event_log.consumed_by`. */
   key: string;
   /** Event types this handler consumes (`["message.received", "message.sent"]`). */
   events: string[];
+  /**
+   * O que fazer quando a organização do evento NÃO está operante
+   * (`lib/organizacao/operante.ts`). Obrigatório: handler novo sem classificação
+   * não compila, e `tests/unit/dispatcher-org-parada.test.ts` guarda a lista.
+   *
+   *   "roda" — escrita interna, LGPD ou entrada: segue normal.
+   *   "pula" — custa dinheiro ou sai para fora: `skipped` com
+   *            `org_nao_operante`, vai para `consumed_by` e NÃO volta na
+   *            reativação (reativação é sem rajada, spec §1.3).
+   */
+  naOrgParada: "roda" | "pula";
   handle(row: EventRow): Promise<HandlerResult>;
 }
 
@@ -78,7 +92,10 @@ export function getRegisteredHandlers(): readonly EventHandler[] {
  * in `consumed_by`. Returns the per-handler results so the cron driver can
  * decide how to update `consumed_by` / `status` / `attempts`.
  */
-export async function dispatchEvent(row: EventRow): Promise<HandlerResult[]> {
+export async function dispatchEvent(
+  row: EventRow,
+  opts: { orgParada: boolean },
+): Promise<HandlerResult[]> {
   const matches = _handlers.filter(
     (h) => h.events.includes(row.event_type) && !row.consumed_by.includes(h.key),
   );
@@ -86,6 +103,10 @@ export async function dispatchEvent(row: EventRow): Promise<HandlerResult[]> {
 
   const results: HandlerResult[] = [];
   for (const handler of matches) {
+    if (opts.orgParada && handler.naOrgParada === "pula") {
+      results.push({ consumer_key: handler.key, status: "skipped", detail: DETALHE_DA_ORG_PARADA });
+      continue;
+    }
     try {
       const r = await handler.handle(row);
       results.push(r);

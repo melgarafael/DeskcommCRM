@@ -205,6 +205,20 @@ if [ -n "$LATEST_TAG" ] && [ "$LATEST_TAG" != "$CURRENT" ]; then
   # nesse caso anunciar é o que preserva o comportamento de sempre — uma VPS com
   # saída de rede ruim não pode ficar sem atualização para sempre, em silêncio.
   [ "$VEREDITO_IMAGEM" = "ausente" ] && LATEST_TAG=""
+  # ── E a release tem as QUATRO imagens? (#1955, critério 1) ──────────────
+  # O veredito de cima olha SÓ a imagem do app. Um run de publicação que morre
+  # no meio deixa a ETIQUETA publicada com o worker (ou o scheduler, ou a voz)
+  # inexistente — e quem clica em "Atualizar" descobre no `up -d`, com o CRM
+  # parado e o build local queimando a memória da VPS. Uma release sem todas
+  # as imagens prontas não é oferecida: o silêncio aqui é transitório (a
+  # próxima passada, 5 min, reavalia) e a alternativa é um botão que derruba
+  # o sistema.
+  # Só `incompleta` cala, pelo MESMO motivo do `ausente`: `indisponivel` é o
+  # registro fora do ar, e uma VPS com rede ruim não pode ficar sem
+  # atualização para sempre, em silêncio.
+  if [ -n "$LATEST_TAG" ] && [ "$(veredito_das_imagens_da_release "${LATEST_TAG#v}")" = "incompleta" ]; then
+    LATEST_TAG=""
+  fi
 fi
 
 CHANGELOG=""

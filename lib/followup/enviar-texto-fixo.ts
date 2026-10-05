@@ -14,6 +14,7 @@ import { createSupabaseAdminClient, type FollowupJobRequest } from "@/lib/follow
 import type { EnrollmentRow } from "@/lib/followup/node-handlers";
 import { completeTurnForEnrollment, type TurnBridgeAdminClient } from "@/lib/followup/turn-bridge";
 import { logger } from "@/lib/logger";
+import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 
 function ponteSupabase(admin: SupabaseClient): TurnBridgeAdminClient {
   const base = createSupabaseAdminClient(admin);
@@ -150,7 +151,13 @@ export async function enviarTextoFixoPendente(
     } catch (err) {
       const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err);
       logger.warn("[dev.pipeline] envio inline falhou", { error: message });
-      await settle(job.organization_id,job.id,jobClaim.acquired_at,err instanceof StaleServiceBoundaryError,message,err instanceof AgendaDeferredError?err:undefined);
+      if (err instanceof OrgNaoOperanteError) {
+        // Turno que já rodava quando a org parou: o motor precisa do evento para
+        // enfileirar um turno novo na reativação (ver fn_followup_turno_descartado).
+        const { error: falhaDoDescarte } = await admin.rpc("fn_followup_turno_descartado", { p_org: job.organization_id, p_job: job.id });
+        if (falhaDoDescarte) throw falhaDoDescarte;
+      }
+      await settle(job.organization_id,job.id,jobClaim.acquired_at,err instanceof StaleServiceBoundaryError||err instanceof OrgNaoOperanteError,message,err instanceof AgendaDeferredError?err:undefined);
     }
   }
   return enviados;

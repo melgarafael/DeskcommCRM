@@ -14,12 +14,16 @@ import { requireOnboardingCtx, patchOnboardingState, OnboardingError } from "./_
 
 export type AcceptWelcomeResult =
   | { ok: true }
-  | { ok: false; error: "auth_required" | "no_active_org" | "invalid_input" | "db_error"; details?: unknown };
+  | { ok: false; error: "auth_required" | "no_active_org" | "forbidden" | "invalid_input" | "db_error"; details?: unknown };
 
 export async function acceptWelcome(formData: FormData): Promise<AcceptWelcomeResult> {
+  // A aba de boas-vindas foi aberta para UMA organização; é ela que este
+  // submit deve atingir, mesmo que a org ativa tenha mudado em outra aba.
+  const orgIdDaAba = String(formData.get("organization_id") ?? "").trim() || undefined;
+
   let ctx;
   try {
-    ctx = await requireOnboardingCtx();
+    ctx = await requireOnboardingCtx(orgIdDaAba);
   } catch (err) {
     if (err instanceof OnboardingError) return { ok: false, error: err.code as never };
     throw err;
@@ -54,9 +58,22 @@ export async function acceptWelcome(formData: FormData): Promise<AcceptWelcomeRe
         },
       },
       { display_name: input.display_name, timezone: input.timezone },
+      { soNoWizard: true },
     );
   } catch (err) {
-    if (err instanceof OnboardingError) return { ok: false, error: "db_error", details: err.message };
+    if (err instanceof OnboardingError) {
+      // #2146: a recusa está certa — a organização já terminou o wizard em
+      // OUTRA aba e nada pode ser gravado —, só a tela estava errada. Qualquer
+      // `OnboardingError` virava `db_error`, então a pessoa via
+      // "Falha: db_error" com o detalhe "Organização já configurada." — um
+      // erro de banco que não aconteceu. Quem chegou aqui já está
+      // configurado: em vez de devolver um código que a tela exibe como
+      // falha, segue direto para a caixa de entrada, que era para onde o
+      // onboarding o levaria em seguida. Todos os OUTROS códigos seguem com
+      // o mapeamento de antes, sem mudança nenhuma.
+      if (err.code === "org_ja_configurada") redirect("/app/inbox");
+      return { ok: false, error: "db_error", details: err.message };
+    }
     throw err;
   }
 

@@ -12,6 +12,7 @@
 import { supportWriteError, authenticatedSessionId } from "@/lib/impersonate/support";
 import { redirect } from "next/navigation";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
 import { buildAuthorizeUrl } from "@/lib/nuvemshop/oauth";
 import { getConfig } from "@/lib/nuvemshop/config";
 import { issueState } from "@/lib/nuvemshop/state";
@@ -29,7 +30,7 @@ export async function connectNuvemshop(): Promise<ConnectResult> {
 
   // Only `admin` can wire up integrations (RBAC). `manager`/`agent`/`viewer`
   // see the UI read-only.
-  if (activeOrg.role !== "admin" && !user.is_platform_admin) {
+  if (!podeAdministrarEmpresa(user, activeOrg)) {
     return { ok: false, error: "forbidden" };
   }
 

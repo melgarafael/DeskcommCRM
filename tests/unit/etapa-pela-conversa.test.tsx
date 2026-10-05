@@ -6,6 +6,7 @@ import { NextRequest } from "next/server";
 
 import { CRMSidePanel } from "@/components/inbox/CRMSidePanel";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
  * MOVER O NEGÓCIO DE ETAPA SEM SAIR DA CONVERSA.
@@ -32,6 +33,7 @@ import { createClient } from "@/lib/supabase/server";
  */
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/users/nome-do-atendente", () => ({ nomesDosAtendentes: async () => new Map() }));
 
 const ORG = "org-1";
@@ -87,6 +89,8 @@ describe("crm-summary: a etapa do negócio e as etapas do funil", () => {
       ],
     });
     vi.mocked(createClient).mockResolvedValue(banco as never);
+    // `lead_notes` é lido pelo client de serviço — mesmo dublê.
+    vi.mocked(createAdminClient).mockReturnValue(banco as never);
 
     const { GET } = await import("@/app/api/v1/contacts/[id]/crm-summary/route");
     const res = await GET(new NextRequest(`http://x/api/v1/contacts/${CONTATO}/crm-summary`), {

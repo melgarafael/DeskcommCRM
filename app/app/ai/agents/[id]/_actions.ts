@@ -539,6 +539,7 @@ export async function revertToVersionAction(
     split_messages: boolean;
     split_max_chars: number;
     inbound_debounce_ms: number | null;
+    followup: unknown;
   };
   const src = source as unknown as SourceRow;
 
@@ -589,6 +590,7 @@ export async function revertToVersionAction(
         split_messages: src.split_messages,
         split_max_chars: src.split_max_chars,
         inbound_debounce_ms: src.inbound_debounce_ms ?? null,
+        followup: src.followup,
         status: "draft",
         created_by: authUser.id,
       })
@@ -743,6 +745,7 @@ export async function createMcpAgentAction(
     split_messages: v.split_messages,
     split_max_chars: v.split_max_chars,
     inbound_debounce_ms: v.inbound_debounce_ms ?? null,
+    followup: v.followup,
     // O corpo ACEITAVA estes cinco e o INSERT os descartava: criar o assistente
     // pela tela com papel Operador, escopo de funil ou material marcado produzia
     // uma versão com tudo no default do banco — desligado e vazio.

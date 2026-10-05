@@ -95,6 +95,10 @@ function fakePool() {
     if (sql.includes("d.fechada_em::text")) return { rows: [{ ...boundary, status: "open", demanda_fechada_em: null }] };
     if (/from conversations/.test(sql)) return { rows: [{ id: CONVERSA, channel_session_id: CANAL, archived_at: null }] };
     if (sql.includes("a.published_version_id")) return { rows: [{ followup: FOLLOWUP_COM_FAIXA }], rowCount: 1 };
+    // A inscrição viva que o handler consulta ANTES do envio (guard da #1913).
+    if (sql.includes("select current_node_id, status from followup_enrollments")) {
+      return { rows: [{ current_node_id: "a1", status: "active" }], rowCount: 1 };
+    }
     if (sql.includes("select timezone from organizations")) return { rows: [{ timezone: "America/Sao_Paulo" }], rowCount: 1 };
     return { rows: [], rowCount: 0 };
   });

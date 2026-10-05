@@ -105,7 +105,7 @@ preserve o trabalho do contribuidor e registre a dependência.
    próprio: a distribuição pública espera o verificador mantido descrito no PROG-017 §11.
 
 9. **Schema de extensão segue a doutrina de migrations.** Migration versionada + apêndice idêntico no
-   `baseline.sql` + MANIFEST; `revoke execute … from public, anon`; vocabulário com CHECK tem par
+   `baseline.sql` + `-- manifest:` no `.sql`; `revoke execute … from public, anon`; vocabulário com CHECK tem par
    em `tests/invariants/vocabulario-banco-x-typescript.test.ts`. Tabelas de instância ficam
    fechadas a `anon`/`authenticated`; leitura por organização passa por RLS.
    **Módulo oficial com dados não põe as tabelas no baseline para todos** ([ADR-0002](../adr/0002-tabelas-de-modulo-num-banco-so.md),
@@ -156,7 +156,7 @@ preserve o trabalho do contribuidor e registre a dependência.
 | Pacote JSON estrito com cards de orientação e as portas de navegação da lista fechada (ADR-0003) | Execução de código de terceiros em executor isolado | Prova: a escolha do executor é por evidência (PROG-017 §7 e §14) |
 | Instalar, atualizar, trocar, desfazer a última troca, remover e reinstalar | Histórico de mais de um passo | Recusado por escrito na spec; volta pelo catálogo |
 | Uma versão por instalação, ativação por organização | Versão por organização | Recusada sem necessidade comprovada (PROG-017 §5) |
-| Nenhum dado de domínio de extensão | Schema próprio de extensão | Módulo nativo oficial: migration + baseline + MANIFEST; tabelas de módulo opcional num banco só, criadas ao instalar o módulo: [ADR-0002](../adr/0002-tabelas-de-modulo-num-banco-so.md), **aceita em 17/09/2026 e construída** — a instalação e a reaplicação vieram na migration 0340 e o primeiro módulo a usá-las foi `honorarios` (migration 0480); as provisionadoras em vigor: `grep -n 'create or replace function public.fn_[a-z_]*_provisionar' supabase/baseline.sql`; dados de extensão de terceiro: marco 4 (PROG-017 §8) |
+| Nenhum dado de domínio de extensão | Schema próprio de extensão | Módulo nativo oficial: migration (com `-- manifest:`) + baseline; tabelas de módulo opcional num banco só, criadas ao instalar o módulo: [ADR-0002](../adr/0002-tabelas-de-modulo-num-banco-so.md), **aceita em 17/09/2026 e construída** — a instalação e a reaplicação vieram na migration 0340 e o primeiro módulo a usá-las foi `honorarios` (migration 0480); as provisionadoras em vigor: `grep -n 'create or replace function public.fn_[a-z_]*_provisionar' supabase/baseline.sql`; dados de extensão de terceiro: marco 4 (PROG-017 §8) |
 | Recibos, auditoria por organização na remoção (menos quando a resposta se perde e a repetição não reaplica), Atividade recente | Dependências entre extensões; downloads e avaliações | Prova (PROG-017 §5 e §12; DEC-004 §3) |
 | Nenhuma telemetria de extensões | Relato de uso enviado pela VPS | Decisão própria antes (DEC-004 §3; PROG-017 §12) |
 

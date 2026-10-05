@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { apiClient } from "@/lib/api/client";
+import { canalDesativado } from "@/lib/channels/desativado";
 import { useT } from "@/hooks/i18n/useT";
 import { ChannelAiAccess } from "./ChannelAiAccess";
 
@@ -19,7 +20,7 @@ type Account = {
   username: string;
   active: boolean;
   inbox_supported: boolean;
-  channel: { id: string; status: string } | null;
+  channel: { id: string; status: string; metadata?: Record<string, unknown> | null } | null;
 };
 type State = {
   label: string;
@@ -44,6 +45,23 @@ export function RedesSociaisClient() {
   const [editing, setEditing] = useState(false);
   const [health, setHealth] = useState<Record<string, string>>({});
   const load = () => query.refetch();
+  async function togglePausado(account: Account) {
+    if (!account.channel) return;
+    const desligar = !canalDesativado(account.channel.metadata);
+    setBusy(account.id);
+    setError(null);
+    try {
+      await apiClient.patch(`/api/v1/channel-sessions/${account.channel.id}/disabled`, {
+        disabled: desligar,
+      });
+      toast.success(t(desligar ? "Canal pausado." : "Canal reativado."));
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível mudar o estado do canal.");
+    } finally {
+      setBusy(null);
+    }
+  }
   async function perform(id: string, body: Record<string, unknown>) {
     setBusy(id);
     setError(null);
@@ -221,6 +239,9 @@ export function RedesSociaisClient() {
                   <Badge variant={account.active ? "secondary" : "outline"}>
                     {account.active ? t("Vinculada") : t("Reconectar")}
                   </Badge>
+                  {account.channel && canalDesativado(account.channel.metadata) && (
+                    <Badge variant="neutral">{t("Pausado")}</Badge>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -232,6 +253,15 @@ export function RedesSociaisClient() {
                   >
                     {t("Verificar conexão")}
                   </Button>
+                  {account.channel && (
+                    <Button
+                      variant="outline"
+                      disabled={!!busy}
+                      onClick={() => void togglePausado(account)}
+                    >
+                      {canalDesativado(account.channel.metadata) ? t("Retomar") : t("Pausar")}
+                    </Button>
+                  )}
                   {account.inbox_supported &&
                     (!account.channel || account.channel.status !== "WORKING") && (
                       <Button

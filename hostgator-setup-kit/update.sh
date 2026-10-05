@@ -21,6 +21,21 @@ source "$KIT_DIR/_common.sh"
 source "$KIT_DIR/manutencao.sh"
 enter_project
 
+# ── 0-. O laço do diagnóstico (#1955) ───────────────────────────────────────
+# Toda execução termina com um arquivo legível — inclusive as que MORREM antes
+# de chegar ao banco (preflight, backup, checkout), que é justamente onde não
+# havia rastro nenhum: o que sobrava era a cauda do log que o agente guarda, e
+# o apagão de resolver da issue não deixava rastro do POR QUÊ.
+#
+# O gatilho do passo do banco (`trap restaurar_servicos EXIT INT TERM HUP`)
+# SUBSTITUI este — e de lá para baixo quem escreve o mesmo arquivo é
+# `restaurar_servicos`, que chama esta mesma função. Os dois caminhos escrevem
+# no MESMO arquivo, e o diagnóstico é silencioso: nunca na stdout.
+DIAGNOSTICO_ARQUIVO="$PROJECT_DIR/.deskcomm-update-diagnostico.log"
+UPDATE_STATUS="em andamento"
+UPDATE_ETAPA="início, antes de decidir a versão"
+trap diagnostico_de_atualizacao EXIT
+
 FORCE=""; SKIP_BACKUP=""; TARGET_TAG=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -174,6 +189,28 @@ elif [ -n "$MESMA_TAG" ]; then
   c_ylw "O código já está na $TARGET_TAG, mas o app está rodando uma imagem antiga. Vou atualizar a imagem."
 else
   c_ylw "Vou atualizar para a versão $TARGET_TAG com segurança."
+fi
+
+# ── 1.5 Preflight: dá para atualizar sem derrubar o que está no ar? (#1955) ──
+# MEDIDO numa instalação real, reproduzido 2x: sem esta pergunta o update parava
+# os serviços e só descobria a hora que o registro não respondia — aí o fallback
+# de construção local consumiu a memória inteira da VPS (OOM no `next-build`) e
+# o app ficou 502 até um restart manual do Docker.
+#
+# ANTES do backup, do checkout e de QUALQUER `docker stop`, de propósito: quando
+# o preflight falha, `refuse` devolve RC 3 (o agent.sh lê como "esta atualização
+# nunca começou" e não tenta desfazer nada) e a versão ATUAL segue no ar.
+step "Conferindo se dá para atualizar (preflight)"
+if ! MOTIVO_PREFLIGHT="$(preflight_atualizacao "$TARGET_TAG")"; then
+  refuse "Atualização NÃO começou — nada foi parado, nada foi baixado, e a versão atual segue no ar.
+  Motivo: $MOTIVO_PREFLIGHT
+  Resolva o motivo acima e rode de novo:
+    bash hostgator-setup-kit/update.sh"
+fi
+if build_local_pedido; then
+  c_grn "✓ preflight — o Docker respondeu; construção local pedida (DESKCOMM_BUILD_LOCAL), sem depender do registro."
+else
+  c_grn "✓ preflight — as quatro imagens da $TARGET_TAG estão prontas no registro."
 fi
 
 # ── 2. Backup de segurança ANTES de tocar no banco ───────────────────────────
@@ -613,6 +650,14 @@ step "Baixando a versão nova do app e reiniciando"
 # antigo grava só `APP_IMAGE`, e o worker fica seguindo um canal móvel.
 PIN_FALTANDO_ANTES="$(pin_incompleto .env)"
 
+# O snapshot que torna o rollback possível (#1955, critério 4): os OITO pins de
+# versão do `.env` ANTES de gravar os novos. É a última janela em que a versão
+# anterior ainda está escrita — depois de `gravar_imagens` + dos `export` logo
+# abaixo, TODO `up -d` seguinte (inclusive o da volta e o do gatilho de saída)
+# já aponta para a versão nova. É por isso que a instalação da issue terminou
+# com os serviços em `Created`: a "volta" usava imagens que não existiam.
+armar_rollback_de_versao .env
+
 VERSAO_ALVO="${TARGET_TAG#v}"
 export APP_IMAGE="${IMG_APP}:${VERSAO_ALVO}"
 export WORKER_IMAGE="${IMG_WORKER}:${VERSAO_ALVO}"
@@ -684,11 +729,31 @@ garantir_rede_do_proxy
 manutencao_desce
 CONSTRUIU_AQUI=""
 if ! dc up -d; then
+  # ── O PORTÃO DO BUILD LOCAL (#1955, critério 2) ─────────────────────────
+  # O gatilho continua sendo o CÓDIGO DE SAÍDA do `up -d` (nunca o texto do
+  # erro — arquitetura, tag publicando, pacote privado e registro fora caem no
+  # mesmo caminho), mas a CONSTRUÇÃO deixou de ser o que acontece SOZINHO
+  # quando quem falhou é o REGISTRO: foi o que transformou um apagão de DNS em
+  # OOM no `next-build` e a instalação em 502.
+  #
+  # Quem tem registro respondendo continua se recuperando sozinho — é a
+  # recuperação de arquitetura do #1060/#1143 e ela não pode sumir. Quem quer
+  # construir de propósito pede com DESKCOMM_BUILD_LOCAL=1.
+  if ! build_local_permitido "$VERSAO_ALVO"; then
+    c_red "✖ A atualização não terminou: o registro de imagens não responde, e a construção local está DESLIGADA por padrão."
+    c_ylw "  Sem resposta do registro (DNS/rede) a construção local gastaria a memória"
+    c_ylw "  desta VPS e deixaria os serviços parados — é exatamente o defeito da #1955."
+    c_ylw "  A versão anterior volta sozinha no fim desta saída; o diagnóstico fica em:"
+    c_ylw "    .deskcomm-update-diagnostico.log"
+    c_ylw "  Para construir as imagens aqui DE PROPÓSITO (mais lento, exige memória):"
+    c_ylw "    DESKCOMM_BUILD_LOCAL=1 bash hostgator-setup-kit/update.sh --to $TARGET_TAG --force"
+    exit 1
+  fi
   if construir_aqui_e_subir "$VERSAO_ALVO"; then
     CONSTRUIU_AQUI=1
   else
     c_red "✖ A atualização não terminou: nem as imagens prontas desta versão nem a construção aqui funcionaram."
-    c_ylw "  O CRM segue no ar, na versão anterior. O erro está logo acima;"
+    c_ylw "  A versão anterior volta sozinha no fim desta saída. O erro está logo acima;"
     c_ylw "  para reproduzir só a construção: docker compose $(dc_files) -f ${COMPOSE_BUILD} build"
     exit 1
   fi
@@ -726,6 +791,19 @@ step "Conferindo se o app voltou no ar"
 ok=""
 wait_app_healthy 20 3 >/dev/null && ok=1
 if [ -n "$ok" ]; then
+  # ── E OS OUTROS SERVIÇOS? (#1955, critério 6) ─────────────────────────
+  # O app responder não é o parque inteiro de pé: worker, scheduler e o proxy
+  # sobem no MESMO `up -d` e podem ter ficado em `Created`/`Exited` pela mesma
+  # imagem que faltou. A promessa da issue é "saiem saudáveis OU o rollback
+  # roda" — e rollback só roda se alguém CONSTATAR o serviço fora. Lista vazia
+  # (o `ps` não respondeu) não derruba nada: só se devolve a versão anterior
+  # havendo um serviço positivamente fora do ar.
+  FORA_DO_AR="$(servicos_fora_do_ar || true)"
+  if [ -n "$FORA_DO_AR" ]; then c_red "✖ O app respondeu, mas estes serviços NÃO subiram: $FORA_DO_AR"; c_ylw "  Voltando para a versão anterior automaticamente — o desfecho está no fim desta saída."; exit 1; fi
+  # Daqui para baixo a atualização ACABOU: é o único ponto em que todas as
+  # peças provaram estar de pé, e por isso é aqui que o rollback é desarmado.
+  UPDATE_STATUS="concluído"
+  desarmar_rollback_de_versao
   # O marcador que a guarda de arquitetura lê (#1778). Instalações antigas só
   # seriam reconhecidas pelo contêiner — que um `down` sem `-v` apaga. Gravar
   # aqui, com o app saudável, fecha esse caso a partir desta atualização.

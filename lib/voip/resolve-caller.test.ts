@@ -5,10 +5,11 @@ import { resolveOrCreateCallerContact } from "./resolve-caller";
 /**
  * Mock mínimo do client Supabase para os dois caminhos que este módulo usa:
  * `contacts.select(...).eq(...).in(...).is(...).limit(...)` (via
- * `encontrarContatoPorTelefone`) e `contacts.insert(...).select(...).single()`.
+ * `encontrarContatoPorTelefoneComBloqueio`) e
+ * `contacts.insert(...).select(...).single()`.
  */
 function fakeSupabase(opts: {
-  existente?: { id: string; phone_number: string } | null;
+  existente?: { id: string; phone_number: string; is_blocked?: boolean | null } | null;
   insertResult?: { data?: Record<string, unknown> | null; error?: { code: string; message: string } | null };
 }) {
   const selectChain = {
@@ -40,13 +41,21 @@ describe("resolveOrCreateCallerContact", () => {
   it("acha contato existente pelo número, sem criar um novo", async () => {
     const supabase = fakeSupabase({ existente: { id: "contato-1", phone_number: "+5532984793302" } });
     const result = await resolveOrCreateCallerContact(supabase as never, "org-1", "+5532984793302");
-    expect(result).toBe("contato-1");
+    expect(result).toEqual({ id: "contato-1", is_blocked: false });
   });
 
-  it("cria contato novo com source voip quando o número não bate com nenhum", async () => {
+  it("contato existente bloqueado viaja com is_blocked true", async () => {
+    const supabase = fakeSupabase({
+      existente: { id: "contato-bloq", phone_number: "+5532984793302", is_blocked: true },
+    });
+    const result = await resolveOrCreateCallerContact(supabase as never, "org-1", "+5532984793302");
+    expect(result).toEqual({ id: "contato-bloq", is_blocked: true });
+  });
+
+  it("cria contato novo com source voip quando o número não bate com nenhum (nasce desbloqueado)", async () => {
     const supabase = fakeSupabase({ existente: null, insertResult: { data: { id: "contato-novo" }, error: null } });
     const result = await resolveOrCreateCallerContact(supabase as never, "org-1", "+5532984793302");
-    expect(result).toBe("contato-novo");
+    expect(result).toEqual({ id: "contato-novo", is_blocked: false });
   });
 
   it("corrida (23505) cai de volta pro lookup em vez de propagar o erro", async () => {
@@ -77,7 +86,7 @@ describe("resolveOrCreateCallerContact", () => {
     };
 
     const result = await resolveOrCreateCallerContact(supabase as never, "org-1", "+5532984793302");
-    expect(result).toBe("contato-da-corrida");
+    expect(result).toEqual({ id: "contato-da-corrida", is_blocked: false });
     expect(lookups).toBe(2);
   });
 });

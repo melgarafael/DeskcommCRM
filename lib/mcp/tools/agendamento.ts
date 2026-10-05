@@ -36,6 +36,7 @@ import {
 } from "@/app/api/v1/agenda/agendamentos/_handler";
 import { ApiError } from "@/lib/api/types";
 import { SITUACOES_DO_AGENDAMENTO } from "@/lib/agenda/tipos";
+import { contatoDoNegocio } from "@/lib/operacao/modelos-de-mensagem";
 import type { McpContext, McpToolDefinition } from "@/lib/mcp/types";
 import { resolveUserNames } from "./_users";
 
@@ -444,15 +445,45 @@ export const crmListAppointments: McpToolDefinition<typeof listarShape> = {
     "decidimos voltar a falar, sem nada combinado com o cliente. Aqui é o que foi combinado " +
     "COM ele e ocupa o tempo de um atendente. O mesmo cliente pode ter os dois. " +
     "USE ANTES DE MARCAR e antes de cobrar: cliente que já tem consulta marcada não deve " +
-    "receber oferta de horário como se não tivesse, nem ser cobrado como se estivesse parado.",
+    "receber oferta de horário como se não tivesse, nem ser cobrado como se estivesse parado." +
+    " Em conversa de atendimento, lista apenas os compromissos do contato desta conversa.",
   inputSchema: listarShape,
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
   handler: async (input, ctx) => {
+    // ── A AGENDA, DURANTE UM TURNO, É A DO CONTATO DESTA CONVERSA ───────────
+    //
+    // Com `ctx.contatoDoTurno` (contexto de confiança do runtime), o contato é
+    // forçado na consulta — `dia`, `owner_user_id` e `de+ate` seguem valendo,
+    // mas só dentro dele. `contact_id` de outro e `lead_id` cujo dono não é o
+    // do turno (inexistente e sem contato inclusive) caem na MESMA recusa.
+    // `lead_id` igual ao contato do turno é a confusão contato × negócio que o
+    // runtime não conseguiu traduzir: o contato já cobre a pergunta. Sem
+    // contato do turno (integrador, pessoa), nada muda.
+    const doTurno = ctx.contatoDoTurno;
+    const leadId = doTurno && input.lead_id === doTurno ? undefined : input.lead_id;
+    if (doTurno) {
+      const foraDoTurno =
+        (input.contact_id !== undefined && input.contact_id !== doTurno) ||
+        (leadId !== undefined &&
+          (await contatoDoNegocio(
+            { supabase: ctx.supabase, organizationId: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId },
+            leadId,
+          )) !== doTurno);
+      if (foraDoTurno) {
+        return {
+          permitido: false,
+          motivo: "fora_da_conversa",
+          mensagem:
+            "esta conversa é com outra pessoa — os compromissos de quem não é este cliente não são " +
+            "seus para ver; siga a conversa com quem está falando.",
+        };
+      }
+    }
     const r = await listaAgendamentos(ctx.supabase, ctx.organizationId, {
-      contactId: input.contact_id ?? null,
-      leadId: input.lead_id ?? null,
+      contactId: doTurno ?? input.contact_id ?? null,
+      leadId: leadId ?? null,
       dia: input.dia ?? null,
       ownerUserId: input.owner_user_id ?? null,
       situacao: input.situacao ?? null,

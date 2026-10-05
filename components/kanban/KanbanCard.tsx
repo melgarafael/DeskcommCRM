@@ -289,7 +289,11 @@ export function KanbanCard({
           {/* A última mensagem, com atalho para o inbox. Fica ANTES do rodapé
               de dono/tempo porque é conteúdo do negócio, não metadado do card —
               e some por inteiro quando não há conversa. */}
-          <ConversaSlot conversa={lead.conversa} />
+          <ConversaSlot
+            conversa={lead.conversa}
+            contactId={lead.contact_id}
+            phone={lead.contact_phone}
+          />
 
           {/* Telefone, e-mail e links do contato — some por inteiro quando o
               negócio não tem nada disso, como a conversa acima. */}

@@ -110,10 +110,17 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   const admin = createAdminClient();
 
+  // #2237 — esta rota só precisa saber que a versão existe (na org e no
+  // agente certos) e qual é o canal dela. A config que o Testar usa — prompt,
+  // modelo, ferramentas, `knowledge_source_ids` — o runtime do preview
+  // RECARREGA por versionId (`loadAgentVersionConfig` → `agent-config.ts`).
+  // A lista de 11 colunas que morava aqui era uma cópia que ninguém lia e que
+  // envelheceu sozinha (faltava `knowledge_source_ids`); ler só o que se usa
+  // não deixa cópia para envelhecer. O teste da rota cobra isso.
   const { data: version } = await admin
     .from("ai_agent_versions")
     .select(
-      "id, agent_id, organization_id, system_prompt, provider, model, channel_session_id, max_steps, token_budget, cost_budget_cents, tool_ids",
+      "id, channel_session_id",
     )
     .eq("id", vid)
     .eq("organization_id", activeOrg.orgId)

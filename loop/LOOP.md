@@ -128,8 +128,8 @@ o que "pronto" significa (os `acceptance` dela — que você NÃO pode editar).
     de rota (`fn_user_org_ids()`, wrappers `ok()`/`fail()`).
   - RBAC: sempre `getUser()`, nunca `getSession()`; roles viewer<agent<manager<admin.
   - **Migrations em TRIPLA**: `supabase/migrations/<ts>_<NNNN>_<slug>.sql`
-    idempotente + apêndice em `supabase/baseline.sql` + linha em
-    `supabase/migrations/MANIFEST.md` + `lib/database.types.ts` regenerado.
+    idempotente com `-- manifest: <descrição>` no cabeçalho + apêndice em
+    `supabase/baseline.sql` + `lib/database.types.ts` regenerado.
     O NNNN é verificado contra TODAS as branches locais (a cadeia `vendaval/F2-*`
     tem migrations não mergeadas) — o hook `loop/hooks/check-migration-triple.sh`
     barra no pre-commit o que faltar.
@@ -249,7 +249,7 @@ elegível — só congeladas/human_input):
   falhar e OBRIGA o flip para teste normal — a sessão exporta a env no commit e o
   commit message cita o flip. Qualquer outra edição de invariante vai pra inbox.
 - **Migration fora da tripla não commita.** `loop/hooks/check-migration-triple.sh`
-  exige baseline.sql + MANIFEST.md no mesmo commit e NNNN inédito em TODAS as
+  exige baseline.sql + `-- manifest:` no .sql no mesmo commit e NNNN inédito em TODAS as
   branches locais (bypass só orientado pelo dono: `DESKCOMM_GOV_MIGRATION_EDIT=1`).
 - **Nunca responda um item de inbox por conta própria.** Inbox é canal do humano.
   Aplicar um item `answered` NÃO é responder — é executar a instrução do humano

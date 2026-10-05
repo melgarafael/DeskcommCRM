@@ -32,7 +32,7 @@ Fontes oficiais consultadas em 24/09/2026 UTC:
 
 Correção e evolução da integração já distribuída no núcleo. Reutiliza contatos, funil, eventos e configuração por organização. Não cria outro CRM nem transforma o envio em requisito para o atendimento.
 
-Esta entrega usa a origem capturada no contato e os eventos de venda `Purchase` e qualificação `QualifiedLead` (Google). Captura web completa para Meta, atribuição por nova jornada de cliente antigo, outros eventos por etapa, conversões otimizadas por dados pessoais e painéis de ROAS são evoluções separadas. Não são anunciados como implementados.
+Esta entrega usa a origem capturada no contato, os eventos de venda `Purchase`, as etapas configuradas do Google (`QualifiedLead` e `Etapa:<uuid>`, 0436) e as etapas configuradas da Meta (`MetaEtapa:<uuid>`, 0524 — seção abaixo). Captura web completa para Meta, atribuição por nova jornada de cliente antigo, conversões otimizadas por dados pessoais e painéis de ROAS são evoluções separadas. Não são anunciados como implementados.
 
 ## Captura Google e qualificação por etapa
 
@@ -44,7 +44,14 @@ CONFIRMADO no código desta entrega:
 - Em **Google Ads → Lead qualificado (opcional)**, escolha uma etapa aberta e o ID de uma ação de conversão diferente da compra. A conta e a autorização são as mesmas da conexão. Configure a categoria da ação e a participação na otimização no Google Ads; o CRM não cria nem altera essas propriedades remotamente.
 - A regra começa desligada. Salvar não percorre negócios antigos: apenas movimentos posteriores à configuração são elegíveis. Arrastar e mover em lote usam `lead.stage_changed`.
 - Qualificação envia uma vez por negócio, sem valor monetário; compra continua exigindo negócio ganho e valor positivo. Reentrada na etapa não gera uma segunda qualificação. Um novo negócio é outra conversão.
-- `QualifiedLead` é o nome interno do registro, não um evento enviado à Meta. No Google, a ação escolhida define o resultado. O transporte Meta continua aceitando somente compra.
+- `QualifiedLead` é o nome interno do registro do Google, não um evento enviado à Meta. No Google, a ação escolhida define o resultado. A Meta tem regras de etapa próprias (seção seguinte).
+
+## Eventos por etapa para a Meta (0524)
+
+- Em **Configurações › Conversões**, com a conexão da Meta configurada, o cartão **O que cada etapa do funil informa à Meta** liga, por etapa aberta, um evento padrão: `LeadSubmitted`, `QualifiedLead`, `InitiateCheckout`, `AddToCart` ou `ViewContent` (lista em `lib/conversoes/regras-meta.ts`, repetida no CHECK da tabela). Ganho é a compra e perda não é conversão: nenhuma das duas aparece ali.
+- O consumidor é `conversoes.etapa_meta` (`lib/conversoes/etapa-meta.handler.ts`), em `lead.stage_changed` e `ad_conversion.retry_requested`. Envia uma vez por negócio, sem valor, e só quando a atribuição do contato é da Meta (clique-para-WhatsApp, ou página com `utm_source` da Meta). Lead do Google ou orgânico sai como `etapa_sem_origem_meta`/`sem_atribuicao`, sem linha no livro-razão.
+- A chave no livro-razão é `MetaEtapa:<uuid da etapa>`; o nome que sai no fio fica em `ad_conversion_dispatches.meta_event_name`, e é ele que o reprocessamento usa — trocar o evento da etapa depois não rebatiza o que já foi registrado.
+- Trava de retroatividade: só movimentos depois de ligar a regra (ou de trocar etapa/evento, ou de religar) enviam. Código de evento de teste vale para estes eventos como para a compra.
 - O livro de envios guarda data e ação originais da qualificação. Alterar uma regra não muda a ação de qualificações já registradas. Pendências mostram evento e permitem reprocessá-lo individualmente.
 - A origem do contato ainda segue primeiro toque; compras de clientes que retornam por outra campanha exigem a evolução de origem por jornada antes de afirmar atribuição correta nesse cenário.
 

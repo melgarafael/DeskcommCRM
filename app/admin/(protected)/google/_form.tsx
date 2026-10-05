@@ -1,6 +1,7 @@
 "use client";
 
 import { useT } from "@/hooks/i18n/useT";
+import { MENSAGEM_DA_RECUSA_DE_ESCRITA, ehRecusaDeEscrita } from "@/lib/auth/recusa-de-escrita-de-admin";
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -144,7 +145,7 @@ export function FormularioDoGoogle({
                   ...(clientSecret.trim() ? { client_secret: clientSecret.trim() } : {}),
                 });
                 if (!r.ok) {
-                  toast.error(t(r.error));
+                  toast.error(t(ehRecusaDeEscrita(r.error) ? MENSAGEM_DA_RECUSA_DE_ESCRITA[r.error] : r.error));
                   return;
                 }
                 toast.success(t("Credenciais do Google salvas."));

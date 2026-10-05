@@ -263,6 +263,10 @@ describe("GET /api/v1/pipelines/[id]/agent-mapping", () => {
       // Migration 0440: a tela de etapas lê daqui a chave «avisar na Central».
       // Ausente na fixture = etapa anterior à coluna = desligada.
       avisar_na_central: false,
+      // #1532: a janela de esfriando acompanha a mesma leitura — sem ela, a
+      // tela de etapas nasceria sempre com o campo vazio e gravaria por cima
+      // da configuração. Ausente na fixture = etapa sem janela = null.
+      expected_duration_hours: null,
       last_change_actor_kind: null,
       last_change_at: null,
     });

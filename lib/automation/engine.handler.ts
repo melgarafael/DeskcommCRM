@@ -7,6 +7,7 @@ import "@/lib/automation/actions/register-all";
 
 export const automationRulesHandler: EventHandler = {
   key: AUTOMATION_CONSUMER_KEY,
+  naOrgParada: "pula",
   // Assina EXATAMENTE o que a tela deixa escolher. Enquanto esta lista era
   // escrita à mão ao lado de `TRIGGER_EVENTS`, um gatilho novo podia existir no
   // seletor e não chegar aqui — e aí a regra é salva, o evento acontece e nada

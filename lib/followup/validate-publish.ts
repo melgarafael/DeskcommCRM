@@ -35,6 +35,10 @@ export const PUBLISH_ERROR_CODES = [
   'roteiro_ramificado',
   'campo_repetido',
   'roteiro_em_ciclo',
+  // #2065 — configuração dos dois nós de ação que não falam com o cliente.
+  'etapa_destino_ausente',
+  'etapa_destino_arquivada',
+  'tag_ausente',
 ] as const;
 export type PublishErrorCode = (typeof PUBLISH_ERROR_CODES)[number];
 
@@ -147,8 +151,8 @@ function cicloDoEncadeamento(
  * recusava em silêncio; a recusa aqui é o erro que a pessoa lê no editor.
  */
 export const NOS_DA_SUPERFICIE: Record<FollowupFlowSurface, readonly NodeType[]> = {
-  followup: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'internal_task', 'end'],
-  crm_automation: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'internal_task', 'end'],
+  followup: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'internal_task', 'move_lead', 'edit_lead_tag', 'end'],
+  crm_automation: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'internal_task', 'move_lead', 'edit_lead_tag', 'end'],
   atendimento: ['trigger', 'collect', 'skill', 'end'],
 };
 
@@ -489,6 +493,66 @@ function cobrirRamos(
 }
 
 /**
+ * #2065 — nó `move_lead` sem etapa de destino, ou com uma etapa que não existe
+ * mais / está arquivada. Mesma régua da `conferirRegras` logo abaixo (e o mesmo
+ * `ContextoDoPublish.etapas`, lido por quem publica): o que só o banco sabe chega
+ * injetado, nunca adivinhado. Sem `contexto.etapas` a conferência não roda — ela
+ * recusa o que é visível, não o que é incerto.
+ */
+function conferirEtapaDestino(
+  node: Extract<FlowNode, { type: 'move_lead' }>,
+  contexto: ContextoDoPublish,
+  errors: PublishValidationError[]
+): void {
+  const destino = node.config.stage_id.trim();
+  const ancora = { node_id: node.id };
+  if (destino === '') {
+    errors.push({
+      ...ancora,
+      code: 'etapa_destino_ausente',
+      message: `A caixa "${node.label}" não tem etapa de destino — escolha para onde o card vai.`,
+    });
+    return;
+  }
+  if (contexto.etapas === undefined) return;
+  const etapa = contexto.etapas.get(destino);
+  if (etapa === undefined) {
+    errors.push({
+      ...ancora,
+      code: 'etapa_destino_ausente',
+      message: `A caixa "${node.label}" aponta para uma etapa que não existe mais — escolha a etapa na lista.`,
+    });
+    return;
+  }
+  if (etapa.arquivada) {
+    errors.push({
+      ...ancora,
+      code: 'etapa_destino_arquivada',
+      message: `A caixa "${node.label}" move para a etapa arquivada "${etapa.nome}" — escolha uma etapa ativa.`,
+    });
+  }
+}
+
+/**
+ * #2065 — nó `edit_lead_tag` sem tag (lista vazia ou com tag em branco). O
+ * schema aceita, porque o rascunho tem de salvar trabalho pela metade; publicado,
+ * um nó que não grava nada é mentira de interface.
+ */
+function conferirTags(
+  node: Extract<FlowNode, { type: 'edit_lead_tag' }>,
+  errors: PublishValidationError[]
+): void {
+  const tags = node.config.tags.map((t) => t.trim());
+  if (tags.length === 0 || tags.some((t) => t === '')) {
+    errors.push({
+      node_id: node.id,
+      code: 'tag_ausente',
+      message: `A caixa "${node.label}" não tem tag para gravar — escreva ao menos uma tag.`,
+    });
+  }
+}
+
+/**
  * Uma regra de condição que não pode decidir nada. O rascunho aceita todas estas
  * formas — trabalho pela metade precisa salvar —, mas publicada cada uma é uma
  * saída que nunca é tomada ou que é tomada sempre, com cara de regra pronta:
@@ -668,6 +732,14 @@ export function validateFlowForPublish(
 
   for (const node of [...nodes].sort(byId)) {
     if (node.type === 'condition') conferirRegras(node, contexto, errors);
+  }
+
+  // #2065 — os nós de ação nascem sem destino (o rascunho valida só a forma) e
+  // é AQUI que a escolha passa a ser obrigatória: publicar um nó que não move
+  // nem grava nada seria dizer à pessoa que o fluxo faz o que ele não faz.
+  for (const node of [...nodes].sort(byId)) {
+    if (node.type === 'move_lead') conferirEtapaDestino(node, contexto, errors);
+    if (node.type === 'edit_lead_tag') conferirTags(node, errors);
   }
 
   for (const node of [...nodes].sort(byId)) {

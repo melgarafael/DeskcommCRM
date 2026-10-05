@@ -14,8 +14,14 @@ import { fusoValido } from "@/lib/tempo/fusos";
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-/** Modos de roteamento no MVP (decisão G1-06b); "load" fica pós-MVP. */
-export const ROUTING_MODES = ["manual", "round_robin"] as const;
+/**
+ * Modos de roteamento. `manual` e `round_robin` são o MVP (decisão G1-06b);
+ * `load` — o de menor carga, com desempate pelo rodízio — era o "pós-MVP"
+ * prometido ali e entrou pela issue #1539. O worker (lib/routing/decide.ts) e
+ * as DUAS telas que oferecem o modo (settings/atendimento e team) derivam desta
+ * lista, então acrescentar um modo aqui os atualiza sem tocar em mais nada.
+ */
+export const ROUTING_MODES = ["manual", "round_robin", "load"] as const;
 export type RoutingMode = (typeof ROUTING_MODES)[number];
 
 /**
@@ -35,6 +41,22 @@ export const routingConfigSchema = z.object({
    * `lib/escalacao/devolucao-automatica.ts`, e a faixa (5 min – 24 h) também.
    */
   handoff_return_after_minutes: z
+    .number()
+    .int()
+    .min(PRAZO_MIN_MINUTOS)
+    .max(PRAZO_MAX_MINUTOS)
+    .nullable()
+    .default(null),
+  /**
+   * Quantos minutos a IA fica calada numa conversa depois que alguém da equipe
+   * responde por FORA do CRM (pelo celular, no próprio aplicativo do canal).
+   * `null` = o padrão de 60 min. Cada nova resposta à mão renova o prazo. Quem
+   * lê é `lerPrazoDoSilencioManualMinutos` (`lib/escalacao/atendimento-manual.ts`),
+   * que trata ausente/fora da faixa como 60. Nasceu do diagnóstico de
+   * @gaberaldo-svg (#2005): a clínica que atende o dia inteiro pelo celular
+   * renovava os 60 min a cada fala, e a IA não respondia ninguém o dia todo.
+   */
+  manual_reply_silence_minutes: z
     .number()
     .int()
     .min(PRAZO_MIN_MINUTOS)
@@ -111,6 +133,14 @@ export const atendimentoConfigPatchSchema = routingConfigSchema.extend({
     .optional(),
   /** Opcional pela mesma razão: cliente antigo não desliga o ajuste por omissão. */
   conversation_stays_with_attendant: z.boolean().optional(),
+  /** Opcional pela mesma razão: cliente antigo não volta o prazo para 60 por omissão. */
+  manual_reply_silence_minutes: z
+    .number()
+    .int()
+    .min(PRAZO_MIN_MINUTOS)
+    .max(PRAZO_MAX_MINUTOS)
+    .nullable()
+    .optional(),
 });
 export type AtendimentoConfigPatch = z.infer<typeof atendimentoConfigPatchSchema>;
 
@@ -121,7 +151,8 @@ export type AtendimentoConfigPatch = z.infer<typeof atendimentoConfigPatchSchema
  *
  * Merge não-destrutivo em DOIS níveis: preserva as demais chaves de `settings`
  * (o provedor de IA mora nele) e, para o que veio OMITIDO do corpo —
- * `visibility_mode` e `handoff_return_after_minutes` —, preserva o que já
+ * `visibility_mode`, `handoff_return_after_minutes`, `conversation_stays_with_attendant`
+ * e `manual_reply_silence_minutes` —, preserva o que já
  * valia. Um cliente antigo, que só conhece o modo de roteamento, não pode
  * desligar a restrição de visibilidade nem a devolução automática por omissão.
  */
@@ -133,6 +164,7 @@ export function mesclarSettingsDeAtendimento(
     visibility_mode,
     handoff_return_after_minutes,
     conversation_stays_with_attendant,
+    manual_reply_silence_minutes,
     ...routingInput
   } = input;
   const routingAtual = routingConfigSchema
@@ -146,6 +178,10 @@ export function mesclarSettingsDeAtendimento(
         : routingAtual.handoff_return_after_minutes,
     conversation_stays_with_attendant:
       conversation_stays_with_attendant ?? routingAtual.conversation_stays_with_attendant,
+    manual_reply_silence_minutes:
+      manual_reply_silence_minutes !== undefined
+        ? manual_reply_silence_minutes
+        : routingAtual.manual_reply_silence_minutes,
   };
   const settings: Record<string, unknown> = { ...atual, routing };
   if (visibility_mode !== undefined) settings.visibility_mode = visibility_mode;

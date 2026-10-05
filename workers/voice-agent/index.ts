@@ -51,9 +51,11 @@ import {
 import { AudioSocketCallBridge } from "./audioSocketBridge";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveVoiceAgent } from "@/lib/ai/agents";
-import { resolveOrCreateCallerContact } from "@/lib/voip/resolve-caller";
+import { resolveOrCreateCallerContact, type ContatoDaChamada } from "@/lib/voip/resolve-caller";
+import { deveRecusarChamada, END_REASON_CONTACT_BLOCKED } from "./recusa-bloqueado";
 import { garantirLeadDaConversa } from "@/lib/leads/nascimento-do-lead";
 import { buscarConhecimento, resolverAcervoDoAgente } from "@/lib/ai/knowledge/busca";
+import { ehOperante } from "@/lib/organizacao/operante";
 
 const supabaseAdmin = createAdminClient();
 
@@ -61,7 +63,12 @@ const AUDIOSOCKET_PORT = parseInt(process.env.AUDIOSOCKET_PORT ?? "9092", 10);
 
 // ---------- Stasis (só ENTRADA, só de passagem) ----------
 
-async function handleStasisStart(event: AriEvent) {
+/**
+ * Exportada para o teste do fio (`fio-recusa-bloqueado.test.ts`) provar que
+ * este caminho USA `deveRecusarChamada` — função pura órfã não conta como
+ * implementação.
+ */
+export async function handleStasisStart(event: AriEvent) {
   const channel = event.channel;
   if (!channel) return;
 
@@ -77,13 +84,50 @@ async function handleStasisStart(event: AriEvent) {
   const callerNumber = channel.caller?.number ?? "unknown";
 
   // Identificador de ligações: acha (ou cria) o contato pelo número de quem
-  // liga. Não bloqueia a chamada se falhar — o pior caso é a tela mostrar só
-  // o número, igual antes desta função existir.
-  let callerContactId: string | null = null;
+  // liga, com o bloqueio lido na mesma consulta. Não bloqueia a chamada se
+  // falhar — o pior caso é a tela mostrar só o número, igual antes desta
+  // função existir. Fail-open: erro de leitura loga e segue,
+  // nunca recusa no escuro.
+  let contatoDeQuemLiga: ContatoDaChamada | null = null;
   try {
-    callerContactId = await resolveOrCreateCallerContact(supabaseAdmin, routing.organization_id, callerNumber);
+    contatoDeQuemLiga = await resolveOrCreateCallerContact(
+      supabaseAdmin,
+      routing.organization_id,
+      callerNumber,
+    );
   } catch (err) {
     console.error(`[voice-agent] falha ao resolver contato de ${callerNumber}:`, err);
+  }
+  const callerContactId = contatoDeQuemLiga?.id ?? null;
+
+  // BLOQUEADO NA LIGAÇÃO É RECUSADO: depois do contato resolvido,
+  // antes do insert, antes do dialplan e antes da IA. Grava a linha já
+  // encerrada (rastreável no histórico como Cancelada) e
+  // desliga — sem negócio, sem IA, sem tocar, sem alerta.
+  // SABOTAGEM DO FIO: remover a chamada a `deveRecusarChamada` abaixo (manter
+  // a função pura existindo mas sem uso) = teste do fio vermelho.
+  if (deveRecusarChamada(contatoDeQuemLiga?.is_blocked)) {
+    const agora = new Date().toISOString();
+    const { error: refuseError } = await supabaseAdmin.from("voice_calls").insert({
+      organization_id: routing.organization_id,
+      provider: "sip",
+      direction: "inbound",
+      status: "ended",
+      end_reason: END_REASON_CONTACT_BLOCKED,
+      peer_phone: callerNumber,
+      contact_id: callerContactId,
+      asterisk_channel_id: randomUUID(),
+      started_at: agora,
+      answered_at: null,
+      ended_at: agora,
+    });
+    if (refuseError) {
+      console.error(`[voice-agent] falha ao gravar recusa de bloqueado:`, refuseError.message);
+    } else {
+      console.info(`[voice-agent] chamada recusada de bloqueado`);
+    }
+    await hangupChannel(channel.id, "normal");
+    return;
   }
 
   // channel.id é o identificador NATIVO do canal no Asterisk (formato
@@ -131,7 +175,7 @@ async function handleStasisStart(event: AriEvent) {
         contactId: callerContactId,
         conversationId: callRow.id,
         nomeDoContato: channel.caller?.name ?? null,
-        origem: { rotulo: "chamada", source: "voip", motivo: "primeira ligação recebida" },
+        origem: { rotulo: "telefone", source: "voip", motivo: "primeira ligação recebida" },
       });
       if (!nascimento.criado) {
         console.info(`[voice-agent] lead não criado para ${callerNumber}: ${nascimento.motivo}`);
@@ -236,6 +280,20 @@ async function handleAudioSocketConnection(socket: net.Socket, uuid: string, lef
 
   if (error || !callRow) {
     console.error(`[audiosocket] uuid ${uuid} não corresponde a nenhuma voice_calls — encerrando`);
+    socket.end();
+    return;
+  }
+
+  // Organização parada (suspensa, redigida, arquivada) não atende por voz: a
+  // sessão em tempo real é o gasto mais caro por minuto do produto. Falha de
+  // leitura também encerra — sem saber o status, não se abre a sessão paga.
+  const { data: org, error: orgErr } = await supabaseAdmin
+    .from("organizations")
+    .select("status")
+    .eq("id", callRow.organization_id)
+    .maybeSingle();
+  if (orgErr || !ehOperante(org?.status)) {
+    console.warn(`[audiosocket] voz_org_suspensa org ${callRow.organization_id} — encerrando`);
     socket.end();
     return;
   }
@@ -395,4 +453,9 @@ function main() {
   startAudioSocketServer();
 }
 
-main();
+// O teste do fio importa `handleStasisStart` deste módulo: sem esta guarda,
+// importar já ligava o worker (TCP + ARI + assertEnv) dentro do vitest.
+// Produção não define nenhuma das três — comportamento idêntico ao de hoje.
+if (!process.env.VITEST && !process.env.VITEST_WORKER_ID && process.env.NODE_ENV !== "test") {
+  main();
+}

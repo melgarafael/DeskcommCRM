@@ -46,6 +46,7 @@ import { mesmoRascunho } from "@/lib/ai/agents/mesmo-rascunho";
 import { ToolPicker } from "./ToolPicker";
 import { TriggerEditor, type TriggerValue } from "./TriggerEditor";
 import { HandoffKeywordsInput } from "./HandoffKeywordsInput";
+import { LimiarDeSentimento } from "./LimiarDeSentimento";
 import { FollowupFlowPicker } from "./FollowupFlowPicker";
 import {
   FollowupWindowEditor,
@@ -1256,6 +1257,19 @@ export function AgentForm(props: Props) {
               disabled={disabled}
             />
           </Card>
+
+          {/* O OUTRO caminho para uma pessoa: o clima fechado
+              (`ai.sentiment_alert`, em `workers/ai-sentiment-worker.ts`).
+              Mesma chave que o worker já lia, agora com porta pública — issue
+              #2209. Grava em `ai_agents.config.sentiment_threshold`, por isso
+              só em edição, como o cartão dos comandos do celular. */}
+          {isEdit && (
+            <LimiarDeSentimento
+              agentId={props.agent.id}
+              inicial={(props.agent.config ?? {}).sentiment_threshold}
+              disabled={disabled}
+            />
+          )}
 
           {/* Casos humanos */}
           <Card className="space-y-3 p-4">

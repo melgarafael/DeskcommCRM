@@ -34,6 +34,11 @@ export interface StageRow {
   agent_stage_hint: string | null;
   pipeline_id: string;
   organization_id: string;
+  /**
+   * Janela de "esfriando" em horas (issue #1532). `null` = etapa anterior à
+   * configuração, o estado que o radar trata como padrão de 24 h.
+   */
+  expected_duration_hours: number | null;
 }
 
 export function etapa(over: Partial<StageRow> & { id: string; name: string }): StageRow {
@@ -46,6 +51,7 @@ export function etapa(over: Partial<StageRow> & { id: string; name: string }): S
     agent_stage_hint: null,
     pipeline_id: PIPE,
     organization_id: ORG_ID,
+    expected_duration_hours: null,
     ...over,
   };
 }
@@ -56,6 +62,13 @@ export interface LeadRow {
   pipeline_id: string;
   organization_id: string;
   contact_id: string | null;
+  /**
+   * #2032 — a rota `win-rates` lê estes DOIS para medir a etapa ATUAL:
+   * `stage_changed_at` é o carimbo da 0071 e `created_at` é a reserva dele.
+   * Opcional aqui porque a maioria dos testes não mede tempo de etapa.
+   */
+  stage_changed_at?: string | null;
+  created_at?: string;
 }
 
 export function negocio(id: string, stageId: string, over: Partial<LeadRow> = {}): LeadRow {
@@ -121,6 +134,12 @@ export interface DbOpts {
   contacts?: Array<Record<string, unknown>>;
   /** Erro do banco na n-ésima escrita (1-based), como o PostgREST devolveria. */
   writeError?: (n: number, table: string) => { code: string; message: string } | null;
+  /**
+   * O `max_rows` do PostgREST (1000 em `supabase/config.toml`): corta TODA
+   * leitura nesse tamanho, sem erro, por maior que seja o `.limit`/`.range`.
+   * Ausente = sem corte, que é o que os testes que não falam de volume querem.
+   */
+  maxRows?: number;
 }
 
 type Linha = Record<string, unknown>;
@@ -216,6 +235,14 @@ export function makeDb(opts: DbOpts = {}): Registro {
 
   function builder(table: string) {
     const filtros: Array<[string, unknown]> = [];
+    /**
+     * `.gte(col, valor)` / `.lte(col, valor)` — recorte por DATA, o que a taxa
+     * histórica por etapa (#1753) usa para dizer de QUAL período é o número.
+     * Sem estes dois, a rota cairia num TypeError do dublê e o teste mediria o
+     * dublê em vez do handler. A comparação é de string: o `performed_at` do
+     * Postgres é ISO-8601 em UTC, e ISO ordena lexicograficamente.
+     */
+    const intervalos: Array<{ coluna: string; op: "gte" | "lte"; valor: string }> = [];
     const pertinencias: Array<[string, unknown[]]> = [];
     const negacoes: Array<[string, unknown]> = [];
     const disjuncoes: Clausula[][] = [];
@@ -227,6 +254,7 @@ export function makeDb(opts: DbOpts = {}): Registro {
     let head = false;
     let apagar = false;
     let teto: number | null = null;
+    let desde = 0;
 
     const casam = () =>
       (tables[table] ?? [])
@@ -239,6 +267,12 @@ export function makeDb(opts: DbOpts = {}): Registro {
         // filtros — a mesma combinação do PostgREST.
         .filter((r) =>
           disjuncoes.every((clausulas) => clausulas.some((clausula) => casa(r, clausula))),
+        )
+        .filter((r) =>
+          intervalos.every(({ coluna, op, valor }) => {
+            const texto = typeof r[coluna] === "string" ? r[coluna] : String(r[coluna]);
+            return op === "gte" ? texto >= valor : texto <= valor;
+          }),
         );
 
     /**
@@ -251,7 +285,8 @@ export function makeDb(opts: DbOpts = {}): Registro {
     const lidos = () => {
       let rows = [...casam()];
       if (ordem) rows.sort((a, b) => Number(a[ordem!]) - Number(b[ordem!]));
-      if (teto !== null) rows = rows.slice(0, teto);
+      if (teto !== null) rows = rows.slice(desde, desde + teto);
+      if (opts.maxRows !== undefined) rows = rows.slice(0, opts.maxRows);
       // `select("*")` (usado por `app/api/v1/leads/_handler.ts`) é o CURINGA do
       // PostgREST — a linha inteira, não uma coluna literal chamada "*". Sem
       // este ramo, o projetor abaixo tratava "*" como nome de coluna e devolvia
@@ -383,6 +418,20 @@ export function makeDb(opts: DbOpts = {}): Registro {
       },
       limit: (n: number) => {
         teto = n;
+        return b;
+      },
+      gte: (c: string, v: string) => {
+        intervalos.push({ coluna: c, op: "gte", valor: v });
+        return b;
+      },
+      lte: (c: string, v: string) => {
+        intervalos.push({ coluna: c, op: "lte", valor: v });
+        return b;
+      },
+      /** `.range(de, ate)` — inclusivo nas duas pontas, como o PostgREST. */
+      range: (de: number, ate: number) => {
+        desde = de;
+        teto = ate - de + 1;
         return b;
       },
       order: (col: string) => {

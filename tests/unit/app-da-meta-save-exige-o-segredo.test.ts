@@ -42,7 +42,7 @@ let erroDeLeitura: { code: string; message: string } | null = null;
 const gravacoes: Record<string, unknown>[] = [];
 
 vi.mock("@/lib/auth/requirePlatformAdmin", () => ({
-  requirePlatformAdmin: async () => ({ user: { id: USUARIO } }),
+  requirePlatformAdminEscrita: async () => ({ user: { id: USUARIO } }),
 }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));

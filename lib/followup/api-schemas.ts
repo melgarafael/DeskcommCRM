@@ -7,6 +7,7 @@
 import { z } from "zod";
 import { flowGraphSchema } from "./graph-schema";
 import { MAX_THRESHOLD_MINUTES, MIN_THRESHOLD_MINUTES } from "./gap-de-retorno";
+import { BASES_DA_PAUSA, MAX_PAUSA_DE_REENTRADA_MINUTES } from "./pausa-de-reentrada";
 
 /**
  * Vocabulário da coluna `surface` (0167; `atendimento` na 0394 — roteiro de
@@ -50,6 +51,16 @@ export const triggerConfigSchema = z.discriminatedUnion("kind", [
     params: z.strictObject({
       threshold_minutes: z.number().int().min(5).max(10_080),
       segments: z.array(z.string()).optional(),
+      // Pausa antes de o fluxo recomeçar para quem já encerrou uma inscrição
+      // nele (`lib/followup/pausa-de-reentrada.ts`). Ausente ou 0 = sem pausa.
+      reentry_pause_minutes: z.number().int().min(0).max(MAX_PAUSA_DE_REENTRADA_MINUTES).optional(),
+      // Teto do silêncio: com ele, o fluxo só começa enquanto o silêncio for
+      // RECENTE (entre `threshold_minutes` e este valor). Sem ele, a varredura
+      // pega todo contato calado há mais que o mínimo — horas ou dias — e um
+      // fluxo de "10 minutos depois" disparava de uma vez para todos ao ser ligado.
+      max_silence_minutes: z.number().int().min(5).max(10_080).optional(),
+      // De onde a pausa conta (`pausa-de-reentrada.ts`). Ausente = `ultima_mensagem`.
+      reentry_pause_basis: z.enum(BASES_DA_PAUSA).optional(),
     }),
     ...CANCEL_ON_REPLY,
   }),

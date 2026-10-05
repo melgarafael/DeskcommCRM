@@ -61,14 +61,23 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ReprocessarConversao } from "./_reprocessar";
 import { HistoricoDeEnvios } from "./_historico";
 import { DiagnosticoGoogle } from "./_diagnostico";
-import { lerDiagnosticoGoogle, lerFiltros, lerHistorico } from "@/lib/conversoes/historico";
+import {
+  lerDiagnosticoGoogle,
+  lerFiltros,
+  lerHistorico,
+  rotuloDoEvento,
+} from "@/lib/conversoes/historico";
 import { FormularioDeCapturaDeUtm } from "./_formCapturaDeUtm";
 import { FormularioDeConversoes } from "./_form";
 import { FormularioDeConversoesGoogle } from "./_formGoogle";
+import { IdentidadeDaConversao } from "./_identidadeDaMeta";
 import { VendaPeloCanal } from "./_vendaPeloCanal";
 import { vendaPeloCanalLigada } from "@/lib/conversoes/venda-pelo-canal";
+import { identidadeDaMeta } from "@/lib/plataformas-de-anuncio/meta/identidade";
 import { RegrasDeConversaoGoogle, type EtapaAberta } from "./_regrasGoogle";
 import { listarRegrasGoogle } from "@/lib/conversoes/regras-google";
+import { RegrasDeConversaoMeta } from "./_regrasMeta";
+import { listarRegrasMeta, rotuloDoEventoDaMeta } from "@/lib/conversoes/regras-meta";
 
 export const metadata = { title: "Conversões" };
 export const dynamic = "force-dynamic";
@@ -119,6 +128,7 @@ export default async function ConversoesPage({
     capturaGoogle,
     etapas,
     regrasGoogle,
+    regrasMeta,
   ] = await Promise.all([
     lerEstadoDaConexao(admin, activeOrg.orgId),
     lerPendencias(admin, activeOrg.orgId),
@@ -140,9 +150,22 @@ export default async function ConversoesPage({
       .order("position"),
     // Falha na leitura das regras não derruba a tela: o editor some e o resto fica.
     listarRegrasGoogle(admin, activeOrg.orgId).catch(() => null),
+    listarRegrasMeta(admin, activeOrg.orgId).catch(() => null),
   ]);
+  // O nome que a pessoa reconhece para cada evento de etapa, das duas
+  // plataformas — o Histórico e as pendências leem daqui.
+  const rotulosDeEtapa = [
+    ...(regrasGoogle ?? []).map((r) => ({ eventName: r.eventName, label: r.label })),
+    ...(regrasMeta ?? []).map((r) => ({
+      eventName: r.eventName,
+      label: `${rotuloDoEventoDaMeta(r.metaEvent)} (Meta)`,
+    })),
+  ];
   const linhaDaOrganizacao = organizacao.data as { slug: string | null; settings?: unknown } | null;
   const slug = linhaDaOrganizacao?.slug ?? null;
+  // Página / WABA gravadas pela tela (#2098) — a MESMA leitura que a credencial
+  // faz no caminho do envio, para a tela e o envio nunca divergirem.
+  const identidadeMeta = identidadeDaMeta(linhaDaOrganizacao?.settings);
   // Etapas abertas agrupadas por funil, na ordem do funil; a primeira de cada
   // funil é onde o lead nasce (a sugestão "Novo lead" do recomendado).
   const vistosOsFunis = new Set<string>();
@@ -260,7 +283,7 @@ export default async function ConversoesPage({
             linhas={historico.linhas}
             total={historico.total}
             filtros={filtrosDoHistorico}
-            regras={regrasGoogle ?? []}
+            regras={rotulosDeEtapa}
             idioma={idioma}
           />
         ) : (
@@ -313,6 +336,16 @@ export default async function ConversoesPage({
             ligada={vendaPeloCanalLigada(linhaDaOrganizacao?.settings)}
             idioma={idioma}
           />
+          {estado.conectada && (
+            <IdentidadeDaConversao
+              pageId={identidadeMeta.pageId}
+              whatsappBusinessAccountId={identidadeMeta.whatsappBusinessAccountId}
+              idioma={idioma}
+            />
+          )}
+          {estado.conectada && !etapas.error && regrasMeta && (
+            <RegrasDeConversaoMeta etapas={etapasAbertas} regras={regrasMeta} idioma={idioma} />
+          )}
           <FormularioDeConversoesGoogle
             estado={estadoGoogle}
             idioma={idioma}
@@ -395,7 +428,7 @@ export default async function ConversoesPage({
                           </a>
                         </td>
                         <td className="p-3">
-                          {t(p.evento === "QualifiedLead" ? "Lead qualificado" : "Compra")}
+                          {t(rotuloDoEvento(p.evento, rotulosDeEtapa))}
                         </td>
                         <td className="p-3">
                           {p.plataforma === "meta_ads"

@@ -16,7 +16,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => ({ get: () => null })) }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/auth/requirePlatformAdmin", () => ({
-  requirePlatformAdmin: vi.fn(async () => ({ user: { id: "99999999-9999-4999-8999-999999999999" } })),
+  requirePlatformAdminEscrita: vi.fn(async () => ({ user: { id: "99999999-9999-4999-8999-999999999999" } })),
 }));
 vi.mock("@/lib/auth/provision", () => ({ ensureTenantForUser: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));

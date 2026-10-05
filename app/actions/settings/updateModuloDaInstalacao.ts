@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { audit } from "@/lib/audit";
-import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
+import { escritaDeAdminOuRecusa } from "@/lib/auth/escritaDeAdminOuRecusa";
 import {
   MODULOS_AINDA_NAO_LIGAVEIS,
   MODULOS_OPCIONAIS_POR_FLAG,
@@ -39,7 +39,9 @@ const entradaSchema = z.object({
 export async function updateModuloDaInstalacao(
   input: z.infer<typeof entradaSchema>,
 ): Promise<UpdateModuloResult> {
-  const { user } = await requirePlatformAdmin();
+  const escrita = await escritaDeAdminOuRecusa();
+  if (!escrita.ok) return escrita;
+  const { user } = escrita.ctx;
 
   const parsed = entradaSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "invalid_input" };

@@ -21,6 +21,7 @@ export const AVISO_DE_PROPOSTA_HANDLER_KEY = "propostas-aviso-no-whatsapp.v1";
 
 export const avisoDePropostaNoWhatsAppHandler: EventHandler = {
   key: AVISO_DE_PROPOSTA_HANDLER_KEY,
+  naOrgParada: "pula",
   events: [EVENTO_PROPOSTA_PRONTA],
   async handle(row): Promise<HandlerResult> {
     try {

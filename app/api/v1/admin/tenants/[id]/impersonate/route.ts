@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
-import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, mfaEmDivida, orgAtivaSemPortao } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
@@ -26,7 +26,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const user = await loadAuthUser();
   if (!user) return fail("unauthenticated", "Entre novamente.", 401, { requestId });
   if (user.support) return fail("state_conflict", "Encerre o acompanhamento atual primeiro.", 409, { requestId });
-  const previous = await resolveActiveOrg(user);
+  // Sem o porteiro das telas: com a org ativa do próprio admin suspensa,
+  // `resolveActiveOrg` redireciona, o handler responde 307, o fetch segue e o
+  // admin cai em "Conta suspensa" sem acompanhamento nenhum aberto. Aqui só se
+  // guarda para onde voltar ao fim do acompanhamento.
+  const previous = await orgAtivaSemPortao(user);
   const db = await createClient();
   const { data: claims } = await db.auth.getClaims();
   const sessionId = claims?.claims.session_id;

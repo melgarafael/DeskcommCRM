@@ -8,9 +8,10 @@ import { useT } from "@/hooks/i18n/useT";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, formatRelative, isToday, isYesterday } from "date-fns";
 import { toast } from "sonner";
+import { apiClient } from "@/lib/api/client";
 import { CaretDown, CaretUp, ChatCircle, Trash } from "@/lib/ui/icons";
 import {
   Table,
@@ -33,7 +34,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useActiveOrg } from "@/hooks/auth/AuthProvider";
-import { useDeleteContact } from "@/hooks/contacts/useDeleteContact";
+import { useDeleteContact, mensagemDeBloqueioPorVinculo } from "@/hooks/contacts/useDeleteContact";
 import type { ContactOrderBy } from "@/lib/schemas/contacts";
 import type { Contact } from "@/lib/types/contacts";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
@@ -116,6 +117,29 @@ export function ContactsTable({ contacts, orderBy, orderDir, onSort }: Props) {
   const [abrindo, setAbrindo] = useState<string | null>(null);
   const router = useRouter();
   const qc = useQueryClient();
+
+  // Pré-checagem da exclusão (issue #1925): o diálogo "Excluir contato?" avisa
+  // que a Agenda vai barrar ANTES do clique, com a MESMA contagem que o 409
+  // usa (rota `contacts/[id]/vinculos`). Consulta só quando há alvo — uma
+  // contagem por linha da lista seria N requisições para ver a tabela.
+  // Se a prévia falhar, nada trava: sem ela o 409 continua barando e a frase
+  // do erro já nomeia o vínculo.
+  const alvoId = alvo?.id ?? null;
+  const vinculos = useQuery({
+    queryKey: ["contato-vinculos-para-excluir", alvoId],
+    enabled: alvoId !== null,
+    retry: false,
+    queryFn: async () => {
+      if (!alvoId) return { vinculos: [], por_tabela: {} };
+      const corpo = await apiClient.get<{
+        data?: { vinculos: string[]; por_tabela: Record<string, number> };
+      }>(`/api/v1/contacts/${alvoId}/vinculos`);
+      // O MESMO formato do `error.details` do 409: a frase da tela é uma só,
+      // servida pela mesma função dos dois caminhos.
+      return corpo.data ?? { vinculos: [], por_tabela: {} };
+    },
+  });
+  const avisoDeVinculo = alvo ? mensagemDeBloqueioPorVinculo(vinculos.data, t) : null;
 
   async function iniciarConversa(c: Contact) {
     if (!c.phone_number || abrindo) return;
@@ -293,6 +317,20 @@ export function ContactsTable({ contacts, orderBy, orderDir, onSort }: Props) {
             {alvo
               ? `${t("Isso remove")} ${displayName(alvo, t)} ${t("e a conversa associada, se houver. Esta ação não pode ser desfeita.")}`
               : null}
+            {/*
+              O aviso ANTES do clique (issue #1925): a recusa já nomeava o
+              vínculo, mas só depois que a pessoa tentava. Mesma frase do 409
+              (plural e chave vindos do servidor), e o link vai direto para a
+              Agenda — é lá que o compromisso é cancelado.
+            */}
+            {avisoDeVinculo ? (
+              <span className="mt-2 block text-sm font-medium text-warning-fg">
+                {avisoDeVinculo}{" "}
+                <Link href="/app/agenda" className="underline">
+                  {t("Abrir Agenda")}
+                </Link>
+              </span>
+            ) : null}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

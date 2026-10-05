@@ -182,22 +182,72 @@ describe("GET /api/v1/ai/skills/[name]", () => {
   });
 });
 
-/** Skill instalada na org, versão atual sem arquivos de pacote (o caso editável). */
-function mockSkillInstalada(manifest: unknown[] = [], forkedFrom: string | null = null) {
-  vi.mocked(createAdminClient).mockReturnValue(
-    makeAdminGetStub({
-      pointer: { version_id: "v1", updated_at: "2026-09-19T00:00:00Z" },
-      version: {
-        id: "v1",
-        name: "catalogo",
-        description: "d",
-        body: "b",
-        matcher: { any_keywords: ["x"] },
-        manifest,
-        forked_from_version_id: forkedFrom,
+/**
+ * Skill instalada na org — o caso editável. `storage` entra quando o teste
+ * precisa do bucket (skill de pacote: o PUT herda os arquivos lá).
+ */
+function mockSkillInstalada(manifest: unknown[] = [], forkedFrom: string | null = null, storage?: unknown) {
+  const stub = makeAdminGetStub({
+    pointer: { version_id: "v1", updated_at: "2026-09-19T00:00:00Z" },
+    version: {
+      id: "v1",
+      name: "catalogo",
+      description: "d",
+      body: "b",
+      matcher: { any_keywords: ["x"] },
+      manifest,
+      forked_from_version_id: forkedFrom,
+    },
+  }) as Record<string, unknown>;
+  if (storage !== undefined) stub.storage = storage;
+  vi.mocked(createAdminClient).mockReturnValue(stub as never);
+}
+
+/** Manifesto de um .zip de verdade: uma reference (texto) e um asset (binário). */
+const PACOTE = [
+  { path: "references/tabela.md", size: 12, sha256: "a", kind: "reference" },
+  { path: "assets/capa.png", size: 3, sha256: "b", kind: "asset" },
+];
+
+interface StorageDePacote {
+  storage: { from: (bucket: string) => unknown };
+  baixados: string[];
+  subidos: string[];
+  removidos: string[];
+}
+
+/** Bucket `skill-assets` dublê: baixa do prefixo da versão V1, sub pro V2. */
+function storageDePacote(opcoes: { falhaNoUploadEm?: string } = {}): StorageDePacote {
+  const baixados: string[] = [];
+  const subidos: string[] = [];
+  const removidos: string[] = [];
+  return {
+    baixados,
+    subidos,
+    removidos,
+    storage: {
+      from: (bucket: string) => {
+        expect(bucket).toBe("skill-assets");
+        return {
+          async download(caminho: string) {
+            baixados.push(caminho);
+            return { data: { arrayBuffer: async () => new TextEncoder().encode("x").buffer }, error: null };
+          },
+          async upload(caminho: string) {
+            if (opcoes.falhaNoUploadEm !== undefined && caminho.endsWith(opcoes.falhaNoUploadEm)) {
+              return { data: null, error: { message: "Object already exists" } };
+            }
+            subidos.push(caminho);
+            return { data: { path: caminho }, error: null };
+          },
+          async remove(caminhos: string[]) {
+            removidos.push(...caminhos);
+            return { data: null, error: null };
+          },
+        };
       },
-    }) as never,
-  );
+    },
+  };
 }
 
 describe("PUT /api/v1/ai/skills/[name]", () => {
@@ -303,25 +353,86 @@ describe("PUT /api/v1/ai/skills/[name]", () => {
     expect(insertSkillVersion).not.toHaveBeenCalled();
   });
 
-  it("skill de pacote com arquivos → 409, sem gravar (a versão nova perderia as references)", async () => {
+  it("skill de pacote com arquivos → salva o texto herdando manifesto e copiando os arquivos", async () => {
     mockAuthzOk();
-    mockSkillInstalada([{ path: "refs/tabela.md", kind: "reference" }]);
+    const storage = storageDePacote();
+    mockSkillInstalada(PACOTE, null, storage.storage);
+    vi.mocked(insertSkillVersion).mockResolvedValue({ id: "v2" } as never);
+    vi.mocked(setSkillPointer).mockResolvedValue(undefined as never);
+
     const { PUT } = await import("./route");
     const res = await PUT(reqPut("catalogo", BODY_VALIDO), { params: Promise.resolve({ name: "catalogo" }) });
-    expect(res.status).toBe(409);
+
+    expect(res.status).toBe(200);
+    // A versão nova NASCE com o manifesto: sem ele, o agente deixaria de
+    // oferecer a tool de references da noite pro dia.
+    expect(vi.mocked(insertSkillVersion)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ manifest: PACOTE, name: "catalogo" }),
+    );
+    // Os objetos moram sob o id da versão (skill-references.ts): ou eles
+    // descem pro prefixo novo, ou o save é uma perda silenciosa de arquivo.
+    expect(storage.baixados).toEqual([
+      `${ORG_ID}/catalogo/v1/references/tabela.md`,
+      `${ORG_ID}/catalogo/v1/assets/capa.png`,
+    ]);
+    expect(storage.subidos).toEqual([
+      `${ORG_ID}/catalogo/v2/references/tabela.md`,
+      `${ORG_ID}/catalogo/v2/assets/capa.png`,
+    ]);
+    expect(vi.mocked(setSkillPointer)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ tenantId: ORG_ID, name: "catalogo", versionId: "v2" }),
+    );
+    expect(storage.removidos).toEqual([]);
+    expect(vi.mocked(audit)).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "ai.skill_saved", organizationId: ORG_ID }),
+    );
+  });
+
+  it("falha ao copiar um arquivo → 500, o ponteiro NÃO move e o que já subiu é removido", async () => {
+    mockAuthzOk();
+    const storage = storageDePacote({ falhaNoUploadEm: "assets/capa.png" });
+    mockSkillInstalada(PACOTE, null, storage.storage);
+    vi.mocked(insertSkillVersion).mockResolvedValue({ id: "v2" } as never);
+    vi.mocked(setSkillPointer).mockResolvedValue(undefined as never);
+
+    const { PUT } = await import("./route");
+    const res = await PUT(reqPut("catalogo", BODY_VALIDO), { params: Promise.resolve({ name: "catalogo" }) });
+
+    expect(res.status).toBe(500);
+    expect(vi.mocked(setSkillPointer)).not.toHaveBeenCalled();
+    expect(vi.mocked(audit)).not.toHaveBeenCalled();
+    expect(storage.removidos).toEqual([`${ORG_ID}/catalogo/v2/references/tabela.md`]);
+    const texto = JSON.stringify(await res.json());
+    expect(texto).toContain("arquivos do pacote");
+    // A mensagem do driver não vaza (mesma regra do 500 de banco).
+    expect(texto).not.toContain("Object already exists");
+  });
+
+  it("mudar arquivo pelo PUT → 422: a estrutura só muda por novo .zip", async () => {
+    mockAuthzOk();
+    mockSkillInstalada(PACOTE);
+    const { PUT } = await import("./route");
+    const res = await PUT(
+      reqPut("catalogo", { ...BODY_VALIDO, manifest: [{ path: "references/novo.md" }] }),
+      { params: Promise.resolve({ name: "catalogo" }) },
+    );
+    expect(res.status).toBe(422);
     expect(insertSkillVersion).not.toHaveBeenCalled();
     expect(setSkillPointer).not.toHaveBeenCalled();
   });
 });
 
 describe("GET avisa quando a skill é de pacote", () => {
-  it("manifest com arquivo → tem_arquivos_do_pacote: true", async () => {
+  it("manifest com arquivo → tem_arquivos_do_pacote: true e lista os caminhos", async () => {
     mockAuthzOk();
     mockSkillInstalada([{ path: "refs/tabela.md", kind: "reference" }]);
     const { GET } = await import("./route");
     const res = await GET(reqGet("catalogo"), { params: Promise.resolve({ name: "catalogo" }) });
-    const body = (await res.json()) as { data: { tem_arquivos_do_pacote: boolean } };
+    const body = (await res.json()) as { data: { tem_arquivos_do_pacote: boolean; arquivos_do_pacote: string[] } };
     expect(body.data.tem_arquivos_do_pacote).toBe(true);
+    expect(body.data.arquivos_do_pacote).toEqual(["refs/tabela.md"]);
   });
 });
 

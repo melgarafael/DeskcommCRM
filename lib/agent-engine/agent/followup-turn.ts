@@ -2,6 +2,7 @@ import {claimOfJob,type JobClaim} from "../queue/claim";
 import {resultadoDoEnvioDoFollowup} from "../edge/crm/send-ledger";
 import { parseServiceBoundary } from "@/lib/atendimento/fronteira";
 import { requireCurrentServiceBoundary } from "@/lib/atendimento/fronteira-server";
+import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 /**
  * Handler do job `followup_turn` (F3-03; blueprint 1.3) — a peça BUILD da
  * continuidade. A F3-01 (cron persistente) dispara e a F3-02 (tool schedule_followup)
@@ -342,14 +343,96 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
 
     const boundary = parseServiceBoundary(job.payload.service_boundary);
     await requireCurrentServiceBoundary(pool, boundary);
-    const { rows: targetRows } = await pool.query<{ channel_session_id: string; archived_at: string | null }>(
-      `select c.channel_session_id, to_jsonb(cs)->>'archived_at' as archived_at from conversations c
+    const { rows: targetRows } = await pool.query<{ channel_session_id: string; archived_at: string | null; canal_desativado: string | null }>(
+      `select c.channel_session_id, to_jsonb(cs)->>'archived_at' as archived_at, to_jsonb(cs)->'metadata'->>'disabled' as canal_desativado from conversations c
        join channel_sessions cs on cs.id=c.channel_session_id and cs.organization_id=c.organization_id
        where c.organization_id=$1 and c.id=$2 and c.contact_id=$3`,
       [tenantId, boundary!.conversation_id, leadId]);
     if (!targetRows[0]) throw new Error('conversa de origem indisponível');
     if (targetRows[0].archived_at) throw new Error('canal arquivado');
+    if (targetRows[0].canal_desativado === 'true') throw new Error('canal desativado');
     const target: ReentrySendTarget = { tenantId, leadId, conversationId: boundary!.conversation_id, channelSessionId: targetRows[0]!.channel_session_id };
+
+    // A INSCRIÇÃO PRECISA ESTAR VIVA ANTES DE QUALQUER EFEITO. O turno já
+    // enfileirado sobrevive ao fluxo: apagar o fluxo pela rota apaga as
+    // inscrições (#1913) e o `cron_jobs` do adiamento para a janela continua de
+    // pé, mas a checagem de atualidade só rodava no `complete` — DEPOIS do
+    // envio. A mensagem de um fluxo apagado saía calada, e o job terminava
+    // `done`. A MESMA régua do caminho inline (`enviarTextoFixoPendente`,
+    // `lib/followup/enviar-texto-fixo.ts`): inscrição existente, no MESMO nó, e
+    // em estado que anda (`active`/`waiting_reply`). Fora disso o turno termina
+    // sem tocar a cadeia; o worker fecha o job como `done` no caminho normal.
+    //
+    // `node_id` ausente NÃO é descartado aqui de propósito: payload de fluxo
+    // sem nó é defeito de programação e segue falhando alto em
+    // `runFlowDrivenTurn`, como falhava.
+    if (payload.followup_enrollment_id !== undefined && payload.node_id !== undefined) {
+      const { rows: inscricaoRows } = await pool.query<{ current_node_id: string; status: string }>(
+        `select current_node_id, status from followup_enrollments where organization_id = $1 and id = $2 limit 1`,
+        [tenantId, payload.followup_enrollment_id],
+      );
+      const inscricao = inscricaoRows[0];
+      const viva =
+        inscricao !== undefined &&
+        inscricao.current_node_id === payload.node_id &&
+        (inscricao.status === 'active' || inscricao.status === 'waiting_reply');
+      if (!viva) {
+        withFields(deps.log, {
+          job_id: job.id,
+          tenant_id: tenantId,
+          lead_id: leadId,
+          enrollment_id: payload.followup_enrollment_id,
+        }).info('turno de fluxo descartado — a inscrição não está mais viva', {
+          motivo: inscricao === undefined ? 'inscricao_ausente' : 'fora_do_no_ou_encerrada',
+          status: inscricao?.status ?? null,
+          no_do_payload: payload.node_id,
+          no_atual: inscricao?.current_node_id ?? null,
+        });
+        // #2262 — O DESCARTE DURANTE A PAUSA NÃO PODE SER SILÉNCIO.
+        //
+        // Apagada, encerrada ou em outro nó: não há nada a reenfileirar, e o
+        // silêncio acima está certo. PAUSADA é o caso oposto — a inscrição
+        // continua viva no MESMO nó (`paused_handoff` do handoff humano,
+        // `paused_manual` da intervenção), com um consumidor de retomada em
+        // `lib/followup/reactivity.ts` / `lib/followup/intervencao.ts`. Sem
+        // rastro, o último evento da estadia continua sendo o `turn_enqueued`
+        // deste job: na retomada o motor lê `actionEnqueued = waitElapsed &&
+        // !turnoDaAcaoDescartado(...)` como "turno em voo", não enfileira nada
+        // (só recheca) e a sequência fica parada no nó até o dead-man marcá-la
+        // `dead` com `action_turn_never_completed` — motivo falso, porque quem
+        // descartou foi a pausa.
+        //
+        // `turn_discarded` é o rastro que JÁ existe para isto (migration 0501,
+        // mesma chave `…:descartado` que não conta como passo em
+        // `fn_followup_job_current`): o motor enfileira um turno novo no
+        // primeiro tick depois da retomada. Escrito aqui pelo worker — sem
+        // `auth.uid()`, o gatilho `fn_followup_generation_write` deixa o
+        // servidor gravar; pela sessão, um manager continuaria recusado.
+        if (
+          inscricao !== undefined &&
+          inscricao.current_node_id === payload.node_id &&
+          (inscricao.status === 'paused_handoff' || inscricao.status === 'paused_manual') &&
+          payload.purpose === 'send_message'
+        ) {
+          await pool.query(
+            `insert into followup_enrollment_events
+               (organization_id, enrollment_id, node_id, event_type, payload, idempotency_key)
+             values ($1, $2, $3, 'turn_discarded', $4, $5)
+             on conflict (enrollment_id, idempotency_key) where idempotency_key is not null do nothing`,
+            [
+              tenantId,
+              payload.followup_enrollment_id,
+              payload.node_id,
+              { job_id: job.id, motivo: 'inscricao_pausada' },
+              `${typeof job.payload.source_step_key === 'string' && job.payload.source_step_key !== ''
+                ? job.payload.source_step_key
+                : job.id}:descartado`,
+            ],
+          );
+        }
+        return;
+      }
+    }
 
     const clock = deps.clock ?? ((): Date => new Date());
 
@@ -417,20 +500,32 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
     // Onda 5 (Task 5.1): turno DIRIGIDO POR FLUXO — guard exclusivo, nunca cai nos
     // caminhos legados abaixo (F3-03/F3-04 seguem intocados quando o campo falta).
     if (payload.followup_enrollment_id !== undefined) {
-      await runFlowDrivenTurn(deps, job, pool, ctx, clock, target, {
-        enrollmentId: payload.followup_enrollment_id,
-        nodeId: payload.node_id,
-        purpose: payload.purpose,
-        promptHint: payload.prompt_hint,
-        fixedBody: payload.fixed_body,
-        templateId: payload.template_id,
-        fallbackTemplateId: payload.fallback_template_id,
-        voltaIndex: payload.volta_index,
-        voltaTotal: payload.volta_total,
-        classes: payload.classes,
-        hint: payload.hint,
-        waits: payload.waits,
-      });
+      try {
+        await runFlowDrivenTurn(deps, job, pool, ctx, clock, target, {
+          enrollmentId: payload.followup_enrollment_id,
+          nodeId: payload.node_id,
+          purpose: payload.purpose,
+          promptHint: payload.prompt_hint,
+          fixedBody: payload.fixed_body,
+          templateId: payload.template_id,
+          fallbackTemplateId: payload.fallback_template_id,
+          voltaIndex: payload.volta_index,
+          voltaTotal: payload.volta_total,
+          classes: payload.classes,
+          hint: payload.hint,
+          waits: payload.waits,
+        });
+      } catch (err) {
+        // A organização parou com este turno JÁ rodando: a suspensão só descarta o
+        // `pending`, e o envio foi barrado aqui. O erro segue para a fila cancelar o
+        // job (`terminal`), mas antes o motor precisa saber que o turno saiu sem
+        // enviar — senão a reativação lê o cancelamento como worker morto e o
+        // dead-man mata a inscrição com `action_turn_never_completed`.
+        if (err instanceof OrgNaoOperanteError && payload.purpose === 'send_message') {
+          await pool.query('select public.fn_followup_turno_descartado($1, $2)', [tenantId, job.id]);
+        }
+        throw err;
+      }
       return;
     }
 

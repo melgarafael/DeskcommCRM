@@ -19,6 +19,7 @@ export const FOLLOWUP_GATILHO_RETORNO_HANDLER_KEY = "followup-gatilho-retorno.v1
 
 export const followupGatilhoRetornoHandler: EventHandler = {
   key: FOLLOWUP_GATILHO_RETORNO_HANDLER_KEY,
+  naOrgParada: "pula",
   events: [EVENTO_DE_RETORNO],
   async handle(row): Promise<HandlerResult> {
     try {

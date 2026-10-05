@@ -91,6 +91,30 @@ describe("aba de Execuções — llm_calls traduzido para a tela", () => {
     expect(linha["status"]).toBe("cancelado");
   });
 
+  it("a prévia (botão Testar) sai como dry-run; o turno de produção não", () => {
+    // A fonte do marcador é `llm_calls.purpose` com `contact_id` nulo (o sandbox
+    // roda sem contato), não o identificador de job.
+    expect(paraLinhaDeExecucao(chamada({ purpose: "agent_preview" }))["is_dry_run"]).toBe(true);
+    expect(paraLinhaDeExecucao(chamada({ purpose: "agent_turn" }))["is_dry_run"]).toBe(false);
+    // A prévia NÃO ganha versão nem vínculo de run inventados: `llm_calls` não
+    // guarda a versão, e `job_id` não é o `run_id` do teste.
+    const previa = paraLinhaDeExecucao(chamada({ purpose: "agent_preview" }));
+    expect(previa["agent_version_id"]).toBeNull();
+    expect(previa["id"]).toBe("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+  });
+
+  it("o rascunho do modo ASSISTIDO é execução real, não teste", () => {
+    // Mesmo purpose da prévia (`agent_preview`), mas sobre um contato de verdade:
+    // marcá-lo como teste diria ao operador que um atendimento real foi ensaio.
+    const assistido = paraLinhaDeExecucao(chamada({ purpose: "agent_preview", contact_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" }));
+    expect(assistido["is_dry_run"]).toBe(false);
+  });
+
+  it("propósito ausente ou desconhecido não vira dry-run por acidente", () => {
+    expect(paraLinhaDeExecucao(chamada({ purpose: null }))["is_dry_run"]).toBe(false);
+    expect(paraLinhaDeExecucao(chamada({ purpose: "classify_stage" }))["is_dry_run"]).toBe(false);
+  });
+
   it("a execução carrega o agente — é o que permite a aba filtrar", () => {
     const linha = paraLinhaDeExecucao(chamada());
     expect(linha["agent_id"]).toBe(AGENTE);

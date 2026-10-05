@@ -28,6 +28,7 @@ import { recusaDeCapacidadeParaOModelo } from "@/lib/mcp/recusa-para-o-modelo";
 import type { McpContext, McpToolDefinition } from "@/lib/mcp/types";
 import { resolveActiveLeadForContact, type LeadCandidate } from "@/lib/leads/active-lead";
 import { podeChamarFerramenta, recusaParaOModelo } from "@/lib/leads/escopo-de-funil";
+import { escritaCabeNoTurno } from "./escopo-das-escritas";
 
 export interface RuntimeHandoffSignal {
   triggered: boolean;
@@ -234,16 +235,50 @@ function wrapMcpTool(
         ensureScope(input.auth.scopes, def.requiresScope);
         ensureRole(input.auth.role, def.requiresRole);
 
+        // ── DE QUEM É O REGISTRO QUE ESTA ESCRITA ALCANÇA — do contato do turno
+        //
+        // `write` E `handoff`: a passagem também age sobre uma conversa. A regra
+        // e o mapa campo → dono moram em `escopo-das-escritas.ts`; o `lead_id`
+        // segue com a guarda logo abaixo. Sem contato do turno, nada muda.
+        if (input.contatoDoTurno && def.category !== "read") {
+          const escopo = await escritaCabeNoTurno(
+            input.supabase,
+            input.ctx.organizationId,
+            input.contatoDoTurno,
+            def.name,
+            argsRecord,
+          );
+          if (!escopo.permitido) {
+            void auditMcpToolCall({
+              ctx: input.ctx,
+              toolName: def.name,
+              args: argsAudit,
+              durationMs: Date.now() - startedAt,
+              success: false,
+              errorMessage: `contato_da_conversa:${escopo.motivo}`,
+            });
+            return escopo;
+          }
+        }
+
         // ── DE QUE NEGÓCIO É ESTA ESCRITA — do contato da conversa ──────────
         //
-        // Só ESCRITA: `crm_list_followups`, `crm_list_appointments` e irmãs têm
+        // Só ESCRITA (`write` e `handoff`): `crm_list_followups`, `crm_list_appointments` e irmãs têm
         // `lead_id` e são leituras; trocar ali faria o modelo perguntar por um
-        // negócio e receber outro. Só com contato do turno: o Operador, a rota
-        // HTTP e as automações seguem com o `lead_id` de quem chamou. Antes do
-        // escopo, para o escopo julgar o negócio que de fato vai ser escrito.
+        // negócio e receber outro. Só com contato do turno — que o turno de
+        // atendimento E o do Operador recebem (`operator-turn.ts` passa
+        // `contactId: job.contact_id`): a rota HTTP e as automações seguem com o
+        // `lead_id` de quem chamou. Antes do escopo, para o escopo julgar o
+        // negócio que de fato vai ser escrito.
+        //
+        // A LEITURA não traduz — ela ESCOPA, e o faz no handler, com o
+        // `ctx.contatoDoTurno` que passamos na chamada abaixo (#2158): trocar o
+        // id mudaria a pergunta do modelo, escopar muda só quem a resposta
+        // alcança. Quem recebe identificador de contato e é do turno segue
+        // abrindo; quem é de outro cliente é recusado com o motivo em texto.
         if (
           input.contatoDoTurno &&
-          def.category === "write" &&
+          def.category !== "read" &&
           typeof argsRecord.lead_id === "string"
         ) {
           const alvo = await negocioDaEscritaDoTurno(
@@ -347,7 +382,16 @@ function wrapMcpTool(
           return { permitido: false, motivo: veredito.motivo, mensagem: explicacao };
         }
 
-        const result = await def.handler(argsRecord as never, input.ctx);
+        // O contato do turno como CONTEXTO ao lado de `ctx.organizationId`, e
+        // não como argumento que o modelo escreve: é o handler que precisa
+        // saber com quem a conversa está, e quem sabe é o runtime. Injetado
+        // aqui, no único ponto que tem `input`, para valer para todo chamador
+        // de `pickToolsFromMcp` — quem não tem contato de turno (rota HTTP,
+        // MCP externo, agente sem conversa) continua com o ctx de antes (#2158).
+        const result = await def.handler(
+          argsRecord as never,
+          input.contatoDoTurno ? { ...input.ctx, contatoDoTurno: input.contatoDoTurno } : input.ctx,
+        );
 
         // Capture handoff signal so the runtime can short-circuit the loop.
         if (def.name === HANDOFF_TOOL_NAME) {
@@ -368,6 +412,23 @@ function wrapMcpTool(
         //
         // Só quem declara é afetado: sem `motivoDoVazio` nada muda.
         const motivoDoVazio = def.motivoDoVazio?.(result) ?? null;
+
+        // Recusa devolvida PELO HANDLER também não é sucesso (#2158): a ficha de
+        // outro cliente recusada em `crm_get_contact` volta no mesmo formato da
+        // recusa de escrita acima, e entra no audit como ela — `success: false`
+        // e o motivo em `error` —, senão a recusa some contada como acerto.
+        const recusa = recusaDoHandler(result);
+        if (recusa !== null) {
+          void auditMcpToolCall({
+            ctx: input.ctx,
+            toolName: def.name,
+            args: argsAudit,
+            durationMs: Date.now() - startedAt,
+            success: false,
+            errorMessage: `contato_da_conversa:${recusa}`,
+          });
+          return result;
+        }
 
         void auditMcpToolCall({
           ctx: input.ctx,
@@ -419,6 +480,13 @@ function wrapMcpTool(
       }
     },
   });
+}
+
+/** O `motivo` de uma recusa `{ permitido: false, motivo }` devolvida pelo handler, ou `null`. */
+function recusaDoHandler(result: unknown): string | null {
+  if (typeof result !== "object" || result === null) return null;
+  const r = result as { permitido?: unknown; motivo?: unknown };
+  return r.permitido === false && typeof r.motivo === "string" ? r.motivo : null;
 }
 
 export function pickToolsFromMcp(input: PickToolsInput): Record<string, Tool> {

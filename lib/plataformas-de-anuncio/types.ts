@@ -50,9 +50,14 @@ export type PlataformaDeAnuncio = "meta_ads" | "google_ads";
 
 /**
  * Venda, qualificação e cada etapa configurada são resultados distintos e
- * deduplicados separadamente. `Etapa:<uuid>` vem das regras por etapa (0436).
+ * deduplicados separadamente. `Etapa:<uuid>` vem das regras por etapa do Google
+ * (0436) e `MetaEtapa:<uuid>` das da Meta (0524).
  */
-export type NomeDoEvento = "Purchase" | "QualifiedLead" | `Etapa:${string}`;
+export type NomeDoEvento =
+  | "Purchase"
+  | "QualifiedLead"
+  | `Etapa:${string}`
+  | `MetaEtapa:${string}`;
 
 /**
  * Uma conversão pronta para sair — no formato da CASA, não no da plataforma.
@@ -79,13 +84,23 @@ export interface ConversaoOffline {
    * um backlog de drain virar atribuição errada em vez de erro visível.
    */
   ocorridoEm: Date;
-  /** O clique que originou a conversa — `ad_source_id` do contato (0164). */
+  /**
+   * O clique que originou a conversa — `ad_source_id` do contato (0164).
+   * Vazio quando a pessoa chegou pela página com UTM da Meta: aí a identidade
+   * é só o telefone, e o transporte declara a origem de acordo.
+   */
   cliqueDeOrigem: string;
   identificadoresGoogle?: IdentificadoresGoogle;
   /** E.164 sem `+`, ainda EM CLARO: o hash é responsabilidade do transporte. */
   telefone: string | null;
   valorCentavos: number | null;
   moeda: string;
+  /**
+   * O nome do evento NO FIO, quando ele não é o `evento` do livro-razão — o
+   * evento padrão de uma regra de etapa da Meta (`InitiateCheckout`,
+   * `LeadSubmitted`…), enquanto o livro-razão guarda `MetaEtapa:<uuid>`.
+   */
+  eventoNaPlataforma?: string | null;
 }
 
 /**
@@ -127,6 +142,18 @@ export interface CredencialDeConversao {
   accessToken: string;
   /** Preenchido = envio marcado como teste, não conta para otimização. */
   testEventCode: string | null;
+  /**
+   * Os ids que a Meta exige em `user_data` quando o evento é
+   * `business_messaging`/`whatsapp` (#2098): sem um dos dois ela recusa o
+   * Purchase com error_subcode 2804116. Vem de
+   * `organizations.settings.conversions` (ver `meta/identidade.ts`), não de
+   * coluna — e é `null` quando a organização não informou: o transporte não
+   * inventa id, manda sem e deixa a recusa ser da Meta, com a mensagem dela.
+   */
+  meta?: {
+    pageId: string | null;
+    whatsappBusinessAccountId: string | null;
+  };
   google?: {
     api?: ApiDeConversaoGoogle;
     /** Decifrado; NUNCA o access token — esse é derivado a cada envio. */

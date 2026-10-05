@@ -29,17 +29,26 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 vi.mock("@/lib/supabase/admin", () => ({
-  createAdminClient: () => {
-    state.admin();
-    const q: Record<string, unknown> = {};
-    for (const name of ["select", "order", "limit"]) q[name] = () => q;
-    q.eq = (...args: unknown[]) => {
-      state.filters.push(args);
+  createAdminClient: () => ({
+    from: (table: string) => {
+      const q: Record<string, unknown> = {};
+      // `lead_notes` também é lido pelo client de serviço (tabela server-only
+      // na VPS); só o enriquecimento conta como consulta de enriquecimento.
+      if (table !== "prospecting_candidates") {
+        for (const name of ["select", "eq", "order", "limit"]) q[name] = () => q;
+        q.then = (resolve: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(resolve);
+        return q;
+      }
+      state.admin();
+      for (const name of ["select", "order", "limit"]) q[name] = () => q;
+      q.eq = (...args: unknown[]) => {
+        state.filters.push(args);
+        return q;
+      };
+      q.maybeSingle = async () => ({ data: state.candidate, error: state.error });
       return q;
-    };
-    q.maybeSingle = async () => ({ data: state.candidate, error: state.error });
-    return { from: () => q };
-  },
+    },
+  }),
 }));
 vi.mock("@/lib/users/nome-do-atendente", () => ({ nomesDosAtendentes: async () => new Map() }));
 import { GET } from "@/app/api/v1/contacts/[id]/crm-summary/route";

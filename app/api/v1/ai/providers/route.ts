@@ -31,7 +31,7 @@ import { PAPEIS, PONTOS_DE_IA, PONTO_POR_ID } from "@/lib/ai/pontos/registro";
 import { PROVEDORES, ehProvedorSuportado } from "@/lib/ai/pontos/provedores";
 import { validarBinding } from "@/lib/ai/pontos/validar-binding";
 import { lerAmbiente } from "@/lib/instalacao/ambiente";
-import { modeloDeTranscricaoEmVigor } from "@/lib/messaging/media/transcription";
+import { decidirTranscricao } from "@/lib/messaging/media/escada-de-transcricao";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -119,6 +119,41 @@ export async function GET(): Promise<Response> {
   }));
   const capacidadePorModelo = new Map(modelos.map((m) => [`${m.provider}|${m.model_id}`, m]));
 
+  // ─── QUEM OUVE O ÁUDIO: a MESMA escada do worker (#2189/#2190) ────────────
+  //
+  // A tela não decide sozinha o que o worker decide lá longe: ela roda a
+  // escada com os MESMOS dados que já estão nesta requisição — credenciais
+  // ativas da organização e knobs do `.env` do processo — e entrega a decisão
+  // ao resolvedor. Um lugar decide; os dois lados leem o mesmo lugar; a régua
+  // `tests/unit/a-tela-e-o-motor-concordam-sobre-imagem.test.ts` compara.
+  //
+  // A aproximação é sobre EXISTIR chave, nunca sobre qual é: o anúncio só
+  // precisa saber em qual degrau o áudio cai. "Existe" aqui é o mesmo critério
+  // de `resolveOrgLlmConfig` — credencial ATIVA e VALIDADA da organização, ou
+  // a chave da instalação em `.env` (o Google não tem chave de instalação, e
+  // `lerAmbiente` devolve `false` para ele, como o runtime recusa).
+  const ambienteDaInstalacao = lerAmbiente();
+  const credenciais = (credsRes.data ?? []) as { provider: string; validated_at: string | null }[];
+  const chaveExiste = (provider: string): string | null =>
+    credenciais.some((c) => c.provider === provider && c.validated_at) ||
+    ambienteDaInstalacao.chavesDeProvedor[provider] === true
+      ? "chave-existente"
+      : null;
+  const transcricao = await decidirTranscricao({
+    conversa:
+      padraoDaOrganizacao.defaultModel !== null
+        ? {
+            provider: padraoDaOrganizacao.provider,
+            apiKey: chaveExiste(padraoDaOrganizacao.provider),
+            modelId: padraoDaOrganizacao.defaultModel,
+            // A base do provedor custom não é selecionada aqui; ela só muda
+            // PARA ONDE a chamada vai, e este lado pergunta QUAL degrau roda.
+            baseUrl: null,
+          }
+        : null,
+    chaveOpenai: async () => chaveExiste("openai"),
+  });
+
   const pontos = PONTOS_DE_IA.map((ponto) => {
     const decisao = decidirBinding({
       pontoId: ponto.id,
@@ -143,6 +178,9 @@ export async function GET(): Promise<Response> {
       // nesta tela, mesmo quando é ela que vale em runtime.
       modeloDeAmbiente: undefined,
       padraoDaOrganizacao,
+      // A escada só muda a resposta do ponto que ela governa; o resolvedor a
+      // lê apenas em `fixo.escada`.
+      transcricao,
     });
     const chave = `${decisao.provider}|${decisao.modelId ?? ""}`;
     const capacidade = capacidadePorModelo.get(chave);
@@ -168,21 +206,19 @@ export async function GET(): Promise<Response> {
       mandadoPeloAgente: agentePublicado !== null && PONTOS_DO_AGENTE_PUBLICADO.has(ponto.id),
       efetivo: {
         provider: decisao.provider,
-        // O ponto fixo de transcrição declara `whisper-1`, mas `TRANSCRIPTION_MODEL`
-        // (o mesmo `.env` do worker) troca o modelo que roda: a tela anuncia o que
-        // roda, pela mesma função que o worker usa.
-        modelId:
-          ponto.id === "transcricao_de_audio"
-            ? modeloDeTranscricaoEmVigor({
-                model: process.env.TRANSCRIPTION_MODEL,
-                apiKey: process.env.TRANSCRIPTION_API_KEY,
-                baseUrl: process.env.TRANSCRIPTION_BASE_URL,
-              })
-            : decisao.modelId,
+        // O modelo de transcrição vem DA ESCADA, e não de um literal no
+        // registro nem de um override aqui (#2190): a mesma
+        // `decidirTranscricao` do worker escolhe o degrau, e o resolvedor
+        // devolve o anúncio daquele degrau. Um override seria um segundo
+        // lugar decidindo o mesmo assunto — a forma como o defeito nasceu.
+        modelId: decisao.modelId,
         credentialId: decisao.credentialId,
         baseUrl: decisao.baseUrl,
         origem: decisao.origem,
-        porQue: EXPLICACAO_DA_ORIGEM[decisao.origem],
+        // O motivo ESCOLHIDO, quando a origem tem um (a escada devolve o do
+        // degrau escolhido): "por que este áudio vai para aquele lugar", que a
+        // frase genérica da origem não sabe dizer.
+        porQue: decisao.motivo ?? EXPLICACAO_DA_ORIGEM[decisao.origem],
       },
       avisos: [
         ...decisao.avisos,

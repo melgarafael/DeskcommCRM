@@ -14,13 +14,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { requireRole } from "@/lib/auth/require-role";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, orgAtivaSemPortao, resolveActiveOrg } from "@/lib/auth/server";
 import type { AuthUser, Role } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 
 vi.mock("@/lib/auth/server", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/auth/server")>();
-  return { ...real, loadAuthUser: vi.fn(), resolveActiveOrg: vi.fn() };
+  return { ...real, loadAuthUser: vi.fn(), resolveActiveOrg: vi.fn(), orgAtivaSemPortao: vi.fn() };
 });
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({
@@ -62,11 +62,12 @@ function preparar(cenario: Cenario): void {
     id: USER_ID,
     email: "admin@teste.local",
     is_platform_admin: cenario.isPlatformAdmin ?? false,
+    platform_admin_scope: cenario.isPlatformAdmin ? "full" : null,
     organizations: [],
   } as unknown as AuthUser;
 
   vi.mocked(loadAuthUser).mockResolvedValue(user);
-  vi.mocked(resolveActiveOrg).mockResolvedValue({ orgId: ORG_ID, name: "Org", role: cenario.role });
+  vi.mocked(orgAtivaSemPortao).mockResolvedValue({ orgId: ORG_ID, name: "Org", role: cenario.role, org_status: "active" });
   vi.mocked(createClient).mockResolvedValue(
     montarStub(cenario) as unknown as Awaited<ReturnType<typeof createClient>>,
   );
@@ -229,11 +230,20 @@ describe("requireRole — os caminhos que não passam pela leitura paralela", ()
     expect(createClient).not.toHaveBeenCalled();
   });
 
-  it("platform admin com opt-in passa sem ler papel nem MFA, como antes", async () => {
-    preparar({ role: "viewer", temFator: true, aal: "aal1", isPlatformAdmin: true });
+  it("platform admin FULL com opt-in e sessão aal2 passa sem ler papel", async () => {
+    preparar({ role: "viewer", temFator: true, aal: "aal2", isPlatformAdmin: true });
+    const stub = montarStub({ role: "viewer", temFator: true, aal: "aal2" });
+    vi.mocked(createClient).mockResolvedValue(stub as unknown as Awaited<ReturnType<typeof createClient>>);
     const r = await requireRole("admin", { allowPlatformAdmin: true });
     expect(r.ok).toBe(true);
-    expect(createClient).not.toHaveBeenCalled();
+    expect(stub.rpc).not.toHaveBeenCalled();
+  });
+
+  it("platform admin FULL com fator em aal1 é BARRADO: o atalho de escrita cobra MFA", async () => {
+    preparar({ role: "viewer", temFator: true, aal: "aal1", isPlatformAdmin: true });
+    const r = await requireRole("admin", { allowPlatformAdmin: true });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect((await r.response.json()).error.code).toBe("mfa_required");
   });
 
   it("acompanhamento ativo NÃO usa o atalho de platform admin: papel e MFA são lidos", async () => {

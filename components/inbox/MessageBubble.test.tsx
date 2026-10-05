@@ -79,6 +79,21 @@ describe("MessageBubble — ações sobre mensagem própria", () => {
     await waitFor(() => expect(onApagar).toHaveBeenCalledOnce());
   });
 
+  it("ocultar no CRM não promete WhatsApp — a conversa pode ser do Instagram ou do Facebook", async () => {
+    // "Ocultar" aparece em todo canal (ao contrário de "Apagar para todos", que
+    // só existe onde o canal altera a mensagem enviada). O aviso dizia "continua
+    // no WhatsApp do cliente" também no direct do Instagram.
+    const user = userEvent.setup();
+    const onOcultar = vi.fn(async () => undefined);
+    render(<MessageBubble message={msg({ direction: "inbound", sent_via: "external_device" })} onOcultar={onOcultar} />);
+    await user.click(screen.getByRole("button", { name: "Opções da mensagem" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Ocultar no CRM" }));
+    const aviso = screen.getByText(/A mensagem continua na conversa do cliente/);
+    expect(aviso.textContent).not.toMatch(/whatsapp/i);
+    fireEvent.click(screen.getAllByRole("button", { name: "Ocultar no CRM" }).at(-1)!);
+    await waitFor(() => expect(onOcultar).toHaveBeenCalledOnce());
+  });
+
   it("salva com Enter, preserva Shift+Enter e evita envio duplicado", async () => {
     const user = userEvent.setup();
     const onEditar = vi.fn(async () => undefined);
@@ -157,7 +172,7 @@ describe("MessageBubble — ocultação local de recebida", () => {
     const { rerender } = render(<MessageBubble message={recebida} onOcultar={onOcultar} onRestaurar={onRestaurar} />);
     await user.click(screen.getByRole("button", { name: "Opções da mensagem" }));
     await user.click(await screen.findByRole("menuitem", { name: "Ocultar no CRM" }));
-    expect(screen.getByText(/continua no WhatsApp do cliente/)).toBeInTheDocument();
+    expect(screen.getByText(/continua na conversa do cliente/)).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole("button", { name: "Ocultar no CRM" }).at(-1)!);
     await waitFor(() => expect(onOcultar).toHaveBeenCalledOnce());
     rerender(<MessageBubble message={{ ...recebida, metadata: { crm_hidden_at: "2026-09-24T12:00:00Z" } }}

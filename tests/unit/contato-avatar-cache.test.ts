@@ -24,7 +24,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const SIGNED_URL = "https://storage.example/assinada?token=abc";
 
 let contatoRow: { avatar_storage_path: string | null; is_anonimizado: boolean } | null = null;
-let orgAtiva: { orgId: string } | null = { orgId: "org-1" };
+let orgAtiva: { orgId: string; org_status: string } | null = { orgId: "org-1", org_status: "active" };
 let erroDeAssinatura: { message: string } | null = null;
 
 // A assinatura tipada importa: o teste do TTL lê o 2º argumento que o handler
@@ -62,7 +62,7 @@ function chain(): Record<string, unknown> {
 vi.mock("@/lib/auth/server", () => ({
   mfaEmDivida: vi.fn(async () => false),
   loadAuthUser: async () => ({ id: "user-1" }),
-  resolveActiveOrg: async () => orgAtiva,
+  orgAtivaSemPortao: async () => orgAtiva,
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -81,7 +81,7 @@ function chamar(id = "contato-1") {
 describe("GET /api/v1/contacts/{id}/avatar — cache do redirect", () => {
   beforeEach(() => {
     contatoRow = { avatar_storage_path: "org-1/avatars/contato-1.jpg", is_anonimizado: false };
-    orgAtiva = { orgId: "org-1" };
+    orgAtiva = { orgId: "org-1", org_status: "active" };
     erroDeAssinatura = null;
     createSignedUrl.mockClear();
   });

@@ -34,7 +34,7 @@ import { appDaMeta } from "@/lib/channels/meta/app";
 import { lerEnvelopeMeta } from "@/lib/channels/meta/envelope";
 import { parseMetaWebhook, verificationChallenge, verifyMetaSignature } from "@/lib/channels/meta/webhook";
 import { statusUpdate } from "@/lib/channels/meta/status-update";
-import { ingestMetaEcho, ingestMetaInbound } from "@/lib/channels/meta/ingest";
+import { ingestMetaAppContactSync, ingestMetaEcho, ingestMetaInbound } from "@/lib/channels/meta/ingest";
 import { metaSessionByWebhookToken } from "@/lib/channels/meta/session";
 import { logger } from "@/lib/logger";
 import {
@@ -167,6 +167,26 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
           status: r.status,
           reason: r.status === "failed" ? r.reason : undefined,
           external_id: e.externalId,
+          phone_number_id: e.phoneNumberId,
+        });
+      }
+      continue;
+    }
+
+    if (e.kind === "app_contact_sync") {
+      // Coexistência: contato criado/editado no ENDEREÇO do app. Entra no CRM com
+      // o nome do celular — sem conversa, sem mensagem e sem tocar na IA, porque
+      // nada foi trocado (ver `ingestMetaAppContactSync`). Mesma política de
+      // falha das outras duas: 2xx sempre, falha no log e no corpo.
+      const r = await ingestMetaAppContactSync(admin, e, {
+        organizationId: session.organizationId,
+      });
+      desfechos.push(`contato:${r.status}`);
+      if (r.status === "failed" || r.status === "no_session") {
+        logger.error("[meta.ingest] contato do app não sincronizado", {
+          request_id: requestId,
+          status: r.status,
+          reason: r.status === "failed" ? r.reason : undefined,
           phone_number_id: e.phoneNumberId,
         });
       }

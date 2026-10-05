@@ -43,7 +43,12 @@ import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
-import { motivoDoAviso, textoDoAviso } from "@/lib/escalacao/aviso-ao-lead";
+import {
+  motivoDoAviso,
+  textoDoAviso,
+  type MotivoDoAviso as MotivoDaFrase,
+} from "@/lib/escalacao/aviso-ao-lead";
+import { comecaComPalavraDeSaida } from "@/lib/opt-out/deteccao";
 import { carregarRosterDeAtendimento, podeAssumirAgora } from "@/lib/escalacao/atendentes";
 // Dois `MotivoDoAviso` no repositório: o de `escalacao/aviso-ao-lead` diz QUE
 // FRASE o cliente lê; este diz POR QUE ele não leu nada. O apelido impede a
@@ -216,7 +221,7 @@ export async function avisarLeadDoCrm(
       idioma = null;
     }
     const body = textoDoAviso(
-      motivoDoAviso(input.reason),
+      await motivoDaFrase(admin, input),
       await quemPodeAssumir(admin, input.organizationId),
       input.contactId,
       idioma,
@@ -266,6 +271,45 @@ export async function avisarLeadDoCrm(
   }
 }
 
+
+/**
+ * Qual frase o cliente lê. Parte do motivo gravado (`last_handoff_reason`) e só
+ * o troca num caso: o motivo é o GENÉRICO ("outro" — clima ruim, baixa
+ * confiança…) e a última coisa que o cliente escreveu COMEÇA com a palavra de
+ * saída ("Parar não é daqui"). Aí a frase é a de suspeita de opt-out — "Entendi.
+ * Vou parar de te enviar mensagens automáticas por aqui." — e não "passei seu
+ * pedido para um atendente humano. Fica por aqui que já te respondem.", que
+ * promete atendimento a quem acabou de dizer que não quer mais mensagens.
+ *
+ * Medido em produção (30/09/2026): um lead respondeu "Parar não é daqui"; o
+ * detector de bloqueio não casa (exige a palavra sozinha), o sentimento
+ * escalou como `low_sentiment` e a frase genérica saiu. `pediu_humano` e
+ * `orcamento_de_ia` têm frase própria e não são reavaliados.
+ *
+ * Leitura que falha devolve o motivo gravado: errar para o lado de como era antes.
+ */
+async function motivoDaFrase(
+  admin: SupabaseClient,
+  input: AvisoDoCrmInput,
+): Promise<MotivoDaFrase> {
+  const gravado = motivoDoAviso(input.reason);
+  if (gravado !== "outro") return gravado;
+  try {
+    const { data } = await admin
+      .from("messages")
+      .select("body")
+      .eq("organization_id", input.organizationId)
+      .eq("conversation_id", input.conversationId)
+      .eq("direction", "inbound")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const ultima = (data as { body?: string | null } | null)?.body ?? null;
+    return comecaComPalavraDeSaida(ultima) ? "suspeita_de_opt_out" : gravado;
+  } catch {
+    return gravado;
+  }
+}
 
 /**
  * Quantos podem assumir agora, no vocabulário que o texto espera.

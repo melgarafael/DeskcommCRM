@@ -546,7 +546,10 @@ Este é um projeto **self-host**: cada pessoa roda o CRM na **própria infraestr
   **desligada**. Se você aceitar o Sentry da comunidade, o que é enviado são **relatórios
   de erro** (stack trace) com CPF, telefone e e-mail substituídos, cabeçalhos sensíveis
   removidos, e token de webhook/convite redigido da URL — **sem** rastreamento de
-  performance e **sem** replay de sessão, que ficam em 0 nesse caminho. Para desligar a
+  performance e **sem** replay de sessão contínuo, que ficam em 0 nesse caminho. Vai
+  junto do erro a gravação dos instantes que o antecederam, com texto e mídia mascarados,
+  as mesmas URLs redigidas e nenhuma gravação nas páginas com credencial na URL
+  ([`lib/sentry/replay.ts`](lib/sentry/replay.ts)). Para desligar a
   qualquer momento: `SENTRY_DSN=off` no `.env`. Para mandar ao **seu** Sentry (aí sim com
   performance e replay): `SENTRY_DSN=<seu-dsn>`. O que é redigido, e por quê, está em
   [`lib/sentry/scrub.ts`](lib/sentry/scrub.ts); a resolução do DSN em

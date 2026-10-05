@@ -11,9 +11,12 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *
  * PUT é o editor da tela (Fase 2 do PLANO-CONFIG-UI-AGENTE): cria uma versão NOVA
  * (nunca edita a antiga — imutabilidade) e move o ponteiro da org. Só edita skill
- * já instalada na org (criar é pelo .zip) e recusa skill de pacote com arquivos
- * (409), porque os arquivos moram sob o id da versão antiga. Semântica de
- * versionamento igual à do import/install.
+ * já instalada na org (criar é pelo .zip) e separa o que é EDITÁVEL do que é
+ * ESTRUTURAL: descrição/matcher/body passam aqui, arquivo não (schema `.strict()` —
+ * 422, a estrutura só muda por novo .zip). Skill de pacote com `references/`/
+ * `assets/` também salva (#2047): a versão nova herda o manifesto e os objetos
+ * são copiados pro prefixo dela (lib/ai/skills/package-files.ts) ANTES do ponteiro
+ * mover — falha na cópia = 500 e nada muda na tela do agente.
  *
  * organization_id vem SEMPRE de requireRole — NUNCA de query/body.
  */
@@ -31,6 +34,7 @@ import {
   validateSkillBody,
 } from "@/lib/agent-engine/agent/skills";
 import { getSkillsPool } from "@/lib/ai/skills/db";
+import { caminhosDoManifesto, copiarArquivosDoPacote } from "@/lib/ai/skills/package-files";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -92,6 +96,10 @@ export async function GET(
     return fail("not_found", t("Versão da skill não encontrada."), 404, { requestId });
   }
 
+  const arquivosDoPacote = caminhosDoManifesto(
+    Array.isArray(version.manifest) ? version.manifest : [],
+  );
+
   return ok(
     {
       name: version.name,
@@ -100,8 +108,11 @@ export async function GET(
       matcher: version.matcher,
       version_id: version.id,
       updated_at: pointer.updated_at,
-      // Skill de pacote não é editável aqui (o PUT devolve 409): a tela avisa antes.
-      tem_arquivos_do_pacote: Array.isArray(version.manifest) && version.manifest.length > 0,
+      // Skill de pacote: o texto É editável (o PUT herda manifesto + arquivos na
+      // versão nova) e a tela mostra o que é estrutural — mudar arquivo é por
+      // novo .zip (#2047).
+      tem_arquivos_do_pacote: arquivosDoPacote.length > 0,
+      arquivos_do_pacote: arquivosDoPacote,
     },
     { requestId },
   );
@@ -170,16 +181,13 @@ export async function PUT(
     return fail("internal_error", "Erro ao carregar a skill.", 500, { requestId });
   }
   // Os arquivos do pacote moram no Storage sob o id da VERSÃO
-  // (`skill-references.ts`). Uma versão nova nasce sem eles, e o agente perderia
-  // as references em silêncio. Skill de pacote muda pelo pacote.
-  if (Array.isArray(atual?.manifest) && atual.manifest.length > 0) {
-    return fail(
-      "state_conflict",
-      t("Esta skill veio de um pacote com arquivos. Para mudar o texto, edite o pacote e envie o .zip de novo."),
-      409,
-      { requestId },
-    );
-  }
+  // (`skill-references.ts`). Uma versão nova nasce sem eles — por isso a edição
+  // textual de skill de pacote HERDA o manifesto aqui e copia os objetos pro
+  // prefixo novo antes de mover o ponteiro (lib/ai/skills/package-files.ts).
+  // Falha na cópia => 500 sem mover nada: o agente segue lendo a versão antiga,
+  // intacta. O que NÃO passa por este PUT é a estrutura: o schema é `.strict()`,
+  // então `manifest`/`files` no body dão 422 — mudar arquivo é por novo .zip.
+  const manifestAtual = Array.isArray(atual?.manifest) ? atual.manifest : [];
 
   // Validação ANTES do banco: erro de conteúdo é 422 com a mensagem que ensina;
   // erro de banco é 500, sem vazar a mensagem do driver.
@@ -199,11 +207,43 @@ export async function PUT(
       description: parsed.data.description,
       body: parsed.data.body,
       matcher: parsed.data.matcher,
-      // Preserva o vínculo com o catálogo da cópia anterior: uma cópia editada
-      // continua devedora da MESMA versão de plataforma, então o aviso de versão
-      // nova segue valendo após o 1º edit (antes virava manual e nunca mais avisava).
+      // Herança: a versão editada mantém os arquivos do pacote e o vínculo com
+      // o catálogo da cópia anterior (uma cópia editada continua devedora da
+      // MESMA versão de plataforma, então o aviso de versão nova segue valendo
+      // após o 1º edit — antes virava manual e nunca mais avisava).
+      manifest: manifestAtual,
       forkedFromVersionId: atual?.forked_from_version_id ?? null,
     });
+    if (manifestAtual.length > 0) {
+      try {
+        await copiarArquivosDoPacote(
+          { admin },
+          {
+            organizationId: org.orgId,
+            name,
+            deVersionId: pointer.version_id,
+            paraVersionId: version.id,
+            manifest: manifestAtual,
+          },
+        );
+      } catch (err) {
+        logger.error("ai.skills.put: falha ao herdar os arquivos do pacote", {
+          requestId,
+          deVersionId: pointer.version_id,
+          paraVersionId: version.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        // Versão órfã no banco (nenhum ponteiro aponta pra ela) e os arquivos
+        // já copiados foram removidos pela própria cópia — a tela do agente
+        // continua na versão antiga, com as references inteiras.
+        return fail(
+          "internal_error",
+          t("Não foi possível copiar os arquivos do pacote para a versão nova. Nada mudou — tente de novo."),
+          500,
+          { requestId },
+        );
+      }
+    }
     await setSkillPointer(pool, { tenantId: org.orgId, name, versionId: version.id });
     versionId = version.id;
   } catch (err) {

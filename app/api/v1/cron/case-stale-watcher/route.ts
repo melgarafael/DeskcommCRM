@@ -88,6 +88,8 @@ function comoFaz(horas: number): string {
  * chave nenhuma no dicionário e devolveria o português para quem escolheu
  * espanhol, em silêncio, que é o modo de falha de i18n que esta casa já pagou.
  * Aqui o número fica fora da tradução e só as palavras passam por `t()`.
+ * O "há" é uma chave com lacuna (`há {tempo}`), e não um pedaço solto, porque
+ * a ordem é da língua: o inglês põe o marcador depois ("3 days ago").
  *
  * ⚠️ O braço dos CASOS continua usando `comoFaz` e continua saindo em português
  * para toda organização. É dívida ANTERIOR a esta onda e está declarada, não
@@ -96,9 +98,9 @@ function comoFaz(horas: number): string {
  */
 function esperaEmPalavras(horas: number, t: (texto: string) => string): string {
   const dias = Math.floor(horas / 24);
-  if (dias >= 1) return `${t("há")} ${dias} ${dias === 1 ? t("dia") : t("dias")}`;
+  if (dias >= 1) return t("há {tempo}").replace("{tempo}", `${dias} ${dias === 1 ? t("dia") : t("dias")}`);
   const h = Math.max(1, Math.round(horas));
-  return `${t("há")} ${h} ${h === 1 ? t("hora") : t("horas")}`;
+  return t("há {tempo}").replace("{tempo}", `${h} ${h === 1 ? t("hora") : t("horas")}`);
 }
 
 async function handle(req: NextRequest): Promise<Response> {

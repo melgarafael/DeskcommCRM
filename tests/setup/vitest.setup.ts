@@ -165,3 +165,40 @@ if (typeof document !== "undefined") {
     await new Promise((resolver) => setTimeout(resolver, 0));
   });
 }
+
+/**
+ * `URL.createObjectURL` no ambiente jsdom do vitest — melgarafael/DeskcommCRM#1745.
+ *
+ * O `createObjectURL` que o vitest instala no ambiente jsdom passa por
+ * `makeCompatBlob`, que lê o interno do Blob do jsdom pelo primeiro símbolo
+ * próprio da instância. Desde o jsdom 30.1 esse interno é o campo privado
+ * `#impl`, o símbolo não existe mais e a chamada estoura
+ * `Cannot read properties of undefined (reading '_buffer')` — em
+ * `URL.createObjectURL(file)` (AttachmentPreviewDialog) e na conversão de um
+ * `FormData` com `File` no corpo de um `NextRequest`. Upstream:
+ * vitest-dev/vitest#11336; medido aqui: nenhuma release da linha 4 conserta
+ * (4.1.11, a mais nova, ainda quebra).
+ *
+ * A sonda é por CAPACIDADE, não por versão: tenta mesmo usar o duviê do
+ * vitest. Se ele funciona (jsdom 30.0.x, ou o vitest consertar o #11336), o
+ * original fica intocado; se estoura, instala um duviê próprio — o objectUrl
+ * só alimenta `src` de `<img>`/`<video>` dentro do teste, o jsdom nunca teve
+ * blob URL de verdade, e o `revokeObjectURL` vira no-op. O caminho contrário
+ * (continuar dependendo do interno do jsdom) também é internals —
+ * `implForWrapper` — só que dentro do nosso código.
+ */
+const criarObjectURL = URL.createObjectURL;
+if (typeof criarObjectURL === "function") {
+  let funciona = true;
+  try {
+    const urlDeProva = criarObjectURL(new Blob(["prova"], { type: "text/plain" }));
+    URL.revokeObjectURL?.(urlDeProva);
+  } catch {
+    funciona = false;
+  }
+  if (!funciona) {
+    let sequencia = 0;
+    URL.createObjectURL = () => `blob:jsdom-test/${++sequencia}`;
+    URL.revokeObjectURL = () => {};
+  }
+}

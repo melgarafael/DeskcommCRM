@@ -985,6 +985,8 @@ jobs:
         presenca-do-atendente.spec.ts
         trunk-sip-config.spec.ts
         fotos-no-catalogo.spec.ts
+        catalogo-busca-no-catalogo-inteiro.spec.ts
+        relatorio-por-etiqueta.spec.ts
 
       # ─── PARTE 4 — a spec de VPS fresca, e quem pode entrar ao lado dela ───
       #
@@ -1121,6 +1123,7 @@ jobs:
         agenda-primeira-pintura-no-fuso.spec.ts
         agenda-portao-de-hidratacao.spec.ts
         etapa-pela-conversa.spec.ts
+        pausa-de-reentrada.spec.ts
         funil-arquivado-volta-pela-tela.spec.ts
         followup-builder.spec.ts
         followup-journey.spec.ts
@@ -1182,11 +1185,19 @@ jobs:
       # entre ~1240s e ~1320s, isto é, ~2 a 3 min abaixo do orçamento.
       #
       # NÃO MEDIDO até aquele run: se as 11 specs passam na vizinhança nova.
+      #
+      # `suspensao-administrativa` entrou em 2026-09-29 (PR 1 da cobrança do
+      # revendedor) na PARTE_6, a de menor previsão (857s). Semeia as próprias
+      # orgs, pessoas, token, fonte de captação e pedido de LGPD pelo service
+      # role e apaga tudo no fim; não depende de seed de passo nem de vizinha.
+      # PREVISÃO, não medida: ~1,5 min de caso.
       SPECS_PARTE_6: >-
         agenda-google-meet.spec.ts
         agenda-presenca-recuperacao.spec.ts
         filtro-por-marcador-pela-tela.spec.ts
+        fonte-de-captacao-assina-os-envios.spec.ts
         inbox-busca-e-filtros-dizem-a-verdade.spec.ts
+        mapas-em-provedores.spec.ts
         painel-de-configuracao-da-instalacao.spec.ts
         protecao-de-envio-nao-congela-o-padrao.spec.ts
         prova-painel-provedores.spec.ts
@@ -1194,6 +1205,7 @@ jobs:
         recursos-opcionais.spec.ts
         redes-sociais-volta-nao-desloga.spec.ts
         sons-dos-avisos.spec.ts
+        suspensao-administrativa.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #
@@ -1669,8 +1681,79 @@ jobs:
           # que é o org id do DEFAULT_SENTRY_DSN (lib/sentry/dsn.ts:17).
           SENTRY_DSN: "off"
 
+      # ─── O browser não pesa; o espelho do apt é que pesa ───────────────────
+      #
+      # "Instalar o browser" levou de 27 s a 425 s por parte no run
+      # 36757657107 (main e8e291217) — e o browser não tem nada com isso. Os
+      # TRÊS downloads do Playwright (Chrome for Testing, FFmpeg, headless
+      # shell) custaram 8–9 s em TODAS as seis partes. O que variou foi o
+      # `apt-get` do `--with-deps`, baixando os mesmos 32–35 MB de .deb (xvfb,
+      # mesa, fontes) do `azure.archive.ubuntu.com`:
+      #
+      #   parte 6: 34,9 MB em 2 s   (14,6 MB/s)
+      #   parte 3: 32,1 MB em 8 s   (3,9 MB/s)
+      #   parte 1: 32,1 MB em 150 s (214 kB/s)
+      #   parte 2: 32,1 MB em 204 s (158 kB/s)
+      #   parte 5: 34,9 MB em 380 s (91,7 kB/s)
+      #   parte 4: 34,9 MB em 398 s (87,6 kB/s)
+      #
+      # Mesmo espelho, mesmo minuto, velocidade de 87 kB/s a 14 MB/s: é sorteio,
+      # e o sorteio comia até 6,6 min de um orçamento de 24. Cachear
+      # `~/.cache/ms-playwright` (o palpite óbvio) compraria 8 s e pagaria
+      # ~300 MB de cota de cache por chave — não entra.
+      #
+      # O que entra: o apt passa a guardar os .deb numa pasta do usuário, e ela
+      # vai para o `actions/cache`. Com a pasta restaurada, o `apt-get` acha os
+      # arquivos já baixados, confere o hash de cada um contra o índice recém-
+      # atualizado, e só desce o que mudou de versão. Nenhum pacote deixa de
+      # ser instalado — o `--with-deps` roda igual, só sem a fila do espelho.
+      #
+      # Chave: imagem do runner (`ImageOS`-`ImageVersion`) + versão do
+      # Playwright. A imagem nova (semanal) renova a chave e, pelo
+      # `restore-keys`, parte dos .deb da anterior; versão nova do Playwright
+      # pode mudar a LISTA de pacotes, por isso também renova.
+      # ponytail: a pasta acumula versões velhas entre imagens (só o que mudou,
+      # ~dezenas de MB); se um dia pesar, `apt-get autoclean` antes de salvar.
+      #
+      # Só em máquina do GitHub: no executor próprio o runner é um contêiner
+      # com apt e `sudo` próprios, e lá o passo segue como era (NÃO MEDIDO se
+      # o espelho pesa naquela máquina).
+      - name: Apontar o cache do apt para uma pasta cacheável
+        if: runner.environment == 'github-hosted'
+        id: debs
+        run: |
+          set -euo pipefail
+          pasta="$HOME/.cache/playwright-apt"
+          mkdir -p "$pasta/partial"
+          printf 'Dir::Cache::Archives "%s/";\nAPT::Keep-Downloaded-Packages "true";\n' "$pasta" \
+            | sudo tee /etc/apt/apt.conf.d/99-debs-do-playwright >/dev/null
+          pw=$(pnpm exec playwright --version | awk '{print $2}')
+          : "${ImageOS:?runner do GitHub sem ImageOS — a chave do cache ficaria sem a imagem}"
+          : "${ImageVersion:?runner do GitHub sem ImageVersion}"
+          echo "prefixo=playwright-apt-${ImageOS}-pw${pw}-" >> "$GITHUB_OUTPUT"
+          echo "imagem=${ImageVersion}" >> "$GITHUB_OUTPUT"
+
+      - name: Restaurar os .deb do browser
+        if: runner.environment == 'github-hosted'
+        id: debs-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/playwright-apt/*.deb
+          key: ${{ steps.debs.outputs.prefixo }}${{ steps.debs.outputs.imagem }}
+          restore-keys: ${{ steps.debs.outputs.prefixo }}
+
       - name: Instalar o browser
         run: pnpm exec playwright install --with-deps chromium
+
+      # Salva logo depois de instalar, e não no fim do job: o `actions/cache`
+      # comum só grava se o job passar, e a parte que estoura o teto — a que
+      # mais precisa do cache na rodada seguinte — nunca gravaria.
+      - name: Guardar os .deb do browser
+        if: runner.environment == 'github-hosted' && steps.debs-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/playwright-apt/*.deb
+          key: ${{ steps.debs.outputs.prefixo }}${{ steps.debs.outputs.imagem }}
 
       # `.env.local` é CÓPIA do `.env.e2e`, não uma terceira redação dele.
       #
@@ -2045,6 +2128,17 @@ jobs:
           path: |
             playwright-report/
             test-results/
+          retention-days: 7
+
+      # A prova das três telas do roteador deve existir também quando o teste
+      # passa. Apenas capturas sintéticas deste teste, sem traces ou credenciais.
+      - name: Guardar prova visual do roteador JEV
+        if: ${{ !cancelled() && matrix.parte == 5 }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: jev-roteador-telas
+          path: test-results/**/jev-roteador-*.png
+          if-no-files-found: ignore
           retention-days: 7
 
       # ── ONDE A MEDIÇÃO FICA ───────────────────────────────────────────────

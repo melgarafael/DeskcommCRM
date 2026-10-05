@@ -72,6 +72,7 @@ function convRow(assigneeKind: string | null) {
     bot_silenced_until: null,
     last_handoff_at: null,
     assignee_kind: assigneeKind,
+    organizations: { status: "active" },
     contacts: {
       id: "66666666-6666-4666-8666-666666666666",
       display_name: null, // sem PII em teste (LGPD)

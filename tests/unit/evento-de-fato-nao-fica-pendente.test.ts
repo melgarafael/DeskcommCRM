@@ -371,6 +371,16 @@ describe("evento-fato (registro) não fica `pending`", () => {
     ).toEqual([]);
   });
 
+  it("o baseline tem a MESMA lista que a última migration", () => {
+    // `tiposDeRegistro()` lê a ÚLTIMA definição, que é sempre uma migration —
+    // e quem instala ou atualiza aplica só o baseline. Tirar um tipo da lista
+    // só na migration (0417, 0534) deixaria o self-host com o tipo dentro: a
+    // linha nasceria `done` e a regra nunca rodaria lá, com este arquivo verde.
+    const m = DEF_REGISTRO.exec(semComentarios(readFileSync(BASELINE, "utf8")));
+    const doBaseline = new Set([...(m?.[1] ?? "").matchAll(/'([a-z0-9_.]+)'/g)].map((x) => x[1]!));
+    expect([...doBaseline].sort()).toEqual([...tiposDeRegistro()].sort());
+  });
+
   it("o backfill e o trigger estão nos DOIS caminhos de schema", () => {
     // A lista sozinha não conserta nada: quem faz a linha nascer `done` é o
     // trigger, e quem conserta o estoque é o backfill. Sem isto, um PR que

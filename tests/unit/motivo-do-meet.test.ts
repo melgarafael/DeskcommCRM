@@ -34,6 +34,22 @@ describe("o motivo da recusa chega inteiro à tela", () => {
     expect(m.texto).toMatch(/atendimento desta conversa mudou/i);
   });
 
+  it("⛔ a recusa NÃO menciona link — compromisso presencial não tem nenhum (#2188)", () => {
+    // `fn_meet_boundary_current` compara `service_revision`,
+    // `current_demanda_id`, `demanda.revision`, `fechada_em` e o status da
+    // conversa — nunca um link. Num compromisso PRESENCIAL ou POR TELEFONE não
+    // existe link nenhum, e a frase antiga ("depois que o link foi criado")
+    // afirmava um fato que não aconteceu no caminho exato do relator do #2188:
+    // resolver a conversa → marcar o compromisso → mandar os dados.
+    //
+    // A precondição é a frase nova não citar link; sem ela o teste verde seria
+    // só repetir o que a tela já dizia.
+    const m = motivoDoMeet({ message: "meet_conversation_stale" });
+    expect(m.texto).not.toMatch(/link/i);
+    expect(m.texto).toMatch(/atendimento desta conversa mudou/i);
+    expect(m.texto).toMatch(/autorize o envio de novo/i);
+  });
+
   it("⛔ e ele NÃO volta como 5xx — é isto que acaba com os 20 segundos", () => {
     // O cliente repete automaticamente em 5xx. Uma recusa de regra devolvida
     // como 500 vira três tentativas idênticas e três recusas idênticas.

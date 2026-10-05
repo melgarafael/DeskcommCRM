@@ -180,6 +180,23 @@ describe("mapas de arquitetura — coerência interna", () => {
     }
   });
 
+  it("a suspensão que suspende está no mapa, e nenhuma peça dela é ilha", () => {
+    // O caso concreto do DoD 13 para a PR 1 da cobrança do revendedor. O laço
+    // de retorno é `fnReativar → itemCentral → central → fila`: é por ele que
+    // uma pessoa revisa o que chegou enquanto a IA estava calada.
+    const m = JSON.parse(
+      fs.readFileSync(path.join(DIR, "suspensao-de-organizacao.architecture.json"), "utf8"),
+    ) as Mapa;
+    const grau = (id: string) => (m.edges ?? []).filter((e) => e.from === id || e.to === id).length;
+    for (const n of m.nodes!) {
+      expect(grau(n.id), `${n.id} com menos de 2 arestas — é ilha pelo invariante 1`).toBeGreaterThanOrEqual(2);
+    }
+    const liga = (de: string, para: string) => (m.edges ?? []).some((e) => e.from === de && e.to === para);
+    expect(liga("fnReativar", "itemCentral"), "a reativação não deixa rastro para uma pessoa revisar").toBe(true);
+    expect(liga("central", "fila"), "o aviso de reativação não leva à Fila").toBe(true);
+    expect(liga("operante", "motor"), "a régua única não chega ao motor da IA").toBe(true);
+  });
+
   it("o Jev está no mapa da escalação, com o laço de retorno", () => {
     // O caso concreto do DoD 13 para o Jev. O genérico cobra ≥1 aresta; o
     // invariante 7 pede o laço de retorno, e é ele que se nomeia aqui: a

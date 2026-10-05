@@ -38,6 +38,7 @@ interface ConversaEmbed {
     phone_number: string | null;
   } | null;
   channel_sessions: { metadata: Record<string, unknown> | null } | null;
+  organizations: { status: string | null } | null;
 }
 
 /**
@@ -51,7 +52,7 @@ export async function decidirElegibilidadeDaConversaViaSupabase(
   const { data, error } = await admin
     .from("conversations")
     .select(
-      "bot_silenced_until, assignee_kind, contacts:contact_id(force_human, ai_authorized_at, phone_number), channel_sessions:channel_session_id(metadata)",
+      "bot_silenced_until, assignee_kind, organizations:organization_id(status), contacts:contact_id(force_human, ai_authorized_at, phone_number), channel_sessions:channel_session_id(metadata)",
     )
     .eq("organization_id", input.organizationId)
     .eq("id", input.conversationId)
@@ -65,6 +66,8 @@ export async function decidirElegibilidadeDaConversaViaSupabase(
   const row = data as unknown as ConversaEmbed;
   return decidirElegibilidade(
     montarEstadoDeElegibilidade({
+      orgStatus: row.organizations?.status ?? null,
+      canalDesativado: row.channel_sessions?.metadata?.["disabled"] ?? null,
       aiGate: row.channel_sessions?.metadata?.["ai_gate"] ?? null,
       aiGateMode: row.channel_sessions?.metadata?.["ai_gate_mode"] ?? null,
       aiTestPhoneNumbers: row.channel_sessions?.metadata?.["ai_test_phone_numbers"] ?? null,

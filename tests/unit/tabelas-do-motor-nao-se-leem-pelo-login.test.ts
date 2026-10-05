@@ -42,7 +42,16 @@ function arquivos(dir: string): string[] {
 
 const CONSULTA = new RegExp(`\\.from\\(["'](${SO_DO_SERVIDOR.join("|")})["']\\)`, "g");
 const RECEPTOR_DO_SERVIDOR = /(createAdminClient\(\)|\badmin)\s*$/;
-const ROTA_DE_USUARIO = /requireRole\(|loadAuthUser\(|requireAuth\(/;
+// `const db = createAdminClient()` também é o client de serviço (rota de roteamento do Jev).
+const NOME_DO_ADMIN = /\b(?:const|let)\s+(\w+)\s*=\s*createAdminClient\(\)/g;
+
+function receptorDoServidor(fonte: string): RegExp {
+  const nomes = [...fonte.matchAll(NOME_DO_ADMIN)].map((m) => m[1]!).filter((n) => n !== "admin");
+  if (nomes.length === 0) return RECEPTOR_DO_SERVIDOR;
+  return new RegExp(`(createAdminClient\\(\\)|\\b(?:admin|${nomes.join("|")}))\\s*$`);
+}
+
+const ROTA_DE_USUARIO =/requireRole\(|loadAuthUser\(|requireAuth\(/;
 
 interface Achado {
   arquivo: string;
@@ -57,6 +66,7 @@ function varrer(): { pelaSessao: Achado[]; semOrganizacao: Achado[]; total: numb
   for (const caminho of arquivos(API)) {
     const fonte = readFileSync(caminho, "utf8");
     const deUsuario = ROTA_DE_USUARIO.test(fonte);
+    const receptor = receptorDoServidor(fonte);
     for (const m of fonte.matchAll(CONSULTA)) {
       total++;
       const inicio = m.index ?? 0;
@@ -66,7 +76,7 @@ function varrer(): { pelaSessao: Achado[]; semOrganizacao: Achado[]; total: numb
         tabela: m[1]!,
       };
       const antes = fonte.slice(Math.max(0, inicio - 200), inicio);
-      if (!RECEPTOR_DO_SERVIDOR.test(antes)) {
+      if (!receptor.test(antes)) {
         pelaSessao.push(achado);
         continue;
       }

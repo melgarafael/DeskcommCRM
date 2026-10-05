@@ -872,6 +872,10 @@ export function AgendaClient({
                 fontesDefasadas={horarios?.fontes_defasadas}
                 googleCoberturaParcial={horarios?.google_cobertura_parcial}
                 onMesVisivel={onMesVisivel}
+                // `data` do React Query é da chave ATUAL (sem `placeholderData`),
+                // então chegou = é do `mesDoPainel`. É o que deixa o painel saber
+                // "este mês acabou" em vez de "ainda carregando".
+                mesCarregado={horarios ? mesDoPainel : null}
                 horarioInicial={horarioEscolhido ?? undefined}
                 // O ENCAIXE é desta tela, e só dela: aqui quem marca é uma
                 // pessoa da equipe com sessão, que é exatamente o ator a quem a

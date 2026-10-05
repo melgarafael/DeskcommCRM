@@ -18,7 +18,8 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser } from "@/lib/auth/server";
+import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { allTools } from "@/lib/mcp/tools";
 import { TOOL_CATALOG, deCapacidadeDesligada, deModuloDesligado } from "@/lib/mcp/tools/catalog";
 import { capacidadesDaOrganizacao } from "@/lib/organizacao/capacidades";
@@ -32,7 +33,9 @@ export async function GET(_req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authUser = await loadAuthUser();
   if (!authUser) return fail("unauthenticated", "Auth required.", 401, { requestId });
-  const activeOrg = await resolveActiveOrg(authUser);
+  const ativa = await orgAtivaDaApi(authUser, requestId);
+  if (!ativa.ok) return ativa.response;
+  const activeOrg = ativa.org;
   if (!activeOrg) return fail("forbidden_tenant", "Sem organização ativa.", 403, { requestId });
 
   let servidas;

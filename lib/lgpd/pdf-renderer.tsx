@@ -95,10 +95,16 @@ interface Props {
   unsignedWarning?: boolean;
 }
 
-function fmtDate(s: string | null | undefined): string {
+/**
+ * Sem `fuso` (Brasil) a data sai como sempre saiu. Com `fuso` (organização
+ * fora do Brasil) sai no fuso DELA e com o nome do fuso escrito: um horário de
+ * São Paulo apresentado como local erra 3 a 4 h em Lisboa (doc 88).
+ */
+function formatarData(s: string | null | undefined, fuso?: string): string {
   if (!s) return "—";
   try {
-    return new Date(s).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+    if (!fuso) return new Date(s).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+    return new Date(s).toLocaleString("pt-PT", { timeZone: fuso, timeZoneName: "short" });
   } catch {
     return s;
   }
@@ -144,6 +150,8 @@ const noticeStatus: Record<string, string> = {
 
 export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElement {
   const shortId = data.request_id.slice(0, 8);
+  // ponytail: o nome antigo, já preso ao fuso deste documento — as ~25 chamadas abaixo não mudam.
+  const fmtDate = (s: string | null | undefined) => formatarData(s, data.fuso);
 
   return (
     <Document>
@@ -155,7 +163,7 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
             {/* A lei vem do PERFIL do país da organização (issue #1033): país
                 sem citação revisada não cita lei nenhuma — citar a errada é
                 pior do que não citar artigo nenhum. */}
-            Base legal: {data.lei_citada ?? "não declarada (país sem citação revisada)"} ·
+            {`${data.lei_rotulo ?? "Base legal"}: `}{data.lei_citada ?? "não declarada (país sem citação revisada)"} ·
             Solicitação #{shortId}
           </Text>
         </View>
@@ -210,7 +218,14 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
               <Text style={styles.value}>{data.contact.phone_number ?? "—"}</Text>
             </View>
             <View style={styles.row}>
-              <Text style={styles.label}>{data.documento_rotulo}:</Text>
+              {/* O valor "informado na conversa" vem só da pergunta de roteiro
+                  do tipo `cpf`, validada como CPF (`lib/lgpd/campos-personalizados.ts`):
+                  é sempre CPF, mesmo numa organização de fora do Brasil. */}
+              <Text style={styles.label}>
+                {data.contact.cpf_present || !data.contact.cpf_informado_na_conversa
+                  ? data.documento_rotulo
+                  : "CPF"}:
+              </Text>
               <Text style={styles.value}>
                 {data.contact.cpf_present
                   ? "Armazenado (criptografado)"
@@ -298,6 +313,11 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
                   {fmtDate(m.created_at)} · {m.direction} · {m.type} · {m.status}
                 </Text>
                 <Text>{m.body ? m.body.slice(0, 280) : m.has_media ? "[mídia]" : "—"}</Text>
+                {m.media_derived_text ? (
+                  <Text style={styles.small}>
+                    transcrição/texto extraído da mídia: {m.media_derived_text.slice(0, 280)}
+                  </Text>
+                ) : null}
               </View>
             ))}
           </View>
@@ -313,6 +333,11 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
                   {fmtDate(m.created_at)} · {m.type}
                 </Text>
                 <Text>{m.body ? m.body.slice(0, 280) : m.has_media ? "[mídia]" : "—"}</Text>
+                {m.media_derived_text ? (
+                  <Text style={styles.small}>
+                    transcrição/texto extraído da mídia: {m.media_derived_text.slice(0, 280)}
+                  </Text>
+                ) : null}
               </View>
             ))}
           </View>
@@ -495,11 +520,20 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
         {/* Unsigned warning */}
         {unsignedWarning ? (
           <View style={styles.warningBanner}>
-            <Text>
-              ASSINATURA DIGITAL PAdES PENDENTE — chave LGPD_SIGNING_KEY não
-              configurada. A integridade do documento é garantida por hash SHA-256
-              registrado em log auditável.
-            </Text>
+            {/* Fora do Brasil o titular não lê o nome de uma variável que cita a LGPD. */}
+            {data.fuso === undefined && data.lei_rotulo === undefined ? (
+              <Text>
+                ASSINATURA DIGITAL PAdES PENDENTE — chave LGPD_SIGNING_KEY não
+                configurada. A integridade do documento é garantida por hash SHA-256
+                registrado em log auditável.
+              </Text>
+            ) : (
+              <Text>
+                ASSINATURA DIGITAL PAdES PENDENTE — a chave de assinatura não está
+                configurada. A integridade do documento é garantida por hash SHA-256
+                registrado em log auditável.
+              </Text>
+            )}
           </View>
         ) : null}
 

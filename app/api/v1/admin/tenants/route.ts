@@ -1,10 +1,9 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createTenantSchema } from "@/lib/schemas/tenant-creation";
 import { issueInvite } from "@/lib/auth/issue-invite";
-import { mfaEmDivida } from "@/lib/auth/server";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
-import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
+import { falhaDaEscritaDePlatformAdmin, requirePlatformAdmin, requirePlatformAdminEscrita, type PlatformAdminContext } from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
@@ -156,20 +155,12 @@ export async function POST(req: NextRequest) {
 
   const requestId = randomUUID();
 
-  let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
+  let adminCtx: PlatformAdminContext;
   try {
-    adminCtx = await requirePlatformAdmin();
-  } catch {
-    return fail("forbidden", "Platform admin required", 403, { requestId });
+    adminCtx = await requirePlatformAdminEscrita();
+  } catch (err) {
+    return falhaDaEscritaDePlatformAdmin(err, requestId);
   }
-
-  if (adminCtx.platformAdmin.scope !== "full") {
-    return fail("forbidden", "Seu acesso de suporte não permite criar organizações", 403, {
-      requestId,
-    });
-  }
-  if (await mfaEmDivida())
-    return fail("mfa_required", "Confirme a verificação em duas etapas", 403, { requestId });
   const key = req.headers.get("Idempotency-Key") ?? randomUUID();
   if (!z.string().uuid().safeParse(key).success) {
     return fail("validation_error", "Idempotency-Key deve ser UUID", 400, { requestId });

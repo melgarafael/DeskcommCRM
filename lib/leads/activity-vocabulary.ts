@@ -161,8 +161,8 @@ export type ActivityType =
   /**
    * O negócio nasceu da TROCA DE FUNIL (`POST /api/v1/leads/[id]/clone`).
    *
-   * ⚠️ Não é `lead_created`: aquele rótulo diz "Entrou pelo WhatsApp", e este
-   * negócio não entrou por canal nenhum — ele veio de outro funil, e é isso que
+   * ⚠️ Não é `lead_created`: aquele diz "Entrou no funil" pela primeira
+   * mensagem de um canal, e este negócio não entrou por canal nenhum — ele veio de outro funil, e é isso que
    * quem abre o card no destino precisa ler. O outro lado da troca é a
    * `demand_closed` da origem, com a razão "Levado para o funil X".
    */
@@ -183,7 +183,7 @@ export type ActivityType =
   | "proposal_followup_skipped";
 
 export const ACTIVITY_LABELS: Record<ActivityType, string> = {
-  lead_created: "Entrou pelo WhatsApp",
+  lead_created: "Entrou no funil",
   stage_changed: "Mudou de estágio",
   agent_move_corrected: "Correção do que o assistente tinha feito",
   note: "Anotação",

@@ -7,16 +7,20 @@ import type { PublishedAgentConfig } from './agent-config';
 import type { LeadCheckpointRow } from './inbound-turn';
 import { ferramentasDeAgendaDoAgente, temFerramentaDeAgenda } from './inbound-turn';
 import {
+  BEFORE_SEND_GATES,
   evaluateBeforeSend,
+  type Gate,
   type GateContext,
   type GateTraceEntry,
   loadChannelProvider,
+  pacingGate,
 } from '../guardrails/before-send';
 import { loadChannelKnobs, loadPacingState } from '../pacing/store';
 import { PACING_DEFAULTS } from '../pacing/defaults';
 import { SPINNING_DEFAULTS } from '../spinning/defaults';
 import { loadRecentCopies, loadSpinningKnobs } from '../spinning/store';
 import { loadPromiseTable } from '../guardrails/promise/table';
+import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
 import { loadDisclosureTemplate, countPriorAcceptedSends } from '../guardrails/disclosure/template';
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
 import { getToolByName } from '@/lib/mcp/tools';
@@ -43,6 +47,12 @@ export interface PreviewResult {
   candidates: Array<{ body: string; citations: Citation[]; trace: GateTraceEntry[] }>;
   proposals: Array<{ tool: string; arguments: unknown }>;
   impediments: Array<{ code: string; message: string }>;
+  /**
+   * O que NÃO impediu o candidato, mas impediria o envio real agora. Só o sandbox
+   * escreve aqui (ver `gatesDoSandbox`); o rascunho assistido continua tratando o
+   * mesmo veto como impedimento.
+   */
+  warnings: Array<{ code: string; message: string }>;
   restrictions: string[];
 }
 export function newPreviewResult(): PreviewResult {
@@ -50,6 +60,7 @@ export function newPreviewResult(): PreviewResult {
     candidates: [],
     proposals: [],
     impediments: [],
+    warnings: [],
     restrictions: [
       'preview_no_client_effects',
       'writes_require_separate_authorization',
@@ -127,6 +138,10 @@ export async function previewGateContext(
       toolCalledThisTurn: false,
     },
     internalVocabularyEnforced: true,
+    // A MESMA decisão do turno real: a camada de afirmação clínica é da organização.
+    // Um Testar que arma diferente da produção faz quem afina o prompt testar contra
+    // outro sistema — o mesmo motivo do `agenda` logo acima.
+    clinicalClaimEnforced: camadaLigada((await lerCamadasDaOrg(db, org)).afirmacao_clinica, false),
   };
 }
 export const SCENARIO_READS = new Set([
@@ -142,6 +157,39 @@ export const SCENARIO_READS = new Set([
   'crm_search_products',
   'crm_search_knowledge',
 ]);
+/**
+ * A cadeia do Testar (sandbox): a de produção, com o veto de pacing rebaixado a aviso.
+ *
+ * Fora da janela de envio, o `pacingGate` impede que a resposta do modelo
+ * apareça como candidato de teste. Janela, aquecimento e limite diário protegem
+ * o envio real; o sandbox não envia mensagens. Rebaixar somente esse veto a aviso
+ * permite inspecionar o candidato e executar os demais gates de conteúdo.
+ *
+ * Só o pacing muda, e só aqui. Opt-out, LGPD e os gates de conteúdo continuam vetando;
+ * o rascunho assistido (`assisted`, contato real) e a produção seguem com
+ * `BEFORE_SEND_GATES` intacta. O veto vira linha `skipped: 'sandbox_send_embargo'` no
+ * trace e um aviso explícito no resultado — nunca um `pass` silencioso.
+ */
+function gatesDoSandbox(avisos: Array<{ code: string; message: string }>): readonly Gate[] {
+  return BEFORE_SEND_GATES.map((gate) =>
+    gate.name !== pacingGate.name
+      ? gate
+      : {
+          name: gate.name,
+          evaluate: (ctx: GateContext) => {
+            const verdict = gate.evaluate(ctx);
+            if (verdict.pass) return verdict;
+            avisos.push({
+              code: verdict.code,
+              message:
+                `Em produção esta resposta não sairia agora (${verdict.reason}). ` +
+                'O teste mostra a resposta mesmo assim; nenhuma mensagem foi enviada.',
+            });
+            return { pass: true, skipped: 'sandbox_send_embargo' as const };
+          },
+        },
+  );
+}
 /** Unknown tools fail closed. A write proposal never calls its original execute. */
 export function applyPreviewPolicy(
   tools: ToolSet,
@@ -175,12 +223,16 @@ export function applyPreviewPolicy(
                 args && typeof args === 'object' && 'body' in args && typeof args.body === 'string'
                   ? args.body
                   : '';
-              const result = evaluateBeforeSend({
-                ...ctx,
-                ...liveContext?.(),
-                body,
-                semanticPromise: semanticClassifier ? await semanticClassifier(body) : null,
-              });
+              const avisos: Array<{ code: string; message: string }> = [];
+              const result = evaluateBeforeSend(
+                {
+                  ...ctx,
+                  ...liveContext?.(),
+                  body,
+                  semanticPromise: semanticClassifier ? await semanticClassifier(body) : null,
+                },
+                p.kind === 'sandbox' ? gatesDoSandbox(avisos) : BEFORE_SEND_GATES,
+              );
               if (result.veto) {
                 p.result.impediments.push({ code: result.veto.code, message: result.veto.message });
                 return {
@@ -188,6 +240,10 @@ export function applyPreviewPolicy(
                   error: { code: result.veto.code, message: result.veto.message },
                 };
               }
+              // O aviso acompanha um candidato; vetado por outro gate, o impedimento já diz.
+              for (const aviso of avisos)
+                if (!p.result.warnings.some((w) => w.code === aviso.code))
+                  p.result.warnings.push(aviso);
               p.result.candidates.push({
                 body: result.body,
                 citations: citations(),

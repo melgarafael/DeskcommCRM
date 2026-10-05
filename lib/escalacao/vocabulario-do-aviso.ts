@@ -42,6 +42,8 @@ export const ERROS_DA_ENTREGA_DE_AVISO = [
   "canal_desconectado",
   "canal_arquivado",
   "canal_nao_aceita_aviso_livre",
+  /** O operador PAUSOU a conexão escolhida para os avisos (`metadata.disabled`, migration 0545). */
+  "canal_desativado",
   "transporte_ausente",
   "destino_invalido",
   /**
@@ -76,6 +78,8 @@ export const FRASE_DO_ERRO_DO_AVISO = {
   canal_arquivado: "A conexão de WhatsApp escolhida para os avisos foi removida.",
   canal_nao_aceita_aviso_livre:
     "A conexão escolhida só envia mensagens aprovadas — ela não serve para o aviso de caso.",
+  canal_desativado:
+    "A conexão escolhida para os avisos está pausada. Retome-a na Central de Conexões para os avisos voltarem a sair.",
   transporte_ausente: "O serviço de WhatsApp desta instalação não está configurado.",
   destino_invalido: "O número de aviso não foi aceito pelo WhatsApp.",
   // Sem o número na frase: a configuração é de `admin`, mas a Central é lida

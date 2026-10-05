@@ -127,6 +127,9 @@ export function PipelinePageClient({
           onOpenChange={setNewOpen}
           pipelineId={pipelineId}
           stages={data.stages}
+          // #1751: o quadro é a lista que o diálogo confere ANTES de criar —
+          // é ela que faz o aviso de negócio duplicado existir sem rede.
+          leads={data.leads}
         />
       )}
       <FilterBar

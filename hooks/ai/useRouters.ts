@@ -21,6 +21,9 @@ export interface RouterMember {
   position: number;
   /** Fluxo de atendimento que começa quando a intenção casa. `null` = só agente. */
   flow_pointer_id: string | null;
+  /** Funil de DESTINO do card quando a intenção casa (#2155). `null` = só roteia. */
+  pipeline_id: string | null;
+  stage_id: string | null;
 }
 
 export interface RouterMemberInput {
@@ -29,6 +32,9 @@ export interface RouterMemberInput {
   intent_description: string;
   examples: string[];
   flow_pointer_id: string | null;
+  /** Funil de DESTINO do card quando a intenção casa (#2155). `null` = só roteia. */
+  pipeline_id: string | null;
+  stage_id: string | null;
 }
 
 export interface RouterDetail {
@@ -46,6 +52,8 @@ export interface RouterDetailState {
 }
 
 export interface RouterTestResult {
+  ia_consultada?: boolean;
+  modo_roteador?: "comparacao" | "sob_demanda";
   intent_name: string | null;
   /**
    * `null` quando NÃO houve veredito — não é zero. O tipo importa mais que a
@@ -68,7 +76,7 @@ export interface RouterTestResult {
     confidence: number | null;
     agent_id: string | null;
     agent_name: string | null;
-    /** Em produção valeria a escolha dele (decidindo, e com a IA de sempre respondendo). */
+    /** Em produção valeria a escolha dele, conforme o modo de roteamento salvo. */
     decide: boolean;
   } | null;
 }

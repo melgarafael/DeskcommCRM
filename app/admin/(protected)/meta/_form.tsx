@@ -25,6 +25,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useT } from "@/hooks/i18n/useT";
+import { MENSAGEM_DA_RECUSA_DE_ESCRITA, ehRecusaDeEscrita } from "@/lib/auth/recusa-de-escrita-de-admin";
 import { copyToClipboard } from "@/lib/clipboard";
 
 interface Props {
@@ -68,6 +69,7 @@ export function FormularioDaMeta({
   const podeSalvar = chave.trim().length >= TAMANHO_MINIMO_DA_CHAVE;
 
   function motivoDaRecusa(r: Extract<UpdateMetaAppResult, { ok: false }>): string {
+    if (ehRecusaDeEscrita(r.error)) return t(MENSAGEM_DA_RECUSA_DE_ESCRITA[r.error]);
     switch (r.error) {
       case "invalid_input":
         return t("A chave parece incompleta. Copie de novo do painel da Meta — ela tem 32 caracteres.");

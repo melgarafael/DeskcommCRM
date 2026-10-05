@@ -68,7 +68,8 @@ Decisão anterior, da mesma sessão: caminho **B** — a capacidade entra no nú
 | Mensagem que CHEGA (WAHA, Meta, canal, captação, Nuvemshop) | Continua gravada. Nenhum webhook de entrada muda. |
 | IA (texto, voz, sentimento, RAG de conversa), automações, follow-up, campanha, prospecção, webhook de saída, conversão de anúncio, lembrete | **Nada roda e nada sai.** Evento consumido como `skipped`, job vira `failed`, mensagem `queued` vira `failed`. |
 | Sessão (tela, server action, API de sessão) | Redireciona para `/account-suspended` ou 403 `org_suspended`. Exceções: rotas de LGPD e de cobrança. |
-| Bearer `dsk_` e MCP | 403. |
+| Bearer `dsk_` | 403. |
+| MCP | Só a consulta de pedidos de LGPD (`crm_list_privacy_requests`) responde; as demais ferramentas voltam `org_suspended` (decisão do dono, 30/09/2026: LGPD nunca é bloqueada). |
 | LGPD | Nunca bloqueada. |
 | Reativação | Zero rajada; um item na Central lista as conversas que receberam mensagem, para revisão humana. |
 | Landings `/api/v1/anuncios/*/[org]` e `/api/v1/rastreio/[id]` | Continuam (decisão D-11). |
@@ -826,7 +827,7 @@ Caminho suportado: `install.sh` por SSH na VPS do Coolify (detecta `coolify-prox
 
 1. **Escrita de dados de negócio via PostgREST, Realtime e Storage por membro de org suspensa** segue pela RLS (decisão D-12). Nada que custe ou saia passa por aí; o estado da org e os limites estão travados no banco. Endurecimento futuro: varredura de policies restritivas `org_operante_write_*`, sem tocar `fn_support_write_allowed`.
 2. **`support_readonly` ainda escreve pelo PostgREST onde a policy aceita `fn_is_platform_admin()`** fora das colunas travadas (ex.: `user_orgs_insert`, `baseline.sql:4308`; campos de exibição de `organizations`). A cobrança está fechada (gatilho de §2.1 e de assentos); o endurecimento geral (`fn_is_platform_admin_full` nas policies) é outro PR.
-3. **15 rotas chamam `resolveActiveOrg` sem `requireRole`** (ex.: `app/api/v1/conversations/route.ts`): org suspensa recebe 307 HTML em vez de 403 JSON. Nenhum acesso se abre.
+3. **Rotas de API com empresa suspensa respondem 403 JSON `org_suspended`** — as 20 que chamavam `resolveActiveOrg` (que redireciona) passaram a `orgAtivaDaApi` no PR 1, e a cerca `tests/unit/api-nao-redireciona-org-suspensa.test.ts` reprova quem voltar ao redirect. Para contar: `grep -rln "orgAtivaDaApi(" app/api | wc -l`.
 4. **Jobs `running` no instante da suspensão** terminam o turno; gate e assert barram a saída; uma chamada de LLM em voo pode ser cobrada.
 5. **Webhook do Asaas fraco** (token estático): corpo é só ponteiro, nunca guardado; decisão sempre por releitura.
 6. **Provedor fora do ar:** estado congela, nenhuma suspensão sem releitura fresca.

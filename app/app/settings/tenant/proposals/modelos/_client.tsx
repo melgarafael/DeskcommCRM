@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
+import { ApiError } from "@/lib/api/types";
 import type { ApiSuccess } from "@/lib/api/wrappers";
 
 interface ModeloListado {
@@ -38,6 +39,7 @@ export function ModelosDeProposta() {
   const [nomeNovo, setNomeNovo] = useState("");
   const [recarga, setRecarga] = useState(0);
   const [mensagem, setMensagem] = useState<string | null>(null);
+  const [propostasDesligadas, setPropostasDesligadas] = useState(false);
   const arquivo = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -45,7 +47,18 @@ export function ModelosDeProposta() {
     apiClient
       .get<ApiSuccess<ModeloListado[]>>("/api/v1/settings/proposal-templates", { signal: controller.signal })
       .then((res) => !controller.signal.aborted && setModelos(res.data))
-      .catch((e: unknown) => !controller.signal.aborted && showApiError(e));
+      .catch((e: unknown) => {
+        if (controller.signal.aborted) return;
+        // Com as propostas desligadas na organização, a rota responde 404
+        // `not_found` (lib/propostas/porta.ts): a tela mora num local que a
+        // empresa não habilitou. Em vez do toast cru e do "Carregando…"
+        // infinito, um estado próprio com o caminho para ligar.
+        if (e instanceof ApiError && e.code === "not_found") {
+          setPropostasDesligadas(true);
+          return;
+        }
+        showApiError(e);
+      });
     return () => controller.abort();
   }, [recarga]);
 
@@ -108,6 +121,20 @@ export function ModelosDeProposta() {
       setAndamento(null);
       setOcupado(false);
     }
+  }
+
+  if (propostasDesligadas) {
+    return (
+      <div className="mx-auto w-full max-w-3xl space-y-3 p-6">
+        <h1 className="text-xl font-semibold">{t("Modelos de proposta")}</h1>
+        <p>
+          {t("As propostas estão desligadas para esta organização. Para editar os modelos, ligue as propostas em Configurações › Propostas e salve.")}
+        </p>
+        <Button asChild variant="outline">
+          <Link href="/app/settings/tenant/proposals">{t("Ir para Configurações › Propostas")}</Link>
+        </Button>
+      </div>
+    );
   }
 
   if (!modelos) return <div className="p-6">{t("Carregando…")}</div>;

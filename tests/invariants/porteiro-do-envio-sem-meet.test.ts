@@ -50,6 +50,16 @@ async function compromisso(local: string, meetingState: string, url: string | nu
   const org = randomUUID();
   const id = randomUUID();
   const contact = randomUUID();
+  // ⚠️ A SOLICITAÇÃO DE MEET SÓ EXISTE ONDE HÁ MEET, e isto é a precondição que
+  // faltava (issue #2188). O campo `meeting_request_id` é preenchido pelo PEDIDO
+  // de Meet (`fn_meet_action`, `fn_meet_enqueue`); num compromisso presencial ele
+  // nunca é tocado e fica NULO. A fixture gravava `gen_random_uuid()` nos dois
+  // casos, então o caso "sem Meet" provava o caminho com um valor que a produção
+  // não tem — e o porteiro, que compara esse campo com `=`, passava aqui e
+  // barrava todo presencial de verdade (`NULL = NULL` não é verdadeiro).
+  // Ver o cabeçalho: é o modo de falha nº 1 desta casa, a guarda verde sobre a
+  // ausência.
+  const solicitacaoDeMeet = local === "google_meet" ? randomUUID() : null;
   await pool.query(
     "insert into organizations(id,slug,legal_name,display_name) values($1::uuid,$1::text,'Porteiro','Porteiro')",
     [org],
@@ -66,10 +76,10 @@ async function compromisso(local: string, meetingState: string, url: string | nu
   await pool.query(
     `insert into calendar_appointments(id,organization_id,contact_id,conversation_id,owner_user_id,title,
        starts_at,ends_at,status,location_kind,meeting_state,meeting_url,meeting_request_id)
-     values($1,$2,$3,$4,$5,'Compromisso',now()+interval '4 days',now()+interval '4 days 1 hour','confirmed',$6,$7,$8,gen_random_uuid())`,
-    [id, org, contact, boundary.conversation_id, GOV_AGENT_A, local, meetingState, url],
+     values($1,$2,$3,$4,$5,'Compromisso',now()+interval '4 days',now()+interval '4 days 1 hour','confirmed',$6,$7,$8,$9)`,
+    [id, org, contact, boundary.conversation_id, GOV_AGENT_A, local, meetingState, url, solicitacaoDeMeet],
   );
-  return { org, id, contact, boundary };
+  return { org, id, contact, boundary, solicitacaoDeMeet };
 }
 
 /** Autoriza como `fn_meet_action` autoriza, e deixa o gatilho enfileirar. */
@@ -114,6 +124,13 @@ async function comoOWorkerPergunta(org: string, job: string): Promise<boolean> {
 
 it("⛔ compromisso PRESENCIAL passa pelo porteiro — sem link, e isso não é falta", async () => {
   const f = await compromisso("in_person", "not_requested", null);
+  // A PRECONDIÇÃO, asserida: sem Meet o campo é NULO — é assim em produção, e é
+  // o par (nulo, nulo) que o porteiro recusava. Uma fixture que volte a preencher
+  // este campo "para o insert não ficar estranho" desliga o caso em silêncio.
+  expect(
+    f.solicitacaoDeMeet,
+    "a fixture deu uma solicitação de Meet a um compromisso presencial — o caso deixa de medir o que existe",
+  ).toBeNull();
   const { job, entrega } = await autorizarEEnfileirar(f);
   expect(entrega.state, "o gatilho não enfileirou — o defeito é antes do porteiro").toBe("queued");
   expect(job).toBeTruthy();

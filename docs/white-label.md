@@ -18,6 +18,26 @@ A cor é **derivada**, não aplicada crua: de um hex saem onze tons nos dois tem
 
 **E o ícone do aplicativo e do navegador.** Logo abaixo do logo, esse campo recebe uma imagem quadrada — PNG ou JPG, até 512 KB, de preferência 512×512 ou maior. A mesma imagem aparece na aba de todas as telas, inclusive o login, e no aplicativo instalado. O manifest anuncia PNGs de 192×192 e 512×512, renderizados no servidor a partir do arquivo limitado no Storage; nenhum endereço arbitrário é buscado. Sem arquivo válido, mantém o símbolo do produto ou a inicial sobre a cor da marca. Remover o arquivo volta a esse desenho. O ícone é da instalação, não de cada organização; trocar de organização não renomeia o aplicativo. Navegadores podem demorar para atualizar um app já instalado; remover o aplicativo e instalá-lo novamente permite conferir a nova marca.
 
+### CSS personalizado
+
+Na mesma página **Marca da instalação**, o administrador da instalação pode adicionar CSS para ajustes visuais finos no login e nas telas de todas as organizações. A folha vale globalmente, sem reiniciar o servidor, e pode ser removida apagando o conteúdo e salvando.
+
+Por segurança, não é um editor de CSS irrestrito: aceita seletores de classes e propriedades visuais de cor, borda, sombra e tipografia. Recusa seletores globais ou por ID, regras `@`, URLs e carregamento remoto, funções fora de `rgb`/`rgba`/`hsl`/`hsla`/`var`/`calc`/`min`/`max`/`clamp`, comentários, escapes, scripts, `!important` e propriedades de layout e posicionamento. O limite é 16 KB. Se uma folha já salva deixar de passar na validação, ela não é aplicada e a tela Marca mostra o motivo. Como a configuração é da instalação, qualquer ajuste também afeta as organizações atendidas por ela; confira as telas depois de salvar.
+
+Exemplo:
+
+```css
+.text-muted-foreground {
+	color: #52645a;
+}
+
+.rounded-md {
+	border-radius: 12px;
+}
+```
+
+**Se o CSS deixar as telas ilegíveis.** Uma folha válida ainda pode esconder texto (cor transparente, fonte de tamanho zero) ou cobrir a tela com uma sombra — inclusive o login e a própria página Marca. Para sair disso, abra a página com `?sem_css=1` no endereço: ela vem sem o CSS personalizado, só para você. Entre por `/login?sem_css=1`, depois abra `/admin/marca?sem_css=1` digitando o endereço, apague o conteúdo do campo e salve. Sem acesso à tela, pelo servidor: `psql "$SUPABASE_DB_URL" -c "delete from public.platform_config where chave = 'APP_CUSTOM_CSS';"` — o CSS deixa de valer em até 30 segundos. Passo a passo em [`runbooks/css-personalizado.md`](runbooks/css-personalizado.md).
+
 O arquivo é aceito **pelos bytes, não pela extensão**. Renomear um `.svg` para `.png` não engana: o sistema lê o conteúdo, recusa e diz por quê. Isso não é preciosismo — SVG é XML e pode carregar script, que executaria se alguém abrisse a imagem direto pelo endereço dela, num bucket que é público por necessidade.
 
 Quem preferir hospedar por conta própria continua podendo, pelo `.env`:
@@ -167,7 +187,7 @@ A **Resolução CD/ANPD nº 19/2024** tornou obrigatórias as cláusulas-padrão
 
 Todo cliente seu que usa um CRM estrangeiro realiza essa transferência e precisa do artefato contratual. Hospedando em VPS no Brasil, **o CRM em si não transfere dados para fora do país** — e, para ele, a obrigação não se aplica.
 
-⚠️ **A ressalva é a IA, e ela vale para quase toda instalação.** A frase acima só é inteira enquanto nenhum provedor de IA estrangeiro estiver ligado. O atendimento automático manda a conversa ao provedor que o cliente conectou (Anthropic, OpenAI, Google, DeepSeek ou OpenRouter, todos fora do Brasil). O Jev, quando o administrador o liga em IA › Provedores, manda cada mensagem dos clientes à TypeSafe AI, nos Estados Unidos, uma de cada vez e sem o resto da conversa, depois de apagar CPF, telefone e e-mail. Cada tarefa do Jev tem a sua finalidade — medir o clima da conversa, perceber tentativa de manipulação do atendimento automático, escolher qual agente atende, perceber pedido para falar com uma pessoa ou para parar de receber mensagens e ler a resposta do cliente a um follow-up — e todas usam só essa mensagem, sozinha. Para escolher o agente, vão junto as intenções que a própria empresa cadastrou no roteador; para ler a resposta ao follow-up, as saídas e a dica que ela criou no passo “Classificar (IA)” do fluxo (textos dela, não do cliente). Nesses fluxos há transferência internacional, e as cláusulas-padrão valem para eles. O Jev nasce desligado e pede o aceite de quem administra antes de enviar qualquer coisa; a IA de atendimento, não.
+⚠️ **A ressalva é a IA, e ela vale para quase toda instalação.** A frase acima só é inteira enquanto nenhum provedor de IA estrangeiro estiver ligado. O atendimento automático manda a conversa ao provedor que o cliente conectou (Anthropic, OpenAI, Google, DeepSeek ou OpenRouter, todos fora do Brasil). O Jev, quando o administrador o liga em IA › Provedores, manda cada mensagem dos clientes à TypeSafe AI, nos Estados Unidos, uma de cada vez e sem o resto da conversa, depois de apagar CPF, telefone e e-mail. Cada tarefa do Jev tem a sua finalidade — medir o clima da conversa, perceber tentativa de manipulação do atendimento automático, escolher qual agente atende, perceber pedido para falar com uma pessoa ou para parar de receber mensagens e ler a resposta do cliente a um follow-up — e todas usam só essa mensagem, sozinha. Para escolher o agente, vão junto as intenções que a própria empresa cadastrou no roteador; para ler a resposta ao follow-up, as saídas e a dica que ela criou no passo “Classificar (IA)” do fluxo (textos dela, não do cliente). Nesses fluxos há transferência internacional, e as cláusulas-padrão valem para eles. O Jev nasce desligado e pede o aceite de quem administra antes de enviar qualquer coisa; a IA de atendimento, não. Fora da IA há um caso só: quando o administrador cadastra uma chave de Mapas em IA › Provedores (desligado por padrão), as coordenadas do pino de localização que o cliente manda pelo WhatsApp vão ao Google, fora do Brasil, para voltar com a rua e a cidade aproximadas — e esse fluxo também é transferência internacional.
 
 ⚠️ **Não venda como "servidor no Brasil = conformidade com a LGPD".** Isso é falso e um advogado desmonta na primeira pergunta: conformidade depende de base legal, finalidade, segurança e direitos do titular. O argumento correto e defensável é o de cima: sem transferência internacional, não há exigência de cláusulas-padrão.
 

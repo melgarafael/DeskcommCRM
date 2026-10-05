@@ -55,6 +55,99 @@ export const CONVERSAS_IGNORADAS = {
 } as const;
 
 /**
+ * O ACERVO DO NÚMERO — o histórico que existe ANTES da vinculação.
+ *
+ * ─── O defeito (issue #999) ────────────────────────────────────────────────
+ *
+ * A sessão do NOWEB nascia só com o filtro: `config: { ignore }`. O padrão da
+ * engine é `store { enabled: false, fullSync: false }` e não há variável de
+ * ambiente que o mude — quem cria a sessão é que precisa PEDIR. Sem o pedido,
+ * o canal não guarda nem entrega o que já estava no aparelho: só o que
+ * acontece depois da vinculação. Medido na instalação da issue: 3 conversas e
+ * 1 MB, contra 825 conversas e 57 MB com o acervo pedido.
+ *
+ * ─── Por que `fullSync` e não só `enabled` ─────────────────────────────────
+ *
+ * `fullSync` manda baixar o histórico ANTERIOR à vinculação. Ligando só
+ * `enabled`, o acervo só enche a partir de agora — o mesmo defeito com outra
+ * roupa. O custo é real e é do pareamento: na vinculação de um número
+ * movimentado, o canal baixa o passado inteiro (tempo, CPU e disco DELE, no
+ * teto de memória do contêiner). Quem não quer esse custo não liga a opção.
+ *
+ * ─── Desligado por padrão: decisão do mantenedor, não descuido ─────────────
+ *
+ * A #999 reabriu com decisão registrada na issue: desligado por padrão, com
+ * opção POR CONEXÃO. O acervo guarda dado pessoal fora do alcance da
+ * anonimização do CRM (ela limpa o banco do CRM, não o do canal), e o que ele
+ * destrava hoje é pouco — o CRM ainda não lê o histórico de volta. Por isso a
+ * constante abaixo NÃO entra no corpo sozinha: quem liga é a conexão
+ * (`channel_sessions.metadata.guardar_historico`, sem migration).
+ *
+ * `resolvePhoneForLid`, mais abaixo neste arquivo, depende do store — a tabela
+ * que traduz `<lid>` em telefone só existe com ele ligado. O caminho que cria
+ * a sessão dispensava o que outro caminho do mesmo arquivo exigia.
+ */
+export const ACERVO_DO_HISTORICO = {
+  /** Liga o acervo: sem isto o canal não guarda nem entrega o que já passou. */
+  enabled: true,
+  /** Baixa o histórico anterior à vinculação, não só o que vier depois. */
+  fullSync: true,
+} as const;
+
+/**
+ * O que a CONEXÃO pede ao canal na criação/reconfiguração da sessão.
+ *
+ * `undefined`/`{}` = o corpo continua idêntico ao de antes da #999. O nome da
+ * opção é o do botão na tela, para o leitor do chamador reconhecer a decisão.
+ *
+ * Três estados, não dois: `true` liga, `false` desliga, e AUSENTE não toca no
+ * `store` — deixa como encontrou. A reconexão de quem não tem a chave no
+ * `metadata` chega sem a opção, e a sessão dela pode ter o store ligado por
+ * fora (pelo painel do canal, ou criada enquanto o #1000 esteve na main). A
+ * doc do NOWEB avisa: "Do not change the values after you scanned QR, it can
+ * lead to the loss of the chat history". Desligar só com `false` explícito,
+ * que vem do PATCH /acervo — escolha de quem administra, na tela.
+ */
+export interface OpcoesDeAcervo {
+  /** Guarda (`true`) ou desliga (`false`) o acervo; ausente = não mexe. */
+  guardarHistorico?: boolean;
+}
+
+/** O `store` que a sessão TEM hoje — `null` = a engine está no default (desligado). */
+function storeDaSessao(config: Record<string, unknown> | null | undefined) {
+  const noweb = config?.noweb;
+  if (!noweb || typeof noweb !== "object" || Array.isArray(noweb)) return null;
+  const store = (noweb as Record<string, unknown>).store;
+  if (!store || typeof store !== "object" || Array.isArray(store)) return null;
+  return store as { enabled?: unknown; fullSync?: unknown };
+}
+
+/**
+ * A sessão já está do jeito que a conexão PEDIU?
+ *
+ * `guardar=false` conforma com o default da engine (sem `noweb.store`, ou com
+ * `enabled: false`); `guardar=true` exige `enabled: true`. É a régua de AMBOS
+ * os lados: ela decide se a convergência precisa de um PUT, e um PUT reinicia
+ * a sessão — ninguém pode pagar restart por uma opção que não mudou.
+ */
+function acervoEstaConferido(config: Record<string, unknown> | null | undefined, guardar: boolean | undefined): boolean {
+  if (guardar === undefined) return true;
+  const ligado = storeDaSessao(config)?.enabled === true;
+  return guardar ? ligado : !ligado;
+}
+
+/** Grava (ou desliga) o acervo na config que vai no PUT, sem tocar no resto do `noweb`. */
+function aplicarAcervoNaConfig(config: Record<string, unknown>, guardar: boolean | undefined): void {
+  if (acervoEstaConferido(config, guardar)) return;
+  const atual = config.noweb;
+  const noweb = atual && typeof atual === "object" && !Array.isArray(atual)
+    ? { ...(atual as Record<string, unknown>) }
+    : {};
+  noweb.store = guardar ? ACERVO_DO_HISTORICO : { enabled: false, fullSync: false };
+  config.noweb = noweb;
+}
+
+/**
  * As chaves do filtro que o CRM IMPÕE. `groups` fica de fora de propósito: desde a
  * funcionalidade de grupos na inbox, quem decide `groups` é `definirRecebimentoDeGrupos`,
  * a partir de `channel_session_groups`. Compatibilidade e convergência não a tocam.
@@ -249,11 +342,16 @@ export class WahaClient {
   }
 
   /** Porta granular para a futura reserva: created nunca significa ownership. */
-  async createSession(name: string): Promise<{ created: boolean; session: WahaSessionSnapshot }> {
+  async createSession(name: string, opcoes: OpcoesDeAcervo = {}): Promise<{ created: boolean; session: WahaSessionSnapshot }> {
+    // O acervo vai JUNTO com o filtro, mas SÓ quando a conexão pediu (opção
+    // desligada por padrão — decisão do mantenedor na issue #999). Sem a opção,
+    // o corpo é byte a byte o de sempre. Ver ACERVO_DO_HISTORICO.
+    const config: Record<string, unknown> = { ignore: CONVERSAS_IGNORADAS };
+    if (opcoes.guardarHistorico) config.noweb = { store: ACERVO_DO_HISTORICO };
     const res = await this.fetchComTeto(`${this.baseUrl}/api/sessions`, {
       method: "POST",
       headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ name, start: false, config: { ignore: CONVERSAS_IGNORADAS } }),
+      body: JSON.stringify({ name, start: false, config }),
     });
     if (!res.ok && !knownSessionConflict(await res.json().catch(() => null), res.status, "create", name)) {
       throw new WahaSessionError("create", res.status);
@@ -266,12 +364,18 @@ export class WahaClient {
   }
 
   /** Compatível com os callers: cria se necessário e inicia, confirmando GET. */
-  async startSession(name: string): Promise<{ qr?: string; status: string }> {
-    const creation = await this.createSession(name);
+  async startSession(name: string, opcoes: OpcoesDeAcervo = {}): Promise<{ qr?: string; status: string }> {
+    const creation = await this.createSession(name, opcoes);
     const ignore = creation.session.config?.ignore;
     const filtersCurrent = ignore && typeof ignore === "object" && Object.entries(CHAVES_DO_FILTRO_FIXAS)
       .every(([key, value]) => (ignore as Record<string, unknown>)[key] === value);
-    if (!creation.created && !filtersCurrent) await this.convergirConfigDaSessao(name);
+    // Sessão que JÁ existe: `POST /api/sessions` responde 422 e a config não é
+    // aplicada nesse caminho. Então quem ligou a opção em um número já pareado
+    // só consegue o acervo pela convergência (guardando daqui em diante: o
+    // fullSync é da vinculação). Sem a opção, o critério é o de sempre
+    // e o store fica como estava (ver OpcoesDeAcervo).
+    const acervoFalta = !acervoEstaConferido(creation.session.config, opcoes.guardarHistorico);
+    if (!creation.created && (!filtersCurrent || acervoFalta)) await this.convergirConfigDaSessao(name, opcoes);
     return this.startExistingSession(name);
   }
 
@@ -349,7 +453,7 @@ export class WahaClient {
    * que não conheça a rota faria toda reconexão falhar por causa de uma
    * economia — trocar mensagem por byte é o negócio errado.
    */
-  async convergirConfigDaSessao(name: string): Promise<void> {
+  async convergirConfigDaSessao(name: string, opcoes: OpcoesDeAcervo = {}): Promise<boolean> {
     const url = `${this.baseUrl}/api/sessions/${encodeURIComponent(name)}`;
     try {
       const atual = await this.fetchComTeto(url, { headers: { "X-Api-Key": this.apiKey } });
@@ -357,15 +461,15 @@ export class WahaClient {
         logger.warn("[waha] não li a config da sessão; não vou reescrevê-la", {
           status: atual.status,
         });
-        return;
+        return false;
       }
       const parsed = sessionSnapshotSchema.safeParse(await atual.json().catch(() => null));
       if (!parsed.success || parsed.data.name !== name) {
         logger.warn("[waha] a sessão respondeu sem identidade correta; não vou reescrevê-la", {});
-        return;
+        return false;
       }
       const sessao = parsed.data;
-      if (!sessao.config) return;
+      if (!sessao.config) return false;
 
       // Checa só o ENGINE aqui, não `compatibleSession()` inteiro: aquele também
       // exige que o filtro JÁ esteja correto, e o trabalho deste método é
@@ -376,7 +480,7 @@ export class WahaClient {
       const actualEngine = engine ?? (await this.getServerVersion()).engine;
       if (actualEngine !== "NOWEB") {
         logger.warn("[waha] engine incompatível; não vou reescrever o filtro da sessão", {});
-        return;
+        return false;
       }
 
       // `groups` NÃO entra no que este método impõe: desde a funcionalidade de
@@ -387,7 +491,6 @@ export class WahaClient {
         ? sessao.config.ignore
         : {}) as Record<string, unknown>;
       const groupsAtual = typeof ignoreAtual.groups === "boolean" ? ignoreAtual.groups : CONVERSAS_IGNORADAS.groups;
-      const config = { ...sessao.config, ignore: { ...CHAVES_DO_FILTRO_FIXAS, groups: groupsAtual } };
       // Já está como queremos: não reiniciar a sessão à toa. Este caminho roda
       // em TODA reconexão, e um restart desnecessário por rodada seria pior que
       // o gasto que ele evita.
@@ -395,8 +498,14 @@ export class WahaClient {
       // à ORDEM das chaves, então o dia em que o WAHA devolver o mesmo objeto
       // com as chaves noutra sequência, esta guarda passa a dizer "mudou" e a
       // sessão reinicia a cada reconexão — sem que nada tenha mudado.
-      const jaConvergida = Object.entries(CHAVES_DO_FILTRO_FIXAS).every(([k, v]) => ignoreAtual[k] === v);
-      if (jaConvergida) return;
+      const guardarHistorico = opcoes.guardarHistorico;
+      const filtroConferido = Object.entries(CHAVES_DO_FILTRO_FIXAS).every(([k, v]) => ignoreAtual[k] === v);
+      // O acervo entra na MESMA régua do filtro: sem isto, quem ligou a opção em
+      // um número já pareado nunca teria o PUT (o filtro já estava certo), e
+      // quem desligou levaria um restart para reafirmar o default da engine.
+      if (filtroConferido && acervoEstaConferido(sessao.config, guardarHistorico)) return true;
+      const config: Record<string, unknown> = { ...sessao.config, ignore: { ...CHAVES_DO_FILTRO_FIXAS, groups: groupsAtual } };
+      aplicarAcervoNaConfig(config, guardarHistorico);
 
       const res = await this.fetchComTeto(url, {
         method: "PUT",
@@ -405,7 +514,9 @@ export class WahaClient {
       });
       if (!res.ok) {
         logger.warn("[waha] não consegui convergir a config da sessão", { status: res.status });
+        return false;
       }
+      return true;
     } catch (err) {
       // Rede fora aqui não é assunto de quem só quer iniciar a sessão — a
       // convergência é oportunista e a sessão sobe do mesmo jeito. Mas os
@@ -415,6 +526,7 @@ export class WahaClient {
       logger.warn("[waha] não consegui falar com o WAHA para convergir a config", {
         erro: err instanceof Error ? err.message : "unknown",
       });
+      return false;
     }
   }
 

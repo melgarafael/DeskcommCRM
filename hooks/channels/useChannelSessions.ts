@@ -21,6 +21,8 @@ export interface ChannelSession {
   last_status_change_at: string | null;
   daily_message_limit: number;
   is_warmup_complete: boolean | null;
+  /** `metadata.disabled === true` = canal pausado pelo operador (quarentena). Ausente em respostas antigas em cache. */
+  metadata?: Record<string, unknown> | null;
   created_at: string;
 }
 

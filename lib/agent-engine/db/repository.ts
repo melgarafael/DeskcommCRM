@@ -102,6 +102,10 @@ export type InboxKind =
   // A proposta rascunhada pela IA precisa de revisão de uma pessoa — a Central
   // acompanha até resolver.
   | 'proposta_pronta_para_revisao'
+  // (migration 0501) A organização voltou de uma suspensão e há conversas que
+  // receberam mensagem enquanto ela estava parada. A IA não respondeu e não vai
+  // responder sozinha, então quem abre o Inbox é uma pessoa. Nasce sem referência.
+  | 'org_reativada'
   | 'other';
 
 export interface InboxItemRow {
@@ -170,11 +174,15 @@ export type InboxDedupe = 'kind' | 'kind_e_ref' | 'kind_e_titulo' | 'kind_ref_e_
  * e é esta escrita que os descreve — `on conflict` precisaria de um alvo por
  * modo. Mas `where not exists` sozinho não fecha a corrida de dois inserts
  * simultâneos: os dois leem "não existe" antes de qualquer escrita e os dois
- * inserem (issue #880). Quem fecha a corrida é o BANCO: o índice único parcial
- * `agent_inbox_event_dead_aberto_unico` (migration 0491) recusa a segunda linha
- * com `23505`, capturado abaixo — a condição deixa de morar só na consulta.
- * Escopo dele é `event_dead`, o único dedupe por kind desta tabela; os outros
- * três modos querem várias linhas abertas com o mesmo título e não têm índice.
+ * inserem (issue #880). Onde o grão tem índice, quem fecha a corrida é o BANCO:
+ * `agent_inbox_event_dead_aberto_unico` (0491) para o `event_dead` e
+ * `agent_inbox_job_dead_conversa_aberto_unico` (0538) para a resposta a caso
+ * obsoleto, `agent_inbox_other_por_titulo_aberto_unico` (0539) para os avisos
+ * `other` de grão título e `agent_inbox_budget_aberto_unico` (0540) para os
+ * avisos de orçamento — a segunda linha vira `23505`, capturado abaixo, e a
+ * condição deixa de morar só na consulta. Os grãos sem índice (a promessa e o
+ * handoff, que os turnos da fila já serializam por contato; os `other` de ref
+ * própria) continuam com a consulta como única guarda — como sempre foram.
  *
  * Devolve `null` quando o dedup barrou — a consulta que não achou nada ou o
  * banco que recusou a segunda escrita são o MESMO desfecho. Não lança: "já
@@ -230,11 +238,11 @@ export async function insertInboxItem(
     return rows[0] ?? null;
   } catch (err) {
     // `23505` — o BANCO recusou a segunda linha, e é ele quem fecha a corrida
-    // (migration 0491). O `where not exists` acima vale para os quatro modos, mas
-    // sozinho não separa dois inserts simultâneos: ambos leem "não existe" antes
-    // de qualquer escrita (issue #880). Quem chega segundo recebe `23505` do
-    // índice único parcial — e "o aviso já estava aberto" é o mesmo desfecho de
-    // ter achado a linha na consulta, não um erro.
+    // (migrations 0491, 0538, 0539 e 0540). O `where not exists` acima vale
+    // para os quatro modos, mas sozinho não separa dois inserts simultâneos: ambos leem "não
+    // existe" antes de qualquer escrita (issue #880). Quem chega segundo recebe
+    // `23505` do índice único parcial — e "o aviso já estava aberto" é o mesmo
+    // desfecho de ter achado a linha na consulta, não um erro.
     if (ehColisaoDeChaveUnica(err)) return null;
     throw err;
   }

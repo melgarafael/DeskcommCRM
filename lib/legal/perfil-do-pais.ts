@@ -33,6 +33,31 @@
  *     países do que a lista oferece; é o que permite preparar o trabalho sem
  *     publicar o que ninguém revisou.
  *
+ * ─── Portugal: revisão feita por IA, por delegação do dono (doc 88) ───────
+ *
+ * Em 2026-10-05 a citação `RGPD art. 15.º (Regulamento (UE) 2016/679)` foi
+ * conferida por revisão AUTOMATIZADA, feita por IA por delegação do dono do
+ * produto (doc 88 das decisões; issues #1033 e #1946). NÃO é parecer jurídico
+ * e não houve advogado em Portugal. Fontes conferidas: o RGPD em português no
+ * JO L 119 de 4.5.2016 (repositório de publicações da UE, com as retificações
+ * do JO L 127/2018 e do JO L 74/2021, que não tocam os arts. 12.º, 15.º, 17.º
+ * e 20.º) e a reprodução da PGR Lisboa; a Lei n.º 58/2019 (nada nela muda o
+ * art. 15.º); as Guidelines 01/2022 do EDPB. O prazo do produto (7 e 15 dias
+ * úteis, calendário português) foi simulado de 2026 a 2030 e nunca passa do
+ * mês do art. 12.º, n.º 3.
+ *
+ * Por isso o perfil leva `revisadaPorIa` — a tela declara a natureza da
+ * revisão a quem responde pelo documento — e `rotuloNoDocumento: "Direito
+ * exercido"`: no RGPD, "base legal" é o art. 6.º (licitude), e o art. 15.º é
+ * o direito que o titular exerceu.
+ *
+ * Ressalva da Nuvemshop, reconferida em 2026-10-05: a Nuvemshop não abre loja
+ * em Portugal, e os 3 webhooks dela são o único caminho que cria pedido de
+ * titular (vigiado por `tests/unit/so-a-nuvemshop-cria-pedido-de-titular`).
+ * Uma organização portuguesa com loja Nuvemshop BRASILEIRA alcança o fluxo; aí
+ * o titular é brasileiro e as duas leis podem valer — citar o RGPD não é
+ * falso, mas é incompleto.
+ *
  * ─── A separação documento × forma (regra adotada do #928) ────────────────
  *
  * Não se inventa dígito verificador. País com checksum público documentado
@@ -43,6 +68,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { HOLIDAYS_BR_ISO } from "@/lib/lgpd/holidays-br";
+import { HOLIDAYS_PT_ISO } from "@/lib/lgpd/holidays-pt";
 
 /** ISO-3166 alpha-2, em maiúsculas. `null`/vazio na coluna significa Brasil. */
 export type CodigoDePais = string;
@@ -114,6 +140,17 @@ export interface LeiCitada {
    * o documento não cita esta lei (ver cabeçalho).
    */
   revisada: boolean;
+  /**
+   * A revisão foi feita por IA, sem advogado local. A tela de Configurações
+   * declara isso a quem responde pelo documento (ver o cabeçalho).
+   */
+  revisadaPorIa?: true;
+  /**
+   * Como o documento de acesso rotula a citação. Ausente = "Base legal", o
+   * rótulo de sempre — o Brasil não declara este campo, e por isso o
+   * `data.json` brasileiro não ganha chave nova.
+   */
+  rotuloNoDocumento?: string;
 }
 
 export interface CalendarioDeDiasUteis {
@@ -167,6 +204,24 @@ export function isValidCpf(raw: string): boolean {
   return d2 === parseInt(s[10]!, 10);
 }
 
+/**
+ * O mod-11 do NIF português — o dígito de controlo da Autoridade Tributária,
+ * algoritmo público (não é checksum inventado; respeita a régua do #928).
+ *
+ * Para os oito primeiros dígitos valem os pesos 9..2 (da esquerda para a
+ * direita); o resto da soma módulo 11 decide o dígito: resto 0 ou 1 → `0`,
+ * senão `11 - resto`. O nono dígito tem de bater com esse cálculo.
+ */
+export function isValidNif(raw: string): boolean {
+  const s = raw.replace(/\D/g, "");
+  if (!/^\d{9}$/.test(s) || /^(\d)\1{8}$/.test(s)) return false;
+  let sum = 0;
+  for (let i = 0; i < 8; i++) sum += parseInt(s[i]!, 10) * (9 - i);
+  const resto = sum % 11;
+  const digito = resto < 2 ? 0 : 11 - resto;
+  return digito === parseInt(s[8]!, 10);
+}
+
 const DOCUMENTO_BR: DocumentoDoTitular = {
   rotulo: "CPF",
   exemplo: "000.000.000-00",
@@ -210,6 +265,54 @@ const PERFIL_BR: PerfilDoPais = {
   ],
 };
 
+const DOCUMENTO_PT: DocumentoDoTitular = {
+  rotulo: "NIF",
+  exemplo: "123 456 789",
+  regra: "dígito de controlo (mod-11 da Autoridade Tributária)",
+  mensagemInvalido: "NIF inválido",
+  confereDigito: true,
+  apelidosDoCabecalho: ["nif", "contribuinte"],
+  valida: isValidNif,
+  normaliza: (valor) => valor.replace(/\D/g, ""),
+};
+
+const PERFIL_PT: PerfilDoPais = {
+  codigo: "PT",
+  nome: "Portugal",
+  documento: DOCUMENTO_PT,
+  telefoneExemplo: "+351912345678",
+  lei: {
+    nome: "RGPD",
+    numero: "Regulamento (UE) 2016/679",
+    artigo: "art. 15.º",
+    // Revisada por IA em 2026-10-05, por delegação do dono (doc 88) — não é
+    // parecer jurídico. Registro completo no cabeçalho deste arquivo.
+    revisada: true,
+    revisadaPorIa: true,
+    rotuloNoDocumento: "Direito exercido",
+  },
+  calendario: {
+    feriados: HOLIDAYS_PT_ISO,
+    rotulo: "feriados nacionais portugueses",
+  },
+  padroesDePii: [
+    {
+      tipo: "nif",
+      marcador: "[NIF]",
+      fonte: "\\b\\d{9}\\b",
+      naoCobre:
+        "NIF com menos de 9 dígitos e número de telemóvel português de 9 dígitos — sem o prefixo `+351` o padrão não distingue um do outro",
+    },
+    {
+      tipo: "codigoPostal",
+      marcador: "[CODIGO_POSTAL]",
+      fonte: "\\b\\d{4}-\\d{3}\\b",
+      naoCobre:
+        "código postal sem hífen e código estrangeiro (CEP brasileiro usa ponto e 8 dígitos)",
+    },
+  ],
+};
+
 /**
  * O registro de países conhecidos.
  *
@@ -224,6 +327,7 @@ const PERFIL_BR: PerfilDoPais = {
  */
 export const PERFIS_DO_PAIS: Record<CodigoDePais, PerfilDoPais> = {
   BR: PERFIL_BR,
+  PT: PERFIL_PT,
 };
 
 /** O perfil de um código; vazio ou desconhecido degrada para o Brasil. */

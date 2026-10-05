@@ -227,10 +227,30 @@ export function rechecksOciososDaAcao(events: EnrollmentEventRef[], nodeId: stri
   for (let i = events.length - 1; i >= 0; i--) {
     const evento = events[i]!;
     if (evento.node_id !== nodeId) break;
-    if (evento.event_type === EVENTO_ACAO_ADIADA) return n;
+    if (evento.event_type === EVENTO_ACAO_ADIADA || evento.event_type === EVENTO_TURNO_DESCARTADO) return n;
     n++;
   }
   return n;
+}
+
+/**
+ * O turno de envio desta estadia saiu da fila SEM rodar: a organização foi
+ * suspensa e `fn_org_parada_descarta_fila` (migration 0501) o falhou, gravando
+ * este evento. Não é defeito do worker, então não conta para o dead-man (ver
+ * `rechecksOciososDaAcao`), e o motor enfileira um turno novo na reativação —
+ * o claim não entrega a inscrição enquanto a org está parada.
+ */
+export const EVENTO_TURNO_DESCARTADO = "turn_discarded";
+
+/** O último turno desta estadia no `action` foi descartado e nenhum outro o substituiu. */
+export function turnoDaAcaoDescartado(events: EnrollmentEventRef[], nodeId: string): boolean {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const evento = events[i]!;
+    if (evento.node_id !== nodeId) return false;
+    if (evento.event_type === EVENTO_TURNO_DESCARTADO) return true;
+    if (evento.event_type === "turn_enqueued") return false;
+  }
+  return false;
 }
 
 /**
@@ -860,6 +880,26 @@ export function processNode(input: {
       // para sair.
       const edge = selectEdge(edges, node.id, { type: "always" });
       if (!edge) return { kind: "fail", error: `internal_task node "${node.id}" has no outbound edge` };
+      return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
+    }
+
+    case "move_lead": {
+      // #2065 — mover o card de etapa é PASSAGEM no relógio, como o
+      // `internal_task`: o nó avança pela aresta única e quem ESCREVE a etapa é
+      // o motor ao aplicar o `advance` (`db.moverLeadNoFunil`, que chama o
+      // `moveLeadHandler` da casa), guardado pelo idempotency_key do evento do
+      // passo — replay do tick não move o card duas vezes.
+      const edge = selectEdge(edges, node.id, { type: "always" });
+      if (!edge) return { kind: "fail", error: `move_lead node "${node.id}" has no outbound edge` };
+      return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
+    }
+
+    case "edit_lead_tag": {
+      // #2065 — mesma passagem do `move_lead`: a tag nasce no motor, depois do
+      // evento do passo, com a MESMA trava. Nenhuma mensagem sai daqui (por isso
+      // este nó não está em `NOS_QUE_ENVIAM`).
+      const edge = selectEdge(edges, node.id, { type: "always" });
+      if (!edge) return { kind: "fail", error: `edit_lead_tag node "${node.id}" has no outbound edge` };
       return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
     }
 

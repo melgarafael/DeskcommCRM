@@ -57,6 +57,7 @@ import {
 } from "@/lib/lgpd/email-delivery";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { marcaDaSaida } from "@/lib/branding/saida";
+import { perfilDaOrganizacao } from "@/lib/legal/perfil-do-pais";
 
 const MAX_ATTEMPTS = 3;
 const BUCKET = "lgpd-exports";
@@ -159,8 +160,11 @@ export async function processLgpdExport(event: EventRow): Promise<HandlerResult>
     .eq("id", requestId);
 
   try {
-    // 3. Collect data.
+    // 3. Collect data. O país é lido UMA vez e vale para o PDF e para o e-mail:
+    // duas leituras, se só uma falhasse, dariam ao titular duas leis (doc 88).
+    const perfil = await perfilDaOrganizacao(admin, orgId);
     const data = await collectExportData({
+      pais: perfil.codigo,
       // O piso do encarregado é resolvido AQUI e injetado: o coletor de LGPD
       // não consulta configuração, para a coleta sem identificador continuar
       // visitando só `organizations` (tests/invariants/agenda-meet-export).
@@ -276,6 +280,10 @@ export async function processLgpdExport(event: EventRow): Promise<HandlerResult>
         signedUrl: signed.signedUrl,
         expiresAt,
         marca: await marcaDaSaida(orgId),
+        // O país decide a lei e o idioma do e-mail — o MESMO perfil que o coletor
+        // usou; o fuso vem do coletor, que só o põe no payload fora do Brasil.
+        perfil,
+        fuso: data.fuso,
       });
       messageId = sent.messageId;
     } catch (err) {

@@ -16,6 +16,7 @@
 import type pg from 'pg';
 
 import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
+import { lerTextoDoAvisoForaDoHorario } from './aviso-fora-do-horario';
 
 export interface PublishedAgentConfig {
   operationMode?: 'automatic' | 'assisted';
@@ -90,6 +91,13 @@ export interface PublishedAgentConfig {
    * conserta (o campo existia na tela e nenhum leitor vivo o consultava).
    */
   janelaDeAtendimento: JanelaDeAtendimento | null;
+  /**
+   * Texto do aviso de fora do horário (#1926), lido do mesmo `trigger_config`
+   * (`filters.business_hours.notice`). `null` = sem aviso configurado: quem
+   * escreve fora da janela só espera a resposta na abertura, como antes.
+   * Opcional porque nasce depois das fixtures que montam esta interface à mão.
+   */
+  avisoForaDoHorario?: string | null;
   /** criadores (p/ mint do token efêmero de audit — padrão do runtime nativo). */
   versionCreatedBy: string | null;
   agentCreatedBy: string | null;
@@ -227,6 +235,7 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // Leitura DEFENSIVA e que falha ABERTA: jsonb livre com shape estranho vira
     // `null` (sem janela ⇒ atende sempre), nunca uma mordaça acidental.
     janelaDeAtendimento: lerJanelaDeAtendimento(r.trigger_config),
+    avisoForaDoHorario: lerTextoDoAvisoForaDoHorario(r.trigger_config),
     versionCreatedBy: r.version_created_by,
     agentCreatedBy: r.agent_created_by,
   };

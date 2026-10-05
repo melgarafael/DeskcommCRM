@@ -21,7 +21,7 @@ import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 import { enumsDoFollowup } from "@/tests/support/enums-do-grafo";
-import { traduzir } from "@/lib/i18n/dicionario";
+import { DICIONARIO, traduzir } from "@/lib/i18n/dicionario";
 
 import { triggerConfigSchema } from "./api-schemas";
 import { conditionLabel } from "./edge-condition-options";
@@ -532,6 +532,33 @@ describe("rótulos sob contrato de e2e", () => {
     // tests/e2e/followup-builder.spec.ts seleciona as duas opções pelo nome exato.
     expect(GATILHOS.manual).toBe("Manual");
     expect(GATILHOS.silence).toBe("Silêncio");
+  });
+});
+
+describe("o desfecho fala a língua de quem opera o dossiê (#2014)", () => {
+  it("todo valor do CHECK de outcome tem rótulo e tradução em espanhol", () => {
+    // Os valores vêm do mesmo lugar que o banco: `EnrollmentOutcome` é o vocabulário
+    // que o CHECK `outcome in ('converted','replied',...)` aceita (migration 0054).
+    // Cada um precisa de um rótulo em português (o dossiê mostra `t(DESFECHOS[...])`)
+    // e esse rótulo tem de ter espanhol — senão quem escolheu espanhol lê o wire cru.
+    for (const valor of DESFECHOS_NO_TIPO) {
+      const rotulo = DESFECHOS[valor as keyof typeof DESFECHOS];
+      expect(rotulo, `'${valor}' sem rótulo em DESFECHOS`).toBeTruthy();
+      expect(DICIONARIO[rotulo]?.es, `rótulo '${rotulo}' (de '${valor}') sem espanhol`).toBeTruthy();
+      // O rótulo não pode ser o identificador de wire — ex.: `exhausted` não vira
+      // "exhausted" na tela, vira frase.
+      expect(rotulo).not.toBe(valor);
+    }
+  });
+
+  it("o desfecho esgotado lê 'Encerrado sem conversão', e o nó final segue 'Esgotado'", () => {
+    // A issue nomeia as duas palavras de propósito: a que o OPERADOR vê no fim do
+    // acompanhamento (DESFECHOS) é frase; a que o DONO DO FLUXO escolhe no construtor
+    // (RESULTADOS_DO_FIM) é contrato do e2e e não muda aqui.
+    // "sem conversão", não "sem resposta": o nó Fim nasce com `exhausted`, então
+    // o dado não garante que o contato ficou calado (ver o comentário de DESFECHOS).
+    expect(DESFECHOS.exhausted).toBe("Encerrado sem conversão");
+    expect(RESULTADOS_DO_FIM.exhausted).toBe("Esgotado");
   });
 });
 

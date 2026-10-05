@@ -67,6 +67,21 @@ async function filtroDaBusca(termo: string): Promise<string> {
   return filtros[0] ?? "";
 }
 
+/**
+ * O `imatch` (regex) das colunas de NOME casado como o Postgres casa (`~*`).
+ *
+ * O padrão sai em regex desde a F2 da #1835 — as letras com grafias viram
+ * classe (`C l [íîï…] n t [éêè…]`) —, então afirmar a string do padrão por
+ * inteiro não diz mais nada sobre o comportamento. O que se afirma aqui é o
+ * que o filtro FAZ, e o tradutor tem controle no arquivo irmão
+ * (`busca-de-contatos-normaliza-termo.test.ts`).
+ */
+function casaNoNome(filtro: string, nome: string): boolean {
+  return [...filtro.matchAll(/(\w+)\.imatch\.([^,]+)/g)]
+    .filter((m) => m[1] === "name" || m[1] === "display_name")
+    .some((m) => new RegExp(m[2]!, "i").test(nome));
+}
+
 /** As colunas que a listagem exige serem NULL. */
 async function colunasComIsNull(): Promise<string[]> {
   const { client, colunasIs } = supabaseEspiao();
@@ -84,14 +99,15 @@ describe("busca de contatos", () => {
     // conversas); o que este caso vigia é a COLUNA estar no OR, e por isso a
     // asserção cita `display_name` por inteiro, com o padrão que hoje sai.
     const filtro = await filtroDaBusca("Cliente Retorno");
-    expect(filtro).toContain("display_name.ilike.%Cliente*Retorno%");
+    expect(filtro).toContain("display_name.imatch.");
+    expect(casaNoNome(filtro, "Cliente Retorno E2E"), `filtro=${filtro}`).toBe(true);
   });
 
   it("continua procurando nas colunas que já procurava", async () => {
     // A adição não pode custar as outras: quem cadastrou o contato à mão tem
     // `name`, e quem digita telefone espera achar por telefone.
     const filtro = await filtroDaBusca("Maria");
-    for (const coluna of ["name.ilike", "email.ilike", "phone_number.ilike"]) {
+    for (const coluna of ["name.imatch", "email.imatch", "phone_number.imatch"]) {
       expect(filtro).toContain(coluna);
     }
   });
@@ -104,12 +120,18 @@ describe("busca de contatos", () => {
     // catraca da normalização; a de cima é a da gramática).
     const filtro = await filtroDaBusca("Silva, Maria");
     expect(filtro).not.toContain("Silva,");
-    expect(filtro).toContain("Silva*Maria");
+    // Os dois sentidos: quem DIGITA a vírgula acha o cadastro que a tem, e quem
+    // não digita também — é o curinga que a normalização põe no lugar dela.
+    expect(casaNoNome(filtro, "Silva, Maria"), `filtro=${filtro}`).toBe(true);
+    expect(casaNoNome(await filtroDaBusca("Silva Maria"), "Silva, Maria")).toBe(true);
   });
 
   it("curinga do LIKE digitado pelo usuário é literal, não coringa", async () => {
+    // Em regex `%` e `_` não são curinga nenhum de natureza — o que se prova é
+    // o casamento nos dois sentidos: com o `%` de verdade e sem ele.
     const filtro = await filtroDaBusca("100%");
-    expect(filtro).toContain("100\\%");
+    expect(casaNoNome(filtro, "Plano 100%"), `filtro=${filtro}`).toBe(true);
+    expect(casaNoNome(filtro, "Plano 1000"), `filtro=${filtro}`).toBe(false);
   });
 
   it("busca o celular também pela grafia com o nono — senão o cadastro some", async () => {

@@ -92,7 +92,7 @@ bash .agents/skills/deskcomm-contribuir/scripts/armar-hooks.sh
 ```
 
 Três guardas, e só isso: `pre-commit` reprova migration nova sem apêndice no `baseline.sql` e sem
-linha no `MANIFEST.md` no mesmo commit, e número (`NNNN`) ou timestamp já usado na **população da
+linha `-- manifest: <descrição>` no cabeçalho do `.sql` no mesmo commit, e número (`NNNN`) ou timestamp já usado na **população da
 pergunta** — a main do PRODUTO (o remoto que aponta para `melgarafael/DeskcommCRM`, com qualquer
 nome; num fork, a sua `origin/main` é a main do fork e não vale) mais `refs/heads` e `refs/remotes`.
 O que essa população não cobre são os PRs abertos, e a mensagem do hook diz isso e aponta

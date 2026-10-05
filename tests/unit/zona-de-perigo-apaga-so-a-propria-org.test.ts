@@ -45,6 +45,7 @@ const auditadas: Array<Record<string, unknown>> = [];
 
 let papel = "admin";
 let ehPlatformAdmin = false;
+let escopo: string | null = "full";
 let mfaPendente = false;
 let nomeNoBanco: string | null = NOME_DA_ORG;
 /** Quando setado, o DELETE nesta tabela devolve erro — simula a parada no meio. */
@@ -66,7 +67,7 @@ vi.mock("@/lib/audit", () => ({
   }),
 }));
 vi.mock("@/lib/auth/server", () => ({
-  loadAuthUser: vi.fn(async () => ({ id: USER, is_platform_admin: ehPlatformAdmin })),
+  loadAuthUser: vi.fn(async () => ({ id: USER, is_platform_admin: ehPlatformAdmin, platform_admin_scope: ehPlatformAdmin ? escopo : null })),
   resolveActiveOrg: vi.fn(async () => ({ orgId: ORG, name: NOME_DA_ORG, role: papel })),
   mfaEmDivida: vi.fn(async () => mfaPendente),
 }));
@@ -159,6 +160,7 @@ beforeEach(() => {
   auditadas.length = 0;
   papel = "admin";
   ehPlatformAdmin = false;
+  escopo = "full";
   mfaPendente = false;
   nomeNoBanco = NOME_DA_ORG;
   tabelaQueFalha = null;
@@ -257,6 +259,19 @@ describe("zona de perigo: quem pode puxar o gatilho", () => {
     const r = await apagarDadosOperacionaisDaOrganizacao({ confirmNome: NOME_DA_ORG });
     expect(r.ok).toBe(true);
     expect(delecoes.length).toBe(RAIZES_DO_APAGAMENTO.length);
+  });
+
+  it("platform admin SÓ LEITURA que é viewer na empresa não apaga nada", async () => {
+    // O acompanhamento já é barrado por `supportWriteError`; este é o outro
+    // caminho: o support_readonly que também é membro comum da empresa. O
+    // atalho de papel exige scope full (`escreveComoPlatformAdmin`).
+    papel = "viewer";
+    ehPlatformAdmin = true;
+    escopo = "support_readonly";
+    const r = await apagarDadosOperacionaisDaOrganizacao({ confirmNome: NOME_DA_ORG });
+    expect(r).toEqual({ ok: false, error: "forbidden_role" });
+    expect(delecoes).toEqual([]);
+    expect(auditadas).toEqual([]);
   });
 });
 

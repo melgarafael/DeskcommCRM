@@ -18,17 +18,17 @@ function formatRelativePtBr(
 
   if (diffDays === 0) return t("hoje");
   if (diffDays === 1) return t("ontem");
-  if (diffDays < 7) return `${t("há")} ${diffDays} ${t("dias")}`;
+  if (diffDays < 7) return t("há {tempo}").replace("{tempo}", `${diffDays} ${t("dias")}`);
   if (diffDays < 30) {
     const n = Math.floor(diffDays / 7);
-    return `${t("há")} ${n} ${n > 1 ? t("semanas") : t("semana")}`;
+    return t("há {tempo}").replace("{tempo}", `${n} ${n > 1 ? t("semanas") : t("semana")}`);
   }
   if (diffDays < 365) {
     const n = Math.floor(diffDays / 30);
-    return `${t("há")} ${n} ${n > 1 ? t("meses") : t("mês")}`;
+    return t("há {tempo}").replace("{tempo}", `${n} ${n > 1 ? t("meses") : t("mês")}`);
   }
   const n = Math.floor(diffDays / 365);
-  return `${t("há")} ${n} ${n > 1 ? t("anos") : t("ano")}`;
+  return t("há {tempo}").replace("{tempo}", `${n} ${n > 1 ? t("anos") : t("ano")}`);
 }
 
 export function SuspendedBanner({ suspendedAt, reason }: SuspendedBannerProps) {

@@ -7,7 +7,12 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { citacaoDaLei, perfilDoPais } from "@/lib/legal/perfil-do-pais";
+import {
+  citacaoDaLei,
+  PAIS_PADRAO,
+  perfilDoPais,
+  type PerfilDoPais,
+} from "@/lib/legal/perfil-do-pais";
 import { logger } from "@/lib/logger";
 import { camposLegiveis, perguntasDosGrafos, type CampoLegivel } from "@/lib/lgpd/campos-personalizados";
 import { maskPhone } from "@/lib/lgpd/mask";
@@ -73,6 +78,15 @@ export interface MessageRow {
   status: string;
   body: string | null;
   has_media: boolean;
+  /**
+   * Transcrição do áudio / texto extraído da mídia (OCR de imagem) que a IA
+   * leu (migration 0497). A anonimização o APAGA quando o titular pede
+   * eliminação (#1989/#1990); o Art. 18 II exige o oposto — quem pede os
+   * próprios dados recebe o texto que a organização leu da mídia dele. O
+   * binário nunca vai no pacote (só `has_media`); sem esta coluna o export não
+   * trazia nem o texto que a IA efetivamente processou.
+   */
+  media_derived_text: string | null;
   sent_at: string | null;
   created_at: string;
 }
@@ -542,6 +556,17 @@ export interface ExportPayload {
    * citação revisada em vez de inventar uma.
    */
   lei_citada: string | null;
+  /**
+   * Como o documento rotula a citação ("Direito exercido" em Portugal).
+   * AUSENTE no Brasil — o renderizador usa "Base legal" — para o `data.json`
+   * brasileiro sair igual byte a byte (doc 88).
+   */
+  lei_rotulo?: string;
+  /**
+   * Fuso IANA da organização, para as datas do documento. Ausente no Brasil,
+   * que segue no formato de sempre (`America/Sao_Paulo`, sem nome de fuso).
+   */
+  fuso?: string;
   /** O rótulo do documento do titular no país ("CPF", "Documento"). */
   documento_rotulo: string;
   generated_at: string;
@@ -793,6 +818,13 @@ interface CollectArgs {
    * instalação; resolver mais esta ali não custa visita nenhuma aqui.
    */
   dpoDaInstalacao?: string | null;
+  /**
+   * O país que quem chama JÁ resolveu (o worker, que manda o e-mail com o mesmo
+   * perfil). Quando vem, vale sobre o lido aqui: duas leituras do país divergem
+   * no dia em que só uma falhar e cair no Brasil — e o titular receberia o PDF
+   * com uma lei e o e-mail com outra. Ausente, o país é o lido com o controlador.
+   */
+  pais?: string | null;
 }
 
 const RECENT_MESSAGES_LIMIT = 100;
@@ -811,6 +843,8 @@ interface Controlador {
    * titular, afirmando a lei de um país com o rótulo de outro.
    */
   country: string | null;
+  /** `organizations.timezone` (NOT NULL no schema); só sai no documento fora do BR. */
+  timezone: string | null;
 }
 
 /**
@@ -830,10 +864,11 @@ async function lerControlador(
     display_name: "",
     dpo_email: dpoDaInstalacao,
     country: null,
+    timezone: null,
   };
   const { data, error } = await admin
     .from("organizations")
-    .select("legal_name, display_name, dpo_email, country")
+    .select("legal_name, display_name, dpo_email, country, timezone")
     .eq("id", organizationId)
     .maybeSingle();
   if (error || !data) {
@@ -848,6 +883,7 @@ async function lerControlador(
     display_name: data.display_name ?? "",
     dpo_email: data.dpo_email?.trim() || dpoDaInstalacao,
     country: (data as { country?: string | null }).country ?? null,
+    timezone: (data as { timezone?: string | null }).timezone ?? null,
   };
 }
 
@@ -891,7 +927,8 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
   const { organizationId, requestId, externalCustomerId } = args;
   // ANTES do primeiro `return`: o caminho "nenhum dado localizado" também gera
   // um relatório entregue ao titular, e ele precisa nomear o controlador igual.
-  const controlador = await lerControlador(admin, organizationId, requestId, args.dpoDaInstalacao ?? null);
+  const lido = await lerControlador(admin, organizationId, requestId, args.dpoDaInstalacao ?? null);
+  const controlador = args.pais === undefined ? lido : { ...lido, country: args.pais };
   let contactId = args.contactId;
 
   // Resolve contact_id when only external customer id is provided.
@@ -1069,7 +1106,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
 
     const { data, error } = await admin
       .from("messages")
-      .select("id, conversation_id, direction, type, status, body, media_url, sent_at, created_at")
+      .select("id, conversation_id, direction, type, status, body, media_url, media_derived_text, sent_at, created_at")
       .eq("organization_id", organizationId)
       .eq("contact_id", contactId)
       .order("created_at", { ascending: false })
@@ -1088,6 +1125,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
         status: m.status,
         body: m.body,
         has_media: Boolean(m.media_url),
+        media_derived_text: m.media_derived_text ?? null,
         sent_at: m.sent_at,
         created_at: m.created_at,
       }));
@@ -1491,7 +1529,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     if (!busca) continue;
     const { data, error } = await admin
       .from("messages")
-      .select("id, conversation_id, direction, type, status, body, media_url, sent_at, created_at")
+      .select("id, conversation_id, direction, type, status, body, media_url, media_derived_text, sent_at, created_at")
       .eq("organization_id", organizationId)
       .in(busca.campo, busca.valores)
       .order("created_at", { ascending: false })
@@ -1512,6 +1550,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
         status: m.status,
         body: m.body,
         has_media: Boolean(m.media_url),
+        media_derived_text: m.media_derived_text ?? null,
         sent_at: m.sent_at,
         created_at: m.created_at,
       });
@@ -2016,6 +2055,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     organization_display_name: controlador.display_name,
     dpo_email: controlador.dpo_email,
     lei_citada: citacaoDaLei(perfil),
+    ...foraDoBrasil(perfil, controlador),
     documento_rotulo: perfil.documento.rotulo,
     generated_at: new Date().toISOString(),
     no_local_footprint:
@@ -2065,6 +2105,21 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
   };
 }
 
+/**
+ * O que só existe no documento FORA do Brasil: o rótulo da citação e o fuso.
+ * Para o Brasil devolve `{}` — nenhuma chave nova no `data.json` (doc 88).
+ */
+function foraDoBrasil(
+  perfil: PerfilDoPais,
+  controlador: Controlador,
+): Pick<ExportPayload, "lei_rotulo" | "fuso"> {
+  if (perfil.codigo === PAIS_PADRAO) return {};
+  return {
+    ...(perfil.lei?.rotuloNoDocumento ? { lei_rotulo: perfil.lei.rotuloNoDocumento } : {}),
+    ...(controlador.timezone ? { fuso: controlador.timezone } : {}),
+  };
+}
+
 function emptyPayload(
   requestId: string,
   organizationId: string,
@@ -2077,6 +2132,7 @@ function emptyPayload(
     organization_display_name: controlador.display_name,
     dpo_email: controlador.dpo_email,
     lei_citada: citacaoDaLei(perfilDoPais(controlador.country)),
+    ...foraDoBrasil(perfilDoPais(controlador.country), controlador),
     documento_rotulo: perfilDoPais(controlador.country).documento.rotulo,
     generated_at: new Date().toISOString(),
     no_local_footprint: true,

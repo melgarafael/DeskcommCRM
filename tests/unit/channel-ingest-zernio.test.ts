@@ -276,6 +276,8 @@ describe("o pino do WhatsApp — o webhook não traz as coordenadas", () => {
     expect(ins.type).toBe("location");
     expect(ins.body).toBe("📍 https://maps.google.com/?q=-25.334888,-57.543594");
     expect(ins.metadata).toEqual({ location: { latitude: -25.334888, longitude: -57.543594 } });
+    // Com coordenadas, nada a buscar de novo.
+    expect(ops.some((o) => o.op === "emit_event" && (o.payload as { p_event_type?: string }).p_event_type === "message.location_retry_requested")).toBe(false);
   });
 
   it("lugar com nome ('📍 Praça…'): também busca, e grava nome, endereço e link", async () => {
@@ -319,14 +321,35 @@ describe("o pino do WhatsApp — o webhook não traz as coordenadas", () => {
     expect(ins).toMatchObject({ type: "text", body: "📍 Location", metadata: {} });
   });
 
+  it("⭐ API fora do ar: pede uma NOVA busca das coordenadas para depois (29/09/2026: timeout, pino sem mapa)", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("The operation was aborted due to timeout"));
+    await ingestZernioInbound(admin, { ...ENTRADA, payload: pino() });
+    const pedido = ops.find((o) => o.op === "emit_event" && (o.payload as { p_event_type?: string }).p_event_type === "message.location_retry_requested")?.payload as Record<string, unknown> | undefined;
+    expect(pedido).toMatchObject({
+      p_event_type: "message.location_retry_requested",
+      p_entity_id: "msg-1",
+      p_organization_id: "org-1",
+      p_payload: { message_id: "msg-1", account_id: "acc_1", provider_conversation_id: "6a76a2dc4b8fe115e5f6c300" },
+    });
+  });
+
   afterEach(() => {
     vi.mocked(resolveZernioCreds).mockReset();
   });
 
-  it("texto comum não consulta a API", async () => {
+  it("o mesmo pedido de nova busca no caminho da conversa JÁ associada à thread", async () => {
+    conversaExistente = { id: "conv-existente", contact_id: "contact-1" };
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("The operation was aborted due to timeout"));
+    await ingestZernioInbound(admin, { ...ENTRADA, payload: pino() });
+    const pedido = ops.find((o) => o.op === "emit_event" && (o.payload as { p_event_type?: string }).p_event_type === "message.location_retry_requested");
+    expect(pedido?.payload).toMatchObject({ p_payload: { message_id: "msg-1", external_id: "wamid.PINO" } });
+  });
+
+  it("texto comum não consulta a API — nem pede nova busca", async () => {
     const f = vi.spyOn(globalThis, "fetch");
     await ingestZernioInbound(admin, { ...ENTRADA, payload: evento() });
     expect(f).not.toHaveBeenCalled();
+    expect(ops.some((o) => o.op === "emit_event" && (o.payload as { p_event_type?: string }).p_event_type === "message.location_retry_requested")).toBe(false);
   });
 });
 

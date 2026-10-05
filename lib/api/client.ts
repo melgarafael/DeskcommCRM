@@ -150,6 +150,19 @@ function pedirDecisaoAoServidor(): void {
   window.location.reload();
 }
 
+/**
+ * A EMPRESA FOI SUSPENSA COM A TELA ABERTA. Diferente de `no_active_org`, aqui
+ * o destino é um só — o hub `/account-suspended` (pagar, LGPD, trocar de
+ * empresa) —, então não há o que perguntar ao servidor: vai direto. Já no hub,
+ * não navega de novo (a trava contra o laço é o próprio endereço).
+ */
+const HUB_DA_SUSPENSAO = "/account-suspended";
+
+function irParaOHubDaSuspensao(): void {
+  if (typeof window === "undefined" || window.location.pathname === HUB_DA_SUSPENSAO) return;
+  window.location.assign(HUB_DA_SUSPENSAO);
+}
+
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -312,6 +325,9 @@ async function request<T>(
         // com erro em vez de ficar pendurado esperando uma resposta que não vem.
         if (res.status === 403 && e.code === "no_active_org") {
           pedirDecisaoAoServidor();
+        }
+        if (res.status === 403 && e.code === "org_suspended") {
+          irParaOHubDaSuspensao();
         }
         throw new ApiError(
           res.status,

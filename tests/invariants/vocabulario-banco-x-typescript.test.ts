@@ -422,6 +422,28 @@ const PARES: Array<{
     arquivo: "lib/schemas/team.ts",
     simbolo: "ROLES",
   },
+  {
+    tabela: "organizations",
+    coluna: "suspended_kind",
+    // lib/organizacao/operante.ts → TIPOS_DE_SUSPENSAO (tupla `as const`). Nasce
+    // no MESMO commit da migration 0501 — a lição desta lista. O tipo decide qual
+    // porta reativa: `/reactivate` só a administrativa; a de cobrança só por
+    // pagamento, prazo ou isenção. Um tipo só no CHECK deixaria a org presa numa
+    // suspensão que nenhuma porta reconhece; só no TypeScript viraria `23514`
+    // dentro de fn_suspender_organizacao.
+    arquivo: "lib/organizacao/operante.ts",
+    simbolo: "TIPOS_DE_SUSPENSAO",
+  },
+  {
+    tabela: "before_send_traces",
+    coluna: "tipo_envio",
+    // lib/agent-engine/guardrails/before-send.ts → TipoDeEnvio. Migration 0535
+    // (#2227, #2112): o trace diz se o envio vetado era resposta ou disparo, e a
+    // rota de retenção escolhe a janela por ele. `null` (linha anterior à 0535)
+    // passa no CHECK e é lido como resposta.
+    arquivo: "lib/agent-engine/guardrails/before-send.ts",
+    simbolo: "TipoDeEnvio",
+  },
 ];
 
 /** Tira um nível de parênteses externos, se ele envolver a expressão inteira. */
