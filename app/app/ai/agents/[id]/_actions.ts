@@ -169,6 +169,8 @@ export async function saveAgentDraftAction(
   const escopo = await validarEscopoDaVersao(admin, activeOrg.orgId, {
     pipeline_ids: v.pipeline_ids,
     knowledge_source_ids: v.knowledge_source_ids,
+    credential_id: v.credential_id,
+    channel_session_id: v.channel_session_id,
   });
   if (!escopo.ok) {
     return { ok: false, error: "validation_failed", message: mensagemDoEscopo(escopo) };
@@ -698,6 +700,12 @@ export async function createMcpAgentAction(
 
   const requestId = randomUUID();
   const admin = createAdminClient();
+
+  // Antes da primeira escrita: recusado aqui, não sobra agente órfão.
+  const escopo = await validarEscopoDaVersao(admin, activeOrg.orgId, parsed.data.version);
+  if (!escopo.ok) {
+    return { ok: false, error: "validation_failed", message: mensagemDoEscopo(escopo) };
+  }
 
   // Cria agent kind='mcp_agent' + v1 draft. Compensa rollback se versão falhar.
   const { data: agentRow, error: agentErr } = await admin

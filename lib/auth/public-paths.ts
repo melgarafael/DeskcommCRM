@@ -140,6 +140,23 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/api\/v1\/ai\/agents\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/versions$/i,
   /^\/api\/v1\/prospecting$/,
   /^\/api\/v1\/agenda\/tipos$/,
+  // VERSÃO, PUBLICAÇÃO E TESTE DO AGENTE SERVER-TO-SERVER (issue #2052).
+  // Mesma dualidade das linhas acima: sessão OU Bearer `dsk_…`, resolvidos por
+  // `lib/api/auth-dual.ts` DENTRO de cada rota (a org sai da linha do token e
+  // nunca do path). O token precisa de `config:read`/`config:write` E de papel
+  // admin (`tokenRole`), porque trocar o prompt em vigor, publicar versão e
+  // pausar o agente é poder de administração — a sessão continua com o rank de
+  // sempre. Escopo PRÓPRIO, não `mcp:*`: token já emitido não ganha este poder
+  // na atualização sem ser criado de novo (decisão do mantenedor no PR #2194).
+  //
+  // Os dois segmentos são FORMA DE UUID, nunca `[^/]+`: `/api/v1/ai/agents/`
+  // tem irmão literal (`assignable`) e um segmento solto daria carona a ele e a
+  // qualquer outro sub-path que ainda é só-sessão. Âncora `$` em todos: nenhum
+  // caminho futuro nasce público de carona.
+  /^\/api\/v1\/ai\/agents\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  /^\/api\/v1\/ai\/agents\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/publish$/i,
+  /^\/api\/v1\/ai\/agents\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/versions\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  /^\/api\/v1\/ai\/agents\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/versions\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/test$/i,
   /^\/_next\//,
   /^\/favicon\.ico$/,
   // O ícone da aba (`app/icon.tsx`), que o `<head>` de TODA página pede —

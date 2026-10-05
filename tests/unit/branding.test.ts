@@ -850,6 +850,16 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint da API da OpenAI (embeddings da busca e transcrição de áudio). É o destino do request: trocar pelo domínio do revendedor faria a chamada não chegar a lugar nenhum.",
   },
+  "auth.openai.com": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint de autorização OAuth da OpenAI usado pelo login por PKCE da assinatura (`lib/ai/pontos/pkce-da-assinatura.ts`): é onde o fluxo troca o code pelo token e renova o acesso. É o destino do request, iniciado pelo próprio usuário na tela de Sistema — trocar pelo domínio do revendedor faria o login não chegar a lugar nenhum.",
+  },
+  "chatgpt.com": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "backend do Codex (`OPENAI_CODEX_ENDPOINT` em `lib/agent-engine/edge/llm/providers.ts`): é para lá que a chamada da ASSINATURA do ChatGPT vai, com o access_token do login por PKCE, e o mesmo host é o painel que a lista de Credenciais aponta em `ondePegarAChave` (`lib/ai/pontos/provedores.ts`). Não é contrato público da OpenAI e a Openai pode mudá-lo sem aviso — é por isto que a queda para a chave da organização existe: muda o destino, não a conversa.",
+  },
   "api.typesafe.ai": {
     categoria: "FORNECEDOR",
     motivo:

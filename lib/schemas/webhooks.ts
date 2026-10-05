@@ -132,15 +132,41 @@ export const ACOES_QUE_REGRAVAM_O_LEAD = ["assign_owner", "create_or_move_lead"]
 export const MENSAGEM_DO_LACO_DE_LEAD =
   "Neste gatilho a automação não pode atribuir responsável nem mover o lead: a própria mudança dispararia a automação de novo, sem fim.";
 
+/**
+ * Os tipos de ação que uma regra declara, DESCOBRINDO os que estão DENTRO de
+ * um `ai_decide` (#1970).
+ *
+ * O veto de #1528 é por TIPO, e o `ai_decide` esconde a ação-alvo escolhida
+ * dentro do `config.opcoes`. Sem este passe, "gatilho lead.assigned → o agente
+ * escolhe `assign_owner`" passaria pela checagem de laço (o tipo de topo é
+ * `ai_decide`, que não consta em `ACOES_QUE_REGRAVAM_O_LEAD`) e regravaria o
+ * lead que disparou a própria regra — exatamente o laço que a lista existe para
+ * barrar, chegando pela porta dos fundos. Quem descobre é UMA função, usada
+ * pelo schema (recusa na porta) e pelo motor (defesa em profundidade).
+ */
+function tiposDeAcao(actions: readonly { type: string; config?: Record<string, unknown> }[] | undefined): string[] {
+  const tipos: string[] = [];
+  for (const a of actions ?? []) {
+    if (a.type === "ai_decide") {
+      const opcoes = Array.isArray(a.config?.opcoes) ? (a.config.opcoes as Array<{ acao?: { type?: unknown } }>) : [];
+      for (const opcao of opcoes) {
+        const alvo = typeof opcao?.acao?.type === "string" ? opcao.acao.type : null;
+        if (alvo) tipos.push(alvo);
+      }
+      continue;
+    }
+    tipos.push(a.type);
+  }
+  return tipos;
+}
+
 /** As ações da regra que fechariam laço com o gatilho dela (vazio = regra segura). */
 export function acoesQueFechamLaco(
   triggerEvent: string | undefined,
-  actions: readonly { type: string }[] | undefined,
+  actions: readonly { type: string; config?: Record<string, unknown> }[] | undefined,
 ): string[] {
   if (!triggerEvent || !(GATILHOS_DO_TRIGGER_DE_LEAD as readonly string[]).includes(triggerEvent)) return [];
-  return (actions ?? [])
-    .map((a) => a.type)
-    .filter((t) => (ACOES_QUE_REGRAVAM_O_LEAD as readonly string[]).includes(t));
+  return tiposDeAcao(actions).filter((t) => (ACOES_QUE_REGRAVAM_O_LEAD as readonly string[]).includes(t));
 }
 
 function recusarLacoDeLead(
@@ -162,7 +188,20 @@ export const conditionSchema = z.object({
   value: z.string().max(500),
 });
 
-export const actionSchema = z.discriminatedUnion("type", [
+/**
+ * As ações FIXAS do motor — a fonte única de "que ações existem, e com que
+ * config".
+ *
+ * Vivem num array próprio, e não dentro do union, porque a `ai_decide` (#1970)
+ * precisa do MESMO conjunto como domínio de escolha: a ação-alvo de cada opção
+ * é uma destas, nunca outra `ai_decide` — sem anel, sem recursão. Um segundo
+ * union escrito à mão envelheceria no primeiro ajuste de config (a mesma
+ * cicatriz de lista duplicada que `ENTIDADE_ESPERADA_POR_GATILHO` existe para
+ * matar): aqui, acrescentar ação é acrescentar UMA vez e as duas leem.
+ *
+ * Os objetos são os MESMOS de sempre, byte a byte — só mudou onde moram.
+ */
+const acoesFixas = [
   z.object({ type: z.literal("create_or_move_lead"), config: z.object({ pipeline_id: z.string().uuid(), stage_id: z.string().uuid() }) }),
   z.object({ type: z.literal("send_whatsapp_message"), config: z.object({ channel_session_id: z.string().uuid(), template: z.string().min(1).max(2000) }) }),
   z.object({ type: z.literal("add_tag"), config: z.object({ tags: z.array(z.string().min(1).max(60)).min(1).max(10) }) }),
@@ -222,7 +261,71 @@ export const actionSchema = z.discriminatedUnion("type", [
       prioridade: z.enum(["low", "medium", "high", "urgent"]),
     }),
   }),
-]);
+] as const;
+
+/**
+ * O domínio de escolha da `ai_decide`: UMA ação-alvo por opção, e a ação tem
+ * que ser uma das fixas. Exportado porque o teste de schema confere que este
+ * union e o de `actionSchema` continuam sendo o mesmo conjunto.
+ */
+export const acaoAlvoSchema = z.discriminatedUnion("type", [...acoesFixas]);
+
+/**
+ * Uma opção do `ai_decide` (#1970) — o conjunto FINITO que a IA pode escolher.
+ *
+ * `id` é o que a IA devolve e `acao` é o que aquele id dispara; `rotulo` é o
+ * que quem lê o run vê. Três campos porque dois não fecham: id sem ação não
+ * executa nada, ação sem id não é escolhível, e nenhum dos dois diz em
+ * português o que aquela opção significa.
+ */
+export const opcaoDoAiDecideSchema = z.object({
+  id: z.string().min(1).max(60),
+  rotulo: z.string().min(1).max(120),
+  acao: acaoAlvoSchema,
+});
+
+export const aiDecideSchema = z.object({
+  type: z.literal("ai_decide"),
+  config: z.object({
+    /**
+     * O REGISTRO EXPLÍCITO do custo de token (#1970).
+     *
+     * `z.literal(true)`: a regra só existe se quem montou declarou, na cara,
+     * que esta ação gasta token — não dá para ligar IA sem escrever isto, nem
+     * por default, nem por herança de outra ação. Ausente, o schema recusa a
+     * regra na porta e a ação recusa de novo na execução (defesa em
+     * profundidade): gasto tácito é o defeito que o registro de pontos de IA do
+     * repo existe para impedir.
+     */
+    custo_de_token: z.literal(true),
+    /** A instrução de quem montou a regra — o que a IA pondera ao escolher. */
+    instrucao: z.string().min(1).max(1000),
+    /**
+     * O conjunto FINITO de opções: 2 a 6, cada uma com id único. Um id
+     * repetido faria a IA "escolher" e o executor acertar a PRIMEIRA opção
+     * com aquele id — a escolha registrada não seria a executada.
+     */
+    opcoes: z
+      .array(opcaoDoAiDecideSchema)
+      .min(2)
+      .max(6)
+      .superRefine((opcoes, ctx) => {
+        const vistos = new Set<string>();
+        for (const [indice, opcao] of opcoes.entries()) {
+          if (vistos.has(opcao.id)) {
+            ctx.addIssue({
+              code: "custom",
+              path: [indice, "id"],
+              message: "Cada opção precisa de um id único: é o id que a IA escolhe e o que a execução acerta.",
+            });
+          }
+          vistos.add(opcao.id);
+        }
+      }),
+  }),
+});
+
+export const actionSchema = z.discriminatedUnion("type", [...acoesFixas, aiDecideSchema]);
 
 export const createWebhookSourceSchema = z.object({
   name: z.string().min(1).max(120),

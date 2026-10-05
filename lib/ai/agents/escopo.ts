@@ -20,11 +20,18 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export interface EscopoDaVersao {
   pipeline_ids?: string[];
   knowledge_source_ids?: string[];
+  /** `null`/ausente = a chave da instalação; não há o que conferir. */
+  credential_id?: string | null;
+  channel_session_id?: string | null;
 }
 
 export type ResultadoDoEscopo =
   | { ok: true }
-  | { ok: false; campo: "pipeline_ids" | "knowledge_source_ids"; ausentes: string[] };
+  | {
+      ok: false;
+      campo: "pipeline_ids" | "knowledge_source_ids" | "credential_id" | "channel_session_id";
+      ausentes: string[];
+    };
 
 /**
  * Confere que todo id do escopo existe NESTA organização.
@@ -66,12 +73,37 @@ export async function validarEscopoDaVersao(
     if (ausentes.length > 0) return { ok: false, campo: "knowledge_source_ids", ausentes };
   }
 
+  // Credencial e canal são referências únicas, e a FK do banco só confere que
+  // a linha EXISTE — não que é desta organização. "De outra organização" e
+  // "não existe" dão a mesma resposta de propósito.
+  const referencias = [
+    ["credential_id", "ai_provider_credentials", escopo.credential_id],
+    ["channel_session_id", "channel_sessions", escopo.channel_session_id],
+  ] as const;
+  for (const [campo, tabela, id] of referencias) {
+    if (!id) continue;
+    const { data } = await supabase
+      .from(tabela)
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("id", id)
+      .maybeSingle();
+    if (!data) return { ok: false, campo, ausentes: [id] };
+  }
+
   return { ok: true };
 }
 
 /** Frase para quem lê na tela — nunca o id cru sem contexto. */
 export function mensagemDoEscopo(r: Extract<ResultadoDoEscopo, { ok: false }>): string {
-  return r.campo === "pipeline_ids"
-    ? `Um dos funis marcados não existe mais nesta organização (${r.ausentes.length}). Recarregue a página e marque de novo.`
-    : `Um dos materiais marcados não existe mais, ou foi arquivado (${r.ausentes.length}). Recarregue a página e marque de novo.`;
+  switch (r.campo) {
+    case "pipeline_ids":
+      return `Um dos funis marcados não existe mais nesta organização (${r.ausentes.length}). Recarregue a página e marque de novo.`;
+    case "knowledge_source_ids":
+      return `Um dos materiais marcados não existe mais, ou foi arquivado (${r.ausentes.length}). Recarregue a página e marque de novo.`;
+    case "credential_id":
+      return "A credencial escolhida não existe nesta organização. Recarregue a página e escolha de novo.";
+    case "channel_session_id":
+      return "A conexão escolhida não existe nesta organização. Recarregue a página e escolha de novo.";
+  }
 }

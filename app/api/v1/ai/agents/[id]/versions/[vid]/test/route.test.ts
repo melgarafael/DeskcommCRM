@@ -18,6 +18,23 @@ import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+// #2052: a rota deixou de chamar `requireRole` direto e passou pelo
+// `resolveAuthDual` (sessão OU Bearer), que chama `createClient()` do servidor
+// no ramo de sessão — escopo de request do Next, que este teste isolado não
+// tem. O que este arquivo prova é o `/test`, não o auth: o caminho aceito/
+// recusado por token está em
+// `tests/unit/configuracao-do-agente-por-token-aceita-e-recusa.test.ts`.
+vi.mock("@/lib/api/auth-dual", () => ({
+  resolveAuthDual: vi.fn(async () => ({
+    ok: true,
+    organizationId: "22222222-2222-4222-8222-222222222222",
+    actor: { type: "user", id: "11111111-1111-4111-8111-111111111111" },
+    supabase: {},
+    idioma: "pt-BR",
+    via: "session",
+  })),
+  tetoDeEscritaDoToken: vi.fn(async () => null),
+}));
 vi.mock("@/lib/agent-engine/agent/sandbox", () => ({
   testAgentVersion: vi.fn(async () => {
     throw new Error("AI_GATEWAY_API_KEY ausente");

@@ -21,6 +21,7 @@ import {
   RETENCAO_FILA_DIAS_PADRAO,
   RETENCAO_PASSAGEM_DIAS_PADRAO,
   RETENCAO_FILA_DIAS_PISO,
+  RETENCAO_MIDIA_DIAS_PISO,
   RETENCAO_OBSERVACOES_DO_JEV_DIAS_PADRAO,
   RETENCAO_OBSERVACOES_DO_JEV_DIAS_PISO,
   RETENCAO_PROSPECCAO_DIAS_PADRAO,
@@ -119,18 +120,24 @@ function bancoQueDevolve(sequencias: {
   auditoria: number[];
   /** A décima poda (issue #1686) — um lote por posição, como as irmãs. */
   rascunhos?: number[];
+  /** A décima segunda poda (#1534) — um lote por posição, em JSONB. */
+  midia?: Array<{ vencidas: number; orfas?: number; expurgadas?: number }>;
 }): {
   db: PodaDb;
   chamadas: { nome: string; dias: number; limite: number }[];
   /** Os cortes que `apagarRascunhos` recebeu, em ordem — é a régua do relógio. */
   cortes: string[];
+  /** O `p_limite` de CADA chamada de `enfileirarMidia`, em ordem. */
+  lotesDeMidia: number[];
 } {
   const chamadas: { nome: string; dias: number; limite: number }[] = [];
   const cortes: string[] = [];
+  const lotesDeMidia: number[] = [];
   const restante = {
     fila: [...sequencias.fila],
     auditoria: [...sequencias.auditoria],
     rascunhos: [...(sequencias.rascunhos ?? [0])],
+    midia: [...(sequencias.midia ?? [{ vencidas: 0, orfas: 0 }])],
   };
   const db: PodaDb = {
     async rpc(nome, args) {
@@ -142,8 +149,12 @@ function bancoQueDevolve(sequencias: {
       cortes.push(corte);
       return { data: restante.rascunhos.shift() ?? 0, error: null };
     },
+    async enfileirarMidia(lote) {
+      lotesDeMidia.push(lote);
+      return { data: restante.midia.shift() ?? { vencidas: 0, orfas: 0 }, error: null };
+    },
   };
-  return { db, chamadas, cortes };
+  return { db, chamadas, cortes, lotesDeMidia };
 }
 
 describe("interpretarRetencao — o knob nunca derruba o produto", () => {
@@ -271,6 +282,9 @@ describe("podarHistorico — o laço de lotes", () => {
       async apagarRascunhos() {
         return { data: null, error: { message: "permission denied for table conversation_drafts" } };
       },
+      async enfileirarMidia() {
+        return { data: { vencidas: 0, orfas: 0 }, error: null };
+      },
     };
     await expect(podarHistorico(db, {})).rejects.toThrow(/permission denied/);
   });
@@ -351,8 +365,26 @@ describe("a décima poda — o rascunho sugerido vencido (issue #1686)", () => {
       async apagarRascunhos() {
         return { data: null, error: { message: "permission denied for table conversation_drafts" } };
       },
+      async enfileirarMidia() {
+        return { data: { vencidas: 0, orfas: 0 }, error: null };
+      },
     };
     await expect(podarHistorico(db, {})).rejects.toThrow(/conversation_drafts/);
+  });
+
+  it("erro do banco sobe — a poda de mídia (#1534) também não engole falha", async () => {
+    const db: PodaDb = {
+      async rpc() {
+        return { data: 0, error: null };
+      },
+      async apagarRascunhos() {
+        return { data: 0, error: null };
+      },
+      async enfileirarMidia() {
+        return { data: null, error: { message: "permission denied for function fn_enfileirar_midia_vencida" } };
+      },
+    };
+    await expect(podarHistorico(db, {})).rejects.toThrow(/fn_enfileirar_midia_vencida/);
   });
 });
 
@@ -407,6 +439,12 @@ describe("houveEfeito — as duas direções", () => {
     lotes_candidatos_do_golden: 0,
     candidatos_do_golden_tem_resto: false,
     retencao_candidatos_do_golden_dias: RETENCAO_CANDIDATOS_GOLDEN_DIAS_PADRAO,
+    // Décima segunda poda (migration 0557, issue #1534): a retenção de mídia.
+    midia_enfileirada: 0,
+    midia_expurgada: 0,
+    lotes_midia: 0,
+    midia_tem_resto: false,
+    retencao_midia_dias: RETENCAO_MIDIA_DIAS_PISO,
     avisos: [] as string[],
   };
 

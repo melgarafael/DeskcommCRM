@@ -110,6 +110,13 @@ export const tenantSchema = z.object({
   locale: z.enum(LOCALES),
   currency: z.enum(MOEDAS),
   media_retention_days: z.coerce.number().int().min(30).max(3650),
+  /**
+   * Interruptor da limpeza automática de mídia antiga (issue #1534, migration
+   * 0557). `true` é o padrão do banco, para a organização que já existia e para
+   * a nova: a limpeza roda desde a 0432. Quem desliga é a tela; quem aplica é a
+   * função do banco. Sem este campo a tela prometeria o que a coluna não grava.
+   */
+  media_retention_enforced: z.boolean(),
   dpo_email: z
     .string()
     .email()

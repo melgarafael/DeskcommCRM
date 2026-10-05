@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { Providers } from "@/app/providers";
+import { definirOrgDaAba } from "@/lib/auth/org-da-aba";
 import { createClient, resetRealtimeAuthentication } from "@/lib/supabase/browser";
 import type { AuthUser, ActiveOrg, Role } from "@/lib/auth/types";
 import { ROLE_RANK } from "@/lib/auth/types";
@@ -39,6 +40,18 @@ export function AuthProvider({
     resetRealtimeAuthentication();
     return resetRealtimeAuthentication;
   }, [user.id, activeOrg?.orgId, user.support?.id, user.support?.access_mode]);
+
+  // A organização que ESTA aba acha que é — a mesma das props, fixas durante a
+  // vida do documento. Registrada para o `apiClient` carimbá-la em toda
+  // mutação (#2335, metade 2): o servidor compara com o cookie e recusa a
+  // divergência. É estado POR DOCUMENTO, e por isso não pode morar no cookie —
+  // duas abas do mesmo navegador discordam justamente nele.
+  useEffect(() => {
+    definirOrgDaAba(
+      activeOrg ? { orgId: activeOrg.orgId, nome: activeOrg.name, idioma: user.idioma } : null,
+    );
+    return () => definirOrgDaAba(null);
+  }, [activeOrg, user.idioma]);
 
   // Revogação/scope no banco também derrubam o snapshot aberto de UI/realtime.
   useEffect(() => {

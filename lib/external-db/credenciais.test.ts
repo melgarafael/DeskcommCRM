@@ -80,9 +80,23 @@ describe("carregarConexao", () => {
         maxRows: 800,
         maxFilters: 40,
         maxResponseBytes: 120000,
+        chaveDoCliente: null,
         versao: "2026-09-11T00:00:00.000Z",
       },
     });
+  });
+
+  it("a coluna que identifica o cliente só vale com o tipo junto", async () => {
+    const com = adminFalso({
+      data: { ...LINHA, customer_key_column: "telefone", customer_key_kind: "phone" },
+      error: null,
+    });
+    const r = await carregarConexao(com.admin, "org-1", "conn-1");
+    expect(r.ok && r.conexao.chaveDoCliente).toEqual({ coluna: "telefone", tipo: "phone" });
+
+    const meia = adminFalso({ data: { ...LINHA, customer_key_column: "telefone" }, error: null });
+    const r2 = await carregarConexao(meia.admin, "org-1", "conn-1");
+    expect(r2.ok && r2.conexao.chaveDoCliente).toBeNull();
   });
 
   it("conexão inexistente", async () => {

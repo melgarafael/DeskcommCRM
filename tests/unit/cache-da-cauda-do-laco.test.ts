@@ -35,6 +35,9 @@ describe("cacheDaCauda", () => {
 
   it("a chamada do motor usa a regra", () => {
     const fonte = readFileSync("lib/agent-engine/edge/llm/run-model-call.ts", "utf8");
-    expect(fonte).toContain("...cacheDaCauda(config.provider, input.maxSteps),");
+    // `cfgUsada` é a config de QUEM responde: a da assinatura, ou a da reserva
+    // quando ela assume (#1672). Amarrar à config usada, e não à inicial, é o
+    // que mantém a regra certa depois da queda.
+    expect(fonte).toContain("...cacheDaCauda(cfgUsada.provider, input.maxSteps),");
   });
 });

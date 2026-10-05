@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -187,6 +188,34 @@ export function TenantForm({ initial }: Props) {
               max={3650}
               value={form.media_retention_days}
               onChange={(e) => set("media_retention_days", Number(e.target.value))}
+            />
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <Label htmlFor="media_retention_enforced">
+                {t("Limpeza automática de mídia antiga")}
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                {form.media_retention_enforced
+                  ? t("Ligado: apaga a mídia com mais de {n} dias.").replace(
+                      "{n}",
+                      String(form.media_retention_days),
+                    )
+                  : t("Desligado: a mídia das conversas não é apagada por idade.")}
+              </p>
+            </div>
+            <Switch
+              id="media_retention_enforced"
+              checked={form.media_retention_enforced}
+              onCheckedChange={(v) => {
+                if (v && !form.media_retention_enforced) {
+                  if (window.confirm(t("Ao ligar, a mídia de mensagem com mais de {n} dias começará a ser apagada.").replace("{n}", String(form.media_retention_days)))) {
+                    set("media_retention_enforced", true);
+                  }
+                } else {
+                  set("media_retention_enforced", v);
+                }
+              }}
             />
           </div>
           <div className="space-y-2">

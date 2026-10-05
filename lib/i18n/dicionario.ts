@@ -1503,6 +1503,14 @@ export const DICIONARIO: Traducoes = {
   "Razão social": { es: "Razón social" },
   "DPO email": { es: "Email del DPO" },
   "Retenção de mídia (dias)": { es: "Retención de archivos multimedia (días)" },
+  "Limpeza automática de mídia antiga": { es: "Limpieza automática de multimedia antigua" },
+  "Ligado: apaga a mídia com mais de {n} dias.": {
+    es: "Activado: elimina la multimedia con más de {n} días.",
+  },
+  "Desligado: a mídia das conversas não é apagada por idade.": {
+    es: "Desactivado: la multimedia de las conversaciones no se elimina por antigüedad.",
+  },
+  "Ao ligar, a mídia de mensagem com mais de {n} dias começará a ser apagada.": { es: "Al activarlo, la multimedia de mensajes con más de {n} días comenzará a eliminarse." },
   "URL política de privacidade": { es: "URL de la política de privacidad" },
   "Informações pessoais. Email só pode ser trocado em breve.": {
     es: "Información personal. Pronto podrás cambiar el email.",
@@ -6287,6 +6295,15 @@ export const DICIONARIO: Traducoes = {
   "Tratar o token como gerente (necessário p/ criar e atribuir)": {
     es: "Tratar el token como gerente (necesario para crear y asignar)",
   },
+  "Tratar o token como administrador: as permissões marcadas agem com poder de administrador (junto de AGIR no CRM, cria agentes de IA e rascunhos e configura, busca e pausa a prospecção)": {
+    es: "Tratar el token como administrador: los permisos marcados actúan con poder de administrador (junto con ACTUAR en el CRM, crea agentes de IA y borradores y configura, busca y pausa la prospección)",
+  },
+  "Ler a configuração do agente de IA (exige papel de administrador)": {
+    es: "Leer la configuración del agente de IA (requiere rol de administrador)",
+  },
+  "Editar, testar, PUBLICAR, PAUSAR, DESLIGAR e ARQUIVAR o agente de IA que atende seus clientes (exige papel de administrador)": {
+    es: "Editar, probar, PUBLICAR, PAUSAR, DESACTIVAR y ARCHIVAR el agente de IA que atiende a sus clientes (requiere rol de administrador)",
+  },
   "Ler contatos": { es: "Leer contactos" },
   "Criar e editar contatos": { es: "Crear y editar contactos" },
   "Ler leads": { es: "Leer leads" },
@@ -7252,6 +7269,10 @@ export const DICIONARIO: Traducoes = {
 
   // ─── Inbox: mídia (áudio, imagem, figurinha, vídeo, documento) ───
   "Mídia indisponível": { es: "Contenido no disponible" },
+  "Mídia apagada pela política de retenção.": { es: "Multimedia eliminada por la política de retención." },
+  "Mídia apagada pela política de retenção ({n} dias)": {
+    es: "Multimedia eliminada por la política de retención ({n} días)",
+  },
   Áudio: { es: "Audio" },
   Imagem: { es: "Imagen" },
   Figurinha: { es: "Sticker" },
@@ -10088,6 +10109,8 @@ export const DICIONARIO: Traducoes = {
   "sem organização ativa": { es: "sin organización activa" },
   "Sem organização ativa": { es: "Sin organización activa" },
   "Sem organização ativa.": { es: "Sin organización activa." },
+  "Esta aba está numa organização diferente da sessão. Recarregar?": { es: "Esta pestaña está en una organización distinta a la de la sesión. ¿Recargar?" },
+  "Recarregar": { es: "Recargar" },
   "Sessão de canal não encontrada.": { es: "Sesión de canal no encontrada." },
   "Sessão expirada": { es: "Sesión expirada" },
   "Sessão sem token.": { es: "Sesión sin token." },
@@ -12130,6 +12153,13 @@ export const DICIONARIO: Traducoes = {
   "Vinculada": { es: "Vinculada" },
   "Verificar conexão": { es: "Verificar conexión" },
   "Receber no atendimento": { es: "Recibir en atención" },
+  "Remover do atendimento": { es: "Quitar de la atención" },
+  "Desconectar conta": { es: "Desconectar cuenta" },
+  "Desconectar esta conta?": { es: "¿Desconectar esta cuenta?" },
+  "Remover do atendimento?": { es: "¿Quitar de la atención?" },
+  "As mensagens param de chegar e a conta sai do provedor. Para usar de novo, será preciso autorizar a conta outra vez. As conversas já recebidas continuam no CRM.": { es: "Los mensajes dejan de llegar y la cuenta sale del proveedor. Para usarla de nuevo, tendrás que autorizar la cuenta otra vez. Las conversaciones ya recibidas siguen en el CRM." },
+  "As mensagens desta conta param de chegar no atendimento. A conta continua vinculada e pode voltar a receber depois. As conversas já recebidas continuam no CRM.": { es: "Los mensajes de esta cuenta dejan de llegar a la atención. La cuenta sigue vinculada y puede volver a recibir después. Las conversaciones ya recibidas siguen en el CRM." },
+  "Conta removida do atendimento.": { es: "Cuenta quitada de la atención." },
   "Recebimento configurado. Novas mensagens entram na caixa de entrada.": { es: "Recepción configurada. Los nuevos mensajes llegan a la bandeja de entrada." },
   "O recebimento precisa de atenção. Confira a conexão antes de atender.": { es: "La recepción necesita atención. Verifica la conexión antes de atender." },
   "Ative para receber novas conversas. A IA começa pausada para evitar respostas duplicadas com outras automações.": { es: "Activa para recibir nuevas conversaciones. La IA empieza pausada para evitar respuestas duplicadas con otras automatizaciones." },
@@ -13211,6 +13241,14 @@ export const DICIONARIO: Traducoes = {
   "Ajustar altura da linha": { es: "Ajustar alto de la fila" },
   "Arraste para ajustar a altura": { es: "Arrastra para ajustar el alto" },
   "Limites de leitura": { es: "Límites de lectura" },
+  "Telefone do cliente": { es: "Teléfono del cliente" },
+  "E-mail do cliente": { es: "Correo del cliente" },
+  "Informe o nome da coluna.": { es: "Indica el nombre de la columna." },
+  "Cliente nas conversas": { es: "Cliente en las conversaciones" },
+  "O que identifica o cliente": { es: "Qué identifica al cliente" },
+  "Na conversa com um cliente, o assistente só lê as linhas em que esta coluna é igual ao telefone ou ao e-mail de quem está falando. Sem isso, ele consulta este banco nas conversas sem limitar ao cliente.": { es: "En la conversación con un cliente, el asistente solo lee las filas en que esta columna es igual al teléfono o al correo de quien está hablando. Sin esto, consulta esta base de datos en las conversaciones sin limitarse al cliente." },
+  "O telefone precisa estar gravado só com números, com ou sem o código do país ou o sinal + (5511999998888, 11999998888 ou +5511999998888).": { es: "El teléfono debe estar guardado solo con números, con o sin el código de país o el signo + (5511999998888, 11999998888 o +5511999998888)." },
+  "Nas conversas, o assistente consulta este banco sem limitar ao cliente que está falando. Escolha, em Editar, a coluna que identifica o cliente.": { es: "En las conversaciones, el asistente consulta esta base de datos sin limitarse al cliente que está hablando. Elige, en Editar, la columna que identifica al cliente." },
   "Quanto o assistente e a grade podem ler desta fonte. Aumente se o seu processo precisar.": {
     es: "Cuánto pueden leer de esta fuente el asistente y la cuadrícula. Auméntalos si tu proceso lo requiere.",
   },
@@ -14146,6 +14184,29 @@ export const DICIONARIO: Traducoes = {
     es: "La tarea no se creó: la base de datos rechazó el registro. Inténtelo de nuevo en unos minutos; si persiste, abra la tarea en la agenda para ver el detalle.",
   },
 
+  // ─── ação ai_decide (issue #1970) ───
+  "A ação não rodou: a regra foi gravada sem declarar o gasto de IA (custo_de_token). Corrija a regra pela API; este passo ainda não tem tela.": {
+    es: "La acción no se ejecutó: la regla se guardó sin declarar el gasto de IA (custo_de_token). Corrija la regla por la API; este paso todavía no tiene pantalla.",
+  },
+  "A ação não rodou: a instrução ou as opções estão incompletas. Abra a automação e revise o texto e as alternativas.": {
+    es: "La acción no se ejecutó: la instrucción o las opciones están incompletas. Abra la automatización y revise el texto y las alternativas.",
+  },
+  "A IA devolveu uma opção que não está na lista desta ação, então nada foi executado. Corrija a instrução da regra para deixar as opções mais claras.": {
+    es: "La IA devolvió una opción que no está en la lista de esta acción, así que no se ejecutó nada. Corrija la instrucción de la regla para que las opciones queden más claras.",
+  },
+  "A opção escolhida aponta para uma ação que esta instalação não tem (pode ter saído em uma atualização). Abra a automação e escolha outra ação.": {
+    es: "La opción elegida apunta a una acción que esta instalación no tiene (puede haber salido en una actualización). Abra la automatización y elija otra acción.",
+  },
+  "A IA não devolveu nenhuma escolha entre as opções desta ação. Tente de novo ou corrija a instrução.": {
+    es: "La IA no devolvió ninguna opción entre las opciones de esta acción. Inténtelo de nuevo o corrija la instrucción.",
+  },
+  "A IA respondeu fora do formato esperado e nada foi executado. Tente de novo em alguns minutos.": {
+    es: "La IA respondió fuera del formato esperado y no se ejecutó nada. Inténtelo de nuevo en unos minutos.",
+  },
+  "A IA respondeu sem dizer qual opção escolher, então nada foi executado. Tente de novo ou corrija a instrução.": {
+    es: "La IA respondió sin decir qué opción elegir, así que no se ejecutó nada. Inténtelo de nuevo o corrija la instrucción.",
+  },
+
   // ─── PREVISÃO PONDERADA DO FUNIL (issue #1535) ───
   "Previsão": { es: "Previsión" },
   "Ponderado": { es: "Ponderado" },
@@ -14378,6 +14439,43 @@ export const DICIONARIO: Traducoes = {
   "Opção de histórico salva.": { es: "Opción de historial guardada." },
   "Não foi possível guardar esta opção.": { es: "No fue posible guardar esta opción." },
 
+  // ─── #1639 — login do Codex por assinatura (fatia do login) ────────────────
+  "Login do Codex por assinatura": { es: "Inicio de sesión de Codex por suscripción" },
+  "Conecta a assinatura do ChatGPT (o mesmo login do Codex): cada empresa conecta a própria conta, em Credenciais, com a chave de API da mesma empresa como reserva. Desligado por padrão.": { es: "Conecta la suscripción de ChatGPT (el mismo inicio de sesión de Codex): cada empresa conecta su propia cuenta, en Credenciales, con la clave de API de la misma organización como reserva. Desactivado por defecto." },
+  "Ligado, cada empresa vê em Credenciais o painel para conectar a própria conta do Codex. Desligado por padrão: sem este interruptor nada aparece para as empresas, e a reserva de chamada continua sendo a chave de API da organização.": { es: "Activado, cada empresa ve en Credenciales el panel para conectar su propia cuenta de Codex. Desactivado por defecto: sin este interruptor nada aparece para las empresas, y la reserva de llamadas sigue siendo la clave de API de la organización." },
+  "Conectar a assinatura do Codex": { es: "Conectar la suscripción de Codex" },
+  "Cada empresa conecta a própria conta do ChatGPT. Abra o link e entre com a conta que tem a assinatura. No fim, o navegador vai para um endereço em localhost:1455 que não abre — é esperado. Copie esse endereço inteiro, da barra do navegador, e cole aqui.": { es: "Cada empresa conecta su propia cuenta de ChatGPT. Abra el enlace y entre con la cuenta que tiene la suscripción. Al final, el navegador va a una dirección en localhost:1455 que no abre — es lo esperado. Copie esa dirección completa, de la barra del navegador, y péguela aquí." },
+  "Link de acesso": { es: "Enlace de acceso" },
+  "Endereço em que o navegador parou": { es: "Dirección en la que se detuvo el navegador" },
+  "Cole o endereço inteiro da barra do navegador (começa com http://localhost:1455/auth/callback), não só o código.": { es: "Pegue la dirección completa de la barra del navegador (empieza con http://localhost:1455/auth/callback), no solo el código." },
+  "Este endereço não veio do link desta tela, aberto por você nesta empresa — ou o link venceu (vale 10 minutos). Recarregue a página, abra o link de novo e cole o endereço novo.": { es: "Esta dirección no vino del enlace de esta pantalla, abierto por usted en esta empresa — o el enlace venció (vale 10 minutos). Recargue la página, abra el enlace de nuevo y pegue la dirección nueva." },
+  "Antes de ligar": { es: "Antes de activar" },
+  "O client_id e o redirect_uri (http://localhost:1455/auth/callback) são os do Codex, não os nossos, e nada disso é contrato público da OpenAI: os dois podem mudar sem aviso.": { es: "El client_id y el redirect_uri (http://localhost:1455/auth/callback) son los de Codex, no los nuestros, y nada de esto es un contrato público de OpenAI: ambos pueden cambiar sin aviso." },
+  "Este recurso vem desligado por padrão; só quem administra a instalação pode ligá-lo, em Recursos opcionais. Ligado, cada empresa conecta a própria conta aqui.": { es: "Este recurso viene desactivado por defecto; solo quien administra la instalación puede activarlo, en Recursos opcionales. Activado, cada empresa conecta su propia cuenta aquí." },
+  "Se a assinatura falhar, a chamada cai na reserva: a chave de API da organização, como sempre.": { es: "Si la suscripción falla, la llamada cae a la reserva: la clave de API de la organización, como siempre." },
+  "O código colado não tem cara de código. Cole o endereço inteiro que o navegador mostrou.": { es: "El código pegado no parece un código. Pegue la dirección completa que mostró el navegador." },
+  "A OpenAI recusou o código. Ele é de uso único: gere o link de novo e cole o código novo.": { es: "OpenAI rechazó el código. Es de un solo uso: genere el enlace de nuevo y pegue el código nuevo." },
+  "Este servidor não tem a chave de cifra (AI_CRED_AES_KEY) configurada, então o login não pode ser guardado.": { es: "Este servidor no tiene la clave de cifrado (AI_CRED_AES_KEY) configurada, así que el inicio de sesión no se puede guardar." },
+  "O banco recusou a gravação. Tente de novo em instantes.": { es: "La base de datos rechazó la grabación. Intente de nuevo en un momento." },
+  "Não deu para conectar. Tente de novo em instantes.": { es: "No se pudo conectar. Intente de nuevo en un momento." },
+  "Login guardado com cifra nesta empresa. A partir de agora o agente fala por esta assinatura; se ela não estiver disponível ou falhar, a chamada cai na chave da empresa.": { es: "Inicio de sesión guardado con cifrado en esta empresa. A partir de ahora el agente habla por esta suscripción; si no está disponible o falla, la llamada cae a la clave de la empresa." },
+
+  // ─── #1639, conta POR EMPRESA (PR #1672) — painel em Credenciais ─────────
+  // O `quandoUsar` do provedor não é literal de `t()`: chega à tela por
+  // `t(provedor.quandoUsar)`, que o guarda de tela não enxerga — por isto a
+  // entrada vive aqui, coberta por `i18n-provedores-e-pontos`.
+  "Para quem já paga o ChatGPT: a conversa sai pela mesma conta do Codex, sem chave de API nenhuma — e, se a assinatura não estiver disponível ou falhar, a chamada cai sozinha na chave da empresa.": { es: "Para quien ya paga ChatGPT: la conversa sale por la misma cuenta de Codex, sin clave de API alguna — y, si la suscripción no está disponible o falla, la llamada cae sola a la clave de la empresa." },
+  "Nenhuma conta conectada nesta empresa ainda.": { es: "Ninguna cuenta conectada en esta empresa todavía." },
+  "Conta conectada nesta empresa, guardada com cifra. O sistema renova o token antes de vencer — na janela de 8 dias, e também na hora em que o sistema acordar.": { es: "Cuenta conectada en esta empresa, guardada con cifrado. El sistema renueva el token antes de vencer — en la ventana de 8 días, y también cuando el sistema despierta." },
+  "Ainda sem validação registrada: gere o link de novo e conecte de novo.": { es: "Aún sin validación registrada: genere el enlace de nuevo y conecte otra vez." },
+  "Não deu para desconectar. Tente de novo em instantes.": { es: "No se pudo desconectar. Intente de nuevo en un momento." },
+  "O recurso está desligado nesta instalação. Só quem administra a instalação pode ligá-lo, em Recursos opcionais.": { es: "El recurso está desactivado en esta instalación. Solo quien administra la instalación puede activarlo, en Recursos opcionales." },
+  "Somente o administrador desta empresa pode conectar a conta.": { es: "Solo el administrador de esta empresa puede conectar la cuenta." },
+  "Você não tem uma empresa ativa para gravar esta conta.": { es: "No tiene una empresa activa donde guardar esta cuenta." },
+  "Sessão expirada. Entre de novo.": { es: "Sesión expirada. Entre de nuevo." },
+  "Outra renovação desta conta está em curso (ou o recurso está desligado). Aguarde alguns segundos e tente de novo.": { es: "Otra renovación de esta cuenta está en curso (o el recurso está desactivado). Espere unos segundos e intente de nuevo." },
+  "A OpenAI recusou a renovação do login. Gere o link de novo e conecte a conta outra vez.": { es: "OpenAI rechazó la renovación del inicio de sesión. Genere el enlace de nuevo y conecte la cuenta otra vez." },
+  "Esta credencial guarda o login por assinatura da empresa, não uma chave de API. Use Conectar ou Desconectar na tela de Credenciais.": { es: "Esta credencial guarda el inicio de sesión por suscripción de la empresa, no una clave de API. Use Conectar o Desconectar en la pantalla de Credenciales." },
 };
 
 /**

@@ -66,3 +66,34 @@ it("shows errors rather than a false empty or connected state", async () => {
   mount();
   expect((await screen.findByRole("alert")).textContent).toContain("Credencial recusada");
 });
+it("asks before removing an account from support and keeps it linked", async () => {
+  h.get.mockResolvedValue({
+    data: {
+      configured: true,
+      label: "Partner",
+      networks: [{ id: "instagram", label: "Instagram" }],
+      accounts: [
+        {
+          id: "a",
+          platform: "instagram",
+          username: "brand",
+          active: true,
+          inbox_supported: true,
+          channel: { id: "c", status: "WORKING", metadata: {} },
+        },
+      ],
+    },
+  });
+  h.post.mockResolvedValue({ data: { channel_id: "c", account_removed: false } });
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "Remover do atendimento" }));
+  expect(h.post).not.toHaveBeenCalled();
+  fireEvent.click(await screen.findByRole("button", { name: "Remover" }));
+  await vi.waitFor(() =>
+    expect(h.post).toHaveBeenCalledWith("/api/v1/channels/social", {
+      action: "disconnect",
+      account_id: "a",
+      remove_account: false,
+    }),
+  );
+});

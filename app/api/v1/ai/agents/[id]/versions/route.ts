@@ -149,6 +149,8 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     const escopo = await validarEscopoDaVersao(admin, organizationId, {
       pipeline_ids: v.pipeline_ids,
       knowledge_source_ids: v.knowledge_source_ids,
+      credential_id: v.credential_id,
+      channel_session_id: v.channel_session_id,
     });
     if (!escopo.ok) {
       return fail("validation_failed", mensagemDoEscopo(escopo), 422, { requestId });

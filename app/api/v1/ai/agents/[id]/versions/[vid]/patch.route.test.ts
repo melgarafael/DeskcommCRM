@@ -12,6 +12,23 @@ vi.mock("@/lib/impersonate/support", () => ({
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+// #2052: a rota deixou de chamar `requireRole` direto e passou pelo
+// `resolveAuthDual` (sessão OU Bearer). O helper chama `createClient()` do
+// servidor no ramo de sessão, que precisa do escopo de request do Next — coisa
+// que este teste isolado não tem. O que este arquivo prova é o PATCH, não o
+// auth: quem prova o caminho aceito/recusado é
+// `tests/unit/configuracao-do-agente-por-token-aceita-e-recusa.test.ts`.
+vi.mock("@/lib/api/auth-dual", () => ({
+  resolveAuthDual: vi.fn(async () => ({
+    ok: true,
+    organizationId: "22222222-2222-4222-8222-222222222222",
+    actor: { type: "user", id: "11111111-1111-4111-8111-111111111111" },
+    supabase: {},
+    idioma: "pt-BR",
+    via: "session",
+  })),
+  tetoDeEscritaDoToken: vi.fn(async () => null),
+}));
 
 const ORG = "22222222-2222-4222-8222-222222222222";
 const USER = "11111111-1111-4111-8111-111111111111";

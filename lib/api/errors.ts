@@ -75,6 +75,10 @@ export const ApiErrorCodes = {
   // retentar depois resolve, enquanto conflito manda trocar a chave.
   idempotency_in_progress: "idempotency_in_progress",
   state_conflict: "state_conflict",
+  // Escrita vinda de uma aba que ficou numa organização diferente da do cookie
+  // `active_org` (#2335). O header `X-Org-Da-Aba` só serve para RECUSAR: a org
+  // efetiva continua sendo a do cookie (`lib/auth/require-role.ts`).
+  org_divergente: "org_divergente",
   // POST /admin/tenants/[id]/reactivate sobre suspensão por falta de pagamento:
   // a saída é "Dar prazo" ou "Tornar isenta", nunca o "Reativar" genérico.
   suspensao_de_cobranca: "suspensao_de_cobranca",

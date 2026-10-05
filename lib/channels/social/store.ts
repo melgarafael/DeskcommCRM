@@ -3,6 +3,8 @@ import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { encryptWebhookSecret, decryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { metadataInicialDoCanal } from "@/lib/ai/elegibilidade/pre-go-live";
+import { resolverSaudeDaConexaoRemovida } from "@/lib/channels/health";
+import { logger } from "@/lib/logger";
 import { inboxSupported, SOCIAL_PROVIDER } from "./catalog";
 import { listSocialAccounts, socialRequest, SocialError } from "./client";
 
@@ -212,4 +214,82 @@ export async function connectSocialInbox(
       .eq("id", channelId);
     throw error;
   }
+}
+/** 404 on a provider DELETE means a previous attempt already removed it; retries must converge. */
+async function deleteAtProvider(key: string, path: string) {
+  try {
+    await socialRequest(key, path, undefined, "DELETE");
+  } catch (error) {
+    if (!(error instanceof SocialError && error.upstreamStatus === 404)) throw error;
+  }
+}
+/**
+ * Stops the inbox for one account and, with `removeAccount`, disconnects it from the provider.
+ * Provider calls run first: if one fails the channel stays intact and the action can be retried.
+ * Conversations are kept; the channel is archived, never deleted (issue #1314).
+ */
+export async function disconnectSocialAccount(
+  db: SupabaseClient,
+  org: string,
+  accountId: string,
+  removeAccount: boolean,
+) {
+  const integration = await readSocialIntegration(db, org);
+  if (!integration) throw new SocialError("Configure a integração primeiro.", 422);
+  const listed = (await listSocialAccounts(integration.key, integration.profileId)).some(
+    (a) => a._id === accountId,
+  );
+  const channel = (await socialChannels(db, org)).find((c) => c.accountId === accountId);
+  if (!listed && !channel) throw new SocialError("Conta não encontrada neste perfil.", 404);
+  const webhookId = channel?.metadata.social_webhook_id;
+  if (typeof webhookId === "string")
+    await deleteAtProvider(
+      integration.key,
+      `webhooks/settings?webhookId=${encodeURIComponent(webhookId)}`,
+    );
+  // Only accounts listed under this profile: the key may reach other profiles' accounts.
+  if (removeAccount && listed)
+    await deleteAtProvider(integration.key, `accounts/${encodeURIComponent(accountId)}`);
+  if (!channel)
+    return {
+      channel_id: null,
+      account_removed: removeAccount && listed,
+      avisos_fechados: "sem_mudanca" as const,
+    };
+  const now = new Date().toISOString();
+  const { error } = await db
+    .from("channel_sessions")
+    .update({
+      archived_at: now,
+      status: "STOPPED",
+      last_status_change_at: now,
+      // A late delivery to the old URL must not resolve this channel again.
+      webhook_path_token: randomBytes(24).toString("hex"),
+    })
+    .eq("organization_id", org)
+    .eq("id", channel.id);
+  if (error) throw new SocialError("Não foi possível arquivar o canal. Tente novamente.", 500);
+  // Best-effort: the channel is already out; an open health alert must not block that.
+  // But the failure is not swallowed: it goes to the log and, via the route's audit
+  // spread, to the audit metadata — same contract as channel-sessions/[id].
+  let avisosFechados: "resolvido" | "sem_mudanca" | "falhou";
+  try {
+    avisosFechados = await resolverSaudeDaConexaoRemovida(db, {
+      id: channel.id,
+      organization_id: org,
+      status: "STOPPED",
+    });
+  } catch (err) {
+    avisosFechados = "falhou";
+    logger.warn("Falha ao fechar os avisos de saúde da conexão social removida", {
+      channel_session_id: channel.id,
+      organization_id: org,
+      erro: err instanceof Error ? err.message : String(err),
+    });
+  }
+  return {
+    channel_id: channel.id,
+    account_removed: removeAccount && listed,
+    avisos_fechados: avisosFechados,
+  };
 }

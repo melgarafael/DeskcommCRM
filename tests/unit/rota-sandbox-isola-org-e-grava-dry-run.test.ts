@@ -11,6 +11,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: mocks.support }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: mocks.requireRole }));
+// #2052: a rota passa pelo `resolveAuthDual`, que no ramo de sessão cria o
+// cliente de servidor (`cookies()`), e este teste não tem escopo de request.
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({}) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.admin }));
 vi.mock("@/lib/agent-engine/agent/sandbox", () => ({ testAgentVersion: mocks.preview }));
 vi.mock("@/lib/agent-engine/agent/request-deps", () => ({ requestTurnDeps: () => ({}) }));

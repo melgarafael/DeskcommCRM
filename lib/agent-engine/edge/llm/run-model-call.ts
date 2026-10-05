@@ -20,12 +20,20 @@ import { generateText, stepCountIs, type ModelMessage, type ToolSet } from 'ai';
 import type pg from 'pg';
 import { z } from 'zod';
 
+import { PROVEDOR_POR_ASSINATURA } from '@/lib/ai/pontos/provedores';
 import { PONTO_POR_ID } from '@/lib/ai/pontos/registro';
+import { decidirQuedaDoProvedor } from '@/lib/ai/pontos/reserva-da-assinatura';
 import { scrubMessage } from '@/lib/sentry/scrub';
 
 import type { Logger } from '../../obs/logger';
 import { decidirParaOSeam } from './binding-do-ponto';
-import { resolveOrgLlmConfig, type LlmEdgeConfig, type OrcamentoDaOrg } from './credentials';
+import {
+  resolveOrgLlmConfig,
+  temChaveDeReserva,
+  type LlmEdgeConfig,
+  type OrcamentoDaOrg,
+  type OrgLlmConfig,
+} from './credentials';
 import {
   AVISO_CORPO,
   AVISO_TITULO,
@@ -599,7 +607,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     decisao.provider !== padrao.provider ||
     (decisao.credentialId !== null && decisao.credentialId !== credencialJaCarregada);
 
-  const config = precisaOutraCredencial
+  let config = precisaOutraCredencial
     ? await resolveOrgLlmConfig(db, cfg, input.tenantId, {
         provider: decisao.provider,
         credentialId: decisao.credentialId,
@@ -673,24 +681,30 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // valor inventado numa tabela de auditoria é pior que a linha faltando.
   // Continua ANTES de qualquer byte ao provedor, que é a propriedade que
   // importa: bloqueio custa zero token.
-  await aplicarOrcamento({
-    db,
-    organizationId: input.tenantId,
-    orcamentoDaConfig: config.orcamento,
-    orcamentoIndisponivelPorque: config.orcamentoIndisponivelPorque,
-    // A chave EFETIVA da instalação: a linha escrita na tela de admin vence, e
-    // o valor do `.env` (que veio na config) é o PISO. A leitura é feita AQUI,
-    // a cada chamada, porque é aqui que a decisão acontece — um snapshot no
-    // boot faria o kill switch da tela só valer depois de reiniciar o worker
-    // (issue #1034). Sem banco lido nesta vida do processo, isto é o de hoje.
-    chave: chaveDeOrcamentoDaInstalacao(cfg.budgetEnforcement ?? 'on'),
-    purpose,
-    provider: config.provider,
-    model,
-    origem: decisao.origem,
-    input,
-    ...(deps.log ? { log: deps.log } : {}),
-  });
+  // O mesmo gate, para QUALQUER provedor que vá falar nesta chamada —
+  // inclusive a reserva que a assinatura pode acionar mais abaixo (mesma
+  // organização, mesmo purpose, mesmo teto: recusar na assinatura e deixar a
+  // reserva passar seria o mesmo furo de antes, com outro nome).
+  const gateDeOrcamento = async (cfgUsada: OrgLlmConfig): Promise<void> =>
+    aplicarOrcamento({
+      db,
+      organizationId: input.tenantId,
+      orcamentoDaConfig: cfgUsada.orcamento,
+      orcamentoIndisponivelPorque: cfgUsada.orcamentoIndisponivelPorque,
+      // A chave EFETIVA da instalação: a linha escrita na tela de admin vence, e
+      // o valor do `.env` (que veio na config) é o PISO. A leitura é feita AQUI,
+      // a cada chamada, porque é aqui que a decisão acontece — um snapshot no
+      // boot faria o kill switch da tela só valer depois de reiniciar o worker
+      // (issue #1034). Sem banco lido nesta vida do processo, isto é o de hoje.
+      chave: chaveDeOrcamentoDaInstalacao(cfg.budgetEnforcement ?? 'on'),
+      purpose,
+      provider: cfgUsada.provider,
+      model,
+      origem: decisao.origem,
+      input,
+      ...(deps.log ? { log: deps.log } : {}),
+    });
+  await gateDeOrcamento(config);
 
   // Disciplina de cache: o prefixo estável org-wide (system do playbook + tools
   // em ordem determinística) ganha os breakpoints AQUI, no seam — call sites
@@ -704,18 +718,20 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
 
   const startedAt = Date.now();
   let result: Awaited<ReturnType<typeof generateText>>;
-  try {
-    input.abortSignal?.throwIfAborted();
-    // `system` aceita SystemModelMessage (com providerOptions de cache) — igual
-    // em v6 e v7 (smoke prova que o cacheControl continua virando cache_control).
-    result = await generateText({
+
+  // A MESMA chamada, em qualquer config: separar em função é o que permite a
+  // assinatura ser refeita com a reserva SEM copiar o corpo (duas cópias do
+  // `generateText` são duas cópias que um dia divergem — e a divergência seria
+  // invisível, porque só uma delas rodaria).
+  const chamarCom = (cfgUsada: OrgLlmConfig, fabrica: (typeof factory)) =>
+    generateText({
       // `decisao.baseUrl` só é preenchido quando o painel apontou um endpoint
       // (gateway OpenAI-compatível, ou modelo local). Providers canônicos
       // ignoram o terceiro argumento e vão ao endpoint intrínseco.
       // `config.baseUrl` é o da PRÓPRIA credencial e só o provedor personalizado
       // (#1642) tem um: o endereço nasce junto da chave, então o agente
       // publicado nele alcança o mesmo gateway que a tela testou ao salvar.
-      model: factory(config.apiKey, model, decisao.baseUrl ?? config.baseUrl ?? undefined),
+      model: fabrica(cfgUsada.apiKey, model, decisao.baseUrl ?? cfgUsada.baseUrl ?? undefined),
       system: prefix.system,
       messages: input.messages,
       abortSignal: input.abortSignal,
@@ -730,8 +746,75 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       topP,
       topK,
       maxOutputTokens: tetoDeSaida(maxOutputTokens, input.maxOutputTokens),
-      ...cacheDaCauda(config.provider, input.maxSteps),
+      ...cacheDaCauda(cfgUsada.provider, input.maxSteps),
     });
+
+  /**
+   * A QUEDA DA ASSINATURA (#1639, item 3) — a metade que faltava da política.
+   *
+   * `decidirQuedaDoProvedor` já existe e é pura; o que faltava era respondê-lo:
+   * `temChaveDeReserva` pergunta à MESMA escada de resolução se a chave `openai`
+   * da empresa existe. Devolve a config da reserva quando a política manda cair,
+   * e `null` quando o desfecho é o de sempre — o erro ORIGINAL é relançado, sem
+   * um erro novo inventado no lugar dele.
+   */
+  const reservaParaAFalha = async (falha: unknown): Promise<OrgLlmConfig | null> => {
+    // O freio do provedor está DENTRO de decidirQuedaDoProvedor: nativo que
+    // falhou continua falhando como sempre. Aqui só evitamos a pergunta ao
+    // banco quando ela não vai ser ouvida.
+    if (config.provider !== PROVEDOR_POR_ASSINATURA) return null;
+    // Abort não é recusa de credencial: a pessoa cancelou, ou o worker parou.
+    if (input.abortSignal?.aborted) return null;
+    // `error_message` já vem redigida (chaves/Bearer fora) — e é só ela que a
+    // classificação usa, para separar "token expirado" de "sem autorização".
+    const { http_status: status, error_message: detalhe } = normalizarErro(falha);
+    const temReserva = await temChaveDeReserva(db, cfg, input.tenantId);
+    const decisaoDaQueda = decidirQuedaDoProvedor({
+      provider: config.provider,
+      status,
+      detalhe,
+      temChaveDeReserva: temReserva,
+    });
+    if (decisaoDaQueda === null || decisaoDaQueda.acao !== 'tentar_reserva') return null;
+    try {
+      return await resolveOrgLlmConfig(db, cfg, input.tenantId, {
+        provider: decisaoDaQueda.provedorDeReserva,
+        credentialId: null,
+      });
+    } catch {
+      // A reserva existia na pergunta e sumiu na resolução (revogou no meio da
+      // chamada). Errar com o erro ORIGINAL é dizer a verdade ao operador.
+      return null;
+    }
+  };
+
+  try {
+    input.abortSignal?.throwIfAborted();
+    // `system` aceita SystemModelMessage (com providerOptions de cache) — igual
+    // em v6 e v7 (smoke prova que o cacheControl continua virando cache_control).
+    try {
+      result = await chamarCom(config, factory);
+    } catch (falhaDaAssinatura) {
+      const reserva = await reservaParaAFalha(falhaDaAssinatura);
+      if (reserva === null) throw falhaDaAssinatura;
+      const fabricaDaReserva = registry[reserva.provider];
+      // Sem fábrica para a reserva (registry de teste, provedor removido):
+      // o erro original é o que interessa, e ele não muda de mão.
+      if (fabricaDaReserva === undefined) throw falhaDaAssinatura;
+      // A troca ANTES da nova tentativa: se a reserva também falhar, a linha de
+      // `llm_calls` grava o provedor que de fato falhou por último, e não o que
+      // a chamada começou a falar.
+      config = reserva;
+      await gateDeOrcamento(reserva);
+      deps.log?.warn('llm: assinatura indisponível — chamada caiu na reserva', {
+        organization_id: input.tenantId,
+        purpose,
+        provider: reserva.provider,
+        model,
+        origem_da_escolha: decisao.origem,
+      });
+      result = await chamarCom(reserva, fabricaDaReserva);
+    }
   } catch (err) {
     // ─── A LINHA QUE FALTAVA ────────────────────────────────────────────────
     //

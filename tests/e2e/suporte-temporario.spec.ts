@@ -118,11 +118,12 @@ test("suporte mantém identidade, opera B e encerra sem misturar A; readonly/exp
   second=await browser.newContext();observeRequests(second);const other=await second.newPage();observeAuth(other);await login(other,email);await acknowledgeKnownAction(other,"/login");
   await start(page,orgs[1]!);
   await expect(sameTab.getByTestId("tenant-switcher")).toContainText(`Suporte B ${suffix}`);
-  await expect(sameTab.locator("[data-conversation-id]").getByText(`Contato B ${suffix}`,{exact:true})).toBeVisible();
+  // A lista só aparece depois da recarga + dois GETs em série (a chave muda com o automatico-ativo); 5s do expect não cabem no CI (#2360).
+  await expect(sameTab.locator("[data-conversation-id]").getByText(`Contato B ${suffix}`,{exact:true})).toBeVisible({timeout:20000});
   await expect(sameTab.locator("[data-conversation-id]").getByText(`Contato A ${suffix}`,{exact:true})).toHaveCount(0);
   await page.goto("/onboarding");await page.waitForURL("**/app/inbox");
   await expect(page.getByRole("alert").filter({hasText:/edição permitida/i})).toContainText(`Suporte B ${suffix}`);
-  await expect(page.locator("[data-conversation-id]").getByText(`Contato B ${suffix}`,{exact:true})).toBeVisible();
+  await expect(page.locator("[data-conversation-id]").getByText(`Contato B ${suffix}`,{exact:true})).toBeVisible({timeout:20000});
   await expect(page.locator("[data-conversation-id]").getByText(`Contato A ${suffix}`,{exact:true})).toHaveCount(0);
   await other.reload();await expect(other.getByTestId("tenant-switcher")).toContainText(`Suporte A ${suffix}`);
   const members=await db.from("user_organizations").select("id").eq("organization_id",orgs[1]).eq("user_id",actor);expect(members.data).toEqual([]);
@@ -168,7 +169,7 @@ test("suporte mantém identidade, opera B e encerra sem misturar A; readonly/exp
   await end(page);await returnedToA;
   await expect(page.getByTestId("tenant-switcher")).toContainText(`Suporte A ${suffix}`);
   await expect(sameTab.getByTestId("tenant-switcher")).toContainText(`Suporte A ${suffix}`);
-  await expect(sameTab.locator("[data-conversation-id]").getByText(`Contato A ${suffix}`,{exact:true})).toBeVisible();
+  await expect(sameTab.locator("[data-conversation-id]").getByText(`Contato A ${suffix}`,{exact:true})).toBeVisible({timeout:20000});
   await expect(sameTab.locator("[data-conversation-id]").getByText(`Contato B ${suffix}`,{exact:true})).toHaveCount(0);
   // Readonly prevalece inclusive depois de o ator ser admin FÍSICO em B.
   await insert("user_organizations",{organization_id:orgs[1],user_id:actor,role:"admin",accepted_at:new Date().toISOString()});

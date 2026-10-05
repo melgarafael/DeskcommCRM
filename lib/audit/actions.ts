@@ -239,6 +239,7 @@ export const AUDIT_ACTIONS = [
   "prospecting.approach_sent",
   "channel.pairing_code_requested",
   "channel.social_configured",
+  "channel.social_disconnected",
   "channel.ai_access_updated",
   "channel.acervo_updated",
   "channel.reconnected",
@@ -1027,6 +1028,12 @@ export const AUDIT_ACTIONS = [
   // auditável é a saída de dados — QUANTAS linhas saíram, não o que elas dizem
   // (o corpo da mensagem não vai para log nem para metadata, LGPD).
   "conversation.exported",
+  // #1639, fatia do login: o código colado em /admin/sistema virou tokens e foi
+  // guardado cifrado. Sem esta linha, "quem conectou a assinatura, e quando"
+  // ficaria sem rastro — e é a conta que passa a pagar as chamadas.
+  "ai.login_codex_conectado",
+  // A conta da empresa foi desconectada pela própria tela de Credenciais.
+  "ai.login_codex_desconectado",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

@@ -19,6 +19,7 @@ import {
   configureSocialIntegration,
   socialChannels,
   connectSocialInbox,
+  disconnectSocialAccount,
 } from "@/lib/channels/social/store";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +42,13 @@ const inputSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("inbox"), account_id: z.string().regex(/^[a-f0-9]{24}$/) }).strict(),
   z
     .object({ action: z.literal("health"), account_id: z.string().regex(/^[a-f0-9]{24}$/) })
+    .strict(),
+  z
+    .object({
+      action: z.literal("disconnect"),
+      account_id: z.string().regex(/^[a-f0-9]{24}$/),
+      remove_account: z.boolean(),
+    })
     .strict(),
 ]);
 function publicBase(): string {
@@ -129,6 +137,13 @@ export async function POST(req: Request) {
       result = { configured: true };
     } else if (body.action === "inbox") {
       result = await connectSocialInbox(db, auth.org.orgId, body.account_id, publicBase());
+    } else if (body.action === "disconnect") {
+      result = await disconnectSocialAccount(
+        db,
+        auth.org.orgId,
+        body.account_id,
+        body.remove_account,
+      );
     } else {
       const config = await readSocialIntegration(db, auth.org.orgId);
       if (!config) throw new SocialError("Configure a integração primeiro.", 422);
@@ -171,12 +186,18 @@ export async function POST(req: Request) {
       result = { auth_url: url.toString() };
     }
     void audit({
-      action: "channel.social_configured",
+      action:
+        body.action === "disconnect" ? "channel.social_disconnected" : "channel.social_configured",
       organizationId: auth.org.orgId,
       actorUserId: auth.user.id,
       resourceType: "social_connections",
       requestId,
-      metadata: { operation: body.action },
+      metadata: {
+        operation: body.action,
+        ...(body.action === "disconnect"
+          ? { account_id: body.account_id, ...(result as object) }
+          : {}),
+      },
     });
     return ok(result, { requestId, headers });
   } catch (error) {

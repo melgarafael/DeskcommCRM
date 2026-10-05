@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   channels: vi.fn(),
   accounts: vi.fn(),
   limit: vi.fn(),
+  disconnect: vi.fn(),
 }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: h.role }));
 vi.mock("@/lib/auth/server", () => ({ mfaEmDivida: h.mfa }));
@@ -22,6 +23,7 @@ vi.mock("@/lib/channels/social/store", () => ({
   configureSocialIntegration: h.configure,
   socialChannels: h.channels,
   connectSocialInbox: vi.fn(),
+  disconnectSocialAccount: h.disconnect,
 }));
 vi.mock("@/lib/channels/social/client", async (original) => ({
   ...(await original<typeof SocialClient>()),
@@ -81,4 +83,22 @@ it("blocks missing role, read-only support and missing MFA proof", async () => {
   h.mfa.mockResolvedValue(true);
   expect((await call({})).status).toBe(403);
   expect(h.configure).not.toHaveBeenCalled();
+});
+it("disconnects under the trusted tenant and audits the outcome", async () => {
+  h.disconnect.mockResolvedValue({ channel_id: "ch", account_removed: true });
+  const response = await call({
+    action: "disconnect",
+    account_id: "a".repeat(24),
+    remove_account: true,
+  });
+  expect(response.status).toBe(200);
+  expect(h.disconnect).toHaveBeenCalledWith({}, "trusted", "a".repeat(24), true);
+  expect(h.audit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      action: "channel.social_disconnected",
+      organizationId: "trusted",
+      metadata: expect.objectContaining({ channel_id: "ch", account_removed: true }),
+    }),
+  );
+  expect((await call({ action: "disconnect", account_id: "a".repeat(24) })).status).toBe(400);
 });

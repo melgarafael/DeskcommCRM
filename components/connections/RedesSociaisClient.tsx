@@ -9,6 +9,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { apiClient } from "@/lib/api/client";
 import { canalDesativado } from "@/lib/channels/desativado";
 import { useT } from "@/hooks/i18n/useT";
@@ -44,6 +54,9 @@ export function RedesSociaisClient() {
   const [platform, setPlatform] = useState("instagram");
   const [editing, setEditing] = useState(false);
   const [health, setHealth] = useState<Record<string, string>>({});
+  const [removing, setRemoving] = useState<{ account: Account; removeAccount: boolean } | null>(
+    null,
+  );
   const load = () => query.refetch();
   async function togglePausado(account: Account) {
     if (!account.channel) return;
@@ -84,6 +97,11 @@ export function RedesSociaisClient() {
               ? "Conexão verificada"
               : "A conexão precisa de atenção",
         }));
+      } else if (body.action === "disconnect") {
+        toast.success(
+          t(body.remove_account ? "Conta desconectada." : "Conta removida do atendimento."),
+        );
+        await load();
       } else {
         setKey("");
         setEditing(false);
@@ -278,6 +296,22 @@ export function RedesSociaisClient() {
                       <Link href="/app/inbox">{t("Abrir atendimento")}</Link>
                     </Button>
                   )}
+                  {account.channel && (
+                    <Button
+                      variant="outline"
+                      disabled={!!busy}
+                      onClick={() => setRemoving({ account, removeAccount: false })}
+                    >
+                      {t("Remover do atendimento")}
+                    </Button>
+                  )}
+                  <Button
+                    variant="destructive"
+                    disabled={!!busy}
+                    onClick={() => setRemoving({ account, removeAccount: true })}
+                  >
+                    {t("Desconectar conta")}
+                  </Button>
                 </div>
                 {health[account.id] && (
                   <p role="status" className="text-sm">
@@ -315,6 +349,41 @@ export function RedesSociaisClient() {
           <Button variant="ghost" className="self-start" onClick={() => setEditing(!editing)}>
             {t("Alterar credencial")}
           </Button>
+          <AlertDialog open={!!removing} onOpenChange={(open) => !open && setRemoving(null)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {removing?.removeAccount
+                    ? t("Desconectar esta conta?")
+                    : t("Remover do atendimento?")}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {removing?.removeAccount
+                    ? t(
+                        "As mensagens param de chegar e a conta sai do provedor. Para usar de novo, será preciso autorizar a conta outra vez. As conversas já recebidas continuam no CRM.",
+                      )
+                    : t(
+                        "As mensagens desta conta param de chegar no atendimento. A conta continua vinculada e pode voltar a receber depois. As conversas já recebidas continuam no CRM.",
+                      )}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() =>
+                    removing &&
+                    void perform(removing.account.id, {
+                      action: "disconnect",
+                      account_id: removing.account.id,
+                      remove_account: removing.removeAccount,
+                    })
+                  }
+                >
+                  {removing?.removeAccount ? t("Desconectar") : t("Remover")}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </>
       )}
     </div>

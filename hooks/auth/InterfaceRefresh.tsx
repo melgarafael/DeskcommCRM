@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { lerInterface } from "@/lib/navigation/interface";
+import { mostrarAvisoOrgDivergente } from "@/lib/auth/aviso-org-divergente";
 import type { ActiveOrg } from "@/lib/auth/types";
 const isDocumentHidden = () => document.visibilityState === "hidden";
 /** Invalidação apenas: refresh RSC preserva estado de formulários e URL aberta. */
@@ -47,7 +48,22 @@ export function InterfaceRefresh({
           if (response.ok) {
             const result = await response.json();
             if (generation !== epoch.current) return;
-            if (result.data?.organization_id === org.orgId && result.data.signature !== expected) {
+            // O cookie `active_org` é um por sessão do NAVEGADOR: vale para
+            // todas as abas. Se a sessão mudou em outra aba, o servidor já
+            // responde pela organização nova enquanto esta continua na antiga
+            // (props fixas durante a vida do documento). Recarregar aqui
+            // apagaria o formulário em edição — AVISA e deixa a decisão com
+            // quem está na tela (#2335, metade 1). O `else` importa: com a
+            // sessão em outra organização a assinatura da interface também
+            // seria lida errado, e um `router.refresh()` silencioso mandaria
+            // os dados da outra org para dentro desta tela.
+            if (result.data?.organization_id !== org.orgId) {
+              mostrarAvisoOrgDivergente({
+                daAba: org.name,
+                daSessao: result.data?.organization_name ?? result.data?.organization_id ?? null,
+                traduzir: t,
+              });
+            } else if (result.data.signature !== expected) {
               router.refresh();
               toast.info(t("Sua navegação foi atualizada. Você pode continuar nesta tela."), {
                 id: "interface-updated",
