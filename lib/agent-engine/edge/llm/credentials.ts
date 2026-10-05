@@ -419,3 +419,29 @@ export async function resolveOrgLlmConfig(
     orcamentoIndisponivelPorque,
   };
 }
+
+/**
+ * A empresa tem a IA de sempre? A MESMA pergunta que a chamada dela faz antes de
+ * sair (`runModelCall` começa por `resolveOrgLlmConfig`): sem chave utilizável,
+ * ela nunca responde.
+ *
+ * É o portão do Jev roteando sozinho (decisão B do mantenedor, doc 89, que
+ * mantém a R2 do DEC-012): sem a IA de sempre, o modo sob demanda não liga e
+ * vale a regra de hoje. Qualquer falha vale "não tem" — falha FECHADA na ação
+ * (o Jev não passa a rotear sozinho por um erro de leitura) e ABERTA na
+ * informação: o turno segue em comparação, chama a IA de sempre, e é a
+ * chamada dela que registra o motivo (`intent-classifier: falha ao classificar`).
+ */
+export async function temIaDeSempre(
+  db: pg.Pool,
+  cfg: LlmEdgeConfig,
+  organizationId: string,
+  provider?: string | null,
+): Promise<boolean> {
+  try {
+    await resolveOrgLlmConfig(db, cfg, organizationId, provider ? { provider } : undefined);
+    return true;
+  } catch {
+    return false;
+  }
+}

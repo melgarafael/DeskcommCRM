@@ -1395,6 +1395,54 @@ describe("CartaoDoJev — sem a IA de sempre, as tarefas seguem com a linha dela
   });
 });
 
+
+describe("modo independente do roteador", () => {
+  const comRoteador = (podeEditar = true, temIa = true) => dados({
+    config: { ligado: true, modo_roteador: "comparacao" }, pode_editar: podeEditar, roteador_tem_ia_de_sempre: temIa,
+    por_tarefa: [{ id: "roteador", ponto: "intent_router", rotulo: "Escolher qual agente atende",
+      oQueFaz: "Escolhe.", estado: "decidindo", novo: false }],
+  });
+
+  it("explica o modo independente no cartão e no seletor do modelo, sem afirmar cobrança paralela", () => {
+    const d = comRoteador();
+    d.config.modo_roteador = "sob_demanda";
+    montar(d);
+    expect(screen.getByTestId("jev-decide-roteador")).toHaveTextContent("A IA de sempre só entra em caso de falha");
+    expect(screen.getByTestId("jev-decide-roteador")).not.toHaveTextContent("nunca só o Jev");
+    expect(jevNoPonto(d, "intent_router")).toEqual({ decide: "O Jev escolhe primeiro. A IA de sempre só entra em caso de falha, baixa confiança ou intenção inválida." });
+  });
+
+  it("oferece comparar ou chamar a reserva sob demanda, e grava a escolha", async () => {
+    montar(comRoteador());
+    const modo = screen.getByLabelText("Como o roteador consulta as IAs");
+    expect(modo).toHaveValue("comparacao");
+    fireEvent.change(modo, { target: { value: "sob_demanda" } });
+    await waitFor(() => expect(chamadas.some((c) => c.metodo === "PATCH")).toBe(true));
+    expect(chamadas.find((c) => c.metodo === "PATCH")?.corpo).toEqual({ modo_roteador: "sob_demanda" });
+    expect(screen.getByRole("link", { name: "Ver resultados do roteamento" })).toHaveAttribute("href", "/app/ai/runs?tab=roteamento");
+  });
+
+  it("sem a IA de sempre (decisão B), a opção sob demanda não liga, e o cartão diz por quê", () => {
+    montar(comRoteador(true, false));
+    const modo = screen.getByLabelText("Como o roteador consulta as IAs");
+    expect(within(modo).getByRole("option", { name: "Jev; IA de sempre só como reserva" })).toBeDisabled();
+    expect(screen.getByTestId("jev-modo-roteador-sem-ia")).toHaveTextContent("Sem a sua IA de sempre, o Jev não escolhe o agente sozinho");
+  });
+
+  it("sem a IA de sempre, um sob demanda gravado antes vale comparação: o seletor e a frase do cartão dizem isso", () => {
+    const d = comRoteador(true, false);
+    d.config.modo_roteador = "sob_demanda";
+    montar(d);
+    expect(screen.getByLabelText("Como o roteador consulta as IAs")).toHaveValue("comparacao");
+    expect(jevNoPonto(d, "intent_router")).not.toEqual({ decide: expect.stringContaining("escolhe primeiro") });
+  });
+
+  it("quem só consulta vê o modo, mas não o altera", () => {
+    montar(comRoteador(false));
+    expect(screen.getByLabelText("Como o roteador consulta as IAs")).toBeDisabled();
+  });
+});
+
 /**
  * A resposta ao follow-up SÓ OBSERVA nesta versão: a saída dela move o cliente
  * no fluxo. O cartão mostra a concordância (a mesma saída, em respostas), diz

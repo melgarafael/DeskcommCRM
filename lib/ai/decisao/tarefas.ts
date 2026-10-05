@@ -193,13 +193,22 @@ export const TAREFA_DA_MANIPULACAO = {
  * nunca o Jev (R2). Só roda onde há um roteador ativo: sem ele o turno não
  * classifica nada (`tarefaSemRoteador`).
  */
+export const ROTEADOR_SOB_DEMANDA = "O Jev escolhe primeiro. A IA de sempre só entra em caso de falha, baixa confiança ou intenção inválida.";
+/**
+ * Por que o Jev não roteia sozinho nesta empresa (decisão B do doc 89, R2 do
+ * DEC-012): a mesma frase na recusa do PATCH e no cartão.
+ */
+export const ROTEADOR_SOB_DEMANDA_SEM_IA =
+  "Sem a sua IA de sempre, o Jev não escolhe o agente sozinho: é ela que cobre quando ele falha ou fica em dúvida. Cadastre uma chave de IA em Agentes IA › Credenciais para usar este modo. Até lá, vale a comparação.";
+
 export const TAREFA_DO_ROTEADOR = {
   id: "roteador",
   ponto: "intent_router",
   primitiva: "choice",
   alcance: "mensagem",
   familia: "substitui",
-  // Os dois perguntam a cada mensagem (`resolve-turn-agent.ts`), e sem a
+  // Texto do modo comparação. Sob demanda, a tela usa ROTEADOR_SOB_DEMANDA.
+  // Na comparação, os dois perguntam a cada mensagem, e sem a
   // resposta da IA de sempre a do Jev não vale (R2) — ao contrário do clima.
   // "Agente de fallback" é o nome do campo na tela do roteador: "o de reserva
   // do roteador" não levava o leigo ao campo que ele precisa conferir.

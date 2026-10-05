@@ -24,6 +24,7 @@ const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_ORG_ID = "33333333-3333-4333-8333-333333333333";
 const SESSION_ID = "44444444-4444-4444-8444-444444444444";
+let lastInserted: Record<string, unknown> | null = null;
 
 function mockAuthzOk(role: "agent" | "admin" = "admin") {
   const user: AuthUser = {
@@ -107,6 +108,7 @@ function makeAdminStub(cfg: AdminCfg) {
           },
           insert(row: Record<string, unknown>) {
             insertedRow = row;
+            lastInserted = row;
             return {
               select() {
                 return {
@@ -150,6 +152,7 @@ function postReq(body: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  lastInserted = null;
 });
 
 describe("GET /api/v1/ai/routers", () => {
@@ -199,6 +202,17 @@ describe("GET /api/v1/ai/routers", () => {
 });
 
 describe("POST /api/v1/ai/routers", () => {
+  it("roteador novo começa com oito mensagens; valor fora de 0–16 é recusado", async () => {
+    mockAuthzOk("admin");
+    vi.mocked(createAdminClient).mockReturnValue(makeAdminStub({ insertResult: { data: { id: "new-router-1" }, error: null } }) as never);
+    const { POST } = await import("./route");
+    expect((await POST(postReq({ name: "Roteador", channel_session_id: SESSION_ID }))).status).toBe(201);
+    expect(lastInserted?.config).toMatchObject({ context_message_count: 8 });
+    lastInserted = null;
+    expect((await POST(postReq({ name: "Roteador", channel_session_id: SESSION_ID,
+      config: { context_message_count: 17 } }))).status).toBe(422);
+    expect(lastInserted).toBeNull();
+  });
   it("cria router; organization_id vem de requireRole mesmo que o body mande outro", async () => {
     mockAuthzOk("admin");
     const admin = makeAdminStub({ insertResult: { data: { id: "new-router-1" }, error: null } });

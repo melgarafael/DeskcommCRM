@@ -3,15 +3,16 @@
  * intenção aparecia com o módulo DESLIGADO — amarrar a um roteiro que a
  * instalação não roda.
  */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { authMock, flowsMock, testeMock, pipelinesMock, stagesMock } = vi.hoisted(() => ({
+const { authMock, flowsMock, testeMock, updateMock, pipelinesMock, stagesMock } = vi.hoisted(() => ({
   authMock: vi.fn(),
   flowsMock: vi.fn(),
   pipelinesMock: vi.fn(() => ({ data: undefined })),
   stagesMock: vi.fn(() => ({ data: undefined })),
   testeMock: vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false, data: undefined as unknown })),
+  updateMock: vi.fn(async () => ({})),
 }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
@@ -28,7 +29,7 @@ vi.mock("@/hooks/ai/useRouters", () => {
   const mut = () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false });
   return {
     useRouter: () => ({ data: undefined }),
-    useUpdateRouter: mut,
+    useUpdateRouter: () => ({ mutate: vi.fn(), mutateAsync: updateMock, isPending: false }),
     useDeleteRouter: mut,
     useSaveMembers: mut,
     useTestRouter: testeMock,
@@ -90,6 +91,20 @@ describe("seletor de roteiro na intenção × módulo", () => {
   });
 });
 
+describe("tamanho do contexto do roteador", () => {
+  it("roteador legado mostra quatro mensagens e salva oito quando o admin escolhe", async () => {
+    authMock.mockReturnValue({ activeOrg: { modulos_ligados: [] } });
+    flowsMock.mockReturnValue({ data: undefined });
+    updateMock.mockClear();
+    renderizar();
+    const campo = screen.getByLabelText("Mensagens anteriores para o roteamento");
+    expect(campo).toHaveValue(4);
+    fireEvent.change(campo, { target: { value: "8" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({ context_message_count: 8 }) }));
+  });
+});
+
 describe("Testar classificação com o Jev (onda 2 do Jev, bloco 2.2)", () => {
   const RESULTADO = {
     intent_name: "financiamento",
@@ -135,6 +150,19 @@ describe("Testar classificação com o Jev (onda 2 do Jev, bloco 2.2)", () => {
     comResultado({ ...RESULTADO, jev: { ...DO_JEV, estado: "decidindo", decide: true } });
     expect(screen.getByTestId("teste-agente-que-atenderia").textContent).toBe("Agente Suporte");
     expect(screen.getByTestId("teste-quem-decide").textContent).toMatch(/vale a escolha dele/);
+  });
+
+  it("sob demanda distingue a reserva dispensada de falha de resposta", () => {
+    comResultado({ ...RESULTADO, confidence: null, ia_consultada: false, modo_roteador: "sob_demanda", jev: { ...DO_JEV, estado: "decidindo", decide: true } });
+    expect(screen.getByTestId("teste-escolha-da-ia").textContent).toContain("Não foi necessário consultar");
+    expect(screen.getByTestId("teste-quem-decide").textContent).toContain("O Jev decidiu sozinho");
+    expect(screen.getByTestId("teste-agente-que-atenderia").textContent).toBe("Agente Suporte");
+  });
+
+  it("sob demanda explica reserva por baixa confiança mesmo quando Jev respondeu", () => {
+    comResultado({ ...RESULTADO, ia_consultada: true, modo_roteador: "sob_demanda", jev: { ...DO_JEV, confidence: 0.3, estado: "decidindo", decide: false } });
+    expect(screen.getByTestId("teste-quem-decide").textContent).toContain("O Jev precisou de reserva");
+    expect(screen.getByTestId("teste-agente-que-atenderia").textContent).toBe("Agente Financiamento");
   });
 
   it("decidindo sem a sua IA (R2): quem atende NÃO é o do Jev", () => {

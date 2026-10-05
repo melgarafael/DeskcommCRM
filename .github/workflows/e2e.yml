@@ -2130,6 +2130,17 @@ jobs:
             test-results/
           retention-days: 7
 
+      # A prova das três telas do roteador deve existir também quando o teste
+      # passa. Apenas capturas sintéticas deste teste, sem traces ou credenciais.
+      - name: Guardar prova visual do roteador JEV
+        if: ${{ !cancelled() && matrix.parte == 5 }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: jev-roteador-telas
+          path: test-results/**/jev-roteador-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
       # ── ONDE A MEDIÇÃO FICA ───────────────────────────────────────────────
       # A medição que só existe no log se perde: quem decide repartir as listas
       # é quem olha o resumo do job, e o resumo é este. Os três relógios saem
