@@ -15,6 +15,8 @@ import {
 import { useT } from "@/hooks/i18n/useT";
 import { FUSO_PADRAO } from "@/lib/tempo/fusos";
 
+import { EtiquetasDoFiltroInput } from "./EtiquetasDoFiltroInput";
+
 export interface BusinessHoursValue {
   timezone: string;
   start: string;
@@ -35,6 +37,9 @@ export interface TriggerValue {
     ignore_self: boolean;
     keyword_regex: string | null;
     business_hours: BusinessHoursValue | null;
+    /** Filtro por etiqueta do contato (`lib/agent-engine/agent/filtro-de-etiquetas.ts`). Ausente = sem filtro. */
+    contact_tags_include?: string[];
+    contact_tags_exclude?: string[];
   };
   concurrency: "one_per_conversation" | "one_per_contact";
 }
@@ -44,6 +49,8 @@ interface Props {
   onChange: (v: TriggerValue) => void;
   disabled?: boolean;
   organizationTimezone?: string;
+  /** Etiquetas em uso nos contatos — sugestões do filtro por etiqueta. */
+  sugestoesDeEtiquetas?: readonly string[];
 }
 
 const WEEKDAYS = [
@@ -56,7 +63,7 @@ const WEEKDAYS = [
   { id: 6, label: "Sáb" },
 ];
 
-export function TriggerEditor({ value, onChange, disabled, organizationTimezone }: Props) {
+export function TriggerEditor({ value, onChange, disabled, organizationTimezone, sugestoesDeEtiquetas }: Props) {
   const t = useT();
   const defaultTimezone = organizationTimezone ?? FUSO_PADRAO;
 
@@ -270,6 +277,44 @@ export function TriggerEditor({ value, onChange, disabled, organizationTimezone 
             </div>
           </div>
         ) : null}
+      </div>
+
+      {/* Filtro, não gatilho: decide só se ESTE agente responde a quem escreveu.
+          Quem obedece é o resolvedor do turno (regra 8 de resolve-turn-agent.ts). */}
+      <div className="space-y-3 rounded-md border border-border/60 p-3">
+        <div className="space-y-1">
+          <p className="text-sm font-medium">{t("Filtro por etiqueta do contato")}</p>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Não é um gatilho: colocar a etiqueta não faz o agente mandar mensagem. Quando o contato escrever, este agente só responde se ele passar por este filtro.",
+            )}
+          </p>
+        </div>
+        <EtiquetasDoFiltroInput
+          id="contact_tags_include"
+          rotulo={t("Responder só quem tem uma destas etiquetas")}
+          ajuda={t(
+            "Vazio = responde qualquer contato. Com etiquetas, quem não tiver nenhuma delas não recebe resposta deste agente.",
+          )}
+          value={value.filters.contact_tags_include ?? []}
+          onChange={(next) => patchFilters({ contact_tags_include: next })}
+          sugestoes={sugestoesDeEtiquetas}
+          disabled={disabled}
+        />
+        <EtiquetasDoFiltroInput
+          id="contact_tags_exclude"
+          rotulo={t("Nunca responder quem tem uma destas etiquetas")}
+          ajuda={t("Vale mesmo que o contato também tenha uma etiqueta da lista de cima.")}
+          value={value.filters.contact_tags_exclude ?? []}
+          onChange={(next) => patchFilters({ contact_tags_exclude: next })}
+          sugestoes={sugestoesDeEtiquetas}
+          disabled={disabled}
+        />
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Se nenhum agente deste número aceitar o contato, a IA não responde e a conversa fica no Inbox para a equipe.",
+          )}
+        </p>
       </div>
     </div>
   );

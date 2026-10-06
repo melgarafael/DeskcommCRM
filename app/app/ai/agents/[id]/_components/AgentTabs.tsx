@@ -24,6 +24,8 @@ interface Props {
   cobertura?: CoberturaPorFunil;
   /** O acervo da organização, para a seção "o que ele consulta" (0181). */
   materiais?: MaterialDoAcervo[];
+  /** Etiquetas em uso nos contatos — ver `AgentForm`. */
+  etiquetasDeContato?: string[];
   agent: AgentRow;
   draft: AgentVersionRow | null;
   published: AgentVersionRow | null;
@@ -79,6 +81,7 @@ export function AgentTabs(props: Props) {
           funis={props.funis}
           cobertura={props.cobertura}
           materiais={props.materiais}
+          etiquetasDeContato={props.etiquetasDeContato}
           routerMembership={props.routerMembership}
           readOnly={props.readOnly}
           organizationTimezone={props.organizationTimezone}

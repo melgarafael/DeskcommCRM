@@ -161,6 +161,12 @@ type Props = (EditProps | CreateProps) & {
    * algo importante.
    */
   materiais?: MaterialDoAcervo[];
+  /**
+   * Etiquetas em uso nos contatos, para o filtro por etiqueta sugerir o que
+   * existe. Vem por PROP, lida no servidor: o editor é renderizado sem
+   * `QueryClient` nos testes e não busca nada sozinho.
+   */
+  etiquetasDeContato?: string[];
 };
 
 interface FormState {
@@ -1234,6 +1240,7 @@ export function AgentForm(props: Props) {
               onChange={(v) => patch({ trigger_config: v })}
               disabled={disabled}
               organizationTimezone={props.organizationTimezone}
+              sugestoesDeEtiquetas={props.etiquetasDeContato}
             />
           </Card>
 

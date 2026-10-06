@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { listSelectableChannels } from "@/lib/channels/selectable";
+import { lerEtiquetasDeContatoEmUso } from "@/lib/contacts/etiquetas-em-uso";
 import { createClient } from "@/lib/supabase/server";
 import type { CredentialRow } from "@/hooks/ai/useCredentials";
 
@@ -40,7 +41,7 @@ export default async function NewAgentPage() {
   }
 
   const supabase = await createClient();
-  const [orgRes, credentialsRes, channelSessions] = await Promise.all([
+  const [orgRes, credentialsRes, channelSessions, etiquetasEmUso] = await Promise.all([
     // O provedor que a organização JÁ usa: sem ele, o agente novo nascia
     // `anthropic` e o formulário pedia "Cadastrar credencial anthropic" para
     // quem só tem chave da OpenAI.
@@ -50,6 +51,8 @@ export default async function NewAgentPage() {
       .select(CREDENTIAL_COLUMNS)
       .eq("organization_id", activeOrg.orgId),
     listSelectableChannels(supabase, activeOrg.orgId),
+    // Sugestões do filtro por etiqueta; falha aqui só tira as sugestões.
+    lerEtiquetasDeContatoEmUso(supabase, activeOrg.orgId),
   ]);
 
   const credentials = (credentialsRes.data ?? []) as CredentialRow[];
@@ -65,6 +68,7 @@ export default async function NewAgentPage() {
         provedoresDaInstalacao={provedoresDaInstalacao()}
         provedorPadrao={llmDaOrg?.provider}
         channelSessions={channelSessions}
+        etiquetasDeContato={etiquetasEmUso.ok ? etiquetasEmUso.tags : []}
         organizationTimezone={fusoUtilizavel(activeOrg.timezone)}
       />
     </div>
