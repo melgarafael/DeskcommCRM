@@ -14,6 +14,12 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Com vários agentes publicados no mesmo número, cada mensagem vai para o agente de maior "Ordem de preferência" cujo filtro aceita o contato — um agente para `cliente`, outro para `lead`, no mesmo WhatsApp. Se nenhum agente do número aceitar o contato, a IA não responde e a conversa fica no Inbox para a equipe (antes, sem agente, o número caía no agente genérico; isso continua valendo só quando não há agente nenhum). O filtro vale também para o agente de campanha, para o roteador por intenção e para os follow-ups. As etiquetas comparadas são as do contato (as do Inbox), não as do negócio. O filtro vale quando a versão é publicada. Sem migration e sem ação do operador.
 
+### Adicionado
+
+- **O agente pode escolher quem ele atende pela etiqueta do contato** Na tela do agente, no bloco "Quando ele entra em ação", a seção **Filtro por etiqueta do contato** tem duas listas: "Responder só quem tem uma destas etiquetas" e "Nunca responder quem tem uma destas etiquetas" (a segunda vence). É filtro, não gatilho: colocar a etiqueta não faz o agente mandar mensagem; quando o contato escreve, o agente só responde se ele passar no filtro.
+
+  Com vários agentes publicados no mesmo número, cada mensagem vai para o agente de maior "Ordem de preferência" cujo filtro aceita o contato — um agente para `cliente`, outro para `lead`, no mesmo WhatsApp. Se nenhum agente do número aceitar o contato, a IA não responde e a conversa fica no Inbox para a equipe (antes, sem agente, o número caía no agente genérico; isso continua valendo só quando não há agente nenhum). O filtro vale também para o agente de campanha, para o roteador por intenção e para os follow-ups. As etiquetas comparadas são as do contato (as do Inbox), não as do negócio. O filtro vale quando a versão é publicada. Sem migration e sem ação do operador.
+
 ## [1.73.0] — 2026-10-05
 
 ### Adicionado
