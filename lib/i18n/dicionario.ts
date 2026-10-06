@@ -14537,6 +14537,12 @@ export const DICIONARIO: Traducoes = {
   "canais já estavam reativados": { es: "canales ya estaban reactivados" },
   "canal arquivado fica de fora": { es: "canal archivado queda fuera" },
   "canais arquivados ficam de fora": { es: "canales archivados quedan fuera" },
+
+  // O item da trava de número novo na Central (lib/agent-engine/health/circuit.ts, doc 109).
+  "Número novo aguardando liberação (go-live)": { es: "Número nuevo en espera de liberación (go-live)" },
+  "Os retornos automáticos deste número estão parados até você liberar. Eles esperam na fila, nada é perdido, e voltam espaçados ao longo das horas seguintes. Responder quem te escreveu continua funcionando normalmente. Marque este item como resolvido quando o número estiver pronto para disparar.": {
+    es: "Los seguimientos automáticos de este número están detenidos hasta que lo liberes. Esperan en la cola, no se pierde nada, y vuelven espaciados a lo largo de las horas siguientes. Responder a quien te escribió sigue funcionando con normalidad. Marca este elemento como resuelto cuando el número esté listo para enviar.",
+  },
 };
 
 /**

@@ -45340,6 +45340,146 @@ grant execute on function public.fn_contato_pessoal_remove_trechos_do_rag(uuid,u
 
 notify pgrst,'reload schema';
 
+-- ---- #2327: a trava de número novo sai sozinha do número já formado (migration 0574) ----
+-- Ver o cabeçalho da migration 0574 (doc 109, opção A). Cria função, então fica
+-- ANTES da VARREDURA anon. Idempotente: `create or replace`; a transição roda
+-- uma vez por instalação (marca no audit log), e repetir a função não muda nada.
+create or replace function public.fn_go_live_solta_numero_formado()
+returns integer
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_soltos integer;
+begin
+  with candidatos as (
+    select s.organization_id,
+           s.id as channel_session_id,
+           s.status,
+           -- `parseWarmupCaps` + `PACING_DEFAULTS.warmupDailyCaps`: degrau inválido
+           -- ou ausente cai no padrão conservador, como no motor.
+           case
+             when jsonb_typeof(k.warmup_daily_caps) = 'array'
+              and jsonb_array_length(k.warmup_daily_caps) > 0
+              and not exists (
+                select 1 from jsonb_array_elements(k.warmup_daily_caps) e
+                 where jsonb_typeof(e) <> 'object'
+                    or coalesce(jsonb_typeof(e -> 'minAgeDays'), '') <> 'number'
+                    or coalesce(jsonb_typeof(e -> 'cap'), '') not in ('null', 'number'))
+             then k.warmup_daily_caps
+             else '[{"minAgeDays":0,"cap":20},{"minAgeDays":4,"cap":50},{"minAgeDays":8,"cap":100},{"minAgeDays":15,"cap":200},{"minAgeDays":31,"cap":null}]'::jsonb
+           end as degraus,
+           -- `decidePacing`: dias completos desde a ativação, nunca negativo; sem
+           -- linha de ritmo, idade 0.
+           coalesce(greatest(0, floor(extract(epoch from (now() - k.number_activated_at)) / 86400)), 0) as idade
+      -- Parte da SESSÃO, não da linha de saúde: a linha só nasce no primeiro
+      -- aviso de conexão (`lib/channels/health.ts`). Número formado sem ela não
+      -- está travado hoje, mas seria travado como "novo" no primeiro aviso —
+      -- depois de a marca de rodada única já ter fechado esta transição.
+      from channel_sessions s
+      left join channel_session_health h
+        on h.organization_id = s.organization_id and h.channel_session_id = s.id
+      left join channel_knobs k
+        on k.organization_id = s.organization_id and k.channel_session_id = s.id
+     where h.health_released_at is null
+       and coalesce(h.health_hold_reason, 'go_live') = 'go_live'
+  ),
+  formados as (
+    select c.organization_id,
+           c.channel_session_id,
+           c.status,
+           case
+             -- `warmupCapFor`: o ÚLTIMO degrau alcançado pela idade; aquém do
+             -- primeiro, o primeiro. `cap` null = sem limite de aquecimento.
+             when coalesce(
+                    (select e -> 'cap'
+                       from jsonb_array_elements(c.degraus) with ordinality as t(e, i)
+                      where (e ->> 'minAgeDays')::numeric <= c.idade
+                      order by i desc
+                      limit 1),
+                    c.degraus -> 0 -> 'cap') = 'null'::jsonb
+               then 'ritmo_sem_limite_de_aquecimento'
+             when exists (
+                    select 1 from messages m
+                     where m.organization_id = c.organization_id
+                       and m.channel_session_id = c.channel_session_id
+                       and m.direction = 'outbound'
+                       and m.status in ('sent', 'delivered', 'read')
+                       and m.sent_at <= now() - interval '31 days')
+               then 'primeira_saida_ha_31_dias_ou_mais'
+           end as motivo
+      from candidatos c
+  ),
+  -- Sem linha de saúde, nasce uma já liberada; com linha, ela é solta. O
+  -- `where` do conflito é a segunda guarda da trava de saúde.
+  liberados as (
+    insert into channel_session_health (organization_id, channel_session_id, status, health_released_at)
+    select f.organization_id, f.channel_session_id, f.status, now()
+      from formados f
+     where f.motivo is not null
+    on conflict (organization_id, channel_session_id) do update
+       set health_released_at = now(),
+           health_hold_active = false,
+           health_hold_reason = null,
+           updated_at = now()
+     where channel_session_health.health_released_at is null
+    returning organization_id, channel_session_id
+  ),
+  soltos as (
+    select l.organization_id, l.channel_session_id, f.motivo
+      from liberados l
+      join formados f
+        on f.organization_id = l.organization_id and f.channel_session_id = l.channel_session_id
+  ),
+  fechados as (
+    update agent_inbox_items i
+       set status = 'resolved', resolved_at = now()
+      from soltos s
+     where i.organization_id = s.organization_id
+       and i.kind = 'other'
+       and i.ref_kind = 'number_health'
+       and i.ref_id = s.channel_session_id
+       and i.status in ('open', 'ack')
+    returning i.organization_id, i.ref_id
+  ),
+  auditados as (
+    insert into api_audit_log (organization_id, action, resource_type, resource_id, metadata, bypassed_rls)
+    select s.organization_id,
+           'channel.go_live_liberado_na_atualizacao',
+           'channel_session',
+           s.channel_session_id,
+           jsonb_build_object(
+             'motivo', s.motivo,
+             'itens_fechados', (select count(*) from fechados f
+                                 where f.organization_id = s.organization_id
+                                   and f.ref_id = s.channel_session_id)),
+           true
+      from soltos s
+    returning 1
+  )
+  select count(*) into v_soltos from auditados;
+  return v_soltos;
+end;
+$$;
+
+revoke execute on function public.fn_go_live_solta_numero_formado() from public, anon, authenticated, service_role;
+
+-- Uma vez por instalação: a marca é a própria linha de auditoria da rodada.
+do $$
+declare
+  v_soltos integer;
+begin
+  if not exists (
+    select 1 from public.api_audit_log where action = 'channel.go_live_transicao_da_atualizacao'
+  ) then
+    v_soltos := public.fn_go_live_solta_numero_formado();
+    insert into public.api_audit_log (organization_id, action, resource_type, metadata, bypassed_rls)
+    values (null, 'channel.go_live_transicao_da_atualizacao', 'channel_session_health',
+            jsonb_build_object('numeros_liberados', v_soltos), true);
+  end if;
+end;
+$$;
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria

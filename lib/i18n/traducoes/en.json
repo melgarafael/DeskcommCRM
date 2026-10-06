@@ -8889,5 +8889,7 @@
   "Contato marcado como pessoal.": "Contact marked as personal.",
   "Contato marcado como pessoal": "Contact marked as personal",
   "Não foi possível marcar o contato como pessoal.": "Could not mark the contact as personal.",
-  "Não foi possível desmarcar o contato como pessoal.": "Could not unmark the contact as personal."
+  "Não foi possível desmarcar o contato como pessoal.": "Could not unmark the contact as personal.",
+  "Número novo aguardando liberação (go-live)": "New number awaiting release (go-live)",
+  "Os retornos automáticos deste número estão parados até você liberar. Eles esperam na fila, nada é perdido, e voltam espaçados ao longo das horas seguintes. Responder quem te escreveu continua funcionando normalmente. Marque este item como resolvido quando o número estiver pronto para disparar.": "Automatic follow-ups from this number are paused until you release it. They wait in the queue, nothing is lost, and they resume spaced out over the following hours. Replying to whoever wrote to you keeps working normally. Mark this item as resolved when the number is ready to send."
 }
