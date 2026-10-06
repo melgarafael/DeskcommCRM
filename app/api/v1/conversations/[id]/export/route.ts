@@ -123,6 +123,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   const pdf = await montarPdfDaConversa(supabase, authz.org.orgId, conversaParaPdf, mensagens, {
     t,
+    idioma: authz.user.idioma,
     exportadoPor: authz.user.full_name ?? authz.user.email ?? null,
     nomesDosUsuarios,
     truncada: mensagens.length >= LIMITE_DE_MENSAGENS,

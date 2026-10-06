@@ -35,6 +35,8 @@ vi.mock("@/lib/propostas/marca-da-organizacao-para-pdf", () => ({
 
 import { audit } from "@/lib/audit";
 
+import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
+
 import { linhasDoHistorico, montarPdfDaConversa, type ConversaParaPdf, type MensagemParaPdf } from "./exporta-pdf";
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
@@ -298,6 +300,24 @@ describe("conversas/exporta-pdf", () => {
       "Primeira mensagem do cliente",
       "Segunda mensagem do cliente",
       "Terceira mensagem do atendente",
+    ]);
+  });
+
+  it("a data do documento segue quem BAIXA — o idioma entra pela camada, sem etiqueta fixa aqui", () => {
+    const horariosDe = (idioma: Idioma) =>
+      linhasDoHistorico(conversa, mensagensDe3(), { t, nomesDosUsuarios, idioma }).map((l) => l.horario);
+
+    // Medido: pt-BR e es devolvem o MESMO dd/mm/aaaa hh:mm (a mesma razão que
+    // `lib/money.ts` registra para número). O que se ganha passando o idioma é
+    // a etiqueta BCP-47 sair da camada de data — nenhuma "pt-BR" escrita neste
+    // arquivo, que é o que a cerca `i18n-a-data-segue-o-idioma` reprovava.
+    expect(horariosDe("es")).toEqual(horariosDe("pt-BR"));
+
+    // Sem idioma declarado, o default continua o de antes: português.
+    expect(horariosDe(IDIOMA_PADRAO)).toEqual([
+      "01/09/2026 09:00",
+      "01/09/2026 09:02",
+      "01/09/2026 09:05",
     ]);
   });
 

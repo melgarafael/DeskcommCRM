@@ -42,6 +42,8 @@ import React from "react";
 import { rotuloDoContato, type ContatoNomeavel } from "@/lib/contacts/rotulo-do-contato";
 import { logger } from "@/lib/logger";
 import { lerRemetenteDeGrupo, rotuloDoRemetente } from "@/lib/messaging/remetente-de-grupo";
+import { tagDeIdioma } from "@/lib/i18n/datas";
+import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 import { marcaDaOrganizacaoParaPdf, type MarcaDaOrganizacaoParaPdf } from "@/lib/propostas/marca-da-organizacao-para-pdf";
 
 /**
@@ -107,6 +109,12 @@ export interface OpcoesDoPdfDaConversa {
   geradoEm?: string;
   /** Conversa maior que o limite: o cabeçalho declara o corte. */
   truncada?: boolean;
+  /**
+   * Idioma de quem está BAIXANDO — a data do documento segue quem lê, pela
+   * mesma camada de `lib/i18n/datas.ts` (nada escrito `"pt-BR"` aqui fora,
+   * que é o que a cerca `i18n-a-data-segue-o-idioma` guarda). Default pt-BR.
+   */
+  idioma?: Idioma;
 }
 
 /** Uma mensagem já resolvida para a página: autor, horário e texto, na ordem. */
@@ -132,8 +140,8 @@ interface DataQuebrada {
   minuto: string;
 }
 
-function quebrarData(instante: number, fuso: string): DataQuebrada {
-  const partes = new Intl.DateTimeFormat("pt-BR", {
+function quebrarData(instante: number, fuso: string, idioma: Idioma): DataQuebrada {
+  const partes = new Intl.DateTimeFormat(tagDeIdioma(idioma), {
     timeZone: fuso,
     year: "numeric",
     month: "2-digit",
@@ -157,19 +165,23 @@ function quebrarData(instante: number, fuso: string): DataQuebrada {
  * inteira. Fuso inválido cai no padrão; data ilegível vira `null` (o "—" do
  * cabeçalho) em vez de estourar `RangeError` no meio do render.
  */
-function quebrar(iso: string | null | undefined, fuso: string): DataQuebrada | null {
+function quebrar(
+  iso: string | null | undefined,
+  fuso: string,
+  idioma: Idioma,
+): DataQuebrada | null {
   if (!iso) return null;
   const instante = Date.parse(iso);
   if (!Number.isFinite(instante)) return null;
   try {
-    return quebrarData(instante, fuso);
+    return quebrarData(instante, fuso, idioma);
   } catch {
-    return quebrarData(instante, FUSO_PADRAO);
+    return quebrarData(instante, FUSO_PADRAO, idioma);
   }
 }
 
-function formatarDataHora(iso: string | null | undefined, fuso: string): string {
-  const d = quebrar(iso, fuso);
+function formatarDataHora(iso: string | null | undefined, fuso: string, idioma: Idioma): string {
+  const d = quebrar(iso, fuso, idioma);
   return d ? `${d.dia}/${d.mes}/${d.ano} ${d.hora}:${d.minuto}` : "—";
 }
 
@@ -178,7 +190,12 @@ function formatarDataHora(iso: string | null | undefined, fuso: string): string 
  * RFC 5987 e de como o navegador decide decodificar — e um download que chega
  * com o nome corrompido é o primeiro defeito que a pessoa vê.
  */
-function nomeDeArquivo(conversa: ConversaParaPdf, geradoEm: string, fuso: string): string {
+function nomeDeArquivo(
+  conversa: ConversaParaPdf,
+  geradoEm: string,
+  fuso: string,
+  idioma: Idioma,
+): string {
   const rotulo = rotuloDoContato(conversa.contato, (texto) => texto);
   const slug = rotulo
     .normalize("NFD")
@@ -188,7 +205,7 @@ function nomeDeArquivo(conversa: ConversaParaPdf, geradoEm: string, fuso: string
     .replace(/^-+|-+$/g, "")
     .slice(0, 40)
     .replace(/-+$/, "");
-  const d = quebrar(geradoEm, fuso);
+  const d = quebrar(geradoEm, fuso, idioma);
   const dia = d ? `${d.ano}-${d.mes}-${d.dia}` : "sem-data";
   return `historico-conversa-${slug || conversa.id.slice(0, 8)}-${dia}.pdf`;
 }
@@ -261,10 +278,16 @@ function instanteDe(m: MensagemParaPdf): number {
 export function linhasDoHistorico(
   conversa: ConversaParaPdf,
   mensagens: MensagemParaPdf[],
-  opcoes: { t: (texto: string) => string; nomesDosUsuarios?: Map<string, string | null>; fuso?: string },
+  opcoes: {
+    t: (texto: string) => string;
+    nomesDosUsuarios?: Map<string, string | null>;
+    fuso?: string;
+    idioma?: Idioma;
+  },
 ): LinhaDoHistorico[] {
   const { t } = opcoes;
   const fuso = opcoes.fuso ?? FUSO_PADRAO;
+  const idioma = opcoes.idioma ?? IDIOMA_PADRAO;
   const ordenadas = [...mensagens].sort(
     (a, b) => instanteDe(a) - instanteDe(b) || a.id.localeCompare(b.id),
   );
@@ -272,7 +295,7 @@ export function linhasDoHistorico(
     id: m.id,
     direcao: m.direction,
     autor: autorDaMensagem(m, conversa, opcoes),
-    horario: formatarDataHora(m.sent_at ?? m.created_at, fuso),
+    horario: formatarDataHora(m.sent_at ?? m.created_at, fuso, idioma),
     texto: textoDaMensagem(m, t),
   }));
 }
@@ -411,10 +434,12 @@ export async function montarPdfDaConversa(
     lerOrganizacao(db, orgId),
   ]);
   const fuso = opcoes.fuso ?? org.timezone ?? FUSO_PADRAO;
+  const idioma = opcoes.idioma ?? IDIOMA_PADRAO;
   const linhas = linhasDoHistorico(conversa, mensagens, {
     t,
     nomesDosUsuarios: opcoes.nomesDosUsuarios,
     fuso,
+    idioma,
   });
   const geradoEm = opcoes.geradoEm ?? new Date().toISOString();
   const controlador = org.legal_name?.trim() || org.display_name?.trim() || marca.appName || null;
@@ -425,10 +450,10 @@ export async function montarPdfDaConversa(
     metadados: [
       `${t("Conversa")}: ${conversa.id}`,
       `${t("Status")}: ${conversa.status ?? "—"}`,
-      `${t("Aberta em")}: ${formatarDataHora(conversa.created_at, fuso)}`,
+      `${t("Aberta em")}: ${formatarDataHora(conversa.created_at, fuso, idioma)}`,
       `${t("Mensagens")}: ${linhas.length}`,
       ...(opcoes.exportadoPor
-        ? [`${t("Exportado por")}: ${opcoes.exportadoPor} em ${formatarDataHora(geradoEm, fuso)}`]
+        ? [`${t("Exportado por")}: ${opcoes.exportadoPor} em ${formatarDataHora(geradoEm, fuso, idioma)}`]
         : []),
     ],
     aviso: opcoes.truncada
@@ -457,5 +482,5 @@ export async function montarPdfDaConversa(
     return { ok: false, motivo: t("Não foi possível gerar o PDF desta conversa.") };
   }
 
-  return { ok: true, buffer, nomeDoArquivo: nomeDeArquivo(conversa, geradoEm, fuso) };
+  return { ok: true, buffer, nomeDoArquivo: nomeDeArquivo(conversa, geradoEm, fuso, idioma) };
 }
