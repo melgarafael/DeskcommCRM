@@ -15,10 +15,11 @@
  * A troca NÃO é apagar esta rota. A da S4 exige `requireRole("manager")` mais
  * `mfaEmDivida()`, porque ela também ESCREVE o vocabulário de toda a
  * organização — e o editor do Inbox é usado por `agent` e por `viewer`, que a
- * S4 responde com 403. Consolidar é trocar o corpo da consulta abaixo por
+ * S4 responde com 403. Consolidar é trocar o corpo da consulta de
+ * `lib/contacts/etiquetas-em-uso.ts` por
  * `supabase.rpc("fn_vocabulario_de_tags", { p_org: authz.org.orgId })`, lendo o
  * campo `tag` de cada linha, MANTENDO o `requireRole("viewer")` daqui e
- * apagando `CONTATOS_LIDOS`, `TETO_DE_TAGS` e o `ponytail:` logo abaixo — a
+ * apagando `CONTATOS_LIDOS`, `TETO_DE_TAGS` e o `ponytail:` de lá — a
  * função no banco não tem teto de leitura, que é exatamente a dívida que essas
  * duas constantes registram. Fora do escopo deste conserto porque mexe no
  * contrato de uma rota que a tela de Etiquetas acabou de estrear.
@@ -28,60 +29,31 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
-import { normalizarTag } from "@/lib/contacts/tag-normalizada";
+import { lerEtiquetasDeContatoEmUso } from "@/lib/contacts/etiquetas-em-uso";
 import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
-
-// ponytail: lê só os 1000 contatos com tag mais recentes (o PostgREST não faz
-// `distinct unnest`); tag rara de contato antigo pode faltar na sugestão. Some
-// quando a leitura do vocabulário da S4 (#852) substituir esta consulta.
-const CONTATOS_LIDOS = 1000;
-const TETO_DE_TAGS = 200;
 
 export async function GET(_req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("viewer", { requestId, resource: "contacts" });
   if (!authz.ok) return authz.response;
 
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("contacts")
-    .select("tags")
-    .eq("organization_id", authz.org.orgId)
-    .neq("tags", "{}")
-    .order("updated_at", { ascending: false })
-    .limit(CONTATOS_LIDOS);
+  const lidas = await lerEtiquetasDeContatoEmUso(await createClient(), authz.org.orgId);
   // A falha SOBE: lista vazia diria "não há tags" em cima de um erro.
   //
   // Fechada na AÇÃO, aberta na INFORMAÇÃO: o cliente recebe uma frase do
   // produto — a mensagem crua do Postgres é para quem opera, não para o
   // navegador — e a causa vai inteira para o log, junto do `requestId` que a
-  // resposta carrega. Trocar uma pela outra sem o log seria pior que o estado
-  // anterior: o operador ficaria com um 500 mudo e nenhum lugar onde procurar.
-  if (error) {
+  // resposta carrega.
+  if (!lidas.ok) {
     logger.error("contact-tags: leitura das tags do contato falhou", {
       requestId,
       orgId: authz.org.orgId,
-      cause: error.message,
+      cause: lidas.causa,
     });
     return fail("internal_error", "Não foi possível carregar as tags.", 500, { requestId });
   }
-
-  // NORMALIZADA, com a mesma função que o editor usa ao gravar: o rótulo do
-  // chip tem de dizer exatamente o que o clique grava. Devolvendo a tag crua,
-  // "VIP", "vip " e "vip" viravam TRÊS chips que gravam a mesma coisa, e dois
-  // deles nunca sumiam da tela.
-  const tags = [
-    ...new Set(
-      (data ?? [])
-        .flatMap((c: { tags: string[] | null }) => c.tags ?? [])
-        .map(normalizarTag)
-        .filter(Boolean),
-    ),
-  ]
-    .sort((a, b) => a.localeCompare(b, "pt-BR"))
-    .slice(0, TETO_DE_TAGS);
-  return ok(tags, { requestId });
+  return ok(lidas.tags, { requestId });
 }
