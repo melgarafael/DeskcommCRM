@@ -2046,6 +2046,13 @@ async function executarTurnoDoAgente(
         inbound: liveJob().kind === 'inbound_turn',
       }, { log: runLog, jev: deps.jev });
   const agentConfig = routed.config;
+  // Regra 8 (filtro por etiqueta): `agentConfig === null` seguiria para o
+  // agente GENÉRICO logo abaixo. Aqui o null quer dizer "o dono disse que este
+  // contato não é atendido por ninguém deste número" — então o turno acaba.
+  if (routed.outcome === 'fora_das_etiquetas') {
+    runLog.info('turno pulado — nenhum agente aceita as etiquetas do contato', { kind: liveJob().kind });
+    return;
+  }
   // #2155 — o destino do card. `in` porque o ramo de preview/campanha devolve um
   // objeto literal SEM estes campos: sem a guarda, o tipo da união recusa a leitura.
   const destinoPipelineId = 'destinationPipelineId' in routed ? (routed.destinationPipelineId ?? null) : null;
@@ -5031,6 +5038,16 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
       inbound: true,
     }, { log: deps.log, jev: deps.jev });
     const operationAgent = resolvedAgent.config;
+    // Regra 8 (filtro por etiqueta): havia agente para esta conversa, mas
+    // nenhum aceita as etiquetas do contato. Sai ANTES do rascunho do
+    // assistido e de anotar a mensagem como vista — silêncio de propósito.
+    if (resolvedAgent.outcome === 'fora_das_etiquetas') {
+      deps.log.info('turno pulado — nenhum agente aceita as etiquetas do contato', {
+        job_id: job.id,
+        conversation_id: payload.conversation_id,
+      });
+      return;
+    }
     if (operationAgent?.operationMode === 'assisted') {
       // As travas do assistido (handoff e elegibilidade) já rodaram acima, antes
       // de escolher o agente.
