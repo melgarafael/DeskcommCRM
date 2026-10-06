@@ -8,6 +8,10 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+### Corrigido
+
+- **Tag posta por sistema de fora (MCP) agora dispara a automação "ganhou uma tag"** A ferramenta `crm_manage_tags` gravava a tag no contato ou no negócio, mas não emitia o evento que a tela emite. Resultado: a regra "Quando um contato ganhar uma tag" (ou "Quando um lead ganhar uma tag") disparava quando a pessoa punha a tag pela tela e ficava muda quando um sistema de fora, como o n8n, punha a mesma tag pela MCP. Agora a ferramenta emite `contact.tag_added` / `lead.tag_added` com o mesmo envelope da tela: só as tags que o alvo não tinha, a lista completa e a origem do atendimento. Reenviar uma tag que já estava, ou só remover, não emite nada. Conversa continua sem esse gatilho. Sem migration e sem ação do operador.
+
 ### Adicionado
 
 - **O agente pode escolher quem ele atende pela etiqueta do contato** Na tela do agente, no bloco "Quando ele entra em ação", a seção **Filtro por etiqueta do contato** tem duas listas: "Responder só quem tem uma destas etiquetas" e "Nunca responder quem tem uma destas etiquetas" (a segunda vence). É filtro, não gatilho: colocar a etiqueta não faz o agente mandar mensagem; quando o contato escreve, o agente só responde se ele passar no filtro.
