@@ -67,6 +67,8 @@ cat > "$WORK/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$DOCKER_LOG"
 case " $* " in
+  *" imagetools inspect --raw "*) printf '%s' '{"schemaVersion":2,"manifests":[{"platform":{"os":"linux","architecture":"amd64"}}]}'; exit 0 ;;
+  *" imagetools inspect --format "*) printf 'linux/amd64\n'; exit 0 ;;
   *" exec "*) printf 'healthy\n{"data":{"status":"healthy","version":"0.1.0","checks":{"supabase":{"status":"ok","latency_ms":12}}}}\n' ;;
 esac
 exit 0
@@ -89,7 +91,11 @@ STUB
 # que não está sob prova aqui).
 cat > "$WORK/bin/curl" <<'STUB'
 #!/usr/bin/env bash
-printf '{"data":{}}\n200'
+case "$*" in
+  *ghcr.io/token*) printf '%s' '{"token":"teste"}' ;;
+  *ghcr.io/v2/*) printf 200 ;;
+  *) printf '{"data":{}}\n200' ;;
+esac
 STUB
 # `uname -m` responde x86_64: o _common.sh recusa, antes de qualquer trabalho,
 # todo update.sh que não roda em amd64 — e aqui quem está sob prova é o caminho

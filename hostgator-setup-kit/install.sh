@@ -996,6 +996,25 @@ if [ -f "$PARTIAL_FILE" ]; then
   c_dim "$(t "  (o token do Supabase é de conta e nunca entra no rascunho: ele é perguntado de novo. Enter pula)")"
 fi
 
+# ARM64: resolver uma release publicada e conferir as quatro imagens e a WAHA
+# efetiva no índice OCI ANTES de criar projeto Supabase, rede, .env ou schema.
+# Uma tag Git pode existir antes do CI. Em AMD64 a versão segue a cascata de
+# sempre (mais abaixo): a sonda exige `docker buildx`, e toda imagem publicada
+# já tem amd64.
+PLATAFORMA_HOST="$(plataforma_oci_do_host "$(uname -m 2>/dev/null || true)" 2>/dev/null || true)"
+if [ "$PLATAFORMA_HOST" = linux/arm64 ]; then
+  RELEASE_TAG="$(ultima_release_estavel)"
+  VERSAO_ALVO="${RELEASE_TAG#v}"
+  WAHA_EFETIVA="${WAHA_IMAGE:-$(imagem_waha_padrao_para_host)}"
+  if [ -z "$RELEASE_TAG" ] || ! preflight_instalacao "$VERSAO_ALVO" "$PLATAFORMA_HOST" "$WAHA_EFETIVA"; then
+    c_red "$(t "✖ Não há release numérica completa para ARM64, ou a WAHA escolhida não oferece ARM64.")"
+    c_red "$(t "  Confira registry, visibilidade das quatro imagens e WAHA_IMAGE; depois repita.")"
+    # O painel genérico sugeriria down -v/drop schema antes de qualquer efeito.
+    trap - EXIT
+    exit 1
+  fi
+fi
+
 # ── Proxy reverso: quem está com as portas 80 e 443? ────────────────────────
 # Fica AQUI, logo depois de ler o .env e ANTES de qualquer coisa cara: era a
 # última etapa da fase 2, então quem esbarrava neste problema já tinha criado um
@@ -1307,7 +1326,8 @@ fi
 # que a versão não era nomeável.
 #
 # Resolvido no REMOTO porque o clone é `--depth 1` e não traz tag nenhuma.
-VERSAO_ALVO="$(ultima_versao_publicada "$REPO_URL")"
+# Em ARM64 a versão já foi resolvida e conferida pelo pré-voo, lá em cima.
+[ "$PLATAFORMA_HOST" = linux/arm64 ] || VERSAO_ALVO="$(ultima_versao_publicada "$REPO_URL")"
 
 # A tag do git é condição NECESSÁRIA, não suficiente: ela nasce minutos antes
 # das imagens, e `deskcomm-worker`/`deskcomm-scheduler` só passaram a existir
@@ -1319,7 +1339,9 @@ VERSAO_ALVO="$(ultima_versao_publicada "$REPO_URL")"
 # Cascata, do mais específico ao mais disponível. Cada nível pergunta pelas TRÊS
 # imagens juntas, porque instalar com elas desalinhadas é o defeito, não a
 # solução.
-if [ -n "$VERSAO_ALVO" ] && trio_publicado "$VERSAO_ALVO"; then
+if [ "$PLATAFORMA_HOST" = linux/arm64 ]; then
+  : # pré-voo OCI já passou
+elif [ -n "$VERSAO_ALVO" ] && trio_publicado "$VERSAO_ALVO"; then
   : # o caminho normal: as três publicadas na última versão
 elif trio_publicado "stable"; then
   c_ylw "$(t "⚠ A versão {1} ainda não tem as três imagens publicadas." "${VERSAO_ALVO:-$(t "mais recente")}")"

@@ -191,7 +191,7 @@ export PATH="$WORK/bin:$PATH"
 # ── Instalação de mentira: repo git + kit + .env ─────────────────────────────
 PROJ="$WORK/deskcommcrm"
 mkdir -p "$PROJ/hostgator-setup-kit" "$PROJ/supabase"
-cp "$REPO_ROOT/hostgator-setup-kit/_common.sh" "$REPO_ROOT/hostgator-setup-kit/_i18n.sh" \
+cp "$REPO_ROOT/hostgator-setup-kit/_common.sh" "$REPO_ROOT/hostgator-setup-kit/_manifestos.sh" "$REPO_ROOT/hostgator-setup-kit/_i18n.sh" \
    "$REPO_ROOT/hostgator-setup-kit/update.sh" \
    "$REPO_ROOT/hostgator-setup-kit/agent.sh" "$REPO_ROOT/hostgator-setup-kit/manutencao.sh" \
    "$PROJ/hostgator-setup-kit/"
@@ -260,8 +260,16 @@ check "mesmo recusando, deixou o agente da tela instalado (com cd no diretório 
   grep -q "cd ${PROJ} && bash hostgator-setup-kit/agent.sh" "$FAKE_CRONTAB"
 
 echo "── 3. --force é a saída explícita de quem quer mesmo voltar"
+: > "$DOCKER_LOG"
 run_update --to v0.9.0 --force
 check "passou da guarda e rodou o backup" test -f "$BACKUP_MARK"
+# O pré-voo de PLATAFORMA (`preflight_plataforma_atualizacao`) é só do ARM64:
+# no AMD64 toda imagem publicada tem amd64. O preflight geral da #1955
+# (`preflight_atualizacao`) consulta o buildx em toda arquitetura, de propósito
+# e com motivo nomeado — por isso a régua aqui é a RECUSA do pré-voo ARM, não
+# o `imagetools` no log do docker. Se o AMD64 voltar a passar por ele, este
+# dublê (sem registro) faz o pré-voo recusar, e a mensagem aparece na saída.
+check "em AMD64 a atualização não passa pelo pré-voo de plataforma do ARM64" bash -c "! grep -q 'não está completa para' '$OUTFILE'"
 
 echo "── 4. Atualização de verdade grava a imagem no .env, sem duplicar a chave"
 # Estado de quem sofreu um rollback antes: o agente deixou a imagem apontando
@@ -762,8 +770,10 @@ echo "── 13. \"Nada a atualizar\" derruba o aviso de manutenção preso (PR 
 # que segura o apelido de rede `app` — seguia respondendo 503 por 6h30.
 cd "$PROJ" || exit 1
 : > "$DOCKER_LOG"
+rm -f "$FAKE_CRONTAB"
 IMAGEM_EM_DIA=1 AVISO_PRESO=1 run_update --to v1.1.0
 check "sai com sucesso pela saída \"nada a atualizar\"" test "$RC" -eq 0
+check "  no-op ainda instala o cron do agente" grep -q "cd ${PROJ} && bash hostgator-setup-kit/agent.sh" "$FAKE_CRONTAB"
 check "  e a saída é mesmo a antecipada" grep -q "Nada a atualizar" "$OUTFILE"
 check "  não rodou o backup (não virou atualização)" test ! -f "$BACKUP_MARK"
 check "  removeu o contêiner do aviso" grep -q "rm -f deskcomm-manutencao" "$DOCKER_LOG"
