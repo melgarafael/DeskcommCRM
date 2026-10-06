@@ -55,6 +55,14 @@
  * `metadata.ai_gate = 'allowlist'`) barra ANTES — no drain e no início do turno,
  * via `decidirElegibilidadeDaConversa` — quando o contato não veio de uma origem
  * elegível. Ali o silêncio É o desfecho, e de propósito.
+ *
+ * Regra 8 — FILTRO POR ETIQUETA (`filtro-de-etiquetas.ts`). Todo agente que a
+ * régua acima carregaria (campanha, membro, reserva, agente do número) passa
+ * antes pelo filtro de etiquetas da versão dele; o que recusa o contato é
+ * pulado como se não existisse. Se a régua termina sem agente E alguém foi
+ * recusado, o desfecho é `fora_das_etiquetas`: silêncio, de propósito, nunca o
+ * genérico — o dono disse quem este número atende. Sem agente nenhum (ninguém
+ * foi recusado) vale a regra 5, como antes: genérico.
  */
 import type pg from 'pg';
 
@@ -70,10 +78,11 @@ import { agenteDaCampanhaDaConversa } from './agente-da-campanha';
 import { registrarDecisaoDoRoteador } from './router-decision-log';
 import { loadActiveRouter, type LoadedRouter, type RouterMember } from './router-config';
 import {
-  loadPublishedAgentConfig,
   loadPublishedAgentConfigById,
+  loadPublishedAgentConfigsDaSessao,
   type PublishedAgentConfig,
 } from './agent-config';
+import { agenteAtendeAsEtiquetas } from './filtro-de-etiquetas';
 import { classifyIntent, type ClassifierContextMessage, type IntentVerdict } from './intent-classifier';
 import { corpoDaMensagem, type CorpoDaMensagemRow } from '../edge/crm/get-lead-context';
 
@@ -92,7 +101,13 @@ export interface TurnAgentResolution {
     | 'no_match'
     | 'classifier_failed'
     /** A conversa nasceu de uma campanha que declarou agente (migration 0267). */
-    | 'campanha';
+    | 'campanha'
+    /**
+     * Havia agente para a conversa, mas nenhum aceita as etiquetas do contato
+     * (`filtro-de-etiquetas.ts`). `config` é null e o turno NÃO cai no
+     * genérico: a IA fica calada e a conversa segue no Inbox.
+     */
+    | 'fora_das_etiquetas';
   /**
    * Fluxo de atendimento que o membro casado aponta (migration 0394; 0237 na branch do autor). O turno
    * começa o fluxo para o contato; `null` = nenhum. Só rótulos casados o trazem
@@ -115,7 +130,8 @@ export interface ResolveTurnAgentDeps {
   agenteDaCampanha?: typeof agenteDaCampanhaDaConversa;
   loadActiveRouter?: typeof loadActiveRouter;
   loadPublishedAgentConfigById?: typeof loadPublishedAgentConfigById;
-  loadPublishedAgentConfig?: typeof loadPublishedAgentConfig;
+  /** Os agentes publicados no número, em ordem de preferência. */
+  loadAgentesDaSessao?: typeof loadPublishedAgentConfigsDaSessao;
   classifyIntent?: typeof classifyIntent;
   /** O Jev ao lado do classificador (`lib/ai/decisao/roteador.ts`). */
   consultarJev?: typeof consultarJevNoRoteador;
@@ -200,33 +216,91 @@ export function agenteDoDestino(router: LoadedRouter, destino: DestinoDoVeredito
   return destino.membro?.agentId ?? router.fallbackAgentId ?? 'fallback';
 }
 
+export interface ResolveTurnAgentInput {
+  tenantId: string;
+  leadId: string;
+  jobId: string;
+  channelSessionId: string;
+  conversationId: string;
+  signal: string | null;
+  /** Texto que o cliente digitou na última inbound ('' para mídia) — o Jev, R4. */
+  signalBody?: string | null;
+  /** A mensagem de onde o `signal` saiu — amarra a observação do Jev a ela. */
+  signalMessageId?: string | null;
+  stickyAgentId: string | null;
+  stickyIntent: string | null;
+  /** Mensagens anteriores ao signal, mais antiga → mais recente. Default []. */
+  recentMessages?: ClassifierContextMessage[];
+  /**
+   * `contacts.tags` do contato da conversa (regra 8). Ausente/null = não filtra:
+   * quem chama sem saber as etiquetas mantém a régua de antes. `[]` = contato
+   * sem etiqueta, que um filtro "só quem tem" recusa.
+   */
+  etiquetasDoContato?: readonly string[] | null;
+}
+
+/** As recusas por etiqueta de UM turno: separa "ninguém aceitou" de "não havia agente". */
+interface FiltroDoTurno {
+  aceita(agentConfig: PublishedAgentConfig): boolean;
+  readonly recusou: boolean;
+}
+
+function criarFiltroDoTurno(etiquetas: readonly string[] | null): FiltroDoTurno {
+  let recusou = false;
+  return {
+    aceita(agentConfig) {
+      if (etiquetas === null || agenteAtendeAsEtiquetas(agentConfig.filtroDeEtiquetas, etiquetas)) return true;
+      recusou = true;
+      return false;
+    },
+    get recusou() {
+      return recusou;
+    },
+  };
+}
+
 export async function resolveTurnAgent(
   db: pg.Pool,
   llmCfg: LlmEdgeConfig,
-  input: {
-    tenantId: string;
-    leadId: string;
-    jobId: string;
-    channelSessionId: string;
-    conversationId: string;
-    signal: string | null;
-    /** Texto que o cliente digitou na última inbound ('' para mídia) — o Jev, R4. */
-    signalBody?: string | null;
-    /** A mensagem de onde o `signal` saiu — amarra a observação do Jev a ela. */
-    signalMessageId?: string | null;
-    stickyAgentId: string | null;
-    stickyIntent: string | null;
-    /** Mensagens anteriores ao signal, mais antiga → mais recente. Default []. */
-    recentMessages?: ClassifierContextMessage[];
-  },
+  input: ResolveTurnAgentInput,
   deps: ResolveTurnAgentDeps,
+): Promise<TurnAgentResolution> {
+  const filtro = criarFiltroDoTurno(input.etiquetasDoContato ?? null);
+  const resultado = await escolherAgenteDoTurno(db, llmCfg, input, deps, filtro);
+  if (resultado.config !== null || !filtro.recusou) return resultado;
+  // Regra 8: a régua terminou sem agente PORQUE alguém recusou o contato.
+  deps.log.info('resolve-turn-agent: nenhum agente desta conversa aceita as etiquetas do contato — a IA fica calada', {
+    conversationId: input.conversationId,
+    routerId: resultado.routerId,
+    outcomeDaRegua: resultado.outcome,
+  });
+  return {
+    config: null,
+    routerId: resultado.routerId,
+    intentName: null,
+    confidence: resultado.confidence,
+    outcome: 'fora_das_etiquetas',
+  };
+}
+
+async function escolherAgenteDoTurno(
+  db: pg.Pool,
+  llmCfg: LlmEdgeConfig,
+  input: ResolveTurnAgentInput,
+  deps: ResolveTurnAgentDeps,
+  filtro: FiltroDoTurno,
 ): Promise<TurnAgentResolution> {
   const inicioDoRoteamento = Date.now();
   const _loadActiveRouter = deps.loadActiveRouter ?? loadActiveRouter;
   const _loadAgentById = deps.loadPublishedAgentConfigById ?? loadPublishedAgentConfigById;
-  const _loadAgentBySession = deps.loadPublishedAgentConfig ?? loadPublishedAgentConfig;
+  const _loadAgentesDaSessao = deps.loadAgentesDaSessao ?? loadPublishedAgentConfigsDaSessao;
   const _classifyIntent = deps.classifyIntent ?? classifyIntent;
   const _consultarJev = deps.consultarJev ?? consultarJevNoRoteador;
+  // O agente publicado DO NÚMERO: o primeiro, na ordem de preferência, que
+  // aceita as etiquetas do contato. Sem etiquetas na conta, o primeiro — o
+  // mesmo que `loadPublishedAgentConfig` devolve.
+  const agenteDaSessao = async (): Promise<PublishedAgentConfig | null> =>
+    (await _loadAgentesDaSessao(db, input.tenantId, input.channelSessionId)).find((c) => filtro.aceita(c)) ?? null;
 
   try {
     // ─── Degrau 0: a campanha que criou esta conversa ───
@@ -242,19 +316,23 @@ export async function resolveTurnAgent(
     const idDaCampanha = await _agenteDaCampanha(db, input.tenantId, input.conversationId);
     if (idDaCampanha !== null) {
       const config = await _loadAgentById(db, input.tenantId, idDaCampanha);
-      if (config !== null) {
+      if (config !== null && filtro.aceita(config)) {
         return { config, routerId: null, intentName: null, confidence: null, outcome: 'campanha' };
       }
-      deps.log.warn('agente da campanha sem versão publicada; seguindo pela régua do número', {
-        tenantId: input.tenantId,
-        conversationId: input.conversationId,
-      });
+      // Sem versão publicada OU com um filtro por etiqueta que recusa este
+      // contato: a campanha não manda mais que o filtro do agente dela.
+      deps.log.warn(
+        config === null
+          ? 'agente da campanha sem versão publicada; seguindo pela régua do número'
+          : 'agente da campanha não aceita as etiquetas do contato; seguindo pela régua do número',
+        { tenantId: input.tenantId, conversationId: input.conversationId },
+      );
     }
 
     const router = await _loadActiveRouter(db, input.tenantId, input.channelSessionId);
     if (router === null) {
       return {
-        config: await _loadAgentBySession(db, input.tenantId, input.channelSessionId),
+        config: await agenteDaSessao(),
         routerId: null,
         intentName: null,
         confidence: null,
@@ -267,12 +345,16 @@ export async function resolveTurnAgent(
       outcome: 'no_match' | 'classifier_failed',
       confidence: number | null,
     ): Promise<TurnAgentResolution> => {
-      if (router.fallbackAgentId === null) {
+      const doFallback =
+        router.fallbackAgentId === null ? null : await _loadAgentById(db, input.tenantId, router.fallbackAgentId);
+      // Regra 8: uma reserva que recusa as etiquetas deste contato vale como
+      // "sem reserva" — quem atende é o agente do número que aceitar o contato.
+      if (router.fallbackAgentId === null || (doFallback !== null && !filtro.aceita(doFallback))) {
         // Regra 5: sem fallback declarado, quem atende é o agente publicado da
         // SESSÃO — o comportamento de antes do router existir. `null` aqui
         // (nenhum publicado) segue caindo no genérico, como sempre.
-        const daSessao = await _loadAgentBySession(db, input.tenantId, input.channelSessionId);
-        if (daSessao === null) {
+        const daSessao = await agenteDaSessao();
+        if (daSessao === null && !filtro.recusou) {
           deps.log.warn('resolve-turn-agent: router sem fallback e sessão sem agente publicado — turno cai no genérico', {
             routerId: router.id,
             outcome,
@@ -280,7 +362,7 @@ export async function resolveTurnAgent(
         }
         return { config: daSessao, routerId: router.id, intentName: null, confidence, outcome };
       }
-      const config = await _loadAgentById(db, input.tenantId, router.fallbackAgentId);
+      const config = doFallback;
       if (config === null) {
         // regra 7: fallback também sem versão publicada — fim legítimo da
         // linha, mas o outcome que já explicava a causa (classifier_failed)
@@ -314,6 +396,15 @@ export async function resolveTurnAgent(
       const config = await _loadAgentById(db, input.tenantId, agentId);
       if (config === null) {
         deps.log.warn('resolve-turn-agent: agente casado sem versão publicada — tentando fallback do router', {
+          routerId: router.id,
+          matchedOutcome: outcome,
+          agentId,
+        });
+        return resolveFallback('no_match', confidence);
+      }
+      if (!filtro.aceita(config)) {
+        // Regra 8: o membro casado não atende as etiquetas deste contato.
+        deps.log.info('resolve-turn-agent: agente casado não aceita as etiquetas do contato — tentando fallback do router', {
           routerId: router.id,
           matchedOutcome: outcome,
           agentId,
@@ -445,7 +536,7 @@ export async function resolveTurnAgent(
       error: err instanceof Error ? err.message : String(err),
     });
     return {
-      config: await _loadAgentBySession(db, input.tenantId, input.channelSessionId),
+      config: await agenteDaSessao(),
       routerId: null,
       intentName: null,
       confidence: null,
@@ -468,13 +559,27 @@ export async function resolveConversationTurn(
   },
   deps: ResolveTurnAgentDeps,
 ): Promise<TurnAgentResolution> {
+  // As etiquetas do contato vêm na MESMA leitura da conversa: o contato é o
+  // da própria conversa (fonte confiável), nunca o do payload — e o turno não
+  // ganha uma consulta a mais por causa do filtro (regra 8).
   const { rows } = await db.query<{
     active_ai_agent_id: string | null;
     active_intent: string | null;
+    contact_tags: string[] | null;
   }>(
-    'select active_ai_agent_id,active_intent from conversations where organization_id=$1 and id=$2',
+    `select cv.active_ai_agent_id, cv.active_intent, ct.tags as contact_tags
+       from conversations cv
+       left join contacts ct on ct.id = cv.contact_id and ct.organization_id = cv.organization_id
+      where cv.organization_id=$1 and cv.id=$2`,
     [input.tenantId, input.conversationId],
   );
+  // Linha sem a coluna (conversa sem contato, dublê de teste) vale como "sem
+  // etiqueta". Um `text[]` do Postgres pode trazer elemento NULL: só strings
+  // entram, senão a normalização do filtro estouraria no meio do turno.
+  const tagsDoContato = rows[0]?.contact_tags;
+  const etiquetasDoContato = Array.isArray(tagsDoContato)
+    ? tagsDoContato.filter((t): t is string => typeof t === 'string')
+    : [];
   const signalRow = input.inbound
     ? (await db.query<{ id: string } & CorpoDaMensagemRow>(
         "select id,body,type,media_url,media_storage_path,media_derived_text from messages where organization_id=$1 and conversation_id=$2 and direction='inbound' order by sent_at desc,created_at desc,id desc limit 1",
@@ -515,6 +620,7 @@ export async function resolveConversationTurn(
     signalBody,
     signalMessageId: signalRow?.id ?? null,
     recentMessages,
+    etiquetasDoContato,
     stickyAgentId: rows[0]?.active_ai_agent_id ?? null,
     stickyIntent: rows[0]?.active_intent ?? null,
   }, deps);

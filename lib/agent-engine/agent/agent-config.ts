@@ -17,6 +17,7 @@ import type pg from 'pg';
 
 import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
 import { lerTextoDoAvisoForaDoHorario } from './aviso-fora-do-horario';
+import { lerFiltroDeEtiquetas, type FiltroDeEtiquetas } from './filtro-de-etiquetas';
 
 export interface PublishedAgentConfig {
   operationMode?: 'automatic' | 'assisted';
@@ -98,6 +99,13 @@ export interface PublishedAgentConfig {
    * Opcional porque nasce depois das fixtures que montam esta interface à mão.
    */
   avisoForaDoHorario?: string | null;
+  /**
+   * Filtro por etiqueta do contato (`trigger_config.filters.contact_tags_*`).
+   * NÃO é gatilho: decide só se ESTE agente responde a quem escreveu. `null` =
+   * sem filtro (atende todos). Opcional porque nasce depois das fixtures que
+   * montam esta interface à mão. Quem obedece é `resolve-turn-agent.ts`.
+   */
+  filtroDeEtiquetas?: FiltroDeEtiquetas | null;
   /** criadores (p/ mint do token efêmero de audit — padrão do runtime nativo). */
   versionCreatedBy: string | null;
   agentCreatedBy: string | null;
@@ -236,6 +244,7 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // `null` (sem janela ⇒ atende sempre), nunca uma mordaça acidental.
     janelaDeAtendimento: lerJanelaDeAtendimento(r.trigger_config),
     avisoForaDoHorario: lerTextoDoAvisoForaDoHorario(r.trigger_config),
+    filtroDeEtiquetas: lerFiltroDeEtiquetas(r.trigger_config),
     versionCreatedBy: r.version_created_by,
     agentCreatedBy: r.agent_created_by,
   };
