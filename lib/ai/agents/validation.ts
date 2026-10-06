@@ -11,6 +11,8 @@ import { z } from "zod";
 import { VALID_TOOL_IDS } from "@/lib/mcp/tools/catalog";
 import { TETO_TOOLS_POR_AGENTE } from "@/lib/mcp/tools/selecao-por-pacote";
 import { IDS_DE_PROVEDOR } from "@/lib/ai/pontos/provedores";
+import { TETO_DE_ETIQUETAS_NO_FILTRO } from "@/lib/agent-engine/agent/filtro-de-etiquetas";
+import { normalizarTags } from "@/lib/contacts/tag-normalizada";
 
 /**
  * Derivado de `lib/ai/pontos/provedores.ts` (a lista única desde a 0127). Como
@@ -22,6 +24,17 @@ export const PROVIDERS = IDS_DE_PROVEDOR;
 export type Provider = (typeof PROVIDERS)[number];
 
 const UUID = z.string().uuid();
+
+/**
+ * Uma lista do filtro por etiqueta do agente (`filtro-de-etiquetas.ts`). Grava
+ * já normalizada — a mesma forma de `contacts.tags` — e SEM default: chave
+ * ausente tem de continuar ausente, senão o servidor completa um `[]` que a
+ * tela não mandou e o botão Publicar fica cinza para sempre (`mesmo-rascunho.ts`).
+ */
+const etiquetasDoFiltroSchema = z
+  .array(z.string().max(200))
+  .max(TETO_DE_ETIQUETAS_NO_FILTRO)
+  .transform((lista) => normalizarTags(lista));
 
 const triggerConfigSchema = z
   .object({
@@ -45,6 +58,9 @@ const triggerConfigSchema = z
           .nullable()
           .optional()
           .default(null),
+        // Filtro, não gatilho: decide só se ESTE agente responde a quem escreveu.
+        contact_tags_include: etiquetasDoFiltroSchema.optional(),
+        contact_tags_exclude: etiquetasDoFiltroSchema.optional(),
       })
       .default({ ignore_groups: true, ignore_self: true, keyword_regex: null, business_hours: null }),
     concurrency: z.enum(["one_per_conversation", "one_per_contact"]).default("one_per_conversation"),
