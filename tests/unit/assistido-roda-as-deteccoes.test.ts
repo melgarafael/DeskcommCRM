@@ -56,6 +56,11 @@ vi.mock('@/lib/agent-engine/agent/agent-config', async (importOriginal) => ({
   loadPublishedAgentConfigById: mocks.byId,
   loadPublishedAgentConfig: mocks.bySession,
   loadConversationAgentConfig: mocks.conversationAgent,
+  // O turno pede a LISTA do número (filtro por etiqueta); o dublê de sempre devolve um agente só.
+  loadPublishedAgentConfigsDaSessao: async (...a: unknown[]) => {
+    const c = await mocks.bySession(...a);
+    return c ? [c] : [];
+  },
 }));
 vi.mock('@/lib/agent-engine/agent/reply-drafts', () => ({ generateReplyDraft: mocks.draft }));
 vi.mock('@/lib/atendimento/fronteira-server', () => ({

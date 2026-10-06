@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { listSelectableChannels } from "@/lib/channels/selectable";
+import { lerEtiquetasDeContatoEmUso } from "@/lib/contacts/etiquetas-em-uso";
 import { createClient } from "@/lib/supabase/server";
 import type { AgentRow } from "@/hooks/ai/useAgent";
 import type { AgentVersionRow } from "@/hooks/ai/useAgentVersions";
@@ -101,7 +102,7 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
   }
 
   // mcp_agent: busca versions + lookups.
-  const [versionsRes, credentialsRes, channelSessions, routerMemberRes, funisRes, acervoRes] =
+  const [versionsRes, credentialsRes, channelSessions, routerMemberRes, funisRes, acervoRes, etiquetasEmUso] =
     await Promise.all([
       supabase
         .from("ai_agent_versions")
@@ -139,6 +140,10 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
         .eq("organization_id", activeOrg.orgId)
         .eq("is_active", true)
         .order("created_at", { ascending: true }),
+      // As etiquetas em uso, para o filtro por etiqueta sugerir o que existe: um
+      // nome digitado errado num "só quem tem" calaria o agente. Falha aqui só
+      // tira as sugestões — a pessoa ainda digita a etiqueta.
+      lerEtiquetasDeContatoEmUso(supabase, activeOrg.orgId),
     ]);
 
   const versions = (versionsRes.data ?? []) as unknown as AgentVersionRow[];
@@ -233,6 +238,7 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
         funis={funis}
         cobertura={cobertura}
         materiais={materiais}
+        etiquetasDeContato={etiquetasEmUso.ok ? etiquetasEmUso.tags : []}
         routerMembership={routerMembership}
         readOnly={readOnly}
         organizationTimezone={fusoUtilizavel(activeOrg.timezone)}

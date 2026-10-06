@@ -14369,7 +14369,24 @@ export const DICIONARIO: Traducoes = {
   "Acervo desligado: só as mensagens novas entram, como sempre.": { es: "Acervo desactivado: solo entran los mensajes nuevos, como siempre." },
   "Opção de histórico salva.": { es: "Opción de historial guardada." },
   "Não foi possível guardar esta opção.": { es: "No fue posible guardar esta opción." },
-
+  "Filtro por etiqueta do contato": { es: "Filtro por etiqueta del contacto" },
+  "Não é um gatilho: colocar a etiqueta não faz o agente mandar mensagem. Quando o contato escrever, este agente só responde se ele passar por este filtro.": {
+    es: "No es un disparador: poner la etiqueta no hace que el agente envíe mensajes. Cuando el contacto escriba, este agente solo responde si pasa este filtro.",
+  },
+  "Responder só quem tem uma destas etiquetas": { es: "Responder solo a quien tenga una de estas etiquetas" },
+  "Vazio = responde qualquer contato. Com etiquetas, quem não tiver nenhuma delas não recebe resposta deste agente.": {
+    es: "Vacío = responde a cualquier contacto. Con etiquetas, quien no tenga ninguna de ellas no recibe respuesta de este agente.",
+  },
+  "Nunca responder quem tem uma destas etiquetas": { es: "Nunca responder a quien tenga una de estas etiquetas" },
+  "Vale mesmo que o contato também tenha uma etiqueta da lista de cima.": {
+    es: "Aplica aunque el contacto también tenga una etiqueta de la lista de arriba.",
+  },
+  "Se nenhum agente deste número aceitar o contato, a IA não responde e a conversa fica no Inbox para a equipe.": {
+    es: "Si ningún agente de este número acepta al contacto, la IA no responde y la conversación queda en el Inbox para el equipo.",
+  },
+  "Nenhuma etiqueta.": { es: "Ninguna etiqueta." },
+  "Digite uma etiqueta e aperte Enter": { es: "Escribe una etiqueta y presiona Enter" },
+  "Nenhum contato tem esta etiqueta ainda:": { es: "Ningún contacto tiene esta etiqueta todavía:" },
 };
 
 /**

@@ -67,6 +67,22 @@ function idAwareLoader() {
   return vi.fn(async (_db: unknown, _org: unknown, id: string) => fakeConfig(id));
 }
 
+/** O dublê de sempre devolvia UM agente da sessão; o motor agora pede a lista do número. */
+function umaListaDe(umAgente: ReturnType<typeof vi.fn>) {
+  // `ReturnType<typeof vi.fn>` é `Mock<Procedure | Constructable>`, que o tipo não
+  // deixa chamar; o dublê aqui é sempre função.
+  const carregar = umAgente as unknown as (...args: unknown[]) => Promise<PublishedAgentConfig | null>;
+  return vi.fn(async (...args: unknown[]) => {
+    const config = await carregar(...args);
+    return config ? [config] : [];
+  });
+}
+
+/** Agente com filtro por etiqueta — o resto da config é o `fakeConfig`. */
+function comFiltro(agentId: string, incluir: string[], excluir: string[] = []): PublishedAgentConfig {
+  return { ...fakeConfig(agentId), filtroDeEtiquetas: { incluir, excluir } };
+}
+
 const baseInput = {
   tenantId: 'org-1',
   leadId: 'lead-1',
@@ -92,12 +108,15 @@ function makeDeps(overrides: {
   classifyIntent?: ReturnType<typeof vi.fn>;
   consultarJev?: ReturnType<typeof vi.fn>;
   temIaDeSempre?: ReturnType<typeof vi.fn>;
+  loadAgentesDaSessao?: ReturnType<typeof vi.fn>;
+  agenteDaCampanha?: ReturnType<typeof vi.fn>;
 }) {
   return {
     log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     loadActiveRouter: overrides.loadActiveRouter ?? vi.fn(),
     loadPublishedAgentConfigById: overrides.loadPublishedAgentConfigById ?? vi.fn(),
-    loadPublishedAgentConfig: overrides.loadPublishedAgentConfig ?? vi.fn(),
+    loadAgentesDaSessao: overrides.loadAgentesDaSessao ?? umaListaDe(overrides.loadPublishedAgentConfig ?? vi.fn()),
+    agenteDaCampanha: overrides.agenteDaCampanha,
     classifyIntent: overrides.classifyIntent ?? vi.fn(),
     consultarJev: overrides.consultarJev ?? jevFalso().consultarJev,
     // A empresa tem a IA de sempre, salvo o caso que prova o contrário (decisão B).
@@ -336,11 +355,11 @@ describe('resolveTurnAgent', () => {
     const r = router({ sticky: false, fallbackAgentId: null });
     const loadActiveRouter = vi.fn().mockResolvedValue(r);
     const classifyIntent = vi.fn().mockResolvedValue({ intentName: null, confidence: 0.1 });
-    const loadPublishedAgentConfig = vi.fn().mockResolvedValue(null);
+    const loadAgentesDaSessao = vi.fn().mockResolvedValue([]);
     const warn = vi.fn();
     const out = await resolveTurnAgent({} as never, {} as never,
       { ...baseInput, signal: 'blablabla', stickyAgentId: null, stickyIntent: null },
-      { log: { info: vi.fn(), warn, error: vi.fn() }, loadActiveRouter, classifyIntent, loadPublishedAgentConfig } as never);
+      { log: { info: vi.fn(), warn, error: vi.fn() }, loadActiveRouter, classifyIntent, loadAgentesDaSessao } as never);
     expect(out.config).toBeNull();
     expect(out.outcome).toBe('no_match');
     expect(warn).toHaveBeenCalled();
@@ -839,5 +858,126 @@ describe('2155 — destino de funil na intenção casada', () => {
     expect(out.outcome).toBe('fallback');
     expect(out.config?.agentId).toBe('agent-reserva');
     expect(out.destinationPipelineId ?? null).toBeNull();
+  });
+});
+
+describe('resolveTurnAgent — filtro por etiqueta do contato (regra 8)', () => {
+  const semRouter = () => vi.fn().mockResolvedValue(null);
+  const entrada = (etiquetasDoContato?: string[]) => ({
+    ...baseInput, signal: 'oi', stickyAgentId: null, stickyIntent: null,
+    ...(etiquetasDoContato !== undefined ? { etiquetasDoContato } : {}),
+  });
+
+  it('dois agentes no número: atende o primeiro que aceita as etiquetas do contato', async () => {
+    const loadAgentesDaSessao = vi.fn().mockResolvedValue([
+      comFiltro('agent-clientes', ['cliente']),
+      comFiltro('agent-leads', ['lead']),
+    ]);
+    const out = await resolveTurnAgent({} as never, {} as never, entrada(['lead']),
+      makeDeps({ loadActiveRouter: semRouter(), loadAgentesDaSessao }));
+    expect(out.outcome).toBe('no_router');
+    expect(out.config?.agentId).toBe('agent-leads');
+  });
+
+  it('nenhum agente aceita ⇒ fora_das_etiquetas, sem config (nunca o genérico)', async () => {
+    const loadAgentesDaSessao = vi.fn().mockResolvedValue([comFiltro('agent-clientes', ['cliente'])]);
+    const out = await resolveTurnAgent({} as never, {} as never, entrada([]),
+      makeDeps({ loadActiveRouter: semRouter(), loadAgentesDaSessao }));
+    expect(out.config).toBeNull();
+    expect(out.outcome).toBe('fora_das_etiquetas');
+  });
+
+  it('número sem agente nenhum segue no genérico (no_router), como antes — ninguém foi recusado', async () => {
+    const loadAgentesDaSessao = vi.fn().mockResolvedValue([]);
+    const out = await resolveTurnAgent({} as never, {} as never, entrada([]),
+      makeDeps({ loadActiveRouter: semRouter(), loadAgentesDaSessao }));
+    expect(out.config).toBeNull();
+    expect(out.outcome).toBe('no_router');
+  });
+
+  it('"nunca responder quem tem" vence "só quem tem"', async () => {
+    const loadAgentesDaSessao = vi.fn().mockResolvedValue([comFiltro('agent-clientes', ['cliente'], ['inadimplente'])]);
+    const out = await resolveTurnAgent({} as never, {} as never, entrada(['cliente', 'inadimplente']),
+      makeDeps({ loadActiveRouter: semRouter(), loadAgentesDaSessao }));
+    expect(out.outcome).toBe('fora_das_etiquetas');
+  });
+
+  it('sem etiquetas informadas (quem chama não sabe) não filtra: vale o primeiro, como antes', async () => {
+    const loadAgentesDaSessao = vi.fn().mockResolvedValue([comFiltro('agent-clientes', ['cliente'])]);
+    const out = await resolveTurnAgent({} as never, {} as never, entrada(),
+      makeDeps({ loadActiveRouter: semRouter(), loadAgentesDaSessao }));
+    expect(out.config?.agentId).toBe('agent-clientes');
+    expect(out.outcome).toBe('no_router');
+  });
+
+  it('roteador casa um membro que recusa o contato ⇒ atende o agente do número que aceita', async () => {
+    const r = router({ sticky: false, fallbackAgentId: null });
+    const classifyIntent = vi.fn().mockResolvedValue({ intentName: 'vendas', confidence: 0.9 });
+    const loadPublishedAgentConfigById = vi.fn(async (_db: unknown, _org: unknown, id: string) => comFiltro(id, ['cliente']));
+    const loadAgentesDaSessao = vi.fn().mockResolvedValue([fakeConfig('agent-geral')]);
+    const out = await resolveTurnAgent({} as never, {} as never,
+      { ...entrada(['lead']), signal: 'quero comprar' },
+      makeDeps({ loadActiveRouter: vi.fn().mockResolvedValue(r), classifyIntent, loadPublishedAgentConfigById, loadAgentesDaSessao }));
+    expect(out.config?.agentId).toBe('agent-geral');
+    expect(out.outcome).toBe('no_match');
+  });
+
+  it('roteador: reserva que recusa vale como "sem reserva"; ninguém aceita ⇒ fora_das_etiquetas', async () => {
+    const r = router({ sticky: false, fallbackAgentId: 'agent-fallback' });
+    const classifyIntent = vi.fn().mockResolvedValue({ intentName: null, confidence: 0.1 });
+    const loadPublishedAgentConfigById = vi.fn(async (_db: unknown, _org: unknown, id: string) => comFiltro(id, ['cliente']));
+    const loadAgentesDaSessao = vi.fn().mockResolvedValue([]);
+    const out = await resolveTurnAgent({} as never, {} as never,
+      { ...entrada(['lead']), signal: 'blablabla' },
+      makeDeps({ loadActiveRouter: vi.fn().mockResolvedValue(r), classifyIntent, loadPublishedAgentConfigById, loadAgentesDaSessao }));
+    expect(out.config).toBeNull();
+    expect(out.outcome).toBe('fora_das_etiquetas');
+    expect(out.routerId).toBe('router-1');
+  });
+
+  it('campanha: o agente da campanha que recusa o contato não atende; segue a régua do número', async () => {
+    const agenteDaCampanha = vi.fn().mockResolvedValue('agent-campanha');
+    const loadPublishedAgentConfigById = vi.fn(async (_db: unknown, _org: unknown, id: string) => comFiltro(id, ['cliente']));
+    const loadAgentesDaSessao = vi.fn().mockResolvedValue([fakeConfig('agent-geral')]);
+    const out = await resolveTurnAgent({} as never, {} as never, entrada(['lead']),
+      makeDeps({ loadActiveRouter: semRouter(), agenteDaCampanha, loadPublishedAgentConfigById, loadAgentesDaSessao }));
+    expect(out.config?.agentId).toBe('agent-geral');
+    expect(out.outcome).toBe('no_router');
+  });
+});
+
+describe('resolveConversationTurn — etiquetas do contato', () => {
+  /** Banco falso: a conversa (com as etiquetas do contato que o join trouxe) e nada mais. */
+  function dbComEtiquetas(contactTags: unknown) {
+    return {
+      query: vi.fn(async (sql: string, _values: unknown[]) => {
+        if (sql.includes('from conversations')) {
+          return { rows: [{ active_ai_agent_id: null, active_intent: null, contact_tags: contactTags }] };
+        }
+        return { rows: [] };
+      }),
+    };
+  }
+  const doisAgentes = () => vi.fn().mockResolvedValue([
+    comFiltro('agent-clientes', ['cliente']),
+    comFiltro('agent-leads', ['lead']),
+  ]);
+
+  it('lê as etiquetas pela conversa (nunca do payload) e as aplica', async () => {
+    const db = dbComEtiquetas(['Lead']);
+    const out = await resolveConversationTurn(db as never, {} as never, { ...baseInput, inbound: false },
+      makeDeps({ loadActiveRouter: vi.fn().mockResolvedValue(null), loadAgentesDaSessao: doisAgentes() }));
+    expect(out.config?.agentId).toBe('agent-leads');
+    const [sql, values] = db.query.mock.calls.find(([q]) => q.includes('from conversations'))!;
+    expect(sql).toContain('left join contacts');
+    expect(values).toEqual(['org-1', 'conv-1']);
+  });
+
+  it('elemento NULL no text[] do contato não derruba o turno: é ignorado', async () => {
+    const db = dbComEtiquetas(['Lead', null]);
+    const out = await resolveConversationTurn(db as never, {} as never, { ...baseInput, inbound: false },
+      makeDeps({ loadActiveRouter: vi.fn().mockResolvedValue(null), loadAgentesDaSessao: doisAgentes() }));
+    expect(out.config?.agentId).toBe('agent-leads');
+    expect(out.outcome).toBe('no_router');
   });
 });
