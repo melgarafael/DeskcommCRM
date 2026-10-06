@@ -241,11 +241,17 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
   };
 }
 
-export async function loadPublishedAgentConfig(
+/**
+ * TODOS os agentes publicados no número, em ordem de preferência
+ * (`priority desc, created_at asc`). O turno escolhe o primeiro que aceita as
+ * etiquetas do contato (`resolve-turn-agent.ts`, filtro por etiqueta); sem
+ * etiquetas na conta, o primeiro — o mesmo de `loadPublishedAgentConfig`.
+ */
+export async function loadPublishedAgentConfigsDaSessao(
   db: pg.Pool,
   organizationId: string,
   channelSessionId: string,
-): Promise<PublishedAgentConfig | null> {
+): Promise<PublishedAgentConfig[]> {
   const { rows } = await db.query<Row>(
     `select ${SELECT_AGENT_CONFIG_COLUMNS}
      from ai_agents a
@@ -257,13 +263,19 @@ export async function loadPublishedAgentConfig(
        -- (grava só paused_at): o pausado vem aqui, e o turno sai no pausedAt.
        and v.status = 'published'
        and v.channel_session_id = $2
-     order by a.priority desc, a.created_at asc
-     limit 1`,
+     order by a.priority desc, a.created_at asc`,
     [organizationId, channelSessionId],
   );
-  const r = rows[0];
-  if (r === undefined) return null;
-  return mapAgentConfigRow(r);
+  return rows.map(mapAgentConfigRow);
+}
+
+/** O agente de maior preferência do número, sem olhar etiquetas. `null` = nenhum publicado. */
+export async function loadPublishedAgentConfig(
+  db: pg.Pool,
+  organizationId: string,
+  channelSessionId: string,
+): Promise<PublishedAgentConfig | null> {
+  return (await loadPublishedAgentConfigsDaSessao(db, organizationId, channelSessionId))[0] ?? null;
 }
 
 /**

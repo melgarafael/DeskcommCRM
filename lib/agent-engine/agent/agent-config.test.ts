@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type pg from 'pg';
 
-import { loadPublishedAgentConfig, loadPublishedAgentConfigById } from './agent-config';
+import {
+  loadPublishedAgentConfig,
+  loadPublishedAgentConfigById,
+  loadPublishedAgentConfigsDaSessao,
+} from './agent-config';
 
 const baseRow = {
   agent_id: 'a1', version_id: 'v1', agent_name: 'Vendedor', system_prompt: 'p',
@@ -99,5 +103,36 @@ describe('loadPublishedAgentConfigById', () => {
     expect(cfg?.activeKbVersionId).toBe('kb-1');
     expect(cfg?.ragTopK).toBe(7);
     expect(cfg?.ragSimilarityThreshold).toBe(0.8);
+  });
+});
+
+describe('loadPublishedAgentConfigsDaSessao — todos os agentes do número', () => {
+  function poolComLinhas(linhas: Record<string, unknown>[]): pg.Pool {
+    return { query: vi.fn().mockResolvedValue({ rows: linhas }) } as unknown as pg.Pool;
+  }
+
+  it('devolve todos, na ordem do banco, filtrando organização e número', async () => {
+    const pool = poolComLinhas([
+      { ...baseRow, agent_id: 'a1', version_id: 'v1' },
+      { ...baseRow, agent_id: 'a2', version_id: 'v2' },
+    ]);
+    const lista = await loadPublishedAgentConfigsDaSessao(pool, 'org-1', 'sess-1');
+    expect(lista.map((c) => c.agentId)).toEqual(['a1', 'a2']);
+    const [sql, values] = (pool.query as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(values).toEqual(['org-1', 'sess-1']);
+    expect(sql).toContain('order by a.priority desc, a.created_at asc');
+    expect(sql).not.toContain('limit 1');
+  });
+
+  it('número sem agente publicado ⇒ lista vazia', async () => {
+    expect(await loadPublishedAgentConfigsDaSessao(poolComLinhas([]), 'org-1', 'sess-1')).toEqual([]);
+  });
+
+  it('loadPublishedAgentConfig segue devolvendo só o primeiro', async () => {
+    const pool = poolComLinhas([
+      { ...baseRow, agent_id: 'a1', version_id: 'v1' },
+      { ...baseRow, agent_id: 'a2', version_id: 'v2' },
+    ]);
+    expect((await loadPublishedAgentConfig(pool, 'org-1', 'sess-1'))?.agentId).toBe('a1');
   });
 });
