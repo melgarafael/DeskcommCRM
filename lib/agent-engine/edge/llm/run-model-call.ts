@@ -772,6 +772,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       topK,
       maxOutputTokens: tetoDeSaida(maxOutputTokens, input.maxOutputTokens),
       ...cacheDaCauda(cfgUsada.provider, input.maxSteps),
+      ...(cfgUsada.provider === 'openrouter' && Object.keys(prefix.tools).length > 0
+        ? { providerOptions: { openrouter: { provider: { require_parameters: true } } } }
+        : {}),
     });
 
   /**
