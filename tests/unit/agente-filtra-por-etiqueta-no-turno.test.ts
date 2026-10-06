@@ -47,7 +47,7 @@ vi.mock('@/lib/agent-engine/pacing/aviso-de-janela', () => ({
   resolverAvisoDeJanela: vi.fn(async () => 0), avisarJanelaFechada: vi.fn(),
 }));
 
-import { createInboundTurnHandler, type InboundTurnDeps } from '@/lib/agent-engine/agent/inbound-turn';
+import { createInboundTurnHandler, runAgentTurn, type InboundTurnDeps } from '@/lib/agent-engine/agent/inbound-turn';
 
 const ids = {
   org: '12000000-0000-4000-8000-000000000001', contact: '12000000-0000-4000-8000-000000000002',
@@ -121,5 +121,43 @@ describe('o agente só responde quem passa no filtro de etiquetas', () => {
     mocks.agentesDaSessao.mockResolvedValue([agente('A', ['cliente'], ['inadimplente'])]);
     await createInboundTurnHandler(deps)(job as never, banco(['cliente', 'inadimplente']) as never, { workerId: 'worker' });
     expect(mocks.operation).not.toHaveBeenCalled();
+    // Sem esta linha o caso passaria também caindo no genérico, que nunca chama a operação.
+    expect(deps.log.info).toHaveBeenCalledWith(
+      'turno pulado — nenhum agente aceita as etiquetas do contato', expect.anything());
+  });
+});
+
+/**
+ * Follow-up e resposta de caso entram por `runAgentTurn` SEM agente já
+ * resolvido: a saída que os protege é a do próprio turno, não a do handler do
+ * inbound. Sem ela, um follow-up da IA iria pelo agente genérico para o contato
+ * que o filtro recusa.
+ */
+describe('follow-up da IA também respeita o filtro', () => {
+  const followup = {
+    ...job,
+    kind: 'followup_turn',
+    payload: { conversation_id: ids.conversation, contact_id: ids.contact, channel_session_id: ids.channel, purpose: 'send_message' },
+  };
+  const entrada = {
+    channelSessionId: ids.channel,
+    conversationId: ids.conversation,
+    buildOpening: () => { throw new Error('a abertura não deveria ser montada'); },
+  };
+
+  it('contato recusado: o follow-up termina calado, sem operação', async () => {
+    mocks.agentesDaSessao.mockResolvedValue([agente('A', ['cliente'])]);
+    await runAgentTurn(deps, followup as never, banco([]) as never, { workerId: 'worker' }, entrada as never);
+    expect(mocks.operation).not.toHaveBeenCalled();
+    expect(deps.log.info).toHaveBeenCalledWith(
+      'turno pulado — nenhum agente aceita as etiquetas do contato', expect.anything());
+  });
+
+  // Controle: o mesmo follow-up para um contato aceito chega à operação.
+  it('contato aceito: o follow-up segue com o agente', async () => {
+    mocks.agentesDaSessao.mockResolvedValue([agente('A', ['cliente'])]);
+    await expect(runAgentTurn(deps, followup as never, banco(['cliente']) as never, { workerId: 'worker' }, entrada as never))
+      .rejects.toBe(chegou);
+    expect(mocks.operation).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ agentId: 'A' }));
   });
 });
