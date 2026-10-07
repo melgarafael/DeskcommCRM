@@ -87,17 +87,17 @@
  *
  * ─── E POR ISSO ELE VOLTOU AO GATE (issue #347) ──────────────────────────────
  *
- * Ele saiu de `FORA_DO_CI` em 2026-08-26 por dois motivos medidos: (a) não
- * discriminava o conserto do token — fechado pela matriz acima; (b) reprovou
- * duas vezes o MESMO sha de um PR que não toca inbox, realtime nem socket,
- * depois de passar em dois outros.
+ * Ele entrou em `FORA_DO_CI` (saiu do gate) em 2026-08-26 por dois motivos
+ * medidos: (a) não discriminava o conserto do token — fechado pela matriz
+ * acima; (b) reprovou duas vezes o MESMO sha de um PR que não toca inbox,
+ * realtime nem socket, depois de passar em dois outros.
  *
  * Sobre (b), a hipótese era `refetchOnWindowFocus` em `useMessagesRealtime`:
  * dois caminhos para a mesma saída, com a janela recebendo foco de volta quando
  * o processo que injeta a mensagem subia. As asserções desta versão não olham a
  * tela — elas leem o `phx_join` e o frame do socket, que foco nenhum satisfaz —,
  * e a injeção é `spawn`, não `execFileSync`. O que NÃO está provado é a
- * frequência no runner: foram três execuções verdes consecutivas na mesma
+ * frequência no runner: foram três execuções verdes com o conserto na mesma
  * bancada, e é o CI que diz se a repetição vale para o runner de lá.
  *
  * Volta para `SPECS_PARTE_3` no `.github/workflows/e2e.yml`, com a matriz
