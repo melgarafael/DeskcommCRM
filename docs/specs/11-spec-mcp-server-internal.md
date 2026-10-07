@@ -41,6 +41,23 @@ owner: Rafael Melgaço
 
 ## 2. Transport & Auth
 
+### Execução no turno interno
+
+`lib/ai/runtime/tools.ts` monta a ponte em processo usada pelo atendimento e pelo
+Operador. Dentro de cada montagem, escritas que recebem `lead_id` e
+`crm_manage_tags` com `target_kind='lead'` aguardam a conclusão do handler
+anterior para o mesmo par organização/negócio, incluindo suas atividades e
+eventos. A chave usa o negócio efetivo após a tradução do contato do turno.
+Leituras e negócios diferentes continuam em paralelo. Papel, escopo, auditoria
+e o filtro otimista de `moveLeadHandler` continuam nativos.
+
+A fila é local ao turno: não ordena requisições HTTP/MCP externas, turnos
+distintos, ações humanas nem ferramentas que resolvem o negócio indiretamente
+pela agenda. Não substitui proteção no banco e não repete conflitos. Uma falha
+libera a próxima chamada, conservando a recusa e sua auditoria para o modelo.
+Regressão: `tests/unit/escritas-do-negocio-no-turno.test.ts` reproduz a colisão
+com handlers nativos e adaptador em memória, sem banco ou modelo externo.
+
 ### 2.1 Endpoint
 
 ```
