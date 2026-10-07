@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { McpContext } from "@/lib/mcp/types";
+import type * as ActivityEmitter from "@/lib/leads/activity-emitter";
 import {
   chaveDaEscritaDoNegocio,
   criarFilaDeEscritasDoNegocio,
@@ -14,7 +15,7 @@ vi.mock("@/lib/atendimento/origem", () => ({
 vi.mock("@/lib/audit", () => ({ audit: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/mcp/audit", () => ({ auditMcpToolCall: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/leads/activity-emitter", async (original) => ({
-  ...(await original<typeof import("@/lib/leads/activity-emitter")>()),
+  ...(await original<typeof ActivityEmitter>()),
   emitLeadActivity: vi.fn(async (_sb, entrada) => {
     (dublês.banco as ReturnType<typeof banco>).atividade(entrada.leadId);
     return { ok: true };
