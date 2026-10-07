@@ -22,7 +22,7 @@
  * alguém acrescentar um `reload()` aqui "para estabilizar", ele passa a medir o
  * F5 — exatamente o sintoma que existe para proibir.
  *
- * ─── O QUE ELE PROVA AGORA — e a lacuna que continua aberta (issue #347) ────
+ * ─── O QUE ELE PROVA — e a matriz que fechou a issue #347 ───────────────────
  *
  * Medido em 2026-08-26, contra o HEAD da época: ele **não discriminava o
  * conserto do token**. Com Supabase local e build de produção, revertendo SÓ
@@ -55,26 +55,54 @@
  * `execFileSync`: o processo sobe sem bloquear o loop do runner durante a
  * janela de asserção, que era um confundidor a mais.
  *
- * ⚠️ HONESTIDADE — O QUE NÃO FOI MEDIDO AQUI: a matriz de sabotagem desta
- * versão. A bancada exige Docker (Supabase local + build de produção) e a VPS
- * onde esta mudança foi escrita não tem Docker. O que se mediu: `tsc --noEmit`,
- * os unitários e a fila de gates. A prova de discriminação — verde com o
- * conserto, VERMELHO revertendo só `lib/supabase/browser.ts` — precisa de uma
- * rodada no runner, e é ela que libera a volta desta spec ao CI.
+ * ─── A MATRIZ MEDIDA (2026-10-07) — é ela que o devolveu ao gate ─────────────
+ *
+ * O que faltava era a prova, e ela foi fechada numa bancada fiel ao job do CI,
+ * com Docker: Supabase local na major do `config.toml`, extensões +
+ * `baseline.sql`, Realtime reiniciado depois do baseline, `pnpm e2e:build` de
+ * produção e os mesmos seeds do job. Quatro execuções, na ordem:
+ *
+ *   com o conserto             → 1 passed
+ *   com o conserto, repetido   → 1 passed   (mesmo resultado: determinístico)
+ *   sem o conserto             → 1 FAILED   (discrimina)
+ *   conserto restaurado        → 1 passed   (`git checkout`, byte a byte)
+ *
+ * A sabotagem foi o `lib/supabase/browser.ts` de antes do #327 (`a3588c160^`),
+ * com as duas exportações que o código de hoje importa mantidas como no-op só
+ * para o build subir — nenhuma delas busca nem devolve token. O bundle da perna
+ * vermelha foi conferido com os MESMOS greps da issue:
+ *
+ *   grep -ro "realtime-token"   .next/static → 0   (o conserto saiu)
+ *   grep -ro "sb-deskcomm-auth" .next/static → 1   (controle: o grep vive)
+ *
+ * E o vermelho veio do produto, não do instrumento: a falha foi na asserção
+ * "nenhum canal assinou com o token do USUÁRIO — o socket está anônimo, que é o
+ * defeito do #327". A leitura de token — a `expect.poll` cuja mensagem é "não
+ * foi possível ler o token de nenhum `phx_join` — instrumento quebrado" —
+ * funcionou e devolveu `anon`; se fosse ELA a falhar, a prova não teria fechado.
  *
  * Quem discrimina em unidade é `tests/unit/realtime-token-do-socket.test.ts`,
  * que cobra a callback INSTALADA e o token que ela devolve — e que reprova 6 de
  * 7 casos quando a callback some.
  *
- * ⚠️ E POR ISSO ELE CONTINUA FORA DO GATE DE MERGE (2026-08-26, issue #347). Ele
- * está em `FORA_DO_CI` no `.github/workflows/e2e.yml`, com o motivo medido
- * escrito lá: além de não discriminar, ele reprovou duas vezes o mesmo sha de um
- * PR que não toca inbox, realtime nem socket, depois de passar em dois outros.
- * Gate que reprova por moeda treina o time a reexecutar em vez de olhar.
+ * ─── E POR ISSO ELE VOLTOU AO GATE (issue #347) ──────────────────────────────
  *
- * Ele CONTINUA rodando local: `pnpm exec playwright test
- * tests/e2e/inbox-tempo-real.spec.ts`. O que falta para ele voltar ao CI é uma
- * rodada no runner com a sabotagem acima VERMELHA.
+ * Ele saiu de `FORA_DO_CI` em 2026-08-26 por dois motivos medidos: (a) não
+ * discriminava o conserto do token — fechado pela matriz acima; (b) reprovou
+ * duas vezes o MESMO sha de um PR que não toca inbox, realtime nem socket,
+ * depois de passar em dois outros.
+ *
+ * Sobre (b), a hipótese era `refetchOnWindowFocus` em `useMessagesRealtime`:
+ * dois caminhos para a mesma saída, com a janela recebendo foco de volta quando
+ * o processo que injeta a mensagem subia. As asserções desta versão não olham a
+ * tela — elas leem o `phx_join` e o frame do socket, que foco nenhum satisfaz —,
+ * e a injeção é `spawn`, não `execFileSync`. O que NÃO está provado é a
+ * frequência no runner: foram três execuções verdes consecutivas na mesma
+ * bancada, e é o CI que diz se a repetição vale para o runner de lá.
+ *
+ * Volta para `SPECS_PARTE_3` no `.github/workflows/e2e.yml`, com a matriz
+ * registrada no bloco de comentários acima daquela lista. Roda local:
+ * `pnpm exec playwright test tests/e2e/inbox-tempo-real.spec.ts`.
  */
 import { execFileSync, spawn } from "node:child_process";
 import * as fs from "node:fs";
