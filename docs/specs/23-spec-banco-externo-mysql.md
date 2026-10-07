@@ -2,13 +2,13 @@
 
 Status: **PROPOSTA**. Base CONFIRMADA na Spec 20 e no código citado; o resto é decisão proposta, não comportamento existente.
 
-Linhas citadas medidas em 07/10/2026 no commit `17a67d3da` (remedidas na `main`, que já contém o filtro por cliente #2280).
+Linhas citadas medidas em 07/10/2026 no commit `17a67d3da` (remedidas na `main`, que já contém o filtro por cliente #2280). A parte do rastro do agente (Segurança, item 4, e "Quais tabelas do CRM a leitura toca") foi medida em `1b193c85c`; a `main` seguinte (`548d70cd`) entrou com a retenção das tabelas da IA (migration 0587), que não toca `ai_agent_runs`.
 
 ## Objetivo
 
 O conector `banco_externo` (Spec 20) hoje só fala PostgreSQL. Nem todo sistema do dono é
 PostgreSQL: WordPress, ERPs pequenos e muita aplicação feita direto com IA rodam
-**MySQL/MariaDB**. Esta spec expande o conector para **MySQL genérico** seguindo o desenho
+**MySQL**. Esta spec expande o conector para **MySQL genérico** seguindo o desenho
 que já existe — sem criar um "conector WordPress" com `if` por provider no núcleo.
 
 WordPress funciona por consequência (MySQL genérico + receita de VIEW que achata o EAV),
@@ -330,10 +330,23 @@ LÊ: `external_db_connections_safe` (`resolverConexao`, `dados-externos.ts:101-1
 ESCREVE: `api_audit_log` (ação `mcp.tool_called`, recurso `mcp_tool`) — e
 `external_db_connections.last_test_*` só quando o admin aperta Testar (rota `/test`).
 
-NADA é copiado para o CRM: sem sincronização, sem cópia em tabelas do CRM, sem embeddings —
-leitura AO VIVO a cada chamada; a fase 1 não cria tabela nenhuma; acrescenta quatro colunas à `external_db_connections` (D3).
-A leitura NÃO aparece na linha do tempo do contato — só no registro de auditoria e no painel
-de capacidades. Decisão proposta: é leitura pura, como as tools de catálogo e
+Cópia sincronizada não há: sem tabela de espelho, sem embeddings do banco externo —
+leitura ao vivo a cada chamada; a fase 1 não cria tabela nenhuma; acrescenta quatro colunas
+à `external_db_connections` (D3). **Mas** o resultado devolvido ao agente, no turno do
+agente, fica gravado no rastro da execução (`ai_agent_runs.tool_calls`): `serializeSteps`
+(`lib/ai/runtime/serialize.ts:53-66`, com `result: redactValue(result)` em :63,
+CONFIRMADO POR LEITURA, não executado) grava o resultado de cada ferramenta; o `trace` é
+montado em `lib/ai/runtime/agent.ts:710` e gravado em :737, :766, :795 e :838
+(CONFIRMADO POR LEITURA, não executado). A redação é só pelo nome da chave (`REDACT_KEYS`
+em `serialize.ts:8-14`: `authorization`, `api_key`, `token`, `password`, `cpf`) e corta
+string longa em 500 + `...[truncated]` (:16-29) — linha com `email`, `telefone`, `endereço`,
+`hash` passa inteira. No MCP externo (`/api/mcp`), o resultado NÃO vai para
+`ai_agent_runs` (só `lib/mcp/audit.test.ts:46` menciona a tabela, num comentário;
+CONFIRMADO POR LEITURA, não executado). Efeito da lista de fontes aqui: ela reduz o que
+PODE ser lido e, portanto, o que pode ir parar no rastro; não apaga o que já foi lido nem
+muda o rastro.
+A leitura NÃO aparece na linha do tempo do contato — aparece no registro de auditoria, no
+painel de capacidades e no rastro do agente. Decisão proposta: é leitura pura, como as tools de catálogo e
 conhecimento, que o Testar lê sem contato (`preview.ts:147-159`).
 
 ### Os dois ingressos, as mesmas tools
@@ -401,8 +414,8 @@ catálogo compara em minúscula (`candidatas`, `dados-externos.ts:433`, CONFIRMA
 igualdade exata (`c.table_name = $2`, `introspeccao.ts:136`, CONFIRMADO). Numa tabela chamada
 `"Pedido"` (comum em aplicações com ORM), o modelo manda `pedido`, o catálogo acha, e a
 segunda consulta não acha — o agente recebe `tabela_nao_encontrada` ("essa tabela não
-existe", 434-436) quando ela existe (e a resposta devolve o mesmo texto, `tabela:
-input.tabela` em 527, não o nome real). No MySQL em Linux os nomes também diferenciam maiúscula
+existe. Confira o nome com crm_describe_external_data.", 447-451) quando ela existe (e a resposta devolve o mesmo texto, `tabela:
+input.tabela` em 527, não o nome real). As linhas 434-436 são o outro caso: nem o catálogo achou ("não encontrei essa tabela."). No MySQL em Linux os nomes também diferenciam maiúscula
 (INFERIDO). **PROPOSTA — decisão do mantenedor: mesmo PR do defeito do módulo desligado (Fatia 1, que sai antes de tudo)** (mexe nas linhas que o dialeto reescreve de todo jeito): usar `escolhida.nome` (o nome real do catálogo) nas duas
 chamadas e cobrir com teste de unidade da tool (tabela `Pedido` pedida como `pedido`).
 
@@ -621,6 +634,18 @@ bytes do `describe` existem para manter esse custo sob controle.
    MyISAM é NÃO MEDIDO (C1a, C1d).
 3. **Arquivo local:** defesa `LOCAL_FILES` proposta, a confirmar em C1b.
 4. **LGPD:** PII fora do audit; sem valores de filtro na querystring (regra atual mantida).
+   Duas metades que a frase antiga escondia: o dado vai ao provedor de IA (os tokens que
+   entram no modelo são os mesmos — ver "Fora de escopo") E fica no rastro do agente
+   (`ai_agent_runs.tool_calls`). A redação cobre chaves chamadas `authorization`,
+   `api_key`, `token`, `password`, `cpf` e corta string em 500 caracteres — NÃO cobre
+   `email`, `telefone`, `endereço`, `hash`. Por quanto tempo fica: NÃO MEDIDO como ausência
+   (varri `app/api/v1/cron`, `lib/retencao`, `lib/lgpd` e `delete from
+   public.ai_agent_runs` no baseline sem achar expurgo por tempo; um grep só prova o que
+   varreu; a migration 0587, retenção das tabelas da IA, entrou na `main` seguinte `548d70cd`
+   e purga sete outras tabelas sem tocar `ai_agent_runs`, conferido no arquivo dela). O que existe é a redação por contato (`fn_lgpd_redigir_tool_calls`, definição
+   no baseline em :43935-43960, última menção em :44042 — cada passo vira `{step,
+   tool_name, redacted}`, o conteúdo sai, o esqueleto fica). Isso vale para o PostgreSQL
+   de HOJE, independente do MySQL e da lista. Ver "Quais tabelas do CRM a leitura toca".
 5. **Prompt injection:** conteúdo externo é dado, nunca instrução (aviso fixo mantido).
 6. **Credencial:** nunca em querystring, nunca em log; senha só decifrada no escopo da leitura.
 
@@ -656,6 +681,12 @@ bytes do `describe` existem para manter esse custo sob controle.
 - `POST /connections` e `PATCH /connections/:id` com `source_mode` ou `sources` no corpo →
   recusados (os schemas são `.strict()`, `schemas.ts:82,105`, CONFIRMADO).
 - `GET sources` por `viewer` devolve a lista mas NUNCA a senha nem qualquer campo cifrado.
+- `GET catalog` com o id de uma conexão de OUTRA organização → não encontrada (a rota
+  vizinha `schemas/route.ts` carrega a conexão com filtro de organização
+  (`abrirAcesso(createAdminClient(), activeOrg.orgId, id)`, :45, CONFIRMADO) e, para conexão
+  que não é da organização, `respostaDeAcesso("nao_encontrada")` devolve 404 `not_found`
+  (`app/api/v1/external-db/_falha.ts:45-46`, CONFIRMADO); `catalog` repete exatamente
+  isso — é a rota que fura a lista de fontes.
 
 ### Isolamento e schema
 
@@ -685,6 +716,9 @@ bytes do `describe` existem para manter esse custo sob controle.
   `e2e.yml:1212-1241`, CONFIRMADO; e `tests/unit/e2e-cobertura-completa.test.ts:185-200`
   reprova spec no disco sem lista), rodando no job de integração até a decisão de pôr MySQL
   no `e2e` obrigatório.
+- O job de CI com MySQL (Fatia 4a) altera `.github/workflows`, e mudança em
+  `.github/workflows` vinda de fork exige todos os passes da triagem MAIS leitura linha a
+  linha (tabela de raio de dano em `triagem/TRIAGEM.md:133-140`, linha 140, CONFIRMADO).
 
 ### Pela tela e em par
 
@@ -752,7 +786,14 @@ Medido contra a `main` `17a67d3da`, que já contém o #2280; fatias 1 e 2a parte
   Decisão: a fachada importa os dois dialetos com `import` ESTÁTICO (nunca `import()` com
   caminho calculado), para o rastreamento enxergar o `mysql2` — INFERIDO (comportamento do
   rastreamento com `mysql2` não medido); a prova é `pnpm build` + `next start` com uma
-  conexão MySQL de teste (C1e).
+  conexão MySQL de teste (C1e). O peso que o `mysql2` acrescenta é uma medida a FAZER, não uma
+  que já existe: o `build-and-size` (`.github/workflows/perf.yml`, CONFIRMADO) roda
+  `pnpm build` em :37-38 e publica só o tamanho do `.next` no resumo em :47-53 — não
+  constrói a imagem Docker e não compara com limite (a linha 55 diz que limiares, Lighthouse
+  e bundle-analyzer, ficaram adiados). **PROPOSTA — decisão do mantenedor**: a Fatia 4a
+  registra o tamanho do `.next` antes e depois de acrescentar o `mysql2` (no resumo do
+  `build-and-size`, que é onde a triagem pediu a medida) e declara a diferença no PR. O peso
+  da imagem Docker em si é NÃO MEDIDO (não localizei job que o meça).
 - Fragmento em `.changes/` (formato em
   `docs/doctrine/versionamento.md:124-133`; exemplo em
   `.changes/canal-desativado-nao-entra-na-inbox.md`: `impacto`, `secao`, `titulo` + prosa
@@ -804,12 +845,17 @@ Medido contra a `main` `17a67d3da`, que já contém o #2280; fatias 1 e 2a parte
   resumo — sem tamanho (CONFIRMADO) — então o custo por ferramenta não é mensurável. Tocaria
   `lib/mcp/audit.ts`, `lib/ai/runtime/tools.ts` e `lib/mcp/server.ts`: código compartilhado
   por todas as tools, por isso PR próprio. Números em "Custo de IA (estimativa)".
+- **Rastro das ferramentas de banco externo sem conteúdo (PR próprio, adiado)**: o rastro em
+  `ai_agent_runs.tool_calls` guardar só tabela, nomes de colunas e contagem de linhas
+  (nunca o conteúdo). Tocaria `lib/ai/runtime/serialize.ts` (compartilhado por TODAS as
+  ferramentas), por isso PR próprio — e NÃO faz parte de nenhuma fatia desta spec.
+  **PROPOSTA — decisão do mantenedor**.
 
 ## Living System Checklist — dialeto MySQL
 
 1. Quem me alimenta? Conexões `mysql` em `external_db_connections` (cadastro em `/app/integracao-dados`). As fontes marcadas alimentam o dialeto (`aplicarFontes`).
 2. Quem eu alimento? Grade do explorador + tools `crm_describe/query_external_data` (mesmos consumidores do PG) — agora filtrados pelas fontes liberadas.
-3. Que registro eu emito? `api_audit_log` via `audit()` (leitura e mutação, sem PII, agora com `db_type` e `source_mode` no metadata de criação) + `last_test_*` na linha da conexão + **aviso de privilégio excessivo** (`last_test_aviso`, visível na tela como aviso amarelo).
+3. Que registro eu emito? `api_audit_log` via `audit()` (leitura e mutação, sem PII, agora com `db_type` e `source_mode` no metadata de criação) + `last_test_*` na linha da conexão + **aviso de privilégio excessivo** (`last_test_aviso`, visível na tela como aviso amarelo) + rastro `ai_agent_runs.tool_calls` (com conteúdo — ver item 4 de Segurança).
 4. Onde eu apareço na tela? Explorador `/app/integracao-dados/[id]` + seletor de motor no formulário (desabilitado ao editar) + aviso amarelo de privilégio (`last_test_aviso`) + painel "O que o assistente pode ver".
 5. Por qual porta se chega? Mesmas rotas `/api/v1/external-db/*`; sem porta nova (sem registro de navegação novo).
 6. Qual meu anti-morte? Leitura pura: nenhum — com justificativa: falha vira erro-texto que ensina (`filtro_sem_valor`, `tabela_nao_encontrada`, `fonte_nao_liberada`, `sem_fontes_liberadas`) em vez de silêncio, e a tela avisa quando a lista está vazia.
