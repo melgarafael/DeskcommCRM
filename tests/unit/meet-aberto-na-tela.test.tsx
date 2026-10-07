@@ -83,7 +83,7 @@ describe("a opção 'Google Meet com acesso aberto' na tela de configurações",
     // Renderizar o componente sozinho provaria uma tela que ninguém monta.
     // Aqui se mede a costura: o cartão entra no `_client` da tela e a página
     // lê a chave do banco e manda para ele — é esta linha que sumiu do PR.
-    const client = fs.readFileSync(
+    const client = readFileSync(
       join(__dirname, "..", "..", "app", "app", "settings", "tenant", "agenda", "_client.tsx"),
       "utf8",
     );
@@ -91,7 +91,7 @@ describe("a opção 'Google Meet com acesso aberto' na tela de configurações",
       /<MeetComAcessoAberto[\s\S]*?ligadoInicial=\{meetAbertoLigado\}[\s\S]*?podeMudar=\{podeMudarMeetAberto\}/,
     );
 
-    const pagina = fs.readFileSync(
+    const pagina = readFileSync(
       join(__dirname, "..", "..", "app", "app", "settings", "tenant", "agenda", "page.tsx"),
       "utf8",
     );
