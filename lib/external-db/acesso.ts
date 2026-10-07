@@ -12,19 +12,19 @@
  * passa por aqui, então a guarda é sempre reavaliada no momento de abrir o pool.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type pg from "pg";
 
 import { moduloLigado } from "@/lib/instalacao/modulos";
 
 import { carregarConexao, type MotivoSemConexao } from "./credenciais";
 import { obterPool } from "./conexao";
+import { criarDialetoPostgres, type Dialeto } from "./dialeto";
 import { validarHostDeBanco } from "./guardas";
 import type { ConexaoExterna } from "./types";
 
 export type MotivoAcesso = MotivoSemConexao | "host_bloqueado" | "dns_falhou" | "modulo_desligado";
 
 export type Acesso =
-  | { ok: true; conexao: ConexaoExterna; pool: pg.Pool }
+  | { ok: true; conexao: ConexaoExterna; dialeto: Dialeto }
   | { ok: false; motivo: MotivoAcesso };
 
 export async function abrirAcesso(
@@ -52,5 +52,12 @@ export async function abrirAcesso(
     };
   }
 
-  return { ok: true, conexao: leitura.conexao, pool: obterPool(leitura.conexao) };
+  return {
+    ok: true,
+    conexao: leitura.conexao,
+    dialeto: criarDialetoPostgres(obterPool(leitura.conexao), {
+      modo: leitura.conexao.sourceMode,
+      fontes: leitura.conexao.fontes,
+    }),
+  };
 }
