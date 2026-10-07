@@ -16,8 +16,8 @@ vi.mock("@/lib/audit", () => ({ audit: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/mcp/audit", () => ({ auditMcpToolCall: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/leads/activity-emitter", async (original) => ({
   ...(await original() as typeof ActivityEmitter),
-  emitLeadActivity: vi.fn(async (_sb, entrada) => {
-    (dublês.banco as ReturnType<typeof banco>).atividade(entrada.leadId);
+  emitLeadActivity: vi.fn(async () => {
+    (dublês.banco as ReturnType<typeof banco>).atividade();
     return { ok: true };
   }),
 }));
