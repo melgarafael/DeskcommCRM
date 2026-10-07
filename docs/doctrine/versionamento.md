@@ -7,7 +7,7 @@
 
 | Se você quer… | Vá para |
 |---|---|
-| decidir se sua mudança é patch, minor ou major | §A régua |
+| decidir se sua mudança é patch ou minor (major é do dono) | §A régua |
 | saber por que não é você quem escolhe o número | §Ninguém escolhe o número |
 | escrever o fragmento que o seu PR precisa trazer | §O fragmento |
 | saber qual versão está publicada agora | §A versão em vigor |
@@ -37,12 +37,20 @@ Quem lê o número é o operador, não o autor. A régua tem que ser escrita da 
 |---|---|
 | Não precisa fazer nada, e **nada que funcionava mudou de forma** | **patch** — `1.6.0` → `1.6.1` |
 | Não precisa fazer nada, mas **ganhou capacidade nova** | **minor** — `1.6.1` → `1.7.0` |
-| **Precisa agir**: editar `.env`, rodar comando, ou algo que existia sumiu / mudou de forma | **major** — `1.7.0` → `2.0.0` |
+| **Precisa agir**: editar `.env`, rodar comando, ou algo que existia sumiu / mudou de forma | **minor**, com o aviso `⚠️ Requer atenção` em destaque nas notas |
 
-A linha de baixo não é escolha nossa: ela já é lei em `CLAUDE.md`, na doutrina de packaging
-e no [ADR 0001](../adr/0001-packaging-e-distribuicao.md) — *bump que exige edição manual não
-entra; vira issue com plano de migração e vai para uma major*. Esta doutrina apenas estende
-a mesma lógica para baixo, para a faixa onde **todas** as releases do projeto realmente caem.
+**Major só existe por decisão explícita do dono.** Palavras dele, em 07/10: *"Major update é
+somente quando eu pedir. IA nem nenhum workflow decide isso! Mantenha seguindo com minor
+update."* Nenhum fragmento produz major — nem `exige_acao`. Quem corta pede com `--major`
+(`scripts/cortar-release.ts`) ou marcando o input `major` no "Run workflow" do `release.yml`,
+e só quando o dono pediu.
+
+O que protege o operador na linha de baixo é o **aviso**, não o número: o bloco
+`## Requer atenção` do fragmento vira `### ⚠️ Requer atenção` na seção, e é isso que a tela de
+atualização mostra antes do `update.sh`. Continua valendo a lei de `CLAUDE.md`, da doutrina de
+packaging e do [ADR 0001](../adr/0001-packaging-e-distribuicao.md) — *bump que exige edição
+manual não entra; vira issue com plano de migração* —, e o número dessa issue, quando sair,
+é decisão do dono.
 
 ### Por que "comportamento visível" NÃO é a régua
 
@@ -67,17 +75,19 @@ Antes de escolher, escreva a frase que o operador vai ler na tela de atualizaç�
 
 - *"Você não precisa fazer nada."* → **patch**
 - *"Você não precisa fazer nada; agora o sistema também faz X."* → **minor**
-- *"Antes de atualizar, você precisa…"* → **major**
+- *"Antes de atualizar, você precisa…"* → **minor**, com `exige_acao` e o aviso em destaque
 
-Se a terceira frase é verdadeira, o número é major **mesmo que a mudança seja pequena** — o
-custo que ele mede é o do operador, não o do autor.
+Se a terceira frase é verdadeira, o fragmento é `exige_acao` **mesmo que a mudança seja
+pequena** — o custo que ele mede é o do operador, não o do autor. O número continua minor;
+major só quando o dono pede.
 
 ---
 
 ## Ninguém escolhe o número
 
 O número é **calculado** a partir do que os PRs declararam, nunca digitado por quem está
-cortando a release. Isso não é preferência de estilo: é o que torna **impossível** a colisão
+cortando a release. A única entrada humana é o pedido de major, que é do dono e só sobe o
+primeiro dígito — o número em si continua calculado. Isso não é preferência de estilo: é o que torna **impossível** a colisão
 entre duas sessões de trabalho paralelas.
 
 Enquanto a escolha era humana, ela dependia de ler `git tag` e somar um — e duas sessões que
@@ -277,7 +287,7 @@ Três coisas fazem essa conferência à mão mentir, e as três mentem no sentid
 4. **Versão publicada é imutável.** Conserto é `X.Y.Z+1`; nunca republicar o mesmo número.
 5. **Todo PR que muda comportamento traz seu fragmento.** Sem ele, o texto que chega ao
    operador é reconstruído por quem não estava lá — ou não chega.
-6. **Bump não pode exigir edição manual de arquivo na VPS.** Se exigir, é major e vem com
-   plano de migração.
+6. **Bump não pode exigir edição manual de arquivo na VPS.** Se exigir, vem com plano de
+   migração e aviso `exige_acao`; major só se o dono pedir.
 7. **Toda versão publicada aparece na vitrine.** A LP lê o `CHANGELOG.md`; o corte confere
    que ela chegou, nos três idiomas, e reprova quando não chegou.
