@@ -271,9 +271,21 @@ const STATUS_PARA_GOOGLE: Record<StatusDoAgendamento, "confirmed" | "tentative" 
 /**
  * O que escrever no campo `location`, que é o que a pessoa lê no calendário.
  *
- * `google_meet` não aparece aqui enquanto o link não existe: ele só nasce
- * DEPOIS do insert (o Google o cria), e a segunda passada que o grava é da
- * camada de chamada.
+ * ─── Por que `google_meet` devolve o link (#2063) ──────────────────────────
+ *
+ * O link do Meet só existe DEPOIS de nascer (o Google o cria, ou a API do Meet
+ * o devolve), então a PRIMEIRA passada sai sem ele e sobra `detalhes`. A partir
+ * daí, porém, ele tem de viajar por ESTA projeção: `location` é o único campo
+ * que o `delta` compara, e é ele que um PATCH posterior leva.
+ *
+ * Antes, `google_meet` devolvia só `detalhes` enquanto `video_link` devolvia o
+ * link — três casos perdiam o endereço aberto por causa disso: o PATCH do local
+ * (sem diferença na projeção, não havia o que publicar), o PATCH que é só de
+ * reunião (o `return` antecipado de `sync-executor.ts`, que sai quando não há
+ * grupo nenhum) e o retry do POST depois que o espaço já está `ready` (o corpo
+ * volta a sair daqui, e saía sem o link). Injetar `location` no corpo lá dentro
+ * faria o link depender de qual caminho o executor tomou; aqui ele depende só
+ * do estado do agendamento, que é a mesma coisa para todos.
  */
 function localDoEvento(a: AgendamentoParaGoogle): string | undefined {
   const detalhes = a.location_details?.trim() || "";
@@ -287,7 +299,10 @@ function localDoEvento(a: AgendamentoParaGoogle): string | undefined {
     case "video_link":
       return a.meeting_url?.trim() || detalhes || undefined;
     case "google_meet":
-      return detalhes || undefined;
+      // Mesma régua do `video_link`: quando o link já existe ele É o local — é
+      // o que a pessoa vai clicar. Sem link ainda (primeira passada) sobra
+      // `detalhes`, como sempre.
+      return a.meeting_url?.trim() || detalhes || undefined;
   }
 }
 

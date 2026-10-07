@@ -32,6 +32,7 @@ import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { classificarErroDoGoogle, type OperacaoNoGoogle } from "./erros";
 import { deveCriarEspacoAberto } from "./oauth";
 import { meetAbertoLigado } from "@/lib/schemas/settings";
+import { logger } from "@/lib/logger";
 
 /** A operação do Google que corresponde ao método HTTP usado na publicação. */
 const OPERACAO_POR_METODO: Record<PendingWrite["method"], OperacaoNoGoogle> = {
@@ -216,6 +217,36 @@ export async function reconcileAppointment(
     const saveMeeting = async (observation: MeetingObservation, etag?: string | null) => {
       a = appointmentSnapshotSchema.parse(await call("meet", { result: { ...observation, etag } }));
       meetingObserved = true;
+    };
+    /**
+     * O espaço aberto do Meet (#2063): cria o espaço pela API do Meet e grava o
+     * link como `ready`. Devolve `false` em QUALQUER recusa — API desativada,
+     * cota, 403, escopo que o Google ignora.
+     *
+     * ⚠️ O link NÃO é injetado no corpo aqui. Ele entra pela projeção normal
+     * (`localDoEvento`, o mesmo ramo do `video_link`), que é a mesma para todo
+     * caminho do executor; injetar `location` neste ponto faria o link depender
+     * de qual caminho o executor tomou.
+     *
+     * ⚠️ A recusa NÃO segura a publicação: quem cai no Meet "confiável" do
+     * Calendar é o chamador — um link com "pedir para participar" é melhor que
+     * nenhum link, e um erro da API do Meet não pode deixar a reunião sem
+     * evento nenhum nessa passada.
+     */
+    const criarEspacoAberto = async (): Promise<boolean> => {
+      try {
+        const { meetingUri } = await api.criarEspacoAberto();
+        await saveMeeting({ state: "ready", received: true, url: meetingUri, error: null });
+        return true;
+      } catch (e) {
+        // Só o status: o corpo da recusa do Google não vai nem para o log.
+        logger.warn("[meet-aberto] a API do Meet recusou; o evento nasce com o Meet do Calendar", {
+          organization_id: org,
+          appointment_id: id,
+          meet_status: e instanceof GoogleHttpError ? e.status : null,
+        });
+        return false;
+      }
     };
     let local = localProjection(a);
     let base = a.google_base_projection;
@@ -546,36 +577,30 @@ export async function reconcileAppointment(
             url: null,
             error: a.meeting_allowed_types === null ? "unknown" : "unsupported",
           });
-          // Espaço aberto (#2063): quando a organização ligou a opção E a
-          // conexão tem o escopo, o Meet nasce via `spaces.create` (accessType
-          // OPEN) e o link é gravado como `ready` direto — sem pedir ao
-          // Calendar um `conferenceData.createRequest`, que nasceria "confiável".
-          // O link entra pelo campo `location` do evento (mesmo ramo do
-          // `video_link` — ver `localDoEvento`), não como conferenceData.
-        } else if (await decidirEspacoAberto(db, org, a.google_connection_id)) {
-          try {
-            const { meetingUri } = await api.criarEspacoAberto();
-            await saveMeeting({ state: "ready", received: true, url: meetingUri, error: null });
-            body = { ...(body ?? {}), location: meetingUri };
-          } catch (e) {
-            // Recusa da API do Meet (desativada, escopo ausente, 403, cota)
-            // vira falha — nunca o corpo do Google vai para a memória. Quem
-            // preferir o Meet "confiável" do Calendar como fallback é decisão
-            // de produto ainda não tomada; aqui falha por padrão.
-            await saveMeeting({ state: "failed", received: false, url: null, error: "google_failure" });
-            return;
-          }
         } else {
-          conferenceRequestId = a.meeting_request_id;
-          body = {
-            ...body,
-            conferenceData: {
-              createRequest: {
-                requestId: conferenceRequestId,
-                conferenceSolutionKey: { type: "hangoutsMeet" },
+          // #2063 — o espaço aberto SÓ quando a organização ligou a opção E a
+          // conexão tem o escopo opcional; o link do Meet nasce via
+          // `spaces.create` (accessType OPEN) e entra na projeção do evento
+          // pelo `localDoEvento`, como o `video_link` — nunca injetado no corpo.
+          //
+          // Qualquer recusa da API do Meet (desativada, escopo ausente, 403,
+          // cota) cai no Meet "confiável" do Calendar: um link com "pedir para
+          // participar" é melhor que nenhum link, e a recusa não segura a
+          // publicação do evento nesta passada.
+          const espacoAberto =
+            (await decidirEspacoAberto(db, org, a.google_connection_id)) && (await criarEspacoAberto());
+          if (!espacoAberto) {
+            conferenceRequestId = a.meeting_request_id;
+            body = {
+              ...body,
+              conferenceData: {
+                createRequest: {
+                  requestId: conferenceRequestId,
+                  conferenceSolutionKey: { type: "hangoutsMeet" },
+                },
               },
-            },
-          };
+            };
+          }
         }
       }
       // Se só faltava conferência e a capacidade foi recusada, nenhum PATCH vazio.
