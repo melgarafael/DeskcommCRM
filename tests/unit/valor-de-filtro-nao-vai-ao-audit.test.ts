@@ -22,21 +22,18 @@ const CONEXAO = {
   maxRows: 200,
   maxFilters: 20,
   maxResponseBytes: 30_000,
+  sourceMode: "all",
+  fontes: [],
 };
-vi.mock("@/lib/external-db/acesso", () => ({
-  abrirAcesso: async () => ({ ok: true, conexao: CONEXAO, pool: {} }),
-}));
-vi.mock("@/lib/external-db/introspeccao", () => ({
+const dialeto = {
   listarTabelas: async () => [],
   colunasDaTabela: async () => new Set(["id", "cpf"]),
+  lerTabela: async () => ({ colunas: ["id"], linhas: [{ id: "1" }], limite: 20, offset: 0 }),
+  catalogoCompleto: async () => [],
+};
+vi.mock("@/lib/external-db/acesso", () => ({
+  abrirAcesso: async () => ({ ok: true, conexao: CONEXAO, dialeto }),
 }));
-vi.mock("@/lib/external-db/leitura", async () => {
-  const real = (await vi.importActual("@/lib/external-db/leitura")) as Record<string, unknown>;
-  return {
-    ...real,
-    lerTabela: async () => ({ colunas: ["id"], linhas: [{ id: "1" }], limite: 20, offset: 0 }),
-  };
-});
 
 /** Só a lista de conexões ativas: `.from().select().eq().eq().order()`. */
 function supabaseFake() {

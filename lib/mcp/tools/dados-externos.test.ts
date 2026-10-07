@@ -1,22 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/external-db/acesso", () => ({ abrirAcesso: vi.fn() }));
-vi.mock("@/lib/external-db/introspeccao", () => ({
-  listarTabelas: vi.fn(),
-  colunasDaTabela: vi.fn(),
-}));
-vi.mock("@/lib/external-db/leitura", async () => {
-  const real = (await vi.importActual("@/lib/external-db/leitura")) as Record<string, unknown>;
-  return { ...real, lerTabela: vi.fn() };
-});
 
 import { abrirAcesso } from "@/lib/external-db/acesso";
-import { colunasDaTabela, listarTabelas } from "@/lib/external-db/introspeccao";
-import { LeituraInvalidaError, lerTabela, montarConsulta } from "@/lib/external-db/leitura";
+import type { Dialeto } from "@/lib/external-db/dialeto";
+import { FonteNaoLiberadaError } from "@/lib/external-db/dialeto";
+import { LeituraInvalidaError, montarConsulta } from "@/lib/external-db/leitura";
 import type { ConexaoExterna, TabelaExterna } from "@/lib/external-db/types";
 import type { McpContext } from "@/lib/mcp/types";
 
 import { crmDescribeExternalData, crmQueryExternalData, motivoDoVazioExterno } from "./dados-externos";
+
+/** O dialeto de mentira: as chamadas viram `vi.fn()` e cada teste decide o que respondem. */
+const dialeto = {
+  listarTabelas: vi.fn(),
+  colunasDaTabela: vi.fn(),
+  lerTabela: vi.fn(),
+  catalogoCompleto: vi.fn(),
+} satisfies { [K in keyof Dialeto]: ReturnType<typeof vi.fn> };
+const listarTabelas = dialeto.listarTabelas;
+const colunasDaTabela = dialeto.colunasDaTabela;
+const lerTabela = dialeto.lerTabela;
 
 const CONEXAO: ConexaoExterna = {
   id: "conn-1",
@@ -32,6 +36,8 @@ const CONEXAO: ConexaoExterna = {
   maxFilters: 20,
   maxResponseBytes: 30_000,
   chaveDoCliente: null,
+  sourceMode: "all",
+  fontes: [],
   versao: "2026-09-11T00:00:00.000Z",
 };
 
@@ -68,7 +74,7 @@ beforeEach(() => {
   vi.mocked(listarTabelas).mockReset();
   vi.mocked(colunasDaTabela).mockReset();
   vi.mocked(lerTabela).mockReset();
-  vi.mocked(abrirAcesso).mockResolvedValue({ ok: true, conexao: CONEXAO, pool: {} as never });
+  vi.mocked(abrirAcesso).mockResolvedValue({ ok: true, conexao: CONEXAO, dialeto: dialeto as unknown as Dialeto });
   vi.mocked(listarTabelas).mockResolvedValue([TABELA]);
   vi.mocked(colunasDaTabela).mockResolvedValue(new Set(["id", "status"]));
 });
@@ -199,7 +205,7 @@ describe("crm_query_external_data", () => {
     vi.mocked(abrirAcesso).mockResolvedValue({
       ok: true,
       conexao: { ...CONEXAO, maxRows: 150 },
-      pool: {} as never,
+      dialeto: dialeto as unknown as Dialeto,
     });
     vi.mocked(lerTabela).mockResolvedValue({ colunas: ["id"], linhas: [], limite: 150, offset: 0 });
 
@@ -209,15 +215,15 @@ describe("crm_query_external_data", () => {
     );
 
     const chamada = vi.mocked(lerTabela).mock.calls[0];
-    expect((chamada?.[1] as { limite: number } | undefined)?.limite).toBe(150);
-    expect(chamada?.[3]).toEqual({ limiteMax: 150 });
+    expect((chamada?.[0] as { limite: number } | undefined)?.limite).toBe(150);
+    expect(chamada?.[2]).toEqual({ limiteMax: 150 });
   });
 
   it("recusa quando os filtros passam do teto DA CONEXÃO", async () => {
     vi.mocked(abrirAcesso).mockResolvedValue({
       ok: true,
       conexao: { ...CONEXAO, maxFilters: 2 },
-      pool: {} as never,
+      dialeto: dialeto as unknown as Dialeto,
     });
     const r = (await crmQueryExternalData.handler(
       {
@@ -295,7 +301,7 @@ describe("crm_query_external_data", () => {
     expect(r.linhas).toEqual([]);
     expect(r.filtro_sem_resultado).toBeTruthy();
     expect(lerTabela).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(lerTabela).mock.calls[0]![1].filtros).toHaveLength(1);
+    expect(vi.mocked(lerTabela).mock.calls[0]![0].filtros).toHaveLength(1);
   });
 
   // Tabela criada por ORM com maiúscula ("Pedido"): o modelo escreve `pedido`.
@@ -308,7 +314,7 @@ describe("crm_query_external_data", () => {
     beforeEach(() => {
       vi.mocked(listarTabelas).mockResolvedValue([PEDIDO]);
       // Só o nome REAL existe para o catálogo: igualdade exata, como o SQL de verdade.
-      vi.mocked(colunasDaTabela).mockImplementation(async (_pool, _schema, tabela) =>
+      vi.mocked(colunasDaTabela).mockImplementation(async (_schema, tabela) =>
         tabela === "Pedido" ? new Set(["id", "status"]) : null,
       );
       vi.mocked(lerTabela).mockResolvedValue({ colunas: ["id"], linhas: [{ id: "1" }], limite: 20, offset: 0 });
@@ -321,7 +327,7 @@ describe("crm_query_external_data", () => {
       )) as Record<string, unknown>;
       expect(r.erro).toBeUndefined();
       expect(r.tabela).toBe("Pedido");
-      expect(vi.mocked(lerTabela).mock.calls[0]![1].tabela).toBe("Pedido");
+      expect(vi.mocked(lerTabela).mock.calls[0]![0].tabela).toBe("Pedido");
     });
 
     it("com schema informado e tabela em minúscula: cai no catálogo e usa o nome real", async () => {
@@ -331,7 +337,7 @@ describe("crm_query_external_data", () => {
       )) as Record<string, unknown>;
       expect(r.erro).toBeUndefined();
       expect(r.tabela).toBe("Pedido");
-      expect(vi.mocked(lerTabela).mock.calls[0]![1].tabela).toBe("Pedido");
+      expect(vi.mocked(lerTabela).mock.calls[0]![0].tabela).toBe("Pedido");
     });
 
     it("duas candidatas em schemas diferentes: continua preferindo `public` e devolve o nome da escolhida", async () => {
@@ -339,7 +345,7 @@ describe("crm_query_external_data", () => {
         { ...TABELA, schema: "outro", nome: "pedido" },
         { ...TABELA, schema: "public", nome: "Pedido" },
       ]);
-      vi.mocked(colunasDaTabela).mockImplementation(async (_pool, schema, tabela) =>
+      vi.mocked(colunasDaTabela).mockImplementation(async (schema, tabela) =>
         schema === "public" && tabela === "Pedido" ? new Set(["id"]) : schema === "outro" && tabela === "pedido" ? new Set(["id"]) : null,
       );
       const r = (await crmQueryExternalData.handler(
@@ -403,13 +409,13 @@ describe("crm_query_external_data durante a conversa: só as linhas do cliente",
     const { ctx, eq } = ctxDoTurno({ phone_number: "+5511999998888", email: null });
     const r = (await crmQueryExternalData.handler(PEDIDO, ctx)) as Record<string, unknown>;
     expect(r.erro).toBeUndefined();
-    expect(vi.mocked(lerTabela).mock.calls[0]![1].filtros).toEqual([]);
+    expect(vi.mocked(lerTabela).mock.calls[0]![0].filtros).toEqual([]);
     // Sem coluna, o contato nem é lido.
     expect(eq).not.toContainEqual(["id", "contato-1"]);
   });
 
   it("com a coluna configurada, o filtro do cliente entra junto com o do modelo", async () => {
-    vi.mocked(abrirAcesso).mockResolvedValue({ ok: true, conexao: COM_CHAVE, pool: {} as never });
+    vi.mocked(abrirAcesso).mockResolvedValue({ ok: true, conexao: COM_CHAVE, dialeto: dialeto as unknown as Dialeto });
     const { ctx, eq } = ctxDoTurno({ phone_number: "+5511999998888", email: null });
     // O modelo tenta o telefone de OUTRA pessoa: o filtro dele soma, não substitui.
     await crmQueryExternalData.handler(
@@ -422,7 +428,7 @@ describe("crm_query_external_data durante a conversa: só as linhas do cliente",
         ["id", "contato-1"],
       ]),
     );
-    const pedido = vi.mocked(lerTabela).mock.calls[0]![1];
+    const pedido = vi.mocked(lerTabela).mock.calls[0]![0];
     expect(pedido.filtros).toEqual([
       { coluna: "telefone", operador: "eq", valor: "5521988887777" },
       { coluna: "telefone", operador: "in", valor: ["+5511999998888", "5511999998888", "11999998888"] },
@@ -438,17 +444,17 @@ describe("crm_query_external_data durante a conversa: só as linhas do cliente",
     vi.mocked(abrirAcesso).mockResolvedValue({
       ok: true,
       conexao: { ...CONEXAO, chaveDoCliente: { coluna: "email", tipo: "email" } },
-      pool: {} as never,
+      dialeto: dialeto as unknown as Dialeto,
     });
     const { ctx } = ctxDoTurno({ phone_number: null, email: "Ana@Loja.com" });
     await crmQueryExternalData.handler(PEDIDO, ctx);
-    expect(vi.mocked(lerTabela).mock.calls[0]![1].filtros).toEqual([
+    expect(vi.mocked(lerTabela).mock.calls[0]![0].filtros).toEqual([
       { coluna: "email", operador: "in", valor: ["Ana@Loja.com", "ana@loja.com"] },
     ]);
   });
 
   it("tabela sem a coluna do cliente: recusa em vez de ler sem o filtro", async () => {
-    vi.mocked(abrirAcesso).mockResolvedValue({ ok: true, conexao: COM_CHAVE, pool: {} as never });
+    vi.mocked(abrirAcesso).mockResolvedValue({ ok: true, conexao: COM_CHAVE, dialeto: dialeto as unknown as Dialeto });
     vi.mocked(colunasDaTabela).mockResolvedValue(new Set(["id", "status"]));
     const { ctx } = ctxDoTurno({ phone_number: "+5511999998888", email: null });
     const r = (await crmQueryExternalData.handler(PEDIDO, ctx)) as Record<string, unknown>;
@@ -457,7 +463,7 @@ describe("crm_query_external_data durante a conversa: só as linhas do cliente",
   });
 
   it("contato sem o dado no cadastro: recusa", async () => {
-    vi.mocked(abrirAcesso).mockResolvedValue({ ok: true, conexao: COM_CHAVE, pool: {} as never });
+    vi.mocked(abrirAcesso).mockResolvedValue({ ok: true, conexao: COM_CHAVE, dialeto: dialeto as unknown as Dialeto });
     const { ctx } = ctxDoTurno({ phone_number: null, email: "a@b.com" });
     const r = (await crmQueryExternalData.handler(PEDIDO, ctx)) as Record<string, unknown>;
     expect(r.erro).toBe("cliente_sem_identificador");
@@ -465,8 +471,112 @@ describe("crm_query_external_data durante a conversa: só as linhas do cliente",
   });
 
   it("CONTROLE: fora da conversa, a consulta segue sem filtro do cliente, configurada ou não", async () => {
-    vi.mocked(abrirAcesso).mockResolvedValue({ ok: true, conexao: COM_CHAVE, pool: {} as never });
+    vi.mocked(abrirAcesso).mockResolvedValue({ ok: true, conexao: COM_CHAVE, dialeto: dialeto as unknown as Dialeto });
     await crmQueryExternalData.handler(PEDIDO, ctxFake());
-    expect(vi.mocked(lerTabela).mock.calls[0]![1].filtros).toEqual([]);
+    expect(vi.mocked(lerTabela).mock.calls[0]![0].filtros).toEqual([]);
+  });
+});
+
+describe("fontes liberadas", () => {
+  const SO_CLIENTES = { schema: "public", tabela: "assinaturas", colunas: null, descricao: "Quem assina" };
+
+  const LISTA_VAZIA: ConexaoExterna = { ...CONEXAO, sourceMode: "list", fontes: [] };
+  const COM_FONTE: ConexaoExterna = { ...CONEXAO, sourceMode: "list", fontes: [SO_CLIENTES] };
+
+  function com(conexao: ConexaoExterna) {
+    vi.mocked(abrirAcesso).mockResolvedValue({ ok: true, conexao, dialeto: dialeto as unknown as Dialeto });
+  }
+
+  it("modo list sem nenhuma fonte: as DUAS tools respondem sem_fontes_liberadas e nem tocam o banco", async () => {
+    com(LISTA_VAZIA);
+    const d = (await crmDescribeExternalData.handler({}, ctxFake())) as Record<string, unknown>;
+    const q = (await crmQueryExternalData.handler({ tabela: "assinaturas", limite: 20 }, ctxFake())) as Record<string, unknown>;
+    expect(d.erro).toBe("sem_fontes_liberadas");
+    expect(q.erro).toBe("sem_fontes_liberadas");
+    expect(String(d.mensagem)).toContain("Integração de dados");
+    expect(listarTabelas).not.toHaveBeenCalled();
+    expect(lerTabela).not.toHaveBeenCalled();
+    expect(motivoDoVazioExterno(d)).toBe("sem_fontes_liberadas");
+  });
+
+  it("describe em list devolve a descrição do administrador ao lado da tabela", async () => {
+    com(COM_FONTE);
+    vi.mocked(listarTabelas).mockResolvedValue([{ ...TABELA, descricao: "Quem assina" }]);
+    const r = (await crmDescribeExternalData.handler({}, ctxFake())) as { tabelas: Array<{ descricao?: string }> };
+    expect(r.tabelas[0]?.descricao).toBe("Quem assina");
+  });
+
+  it("describe respeita o teto de bytes da conexão e marca truncado", async () => {
+    com({ ...CONEXAO, maxResponseBytes: 4_096 });
+    const muitas: TabelaExterna[] = Array.from({ length: 40 }, (_, i) => ({
+      ...TABELA,
+      nome: `tabela_${i}`,
+      colunas: Array.from({ length: 30 }, (_, j) => ({ nome: `campo_${j}`, tipo: "text", nulavel: true, posicao: j + 1 })),
+    }));
+    vi.mocked(listarTabelas).mockResolvedValue(muitas);
+    const r = (await crmDescribeExternalData.handler({}, ctxFake())) as { tabelas: unknown[]; truncado?: boolean };
+    expect(r.truncado).toBe(true);
+    expect(r.tabelas.length).toBeGreaterThan(0);
+    expect(r.tabelas.length).toBeLessThan(40);
+    expect(JSON.stringify(r.tabelas).length).toBeLessThanOrEqual(4_096 + 4_000); // a primeira tabela sempre entra
+  });
+
+  it("query de tabela que não está na lista: fonte_nao_liberada (list) — e tabela_nao_encontrada continua em all", async () => {
+    com(COM_FONTE);
+    vi.mocked(colunasDaTabela).mockResolvedValue(null);
+    vi.mocked(listarTabelas).mockResolvedValue([]);
+    const emLista = (await crmQueryExternalData.handler({ tabela: "wp_users", limite: 20 }, ctxFake())) as Record<string, unknown>;
+    expect(emLista.erro).toBe("fonte_nao_liberada");
+    expect(String(emLista.mensagem)).toContain("crm_describe_external_data");
+    expect(lerTabela).not.toHaveBeenCalled();
+
+    com(CONEXAO);
+    const emTudo = (await crmQueryExternalData.handler({ tabela: "wp_users", limite: 20 }, ctxFake())) as Record<string, unknown>;
+    expect(emTudo.erro).toBe("tabela_nao_encontrada");
+  });
+
+  it("FonteNaoLiberadaError vinda do dialeto vira fonte_nao_liberada, não exceção", async () => {
+    com(COM_FONTE);
+    vi.mocked(lerTabela).mockRejectedValue(new FonteNaoLiberadaError("fonte_nao_liberada"));
+    const r = (await crmQueryExternalData.handler(
+      { connection_id: "conn-1", schema: "public", tabela: "assinaturas", limite: 20 },
+      ctxFake(),
+    )) as Record<string, unknown>;
+    expect(r.erro).toBe("fonte_nao_liberada");
+  });
+
+  it("a lista esconde a coluna do cliente (#2280): a consulta na conversa FECHA, nunca lê sem o filtro", async () => {
+    com({ ...COM_FONTE, chaveDoCliente: { coluna: "telefone", tipo: "phone" } });
+    // O dialeto só devolve as colunas liberadas: `telefone` ficou de fora da lista.
+    vi.mocked(colunasDaTabela).mockResolvedValue(new Set(["id", "status"]));
+    const chain = {
+      select: () => chain,
+      eq: () => chain,
+      order: async () => ({ data: [{ id: "conn-1", label: "Outro CRM" }], error: null }),
+      maybeSingle: async () => ({ data: { phone_number: "+5511999998888", email: null }, error: null }),
+    };
+    const ctx = { ...ctxFake(), contatoDoTurno: "contato-1", supabase: { from: () => chain } } as unknown as McpContext;
+    const r = (await crmQueryExternalData.handler(
+      { connection_id: "conn-1", schema: "public", tabela: "assinaturas", limite: 20 },
+      ctx,
+    )) as Record<string, unknown>;
+    expect(r.erro).toBe("tabela_sem_identificador_do_cliente");
+    expect(lerTabela).not.toHaveBeenCalled();
+  });
+
+  it("LeituraInvalidaError por coluna escondida continua virando pedido_invalido", async () => {
+    com(COM_FONTE);
+    vi.mocked(lerTabela).mockRejectedValue(new LeituraInvalidaError("coluna_inexistente:cpf"));
+    const r = (await crmQueryExternalData.handler(
+      {
+        connection_id: "conn-1",
+        schema: "public",
+        tabela: "assinaturas",
+        filtros: [{ coluna: "cpf", operador: "eq", valor: "1" }],
+        limite: 20,
+      },
+      ctxFake(),
+    )) as Record<string, unknown>;
+    expect(r.erro).toBe("pedido_invalido");
   });
 });
