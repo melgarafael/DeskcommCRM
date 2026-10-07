@@ -12,9 +12,13 @@ preservado sem nenhuma mudança.
 
 Requer, na conexão do Google da organização, que a API do Meet esteja
 habilitada e que o escopo opcional de criação de espaços tenha sido concedido
-(um reconectar quando a opção é ligada). Sem o escopo, a reunião continua
+(reconectar com a opção ligada já pede o escopo). Sem o escopo, a reunião continua
 nascendo o Meet "confiável" de sempre — a opção só passa a valer quando as duas
 condições se encontram.
+
+No self-host quem conecta o Google usa o app OAuth próprio, então habilitar a
+Meet API e colocar `meetings.space.created` na tela de consentimento do projeto
+está na própria tela da opção e na doc de setup do kit.
 
 Contribuição de @webtecnica (#2089).
 
