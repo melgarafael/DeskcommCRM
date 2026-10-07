@@ -26,6 +26,8 @@ import { responderSobreOCaso } from "@/lib/agent-engine/agent/conversa-do-caso";
 import { fail } from "@/lib/api/wrappers";
 import { ROLE_RANK, type AuthUser, type Role } from "@/lib/auth/types";
 import { LlmNotConfiguredError } from "@/lib/agent-engine/edge/llm/run-model-call";
+import type { ResultadoDaBusca } from "@/lib/ai/knowledge/busca";
+import type { Citation } from "@/lib/ai/citations/types";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
@@ -64,6 +66,7 @@ const CASE_ID = "33333333-3333-4333-8333-333333333333";
 const CONV_ID = "44444444-4444-4444-8444-444444444444";
 const CONTACT_ID = "55555555-5555-4555-8555-555555555555";
 const TURN_ID = "77777777-7777-4777-8777-777777777777";
+const AGENT_ID = "66666666-6666-4666-8666-666666666666";
 
 function session(effectiveRole: Role = "agent") {
   const user: AuthUser = {
@@ -410,5 +413,133 @@ describe("GET", () => {
     const corpo = (await r.json()) as { data: { mensagens: unknown[]; estado: Record<string, unknown> } };
     expect(corpo.data.mensagens).toHaveLength(1);
     expect(corpo.data.estado.caso_obsoleto).toBeNull();
+  });
+});
+
+describe("POST — F3 (#1869): o chat cita o acervo", () => {
+  // A rota injeta os resolvedores por `ctx.citacoes` (seam de teste, mesmo
+  // desenho do `deps` de `searchKnowledge`) — sem depender de mock de módulo.
+  const t = (deps: {
+    resolverAcervo?: (s: unknown, org: string, agent: string) => Promise<string[]>;
+    buscar?: (s: unknown, _p: unknown) => Promise<ResultadoDaBusca>;
+  }) => POST(pedido(CORPO_OK), { params: Promise.resolve({ id: CASE_ID }), citacoes: deps });
+  const casoComAgente = {
+    id: CASE_ID,
+    title: "Desconto",
+    kind: "outro",
+    summary: "20%",
+    blocker: "10%",
+    status: "awaiting_human",
+    opened_at: "2026-03-10T12:00:00Z",
+    agent_id: AGENT_ID,
+    conversation_id: CONV_ID,
+    contact_id: CONTACT_ID,
+    context_snapshot: null,
+  };
+
+  it("agente com base: a resposta devolve as citações do acervo", async () => {
+    sessaoComVisibilidade([CONV_ID]);
+    poolFalso({ caso: casoComAgente });
+    const resolverAcervo = vi.fn(async (_s: unknown, _org: string, agent: string) => {
+      expect(agent).toBe(AGENT_ID);
+      return ["src-1"];
+    });
+    const buscar = vi.fn(async () => ({
+      trechos: [
+        {
+          chunk_id: "c-1",
+          knowledge_source_id: "src-1",
+          source_name: "Manual de descontos",
+          content: "A política permite 20%.",
+          similarity: 0.81,
+        },
+      ],
+      melhorSimilaridade: 0.81,
+    }));
+
+    const r = await t({ resolverAcervo, buscar });
+    expect(r.status).toBe(200);
+    const corpo = (await r.json()) as { data: { citacoes: Citation[] } };
+    expect(resolverAcervo).toHaveBeenCalledTimes(1);
+    expect(buscar).toHaveBeenCalledTimes(1);
+    expect(corpo.data.citacoes).toHaveLength(1);
+    expect(corpo.data.citacoes[0]!).toMatchObject({
+      chunk_id: "c-1",
+      knowledge_source_id: "src-1",
+      source_anchor: "Manual de descontos",
+      score: 0.81,
+    });
+    expect(corpo.data.citacoes[0]!.snippet).toContain("20%");
+  });
+
+  it("agente SEM material (acervo vazio): sem citação e sem segunda busca", async () => {
+    sessaoComVisibilidade([CONV_ID]);
+    poolFalso({ caso: casoComAgente });
+    const resolverAcervo = vi.fn(async () => []);
+    const buscar = vi.fn(async () => ({ trechos: [], melhorSimilaridade: null }));
+
+    const r = await t({ resolverAcervo, buscar });
+    expect(r.status).toBe(200);
+    expect((await r.json()) as { data: { citacoes: unknown[] } }).toMatchObject({
+      data: { citacoes: [] },
+    });
+    expect(buscar).not.toHaveBeenCalled();
+  });
+
+  it("agente do caso ausente (agent_id null): nem resolve o acervo", async () => {
+    sessaoComVisibilidade([CONV_ID]);
+    poolFalso(); // caso default tem agent_id: null
+    const resolverAcervo = vi.fn(async () => []);
+    const buscar = vi.fn(async () => ({ trechos: [], melhorSimilaridade: null }));
+
+    const r = await t({ resolverAcervo, buscar });
+    expect(r.status).toBe(200);
+    expect(resolverAcervo).not.toHaveBeenCalled();
+    expect((await r.json()) as { data: { citacoes: unknown[] } }).toMatchObject({
+      data: { citacoes: [] },
+    });
+  });
+
+  it("a FALHA da busca do acervo não derruba o POST — resposta sai sem citação", async () => {
+    sessaoComVisibilidade([CONV_ID]);
+    poolFalso({ caso: casoComAgente });
+    const resolverAcervo = vi.fn(async () => ["src-1"]);
+    const buscar = vi.fn(async () => {
+      throw new Error("embedding sem chave");
+    });
+
+    const r = await t({ resolverAcervo, buscar });
+    expect(r.status).toBe(200); // nunca 500 — a resposta de IA já aconteceu
+    expect((await r.json()) as { data: { citacoes: unknown[] } }).toMatchObject({
+      data: { citacoes: [] },
+    });
+  });
+
+  it("LGPD mantida: contato ANONIMIZADO devolve 422 SEM consultar o acervo", async () => {
+    sessaoComVisibilidade([CONV_ID]);
+    poolFalso({ contato: { is_blocked: false, is_anonymized: true } });
+    const resolverAcervo = vi.fn(async () => []);
+    const buscar = vi.fn(async () => ({ trechos: [], melhorSimilaridade: null }));
+
+    const r = await t({ resolverAcervo, buscar });
+    expect(r.status).toBe(422);
+    expect(resolverAcervo).not.toHaveBeenCalled();
+    expect(buscar).not.toHaveBeenCalled();
+  });
+
+  it("idempotência mantida: replay (`turn_id` repetido) devolve o turno SEM buscar o acervo", async () => {
+    sessaoComVisibilidade([CONV_ID]);
+    poolFalso({ inserirLanca: { code: "23505" }, caso: casoComAgente });
+    const resolverAcervo = vi.fn(async () => []);
+    const buscar = vi.fn(async () => ({ trechos: [], melhorSimilaridade: null }));
+
+    const r = await t({ resolverAcervo, buscar });
+    expect(r.status).toBe(200);
+    const corpo = (await r.json()) as { data: Record<string, unknown> };
+    expect(corpo).toMatchObject({ data: { replay: true } });
+    // O formato que a guarda `?.` da tela protege: o replay volta SEM `citacoes`.
+    expect(corpo.data).not.toHaveProperty("citacoes");
+    expect(resolverAcervo).not.toHaveBeenCalled();
+    expect(buscar).not.toHaveBeenCalled();
   });
 });

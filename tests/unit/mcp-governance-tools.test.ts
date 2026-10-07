@@ -294,6 +294,104 @@ describe("crm_manage_tags", () => {
 });
 
 // ---------------------------------------------------------------------------
+// crm_manage_tags — o evento "ganhou tag", igual à tela
+// ---------------------------------------------------------------------------
+
+describe("crm_manage_tags emite tag_added como a tela", () => {
+  const CONTACT = "55555555-5555-4555-8555-555555555555";
+  const emitidos = (cap: Captures) =>
+    cap.rpc.filter((c) => c.fn === "emit_event").map((c) => c.args);
+  const linha = (table: string, row: Record<string, unknown>): Resolver => (q) =>
+    q.terminal === "maybeSingle" && q.table === table
+      ? { data: row, error: null }
+      : { data: null, error: null };
+
+  it("contact: tag nova emite contact.tag_added só com as novas, e a origem do atendimento", async () => {
+    const cap = makeCap({ rpcResult: { data: { observado: true }, error: null } });
+    await crmManageTags.handler(
+      { target_kind: "contact", target_id: CONTACT, add: ["VCA", "antiga"], remove: undefined },
+      makeCtx(linha("contacts", { id: CONTACT, tags: ["antiga"] }), cap),
+    );
+
+    const [evento, ...resto] = emitidos(cap);
+    expect(resto).toEqual([]);
+    expect(evento).toMatchObject({
+      p_event_type: "contact.tag_added",
+      p_entity_kind: "contact",
+      p_entity_id: CONTACT,
+      p_organization_id: ORG,
+      p_payload: {
+        added_tags: ["vca"],
+        tags: ["antiga", "vca"],
+        service_origin: { kind: "command", observed: { observado: true } },
+      },
+    });
+    expect(cap.rpc).toContainEqual({
+      fn: "fn_service_observe_command",
+      args: { p_org: ORG, p_contact: CONTACT },
+    });
+  });
+
+  it("lead: tag nova emite lead.tag_added com a origem do contato do card", async () => {
+    const cap = makeCap({ rpcResult: { data: { observado: true }, error: null } });
+    await crmManageTags.handler(
+      { target_kind: "lead", target_id: CONV, add: ["vca"], remove: undefined },
+      makeCtx(linha("crm_leads", { id: CONV, tags: [], contact_id: CONTACT }), cap),
+    );
+
+    expect(emitidos(cap)).toEqual([
+      expect.objectContaining({
+        p_event_type: "lead.tag_added",
+        p_entity_kind: "crm_lead",
+        p_entity_id: CONV,
+        p_payload: expect.objectContaining({ added_tags: ["vca"], tags: ["vca"] }),
+      }),
+    ]);
+    expect(cap.rpc).toContainEqual({
+      fn: "fn_service_observe_command",
+      args: { p_org: ORG, p_contact: CONTACT },
+    });
+  });
+
+  it("tag que o contato já tinha não emite", async () => {
+    const cap = makeCap();
+    await crmManageTags.handler(
+      { target_kind: "contact", target_id: CONTACT, add: ["vca"], remove: undefined },
+      makeCtx(linha("contacts", { id: CONTACT, tags: ["vca"] }), cap),
+    );
+    expect(emitidos(cap)).toEqual([]);
+  });
+
+  it("só remover não emite", async () => {
+    const cap = makeCap();
+    await crmManageTags.handler(
+      { target_kind: "contact", target_id: CONTACT, add: undefined, remove: ["vca"] },
+      makeCtx(linha("contacts", { id: CONTACT, tags: ["vca"] }), cap),
+    );
+    expect(emitidos(cap)).toEqual([]);
+  });
+
+  it("conversa não tem evento de tag: não emite", async () => {
+    const cap = makeCap();
+    await crmManageTags.handler(
+      { target_kind: "conversation", target_id: CONV, add: ["vca"], remove: undefined },
+      makeCtx(linha("conversations", { id: CONV, tags: [] }), cap),
+    );
+    expect(emitidos(cap)).toEqual([]);
+  });
+
+  it("falha ao emitir não desfaz a tag gravada", async () => {
+    const cap = makeCap({ rpcResult: { data: null, error: { message: "fora do ar" } } });
+    const res = (await crmManageTags.handler(
+      { target_kind: "contact", target_id: CONTACT, add: ["vca"], remove: undefined },
+      makeCtx(linha("contacts", { id: CONTACT, tags: [] }), cap),
+    )) as { tags: string[] };
+    expect(res.tags).toEqual(["vca"]);
+    expect(cap.updates).toContainEqual({ table: "contacts", values: { tags: ["vca"] } });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // crm_get_queue_status
 // ---------------------------------------------------------------------------
 

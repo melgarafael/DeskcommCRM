@@ -1,7 +1,5 @@
 "use server";
 
-import { escreveComoPlatformAdmin } from "@/lib/auth/types";
-
 /**
  * Server Action: mark the active org's Nuvemshop integration as disconnected.
  *
@@ -14,6 +12,7 @@ import { supportWriteError } from "@/lib/impersonate/support";
 import { revalidatePath } from "next/cache";
 import { audit } from "@/lib/audit";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type DisconnectResult =
@@ -28,7 +27,7 @@ export async function disconnectNuvemshop(): Promise<DisconnectResult> {
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) return { ok: false, error: "no_active_org" };
 
-  if (activeOrg.role !== "admin" && !escreveComoPlatformAdmin(user)) {
+  if (!podeAdministrarEmpresa(user, activeOrg)) {
     return { ok: false, error: "forbidden" };
   }
 

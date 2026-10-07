@@ -2,7 +2,10 @@
 # check-migration-triple.sh — a tripla de migration é indivisível (doutrina do repo).
 # Commit que ADICIONA arquivo em supabase/migrations/*.sql precisa, no MESMO commit:
 #   1. mudança em supabase/baseline.sql (apêndice idempotente)
-#   2. mudança em supabase/migrations/MANIFEST.md (linha na tabela Applied)
+#   2. descrição: uma linha `-- manifest: <o quê e por quê>` no próprio .sql
+#      (desde 02/10/2026; o MANIFEST.md parou de receber linha nova porque era
+#      o arquivo que TODO PR com migration tocava, e o GitHub ignora merge=union).
+#      Linha no MANIFEST.md staged ainda passa, para PR aberto antes da mudança.
 # E o NNNN do nome novo não pode existir em NENHUMA branch local — a cadeia
 # vendaval/F2-* tem migrations não mergeadas; colisão de sequência é bug real.
 # Bypass (correção orientada pelo dono): DESKCOMM_GOV_MIGRATION_EDIT=1.
@@ -48,16 +51,23 @@ staged=$(git diff --cached --name-only)
 
 if ! grep -qx 'supabase/baseline.sql' <<<"$staged"; then
   echo "pre-commit BLOQUEADO: migration nova sem apêndice em supabase/baseline.sql no MESMO commit." >&2
-  echo "A tripla é indivisível (CLAUDE.md §Migrations): migrations/*.sql + baseline.sql + MANIFEST.md." >&2
+  echo "A tripla é indivisível (CLAUDE.md §Migrations): migrations/*.sql + baseline.sql + linha \`-- manifest:\` no .sql." >&2
   echo "Sem o baseline, self-hosters nunca recebem a mudança. Correção orientada pelo dono: DESKCOMM_GOV_MIGRATION_EDIT=1." >&2
   exit 1
 fi
 
+# Sem `grep -q`: com `pipefail`, o -q fecha o cano cedo, o `git show` morre de
+# SIGPIPE e um .sql COM descrição seria lido como sem.
 if ! grep -qx 'supabase/migrations/MANIFEST.md' <<<"$staged"; then
-  echo "pre-commit BLOQUEADO: migration nova sem linha em supabase/migrations/MANIFEST.md no MESMO commit." >&2
-  echo "A tripla é indivisível (CLAUDE.md §Migrations): migrations/*.sql + baseline.sql + MANIFEST.md." >&2
-  echo "Correção orientada pelo dono: DESKCOMM_GOV_MIGRATION_EDIT=1." >&2
-  exit 1
+  while IFS= read -r p; do
+    [ -z "$p" ] && continue
+    if ! git show ":$p" 2>/dev/null | grep -E '^-- manifest:[[:space:]]*[^[:space:]]' >/dev/null; then
+      echo "pre-commit BLOQUEADO: '$p' sem descrição — ponha uma linha \`-- manifest: <o quê e por quê>\` no cabeçalho do .sql." >&2
+      echo "NÃO acrescente linha no supabase/migrations/MANIFEST.md: ele é histórico, e era o arquivo que fazia todo PR com migration conflitar." >&2
+      echo "Correção orientada pelo dono: DESKCOMM_GOV_MIGRATION_EDIT=1." >&2
+      exit 1
+    fi
+  done <<<"$new_migrations"
 fi
 
 # Um arquivo pode colidir no NNNN E no timestamp ao mesmo tempo — e colide, na

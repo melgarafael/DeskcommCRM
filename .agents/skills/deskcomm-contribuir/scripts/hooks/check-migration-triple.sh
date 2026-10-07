@@ -4,7 +4,10 @@
 # Commit que ADICIONA supabase/migrations/*.sql precisa, no MESMO commit:
 #   1. mudança em supabase/baseline.sql (apêndice idempotente — é o que o kit
 #      self-host aplica; migration que não chega lá não chega em quem instalou)
-#   2. linha em supabase/migrations/MANIFEST.md
+#   2. descrição: uma linha `-- manifest: <o quê e por quê>` no próprio .sql
+#      (o MANIFEST.md é histórico e não recebe linha nova — era o arquivo que
+#      fazia todo PR com migration conflitar; linha nele ainda passa, para PR
+#      aberto antes de 02/10/2026)
 # E o NNNN e o TIMESTAMP do nome novo não podem existir na POPULAÇÃO que os
 # mediu: a main do PRODUTO (o remoto que aponta para melgarafael/DeskcommCRM, com
 # qualquer nome) mais as outras refs do clone. Colisão é o defeito nº 1 da
@@ -105,9 +108,17 @@ if ! grep -qx 'supabase/baseline.sql' <<<"$staged"; then
   echo "  O kit self-host aplica SÓ o baseline: sem o apêndice, a mudança não chega em quem instalou numa VPS." >&2
   falhou=1
 fi
+# Sem `grep -q`: com `pipefail`, o -q fecha o cano cedo, o `git show` morre de
+# SIGPIPE e um .sql COM descrição seria lido como sem.
 if ! grep -qx 'supabase/migrations/MANIFEST.md' <<<"$staged"; then
-  echo "pre-commit BLOQUEADO: migration nova sem linha em supabase/migrations/MANIFEST.md no MESMO commit." >&2
-  falhou=1
+  while IFS= read -r p; do
+    [ -z "$p" ] && continue
+    if ! git show ":$p" 2>/dev/null | grep -E '^-- manifest:[[:space:]]*[^[:space:]]' >/dev/null; then
+      echo "pre-commit BLOQUEADO: '$p' sem descrição — ponha uma linha \`-- manifest: <o quê e por quê>\` no cabeçalho do .sql." >&2
+      echo "  NÃO acrescente linha no supabase/migrations/MANIFEST.md: ele é histórico, e era o arquivo que fazia todo PR com migration conflitar." >&2
+      falhou=1
+    fi
+  done <<<"$novas"
 fi
 
 if declare -F pop_refs_de_outrem >/dev/null 2>&1; then

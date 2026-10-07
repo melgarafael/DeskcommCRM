@@ -53,6 +53,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createHash } from "node:crypto";
 
+import { canalDesativado } from "@/lib/channels/desativado";
 import { phoneLookupVariants } from "@/lib/channels/phone-variants";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import type { Idioma } from "@/lib/i18n/idiomas";
@@ -161,6 +162,8 @@ export interface CanalDoAviso {
   archived_at: string | null;
   /** CAPACIDADE, nunca o nome do provedor — quem resolve é `lib/channels/`. */
   aceitaMensagemLivre: boolean;
+  /** Pausado pelo operador (`metadata.disabled`). Ausente = ligado, a leitura estrita de `canalDesativado`. */
+  desativado?: boolean;
 }
 
 export interface PatchDaEntrega {
@@ -419,6 +422,10 @@ export async function aplicaAvisoDeCaso(
   const canal = await deps.db.carregaCanal(orgId, channelSessionId);
   if (!canal || canal.archived_at) {
     return await condena(deps, orgId, caso, entrega, "canal_arquivado", null, agora);
+  }
+  // Pausado não é `canal_desconectado`: esperar não resolve, só o operador retomando.
+  if (canal.desativado) {
+    return await condena(deps, orgId, caso, entrega, "canal_desativado", null, agora);
   }
   if (!canal.aceitaMensagemLivre) {
     return await condena(deps, orgId, caso, entrega, "canal_nao_aceita_aviso_livre", null, agora);
@@ -771,13 +778,19 @@ export function createSupabaseAvisoDb(admin: SupabaseClient): AvisoDb {
     async carregaCanal(orgId, channelSessionId) {
       const { data, error } = await admin
         .from("channel_sessions")
-        .select("id, status, archived_at, provider")
+        .select("id, status, archived_at, provider, metadata")
         .eq("organization_id", orgId)
         .eq("id", channelSessionId)
         .maybeSingle();
       if (error) throw new Error(error.message);
       if (!data) return null;
-      const linha = data as { id: string; status: string; archived_at: string | null; provider: string | null };
+      const linha = data as {
+        id: string;
+        status: string;
+        archived_at: string | null;
+        provider: string | null;
+        metadata: unknown;
+      };
       // A capacidade é resolvida em `lib/channels/` — este módulo nunca conhece
       // provedor. O import é TARDIO pelo mesmo motivo que `urlPublica` chega
       // pronta: o topo deste arquivo tem de carregar sem ambiente.
@@ -795,6 +808,7 @@ export function createSupabaseAvisoDb(admin: SupabaseClient): AvisoDb {
         status: linha.status,
         archived_at: linha.archived_at,
         aceitaMensagemLivre: aceita,
+        desativado: canalDesativado(linha.metadata),
       };
     },
 

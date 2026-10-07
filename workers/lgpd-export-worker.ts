@@ -57,6 +57,7 @@ import {
 } from "@/lib/lgpd/email-delivery";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { marcaDaSaida } from "@/lib/branding/saida";
+import { PAIS_PADRAO, perfilDaOrganizacao } from "@/lib/legal/perfil-do-pais";
 
 const MAX_ATTEMPTS = 3;
 const BUCKET = "lgpd-exports";
@@ -159,8 +160,11 @@ export async function processLgpdExport(event: EventRow): Promise<HandlerResult>
     .eq("id", requestId);
 
   try {
-    // 3. Collect data.
+    // 3. Collect data. O país é lido UMA vez e vale para o PDF e para o e-mail:
+    // duas leituras, se só uma falhasse, dariam ao titular duas leis (doc 88).
+    const perfil = await perfilDaOrganizacao(admin, orgId);
     const data = await collectExportData({
+      pais: perfil.codigo,
       // O piso do encarregado é resolvido AQUI e injetado: o coletor de LGPD
       // não consulta configuração, para a coleta sem identificador continuar
       // visitando só `organizations` (tests/invariants/agenda-meet-export).
@@ -214,6 +218,23 @@ export async function processLgpdExport(event: EventRow): Promise<HandlerResult>
       .createSignedUrl(pdfPath, expiresInSec);
     if (signedErr || !signed) {
       throw new Error(`signed_url_failed: ${signedErr?.message ?? "no_url"}`);
+    }
+
+    // A cópia do art. 15.º, n.º 3 (issue #2340): o `data.json` já subia no
+    // mesmo diretório, mas só o PDF tinha ligação — o titular recebia um
+    // relatório que prometia uma cópia inacessível. Mesma validade do PDF.
+    // SÓ fora do Brasil: o e-mail brasileiro não imprime a ligação (byte a byte
+    // do doc 88), e pedi-la ali só acrescentaria ao export brasileiro um modo
+    // de falha novo — uma assinatura que falha derrubaria um envio que não a usa.
+    let signedUrlDados: string | undefined;
+    if (perfil.codigo !== PAIS_PADRAO) {
+      const { data: signedDados, error: signedDadosErr } = await admin.storage
+        .from(BUCKET)
+        .createSignedUrl(jsonPath, expiresInSec);
+      if (signedDadosErr || !signedDados) {
+        throw new Error(`signed_url_json_failed: ${signedDadosErr?.message ?? "no_url"}`);
+      }
+      signedUrlDados = signedDados.signedUrl;
     }
 
     // 8. Resolve delivery email.
@@ -274,8 +295,13 @@ export async function processLgpdExport(event: EventRow): Promise<HandlerResult>
         to: deliveryEmail,
         requestId,
         signedUrl: signed.signedUrl,
+        signedUrlDados,
         expiresAt,
         marca: await marcaDaSaida(orgId),
+        // O país decide a lei e o idioma do e-mail — o MESMO perfil que o coletor
+        // usou; o fuso vem do coletor, que só o põe no payload fora do Brasil.
+        perfil,
+        fuso: data.fuso,
       });
       messageId = sent.messageId;
     } catch (err) {

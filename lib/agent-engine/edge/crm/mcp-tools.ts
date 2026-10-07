@@ -56,8 +56,12 @@ export interface McpTurnTools {
 
 export async function buildMcpTurnTools(
   cfg: CrmEdgeConfig,
-  /** `contactId`: o contato do turno — ver `contatoDoTurno` em `lib/ai/runtime/tools.ts`. */
-  ids: { organizationId: string; jobId: string; contactId?: string },
+  /**
+   * `contactId`: o contato do turno — ver `contatoDoTurno` em `lib/ai/runtime/tools.ts`.
+   * Obrigatório de propósito: `null` só onde não há cliente (o ensaio do agente);
+   * omiti-lo num turno de conversa abriria as leituras escopadas por ele.
+   */
+  ids: { organizationId: string; jobId: string; contactId: string | null },
   agentConfig: PublishedAgentConfig,
   log: Logger,
   options?: { readOnly: boolean },

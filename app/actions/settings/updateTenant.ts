@@ -8,7 +8,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
 import { tenantSchema, type TenantInput } from "@/lib/schemas/settings";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK, escreveComoPlatformAdmin } from "@/lib/auth/types";
+import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
 import { paisesOferecidos } from "@/lib/legal/perfil-do-pais";
 
 export type UpdateTenantResult =
@@ -26,7 +26,7 @@ export async function updateTenant(input: TenantInput): Promise<UpdateTenantResu
   if (supportWriteError(authUser.support)) return { ok: false, error: "forbidden" };
   const activeOrg = await resolveActiveOrg(authUser);
   if (!activeOrg) return { ok: false, error: "forbidden_tenant" };
-  if (!escreveComoPlatformAdmin(authUser) && ROLE_RANK[activeOrg.role] < ROLE_RANK.admin) {
+  if (!podeAdministrarEmpresa(authUser, activeOrg)) {
     return { ok: false, error: "forbidden_role" };
   }
 
@@ -76,6 +76,7 @@ export async function updateTenant(input: TenantInput): Promise<UpdateTenantResu
       locale: parsed.data.locale,
       currency: parsed.data.currency,
       media_retention_days: parsed.data.media_retention_days,
+      media_retention_enforced: parsed.data.media_retention_enforced,
       dpo_email: parsed.data.dpo_email ?? null,
       privacy_policy_url: parsed.data.privacy_policy_url ?? null,
     })

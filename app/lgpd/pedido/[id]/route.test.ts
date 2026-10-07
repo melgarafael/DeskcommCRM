@@ -32,9 +32,8 @@ describe("/lgpd/pedido/<id>: a porta do e-mail decide no clique", () => {
     await expect(abrir("..%2Fadmin")).rejects.toThrow(/^NEXT_REDIRECT:\/app$/);
   });
 
-  // O hub é público e o `requireAuth` dele manda ao /login SEM `next`. Esta porta
-  // não pode ser: é o proxy que, sem sessão, grava `next=/lgpd/pedido/<id>` e
-  // traz o DPO de volta ao pedido depois do login.
+  // Esta porta não pode ser pública: é o proxy que, sem sessão, grava
+  // `next=/lgpd/pedido/<id>` e traz o DPO de volta ao pedido depois do login.
   it("não é rota pública: o login preserva o pedido", () => {
     expect(isPublicPath(`/lgpd/pedido/${ID}`)).toBe(false);
   });

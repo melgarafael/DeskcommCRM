@@ -79,11 +79,14 @@ describe("audit de duplicação diz de qual versão veio a cópia", () => {
       /sourceVersionId:\s*string \| null/,
     );
     // `ok: true` com VÍRGULA = os returns; o `ok: true;` do tipo usa ponto-e-vírgula.
-    // (Contar sem distinguir dá 3 e não 2 — a declaração do tipo entra na conta.)
+    // A guarda é "TODO return de sucesso preenche o campo", não QUANTOS returns
+    // existem: o #2296 uniu os dois num só e a cerca, que contava 2, reprovou
+    // um código que cumpria a intenção.
     const retornos = [...src.matchAll(/ok:\s*true,/g)];
-    expect(retornos.length, "esperado 2 caminhos de sucesso no helper").toBe(2);
-    // Ambos precisam preencher o campo — o caminho sem versão com `null` explícito.
-    // 1 no tipo + 1 por return = 3.
-    expect((src.match(/sourceVersionId:/g) ?? []).length).toBeGreaterThanOrEqual(3);
+    expect(retornos.length, "controle de vacuidade: nenhum return de sucesso achado").toBeGreaterThanOrEqual(1);
+    for (const r of retornos) {
+      const corpo = src.slice(r.index, src.indexOf("}", r.index));
+      expect(corpo, "return de sucesso sem sourceVersionId").toMatch(/sourceVersionId:/);
+    }
   });
 });

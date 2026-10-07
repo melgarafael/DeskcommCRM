@@ -51,7 +51,7 @@ O `pnpm lint` só avisa (`no-console: warn`), então passa verde; a triagem repr
 ### Migration
 A tripla é indivisível: arquivo em `supabase/migrations/`, apêndice **idempotente** no
 `supabase/baseline.sql` (`add column if not exists`, `create ... if not exists`,
-`create or replace function`, `drop policy if exists` + `create policy`), linha no `MANIFEST.md`.
+`create or replace function`, `drop policy if exists` + `create policy`), linha `-- manifest: <o quê e por quê>` no cabeçalho do `.sql` (não no `MANIFEST.md`).
 O kit self-host aplica **só o baseline** — migration sem apêndice não existe para quem instalou.
 
 - `NNNN` e timestamp únicos contra a POPULAÇÃO da pergunta: a main do PRODUTO (o remoto que

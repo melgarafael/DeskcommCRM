@@ -11,7 +11,7 @@ const channel = { id: key, organization_id: org, waha_session_name: "owned", sta
  * `STARTING` antes do `returning`, então o status que chega ao código de
  * conexão NUNCA é o status real do canal. `phone_number`, sim.
  */
-function fixture(linha: Partial<typeof channel> & { phone_number?: string | null } = {}) {
+function fixture(linha: Partial<typeof channel> & { phone_number?: string | null; metadata?: Record<string, unknown> } = {}) {
   const finishes: Record<string, unknown>[] = [];
   const noBanco = { ...channel, phone_number: null as string | null, ...linha };
   const reservado = { ...noBanco, status: "STARTING" };
@@ -221,5 +221,18 @@ describe("I1: conectar/reativar ressincroniza o filtro de grupos", () => {
     expect(filtros).toContainEqual(["organization_id", org]);
     expect(f.transport.startExistingSession.mock.invocationCallOrder[0])
       .toBeLessThan(definirRecebimentoDeGrupos.mock.invocationCallOrder[0]!);
+  });
+});
+
+
+describe("a opção por conexão do acervo (#999)", () => {
+  it("pede o store na criação SÓ quando o canal tem a opção ligada", async () => {
+    const ligado = fixture({ metadata: { guardar_historico: true } });
+    await connectWahaChannel(ligado.db, ligado.db, ligado.transport, ligado.input);
+    expect(ligado.transport.createSession).toHaveBeenCalledWith("owned", { guardarHistorico: true });
+
+    const desligado = fixture();
+    await connectWahaChannel(desligado.db, desligado.db, desligado.transport, desligado.input);
+    expect(desligado.transport.createSession).toHaveBeenCalledWith("owned");
   });
 });

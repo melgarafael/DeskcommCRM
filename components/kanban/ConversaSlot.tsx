@@ -6,6 +6,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { ChatCircle } from "@/lib/ui/icons";
 import type { Lead } from "@/lib/types/leads";
 import { cn } from "@/lib/utils";
+import { AbrirConversaDoLead, temAlvoParaAbrir } from "./AbrirConversaDoLead";
 
 /**
  * A última mensagem do negócio, com atalho para o inbox.
@@ -29,10 +30,33 @@ import { cn } from "@/lib/utils";
  * Lead criado à mão ou por webhook não tem contato; contato pode não ter
  * conversa. Nesses casos o slot não aparece — e NÃO aparece um "sem mensagens"
  * cinza, que ocuparia a mesma linha em metade dos cards para não dizer nada.
+ *
+ * ─── Sem conversa, mas com contato: a AÇÃO no lugar da prévia ────────────────
+ *
+ * O lead do webhook chega com telefone e sem thread (issue #1993). Para ele a
+ * linha não some: vira o botão "Abrir conversa", que usa a rota já existente e
+ * leva para a Inbox. `conversa === undefined` continua mudo — é "ainda não
+ * carregou", e prometer ação sobre um dado que pode existir seria mentir.
  */
-export function ConversaSlot({ conversa }: { conversa: Lead["conversa"] }) {
+export function ConversaSlot({
+  conversa,
+  contactId,
+  phone,
+}: {
+  conversa: Lead["conversa"];
+  contactId?: string | null;
+  phone?: string | null;
+}) {
   const t = useT();
-  if (!conversa) return null;
+  if (conversa === undefined) return null;
+  if (conversa === null) {
+    // A guarda de alvo fica AQUI, antes de montar: montar o botão sem contato
+    // nem telefone desenharia (e custaria router + query client) uma linha que
+    // não tem o que dizer.
+    return temAlvoParaAbrir(contactId, phone) ? (
+      <AbrirConversaDoLead contactId={contactId} phone={phone} />
+    ) : null;
+  }
 
   const preview = conversa.preview?.trim();
   const temNaoLidas = conversa.unread > 0;

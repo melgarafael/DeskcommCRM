@@ -149,6 +149,7 @@ describe("as telas de Configurações oferecem o que o registro deixa aparecer",
             locale: "pt-BR",
             currency: "BRL",
             media_retention_days: 365,
+            media_retention_enforced: true,
             dpo_email: null,
             privacy_policy_url: null,
           }}

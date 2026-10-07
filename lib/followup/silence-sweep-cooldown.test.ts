@@ -29,6 +29,10 @@ function fakeDb(opts: {
     ],
     loadSilentContactIds: async () => ["contato-a", "contato-b"],
     loadContatosComRetornoVivo: async () => new Set<string>(),
+    // Pausa de reentrada e pessoa no comando: neutros aqui.
+    loadEncerramentosDoFluxo: async () => new Map(),
+    loadContatosComPessoaNoComando: async () => new Set<string>(),
+    loadContatosComInscricaoViva: async () => new Set<string>(),
     loadTriggerNode: async () => ({ id: "t-1", pedeAgente: false }),
     loadContactIdsEmCooldown: async () => opts.contatosEmCooldown,
     insertEnrollment: opts.insert ?? (async () => ({ inserted: true })),

@@ -23,7 +23,7 @@ import { audit } from "@/lib/audit";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { mensagemDoEscopo, validarEscopoDaVersao } from "@/lib/ai/agents/escopo";
+import { codigoDoEscopo, mensagemDoEscopo, validarEscopoDaVersao } from "@/lib/ai/agents/escopo";
 import {
   agentMcpCreateSchema,
   agentMcpPatchSchema,
@@ -167,11 +167,14 @@ export async function saveAgentDraftAction(
   // material apagado (ou de outra organização) produz uma configuração muda: a
   // tela mostra a marcação, o assistente não acha nada, e ninguém vê erro.
   const escopo = await validarEscopoDaVersao(admin, activeOrg.orgId, {
+    provider: v.provider,
     pipeline_ids: v.pipeline_ids,
     knowledge_source_ids: v.knowledge_source_ids,
+    credential_id: v.credential_id,
+    channel_session_id: v.channel_session_id,
   });
   if (!escopo.ok) {
-    return { ok: false, error: "validation_failed", message: mensagemDoEscopo(escopo) };
+    return { ok: false, error: codigoDoEscopo(escopo), message: mensagemDoEscopo(escopo) };
   }
 
   // Em QUAL rascunho esta escrita cai — pela MESMA régua que a tela usa para
@@ -511,6 +514,15 @@ export async function revertToVersionAction(
     return { ok: false, error: "tool_id_invalid", details: { invalid } };
   }
 
+  // Voltar a uma versão de quando a assinatura estava ligada regravaria o
+  // provedor que a instalação desligou — a mesma régua do salvar.
+  const escopo = await validarEscopoDaVersao(admin, activeOrg.orgId, {
+    provider: (source as { provider: string }).provider,
+  });
+  if (!escopo.ok) {
+    return { ok: false, error: codigoDoEscopo(escopo), message: mensagemDoEscopo(escopo) };
+  }
+
   // Cria draft idêntica com retry em 23505 (race no version_number).
   type SourceRow = {
     system_prompt: string;
@@ -539,6 +551,7 @@ export async function revertToVersionAction(
     split_messages: boolean;
     split_max_chars: number;
     inbound_debounce_ms: number | null;
+    followup: unknown;
   };
   const src = source as unknown as SourceRow;
 
@@ -589,6 +602,7 @@ export async function revertToVersionAction(
         split_messages: src.split_messages,
         split_max_chars: src.split_max_chars,
         inbound_debounce_ms: src.inbound_debounce_ms ?? null,
+        followup: src.followup,
         status: "draft",
         created_by: authUser.id,
       })
@@ -697,6 +711,12 @@ export async function createMcpAgentAction(
   const requestId = randomUUID();
   const admin = createAdminClient();
 
+  // Antes da primeira escrita: recusado aqui, não sobra agente órfão.
+  const escopo = await validarEscopoDaVersao(admin, activeOrg.orgId, parsed.data.version);
+  if (!escopo.ok) {
+    return { ok: false, error: codigoDoEscopo(escopo), message: mensagemDoEscopo(escopo) };
+  }
+
   // Cria agent kind='mcp_agent' + v1 draft. Compensa rollback se versão falhar.
   const { data: agentRow, error: agentErr } = await admin
     .from("ai_agents")
@@ -743,6 +763,7 @@ export async function createMcpAgentAction(
     split_messages: v.split_messages,
     split_max_chars: v.split_max_chars,
     inbound_debounce_ms: v.inbound_debounce_ms ?? null,
+    followup: v.followup,
     // O corpo ACEITAVA estes cinco e o INSERT os descartava: criar o assistente
     // pela tela com papel Operador, escopo de funil ou material marcado produzia
     // uma versão com tudo no default do banco — desligado e vazio.

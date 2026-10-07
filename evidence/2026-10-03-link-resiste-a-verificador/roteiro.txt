@@ -1,0 +1,4 @@
+verificador: GET seguiu até /login/continuar (HTTP 200)
+pessoa: abriu e caiu em /login/continuar
+pessoa: apertou Continuar e caiu em /login/reset
+RESULTADO: OK — o token sobreviveu ao verificador

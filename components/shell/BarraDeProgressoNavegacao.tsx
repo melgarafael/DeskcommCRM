@@ -84,8 +84,7 @@ export function BarraDeProgressoNavegacao() {
       if (urlDestino.origin !== window.location.origin) return;
 
       const mesmoDestino =
-        urlDestino.pathname === rotaAtual.current &&
-        urlDestino.search === window.location.search;
+        urlDestino.pathname === rotaAtual.current && urlDestino.search === window.location.search;
 
       if (!mesmoDestino) {
         setVisivel(true);
@@ -108,10 +107,27 @@ export function BarraDeProgressoNavegacao() {
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none fixed inset-x-0 top-0 z-[9999] h-[2px] bg-transparent"
+      /*
+        `top-[env(safe-area-inset-top,0px)]` e não `top-0`.
+
+        Desde que `app/layout.tsx` declarou `viewportFit: "cover"`, o documento
+        se estende POR BAIXO da barra de status no iOS em tela cheia. Uma faixa
+        de 2px em `top: 0` nasce inteira dentro dessa área: ela desenha, mas
+        ninguém vê — e o único sinal de que a navegação está em curso desaparece
+        justamente no aparelho em que a espera é mais longa. Fora do iOS em tela
+        cheia o termo vale `0px` e nada muda.
+      */
+      className="pointer-events-none fixed inset-x-0 top-[env(safe-area-inset-top,0px)] z-[9999] h-[2px] bg-transparent"
     >
       <div
-        className="h-full bg-primary shadow-[0_0_8px_var(--color-primary)] transition-all duration-200 ease-out"
+        /*
+          `transition-[width,opacity]` em vez de `transition-all`: as duas
+          propriedades que o estilo inline abaixo mexe são exatamente estas.
+          `all` é anti-pattern declarado em
+          `docs/design-system/07-motion-language.md`. E `duration-base` em vez
+          do `duration-200` literal — mesmo número, vindo de `--duration-base`.
+        */
+        className="h-full bg-primary shadow-[0_0_8px_var(--color-primary)] transition-[width,opacity] duration-base ease-out"
         style={{
           width: `${progresso}%`,
           opacity: progresso === 100 ? 0 : 1,

@@ -65,7 +65,18 @@ function produto(over: Partial<Produto> = {}): Produto {
 const TEXTOS = { titulo: "Produtos", subtitulo: "", vazio: "", vazioDica: "" };
 
 function montar(itens: Produto[]) {
-  render(<ProdutosClient inicial={itens} urlsDasFotos={{}} podeEditar={false} textos={TEXTOS} />);
+  render(
+    <ProdutosClient
+      inicial={itens}
+      total={itens.length}
+      pagina={1}
+      porPagina={50}
+      buscaInicial=""
+      urlsDasFotos={{}}
+      podeEditar={false}
+      textos={TEXTOS}
+    />,
+  );
 }
 
 /** O `Intl` emite NBSP (U+00A0) ou narrow NBSP (U+202F) entre símbolo e número. */

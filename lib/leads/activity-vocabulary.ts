@@ -161,8 +161,8 @@ export type ActivityType =
   /**
    * O negócio nasceu da TROCA DE FUNIL (`POST /api/v1/leads/[id]/clone`).
    *
-   * ⚠️ Não é `lead_created`: aquele rótulo diz "Entrou pelo WhatsApp", e este
-   * negócio não entrou por canal nenhum — ele veio de outro funil, e é isso que
+   * ⚠️ Não é `lead_created`: aquele diz "Entrou no funil" pela primeira
+   * mensagem de um canal, e este negócio não entrou por canal nenhum — ele veio de outro funil, e é isso que
    * quem abre o card no destino precisa ler. O outro lado da troca é a
    * `demand_closed` da origem, com a razão "Levado para o funil X".
    */
@@ -180,10 +180,20 @@ export type ActivityType =
    * retorno veio" seria indistinguível de "o retorno está a caminho" — e é
    * justamente no silêncio que a demanda morre. O PORQUÊ vai no `reason`.
    */
-  | "proposal_followup_skipped";
+  | "proposal_followup_skipped"
+  /**
+   * O CONTATO VIROU PESSOAL / DEIXOU DE SER PESSOAL (spec 21).
+   *
+   * Tipos próprios, e não `note`, porque quem decide o que some da vista é um
+   * FILTRO que só enxerga `new.type`: sem tipo próprio, marcar não teria como
+   * pendurar a prova na timeline do negócio — e sem negócio aberto não há linha
+   * possível (`lead_id` é NOT NULL), só auditoria (D6).
+   */
+  | "contact_marked_personal"
+  | "contact_unmarked_personal";
 
 export const ACTIVITY_LABELS: Record<ActivityType, string> = {
-  lead_created: "Entrou pelo WhatsApp",
+  lead_created: "Entrou no funil",
   stage_changed: "Mudou de estágio",
   agent_move_corrected: "Correção do que o assistente tinha feito",
   note: "Anotação",
@@ -288,6 +298,10 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   proposal_expired: "Proposta venceu sem decisão",
   proposal_value_changed: "Valor do negócio atualizado pela proposta",
   proposal_followup_skipped: "Follow-up automático não agendado",
+  // Rótulos com o veredito, nunca o mecanismo: quem lê a timeline quer saber
+  // que o contato saiu da operação (ou voltou), não o nome da coluna.
+  contact_marked_personal: "Marcado como pessoal",
+  contact_unmarked_personal: "Desmarcado como pessoal",
 };
 
 /** Quando o tipo é legado/desconhecido, a linha ainda é honesta — sem jargão. */

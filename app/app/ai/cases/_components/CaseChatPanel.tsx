@@ -39,6 +39,7 @@ import { format, type Locale } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { CitationButton } from "@/components/ai/CitationButton";
 import { useCaseChat, useAskCase, type CaseChatMessage } from "@/hooks/ai/useCaseChat";
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
@@ -224,6 +225,22 @@ export function CaseChatPanel({ caseId }: { caseId: string }) {
 
         {ask.isPending ? <Pensando t={t} /> : null}
       </div>
+
+      {/* F3 (#1869): os trechos do acervo ligados à última pergunta. Não são
+          a fonte da resposta — o modelo não os recebe —, e o texto diz isso.
+          Eles voltam no POST (a thread periódica lê só o banco, que não guarda
+          a lista — sem migração). Ainda no ar na troca de mensagens; somem num
+          recarregamento completo da página, e sem elas a resposta segue
+          legível. `length > 0` é a régua: sem acervo não há botão. `?.` porque o
+          replay do mesmo `turn_id` volta sem `citacoes`. */}
+      {ask.data?.citacoes?.length ? (
+        <div className="flex items-center gap-2">
+          <CitationButton citations={ask.data.citacoes ?? []} messageId={ask.data.turn_id} />
+          <span className="text-xs text-muted-foreground">
+            {t("Trechos do acervo ligados à pergunta.")}
+          </span>
+        </div>
+      ) : null}
 
       {ask.error ? <ErroDaPergunta erro={ask.error} t={t} /> : null}
 

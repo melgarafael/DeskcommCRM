@@ -46,8 +46,20 @@ export function CompaniesListClient() {
   const [legalName, setLegalName] = useState("");
   const [tradeName, setTradeName] = useState("");
   const [cnpj, setCnpj] = useState("");
+  const [street, setStreet] = useState("");
+  const [number, setNumber] = useState("");
+  const [complement, setComplement] = useState("");
+  const [district, setDistrict] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [zipCode, setZipCode] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [saving, setSaving] = useState(false);
+  const [consulting, setConsulting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Aviso que NÃO é erro: consulta ok, mas algo o usuário precisa ver. */
+  const [aviso, setAviso] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setSearch(searchInput), 250);
@@ -67,6 +79,48 @@ export function CompaniesListClient() {
     void load();
   }, [load]);
 
+  /**
+   * Consulta ANTES de criar (#1937): o CNPJ vai pra BrasilAPI, os dados públicos
+   * preenchem o formulário e quem cria revisa. Nada é gravado aqui — a rota de
+   * lookup só lê.
+   */
+  async function consultar() {
+    setConsulting(true);
+    setError(null);
+    setAviso(null);
+    const res = await fetch(`/api/v1/companies/lookup?cnpj=${encodeURIComponent(cnpj)}`);
+    const json = await res.json().catch(() => null);
+    setConsulting(false);
+    if (!res.ok) {
+      const dica = json?.error?.details?.dica;
+      setError(
+        [json?.error?.message ?? t("Não foi possível consultar o CNPJ."), dica]
+          .filter(Boolean)
+          .join(" "),
+      );
+      return;
+    }
+    const dados = json?.data ?? {};
+    const f = dados.fields ?? {};
+    setLegalName((f.legal_name as string) || legalName);
+    setTradeName((f.trade_name as string) || tradeName);
+    setStreet((f.street as string) || "");
+    setNumber((f.number as string) || "");
+    setComplement((f.complement as string) || "");
+    setDistrict((f.district as string) || "");
+    setCity((f.city as string) || "");
+    setState((f.state as string) || "");
+    setZipCode((f.zip_code as string) || "");
+    setEmail((f.email as string) || "");
+    setPhone((f.phone as string) || "");
+    if (dados.cnpj) setCnpj(dados.cnpj);
+    setAviso(
+      dados.already_registered
+        ? t("Já existe uma empresa com este CNPJ nesta organização. Revise antes de criar.")
+        : t("Dados públicos preenchidos. Revise antes de criar."),
+    );
+  }
+
   async function create() {
     setSaving(true);
     setError(null);
@@ -77,6 +131,15 @@ export function CompaniesListClient() {
         legal_name: legalName || null,
         trade_name: tradeName || null,
         cnpj: cnpj || null,
+        street: street || null,
+        number: number || null,
+        complement: complement || null,
+        district: district || null,
+        city: city || null,
+        state: state || null,
+        zip_code: zipCode || null,
+        email: email || null,
+        phone: phone || null,
         enrich: true,
       }),
     });
@@ -90,6 +153,16 @@ export function CompaniesListClient() {
     setLegalName("");
     setTradeName("");
     setCnpj("");
+    setStreet("");
+    setNumber("");
+    setComplement("");
+    setDistrict("");
+    setCity("");
+    setState("");
+    setZipCode("");
+    setEmail("");
+    setPhone("");
+    setAviso(null);
     void load();
   }
 
@@ -169,12 +242,21 @@ export function CompaniesListClient() {
         </Table>
       </Card>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog
+        open={createOpen}
+        onOpenChange={(aberto) => {
+          setCreateOpen(aberto);
+          if (aberto) {
+            setError(null);
+            setAviso(null);
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("Nova empresa")}</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-3 py-2">
+          <div className="grid max-h-[60vh] gap-3 overflow-y-auto py-2 pr-1">
             <div className="grid gap-1.5">
               <Label>{t("Razão social")}</Label>
               <Input value={legalName} onChange={(e) => setLegalName(e.target.value)} />
@@ -185,9 +267,105 @@ export function CompaniesListClient() {
             </div>
             <div className="grid gap-1.5">
               <Label>CNPJ</Label>
-              <Input value={cnpj} onChange={(e) => setCnpj(e.target.value)} placeholder="00.000.000/0000-00" />
+              <div className="flex gap-2">
+                <Input
+                  value={cnpj}
+                  onChange={(e) => setCnpj(e.target.value)}
+                  placeholder="00.000.000/0000-00"
+                  maxLength={32}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void consultar()}
+                  disabled={consulting || !cnpj.trim()}
+                >
+                  {consulting ? t("Consultando…") : t("Consultar CNPJ")}
+                </Button>
+              </div>
             </div>
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-1.5">
+                <Label>{t("E-mail")}</Label>
+                <Input
+                  type="email"
+                  value={email}
+                  maxLength={254}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>{t("Telefone")}</Label>
+                <Input value={phone} maxLength={40} onChange={(e) => setPhone(e.target.value)} />
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
+              <div className="grid gap-1.5">
+                <Label>{t("Rua")}</Label>
+                <Input
+                  value={street}
+                  maxLength={300}
+                  onChange={(e) => setStreet(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>{t("Número")}</Label>
+                <Input value={number} maxLength={40} onChange={(e) => setNumber(e.target.value)} />
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-1.5">
+                <Label>{t("Complemento")}</Label>
+                <Input
+                  value={complement}
+                  maxLength={120}
+                  onChange={(e) => setComplement(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>{t("Bairro")}</Label>
+                <Input
+                  value={district}
+                  maxLength={120}
+                  onChange={(e) => setDistrict(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-[1fr_5rem_9rem]">
+              <div className="grid gap-1.5">
+                <Label>{t("Cidade")}</Label>
+                <Input value={city} maxLength={120} onChange={(e) => setCity(e.target.value)} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>UF</Label>
+                <Input
+                  value={state}
+                  maxLength={2}
+                  onChange={(e) => setState(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>CEP</Label>
+                <Input
+                  value={zipCode}
+                  maxLength={16}
+                  onChange={(e) => setZipCode(e.target.value)}
+                />
+              </div>
+            </div>
+            {aviso ? (
+              <p
+                role="status"
+                className="rounded-md border border-warning/40 bg-warning-bg p-3 text-sm text-warning-fg"
+              >
+                {aviso}
+              </p>
+            ) : null}
+            {error ? (
+              <p className="text-sm text-destructive" role="alert">
+                {error}
+              </p>
+            ) : null}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>

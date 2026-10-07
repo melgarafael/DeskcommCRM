@@ -25,7 +25,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { envMock, linhaDaInstalacao, leiturasDaInstalacao, despachados } = vi.hoisted(() => ({
+const { envMock, linhaDaInstalacao, leiturasDaInstalacao, leiturasDaSessao, decifragens, despachados } = vi.hoisted(() => ({
   envMock: {
     WAHA_HMAC_SECRET: "",
     WAHA_WEBHOOK_REQUIRE_SIGNATURE: "false",
@@ -35,6 +35,8 @@ const { envMock, linhaDaInstalacao, leiturasDaInstalacao, despachados } = vi.hoi
   },
   linhaDaInstalacao: { atual: null as Record<string, unknown> | null },
   leiturasDaInstalacao: { n: 0 },
+  leiturasDaSessao: { n: 0 },
+  decifragens: { n: 0 },
   despachados: [] as unknown[],
 }));
 
@@ -73,13 +75,20 @@ vi.mock("@/lib/supabase/admin", () => ({
       };
     },
     // Sessão sem segredo utilizável: o caso real de quem roda WAHA Core.
-    rpc: async () => ({ data: null, error: null }),
+    // `fn_decrypt_oauth('\x00')` devolve NULL em produção (migration 0240).
+    rpc: async () => {
+      decifragens.n += 1;
+      return { data: null, error: null };
+    },
   }),
 }));
 
 vi.mock("@/lib/channels/archived", () => ({
   ARCHIVED_AT: "archived_at",
-  queryTolerantToMissingArchived: async () => ({ data: SESSAO, error: null }),
+  queryTolerantToMissingArchived: async () => {
+    leiturasDaSessao.n += 1;
+    return { data: SESSAO, error: null };
+  },
 }));
 
 vi.mock("@/lib/audit", () => ({ audit: async () => undefined }));
@@ -94,6 +103,7 @@ vi.mock("@/lib/waha/ingest", async (original) => ({
 import { POST as postSemToken } from "@/app/api/v1/webhooks/waha/route";
 import { POST as postComToken } from "@/app/api/v1/webhooks/waha/[token]/route";
 import { comportamentoEmVigor, esquecerComportamento } from "@/lib/instalacao/comportamento";
+import { limparMemoriaDeSessoes } from "@/lib/waha/sessao-do-webhook";
 
 const CORPO = { event: "message", session: "default", payload: { id: "wamid.X" } };
 
@@ -115,7 +125,11 @@ beforeEach(() => {
   // O processo recém-subido: nenhuma leitura nesta vida do processo.
   esquecerComportamento();
   leiturasDaInstalacao.n = 0;
+  leiturasDaSessao.n = 0;
+  decifragens.n = 0;
   despachados.length = 0;
+  // A sessão `default` é reutilizada entre casos.
+  limparMemoriaDeSessoes();
 });
 
 describe("rota sem token — processo frio", () => {
@@ -172,5 +186,22 @@ describe("rota por token — processo frio", () => {
       error: { code: "unauthenticated", message: "signature_required" },
     });
     expect(despachados).toHaveLength(0);
+  });
+});
+
+describe("memória da sessão com o segredo que produção devolve", () => {
+  it("sessão com '\\x00' (decifra para null): 10 eventos no mesmo processo = 1 leitura e 1 decifragem", async () => {
+    // O dublê aqui imita produção: sem isto, a memória do PR #2469 passava nos
+    // testes e nunca guardava nada em instalação nenhuma criada pelo produto.
+    envMock.WAHA_WEBHOOK_REQUIRE_SIGNATURE = "false";
+    linhaDaInstalacao.atual = linha(false);
+
+    for (let i = 0; i < 10; i++) {
+      expect((await postSemToken(semAssinatura())).status).toBe(200);
+    }
+
+    expect(despachados).toHaveLength(10);
+    expect(leiturasDaSessao.n, "cada evento voltou ao banco pela sessão").toBe(1);
+    expect(decifragens.n, "cada evento voltou ao banco pelo segredo").toBe(1);
   });
 });

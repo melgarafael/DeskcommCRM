@@ -177,10 +177,12 @@ const schema = z.object({
   // declarava aqui, então nunca teve como verificar nada.
   WAHA_HMAC_SECRET: z.string().optional().default(""),
   // "true" exige assinatura válida em todo webhook do WAHA. Fica desligado por
-  // padrão porque o WAHA Core não assina (medido: 2026.7.2 CORE manda os
-  // eventos sem header mesmo com WHATSAPP_HOOK_HMAC configurado), e exigir
-  // derrubaria a ingestão de mensagens. Ligue se usa WAHA Plus ou um proxy que
-  // assine — aí a verificação passa a ser obrigatória.
+  // padrão porque sem a variável certa o WAHA não assina (medido: 2026.7.2
+  // mandava os eventos sem header porque o compose entregava WHATSAPP_HOOK_HMAC,
+  // nome que não existe na doc dele — o certo é WHATSAPP_HOOK_HMAC_KEY), e exigir
+  // derrubaria a ingestão de mensagens. Ligue quando o WAHA estiver assinando
+  // (WHATSAPP_HOOK_HMAC_KEY no compose) ou houver um proxy que assine — aí a
+  // verificação passa a ser obrigatória.
   WAHA_WEBHOOK_REQUIRE_SIGNATURE: z.string().optional().default("false"),
 
   // ─── Chamada de voz WhatsApp (WaCalls, spec 18) ───
@@ -197,6 +199,45 @@ const schema = z.object({
   // server-to-server não tem cookie. URL sem token dá um cliente que constrói e
   // devolve 401 em toda chamada — por isso `getWacallsClient()` exige os dois.
   WACALLS_API_TOKEN: z.string().optional().default(""),
+
+  // ─── Videochamada (Jitsi Meet, #2440) — OPCIONAL, DESLIGADA POR PADRÃO ───
+  //
+  // Mesmo desenho de WACALLS_API_BASE_URL: NUNCA `required()`. Vazio = a
+  // instalação não oferece videochamada e o botão "Vídeo" não aparece no
+  // header da conversa (esconde, nunca erro). Quem lê é `servidorDeVideo()`
+  // em `lib/video/jitsi.ts`.
+  //
+  // `https://meet.jit.si` (público; desde 24/08/2023 quem abre a sala entra
+  // com conta Google/GitHub/Facebook, o convidado não) ou o servidor próprio em
+  // Docker/consórcio — a URL é a ORIGEM da aba de videochamada.
+  //
+  // Validada como URL http(s) desde o review do #2441: depois de trocarmos o
+  // iframe por aba nova, este valor vira `href` num `<a>`, então um `javascript:`
+  // escrito no `.env` seria código executando no clique do operador. A segunda
+  // triagem (`EH_HTTP`, em `lib/video/jitsi.ts`) fica no lado do navegador,
+  // que lê o payload injetado e não passa por aqui de novo.
+  //
+  // O formato é `.refine().catch()` e não `.url()` puro, pelo motivo que a
+  // nota de META_GRAPH_BASE_URL registra: validação que DERRUBA roda no import
+  // do Next e derruba TODAS as telas com o contêiner `healthy`. Aqui a ação
+  // falha fechada — URL fora de http(s) vira `""`, o botão some, a feature
+  // desliga — e a informação sobe em alto e bom som no log (padrão
+  // `diasDeRetencao`, lá em cima).
+  JITSI_SERVER_URL: z
+    .string()
+    .optional()
+    .default("")
+    .refine((v) => v.trim() === "" || /^https?:\/\/\S+$/i.test(v.trim()), {
+      message: "precisa ser uma URL http(s) como https://meet.jit.si",
+    })
+    .catch(({ error }) => {
+      console.warn(
+        `[env] JITSI_SERVER_URL inválida (${JSON.stringify(process.env.JITSI_SERVER_URL)}) — videochamada DESLIGADA. ` +
+          `Ela vira o link da sala no botão "Vídeo", então só http(s) vale (ex.: https://meet.jit.si). ` +
+          `(${error.issues[0]?.message ?? "valor recusado"})`,
+      );
+      return "";
+    }),
 
   // ─── Canal Datafy (recorte do #1130) — OPCIONAL, DESLIGADO POR PADRÃO ───
   //

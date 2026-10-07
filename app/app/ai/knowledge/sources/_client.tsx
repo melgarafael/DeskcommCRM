@@ -24,12 +24,9 @@ import {
   type EstadoDaChave,
 } from "@/components/ai/ChaveDeConhecimento";
 import { StatusDaBase } from "@/components/ai/StatusDaBase";
+import type { AgenteQueUsa } from "@/lib/ai/knowledge/agentes-que-usam";
 
-export interface AgenteQueUsa {
-  id: string;
-  nome: string;
-  materiais: string[];
-}
+export type { AgenteQueUsa };
 
 interface Props {
   initialSources: SourceRow[];

@@ -61,10 +61,13 @@ export function bareWaMessageId(id: string): string {
  * divergência não quebra nada à vista: ela só faz o eco sumir por um caminho e
  * ficar pelo outro — que é como a mensagem duplicada "voltava".
  *
- * ⚠️ LIMITE CONHECIDO, o mesmo nos dois caminhos: se o engine ecoar com um chat
- * diferente do que usamos para enviar (`@lid` de um lado, `@c.us` do outro), o
- * composto construído não casa e a duplicata fica. O conserto de raiz é canonizar
- * o id nas duas pontas — desenho na issue #196 do DeskcommCRM.
+ * ⚠️ LIMITE CONHECIDO: se o engine ecoar com um chat diferente do que usamos
+ * para enviar (`@lid` de um lado, `@c.us` do outro), o composto construído aqui
+ * não casa. O envio normal contorna: `removerEcoDoProprioEnvio`
+ * (`app/api/v1/messages/_handler.ts`) também apaga pelo SUFIXO `_<bare>`, que
+ * vale para qualquer formato de chat. O reenvio do watchdog ainda depende só
+ * desta lista. O conserto de raiz segue sendo canonizar o id nas duas pontas —
+ * desenho na issue #196 do DeskcommCRM.
  */
 export function wahaEchoExternalIds(externalId: string, recipient: string): string[] {
   const bare = bareWaMessageId(externalId);

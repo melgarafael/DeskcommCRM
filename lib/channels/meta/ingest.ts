@@ -39,7 +39,11 @@ import { encontrarContatoPorTelefone } from "../contato-por-telefone";
 import { marcarConversaComMensagem } from "../marcar-conversa";
 import { canonicalPhoneBR, phoneLookupVariants } from "../phone-variants";
 import type { ChannelTenantScope } from "../types";
-import type { InboundMessageEvent, OutboundEchoEvent } from "./webhook";
+import type {
+  AppContactSyncEvent,
+  InboundMessageEvent,
+  OutboundEchoEvent,
+} from "./webhook";
 
 type Admin = SupabaseClient;
 
@@ -62,6 +66,14 @@ export type IngestOutcome =
    * este valor entra sem mexer em decisão nenhuma lá.
    */
   | { status: "ignored"; reason: string }
+  /**
+   * Contato do ENDEREÇO do app gravado no CRM (coexistência, `smb_app_state_sync`).
+   *
+   * Status próprio porque não há mensagem nem conversa para reportar: o que
+   * aconteceu foi uma escrita em `contacts`, e dizer `ingested` aqui seria dizer
+   * que entrou coisa na caixa de entrada. `contactId` é o da linha gravada.
+   */
+  | { status: "synced"; contactId: string }
   | { status: "failed"; reason: string };
 
 /**
@@ -483,4 +495,89 @@ export async function ingestMetaEcho(
   });
 
   return { status: "ingested", messageId, conversationId: conversationId as string };
+}
+
+/**
+ * Contato que a empresa criou ou renomeou no ENDEREÇO do app WhatsApp Business
+ * (coexistência), entregue pela Meta no campo `smb_app_state_sync`.
+ *
+ * O que FAZ: garante que o contato exista no CRM **com o nome que a equipe usa
+ * no celular**, pela mesma resolução da recebida e do eco —
+ * `findContactByVariants` (variantes do número, senão a mesma pessoa vira dois
+ * cadastros) e `fn_upsert_wa_contact`. O `coalesce` dela É a regra do código:
+ * preenche `display_name` quando vazio e **nunca sobrescreve** um nome que já
+ * existe — quem vence entre o nome do operador no CRM e o do app a issue não
+ * prova, e a regra que já existe no repo é não sobrescrever.
+ *
+ * O que NÃO faz, de propósito:
+ *
+ * - **não cria conversa nem mensagem**: não houve troca de mensagens, então nada
+ *   muda na caixa de entrada, em `last_inbound_at`, em `unread_count` nem no
+ *   agente. Pausar a IA também não — ninguém respondeu nada.
+ * - **não apaga nada quando o app REMOVE o contato do endereço**: `remove` vem
+ *   sem nome (a referência da Meta diz que o nome sai junto), não tem o que
+ *   gravar, e apagar cadastro do CRM por causa da agenda do celular perderia
+ *   histórico sem a #1632 provar que é para isso. É o mesmo recuo deliberado do
+ *   `ignored` de cima: sem prova, não escreve.
+ *
+ * Como não há mensagem, o evento também não traz timestamp — nenhum aqui leria.
+ */
+export async function ingestMetaAppContactSync(
+  admin: Admin,
+  e: AppContactSyncEvent,
+  dono: ChannelTenantScope & {
+    /** Ver `ingestMetaInbound`: sessão já resolvida pelo token (canal parceiro). */
+    channelSessionId?: string;
+  },
+): Promise<IngestOutcome> {
+  // Sem nome não há o que gravar — `remove` vem sem nome de propósito.
+  const nome = e.name?.trim() ?? "";
+  if (!nome) return { status: "ignored", reason: "sem_nome" };
+
+  let sessao: { id: string; organization_id: string } | null;
+  if (dono.channelSessionId) {
+    sessao = { id: dono.channelSessionId, organization_id: dono.organizationId };
+  } else {
+    try {
+      sessao = await sessionByPhoneNumberId(admin, dono.organizationId, e.phoneNumberId);
+    } catch (err) {
+      return { status: "failed", reason: err instanceof Error ? err.message : "sessao_do_numero" };
+    }
+  }
+  // Sessão não é dona do número: o endereço é de OUTRO número, e nada do que ele
+  // tem pode cair nesta organização.
+  if (!sessao) return { status: "no_session" };
+
+  const orgId = sessao.organization_id;
+  const telefone = `+${e.phone.replace(/\D/g, "")}`;
+
+  // Mesma guarda da recebida e do eco: do número interno de avisos não nasce
+  // contato (a própria `ehNumeroInternoDeAviso` documenta esse desenho). Aqui não
+  // há mensagem a registrar como ignorada — o desfecho `ignored` já diz.
+  if (await ehNumeroInternoDeAviso(admin, orgId, { kind: "phone", phone: telefone, lid: null })) {
+    return { status: "ignored", reason: "numero_interno_de_aviso" };
+  }
+
+  const existente = await findContactByVariants(admin, orgId, e.phone);
+  const phone = existente?.phone_number
+    ? canonicalPhoneBR(existente.phone_number)
+    : canonicalPhoneBR(telefone);
+
+  const { data: contactId, error: erroContato } = await admin.rpc(
+    "fn_upsert_wa_contact" as never,
+    {
+      p_org: orgId,
+      p_kind: "phone",
+      p_phone: phone,
+      p_lid: null,
+      // Mesma grafia do `from`/`to` das mensagens: a identidade wa, não o `+`.
+      p_chat_id: e.phone,
+      p_notify: nome,
+    } as never,
+  );
+  if (erroContato || !contactId) {
+    return { status: "failed", reason: `contato: ${erroContato?.message ?? "sem id"}` };
+  }
+
+  return { status: "synced", contactId: contactId as string };
 }

@@ -70,6 +70,27 @@ export async function idsDeOrgsParadas(admin: SupabaseClient): Promise<string[]>
   return ((data ?? []) as Array<{ id: string }>).map((linha) => linha.id);
 }
 
+/**
+ * O status embutido por `organizations:organization_id!inner(status)` — o
+ * PostgREST devolve objeto ou array conforme a cardinalidade inferida, e quem lê
+ * não deve se prender a um dos dois. É o par da régua SQL `fn_org_operante`: em
+ * vez de buscar a lista de ids das orgs paradas e negar `in (...)` na URL (que
+ * cresce sem teto e corta em `max_rows` sem aviso), as varreduras embutem o
+ * status com `!inner`, filtram `organizations.status = STATUS_OPERANTE` na
+ * própria consulta (o corte sai ANTES do `limit`) e ainda passam `ehOperante`
+ * linha a linha, como cinto.
+ *
+ * O `:organization_id` fixa a relação pela coluna: uma tabela com FK para as
+ * duas pontas na chave primária (ex.: `appointment_recovery_receipts`) pode
+ * fazer o PostgREST enxergar um muitos-para-muitos e recusar o embed por nome.
+ */
+export function statusDaOrgEmbutida(
+  embutida: { status?: string | null } | Array<{ status?: string | null }> | null | undefined,
+): string | null | undefined {
+  if (!embutida) return undefined;
+  return Array.isArray(embutida) ? embutida[0]?.status : embutida.status;
+}
+
 /** Lança `OrgNaoOperanteError` se a org não opera (inclusive se não aparece). Erro de leitura lança erro comum. */
 export async function assertOrgOperante(db: SupabaseClient, orgId: string): Promise<void> {
   const { data, error } = await db.from("organizations").select("status").eq("id", orgId).maybeSingle();

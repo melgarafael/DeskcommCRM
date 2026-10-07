@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 
 import { LinhaDoRecurso } from "@/components/recursos-opcionais/LinhaDoRecurso";
 import { loadAuthUser } from "@/lib/auth/server";
+import { lerAssinaturaDasEntregas } from "@/lib/channels/assinatura-das-entregas";
+import { tagDeIdioma } from "@/lib/i18n/datas";
 import { carregarComportamentoDaInstalacao } from "@/lib/instalacao/comportamento-servidor";
 import { MODULOS_OPCIONAIS_POR_FLAG, modulosLigados, type ModuloOpcional } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -26,6 +28,20 @@ const ROTULO_NO_SERVIDOR: Record<EstadoDoRecurso, string> = {
   nao_verificado: "Não dá para ver daqui",
 };
 export const dynamic = "force-dynamic";
+
+/**
+ * Formata no SERVIDOR, com fuso fixo: no cliente, o HTML servido (fuso do
+ * contêiner) e a hidratação (fuso do navegador) divergiriam. Mesmo motivo e
+ * mesma escolha de `/admin/marca` e `/admin/google`.
+ */
+function instanteLegivel(iso: string | null, tag: string): string | null {
+  if (!iso) return null;
+  return new Date(iso).toLocaleString(tag, {
+    timeZone: "America/Sao_Paulo",
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+}
 
 /**
  * A tela onde o dono da instalação decide COMO ela se comporta, sem SSH.
@@ -69,10 +85,12 @@ export default async function Page() {
 
   // O valor EFETIVO (linha acima, `.env` como piso): a tela mostra o que está
   // valendo de verdade, e não o que a linha diria se ela existisse.
-  const [comportamento, ligados, servidor] = await Promise.all([
+  const admin = createAdminClient();
+  const [comportamento, ligados, servidor, assinatura] = await Promise.all([
     carregarComportamentoDaInstalacao(),
-    modulosLigados(createAdminClient()),
+    modulosLigados(admin),
     detectarServidor(),
+    lerAssinaturaDasEntregas(admin),
   ]);
   const fontes = { modulos: ligados, settings: null, servidor };
 
@@ -129,7 +147,16 @@ export default async function Page() {
         <h2 id="bloco-comportamento" className="text-lg font-semibold">
           {traduzir("Comportamento", idioma)}
         </h2>
-        <FormularioDeComportamento inicial={comportamento} />
+        <FormularioDeComportamento
+          inicial={comportamento}
+          assinatura={
+            assinatura && {
+              assinadas: assinatura.assinadas,
+              ultimaAssinada: instanteLegivel(assinatura.ultimaAssinadaEm, tagDeIdioma(idioma)),
+              ultimaSemAssinatura: instanteLegivel(assinatura.ultimaSemAssinaturaEm, tagDeIdioma(idioma)),
+            }
+          }
+        />
         <ul className="space-y-3">
           {outrasChaves.map((r) => (
             <LinhaDoRecurso

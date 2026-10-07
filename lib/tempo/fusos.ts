@@ -51,7 +51,42 @@ export const FUSOS_OFERECIDOS: { codigo: string; rotulo: string }[] = [
   // Mesmo motivo, em Portugal: sem Lisboa, quem opera lá ficava entre um fuso
   // do Brasil e UTC — e UTC erra uma hora no verão europeu.
   { codigo: "Europe/Lisbon", rotulo: "Lisboa (Portugal)" },
+  // O onboarding já oferecia estes (`FUSOS_DO_ONBOARDING`, abaixo) e esta lista
+  // não: quem escolhia Madri no primeiro acesso abria Configurações e via o
+  // <select> no padrão, porque `fusoOferecidoOuPadrao` cai em São Paulo para
+  // fuso fora da lista. Roma entrou pelo mesmo caminho, a pedido de quem opera
+  // da Itália.
+  { codigo: "America/Cuiaba", rotulo: "Cuiabá (Brasil)" },
+  { codigo: "America/Rio_Branco", rotulo: "Rio Branco (Brasil)" },
+  { codigo: "Europe/Madrid", rotulo: "Madri (Espanha)" },
+  { codigo: "Europe/Rome", rotulo: "Roma (Itália)" },
+  { codigo: "America/New_York", rotulo: "Nova York (EUA)" },
+  { codigo: "America/Los_Angeles", rotulo: "Los Angeles (EUA)" },
   { codigo: "UTC", rotulo: "UTC" },
+];
+
+/**
+ * Os fusos do primeiro acesso (`app/onboarding/welcome/_form.tsx`), escritos
+ * como a pessoa reconhece — a cidade e a região, não o identificador. Todo
+ * `id` aqui TEM de estar em `FUSOS_OFERECIDOS`: é o que as telas de
+ * configuração mostram depois, e um fuso que só existe no onboarding vira
+ * "São Paulo" na primeira vez que alguém abre Configurações. Vigiado por
+ * `tests/unit/fusos-uma-lista-so.test.ts`.
+ */
+export const FUSOS_DO_ONBOARDING: { id: string; cidade: string }[] = [
+  { id: "America/Sao_Paulo", cidade: "São Paulo, Rio, Brasília, Sul e Sudeste" },
+  { id: "America/Recife", cidade: "Recife, Salvador, Fortaleza e Nordeste" },
+  { id: "America/Belem", cidade: "Belém e Pará" },
+  { id: "America/Manaus", cidade: "Manaus e Amazonas" },
+  { id: "America/Cuiaba", cidade: "Cuiabá e Mato Grosso" },
+  { id: "America/Rio_Branco", cidade: "Rio Branco e Acre" },
+  { id: "America/Argentina/Buenos_Aires", cidade: "Buenos Aires" },
+  { id: "Europe/Lisbon", cidade: "Lisboa" },
+  { id: "Europe/Madrid", cidade: "Madri" },
+  { id: "Europe/Rome", cidade: "Roma" },
+  { id: "America/New_York", cidade: "Nova York" },
+  { id: "America/Los_Angeles", cidade: "Los Angeles" },
+  { id: "UTC", cidade: "Outro (horário universal)" },
 ];
 
 /**

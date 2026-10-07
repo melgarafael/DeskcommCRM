@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { algumCanalExigeModeloForaDaJanela, validateFlowForPublish } from './validate-publish';
+import { idsDeEtapaCitados } from './etapas-citadas';
 import type { FlowGraph, FlowNode, FlowEdge } from './graph-schema';
 import { CHANNEL_CAPABILITIES, PROVIDERS_DE_MENSAGEM, PROVIDERS_SEM_MENSAGEM } from '../channels/capabilities';
 
@@ -864,5 +865,54 @@ describe('publish por superfície (roteiro de atendimento, #1130)', () => {
       expect(erros(roteiroQueVaiPara('B'), ctx([['B', ['C']], ['C', []]]))).toEqual([]);
       expect(erros(roteiroQueVaiPara('B'), ctx([['B', ['C']], ['C', ['B']]]))).toEqual([]);
     });
+  });
+});
+
+/**
+ * #2065 — os nós de ação no publish, com o contexto montado como a rota monta:
+ * o banco só devolve as etapas que `idsDeEtapaCitados` pediu. Antes do conserto
+ * essa função só olhava nós de condição, e todo `move_lead` lia como "etapa que
+ * não existe mais" — nenhum fluxo com a caixa conseguia ser publicado.
+ */
+describe('validateFlowForPublish — nós de ação (#2065)', () => {
+  const ATIVA = '6f1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b';
+  const ARQUIVADA = '7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d';
+  const banco = new Map([
+    [ATIVA, { nome: 'Proposta · Vendas', arquivada: false }],
+    [ARQUIVADA, { nome: 'Antiga · Vendas', arquivada: true }],
+  ]);
+  const codigos = (r: ReturnType<typeof validateFlowForPublish>) => (r.ok ? [] : r.errors.map((e) => e.code));
+
+  function comAcao(acao: FlowNode): FlowGraph {
+    return graph([trigger('t1'), acao, end('fim')], [edge('t1', acao.id, always()), edge(acao.id, 'fim', always())]);
+  }
+  const mover = (stage_id: string): FlowNode => ({ id: 'm1', type: 'move_lead', label: 'Mover', position: pos, config: { stage_id } });
+  const marcar = (tags: string[]): FlowNode => ({ id: 'g1', type: 'edit_lead_tag', label: 'Tag', position: pos, config: { tags } });
+
+  /** O que `carregaEtapasCitadas` faz, sem Postgres: consulta só os ids citados. */
+  function publicar(g: FlowGraph) {
+    const etapas = new Map(idsDeEtapaCitados(g.nodes).flatMap((id) => (banco.has(id) ? [[id, banco.get(id)!] as const] : [])));
+    return validateFlowForPublish(g, { etapas });
+  }
+
+  it('mover para etapa ativa publica', () => {
+    expect(publicar(comAcao(mover(ATIVA)))).toEqual({ ok: true });
+  });
+
+  it('mover sem etapa escolhida recusa, mesmo sem nada lido do banco', () => {
+    expect(codigos(validateFlowForPublish(comAcao(mover('  '))))).toEqual(['etapa_destino_ausente']);
+  });
+
+  it('mover para etapa arquivada recusa com o nome da etapa', () => {
+    const r = publicar(comAcao(mover(ARQUIVADA)));
+    expect(codigos(r)).toEqual(['etapa_destino_arquivada']);
+    if (r.ok) return;
+    expect(r.errors[0]!.message).toContain('Antiga · Vendas');
+  });
+
+  it('tag vazia ou em branco recusa; tag escrita publica', () => {
+    expect(codigos(publicar(comAcao(marcar([]))))).toEqual(['tag_ausente']);
+    expect(codigos(publicar(comAcao(marcar(['vip', '  ']))))).toEqual(['tag_ausente']);
+    expect(publicar(comAcao(marcar(['vip'])))).toEqual({ ok: true });
   });
 });

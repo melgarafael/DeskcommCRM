@@ -14,7 +14,13 @@ import { redirect } from "next/navigation";
 import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { empresaExigeMfa, exigeCadastroDeMfa } from "@/lib/auth/politica-mfa";
+import {
+  empresaExigeMfa,
+  avaliaPoliticaDeMfa,
+  politicaDaEmpresa,
+  type ExigenciaDeMfa,
+  type PapelMinimoDeMfa,
+} from "@/lib/auth/politica-mfa";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { STATUS_OPERANTE, ehOperante } from "@/lib/organizacao/operante";
 import type { AuthUser, Role, UserOrgMembership, ActiveOrg } from "./types";
@@ -390,30 +396,24 @@ export const isMfaEnrolled = cache(async (): Promise<boolean> => {
 });
 
 /**
- * Quem é OBRIGADO a cadastrar a verificação em duas etapas.
+ * A política de CADASTRO completa para quem está na tela — as três saídas de
+ * `avaliaPoliticaDeMfa` (`lib/auth/politica-mfa.ts`).
  *
- * ⚠️ ISTO DEIXOU DE SER UMA CONSTANTE. A regra era
- * `isPlatformAdmin || role === "admin"` — sem opção —, e como o `install.sh`
- * cria o dono da instalação como platform admin, TODA instalação self-host
- * forçava TOTP antes de a pessoa usar o produto. Medido percorrendo o wizard: o
- * botão "Começar a usar" entregava o dono num bloqueador de tela cheia, um
- * sétimo passo que a barra de progresso nunca anunciou.
+ * As duas leituras vêm daqui porque o layout precisa delas de qualquer forma;
+ * quem já tem a política em mãos deve chamar `avaliaPoliticaDeMfa` direto.
  *
- * Agora a resposta vem da POLÍTICA — `platform_admins.mfa_required` para o
- * platform admin, `organizations.settings.security.mfa_required` para o admin do
- * tenant —, e o padrão de ambos é não exigir. A regra pura, com o porquê de cada
- * ramo, vive em `lib/auth/politica-mfa.ts`.
- *
- * Carrega as duas leituras porque o layout precisa delas de qualquer forma; quem
- * já tem a política em mãos deve chamar `exigeCadastroDeMfa` direto.
+ * A carência (`mfa_grace_days`) só é resolvida quando ela existe: a âncora é
+ * `max(mfa_policy_changed_at, user_organizations.accepted_at)`, e buscar o
+ * `accepted_at` de todo mundo custaria uma consulta em TODA requisição para
+ * resolver um caso que a grande maioria das instalações não tem.
  */
-export const requiresMfa = cache(
+export const exigenciaDeMfa = cache(
   async (
     role: Role | undefined,
     isPlatformAdmin: boolean,
     userId?: string,
     orgId?: string,
-  ): Promise<boolean> => {
+  ): Promise<ExigenciaDeMfa> => {
     const admin = createAdminClient();
 
     let plataformaExige: boolean | null = null;
@@ -428,6 +428,10 @@ export const requiresMfa = cache(
     }
 
     let empresaExige = false;
+    let papelMinimo: PapelMinimoDeMfa | null = null;
+    let diasDeCarencia = 0;
+    let mudouEm: Date | null = null;
+    let aceitoEm: string | null = null;
     if (orgId) {
       const { data } = await admin
         .from("organizations")
@@ -435,10 +439,62 @@ export const requiresMfa = cache(
         .eq("id", orgId)
         .maybeSingle();
       empresaExige = empresaExigeMfa(data?.settings);
+      const cfg = politicaDaEmpresa(data?.settings);
+      papelMinimo = cfg.papelMinimo;
+      diasDeCarencia = cfg.diasDeCarencia;
+      mudouEm = cfg.mudouEm;
+
+      if (userId && diasDeCarencia > 0) {
+        const { data: vinculo } = await admin
+          .from("user_organizations")
+          .select("accepted_at")
+          .eq("organization_id", orgId)
+          .eq("user_id", userId)
+          .maybeSingle();
+        aceitoEm = (vinculo?.accepted_at as string | null | undefined) ?? null;
+      }
     }
 
-    return exigeCadastroDeMfa({ role, isPlatformAdmin, plataformaExige, empresaExige });
+    return avaliaPoliticaDeMfa({
+      role,
+      isPlatformAdmin,
+      plataformaExige,
+      empresaExige,
+      papelMinimo,
+      diasDeCarencia,
+      mudouEm,
+      aceitoEm,
+    });
   },
+);
+
+/**
+ * Quem é OBRIGADO A CADASTRAR a verificação em duas etapas.
+ *
+ * ⚠️ ISTO DEIXOU DE SER UMA CONSTANTE. A regra era
+ * `isPlatformAdmin || role === "admin"`, sem opção —, e como o `install.sh`
+ * cria o dono da instalação como platform admin, TODA instalação self-host
+ * forçava TOTP antes de a pessoa usar o produto. Medido percorrendo o wizard: o
+ * botão "Começar a usar" entregava o dono num bloqueador de tela cheia, um
+ * sétimo passo que a barra de progresso nunca anunciou.
+ *
+ * Agora a resposta vem da POLÍTICA — `platform_admins.mfa_required` para o
+ * platform admin, `organizations.settings.security.mfa_required` /
+ * `.mfa_required_min_role` para o tenant —, e o padrão de ambos é não exigir. A
+ * regra pura, com o porquê de cada ramo, vive em `lib/auth/politica-mfa.ts`.
+ *
+ * O booleano que este retorno devolve é o de BLOQUEIO (`bloqueia`), não o de
+ * obrigação: é ele que o layout do `/app` transforma no `MfaEnrollGate` de tela
+ * cheia, e durante a carência (`mfa_grace_days`) a pessoa já está obrigada mas a
+ * tela ainda não pode travar. Quem precisa da distinção chama `exigenciaDeMfa`.
+ */
+export const requiresMfa = cache(
+  async (
+    role: Role | undefined,
+    isPlatformAdmin: boolean,
+    userId?: string,
+    orgId?: string,
+  ): Promise<boolean> => (await exigenciaDeMfa(role, isPlatformAdmin, userId, orgId)).bloqueia,
 );
 
 /**

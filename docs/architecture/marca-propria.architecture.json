@@ -22,6 +22,7 @@
     "instalacao",
     "resolver",
     "css",
+    "csscustom",
     "layout",
     "interface"
   ],
@@ -61,6 +62,7 @@
 
     { "id": "registry", "lane": "humano", "col": 0, "type": "frontend", "label": "lib/navigation/registry.ts", "sublabel": "a PORTA: /app/settings/marca no grupo Configurações, sidebar:false (tarefa de uma vez)" },
     { "id": "adminmarca", "lane": "humano", "col": 1, "type": "frontend", "label": "/admin/marca", "sublabel": "marca da INSTALAÇÃO · tira de tons + estado do degrade (fallback_at/fallback_reason)" },
+    { "id": "cssform", "lane": "humano", "col": 2, "type": "frontend", "label": "Editor de CSS personalizado", "sublabel": "somente platform admin · regras cosméticas globais · limite 16 KB" },
     { "id": "orgmarca", "lane": "humano", "col": 1, "type": "frontend", "label": "/app/settings/marca", "sublabel": "marca da ORGANIZAÇÃO · admin do tenant, sem platform_admin" },
     { "id": "telatenant", "lane": "humano", "col": 1, "type": "frontend", "label": "/app/settings/tenant", "sublabel": "campo Razão social — o único lugar onde legal_name deixa de ser cópia do nome fantasia" },
     { "id": "aba", "lane": "humano", "col": 8, "type": "frontend", "label": "A aba do navegador", "sublabel": "título (generateMetadata) + ícone (/icon) + cor da barra (themeColor)" },
@@ -71,6 +73,7 @@
     { "id": "titular", "lane": "humano", "col": 8, "type": "frontend", "label": "O titular de dados (Art. 18 II)", "sublabel": "recebe o link do export e o relatório — e nele lê o CONTROLADOR, não a marca de quem vende" },
 
     { "id": "updatebranding", "lane": "escrita", "col": 2, "type": "api", "label": "updateBranding (server action)", "sublabel": "gate is_platform_admin + admin client + invalidarMarcaDaInstalacao()" },
+    { "id": "updatecss", "lane": "escrita", "col": 3, "type": "api", "label": "updateCustomBrandingCss", "sublabel": "platform admin · valida AST · grava config e audita comprimento, nunca o texto" },
     { "id": "updateorg", "lane": "escrita", "col": 2, "type": "api", "label": "updateMarcaDaOrganizacao (server action)", "sublabel": "RPC atômica: SELECT→spread→UPDATE no mesmo jsonb perderia visibility_mode" },
     { "id": "rotalogo", "lane": "escrita", "col": 2, "type": "api", "label": "POST/DELETE /api/v1/marca/logo", "sublabel": "gate POR ESCOPO · tipo pelos BYTES (file.type só no details) · 512 KB por arte · claro/escuro opcionais · sobe → grava → só então apaga, com o prefixo asseverado" },
 
@@ -78,6 +81,7 @@
     { "id": "fnlogoorg", "lane": "banco", "col": 4, "type": "database", "label": "fn_definir_logo_da_organizacao (0158)", "sublabel": "assevera o prefixo contra p_org DENTRO do banco · merge no CAMPO · a 0157 ganhou forward-fix para não apagar logo_path" },
 
     { "id": "platformbranding", "lane": "banco", "col": 3, "type": "database", "label": "public.platform_branding", "sublabel": "singleton id=1 · sem organization_id · revoke de anon (o baseline dá GRANT ALL por default)" },
+    { "id": "platformconfig", "lane": "banco", "col": 3, "type": "database", "label": "public.platform_config", "sublabel": "APP_CUSTOM_CSS · linha server-side-only · sem migration nova (0341)" },
     { "id": "orgbranding", "lane": "banco", "col": 3, "type": "database", "label": "organizations.settings.branding", "sublabel": "jsonb com envelope {format, algo, semente_hex} · schema LOOSE: código velho sobre schema novo não pode lançar" },
     { "id": "legalname", "lane": "banco", "col": 3, "type": "database", "label": "organizations.legal_name + dpo_email", "sublabel": "identidade JURÍDICA — já existia, ninguém usava. DIRC respondeu I (Integrar), não campo novo" },
     { "id": "auditlog", "lane": "banco", "col": 4, "type": "database", "label": "api_audit_log", "sublabel": "platform_branding.updated (sem org) · org.branding_updated (com org)" },
@@ -87,6 +91,7 @@
     { "id": "resolver", "lane": "resolver", "col": 5, "type": "service", "label": "lib/branding/resolve.ts", "sublabel": "pilha org → instalação → .env → padrão do produto; cor recusada NÃO apaga a camada de baixo" },
     { "id": "rampa", "lane": "resolver", "col": 5, "type": "service", "label": "rampa.ts + contraste.ts", "sublabel": "1 hex → 11 stops nos 2 temas; piso por PAPEL × SUPERFÍCIE, não pela semente" },
     { "id": "css", "lane": "resolver", "col": 6, "type": "service", "label": "lib/branding/css.ts", "sublabel": "serialização com allowlist: emite --color-brand e a família do accent — NUNCA --color-bg" },
+    { "id": "csscustom", "lane": "resolver", "col": 7, "type": "service", "label": "lib/branding/css-personalizado.ts", "sublabel": "PostCSS AST · classes + propriedades cosméticas · sem at-rules, URLs, escapes, layout ou !important" },
     { "id": "saida", "lane": "resolver", "col": 6, "type": "service", "label": "lib/branding/saida.ts", "sublabel": "marcaDaSaida(orgId|null) → um hex + uma frente legível · tema CLARO sempre · NUNCA LANÇA" },
     { "id": "barra", "lane": "resolver", "col": 6, "type": "service", "label": "lib/branding/barra-do-navegador.ts", "sublabel": "os 2 hexes do themeColor, importados de REGUA_DO_PRODUTO (eram cópia em 3 arquivos)" },
 
@@ -112,6 +117,11 @@
     { "id": "e5", "from": "registry", "to": "telatenant", "label": "porta de 1ª classe do grupo Configurações" },
     { "id": "e6", "from": "registry", "to": "interface", "label": "a sidebar inteira é renderizada a partir do registro" },
     { "id": "e7", "from": "adminmarca", "to": "updatebranding", "label": "Salvar (desabilitado enquanto o hex for inválido)" },
+    { "id": "e65", "from": "adminmarca", "to": "cssform", "label": "editor CSS global na mesma página de marca" },
+    { "id": "e66", "from": "cssform", "to": "updatecss", "label": "Salvar CSS separado dos campos base da marca" },
+    { "id": "e67", "from": "updatecss", "to": "platformconfig", "label": "APP_CUSTOM_CSS · valor em texto · platform_config já existente" },
+    { "id": "e68", "from": "platformconfig", "to": "csscustom", "label": "leitura memoizada com TTL curto e invalidação após salvar" },
+    { "id": "e69", "from": "csscustom", "to": "layout", "label": "folha validada no head, global para login e telas das organizações" },
     { "id": "e8", "from": "orgmarca", "to": "updateorg", "label": "Salvar" },
     { "id": "e9", "from": "telatenant", "to": "legalname", "label": "Razão social — legal_name NASCE igual a display_name (bootstrap-owner.ts), então 'se vazio use X' nunca dispara" },
     { "id": "e10", "from": "updatebranding", "to": "platformbranding", "label": "update do singleton + invalidação do memo" },

@@ -73,8 +73,14 @@ async function contatoDaRota(contactId: string): Promise<Record<string, unknown>
   }
 }
 
-async function contactNotifyBits(contactId: string): Promise<{ title: string; icon?: string }> {
+async function contactNotifyBits(contactId: string): Promise<{
+  title: string;
+  icon?: string;
+  /** Spec 21, caminho 1: pessoal não entrega aviso — a linha já traz a marca. */
+  pessoal: boolean;
+}> {
   const row = await contatoDaRota(contactId);
+  const pessoal = (row as { is_personal?: boolean } | null)?.is_personal === true;
   const title = nomeDoContato(row as { display_name?: string | null; name?: string | null } | null) ?? "Nova mensagem";
   let icon: string | undefined;
   try {
@@ -86,7 +92,7 @@ async function contactNotifyBits(contactId: string): Promise<{ title: string; ic
   } catch {
     // sem foto: badge da marca
   }
-  return { title, icon };
+  return { title, icon, pessoal };
 }
 
 async function contactIdFromRow(
@@ -136,7 +142,10 @@ export function useInboundMessageAlerts(): void {
       const contactId = await contactIdFromRow(row, conversationId);
       const bits = contactId
         ? await contactNotifyBits(contactId)
-        : { title: "Nova mensagem" as const, icon: undefined };
+        : { title: "Nova mensagem" as const, icon: undefined, pessoal: false };
+      // Pessoal não avisa (spec 21, caminho 1): nem toast, nem push de tela —
+      // o choke é aqui, antes do `entregarAviso`; `emit`/`sounds` não mudam.
+      if (bits.pessoal) return;
       entregarAviso({
         category: "message",
         kind: "message_inbound",

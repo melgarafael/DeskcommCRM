@@ -5,6 +5,7 @@ import { audit } from "@/lib/audit";
 import {
   TETO_NOME_DE_SESSAO_WAHA, nomeDaSessaoCabeNoWaha, nomeDaSessaoNovo, podeRenomearSessaoDoWaha,
 } from "@/lib/channels/nome-da-sessao";
+import { lerGuardarHistorico } from "@/lib/channels/acervo-do-historico";
 import type { WahaClient } from "@/lib/waha/client";
 import { WahaSessionError } from "@/lib/waha/client";
 import { sincronizarRecebimentoDeGrupos } from "@/lib/grupos/sincronizar-filtro";
@@ -14,6 +15,8 @@ const channelSchema = z.object({
   status: z.enum(["STARTING", "SCAN_QR_CODE", "WORKING", "STOPPED", "FAILED"]),
   display_name: z.string().nullable().optional(), phone_number: z.string().nullable().optional(),
   status_reason: z.string().nullable().optional(), archived_at: z.string().nullable().optional(),
+  // A opção por conexão da #999 mora no `metadata` (jsonb, SEM migration).
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 const receiptSchema = z.object({
   replay: z.boolean(), channel: channelSchema.nullable(), receipt_id: z.string().uuid(), lease_token: z.string().uuid().optional(),
@@ -87,7 +90,13 @@ export async function connectWahaChannel(authDb: SupabaseClient, serviceDb: Supa
   }
   try {
     if (input.restart) await waha.stopSession(channel.waha_session_name);
-    const creation = await waha.createSession(channel.waha_session_name);
+    // A opção por conexão decide o corpo da criação (desligada por padrão —
+    // decisão do mantenedor na #999). Com ela DESLIGADA a chamada continua
+    // sendo a de sempre, sem segundo argumento: o rastro não muda para quem
+    // não ligou nada.
+    const creation = lerGuardarHistorico(channel.metadata)
+      ? await waha.createSession(channel.waha_session_name, { guardarHistorico: true })
+      : await waha.createSession(channel.waha_session_name);
     created = creation.created;
     if (created) await finish("remote_created");
     const remote = await waha.startExistingSession(channel.waha_session_name);

@@ -3,24 +3,37 @@
  * intenção aparecia com o módulo DESLIGADO — amarrar a um roteiro que a
  * instalação não roda.
  */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { authMock, flowsMock, testeMock } = vi.hoisted(() => ({
+const { authMock, flowsMock, testeMock, updateMock, pipelinesMock, stagesMock, routerDataMock } = vi.hoisted(() => ({
   authMock: vi.fn(),
   flowsMock: vi.fn(),
+  // O tipo de retorno explícito evita que o tsc infira `undefined` do default
+  // e reprove os mockReturnValue de teste (#2415).
+  pipelinesMock: vi.fn((): { data: unknown } => ({ data: undefined })),
+  stagesMock: vi.fn((): { data: unknown } => ({ data: undefined })),
   testeMock: vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false, data: undefined as unknown })),
+  updateMock: vi.fn(async () => ({})),
+  // #2415 — o que o React Query devolve no refetch: undefined = sem query em cache.
+  routerDataMock: vi.fn((): { data: unknown } => ({ data: undefined })),
 }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({ useAuth: authMock, usePermission: () => true }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 vi.mock("@/hooks/followup/useFollowupFlows", () => ({ useFollowupFlows: flowsMock }));
+// #2155 — o seletor de funil/etapa de destino usa os MESMOS hooks dos webhooks:
+// sem o mock, a renderização estoura "No QueryClient set" (não há provider aqui).
+vi.mock("@/hooks/webhooks/useWebhookSources", () => ({
+  usePipelines: pipelinesMock,
+  usePipelineStages: stagesMock,
+}));
 vi.mock("@/hooks/ai/useRouters", () => {
   const mut = () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false });
   return {
-    useRouter: () => ({ data: undefined }),
-    useUpdateRouter: mut,
+    useRouter: () => routerDataMock(),
+    useUpdateRouter: () => ({ mutate: vi.fn(), mutateAsync: updateMock, isPending: false }),
     useDeleteRouter: mut,
     useSaveMembers: mut,
     useTestRouter: testeMock,
@@ -82,6 +95,20 @@ describe("seletor de roteiro na intenção × módulo", () => {
   });
 });
 
+describe("tamanho do contexto do roteador", () => {
+  it("roteador legado mostra quatro mensagens e salva oito quando o admin escolhe", async () => {
+    authMock.mockReturnValue({ activeOrg: { modulos_ligados: [] } });
+    flowsMock.mockReturnValue({ data: undefined });
+    updateMock.mockClear();
+    renderizar();
+    const campo = screen.getByLabelText("Mensagens anteriores para o roteamento");
+    expect(campo).toHaveValue(4);
+    fireEvent.change(campo, { target: { value: "8" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({ context_message_count: 8 }) }));
+  });
+});
+
 describe("Testar classificação com o Jev (onda 2 do Jev, bloco 2.2)", () => {
   const RESULTADO = {
     intent_name: "financiamento",
@@ -127,6 +154,19 @@ describe("Testar classificação com o Jev (onda 2 do Jev, bloco 2.2)", () => {
     comResultado({ ...RESULTADO, jev: { ...DO_JEV, estado: "decidindo", decide: true } });
     expect(screen.getByTestId("teste-agente-que-atenderia").textContent).toBe("Agente Suporte");
     expect(screen.getByTestId("teste-quem-decide").textContent).toMatch(/vale a escolha dele/);
+  });
+
+  it("sob demanda distingue a reserva dispensada de falha de resposta", () => {
+    comResultado({ ...RESULTADO, confidence: null, ia_consultada: false, modo_roteador: "sob_demanda", jev: { ...DO_JEV, estado: "decidindo", decide: true } });
+    expect(screen.getByTestId("teste-escolha-da-ia").textContent).toContain("Não foi necessário consultar");
+    expect(screen.getByTestId("teste-quem-decide").textContent).toContain("O Jev decidiu sozinho");
+    expect(screen.getByTestId("teste-agente-que-atenderia").textContent).toBe("Agente Suporte");
+  });
+
+  it("sob demanda explica reserva por baixa confiança mesmo quando Jev respondeu", () => {
+    comResultado({ ...RESULTADO, ia_consultada: true, modo_roteador: "sob_demanda", jev: { ...DO_JEV, confidence: 0.3, estado: "decidindo", decide: false } });
+    expect(screen.getByTestId("teste-quem-decide").textContent).toContain("O Jev precisou de reserva");
+    expect(screen.getByTestId("teste-agente-que-atenderia").textContent).toBe("Agente Financiamento");
   });
 
   it("decidindo sem a sua IA (R2): quem atende NÃO é o do Jev", () => {
@@ -223,6 +263,92 @@ describe("Testar classificação com o Jev (onda 2 do Jev, bloco 2.2)", () => {
     expect(within(screen.getByTestId("teste-escolha-do-jev")).getByRole("link", { name: "Ver o motivo no cartão do Jev" })).toHaveAttribute(
       "href",
       "/app/ai/providers",
+    );
+  });
+});
+
+/**
+ * #2415 — o destino de funil/etapa não persistia após salvar e recarregar: o
+ * SSR chegava sem pipeline_id/stage_id e o draft não reidratava quando o
+ * React Query devolvia a resposta completa da API.
+ */
+describe("destino do funil/etapa do roteador (#2415)", () => {
+  const ROTEADOR = {
+    id: "r1",
+    name: "Roteador",
+    channel_session_id: "s1",
+    is_active: true,
+    config: {},
+    fallback_agent_id: null,
+  };
+  // O SSR legado chegava SEM os campos de destino (o defeito da issue).
+  const MEMBRO_SEM_DESTINO = {
+    id: "m1",
+    agent_id: "a1",
+    intent_name: "financiamento",
+    intent_description: "quer financiar",
+    examples: [],
+    position: 0,
+    flow_pointer_id: null,
+  } as never;
+  // A resposta completa da API de detalhe (já selecionava os dois campos).
+  const MEMBRO_COM_DESTINO = {
+    id: "m1",
+    agent_id: "a1",
+    intent_name: "financiamento",
+    intent_description: "quer financiar",
+    examples: [],
+    position: 0,
+    flow_pointer_id: null,
+    pipeline_id: "p1",
+    stage_id: "e1",
+  } as never;
+
+  function elemento() {
+    return (
+      <RouterEditorClient
+        routerId="r1"
+        initialState={{ router: ROTEADOR, members: [MEMBRO_SEM_DESTINO] }}
+        agents={[{ id: "a1", name: "Agente" }]}
+        channelSessions={[]}
+        classifierModels={[]}
+      />
+    );
+  }
+
+  function comFunisDoOrgao() {
+    routerDataMock.mockReturnValue({ data: undefined });
+    authMock.mockReturnValue({ activeOrg: { modulos_ligados: [] } });
+    flowsMock.mockReturnValue({ data: undefined });
+    pipelinesMock.mockReturnValue({ data: { data: [{ id: "p1", name: "Funil Vendas" }] } });
+    stagesMock.mockReturnValue({ data: { data: { stages: [{ id: "e1", name: "Prospecção" }] } } });
+  }
+
+  it("o refetch com a resposta completa da API reidrata o destino no draft", () => {
+    comFunisDoOrgao();
+    const { rerender } = render(elemento());
+    // Controle negativo: o SSR legado nasce sem destino.
+    expect(screen.getByRole("combobox", { name: "Funil de destino (opcional)" })).toHaveTextContent(
+      "Sem destino — só escolher o agente",
+    );
+    // O refetch chega com pipeline_id + stage_id (o que a API devolve).
+    routerDataMock.mockReturnValue({ data: { router: ROTEADOR, members: [MEMBRO_COM_DESTINO] } });
+    rerender(elemento());
+    expect(screen.getByRole("combobox", { name: "Funil de destino (opcional)" })).toHaveTextContent("Funil Vendas");
+    expect(screen.getByRole("combobox", { name: "Etapa de destino" })).toHaveTextContent("Prospecção");
+  });
+
+  it("refetch não sobrescreve edição local pendente", () => {
+    comFunisDoOrgao();
+    const { rerender } = render(elemento());
+    fireEvent.change(screen.getByDisplayValue("financiamento"), { target: { value: "financiamento novo" } });
+    routerDataMock.mockReturnValue({ data: { router: ROTEADOR, members: [MEMBRO_COM_DESTINO] } });
+    rerender(elemento());
+    // A edição local fica; o destino continua vazio porque o refetch não pode
+    // apagar o que a pessoa acabou de digitar.
+    expect(screen.getByDisplayValue("financiamento novo")).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Funil de destino (opcional)" })).toHaveTextContent(
+      "Sem destino — só escolher o agente",
     );
   });
 });

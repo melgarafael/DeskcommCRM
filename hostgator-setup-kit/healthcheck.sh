@@ -4,11 +4,26 @@ source "$(dirname "$0")/_common.sh"
 enter_project
 
 step "Containers"
-dc ps
+# MEDIDO (#1955): com o resolver do Docker saturado (`dial udp 8.8.4.4:53:
+# i/o timeout`), o `docker ps` também travava — e o healthcheck ficava preso em
+# "▶ Containers" para sempre, justamente na tela que o dono abre para descobrir
+# o que aconteceu. Com prazo ele diz que o Docker não respondeu e o resto do
+# diagnóstico continua rodando.
+if com_prazo 45 docker compose $(dc_files) ps; then
+  :
+else
+  c_red "⛔ O Docker não respondeu em 45s. Ou o daemon está travado, ou o resolver"
+  c_red "   está saturado (journalctl -u docker -n 100 | tail). Enquanto isso, os"
+  c_red "   comandos de docker continuam travando: reinicie o Docker com"
+  c_red "   systemctl restart docker."
+fi
 
 step "Saúde interna do app (/api/v1/health)"
 # Roda de dentro da rede do compose (a rota não é exposta publicamente sem TLS).
-out="$(dc exec -T app node -e "
+# Mesmo prazo do `ps` acima, pelo mesmo motivo (#1955): um `docker exec` com o
+# resolver saturado travava aqui também, e este era o segundo ponto em que o
+# healthcheck ficava sem resposta nenhuma.
+out="$(com_prazo 30 docker compose $(dc_files) exec -T app node -e "
 fetch('http://127.0.0.1:3000/api/v1/health').then(r=>r.text()).then(t=>{console.log(t);process.exit(0)}).catch(e=>{console.error(e.message);process.exit(1)})
 " 2>/dev/null || echo '')"
 if [ -n "$out" ]; then
@@ -56,8 +71,10 @@ step "E-mails de acesso (confirmar conta e redefinir senha)"
 # O conserto é apontar `GOTRUE_MAILER_TEMPLATES_*` para a rota do app. Como o
 # GoTrue não é serviço deste compose (o kit sobe app, worker, scheduler, waha,
 # redis, srh e caddy — o Supabase próprio fica FORA), o kit não tem como
-# escrever essa configuração. O que ele pode, e é o que faz aqui, é MEDIR o
-# estado e dizer as duas linhas exatas. Silêncio aqui seria o `return` mudo que
+# escrever essa configuração. A exceção é o modo single-server, em que o
+# Supabase é do kit: lá o install-single-server.sh e o update.sh gravam as duas
+# chaves (gravar_modelos_do_gotrue, _common.sh — #2109). Para o resto, o que o
+# kit pode, e é o que faz aqui, é MEDIR o estado e dizer as duas linhas exatas. Silêncio aqui seria o `return` mudo que
 # o invariante 6(c) do Sistema Vivo proíbe.
 case "${NEXT_PUBLIC_SUPABASE_URL:-}" in
   https://*.supabase.co*)
@@ -126,3 +143,32 @@ fetch('http://127.0.0.1:3000/email-templates/confirmation').then(r=>r.text()).th
     fi
     ;;
 esac
+
+step "TLS do banco (Supabase)"
+# ── Por que este passo existe (#829) ──────────────────────────────────────────
+# Instalação sem patches permanentes falhou nos diagnósticos com
+# `SELF_SIGNED_CERT_IN_CHAIN`: a cadeia do pooler não está na trust store
+# padrão, e o erro cru não diz o que fazer. Aqui o teste roda com verificação
+# TOTAL (sslmode=verify-full + sslrootcert, montado pelo pg_container) e, quando
+# a CA não está declarada, a frase vem com o NOME da variável que falta — é o
+# que a issue pede. Nada é desligado para o teste passar.
+#
+# A chave é OPCIONAL, e o passo trata a ausência dela como opção, não como
+# defeito: sem SUPABASE_SSL_ROOT_CERT a linha é informativa (c_dim), sem
+# instrução de download. Em amarelo, ela mandaria TODA instalação existente —
+# a maioria não exige verificação de certificado — baixar uma CA de que não
+# precisa. No single-server o banco é o Postgres desta máquina, e a CA da nuvem
+# não se aplica. O amarelo fica para quem DECLAROU a CA e ela não funciona.
+if [ "${SINGLE_SERVER:-0}" = "1" ]; then
+  c_dim "  não se aplica: no single-server o banco é o Postgres desta máquina, não o pooler da nuvem."
+elif [ -z "${SUPABASE_SSL_ROOT_CERT:-}" ]; then
+  c_dim "  (opcional) SUPABASE_SSL_ROOT_CERT não declarada no .env — nada a verificar."
+  c_dim "  Só faz falta se a sua conexão exige verificação de certificado (veja o README do kit)."
+elif tls_dito="$(tls_do_banco 2>&1)"; then
+  c_grn "✓ TLS do banco verificado (sslmode=verify-full com a CA de SUPABASE_SSL_ROOT_CERT)"
+else
+  while IFS= read -r linha_tls; do
+    if [ -n "$linha_tls" ]; then c_ylw "$linha_tls"; fi
+  done <<< "$tls_dito"
+  c_dim "  (a verificação de certificado continua ligada — nada foi desligado para este teste.)"
+fi

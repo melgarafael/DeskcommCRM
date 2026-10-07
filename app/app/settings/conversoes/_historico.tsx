@@ -63,7 +63,8 @@ export function HistoricoDeEnvios({
   linhas: LinhaDoHistorico[];
   total: number;
   filtros: FiltrosDoHistorico;
-  regras: RegraDeConversaoGoogle[];
+  /** O nome de cada evento de etapa (Google e Meta), para o filtro e a tabela. */
+  regras: Pick<RegraDeConversaoGoogle, "eventName" | "label">[];
   idioma: Idioma;
 }) {
   const t = (texto: string) => traduzir(texto, idioma);

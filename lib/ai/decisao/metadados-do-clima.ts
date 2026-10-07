@@ -17,6 +17,14 @@ export const CHAVES_DO_CLIMA = {
   notaDoJev: "sentiment_jev_score",
   /** A versão do Jev que respondeu. */
   modeloDoJev: "sentiment_jev_model",
+  /**
+   * O limiar COM O QUAL a nota foi cortada naquela decisão — o
+   * `config.sentiment_threshold` do agente da conversa (#2216), ou o padrão do
+   * produto. A concordância do cartão do Jev lê por aqui (issue #2219): sem
+   * esta chave, um agente em 0,1 teria a conta medida contra 0,3. Mensagem
+   * gravada antes do #2219 não tem a chave — quem lê cai no padrão.
+   */
+  limiar: "sentiment_threshold",
 } as const;
 
 export type MotorDoClima = "jev" | "llm";

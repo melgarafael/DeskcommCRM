@@ -55,7 +55,16 @@ function bancoDeMentira(preexistentes: Array<Partial<LinhaMessage>> = []): Duplo
     let org: string | null = null;
     let externos: string[] = [];
     const filtrosExtras: Array<[string, unknown]> = [];
+    // `.neq()` APLICADO, não decorativo: a re-checagem pós-insert da ingestão
+    // (corrida com o envio, lib/waha/ingest.ts) exclui a própria linha recém-
+    // inserida por `neq("id")`. Um elo que ignorasse o filtro acharia o eco nele
+    // mesmo e mediria o caminho errado.
+    const diferentes: Array<[string, unknown]> = [];
     const q = {
+      neq(coluna: string, valor: unknown) {
+        diferentes.push([coluna, valor]);
+        return q;
+      },
       eq(coluna: string, valor: string) {
         if (coluna === "organization_id") org = valor;
         else filtrosExtras.push([coluna, valor]);
@@ -89,7 +98,8 @@ function bancoDeMentira(preexistentes: Array<Partial<LinhaMessage>> = []): Duplo
         const casadas = messages.filter(
           (m) =>
             (org === null || m.organization_id === org) &&
-            filtrosExtras.every(([c, v]) => (Array.isArray(v) ? v.includes(m[c]) : (m[c] ?? null) === v)),
+            filtrosExtras.every(([c, v]) => (Array.isArray(v) ? v.includes(m[c]) : (m[c] ?? null) === v)) &&
+            diferentes.every(([c, v]) => m[c] !== v),
         );
         return Promise.resolve(ok({ data: casadas, error: null }));
       },
@@ -98,7 +108,11 @@ function bancoDeMentira(preexistentes: Array<Partial<LinhaMessage>> = []): Duplo
       },
       async maybeSingle() {
         const achou = messages.find(
-          (m) => m.organization_id === org && m.external_id !== null && externos.includes(m.external_id),
+          (m) =>
+            m.organization_id === org &&
+            m.external_id !== null &&
+            externos.includes(m.external_id) &&
+            diferentes.every(([c, v]) => m[c] !== v),
         );
         return { data: achou ? { id: achou.id } : null, error: null };
       },

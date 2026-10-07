@@ -49,8 +49,10 @@ export interface SkillComCorpo {
   matcher: SkillMatcher;
   version_id: string;
   updated_at?: string;
-  /** Skill de pacote (.zip com arquivos): o editor avisa e não salva — o PUT devolve 409. */
+  /** Skill de pacote (.zip com arquivos): o texto é editável e o PUT herda manifesto + arquivos na versão nova (#2047). */
   tem_arquivos_do_pacote?: boolean;
+  /** Paths do manifesto (`references/` e `assets/`) — a UI mostra como somente leitura. */
+  arquivos_do_pacote?: string[];
 }
 
 export interface SalvarSkillBody {

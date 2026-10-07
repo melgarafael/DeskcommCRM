@@ -10,6 +10,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { conversaoDeVendaHandler } from "@/lib/conversoes/envio.handler";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import { INTERNOS, transporteMeta } from "@/lib/plataformas-de-anuncio/meta/conversions";
+import {
+  SEM_IDENTIDADE,
+  identidadeDaMeta,
+} from "@/lib/plataformas-de-anuncio/meta/identidade";
 import { PLATAFORMAS, transporteDe } from "@/lib/plataformas-de-anuncio/registry";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -24,6 +28,8 @@ interface Tabelas {
   contacts?: unknown;
   ad_platform_connections?: unknown;
   ad_conversion_dispatches?: unknown;
+  /** `settings` da organização — de onde vêm Página e WABA (#2098). */
+  organizations?: unknown;
 }
 
 /** Registra o que foi gravado, para o teste poder afirmar sobre o livro-razão. */
@@ -452,4 +458,113 @@ describe("confirmação e recuperação", () => {
       });
     },
   );
+});
+
+/**
+ * A identidade da Página / da WABA que a Meta cobra no Purchase de
+ * clique-para-WhatsApp (#2098): error_subcode 2804116 recusava TODA venda
+ * porque `user_data` saía só com `ctwa_clid` e `ph`.
+ */
+describe("a identidade que a Meta exige em business_messaging (#2098)", () => {
+  interface EventoDaMeta {
+    user_data: Record<string, unknown>;
+    action_source?: string;
+  }
+
+  /** Manda a venda e devolve o evento que saiu no fio. */
+  async function vendaEnviada(tabelas: Tabelas): Promise<EventoDaMeta> {
+    vi.mocked(createAdminClient).mockReturnValue(fakeAdmin(tabelas) as never);
+    let corpo = "";
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_u, init) => {
+      corpo = String((init as RequestInit).body);
+      return new Response('{"events_received":1}', { status: 200 });
+    });
+    const r = await conversaoDeVendaHandler.handle(evento("lead.won"));
+    expect(r.status).toBe("ok");
+    return JSON.parse(corpo).data[0] as EventoDaMeta;
+  }
+
+  const base: Tabelas = {
+    crm_leads: leadGanho,
+    contacts: contatoComAnuncio,
+    ad_platform_connections: conexaoAtiva,
+  };
+
+  it("com a Página gravada, o Purchase sai com user_data.page_id", async () => {
+    const ev = await vendaEnviada({
+      ...base,
+      organizations: { settings: { conversions: { meta_page_id: "123456789012345" } } },
+    });
+
+    // É isto que a Meta pedia no 2804116: um dos dois ids em `user_data`.
+    expect(ev.user_data.page_id).toBe("123456789012345");
+    expect(ev.user_data.ctwa_clid).toBe("CLIQUE_ABC");
+    expect(ev.action_source).toBe("business_messaging");
+  });
+
+  it("sem Página, a conta do WhatsApp Business entra no lugar dela", async () => {
+    const ev = await vendaEnviada({
+      ...base,
+      organizations: {
+        settings: { conversions: { meta_whatsapp_business_account_id: "104987654321098" } },
+      },
+    });
+
+    expect(ev.user_data.whatsapp_business_account_id).toBe("104987654321098");
+    // UM por envio: mandar os dois mostraria um id que talvez não seja deste
+    // conjunto de dados — e a plataforma pede "o que estiver vinculado".
+    expect(ev.user_data.page_id).toBeUndefined();
+  });
+
+  it("sem nada gravado, NADA é inventado e a recusa da Meta fica declarada", async () => {
+    vi.mocked(createAdminClient).mockReturnValue(fakeAdmin(base) as never);
+    let corpo = "";
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_u, init) => {
+      corpo = String((init as RequestInit).body);
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: 100,
+            error_subcode: 2804116,
+            message: "Invalid parameter",
+            error_user_title: "Falta a identificação da Página ou da conta do WhatsApp Business",
+            error_user_msg:
+              "Seu evento Purchase com a fonte da ação business_messaging do canal whatsapp não tem page_id nem whatsapp_business_account_id.",
+          },
+        }),
+        { status: 400 },
+      );
+    });
+
+    const r = await conversaoDeVendaHandler.handle(evento("lead.won"));
+
+    const ev = JSON.parse(corpo).data[0] as EventoDaMeta;
+    // O clique é mandado igual: a ausência do id não vira bloqueio nosso, e o
+    // id não é adivinhado de lugar nenhum.
+    expect(ev.user_data.ctwa_clid).toBe("CLIQUE_ABC");
+    expect(ev.user_data.page_id).toBeUndefined();
+    expect(ev.user_data.whatsapp_business_account_id).toBeUndefined();
+    // A recusa é da Meta — e o livro-razão diz a causa, não mais "Invalid parameter".
+    expect(r.status).toBe("skipped");
+    expect(upserts.at(-1)?.valores).toMatchObject({
+      status: "error",
+      reason: "recusado_pela_plataforma",
+    });
+    expect(String(upserts.at(-1)?.valores.detail)).toContain(
+      "Falta a identificação da Página ou da conta do WhatsApp Business",
+    );
+  });
+
+  it("id torto não vira credencial: o que não for dígitos volta null", () => {
+    // Valor malformado mandado ao fio produziria uma recusa indistinguível da
+    // recusa por id faltando. As DUAS pontas (gravar e ler) filtram a mesma forma.
+    expect(
+      identidadeDaMeta({
+        conversions: { meta_page_id: "12ab", meta_whatsapp_business_account_id: " 104987654321098 " },
+      }),
+    ).toEqual({ pageId: null, whatsappBusinessAccountId: "104987654321098" });
+    expect(identidadeDaMeta(null)).toEqual(SEM_IDENTIDADE);
+    expect(identidadeDaMeta({})).toEqual(SEM_IDENTIDADE);
+    expect(identidadeDaMeta({ conversions: { report_via_channel: true } })).toEqual(SEM_IDENTIDADE);
+  });
 });

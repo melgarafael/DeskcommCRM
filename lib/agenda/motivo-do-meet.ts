@@ -96,8 +96,14 @@ const POR_NOME: Readonly<Record<string, Omit<MotivoDoMeet, "naoRepetir">>> = {
   meet_conversation_stale: {
     codigo: "meet_conversation_stale",
     status: 409,
+    // Sem menção a "link": `fn_meet_boundary_current` compara `service_revision`,
+    // `current_demanda_id`, `demanda.revision`, `fechada_em` e o status da
+    // conversa — nunca um link. Num compromisso PRESENCIAL ou POR TELEFONE não
+    // existe link nenhum (#2188), e a frase antiga afirmava um fato que não
+    // aconteceu ("depois que o link foi criado") logo no caminho que o relator
+    // descreveu: resolver a conversa → marcar o compromisso → mandar os dados.
     texto:
-      "O atendimento desta conversa mudou depois que o link foi criado. Escolha a conversa atual e autorize o envio de novo.",
+      "O atendimento desta conversa mudou. Escolha a conversa atual e autorize o envio de novo.",
   },
   meet_ocupado: {
     codigo: "meet_ocupado",

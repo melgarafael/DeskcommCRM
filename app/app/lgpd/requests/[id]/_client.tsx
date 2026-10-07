@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLgpdRequest } from "@/hooks/useLgpdRequest";
+import { prazoEmBr } from "@/lib/lgpd/sla";
 import { SlaTimeline } from "./SlaTimeline";
 import { PreviewPanel } from "./PreviewPanel";
 import { ApproveButton } from "./ApproveButton";
@@ -111,8 +112,7 @@ export function LgpdRequestDetail({ id, hrefDaLista = "/app/lgpd/requests" }: Pr
           {request.due_at && (
             <>
               {" · "}
-              {t("Vence em")}{" "}
-              {format(new Date(request.due_at), "dd/MM/yyyy", { locale: localeDaData })}
+              {t("Vence em")} {prazoEmBr(request.due_at)}
             </>
           )}
         </p>

@@ -8,8 +8,10 @@ import { AuthProvider } from "@/hooks/auth/AuthProvider";
 import { ProvedorDeCoresDasEtiquetas } from "@/components/tags/CoresDasEtiquetas";
 import { AppShell } from "./_components/AppShell";
 import { EstiloDaMarcaDaOrganizacao } from "./_components/EstiloDaMarcaDaOrganizacao";
+import { EstiloDoTemaDaExtensao } from "./_components/EstiloDoTemaDaExtensao";
 import { MfaEnrollGate } from "@/components/auth/MfaEnrollGate";
 import { cssDaMarca, ESCOPO_DA_ORGANIZACAO } from "@/lib/branding/css";
+import { cssDaExtensaoDeTema, linhaBrutaDeTema, temaAplicavel } from "@/lib/extensions/tema";
 import { marcaDaInstalacao } from "@/lib/branding/instalacao";
 import { resolverMarcaDaOrganizacao } from "@/lib/branding/organizacao";
 import { env } from "@/lib/env";
@@ -57,6 +59,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
    * e não aqui: a precedência é regra do produto, não detalhe deste layout.
    */
   let cssDaOrganizacao: string | null = null;
+  // O tema de extensão, se a organização escolheu um. `null` = quem não
+  // escolheu — e aí o `EstiloDoTemaDaExtensao` não renderiza nada.
+  let cssDoTemaDaExtensao: string | null = null;
 
   // EPIC-02: gate /app/* on completed onboarding.
   // EPIC-11: gate /app/* on org not being suspended (S-11.08).
@@ -157,6 +162,36 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       // laço de retorno desta feature é a tela `/app/settings/marca`, que mostra
       // os motivos para quem pode consertá-los — o admin daquela organização.
       cssDaOrganizacao = cssDaMarca(marca.cor, ESCOPO_DA_ORGANIZACAO).css;
+    }
+
+    // O tema de extensão NUNCA derruba a casca — e por isso a leitura fica FORA
+    // do `Promise.all` lá de cima: o portão de organização (suspensa / onboarding
+    // / ilegível) decide o destino ANTES de qualquer consulta nova, e uma leitura
+    // que falhe aqui (tabela ausente numa instalação antiga, RLS, formato
+    // inesperado) desce para `null` em vez de trocar o `redirect` do portão por
+    // um 500. Quem não escolheu tema fica exatamente como está; quem escolheu só
+    // perde a pintura naquele render.
+    try {
+      const temaTrace = await admin
+        .from("organization_extensions")
+        .select(
+          "configuration," +
+            "extension_installations!organization_extensions_installation_id_fkey(" +
+            "extension_artifacts!extension_installations_artifact_id_fkey(manifest))",
+        )
+        .eq("organization_id", activeOrg.orgId)
+        .eq("enabled", true)
+        .limit(50);
+      if (!temaTrace.error) {
+        const linhas = (temaTrace.data ?? [])
+          .map(linhaBrutaDeTema)
+          .filter((linha): linha is NonNullable<typeof linha> => linha !== null);
+        const temaEscolhido = temaAplicavel(linhas);
+        cssDoTemaDaExtensao =
+          temaEscolhido === null ? null : cssDaExtensaoDeTema(temaEscolhido).css;
+      }
+    } catch {
+      cssDoTemaDaExtensao = null;
     }
 
     // Desce para o menu CAMPO A CAMPO, e só o campo que a organização definiu.
@@ -260,6 +295,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       */}
       <div data-marca-org="" className="contents">
         <EstiloDaMarcaDaOrganizacao css={cssDaOrganizacao} />
+        <EstiloDoTemaDaExtensao css={cssDoTemaDaExtensao} />
         <ImpersonateBanner impersonating={impersonating} />
         <ConexaoCaidaBanner caidas={conexoesCaidas} />
         {needsMfaGate ? (

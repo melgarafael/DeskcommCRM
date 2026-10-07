@@ -36,8 +36,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * de API), onde um humano da empresa decide o papel — não é esquecimento aqui,
  * é o caminho.
  *
- * `scopesRole` (`lib/mcp/auth.ts:49`) lê o primeiro `role:` da lista; o teste
- * ao lado fixa o conjunto emitido, então acrescentar `role:manager` sem querer
+ * `scopesRole` (`lib/mcp/auth.ts`) usa o MAIOR `role:` da lista; o teste ao
+ * lado fixa o conjunto emitido, então acrescentar `role:manager` sem querer
  * reprova.
  *
  * ## Não há `actor:ai_agent`, e a AUSÊNCIA é a decisão (decisão do dono, 19/09)

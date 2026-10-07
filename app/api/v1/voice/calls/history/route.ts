@@ -12,6 +12,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { logger } from "@/lib/logger";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
+import { idsDeContatosPessoais } from "@/app/api/v1/conversations/_handler";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,13 @@ export async function GET(req: Request): Promise<Response> {
       "id, contact_id, direction, peer_phone, status, end_reason, started_at, answered_at, ended_at, duration_ms, owner_user_id, created_by",
     )
     .eq("organization_id", activeOrg.orgId);
+  // Chamada de pessoal some do histórico e só volta ao desmarcar (spec 21,
+  // etapa 14) — a mesma primitiva de ids da lista do inbox. Bloqueado continua
+  // aparecendo (recusada); por isso o filtro é só de pessoal.
+  const pessoais = await idsDeContatosPessoais(supabase, activeOrg.orgId);
+  if (pessoais.length > 0) {
+    consulta = consulta.not("contact_id", "in", `(${pessoais.join(",")})`);
+  }
   if (id) consulta = consulta.eq("id", id);
   const { data, error } = await consulta.order("started_at", { ascending: false }).limit(limit);
 

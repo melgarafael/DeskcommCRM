@@ -12,8 +12,7 @@ import { z } from "zod";
  *
  * Fora de `app/app/` (o layout de `/app` desviaria sem o pedido) e fora de
  * `lib/auth/public-paths.ts` de propósito: sem sessão, é o proxy que manda ao
- * login com `next=` e traz o DPO de volta a este pedido. O hub é público, e o
- * `requireAuth` dele manda ao login sem `next`.
+ * login com `next=` e traz o DPO de volta a este pedido.
  *
  * Nenhuma leitura aqui: quem autoriza o pedido é a página/rota de destino.
  */

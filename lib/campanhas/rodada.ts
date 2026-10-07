@@ -42,9 +42,9 @@ import { decidePacing, dayStartInTz } from "@/lib/agent-engine/pacing/engine";
 import { loadChannelKnobs, loadPacingState, recordSend } from "@/lib/agent-engine/pacing/store";
 import { beginServiceAtOrigin } from "@/lib/atendimento/origem";
 import { logger } from "@/lib/logger";
-import { OrgNaoOperanteError, idsDeOrgsParadas } from "@/lib/organizacao/operante";
+import { OrgNaoOperanteError, STATUS_OPERANTE, ehOperante, statusDaOrgEmbutida } from "@/lib/organizacao/operante";
 
-import { motivoParaExcluir, recusouMarketing } from "./elegibilidade";
+import { motivoParaExcluir, recusouMarketing, statusDaSaida } from "./elegibilidade";
 import { hashDoEndereco } from "./exclusoes";
 import { renderizar } from "./renderizador";
 import { escolherNumero, poolDaCampanha, type NumeroDisponivel } from "./rodizio";
@@ -75,6 +75,9 @@ const VAZIA: ResultadoDaRodada = {
 /** Teto de números atendidos por rodada — a rodada é de um minuto, não de um dia. */
 const NUMEROS_POR_RODADA = 10;
 
+/** Teto de agendadas promovidas por rodada: a sobra vira `running` no minuto seguinte. */
+const PROMOVIDAS_POR_RODADA = 100;
+
 interface CampanhaRow {
   id: string;
   organization_id: string;
@@ -94,6 +97,16 @@ const COLUNAS_DA_CAMPANHA =
   "id, organization_id, channel_session_id, name, message_body, content_version, " +
   "intervalo_segundos, janela_inicio_hora, janela_fim_hora, teto_diario, teto_horario";
 
+/**
+ * O status da organização embutido com `!inner` no `select`, e filtrado na
+ * própria consulta (`organizations.status`): o corte sai no banco, ANTES do
+ * `limit`. Filtrar só em memória deixaria a campanha da org parada ocupar a
+ * janela — ela nunca conclui, e a ordem por `started_at` a mantém no topo. Nunca
+ * se trafega a lista de ids das paradas numa `in (...)` da URL: ela cresce sem
+ * teto e corta em `max_rows` sem aviso (issue #2015).
+ */
+const COLUNAS_DA_CAMPANHA_COM_EMBED = `${COLUNAS_DA_CAMPANHA}, organizations:organization_id!inner(status)`;
+
 export async function rodarUmaRodadaDeCampanha(
   admin: SupabaseClient,
   agora: Date = new Date(),
@@ -105,20 +118,15 @@ export async function rodarUmaRodadaDeCampanha(
   // agente"; a fila nunca filtrou status (o `CLAIM_SQL` de
   // `lib/agent-engine/queue/queue.ts` não olha `organizations`), e quem fecha a
   // fila é `fn_suspender_organizacao`, que falha os jobs pendentes.
-  const idsParadas = await idsDeOrgsParadas(admin);
+  const promovidas = await promoverAgendadas(admin, agora);
 
-  const promovidas = await promoverAgendadas(admin, idsParadas, agora);
-
-  let consulta = admin
+  const { data: campanhas, error: falhaDaBusca } = await admin
     .from("campaigns")
-    .select(COLUNAS_DA_CAMPANHA)
+    .select(COLUNAS_DA_CAMPANHA_COM_EMBED)
     .eq("status", "running")
+    .eq("organizations.status", STATUS_OPERANTE)
     .order("started_at", { ascending: true })
     .limit(NUMEROS_POR_RODADA * 3);
-  if (idsParadas.length > 0) {
-    consulta = consulta.not("organization_id", "in", `(${idsParadas.join(",")})`);
-  }
-  const { data: campanhas, error: falhaDaBusca } = await consulta;
   if (falhaDaBusca) {
     // Sem isto a falha virava "nada_a_fazer": indistinguível de rodada vazia.
     logger.warn("[campanha] busca das campanhas em andamento falhou", { motivo: falhaDaBusca.message });
@@ -127,7 +135,11 @@ export async function rodarUmaRodadaDeCampanha(
   // `as unknown as`: a lista de colunas é montada por concatenação, e o tipo
   // gerado do PostgREST só sabe inferir literal — o mesmo caminho que
   // `lib/asaas/*` já usa para tabela que ainda não está em `database.types.ts`.
-  const emExecucao = (campanhas ?? []) as unknown as CampanhaRow[];
+  // ponytail: o `ehOperante` aqui é cinto — o banco já cortou; ele só segura o
+  // dia em que alguém tirar o filtro da consulta.
+  const emExecucao = ((campanhas ?? []) as unknown as Array<
+    CampanhaRow & { organizations?: { status?: string | null } | Array<{ status?: string | null }> | null }
+  >).filter((campanha) => ehOperante(statusDaOrgEmbutida(campanha.organizations)));
   if (emExecucao.length === 0) {
     return promovidas > 0 ? { ...VAZIA, promovidas, detalhe: "promovidas" } : VAZIA;
   }
@@ -166,21 +178,39 @@ export async function rodarUmaRodadaDeCampanha(
   return total;
 }
 
-/** `scheduled` cuja hora chegou vira `running`. */
+/**
+ * `scheduled` cuja hora chegou vira `running` — só de org operante, em dois
+ * passos limitados. O PostgREST filtra por recurso EMBUTIDO, e um `update` não
+ * embute: `organizations.status` ali ou dá erro ou não corta nada. Por isso:
+ * (a) escolhe os ids no banco, com o embed `!inner` e o corte antes do
+ * `limit`; (b) promove só esses ids, e só se ainda estão `scheduled` (outra
+ * rodada concorrente não promove duas vezes). A lista que vai na URL é a das
+ * campanhas a promover, com teto — nunca a das orgs paradas, que não tem teto.
+ */
 async function promoverAgendadas(
   admin: SupabaseClient,
-  idsParadas: string[],
   agora: Date,
 ): Promise<number> {
-  let consulta = admin
+  const { data: vencidas, error: falhaDaEscolha } = await admin
+    .from("campaigns")
+    .select("id, organizations:organization_id!inner(status)")
+    .eq("status", "scheduled")
+    .lte("scheduled_at", agora.toISOString())
+    .eq("organizations.status", STATUS_OPERANTE)
+    .order("scheduled_at", { ascending: true })
+    .limit(PROMOVIDAS_POR_RODADA);
+  if (falhaDaEscolha) {
+    logger.warn("[campanha] promoção de agendadas falhou", { motivo: falhaDaEscolha.message });
+    return 0;
+  }
+  const ids = ((vencidas ?? []) as Array<{ id: string }>).map((c) => c.id);
+  if (ids.length === 0) return 0;
+  const { data, error } = await admin
     .from("campaigns")
     .update({ status: "running", started_at: agora.toISOString() })
+    .in("id", ids)
     .eq("status", "scheduled")
-    .lte("scheduled_at", agora.toISOString());
-  if (idsParadas.length > 0) {
-    consulta = consulta.not("organization_id", "in", `(${idsParadas.join(",")})`);
-  }
-  const { data, error } = await consulta.select("id");
+    .select("id");
   if (error) {
     logger.warn("[campanha] promoção de agendadas falhou", { motivo: error.message });
     return 0;
@@ -199,6 +229,7 @@ interface DestinatarioRow {
     display_name: string | null;
     phone_number: string | null;
     is_blocked: boolean;
+    is_personal: boolean;
     is_anonymized: boolean;
     consent: unknown;
   } | null;
@@ -213,7 +244,7 @@ async function rodarUmaCampanha(
     .from("campaign_recipients")
     .select(
       "id, contact_id, recipient_address, rendered_body, " +
-        "contacts(id, name, display_name, phone_number, is_blocked, is_anonymized, consent)",
+        "contacts(id, name, display_name, phone_number, is_blocked, is_personal, is_anonymized, consent)",
     )
     .eq("campaign_id", campanha.id)
     .eq("status", "pending")
@@ -256,6 +287,7 @@ async function rodarUmaCampanha(
     contactId: alvo.contact_id,
     telefone: contato?.phone_number ?? alvo.recipient_address,
     bloqueado: !!contato?.is_blocked,
+    pessoal: !!contato?.is_personal,
     anonimizado: !!contato?.is_anonymized,
     recusouMarketing: recusouMarketing(contato?.consent),
   });
@@ -263,7 +295,7 @@ async function rodarUmaCampanha(
     await admin
       .from("campaign_recipients")
       .update({
-        status: motivo === "opt_out" ? "opted_out" : "skipped",
+        status: statusDaSaida(motivo),
         eligibility_status: "excluded",
         exclusion_reason: motivo,
         opted_out_at: motivo === "opt_out" ? agora.toISOString() : null,

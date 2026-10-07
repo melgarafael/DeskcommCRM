@@ -37,9 +37,30 @@ async function insert(table: string, values: Record<string, unknown>) {
  * flakinesses: é o mesmo defeito de espera, e é a SEGUNDA vez que esta classe
  * morde este repositório.
  *
- * O conserto NÃO relaxa asserção nenhuma — nenhum timeout foi aumentado. Ele
- * apenas espera o que é determinístico (a URL final) antes de começar a medir.
+ * O conserto de 11/09 não relaxou asserção nenhuma: ele apenas espera o que é
+ * determinístico (a URL final) antes de começar a medir. Depois disso, o #2398
+ * DEU prazo explícito de 15s às asserções que dependem de recarga — ver
+ * `PRAZO_DA_RECARGA` abaixo, que diz o que esse prazo cobre e o que não cobre.
  */
+/**
+ * PRAZO DAS ASSERÇÕES QUE DEPENDEM DE RECARGA (navegação, F5 ou realtime).
+ *
+ * O padrão de 5s do `expect` não cobre a cadeia que o painel do contato percorre
+ * depois de uma navegação forte — medido nos traces do CI (runs 37105734917,
+ * 36889612194, 37421665509): documento → `automatico-ativo` + conversa (+1,0 a
+ * +2,4s) → segunda lista, porque a chave da query muda quando o
+ * `automatico-ativo` responde (issue #2366) → `crm-summary` (+2,8 a +3,9s) →
+ * pintura ~1s depois. O texto certo chegava em ~5,05–5,15s: a spec perdia a
+ * corrida contra o próprio relógio, a tela não ficava presa. Mesmo padrão do
+ * #2365.
+ *
+ * Ressalva: o prazo é o conserto da SPEC, não do produto. A cadeia lenta segue
+ * lá — o refetch duplo da lista é o #2366, e o ~1–1,5s de página ocupada antes
+ * da segunda lista (e ~1s entre o `crm-summary` e a pintura) não tem causa
+ * medida: o trace não traz perfil de CPU.
+ */
+const PRAZO_DA_RECARGA = { timeout: 15_000 };
+
 async function abrirConversa(page: Page, conversation: string): Promise<void> {
   await page.goto(`/app/inbox/${conversation}`);
   await page.waitForURL(new RegExp(`/app/inbox\\?id=${conversation}`));
@@ -167,7 +188,7 @@ test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à
     await page.waitForURL(/\/app(?:\/|$)/);
     await abrirConversa(page, conversation);
     const panel = page.getByTestId("inbox-demandas");
-    await expect(panel.getByText("Demanda vigente neste canal")).toBeVisible();
+    await expect(panel.getByText("Demanda vigente neste canal")).toBeVisible(PRAZO_DA_RECARGA);
     await expect(page.getByTestId("inbox-memoria")).toContainText("Preferência de horário");
     // DoD 12 para a issue #908: o rótulo do botão que CRIA o lead provado pela
     // tela, não só em jsdom. O painel é `flex flex-wrap` e o rótulo ficou mais
@@ -211,12 +232,17 @@ test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à
     await expect(panel).toContainText("Nenhuma demanda aberta.");
     await expect(page.getByTestId("inbox-memoria")).toContainText("Histórico encerrado");
     await inbound("Voltei para novo atendimento");
-    await expect(panel.getByText("Demanda vigente neste canal")).toBeVisible();
+    // Aqui a tela não navega, só o realtime atualiza. Quando isto falhou (run
+    // 37320609105), o que separou a falha do controle aprovado (run 37329560310,
+    // com a MESMA rajada de buscas canceladas) foi o servidor demorando ~4s em
+    // pedidos que nunca são cancelados — causa não explicada, issue #2399.
+    // O prazo explícito ainda reprova o painel que nunca atualiza.
+    await expect(panel.getByText("Demanda vigente neste canal")).toBeVisible(PRAZO_DA_RECARGA);
     await page.goto("/app/inbox?filter=unassigned");
     await page.getByText("Voltei para novo atendimento", { exact: true }).first().click();
     await expect(
       page.getByTestId("inbox-demandas").getByText("Demanda vigente neste canal"),
-    ).toBeVisible();
+    ).toBeVisible(PRAZO_DA_RECARGA);
     const current = await db
       .from("conversations")
       .select("current_demanda_id,status")
@@ -265,11 +291,11 @@ test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à
     await expect(page.getByTestId("inbox-item")).toContainText("Resposta registrada; atendimento mudou");
     await page.screenshot({ path: `${evidence}/task4-caso-obsoleto-aviso.png`, fullPage: true });
     await abrirConversa(page, conversation);
-    await expect(page.getByTestId("inbox-memoria")).toContainText("Histórico encerrado");
+    await expect(page.getByTestId("inbox-memoria")).toContainText("Histórico encerrado", PRAZO_DA_RECARGA);
     const language = await db.auth.admin.updateUserById(user, { user_metadata: { locale: "es" } });
     if (language.error) throw language.error;
     await page.reload();
-    await expect(page.getByTestId("inbox-memoria")).toContainText("Historial cerrado — sin tareas pendientes");
+    await expect(page.getByTestId("inbox-memoria")).toContainText("Historial cerrado — sin tareas pendientes", PRAZO_DA_RECARGA);
     await expect(page.getByTestId("inbox-memoria")).toContainText("Resuelto");
     await page.screenshot({ path: `${evidence}/task4-historico-es.png`, fullPage: true });
     await page.getByRole("button", { name: "Reabrir", exact: true }).click();

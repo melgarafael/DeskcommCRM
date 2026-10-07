@@ -19,6 +19,7 @@ import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { classificarLeadInicial, type ResultadoClassificacaoInicial } from "@/lib/leads/classificacao-inicial";
 import type { CreateLeadInput } from "@/lib/schemas";
 import { mapInboundPayload, verifyInboundSignature, type FieldMap } from "@/lib/webhooks/inbound";
+import { HEADER_ASSINATURA_DE_ENTRADA } from "@/lib/webhooks/assinatura";
 import { encontrarContatoPorTelefoneComNome } from "@/lib/channels/contato-por-telefone";
 import {
   buildContactConsentGrant,
@@ -33,10 +34,17 @@ import {
   mapRdStationPayload,
   type RdStationMapped,
 } from "@/lib/webhooks/rdstation";
-import { origemDaPagina, registrarCaptacao } from "@/lib/webhooks/captacao";
+import { isElementorPayload, mapElementorPayload, type ElementorMapped } from "@/lib/webhooks/elementor";
+import {
+  motivoDaRecusaDaCriacao,
+  origemDaPagina,
+  registrarCaptacao,
+  type MotivoDaRecusa,
+} from "@/lib/webhooks/captacao";
 import { ipDoClienteParaInet } from "@/lib/http/ip-do-cliente";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { ApiError } from "@/lib/api/types";
+import { autorizarCaptacaoParaIA, camposDaCaptacao } from "@/lib/ai/elegibilidade/formulario";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { kickLocalPipeline } from "@/lib/dev/kick-local-pipeline";
 
@@ -86,7 +94,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   const admin = createAdminClient();
   const { data: source, error: srcErr } = await admin
     .from("webhook_sources")
-    .select("id, name, organization_id, secret_encrypted, default_pipeline_id, default_stage_id, field_map, redirect_to, is_active")
+    .select("id, name, organization_id, secret_encrypted, default_pipeline_id, default_stage_id, field_map, redirect_to, is_active, authorize_ai_on_capture")
     .eq("path_token", token)
     .maybeSingle();
   if (srcErr) return fail("internal_error", srcErr.message, 500, { requestId });
@@ -124,30 +132,42 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     sourceName: (source.name as string) ?? "Fonte sem nome",
   };
 
-  const sigHeader = req.headers.get("x-deskcomm-signature");
-  // secret cifrado at-rest (migration 0041). Decrypt falhou (chave da GUC
-  // ausente/trocada)? Precedente WAHA: pula a validação em vez de derrubar a
-  // captação — secret aqui é defesa opcional, não gate de disponibilidade.
+  const sigHeader = req.headers.get(HEADER_ASSINATURA_DE_ENTRADA);
+  // secret cifrado at-rest (migration 0041). A fonte que TEM segredo exige
+  // assinatura; se esta instalação não consegue decifrá-lo (chave mestra
+  // ausente/trocada, dado corrompido), não há como conferir — e o que não se
+  // confere não entra. Mesma regra da autenticação do WAHA
+  // (lib/waha/webhook-auth.ts): falha FECHADA. O operador vê o motivo em
+  // "Leads recebidos" e recadastra a assinatura da fonte.
   let sourceSecret: string | null = null;
-  let hmacSkipped = false;
+  let recusa: MotivoDaRecusa | null = null;
   if (source.secret_encrypted) {
     sourceSecret = await decryptWebhookSecret(admin, source.secret_encrypted as unknown as string);
-    if (sourceSecret === null) hmacSkipped = true;
+    if (sourceSecret === null) {
+      logger.error("[webhooks.in] segredo da fonte não decifra — captação recusada até recadastrar a assinatura", {
+        organizationId: source.organization_id,
+        webhookSourceId: source.id,
+        requestId,
+      });
+      recusa = "assinatura_indecifravel";
+    } else if (!verifyInboundSignature(rawBody, sigHeader, sourceSecret)) {
+      recusa = "assinatura_invalida";
+    }
   }
-  const validSignature = sourceSecret ? verifyInboundSignature(rawBody, sigHeader, sourceSecret) : null;
-  if (sourceSecret && !validSignature) {
+  if (recusa) {
     await audit({
       action: "webhook.inbound_invalid_signature",
       organizationId: source.organization_id,
       resourceType: "webhook_source",
       resourceId: source.id,
       requestId,
+      metadata: { reason: recusa },
     });
     await registrarCaptacao(admin, {
       ...fonteDaCaptacao,
       ...origemDaCaptacao,
       outcome: "recusado",
-      rejectReason: "assinatura_invalida",
+      rejectReason: recusa,
     });
     return fail("unauthenticated", "invalid_signature", 401, { requestId });
   }
@@ -167,10 +187,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     raw_body: rawBody,
     payload_parsed: payload,
     signature_header: sigHeader ?? null,
-    // hmacSkipped (decrypt indisponível) conta como "não validado mas aceito",
-    // igual ao webhook WAHA — o feed da UI não pinta de vermelho.
-    valid_signature: validSignature ?? true,
-    event_type: hmacSkipped ? "lead_capture.received_hmac_skipped" : "lead_capture.received",
+    // Daqui só passa fonte sem segredo ou assinatura que conferiu.
+    valid_signature: true,
+    event_type: "lead_capture.received",
     external_id: null,
     status: "received",
     attempts: 0,
@@ -191,6 +210,15 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   const rdStationMapped: RdStationMapped | null =
     respondiMapped === null && isRdStationPayload(payload)
       ? mapRdStationPayload(payload)
+      : null;
+
+  // Elementor Pro manda `fields[<id>][value]` (colchetes, uma linha por
+  // propriedade) — mesmo problema: nenhuma chave de topo chama `nome`. Fica por
+  // último na precedência porque a detecção é por forma estrita, e nenhum
+  // payload é de duas origens.
+  const elementorMapped: ElementorMapped | null =
+    respondiMapped === null && rdStationMapped === null && isElementorPayload(payload)
+      ? mapElementorPayload(payload)
       : null;
 
   // Idempotência (spec §5): `external_id` é campo reservado do envio — quem
@@ -257,10 +285,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   // O `respondiMapped ??` é do PR #326: sem ele o payload aninhado do Respondi
   // volta a cair no mapeador genérico, que é o defeito que aquele PR conserta.
   // O `rdStationMapped ??` é a mesma figura para o envelope `leads[]` do RD
-  // Station (achado 2026-09-08). Ordem: Respondi, RD Station, genérico.
+  // Station (achado 2026-09-08), e o `elementorMapped ??` para os campos em
+  // colchetes do Elementor. Ordem: Respondi, RD Station, Elementor, genérico.
   const mapped =
     respondiMapped ??
     rdStationMapped ??
+    elementorMapped ??
     mapInboundPayload(externalId ? payloadForMapping : payload, fieldMap);
   if (!mapped.phone) {
     const rawPhone = findRawPhoneIfUnnormalized(payload, fieldMap);
@@ -268,11 +298,18 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   }
 
   /** O que o formulário trouxe, do jeito que a tela de histórico mostra. */
+  // O aceite é evidência de captação, não resposta comercial no card.
+  if (source.authorize_ai_on_capture) {
+    for (const key of ["ai_service_consent", "submission_status", "ai_service_consent_version"]) {
+      delete mapped.custom_fields[key];
+    }
+  }
+
   const dadosDaCaptacao = {
     capturedName: mapped.name,
     capturedPhone: mapped.phone,
     capturedEmail: mapped.email,
-    fields: mapped.custom_fields,
+    fields: camposDaCaptacao(mapped.custom_fields, payload, source.authorize_ai_on_capture),
     utm: mapped.source_metadata,
   };
 
@@ -391,7 +428,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
           phone_number: mapped.phone,
           email: mapped.email,
           source: "webhook",
-          source_metadata: { webhook_source_id: source.id, ...mapped.source_metadata },
+          source_metadata: { ...mapped.source_metadata, webhook_source_id: source.id },
           // Consentimento explícito só quando o Respondi confirmou concessão —
           // recusa NUNCA vira concessão por omissão. E a recusa agora é
           // GRAVADA, não omitida: o DEFAULT da coluna já é `granted_at: null`,
@@ -518,7 +555,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     tags: [],
     source: "webhook",
     custom_fields: mapped.custom_fields,
-    source_metadata: { webhook_source_id: source.id, ...mapped.source_metadata },
+    source_metadata: { ...mapped.source_metadata, webhook_source_id: source.id },
     ...(externalId ? { external_id: externalId } : {}),
   };
 
@@ -532,6 +569,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
         requestId,
       },
       leadInput,
+      // O lead de formulário entra no funil mesmo com campo exigido em branco:
+      // decisão do #2295 (ver `exigirCamposDaEtapa` no handler).
+      { exigirCamposDaEtapa: false },
     );
   } catch (err) {
     if (err instanceof ApiError) {
@@ -561,7 +601,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
         ...dadosDaCaptacao,
         contactId: contactId ?? null,
         outcome: "recusado",
-        rejectReason: "erro_ao_criar_lead",
+        // O rótulo diz o que REALMENTE falhou (#2297, caminho 4): o mesmo
+        // `erro_ao_criar_lead` para tudo mentia sobre qualquer recusa que não
+        // fosse de funil ou de etapa.
+        rejectReason: motivoDaRecusaDaCriacao(err),
       });
       return fail(err.code, err.message ?? "erro", err.status, { requestId });
     }
@@ -660,7 +703,26 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     respondiMapped != null &&
     respondiMapped.consent.detectedVia !== "not_found" &&
     !respondiMapped.consent.granted;
-  if (respondiMapped && contactId && !consentNegado) {
+  if (source.authorize_ai_on_capture && contactId) {
+    const autorizou = sourceSecret !== null && await autorizarCaptacaoParaIA(admin, {
+      organizationId: source.organization_id, sourceId: source.id,
+      leadId: String(lead.id), contactId, requestId,
+    });
+    const atividadeIA = await emitLeadActivity(admin, {
+      organizationId: source.organization_id, leadId: String(lead.id), contactId,
+      type: "note", sourceModule: "webhook", sourceId: source.id,
+      actor: { type: "webhook_source", id: source.id },
+      reason: autorizou
+        ? "Atendimento por IA autorizado pelo consentimento explícito deste formulário."
+        : "Este envio não concedeu nova autorização de IA. Confira o consentimento e o estado do contato antes de configurar o atendimento.",
+      payload: { webhook_source_id: source.id, request_id: requestId, ai_authorized: autorizou },
+    });
+    if (!atividadeIA.ok) {
+      logger.warn("[webhooks.inbound] autorização por formulário sem atividade", {
+        organization_id: source.organization_id, request_id: requestId,
+      });
+    }
+  } else if (!source.authorize_ai_on_capture && respondiMapped && contactId && !consentNegado) {
     const formId = respondiMapped.custom_fields.respondi_form_id ?? "form";
     const submissionId = respondiMapped.custom_fields.respondi_respondent_id ?? "s";
     await autorizarContatoParaIA(admin, {

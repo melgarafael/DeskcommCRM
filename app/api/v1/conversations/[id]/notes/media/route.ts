@@ -27,7 +27,7 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
-import { resolveAuthDual } from "@/lib/api/auth-dual";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { extFromMime, MAX_MEDIA_BYTES } from "@/lib/messaging/media/types";
 import { validateOutboundMedia } from "@/lib/messaging/media/upload-validation";
@@ -56,6 +56,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     scope: "mcp:write",
   });
   if (!authz.ok) return authz.response;
+  // Fora de PUBLIC_PATHS hoje: o proxy recusa Bearer sem cookie antes daqui.
+  // O teto é defesa em profundidade e passa a valer no dia em que a rota
+  // entrar na lista — mesmo teto das irmãs que já aplicam sobre
+  // resolveAuthDual. Anexo de nota é escrita real no bucket.
+  const teto = await tetoDeEscritaDoToken(authz, "conversation_notes", requestId);
+  if (teto) return teto;
   const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const activeOrg = { orgId: authz.organizationId };
   // Mesmo motivo da rota irmã: no ramo do token não há cookie de sessão, então o

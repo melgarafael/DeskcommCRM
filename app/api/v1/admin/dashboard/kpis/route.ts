@@ -3,6 +3,7 @@ import { normalizarModoDeOrcamento } from "@/lib/agent-engine/edge/llm/orcamento
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
+import { corteDaJanela, diasDeAtraso, prazoEmBr } from "@/lib/lgpd/sla";
 
 export type AlertSeverity = "critical" | "warning" | "info";
 export type AlertKind =
@@ -31,6 +32,15 @@ export interface DashboardKPIs {
   alerts: AlertItem[];
 }
 
+/**
+ * A janela do "LGPD em risco", em dias: o prazo **expira** dentro dela.
+ *
+ * Uma constante porque as duas leituras desta rota (o KPI e a lista de alertas)
+ * têm de usar a MESMA janela — quando eram dois `5 * 24 * 60 * 60 * 1000` escritos
+ * em lugares diferentes, nada garantia que continuassem iguais.
+ */
+const JANELA_DE_RISCO_EM_DIAS = 5;
+
 // GET /api/v1/admin/dashboard/kpis
 // Requires platform admin gate (MFA-enforced).
 // Uses service-role client intentionally — cross-tenant read for super-admin.
@@ -44,6 +54,8 @@ export async function GET(_req: NextRequest) {
 
   const admin = createAdminClient();
 
+  // "LGPD em risco": o KPI e os alertas filtram `due_at` por ESTE corte, e só por ele.
+  const corteDeRisco = corteDaJanela(new Date(Date.now()), JANELA_DE_RISCO_EM_DIAS).toISOString();
   // ── KPI counts in parallel ────────────────────────────────────────────────
   const [
     tenantsRes,
@@ -73,7 +85,7 @@ export async function GET(_req: NextRequest) {
       .from("lgpd_requests")
       .select("*", { count: "exact", head: true })
       .not("status", "in", "(completed,failed)")
-      .lt("due_at", new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString()),
+      .lte("due_at", corteDeRisco), // expira em até 5 dias: ver `corteDaJanela`
   ]);
 
   // O KPI de orçamento saiu daqui e passou a ser contado a partir das MESMAS
@@ -88,7 +100,6 @@ export async function GET(_req: NextRequest) {
 
   // ── Alerts: top 20, union from 4 sources ─────────────────────────────────
   const cutoff24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const cutoff5d = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
 
   const [
     wahaAlertsRes,
@@ -125,7 +136,7 @@ export async function GET(_req: NextRequest) {
         organizations!inner(display_name)
       `)
       .not("status", "in", "(completed,failed)")
-      .lt("due_at", cutoff5d)
+      .lte("due_at", corteDeRisco) // o MESMO corte e o MESMO operador do KPI
       .order("due_at", { ascending: true })
       .limit(20),
 
@@ -185,7 +196,15 @@ export async function GET(_req: NextRequest) {
   // LGPD alerts
   for (const row of lgpdAlertsRes.data ?? []) {
     const org = (row as { organizations?: { display_name?: string } }).organizations;
-    const isOverdue = new Date(row.due_at).getTime() < now;
+    // A virada é a MESMA do selo e do balde: `diasDeAtraso > 0`. Comparar
+    // `new Date(due_at) < now` marcava "vencida" a partir das 21h da VÉSPERA,
+    // porque `due_at` é o início do dia guardado. Medido: 04/10 22:00 em São
+    // Paulo com prazo no dia 05/10 já dizia "vencida".
+    const isOverdue = diasDeAtraso(row.due_at, new Date(now)) > 0;
+    // A data sai do DIA guardado, e não do instante no fuso do PROCESSO: sem
+    // `timeZone` explícito, um servidor em UTC e uma máquina de dev em São Paulo
+    // imprimiam datas diferentes para o mesmo `due_at` (medido: 05/10 x 04/10).
+    const venceEm = prazoEmBr(row.due_at) ?? row.due_at;
     alerts.push({
       id: `lgpd-${row.id}`,
       severity: isOverdue ? "critical" : "warning",
@@ -193,8 +212,8 @@ export async function GET(_req: NextRequest) {
       tenant_id: row.organization_id,
       tenant_name: (org as { display_name?: string })?.display_name ?? row.organization_id,
       message: isOverdue
-        ? `Requisição LGPD vencida em ${new Date(row.due_at).toLocaleDateString("pt-BR")}`
-        : `Prazo LGPD expira em ${new Date(row.due_at).toLocaleDateString("pt-BR")}`,
+        ? `Requisição LGPD vencida em ${venceEm}`
+        : `Prazo LGPD expira em ${venceEm}`,
       link: "/admin/lgpd",
       created_at: row.created_at,
     });

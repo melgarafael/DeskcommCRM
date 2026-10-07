@@ -112,6 +112,14 @@ export interface LeadContext {
     tags: string[];
     /** contacts.is_blocked lido NESTE turno (fonte da verdade do gate 1). */
     is_blocked: boolean;
+    /**
+     * Spec 21: `contacts.is_personal` lido NESTE turno, ao lado do bloqueio.
+     *
+     * OPCIONAL no tipo pelo mesmo motivo de `contact_id`: exigir obrigaria a
+     * editar fixtures em `tests/invariants/**`, que é congelado. A produção
+     * sempre preenche; quem constrói contexto à mão num teste não precisa.
+     */
+    is_personal?: boolean;
   };
   conversation_id: string | null;
   previous_service?: { label: string; outcomes: string[] };
@@ -158,6 +166,8 @@ interface ContactRow {
   phone_number: string | null;
   tags: string[] | null;
   is_blocked: boolean;
+  /** Spec 21: espelha a coluna (o veto de envio e o esconderijo entram na fatia 2). */
+  is_personal: boolean;
   source: string | null;
   consent: Record<string, unknown> | null;
   is_anonymized: boolean;
@@ -208,7 +218,7 @@ export async function getLeadContext(
   knobs: LeadContextKnobs,
 ): Promise<LeadContextResult> {
   const { rows: contactRows } = await db.query<ContactRow>(
-    `select name, display_name, email, phone_number, tags, is_blocked, source, consent, is_anonymized
+    `select name, display_name, email, phone_number, tags, is_blocked, is_personal, source, consent, is_anonymized
      from contacts where organization_id = $1 and id = $2`,
     [input.tenantId, input.leadId],
   );
@@ -333,6 +343,7 @@ export async function getLeadContext(
         email: contact.email,
         tags: contact.tags ?? [],
         is_blocked: contact.is_blocked,
+        is_personal: contact.is_personal,
       },
       conversation_id: conversationId,
       last_human_decision: lastHumanDecision,

@@ -176,8 +176,19 @@ async function destinosOferecidos(page: Page): Promise<string[]> {
   await expect(opcoes.first()).toBeVisible();
   const nomes = await opcoes.allInnerTexts();
   await page.keyboard.press("Escape"); // fecha o seletor
+  // ⚠️ O 2º Escape só pode sair depois que o seletor SAIU DO DOM. Com a animação
+  // de saída do painel (`.ds-painel[data-state="closed"]`), o Radix segura o
+  // listbox montado até o `animationend` — e enquanto ele está montado é a camada
+  // mais alta, que é a ÚNICA que escuta Escape. Um Escape dado nessa janela é
+  // consumido pelo seletor já fechado e o diálogo fica aberto (trace do #2411).
+  await expect(page.locator('[role="listbox"]')).toHaveCount(0);
   await page.keyboard.press("Escape"); // fecha o diálogo
-  await expect(dialogo).toBeHidden();
+  // `includeHidden` + contagem, nunca `toBeHidden()`: com o seletor aberto o Radix
+  // põe `aria-hidden` no diálogo, `getByRole` deixa de achá-lo e `toBeHidden()`
+  // passa VAZIO com o diálogo ainda aberto na tela.
+  await expect(
+    page.getByRole("dialog", { name: "Importar leads de uma planilha", includeHidden: true }),
+  ).toHaveCount(0);
   return nomes.map((n) => n.trim());
 }
 

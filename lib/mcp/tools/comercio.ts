@@ -29,12 +29,38 @@ export const crmListContactOrders: McpToolDefinition<typeof pedidosInputShape> =
   description:
     "Lista os pedidos de um contato, do mais recente para o mais antigo, com status, valor, " +
     "forma de pagamento, situação de entrega e código de rastreio. Use antes de prometer prazo " +
-    "ou repetir oferta: o cliente pode já ter comprado.",
+    "ou repetir oferta: o cliente pode já ter comprado." +
+    " Em conversa de atendimento, devolve apenas os pedidos do contato desta conversa.",
   inputSchema: pedidosInputShape,
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
   handler: async (input, ctx) => {
+    // ── OS PEDIDOS DE QUEM NÃO É DESTA CONVERSA NÃO SÃO DESTA LEITURA (#2178) ─
+    //
+    // A mesma recusa de `crm_get_contact` (#2158), e ANTES da consulta: a
+    // chamada é por `contact_id`, então o pedido de OUTRO cliente da mesma
+    // organização é recusado com motivo em texto e a linha nunca sai do
+    // banco. Pedidos são valor, entrega e rastreio — dado que, uma vez lido,
+    // vai para o WhatsApp do cliente A encaminhável, sem volta.
+    //
+    // RECUSA, e não tradução: trocar o `contact_id` pelo do turno faria o
+    // modelo perguntar pelo pedido de um cliente e receber o de outro.
+    //
+    // `ctx.contatoDoTurno` é contexto de CONFIANÇA (injetado por
+    // `lib/ai/runtime/tools.ts`, nunca escrito pelo modelo); sem ele — rota
+    // HTTP, MCP externo, agente sem conversa — os pedidos de qualquer
+    // contato da organização seguem vindo como antes. O Operador recebe o
+    // contato do turno e também fica escopado.
+    if (ctx.contatoDoTurno && input.contact_id !== ctx.contatoDoTurno) {
+      return {
+        permitido: false,
+        motivo: "fora_da_conversa",
+        mensagem:
+          "esta conversa é com outra pessoa — os pedidos de um cliente que não é o desta " +
+          "conversa não são seus para ver; siga a conversa com quem está falando.",
+      };
+    }
     const { data, error } = await ctx.supabase
       .from("orders")
       .select(

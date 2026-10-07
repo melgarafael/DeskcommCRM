@@ -37,11 +37,12 @@ const MENSAGEM = "meu pedido não chegou, me liga no 11 98765-4321";
 
 const log: Logger = { info: () => undefined, warn: () => undefined, error: () => undefined };
 
-function settingsDoJev(estado?: "observando" | "decidindo" | "desligada") {
+function settingsDoJev(estado?: "observando" | "decidindo" | "desligada", modoRoteador?: "comparacao" | "sob_demanda") {
   return {
     jev: {
       ligado: true,
       aceite: { em: "2026-09-01T12:00:00.000Z", por: ADMIN },
+      ...(modoRoteador ? { modo_roteador: modoRoteador } : {}),
       ...(estado ? { tarefas: { roteador: { estado } } } : {}),
     },
   };
@@ -208,6 +209,27 @@ function turno(c: Cenario, deps: { classifyIntent: ReturnType<typeof iaDeSempre>
   );
 }
 
+/**
+ * O turno numa empresa COM a IA de sempre (decisão B, doc 89): a chave da
+ * instalação, que `temIaDeSempre` resolve pelo banco de verdade — a mesma
+ * resolução que a chamada da IA de sempre faz antes de sair.
+ */
+function turnoComIaDeSempre(c: Cenario, deps: { classifyIntent: ReturnType<typeof iaDeSempre>; jev: ReturnType<typeof jevDuble>["deps"] }) {
+  return resolveConversationTurn(
+    pool,
+    { anthropicApiKey: "chave-da-instalacao-de-teste" } as never,
+    {
+      tenantId: c.org,
+      leadId: c.contato,
+      jobId: c.job,
+      conversationId: c.conversa,
+      channelSessionId: c.sessao,
+      inbound: true,
+    },
+    { log, classifyIntent: deps.classifyIntent as never, jev: deps.jev },
+  );
+}
+
 async function observacoes(org: string) {
   const { rows } = await pool.query(
     `select tarefa, estado, conversation_id, message_id, job_id, rotulo_jev, rotulo_atual, concordou,
@@ -309,6 +331,53 @@ describe("o Jev no roteador, pelo caminho do turno", () => {
     expect(await chamadasDoJev(c.org)).toEqual([expect.objectContaining({ origem_da_escolha: "jev" })]);
   });
 
+  it("sob demanda: o turno real escolhe o Jev sem consultar o classificador convencional", async () => {
+    const c = await cenario(settingsDoJev("decidindo", "sob_demanda"));
+    const jev = jevDuble("suporte");
+    const ia = iaDeSempre({ intentName: "vendas", confidence: 0.99 });
+    const r = await turnoComIaDeSempre(c, { classifyIntent: ia, jev: jev.deps });
+    expect(r.config?.agentId).toBe(c.agentes.suporte);
+    expect(ia).not.toHaveBeenCalled();
+    const { rows } = await pool.query(
+      `select modo, origem, motivo_reserva, custo_tradicional_cents::float8 as custo_tradicional_cents
+       from public.jev_router_decisions where organization_id=$1 and message_id=$2`,
+      [c.org, c.mensagem],
+    );
+    expect(rows).toEqual([expect.objectContaining({ modo: "jev_sob_demanda", origem: "jev",
+      motivo_reserva: null, custo_tradicional_cents: 0 })]);
+  });
+
+  it("sob demanda: falha do Jev aciona e registra a reserva tradicional uma vez", async () => {
+    const c = await cenario(settingsDoJev("decidindo", "sob_demanda"));
+    const ia = iaDeSempre({ intentName: "vendas", confidence: 0.95 });
+    const r = await turnoComIaDeSempre(c, { classifyIntent: ia, jev: jevDuble("suporte", { nuncaResponde: true }).deps });
+    expect(r.config?.agentId).toBe(c.agentes.vendas);
+    expect(ia).toHaveBeenCalledOnce();
+    const { rows } = await pool.query(
+      `select modo, origem, motivo_reserva from public.jev_router_decisions
+       where organization_id=$1 and message_id=$2`,
+      [c.org, c.mensagem],
+    );
+    expect(rows).toEqual([expect.objectContaining({ modo: "jev_sob_demanda", origem: "reserva", motivo_reserva: "falha_jev" })]);
+  });
+
+  it("sob demanda numa empresa SEM a IA de sempre (decisão B): o modo não liga, a IA de sempre é perguntada, e sem ela vale a regra de hoje", async () => {
+    // Sem credencial e sem chave da instalação: `temIaDeSempre` diz não pelo banco.
+    const c = await cenario(settingsDoJev("decidindo", "sob_demanda"));
+    const ia = iaDeSempre(null);
+    const r = await turno(c, { classifyIntent: ia, jev: jevDuble("suporte").deps });
+    expect(ia).toHaveBeenCalledOnce();
+    expect(r.outcome).toBe("classifier_failed");
+    expect(r.config?.agentId).toBe(c.agentes.reserva);
+    const { rows } = await pool.query(
+      `select modo, origem from public.jev_router_decisions where organization_id=$1 and message_id=$2`,
+      [c.org, c.mensagem],
+    );
+    expect(rows).toEqual([expect.objectContaining({ modo: "jev_comparacao", origem: "tradicional" })]);
+    // O Jev respondeu: a observação fica, sem par (como na R2).
+    await esperarObservacao(c.org);
+  });
+
   it("decidindo, e o Jev passa do teto: a IA de sempre cobre, e o turno espera no máximo o teto dele", async () => {
     const c = await cenario(settingsDoJev("decidindo"));
     const jev = jevDuble("suporte", { nuncaResponde: true });
@@ -363,5 +432,44 @@ describe("o Jev no roteador, pelo caminho do turno", () => {
     await vi.waitFor(async () => expect(await chamadasDoJev(c.org)).toHaveLength(2), { timeout: 5_000, interval: 50 });
     // A primeira resposta fica.
     expect(await observacoes(c.org)).toEqual([expect.objectContaining({ rotulo_jev: c.agentes.suporte })]);
+  });
+});
+
+
+describe("a janela do roteador vale para a IA de sempre; o histórico do Jev espera a TypeSafe (DEC-012, escolha 2)", () => {
+  it("a IA de sempre recebe a janela, sem mensagens de outra conversa ou organização; o Jev, mesmo com um aceite de histórico gravado, só a mensagem", async () => {
+    const config = settingsDoJev("decidindo");
+    const c = await cenario({ jev: { ...config.jev, contexto_roteador: { em: "2026-09-29T12:00:00.000Z", por: ADMIN, versao: 1 } } });
+    const alheia = await cenario(settingsDoJev());
+    const outraConversa = randomUUID();
+    const outroContato = randomUUID();
+    await pool.query("insert into contacts (id, organization_id, name, phone_number) values ($1,$2,'Outro contato',$3)",
+      [outroContato, c.org, "+5511900000423"]);
+    await pool.query(`insert into conversations (id, organization_id, contact_id, channel_session_id, status, is_group)
+      values ($1, $2, $3, $4, 'ai_handling', false)`, [outraConversa, c.org, outroContato, c.sessao]);
+    async function anterior(alvo: Cenario, corpo: string, segundos: number, direction = "outbound") {
+      await pool.query(`insert into messages (id, organization_id, conversation_id, channel_session_id, contact_id,
+        type, direction, status, body, sent_via, sent_at)
+        values ($1,$2,$3,$4,$5,'text',$6,'delivered',$7,'external_device',now() - $8 * interval '1 second')`,
+        [randomUUID(), alvo.org, alvo.conversa, alvo.sessao, alvo.contato, direction, corpo, segundos]);
+    }
+    await anterior(alheia, "segredo de outra empresa", 1);
+    await anterior({ ...c, conversa: outraConversa, contato: outroContato }, "segredo de outra conversa", 1);
+    await anterior(c, "velha demais", 60);
+    await anterior(c, "Quero comprar", 50, "inbound");
+    await anterior(c, "Prefere a primeira ou a segunda?", 40);
+    await anterior(c, "meu e-mail é cliente@example.com", 30, "inbound");
+    await anterior(c, "Confirmar a primeira opção?", 20);
+    await pool.query("update messages set body='a primeira' where id=$1", [c.mensagem]);
+    const jev = jevDuble("vendas");
+    const ia = iaDeSempre({ intentName: "vendas", confidence: 0.95 });
+    const resultado = await turno(c, { classifyIntent: ia, jev: jev.deps });
+    expect(resultado.config?.agentId).toBe(c.agentes.vendas);
+    const input = (ia.mock.calls[0] as unknown as [unknown, unknown, { recentMessages: Array<{ direction: string; body: string }> }])[2];
+    expect(input.recentMessages.map((m) => m.body)).toEqual([
+      "Quero comprar", "Prefere a primeira ou a segunda?", "meu e-mail é cliente@example.com", "Confirmar a primeira opção?",
+    ]);
+    expect(jev.pedidos[0]!.state).toBe("a primeira");
+    await esperarObservacao(c.org);
   });
 });

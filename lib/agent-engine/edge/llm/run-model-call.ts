@@ -20,12 +20,24 @@ import { generateText, stepCountIs, type ModelMessage, type ToolSet } from 'ai';
 import type pg from 'pg';
 import { z } from 'zod';
 
+import { PROVEDOR_POR_ASSINATURA } from '@/lib/ai/pontos/provedores';
 import { PONTO_POR_ID } from '@/lib/ai/pontos/registro';
+// O par (provedor, modelo) é a mesma régua em TODOS os caminhos de execução:
+// este seam, a resolução dos pontos, a mídia, o embedding e o runtime do agente
+// importam daqui — não cada um a sua (issue #2377).
+import { ParProvedorModeloInvalidoError, validarParProvedorModelo } from '@/lib/ai/par-provedor-modelo';
+import { decidirQuedaDoProvedor } from '@/lib/ai/pontos/reserva-da-assinatura';
 import { scrubMessage } from '@/lib/sentry/scrub';
 
 import type { Logger } from '../../obs/logger';
 import { decidirParaOSeam } from './binding-do-ponto';
-import { resolveOrgLlmConfig, type LlmEdgeConfig, type OrcamentoDaOrg } from './credentials';
+import {
+  resolveOrgLlmConfig,
+  temChaveDeReserva,
+  type LlmEdgeConfig,
+  type OrcamentoDaOrg,
+  type OrgLlmConfig,
+} from './credentials';
 import {
   AVISO_CORPO,
   AVISO_TITULO,
@@ -177,6 +189,21 @@ const paramsSchema = z
     maxOutputTokens: z.number().int().positive().optional(),
   })
   .passthrough();
+
+/**
+ * Teto de saída quando nem a organização (`settings.llm.params.maxOutputTokens`)
+ * nem a chamada dizem um. Sem teto o pedido sai sem `max_tokens`, e o OpenRouter
+ * reserva o MÁXIMO do modelo (64000 no Haiku 4.5) contra o saldo da chave: uma
+ * chave com crédito para milhares de respostas curtas recusava todas com
+ * "You requested up to 64000 tokens, but can only afford 7978" — medido em
+ * produção. Uma resposta de WhatsApp com ferramentas cabe com folga em 4096.
+ */
+export const TETO_DE_SAIDA_PADRAO = 4096;
+
+export function tetoDeSaida(daOrganizacao: number | undefined, daChamada: number | undefined): number {
+  const base = daOrganizacao ?? TETO_DE_SAIDA_PADRAO;
+  return daChamada === undefined ? base : Math.min(base, daChamada);
+}
 
 export interface RunModelCallInput {
   tenantId: string;
@@ -381,7 +408,14 @@ async function aplicarOrcamento(d: {
      where not exists (
        select 1 from agent_inbox_items
        where organization_id = $1 and kind = 'budget_exceeded' and status = 'open'
-     )`,
+     )
+     -- on conflict SEM ALVO pela mesma razão do statement do orçamento
+     -- (SQL_ORCAMENTO): a forma com alvo exige que o índice da 0540 já exista,
+     -- e um clone fora de ordem falharia aqui com 42P10 — trocando a RECUSA (o
+     -- erro lançado abaixo) por um erro de banco. Sem alvo, se outro processo
+     -- abriu o mesmo item entre a guarda e o insert, a linha não entra e a
+     -- recusa continua valendo.
+     on conflict do nothing`,
     [d.organizationId, BLOQUEIO_TITULO, corpoDoBloqueio(gastoCents, tetoCents)],
   );
   // A recusa vira LINHA em llm_calls. A tela /app/ai/runs nasceu porque
@@ -507,6 +541,31 @@ async function registrarRecusaDeEnderecoSemChave(d: {
   return erro;
 }
 
+/**
+ * A CAUDA DO LAÇO DE TOOLS TAMBÉM VAI PARA O CACHE (só Anthropic, só laço).
+ *
+ * O prefixo estável (tools + system) já tem breakpoints de 1 h. Mas numa resposta
+ * com laço de tools cada passo reenvia a abertura (checkpoint, contexto do lead,
+ * histórico, mensagem) e os resultados dos passos anteriores — e isso ficava
+ * DEPOIS do último breakpoint, cobrado a preço cheio em todo passo. Medido numa
+ * instalação real (27/09/2026): ~3,5 passos por resposta, ~12 mil tokens sem
+ * cache por passo, 46% do custo da resposta.
+ *
+ * `cache_control` no nível do pedido põe um breakpoint automático no fim da
+ * conversa: o passo 2 em diante lê do cache o que o passo anterior já mandou. TTL
+ * de 5 min: os passos de uma resposta são segundos, e 5 min custa menos para
+ * escrever que 1 h. É o 3º de 4 breakpoints, e o de 1 h vem antes do de 5 min,
+ * como a API exige. Fora do laço (um passo só) não entra: escrever sem reler
+ * só encarece.
+ */
+export function cacheDaCauda(
+  provider: string,
+  maxSteps: number | undefined,
+): { providerOptions?: { anthropic: { cacheControl: { type: 'ephemeral'; ttl: '5m' } } } } {
+  if (provider !== 'anthropic' || maxSteps === undefined || maxSteps <= 1) return {};
+  return { providerOptions: { anthropic: { cacheControl: { type: 'ephemeral', ttl: '5m' } } } };
+}
+
 export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunModelCallInput, deps: RunModelCallDeps = {}) {
   // O knob do raciocínio da DeepSeek entra pela fábrica: `deepseekThinking` só é
   // lido pela fábrica `deepseek`, então os outros provedores não têm como mudar.
@@ -552,7 +611,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     decisao.provider !== padrao.provider ||
     (decisao.credentialId !== null && decisao.credentialId !== credencialJaCarregada);
 
-  const config = precisaOutraCredencial
+  let config = precisaOutraCredencial
     ? await resolveOrgLlmConfig(db, cfg, input.tenantId, {
         provider: decisao.provider,
         credentialId: decisao.credentialId,
@@ -565,6 +624,27 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       'modelo LLM não definido — configure o ponto no painel de provedores, ' +
         'organizations.settings.llm.default_model, ou passe input.model',
     );
+  }
+  // ═══ O PAR (PROVEDOR, MODELO) ANTES DE QUALQUER BYTE ═══
+  //
+  // `config.provider` é quem de fato recebe a requisição (`registry` é lido por
+  // ele, não por `decisao.provider`), e é contra ele que o modelo é conferido.
+  // Sem esta linha, um `settings.llm` legado mandava `claude-sonnet-5` para o
+  // endpoint da OpenAI e o primeiro aviso era o 400 do provedor — dentro do
+  // try, na fila, com retry (issue #2377). Aqui a recusa é anterior a tudo: o
+  // log sai com provedor, modelo, propósito e origem da configuração, e o erro
+  // carrega o motivo pronto para a tela de Execuções.
+  const par = validarParProvedorModelo(config.provider, model);
+  if (!par.valido) {
+    deps.log?.error('llm: par provedor+modelo recusado antes de sair byte', {
+      organization_id: input.tenantId,
+      purpose,
+      provider: config.provider,
+      model,
+      origem_da_escolha: decisao.origem,
+      motivo: par.motivo,
+    });
+    throw new ParProvedorModeloInvalidoError(config.provider, model, par.motivo, purpose);
   }
   if (config.enabledModels.length > 0 && !config.enabledModels.includes(model)) {
     throw new LlmModelNotEnabledError(model);
@@ -626,24 +706,30 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // valor inventado numa tabela de auditoria é pior que a linha faltando.
   // Continua ANTES de qualquer byte ao provedor, que é a propriedade que
   // importa: bloqueio custa zero token.
-  await aplicarOrcamento({
-    db,
-    organizationId: input.tenantId,
-    orcamentoDaConfig: config.orcamento,
-    orcamentoIndisponivelPorque: config.orcamentoIndisponivelPorque,
-    // A chave EFETIVA da instalação: a linha escrita na tela de admin vence, e
-    // o valor do `.env` (que veio na config) é o PISO. A leitura é feita AQUI,
-    // a cada chamada, porque é aqui que a decisão acontece — um snapshot no
-    // boot faria o kill switch da tela só valer depois de reiniciar o worker
-    // (issue #1034). Sem banco lido nesta vida do processo, isto é o de hoje.
-    chave: chaveDeOrcamentoDaInstalacao(cfg.budgetEnforcement ?? 'on'),
-    purpose,
-    provider: config.provider,
-    model,
-    origem: decisao.origem,
-    input,
-    ...(deps.log ? { log: deps.log } : {}),
-  });
+  // O mesmo gate, para QUALQUER provedor que vá falar nesta chamada —
+  // inclusive a reserva que a assinatura pode acionar mais abaixo (mesma
+  // organização, mesmo purpose, mesmo teto: recusar na assinatura e deixar a
+  // reserva passar seria o mesmo furo de antes, com outro nome).
+  const gateDeOrcamento = async (cfgUsada: OrgLlmConfig): Promise<void> =>
+    aplicarOrcamento({
+      db,
+      organizationId: input.tenantId,
+      orcamentoDaConfig: cfgUsada.orcamento,
+      orcamentoIndisponivelPorque: cfgUsada.orcamentoIndisponivelPorque,
+      // A chave EFETIVA da instalação: a linha escrita na tela de admin vence, e
+      // o valor do `.env` (que veio na config) é o PISO. A leitura é feita AQUI,
+      // a cada chamada, porque é aqui que a decisão acontece — um snapshot no
+      // boot faria o kill switch da tela só valer depois de reiniciar o worker
+      // (issue #1034). Sem banco lido nesta vida do processo, isto é o de hoje.
+      chave: chaveDeOrcamentoDaInstalacao(cfg.budgetEnforcement ?? 'on'),
+      purpose,
+      provider: cfgUsada.provider,
+      model,
+      origem: decisao.origem,
+      input,
+      ...(deps.log ? { log: deps.log } : {}),
+    });
+  await gateDeOrcamento(config);
 
   // Disciplina de cache: o prefixo estável org-wide (system do playbook + tools
   // em ordem determinística) ganha os breakpoints AQUI, no seam — call sites
@@ -657,18 +743,20 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
 
   const startedAt = Date.now();
   let result: Awaited<ReturnType<typeof generateText>>;
-  try {
-    input.abortSignal?.throwIfAborted();
-    // `system` aceita SystemModelMessage (com providerOptions de cache) — igual
-    // em v6 e v7 (smoke prova que o cacheControl continua virando cache_control).
-    result = await generateText({
+
+  // A MESMA chamada, em qualquer config: separar em função é o que permite a
+  // assinatura ser refeita com a reserva SEM copiar o corpo (duas cópias do
+  // `generateText` são duas cópias que um dia divergem — e a divergência seria
+  // invisível, porque só uma delas rodaria).
+  const chamarCom = (cfgUsada: OrgLlmConfig, fabrica: (typeof factory)) =>
+    generateText({
       // `decisao.baseUrl` só é preenchido quando o painel apontou um endpoint
       // (gateway OpenAI-compatível, ou modelo local). Providers canônicos
       // ignoram o terceiro argumento e vão ao endpoint intrínseco.
       // `config.baseUrl` é o da PRÓPRIA credencial e só o provedor personalizado
       // (#1642) tem um: o endereço nasce junto da chave, então o agente
       // publicado nele alcança o mesmo gateway que a tela testou ao salvar.
-      model: factory(config.apiKey, model, decisao.baseUrl ?? config.baseUrl ?? undefined),
+      model: fabrica(cfgUsada.apiKey, model, decisao.baseUrl ?? cfgUsada.baseUrl ?? undefined),
       system: prefix.system,
       messages: input.messages,
       abortSignal: input.abortSignal,
@@ -682,10 +770,76 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       temperature,
       topP,
       topK,
-      maxOutputTokens: input.maxOutputTokens === undefined
-        ? maxOutputTokens
-        : Math.min(maxOutputTokens ?? Infinity, input.maxOutputTokens),
+      maxOutputTokens: tetoDeSaida(maxOutputTokens, input.maxOutputTokens),
+      ...cacheDaCauda(cfgUsada.provider, input.maxSteps),
     });
+
+  /**
+   * A QUEDA DA ASSINATURA (#1639, item 3) — a metade que faltava da política.
+   *
+   * `decidirQuedaDoProvedor` já existe e é pura; o que faltava era respondê-lo:
+   * `temChaveDeReserva` pergunta à MESMA escada de resolução se a chave `openai`
+   * da empresa existe. Devolve a config da reserva quando a política manda cair,
+   * e `null` quando o desfecho é o de sempre — o erro ORIGINAL é relançado, sem
+   * um erro novo inventado no lugar dele.
+   */
+  const reservaParaAFalha = async (falha: unknown): Promise<OrgLlmConfig | null> => {
+    // O freio do provedor está DENTRO de decidirQuedaDoProvedor: nativo que
+    // falhou continua falhando como sempre. Aqui só evitamos a pergunta ao
+    // banco quando ela não vai ser ouvida.
+    if (config.provider !== PROVEDOR_POR_ASSINATURA) return null;
+    // Abort não é recusa de credencial: a pessoa cancelou, ou o worker parou.
+    if (input.abortSignal?.aborted) return null;
+    // `error_message` já vem redigida (chaves/Bearer fora) — e é só ela que a
+    // classificação usa, para separar "token expirado" de "sem autorização".
+    const { http_status: status, error_message: detalhe } = normalizarErro(falha);
+    const temReserva = await temChaveDeReserva(db, cfg, input.tenantId);
+    const decisaoDaQueda = decidirQuedaDoProvedor({
+      provider: config.provider,
+      status,
+      detalhe,
+      temChaveDeReserva: temReserva,
+    });
+    if (decisaoDaQueda === null || decisaoDaQueda.acao !== 'tentar_reserva') return null;
+    try {
+      return await resolveOrgLlmConfig(db, cfg, input.tenantId, {
+        provider: decisaoDaQueda.provedorDeReserva,
+        credentialId: null,
+      });
+    } catch {
+      // A reserva existia na pergunta e sumiu na resolução (revogou no meio da
+      // chamada). Errar com o erro ORIGINAL é dizer a verdade ao operador.
+      return null;
+    }
+  };
+
+  try {
+    input.abortSignal?.throwIfAborted();
+    // `system` aceita SystemModelMessage (com providerOptions de cache) — igual
+    // em v6 e v7 (smoke prova que o cacheControl continua virando cache_control).
+    try {
+      result = await chamarCom(config, factory);
+    } catch (falhaDaAssinatura) {
+      const reserva = await reservaParaAFalha(falhaDaAssinatura);
+      if (reserva === null) throw falhaDaAssinatura;
+      const fabricaDaReserva = registry[reserva.provider];
+      // Sem fábrica para a reserva (registry de teste, provedor removido):
+      // o erro original é o que interessa, e ele não muda de mão.
+      if (fabricaDaReserva === undefined) throw falhaDaAssinatura;
+      // A troca ANTES da nova tentativa: se a reserva também falhar, a linha de
+      // `llm_calls` grava o provedor que de fato falhou por último, e não o que
+      // a chamada começou a falar.
+      config = reserva;
+      await gateDeOrcamento(reserva);
+      deps.log?.warn('llm: assinatura indisponível — chamada caiu na reserva', {
+        organization_id: input.tenantId,
+        purpose,
+        provider: reserva.provider,
+        model,
+        origem_da_escolha: decisao.origem,
+      });
+      result = await chamarCom(reserva, fabricaDaReserva);
+    }
   } catch (err) {
     // ─── A LINHA QUE FALTAVA ────────────────────────────────────────────────
     //

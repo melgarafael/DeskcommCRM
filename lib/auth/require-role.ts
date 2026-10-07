@@ -23,10 +23,12 @@
  *     membership foi revogado.
  *  6. Rank insuficiente → audit `authz.denied` (fire-and-forget) + 403.
  */
+import { headers } from "next/headers";
 import type { NextResponse } from "next/server";
 
 import { fail, type ApiError } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { CODIGO_ORG_DIVERGENTE, HEADER_ORG_DA_ABA } from "@/lib/auth/org-da-aba";
 import { loadAuthUser, mfaEmDivida, orgAtivaSemPortao } from "@/lib/auth/server";
 import { ROLE_RANK, type ActiveOrg, type AuthUser, type Role } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -95,6 +97,22 @@ export async function orgAtivaDaApi(user: AuthUser | null, requestId?: string): 
 }
 
 /**
+ * A organização que a ABA declara no header `X-Org-Da-Aba`, ou `null`.
+ *
+ * `try` porque o `headers()` só existe dentro de um contexto de requisição: fora
+ * dele (suíte que não mockou, chamada de script) não há aba que discorde de
+ * nada, e a ausência do header é justamente "não há nada a recusar".
+ */
+async function orgDaAbaNoHeader(): Promise<string | null> {
+  try {
+    const valor = (await headers()).get(HEADER_ORG_DA_ABA);
+    return valor && valor.trim() ? valor.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Gate de rota: `const authz = await requireRole("manager", { requestId });`
  * `if (!authz.ok) return authz.response;`
  */
@@ -149,6 +167,46 @@ export async function requireRole(min: Role, opts: RequireRoleOpts = {}): Promis
       ok: false,
       response: fail("forbidden_tenant", t("Sem organização ativa."), 403, { requestId }),
     };
+  }
+
+  // #2335, metade 2 — A ESCRITA NÃO PODE IR PARA UMA ORGANIZAÇÃO DIFERENTE DA
+  // QUE A ABA MOSTRA. O cookie `active_org` é um por sessão do NAVEGADOR: com
+  // duas abas abertas, alguém troca de organização na primeira e a segunda
+  // continua com as props antigas enquanto o servidor já responde pela nova —
+  // e a escrita dela cai na organização errada. A aba declara qual é a dela no
+  // header `X-Org-Da-Aba` (carimbado pelo `apiClient` SÓ em mutante); divergiu
+  // do cookie → recusa com código próprio, que a tela traduz no mesmo aviso da
+  // metade 1 (leitura).
+  //
+  // Sem header nada muda: leitura não carrega, chamada que não passa pelo
+  // `apiClient` não carrega, e server action segue o parâmetro explícito do
+  // precedente #2068. Este bloco é a porta de ESCRITA, e o `requireRole` é o
+  // gate único que toda rota /api/v1 já atravessa.
+  const aba = await orgDaAbaNoHeader();
+  if (aba) {
+    // Com `organizationId` (override para a org do RECURSO — ex.: LGPD, que
+    // escreve na org do CONTATO) a comparação é com o COOKIE, nunca com o
+    // recurso: a aba declara a própria organização, não a de quem recebe a
+    // escrita. `orgAtivaSemPortao` é `cache()` por requisição, não é leitura
+    // nova.
+    const orgDoCookie = organizationId ? await orgAtivaSemPortao(user) : org;
+    if (orgDoCookie && orgDoCookie.orgId !== aba) {
+      return {
+        ok: false,
+        response: fail(
+          CODIGO_ORG_DIVERGENTE,
+          t("Esta aba está numa organização diferente da sessão. Recarregar?"),
+          409,
+          {
+            requestId,
+            details: {
+              organization_id: orgDoCookie.orgId,
+              organization_name: orgDoCookie.name,
+            },
+          },
+        ),
+      };
+    }
   }
 
   // ANTES do atalho de platform admin: nada que custe ou saia roda em org

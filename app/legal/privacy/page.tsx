@@ -97,6 +97,11 @@ export default async function PrivacyPage() {
               "quando o operador liga o Jev (desligado por padrão), a TypeSafe AI, nos Estados Unidos, que recebe cada mensagem do cliente, sozinha e já sem CPF, telefone e e-mail, para avaliar se ele está irritado, se a mensagem tenta manipular o atendimento automático, a qual área da empresa ela se destina, se ela pede para falar com uma pessoa ou para parar de receber mensagens e, quando ela responde a um follow-up, em qual das saídas do fluxo ela se encaixa;",
             )}
           </li>
+          <li>
+            {t(
+              "quando o operador cadastra uma chave de Mapas (desligado por padrão), o Google, que recebe as coordenadas da localização que o cliente compartilhou, para devolver a rua e a cidade aproximadas;",
+            )}
+          </li>
           <li>{t("o provedor de infraestrutura onde o servidor está hospedado.")}</li>
         </ul>
         <p>{t("Os dados não são vendidos nem cedidos para publicidade de terceiros.")}</p>

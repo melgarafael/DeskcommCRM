@@ -13,6 +13,13 @@ import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
  * split_part do event_type), enquanto os handlers desta feature emitem com
  * entity_kind='crm_lead'. Sem este filtro o motor rodaria a regra 2x por
  * mudança de lead (uma vez por linha de event_log duplicada).
+ *
+ * A exceção de #1528: os quatro gatilhos de encerramento/reabertura/atribuição
+ * SÓ existem como linha do trigger, portanto SÓ existem com entity_kind='lead'.
+ * Para eles `'lead'` vale como `'crm_lead'` (`entidadeDoEvento`) — sem isso a
+ * regra nunca roda, ou roda sem o objeto `lead` no contexto. O `lead.stage_changed`
+ * legado continua recusado: é o mesmo fato que o moveLeadHandler já emite com
+ * `crm_lead`, e aceitá-lo entregaria o webhook duas vezes.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
@@ -21,12 +28,33 @@ import { getAction } from "@/lib/automation/actions";
 import type { ActionResultDetail } from "@/lib/automation/types";
 import { audit } from "@/lib/audit";
 import { regraDoEvento } from "@/lib/automation/gatilho-de-data-do-funil";
-import { ENTIDADE_ESPERADA_POR_GATILHO } from "@/lib/schemas/webhooks";
+import {
+  acoesQueFechamLaco,
+  ENTIDADE_ESPERADA_POR_GATILHO,
+  GATILHOS_DO_TRIGGER_DE_LEAD,
+} from "@/lib/schemas/webhooks";
 import { logger } from "@/lib/logger";
 
 export const AUTOMATION_CONSUMER_KEY = "automation-rules";
 
 const EXPECTED_ENTITY_KIND: Record<string, string> = ENTIDADE_ESPERADA_POR_GATILHO;
+
+/** Os gatilhos que o trigger do banco grava com `entity_kind='lead'` (#1528). */
+const GATILHOS_DO_TRIGGER = new Set<string>(GATILHOS_DO_TRIGGER_DE_LEAD);
+
+/**
+ * A entidade que a REGRA enxerga — nem sempre a que está gravada na linha.
+ *
+ * Para os quatro gatilhos do trigger do banco, `'lead'` (o que o `fn_log_event`
+ * deriva do `split_part` do event_type) é o MESMO fato que `'crm_lead'`
+ * (o que os handlers da feature emitem, e o que `buildContext` sabe hidratar).
+ * Só para eles: em qualquer outro evento, o `entity_kind` gravado segue
+ * mandando, que é a anti-duplicação de sempre.
+ */
+function entidadeDoEvento(row: Pick<EventRow, "event_type" | "entity_kind">): string {
+  if (row.entity_kind === "lead" && GATILHOS_DO_TRIGGER.has(row.event_type)) return "crm_lead";
+  return row.entity_kind;
+}
 
 interface RuleRow {
   id: string;
@@ -41,13 +69,24 @@ export async function buildContext(admin: SupabaseClient, row: EventRow): Promis
   // Admin client bypassa RLS — todo lookup filtra organization_id do evento
   // (doutrina multi-tenant; um FK cross-org corrompido nunca vaza pro contexto).
   const org = row.organization_id;
-  if (row.entity_kind === "crm_lead" && row.entity_id) {
-    const { data: lead } = await admin
-      .from("crm_leads")
-      .select("*")
-      .eq("id", row.entity_id)
-      .eq("organization_id", org)
-      .maybeSingle();
+  // `lead` ≡ `crm_lead` para os gatilhos do trigger do banco (#1528): sem
+  // isto, `lead.won`/`lead.lost`/`lead.reopened`/`lead.assigned` chegavam com a
+  // entidade que o `fn_log_event` deriva e a regra rodava SEM o objeto `lead`
+  // — um webhook de ganho sem o negócio dentro, que é pior que webhook nenhum.
+  const entidade = entidadeDoEvento(row);
+  if (entidade === "crm_lead") {
+    // O id vem da linha (o `fn_log_event` grava `entity_id` = payload.lead_id);
+    // o payload é o fallback para fixtures e para o Reenviar.
+    const payloadLeadId = typeof row.payload?.lead_id === "string" ? row.payload.lead_id : null;
+    const leadId = row.entity_id ?? payloadLeadId;
+    const { data: lead } = leadId
+      ? await admin
+          .from("crm_leads")
+          .select("*")
+          .eq("id", leadId)
+          .eq("organization_id", org)
+          .maybeSingle()
+      : { data: null };
     if (lead) {
       context.lead = lead;
       if (lead.contact_id) {
@@ -151,6 +190,51 @@ async function registrarAdiamento(
   }
 }
 
+/** O contato do evento, quando ele existe — direto ou via conversa. */
+async function contatoDoEvento(
+  admin: SupabaseClient,
+  row: EventRow,
+): Promise<string | null> {
+  const direto = typeof row.payload.contact_id === "string" ? row.payload.contact_id : null;
+  if (direto) return direto;
+  const conversa =
+    typeof row.payload.conversation_id === "string" ? row.payload.conversation_id : null;
+  if (!conversa) return null;
+  const { data } = await admin
+    .from("conversations")
+    .select("contact_id")
+    .eq("id", conversa)
+    .eq("organization_id", row.organization_id)
+    .maybeSingle();
+  return (data as { contact_id?: string } | null)?.contact_id ?? null;
+}
+
+/**
+ * Verdadeiro quando o evento é de um contato pessoal (spec 21, caminho 8).
+ *
+ * Fail-open de propósito: sem conseguir resolver o contato, a regra segue o
+ * caminho de sempre — calar por falta de leitura esconderia automação legítima
+ * sem deixar rastro do porquê.
+ */
+async function eventoEhDeContatoPessoal(
+  admin: SupabaseClient,
+  row: EventRow,
+): Promise<boolean> {
+  try {
+    const contatoId = await contatoDoEvento(admin, row);
+    if (!contatoId) return false;
+    const { data } = await admin
+      .from("contacts")
+      .select("is_personal")
+      .eq("id", contatoId)
+      .eq("organization_id", row.organization_id)
+      .maybeSingle();
+    return (data as { is_personal?: boolean } | null)?.is_personal === true;
+  } catch {
+    return false;
+  }
+}
+
 export async function runAutomationForEvent(
   admin: SupabaseClient,
   row: EventRow,
@@ -164,9 +248,15 @@ export async function runAutomationForEvent(
   }
 
   const expectedKind = EXPECTED_ENTITY_KIND[row.event_type];
-  if (expectedKind && row.entity_kind !== expectedKind) {
-  
+  if (expectedKind && entidadeDoEvento(row) !== expectedKind) {
+
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "skipped", detail: "entity_kind_mismatch" };
+  }
+
+  // Contato pessoal (spec 21, caminho 8): evento de pessoal não casa com regra
+  // nenhuma — nem webhook externo sai por ele.
+  if (await eventoEhDeContatoPessoal(admin, row)) {
+    return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "skipped", detail: "contato_pessoal" };
   }
 
   const { data: rules, error } = await admin
@@ -203,6 +293,13 @@ export async function runAutomationForEvent(
   }
 
   const context = await buildContext(admin, row);
+  // O pré-check acima só acha o contato pelo payload (`contact_id`/`conversation_id`).
+  // O aniversário (`contact.birthday`) traz o contato em `entity_id`, e o evento de
+  // negócio ou de compromisso traz o contato pelo lead/compromisso: o contexto
+  // hidratado é quem os alcança.
+  if ((context.contact as { is_personal?: boolean } | undefined)?.is_personal === true) {
+    return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "skipped", detail: "contato_pessoal" };
+  }
   const applicable = matched.filter((r) => evaluateConditions(r.conditions ?? [], context));
   if (!applicable.length) {
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "ok", detail: "no_match" };
@@ -237,6 +334,13 @@ export async function runAutomationForEvent(
       const executor = getAction(action.type);
       if (!executor) {
         results.push({ type: action.type, status: "failed", error: "unknown_action" });
+        continue;
+      }
+      // Defesa em profundidade do veto de #1528: a regra pode ter chegado por
+      // outra porta que não o schema (SQL, import). Regravar o lead aqui
+      // reemitiria o próprio gatilho, sem marca de anti-laço.
+      if (acoesQueFechamLaco(row.event_type, [action]).length) {
+        results.push({ type: action.type, status: "skipped", error: "acao_fecharia_laco" });
         continue;
       }
       try {

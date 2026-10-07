@@ -21,6 +21,10 @@ const NOME_DA_PORTA: Record<ExtensionPermission, string> = {
   "navigation.contacts": "Contatos",
   "navigation.agenda": "Agenda",
   "navigation.radar": "Radar",
+  // `theme.apply` não abre uma tela: pinta o produto com o tema escolhido. O
+  // label próprio impede que o `Record` exaustivo deixe de compilar e que a
+  // tela de aceite silencie sobre um acesso que está declarado.
+  "theme.apply": "Seu tema na tela",
 };
 
 export function nomeDaPorta(permissao: ExtensionPermission): string {

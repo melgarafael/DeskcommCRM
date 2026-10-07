@@ -34,7 +34,7 @@ select date_trunc('week', m.sent_at at time zone o.timezone)::date as semana,
 
 **P3 — Funil por origem: leads, ganhos, perdidos, taxa sobre fechados, dias até ganhar, receita**
 ```sql
-select l.source, count(*) as leads,
+select l.source, l.currency, count(*) as leads,
        count(*) filter (where l.status='won')  as ganhos,
        count(*) filter (where l.status='lost') as perdidos,
        count(*) filter (where l.status='open') as abertos,
@@ -45,9 +45,12 @@ select l.source, count(*) as leads,
        sum(l.value_cents) filter (where l.status='won') as receita_ganha_cents
   from public.crm_leads l
  where l.organization_id = :org and l.created_at >= :de and l.created_at < :ate
- group by 1 order by 2 desc;
+ group by 1,2 order by 3 desc;
 ```
 Régua: leads **criados** na janela; `source` é texto livre (`manual`, `whatsapp`, `meta_ads`…).
+`currency` é grupo (#1531): uma linha por moeda, porque `receita_ganha_cents` de
+real e de euro somado junto é um número que não existe em moeda nenhuma. Nunca
+converter, nunca somar entre moedas.
 
 **P4 — Onde o funil trava: estagnação por etapa (foto de agora)**
 ```sql
@@ -166,14 +169,16 @@ Régua: "primeira mensagem" é a primeira **dentro da janela**, não da vida da 
 **A2 — Motivos de perda por funil (tratar o texto livre como categoria)**
 ```sql
 select p.name as funil, coalesce(nullif(l.lost_reason,''), '(sem motivo)') as motivo,
+       l.currency,
        count(*) as perdidos, sum(l.value_cents) as valor_cents,
        count(*) filter (where l.owner_kind = 'ai') as perdidos_com_dono_agente
   from public.crm_leads l join public.crm_pipelines p on p.id = l.pipeline_id
  where l.organization_id = :org and l.status = 'lost' and l.closed_at >= :de and l.closed_at < :ate
- group by 1,2 order by 1,3 desc;
+ group by 1,2,3 order by 1,4 desc;
 ```
 Cruze `motivo` com `crm_pipelines.settings->'lost_reasons'`; o que não bate vira "outro" antes de
-ir ao relatório (pode conter texto livre com dado pessoal).
+ir ao relatório (pode conter texto livre com dado pessoal). `currency` é grupo (#1531): o
+`valor_cents` de uma perda nunca junta real com euro na mesma linha — cada moeda na sua.
 
 **A3 — Fluxo entre etapas no período, por ator (pessoa, agente, regra)**
 ```sql

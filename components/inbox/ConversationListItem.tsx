@@ -11,7 +11,12 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { ChipDeEtiqueta } from "@/components/tags/ChipDeEtiqueta";
 import { OwnerBadge } from "@/components/kanban/OwnerBadge";
-import { comandoDaConversa, esperaDaConversa } from "@/lib/inbox/comando-da-conversa";
+import {
+  comandoDaConversa,
+  esperaDaConversa,
+  ROTULO_DO_COMANDO,
+  STATUS_ENCERRADOS,
+} from "@/lib/inbox/comando-da-conversa";
 import { cn } from "@/lib/utils";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
@@ -187,6 +192,21 @@ export function ConversationListItem({
   });
   const isAi = comando.quem === "automatico";
   const dot = COR_DO_COMANDO[comando.quem] ?? COR_DO_COMANDO.ninguem;
+  // A cor sozinha não se explica: quem não decorou a tabela perguntava o que
+  // cada bolinha queria dizer. A palavra é a de ROTULO_DO_COMANDO, o rótulo que
+  // o produto já define para cada estado, no passar do mouse e no leitor de
+  // tela — antes ela era `aria-hidden`.
+  //
+  // Encerrada vence `humano` só na PALAVRA. Fechar não solta o dono
+  // (`fn_service_status`), e `comandoDaConversa` segue dizendo `humano` para
+  // nomear quem atendeu — a cor acompanha isso e fica como estava. Mas escrever
+  // "Em atendimento" numa conversa fechada afirmaria no presente um atendimento
+  // que acabou.
+  const rotuloDoComando = t(
+    STATUS_ENCERRADOS.has(conversation.status)
+      ? ROTULO_DO_COMANDO.encerrada
+      : (ROTULO_DO_COMANDO[comando.quem] ?? ROTULO_DO_COMANDO.ninguem),
+  );
 
   // O número DA EMPRESA por onde esta conversa chegou — não o do cliente. Com
   // dois canais é o que decide o tom da resposta e qual número a pessoa vê
@@ -238,7 +258,9 @@ export function ConversationListItem({
             "absolute -bottom-0.5 -left-0.5 h-3 w-3 rounded-full border-2 border-background",
             dot,
           )}
-          aria-hidden
+          role="img"
+          aria-label={rotuloDoComando}
+          title={rotuloDoComando}
         />
         <ChannelLogo channel={canal} size={16} className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-background ring-2 ring-background" />
       </div>

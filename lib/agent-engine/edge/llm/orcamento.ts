@@ -400,6 +400,14 @@ avisa as (
        select 1 from agent_inbox_items
         where organization_id = $1 and kind = 'budget_warning' and status = 'open'
      )
+  -- on conflict SEM ALVO de propósito: com o alvo (organization_id, kind) e o
+  -- predicado do índice, este statement passaria a EXIGIR que o índice único
+  -- parcial da 0540 exista — num clone que aplicou o código antes do banco, a
+  -- consulta do orçamento falharia com 42P10 e o chamador seguiria SEM TETO.
+  -- Sem alvo a cláusula não depende de inferência nenhuma, e o veredito viaja
+  -- inteiro; para estas linhas (kind de orçamento) o único conflito possível é
+  -- o do índice da 0540. Quem chega segundo simplesmente não insere.
+  on conflict do nothing
   returning 1
 )
 select (select teto from orc)         as teto,

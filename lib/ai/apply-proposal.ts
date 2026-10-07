@@ -8,6 +8,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { versionPayloadFrom } from "@/lib/ai/agents/duplicate";
 import { publishAgentVersion } from "@/lib/ai/agents/publish";
 
 /** Bullet entra como seção datável no FIM do prompt — diff auditável, nunca rewrite. */
@@ -28,10 +29,6 @@ export type ApplyProposalErrorCode =
   | "agent_not_published"
   | "publish_failed"
   | "internal_error";
-
-/** Colunas copiadas da versão publicada para a nova (conteúdo imutável — cópia integral). */
-const VERSION_COPY_COLUMNS =
-  "id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled";
 
 export async function applyProposal(
   admin: SupabaseClient,
@@ -111,9 +108,13 @@ export async function applyProposal(
     };
   }
 
+  // Cópia INTEGRAL da linha publicada (`*`, sem lista de colunas à mão): o que
+  // sai daqui é lido só por `versionPayloadFrom`, que escolhe o que a nova
+  // versão leva. Lista escrita à mão aqui perdia 11 chaves de
+  // `versionShapeSchema` (#2126) — e voltaria a perder na próxima coluna.
   const { data: base } = await admin
     .from("ai_agent_versions")
-    .select(VERSION_COPY_COLUMNS)
+    .select("*")
     .eq("id", agent.published_version_id)
     .eq("organization_id", orgId)
     .maybeSingle();
@@ -137,20 +138,15 @@ export async function applyProposal(
       organization_id: orgId,
       agent_id: agentId,
       version_number: nextNumber,
+      // Mesma cópia do duplicar: TODAS as chaves de conteúdo da versão publicada
+      // vêm daqui. A lista escrita à mão que vivia neste INSERT deixava de fora
+      // followup, operator_*, pipeline_ids, knowledge_source_ids, split_*,
+      // inbound_debounce_ms, cases_enabled e proposal_ai_draft_enabled (#2126) —
+      // a proposta era aplicada e a nova versão publicada voltava ao default do
+      // banco naqueles onze campos.
+      ...versionPayloadFrom(base),
+      // Única chave da cópia que muda: o bullet proposto entra no fim do prompt.
       system_prompt: composeAppliedPrompt(base.system_prompt, proposal.content),
-      provider: base.provider,
-      model: base.model,
-      credential_id: base.credential_id,
-      tool_ids: base.tool_ids,
-      trigger_config: base.trigger_config ?? undefined,
-      channel_session_id: base.channel_session_id,
-      max_steps: base.max_steps,
-      token_budget: base.token_budget,
-      cost_budget_cents: base.cost_budget_cents,
-      history_message_window: base.history_message_window,
-      history_token_window: base.history_token_window,
-      handoff_keywords: base.handoff_keywords,
-      handoff_tool_enabled: base.handoff_tool_enabled,
       status: "draft",
       created_by: userId,
     })

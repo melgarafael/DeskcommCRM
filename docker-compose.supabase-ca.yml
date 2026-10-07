@@ -1,0 +1,54 @@
+# docker-compose.supabase-ca.yml — overlay da CA do Supabase no RUNTIME (#829)
+#
+# Problema da issue: a cadeia do pooler da nuvem não está na trust store padrão,
+# e um cliente que exige verificação (`rejectUnauthorized` / `sslmode=verify-full`)
+# falha com `SELF_SIGNED_CERT_IN_CHAIN`. A CA oficial resolve — mas ela precisava
+# de um arquivo DENTRO de cada contêiner, e não havia caminho declarado para isso.
+#
+# Este overlay entrega o arquivo aos três serviços que falam com o Postgres
+# direto (app, worker, scheduler), em duas peças que só valem juntas:
+#
+#   1. volume bind SOMENTE-LEITURA da CA desta máquina
+#      (SUPABASE_SSL_ROOT_CERT, no .env — caminho de HOST, não de contêiner);
+#   2. NODE_EXTRA_CA_CERTS apontando para o caminho fixo lá dentro, que é o
+#      que o Node soma à trust store padrão na hora do handshake TLS.
+#
+# Quem entra aqui: dc() do hostgator-setup-kit/_common.sh, e SÓ quando a
+# variável está declarada e o arquivo existe no disco (ca_do_supabase_ok) —
+# um bind para arquivo inexistente faria o compose criar um DIRETÓRIO no lugar
+# da CA. A verificação de certificado e de hostname continua LIGADA; este
+# overlay só adiciona a cadeia de confiança, nunca a desliga.
+#
+# Uso manual (o kit já faz sozinho):
+#   docker compose -f docker-compose.prod.yml -f docker-compose.supabase-ca.yml up -d
+#
+# Os clientes Postgres EFÊMEROS do kit (`docker run postgres:17-alpine psql`)
+# não passam por este arquivo — eles recebem a mesma CA por `pg_container`
+# (-v + PGSSLROOTCERT) em hostgator-setup-kit/_common.sh.
+services:
+  app:
+    environment:
+      NODE_EXTRA_CA_CERTS: /etc/deskcomm/ca/supabase-ca.crt
+    volumes:
+      - type: bind
+        source: ${SUPABASE_SSL_ROOT_CERT}
+        target: /etc/deskcomm/ca/supabase-ca.crt
+        read_only: true
+
+  worker:
+    environment:
+      NODE_EXTRA_CA_CERTS: /etc/deskcomm/ca/supabase-ca.crt
+    volumes:
+      - type: bind
+        source: ${SUPABASE_SSL_ROOT_CERT}
+        target: /etc/deskcomm/ca/supabase-ca.crt
+        read_only: true
+
+  scheduler:
+    environment:
+      NODE_EXTRA_CA_CERTS: /etc/deskcomm/ca/supabase-ca.crt
+    volumes:
+      - type: bind
+        source: ${SUPABASE_SSL_ROOT_CERT}
+        target: /etc/deskcomm/ca/supabase-ca.crt
+        read_only: true

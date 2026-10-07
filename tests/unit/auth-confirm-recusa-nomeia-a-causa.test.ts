@@ -35,7 +35,7 @@ vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/auth/provision", () => ({ ensureTenantForUser: vi.fn(async () => undefined) }));
 vi.mock("@/lib/env", () => ({ env: { NEXT_PUBLIC_APP_URL: "https://crm.exemplo.com.br" } }));
 
-import { GET } from "@/app/auth/confirm/route";
+import { GET, POST } from "@/app/auth/confirm/route";
 
 type Resultado = { data: { user: unknown }; error: { message: string } | null };
 
@@ -58,8 +58,22 @@ function supabaseQue(resposta: Resultado, jaLogado: unknown = null) {
   return { verifyOtp, exchangeCodeForSession, getUser };
 }
 
-const chamar = (query: string) =>
-  GET(new NextRequest(`https://crm.exemplo.com.br/auth/confirm${query}`));
+// O `token_hash` só é gasto pelo POST do botão "Continuar" (`/login/continuar`):
+// o GET com ele apenas leva à tela, para o verificador de links do e-mail não
+// queimar o token. O `code` segue no GET. Cada formato vai pelo caminho real.
+const chamar = (query: string) => {
+  const params = new URLSearchParams(query);
+  if (!params.has("token_hash")) {
+    return GET(new NextRequest(`https://crm.exemplo.com.br/auth/confirm${query}`));
+  }
+  return POST(
+    new NextRequest("https://crm.exemplo.com.br/auth/confirm", {
+      method: "POST",
+      body: params,
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+    }),
+  );
+};
 
 /** O `Location` do redirect, sem o host. */
 async function destino(query: string): Promise<string> {

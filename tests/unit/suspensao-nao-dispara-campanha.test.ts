@@ -27,114 +27,158 @@ vi.mock("@/lib/logger", () => ({
 import { registrarExcecaoDoEnvio, rodarUmaRodadaDeCampanha } from "@/lib/campanhas/rodada";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 
-const ORG_SUSPENSA = "11111111-1111-4111-8111-111111111111";
+type Linha = Record<string, unknown>;
 
 interface Chamada {
   tabela: string;
   operacao: "select" | "update";
-  not?: [string, string, string];
-  neq?: [string, string];
+  /** A consulta embutiu `organizations…!inner(status)` (o que faz `organizations.status` cortar)? */
+  embuteOrgInner: boolean;
+  /** A consulta filtrou `organizations.status`? */
+  filtraStatusDaOrg: boolean;
+  /** A URL antiga `not(organization_id, in, ...)` com a lista de paradas? */
+  notIn: boolean;
 }
 
-/** Supabase falso: registra o que foi perguntado e devolve o que o teste manda. */
-function fakeAdmin(opts: { suspensas: string[]; campanhas: unknown[]; erroNaBusca?: string }) {
+/**
+ * PostgREST em memória, só o que a rodada usa. Aplica `eq`/`in`/`lte` às colunas
+ * da linha e o `limit`, nesta ordem — como o banco. `organizations.status` só
+ * corta quando o `select` embute `organizations` com `!inner`: sem embed (um
+ * `update`), o filtro não restringe nada, que é o pior dos dois resultados
+ * possíveis do PostgREST real. Tabela desconhecida devolve vazio.
+ */
+function fakeAdmin(opts: { campanhas: Linha[]; erroNaBusca?: string }) {
   const chamadas: Chamada[] = [];
+  const tabelas: Record<string, Linha[]> = { campaigns: opts.campanhas };
   const builder = (tabela: string) => {
-    const estado: {
-      not?: [string, string, string];
-      neq?: [string, string];
-      operacao: "select" | "update";
-    } = {
-      operacao: "select",
+    const c: Chamada = { tabela, operacao: "select", embuteOrgInner: false, filtraStatusDaOrg: false, notIn: false };
+    const filtros: Array<(l: Linha) => boolean> = [];
+    let limite = Infinity;
+    let patch: Linha | null = null;
+    const resolver = () => {
+      chamadas.push(c);
+      if (opts.erroNaBusca && tabela === "campaigns" && c.operacao === "select") {
+        return { data: null, error: { message: opts.erroNaBusca } };
+      }
+      const linhas = (tabelas[tabela] ?? []).filter((l) => filtros.every((f) => f(l))).slice(0, limite);
+      if (patch) for (const l of linhas) Object.assign(l, patch);
+      return { data: linhas, error: null };
     };
-    const b: Record<string, unknown> = {
-      select: () => b,
-      update: () => {
-        estado.operacao = "update";
-        return b;
+    const b: Record<string, unknown> = new Proxy(
+      {},
+      {
+        get(_alvo, metodo) {
+          switch (metodo) {
+            case "then":
+              return (ok: (v: unknown) => unknown) => Promise.resolve(resolver()).then(ok);
+            case "maybeSingle":
+            case "single":
+              return async () => ({ data: resolver().data?.[0] ?? null, error: null });
+            case "select":
+              return (cols?: unknown) => {
+                if (typeof cols === "string" && /organizations[^,(]*!inner\(/.test(cols)) c.embuteOrgInner = true;
+                return b;
+              };
+            case "update":
+              return (p: Linha) => {
+                c.operacao = "update";
+                patch = p;
+                return b;
+              };
+            case "eq":
+              return (coluna: string, valor: unknown) => {
+                if (coluna === "organizations.status") {
+                  c.filtraStatusDaOrg = true;
+                  if (c.embuteOrgInner) filtros.push((l) => (l.organizations as { status?: string } | null)?.status === valor);
+                } else {
+                  filtros.push((l) => !(coluna in l) || l[coluna] === valor);
+                }
+                return b;
+              };
+            case "in":
+              return (coluna: string, valores: unknown[]) => {
+                filtros.push((l) => !(coluna in l) || valores.includes(l[coluna]));
+                return b;
+              };
+            case "lte":
+              return (coluna: string, valor: string) => {
+                filtros.push((l) => !(coluna in l) || String(l[coluna]) <= valor);
+                return b;
+              };
+            case "limit":
+              return (n: number) => {
+                limite = n;
+                return b;
+              };
+            case "not":
+              return (coluna: string, op: string) => {
+                if (coluna === "organization_id" && op === "in") c.notIn = true;
+                return b;
+              };
+            default:
+              return () => b;
+          }
+        },
       },
-      eq: () => b,
-      lte: () => b,
-      or: () => b,
-      order: () => b,
-      limit: () => b,
-      neq: (coluna: string, valor: string) => {
-        estado.neq = [coluna, valor];
-        return b;
-      },
-      not: (coluna: string, op: string, valor: string) => {
-        estado.not = [coluna, op, valor];
-        return b;
-      },
-      maybeSingle: async () => ({ data: null, error: null }),
-      then: (resolve: (v: unknown) => unknown) => {
-        chamadas.push({ tabela, operacao: estado.operacao, not: estado.not, neq: estado.neq });
-        const data =
-          tabela === "organizations"
-            ? opts.suspensas.map((id) => ({ id }))
-            : estado.operacao === "update"
-              ? []
-              : opts.campanhas;
-        if (opts.erroNaBusca && tabela === "campaigns" && estado.operacao === "select") {
-          return Promise.resolve({ data: null, error: { message: opts.erroNaBusca } }).then(resolve);
-        }
-        return Promise.resolve({ data, error: null }).then(resolve);
-      },
-    };
+    );
     return b;
   };
   return { admin: { from: (t: string) => builder(t) }, chamadas };
 }
 
+const ORG_PARADA = "11111111-1111-4111-8111-111111111111";
+const ORG_ATIVA = "22222222-2222-4222-8222-222222222222";
+const ONTEM = new Date(Date.now() - 86_400_000).toISOString();
+
+function campanha(id: string, org: string, status: "running" | "scheduled", orgStatus: string, canal = `canal-${id}`): Linha {
+  return {
+    id,
+    organization_id: org,
+    channel_session_id: canal,
+    status,
+    scheduled_at: ONTEM,
+    started_at: status === "running" ? ONTEM : null,
+    organizations: { status: orgStatus },
+  };
+}
+
 describe("suspensão × campanha", () => {
-  it("parada é tudo que não é 'active' — redigida e arquivada também não disparam", async () => {
-    const { admin, chamadas } = fakeAdmin({ suspensas: [ORG_SUSPENSA], campanhas: [] });
+  it("a rodada não lê a lista de orgs paradas — o corte vem embutido na consulta", async () => {
+    const { admin, chamadas } = fakeAdmin({ campanhas: [] });
     await rodarUmaRodadaDeCampanha(admin as never);
-    expect(chamadas[0]).toMatchObject({ tabela: "organizations", neq: ["status", "active"] });
-  });
-
-  it("a rodada EXCLUI as campanhas de organização suspensa da escolha", async () => {
-    const { admin, chamadas } = fakeAdmin({ suspensas: [ORG_SUSPENSA], campanhas: [] });
-    const r = await rodarUmaRodadaDeCampanha(admin as never);
-
-    expect(r).toEqual({
-      enviadas: 0,
-      pulados: 0,
-      concluidas: 0,
-      promovidas: 0,
-      detalhe: "nada_a_fazer",
-    });
+    expect(chamadas.some((c) => c.tabela === "organizations")).toBe(false);
     const escolha = chamadas.find((c) => c.tabela === "campaigns" && c.operacao === "select");
-    expect(escolha?.not).toEqual(["organization_id", "in", `(${ORG_SUSPENSA})`]);
+    expect(escolha).toMatchObject({ embuteOrgInner: true, filtraStatusDaOrg: true, notIn: false });
+    for (const c of chamadas) expect(c.notIn, JSON.stringify(c)).toBe(false);
   });
 
-  it("a PROMOÇÃO da agendada também exclui a suspensa — senão a suspensão só valeria para quem já estava rodando", async () => {
-    const { admin, chamadas } = fakeAdmin({ suspensas: [ORG_SUSPENSA], campanhas: [] });
-    await rodarUmaRodadaDeCampanha(admin as never);
+  it("⭐ 30 campanhas de org parada à frente não tiram a vez da org operante (o corte é ANTES do limit)", async () => {
+    const paradas = Array.from({ length: 30 }, (_, i) => campanha(`parada${String(i).padStart(2, "0")}`, ORG_PARADA, "running", "suspended"));
+    const { admin } = fakeAdmin({ campanhas: [...paradas, campanha("ativa-01", ORG_ATIVA, "running", "active")] });
+    const r = await rodarUmaRodadaDeCampanha(admin as never);
+    expect(r.detalhe).toContain("ativa-01:");
+    expect(r.detalhe).not.toContain("parada");
+  });
+
+  it("⭐ a PROMOÇÃO de agendadas não promove a da org parada e não deixa a operante sem vez", async () => {
+    const paradas = Array.from({ length: 150 }, (_, i) => campanha(`agendada-parada-${i}`, ORG_PARADA, "scheduled", "suspended"));
+    const ativa = campanha("agendada-ativa", ORG_ATIVA, "scheduled", "active");
+    const { admin, chamadas } = fakeAdmin({ campanhas: [...paradas, ativa] });
+    const r = await rodarUmaRodadaDeCampanha(admin as never);
+    // Promovida (e, sem destinatário no fake, já concluída na mesma rodada).
+    expect(ativa.status).not.toBe("scheduled");
+    expect(paradas.filter((c) => c.status !== "scheduled")).toHaveLength(0);
+    expect(r.promovidas).toBe(1);
+    // O update não filtra pelo embutido (que ali não corta): promove por id.
     const promocao = chamadas.find((c) => c.tabela === "campaigns" && c.operacao === "update");
-    expect(promocao?.not).toEqual(["organization_id", "in", `(${ORG_SUSPENSA})`]);
-  });
-
-  it("sem nenhuma organização suspensa, a consulta NÃO ganha filtro — `in ()` vazio derrubaria a query", async () => {
-    const { admin, chamadas } = fakeAdmin({ suspensas: [], campanhas: [] });
-    await rodarUmaRodadaDeCampanha(admin as never);
-    for (const c of chamadas.filter((x) => x.tabela === "campaigns")) {
-      expect(c.not).toBeUndefined();
-    }
-  });
-
-  it("a organização suspensa é perguntada ANTES da campanha — não adianta filtrar depois de escolher", async () => {
-    const { admin, chamadas } = fakeAdmin({ suspensas: [ORG_SUSPENSA], campanhas: [] });
-    await rodarUmaRodadaDeCampanha(admin as never);
-    expect(chamadas[0]?.tabela).toBe("organizations");
-    expect(chamadas.slice(1).every((c) => c.tabela === "campaigns")).toBe(true);
+    expect(promocao?.filtraStatusDaOrg).toBe(false);
   });
 });
 
 describe("a busca das campanhas em andamento falhou", () => {
   it("⭐ registra o erro e não responde 'nada a fazer' — a falha não se disfarça de rodada vazia", async () => {
     avisos.length = 0;
-    const { admin } = fakeAdmin({ suspensas: [], campanhas: [], erroNaBusca: "timeout do PostgREST" });
+    const { admin } = fakeAdmin({ campanhas: [], erroNaBusca: "timeout do PostgREST" });
     const r = await rodarUmaRodadaDeCampanha(admin as never);
 
     expect(r.detalhe).toBe("busca_falhou");

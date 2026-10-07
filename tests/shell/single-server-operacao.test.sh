@@ -55,6 +55,9 @@ case " $* " in
     case " $* " in
       *platform_smtp_settings*) printf '%b' "${PSQL_SMTP:-}" ;;
       *signup_mode*) printf '%b' "${PSQL_SIGNUP:-}" ;;
+      # a checagem do restore.sh conta as tabelas de public antes de pedir a
+      # confirmação; a instalação simulada aqui está vazia, então 0
+      *" pg_tables"*) printf '0\n' ;;
       *" pg_dump "*) echo "-- dump" ;;
       *" tar czf /out/"*)
         [ "${STORAGE_FALHA:-0}" = "1" ] && case " $* " in *storage-*) exit 1;; esac

@@ -9,6 +9,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import type { LanguageModel } from 'ai';
 import { MockLanguageModelV3 } from 'ai/test';
 
+import { PROVEDOR_POR_ASSINATURA } from '@/lib/ai/pontos/provedores';
 import { fetchParaDestinoDaOrganizacao } from '@/lib/automation/destinos-internos-autorizados';
 
 import { allowlistedFetch, buildAllowlist } from '../egress';
@@ -60,6 +61,21 @@ export const DEEPSEEK_ENDPOINT = 'https://api.deepseek.com';
  * `https://router.eu.requesty.ai/v1`.
  */
 export const REQUESTY_ENDPOINT = 'https://router.requesty.ai/v1';
+
+/**
+ * O endpoint do CODEX — o mesmo login do ChatGPT, falando a API de resposta.
+ *
+ * A assinatura (`openai-assinatura`) não tem chave: o `access_token` do login
+ * por PKCE (`lib/ai/pontos/pkce-da-assinatura.ts`) viaja como `Bearer`, e o
+ * destino é o backend que o próprio Codex CLI usa. Não é contrato público —
+ * a OpenAI pode mudá-lo sem aviso —, e é por isso que a queda para a chave de
+ * API da organização existe: muda o destino, não a conversa.
+ *
+ * A allowlist de egress do provider deriva daqui (`contain(...)` abaixo) — mas
+ * o CATRACA de host do `branding.test.ts` é régua à parte: ele exige a linha
+ * declarada em `HOSTS_DECLARADOS`, que está lá, com categoria e motivo.
+ */
+export const OPENAI_CODEX_ENDPOINT = 'https://chatgpt.com/backend-api/codex';
 
 /**
  * Cabeçalhos OPCIONAIS de atribuição da OpenRouter.
@@ -253,6 +269,25 @@ export function createDefaultRegistry(opts?: {
           : contido;
       return createOpenAI({ apiKey, fetch: fetchFinal })(modelId);
     },
+    /**
+     * A ASSINATURA (#1639) — mesma fábrica da OpenAI, outro destino e outro
+     * segredo: o `apiKey` aqui é o `access_token` do login por PKCE, nunca uma
+     * chave de API (quem o monta é `resolveOrgLlmConfig`, e só ele).
+     *
+     * Sem `baseUrl`: este provedor não aceita endpoint próprio (`aceitaEndpointProprio:
+     * false` na lista), e honrar um endereço escolhido num provider que a tela
+     * diz não poder ser apontado seria a tela e o runtime discordando.
+     *
+     * Sem injeção de `reasoning.effort` também: o knob é da fábrica `openai`,
+     * e o campo existe onde a OpenAI o documenta — aqui ele só correria o risco
+     * de o backend recusar um parâmetro que não pediu.
+     */
+    [PROVEDOR_POR_ASSINATURA]: (apiKey, modelId) =>
+      createOpenAI({
+        apiKey,
+        baseURL: OPENAI_CODEX_ENDPOINT,
+        fetch: contain(OPENAI_CODEX_ENDPOINT),
+      })(modelId),
     google: (apiKey, modelId) =>
       createGoogleGenerativeAI({ apiKey, fetch: contain(GOOGLE_ENDPOINT) })(modelId),
     /**

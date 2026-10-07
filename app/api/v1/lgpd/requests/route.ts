@@ -13,6 +13,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { computeSlaBucket } from "@/lib/lgpd/balde-de-sla";
 
 export const dynamic = "force-dynamic";
 
@@ -28,21 +29,11 @@ const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(25),
 });
 
-type SlaBucket = "overdue" | "critical" | "warning" | "ok";
-
-function computeSlaBucket(dueAt: string | null, receivedAt: string): SlaBucket {
-  if (!dueAt) return "ok";
-  const now = Date.now();
-  const due = new Date(dueAt).getTime();
-  const received = new Date(receivedAt).getTime();
-  const msUntilDue = due - now;
-
-  if (msUntilDue < 0) return "overdue";
-  if (msUntilDue < 2 * 24 * 60 * 60 * 1000) return "critical";
-  const totalWindow = due - received;
-  if (totalWindow > 0 && msUntilDue < totalWindow * 0.5) return "warning";
-  return "ok";
-}
+/**
+ * O BALDE DE SLA da linha é `computeSlaBucket`, de `lib/lgpd/balde-de-sla.ts` —
+ * função pura, testada em `tests/unit/lgpd-prazo-e-dia-civil.test.ts`. O motivo
+ * de a régua não estar neste arquivo está no cabeçalho de lá.
+ */
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
@@ -105,7 +96,10 @@ export async function GET(req: NextRequest): Promise<Response> {
     return fail("internal_error", dbErr.message, 500, { requestId });
   }
 
-  // Compute sla_bucket per row and apply optional filter
+  // Balde por linha. A régua mora em `lib/lgpd/balde-de-sla.ts` porque é
+  // aritmética de DIA CIVIL (`due_at` guarda um dia, não um instante) e
+  // aritmética testada precisa ficar onde o teste alcança. A versão que estava
+  // neste arquivo comparava milissegundos e marcava "Vencido" 26h antes do prazo.
   const enriched = (rows ?? []).map((r) => ({
     ...r,
     sla_bucket: computeSlaBucket(r.due_at, r.received_at),

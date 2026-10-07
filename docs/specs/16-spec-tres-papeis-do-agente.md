@@ -129,7 +129,7 @@ existe, mais os classificadores onde regra não alcança.
 | camada | natureza | custo | estado |
 |---|---|---|---|
 | 10 gates de `BEFORE_SEND_GATES` (v6) | determinística | zero | **pronto** |
-| promessa semântica | LLM auxiliar | 1 chamada/envio | **pronto**, opt-in |
+| promessa semântica | LLM auxiliar | 1 chamada/envio | **pronto**, opt-in; considera [evidências consultadas no turno](promessas-com-evidencias-consultadas.md) |
 | jailbreak (inbound) | LLM auxiliar | 1 chamada/turno | **pronto**, opt-in |
 | vazamento de vocabulário | determinística | zero | **pronto** (`internal_vocabulary`) |
 

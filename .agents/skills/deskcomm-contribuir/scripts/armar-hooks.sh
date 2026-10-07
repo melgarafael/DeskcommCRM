@@ -38,7 +38,7 @@ fi
 chmod +x "$alvo"/* 2>/dev/null || true
 git config core.hooksPath "$alvo"
 echo "ok: core.hooksPath=$alvo"
-echo "  pre-commit: migration nova exige apêndice no baseline.sql + linha no MANIFEST.md no mesmo commit;"
+echo "  pre-commit: migration nova exige apêndice no baseline.sql + linha \`-- manifest: <descrição>\` no próprio .sql;"
 echo "              NNNN e timestamp únicos contra origin/main e branches locais"
 echo "  pre-push:   push na main/master é recusado; branch atrasada gera aviso"
 echo "  identidade: commit como root@… ou sem e-mail gera aviso (o crédito some do seu perfil)"

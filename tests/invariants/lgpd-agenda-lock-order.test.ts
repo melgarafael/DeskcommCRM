@@ -201,3 +201,48 @@ it("porta legada preserva timestamp/retomada e cerca papel, tenant, suporte e MF
     await pool.query("delete from platform_admins where user_id=$1", [f.user]);
   }
 });
+
+it("platform admin support_readonly FORA do suporte não anonimiza — o modo de leitura não escreve (0532)", async () => {
+  // O buraco que faltava: o caso acima prova o platform admin `full` fora de
+  // suporte e o suporte em modo leitura DENTRO de sessão; nunca o scope
+  // `platform_admins.scope='support_readonly'` SEM sessão de suporte — que é o
+  // estado normal de quem entra no painel só para observar. O portão antigo
+  // aceitava `(fn_is_platform_admin() and support is null)`, e a função pura
+  // ignora o scope: a redação irreversível passava pela chamada direta ao
+  // PostgREST (a rota da tela já recusava: o requireRole só abre o atalho de
+  // plataforma para scope full desde 9c0cf9114).
+  const f = await fixture();
+  const padmin = randomUUID();
+  await pool.query("insert into auth.users(id,email) values($1,$2)", [padmin, `${padmin}@invariant.test`]);
+  await pool.query(
+    "insert into platform_admins(user_id,granted_by,scope,mfa_required,reason) values($1,$1,'support_readonly',false,'invariante 0532')",
+    [padmin],
+  );
+  const call = async () => {
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+      await claims(client, padmin);
+      const result = await client.query(legacy, [f.org, f.contact]);
+      await client.query("commit");
+      return result.rows[0].result;
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+  };
+  try {
+    await expect(call()).rejects.toMatchObject({ code: "42501" });
+    expect((await state(f)).contact.is_anonymized).toBe(false);
+
+    // CONTROLE POSITIVO: o mesmo ator, `full`, segue anonimizando (0229).
+    await pool.query("update platform_admins set scope='full' where user_id=$1", [padmin]);
+    expect((await call()).already_anonymized).toBe(false);
+    expect((await state(f)).contact.is_anonymized).toBe(true);
+  } finally {
+    await pool.query("delete from platform_admins where user_id=$1", [padmin]);
+    await pool.query("delete from auth.users where id=$1", [padmin]);
+  }
+});

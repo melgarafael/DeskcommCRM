@@ -13,7 +13,7 @@ import { z } from "zod";
 
 import { audit } from "@/lib/audit";
 import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK, escreveComoPlatformAdmin } from "@/lib/auth/types";
+import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
 import { VALORES_DE_CATEGORIA } from "@/lib/conversoes/regras-google";
 import {
   criarAcaoDeConversao,
@@ -37,10 +37,7 @@ async function autorizar(escrita: boolean) {
     return { ok: false as const, error: "forbidden_role" as const };
   const activeOrg = await resolveActiveOrg(authUser);
   if (!activeOrg) return { ok: false as const, error: "forbidden_tenant" as const };
-  if (
-    !(escreveComoPlatformAdmin(authUser) && !authUser.support) &&
-    ROLE_RANK[activeOrg.role] < ROLE_RANK.admin
-  )
+  if (!podeAdministrarEmpresa(authUser, activeOrg))
     return { ok: false as const, error: "forbidden_role" as const };
   if (escrita && (await mfaEmDivida()))
     return { ok: false as const, error: "mfa_required" as const };

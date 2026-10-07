@@ -13,11 +13,12 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { PEDIDOS_DO_CLIENTE, TAREFAS_DO_JEV } from "@/lib/ai/decisao/tarefas";
+import { CONFERENCIA_DE_CAMPO, PEDIDOS_DO_CLIENTE, TAREFAS_DO_JEV } from "@/lib/ai/decisao/tarefas";
 import { PROVEDORES_COM_CHAVE } from "@/lib/ai/pontos/provedores";
 import { PAPEIS, PONTOS_DE_IA } from "@/lib/ai/pontos/registro";
-import { EXPLICACAO_DA_ORIGEM } from "@/lib/ai/pontos/resolver";
+import { EXPLICACAO_DA_ORIGEM, decidirBinding } from "@/lib/ai/pontos/resolver";
 import { DICIONARIO } from "@/lib/i18n/dicionario";
+import { MOTIVOS_DA_TRANSCRICAO } from "@/lib/messaging/media/escada-de-transcricao";
 
 function semEspanhol(textos: readonly string[]): string[] {
   return textos.filter((t) => !DICIONARIO[t]?.es);
@@ -64,9 +65,28 @@ describe("espanhol dos textos que vêm de lista, não de literal", () => {
 
   it("o nome e o porquê da chamada do Jev que não é de ponto nenhum, em IA › Execuções", () => {
     expect(semEspanhol([PEDIDOS_DO_CLIENTE.rotulo, PEDIDOS_DO_CLIENTE.porQue, PEDIDOS_DO_CLIENTE.porQueNaFalha])).toEqual([]);
+    expect(semEspanhol([CONFERENCIA_DE_CAMPO.rotulo, CONFERENCIA_DE_CAMPO.porQue, CONFERENCIA_DE_CAMPO.porQueNaFalha])).toEqual([]);
   });
 
   it("toda explicação de origem — o \"por que este modelo\" de IA › Execuções", () => {
     expect(semEspanhol(Object.values(EXPLICACAO_DA_ORIGEM))).toEqual([]);
+  });
+
+  it("todo motivo da escada de transcrição — o \"por quê\" do cartão \"Ouvir o áudio do cliente\" (#2205)", () => {
+    // A rota põe `decisao.motivo` em `efetivo.porQue`, e o cartão faz
+    // `t(ponto.efetivo.porQue)`. Inclui o "—" do resolvedor quando ninguém
+    // lhe entregou a escada.
+    const semEscada = decidirBinding({
+      pontoId: "transcricao_de_audio",
+      binding: null,
+      agentePublicado: null,
+      modeloDeAmbiente: undefined,
+      padraoDaOrganizacao: { provider: "anthropic", defaultModel: null },
+      transcricao: null,
+    }).motivo;
+    expect(semEscada, "o resolvedor deixou de dar motivo sem a escada").toBeDefined();
+    const textos = [...Object.values(MOTIVOS_DA_TRANSCRICAO), semEscada!];
+    expect(textos.length).toBeGreaterThan(5);
+    expect(semEspanhol(textos)).toEqual([]);
   });
 });

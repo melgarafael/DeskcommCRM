@@ -51,17 +51,38 @@ import { TAREFA_DO_CLIMA } from "./tarefas";
  *
  * Cinco níveis para dar resolução comparável à nota contínua que o worker já grava;
  * o fornecedor aceita de 2 a 10.
+ *
+ * ═══ RELATO DO PROBLEMA NÃO É RECLAMAÇÃO (issue #2219) ═══
+ *
+ * O segundo nível era `"cliente insatisfeito ou reclamando"`: com `score01 =
+ * score / teto` (`teto = 4`), valia 0.25 — ABAIXO do `DEFAULT_SENTIMENT_THRESHOLD`
+ * (0.3). Com o Jev decidindo, o caso da #2209 ("Fui bloqueado na Uber") caía
+ * naquele nível e virava `reclamando`: o lead passava para uma pessoa, e o
+ * prompt novo do #2216 não alcança este caminho (ele só vale para a IA de
+ * sempre, que responde pelo `SENTIMENT_SYSTEM_PROMPT`).
+ *
+ * Por isso os níveis separam as DUAS pontas, com a mesma régua do prompt:
+ * insatisfação COM O ATENDIMENTO fica no nível 1 (0.25, abaixo do corte — abre
+ * a passagem), e o RELATO DO PROBLEMA no nível 2 (0.5, acima — não abre).
+ * `tests/unit/escala-do-jev-separa-relato-de-reclamacao.test.ts` prende as
+ * duas pontas; `tests/unit/clima-da-conversa-no-worker.test.ts` prende o
+ * desfecho no worker, com o Jev decidindo.
  */
 export const NIVEIS_DE_CLIMA = [
-  "cliente irritado, revoltado ou ameaçando sair",
-  "cliente insatisfeito ou reclamando",
-  "cliente neutro, apenas trocando informação",
+  "cliente irritado, revoltado ou ameaçando sair — hostilidade aberta com quem responde: ameaça, xingamento ou pedido agressivo de falar com uma pessoa",
+  "cliente insatisfeito COM O ATENDIMENTO, sem hostilidade aberta — reclamando de demora, de resposta que não resolve ou de cobrança fechada",
+  "cliente apenas relatando o problema que o trouxe até aqui ou trocando informação, sem irritação com quem responde (ex.: \"Fui bloqueado na Uber\")",
   "cliente satisfeito ou colaborativo",
   "cliente entusiasmado, elogiando ou agradecendo",
 ] as const;
 
+/**
+ * A instrução diz o que medir, e não só onde olhar: "relatar o problema é
+ * informação, não reclamação" é a separação que o prompt da IA de sempre ganhou
+ * no #2216 — aqui ela vale para o caminho em que o Jev decide.
+ */
 const INSTRUCAO =
-  "Com base na ÚLTIMA mensagem do cliente, em que ponto está o clima da conversa?";
+  "Com base na ÚLTIMA mensagem do cliente, em que ponto está o clima da conversa? Meça a hostilidade com o ATENDIMENTO, não o assunto: relatar o problema que a pessoa descreve é informação, não reclamação.";
 
 export interface EntradaDoClima {
   organizationId: string;

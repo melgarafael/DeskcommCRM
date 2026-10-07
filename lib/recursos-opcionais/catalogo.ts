@@ -36,6 +36,7 @@ import { vendaPeloCanalLigada } from "@/lib/conversoes/venda-pelo-canal";
 import { lerConfigDoJev } from "@/lib/ai/decisao/config";
 import { capacidadesLigadas, type CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
 import { conversaFicaComQuemAtendeu } from "@/lib/schemas/routing";
+import { configAssinatura } from "@/lib/messaging/assinatura";
 
 /** Quem decide: o servidor inteiro, a empresa, cada agente, ou o arquivo do servidor. */
 export type NivelDoRecurso = "instalacao" | "organizacao" | "agente" | "servidor";
@@ -116,6 +117,11 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
   honorarios: {
     nome: "Honorários",
     oQueFaz: "Contratos de honorários com parcelas e o controle do que já foi pago.",
+  },
+  login_codex: {
+    nome: "Login do Codex por assinatura",
+    oQueFaz:
+      "Conecta a assinatura do ChatGPT (o mesmo login do Codex): cada empresa conecta a própria conta, em Credenciais, com a chave de API da mesma empresa como reserva. Desligado por padrão.",
   },
 };
 
@@ -257,6 +263,25 @@ const DO_SERVIDOR: RecursoOpcional[] = [
     ler: peloServidor("voz_whatsapp"),
   },
   {
+    // Entra aqui pelo review do #2441: a feature passa a ser visível ao dono
+    // do servidor do mesmo jeito que a voz — `JITSI_SERVER_URL` no `.env`,
+    // liga ou não, sem rebuild. A linha existe mesmo o teste não cobrando
+    // recurso que vive só em env: quem chega nesta tela é justamente para
+    // saber o que está ligado, e a videochamada não pode ser a uma que só
+    // aparece quando alguém lembra do `.env`.
+    id: "videochamada_jitsi",
+    nome: "Videochamada (Jitsi Meet)",
+    oQueFaz:
+      "Abrir sala de vídeo no header da conversa: o contato entra pelo link no chat, sem instalar nada.",
+    nivel: "servidor",
+    padrao: "desligado",
+    quemDecide: "dono_do_servidor",
+    href: null,
+    comoLigar:
+      "No arquivo de ambiente, JITSI_SERVER_URL apontando para a origem da sala (ex.: https://meet.jit.si). Vazio = o botão Vídeo não aparece.",
+    ler: peloServidor("videochamada_jitsi"),
+  },
+  {
     id: "telefonia_sip",
     nome: "Telefonia por SIP",
     oQueFaz: "Atender e ligar por telefone de verdade, com agente de voz.",
@@ -343,6 +368,19 @@ const DA_EMPRESA: RecursoOpcional[] = [
     quemDecide: "manager",
     href: "/app/settings/atendimento",
     ler: peloSettings((s) => s.visibility_mode === "own" || s.visibility_mode === "own_and_unassigned"),
+  },
+  {
+    id: "assinatura_do_emissor",
+    nome: "Quem fala aparece na mensagem",
+    oQueFaz: "Põe o nome do atendente ou da IA em negrito na linha de cima da mensagem ao cliente.",
+    nivel: "organizacao",
+    padrao: "desligado",
+    quemDecide: "manager",
+    href: "/app/settings/atendimento",
+    ler: peloSettings((s) => {
+      const c = configAssinatura(s);
+      return c.humanos || c.ia;
+    }),
   },
   {
     id: "etapa_move_o_card",
@@ -513,6 +551,16 @@ const DA_EMPRESA: RecursoOpcional[] = [
       const familia = objeto(f.settings.base_de_conhecimento)?.familia;
       return familia === "google" ? "ligado" : familia === "openai" ? "desligado" : "nao_verificado";
     },
+  },
+  {
+    id: "mapas",
+    nome: "Endereço aproximado do pino",
+    oQueFaz: "Com uma chave do Google, o pino de localização do cliente chega com rua e cidade aproximadas.",
+    nivel: "organizacao",
+    padrao: "desligado",
+    quemDecide: "admin",
+    // A chave mora em `map_provider_credentials`, e esta lista não lê chave: o estado fica na tela.
+    href: "/app/ai/providers",
   },
   {
     id: "teto_de_gasto",

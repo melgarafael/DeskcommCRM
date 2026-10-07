@@ -42,9 +42,11 @@ import {
   type DepsDaOperacao,
 } from "@/lib/operacao/entradas-automaticas";
 import { listarMarcadores, listarTime } from "@/lib/operacao/marcadores-e-time";
+import { resolveUserNames } from "./_users";
 import {
   CHAVE_DE_VALOR_MAX,
   VALOR_DE_VARIAVEL_MAX,
+  contatoDoNegocio,
   listarModelosDeMensagem,
   preencherModeloDeMensagem,
 } from "@/lib/operacao/modelos-de-mensagem";
@@ -78,7 +80,8 @@ export const crmListStages: McpToolDefinition<typeof listStagesShape> = {
   description:
     "Lista as etapas ativas de um pipeline, na ordem do quadro, com id, name, slug, position, " +
     "is_won/is_lost, win_probability (probabilidade de ganho 0-100 ou null quando a etapa nao foi " +
-    "calibrada) e a autoria da última mudança de configuração (last_change_actor_kind: user|ai|system). " +
+    "calibrada), expected_duration_hours (janela de esfriando em HORAS, ou null quando a etapa " +
+    "usa o padrao de 24 h) e a autoria da última mudança de configuração (last_change_actor_kind: user|ai|system). " +
     "Use antes de mover um lead ou de criar etapa nova, para não duplicar coluna existente.",
   inputSchema: listStagesShape,
   category: "read",
@@ -131,13 +134,21 @@ const updateStageShape = {
    * probabilidade" em vez de somar zero em silêncio.
    */
   win_probability: z.number().int().min(0).max(100).nullable().optional(),
+  /**
+   * Janela de "esfriando" da etapa, em HORAS (1 a 8760; `null` limpa e o radar
+   * volta ao padrão de 24 h/72 h). É o que o CORE 5 lê de
+   * `crm_stages.expected_duration_hours` para classificar lead parado.
+   */
+  expected_duration_hours: z.number().int().min(1).max(8760).nullable().optional(),
 };
 
 export const crmUpdateStage: McpToolDefinition<typeof updateStageShape> = {
   name: "crm_update_stage",
   description:
     "Renomeia, reordena, calibra a probabilidade de ganho (win_probability, 0-100; null limpa a " +
-    "calibração e a previsão passa a reportar a etapa sem probabilidade) ou muda o papel de desfecho " +
+    "calibração e a previsão passa a reportar a etapa sem probabilidade), ajusta a janela de " +
+    "esfriando (expected_duration_hours, em HORAS de 1 a 8760; null volta ao padrão de 24 h) ou " +
+    "muda o papel de desfecho " +
     "(is_won/is_lost) de uma etapa. " +
     "after_stage_id é o id da etapa VIZINHA DA ESQUERDA (null = primeira coluna), não um número de posição. " +
     "Mover a marcação de ganho/perda para outra etapa é permitido; REMOVÊ-LA sem substituta não é — " +
@@ -153,13 +164,16 @@ export const crmUpdateStage: McpToolDefinition<typeof updateStageShape> = {
     if (input.is_lost !== undefined) pedido.is_lost = input.is_lost;
     if (input.after_stage_id !== undefined) pedido.depois_de = input.after_stage_id;
     if (input.win_probability !== undefined) pedido.win_probability = input.win_probability;
+    if (input.expected_duration_hours !== undefined) {
+      pedido.expected_duration_hours = input.expected_duration_hours;
+    }
     if (Object.keys(pedido).length === 0) {
       throw new ApiError(
         422,
         "unprocessable_entity",
         undefined,
         ctx.requestId,
-        "Diga o que mudar na etapa: o nome, a ordem ou o papel dela no desfecho do negócio.",
+        "Diga o que mudar na etapa: o nome, a ordem, a janela de esfriando ou o papel dela no desfecho do negócio.",
       );
     }
     const { funil } = await atualizarEtapa(deps(ctx), {
@@ -281,17 +295,45 @@ export const crmRenderMessageTemplate: McpToolDefinition<typeof renderTemplateSh
     "`valores` preenche o que só quem chama sabe (link, valor, protocolo); variável fora do formato, " +
     "do contato/negócio ou que o modelo não usa é RECUSADA com o nome dela. Devolve também `lacunas`: as " +
     "marcações que ficaram sem valor. Se vier lacuna, NÃO mande o texto como está: 'Olá , tudo bem?' chega " +
-    "assim no cliente.",
+    "assim no cliente." +
+    " Em conversa de atendimento, preenche apenas com os dados do contato desta conversa (sem " +
+    "contact_id nem lead_id, usa ele).",
   inputSchema: renderTemplateShape,
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
   redigirParaAuditoria: redigirValores,
   handler: async (input, ctx) => {
+    // ── O TEXTO MONTADO É DO CONTATO DESTA CONVERSA ─────────────────────────
+    //
+    // Mesmo escopo das demais leituras do turno: `ctx.contatoDoTurno` é
+    // contexto de CONFIANÇA (injetado pelo runtime, nunca escrito pelo
+    // modelo). Com ele, `contact_id` de outro contato e `lead_id` cujo dono
+    // não é o do turno caem no MESMO `fora_da_conversa` — negócio inexistente
+    // e negócio sem contato inclusive. Sem nenhum dos dois, o contato do turno
+    // preenche. Sem contato do turno (integrador, pessoa), nada muda.
+    // `lead_id` igual ao contato do turno é a confusão contato × negócio (como
+    // em `crm_list_appointments`): o contato já cobre o pedido.
+    const doTurno = ctx.contatoDoTurno;
+    const leadId = doTurno && input.lead_id === doTurno ? undefined : input.lead_id;
+    if (doTurno) {
+      const foraDoTurno =
+        (input.contact_id !== undefined && input.contact_id !== doTurno) ||
+        (leadId !== undefined && (await contatoDoNegocio(deps(ctx), leadId)) !== doTurno);
+      if (foraDoTurno) {
+        return {
+          permitido: false,
+          motivo: "fora_da_conversa",
+          mensagem:
+            "esta conversa é com outra pessoa — preencher uma resposta pronta com os dados de quem " +
+            "não é este cliente não é seu para fazer; siga a conversa com quem está falando.",
+        };
+      }
+    }
     return preencherModeloDeMensagem(deps(ctx), {
       templateId: input.template_id,
-      contactId: input.contact_id,
-      leadId: input.lead_id,
+      contactId: input.contact_id ?? doTurno,
+      leadId,
       valores: input.valores,
     });
   },
@@ -488,14 +530,23 @@ const listTeamShape = {};
 export const crmListTeamMembers: McpToolDefinition<typeof listTeamShape> = {
   name: "crm_list_team_members",
   description:
-    "Lista quem trabalha na organização: user_id, papel (viewer|agent|manager|admin) e se o convite ainda está pendente. " +
-    "É o user_id que crm_assign_conversation consome. Não devolve e-mail nem nome — o agente precisa saber a quem " +
-    "direcionar, não a identidade pessoal de cada um. Somente leitura: mudar papel não é possível por aqui.",
+    "Lista quem trabalha na organização: user_id, nome, papel (viewer|agent|manager|admin) e se o convite ainda está pendente. " +
+    "É o user_id que crm_assign_conversation consome; o `nome` existe para a IA escrever uma regra de roteamento citando gente, " +
+    "e não UUID (issue #1539). Segue SEM e-mail: o que sai daqui entra no contexto de um modelo, e a identidade pessoal de cada " +
+    "um não participa de nenhuma decisão de encaminhamento (mínimo LGPD do team/assignable). Somente leitura: mudar papel não é " +
+    "possível por aqui.",
   inputSchema: listTeamShape,
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
   handler: async (_input, ctx) => {
-    return { time: await listarTime(deps(ctx)) };
+    const time = await listarTime(deps(ctx));
+    // Nome sem UUID na ponta (issue #1539): a mesma resolução de `nome` da
+    // `crm_list_available_attendants`, pelo helper que expõe SÓ full_name.
+    const nomes = await resolveUserNames(
+      ctx.supabase,
+      time.map((p) => p.user_id),
+    );
+    return { time: time.map((p) => ({ ...p, nome: nomes.get(p.user_id) ?? null })) };
   },
 };

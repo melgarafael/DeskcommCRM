@@ -3,6 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 
 import { useT } from "@/hooks/i18n/useT";
+import { distanciaDoPrazo } from "@/lib/lgpd/contagem-do-prazo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -94,31 +95,14 @@ function fmtRelative(iso: string, t: (texto: string) => string): string {
   }
 }
 
-function fmtDistance(
-  iso: string | null,
-  t: (texto: string) => string,
-): { label: string; urgent: boolean } {
-  if (!iso) return { label: "—", urgent: false };
-  try {
-    const now = Date.now();
-    const due = new Date(iso).getTime();
-    const diffMs = due - now;
-    const urgent = diffMs < 2 * 24 * 60 * 60 * 1000;
-    if (diffMs < 0) {
-      const overMs = Math.abs(diffMs);
-      const overD = Math.floor(overMs / 86_400_000);
-      return { label: overD > 0 ? `${overD}${t("d atrasado")}` : t("atrasado hoje"), urgent: true };
-    }
-    const diffD = Math.floor(diffMs / 86_400_000);
-    if (diffD < 1) {
-      const diffH = Math.floor(diffMs / 3_600_000);
-      return { label: `${t("em")} ${diffH}h`, urgent };
-    }
-    return { label: `${t("em")} ${diffD}d`, urgent };
-  } catch {
-    return { label: iso, urgent: false };
-  }
-}
+// O rótulo da coluna "Vence em" e o sinal de urgência que pinta a linha vêm de
+// `distanciaDoPrazo`, em `lib/lgpd/contagem-do-prazo.ts`.
+//
+// Aqui ficava `fmtDistance`, e ela media a distância até o INÍCIO do dia do
+// prazo: medido, 23 horas dizendo "atrasado hoje" com o prazo ainda por vencer.
+// A conta mora em `lib/` para que o teste meça a conta que a TELA faz — um teste
+// que reescreve a fórmula no próprio arquivo de teste mede a si mesmo, e foi
+// assim que uma regressão de um dia passou verde no #2170.
 
 // ── Select options ────────────────────────────────────────────────────────────
 
@@ -285,7 +269,7 @@ export function RequestsTable({
               </TableRow>
             ) : (
               rows.map((r) => {
-                const due = fmtDistance(r.due_at, t);
+                const due = distanciaDoPrazo(r.due_at, t);
                 const subject = r.external_customer_id
                   ? r.external_customer_id.slice(0, 16)
                   : r.contact_id

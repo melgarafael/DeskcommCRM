@@ -254,7 +254,7 @@ owner: Rafael Melgaço
 - **Origem**: Sub-PRD 03 §3.10
 - **Tipo**: Hard constraint
 - **Regra**: GIVEN mensagem com `status='sending'`; WHEN `created_at < now() - 5 min`; THEN cron muda pra `status='failed'`, emite event `message.failed` e notifica atendente se modo interativo.
-- **Enforcement**: Cron de 1 min — `app/api/v1/cron/recover-stuck-messages/route.ts`, agendado no serviço `scheduler` do `docker-compose.prod.yml`. Implementado em 2026-08-05 (issue #129); antes disso a regra existia só neste catálogo. A notificação é um item `message_send_stuck` na Central de avisos, **um por organização por rodada** (um por mensagem enterraria a Central justo no dia em que ela precisa ser lida). Guardado por `tests/unit/recover-stuck-messages.test.ts`.
+- **Enforcement**: Cron de 5 min (`*/5`, `docker/scheduler/entrypoint.sh`; pior caso de cerca de 10 min entre a mensagem travar e virar `failed`) — `app/api/v1/cron/recover-stuck-messages/route.ts`, agendado no serviço `scheduler` do `docker-compose.prod.yml`. Implementado em 2026-08-05 (issue #129); antes disso a regra existia só neste catálogo. A notificação é um item `message_send_stuck` na Central de avisos, **um por organização por rodada** (um por mensagem enterraria a Central justo no dia em que ela precisa ser lida). Guardado por `tests/unit/recover-stuck-messages.test.ts`.
 - **Exceção**: `status='queued'` não entra. Esse estado tem dono — o agent-engine reagenda o envio por `SEND_QUEUED_RETRY_MS` enquanto a sessão do canal não está WORKING —, e falhá-lo em 5 min perderia mensagem que ia sair. `sending` é que não tem dono nenhum.
 
 ---

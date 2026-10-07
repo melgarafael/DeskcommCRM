@@ -63,6 +63,7 @@ vi.mock("@/lib/auth/server", () => ({
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => clienteFalso() }));
 
 import { createDefaultAgent, type CreateAgentResult } from "@/app/actions/onboarding/createDefaultAgent";
+import { audit } from "@/lib/audit";
 
 /**
  * Construtor de consulta no formato do PostgREST: encadeável, thenable, e com
@@ -209,6 +210,11 @@ interface Mundo {
   funilPadrao?: { id: string } | null;
   /** Erro ao gravar as regras da casa. */
   erroMemoria?: ErroDb;
+  /**
+   * `organizations.onboarded_at`. Preenchido = organização já configurada,
+   * o retrato de uma aba antiga do passo da IA (#2113).
+   */
+  onboardedAt?: string | null;
 }
 
 const CANAL = {
@@ -358,6 +364,11 @@ function montarBanco(mundo: Mundo = {}): Estado {
 
     if (c.table === "organizations") {
       if (c.op === "update") {
+        // `.is("onboarded_at", null)` numa org já configurada: o PostgREST
+        // não atinge linha nenhuma e devolve `[]`.
+        if ("onboarded_at" in c.filtros && c.filtros.onboarded_at === null && mundo.onboardedAt) {
+          return { data: [], error: null };
+        }
         estado.onboardingState = (c.payload?.onboarding_state as Record<string, unknown>) ?? {};
         return { data: null, error: null };
       }
@@ -369,7 +380,7 @@ function montarBanco(mundo: Mundo = {}): Estado {
         if (mundo.erroSettings) return { data: null, error: mundo.erroSettings };
         return { data: { settings: mundo.settings ?? null }, error: null };
       }
-      return { data: { onboarding_state: estado.onboardingState, onboarded_at: null }, error: null };
+      return { data: { onboarding_state: estado.onboardingState, onboarded_at: mundo.onboardedAt ?? null }, error: null };
     }
 
     if (c.table === "org_memory_versions") {
@@ -544,6 +555,21 @@ describe("onboarding: publicação impossível não pode terminar em silêncio",
     expect(estado.versoes).toHaveLength(1);
     expect(estado.versoes[0]).toMatchObject({ channel_session_id: "canal-1", status: "published" });
     expect(estado.agentes[0]?.published_version_id).toBe("versao-1");
+  });
+
+  it("aba antiga do passo numa org já configurada: o agente publicado deixa estado, auditoria e evento", async () => {
+    // A guarda do #2113 é só das boas-vindas. Aqui o agente já foi criado e
+    // publicado antes de o passo ser registrado; recusar o registro deixaria
+    // um agente no ar sem rastro e a tela dizendo "Falha".
+    const estado = montarBanco({ onboardedAt: "2026-01-01T00:00:00.000Z" });
+    vi.mocked(audit).mockClear();
+
+    const res = await clicar();
+
+    expect(res).toBe("redirecionou");
+    expect(estado.versoes).toHaveLength(1);
+    expect(estado.eventos).toHaveLength(1);
+    expect(vi.mocked(audit)).toHaveBeenCalled();
   });
 
   it("sem canal nenhum é rascunho CONHECIDO: segue o wizard e não alarma", async () => {

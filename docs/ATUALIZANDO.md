@@ -45,8 +45,9 @@ recente**, é porque não havia nada novo pra baixar; está tudo certo.
   - **permissão** (`must be owner`, `permission denied`): repetir não resolve — a conexão do
     `.env` não é a dona do banco. Declare `SUPABASE_DB_ADMIN_URL` e repita;
   - **qualquer outra coisa:** guarde a mensagem e peça ajuda.
-  Só em último caso volte ao estado anterior com o backup: `bash hostgator-setup-kit/restore.sh`
-  (ele desfaz também o que o CRM gravou depois dele).
+  O backup feito antes da atualização **não** volta por cima do banco em uso: o `restore.sh` só
+  restaura num banco vazio (ver `hostgator-setup-kit/README.md`). Se precisar voltar o banco ao
+  estado anterior, peça ajuda.
 
 ## Dicas
 

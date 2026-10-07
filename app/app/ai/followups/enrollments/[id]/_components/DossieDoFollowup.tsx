@@ -39,6 +39,7 @@ import {
   type EventoDeEnrollment,
   type NoDoDossie,
 } from "@/lib/followup/eventos-legiveis";
+import { DESFECHOS } from "@/lib/followup/vocabulario";
 import { useFollowupEnrollment, useIntervirNoFollowup } from "@/hooks/followup/useFollowupEnrollment";
 import { useCancelFollowupEnrollment } from "@/hooks/followup/useFollowupQueue";
 import { useT } from "@/hooks/i18n/useT";
@@ -217,7 +218,7 @@ export function DossieDoFollowup({ id, canWrite }: Props) {
           <Campo rotulo={t("Fluxo")}>{data.flow.name ?? t("Fluxo removido")}</Campo>
           <Campo rotulo={t("Agente")}>{data.agent_name ?? t("Nenhum agente fixado")}</Campo>
           <Campo rotulo={t("Começou")}>{absoluta(data.started_at, localeDaData)}</Campo>
-          <Campo rotulo={t("Passos dados")}>{data.steps_taken}</Campo>
+          <Campo rotulo={t("Etapas executadas")}>{data.steps_taken}</Campo>
         </div>
       </header>
 
@@ -252,7 +253,7 @@ export function DossieDoFollowup({ id, canWrite }: Props) {
           </p>
           {data.outcome && (
             <p className="text-sm text-text-muted">
-              {t("Desfecho")}: {data.outcome}
+              {t("Desfecho")}: {t(DESFECHOS[data.outcome as keyof typeof DESFECHOS])}
             </p>
           )}
           {data.cancel_reason && (
@@ -262,7 +263,7 @@ export function DossieDoFollowup({ id, canWrite }: Props) {
           )}
           {data.last_error && (
             <p className="flex items-center gap-1.5 text-sm text-warning-fg">
-              <Warning size={14} aria-hidden /> {t("Última falha")}: {data.last_error} ({t("tentativa")}{" "}
+              <Warning size={14} aria-hidden /> {t("Falha ao processar a etapa")}: {data.last_error} ({t("nova tentativa automática")}{" "}
               {data.attempts} {t("de")} {data.max_attempts})
             </p>
           )}

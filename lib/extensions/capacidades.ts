@@ -28,6 +28,9 @@ export const EXTENSION_PERMISSIONS = [
   "navigation.contacts",
   "navigation.agenda",
   "navigation.radar",
+  // O consentimento para um tema de extensão pintar o produto — mostrado na
+  // MESMA tela que lista as demais permissões antes de alguém aceitar a extensão.
+  "theme.apply",
 ] as const;
 export type ExtensionPermission = (typeof EXTENSION_PERMISSIONS)[number];
 

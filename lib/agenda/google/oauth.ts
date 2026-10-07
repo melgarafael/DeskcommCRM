@@ -185,7 +185,12 @@ export type MotivoDeTokenIlegivel = "resposta_invalida" | "erro_do_google" | "se
 
 export type LeituraDeToken =
   | { ok: true; token: TokenDoGoogle }
-  | { ok: false; motivo: MotivoDeTokenIlegivel; detalhe: string };
+  /**
+   * `status` é o HTTP da resposta quando HOUVE uma; `null` quando o Google não
+   * respondeu (rede). Quem classifica precisa dos dois lados: sem ele, uma
+   * recusa 400 do Google chegava ao cron como "sem resposta" (#2393).
+   */
+  | { ok: false; motivo: MotivoDeTokenIlegivel; detalhe: string; status: number | null };
 
 function texto(v: unknown): string | null {
   return typeof v === "string" && v.trim() ? v.trim() : null;
@@ -196,22 +201,29 @@ function texto(v: unknown): string | null {
  *
  * Não lança: a resposta vem da rede, e um `throw` aqui viraria 500 numa rota que
  * precisa redirecionar o navegador com um motivo legível.
+ *
+ * O `status` chega de fora porque esta camada é pura: quem fala com a rede
+ * (`token.ts`) é quem o tem em mãos. Sem ele, `null` — "o Google não respondeu".
  */
-export function lerRespostaDeToken(bruto: unknown, opcoes: { agora: Date }): LeituraDeToken {
+export function lerRespostaDeToken(
+  bruto: unknown,
+  opcoes: { agora: Date; status?: number | null },
+): LeituraDeToken {
+  const status = opcoes.status ?? null;
   if (typeof bruto !== "object" || bruto === null) {
-    return { ok: false, motivo: "resposta_invalida", detalhe: `resposta não é objeto: ${typeof bruto}` };
+    return { ok: false, motivo: "resposta_invalida", detalhe: `resposta não é objeto: ${typeof bruto}`, status };
   }
   const r = bruto as Record<string, unknown>;
 
   const erro = texto(r.error);
   if (erro) {
     const descricao = texto(r.error_description);
-    return { ok: false, motivo: "erro_do_google", detalhe: descricao ? `${erro}: ${descricao}` : erro };
+    return { ok: false, motivo: "erro_do_google", detalhe: descricao ? `${erro}: ${descricao}` : erro, status };
   }
 
   const accessToken = texto(r.access_token);
   if (!accessToken) {
-    return { ok: false, motivo: "sem_access_token", detalhe: "resposta sem `access_token`" };
+    return { ok: false, motivo: "sem_access_token", detalhe: "resposta sem `access_token`", status };
   }
 
   // Sem validade declarada, tratamos como JÁ vencido. É o desfecho conservador:

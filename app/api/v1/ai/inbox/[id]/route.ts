@@ -59,13 +59,13 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     .select("id, kind, severity, title, body, ref_kind, ref_id, status, created_at")
     .maybeSingle();
   if (error) {
-    // `23505` — o índice único parcial da migration 0491 recusou a virada para
-    // `open`: já existe um aviso ABERTO idêntico nesta organização (mesmo kind,
-    // mesmo título). É 409 e não 500: a ação pedida não cabe no estado atual, e
-    // "falha ao atualizar" esconderia que foi o próprio banco que impediu o
-    // duplicado que a issue #880 veio fechar. Reabrir sem um aberto igual
-    // continua passando — o índice parcial deixa a linha resolvida sair de lá e
-    // voltar quando reabre.
+    // `23505` — um índice único parcial das migrations 0491/0527/0538 recusou a
+    // virada para `open`: já existe um aviso ABERTO com a mesma chave nesta
+    // organização (mesmo kind e mesmo título, ou mesma conversa). É 409 e não
+    // 500: a ação pedida não cabe no estado atual, e "falha ao atualizar"
+    // esconderia que foi o próprio banco que impediu o duplicado que a issue
+    // #880 veio fechar. Reabrir sem um aberto igual continua passando — o índice
+    // parcial deixa a linha resolvida sair de lá e voltar quando reabre.
     if (error.code === "23505") {
       return fail(
         "state_conflict",

@@ -113,7 +113,7 @@ Contrato completo em [`docs/specs/07-spec-events-workers.md`](docs/specs/07-spec
 | `lib/branding/`         | Marca própria (white-label) — resolve do banco, nunca do .env                                                   |
 | `workers/`              | Workers de `event_log` + crons                                                                                  |
 | `components/`, `hooks/` | React compartilhado; convenções nos README de cada pasta                                                        |
-| `supabase/migrations/`  | Schema versionado + `MANIFEST.md`; `supabase/baseline.sql` é o que o self-host aplica                           |
+| `supabase/migrations/`  | Schema versionado (`MANIFEST.md` = histórico); `supabase/baseline.sql` é o que o self-host aplica              |
 | `hostgator-setup-kit/`  | Kit de instalação/atualização da VPS (`install.sh`, `update.sh`, `diagnostico.sh`, `healthcheck.sh`)            |
 | `scripts/`              | CLIs de operação e QA — ver `scripts/README.md`                                                                 |
 | `tests/`                | `unit/`, `invariants/`, `e2e/`, `shell/`, `journeys/`, `fixtures/`                                              |
@@ -198,6 +198,7 @@ cite cada um:
 | Situação                                                                            | Guia                    |
 | ----------------------------------------------------------------------------------- | ----------------------- |
 | Instalar, atualizar ou consertar a instalação numa VPS; domínio, Supabase, WhatsApp | `deskcomm-instalar`     |
+| Usar o CRM no dia a dia; encontrar telas, fluxos e configurações pela interface     | `deskcomm-operacao`     |
 | Configurar o CRM para um cliente ou nicho: agentes, roteadores, follow-ups, base    | `deskcomm-cliente-novo` |
 | Desempenho, conversão, custo de IA, funil, relatório                                | `deskcomm-metricas`     |
 | O agente responde errado, passa tudo para humano, não usa a agenda; afinar o prompt | `deskcomm-prompt`       |
@@ -244,8 +245,10 @@ em toda tabela tenant-aware. `lib/supabase/admin.ts` **bypassa RLS**: toda query
 filtra `organization_id` manualmente. Sem gate automático para isso — a responsabilidade é sua.
 
 **Migrations** — mudança de schema sai **sempre** como tripla: migration versionada em
-`supabase/migrations/`, apêndice idempotente em `supabase/baseline.sql` e linha em
-`supabase/migrations/MANIFEST.md`. Nunca edite migration já aplicada; corrija com uma nova.
+`supabase/migrations/` com uma linha `-- manifest: <o quê e por quê>` no cabeçalho, e apêndice
+idempotente em `supabase/baseline.sql`. **Não** acrescente linha no `MANIFEST.md`: ele é histórico,
+e era o arquivo que fazia todo PR com migration conflitar no GitHub. Nunca edite migration já
+aplicada; corrija com uma nova.
 Função nova em `public` precisa de `revoke execute ... from public, anon` **e** `grant` — são
 duas origens de `EXECUTE`.
 ⚠️ E **não leia o baseline com `grep` no arquivo inteiro**: ele é dump + apêndice, a mesma
@@ -405,7 +408,7 @@ sed -n '/^## Definition of Done/,/^Um staff engineer/p' CLAUDE.md | grep -cE '^[
 
 Em resumo: typecheck/lint zerados, testes relevantes verdes, RLS testada se tocou tabela
 tenant-aware, `audit()` se houve mutação, Zod em todo input externo, migration + baseline +
-MANIFEST de tripla se mudou schema, prova visual se mudou UI, `pnpm test:shell` se tocou packaging,
+`-- manifest:` da tripla se mudou schema, prova visual se mudou UI, `pnpm test:shell` se tocou packaging,
 Living System Checklist respondido (lei em `docs/doctrine/sistema-vivo.md`) e mapa vivo em
 `docs/architecture/` atualizado para peça nova.
 
@@ -519,7 +522,7 @@ isto, a operação comum continua inteira?** O não-negociável:
 
 Vale a **Definition of Done em [`CLAUDE.md`](CLAUDE.md)** — conte lá em vez de confiar num número aqui (`sed -n '/^## Definition of Done/,/^Um staff engineer/p' CLAUDE.md | grep -cE '^[0-9]+\. '`; esta linha já disse 15 quando o DoD tinha 16). A régua tem que DELIMITAR a seção: a primeira versão desta linha oferecia `grep -c '^[0-9]\+\. \*\*' CLAUDE.md`, que devolve **25** — casa toda linha numerada em negrito do arquivo (anti-patterns, packaging, higiene de branches, migrations) e perde os itens 1–10 do próprio DoD, que não são negrito. Trocar o número pelo comando só ajuda se o comando responder à pergunta. Não declare pronto
 sem: typecheck/lint zerados, testes relevantes verdes, RLS testada se tocou tabela
-tenant-aware, migration + baseline + MANIFEST se mudou schema, prova visual se mudou UI, e a
+tenant-aware, migration (com `-- manifest:`) + baseline se mudou schema, prova visual se mudou UI, e a
 regra de packaging acima se mudou o artefato que o self-hoster instala.
 
 ## Guias do assistente (skills embutidas)

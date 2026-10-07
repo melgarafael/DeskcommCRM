@@ -77,6 +77,20 @@ function blocoDoBaseline(marca: string): string | null {
 const BLOCO_0159 = blocoDoBaseline("-- ---- o teto de IA que vincula (migration 0159) ----");
 const BLOCO_0160 = blocoDoBaseline("-- ---- ai_budgets só se escreve pela rota (migration 0160) ----");
 
+/**
+ * A companheira dos grants do snapshot para `ai_budgets` — o revoke EFETIVO
+ * desde a #2255/#2258. Extraída do ARTEFATO (não digitada aqui): o bloco da
+ * 0160 guarda a decisão comentada, mas o statement mora ao lado dos grants,
+ * e é ele que o caso `(0160)` precisa provar.
+ */
+function companheiraDoAiBudgets(): string | null {
+  const m =
+    /revoke insert, update, delete, truncate on table public\.ai_budgets from authenticated, anon;/.exec(
+      readFileSync(BASELINE, "utf8"),
+    );
+  return m ? m[0] : null;
+}
+
 const lista = (ids: string[]): string => ids.map((i) => `'${i}'`).join(",");
 
 /**
@@ -328,9 +342,19 @@ describe("o teto de orçamento nasce desarmado, e o gate faz o que promete", () 
     });
 
     it("(0160) o teto não se escreve pela REST do Supabase, só pela rota com escada", () => {
-      sql(BLOCO_0160 as string);
+      const companheira = companheiraDoAiBudgets();
+      expect(
+        companheira,
+        "a companheira da 0160 sumiu do baseline — sem ela este caso mediria o revoke global, não a guarda",
+      ).not.toBeNull();
+      // Reproduz o CLONE antes da guarda: a concessão do snapshot de volta. Sem
+      // isto, aplicar a companheira sobre o baseline já aplicado seria um no-op
+      // e o caso passaria por vacuidade (foi o que aconteceu quando o revoke
+      // saiu do bloco, na #2257).
+      sql(`grant insert, update, delete, truncate on table public.ai_budgets to anon, authenticated;`);
+      sql(companheira as string);
       for (const papel of ["anon", "authenticated"]) {
-        for (const priv of ["INSERT", "UPDATE", "DELETE"]) {
+        for (const priv of ["INSERT", "UPDATE", "DELETE", "TRUNCATE"]) {
           expect(
             sql(`select has_table_privilege('${papel}', 'public.ai_budgets', '${priv}');`),
             `${papel} escreve ${priv} em ai_budgets — arma a parada sem escada, sem carência e sem auditoria`,
@@ -364,6 +388,26 @@ describe("o teto de orçamento nasce desarmado, e o gate faz o que promete", () 
       expect(Number(r.gasto)).toBe(0);
       expect(r.avisadoAntes).toBe("f");
       expect(itensAbertos(ORG_GATE, "budget_warning"), "abriu aviso com gasto zero").toBe(0);
+    });
+
+    it("(j0) não depende do índice da 0540 existir: a forma sem alvo não infere nada", () => {
+      // A forma com alvo (`on conflict (organization_id, kind) where ...`) só
+      // resolve se o índice único parcial existir: num clone cuja atualização
+      // aplicou o código antes do banco, `SQL_ORCAMENTO` falharia com 42P10 e o
+      // chamador seguiria SEM TETO (o `catch` de leitura é fail-open de
+      // propósito). Este caso derruba o índice dentro de uma transação desfeita
+      // e mede que o statement continua avaliando — o texto vem do módulo,
+      // como no `rodarGate`.
+      const texto = SQL_ORCAMENTO.replace(/\$1/g, `'${ORG_GATE}'::uuid`)
+        .replace(/\$2/g, `'Titulo do aviso'`)
+        .replace(/\$3/g, `'Corpo do aviso'`);
+      const saida = sql(
+        `begin; drop index public.agent_inbox_budget_aberto_unico; ${texto}; rollback;`,
+      );
+      const linha = saida.split("\n").find((l) => l.includes("|")) ?? "";
+      const [teto = "", modo = ""] = linha.split("|");
+      expect(teto, "o statement não avaliou sem o índice (42P10 na forma com alvo?)").toBe("1000");
+      expect(modo).toBe("avisar");
     });
 
     it("(j) gasto entre limiar e teto abre UM aviso, e a segunda passada não duplica", () => {

@@ -72,12 +72,10 @@ export function resolveBranding(
  * renderizava o nome em `<span>` e o cliente hidratava um `<img>`: troca de tipo
  * de elemento, React #418 em toda tela, árvore descartada e regerada.
  *
- * No SERVIDOR o comportamento é correto e é DELIBERADO: o texto sob o "Entrar"
- * sai daqui (o `.env`) enquanto o título da aba sai do banco, e
- * `tests/e2e/icone-da-marca.spec.ts:64-77` cruza as duas resoluções de propósito
- * — é o que faz "trocar o nome pela tela e a aba não acompanhar" reprovar. Por
- * isso o defeito se fecha tirando os client components daqui, e não mudando o
- * que esta função devolve.
+ * No SERVIDOR esta função continua lendo somente o `.env`. Páginas que precisam
+ * refletir a marca editada na tela devem usar `marcaDaSaida()` — por exemplo, o
+ * login, cujo texto precisa acompanhar o título da aba. Os demais call sites
+ * deste helper mantêm explicitamente o comportamento de fallback do ambiente.
  *
  * O ramo do navegador continua de pé porque a alternativa é pior: sem ele, um
  * client component que voltasse a chamar `branding()` cairia no padrão do

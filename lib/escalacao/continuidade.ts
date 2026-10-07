@@ -19,6 +19,8 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { textoLegivelDeMencao } from "@/lib/notifications/mentions";
+
 /** O que a pessoa decidiu num chamado, na linguagem de quem vai ler. */
 export interface DecisaoHumana {
   chamadoId: string;
@@ -144,7 +146,7 @@ export async function lerContinuidadeHumana(
     .order("created_at", { ascending: false })
     .limit(LIMITE_POR_SUPERFICIE);
   const notas = ((notesData ?? []) as NoteRow[])
-    .map((n) => ({ autor: n.created_by_name, texto: n.body, quando: n.created_at }))
+    .map((n) => ({ autor: n.created_by_name, texto: textoLegivelDeMencao(n.body), quando: n.created_at }))
     .reverse();
 
   const decisoes: DecisaoHumana[] = eventos.map((e) => ({

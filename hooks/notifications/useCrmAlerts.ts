@@ -5,7 +5,7 @@ import { useCallback } from "react";
 import { useActiveOrg, useUser } from "@/hooks/auth/AuthProvider";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { entregarAviso } from "@/lib/notifications/deliver";
-import { mencaoAtingeUsuario } from "@/lib/notifications/mentions";
+import { mencaoAtingeUsuario, textoLegivelDeMencao } from "@/lib/notifications/mentions";
 
 function str(v: unknown): string | null {
   return typeof v === "string" && v.length > 0 ? v : null;
@@ -99,7 +99,9 @@ export function useCrmAlerts(): void {
         category: "mention",
         kind: "mention",
         title: "Você foi mencionado",
-        body,
+        // O sino é LIDO por gente: o token com o id vira `@Ana Lima` aqui,
+        // nunca o contrário (o casamento já aconteceu logo acima, no cru).
+        body: textoLegivelDeMencao(body),
         tag: conversationId ?? undefined,
         href: conversationId ? `/app/inbox?id=${conversationId}` : "/app/inbox",
       });

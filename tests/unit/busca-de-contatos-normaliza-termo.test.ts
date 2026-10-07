@@ -31,18 +31,22 @@
  *
  * ─── O que este teste mede, e o que ele NÃO mede ─────────────────────────────
  * Não há banco no `tests/unit`. O que se mede é o FILTRO que sai do handler —
- * a decisão que estava errada — e ele é então traduzido para SQL pelo MESMO
- * par de regras do PostgREST (`padraoCasa` abaixo): `*` vira `%`, `%`/`_`
- * escapados são literais. É uma reimplementação de `ILIKE`, e por isso ela
- * mesma tem casos de CONTROLE: se o emulador passasse a casar tudo, os quatro
- * casos de cima ficariam verdes sem provar nada.
+ * a decisão que estava errada — e ele é então traduzido para cá por DOIS
+ * emuladores, um por operador: o `regexCasa` (um `RegExp` com caixa dobrada,
+ * que é o que o Postgres executa em `imatch`) para o texto, e o `padraoCasa`
+ * (uma reimplementação de `ILIKE`) para as variantes de telefone, que seguem
+ * em LIKE porque são dígitos. Ambos têm casos de CONTROLE: se algum deles
+ * passasse a casar tudo, os casos de cima ficariam verdes sem provar nada.
  *
  * O que NÃO está aqui: o banco de verdade (`tests/invariants`, `test:db`) e a
- * tela — ambos do CI.
+ * tela — ambos do CI. O `imatch` em si foi medido contra o PostgREST de VERDADE
+ * (docker `postgrest/postgrest:latest` sobre `postgres:17`) antes de virar
+ * código: a prova está no corpo do PR desta issue.
  */
 import { describe, expect, it } from "vitest";
 
 import { listContactsHandler } from "@/app/api/v1/contacts/_handler";
+import { padraoRegexDeBusca } from "@/lib/contacts/busca-regex";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 
@@ -145,34 +149,60 @@ function padraoCasa(padrao: string, valor: string): boolean {
   return new RegExp(`^${re}$`, "i").test(valor);
 }
 
-/** Todas as condições `coluna.ilike.padrao` que o handler pôs no `.or()`. */
-function condicoesIlke(filtro: string): Array<{ coluna: string; padrao: string }> {
-  return [...filtro.matchAll(/(\w+)\.ilike\.([^,]+)/g)].map((m) => ({
+type Operador = "ilike" | "imatch";
+
+/** Todas as condições `coluna.operador.padrao` que o handler pôs no `.or()`. */
+function condicoes(filtro: string): Array<{ coluna: string; operador: Operador; padrao: string }> {
+  return [...filtro.matchAll(/(\w+)\.(ilike|imatch)\.([^,]+)/g)].map((m) => ({
     coluna: m[1]!,
-    padrao: m[2]!,
+    operador: m[2] as Operador,
+    padrao: m[3]!,
   }));
+}
+
+/**
+ * Uma condição traduzida para cá.
+ *
+ * `imatch` (`~*`) → `RegExp` com caixa dobrada: é a MESMA semântica que o
+ * Postgres executa, e o `padrao` do handler é um regex POSIX que o `RegExp` do
+ * JS lê igual para os construtos que o handler emite (classe, `.`, `*`, escape).
+ * `ilike` continua pelo `padraoCasa` abaixo — é ele que anda nas variantes de
+ * telefone, que continuam em LIKE de propósito (são dígitos, não têm acento).
+ */
+function casa(condicao: { operador: Operador; padrao: string }, valor: string): boolean {
+  return condicao.operador === "imatch" ? regexCasa(condicao.padrao, valor) : padraoCasa(condicao.padrao, valor);
+}
+
+/** O `imatch` (`~*`) em `RegExp` com caixa dobrada — o tradutor do texto. */
+function regexCasa(padrao: string, valor: string): boolean {
+  return new RegExp(padrao, "i").test(valor);
 }
 
 /** O filtro ACHOU o nome? (`name` e `display_name` — as duas colunas do OR.) */
 function achouNoNome(filtro: string, nome: string): boolean {
-  return condicoesIlke(filtro)
+  return condicoes(filtro)
     .filter((c) => c.coluna === "name" || c.coluna === "display_name")
-    .some((c) => padraoCasa(c.padrao, nome));
+    .some((c) => casa(c, nome));
 }
 
 describe("busca de contatos: o termo é normalizado pela régua do repo (#1835, F1)", () => {
   it('espaço duplo ("Paulo  Lima") passa a achar "Paulo Lima Jr"', async () => {
     const { filtro } = await busca("Paulo  Lima");
     expect(achouNoNome(filtro, PAULO_LIMA_JR), `filtro=${filtro}`).toBe(true);
-    // A asserção acima é o comportamento; esta diz COMO ele nasceu: um curinga
-    // só, não dois espaços literais.
-    expect(filtro).toContain("%Paulo*Lima%");
+    // A asserção acima é o comportamento; esta diz COMO ele nasceu: o espaço
+    // DUO não sobra no filtro. O padrão sai em regex (#1835, F2), então o que
+    // não se pode mais afirmar é a string `%Paulo*Lima%` por inteiro — as
+    // letras com grafias viram classe (`P[aáàâãä…]…`).
+    expect(filtro).not.toContain("Paulo  Lima");
+    expect(filtro).toContain("name.imatch.");
   });
 
   it('palavras não adjacentes ("Paulo Jr") passam a achar "Paulo Lima Jr"', async () => {
     const { filtro } = await busca("Paulo Jr");
     expect(achouNoNome(filtro, PAULO_LIMA_JR), `filtro=${filtro}`).toBe(true);
-    expect(filtro).toContain("%Paulo*Jr%");
+    // O termo cru ("Paulo Jr", com o espaço que exige adjacência) é justamente o
+    // que NÃO pode estar no filtro: quem exigisse adjacência casaria zero.
+    expect(filtro).not.toContain("Paulo Jr");
   });
 
   it('vírgula ("Silva, Maria") não exige mais adjacência — nem injeção no or=', async () => {
@@ -250,42 +280,178 @@ describe("busca de contatos: o termo é normalizado pela régua do repo (#1835, 
   });
 
   it("CONTROLE: o curinga digitado continua literal, não vira coringa", async () => {
+    // Em regex o `%` não é curinga nenhum (o `LIKE` é que o tinha), e `_` também
+    // não: o que o handler escapa hoje é o metacaractere do REGEX. Prova pelos
+    // dois sentidos — casa com o `%` de verdade, não casa sem ele.
     const { filtro } = await busca("100%");
-    expect(filtro).toContain("100\\%");
+    expect(achouNoNome(filtro, "Plano 100%"), `filtro=${filtro}`).toBe(true);
+    expect(achouNoNome(filtro, "Plano 1000"), `filtro=${filtro}`).toBe(false);
   });
 });
 
 /**
- * ⛔ Os controles do PRÓPRIO emulador.
+ * ─── A F2: o ACENTO casa dos DOIS LADOS ──────────────────────────────────────
  *
- * Ele é uma reimplementação de `ILIKE`, então é ele quem decide se os quatro
- * casos de cima significam alguma coisa. Se `padraoCasa` casasse tudo, todos
- * passariam verdes com a busca destruída.
+ * Medido na issue #1835: `ILIKE` dobra a CAIXA, não o ACENTO (`lower("Á") =
+ * "á"`, que não é `"a"`), e o banco não tem `unaccent` nenhum — então "Joao"
+ * não achava "João" e "MARCIA" não achava "Márcia". O #1892 deixou a F2
+ * declaradamente de fora; é ela que este bloco vigia.
+ *
+ * O que se mede aqui é o FILTRO que sai do handler, traduzido para cá pelo
+ * `regexCasa`. O banco de verdade (`tests/invariants`, `test:db`) e a tela
+ * seguem fora, como no resto do arquivo — a prova do operador `imatch` contra
+ * o PostgREST real está no corpo do PR.
  */
-describe("CONTROLE: o emulador de ILIKE mede o que diz medir", () => {
-  it("curinga `*` (que o PostgREST vira `%`) cobre o meio", () => {
+describe("busca de contatos: o acento casa dos dois lados (#1835, F2)", () => {
+  it('"Joao" acha "João" — o defeito medido na issue, termo cru contra coluna acentuada', async () => {
+    const { filtro } = await busca("Joao");
+    expect(achouNoNome(filtro, "João Silva"), `filtro=${filtro}`).toBe(true);
+    // E a classe não pode achar TODO mundo: quem não tem o nome não entra.
+    expect(achouNoNome(filtro, "Josefina"), `filtro=${filtro}`).toBe(false);
+  });
+
+  it('"João" acha "Joao" — o sentido inverso, e continua achando a própria grafia', async () => {
+    const { filtro } = await busca("João");
+    expect(achouNoNome(filtro, "Joao Souza"), `filtro=${filtro}`).toBe(true);
+    expect(achouNoNome(filtro, "João Silva"), `filtro=${filtro}`).toBe(true);
+  });
+
+  it('"MARCIA" acha "Márcia" e "Márcia" acha "Marcia" — caixa e acento juntos', async () => {
+    const semAcento = await busca("MARCIA");
+    expect(achouNoNome(semAcento.filtro, "Márcia Conceição"), `filtro=${semAcento.filtro}`).toBe(true);
+    const comAcento = await busca("Márcia");
+    expect(achouNoNome(comAcento.filtro, "Marcia"), `filtro=${comAcento.filtro}`).toBe(true);
+  });
+
+  it("CONTROLE: sem a classe de acento NÃO casa — é a classe, e não o emulador", () => {
+    // As duas primeiras são a régua de identidade do caso: se o tradutor
+    // passasse a casar tudo, "João" ficaria verde até com o padrão CRU e nenhum
+    // dos testes de cima provaria nada. O padrão cru é exatamente o defeito da
+    // issue — e ele reprova.
+    expect(regexCasa(".*joao.*", "João")).toBe(false);
+    expect(regexCasa(".*joao.*", "Joao")).toBe(true);
+    // E o padrão que o MÓDULO emite fecha os dois sentidos e as duas caixas.
+    const modulo = padraoRegexDeBusca("Joao");
+    expect(regexCasa(modulo, "João")).toBe(true);
+    expect(regexCasa(modulo, "Joao")).toBe(true);
+    expect(regexCasa(modulo, "JOÃO")).toBe(true);
+    expect(regexCasa(modulo, "Josefina")).toBe(false);
+  });
+
+  it("CONTROLE: telefone, emoji e nome sem acento continuam achando", async () => {
+    // O saneamento novo tem de deixar o RESTO do filtro intacto.
+    const telefone = await busca("3284793302");
+    expect(telefone.filtro).toContain("phone_number.ilike.%5532984793302%");
+    expect(telefone.filtro).toContain("phone_number.imatch.");
+
+    // O emoji tem de atravessar a normalização inteiro: `semAcento` não pode
+    // comer o variation selector que fecha o emoji (é por isso que ele só
+    // remove `\p{M}` depois de `\p{L}`).
+    const emoji = await busca("Maria 👍");
+    expect(achouNoNome(emoji.filtro, "Maria 👍 Santos"), `filtro=${emoji.filtro}`).toBe(true);
+
+    const nome = await busca("Silva");
+    expect(achouNoNome(nome.filtro, "João Silva"), `filtro=${nome.filtro}`).toBe(true);
+    expect(achouNoNome(nome.filtro, "Josefina"), `filtro=${nome.filtro}`).toBe(false);
+  });
+});
+
+/**
+ * ⛔ Os controles dos PRÓPRIOS emuladores.
+ *
+ * São eles quem decide se os casos de cima significam alguma coisa. Se algum
+ * passasse a casar tudo, tudo ficaria verde com a busca destruída.
+ */
+describe("CONTROLE: o emulador mede o que diz medir", () => {
+  it("regex: curinga `.` `*` cobre o meio; classe casa as DUAS grafias", () => {
+    expect(regexCasa(".*Paulo.*Jr*", PAULO_LIMA_JR)).toBe(true);
+    expect(regexCasa(".*Paulo.*", PAULO_LIMA_JR)).toBe(true);
+    expect(regexCasa(".*[jJ]o[aáàâãä]o.*", "João")).toBe(true);
+    expect(regexCasa(".*[jJ]o[aáàâãä]o.*", "Joao")).toBe(true);
+  });
+
+  it("regex: casamento é por INTEIRO — `.*` nas pontas, não casa pedaço qualquer", () => {
+    expect(regexCasa(".*lmo.*", PAULO_LIMA_JR)).toBe(false);
+    expect(regexCasa(".*Paulo.*", PAULO_LIMA_JR)).toBe(true);
+  });
+
+  it("ilike (as variantes de telefone): `*` cobre o meio, `%`/`_` escapado é literal", () => {
+    expect(padraoCasa("%5532984793302%", "+5532984793302")).toBe(true);
     expect(padraoCasa("%Paulo*Jr%", PAULO_LIMA_JR)).toBe(true);
-    expect(padraoCasa("%Paulo%", PAULO_LIMA_JR)).toBe(true);
-  });
-
-  it("espaço literal NÃO cobre o meio: é o defeito da F1, medido aqui", () => {
-    expect(padraoCasa("%Paulo  Lima%", PAULO_LIMA_JR)).toBe(false);
-    expect(padraoCasa("%Paulo Jr%", PAULO_LIMA_JR)).toBe(false);
-  });
-
-  it("% escapado é literal; _ escapado é literal; sem escape, é o coringa do SQL", () => {
     expect(padraoCasa("100\\%", "100%")).toBe(true);
     expect(padraoCasa("100\\%", "1000")).toBe(false);
     expect(padraoCasa("a\\_b", "a_b")).toBe(true);
     expect(padraoCasa("a\\_b", "axb")).toBe(false);
-    // E o `_` SEM escape é curinga de UM caractere — é o `LIKE` do SQL, e é
-    // por isso que o handler escapa o digitado: sem o escape, "a_b" casaria
-    // "axb" e a busca acharia gente que ninguém pediu.
+    // E o `_` SEM escape é curinga de UM caractere — é o `LIKE` do SQL, e é por
+    // isso que o digitado é escapado ali: sem o escape, "a_b" casaria "axb".
     expect(padraoCasa("a_b", "axb")).toBe(true);
+    expect(padraoCasa("%Paulo  Lima%", PAULO_LIMA_JR)).toBe(false);
+  });
+});
+
+/**
+ * ─── O ESCAPE e os dois defeitos que a troca para regex podia trazer ────────
+ *
+ * Os termos dos blocos de cima não têm metacaractere nenhum, então nenhum deles
+ * exercita o `escapar` — tirá-lo deixava tudo verde. Este bloco mede o escape,
+ * o colapso dos `*` (sem ele, `a` + 400 `*` + `b` vira `.*.*.*…`: 28 s por
+ * coluna, e com 3000 o Postgres recusa com `regular expression is too complex`)
+ * e a letra acentuada FORA da tabela, que o `ilike` achava pela grafia exata.
+ */
+describe("busca de contatos: escape, colapso de * e acento fora da tabela (#2310)", () => {
+  it('"a.*" é ponto LITERAL seguido de curinga — não vira o regex `.*`', () => {
+    const padrao = padraoRegexDeBusca("a.*");
+    expect(regexCasa(padrao, "a.x"), padrao).toBe(true);
+    expect(regexCasa(padrao, "aXYZ"), padrao).toBe(false);
   });
 
-  it("casamento é por INTEIRO e sem caixa — não é busca desubstring qualquer", () => {
-    expect(padraoCasa("%lmo%", PAULO_LIMA_JR)).toBe(false);
-    expect(padraoCasa("%PAULO LIMA%", PAULO_LIMA_JR)).toBe(true);
+  it.each([
+    ["a[b", "a[b", "ab"],
+    ["a\\b", "a\\b", "ab"],
+    ["x{2}", "x{2}", "xx"],
+    ["a+b", "a+b", "aab"],
+    ["a|b", "a|b", "b"],
+    ["^a$", "^a$", "a"],
+  ])('"%s" casa só o literal', (termo, literal, metacaractere) => {
+    const padrao = padraoRegexDeBusca(termo);
+    expect(regexCasa(padrao, `Cliente ${literal}`), padrao).toBe(true);
+    expect(regexCasa(padrao, `Cliente ${metacaractere}`), padrao).toBe(false);
+  });
+
+  it.each(["Peña", "Muñoz", "Zoë", "Ångela", "Lòpez"])(
+    '"%s" acha a própria grafia — letra fora da tabela sai literal, como no ilike',
+    (nome) => {
+      const padrao = padraoRegexDeBusca(nome);
+      expect(regexCasa(padrao, `${nome} Silva`), padrao).toBe(true);
+      expect(regexCasa(padrao, `${nome.toUpperCase()} SILVA`), padrao).toBe(true);
+    },
+  );
+
+  it("a letra DA tabela continua virando classe nos dois sentidos", () => {
+    expect(regexCasa(padraoRegexDeBusca("Conceição"), "Conceicao")).toBe(true);
+    expect(regexCasa(padraoRegexDeBusca("Conceicao"), "CONCEIÇÃO")).toBe(true);
+  });
+
+  it('"a***b" gera UM `.*` só — e 3000 asteriscos também', () => {
+    expect(padraoRegexDeBusca("a***b").match(/\.\*/g)).toHaveLength(3);
+    const longo = padraoRegexDeBusca(`a${"*".repeat(3000)}b`);
+    expect(longo.match(/\.\*/g)).toHaveLength(3);
+    expect(regexCasa(longo, "aXYZb")).toBe(true);
+  });
+
+  it("nenhum caractere digitado chega ao or= como , ( ou ) — pelo caminho do handler", async () => {
+    // A função sozinha emite `\(` e `\)`: quem os tira é o handler, ANTES dela.
+    // Por isso a varredura passa pelo handler, que é o que vai ao PostgREST.
+    const amostra = [
+      ...Array.from({ length: 0x7f - 0x20 }, (_, i) => String.fromCharCode(0x20 + i)),
+      " ", " ", "（", "）", "，", "،", "、", "ñ", "Å", "👍",
+    ];
+    for (const ch of amostra) {
+      const { filtro, execucoes } = await busca(`ab${ch}cd`);
+      expect(execucoes, JSON.stringify(ch)).toBe(1);
+      expect(filtro, JSON.stringify(ch)).not.toMatch(/[()]/);
+      const colunas = filtro.split(",").map((cond) => cond.split(".")[0]);
+      expect(colunas, JSON.stringify(ch)).toEqual(["name", "display_name", "email", "phone_number"]);
+    }
   });
 });

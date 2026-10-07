@@ -39,6 +39,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { llmEdgeConfigFromEnv, temIaDeSempre } from "@/lib/agent-engine/edge/llm/credentials";
 import { camadasEfetivas } from "@/lib/agent-engine/guardrails/camadas-da-org";
 import { haQuemAtendaAOrganizacao } from "@/lib/ai/agents/quem-atende-a-sessao";
 import { credencialEmUsoPeloJev, PROVEDOR_DO_JEV } from "@/lib/ai/decisao/credencial";
@@ -63,6 +64,7 @@ import {
   algumFluxoQueClassifica,
   algumRoteadorQuePergunta,
   INSCRICAO_ENCERRADA,
+  ROTEADOR_SOB_DEMANDA_SEM_IA,
   TAREFA_DA_MANIPULACAO,
   tarefaSemAtendente,
   tarefaSemCamada,
@@ -85,6 +87,7 @@ import { logger } from "@/lib/logger";
 import { aiDispatchModeSchema } from "@/lib/schemas/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { env } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
@@ -253,48 +256,63 @@ function numerosDaSemana(linhas: readonly LinhaDaSemana[]) {
 }
 
 /**
- * A nota chamaria uma pessoa? O corte é `DEFAULT_SENTIMENT_THRESHOLD`
- * (`lib/ai/prompts/sentiment.ts:34`), o mesmo que `workers/ai-sentiment-worker.ts`
- * compara (`score < threshold`) para emitir `ai.sentiment_alert`.
- * ponytail: o limiar por agente (`config.sentiment_threshold`) não entra — não
- * tem tela que o grave hoje. Se ganhar, o worker passa a gravar o limiar usado
- * em `messages.metadata` e a conta lê de lá.
+ * O limiar COM O QUAL a nota foi cortada — lido da própria mensagem
+ * (`messages.metadata.sentiment_threshold`, que o worker passou a gravar na
+ * #2219), e não do fixo. É o `config.sentiment_threshold` do agente da
+ * conversa (tela desde o #2216): um agente em 0,1 tem a concordância dele
+ * medida contra 0,1. Mensagem antiga, gravada antes do #2219, não tem a chave:
+ * aí vale `DEFAULT_SENTIMENT_THRESHOLD`, o mesmo default do worker — e um valor
+ * fora da faixa 0–1 nunca corta no escuro.
  */
-const abaixo = (n: number) => n < DEFAULT_SENTIMENT_THRESHOLD;
+const limiarDa = (linha: { limiar?: unknown }): number =>
+  typeof linha.limiar === "number" && Number.isFinite(linha.limiar) && linha.limiar >= 0 && linha.limiar <= 1
+    ? linha.limiar
+    : DEFAULT_SENTIMENT_THRESHOLD;
+
+/** A nota chamaria uma pessoa? O worker decide por `score < limiar`. */
+const abaixo = (n: number, limiar: number) => n < limiar;
 
 /**
  * Concordância em observação: as duas notas caíram do MESMO LADO do corte que
  * decide a passagem para humano? É a pergunta que importa antes de deixar o Jev
- * decidir — "chamou uma pessoa quando a IA de sempre chamaria".
+ * decidir — "chamou uma pessoa quando a IA de sempre chamaria". O corte é o de
+ * CADA mensagem (o limiar por agente gravado na decisão), com o padrão como
+ * fallback para as antigas (issue #2219).
  */
-function concordancia(linhas: ReadonlyArray<{ nota: unknown; nota_do_jev: unknown }>): Concordancia {
+function concordancia(
+  linhas: ReadonlyArray<{ nota: unknown; nota_do_jev: unknown; limiar?: unknown }>,
+): Concordancia {
   const pares = linhas.flatMap((l) =>
     typeof l.nota === "number" && typeof l.nota_do_jev === "number"
-      ? [[l.nota, l.nota_do_jev] as const]
+      ? [[l.nota, l.nota_do_jev, limiarDa(l)] as const]
       : [],
   );
   return {
     dias: DIAS_DA_CONCORDANCIA,
     comparadas: pares.length,
-    concordaram: pares.filter(([ia, jev]) => abaixo(ia) === abaixo(jev)).length,
+    concordaram: pares.filter(([ia, jev, limiar]) => abaixo(ia, limiar) === abaixo(jev, limiar)).length,
   };
 }
 
 /**
- * "Clientes irritados percebidos": conversas em que a nota DO JEV ficou abaixo
+ * "Clientes irritados percebidos": conversas em que a nota DO Jev ficou abaixo
  * do corte da passagem para humano. A nota dele, e não a que decidiu: em
  * observação quem decide é a IA de sempre, e o número do cartão ficaria em zero
  * enquanto o Jev percebe a irritação do mesmo jeito. Conversa, e não mensagem:
  * o cliente irritado que manda três mensagens é um cliente.
  */
-function irritadosPercebidos(linhas: ReadonlyArray<{ conversa: unknown; nota_do_jev: unknown }>): number {
+function irritadosPercebidos(
+  linhas: ReadonlyArray<{ conversa: unknown; nota_do_jev: unknown; limiar?: unknown }>,
+): number {
   return new Set(
-    linhas.flatMap((l) => (typeof l.nota_do_jev === "number" && abaixo(l.nota_do_jev) ? [l.conversa] : [])),
+    linhas.flatMap((l) =>
+      typeof l.nota_do_jev === "number" && abaixo(l.nota_do_jev, limiarDa(l)) ? [l.conversa] : [],
+    ),
   ).size;
 }
 
 function configPublica(c: ConfigDoJev) {
-  return { ligado: c.ligado, modo: c.modo, aceite: c.aceite };
+  return { ligado: c.ligado, modo: c.modo, modo_roteador: c.modo_roteador, aceite: c.aceite };
 }
 
 function diasAtras(dias: number): string {
@@ -422,7 +440,7 @@ export async function GET(): Promise<Response> {
     }
   };
 
-  const [orgRes, credsRes, semana, comparadasRes, iaDeSempre, percebidasRes, observacoes, percebidos, camadasRes, roteadoresRes, haQuemAtenda, fluxosRes, versoesEmCursoRes] = await Promise.all([
+  const [orgRes, credsRes, semana, comparadasRes, iaDeSempre, percebidasRes, observacoes, percebidos, camadasRes, roteadoresRes, haQuemAtenda, fluxosRes, versoesEmCursoRes, roteadorTemIaDeSempre] = await Promise.all([
     db.from("organizations").select("settings").eq("id", org.orgId).maybeSingle(),
     db
       .from("ai_provider_credentials")
@@ -436,7 +454,12 @@ export async function GET(): Promise<Response> {
     // `metadata ? 'sentiment_jev_score'` (migration) quando pesar.
     db
       .from("messages")
-      .select(`nota:metadata->${CHAVES_DO_CLIMA.nota}, nota_do_jev:metadata->${CHAVES_DO_CLIMA.notaDoJev}`)
+      // `limiar` é o corte que valeu NAQUELA mensagem (o do agente da
+      // conversa, #2216): a concordância corta por ele, com o padrão como
+      // fallback para as mensagens anteriores ao #2219.
+      .select(
+        `nota:metadata->${CHAVES_DO_CLIMA.nota}, nota_do_jev:metadata->${CHAVES_DO_CLIMA.notaDoJev}, limiar:metadata->${CHAVES_DO_CLIMA.limiar}`,
+      )
       .eq("organization_id", org.orgId)
       .gte("created_at", diasAtras(DIAS_DA_CONCORDANCIA))
       .eq(`metadata->>${CHAVES_DO_CLIMA.motor}`, "llm" satisfies MotorDoClima)
@@ -452,7 +475,9 @@ export async function GET(): Promise<Response> {
     // disso a conta sai das mais recentes. O agregado em SQL é o passo seguinte.
     db
       .from("messages")
-      .select(`conversa:conversation_id, nota_do_jev:metadata->${CHAVES_DO_CLIMA.notaDoJev}`)
+      .select(
+        `conversa:conversation_id, nota_do_jev:metadata->${CHAVES_DO_CLIMA.notaDoJev}, limiar:metadata->${CHAVES_DO_CLIMA.limiar}`,
+      )
       .eq("organization_id", org.orgId)
       .gte("created_at", diasAtras(DIAS_DOS_NUMEROS))
       .not(`metadata->${CHAVES_DO_CLIMA.notaDoJev}`, "is", null)
@@ -487,6 +512,11 @@ export async function GET(): Promise<Response> {
       .eq("organization_id", org.orgId)
       .not("inscricoes.status", "in", INSCRICAO_ENCERRADA)
       .limit(1, { referencedTable: "inscricoes" }),
+    // A IA de sempre do ROTEADOR é a pergunta do turno (`temIaDeSempre`), não a
+    // do clima: o cartão só oferece o Jev roteando sozinho onde ele teria a
+    // reserva (decisão B, doc 89). Nunca rejeita: na dúvida (até o pool que não
+    // abre, como em `lerQuemAtende`), diz que não tem — e o turno diz o mesmo.
+    (async () => temIaDeSempre(getRequestPool(), llmEdgeConfigFromEnv(env), org.orgId))().catch(() => false),
   ]);
 
   const erro =
@@ -556,6 +586,7 @@ export async function GET(): Promise<Response> {
         ]),
       ),
       tem_ia_de_sempre: iaDeSempre !== null,
+      roteador_tem_ia_de_sempre: roteadorTemIaDeSempre,
       numeros: {
         ...numeros,
         irritados: irritadosPercebidos(percebidasRes.data ?? []),
@@ -575,6 +606,7 @@ const corpoDoPatch = z
     ligado: z.boolean().optional(),
     /** O estado do clima, no nome da onda 1 — a imagem anterior também o entende. */
     modo: z.enum(["observacao", "decide"]).optional(),
+    modo_roteador: z.enum(["comparacao", "sob_demanda"]).optional(),
     /** A caixa marcada na tela. Só pesa ao ligar pela primeira vez. */
     aceite_lgpd: z.literal(true).optional(),
     tarefa: idDaTarefaSchema.optional(),
@@ -587,8 +619,8 @@ const corpoDoPatch = z
   .refine((c) => c.modo === undefined || c.tarefa === undefined, {
     message: "informe `modo` ou `tarefa`, não os dois",
   })
-  .refine((c) => c.ligado !== undefined || c.modo !== undefined || c.tarefa !== undefined, {
-    message: "informe `ligado`, `modo` ou `tarefa`",
+  .refine((c) => c.ligado !== undefined || c.modo !== undefined || c.modo_roteador !== undefined || c.tarefa !== undefined, {
+    message: "informe `ligado`, `modo`, `modo_roteador` ou `tarefa`",
   });
 
 export async function PATCH(req: NextRequest): Promise<Response> {
@@ -620,6 +652,16 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   const atual = lerConfigDoJev(orgAtual?.settings);
 
   const mudanca: MudancaDaConfig = {};
+  if (corpo.modo_roteador !== undefined && corpo.modo_roteador !== atual.modo_roteador) {
+    // Decisão B (doc 89): sem a IA de sempre, o Jev não roteia sozinho. O turno
+    // confere de novo a cada mensagem; aqui a recusa é para a tela não gravar um
+    // modo que não valeria.
+    if (corpo.modo_roteador === "sob_demanda" &&
+      !(await temIaDeSempre(getRequestPool(), llmEdgeConfigFromEnv(env), org.orgId))) {
+      return fail("jev_sem_ia_de_sempre", t(ROTEADOR_SOB_DEMANDA_SEM_IA), 422, { requestId });
+    }
+    mudanca.modo_roteador = corpo.modo_roteador;
+  }
   // `modo` é o clima com o nome antigo: os dois pedidos chegam ao mesmo lugar.
   const pedido =
     corpo.tarefa !== undefined && corpo.estado !== undefined
@@ -691,7 +733,9 @@ export async function PATCH(req: NextRequest): Promise<Response> {
           ? "ai.jev.desligado"
           : corpo.modo !== undefined
             ? "ai.jev.modo_alterado"
-            : "ai.jev.tarefa_alterada",
+            : mudanca.modo_roteador !== undefined
+              ? "ai.jev.modo_roteador_alterado"
+              : "ai.jev.tarefa_alterada",
     organizationId: org.orgId,
     actorUserId: user.id,
     resourceType: "organization",
@@ -699,6 +743,10 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     requestId,
     metadata: {
       modo: gravado.config.modo,
+      ...(mudanca.modo_roteador !== undefined ? {
+        modo_roteador: mudanca.modo_roteador,
+        modo_roteador_anterior: atual.modo_roteador,
+      } : {}),
       ...(gravado.config.modo !== atual.modo ? { modo_anterior: atual.modo } : {}),
       ...(mudanca.tarefas !== undefined && pedido
         ? { tarefa: pedido.tarefa, estado: pedido.estado, estado_anterior: estadoAnterior ?? null }

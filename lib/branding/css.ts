@@ -51,6 +51,7 @@
  */
 
 import { GRAUS, stop } from "./rampa";
+import { ehFormaDeValorPermitida, ehNomeDeToken } from "./formas-de-valor";
 import type { CorResolvida } from "./resolve";
 
 export type CodigoDoCss =
@@ -71,21 +72,12 @@ export type CssDaMarca = {
   readonly motivos: readonly MotivoDoCss[];
 };
 
-/** `--nome-do-token`. Sem maiúscula, sem escape, sem espaço. */
-const NOME_DE_TOKEN = /^--[a-z][a-z0-9-]*$/;
-
 /**
- * As três formas de valor que este produto emite. Ancoradas nas duas pontas
- * (`^`/`$`) de propósito: sem âncora, `#ff0000; } body { x` casaria o prefixo e
- * passaria com o resto pendurado.
+ * `--nome-do-token`. Sem maiúscula, sem escape, sem espaço.
+ * A régua mora em `formas-de-valor.ts` — TODO emissor de custom property usa o
+ * mesmo `ehNomeDeToken`/`ehFormaDeValorPermitida`, para que duas definições de
+ * "forma segura" nunca divirjam.
  */
-const FORMAS_DE_VALOR: readonly RegExp[] = [
-  /^#[0-9a-f]{3}$/i,
-  /^#[0-9a-f]{6}$/i,
-  /^rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)$/,
-  /^rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*(?:0|1|0?\.\d{1,4})\s*\)$/,
-  /^var\(--[a-z][a-z0-9-]*\)$/,
-];
 
 /**
  * Sequências que não podem existir na saída, checadas no texto JÁ montado.
@@ -277,7 +269,7 @@ export function cssDaMarca(
   for (const [seletor, tema] of escopo) {
     const decls = declaracoesDoTema(cor, tema);
     for (const [nome, valor] of decls) {
-      if (!NOME_DE_TOKEN.test(nome)) {
+      if (!ehNomeDeToken(nome)) {
         motivos.push({
           codigo: "nome_de_token_invalido",
           alvo: paraDiagnostico(nome),
@@ -285,7 +277,7 @@ export function cssDaMarca(
         });
         return { css: null, motivos };
       }
-      if (!FORMAS_DE_VALOR.some((forma) => forma.test(valor))) {
+      if (!ehFormaDeValorPermitida(valor)) {
         motivos.push({
           codigo: "valor_fora_da_allowlist",
           alvo: nome,

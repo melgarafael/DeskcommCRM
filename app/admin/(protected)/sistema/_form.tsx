@@ -27,6 +27,21 @@ import type { ModuloOpcional, MODULOS_OPCIONAIS_POR_FLAG } from "@/lib/instalaca
  * aqui existe pra isso dar erro em build, não silenciosamente em runtime. */
 type ModuloPorFlag = (typeof MODULOS_OPCIONAIS_POR_FLAG)[number];
 
+/** O marcador das frases da assinatura; fora do JSX porque não é prosa. */
+const MOMENTO = "{momento}";
+
+/**
+ * O que as últimas entregas do WhatsApp disseram sobre a assinatura (doc 99,
+ * opção A), com os instantes já formatados pelo servidor. `null` = a leitura
+ * falhou, e a tela não diz nada. A regra do "sim" mora em
+ * `lib/channels/assinatura-das-entregas.ts`.
+ */
+export interface AssinaturaNaTela {
+  readonly assinadas: boolean | null;
+  readonly ultimaAssinada: string | null;
+  readonly ultimaSemAssinatura: string | null;
+}
+
 /**
  * Cada interruptor salva na hora, sem botão de confirmar — mesmo desenho do
  * formulário da política de cadastro, e pelo mesmo motivo: é reversível com um
@@ -37,7 +52,13 @@ type ModuloPorFlag = (typeof MODULOS_OPCIONAIS_POR_FLAG)[number];
  * um `upsert` de uma linha só, e mandar o estado todo evita que duas telas
  * abertas se sobrescrevam em campos que ninguém tocou.
  */
-export function FormularioDeComportamento({ inicial }: { inicial: ComportamentoDaInstalacao }) {
+export function FormularioDeComportamento({
+  inicial,
+  assinatura = null,
+}: {
+  inicial: ComportamentoDaInstalacao;
+  assinatura?: AssinaturaNaTela | null;
+}) {
   const t = useT();
   const [valores, setValores] = useState<ComportamentoDaInstalacao>(inicial);
   const [erro, setErro] = useState<string | null>(null);
@@ -110,6 +131,41 @@ export function FormularioDeComportamento({ inicial }: { inicial: ComportamentoD
                 "Ligado, toda entrega de webhook precisa vir assinada com o segredo da sessão. Desligado por padrão porque nem todo servidor de canal assina: ligar sem que ele assine corta a entrada de mensagens.",
               )}
             </p>
+            {assinatura && (
+              <div className="space-y-1 text-sm" data-testid="assinatura-das-entregas">
+                {assinatura.assinadas === null ? (
+                  <p className="text-muted-foreground">
+                    {t("Nenhuma entrega do WhatsApp na última semana para conferir a assinatura.")}
+                  </p>
+                ) : assinatura.assinadas ? (
+                  <p>
+                    {t("As últimas entregas do WhatsApp chegaram assinadas: sim (última em {momento}).").replace(
+                      MOMENTO,
+                      assinatura.ultimaAssinada ?? "",
+                    )}
+                  </p>
+                ) : (
+                  <>
+                    <p>{t("As últimas entregas do WhatsApp chegaram assinadas: não.")}</p>
+                    {assinatura.ultimaAssinada && (
+                      <p className="text-muted-foreground">
+                        {t("Última assinada: {momento}.").replace(MOMENTO, assinatura.ultimaAssinada)}
+                      </p>
+                    )}
+                  </>
+                )}
+                {assinatura.ultimaSemAssinatura && (
+                  <p className="text-muted-foreground">
+                    {t("Última sem assinatura: {momento}.").replace(MOMENTO, assinatura.ultimaSemAssinatura)}
+                  </p>
+                )}
+                {assinatura.assinadas === true && !valores.exigir_assinatura_no_webhook && (
+                  <p className="font-medium" role="status">
+                    {t("Pode ligar: o WhatsApp já assina.")}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
           <Switch
             id="assinatura-do-webhook"
@@ -216,6 +272,13 @@ const MODULOS_NA_TELA: ReadonlyArray<{ modulo: ModuloPorFlag; id: string; rotulo
     rotulo: "Empresas e pessoas (venda para empresas)",
     descricao:
       "Ligado, cada empresa ganha no CRM o cadastro de Empresas (razão social e CNPJ, com os dados públicos preenchidos pela BrasilAPI), as Pessoas que decidem dentro delas, com vários telefones, e a importação de planilha CSV ou Excel. Consultar um CNPJ manda o número para a BrasilAPI. Desligado, as telas e o menu somem.",
+  },
+  {
+    modulo: "login_codex",
+    id: "modulo-login-codex",
+    rotulo: "Login do Codex por assinatura",
+    descricao:
+      "Ligado, cada empresa vê em Credenciais o painel para conectar a própria conta do Codex. Desligado por padrão: sem este interruptor nada aparece para as empresas, e a reserva de chamada continua sendo a chave de API da organização.",
   },
 ];
 

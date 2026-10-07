@@ -10,6 +10,12 @@ import {
 
 import { ExtensionError } from "./errors";
 import { parseStrictJson } from "./strict-json";
+import {
+  esquemaDaContribuicaoDeTema,
+  PALETAS_DE_TEMA,
+  type PaletaDeTema,
+  type TemaDeExtensao,
+} from "./tema";
 
 export const EXTENSION_LIMITS = {
   packageBytes: 64 * 1_024,
@@ -32,6 +38,8 @@ export type LocalizedText = { "pt-BR": string; es?: string };
 export type ExtensionConfiguration = {
   density: "comfortable" | "compact";
   show_description: boolean;
+  /** A paleta de tema escolhida (opcional) — o "qual paleta" da organização. */
+  theme?: PaletaDeTema;
 };
 
 export type ExtensionManifest = {
@@ -61,6 +69,8 @@ export type ExtensionManifest = {
       blocks: Array<{ heading: LocalizedText; body: LocalizedText }>;
       action: { label: LocalizedText; capability: ExtensionCapability };
     }>;
+    /** Um tema opcional que a organização pode escolher para pintar o produto. */
+    theme?: TemaDeExtensao;
   };
 };
 
@@ -170,6 +180,8 @@ export const configurationSchema = z
   .object({
     density: z.enum(["comfortable", "compact"]),
     show_description: z.boolean(),
+    // A paleta escolhida pela organização. Ausente = quem nunca escolheu tema.
+    theme: z.enum(PALETAS_DE_TEMA).optional(),
   })
   .strict();
 
@@ -240,6 +252,7 @@ const manifestSchema: z.ZodType<ExtensionManifest> = z
               ctx.addIssue({ code: "custom", message: "id de card repetido" });
             }
           }),
+        theme: esquemaDaContribuicaoDeTema.optional(),
       })
       .strict(),
   })
@@ -455,6 +468,14 @@ export function checkCompatibility(subject: CompatibilitySubject): Compatibility
   // exatamente a informação que a tela existe para mostrar.
   const declaradas = new Set<ExtensionPermission>(subject.permissions);
   if (capacidades.some((capacidade) => !declaradas.has(permissaoDaCapacidade(capacidade)))) {
+    return incompatible("permission_unsupported");
+  }
+  // Um tema declarado sem a permissão que o anuncia fica invisível para quem vai aceitar a
+  // extensão — a mesma regra de cobertura dos cards, para a contribuição de tema.
+  if (
+    subject.contributions?.theme !== undefined &&
+    !declaradas.has("theme.apply")
+  ) {
     return incompatible("permission_unsupported");
   }
   return { compatible: true, reason: null };

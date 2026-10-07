@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   createWebhookSourceSchema,
+  updateWebhookSourceSchema,
   createAutomationRuleSchema,
   updateAutomationRuleSchema,
   conditionSchema,
@@ -171,5 +172,16 @@ describe("#1612: gatilhos de desfecho e o opt-in do responsável", () => {
       ],
     });
     expect(r.success).toBe(false);
+  });
+});
+
+
+describe("form source AI authorization configuration", () => {
+  it("accepts a boolean on update and rejects coercion", () => {
+    expect(updateWebhookSourceSchema.parse({ authorize_ai_on_capture: true })).toEqual({ authorize_ai_on_capture: true });
+    expect(updateWebhookSourceSchema.safeParse({ authorize_ai_on_capture: "true" }).success).toBe(false);
+  });
+  it("creation keeps authorization off until explicit source configuration", () => {
+    expect(createWebhookSourceSchema.parse({ name: "Synthetic", default_pipeline_id: UUID, default_stage_id: UUID2, authorize_ai_on_capture: true })).not.toHaveProperty("authorize_ai_on_capture");
   });
 });

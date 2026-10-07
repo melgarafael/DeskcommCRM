@@ -58,6 +58,7 @@ import {
   type waitConfigSchema,
 } from "./graph-schema";
 import type { EnrollmentOutcome, EnrollmentStatus } from "./node-handlers";
+import type { BaseDaPausa } from "./pausa-de-reentrada";
 
 type ConditionConfig = z.infer<typeof conditionConfigSchema>;
 type Check = ConditionConfig["checks"][number];
@@ -570,11 +571,26 @@ export const SITUACOES_DO_ACOMPANHAMENTO: Record<EnrollmentStatus, string> = {
   dead: "Parou por falha",
 };
 
-/** Como o acompanhamento terminou. Sem tradução em lugar nenhum do produto até aqui. */
+/**
+ * Como o acompanhamento terminou — na voz de quem opera o dossiê (#2014).
+ *
+ * Antes este mapa existia só para o teste. O desfecho agora sai por aqui na
+ * tela do dossiê, e o rótulo de `exhausted` diverge de `RESULTADOS_DO_FIM` de
+ * propósito: lá é a opção do nó final no construtor, sob contrato do e2e
+ * ("Esgotado"); aqui é como o operador lê o fim do acompanhamento.
+ *
+ * De onde `exhausted` vem, para o rótulo não afirmar mais do que o dado sabe:
+ * do nó Fim (que NASCE com `exhausted` — nodeVisuals.ts) ou de uma pergunta de
+ * coleta esgotada (atendimento.ts), sempre como a alternativa a `converted`.
+ * NÃO vem de esgotar as novas tentativas do motor: isso leva o enrollment a
+ * `status='dead'` (`markDead`, engine.ts) sem tocar em `outcome`. E não prova
+ * que o contato ficou calado — um fluxo pode chegar ao nó Fim padrão depois de
+ * uma resposta. Por isso "sem conversão", e não "sem resposta".
+ */
 export const DESFECHOS: Record<EnrollmentOutcome, string> = {
   converted: "Convertido",
   replied: "O contato respondeu",
-  exhausted: "Esgotado",
+  exhausted: "Encerrado sem conversão",
   opted_out: "Pediu para parar",
   handoff: "Passou para um humano",
 };
@@ -598,4 +614,14 @@ export const GATILHOS: Record<TipoDeGatilho, string> = {
   case_opened: "Quando o agente pede ajuda de um humano",
   inbound_after_silence: "Cliente voltou",
   conversation_end: "Fim da conversa",
+};
+
+/**
+ * De onde conta a pausa antes de o gatilho de silêncio recomeçar
+ * (`params.reentry_pause_basis`). A tela a oferece como um interruptor, mas o
+ * valor não pode chegar cru a quem lê o gatilho em outro lugar.
+ */
+export const BASES_DA_PAUSA_DE_REENTRADA: Record<BaseDaPausa, string> = {
+  ultima_mensagem: "Da última mensagem do cliente",
+  ultimo_envio: "Do último envio deste fluxo",
 };

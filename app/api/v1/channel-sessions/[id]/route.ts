@@ -26,10 +26,11 @@ import { audit } from "@/lib/audit";
 import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, mfaEmDivida } from "@/lib/auth/server";
 import { orgAtivaDaApi, requireRole } from "@/lib/auth/require-role";
-import { CHANNEL_PROVIDER_WAHA } from "@/lib/channels/capabilities";
+import { CHANNEL_PROVIDER_SOCIAL, CHANNEL_PROVIDER_WAHA } from "@/lib/channels/capabilities";
 import { resolverSaudeDaConexaoRemovida } from "@/lib/channels/health";
 import { desfazerWebhookDoNumero } from "@/lib/channels/meta/webhook-override";
 import { numeroObservadoDaSessao } from "@/lib/channels/numero-observado";
+import { apagarAssinaturaSocial } from "@/lib/channels/social/store";
 import { isChannelStatus } from "@/lib/schemas/channels";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -300,6 +301,14 @@ export async function GET(
  *    resolvia a sessão pelo token antigo e criava contato, conversa e mensagem
  *    num inbox onde o operador nem consegue responder (o arquivamento grava
  *    STOPPED).
+ *  - Canal social (Zernio): a assinatura de webhook é por CHAVE, não por conta
+ *    — arquivar/excluir sem removê-la deixava o provedor entregando para sempre
+ *    numa URL que virou 404, sem erro do nosso lado (issue #2419). Ela é apagada
+ *    ANTES do patch, pelo id gravado ou reconciliada pela URL do token quando o
+ *    id faltar (`apagarAssinaturaSocial`), em best-effort no mesmo padrão do ramo
+ *    oficial: provedor fora do ar vai para o log e para o metadata da auditoria,
+ *    e NÃO desfaz a exclusão que o operador pediu. O `webhook_path_token` é
+ *    rotacionado depois, para a URL antiga virar 404 como no `disconnect`.
  *
  * Admin only. organization_id vem da sessão — nunca do path/body.
  */
@@ -351,6 +360,14 @@ export async function DELETE(
    */
   let webhookOverride: "desfeito" | "sem_credencial" | "falhou" = "sem_credencial";
 
+  /**
+   * O que terminou sendo a assinatura de webhook no Zernio (issue #2419).
+   * Fica declarado fora dos ramos pelo mesmo motivo: vai para o metadata da
+   * auditoria inclusive quando não havia chave a usar — ou quando o provedor
+   * estava fora do ar e a exclusão seguiu em best-effort.
+   */
+  let socialWebhook: "apagada" | "sem_integracao" | "falhou" | "nao_social" = "nao_social";
+
   if (session.provider === CHANNEL_PROVIDER_WAHA) {
     const waha = getWahaClient();
     if (!waha) {
@@ -371,6 +388,35 @@ export async function DELETE(
         .eq("organization_id", activeOrg.orgId).eq("id", id);
       return fail("waha_error", wahaFriendlyError(err), 502, { requestId });
     }
+  } else if (session.provider === CHANNEL_PROVIDER_SOCIAL) {
+    // ─── A ASSINATURA NÃO FICA ÓRFÃ NO ZERNIO (issue #2419) ───────────────────
+    //
+    // A assinatura no Zernio é por chave, não por conta. Daqui para baixo a rota
+    // arquiva a linha e rotaciona o `webhook_path_token`: a URL antiga vira 404
+    // e a assinatura continuaria entregando nela para sempre, sem erro do nosso
+    // lado. `apagarAssinaturaSocial` remove a assinatura ANTES do patch — pelo
+    // id gravado, ou reconciliada pela URL do token quando o id faltar (#2364).
+    //
+    // Best-effort, no mesmo padrão do ramo da Meta logo abaixo: Zernio fora do
+    // ar ou chave já desvinculada vão para o log e para o metadata da auditoria
+    // (`social_webhook`), e NÃO desfazem a exclusão que o operador pediu.
+    try {
+      socialWebhook = await apagarAssinaturaSocial(createAdminClient(), activeOrg.orgId, id);
+    } catch (err) {
+      socialWebhook = "falhou";
+      logger.warn("Falha ao apagar a assinatura do webhook social no Zernio", {
+        requestId,
+        channel_session_id: id,
+        organization_id: activeOrg.orgId,
+        erro: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // A URL antiga precisa virar 404, como no `disconnect`: rotaciona o token
+    // DEPOIS de apagar a assinatura, que pode ter sido achada pela URL dele.
+    // (`meta_token_encrypted` não entra aqui de propósito: a linha social não
+    // usa essa coluna — a credencial que autoriza a chamada vive na integração.)
+    patch.webhook_path_token = randomUUID().replace(/-/g, "");
   } else {
     // ─── O OVERRIDE NÃO FICA ÓRFÃO NA META (issue #1334) ─────────────────────
     //
@@ -509,6 +555,7 @@ export async function DELETE(
       provider: session.provider,
       avisos_fechados: avisosFechados,
       webhook_override: webhookOverride,
+      social_webhook: socialWebhook,
       ...impact.history,
       ...impact.configuration,
     },

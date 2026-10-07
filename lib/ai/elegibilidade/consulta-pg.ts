@@ -56,6 +56,7 @@ export async function decidirElegibilidadeDaConversa(
   return decidirElegibilidade(
     montarEstadoDeElegibilidade({
       orgStatus: r.org_status,
+      canalDesativado: r.channel_metadata?.disabled,
       aiGate: r.channel_metadata?.ai_gate,
       aiGateMode: r.channel_metadata?.ai_gate_mode,
       aiTestPhoneNumbers: r.channel_metadata?.ai_test_phone_numbers,

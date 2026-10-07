@@ -713,3 +713,16 @@ it("suporte full conserva dono efetivo; readonly e expirado não decidem nem sel
     await pool.query("delete from auth.sessions where id=$1", [session]);
   }
 });
+it("idle convergente limpa erro morto e remarca tentativa (#2467)", async () => {
+  const f = await fixture();
+  const a = appointmentSnapshotSchema.parse(await app(f.id, "claim"));
+  await pool.query("update calendar_appointments set google_sync_error='erro morto' where id=$1", [
+    f.id,
+  ]);
+  await app(f.id, "idle", expectedAppointment(a));
+  const row = (
+    await pool.query("select google_sync_error from calendar_appointments where id=$1", [f.id])
+  ).rows[0];
+  expect(row.google_sync_error).toBeNull();
+  await app(f.id, "release", expectedAppointment(a));
+});

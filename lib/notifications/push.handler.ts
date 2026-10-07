@@ -1,5 +1,6 @@
 import type { EventHandler, EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { marcaDaSaida } from "@/lib/branding/saida";
+import { canalDoEventoDesativado } from "@/lib/channels/desativado";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { montarPayloadDeInbound, truncar } from "./push_payload";
 import { enviarPushAoUsuario, enviarPushDaOrg } from "./web_push";
@@ -11,6 +12,13 @@ import { rotuloDoContato, SEM_NOME } from "@/lib/contacts/rotulo-do-contato";
 export const WEB_PUSH_INBOUND_KEY = "web-push-inbound.v1";
 
 async function handleInbound(row: EventRow): Promise<HandlerResult> {
+  // Canal DESATIVADO (#2329): a lei do #2318 vale nos dois sentidos — o canal
+  // desligado não acorda a IA e também não enche o bolso de quem está de
+  // plantão com uma conversa que a inbox nem mostra. Mesma ida de
+  // `channel_session_id` que o payload do `fn_emit_message_event` já traz.
+  if (await canalDoEventoDesativado(createAdminClient(), row.organization_id, row.payload)) {
+    return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "skipped", detail: "canal_desativado" };
+  }
   const conversationId =
     (typeof row.payload.conversation_id === "string" ? row.payload.conversation_id : null) ?? null;
   const previewRaw = row.payload.body_preview;
@@ -26,7 +34,7 @@ async function handleInbound(row: EventRow): Promise<HandlerResult> {
     const admin = createAdminClient();
     const { data } = await admin
       .from("contacts")
-      .select("display_name, name, phone_number, avatar_storage_path, is_anonymized")
+      .select("display_name, name, phone_number, avatar_storage_path, is_anonymized, is_personal")
       .eq("id", contactId)
       .eq("organization_id", row.organization_id)
       .maybeSingle();
@@ -36,7 +44,12 @@ async function handleInbound(row: EventRow): Promise<HandlerResult> {
       phone_number?: string | null;
       avatar_storage_path?: string | null;
       is_anonymized?: boolean | null;
+      is_personal?: boolean | null;
     } | null;
+    // Pessoal não empurra nada no bolso (spec 21, etapa 10, caminho 3): sem push.
+    if (c?.is_personal === true) {
+      return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "skipped", detail: "contato_pessoal" };
+    }
     // A cadeia CANÔNICA, e não a de dois campos remontada aqui: aquela deixava
     // passar o identificador técnico do WhatsApp — a notificação chegaria à tela
     // de bloqueio do celular escrita "Contato 543134@lid". `rotuloDoContato`
@@ -77,6 +90,11 @@ async function handleInbound(row: EventRow): Promise<HandlerResult> {
  * está falando. Título fixo, igual em toda organização.
  */
 async function handleGroupInbound(row: EventRow): Promise<HandlerResult> {
+  // Canal DESATIVADO (#2329): a mesma régua de `handleInbound` — a inbox
+  // esconde o grupo do canal pausado também, e o payload é o mesmo.
+  if (await canalDoEventoDesativado(createAdminClient(), row.organization_id, row.payload)) {
+    return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "skipped", detail: "canal_desativado" };
+  }
   const conversationId =
     (typeof row.payload.conversation_id === "string" ? row.payload.conversation_id : null) ?? null;
   const previewRaw = row.payload.body_preview;

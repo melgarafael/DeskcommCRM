@@ -5,6 +5,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { expect, type Page } from "@playwright/test";
+
 const MAILPIT_URL = process.env.MAILPIT_URL ?? "http://127.0.0.1:54324";
 
 /** Parser mínimo de .env.local (os specs rodam fora do runtime Next). */
@@ -76,4 +78,16 @@ export function extractAuthConfirmLink(html: string, baseUrl: string): string {
   url.host = base.host;
   url.pathname = "/auth/confirm";
   return url.toString();
+}
+
+/**
+ * Segue um link de e-mail como a pessoa faz: abre, vê a tela de confirmação e
+ * aperta "Continuar". Abrir o link sozinho não gasta mais o token (é o que
+ * protege do verificador de links do Hotmail/Outlook) — ver
+ * `app/auth/confirm/route.ts`.
+ */
+export async function seguirLinkDeAcesso(page: Page, link: string): Promise<void> {
+  await page.goto(link);
+  await expect(page).toHaveURL(/\/login\/continuar/);
+  await page.getByRole("button", { name: "Continuar" }).click();
 }

@@ -280,8 +280,9 @@ cp /root/.env.antes-remediacao .env
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-O banco **não** volta com isso. Para voltá-lo, `bash hostgator-setup-kit/restore.sh` com o
-dump que o A3 gerou — e ele pede confirmação digitada, de propósito.
+O banco **não** volta com isso, e o `restore.sh` também não o volta por cima do banco em uso:
+ele só restaura num banco vazio e, num banco com as tabelas do sistema, para sem alterar nada
+(#2120). Guarde o dump que o A3 gerou e peça ajuda.
 
 ### A4. Verificar que o worker mudou de verdade `[ENSAIADO]`
 

@@ -413,6 +413,21 @@ export function criarDubleDoHandler(
                 capturas.filtros.messages!.push({ coluna, valor: valores });
                 return cadeia;
               },
+              // LIKE do Postgres, APLICADO: `%` é qualquer sequência, `_` um
+              // caractere, `\_` o sublinhado literal. A remoção do eco por sufixo
+              // (`_<id bare>`, @lid × @c.us) é exatamente o que este elo mede.
+              like: (coluna: string, padrao: string) => {
+                const re = new RegExp(
+                  "^" +
+                    padrao.replace(/\\_|%|_|[.*+?^${}()|[\]\\]/g, (t) =>
+                      t === "\\_" ? "_" : t === "%" ? ".*" : t === "_" ? "." : `\\${t}`,
+                    ) +
+                    "$",
+                );
+                filtros.push((r) => typeof r[coluna] === "string" && re.test(r[coluna] as string));
+                capturas.filtros.messages!.push({ coluna, valor: `like:${padrao}` });
+                return cadeia;
+              },
               then: (
                 resolve: (v: { error: null }) => unknown,
                 reject?: (e: unknown) => unknown,

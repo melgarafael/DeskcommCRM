@@ -58,7 +58,7 @@
  * classe, verificaria se alguém lembrou de atualizar a lista. Seria um segundo
  * MANIFEST para manter em dia, com exatamente o apodrecimento do primeiro.
  */
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -69,8 +69,16 @@ const MANIFEST = join(RAIZ, "supabase", "migrations", "MANIFEST.md");
 /** Extensões que denunciam um arquivo do repo (e não uma tabela ou um slug). */
 const EXTENSOES = [".ts", ".tsx", ".sql", ".md", ".sh", ".yml", ".yaml", ".json"];
 
+/**
+ * O MANIFEST.md (histórico) MAIS as linhas `-- manifest:` das migrations que se
+ * descrevem no próprio arquivo — as duas metades do mesmo registro.
+ */
 function manifesto(): string {
-  return readFileSync(MANIFEST, "utf8");
+  const dir = join(RAIZ, "supabase", "migrations");
+  const cabecalhos = readdirSync(dir)
+    .filter((f) => f.endsWith(".sql"))
+    .flatMap((f) => readFileSync(join(dir, f), "utf8").match(/^-- manifest:.*$/m) ?? []);
+  return [readFileSync(MANIFEST, "utf8"), ...cabecalhos].join("\n");
 }
 
 function tokensEmCrase(texto: string): string[] {

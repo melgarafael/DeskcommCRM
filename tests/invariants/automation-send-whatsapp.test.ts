@@ -362,6 +362,25 @@ function baseCtx(overrides: Partial<ActionCtx> = {}): ActionCtx {
   };
 }
 
+/**
+ * `emit_event` SEM `service_origin` injetada — como o cron do aniversário e o
+ * handler da Agenda chamam. O carimbo é responsabilidade DO SERVIDOR (#2326).
+ */
+function emitirSemOrigem(
+  tipo: string,
+  kind: string,
+  id: string,
+  payload: Record<string, unknown> = {},
+): string {
+  return lastLine(
+    sql(
+      `select public.emit_event(${sqlString(tipo)},${sqlString(kind)},${sqlString(id)},${sqlString(
+        JSON.stringify(payload),
+      )}::jsonb,'{}'::jsonb,${sqlString(GOV_ORG)});`,
+    ),
+  );
+}
+
 describe("ensureConversation (Task 11)", () => {
   it("1. idempotente: acha a conversa aberta existente em vez de duplicar", async () => {
     const id1 = await ensureConversation(admin, GOV_ORG, CONTACT_ID, SESSION_ID);
@@ -646,5 +665,96 @@ describe("send_whatsapp_message — gate de recusa de consentimento (achado 2026
     // harness.
     expect(result.status).toBe("postponed");
     expect(result.detail?.reason).toBe("waha_not_configured");
+  });
+});
+
+/**
+ * #2326 — a ação de WhatsApp disparada por `contact.birthday` ou por um dos
+ * seis `appointment.*` nunca enviava: o evento não ganhava `service_origin` no
+ * carimbo do servidor (`emit_event`) e `fn_service_event_origin` recusava o tipo
+ * com `service_event_origin_unsupported` (40001), que `serviceForEvent` engole
+ * como origem obsoleta — o run terminava `failed` com `service_boundary_stale`.
+ *
+ * As duas pontas leem agora a mesma tabela `(tipo, entidade) → contato`
+ * (`fn_service_event_contact`), e estes dois casos provam os dois caminhos: o
+ * aniversário dispara a AÇÃO inteira e os seis `appointment.*` resolvem a
+ * FRONTEIRA. Sem o conserto da 0551, os dois reprovam — o primeiro com
+ * `failed`/`service_boundary_stale` e o segundo com
+ * `service_event_origin_unsupported`.
+ */
+describe("send_whatsapp_message — gatilhos de aniversário e de agenda (#2326)", () => {
+  it("9. contact.birthday sem origem: emit_event carimba e a ação envia (não morre em service_boundary_stale)", async () => {
+    // 13:00Z = 10:00 em São Paulo: dentro da janela do canal.
+    vi.setSystemTime(new Date("2026-07-17T13:00:00Z"));
+    await ensureConversation(admin, GOV_ORG, CONTACT_ID, SESSION_ID);
+
+    const eventoId = emitirSemOrigem("contact.birthday", "contact", CONTACT_ID, {
+      local_date: "2026-07-17",
+    });
+
+    const executor = getAction("send_whatsapp_message")!;
+    const result = await executor.execute(
+      baseCtx({
+        event: { id: eventoId } as unknown as EventRow,
+        context: {
+          contact: {
+            id: CONTACT_ID,
+            is_blocked: false,
+            phone_number: "+5511999990001",
+            name: "Ana",
+          },
+        },
+      }),
+      { channel_session_id: SESSION_ID, template: "Feliz aniversário, {{contact.name}}!" },
+    );
+
+    // O desfecho do defeito era `failed` com `service_boundary_stale`.
+    expect(result.status).toBe("postponed");
+    expect(result.detail?.reason).toBe("waha_not_configured");
+    const mensagemId = String(result.detail?.message_id);
+    expect(mensagemId).toBeTruthy();
+    const encontradas = rows(
+      `select body, direction, contact_id from public.messages where id = '${mensagemId}'`,
+    );
+    expect(encontradas.length).toBe(1);
+    expect(encontradas[0]!.body).toBe("Feliz aniversário, Ana!");
+    expect(encontradas[0]!.direction).toBe("outbound");
+    expect(encontradas[0]!.contact_id).toBe(CONTACT_ID);
+  });
+
+  it("10. os seis appointment.* resolvem a fronteira de origem (sem service_event_origin_unsupported)", async () => {
+    vi.setSystemTime(new Date("2026-07-17T13:00:00Z"));
+    await ensureConversation(admin, GOV_ORG, CONTACT_ID, SESSION_ID);
+    const compromissoId = "44444444-5555-4000-8000-000000000001";
+    sql(`
+      insert into public.calendar_appointments (id, organization_id, contact_id, title, starts_at, ends_at)
+        values ('${compromissoId}', '${GOV_ORG}', '${CONTACT_ID}', 'Compromisso T11',
+                now() + interval '30 days', now() + interval '30 days 1 hour')
+        on conflict (id) do nothing;
+    `);
+
+    for (const tipo of [
+      "created",
+      "confirmed",
+      "rescheduled",
+      "cancelled",
+      "completed",
+      "no_show",
+    ]) {
+      const eventoId = emitirSemOrigem(
+        `appointment.${tipo}`,
+        "calendar_appointment",
+        compromissoId,
+        { appointment_id: compromissoId },
+      );
+      const fronteira = JSON.parse(
+        sql(
+          `select public.fn_service_event_origin(${sqlString(GOV_ORG)}::uuid, ${sqlString(
+            eventoId,
+          )}::uuid, ${sqlString(CONTACT_ID)}::uuid, ${sqlString(SESSION_ID)}::uuid);`,
+        ),
+      ) as { conversation_id?: string };
+      expect(fronteira.conversation_id, `appointment.${tipo} não resolveu a conversa`).toBeTruthy();
+    }
   });
 });

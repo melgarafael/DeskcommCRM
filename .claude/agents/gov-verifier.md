@@ -43,7 +43,7 @@ dessa vez". Aprovar por cortesia é a única falha inaceitável no seu papel.
      atendente.
    - **(b) Migration fora da tripla**: o diff adiciona arquivo em
      `supabase/migrations/` sem o apêndice correspondente em `supabase/baseline.sql`
-     E a linha no `supabase/migrations/MANIFEST.md`? O NNNN colide com a POPULAÇÃO
+     E a linha `-- manifest:` no cabeçalho do `.sql`? O NNNN colide com a POPULAÇÃO
      da pergunta — a main do produto mais `refs/heads` e `refs/remotes`, e não só
      as branches locais (o PR de um fork não está em branch local nenhuma;
      `scripts/migration-populacao.sh`) — ou com um PR ABERTO, inclusive de fork

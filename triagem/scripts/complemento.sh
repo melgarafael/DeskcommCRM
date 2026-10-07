@@ -69,7 +69,15 @@ MIG=$(f -c '^supabase/migrations/[0-9].*\.sql$')
 if [ "$MIG" -gt 0 ]; then
   BL=$(f -c '^supabase/baseline.sql$')
   MF=$(f -c '^supabase/migrations/MANIFEST.md$')
-  p migration_tripla "migrations=$MIG baseline=$BL manifest=$MF $([ "$BL" -ge 1 ] && [ "$MF" -ge 1 ] && echo COMPLETA || echo INCOMPLETA)"
+  # Desde o #2149 a descrição pode morar no cabeçalho `-- manifest:` do próprio
+  # .sql em vez de numa linha do MANIFEST.md; contar só o MANIFEST dava
+  # "INCOMPLETA" falso em toda migration do formato novo (#2259, #2260, #2263).
+  # Conta ARQUIVOS de migration (não linhas do diff inteiro) cujo conteúdo
+  # adicionado traz o cabeçalho — linha `-- manifest:` em teste/doc, ou duas num
+  # mesmo .sql, não podem cobrir outra migration que não o tem.
+  HM=$(awk '/^\+\+\+ b\//{f=substr($0,7); next} f ~ /^supabase\/migrations\/[0-9][^\/]*\.sql$/ && /^\+-- manifest:/ {seen[f]=1} END{n=0; for(k in seen) n++; print n}' <<<"$DIFF")
+  [ "$HM" -ge "$MIG" ] && MF=$((MF + HM))
+  p migration_tripla "migrations=$MIG baseline=$BL manifest=$MF (cabecalho=$HM) $([ "$BL" -ge 1 ] && [ "$MF" -ge 1 ] && echo COMPLETA || echo INCOMPLETA)"
   # A população é a da pergunta (#1273): a main do PRODUTO mais as outras refs do
   # clone, com a âncora do nome canônico. A versão anterior media `git ls-tree
   # origin/main` e contava com `grep -c "_${NUM}_"` — a main de um fork em vez da
@@ -132,7 +140,7 @@ else p tabela_nova "n/a"; fi
 
 # --- security definer exposta ---
 if c -qi 'security definer'; then
-  c -qiE 'revoke execute on function.*from.*(public|anon)' && p definer_revoke "tem revoke" || p definer_revoke "security definer SEM revoke — as DUAS origens"
+  c -qiE 'revoke (execute|all( privileges)?) on function.*from.*(public|anon)' && p definer_revoke "tem revoke" || p definer_revoke "security definer SEM revoke — as DUAS origens"
 fi
 
 # --- 4. console.log (no-console é warn, o CI não reprova) ---

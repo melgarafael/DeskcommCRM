@@ -9,7 +9,7 @@
 import { byteaToBuffer, decryptKey } from "@/lib/crypto/aes_gcm";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-import type { ProvedorComChave } from "@/lib/ai/pontos/provedores";
+import { PROVEDOR_POR_ASSINATURA, type ProvedorComChave } from "@/lib/ai/pontos/provedores";
 
 export interface LoadedCredential {
   apiKey: string;
@@ -82,6 +82,18 @@ export async function loadCredential(
   }
   if (!data.is_active) {
     throw new CredentialUnavailableError("inactive", "credential desativada");
+  }
+  // O RAMO DO LOGIN POR ASSINATURA (#1672, item 9): esta linha guarda um PAR
+  // DE TOKENOS, não uma chave de API. Decifrar aqui e devolver como `apiKey`
+  // mandaria o JSON dos tokens para o provedor no lugar de uma chave — é
+  // exatamente o que o caminho por `credentialId` de `resolveOrgLlmConfig`
+  // fazia. Nenhum leitor GENÉRICO usa esta linha: quem lê tokens é
+  // `lib/ai/credenciais/login-codex.ts`, que ainda consulta o módulo.
+  if (data.provider === PROVEDOR_POR_ASSINATURA) {
+    throw new CredentialUnavailableError(
+      "not_found",
+      "credencial de login por assinatura: fora do caminho genérico de chave",
+    );
   }
   if (!data.validated_at) {
     throw new CredentialUnavailableError(

@@ -160,6 +160,15 @@ export default defineConfig({
     // quando já se está pagando o custo maior, que é ter um vermelho.
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
+    // Menus, seletores e diálogos têm animação de entrada e saída (`ds-painel`,
+    // `ds-modal` em globals.css). Enquanto a saída anima, a camada do Radix
+    // segue montada: escuta clique fora e segura `pointer-events: none` no
+    // body. O Playwright age em dezenas de ms, dentro dessa janela, e o clique
+    // se perde (medido no e2e do #2411: item clicado 70ms após abrir o menu;
+    // gatilho reaberto durante a saída de 120ms). Com `reduce`, o próprio CSS
+    // encurta as animações para 0.01ms e a suíte volta ao comportamento
+    // instantâneo para o qual as specs foram escritas.
+    contextOptions: { reducedMotion: "reduce" },
   },
   webServer: {
     // Produção (`next build` antes!): dev-server compila por rota (40-80s) e

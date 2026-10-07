@@ -15,6 +15,7 @@ import type { Logger } from '../obs/logger';
 import type { ProviderRegistry } from '../edge/llm/providers';
 import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
 import type { LeadContext } from '../edge/crm/get-lead-context';
+import { extrairObjetoJsonDoTexto } from '@/lib/agent-engine/texto/extrair-json-do-texto';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { renderAgora } from '@/lib/tempo/agora';
 
@@ -42,14 +43,9 @@ function buildClassifyMessage(candidate: string, classes: string[], hint?: strin
  * JSON parseável) vira `null`, nunca um palpite.
  */
 export function parseFollowupClassification(text: string, classes: string[]): string | null {
-  const match = /\{[\s\S]*\}/.exec(text);
-  if (match === null) return null;
-  let obj: Record<string, unknown>;
-  try {
-    obj = JSON.parse(match[0]) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
+  const bruto = extrairObjetoJsonDoTexto(text);
+  if (bruto === null || typeof bruto !== 'object') return null;
+  const obj = bruto as Record<string, unknown>;
   const value = typeof obj.class === 'string' ? obj.class : null;
   return value !== null && classes.includes(value) ? value : null;
 }
@@ -160,14 +156,9 @@ function buildPlanMessage(
  * acessório. Fica registrado que o modelo não explicou.
  */
 export function parsePlanoDeEsperas(text: string, nodeIdsDoFluxo: string[]): PropostaDeEsperaBruta[] {
-  const match = /\{[\s\S]*\}/.exec(text);
-  if (match === null) return [];
-  let obj: Record<string, unknown>;
-  try {
-    obj = JSON.parse(match[0]) as Record<string, unknown>;
-  } catch {
-    return [];
-  }
+  const bruto = extrairObjetoJsonDoTexto(text);
+  if (bruto === null || typeof bruto !== 'object') return [];
+  const obj = bruto as Record<string, unknown>;
   if (!Array.isArray(obj.esperas)) return [];
 
   const conhecidos = new Set(nodeIdsDoFluxo);

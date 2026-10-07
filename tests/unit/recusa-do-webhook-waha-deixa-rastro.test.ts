@@ -76,6 +76,7 @@ vi.mock("@/lib/waha/ingest", async (original) => ({
 import { logger } from "@/lib/logger";
 import { POST as postGlobal } from "@/app/api/v1/webhooks/waha/route";
 import { POST as postPorToken } from "@/app/api/v1/webhooks/waha/[token]/route";
+import { limparMemoriaDeSessoes } from "@/lib/waha/sessao-do-webhook";
 
 const pedido = (corpo: unknown) =>
   ({
@@ -124,6 +125,8 @@ const niveisDoEstagio = (estagio: "roteamento" | "conteudo"): string[] => {
 };
 
 beforeEach(() => {
+  // A sessão `default` é reutilizada entre casos.
+  limparMemoriaDeSessoes();
   arquivados.length = 0;
   despachados.length = 0;
   autenticacao = { ok: true, signatureVerified: true };

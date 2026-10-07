@@ -117,7 +117,11 @@ test.describe("a verificação em duas etapas é escolha, não imposição", () 
     await page.waitForURL(/\/app\//, { timeout: 30_000 });
     await page.goto("/app/settings/security");
 
-    await page.locator('input[type="checkbox"]').click();
+    // A caixa única virou seletor de nível mínimo + carência (#1533): o valor
+    // gravado são as três chaves novas, e `mfa_required` continua sendo escrito
+    // junto para a leitura legada continuar verdadeira.
+    await page.locator("#mfa-papel-minimo").selectOption("admin");
+    await page.getByRole("button", { name: /^salvar$/i }).click();
     await page.waitForLoadState("networkidle");
 
     // A escrita é por service role com a organização resolvida da sessão: a
@@ -129,8 +133,11 @@ test.describe("a verificação em duas etapas é escolha, não imposição", () 
       .select("settings")
       .eq("id", orgId)
       .maybeSingle();
-    const settings = org?.settings as { security?: { mfa_required?: boolean } } | null;
+    const settings = org?.settings as {
+      security?: { mfa_required?: boolean; mfa_required_min_role?: string };
+    } | null;
     expect(settings?.security?.mfa_required).toBe(true);
+    expect(settings?.security?.mfa_required_min_role).toBe("admin");
 
     // E agora o bloqueador aparece — o mesmo que não aparecia no primeiro caso.
     await page.goto("/app/inbox");

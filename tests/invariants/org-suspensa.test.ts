@@ -24,6 +24,13 @@ import { lastLine, sql, writeCountAs } from "./gov-helpers";
  * ⚠️ O gatilho e a RLS recusam com o MESMO SQLSTATE (42501). Por isso cada
  * recusa confere também a MENSAGEM do gatilho — sem ela, uma recusa de RLS
  * passaria por prova do gatilho.
+ *
+ * Desde a 0508 (#2078) o `support_readonly` não passa nem da RLS de escrita de
+ * `organizations` (`fn_is_platform_admin_full()` exige `scope = 'full'`): o
+ * UPDATE dele altera 0 linhas e o gatilho nem roda. No inv. 2 o ramo
+ * `support_readonly` mede isso (0 linhas + estado intacto), e é o ramo `full`
+ * — que passa da RLS — que mantém o gatilho coberto. O INSERT segue recusado
+ * pelo gatilho nos dois ramos: o BEFORE INSERT roda antes do WITH CHECK.
  */
 
 const ORG_A = "c0de0496-0000-4000-8000-00000000000a"; // a que é suspensa
@@ -246,19 +253,26 @@ describe("inv. 2 — status e suspensão só mudam pelo servidor", () => {
     ["support_readonly", SUPORTE],
     ["full", DONO],
   ] as const) {
+    /** `support_readonly` para na RLS (0 linhas, 0508); `full` passa dela e para no gatilho. */
+    const recusaUpdate = (dml: string, rotulo?: string): void => {
+      if (scope === "support_readonly") {
+        expect(writeCountAs(usuario, dml), rotulo).toBe(0);
+        return;
+      }
+      const e = erroDe(comoUsuario(usuario, dml));
+      expect(e, rotulo).toContain("42501");
+      expect(e, rotulo).toContain("estado_da_organizacao_so_pelo_servidor");
+    };
+
     it(`⭐ platform admin ${scope} não reativa uma suspensa pelo PostgREST`, () => {
       sql(`update public.organizations set status = 'suspended', suspended_kind = 'cobranca', suspended_at = now() where id = '${ORG_C}';`);
-      const e = erroDe(comoUsuario(usuario, `update public.organizations set status = 'active' where id = '${ORG_C}'`));
-      expect(e).toContain("42501");
-      expect(e).toContain("estado_da_organizacao_so_pelo_servidor");
+      recusaUpdate(`update public.organizations set status = 'active' where id = '${ORG_C}'`);
       expect(estado(ORG_C)).toBe("suspended/cobranca");
     });
 
     it(`⭐ platform admin ${scope} não troca o tipo da suspensão`, () => {
       sql(`update public.organizations set status = 'suspended', suspended_kind = 'administrativa', suspended_at = now() where id = '${ORG_C}';`);
-      const e = erroDe(comoUsuario(usuario, `update public.organizations set suspended_kind = 'cobranca' where id = '${ORG_C}'`));
-      expect(e).toContain("42501");
-      expect(e).toContain("estado_da_organizacao_so_pelo_servidor");
+      recusaUpdate(`update public.organizations set suspended_kind = 'cobranca' where id = '${ORG_C}'`);
       expect(estado(ORG_C)).toBe("suspended/administrativa");
     });
 
@@ -270,16 +284,13 @@ describe("inv. 2 — status e suspensão só mudam pelo servidor", () => {
         `suspended_by = '${usuario}'`,
         `created_by = '${usuario}'`,
       ]) {
-        const e = erroDe(comoUsuario(usuario, `update public.organizations set ${atribuicao} where id = '${ORG_C}'`));
-        expect(e, atribuicao).toContain("estado_da_organizacao_so_pelo_servidor");
+        recusaUpdate(`update public.organizations set ${atribuicao} where id = '${ORG_C}'`, atribuicao);
       }
       expect(estado(ORG_C)).toBe("active/-");
     });
 
     it(`⭐ platform admin ${scope} não grava a data de anonimização pelo PostgREST`, () => {
-      const e = erroDe(comoUsuario(usuario, `update public.organizations set redacted_at = now() where id = '${ORG_C}'`));
-      expect(e).toContain("42501");
-      expect(e).toContain("estado_da_organizacao_so_pelo_servidor");
+      recusaUpdate(`update public.organizations set redacted_at = now() where id = '${ORG_C}'`);
       expect(valor(`select coalesce(redacted_at::text, '-') from public.organizations where id = '${ORG_C}';`)).toBe("-");
     });
 

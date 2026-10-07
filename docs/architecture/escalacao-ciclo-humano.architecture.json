@@ -512,7 +512,7 @@
       "col": 2,
       "type": "frontend",
       "label": "Configurações › Distribuição de atendimento",
-      "sublabel": "settings.routing.handoff_return_after_minutes — null = IA-06 (nunca)"
+      "sublabel": "settings.routing.handoff_return_after_minutes — null = IA-06 (nunca); settings.routing.manual_reply_silence_minutes — null = 60 min"
     },
     {
       "id": "presenca_emissor",
@@ -1024,7 +1024,7 @@
       "id": "e65",
       "from": "atendimentoManual",
       "to": "conversas",
-      "label": "bot_silenced_until = agora + PRAZO_DO_SILENCIO_MS (60 min), renovado a cada fala humana e NUNCA encurtando um silêncio maior, + last_handoff_reason — NÃO toca ai_authorized_at (a origem do lead é outro estado)"
+      "label": "bot_silenced_until = agora + prazo da empresa (manual_reply_silence_minutes; padrão PRAZO_DO_SILENCIO_MS, 60 min; falha ao ler = 60), renovado a cada fala humana e NUNCA encurtando um silêncio maior, + last_handoff_reason — NÃO toca ai_authorized_at (a origem do lead é outro estado)"
     },
     {
       "id": "e66",
@@ -1465,6 +1465,12 @@
       "from": "jevFollowup",
       "to": "jevLlmCalls",
       "label": "linha typesafe purpose followup_classify, origem jev_observacao — no mesmo comando da observação"
+    },
+    {
+      "id": "e134",
+      "from": "prazoConfig",
+      "to": "atendimentoManual",
+      "label": "manual_reply_silence_minutes (5 min a 24 h; null = 60): quanto a IA fica calada depois de uma resposta pelo celular — lido a cada pausa por lerPrazoDoSilencioManualMinutos (diagnóstico de @gaberaldo-svg, #2005)"
     }
   ],
   "cards": [

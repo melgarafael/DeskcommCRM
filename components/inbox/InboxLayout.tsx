@@ -3,8 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/auth/AuthProvider";
-import { fonteDeTemplates } from "@/lib/channels/templates-fonte";
-import { estadoDaJanela, formatarDecorrido } from "@/lib/channels/janela";
+import { estadoDaJanela } from "@/lib/channels/janela";
+import { motivoDaJanelaFechada, motivoDoContato } from "@/lib/inbox/motivo-do-envio-bloqueado";
 import { JanelaFechadaAviso } from "@/components/inbox/JanelaFechadaAviso";
 import { NumeroForaDoAr } from "@/components/inbox/NumeroForaDoAr";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
@@ -139,12 +139,24 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
   const searchParams = useSearchParams();
   const tab = parseFilterParam(searchParams.get("filter"));
   const idNaUrl = searchParams.get("id");
+  /**
+   * `?tag=` é o destino do link de cada linha do relatório Por etiqueta
+   * (#1891): a lista nasce filtrada pelo marcador escolhido lá. Sem esta
+   * leitura o link abriria o Inbox SEM filtrar nada — um link que promete
+   * conversa e entrega caixa de entrada inteira.
+   *
+   * Uma etiqueta só: o filtro de VÁRIAS (#1886) é o da própria tela, e uma
+   * query repetida aqui não teria como distinguir E de OU no seletor.
+   */
+  const tagNaUrl = searchParams.get("tag");
 
-  // tab vive na URL (?filter=); os demais filtros são estado local de sessão.
+  // tab vive na URL (?filter=); os demais filtros são estado local de sessão —
+  // exceto a etiqueta, que entra UMA vez, na abertura, pela URL.
   const [aux, setAux] = useState<Omit<InboxFiltersValue, "tab">>({
     search: "",
     onlyUnread: false,
     onlyGroups: false,
+    ...(tagNaUrl ? { tag: tagNaUrl } : {}),
   });
   const filterValue: InboxFiltersValue = { tab, ...aux };
   const setFilterValue = useCallback(
@@ -365,20 +377,15 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
     selectedConversation?.last_inbound_at ?? null,
     agoraJanela,
   );
-  const motivoDaJanela =
-    janela.tipo === "fechada"
-      ? fonteDeTemplates(selectedConversation?.channel_sessions?.provider) === null
-        ? t("Aguarde uma nova mensagem do cliente para reabrir o atendimento nesta rede.")
-        : janela.fechadaHaMs === null
-        ? t("O cliente ainda não escreveu — a janela de 24h nunca abriu. Só um modelo aprovado sai daqui.")
-        : `${t("A janela de 24h fechou há")} ${formatarDecorrido(janela.fechadaHaMs)}. ${t("Só um modelo aprovado sai daqui — texto livre é recusado pela plataforma.")}`
-      : null;
+  // Os textos moram em lib/inbox/motivo-do-envio-bloqueado.ts: o "Enviar link"
+  // da videochamada desabilita na mesma conversa e mostra o MESMO motivo.
+  const motivoDaJanela = motivoDaJanelaFechada(
+    janela,
+    selectedConversation?.channel_sessions?.provider,
+    t,
+  );
 
-  const blockedReason = selectedConversation?.contacts?.is_blocked
-    ? t("Contato bloqueado — envio de mensagens desabilitado.")
-    : selectedConversation?.contacts?.is_anonymized
-      ? t("Contato anonimizado — não é possível enviar mensagens.")
-      : null;
+  const blockedReason = motivoDoContato(selectedConversation?.contacts, t);
 
   // Altura da grade: a conta desconta TUDO que fica acima e abaixo dela.
   //   3.5rem            TopBar (`h-14`, em components/shell/TopBar.tsx)

@@ -21,6 +21,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
+import { lerIdentidadeDaMeta } from "./meta/identidade";
 import type { CredencialDeConversao, PlataformaDeAnuncio } from "./types";
 
 /**
@@ -144,6 +145,11 @@ export async function lerCredencial(
       datasetId: linha.dataset_id,
       accessToken: token,
       testEventCode: linha.test_event_code,
+      // Página / WABA da organização (#2098) — só aqui, no ramo Meta, porque é
+      // a única plataforma que cobra essa identidade em `user_data`. Uma
+      // leitura a mais por envio, e só depois que a conexão existe: quem nunca
+      // conectou não paga a chamada.
+      meta: await lerIdentidadeDaMeta(admin, organizationId),
     },
   };
 }

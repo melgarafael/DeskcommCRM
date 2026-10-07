@@ -22,8 +22,61 @@ import {
   retomarLeadHandler,
 } from "@/app/api/v1/leads/_handler";
 import { createLeadSchema, updateLeadSchema } from "@/lib/schemas/leads";
+import { conferirCamposPersonalizados } from "../conferencia-de-campos";
 import { resolveUserNames } from "./_users";
 import type { McpContext, McpToolDefinition } from "../types";
+import { ApiError } from "@/lib/api/types";
+
+/**
+ * A recusa ÚNICA das leituras de negócio durante um turno: negócio de outro
+ * cliente, inexistente, de outra organização ou sem contato ligado recebem
+ * este MESMO objeto — um uuid não vira oráculo de existência.
+ */
+const NEGOCIO_FORA_DA_CONVERSA = {
+  permitido: false,
+  motivo: "fora_da_conversa",
+  mensagem:
+    "esta conversa é com outra pessoa — um negócio que não é deste cliente não é seu para ver; " +
+    "siga a conversa com quem está falando.",
+} as const;
+
+/**
+ * A recusa de pessoal na ficha de negócio (spec 21, etapa 12).
+ *
+ * `getLeadHandler` responde 404 tanto para "não existe" quanto para "é de
+ * pessoal" (igual à conversa). Só no 404 esta leitura diagnóstica distingue —
+ * e o motivo honesto passa na frente do genérico de fora-da-conversa.
+ */
+const NEGOCIO_CONTATO_PESSOAL = {
+  permitido: false,
+  motivo: "contato_pessoal",
+  mensagem:
+    "este negócio é de um contato marcado como pessoal — fora da operação: não leia " +
+    "nem escreva aqui; siga a conversa com quem está falando.",
+} as const;
+
+async function recusaSeLeadDePessoal(
+  ctx: McpContext,
+  leadId: string,
+): Promise<typeof NEGOCIO_CONTATO_PESSOAL | null> {
+  const { data: lead } = await ctx.supabase
+    .from("crm_leads")
+    .select("contact_id")
+    .eq("organization_id", ctx.organizationId)
+    .eq("id", leadId)
+    .maybeSingle();
+  const contactId = (lead as { contact_id?: string | null } | null)?.contact_id;
+  if (!contactId) return null;
+  const { data: contato } = await ctx.supabase
+    .from("contacts")
+    .select("is_personal")
+    .eq("organization_id", ctx.organizationId)
+    .eq("id", contactId)
+    .maybeSingle();
+  return (contato as { is_personal?: boolean } | null)?.is_personal === true
+    ? NEGOCIO_CONTATO_PESSOAL
+    : null;
+}
 
 /**
  * A unidade de `value_cents` DITA AO MODELO. O negócio guarda o valor × 100 em
@@ -103,7 +156,8 @@ export const crmListLeads: McpToolDefinition<typeof listInputShape> = {
   name: "crm_list_leads",
   description:
     "Lista leads do CRM filtrando por pipeline, stage, status e owner. Cursor base64 para paginação. " +
-    "Governança por lead: owner_user_id + owner_user_name (só o nome do dono, sem email/telefone), stage ({ id, name } legível além do stage_id) e tags[].",
+    "Governança por lead: owner_user_id + owner_user_name (só o nome do dono, sem email/telefone), stage ({ id, name } legível além do stage_id) e tags[]." +
+    " Em conversa de atendimento, lista apenas os negócios do contato desta conversa.",
   inputSchema: listInputShape,
   category: "read",
   requiresRole: "agent",
@@ -123,6 +177,9 @@ export const crmListLeads: McpToolDefinition<typeof listInputShape> = {
         owner_user_id: input.owner_user_id,
         lost_reason: input.lost_reason,
         lost_reason_category: input.lost_reason_category,
+        // Escopo do turno NA CONSULTA, antes do limite: filtrar a página depois
+        // esconderia negócios do próprio cliente que caíssem fora dela.
+        contact_id: ctx.contatoDoTurno,
         limit: input.limit,
         cursor: input.cursor,
       },
@@ -147,21 +204,37 @@ export const crmGetLead: McpToolDefinition<typeof getInputShape> = {
   name: "crm_get_lead",
   description:
     "Retorna um lead pelo UUID. Inclui pipeline_id, stage_id, status, owner. " +
-    "Governança: owner_user_id + owner_user_name (só o nome, sem email/telefone), stage ({ id, name } legível) e tags[].",
+    "Governança: owner_user_id + owner_user_name (só o nome, sem email/telefone), stage ({ id, name } legível) e tags[]." +
+    " Em conversa de atendimento, só abre negócio do contato desta conversa.",
   inputSchema: getInputShape,
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
   handler: async (input, ctx) => {
-    const lead = await getLeadHandler(
-      ctx.supabase,
-      {
-        organization_id: ctx.organizationId,
-        actor: ctx.actor,
-        requestId: ctx.requestId,
-      },
-      input.lead_id,
-    );
+    const doTurno = ctx.contatoDoTurno;
+    let lead: Record<string, unknown> | null = null;
+    try {
+      lead = await getLeadHandler(
+        ctx.supabase,
+        {
+          organization_id: ctx.organizationId,
+          actor: ctx.actor,
+          requestId: ctx.requestId,
+        },
+        input.lead_id,
+      );
+    } catch (e: unknown) {
+      // Com turno, o `404` vira a MESMA recusa do negócio de outro cliente.
+      if (!(e instanceof ApiError) || e.status !== 404) throw e;
+      // ...exceto quando o negócio EXISTE e é de pessoal: motivo honesto nos
+      // dois ingressos. Diagnóstico só neste 404 — fora dele, nada muda.
+      const recusa = await recusaSeLeadDePessoal(ctx, input.lead_id);
+      if (recusa) return recusa;
+      if (!doTurno) throw e;
+      lead = null;
+    }
+    if (doTurno && (!lead || lead.contact_id !== doTurno)) return NEGOCIO_FORA_DA_CONVERSA;
+    if (!lead) throw new Error("not_found");
     if ((lead as { organization_id?: string }).organization_id !== ctx.organizationId) {
       // Defesa em profundidade — service-role bypassa RLS.
       throw new Error("not_found");
@@ -192,6 +265,18 @@ const createInputShape = {
     .optional(),
   tags: z.array(z.string()).optional(),
   source: z.string().optional(),
+  /**
+   * Os campos que o DONO declarou em `pipeline.settings.fields` (#2297).
+   *
+   * Sem esta chave a ferramenta não tem como criar um negócio numa etapa
+   * exigente nem quando o agente JÁ SABE o valor: `z.object` descarta a chave
+   * que não declarou, o valor morria antes do `createLeadHandler` — quem
+   * pergunta a régua —, e a recusa (422 `required_fields_missing`) acontecia
+   * sem que houvesse como evitá-la. Mesmo desenho do `crm_update_lead`, que já
+   * declarava a chave; o schema de criação do REST continua sem ela porque lá
+   * ela é gerida pelo servidor (o valor entra por fora do `parse`, no handler).
+   */
+  custom_fields: z.record(z.string(), z.unknown()).optional(),
 };
 
 export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
@@ -219,6 +304,16 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
       tags: input.tags ?? [],
       source: input.source ?? "ai_agent",
     });
+    // #2234 na CRIAÇÃO (#2302): a mesma conferência do `crm_update_lead`. Sem
+    // ela, a chave nova deixava a IA cumprir a régua da etapa com um valor que
+    // o cliente não disse. O campo recusado sai do insert; se a etapa o exige,
+    // a régua devolve o 422 — coerente: o cliente não disse.
+    const conferencia = await conferirCamposPersonalizados(
+      ctx,
+      { pipelineId: input.pipeline_id },
+      input.custom_fields,
+    );
+    const custom_fields = conferencia.custom_fields ?? input.custom_fields;
     const lead = await createLeadHandler(
       ctx.supabase,
       {
@@ -226,9 +321,26 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
         actor: ctx.actor,
         requestId: ctx.requestId,
       },
-      parsed,
+      // `custom_fields` entra POR FORA do `createLeadSchema.parse`, que é o
+      // mesmo lugar de onde ele sairia: o schema de criação não declara a chave
+      // (server-managed no REST) e o `parse` descarta o que não declara. É a
+      // interseção que o webhook de captação também monta. Sem isto o argumento
+      // do agente morria aqui dentro, antes da régua que ele precisa satisfazer
+      // (#2297, caminho 2).
+      {
+        ...parsed,
+        ...(custom_fields === undefined ? {} : { custom_fields }),
+      },
     );
-    return { lead };
+    return {
+      lead,
+      ...(conferencia.recusados.length > 0
+        ? {
+            campos_nao_gravados: conferencia.recusados,
+            erro_de_ensino: conferencia.recusados.map((r) => r.mensagem).join(" "),
+          }
+        : {}),
+    };
   },
 };
 
@@ -279,6 +391,13 @@ export const crmUpdateLead: McpToolDefinition<typeof updateInputShape> = {
   handler: async (input, ctx) => {
     const { lead_id, ...rest } = input;
     const parsed = updateLeadSchema.parse(rest);
+    // #2234 — a IA só grava o que o CLIENTE disse. A conferência vale só para a
+    // origem do agente de IA (tela, API de terceiros e automação passam por
+    // aqui sem nenhuma leitura): o degrau 1 confere número, data, e-mail e
+    // dinheiro em código, o degrau 2 pergunta ao Jev o que sobrou, e o que o
+    // cliente não disse volta como ERRO DE ENSINO para o modelo, com os outros
+    // campos da mesma chamada seguindo gravando (`lib/mcp/conferencia-de-campos`).
+    const conferencia = await conferirCamposPersonalizados(ctx, { leadId: lead_id }, parsed.custom_fields);
     const lead = await updateLeadHandler(
       ctx.supabase,
       {
@@ -287,9 +406,19 @@ export const crmUpdateLead: McpToolDefinition<typeof updateInputShape> = {
         requestId: ctx.requestId,
       },
       lead_id,
-      parsed,
+      conferencia.custom_fields === undefined
+        ? parsed
+        : { ...parsed, custom_fields: conferencia.custom_fields },
     );
-    return { lead };
+    return {
+      lead,
+      ...(conferencia.recusados.length > 0
+        ? {
+            campos_nao_gravados: conferencia.recusados,
+            erro_de_ensino: conferencia.recusados.map((r) => r.mensagem).join(" "),
+          }
+        : {}),
+    };
   },
 };
 

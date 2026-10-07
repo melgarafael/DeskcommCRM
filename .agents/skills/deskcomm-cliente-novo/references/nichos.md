@@ -220,21 +220,29 @@ Mensagens curtas, uma pergunta por vez, sem termos jurídicos sem explicação. 
 
 **Atenção — três coisas que este nicho quebra se você copiar de outro sem ajustar:**
 
-1. **Mencionar "advogado" ou termos jurídicos passa por cima do agente — sempre, sem exceção, e
-   isso NÃO é configurável por agente.** Antes de qualquer LLM rodar, o worker aplica um gate fixo
-   da plataforma (`checkG4Legal`, `lib/ai/handoff/regex.ts`, gatilho G4): se a mensagem do lead
-   casar com `advogad\w*`, `processo judicial`, `justiça`, `juiz\w*`, `reclame aqui`,
-   `denúncia`/`denuncia`, `acionar a justiça`, `órgão regulador`, `defensoria`, `ministério
-   público` ou `procon`, a conversa vai direto para handoff humano — não é um item de
-   `ai_agents.guardrails` (esse jsonb é outra coisa: guardrails *por agente*, 5 tipos, nenhum
-   deles é este). Para a maioria dos nichos isso é sinal raro de reclamação grave contra a própria
-   empresa; **para um escritório de advocacia é o vocabulário normal do dia a dia do cliente** —
-   "quero falar com o advogado", "já entrei com processo", "isso vai parar na justiça" são frases
-   comuns de quem já procura o escritório, não ameaça. Não tem como desligar isso hoje (é gate de
-   plataforma, não de tenant): avise o escritório que boa parte das conversas vai escalar para
-   humano rápido, e desenhe o prompt para o cenário em que a IA faz só a primeira pergunta antes de
-   passar — não uma triagem longa. Se isso incomodar de verdade, é questão de produto a levar ao
-   dono (issue), não algo para contornar no prompt.
+1. **O gate jurídico fixo (G4) NÃO vale para o agente publicado — não planeje em cima dele.** Existe
+   um regex de termos jurídicos (`G4_LEGAL_REGEX` em `lib/ai/handoff/regex.ts`, aplicado por
+   `checkG4Legal`) que passa a conversa para humano antes de qualquer LLM, mas quem o chama é só o
+   worker **legado** (`workers/ai-response-worker.ts`). Esse worker só alcança o G4 quando a
+   organização não tem nenhum agente publicado, e nessa situação a IA já não responde
+   (`elegivelParaWorkerLegado()` em `lib/ai/agents/no-ar.ts` devolve `false` desde a v1.17.0). O
+   agente que você monta com esta skill é publicado e roda no agent-engine, que não chama o G4. Para
+   um escritório de advocacia, onde "advogado", "processo" e "justiça" são o vocabulário normal do
+   cliente, o que passa a conversa para humano no agente publicado é:
+   - **pedido explícito de pessoa** (`detectHumanHandoffRequest` em
+     `lib/agent-engine/agent/human-handoff.ts`): regex conservador e sempre ligado. Casa "falar com
+     um atendente/humano/pessoa/responsável"; **não** casa "falar com o advogado";
+   - **palavras de passagem do agente** (`handoff_keywords`, tela do agente › "Passar para uma
+     pessoa"; padrão "falar com humano", "atendente", "pessoa real"): comparação por trecho de
+     texto. Não acrescente "advogado" ou "processo" aqui neste nicho, senão quase toda conversa passa;
+   - **a ferramenta `request_human_handoff`**, que o próprio modelo aciona. A descrição dela
+     (`AGENT_TOOL_DEFS` em `lib/agent-engine/agent/inbound-turn.ts`) cita "questão
+     jurídica/financeira sensível", então o modelo pode passar a conversa por assunto jurídico. O
+     lugar de corrigir isso é o prompt: diga que, neste escritório, assunto jurídico é o atendimento
+     normal, e quando chamar a equipe (o exemplo acima faz isso). Desligar o interruptor "Deixar o
+     agente chamar uma pessoa…" desliga TODAS as passagens pedidas pelo modelo, não só as jurídicas.
+   Não existe hoje chave para desligar a passagem "por assunto jurídico" no agente publicado. Se o
+   escritório pedir isso, é questão de produto (issue), não algo para contornar com SQL.
 2. **"Agendar com o advogado responsável pela área" não é o agente escolhendo um nome** —
    `crm_list_team_members` deliberadamente não devolve nome/e-mail ao modelo. O roteamento certo é
    por **tipo de atendimento** (Agenda › Tipos de atendimento), um por área, cada um com

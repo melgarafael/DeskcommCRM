@@ -19,6 +19,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
+import { enderecoAproximadoDoPino } from "@/lib/mapas/credencial";
 import { lerLocalizacao, type Localizacao } from "@/lib/messaging/localizacao";
 
 import { resolveZernioCreds, type ZernioCredentials } from "./credentials";
@@ -112,12 +113,71 @@ export async function completarLocalizacao(
       });
       return msg;
     }
-    return { ...msg, location };
+    // Com a chave de Mapas da organização, as coordenadas ganham rua, cidade e
+    // região aproximadas — o agente deixa de perguntar a cidade de quem mandou o
+    // pino. Sem chave, nenhuma rede a mais; e a falha nunca derruba o pino.
+    const aproximado = await enderecoAproximadoDoPino(admin, organizationId, location);
+    return { ...msg, location: aproximado ? { ...location, aproximado } : location };
   } catch (err) {
     logger.warn("zernio: busca das coordenadas do pino falhou — mensagem entra com o marcador", {
       organization_id: organizationId,
       detail: err instanceof Error ? err.message : String(err),
     });
     return msg;
+  }
+}
+
+/**
+ * O pino ficou só com o marcador: era pino (o texto é o alfinete), veio pelo
+ * WhatsApp e a busca das coordenadas não trouxe nada — a API não respondeu a
+ * tempo, ou a mensagem ainda não aparecia na listagem.
+ *
+ * Medido em 29/09/2026: "The operation was aborted due to timeout" duas vezes
+ * seguidas, e o pino de um pedido confirmado ficou sem mapa — o entregador sem
+ * a localização. A próxima busca, minutos depois, trouxe as coordenadas.
+ */
+export function pinoFicouSemCoordenadas(msg: ZernioInboundMessage): boolean {
+  return (
+    msg.kind === "message" &&
+    msg.direction === "inbound" &&
+    msg.attachments.length === 0 &&
+    !msg.location &&
+    Boolean(msg.accountId) &&
+    ehMarcadorDeLocalizacao(msg.text)
+  );
+}
+
+/** O evento que pede uma nova busca das coordenadas, consumido por `pino-reintento.handler.ts`. */
+export const EVENTO_NOVA_BUSCA_DO_PINO = "message.location_retry_requested";
+
+/**
+ * Pede uma nova busca das coordenadas, depois da ingestão. Best-effort, como a
+ * persistência de mídia: a mensagem já está gravada, e derrubar a ingestão aqui
+ * devolveria 500 ao provedor, que reenviaria tudo.
+ */
+export async function pedirNovaBuscaDoPino(
+  admin: SupabaseClient,
+  organizationId: string,
+  messageId: string,
+  msg: ZernioInboundMessage,
+): Promise<void> {
+  const { error } = await admin.rpc(
+    "emit_event" as never,
+    {
+      p_event_type: EVENTO_NOVA_BUSCA_DO_PINO,
+      p_entity_kind: "message",
+      p_entity_id: messageId,
+      p_payload: {
+        message_id: messageId,
+        account_id: msg.accountId,
+        provider_conversation_id: msg.conversationId,
+        external_id: msg.externalId,
+      },
+      p_metadata: { source: "zernio_webhook" },
+      p_organization_id: organizationId,
+    } as never,
+  );
+  if (error) {
+    logger.warn("zernio: não consegui pedir a nova busca do pino", { organization_id: organizationId, detail: error.message });
   }
 }

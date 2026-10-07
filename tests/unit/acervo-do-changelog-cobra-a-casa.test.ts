@@ -226,4 +226,68 @@ describe("a medição do acervo de .changes/ saiu do PR e continua viva", () => 
       ).not.toMatch(/candidataDoAcervo/);
     });
   });
+
+  // ─── 5. A OUTRA METADE DO #558: O QUE O VERMELHO DIZ ──────────────────────
+  //
+  // A seção 4 acima fecha a PRIMEIRA metade do defeito (o gate MEDIR o acervo
+  // no caminho do PR). A segunda é o QUE ele falava quando reprovava:
+  // "Enxugue o corpo dos fragmentos em `.changes/`" mandava o autor enxugar
+  // texto de terceiro — e, se obedecesse, encolhia o fragmento errado e o
+  // vermelho continuava. Medido no PR #552: o fragmento dele tinha 1.475 B num
+  // teto de 30.000. Culpar quem não tem culpa é pior que o vermelho: é a
+  // primeira coisa que um contribuinte de fora vê do repo.
+  //
+  // Isto não era cobrado por nada. `grep "Enxugue o corpo" tests/` voltava
+  // VAZIO — por não haver teste, não por haver um teste negando a frase. Um
+  // alarme sem trava some no primeiro "limpeza" de mensagem e volta a acusar
+  // quem não pode pagar. Aqui a frase é proibida na FONTE (onde o `conserto`
+  // nasce) e no CLI, e o conserto é cobrado pelo ATOR que ele nomeia.
+  describe("5. a mensagem do vermelho é da casa, não do contribuinte", () => {
+    const SCRIPT = fs.readFileSync(path.join(RAIZ, "scripts/acervo-cabe-na-tela.ts"), "utf8");
+    const REGUA = fs.readFileSync(path.join(RAIZ, "lib/release/cabe-na-tela.ts"), "utf8");
+    // As duas formas em que a acusação já circulou: imperativo ("Enxugue o
+    // corpo…", a que o PR #552 recebeu) e infinitivo ("enxugar o corpo…", como
+    // os cabeçalhos deste repo a citam hoje). Proibida na FONTE, não no
+    // cabeçalho: citar a frase como história é o que impede de esquecê-la.
+    const ACUSACAO = /enxug(?:ue|ar) o corpo d[oa]s fragmentos/i;
+
+    it("o conserto do acervo nomeia o dono da dívida — a casa, nunca o PR", () => {
+      const c = candidataDoAcervo(RAW, [sintetico(1500)]);
+      expect(c, "candidataDoAcervo devolveu null com fragmento na mão").not.toBeNull();
+      expect(
+        c!.conserto,
+        "o conserto do acervo parou de dizer de quem é a dívida",
+      ).toMatch(/dívida da casa, não do PR/);
+      expect(c!.conserto, "o conserto do acervo voltou a culpar o autor do PR").not.toMatch(ACUSACAO);
+    });
+
+    it("nenhuma mensagem que o AUTOR DO PR vê aponta para .changes/", () => {
+      // A régua é o objeto que o teste do PR renderiza na falha. Se algum dia
+      // voltar a apontar `.changes/`, o vermelho volta a pedir trabalho de
+      // terceiro — e é AQUI que isso morre, não no relato de quem recebeu.
+      const candidatas = candidatasDoPr(RAW);
+      expect(candidatas.length, "controle: o caminho do PR ficou sem candidata").toBeGreaterThan(0);
+      for (const c of candidatas) {
+        expect(
+          c.conserto,
+          `a candidata "${c.nome}" manda o autor do PR mexer em .changes/ — fragmento não é dele`,
+        ).not.toMatch(/\.changes/);
+        expect(c.conserto, `a candidata "${c.nome}" volta a culpar o contribuinte`).not.toMatch(ACUSACAO);
+      }
+    });
+
+    it("a frase que acusa não existe em nenhum arquivo que produz a mensagem", () => {
+      expect(REGUA, "a régua compartilhada voltou a carregar a acusação").not.toMatch(ACUSACAO);
+      expect(SCRIPT, "o CLI do acervo voltou a carregar a acusação").not.toMatch(ACUSACAO);
+    });
+
+    it("e o CLI diz QUEM paga — a frase que substitui a acusação está lá", () => {
+      // Proibir sem substituir viraria silêncio: quem lê o vermelho precisaria
+      // adivinhar o conserto. O par abaixo é o que o issue #558 pediu no lugar.
+      expect(SCRIPT, "o CLI perdeu a frase que separa a dívida da casa da do PR").toMatch(
+        /dívida da casa, não de um PR/,
+      );
+      expect(SCRIPT, "o CLI perdeu o conserto certo: cortar release").toMatch(/CORTAR RELEASE/);
+    });
+  });
 });

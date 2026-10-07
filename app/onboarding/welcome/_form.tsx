@@ -15,32 +15,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { FUSO_PADRAO, FUSOS_DO_ONBOARDING } from "@/lib/tempo/fusos";
 
-/**
- * Cidade, não identificador de fuso. A lista mostrava "America/Bahia" e
- * "America/Fortaleza" e esperava que a pessoa soubesse em qual delas mora — o
- * identificador é do sistema, o que ela reconhece é a cidade.
- */
-const FUSOS: { id: string; cidade: string }[] = [
-  { id: "America/Sao_Paulo", cidade: "São Paulo, Rio, Brasília, Sul e Sudeste" },
-  { id: "America/Recife", cidade: "Recife, Salvador, Fortaleza e Nordeste" },
-  { id: "America/Belem", cidade: "Belém e Pará" },
-  { id: "America/Manaus", cidade: "Manaus e Amazonas" },
-  { id: "America/Cuiaba", cidade: "Cuiabá e Mato Grosso" },
-  { id: "America/Rio_Branco", cidade: "Rio Branco e Acre" },
-  { id: "America/Argentina/Buenos_Aires", cidade: "Buenos Aires" },
-  { id: "Europe/Lisbon", cidade: "Lisboa" },
-  { id: "Europe/Madrid", cidade: "Madri" },
-  { id: "America/New_York", cidade: "Nova York" },
-  { id: "America/Los_Angeles", cidade: "Los Angeles" },
-  { id: "UTC", cidade: "Outro (horário universal)" },
-];
 
-export function WelcomeForm({ defaultOrgName }: { defaultOrgName: string }) {
+export function WelcomeForm({
+  defaultOrgName,
+  orgId,
+}: {
+  defaultOrgName: string;
+  orgId: string;
+}) {
   const t = useT();
   const [displayName, setDisplayName] = useState(defaultOrgName);
   const [oQueFaz, setOQueFaz] = useState("");
-  const [timezone, setTimezone] = useState("America/Sao_Paulo");
+  const [timezone, setTimezone] = useState(FUSO_PADRAO);
   const [accepted, setAccepted] = useState(false);
   const [pending, startTransition] = useTransition();
 
@@ -107,7 +95,7 @@ export function WelcomeForm({ defaultOrgName }: { defaultOrgName: string }) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {FUSOS.map((f) => (
+            {FUSOS_DO_ONBOARDING.map((f) => (
               <SelectItem key={f.id} value={f.id}>
                 {t(f.cidade)}
               </SelectItem>
@@ -115,6 +103,10 @@ export function WelcomeForm({ defaultOrgName }: { defaultOrgName: string }) {
           </SelectContent>
         </Select>
         <input type="hidden" name="timezone" value={timezone} />
+        {/* A org para a qual ESTA aba foi aberta. No submit, o server action
+            resolve por ela (validada como membership), não pela org ativa do
+            momento — que outra aba pode ter trocado. */}
+        <input type="hidden" name="organization_id" value={orgId} />
         <p className="text-xs text-muted-foreground">
           {t("Decide o horário em que seu funcionário pode falar com clientes.")}
         </p>

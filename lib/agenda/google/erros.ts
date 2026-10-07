@@ -165,6 +165,14 @@ function extrairMotivos(erro: unknown): string[] {
 
   // `{ error: "invalid_grant" }` — o formato do endpoint de token, em que
   // `error` é STRING.
+  //
+  // ⚠️ Essa string pode chegar COM A DESCRIÇÃO COLADA: quem classifica a
+  // renovação passa `leitura.detalhe`, que o `oauth.ts` monta como
+  // `` `${error}: ${error_description}` `` (ex.:
+  // `invalid_grant: Token has been expired or revoked.`). Aqui guardamos ela
+  // inteira — quem decide é a régua de comparação em
+  // `classificarErroDoGoogle`, que casava só por igualdade exata e perdia o
+  // código (#2384).
   empilhar(e.error);
   // …e `{ error: { code, errors[], status } }` — o corpo cru da API, em que
   // `error` é OBJETO. Só aceitar a string descartava este em silêncio, e era
@@ -270,15 +278,42 @@ const FRASE: Record<DesfechoDoGoogle, string> = {
   permanente: "o Google recusou e repetir não muda o resultado",
 };
 
+/**
+ * O motivo casa quando o CÓDIGO está no INÍCIO dele — igualdade exata perdia a
+ * descrição que vem junto (#2384).
+ *
+ * Quem classifica a renovação recebe `leitura.detalhe`, que o `oauth.ts` monta
+ * como `` `${error}: ${error_description}` `` (ex.:
+ * `invalid_grant: Token has been expired or revoked.`). Com
+ * `motivos.includes("invalid_grant")` essa string não casava: o desfecho caía
+ * em `transitorio`, `estadoDaConexaoApos` devolvia `null`, a conexão
+ * continuava `healthy` e o cron só somava `falhas` para sempre — o sintoma
+ * medido na issue: `reautenticar` sempre 0 com falha em todo ciclo.
+ *
+ * O que vem depois do código tem de começar por separador: `:` (o que o
+ * `oauth.ts` cola) ou espaço (`reason: texto`). Sem essa régua,
+ * `invalid_grantante` casaria com `invalid_grant`. E a forma SEM descrição
+ * continua passando: igualdade é o caso particular em que não há resto nenhum
+ * depois do código.
+ */
+function casouPorPrefixo(motivo: string, codigo: string): boolean {
+  if (motivo === codigo) return true;
+  if (!motivo.startsWith(codigo)) return false;
+  const resto = motivo.slice(codigo.length);
+  return resto.startsWith(":") || resto.startsWith(" ");
+}
+
 export function classificarErroDoGoogle(erro: unknown, operacao: OperacaoNoGoogle): ClassificacaoDoErro {
   const status = extrairStatus(erro);
   const motivos = extrairMotivos(erro);
   const esperarSegundos = extrairRetryAfter(erro);
   const primeiroMotivo = motivos[0] ?? null;
 
-  const tem = (nome: string) => motivos.includes(nome);
-  const temCota = motivos.some((m) => MOTIVOS_DE_COTA.has(m));
-  const temAppErrado = motivos.some((m) => MOTIVOS_DE_APP_ERRADO.has(m));
+  const temAlgum = (codigos: readonly string[]) =>
+    motivos.some((motivo) => codigos.some((codigo) => casouPorPrefixo(motivo, codigo)));
+  const tem = (nome: string) => temAlgum([nome]);
+  const temCota = temAlgum([...MOTIVOS_DE_COTA]);
+  const temAppErrado = temAlgum([...MOTIVOS_DE_APP_ERRADO]);
 
   const desfecho: DesfechoDoGoogle = (() => {
     // O app OAuth da instalação está mal configurado. Vem antes de tudo porque

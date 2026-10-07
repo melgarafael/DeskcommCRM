@@ -41,6 +41,7 @@ export interface FonteVisivel {
   organization_id: string;
   name: string;
   is_active: boolean;
+  authorize_ai_on_capture: boolean;
   kind: string;
   path_token: string;
   default_pipeline_id: string;
@@ -65,7 +66,7 @@ export interface FonteVisivel {
 const COLUNAS =
   "id, organization_id, name, is_active, kind, path_token, default_pipeline_id, default_stage_id, " +
   "redirect_to, field_map, last_received_at, secret_encrypted, created_at, updated_at, " +
-  "last_change_actor_kind, last_change_at";
+  "last_change_actor_kind, last_change_at, authorize_ai_on_capture";
 
 function semSegredo(linha: Record<string, unknown>): FonteVisivel {
   const { secret_encrypted, ...resto } = linha;

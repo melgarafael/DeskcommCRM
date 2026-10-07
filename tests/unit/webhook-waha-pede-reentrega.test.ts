@@ -116,6 +116,7 @@ vi.mock("@/lib/waha/ingest", async (original) => {
 import { logger } from "@/lib/logger";
 import { POST as postGlobal } from "@/app/api/v1/webhooks/waha/route";
 import { POST as postPorToken } from "@/app/api/v1/webhooks/waha/[token]/route";
+import { limparMemoriaDeSessoes } from "@/lib/waha/sessao-do-webhook";
 import { MAX_TENTATIVAS, reprocessarArquivoDeWebhooks } from "@/lib/channels/reprocessar-arquivo-de-webhook";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { MENSAGEM_QUE_NAO_ENTROU } from "@/lib/event-log/aviso-de-evento-morto";
@@ -140,6 +141,8 @@ const desfechosGravados = () =>
   ops.filter((o) => o.tabela === "webhook_events_log" && o.op === "update").map((o) => o.valores);
 
 beforeEach(() => {
+  // A sessão `default` é reutilizada entre casos.
+  limparMemoriaDeSessoes();
   ops.length = 0;
   roteiro = [];
   despachos = 0;

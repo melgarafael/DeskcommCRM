@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Trash, CaretUp, CaretDown } from "@/lib/ui/icons";
-import { createAutomationRuleSchema, TRIGGER_EVENTS } from "@/lib/schemas/webhooks";
+import { acoesQueFechamLaco, createAutomationRuleSchema, TRIGGER_EVENTS } from "@/lib/schemas/webhooks";
 import {
   DIAS_MAX,
   DIAS_MIN,
@@ -130,6 +130,14 @@ const AGENDAMENTO_FIELDS: CuratedField[] = [
 const CURATED_FIELDS: Record<TriggerEvent, CuratedField[]> = {
   "lead.created": LEAD_FIELDS,
   "lead.stage_changed": [...LEAD_FIELDS, STAGE_FIELD],
+  // #1528 — os quatro do encerramento/reabertura/atribuição: as condições são
+  // as do NEGÓCIO (é dele o desfecho). O motivo da perda não é condição — quem
+  // filtra por motivo de perda filtra o campo livre na própria etapa/linha; o
+  // que dá para filtrar aqui é o que o lead é (funil, tags, origem).
+  "lead.won": LEAD_FIELDS,
+  "lead.lost": LEAD_FIELDS,
+  "lead.reopened": LEAD_FIELDS,
+  "lead.assigned": LEAD_FIELDS,
   "message.received": MESSAGE_FIELDS,
   // O que a regra quer filtrar numa falha é o MOTIVO (só o 131047, só o
   // timeout) e de QUEM é o contato — `event.erro.codigo` é o mesmo valor que a
@@ -728,11 +736,15 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                 <SelectValue placeholder={t("Adicionar ação")} />
               </SelectTrigger>
               <SelectContent>
-                {(Object.keys(ACTION_LABELS) as ActionType[]).map((actionType) => (
-                  <SelectItem key={actionType} value={actionType}>
-                    {t(ACTION_LABELS[actionType])}
-                  </SelectItem>
-                ))}
+                {/* Os gatilhos de ganho/perda/reabertura/responsável não oferecem
+                    as ações que regravam o lead: fechariam laço (#1528). */}
+                {(Object.keys(ACTION_LABELS) as ActionType[])
+                  .filter((actionType) => !acoesQueFechamLaco(triggerEvent, [{ type: actionType }]).length)
+                  .map((actionType) => (
+                    <SelectItem key={actionType} value={actionType}>
+                      {t(ACTION_LABELS[actionType])}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
           </section>

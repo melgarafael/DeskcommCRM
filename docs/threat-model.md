@@ -41,7 +41,6 @@ São conclusões de leitura de código.
 | `/api/internal/*` | `x-internal-secret` ou `Bearer INTERNAL_SECRET`, comparação em tempo constante | ❌ |
 | `/api/mcp` | `Bearer tok_...` validado contra `api_tokens` (hash SHA256) | ❌ |
 | `/403`, `/404`, `/500`, `/503`, `/admin/forbidden` | — | ❌ |
-| `/account-suspended` | `requireAuth()` + organização ativa da SESSÃO; o estado das orgs é lido por service role só com ids da sessão, nunca da URL | ❌ |
 
 **Leitura:** a autenticação de cada superfície está bem construída — HMAC com
 `timingSafeEqual` em 6 módulos distintos, crons fail-closed, bearer só via header

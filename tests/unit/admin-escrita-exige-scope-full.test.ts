@@ -31,6 +31,13 @@ import { arquivosDeCodigo, caminhoRelativo } from "./helpers/varrer-codigo";
  * re-export `export { X } from "./outro"`).
  */
 const METODOS_DE_ESCRITA = new Set(["POST", "PATCH", "PUT", "DELETE"]);
+/**
+ * O atalho de papel que já cobra o scope. `podeAdministrarEmpresa` é importado
+ * (o limite acima o deixaria cego), então ele entra pelo nome — e o caso
+ * "o atalho importado passa por escreveComoPlatformAdmin" prova, lendo o
+ * arquivo dele, que o nome não é um salvo-conduto.
+ */
+const ATALHOS_COM_SCOPE = new Set(["escreveComoPlatformAdmin", "podeAdministrarEmpresa"]);
 
 /** Allowlist que SÓ ENCOLHE. Chave `arquivo#regra:alvo`; valor = porquê (≥ 20 caracteres). */
 const EXCECOES: Record<string, string> = {
@@ -97,7 +104,7 @@ function oQueAlcanca(no: ts.Node, funcoes: ReturnType<typeof funcoesDoTopo>, vis
       const nome = n.expression.text;
       if (nome === "requirePlatformAdmin") r.chamaLeitura = true;
       if (nome === "requirePlatformAdminEscrita" || nome === "escritaDeAdminOuRecusa") r.chamaEscrita = true;
-      if (nome === "escreveComoPlatformAdmin") r.chamaAtalhoComScope = true;
+      if (ATALHOS_COM_SCOPE.has(nome)) r.chamaAtalhoComScope = true;
       seguir(nome);
     }
     // `comX(handle)`: a função local passada como argumento também roda
@@ -177,6 +184,15 @@ describe("escrita de platform admin exige scope full (a CLASSE)", () => {
     expect(fora, "support_readonly não escreve: rota usa requirePlatformAdminEscrita; server action (D), escritaDeAdminOuRecusa").toEqual([]);
   });
 
+  it("o atalho importado passa por escreveComoPlatformAdmin (senão o nome seria salvo-conduto)", () => {
+    const arquivo = "lib/auth/pode-administrar-empresa.ts";
+    const sf = ts.createSourceFile(arquivo, readFileSync(arquivo, "utf8"), ts.ScriptTarget.Latest, true);
+    const atalho = funcoesDoTopo(sf).get("podeAdministrarEmpresa");
+    expect(atalho, `${arquivo} não exporta mais podeAdministrarEmpresa`).toBeDefined();
+    const r = oQueAlcanca(atalho!.no, funcoesDoTopo(sf), new Set(["podeAdministrarEmpresa"]));
+    expect(r.chamaAtalhoComScope && !r.leFlag, "podeAdministrarEmpresa tem de decidir por escreveComoPlatformAdmin, nunca pela flag crua").toBe(true);
+  });
+
   it("a allowlist só encolhe: toda exceção ainda viola e tem porquê", () => {
     const chaves = new Set(VIOLACOES.map((v) => v.chave));
     for (const [chave, porque] of Object.entries(EXCECOES)) {
@@ -229,6 +245,8 @@ describe("controles do instrumento", () => {
     expect(violacoesDeEscrita(atalho, "a.ts").map((v) => v.chave)).toEqual(["a.ts#B:flag"]);
     const comScope = `"use server";\nexport async function salvar(u: { is_platform_admin: boolean }, papel: number) { if (!escreveComoPlatformAdmin(u) && papel < 4) return; void u.is_platform_admin; }`;
     expect(violacoesDeEscrita(comScope, "a.ts")).toEqual([]);
+    const comAtalhoUnico = `"use server";\nexport async function salvar(u: { is_platform_admin: boolean }, o: unknown) { if (!podeAdministrarEmpresa(u, o)) return; void u.is_platform_admin; }`;
+    expect(violacoesDeEscrita(comAtalhoUnico, "a.ts")).toEqual([]);
     // Fora de "use server" a regra B não vale (a A cobre os handlers de rota).
     expect(violacoesDeEscrita(atalho.replace('"use server";\n', ""), "a.ts")).toEqual([]);
   });

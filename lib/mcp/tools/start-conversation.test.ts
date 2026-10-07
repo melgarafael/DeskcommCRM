@@ -49,6 +49,16 @@ interface IdemState {
 function makeCtx(state: IdemState): McpContext {
   const supabase = {
     from: (table: string) => {
+      // Spec 21: a tool confere `is_personal` antes de abrir. Sem pessoal na
+      // base do teste, a consulta volta vazia e o fluxo segue igual a antes.
+      if (table === "contacts") {
+        const cadeia: Record<string, () => unknown> = {};
+        for (const metodo of ["select", "eq", "in", "is", "limit"]) {
+          cadeia[metodo] = () => cadeia;
+        }
+        cadeia["maybeSingle"] = () => Promise.resolve({ data: null, error: null });
+        return cadeia;
+      }
       if (table !== "idempotency_keys") throw new Error(`tabela inesperada: ${table}`);
       return {
         select: () => ({

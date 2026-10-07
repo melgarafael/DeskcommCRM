@@ -263,6 +263,37 @@ export const RETENCAO_CANDIDATOS_GOLDEN_DIAS_PADRAO = 90;
  */
 export const RETENCAO_CANDIDATOS_GOLDEN_DIAS_PISO = 30;
 
+/**
+ * 365 dias para a MÍDIA de mensagem (`messages.media_storage_path` / bucket
+ * `whatsapp-media`, migration 0432).
+ *
+ * É o padrão do formulário da organização (`organizations.media_retention_days`,
+ * migration 0432/#1731). A MÍDIA que a empresa promete guardar não é tratada
+ * como a auditoria (1825 dias): é o ATTACHMENT do canal, reconstruível pelo
+ * provedor enquanto ele a tiver — o que a política segura é o custo e a
+ * finalidade, não o histórico legal.
+ *
+ * Quem APLICA é `fn_enfileirar_midia_vencida` (0432 + 0557), chamada em lotes
+ * pelo cron `media-retention` — e o piso mora DENTRO do corpo da função
+ * (`greatest(...)`), valendo para qualquer chamador, inclusive um `psql` na mão.
+ *
+ * ⚠️ MÍDIA TEM INTERRUPTOR (migration 0557, issue #1534): a função só enfileira
+ * mídia vencida de organização com `media_retention_enforced = true`, que é o
+ * PADRÃO — a limpeza roda desde a 0432 e quem já existia continua com ela
+ * (doc 92, opção A). Esta dupla de constantes descreve o PADRÃO e o PISO; quem
+ * decide se VALE para uma organização é o interruptor, não estes números.
+ */
+export const RETENCAO_MIDIA_DIAS_PADRAO = 365;
+/**
+ * Piso de 30 dias para a MÍDIA: o mesmo piso que o formulário do tenant.
+ *
+ * Valor menor gravado direto no banco encontra o `greatest(..., 30)` no corpo
+ * da função e vira 30 — a régua do formulário é também a do banco, como as
+ * irmãs. Não pode ficar abaixo disso: o aceite do #1534 diz explicitamente que
+ * o piso vale mesmo com valor menor no banco.
+ */
+export const RETENCAO_MIDIA_DIAS_PISO = 30;
+
 export interface RetencaoInterpretada {
   /** Dias a pedir ao banco. Nunca abaixo do piso, nunca `NaN`. */
   readonly dias: number;

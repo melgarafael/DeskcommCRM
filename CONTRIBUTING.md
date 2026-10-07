@@ -75,7 +75,7 @@ Ao finalizar um epic:
      está como aviso, então ele passa verde; a conferência é humana
    - Env vars novas em `.env.example` **e** `lib/env.ts`, com default que não quebre instalação nova
    - Mudança de schema saiu como **tripla**: arquivo em `supabase/migrations/`, apêndice idempotente
-     no `supabase/baseline.sql` e linha no `MANIFEST.md`. O kit self-host aplica **só o baseline** —
+     no `supabase/baseline.sql` e uma linha `-- manifest: <o quê e por quê>` no cabeçalho do próprio `.sql` (não no `MANIFEST.md`, que é histórico). O kit self-host aplica **só o baseline** —
      migration que não chega lá não chega em quem instalou numa VPS. Nenhum job de CI confere isso
    - **Se você tocou `Dockerfile*`, `docker-compose*.yml` ou `hostgator-setup-kit/`:** a mudança
      alcança quem **já** instalou. Lei em [`docs/doctrine/packaging.md`](docs/doctrine/packaging.md).

@@ -22,9 +22,15 @@ import { DEFAULT_CLASSIFIER_MODEL } from "@/lib/ai/gateway";
 import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
 import { lerAmbiente } from "@/lib/instalacao/ambiente";
 import { logger } from "@/lib/logger";
-import { PROVEDORES } from "@/lib/ai/pontos/provedores";
+import { criarSessaoPkce } from "@/lib/ai/pontos/pkce-da-assinatura";
+import { emitirEstado } from "@/lib/agenda/google/estado";
+import { env } from "@/lib/env";
+import { PROVEDOR_POR_ASSINATURA, PROVEDORES } from "@/lib/ai/pontos/provedores";
+import { moduloLigado } from "@/lib/instalacao/modulos";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { tagDeIdioma } from "@/lib/i18n/datas";
 import { CredentialsList } from "./_components/CredentialsList";
+import { PainelDeLoginCodex } from "./_components/PainelDeLoginCodex";
 
 export const dynamic = "force-dynamic";
 
@@ -47,8 +53,52 @@ export default async function CredentialsPage() {
     .eq("organization_id", activeOrg.orgId)
     .order("created_at", { ascending: false });
 
-  const credentials = (data ?? []) as CredentialRow[];
+  const todas = (data ?? []) as CredentialRow[];
+
+  // O INTERRUPTOR DA INSTALAÇÃO (#1672, itens 6 e 9): desligado, a linha do
+  // login por assinatura NÃO aparece aqui — nem no painel, nem na lista de
+  // chaves. A leitura do banco continua acontecendo (a linha é da empresa,
+  // cifrada e protegida por RLS), mas ninguém a enxerga: o leitor próprio
+  // (`lib/ai/credenciais/login-codex.ts`) também recusa quando o módulo está
+  // fora.
+  const moduloLoginCodex = await moduloLigado(createAdminClient(), "login_codex");
+
+  // A linha do login por assinatura não é uma CHAVE de API: ela guarda o par
+  // de tokens da conta da empresa, e vai para o painel próprio. Fora da lista
+  // de chaves, ela também não mentiria como "credencial" no agrupamento por
+  // provedor (que só conhece quem cadastra chave).
+  const linhaDeLogin = moduloLoginCodex
+    ? (todas.find((c) => c.provider === PROVEDOR_POR_ASSINATURA) ?? null)
+    : null;
+  const credentials = todas.filter((c) => c.provider !== PROVEDOR_POR_ASSINATURA);
   const canWrite = ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
+  // O par PKCE DESTA renderização: o link mostrado e o verifier do campo de
+  // colagem nascem juntos — e só JUNTOS valem: o `code` que o navegador deixa
+  // não troca sem o verifier. Nenhum dos dois circula sozinho (o `code` só
+  // existe no navegador de quem conecta, e a troca acontece no servidor), mas
+  // isso não faz do verifier um valor público: é segredo de uso ÚNICO, que
+  // existe para esta conexão e morre com ela. Não é chave da OpenAI — quem
+  // tiver os dois, porém, troca o `code` por tokens.
+  //
+  // O `state` é ASSINADO com a empresa e a pessoa (o mesmo `emitirEstado` da
+  // agenda do Google): a action só troca o código cujo retorno traz este
+  // `state`. Sem segredo utilizável o painel não aparece — um login que
+  // ninguém consegue conferir não deve ser oferecido.
+  let sessaoPkce: ReturnType<typeof criarSessaoPkce> | null = null;
+  if (moduloLoginCodex) {
+    try {
+      sessaoPkce = criarSessaoPkce(
+        emitirEstado(
+          { organizationId: activeOrg.orgId, userId: user.id },
+          { segredo: env.INTERNAL_SECRET, agora: new Date() },
+        ),
+      );
+    } catch (err) {
+      logger.warn("[ai/credentials] login por assinatura sem state assinado (INTERNAL_SECRET?)", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   // Mesma regra do DELETE — e a mesma da FK `ON DELETE RESTRICT`: TODA versão
   // que aponta para a credencial trava a exclusão, não só a publicada. O número
@@ -165,6 +215,14 @@ export default async function CredentialsPage() {
           )}
         </p>
       </header>
+      {moduloLoginCodex && sessaoPkce && (
+        <PainelDeLoginCodex
+          url={sessaoPkce.url}
+          codeVerifier={sessaoPkce.codeVerifier}
+          conectado={linhaDeLogin !== null}
+          validada={linhaDeLogin?.validated_at != null}
+        />
+      )}
       <CredentialsList
         initialData={credentials}
         canWrite={canWrite}

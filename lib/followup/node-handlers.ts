@@ -883,6 +883,26 @@ export function processNode(input: {
       return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
     }
 
+    case "move_lead": {
+      // #2065 — mover o card de etapa é PASSAGEM no relógio, como o
+      // `internal_task`: o nó avança pela aresta única e quem ESCREVE a etapa é
+      // o motor ao aplicar o `advance` (`db.moverLeadNoFunil`, que chama o
+      // `moveLeadHandler` da casa), guardado pelo idempotency_key do evento do
+      // passo — replay do tick não move o card duas vezes.
+      const edge = selectEdge(edges, node.id, { type: "always" });
+      if (!edge) return { kind: "fail", error: `move_lead node "${node.id}" has no outbound edge` };
+      return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
+    }
+
+    case "edit_lead_tag": {
+      // #2065 — mesma passagem do `move_lead`: a tag nasce no motor, depois do
+      // evento do passo, com a MESMA trava. Nenhuma mensagem sai daqui (por isso
+      // este nó não está em `NOS_QUE_ENVIAM`).
+      const edge = selectEdge(edges, node.id, { type: "always" });
+      if (!edge) return { kind: "fail", error: `edit_lead_tag node "${node.id}" has no outbound edge` };
+      return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
+    }
+
     case "end": {
       if (node.config.outcome === "custom") {
         return { kind: "complete", outcome: null, cancel_reason: node.config.note };

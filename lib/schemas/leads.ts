@@ -94,6 +94,13 @@ export const CANONICAL_LOST_REASONS = [
    * daqui é uma recusa de tela para uma escrita que funciona.
    */
   "moved_to_another_pipeline",
+  /**
+   * Motivo do SISTEMA para quem respondeu PARAR (#2049, migration 0513): a
+   * ingestão fecha sozinha todo negócio aberto do contato com ele. Não é
+   * `requested_by_customer` porque pedir silêncio não é cancelar. Diferente da
+   * transferência, CONTA como perda — é oportunidade que foi embora.
+   */
+  "opted_out_of_messages",
 ] as const;
 
 /**
@@ -111,6 +118,7 @@ export const ROTULO_DO_MOTIVO_CANONICO: Record<(typeof CANONICAL_LOST_REASONS)[n
   payment_failed: "Falha no pagamento",
   other: "Outro motivo",
   moved_to_another_pipeline: "Levado para outro funil",
+  opted_out_of_messages: "Pediu para não receber mensagens",
 };
 
 /** O rótulo pt-BR do motivo: o do canônico, ou o próprio texto do motivo do funil. */
@@ -147,6 +155,7 @@ export type CategoriaDePerda = (typeof CATEGORIAS_DE_PERDA)[number];
  */
 export const CATEGORIA_PADRAO_DO_MOTIVO: Partial<Record<CanonicalLostReason, CategoriaDePerda>> = {
   requested_by_customer: "Cliente",
+  opted_out_of_messages: "Cliente",
   cancelled_by_customer: "Cliente",
   payment_failed: "Cliente",
   price: "Nós",

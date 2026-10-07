@@ -47,6 +47,15 @@ vi.mock("@/components/shell/TopBar", () => ({ TopBar: () => null }));
 vi.mock("@/components/shell/BarraDeProgressoNavegacao", () => ({
   BarraDeProgressoNavegacao: () => null,
 }));
+// A barra de abas do celular é a SEGUNDA peça fixa do rodapé, e ela fica fora
+// aqui pelo mesmo critério das três acima: não é o assunto. Ela lê `useAuth`
+// para herdar o portão do sidebar, e montá-la exigiria um `<AuthProvider>` em
+// volta de um teste que mede geometria de rodapé.
+//
+// Isto NÃO a deixa sem cobertura — ela declara a própria ocupação e o gate
+// `tests/unit/rodape-ocupado-contrato.test.ts` cobra isso dela por arquivo, mais
+// `components/shell/BarraInferior.celular.test.tsx`, que prova a regra da tela.
+vi.mock("@/components/shell/BarraInferior", () => ({ BarraInferior: () => null }));
 vi.mock("@/hooks/atendimento/useSinalDePresenca", () => ({ useSinalDePresenca: () => {} }));
 vi.mock("@/hooks/notifications/useInboundMessageAlerts", () => ({
   useInboundMessageAlerts: () => {},
@@ -194,8 +203,15 @@ describe("com a chamada em andamento", () => {
 
     expect(reserva()).toBeGreaterThanOrEqual(ocupacao);
     expect(variavel()).toBe(`${reserva()}px`);
+    // A ÁREA SEGURA É O TERCEIRO TERMO. O indicador de home do iOS em tela
+    // cheia ocupa ~34px do fundo e não é peça nossa — ninguém o declara. Fora
+    // do `max()` ele abria um buraco estreito: peça de 20px de alcance deixa a
+    // reserva no piso de 24px, 24 < 34, e o estilo inline vence a classe
+    // `pb-area-segura` do `<main>` — o conteúdo voltava para debaixo do
+    // indicador por causa da peça que devia protegê-lo. O porquê inteiro está
+    // no cabeçalho de `estiloDaReserva`.
     expect(rodape.getAttribute("style") ?? "").toContain(
-      `max(${PISO_DO_RODAPE}px, var(${VARIAVEL_DA_OCUPACAO}, 0px))`,
+      `max(${PISO_DO_RODAPE}px, env(safe-area-inset-bottom, 0px), var(${VARIAVEL_DA_OCUPACAO}, 0px))`,
     );
   });
 

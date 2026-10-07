@@ -77,9 +77,12 @@ export async function zernioReportConversion(
     eventName: input.event,
     eventId: input.eventId,
     eventTime: Math.floor(input.occurredAt.getTime() / 1000),
-    value: input.valueCents / 100,
-    currency: input.currency,
   };
+  // Sem valor (evento de etapa), sem `value`/`currency` — zero seria mentira.
+  if (input.valueCents !== null) {
+    corpo.value = input.valueCents / 100;
+    corpo.currency = input.currency;
+  }
   if (input.providerConversationId) corpo.conversationId = input.providerConversationId;
   if (input.phone) corpo.phoneE164 = input.phone;
 

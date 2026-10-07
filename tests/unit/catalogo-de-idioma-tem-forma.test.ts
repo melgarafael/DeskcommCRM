@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
 import { format } from "date-fns";
-import { zhCN } from "date-fns/locale";
+import { enUS, zhCN } from "date-fns/locale";
 import { describe, expect, it } from "vitest";
 
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
@@ -28,7 +28,7 @@ const RAIZ = join(__dirname, "..", "..");
 const PASTA = join(RAIZ, "lib", "i18n", "traducoes");
 
 /** Os `Locale` do date-fns de quem tem catálogo — só para o teste formatar. */
-const LOCALE_DO_CATALOGO: Record<string, typeof zhCN> = { "zh-CN": zhCN };
+const LOCALE_DO_CATALOGO: Record<string, typeof zhCN> = { "zh-CN": zhCN, en: enUS };
 
 const catalogos = readdirSync(PASTA)
   .filter((arquivo) => arquivo.endsWith(".json"))

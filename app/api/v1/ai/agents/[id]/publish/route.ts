@@ -14,9 +14,9 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { publishSchema, PUBLISH_ERROR_CODES } from "@/lib/ai/agents/validation";
 import { VALID_TOOL_IDS } from "@/lib/mcp/tools";
@@ -41,10 +41,20 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     return fail("invalid_request", "id inválido.", 400, { requestId });
   }
 
-  const authz = await requireRole("admin", { requestId, resource: "ai_agents" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_agents",
+    role: "admin",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user: authUser, org: activeOrg } = authz;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
+  const { organizationId, actor } = authz;
+
+  const teto = await tetoDeEscritaDoToken(authz, "ai_agents_publish", requestId);
+  if (teto) return teto;
+  const authUserId = actor.type === "user" ? actor.id : null;
 
   let raw: unknown;
   try {
@@ -69,7 +79,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     .from("ai_agent_versions")
     .select("id, agent_id, organization_id, tool_ids, status")
     .eq("id", parsed.data.version_id)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
 
   if (!targetV || targetV.agent_id !== id) {
@@ -86,7 +96,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   }
 
   const result = await publishAgentVersion(admin, {
-    orgId: activeOrg.orgId,
+    orgId: organizationId,
     agentId: id,
     versionId: parsed.data.version_id,
   });
@@ -105,7 +115,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   void admin
     .from("event_log")
     .insert({
-      organization_id: activeOrg.orgId,
+      organization_id: organizationId,
       event_type: "ai_agent.published",
       // NOT NULL sem default — ver `tests/unit/evento-de-publicacao-tem-dono.test.ts`.
       entity_kind: "ai_agent",
@@ -122,8 +132,9 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   void audit({
     action: "ai_agent.published",
-    actorUserId: authUser.id,
-    organizationId: activeOrg.orgId,
+    actorUserId: authUserId,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: organizationId,
     resourceType: "ai_agent",
     resourceId: id,
     requestId,

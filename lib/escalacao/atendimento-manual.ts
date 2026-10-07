@@ -18,7 +18,7 @@
  * volta na conversa afirmando que "os dados do PIX estão sendo confirmados" —
  * algo que ela não tem nenhuma ferramenta para saber.
  *
- * ## O prazo, e por que ele é 60 minutos
+ * ## O prazo, e por que o padrão é 60 minutos
  *
  * O silêncio EXPIRA sozinho. Não é `'infinity'`: `'infinity'` é o handoff
  * FORMAL, aquele em que alguém clicou "assumir" na tela e assumiu junto a
@@ -34,15 +34,42 @@
  * digitar dentro do CRM) e é curto o bastante para que um engano se pague
  * sozinho no mesmo turno de trabalho, em vez de virar uma conversa morta.
  *
- * ⚠️ Quem quiser outro prazo mexe AQUI, num lugar só: a constante é lida por
- * TODO canal cuja ingestão reconhece saída feita fora do CRM, e pelo teste.
+ * ## O prazo é um ajuste POR EMPRESA — e por que ele precisou existir
+ *
+ * O raciocínio acima vale para o caso que ele mediu, mas ele mediu UM caso: o
+ * dono que responde pelo celular de vez em quando e fecha o assunto. Quem
+ * atende o dia INTEIRO pelo celular tem outra forma — e é o caso mais comum
+ * de consultório e clínica, onde uma pessoa atende, atende e atende.
+ *
+ * Medido numa instalação real (2026-09-30, diagnóstico de @gaberaldo-svg no
+ * #2005): com 60 min, a IA não respondia NENHUMA mensagem de paciente ao longo
+ * do expediente. Não era falha do agente, do funil nem do modelo — a atendente
+ * renovava o prazo a cada fala, e o dia inteiro de atendimento manual é, na
+ * prática, silêncio de 60 min sem fim. O sintoma é o pior possível de
+ * diagnosticar: o agente está publicado, o canal está de pé, e os logs dizem
+ * "turno pulado (sem gasto)", `motivo: "conversa_silenciada"` — que parece
+ * exatamente uma pausa correta.
+ *
+ * Por isso o prazo é `organizations.settings.routing.manual_reply_silence_minutes`,
+ * editável em Configurações › Atendimento, com o 60 de antes como PADRÃO:
+ * empresa que nunca abriu a tela continua com o comportamento medido acima.
+ * A faixa é a mesma da devolução automática (5 min a 24 h, `PRAZO_MIN_MINUTOS`
+ * / `PRAZO_MAX_MINUTOS`). Quem lê é `lerPrazoDoSilencioManualMinutos`; valor
+ * ausente, nulo ou fora da faixa é 60, e falha ao ler `settings` também é 60 —
+ * a pausa nunca deixa de acontecer por causa do ajuste.
+ *
+ * É por empresa, e não por instalação, porque numa VPS com várias empresas a
+ * clínica que atende pelo celular o dia inteiro e a loja que responde de vez
+ * em quando querem prazos diferentes. O ajuste é lido por TODO canal cuja
+ * ingestão reconhece saída feita fora do CRM (qualquer provedor), porque
+ * todos passam por `pausarIaPorAtendimentoManual`.
  *
  * ## Cada mensagem nova do humano RENOVA o prazo
  *
  * O relógio conta a partir da ÚLTIMA fala humana, não da primeira. Sem isso, um
  * atendimento de uma hora e meia veria a IA voltar a falar no meio — que é o
  * pior desfecho possível, porque é justamente quando há uma pessoa na conversa.
- * Na prática: cada chamada propõe `agora + PRAZO` e grava se isso for MAIS
+ * Na prática: cada chamada propõe `agora + prazo` e grava se isso for MAIS
  * TARDE que o silêncio em vigor.
  *
  * ## O que NUNCA encurta
@@ -54,7 +81,7 @@
  *
  * ## O que grava, e o que NÃO grava
  *
- *   - `bot_silenced_until = agora + PRAZO_DO_SILENCIO_MS`
+ *   - `bot_silenced_until = agora + prazo da empresa`
  *   - `last_handoff_at` / `last_handoff_reason` — rastro visível de que uma
  *     pessoa assumiu por fora.
  *
@@ -76,13 +103,67 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
 import { normalizarInstante } from "@/lib/ai/elegibilidade/gate";
+import { PRAZO_MAX_MINUTOS, PRAZO_MIN_MINUTOS } from "@/lib/escalacao/devolucao-automatica";
+
+/** O prazo documentado acima, e o que vale quando a empresa não ajustou nada. */
+export const PRAZO_PADRAO_DO_SILENCIO_MINUTOS = 60;
 
 /**
- * Quanto tempo a IA fica calada depois de uma resposta manual pelo canal.
- * Ver "O prazo, e por que ele é 60 minutos" na docstring do módulo — o número
- * tem motivo, e mudá-lo é uma decisão de produto, não de implementação.
+ * O prazo PADRÃO em milissegundos — o que vale para quem nunca abriu a tela.
+ * Ver "O prazo, e por que o padrão é 60 minutos" na docstring do módulo.
  */
-export const PRAZO_DO_SILENCIO_MS = 60 * 60 * 1000;
+export const PRAZO_DO_SILENCIO_MS = PRAZO_PADRAO_DO_SILENCIO_MINUTOS * 60 * 1000;
+
+/**
+ * Lê `settings.routing.manual_reply_silence_minutes` sem nunca lançar.
+ *
+ * Ausente, nulo, não-número, não-finito ou fora da faixa (5 min a 24 h) é o
+ * padrão de 60. Defensivo porque `settings` é jsonb livre: um valor estragado
+ * gravado à mão não pode virar `NaN` em `bot_silenced_until` — o efeito seria
+ * a IA falando por cima do humano, que é o defeito que este módulo existe para
+ * não ter.
+ */
+export function lerPrazoDoSilencioManualMinutos(settings: unknown): number {
+  const routing = (settings as { routing?: unknown } | null)?.routing;
+  const valor = (routing as { manual_reply_silence_minutes?: unknown } | null)
+    ?.manual_reply_silence_minutes;
+  if (typeof valor !== "number" || !Number.isFinite(valor)) return PRAZO_PADRAO_DO_SILENCIO_MINUTOS;
+  if (valor < PRAZO_MIN_MINUTOS || valor > PRAZO_MAX_MINUTOS) return PRAZO_PADRAO_DO_SILENCIO_MINUTOS;
+  return Math.floor(valor);
+}
+
+/**
+ * O prazo da empresa, em ms. Falha ao ler (rede, RLS, organização sumida) é o
+ * padrão: a pausa tem de acontecer de qualquer jeito, e o padrão é o
+ * comportamento que valia antes de o ajuste existir.
+ */
+async function prazoDoSilencioDaEmpresaMs(
+  admin: SupabaseClient,
+  organizationId: string,
+): Promise<number> {
+  try {
+    const { data, error } = await admin
+      .from("organizations")
+      .select("settings")
+      .eq("id", organizationId)
+      .maybeSingle();
+    if (error) {
+      logger.warn("[atendimento-manual] ajuste do prazo ilegível — vale o padrão de 60 min", {
+        organization_id: organizationId,
+        detail: error.message.slice(0, 160),
+      });
+      return PRAZO_DO_SILENCIO_MS;
+    }
+    const settings = (data as { settings?: unknown } | null)?.settings;
+    return lerPrazoDoSilencioManualMinutos(settings) * 60 * 1000;
+  } catch (err) {
+    logger.warn("[atendimento-manual] leitura do ajuste do prazo lançou — vale o padrão de 60 min", {
+      organization_id: organizationId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "erro",
+    });
+    return PRAZO_DO_SILENCIO_MS;
+  }
+}
 
 /** Motivo gravado quando uma pessoa responde pelo canal, fora do CRM. */
 export const MOTIVO_ATENDIMENTO_MANUAL = "Atendimento manual pelo canal (resposta fora do CRM)";
@@ -118,23 +199,25 @@ export interface PausaPorAtendimentoManualInput {
 }
 
 /**
- * Pausa a IA numa conversa porque uma pessoa respondeu por fora do CRM, por
- * `PRAZO_DO_SILENCIO_MS` a contar de `agora`. Devolve `true` se gravou (pausa
- * nova ou prazo renovado), `false` se havia silêncio mais longo em vigor ou se
- * falhou.
+ * Pausa a IA numa conversa porque uma pessoa respondeu por fora do CRM, pelo
+ * prazo da empresa (`lerPrazoDoSilencioManualMinutos`; padrão de 60 min) a
+ * contar de `agora`. Devolve `true` se gravou (pausa nova ou prazo renovado),
+ * `false` se havia silêncio mais longo em vigor ou se falhou.
  */
 export async function pausarIaPorAtendimentoManual(
   admin: SupabaseClient,
   input: PausaPorAtendimentoManualInput,
 ): Promise<boolean> {
   const agora = input.agora ?? new Date();
-  const propostoMs = input.duravel
-    ? Number.POSITIVE_INFINITY
-    : agora.getTime() + PRAZO_DO_SILENCIO_MS;
-  const gravado = input.duravel ? "infinity" : new Date(propostoMs).toISOString();
   const motivo = input.motivo ?? MOTIVO_ATENDIMENTO_MANUAL;
 
   try {
+    // Dentro do `try`: um instante inválido não pode derrubar a ingestão.
+    const propostoMs = input.duravel
+      ? Number.POSITIVE_INFINITY
+      : agora.getTime() + (await prazoDoSilencioDaEmpresaMs(admin, input.organizationId));
+    const gravado = input.duravel ? "infinity" : new Date(propostoMs).toISOString();
+
     const { data: atual, error: readErr } = await admin
       .from("conversations")
       .select("bot_silenced_until")

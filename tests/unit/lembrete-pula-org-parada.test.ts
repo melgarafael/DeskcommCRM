@@ -10,7 +10,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 
 const mocks = vi.hoisted(() => ({
-  paradas: vi.fn(),
   enviar: vi.fn(),
   abrirConversa: vi.fn(),
   compromissos: [] as Array<Record<string, unknown>>,
@@ -22,10 +21,6 @@ vi.mock("@/app/api/v1/messages/_handler", () => ({ sendMessageHandler: mocks.env
 vi.mock("@/lib/automation/start-conversation", () => ({ ensureConversation: mocks.abrirConversa }));
 vi.mock("@/lib/automation/janela-do-canal", () => ({ adiarAteAJanelaAbrir: async () => null }));
 vi.mock("@/lib/automation/throttle", () => ({ espacarEnvio: async () => {} }));
-vi.mock("@/lib/organizacao/operante", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/organizacao/operante")>()),
-  idsDeOrgsParadas: mocks.paradas,
-}));
 /** PostgREST falso: toda cadeia devolve a si mesma; a lista e as linhas únicas vêm de `mocks`. */
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
@@ -52,24 +47,23 @@ const tipo = {
   name: "Consulta", reminder_enabled: true, reminder_minutes_before: 60, reminder_extra_offsets_minutes: null,
   reminder_template_name: null, reminder_body: null, reminder_bodies: null, location_details: null,
 };
-const compromisso = (id: string, organization_id: string) => ({
+const compromisso = (id: string, organization_id: string, status?: string | null) => ({
   id, organization_id, contact_id: "contato-1", title: "Retorno",
   starts_at: new Date(Date.now() + 30 * 60_000).toISOString(), location_details: null,
   reminder_sent_offsets_minutes: null, calendar_event_types: tipo,
+  organizations: status === undefined ? null : { status },
 });
 
 beforeEach(() => {
-  mocks.paradas.mockReset();
   mocks.enviar.mockReset();
   mocks.abrirConversa.mockReset();
   mocks.abrirConversa.mockResolvedValue("conversa-1");
   mocks.enviar.mockResolvedValue({ id: "msg-1", status: "queued" });
-  mocks.compromissos = [compromisso("c-parada", "org-parada"), compromisso("c-ativa", "org-ativa")];
+  mocks.compromissos = [compromisso("c-parada", "org-parada", "suspended"), compromisso("c-ativa", "org-ativa", "active")];
 });
 
 describe("agenda-reminder × organização parada", () => {
-  it("não abre conversa nem envia para a org parada; a operante segue", async () => {
-    mocks.paradas.mockResolvedValue(["org-parada"]);
+  it("não abre conversa nem envia para a org parada (status embutido + ehOperante); a operante segue", async () => {
     const res = await GET(pedido());
     expect(res.status).toBe(200);
     expect(mocks.abrirConversa).toHaveBeenCalledTimes(1);
@@ -80,18 +74,18 @@ describe("agenda-reminder × organização parada", () => {
   });
 
   it("corrida com a porta de saída: OrgNaoOperanteError vira pulado org_nao_operante, não erro_no_envio", async () => {
-    mocks.paradas.mockResolvedValue([]);
-    mocks.enviar.mockRejectedValueOnce(new OrgNaoOperanteError("org-parada", "suspended"));
+    mocks.compromissos = [compromisso("c-um", "org-um", "active"), compromisso("c-dois", "org-dois", "active")];
+    mocks.enviar.mockRejectedValueOnce(new OrgNaoOperanteError("org-um", "suspended"));
     const res = await GET(pedido());
     const { data } = await res.json();
     expect(data.motivos).toMatchObject({ org_nao_operante: 1 });
     expect(data.motivos.erro_no_envio).toBeUndefined();
   });
 
-  it("leitura das paradas falha → 500 e nada sai (falha fechada)", async () => {
-    mocks.paradas.mockRejectedValue(new Error("connection reset"));
+  it("compromisso de org sem status embutido não sai (falha fechada: sem status = não operante)", async () => {
+    mocks.compromissos = [compromisso("c-sem-status", "org-x")];
     const res = await GET(pedido());
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(200);
     expect(mocks.enviar).not.toHaveBeenCalled();
     expect(mocks.abrirConversa).not.toHaveBeenCalled();
   });

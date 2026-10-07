@@ -159,6 +159,10 @@ backups/
 # de instalação existente numa VPS ARM (#1778). É estado da máquina de quem
 # instalou, nunca entra no repositório — igual ao `.env` que mora ao lado dele.
 .deskcomm-instalado
+# Diagnóstico de toda execução do update.sh e o snapshot dos pins de versão
+# que o rollback devolve (#1955). Estado da VPS, como o marcador acima.
+.deskcomm-update-diagnostico.log
+.deskcomm-env-antes-do-update
 
 # Dump de banco de QA. A doutrina já estava escrita duas linhas acima e só o
 # PADRÃO faltava: `backups/` não casa com `.qa-backups/`, e um dump de 1,1 MB de

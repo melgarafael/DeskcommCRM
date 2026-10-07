@@ -109,6 +109,8 @@ function bancoDeMentira(preexistentes: Array<Partial<LinhaMessage>> = [], opcoes
     let org: string | null = null;
     let externos: string[] = [];
     const filtrosExtras: Array<[string, unknown]> = [];
+    // `.neq` filtra de verdade: a busca da linha nossa exclui a recém-inserida.
+    const diferentes: Array<[string, unknown]> = [];
     const q = {
       eq(coluna: string, valor: string) {
         if (coluna === "organization_id") org = valor;
@@ -118,6 +120,10 @@ function bancoDeMentira(preexistentes: Array<Partial<LinhaMessage>> = [], opcoes
       in(coluna: string, valores: string[]) {
         if (coluna === "external_id") externos = valores;
         else filtrosExtras.push([coluna, valores]);
+        return q;
+      },
+      neq(coluna: string, valor: unknown) {
+        diferentes.push([coluna, valor]);
         return q;
       },
       is(coluna: string, valor: unknown) {
@@ -140,13 +146,18 @@ function bancoDeMentira(preexistentes: Array<Partial<LinhaMessage>> = [], opcoes
         const casadas = messages.filter(
           (m) =>
             (org === null || m.organization_id === org) &&
-            filtrosExtras.every(([c, v]) => (Array.isArray(v) ? v.includes(m[c]) : (m[c] ?? null) === v)),
+            filtrosExtras.every(([c, v]) => (Array.isArray(v) ? v.includes(m[c]) : (m[c] ?? null) === v)) &&
+            diferentes.every(([c, v]) => (m[c] ?? null) !== v),
         );
         return Promise.resolve(ok({ data: casadas, error: null }));
       },
       async maybeSingle() {
         const achou = messages.find(
-          (m) => m.organization_id === org && m.external_id !== null && externos.includes(m.external_id),
+          (m) =>
+            m.organization_id === org &&
+            m.external_id !== null &&
+            externos.includes(m.external_id) &&
+            diferentes.every(([c, v]) => (m[c] ?? null) !== v),
         );
         return { data: achou ? { id: achou.id } : null, error: null };
       },

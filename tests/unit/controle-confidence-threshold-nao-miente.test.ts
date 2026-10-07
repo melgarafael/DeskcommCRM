@@ -35,9 +35,9 @@
  * `supabase/baseline.sql` e as migrations continuam com `confidence_threshold`
  * no default do jsonb de `ai_agents.config`: é dado já gravado em base de
  * cliente, não o controle, e mexer ali é migration (fora do alcance da issue).
- * O Zod já descarta a chave que não conhece — é o mesmo destino de
- * `sentiment_threshold`, que também está no default do banco e em nenhum
- * formulário.
+ * O Zod já descarta a chave que não conhece. (`sentiment_threshold` teve o
+ * mesmo destino até o #2216, que lhe deu schema e tela porque ela TEM leitor
+ * vivo — o worker de clima.)
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";

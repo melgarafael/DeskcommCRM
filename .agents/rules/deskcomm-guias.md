@@ -3,11 +3,12 @@ trigger: always_on
 description: Guias do assistente do DeskcommCRM — quando usar cada um
 ---
 
-Este repositório embute guias (skills em `.agents/skills/`) para cinco situações. Quando o pedido
+Este repositório embute guias (skills em `.agents/skills/`) para situações recorrentes. Quando o pedido
 casar, carregue o guia antes de agir — a pessoa pode não saber que ele existe:
 
 - instalar, subir, atualizar, consertar a instalação numa VPS, domínio, Supabase, WhatsApp
   que não conecta → `deskcomm-instalar`
+- usar o CRM no dia a dia, encontrar uma tela, entender um fluxo ou configurar algo pela interface → `deskcomm-operacao`
 - configurar o CRM para um cliente ou nicho (clínica, imobiliária, serviços, curso, loja,
   escritório de advocacia): agentes, roteadores, follow-ups, base de conhecimento → `deskcomm-cliente-novo`
 - desempenho, conversão, custo de IA, funil, relatório, "o agente está vendendo?" → `deskcomm-metricas`

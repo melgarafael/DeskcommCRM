@@ -57,6 +57,7 @@ describe("tenantSchema", () => {
       locale: "pt-BR",
       currency: "BRL",
       media_retention_days: 90,
+      media_retention_enforced: true,
       dpo_email: "dpo@acme.com",
       privacy_policy_url: "https://acme.com/privacy",
     });
@@ -82,6 +83,7 @@ describe("tenantSchema", () => {
       locale: "pt-BR",
       currency: "BRL",
       media_retention_days: 90,
+      media_retention_enforced: true,
       lost_reasons_extra: ["Sem orçamento"],
     });
     expect(r.success).toBe(true);

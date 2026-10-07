@@ -1,6 +1,6 @@
 import type { ComponentType } from "react";
 
-import { Bell, Play, Clock, GitBranch, Brain, ChatCircle, ArrowsClockwise, PaperPlaneTilt, Flag, Question, PuzzlePiece } from "@/lib/ui/icons";
+import { Bell, Play, Clock, GitBranch, Brain, ChatCircle, ArrowsClockwise, PaperPlaneTilt, Flag, Question, PuzzlePiece, Funnel, Tag } from "@/lib/ui/icons";
 import type { FlowNode, NodeType } from "@/lib/followup/graph-schema";
 import { RESULTADOS_DO_FIM } from "@/lib/followup/vocabulario";
 import { NOS_DA_SUPERFICIE } from "@/lib/followup/validate-publish";
@@ -165,6 +165,28 @@ export const NODE_VISUALS: Record<NodeType, NodeVisual> = {
       prioridade: "medium",
     }),
   },
+  // #2065 — os dois tipos de ação que a issue pede e que NÃO falam com o
+  // cliente: mover o card no funil e gravar tag. O `defaultConfig` nasce vazio
+  // de propósito (rascunho salva trabalho pela metade); o publish é quem exige
+  // a escolha (`etapa_destino_ausente`, `tag_ausente`).
+  move_lead: {
+    type: "move_lead",
+    paletteLabel: "Mover lead no funil",
+    icon: Funnel,
+    chipClassName: "bg-info-bg text-info-fg",
+    borderClassName: "border-l-info",
+    defaultLabel: "Mover card de etapa",
+    defaultConfig: () => ({ stage_id: "" }),
+  },
+  edit_lead_tag: {
+    type: "edit_lead_tag",
+    paletteLabel: "Editar tag do lead",
+    icon: Tag,
+    chipClassName: "bg-accent-soft text-accent",
+    borderClassName: "border-l-accent-500",
+    defaultLabel: "Gravar tag no lead",
+    defaultConfig: () => ({ tags: [] }),
+  },
   end: {
     type: "end",
     paletteLabel: "Fim",
@@ -260,6 +282,16 @@ export function describeNodeConfig(
       const c = config as ConfigOf<"internal_task">;
       const prazo = c.vence_em_dias === 0 ? t("hoje") : `+${c.vence_em_dias}d`;
       return `${c.titulo} · ${prazo} · ${t("sem mensagem ao cliente")}`;
+    }
+    // #2065 — o rótulo da etapa (nome de banco) não chega aqui: o card diz o
+    // QUE faz, e o formulário diz PARA ONDE, com o nome da etapa escolhida.
+    case "move_lead": {
+      const c = config as ConfigOf<"move_lead">;
+      return c.stage_id ? t("move o card para outra etapa do funil") : t("sem etapa de destino");
+    }
+    case "edit_lead_tag": {
+      const c = config as ConfigOf<"edit_lead_tag">;
+      return c.tags.length ? c.tags.join(", ") : t("sem tag escolhida");
     }
     case "end": {
       const c = config as ConfigOf<"end">;

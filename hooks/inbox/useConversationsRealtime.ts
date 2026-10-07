@@ -1,8 +1,9 @@
 "use client";
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { hashKey, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { useRefetchDeSeguranca } from "@/hooks/realtime/useRefetchDeSeguranca";
+import { agendarRecargaDasConversas } from "@/hooks/inbox/recargaDasConversas";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import {
@@ -10,7 +11,7 @@ import {
   marcadoresEscolhidos,
 } from "@/lib/inbox/marcador-da-conversa";
 import type { Conversation } from "@/lib/types/messaging";
-import type { ComandoDoBanco } from "@/lib/inbox/comando-da-conversa";
+import { ehAFila, type ComandoDoBanco } from "@/lib/inbox/comando-da-conversa";
 
 export interface ContactSummary {
   id: string;
@@ -20,6 +21,8 @@ export interface ContactSummary {
   tags: string[];
   is_blocked: boolean;
   is_anonymized: boolean;
+  /** Spec 21: lido da coluna, nunca de etiqueta (o selo "Pessoal" da fatia 3 lê daqui). */
+  is_personal: boolean;
   /** Caminho da foto no bucket privado. A tela nunca usa este valor como src —
    *  só para saber SE existe foto; a imagem vem de /api/v1/contacts/{id}/avatar,
    *  que assina a URL. Opcional: conversas em cache de antes do campo existir. */
@@ -117,6 +120,22 @@ interface ListResponse {
   meta?: { cursor?: string | null; has_more?: boolean };
 }
 
+/**
+ * A TROCA DE CHAVE QUE É A MESMA LISTA (#2366): os dois lados são a Fila e só o
+ * `comando` mudou — é o `automatico-ativo` respondendo (`comandosDaFila`), não
+ * uma escolha de quem usa a tela. Qualquer outra troca (aba, busca, etiqueta,
+ * canal) é OUTRA lista, e mostrar a anterior enquanto a nova carrega põe na
+ * tela linhas que não são da aba — clicáveis, e numeradas como Fila.
+ */
+export function soMudouOAutomaticoDaFila(
+  anterior: ConversationsFilters,
+  atual: ConversationsFilters,
+): boolean {
+  const { comando: _comandoAnterior, ...restoAnterior } = anterior;
+  const { comando: _comandoAtual, ...restoAtual } = atual;
+  return ehAFila(anterior) && ehAFila(atual) && hashKey([restoAnterior]) === hashKey([restoAtual]);
+}
+
 export function useConversationsRealtime(
   filters: ConversationsFilters,
   orgId: string | null,
@@ -171,11 +190,27 @@ export function useConversationsRealtime(
     // chega de fora enquanto ninguém olha, e voltar para a aba é quando a
     // defasagem aparece. Segunda rede — a primeira é o Realtime.
     refetchOnWindowFocus: true,
+    // #2366 — A LISTA NÃO VOLTA AO SKELETON NUM REFETCH.
+    //
+    // A chave desta query muda depois de a primeira resposta chegar: quando
+    // `/ai/automatico-ativo` responde, `comandosDaFila` troca `aguardando` por
+    // `aguardando,automatico` e o react-query abre uma query NOVA, que nasce
+    // sem dado. Sem isto a primeira resposta é DESCARTADA, a tela cai no
+    // skeleton e um segundo GET sai ~2 s depois — medido no trace do #2360
+    // (run 37340942770): 1 a 3 s de tela vazia a cada carga do inbox.
+    //
+    // A lista anterior fica na tela até a chave nova responder (ou falhar) SÓ
+    // nessa troca (`soMudouOAutomaticoDaFila`). O `keepPreviousData` puro valia
+    // para toda troca de chave: trocar de aba ou de busca mostrava a lista
+    // anterior, sem aviso, enquanto a nova carregava. Nas outras trocas o
+    // `isLoading` volta e o skeleton aparece — ali ele tem o que dizer.
+    placeholderData: (anterior, queryAnterior) =>
+      queryAnterior && soMudouOAutomaticoDaFila(queryAnterior.queryKey[1], filters)
+        ? anterior
+        : undefined,
   });
 
-  const onChange = useCallback(() => {
-    qc.invalidateQueries({ queryKey: ["conversations"] });
-  }, [qc]);
+  const onChange = useCallback(() => agendarRecargaDasConversas(qc), [qc]);
 
   // G4-01 (visibility_mode): a subscription postgres_changes HERDA a RLS de
   // SELECT de `conversations` — o Supabase Realtime avalia as policies do usuário
