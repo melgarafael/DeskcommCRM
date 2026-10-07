@@ -186,6 +186,8 @@ describe("reprodução com os handlers nativos", () => {
     const movimento = tools.crm_move_lead_stage!.execute!({ ...mover, lead_id: CONTATO }, options);
     await sb.leuEtapa.espera;
     const edicao = tools.crm_update_lead!.execute!(editar, options);
+    // Drena as microtarefas; o movimento permanece parado na porta da etapa.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     sb.liberaEtapa.liberar();
     expect(await Promise.all([movimento, edicao])).toEqual([
       expect.objectContaining({ lead: expect.objectContaining({ id: LEAD, stage_id: ETAPA }) }),
@@ -217,6 +219,7 @@ describe("reprodução com os handlers nativos", () => {
     const movimento = tools.crm_move_lead_stage!.execute!(mover, options);
     await sb.leuEtapa.espera;
     const edicao = tools.crm_update_lead!.execute!(editar, options);
+    await new Promise((resolve) => setTimeout(resolve, 0));
     sb.liberaEtapa.liberar();
     const resultados = await Promise.all([movimento, edicao]);
     expect(resultados).toEqual([
