@@ -15,7 +15,7 @@ vi.mock("@/lib/atendimento/origem", () => ({
 vi.mock("@/lib/audit", () => ({ audit: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/mcp/audit", () => ({ auditMcpToolCall: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/leads/activity-emitter", async (original) => ({
-  ...(await original<typeof ActivityEmitter>()),
+  ...(await original() as typeof ActivityEmitter),
   emitLeadActivity: vi.fn(async (_sb, entrada) => {
     (dublês.banco as ReturnType<typeof banco>).atividade(entrada.leadId);
     return { ok: true };
@@ -162,7 +162,7 @@ function montar(sb: unknown, contatoDoTurno?: string) {
 }
 const mover = { lead_id: LEAD, to_stage_id: ETAPA, position_in_stage: 10 };
 const editar = { lead_id: LEAD, description: "Atualização fictícia" };
-const options = { toolCallId: "chamada-ficticia", messages: [] };
+const options = { toolCallId: "chamada-ficticia", messages: [], context: undefined };
 
 beforeEach(() => vi.clearAllMocks());
 
