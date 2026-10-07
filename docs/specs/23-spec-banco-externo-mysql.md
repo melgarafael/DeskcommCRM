@@ -677,7 +677,9 @@ bytes do `describe` existem para manter esse custo sob controle.
   `GET catalog` só administrador.
 - Rota `POST /connections`: a linha criada tem `source_mode = 'list'` e `sources = []`.
 - `PUT sources` com corpo inválido (mais de 200 fontes, `descricao` com mais de 300
-  caracteres, `colunas` com mais de 200 nomes, `sources` que não é array) → 400 com `fail()`.
+  caracteres, `colunas` com mais de 200 nomes, `sources` que não é array) → 422
+  `validation_failed` com `fail()` (o 400 fica só para JSON ilegível, como em
+  `connections/route.ts:83-88`, CONFIRMADO).
 - `POST /connections` e `PATCH /connections/:id` com `source_mode` ou `sources` no corpo →
   recusados (os schemas são `.strict()`, `schemas.ts:82,105`, CONFIRMADO).
 - `GET sources` por `viewer` devolve a lista mas NUNCA a senha nem qualquer campo cifrado.
