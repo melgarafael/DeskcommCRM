@@ -2,6 +2,7 @@
 import { AgendasConectadas } from "@/components/agenda/AgendasConectadas";
 import { PrazosDePresenca } from "@/components/agenda/PrazosDePresenca";
 import { AgendaDosColegas } from "@/components/agenda/AgendaDosColegas";
+import { MeetComAcessoAberto } from "@/components/agenda/MeetComAcessoAberto";
 import { ClientePelaAgenda } from "@/components/agenda/ClientePelaAgenda";
 import { DiasBloqueados } from "@/components/agenda/DiasBloqueados";
 
@@ -312,6 +313,8 @@ export function TiposDeAgendamentoClient({
   podeLigarClientePelaAgenda,
   colegasPodemMexerNaAgendaLigado,
   podeMudarAgendaDosColegas,
+  meetAbertoLigado,
+  podeMudarMeetAberto,
 }: {
   tiposIniciais: TipoRow[];
   pessoas: Array<{ id: string; papel: string; nome: string }>;
@@ -326,6 +329,9 @@ export function TiposDeAgendamentoClient({
   /** `organizations.settings.colegas_podem_mexer_na_agenda` (migration 0343). */
   colegasPodemMexerNaAgendaLigado: boolean;
   podeMudarAgendaDosColegas: boolean;
+  /** `organizations.settings.google_meet_acesso_aberto` (migration 0579, issue #2063). */
+  meetAbertoLigado: boolean;
+  podeMudarMeetAberto: boolean;
 }) {
   const t = useT();
   const router = useRouter();
@@ -386,6 +392,15 @@ export function TiposDeAgendamentoClient({
       <AgendaDosColegas
         ligadoInicial={colegasPodemMexerNaAgendaLigado}
         podeMudar={podeMudarAgendaDosColegas}
+      />
+      {/* A opção da issue #2063 é a mesma pergunta ("como a agenda se
+          comporta nesta empresa?"), e o AVISO DE RISCO fica encostado nela de
+          propósito: é a única troca de segurança por conveniência que esta
+          tela faz, e ler a frase antes de apertar é melhor que confirmar
+          depois. */}
+      <MeetComAcessoAberto
+        ligadoInicial={meetAbertoLigado}
+        podeMudar={podeMudarMeetAberto}
       />
       <DiasBloqueados podeEditar={podeEditar}/>
       {podeEditar ? (

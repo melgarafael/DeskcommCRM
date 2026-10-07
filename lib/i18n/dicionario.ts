@@ -13292,6 +13292,25 @@ export const DICIONARIO: Traducoes = {
   // salvar essa mudança agora."), reaproveitadas de propósito: mesma situação,
   // mesma frase. Só a do papel é nova, porque aqui o piso é gerente.
   "Agenda dos colegas": { es: "Agenda de los colegas" },
+  // "Google Meet com acesso aberto" (issue #2063, migration 0579): a opção e
+  // o AVISO DE RISCO, que fica encostada nela na mesma tela. A irmã ao lado é
+  // a "Agenda dos colegas" — mesma página, mesmo piso, mesmo formato de frase.
+  "Google Meet com acesso aberto": { es: "Google Meet con acceso abierto" },
+  "O Meet da reunião nasce com o acesso aberto": {
+    es: "La reunión de Meet nace con el acceso abierto",
+  },
+  "Com isto ligado, quando um compromisso ganha Meet o espaço já nasce aberto — qualquer pessoa com o link entra sem pedir para participar. Desligado, o Meet continua pedindo: é o comportamento de sempre.":
+    {
+      es: "Con esta opción activada, cuando una cita tiene Meet el espacio nace abierto: cualquier persona con el enlace entra sin pedir para unirse. Desactivado, Meet sigue pidiendo permiso: es el comportamiento de siempre.",
+    },
+  "⚠ Com o Meet aberto, quem tiver o link da reunião entra sozinho, sem que ninguém o admita. O link é a porta: não o publique onde circula livremente.":
+    {
+      es: "⚠ Con Meet abierto, quien tenga el enlace de la reunión entra solo, sin que nadie lo admita. El enlace es la puerta: no lo publique donde circula libremente.",
+    },
+  "No self-host, quem conecta o Google usa o próprio app OAuth: ligue a Meet API do Google Cloud e adicione o escopo meetings.space.created na tela de consentimento do seu projeto — sem isso, o Google recusa a criação do espaço aberto e o link sai comum.":
+    {
+      es: "En autoalojamiento, quien conecta Google usa su propia app OAuth: activa la Meet API de Google Cloud y agrega el ámbito meetings.space.created en la pantalla de consentimiento de tu proyecto; sin eso, Google rechaza la creación del espacio abierto y el enlace sale común.",
+    },
   "Atendentes podem mexer na agenda dos colegas": {
     es: "Los asesores pueden modificar la agenda de sus colegas",
   },
