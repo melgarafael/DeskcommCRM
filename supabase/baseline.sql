@@ -48270,3 +48270,41 @@ update public.agent_inbox_items i
 create unique index if not exists agent_inbox_canal_pausado_aberto_unico
   on public.agent_inbox_items (organization_id, kind, ref_id)
   where status = 'open' and kind = 'canal_pausado';
+
+-- ---- fontes liberadas do banco externo (migration 0594) ----
+-- Espelha a migration 0594_banco_externo_fontes_liberadas: o racional inteiro está lá.
+-- Idempotente: `add column if not exists`, constraints derrubadas e recriadas, view
+-- recriada com revoke/grant reemitidos. Linhas existentes ficam 'all'.
+alter table public.external_db_connections
+  add column if not exists source_mode text not null default 'all',
+  add column if not exists sources jsonb not null default '[]'::jsonb;
+
+alter table public.external_db_connections
+  drop constraint if exists external_db_connections_source_mode_valido,
+  drop constraint if exists external_db_connections_sources_valido;
+
+alter table public.external_db_connections
+  add constraint external_db_connections_source_mode_valido
+    check (source_mode in ('all', 'list')),
+  add constraint external_db_connections_sources_valido
+    check (jsonb_typeof(sources) = 'array' and octet_length(sources::text) <= 262144);
+
+comment on column public.external_db_connections.source_mode is
+  'all = o assistente lê tudo que o usuário do banco externo enxerga (comportamento anterior); list = só o que está em sources.';
+comment on column public.external_db_connections.sources is
+  'Fontes liberadas: [{schema, tabela, colunas: string[]|null, descricao}]. Formato validado em lib/external-db/fontes.ts. Só vale com source_mode = list.';
+
+drop view if exists public.external_db_connections_safe;
+create view public.external_db_connections_safe
+  with (security_invoker = true)
+  as
+  select id, organization_id, label, host, port, database_name, username,
+         ssl_mode, enabled, max_rows, max_filters, max_response_bytes,
+         customer_key_column, customer_key_kind,
+         last_tested_at, last_test_ok, last_test_error,
+         created_by, created_at, updated_at,
+         source_mode, jsonb_array_length(sources) as sources_count
+  from public.external_db_connections;
+
+revoke all on public.external_db_connections_safe from anon;
+grant select on public.external_db_connections_safe to authenticated;
