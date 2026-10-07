@@ -253,7 +253,13 @@ describe("4A-2 — watchdog reconcilia o espelho e reenvia queued", () => {
  *
  * As formas do id são as de cada engine:
  *   NOWEB — o sendText devolve o id cru; o eco chega composto `true_<chat>_<id>`
- *   WEBJS — os dois lados usam o `_serialized` completo, a MESMA string
+ *   WEBJS — o sendText devolve o `_serialized` completo
+ *
+ * e o que as DUAS trilhas GRAVAM é a mesma coisa desde o #1855/#196: o eco
+ * grava o `bare` em qualquer engine, e o reenvio grava o `bare` também — é a
+ * MESMA string que faz o `unique (organization_id, external_id)` recusar a
+ * segunda linha. Uma trilha gravando o composto enquanto a outra grava o curto
+ * é exatamente o defeito: o unique fica mudo e a duplicata nasce.
  */
 describe("o reenvio não deixa o eco da própria mensagem duplicado", () => {
   // Contato da fixture tem só telefone: `chatIdOf` resolve para `@c.us`.
@@ -369,8 +375,13 @@ describe("o reenvio não deixa o eco da própria mensagem duplicado", () => {
   it("WEBJS: eco com o MESMO id não prende a mensagem em queued — e o tick seguinte não reenvia", async () => {
     const frase = "pode passar para retirar amanhã";
     const serializado = `true_${CHAT_DO_CONTATO}_3EB0WEBJSMESMOID`;
+    const bare = "3EB0WEBJSMESMOID";
     await inserirPresa(PRESA_WEBJS, frase);
-    await inserirDoCelular(ECO_WEBJS, CONV, CONTACT, serializado, frase);
+    // O eco é inserido na forma que o webhook GRAVA desde o #1855 — o bare —,
+    // não o `_serialized` que o WAHA devolve no envio WEBJS. É essa forma que
+    // o carimbo do reenvio tem de encontrar, senão o unique não colide e a
+    // duplicata nasce.
+    await inserirDoCelular(ECO_WEBJS, CONV, CONTACT, bare, frase);
     proximasRespostasDoSendText.push({ id: { _serialized: serializado } });
 
     const antes = sendTextCalls.length;
@@ -382,7 +393,9 @@ describe("o reenvio não deixa o eco da própria mensagem duplicado", () => {
       id: PRESA_WEBJS,
       sent_via: "ai",
       status: "sent",
-      external_id: serializado,
+      // A forma canônica: o eco gravou o bare, o reenvio carimba o bare, e é
+      // essa colisão que o catch abaixo trata.
+      external_id: bare,
     });
 
     // A ARMADILHA medida pelo dono na issue #196: o UPDATE esbarra no unique

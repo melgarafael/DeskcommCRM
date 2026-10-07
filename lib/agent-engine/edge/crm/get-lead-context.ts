@@ -22,7 +22,7 @@ import { nomeDoContato } from '@/lib/contacts/rotulo-do-contato';
  * Heurística conservadora de contagem: ~3,5 chars/token para pt-br (BPE real fica
  * entre 3,5 e 4; dividir por menos SUPERESTIMA tokens — erra pro lado seguro).
  */
-const CHARS_PER_TOKEN = 3.5;
+export const CHARS_PER_TOKEN = 3.5;
 
 export function countPayloadTokens(serialized: string): number {
   return Math.ceil(serialized.length / CHARS_PER_TOKEN);
