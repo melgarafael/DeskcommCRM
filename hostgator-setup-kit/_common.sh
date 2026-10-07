@@ -1558,6 +1558,73 @@ url_do_schema() {
   printf '%s' "${SUPABASE_DB_ADMIN_URL:-${SUPABASE_DB_URL:?sem connection string de banco no .env — rode o install.sh}}"
 }
 
+# ── A conexão de RESTORE, que precisa ESCREVER (#2381) ──────────────────────
+#
+# `url_do_schema` resolve para `SUPABASE_DB_URL` quando não há dono declarado,
+# e no single-server essa string é a do usuário `postgres` — que no Supabase
+# NÃO é superusuário: os schemas `auth`, `storage` e `realtime` são de
+# `supabase_admin`. Um restore por essa conexão devolve 2.887 linhas
+# `permission denied` e o `.env` do app não muda por isso: quem restaura é o
+# kit, e o kit sabe a senha do Postgres local.
+#
+# Ordem de resolução (quem já declarou não muda de comportamento):
+#   1. `SUPABASE_DB_ADMIN_URL`, se presente — o dono declarado à mão;
+#   2. single-server: a MESMA senha do Postgres local (POSTGRES_PASSWORD do
+#      `.env` do Supabase) com a role `supabase_admin`, dona dos schemas do
+#      sistema. Confirmado no compose pinado (SUPABASE_REF): ele mesmo monta
+#      `ecto://supabase_admin:${POSTGRES_PASSWORD}` e o postgres-meta sobe com
+#      `DB_USER=supabase_admin` + `DB_PASSWORD=${POSTGRES_PASSWORD}` — é a
+#      mesma credencial, por TCP, na rede privada;
+#   3. `url_do_schema`, como antes.
+#
+# O host/porta/banco continuam sendo os de `SUPABASE_DB_URL`: só a role e a
+# senha mudam, então a string montada segue valendo para `pg_container` e sua
+# rede privada (PSQL_DOCKER_NETWORK).
+url_do_restore() {
+  local base="${SUPABASE_DB_URL:-}" senha="" resto=""
+  if [ -n "${SUPABASE_DB_ADMIN_URL:-}" ]; then
+    printf '%s' "$SUPABASE_DB_ADMIN_URL"
+    return 0
+  fi
+  if [ "${SINGLE_SERVER:-0}" = "1" ] && [ -n "$base" ]; then
+    case "$base" in
+      *://*@*)
+        senha="$(valor_do_env_do_supabase POSTGRES_PASSWORD)"
+        if [ -n "$senha" ]; then
+          resto="${base#*@}"
+          printf 'postgresql://supabase_admin:%s@%s' "$(uri_escapar "$senha")" "$resto"
+          return 0
+        fi
+        ;;
+    esac
+  fi
+  url_do_schema
+}
+
+# Lê uma chave do `.env` que o install-single-server.sh deixou para o Supabase.
+# Vazio (rc 0) quando o arquivo ou a chave não existe: quem chama decide se o
+# vazio é motivo para cair no caminho de sempre.
+valor_do_env_do_supabase() {  # valor_do_env_do_supabase CHAVE → valor cru
+  local arquivo="" linha=""
+  arquivo="$(dir_do_supabase)/.env"
+  [ -f "$arquivo" ] || return 0
+  linha="$(grep -E "^${1:?valor_do_env_do_supabase sem chave}=" "$arquivo" | tail -1 || true)"
+  linha="${linha#*=}"
+  linha="${linha#\"}"; linha="${linha%\"}"
+  linha="${linha#\'}"; linha="${linha%\'}"
+  printf '%s' "$linha"
+}
+
+# Percent-encode dos caracteres que quebram uma connection string URI. A senha
+# do Postgres local vem de um `.env` e não é garantida sem reservados; sem
+# isto, um `:` ou `@` na senha viraria host errado e o psql falharia com um
+# erro que não aponta para o `.env`.
+uri_escapar() {  # uri_escapar <texto> → texto percent-encoded
+  printf '%s' "${1-}" | sed -e 's/%/%25/g' -e 's/:/%3A/g' -e 's|/|%2F|g' \
+    -e 's/@/%40/g' -e 's/#/%23/g' -e 's/?/%3F/g' -e 's/\[/%5B/g' \
+    -e 's/\]/%5D/g' -e 's/ /%20/g'
+}
+
 # psql efêmero via container (não exige psql no host). Usa a conexão de schema:
 # os chamadores mexem em `auth.mfa_factors` e `private.app_secrets`, fora do
 # alcance de uma role de app com grants só em `public`.

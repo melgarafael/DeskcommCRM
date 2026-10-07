@@ -14,7 +14,10 @@
 # do mantenedor em 03/10: elas fazem o restore falhar também em banco vazio
 # (rc=3, 0 tabelas) em Supabase novo, Postgres 17 puro e database nova — o
 # caminho que hoje funciona deixaria de funcionar. Sem elas, o psql avisa e
-# segue, saindo 0 num banco que restaurou.
+# segue, saindo 0 também quando NÃO restaurou (#2381: 2.887 `permission
+# denied` e o script imprimia "✓ banco restaurado"). Por isso o veredito não é
+# o rc do psql: é a varredura da saída dele, logo abaixo — e a conexão é a de
+# quem consegue escrever (url_do_restore).
 #
 #   bash hostgator-setup-kit/restore.sh backups/db-20260702-030000.sql.gz
 source "$(dirname "$0")/_common.sh"
@@ -35,7 +38,9 @@ c_ylw "   Ele também traz auth, storage e extensões — os erros de \"already 
 # existem até em banco recém-criado.
 # A contagem NÃO pode comer o stdin: o `restore.sh` pede a confirmação logo
 # abaixo, e quem chama alimenta tudo com printf 'RESTAURAR\n' | restore.sh.
-if tabela="$(pg_container -i postgres:17-alpine psql "$(url_do_schema)" \
+# A contagem e o restore usam a MESMA conexão (url_do_restore, #2381): conferir
+# com uma role e restaurar com outra mediria um banco que não é o do restore.
+if tabela="$(pg_container -i postgres:17-alpine psql "$(url_do_restore)" \
       -tAc "select count(*) from pg_tables where schemaname='public'" \
       </dev/null 2>/dev/null)"; then
   # Falhar fechado também quando a conexão "deu certo" e a resposta não é um
@@ -60,11 +65,52 @@ step "Restaurando $DUMP"
 # primeiros, o mesmo dump entrou com rc=0 e 110 tabelas. O dump traz auth, storage e
 # extensões que já existem num Supabase novo, então o erro é normal ali. Quem
 # segura o banco populado é a checagem de cima; aqui o psql avisa, segue e sai
-# 0, e o `&&` só confirma o rc. Em falha fatal (conexão, disco) o banco pode
-# ficar incompleto — sem a transação única não há rollback, por isso o aviso
-# abaixo não promete mais que nada.
-gunzip -c "$DUMP" | pg_container -i postgres:17-alpine psql "$(url_do_schema)" \
-  && c_grn "✓ banco restaurado" || die "Falha na restauração — confira o log acima e o estado do banco antes de repetir."
+# 0. Em falha fatal (conexão, disco) o banco pode ficar incompleto — sem a
+# transação única não há rollback, por isso o aviso abaixo não promete mais
+# que nada.
+#
+# #2381: psql SEM ON_ERROR_STOP sai rc=0 MESMO com erro, e foi isso que fez um
+# dump que não restaurou NENHUMA linha terminar em "✓ banco restaurado" e
+# exit 0 (2.887 linhas `permission denied`, single-server: a conexão era a do
+# `postgres`, que não é dono de auth/storage/realtime). As flags continuam
+# fora por medição; quem decide agora é o VEREDITO logo abaixo, sobre a saída
+# INTEIRA do psql — capturada num log que segue aparecendo na tela (tee).
+psql_log="$(mktemp "${TMPDIR:-/tmp}/restore-psql.XXXXXX")" \
+  || die "Não consegui criar o arquivo temporário do log em ${TMPDIR:-/tmp} (disco cheio?): nada foi restaurado."
+rc_restore=0
+gunzip -c "$DUMP" | pg_container -i postgres:17-alpine psql "$(url_do_restore)" 2>&1 \
+  | tee "$psql_log" || rc_restore=$?
+
+# Erro é ERRO: todo ERROR/FATAL/PANIC reprova o restore, exceto as duas
+# classes benignas que o dump real dá também em banco VAZIO (#2120, medição
+# do mantenedor): objeto que o Supabase novo já trouxe ("already exists") e
+# extensão indisponível. Se o backup.sh um dia passar a gerar dump com
+# --clean, os "does not exist" do DROP entram aqui — decisão consciente, e
+# sempre no sentido de NÃO dizer ✓, nunca no de esconder falha.
+erros_fora_do_previsto="$(
+  grep -E '^(ERROR|FATAL|PANIC):' "$psql_log" 2>/dev/null \
+    | grep -v -e 'already exists' \
+              -e 'extension "[^"]*" is not available' \
+              -e 'extension "[^"]*" does not exist' \
+    || true
+)"
+rm -f "$psql_log"
+
+if [ "$rc_restore" -ne 0 ]; then
+  die "Falha na restauração (psql saiu com $rc_restore) — o dump NÃO restaurou. Confira o log acima e o estado do banco antes de repetir."
+fi
+if [ -n "$erros_fora_do_previsto" ]; then
+  printf '%s\n' "$erros_fora_do_previsto" | sed 's/^/    | /'
+  # Contagem, não `grep -q`: com `pipefail`, um `-q` que fecha o pipe cedo
+  # mataria o printf com SIGPIPE e o `if` leria o rc errado.
+  qtd_permissao="$(printf '%s\n' "$erros_fora_do_previsto" \
+    | grep -ciE 'permission denied|must be owner|is not the owner|no (pg_hba|password)|authentication failed' || true)"
+  if [ "${qtd_permissao:-0}" -gt 0 ]; then
+    die "O dump NÃO restaurou: a conexão ($(url_do_restore | sed 's|://[^@]*@|://***@|') não consegue ESCREVER nos schemas do banco — auth, storage e realtime são de supabase_admin. Declare SUPABASE_DB_ADMIN_URL no .env com a connection string do dono e rode de novo. NADA foi considerado restaurado."
+  fi
+  die "O dump NÃO restaurou ($(printf '%s\n' "$erros_fora_do_previsto" | grep -c . ) erro(s) acima, fora dos já esperados de um dump sem --clean). NADA foi considerado restaurado: veja o log e o estado do banco antes de repetir."
+fi
+c_grn "✓ banco restaurado"
 
 # Restaura o estado das sessões do WhatsApp (WAHA) se o snapshot emparelhado existir
 WAHA_TAR="${DUMP/db-/waha-}"
