@@ -122,6 +122,47 @@ describe("tomada humana invalida o comando autônomo", () => {
       ),
     ).toBe(1);
   });
+  it("login não fabrica revogação por emit_event, fn_log_event ou escrita direta", async () => {
+    seedJob("followup_turn");
+    const job = await runningJob();
+    const commands = [
+      {
+        text: "select emit_event('conversation.autonomous_turn_revoked','job',$1,$2,'{}',$3)",
+        values: [job.id, JSON.stringify({ conversation_id: CONVERSATION }), ORG],
+      },
+      {
+        text: "select fn_log_event($1,'conversation.autonomous_turn_revoked',$2)",
+        values: [ORG, JSON.stringify({ conversation_id: CONVERSATION, lead_id: job.id })],
+      },
+      {
+        text: "insert into event_log(organization_id,event_type,entity_kind,entity_id,payload,status) values($1,'conversation.autonomous_turn_revoked','job',$2,$3,'done')",
+        values: [ORG, job.id, JSON.stringify({ conversation_id: CONVERSATION })],
+      },
+    ];
+    for (const command of commands) {
+      const tx = await pool.connect();
+      try {
+        await tx.query("begin");
+        await tx.query("set local role authenticated");
+        await tx.query("select set_config('request.jwt.claims',$1,true)", [
+          JSON.stringify({ sub: OWNER }),
+        ]);
+        await expect(tx.query(command)).rejects.toMatchObject({ code: "42501" });
+      } finally {
+        await tx.query("rollback");
+        tx.release();
+      }
+    }
+    expect(
+      (
+        await pool.query(
+          "select count(*)::int as n from event_log where organization_id=$1 and entity_id=$2 and event_type='conversation.autonomous_turn_revoked'",
+          [ORG, job.id],
+        )
+      ).rows[0]!.n,
+    ).toBe(0);
+    await expect(requireCurrentAutonomousTurn(pool, job)).resolves.toBeUndefined();
+  });
   it("a sessão humana assume sem atravessar a proteção de follow-ups", () => {
     seedJob("followup_turn");
     sql(`set role authenticated;
