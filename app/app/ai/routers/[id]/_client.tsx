@@ -146,6 +146,13 @@ export function RouterEditorClient({
   // destino do funil/etapa voltava para "Sem destino" a cada recarga. Só
   // reidrata quando o draft ainda reflete o estado ANTERIOR: edição local
   // pendente não é sobrescrita pelo refetch.
+  // #2569 — esta reidratação só existe se a BUSCA existir: ela dispara quando
+  // `members` muda, e `members` só muda se o detalhe ser buscado. Foi o que
+  // faltou depois do #2415 — `useRouter` recebia o snapshot do SSR como
+  // `initialData`, o React Query o tratava como dado fresco (staleTime de 30 s,
+  // sem refetch em foco) e o GET nunca acontecia ao abrir a tela: o seletor
+  // ficava em "Sem destino" mesmo com a API devolvendo o funil gravado. Por
+  // isso o hook agora usa `placeholderData` (hooks/ai/useRouters.ts).
   const prevMembers = React.useRef(members);
   React.useEffect(() => {
     const anterior = prevMembers.current;

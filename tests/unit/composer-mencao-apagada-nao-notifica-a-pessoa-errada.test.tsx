@@ -173,4 +173,29 @@ describe("menção apagada não notifica a pessoa errada", () => {
       "fala com @[Ana Lima](mencao:ana-lima-0001) oi\nx",
     );
   });
+
+  it("a nota SEGUINTE mantém a menção escolhida enquanto a anterior salvava (resíduo)", async () => {
+    // O `onSuccess` zerava a lista inteira: quem já começava a próxima nota e
+    // escolhia uma menção nela perdia a escolha quando o salvamento da anterior
+    // terminava — a próxima saía como texto puro (com homônimos, avisando os
+    // dois). O fim de um envio só pode remover as escolhas DAQUELE envio.
+    abrirModoNota();
+    await digitar("fala com @an");
+    await escolherNaLista(0);
+    await digitar("fala com @Ana Lima oi");
+    await enviarNota();
+    const [, opcoes] = createNoteMock.mock.calls[0]! as [unknown, { onSuccess: () => void }];
+
+    // A próxima nota começa (e a menção dela é escolhida) com a 1ª no ar.
+    await digitar("outra @an");
+    await escolherNaLista(0);
+    act(() => opcoes.onSuccess());
+
+    expect(screen.getByLabelText(/mensagem/i)).toHaveValue("outra @Ana Lima ");
+    createNoteMock.mockClear();
+    const segunda = await enviarNota();
+    expect(segunda.body, "o sucesso da anterior apagou a escolha desta — sai sem id").toBe(
+      "outra @[Ana Lima](mencao:ana-lima-0001)",
+    );
+  });
 });

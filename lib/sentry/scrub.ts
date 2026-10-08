@@ -150,6 +150,14 @@ export function scrubMessage(input: string, { perfisDePais = true }: OpcoesDoScr
     // padrões de CPF e telefone abaixo comeriam pedaços numéricos dela e
     // deixariam o resto passar.
     .replace(/apikey_[A-Za-z0-9_]{16,}/g, "[CHAVE]")
+    // Chaves dos provedores de cobrança (spec da cobrança do revendedor §6):
+    // Stripe secreta, restrita e publicável (sk_/rk_/pk_, de live e de test), o
+    // segredo do webhook (whsec_) e a chave do Asaas ($aact_, base64 que pode
+    // ter `+`, `/`, `=` e `:` no meio — cortar no primeiro deles vazaria o
+    // resto). Também ANTES de CPF e telefone, pelo mesmo motivo da chave acima.
+    .replace(/\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}/g, "[CHAVE]")
+    .replace(/\bwhsec_[\w+/=]{8,}/g, "[CHAVE]")
+    .replace(/\$aact_[\w+/=:-]{8,}/g, "[CHAVE]")
     // E-mail antes dos números, para o telefone não comer dígito de dentro do
     // endereço e deixar o resto dele passar.
     .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "[EMAIL]")

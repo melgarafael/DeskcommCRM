@@ -111,6 +111,7 @@ export async function rotateIntegrationApiKey(input: {
     const { data: revogadas, error: erroDaRevogacao } = await admin
       .from("api_tokens")
       .update({ revoked_at: new Date().toISOString(), revoked_by: input.createdBy })
+      .eq("organization_id", input.organizationId)
       .in("id", ids)
       .is("revoked_at", null)
       .select("id");

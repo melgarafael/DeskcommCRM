@@ -25,7 +25,7 @@ describe("traduzirLimiteDoPlano", () => {
     ).toEqual({
       code: "plan_limit_reached",
       message:
-        "Seu plano permite 2 números conectados. Exclua um número em Conexões ou peça a quem administra o sistema para trocar de plano.",
+        "Seu plano permite 2 números conectados. Exclua um número em Conexões ou troque de plano em Configurações › Plano e cobrança.",
       details: { recurso: "canais", limite: 2 },
     });
   });
@@ -46,19 +46,19 @@ describe("traduzirLimiteDoPlano", () => {
 
   it("as duas frases têm espanhol", () => {
     expect(mensagemDoLimite("assentos", 5, "es")).toBe(
-      "Tu plan permite 5 personas y todas las plazas están ocupadas. Revoca el acceso de alguien en Equipo o pide a quien administra el sistema que cambie el plan.",
+      "Tu plan permite 5 personas y todas las plazas están ocupadas. Revoca el acceso de alguien en Equipo o cambia de plan en Configuración › Plan y facturación.",
     );
     expect(mensagemDoLimite("canais", 1, "es")).toBe(
-      "Tu plan permite 1 número conectado. Elimina un número en Conexiones o pide a quien administra el sistema que cambie el plan.",
+      "Tu plan permite 1 número conectado. Elimina un número en Conexiones o cambia de plan en Configuración › Plan y facturación.",
     );
   });
 
   it("teto 1 fala no singular — plano de uma pessoa só é comum, e '1 pessoas' é a tela dizendo que ninguém a leu", () => {
     expect(mensagemDoLimite("assentos", 1, "pt-BR")).toBe(
-      "Seu plano permite 1 pessoa e a vaga está ocupada. Revogue o acesso de alguém em Equipe ou peça a quem administra o sistema para trocar de plano.",
+      "Seu plano permite 1 pessoa e a vaga está ocupada. Revogue o acesso de alguém em Equipe ou troque de plano em Configurações › Plano e cobrança.",
     );
     expect(mensagemDoLimite("canais", 1, "pt-BR")).toBe(
-      "Seu plano permite 1 número conectado. Exclua um número em Conexões ou peça a quem administra o sistema para trocar de plano.",
+      "Seu plano permite 1 número conectado. Exclua um número em Conexões ou troque de plano em Configurações › Plano e cobrança.",
     );
   });
 });

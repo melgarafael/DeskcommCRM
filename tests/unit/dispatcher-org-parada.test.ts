@@ -27,6 +27,7 @@ import { ensureHandlersRegistered } from "@/lib/event-log/register-handlers";
 import { pinoReintentoHandler } from "@/lib/channels/zernio/pino-reintento.handler";
 import { automationRulesHandler } from "@/lib/automation/engine.handler";
 import { campanhaRespostaHandler } from "@/lib/campanhas/resposta.handler";
+import { cobrancaSinalHandler } from "@/lib/cobranca/sinal.handler";
 import { conversaoDeVendaHandler } from "@/lib/conversoes/envio.handler";
 import { conversaoDeQualificacaoHandler } from "@/lib/conversoes/qualificacao.handler";
 import { conversaoDeEtapaMetaHandler } from "@/lib/conversoes/etapa-meta.handler";
@@ -60,6 +61,7 @@ const RODA: EventHandler[] = [
   mediaPersistHandler,
   lgpdExportHandler,
   lgpdRedactHandler,
+  cobrancaSinalHandler,
 ];
 
 const PULA: EventHandler[] = [

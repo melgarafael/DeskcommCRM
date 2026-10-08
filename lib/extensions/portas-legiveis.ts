@@ -25,6 +25,10 @@ const NOME_DA_PORTA: Record<ExtensionPermission, string> = {
   // label próprio impede que o `Record` exaustivo deixe de compilar e que a
   // tela de aceite silencie sobre um acesso que está declarado.
   "theme.apply": "Seu tema na tela",
+  // `dados.proprios` também não abre tela: o módulo GUARDA fichas próprias na instalação. O nome
+  // está aqui para o `Record` exaustivo e para quem lista as concessões uma a uma; a frase da tela
+  // o trata à parte, porque "abre" e "guarda" não são a mesma promessa.
+  "dados.proprios": "Fichas próprias",
 };
 
 export function nomeDaPorta(permissao: ExtensionPermission): string {
@@ -46,13 +50,27 @@ export function portasLegiveis(
   permissoes: readonly ExtensionPermission[],
   t: (texto: string) => string = (texto) => texto,
 ): string {
+  // `dados.proprios` sai da lista de "abre": ele não é uma tela, é armazenamento. Misturá-lo na
+  // mesma oração faria a tela prometer uma coisa e o módulo fazer outra.
+  const guardaDados = permissoes.includes("dados.proprios");
   const nomes = [...permissoes]
-    .filter((p) => p in NOME_DA_PORTA)
+    .filter((p) => p !== "dados.proprios" && p in NOME_DA_PORTA)
     .sort((a, b) => NOME_DA_PORTA[a].localeCompare(NOME_DA_PORTA[b], "pt-BR"))
     .map((p) => t(nomeDaPorta(p)));
-  if (nomes.length === 0) return t("Não abre nenhuma tela e não lê seus dados.");
+
+  if (nomes.length === 0) {
+    return guardaDados
+      ? t("Guarda fichas próprias nesta instalação; não lê seus dados.")
+      : t("Não abre nenhuma tela e não lê seus dados.");
+  }
   const lista =
     nomes.length === 1 ? nomes[0]! : `${nomes.slice(0, -1).join(", ")} ${t("e")} ${nomes.at(-1)!}`;
+  if (guardaDados) {
+    return t("Abre {portas} e guarda fichas próprias nesta instalação; não lê seus dados.").replace(
+      "{portas}",
+      lista,
+    );
+  }
   return t("Abre {portas}; não lê seus dados.").replace("{portas}", lista);
 }
 

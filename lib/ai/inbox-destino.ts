@@ -148,6 +148,17 @@ export const POLITICAS_DE_AVISO = {
     orientacao: "A IA não respondeu nem vai responder sozinha às conversas que chegaram durante a suspensão: abra o Inbox e procure-as nas abas Fila e Automático. Os agendamentos e os passos de follow-up que este aviso cita também não voltam sozinhos: confira em IA › Follow-ups.",
     geral: { papel: "agent", href: "/app/inbox", rotulo: "Abrir o Inbox" },
   },
+  // A cobrança do revendedor (spec cobrança §2.5). Os avisos da régua nascem
+  // SEM referência e vão pelo `geral`; o de 80% do teto de IA nasce com
+  // `ref_kind='plano'` e usa o ramo de `plano` do resolvedor. Os dois levam ao
+  // mesmo lugar — Plano e cobrança, onde está o "Pagar agora" — e só quem
+  // administra a empresa chega lá (a entrada do menu é `minRole: "admin"`).
+  cobranca: {
+    refs: ["plano"],
+    orientacao:
+      "Abra Plano e cobrança: lá estão o link para pagar, a troca do cartão e a troca de plano. Só quem administra a empresa vê essa tela.",
+    geral: { papel: "admin", href: "/app/settings/billing", rotulo: "Abrir plano e cobrança" },
+  },
   other: { refs: ["lead", "channel_session", "appointment", "ai_agent", "ai_provider_credential", "agent_case"], orientacao: "Confira a situação descrita neste aviso com a pessoa responsável." },
 } satisfies Record<InboxKind, Politica>;
 

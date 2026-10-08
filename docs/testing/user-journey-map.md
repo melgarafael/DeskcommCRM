@@ -1391,6 +1391,43 @@ limite (provado em `tests/invariants/cobranca-assentos.test.ts` e em
 bloqueando uma conversa com agente publicado (provado em unit e no Postgres
 real, não pela tela).
 
+## J43 — A primeira cobrança: o dono conecta a Stripe, o cliente assina, atrasa, é suspenso e volta sozinho ao pagar `[P0]` (2026-09-30)
+
+**Origem:** PR 3a da cobrança do revendedor
+(`docs/superpowers/specs/2026-09-29-cobranca-do-revendedor-design.md`, §3.2, §6.1, §7(a)–(f), §8, §9, §12).
+É P0 porque é a primeira impressão de quem instala para vender: se a primeira cobrança não fecha o ciclo, não há produto para revender. Cobre o que a J41 (PR 2) deixou para esta PR: ligar pela tela, pagamento, régua e suspensão automática.
+
+| Caso | Spec | Estado |
+|---|---|---|
+| O dono liga "Cobrança dos seus clientes" em /admin/sistema e acha a porta Cobrança | `tests/e2e/cobranca-revendedor.spec.ts` | CI |
+| Conecta a Stripe em teste: selo MODO DE TESTE, só os 4 últimos da chave na tela, chave cifrada e fora do audit; webhook sem `invoice.created`; portal sem troca de plano | idem | CI |
+| Ajusta a tolerância na aba Régua; cria dois planos e escolhe o do cadastro | idem | CI |
+| O cliente se cadastra e nasce em teste grátis; a faixa leva ao plano; Assinar abre o checkout hospedado; a volta mostra "1ª cobrança agendada" | idem | CI |
+| Os avisos chegam assinados e ficam só como ponteiro (`{id,type}`, org nula, sem cabeçalhos); assinatura errada → 401 | idem | CI |
+| A 1ª cobrança paga vira "Em dia" e marca o checklist; o passo do e-mail fica aberto, apontando /admin/email | idem | CI |
+| Trocar de plano depois do teste: "vale a partir de DD/MM", sem rateio, e o plano vira só na virada paga | idem | CI |
+| Atraso: aviso na Central e faixa com o link de pagamento; aviso final; suspensão só 48 h depois dele | idem | CI |
+| No hub, "Já paguei" sem pagar não reativa; pagar a fatura reativa sozinha, sem rajada, com um item de revisão | idem | CI |
+| O dublê e o adaptador falam a mesma língua (cabeçalhos, idempotência, formas basil, assinatura dos avisos) | `tests/unit/cobranca-duble-fala-a-lingua-do-adaptador.test.ts` | unit |
+| A base de teste só vale em loopback e com o app em loopback | `lib/cobranca/provedores/base-de-teste.test.ts` | unit |
+| O mapa vivo tem o caminho do dinheiro de ponta a ponta | `tests/unit/mapas-de-arquitetura.test.ts` | unit |
+
+**Não coberto pela tela:** a publicação (troca da chave de teste pela de produção, D-7); "Tornar isenta" com assinatura viva no provedor; o aviso de 80% do teto de IA; o e-mail dos avisos (o fresco não tem envio configurado, e o checklist mostra isso); o cancelamento de org redigida. Onde são provados: nos testes unitários das rotas e da régua (`lib/cobranca/regua.test.ts`, `lib/cobranca/estado.test.ts`) e nos invariantes da PR 3a. A suspensão usa datas recuadas no banco, não relógio falso: cron e régua rodam com o `now()` real.
+
+**Evidência** (PNG em `evidence/cobranca-revendedor/`):
+- `evidence/cobranca-revendedor/billing-cobranca-agendada.png`
+- `evidence/cobranca-revendedor/billing-em-dia.png`
+- `evidence/cobranca-revendedor/billing-troca-agendada.png`
+- `evidence/cobranca-revendedor/central-aviso-final.png`
+- `evidence/cobranca-revendedor/central-aviso-venceu.png`
+- `evidence/cobranca-revendedor/checkout-do-duble.png`
+- `evidence/cobranca-revendedor/conexao-modo-de-teste.png`
+- `evidence/cobranca-revendedor/faixa-em-atraso.png`
+- `evidence/cobranca-revendedor/hub-pagar-agora.png`
+- `evidence/cobranca-revendedor/reativada-sem-rajada.png`
+- `evidence/cobranca-revendedor/sistema-cobranca-ligada.png`
+- `evidence/cobranca-revendedor/visao-geral-checklist.png`
+
 ## Jornadas exercitadas (instalação final, virgem)
 
 | Jornada | Resultado |

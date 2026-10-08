@@ -291,6 +291,25 @@ describe("extensões: publicação transacional e recibos", () => {
     expect((await query("select * from extension_installations where publisher='invariant'")).rowCount).toBe(2);
   });
 
+  it("entrada com os campos de loja instala: eles são da vitrine, e o pacote não pode tê-los", async () => {
+    // O catálogo oficial (extensoes/catalogo.json) traz os cinco campos em toda entrada, e a 0282
+    // os admite; o pacote, por outro lado, recusa qualquer chave fora das 13 dele. Comparar o
+    // manifesto com a entrada INTEIRA fazia toda extensão oficial terminar em artifact_mismatch.
+    const loja = artifact("guia-da-loja");
+    const entry = { ...loja.entry, publisher_label: "Invariant", homepage: "https://invariant.test",
+      repository: "https://invariant.test/repo", tags: ["vendas"], published_at: "2026-09-28" };
+    const c = (await admit([entry])).catalog_id;
+    const p = await prepare({ ...loja, entry }, randomUUID(), c);
+    const pronto = await finish(p.id, { ...loja, entry });
+    expect(pronto.status).toBe("completed");
+    // O controle: a proteção que a comparação existe para dar continua de pé — o mesmo pacote
+    // com um metadado da entrada divergente segue recusado.
+    const divergente = { ...entry, display: { ...entry.display, category: "sales" } };
+    const c2 = (await admit([divergente], 1, origin())).catalog_id;
+    const p2 = await prepare({ ...loja, entry: divergente }, randomUUID(), c2);
+    await expect(finish(p2.id, { ...loja, entry: divergente })).rejects.toThrow(/extension_artifact_mismatch/);
+  });
+
   it("bytes, hash, metadata e manifesto trocados não publicam nada", async () => {
     const p = await prepare();
     for (const args of [
