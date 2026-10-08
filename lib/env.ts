@@ -292,6 +292,12 @@ const schema = z.object({
   // daqui, é por organização (BYOK). Quem lê é `baseDaApiDoJev()`, em
   // lib/ai/decisao/cliente.ts.
   JEV_API_BASE_URL: z.string().optional().default(""),
+  // Endereço de TESTE da API do provedor de cobrança. Existe só para o dublê
+  // do e2e (tests/e2e/fixtures/provedor-de-cobranca.ts, porta 3995). Quem lê é
+  // `baseDeTesteDaCobranca()` (lib/cobranca/provedores/base-de-teste.ts), que
+  // só a aceita em loopback E com o próprio app em loopback: numa VPS ela é
+  // ignorada, com log. Vazio = as URLs oficiais do provedor.
+  COBRANCA_API_BASE_URL_TESTE: z.string().optional().default(""),
   // Destinos internos que o DONO DA INSTALAÇÃO autoriza (decisão 22-d, #1004):
   // IPv4 e faixas CIDR IPv4 que a saída pode alcançar mesmo sendo rede interna,
   // e só para destinos que a própria INSTALAÇÃO configura (nunca o endereço que

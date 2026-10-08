@@ -3,7 +3,9 @@ import { marcaDaSaida } from "@/lib/branding/saida";
 import { canalDoEventoDesativado } from "@/lib/channels/desativado";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { montarPayloadDeInbound, truncar } from "./push_payload";
-import { enviarPushAoUsuario, enviarPushDaOrg } from "./web_push";
+import { enviarPushAoUsuario, enviarPushAQuemVeAConversa, enviarPushDaOrg } from "./web_push";
+import { carregarDestinatariosDaMensagem, type DestinatariosDaMensagem } from "./destinatarios-da-mensagem";
+import { logger } from "@/lib/logger";
 import { vapidPronto } from "./vapid";
 import { pushDoAvisoDaCentral } from "./push-dos-avisos";
 import type { PushPayload } from "./push_payload";
@@ -21,6 +23,10 @@ async function handleInbound(row: EventRow): Promise<HandlerResult> {
   }
   const conversationId =
     (typeof row.payload.conversation_id === "string" ? row.payload.conversation_id : null) ?? null;
+  // Sem conversa não há como saber quem pode vê-la: ninguém recebe.
+  if (!conversationId) {
+    return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "skipped", detail: "sem_conversa" };
+  }
   const previewRaw = row.payload.body_preview;
   const preview = typeof previewRaw === "string" && previewRaw.trim() ? previewRaw : "Nova mensagem";
   const type = typeof row.payload.type === "string" ? row.payload.type : "text";
@@ -77,8 +83,45 @@ async function handleInbound(row: EventRow): Promise<HandlerResult> {
     contactName,
     icon,
   });
-  const { sent } = await enviarPushDaOrg(row.organization_id, payload);
-  return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "ok", detail: `sent:${sent}` };
+  const destino = await destinatariosDoInbound(row.organization_id, conversationId, contactId);
+  // Quem DEVE ser avisado (`destino`) nunca alarga quem PODE ver: nome e prévia
+  // só saem para quem a RLS de `conversations` deixaria abrir a conversa.
+  const soUsuarios = destino.tipo === "restrito" ? destino.userIds : undefined;
+  const { sent } = await enviarPushAQuemVeAConversa(row.organization_id, conversationId, payload, soUsuarios);
+  const detail = soUsuarios ? `sent:${sent};restrito:${soUsuarios.length}` : `sent:${sent}`;
+  return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "ok", detail };
+}
+
+/**
+ * Para quem vai o push da mensagem recebida — regra em
+ * `./destinatarios-da-mensagem.ts` (responsável + admins, ou todos).
+ *
+ * Falha de leitura cai para "todos", de propósito: era o comportamento antes
+ * da regra, e um aviso a mais é um incômodo, enquanto um aviso a menos é
+ * cliente sem resposta. O evento também não é reprocessado por isso — repetir
+ * o handler mandaria o push duas vezes a quem já recebeu.
+ */
+async function destinatariosDoInbound(
+  organizationId: string,
+  conversationId: string,
+  contactId: string | null,
+): Promise<DestinatariosDaMensagem> {
+  try {
+    const destino = await carregarDestinatariosDaMensagem(
+      createAdminClient(),
+      organizationId,
+      conversationId,
+      contactId,
+    );
+    return destino ?? { tipo: "todos" };
+  } catch (err) {
+    logger.warn("push_inbound_destinatarios_falhou", {
+      organization_id: organizationId,
+      conversation_id: conversationId,
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    return { tipo: "todos" };
+  }
 }
 
 /**
@@ -88,6 +131,8 @@ async function handleInbound(row: EventRow): Promise<HandlerResult> {
  * contato (a IA não serve grupos, e a Task 8 não abre exceção só para a
  * notificação), não cria nem roteia nada — só avisa o atendente que o grupo
  * está falando. Título fixo, igual em toda organização.
+ *
+ * Quem recebe é a mesma régua do 1:1: só quem pode ver a conversa do grupo.
  */
 async function handleGroupInbound(row: EventRow): Promise<HandlerResult> {
   // Canal DESATIVADO (#2329): a mesma régua de `handleInbound` — a inbox
@@ -95,8 +140,10 @@ async function handleGroupInbound(row: EventRow): Promise<HandlerResult> {
   if (await canalDoEventoDesativado(createAdminClient(), row.organization_id, row.payload)) {
     return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "skipped", detail: "canal_desativado" };
   }
-  const conversationId =
-    (typeof row.payload.conversation_id === "string" ? row.payload.conversation_id : null) ?? null;
+  const conversationId = typeof row.payload.conversation_id === "string" ? row.payload.conversation_id : null;
+  if (!conversationId) {
+    return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "skipped", detail: "sem_conversa" };
+  }
   const previewRaw = row.payload.body_preview;
   const preview = typeof previewRaw === "string" && previewRaw.trim() ? previewRaw : "Nova mensagem";
   const type = typeof row.payload.type === "string" ? row.payload.type : "text";
@@ -105,10 +152,10 @@ async function handleGroupInbound(row: EventRow): Promise<HandlerResult> {
   const payload: PushPayload = {
     title: "Nova mensagem no grupo",
     body: truncar(body),
-    tag: conversationId ? `msg:${conversationId}` : "msg",
-    href: conversationId ? `/app/inbox?id=${conversationId}` : "/app/inbox",
+    tag: `msg:${conversationId}`,
+    href: `/app/inbox?id=${conversationId}`,
   };
-  const { sent } = await enviarPushDaOrg(row.organization_id, payload);
+  const { sent } = await enviarPushAQuemVeAConversa(row.organization_id, conversationId, payload);
   return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "ok", detail: `sent:${sent}` };
 }
 
@@ -189,14 +236,30 @@ export const webPushInboundHandler: EventHandler = {
       const toUserId = typeof row.payload.to_user_id === "string" ? row.payload.to_user_id : null;
       const conversationId =
         typeof row.payload.conversation_id === "string" ? row.payload.conversation_id : null;
+      if (!toUserId) {
+        return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "skipped", detail: "sem_destinatario" };
+      }
+      // Sem conversa não há como saber se o mencionado pode vê-la: ninguém recebe.
+      if (!conversationId) {
+        return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "skipped", detail: "sem_conversa" };
+      }
       const preview =
         typeof row.payload.body_preview === "string" ? row.payload.body_preview : "Você foi mencionado";
-      return enviarParaUsuario(row.organization_id, toUserId, {
-        title: "Você foi mencionado",
-        body: truncar(preview),
-        tag: conversationId ? `mention:${conversationId}` : "mention",
-        href: conversationId ? `/app/inbox/${conversationId}` : "/app/inbox",
-      });
+      // Mencionado que não pode ver a conversa não recebe aviso nenhum — nem sem
+      // prévia: tag e link já apontam a conversa. É o que o sino dentro do app
+      // já faz (a nota chega pela RLS de `conversation_notes`).
+      const { sent } = await enviarPushAQuemVeAConversa(
+        row.organization_id,
+        conversationId,
+        {
+          title: "Você foi mencionado",
+          body: truncar(preview),
+          tag: `mention:${conversationId}`,
+          href: `/app/inbox/${conversationId}`,
+        },
+        [toUserId],
+      );
+      return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "ok", detail: `sent:${sent}` };
     }
 
     const leadId =

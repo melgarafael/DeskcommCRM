@@ -68,9 +68,13 @@ async function handle(req: NextRequest): Promise<Response> {
     enqueueJob,
   };
 
-  const confirmation=await admin.rpc("fn_appointment_confirmation_sweep",{});
-  if(confirmation.error) return fail("internal_error","Não foi possível verificar as confirmações de presença.",500,{requestId});
-  if(Number(confirmation.data)>0) void audit({action:"agenda.confirmation_sweep_run",organizationId:null,bypassedRls:true,requestId,metadata:{avisos:Number(confirmation.data)}});
+  // A varredura de confirmação de presença pega carona neste cron, mas é OUTRO
+  // assunto: antes, um erro só nela devolvia 500 ANTES do motor rodar, e o
+  // follow-up de todas as orgs parava junto com a agenda. Agora a falha fica
+  // isolada aqui (log + Sentry + trilha) e volta na resposta em
+  // `confirmation_sweep`, sem esconder — mas sem derrubar o tick.
+  const confirmationSweep = await varrerConfirmacoesDePresenca(admin, requestId);
+
   let summary;
   try {
     summary = await runFollowupTick(deps);
@@ -172,7 +176,87 @@ async function handle(req: NextRequest): Promise<Response> {
     logger.error("[followup-flow-worker.cron] enviarTextoFixoPendente threw", { error: detail, requestId });
   }
 
-  return ok(summary, { requestId });
+  return ok({ ...summary, confirmation_sweep: confirmationSweep }, { requestId });
+}
+
+/**
+ * Resultado da varredura de confirmação de presença, devolvido na resposta do
+ * tick. `ok: false` é a falha PARCIAL: o motor de follow-up rodou, a agenda não.
+ */
+type ResultadoDaVarreduraDeConfirmacao = { ok: true; avisos: number } | { ok: false; erro: string };
+
+/**
+ * Roda `fn_appointment_confirmation_sweep` sem nunca lançar. Cobre os dois
+ * jeitos de falhar: `error` devolvido pelo PostgREST e exceção do próprio
+ * client (rede, fetch abortado) — os dois teriam o mesmo efeito de parar o tick.
+ *
+ * A falha AUDITA (mesma action, `falhou: true`), como o `claim_falhou` do
+ * motor: senão a rodada que não conseguiu varrer fica idêntica, na trilha, à
+ * rodada que não tinha aviso a abrir.
+ */
+async function varrerConfirmacoesDePresenca(
+  admin: ReturnType<typeof createAdminClient>,
+  requestId: string,
+): Promise<ResultadoDaVarreduraDeConfirmacao> {
+  let resultado: ResultadoDaVarreduraDeConfirmacao;
+  let causa: unknown;
+  try {
+    const confirmation = await admin.rpc("fn_appointment_confirmation_sweep", {});
+    if (confirmation.error) {
+      causa = new Error(confirmation.error.message);
+      resultado = { ok: false, erro: confirmation.error.message };
+    } else {
+      resultado = { ok: true, avisos: Number(confirmation.data) || 0 };
+    }
+  } catch (err) {
+    causa = err;
+    resultado = { ok: false, erro: err instanceof Error ? err.message : String(err) };
+  }
+
+  if (resultado.ok && resultado.avisos > 0) {
+    void audit({
+      action: "agenda.confirmation_sweep_run",
+      organizationId: null,
+      bypassedRls: true,
+      requestId,
+      metadata: { avisos: resultado.avisos },
+    });
+  }
+  if (!resultado.ok) {
+    logger.error("[followup-flow-worker.cron] fn_appointment_confirmation_sweep falhou", {
+      error: resultado.erro,
+      requestId,
+    });
+    avisaSentry(causa, requestId);
+    void audit({
+      action: "agenda.confirmation_sweep_run",
+      organizationId: null,
+      bypassedRls: true,
+      requestId,
+      metadata: { falhou: true, erro: resultado.erro },
+    });
+  }
+  return resultado;
+}
+
+/**
+ * Sentry por import DINÂMICO com `.catch`, como em
+ * `app/api/v1/cron/webhook-log-retention/route.ts`: sem SENTRY_DSN a import
+ * pode nem carregar, e o aviso não pode virar a segunda falha da rodada.
+ */
+function avisaSentry(err: unknown, requestId: string): void {
+  const detalhe = err instanceof Error ? err.message : String(err);
+  void import("@sentry/nextjs")
+    .then((Sentry) => {
+      Sentry.captureException(err instanceof Error ? err : new Error(detalhe), {
+        level: "error",
+        tags: { subsystem: "agenda", varredura: "confirmation_sweep" },
+        extra: { request_id: requestId },
+      });
+    })
+    .catch(() => {
+      /* sem Sentry configurado: o logger.error e a linha de trilha bastam */
+    });
 }
 
 export async function GET(req: NextRequest): Promise<Response> {
