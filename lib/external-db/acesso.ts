@@ -1,7 +1,7 @@
 /**
  * Abre o acesso ao banco externo para uma leitura: carrega a conexão (com a
  * organização no filtro), revalida o destino contra a guarda de rede e devolve o
- * pool da conexão.
+ * dialeto de leitura da conexão (que embrulha o pool e aplica a lista de fontes liberadas).
  *
  * ─── Por que a guarda roda AQUI, e não só no cadastro ───────────────────────
  *
