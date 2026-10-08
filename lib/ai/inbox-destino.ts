@@ -20,6 +20,7 @@ export const REFERENCIAS_DE_AVISO = {
   contact: { tabela: "contacts", papel: "agent", rotulo: "Ver contato", href: (id: string) => `/app/contacts/${id}` },
   lead: { tabela: "crm_leads", papel: "agent", rotulo: "Abrir negócio", href: (id: string, pipelineId?: string) => `/app/pipelines/${pipelineId}?lead=${id}` },
   followup_enrollment: { tabela: "followup_enrollments", papel: "viewer", rotulo: "Abrir acompanhamento", href: (id: string) => `/app/ai/followups/enrollments/${id}` },
+  tenant_integration: { tabela: "tenant_integrations", papel: "admin", rotulo: "Revisar integração", href: () => "/app/integrations/nuvemshop" },
   channel_session: { tabela: "channel_sessions", papel: "admin", rotulo: "Revisar conexão", href: () => "/app/connections", ativo: true },
   ai_knowledge_source: { tabela: "ai_knowledge_sources", papel: "manager", rotulo: "Abrir base de conhecimento", href: () => "/app/ai/knowledge/sources" },
   agent_case: { tabela: "agent_cases", papel: "agent", rotulo: "Abrir atendimento", href: (id: string) => `/app/ai/cases?caso=${id}` },
@@ -91,6 +92,7 @@ export const POLITICAS_DE_AVISO = {
   // pausa, que é o único clique que devolve o canal ao ar. E o aviso fecha
   // sozinho quando isso acontecer.
   canal_pausado: { refs: ["channel_session"], orientacao: "Se este canal precisar voltar a operar, retome a pausa em Conexões — este aviso se resolve sozinho quando a pausa for desfeita." },
+  integracao_desautorizada: { refs: ["tenant_integration"], orientacao: "Abra a integração, desconecte e conecte de novo para devolver o acesso à loja." },
   promise_unfulfilled: { refs: ["conversation"], orientacao: "Confira o compromisso descrito e defina quem fica responsável." },
   contact_proposal_expired: { refs: ["organization"], orientacao: "A sugestão venceu. Se a informação ainda for relevante, confirme com o cliente antes de editar sua ficha." },
   conhecimento_nao_indexado: { refs: ["ai_knowledge_source"], orientacao: "Peça ao gestor para conferir o material e o motivo da falha na base de conhecimento." },

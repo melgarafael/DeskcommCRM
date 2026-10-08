@@ -57,6 +57,7 @@ export const KIND_LABEL = {
   // mensagens" é o que muda para quem estava esperando mensagem neste canal —
   // e é a frase que faz quem lê no outro turno abrir o item.
   canal_pausado: "Um canal foi pausado — não recebe nem envia mensagens",
+  integracao_desautorizada: "A loja Nuvemshop revogou o acesso — os pedidos pararam de sincronizar",
   // Diz o que o CLIENTE está esperando, não o que o sistema deixou de gravar.
   // "Promessa não cumprida" é a única frase que faz o dono do negócio agir: do
   // lado de lá existe uma pessoa que ouviu um compromisso e está aguardando.

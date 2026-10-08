@@ -34,6 +34,8 @@ export type InboxKind =
   // `channel.disabled` e se resolve sozinho no `channel.enabled`/arquivamento,
   // sem clique (laço do canal-mudo, só que instantâneo).
   | 'canal_pausado'
+  // (0611) loja Nuvemshop revogou o acesso; resolve na reconexão
+  | 'integracao_desautorizada'
   | 'appointment_outcome_required'
   | 'appointment_recovery_review'
   | 'qr_rescan'
