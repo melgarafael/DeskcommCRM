@@ -10993,6 +10993,16 @@ export type Database = {
           version_id: string
         }[]
       }
+      fn_push_inscricoes_que_veem_a_conversa: {
+        Args: { p_org: string; p_conversation: string }
+        Returns: {
+          id: string
+          user_id: string
+          endpoint: string
+          p256dh: string
+          auth: string
+        }[]
+      }
       fn_publish_followup_flow_version: {
         Args: {
           p_created_by: string

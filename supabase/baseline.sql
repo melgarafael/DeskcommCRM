@@ -28052,8 +28052,13 @@ begin
     or p_manifest->>'publisher' is distinct from v_op.publisher or p_manifest->>'name' is distinct from v_op.name
     or p_manifest->>'version' is distinct from v_op.version
     or p_manifest->'dependencies' <> '[]'::jsonb or p_manifest->'data' <> '{"mode":"none"}'::jsonb
-    or (p_manifest - array['format_version','profile','dependencies','data','configuration','contributions'])
-      is distinct from (v_op.entry - array['sha256','byte_length']) then
+    -- 0511: projeta os dois lados sobre as chaves que a ENTRADA do catálogo anuncia. Comparar os
+    -- complementos fazia todo campo de vitrine da 0282 (publisher_label, homepage, repository,
+    -- tags, published_at) divergir, e nenhuma entrada do catálogo oficial instalava.
+    or exists (
+      select 1 from unnest(array['publisher','name','version','license','host_api','display','permissions']) k
+      where p_manifest->k is distinct from v_op.entry->k
+    ) then
     raise exception using errcode='P0001',message='extension_artifact_mismatch';
   end if;
   if v_op.status='completed' then
@@ -32337,8 +32342,13 @@ begin
     or p_manifest->>'publisher' is distinct from v_op.publisher or p_manifest->>'name' is distinct from v_op.name
     or p_manifest->>'version' is distinct from v_op.version
     or p_manifest->'dependencies' <> '[]'::jsonb or p_manifest->'data' <> '{"mode":"none"}'::jsonb
-    or (p_manifest - array['format_version','profile','dependencies','data','configuration','contributions'])
-      is distinct from (v_op.entry - array['sha256','byte_length']) then
+    -- 0511: projeta os dois lados sobre as chaves que a ENTRADA do catálogo anuncia. Comparar os
+    -- complementos fazia todo campo de vitrine da 0282 (publisher_label, homepage, repository,
+    -- tags, published_at) divergir, e nenhuma entrada do catálogo oficial instalava.
+    or exists (
+      select 1 from unnest(array['publisher','name','version','license','host_api','display','permissions']) k
+      where p_manifest->k is distinct from v_op.entry->k
+    ) then
     raise exception using errcode='P0001',message='extension_artifact_mismatch';
   end if;
   if v_op.status='completed' then
@@ -47632,6 +47642,55 @@ create unique index if not exists agent_inbox_integracao_desautorizada_aberto_un
   where status = 'open' and kind = 'integracao_desautorizada';
 
 notify pgrst, 'reload schema';
+
+-- ---- push de mensagem recebida só a quem pode ver a conversa (migration 0612) ----
+create or replace function public.fn_push_inscricoes_que_veem_a_conversa(
+  p_org uuid,
+  p_conversation uuid
+) returns table (id uuid, user_id uuid, endpoint text, p256dh text, auth text)
+language plpgsql volatile security definer
+set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_assigned uuid;
+  v_user uuid;
+  v_claims text := current_setting('request.jwt.claims', true);
+  v_claim text := current_setting('request.jwt.claim', true);
+  v_sub text := current_setting('request.jwt.claim.sub', true);
+begin
+  select c.assigned_to_user_id into v_assigned
+    from public.conversations c
+   where c.id = p_conversation and c.organization_id = p_org;
+  if not found then
+    return;
+  end if;
+
+  -- auth.uid()/auth.jwt() leem estas três; só `claims` carrega o inscrito.
+  perform set_config('request.jwt.claim', '', true);
+  perform set_config('request.jwt.claim.sub', '', true);
+  for v_user in
+    select distinct s.user_id from public.push_subscriptions s where s.organization_id = p_org
+     order by s.user_id
+  loop
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', v_user)::text, true);
+    if public.fn_can_view_conversation(p_org, v_assigned) then
+      return query
+        select s.id, s.user_id, s.endpoint, s.p256dh, s.auth
+          from public.push_subscriptions s
+         where s.organization_id = p_org and s.user_id = v_user;
+    end if;
+  end loop;
+
+  perform set_config('request.jwt.claims', coalesce(v_claims, ''), true);
+  perform set_config('request.jwt.claim', coalesce(v_claim, ''), true);
+  perform set_config('request.jwt.claim.sub', coalesce(v_sub, ''), true);
+end;
+$$;
+
+revoke all on function public.fn_push_inscricoes_que_veem_a_conversa(uuid, uuid) from public;
+revoke execute on function public.fn_push_inscricoes_que_veem_a_conversa(uuid, uuid) from anon, authenticated;
+grant execute on function public.fn_push_inscricoes_que_veem_a_conversa(uuid, uuid) to service_role;
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --

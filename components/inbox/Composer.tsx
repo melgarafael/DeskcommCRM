@@ -272,9 +272,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               podarMencoes(restaurado, [...mencoesEnviadas, ...atual.filter((m) => !mencoesEnviadas.includes(m))]),
             );
           },
-          // Só depois de gravar: se falhar, as menções continuam valendo para
-          // o retry — apagá-las aqui faria a segunda tentativa notificar quem?
-          onSuccess: () => setMencoes([]),
+          // Só depois de gravar, e só as escolhas DESTA nota — a lista pode já
+          // ter a menção da PRÓXIMA, escolhida enquanto esta ainda estava no ar
+          // (`mencoesEnviadas`): zerar tudo apagava a escolha dela, e a nota
+          // seguinte sairia como texto puro (com homônimos, avisando os dois).
+          onSuccess: () =>
+            setMencoes((atual) => atual.filter((m) => !mencoesEnviadas.includes(m))),
         },
       );
       return;
