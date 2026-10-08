@@ -17,6 +17,7 @@ import { carregarConexao } from "./credenciais";
 const LINHA = {
   id: "conn-1",
   organization_id: "org-1",
+  db_type: "postgres",
   label: "Meu Postgres",
   host: "db.exemplo.com",
   port: 5432,
@@ -89,6 +90,12 @@ describe("carregarConexao", () => {
         versao: "2026-09-11T00:00:00.000Z",
       },
     });
+  });
+
+  it("lê o motor da linha: com db_type mysql, devolve dbType mysql", async () => {
+    const { admin } = adminFalso({ data: { ...LINHA, db_type: "mysql" }, error: null });
+    const r = await carregarConexao(admin, "org-1", "conn-1");
+    expect(r.ok && r.conexao.dbType).toBe("mysql");
   });
 
   it("a coluna que identifica o cliente só vale com o tipo junto", async () => {

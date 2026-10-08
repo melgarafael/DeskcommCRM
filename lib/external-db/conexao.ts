@@ -146,7 +146,7 @@ export async function consultar<T extends pg.QueryResultRow = pg.QueryResultRow>
   }
 }
 
-export type ResultadoDeTeste = { ok: true } | { ok: false; erro: string };
+export type ResultadoDeTeste = { ok: true; aviso?: string } | { ok: false; erro: string };
 
 function mensagemSegura(err: unknown): string {
   if (err instanceof Error) {

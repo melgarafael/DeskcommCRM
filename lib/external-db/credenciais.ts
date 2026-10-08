@@ -17,7 +17,7 @@ import { logger } from "@/lib/logger";
 import { LIMITE_FILTROS, LIMITE_LINHAS, LIMITE_RESPOSTA_BYTES } from "./limites";
 import { lerFontesDoBanco, type Fonte } from "./fontes";
 import type { TipoDeIdentificador } from "./schemas";
-import type { ConexaoExterna, ModoDeFontes, ModoTls } from "./types";
+import type { ConexaoExterna, ModoDeFontes, ModoTls, TipoBanco } from "./types";
 
 /** Um valor de limite ausente/ inválido cai no padrão — nunca em "sem limite". */
 function limiteOuPadrao(valor: number | null, padrao: number): number {
@@ -55,6 +55,7 @@ export type LeituraConexao =
 interface LinhaConexao {
   id: string;
   organization_id: string;
+  db_type: TipoBanco;
   label: string;
   host: string;
   port: number;
@@ -102,7 +103,7 @@ export async function carregarConexao(
   const { data, error } = await admin
     .from("external_db_connections")
     .select(
-      "id, organization_id, label, host, port, database_name, username, password_encrypted, password_iv, password_tag, ssl_mode, enabled, max_rows, max_filters, max_response_bytes, customer_key_column, customer_key_kind, source_mode, sources, updated_at",
+      "id, organization_id, db_type, label, host, port, database_name, username, password_encrypted, password_iv, password_tag, ssl_mode, enabled, max_rows, max_filters, max_response_bytes, customer_key_column, customer_key_kind, source_mode, sources, updated_at",
     )
     .eq("organization_id", organizationId)
     .eq("id", connectionId)
@@ -138,8 +139,7 @@ export async function carregarConexao(
     conexao: {
       id: data.id,
       organizationId: data.organization_id,
-      // A coluna `db_type` chega na Fatia 4a; até lá todo cadastro é PostgreSQL.
-      dbType: "postgres",
+      dbType: data.db_type,
       label: data.label,
       host: data.host,
       port: data.port,

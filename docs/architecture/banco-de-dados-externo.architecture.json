@@ -38,7 +38,7 @@
       "id": "migration0372",
       "lane": "dados",
       "label": "external_db_connections",
-      "sublabel": "migration 0372 · tenant-aware, RLS, senha AES-GCM",
+      "sublabel": "migration 0372 · tenant-aware, RLS, senha AES-GCM · 0602 soma db_type e last_test_aviso",
       "type": "table",
       "dot": "sky"
     },
@@ -46,7 +46,7 @@
       "id": "safeview",
       "lane": "dados",
       "label": "external_db_connections_safe",
-      "sublabel": "view sem as colunas cifradas · a única que a tela lê",
+      "sublabel": "view sem as colunas cifradas · a única que a tela lê · 0602 soma db_type e last_test_aviso",
       "type": "table",
       "dot": "sky"
     },

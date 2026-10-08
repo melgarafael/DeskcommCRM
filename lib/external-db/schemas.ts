@@ -22,6 +22,16 @@ const modoTls = z.enum(MODOS_TLS);
 export const TIPOS_DE_IDENTIFICADOR = ["phone", "email"] as const;
 export type TipoDeIdentificador = (typeof TIPOS_DE_IDENTIFICADOR)[number];
 
+/** Espelha o CHECK de `external_db_connections.db_type` e `TipoBanco`. */
+export const TIPOS_DE_BANCO = ["postgres", "mysql"] as const;
+/** O que a API aceita CRIAR hoje: só os motores com driver instalado. O MySQL entra aqui na Fatia 4a-2. */
+export const TIPOS_DE_BANCO_ACEITOS = ["postgres"] as const;
+
+/** Porta padrão de cada motor. */
+export function portaPadraoDoMotor(tipo: (typeof TIPOS_DE_BANCO)[number]): number {
+  return tipo === "mysql" ? 3306 : 5432;
+}
+
 const camposDeConexao = {
   label: z.string().trim().min(1).max(80),
   host: z.string().trim().min(1).max(255),
@@ -68,7 +78,8 @@ export const criarConexaoSchema = z
   .object({
     label: camposDeConexao.label,
     host: camposDeConexao.host,
-    port: camposDeConexao.port.default(5432),
+    port: camposDeConexao.port.optional(),
+    db_type: z.enum(TIPOS_DE_BANCO_ACEITOS).default("postgres"),
     database_name: camposDeConexao.database_name,
     username: camposDeConexao.username,
     password: camposDeConexao.password,
@@ -81,7 +92,8 @@ export const criarConexaoSchema = z
     customer_key_kind: camposDeConexao.customer_key_kind.default(null),
   })
   .strict()
-  .refine(chaveDoClienteCompleta, CHAVE_INCOMPLETA);
+  .refine(chaveDoClienteCompleta, CHAVE_INCOMPLETA)
+  .transform((v) => ({ ...v, port: v.port ?? portaPadraoDoMotor(v.db_type) }));
 
 /**
  * Atualização parcial. `password` é opcional: ausente = não mexer na senha

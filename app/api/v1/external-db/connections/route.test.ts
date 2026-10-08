@@ -89,4 +89,56 @@ describe("POST /api/v1/external-db/connections", () => {
     );
     expect(res.status).toBe(422);
   });
+
+  it("criar sem db_type grava postgres no insert e no audit", async () => {
+    let inserido: Record<string, unknown> | undefined;
+    deps.admin.mockReturnValue({
+      from: () => ({
+        insert: (payload: Record<string, unknown>) => {
+          inserido = payload;
+          return { select: () => ({ single: async () => ({ data: { id: "c-1", ...payload }, error: null }) }) };
+        },
+      }),
+    });
+
+    const res = await POST(
+      new NextRequest("http://localhost/api/v1/external-db/connections", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          label: "Outro CRM",
+          host: "10.0.0.5",
+          database_name: "app",
+          username: "leitor",
+          password: "segredo",
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    expect(inserido?.db_type).toBe("postgres");
+    const evento = deps.audit.mock.calls[0]![0] as { metadata: Record<string, unknown> };
+    expect(evento.metadata.db_type).toBe("postgres");
+  });
+
+  it("criar com db_type mysql é recusado (sem driver instalado) e nem chega ao insert", async () => {
+    const from = vi.fn().mockReturnValue({});
+    deps.admin.mockReturnValue({ from });
+    const res = await POST(
+      new NextRequest("http://localhost/api/v1/external-db/connections", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          label: "x",
+          host: "10.0.0.5",
+          database_name: "app",
+          username: "u",
+          password: "p",
+          db_type: "mysql",
+        }),
+      }),
+    );
+    expect(res.status).toBe(422);
+    expect(from).not.toHaveBeenCalled();
+  });
 });

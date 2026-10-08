@@ -13,7 +13,7 @@ export type ModoTls = "disable" | "prefer" | "require" | "verify-ca" | "verify-f
 /** Modos das fontes liberadas, alinhados ao CHECK de `external_db_connections.source_mode`. */
 export type ModoDeFontes = "all" | "list";
 
-/** Motores aceitos, alinhados ao CHECK futuro de `external_db_connections.db_type` (a coluna chega na Fatia 4a). */
+/** Motores aceitos, alinhados ao CHECK de `external_db_connections.db_type`. Mais motores que a API aceita hoje: ver `TIPOS_DE_BANCO_ACEITOS` em `schemas.ts`. */
 export type TipoBanco = "postgres" | "mysql";
 
 /**
