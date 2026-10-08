@@ -138,6 +138,14 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
     "A tarefa não foi criada: o título ficou vazio depois de preencher os campos do texto. Escreva um título que não dependa só de dado que faltou.",
   falha:
     "A tarefa não foi criada: o banco recusou a gravação. Tente de novo em alguns minutos; se persistir, abra a tarefa na agenda para ver o detalhe.",
+  /*
+   * #1752 — o PLANO de tarefas. Mesmo caminho dos quatro acima: nasce em
+   * `lib/tarefas/plano.ts` como `resultado.codigo` e chega pelo `reason` da
+   * ação `apply_task_plan` (declaração em ORIGENS, no teste da guarda). Só
+   * este é novo — os outros quatro já têm frase por virem do criar-tarefa.
+   */
+  plano_nao_encontrado:
+    "O plano não foi aplicado: o plano escolhido nesta regra não existe mais na lista da organização. Abra a automação e escolha outro plano.",
   /* #1970 — a ação ai_decide. Estes quatro nascem aqui em lib/automation/actions/ai-decide.ts
      e chegam ao run por `detail.reason`/`action.error` (mesmo casal de canais da guarda). */
   custo_de_token_nao_registrado:

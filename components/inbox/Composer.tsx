@@ -37,7 +37,7 @@ import {
   type MotivoDeRecusa,
 } from "@/lib/inbox/rascunho-sugerido";
 import { apiClient } from "@/lib/api/client";
-import { embutirMencoes, type MencaoEscolhida } from "@/lib/notifications/mentions";
+import { embutirMencoes, podarMencoes, type MencaoEscolhida } from "@/lib/notifications/mentions";
 import { cn } from "@/lib/utils";
 
 export interface ComposerHandle {
@@ -247,17 +247,31 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     setText("");
     requestAnimationFrame(() => autoresize());
 
+    // Se a pessoa já começou a próxima resposta, preserve os dois textos.
+    const restaurar = (current: string) => (current ? `${legivel}\n${current}` : legivel);
     const restoreOnError = () => {
-      // Se a pessoa já começou a próxima resposta, preserve os dois textos.
-      setText((current) => (current ? `${legivel}\n${current}` : legivel));
+      setText(restaurar);
       requestAnimationFrame(() => autoresize());
     };
+    // As escolhas DESTA nota, guardadas no envio: o campo segue editável
+    // durante o envio, e a 1ª tecla poda `mencoes` contra um texto que já não
+    // tem o `@Nome` enviado. Sem isto, o retry voltava sem o id e saía como
+    // texto puro (com homônimos, avisando os dois).
+    const mencoesEnviadas = mencoes;
 
     if (mode === "note") {
       createNote.mutate(
         { conversation_id: conversationId, body: corpo },
         {
-          onError: restoreOnError,
+          onError: () => {
+            restoreOnError();
+            // Na FRENTE das atuais: o texto enviado volta antes do novo, e o
+            // `embutirMencoes` pareia ocorrência e escolha por ordem.
+            const restaurado = restaurar(taRef.current?.value ?? "");
+            setMencoes((atual) =>
+              podarMencoes(restaurado, [...mencoesEnviadas, ...atual.filter((m) => !mencoesEnviadas.includes(m))]),
+            );
+          },
           // Só depois de gravar: se falhar, as menções continuam valendo para
           // o retry — apagá-las aqui faria a segunda tentativa notificar quem?
           onSuccess: () => setMencoes([]),
@@ -542,6 +556,15 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               const pos = e.target.selectionStart ?? e.target.value.length;
               setCaret(pos);
               setMencaoIndice(0);
+              // A escolha que sumiu do texto sai da lista AGORA (#2463): com
+              // duas pessoas de mesmo rótulo, a escolha apagada roubava o
+              // `@Nome` da próxima e a nota notificava quem não foi mencionado.
+              //
+              // Só na edição À MÃO, de propósito: o envio limpa o campo sem
+              // passar por aqui, e é isso que mantém as menções valendo para o
+              // retry depois de uma falha. Quem digita DURANTE o envio poda as
+              // escolhas aqui — o `onError` da nota devolve as que foram enviadas.
+              setMencoes((atual) => podarMencoes(e.target.value, atual));
               if (!resolveSlash(e.target.value).open) setMenuDismissed(false);
               // Sumiu o `@` (apagou, ou o Enter escolheu): o Esc de uma vez
               // não pode travar a lista da PRÓXIMA menção.

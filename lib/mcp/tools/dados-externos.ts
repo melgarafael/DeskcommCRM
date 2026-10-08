@@ -191,6 +191,8 @@ function mensagemDeAcesso(motivo: string): string {
       return "o endereço dessa conexão não é um destino permitido pela política de rede.";
     case "dns_falhou":
       return "não foi possível resolver o endereço dessa conexão agora.";
+    case "modulo_desligado":
+      return "o banco de dados externo está desligado nesta instalação; quem administra o servidor precisa ligar o módulo em Admin › Sistema.";
     default:
       return "não foi possível abrir a conexão.";
   }
@@ -408,6 +410,11 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
     }
 
     let schema = input.schema;
+    // O nome da tabela que o CATÁLOGO conhece. O modelo escreve `pedido` para a
+    // tabela `"Pedido"`; a busca no catálogo compara em minúscula, mas a conferência
+    // de colunas e a consulta comparam por igualdade exata — por isso o nome real
+    // tem de ser o usado dali em diante.
+    let tabela = input.tabela;
     let permitidas: Set<string> | null = null;
 
     // 1) Com schema informado, tenta direto. 2) Sem schema OU schema errado/
@@ -416,7 +423,7 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
     //    o atendente dizia "não consigo acessar o catálogo" em vez de ofertar.
     if (schema) {
       try {
-        permitidas = await colunasDaTabela(acesso.pool, schema, input.tabela);
+        permitidas = await colunasDaTabela(acesso.pool, schema, tabela);
       } catch {
         permitidas = null;
       }
@@ -434,11 +441,19 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
       if (candidatas.length === 0) {
         return { erro: "tabela_nao_encontrada", mensagem: "não encontrei essa tabela." };
       }
-      // prefere `public` quando o mesmo nome existir em mais de um agrupamento
-      const escolhida = candidatas.find((c) => c.schema === "public") ?? candidatas[0]!;
+      // prefere `public` quando o mesmo nome existir em mais de um agrupamento, e,
+      // dentro do agrupamento, o nome EXATO: com `Pedido` e `pedido` lado a lado,
+      // quem pediu `pedido` lê `pedido` (antes da busca sem caixa era assim).
+      const exato = (c: TabelaExterna) => c.nome === input.tabela;
+      const escolhida =
+        candidatas.find((c) => c.schema === "public" && exato(c)) ??
+        candidatas.find((c) => c.schema === "public") ??
+        candidatas.find(exato) ??
+        candidatas[0]!;
       schema = escolhida.schema;
+      tabela = escolhida.nome;
       try {
-        permitidas = await colunasDaTabela(acesso.pool, schema, input.tabela);
+        permitidas = await colunasDaTabela(acesso.pool, schema, tabela);
       } catch {
         return { erro: "falha_na_leitura", mensagem: "não foi possível conferir a tabela." };
       }
@@ -462,7 +477,7 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
 
     const pedido: PedidoDeLeitura = {
       schema: schema!,
-      tabela: input.tabela,
+      tabela,
       colunas: input.colunas ?? [],
       filtros: [
         ...filtros.map((f) => ({
@@ -524,7 +539,7 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
     return {
       conexao: { id: acesso.conexao.id, label: acesso.conexao.label },
       schema,
-      tabela: input.tabela,
+      tabela,
       colunas: resultado.colunas,
       linhas,
       linhas_devolvidas: linhas.length,

@@ -552,6 +552,69 @@ gravar_modelos_do_gotrue() {  # gravar_modelos_do_gotrue <.env do Supabase> [htt
   return 0
 }
 
+# ── O aviso do Site URL, UMA vez, no update.sh sem token ────────────────────
+# Por topologia, na mesma ordem do marca-emails.sh. O texto da nuvem (painel do
+# Supabase + `export SUPABASE_ACCESS_TOKEN=sbp_...`) saía em TODA instalação —
+# e mandava quem tem o Supabase na própria VPS a outra conta, atrás de uma chave
+# que ali não serve.
+#  - single-server: nada a dizer. O Site URL é do kit: o install-single-server.sh
+#    grava SITE_URL e ADDITIONAL_REDIRECT_URLS com o domínio desde o nascimento.
+#  - Supabase próprio (URL que não é *.supabase.co): o padrão de um Supabase
+#    novo também é localhost:3000, mas a conferência é no .env DELE.
+#  - nuvem, e URL vazia (topologia desconhecida): o texto de sempre.
+# Mora aqui, e não no update.sh, porque o update.sh relê este arquivo depois do
+# checkout: daqui em diante, um texto corrigido chega na própria atualização que
+# o traz. (A atualização que traz ESTA função ainda roda o update.sh anterior,
+# com o texto antigo embutido — o bash segue lendo o arquivo que abriu. No
+# single-server ele não chega a sair: atualizar_supabase_single_server grava o
+# marcador antes. No Supabase próprio sai uma última vez.)
+aviso_do_site_url() {  # aviso_do_site_url <URL do app>
+  local dom="${1%/}"
+  [ "${SINGLE_SERVER:-0}" = "1" ] && return 0
+  printf '\n'
+  c_ylw "  ─── CONFIRA UMA COISA, UMA VEZ SÓ ─────────────────────"
+  case "${NEXT_PUBLIC_SUPABASE_URL:-}" in
+    https://*.supabase.co*|"")
+      cat <<AVISO
+
+  Os e-mails de acesso (esqueci minha senha, confirmação de cadastro,
+  aceite de convite) levam para o endereço que estiver em Authentication
+  → URL Configuration, no painel do Supabase. Instalações feitas antes de
+  o instalador perguntar o token do Supabase ficaram com o padrão de
+  projeto novo, \`http://localhost:3000\`, que só existe na máquina de
+  quem desenvolve — e aí ninguém consegue redefinir a própria senha.
+
+  Vale conferir. Se já estiver com os valores abaixo, não há nada a fazer:
+
+       Site URL:       ${dom}
+       Redirect URLs:  ${dom}/auth/confirm
+
+  Este aviso não se repete — para o instalador cuidar disso sozinho, rode
+  o update com \`export SUPABASE_ACCESS_TOKEN=sbp_...\` no ambiente.
+AVISO
+      ;;
+    *)
+      cat <<AVISO
+
+  Os e-mails de acesso (esqueci minha senha, confirmação de cadastro,
+  aceite de convite) levam para o endereço que o seu Supabase tem em
+  SITE_URL. O padrão de um Supabase novo é \`http://localhost:3000\`, que só
+  existe na máquina de quem desenvolve — e aí ninguém consegue redefinir a
+  própria senha.
+
+  Vale conferir no .env do seu Supabase. Se já estiver assim, não há nada a
+  fazer; se mudar, recrie o contêiner auth dele (docker compose up -d auth,
+  na pasta do Supabase — um restart não relê o .env):
+
+       SITE_URL=${dom}
+       ADDITIONAL_REDIRECT_URLS=${dom}/auth/confirm
+
+  Este aviso não se repete.
+AVISO
+      ;;
+  esac
+}
+
 # ── O update.sh leva o Supabase até a versão pinada ──────────────────────────
 #
 # O `update.sh` oficial do Supabase faz o merge de três vias dos arquivos dele
@@ -560,6 +623,11 @@ gravar_modelos_do_gotrue() {  # gravar_modelos_do_gotrue <.env do Supabase> [htt
 # CRM: o Supabase segue na versão de antes e a próxima rodada tenta de novo.
 atualizar_supabase_single_server() {
   local dir atual
+  # O aviso do Site URL não tem o que dizer aqui: o Site URL é do kit (ver
+  # aviso_do_site_url). O marcador nasce no corpo desta função, e não só no
+  # update.sh, pelo motivo do #1653 lá embaixo: o update.sh ANTIGO, com o texto
+  # da nuvem embutido, chama esta função antes de decidir o aviso pelo marcador.
+  : > "${PROJECT_DIR:-$PWD}/.deskcomm-site-url-avisado" 2>/dev/null || true
   dir="$(dir_do_supabase)"
   [ -f "$dir/.env" ] || { c_red "⛔ $(t "Modo single-server sem {1}/.env — rode install-single-server.sh." "$dir")"; return 1; }
   cp "$KIT_DIR/supabase-single-server.override.yml" "$dir/docker-compose.deskcomm.yml" || return 1
@@ -2404,6 +2472,27 @@ ensure_encryption_key() {
     >/dev/null 2>&1 \
     && c_grn "$(t "✓ chave de cifra ativa no banco (segredos de webhook são guardados cifrados)")" \
     || c_ylw "$(t "⚠ não consegui semear a chave de cifra no banco — segredos de webhook não poderão ser salvos até rodar update.sh de novo.")"
+
+  # ── Chave do CPF (#2522) ───────────────────────────────────────────────────
+  # `encrypt_cpf`/`decrypt_cpf` (migration 0597) leem `private.app_secrets`
+  # na linha `cpf_key`. SEM esta linha toda gravação de contato COM CPF cai na
+  # degradação: o contato é salvo sem CPF e a busca por CPF não acha ninguém —
+  # exatamente o problema que o reportante do #2522 descreveu.
+  local cpf="${CPF_ENCRYPTION_KEY:-}"
+  if [ -z "$cpf" ] && [ -f "$envfile" ]; then
+    cpf="$(grep -E '^CPF_ENCRYPTION_KEY=' "$envfile" | head -1 | cut -d= -f2- | tr -d "'\"" || true)"
+  fi
+  if [ -z "$cpf" ]; then
+    cpf="$(openssl rand -base64 32)"
+    printf '\nCPF_ENCRYPTION_KEY=%s\n' "$cpf" >> "$envfile"
+    c_grn "$(t "✓ chave de cifra do CPF gerada e gravada no .env")"
+  fi
+  export CPF_ENCRYPTION_KEY="$cpf"
+
+  psql_run -c "insert into private.app_secrets (name, value) values ('cpf_key', '${cpf}') on conflict (name) do update set value = excluded.value, updated_at = now();" \
+    >/dev/null 2>&1 \
+    && c_grn "$(t "✓ chave de cifra do CPF ativa no banco (contato com CPF é salvo cifrado)")" \
+    || c_ylw "$(t "⚠ não consegui semear a chave de cifra do CPF no banco — o contato será salvo sem CPF até rodar update.sh de novo.")"
 }
 
 # ── A ÚLTIMA RELEASE ESTÁVEL PUBLICADA ──────────────────────────────────────

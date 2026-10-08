@@ -36,6 +36,9 @@ import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 const XISTAO: PerfilDoPais = {
   codigo: "XI",
   nome: "Xistão",
+  // Rótulos da tela da organização do país sintético — o campo é obrigatório
+  // no perfil justamente para país novo declarar os seus (#1946, item 4).
+  empresa: { rotuloNomeLegal: "Razão do Xistão", rotuloNumero: "CNPJ do Xistão" },
   telefoneExemplo: "+999123456789",
   documento: {
     rotulo: "Bilhete",

@@ -8,6 +8,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { canalDesativado } from "@/lib/channels/desativado";
+import { sincronizarAvisoDePausa } from "@/lib/channels/central-de-pausa";
 
 export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ id: string }> };
@@ -51,5 +52,14 @@ export async function PATCH(req: NextRequest, { params }: Context): Promise<Resp
     organizationId: auth.org.orgId, resourceType: "channel_session", resourceId: id, requestId,
     metadata: { disabled: parsed.data.disabled },
   });
+  // O aviso da Central nasce e morre na MESMA rodada do clique (issue #2389):
+  // pausar abre um item com o canal, o autor e o horário; retomar resolve o
+  // MESMO item com o motivo no corpo, sem ninguém clicar. Best-effort e nunca
+  // lançante — a pausa já foi gravada pela RPC acima.
+  await sincronizarAvisoDePausa(
+    createAdminClient(),
+    { id, organization_id: auth.org.orgId },
+    { autor: (auth.user.full_name ?? "").trim() || auth.user.email || auth.user.id, idioma: auth.user.idioma },
+  );
   return ok(parsed.data, { requestId });
 }

@@ -64,6 +64,26 @@ export function estaEncerrada(tarefa: Pick<Tarefa, "status">): boolean {
 }
 
 /**
+ * O que a caixa da lista deve gravar quando alguém pede para concluir ou
+ * reabrir (#2549).
+ *
+ * A TELA decide "encerrada" com `estaEncerrada` — vale para `done` **e**
+ * `cancelled`, e por isso a tarefa cancelada mostra caixa marcada com o rótulo
+ * "Reabrir a tarefa". O hook antigo decidia olhando só `done`; no `cancelled`
+ * a condição era falsa e o clique gravava `done`, ou seja, a tarefa cancelada
+ * era reaberta para CONCLUÍDA e a rota de edição registrava "Tarefa concluída"
+ * na linha do tempo de um trabalho que ninguém fez.
+ *
+ * Aqui a decisão fica numa função pura ao lado de `estaEncerrada`, para que a
+ * tela e o cliente partilhem a MESMA regra e para que o teste prenda o caso
+ * sem montar hook, provider nem fetch: encerrada (`done` **ou** `cancelled`)
+ * volta para `pending`; o que ainda pede ação vira `done`.
+ */
+export function proximoEstadoAoAlternar(atual: SituacaoDaTarefa): SituacaoDaTarefa {
+  return estaEncerrada({ status: atual }) ? "pending" : "done";
+}
+
+/**
  * Atrasada = tem prazo, o prazo passou, e ninguém a encerrou.
  *
  * `agora` é parâmetro para o teste poder fixar o relógio. Sem isso, um caso de

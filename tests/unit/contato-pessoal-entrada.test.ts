@@ -28,7 +28,10 @@ const garantirLeadDaConversa = vi.fn(
   async () => ({ criado: true, leadId: "lead-1" }) as never,
 );
 const encerraDemanda = vi.fn(async () => ({ lead: {}, jaEstava: false }) as never);
-const acelerarPipelineDeEventos = vi.fn(async () => {});
+// O pós-entrada chama as duas metades do acelerador (#2337): o follow-up do
+// contato ANTES do despacho, o dreno DEPOIS. As duas contam como "gerar efeito".
+const acelerarFollowupDoInbound = vi.fn(async () => {});
+const drenarEventosDoInbound = vi.fn(async () => {});
 
 vi.mock("@/lib/audit", () => ({ audit: (...a: unknown[]) => audit(...(a as [])) }));
 vi.mock("@/lib/leads/encerramento", () => ({
@@ -41,8 +44,8 @@ vi.mock("@/lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 vi.mock("@/lib/dev/kick-local-pipeline", () => ({
-  acelerarPipelineDeEventos: (...a: unknown[]) =>
-    acelerarPipelineDeEventos(...(a as [])),
+  acelerarFollowupDoInbound: (...a: unknown[]) => acelerarFollowupDoInbound(...(a as [])),
+  drenarEventosDoInbound: (...a: unknown[]) => drenarEventosDoInbound(...(a as [])),
 }));
 vi.mock("@/lib/escalacao/numero-interno-de-aviso", () => ({
   ehContatoDoNumeroInterno: vi.fn(async () => false),
@@ -140,7 +143,8 @@ beforeEach(() => {
   garantirLeadDaConversa.mockClear();
   garantirLeadDaConversa.mockResolvedValue({ criado: true, leadId: "lead-1" } as never);
   encerraDemanda.mockClear();
-  acelerarPipelineDeEventos.mockClear();
+  acelerarFollowupDoInbound.mockClear();
+  drenarEventosDoInbound.mockClear();
 });
 
 describe("pós-entrada de contato pessoal não gera nada", () => {
@@ -149,7 +153,8 @@ describe("pós-entrada de contato pessoal não gera nada", () => {
     await rodar();
 
     expect(garantirLeadDaConversa, "negócio não nasce de pessoal").not.toHaveBeenCalled();
-    expect(acelerarPipelineDeEventos, "follow-up quente não acorda").not.toHaveBeenCalled();
+    expect(acelerarFollowupDoInbound, "follow-up quente não acorda").not.toHaveBeenCalled();
+    expect(drenarEventosDoInbound, "nem o dreno do inbound roda").not.toHaveBeenCalled();
     expect(
       rpcChamadas.filter((c) => c.args.p_event_type === "ai_agent.dispatch_requested"),
       "nenhum turno é enfileirado",
@@ -177,7 +182,8 @@ describe("pós-entrada de contato pessoal não gera nada", () => {
     await rodar();
 
     expect(garantirLeadDaConversa).toHaveBeenCalledTimes(1);
-    expect(acelerarPipelineDeEventos).toHaveBeenCalledTimes(1);
+    expect(acelerarFollowupDoInbound).toHaveBeenCalledTimes(1);
+    expect(drenarEventosDoInbound).toHaveBeenCalledTimes(1);
     expect(
       rpcChamadas.filter((c) => c.args.p_event_type === "ai_agent.dispatch_requested"),
     ).toHaveLength(1);

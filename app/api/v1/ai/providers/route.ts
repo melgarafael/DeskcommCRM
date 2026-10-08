@@ -27,19 +27,22 @@ import { requireRole } from "@/lib/auth/require-role";
 import { roleAtLeast } from "@/lib/auth/types";
 import {
   decidirBinding,
+  escolherModeloEconomico,
   EXPLICACAO_DA_ORIGEM,
   PONTOS_DO_AGENTE_PUBLICADO,
   PONTOS_QUE_HERDAM_DO_AGENTE,
   type LinhaDeBinding,
 } from "@/lib/ai/pontos/resolver";
 import { PAPEIS, PONTOS_DE_IA, PONTO_POR_ID } from "@/lib/ai/pontos/registro";
-import { PROVEDORES, ehProvedorSuportado } from "@/lib/ai/pontos/provedores";
+import { PROVEDORES, ehProvedorSuportado, PROVEDOR_POR_ASSINATURA } from "@/lib/ai/pontos/provedores";
+import { listarModelosDaAssinatura } from "@/lib/ai/catalogo/modelos-da-assinatura";
 import { validarBinding } from "@/lib/ai/pontos/validar-binding";
 import { lerAmbiente } from "@/lib/instalacao/ambiente";
 import { decidirTranscricao } from "@/lib/messaging/media/escada-de-transcricao";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { temPrecoNoMotor } from "@/lib/agent-engine/edge/llm/pricing";
 
 export const dynamic = "force-dynamic";
 
@@ -49,9 +52,22 @@ interface ModeloDoCatalogo {
   display_name: string;
   supports_tools: boolean;
   supports_vision: boolean;
+  supports_embedding: boolean;
   input_price_per_million_cents: number | null;
   output_price_per_million_cents: number | null;
   context_window: number | null;
+}
+
+/** O knob de ambiente dos pontos do degrau econômico — o mesmo que `lib/agent-engine/env.ts` lê no worker. */
+function knobDoPontoEconomico(pontoId: string): string | undefined {
+  const nome =
+    pontoId === "stage_classifier"
+      ? "STAGE_CLASSIFIER_MODEL"
+      : pontoId === "jailbreak_detect"
+        ? "JAILBREAK_CLASSIFIER_MODEL"
+        : undefined;
+  const valor = nome === undefined ? undefined : process.env[nome]?.trim();
+  return valor ? valor : undefined;
 }
 
 export async function GET(): Promise<Response> {
@@ -75,7 +91,7 @@ export async function GET(): Promise<Response> {
     db
       .from("ai_models")
       .select(
-        "provider, model_id, display_name, supports_tools, supports_vision, input_price_per_million_cents, output_price_per_million_cents, context_window",
+        "provider, model_id, display_name, supports_tools, supports_vision, supports_embedding, input_price_per_million_cents, output_price_per_million_cents, context_window",
       )
       .is("deprecated_at", null)
       .order("provider")
@@ -98,7 +114,7 @@ export async function GET(): Promise<Response> {
   );
 
   const llm = ((orgRes.data?.settings as { llm?: Record<string, unknown> } | null)?.llm ??
-    {}) as { provider?: string; default_model?: string | null };
+    {}) as { provider?: string; default_model?: string | null; enabled_models?: unknown };
   const padraoDaOrganizacao = {
     provider: typeof llm.provider === "string" ? llm.provider : "anthropic",
     defaultModel: typeof llm.default_model === "string" ? llm.default_model : null,
@@ -114,7 +130,7 @@ export async function GET(): Promise<Response> {
   // coluna — a mesma que discordava do motor. Reconciliar aqui, uma vez, é o
   // que faz a lista, o aviso do binding e o motor darem a MESMA resposta.
   // Ver `lib/ai/pontos/capacidade-em-vigor.ts`.
-  const modelos = ((modelosRes.data ?? []) as ModeloDoCatalogo[]).map((m) => ({
+  const modelosGlobais = ((modelosRes.data ?? []) as ModeloDoCatalogo[]).map((m) => ({
     ...m,
     supports_vision: enxergaImagem({
       provider: m.provider,
@@ -122,6 +138,23 @@ export async function GET(): Promise<Response> {
       doCatalogo: m.supports_vision,
     }),
   }));
+  const temAssinatura = (credsRes.data ?? []).some(
+    (credential) => credential.provider === PROVEDOR_POR_ASSINATURA,
+  );
+  const modelosDaAssinatura = temAssinatura
+    ? await listarModelosDaAssinatura(org.orgId)
+    : null;
+  const modelos = [
+    ...modelosGlobais,
+    ...(modelosDaAssinatura ?? []).map((m) => ({
+      ...m,
+      supports_vision: enxergaImagem({
+        provider: "openai",
+        modelId: m.model_id,
+        doCatalogo: m.supports_vision,
+      }),
+    })),
+  ];
   const capacidadePorModelo = new Map(modelos.map((m) => [`${m.provider}|${m.model_id}`, m]));
 
   // ─── QUEM OUVE O ÁUDIO: a MESMA escada do worker (#2189/#2190) ────────────
@@ -181,8 +214,24 @@ export async function GET(): Promise<Response> {
       // `lib/instalacao/ambiente.ts` já faz para as chaves.
       // Enquanto ficar `undefined`, a origem "veio da instalação" nunca aparece
       // nesta tela, mesmo quando é ela que vale em runtime.
-      modeloDeAmbiente: undefined,
+      // Os dois pontos do degrau econômico leem o knob: com ele preenchido, o
+      // motor roda o knob e a tela anunciaria o econômico. Os demais seguem a
+      // dívida descrita acima.
+      modeloDeAmbiente: knobDoPontoEconomico(ponto.id),
       padraoDaOrganizacao,
+      // A MESMA escolha econômica do seam (`binding-do-ponto.ts`), sobre o mesmo
+      // catálogo e a mesma restrição de modelos habilitados — senão a tela
+      // anunciaria o modelo do agente num classificador que roda no econômico.
+      economicoDoProvedor: (provider, modeloAtual) =>
+        escolherModeloEconomico(
+          modelosRes.data ?? [],
+          provider,
+          modeloAtual,
+          Array.isArray(llm.enabled_models)
+            ? llm.enabled_models.filter((m): m is string => typeof m === "string")
+            : [],
+          temPrecoNoMotor,
+        ),
       // A escada só muda a resposta do ponto que ela governa; o resolvedor a
       // lê apenas em `fixo.escada`.
       transcricao,

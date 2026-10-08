@@ -69,6 +69,11 @@ const DONO_NO_SQL: Record<string, string> = {
   OBSERVACOES_DO_JEV: "fn_expurgar_observacoes_do_jev",
   // migration 0428 — os candidatos ao golden set (issue #1695).
   CANDIDATOS_GOLDEN: "fn_expurgar_candidatos_do_golden",
+  // migration 0587 — as tabelas append-only da IA, no MESMO commit da migration.
+  TELEMETRIA_DE_IA: "fn_expurgar_telemetria_de_ia_vencida",
+  RITMO_DE_ENVIO: "fn_expurgar_ritmo_de_envio_vencido",
+  COPIAS_ENVIADAS: "fn_expurgar_copias_enviadas_vencidas",
+  CHECKPOINTS: "fn_expurgar_checkpoints_superados",
 };
 
 /**

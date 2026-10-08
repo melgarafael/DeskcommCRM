@@ -29,12 +29,15 @@
  * cada turno. O teto corta a lista e DIZ que cortou.
  */
 import type { Queryable } from "../queue/queue";
+import { isoLocalComOffset, rotuloLocal } from "@/lib/tempo/agora";
+import { FUSO_PADRAO, fusoValido } from "@/lib/tempo/fusos";
 
 export interface CompromissoDoContato {
   id: string;
   title: string | null;
-  starts_at: string;
-  ends_at: string | null;
+  starts_at: string | Date;
+  ends_at: string | Date | null;
+  time_zone?: string;
   status: string;
   meeting_state?: string;
   meeting_url?: string | null;
@@ -57,7 +60,7 @@ export async function compromissosDoContato(
   agora: Date,
 ): Promise<CompromissoDoContato[]> {
   const { rows } = await db.query<CompromissoDoContato>(
-    `select id, title, starts_at, ends_at, status, meeting_state, meeting_url
+    `select id, title, starts_at, ends_at, time_zone, status, meeting_state, meeting_url
        from calendar_appointments
       where organization_id = $1
         and contact_id = $2
@@ -82,8 +85,13 @@ export function renderCompromissos(linhas: readonly CompromissoDoContato[]): str
 
   const itens = cabem.map((c) => {
     const titulo = (c.title ?? "").trim() || "compromisso";
-    const fim = c.ends_at ? ` até ${c.ends_at}` : "";
-    return `- ${c.starts_at}${fim} — ${titulo} (${c.status})${c.meeting_state === "ready" && c.meeting_url ? ` — link da reunião: ${c.meeting_url}` : c.meeting_state === "pending" ? " — link ainda sendo criado" : c.meeting_state === "failed" ? " — link indisponível; a equipe precisa verificar" : ""}`;
+    const fuso = c.time_zone && fusoValido(c.time_zone) ? c.time_zone : FUSO_PADRAO;
+    const inicio = new Date(c.starts_at);
+    const fim = c.ends_at ? ` até ${isoLocalComOffset(new Date(c.ends_at), fuso)}` : "";
+    // O driver pg devolve Date; interpolá-la mostrava a hora do PROCESSO (UTC).
+    // A hora de parede e o ISO com offset representam o mesmo instante, no fuso
+    // da reserva. Nunca aplicar um deslocamento fixo de três horas.
+    return `- ${rotuloLocal(inicio, fuso)} (${fuso}; início: ${isoLocalComOffset(inicio, fuso)})${fim} — ${titulo} (${c.status})${c.meeting_state === "ready" && c.meeting_url ? ` — link da reunião: ${c.meeting_url}` : c.meeting_state === "pending" ? " — link ainda sendo criado" : c.meeting_state === "failed" ? " — link indisponível; a equipe precisa verificar" : ""}`;
   });
 
   // Truncar em silêncio faria o modelo afirmar que o cliente só tem estes — a

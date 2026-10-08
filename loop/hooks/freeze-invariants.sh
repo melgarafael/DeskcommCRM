@@ -38,7 +38,8 @@
 #   · a ponta: o invariante da branch JÁ ENTROU na main por squash, sem
 #     parentesco com o commit da branch — a merge-base não o tem (NOVO-APOS-FETCH).
 # Só `M`: `D` e `R` seguem acusados mesmo para invariante próprio (rename é
-# delete disfarçado, e o lado apagado de um `R` é da main).
+# delete disfarçado, e o lado apagado de um `R` é da main). O `T` (troca de tipo) e
+# o `C` (cópia) entraram depois (#2465): o primeiro como `M`, o segundo fechado.
 #
 # ⚠️ Falha FECHADA sem a ref: sem `origin/main` (fork sem o remote, clone raso,
 # remote da main com outro nome — `upstream/main` NÃO é consultada, como nas
@@ -61,7 +62,23 @@ set -euo pipefail
 
 [ "${DESKCOMM_GOV_INVARIANTS_EDIT:-0}" = "1" ] && exit 0
 
-# Status M/D/R (rename = delete disfarçado) em tests/invariants/ bloqueia; A passa.
+# Status M/D/R/T/C em tests/invariants/ bloqueia; A passa.
+#   R = rename (delete disfarçado).
+#   T = TROCA DE TIPO: arquivo vira symlink (ou o inverso), 100644 ↔ 120000. Ele
+#       ficava FORA do regex e passava pelo pre-commit sem a válvula (#2465,
+#       medido igual na main 8dc7a75cc): `tests/invariants/x.test.ts` virava
+#       symlink para um arquivo mais fraco e o guard nem via a linha. T entra
+#       tratado como M — acusado, e só escapa pelas MESMAS exceções do M.
+#   C = cópia: o `--name-status` só a emite com detecção de cópia ligada
+#       (`diff.renames=copies` no config de quem roda, ou `-C`; `diff.copies`
+#       não é chave do git).
+#       Sem `--find-copies-harder` o C só aparece quando a ORIGEM também mudou,
+#       e essa mudança já aparece na própria linha M, sujeita às mesmas regras
+#       de antes — o C não esconde edição de invariante.
+#       Ele entra FECHADO por conservadorismo, igual ao R: a linha tem DOIS
+#       caminhos (`C100<TAB>origem<TAB>destino`) e nenhum passa pelas exceções do M.
+#       O custo: nessa config, um invariante NOVO copiado de um arquivo
+#       modificado passa a pedir a válvula.
 #
 # ⚠️ `-c core.quotepath=false` e o `"?` do regex NÃO são enfeite: eram um FURO
 # ABERTO, medido em 18/09/2026 nesta versão e nas duas anteriores. Com
@@ -81,7 +98,7 @@ set -euo pipefail
 # quatro OIDs vêm vazios, a condição 5 recusa a exclusão e a guarda falha
 # FECHADA — que é o lado certo para um caminho que ela não sabe ler.
 violations=$(git -c core.quotepath=false diff --cached --name-status \
-  | awk -F'\t' '$1 ~ /^(M|D|R)/ && ($2 ~ /^"?tests\/invariants\// || $3 ~ /^"?tests\/invariants\//) { print $0 }')
+  | awk -F'\t' '$1 ~ /^(M|D|R|T|C)/ && ($2 ~ /^"?tests\/invariants\// || $3 ~ /^"?tests\/invariants\//) { print $0 }')
 
 # ── O que o OUTRO LADO DO MERGE mudou não é edição desta branch ────────────
 #
@@ -337,8 +354,11 @@ fi
 # Diferença remanescente, blob que falhou, arquivo vazio de um lado ou caminho que o git
 # CITOU (aspas/acento, onde o nome cru não acha o blob) → segue acusado. Falha FECHADA.
 #
-# `D` (deletar) e `R` (rename = delete disfarçado) nem chegam aqui: apagar invariante
-# continua bloqueado sem exceção, e `A` já passava antes.
+# `D` (deletar), `R` (rename = delete disfarçado) e `C` (cópia — dois caminhos na
+# linha) nem chegam aqui: apagar invariante continua bloqueado sem exceção, e `A` já
+# passava antes. O `T` (troca de tipo) CHEGA aqui como `M`; para invariante da main as
+# duas exceções o recusam de qualquer jeito (a main tem o caminho, e o MODO 100644 vs
+# 120000 difere — `mudanca_so_de_comentario` lê justamente o modo).
 sem_comentarios() {
   awk '
 BEGIN {
@@ -447,7 +467,11 @@ if [ -n "$violations" ]; then
         # citado pelo git: nome cru não acha o blob -> não decidível aqui, segue acusado
         ;;
       *)
-        if [ "${status:0:1}" = "M" ] \
+        # O T (troca de tipo) entra tratado como M: escapa pelas MESMAS exceções, e
+        # nenhuma delas o solta para invariante da main — `criado_nesta_branch` falha
+        # (a main tem o caminho) e `mudanca_so_de_comentario` recusa por MODO (100644 vs
+        # 120000). #2465.
+        if { [ "${status:0:1}" = "M" ] || [ "${status:0:1}" = "T" ]; } \
           && { criado_nesta_branch "$caminho" || mudanca_so_de_comentario "$caminho"; }; then
           continue
         fi

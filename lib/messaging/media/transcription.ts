@@ -4,9 +4,29 @@
  * modelo de chat (camada universal). Um backend mlx-whisper local implementa a
  * mesma interface para self-host em Apple Silicon (fora deste MVP).
  */
+import type { TokenUsage } from "@/lib/agent-engine/edge/llm/pricing";
+
 export interface TranscriptionProvider {
   transcribe(audio: Buffer, mime: string): Promise<string>;
+  /**
+   * Só quem é cobrado por TOKEN implementa: o modelo de conversa da
+   * organização (degrau 3 da escada, `escada-de-transcricao.ts`). Sem o uso
+   * devolvido, a linha em `llm_calls` sairia sem tokens e com custo nulo —
+   * uma chamada de LLM paga, com preço na tabela, contada como "preço
+   * desconhecido" e fora do teto de gasto.
+   */
+  transcribeMedindo?(audio: Buffer, mime: string): Promise<{ texto: string; uso: TokenUsage }>;
 }
+
+/**
+ * Os degraus da escada que chamam `/v1/audio/transcriptions` (abaixo). Esse
+ * serviço tem tabela de preço própria, que o sistema não conhece, e a chamada
+ * não lê tokens de volta: a linha deles em `llm_calls` tem custo nulo por
+ * construção, e é por esta lista — gravada em `origem_da_escolha` — que o
+ * aviso de "preço desconhecido" os separa do degrau 3, que é LLM cobrado por
+ * token (`lib/ai/budget/check.ts`).
+ */
+export const ORIGENS_DA_TRANSCRICAO_POR_SERVICO = ["servico_da_instalacao", "padrao_openai_compativel"] as const;
 
 export interface TranscriptionCreds {
   apiKey: string;

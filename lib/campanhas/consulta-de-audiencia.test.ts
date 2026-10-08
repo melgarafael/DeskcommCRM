@@ -611,3 +611,53 @@ describe("teto de 20.000 e o aviso de truncamento (#2404)", () => {
     cercaDeOrganizacao(banco);
   });
 });
+
+describe("#2402: funil com 2.500 negócios e max_rows=1.000", () => {
+  const comFunil = (extra: Partial<FiltroDeAudiencia>) => ({
+    ...FILTRO_VAZIO,
+    funis: [uuid(900, "8888")],
+    ...extra,
+  });
+  /** Um negócio por contato, do mais novo ao mais velho, na ordem da lista. */
+  const negociosDe = (contatos: string[]): Negocio[] =>
+    contatos.map((c, i) => ({
+      id: uuid(i, "2222"),
+      contact_id: c,
+      created_at: quando(i),
+      custom_fields: {},
+    }));
+
+  it("2.500 contatos distintos: a audiência sai INTEIRA, não 1.000", async () => {
+    // O defeito da #2402: `.limit(20_000)` sem paginação devolve só o primeiro
+    // `max_rows` de linhas — 1.000 — e a preparação segue sem erro nenhum.
+    const contatos = Array.from({ length: 2500 }, (_, i) => uuid(i));
+    const banco = bancoFalso(contatos, negociosDe(contatos)); // max_rows = 1.000
+
+    const { candidatos: lista, truncado } = await buscarCandidatos(banco.sb, {
+      organizationId: ORG,
+      filtro: comFunil({ limite: 5000 }),
+      agora: new Date(Date.UTC(2026, 5, 1)),
+    });
+
+    expect(lista.map((c) => c.contactId)).toEqual(contatos);
+    expect(truncado).toBe(false);
+    // 3 páginas cheias (1000 + 1000 + 500) + a página VAZIA que prova o fim.
+    expect(banco.urlsDeNegocio()).toHaveLength(4);
+    cercaDeOrganizacao(banco);
+  });
+
+  it("900 negócios: abaixo do max_rows, uma página só — o comportamento não muda", async () => {
+    const contatos = Array.from({ length: 900 }, (_, i) => uuid(i));
+    const banco = bancoFalso(contatos, negociosDe(contatos));
+
+    const { candidatos: lista, truncado } = await buscarCandidatos(banco.sb, {
+      organizationId: ORG,
+      filtro: comFunil({ limite: 5000 }),
+      agora: new Date(Date.UTC(2026, 5, 1)),
+    });
+
+    expect(lista.map((c) => c.contactId)).toEqual(contatos);
+    expect(truncado).toBe(false);
+    expect(banco.urlsDeNegocio()).toHaveLength(2);
+  });
+});

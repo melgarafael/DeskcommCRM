@@ -6,8 +6,10 @@ import { useState } from "react";
 import { useAttendantMetrics, type AttendantMetric } from "@/hooks/metrics/useAttendantMetrics";
 import { EmptyState } from "@/components/empty/EmptyState";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatarDuracao } from "@/lib/metrics/canais";
 import { WarningOctagon } from "@/lib/ui/icons";
 import { AtritoPanel } from "./AtritoPanel";
+import { CanaisPanel } from "./CanaisPanel";
 import { PerdasPanel } from "./PerdasPanel";
 import { PrevisaoPanel } from "./PrevisaoPanel";
 import { useTeamMembers } from "@/hooks/team/useTeamMembers";
@@ -29,15 +31,6 @@ import {
 } from "@/components/ui/select";
 
 const ALL = "__all__";
-
-function formatDuration(seconds: number | null): string {
-  if (seconds == null) return "—";
-  const s = Math.round(seconds);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  const rest = s % 60;
-  return rest === 0 ? `${m}min` : `${m}min ${rest}s`;
-}
 
 function attendantLabel(a: AttendantMetric, t: (texto: string) => string): string {
   return a.name ?? a.email ?? `${t("Atendente")} ${a.user_id.slice(0, 8)}`;
@@ -215,7 +208,7 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
                       {a.conversations_handled}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {formatDuration(a.avg_first_response_seconds)}
+                      {formatarDuracao(a.avg_first_response_seconds)}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -224,6 +217,12 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
           )}
         </CardContent>
       </Card>
+
+      {/* Relatório "Por canal" (issue #2390): o mesmo corte de período e de
+          atendente da página, agora pelo NÚMERO — a unidade de trabalho da
+          operação (rodízio #1330). Fora do filtro de atendente a RLS é quem
+          escopa: agent vê as próprias conversas, manager+ a organização. */}
+      <CanaisPanel owner={selectedOwner} />
     </div>
   );
 }

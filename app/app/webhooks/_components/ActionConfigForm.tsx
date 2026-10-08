@@ -24,6 +24,7 @@ import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 import { apiClient } from "@/lib/api/client";
 import type { FollowupFlowPointerRow } from "@/hooks/followup/useFollowupFlows";
+import type { PlanoDeTarefas } from "@/lib/tarefas/plano";
 
 export type ActionItem =
   | { type: "create_or_move_lead"; config: { pipeline_id: string; stage_id: string } }
@@ -45,7 +46,11 @@ export type ActionItem =
         atribuir_a: "dono_do_lead" | { usuario_id: string };
         prioridade: string;
       };
-    };
+    }
+  // #1752 — a SEQUÊNCIA: o plano mora em `organizations.settings.task_plans`,
+  // e o editor só escolhe QUAL deles aplicar. `plano_id` é o id do JSON (não
+  // uuid) — mesmos campos do schema da API e da ação `apply_task_plan`.
+  | { type: "apply_task_plan"; config: { plano_id: string } };
 
 export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
   switch (type) {
@@ -69,6 +74,8 @@ export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
         type,
         config: { titulo: "", vence_em_dias: 1, atribuir_a: "dono_do_lead", prioridade: "medium" },
       };
+    case "apply_task_plan":
+      return { type, config: { plano_id: "" } };
   }
 }
 
@@ -552,6 +559,66 @@ function StartMessageFlowForm({ config, onChange }: FormProps<{ flow_pointer_id:
   );
 }
 
+/**
+ * `apply_task_plan` (#1752) — o seletor dos planos CADASTRADOS.
+ *
+ * A lista vem da MESMA rota que a tela Tarefas › Planos grava
+ * (`settings/task-plans`), e é o motor quem a filtra: o que aparece aqui é
+ * exatamente o que `lib/tarefas/plano.ts` aplicaria. Um `plano_id` escrito à
+ * mão (regra criada pela API) morreria como `plano_nao_encontrado` em cada
+ * disparo — o seletor existe para que isso só aconteça se o plano for apagado
+ * DEPOIS de a regra estar pronta.
+ */
+function ApplyTaskPlanForm({ config, onChange }: FormProps<{ plano_id: string }>) {
+  const t = useT();
+  const { data, isLoading } = useQuery({
+    queryKey: ["settings", "task-plans"],
+    queryFn: async () =>
+      (
+        await apiClient.get<{ data: { planos: PlanoDeTarefas[] } }>(
+          "/api/v1/settings/task-plans",
+        )
+      ).data,
+  });
+  const planos = data?.planos ?? [];
+
+  return (
+    <div className="space-y-1">
+      <Label>{t("Plano de tarefa")}</Label>
+      <Select
+        value={config.plano_id}
+        onValueChange={(v) => onChange({ plano_id: v })}
+        disabled={isLoading}
+      >
+        <SelectTrigger>
+          <SelectValue placeholder={t("Escolha um plano cadastrado")} />
+        </SelectTrigger>
+        <SelectContent>
+          {planos.map((p) => (
+            <SelectItem key={p.id} value={p.id}>
+              {p.nome}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {/* Carregando não diz nada: a frase abaixo só é verdade quando a lista
+          JÁ chegou, e um aviso de "nenhum plano" durante o carregamento ensina
+          o operador a desistir antes de a resposta chegar. */}
+      {isLoading ? null : planos.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          {t("Nenhum plano cadastrado ainda. Cadastre em Tarefas › Planos.")}
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Cada aplicação cria as tarefas do plano na ordem e não duplica — a marca da aplicação é a prova.",
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function ActionConfigForm({
   action,
   onChange,
@@ -612,6 +679,13 @@ export function ActionConfigForm({
     case "create_task":
       return (
         <CreateTaskForm
+          config={action.config}
+          onChange={(config) => onChange({ type: action.type, config })}
+        />
+      );
+    case "apply_task_plan":
+      return (
+        <ApplyTaskPlanForm
           config={action.config}
           onChange={(config) => onChange({ type: action.type, config })}
         />

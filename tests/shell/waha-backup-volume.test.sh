@@ -61,25 +61,21 @@ case " $* " in
     exit 0 ;;
 esac
 case " $* " in *" run "*) ;; *) exit 0 ;; esac
-origem=""; destino=""
+case " $* " in *" tar czf - "*) ;; *) exit 0 ;; esac   # não é o snapshot (ex.: o pg_dump do banco)
+origem=""
 anterior=""
 for arg in "$@"; do
   if [ "$anterior" = "-v" ]; then
     sem_opcao="${arg%:ro}"; sem_opcao="${sem_opcao%:rw}"
-    case "${sem_opcao##*:}" in
-      /data) origem="${sem_opcao%:*}" ;;
-      /out) destino="${sem_opcao%:*}" ;;
-    esac
+    case "${sem_opcao##*:}" in /data) origem="${sem_opcao%:*}" ;; esac
   fi
   anterior="$arg"
 done
-[ -n "$destino" ] || exit 0   # não é o snapshot (ex.: o pg_dump do banco)
 case "$origem" in
   /*) pasta="$origem" ;;                                             # bind: o host manda
   *) pasta="$VOLSTORE/${origem:-sem-origem}"; mkdir -p "$pasta" ;;    # volume nomeado: docker cria vazio
 esac
-alvo="$(printf '%s\n' "$*" | grep -oE '/out/[^ ]+' | head -1 || true)"
-if [ -n "$alvo" ]; then tar czf "$destino/${alvo#/out/}" -C "$pasta" .; fi
+tar czf - -C "$pasta" .                                              # o snapshot sai pela saída padrão
 exit 0
 STUB
 chmod +x "$WORK/bin/docker"

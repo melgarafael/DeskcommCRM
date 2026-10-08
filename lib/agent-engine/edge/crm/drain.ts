@@ -68,7 +68,9 @@ const ALLOWLIST_TTL_MS_PADRAO = 21 * 24 * 60 * 60 * 1000;
 
 /** Um tick do drain: claima um lote de eventos e os transforma em jobs. */
 export async function drainTick(pool: pg.Pool, knobs: DrainKnobs, log: Logger): Promise<number> {
-  // Reaper de eventos órfãos — barato (update indexado), roda a cada tick.
+  // Reaper de eventos órfãos, a cada tick. Quem o serve é o parcial
+  // `event_log_processing_por_tipo_idx` (event_type where status='processing',
+  // migration 0585); o `= any(consumed_by)` é filtro e não usa o GIN.
   await pool.query(
     `update event_log set status = 'pending', updated_at = now()
      where event_type = 'ai_agent.dispatch_requested'

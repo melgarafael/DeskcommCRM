@@ -30,6 +30,8 @@ export interface EstadoDaConexaoDeAds {
   userId: string;
   nonce: string;
   expiraEmMs: number;
+  /** Sessão de quem iniciou: a régua de suporte do callback confere por ela. */
+  authSessionId?: string;
 }
 
 function assinar(carga: string, segredo: string): Buffer {
@@ -47,7 +49,7 @@ function conferirSegredo(segredo: string): string {
 }
 
 export function emitirEstado(
-  dados: { organizationId: string; userId: string; api?: ApiDeConversaoGoogle },
+  dados: { organizationId: string; userId: string; api?: ApiDeConversaoGoogle; authSessionId?: string },
   opcoes: { segredo: string; agora: Date; nonce?: string; validadeMs?: number },
 ): string {
   const segredo = conferirSegredo(opcoes.segredo);
@@ -64,7 +66,8 @@ export function emitirEstado(
 
   const nonce = opcoes.nonce?.trim() || randomBytes(16).toString("hex");
   const expira = opcoes.agora.getTime() + (opcoes.validadeMs ?? VALIDADE_DO_ESTADO_MS);
-  const carga = `${organizationId}.${userId}.${nonce}.${expira}.${dados.api ?? "google_ads"}`;
+  const sessao = dados.authSessionId ? `.${dados.authSessionId}` : "";
+  const carga = `${organizationId}.${userId}.${nonce}.${expira}.${dados.api ?? "google_ads"}${sessao}`;
   const assinatura = assinar(carga, segredo).toString("hex");
   return `${Buffer.from(carga, "utf8").toString("base64url")}.${assinatura}`;
 }
@@ -99,12 +102,12 @@ export function verificarEstado(
   if (!timingSafeEqual(recebida, esperada)) return null;
 
   const campos = carga.split(".");
-  if (campos.length !== 4 && campos.length !== 5) return null;
-  const [organizationId, userId, nonce, expiraTexto, api = "google_ads"] = campos;
+  if (campos.length < 4 || campos.length > 6) return null;
+  const [organizationId, userId, nonce, expiraTexto, api = "google_ads", authSessionId] = campos;
   if (api !== "google_ads" && api !== "data_manager") return null;
   const expiraEmMs = Number(expiraTexto);
   if (!organizationId || !userId || !nonce || !Number.isFinite(expiraEmMs)) return null;
   if (opcoes.agora.getTime() > expiraEmMs) return null;
 
-  return { organizationId, userId, nonce, expiraEmMs, api };
+  return { organizationId, userId, nonce, expiraEmMs, api, ...(authSessionId ? { authSessionId } : {}) };
 }

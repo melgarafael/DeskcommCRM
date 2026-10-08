@@ -224,7 +224,11 @@ function montarBanco(c: Cenario): Banco {
         metadata: {},
       },
     ],
-    conversations: [{ id: CONV, organization_id: ORG, channel_session_id: null, active_ai_agent_id: null }],
+    // `organizations` é o embed que o portão de elegibilidade lê: sem status a
+    // empresa não opera, e o worker pula antes de medir (a régua do handoff).
+    conversations: [
+      { id: CONV, organization_id: ORG, channel_session_id: null, active_ai_agent_id: null, organizations: { status: "active" } },
+    ],
     // O worker só mede com um agente no ar (#1936): sem ele, sai com `nenhum_agente_no_ar`.
     ai_agents: [
       {
@@ -1278,9 +1282,9 @@ describe("os pedidos do cliente no worker de clima", () => {
 
   it.each([
     ["contato bloqueado", { contato: { is_blocked: true } }],
-    ["pessoa no comando da conversa", { conversa: { assignee_kind: "user" } }],
-    ["conversa silenciada", { conversa: { bot_silenced_until: "2999-01-01T00:00:00.000Z" } }],
-    ["contato passado para uma pessoa", { conversa: { contacts: { force_human: true } } }],
+    ["pessoa no comando da conversa", { conversa: { assignee_kind: "user" }, vetoDaElegibilidade: true }],
+    ["conversa silenciada", { conversa: { bot_silenced_until: "2999-01-01T00:00:00.000Z" }, vetoDaElegibilidade: true }],
+    ["contato passado para uma pessoa", { conversa: { contacts: { force_human: true } }, vetoDaElegibilidade: true }],
     ["conversa de grupo", { conversa: { is_group: true } }],
     // Pausar pela tela grava SÓ `paused_at`: a versão segue publicada e o
     // ponteiro fica (`app/app/ai/agents/_actions.ts`). O dreno enfileira o
@@ -1294,7 +1298,7 @@ describe("os pedidos do cliente no worker de clima", () => {
     ["o único agente publicado em OUTRO número", { sessaoDoAgente: OUTRO_NUMERO }],
     ["conversa sem número", { conversa: { channel_session_id: null } }],
     // A empresa suspensa: o portão veta o turno (`org_nao_operante`), então o Jev não pergunta.
-    ["empresa suspensa", { conversa: { organizations: { status: "suspended" } } }],
+    ["empresa suspensa", { conversa: { organizations: { status: "suspended" } }, vetoDaElegibilidade: true }],
   ])("%s: o turno não rodaria, e os pedidos não são perguntados", async (_caso, over) => {
     fornecedor(respostaPorPergunta({ humano: 0.99 }));
     const cenario = jevLigado("decide");
@@ -1302,10 +1306,11 @@ describe("os pedidos do cliente no worker de clima", () => {
     expect(perguntasDosPedidos()).toEqual([]);
     // Sem NENHUM agente no ar na empresa (o único pausado, despublicado ou
     // arquivado), o worker inteiro sai antes do clima (#1936,
-    // `nenhum_agente_no_ar`): não há controle a medir. Nos outros casos há um
-    // agente no ar, e o clima segue medindo.
-    const semAgenteNoAr = "agente" in over;
-    expect(doClima(), "o clima segue medindo (controle)").toHaveLength(semAgenteNoAr ? 0 : 1);
+    // `nenhum_agente_no_ar`). Com a elegibilidade vetando a conversa, também:
+    // o handoff recusaria o alerta pela mesma régua, então medir seria pagar
+    // por nada. Nos outros casos há quem atenda, e o clima segue medindo.
+    const semEfeito = "agente" in over || "vetoDaElegibilidade" in over;
+    expect(doClima(), "o clima mede só quando o alerta teria efeito").toHaveLength(semEfeito ? 0 : 1);
     expect(banco.jev_observacoes ?? []).toEqual([]);
   });
 

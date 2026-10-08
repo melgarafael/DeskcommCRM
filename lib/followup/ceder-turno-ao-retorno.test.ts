@@ -194,6 +194,20 @@ describe("deveCederTurnoAoRetorno", () => {
     ).toBe(false);
   });
 
+  it("claim entre a inscrição e o evento dela: a inscrição de retorno nascida depois desta mensagem é a voz dela", async () => {
+    // O despacho sai antes do dreno do gatilho; o claim do agente pode cair
+    // depois de `insereEnrollment` e antes de `insereEventoDoEnrollment`.
+    const vivo = (pointer_id: string, nasceu_depois: boolean) => ({
+      match: (sql: string) => sql.includes("waiting_reply"),
+      rows: [{ pointer_id, nasceu_depois }],
+    });
+    const base = [pointerQualifica, conversaLivre, inboundOntem, ninguemArma, grafoDeTextoFixo];
+    expect(await deveCederTurnoAoRetorno(pool([vivo(POINTER, true), ...base]), pedido)).toBe(true);
+    // Controles: inscrição de antes desta mensagem, ou de um fluxo que não é de retorno, ocupa o slot.
+    expect(await deveCederTurnoAoRetorno(pool([vivo(POINTER, false), ...base]), pedido)).toBe(false);
+    expect(await deveCederTurnoAoRetorno(pool([vivo("outro", true), ...base]), pedido)).toBe(false);
+  });
+
   it("outro enrollment vivo não cede — este gatilho não enrollaria", async () => {
     expect(
       await deveCederTurnoAoRetorno(

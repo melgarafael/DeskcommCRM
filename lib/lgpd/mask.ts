@@ -33,7 +33,7 @@ export function maskPhone(phone: string | null | undefined): string | null {
  * O CPF do titular, mascarado, para o PDF de acesso (issue #2341).
  *
  * O relatório dizia "Informado na conversa (valor no arquivo de dados)", mas o
- * `data.json` fica no Storage e o e-mail não o entrega: o documento apontava
+ * `data.json` ficava no Storage sem link no e-mail: o documento apontava
  * para um arquivo que quem o lê não tem. A saída escolhida foi imprimir o
  * valor AQUI, mascarado — o ponteiro para o arquivo sumiu.
  *

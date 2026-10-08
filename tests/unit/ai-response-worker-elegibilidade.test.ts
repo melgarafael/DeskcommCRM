@@ -7,7 +7,9 @@
  *
  * Prova, contra o worker REAL (admin client + gateway mockados):
  *  - gate 'allowlist' + contato não autorizado → skip 'nao_elegivel_para_ia',
- *    ANTES de qualquer leitura de mensagem/agente;
+ *    ANTES de qualquer leitura de mensagem. O agente legado é lido PRIMEIRO
+ *    (sem candidato o worker sai com uma consulta), então a org daqui tem um
+ *    `rag_bot` sem versão — o único caso em que o gate chega a importar.
  *  - gate 'open' (default) → o guard não veta;
  *  - erro na leitura da elegibilidade → skip 'nao_elegivel_para_ia' (fail-closed).
  */
@@ -49,6 +51,17 @@ const CONV_ID = "44444444-4444-4444-8444-444444444444";
 const MSG_ID = "55555555-5555-4555-8555-555555555555";
 const CONTACT_ID = "66666666-6666-4666-8666-666666666666";
 
+/** `rag_bot` ativo sem versão publicada: o candidato que faz o worker legado olhar a conversa. */
+const AGENTE_LEGADO = {
+  id: "88888888-8888-4888-8888-888888888888",
+  organization_id: ORG_ID,
+  kind: "rag_bot",
+  is_active: true,
+  published_version_id: null,
+  archived_at: null,
+  paused_at: null,
+};
+
 interface ConvOpts {
   aiGate?: string | null;
   aiAuthorizedAt?: string | null;
@@ -79,7 +92,14 @@ function makeAdminStub(opts: ConvOpts, queried: string[]) {
 
   const from = (table: string) => {
     queried.push(table);
-    const result = table === "conversations" ? convRow : table === "messages" ? { id: MSG_ID, body: "oi", direction: "inbound", organization_id: ORG_ID } : null;
+    const result =
+      table === "conversations"
+        ? convRow
+        : table === "messages"
+          ? { id: MSG_ID, body: "oi", direction: "inbound", organization_id: ORG_ID }
+          : table === "ai_agents"
+            ? AGENTE_LEGADO
+            : null;
     let selectCols = "";
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chain: any = {
@@ -128,7 +148,8 @@ describe("ai-response-worker (legado) · gate de elegibilidade", () => {
     const result = await processMessageReceived(eventRow);
     expect(result).toMatchObject({ status: "skipped", reason: "nao_elegivel_para_ia" });
     expect(queried).not.toContain("messages");
-    expect(queried).not.toContain("ai_agents");
+    // Só a leitura dos candidatos: a checagem de "há versão publicada" fica depois do gate.
+    expect(queried.filter((t) => t === "ai_agents")).toHaveLength(1);
   });
 
   it("gate 'allowlist' + contato autorizado → o guard não veta (avança no pipeline)", async () => {

@@ -17,7 +17,7 @@ import type pg from "pg";
 import { situacaoDoRetorno, type RetornoAgendado, type RetornoDb } from "./retorno";
 
 const COLUNAS =
-  "id, contact_id, next_run_at, enabled, payload, cancelled_at, cancel_reason";
+  "id, contact_id, next_run_at, enabled, payload, cancelled_at, cancel_reason, last_error";
 
 interface LinhaDeCron {
   id: string;
@@ -27,6 +27,7 @@ interface LinhaDeCron {
   payload?: Record<string, unknown> | null;
   cancelled_at?: Date | string | null;
   cancel_reason?: string | null;
+  last_error?: string | null;
   /** Presente quando a query projeta o instante prometido direto do payload. */
   promised_at?: string | null;
 }
@@ -50,6 +51,7 @@ function paraRetorno(row: LinhaDeCron, contactIdPadrao: string): RetornoAgendado
     situacao: situacaoDoRetorno({
       enabled: row.enabled ?? true,
       cancelled_at: iso(row.cancelled_at),
+      last_error: row.last_error ?? null,
     }),
     motivo: texto(payload.reason) ?? "Retorno agendado",
     promessa: texto(payload.promise),

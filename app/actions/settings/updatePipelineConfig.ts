@@ -65,6 +65,9 @@ export async function updatePipelineConfig(
   if (parsed.data.won_reason_required !== undefined) {
     nextSettings.won_reason_required = parsed.data.won_reason_required;
   }
+  if (parsed.data.comanda_no_ganho !== undefined) {
+    nextSettings.comanda_no_ganho = parsed.data.comanda_no_ganho;
+  }
   if (parsed.data.reabertura !== undefined) nextSettings.reabertura = parsed.data.reabertura;
   if (parsed.data.reabertura_campos !== undefined) {
     nextSettings.reabertura_campos = parsed.data.reabertura_campos;

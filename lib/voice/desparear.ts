@@ -34,6 +34,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { fecharAvisoDePausaDoCanalArquivado } from "@/lib/channels/central-de-pausa";
 import type { WacallsClient } from "@/lib/wacalls/client";
 
 export interface ResultadoDoDesparear {
@@ -102,6 +103,9 @@ export async function despareaVoz(
     .eq("id", linha.id);
 
   if (error) throw new Error(`channel_sessions archive: ${error.message}`);
+
+  // Canal pausado e depois desligado: o aviso de pausa resolve junto (issue #2389).
+  await fecharAvisoDePausaDoCanalArquivado(supabase, { id: linha.id, organization_id: organizationId });
 
   return { desapareado: true, channelSessionId: linha.id };
 }

@@ -20,6 +20,9 @@ import { McpAuthError, ensureRole, ensureScope } from "@/lib/mcp/auth";
 import type { McpAuthResult } from "@/lib/mcp/auth";
 import { logger } from "@/lib/logger";
 import { allTools, getToolByName } from "@/lib/mcp/tools";
+import { escolhasRemotas } from "@/lib/mcp/servidor-externo/ids";
+import { definirFerramentasRemotas } from "@/lib/mcp/tools/externo";
+import type { ServidorMcpExternoMontado } from "@/lib/mcp/servidor-externo/carregar";
 import { catalogEntry, deCapacidadeDesligada, deModuloDesligado } from "@/lib/mcp/tools/catalog";
 import type { CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
 import type { ModuloOpcional } from "@/lib/instalacao/modulos";
@@ -75,6 +78,16 @@ export interface PickToolsInput {
    * do turno à mão, esse id é traduzido para o negócio aberto dele.
    */
   contatoDoTurno?: string;
+  /**
+   * Servidor MCP externo REGISTRADO pela instalação, já com as ferramentas que
+   * ele anunciou (#2147).
+   *
+   * Ausente = não existe servidor: o catálogo compilado continua sendo a
+   * única fonte de tool do turno, sem nenhuma chamada de rede. Quem monta é
+   * `carregarServidorMcpExternoDoTurno`, ANTES daqui — descobrir é rede e este montador
+   * é síncrono.
+   */
+  servidorMcpExterno?: ServidorMcpExternoMontado;
 }
 
 /**
@@ -175,6 +188,13 @@ const PREPARAR_PROPOSTA_TOOL_NAME = "crm_preparar_proposta";
 
 function shapeToZodObject(shape: Record<string, z.ZodTypeAny>): z.ZodTypeAny {
   // The MCP tool inputSchema is a Zod *raw shape* (object of zod types).
+  //
+  // Shape VAZIO vira registro livre, e não `z.object({})`: um servidor MCP
+  // externo pode anunciar ferramenta sem `properties` (#2147), e `z.object({})`
+  // faria o Zod DESCARTAR todo argumento antes do handler ver — a chamada
+  // sairia vazia para o ERP, sem erro em lugar nenhum. Nenhuma tool compilada
+  // tem shape vazio, então isto só muda o que é novo.
+  if (Object.keys(shape).length === 0) return z.record(z.string(), z.unknown());
   return z.object(shape);
 }
 
@@ -550,6 +570,53 @@ export function pickToolsFromMcp(input: PickToolsInput): Record<string, Tool> {
       const tool = allTools.find((t) => t.name === nome);
       if (tool) {
         result[nome] = wrapMcpTool(tool, input);
+      }
+    }
+  }
+
+  // ── Ferramentas remotas ESCOLHIDAS pelo agente (#2147, itens 6, 7 e 8) ───
+  //
+  // Depois de tudo: as remotas somam às compiladas e nunca substituem nenhuma
+  // (o nome colidindo é descartado lá em `definirFerramentasRemotas`, com o
+  // motivo no log). Passam pelo MESMO `wrapMcpTool`, então auditoria, papel,
+  // escopo e a devolução de texto em vez de exceção valem para elas — e é
+  // passando por ele que uma remota classificada como ESCRITA cai na
+  // conferência de escopo do turno logo acima (`escrita_sem_escopo_do_turno`)
+  // em vez de atravessá-la.
+  //
+  // A ESCOLHA é do `tool_ids` da versão, com prefixo estável `mcp_externo:`
+  // (item 6, `servidor-externo/ids.ts`) — não do cadastro: registrar o servidor
+  // não dá ferramenta a agente nenhum. DESLIGADO POR PADRÃO (item 7): sem
+  // servidor, ou com servidor mas sem id remoto escolhido, este bloco não
+  // monta nada, e o turno é o catálogo de sempre sem rede nenhuma.
+  //
+  // Fora dos filtros de módulo e capacidade de ORGANIZAÇÃO por desenho: quem
+  // registra o servidor é a instalação, o endereço não vem de pacote nenhum e
+  // o catálogo compilado não sabe que essas ferramentas existem — filtrá-las
+  // por chave que só existe dentro dele as deixaria invisíveis para sempre.
+  if (input.servidorMcpExterno) {
+    const escolhas = escolhasRemotas(input.toolIds);
+    if (escolhas.length > 0) {
+      const ocupados = new Set(allTools.map((t) => t.name));
+      const remotas = definirFerramentasRemotas(
+        input.servidorMcpExterno.servidor,
+        input.servidorMcpExterno.ferramentas,
+        ocupados,
+        escolhas,
+        // Junta de teste (ver `ServidorMcpExternoMontado.fetch`): em produção
+        // isto vem vazio e a saída usa o guard anti-SSRF.
+        input.servidorMcpExterno.fetch ? { fetch: input.servidorMcpExterno.fetch } : undefined,
+      );
+      for (const def of remotas) {
+        // ESCOLHA (b), item 8, em dois níveis. O primeiro é
+        // `carregarServidorMcpExterno`, que não carrega servidor nenhum para
+        // turno com contato — este é o de defesa: se um chamador futuro
+        // passar as duas coisas, a LEITURA remota não monta (o servidor não
+        // recebe o contato do turno e poderia devolver dado de outro cliente)
+        // e a ESCRITA monta para ser RECUSADA logo acima por
+        // `escrita_sem_escopo_do_turno`, nunca executada.
+        if (input.contatoDoTurno && def.category === "read") continue;
+        result[def.name] = wrapMcpTool(def, input);
       }
     }
   }

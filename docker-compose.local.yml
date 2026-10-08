@@ -20,6 +20,8 @@ services:
     env_file: ${LOCAL_ENV_FILE:-.env.local}
     environment:
       WAHA_API_BASE_URL: http://waha:3000
+      # O `worker` abaixo drena o event_log; ver docker-compose.prod.yml.
+      EVENT_LOG_WORKER_DRAINS: ${EVENT_LOG_WORKER_DRAINS:-true}
     ports:
       - "${APP_PORT:-3000}:3000"
     extra_hosts:

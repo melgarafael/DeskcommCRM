@@ -92,6 +92,8 @@ vi.mock("@/lib/ai/pontos/pkce-da-assinatura", async (orig) => {
 const tokens: TokensDoCodex = {
   access_token: "at-1234567890",
   refresh_token: "rt-9876543210",
+  client_id: "siwc-client-test",
+  scopes: ["chatgpt.tokens.use.direct"],
   expires_at: null,
 };
 
@@ -200,6 +202,9 @@ const registroQueFalha = (erro: unknown) => (_apiKey: string,
     provider: PROVEDOR_POR_ASSINATURA,
     modelId: "gpt-5",
     doGenerate: async () => {
+      throw erro;
+    },
+    doStream: async () => {
       throw erro;
     },
   }) as never;

@@ -80,18 +80,26 @@ export async function loadDisclosureTemplate(db: Queryable, tenantId: string): P
 }
 
 /**
- * "PRIMEIRO outbound ao contato": conta envios `accepted` prévios (send_ledger, F2-06) deste
+ * "PRIMEIRO outbound ao contato": envios `accepted` prévios (send_ledger, F2-06) deste
  * contato. 0 → é o primeiro (o disclosure precisa estar na mensagem). Só sends CONFIRMADOS
  * contam: um 'queued'/'failed' não alcançou o lead, então a próxima tentativa ainda é a
  * primeira e leva o disclosure. organization_id/contact_id de fonte confiável (row do job — regra dura nº 1).
+ *
+ * Devolve 0 ou 1, nunca o total: os chamadores só comparam com 0, e um `count(*)` por
+ * envio contava todas as linhas casadas para responder "existe?"; o `exists` para na
+ * primeira. ponytail: o nome
+ * ficou `count` para não abrir conflito em `before-send.ts`; vira `hasPriorAcceptedSend`
+ * quando aquela região estiver livre.
  */
 export async function countPriorAcceptedSends(db: Queryable, tenantId: string, leadId: string): Promise<number> {
-  const { rows } = await db.query<{ n: number }>(
-    `select count(*)::int as n from send_ledger
-     where organization_id = $1 and contact_id = $2 and status = 'accepted'`,
+  const { rows } = await db.query<{ existe: boolean }>(
+    `select exists(
+       select 1 from send_ledger
+       where organization_id = $1 and contact_id = $2 and status = 'accepted'
+     ) as existe`,
     [tenantId, leadId],
   );
-  return rows[0]?.n ?? 0;
+  return rows[0]?.existe ? 1 : 0;
 }
 
 /**

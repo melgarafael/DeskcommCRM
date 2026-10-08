@@ -21,6 +21,8 @@ if [ -z "$URL" ]; then
 fi
 [ -n "$URL" ] || { echo "FATAL: SUPABASE_DB_ADMIN_URL/SUPABASE_DB_URL ausente (env ou .env/.env.local)" >&2; exit 1; }
 
+# O dump é o banco inteiro: só o dono lê. No cron o umask é 022 (dump 644).
+umask 077
 mkdir -p "$DIR"
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 OUT="$DIR/deskcomm-$STAMP.dump"

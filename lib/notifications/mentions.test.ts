@@ -6,6 +6,7 @@ import {
   mencaoAtingeUsuario,
   montarMencao,
   partesDoCorpo,
+  podarMencoes,
   textoLegivelDeMencao,
   tokensDeMencao,
 } from "./mentions";
@@ -143,5 +144,56 @@ describe("embutirMencoes", () => {
   it("nome com caractere de regex não vira erro: Ana (HQ) casa literal", () => {
     const heroi = { id: "id-heroi", nome: "Ana (HQ)" };
     expect(embutirMencoes("oi @Ana (HQ)", [heroi])).toBe("oi @[Ana (HQ)](mencao:id-heroi)");
+  });
+});
+
+/**
+ * `podarMencoes` — a escolha apagada sai da lista antes de virar notificação
+ * para a pessoa errada (#2463).
+ *
+ * A régua de presença tem de ser a MESMA do `embutirMencoes`: se a poda
+ * aceitasse `@Ana Lima123` como ocorrência, a escolha morta voltaria a roubar
+ * a ocorrência da próxima Ana na saída.
+ */
+describe("podarMencoes", () => {
+  const ana1 = { id: "id-ana-1", nome: "Ana Lima" };
+  const ana2 = { id: "id-ana-2", nome: "Ana Lima" };
+  const carlos = { id: "id-carlos", nome: "Carlos Dias" };
+
+  it("nome continua no texto: a escolha fica", () => {
+    expect(podarMencoes("fala com @Ana Lima sobre o orçamento", [ana1])).toEqual([ana1]);
+  });
+
+  it("apagou o nome: a escolha sai", () => {
+    expect(podarMencoes("fala com ", [ana1])).toEqual([]);
+    expect(podarMencoes("", [ana1])).toEqual([]);
+  });
+
+  it("a régua é a MESMA do embutir: `@Ana Lima123` não segura a escolha", () => {
+    // Com `includes()` cru, esta escolha sobreviveria e voltaria a roubar a
+    // ocorrência da próxima Ana — o defeito da issue, só mais difícil de ver.
+    expect(podarMencoes("oi @Ana Lima123", [ana1])).toEqual([]);
+    expect(embutirMencoes("oi @Ana Lima123", [ana1])).toBe("oi @Ana Lima123");
+  });
+
+  it("escolha sem nome não segura nada", () => {
+    expect(podarMencoes("@xyz", [{ id: "u-1", nome: "   " }])).toEqual([]);
+  });
+
+  it("edição que deixa o texto sem NENHUMA menção derruba todas", () => {
+    expect(podarMencoes("fala com ", [ana1, carlos])).toEqual([]);
+  });
+
+  it("só a escolha cujo nome sumiu sai — a outra fica", () => {
+    expect(podarMencoes("fala com @Carlos Dias", [ana1, carlos])).toEqual([carlos]);
+  });
+
+  it("duas ocorrências legítimas: as duas escolhas ficam (o pareamento é do embutir)", () => {
+    expect(podarMencoes("@Ana Lima e @Ana Lima", [ana1, ana2])).toEqual([ana1, ana2]);
+  });
+
+  it("mesma referência quando nada saiu — o setState por tecla não re-renderiza à toa", () => {
+    const lista = [ana1];
+    expect(podarMencoes("fala com @Ana Lima", lista)).toBe(lista);
   });
 });

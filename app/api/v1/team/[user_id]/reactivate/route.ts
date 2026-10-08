@@ -39,6 +39,7 @@ import type { NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { traduzirLimiteDoPlano } from "@/lib/cobranca/limites";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -81,7 +82,13 @@ export async function POST(
     .from("user_organizations")
     .update({ revoked_at: null, updated_at: nowIso })
     .eq("id", target.id);
-  if (updErr) return fail("internal_error", updErr.message, 500, { requestId });
+  if (updErr) {
+    // O gatilho de assentos do plano (spec cobrança §5) recusa com PT402 quando
+    // devolver esta pessoa passaria do teto — é instrução para quem clicou.
+    const limite = traduzirLimiteDoPlano(updErr, authz.user.idioma);
+    if (limite) return fail(limite.code, limite.message, 409, { requestId, details: limite.details });
+    return fail("internal_error", updErr.message, 500, { requestId });
+  }
 
   await audit({
     action: "member.reactivated",

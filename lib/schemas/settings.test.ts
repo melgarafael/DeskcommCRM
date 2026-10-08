@@ -131,6 +131,14 @@ describe("notificationPrefsSchema", () => {
 });
 
 describe("pipelineConfigPatchSchema", () => {
+  // A porta da comanda do ganho (#1477): o zod descarta chave desconhecida, então
+  // tirá-la do schema faria a caixa da tela gravar NADA, sem erro nenhum.
+  it("mantém `comanda_no_ganho` booleano e recusa qualquer outra forma", () => {
+    const r = pipelineConfigPatchSchema.safeParse({ comanda_no_ganho: true });
+    expect(r.success && r.data.comanda_no_ganho).toBe(true);
+    expect(pipelineConfigPatchSchema.safeParse({ comanda_no_ganho: "true" }).success).toBe(false);
+  });
+
   it("accepts partial vocabulary patch", () => {
     const r = pipelineConfigPatchSchema.safeParse({
       vocabulary: { lead: "Cliente", won: "Pago" },

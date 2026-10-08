@@ -67,6 +67,30 @@ const ANON_PERMITIDO: readonly Excecao[] = [];
  */
 const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
   {
+    fn: "encrypt_cpf(text)",
+    razao:
+      "POST/PATCH app/api/v1/contacts/route.ts e app/api/v1/contacts/[id]/route.ts, " +
+      "e POST app/api/v1/contacts/import/route.ts — os três montam o client com " +
+      "createClient de lib/supabase/server (sessão; _handler.ts:961 registra que " +
+      "\"nenhum service role entra aqui\"). Definer porque a chave vem de " +
+      "private.app_secrets('cpf_key'), que o papel anon não alcança. NÃO escreve: " +
+      "devolve só o ciphertext do CPF que a MESMA requisição enviou, então não há " +
+      "dado de outro tenant no retorno; volátil porque relê a chave a cada chamada " +
+      "(GUC app.cpf_key é por conexão). Sem ela o CHECK contacts_cpf_consistency " +
+      "recusa a linha e o contato é salvo sem CPF (#2522).",
+  },
+  {
+    fn: "decrypt_cpf(uuid)",
+    razao:
+      "GET app/api/v1/contacts/[id]/route.ts → getContactHandler (_handler.ts:418) " +
+      "é o único call site, com o client de sessão — e ele só CHEGA ali depois de " +
+      "ler user_organizations do contato e exigir roleAtLeast(manager). Definer " +
+      "porque lê contacts.cpf_encrypted e ESCREVE o audit contact.cpf_decrypted em " +
+      "api_audit_log antes de devolver o texto. A guarda de tenant é a da casa: " +
+      "fora de fn_user_org_ids() a função levanta forbidden_org (platform admin " +
+      "passa), então cross-org nunca lê CPF (#2522).",
+  },
+  {
     fn: "fn_honorarios_parcela_pagar(uuid,uuid,uuid,uuid)",
     razao:
       "POST app/api/v1/honorarios/parcelas/[id]/pagar/route.ts usa createClient da " +

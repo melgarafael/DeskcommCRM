@@ -161,11 +161,17 @@ export async function loadPacingState(
   input: { now: Date; timezone: string; numberActivatedAt: Date | null },
 ): Promise<PacingState> {
   const dayStart = dayStartInTz(input.now, input.timezone);
+  // Dois subselects e não `max` + `count(*) filter`: com o filtro de data fora do
+  // WHERE, a agregação lia o histórico inteiro do número a cada envio, sob o lock.
+  // Assim os dois descem por `idx_pacing_ledger_session (org, sessão, sent_at desc)`:
+  // a última linha e só as linhas do dia. Mesmo molde de `ledger-supabase.ts`.
   const { rows } = await db.query<{ last_sent_at: Date | null; sent_today: string }>(
-    `select max(sent_at) as last_sent_at,
-            count(*) filter (where sent_at >= $3) as sent_today
-     from pacing_ledger
-     where organization_id = $1 and channel_session_id = $2`,
+    `select (select sent_at from pacing_ledger
+              where organization_id = $1 and channel_session_id = $2
+              order by sent_at desc limit 1) as last_sent_at,
+            (select count(*) from pacing_ledger
+              where organization_id = $1 and channel_session_id = $2
+                and sent_at >= $3) as sent_today`,
     [tenantId, channelSessionId, dayStart],
   );
   const row = rows[0];
