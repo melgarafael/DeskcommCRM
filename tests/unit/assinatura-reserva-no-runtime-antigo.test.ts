@@ -7,7 +7,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
  * Sem login utilizável, `runAgent` pega a chave `openai` da empresa como
  * reserva. A versão continua dizendo `openai-assinatura`, e montar o modelo
  * com ESSE provider mandaria a chave de API ao endpoint do Codex
- * (`chatgpt.com/backend-api/codex`), que não a aceita: a reserva existiria e
+ * (`api.openai.com/v1`), que não a aceita: a reserva existiria e
  * nunca responderia. O motor (`resolveOrgLlmConfig`) já devolvia o provider da
  * reserva junto da chave; este arquivo amarra o mesmo par no `runAgent`.
  *
@@ -125,6 +125,6 @@ describe("runAgent: a reserva da assinatura fala pelo provider da reserva", () =
     await rodar();
     expect(montagens).toHaveLength(1);
     expect(montagens[0]!.apiKey).toBe("at-da-assinatura");
-    expect(montagens[0]!.baseURL).toContain("chatgpt.com/backend-api/codex");
+    expect(montagens[0]!.baseURL).toContain("api.openai.com/v1");
   });
 });

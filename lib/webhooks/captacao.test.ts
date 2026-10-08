@@ -46,6 +46,7 @@ describe("motivoDaRecusaDaCriacao (#2297, caminho 4)", () => {
       [
         "assinatura_indecifravel",
         "assinatura_invalida",
+        "campo_numerico_invalido",
         "erro_ao_criar_lead",
         "erro_inesperado",
         "recusa_da_regra",

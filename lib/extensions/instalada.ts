@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { ExtensionError, type ExtensionErrorCode } from "./errors";
 import {
   checkCompatibility,
+  temConfiguracaoDeCard,
   parseManifest,
   type CatalogEntry,
   type ExtensionConfiguration,
@@ -150,7 +151,15 @@ export function montarInstalada({
     ...comum,
     display: leitura.manifest.display,
     permissions: leitura.manifest.permissions,
-    configuration: binding?.configuration ?? leitura.manifest.configuration,
+    // Um pacote de DADOS não tem card para configurar, então o manifesto dele traz `configuration`
+    // vazia (ADR-0005). A view, que alimenta a tela de extensões, sempre entrega uma configuração
+    // utilizável — a mesma padrão que a linha 143 já usa para o pacote ilegível. Sem isto, a tela
+    // receberia `{}` e leria `density`/`show_description` como `undefined`.
+    configuration:
+      binding?.configuration ??
+      (temConfiguracaoDeCard(leitura.manifest.configuration)
+        ? leitura.manifest.configuration
+        : { density: "comfortable", show_description: true }),
     compatible: compatibility.compatible,
     compatibility_reason: compatibility.compatible ? null : MOTIVO_API_INCOMPATIVEL,
   };

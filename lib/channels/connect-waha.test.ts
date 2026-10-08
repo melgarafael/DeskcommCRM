@@ -224,6 +224,18 @@ describe("I1: conectar/reativar ressincroniza o filtro de grupos", () => {
   });
 });
 
+describe("limite de números do plano", () => {
+  it("⭐ o PT402 da reserva sobe CRU — a rota precisa da mensagem com o número", async () => {
+    // O gatilho de canais (spec cobrança §5) recusa de dentro de
+    // `fn_reserve_channel_connection`. Embrulhado em ChannelConnectionError, o
+    // número se perdia e a tela dizia "Não foi possível concluir a conexão".
+    const f = fixture();
+    const recusa = { code: "PT402", message: "limite_do_plano:canais:1" };
+    vi.mocked(f.db.rpc).mockImplementationOnce((async () => ({ data: null, error: recusa })) as never);
+    await expect(connectWahaChannel(f.db, f.db, f.transport, f.input)).rejects.toBe(recusa);
+    expect(f.transport.createSession).not.toHaveBeenCalled();
+  });
+});
 
 describe("a opção por conexão do acervo (#999)", () => {
   it("pede o store na criação SÓ quando o canal tem a opção ligada", async () => {

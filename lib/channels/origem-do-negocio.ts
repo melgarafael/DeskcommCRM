@@ -40,6 +40,28 @@ export const ORIGEM_DO_WHATSAPP: OrigemDoNascimento = {
   motivo: "primeira mensagem recebida no WhatsApp",
 };
 
+/**
+ * O negócio que nasce quando quem ATENDE fala primeiro — pelo celular
+ * conectado ao WAHA (issue #2448).
+ *
+ * O caminho recebido continua dizendo "recebida"; aqui a mensagem SAIU do
+ * aparelho, e o motivo da linha do tempo tem de dizer isso: sem esta origem
+ * própria, o nascimento recairia no padrão e a timeline afirmaria
+ * "primeira mensagem recebida no WhatsApp" para uma conversa que começou com
+ * a nossa abordagem.
+ *
+ * `source` ganha um valor próprio pela mesma razão do arquivo irmão da
+ * campanha: `crm_leads.source` é vocabulário ABERTO (nenhum CHECK, por
+ * doutrina de clone — ver `lib/campanhas/origem-do-lead.ts`), e juntar os dois
+ * sob `whatsapp` faria o relatório por origem contar como "chegou sozinho" quem
+ * fomos atrás. O `rotulo` continua "WhatsApp": o card sem nome é do MESMO canal.
+ */
+export const ORIGEM_DO_WHATSAPP_OPERADOR: OrigemDoNascimento = {
+  rotulo: "WhatsApp",
+  source: "whatsapp_operador",
+  motivo: "primeira mensagem enviada pelo celular",
+};
+
 export function origemDoNegocioPeloCanal(canal: string | null | undefined): OrigemDoNascimento {
   const rede = SOCIAL_NETWORKS.find((r) => r.inbox && r.id === canal);
   if (!rede) return ORIGEM_DO_WHATSAPP;

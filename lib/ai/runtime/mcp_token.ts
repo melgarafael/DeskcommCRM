@@ -128,7 +128,11 @@ export async function mintEphemeralToken(input: MintEphemeralTokenInput): Promis
   return { id: data.id as string, plaintext, expiresAt: data.expires_at as string };
 }
 
-export async function revokeEphemeralToken(tokenId: string): Promise<void> {
+export async function revokeEphemeralToken(tokenId: string, organizationId: string): Promise<void> {
   const admin = createAdminClient();
-  await admin.from("api_tokens").update({ revoked_at: new Date().toISOString() }).eq("id", tokenId);
+  await admin
+    .from("api_tokens")
+    .update({ revoked_at: new Date().toISOString() })
+    .eq("organization_id", organizationId)
+    .eq("id", tokenId);
 }

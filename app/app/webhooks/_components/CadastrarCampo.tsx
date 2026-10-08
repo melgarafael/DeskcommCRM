@@ -38,6 +38,8 @@ function rotuloDoTipo(tipo: TipoCadastravel, t: Traduz): string {
       return t("Texto longo");
     case "number":
       return t("Número");
+    case "currency":
+      return t("Moeda (BRL)");
     case "date":
       return t("Data");
     case "email":
@@ -136,16 +138,18 @@ function mensagemDoMotivo(
 export function CadastrarCampo({
   chave,
   valor,
+  tipoInicial,
   cadastrar,
 }: {
   chave: string;
   valor: unknown;
+  tipoInicial?: TipoCadastravel;
   cadastrar: CampoDoFunilDaCaptacao["cadastrar"];
 }) {
   const t = useT();
   const [aberto, setAberto] = React.useState(false);
   const [rotulo, setRotulo] = React.useState(() => rotuloSugerido(chave));
-  const [tipo, setTipo] = React.useState<TipoCadastravel>(() => tipoSugerido(valor));
+  const [tipo, setTipo] = React.useState<TipoCadastravel>(() => tipoInicial ?? tipoSugerido(valor));
   const [salvando, setSalvando] = React.useState(false);
 
   // Nome de campo que a API recusaria (hífen, espaço, colchete…) não tem como virar

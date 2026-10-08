@@ -91,6 +91,8 @@ const STATUS: Record<string, { rotulo: string; tom: TomDoStatus }> = {
   agendada: { rotulo: "Agendada", tom: "info" },
   "concluída": { rotulo: "Concluída", tom: "neutral" },
   cancelada: { rotulo: "Cancelada", tom: "neutral" },
+  // Desligada porque a empresa estava parada (scheduler: last_error=org_nao_operante).
+  "não disparada": { rotulo: "Não disparada", tom: "warning" },
 };
 
 export function rotuloDoStatus(status: string, t: (texto: string) => string = (texto) => texto): string {
@@ -481,6 +483,15 @@ export function descreveEvento(
       return { titulo: "O fluxo parou de tentar", detalhe: texto(p.reason), ...motor };
     case "node_failed":
       return { titulo: "Falhou neste passo", detalhe: texto(p.error), ...motor };
+    case "move_lead_failed":
+      // O card NÃO andou: o motor foi recusado ao mover (ex.: etapa de perda
+      // sem motivo) e o fluxo seguiu. Sem esta linha a trilha mostrava só o
+      // avanço e quem montou o fluxo lia "concluído" com o negócio aberto.
+      return {
+        titulo: "Não conseguiu mover o card para a etapa escolhida",
+        detalhe: texto(p.error) ?? texto(p.codigo),
+        ...motor,
+      };
     case "inbound_woke":
       return { titulo: "O cliente respondeu — o fluxo acordou na hora", detalhe: null, ...cliente };
     case "reactivity_replied":

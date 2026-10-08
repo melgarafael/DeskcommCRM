@@ -56,7 +56,12 @@ services:
       waha:
         condition: service_healthy
     ports:
-      - "8787:8787"
+      # Só 127.0.0.1: /healthz e /metrics do worker não têm autenticação e o
+      # /metrics conta filas, sessões e custo de todas as empresas. Sem endereço
+      # de bind o Docker publica em 0.0.0.0 — qualquer um na mesma rede (Wi-Fi
+      # do café, LAN do escritório) lia os números. O healthcheck roda DENTRO do
+      # container e não depende desta linha.
+      - "127.0.0.1:8787:8787"
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8787/healthz"]
       interval: 30s

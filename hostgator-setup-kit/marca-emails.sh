@@ -258,10 +258,37 @@ if [ -n "$RENDER_EM" ]; then
 fi
 
 # ── 3. Dá para subir? ──────────────────────────────────────────────────────
-[ -n "${SUPABASE_ACCESS_TOKEN:-}" ] || instrua_e_saia \
-  "sem SUPABASE_ACCESS_TOKEN — não dá para configurar os e-mails de acesso sozinho.
+# A TOPOLOGIA vem antes do token. O token (`sbp_...`) é da Management API da
+# NUVEM; perguntar por ele primeiro mandava quem tem o Supabase na própria VPS
+# buscar uma chave de outra conta, para um passo que ali não existe (medido
+# numa instalação single-server em 2026-10-07).
+#
+# Single-server: o Supabase é do kit, e o install-single-server.sh / update.sh
+# gravam os moldes direto no GoTrue (gravar_modelos_do_gotrue, _common.sh —
+# #2109). Aqui só conferimos que estão lá.
+if [ "${SINGLE_SERVER:-0}" = "1" ]; then
+  env_sb="$(PROJECT_DIR="$PROJ_DIR" dir_do_supabase)/.env"
+  if [ -n "$(valor_do_env "$env_sb" GOTRUE_MAILER_TEMPLATES_CONFIRMATION)" ] \
+     && [ -n "$(valor_do_env "$env_sb" GOTRUE_MAILER_TEMPLATES_RECOVERY)" ]; then
+    c_grn "✓ Supabase desta VPS: os e-mails de acesso já usam os moldes do app (gravados no GoTrue)."
+  else
+    anota_pendencia "o GoTrue do Supabase desta VPS ainda não aponta para os moldes do app — rode: bash hostgator-setup-kit/update.sh"
+    c_ylw "⚠ o GoTrue do Supabase desta VPS ainda não aponta para os moldes do app."
+    c_dim "  Rode: bash hostgator-setup-kit/update.sh  (ele grava os moldes e reinicia o auth)"
+  fi
+  exit 0
+fi
+# Supabase próprio fora do kit: sem URL da nuvem, o token não serve para nada —
+# o passo abaixo (REF vazio) ensina a env do GoTrue. URL vazia segue pedindo o
+# token: ali não dá para saber a topologia.
+case "${NEXT_PUBLIC_SUPABASE_URL:-}" in
+  https://*.supabase.co*|"")
+    [ -n "${SUPABASE_ACCESS_TOKEN:-}" ] || instrua_e_saia \
+      "sem SUPABASE_ACCESS_TOKEN — não dá para configurar os e-mails de acesso sozinho.
     Pegue um token em https://supabase.com/dashboard/account/tokens, rode
     \`export SUPABASE_ACCESS_TOKEN=sbp_...\` e chame este script de novo."
+    ;;
+esac
 
 # O ref do projeto sai da URL: https://<ref>.supabase.co. Supabase PRÓPRIO
 # (self-hosted) não tem Management API nenhuma — e nesse caso o passo é por env

@@ -21,7 +21,7 @@ const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 interface Creds {
   password: string;
   org_id: string;
-  users: Record<string, { email: string }>;
+  users: Record<string, { email: string; id?: string }>;
   kanban?: { pipeline_id: string };
 }
 
@@ -217,5 +217,78 @@ test.describe("arrastar o mesmo card duas vezes seguidas (#916)", () => {
 
     const { data } = await admin.from("crm_leads").select("stage_id").eq("id", leadId).single();
     expect((data as { stage_id: string }).stage_id, "o banco guardou a terceira etapa").toBe(etapas[2]);
+  });
+});
+
+/**
+ * #2547 — no modo "Só os seus", o Atendente cria negócio pelo "Novo Lead".
+ *
+ * Antes, a tela recusava (500 e, desde o #2556, 403 explicado): o negócio nascia
+ * sem responsável e ficaria fora do que o Atendente vê. Decisão do mantenedor
+ * (opção A): nesse modo, o negócio que ele cria nasce com ELE de responsável.
+ * Prova pela tela: o card aparece no quadro do Atendente e o banco guardou o
+ * responsável e a data de atribuição.
+ *
+ * `visibility_mode` é da ORGANIZAÇÃO e a suíte inteira compartilha uma: o modo
+ * de antes volta no `afterAll` (molde de `conversa-do-caso.spec.ts`).
+ */
+test.describe("Atendente cria negócio no modo 'Só os seus' (#2547)", () => {
+  const env = carregarEnvLocal();
+  const admin = createClient(env.NEXT_PUBLIC_SUPABASE_URL!, env.SUPABASE_SERVICE_ROLE_KEY!, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const TITULO = `Novo Lead do Atendente ${`${Date.now()}`.slice(-7)}`;
+  let modoOriginal: unknown = undefined;
+
+  async function gravarModo(modo: unknown): Promise<void> {
+    const { data, error } = await admin.from("organizations").select("settings").eq("id", creds.org_id).single();
+    if (error) throw new Error(`settings da org: ${error.message}`);
+    const settings = { ...((data as { settings: Record<string, unknown> | null }).settings ?? {}) };
+    if (modo === undefined) delete settings.visibility_mode;
+    else settings.visibility_mode = modo;
+    const { error: erro } = await admin.from("organizations").update({ settings }).eq("id", creds.org_id);
+    if (erro) throw new Error(`gravar settings da org: ${erro.message}`);
+  }
+
+  test.beforeAll(async () => {
+    const { data } = await admin.from("organizations").select("settings").eq("id", creds.org_id).single();
+    modoOriginal = (data as { settings: Record<string, unknown> | null } | null)?.settings?.visibility_mode;
+    await gravarModo("own");
+  });
+
+  test.afterAll(async () => {
+    await admin.from("crm_leads").delete().eq("organization_id", creds.org_id).eq("title", TITULO);
+    await gravarModo(modoOriginal);
+  });
+
+  test("o botão 'Novo Lead' cria, e o negócio aparece no quadro do Atendente como dele", async ({ page }) => {
+    await login(page, creds.users.agent!.email);
+    await page.goto(`/app/pipelines/${creds.kanban!.pipeline_id}`);
+
+    await page.getByRole("button", { name: "Novo Lead", exact: true }).click();
+    await page.locator("#title").fill(TITULO);
+    const resposta = page.waitForResponse(
+      (r) => r.url().endsWith("/api/v1/leads") && r.request().method() === "POST",
+    );
+    await page.getByRole("button", { name: "Criar lead" }).click();
+    expect((await resposta).status(), "a criação não pode ser recusada").toBe(201);
+
+    await expect(page.getByRole("heading", { name: TITULO })).toBeVisible({ timeout: 30_000 });
+    fs.mkdirSync(path.join(process.cwd(), "evidence", "atendente-cria-no-so-os-seus"), { recursive: true });
+    await page.screenshot({
+      path: path.join(process.cwd(), "evidence", "atendente-cria-no-so-os-seus", "01-card-no-quadro.png"),
+      fullPage: true,
+    });
+
+    const { data } = await admin
+      .from("crm_leads")
+      .select("owner_user_id, owner_kind, assigned_at")
+      .eq("organization_id", creds.org_id)
+      .eq("title", TITULO)
+      .single();
+    const lead = data as { owner_user_id: string | null; owner_kind: string | null; assigned_at: string | null };
+    expect(lead.owner_user_id, "o responsável é o próprio Atendente").toBe(creds.users.agent!.id);
+    expect(lead.owner_kind).toBe("user");
+    expect(lead.assigned_at, "entra como atribuído, com a data").not.toBeNull();
   });
 });

@@ -137,7 +137,7 @@ export async function dadosDoFormularioDoContexto(ctx: ActionCtx): Promise<Dados
     // criou o lead — a primeira. Ordena ascendente por isso.
     const { data } = await ctx.admin
       .from("webhook_lead_captures")
-      .select("fields, utm, source_name")
+      .select("fields, utm, source_name, webhook_source_id")
       .eq("organization_id", ctx.organizationId)
       .eq("lead_id", lead.id)
       .order("received_at", { ascending: true })
@@ -145,10 +145,40 @@ export async function dadosDoFormularioDoContexto(ctx: ActionCtx): Promise<Dados
       .maybeSingle();
 
     const captura = data as
-      | { fields: Record<string, unknown>; utm: Record<string, string>; source_name: string }
+      | {
+          fields: Record<string, unknown>;
+          utm: Record<string, string>;
+          source_name: string;
+          webhook_source_id: string | null;
+        }
       | null;
     if (captura) {
-      acrescentar(dados, captura.fields, rotulos);
+      const rotulosDaFonte = new Map(rotulos);
+      if (captura.webhook_source_id) {
+        const { data: fonte } = await ctx.admin
+          .from("webhook_sources")
+          .select("form_fields")
+          .eq("id", captura.webhook_source_id)
+          .eq("organization_id", ctx.organizationId)
+          .maybeSingle();
+        const formFields = (fonte as { form_fields?: unknown } | null)?.form_fields;
+        if (Array.isArray(formFields)) {
+          for (const field of formFields) {
+            if (
+              field &&
+              typeof field === "object" &&
+              typeof (field as { key?: unknown }).key === "string" &&
+              typeof (field as { label?: unknown }).label === "string"
+            ) {
+              rotulosDaFonte.set(
+                (field as { key: string }).key,
+                (field as { label: string }).label,
+              );
+            }
+          }
+        }
+      }
+      acrescentar(dados, captura.fields, rotulosDaFonte);
       acrescentar(dados, captura.utm);
       return { dados, origem: captura.source_name, origemDaAbordagem: "formulario" };
     }

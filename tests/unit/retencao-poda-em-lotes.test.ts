@@ -28,6 +28,7 @@ import {
   RETENCAO_PROSPECCAO_DIAS_PISO,
   RETENCAO_RASCUNHO_DIAS_PADRAO,
   RETENCAO_RASCUNHO_DIAS_PISO,
+  RETENCAO_TETO_DIAS,
   interpretarRetencao,
 } from "@/lib/retencao/politica";
 
@@ -179,6 +180,32 @@ describe("interpretarRetencao — o knob nunca derruba o produto", () => {
     const r = interpretarRetencao("2", { chave: "K", padrao: 90, piso: 7 });
     expect(r.dias).toBe(7);
     expect(r.aviso).toContain("piso");
+  });
+
+  it("valor acima do teto é REDUZIDO ao teto, com aviso no MESMO formato do piso", () => {
+    // `AUDIT_LOG_RETENTION_DAYS=9999999` chegaria ao Postgres como
+    // `now() - make_interval(days => 9999999)` — antes do mínimo de
+    // `timestamptz` (4713 a.C.) → `timestamp out of range`, o cron
+    // `data-retention` lançava a cada rodada, e aquela tabela e as que vêm
+    // depois dela paravam de ser podadas (#2509). O formato do aviso espelha o
+    // do piso:
+    // `chave=valor está <preposição> do <limite> de N dias — usando N.`
+    const r = interpretarRetencao("9999999", {
+      chave: "AUDIT_LOG_RETENTION_DAYS",
+      padrao: 90,
+      piso: 7,
+    });
+    expect(r.dias).toBe(RETENCAO_TETO_DIAS);
+    expect(r.aviso).toBe(
+      `AUDIT_LOG_RETENTION_DAYS=9999999 está acima do teto de ${RETENCAO_TETO_DIAS} dias — ` +
+        `usando ${RETENCAO_TETO_DIAS}.`,
+    );
+  });
+
+  it("valor NO teto passa intacto — o teto é inclusivo", () => {
+    expect(
+      interpretarRetencao(String(RETENCAO_TETO_DIAS), { chave: "K", padrao: 90, piso: 7 }),
+    ).toEqual({ dias: RETENCAO_TETO_DIAS, aviso: null });
   });
 
   it("valor válido passa inteiro, sem aviso", () => {

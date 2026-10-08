@@ -48,8 +48,17 @@ const ORG: TenantOrganization = {
   status: "active",
   onboarded_at: "2026-01-02T12:00:00.000Z",
   suspended_at: null,
+  suspended_kind: null,
   created_at: "2026-01-01T12:00:00.000Z",
   settings: { plan: "pro" },
+  country: "BR",
+  timezone: "America/Sao_Paulo",
+  locale: "pt-BR",
+  currency: "BRL",
+  media_retention_days: 180,
+  media_retention_enforced: true,
+  dpo_email: null,
+  privacy_policy_url: null,
 };
 
 const COUNTS: TenantCounts = {

@@ -170,7 +170,7 @@ export async function buildMcpTurnTools(
     // pelo TTL curto do mint (mesmo tradeoff aceito pelo runtime nativo no grace).
     cleanup: async () => {
       try {
-        await revokeEphemeralToken(ephemeral.id);
+        await revokeEphemeralToken(ephemeral.id, ids.organizationId);
       } catch {
         // token expira sozinho; revogação é higiene, não invariante.
       }

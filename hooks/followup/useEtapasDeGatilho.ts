@@ -28,6 +28,10 @@ export interface EtapaDeGatilho {
   stageName: string;
   pipelineId: string;
   pipelineName: string;
+  /** `is_lost` do agent-mapping: a etapa fecha o negócio como perda e exige motivo. */
+  isPerda: boolean;
+  /** `settings` do funil na lista de funis — o vocabulário de motivos extras. */
+  settingsDoFunil: unknown;
 }
 
 export interface EtapasDeGatilho {
@@ -112,6 +116,8 @@ export function useEtapasDeGatilho(habilitado = true): EtapasDeGatilho {
         stageName: etapa.name,
         pipelineId: funil.id,
         pipelineName: funil.name,
+        isPerda: etapa.is_lost === true,
+        settingsDoFunil: (funil as { settings?: unknown }).settings ?? null,
       });
     }
   });

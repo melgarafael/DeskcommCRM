@@ -8,6 +8,7 @@ import { format } from "date-fns";
 import { ShieldCheck, PencilSimple, LockOpen } from "@/lib/ui/icons";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
+import { FichasDoModulo } from "@/components/modulos/FichasDoModulo";
 import { ChipDeEtiqueta } from "@/components/tags/ChipDeEtiqueta";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,8 @@ import { DialButton } from "@/components/voice/DialButton";
 
 interface Props {
   contactId: string;
+  /** Painéis de módulo de dados que declaram referência a contato. Resolvido no servidor. */
+  paineisDeModulo?: { modulo: string; objeto: string }[];
 }
 
 /**
@@ -67,7 +70,7 @@ function NivelDaOrigem({ rotulo, valor }: { rotulo: string; valor: string | null
   );
 }
 
-export function ContactDetailClient({ contactId }: Props) {
+export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const q = useContact(contactId);
@@ -416,6 +419,20 @@ export function ContactDetailClient({ contactId }: Props) {
           <div className="mt-4">
             <RoteirosDoContato contactId={contactId} />
           </div>
+          {/*
+            O que os módulos de dados instalados guardam sobre esta pessoa. A lista vem do servidor e
+            é vazia quando não há módulo com ficha de contato — então quem não instalou nada não vê
+            nada a mais, que é o estado de primeira classe do não-negociável 1.
+          */}
+          {paineisDeModulo.map((painel) => (
+            <div className="mt-4" key={`${painel.modulo}:${painel.objeto}`}>
+              <FichasDoModulo
+                modulo={painel.modulo}
+                objeto={painel.objeto}
+                contatoId={contactId}
+              />
+            </div>
+          ))}
         </TabsContent>
 
         <TabsContent value="timeline" className="mt-4">

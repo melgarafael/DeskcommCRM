@@ -39,6 +39,7 @@ import {
 import { validateGraphPartnerCredentials } from "@/lib/channels/graph-parceiro/validate-credentials";
 import { PREFIXO_DO_SEGREDO } from "@/lib/channels/graph-parceiro/webhook";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { traduzirLimiteDoPlano } from "@/lib/cobranca/limites";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { decryptWebhookSecret, encryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { basePublicaDaInstalacao } from "@/lib/webhooks/url-publica";
@@ -145,7 +146,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     userId: authz.user.id,
     requestId,
   });
-  if (error) return fail("internal_error", error, 500, { requestId });
+  if (error) {
+    // `saveGraphPartnerSession` devolve só a mensagem: é ela que carrega o limite do plano.
+    const limite = traduzirLimiteDoPlano(error, authz.user.idioma);
+    if (limite) return fail(limite.code, limite.message, 409, { requestId, details: limite.details });
+    return fail("internal_error", error, 500, { requestId });
+  }
 
   // A volta de um canal arquivado já é auditada por `reactivateChannelSession`
   // (`channel.reactivated`); aqui fica a conexão nova e a troca de token.

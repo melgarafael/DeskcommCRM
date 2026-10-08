@@ -122,7 +122,7 @@ Se você quer rodar o app o mais rápido possível com o mínimo viável:
 5. [OpenAI ou OpenRouter](#5-openai-ou-openrouter--embeddings-do-rag) — embeddings do RAG.
 
 **🟡 Pra testar WhatsApp (+15 min):**
-6. [WAHA](#3-waha--whatsapp) + ngrok (precisa URL pública).
+6. [WAHA](#3-waha--whatsapp) (roda no Docker e chama o app pela rede local).
 
 **⚪ Pode ficar vazio em dev (degradam graciosamente):**
 - [Sentry](#6-sentry--monitoramento-de-erros) — não monitora erros, mas app sobe.
@@ -279,34 +279,24 @@ WAHA_HMAC_SECRET=<plaintext-do-passo-2>
 # WAHA roda em localhost:3030 (mapeamento do docker-compose, host:3030 → container:3000)
 WAHA_API_BASE_URL=http://localhost:3030
 
-# URL pública que o WAHA chama de volta — preenchido no Passo 4
-WAHA_WEBHOOK_BASE_URL=
+# Endereço que o WAHA chama de volta — ver Passo 4
+WAHA_WEBHOOK_BASE_URL=http://host.docker.internal:3000
 ```
 
-### Passo 4 — URL pública pra webhook (ngrok)
+### Passo 4 — o endereço do webhook
 
-WAHA precisa chamar nossa app de volta quando chega mensagem. Localhost não serve — precisa de URL HTTPS pública.
+WAHA precisa chamar nossa app de volta quando chega mensagem. Ele roda no Docker e o
+`pnpm dev` roda no seu computador, então ele chama o app por `host.docker.internal` —
+pela rede local, sem URL pública. A rota global do webhook só atende a rede interna:
+um túnel público (ngrok, Cloudflare) recebe 404 nela.
+
+Quem define o endereço é a variável `WAHA_HOOK_BASE_URL` do `docker-compose.yml`
+(padrão `http://host.docker.internal:3003`). Se o seu `pnpm dev` roda na porta 3000, suba o
+WAHA no Passo 5 assim:
 
 ```bash
-# Instale ngrok
-brew install ngrok
-
-# Cadastre conta grátis em https://ngrok.com e pegue seu authtoken
-ngrok config add-authtoken <seu-token>
-
-# Em outro terminal, expõe a porta 3000 (onde o Next.js vai rodar)
-ngrok http 3000
+WAHA_HOOK_BASE_URL=http://host.docker.internal:3000 docker compose up -d
 ```
-
-O ngrok mostra: `Forwarding https://abc-123-456.ngrok-free.app -> http://localhost:3000`.
-
-Copie a URL `https://...` e cole em:
-
-```env
-WAHA_WEBHOOK_BASE_URL=https://abc-123-456.ngrok-free.app
-```
-
-> ⚠️ A URL do ngrok muda toda vez que você reinicia (no plano free). Pague $8/mês pelo subdomínio fixo se for trabalhar muito com WAHA, ou use [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) (gratuito com domínio próprio).
 
 ### Passo 5 — subir o WAHA
 
@@ -462,7 +452,7 @@ RESEND_FROM_EMAIL=onboarding@resend.dev
 1. Acesse <https://partners.tiendanube.com/> → **Sign up** como parceiro (gratuito).
 2. No dashboard de parceiro → **Apps → Create new app**.
    - **App name:** `DeskcommCRM Dev`.
-   - **Redirect URI:** `https://<sua-url-ngrok>.ngrok-free.app/api/v1/integrations/nuvemshop/callback` (mesmo ngrok do WAHA, ou outro).
+   - **Redirect URI:** `https://<sua-url-ngrok>.ngrok-free.app/api/v1/integrations/nuvemshop/callback` (o callback da Nuvemshop precisa de URL pública: instale o [ngrok](https://ngrok.com), rode `ngrok http 3000` e use a URL `https://` que ele mostra).
    - **Scopes:** marque tudo relacionado a `read_orders`, `read_customers`, `read_products`, `write_orders` (pra atualizar status).
 3. Após criar, a tela do app mostra:
 
@@ -522,6 +512,19 @@ LGPD_SIGNING_KEY=<saída-6>
 > ⚠️ **NUNCA reutilize** a mesma string em produção. Cada uma criptografa uma coisa diferente — se vazar uma, queremos blast radius limitado.
 >
 > ⚠️ **NUNCA mude `CPF_ENCRYPTION_KEY` ou `NUVEMSHOP_OAUTH_ENCRYPTION_KEY` depois que tiver dados em prod** — você não consegue mais descriptografar o que foi salvo. Rotação dessas chaves exige migration de re-encryption.
+>
+> ⚠️ **A chave do CPF precisa chegar ao BANCO**: `encrypt_cpf`/`decrypt_cpf`
+> (migration 0597) leem `private.app_secrets` na linha `cpf_key`. O
+> `install.sh`/`update.sh` semeia sozinho; numa instalação montada à mão:
+>
+> ```sql
+> insert into private.app_secrets (name, value)
+> values ('cpf_key', '<valor de CPF_ENCRYPTION_KEY>')
+> on conflict (name) do update set value = excluded.value, updated_at = now();
+> ```
+>
+> Sem essa linha o contato com CPF é salvo **sem CPF** — a linha entra, mas a
+> busca por CPF não acha ninguém (#2522).
 
 ### Outras vars opcionais
 
@@ -593,13 +596,12 @@ A `anon key` ou `service role key` foi colada errada (cortou no meio). JWTs do S
 Provável: você botou o **hash** em `WAHA_API_KEY` em vez do **plaintext**. Confira: a app envia o que tá no `.env.local` no header — o container WAHA é quem tem o hash (em `WAHA_API_KEY_SHA512`). Refaça o passo 1 do WAHA.
 
 ### Webhook do WAHA não chega
-- O ngrok está rodando? (`ngrok http 3000`)
-- A URL do ngrok atual está em `WAHA_WEBHOOK_BASE_URL`? (muda a cada restart no plano free).
+- O `WAHA_HOOK_BASE_URL` com que você subiu o WAHA aponta para a porta do `pnpm dev`? (ver Passo 4 do WAHA).
 - Você reiniciou o `pnpm dev` depois de mudar o `.env.local`? Variáveis de ambiente são lidas no boot.
 - Confira logs do container: `docker logs deskcomm-waha`.
 
 ### Porta 3000 já em uso
-Algum outro processo rodando. Mata com `lsof -ti:3000 | xargs kill -9` ou roda o Next em outra porta: `pnpm dev -- -p 3001` (e atualize `WAHA_WEBHOOK_BASE_URL` no ngrok pra apontar pra nova porta).
+Algum outro processo rodando. Mata com `lsof -ti:3000 | xargs kill -9` ou roda o Next em outra porta: `pnpm dev -- -p 3001` (e suba o WAHA com `WAHA_HOOK_BASE_URL` apontando pra nova porta).
 
 ### `RESEND_API_KEY is undefined` (mas o app sobe)
 Esperado em dev se você não configurou **nenhum** dos dois caminhos de e-mail (nem SMTP, nem Resend). Emails caem no `console.log`. Só configure se for testar fluxos de email (LGPD export, magic link).

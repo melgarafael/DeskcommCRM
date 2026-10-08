@@ -30,7 +30,7 @@ function sqlLiteral(v: unknown): string {
   return sqlString(String(v));
 }
 
-type FilterOp = "eq" | "lte" | "lt" | "in" | "or";
+type FilterOp = "eq" | "neq" | "lte" | "lt" | "in" | "not_in" | "or";
 interface Filter {
   op: FilterOp;
   col?: string;
@@ -89,6 +89,24 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: { message: string
     return this;
   }
 
+  /**
+   * `neq` e `not(col, "in", ...)` entraram com o PR #1967, cujo primeiro dreno
+   * tirava da consulta as organizações paradas; o filtro saiu (a main usa
+   * `naOrgParada` no handler, #1987) e ficam porque só ALARGAM o dublê. Mesmo
+   * caso do `lt` acima: sem eles, um dreno que os use estoura no instrumento.
+   */
+  neq(col: string, val: unknown): this {
+    this.filters.push({ op: "neq", col, val });
+    return this;
+  }
+
+  not(col: string, op: string, raw: string): this {
+    if (op !== "in") throw new Error(`fakeAdminClient: unsupported .not() op: ${op}`);
+    const vals = raw.replace(/^\(|\)$/g, "").split(",").filter(Boolean);
+    this.filters.push({ op: "not_in", col, val: vals });
+    return this;
+  }
+
   in(col: string, val: unknown[]): this {
     this.filters.push({ op: "in", col, val });
     return this;
@@ -114,6 +132,9 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: { message: string
     if (!this.filters.length) return "";
     const clauses = this.filters.map((f) => {
       if (f.op === "eq") return `${f.col} = ${sqlLiteral(f.val)}`;
+      if (f.op === "neq") return `${f.col} <> ${sqlLiteral(f.val)}`;
+      if (f.op === "not_in")
+        return `${f.col} not in (${(f.val as unknown[]).map(sqlLiteral).join(",")})`;
       if (f.op === "lte") return `${f.col} <= ${sqlLiteral(f.val)}`;
       if (f.op === "lt") return `${f.col} < ${sqlLiteral(f.val)}`;
       if (f.op === "in") return `${f.col} in (${(f.val as unknown[]).map(sqlLiteral).join(",")})`;

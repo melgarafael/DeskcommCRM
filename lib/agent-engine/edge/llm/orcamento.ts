@@ -28,6 +28,12 @@
  * recusas abaixo é essa assimetria escrita.
  */
 
+import type pg from 'pg';
+
+import type { RecursoDoPlano } from '@/lib/cobranca/vocabulario';
+
+import type { OrigemDaChaveLlm } from './credentials';
+
 /**
  * Piso do teto: US$ 1,00/mês. Abaixo disto o número não é orçamento de um agente
  * de WhatsApp, é erro de unidade — e um erro de unidade não pode calar a IA.
@@ -373,6 +379,9 @@ retrata as (
    where organization_id = $1
      and kind in ('budget_exceeded','budget_warning')
      and status = 'open'
+     -- Só os itens do orçamento da ORG, e o legado sem referência. O item do
+     -- teto do PLANO (ref_kind 'plano') tem retratação própria, em SQL_TETO_DO_PLANO.
+     and (ref_kind is null or ref_kind = 'ai_budget')
      and (
        (select teto from orc) is null
        or (select teto from orc) < ${PISO_DE_TETO_CENTS}
@@ -417,3 +426,121 @@ select (select teto from orc)         as teto,
        (select spent from gasto)      as gasto,
        (select ja from avisado_antes) as avisado_antes;
 `;
+
+// ═══ O TETO DE IA DO PLANO (spec da cobrança do revendedor §5) ═══
+//
+// Separado de `ai_budgets`: aquele é o orçamento que a ORGANIZAÇÃO escolhe; este
+// é o bolso do DONO da instalação, que vende o plano. Por isso o `modo 'off'` da
+// organização não o desliga, e só a chave da instalação o consulta (decisão D-9:
+// conta o mês inteiro, inclusive BYOK, mas só BLOQUEIA a chave da instalação).
+//
+// ⚠️ `lerTetoDoPlano` é o único I/O deste arquivo — mora aqui, ao lado de
+// `SQL_ORCAMENTO`, porque o invariante de banco precisa executar ESTE texto, e o
+// caminho legado (`workers/ai-response-worker.ts`) importa a decisão e os
+// textos sem poder arrastar o engine.
+
+export const TITULO_TETO_DO_PLANO = 'O uso de IA do plano acabou';
+export const CORPO_TETO_DO_PLANO =
+  'O uso de IA incluído no plano acabou neste mês. As conversas foram para a equipe. ' +
+  'Troque de plano em Configurações › Plano e cobrança, cadastre uma chave de IA própria ou aguarde o próximo mês.';
+/** Vai para `llm_calls.error_message` e para o `last_error` da fila — a instrução numa linha. */
+export const MOTIVO_TETO_DO_PLANO =
+  'uso de IA incluído no plano da empresa esgotado neste mês — chamada recusada antes de sair byte para o provedor; troque de plano em Configurações › Plano e cobrança, cadastre uma chave de IA própria ou aguarde a virada do mês (agent_inbox_items kind=budget_exceeded ref_kind=plano)';
+
+export type VereditoDoPlano =
+  | {
+      acao: 'seguir';
+      porque: 'chave_de_emergencia' | 'chave_da_organizacao' | 'purpose_isento' | 'sem_teto' | 'abaixo_do_teto';
+    }
+  | { acao: 'bloquear'; porque: 'teto_do_plano' };
+
+/**
+ * A decisão do teto do plano, pura. Só `chave === 'off'` afrouxa: é o
+ * interruptor único do dono (D-9). `'avisar'` rebaixa o orçamento da org, e o
+ * teto do plano não é da org.
+ */
+export function decidirTetoDoPlano(e: {
+  tetoUsdCents: number | null;
+  gastoUsdCents: number;
+  origemDaChave: OrigemDaChaveLlm;
+  purpose: string;
+  chave: ChaveDeOrcamento;
+}): VereditoDoPlano {
+  if (e.chave === 'off') return { acao: 'seguir', porque: 'chave_de_emergencia' };
+  if (e.origemDaChave !== 'chave_da_instalacao') return { acao: 'seguir', porque: 'chave_da_organizacao' };
+  if (ehPurposeIsento(e.purpose)) return { acao: 'seguir', porque: 'purpose_isento' };
+  if (e.tetoUsdCents === null) return { acao: 'seguir', porque: 'sem_teto' };
+  if (e.gastoUsdCents < e.tetoUsdCents) return { acao: 'seguir', porque: 'abaixo_do_teto' };
+  return { acao: 'bloquear', porque: 'teto_do_plano' };
+}
+
+const RECURSO_TETO_DE_IA: RecursoDoPlano = 'ia_usd_cents';
+
+/**
+ * Lê o teto e o gasto numa ida, e fecha o item do plano que perdeu a razão.
+ *
+ * Parâmetros: `$1` organization_id, `$2` o recurso (`'ia_usd_cents'`).
+ *
+ * Sem teto — a instalação de empresa única, com a cobrança desligada —, o gasto
+ * NÃO é somado: essa instalação não paga uma soma de `llm_calls` por chamada por
+ * uma capacidade que não usa.
+ *
+ * LAÇO DE RETORNO: o `budget_exceeded` do PLANO aberto é resolvido quando o gate
+ * perdeu a razão de bloquear — gasto abaixo do teto (virou o mês, ou o plano
+ * subiu) OU teto nenhum (a empresa ficou isenta, ou o plano perdeu o teto). A
+ * mesma régua de `SQL_ORCAMENTO`: sem o caso do teto nulo, o aviso "as conversas
+ * foram para a equipe" ficaria aceso para sempre, porque não há outro resolvedor.
+ * A cobrança DESLIGADA não chega aqui, salvo a janela do memo (o gate nem roda o
+ * statement); quem fecha esse caso é `fn_cobranca_liberar_suspensoes`, no ato de
+ * desligar.
+ */
+export const SQL_TETO_DO_PLANO = `
+with plano as (
+  select public.fn_limite_do_plano($1, $2) as teto
+),
+leitura as (
+  select teto,
+         case when teto is null then null else public.fn_gasto_de_ia_do_mes($1) end as gasto
+    from plano
+),
+retrata as (
+  update agent_inbox_items set status = 'resolved'
+   where organization_id = $1
+     and kind = 'budget_exceeded'
+     and ref_kind = 'plano'
+     and status = 'open'
+     and ((select teto from leitura) is null or (select gasto from leitura) < (select teto from leitura))
+  returning 1
+)
+select teto, gasto from leitura;
+`;
+
+export type LeituraDoTetoDoPlano =
+  | { tetoUsdCents: number | null; gastoUsdCents: number }
+  | { indisponivel: string };
+
+/**
+ * Nunca lança. Erro → `indisponivel` com o SQLSTATE, e quem chama SEGUE: o teto
+ * do plano falhando não pode levar junto o orçamento da org, que é consultado
+ * depois, por outro statement.
+ */
+export async function lerTetoDoPlano(
+  db: Pick<pg.Pool, 'query'>,
+  organizationId: string,
+): Promise<LeituraDoTetoDoPlano> {
+  try {
+    const { rows } = await db.query<{ teto: number | string | null; gasto: number | string | null }>(
+      SQL_TETO_DO_PLANO,
+      [organizationId, RECURSO_TETO_DE_IA],
+    );
+    const linha = rows[0];
+    return {
+      tetoUsdCents: linha?.teto === null || linha?.teto === undefined ? null : Number(linha.teto),
+      gastoUsdCents: Number(linha?.gasto ?? 0),
+    };
+  } catch (err) {
+    const codigo = (err as { code?: unknown } | null)?.code;
+    const texto = err instanceof Error ? err.message : String(err);
+    return { indisponivel: `${typeof codigo === 'string' ? codigo : 'sem_sqlstate'}: ${texto}`.slice(0, 300) };
+  }
+}

@@ -33,9 +33,18 @@ function banco(opcoes: {
   falhas?: Array<{ code: string; message: string } | null>;
   /** O país declarado pela organização; ausente/`null` é o Brasil. */
   pais?: string | null;
+  /** A RPC `encrypt_cpf` não responde — banco sem a migration 0597 ou sem a chave. */
+  cifraIndisponivel?: boolean;
 } = {}) {
   const tentativas: Record<string, unknown>[] = [];
-  const rpc = vi.fn().mockResolvedValue({ error: null });
+  // `encrypt_cpf` (migration 0597) devolve o ciphertext; sem ele,
+  // `camposCpfParaGravar` grava a linha SEM CPF. `cifraIndisponivel` encena o
+  // banco em que a RPC ainda não existe ou a chave não foi semeada (#2522).
+  const rpc = vi.fn(async (nome: string) => {
+    if (nome !== "encrypt_cpf") return { error: null };
+    if (opcoes.cifraIndisponivel) return { error: { message: "encrypt_cpf RPC unavailable" } };
+    return { data: new Uint8Array([1, 2, 3]), error: null };
+  });
   const from = vi.fn((tabela: string) => {
     // A régua do documento vem do PAÍS da organização (issue #1033): a rota lê a
     // organização UMA vez, na entrada. O dublê libera só essa leitura e segue
@@ -283,5 +292,49 @@ describe("POST /api/v1/contacts/import — a planilha segue o PAÍS da organiza�
 
     expect(corpo.data?.errors[0]?.motivo).toContain("CPF inválido");
     expect(db.tentativas).toHaveLength(0);
+  });
+});
+
+describe("POST /api/v1/contacts/import — o CPF grava os DOIS campos ou nenhum (#2522)", () => {
+  /** CPF do próprio exemplo da issue: dígitos verificadores válidos. */
+  const CPF = "529.982.247-25";
+
+  async function importarCpf(linhas: string[]) {
+    const form = new FormData();
+    form.set("file", new File(
+      [["nome,telefone,cpf", ...linhas].join("\n")],
+      "contatos.csv",
+      { type: "text/csv" },
+    ));
+    const resposta = await POST(new NextRequest("http://localhost/api/v1/contacts/import", {
+      method: "POST",
+      body: form,
+    }));
+    return { status: resposta.status, corpo: await resposta.json() as { data?: Resumo } };
+  }
+
+  it("com a RPC no schema a linha nasce com hash E ciphertext", async () => {
+    const db = banco();
+    const { status, corpo } = await importarCpf([`Ana,${PHONE},${CPF}`]);
+
+    expect(status).toBe(200);
+    expect(corpo.data).toEqual({ total_linhas: 1, imported: 1, skipped_duplicates: 0, errors: [] });
+    expect(db.tentativas[0]).toMatchObject({
+      cpf_hash: hashCpf(CPF),
+      cpf_encrypted: expect.anything(),
+    });
+  });
+
+  it("sem cifra disponível a linha é salva SEM CPF — nunca cpf_hash sozinho (#2522)", async () => {
+    const db = banco({ cifraIndisponivel: true });
+    const { status, corpo } = await importarCpf([`Ana,${PHONE},${CPF}`]);
+
+    // O defeito reportado: a linha voltava em `errors` com
+    // `violates check constraint "contacts_cpf_consistency"`. Agora ela entra.
+    expect(status).toBe(200);
+    expect(corpo.data).toEqual({ total_linhas: 1, imported: 1, skipped_duplicates: 0, errors: [] });
+    // Os DOIS ausentes: é a paridade que o CHECK cobra.
+    expect(db.tentativas[0]).not.toHaveProperty("cpf_hash");
+    expect(db.tentativas[0]).not.toHaveProperty("cpf_encrypted");
   });
 });
