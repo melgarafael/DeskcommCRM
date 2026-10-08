@@ -356,6 +356,18 @@ describe("crm_query_external_data", () => {
       expect(r.tabela).toBe("Pedido");
     });
 
+    it("`Pedido` e `pedido` no mesmo schema: quem pede `pedido` lê `pedido`, não a vizinha de outra caixa", async () => {
+      vi.mocked(listarTabelas).mockResolvedValue([
+        { ...TABELA, schema: "public", nome: "Pedido" },
+        { ...TABELA, schema: "public", nome: "pedido" },
+      ]);
+      vi.mocked(colunasDaTabela).mockImplementation(async (schema, tabela) =>
+        schema === "public" && (tabela === "Pedido" || tabela === "pedido") ? new Set(["id"]) : null,
+      );
+      await crmQueryExternalData.handler({ connection_id: "conn-1", tabela: "pedido", limite: 20 }, ctxFake());
+      expect(vi.mocked(lerTabela).mock.calls[0]![0].tabela).toBe("pedido");
+    });
+
     it("tabela que não existe em nenhuma caixa continua `tabela_nao_encontrada`", async () => {
       const r = (await crmQueryExternalData.handler(
         { connection_id: "conn-1", tabela: "fatura", limite: 20 },

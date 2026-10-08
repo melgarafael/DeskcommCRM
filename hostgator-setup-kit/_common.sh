@@ -2404,6 +2404,27 @@ ensure_encryption_key() {
     >/dev/null 2>&1 \
     && c_grn "$(t "✓ chave de cifra ativa no banco (segredos de webhook são guardados cifrados)")" \
     || c_ylw "$(t "⚠ não consegui semear a chave de cifra no banco — segredos de webhook não poderão ser salvos até rodar update.sh de novo.")"
+
+  # ── Chave do CPF (#2522) ───────────────────────────────────────────────────
+  # `encrypt_cpf`/`decrypt_cpf` (migration 0597) leem `private.app_secrets`
+  # na linha `cpf_key`. SEM esta linha toda gravação de contato COM CPF cai na
+  # degradação: o contato é salvo sem CPF e a busca por CPF não acha ninguém —
+  # exatamente o problema que o reportante do #2522 descreveu.
+  local cpf="${CPF_ENCRYPTION_KEY:-}"
+  if [ -z "$cpf" ] && [ -f "$envfile" ]; then
+    cpf="$(grep -E '^CPF_ENCRYPTION_KEY=' "$envfile" | head -1 | cut -d= -f2- | tr -d "'\"" || true)"
+  fi
+  if [ -z "$cpf" ]; then
+    cpf="$(openssl rand -base64 32)"
+    printf '\nCPF_ENCRYPTION_KEY=%s\n' "$cpf" >> "$envfile"
+    c_grn "$(t "✓ chave de cifra do CPF gerada e gravada no .env")"
+  fi
+  export CPF_ENCRYPTION_KEY="$cpf"
+
+  psql_run -c "insert into private.app_secrets (name, value) values ('cpf_key', '${cpf}') on conflict (name) do update set value = excluded.value, updated_at = now();" \
+    >/dev/null 2>&1 \
+    && c_grn "$(t "✓ chave de cifra do CPF ativa no banco (contato com CPF é salvo cifrado)")" \
+    || c_ylw "$(t "⚠ não consegui semear a chave de cifra do CPF no banco — o contato será salvo sem CPF até rodar update.sh de novo.")"
 }
 
 # ── A ÚLTIMA RELEASE ESTÁVEL PUBLICADA ──────────────────────────────────────

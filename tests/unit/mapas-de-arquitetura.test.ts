@@ -180,6 +180,41 @@ describe("mapas de arquitetura — coerência interna", () => {
     }
   });
 
+  it("a cobrança do revendedor está no mapa: nenhuma peça é ilha e todo espelho existe", () => {
+    // Spec §13: o mapa espelha recursos-opcionais, teto-de-orcamento,
+    // organizacoes-e-acesso e central-avisos, e traz o event_log, que não tem
+    // mapa próprio. "Espelha" só é verificável se o nó disser QUAL peça do
+    // outro mapa ele é: renomear a peça lá reprova aqui.
+    type NoComEspelho = { id: string; lane: string; label: string; espelho?: string };
+    const ler = (nome: string) =>
+      JSON.parse(fs.readFileSync(path.join(DIR, nome), "utf8")) as {
+        nodes: NoComEspelho[];
+        edges: NonNullable<Mapa["edges"]>;
+      };
+    const m = ler("cobranca-do-revendedor.architecture.json");
+    const grau = (id: string) => m.edges.filter((e) => e.from === id || e.to === id).length;
+    for (const n of m.nodes) {
+      expect(grau(n.id), `${n.id} com menos de 2 arestas — é ilha pelo invariante 1`).toBeGreaterThanOrEqual(2);
+    }
+    const espelhos = m.nodes.filter((n) => n.espelho !== undefined).map((n) => ({ id: n.id, alvo: n.espelho ?? "" }));
+    for (const { id, alvo } of espelhos) {
+      const [arquivo = "", alvoId = ""] = alvo.split("#");
+      const outro = ler(arquivo);
+      expect(outro.nodes.some((n) => n.id === alvoId), `${id} espelha ${alvo}, que não existe mais`).toBe(true);
+    }
+    for (const mapa of ["recursos-opcionais", "teto-de-orcamento", "organizacoes-e-acesso", "central-avisos"]) {
+      expect(
+        espelhos.some((e) => e.alvo.startsWith(`${mapa}.architecture.json#`)),
+        `nenhuma peça espelha ${mapa}`,
+      ).toBe(true);
+    }
+    expect(m.nodes.some((n) => n.id === "eventLog"), "o event_log não tem mapa próprio: ele mora aqui").toBe(true);
+    const liga = (de: string, para: string) => m.edges.some((e) => e.from === de && e.to === para);
+    expect(liga("acaoModulo", "fnLiberar"), "desligar a chave não libera quem foi suspenso por cobrança").toBe(true);
+    expect(liga("fnLimite", "tetoPlano"), "o teto de IA do plano não sai da régua única de limites").toBe(true);
+    expect(liga("trgCanais", "rotasCanais"), "o limite de números não volta como mensagem para a tela").toBe(true);
+  });
+
   it("a suspensão que suspende está no mapa, e nenhuma peça dela é ilha", () => {
     // O caso concreto do DoD 13 para a PR 1 da cobrança do revendedor. O laço
     // de retorno é `fnReativar → itemCentral → central → fila`: é por ele que

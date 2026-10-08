@@ -1345,6 +1345,52 @@ APROVAR um pedido de LGPD pelo hub (a spec abre o pedido, não aprova).
 `evidence/suspensao-administrativa/hub-atendente.png`,
 `evidence/suspensao-administrativa/central-apos-reativar.png`.
 
+## J41 — O dono cria planos e os limites de pessoas, números e IA valem de verdade `[P1]` (2026-09-30)
+
+**Origem:** PR 2 da cobrança do revendedor
+(`docs/superpowers/specs/2026-09-29-cobranca-do-revendedor-design.md`, §2.2, §2.3, §5, §7(g)(h), §9).
+A chave `MODULO_COBRANCA` ainda não pode ser ligada pela tela (fica em
+`MODULOS_AINDA_NAO_LIGAVEIS` até a PR 3a), então os casos com a chave ligada
+gravam `platform_config.MODULO_COBRANCA='ligado'` direto no banco pelo fixture.
+
+| Caso | Spec | Estado |
+|---|---|---|
+| O dono acha a porta Cobrança, cria um plano (1 pessoa, 1 número, 5 dias) e o atribui à empresa B pelo card do tenant | `tests/e2e/cobranca-suspensao-e-limites.spec.ts` | CI (PARTE_6) |
+| A admin de B vê a faixa de teste grátis; o convite com o plano cheio é recusado antes do e-mail, com a mensagem do plano | idem | CI (PARTE_6) |
+| Reativar membro acima do teto pela API da sessão: o `PT402` atravessa o PostgREST real e vira 409 `plan_limit_reached` | idem | CI (PARTE_6) |
+| Billing mostra o teste grátis e o uso 1 de 1 | idem | CI (PARTE_6) |
+| B suspensa por cobrança: o dono dá prazo pelo card e B volta; suspensa de novo, desligar a chave em /admin/sistema a libera e a porta some | idem | CI (PARTE_6) |
+| Sem a chave: formulário de novo tenant, painel do tenant, /admin/sistema, Billing e menu como antes; nenhuma faixa; Recursos opcionais sem cobrança | `tests/e2e/cobranca-desligada.spec.ts` | CI (PARTE_6) |
+| As duas tabelas: forma, vocabulário, grants, colunas mortas fora | `tests/invariants/cobranca-tabelas.test.ts` | test:db |
+| Isolamento: admin de A lê só A; `agent` não lê; a sessão não escreve; `cobranca_planos` invisível | `tests/invariants/cobranca-isolamento.test.ts` | test:db |
+| O limite do plano: nulo com a chave desligada, isenta ou sem teto; recurso fora do vocabulário = 22023 | `tests/invariants/cobranca-limite-do-plano.test.ts` | test:db |
+| Assentos: teto 2 → 3º membro `PT402` com a mensagem que o app lê; entradas concorrentes → uma passa; provisório pela sessão → `42501` | `tests/invariants/cobranca-assentos.test.ts` | test:db |
+| Canais: idem com desarquivar, troca de organização, reconexão do número já ativo e `wacalls` fora da conta | `tests/invariants/cobranca-canais.test.ts` | test:db |
+| Teste grátis na criação: chave ligada + plano do cadastro → `trial`; criado por platform admin → nada; chave desligada → `settings.plan` como antes | `tests/invariants/cobranca-trial-na-criacao.test.ts` | test:db |
+| Suspensão por cobrança poupa a isenta; reativar zera o aviso; desligar libera só as de cobrança | `tests/invariants/cobranca-suspensao-e-liberacao.test.ts` | test:db |
+| Teto de IA do plano no Postgres real; o orçamento da org não retrata o aviso do plano | `tests/invariants/teto-do-plano.test.ts` | test:db |
+| Aviso do plano e aviso do orçamento convivem sem se retratar | `tests/invariants/cobranca-aviso-do-plano-e-do-orcamento.test.ts` | test:db |
+| Teto de IA do plano: chave própria nunca bloqueia; finalidade isenta segue; `AI_BUDGET_ENFORCEMENT=off` desliga | `lib/agent-engine/edge/llm/orcamento.test.ts` | unit |
+| O mapa vivo espelha os mapas vizinhos e nenhuma peça é ilha | `tests/unit/mapas-de-arquitetura.test.ts` | unit |
+
+**Evidência** (gerada pelo e2e da PARTE_6 no CI e versionada a partir do artefato
+`evidencia-parte-6`): `evidence/cobranca-planos-e-limites/admin-cobranca-planos.png`,
+`evidence/cobranca-planos-e-limites/tenant-card-cobranca.png`,
+`evidence/cobranca-planos-e-limites/convite-recusado-pelo-plano.png`,
+`evidence/cobranca-planos-e-limites/billing-teste-gratis.png`,
+`evidence/cobranca-planos-e-limites/sistema-desligar-libera.png`,
+`evidence/cobranca-planos-e-limites/desligada-novo-tenant.png`,
+`evidence/cobranca-planos-e-limites/desligada-billing.png`,
+`evidence/cobranca-planos-e-limites/desligada-recursos-opcionais.png`.
+
+**Não coberto pela tela:** ligar a chave pela tela (PR 3a, quando ela sair de
+`MODULOS_AINDA_NAO_LIGAVEIS`); pagamento, régua de avisos e suspensão
+automática por falta de pagamento (PR 3a); o aceite de convite recusado pelo
+limite (provado em `tests/invariants/cobranca-assentos.test.ts` e em
+`lib/auth/aplicar-convite.test.ts`, não pela tela); o teto de IA do plano
+bloqueando uma conversa com agente publicado (provado em unit e no Postgres
+real, não pela tela).
+
 ## Jornadas exercitadas (instalação final, virgem)
 
 | Jornada | Resultado |

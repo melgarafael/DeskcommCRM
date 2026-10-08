@@ -25,10 +25,45 @@ export const LIMITE_DA_LEGENDA = 1024;
 
 const BUCKET_DA_CONVERSA = 'whatsapp-media';
 
+/**
+ * A pasta em que o DRY-RUN deixa as fotos preparadas (#2490).
+ *
+ * O teste roda a MESMA `prepararFotosDoProduto` do envio real — mesma query no
+ * catálogo, mesmo filtro de dono, mesma cópia por service role — mas o destino
+ * não é a pasta de conversa nenhuma: o sandbox não tem conversa, e anexo em
+ * pasta de conversa seria efeito permanente onde a issue manda não criar nenhum.
+ * Segmento determinístico (não é UUID): repetir o teste reaproveita o arquivo
+ * em vez de encher a cota de Storage do cliente com duplicatas.
+ */
+export const PASTA_DE_TESTE_DE_MIDIA = 'dry-run';
+
 export interface FotoParaEnvio {
   /** caminho em `whatsapp-media`, dentro da pasta da conversa */
   storagePath: string;
   mime: string;
+}
+
+/**
+ * O que o dry-run apurou sobre a mídia que a resposta USARIA (#2490).
+ *
+ * É o mesmo preparo do caminho de produção, só que sem enviar nada: `anexos` é
+ * o que sairia, `fotosCadastradas` × `fotosPreparadas` é a conta que a tela do
+ * teste informa, e `falha` presente significa teste VERMELHO — o dry-run não
+ * degrada para só texto nem se aprova com a mídia pendente.
+ */
+export interface MidiaPreparada {
+  /** O `produto_codigo` da resposta — o mesmo `codigo` que `crm_search_products` devolve. */
+  codigo: string;
+  /** O produto foi achado ATIVO no catálogo da organização. */
+  produtoResolvido: boolean;
+  /** Fotos cadastradas do produto (as que o envio real veria). */
+  fotosCadastradas: number;
+  /** Fotos que a preparação deixou prontas. */
+  fotosPreparadas: number;
+  /** Os anexos previstos, no formato que o envio real montaria. */
+  anexos: FotoParaEnvio[];
+  /** Presente = falha explícita: código sem produto, ou foto que não copiou. */
+  falha?: { code: string; message: string };
 }
 
 /** Copia do catálogo para a conversa. `true` = o arquivo está no destino. */

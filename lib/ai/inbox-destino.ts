@@ -34,7 +34,7 @@ export const REFERENCIAS_DE_AVISO = {
   ai_provider_credential: { tabela: "ai_provider_credentials", papel: "admin", rotulo: "Revisar credencial", href: () => "/app/ai/credentials" },
 } satisfies Record<string, Alvo>;
 
-export type InboxRefKind = keyof typeof REFERENCIAS_DE_AVISO | "organization" | "ai_budget" | "job_queue" | "cron_jobs";
+export type InboxRefKind = keyof typeof REFERENCIAS_DE_AVISO | "organization" | "ai_budget" | "plano" | "job_queue" | "cron_jobs";
 type ContextoGeral = { papel: Role; href: string; rotulo: string };
 interface Politica { refs: readonly InboxRefKind[]; orientacao: string; geral?: ContextoGeral }
 const EVOLUCAO: ContextoGeral = { papel: "manager", href: "/app/ai/evolution", rotulo: "Abrir evolução do assistente" };
@@ -57,7 +57,9 @@ export const POLITICAS_DE_AVISO = {
   qr_rescan: { refs: ["channel_session"], orientacao: "Peça a quem administra para revisar a conexão do WhatsApp." },
   job_dead: { refs: ["conversation", "job_queue", "cron_jobs"], orientacao: "Confira o motivo deste aviso com quem administra antes de tentar a operação novamente." },
   event_dead: { refs: [], orientacao: "Peça a quem administra para conferir o processamento descrito neste aviso." },
-  budget_exceeded: { refs: ["ai_budget"], orientacao: "Peça ao gestor para revisar o limite e o uso de IA." },
+  // `plano` é o teto de IA do plano de cobrança (spec cobrança §5): a IA parou
+  // porque o uso incluído acabou, e quem resolve é o admin, na tela do plano.
+  budget_exceeded: { refs: ["ai_budget", "plano"], orientacao: "Peça ao gestor para revisar o limite e o uso de IA." },
   budget_warning: { refs: ["ai_budget"], orientacao: "Peça ao gestor para revisar o limite e o uso de IA." },
   // `conversation` primeiro porque é o que o produtor grava hoje (o corpo do
   // aviso ficou CURTO e o contexto foi para dentro da conversa, onde a RLS o
@@ -138,9 +140,12 @@ export const POLITICAS_DE_AVISO = {
   // As DUAS: numa empresa com IA, a conversa sem dono e sem silêncio é
   // classificada como `automatico` (comando-da-conversa.ts) e só cai na Fila
   // quando a empresa não tem atendimento automático.
+  // 0583: o aviso também nasce SEM conversa (agendamento de disparo único
+  // desligado, passo de follow-up descartado). A fila deles é a de
+  // IA › Follow-ups (QueueTab lê cron_jobs); a orientação nomeia os dois lugares.
   org_reativada: {
     refs: [],
-    orientacao: "A IA não respondeu nem vai responder sozinha às conversas que chegaram durante a suspensão. Abra o Inbox e procure-as nas abas Fila e Automático.",
+    orientacao: "A IA não respondeu nem vai responder sozinha às conversas que chegaram durante a suspensão: abra o Inbox e procure-as nas abas Fila e Automático. Os agendamentos e os passos de follow-up que este aviso cita também não voltam sozinhos: confira em IA › Follow-ups.",
     geral: { papel: "agent", href: "/app/inbox", rotulo: "Abrir o Inbox" },
   },
   other: { refs: ["lead", "channel_session", "appointment", "ai_agent", "ai_provider_credential", "agent_case"], orientacao: "Confira a situação descrita neste aviso com a pessoa responsável." },
@@ -246,6 +251,11 @@ export async function resolverDestinosDosAvisos<T extends ReferenciaDoAviso>(
             : item.kind === "contact_proposal_expired" ? { estado: "sem_destino", orientacao: p.orientacao }
             : !permite(papel, item.ref_kind === "ai_budget" ? "manager" : "agent") ? semPermissao("manager")
             : { estado: "disponivel", href: item.ref_kind === "ai_budget" ? "/app/ai/usage" : "/app/radar", rotulo: item.ref_kind === "ai_budget" ? "Abrir uso de IA" : "Abrir Radar" };
+        } else if (item.ref_kind === "plano") {
+          // Plano é assunto do ADMIN (a entrada de Configurações é `minRole: "admin"`).
+          destination = item.ref_id !== organizationId ? INDISPONIVEL
+            : !permite(papel, "admin") ? semPermissao("admin")
+            : { estado: "disponivel", href: "/app/settings/billing", rotulo: "Abrir plano e cobrança" };
         } else destination = { estado: "sem_destino", orientacao: p.orientacao };
       }
     }

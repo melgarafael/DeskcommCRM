@@ -177,6 +177,13 @@ describe("#1612: gatilhos de desfecho e o opt-in do responsável", () => {
 
 
 describe("form source AI authorization configuration", () => {
+  it("allows renaming an existing source and trims outer whitespace", () => {
+    expect(updateWebhookSourceSchema.parse({ name: "  Campanha de Sites  " })).toEqual({
+      name: "Campanha de Sites",
+    });
+    expect(updateWebhookSourceSchema.safeParse({ name: "   " }).success).toBe(false);
+  });
+
   it("accepts a boolean on update and rejects coercion", () => {
     expect(updateWebhookSourceSchema.parse({ authorize_ai_on_capture: true })).toEqual({ authorize_ai_on_capture: true });
     expect(updateWebhookSourceSchema.safeParse({ authorize_ai_on_capture: "true" }).success).toBe(false);

@@ -8,6 +8,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getWahaClient } from "@/lib/waha/client";
 import { connectWahaChannel, ChannelConnectionError } from "@/lib/channels/connect-waha";
 import { loadOnboardingChannel } from "@/lib/channels/onboarding-session";
+import { traduzirLimiteDoPlano } from "@/lib/cobranca/limites";
 
 export async function GET(): Promise<Response> {
   const requestId = randomUUID();
@@ -43,6 +44,8 @@ export async function POST(req: Request): Promise<Response> {
     });
     return ok({ status: result.channel.status, session: result.channel.waha_session_name, channel_session_id: result.channel.id }, { requestId });
   } catch (error) {
+    const limite = traduzirLimiteDoPlano(error, auth.user.idioma);
+    if (limite) return fail(limite.code, limite.message, 409, { requestId, details: limite.details });
     if (error instanceof ChannelConnectionError) return fail(error.code,
       error.code === "connection_in_progress" ? "A conexão ainda está sendo preparada. Aguarde e tente novamente."
         : error.code === "connection_session_name_too_long" ? "O identificador desta conexão passou do limite que o WhatsApp aceita. Nada foi criado no WhatsApp — atualize o sistema e tente novamente."

@@ -109,6 +109,29 @@ describe('podeExcluirDeVez', () => {
     expect(r.ok === false && r.erro).toMatch(/arquiv/i);
   });
 
+  it('funil ATIVO com negócios → segue mandando arquivar, que é a porta certa de quem tem lista viva', () => {
+    const r = podeExcluirDeVez(funis, 'f2', { ...semDependencia, negocios: 3 });
+    expect(r.ok).toBe(false);
+    expect(r.ok === false && r.erro).toMatch(/Arquive em vez de excluir/);
+  });
+
+  /**
+   * #979 — o "Excluir de vez" do funil ARQUIVADO mora na gaveta do arquivo.
+   * A recusa que chega lá precisa apontar para uma saída que existe dali;
+   * mandar "arquive em vez de excluir" para quem está olhando um funil que já
+   * está arquivado é o mesmo beco sem saída de onde a issue nasceu.
+   */
+  it('funil JÁ arquivado com negócios → a recusa não manda arquivar de novo', () => {
+    const arquivados = funis.map((f) => (f.id === 'f2' ? { ...f, is_archived: true } : f));
+    const r = podeExcluirDeVez(arquivados, 'f2', { ...semDependencia, negocios: 3 });
+    expect(r.ok).toBe(false);
+    const erro = r.ok === false ? r.erro : '';
+    expect(erro).not.toMatch(/Arquive em vez de excluir/);
+    expect(erro).toMatch(/já está no arquivo/i);
+    expect(erro).toMatch(/tire-o do arquivo/i);
+    expect(erro).toMatch(/3 negócios/);
+  });
+
   it('permite excluir o funil criado por engano — zero de tudo', () => {
     expect(podeExcluirDeVez(funis, 'f2', semDependencia).ok).toBe(true);
   });

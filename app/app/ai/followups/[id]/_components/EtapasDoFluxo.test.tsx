@@ -27,7 +27,7 @@ vi.mock("@/hooks/followup/useEtapasDeGatilho", async (original) => {
 });
 
 const ID = "6f1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b";
-const PAGO = { stageId: ID, stageName: "Pago", pipelineId: "p1", pipelineName: "Vendas" };
+const PAGO = { stageId: ID, stageName: "Pago", pipelineId: "p1", pipelineName: "Vendas", isPerda: false, settingsDoFunil: null };
 
 function resolver(estado: hook.EtapasDeGatilho): (id: string) => string | null {
   vi.mocked(hook.useEtapasDeGatilho).mockReturnValue(estado);

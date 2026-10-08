@@ -491,8 +491,15 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
       if (candidatas.length === 0) {
         return tabelaNaoAchada(acesso.conexao);
       }
-      // prefere `public` quando o mesmo nome existir em mais de um agrupamento
-      const escolhida = candidatas.find((c) => c.schema === "public") ?? candidatas[0]!;
+      // prefere `public` quando o mesmo nome existir em mais de um agrupamento, e,
+      // dentro do agrupamento, o nome EXATO: com `Pedido` e `pedido` lado a lado,
+      // quem pediu `pedido` lê `pedido` (antes da busca sem caixa era assim).
+      const exato = (c: TabelaExterna) => c.nome === input.tabela;
+      const escolhida =
+        candidatas.find((c) => c.schema === "public" && exato(c)) ??
+        candidatas.find((c) => c.schema === "public") ??
+        candidatas.find(exato) ??
+        candidatas[0]!;
       schema = escolhida.schema;
       tabela = escolhida.nome;
       try {

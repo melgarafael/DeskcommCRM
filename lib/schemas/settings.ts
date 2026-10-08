@@ -164,6 +164,7 @@ export const customFieldSchema = z.object({
     "text",
     "textarea",
     "number",
+    "currency",
     "date",
     "select",
     "multiselect",

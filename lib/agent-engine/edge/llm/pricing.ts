@@ -105,6 +105,9 @@ const USD_PER_MTOK: Record<string, Preco> = {
   // página: leitura = entrada, que nunca é aplicada porque nunca vem leitura.
   // Fora da tabela: a faixa acima de 200K tokens de entrada do 2.5 Pro e do 3.1 Pro.
   'gemini-3.5-flash': { input: 1.5, output: 9, cacheRead: 0.15, cacheWrite5m: 1.5, cacheWrite1h: 1.5 },
+  // 3.5 Flash-Lite: tarifa Standard de ai.google.dev/gemini-api/docs/pricing
+  // (06/10/2026). O armazenamento de cache ($1/MTok/h) não é por chamada.
+  'gemini-3.5-flash-lite': { input: 0.3, output: 2.5, cacheRead: 0.03, cacheWrite5m: 0.3, cacheWrite1h: 0.3 },
   'gemini-3.1-pro-preview': { input: 2, output: 12, cacheRead: 0.2, cacheWrite5m: 2, cacheWrite1h: 2 },
   'gemini-2.5-pro': { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite5m: 1.25, cacheWrite1h: 1.25 },
   'gemini-2.5-flash': { input: 0.3, output: 2.5, cacheRead: 0.03, cacheWrite5m: 0.3, cacheWrite1h: 0.3 },

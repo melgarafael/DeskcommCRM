@@ -77,6 +77,20 @@ export function art15DoControlador(settings: unknown): Art15DoControlador {
   };
 }
 
+/**
+ * O cartão das alíneas (Configurações › Empresa) existe fora do Brasil. `null`
+ * de país é Brasil (migration 0277) — a mesma convenção do seletor de
+ * `tenant/_form.tsx`, para não depender do default implícito da coluna.
+ *
+ * Mora AQUI, e não no `_art15.tsx`: quem a chama é a página, que é Server
+ * Component, e função exportada de módulo "use client" vira referência de
+ * cliente no servidor — chamá-la lança "Attempted to call ... from the server"
+ * e derruba a página inteira, inclusive no Brasil.
+ */
+export function alineasDoArt15Visiveis(pais: string | null): boolean {
+  return (pais ?? "BR") !== "BR";
+}
+
 /** O que o relatório imprime onde o responsável deixou a alínea em branco. */
 export const NAO_INFORMADO_PELO_CONTROLADOR = "não informado pelo controlador";
 

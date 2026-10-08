@@ -26,6 +26,7 @@ import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
 import { getToolByName } from '@/lib/mcp/tools';
 import type { Logger } from '../obs/logger';
 import type { Citation } from '@/lib/ai/citations/types';
+import type { FotosPreparadas, MidiaPreparada } from './fotos-do-produto';
 
 export interface TurnPreview {
   kind: 'sandbox' | 'assisted';
@@ -48,12 +49,20 @@ export interface PreviewResult {
   proposals: Array<{ tool: string; arguments: unknown }>;
   impediments: Array<{ code: string; message: string }>;
   /**
-   * O que NÃO impediu o candidato, mas impediria o envio real agora. Só o sandbox
-   * escreve aqui (ver `gatesDoSandbox`); o rascunho assistido continua tratando o
-   * mesmo veto como impedimento.
+   * O que NÃO impediu o candidato, mas o operador precisa ver sobre o ENVIO real:
+   * um gate que o barraria agora, ou uma mídia que não sairia (produto sem fotos,
+   * #2490). O aviso de gate só o sandbox escreve (ver `gatesDoSandbox`) — o rascunho
+   * assistido trata o mesmo veto como impedimento; o de produto sem fotos
+   * (`midia_sem_fotos`) sai nos dois.
    */
   warnings: Array<{ code: string; message: string }>;
   restrictions: string[];
+  /**
+   * A mídia que a resposta USARIA, preparada pelo MESMO caminho do envio real
+   * (#2490): produto resolvido no catálogo, fotos preparadas e anexos previstos.
+   * Falha aqui vira `falha` no registro E impedimento no teste — nunca candidato.
+   */
+  midia: MidiaPreparada[];
 }
 export function newPreviewResult(): PreviewResult {
   return {
@@ -61,6 +70,7 @@ export function newPreviewResult(): PreviewResult {
     proposals: [],
     impediments: [],
     warnings: [],
+    midia: [],
     restrictions: [
       'preview_no_client_effects',
       'writes_require_separate_authorization',
@@ -190,6 +200,58 @@ function gatesDoSandbox(avisos: Array<{ code: string; message: string }>): reado
         },
   );
 }
+/**
+ * A MESMA preparação de mídia do envio real, dentro do dry-run (#2490).
+ *
+ * `preparar` é injetado por quem monta a prévia e resolve a `prepararFotosDoProduto`
+ * do caminho de produção — mesma query no catálogo, mesma cópia. Aqui só se
+ * traduz o desfecho para o VOCABULÁRIO do teste:
+ *
+ * - código sem produto, ou foto que não copiou → `falha` (o teste fica VERMELHO;
+ *   o envio real degrada para só texto, o teste não pode fingir que passou);
+ * - produto sem fotos → conta zerada, sem `falha`: nada a enviar, dito claramente;
+ * - sem `preparar` injetado → também `falha`: mídia que ninguém preparou não
+ *   pode atravessar o teste como se tivesse sido validada.
+ */
+async function prepararMidiaNoDryRun(
+  preparar: ((codigo: string) => Promise<FotosPreparadas>) | undefined,
+  codigo: string,
+): Promise<MidiaPreparada> {
+  const semProduto = (falha: { code: string; message: string }): MidiaPreparada => ({
+    codigo,
+    produtoResolvido: false,
+    fotosCadastradas: 0,
+    fotosPreparadas: 0,
+    anexos: [],
+    falha,
+  });
+  if (!preparar)
+    return semProduto({
+      code: 'midia_nao_preparada',
+      message:
+        'A mídia desta resposta não foi preparada no teste — não há como afirmar que as fotos ' +
+        'saíriam no envio real. Corrija a preparação e execute o teste de novo.',
+    });
+  const preparadas = await preparar(codigo);
+  if (!preparadas.ok) return semProduto({ code: preparadas.code, message: preparadas.message });
+  const registro: MidiaPreparada = {
+    codigo,
+    produtoResolvido: true,
+    fotosCadastradas: preparadas.tinha,
+    fotosPreparadas: preparadas.fotos.length,
+    anexos: [...preparadas.fotos],
+  };
+  const faltaram = preparadas.tinha - preparadas.fotos.length;
+  if (faltaram > 0)
+    registro.falha = {
+      code: 'midia_nao_preparada',
+      message:
+        `${faltaram} foto(s) do produto ${JSON.stringify(codigo)} não puderam ser preparadas no ` +
+        'teste. Em produção o texto sairia sem elas; aqui o teste falha de propósito, para o ' +
+        'problema não chegar só no atendimento real.',
+    };
+  return registro;
+}
 /** Unknown tools fail closed. A write proposal never calls its original execute. */
 export function applyPreviewPolicy(
   tools: ToolSet,
@@ -198,6 +260,12 @@ export function applyPreviewPolicy(
   citations: () => Citation[],
   semanticClassifier?: (body: string) => Promise<NonNullable<GateContext['semanticPromise']>>,
   liveContext?: () => Partial<GateContext>,
+  /**
+   * #2490 — a `prepararFotosDoProduto` do caminho de produção, injetada pelo
+   * turno que tem banco e Storage. Sem ela o `produto_codigo` NÃO passa: o
+   * teste falha a mídia em vez de aprovar texto com foto pendente.
+   */
+  prepararMidia?: (codigo: string) => Promise<FotosPreparadas>,
 ): ToolSet {
   return Object.fromEntries(
     Object.entries(tools).map(([name, definition]) => {
@@ -223,6 +291,41 @@ export function applyPreviewPolicy(
                 args && typeof args === 'object' && 'body' in args && typeof args.body === 'string'
                   ? args.body
                   : '';
+              // #2490 — A MESMA preparação do envio real, e na MESMA ordem: o
+              // `produto_codigo` que `crm_search_products` devolveu resolve o
+              // produto no catálogo e prepara as fotos ANTES da cadeia (é o que
+              // `inbound-turn.ts` faz no caminho de produção). Aqui o preparo é
+              // o único efeito — nenhuma mensagem sai pelo canal de entrega e
+              // nada é gravado em conversa nenhuma, como `preview_no_client_effects`
+              // manda.
+              const produtoCodigo =
+                args && typeof args === 'object' && 'produto_codigo' in args
+                  ? typeof args.produto_codigo === 'string'
+                    ? args.produto_codigo
+                    : undefined
+                  : undefined;
+              if (produtoCodigo !== undefined && produtoCodigo.trim() !== '') {
+                const midia = await prepararMidiaNoDryRun(prepararMidia, produtoCodigo);
+                p.result.midia.push(midia);
+                // Falha de mídia NÃO vira candidato: sem degradar para só texto,
+                // sem aprovar o teste com a foto pendente (issue #2490, item 6).
+                if (midia.falha) {
+                  p.result.impediments.push({ code: midia.falha.code, message: midia.falha.message });
+                  return {
+                    ok: false,
+                    error: { code: midia.falha.code, message: midia.falha.message },
+                  };
+                }
+                // Produto sem foto é desfecho LEGÍTIMO do envio real — não é
+                // falha, mas o operador tem de ler que nenhuma imagem sairia.
+                if (midia.fotosCadastradas === 0 && !p.result.warnings.some((w) => w.code === 'midia_sem_fotos'))
+                  p.result.warnings.push({
+                    code: 'midia_sem_fotos',
+                    message:
+                      `O produto ${JSON.stringify(midia.codigo)} não tem fotos cadastradas: ` +
+                      'nenhuma imagem seria enviada no envio real — só o texto.',
+                  });
+              }
               const avisos: Array<{ code: string; message: string }> = [];
               const result = evaluateBeforeSend(
                 {

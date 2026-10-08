@@ -8,6 +8,7 @@ import { MODULOS_OPCIONAIS } from "@/lib/instalacao/modulos";
 import { NAV_CATALOG, type NavMetadata } from "@/lib/navigation/catalogo";
 import { CAPACIDADES_DA_ORGANIZACAO } from "@/lib/organizacao/capacidades";
 import {
+  MODULOS_DA_EMPRESA,
   RECURSOS_OPCIONAIS,
   ROTULO_DE_QUEM_DECIDE,
   ROTULO_DO_ESTADO,
@@ -139,5 +140,20 @@ describe("o estado nunca lança e nunca inventa 'desligado'", () => {
     const chaveLigada = { proposals: { enabled: true } };
     expect(estadoDoRecurso(propostas, { ...vazio, settings: chaveLigada })).toBe("desligado");
     expect(estadoDoRecurso(propostas, { ...vazio, modulos: ["propostas"], settings: chaveLigada })).toBe("ligado");
+  });
+});
+
+describe("o que é só de quem administra o servidor não aparece para a empresa", () => {
+  it("a empresa não vê 'Cobrança dos seus clientes'; o catálogo do dono tem a linha", () => {
+    const daEmpresa = MODULOS_DA_EMPRESA.map((r) => r.modulo);
+    expect(daEmpresa).not.toContain("cobranca");
+    // Controle: a lista não ficou vazia por acidente.
+    expect(daEmpresa).toContain("banco_externo");
+    expect(RECURSOS_OPCIONAIS.find((r) => r.modulo === "cobranca")?.href).toBe("/admin/sistema");
+  });
+
+  it("a tela da empresa lista os módulos por MODULOS_DA_EMPRESA", () => {
+    const tela = fs.readFileSync(path.join(process.cwd(), "app/app/settings/recursos/page.tsx"), "utf8");
+    expect(tela).toContain("MODULOS_DA_EMPRESA");
   });
 });

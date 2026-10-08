@@ -51,7 +51,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   const supabase = await createClient();
   const { data: existing, error: fetchErr } = await supabase
     .from("automation_rules")
-    .select("id, trigger_event, actions")
+    .select("id, trigger_event, trigger_config, actions")
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
@@ -70,6 +70,20 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     ).length
   ) {
     return fail("invalid_request", t(MENSAGEM_DO_LACO_DE_LEAD), 400, { requestId });
+  }
+
+  const webhookSourceId = parsed.data.trigger_config?.webhook_source_id;
+  if (typeof webhookSourceId === "string") {
+    const { data: source, error: sourceError } = await supabase
+      .from("webhook_sources")
+      .select("id")
+      .eq("id", webhookSourceId)
+      .eq("organization_id", activeOrg.orgId)
+      .maybeSingle();
+    if (sourceError) return fail("internal_error", sourceError.message, 500, { requestId });
+    if (!source) {
+      return fail("invalid_request", t("A fonte escolhida não pertence a esta empresa."), 422, { requestId });
+    }
   }
 
   // Secrets de call_webhook nunca ficam em claro no jsonb (migration 0041);
