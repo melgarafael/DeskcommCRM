@@ -103,7 +103,8 @@ export async function POST(req: NextRequest, { params }: Rota) {
     await admin
       .from("webhook_events_log")
       .update({ status: "error", error_message: "cliente_desconhecido", processed_at: agora })
-      .eq("id", linha.id);
+      .eq("id", linha.id)
+      .is("organization_id", null);
     return ok({ ignorado: "cliente_desconhecido" }, { requestId });
   }
 
@@ -119,7 +120,11 @@ export async function POST(req: NextRequest, { params }: Rota) {
     logger.error("cobranca.sinal_nao_emitido", { organization_id: org, provedor, codigo: erroDoSinal.code ?? null });
     return fail("unavailable", "Tente de novo em instantes.", 503, { requestId });
   }
-  await admin.from("webhook_events_log").update({ status: "processed", processed_at: agora }).eq("id", linha.id);
+  await admin
+    .from("webhook_events_log")
+    .update({ status: "processed", processed_at: agora })
+    .eq("id", linha.id)
+    .is("organization_id", null);
   return ok({ recebido: true }, { requestId });
 }
 
@@ -155,6 +160,7 @@ async function gravarPonteiro(
     .select("id, status")
     .eq("provider", provedor)
     .eq("external_id", sinal.eventoId)
+    .is("organization_id", null)
     .maybeSingle();
   if (erroDaLeitura || !existente) return "erro";
   return existente as { id: string; status: string };
