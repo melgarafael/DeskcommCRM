@@ -89,6 +89,7 @@ test.beforeAll(async () => {
   idMysql = await semearConexao({
     label: NOME_MYSQL,
     db_type: "mysql",
+    port: 3306,
     last_test_ok: true,
     last_test_aviso: AVISO_ESCRITA,
   });
