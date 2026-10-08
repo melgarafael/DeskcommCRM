@@ -190,7 +190,7 @@ export function serializarValor(v: unknown, prefixoBinario: string): unknown {
   if (v === null || v === undefined) return null;
   if (typeof v === "bigint") return v.toString();
   if (v instanceof Date) return v.toISOString();
-  if (v instanceof Uint8Array) return `${prefixoBinario}${Buffer.from(v).toString("hex")}`;
+  if (Buffer.isBuffer(v) || v instanceof Uint8Array) return `${prefixoBinario}${Buffer.from(v).toString("hex")}`;
   if (typeof v === "string" && v.length > MAX_TEXTO) {
     return `${v.slice(0, MAX_TEXTO)}…(truncado, ${v.length} chars)`;
   }
