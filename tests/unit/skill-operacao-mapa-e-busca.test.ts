@@ -89,7 +89,8 @@ describe("skill-operacao — conferir-mapa.sh avisa da tela que falta", () => {
     const dir = raizFalsa(["/app/inbox", "/app/radar"]);
     const { saida, rc } = roda(CONFERIR, [], dir);
     expect(rc).toBe(0);
-    expect(saida).toContain("Radar (/app/radar)");
+    expect(saida).toContain("Agenda (/app/agenda)");
+    expect(saida).not.toContain("Radar (/app/radar)");
     expect(saida).toContain("1 fora do mapa");
   });
 
