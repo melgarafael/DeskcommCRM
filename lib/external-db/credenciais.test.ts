@@ -72,6 +72,7 @@ describe("carregarConexao", () => {
       conexao: {
         id: "conn-1",
         organizationId: "org-1",
+        dbType: "postgres",
         label: "Meu Postgres",
         host: "db.exemplo.com",
         port: 5432,

@@ -138,6 +138,8 @@ export async function carregarConexao(
     conexao: {
       id: data.id,
       organizationId: data.organization_id,
+      // A coluna `db_type` chega na Fatia 4a; até lá todo cadastro é PostgreSQL.
+      dbType: "postgres",
       label: data.label,
       host: data.host,
       port: data.port,

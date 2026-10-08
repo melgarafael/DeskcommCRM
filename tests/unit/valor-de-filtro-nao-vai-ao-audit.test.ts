@@ -18,6 +18,7 @@ vi.mock("@/lib/mcp/audit", () => ({ auditMcpToolCall: (e: unknown) => auditSpy(e
 const CONEXAO = {
   id: "conn-1",
   organizationId: "00000000-0000-4000-8000-000000000001",
+  dbType: "postgres",
   label: "Outro CRM",
   maxRows: 200,
   maxFilters: 20,

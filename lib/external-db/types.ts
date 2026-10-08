@@ -13,6 +13,9 @@ export type ModoTls = "disable" | "prefer" | "require" | "verify-ca" | "verify-f
 /** Modos das fontes liberadas, alinhados ao CHECK de `external_db_connections.source_mode`. */
 export type ModoDeFontes = "all" | "list";
 
+/** Motores aceitos, alinhados ao CHECK futuro de `external_db_connections.db_type` (a coluna chega na Fatia 4a). */
+export type TipoBanco = "postgres" | "mysql";
+
 /**
  * Conexão já decifrada, pronta para abrir o pool.
  *
@@ -24,6 +27,8 @@ export type ModoDeFontes = "all" | "list";
 export interface ConexaoExterna {
   id: string;
   organizationId: string;
+  /** Qual motor fala com este banco. Até a Fatia 4a (coluna `db_type`), todo cadastro é PostgreSQL. */
+  dbType: TipoBanco;
   label: string;
   host: string;
   port: number;

@@ -19,7 +19,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { cifrarSenha } from "@/lib/external-db/credenciais";
-import { fecharPool } from "@/lib/external-db/conexao";
+import { fecharPool } from "@/lib/external-db/drivers";
 import { validarHostDeBanco } from "@/lib/external-db/guardas";
 import { atualizarConexaoSchema } from "@/lib/external-db/schemas";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";

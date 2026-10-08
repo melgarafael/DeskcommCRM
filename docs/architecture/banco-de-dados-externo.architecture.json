@@ -28,6 +28,7 @@
     "migration0372",
     "credenciais",
     "acesso",
+    "drivers",
     "dialeto",
     "apiLeitura",
     "telaExplorador"
@@ -102,6 +103,14 @@
       "lane": "nucleo",
       "label": "acesso.ts",
       "sublabel": "carrega a conexão + revalida o destino antes de abrir o pool",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "drivers",
+      "lane": "nucleo",
+      "label": "drivers.ts",
+      "sublabel": "escolhe o motor pela conexão: abre o dialeto, testa e fecha o pool",
       "type": "lib",
       "dot": "blue"
     },
@@ -238,12 +247,6 @@
       "label": "valida no cadastro"
     },
     {
-      "id": "e10",
-      "from": "pool",
-      "to": "acesso",
-      "label": "pool da conexão"
-    },
-    {
       "id": "e11",
       "from": "pool",
       "to": "introspeccao",
@@ -346,12 +349,6 @@
       "label": "o que é visível"
     },
     {
-      "id": "e38",
-      "from": "acesso",
-      "to": "dialeto",
-      "label": "abre o pool e liga a regra"
-    },
-    {
       "id": "e39",
       "from": "dialeto",
       "to": "apiLeitura",
@@ -392,6 +389,36 @@
       "from": "telaFontes",
       "to": "telaExplorador",
       "label": "a grade passa a mostrar só o liberado"
+    },
+    {
+      "id": "e46",
+      "from": "acesso",
+      "to": "drivers",
+      "label": "abre o dialeto pelo motor da conexão"
+    },
+    {
+      "id": "e47",
+      "from": "drivers",
+      "to": "dialeto",
+      "label": "cria o dialeto do motor"
+    },
+    {
+      "id": "e48",
+      "from": "pool",
+      "to": "drivers",
+      "label": "pool do PostgreSQL"
+    },
+    {
+      "id": "e49",
+      "from": "apiTest",
+      "to": "drivers",
+      "label": "testa pelo driver do motor"
+    },
+    {
+      "id": "e50",
+      "from": "apiConnections",
+      "to": "drivers",
+      "label": "fecha o pool ao editar ou apagar"
     }
   ],
   "cards": [
