@@ -13545,6 +13545,9 @@ export const DICIONARIO: Traducoes = {
   "Remover da lista": { es: "Quitar de la lista" },
   "Salvar": { es: "Guardar" },
   "Lista salva. O assistente já usa a nova lista.": { es: "Lista guardada. El asistente ya usa la nueva lista." },
+  "O assistente ainda não enxerga nada deste banco.": { es: "El asistente aún no ve nada de esta base de datos." },
+  "Escolher o que ele pode ler": { es: "Elegir qué puede leer" },
+  "Conexão criada. Agora escolha o que o assistente pode ler.": { es: "Conexión creada. Ahora elige qué puede leer el asistente." },
   // Frase inteira, e não "Ativada" seco: essa chave já existe neste arquivo,
   // de outra tela e no feminino (`Activada`) — reusá-la duplicaria a chave e
   // discordaria do gênero de `Recorrido`.
