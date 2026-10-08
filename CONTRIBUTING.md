@@ -220,7 +220,10 @@ Lista completa em `CLAUDE.md`. Os mais letais:
 
 ## Setup local
 
-Veja [`README.md`](README.md) §Como rodar local.
+Nunca programou ou nunca montou este ambiente? Siga a
+[`docs/apostila-contribuidor.md`](docs/apostila-contribuidor.md): do que baixar até o primeiro PR,
+passo a passo, com textos prontos para usar com um assistente de IA. O resumo para quem já tem
+prática está no [`README.md`](README.md) §Desenvolvimento.
 
 ## Suporte
 

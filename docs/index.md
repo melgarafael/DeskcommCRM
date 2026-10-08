@@ -36,6 +36,7 @@ de menor precedência e registre.
 | [`AGENTS.md`](../AGENTS.md) | Contrato para agentes de código (qualquer ferramenta) |
 | [`CLAUDE.md`](../CLAUDE.md) | **Doutrina não-negociável.** Convenções, anti-patterns, Definition of Done |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Como contribuir |
+| [`docs/apostila-contribuidor.md`](apostila-contribuidor.md) | **Apostila passo a passo para leigos (e para a IA deles):** instalar as ferramentas, subir o ambiente local, desenvolver, testar com Playwright e abrir o PR |
 | [`CHANGELOG.md`](../CHANGELOG.md) | Mudanças por versão (SemVer). **Quem roda VPS lê antes de `update.sh`** — mudança que exige ação manual aparece sob "⚠️ Requer atenção" |
 | [`docs/current-state.md`](current-state.md) | **O que está pronto, incompleto e quebrado hoje** |
 | [`.agents/skills/`](../.agents/skills/deskcomm-instalar/SKILL.md) | **Guias do assistente** — instalar, montar cliente por nicho, métricas, prompt, contribuir. Skills lidas por Claude Code, Codex, Cursor, OpenCode e Antigravity (não confundir com as *Skills* do agente de IA, na tela IA › Skills) |
