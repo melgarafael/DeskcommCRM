@@ -41,7 +41,7 @@
  * (invariante 4 — não-aplicação é auditável, não invisível).
  */
 import { canalQueReportaConversao } from "@/lib/channels/conversao-pelo-canal";
-import type { ChannelConversionResult } from "@/lib/channels/types";
+import type { ChannelConversionInput, ChannelConversionResult } from "@/lib/channels/types";
 import type { EventHandler, EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { lerCredencial } from "@/lib/plataformas-de-anuncio/credenciais";
 import { transporteDe, ehPlataformaConhecida } from "@/lib/plataformas-de-anuncio/registry";
@@ -282,12 +282,18 @@ export async function processarConversao(
     // Protocolo pendente (`remote_request_id`) é do transporte direto, e só ele
     // sabe consultá-lo: fica fora. Sem valor no negócio, a conversa só é lida
     // depois que a chave está ligada E o canal existe — antes, não há destino.
+    //
+    // O evento de ETAPA da Meta (0524) vai pelo mesmo caminho e com o mesmo
+    // retrato do transporte direto: o nome padrão da Meta, o instante da
+    // entrada na etapa e nenhum valor. Sem isto, quem só tem o canal via toda
+    // etapa virar `sem_conexao` — uma conexão direta que ali nunca vai existir.
+    const eventoNoCanal = eventoParaOCanal(qualificacao, registro?.meta_event_name);
     if (
       credencial.motivo === "sem_conexao" &&
       plataforma === "meta_ads" &&
-      EVENTO === "Purchase" &&
+      eventoNoCanal !== null &&
       !registro?.remote_request_id &&
-      (valorDaVenda !== null || valorPodeVirDaConversa)
+      (qualificacao !== undefined || valorDaVenda !== null || valorPodeVirDaConversa)
     ) {
       // A chave vem ANTES de tudo (doc 76): desligada — o padrão —, nem as
       // conversas são lidas, e nada sai para o provedor.
@@ -306,13 +312,17 @@ export async function processarConversao(
         };
       }
       if (canal && valorPodeVirDaConversa) await lerOValorNaConversa();
-      if (canal && valorDaVenda !== null) {
+      if (canal && (qualificacao !== undefined || valorDaVenda !== null)) {
         const pelo = await canal.reportar({
-          event: EVENTO,
+          event: eventoNoCanal,
           eventId: `${lead.id}:${EVENTO}`,
-          occurredAt: new Date(lead.closed_at ?? row.created_at ?? Date.now()),
+          occurredAt: new Date(
+            qualificacao
+              ? (registro?.event_occurred_at ?? qualificacao.ocorridoEm)
+              : (lead.closed_at ?? row.created_at ?? Date.now()),
+          ),
           phone: telefone,
-          valueCents: valorDaVenda,
+          valueCents: qualificacao ? null : valorDaVenda,
           currency: moedaDaVenda ?? "BRL",
         });
         return desfecho(doCanal(pelo), false);
@@ -465,6 +475,29 @@ export async function processarConversao(
     );
     return ok("skipped", "recusado_pela_plataforma");
   }
+}
+
+/** Os eventos de etapa que o canal sabe repassar (`ChannelConversionInput`). */
+const EVENTOS_DE_ETAPA_NO_CANAL: readonly ChannelConversionInput["event"][] = [
+  "InitiateCheckout",
+  "LeadSubmitted",
+  "AddToCart",
+];
+
+/**
+ * O nome que sai pelo canal: a compra, ou o evento padrão da Meta da etapa — o
+ * do retrato gravado no primeiro envio e, só na falta dele, o da regra (a mesma
+ * precedência do transporte direto). Etapa do Google, ou evento da Meta fora do
+ * vocabulário do canal, não tem caminho por ele.
+ */
+function eventoParaOCanal(
+  qualificacao: EventoDeEtapa | undefined,
+  retrato: string | null | undefined,
+): ChannelConversionInput["event"] | null {
+  if (!qualificacao) return "Purchase";
+  if (!qualificacao.eventoMeta) return null;
+  const nome = retrato ?? qualificacao.eventoMeta;
+  return EVENTOS_DE_ETAPA_NO_CANAL.find((e) => e === nome) ?? null;
 }
 
 /** O desfecho do canal, no vocabulário do transporte — um só caminho de registro. */

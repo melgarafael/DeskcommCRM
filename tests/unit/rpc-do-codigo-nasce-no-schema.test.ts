@@ -75,29 +75,17 @@ const SUPABASE = "supabase";
 const BASELINE = "supabase/baseline.sql";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// As três chamadas congeladas: existem no código, NÃO existem no schema
+// A chamada congelada: existe no código, NÃO existe no schema
 // ─────────────────────────────────────────────────────────────────────────────
 //
 // Toda entrada precisa do motivo escrito e do `arquivo:linha` do CAMINHO DE
 // DEGRADAÇÃO — o ponto onde a chamada falha e o produto segue de pé. A lista só
 // encolhe: se o nome virar função de verdade numa migração, o teste fica
-// vermelho pedindo a remoção daqui (é o `it` abaixo que faz isso).
+// vermelho pedindo a remoção daqui (é o `it` abaixo que faz isso) — foi o que
+// aconteceu com `encrypt_cpf` e `decrypt_cpf`, que a migration 0597 (#2522)
+// trouxe para o schema e tirou daqui.
 
 const CONGELADAS: Record<string, { degradacao: string; porque: string }> = {
-  decrypt_cpf: {
-    degradacao: "app/api/v1/contacts/_handler.ts:324",
-    porque:
-      "A chamada já está prevista para não existir: se o erro volta, o handler " +
-      "loga `decrypt_cpf RPC unavailable` e a resposta segue SEM CPF — o contato " +
-      "não quebra. Criar a RPC no banco é decisão de produto, não deste gate.",
-  },
-  encrypt_cpf: {
-    degradacao: "lib/contacts/cpf.ts:36",
-    porque:
-      "O caminho de degradação está escrito na própria função: sem a RPC, loga " +
-      "`encrypt_cpf RPC unavailable — storing cpf_hash only` e devolve `null`, e " +
-      "o contato é gravado só com o hash. Mesma decisão de produto, fora do gate.",
-  },
   jsonb_set_last_alarm_at: {
     degradacao: "lib/lgpd/sla-alarm.ts:203",
     porque:

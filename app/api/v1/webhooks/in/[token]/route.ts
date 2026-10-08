@@ -44,8 +44,13 @@ import {
 import { ipDoClienteParaInet } from "@/lib/http/ip-do-cliente";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { ApiError } from "@/lib/api/types";
+import { autorizarCaptacaoParaIA, camposDaCaptacao } from "@/lib/ai/elegibilidade/formulario";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { kickLocalPipeline } from "@/lib/dev/kick-local-pipeline";
+import {
+  normalizarCamposNumericos,
+  webhookFormFieldsSchema,
+} from "@/lib/webhooks/formulario";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -93,7 +98,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   const admin = createAdminClient();
   const { data: source, error: srcErr } = await admin
     .from("webhook_sources")
-    .select("id, name, organization_id, secret_encrypted, default_pipeline_id, default_stage_id, field_map, redirect_to, is_active")
+    .select("id, name, organization_id, secret_encrypted, default_pipeline_id, default_stage_id, field_map, form_fields, redirect_to, is_active, authorize_ai_on_capture")
     .eq("path_token", token)
     .maybeSingle();
   if (srcErr) return fail("internal_error", srcErr.message, 500, { requestId });
@@ -296,12 +301,42 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     if (rawPhone) mapped.source_metadata.raw_phone = rawPhone;
   }
 
+  const camposConfigurados = webhookFormFieldsSchema.safeParse(source.form_fields ?? []);
+  const tipagem = normalizarCamposNumericos(payload, camposConfigurados.success ? camposConfigurados.data : []);
+  if (tipagem.invalidKeys.length > 0) {
+    await registrarCaptacao(admin, {
+      ...fonteDaCaptacao,
+      ...origemDaCaptacao,
+      capturedName: mapped.name,
+      capturedPhone: mapped.phone,
+      capturedEmail: mapped.email,
+      fields: camposDaCaptacao(mapped.custom_fields, payload, source.authorize_ai_on_capture),
+      utm: mapped.source_metadata,
+      leadId: null,
+      contactId: null,
+      outcome: "recusado",
+      rejectReason: "campo_numerico_invalido",
+    });
+    return fail("invalid_request", "A resposta de um campo numérico tem formato inválido.", 422, {
+      requestId,
+      details: { fields: tipagem.invalidKeys },
+    });
+  }
+  Object.assign(mapped.custom_fields, tipagem.values);
+
   /** O que o formulário trouxe, do jeito que a tela de histórico mostra. */
+  // O aceite é evidência de captação, não resposta comercial no card.
+  if (source.authorize_ai_on_capture) {
+    for (const key of ["ai_service_consent", "submission_status", "ai_service_consent_version"]) {
+      delete mapped.custom_fields[key];
+    }
+  }
+
   const dadosDaCaptacao = {
     capturedName: mapped.name,
     capturedPhone: mapped.phone,
     capturedEmail: mapped.email,
-    fields: mapped.custom_fields,
+    fields: camposDaCaptacao(mapped.custom_fields, payload, source.authorize_ai_on_capture),
     utm: mapped.source_metadata,
   };
 
@@ -420,7 +455,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
           phone_number: mapped.phone,
           email: mapped.email,
           source: "webhook",
-          source_metadata: { webhook_source_id: source.id, ...mapped.source_metadata },
+          source_metadata: { ...mapped.source_metadata, webhook_source_id: source.id },
           // Consentimento explícito só quando o Respondi confirmou concessão —
           // recusa NUNCA vira concessão por omissão. E a recusa agora é
           // GRAVADA, não omitida: o DEFAULT da coluna já é `granted_at: null`,
@@ -547,7 +582,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     tags: [],
     source: "webhook",
     custom_fields: mapped.custom_fields,
-    source_metadata: { webhook_source_id: source.id, ...mapped.source_metadata },
+    source_metadata: { ...mapped.source_metadata, webhook_source_id: source.id },
     ...(externalId ? { external_id: externalId } : {}),
   };
 
@@ -695,7 +730,26 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     respondiMapped != null &&
     respondiMapped.consent.detectedVia !== "not_found" &&
     !respondiMapped.consent.granted;
-  if (respondiMapped && contactId && !consentNegado) {
+  if (source.authorize_ai_on_capture && contactId) {
+    const autorizou = sourceSecret !== null && await autorizarCaptacaoParaIA(admin, {
+      organizationId: source.organization_id, sourceId: source.id,
+      leadId: String(lead.id), contactId, requestId,
+    });
+    const atividadeIA = await emitLeadActivity(admin, {
+      organizationId: source.organization_id, leadId: String(lead.id), contactId,
+      type: "note", sourceModule: "webhook", sourceId: source.id,
+      actor: { type: "webhook_source", id: source.id },
+      reason: autorizou
+        ? "Atendimento por IA autorizado pelo consentimento explícito deste formulário."
+        : "Este envio não concedeu nova autorização de IA. Confira o consentimento e o estado do contato antes de configurar o atendimento.",
+      payload: { webhook_source_id: source.id, request_id: requestId, ai_authorized: autorizou },
+    });
+    if (!atividadeIA.ok) {
+      logger.warn("[webhooks.inbound] autorização por formulário sem atividade", {
+        organization_id: source.organization_id, request_id: requestId,
+      });
+    }
+  } else if (!source.authorize_ai_on_capture && respondiMapped && contactId && !consentNegado) {
     const formId = respondiMapped.custom_fields.respondi_form_id ?? "form";
     const submissionId = respondiMapped.custom_fields.respondi_respondent_id ?? "s";
     await autorizarContatoParaIA(admin, {

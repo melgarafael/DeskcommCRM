@@ -104,6 +104,7 @@ const ORIGEM_PADRAO: OrigemDoNascimento = ORIGEM_DO_WHATSAPP;
 export type MotivoSemLead =
   | "ja_existe" // o contato já tem lead aberto: um por demanda, não um por mensagem
   | "contato_bloqueado" // pediu para sair; criar oportunidade seria desrespeito registrado
+  | "contato_pessoal" // marcado como pessoal (spec 21): não é oportunidade, nunca nasce
   | "sem_funil_de_entrada" // a organização não tem funil padrão — falha de configuração, visível
   | "sem_etapa" // o funil existe e não tem etapa utilizável
   | "erro"; // qualquer falha de escrita
@@ -263,18 +264,23 @@ export async function garantirLeadDaConversa(
 
   // 1 · quem pediu para sair não vira oportunidade. O gate de envio já respeita
   // o opt-out; abrir um card para essa pessoa seria a mesma desatenção num
-  // lugar onde ninguém olharia.
+  // lugar onde ninguém olharia. Pessoal (spec 21) recusa igual: não é
+  // oportunidade, e a recusa aqui é a segunda defesa — cobre o voice-agent,
+  // que chama direto (`workers/voice-agent/index.ts`), e qualquer chamador
+  // futuro que não passe pela pós-entrada.
   const { data: contato } = await db
     .from("contacts")
     // `first_service_at` viaja no select que JÁ existe: decidir o funil não custa
     // uma consulta a mais no caminho quente da ingestão. É por isso que o fato
     // mora numa coluna de `contacts`, e não é derivado da agenda a cada inbound.
-    .select("is_blocked,display_name,name,phone_number,source,source_metadata,first_service_at")
+    .select("is_blocked,is_personal,display_name,name,phone_number,source,source_metadata,first_service_at")
     .eq("organization_id", organizationId)
     .eq("id", contactId)
     .maybeSingle();
 
   if (contato?.is_blocked === true) return { criado: false, motivo: "contato_bloqueado" };
+  if ((contato as { is_personal?: boolean } | null)?.is_personal === true)
+    return { criado: false, motivo: "contato_pessoal" };
 
   // 2 · já existe demanda aberta?
   const { data: existente } = await db

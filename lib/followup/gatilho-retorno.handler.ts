@@ -7,6 +7,7 @@
  */
 import type { EventHandler, HandlerResult } from "@/lib/event-log/dispatcher";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { canalDoEventoDesativado } from "@/lib/channels/desativado";
 import { createSupabaseFollowupGateDb } from "@/lib/followup/agent-followup-gate";
 import { avancarFollowupsAtivosDoContato } from "@/lib/followup/aplicar-inbound";
 import {
@@ -24,6 +25,16 @@ export const followupGatilhoRetornoHandler: EventHandler = {
   async handle(row): Promise<HandlerResult> {
     try {
       const admin = createAdminClient();
+      // Canal DESATIVADO (#2329): inscrever o contato no retorno de um canal
+      // que o operador desligou armava um ponteiro para um envio que não sai.
+      // O `message.received` de canal pausado não arma nada.
+      if (await canalDoEventoDesativado(admin, row.organization_id, row.payload)) {
+        return {
+          consumer_key: FOLLOWUP_GATILHO_RETORNO_HANDLER_KEY,
+          status: "skipped",
+          detail: "canal_desativado",
+        };
+      }
       const summary = await aplicaGatilhoDeRetorno(
         {
           db: createSupabaseGatilhoRetornoDb(admin),

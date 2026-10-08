@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { createClient } from "@supabase/supabase-js";
-import type { Database } from "@/lib/database.types";
+import type { Database, Json } from "@/lib/database.types";
 import { expect, test } from "./helpers/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
@@ -101,6 +101,94 @@ test("conversões: instalação sem credenciais explica a ausência e permite re
   } finally {
     await admin.from("event_log").delete().eq("organization_id", org).eq("entity_id", lead);
     await admin.from("crm_leads").delete().eq("organization_id", org).eq("id", lead);
+    await admin.from("crm_stages").delete().eq("organization_id", org).eq("id", stage);
+    await admin.from("crm_pipelines").delete().eq("organization_id", org).eq("id", pipeline);
+  }
+});
+
+test("regras de etapa da Meta: sem conexão direta, aparecem quando a venda sai pelo canal da conversa", async ({
+  page,
+}) => {
+  const creds = await loginComoAdmin(page, lerCreds());
+  const { data: users, error: usersError } = await admin.auth.admin.listUsers();
+  if (usersError) throw usersError;
+  const user = users.users.find((u) => u.email === creds.users.admin!.email);
+  if (!user) throw new Error("Admin de teste ausente");
+  const { data: membro, error: membroError } = await admin
+    .from("user_organizations")
+    .select("organization_id")
+    .eq("user_id", user.id)
+    .limit(1)
+    .single();
+  if (membroError) throw membroError;
+  const org = membro.organization_id;
+  // O caso mede a instalação que reporta SÓ pelo canal: sem conexão direta.
+  const { data: conexao, error: erroConexao } = await admin
+    .from("ad_platform_connections")
+    .select("organization_id")
+    .eq("organization_id", org)
+    .eq("platform", "meta_ads")
+    .maybeSingle();
+  if (erroConexao) throw erroConexao;
+  expect(conexao, "este caso exige uma organização sem conexão direta com a Meta").toBeNull();
+  const { data: linhaOrg, error: erroOrg } = await admin
+    .from("organizations")
+    .select("settings")
+    .eq("id", org)
+    .single();
+  if (erroOrg) throw erroOrg;
+  const original = (linhaOrg.settings ?? {}) as Record<string, unknown>;
+  const comAChave = (ligada: boolean): Json => ({
+    ...original,
+    conversions: {
+      ...((original.conversions as Record<string, unknown> | undefined) ?? {}),
+      report_via_channel: ligada,
+    },
+  });
+  const pipeline = randomUUID(),
+    stage = randomUUID();
+  const etapa = `Orçamento enviado ${stage.slice(0, 8)}`;
+  const titulo = page.getByRole("heading", { name: "O que cada etapa do funil informa à Meta" });
+  try {
+    const { error: p } = await admin.from("crm_pipelines").insert({
+      id: pipeline,
+      organization_id: org,
+      name: "Regras Meta teste",
+      slug: `regras-meta-${pipeline.slice(0, 8)}`,
+    });
+    if (p) throw p;
+    const { error: s } = await admin.from("crm_stages").insert({
+      id: stage,
+      organization_id: org,
+      pipeline_id: pipeline,
+      name: etapa,
+      slug: `orcamento-${stage.slice(0, 8)}`,
+      position: 1,
+    });
+    if (s) throw s;
+
+    // Chave desligada e sem conexão direta: o evento de etapa não tem destino,
+    // e a seção não aparece.
+    const { error: e1 } = await admin.from("organizations").update({ settings: comAChave(false) }).eq("id", org);
+    if (e1) throw e1;
+    await page.goto("/app/settings/conversoes");
+    await expect(page.getByRole("heading", { name: "Conversões", exact: true })).toBeVisible();
+    await expect(titulo).toHaveCount(0);
+
+    // Chave ligada: o evento de etapa sai pelo canal, e quem opera precisa ver
+    // e editar o que cada etapa envia.
+    const { error: e2 } = await admin.from("organizations").update({ settings: comAChave(true) }).eq("id", org);
+    if (e2) throw e2;
+    await page.reload();
+    await expect(titulo).toBeVisible();
+    await expect(page.getByText(etapa, { exact: true })).toBeVisible();
+    await titulo.scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: "evidence/regras-meta-pelo-canal/01-regras-visiveis-sem-conexao-direta.png",
+      fullPage: true,
+    });
+  } finally {
+    await admin.from("organizations").update({ settings: original as Json }).eq("id", org);
     await admin.from("crm_stages").delete().eq("organization_id", org).eq("id", stage);
     await admin.from("crm_pipelines").delete().eq("organization_id", org).eq("id", pipeline);
   }

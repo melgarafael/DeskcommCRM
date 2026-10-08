@@ -10,7 +10,8 @@
  *
  * 1. `canalDesativado()` — só o booleano `true` desliga;
  * 2. `idsDosCanaisDesativados()` — lista para a inbox; erro vira lista vazia;
- * 3. `followup_turn` — job de canal desativado morre antes do turno;
+ * 3. `followup_turn` — job de canal desativado é consumido ANTES do turno,
+ *    sem retentativa e sem o aviso crítico de job morto (#2329);
  * 4. `PATCH/GET .../disabled` — validação, auditoria e leitura;
  * 5. envio — canal desativado recusa com `channel_disabled`, sem rede.
  */
@@ -115,11 +116,22 @@ beforeAll(async () => {
   ({ createFollowupTurnHandler: criarHandler } = await import("@/lib/agent-engine/agent/followup-turn"));
 }, 60_000);
 
-describe("followup_turn — canal desativado morre antes do turno", () => {
-  it("canal desativado recusa com motivo nomeado e não chama o turno", async () => {
+describe("followup_turn — canal desativado não paga o turno", () => {
+  /**
+   * Consumidor 5 da #2329. Antes, o `throw` mandava o job para a fila de
+   * retentativa: 5 tentativas gastas e um `dead` com aviso CRÍTICO "Job
+   * descartado" na Central, UM por follow-up — e o canal seguia desligado, sem
+   * ninguém poder fazer nada. O desfecho próprio é consumir sem erro: o turno
+   * NÃO roda (isto é o que este teste prende), o job termina `done` e o motivo
+   * fica no log.
+   *
+   * Quem devolver o `throw` vê este teste vermelho — e a Central, com um alerta
+   * crítico por follow-up de canal pausado.
+   */
+  it("canal desativado consome o job SEM ERRO e nunca roda o turno", async () => {
     const { pool } = poolComCanal(true);
     const handler = criarHandler({} as never);
-    await expect(handler(job(), pool, { workerId: "w1" })).rejects.toThrow(/canal desativado/);
+    await expect(handler(job(), pool, { workerId: "w1" })).resolves.toBeUndefined();
     expect(runAgentTurn).not.toHaveBeenCalled();
   });
 

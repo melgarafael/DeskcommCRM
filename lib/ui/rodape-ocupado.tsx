@@ -98,14 +98,29 @@ export function reservaDoRodape(ocupacoes: readonly number[]): number {
 }
 
 /**
- * O `padding-bottom` que a casca aplica. `undefined` — nenhum estilo, o `p-6`
- * de sempre — quando não há peça: sem peça não há faixa a reservar, e o rodapé
- * de todas as telas continua exatamente o que era.
+ * O `padding-bottom` que a casca aplica. `undefined` — nenhum estilo, a classe
+ * `pb-area-segura` de sempre — quando não há peça: sem peça não há faixa a
+ * reservar, e o rodapé de todas as telas continua exatamente o que era.
+ *
+ * ─── Por que `env(safe-area-inset-bottom)` entra no `max()` ─────────────────
+ *
+ * O indicador de home do iOS em tela cheia ocupa ~34px do fundo da janela, e
+ * ele NÃO é peça nossa: nenhum arquivo o declara, nada o registra, e o contrato
+ * não tem como saber que existe. Ele é a terceira medida da mesma faixa.
+ *
+ * Deixá-lo fora criava um buraco estreito e real: uma peça fixa de 20px de
+ * alcance faz a reserva valer 24px (o piso), e 24 < 34 — o estilo inline vence
+ * a classe `pb-area-segura` do `<main>` e o conteúdo volta para debaixo do
+ * indicador justamente por causa da peça que deveria protegê-lo. Com os três no
+ * mesmo `max()` o pior caso é o que manda, que é o único jeito de somar medidas
+ * que não se somam (o mesmo argumento de `reservaDoRodape`).
+ *
+ * Fora do iOS em tela cheia o termo vale `0px` e nada muda.
  */
 export function estiloDaReserva(reserva: number): { paddingBottom: string } | undefined {
   if (reserva <= 0) return undefined;
   return {
-    paddingBottom: `max(${PISO_DO_RODAPE}px, var(${VARIAVEL_DA_OCUPACAO}, 0px))`,
+    paddingBottom: `max(${PISO_DO_RODAPE}px, env(safe-area-inset-bottom, 0px), var(${VARIAVEL_DA_OCUPACAO}, 0px))`,
   };
 }
 

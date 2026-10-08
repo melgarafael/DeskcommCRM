@@ -29,7 +29,7 @@
  * primeiro sintoma que o cliente veria da proteção que acabou de ligar seria o
  * WhatsApp mudo.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/logger", () => ({
@@ -45,6 +45,16 @@ vi.mock("@/lib/ai/gateway", () => ({
   resolveLanguageModel: () => "modelo-dublê",
 }));
 vi.mock("@/lib/ai/budget/check", () => ({ getBudgetStatus: vi.fn() }));
+// Hoje `elegivelParaWorkerLegado` devolve SEMPRE false e o veto é inalcançável.
+// O mock deixa o padrão real (false) e só o último `describe` força a passagem.
+vi.mock("@/lib/ai/agents/no-ar", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/ai/agents/no-ar")>()),
+  elegivelParaWorkerLegado: vi.fn(() => false),
+}));
+vi.mock("@/lib/ai/gateway-binding", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/ai/gateway-binding")>();
+  return { ...real, resolverModeloDoPonto: vi.fn(real.resolverModeloDoPonto) };
+});
 // O SDK nunca é alcançado de verdade: se o guard deixar passar, esta sentinela é
 // que prova a passagem — e nenhum byte sai para provedor nenhum.
 vi.mock("ai", () => ({
@@ -58,6 +68,9 @@ import { getBudgetStatus, type BudgetStatus } from "@/lib/ai/budget/check";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { LIMIAR_PADRAO_PCT } from "@/lib/agent-engine/edge/llm/orcamento";
 import type { EventRow } from "@/lib/event-log/dispatcher";
+import { elegivelParaWorkerLegado } from "@/lib/ai/agents/no-ar";
+import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
+import { TITULO_TETO_DO_PLANO } from "@/lib/agent-engine/edge/llm/orcamento";
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const CONV_ID = "44444444-4444-4444-8444-444444444444";
@@ -108,7 +121,7 @@ interface Operacao {
  * `agent_inbox_items`; elas se distinguem pelo filtro, não pela ordem.
  */
 function makeAdminStub(
-  contagens: { avisosNoMes: number; itensAbertos: number },
+  contagens: { avisosNoMes: number; itensAbertos: number; tetoDoPlano?: number | null },
   corpoInbound: string = INBOUND_BODY,
 ) {
   const operacoes: Operacao[] = [];
@@ -231,8 +244,20 @@ function makeAdminStub(
     return chain;
   };
 
-  const rpc = (name: string) => Promise.resolve({ data: name === "fn_service_boundary" ? SERVICE : [], error: null });
-  return { stub: { from, rpc }, operacoes, tabelasConsultadas };
+  const rpcs: string[] = [];
+  const rpc = (name: string) => {
+    rpcs.push(name);
+    return Promise.resolve({
+      data:
+        name === "fn_service_boundary"
+          ? SERVICE
+          : name === "fn_limite_do_plano"
+            ? (contagens.tetoDoPlano ?? null)
+            : [],
+      error: null,
+    });
+  };
+  return { stub: { from, rpc }, operacoes, tabelasConsultadas, rpcs };
 }
 
 const eventRow = {
@@ -243,10 +268,13 @@ const eventRow = {
 
 function montar(
   orcamento: Partial<BudgetStatus> | "erro",
-  contagens: { avisosNoMes: number; itensAbertos: number } = { avisosNoMes: 0, itensAbertos: 0 },
+  contagens: { avisosNoMes: number; itensAbertos: number; tetoDoPlano?: number | null } = {
+    avisosNoMes: 0,
+    itensAbertos: 0,
+  },
   corpoInbound: string = INBOUND_BODY,
 ) {
-  const { stub, operacoes, tabelasConsultadas } = makeAdminStub(contagens, corpoInbound);
+  const { stub, operacoes, tabelasConsultadas, rpcs } = makeAdminStub(contagens, corpoInbound);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   vi.mocked(createAdminClient).mockReturnValue(stub as any);
   if (orcamento === "erro") {
@@ -254,7 +282,7 @@ function montar(
   } else {
     vi.mocked(getBudgetStatus).mockResolvedValue({ ...ARMADO_E_ESTOURADO, ...orcamento });
   }
-  return { operacoes, tabelasConsultadas };
+  return { operacoes, tabelasConsultadas, rpcs };
 }
 
 /**
@@ -331,5 +359,59 @@ describe("a ORDEM do veto — o teto de gasto não cala a triagem determinístic
     expect(result).toMatchObject({status:'skipped',reason:'agent_inactive_or_missing'});
     expect(getBudgetStatus).not.toHaveBeenCalled();
     expect(operacoes.filter(o=>o.table==='conversations'&&o.tipo==='update'&&o.row.last_handoff_reason==='orcamento_de_ia')).toEqual([]);
+  });
+});
+
+describe("o teto de IA do plano no caminho legado (forçado: hoje o veto é inalcançável)", () => {
+  beforeEach(() => vi.mocked(elegivelParaWorkerLegado).mockReturnValue(true));
+  afterEach(() => vi.mocked(elegivelParaWorkerLegado).mockReturnValue(false));
+
+  const comOrigem = (origem: "padrao" | "credencial_da_organizacao") =>
+    vi.mocked(resolverModeloDoPonto).mockResolvedValueOnce({
+      model: "modelo-dublê" as never,
+      modelId: "anthropic/claude-sonnet-4-6",
+      origem,
+    });
+  const itensDoPlano = (operacoes: Operacao[]) =>
+    itensDeOrcamento(operacoes).filter((o) => o.tipo === "insert" && o.row.ref_kind === "plano");
+
+  it("⭐ plano estourado com a chave da instalação: equipe assume e o item nasce com ref_kind 'plano', mesmo com o orçamento da org em 'off'", async () => {
+    const { operacoes } = montar(
+      { enforcement_mode: "off", current_month_consumed_cents: 1500 },
+      { avisosNoMes: 0, itensAbertos: 0, tetoDoPlano: 1000 },
+    );
+    comOrigem("padrao");
+
+    expect(await processMessageReceived(eventRow)).toEqual({ status: "skipped", reason: "budget_exceeded" });
+    expect(itensDoPlano(operacoes)).toHaveLength(1);
+    expect(itensDoPlano(operacoes)[0]!.row.title).toBe(TITULO_TETO_DO_PLANO);
+    expect(
+      operacoes.filter(
+        (o) => o.table === "conversations" && o.tipo === "update" && o.row.last_handoff_reason === "orcamento_de_ia",
+      ).length,
+      "o teto do plano parou a IA sem passar a conversa para a equipe",
+    ).toBeGreaterThan(0);
+  });
+
+  it("chave da organização (BYOK): o teto do plano nem é lido", async () => {
+    const { operacoes, rpcs } = montar(
+      { enforcement_mode: "off", current_month_consumed_cents: 1500 },
+      { avisosNoMes: 0, itensAbertos: 0, tetoDoPlano: 1000 },
+    );
+    comOrigem("credencial_da_organizacao");
+    await processMessageReceived(eventRow).catch(() => null);
+    expect(rpcs).not.toContain("fn_limite_do_plano");
+    expect(itensDoPlano(operacoes)).toEqual([]);
+  });
+
+  it("AI_BUDGET_ENFORCEMENT=off desliga o teto do plano (D-9)", async () => {
+    const { operacoes, rpcs } = montar(
+      { enforcement_env: "off", current_month_consumed_cents: 1500 },
+      { avisosNoMes: 0, itensAbertos: 0, tetoDoPlano: 1000 },
+    );
+    comOrigem("padrao");
+    await processMessageReceived(eventRow).catch(() => null);
+    expect(rpcs).not.toContain("fn_limite_do_plano");
+    expect(itensDoPlano(operacoes)).toEqual([]);
   });
 });

@@ -390,7 +390,7 @@ export async function testarAcao(
 
   const { data: contato } = await admin
     .from("contacts")
-    .select("id, name, display_name, phone_number, is_blocked, is_anonymized, consent")
+    .select("id, name, display_name, phone_number, is_blocked, is_personal, is_anonymized, consent")
     .eq("organization_id", c.organization_id)
     .eq("id", contactId)
     .maybeSingle();
@@ -408,6 +408,7 @@ export async function testarAcao(
     display_name: string | null;
     phone_number: string | null;
     is_blocked: boolean;
+    is_personal: boolean;
     is_anonymized: boolean;
     consent: unknown;
   };
@@ -418,6 +419,7 @@ export async function testarAcao(
     contactId: linha.id,
     telefone: linha.phone_number,
     bloqueado: linha.is_blocked,
+    pessoal: linha.is_personal === true,
     anonimizado: linha.is_anonymized,
     recusouMarketing: recusouMarketing(linha.consent),
   });

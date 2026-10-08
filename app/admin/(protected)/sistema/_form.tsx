@@ -27,6 +27,21 @@ import type { ModuloOpcional, MODULOS_OPCIONAIS_POR_FLAG } from "@/lib/instalaca
  * aqui existe pra isso dar erro em build, não silenciosamente em runtime. */
 type ModuloPorFlag = (typeof MODULOS_OPCIONAIS_POR_FLAG)[number];
 
+/** O marcador das frases da assinatura; fora do JSX porque não é prosa. */
+const MOMENTO = "{momento}";
+
+/**
+ * O que as últimas entregas do WhatsApp disseram sobre a assinatura (doc 99,
+ * opção A), com os instantes já formatados pelo servidor. `null` = a leitura
+ * falhou, e a tela não diz nada. A regra do "sim" mora em
+ * `lib/channels/assinatura-das-entregas.ts`.
+ */
+export interface AssinaturaNaTela {
+  readonly assinadas: boolean | null;
+  readonly ultimaAssinada: string | null;
+  readonly ultimaSemAssinatura: string | null;
+}
+
 /**
  * Cada interruptor salva na hora, sem botão de confirmar — mesmo desenho do
  * formulário da política de cadastro, e pelo mesmo motivo: é reversível com um
@@ -37,7 +52,13 @@ type ModuloPorFlag = (typeof MODULOS_OPCIONAIS_POR_FLAG)[number];
  * um `upsert` de uma linha só, e mandar o estado todo evita que duas telas
  * abertas se sobrescrevam em campos que ninguém tocou.
  */
-export function FormularioDeComportamento({ inicial }: { inicial: ComportamentoDaInstalacao }) {
+export function FormularioDeComportamento({
+  inicial,
+  assinatura = null,
+}: {
+  inicial: ComportamentoDaInstalacao;
+  assinatura?: AssinaturaNaTela | null;
+}) {
   const t = useT();
   const [valores, setValores] = useState<ComportamentoDaInstalacao>(inicial);
   const [erro, setErro] = useState<string | null>(null);
@@ -110,6 +131,41 @@ export function FormularioDeComportamento({ inicial }: { inicial: ComportamentoD
                 "Ligado, toda entrega de webhook precisa vir assinada com o segredo da sessão. Desligado por padrão porque nem todo servidor de canal assina: ligar sem que ele assine corta a entrada de mensagens.",
               )}
             </p>
+            {assinatura && (
+              <div className="space-y-1 text-sm" data-testid="assinatura-das-entregas">
+                {assinatura.assinadas === null ? (
+                  <p className="text-muted-foreground">
+                    {t("Nenhuma entrega do WhatsApp na última semana para conferir a assinatura.")}
+                  </p>
+                ) : assinatura.assinadas ? (
+                  <p>
+                    {t("As últimas entregas do WhatsApp chegaram assinadas: sim (última em {momento}).").replace(
+                      MOMENTO,
+                      assinatura.ultimaAssinada ?? "",
+                    )}
+                  </p>
+                ) : (
+                  <>
+                    <p>{t("As últimas entregas do WhatsApp chegaram assinadas: não.")}</p>
+                    {assinatura.ultimaAssinada && (
+                      <p className="text-muted-foreground">
+                        {t("Última assinada: {momento}.").replace(MOMENTO, assinatura.ultimaAssinada)}
+                      </p>
+                    )}
+                  </>
+                )}
+                {assinatura.ultimaSemAssinatura && (
+                  <p className="text-muted-foreground">
+                    {t("Última sem assinatura: {momento}.").replace(MOMENTO, assinatura.ultimaSemAssinatura)}
+                  </p>
+                )}
+                {assinatura.assinadas === true && !valores.exigir_assinatura_no_webhook && (
+                  <p className="font-medium" role="status">
+                    {t("Pode ligar: o WhatsApp já assina.")}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
           <Switch
             id="assinatura-do-webhook"
@@ -218,6 +274,13 @@ const MODULOS_NA_TELA: ReadonlyArray<{ modulo: ModuloPorFlag; id: string; rotulo
       "Ligado, cada empresa ganha no CRM o cadastro de Empresas (razão social e CNPJ, com os dados públicos preenchidos pela BrasilAPI), as Pessoas que decidem dentro delas, com vários telefones, e a importação de planilha CSV ou Excel. Consultar um CNPJ manda o número para a BrasilAPI. Desligado, as telas e o menu somem.",
   },
   {
+    modulo: "cobranca",
+    id: "modulo-cobranca",
+    rotulo: "Cobrança dos seus clientes",
+    descricao:
+      "Ligado, você cria planos e cobra as empresas hospedadas aqui, com teste grátis e suspensão automática de quem não paga. Empresas que já existem ficam isentas; você escolhe quem passa a pagar. Desligado, os limites dos planos deixam de valer e as empresas suspensas por falta de pagamento são liberadas; nada é cancelado no provedor de pagamento.",
+  },
+  {
     modulo: "login_codex",
     id: "modulo-login-codex",
     rotulo: "Login do Codex por assinatura",
@@ -226,7 +289,17 @@ const MODULOS_NA_TELA: ReadonlyArray<{ modulo: ModuloPorFlag; id: string; rotulo
   },
 ];
 
-export function FormularioDeModulos({ ligados }: { ligados: readonly ModuloOpcional[] }) {
+export function FormularioDeModulos({
+  ligados,
+  escondidos,
+  suspensasPorCobranca,
+}: {
+  ligados: readonly ModuloOpcional[];
+  /** Módulos que ainda não se ligam nesta versão e estão desligados: ficam sem interruptor. */
+  escondidos: readonly ModuloOpcional[];
+  /** Spec da cobrança §7(h): quantas o desligar libera. `null` = a contagem falhou. */
+  suspensasPorCobranca: number | null;
+}) {
   const t = useT();
   const [estado, setEstado] = useState<ReadonlySet<ModuloOpcional>>(new Set(ligados));
   const [erro, setErro] = useState<string | null>(null);
@@ -246,7 +319,15 @@ export function FormularioDeModulos({ ligados }: { ligados: readonly ModuloOpcio
       const r = await updateModuloDaInstalacao({ modulo, ligado: valor });
       if (!r.ok) {
         alternar(!valor);
-        setErro(t(ehRecusaDeEscrita(r.error) ? MENSAGEM_DA_RECUSA_DE_ESCRITA[r.error] : "Não deu para salvar. Tente de novo em instantes."));
+        setErro(
+          t(
+            ehRecusaDeEscrita(r.error)
+              ? MENSAGEM_DA_RECUSA_DE_ESCRITA[r.error]
+              : r.error === "liberacao_falhou"
+                ? "A cobrança continua ligada: não deu para liberar as empresas suspensas por falta de pagamento, e nada foi mudado. Tente desligar de novo em instantes."
+                : "Não deu para salvar. Tente de novo em instantes.",
+          ),
+        );
       }
     });
   }
@@ -262,13 +343,20 @@ export function FormularioDeModulos({ ligados }: { ligados: readonly ModuloOpcio
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {MODULOS_NA_TELA.map((m) => (
+        {MODULOS_NA_TELA.filter((m) => !escondidos.includes(m.modulo)).map((m) => (
           <div key={m.modulo} className="flex items-start justify-between gap-4 rounded-lg border p-4">
             <div className="space-y-1">
               <Label htmlFor={m.id} className="text-base">
                 {t(m.rotulo)}
               </Label>
               <p className="text-sm text-muted-foreground">{t(m.descricao)}</p>
+              {m.modulo === "cobranca" && estado.has("cobranca") && suspensasPorCobranca !== 0 && (
+                <p className="text-sm text-warning-fg">
+                  {suspensasPorCobranca === null
+                    ? t("Não deu para contar as empresas suspensas por falta de pagamento. Desligar libera todas.")
+                    : `${t("Empresas suspensas por falta de pagamento que serão liberadas ao desligar:")} ${suspensasPorCobranca}`}
+                </p>
+              )}
             </div>
             <Switch
               id={m.id}

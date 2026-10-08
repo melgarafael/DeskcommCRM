@@ -187,12 +187,24 @@ const semChaveOpenAi = () =>
     },
   );
 
+/** A forma real do `generateText`: o `usage` vem sempre, e o worker grava os tokens dele. */
+function respostaDoModelo(text: string) {
+  return {
+    text,
+    usage: {
+      inputTokens: 300,
+      outputTokens: 12,
+      inputTokenDetails: { noCacheTokens: 300, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    },
+  };
+}
+
 describe("transcricao_de_audio — quem ouve o áudio (#2171)", () => {
   beforeEach(() => {
     downloadMock.mockReset().mockResolvedValue({ data: new Blob([new Uint8Array([1, 2, 3])]), error: null });
     updateEqMock.mockReset();
     inboxInsertMock.mockReset();
-    generateTextMock.mockReset().mockResolvedValue({ text: "Quiero una cotización de 20 unidades" });
+    generateTextMock.mockReset().mockResolvedValue(respostaDoModelo("Quiero una cotización de 20 unidades"));
     extractPdfMock.mockReset().mockResolvedValue("NF: 120 Contrato: 9912492178");
     fetchMock.mockReset().mockResolvedValue({ ok: true, json: async () => ({ text: "transcrito pelo whisper" }) });
     vi.stubGlobal("fetch", fetchMock);
@@ -264,7 +276,7 @@ describe("transcricao_de_audio — quem ouve o áudio (#2171)", () => {
   });
 
   it("transcrição que volta VAZIA vira failed com motivo (nunca `ready` sem texto)", async () => {
-    generateTextMock.mockResolvedValue({ text: "   " });
+    generateTextMock.mockResolvedValue(respostaDoModelo("   "));
 
     const r = await deriveMessageMedia(eventRow());
 

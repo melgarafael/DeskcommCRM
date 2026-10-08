@@ -70,6 +70,19 @@ export function assertCurrentServiceBoundary(
     throw new StaleServiceBoundaryError();
   }
 }
+/** Mesma identidade de atendimento: org, contato, conversa, revisão e demanda. */
+export function mesmaFronteira(a: ServiceBoundary | null, b: ServiceBoundary | null): boolean {
+  return (
+    !!a &&
+    !!b &&
+    a.organization_id === b.organization_id &&
+    a.contact_id === b.contact_id &&
+    a.conversation_id === b.conversation_id &&
+    a.service_revision === b.service_revision &&
+    a.demanda_id === b.demanda_id &&
+    a.demanda_revision === b.demanda_revision
+  );
+}
 export function parseServiceBoundary(value: unknown): ServiceBoundary | null {
   if (!value || typeof value !== "object") return null;
   const b = value as Record<string, unknown>;

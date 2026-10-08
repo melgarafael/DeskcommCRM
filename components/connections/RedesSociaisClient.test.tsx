@@ -2,8 +2,8 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RedesSociaisClient } from "./RedesSociaisClient";
-const h = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
-vi.mock("@/lib/api/client", () => ({ apiClient: h }));
+const h = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), remove: vi.fn() }));
+vi.mock("@/lib/api/client", () => ({ apiClient: { get: h.get, post: h.post, delete: h.remove } }));
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams() }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 vi.mock("./ChannelAiAccess", () => ({ ChannelAiAccess: () => <div>IA pausada</div> }));
@@ -95,5 +95,52 @@ it("asks before removing an account from support and keeps it linked", async () 
       account_id: "a",
       remove_account: false,
     }),
+  );
+});
+it("shows orphaned channels and removes them through the disconnect action, which deletes the provider webhook", async () => {
+  h.get.mockResolvedValue({
+    data: {
+      configured: true,
+      label: "Partner",
+      networks: [{ id: "instagram", label: "Instagram" }],
+      accounts: [],
+      orphaned_channels: [
+        { channel_id: "ch-orfa", account_id: "velha", display_name: "Instagram velha", status: "FAILED" },
+      ],
+    },
+  });
+  h.post.mockResolvedValue({ data: { channel_id: "ch-orfa", account_removed: false } });
+  mount();
+  await screen.findByText("Canais sem conta no perfil");
+  fireEvent.click(screen.getByRole("button", { name: "Excluir" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Excluir canal" }));
+  await vi.waitFor(() =>
+    expect(h.post).toHaveBeenCalledWith("/api/v1/channels/social", {
+      action: "disconnect",
+      account_id: "velha",
+      remove_account: false,
+    }),
+  );
+  // channel-sessions/[id] não apaga a assinatura no provedor: ela ficaria viva.
+  expect(h.remove).not.toHaveBeenCalled();
+});
+it("asks before unlinking the profile and posts unlink on confirm", async () => {
+  h.get.mockResolvedValue({
+    data: {
+      configured: true,
+      label: "Partner",
+      networks: [{ id: "instagram", label: "Instagram" }],
+      accounts: [],
+      orphaned_channels: [],
+    },
+  });
+  h.post.mockResolvedValue({ data: { desvinculado: true } });
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "Desvincular perfil" }));
+  expect(h.post).not.toHaveBeenCalled();
+  await screen.findByText("Desvincular o perfil?");
+  fireEvent.click(screen.getByRole("button", { name: /^Desvincular$/ }));
+  await vi.waitFor(() =>
+    expect(h.post).toHaveBeenCalledWith("/api/v1/channels/social", { action: "unlink" }),
   );
 });

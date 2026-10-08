@@ -359,9 +359,10 @@ check "  o FIM da tela repete que o banco NÃO terminou limpo" \
   grep -q "Atenção: o banco NÃO terminou limpo nesta atualização" "$OUTFILE"
 check "  e não diz Atualização concluída" test -z "$(grep 'Atualização concluída' "$OUTFILE" || true)"
 check "  a dica aparece no passo do banco E no fim" test "$(grep -cF 'update.sh --to v1.1.0 --force' "$OUTFILE")" -eq 2
-# Restaurar o backup desfaz também o que o CRM gravou desde ele: é o último recurso.
-check "  no passo do banco, repetir vem ANTES de restaurar" \
-  test "$(linha_de 'update.sh --to v1.1.0 --force')" -lt "$(linha_de 'Só em último caso, volte ao backup')"
+# O backup não volta por cima do banco em uso (#2120): o aviso disso vem depois do
+# que se pode fazer, que é repetir.
+check "  no passo do banco, repetir vem ANTES do aviso sobre o backup" \
+  test "$(linha_de 'update.sh --to v1.1.0 --force')" -lt "$(linha_de 'O backup feito antes desta atualização NÃO volta')"
 check "  e a orientação é a ÚLTIMA coisa da saída, depois do passo 7" \
   test -n "$(tail -n 8 "$OUTFILE" | grep -F 'update.sh --to v1.1.0 --force' || true)"
 

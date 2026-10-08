@@ -81,7 +81,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const { data: contactRaw } = await supabase
     .from("contacts")
-    .select("id, phone_number, name, is_blocked, is_anonymized")
+    .select("id, phone_number, name, is_blocked, is_personal, is_anonymized")
     .eq("organization_id", activeOrg.orgId)
     .eq("id", parsed.data.contactId)
     .maybeSingle();
@@ -90,6 +90,7 @@ export async function POST(req: Request): Promise<Response> {
     phone_number: string | null;
     name: string | null;
     is_blocked: boolean | null;
+    is_personal: boolean | null;
     is_anonymized: boolean | null;
   } | null;
   if (!contact) return fail("not_found", "Contato não encontrado.", 404, { requestId });
@@ -103,6 +104,11 @@ export async function POST(req: Request): Promise<Response> {
   // `forbidden` de lá, para que a tela trate os dois do mesmo jeito.
   if (contact.is_blocked) {
     return fail("forbidden", "Contato bloqueou o atendimento.", 403, { requestId });
+  }
+  // Contato pessoal (spec 21): nada sai para ele, nem ligação — a mesma recusa
+  // que o envio de mensagem dá.
+  if (contact.is_personal) {
+    return fail("forbidden", "Contato marcado como pessoal.", 403, { requestId });
   }
   // Contato anonimizado não tem mais telefone real guardado, e o que sobrou não
   // é dele. 422 e não 403, pela mesma assimetria que o envio de mensagem já

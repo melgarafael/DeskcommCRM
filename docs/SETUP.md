@@ -522,6 +522,19 @@ LGPD_SIGNING_KEY=<saída-6>
 > ⚠️ **NUNCA reutilize** a mesma string em produção. Cada uma criptografa uma coisa diferente — se vazar uma, queremos blast radius limitado.
 >
 > ⚠️ **NUNCA mude `CPF_ENCRYPTION_KEY` ou `NUVEMSHOP_OAUTH_ENCRYPTION_KEY` depois que tiver dados em prod** — você não consegue mais descriptografar o que foi salvo. Rotação dessas chaves exige migration de re-encryption.
+>
+> ⚠️ **A chave do CPF precisa chegar ao BANCO**: `encrypt_cpf`/`decrypt_cpf`
+> (migration 0597) leem `private.app_secrets` na linha `cpf_key`. O
+> `install.sh`/`update.sh` semeia sozinho; numa instalação montada à mão:
+>
+> ```sql
+> insert into private.app_secrets (name, value)
+> values ('cpf_key', '<valor de CPF_ENCRYPTION_KEY>')
+> on conflict (name) do update set value = excluded.value, updated_at = now();
+> ```
+>
+> Sem essa linha o contato com CPF é salvo **sem CPF** — a linha entra, mas a
+> busca por CPF não acha ninguém (#2522).
 
 ### Outras vars opcionais
 

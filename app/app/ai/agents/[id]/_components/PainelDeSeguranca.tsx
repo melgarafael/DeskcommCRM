@@ -87,7 +87,9 @@ function Conferencia({
         <p className="text-xs text-muted-foreground">{t(c.oQueProtege)}</p>
         {c.escolha === null ? (
           <p data-testid={`conferencia-${c.nome}-fixa`} className="text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">{t("Isto não se desliga.")}</span>{" "}
+            <span className="font-medium text-foreground">
+              {t(c.escolhaEmOutraTela ?? "Isto não se desliga.")}
+            </span>{" "}
             {t(c.porQueNaoSeDesliga)}
           </p>
         ) : (

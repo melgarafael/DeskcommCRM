@@ -42,7 +42,7 @@ function linhaRecusada() {
 /** Cadeia `from().select().eq().eq().order().limit()` que resolve a lista. */
 function dubleLista(linhas: Array<Record<string, unknown>>) {
   const cadeia: Record<string, unknown> = {};
-  for (const m of ["select", "eq", "order", "limit"]) {
+  for (const m of ["select", "eq", "order", "limit", "not"]) {
     cadeia[m] = () => cadeia;
   }
   cadeia.then = (ok: (r: unknown) => unknown) =>

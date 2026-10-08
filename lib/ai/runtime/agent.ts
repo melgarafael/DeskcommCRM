@@ -25,7 +25,7 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
-import { generateText, stepCountIs, type LanguageModel, type StopCondition, type ToolSet } from "ai";
+import { generateText, stepCountIs, streamText, type LanguageModel, type StopCondition, type ToolSet } from "ai";
 
 // Fonte única do endpoint — a mesma constante que o registry de produção usa.
 // Repetir a URL aqui criaria dois lugares para consertar quando ela mudar.
@@ -48,11 +48,15 @@ import { audit } from "@/lib/audit";
 import type { McpAuthResult } from "@/lib/mcp/auth";
 import type { McpContext } from "@/lib/mcp/types";
 import { computeCostCents } from "./cost";
+// O par (provedor, modelo) é a MESMA régua de todos os caminhos de execução
+// (seam, pontos, mídia, embedding e aqui) — issue #2377.
+import { ParProvedorModeloInvalidoError, validarParProvedorModelo } from "@/lib/ai/par-provedor-modelo";
 import { finalizeRun } from "./finalize";
 import { sendFinalResponse } from "./finalize";
 import { finalizeHandoff } from "./handoff";
 import { loadHistoryWithBudget } from "./history";
 import { mintEphemeralToken, revokeEphemeralToken } from "./mcp_token";
+import { carregarServidorMcpExternoDoTurno } from "@/lib/mcp/servidor-externo/carregar";
 import { pickToolsFromMcp, type RuntimeHandoffSignal } from "./tools";
 import { modulosLigados } from "@/lib/instalacao/modulos";
 import { capacidadesDaOrganizacao } from "@/lib/organizacao/capacidades";
@@ -178,12 +182,21 @@ export function buildModel(
   modelId: string,
   baseUrl?: string | null,
 ): LanguageModel {
+  // O PAR ANTES DE INSTANCIAR (issue #2377): o ensaio ("Teste" na aba do
+  // agente), o runtime do run e o onboarding passam todos por aqui, e este
+  // switch era o único que não conferia nada. Um `agent_versions` gravado com
+  // `{provider: 'openai', model: 'claude-sonnet-5'}` chegava ao
+  // `createOpenAI(...)(claude-sonnet-5)` e só o 400 do provedor dizia o que
+  // acontecia — depois de a tela ter prometido que o ensaio rodava. A recusa
+  // é anterior à instância, com provedor, modelo e motivo na mensagem.
+  const par = validarParProvedorModelo(provider, modelId);
+  if (!par.valido) throw new ParProvedorModeloInvalidoError(provider, modelId, par.motivo);
   switch (provider) {
     case "anthropic":
       return createAnthropic({ apiKey })(modelId);
     case "openai":
       return createOpenAI({ apiKey })(modelId);
-    // A ASSINATURA (#1639): mesma fábrica da OpenAI, endpoint do Codex. O
+    // A ASSINATURA (#1639): mesma fábrica da OpenAI, API pública de Responses. O
     // `apiKey` que chega por aqui é o `access_token` do login por PKCE — quem
     // o monta é o leitor próprio (`lerLoginCodexRenovandoSeProxima`), nunca a
     // tela de chave. Sem este caso o ensaio responderia `unsupported_provider`
@@ -405,7 +418,7 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
           return await failRun(
             run,
             "credential_invalid",
-            `sem linha de login nem chave de reserva para ${version.provider}: conecte o Codex em IA › Credenciais`,
+            `sem linha de login nem chave de reserva para ${version.provider}: conecte a assinatura do ChatGPT em IA › Credenciais`,
             startedAt,
           );
         }
@@ -600,6 +613,17 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
       supabase: admin,
     };
     const handoffSignal: RuntimeHandoffSignal = { triggered: false };
+    // #2147 — servidor MCP externo que o dono da instalação registrou. `null`
+    // SEM REDE quando a versão não escolheu nenhuma remota (item 7) ou o TURNO
+    // TEM CONTATO (item 8, escolha (b)): sem o identificador do contato na
+    // chamada ao servidor remoto, a leitura de lá poderia devolver dado de
+    // outro cliente. `null` também sem registro ou com o servidor calado.
+    const servidorExterno = await carregarServidorMcpExternoDoTurno(
+      admin,
+      run.organization_id,
+      version.tool_ids ?? [],
+      { ...(contatoDoTurno ? { contatoDoTurno } : {}) },
+    );
     const tools = pickToolsFromMcp({
       supabase: admin,
       ctx,
@@ -612,6 +636,7 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
       modulosLigados: await modulosLigados(admin),
       capacidadesLigadas: await capacidadesDaOrganizacao(admin, run.organization_id),
       handoffSignal,
+      ...(servidorExterno ? { servidorMcpExterno: servidorExterno } : {}),
       ...(contatoDoTurno ? { contatoDoTurno } : {}),
     });
 
@@ -665,13 +690,32 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
       { role: "user" as const, content: inboundBody },
     ];
 
-    const result = await generateText({
-      model,
-      system: version.system_prompt,
-      messages,
-      tools,
-      stopWhen: [stepCountIs(version.max_steps), budgetGuard],
-    });
+    const result =
+      providerDoTurno === PROVEDOR_POR_ASSINATURA
+        ? await (async () => {
+            const streamed = streamText({
+              model,
+              system: version.system_prompt,
+              messages,
+              tools,
+              stopWhen: [stepCountIs(version.max_steps), budgetGuard],
+              providerOptions: { openai: { store: false } },
+            });
+            const [text, steps, usage, finishReason] = await Promise.all([
+              streamed.text,
+              streamed.steps,
+              streamed.usage,
+              streamed.finishReason,
+            ]);
+            return { text, steps, usage, finishReason };
+          })()
+        : await generateText({
+            model,
+            system: version.system_prompt,
+            messages,
+            tools,
+            stopWhen: [stepCountIs(version.max_steps), budgetGuard],
+          });
 
     // 12) Aggregate metrics.
     const usage = totalUsage(result.steps as Array<{ usage?: { inputTokens?: number; outputTokens?: number } }>);

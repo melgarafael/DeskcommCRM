@@ -53,12 +53,14 @@ const FONTE: WebhookSourceRow = {
   name: "Landing page",
   path_token: "tok-abc",
   is_active: true,
+  authorize_ai_on_capture: false,
   kind: "lead_capture",
   last_received_at: null,
   default_pipeline_id: "p-1",
   default_stage_id: "s-1",
   redirect_to: null,
   field_map: {},
+  form_fields: [],
   has_secret: false,
   created_at: "2026-09-30T10:00:00Z",
   updated_at: "2026-09-30T10:00:00Z",
@@ -268,4 +270,36 @@ describe("fonte de webhook — assinatura (HMAC)", () => {
     expect(screen.queryByRole("button", { name: "Remover segredo" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Gerar segredo" })).toBeNull();
   });
+});
+
+
+describe("autorização de IA por fonte de formulário", () => {
+  it("abre desligada e só confirma a mudança depois da resposta persistida", async () => {
+    patch.mockResolvedValue({ data: { ...FONTE, authorize_ai_on_capture: true } });
+    renderPainel({ has_secret: true });
+    const control = screen.getByRole("switch", { name: "Autorizar IA para leads deste formulário" });
+    expect(control.getAttribute("aria-checked")).toBe("false");
+    await userEvent.setup().click(control);
+    await waitFor(() => expect(patch).toHaveBeenCalledWith("/api/v1/webhook-sources/src-1", { authorize_ai_on_capture: true }));
+    await waitFor(() => expect(control.getAttribute("aria-checked")).toBe("true"));
+  });
+  it("respeita permissão de gestão da fonte", () => {
+    permissao.mockReturnValue(false);
+    renderPainel({ has_secret: true });
+    expect((screen.getByRole("switch", { name: "Autorizar IA para leads deste formulário" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+  it("falha de gravação mantém a opção desligada", async () => {
+    patch.mockRejectedValue(new Error("synthetic failure"));
+    renderPainel({ has_secret: true });
+    const control = screen.getByRole("switch", { name: "Autorizar IA para leads deste formulário" });
+    await userEvent.setup().click(control);
+    await waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect((control as HTMLButtonElement).disabled).toBe(false));
+    expect(control.getAttribute("aria-checked")).toBe("false");
+  });
+});
+
+it("a fonte sem assinatura não permite habilitar autorização de IA", () => {
+  renderPainel({ has_secret: false });
+  expect((screen.getByRole("switch", { name: "Autorizar IA para leads deste formulário" }) as HTMLButtonElement).disabled).toBe(true);
 });

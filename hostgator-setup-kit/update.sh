@@ -217,7 +217,7 @@ fi
 if [ -z "$SKIP_BACKUP" ]; then
   step "Backup de segurança (antes de mexer no banco)"
   if bash "$KIT_DIR/backup.sh"; then
-    c_grn "✓ backup feito — se algo der errado, dá pra restaurar (restore.sh)."
+    c_grn "✓ backup feito. Ele só volta num banco VAZIO, não por cima deste (restore.sh; ver hostgator-setup-kit/README.md)."
   else
     if [ -n "${DESKCOMM_AGENT_REPORT:-}" ] || [ ! -t 0 ]; then
       die "O backup preventivo falhou. Atualização automática interrompida para proteger os dados."
@@ -313,7 +313,7 @@ BANCO_INCOMPLETO=""
 BANCO_RESTANTE=""
 # O que fazer, dito por causa, no passo 4 e de novo no fim. Rodar o update.sh sem
 # --force responderia "já está na versão mais recente" e não tocaria no banco.
-# O restore vem por ÚLTIMO: ele desfaz também o que o CRM gravou desde o backup.
+# O backup não é saída aqui: o restore.sh só restaura num banco vazio (#2120).
 orientar_banco_incompleto() {
   # As duas metades SOMAM: uma lista pode ter disputa (que repetir cura) e erro de
   # permissão ou de dado (que não). Escolher uma só escondia a ação possível.
@@ -333,7 +333,8 @@ orientar_banco_incompleto() {
     *)
       c_ylw "  O resto dos erros acima repetir não cura: guarde a mensagem e peça ajuda." ;;
   esac
-  c_ylw "  Só em último caso, volte ao backup feito antes desta atualização (restore.sh)."
+  c_ylw "  O backup feito antes desta atualização NÃO volta por cima deste banco (o restore.sh só"
+  c_ylw "  restaura num banco vazio). Se precisar voltar o banco ao estado anterior, peça ajuda."
 }
 if [ -f supabase/baseline.sql ]; then
   # O aviso PRIMEIRO: entre pausar e anunciar, quem estivesse com a tela aberta
@@ -553,7 +554,7 @@ if [ -f supabase/baseline.sql ]; then
     c_red "   sem erro nenhum, e isso é indistinguível de 'não há dados'."
     printf '%s\n' "$faltando" | sed 's/|/ na tabela /; s/^/   • /' | head -20
     c_ylw "   O log do banco está em .deskcomm-banco.log — mande-o para o suporte."
-    c_ylw "   Para voltar ao estado anterior: bash restore.sh"
+    c_ylw "   O backup NÃO volta por cima deste banco (restore.sh só em banco vazio): peça ajuda."
     # ⛔ E A ATUALIZAÇÃO PARA AQUI.
     #
     # Antes ela seguia: imprimia este bloco vermelho e ia para o passo 5, que
@@ -832,26 +833,9 @@ if [ -n "$ok" ]; then
   fi
   # Dito aqui pelo mesmo motivo do pin: é no fim que o dono lê.
   if [ -n "$AVISO_SITE_URL" ]; then
-    DOM_AVISO="$(printf '%s' "${NEXT_PUBLIC_APP_URL:-https://SEU_DOMINIO}")"
-    cat <<AVISO
-
-$(c_ylw "  ─── CONFIRA UMA COISA, UMA VEZ SÓ ─────────────────────")
-
-  Os e-mails de acesso (esqueci minha senha, confirmação de cadastro,
-  aceite de convite) levam para o endereço que estiver em Authentication
-  → URL Configuration, no painel do Supabase. Instalações feitas antes de
-  o instalador perguntar o token do Supabase ficaram com o padrão de
-  projeto novo, \`http://localhost:3000\`, que só existe na máquina de
-  quem desenvolve — e aí ninguém consegue redefinir a própria senha.
-
-  Vale conferir. Se já estiver com os valores abaixo, não há nada a fazer:
-
-       Site URL:       ${DOM_AVISO}
-       Redirect URLs:  ${DOM_AVISO%/}/auth/confirm
-
-  Este aviso não se repete — para o instalador cuidar disso sozinho, rode
-  o update com \`export SUPABASE_ACCESS_TOKEN=sbp_...\` no ambiente.
-AVISO
+    # O texto depende da topologia (single-server não tem o que conferir):
+    # ver aviso_do_site_url, em _common.sh.
+    aviso_do_site_url "${NEXT_PUBLIC_APP_URL:-https://SEU_DOMINIO}"
     : > "$MARCA_AVISO_SITE_URL" 2>/dev/null || true
   fi
 else

@@ -9,10 +9,38 @@ import { z } from "zod";
 const DEFAULT_BASE = "https://brasilapi.com.br/api";
 const DEFAULT_TIMEOUT_MS = 8_000;
 
-const cnaeSchema = z.object({
-  code: z.union([z.string(), z.number()]).transform(String).optional(),
-  text: z.string().optional(),
-}).passthrough();
+/**
+ * O `User-Agent` PADRÃO DO NODE É RECUSADO PELA BRASILAPI — por isso este é explícito.
+ *
+ * Quando o código não define o cabeçalho, o `fetch` do Node 22 (o do `.nvmrc`)
+ * manda `User-Agent: node` sozinho. A borda que serve a BrasilAPI recusa esse
+ * VALOR. Medido contra o mesmo CNPJ, da mesma máquina, na mesma rodada:
+ *
+ *   403/429  `User-Agent: node`  (era exatamente o que daqui saía)
+ *   429      sem `User-Agent`, ou com ele vazio
+ *   200      `User-Agent: self-hosted-crm/1.0`, e também `curl/8.7.1`
+ *
+ * O status da recusa variou entre 403 e 429 de uma medição para outra; o 200 do
+ * valor abaixo, não. Não era bloqueio temporário nem limite de uso do IP de
+ * alguém: deixava a consulta de CNPJ quebrada em TODA instalação — o lookup do
+ * cadastro, o enriquecimento de `lib/crm-b2b/enrich.ts` e a importação em lote,
+ * que usam este mesmo cliente.
+ *
+ * O valor é NEUTRO de propósito, e não reusa o `APP_USER_AGENT` de
+ * `lib/nuvemshop/config.ts`. Lá o nome do produto está na allowlist de marca
+ * porque identifica uma aplicação REGISTRADA na Nuvemshop; aqui não há registro
+ * nenhum. Mandar o nome da marca entregaria o revendedor a um terceiro,
+ * variaria por instalação (deixando o tráfego justamente inidentificável) e
+ * pediria linha nova numa allowlist que, por doutrina, só encolhe.
+ */
+const USER_AGENT = "self-hosted-crm/1.0";
+
+const cnaeSchema = z
+  .object({
+    code: z.union([z.string(), z.number()]).transform(String).optional(),
+    text: z.string().optional(),
+  })
+  .passthrough();
 
 export const brasilApiCnpjSchema = z
   .object({
@@ -77,11 +105,16 @@ export function createBrasilApiClient(opts: BrasilApiClientOpts = {}): BrasilApi
       try {
         const res = await fetchFn(`${baseUrl}/cnpj/v1/${normalizedCnpj}`, {
           method: "GET",
-          headers: { Accept: "application/json" },
+          headers: { Accept: "application/json", "User-Agent": USER_AGENT },
           signal: ctrl.signal,
         });
         if (res.status === 404) {
-          return { ok: false, code: "not_found", message: "CNPJ não encontrado na BrasilAPI.", status: 404 };
+          return {
+            ok: false,
+            code: "not_found",
+            message: "CNPJ não encontrado na BrasilAPI.",
+            status: 404,
+          };
         }
         if (!res.ok) {
           return {
@@ -94,10 +127,18 @@ export function createBrasilApiClient(opts: BrasilApiClientOpts = {}): BrasilApi
         const raw: unknown = await res.json();
         const parsed = brasilApiCnpjSchema.safeParse(raw);
         if (!parsed.success) {
-          return { ok: false, code: "incomplete", message: "Resposta da BrasilAPI incompleta ou inválida." };
+          return {
+            ok: false,
+            code: "incomplete",
+            message: "Resposta da BrasilAPI incompleta ou inválida.",
+          };
         }
         if (!parsed.data.razao_social && !parsed.data.nome_fantasia) {
-          return { ok: false, code: "incomplete", message: "BrasilAPI sem razão social nem nome fantasia." };
+          return {
+            ok: false,
+            code: "incomplete",
+            message: "BrasilAPI sem razão social nem nome fantasia.",
+          };
         }
         return { ok: true, data: parsed.data, raw };
       } catch (err) {
@@ -105,7 +146,9 @@ export function createBrasilApiClient(opts: BrasilApiClientOpts = {}): BrasilApi
         return {
           ok: false,
           code: aborted ? "timeout" : "upstream_error",
-          message: aborted ? "Timeout ao consultar a BrasilAPI." : "Falha de rede ao consultar a BrasilAPI.",
+          message: aborted
+            ? "Timeout ao consultar a BrasilAPI."
+            : "Falha de rede ao consultar a BrasilAPI.",
         };
       } finally {
         clearTimeout(timer);

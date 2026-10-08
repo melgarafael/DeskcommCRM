@@ -1,5 +1,6 @@
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { idsDeContatosPessoais } from "@/app/api/v1/conversations/_handler";
 /**
  * Core handlers para /api/v1/leads.
  *
@@ -152,7 +153,7 @@ async function ownerPatchOrThrow(
 async function contatoDaOrgOrThrow(supabase: SB, ctx: HandlerCtx, contactId: string): Promise<void> {
   const { data: contato, error: contatoErr } = await supabase
     .from("contacts")
-    .select("id")
+    .select("id, is_personal")
     .eq("id", contactId)
     .eq("organization_id", ctx.organization_id)
     .maybeSingle();
@@ -169,6 +170,61 @@ async function contatoDaOrgOrThrow(supabase: SB, ctx: HandlerCtx, contactId: str
       traduzir("Contato não encontrado.", ctx.idioma ?? "pt-BR"),
     );
   }
+  // Contato pessoal está fora da operação (spec 21, decisão 3): nenhum negócio
+  // nasce nem muda de dono/etapa para ele — 403 sem vazar dado do contato.
+  if ((contato as { is_personal?: boolean }).is_personal === true) {
+    throw new ApiError(
+      403,
+      "forbidden",
+      undefined,
+      ctx.requestId,
+      traduzir("Contato marcado como pessoal.", ctx.idioma ?? "pt-BR"),
+    );
+  }
+}
+
+/**
+ * O contato EFETIVO do negócio é pessoal? (spec 21, decisão 3).
+ *
+ * `contatoDaOrgOrThrow` cobre o contato NOVO que o corpo pede; aqui fica o que
+ * ela não vê: o contato que o negócio JÁ tem (update sem trocar contato, mover,
+ * retomar) e a leitura (get lista/ficha). Sem esta pergunta, marcar depois de
+ * abrir o negócio deixaria a escrita passar pela porta que já estava aberta.
+ * Ausente = não é pessoal (o 404 de quem não existe é de outra guarda).
+ */
+async function contatoEfetivoEhPessoal(
+  supabase: SB,
+  ctx: HandlerCtx,
+  contactId: string | null | undefined,
+): Promise<boolean> {
+  if (!contactId) return false;
+  const { data, error } = await supabase
+    .from("contacts")
+    .select("is_personal")
+    .eq("id", contactId)
+    .eq("organization_id", ctx.organization_id)
+    .maybeSingle();
+  if (error) {
+    throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
+  }
+  return (data as { is_personal?: boolean } | null)?.is_personal === true;
+}
+
+/** Recusa 403 padrão de escrita para pessoal (mesma mensagem do veto de envio). */
+async function recusaPessoalNaEscrita(
+  supabase: SB,
+  ctx: HandlerCtx,
+  contactId: string | null | undefined,
+): Promise<void> {
+  if (await contatoEfetivoEhPessoal(supabase, ctx, contactId)) {
+    throw new ApiError(
+      403,
+      "forbidden",
+      undefined,
+      ctx.requestId,
+      traduzir("Contato marcado como pessoal.", ctx.idioma ?? "pt-BR"),
+    );
+  }
 }
 
 /**
@@ -176,10 +232,16 @@ async function contatoDaOrgOrThrow(supabase: SB, ctx: HandlerCtx, contactId: str
  * SQLSTATE `PT404`/`PT422` o contato ou responsável de fora da organização. As
  * guardas acima respondem antes; isto cobre a janela entre conferir e gravar
  * (um vínculo revogado nesse meio) com a MESMA resposta, e não um 500.
+ *
+ * `42501` é a policy de `crm_leads` (`fn_can_view_lead`) recusando a linha:
+ * quem grava não enxergaria o negócio depois de gravado — no modo "own" um
+ * Atendente nasce sem dono, e no "own_and_unassigned" um dono colega. É falta
+ * de permissão, não falha do sistema: 403, e não 500 "tente de novo", que
+ * tentar de novo nunca resolve.
  */
 function recusaDaGuardaDoBanco(
   ctx: HandlerCtx,
-  erro: { code?: string } | null,
+  erro: { code?: string; message?: string } | null,
 ): ApiError | null {
   if (erro?.code === "PT404") {
     return new ApiError(
@@ -197,6 +259,25 @@ function recusaDaGuardaDoBanco(
       undefined,
       ctx.requestId,
       traduzir("Responsável não é um atendente ativo desta organização.", ctx.idioma ?? "pt-BR"),
+    );
+  }
+  // Só a policy de `crm_leads`: o mesmo 42501 também é GRANT faltando numa
+  // função ou numa tabela que um gatilho alcança — defeito nosso, que tem de
+  // continuar 500 com a mensagem do banco, e não virar "visibilidade". A recusa
+  // de RLS nomeia a tabela entre aspas na mensagem em inglês, que é o
+  // lc_messages do Supabase (en_US); a de GRANT ("permission denied for table
+  // crm_leads") não. Num Postgres com mensagens em de, es ou fr as aspas mudam
+  // e a recusa cai no 500 antigo, que é a direção segura.
+  if (erro?.code === "42501" && erro.message?.includes('"crm_leads"')) {
+    return new ApiError(
+      403,
+      "forbidden",
+      undefined,
+      ctx.requestId,
+      traduzir(
+        "Sem permissão para salvar este negócio: pela visibilidade definida na organização, ele ficaria fora do que você pode ver.",
+        ctx.idioma ?? "pt-BR",
+      ),
     );
   }
   return null;
@@ -304,6 +385,13 @@ export async function listLeadsHandler(
   if (q.status) query = query.eq("status", q.status);
   if (q.owner_user_id) query = query.eq("owner_user_id", q.owner_user_id);
   if (q.contact_id) query = query.eq("contact_id", q.contact_id);
+  // Negócio de pessoal não é listado (spec 21, etapa 12 — leitura exclui):
+  // a MESMA primitiva de ids da lista do inbox (`conversations/_handler.ts`),
+  // antes do limite, para cursor e `has_more` descreverem o conjunto visível.
+  const pessoais = await idsDeContatosPessoais(supabase, ctx.organization_id);
+  if (pessoais.length > 0) {
+    query = query.not("contact_id", "in", `(${pessoais.join(",")})`);
+  }
   // #1537 — perda por motivo e por categoria. A categoria NÃO é coluna: ela
   // sai do `settings.lost_reasons` do funil, então o caminho é achar os rótulos
   // da categoria e filtrar por eles. Só os PERDIDOS têm motivo que valha; um
@@ -386,6 +474,18 @@ export async function getLeadHandler(
   if (!data) {
     // 404, e não 403: dizer "existe, mas não é seu" confirmaria a existência de
     // um recurso alheio a quem tentou adivinhar o id.
+    throw new ApiError(
+      404,
+      "not_found",
+      undefined,
+      ctx.requestId,
+      traduzir("Lead não encontrado.", ctx.idioma ?? "pt-BR"),
+    );
+  }
+  // Negócio de pessoal some até por link direto (spec 21, etapa 12): o mesmo
+  // 404 de "não existe", para não revelar que ele está lá — espelha o 404 da
+  // conversa de pessoal em `conversations/_handler.ts`.
+  if (await contatoEfetivoEhPessoal(supabase, ctx, (data as { contact_id?: string | null }).contact_id)) {
     throw new ApiError(
       404,
       "not_found",
@@ -713,6 +813,17 @@ export async function updateLeadHandler(
   if (input.contact_id && input.contact_id !== existing.contact_id) {
     await contatoDaOrgOrThrow(supabase, ctx, input.contact_id);
   }
+  // ...mas o contato EFETIVO (trocado ou mantido) não pode ser pessoal: sem
+  // esta linha, marcar depois de abrir o negócio deixava a edição passar pela
+  // porta que já estava aberta (spec 21, etapa 12).
+  await recusaPessoalNaEscrita(
+    supabase,
+    ctx,
+    (input.contact_id ?? (existing as { contact_id?: string | null }).contact_id) as
+      | string
+      | null
+      | undefined,
+  );
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (input.title !== undefined) patch.title = input.title;
@@ -1020,6 +1131,12 @@ export async function moveLeadHandler(
       traduzir("Lead não encontrado.", ctx.idioma ?? "pt-BR"),
     );
   }
+  // Mover negócio de pessoal é escrita para fora da operação (spec 21, etapa 12).
+  await recusaPessoalNaEscrita(
+    supabase,
+    ctx,
+    (lead as { contact_id?: string | null }).contact_id,
+  );
 
   const { data: stage, error: stageErr } = await supabase
     .from("crm_stages")
@@ -1435,6 +1552,9 @@ export async function retomarLeadHandler(
     custom_fields?: Record<string, unknown> | null;
     lost_reason?: string | null;
   };
+  // Retomar para pessoal abriria um negócio novo para fora da operação: a
+  // retomada é escrita e recusa como as outras (spec 21, etapa 12).
+  await recusaPessoalNaEscrita(supabase, ctx, origemTipada.contact_id);
   if (origemTipada.status === "open") {
     throw new ApiError(
       422,

@@ -3,12 +3,19 @@
  *
  * Verifies that the LGPD SLA calculator correctly skips:
  *  - Weekends (Saturday + Sunday)
- *  - Brazilian national holidays (fixed and moveable 2026-2030)
+ *  - Brazilian national holidays (fixed and moveable, calculated 2000-2100;
+ *    20/11 from 2024 on — Lei 14.759/2023)
  */
 
 import { describe, it, expect } from "vitest";
 import { computeDueAt } from "@/lib/lgpd/sla";
-import { HOLIDAYS_BR_ISO } from "@/lib/lgpd/holidays-br";
+import {
+  HOLIDAYS_BR_ISO,
+  PRIMEIRO_ANO_COBERTO,
+  PRIMEIRO_ANO_DA_CONSCIENCIA_NEGRA,
+  ULTIMO_ANO_COBERTO,
+  feriadosDoBrasilDoAno,
+} from "@/lib/lgpd/holidays-br";
 
 /** Parse a YYYY-MM-DD string as a UTC Date */
 function d(iso: string): Date {
@@ -129,22 +136,91 @@ describe("computeDueAt — business day SLA calculator", () => {
   // Sanity check on the holiday list
   // -------------------------------------------------------------------------
 
-  it("HOLIDAYS_BR_ISO contains all 8 fixed holidays per year × 5 years = 40", () => {
-    const fixedCount = HOLIDAYS_BR_ISO.filter((h) => {
-      // Fixed holidays have a known suffix
-      const md = h.slice(5); // MM-DD
-      const fixed = [
-        "01-01",
-        "04-21",
-        "05-01",
-        "09-07",
-        "10-12",
-        "11-02",
-        "11-15",
-        "12-25",
-      ];
-      return fixed.includes(md);
-    }).length;
-    expect(fixedCount).toBe(8 * 5);
+  it("HOLIDAYS_BR_ISO cobre 12 feriados por ano até 2023 e 13 de 2024 em diante (#2413, #2421)", () => {
+    const anosDe12 = PRIMEIRO_ANO_DA_CONSCIENCIA_NEGRA - PRIMEIRO_ANO_COBERTO;
+    const anosDe13 = ULTIMO_ANO_COBERTO - PRIMEIRO_ANO_DA_CONSCIENCIA_NEGRA + 1;
+    expect(HOLIDAYS_BR_ISO).toHaveLength(12 * anosDe12 + 13 * anosDe13);
+    // Amostra dos fixos: a data exata de cada um não muda com o ano.
+    for (const data of ["2026-01-01", "2026-04-21", "2026-09-07", "2026-12-25"]) {
+      expect(HOLIDAYS_BR_ISO).toContain(data);
+    }
+  });
+
+  it("o cálculo reproduz os cinco anos que a lista tinha à mão (#2413)", () => {
+    // Carnaval (segunda e terça), Sexta-feira Santa e Corpo de Deus, como
+    // estavam escritos à mão na tabela antiga — byte a byte.
+    const conhecidos: Array<[number, string, string, string, string]> = [
+      [2026, "2026-02-16", "2026-02-17", "2026-04-03", "2026-06-04"],
+      [2027, "2027-02-08", "2027-02-09", "2027-03-26", "2027-05-27"],
+      [2028, "2028-02-28", "2028-02-29", "2028-04-14", "2028-06-15"],
+      [2029, "2029-02-12", "2029-02-13", "2029-03-30", "2029-05-31"],
+      [2030, "2030-03-04", "2030-03-05", "2030-04-19", "2030-06-20"],
+    ];
+    for (const [ano, segunda, terca, sextaSanta, corpoDeDeus] of conhecidos) {
+      const feriados = feriadosDoBrasilDoAno(ano);
+      expect(feriados).toHaveLength(13); // os 12 da lista à mão + o 20/11 (#2421)
+      expect(feriados).toContain(segunda);
+      expect(feriados).toContain(terca);
+      expect(feriados).toContain(sextaSanta);
+      expect(feriados).toContain(corpoDeDeus);
+    }
+  });
+
+  it("o prazo aberto no fim de 2030 salta o 1º de janeiro de 2031 (#2413)", () => {
+    // Na lista à mão, 2031 não tinha feriado nenhum: o D+7 de 20/12/2030 caía em 01/01/2031.
+    expect(computeDueAt(d("2030-12-20"), 7).toISOString().slice(0, 10)).toBe("2031-01-02");
+  });
+
+  it("a cobertura alcança o ano atual + 2 — senão o prazo conta sem feriados (#2413)", () => {
+    const alvo = new Date().getFullYear() + 2;
+    expect(ULTIMO_ANO_COBERTO).toBeGreaterThanOrEqual(alvo);
+    expect(HOLIDAYS_BR_ISO).toContain(`${alvo}-12-25`);
+    expect(feriadosDoBrasilDoAno(alvo)).toHaveLength(13);
+  });
+
+  // -------------------------------------------------------------------------
+  // 20 de novembro — doc 108, A (Lei 14.759/2023): feriado nacional desde 2024
+  // -------------------------------------------------------------------------
+
+  it("o 20/11 é feriado de 2024 em diante, e não antes (#2421)", () => {
+    expect(PRIMEIRO_ANO_DA_CONSCIENCIA_NEGRA).toBe(2024);
+    expect(HOLIDAYS_BR_ISO).not.toContain("2023-11-20");
+    expect(feriadosDoBrasilDoAno(2023)).toHaveLength(12);
+    for (const ano of [2024, 2026, 2030, 2100]) {
+      expect(HOLIDAYS_BR_ISO).toContain(`${ano}-11-20`);
+    }
+  });
+
+  it("o D+7 que atravessa o 20/11/2026 (sexta) vence um dia depois (#2421)", () => {
+    // Aberto seg 16/11: ter17(1) qua18(2) qui19(3) [sex20 feriado] seg23(4)
+    // ter24(5) qua25(6) qui26(7). Sem o 20/11, vencia na quarta 25.
+    expect(fmt(computeDueAt(d("2026-11-16"), 7))).toBe("2026-11-26");
+  });
+
+  it("o D+7 que atravessa o 20/11/2023 NÃO muda — a lei é de dezembro de 2023 (#2421)", () => {
+    // Aberto qui 16/11/2023: sex17(1) seg20(2, ainda dia útil) ter21(3) qua22(4)
+    // qui23(5) sex24(6) seg27(7). Contar o 20/11 aqui daria 28/11.
+    expect(fmt(computeDueAt(d("2023-11-16"), 7))).toBe("2023-11-27");
+  });
+
+  it("três anos depois de 2030, ancorados na Páscoa da tabela do Census (#2413)", () => {
+    // Páscoa: 2031-04-13, 2035-03-25, 2038-04-25 (tabela do US Census Bureau,
+    // a mesma que o #2410 usou para Portugal). Os móveis saem dela.
+    const ancorados: Array<[number, string, string, string, string]> = [
+      [2031, "2031-02-24", "2031-02-25", "2031-04-11", "2031-06-12"],
+      [2035, "2035-02-05", "2035-02-06", "2035-03-23", "2035-05-24"],
+      [2038, "2038-03-08", "2038-03-09", "2038-04-23", "2038-06-24"],
+    ];
+    for (const [ano, segunda, terca, sextaSanta, corpoDeDeus] of ancorados) {
+      // A lista que o prazo consome, não só a função: a #2413 era a LISTA parar em 2030.
+      for (const dia of [`${ano}-01-01`, segunda, terca, sextaSanta, corpoDeDeus]) {
+        expect(HOLIDAYS_BR_ISO).toContain(dia);
+      }
+      const feriados = feriadosDoBrasilDoAno(ano);
+      expect(feriados).toContain(segunda);
+      expect(feriados).toContain(terca);
+      expect(feriados).toContain(sextaSanta);
+      expect(feriados).toContain(corpoDeDeus);
+    }
   });
 });

@@ -73,12 +73,18 @@ function fazerAdmin(opts: {
   itensAbertos?: number;
 }) {
   const escritas: Escrita[] = [];
+  /** Os filtros `.or()` aplicados — quem o retrato alcança mora aí. */
+  const filtrosOr: string[] = [];
   const from = (tabela: string) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chain: any = {
       select: () => chain,
       eq: () => chain,
       in: () => chain,
+      or: (filtro: string) => {
+        filtrosOr.push(filtro);
+        return chain;
+      },
       maybeSingle: async () => ({
         data: tabela === "ai_budgets" ? opts.linha : null,
         error: null,
@@ -102,7 +108,7 @@ function fazerAdmin(opts: {
     };
     return chain;
   };
-  return { cliente: { from }, escritas };
+  return { cliente: { from }, escritas, filtrosOr };
 }
 
 function estadoDaTela(over: Partial<BudgetStatus> = {}): BudgetStatus {
@@ -412,7 +418,7 @@ describe("PATCH /api/v1/ai/budget", () => {
   describe("o laço de retorno — afrouxar fecha o alerta na hora", () => {
     it("desarmar resolve os budget_exceeded/budget_warning abertos", async () => {
       sessao("admin");
-      const { cliente, escritas } = fazerAdmin({
+      const { cliente, escritas, filtrosOr } = fazerAdmin({
         linha: {
           monthly_limit_cents: 5000,
           alarm_threshold_pct: 80,
@@ -436,6 +442,9 @@ describe("PATCH /api/v1/ai/budget", () => {
       const fechamento = escritas.find((e) => e.tabela === "agent_inbox_items");
       expect(fechamento?.op).toBe("update");
       expect(fechamento?.payload).toEqual({ status: "resolved" });
+      // Afrouxar o orçamento da ORG não fecha o aviso do teto do PLANO (spec da
+      // cobrança §5): o retrato alcança só os itens da org e o legado sem ref.
+      expect(filtrosOr).toEqual(["ref_kind.is.null,ref_kind.eq.ai_budget"]);
       // A tela não pode voltar do clique dizendo que a IA continua parada.
       expect((await corpo(res)).data?.blocked_now).toBe(false);
     });

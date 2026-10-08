@@ -154,13 +154,26 @@ describe("busca do inbox — o contato entra no predicado", () => {
     expect(texto, "montou um `in` vazio, que o PostgREST recusa").not.toContain("contact_id.in.()");
   });
 
-  it("sem termo de busca, nada de contatos é consultado", async () => {
+  it("sem termo de busca, contatos só é consultado para excluir pessoais", async () => {
+    // Spec 21: a lista exclui conversa de pessoal, e isso exige uma consulta
+    // curta em `contacts` (org + `is_personal` + teto) — mesmo sem busca.
+    // O que continua proibido é consulta DIRIGIDA PELA BUSCA sem termo:
+    // nenhum `or`/`ilike` de nome/telefone.
     const { client, chamadas } = fakeSupabase([]);
     await listConversationsHandler(client, ctx, { limit: 50 } as never);
+    const emContatos = chamadas.filter((x) => x.tabela === "contacts");
+    const texto = JSON.stringify(emContatos);
+    expect(texto, "busca por nome/telefone sem termo").not.toContain("display_name");
+    expect(texto, "busca por telefone sem termo").not.toContain("phone_number");
     expect(
-      chamadas.filter((x) => x.tabela === "contacts"),
-      "consultou contatos sem ninguém ter buscado — uma ida ao banco por listagem",
-    ).toEqual([]);
+      args(chamadas, "contacts", "eq"),
+      "exclusão sem filtro de organização — service role bypassa RLS",
+    ).toContain("org-1");
+    expect(args(chamadas, "contacts", "eq")).toContain("is_personal");
+    expect(
+      emContatos.some((x) => x.metodo === "limit"),
+      "consulta de exclusão sem teto",
+    ).toBe(true);
   });
 });
 

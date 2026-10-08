@@ -254,7 +254,7 @@ owner: Rafael Melgaço
 - **Origem**: Sub-PRD 03 §3.10
 - **Tipo**: Hard constraint
 - **Regra**: GIVEN mensagem com `status='sending'`; WHEN `created_at < now() - 5 min`; THEN cron muda pra `status='failed'`, emite event `message.failed` e notifica atendente se modo interativo.
-- **Enforcement**: Cron de 1 min — `app/api/v1/cron/recover-stuck-messages/route.ts`, agendado no serviço `scheduler` do `docker-compose.prod.yml`. Implementado em 2026-08-05 (issue #129); antes disso a regra existia só neste catálogo. A notificação é um item `message_send_stuck` na Central de avisos, **um por organização por rodada** (um por mensagem enterraria a Central justo no dia em que ela precisa ser lida). Guardado por `tests/unit/recover-stuck-messages.test.ts`.
+- **Enforcement**: Cron de 5 min (`*/5`, `docker/scheduler/entrypoint.sh`; pior caso de cerca de 10 min entre a mensagem travar e virar `failed`) — `app/api/v1/cron/recover-stuck-messages/route.ts`, agendado no serviço `scheduler` do `docker-compose.prod.yml`. Implementado em 2026-08-05 (issue #129); antes disso a regra existia só neste catálogo. A notificação é um item `message_send_stuck` na Central de avisos, **um por organização por rodada** (um por mensagem enterraria a Central justo no dia em que ela precisa ser lida). Guardado por `tests/unit/recover-stuck-messages.test.ts`.
 - **Exceção**: `status='queued'` não entra. Esse estado tem dono — o agent-engine reagenda o envio por `SEND_QUEUED_RETRY_MS` enquanto a sessão do canal não está WORKING —, e falhá-lo em 5 min perderia mensagem que ia sair. `sending` é que não tem dono nenhum.
 
 ---
@@ -453,6 +453,7 @@ owner: Rafael Melgaço
 - **Regra**: GIVEN tenant com `ai_budget_cents` configurado; WHEN consumo do mês atinge 80%; THEN alarme + email pro admin. Em 100%; THEN bot é throttled (default: pausa); 4 gatilhos de handoff continuam funcionando (cliente sempre tem humano).
 - **Enforcement**: Worker IA + cron de billing.
 - **Override**: Tenant pode escolher comportamento em 100%: pausar bot vs continuar (paga overage). Default: pausar.
+- **Estado**: o orçamento que a organização escolhe mora na tabela `ai_budgets` (`app/api/v1/ai/budget/route.ts`), não em `organizations.ai_budget_cents` — essa coluna nunca teve leitor e saiu na migration 0583 (`grep -c "drop column if exists ai_budget_cents" supabase/baseline.sql` devolve 1 enquanto a remoção estiver no baseline). O teto de IA que o revendedor põe no plano é outra régua: `cobranca_planos.teto_ia_usd_cents`.
 
 ### IA-11 — Embeddings de catálogo Nuvemshop são re-indexados em mudança
 - **Origem**: Sub-PRD 05 §3.5
@@ -495,7 +496,7 @@ owner: Rafael Melgaço
 - **Regra**: GIVEN tenant fazendo chamadas via API; WHEN ultrapassa 100 RPS; THEN próxima chamada retorna 429 com `Retry-After` e `X-RateLimit-*` headers.
 - **Enforcement**: Upstash Redis sliding window.
 - **Override**: Cliente enterprise pode contratar plano com RPS maior; ajuste em `tenants.rate_limit_config`.
-- **Estado**: **não cumprida como escrita.** A coluna `organizations.rate_limit_rps` (padrão 100) existe no schema e nada a lê; `tenants.rate_limit_config` não existe; nenhum teto de 100 RPS por organização é aplicado. O teto real da API é de escrita, por token e por organização, numa janela fixa (`grep -n 'TETO_\|JANELA_' lib/mcp/rate-limit.ts`), aplicado rota a rota por quem chama `tetoDeEscritaDoToken` (`lib/api/auth-dual.ts`) ou o contador de `/api/v1/messages`; nem toda rota com Bearer o chama (`grep -rlE 'tetoDeEscritaDoToken|TETO_DE_ESCRITA' app/api`). A cobrança do revendedor ([ADR-0004](../adr/0004-cobranca-do-revendedor.md)) não vende nem limita RPS; o desenho dela prevê remover a coluna sem leitor (`grep -n rate_limit_rps supabase/baseline.sql` diz se ela ainda existe).
+- **Estado**: **não cumprida como escrita.** A coluna `organizations.rate_limit_rps` (padrão 100) nunca teve leitor e saiu na migration 0583; `tenants.rate_limit_config` não existe; nenhum teto de 100 RPS por organização é aplicado. O teto real da API é de escrita, por token e por organização, numa janela fixa (`grep -n 'TETO_\|JANELA_' lib/mcp/rate-limit.ts`), aplicado rota a rota por quem chama `tetoDeEscritaDoToken` (`lib/api/auth-dual.ts`) ou o contador de `/api/v1/messages`; nem toda rota com Bearer o chama (`grep -rlE 'tetoDeEscritaDoToken|TETO_DE_ESCRITA' app/api`). A cobrança do revendedor ([ADR-0004](../adr/0004-cobranca-do-revendedor.md)) não vende nem limita RPS; a coluna sem leitor saiu com ela (`grep -c "drop column if exists rate_limit_rps" supabase/baseline.sql` devolve 1 enquanto a remoção estiver no baseline; o `CREATE TABLE` do dump continua citando o nome).
 
 ### B-05 — Sync inicial Nuvemshop respeita rate limit do upstream
 - **Origem**: Sub-PRD 06 §3.11

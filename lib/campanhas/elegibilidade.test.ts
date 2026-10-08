@@ -6,6 +6,7 @@ import {
   contarExclusoes,
   motivoParaExcluir,
   recusouMarketing,
+  statusDaSaida,
   type CandidatoDaAudiencia,
 } from "./elegibilidade";
 
@@ -19,6 +20,7 @@ function candidato(over: Partial<CandidatoDaAudiencia> = {}): CandidatoDaAudienc
     telefone: "telefone" in over ? (over.telefone ?? null) : "+5548999990000",
     bloqueado: over.bloqueado ?? false,
     anonimizado: over.anonimizado ?? false,
+    pessoal: over.pessoal ?? false,
     recusouMarketing: over.recusouMarketing ?? false,
   };
 }
@@ -42,6 +44,18 @@ describe("vetos por pessoa", () => {
     // A ordem não é estética: dizer "sem telefone" para quem pediu para parar
     // mentiria sobre o motivo de não ter recebido.
     expect(motivoParaExcluir(candidato({ bloqueado: true, telefone: null }))).toBe("opt_out");
+  });
+
+  it("contato pessoal veta com motivo próprio, depois do opt-out (spec 21)", () => {
+    expect(motivoParaExcluir(candidato({ pessoal: true }))).toBe("contato_pessoal");
+    // Quem pediu para parar continua sendo opt-out, mesmo marcado como pessoal.
+    expect(motivoParaExcluir(candidato({ pessoal: true, bloqueado: true }))).toBe("opt_out");
+  });
+
+  it("a saída de pessoal na rodada é `personal`, nunca `opted_out` (D7)", () => {
+    expect(statusDaSaida("contato_pessoal")).toBe("personal");
+    expect(statusDaSaida("opt_out")).toBe("opted_out");
+    expect(statusDaSaida("sem_telefone")).toBe("skipped");
   });
 
   it("anonimizado e recusa de marketing vetam", () => {

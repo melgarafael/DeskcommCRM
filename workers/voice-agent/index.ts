@@ -52,7 +52,12 @@ import { AudioSocketCallBridge } from "./audioSocketBridge";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveVoiceAgent } from "@/lib/ai/agents";
 import { resolveOrCreateCallerContact, type ContatoDaChamada } from "@/lib/voip/resolve-caller";
-import { deveRecusarChamada, END_REASON_CONTACT_BLOCKED } from "./recusa-bloqueado";
+import {
+  deveRecusarChamada,
+  deveRecusarChamadaPessoal,
+  END_REASON_CONTACT_BLOCKED,
+  END_REASON_CONTACT_PERSONAL,
+} from "./recusa-bloqueado";
 import { garantirLeadDaConversa } from "@/lib/leads/nascimento-do-lead";
 import { buscarConhecimento, resolverAcervoDoAgente } from "@/lib/ai/knowledge/busca";
 import { ehOperante } from "@/lib/organizacao/operante";
@@ -125,6 +130,37 @@ export async function handleStasisStart(event: AriEvent) {
       console.error(`[voice-agent] falha ao gravar recusa de bloqueado:`, refuseError.message);
     } else {
       console.info(`[voice-agent] chamada recusada de bloqueado`);
+    }
+    await hangupChannel(channel.id, "normal");
+    return;
+  }
+
+  // PESSOAL NA LIGAÇÃO É RECUSADO COMO BLOQUEADO (spec 21, etapa 14 —
+  // critério 11): depois do contato resolvido, antes do insert, antes do
+  // dialplan e antes da IA. Grava a linha já encerrada (ESCONDIDA do
+  // histórico, como a mensagem — volta ao desmarcar) e desliga — sem negócio,
+  // sem IA, sem tocar, sem alerta. `end_reason` próprio, nunca o de bloqueio.
+  // SABOTAGEM DO FIO: remover a chamada a `deveRecusarChamadaPessoal` abaixo
+  // (manter a função pura existindo mas sem uso) = teste do fio vermelho.
+  if (deveRecusarChamadaPessoal(contatoDeQuemLiga?.is_personal)) {
+    const agora = new Date().toISOString();
+    const { error: refuseError } = await supabaseAdmin.from("voice_calls").insert({
+      organization_id: routing.organization_id,
+      provider: "sip",
+      direction: "inbound",
+      status: "ended",
+      end_reason: END_REASON_CONTACT_PERSONAL,
+      peer_phone: callerNumber,
+      contact_id: callerContactId,
+      asterisk_channel_id: randomUUID(),
+      started_at: agora,
+      answered_at: null,
+      ended_at: agora,
+    });
+    if (refuseError) {
+      console.error(`[voice-agent] falha ao gravar recusa de pessoal:`, refuseError.message);
+    } else {
+      console.info(`[voice-agent] chamada recusada de pessoal`);
     }
     await hangupChannel(channel.id, "normal");
     return;

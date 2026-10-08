@@ -41,6 +41,44 @@ const NEGOCIO_FORA_DA_CONVERSA = {
 } as const;
 
 /**
+ * A recusa de pessoal na ficha de negócio (spec 21, etapa 12).
+ *
+ * `getLeadHandler` responde 404 tanto para "não existe" quanto para "é de
+ * pessoal" (igual à conversa). Só no 404 esta leitura diagnóstica distingue —
+ * e o motivo honesto passa na frente do genérico de fora-da-conversa.
+ */
+const NEGOCIO_CONTATO_PESSOAL = {
+  permitido: false,
+  motivo: "contato_pessoal",
+  mensagem:
+    "este negócio é de um contato marcado como pessoal — fora da operação: não leia " +
+    "nem escreva aqui; siga a conversa com quem está falando.",
+} as const;
+
+async function recusaSeLeadDePessoal(
+  ctx: McpContext,
+  leadId: string,
+): Promise<typeof NEGOCIO_CONTATO_PESSOAL | null> {
+  const { data: lead } = await ctx.supabase
+    .from("crm_leads")
+    .select("contact_id")
+    .eq("organization_id", ctx.organizationId)
+    .eq("id", leadId)
+    .maybeSingle();
+  const contactId = (lead as { contact_id?: string | null } | null)?.contact_id;
+  if (!contactId) return null;
+  const { data: contato } = await ctx.supabase
+    .from("contacts")
+    .select("is_personal")
+    .eq("organization_id", ctx.organizationId)
+    .eq("id", contactId)
+    .maybeSingle();
+  return (contato as { is_personal?: boolean } | null)?.is_personal === true
+    ? NEGOCIO_CONTATO_PESSOAL
+    : null;
+}
+
+/**
  * A unidade de `value_cents` DITA AO MODELO. O negócio guarda o valor × 100 em
  * QUALQUER moeda — inclusive guarani, que não tem centavo (ver
  * `formatValorDoNegocio` em `lib/money.ts`) —, e o catálogo não: `preco_cents`
@@ -174,19 +212,27 @@ export const crmGetLead: McpToolDefinition<typeof getInputShape> = {
   requiresScope: "mcp:read",
   handler: async (input, ctx) => {
     const doTurno = ctx.contatoDoTurno;
-    const lead = await getLeadHandler(
-      ctx.supabase,
-      {
-        organization_id: ctx.organizationId,
-        actor: ctx.actor,
-        requestId: ctx.requestId,
-      },
-      input.lead_id,
-    ).catch((e: unknown) => {
+    let lead: Record<string, unknown> | null = null;
+    try {
+      lead = await getLeadHandler(
+        ctx.supabase,
+        {
+          organization_id: ctx.organizationId,
+          actor: ctx.actor,
+          requestId: ctx.requestId,
+        },
+        input.lead_id,
+      );
+    } catch (e: unknown) {
       // Com turno, o `404` vira a MESMA recusa do negócio de outro cliente.
-      if (doTurno && e instanceof ApiError && e.status === 404) return null;
-      throw e;
-    });
+      if (!(e instanceof ApiError) || e.status !== 404) throw e;
+      // ...exceto quando o negócio EXISTE e é de pessoal: motivo honesto nos
+      // dois ingressos. Diagnóstico só neste 404 — fora dele, nada muda.
+      const recusa = await recusaSeLeadDePessoal(ctx, input.lead_id);
+      if (recusa) return recusa;
+      if (!doTurno) throw e;
+      lead = null;
+    }
     if (doTurno && (!lead || lead.contact_id !== doTurno)) return NEGOCIO_FORA_DA_CONVERSA;
     if (!lead) throw new Error("not_found");
     if ((lead as { organization_id?: string }).organization_id !== ctx.organizationId) {
@@ -393,12 +439,22 @@ const moveInputShape = {
    * cliente ou passa para o humano — nunca move calado.
    */
   won_reason: z.string().max(500).optional(),
+  /**
+   * O motivo da perda, quando o destino é etapa de perda (issue #917). O banco
+   * confere contra o vocabulário do funil (canônico + `settings.lost_reasons`) e
+   * recusa a perda sem ele. O `moveLeadHandler` já aceitava; a tool descartava.
+   * Sem `.min(1)`: motivo em branco é tratado em lib/leads/motivo-da-perda.ts como
+   * ausente — a mesma régua do moveLeadSchema e do won_reason; string vazia
+   * morrendo no zod daria uma mensagem diferente da recusa de negócio.
+   */
+  lost_reason: z.string().max(500).optional(),
 };
 
 export const crmMoveLeadStage: McpToolDefinition<typeof moveInputShape> = {
   name: "crm_move_lead_stage",
   description:
     "Move um lead para outro stage dentro do MESMO pipeline. Audit registra from/to stage e reason. " +
+    "Mover para uma etapa de perda exige lost_reason, com um motivo do vocabulário do funil. " +
     // "use clone" apontava para uma porta que o agente NÃO tem: não existe tool
     // de clone em lib/mcp/tools/, e ele não faz HTTP autenticado por cookie de
     // sessão. Instrução que não pode ser cumprida faz o modelo prometer ao
@@ -424,6 +480,7 @@ export const crmMoveLeadStage: McpToolDefinition<typeof moveInputShape> = {
         position_in_stage: input.position_in_stage,
         reason: input.reason,
         won_reason: input.won_reason,
+        lost_reason: input.lost_reason,
       },
     );
     return { lead };

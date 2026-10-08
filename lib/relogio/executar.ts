@@ -69,6 +69,17 @@ export async function aplicarRespostasQueChegaram(admin: SupabaseClient, deps: T
   );
   for (const row of linhas) {
     const enrollment = row as EnrollmentRow;
+    // Contato pessoal (spec 21, caminho 5 — follow-up morno): a resposta dele
+    // não move enrollment nenhum. Uma leitura por linha, e não um join: são no
+    // máximo 40 por tick, e o filtro já cortou a org parada no banco.
+    const { data: contato, error: contatoErr } = await admin
+      .from("contacts")
+      .select("is_personal")
+      .eq("organization_id", enrollment.organization_id)
+      .eq("id", enrollment.contact_id)
+      .maybeSingle();
+    if (contatoErr) throw new Error(contatoErr.message);
+    if ((contato as { is_personal?: boolean } | null)?.is_personal === true) continue;
     const ids = await idsDoContatoEGemeos(admin, enrollment.organization_id, enrollment.contact_id);
     const { data: msg, error: msgErr } = await admin
       .from("messages")

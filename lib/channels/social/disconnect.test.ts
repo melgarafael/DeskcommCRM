@@ -1,10 +1,11 @@
 import { beforeEach, expect, it, vi } from "vitest";
-const h = vi.hoisted(() => ({ fetch: vi.fn(), health: vi.fn(), warn: vi.fn() }));
+const h = vi.hoisted(() => ({ fetch: vi.fn(), health: vi.fn(), pausa: vi.fn(), warn: vi.fn() }));
 vi.mock("@/lib/webhooks/secrets", () => ({
   decryptWebhookSecret: async () => "provider-key",
   encryptWebhookSecret: async () => "enc",
 }));
 vi.mock("@/lib/channels/health", () => ({ resolverSaudeDaConexaoRemovida: h.health }));
+vi.mock("@/lib/channels/central-de-pausa", () => ({ fecharAvisoDePausaDoCanalArquivado: h.pausa }));
 vi.mock("@/lib/logger", () => ({ logger: { warn: h.warn, info: vi.fn(), error: vi.fn() } }));
 vi.mock("../zernio/credentials", () => ({ zernioBaseUrl: () => "https://zernio.test" }));
 import { disconnectSocialAccount } from "./store";
@@ -65,6 +66,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal("fetch", h.fetch);
   h.health.mockResolvedValue("resolvido");
+  h.pausa.mockResolvedValue("resolvido");
 });
 
 it("removes the webhook and the account, then archives the channel with a new URL token", async () => {
@@ -152,4 +154,18 @@ it("logs and reports a health-alert failure instead of swallowing it, without un
       erro: "ler os avisos abertos: 500",
     }),
   );
+});
+
+it("closes the pause alert AFTER archiving, so a paused account does not leave it open (#2389)", async () => {
+  provider({});
+  const { db, updates } = fakeDb([channel]);
+  let arquivadasNaHora = -1;
+  h.pausa.mockImplementation(async () => {
+    arquivadasNaHora = updates.length;
+    return "resolvido";
+  });
+  await disconnectSocialAccount(db, org, account, false);
+  expect(h.pausa).toHaveBeenCalledWith(db, { id: "ch-1", organization_id: org });
+  // With the row already archived the rule only resolves (`canal_arquivado`).
+  expect(arquivadasNaHora).toBe(1);
 });

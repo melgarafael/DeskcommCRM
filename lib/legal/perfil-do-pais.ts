@@ -128,6 +128,27 @@ export interface DocumentoDoTitular {
   normaliza(valor: string): string;
 }
 
+/**
+ * Os rótulos da tela da ORGANIZAÇÃO — o nome legal da empresa e o número que a
+ * identifica (`legal_name` e `cnpj` no schema de Configurações).
+ *
+ * Mesma razão de `DocumentoDoTitular.rotulo`: o vocabulário de TELA é
+ * propriedade do país, e não do componente. Enquanto
+ * `app/app/settings/tenant/_form.tsx` escrevia "Razão social" e "CNPJ" em
+ * duro, uma organização portuguesa via o Brasil na própria tela de
+ * Configurações (issue #1946, item 4) — o mesmo defeito que o #1945 corrigiu
+ * nos diálogos de negócio e de contato.
+ *
+ * A coluna continua `cnpj` e o schema não muda: muda só o que se lê na tela,
+ * a mesma régua de `apelidosDoCabecalho` (o vocabulário de tela muda, o dado não).
+ */
+export interface EmpresaDoPais {
+  /** O rótulo da tela do nome legal: "Razão social", "Denominação social". */
+  rotuloNomeLegal: string;
+  /** O rótulo da tela do número da empresa: "CNPJ", "NIPC". */
+  rotuloNumero: string;
+}
+
 export interface LeiCitada {
   /** Sigla pela qual a lei é conhecida: "LGPD", "GDPR". */
   nome: string;
@@ -183,6 +204,13 @@ export interface PerfilDoPais {
   /** Nome do país como o operador o lê. */
   nome: string;
   documento: DocumentoDoTitular;
+  /**
+   * Os rótulos da tela da ORGANIZAÇÃO — nome legal e número da empresa.
+   *
+   * Vêm do país junto com `documento`, porque a mesma troca de país na tela de
+   * Configurações troca os dois: o rótulo não é do componente.
+   */
+  empresa: EmpresaDoPais;
   /**
    * Um telefone DESTE país em E.164, para o exemplo dos formulários.
    *
@@ -262,6 +290,11 @@ const PERFIL_BR: PerfilDoPais = {
   codigo: "BR",
   nome: "Brasil",
   documento: DOCUMENTO_BR,
+  // O par que a tela da organização mostra no Brasil (issue #1946, item 4).
+  empresa: {
+    rotuloNomeLegal: "Razão social",
+    rotuloNumero: "CNPJ",
+  },
   telefoneExemplo: "+5511999998888",
   lei: {
     nome: "LGPD",
@@ -305,6 +338,13 @@ const PERFIL_PT: PerfilDoPais = {
   codigo: "PT",
   nome: "Portugal",
   documento: DOCUMENTO_PT,
+  // Como Portugal chama o mesmo par (issue #1946, item 4): `Denominação social`
+  // é a designação legal da firma, e `NIPC` o Número de Identificação de
+  // Pessoas Coletivas — o análogo do CNPJ, e não um NIF de titular.
+  empresa: {
+    rotuloNomeLegal: "Denominação social",
+    rotuloNumero: "NIPC",
+  },
   telefoneExemplo: "+351912345678",
   lei: {
     nome: "RGPD",
@@ -329,18 +369,37 @@ const PERFIL_PT: PerfilDoPais = {
   },
   padroesDePii: [
     {
+      // ANTES do NIF: `+351 912 345 678` tem três blocos que o padrão de NIF
+      // também casaria (o miolo `912 345 678`), e o telefone é o dono do número.
+      tipo: "telefonePT",
+      marcador: "[TELEFONE]",
+      fonte: "\\+351[\\s.-]?\\d{3}[\\s.-]?\\d{3}[\\s.-]?\\d{3}",
+      naoCobre:
+        "telemóvel de 9 dígitos sem o `+351` — é indistinguível de um NIF e os dois são PII; o que separa é o prefixo",
+    },
+    {
+      tipo: "iban",
+      marcador: "[IBAN]",
+      fonte: "\\bPT\\d{2}(?:\\s?\\d{4}){5}\\s?\\d\\b",
+      naoCobre: "IBAN de outro país e IBAN colado a letra sem o prefixo `PT`",
+    },
+    {
       tipo: "nif",
       marcador: "[NIF]",
-      fonte: "\\b\\d{9}\\b",
+      // O lookahead deixa o CPF separado (`123.456.789-09`) para o padrão
+      // brasileiro: sem ele, os nove primeiros dígitos viravam `[NIF]` e os
+      // dois do dígito de controlo sobravam no texto (medido na cerca
+      // `mascara-da-ingestao-tem-o-brasil-por-baixo`).
+      fonte: "\\b(?:PT\\s?)?\\d{3}[ .]?\\d{3}[ .]?\\d{3}(?![.\\s-]\\d{2}\\b)\\b",
       naoCobre:
-        "NIF com menos de 9 dígitos e número de telemóvel português de 9 dígitos — sem o prefixo `+351` o padrão não distingue um do outro",
+        "NIF colado a letra sem o prefixo `PT` (ex.: `nif123456789`) e NIF com menos de 9 dígitos",
     },
     {
       tipo: "codigoPostal",
       marcador: "[CODIGO_POSTAL]",
-      fonte: "\\b\\d{4}-\\d{3}\\b",
+      fonte: "\\b\\d{4}[-\\s]\\d{3}\\b",
       naoCobre:
-        "código postal sem hífen e código estrangeiro (CEP brasileiro usa ponto e 8 dígitos)",
+        "código postal sem separador (7 dígitos) e código estrangeiro (CEP brasileiro usa ponto e 8 dígitos)",
     },
   ],
 };

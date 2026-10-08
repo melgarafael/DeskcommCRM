@@ -1,11 +1,11 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import * as TabsPrimitive from "@radix-ui/react-tabs"
+import * as React from "react";
+import * as TabsPrimitive from "@radix-ui/react-tabs";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
-const Tabs = TabsPrimitive.Root
+const Tabs = TabsPrimitive.Root;
 
 const TabsList = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.List>,
@@ -25,12 +25,12 @@ const TabsList = React.forwardRef<
       // mesma fragilidade, e consertar só onde eu esbarrei deixaria as irmãs
       // quebradas com um álibi de "já foi tratado".
       "inline-flex h-9 max-w-full items-center justify-center overflow-x-auto rounded-lg bg-muted p-1 text-muted-foreground",
-      className
+      className,
     )}
     {...props}
   />
-))
-TabsList.displayName = TabsPrimitive.List.displayName
+));
+TabsList.displayName = TabsPrimitive.List.displayName;
 
 const TabsTrigger = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.Trigger>,
@@ -39,13 +39,30 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm",
-      className
+      // `transition-[background-color,color,box-shadow]` em vez de
+      // `transition-all`: o que muda ao ativar a aba é exatamente isto —
+      // `data-[state=active]` troca fundo, cor do texto e sombra. `all` é
+      // anti-pattern declarado em `docs/design-system/07-motion-language.md`,
+      // e numa fila de abas ele ainda animava `width`/`padding` a cada troca.
+      // Sombra e borda contam como um par pela própria exceção da lei.
+      // `min-h-11 lg:min-h-0` — 44px de altura onde o dedo aciona.
+      //
+      // `px-3 py-1` em volta de `text-sm` dá **28px**, e a aba é o controle
+      // mais repetido do produto: medido em 360px, 6 delas em Conexões, 2 em
+      // Equipe, 2 em Atividades e 2 em Tarefas — todas na mesma altura curta.
+      // Como a régua vale para TODA `TabsList`, o conserto aqui alcança as
+      // quatro telas de uma vez, e as que já resolveram à mão (a fila do
+      // Inbox) seguem com o delas, porque `cn` deixa o chamador vencer.
+      //
+      // `lg:` é o mesmo corte que `components/ui/button.tsx` usa para separar
+      // "quem aciona é dedo" de "quem aciona é cursor".
+      "inline-flex min-h-11 items-center justify-center rounded-md px-3 py-1 text-sm font-medium whitespace-nowrap ring-offset-background transition-[background-color,color,box-shadow] duration-fast focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm lg:min-h-0",
+      className,
     )}
     {...props}
   />
-))
-TabsTrigger.displayName = TabsPrimitive.Trigger.displayName
+));
+TabsTrigger.displayName = TabsPrimitive.Trigger.displayName;
 
 const TabsContent = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.Content>,
@@ -54,12 +71,12 @@ const TabsContent = React.forwardRef<
   <TabsPrimitive.Content
     ref={ref}
     className={cn(
-      "mt-2 ring-offset-background focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-      className
+      "mt-2 ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-hidden",
+      className,
     )}
     {...props}
   />
-))
-TabsContent.displayName = TabsPrimitive.Content.displayName
+));
+TabsContent.displayName = TabsPrimitive.Content.displayName;
 
-export { Tabs, TabsList, TabsTrigger, TabsContent }
+export { Tabs, TabsList, TabsTrigger, TabsContent };

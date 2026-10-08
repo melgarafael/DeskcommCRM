@@ -57,7 +57,8 @@ import {
 } from "@/lib/lgpd/email-delivery";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { marcaDaSaida } from "@/lib/branding/saida";
-import { PAIS_PADRAO, perfilDaOrganizacao } from "@/lib/legal/perfil-do-pais";
+import { perfilDaOrganizacao } from "@/lib/legal/perfil-do-pais";
+import { copiaDoTitular } from "@/lib/lgpd/copia-do-titular";
 
 const MAX_ATTEMPTS = 3;
 const BUCKET = "lgpd-exports";
@@ -187,7 +188,9 @@ export async function processLgpdExport(event: EventRow): Promise<HandlerResult>
     const jsonPath = `${orgId}/${requestId}/data.json`;
     const pdfPath = `${orgId}/${requestId}/report.pdf`;
 
-    const jsonBytes = Buffer.from(JSON.stringify(data, null, 2), "utf-8");
+    // O arquivo é o que o titular RECEBE (doc 103): o payload sem o que é da
+    // equipe. O PDF acima foi desenhado do payload inteiro e não muda.
+    const jsonBytes = Buffer.from(JSON.stringify(copiaDoTitular(data, perfil.codigo), null, 2), "utf-8");
 
     const { error: jsonUploadErr } = await admin.storage
       .from(BUCKET)
@@ -220,22 +223,17 @@ export async function processLgpdExport(event: EventRow): Promise<HandlerResult>
       throw new Error(`signed_url_failed: ${signedErr?.message ?? "no_url"}`);
     }
 
-    // A cópia do art. 15.º, n.º 3 (issue #2340): o `data.json` já subia no
-    // mesmo diretório, mas só o PDF tinha ligação — o titular recebia um
-    // relatório que prometia uma cópia inacessível. Mesma validade do PDF.
-    // SÓ fora do Brasil: o e-mail brasileiro não imprime a ligação (byte a byte
-    // do doc 88), e pedi-la ali só acrescentaria ao export brasileiro um modo
-    // de falha novo — uma assinatura que falha derrubaria um envio que não a usa.
-    let signedUrlDados: string | undefined;
-    if (perfil.codigo !== PAIS_PADRAO) {
-      const { data: signedDados, error: signedDadosErr } = await admin.storage
-        .from(BUCKET)
-        .createSignedUrl(jsonPath, expiresInSec);
-      if (signedDadosErr || !signedDados) {
-        throw new Error(`signed_url_json_failed: ${signedDadosErr?.message ?? "no_url"}`);
-      }
-      signedUrlDados = signedDados.signedUrl;
+    // A cópia dos dados: o `data.json` subia no mesmo diretório, mas só o PDF
+    // tinha link. Portugal passou a recebê-lo pelo art. 15.º, n.º 3 (#2340); o
+    // Brasil, pela declaração completa da LGPD (art. 19, II — doc 103, A).
+    // Mesma validade do PDF.
+    const { data: signedDados, error: signedDadosErr } = await admin.storage
+      .from(BUCKET)
+      .createSignedUrl(jsonPath, expiresInSec);
+    if (signedDadosErr || !signedDados) {
+      throw new Error(`signed_url_json_failed: ${signedDadosErr?.message ?? "no_url"}`);
     }
+    const signedUrlDados = signedDados.signedUrl;
 
     // 8. Resolve delivery email.
     const deliveryFromPayload = (req.request_payload as Record<string, unknown>)?.delivery as

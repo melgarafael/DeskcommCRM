@@ -175,22 +175,29 @@ export const crmGetConversation: McpToolDefinition<typeof getInputShape> = {
   requiresRole: "agent",
   requiresScope: "mcp:read",
   handler: async (input, ctx) => {
-    const conv = await getConversationHandler(
-      ctx.supabase,
-      {
-        organization_id: ctx.organizationId,
-        actor: ctx.actor,
-        requestId: ctx.requestId,
-      },
-      input.conversation_id,
-    ).catch((e: unknown) => {
+    let conv: Awaited<ReturnType<typeof getConversationHandler>> | null = null;
+    try {
+      conv = await getConversationHandler(
+        ctx.supabase,
+        {
+          organization_id: ctx.organizationId,
+          actor: ctx.actor,
+          requestId: ctx.requestId,
+        },
+        input.conversation_id,
+      );
+    } catch (e: unknown) {
       // Com turno, o `404` (não existe, ou é de outra organização) vira a
       // MESMA recusa da conversa de outro cliente, como no histórico: um uuid
       // não ganha veredito sobre existência. Sem turno, sobe como antes; erro
       // que não é `404` sobe sempre.
-      if (ctx.contatoDoTurno && e instanceof ApiError && e.status === 404) return null;
-      throw e;
-    });
+      if (!(e instanceof ApiError) || e.status !== 404) throw e;
+      if (ctx.contatoDoTurno) {
+        conv = null;
+      } else {
+        throw e;
+      }
+    }
     // ── A CONVERSA DE QUEM NÃO É DESTA CONVERSA NÃO ABRE AQUI (#2178) ────────
     //
     // RECUSA, e não tradução: trocar o uuid pedido pelo da conversa do turno
@@ -317,16 +324,21 @@ export const crmGetConversationHistory: McpToolDefinition<typeof historyInputSha
         };
       }
     }
-    const result = await listMessagesHandler(
-      ctx.supabase,
-      {
-        organization_id: ctx.organizationId,
-        actor: ctx.actor,
-        requestId: ctx.requestId,
-      },
-      input.conversation_id,
-      { limit: input.limit, cursor: input.cursor },
-    );
+    let result: Awaited<ReturnType<typeof listMessagesHandler>>;
+    try {
+      result = await listMessagesHandler(
+        ctx.supabase,
+        {
+          organization_id: ctx.organizationId,
+          actor: ctx.actor,
+          requestId: ctx.requestId,
+        },
+        input.conversation_id,
+        { limit: input.limit, cursor: input.cursor },
+      );
+    } catch (e: unknown) {
+      throw e;
+    }
     return {
       messages: result.messages.map((m) => ({
         id: m.id,

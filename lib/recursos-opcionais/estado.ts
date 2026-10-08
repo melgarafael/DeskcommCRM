@@ -24,6 +24,7 @@ import { vapidPronto } from "@/lib/notifications/vapid";
 import { isConfigured as nuvemshopConfigurada } from "@/lib/nuvemshop/config";
 import { googleAdsEstaConfigurado } from "@/lib/plataformas-de-anuncio/google/config";
 import { getWacallsClient } from "@/lib/wacalls/client";
+import { resolveServidorDeVideo } from "@/lib/video/jitsi";
 
 import type { FontesDeEstado } from "./catalogo";
 
@@ -50,6 +51,12 @@ export async function detectarServidor(): Promise<Record<string, boolean | null>
     }),
     detectar("graph_parceiro", () => canalGraphParceiroLigado()),
     detectar("voz_whatsapp", () => getWacallsClient() !== null),
+    // Mesma régua do botão: liga quando o self-hoster apontou a origem da
+    // sala. Com a validação do Zod, uma URL fora de http(s) volta `""`, então
+    // o catálogo mostra "desligado" — coerente com a tela, que não mostra o
+    // botão. Reusa `resolveServidorDeVideo` (não `servidorDeVideo()`) para não
+    // depender de `window` num arquivo de servidor.
+    detectar("videochamada_jitsi", () => resolveServidorDeVideo(env.JITSI_SERVER_URL) !== null),
     detectar("nuvemshop", nuvemshopConfigurada),
     detectar("google_ads", () => googleAdsEstaConfigurado()),
     detectar("web_push", vapidPronto),

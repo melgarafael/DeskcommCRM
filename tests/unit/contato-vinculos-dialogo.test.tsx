@@ -65,6 +65,7 @@ const CONTATO_LINHA = {
   cpf_hash: null,
   birthdate: null,
   is_blocked: false,
+  is_personal: false,
   blocked_reason: null,
   is_anonymized: false,
   anonymized_at: null,

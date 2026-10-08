@@ -9,7 +9,7 @@
  *      em `normalized_cnpj`.
  *   2. enriquecimento que TEM SUCESSO também grava o CNPJ formatado.
  *   3. lookup antes da criação devolve dados públicos SEM gravar, marca
- *      `already_registered` e mapeia 403 da BrasilAPI como 502 com dica de retry.
+ *      `already_registered` e mapeia 403 e 429 da BrasilAPI como 502 com dica de retry.
  *   4. exclusão segura: soma audit, devolve o que foi apagado, 404 quando a
  *      empresa não existe, 409 com a contagem quando há pessoas vinculadas
  *      (company_people é ON DELETE CASCADE, então o 23503 não vem do banco)
@@ -212,6 +212,26 @@ describe("lookup de CNPJ antes da criação", () => {
       status: 502,
       details: expect.objectContaining({ dica: expect.stringContaining("403") }),
     });
+  });
+
+  it("429 da BrasilAPI também ganha dica, e a dica não promete causa", async () => {
+    const lookupCnpj = vi.fn(async (): Promise<BrasilApiResult> => ({
+      ok: false,
+      code: "upstream_error",
+      message: "BrasilAPI respondeu 429.",
+      status: 429,
+    }));
+    const falha = await lookupCompanyCnpjHandler(
+      bancoDeLeitura(null) as never,
+      CTX,
+      { cnpj: CNPJ_FORMATADO },
+      { lookupCnpj },
+    ).catch((e: unknown) => e);
+    expect(falha).toMatchObject({
+      status: 502,
+      details: expect.objectContaining({ dica: expect.stringContaining("HTTP 429") }),
+    });
+    expect((falha as { details: { dica: string } }).details.dica).not.toMatch(/tempor/i);
   });
 
   it("CNPJ inválido é rejeitado sem chamar a rede", async () => {

@@ -4,9 +4,16 @@
  * (prompt, ferramentas, credencial, canal, handoff, budgets, follow-up) mora em
  * `ai_agent_versions`.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 import { duplicateAgentWithVersion } from "./duplicate";
+
+// O módulo `login_codex` DESLIGADO em todo o arquivo, salvo onde um caso o liga:
+// os casos com `anthropic` provam que a régua do #2458 não toca os outros.
+const modulo = vi.hoisted(() => ({ loginCodex: false }));
+vi.mock("@/lib/instalacao/modulos", () => ({
+  moduloLigado: vi.fn(async () => modulo.loginCodex),
+}));
 
 const ORG = "org-1";
 const ACTOR = "user-1";
@@ -221,5 +228,33 @@ describe("duplicateAgentWithVersion", () => {
     });
 
     expect(res).toEqual({ ok: false, error: "no_version_to_duplicate" });
+  });
+});
+
+describe("duplicar com a assinatura do ChatGPT na origem (#2458)", () => {
+  const ORIGEM_ASSINATURA = { ...VERSAO_PUBLICADA, provider: "openai-assinatura", model: "gpt-5.5" };
+  const pedido = { orgId: ORG, agentId: "agent-1", actorUserId: ACTOR, requireVersion: true };
+
+  it("módulo desligado: recusa com a frase do módulo e não grava nem o agente", async () => {
+    modulo.loginCodex = false;
+    const { db, inserts } = makeDb({ agent: AGENTE_MCP, published: ORIGEM_ASSINATURA });
+    const res = await duplicateAgentWithVersion(db, pedido);
+    expect(res).toEqual({
+      ok: false,
+      error: "provedor_desligado",
+      message: expect.stringMatching(/assinatura do ChatGPT está desligada/),
+    });
+    expect(inserts).toEqual([]);
+  });
+
+  it("módulo ligado: copia a assinatura como copia qualquer provedor", async () => {
+    modulo.loginCodex = true;
+    const { db, inserts } = makeDb({ agent: AGENTE_MCP, published: ORIGEM_ASSINATURA });
+    const res = await duplicateAgentWithVersion(db, pedido);
+    expect(res.ok).toBe(true);
+    expect(inserts.find((i) => i.table === "ai_agent_versions")!.row.provider).toBe(
+      "openai-assinatura",
+    );
+    modulo.loginCodex = false;
   });
 });

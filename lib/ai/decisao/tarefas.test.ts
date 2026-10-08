@@ -14,6 +14,7 @@ import {
   estadoEfetivoDaTarefa,
   estadoGravadoDaTarefa,
   TAREFA_DA_MANIPULACAO,
+  TAREFA_DA_URGENCIA,
   TAREFA_DO_CLIMA,
   TAREFAS_DO_JEV,
   tarefaEhNova,
@@ -93,7 +94,11 @@ describe("TAREFAS_DO_JEV", () => {
    */
   it("as tarefas em cascata: sem ponto, sim ou não, cada mensagem sozinha, e decidir é só avisar", () => {
     const cascata = TAREFAS_DO_JEV.filter((t) => t.familia === "cascata");
-    expect(cascata.map((t) => t.id)).toEqual([TAREFA_DO_PEDIDO_DE_HUMANO.id, TAREFA_DO_PEDIDO_PARA_PARAR.id]);
+    expect(cascata.map((t) => t.id)).toEqual([
+      TAREFA_DO_PEDIDO_DE_HUMANO.id,
+      TAREFA_DO_PEDIDO_PARA_PARAR.id,
+      TAREFA_DA_URGENCIA.id,
+    ]);
     for (const t of cascata) {
       expect(t.ponto, t.id).toBeUndefined();
       expect(t.aoDecidirNoPonto, t.id).toBeUndefined();
@@ -107,6 +112,7 @@ describe("TAREFAS_DO_JEV", () => {
     // E nascem observando para quem já tem o Jev ligado (R7), com o selo "Nova".
     const ligado = config({ ligado: true, modo: "decide", aceite: ACEITE });
     expect(cascata.map((t) => [estadoEfetivoDaTarefa(ligado, t), tarefaEhNova(ligado, t)])).toEqual([
+      ["observando", true],
       ["observando", true],
       ["observando", true],
     ]);
@@ -289,8 +295,11 @@ describe("a tarefa do follow-up", () => {
     expect(rotuloDaChamadaDoJev("followup_classify")).toBe(TAREFA_DO_FOLLOWUP.rotulo);
   });
 
-  it("tarefaPodeDecidir: só a do follow-up não pode", () => {
-    expect(TAREFAS_DO_JEV.filter((t) => !tarefaPodeDecidir(t)).map((t) => t.id)).toEqual([TAREFA_DO_FOLLOWUP.id]);
+  it("tarefaPodeDecidir: só o follow-up e a conferência de fato não podem", () => {
+    expect(TAREFAS_DO_JEV.filter((t) => !tarefaPodeDecidir(t)).map((t) => t.id)).toEqual([
+      TAREFA_DO_FOLLOWUP.id,
+      "afirmacao_de_fato",
+    ]);
   });
 
   it("nasce observando para quem já tem o Jev ligado (R7), com o selo Nova", () => {

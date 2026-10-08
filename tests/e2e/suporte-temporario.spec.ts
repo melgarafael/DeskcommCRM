@@ -33,14 +33,29 @@ test("suporte mantém identidade, opera B e encerra sem misturar A; readonly/exp
   return request.method() === "GET" && (/^\/api\/v1\/channel-sessions\/[^/]+$/.test(path)
    || path === "/api/v1/onboarding/whatsapp/session");
  };
+ // Mutação enviada que o NAVEGADOR abandonou: nunca terá desfecho observável,
+ // mas o servidor pode seguir processando. Guarda quando foi abandonada.
+ const abandonedMutations = new Map<Request, number>();
+ const abandon = (request: Request) => { if (pendingMutations.delete(request)) abandonedMutations.set(request, Date.now()); };
  const observeRequests = (context: BrowserContext) => {
   context.on("request", request => {
    if (mutatesFixture(request) && !blockedBeforeSend.has(request)) pendingMutations.add(request);
    if(request.method()==="POST" && ["/login","/app/settings/tenant"].includes(new URL(request.url()).pathname)) knownServerActions.add(request);
   });
-  context.on("requestfinished", request => pendingMutations.delete(request));
+  context.on("requestfinished", request => { pendingMutations.delete(request); abandonedMutations.delete(request); });
   // Cancelamento após envio não prova que a transação no servidor terminou.
-  context.on("requestfailed", request => { if (blockedBeforeSend.has(request)) pendingMutations.delete(request); });
+  context.on("requestfailed", request => { if (blockedBeforeSend.has(request)) pendingMutations.delete(request); else abandon(request); });
+  // Documento novo na aba mata o que o anterior tinha em voo, e o Playwright
+  // não emite requestfinished NEM requestfailed para esses pedidos: no trace do
+  // PR #2468 o POST /api/v1/attendants/presence da batida de montagem ficou sem
+  // desfecho quando a aba recarregou 80 ms depois. Esperar o evento era esperar
+  // para sempre.
+  const watchDocuments = (target: Page) => target.on("domcontentloaded", () => {
+   for (const request of pendingMutations) {
+    if (!request.serviceWorker() && !request.isNavigationRequest() && request.frame() === target.mainFrame()) abandon(request);
+   }
+  });
+  context.pages().forEach(watchDocuments); context.on("page", watchDocuments);
  };
  const acknowledgeKnownAction = async (target: Page, path: "/login" | "/app/settings/tenant") => {
   // Chamar SOMENTE após a confirmação semântica específica abaixo. O stream
@@ -51,10 +66,10 @@ test("suporte mantém identidade, opera B e encerra sem misturar A; readonly/exp
   const request=matching[0]!;const response=await request.response();
   expect(response?.status()).toBe(200);
   expect(response?.headers()["content-type"]).toContain("text/x-component");
-  pendingMutations.delete(request);knownServerActions.delete(request);
+  pendingMutations.delete(request);abandonedMutations.delete(request);knownServerActions.delete(request);
  };
- const pendingMutationDescriptions = () => [...pendingMutations].map(request=>({
-  method:request.method(),path:new URL(request.url()).pathname,
+ const pendingMutationDescriptions = () => [...pendingMutations, ...abandonedMutations.keys()].map(request=>({
+  method:request.method(),path:new URL(request.url()).pathname,abandoned:abandonedMutations.has(request),
  }));
  observeRequests(page.context());
  const joins: Array<{role:string;topic:string}> = [];
@@ -235,6 +250,11 @@ test("suporte mantém identidade, opera B e encerra sem misturar A; readonly/exp
    })));
    await expect.poll(()=>pendingMutations.size,{timeout:20000,
     message:"Mutações enviadas devem concluir antes de fechar contextos ou apagar fixtures"}).toBe(0);
+   // Abandonada não tem evento que prove o fim no servidor; a prova é o prazo.
+   // ponytail: prazo fixo — o handler de mutação mais lento nos traces levou 2,4 s;
+   // se algum passar de 10 s, este prazo apaga fixtures sob ele: suba o número.
+   const settleMs = Math.max(0, ...[...abandonedMutations.values()].map(at => at + 10_000 - Date.now()));
+   await new Promise(resolve => setTimeout(resolve, settleMs));
    const closing = await Promise.allSettled([
     ...page.context().pages().map(ownedPage => ownedPage.close()),
     ...(second ? [second.close()] : []),

@@ -256,12 +256,13 @@ export async function lookupCompanyCnpjHandler(
 
   const result = await client.lookupCnpj(normalized);
   if (!result.ok) {
-    // 403/5xx da BrasilAPI não é "não encontrado": é indisponibilidade
-    // temporária, e a sugestão é tentar de novo. Feedback distinguível.
+    // Recusa (403/429) ou falha da BrasilAPI não é "não encontrado", e a tela
+    // precisa distinguir. A dica NÃO afirma causa: a permanente (o User-Agent
+    // padrão do Node) foi consertada no cliente, e o que sobrar não foi medido.
     const status = result.code === "not_found" ? 404 : 502;
     const dica =
-      result.status === 403
-        ? "A BrasilAPI recusou a consulta (403). Pode ser bloqueio temporário; tente de novo mais tarde."
+      result.status === 403 || result.status === 429
+        ? `A BrasilAPI recusou a consulta (HTTP ${result.status}). Tente de novo em alguns minutos; se persistir, avise o suporte.`
         : undefined;
     err(ctx, status, result.code, result.message, dica ? { dica } : undefined);
   }

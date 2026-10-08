@@ -19,7 +19,14 @@ name: release
 # no registro, falhando alto se não aparecerem.
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      major:
+        # Major só por decisão explícita do dono — nenhum fragmento a produz
+        # (docs/doctrine/versionamento.md).
+        description: "Cortar como MAJOR (só quando o dono pedir)"
+        type: boolean
+        default: false
   push:
     branches: [main]
 
@@ -55,9 +62,13 @@ jobs:
 
       - name: Calcular o número e montar a seção
         id: corte
+        env:
+          MAJOR: ${{ inputs.major }}
         run: |
           set -euo pipefail
-          pnpm exec tsx scripts/cortar-release.ts --escrever | tee /tmp/corte.txt
+          pedido=()
+          if [ "${MAJOR}" = "true" ]; then pedido=(--major); fi
+          pnpm exec tsx scripts/cortar-release.ts --escrever "${pedido[@]}" | tee /tmp/corte.txt
           versao=$(pnpm exec tsx scripts/cortar-release.ts --versao-do-changelog)
           echo "versao=${versao}" >> "$GITHUB_OUTPUT"
 

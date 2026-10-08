@@ -352,8 +352,10 @@ async function contatoEstaBloqueado(
   contactId: string,
 ): Promise<boolean> {
   try {
+    // Contato pessoal (spec 21) sai da operação do mesmo jeito: sem aviso na
+    // Central e sem carimbo de perdida na timeline.
     const { rows } = await pool.query<{ is_blocked: boolean | null }>(
-      `select is_blocked from contacts where organization_id = $1 and id = $2`,
+      `select (is_blocked or is_personal) as is_blocked from contacts where organization_id = $1 and id = $2`,
       [organizationId, contactId],
     );
     return rows[0]?.is_blocked === true;

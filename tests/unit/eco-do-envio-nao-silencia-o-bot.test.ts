@@ -87,7 +87,13 @@ function banco(preexistentes: Array<Partial<Linha>> = []) {
     let org: string | null = null;
     let externos: string[] = [];
     const filtros: Array<[string, unknown]> = [];
+    // `.neq()` aplicado: a re-checagem pós-insert exclui a linha recém-inserida.
+    const diferentes: Array<[string, unknown]> = [];
     const q: Record<string, unknown> = {
+      neq(coluna: string, valor: unknown) {
+        diferentes.push([coluna, valor]);
+        return q;
+      },
       eq(coluna: string, valor: unknown) {
         if (coluna === "organization_id") org = valor as string;
         else filtros.push([coluna, valor]);
@@ -114,7 +120,8 @@ function banco(preexistentes: Array<Partial<Linha>> = []) {
             m.organization_id === org &&
             m.external_id !== null &&
             externos.includes(m.external_id) &&
-            filtros.every(([c, v]) => (Array.isArray(v) ? v.includes(m[c]) : m[c] === v)),
+            filtros.every(([c, v]) => (Array.isArray(v) ? v.includes(m[c]) : m[c] === v)) &&
+            diferentes.every(([c, v]) => m[c] !== v),
         );
         return { data: achou ? { id: achou.id } : null, error: null };
       },
@@ -123,7 +130,8 @@ function banco(preexistentes: Array<Partial<Linha>> = []) {
           (m) =>
             (org === null || m.organization_id === org) &&
             filtros.every(([c, v]) => (Array.isArray(v) ? v.includes(m[c]) : m[c] === v)) &&
-            (externos.length === 0 || (m.external_id !== null && externos.includes(m.external_id))),
+            (externos.length === 0 || (m.external_id !== null && externos.includes(m.external_id))) &&
+            diferentes.every(([c, v]) => m[c] !== v),
         );
         return Promise.resolve(ok({ data: casadas, error: null }));
       },

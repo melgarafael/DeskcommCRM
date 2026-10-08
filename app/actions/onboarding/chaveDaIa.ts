@@ -27,9 +27,13 @@
 import { revalidatePath } from "next/cache";
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { guardarCredencial } from "@/lib/ai/credenciais/guardar";
+import { guardarCredencial, MENSAGEM_ASSINATURA_SO_PELO_LOGIN } from "@/lib/ai/credenciais/guardar";
 import { definirPadraoDeIaDaOrganizacao } from "@/lib/ai/pontos/padrao-da-organizacao";
 import { IDS_DE_PROVEDOR } from "@/lib/ai/pontos/provedores";
+import {
+  MENSAGEM_PROVEDOR_DESLIGADO,
+  provedorDesligadoNaInstalacao,
+} from "@/lib/ai/pontos/provedores-oferecidos";
 import { requireOnboardingCtx, OnboardingError } from "./_shared";
 
 export type ResultadoDaChave =
@@ -74,6 +78,12 @@ export async function salvarChaveDaIa(formData: FormData): Promise<ResultadoDaCh
     return { ok: false, erro: "Escolha qual inteligência artificial você contratou." };
   }
 
+  // A gravação abaixo também vira o padrão da EMPRESA: a assinatura do ChatGPT
+  // não entra por aqui com o módulo `login_codex` desligado.
+  if (await provedorDesligadoNaInstalacao(createAdminClient(), provider)) {
+    return { ok: false, erro: MENSAGEM_PROVEDOR_DESLIGADO };
+  }
+
   const apiKey = String(formData.get("api_key") ?? "").trim();
   if (apiKey.length < 8) {
     return { ok: false, erro: "Essa chave parece incompleta. Cole a chave inteira, do começo ao fim." };
@@ -104,6 +114,7 @@ export async function salvarChaveDaIa(formData: FormData): Promise<ResultadoDaCh
         erro: "Já existe uma chave cadastrada com esse nome. Veja em IA › Credenciais.",
       };
     }
+    if (r.motivo === "assinatura_so_pelo_login") return { ok: false, erro: MENSAGEM_ASSINATURA_SO_PELO_LOGIN };
     return { ok: false, erro: "Não consegui guardar a chave agora. Tente de novo." };
   }
 

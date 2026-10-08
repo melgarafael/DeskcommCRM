@@ -18,7 +18,7 @@ import type { Idioma } from "@/lib/i18n/idiomas";
 import { roleAtLeast } from "@/lib/auth/types";
 import { canonicalPhoneBR, phoneLookupVariants } from "@/lib/channels/phone-variants";
 import { encontrarContatoPorTelefone } from "@/lib/channels/contato-por-telefone";
-import { hashCpf, encryptCpfSql } from "@/lib/contacts/cpf";
+import { camposCpfParaGravar, hashCpf } from "@/lib/contacts/cpf";
 import type { Contact } from "@/lib/types/contacts";
 import { ensureConversation, sessaoProntaParaEnvio } from "@/lib/automation/start-conversation";
 import type {
@@ -35,7 +35,7 @@ import { padraoRegexDeBusca } from "@/lib/contacts/busca-regex";
 type SB = SupabaseClient;
 
 const SELECT_COLS =
-  "id, organization_id, name, display_name, email, email_normalized, phone_number, cpf_hash, birthdate, is_blocked, blocked_reason, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, custom_fields, created_at, updated_at, last_activity_at, first_service_at";
+  "id, organization_id, name, display_name, email, email_normalized, phone_number, cpf_hash, birthdate, is_blocked, blocked_reason, is_personal, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, custom_fields, created_at, updated_at, last_activity_at, first_service_at";
 
 interface CursorPayload {
   sort: string | null;
@@ -257,6 +257,12 @@ export async function listContactsHandler(
   }
   if (q.source) query = query.eq("source", q.source);
   if (soContato) query = query.eq("id", soContato);
+  // Pessoal fora da lista por padrão; `?pessoais=true` lista SÓ pessoais
+  // (spec 21, etapa 13 — a tela do filtro e o desmarcar). Sem esta linha a
+  // lista de Contatos furava pelo outro lado o esconderijo que o inbox
+  // construiu — e o MCP search herdaria o furo junto.
+  if (q.pessoais) query = query.eq("is_personal", true);
+  else query = query.eq("is_personal", false);
 
   if (q.cursor) {
     const c = decodeCursor(q.cursor);
@@ -481,9 +487,10 @@ export async function createContactHandler(
   };
 
   if (input.cpf) {
-    insertRow.cpf_hash = hashCpf(input.cpf);
-    const enc = await encryptCpfSql(supabase, input.cpf);
-    if (enc) insertRow.cpf_encrypted = enc;
+    // #2522: os DOIS campos ou NENHUM — o CHECK `contacts_cpf_consistency`
+    // recusa a linha inteira se só o hash for gravado. Sem cifra disponível
+    // (RPC ausente ou chave não semeada) o contato nasce SEM CPF.
+    Object.assign(insertRow, await camposCpfParaGravar(supabase, input.cpf));
   }
 
   const { data: created, error: insErr } = await supabase
@@ -652,9 +659,11 @@ export async function patchContactHandler(
     patch.consent = { ...anterior, ...input.consent };
   }
   if (input.cpf !== undefined) {
-    patch.cpf_hash = hashCpf(input.cpf);
-    const enc = await encryptCpfSql(supabase, input.cpf);
-    if (enc) patch.cpf_encrypted = enc;
+    // Mesma regra do create (#2522): os DOIS campos ou NENHUM. Quando a cifra
+    // falha aqui, o par ANTIGO permanece intacto (hash e texto continuam do
+    // mesmo CPF) — apagar só um dos dois seria a corrupção silenciosa que o
+    // CHECK existe para impedir.
+    Object.assign(patch, await camposCpfParaGravar(supabase, input.cpf));
   }
 
   if (Object.keys(patch).length === 0) {

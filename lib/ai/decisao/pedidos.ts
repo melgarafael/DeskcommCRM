@@ -312,6 +312,23 @@ export async function observarPedidos(
   deps: DependenciasDoPonto = {},
 ): Promise<PedidosObservados> {
   const nada: PedidosObservados = { entrada: e, respondidos: [], nova: false };
+  // Contato pessoal (spec 21, caminho 7 — belt): com a etapa 6 o turno não
+  // roda e o Jev do turno nem é perguntado; se algum outro chamador chegar
+  // aqui com pessoal, não pergunta nada — mesmo padrão do early-return abaixo.
+  if (e.contactId) {
+    try {
+      const { data } = await admin
+        .from("contacts")
+        .select("is_personal")
+        .eq("organization_id", e.organizationId)
+        .eq("id", e.contactId)
+        .maybeSingle();
+      if ((data as { is_personal?: boolean } | null)?.is_personal === true) return nada;
+    } catch {
+      // Sem a leitura não há veredito: segue o caminho de sempre, que decide
+      // pelo turno — hoje, pessoal não tem turno (etapa 6).
+    }
+  }
   try {
     if (e.mensagem.trim() === "" || !turnoRodaria(e.turno)) return nada;
     const aPerguntar = pedidosAPerguntar(e.config, e.regraPegou);

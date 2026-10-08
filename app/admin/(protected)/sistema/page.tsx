@@ -1,9 +1,13 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { notFound } from "next/navigation";
 
 import { LinhaDoRecurso } from "@/components/recursos-opcionais/LinhaDoRecurso";
 import { loadAuthUser } from "@/lib/auth/server";
+import { lerAssinaturaDasEntregas } from "@/lib/channels/assinatura-das-entregas";
+import { tagDeIdioma } from "@/lib/i18n/datas";
 import { carregarComportamentoDaInstalacao } from "@/lib/instalacao/comportamento-servidor";
-import { MODULOS_OPCIONAIS_POR_FLAG, modulosLigados, type ModuloOpcional } from "@/lib/instalacao/modulos";
+import { MODULOS_AINDA_NAO_LIGAVEIS, MODULOS_OPCIONAIS_POR_FLAG, modulosLigados, type ModuloOpcional } from "@/lib/instalacao/modulos";
+import type { TipoDeSuspensao } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 import {
@@ -26,6 +30,20 @@ const ROTULO_NO_SERVIDOR: Record<EstadoDoRecurso, string> = {
   nao_verificado: "Não dá para ver daqui",
 };
 export const dynamic = "force-dynamic";
+
+/**
+ * Formata no SERVIDOR, com fuso fixo: no cliente, o HTML servido (fuso do
+ * contêiner) e a hidratação (fuso do navegador) divergiriam. Mesmo motivo e
+ * mesma escolha de `/admin/marca` e `/admin/google`.
+ */
+function instanteLegivel(iso: string | null, tag: string): string | null {
+  if (!iso) return null;
+  return new Date(iso).toLocaleString(tag, {
+    timeZone: "America/Sao_Paulo",
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+}
 
 /**
  * A tela onde o dono da instalação decide COMO ela se comporta, sem SSH.
@@ -69,11 +87,18 @@ export default async function Page() {
 
   // O valor EFETIVO (linha acima, `.env` como piso): a tela mostra o que está
   // valendo de verdade, e não o que a linha diria se ela existisse.
-  const [comportamento, ligados, servidor] = await Promise.all([
+  const admin = createAdminClient();
+  const [comportamento, ligados, servidor, assinatura] = await Promise.all([
     carregarComportamentoDaInstalacao(),
-    modulosLigados(createAdminClient()),
+    modulosLigados(admin),
     detectarServidor(),
+    lerAssinaturaDasEntregas(admin),
   ]);
+  // Spec da cobrança §7(h): o aviso de quantas o desligar libera só existe com ela ligada.
+  const suspensasPorCobranca = ligados.includes("cobranca") ? await contarSuspensasPorCobranca(admin) : 0;
+  // Módulo que ainda não se liga nesta versão só aparece se já estiver ligado
+  // (pelo banco): dá para desligar, e quem nunca ligou não vê interruptor que recusa.
+  const escondidos = MODULOS_AINDA_NAO_LIGAVEIS.filter((m) => !ligados.includes(m));
   const fontes = { modulos: ligados, settings: null, servidor };
 
   // Os módulos que NÃO se ligam por interruptor aqui (módulo de tabela, ADR-0002)
@@ -105,7 +130,7 @@ export default async function Page() {
         <h2 id="bloco-modulos" className="text-lg font-semibold">
           {traduzir("Módulos", idioma)}
         </h2>
-        <FormularioDeModulos ligados={ligados} />
+        <FormularioDeModulos ligados={ligados} escondidos={escondidos} suspensasPorCobranca={suspensasPorCobranca} />
         {modulosDeOutraTela.length > 0 && (
           <ul className="space-y-3">
             {modulosDeOutraTela.map((r) => {
@@ -129,7 +154,16 @@ export default async function Page() {
         <h2 id="bloco-comportamento" className="text-lg font-semibold">
           {traduzir("Comportamento", idioma)}
         </h2>
-        <FormularioDeComportamento inicial={comportamento} />
+        <FormularioDeComportamento
+          inicial={comportamento}
+          assinatura={
+            assinatura && {
+              assinadas: assinatura.assinadas,
+              ultimaAssinada: instanteLegivel(assinatura.ultimaAssinadaEm, tagDeIdioma(idioma)),
+              ultimaSemAssinatura: instanteLegivel(assinatura.ultimaSemAssinaturaEm, tagDeIdioma(idioma)),
+            }
+          }
+        />
         <ul className="space-y-3">
           {outrasChaves.map((r) => (
             <LinhaDoRecurso
@@ -174,4 +208,16 @@ export default async function Page() {
       </section>
     </div>
   );
+}
+
+const SUSPENSA_POR_COBRANCA: TipoDeSuspensao = "cobranca";
+
+/** Quantas empresas estão suspensas por falta de pagamento. `null` = a leitura falhou: a tela não afirma número que não leu. */
+async function contarSuspensasPorCobranca(db: SupabaseClient): Promise<number | null> {
+  const { count, error } = await db
+    .from("organizations")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "suspended")
+    .eq("suspended_kind", SUSPENSA_POR_COBRANCA);
+  return error ? null : (count ?? 0);
 }

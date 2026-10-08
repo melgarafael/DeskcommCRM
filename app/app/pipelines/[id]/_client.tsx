@@ -86,10 +86,24 @@ export function PipelinePageClient({
       // no pé dele — com uma etapa cheia, era preciso descer até o fim para
       // conseguir andar para o lado, e no caminho o nome da etapa sumia do alto.
       // Com a altura da área visível (100dvh menos a barra do topo, h-14, e o
-      // p-6 do <main>), quem rola é o quadro: a barra horizontal fica sempre no
-      // pé da tela e o cabeçalho de cada etapa fica preso em cima. O piso de
+      // padding do <main>), quem rola é o quadro: a barra horizontal fica sempre
+      // no pé da tela e o cabeçalho de cada etapa fica preso em cima. O piso de
       // 28rem é para tela baixa demais, onde a página volta a rolar.
-      className="flex h-[calc(100dvh-3.5rem-3rem)] min-h-[28rem] flex-col gap-4"
+      //
+      // ⚠️ A PARCELA DE BAIXO VEM DO CONTRATO, e era um `3rem` literal.
+      //
+      // Aquele literal era a segunda metade do `p-6` do `<main>` escrita à mão,
+      // e ela não sabia de nenhuma peça fixa no rodapé. Com a barra de abas do
+      // celular (`components/shell/BarraInferior.tsx`, 56px mais a área segura),
+      // o quadro media 48px a mais do que tinha e o fim dele — justamente onde
+      // mora a barra de rolagem horizontal, a razão desta linha existir —
+      // passava a correr POR BAIXO das abas.
+      //
+      // `max(var(--space-6), var(--rodape-ocupado, 0px))` é a mesma fórmula do
+      // `components/inbox/InboxLayout.tsx`, e é o que o gate
+      // `tests/unit/altura-fixa-le-a-reserva-do-rodape.test.ts` cobra: altura
+      // fixa não desconta número próprio, lê a reserva.
+      className="flex h-[calc(100dvh-3.5rem-var(--space-6)-max(var(--space-6),var(--rodape-ocupado,0px)))] min-h-[28rem] flex-col gap-4"
       // OBSERVÁVEL de propósito, e é a razão de existir desta linha: "a
       // assinatura morreu" e "nada aconteceu" produzem o MESMO silêncio na
       // tela, e sem este valor nem o produto nem o teste conseguem separar as

@@ -6,7 +6,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { publishFirstVersion } from "@/lib/ai/agents/first-publication";
-import { mensagemDoEscopo, validarEscopoDaVersao } from "@/lib/ai/agents/escopo";
+import { codigoDoEscopo, mensagemDoEscopo, validarEscopoDaVersao } from "@/lib/ai/agents/escopo";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { ehProvedorSuportado } from "@/lib/ai/pontos/provedores";
@@ -62,8 +62,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     );
   const p = parsed.data;
   // O canal já é conferido contra a organização em `publishFirstVersion`.
-  const escopo = await validarEscopoDaVersao(admin, auth.org.orgId, { credential_id: p.credential_id });
-  if (!escopo.ok) return fail("validation_failed", mensagemDoEscopo(escopo), 422, { requestId });
+  const escopo = await validarEscopoDaVersao(admin, auth.org.orgId, { credential_id: p.credential_id, provider: p.provider });
+  if (!escopo.ok) return fail(codigoDoEscopo(escopo), mensagemDoEscopo(escopo), 422, { requestId });
   const result = await publishFirstVersion(
       admin,
       auth.org.orgId,

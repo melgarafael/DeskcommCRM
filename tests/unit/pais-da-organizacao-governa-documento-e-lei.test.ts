@@ -28,6 +28,8 @@ const ORG = "22222222-2222-4222-8222-222222222222";
 const XISTAO: PerfilDoPais = {
   codigo: "XI",
   nome: "Xistão",
+  // País sintético declara os SEUS rótulos de organização (#1946, item 4).
+  empresa: { rotuloNomeLegal: "Razão do Xistão", rotuloNumero: "Registro do Xistão" },
   documento: {
     rotulo: "Bilhete",
     exemplo: "123456789XI000",
@@ -54,6 +56,8 @@ const XISTAO: PerfilDoPais = {
 const REVISADOLANDIA: PerfilDoPais = {
   codigo: "RV",
   nome: "Revisadolândia",
+  // País sintético declara os SEUS rótulos de organização (#1946, item 4).
+  empresa: { rotuloNomeLegal: "Razão de Revisadolândia", rotuloNumero: "Registro de Revisadolândia" },
   documento: {
     rotulo: "Documento",
     exemplo: "000000000",

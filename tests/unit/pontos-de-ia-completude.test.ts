@@ -26,7 +26,12 @@ import ts from "typescript";
 
 import { describe, expect, it } from "vitest";
 
-import { CONFERENCIA_DE_CAMPO, PEDIDOS_DO_CLIENTE, rotuloDaChamadaDoJev } from "@/lib/ai/decisao/tarefas";
+import {
+  CONFERENCIA_DE_CAMPO,
+  PEDIDOS_DO_CLIENTE,
+  rotuloDaChamadaDoJev,
+  SINAL_DE_URGENCIA,
+} from "@/lib/ai/decisao/tarefas";
 import {
   PONTOS_DE_IA,
   pontosPorPapel,
@@ -130,6 +135,9 @@ const CHAMADAS_DO_JEV_SEM_PONTO: ReadonlySet<string> = new Set([
   PEDIDOS_DO_CLIENTE.purpose,
   // A conferência de campo (#2234): as perguntas são por CAMPO, não por tarefa.
   CONFERENCIA_DE_CAMPO.purpose,
+  // O sinal de urgência da mensagem represada (#2232): a pergunta é do turno,
+  // e quem decide se ela vale é a regra léxica, sem modelo nenhum.
+  SINAL_DE_URGENCIA.purpose,
 ]);
 
 describe("registro de pontos de IA × código", () => {

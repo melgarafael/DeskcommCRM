@@ -37,7 +37,9 @@
     { "id": "avisos", "lane": "banco", "col": 6, "type": "database", "label": "agent_inbox_items (job_dead, status='open')", "sublabel": "o aviso aberto É o dono: o job que ele aponta não é podado" },
 
     { "id": "trilha", "lane": "volta", "col": 2, "type": "service", "label": "audit('retention.sweep_run')", "sublabel": "contagem + retenção em vigor; linha nova demais para o próprio expurgo alcançar" },
-    { "id": "log", "lane": "volta", "col": 1, "type": "service", "label": "logger.warn / logger.error", "sublabel": "knob ajustado e falha de RPC saem alto — nunca a frase tranquilizadora" }
+    { "id": "log", "lane": "volta", "col": 1, "type": "service", "label": "logger.warn / logger.error", "sublabel": "knob ajustado e falha de RPC saem alto — nunca a frase tranquilizadora" },
+    { "id": "fnia", "lane": "banco", "col": 7, "type": "database", "label": "fn_expurgar_telemetria_de_ia_vencida / _ritmo_de_envio_vencido / _copias_enviadas_vencidas / _checkpoints_superados (definer, 0587)", "sublabel": "sem seletor de linha · piso no corpo · último envio do número, janela do anti-repetição e último checkpoint da fronteira ficam" },
+    { "id": "tabelasia", "lane": "banco", "col": 8, "type": "database", "label": "llm_calls · metrics · skill_activations · ai_router_decisions · pacing_ledger · outbound_copies · lead_checkpoints", "sublabel": "append-only da IA; event_log fica FORA (idempotência dos gatilhos de tempo)" }
   ],
   "edges": [
     { "id": "e1", "from": "scheduler", "to": "rota", "label": "curl com INTERNAL_SECRET" },
@@ -57,6 +59,9 @@
     { "id": "e15", "from": "podar", "to": "log", "label": "avisos de configuração" },
     { "id": "e16", "from": "log", "to": "runbook", "label": "o que o operador procura" },
     { "id": "e17", "from": "runbook", "to": "envs", "label": "qual alavanca puxar" },
-    { "id": "e18", "from": "rota", "to": "trilha", "label": "request_id correlaciona" }
+    { "id": "e18", "from": "rota", "to": "trilha", "label": "request_id correlaciona" },
+    { "id": "e19", "from": "podar", "to": "fnia", "label": "rpc em lote" },
+    { "id": "e20", "from": "fnia", "to": "tabelasia", "label": "delete do que passou do prazo e já não tem leitor" },
+    { "id": "e21", "from": "fila", "to": "fnia", "label": "job pending/running ⇒ o checkpoint que ele lê fica" }
   ]
 }

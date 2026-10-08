@@ -29,7 +29,11 @@ interface Linha extends Record<string, unknown> {
 /** Banco em memória: aplica eq/in/is/gt/lt, como o PostgREST. */
 function bancoDeLista(rows: Linha[]) {
   const aplicados: Record<string, unknown[]> = {};
-  let dados = rows;
+  // Estado POR TABELA, como no banco de verdade: uma consulta em `contacts`
+  // (ex.: os ids de pessoais da spec 21) nunca filtra as linhas de
+  // `conversations`. Estado compartilhado entre tabelas apagaria a lista.
+  function cadeiaPara(dadosIniciais: Linha[]) {
+    let dados = dadosIniciais;
   const cadeia: Record<string, unknown> = {
     select: () => cadeia,
     order: () => cadeia,
@@ -69,11 +73,14 @@ function bancoDeLista(rows: Linha[]) {
       resolve: (v: { data: unknown; error: null }) => unknown,
       reject?: (e: unknown) => unknown,
     ) => Promise.resolve({ data: dados, error: null }).then(resolve, reject),
-  };
+    };
+    return { cadeia, linhas: () => dados };
+  }
+  const principal = cadeiaPara(rows);
   const supabase = {
-    from: () => cadeia,
+    from: (tabela: string) => (tabela === "conversations" ? principal.cadeia : cadeiaPara([]).cadeia),
   } as never;
-  return { supabase, aplicados, resultado: () => dados };
+  return { supabase, aplicados, resultado: () => principal.linhas() };
 }
 
 const ctx: HandlerCtx = {

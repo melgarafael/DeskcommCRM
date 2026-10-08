@@ -98,18 +98,29 @@ export async function encontrarContatoPorTelefone(
 }
 
 /**
- * Como `encontrarContatoPorTelefone`, mas trazendo `is_blocked` NA MESMA
- * consulta (bloqueado na ligação é recusado). Sem consulta extra:
- * só a coluna a mais no `select` de `buscarPorVariantes`.
+ * Como `encontrarContatoPorTelefone`, mas trazendo `is_blocked` E `is_personal`
+ * NA MESMA consulta (bloqueado e pessoal na ligação são recusados). Sem
+ * consulta extra: só as colunas a mais no `select` de `buscarPorVariantes`.
  */
 export async function encontrarContatoPorTelefoneComBloqueio(
   admin: SupabaseClient,
   orgId: string,
   rawPhone: string,
-): Promise<{ id: string; phone_number: string | null; is_blocked: boolean | null } | null> {
-  const linha = await buscarPorVariantes(admin, orgId, rawPhone, "id, phone_number, is_blocked");
+): Promise<{
+  id: string;
+  phone_number: string | null;
+  is_blocked: boolean | null;
+  /** Spec 21: pessoal na ligação é recusado como bloqueado (etapa 14). */
+  is_personal: boolean | null;
+} | null> {
+  const linha = await buscarPorVariantes(admin, orgId, rawPhone, "id, phone_number, is_blocked, is_personal");
   return (
-    (linha as { id: string; phone_number: string | null; is_blocked: boolean | null } | null) ?? null
+    (linha as {
+      id: string;
+      phone_number: string | null;
+      is_blocked: boolean | null;
+      is_personal: boolean | null;
+    } | null) ?? null
   );
 }
 

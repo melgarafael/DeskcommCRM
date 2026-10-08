@@ -109,6 +109,7 @@ function makeAdmin(
         return chain;
       },
       eq: () => chain,
+      neq: () => chain,
       in: () => chain,
       is: () => chain,
       gte: () => chain,

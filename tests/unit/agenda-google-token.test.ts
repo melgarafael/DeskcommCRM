@@ -66,6 +66,8 @@ describe("trocarCodigoPorToken", () => {
     const r = await trocarCodigoPorToken(APP, "c", { agora: AGORA });
     expect(r).toMatchObject({ ok: false, motivo: "erro_do_google" });
     if (!r.ok) expect(r.detalhe).toContain("invalid_grant");
+    // O status viaja junto (#2393): é ele que faz a frase dizer HTTP 400.
+    if (!r.ok) expect(r.status).toBe(400);
   });
 
   it("rede caída não lança — vira recusa legível", async () => {
@@ -73,6 +75,8 @@ describe("trocarCodigoPorToken", () => {
     const r = await trocarCodigoPorToken(APP, "c", { agora: AGORA });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.detalhe).toContain("sem resposta do Google");
+    // Sem resposta HTTP, o status é `null` — não inventa 0 nem 500.
+    if (!r.ok) expect(r.status).toBeNull();
   });
 
   it("corpo que não é JSON também não lança", async () => {
@@ -85,6 +89,7 @@ describe("trocarCodigoPorToken", () => {
     const r = await trocarCodigoPorToken(APP, "c", { agora: AGORA });
     expect(r).toMatchObject({ ok: false, motivo: "resposta_invalida" });
     if (!r.ok) expect(r.detalhe).toContain("502");
+    if (!r.ok) expect(r.status).toBe(502);
   });
 
   it("desiste depois de um prazo, em vez de pendurar a requisição", async () => {
@@ -127,5 +132,28 @@ describe("renovarToken", () => {
     vi.mocked(fetch).mockResolvedValue(respostaDoGoogle({ error: "invalid_grant" }, 400));
     const r = await renovarToken(APP, "1//morto", { agora: AGORA });
     expect(r).toMatchObject({ ok: false, motivo: "erro_do_google" });
+  });
+
+  it("200 com o corpo cortado no meio (timeout/reset na LEITURA) não leva status — é rede, não recusa", async () => {
+    // Os cabeçalhos 200 chegaram e a conexão caiu durante o JSON. Repassar o
+    // 200 fazia o cron classificar `permanente` e marcar a agenda `error` por
+    // um soluço de rede. Quem não recusou não tem status de recusa.
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new TypeError("terminated");
+      },
+    } as unknown as Response);
+    const r = await renovarToken(APP, "1//refresh", { agora: AGORA });
+    expect(r).toMatchObject({ ok: false, motivo: "resposta_invalida", status: null });
+    // O texto ainda conta o que aconteceu, para quem investiga.
+    if (!r.ok) expect(r.detalhe).toContain("HTTP 200");
+  });
+
+  it("200 sem `access_token` também não leva status — o Google não recusou", async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: true, status: 200, json: async () => ({}) } as unknown as Response);
+    const r = await renovarToken(APP, "1//refresh", { agora: AGORA });
+    expect(r).toMatchObject({ ok: false, motivo: "sem_access_token", status: null });
   });
 });

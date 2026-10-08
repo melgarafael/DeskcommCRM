@@ -92,9 +92,36 @@ const SELECT_COLS = `
   snooze_until, created_at, updated_at,
   bot_silenced_until, last_handoff_at, last_handoff_reason,
   comando_da_conversa,
-  contacts:contact_id (id, display_name, name, phone_number, is_anonymized, tags, is_blocked, avatar_storage_path, force_human),
+  contacts:contact_id (id, display_name, name, phone_number, is_anonymized, tags, is_blocked, is_personal, avatar_storage_path, force_human),
   channel_sessions:channel_session_id (phone_number, display_name, provider, social_platform:metadata->>social_platform)
 `;
+
+/**
+ * Os ids dos contatos marcados como pessoais na organização (spec 21, etapa 7).
+ *
+ * A conversa de pessoal some da lista, da busca e das contagens — e `conversations`
+ * não tem a coluna, então quem filtra precisa dos ids antes da query principal
+ * (a mesma primitiva da busca por contato). Cortados pelo orçamento da URL, como
+ * os da busca: pessoal se marca um a um, à mão, então a lista é curta por
+ * construção — mas o teto impede o `414` se um dia não for.
+ *
+ * Exportado porque a rota de contagens (`counts/route.ts`) aplica a MESMA
+ * exclusão: badge que conta o que a aba não mostra manda o atendente procurar
+ * trabalho que não existe.
+ */
+export async function idsDeContatosPessoais(
+  supabase: SB,
+  organizationId: string,
+): Promise<string[]> {
+  const { data } = await supabase
+    .from("contacts")
+    // Service role bypassa RLS: o filtro de organização é manual e obrigatório.
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("is_personal", true)
+    .limit(500);
+  return idsQueCabemNaURL((data ?? []).map((c) => (c as { id: string }).id));
+}
 
 interface CursorPayload {
   sort: string | null;
@@ -179,6 +206,14 @@ export async function listConversationsHandler(
     .order(sortCol, ordem)
     .order("id", { ascending: asc })
     .limit(q.limit + 1);
+
+  // Contato pessoal some da lista (spec 21, etapa 7 — critério 1): conversa cujo
+  // contato é pessoal não aparece em nenhuma visão. ANTES de todo filtro
+  // opcional, para que cursor e `has_more` descrevam o conjunto já escondido.
+  const pessoais = await idsDeContatosPessoais(supabase, ctx.organization_id);
+  if (pessoais.length > 0) {
+    query = query.not("contact_id", "in", `(${pessoais.join(",")})`);
+  }
 
   // `.in` e não `.eq`: o filtro agora chega como LISTA (um valor vira lista de um,
   // e o SQL resultante é equivalente). É o que deixa a aba Fila pedir os dois
@@ -355,6 +390,9 @@ export async function listConversationsHandler(
       // Anonimizar é direito do titular. Voltar a encontrá-lo pelo nome antigo
       // criaria um vazamento onde não havia.
       .eq("is_anonymized", false)
+      // Pessoal não é achado pela busca (spec 21, etapa 7 — critério 2): nem por
+      // nome, nem por telefone. A prévia segue pelo `.not` da query principal.
+      .eq("is_personal", false)
       .or(camposDoContato)
       // Teto obrigatório: a lista de ids viaja na URL do PostgREST, e uma busca
       // por "a" sem limite estoura a requisição.
@@ -451,6 +489,20 @@ export async function getConversationHandler(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
   }
   if (!data) {
+    throw new ApiError(
+      404,
+      "not_found",
+      undefined,
+      ctx.requestId,
+      traduzir("Conversa não encontrada.", ctx.idioma ?? "pt-BR"),
+    );
+  }
+  // Pessoal some até por link direto (spec 21, D10 — critério 1): a conversa de
+  // contato pessoal responde 404, com a mesma mensagem de "não existe", para
+  // não revelar que ela está lá. O desmarcar acontece pela ficha de Contatos.
+  const pessoal = (data as unknown as { contacts?: { is_personal?: boolean } | null }).contacts
+    ?.is_personal;
+  if (pessoal === true) {
     throw new ApiError(
       404,
       "not_found",

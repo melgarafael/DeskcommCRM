@@ -170,7 +170,7 @@ describe("criação conversacional apenas propõe", () => {
     });
     const release = vi.fn();
     const pool = { connect: vi.fn().mockResolvedValue({ query, release }) };
-    const result = await chatAboutAgent(pool as never, org, input);
+    const result = await chatAboutAgent(pool as never, org, input, () => true);
     expect(result.ready).toBe(true);
     expect(query.mock.calls.every((call) => /^select/.test(call[0].trim()))).toBe(true);
     for (const call of query.mock.calls) expect(call[1]).toContain(org);
@@ -191,7 +191,7 @@ describe("criação conversacional apenas propõe", () => {
         .fn()
         .mockResolvedValue({ query: vi.fn().mockResolvedValue({ rows: [] }), release }),
     };
-    await expect(chatAboutAgent(pool as never, org, input)).rejects.toThrow(
+    await expect(chatAboutAgent(pool as never, org, input, () => true)).rejects.toThrow(
       "Campanha não encontrada",
     );
     expect(mocks.call).not.toHaveBeenCalled();

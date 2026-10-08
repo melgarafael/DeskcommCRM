@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { wahaEchoExternalIds, parseWahaMessageId } from "./message-id";
+import { canonicalWahaExternalId, wahaEchoExternalIds, parseWahaMessageId } from "./message-id";
 
 /**
  * Fase 4A-3 — o external_id null nasceu de shapes de resposta do sendText que
@@ -74,5 +74,18 @@ describe("wahaEchoExternalIds", () => {
     expect(
       wahaEchoExternalIds("true_5511900000002@c.us_3EB0ABC123", "5511900000002@c.us"),
     ).toEqual(["true_5511900000002@c.us_3EB0ABC123", "3EB0ABC123"]);
+  });
+});
+
+describe("canonicalWahaExternalId", () => {
+  it("conversa individual: reduz à cauda, como o eco grava", () => {
+    expect(canonicalWahaExternalId("true_5531999998888@c.us_3EB0AB")).toBe("3EB0AB");
+    expect(canonicalWahaExternalId("3EB0AB")).toBe("3EB0AB");
+  });
+
+  it("grupo: id intacto, inclusive com o participante no 4º segmento", () => {
+    // Reduzido, o de 4 segmentos viraria o JID do participante.
+    expect(canonicalWahaExternalId("true_120363@g.us_3EB0AB")).toBe("true_120363@g.us_3EB0AB");
+    expect(canonicalWahaExternalId("true_120363@g.us_3EB0AB_9999@lid")).toBe("true_120363@g.us_3EB0AB_9999@lid");
   });
 });

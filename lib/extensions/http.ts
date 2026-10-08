@@ -35,21 +35,21 @@ export async function requireExtensionPlatform(): Promise<PlatformCheck> {
 }
 
 /**
- * A mesma conferência, para quem já carregou o usuário. Recarregar faria um segundo getUser() pela
- * rede, e uma falha passageira nele virava 401, lido como "não administra a instalação".
+ * O que a REGRA devolve: o usuário, ou o CÓDIGO que a resposta de API traduz.
+ *
+ * A regra é separada da `Response` de propósito (#2147, item 1): a mesma
+ * conferência serve quem responde JSON e quem responde Server Action, e uma
+ * `Response` não atravessa fronteira de Server Action. Quem chama a regra não
+ * reimplementa `is_platform_admin`, escopo `full`, recusa de sessão de suporte
+ * nem `aal2` — ele só traduz o código no próprio vocabulário.
  */
-export async function requireExtensionPlatformFor(user: AuthUser): Promise<PlatformCheck> {
-  const t = (text: string) => traduzir(text, user.idioma);
-  if (!user.is_platform_admin || user.support) {
-    return {
-      ok: false,
-      response: fail(
-        "forbidden",
-        t("Só o administrador da instalação pode gerenciar os pacotes disponíveis."),
-        403,
-      ),
-    };
-  }
+export type RegraPlatformAdmin =
+  | { ok: true; user: AuthUser }
+  | { ok: false; codigo: "forbidden" | "upstream_unavailable" | "mfa_required" };
+
+/** A conferência em si: plataforma, sessão de suporte, escopo `full` e `aal2`. */
+export async function regraPlatformAdmin(user: AuthUser): Promise<RegraPlatformAdmin> {
+  if (!user.is_platform_admin || user.support) return { ok: false, codigo: "forbidden" };
   const db = await createClient();
   const { data: platform, error } = await db
     .from("platform_admins")
@@ -57,39 +57,42 @@ export async function requireExtensionPlatformFor(user: AuthUser): Promise<Platf
     .eq("user_id", user.id)
     .is("revoked_at", null)
     .maybeSingle();
-  if (error) {
-    return {
-      ok: false,
-      response: fail(
-        "upstream_unavailable",
-        t("Não foi possível confirmar a permissão de acesso."),
-        503,
-      ),
-    };
-  }
-  if (!platform || platform.scope !== "full") {
-    return {
-      ok: false,
-      response: fail(
-        "forbidden",
-        t("Só o administrador da instalação pode gerenciar os pacotes disponíveis."),
-        403,
-      ),
-    };
-  }
+  if (error) return { ok: false, codigo: "upstream_unavailable" };
+  if (!platform || platform.scope !== "full") return { ok: false, codigo: "forbidden" };
   if ((platform.mfa_required && (await sessionAal()) !== "aal2") || (await mfaEmDivida())) {
+    return { ok: false, codigo: "mfa_required" };
+  }
+  return { ok: true, user };
+}
+
+/**
+ * A mesma conferência, para quem já carregou o usuário. Recarregar faria um segundo getUser() pela
+ * rede, e uma falha passageira nele viraria 401, lido como "não administra a instalação".
+ */
+export async function requireExtensionPlatformFor(user: AuthUser): Promise<PlatformCheck> {
+  const regra = await regraPlatformAdmin(user);
+  if (regra.ok) return { ok: true, user: regra.user };
+  const t = (text: string) => traduzir(text, user.idioma);
+  if (regra.codigo === "upstream_unavailable") {
+    return {
+      ok: false,
+      response: fail("upstream_unavailable", t("Não foi possível confirmar a permissão de acesso."), 503),
+    };
+  }
+  if (regra.codigo === "mfa_required") {
     return {
       ok: false,
       response: fail(
         "mfa_required",
-        t(
-          "Esta sessão precisa da verificação em duas etapas. Entre novamente com o código do aplicativo.",
-        ),
+        t("Esta sessão precisa da verificação em duas etapas. Entre novamente com o código do aplicativo."),
         403,
       ),
     };
   }
-  return { ok: true, user };
+  return {
+    ok: false,
+    response: fail("forbidden", t("Só o administrador da instalação pode gerenciar os pacotes disponíveis."), 403),
+  };
 }
 
 export function operationKey(request: Request): string {

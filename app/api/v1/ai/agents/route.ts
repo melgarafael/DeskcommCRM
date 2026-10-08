@@ -29,7 +29,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { mcpAgentDraftRecords } from "@/lib/ai/agents/create-draft";
-import { mensagemDoEscopo, validarEscopoDaVersao } from "@/lib/ai/agents/escopo";
+import { codigoDoEscopo, mensagemDoEscopo, validarEscopoDaVersao } from "@/lib/ai/agents/escopo";
 import { agentCreateSchema } from "@/lib/ai/guardrails-schema";
 import { corpoLegadoComoCorpoDeCriacao } from "@/lib/ai/agents/legado-para-versao";
 import { agentMcpCreateSchema } from "@/lib/ai/agents/validation";
@@ -171,7 +171,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   // Validate scope before the first write; a rejected form leaves no orphan.
   const escopo = await validarEscopoDaVersao(admin, organizationId, input.version);
-  if (!escopo.ok) return fail("validation_failed", mensagemDoEscopo(escopo), 422, { requestId });
+  if (!escopo.ok) return fail(codigoDoEscopo(escopo), mensagemDoEscopo(escopo), 422, { requestId });
   const records = mcpAgentDraftRecords({ orgId: organizationId, userId: authUserId ?? "" }, input);
   const { data: agentRow, error: agentError } = await admin
     .from("ai_agents")

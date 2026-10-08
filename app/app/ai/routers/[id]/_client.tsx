@@ -86,6 +86,32 @@ function classifierKeyFrom(config: Record<string, unknown> | null | undefined): 
   return `${provider}::${model}`;
 }
 
+/**
+ * #2415 — o recorte que o baseline, o `currentMembers` (payload do PUT) e a
+ * reidratação comparam: os mesmos campos de entrada/saída do membro. `?? null`
+ * nos de destino porque o SSR legado chega sem `pipeline_id`/`stage_id` e
+ * `undefined` não pode virar "tem destino" na comparação nem no salvamento.
+ */
+function camposDoMembro(m: {
+  agent_id: string;
+  intent_name: string;
+  intent_description: string;
+  examples: string[];
+  flow_pointer_id?: string | null;
+  pipeline_id?: string | null;
+  stage_id?: string | null;
+}): RouterMemberInput {
+  return {
+    agent_id: m.agent_id,
+    intent_name: m.intent_name,
+    intent_description: m.intent_description,
+    examples: m.examples,
+    flow_pointer_id: m.flow_pointer_id ?? null,
+    pipeline_id: m.pipeline_id ?? null,
+    stage_id: m.stage_id ?? null,
+  };
+}
+
 export function RouterEditorClient({
   routerId,
   initialState,
@@ -114,6 +140,24 @@ export function RouterEditorClient({
   const [draftMembers, setDraftMembers] = React.useState<DraftMember[]>(() =>
     members.map((m) => ({ ...m, key: m.id })),
   );
+  // #2415 — o estado inicial do SSR e a resposta do React Query podem divergir
+  // (o SELECT do page.tsx não trazia pipeline_id/stage_id; a API devolve os
+  // dois). Sem esta reidratação, o draft ficava preso ao estado incompleto e o
+  // destino do funil/etapa voltava para "Sem destino" a cada recarga. Só
+  // reidrata quando o draft ainda reflete o estado ANTERIOR: edição local
+  // pendente não é sobrescrita pelo refetch.
+  const prevMembers = React.useRef(members);
+  React.useEffect(() => {
+    const anterior = prevMembers.current;
+    if (anterior === members) return;
+    prevMembers.current = members;
+    setDraftMembers((prev) => {
+      const aindaRefleteOAnterior =
+        JSON.stringify(prev.map(camposDoMembro)) === JSON.stringify(anterior.map(camposDoMembro));
+      if (!aindaRefleteOAnterior) return prev;
+      return members.map((m) => ({ ...m, key: m.id }));
+    });
+  }, [members]);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [testMessage, setTestMessage] = React.useState("");
 
@@ -135,30 +179,12 @@ export function RouterEditorClient({
       fallbackAgentId: router.fallback_agent_id ?? "",
       classifier: classifierKeyFrom(router.config),
       contextMessageCount: typeof router.config?.context_message_count === "number" ? router.config.context_message_count : 4,
-      members: members.map(({ agent_id, intent_name, intent_description, examples, flow_pointer_id, pipeline_id, stage_id }) => ({
-        agent_id,
-        intent_name,
-        intent_description,
-        examples,
-        flow_pointer_id: flow_pointer_id ?? null,
-        pipeline_id: pipeline_id ?? null,
-        stage_id: stage_id ?? null,
-      })),
+      members: members.map(camposDoMembro),
     }),
     [router, members],
   );
 
-  const currentMembers = draftMembers.map(
-    ({ agent_id, intent_name, intent_description, examples, flow_pointer_id, pipeline_id, stage_id }) => ({
-      agent_id,
-      intent_name,
-      intent_description,
-      examples,
-      flow_pointer_id: flow_pointer_id ?? null,
-      pipeline_id: pipeline_id ?? null,
-      stage_id: stage_id ?? null,
-    }),
-  );
+  const currentMembers = draftMembers.map(camposDoMembro);
 
   const dirty =
     name !== baseline.name ||

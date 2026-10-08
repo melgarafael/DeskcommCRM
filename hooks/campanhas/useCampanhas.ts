@@ -80,6 +80,8 @@ export interface PreviaDaAudiencia {
   elegiveis: number;
   excluidos: number;
   motivos: Record<string, number>;
+  /** O recorte bateu o teto de 20.000 negócios e há linha além dele (#2404). */
+  truncado: boolean;
   amostra: Array<{ nome: string | null; motivo: string | null }>;
   legenda: Record<string, string>;
 }

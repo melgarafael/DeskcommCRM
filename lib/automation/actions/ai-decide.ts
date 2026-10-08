@@ -16,6 +16,10 @@
  *  - Não gasta token sem registro. O schema exige `custo_de_token: true`
  *    (literal, não booleano opiniável) e esta ação confere de novo aqui: sem o
  *    registro explícito, `skipped` com motivo, e o modelo nem é consultado.
+ *  - Não roda com o interruptor da EMPRESA desligado (#2367). O freio por
+ *    empresa mora antes de tudo aqui: com ele desligado, nenhum `ai_decide` de
+ *    nenhuma regra consulta o modelo, e o motivo fica no run. Ver
+ *    `lib/automation/ai-decide-da-org.ts` (padrão LIGADO).
  *  - Não decide sozinha quem recebe. O `postponeUntil` das ações-alvo (janela
  *    do número, cap diário, espaçamento) roda ANTES da chamada de modelo: se
  *    QUALQUER opção adiaria, o evento inteiro adia — a mesma régua
@@ -28,6 +32,7 @@
 import { getAction, registerAction } from "@/lib/automation/actions";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import type { OpcaoDeDecisao } from "@/lib/automation/decider";
+import { aiDecideLigado } from "@/lib/automation/ai-decide-da-org";
 import { decidirAcao } from "@/lib/agent-engine/agent/decisao-de-acao";
 import { logger } from "@/lib/logger";
 
@@ -82,6 +87,12 @@ function contatoDoContexto(ctx: ActionCtx): string | null {
  * quando a escolha certa seria uma ação sem janela — menor que o contrário.
  */
 async function postponeUntil(ctx: ActionCtx, config: Record<string, unknown>): Promise<string | null> {
+  // Com o freio da empresa acionado (#2367) este passo não roda: adiar o EVENTO
+  // INTEIRO por causa de uma ação que será pulada atrasaria as demais regras do
+  // mesmo gatilho sem motivo nenhum. Só o `false` GRAVADO pula as janelas: no
+  // ilegível elas seguem, porque o `execute` pode ler `true` logo depois — e,
+  // sem a pré-checagem, mandaria fora da janela.
+  if ((await aiDecideLigado(ctx.admin, ctx.organizationId)) === false) return null;
   const opcoes = lerOpcoes(config);
   if (!opcoes) return null; // config inválida falha no execute, não adia
   for (const opcao of opcoes) {
@@ -94,6 +105,25 @@ async function postponeUntil(ctx: ActionCtx, config: Record<string, unknown>): P
 }
 
 async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise<ActionResultDetail> {
+  // ─── O freio POR EMPRESA (#2367) ──────────────────────────────────────────
+  // Antes de qualquer outra checagem, inclusive a do custo: com o interruptor
+  // desligado o que o operador precisa ler no run é QUEM desligou (a empresa
+  // inteira), não uma recusa de gravação da regra — que o mandaria editar a
+  // regra em vez de procurar o interruptor. E é o único ponto em que a
+  // recusa acontece ANTES da chamada de modelo: daqui para baixo, nada
+  // consulta a IA.
+  //
+  // Só segue com o `true` lido. Falha de leitura (`undefined`) NÃO consulta o
+  // modelo: o interruptor é um "não" explícito do operador, e na dúvida sobre
+  // agir, não se age (docs/doctrine/sistema-vivo/04-fronteira-de-autoridade.md
+  // §4.5). O motivo é próprio, para a tela não dizer "a empresa desligou"
+  // quando o que houve foi um erro de leitura.
+  const interruptor = await aiDecideLigado(ctx.admin, ctx.organizationId);
+  if (interruptor !== true) {
+    const reason = interruptor === false ? "ai_decide_desligado_na_empresa" : "ai_decide_interruptor_ilegivel";
+    return { type: TIPO, status: "skipped", detail: { reason } };
+  }
+
   // O registro EXPLÍCITO do custo (#1970) — sem ele, nem pergunta à IA.
   if (config.custo_de_token !== true) {
     return { type: TIPO, status: "skipped", detail: { reason: "custo_de_token_nao_registrado" } };

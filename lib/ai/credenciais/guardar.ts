@@ -32,9 +32,17 @@ export type ResultadoDeGuardar =
        * `label_em_uso` é o único que o chamador precisa distinguir: é escolha do
        * usuário e tem conserto óbvio (mudar o nome). O resto é falha nossa.
        */
-      motivo: "cifragem" | "label_em_uso" | "banco";
+      motivo: "cifragem" | "label_em_uso" | "banco" | "assinatura_so_pelo_login";
       detalhe?: string;
     };
+
+/**
+ * A recusa de quem tenta CADASTRAR a assinatura do ChatGPT colando um texto.
+ * Os chamadores (rota REST e onboarding) mostram esta frase quando o motivo é
+ * `assinatura_so_pelo_login`.
+ */
+export const MENSAGEM_ASSINATURA_SO_PELO_LOGIN =
+  "A conta do ChatGPT não se cadastra colando uma chave: ela se conecta pelo botão de login em IA › Credenciais.";
 
 export type ResultadoDeRotacionar =
   | { ok: true; id: string; last4: string | null; trocouChave: boolean }
@@ -107,7 +115,32 @@ function ultimo4DoLogin(json: string): string {
   return json.slice(-4);
 }
 
+/**
+ * O cadastro GENÉRICO — rota REST e onboarding, onde a pessoa cola uma chave.
+ *
+ * Recusa a assinatura do ChatGPT SEMPRE, com o módulo `login_codex` ligado ou
+ * não: a linha dela nasce marcada como validada (#1672, item 4) porque quem a
+ * prova é a troca do código do login. Um texto colado por aqui viraria uma
+ * credencial "validada" que ninguém provou, desviando do login inteiro. A guarda
+ * mora no miolo, e não na borda, porque todo cadastro passa por aqui — um
+ * chamador novo herda a recusa sem saber dela.
+ */
 export async function guardarCredencial(p: PedidoDeGuardar): Promise<ResultadoDeGuardar> {
+  if (p.provider === PROVEDOR_POR_ASSINATURA) return { ok: false, motivo: "assinatura_so_pelo_login" };
+  return inserirCredencial(p);
+}
+
+/**
+ * O ÚNICO caminho de nascimento da credencial da assinatura: `guardarLoginCodex`
+ * (`./login-codex.ts`), depois de o login provar o par de tokens.
+ */
+export async function guardarCredencialDoLogin(
+  p: Omit<PedidoDeGuardar, "provider" | "baseUrl">,
+): Promise<ResultadoDeGuardar> {
+  return inserirCredencial({ ...p, provider: PROVEDOR_POR_ASSINATURA });
+}
+
+async function inserirCredencial(p: PedidoDeGuardar): Promise<ResultadoDeGuardar> {
   let cifrada: ReturnType<typeof colunasCifradas>;
   try {
     cifrada = colunasCifradas(p.apiKey, p.provider);

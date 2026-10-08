@@ -1,5 +1,5 @@
 /**
- * Feriados nacionais de Portugal 2026-2030.
+ * Feriados nacionais de Portugal — CALCULADOS, não listados à mão.
  * Usados pelo cálculo do prazo do RGPD para saltar dias não úteis.
  *
  * São os feriados obrigatórios do Código do Trabalho (art. 234.º). Quatro deles
@@ -12,14 +12,31 @@
  * A Terça-feira de Carnaval NÃO entra: é feriado facultativo (art. 235.º),
  * decidido ano a ano. Listá-la faria o prazo pular um dia útil a mais.
  *
- * Os móveis saem da data da Páscoa e ficam listados à mão para 2026-2030,
- * como faz `holidays-br.ts`.
+ * ─── Por que o cálculo substituiu a tabela (#2346) ───────────────────────────
+ *
+ * Os móveis saíam de uma lista à mão para 2026–2030: depois de 2030 o prazo
+ * seria contado SEM os feriados portugueses, e ninguém seria avisado. A Páscoa
+ * e os móveis que dependem dela agora são calculados (Meeus/Jones/Butcher), e a
+ * cobertura é uma CONSTANTE vigiada por teste: `ULTIMO_ANO_COBERTO` tem de
+ * alcançar o ano atual + 2, senão o teste de cobertura reprova.
+ *
+ * O conjunto é o MESMO da tabela antiga — dez fixos + Sexta-feira Santa
+ * (Páscoa − 2) e Corpo de Deus (Páscoa + 60) —, e o teste reproduz os cinco
+ * anos que estavam listados, para o cálculo não trocar a régua em silêncio.
  */
 
-// Feriados fixos (padrão MM-DD repetido para cada ano 2026-2030)
-const FIXED_HOLIDAYS: string[] = [];
+import { diaEmTornoDaPascoa } from "./pascoa";
 
-const YEARS = [2026, 2027, 2028, 2029, 2030];
+/** Primeiro ano coberto pelo calendário gerado. */
+export const PRIMEIRO_ANO_COBERTO = 2000;
+
+/**
+ * Último ano coberto. O teste `perfil-portugal` exige que ele alcance o ano
+ * atual + 2; quando a data chegar perto, o vermelho é o pedido de estender.
+ */
+export const ULTIMO_ANO_COBERTO = 2100;
+
+/** Feriados fixos — mesma data em todo ano (`MM-DD`). */
 const FIXED_DATES = [
   "01-01", // Ano Novo
   "04-25", // Dia da Liberdade (25 de Abril)
@@ -33,32 +50,31 @@ const FIXED_DATES = [
   "12-25", // Natal
 ];
 
-for (const year of YEARS) {
-  for (const md of FIXED_DATES) {
-    FIXED_HOLIDAYS.push(`${year}-${md}`);
-  }
+/**
+ * Os doze feriados obrigatórios de um ano: os dez fixos, a Sexta-feira Santa
+ * (Páscoa − 2) e o Corpo de Deus (Páscoa + 60). A Páscoa vem do módulo comum
+ * (`./pascoa`), o mesmo que o Brasil usa.
+ *
+ * ⚠️ A lista pode repetir uma data: quando o Corpo de Deus cai em 10 de junho
+ * (Dia de Portugal), os dois feriados são o MESMO dia — 2004, 2066, 2077 e
+ * 2088, por exemplo. Quem consome usa `Set`, então a repetição não muda a
+ * contagem de dias úteis.
+ */
+export function feriadosDePortugalDoAno(ano: number): string[] {
+  return [
+    ...FIXED_DATES.map((md) => `${ano}-${md}`),
+    diaEmTornoDaPascoa(ano, -2), // Sexta-feira Santa
+    diaEmTornoDaPascoa(ano, 60), // Corpo de Deus
+  ];
 }
 
-// Feriados móveis 2026-2030 (Páscoa: 05-04/28-03/16-04/01-04/21-04)
-const MOVEABLE_HOLIDAYS: string[] = [
-  // 2026
-  "2026-04-03", // Sexta-feira Santa
-  "2026-06-04", // Corpo de Deus
-  // 2027
-  "2027-03-26", // Sexta-feira Santa
-  "2027-05-27", // Corpo de Deus
-  // 2028
-  "2028-04-14", // Sexta-feira Santa
-  "2028-06-15", // Corpo de Deus
-  // 2029
-  "2029-03-30", // Sexta-feira Santa
-  "2029-05-31", // Corpo de Deus
-  // 2030
-  "2030-04-19", // Sexta-feira Santa
-  "2030-06-20", // Corpo de Deus
-];
-
-export const HOLIDAYS_PT_ISO: string[] = [...FIXED_HOLIDAYS, ...MOVEABLE_HOLIDAYS];
+export const HOLIDAYS_PT_ISO: string[] = (() => {
+  const lista: string[] = [];
+  for (let ano = PRIMEIRO_ANO_COBERTO; ano <= ULTIMO_ANO_COBERTO; ano++) {
+    lista.push(...feriadosDePortugalDoAno(ano));
+  }
+  return lista;
+})();
 
 const _holidaySet = new Set(HOLIDAYS_PT_ISO);
 

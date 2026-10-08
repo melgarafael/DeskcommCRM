@@ -6,13 +6,17 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { authMock, flowsMock, testeMock, updateMock, pipelinesMock, stagesMock } = vi.hoisted(() => ({
+const { authMock, flowsMock, testeMock, updateMock, pipelinesMock, stagesMock, routerDataMock } = vi.hoisted(() => ({
   authMock: vi.fn(),
   flowsMock: vi.fn(),
-  pipelinesMock: vi.fn(() => ({ data: undefined })),
-  stagesMock: vi.fn(() => ({ data: undefined })),
+  // O tipo de retorno explícito evita que o tsc infira `undefined` do default
+  // e reprove os mockReturnValue de teste (#2415).
+  pipelinesMock: vi.fn((): { data: unknown } => ({ data: undefined })),
+  stagesMock: vi.fn((): { data: unknown } => ({ data: undefined })),
   testeMock: vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false, data: undefined as unknown })),
   updateMock: vi.fn(async () => ({})),
+  // #2415 — o que o React Query devolve no refetch: undefined = sem query em cache.
+  routerDataMock: vi.fn((): { data: unknown } => ({ data: undefined })),
 }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
@@ -28,7 +32,7 @@ vi.mock("@/hooks/webhooks/useWebhookSources", () => ({
 vi.mock("@/hooks/ai/useRouters", () => {
   const mut = () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false });
   return {
-    useRouter: () => ({ data: undefined }),
+    useRouter: () => routerDataMock(),
     useUpdateRouter: () => ({ mutate: vi.fn(), mutateAsync: updateMock, isPending: false }),
     useDeleteRouter: mut,
     useSaveMembers: mut,
@@ -259,6 +263,92 @@ describe("Testar classificação com o Jev (onda 2 do Jev, bloco 2.2)", () => {
     expect(within(screen.getByTestId("teste-escolha-do-jev")).getByRole("link", { name: "Ver o motivo no cartão do Jev" })).toHaveAttribute(
       "href",
       "/app/ai/providers",
+    );
+  });
+});
+
+/**
+ * #2415 — o destino de funil/etapa não persistia após salvar e recarregar: o
+ * SSR chegava sem pipeline_id/stage_id e o draft não reidratava quando o
+ * React Query devolvia a resposta completa da API.
+ */
+describe("destino do funil/etapa do roteador (#2415)", () => {
+  const ROTEADOR = {
+    id: "r1",
+    name: "Roteador",
+    channel_session_id: "s1",
+    is_active: true,
+    config: {},
+    fallback_agent_id: null,
+  };
+  // O SSR legado chegava SEM os campos de destino (o defeito da issue).
+  const MEMBRO_SEM_DESTINO = {
+    id: "m1",
+    agent_id: "a1",
+    intent_name: "financiamento",
+    intent_description: "quer financiar",
+    examples: [],
+    position: 0,
+    flow_pointer_id: null,
+  } as never;
+  // A resposta completa da API de detalhe (já selecionava os dois campos).
+  const MEMBRO_COM_DESTINO = {
+    id: "m1",
+    agent_id: "a1",
+    intent_name: "financiamento",
+    intent_description: "quer financiar",
+    examples: [],
+    position: 0,
+    flow_pointer_id: null,
+    pipeline_id: "p1",
+    stage_id: "e1",
+  } as never;
+
+  function elemento() {
+    return (
+      <RouterEditorClient
+        routerId="r1"
+        initialState={{ router: ROTEADOR, members: [MEMBRO_SEM_DESTINO] }}
+        agents={[{ id: "a1", name: "Agente" }]}
+        channelSessions={[]}
+        classifierModels={[]}
+      />
+    );
+  }
+
+  function comFunisDoOrgao() {
+    routerDataMock.mockReturnValue({ data: undefined });
+    authMock.mockReturnValue({ activeOrg: { modulos_ligados: [] } });
+    flowsMock.mockReturnValue({ data: undefined });
+    pipelinesMock.mockReturnValue({ data: { data: [{ id: "p1", name: "Funil Vendas" }] } });
+    stagesMock.mockReturnValue({ data: { data: { stages: [{ id: "e1", name: "Prospecção" }] } } });
+  }
+
+  it("o refetch com a resposta completa da API reidrata o destino no draft", () => {
+    comFunisDoOrgao();
+    const { rerender } = render(elemento());
+    // Controle negativo: o SSR legado nasce sem destino.
+    expect(screen.getByRole("combobox", { name: "Funil de destino (opcional)" })).toHaveTextContent(
+      "Sem destino — só escolher o agente",
+    );
+    // O refetch chega com pipeline_id + stage_id (o que a API devolve).
+    routerDataMock.mockReturnValue({ data: { router: ROTEADOR, members: [MEMBRO_COM_DESTINO] } });
+    rerender(elemento());
+    expect(screen.getByRole("combobox", { name: "Funil de destino (opcional)" })).toHaveTextContent("Funil Vendas");
+    expect(screen.getByRole("combobox", { name: "Etapa de destino" })).toHaveTextContent("Prospecção");
+  });
+
+  it("refetch não sobrescreve edição local pendente", () => {
+    comFunisDoOrgao();
+    const { rerender } = render(elemento());
+    fireEvent.change(screen.getByDisplayValue("financiamento"), { target: { value: "financiamento novo" } });
+    routerDataMock.mockReturnValue({ data: { router: ROTEADOR, members: [MEMBRO_COM_DESTINO] } });
+    rerender(elemento());
+    // A edição local fica; o destino continua vazio porque o refetch não pode
+    // apagar o que a pessoa acabou de digitar.
+    expect(screen.getByDisplayValue("financiamento novo")).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Funil de destino (opcional)" })).toHaveTextContent(
+      "Sem destino — só escolher o agente",
     );
   });
 });

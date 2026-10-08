@@ -26,10 +26,13 @@ vi.mock("./web_push", () => ({
     enviarPushAoUsuarioMock(organizationId, userId, payload),
 }));
 
-// A rota 1:1 (`handleInbound`) usa `createAdminClient` para buscar
-// nome/avatar do contato. A rota de grupo NUNCA deveria — é exatamente o que
-// os testes abaixo travam.
-const createAdminClientMock = vi.fn(() => ({}) as unknown);
+// A rota 1:1 (`handleInbound`) usa o admin client para buscar nome/avatar em
+// `contacts`. A rota de grupo NUNCA deveria — é exatamente o que os testes
+// abaixo travam. O client em si a rota de grupo pede (a régua do canal
+// desativado, #2329, lê `channel_sessions`), então a trava é `from("contacts")`,
+// não `createAdminClient`.
+const fromMock = vi.fn();
+const createAdminClientMock = vi.fn(() => ({ from: fromMock }) as unknown);
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => createAdminClientMock(),
 }));
@@ -56,6 +59,7 @@ describe("webPushInboundHandler", () => {
     enviarPushDaOrgMock.mockClear();
     enviarPushAoUsuarioMock.mockClear();
     createAdminClientMock.mockClear();
+    fromMock.mockClear();
   });
 
   it("pula quando VAPID não está configurado", async () => {
@@ -97,9 +101,9 @@ describe("webPushInboundHandler", () => {
       expect(enviarPushAoUsuarioMock).not.toHaveBeenCalled();
     });
 
-    it("não busca nome/avatar do contato — a rota 1:1 (createAdminClient) nunca é chamada", async () => {
+    it("não busca nome/avatar do contato — `contacts` nunca é lido", async () => {
       await webPushInboundHandler.handle(grupoRow());
-      expect(createAdminClientMock).not.toHaveBeenCalled();
+      expect(fromMock).not.toHaveBeenCalledWith("contacts");
     });
 
     it("sem conversation_id: href cai para /app/inbox (mesma forma do 1:1 sem conversa)", async () => {

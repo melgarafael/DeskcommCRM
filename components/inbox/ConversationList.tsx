@@ -113,7 +113,14 @@ export function ConversationList({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
 
-  if (q.isLoading) {
+  // O SKELETON É DA PRIMEIRA CARGA (#2366) — nunca do refetch.
+  //
+  // `isLoading` só é verdadeiro sem dado nenhum na tela: o refetch em voo
+  // mantém a resposta anterior, e a troca de chave (quando o automatico-ativo
+  // responde) herda a lista anterior pelo `placeholderData` do hook — só essa
+  // troca: aba ou busca nova é outra lista, e volta ao skeleton. `items.length === 0` declara a regra em palavras — o preço de
+  // reconstruí-la aqui é o defeito inteiro desta issue.
+  if (q.isLoading && items.length === 0) {
     return (
       <div className="space-y-3 p-3">
         {[1, 2, 3, 4, 5].map((i) => (
@@ -123,7 +130,14 @@ export function ConversationList({
     );
   }
 
-  if (q.isError) {
+  // O erro só fala quando NÃO HÁ O QUE PRESERVAR (#2366).
+  //
+  // Um refetch que falha com a lista na tela deixa a lista onde está: trocar
+  // uma tela cheia por "Erro ao carregar conversas" é trocar um problema de
+  // rede por uma caixa de entrada vazia — e o `queryFn` do hook já disparou o
+  // toast com o motivo cru. Sem dado nenhum (primeira carga), o erro continua
+  // sendo tudo o que existe para mostrar, com o botão de tentar de novo.
+  if (q.isError && q.data === undefined) {
     return (
       <div className="p-4 text-center text-sm text-muted-foreground">
         <p>{t("Erro ao carregar conversas.")}</p>

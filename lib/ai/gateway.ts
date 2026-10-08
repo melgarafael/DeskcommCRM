@@ -29,7 +29,14 @@ export type ModelId =
   // Allow arbitrary tenant-configured strings without losing autocomplete on the canonical ones.
   | (string & {});
 
-export const DEFAULT_BOT_MODEL: ModelId = "anthropic/claude-sonnet-5";
+// `DEFAULT_BOT_MODEL` morava aqui (`"anthropic/claude-sonnet-5"`) e SAIU
+// (issue #2377): era o default silencioso de ATENDIMENTO — um modelo da
+// Anthropic injetado quando `ai_agents.model` viesse vazio, para uma
+// instalação que pode estar em OpenAI. Só caía no ramo de quem não tinha
+// modelo gravado, e justamente aí ninguém escolheu Anthropic. O que restou
+// como default é o de CLASSIFICAÇÃO, que continua em pé porque passa pela
+// conferência de par provedor+modelo antes de executar
+// (`lib/ai/par-provedor-modelo.ts`) e não executa sob outro provedor direto.
 export const DEFAULT_CLASSIFIER_MODEL: ModelId = "anthropic/claude-haiku-4-5";
 export const DEFAULT_EMBEDDING_MODEL: ModelId = "openai/text-embedding-3-small";
 

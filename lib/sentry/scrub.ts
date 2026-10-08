@@ -12,6 +12,18 @@
  */
 
 /**
+ * O PERFIL DO PAÍS entra aqui pela porta que a issue #2418 abriu: aplicar os
+ * padrões de TODOS os perfis, porque quem chama este scrub não tem organização
+ * na mão — os hooks do Sentry são globais (montados no `Sentry.init` de cada
+ * runtime) e o Jev limpa texto solto, sem saber de qual linha de
+ * `organizations.country` veio. Os padrões vêm do registro
+ * (`lib/legal/perfil-do-pais.ts`), o mesmo que a ingestão já usa desde o #2416:
+ * aqui não se copia regex nenhuma, para os dois pontos de saída não divergirem
+ * no dia em que um país ganhar padrão.
+ */
+import { PERFIS_DO_PAIS, type PadraoDePiiDoPais } from "@/lib/legal/perfil-do-pais";
+
+/**
  * Tipos estruturais mínimos, em vez de importar de `@sentry/core`.
  *
  * `StreamedSpanJSON` e `Event` não são reexportados por `@sentry/nextjs`, e o
@@ -73,7 +85,66 @@ export function isSensitiveHeader(name: string): boolean {
  */
 const UUID = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
 
-export function scrubMessage(input: string): string {
+/**
+ * Os padrões de PII declarados nos perfis do país, de TODOS os perfis
+ * conhecidos, lidos a cada chamada: `PERFIS_DO_PAIS` é mutável de propósito
+ * (os testes de tabela registram país sintético) e a instância de regex é nova
+ * por chamada porque o `g` carrega `lastIndex` — a mesma razão anotada no
+ * cabeçalho de `PadraoDePiiDoPais`.
+ */
+function padroesDoPerfil(): readonly PadraoDePiiDoPais[] {
+  return Object.values(PERFIS_DO_PAIS).flatMap((perfil) => perfil.padroesDePii);
+}
+
+/**
+ * Os padrões do perfil que têm de vir ANTES da cadeia de telefone/CPF — pela
+ * mesma razão do `apikey` e do UUID, que já moram lá: a cadeia comeria a forma
+ * por dentro. Medido, o IBAN `PT50 0002 0123 1234 5678 9015 4` saía
+ * `PT50 [PHONE] [PHONE] 9015 4` (os blocos de 4 dígitos dele são a forma exata
+ * de um telefone) e, destruído assim, não sobrava forma nenhuma para o padrão
+ * do perfil reconhecer depois.
+ *
+ * Padrao novo cuja forma a cadeia destrói entra nesta lista. Os demais vêm
+ * DEPOIS da cadeia, de propósito: é o que mantém o resultado de antes para o
+ * que já saía apagado (o NIF sem prefixo continua saindo `[PHONE]`, como no
+ * #2345) — o perfil só completa o que a cadeia não resolveu.
+ */
+const PERFIL_VEM_ANTES = new Set(["iban"]);
+
+/** Aplica os padrões do perfil, na fase escolhida, com marcador do próprio perfil. */
+function aplicarPadroesDoPerfil(texto: string, fase: "antes" | "depois"): string {
+  let saida = texto;
+  for (const padrao of padroesDoPerfil()) {
+    if ((fase === "antes") !== PERFIL_VEM_ANTES.has(padrao.tipo)) continue;
+    saida = saida.replace(new RegExp(padrao.fonte, "g"), padrao.marcador);
+  }
+  return saida;
+}
+
+/**
+ * O telefone brasileiro. O segundo é o mesmo padrão como era antes do #2418
+ * (separador depois do `55` só espaço), usado só com `perfisDePais: false`.
+ */
+const TELEFONE_BR =
+  /(^|[^\w-])(?:\+?55[\s.-]?)?(?:\(?\d{2}\)?[-.\s]?)?(?:9[-.\s]?\d{4}|\d{4,5})[-.\s]?\d{4}(?![\w-])/g;
+const TELEFONE_BR_ANTES_DO_2418 =
+  /(^|[^\w-])(?:\+?55\s?)?(?:\(?\d{2}\)?[-.\s]?)?(?:9[-.\s]?\d{4}|\d{4,5})[-.\s]?\d{4}(?![\w-])/g;
+
+/**
+ * `perfisDePais: false` devolve a saída de ANTES do #2418: sem os padrões dos
+ * perfis e com o `+55` aceitando só espaço depois dele. Existe para UM chamador,
+ * a conferência de campo personalizado (`lib/mcp/conferencia-de-campos.ts`), que
+ * não é telemetria — ela pergunta ao Jev se o valor CRU que a IA quer gravar
+ * ("CEP é 01310-100?") foi dito nas mensagens que saem daqui. Lá, máscara a mais
+ * não protege nada (o valor vai ao Jev pela pergunta de qualquer jeito) e faz a
+ * conferência recusar o CEP ou o telefone que o cliente acabou de digitar.
+ * Telemetria (Sentry e os demais textos do Jev) usa o padrão, com todos os perfis.
+ */
+export interface OpcoesDoScrub {
+  perfisDePais?: boolean;
+}
+
+export function scrubMessage(input: string, { perfisDePais = true }: OpcoesDoScrub = {}): string {
   return input
     // Chave do Jev (`apikey_<hex>_<hex>`) solta no texto. PRIMEIRO, porque os
     // padrões de CPF e telefone abaixo comeriam pedaços numéricos dela e
@@ -83,27 +154,49 @@ export function scrubMessage(input: string): string {
     // endereço e deixar o resto dele passar.
     .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "[EMAIL]")
     .split(UUID)
-    .map((trecho, i) => (i % 2 === 1 ? trecho : apagarCpfETelefone(trecho)))
+    .map((trecho, i) => (i % 2 === 1 ? trecho : apagarCpfETelefone(trecho, perfisDePais)))
     .join("");
 }
 
-function apagarCpfETelefone(trecho: string): string {
-  return trecho
-    // Telefone como se escreve no Brasil: +55 opcional, DDD opcional (com ou
-    // sem parênteses), 8 ou 9 dígitos (o 9 da frente pode vir solto), e hífen,
-    // ponto, espaço ou nada entre os blocos — `11-98765-4321` e `11.98765.4321`
-    // saíam inteiros enquanto a tela prometia apagar o telefone. Com 8 dígitos
-    // o padrão é curto, e a borda (`[^\w-]` antes, `(?![\w-])` depois) o tira de
-    // dentro de hash: sem ela, 1.390 de 5.000 SHA-1 saíam alterados. Os dois
-    // padrões de baixo seguem pegando o número colado em outro texto.
-    .replace(
-      /(^|[^\w-])(?:\+?55\s?)?(?:\(?\d{2}\)?[-.\s]?)?(?:9[-.\s]?\d{4}|\d{4,5})[-.\s]?\d{4}(?![\w-])/g,
-      "$1[PHONE]",
-    )
-    // CPF com qualquer separador entre os blocos (ponto, espaço, hífen ou nada):
-    // `123 456 789 09` e `123.456.789.09` também são CPF de quem digita rápido.
-    .replace(/\d{3}[.\s-]?\d{3}[.\s-]?\d{3}[.\s-]?\d{2}/g, "[CPF]")
-    .replace(/\+?\d{2}\s?\d{4,5}-?\d{4}/g, "[PHONE]");
+function apagarCpfETelefone(trecho: string, perfisDePais: boolean): string {
+  // O IBAN (e o que mais o `PERFIL_VEM_ANTES` declarar) primeiro: a cadeia de
+  // telefone comeria os blocos de 4 dígitos dele por dentro.
+  const comIban = perfisDePais ? aplicarPadroesDoPerfil(trecho, "antes") : trecho;
+  const aposCadeia = comIban
+    // Números em formato internacional (+DDI), ANTES de tudo: sem esta
+    // passada o `+351912345678` caía no padrão de CPF e saía como
+    // `+[CPF]8` (issue #2345). Cobre `+351912345678` e `+351 912 345 678`;
+    // os +55 ficam com o padrão brasileiro logo abaixo — o `(?!55)` cumpre
+    // isso e mantém o número brasileiro saindo exatamente como antes. O último
+    // bloco é `\d{3,}`, não `\d{3,4}`, para não sobrar dígito no fim de número
+    // estrangeiro (`+49 30 12345678` saía `[PHONE]8`). Sem as duas peças,
+    // `+55 11 987654321` saía `[PHONE]21`.
+      .replace(/\+(?!55)\d{1,3}[\s.-]?\(?\d{2,3}\)?[\s.-]?\d{3}[\s.-]?\d{3,}/g, "[PHONE]")
+      // Telefone como se escreve no Brasil: +55 opcional, DDD opcional (com ou
+      // sem parênteses), 8 ou 9 dígitos (o 9 da frente pode vir solto), e hífen,
+      // ponto, espaço ou nada entre os blocos — `11-98765-4321` e `11.98765.4321`
+      // saíam inteiros enquanto a tela prometia apagar o telefone. Com 8 dígitos
+      // o padrão é curto, e a borda (`[^\w-]` antes, `(?![\w-])` depois) o tira de
+      // dentro de hash: sem ela, 1.390 de 5.000 SHA-1 saíam alterados. Os dois
+      // padrões de baixo seguem pegando o número colado em outro texto.
+      // O separador depois do `55` é `[\s.-]`, não `\s`: sem isso `+55-11-98765-4321`
+      // saía inteiro e `+55.11.98765.4321` saía `+55.[PHONE]` (#2418).
+      .replace(perfisDePais ? TELEFONE_BR : TELEFONE_BR_ANTES_DO_2418, "$1[PHONE]")
+      // CPF com qualquer separador entre os blocos (ponto, espaço, hífen ou nada):
+      // `123 456 789 09` e `123.456.789.09` também são CPF de quem digita rápido.
+      .replace(/\d{3}[.\s-]?\d{3}[.\s-]?\d{3}[.\s-]?\d{2}/g, "[CPF]")
+      // 9 dígitos em três blocos (`123 456 789`) — o NIF português e o telemóvel
+      // nacional. Vem DEPOIS do CPF para não partir um CPF separado
+      // (`123.456.789-09`) em `[PHONE]-09`.
+      .replace(/\b\d{3}[.\s-]\d{3}[.\s-]\d{3}\b/g, "[PHONE]")
+      .replace(/\+?\d{2}\s?\d{4,5}-?\d{4}/g, "[PHONE]");
+
+  // Depois da cadeia, os padrões do perfil completam o que ela não cobre: NIF
+  // com prefixo `PT`, código postal PT, IBAN de quem digitou sem espaço. Vir
+  // DEPOIS é o que preserva o resultado de antes — o NIF sem prefixo e o
+  // `+351 912 345 678` já saíram `[PHONE]` acima, e o perfil não acha mais
+  // dígito nenhum para trocar.
+  return perfisDePais ? aplicarPadroesDoPerfil(aposCadeia, "depois") : aposCadeia;
 }
 
 /**

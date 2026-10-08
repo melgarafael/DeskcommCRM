@@ -10,6 +10,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { env } from "@/lib/env";
 import { drainEventLog } from "@/lib/event-log/drain";
 import { comOrigemDeRequest } from "@/lib/event-log/origem-do-dreno";
 import { ensureHandlersRegistered } from "@/lib/event-log/register-handlers";
@@ -21,6 +22,8 @@ import {
   type TickDeps,
 } from "@/lib/followup/engine";
 import { enviarTextoFixoPendente } from "@/lib/followup/enviar-texto-fixo";
+import { FOLLOWUP_GATILHO_LEAD_HANDLER_KEY } from "@/lib/followup/gatilho-lead.handler";
+import { FOLLOWUP_GATILHO_RETORNO_HANDLER_KEY } from "@/lib/followup/gatilho-retorno.handler";
 import type { EnrollmentRow } from "@/lib/followup/node-handlers";
 import { applyReactivityEvent, createSupabaseReactivityClient } from "@/lib/followup/reactivity";
 import { logger } from "@/lib/logger";
@@ -127,34 +130,88 @@ async function acelerarDesteContato(
   }
 }
 
-export async function acelerarPipelineDeEventos(
+/**
+ * O worker drena o `event_log` em laço (`runEventLogDrainLoop`, a cada 2 s com
+ * trabalho e 10 s ocioso)? Quem declara é o compose que sobe o `worker` ao lado
+ * do `app` — `docker-compose.prod.yml` e `docker-compose.local.yml`. Ausente
+ * (dev com `npm run dev`, e2e, deploy sem worker) é "não", e o dreno inline
+ * continua global como sempre foi.
+ */
+function workerDrenaOEventLog(): boolean {
+  return /^(1|true|on|yes|sim)$/i.test(env.EVENT_LOG_WORKER_DRAINS.trim());
+}
+
+/**
+ * Os handlers que INSCREVEM este contato num fluxo a partir desta mensagem: o
+ * retorno depois de silêncio (`message.received`) e o lead que acabou de nascer
+ * (`lead.created`). São os únicos cujo efeito o 2º tick deste request alcança —
+ * sem eles no request, a primeira mensagem do fluxo espera o cron
+ * `followup-flow-worker` (1 min), porque o laço do worker inscreve mas não
+ * avança o fluxo de lead novo.
+ *
+ * Fica de fora o que não precisa do request: sentimento (LLM), push, mídia,
+ * RAG, automações e a métrica de campanha seguem para o laço do worker. A
+ * reatividade de `message.received` também fica: `acordarFollowupPorInbound`
+ * já aplicou a mesma regra acima.
+ */
+const HANDLERS_DO_DRENO_DO_REQUEST = [
+  FOLLOWUP_GATILHO_RETORNO_HANDLER_KEY,
+  FOLLOWUP_GATILHO_LEAD_HANDLER_KEY,
+] as const;
+
+/**
+ * Passo 1 do inbound: o follow-up DESTE contato reage à mensagem.
+ *
+ * Vem antes do despacho do agente (regra UMA VOZ, `aplicarEfeitosPosEntrada`):
+ * o cliente que responde a um fluxo avança o fluxo antes de o turno ser pedido.
+ */
+export async function acelerarFollowupDoInbound(
+  admin: SupabaseClient,
+  inbound: SinalDeInbound,
+): Promise<void> {
+  try {
+    // Mesma ordem do handler de event_log: acordar a espera QUE JÁ EXISTIA,
+    // depois aplicar o texto. Aplicar primeiro estaciona um wait_started
+    // novo (ALWAYS → menu) e o acordar seguinte acorda essa espera com a
+    // mesma mensagem — o fluxo inteiro dispara de uma vez.
+    try {
+      await acordarFollowupPorInbound(admin, inbound);
+    } catch (err) {
+      logger.warn("[dev.pipeline] acordar follow-up falhou", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    try {
+      await aplicarTextoNosFollowups(admin, inbound);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      logger.warn("[dev.pipeline] aplicar texto do inbound falhou", { error: detail });
+    }
+    await acelerarDesteContato(admin, {
+      organizationId: inbound.organizationId,
+      contactId: inbound.contactId,
+    });
+  } catch (err) {
+    logger.warn("[dev.pipeline] acelerar follow-up falhou (lead/mensagem já gravados)", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
+ * Passo 2: drena o `event_log` e dá o 2º tick no contato.
+ *
+ * Com worker drenando, o dreno é ESCOPADO (esta organização, só
+ * `HANDLERS_DO_DRENO_DO_REQUEST`): o dreno global levava até 50 eventos de
+ * QUALQUER organização — indexação de PDF, mídia, push — para dentro do tempo
+ * do webhook. Sem worker, ele é a única coisa que roda os handlers a tempo, e
+ * continua global.
+ */
+export async function drenarEventosDoInbound(
   admin: SupabaseClient,
   inbound?: SinalDeInbound,
 ): Promise<void> {
   try {
-    if (inbound) {
-      // Mesma ordem do handler de event_log: acordar a espera QUE JÁ EXISTIA,
-      // depois aplicar o texto. Aplicar primeiro estaciona um wait_started
-      // novo (ALWAYS → menu) e o acordar seguinte acorda essa espera com a
-      // mesma mensagem — o fluxo inteiro dispara de uma vez.
-      try {
-        await acordarFollowupPorInbound(admin, inbound);
-      } catch (err) {
-        logger.warn("[dev.pipeline] acordar follow-up falhou", {
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-      try {
-        await aplicarTextoNosFollowups(admin, inbound);
-      } catch (err) {
-        const detail = err instanceof Error ? err.message : String(err);
-        logger.warn("[dev.pipeline] aplicar texto do inbound falhou", { error: detail });
-      }
-      await acelerarDesteContato(admin, {
-        organizationId: inbound.organizationId,
-        contactId: inbound.contactId,
-      });
-    }
     ensureHandlersRegistered();
     try {
       // ⚠️ MARCADO COMO "dentro de requisição". Este dreno roda no meio do
@@ -163,7 +220,18 @@ export async function acelerarPipelineDeEventos(
       // mensagem entregue numa mensagem reentregue — e a reentrega dispara o
       // agente de novo. Quem precisa dessa informação a lê por `origemDoDreno()`
       // e se adia; quem não precisa não muda uma linha.
-      const drain = await comOrigemDeRequest(() => drainEventLog(admin));
+      const drain =
+        inbound && workerDrenaOEventLog()
+          ? await comOrigemDeRequest(() =>
+              drainEventLog(admin, {
+                limit: 10,
+                escopo: {
+                  organizationId: inbound.organizationId,
+                  handlers: HANDLERS_DO_DRENO_DO_REQUEST,
+                },
+              }),
+            )
+          : await comOrigemDeRequest(() => drainEventLog(admin));
       logger.info("[dev.pipeline] event-log-drain", { ...drain });
     } catch (err) {
       logger.warn("[dev.pipeline] drain falhou; tick do follow-up segue", {
@@ -181,6 +249,14 @@ export async function acelerarPipelineDeEventos(
       error: err instanceof Error ? err.message : String(err),
     });
   }
+}
+
+export async function acelerarPipelineDeEventos(
+  admin: SupabaseClient,
+  inbound?: SinalDeInbound,
+): Promise<void> {
+  if (inbound) await acelerarFollowupDoInbound(admin, inbound);
+  await drenarEventosDoInbound(admin, inbound);
 }
 
 export async function kickLocalPipeline(

@@ -8,6 +8,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createHash, randomUUID } from "node:crypto";
+import { lerPlano } from "@/lib/cobranca/dono";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -182,7 +184,25 @@ export async function POST(req: NextRequest) {
   }
 
   const admin = createAdminClient();
-  const request = { ...parsed.data, owner_email: parsed.data.owner_email.trim().toLowerCase() };
+  // Spec da cobrança §2.1/§9 (D-2): com a cobrança ligada, o dono escolhe um
+  // plano de cobrança (ou nenhum: isenta) e o rótulo antigo `settings.plan`
+  // deixa de ser gravado. Desligada, tudo segue como antes, e `plano_id` é
+  // recusado aqui, com nome (a função SQL também o recusa).
+  const cobrancaLigada = await moduloLigado(admin, "cobranca");
+  if (parsed.data.plano_id !== undefined) {
+    const plano = cobrancaLigada ? await lerPlano(admin, parsed.data.plano_id) : null;
+    if (plano === "erro") return fail("internal_error", "Não foi possível ler o plano", 500, { requestId });
+    if (!plano || plano.arquivado_em !== null) {
+      return fail(
+        "plano_invalido",
+        cobrancaLigada ? "Plano não encontrado ou arquivado." : "A cobrança está desligada nesta instalação.",
+        422,
+        { requestId },
+      );
+    }
+  }
+  const normalizado = { ...parsed.data, owner_email: parsed.data.owner_email.trim().toLowerCase() };
+  const request = cobrancaLigada ? { ...normalizado, plan: undefined } : normalizado;
   const { data: org, error } = await admin.rpc("fn_create_tenant_with_owner", {
     p_actor: adminCtx.user.id,
     p_key: key,
@@ -190,6 +210,18 @@ export async function POST(req: NextRequest) {
     p_hash: createHash("sha256").update(JSON.stringify(request)).digest("hex"),
   });
   if (error) {
+    // Corrida: a chave desligou ou o plano foi arquivado entre a leitura acima e
+    // a função (Task 5 levanta 22023 com a mensagem). Sem isto, o 22023 caía no
+    // "slug já existe" abaixo.
+    if (error.code === "22023" && /cobranca_desligada|plano_invalido/.test(error.message ?? "")) {
+      const desligou = (error.message ?? "").includes("cobranca_desligada");
+      return fail(
+        "plano_invalido",
+        desligou ? "A cobrança está desligada nesta instalação." : "Plano não encontrado ou arquivado.",
+        422,
+        { requestId },
+      );
+    }
     if (error.code === "23505" || error.code === "22023") {
       return fail("conflict", "Slug já existe ou a chave foi usada com outros dados", 409, {
         requestId,
@@ -210,7 +242,8 @@ export async function POST(req: NextRequest) {
       metadata: {
         slug: org.slug,
         display_name: org.display_name,
-        plan: request.plan,
+        plan: request.plan ?? null,
+        plano_id: request.plano_id ?? null,
         creator_role: "admin",
       },
     });

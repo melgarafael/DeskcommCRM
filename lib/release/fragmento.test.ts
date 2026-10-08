@@ -84,7 +84,7 @@ describe("o número é consequência do efeito declarado", () => {
   it.each([
     ["nada_mudou", "patch"],
     ["capacidade_nova", "minor"],
-    ["exige_acao", "major"],
+    ["exige_acao", "minor"],
   ] as const)("%s produz %s", (impacto, esperado) => {
     expect(BUMP_DO_IMPACTO[impacto]).toBe(esperado);
     expect(calcularBump([impacto])).toBe(esperado);
@@ -99,8 +99,20 @@ describe("o número é consequência do efeito declarado", () => {
   it("o conjunto vale pelo mais severo, em qualquer ordem", () => {
     expect(calcularBump(["nada_mudou", "capacidade_nova"])).toBe("minor");
     expect(calcularBump(["capacidade_nova", "nada_mudou"])).toBe("minor");
-    expect(calcularBump(["exige_acao", "nada_mudou", "capacidade_nova"])).toBe("major");
+    expect(calcularBump(["exige_acao", "nada_mudou", "capacidade_nova"])).toBe("minor");
     expect(calcularBump(["nada_mudou", "nada_mudou"])).toBe("patch");
+  });
+
+  it("major só sai com o pedido explícito de quem corta — nenhum fragmento o produz", () => {
+    // Decisão do dono (07/10): "Major update é somente quando eu pedir. IA nem
+    // nenhum workflow decide isso!" Sem o pedido, nenhum conjunto chega a major.
+    for (const impacto of Impacto.options) {
+      expect(calcularBump([impacto]), impacto).not.toBe("major");
+      expect(calcularBump([impacto], true), impacto).toBe("major");
+    }
+    expect(calcularBump(["exige_acao", "exige_acao"])).toBe("minor");
+    expect(proximaVersao("1.7.3", calcularBump(["exige_acao"]))).toBe("1.8.0");
+    expect(proximaVersao("1.7.3", calcularBump(["nada_mudou"], true))).toBe("2.0.0");
   });
 
   it("sem fragmento não há release — nunca um patch inventado", () => {

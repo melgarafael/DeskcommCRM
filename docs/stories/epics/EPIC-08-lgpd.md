@@ -120,7 +120,7 @@ Receiver retorna 200 dentro de 5s **antes** do processing — pipeline é totalm
 #### Files to create
 - `app/api/v1/webhooks/nuvemshop/customer-redact/route.ts` — POST receiver
 - `lib/lgpd/sla.ts` — `computeDueAt(receivedAt, slaDays, holidays)` (dias úteis BR)
-- `lib/lgpd/holidays-br.ts` — lista de feriados nacionais 2026-2030
+- `lib/lgpd/holidays-br.ts` — feriados nacionais calculados por ano (2000-2100; Páscoa em `lib/lgpd/pascoa.ts`)
 - `lib/lgpd/repository.ts` — `createLgpdRequest()`, `findLgpdRequest()`, helpers
 - `lib/lgpd/types.ts` — types canônicos (`LgpdRequest`, `LgpdRequestType`, `LgpdRequestStatus`)
 - `tests/unit/lgpd-sla.test.ts` — vitest pra SLA computation

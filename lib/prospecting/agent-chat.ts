@@ -140,6 +140,8 @@ export async function chatAboutAgent(
   pool: pg.Pool,
   orgId: string,
   input: AgentChatInput,
+  /** `provedorOferecido` — a mesma escolha de modelo que a montagem do agente fará. */
+  oferece: (provider: string) => boolean,
   signal?: AbortSignal,
 ): Promise<AgentChatResponse> {
   const db = await pool.connect();
@@ -203,7 +205,7 @@ export async function chatAboutAgent(
       stages: stages.map((s) => ({ ...s, pipeline_name: pipelineNames.get(s.pipeline_id)! })),
     };
     draft = refreshChatDraft(input.draft ?? {}, context);
-    model = await resolveSetupModel(db, orgId, draft.channel_session_id ?? null);
+    model = await resolveSetupModel(db, orgId, draft.channel_session_id ?? null, oferece);
   } finally {
     db.release();
   }

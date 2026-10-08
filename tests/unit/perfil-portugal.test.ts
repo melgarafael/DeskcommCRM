@@ -9,7 +9,12 @@ import {
   paisesOferecidos,
   perfilDoPais,
 } from "@/lib/legal/perfil-do-pais";
-import { HOLIDAYS_PT_ISO } from "@/lib/lgpd/holidays-pt";
+import {
+  HOLIDAYS_PT_ISO,
+  PRIMEIRO_ANO_COBERTO,
+  ULTIMO_ANO_COBERTO,
+  feriadosDePortugalDoAno,
+} from "@/lib/lgpd/holidays-pt";
 import { computeDueAt } from "@/lib/lgpd/sla";
 import { contactCreateSchemaDoPais } from "@/lib/schemas/contacts";
 
@@ -117,9 +122,9 @@ describe("perfil de Portugal (issue #1946)", () => {
     }
   });
 
-  it("padroesDePii declara NIF e código postal 1234-567", () => {
+  it("padroesDePii declara telefone, IBAN, NIF e código postal", () => {
     const tipos = padroesDePii([perfilDoPais("PT")]).map((p) => p.tipo);
-    expect(tipos).toEqual(["nif", "codigoPostal", "email", "phone"]);
+    expect(tipos).toEqual(["telefonePT", "iban", "nif", "codigoPostal", "email", "phone"]);
   });
 
   it("o anonimizador redige o NIF português e o código postal", () => {
@@ -129,6 +134,29 @@ describe("perfil de Portugal (issue #1946)", () => {
     expect(textoTurvo.anonymized).toContain("[CODIGO_POSTAL]");
     expect(textoTurvo.anonymized).not.toContain("123456789");
     expect(detectResidualPii("123456789 e 1234-567", padroes)).not.toBeNull();
+  });
+
+  it("a máscara cobre as formas que a AT aceita, o IBAN e o +351 (#2345)", () => {
+    const padroes = padroesDePii([perfilDoPais("PT")]);
+    const texto =
+      "NIF PT123456789 e 123 456 789; IBAN PT50 0002 0123 1234 5678 9015 4; postal 1234 567; zap +351 912 345 678";
+    const r = anonymize(texto, padroes);
+    expect(r.anonymized).toContain("[NIF]");
+    expect(r.anonymized).toContain("[IBAN]");
+    expect(r.anonymized).toContain("[CODIGO_POSTAL]");
+    expect(r.anonymized).toContain("[TELEFONE]");
+    expect(r.anonymized).not.toContain("123456789");
+    expect(r.anonymized).not.toContain("123 456 789");
+    expect(r.anonymized).not.toContain("PT50");
+    expect(r.anonymized).not.toContain("+351");
+    // A guarda de residual usa a MESMA lista: nada do texto original sobra.
+    expect(detectResidualPii(r.anonymized, padroes)).toBeNull();
+  });
+
+  it("o +351 não é comido pelo NIF: o telefone vem antes na lista (#2345)", () => {
+    const padroes = padroesDePii([perfilDoPais("PT")]);
+    const r = anonymize("zap +351 912 345 678", padroes);
+    expect(r.anonymized).toBe("zap [TELEFONE]");
   });
 
   it("o CPF brasileiro NÃO é confundido com o NIF português", () => {
@@ -141,8 +169,9 @@ describe("perfil de Portugal (issue #1946)", () => {
   });
 
   it("o calendário é o dos feriados obrigatórios: Carnaval (facultativo) não pula dia útil", () => {
-    // 10 fixos + Sexta-feira Santa + Corpo de Deus, 5 anos (CT art. 234.º).
-    expect(HOLIDAYS_PT_ISO).toHaveLength(60);
+    // 10 fixos + Sexta-feira Santa + Corpo de Deus, por ano coberto (CT art. 234.º).
+    const anosCobertos = ULTIMO_ANO_COBERTO - PRIMEIRO_ANO_COBERTO + 1;
+    expect(HOLIDAYS_PT_ISO).toHaveLength(12 * anosCobertos);
     expect(HOLIDAYS_PT_ISO).toContain("2027-03-26"); // Sexta-feira Santa (Páscoa 28/03)
     expect(HOLIDAYS_PT_ISO).not.toContain("2026-02-17"); // Terça de Carnaval, art. 235.º
     // Pedido na segunda 16/02/2026 com 1 dia útil vence na terça 17/02, não na quarta.
@@ -152,5 +181,45 @@ describe("perfil de Portugal (issue #1946)", () => {
       new Set(perfilDoPais("PT").calendario.feriados),
     );
     expect(vence.toISOString().slice(0, 10)).toBe("2026-02-17");
+  });
+
+  it("o cálculo reproduz os cinco anos que a tabela listava à mão (#2346)", () => {
+    // Sexta-feira Santa e Corpo de Deus, como estavam escritos à mão.
+    const conhecidos: Array<[number, string, string]> = [
+      [2026, "2026-04-03", "2026-06-04"],
+      [2027, "2027-03-26", "2027-05-27"],
+      [2028, "2028-04-14", "2028-06-15"],
+      [2029, "2029-03-30", "2029-05-31"],
+      [2030, "2030-04-19", "2030-06-20"],
+    ];
+    for (const [ano, sextaSanta, corpoDeDeus] of conhecidos) {
+      const feriados = feriadosDePortugalDoAno(ano);
+      expect(feriados).toHaveLength(12);
+      expect(feriados).toContain(sextaSanta);
+      expect(feriados).toContain(corpoDeDeus);
+    }
+  });
+
+  it("a cobertura alcança o ano atual + 2 — senão o prazo conta sem feriados (#2346)", () => {
+    const alvo = new Date().getFullYear() + 2;
+    expect(ULTIMO_ANO_COBERTO).toBeGreaterThanOrEqual(alvo);
+    expect(HOLIDAYS_PT_ISO).toContain(`${alvo}-12-25`);
+    expect(feriadosDePortugalDoAno(alvo)).toHaveLength(12);
+  });
+
+  it("depois de 2030 o calendário segue a Páscoa oficial (#2346)", () => {
+    // Páscoa: 2031-04-13, 2035-03-25, 2038-04-25 (US Census Bureau, tabela 2000–2099).
+    // Sexta-feira Santa = Páscoa − 2; Corpo de Deus = Páscoa + 60.
+    const esperados = [
+      "2031-04-11",
+      "2031-06-12",
+      "2035-03-23",
+      "2035-05-24",
+      "2038-04-23",
+      "2038-06-24",
+    ];
+    for (const d of esperados) {
+      expect(HOLIDAYS_PT_ISO).toContain(d);
+    }
   });
 });

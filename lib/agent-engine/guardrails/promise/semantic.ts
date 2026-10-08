@@ -11,9 +11,12 @@
  * {isPromise, suspectPhrase}. suspectPhrase é o trecho da PRÓPRIA candidata (mensagem que o
  * agente quer enviar) — volta ao modelo no veto (erro de ensino), mas NUNCA vai a log.
  *
- * Como Gate.evaluate é SÍNCRONO (before-send.ts), a chamada async roda na FASE DE CARGA do
- * GateContext (sob o advisory lock, junto de loadPromiseTable); o resultado entra no ctx e o
- * `semanticPromiseGate` (sync) lê e veta. Este módulo não persiste nada.
+ * Como Gate.evaluate é SÍNCRONO (before-send.ts), a chamada async roda ANTES da cadeia e
+ * entra no GateContext pronta; o `semanticPromiseGate` (sync) lê e veta. Ela roda antes de o
+ * runBeforeSend tomar conexão, FORA do advisory lock do número: não lê nada do que o lock
+ * protege, e dentro da transação ela fechava um ciclo de travas com DDL (o `runModelCall`
+ * grava `llm_calls`, que tem FK para `contacts`, por outra conexão — #2363).
+ * Este módulo não persiste nada.
  *
  * organization_id/contact_id vêm da ROW do job (closure do run), nunca do payload (regra dura 1).
  */
@@ -266,4 +269,33 @@ export function renderSemanticPromiseVeto(suspectPhrase: string | null): string 
     "estruturados não pega; reformule sem prometer prazo, cortesia, gratuidade, brinde ou garantia " +
     "não autorizada antes de reenviar."
   );
+}
+
+/**
+ * Uma classificação por CORPO EXATO e pelo mesmo CONTEXTO, enquanto a função
+ * memoizada viver — o turno cria uma por turno. Os fail-safes de vocabulário e
+ * de promessa re-rodam a cadeia `before_send` com o mesmo texto, e cada
+ * passagem pagava uma chamada de modelo nova para a mesma frase.
+ *
+ * `contexto` entra na chave porque o veredito não depende só do texto: as
+ * evidências comerciais do turno também vão à classificação, e elas CRESCEM
+ * entre um veto e o reenvio — o modelo vetado consulta o preço e manda a mesma
+ * frase. Reaproveitar o veredito de antes da consulta vetaria de novo uma
+ * promessa que agora tem prova. Falha sai do memo: a próxima passagem tenta de
+ * novo, como antes.
+ */
+export function memoizarPorCandidata(
+  classificar: (candidata: string) => Promise<PromiseClassification>,
+  contexto: () => string = () => '',
+): (candidata: string) => Promise<PromiseClassification> {
+  const pedidas = new Map<string, Promise<PromiseClassification>>();
+  return (candidata) => {
+    const chave = `${contexto()}\u0000${candidata}`;
+    const jaPedida = pedidas.get(chave);
+    if (jaPedida !== undefined) return jaPedida;
+    const pedida = classificar(candidata);
+    pedidas.set(chave, pedida);
+    pedida.catch(() => pedidas.delete(chave));
+    return pedida;
+  };
 }

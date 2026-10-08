@@ -51,7 +51,20 @@ describe("a barra ocupa lugar, em vez de flutuar", () => {
   it("é `sticky` e ocupa a altura da tela", () => {
     // O efeito visual precisa continuar: a barra não rola com a página.
     expect(BARRA).toMatch(/\bsticky\b/);
-    expect(BARRA).toMatch(/h-screen/);
+    // `h-dvh`, e a régua trocou de `h-screen` de propósito.
+    //
+    // `h-screen` é `100vh`, que no navegador móvel é a janela com a barra de
+    // endereço RECOLHIDA — um valor que o navegador nunca corrige depois. Esta
+    // barra JÁ aparece no tablet (a casca a mostra a partir de `md`, 768px),
+    // então entre 768 e 1023px ela media mais que a janela e o fim dela ficava
+    // fora do alcance, com a página nascendo rolável sem conteúdo para rolar.
+    //
+    // A régua é estreita (`h-dvh`, não uma alternância com `h-screen`) porque
+    // aceitar os dois deixaria a volta do defeito passar: o princípio 2 de
+    // `docs/design-system/screen-flow/07-responsive-strategy.md` manda `dvh`
+    // "sempre que altura cheia", e aqui é altura cheia.
+    expect(BARRA, "a barra voltou a medir `100vh`").toMatch(/h-dvh/);
+    expect(BARRA, "`h-screen` não acompanha a barra do navegador móvel").not.toMatch(/h-screen/);
   });
 
   it("não encolhe", () => {

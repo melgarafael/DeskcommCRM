@@ -88,6 +88,9 @@ export const crmSearchContacts: McpToolDefinition<typeof searchInputShape> = {
         tags: c.tags ?? [],
         is_blocked: c.is_blocked,
         is_anonymized: c.is_anonymized,
+        // Espelha a coluna como os outros selos: a lista já exclui pessoais por
+        // padrão (etapa 13), e este campo prova o elo coluna → ferramenta.
+        is_personal: c.is_personal,
         created_at: c.created_at,
         last_activity_at: c.last_activity_at,
       })),
@@ -143,6 +146,20 @@ export const crmGetContact: McpToolDefinition<typeof getInputShape> = {
       },
       { contactId: input.contact_id, decryptPurpose: null },
     );
+    // ── A FICHA DE PESSOAL NÃO SAI PELO MCP (spec 21, etapa 12) ─────────────
+    //
+    // RECUSA no tool, com motivo em texto para o modelo (molde do #2158 acima):
+    // a ficha carrega telefone e e-mail, e pessoal está fora da operação. A
+    // ficha da TELA continua abrindo — é nela que mora o botão desmarcar (D10).
+    if (contact.is_personal === true) {
+      return {
+        permitido: false,
+        motivo: "contato_pessoal",
+        mensagem:
+          "este contato foi marcado como pessoal — ele está fora da operação: a ficha " +
+          "não é sua para abrir e nada se escreve para ele; siga a conversa com quem está falando.",
+      };
+    }
     return {
       id: contact.id,
       name: contact.name,
@@ -154,6 +171,7 @@ export const crmGetContact: McpToolDefinition<typeof getInputShape> = {
       consent: contact.consent ?? {},
       is_blocked: contact.is_blocked,
       is_anonymized: contact.is_anonymized,
+      is_personal: contact.is_personal,
       cpf_available: contact.cpf_available,
       created_at: contact.created_at,
       last_activity_at: contact.last_activity_at,

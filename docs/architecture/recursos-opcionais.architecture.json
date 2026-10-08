@@ -60,6 +60,22 @@
       "dot": "blue"
     },
     {
+      "id": "webhooklog",
+      "lane": "fontes",
+      "label": "webhook_events_log.valid_signature",
+      "sublabel": "gravado por entrega pelas rotas do webhook do WhatsApp",
+      "type": "table",
+      "dot": "sky"
+    },
+    {
+      "id": "assinatura",
+      "lane": "fontes",
+      "label": "assinatura-das-entregas.ts",
+      "sublabel": "lib/channels · as últimas entregas chegaram assinadas? (doc 99, opção A)",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
       "id": "catalogo",
       "lane": "nucleo",
       "label": "catalogo.ts",
@@ -96,6 +112,14 @@
       "lane": "guarda",
       "label": "recursos-opcionais-catalogo.test.ts",
       "sublabel": "reprova módulo/porta fora do catálogo, link morto e texto sem espanhol",
+      "type": "test",
+      "dot": "amber"
+    },
+    {
+      "id": "testeAssinatura",
+      "lane": "guarda",
+      "label": "assinatura-das-entregas.test.tsx",
+      "sublabel": "regra do sim nas duas direções; sugestão só com o interruptor desligado",
       "type": "test",
       "dot": "amber"
     }
@@ -160,6 +184,24 @@
       "from": "teste",
       "to": "navcatalogo",
       "label": "varre as portas condicionadas"
+    },
+    {
+      "id": "e11",
+      "from": "webhooklog",
+      "to": "assinatura",
+      "label": "primeira/última assinada, última sem assinatura (7 dias)"
+    },
+    {
+      "id": "e12",
+      "from": "assinatura",
+      "to": "telaAdmin",
+      "label": "sim/não ao lado do interruptor + 'Pode ligar'"
+    },
+    {
+      "id": "e13",
+      "from": "testeAssinatura",
+      "to": "assinatura",
+      "label": "reprova o sim com número sem assinatura"
     }
   ]
 }

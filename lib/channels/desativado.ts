@@ -30,6 +30,58 @@ export function canalDesativado(metadata: unknown): boolean {
 }
 
 /**
+ * O EVENTO veio de um canal DESATIVADO? (#2329)
+ *
+ * Régua única dos efeitos INTERNOS de `message.received` — push, fluxo de
+ * follow-up, gatilho de retorno e regra/webhook de automação. A lei do #2318
+ * vale nos dois sentidos: o canal desligado não entra na inbox, não acorda a
+ * IA, não envia… e também não REAGE. Nenhum destes efeitos chega ao cliente
+ * (o envio deles seria recusado em `messages/_handler`), mas todos custam e
+ * poluem: push no bolso, fluxo avançado, inscrição no retorno e um webhook
+ * HTTP de SAÍDA saindo para fora.
+ *
+ * `fn_emit_message_event` já grava `channel_session_id` no payload — não há
+ * leitura extra para descobrir de qual canal o evento veio.
+ *
+ * Sem `channel_session_id` → `false`: o evento não é de canal nenhum
+ * (`lead.*`, `user.mentioned`, handoff) e passa inteiro, sem custo de ida.
+ *
+ * Leitura FALHA → `false` (abre). É o mesmo desfecho de
+ * `idsDosCanaisDesativados`: esta leitura é lateral a um evento que já foi
+ * gravado, e derrubar push/follow-up/automação da organização INTEIRA por um
+ * erro transitório trocaria um vazamento pontual por um silêncio geral.
+ * Falha fechada é para o caminho do envio — `messages/_handler`, que é quem
+ * recusa com `channel_disabled`.
+ */
+export async function canalDoEventoDesativado(
+  db: SupabaseClient,
+  organizationId: string,
+  payload: unknown,
+): Promise<boolean> {
+  const canal = canalDoPayload(payload);
+  if (canal === null) return false;
+  try {
+    const { data } = await db.from("channel_sessions").select("metadata")
+      .eq("organization_id", organizationId)
+      .eq("id", canal)
+      .maybeSingle();
+    const linha = data as { metadata?: unknown } | null;
+    // Linha ausente (canal de outra org, canal apagado) = não desativado: o
+    // mesmo "leitura estrita" de `canalDesativado`, sem inventar estado.
+    return canalDesativado(linha?.metadata);
+  } catch {
+    return false;
+  }
+}
+
+/** `channel_session_id` do payload — só string não vazia vale como canal. */
+function canalDoPayload(payload: unknown): string | null {
+  if (payload === null || typeof payload !== "object") return null;
+  const canal = (payload as Record<string, unknown>).channel_session_id;
+  return typeof canal === "string" && canal !== "" ? canal : null;
+}
+
+/**
  * Ids dos canais desativados da org — para excluir da inbox (lista + badges).
  * Lista vazia = nada desligado (o caso comum, uma ida curta que volta vazia).
  * Em erro de leitura, volta vazio e deixa a lista decidir: a inbox é caminho

@@ -85,7 +85,7 @@ discordarem, vale o guia; quando o guia e `install.sh` discordarem, vale o insta
 | sem cadeado / site não abre | `getent ahosts <domínio>` vs `curl -s https://api.ipify.org`; portas 80/443; `docker compose -f docker-compose.prod.yml restart caddy` |
 | app reiniciando em loop | `docker compose -f docker-compose.prod.yml logs app \| grep '\[env\] Falha de validação'` — diz a variável que falta |
 | "Network unreachable" no banco | trocar a connection string pela **Session pooler** |
-| "esqueci minha senha" com link para `localhost:3000` | `export SUPABASE_ACCESS_TOKEN=sbp_... && bash hostgator-setup-kit/marca-emails.sh` |
+| "esqueci minha senha" com link para `localhost:3000` | Supabase na nuvem: `export SUPABASE_ACCESS_TOKEN=sbp_... && bash hostgator-setup-kit/marca-emails.sh`. Supabase na VPS (single-server) ou próprio: o token não serve — confira `SITE_URL` e `ADDITIONAL_REDIRECT_URLS` no `.env` do Supabase (no single-server, `.runtime/supabase/.env`) e RECRIE o auth, porque `restart` não relê o `.env`: single-server, `cd .runtime/supabase && docker compose up -d --no-deps auth` (o `dc_supabase` do kit); próprio, `docker compose up -d auth` na pasta do Supabase dele |
 | esqueci a senha / perdi o autenticador | `bash hostgator-setup-kit/reset-password.sh <email>` / `bash hostgator-setup-kit/reset-mfa.sh <email>` |
 | está tudo no ar? | `bash hostgator-setup-kit/healthcheck.sh` |
 

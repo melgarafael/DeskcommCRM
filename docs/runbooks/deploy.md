@@ -51,8 +51,11 @@ docker inspect "$(docker compose -f docker-compose.prod.yml ps -q app)" \
 
 # 2) o domínio responde?
 curl -s -o /dev/null -w "%{http_code}\n" https://<DOMAIN>/
-# esperado: 307 (redireciona pro login)
+# esperado: 200 (a página inicial pública; 307 para quem já tem sessão)
 # 404      = labels perdidas, refaça o deploy com os dois -f
+curl -s -o /dev/null -w '%{http_code}\n' https://<DOMAIN>/app
+# esperado: 307 (para /login) — o sinal de que quem responde é o app, e não
+#           outra coisa no domínio que também daria 200 em /
 ```
 
 ---

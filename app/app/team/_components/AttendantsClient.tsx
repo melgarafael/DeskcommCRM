@@ -54,9 +54,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Clock, Plus, Trash } from "@/lib/ui/icons";
+import { Clock, Copy, Plus, Trash } from "@/lib/ui/icons";
+import {
+  copiarParaDiasUteis,
+  podeCopiarParaDiasUteis,
+  resumoDaJornada,
+  ROTULOS_DOS_DIAS,
+} from "@/lib/agenda/editor-de-jornada";
 
-const DOW_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+/**
+ * Os rótulos da semana vêm de `lib/agenda/editor-de-jornada` — a MESMA fonte do
+ * resumo do que foi publicado. Duas listas aqui e ali seria o segundo rótulo
+ * para o mesmo dia, que é a segunda régua do mesmo número.
+ */
+const DOW_LABELS: readonly string[] = ROTULOS_DOS_DIAS;
 
 const MODE_LABELS: Record<(typeof ROUTING_MODES)[number], string> = {
   manual: "Manual (atendente puxa da fila)",
@@ -181,8 +192,21 @@ function PresenceBadge({ attendant }: { attendant: Attendant }) {
   );
 }
 
-/** Editor de janela de horário (schedule tz-aware) de um atendente. */
-function ScheduleDialog({
+/**
+ * Editor de janela de horário (schedule tz-aware) de um atendente.
+ *
+ * Duas peças da issue #2312 moram aqui, e as duas são respostas ao MESMO
+ * defeito — a pessoa achava que preencheu a semana e só a segunda foi gravada:
+ *
+ *   o BOTÃO copia as faixas do dia-modelo para os outros dias úteis
+ *   (`lib/agenda/editor-de-jornada`) — a semana deixa de ser digitação;
+ *
+ *   o RESUMO depois de salvar mostra o que SAIU GRAVADO, lido do retorno da
+ *   gravação, e o diálogo SÓ FECHA quando a pessoa pede — fechar no sucesso
+ *   transformaria o resumo num toast que ninguém lê, que é o mesmo silêncio
+ *   do bug.
+ */
+export function ScheduleDialog({
   attendant,
   open,
   onOpenChange,
@@ -193,7 +217,8 @@ function ScheduleDialog({
   attendant: Attendant;
   open: boolean;
   onOpenChange: (o: boolean) => void;
-  onSave: (windows: ScheduleWindow[], timezone: string) => void;
+  /** Devolve as janelas que o SERVIDOR guardou — é daqui que o resumo lê. */
+  onSave: (windows: ScheduleWindow[], timezone: string) => Promise<ScheduleWindow[]>;
   isPending: boolean;
   organizationTimezone?: string;
 }) {
@@ -202,6 +227,38 @@ function ScheduleDialog({
   const defaultTimezone = fusoOferecidoOuPadrao(organizationTimezone);
   const [timezone, setTimezone] = useState(initial?.timezone || defaultTimezone);
   const [windows, setWindows] = useState<ScheduleWindow[]>(initial?.windows ?? []);
+  /**
+   * O que o SERVIDOR guardou no último "Salvar", lido do RETORNO da gravação.
+   * `null` enquanto nada foi publicado nesta abertura do diálogo.
+   *
+   * Não é uma cópia de `windows`: o formulário é o rascunho, e o rascunho pode
+   * divergir do banco (janela removida, limite da rota, outra pessoa mexendo).
+   * O resumo existe justamente para mostrar a diferença — se ele lesse o
+   * formulário, repetiria o defeito da #2312 com outra roupa.
+   */
+  const [gravacao, setGravacao] = useState<{
+    rascunho: ScheduleWindow[];
+    timezone: string;
+    janelas: ScheduleWindow[];
+  } | null>(null);
+  // O resumo vale para o rascunho que foi gravado. Mexeu depois (outra faixa,
+  // o botão de copiar, o fuso)? O resumo sai e o "Salvar" volta — senão a
+  // edição sumiria no "Fechar" sem aviso, que é o defeito da #2312 de novo.
+  const publicado =
+    gravacao && gravacao.rascunho === windows && gravacao.timezone === timezone
+      ? gravacao.janelas
+      : null;
+  /** Desligado quando não há o que copiar ou quando a cópia estouraria a rota. */
+  const podeCopiar = podeCopiarParaDiasUteis(windows);
+
+  async function salvar() {
+    try {
+      setGravacao({ rascunho: windows, timezone, janelas: await onSave(windows, timezone) });
+    } catch {
+      // O erro já virou toast no hook (`showApiError`) e o diálogo fica ABERTO:
+      // fechar depois de uma gravação que falhou seria dizer que deu certo.
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -243,7 +300,7 @@ function ScheduleDialog({
               </p>
             ) : null}
             {windows.map((w, i) => (
-              <div key={i} className="flex items-center gap-2">
+              <div key={i} data-testid="janela" data-dow={w.dow} className="flex items-center gap-2">
                 <Select
                   value={String(w.dow)}
                   onValueChange={(v) =>
@@ -303,16 +360,71 @@ function ScheduleDialog({
             >
               <Plus size={16} className="mr-1" /> Adicionar janela
             </Button>
+            {/*
+              O DEFEITO DA #2312 EM UMA LINHA: preenchia-se a segunda e o
+              editor deixava a pessoa acreditar que tinha publicado a semana.
+              O botão copia as faixas do dia-modelo para os outros dias úteis,
+              no RASCUNHO — ainda dá para ajustar ou cancelar antes de salvar.
+              Sem janela nenhuma não há o que copiar, e passar do limite da rota
+              (50) viraria erro no salvamento, então os dois casos desligam o
+              botão em vez de prometer o que não vão entregar.
+            */}
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!podeCopiar}
+              title={
+                podeCopiar || windows.length === 0
+                  ? undefined
+                  : t("Limite de 50 janelas por atendente: remova algumas antes de copiar.")
+              }
+              onClick={() => setWindows((ws) => copiarParaDiasUteis(ws))}
+            >
+              <Copy size={16} className="mr-1" />{" "}
+              {t("Copiar estes horários para os outros dias úteis")}
+            </Button>
           </div>
         </div>
 
+        {/*
+          O RESUMO LÊ O RETORNO DA GRAVAÇÃO (`publicado`), nunca o formulário
+          acima. É a outra metade do mesmo defeito: a tela dizia uma semana e o
+          banco guardava um dia. Aqui a pessoa vê o que o banco guardou — e o
+          rodapé vira "Fechar" justamente para ela conferir ANTES de sair, não
+          depois, no toast que ninguém lê.
+        */}
+        {/* A região de status fica SEMPRE montada e o resumo entra dentro dela:
+            leitor de tela anuncia mudança numa região que já existia, não uma
+            região que nasce já cheia. */}
+        <div role="status">
+          {publicado ? (
+            <div data-testid="resumo-publicado" className="space-y-1 rounded-md border p-3">
+              <p className="text-sm font-medium">{t("Publicado")}</p>
+              <ul className="text-sm text-muted-foreground">
+                {resumoDaJornada(publicado, t).map((linha) => (
+                  <li key={linha}>{linha}</li>
+                ))}
+              </ul>
+              <p className="text-xs text-muted-foreground">
+                {t("É isto que ficou gravado — confira os dias e os horários antes de sair.")}
+              </p>
+            </div>
+          ) : null}
+        </div>
+
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancelar
-          </Button>
-          <Button disabled={isPending} onClick={() => onSave(windows, timezone)}>
-            Salvar
-          </Button>
+          {publicado ? (
+            <Button onClick={() => onOpenChange(false)}>{t("Fechar")}</Button>
+          ) : (
+            <>
+              <Button variant="ghost" onClick={() => onOpenChange(false)}>
+                Cancelar
+              </Button>
+              <Button disabled={isPending} onClick={salvar}>
+                Salvar
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -555,7 +667,12 @@ export function AttendantsClient({ canManage, organizationTimezone }: Props) {
                             aria-label={`Editar horário de ${a.name}`}
                             onClick={() => setScheduleFor(a)}
                           >
+                            {/* Rótulo visível (item opcional da #2312): achar o
+                                editor era o primeiro problema — ele era só um
+                                ícone solto na coluna. O `aria-label` fica, é ele
+                                que a automação e o leitor de tela usam. */}
                             <Clock size={16} />
+                            <span className="ml-1 hidden lg:inline">{t("Editar")}</span>
                           </Button>
                         ) : null}
                       </div>
@@ -586,12 +703,16 @@ export function AttendantsClient({ canManage, organizationTimezone }: Props) {
           onOpenChange={(o) => !o && setScheduleFor(null)}
           isPending={patch.isPending}
           organizationTimezone={organizationTimezone}
-          onSave={(windows, timezone) =>
-            patch.mutate(
-              { userId: scheduleFor.userId, patch: { schedule: { timezone, windows } } },
-              { onSuccess: () => setScheduleFor(null) },
-            )
-          }
+          onSave={async (windows, timezone) => {
+            // `mutateAsync`, e não `mutate`: o resumo lê o RETORNO da gravação
+            // (issue #2312) — fechar o diálogo no `onSuccess` era exatamente o
+            // que impedia a pessoa de conferir o que ficou publicado.
+            const resposta = await patch.mutateAsync({
+              userId: scheduleFor.userId,
+              patch: { schedule: { timezone, windows } },
+            });
+            return resposta?.data?.schedule?.windows ?? [];
+          }}
         />
       ) : null}
     </div>

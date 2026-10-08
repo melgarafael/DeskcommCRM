@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -24,11 +24,31 @@ describe("randomId — UUID v4 dentro E fora de secure context", () => {
   });
 
   /**
-   * Régua anti-regressão: código CLIENT-SIDE não pode chamar
-   * crypto.randomUUID() cru — em http://IP isso é TypeError antes do fetch.
-   * Varre todo arquivo com "use client" + o apiClient (entrada compartilhada).
+   * Régua anti-regressão: código que chega ao NAVEGADOR não pode chamar
+   * crypto.randomUUID() cru — em http://IP isso é TypeError.
+   *
+   * A versão anterior só olhava arquivos com "use client" no topo, e por isso
+   * não viu `lib/video/jitsi.ts` (#2441): um módulo de `lib/` sem o marcador,
+   * importado pelo botão de vídeo. O critério agora é o inverso: TODO arquivo
+   * de app/components/hooks/lib que chama crypto.randomUUID() é suspeito, e só
+   * escapa quem está provadamente do lado do servidor — `app/api/**` (rota não
+   * vai ao bundle) ou a lista abaixo, cada um com o motivo escrito.
    */
-  it('nenhum arquivo "use client" (nem lib/api/client.ts) usa crypto.randomUUID cru', () => {
+  const SO_SERVIDOR: Record<string, string> = {
+    "lib/random-id.ts": "é o próprio helper: só delega quando randomUUID existe",
+    "lib/agent-engine/edge/crm/send-ledger.ts":
+      "importa node:crypto; roda no worker do agente e nas rotas de envio",
+    "lib/agent-engine/flywheel/live.ts": "importa pg; só o workers/agent-worker usa",
+    "lib/branding/logo.ts":
+      "o módulo vai ao bundle (CampoDeLogo importa TAMANHO_MAXIMO_DO_LOGO), mas caminhoNovoDoLogo só é chamado em app/api/v1/marca/logo",
+    "lib/channels/nome-da-sessao.ts":
+      "nomeDaSessaoNovo só é chamado em lib/channels/connect-*, que cria a sessão pelo servidor",
+    "lib/followup/nome-da-copia.ts":
+      "nomeDaCopia só é chamado em app/api/v1/ai/followup-flows/[id]/duplicate",
+    "lib/schemas/_validate.ts": "validação de body das rotas de app/api",
+  };
+
+  it("nenhum arquivo que chega ao navegador usa crypto.randomUUID cru", () => {
     const root = join(__dirname, "..");
     const offenders: string[] = [];
     const walk = (dir: string) => {
@@ -38,14 +58,23 @@ describe("randomId — UUID v4 dentro E fora de secure context", () => {
         if (statSync(p).isDirectory()) {
           walk(p);
         } else if (/\.(ts|tsx)$/.test(name) && !/\.test\./.test(name)) {
-          const src = readFileSync(p, "utf8");
-          const isClient =
-            src.slice(0, 200).includes('"use client"') || p.endsWith("lib/api/client.ts");
-          if (isClient && /crypto\.randomUUID\(/.test(src)) offenders.push(p);
+          const rel = relative(root, p).split(sep).join("/");
+          if (rel.startsWith("app/api/") || rel in SO_SERVIDOR) continue;
+          if (/crypto\.randomUUID\(/.test(readFileSync(p, "utf8"))) offenders.push(rel);
         }
       }
     };
     for (const d of ["app", "components", "hooks", "lib"]) walk(join(root, d));
-    expect(offenders).toEqual([]);
+    expect(offenders, "use randomId() de lib/random-id.ts").toEqual([]);
+  });
+
+  it("a lista de só-servidor não guarda arquivo que já não chama randomUUID", () => {
+    // Sem isto a lista só cresce: quem troca para randomId() deixa a isenção
+    // para trás, e um uso novo no mesmo arquivo passaria calado.
+    const root = join(__dirname, "..");
+    const mortos = Object.keys(SO_SERVIDOR).filter(
+      (rel) => !/crypto\.randomUUID\(/.test(readFileSync(join(root, rel), "utf8")),
+    );
+    expect(mortos).toEqual([]);
   });
 });

@@ -21,6 +21,7 @@ export const TIPOS_CADASTRAVEIS_DA_CAPTACAO = [
   "text",
   "textarea",
   "number",
+  "currency",
   "date",
   "email",
   "phone",

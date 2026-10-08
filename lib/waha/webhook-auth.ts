@@ -23,6 +23,9 @@
  *     derrubaria a ingestão de mensagens de todo mundo — remédio pior que a
  *     doença. Quem roda WAHA Plus (ou um proxy que assina) liga e ganha a
  *     verificação forte.
+ *     Para saber se já está assinando, `/admin/sistema` mostra ao lado do
+ *     interruptor se as últimas entregas chegaram assinadas e sugere ligar
+ *     quando sim (`lib/channels/assinatura-das-entregas.ts`, doc 99).
  *  3. Sem assinatura e sem exigência ⇒ aceita, mas devolve `signatureVerified:
  *     false` — e quem chama grava ESSA verdade no log. Antes o log registrava
  *     `valid_signature = true` para evento não verificado.

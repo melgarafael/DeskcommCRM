@@ -20,6 +20,7 @@ import { orgTemAutomatico } from "@/lib/ai/agents/org-tem-automatico";
 import { comandosDaFila } from "@/lib/inbox/comando-da-conversa";
 import { aplicarMarcadores, modoDeEtiqueta } from "@/lib/inbox/marcador-da-conversa";
 import { createClient } from "@/lib/supabase/server";
+import { idsDeContatosPessoais } from "../_handler";
 
 export const dynamic = "force-dynamic";
 
@@ -109,6 +110,11 @@ export async function GET(req: NextRequest): Promise<Response> {
   // ⚠️ TODA contagem nasce daqui, e daqui já sai com `organization_id` E com os
   // filtros auxiliares. Herdar tira a opção de esquecer: não existe o caminho
   // "montei uma contagem e não pus o filtro".
+  //
+  // Pessoal não soma em nenhuma aba (spec 21, etapa 7 — critério 3): ao marcar,
+  // a contagem cai exatamente nas não-lidas daquele contato. A MESMA exclusão
+  // da lista, pela mesma primitiva — sem ela o badge diria o que a aba esconde.
+  const pessoais = await idsDeContatosPessoais(supabase, org);
   // Canal desativado nunca entra na inbox: o mesmo corte da lista, para badge
   // e aba nunca divergirem.
   const idsDesativados = await idsDosCanaisDesativados(supabase, org);
@@ -121,6 +127,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     for (const [coluna, valor] of auxiliares) q = q.eq(coluna, valor);
     // O marcador entra pela régua da LISTA — a mesma função, não uma segunda.
     q = aplicarMarcadores(q, marcadores, modo);
+    if (pessoais.length > 0) q = q.not("contact_id", "in", `(${pessoais.join(",")})`);
     if (soNaoLidas) q = q.gt("unread_count_for_assignee", 0);
     return q;
   };

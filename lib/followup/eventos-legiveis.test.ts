@@ -210,6 +210,21 @@ describe("descreveEvento", () => {
     expect(r.detalhe).toBe("foi para Primeira cutucada");
   });
 
+  it("o mover recusado diz que o card NÃO andou, com o motivo da recusa", () => {
+    const r = descreveEvento(
+      evento({
+        node_id: "m1",
+        event_type: "move_lead_failed",
+        payload: { error: "Informe o motivo da perda.", codigo: "lost_reason_required" },
+      }),
+      nos,
+      "pt-BR",
+    );
+    expect(r.titulo).toBe("Não conseguiu mover o card para a etapa escolhida");
+    expect(r.detalhe).toBe("Informe o motivo da perda.");
+    expect(r.autor).toBe("motor");
+  });
+
   it("tipo desconhecido não vira jargão disfarçado de frase, mas também não some", () => {
     const r = descreveEvento(evento({ event_type: "passo_que_ainda_nao_existe" }), nos, "pt-BR");
     expect(r.titulo).toBe("Passo registrado pelo motor");

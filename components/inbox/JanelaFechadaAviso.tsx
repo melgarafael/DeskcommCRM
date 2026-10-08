@@ -8,6 +8,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
 import { useSendMessage } from "@/hooks/inbox/useSendMessage";
+import {
+  renderTemplatePreview,
+  type BlocoDaPrevia,
+  type PreviaDaMensagem,
+} from "@/lib/channels/meta/render-template";
 import { fonteDeTemplates, rotaDeTemplates } from "@/lib/channels/templates-fonte";
 import { lerConteudo } from "@/lib/channels/template-conteudo";
 import { cn } from "@/lib/utils";
@@ -42,6 +47,20 @@ import { cn } from "@/lib/utils";
  * deste lado. A chave de cada valor é a `valueKey` que a rota calcula com
  * `slotKey`, a MESMA função que monta o payload de envio: cabeçalho de mídia e
  * `{{1}}` do corpo têm a mesma `key` e só o endereço os separa.
+ *
+ * ─── A prévia em tempo real (#2446) ─────────────────────────────────────────
+ *
+ * O atendente preenchia os campos sem ver o resultado: a tela mostrava só o
+ * rótulo de cada slot, e o valor no campo errado (ou a frase sem sentido) só se
+ * descobria depois, na bolha — quando a janela já não deixa corrigir. Agora a
+ * escolha do modelo abre a prévia da mensagem INTEIRA: cabeçalho (mídia desenhada
+ * do link), corpo, rodapé e botões, com cada `{{n}}` trocado pelo valor conforme
+ * ele é digitado, e o que continua vazio aparecendo como `{{n}}` destacado.
+ *
+ * A prévia é filha do envio, não irmã gêmea: ela sai de `renderTemplatePreview`,
+ * que compartilha com `renderTemplateBody` (o texto que a cadeia `before_send`
+ * avalia como o que o LEAD vai ler) o mapa de valores por `slotKey` e a troca do
+ * placeholder. Duas rotinas de substituição teriam como divergir; uma só, não.
  *
  * ─── O link salvo no modelo ─────────────────────────────────────────────────
  *
@@ -109,6 +128,181 @@ function textoDoModelo(modelo: ModeloAprovado): string {
   return lerConteudo(modelo.components ?? []).body?.trim() || modelo.name;
 }
 
+/**
+ * Um trecho do texto da prévia — com cada `{{n}}` SEM valor destacado.
+ *
+ * O placeholder não some quando o campo está vazio: ele é a metade visual do
+ * contrato "campo vazio continua aparecendo como `{{n}}` destacado" (#2446).
+ * Sumir com ele deixaria a prévia parecer pronta enquanto o envio seria recusado
+ * por `missingSlots` — a mesma mentira que este painel já pagou em 21/09/2026.
+ *
+ * O chip é o MESMO desenho que a tela Conexões → Templates usa para marcar os
+ * `{{n}}` do texto aprovado: o operador aprende a marca uma vez e a reconhece
+ * nas duas telas.
+ */
+function Trecho({ texto }: { texto: string }) {
+  const partes = texto.split(/(\{\{\w+\}\})/g);
+  return (
+    <>
+      {partes.map((parte, i) =>
+        /^\{\{\w+\}\}$/.test(parte) ? (
+          <span
+            key={i}
+            data-testid="parametro-em-falta"
+            className="rounded-md bg-primary/10 px-1 py-0.5 font-mono text-[11px] font-medium text-primary ring-1 ring-primary/20"
+          >
+            {parte}
+          </span>
+        ) : (
+          <span key={i}>{parte}</span>
+        ),
+      )}
+    </>
+  );
+}
+
+/** Mídia do cabeçalho, corpo e cabeçalho de UM bloco — o de cima ou o de um card. */
+function Bloco({ bloco, prefixo }: { bloco: BlocoDaPrevia; prefixo: string }) {
+  const t = useT();
+  return (
+    <>
+      {bloco.midia && (
+        <div data-testid={`${prefixo}midia`} className="min-w-0">
+          {bloco.midia.link ? (
+            bloco.midia.formato === "image" ? (
+              <img
+                src={bloco.midia.link}
+                alt={t("Prévia da mídia do cabeçalho")}
+                className="max-h-36 w-full rounded-md border border-amber-300/60 object-cover dark:border-amber-800/60"
+              />
+            ) : bloco.midia.formato === "video" ? (
+              <video
+                src={bloco.midia.link}
+                controls
+                preload="metadata"
+                className="max-h-36 w-full rounded-md border border-amber-300/60 dark:border-amber-800/60"
+              />
+            ) : (
+              <a
+                href={bloco.midia.link}
+                target="_blank"
+                rel="noreferrer"
+                className="block truncate rounded-md border border-input bg-background px-2 py-1 text-xs underline"
+              >
+                {bloco.midia.link}
+              </a>
+            )
+          ) : (
+            // Sem link não há o que desenhar. Dizer isso é melhor que um
+            // retângulo de imagem quebrada — e o campo acima é onde ele entra.
+            <p className="text-xs text-amber-900/70 dark:text-amber-200/70">
+              {t("Cole o link da mídia para ver a prévia aqui.")}
+            </p>
+          )}
+        </div>
+      )}
+
+      {bloco.cabecalho && (
+        <p
+          data-testid={`${prefixo}cabecalho`}
+          className="wrap-anywhere text-sm font-semibold text-amber-900 dark:text-amber-200"
+        >
+          <Trecho texto={bloco.cabecalho} />
+        </p>
+      )}
+
+      {bloco.corpo && (
+        <p
+          data-testid={`${prefixo}corpo`}
+          className="whitespace-pre-wrap wrap-anywhere text-sm leading-relaxed text-amber-900 dark:text-amber-200"
+        >
+          <Trecho texto={bloco.corpo} />
+        </p>
+      )}
+    </>
+  );
+}
+
+/** Os botões do bloco, na ordem da definição — é o cliente quem escolhe um deles. */
+function Botoes({ bloco, prefixo }: { bloco: BlocoDaPrevia; prefixo: string }) {
+  if (bloco.botoes.length === 0) return null;
+  return (
+    <div
+      data-testid={`${prefixo}botoes`}
+      className="flex flex-col gap-1 border-t border-amber-300/60 pt-1.5 dark:border-amber-800/60"
+    >
+      {bloco.botoes.map((botao, i) => (
+        <div
+          key={`${botao.tipo}:${i}`}
+          className="flex items-center justify-between gap-2 rounded-md border border-input bg-background px-2 py-1 text-xs"
+        >
+          <span className="font-medium">
+            <Trecho texto={botao.texto} />
+          </span>
+          {botao.url && (
+            <span className="min-w-0 truncate text-muted-foreground">
+              <Trecho texto={botao.url} />
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * A prévia da mensagem COMPLETA — cabeçalho, corpo, rodapé e botões.
+ *
+ * O atendente a olha ENQUANTO preenche: é ela que responde à pergunta "como vai
+ * ficar para o cliente?", que antes só se respondia depois do envio, na bolha.
+ *
+ * Os textos vêm de `renderTemplatePreview`, que é o MESMO núcleo de
+ * `renderTemplateBody` — a função que monta o texto do envio e que a cadeia
+ * `before_send` avalia. Prévia e mensagem enviada, portanto, não têm como
+ * divergir: não há duas rotinas de substituição para driftar.
+ */
+function Previa({ previa }: { previa: PreviaDaMensagem }) {
+  const t = useT();
+  return (
+    <div
+      data-testid="previa-modelo"
+      role="group"
+      aria-label={t("Prévia da mensagem")}
+      className="mt-2 flex flex-col gap-1.5 rounded-md border border-amber-300/70 bg-background/60 p-2.5 dark:border-amber-800/70 dark:bg-black/25"
+    >
+      <span className="text-[10px] font-medium uppercase tracking-wide text-amber-900/70 dark:text-amber-200/70">
+        {t("Prévia da mensagem")}
+      </span>
+
+      <Bloco bloco={previa} prefixo="previa-" />
+
+      {previa.rodape && (
+        <p
+          data-testid="previa-rodape"
+          className="text-[11px] text-amber-900/70 dark:text-amber-200/70"
+        >
+          {previa.rodape}
+        </p>
+      )}
+
+      <Botoes bloco={previa} prefixo="previa-" />
+
+      {previa.cards.map((card) => (
+        <div
+          key={card.indice}
+          className="flex flex-col gap-1.5 rounded-md border border-dashed border-amber-300/70 p-1.5 dark:border-amber-800/70"
+        >
+          <span className="text-[10px] font-medium uppercase tracking-wide text-amber-900/70 dark:text-amber-200/70">
+            {t("Item do carrossel")} {card.indice + 1}
+          </span>
+          <Bloco bloco={card} prefixo={`previa-card-${card.indice}-`} />
+          <Botoes bloco={card} prefixo={`previa-card-${card.indice}-`} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function JanelaFechadaAviso({
   conversationId,
   provider,
@@ -150,6 +344,20 @@ export function JanelaFechadaAviso({
   // faz no servidor, feita antes do clique: recusar depois de enviar é a
   // experiência que este conserto existe para acabar.
   const faltando = slots.filter((s) => !(valores[s.valueKey] ?? "").trim());
+
+  // A prévia é remontada a cada tecla — é ela que mostra o resultado do
+  // preenchimento ENQUANTO ele acontece (#2446). Sai da MESMA função que monta
+  // o texto do envio (`renderTemplatePreview` e `renderTemplateBody` são o mesmo
+  // núcleo), então prévia e mensagem enviada não têm como divergir. Sem
+  // `useMemo` aqui de propósito: o React Compiler recusa memoização cuja
+  // dependência (`valores`) é reatribuída adiante, e derivar o contrato de um
+  // modelo cabe em microssegundos — não vale uma memoização que o compiler veta.
+  const previa = atual
+    ? renderTemplatePreview(atual.components ?? [], valores, {
+        name: atual.name,
+        language: atual.language,
+      })
+    : null;
 
   /** Trocar de modelo zera os valores (chave de um não vale para o outro) e traz os salvos. */
   function escolher(valor: string) {
@@ -274,6 +482,12 @@ export function JanelaFechadaAviso({
           </Button>
         </div>
       )}
+
+      {/* A prévia vem ANTES dos campos: escolher o modelo mostra na hora como a
+          mensagem vai ficar para o cliente, e os `{{n}}` destacados dizem o que
+          ainda falta preencher — a pergunta que antes só se respondia depois do
+          envio, na bolha da conversa (#2446). */}
+      {previa && <Previa previa={previa} />}
 
       {slots.length > 0 && (
         <div className="mt-2 flex flex-col gap-2">

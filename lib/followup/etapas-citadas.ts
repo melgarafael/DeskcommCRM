@@ -15,6 +15,10 @@ export interface EtapaCitada {
   /** «Etapa · Funil»: todo funil nasce com «Novo / Em andamento / Ganho / Perdido», e o nome sozinho não identifica a etapa. */
   nome: string;
   arquivada: boolean;
+  /** `crm_stages.is_lost` — a etapa fecha o negócio como perda e exige motivo. */
+  isPerda: boolean;
+  /** `crm_pipelines.settings` cru do funil da etapa — o vocabulário de motivos extras. */
+  settingsDoFunil: unknown;
 }
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -38,7 +42,7 @@ export function idsDeEtapaCitados(nodes: readonly FlowNode[]): string[] {
   return [...ids];
 }
 
-type Linha = { id: string; name: string; is_archived: boolean; crm_pipelines: { name: string } | { name: string }[] | null };
+type Linha = { id: string; name: string; is_archived: boolean; is_lost: boolean | null; crm_pipelines: { name: string; settings: unknown } | { name: string; settings?: unknown }[] | null };
 
 export async function carregaEtapasCitadas(
   client: SupabaseClient,
@@ -51,7 +55,7 @@ export async function carregaEtapasCitadas(
 
   const { data, error } = await client
     .from("crm_stages")
-    .select("id, name, is_archived, crm_pipelines(name)")
+    .select("id, name, is_archived, is_lost, crm_pipelines(name, settings)")
     .eq("organization_id", orgId)
     .in("id", ids);
   // Erro NÃO vira mapa vazio: vazio leria como "nenhuma dessas etapas existe" e
@@ -63,6 +67,8 @@ export async function carregaEtapasCitadas(
     etapas.set(linha.id, {
       nome: funil?.name ? `${linha.name} · ${funil.name}` : linha.name,
       arquivada: linha.is_archived,
+      isPerda: linha.is_lost === true,
+      settingsDoFunil: (funil as { settings?: unknown } | undefined)?.settings ?? null,
     });
   }
   return { ok: true, etapas };

@@ -97,7 +97,9 @@ export async function mensagensPendentesDoTurno(
       const corpo = (m.body?.trim() ? m.body : m.media_derived_text) ?? "";
       if (corpo.trim() !== "") pendentes.unshift(corpo);
     }
-    return { conversationId, mensagens: pendentes.map(scrubMessage) };
+    // Sem os perfis de país (#2418): a pergunta ao Jev leva o valor CRU, e um
+    // `[CEP]` aqui faria a conferência recusar o CEP que o cliente digitou.
+    return { conversationId, mensagens: pendentes.map((m) => scrubMessage(m, { perfisDePais: false })) };
   } catch {
     return { conversationId: null, mensagens: [] };
   }

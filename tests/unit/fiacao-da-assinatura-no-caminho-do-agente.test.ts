@@ -92,6 +92,8 @@ vi.mock("@/lib/ai/pontos/pkce-da-assinatura", async (orig) => {
 const tokens: TokensDoCodex = {
   access_token: "at-1234567890",
   refresh_token: "rt-9876543210",
+  client_id: "siwc-client-test",
+  scopes: ["chatgpt.tokens.use.direct"],
   expires_at: null,
 };
 
@@ -167,7 +169,8 @@ function poolDoSeam(provider: string) {
       return {
         rows: [
           {
-            llm: { provider, default_model: "gpt-5-teste", params: {}, enabled_models: [] },
+            // O par tem de ser coerente (#2377): a Anthropic recebe um id dela.
+            llm: { provider, default_model: provider === "anthropic" ? "claude-teste" : "gpt-5-teste", params: {}, enabled_models: [] },
             teto: null,
             modo: null,
             efetivo_em: null,
@@ -199,6 +202,9 @@ const registroQueFalha = (erro: unknown) => (_apiKey: string,
     provider: PROVEDOR_POR_ASSINATURA,
     modelId: "gpt-5",
     doGenerate: async () => {
+      throw erro;
+    },
+    doStream: async () => {
       throw erro;
     },
   }) as never;

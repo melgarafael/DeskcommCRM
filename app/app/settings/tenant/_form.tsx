@@ -34,6 +34,12 @@ export function TenantForm({ initial }: Props) {
   const [form, setForm] = useState<TenantInput>(initial);
   const [isPending, startTransition] = useTransition();
 
+  // O rótulo do nome legal e do número da empresa vem do PERFIL DO PAÍS
+  // (issue #1946, item 4): a mesma troca de país que muda o documento do
+  // contato muda estes dois rótulos. Escrevê-los aqui em duro mostrava
+  // "Razão social"/"CNPJ" para uma organização em Portugal.
+  const perfil = perfilDoPais(form.country);
+
   function set<K extends keyof TenantInput>(key: K, value: TenantInput[K]) {
     setForm((f) => ({ ...f, [key]: value }));
   }
@@ -66,7 +72,7 @@ export function TenantForm({ initial }: Props) {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="legal_name">{t("Razão social")}</Label>
+            <Label htmlFor="legal_name">{t(perfil.empresa.rotuloNomeLegal)}</Label>
             <Input
               id="legal_name"
               value={form.legal_name}
@@ -75,7 +81,7 @@ export function TenantForm({ initial }: Props) {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="cnpj">{t("CNPJ")}</Label>
+            <Label htmlFor="cnpj">{t(perfil.empresa.rotuloNumero)}</Label>
             <Input
               id="cnpj"
               value={form.cnpj ?? ""}
@@ -167,7 +173,7 @@ export function TenantForm({ initial }: Props) {
             {/* Quem responde pelo documento precisa saber que a revisão foi
                 feita por IA (doc 88). O texto fala de Portugal: só o perfil PT
                 declara `revisadaPorIa`, e um teste prende isso. */}
-            {perfilDoPais(form.country).lei?.revisadaPorIa && (
+            {perfil.lei?.revisadaPorIa && (
               <p
                 role="note"
                 data-testid="aviso-revisao-por-ia"
@@ -197,11 +203,11 @@ export function TenantForm({ initial }: Props) {
               </Label>
               <p className="text-xs text-muted-foreground">
                 {form.media_retention_enforced
-                  ? t("Ligado: apaga a mídia com mais de {n} dias.").replace(
+                  ? t("Ligado: apaga a mídia e o anexo de nota interna com mais de {n} dias.").replace(
                       "{n}",
                       String(form.media_retention_days),
                     )
-                  : t("Desligado: a mídia das conversas não é apagada por idade.")}
+                  : t("Desligado: a mídia das conversas e os anexos de nota interna não são apagados por idade.")}
               </p>
             </div>
             <Switch
@@ -209,7 +215,7 @@ export function TenantForm({ initial }: Props) {
               checked={form.media_retention_enforced}
               onCheckedChange={(v) => {
                 if (v && !form.media_retention_enforced) {
-                  if (window.confirm(t("Ao ligar, a mídia de mensagem com mais de {n} dias começará a ser apagada.").replace("{n}", String(form.media_retention_days)))) {
+                  if (window.confirm(t("Ao ligar, a mídia de mensagem e o anexo de nota interna com mais de {n} dias começarão a ser apagados.").replace("{n}", String(form.media_retention_days)))) {
                     set("media_retention_enforced", true);
                   }
                 } else {

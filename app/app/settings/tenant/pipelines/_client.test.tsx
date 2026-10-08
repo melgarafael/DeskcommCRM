@@ -343,3 +343,33 @@ describe("retomada de negócio encerrado (#1538)", () => {
     expect(vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1].reabertura).toBe("mesmo_registro");
   });
 });
+
+describe("comanda do ganho (#1477)", () => {
+  beforeEach(() => vi.mocked(updatePipelineConfig).mockClear());
+  const salvar = () =>
+    fireEvent.click(screen.getByRole("button", { name: "Salvar vocabulário e campos" }));
+  const ROTULO = "Abrir comanda ao ganhar um negócio neste funil";
+
+  it("nasce desligada e ligar grava `comanda_no_ganho: true` na porta única de escrita", () => {
+    render(<PipelinesClient pipelines={[FUNIL]} etapas={{}} podeEditarConfig />);
+    const caixa = screen.getByLabelText(ROTULO);
+    expect(caixa).not.toBeChecked();
+
+    fireEvent.click(caixa);
+    salvar();
+
+    expect(vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1].comanda_no_ganho).toBe(true);
+  });
+
+  it("funil já ligado abre marcado, e desligar grava `false`", () => {
+    const ligado: PipelineRow = { ...FUNIL, settings: { ...FUNIL.settings, comanda_no_ganho: true } };
+    render(<PipelinesClient pipelines={[ligado]} etapas={{}} podeEditarConfig />);
+    const caixa = screen.getByLabelText(ROTULO);
+    expect(caixa).toBeChecked();
+
+    fireEvent.click(caixa);
+    salvar();
+
+    expect(vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1].comanda_no_ganho).toBe(false);
+  });
+});

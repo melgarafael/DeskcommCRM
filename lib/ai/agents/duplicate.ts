@@ -13,6 +13,11 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import {
+  MENSAGEM_PROVEDOR_DESLIGADO,
+  provedorDesligadoNaInstalacao,
+} from "@/lib/ai/pontos/provedores-oferecidos";
+
 import { mcpAgentDraftRecords } from "./create-draft";
 import { corpoLegadoComoCorpoDeCriacao } from "./legado-para-versao";
 import { agentMcpCreateSchema } from "./validation";
@@ -34,7 +39,8 @@ export type DuplicateAgentError =
   | "not_found"
   | "no_version_to_duplicate"
   | "agent_insert_failed"
-  | "version_insert_failed";
+  | "version_insert_failed"
+  | "provedor_desligado";
 
 export type DuplicateAgentResult =
   | {
@@ -191,6 +197,16 @@ export async function duplicateAgentWithVersion(
   const receitaLegada = corpoLegado
     ? mcpAgentDraftRecords({ orgId, userId: actorUserId }, corpoLegado.data)
     : null;
+
+  // A cópia GRAVA o provedor da origem, e gravar passa pela mesma régua do
+  // editor (#2458): com o módulo `login_codex` desligado, a assinatura do
+  // ChatGPT não volta por aqui. Recusar, e não trocar de provedor em silêncio:
+  // quem duplica espera uma cópia, e uma cópia que fala com outra IA seria
+  // surpresa descoberta no primeiro atendimento. Antes do primeiro insert, para
+  // a recusa não deixar agente órfão.
+  if (await provedorDesligadoNaInstalacao(admin, srcVersion?.provider as string | undefined)) {
+    return { ok: false, error: "provedor_desligado", message: MENSAGEM_PROVEDOR_DESLIGADO };
+  }
 
   const { data: newAgent, error: agentErr } = await admin
     .from("ai_agents")

@@ -426,6 +426,20 @@ describe("as mensagens do turno — o Conversador antes da resposta, o Operador 
     expect(await pendentes(depois)).toEqual(["procuro algo pequeno", "pra mim e meu cachorro"]);
   });
 
+  // A pergunta ao Jev leva o valor CRU ("CEP é 01310-100?"). Se a mensagem
+  // chegasse com `[CEP]` — a máscara de telemetria do #2418 —, a conferência
+  // recusaria o CEP que o cliente acabou de digitar. CPF segue mascarado.
+  it("CEP e telefone com hífen chegam como o cliente digitou; CPF segue mascarado", async () => {
+    expect(
+      await pendentes([
+        msg("outbound", "qual o seu cep?", 0),
+        msg("inbound", "meu cep é 01310-100", 1),
+        msg("inbound", "zap +55-11-98765-4321", 2),
+        msg("inbound", "cpf 123.456.789-09", 3),
+      ]),
+    ).toEqual(["meu cep é 01310-100", "zap +55-11-98765-4321", "cpf [CPF]"]);
+  });
+
   it("conversa longa (mais que as 1000 linhas do PostgREST): lê as mais recentes, nunca as do começo", async () => {
     const longa = [
       ...Array.from({ length: 1100 }, (_, i) => msg(i % 2 === 0 ? "inbound" : "outbound", `antiga ${i}`, i % 60)),

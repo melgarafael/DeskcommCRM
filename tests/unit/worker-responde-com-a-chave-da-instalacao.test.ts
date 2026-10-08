@@ -159,6 +159,12 @@ describe("o worker responde com a chave da instalação", () => {
     // cadastrada) roda a cada evento do worker de sentimento. A única leitura
     // de `organizations` que lhe cabe é a da procura por credencial; a do
     // provedor só serve a id BARE e seria descartada aqui.
+    //
+    // O provedor da organização deste cenário é a ANTHROPIC, que é o que o
+    // teste descreve (chave Anthropic no ambiente). Com `openai` gravado, o par
+    // `openai + anthropic/claude-haiku-4-5` é recusado de propósito pela régua
+    // nova da issue #2377 — e este teste não é sobre a régua.
+    estado.settings = { llm: { provider: "anthropic" } };
     envMock.ANTHROPIC_API_KEY = "sk-ant";
 
     const resolvido = await resolverModeloDoPonto(
@@ -220,5 +226,29 @@ describe("o worker responde com a chave da instalação", () => {
     const resolvido = await resolverModeloDoPonto("bot_respond", ORG, "claude-haiku-4-5");
 
     expect(resolvido).toBeNull();
+  });
+});
+
+describe("o default de classificação numa VPS já instalada (#2377)", () => {
+  const HAIKU = "anthropic/claude-haiku-4-5";
+
+  it("org em openai SEM par próprio executável e só a chave Anthropic: classifica com o piso, não para", async () => {
+    estado.settings = { llm: { provider: "openai" } };
+    envMock.ANTHROPIC_API_KEY = "sk-ant";
+
+    const r = await resolverModeloDoPonto("sentiment_classify", ORG, HAIKU, { naFaltaUsarOPadraoDaOrganizacao: true });
+
+    expect(r?.modelId).toBe(HAIKU);
+    expect(r?.origem).toBe("padrao");
+  });
+
+  it("org em openai COM par próprio executável: classifica com o par dela, não com o Claude", async () => {
+    estado.settings = { llm: { provider: "openai", default_model: MODELO_PADRAO_DA_OPENAI } };
+    envMock.ANTHROPIC_API_KEY = "sk-ant";
+    envMock.OPENAI_API_KEY = "sk-openai";
+
+    const r = await resolverModeloDoPonto("sentiment_classify", ORG, HAIKU, { naFaltaUsarOPadraoDaOrganizacao: true });
+
+    expect(r?.modelId).toBe(`openai/${MODELO_PADRAO_DA_OPENAI}`);
   });
 });

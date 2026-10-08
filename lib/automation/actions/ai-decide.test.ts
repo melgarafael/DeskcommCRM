@@ -306,7 +306,10 @@ describe("execução: a escolha vira a ação-alvo", () => {
     const semCusto = structuredClone(AI_DECIDE);
     delete (semCusto.config as Record<string, unknown>).custo_de_token;
 
-    const resultado = await executor().execute(ctx({ lead: { id: LEAD, contact_id: null, tags: [] } }), semCusto.config);
+    // Client que responde: sem ele a leitura do interruptor da empresa (#2367)
+    // lança e o passo para em `ai_decide_interruptor_ilegivel`, antes do custo.
+    const fake = adminFake({ lead: { id: LEAD, contact_id: null, tags: [] } });
+    const resultado = await executor().execute(ctx({ lead: { id: LEAD, contact_id: null, tags: [] } }, fake.admin), semCusto.config);
 
     expect(resultado).toEqual({
       type: "ai_decide",
