@@ -39,11 +39,40 @@ export async function GET(
   }
 
   const alvo = await tabelaDoObjeto(modulo, objeto);
-  if (!alvo) {
+  const admin = createAdminClient();
+
+  /**
+   * ⚠️ AS DUAS RECUSAS RESPONDEM O MESMO 404, e isso é de propósito.
+   *
+   * Antes, "módulo não instalado" dava 404 e "a sua empresa não tem nenhuma ficha" dava 200 com
+   * `rotulo` e `campos`. Quem quisesse descobrir quais módulos as OUTRAS empresas do mesmo
+   * servidor usam só precisava comparar as duas respostas — a rota era um oráculo do catálogo da
+   * instalação. Um cético achou isso quando o conserto anterior (esconder o painel vazio na tela)
+   * já estava verde: a tela não mostrava, e o dado descia de todo jeito.
+   *
+   * Agora as duas são indistinguíveis — mesmo código, mesma mensagem, mesmo status. Quem tem ficha
+   * lê; para todo o resto, o módulo não existe. O recorte por organização de verdade está em
+   * `paineisDaEntidade`, que nem monta o painel; isto aqui é a segunda camada, para a rota não
+   * responder a quem a chamar direto.
+   *
+   * Custo: uma contagem `head` por pedido. A alternativa — devolver lista vazia — é exatamente o
+   * oráculo.
+   */
+  const semFicha = async (): Promise<boolean> => {
+    const { count, error } = await admin
+      .from(alvo!.tabela)
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", autorizado.org.orgId)
+      .limit(1);
+    // Falha de leitura NÃO abre a porta: na dúvida, o módulo não existe para esta empresa.
+    if (error) return true;
+    return (count ?? 0) === 0;
+  };
+
+  if (!alvo || (await semFicha())) {
     return fail("not_found", "Este módulo não guarda esta informação nesta instalação.", 404);
   }
 
-  const admin = createAdminClient();
   let consulta = admin
     .from(alvo.tabela)
     .select("*")

@@ -3,6 +3,8 @@ import "server-only";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+import { nomeDaTabela } from "./nome";
+
 /**
  * Quais módulos de dados mostram ficha NA tela de uma entidade do núcleo.
  *
@@ -49,7 +51,33 @@ function declaraRefPara(objeto: ObjetoDeclarado, entidade: EntidadeDoNucleo): bo
   );
 }
 
-export async function paineisDaEntidade(entidade: EntidadeDoNucleo): Promise<PainelDeModulo[]> {
+/**
+ * ⚠️ O `orgId` NÃO É DECORAÇÃO, e a razão foi medida por um cético.
+ *
+ * O módulo é instalado por INSTALAÇÃO (ADR-0002 D3) e isso não muda. O que passa a ser por
+ * organização é **o que a tela de uma empresa chega a saber**: sem recorte aqui, o NOME do módulo
+ * chega ao navegador de toda empresa da instalação por três caminhos, e esconder o painel no
+ * componente não fecha nenhum deles —
+ *
+ *   1. o destino é `"use client"`, então `{ modulo, objeto }` vai SERIALIZADO no payload da página;
+ *   2. o componente busca `/api/v1/modulos/<modulo>/<objeto>`, e o nome aparece na aba de rede;
+ *   3. a rota respondia 200 com `rotulo` e `campos` mesmo sem nenhuma ficha da empresa.
+ *
+ * Numa instalação de revendedor, isso conta a uma empresa quais módulos as OUTRAS usam. A régua
+ * que fecha os três: painel existe para esta empresa só se ela tem ao menos UMA linha na tabela do
+ * módulo — e quem decide isso é o servidor, antes de qualquer coisa descer.
+ *
+ * Custo: uma contagem `head` por objeto declarado, só para módulos de dados instalados. O catálogo
+ * oficial não publica nenhum hoje, então na prática são zero consultas; com N módulos são N
+ * contagens por render da ficha. Se isso aparecer num perfil, o caminho é uma view materializada
+ * por organização, não tirar o recorte.
+ *
+ * `orgId` vem da SESSÃO em quem chama (`resolveActiveOrg`), nunca da URL.
+ */
+export async function paineisDaEntidade(
+  entidade: EntidadeDoNucleo,
+  orgId: string,
+): Promise<PainelDeModulo[]> {
   const admin = createAdminClient();
   /**
    * ⚠️ A DICA `!artifact_id` NÃO É ENFEITE. `extension_installations` tem DUAS chaves
@@ -61,7 +89,7 @@ export async function paineisDaEntidade(entidade: EntidadeDoNucleo): Promise<Pai
    */
   const { data, error } = await admin
     .from("extension_installations")
-    .select("name, extension_artifacts!artifact_id!inner(manifest)")
+    .select("publisher, name, extension_artifacts!artifact_id!inner(manifest)")
     .is("removed_at", null)
     .order("name", { ascending: true });
   if (error || !data) {
@@ -83,8 +111,9 @@ export async function paineisDaEntidade(entidade: EntidadeDoNucleo): Promise<Pai
     return [];
   }
 
-  const paineis: PainelDeModulo[] = [];
+  const candidatos: Array<PainelDeModulo & { tabela: string }> = [];
   for (const linha of data as unknown as {
+    publisher: string;
     name: string;
     extension_artifacts: { manifest: unknown } | { manifest: unknown }[] | null;
   }[]) {
@@ -93,9 +122,33 @@ export async function paineisDaEntidade(entidade: EntidadeDoNucleo): Promise<Pai
       : linha.extension_artifacts;
     for (const objeto of objetosDeDados(bruto?.manifest)) {
       if (typeof objeto.slug === "string" && declaraRefPara(objeto, entidade)) {
-        paineis.push({ modulo: linha.name, objeto: objeto.slug });
+        candidatos.push({
+          modulo: linha.name,
+          objeto: objeto.slug,
+          tabela: nomeDaTabela(linha.publisher, linha.name, objeto.slug),
+        });
       }
     }
+  }
+
+  const paineis: PainelDeModulo[] = [];
+  for (const candidato of candidatos) {
+    const { count, error: erroDaContagem } = await admin
+      .from(candidato.tabela)
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgId)
+      .limit(1);
+    if (erroDaContagem) {
+      // Falha fechada, e com rastro: sem painel, mas a razão fica no log. Tabela ausente aqui só
+      // aconteceria num banco onde o compilador não rodou, e aí não há o que mostrar mesmo.
+      logger.warn("painéis de módulo: contagem recusada — este módulo fica fora da ficha", {
+        modulo: candidato.modulo,
+        codigo: erroDaContagem.code,
+        detalhe: erroDaContagem.message,
+      });
+      continue;
+    }
+    if ((count ?? 0) > 0) paineis.push({ modulo: candidato.modulo, objeto: candidato.objeto });
   }
   return paineis;
 }

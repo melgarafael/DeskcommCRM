@@ -312,6 +312,10 @@ test("módulo removido: o painel sai e a ficha do contato segue inteira", async 
     timeout: ESPERA,
   });
   await expect(page.getByText(ROTULO, { exact: true })).toHaveCount(0);
+  // ⚠️ A AUSÊNCIA DO RÓTULO NÃO BASTA: ela também seria verdade se o painel tivesse caído no
+  // estado de ERRO, que desenha outro texto. Aí o teste estaria verde sobre um painel quebrado em
+  // vez de um painel removido. Esta linha separa as duas coisas.
+  await expect(page.getByText(/Não foi possível carregar/i)).toHaveCount(0);
 
   // E o dado NÃO foi apagado: remover é lógico.
   const { count } = await db

@@ -93,6 +93,28 @@ describe("FichasDoModulo", () => {
     expect(screen.queryByText("Odontograma")).toBeNull();
   });
 
+  /**
+   * ⚠️ 404 É SILÊNCIO; 5xx É AVISO. A distinção é de privacidade, não de estilo.
+   *
+   * A rota responde o MESMO 404 para "módulo não instalado" e para "esta empresa não tem nenhuma
+   * ficha" — de propósito, para não ser oráculo do catálogo da instalação. Se o componente
+   * traduzisse esse 404 em "Não foi possível carregar o que este módulo guarda", ele desfaria o
+   * cuidado da rota: a frase revelaria que o módulo existe E daria a impressão de defeito.
+   *
+   * Então: 404 não desenha nada. Qualquer outra falha (rede, 5xx) continua avisando, porque aí há
+   * de fato algo quebrado e calar seria esconder defeito de quem opera.
+   */
+  it("⭐ 404 não desenha NADA — nem o aviso de falha, nem o nome do módulo", async () => {
+    fetchFalso.mockReturnValue(resposta({ error: { code: "not_found" } }, 404));
+
+    render(<FichasDoModulo modulo="odontograma" objeto="marcacao" contatoId="c1" />);
+
+    await waitFor(() => expect(fetchFalso).toHaveBeenCalled());
+    expect(screen.queryByText(/Não foi possível carregar/i)).toBeNull();
+    expect(screen.queryByText("Odontograma")).toBeNull();
+    expect(screen.queryByRole("table")).toBeNull();
+  });
+
   it("quando a leitura falha, avisa e NÃO derruba a ficha do contato", async () => {
     fetchFalso.mockReturnValue(resposta({ error: { code: "upstream_unavailable" } }, 503));
 
