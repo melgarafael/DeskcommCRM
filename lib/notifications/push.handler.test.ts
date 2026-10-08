@@ -14,7 +14,25 @@ const enviarPushDaOrgMock = vi.fn(async (_organizationId: string, _payload: Push
 const enviarPushAoUsuarioMock = vi.fn(
   async (_organizationId: string, _userId: string | null, _payload: PushPayload) => ({ sent: 0, gone: 0 }),
 );
+const enviarPushAosUsuariosMock = vi.fn(
+  async (_organizationId: string, _userIds: ReadonlyArray<string>, _payload: PushPayload) => ({ sent: 2, gone: 0 }),
+);
+// A decisão de destinatários tem suíte própria (`destinatarios-da-mensagem.test.ts`);
+// aqui só interessa que o handler OBEDEÇA ao que ela decidir.
+const carregarDestinatariosMock = vi.fn(
+  async (..._args: unknown[]): Promise<{ tipo: "todos" } | { tipo: "restrito"; userIds: string[] } | null> => ({
+    tipo: "todos",
+  }),
+);
+vi.mock("./destinatarios-da-mensagem", () => ({
+  carregarDestinatariosDaMensagem: (...args: unknown[]) => carregarDestinatariosMock(...args),
+}));
+vi.mock("@/lib/branding/saida", () => ({
+  marcaDaSaida: async () => ({ nome: "Marca" }),
+}));
 vi.mock("./web_push", () => ({
+  enviarPushAosUsuarios: (organizationId: string, userIds: ReadonlyArray<string>, payload: PushPayload) =>
+    enviarPushAosUsuariosMock(organizationId, userIds, payload),
   // Referências indiretas de propósito: o factory do `vi.mock` é hoisted
   // acima das declarações `const` deste arquivo, então gravar o mock
   // diretamente como valor (`enviarPushDaOrg: enviarPushDaOrgMock`) estoura
@@ -58,6 +76,8 @@ describe("webPushInboundHandler", () => {
     state.vapidPronto = false;
     enviarPushDaOrgMock.mockClear();
     enviarPushAoUsuarioMock.mockClear();
+    enviarPushAosUsuariosMock.mockClear();
+    carregarDestinatariosMock.mockClear();
     createAdminClientMock.mockClear();
     fromMock.mockClear();
   });
@@ -110,6 +130,71 @@ describe("webPushInboundHandler", () => {
       await webPushInboundHandler.handle(grupoRow({ conversation_id: undefined }));
       const [, payload] = enviarPushDaOrgMock.mock.calls[0]!;
       expect(payload).toMatchObject({ title: "Nova mensagem no grupo", href: "/app/inbox" });
+    });
+  });
+  describe("mensagem recebida (message.received) — responsável + admins, ou todos", () => {
+    // Sem `contact_id` o handler não busca nome/avatar: o foco aqui é o destino.
+    function inboundRow(payload: Record<string, unknown> = {}) {
+      return {
+        id: "e-in",
+        organization_id: "org1",
+        event_type: "message.received",
+        entity_kind: "message",
+        entity_id: "m-in",
+        payload: { conversation_id: "conv-1", body_preview: "oi", type: "text", ...payload },
+        metadata: {},
+        consumed_by: [],
+        attempts: 0,
+      };
+    }
+
+    beforeEach(() => {
+      state.vapidPronto = true;
+    });
+
+    it("conversa sem responsável → push para a organização inteira (como antes)", async () => {
+      carregarDestinatariosMock.mockResolvedValueOnce({ tipo: "todos" });
+      const result = await webPushInboundHandler.handle(inboundRow());
+      expect(result.status).toBe("ok");
+      expect(enviarPushDaOrgMock).toHaveBeenCalledTimes(1);
+      expect(enviarPushAosUsuariosMock).not.toHaveBeenCalled();
+    });
+
+    it("conversa com responsável → push SÓ para a lista decidida (responsável + admins)", async () => {
+      carregarDestinatariosMock.mockResolvedValueOnce({ tipo: "restrito", userIds: ["u-ana", "u-admin"] });
+      const result = await webPushInboundHandler.handle(inboundRow());
+      expect(result.status).toBe("ok");
+      expect(enviarPushDaOrgMock).not.toHaveBeenCalled();
+      expect(enviarPushAosUsuariosMock).toHaveBeenCalledTimes(1);
+      const [orgId, userIds, payload] = enviarPushAosUsuariosMock.mock.calls[0]!;
+      expect(orgId).toBe("org1");
+      expect(userIds).toEqual(["u-ana", "u-admin"]);
+      expect(payload).toMatchObject({ body: "oi" });
+      // A decisão é pedida para a conversa e a org DO EVENTO.
+      expect(carregarDestinatariosMock.mock.calls[0]!.slice(1)).toEqual(["org1", "conv-1", null]);
+    });
+
+    it("falha ao decidir → cai para todos (aviso a mais incomoda; a menos perde cliente)", async () => {
+      carregarDestinatariosMock.mockRejectedValueOnce(new Error("banco fora"));
+      const result = await webPushInboundHandler.handle(inboundRow());
+      expect(result.status).toBe("ok");
+      expect(enviarPushDaOrgMock).toHaveBeenCalledTimes(1);
+      expect(enviarPushAosUsuariosMock).not.toHaveBeenCalled();
+    });
+
+    it("conversa não encontrada (null) ou evento sem conversa → todos", async () => {
+      carregarDestinatariosMock.mockResolvedValueOnce(null);
+      await webPushInboundHandler.handle(inboundRow());
+      await webPushInboundHandler.handle(inboundRow({ conversation_id: undefined }));
+      expect(enviarPushDaOrgMock).toHaveBeenCalledTimes(2);
+      // Sem conversa nem há o que perguntar.
+      expect(carregarDestinatariosMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("grupo NÃO passa pela regra — continua indo para a organização", async () => {
+      await webPushInboundHandler.handle(grupoRow());
+      expect(carregarDestinatariosMock).not.toHaveBeenCalled();
+      expect(enviarPushDaOrgMock).toHaveBeenCalledTimes(1);
     });
   });
 });

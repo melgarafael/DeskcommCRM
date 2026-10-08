@@ -29,6 +29,7 @@
 import WebSocket from "ws";
 import type { Socket } from "node:net";
 import { pcm16ToUlaw, ulawToPcm16 } from "@/lib/voip/ulaw";
+import { somarUsoDaResposta, usoVazio, type UsoDaSessao } from "./uso-da-sessao";
 
 // Fallback só pra quem ainda não configurou nada na aba Voz do agente
 // (config.voice_model) -- normalmente this.ctx.voiceModel já vem preenchido
@@ -148,6 +149,20 @@ export class AudioSocketCallBridge {
   private pacerTimer: NodeJS.Timeout | null = null;
 
   private readonly realtimeModel: string;
+
+  /**
+   * O uso medido da sessão, somado a cada `response.done` — vira a linha de
+   * `llm_calls` no fim da ligação (`index.ts`, `finalizeAudioSocketCall`). Ver
+   * `./uso-da-sessao.ts` para o que é medido e o que NÃO é (o preço).
+   */
+  private uso: UsoDaSessao = usoVazio();
+  /** Handshake recusado pela OpenAI: a sessão nem abriu, e a linha sai como erro. */
+  private erroDeAbertura: { message: string; status?: number } | null = null;
+
+  /** O que a ligação consumiu até agora, e se a sessão falhou ao abrir. */
+  usoDaSessao(): { modelo: string; uso: UsoDaSessao; erro: { message: string; status?: number } | null } {
+    return { modelo: this.realtimeModel, uso: this.uso, erro: this.erroDeAbertura };
+  }
 
   constructor(
     private socket: Socket,
@@ -380,6 +395,7 @@ export class AudioSocketCallBridge {
           break;
         }
         case "response.done": {
+          this.uso = somarUsoDaResposta(this.uso, event.response?.usage);
           const output = (event.response?.output ?? []) as Array<{ type?: string; name?: string }>;
           const pediuEncerrar = output.some(
             (item) => item.type === "function_call" && item.name === ENCERRAR_CHAMADA_TOOL_NAME,
@@ -399,9 +415,13 @@ export class AudioSocketCallBridge {
     this.realtimeWs.on("unexpected-response", (_req, res) => {
       let body = "";
       res.on("data", (chunk) => (body += chunk));
-      res.on("end", () =>
-        console.error(`[realtime] call=${this.ctx.callId} handshake rejeitado, HTTP ${res.statusCode}: ${body}`),
-      );
+      res.on("end", () => {
+        this.erroDeAbertura = {
+          message: `handshake rejeitado: ${body}`.slice(0, 500),
+          ...(typeof res.statusCode === "number" ? { status: res.statusCode } : {}),
+        };
+        console.error(`[realtime] call=${this.ctx.callId} handshake rejeitado, HTTP ${res.statusCode}: ${body}`);
+      });
     });
 
     this.realtimeWs.on("close", (code, reason) => {

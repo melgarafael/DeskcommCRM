@@ -3,7 +3,9 @@ import { marcaDaSaida } from "@/lib/branding/saida";
 import { canalDoEventoDesativado } from "@/lib/channels/desativado";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { montarPayloadDeInbound, truncar } from "./push_payload";
-import { enviarPushAoUsuario, enviarPushDaOrg } from "./web_push";
+import { enviarPushAoUsuario, enviarPushAosUsuarios, enviarPushDaOrg } from "./web_push";
+import { carregarDestinatariosDaMensagem, type DestinatariosDaMensagem } from "./destinatarios-da-mensagem";
+import { logger } from "@/lib/logger";
 import { vapidPronto } from "./vapid";
 import { pushDoAvisoDaCentral } from "./push-dos-avisos";
 import type { PushPayload } from "./push_payload";
@@ -77,8 +79,46 @@ async function handleInbound(row: EventRow): Promise<HandlerResult> {
     contactName,
     icon,
   });
-  const { sent } = await enviarPushDaOrg(row.organization_id, payload);
-  return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "ok", detail: `sent:${sent}` };
+  const destino = await destinatariosDoInbound(row.organization_id, conversationId, contactId);
+  if (destino.tipo === "todos") {
+    const { sent } = await enviarPushDaOrg(row.organization_id, payload);
+    return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "ok", detail: `sent:${sent}` };
+  }
+  const { sent } = await enviarPushAosUsuarios(row.organization_id, destino.userIds, payload);
+  return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "ok", detail: `sent:${sent};restrito:${destino.userIds.length}` };
+}
+
+/**
+ * Para quem vai o push da mensagem recebida — regra em
+ * `./destinatarios-da-mensagem.ts` (responsável + admins, ou todos).
+ *
+ * Falha de leitura cai para "todos", de propósito: era o comportamento antes
+ * da regra, e um aviso a mais é um incômodo, enquanto um aviso a menos é
+ * cliente sem resposta. O evento também não é reprocessado por isso — repetir
+ * o handler mandaria o push duas vezes a quem já recebeu.
+ */
+async function destinatariosDoInbound(
+  organizationId: string,
+  conversationId: string | null,
+  contactId: string | null,
+): Promise<DestinatariosDaMensagem> {
+  if (!conversationId) return { tipo: "todos" };
+  try {
+    const destino = await carregarDestinatariosDaMensagem(
+      createAdminClient(),
+      organizationId,
+      conversationId,
+      contactId,
+    );
+    return destino ?? { tipo: "todos" };
+  } catch (err) {
+    logger.warn("push_inbound_destinatarios_falhou", {
+      organization_id: organizationId,
+      conversation_id: conversationId,
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    return { tipo: "todos" };
+  }
 }
 
 /**
