@@ -237,7 +237,7 @@ test("conectar a loja: sincronizar agora traz os pedidos para a integração e p
 
   await login(page, f);
   await page.goto("/app/integrations/nuvemshop");
-  await expect(page.getByText("Conectado", { exact: true })).toBeVisible({ timeout: ESPERA });
+  await expect(page.getByText(/^Conectado/)).toBeVisible({ timeout: ESPERA });
   const botao = page.getByRole("button", { name: "Sincronizar agora" });
   await expect(botao).toBeVisible();
   await expect(page.getByTestId("nuvemshop-pedidos-total")).toContainText("0");

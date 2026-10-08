@@ -3345,11 +3345,14 @@ são de mentira e a integração é semeada `healthy` — **não há OAuth nem w
 
 | Caso | Spec | Estado |
 |---|---|---|
-| **`[P1]`** Admin clica "Sincronizar agora": toast "Sincronização iniciada.", o run fica `running`, o dreno do `event_log` percorre as 12 janelas mensais e a integração passa a dizer "Em dia" com 2 pedidos | `tests/e2e/nuvemshop-sincroniza-pedidos.spec.ts` (SPECS_PARTE_6) | CI; prova local: ver abaixo |
+| **`[P1]`** Admin clica "Sincronizar agora": toast "Sincronização iniciada.", o run fica `running`, o dreno do `event_log` percorre as 12 janelas mensais e a integração passa a dizer "Em dia" com 2 pedidos | `tests/e2e/nuvemshop-sincroniza-pedidos.spec.ts` (SPECS_PARTE_6) | CI; PASS local 2026-10-08 (banco fresco do baseline, `next start`) |
 | O receptor recebeu o token em `Authentication: bearer`, `status=any` e janelas de `updated_at` ordenadas | idem | CI |
 | O painel "Pedidos recentes" do contato na inbox mostra `#1001` e `R$ 150,90` | idem | CI |
 | Cliente do pedido sem contato vira contato novo com `source = 'nuvemshop'` | idem | CI |
 | Com um run em andamento, o botão responde "Já está sincronizando." | idem | CI |
 
 Evidência: `evidence/nuvemshop-sync-e1/` (`01-integracao-em-dia.png`, `02-painel-do-contato.png`,
-`03-ja-sincronizando.png`) — presente só se a execução local foi feita; ver o relatório da task.
+`03-ja-sincronizando.png`).
+
+**Achado (WARN, não corrigido aqui):** o painel "Pedidos recentes" mostra o status cru do pedido
+(`paid · R$ 150,90`), em inglês, numa interface em português.
