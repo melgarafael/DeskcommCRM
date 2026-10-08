@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import { NuvemshopApiError } from "@/lib/nuvemshop/api-client";
-import { PAGINA_TAMANHO } from "./constantes";
+import { PAGINA_MAXIMA, PAGINA_TAMANHO } from "./constantes";
 import type { DepsDoSync } from "./deps";
 import type { EstadoDoSync } from "./estado";
 import { processarPaginaDoSync } from "./sync-page.handler";
@@ -101,5 +101,48 @@ describe("nuvemshop-sync.v1", () => {
 
   it("5xx → error (o dreno faz o backoff)", async () => {
     expect((await processarPaginaDoSync(row(), deps(new NuvemshopApiError(502, "upstream_error", "")))).status).toBe("error");
+  });
+
+  describe("janela indivisível (perda)", () => {
+    const INDIVISIVEL = { janela_ini: "2026-01-01T00:00:00.000Z", janela_fim: "2026-01-01T00:02:00.000Z", pagina: PAGINA_MAXIMA };
+
+    it("no meio do backfill → conta a perda e emite a próxima janela", async () => {
+      const d = deps(cheia);
+      const r = await processarPaginaDoSync(row({ ...PASSO, ...INDIVISIVEL }), d);
+      expect(r.status).toBe("ok");
+      expect(d.registrarPagina).toHaveBeenCalledWith(ESTADO, expect.objectContaining({ gravados: PAGINA_TAMANHO, comErro: 1, ultimoErro: "janela_indivisivel" }));
+      expect(d.emitirPasso).toHaveBeenCalledWith("org-1", "integ-1", expect.objectContaining({ janela_ini: INDIVISIVEL.janela_fim, pagina: 1 }));
+      expect(d.fecharRun).not.toHaveBeenCalled();
+    });
+
+    it("que termina no alvo → conta a perda e fecha o run", async () => {
+      const d = deps(cheia);
+      const passo = { ...PASSO, ...INDIVISIVEL, janela_fim: PASSO.alvo_fim, janela_ini: "2026-10-08T11:58:00.000Z" };
+      expect(await processarPaginaDoSync(row(passo), d)).toMatchObject({ status: "ok", detail: "run_concluido" });
+      expect(d.registrarPagina).toHaveBeenCalledWith(ESTADO, expect.objectContaining({ comErro: 1, ultimoErro: "janela_indivisivel" }));
+      expect(d.fecharRun).toHaveBeenCalled();
+      expect(d.emitirPasso).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("falha de infra propaga", () => {
+    it("gravarPedido lança → rejeita e nada depois é chamado", async () => {
+      const d = deps([{ id: 1 }], { gravarPedido: vi.fn().mockRejectedValue(new Error("db")) });
+      await expect(processarPaginaDoSync(row(), d)).rejects.toThrow("db");
+      expect(d.registrarPagina).not.toHaveBeenCalled();
+      expect(d.emitirPasso).not.toHaveBeenCalled();
+      expect(d.fecharRun).not.toHaveBeenCalled();
+    });
+    it("registrarPagina lança → rejeita", async () => {
+      const d = deps([{ id: 1 }], { registrarPagina: vi.fn().mockRejectedValue(new Error("db")) });
+      await expect(processarPaginaDoSync(row(), d)).rejects.toThrow("db");
+    });
+    it("emitirPasso lança → rejeita", async () => {
+      const d = deps(cheia, { emitirPasso: vi.fn().mockRejectedValue(new Error("emit")) });
+      await expect(processarPaginaDoSync(row(), d)).rejects.toThrow("emit");
+    });
+    it("erro que não é da API (TypeError) → relança", async () => {
+      await expect(processarPaginaDoSync(row(), deps(new TypeError("x")))).rejects.toThrow(TypeError);
+    });
   });
 });

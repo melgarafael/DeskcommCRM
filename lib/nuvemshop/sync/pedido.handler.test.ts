@@ -43,4 +43,8 @@ describe("nuvemshop-pedido.v1", () => {
     const d = deps(vi.fn().mockResolvedValue({ id: 9 }), { gravarPedido: vi.fn().mockResolvedValue({ ok: false, motivo: "total_invalido:9" }) });
     expect(await processarPedidoDoWebhook(row({ id: 9 }), d)).toMatchObject({ status: "skipped", detail: "total_invalido:9" });
   });
+  it("gravarPedido lança → rejeita", async () => {
+    const d = deps(vi.fn().mockResolvedValue({ id: 9 }), { gravarPedido: vi.fn().mockRejectedValue(new Error("db")) });
+    await expect(processarPedidoDoWebhook(row({ id: 9 }), d)).rejects.toThrow("db");
+  });
 });
