@@ -6806,6 +6806,77 @@ export type Database = {
           },
         ]
       }
+      integration_sync_state: {
+        Row: {
+          alvo_fim: string | null
+          created_at: string
+          cursor_updated_at: string | null
+          id: string
+          janela_atual_fim: string | null
+          janela_atual_ini: string | null
+          organization_id: string
+          pedidos_com_erro: number
+          pedidos_gravados: number
+          provider: string
+          resource: string
+          run_id: string | null
+          run_origem: string | null
+          status: string
+          trava_ate: string | null
+          ultimo_erro: string | null
+          ultimo_run_fim: string | null
+          updated_at: string
+        }
+        Insert: {
+          alvo_fim?: string | null
+          created_at?: string
+          cursor_updated_at?: string | null
+          id?: string
+          janela_atual_fim?: string | null
+          janela_atual_ini?: string | null
+          organization_id: string
+          pedidos_com_erro?: number
+          pedidos_gravados?: number
+          provider: string
+          resource: string
+          run_id?: string | null
+          run_origem?: string | null
+          status?: string
+          trava_ate?: string | null
+          ultimo_erro?: string | null
+          ultimo_run_fim?: string | null
+          updated_at?: string
+        }
+        Update: {
+          alvo_fim?: string | null
+          created_at?: string
+          cursor_updated_at?: string | null
+          id?: string
+          janela_atual_fim?: string | null
+          janela_atual_ini?: string | null
+          organization_id?: string
+          pedidos_com_erro?: number
+          pedidos_gravados?: number
+          provider?: string
+          resource?: string
+          run_id?: string | null
+          run_origem?: string | null
+          status?: string
+          trava_ate?: string | null
+          ultimo_erro?: string | null
+          ultimo_run_fim?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "integration_sync_state_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       idempotency_keys: {
         Row: {
           tenant_creation_trusted: boolean
@@ -10810,6 +10881,7 @@ export type Database = {
         Args: { p_job: string; p_org: string }
         Returns: boolean
       }
+      fn_gravar_pedido_externo: { Args: { p_organization_id: string; p_pedido: Json }; Returns: string }
       fn_gasto_de_ia_do_mes: { Args: { p_org: string }; Returns: number }
       fn_is_platform_admin: { Args: never; Returns: boolean }
       /** Migration 0502 — mescla campos personalizados no lead DENTRO do banco, numa única instrução atômica. */
