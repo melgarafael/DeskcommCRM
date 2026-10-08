@@ -213,9 +213,9 @@ test.describe("Painel — o que o assistente pode ver", () => {
 
     await page.getByRole("radio", { name: "Só o que eu marcar (recomendado)" }).click();
     await page.getByRole("button", { name: "Salvar" }).click();
-    await expect(page.getByText("Lista salva. O assistente já usa a nova lista.")).toBeVisible();
+    // O aviso do primeiro salvamento ainda pode estar na tela: espere o BANCO mudar, não o aviso.
+    await expect.poll(async () => (await lerLinhaDoBanco()).source_mode, { timeout: 15_000 }).toBe("list");
     const volta = await lerLinhaDoBanco();
-    expect(volta.source_mode).toBe("list");
     expect(volta.sources).toHaveLength(1);
   });
 

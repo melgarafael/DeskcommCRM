@@ -177,7 +177,7 @@ describe("PainelDeFontes", () => {
     montar({ colunaDoCliente: "telefone" });
     await userEvent.click(screen.getByRole("checkbox", { name: "Liberar public.wp_users" }));
     await userEvent.click(screen.getByRole("button", { name: "Detalhes" }));
-    expect(screen.getByText("Esta tabela não tem a coluna que identifica o cliente:")).toBeTruthy();
+    expect(screen.getByText(/Esta tabela não tem a coluna que identifica o cliente:/)).toBeTruthy();
     expect((screen.getByRole("button", { name: "Salvar" }) as HTMLButtonElement).disabled).toBe(false);
   });
 });
