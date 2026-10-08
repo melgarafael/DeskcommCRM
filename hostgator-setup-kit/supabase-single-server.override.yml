@@ -86,6 +86,13 @@ services:
       GOTRUE_MAILER_TEMPLATES_CONFIRMATION: "${GOTRUE_MAILER_TEMPLATES_CONFIRMATION:-}"
       GOTRUE_MAILER_TEMPLATES_RECOVERY: "${GOTRUE_MAILER_TEMPLATES_RECOVERY:-}"
 
+    # O Auth busca os modelos no app. No modo single-server, o app está na
+    # rede privada `deskcomm_private`; sem esta ligação, a URL pública pode
+    # dar timeout quando a VPS usa Traefik externo (hairpin inexistente).
+    networks:
+      default: {}
+      deskcomm_private: {}
+
   rest:
     container_name: !reset null
 

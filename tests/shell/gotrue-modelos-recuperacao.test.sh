@@ -161,6 +161,10 @@ check "override entrega o molde de confirmação ao serviço auth (default vazio
   grep -qxF '      GOTRUE_MAILER_TEMPLATES_CONFIRMATION: "${GOTRUE_MAILER_TEMPLATES_CONFIRMATION:-}"' "$OVERRIDE"
 check "override entrega o molde de recuperação ao serviço auth (default vazio)" \
   grep -qxF '      GOTRUE_MAILER_TEMPLATES_RECOVERY: "${GOTRUE_MAILER_TEMPLATES_RECOVERY:-}"' "$OVERRIDE"
+check "auth permanece na rede padrão do Supabase" \
+  bash -c 'grep -A30 "^  auth:$" "$1" | grep -qxF "      default: {}"' _ "$OVERRIDE"
+check "auth alcança o app pela rede privada" \
+  bash -c 'grep -A30 "^  auth:$" "$1" | grep -qxF "      deskcomm_private: {}"' _ "$OVERRIDE"
 
 # (7) QUEM JÁ INSTALOU: o update.sh chama `atualizar_supabase_single_server`
 #     (_common.sh), e é no CORPO dela que a gravação tem de acontecer — numa
