@@ -438,7 +438,14 @@ it("HTTP controlado: POST pending, polling GET, success/failure/unknown e convit
     expect(ready.revision).toBe(a.revision);
     expect(ready.google_local_revision).toBe(a.google_local_revision);
     expect(ready.meeting_delivery.state).toBe("none");
-    expect(writes).toHaveLength(1);
+    expect(ready.meeting_url).toBe("https://meet.google.com/abc-defg-hij");
+    // #2063 — o link nasceu e ele É o local do evento: `location` é o único
+    // campo que o `delta` compara, então a chegada do link publica UM PATCH.
+    // Esse é o único escrito extra do teste; daqui em diante a projeção já
+    // carrega o link e nenhuma passada seguinte escreve de novo.
+    expect(writes).toHaveLength(2);
+    expect(writes[1]!.method).toBe("PATCH");
+    expect(writes[1]!.body).toMatchObject({ location: "https://meet.google.com/abc-defg-hij" });
     // Nova fixture de intenção existente: falha explícita não vira ready nem outro POST.
     await pool.query(
       "update calendar_appointments set meeting_state='pending',meeting_next_attempt_at=now() where id=$1",
@@ -453,15 +460,17 @@ it("HTTP controlado: POST pending, polling GET, success/failure/unknown e convit
     };
     await reconcileAppointment(db, f.org, f.id, options);
     expect((await row(f.id)).meeting_last_error).toBe("google_failure");
-    expect(writes).toHaveLength(1);
+    // A falha limpa o link que tinha sido publicado (não há sala de verdade),
+    // e a projeção sem o link manda o `location` de volta — terceiro escritor.
+    expect(writes).toHaveLength(3);
     await actor(GOV_AGENT_A, human, [f.org, f.id, a.revision, a.meeting_request_id, "retry", null]);
     const retry = await row(f.id);
     expect(retry.meeting_request_id).not.toBe(a.meeting_request_id);
     // O GET de failure antigo não é recibo da nova intenção.
     await reconcileAppointment(db, f.org, f.id, options);
-    expect(writes).toHaveLength(2);
-    expect(writes[1]!.method).toBe("PATCH");
-    expect(writes[1]!.body).not.toHaveProperty("attendees");
+    expect(writes).toHaveLength(4);
+    expect(writes[3]!.method).toBe("PATCH");
+    expect(writes[3]!.body).not.toHaveProperty("attendees");
     expect((await row(f.id)).meeting_request_id).toBe(retry.meeting_request_id);
     remote = {
       ...((remote as Record<string, unknown> | null) ?? {}),
@@ -475,7 +484,8 @@ it("HTTP controlado: POST pending, polling GET, success/failure/unknown e convit
     await reconcileAppointment(db, f.org, f.id, options);
     expect((await row(f.id)).meeting_last_error).toBe("invalid");
     expect((await row(f.id)).meeting_url).toBeNull();
-    expect(writes).toHaveLength(2);
+    // A recusa não escreve: segue o mesmo total de 4 (create, link, limpeza, retry).
+    expect(writes).toHaveLength(4);
   } finally {
     receiver.closeAllConnections();
     await new Promise<void>((r) => receiver.close(() => r()));

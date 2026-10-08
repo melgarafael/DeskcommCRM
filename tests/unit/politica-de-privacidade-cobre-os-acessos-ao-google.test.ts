@@ -27,6 +27,7 @@ const POLITICA = "app/legal/privacy/page.tsx";
 const ESCOPOS_DECLARADOS: Record<string, string> = {
   "calendar.events": "Google Agenda:",
   "calendar.readonly": "Google Agenda:",
+  "meetings.space.created": "Google Meet:",
   adwords: "Google Ads:",
   datamanager: "Google Ads:",
 };

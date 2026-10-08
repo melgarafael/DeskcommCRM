@@ -169,7 +169,7 @@ export default async function PrivacyPage() {
           ao Google sem acrescentar a frase correspondente é descumprir a política
           de dados de usuário do Google. */}
       <section className="space-y-2" id="dados-do-google">
-        <h2 className="text-base font-semibold">{t("9. Dados do Google (Agenda e Google Ads)")}</h2>
+        <h2 className="text-base font-semibold">{t("9. Dados do Google (Agenda, Meet e Google Ads)")}</h2>
         <p>
           {t(
             "Quando uma pessoa autorizada da organização conecta uma conta Google a este sistema, os dados recebidos do Google são usados somente para a função que ela pediu:",
@@ -180,6 +180,12 @@ export default async function PrivacyPage() {
             <strong>{t("Google Agenda:")}</strong>{" "}
             {t(
               "mostrar a ocupação da agenda, criar, alterar e cancelar os agendamentos feitos pelo próprio usuário e evitar choque de horários. O sistema guarda no servidor do operador o título e o horário dos eventos para calcular a ocupação, e o cálculo de horários livres usa apenas o início, o fim e a situação deles. O sistema não lê e-mails.",
+            )}
+          </li>
+          <li>
+            <strong>{t("Google Meet:")}</strong>{" "}
+            {t(
+              "criar espaços de reunião do Google Meet quando a organização liga o Meet com acesso aberto; só o link gerado é devolvido pelo Google e guardado no servidor do operador para o convite.",
             )}
           </li>
           <li>

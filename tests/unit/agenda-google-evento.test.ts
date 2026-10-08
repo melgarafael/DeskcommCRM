@@ -598,8 +598,15 @@ describe("doEventoDoGoogle", () => {
   });
 });
 
-it("URL assíncrona Meet não altera projeção de local; vídeo manual continua publicado", () => {
+it("URL assíncrona do Meet vira o local; sem URL a projeção não muda; vídeo manual continua publicado (#2063)", () => {
   const pending = agendamento({ location_kind: "google_meet", location_details: "Atendimento online", meeting_url: null });
-  expect(paraEventoDoGoogle({ ...pending, meeting_url: "https://meet.google.com/abc-defg-hij" })).toEqual(paraEventoDoGoogle(pending));
+  // Sem link, a primeira passada sai com os detalhes — como sempre.
+  expect(paraEventoDoGoogle(pending).location).toBe("Atendimento online");
+  // Com o link, ele É o local (mesma régua do video_link): `location` é o único
+  // campo que o `delta` compara, então é por aí que o link publica depois.
+  // Ver tests/unit/agenda-google-meet-viaja-na-projecao.test.ts.
+  expect(paraEventoDoGoogle({ ...pending, meeting_url: "https://meet.google.com/abc-defg-hij" }).location).toBe(
+    "https://meet.google.com/abc-defg-hij",
+  );
   expect(paraEventoDoGoogle({ ...pending, location_kind: "video_link", meeting_url: "https://video.example/room" }).location).toBe("https://video.example/room");
 });

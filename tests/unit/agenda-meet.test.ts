@@ -68,7 +68,7 @@ describe("recibo da conferência", () => {
       received: false,
     });
   });
-  it("chegada da URL não altera projeção local", () => {
+  it("a URL do Meet entra na projeção de local quando ela chega (#2063)", () => {
     const a = {
       id: req,
       organization_id: req,
@@ -79,8 +79,14 @@ describe("recibo da conferência", () => {
       status: "confirmed" as const,
       location_kind: "google_meet" as const,
     };
-    expect(localProjection({ ...a, meeting_url: "https://meet.google.com/abc-defg-hij" })).toEqual(
-      localProjection(a),
+    const semLink = localProjection(a).outbound.location;
+    const comLink = localProjection({ ...a, meeting_url: "https://meet.google.com/abc-defg-hij" }).outbound.location;
+    // Sem link não há o que publicar — a projeção continua a mesma.
+    expect(semLink).toBe(localProjection({ ...a, meeting_url: null }).outbound.location);
+    // Com o link ele É o local: é o campo que o delta compara e publica depois
+    // (mesma leitura de ter posto o próprio link em `location_details`).
+    expect(comLink).toBe(
+      localProjection({ ...a, location_details: "https://meet.google.com/abc-defg-hij" }).outbound.location,
     );
   });
 });
