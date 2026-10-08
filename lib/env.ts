@@ -542,6 +542,9 @@ const schema = z.object({
   NUVEMSHOP_APP_ID: z.string().optional().default(""),
   NUVEMSHOP_CLIENT_ID: z.string().optional().default(""),
   NUVEMSHOP_CLIENT_SECRET: z.string().optional().default(""),
+  // Base da API da Nuvemshop. Vazia = host real. Existe para a prova em tela
+  // (receptor local); o portão de valor vive em `nuvemshopApiBase()`.
+  NUVEMSHOP_API_BASE_URL: z.string().optional().default(""),
   NUVEMSHOP_ENABLED: z
     .enum(["true", "false"])
     .optional()

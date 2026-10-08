@@ -1,3 +1,6 @@
+import { hostAceito } from "@/lib/channels/meta/graph-base";
+import { logger } from "@/lib/logger";
+
 /**
  * Nuvemshop integration — static configuration + env-derived credentials.
  *
@@ -10,6 +13,23 @@
 
 export const NUVEMSHOP_AUTH_BASE = "https://www.tiendanube.com";
 export const NUVEMSHOP_API_BASE = "https://api.tiendanube.com/v1";
+
+/**
+ * A base da API desta instalação. `NUVEMSHOP_API_BASE_URL` existe para a prova
+ * em tela (receptor local) e homólogo; o portão é o MESMO da Graph da Meta
+ * (`hostAceito`): só http/https, barra final aparada e, em produção, `http` só
+ * para destino interno. Valor recusado cai no host real e avisa no log.
+ */
+export function nuvemshopApiBase(): string {
+  const bruto = process.env.NUVEMSHOP_API_BASE_URL?.trim();
+  if (!bruto) return NUVEMSHOP_API_BASE;
+  const aceito = hostAceito(bruto);
+  if (!aceito) {
+    logger.warn("[nuvemshop.config] NUVEMSHOP_API_BASE_URL recusada; usando o host real", { valor: bruto });
+    return NUVEMSHOP_API_BASE;
+  }
+  return aceito;
+}
 export const APP_USER_AGENT = "DeskcommCRM (rafael@maudibrasil.com.br)";
 
 export interface NuvemshopConfig {
