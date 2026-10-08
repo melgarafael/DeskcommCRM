@@ -1283,6 +1283,6 @@ pedido como lead no pipeline "Pedidos" (E3), relatórios (E4), `EcommercePlatfor
 Mapa vivo: `docs/architecture/nuvemshop-sync.architecture.json`.
 
 ### Pendências
-- Backfill workers (sync de orders existentes pós-conexão) — vem em EPIC-12
+- Backfill de **pedidos** entregue na E1 (2026-10-08). Segue pendente o backfill de produtos e clientes (E2) — antes previsto para EPIC-12
 - LGPD redact webhooks — vem em EPIC-08
 - Pra dev local, webhook URL precisa de tunnel HTTPS público (Cloudflared/ngrok)
