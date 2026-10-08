@@ -13567,6 +13567,18 @@ export const DICIONARIO: Traducoes = {
   "O assistente ainda não enxerga nada deste banco.": { es: "El asistente aún no ve nada de esta base de datos." },
   "Escolher o que ele pode ler": { es: "Elegir qué puede leer" },
   "Conexão criada. Agora escolha o que o assistente pode ler.": { es: "Conexión creada. Ahora elige qué puede leer el asistente." },
+  "Este usuário do banco pode escrever. Crie um usuário só de leitura (apenas SELECT) para o assistente.": { es: "Este usuario de la base de datos puede escribir. Crea un usuario solo de lectura (únicamente SELECT) para el asistente." },
+  "Este usuário lê o banco inteiro. Libere só as tabelas e views que o assistente deve ver.": { es: "Este usuario lee toda la base de datos. Libera solo las tablas y vistas que el asistente debe ver." },
+  "Não consegui conferir os papéis deste usuário. Confirme que ele só lê.": { es: "No pude verificar los roles de este usuario. Confirma que solo lee." },
+  "Não consegui conferir os privilégios deste usuário. Confirme que ele só lê.": { es: "No pude verificar los privilegios de este usuario. Confirma que solo lee." },
+  "Tipo de banco": { es: "Tipo de base de datos" },
+  "O tipo de banco não muda depois de criado. Para trocar, apague a conexão e crie outra.": { es: "El tipo de base de datos no cambia una vez creado. Para cambiarlo, elimina la conexión y crea otra." },
+  "No MySQL, conecte com um usuário só de leitura (apenas SELECT). Se for um WordPress, crie uma view com os dados que o assistente deve ver.": { es: "En MySQL, conecta con un usuario solo de lectura (únicamente SELECT). Si es un WordPress, crea una vista con los datos que el asistente debe ver." },
+  "O teste passou, mas há um aviso sobre o usuário deste banco. Veja no cartão da conexão.": { es: "La prueba pasó, pero hay un aviso sobre el usuario de esta base de datos. Míralo en la tarjeta de la conexión." },
+  "Quando o seu outro sistema guarda os dados num banco PostgreSQL ou MySQL, conecte-o aqui e o agente passa a responder com esses dados — pedido, assinatura, matrícula, saldo.": { es: "Si tu otro sistema guarda sus datos en una base PostgreSQL o MySQL, conéctala aquí y el agente podrá responder con esa información: pedidos, suscripciones, matrículas, saldo." },
+  "Conecte um banco de dados de outro sistema — o seu segundo CRM, um ERP, uma planilha num banco PostgreSQL ou MySQL — e o agente passa a consultá-lo em tempo real. A conexão é sempre somente leitura: nada que o agente faz altera o banco de origem.": {
+    es: "Conecta la base de datos de otro sistema (tu segundo CRM, un ERP, una hoja de cálculo en una base PostgreSQL o MySQL) y el agente podrá consultarla en tiempo real. La conexión es siempre de solo lectura: nada de lo que haga el agente modifica la base de origen.",
+  },
   // Frase inteira, e não "Ativada" seco: essa chave já existe neste arquivo,
   // de outra tela e no feminino (`Activada`) — reusá-la duplicaria a chave e
   // discordaria do gênero de `Recorrido`.

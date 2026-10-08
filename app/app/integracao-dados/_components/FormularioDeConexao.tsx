@@ -51,6 +51,13 @@ const IDENTIFICADORES = [
 ] as const;
 type Identificador = (typeof IDENTIFICADORES)[number]["valor"];
 
+/** Os motores que a API aceita criar. O nome do motor é nome próprio: não passa por `t()`. */
+const MOTORES = [
+  { valor: "postgres", rotulo: "PostgreSQL", porta: 5432 },
+  { valor: "mysql", rotulo: "MySQL", porta: 3306 },
+] as const;
+type Motor = (typeof MOTORES)[number]["valor"];
+
 /** O tamanho da resposta é gravado em bytes, mas a tela fala em KB. */
 const KB = 1024;
 const KB_MIN = Math.ceil(LIMITE_RESPOSTA_BYTES.minimo / KB);
@@ -102,7 +109,8 @@ export function FormularioDeConexao({ open, onOpenChange, conexao }: Props) {
 
   const [label, setLabel] = useState(conexao?.label ?? "");
   const [host, setHost] = useState(conexao?.host ?? "");
-  const [port, setPort] = useState(String(conexao?.port ?? 5432));
+  const [dbType, setDbType] = useState<Motor>(conexao?.db_type ?? "postgres");
+  const [port, setPort] = useState(String(conexao?.port ?? (conexao?.db_type === "mysql" ? 3306 : 5432)));
   const [database, setDatabase] = useState(conexao?.database_name ?? "");
   const [username, setUsername] = useState(conexao?.username ?? "");
   // A senha nunca vem do servidor: ela não sai de lá. Em branco ao editar =
@@ -121,6 +129,15 @@ export function FormularioDeConexao({ open, onOpenChange, conexao }: Props) {
   const [colunaDoCliente, setColunaDoCliente] = useState(conexao?.customer_key_column ?? "");
   const [salvando, setSalvando] = useState(false);
   const [erros, setErros] = useState<Record<string, string | undefined>>({});
+
+  function trocarMotor(proximo: string) {
+    const novo = MOTORES.find((m) => m.valor === proximo);
+    const antigo = MOTORES.find((m) => m.valor === dbType);
+    if (!novo || !antigo || editando) return;
+    setDbType(novo.valor);
+    // Só sugere a porta do motor novo se a pessoa ainda não mexeu na do antigo.
+    if (port === String(antigo.porta)) setPort(String(novo.porta));
+  }
 
   async function salvar(evento: React.FormEvent) {
     evento.preventDefault();
@@ -192,6 +209,7 @@ export function FormularioDeConexao({ open, onOpenChange, conexao }: Props) {
         toast.success(t("Conexão atualizada."));
       } else {
         const criada = await criarConexao({
+          db_type: dbType,
           label: parsed.data.label,
           host: parsed.data.host,
           port: parsed.data.port,
@@ -231,6 +249,31 @@ export function FormularioDeConexao({ open, onOpenChange, conexao }: Props) {
         </DialogHeader>
 
         <form onSubmit={salvar} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="ext-motor">{t("Tipo de banco")}</Label>
+            <Select value={dbType} onValueChange={trocarMotor} disabled={editando}>
+              <SelectTrigger id="ext-motor">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {MOTORES.map((m) => (
+                  <SelectItem key={m.valor} value={m.valor}>
+                    {m.rotulo}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {editando && (
+              <p className="text-xs text-muted-foreground">
+                {t("O tipo de banco não muda depois de criado. Para trocar, apague a conexão e crie outra.")}
+              </p>
+            )}
+            {dbType === "mysql" && (
+              <p className="text-xs text-muted-foreground">
+                {t("No MySQL, conecte com um usuário só de leitura (apenas SELECT). Se for um WordPress, crie uma view com os dados que o assistente deve ver.")}
+              </p>
+            )}
+          </div>
           <div className="space-y-2">
             <Label htmlFor="ext-label">{t("Nome da conexão")}</Label>
             <Input
