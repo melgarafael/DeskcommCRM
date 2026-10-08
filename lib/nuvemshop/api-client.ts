@@ -106,8 +106,18 @@ export class NuvemshopApiClient {
       throw new NuvemshopApiError(0, "network_error", String((err as Error).message));
     }
 
-    const text = await res.text();
-    if (res.status === 204 || text.length === 0) {
+    let text: string;
+    try {
+      text = await res.text();
+    } catch (err) {
+      // Leitura do corpo interrompida (ex.: o AbortSignal de timeout disparou
+      // depois dos cabeçalhos): mesma classe de falha de rede do fetch acima.
+      throw new NuvemshopApiError(0, "network_error", String((err as Error).message));
+    }
+
+    // Corpo vazio só é sucesso numa resposta 2xx. Erro sem corpo (429/5xx/404
+    // vazios) segue o caminho de erro, senão uma janela que falhou parece vazia.
+    if (res.ok && (res.status === 204 || text.length === 0)) {
       return undefined as T;
     }
 

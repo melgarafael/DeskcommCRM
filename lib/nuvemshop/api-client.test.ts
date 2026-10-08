@@ -88,3 +88,53 @@ describe("getOrder", () => {
     await expect(cliente().getOrder("55")).resolves.toEqual({ id: 55 });
   });
 });
+
+describe("erro sem corpo nunca vira sucesso", () => {
+  const janela = { updatedAtMin: "a", updatedAtMax: "b", page: 1, perPage: 50 };
+
+  it("429 sem corpo em listOrders lança com retryAfterMs do cabeçalho", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(resposta(429, "", { "x-rate-limit-reset": "1500" })));
+    const err = (await cliente().listOrders(janela).catch((e: unknown) => e)) as NuvemshopApiError;
+    expect(err).toBeInstanceOf(NuvemshopApiError);
+    expect(err.status).toBe(429);
+    expect(err.retryAfterMs).toBe(1500);
+  });
+
+  it("502 sem corpo em listOrders lança e não devolve lista vazia", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(resposta(502, "")));
+    const err = (await cliente().listOrders(janela).catch((e: unknown) => e)) as NuvemshopApiError;
+    expect(err).toBeInstanceOf(NuvemshopApiError);
+    expect(err.status).toBe(502);
+  });
+
+  it("404 sem corpo em getOrder lança not_found", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(resposta(404, "")));
+    const err = (await cliente().getOrder("55").catch((e: unknown) => e)) as NuvemshopApiError;
+    expect(err).toBeInstanceOf(NuvemshopApiError);
+    expect(err.code).toBe("not_found");
+  });
+
+  it("404 sem corpo em listOrders continua lista vazia", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(resposta(404, "")));
+    await expect(cliente().listOrders(janela)).resolves.toEqual([]);
+  });
+
+  it("200 sem corpo continua sucesso (undefined)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
+    await expect(cliente().getOrder("55")).resolves.toBeUndefined();
+  });
+
+  it("timeout na leitura do corpo vira NuvemshopApiError, não DOMException", async () => {
+    const corpoQueExpira = {
+      status: 200,
+      ok: true,
+      headers: new Headers(),
+      text: () => Promise.reject(new DOMException("The operation timed out.", "TimeoutError")),
+    } as unknown as Response;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(corpoQueExpira));
+    const err = await cliente().getOrder("55").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(NuvemshopApiError);
+    expect(err).not.toBeInstanceOf(DOMException);
+    expect((err as NuvemshopApiError).code).toBe("network_error");
+  });
+});
