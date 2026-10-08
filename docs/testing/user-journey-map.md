@@ -3336,3 +3336,20 @@ Spec: `tests/e2e/mapas-em-provedores.spec.ts`.
 | J40.6 | O que o Google diz × o endereço anotado em 8 pedidos confirmados (28/09/2026, numa instalação real) | município 8/8, região 8/8, localidade 7/8 (na zona rural virou o povoado), rua 3/5, bairro 1/8, número interpolado → a cidade é o MUNICÍPIO; bairro e número não saem | **MEDIDO em produção** (fora deste repositório); regra em `tests/unit/mapas-pino-com-endereco.test.ts` |
 | J40.7 | O pino com endereço aproximado, aberto na conversa pela equipe | o cartão do pino mostra «Rua, Cidade, Estado (aprox.)», com o texto inteiro no `title` (o cartão corta com …) e o toque abre as COORDENADAS no mapa | **PASS pela tela** — Evidência: `evidence/triagem-16set-l12/mapas-03-pino-na-conversa.png` |
 | J40.8 | A API do canal intermediado não responde a tempo na ingestão do pino (medido 29/09/2026: timeout duas vezes seguidas) | a mensagem entra com o marcador e pede nova busca (`message.location_retry_requested`); 1 min depois, e a cada 2 min até 15, busca de novo e grava tipo `location` + link (+ endereço aproximado com chave); nunca rebaixa um pino que já tem coordenadas; desiste sem virar incidente | **PASS (unit)** — `tests/unit/pino-reintento.test.ts`, `tests/unit/channel-ingest-zernio.test.ts` |
+
+## J42 — Conectar a Nuvemshop e ver os pedidos na integração e no contato `[P1]` (2026-10-08)
+
+**Origem:** sincronização de pedidos da Nuvemshop (E1). A prova é pela tela, com um receptor HTTP
+que imita a API da Nuvemshop (`NUVEMSHOP_API_BASE_URL`, porta 3995); as credenciais do ambiente
+são de mentira e a integração é semeada `healthy` — **não há OAuth nem webhook real aqui**.
+
+| Caso | Spec | Estado |
+|---|---|---|
+| **`[P1]`** Admin clica "Sincronizar agora": toast "Sincronização iniciada.", o run fica `running`, o dreno do `event_log` percorre as 12 janelas mensais e a integração passa a dizer "Em dia" com 2 pedidos | `tests/e2e/nuvemshop-sincroniza-pedidos.spec.ts` (SPECS_PARTE_6) | CI; prova local: ver abaixo |
+| O receptor recebeu o token em `Authentication: bearer`, `status=any` e janelas de `updated_at` ordenadas | idem | CI |
+| O painel "Pedidos recentes" do contato na inbox mostra `#1001` e `R$ 150,90` | idem | CI |
+| Cliente do pedido sem contato vira contato novo com `source = 'nuvemshop'` | idem | CI |
+| Com um run em andamento, o botão responde "Já está sincronizando." | idem | CI |
+
+Evidência: `evidence/nuvemshop-sync-e1/` (`01-integracao-em-dia.png`, `02-painel-do-contato.png`,
+`03-ja-sincronizando.png`) — presente só se a execução local foi feita; ver o relatório da task.

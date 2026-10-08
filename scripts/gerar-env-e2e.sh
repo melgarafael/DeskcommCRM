@@ -168,6 +168,16 @@ EXTENSIONS_LOCAL_CATALOG_ORIGIN=http://127.0.0.1:56331
 # escuta aqui, e não precisa: o Jev nasce desligado em toda organização.
 JEV_API_BASE_URL=http://127.0.0.1:3996
 
+# A API da Nuvemshop fala com o receptor que a spec
+# \`nuvemshop-sincroniza-pedidos\` sobe nesta porta (vizinha do Jev, 3996).
+# As credenciais são de mentira: só ligam a tela da integração; nenhuma spec
+# faz OAuth real. NUVEMSHOP_ENABLED fica de fora de propósito — ele muda os
+# passos do onboarding, que a vps-fresh-onboarding mede sem a loja.
+NUVEMSHOP_API_BASE_URL=http://127.0.0.1:3995/v1
+NUVEMSHOP_APP_ID=e2e-app
+NUVEMSHOP_CLIENT_ID=e2e-app
+NUVEMSHOP_CLIENT_SECRET=e2e-placeholder-nao-e-segredo
+
 # Placeholders: 'next start' roda em NODE_ENV=production, e lib/env.ts exige
 # estas vars em produção. As specs não exercitam os serviços por trás delas.
 # Local e CI falham pelos mesmos motivos porque leem ESTE arquivo: o workflow
