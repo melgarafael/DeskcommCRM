@@ -93,7 +93,8 @@ correspondentes localizados no repo):
 - **Atendimento WhatsApp** — inbox de 3 painéis em tempo real, conexões WAHA multi-número,
   mídia via Storage, anti-banimento (throttle + jitter + janela de horário), STOP detection.
 - **CRM & pedidos** — kanban com vocabulário configurável por nicho (fractional indexing),
-  customer 360, contatos, tags, Nuvemshop.
+  customer 360, contatos, tags, Nuvemshop (conexão e pedidos sincronizados; produtos, funil e
+  relatórios de loja seguem abertos — ver a seção 3).
 - **IA nativa** — agentes com RAG por tenant (pgvector), sentiment, handoff IA→humano,
   budget por org, MCP server interno.
 - **LGPD** — export e redact via workers, anonimização em cascata, consentimento auditado.
@@ -125,6 +126,7 @@ o contrato de governança para agentes de IA externos.
 | **Casos humanos** (`docs/handoffs/HANDOFF-casos-humanos.md`) | Waves 1–6 ✅ e revisadas; Wave 7 (prova E2E) relatada PARCIAL — interrompida por limite de API, não por bug | **A CONFIRMAR** se fechou: o HANDOFF saiu da raiz para `docs/handoffs/`, o que normalmente sinaliza épico encerrado |
 | **Inbox multimodal** (`docs/handoffs/HANDOFF-inbox-multimodal.md`) | Ondas 0–3.1 ✅ com prova real (WhatsApp real, mídia real) | **A CONFIRMAR** o estado das ondas 4–6. **Bloqueios externos que valem revalidar:** chave Google era de gateway (gemini real inacessível) e credencial Anthropic era placeholder (`last4 1234`) — o agente multimodal foi provado só em OpenAI/gpt-4o |
 | **Fase FG / Vendaval** | Não iniciada | O gatilho era a aprovação de G6, que existe (`G6.approved`). O README **não lista mais** a Fase FG em "Próximo" — **A CONFIRMAR** se saiu de escopo ou foi absorvida |
+| **Nuvemshop** (`docs/stories/epics/EPIC-07-nuvemshop.md`) | **E1 entregue:** conexão OAuth, pedidos dos últimos 12 meses em `orders` (backfill na conexão, webhook em segundos, conferência a cada 30 min), estado na tela e pedidos na ficha. O épico já constou como `completed` e não era: só havia conexão e recepção de webhook | **Abertos:** E2 produtos e catálogo, E3 pedido como lead no funil, E4 relatórios de receita, `EcommercePlatformAdapter` e `contact_external_ids`. Para medir o que a E1 faz hoje: `grep -n nuvemshop lib/event-log/register-handlers.ts` |
 
 ### Próximo no roadmap (não iniciado — CONFIRMADO no README)
 

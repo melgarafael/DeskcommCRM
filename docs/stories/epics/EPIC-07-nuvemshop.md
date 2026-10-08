@@ -32,7 +32,7 @@ exposes_contracts:
   - "db.nuvemshop_products"
   - "db.sync_progress"
   - "route./app/integrations/nuvemshop"
-status: completed
+status: in_progress
 created_at: 2026-04-28
 owner: Rafael Melgaço
 ---
@@ -1264,6 +1264,23 @@ LGPD redact webhooks (store/redact, customers/redact, customers/data_request) **
 - `route./app/integrations/nuvemshop` (status UI)
 - `lib/nuvemshop/{config,oauth,api-client,state}` exports
 - `tenant_integrations` row com `provider='nuvemshop'`, `oauth_access_token_encrypted` (via fn_encrypt_oauth)
+
+### Atualização 2026-10-08 — o status `completed` acima era falso
+
+O log abaixo registra só OAuth, recepção de webhook e tela de status. Os eventos `nuvemshop.order_*`
+eram emitidos e **nenhum handler os consumia**, e `orders` não tinha quem escrevesse. A entrega
+**E1** (spec `docs/superpowers/specs/2026-10-08-nuvemshop-sync-e1-design.md`) cumpre:
+
+- [x] sync de pedidos: backfill de 12 meses na conexão, por janela mensal e uma página por evento
+- [x] consumidor de `order/created|updated|paid|cancelled` (relê o pedido na API e grava em `orders`)
+- [x] consumidor de `app/uninstalled` (integração passa a `disconnected`)
+- [x] estado de sync por integração (`integration_sync_state`), reconciliação a cada 30 min e botão "Sincronizar agora"
+- [x] aviso na Central quando a loja revoga o acesso; pedidos na tela da integração e na ficha do contato
+
+Segue **aberto** (e por isso o status voltou a `in_progress`): `product_*` e `nuvemshop_products` (E2),
+pedido como lead no pipeline "Pedidos" (E3), relatórios (E4), `EcommercePlatformAdapter`,
+`contact_external_ids`, `cart/abandoned` e o modo de re-sync por tipo (`customers`/`products`).
+Mapa vivo: `docs/architecture/nuvemshop-sync.architecture.json`.
 
 ### Pendências
 - Backfill workers (sync de orders existentes pós-conexão) — vem em EPIC-12
