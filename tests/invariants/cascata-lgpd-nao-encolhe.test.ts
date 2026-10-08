@@ -122,6 +122,7 @@ const TIPOS_RESERVADOS = [
   "ai.case_opened", //               0279
   "appointment.outcome_confirmed", //herdado
   "contact.birthday", //             0551
+  "conversation.autonomous_turn_revoked", //0594 — revogação nativa, sessão não pode forjar
   "message.received", //             herdado
 ] as const;
 
