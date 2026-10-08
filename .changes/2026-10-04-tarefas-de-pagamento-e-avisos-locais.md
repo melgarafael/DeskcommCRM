@@ -1,7 +1,7 @@
 ---
 impacto: capacidade_nova
 secao: adicionado
-titulo: Tarefas de pagamento com responsável e lembretes internos
+titulo: Todo caso aguardando a equipe gera lembretes
 ---
 
-Os casos podem guardar tarefas para liberar dados oficiais de pagamento ou conferir recebimento. A equipe assume a tarefa, identifica a compra, revisa a comunicação e registra a decisão. A tela distingue a decisão do resultado do envio. Pendências da equipe geram lembretes na Central aos 3, 6 e 9 minutos; assumir ou comentar não reinicia o prazo. O aviso de abertura no WhatsApp pode ser configurado sem link público para instalações locais.
+Quando a Bia abre um caso e aguarda uma decisão humana, a equipe recebe lembretes internos nos minutos configurados, inclusive em dúvidas e casos sem pagamento. Se o caso aguarda uma resposta do cliente, o relógio pausa e recomeça quando ele volta para a equipe. Os reforços por WhatsApp são opcionais; o aviso de abertura continua independente.

@@ -20,5 +20,5 @@ begin
   return v_resultado;
 end;
 $$;
-revoke all on function public.fn_definir_aviso_de_caso_local(uuid,uuid,text,text,boolean,boolean,boolean) from public, anon;
+revoke execute on function public.fn_definir_aviso_de_caso_local(uuid,uuid,text,text,boolean,boolean,boolean) from public, anon;
 grant execute on function public.fn_definir_aviso_de_caso_local(uuid,uuid,text,text,boolean,boolean,boolean) to authenticated;

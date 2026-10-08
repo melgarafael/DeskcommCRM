@@ -49795,7 +49795,7 @@ create unique index if not exists agent_inbox_budget_do_plano_aberto_unico
   on public.agent_inbox_items (organization_id)
   where status = 'open' and kind = 'budget_exceeded' and ref_kind = 'plano';
 
--- ---- aviso interno de caso sem link (migration 0600) ----
+-- ---- aviso interno de caso sem link (migration 0601) ----
 -- manifest: aviso interno opcional sem link para operação local, preservando guardas da configuração.
 alter table public.config_aviso_de_caso add column if not exists sem_link boolean not null default false;
 
@@ -49818,10 +49818,10 @@ begin
   return v_resultado;
 end;
 $$;
-revoke all on function public.fn_definir_aviso_de_caso_local(uuid,uuid,text,text,boolean,boolean,boolean) from public, anon;
+revoke execute on function public.fn_definir_aviso_de_caso_local(uuid,uuid,text,text,boolean,boolean,boolean) from public, anon;
 grant execute on function public.fn_definir_aviso_de_caso_local(uuid,uuid,text,text,boolean,boolean,boolean) to authenticated;
 
--- ---- tarefas de pagamento no caso (migration 0601) ----
+-- ---- tarefas de pagamento no caso (migration 0602) ----
 -- manifest: tarefas de pagamento com compra fixa, decisão humana, envio e espera separados
 alter table public.agent_cases
   add column if not exists task_kind text,
@@ -49906,7 +49906,7 @@ drop trigger if exists redigir_tarefa_caso on public.contacts;
 create trigger redigir_tarefa_caso after update of is_anonymized on public.contacts
 for each row execute function public.fn_redigir_tarefa_caso();
 
--- ---- lembretes de tarefas de pagamento (migration 0602) ----
+-- ---- lembretes de tarefas de pagamento (migration 0603) ----
 -- manifest: Recibos e Central atômicos para espera humana de pagamento aos 3/6/9 minutos.
 -- A cadência é interna: nenhum HTTP ou envio para a cliente sai desta função.
 create unique index if not exists agent_cases_id_org_task_idx on public.agent_cases(id, organization_id);
@@ -50011,7 +50011,7 @@ create trigger trg_encerrar_lembrete_tarefa after update of task_state,task_kind
   on public.agent_cases for each row execute function public.fn_encerrar_lembrete_tarefa();
 notify pgrst, 'reload schema';
 
--- ---- configuração de cadência dos lembretes (migration 0603) ----
+-- ---- configuração de cadência dos lembretes (migration 0604) ----
 -- manifest: Torna configurável a cadência de lembretes da Central e dos reforços WhatsApp, preservando recibos e catch-up sem rajada.
 
 -- A função pura valida também a forma do array: somente uma dimensão, índice inicial 1,
@@ -50398,7 +50398,7 @@ grant execute on function public.fn_definir_aviso_de_caso_repeticao(
 
 notify pgrst, 'reload schema';
 
--- ---- lembretes em todos os casos que aguardam a equipe (migration 0604) ----
+-- ---- lembretes em todos os casos que aguardam a equipe (migration 0605) ----
 -- manifest: aplica a cadência configurável a todo caso que aguarda a equipe, sem cobrar enquanto aguarda o cliente
 -- Casos gerais em espera passam a usar o mesmo relógio, recibos e opt-in já usados pelas tarefas financeiras.
 drop trigger if exists trg_encerrar_lembrete_tarefa on public.agent_cases;

@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 const RAIZ = join(process.cwd(), "supabase");
 const MIGRATIONS = join(RAIZ, "migrations");
 const ARQUIVO = readdirSync(MIGRATIONS).find((name) =>
-  /^\d{14}_0603_configuracao_de_cadencia_de_lembretes_equipe\.sql$/.test(name),
+  /^\d{14}_0604_configuracao_de_cadencia_de_lembretes_equipe\.sql$/.test(name),
 );
 if (!ARQUIVO) throw new Error("Migration 0603 da cadência configurável ausente");
 
@@ -32,9 +32,9 @@ function checkDeMinuto(texto: string) {
 
 describe("cadência configurável dos lembretes no SQL", () => {
   it("adiciona o opt-in de reforços de forma aditiva, preservando valores existentes", () => {
-    const marcador = "-- ---- configuração de cadência dos lembretes (migration 0603) ----";
+    const marcador = "-- ---- configuração de cadência dos lembretes (migration 0604) ----";
     const inicio = BASELINE.lastIndexOf(marcador);
-    expect(inicio, "apêndice final da migration 0603 ausente").toBeGreaterThan(-1);
+    expect(inicio, "apêndice final da migration 0604 ausente").toBeGreaterThan(-1);
     const baselineFinal = BASELINE.slice(inicio);
     const ddl =
       /add column if not exists repetir_lembretes_whatsapp boolean not null default false/i;
