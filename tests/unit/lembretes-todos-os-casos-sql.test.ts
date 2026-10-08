@@ -6,13 +6,13 @@ import { describe, expect, it } from "vitest";
 const RAIZ = join(process.cwd(), "supabase");
 const MIGRATIONS = join(RAIZ, "migrations");
 const ARQUIVO = readdirSync(MIGRATIONS).find((name) =>
-  /^\d{14}_0605_lembretes_em_todos_os_casos\.sql$/.test(name),
+  /^\d{14}_0610_lembretes_em_todos_os_casos\.sql$/.test(name),
 );
-if (!ARQUIVO) throw new Error("Migration 0604 dos lembretes para todos os casos ausente");
+if (!ARQUIVO) throw new Error("Migration 0610 dos lembretes para todos os casos ausente");
 
 const SQL = readFileSync(join(MIGRATIONS, ARQUIVO), "utf8");
 const BASELINE = readFileSync(join(RAIZ, "baseline.sql"), "utf8");
-const MARCADOR = "-- ---- lembretes em todos os casos que aguardam a equipe (migration 0605) ----";
+const MARCADOR = "-- ---- lembretes em todos os casos que aguardam a equipe (migration 0610) ----";
 
 function funcao(texto: string, nome: string, proximo: string): string {
   const inicio = texto.indexOf(`create or replace function public.${nome}(`);
@@ -25,7 +25,7 @@ function funcao(texto: string, nome: string, proximo: string): string {
 describe("lembretes configuráveis para todos os casos", () => {
   it("mantém a migration e o apêndice idempotente do baseline em sincronia", () => {
     const inicio = BASELINE.lastIndexOf(MARCADOR);
-    expect(inicio, "apêndice final da migration 0605 ausente").toBeGreaterThan(-1);
+    expect(inicio, "apêndice final da migration 0610 ausente").toBeGreaterThan(-1);
     expect(BASELINE.slice(inicio + MARCADOR.length).trim()).toBe(SQL.trim());
     expect(SQL.split("\n", 1)[0]).toMatch(/^-- manifest:/);
   });

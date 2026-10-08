@@ -306,11 +306,11 @@ Esta extensão mantém o caso como tarefa de retaguarda, mas separa a decisão f
 
 **Fontes da implementação.** Schema e autorização no banco:
 
-- `supabase/migrations/20261008120000_0601_aviso_de_caso_sem_link.sql`;
-- `supabase/migrations/20261008120100_0602_tarefas_de_pagamento_no_caso.sql`;
-- `supabase/migrations/20261008120200_0603_lembretes_das_tarefas_de_caso.sql`;
-  - `supabase/migrations/20261008120300_0604_configuracao_de_cadencia_de_lembretes_equipe.sql` — cadência configurável, reforços WhatsApp e recibos no baseline;
-  - `supabase/migrations/20261008120400_0605_lembretes_em_todos_os_casos.sql` — cobertura de casos gerais, backfill do relógio e pausa enquanto o caso aguarda o cliente.
+- `supabase/migrations/20261008115320_0606_aviso_de_caso_sem_link.sql`;
+- `supabase/migrations/20261008115321_0607_tarefas_de_pagamento_no_caso.sql`;
+- `supabase/migrations/20261008115322_0608_lembretes_das_tarefas_de_caso.sql`;
+  - `supabase/migrations/20261008115323_0609_configuracao_de_cadencia_de_lembretes_equipe.sql` — cadência configurável, reforços WhatsApp e recibos no baseline;
+  - `supabase/migrations/20261008115324_0610_lembretes_em_todos_os_casos.sql` — cobertura de casos gerais, backfill do relógio e pausa enquanto o caso aguarda o cliente.
 
 Contrato e transições: `lib/agent-engine/agent/case-task-schema.ts`, `lib/agent-engine/agent/case-task.ts` e `lib/agent-engine/agent/case-task-delivery.ts`. Porta humana: `app/api/v1/ai/cases/[id]/task/route.ts`. Relógio: `lib/escalacao/lembretes-tarefa.ts`, `app/api/v1/cron/case-task-reminders/route.ts` e `lib/relogio/executar.ts`. Matrícula pós-envio: `lib/followup/apos-dados-confirmados.ts`, `lib/followup/apos-dados-confirmados.handler.ts` e registro em `lib/event-log/register-handlers.ts`. Cancelamento na conferência: `lib/agent-engine/agent/payment-review-followup.ts`. A arquitetura está em `docs/architecture/tarefas-de-pagamento.architecture.json`; evidências e pendências de ativação estão em `docs/superpowers/plans/2026-10-04-pendencias-de-pagamento-e-avisos-locais.md`.
 

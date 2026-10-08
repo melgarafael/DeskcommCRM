@@ -98,7 +98,7 @@ describe("a guarda de número da própria organização, nos dois artefatos", ()
 
   it("o wrapper local reutiliza a função canônica antes de gravar o modo local", () => {
     const local = readFileSync(
-      join(MIGRATIONS, "20261008120000_0601_aviso_de_caso_sem_link.sql"),
+      join(MIGRATIONS, "20261008115320_0606_aviso_de_caso_sem_link.sql"),
       "utf8",
     );
     const chamada = local.indexOf("v_resultado := public.fn_definir_aviso_de_caso(");
