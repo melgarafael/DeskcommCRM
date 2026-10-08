@@ -15,17 +15,19 @@ export async function marcarIntegracaoDesautorizada(
   admin: SupabaseClient,
   integ: { id: string; organizationId: string },
 ): Promise<void> {
-  await admin
+  const { error: erroIntegracao } = await admin
     .from("tenant_integrations")
     .update({ status: "error", status_reason: "auth_revogada" })
     .eq("organization_id", integ.organizationId)
     .eq("id", integ.id);
-  await admin
+  if (erroIntegracao) throw new Error(`desautorizar_integracao:${erroIntegracao.code ?? "erro"}`);
+  const { error: erroEstado } = await admin
     .from("integration_sync_state")
     .update({ status: "error", ultimo_erro: "auth", run_id: null, trava_ate: null })
     .eq("organization_id", integ.organizationId)
     .eq("provider", PROVEDOR)
     .eq("resource", "orders");
+  if (erroEstado) throw new Error(`desautorizar_estado:${erroEstado.code ?? "erro"}`);
   const { error } = await admin.from("agent_inbox_items").insert({
     organization_id: integ.organizationId,
     kind: KIND_INTEGRACAO_DESAUTORIZADA,

@@ -50,6 +50,11 @@ describe("iniciarSincronizacao", () => {
     await expect(iniciarSincronizacao(deps({ carregarIntegracao: erro }), "org-1", "manual")).resolves.toEqual({ ok: false, motivo: "desautorizada" });
   });
 
+  it("integração em erro com origem conexao prossegue", async () => {
+    const erro = vi.fn().mockResolvedValue({ id: "i", organizationId: "org-1", status: "error", storeId: "s", accessToken: "t" });
+    await expect(iniciarSincronizacao(deps({ carregarIntegracao: erro }), "org-1", "conexao")).resolves.toMatchObject({ ok: true });
+  });
+
   it("run ativo → sync_em_andamento, nada emitido", async () => {
     const d = deps({ reservarRun: vi.fn().mockResolvedValue(false) });
     await expect(iniciarSincronizacao(d, "org-1", "manual")).resolves.toEqual({ ok: false, motivo: "sync_em_andamento" });

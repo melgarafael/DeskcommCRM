@@ -109,6 +109,7 @@ export async function registrarPagina(
 }
 
 export async function fecharRun(admin: SupabaseClient, estado: EstadoDoSync, agora: Date): Promise<EstadoDoSync | null> {
+  if (!estado.run_id) return null;
   const { data, error } = await admin
     .from(TABELA)
     .update({
@@ -121,16 +122,18 @@ export async function fecharRun(admin: SupabaseClient, estado: EstadoDoSync, ago
     .eq("organization_id", estado.organization_id)
     .eq("provider", PROVEDOR)
     .eq("resource", RECURSO)
-    .eq("run_id", estado.run_id ?? "")
+    .eq("run_id", estado.run_id)
     .select(COLUNAS)
     .maybeSingle();
   if (error) throw new Error(`sync_state_fim:${error.message}`);
-  await admin
+  if (!data) return null;
+  const { error: erroSync } = await admin
     .from("tenant_integrations")
     .update({ last_sync_at: agora.toISOString() })
     .eq("organization_id", estado.organization_id)
     .eq("provider", PROVEDOR);
-  return (data as EstadoDoSync | null) ?? null;
+  if (erroSync) throw new Error(`sync_state_last_sync:${erroSync.message}`);
+  return data as EstadoDoSync;
 }
 
 export async function liberarRun(admin: SupabaseClient, orgId: string, runId: string | null): Promise<void> {
