@@ -31,6 +31,9 @@ import { avisoDeEtapaHandler } from "@/lib/leads/aviso-de-etapa.handler";
 import { comandaDoGanhoHandler } from "@/lib/financeiro/comanda-do-ganho.handler";
 import { avisoDeCasoAoSuporteHandler } from "@/lib/escalacao/aviso-ao-suporte.handler";
 import { avisoDePropostaNoWhatsAppHandler } from "@/lib/propostas/aviso-no-whatsapp.handler";
+import { nuvemshopDesinstalacaoHandler } from "@/lib/nuvemshop/sync/desinstalacao.handler";
+import { nuvemshopPedidoHandler } from "@/lib/nuvemshop/sync/pedido.handler";
+import { nuvemshopSyncHandler } from "@/lib/nuvemshop/sync/sync-page.handler";
 import { registerHandler } from "@/lib/event-log/dispatcher";
 
 let _registered = false;
@@ -72,9 +75,15 @@ export function ensureHandlersRegistered(): void {
   registerHandler(followupGatilhoPresencaHandler);
   registerHandler(mediaPersistHandler);
   registerHandler(mediaDeriveHandler);
+  // Escrita interna: desinstalação da loja só desliga a integração.
+  registerHandler(nuvemshopDesinstalacaoHandler);
   // Os consumidores dos canais (ex.: o pino que entrou sem coordenadas).
   for (const consumidor of CONSUMIDORES_DOS_CANAIS) registerHandler(consumidor);
   registerHandler(webPushInboundHandler);
+  // Nuvemshop: chamam a API da loja (rede de terceiro) — depois de quem só
+  // escreve no banco, antes dos avisos que saem por WhatsApp.
+  registerHandler(nuvemshopPedidoHandler);
+  registerHandler(nuvemshopSyncHandler);
   // Penúltimo, pelo MESMO critério do último: o aviso ao suporte sai por rede de
   // terceiro (o transporte de WhatsApp) e nunca pode atrasar quem escreve no
   // banco — inclusive o `followupGatilhoCasoHandler`, que consome o MESMO evento

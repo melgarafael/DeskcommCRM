@@ -30,6 +30,9 @@ import { campanhaRespostaHandler } from "@/lib/campanhas/resposta.handler";
 import { conversaoDeVendaHandler } from "@/lib/conversoes/envio.handler";
 import { conversaoDeQualificacaoHandler } from "@/lib/conversoes/qualificacao.handler";
 import { conversaoDeEtapaMetaHandler } from "@/lib/conversoes/etapa-meta.handler";
+import { nuvemshopDesinstalacaoHandler } from "@/lib/nuvemshop/sync/desinstalacao.handler";
+import { nuvemshopPedidoHandler } from "@/lib/nuvemshop/sync/pedido.handler";
+import { nuvemshopSyncHandler } from "@/lib/nuvemshop/sync/sync-page.handler";
 import { avisoDeCasoAoSuporteHandler } from "@/lib/escalacao/aviso-ao-suporte.handler";
 import { casoNaCentralHandler } from "@/lib/escalacao/caso-na-central.handler";
 import { followupGatilhoCasoHandler } from "@/lib/followup/gatilho-caso.handler";
@@ -52,6 +55,7 @@ import { mediaPersistHandler } from "@/workers/media-persist-worker.handler";
 import { ragIndexerHandler } from "@/workers/rag-indexer.handler";
 
 const RODA: EventHandler[] = [
+  nuvemshopDesinstalacaoHandler,
   followupReactivityHandler,
   campanhaRespostaHandler,
   avisoDeEtapaHandler,
@@ -63,6 +67,8 @@ const RODA: EventHandler[] = [
 ];
 
 const PULA: EventHandler[] = [
+  nuvemshopPedidoHandler,
+  nuvemshopSyncHandler,
   aiResponseHandler,
   aiSentimentHandler,
   aiHandoffFromSentimentHandler,
