@@ -12,7 +12,8 @@ Três proteções ficam valendo desde já:
 
 - as informações de um módulo não são alcançáveis direto pelo navegador: as tabelas do módulo são fechadas para o acesso do navegador, e a leitura passa por uma rota do sistema que confere a empresa de quem pediu;
 - a ligação de uma ficha de módulo com um contato é conferida **junto com a empresa dona do contato**, de modo que um módulo não consegue apontar para o cliente de outra empresa na mesma instalação;
-- um módulo que falhe não derruba nem esvazia a ficha do contato — o painel dele sai e o resto continua.
+- um módulo que falhe não derruba nem esvazia a ficha do contato — o painel dele sai e o resto continua;
+- o painel de um módulo só aparece quando há algo para mostrar: na ficha em que o módulo não guardou nada, ele não é desenhado.
 
 Ao juntar dois contatos duplicados, as fichas de módulo passam a acompanhar o contato que ficou, em vez de permanecerem presas ao que saiu da junção.
 
