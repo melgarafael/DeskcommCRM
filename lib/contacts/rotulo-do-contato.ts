@@ -132,3 +132,26 @@ export function rotuloDoContato(
 
   return t(SEM_NOME);
 }
+
+/**
+ * O rótulo que SÓ A EQUIPE vê: o de `rotuloDoContato`, com o nome salvo na
+ * agenda do celular (`address_book_name`) entre o nome escolhido no CRM e o
+ * apelido do perfil.
+ *
+ * Função separada, e não um campo a mais em `ContatoNomeavel`, porque
+ * `rotuloDoContato` e `nomeDoContato` também alimentam o que SAI para o
+ * cliente (o PDF da proposta, o `{{nome}}` da campanha, o prompt do agente). O
+ * nome da agenda é o rótulo que alguém da empresa escreveu no celular — pode
+ * ser "Maria caloteira" — e nunca vai em mensagem (decisão do mantenedor no PR
+ * #2439). Use esta função só em tela da equipe: caixa de entrada, ficha, lista.
+ */
+export function rotuloParaAEquipe(
+  c: (ContatoNomeavel & { address_book_name?: string | null }) | null | undefined,
+  t: (texto: string) => string = (texto) => texto,
+): string {
+  const escolhido = (c?.name ?? "").trim();
+  if (escolhido !== "" && !ehIdentificadorTecnico(escolhido)) return escolhido;
+  const agenda = (c?.address_book_name ?? "").trim();
+  if (agenda !== "" && !ehIdentificadorTecnico(agenda)) return agenda;
+  return rotuloDoContato(c, t);
+}

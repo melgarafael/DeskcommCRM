@@ -82,6 +82,7 @@ function contato(custom_fields: Record<string, unknown>) {
     id: "contato-1",
     name: "Lia",
     display_name: null,
+    address_book_name: null,
     email: null,
     phone_number: "5531999990000",
     cpf_present: false,

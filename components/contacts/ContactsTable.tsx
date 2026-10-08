@@ -37,7 +37,7 @@ import { useActiveOrg } from "@/hooks/auth/AuthProvider";
 import { useDeleteContact, mensagemDeBloqueioPorVinculo } from "@/hooks/contacts/useDeleteContact";
 import type { ContactOrderBy } from "@/lib/schemas/contacts";
 import type { Contact } from "@/lib/types/contacts";
-import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
+import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { useConversaNovaComEscolhaDeCanal } from "@/components/channels/SeletorDeCanalParaConversa";
 
@@ -49,7 +49,7 @@ interface Props {
 }
 
 function displayName(c: Contact, t: (texto: string) => string = (texto) => texto): string {
-  return rotuloDoContato(c, t);
+  return rotuloParaAEquipe(c, t);
 }
 
 /** Hoje/ontem: relativo ("há 2 horas", "ontem"). Mais antigo: data, não dia da semana. */

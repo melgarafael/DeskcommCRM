@@ -132,6 +132,7 @@ it("o PDF lista as respostas pelo rótulo da pergunta, e o CPF só na linha do d
     id: "contato-1",
     name: "Lia",
     display_name: null,
+    address_book_name: null,
     email: null,
     phone_number: "5531999990000",
     cpf_present: false,

@@ -2978,6 +2978,10 @@ export const DICIONARIO: Traducoes = {
   "Erro ao salvar": { es: "Error al guardar" },
   "Agent default": { es: "Agente predeterminado" },
   "Criado em": { es: "Creado el" },
+  "Nome na agenda do celular": { es: "Nombre en la agenda del celular" },
+  "Só a equipe vê. Para usar em mensagens, copie para o nome.": {
+    es: "Solo lo ve el equipo. Para usarlo en mensajes, cópialo al nombre.",
+  },
   "Geral": { es: "General" },
   "Descrição interna do agent": { es: "Descripción interna del agente" },
   "Agent ativo": { es: "Agente activo" },

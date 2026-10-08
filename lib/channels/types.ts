@@ -290,6 +290,27 @@ export interface ChannelAdapter {
   ): Promise<string | null>;
 
   /**
+   * O nome salvo na agenda do aparelho ligado a este canal, e o apelido do perfil.
+   *
+   * OPCIONAL: nem todo canal tem agenda. `null` significa que a pergunta nem
+   * saiu (transporte fora, canal sem o método). Um objeto com os dois campos
+   * nulos significa que o canal respondeu e não tinha nome — quem chama
+   * carimba e tenta de novo depois, em vez de perguntar a mesma pessoa para
+   * sempre.
+   *
+   * `agenda` é o nome que o dono do número GRAVOU no celular. `perfil` é o
+   * apelido que a própria pessoa pôs no WhatsApp. Quem chama não precisa saber
+   * QUAL canal guarda a agenda: testa a presença do método.
+   */
+  resolveAddressBookName?(
+    input: ChannelTenantScope & {
+      sessionRef: string;
+      phone: string | null;
+      lid: string | null;
+    },
+  ): Promise<{ agenda: string | null; perfil: string | null } | null>;
+
+  /**
    * O número, em dígitos, pelo qual este canal REGISTRA um telefone — `null`
    * quando não souber, quando o número não existir ou quando só houver
    * identidade opaca.

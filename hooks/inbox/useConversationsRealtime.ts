@@ -17,6 +17,9 @@ export interface ContactSummary {
   id: string;
   display_name: string | null;
   name: string | null;
+  /** Nome salvo na agenda do celular. SÓ A EQUIPE vê (`rotuloParaAEquipe`); nunca vai em mensagem.
+   *  Opcional: conversas em cache de antes do campo existir. */
+  address_book_name?: string | null;
   phone_number: string | null;
   tags: string[];
   is_blocked: boolean;

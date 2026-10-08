@@ -88,6 +88,7 @@ export async function GET(
         id: payload.contact.id,
         name: payload.contact.name,
         display_name: payload.contact.display_name,
+        address_book_name: payload.contact.address_book_name,
         email: maskEmail(payload.contact.email),
         phone_number: maskPhone(payload.contact.phone_number),
         // cpf_present tells whether it exists — CPF value itself NEVER exposed

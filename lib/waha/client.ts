@@ -673,6 +673,42 @@ export class WahaClient {
   }
 
   /**
+   * O nome salvo na agenda do aparelho, e o apelido do perfil.
+   *
+   * `name` é o que a pessoa GRAVOU no celular. `pushname` é o que o contato
+   * escolheu no próprio perfil — o mesmo campo que o webhook já entrega, e que
+   * falta justamente quando a lista mostra só o telefone. `null` quando o
+   * canal não responde: ausência de agenda não é erro, e quem chama carimba
+   * a tentativa para a fila girar.
+   *
+   * NOWEB só responde isto com o store da sessão ligado. Sem store a chamada
+   * volta erro e este método devolve null — o mesmo contrato de
+   * `resolvePhoneForLid`.
+   */
+  async getContact(
+    session: string,
+    contactId: string,
+    tetoMs = 2_500,
+  ): Promise<{ name: string | null; pushname: string | null; shortName: string | null } | null> {
+    try {
+      const url = new URL(`${this.baseUrl}/api/contacts`);
+      url.searchParams.set("session", session);
+      url.searchParams.set("contactId", contactId);
+      const res = await this.fetchComTeto(url, { headers: { "X-Api-Key": this.apiKey } }, tetoMs);
+      if (!res.ok) return null;
+      const body = (await res.json()) as {
+        name?: unknown;
+        pushname?: unknown;
+        shortName?: unknown;
+      };
+      const texto = (v: unknown) => (typeof v === "string" && v.trim() !== "" ? v : null);
+      return { name: texto(body.name), pushname: texto(body.pushname), shortName: texto(body.shortName) };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * O telefone por trás de um id opaco (`<lid>@lid`), quando o canal souber.
    *
    * ─── Por que isto não é sempre possível ─────────────────────────────────
