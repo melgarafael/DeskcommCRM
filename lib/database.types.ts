@@ -10818,6 +10818,16 @@ export type Database = {
       fn_user_org_ids: { Args: never; Returns: string[] }
       fn_user_role_in: { Args: { p_org: string }; Returns: number }
       fn_user_role_in_org: { Args: { p_org: string }; Returns: string }
+      fn_uso_de_ia: {
+        Args: {
+          p_agent_id?: string
+          p_ate: string
+          p_desde: string
+          p_org: string
+          p_purpose?: string
+        }
+        Returns: Json
+      }
       midpoint: { Args: { p_next: number; p_prev: number }; Returns: number }
       retrieve_top_k_chunks: {
         Args: {
