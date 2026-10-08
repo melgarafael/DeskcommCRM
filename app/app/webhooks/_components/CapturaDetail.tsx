@@ -19,6 +19,7 @@ import type { LeadCaptureRow } from "@/hooks/webhooks/useLeadCaptures";
 import { DESFECHO_LABEL } from "./CapturasTab";
 import { useT } from "@/hooks/i18n/useT";
 import { CadastrarCampo, useCampoDoFunilDaCaptacao } from "./CadastrarCampo";
+import { useWebhookSources } from "@/hooks/webhooks/useWebhookSources";
 
 interface Props {
   captura: LeadCaptureRow | null;
@@ -59,7 +60,10 @@ export function CapturaDetail({ captura, onOpenChange }: Props) {
   const t = useT();
   // Antes do `return null`: hook não pode ficar depois de retorno condicional.
   const funil = useCampoDoFunilDaCaptacao(captura?.webhook_source_id ?? null);
+  const { data: fontesRes } = useWebhookSources();
   if (!captura) return null;
+  const camposDaFonte =
+    fontesRes?.data?.find((source) => source.id === captura.webhook_source_id)?.form_fields ?? [];
   const campos = Object.entries(captura.fields ?? {});
   const utms = Object.entries(captura.utm ?? {});
   const motivo = captura.reject_reason
@@ -113,11 +117,17 @@ export function CapturaDetail({ captura, onOpenChange }: Props) {
                 // Cadastrado no funil: a tela mostra o rótulo que a equipe escolheu, não a
                 // chave crua do formulário. Não cadastrado: oferece cadastrar aqui mesmo.
                 const definicao = funil.definicoes.find((d) => d.key === chave);
+                const campoDaFonte = camposDaFonte.find((field) => field.key === chave);
                 return (
-                  <Linha key={chave} rotulo={definicao?.label ?? chave}>
+                  <Linha key={chave} rotulo={campoDaFonte?.label ?? definicao?.label ?? chave}>
                     {valorLegivel(valor)}
                     {!definicao && funil.pronto ? (
-                      <CadastrarCampo chave={chave} valor={valor} cadastrar={funil.cadastrar} />
+                      <CadastrarCampo
+                        chave={chave}
+                        valor={valor}
+                        tipoInicial={campoDaFonte?.type === "currency" || campoDaFonte?.type === "number" ? campoDaFonte.type : undefined}
+                        cadastrar={funil.cadastrar}
+                      />
                     ) : null}
                   </Linha>
                 );

@@ -23,12 +23,14 @@
  * 2. **O relógio é injetado.** Prazo é a metade da defesa que só se prova nas
  *    bordas, e uma função que lê o próprio relógio não tem bordas testáveis.
  *
- * ─── O que este arquivo NÃO resolve, e está declarado ─────────────────────
+ * ─── O uso único NÃO mora aqui ────────────────────────────────────────────
  *
- * O `nonce` é emitido e devolvido na verificação, mas ninguém o queima: dentro
- * do prazo, o mesmo `state` vale duas vezes. Fechar isso exige guardar o nonce
- * usado (Redis ou tabela), o que é estado — e estado não mora nesta camada.
- * Quem monta a rota do callback recebe o nonce justamente para poder queimá-lo.
+ * Sozinho, um `state` válido vale quantas vezes for apresentado dentro do
+ * prazo. Este arquivo devolve o `nonce` para que QUEM CONSOME o retorno o
+ * queime: o callback grava o nonce em `calendar_oauth_nonces` (migration 0190,
+ * chave primária = nonce) antes de trocar o código, e a segunda tentativa
+ * viola a unicidade. Ver `app/api/v1/agenda/google/callback/route.ts`.
+ * Consumidor novo de `verificarEstado` que não queime o nonce reabre o reuso.
  */
 
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";

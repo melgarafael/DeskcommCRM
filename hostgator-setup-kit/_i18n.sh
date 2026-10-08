@@ -111,6 +111,9 @@ sin eso un contenedor de compose común no puede entrar en ella."
   ["✓ chave de cifra dos segredos gerada e gravada no .env"]="✓ Clave de cifrado de los secretos generada y guardada en el .env"
   ["✓ chave de cifra ativa no banco (segredos de webhook são guardados cifrados)"]="✓ Clave de cifrado activa en la base de datos (los secretos de webhook se guardan cifrados)"
   ["⚠ não consegui semear a chave de cifra no banco — segredos de webhook não poderão ser salvos até rodar update.sh de novo."]="⚠ No pude sembrar la clave de cifrado en la base de datos — los secretos de webhook no podrán guardarse hasta volver a ejecutar update.sh."
+  ["✓ chave de cifra do CPF gerada e gravada no .env"]="✓ Clave de cifrado del CPF generada y guardada en el .env"
+  ["✓ chave de cifra do CPF ativa no banco (contato com CPF é salvo cifrado)"]="✓ Clave de cifrado del CPF activa en la base de datos (el contacto con CPF se guarda cifrado)"
+  ["⚠ não consegui semear a chave de cifra do CPF no banco — o contato será salvo sem CPF até rodar update.sh de novo."]="⚠ No pude sembrar la clave de cifrado del CPF en la base de datos — el contacto se guardará sin CPF hasta volver a ejecutar update.sh."
 
   # ── install.sh: banner() e show_recovery() ──────────────────────────────
   ["  Agentes de IA que atendem no WhatsApp, dentro do seu CRM."]="  Agentes de IA que atienden por WhatsApp, dentro de tu CRM."
@@ -136,6 +139,7 @@ sin eso un contenedor de compose común no puede entrar en ella."
   ["A URL precisa começar com https://. Na nuvem ela fica em Settings > API > Project URL (termina em .supabase.co); num Supabase próprio, é o endereço do seu servidor."]="La URL debe empezar con https://. En la nube está en Settings > API > Project URL (termina en .supabase.co); en un Supabase propio, es la dirección de tu servidor."
   ["O modo single-server exige SUPABASE_INTERNAL_URL com http:// ou https:// para validar o Supabase local."]="El modo single-server requiere SUPABASE_INTERNAL_URL con http:// o https:// para validar el Supabase local."
   ["Não consegui alcançar {1} — confira se o projeto existe, está ativo (projeto pausado não responde) e se o VPS tem internet."]="No pude conectar con {1} — revisa que el proyecto exista, esté activo (un proyecto pausado no responde) y que la VPS tenga internet."
+  ["{1} respondeu (HTTP {2}), mas não é o Supabase: o serviço de login dele não atendeu em /auth/v1/verify. Confira o endereço (e a porta, se houver outro painel no servidor)."]="{1} respondió (HTTP {2}), pero no es Supabase: su servicio de login no atendió en /auth/v1/verify. Revisa la dirección (y el puerto, si hay otro panel en el servidor)."
   ["Essa é a chave '{1}', e aqui eu preciso da '{2}'. Em Settings > API elas ficam uma embaixo da outra — confira qual copiou."]="Esa es la clave '{1}', y aquí necesito la '{2}'. En Settings > API están una debajo de la otra — revisa cuál copiaste."
   ["Essa chave é de OUTRO projeto Supabase ({1}), e a URL que você deu é do projeto {2}. Copie as duas do mesmo projeto."]="Esa clave es de OTRO proyecto de Supabase ({1}), y la URL que diste es del proyecto {2}. Copia las dos del mismo proyecto."
   ["Isso não parece uma chave do Supabase (elas começam com 'eyJ' ou 'sb_'). Pegue em Settings > API."]="Esto no parece una clave de Supabase (empiezan con 'eyJ' o 'sb_'). Consíguela en Settings > API."
@@ -314,6 +318,9 @@ y, si de verdad es un Traefik, pon REVERSE_PROXY=traefik en el .env y vuelve a e
 
   # ── install.sh: red del Traefik, telemetría, escritura del .env ─────────
   ["  (o Traefik roda em modo host, então o CRM publica numa rede própria: {1})"]="  (Traefik corre en modo host, así que el CRM publica en una red propia: {1})"
+  ["O seu Traefik está em mais de uma rede Docker ({1}) e não sei por qual ele alcança os sites.
+Ponha TRAEFIK_NETWORK=<nome> no .env com a rede certa antes de tentar de novo."]="Tu Traefik está en más de una red Docker ({1}) y no sé por cuál llega a los sitios.
+Pon TRAEFIK_NETWORK=<nombre> en el .env con la red correcta antes de volver a intentarlo."
   ["Não consegui descobrir a rede Docker do seu Traefik. Rode 'docker network ls',
 identifique a rede dele e ponha TRAEFIK_NETWORK=<nome> no .env antes de tentar de novo."]="No pude averiguar la red Docker de tu Traefik. Ejecuta 'docker network ls',
 identifica su red y pon TRAEFIK_NETWORK=<nombre> en el .env antes de volver a intentarlo."

@@ -61,6 +61,7 @@ interface RuleRow {
   name: string;
   conditions: RuleCondition[];
   actions: Array<{ type: string; config?: Record<string, unknown> }>;
+  trigger_config?: Record<string, unknown> | null;
 }
 
 /** Hidrata o contexto avaliado pelas condições/ações a partir do entity do evento. */
@@ -261,7 +262,7 @@ export async function runAutomationForEvent(
 
   const { data: rules, error } = await admin
     .from("automation_rules")
-    .select("id, name, conditions, actions")
+    .select("id, name, conditions, actions, trigger_config")
     .eq("organization_id", row.organization_id)
     .eq("trigger_event", row.event_type)
     .eq("is_active", true)
@@ -300,7 +301,21 @@ export async function runAutomationForEvent(
   if ((context.contact as { is_personal?: boolean } | undefined)?.is_personal === true) {
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "skipped", detail: "contato_pessoal" };
   }
-  const applicable = matched.filter((r) => evaluateConditions(r.conditions ?? [], context));
+  const lead = context.lead as
+    | { source_metadata?: Record<string, unknown> | null }
+    | undefined;
+  const webhookSourceId = lead?.source_metadata?.webhook_source_id;
+  const applicable = matched.filter((rule) => {
+    const configuredSourceId = rule.trigger_config?.webhook_source_id;
+    if (
+      row.event_type === "lead.created" &&
+      typeof configuredSourceId === "string" &&
+      configuredSourceId !== webhookSourceId
+    ) {
+      return false;
+    }
+    return evaluateConditions(rule.conditions ?? [], context);
+  });
   if (!applicable.length) {
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "ok", detail: "no_match" };
   }

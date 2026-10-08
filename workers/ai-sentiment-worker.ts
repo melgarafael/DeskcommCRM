@@ -25,6 +25,7 @@ import { z } from "zod";
 import { costCents } from "@/lib/agent-engine/edge/llm/pricing";
 import { resolverAgenteDaConversa } from "@/lib/ai/agents/agente-da-conversa";
 import { agenteAtende, precisaRecuperarLegado } from "@/lib/ai/agents/no-ar";
+import { podeGastarComIa } from "@/lib/ai/budget/pode-gastar";
 import { computeCost } from "@/lib/ai/cost";
 import { avisarNaCentral, fecharAvisoDoJev } from "@/lib/ai/decisao/aviso";
 import { MODELO_DO_JEV } from "@/lib/ai/decisao/cliente";
@@ -44,6 +45,7 @@ import { DEFAULT_SENTIMENT_THRESHOLD, SENTIMENT_SYSTEM_PROMPT } from "@/lib/ai/p
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { MENSAGEM_REDIGIDA } from "@/lib/lgpd/cascata";
+import { logger } from "@/lib/logger";
 import { aiDispatchModeSchema } from "@/lib/schemas/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { aConversaAgora, perguntarOsPedidosDoCliente } from "@/workers/ai-sentiment-worker.pedidos";
@@ -277,6 +279,32 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
       message_id: messageId,
       invocation_kind: "sentiment_classify",
     } satisfies Partial<LogInvocationInput>;
+
+    // ── O teto de gasto de IA, ANTES de qualquer chamada paga ─────────────
+    //
+    // Este worker roda a cada mensagem recebida e não passa pelo seam do engine
+    // nem pelo guard do caminho legado — os dois lugares onde o teto vinculava.
+    // Com a organização em "parar a IA" e o teto estourado, o turno ia para a
+    // fila humana e o clima seguia cobrando cada mensagem. A pergunta é a MESMA
+    // decisão pura dos outros dois (`podeGastarComIa` → `decidirOrcamento`):
+    // "só avisar" e "desligado" seguem; só o veredito `bloquear` pula.
+    //
+    // Aqui, e não mais abaixo, porque daqui para baixo TUDO é pago: o Jev do
+    // clima, o Jev dos pedidos e o LLM de reserva. E depois dos guards baratos
+    // (mensagem, direção, elegibilidade, agente no ar), para a leitura do
+    // orçamento não rodar à toa em mensagem que nem seria classificada.
+    // Pular não deixa linha em `llm_calls` — não houve chamada —, e o motivo
+    // fica no resultado do consumidor do event_log e no log.
+    const orcamento = await podeGastarComIa(event.organization_id, "sentiment_classify");
+    if (!orcamento.pode) {
+      logger.info("[ai-sentiment-worker] clima não medido: teto de gasto de IA atingido", {
+        organization_id: event.organization_id,
+        message_id: messageId,
+        gasto_cents: orcamento.gastoCents,
+        teto_cents: orcamento.tetoCents,
+      });
+      return { skipped: true, reason: "orcamento_de_ia_estourado" };
+    }
 
     // ── Os pedidos do cliente, ao lado do clima ────────────────────────────
     //

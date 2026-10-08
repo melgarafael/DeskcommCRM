@@ -37,6 +37,28 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Conectar a assinatura do ChatGPT": { es: "Conectar la suscripción de ChatGPT" },
+  "Cada empresa conecta a própria conta do ChatGPT. Abra o link e entre com a conta que tem a assinatura. No fim, o navegador vai para http://127.0.0.1:1455/auth/callback, que pode não abrir — é esperado. Copie esse endereço inteiro, da barra do navegador, e cole aqui.": {
+    es: "Cada empresa conecta su propia cuenta de ChatGPT. Abre el enlace e inicia sesión con la cuenta que tiene la suscripción. Al final, el navegador irá a http://127.0.0.1:1455/auth/callback, que quizá no se abra — es normal. Copia la dirección completa de la barra del navegador y pégala aquí.",
+  },
+  "A autorização usa Sign in with ChatGPT para apps auto-hospedados. O acesso depende dos termos e limites de uso da assinatura e pode mudar conforme as regras da OpenAI.": {
+    es: "La autorización usa Sign in with ChatGPT para aplicaciones autoalojadas. El acceso depende de los términos y límites de uso de la suscripción y puede cambiar según las reglas de OpenAI.",
+  },
+  "A assinatura é pessoal e tem limites por janela de uso. Não compartilhe esta conta entre organizações nem tente contornar os limites.": {
+    es: "La suscripción es personal y tiene límites por ventana de uso. No compartas esta cuenta entre organizaciones ni intentes eludir los límites.",
+  },
+  "Para atendimento de clientes em volume, prefira uma chave de API da própria organização. Se configurada, ela pode servir como reserva quando a assinatura atingir limites ou falhar.": {
+    es: "Para atender a clientes a gran escala, es mejor usar una clave de API de la propia organización. Si está configurada, puede servir como alternativa cuando la suscripción alcance sus límites o falle.",
+  },
+  "Há um login anterior salvo, mas ele ainda não autorizou o uso do plano ChatGPT. Conecte novamente por este link para listar modelos e usar a assinatura.": {
+    es: "Hay un inicio de sesión anterior guardado, pero aún no autorizó el uso del plan ChatGPT. Vuelve a conectar desde este enlace para listar modelos y usar la suscripción.",
+  },
+  "Login guardado com cifra nesta empresa. O agente pode usar a assinatura dentro dos limites dela; se houver falha elegível e uma reserva configurada, usa a chave de API desta organização.": {
+    es: "Inicio de sesión guardado cifrado para esta empresa. El agente puede usar la suscripción dentro de sus límites; si ocurre un fallo compatible y hay una alternativa configurada, usará la clave de API de esta organización.",
+  },
+  "Conecte sua conta pessoal do ChatGPT dentro dos limites da assinatura; para operação em volume, prefira uma chave de API da organização. Uma chave da própria organização pode servir de reserva.": {
+    es: "Conecta tu cuenta personal de ChatGPT dentro de los límites de la suscripción; para operar a gran escala, es mejor usar una clave de API de la organización. Una clave de la propia organización puede servir como alternativa.",
+  },
   // Página inicial pública e seção "Dados do Google" da política de privacidade.
   "Atendimento e vendas pelo WhatsApp, com agentes de inteligência artificial.": { es: "Atención y ventas por WhatsApp, con agentes de inteligencia artificial." },
   "reúne em um só lugar as conversas com os clientes, o funil de vendas, a agenda de atendimentos e agentes de inteligência artificial que respondem, qualificam o interesse e passam a conversa para uma pessoa quando é preciso.": { es: "reúne en un solo lugar las conversaciones con los clientes, el embudo de ventas, la agenda de atención y agentes de inteligencia artificial que responden, califican el interés y pasan la conversación a una persona cuando hace falta." },
@@ -2411,6 +2433,7 @@ export const DICIONARIO: Traducoes = {
   Agendada: { es: "Programada" },
   "Concluída": { es: "Concluida" },
   Cancelada: { es: "Cancelada" },
+  "Não disparada": { es: "No disparada" },
   "Fluxo criado.": { es: "Flujo creado." },
   "Follow-up cancelado.": { es: "Seguimiento cancelado." },
   "Retorno cancelado.": { es: "Seguimiento cancelado." },
@@ -3398,7 +3421,6 @@ export const DICIONARIO: Traducoes = {
     es: "Las conversaciones en curso pasan a la fila de atención humana. Nadie se queda sin respuesta, pero alguien tiene que responder. Cada una vuelve al modo automático con el botón \"Devolver al automático\" de su encabezado.",
   },
   "Assuntos mais procurados": { es: "Temas más buscados" },
-  "Atendimentos com IA": { es: "Atenciones con IA" },
   Até: { es: "Hasta" },
   "Até lá, só avisamos.": { es: "Hasta entonces, solo avisamos." },
   "Avisamos ao passar de": { es: "Avisamos al pasar de" },
@@ -3447,6 +3469,18 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível registrar a ação. O motivo ficou registrado no servidor com o identificador abaixo.": { es: "No se pudo registrar la acción. El motivo quedó registrado en el servidor con el identificador de abajo." },
   "Custo da IA no período": { es: "Costo de la IA en el período" },
   "Custo no período": { es: "Costo en el período" },
+  "Chamadas de IA": { es: "Llamadas a la IA" },
+  "cada resposta do agente pode fazer várias": { es: "cada respuesta del agente puede hacer varias" },
+  "Turnos do agente": { es: "Turnos del agente" },
+  "custo médio por turno:": { es: "costo promedio por turno:" },
+  "sem turnos no período": { es: "sin turnos en el período" },
+  "conta só os turnos que a fila ainda guarda (padrão: 90 dias)": { es: "cuenta solo los turnos que la cola aún guarda (predeterminado: 90 días)" },
+  "Taxa de cache": { es: "Tasa de caché" },
+  "do texto enviado à IA veio do cache, que custa bem menos": { es: "del texto enviado a la IA vino de la caché, que cuesta mucho menos" },
+  "Tempo de uma chamada à IA": { es: "Tiempo de una llamada a la IA" },
+  "Tempo de uma chamada à IA por dia (segundos)": { es: "Tiempo de una llamada a la IA por día (segundos)" },
+  "Quanto gastou por dia (US$)": { es: "Cuánto gastaste por día (US$)" },
+  "Quanto a inteligência artificial custou, quantas vezes foi chamada, quantos turnos o agente fez, quanto demora uma chamada e quantas vezes precisou chamar uma pessoa — nos últimos 30 dias.": { es: "Cuánto costó la inteligencia artificial, cuántas veces fue llamada, cuántos turnos hizo el agente, cuánto tarda una llamada y cuántas veces necesitó llamar a una persona — en los últimos 30 días." },
   // ── Administração › Destinos internos (decisão 22-d, #1004) ──────────────
   "Destinos internos": { es: "Destinos internos" },
   "Endereços da rede deste servidor que a instalação pode alcançar.": {
@@ -3651,11 +3685,7 @@ export const DICIONARIO: Traducoes = {
   "Quantas vezes o sistema leu o que o cliente queria e escolheu qual atendimento devia responder.": {
     es: "Cuántas veces el sistema leyó lo que el cliente quería y eligió qué atención debía responder.",
   },
-  "Quanto a inteligência artificial custou, quantos atendimentos ela fez, quanto demorou para responder e quantas vezes precisou chamar uma pessoa — nos últimos 30 dias.": {
-    es: "Cuánto costó la inteligencia artificial, cuántas conversaciones atendió, cuánto tardó en responder y cuántas veces necesitó llamar a una persona en los últimos 30 días.",
-  },
   "Quanto foi para uma pessoa (%)": { es: "Cuánto pasó a una persona (%)" },
-  "Quanto gastou por dia (R$)": { es: "Cuánto gastaste por día (R$)" },
   Reabrir: { es: "Reabrir" },
   Reativar: { es: "Reactivar" },
   "Regras e aprendizados que TODOS os agentes de IA desta organização seguem em qualquer conversa — não é uma configuração de um agente específico.": {
@@ -3699,8 +3729,6 @@ export const DICIONARIO: Traducoes = {
     es: "Sugerencias que el sistema sacó de las propias atenciones y que revisaste y aceptaste.",
   },
   "Só acompanhar": { es: "Solo monitorear" },
-  "Tempo de resposta": { es: "Tiempo de respuesta" },
-  "Tempo de resposta por dia (segundos)": { es: "Tiempo de respuesta por día (segundos)" },
   "Tentar de novo": { es: "Intentar de nuevo" },
   "Tipo de uso": { es: "Tipo de uso" },
   "Todos os números desta página são só deste intervalo. Mude as datas para comparar um mês com o outro.": {
@@ -5832,6 +5860,11 @@ export const DICIONARIO: Traducoes = {
   "O card vai para esta etapa do mesmo funil — trocar de funil é recusado, como no quadro.": {
     es: "La tarjeta va a esta etapa del mismo embudo: cambiar de embudo se rechaza, igual que en el tablero.",
   },
+  // Motivo da perda no "mover lead" (etapa de perda exige motivo)
+  "Motivo da perda": { es: "Motivo de pérdida" },
+  "Escolha o motivo": { es: "Elige el motivo" },
+  "Escolha o motivo da perda.": { es: "Elige el motivo de pérdida." },
+  "falta o motivo da perda": { es: "falta el motivo de pérdida" },
   "Texto da mensagem": { es: "Texto del mensaje" },
   "Tags do contato": { es: "Etiquetas del contacto" },
   "Tag adicionada": { es: "Etiqueta agregada" },
@@ -7334,6 +7367,12 @@ export const DICIONARIO: Traducoes = {
   "A mídia do modelo entra por link público — a plataforma baixa o arquivo na hora do envio.": {
     es: "El archivo multimedia de la plantilla va por enlace público: la plataforma lo descarga en el momento del envío.",
   },
+  // Prévia em tempo real da mensagem na janela fechada (#2446).
+  "Prévia da mídia do cabeçalho": { es: "Vista previa de la multimedia del encabezado" },
+  "Cole o link da mídia para ver a prévia aqui.": {
+    es: "Pega el enlace de la multimedia para ver la vista previa aquí.",
+  },
+  "Item do carrossel": { es: "Elemento del carrusel" },
   "Nenhum modelo aprovado ainda. Crie um em": { es: "Todavía no hay ninguna plantilla aprobada. Crea una en" },
   "Conexões → Templates": { es: "Conexiones → Plantillas" },
   "e envie quando a plataforma aprovar.": { es: "y envíala cuando la plataforma la apruebe." },
@@ -8110,6 +8149,7 @@ export const DICIONARIO: Traducoes = {
   // ─── Contacts: vocabulário da timeline (lib/leads/activity-vocabulary.ts) ───
   "Entrou no funil": { es: "Entró al embudo" },
   "primeira mensagem recebida no WhatsApp": { es: "primer mensaje recibido en WhatsApp" },
+  "primeira mensagem enviada pelo celular": { es: "primer mensaje enviado desde el celular" },
   "primeira mensagem recebida no Instagram": { es: "primer mensaje recibido en Instagram" },
   "primeira mensagem recebida no Facebook": { es: "primer mensaje recibido en Facebook" },
   "primeira ligação recebida": { es: "primera llamada recibida" },
@@ -8180,6 +8220,9 @@ export const DICIONARIO: Traducoes = {
   "Fluxo concluído": { es: "Flujo concluido" },
   "O fluxo parou de tentar": { es: "El flujo dejó de intentarlo" },
   "Falhou neste passo": { es: "Falló en este paso" },
+  "Não conseguiu mover o card para a etapa escolhida": {
+    es: "No pudo mover la tarjeta a la etapa elegida",
+  },
   "O cliente respondeu — o fluxo acordou na hora": { es: "El cliente respondió: el flujo despertó al instante" },
   "Encerrado porque o cliente respondeu": { es: "Finalizado porque el cliente respondió" },
   "Encerrado porque o cliente pediu para parar": { es: "Finalizado porque el cliente pidió parar" },
@@ -9636,6 +9679,8 @@ export const DICIONARIO: Traducoes = {
   "Endereço de retorno": { es: "URL de redirección" },
   "Já existe uma chave cadastrada. Deixe em branco para mantê-la, ou digite uma nova para substituir.": { es: "Ya hay una clave registrada. Déjalo en blanco para mantenerla, o escribe una nueva para reemplazarla." },
   "Ela é guardada cifrada e nunca volta a aparecer nesta tela.": { es: "Se guarda cifrada y nunca vuelve a aparecer en esta pantalla." },
+  "Essa chave tem aspas, vírgula ou espaço — sinal de que veio colada junto com o resto do arquivo. Copie só o valor que começa com GOCSPX-, sem nada colado depois.": { es: "Esta clave tiene comillas, comas o espacios: señal de que se pegó junto con el resto del archivo. Copia solo el valor que empieza con GOCSPX-, sin nada pegado después." },
+  "A chave secreta tem caracteres que não existem numa chave do Google (como aspas, vírgula ou espaço). Copie só o valor que começa com GOCSPX-, sem nada colado depois.": { es: "La clave secreta tiene caracteres que no existen en una clave de Google (como comillas, comas o espacios). Copia solo el valor que empieza con GOCSPX-, sin nada pegado después." },
   "Esta instalação já tem as credenciais no arquivo de configuração do servidor. O que você salvar aqui passa a valer no lugar delas; apagar o que está aqui faz o sistema voltar a usar as do arquivo.": { es: "Esta instalación ya tiene credenciales en el archivo de configuración del servidor. Lo que guardes aquí las reemplaza. Si borras lo que hay aquí, el sistema vuelve a usar las del archivo." },
   "Ao trocar uma credencial já em uso:": { es: "Al cambiar una credencial ya en uso:" },
   "quem já conectou a agenda vai precisar conectar de novo. O Google invalida as autorizações antigas quando o aplicativo muda — não há como evitar, e ninguém perde compromisso por isso.": { es: "quien ya conectó su agenda tendrá que conectarla de nuevo. Google invalida las autorizaciones anteriores cuando cambia la aplicación. No hay forma de evitarlo, pero nadie pierde citas por eso." },
@@ -11490,6 +11535,11 @@ export const DICIONARIO: Traducoes = {
   },
 
   // ─── Fase B: handlers compartidos REST/MCP (leads/_handler.ts) ───
+  // A recusa da policy `crm_leads` (SQLSTATE 42501) traduzida em 403 — ver
+  // `recusaDaGuardaDoBanco`.
+  "Sem permissão para salvar este negócio: pela visibilidade definida na organização, ele ficaria fora do que você pode ver.": {
+    es: "Sin permiso para guardar este negocio: por la visibilidad definida en la organización, quedaría fuera de lo que puedes ver.",
+  },
   "Um lead tem um dono: informe owner_user_id OU owner_agent_id.": {
     es: "Un lead tiene un dueño: indica owner_user_id O owner_agent_id.",
   },
@@ -12185,6 +12235,49 @@ export const DICIONARIO: Traducoes = {
     es: "La IA llama a este número y conduce la llamada. Aún no es posible hablar tú mismo.",
   },
   "Número": { es: "Número" },
+  "Moeda (BRL)": { es: "Moneda (BRL)" },
+  "Uma resposta numérica não estava no formato aceito pelo formulário. Confira se o campo contém apenas números e use o formato BRL na pergunta de moeda.": {
+    es: "Una respuesta numérica no tenía un formato aceptado por el formulario. Comprueba que el campo contenga solo números y usa el formato BRL en la pregunta de moneda.",
+  },
+  "Fonte do formulário": { es: "Fuente del formulario" },
+  "Qualquer fonte": { es: "Cualquier fuente" },
+  "Fonte removida": { es: "Fuente eliminada" },
+  "Escolha uma fonte para limitar esta automação a um formulário. Qualquer fonte mantém o comportamento geral.": { es: "Elige una fuente para limitar esta automatización a un formulario. Cualquier fuente mantiene el comportamiento general." },
+  "Selecione uma opção": { es: "Selecciona una opción" },
+  "Informe um nome para a fonte.": { es: "Indica un nombre para la fuente." },
+  "Nome da fonte atualizado.": { es: "Nombre de la fuente actualizado." },
+  "Perguntas do formulário salvas.": { es: "Preguntas del formulario guardadas." },
+  "Salvar nome": { es: "Guardar nombre" },
+  "Cancelar edição do nome": { es: "Cancelar la edición del nombre" },
+  "Editar nome da fonte": { es: "Editar el nombre de la fuente" },
+  "Personalizar perguntas do formulário": { es: "Personalizar las preguntas del formulario" },
+  "As respostas extras ficam nos campos personalizados do lead e no histórico desta captação. O checkbox envia sim ou não; a lista permite escolher uma opção.": { es: "Las respuestas adicionales se guardan en los campos personalizados del lead y en el historial de esta captación. La casilla envía sí o no; la lista permite elegir una opción." },
+  "Salvar perguntas": { es: "Guardar preguntas" },
+  "Pergunta": { es: "Pregunta" },
+  "Pergunta exibida": { es: "Pregunta visible" },
+  "Qual serviço você procura?": { es: "¿Qué servicio buscas?" },
+  "Chave enviada ao CRM": { es: "Clave enviada al CRM" },
+  "Tipo de resposta": { es: "Tipo de respuesta" },
+  "Texto curto": { es: "Texto breve" },
+  "Lista de opções": { es: "Lista de opciones" },
+  "Caixa de seleção": { es: "Casilla de verificación" },
+  "Resposta obrigatória": { es: "Respuesta obligatoria" },
+  "Opções, uma por linha": { es: "Opciones, una por línea" },
+  "Sites": { es: "Sitios web" },
+  "Tráfego pago": { es: "Publicidad de pago" },
+  "Adicionar pergunta": { es: "Añadir pregunta" },
+  "O limite é de 20 perguntas extras por formulário.": { es: "El límite es de 20 preguntas adicionales por formulario." },
+  "A fonte escolhida não pertence a esta empresa.": { es: "La fuente elegida no pertenece a esta empresa." },
+  "Escolha uma fonte de formulário válida.": { es: "Elige una fuente de formulario válida." },
+  "Escreva o texto da pergunta.": { es: "Escribe el texto de la pregunta." },
+  "Use uma chave iniciada por letra minúscula, sem espaços.": { es: "Usa una clave que empiece con letra minúscula, sin espacios." },
+  "Essa chave é reservada pelo formulário ou pelo CRM.": { es: "Esa clave está reservada por el formulario o por el CRM." },
+  "Adicione pelo menos uma opção para a lista.": { es: "Añade al menos una opción a la lista." },
+  "As opções só se aplicam ao campo de lista.": { es: "Las opciones solo se aplican al campo de lista." },
+  "Remova opções repetidas.": { es: "Elimina las opciones repetidas." },
+  "O formulário pode ter até 20 perguntas.": { es: "El formulario puede tener hasta 20 preguntas." },
+  "Cada pergunta precisa ter uma chave diferente.": { es: "Cada pregunta necesita una clave diferente." },
+  "Revise os campos do formulário.": { es: "Revisa los campos del formulario." },
   "Ligar com IA": { es: "Llamar con IA" },
   "Chamadas": { es: "Llamadas" },
   "Histórico de ligações (voz por IA) com transcrição.": {
@@ -14558,6 +14651,96 @@ export const DICIONARIO: Traducoes = {
   "Não dá para ver daqui": { es: "No se puede ver desde aquí" },
   "Ajustar": { es: "Ajustar" },
   "Tudo o que se liga e desliga, se está ligado e onde se ajusta.": { es: "Todo lo que se activa y desactiva, si está activado y dónde se ajusta." },
+  // ─── Cobrança do revendedor — aviso da volta (PR 2) ───
+  "A conta foi reativada — há o que revisar": { es: "La cuenta fue reactivada — hay algo para revisar" },
+  "A IA não respondeu nem vai responder sozinha às conversas que chegaram durante a suspensão: abra o Inbox e procure-as nas abas Fila e Automático. Os agendamentos e os passos de follow-up que este aviso cita também não voltam sozinhos: confira em IA › Follow-ups.": { es: "La IA no respondió ni responderá sola a las conversaciones que llegaron durante la suspensión: abre el Inbox y búscalas en las pestañas Cola y Automático. Las programaciones y los pasos de seguimiento que cita este aviso tampoco vuelven solos: revísalos en IA › Seguimientos." },
+  // ─── Limites do plano de cobrança (spec cobrança do revendedor §5) ───
+  "Seu plano permite {n} pessoas e todas as vagas estão ocupadas. Revogue o acesso de alguém em Equipe ou peça a quem administra o sistema para trocar de plano.": { es: "Tu plan permite {n} personas y todas las plazas están ocupadas. Revoca el acceso de alguien en Equipo o pide a quien administra el sistema que cambie el plan." },
+  "Seu plano permite {n} números conectados. Exclua um número em Conexões ou peça a quem administra o sistema para trocar de plano.": { es: "Tu plan permite {n} números conectados. Elimina un número en Conexiones o pide a quien administra el sistema que cambie el plan." },
+  "Seu plano permite 1 pessoa e a vaga está ocupada. Revogue o acesso de alguém em Equipe ou peça a quem administra o sistema para trocar de plano.": { es: "Tu plan permite 1 persona y la plaza está ocupada. Revoca el acceso de alguien en Equipo o pide a quien administra el sistema que cambie el plan." },
+  "Seu plano permite 1 número conectado. Exclua um número em Conexões ou peça a quem administra o sistema para trocar de plano.": { es: "Tu plan permite 1 número conectado. Elimina un número en Conexiones o pide a quien administra el sistema que cambie el plan." },
+  "A empresa que te convidou atingiu o limite de pessoas do plano. Avise quem te convidou.": { es: "La empresa que te invitó alcanzó el límite de personas de su plan. Avisa a quien te invitó." },
+  "Abrir plano e cobrança": { es: "Abrir plan y facturación" },
+  "O uso de IA do plano acabou": { es: "Se agotó el uso de IA del plan" },
+  "O uso de IA incluído no plano acabou neste mês. As conversas foram para a equipe. Peça a quem administra o sistema para trocar de plano, cadastre uma chave de IA própria ou aguarde o próximo mês.": { es: "El uso de IA incluido en el plan se agotó este mes. Las conversaciones pasaron al equipo. Pide a quien administra el sistema que cambie el plan, registra una clave de IA propia o espera al próximo mes." },
+  // ─── Cobrança do revendedor — módulo (PR 2) ───
+  "Cobrança dos seus clientes": { es: "Cobro a tus clientes" },
+  "Você cria planos e cobra as empresas desta instalação, com teste grátis e suspensão de quem não paga.": { es: "Creas planes y cobras a las empresas de esta instalación, con prueba gratis y suspensión de quien no paga." },
+  "Ligado, você cria planos e cobra as empresas hospedadas aqui, com teste grátis e suspensão automática de quem não paga. Empresas que já existem ficam isentas; você escolhe quem passa a pagar. Desligado, os limites dos planos deixam de valer e as empresas suspensas por falta de pagamento são liberadas; nada é cancelado no provedor de pagamento.": { es: "Activado, creas planes y cobras a las empresas alojadas aquí, con prueba gratis y suspensión automática de quien no paga. Las empresas que ya existen quedan exentas; tú eliges quién pasa a pagar. Desactivado, los límites de los planes dejan de valer y las empresas suspendidas por falta de pago quedan liberadas; nada se cancela en el proveedor de pago." },
+  "Empresas suspensas por falta de pagamento que serão liberadas ao desligar:": { es: "Empresas suspendidas por falta de pago que se liberarán al desactivar:" },
+  "Não deu para contar as empresas suspensas por falta de pagamento. Desligar libera todas.": { es: "No se pudo contar las empresas suspendidas por falta de pago. Desactivar libera a todas." },
+  "A cobrança continua ligada: não deu para liberar as empresas suspensas por falta de pagamento, e nada foi mudado. Tente desligar de novo em instantes.": { es: "El cobro sigue activado: no se pudo liberar a las empresas suspendidas por falta de pago y no se cambió nada. Intenta desactivarlo de nuevo en unos instantes." },
+  // ─── Cobrança do revendedor — novo tenant (PR 2) ───
+  "Plano de cobrança": { es: "Plan de cobro" },
+  "Sem cobrança (isenta)": { es: "Sin cobro (exenta)" },
+  "por mês": { es: "por mes" },
+  "por ano": { es: "por año" },
+  "dias de teste": { es: "días de prueba" },
+  "Com um plano, a empresa começa em teste grátis pelos dias do plano. Isenta, ela não paga e não tem limites.": { es: "Con un plan, la empresa empieza en prueba gratis por los días del plan. Exenta, no paga y no tiene límites." },
+  "Nenhum plano criado ainda: a empresa nasce isenta. Crie planos em Cobrança e atribua um no painel da empresa.": { es: "Todavía no hay planes: la empresa nace exenta. Crea planes en Cobro y asigna uno en el panel de la empresa." },
+  // ─── Cobrança do revendedor — /admin/cobranca (PR 2) ───
+  "Cobrança": { es: "Cobro" },
+  "Teste grátis": { es: "Prueba gratis" },
+  "Em dia": { es: "Al día" },
+  "Em atraso": { es: "Atrasada" },
+  "Os planos que você vende e as empresas que pagam. Empresa sem plano é isenta: não paga e não tem limites.": { es: "Los planes que vendes y las empresas que pagan. Una empresa sin plan está exenta: no paga y no tiene límites." },
+  "Planos": { es: "Planes" },
+  "Nenhuma empresa paga ainda. Atribua um plano no painel da empresa, em Tenants.": { es: "Ninguna empresa paga todavía. Asigna un plan en el panel de la empresa, en Tenants." },
+  "Teste grátis até": { es: "Prueba gratis hasta" },
+  "Prazo extra até": { es: "Plazo extra hasta" },
+  "Editar plano": { es: "Editar plan" },
+  "Preço (R$)": { es: "Precio (R$)" },
+  "Intervalo de cobrança": { es: "Intervalo de cobro" },
+  "Mensal": { es: "Mensual" },
+  "Anual": { es: "Anual" },
+  "Dias de teste grátis": { es: "Días de prueba gratis" },
+  "Máximo de pessoas": { es: "Máximo de personas" },
+  "Máximo de números conectados": { es: "Máximo de números conectados" },
+  "Teto de uso de IA por mês (US$)": { es: "Tope de uso de IA por mes (US$)" },
+  "Deixe um limite vazio para não limitar.": { es: "Deja un límite vacío para no limitar." },
+  "Cancelar edição": { es: "Cancelar edición" },
+  "Plano salvo.": { es: "Plan guardado." },
+  "Confira os campos do plano: preço a partir de R$ 5,00, teste grátis de 0 a 90 dias e limites a partir de 1.": { es: "Revisa los campos del plan: precio desde R$ 5,00, prueba gratis de 0 a 90 días y límites desde 1." },
+  "O preço e o intervalo de um plano travam quando alguém o assina: para mudar, arquive e crie outro.": { es: "El precio y el intervalo de un plan se bloquean cuando alguien lo contrata: para cambiarlos, archívalo y crea otro." },
+  "Nenhum plano ainda. Crie o primeiro no formulário acima: nome, preço, dias de teste grátis e, se quiser, os limites. Depois atribua-o a cada empresa no painel dela, em Tenants.": { es: "Todavía no hay planes. Crea el primero en el formulario de arriba: nombre, precio, días de prueba gratis y, si quieres, los límites. Después asígnalo a cada empresa en su panel, en Tenants." },
+  "Plano do cadastro": { es: "Plan del registro" },
+  "Números conectados": { es: "Números conectados" },
+  "sem limite": { es: "sin límite" },
+  "Usar no cadastro": { es: "Usar en el registro" },
+  "Tirar do cadastro": { es: "Quitar del registro" },
+  "Desarquivar": { es: "Desarchivar" },
+  // ─── Cobrança do revendedor — card do tenant (PR 2) ───
+  "Suspensa por falta de pagamento. Dar prazo ou tornar isenta a reativa na hora.": { es: "Suspendida por falta de pago. Dar plazo o dejarla exenta la reactiva al instante." },
+  "Isenta: não paga e não tem limites.": { es: "Exenta: no paga y no tiene límites." },
+  "Rótulo antigo:": { es: "Etiqueta anterior:" },
+  "Plano da empresa": { es: "Plan de la empresa" },
+  "Trocar plano": { es: "Cambiar plan" },
+  "Atribuir plano": { es: "Asignar plan" },
+  "Plano trocado.": { es: "Plan cambiado." },
+  "Plano atribuído.": { es: "Plan asignado." },
+  "Dar prazo até": { es: "Dar plazo hasta" },
+  "Dar prazo": { es: "Dar plazo" },
+  "Prazo concedido.": { es: "Plazo concedido." },
+  "Tornar isenta": { es: "Dejar exenta" },
+  "A empresa agora é isenta.": { es: "La empresa ahora está exenta." },
+  "O uso atual não cabe no plano escolhido. Para trocar, primeiro:": { es: "El uso actual no cabe en el plan elegido. Para cambiar, primero:" },
+  "Revogue o acesso de {n} pessoa(s) em Equipe.": { es: "Revoca el acceso de {n} persona(s) en Equipo." },
+  "Exclua {n} número(s) em Conexões.": { es: "Elimina {n} número(s) en Conexiones." },
+  "Suspensa por falta de pagamento": { es: "Suspendida por falta de pago" },
+  "Suspensão administrativa": { es: "Suspensión administrativa" },
+  "Para reativar, use o card Cobrança: Dar prazo ou Tornar isenta.": { es: "Para reactivarla, usa la tarjeta Cobro: Dar plazo o Dejar exenta." },
+  "Nenhum plano ativo para escolher.": { es: "No hay planes activos para elegir." },
+  "Criar um plano em Cobrança": { es: "Crear un plan en Cobro" },
+  // ─── Cobrança do revendedor — painel da assinatura (PR 2) ───
+  "Seu plano": { es: "Tu plan" },
+  "Sua empresa não tem plano de cobrança: não paga e não tem limites.": { es: "Tu empresa no tiene plan de cobro: no paga y no tiene límites." },
+  "{usados} de {limite}": { es: "{usados} de {limite}" },
+  "Uso de IA no mês": { es: "Uso de IA en el mes" },
+  "Para trocar de plano, fale com quem administra este sistema.": { es: "Para cambiar de plan, habla con quien administra este sistema." },
+  // ─── Cobrança do revendedor — faixa de teste (PR 2) ───
+  "Seu teste grátis termina em {n} dias.": { es: "Tu prueba gratis termina en {n} días." },
+  "Seu teste grátis termina nas próximas 24 horas.": { es: "Tu prueba gratis termina en las próximas 24 horas." },
+  "Ver o plano": { es: "Ver el plan" },
   "Não foi necessário consultar a IA de sempre.": { es: "No fue necesario consultar a la IA de siempre." },
   "O Jev decidiu sozinho; a IA de sempre não foi chamada.": { es: "Jev decidió solo; no se llamó a la IA de siempre." },
   "O Jev precisou de reserva. A IA de sempre foi consultada; sem resposta válida, valem as regras de fallback do roteador.": { es: "Jev necesitó respaldo. Se consultó a la IA de siempre; sin respuesta válida, se aplican las reglas de respaldo del enrutador." },
@@ -14643,7 +14826,7 @@ export const DICIONARIO: Traducoes = {
   "Link de acesso": { es: "Enlace de acceso" },
   "Endereço em que o navegador parou": { es: "Dirección en la que se detuvo el navegador" },
   "Cole o endereço inteiro da barra do navegador (começa com http://localhost:1455/auth/callback), não só o código.": { es: "Pegue la dirección completa de la barra del navegador (empieza con http://localhost:1455/auth/callback), no solo el código." },
-  "Este endereço não veio do link desta tela, aberto por você nesta empresa — ou o link venceu (vale 10 minutos). Recarregue a página, abra o link de novo e cole o endereço novo.": { es: "Esta dirección no vino del enlace de esta pantalla, abierto por usted en esta empresa — o el enlace venció (vale 10 minutos). Recargue la página, abra el enlace de nuevo y pegue la dirección nueva." },
+  "Este endereço não veio do link desta tela, aberto por você nesta empresa — ou o link venceu (vale 10 minutos e uma vez só). Recarregue a página, abra o link de novo e cole o endereço novo.": { es: "Esta dirección no vino del enlace de esta pantalla, abierto por usted en esta empresa — o el enlace venció (vale 10 minutos y una sola vez). Recargue la página, abra el enlace de nuevo y pegue la dirección nueva." },
   "Antes de ligar": { es: "Antes de activar" },
   "O client_id e o redirect_uri (http://localhost:1455/auth/callback) são os do Codex, não os nossos, e nada disso é contrato público da OpenAI: os dois podem mudar sem aviso.": { es: "El client_id y el redirect_uri (http://localhost:1455/auth/callback) son los de Codex, no los nuestros, y nada de esto es un contrato público de OpenAI: ambos pueden cambiar sin aviso." },
   "Este recurso vem desligado por padrão; só quem administra a instalação pode ligá-lo, em Recursos opcionais. Ligado, cada empresa conecta a própria conta aqui.": { es: "Este recurso viene desactivado por defecto; solo quien administra la instalación puede activarlo, en Recursos opcionales. Activado, cada empresa conecta su propia cuenta aquí." },
@@ -14769,6 +14952,33 @@ export const DICIONARIO: Traducoes = {
   "A conversa fica vinculada ao canal escolhido, e as próximas mensagens saem por ele.": { es: "La conversación queda vinculada al canal elegido, y los próximos mensajes salen por él." },
   "Canais disponíveis": { es: "Canales disponibles" },
   "Iniciar conversa": { es: "Iniciar conversación" },
+
+  // ─── Alíneas do art. 15.º que o controlador preenche (#2356) ───
+  // O cartão de Configurações › Empresa, só fora do Brasil. Os rótulos trazem
+  // a letra porque é assim que o relatório de acesso os imprime ("a) Finalidades:").
+  "Alíneas do art. 15.º do RGPD": { es: "Alíneas del art. 15.º del RGPD" },
+  "O relatório de acesso imprime estes três textos em nome da organização. Deixar em branco faz o documento mostrar «não informado pelo controlador» — nada é inventado no lugar do que falta.": {
+    es: "El informe de acceso imprime estos tres textos en nombre de la organización. Dejarlos en blanco hace que el documento muestre «no informado por el responsable»: no se inventa nada en lugar de lo que falta.",
+  },
+  "Finalidades do tratamento (alínea a))": {
+    es: "Finalidades del tratamiento (letra a))",
+  },
+  "Para que fins os dados pessoais são tratados: atendimento, faturação, marketing.": {
+    es: "Para qué fines se tratan los datos personales: atención, facturación, marketing.",
+  },
+  "Destinatários dos dados (alínea c))": { es: "Destinatarios de los datos (letra c))" },
+  "Com quem esses dados são compartilhados: prestadores, autoridades, parceiros.": {
+    es: "Con quién se comparten estos datos: proveedores, autoridades, socios.",
+  },
+  "Prazo de conservação dos dados (alínea d))": {
+    es: "Plazo de conservación de los datos (letra d))",
+  },
+  "Por quanto tempo os dados são guardados depois do último contato.": {
+    es: "Cuánto tiempo se conservan los datos después del último contacto.",
+  },
+  "Máximo de {n} caracteres.": { es: "Máximo de {n} caracteres." },
+  "Salvar alíneas": { es: "Guardar las letras" },
+  "Alíneas do art. 15.º salvas.": { es: "Las letras del art. 15.º quedaron guardadas." },
 };
 
 /**

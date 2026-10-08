@@ -184,11 +184,30 @@ export function podeExcluirDeVez(
   if (deps.negocios > 0) {
     const funil = funis.find((f) => f.id === funilId)!;
     const n = deps.negocios;
+    const um = n === 1;
+    const negocio = um ? "negócio" : "negócios";
+    const historico = um ? "dele" : "deles";
+    /**
+     * ⚠️ O CONSELHO MUDA CONFORME DE ONDE O CLIQUE VEIO (#979).
+     *
+     * "Arquive em vez de excluir" é a resposta certa para quem está com o funil
+     * na lista viva. Mas o "Excluir de vez" que leva aqui também mora na gaveta
+     * do arquivo — e para um funil que JÁ está arquivado aquilo é beco sem
+     * saída: manda arquivar algo que não está na lista, que é exatamente o
+     * estado sem saída da issue. A recusa em si NÃO muda (nega nos dois casos,
+     * nenhuma escrita sai); só o conselho aponta para a porta que existe
+     * dali — tirar do arquivo e resolver os negócios antes de excluir.
+     */
+    const conselho = funil.is_archived
+      ? `Ele já está no arquivo, então arquivar de novo não resolve: tire-o do arquivo e ` +
+        `resolva ${um ? "o negócio" : "os negócios"} antes de excluir.`
+      : `Arquive em vez de excluir — o funil sai da lista e nada se perde.`;
+
     return {
       ok: false,
       erro:
-        `«${funil.name}» tem ${n} ${n === 1 ? "negócio" : "negócios"}, e o histórico ${n === 1 ? "dele" : "deles"} ` +
-        `aponta para este funil. Arquive em vez de excluir — o funil sai da lista e nada se perde.`,
+        `«${funil.name}» tem ${n} ${negocio}, e o histórico ${historico} ` +
+        `aponta para este funil. ${conselho}`,
     };
   }
 

@@ -475,7 +475,7 @@ function PipelineEditor({
               <SelectContent>
                 {TIPOS_DE_CAMPO.map((tipo) => (
                   <SelectItem key={tipo} value={tipo}>
-                    {tipo}
+                    {tipo === "currency" ? t("Moeda (BRL)") : tipo}
                   </SelectItem>
                 ))}
               </SelectContent>

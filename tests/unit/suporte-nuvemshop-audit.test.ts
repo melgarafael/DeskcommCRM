@@ -10,7 +10,7 @@ vi.mock("@/lib/nuvemshop/oauth",()=>({exchangeCodeForToken:async()=>({ok:true,ac
 vi.mock("@/lib/nuvemshop/api-client",()=>({NuvemshopApiClient:class {async createWebhook(){return {id:1};}}}));
 vi.mock("@/lib/supabase/admin",()=>({createAdminClient:()=>({
  rpc:async()=>({data:"\\x00",error:null}),
- from:()=>({upsert:()=>({select:()=>({single:async()=>({data:{id:fake.integration},error:null})})}),update:()=>({eq:()=>({eq:async()=>({error:null})})})}),
+ from:()=>({insert:async()=>({error:null}),upsert:()=>({select:()=>({single:async()=>({data:{id:fake.integration},error:null})})}),update:()=>({eq:()=>({eq:async()=>({error:null})})})}),
 })}));
 it("callback sem JWT encaminha identidade do state validado e recurso UUID à auditoria",async()=>{
  const actor=randomUUID(),session=randomUUID(),org=randomUUID();

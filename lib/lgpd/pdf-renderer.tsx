@@ -158,12 +158,12 @@ const noticeStatus: Record<string, string> = {
  * O CPF que o titular informou na conversa, MASCARADO, para a linha do
  * documento no relatório (issue #2341).
  *
- * Antes esta linha dizia "valor no arquivo de dados", mas o `data.json` fica no
- * Storage e o e-mail ao titular não o entrega — o documento apontava para um
- * arquivo que quem o lê não tem. A saída escolhida (uma das duas da issue) foi
- * imprimir o valor mascarado aqui mesmo; a outra — entregar o `data.json` junto
- * — ficaria de fora porque esse arquivo também carrega campo interno
- * (`reply_drafts`, `conversation_notes`, `audit_log_extract`).
+ * Antes esta linha dizia "valor no arquivo de dados", mas o `data.json` ficava no
+ * Storage sem link no e-mail ao titular — o documento apontava para um
+ * arquivo que quem o lê não tinha. A saída escolhida (uma das duas da issue) foi
+ * imprimir o valor mascarado aqui mesmo. A outra — entregar o `data.json` junto
+ * — veio depois (doc 103, A), com o que é da equipe tirado do arquivo
+ * (`lib/lgpd/copia-do-titular.ts`); a linha mascarada ficou.
  *
  * QUAL chave: o coletor reconhece o CPF pelo TIPO da pergunta (`cpf`), mas a
  * chave onde ela grava é o operador que escolhe, e este relatório só enxerga o

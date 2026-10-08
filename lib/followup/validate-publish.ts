@@ -3,6 +3,8 @@ import type { FollowupFlowSurface } from './api-schemas';
 import { branchIdForCondition, nodeBranches } from './graph-schema';
 import { rotuloDoRamo } from './rotulo-do-ramo';
 import type { NomesDeValor } from './vocabulario';
+import type { EtapaCitada } from './etapas-citadas';
+import { recusaDeMotivoForaDoVocabulario } from '../leads/motivo-da-perda';
 import { capabilitiesOf, transportaMensagem, type ChannelProvider } from '../channels/capabilities';
 
 /**
@@ -38,6 +40,8 @@ export const PUBLISH_ERROR_CODES = [
   // #2065 — configuração dos dois nós de ação que não falam com o cliente.
   'etapa_destino_ausente',
   'etapa_destino_arquivada',
+  'motivo_da_perda_ausente',
+  'motivo_da_perda_invalido',
   'tag_ausente',
 ] as const;
 export type PublishErrorCode = (typeof PUBLISH_ERROR_CODES)[number];
@@ -60,7 +64,7 @@ export type PublishValidationResult =
  */
 export interface ContextoDoPublish {
   /** Etapas da organização por `stage_id`, com o nome como a tela mostra («Etapa · Funil»). */
-  etapas?: ReadonlyMap<string, { nome: string; arquivada: boolean }>;
+  etapas?: ReadonlyMap<string, EtapaCitada>;
   /** Superfície do pointer. Ausente = follow-up (o que a coluna tem por padrão). */
   surface?: FollowupFlowSurface;
   /**
@@ -498,6 +502,11 @@ function cobrirRamos(
  * `ContextoDoPublish.etapas`, lido por quem publica): o que só o banco sabe chega
  * injetado, nunca adivinhado. Sem `contexto.etapas` a conferência não roda — ela
  * recusa o que é visível, não o que é incerto.
+ *
+ * Etapa de perda exige motivo da perda no próprio bloco: sem ele o motor seria
+ * recusado com 422 (`lost_reason_required`) e o fluxo seguiria como se o card
+ * tivesse andado. Etapa que NÃO é de perda publica sem motivo — e aceita o
+ * motivo mesmo assim, para não reprovar rascunho que trocou de destino.
  */
 function conferirEtapaDestino(
   node: Extract<FlowNode, { type: 'move_lead' }>,
@@ -529,6 +538,27 @@ function conferirEtapaDestino(
       ...ancora,
       code: 'etapa_destino_arquivada',
       message: `A caixa "${node.label}" move para a etapa arquivada "${etapa.nome}" — escolha uma etapa ativa.`,
+    });
+  }
+  if (!etapa.isPerda) return;
+  const motivo = (node.config.lost_reason ?? '').trim();
+  if (motivo === '') {
+    errors.push({
+      ...ancora,
+      code: 'motivo_da_perda_ausente',
+      message: `A caixa "${node.label}" move para a etapa de perda "${etapa.nome}" — escolha o motivo da perda no bloco antes de publicar.`,
+    });
+    return;
+  }
+  const foraDoVocabulario = recusaDeMotivoForaDoVocabulario({
+    motivo,
+    settingsDoFunil: etapa.settingsDoFunil,
+  });
+  if (foraDoVocabulario) {
+    errors.push({
+      ...ancora,
+      code: 'motivo_da_perda_invalido',
+      message: `A caixa "${node.label}" tem um motivo de perda que não está na lista deste funil — escolha um dos motivos configurados.`,
     });
   }
 }

@@ -555,7 +555,7 @@ async function lerBindingDoPonto(
 }
 
 function buildDeriveDeps(
-  llm: Pick<OrgLlmConfig, "provider" | "apiKey" | "defaultModel" | "orcamento" | "orcamentoIndisponivelPorque">,
+  llm: Pick<OrgLlmConfig, "provider" | "apiKey" | "defaultModel" | "orcamento" | "orcamentoIndisponivelPorque" | "origemDaChave">,
   decisao: DecisaoDeTranscricao,
   orgId: string,
   admin: ReturnType<typeof createAdminClient>,
@@ -613,6 +613,8 @@ function buildDeriveDeps(
         orcamentoIndisponivelPorque: llm.orcamentoIndisponivelPorque,
         // A mesma chave efetiva do seam: a tela de admin vence, o `.env` é o piso.
         chave: chaveDeOrcamentoDaInstalacao(normalizarChaveDeOrcamento(env.AI_BUDGET_ENFORCEMENT)),
+        // O teto do PLANO só vincula a chave da instalação (cobrança do revendedor §5).
+        origemDaChave: llm.origemDaChave,
         purpose: d.purpose,
         provider: d.provider,
         model: d.model,

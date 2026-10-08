@@ -92,7 +92,7 @@ describe("useEtapasDeGatilho", () => {
 
     await waitFor(() => expect(result.current.carregando).toBe(false));
     expect(result.current.etapas).toEqual([
-      { stageId: "e1", stageName: "Novo contato", pipelineId, pipelineName: "Funil 1" },
+      { stageId: "e1", stageName: "Novo contato", pipelineId, pipelineName: "Funil 1", isPerda: false, settingsDoFunil: null },
     ]);
   });
 });

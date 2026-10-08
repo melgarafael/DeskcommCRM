@@ -72,6 +72,48 @@ export async function enviarPushDaOrg(
   return { sent, gone };
 }
 
+/**
+ * Push para uma LISTA de pessoas da organização — o destino de
+ * `message.received` quando a conversa já tem responsável (regra em
+ * `./destinatarios-da-mensagem.ts`).
+ *
+ * O envio e a faxina de inscrição morta (404/410) são os de `enviarPushDaOrg`,
+ * reaproveitados pelo mesmo adaptador de `enviarPushAoUsuario`: a lista de
+ * inscrições já vem filtrada, e o `delete` segue indo ao banco de verdade.
+ * Lista vazia não consulta nada — `.in("user_id", [])` não é um "ninguém"
+ * confiável em todo PostgREST.
+ */
+export async function enviarPushAosUsuarios(
+  organizationId: string,
+  userIds: ReadonlyArray<string>,
+  payload: PushPayload,
+  admin: ReturnType<typeof createAdminClient> = createAdminClient(),
+): Promise<{ sent: number; gone: number }> {
+  if (!vapidPronto() || userIds.length === 0) return { sent: 0, gone: 0 };
+  const { data, error } = await admin
+    .from("push_subscriptions")
+    .select("id, endpoint, p256dh, auth")
+    .eq("organization_id", organizationId)
+    .in("user_id", [...userIds]);
+  if (error) {
+    logger.warn("push_subscriptions_users_list_failed", { detail: error.message });
+    return { sent: 0, gone: 0 };
+  }
+  return enviarPushDaOrg(organizationId, payload, {
+    from: (table: string) => ({
+      select: () => ({
+        eq: async () => ({ data: (data ?? []) as PushSubRow[], error: null }),
+      }),
+      delete: () => ({
+        eq: async (col: string, val: string) => {
+          const { error: delErr } = await admin.from(table).delete().eq(col, val);
+          return { error: delErr };
+        },
+      }),
+    }),
+  });
+}
+
 export async function enviarPushAoUsuario(
   organizationId: string,
   userId: string,

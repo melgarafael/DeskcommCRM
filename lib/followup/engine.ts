@@ -53,6 +53,7 @@ import { interpolarDestino, persistirRespostaFollowupSupabase } from "./persisti
 import { criarTarefaInterna as criarTarefaNoCrm } from "@/lib/tarefas/criar-tarefa";
 import { moveLeadHandler } from "@/app/api/v1/leads/_handler";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
+import { ApiError } from "@/lib/api/types";
 import { getAction } from "@/lib/automation/actions";
 // Efeito de import: registra a ação `add_tag` no MESMO mapa que o motor de
 // automação usa. A tag do follow-up é a tag da automação — não uma segunda.
@@ -490,6 +491,30 @@ async function applyResult(
         node_id: node.id,
         error: err instanceof Error ? err.message : String(err),
       });
+      // A recusa vira linha na trilha da inscrição — quem montou o fluxo vê o
+      // card parado onde o fluxo diz que andou. Chave própria (`:falha`) para o
+      // replay não duplicar; o registro tem o próprio try/catch para nunca
+      // derrubar o tick nem reverter o avanço.
+      try {
+        await db.insertEnrollmentEvent({
+          organization_id: enrollment.organization_id,
+          enrollment_id: enrollment.id,
+          node_id: node.id,
+          event_type: "move_lead_failed",
+          payload: {
+            error: err instanceof Error ? err.message : String(err),
+            codigo: err instanceof ApiError ? err.code : null,
+          },
+          idempotency_key: `${idemKey}:falha`,
+        });
+      } catch (registroErr) {
+        logger.warn("followup_move_lead_failed_event_failed", {
+          organization_id: enrollment.organization_id,
+          enrollment_id: enrollment.id,
+          node_id: node.id,
+          error: registroErr instanceof Error ? registroErr.message : String(registroErr),
+        });
+      }
     }
   }
   if (result.kind === "advance" && !isReplay && node.type === "edit_lead_tag") {
@@ -1113,8 +1138,9 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
      * as automações (`create_or_move_lead`) e a tool MCP `crm_move_lead_stage`.
      * Ele é quem valida etapa existente, organização certa, troca de funil
      * (`pipeline_immutable_use_clone`) e reabertura de negócio encerrado; aqui
-     * só resolvemos QUAL negócio e deixamos a recusa subir (o `applyResult`
-     * registra em `followup_move_lead_failed` sem reverter o avanço).
+     * só resolvemos QUAL negócio e repassamos o motivo da perda que o bloco
+     * guarda (`lost_reason`, sem padrão escondido) — e deixamos a recusa subir
+     * (o `applyResult` registra em `followup_move_lead_failed` sem reverter o avanço).
      *
      * O negócio é o mais recente do contato NO FUNIL DA ETAPA DE DESTINO. O
      * mais recente de qualquer funil, quando o contato tem negócio em dois,
@@ -1159,7 +1185,16 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
         actor: { type: "webhook_source", id: `followup:${item.enrollment_id}` },
         requestId: `followup:${item.enrollment_id}`,
       };
-      await moveLeadHandler(admin, handlerCtx, lead.id, { to_stage_id: item.config.stage_id });
+      // O motivo da perda viaja junto quando quem montou o fluxo escolheu um —
+      // sem ele a etapa de perda recusa com 422 e o publish já barrou antes.
+      // Sem motivo configurado a chave nem viaja: nada de padrão escondido.
+      const motivo = item.config.lost_reason?.trim();
+      await moveLeadHandler(
+        admin,
+        handlerCtx,
+        lead.id,
+        motivo ? { to_stage_id: item.config.stage_id, lost_reason: motivo } : { to_stage_id: item.config.stage_id },
+      );
     },
     /**
      * #2065 — nó `edit_lead_tag`: a MESMA ação `add_tag` do motor de automação,

@@ -1,6 +1,7 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
+import type { TipoDeSuspensao } from "@/lib/organizacao/operante";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -17,6 +18,8 @@ export interface TenantOrganization {
   status: "active" | "suspended" | "redacted";
   onboarded_at: string | null;
   suspended_at: string | null;
+  /** PR 1: o tipo da suspensão (nulo com a org ativa). Opcional: fixtures antigas não o têm. */
+  suspended_kind?: TipoDeSuspensao | null;
   created_at: string;
   settings: Record<string, unknown> | null;
 }

@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { abrirAcesso } from "@/lib/external-db/acesso";
 
-import { esquecerMemoDosModulos, MEMO_DO_MODULO_MS, moduloLigadoComMemo, modulosLigados } from "./modulos";
+import { CHAVE_DO_MODULO, esquecerMemoDosModulos, MEMO_DO_MODULO_MS, moduloLigadoComMemo, modulosLigados } from "./modulos";
 
 type Resposta = { data?: unknown; error?: unknown } | Error;
 
@@ -143,3 +143,13 @@ describe("moduloLigadoComMemo (turno do agente)", () => {
   });
 });
 
+
+describe("a chave da cobrança do revendedor (spec 2026-09-29, PR 2)", () => {
+  it("mora em MODULO_COBRANCA, e só `ligado` liga", async () => {
+    expect(CHAVE_DO_MODULO.cobranca).toBe("MODULO_COBRANCA");
+    const ligada = [{ chave: "MODULO_COBRANCA", valor: "ligado" }];
+    expect(await modulosLigados(banco({ platform_config: { data: ligada } }).db)).toEqual(["cobranca"]);
+    const lixo = [{ chave: "MODULO_COBRANCA", valor: "sim" }];
+    expect(await modulosLigados(banco({ platform_config: { data: lixo } }).db)).toEqual([]);
+  });
+});
