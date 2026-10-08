@@ -80,6 +80,8 @@ interface Registro {
   colunas: string[];
   filtros: Array<[string, unknown]>;
   updates: Array<Record<string, unknown>>;
+  /** Filtro de cada `.eq(...)` do update, na ordem encadeada. */
+  filtrosDeUpdate: Array<[string, unknown]>;
   idsAtualizados: unknown[];
 }
 
@@ -108,8 +110,9 @@ function adminDeTokens(resposta: Resposta, reg: Registro) {
         update: (valores: Record<string, unknown>) => {
           reg.updates.push(valores);
           const c: Record<string, unknown> = {};
-          c.eq = (_coluna: string, valor: unknown) => {
-            reg.idsAtualizados.push(valor);
+          c.eq = (coluna: string, valor: unknown) => {
+            reg.filtrosDeUpdate.push([coluna, valor]);
+            if (coluna === "id") reg.idsAtualizados.push(valor);
             return c;
           };
           c.then = (resolver: (v: unknown) => unknown) => resolver({ error: null });
@@ -121,7 +124,7 @@ function adminDeTokens(resposta: Resposta, reg: Registro) {
 }
 
 function armar(resposta: Resposta): Registro {
-  const reg: Registro = { colunas: [], filtros: [], updates: [], idsAtualizados: [] };
+  const reg: Registro = { colunas: [], filtros: [], updates: [], filtrosDeUpdate: [], idsAtualizados: [] };
   vi.mocked(createAdminClient).mockReturnValue(adminDeTokens(resposta, reg) as never);
   return reg;
 }
@@ -248,6 +251,13 @@ describe("resolveApiToken — o caminho feliz (par de vacuidade dos casos acima)
     expect(Object.keys(reg.updates[0]!)).toEqual(["last_used_at"]);
     expect(reg.idsAtualizados, "o update de uso não foi filtrado pelo id do token").toEqual([
       TOKEN_ID,
+    ]);
+    expect(
+      reg.filtrosDeUpdate,
+      "o update de uso não foi amarrado à organização do token (R3: cadeia por chave carrega o tenant)",
+    ).toEqual([
+      ["organization_id", ORG_ID],
+      ["id", TOKEN_ID],
     ]);
   });
 

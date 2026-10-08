@@ -34,7 +34,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "@/lib/logger";
 
 /** Cabeçalhos que NUNCA entram no arquivo, por menor que seja a chance. */
-const PROIBIDOS = ["authorization", "cookie", "x-api-key"];
+// `asaas-access-token` (spec da cobrança do revendedor §2.4): o Asaas autentica
+// o webhook com um token ESTÁTICO no cabeçalho — é a credencial inteira, não uma
+// assinatura. A rota de cobrança nem grava cabeçalho; isto é o cinto para quando
+// alguém apontar o aviso do Asaas para uma rota de canal.
+const PROIBIDOS = ["authorization", "cookie", "x-api-key", "asaas-access-token"];
 
 /**
  * Cabeçalhos sanitizados.

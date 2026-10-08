@@ -189,7 +189,10 @@ export async function conferirAfirmacoes(
 
   // 5. Degrau 3: a decisão é em CÓDIGO, pelo máximo das frases. Resposta fora
   //    de probabilidade é `resposta_ilegivel` — fail-open, nunca um veto.
-  const calculo = decidirAfirmacoes(frases, r.respostas);
+  //    A evidência vai junto (#2582): é o que a corroboração mecânica usa para
+  //    não vetar paráfrase cujo preço e itens estão na base, em qualquer forma.
+  const evidenciaEmTexto = evidencias.map((ev) => `${ev.titulo}\n${ev.conteudo}`).join("\n");
+  const calculo = decidirAfirmacoes(frases, r.respostas, evidenciaEmTexto);
   if (calculo.ilegivel) {
     registrarFalha(alvo, "resposta_ilegivel", Date.now());
     logger.warn("a conferência de fato respondeu fora de uma probabilidade", {

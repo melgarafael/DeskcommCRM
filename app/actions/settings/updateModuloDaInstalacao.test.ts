@@ -69,12 +69,13 @@ describe("updateModuloDaInstalacao", () => {
 });
 
 describe("a chave da cobrança", () => {
-  it("ligar ainda é recusado nesta versão: nada gravado", async () => {
-    expect(await updateModuloDaInstalacao({ modulo: "cobranca", ligado: true })).toEqual({
-      ok: false,
-      error: "modulo_ainda_nao_disponivel",
-    });
-    expect(deps.upsert).not.toHaveBeenCalled();
+  it("ligar grava a chave e não libera nada (a liberação é só do desligar)", async () => {
+    expect(await updateModuloDaInstalacao({ modulo: "cobranca", ligado: true })).toEqual({ ok: true });
+    expect(deps.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ chave: "MODULO_COBRANCA", valor: "ligado" }),
+      expect.anything(),
+    );
+    expect(deps.rpc).not.toHaveBeenCalled();
   });
 
   it("desligar libera as suspensas ANTES de gravar a chave, e audita quantas", async () => {

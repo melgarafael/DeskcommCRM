@@ -641,6 +641,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   await admin
     .from("webhook_sources")
     .update({ last_received_at: new Date().toISOString() })
+    .eq("organization_id", source.organization_id)
     .eq("id", source.id);
 
   await audit({
