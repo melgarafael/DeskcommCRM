@@ -61,9 +61,15 @@ export async function tabelaDoObjeto(
   objeto: string,
 ): Promise<ObjetoInstalado | null> {
   const admin = createAdminClient();
+  /**
+   * ⚠️ `!artifact_id` desambigua: há DUAS FKs para `extension_artifacts`
+   * (`artifact_id` e `previous_artifact_id`) e o PostgREST recusa o embed sem a dica
+   * (`PGRST201`). Sem ela esta função devolve `null` e a rota responde 404 para módulo que
+   * ESTÁ instalado. Ver o comentário longo em `paineis.ts`.
+   */
   const { data, error } = await admin
     .from("extension_installations")
-    .select("publisher, name, extension_artifacts!inner(manifest)")
+    .select("publisher, name, extension_artifacts!artifact_id!inner(manifest)")
     .eq("name", modulo)
     .is("removed_at", null)
     .limit(1);

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -50,12 +51,37 @@ function declaraRefPara(objeto: ObjetoDeclarado, entidade: EntidadeDoNucleo): bo
 
 export async function paineisDaEntidade(entidade: EntidadeDoNucleo): Promise<PainelDeModulo[]> {
   const admin = createAdminClient();
+  /**
+   * ⚠️ A DICA `!artifact_id` NÃO É ENFEITE. `extension_installations` tem DUAS chaves
+   * estrangeiras para `extension_artifacts` — `artifact_id` e `previous_artifact_id` —, e com
+   * duas o PostgREST recusa o embed inteiro (`PGRST201`). Sem a dica esta leitura falha, cai no
+   * `return []` abaixo e a ficha do contato fica em branco com o módulo instalado e a tabela
+   * criada: medido pelo e2e, depois de quatro testes de unidade verdes em cima — o cliente era
+   * dublê, e dublê aceita qualquer `select`.
+   */
   const { data, error } = await admin
     .from("extension_installations")
-    .select("name, extension_artifacts!inner(manifest)")
+    .select("name, extension_artifacts!artifact_id!inner(manifest)")
     .is("removed_at", null)
     .order("name", { ascending: true });
-  if (error || !data) return [];
+  if (error || !data) {
+    /**
+     * FALHA FECHADA, MAS NUNCA MUDA. Devolver vazio é a regra (não-negociável 1:
+     * nenhuma jornada do núcleo depende de extensão), e ela só é defensável se a
+     * falha deixar rastro — sem isto, "nenhum módulo instalado" e "a consulta
+     * quebrou" são a MESMA tela em branco, e foi exatamente esse silêncio que
+     * custou uma rodada inteira de e2e: 20 s esperando um painel que nunca vinha,
+     * sem uma linha dizendo por quê.
+     */
+    if (error) {
+      logger.warn("painéis de módulo: leitura recusada — a ficha segue sem painel", {
+        entidade,
+        codigo: error.code,
+        detalhe: error.message,
+      });
+    }
+    return [];
+  }
 
   const paineis: PainelDeModulo[] = [];
   for (const linha of data as unknown as {
