@@ -50,7 +50,7 @@ export async function reservarRun(
   args: { passo: PassoDoSync; origem: OrigemDoRun; agora: Date; forcar: boolean },
 ): Promise<boolean> {
   const { error: erroSemente } = await admin
-    .from(TABELA)
+    .from("integration_sync_state")
     .upsert(
       { organization_id: orgId, provider: PROVEDOR, resource: RECURSO },
       { onConflict: "organization_id,provider,resource", ignoreDuplicates: true },

@@ -3351,8 +3351,9 @@ são de mentira e a integração é semeada `healthy` — **não há OAuth nem w
 | Cliente do pedido sem contato vira contato novo com `source = 'nuvemshop'` | idem | CI |
 | Com um run em andamento, o botão responde "Já está sincronizando." | idem | CI |
 
-Evidência: `evidence/nuvemshop-sync-e1/` (`01-integracao-em-dia.png`, `02-painel-do-contato.png`,
-`03-ja-sincronizando.png`).
+Evidência: `evidence/nuvemshop-sync-e1/01-integracao-em-dia.png`,
+`evidence/nuvemshop-sync-e1/02-painel-do-contato.png` e
+`evidence/nuvemshop-sync-e1/03-ja-sincronizando.png`.
 
 **Achado (WARN, não corrigido aqui):** o painel "Pedidos recentes" mostra o status cru do pedido
 (`paid · R$ 150,90`), em inglês, numa interface em português.

@@ -3243,9 +3243,9 @@ Conferir antes que nada escuta na 3995 (`grep -rn 3995 scripts tests .github | h
 3. Login como admin → `/app/integrations/nuvemshop` → vê "Conectado" → clica **Sincronizar agora** → toast "Sincronização iniciada.".
 4. Drena: chama `GET /api/v1/cron/event-log-drain` com o cabeçalho do cron (ver `lib/auth/cron-auth.ts` para o nome do segredo, valor do `.env.e2e`) em laço até `integration_sync_state.status = 'idle'` (teto 60 s).
 5. Recarrega → `getByTestId("nuvemshop-pedidos-total")` contém `2`; `nuvemshop-pedidos-situacao` contém "Em dia". Screenshot `evidence/nuvemshop-sync-e1/01-integracao-em-dia.png`.
-6. Abre a conversa semeada na inbox → painel "Pedidos recentes" mostra `#1001` e `R$ 150,90`. Screenshot `02-painel-do-contato.png`.
+6. Abre a conversa semeada na inbox → painel "Pedidos recentes" mostra `#1001` e `R$ 150,90`. Screenshot `evidence/nuvemshop-sync-e1/02-painel-do-contato.png`.
 7. Asserção de banco: existe contato `email = nova-cliente-e2e@ex.com` com `source = 'nuvemshop'`.
-8. Botão de novo enquanto um run roda (inserir `status='running'` + `trava_ate` futura direto no estado) → toast "Já está sincronizando.". Screenshot `03-ja-sincronizando.png`.
+8. Botão de novo enquanto um run roda (inserir `status='running'` + `trava_ate` futura direto no estado) → toast "Já está sincronizando.". Screenshot `evidence/nuvemshop-sync-e1/03-ja-sincronizando.png`.
 9. `afterAll`: apaga orders/contatos/estado/integração da semente; fecha o receptor.
 
 Medidas por `getBoundingClientRect`/texto, nunca a olho. Sem `waitForTimeout` fixo: espera por estado.
