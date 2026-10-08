@@ -48,6 +48,7 @@ export async function disconnectNuvemshop(): Promise<DisconnectResult> {
       status: "disconnected",
       status_reason: "user_disconnected",
     })
+    .eq("organization_id", activeOrg.orgId)
     .eq("id", existing.id);
 
   if (updErr) return { ok: false, error: "db_error" };

@@ -31,6 +31,11 @@ export const EXTENSION_PERMISSIONS = [
   // O consentimento para um tema de extensão pintar o produto — mostrado na
   // MESMA tela que lista as demais permissões antes de alguém aceitar a extensão.
   "theme.apply",
+  // A concessão de um módulo de DADOS: ele guarda fichas próprias, declaradas no manifesto e
+  // compiladas pelo host. Entra na lista porque aparece na MESMA tela de consentimento das outras —
+  // um pacote de dados não pede porta de navegação, e dar-lhe uma que ele não usa só para caber na
+  // validação seria mentir para quem lê a tela (ADR-0005, D4).
+  "dados.proprios",
 ] as const;
 export type ExtensionPermission = (typeof EXTENSION_PERMISSIONS)[number];
 

@@ -180,7 +180,9 @@ export function NavHub({
           ) : (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
               {extensionGuides.flatMap((guide) =>
-                guide.manifest.contributions.crm_cards.map((contribution) => {
+                // `?? []`: módulo de DADOS não contribui card; ele aparece na ficha do contato,
+                // não no hub. Sem a guarda, o hub quebraria ao encontrar um instalado.
+                (guide.manifest.contributions.crm_cards ?? []).map((contribution) => {
                   const Icon = EXTENSION_ICONS[contribution.icon];
                   const compact = guide.configuration.density === "compact";
                   return (

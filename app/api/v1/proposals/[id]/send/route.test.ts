@@ -383,12 +383,17 @@ function montarMundoDeEnvio(opts: MundoOpts = {}) {
       }
       if (tabela === "messages") {
         return {
-          update: (patch: Record<string, unknown>) => ({
-            eq: (_c: string, id: string) => {
-              atualizacoesDeMensagem.push({ id, patch });
-              return Promise.resolve({ error: null });
-            },
-          }),
+          update: (patch: Record<string, unknown>) => {
+            // Aceita `.eq(...)` quantas vezes a cadeia encadear (a rota agora
+            // filtra por `organization_id` E por `id`) e registra por coluna.
+            const cadeia: Record<string, unknown> = {};
+            cadeia.eq = (campo: string, valor: unknown) => {
+              if (campo === "id") atualizacoesDeMensagem.push({ id: valor as string, patch });
+              return cadeia;
+            };
+            cadeia.then = (resolver: (v: unknown) => unknown) => resolver({ error: null });
+            return cadeia;
+          },
         };
       }
       throw new Error(`Tabela desconhecida: ${tabela}`);
