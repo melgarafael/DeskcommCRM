@@ -170,6 +170,14 @@
       "dot": "purple"
     },
     {
+      "id": "telaFontes",
+      "lane": "ui",
+      "label": "Painel \"O que o assistente pode ver\"",
+      "sublabel": "admin marca tabelas e colunas, descreve e salva · os demais só leem",
+      "type": "route",
+      "dot": "purple"
+    },
+    {
       "id": "toolsAgente",
       "lane": "agente",
       "label": "crm_describe / crm_query_external_data",
@@ -366,6 +374,24 @@
       "from": "dialeto",
       "to": "apiFontes",
       "label": "catálogo completo (admin)"
+    },
+    {
+      "id": "e43",
+      "from": "telaFontes",
+      "to": "apiFontes",
+      "label": "lê o catálogo completo e grava a lista"
+    },
+    {
+      "id": "e44",
+      "from": "telaLista",
+      "to": "telaFontes",
+      "label": "abre o painel (conexão nova ou sem fontes)"
+    },
+    {
+      "id": "e45",
+      "from": "telaFontes",
+      "to": "telaExplorador",
+      "label": "a grade passa a mostrar só o liberado"
     }
   ],
   "cards": [
