@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { McpContext } from "@/lib/mcp/types";
 import type * as ActivityEmitter from "@/lib/leads/activity-emitter";
@@ -6,6 +6,7 @@ import type * as ServiceBoundary from "@/lib/atendimento/fronteira-server";
 import {
   chaveDaEscritaDoNegocio,
   criarFilaDeEscritasDoNegocio,
+  PRAZO_ESCRITA_NEGOCIO_MS,
 } from "@/lib/ai/runtime/escritas-do-negocio";
 
 const dublês = vi.hoisted(() => ({ banco: null as unknown, comandoVigente: true }));
@@ -57,10 +58,13 @@ function porta() {
  * A comparação updated_at usa o filtro que moveLeadHandler realmente enviou.
  * A atividade reproduz o segundo bump de updated_at do trigger nativo.
  */
-function banco() {
+function banco({ segurarEdicao = false } = {}) {
   let revisao = 0;
   const leuEtapa = porta();
   const liberaEtapa = porta();
+  const editou = porta();
+  const liberaEdicao = porta();
+  let leiturasEtapa = 0;
   let pausar = true;
   const lead: Record<string, unknown> = {
     id: LEAD,
@@ -82,6 +86,9 @@ function banco() {
     lead,
     leuEtapa,
     liberaEtapa,
+    editou,
+    liberaEdicao,
+    get leiturasEtapa() { return leiturasEtapa; },
     atividade: () => bump(),
     humano: () => {
       lead.description = "Edição humana";
@@ -110,6 +117,7 @@ function banco() {
         maybeSingle: async () => {
           if (tabela === "crm_pipelines") return { data: { settings: {} }, error: null };
           if (tabela === "crm_stages") {
+            if (filtros.id === ETAPA) leiturasEtapa++;
             if (pausar && filtros.id === ETAPA) {
               pausar = false;
               leuEtapa.liberar();
@@ -135,6 +143,10 @@ function banco() {
               return { data: null, error: null };
             Object.assign(lead, patch);
             bump();
+            if (segurarEdicao && patch.description) {
+              editou.liberar();
+              await liberaEdicao.espera;
+            }
           }
           return { data: { ...lead }, error: null };
         },
@@ -185,16 +197,26 @@ beforeEach(() => {
 
 describe("reprodução com os handlers nativos", () => {
   it("edição seguida de movimento no mesmo passo relê a revisão após a atividade", async () => {
-    const sb = banco();
+    const sb = banco({ segurarEdicao: true });
     dublês.banco = sb;
     sb.liberaEtapa.liberar();
     const tools = montar(sb);
-    const resultados = await Promise.all([
-      tools.crm_update_lead!.execute!(editar, options),
-      tools.crm_move_lead_stage!.execute!(mover, options),
-    ]);
+    const edicao = tools.crm_update_lead!.execute!(editar, options);
+    await sb.editou.espera;
+    const movimento = tools.crm_move_lead_stage!.execute!(mover, options);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // O update já gravou; a atividade/auditoria da edição ainda não ocorreram.
+    // Sem a fila, o movimento entra pela porta da etapa antes desta liberação.
+    expect(sb.lead.description).toBe(editar.description);
+    expect(sb.leiturasEtapa).toBe(0);
+    sb.liberaEdicao.liberar();
+    const resultados = await Promise.all([edicao, movimento]);
     expect(resultados.every((r) => !!r && typeof r === "object" && "lead" in r)).toBe(true);
     expect(sb.lead).toMatchObject({ stage_id: ETAPA, description: editar.description });
+    expect(vi.mocked(audit).mock.calls.map(([a]) => a.action)).toEqual([
+      "lead.updated",
+      "lead.moved",
+    ]);
   });
 
   it("id do contato traduzido e id do negócio compartilham a mesma fila", async () => {
@@ -376,5 +398,102 @@ describe("fila por negócio do turno", () => {
     expect(
       chaveDaEscritaDoNegocio(ORG, { ...def, name: "crm_book_appointment" }, { contact_id: LEAD }),
     ).toBeNull();
+  });
+});
+
+describe("prazo sem liberar uma escrita em andamento", () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("devolve resultado incerto, recusa queued e novo turno até a escrita tardia terminar", async () => {
+    const fila = criarFilaDeEscritasDoNegocio();
+    const bloqueio = porta();
+    const ordem: string[] = [];
+    const ativa = fila("prazo/card", async () => {
+      ordem.push("iniciada");
+      await bloqueio.espera;
+      ordem.push("escrita tardia");
+    });
+    const seguinte = vi.fn(async () => ordem.push("não deve executar"));
+    const espera = fila("prazo/card", seguinte);
+    const recusaAtiva = expect(ativa).rejects.toThrow("lead_write_outcome_unknown");
+    const recusaEspera = expect(espera).rejects.toThrow("lead_write_outcome_unknown");
+    await vi.advanceTimersByTimeAsync(PRAZO_ESCRITA_NEGOCIO_MS);
+    await Promise.all([recusaAtiva, recusaEspera]);
+    expect(ordem).toEqual(["iniciada"]);
+    const outroTurno = criarFilaDeEscritasDoNegocio();
+    await expect(outroTurno("prazo/card", seguinte)).rejects.toThrow("lead_write_outcome_unknown");
+    expect(await outroTurno("outra-org/card", async () => "outro tenant")).toBe("outro tenant");
+    expect(await outroTurno("prazo/outro-card", async () => "outro card")).toBe("outro card");
+    expect(await outroTurno(null, async () => "leitura")).toBe("leitura");
+    bloqueio.liberar();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ordem).toEqual(["iniciada", "escrita tardia"]);
+    expect(seguinte).not.toHaveBeenCalled();
+    // O turno vencido não revive; a pendência verdadeira já liquidada libera um novo.
+    await expect(fila("prazo/card", seguinte)).rejects.toThrow("lead_write_outcome_unknown");
+    expect(await outroTurno("prazo/card", async () => "novo turno legítimo")).toBe("novo turno legítimo");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("limpar a pendência mais antiga não apaga outra operação sem desfecho da mesma chave", async () => {
+    // Montagens independentes podiam já estar executando antes da primeira expiração.
+    const a = porta();
+    const b = porta();
+    const primeira = criarFilaDeEscritasDoNegocio()("identidade/card", () => a.espera);
+    const segunda = criarFilaDeEscritasDoNegocio()("identidade/card", () => b.espera);
+    const recusas = [primeira, segunda].map((p) => expect(p).rejects.toThrow("lead_write_outcome_unknown"));
+    await vi.advanceTimersByTimeAsync(PRAZO_ESCRITA_NEGOCIO_MS);
+    await Promise.all(recusas);
+    a.liberar();
+    await vi.advanceTimersByTimeAsync(0);
+    const nova = criarFilaDeEscritasDoNegocio();
+    const operacao = vi.fn(async () => "ok");
+    await expect(nova("identidade/card", operacao)).rejects.toThrow("lead_write_outcome_unknown");
+    expect(operacao).not.toHaveBeenCalled();
+    b.liberar();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await nova("identidade/card", operacao)).toBe("ok");
+  });
+
+  it("rejeição tardia do handler também liquida a pendência sem erro não tratado nem retry", async () => {
+    const bloqueio = porta();
+    const operacao = vi.fn(async () => { await bloqueio.espera; throw new Error("recusa tardia"); });
+    const ativa = criarFilaDeEscritasDoNegocio()("rejeicao/card", operacao);
+    const recusa = expect(ativa).rejects.toThrow("lead_write_outcome_unknown");
+    await vi.advanceTimersByTimeAsync(PRAZO_ESCRITA_NEGOCIO_MS);
+    await recusa;
+    bloqueio.liberar();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(operacao).toHaveBeenCalledTimes(1);
+    expect(await criarFilaDeEscritasDoNegocio()("rejeicao/card", async () => "ok")).toBe("ok");
+  });
+
+  it("na ponte nativa, auditoria marca falha e o modelo recebe incerteza sem iniciar movimento", async () => {
+    const sb = banco({ segurarEdicao: true });
+    dublês.banco = sb;
+    sb.liberaEtapa.liberar();
+    const tools = montar(sb);
+    const edicao = tools.crm_update_lead!.execute!(editar, options);
+    await sb.editou.espera;
+    const movimento = tools.crm_move_lead_stage!.execute!(mover, options);
+    await vi.advanceTimersByTimeAsync(PRAZO_ESCRITA_NEGOCIO_MS);
+    const erro = expect.objectContaining({ error: "lead_write_outcome_unknown", resultado_incerto: true });
+    expect(await edicao).toEqual(erro);
+    expect(await movimento).toEqual(erro);
+    expect(sb.leiturasEtapa).toBe(0);
+    expect(await montar(sb).crm_move_lead_stage!.execute!(mover, options)).toEqual(erro);
+    expect(vi.mocked(auditMcpToolCall).mock.calls.map(([a]) => [a.success, a.errorMessage])).toEqual([
+      [false, "lead_write_outcome_unknown"],
+      [false, "lead_write_outcome_unknown"],
+      [false, "lead_write_outcome_unknown"],
+    ]);
+    sb.liberaEdicao.liberar();
+    await vi.advanceTimersByTimeAsync(0);
+    // Efeito tardio e auditoria nativa podem existir; a resposta nunca alegou cancelamento.
+    expect(vi.mocked(audit).mock.calls.map(([a]) => a.action)).toEqual(["lead.updated"]);
+    expect(sb.lead.stage_id).toBe("origem");
+    expect(await montar(sb).crm_move_lead_stage!.execute!(mover, options)).toHaveProperty("lead");
+    expect(sb.lead.stage_id).toBe(ETAPA);
   });
 });

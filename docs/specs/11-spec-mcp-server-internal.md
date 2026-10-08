@@ -56,8 +56,24 @@ valia quando a chamada chegou não é reutilizada como permissão para executá-
 
 A fila é local ao turno: não ordena requisições HTTP/MCP externas, turnos
 distintos, ações humanas nem ferramentas que resolvem o negócio indiretamente
-pela agenda. Não substitui proteção no banco e não repete conflitos. Uma falha
-libera a próxima chamada, conservando a recusa e sua auditoria para o modelo.
+pela agenda. Não substitui proteção no banco e não repete conflitos. Um handler
+que assenta com falha libera a próxima chamada, conservando a recusa e sua
+auditoria para o modelo.
+Uma chamada da fila tem teto de retorno igual à janela padrão do token MCP
+(`EPHEMERAL_TOKEN_TTL_SEC`, atualmente 300 segundos), contado da entrada na
+fila, incluindo a espera. Não é o prazo restante da credencial. Ao excedê-lo,
+o modelo recebe `lead_write_outcome_unknown` e `resultado_incerto`, com
+orientação para não confirmar nem repetir a escrita e pedir conferência humana.
+A recusa continua em `mcp.tool_called` e no log estruturado da ponte.
+
+Esse teto **não cancela** o handler nem libera o próximo: a chave fica recusada
+na montagem vencida. Um registro compartilhado em processo impede novas
+montagens/turnos de iniciar escrita nesse par organização/negócio até todos os
+handlers vencidos assentarem realmente; a liquidação retira esse impedimento
+automaticamente. Outros negócios, organizações e leituras continuam livres.
+Um efeito já iniciado pode completar tarde. O registro não coordena processos
+distintos ou escritas fora da ponte; um handler que nunca assenta conserva o
+impedimento até a recuperação/reinício do processo. Não há retry automático.
 Regressão: `tests/unit/escritas-do-negocio-no-turno.test.ts` reproduz a colisão
 com handlers nativos e adaptador em memória, sem banco ou modelo externo.
 

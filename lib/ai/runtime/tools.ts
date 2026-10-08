@@ -33,7 +33,12 @@ import type { McpContext, McpToolDefinition } from "@/lib/mcp/types";
 import { resolveActiveLeadForContact, type LeadCandidate } from "@/lib/leads/active-lead";
 import { podeChamarFerramenta, recusaParaOModelo } from "@/lib/leads/escopo-de-funil";
 import { escritaCabeNoTurno } from "./escopo-das-escritas";
-import { chaveDaEscritaDoNegocio, criarFilaDeEscritasDoNegocio } from "./escritas-do-negocio";
+import {
+  chaveDaEscritaDoNegocio,
+  criarFilaDeEscritasDoNegocio,
+  EscritaDoNegocioSemDesfechoError,
+  PRAZO_ESCRITA_NEGOCIO_MS,
+} from "./escritas-do-negocio";
 import { guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 
 export interface RuntimeHandoffSignal {
@@ -487,6 +492,19 @@ function wrapMcpTool(
           success: false,
           errorMessage: message,
         });
+        if (err instanceof EscritaDoNegocioSemDesfechoError) {
+          logger.error("escrita do negócio sem desfecho; novas escritas recusadas", {
+            tool_name: def.name,
+            organization_id: input.ctx.organizationId,
+            request_id: input.ctx.requestId,
+            prazo_ms: PRAZO_ESCRITA_NEGOCIO_MS,
+          });
+          return {
+            error: message,
+            resultado_incerto: true,
+            mensagem: "Há uma escrita deste negócio ainda sem desfecho confirmado. Não confirme sucesso, não repita nem tente outra escrita: peça à equipe para conferir. A operação em andamento não foi cancelada.",
+          };
+        }
         // Recusa por papel/scope NAO e erro de execucao — e defeito de
         // configuracao: o humano ligou a capacidade na tela e ela nao existe na
         // pratica. Devolver so ao modelo faz a promessa quebrada sumir sem

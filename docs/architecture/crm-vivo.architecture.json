@@ -40,7 +40,7 @@
     { "id": "ritual", "lane": "agente", "col": 1, "type": "service", "label": "inbound-turn (ritual)", "sublabel": "abre lendo checkpoint + lead_state" },
     { "id": "espelho", "lane": "agente", "col": 5, "type": "service", "label": "mirrorLeadStageToCrm", "sublabel": "propõe quando há conflito" },
     { "id": "pontemcp", "lane": "agente", "col": 2, "type": "service", "label": "pickToolsFromMcp", "sublabel": "papel · contato · funil · auditoria" },
-    { "id": "filanegocio", "lane": "agente", "col": 3, "type": "service", "label": "Fila de escritas por negócio", "sublabel": "escritas explícitas · local ao turno · trava humana preservada" },
+    { "id": "filanegocio", "lane": "agente", "col": 3, "type": "service", "label": "Fila de escritas por negócio", "sublabel": "ordem no turno · prazo com resultado incerto · pendência em processo até desfecho" },
     { "id": "promocaocliente", "lane": "negocio", "col": 2, "type": "trigger", "label": "trg_agendamento_marca_cliente", "sublabel": "agendamento inserido/alterado/apagado (regra ligada) → first_service_at + etiqueta com dono" },
     { "id": "interruptorcliente", "lane": "humano", "col": 1, "type": "frontend", "label": "Clientes pela agenda", "sublabel": "Tipos de agendamento › fn_definir_cliente_pela_agenda (admin)" },
 
