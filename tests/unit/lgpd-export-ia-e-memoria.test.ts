@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mock = vi.hoisted(() => ({ admin: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mock.admin }));
 vi.mock("@/lib/logger", () => ({ logger: { warn: vi.fn() } }));
+import { copiaDoTitular } from "@/lib/lgpd/copia-do-titular";
 import { collectExportData } from "@/lib/lgpd/export-collector";
 
 type Row = Record<string, unknown>;
@@ -218,7 +219,8 @@ describe("LGPD: export do titular traz a memória da IA e o estado da lead", () 
     expect(reads.filter((read) => read.table === "lead_notes")).toHaveLength(1);
   });
 
-  it("ai_agent_runs entrega os argumentos de tool_calls do titular, filtrado por org e contato", async () => {
+  // O COLETOR lê os argumentos; o arquivo que o titular recebe os tira (doc 110, 1A — `copiaDoTitular`).
+  it("ai_agent_runs coleta os argumentos de tool_calls do titular, filtrado por org e contato", async () => {
     const payload = await collectExportData(request);
     expect(payload.ai_agent_runs?.map((r) => r.id)).toEqual(["run-mine"]);
     expect(JSON.stringify(payload.ai_agent_runs)).toContain(TEXTOS_DO_TITULAR[0]!);
@@ -271,9 +273,8 @@ describe("LGPD: export do titular traz a memória da IA e o estado da lead", () 
 
   it("os textos plantados aparecem no arquivo gerado (JSON que o worker sobe)", async () => {
     const payload = await collectExportData(request);
-    const json = JSON.stringify(payload);
-    // data.json é `JSON.stringify(data)`: se o texto não aparece no payload,
-    // não aparece no arquivo que o titular recebe.
+    // O arquivo que o worker sobe: `copiaDoTitular(data, perfil.codigo)`.
+    const json = JSON.stringify(copiaDoTitular(payload, "BR"));
     expect(json).toContain(TEXTOS_DO_TITULAR[0]!);
     expect(json).toContain(TEXTOS_DO_TITULAR[1]!);
     expect(json).toContain('"next_action":"ligar segunda"');

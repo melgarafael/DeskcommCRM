@@ -72,6 +72,8 @@ function admin() {
 const tokens: TokensDoCodex = {
   access_token: "at-1234567890",
   refresh_token: "rt-9876543210",
+  client_id: "siwc-client-test",
+  scopes: ["chatgpt.tokens.use.direct"],
   expires_at: null,
 };
 

@@ -19,9 +19,8 @@ import type { Idioma } from "@/lib/i18n/idiomas";
  * `baseline.sql` que os gatilhos a escrevem assim, e os invariantes
  * `cobranca-assentos`/`cobranca-canais` conferem a mensagem que o Postgres entrega.
  *
- * Na PR 2 a empresa não troca de plano sozinha (não há provedor): a frase manda
- * pedir a quem administra o sistema. A PR 3a, com o autoatendimento, troca o
- * caminho junto com o nome do item de menu.
+ * Desde a PR 3a a empresa troca de plano sozinha: a frase aponta o item de menu
+ * "Plano e cobrança".
  */
 
 export type RecursoComLimite = Extract<RecursoDoPlano, "assentos" | "canais">;
@@ -37,16 +36,18 @@ export function lerLimiteEstourado(
   return achado ? { recurso: achado[1] as RecursoComLimite, limite: Number(achado[2]) } : null;
 }
 
+// PR 3a: a empresa troca de plano sozinha, então a frase diz ONDE — é a saída
+// que o convite recusado com o plano cheio precisa mostrar.
 const FRASE_DO_LIMITE: Record<RecursoComLimite, { um: string; varios: string }> = {
   assentos: {
-    um: "Seu plano permite 1 pessoa e a vaga está ocupada. Revogue o acesso de alguém em Equipe ou peça a quem administra o sistema para trocar de plano.",
+    um: "Seu plano permite 1 pessoa e a vaga está ocupada. Revogue o acesso de alguém em Equipe ou troque de plano em Configurações › Plano e cobrança.",
     varios:
-      "Seu plano permite {n} pessoas e todas as vagas estão ocupadas. Revogue o acesso de alguém em Equipe ou peça a quem administra o sistema para trocar de plano.",
+      "Seu plano permite {n} pessoas e todas as vagas estão ocupadas. Revogue o acesso de alguém em Equipe ou troque de plano em Configurações › Plano e cobrança.",
   },
   canais: {
-    um: "Seu plano permite 1 número conectado. Exclua um número em Conexões ou peça a quem administra o sistema para trocar de plano.",
+    um: "Seu plano permite 1 número conectado. Exclua um número em Conexões ou troque de plano em Configurações › Plano e cobrança.",
     varios:
-      "Seu plano permite {n} números conectados. Exclua um número em Conexões ou peça a quem administra o sistema para trocar de plano.",
+      "Seu plano permite {n} números conectados. Exclua um número em Conexões ou troque de plano em Configurações › Plano e cobrança.",
   },
 };
 

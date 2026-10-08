@@ -227,7 +227,14 @@ show_recovery() {
   printf '%s\n'   "$(t "abra o Supabase > SQL Editor e rode (ATENÇÃO: apaga todos os dados):")"
   printf '  %s\n\n' "drop schema public cascade; create schema public;"
 }
-trap 'rc=$?; [ "$rc" -ne 0 ] && show_recovery; exit $rc' EXIT
+# O temporário da pendência de e-mail (passo 7) também sai aqui, em QUALQUER
+# saída: sem isto cada instalação deixava um /tmp/tmp.* com o aviso dentro.
+# Zerado aqui para o trap só apagar o que ESTE script criou: um valor herdado do
+# ambiente apontaria o `rm -f` para um arquivo alheio se a instalação morresse
+# antes do passo 7.
+PENDENCIA_EMAIL=
+apaga_temporarios() { [ -z "${PENDENCIA_EMAIL:-}" ] || rm -f "$PENDENCIA_EMAIL"; }
+trap 'rc=$?; apaga_temporarios; [ "$rc" -ne 0 ] && show_recovery; exit $rc' EXIT
 
 # ── Validadores ─────────────────────────────────────────────────────────────
 # Cada validador recebe o valor, imprime a explicação do problema em português
@@ -2472,8 +2479,8 @@ $(c_ylw "═══════════════════════�
 
 INCOMPLETO
   # Sai != 0 para que automação (e o --yes) saiba que não terminou saudável,
-  # mas sem o trap: a receita de "apague tudo e recomece" não cabe aqui.
-  trap - EXIT
+  # mas sem o show_recovery: a receita de "apague tudo e recomece" não cabe aqui.
+  trap apaga_temporarios EXIT
   exit 1
 fi
 

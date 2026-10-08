@@ -75,7 +75,10 @@ export async function POST(
       orgId: activeOrg.orgId,
       credentialId: id,
       userId: authUser.id,
-      renovar: (atuais) => renovarPorRefreshToken({ refreshToken: atuais.refresh_token }),
+      renovar: (atuais) => {
+        if (!atuais.client_id) throw new Error("credencial_siwc_sem_client_id");
+        return renovarPorRefreshToken({ refreshToken: atuais.refresh_token, clientId: atuais.client_id });
+      },
     });
     if (renovado.ok) {
       const { data: safe } = await admin

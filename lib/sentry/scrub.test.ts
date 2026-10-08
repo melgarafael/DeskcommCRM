@@ -282,3 +282,30 @@ describe("sentryScrubHooks", () => {
     expect(JSON.stringify(crumb)).not.toContain(TOKEN);
   });
 });
+
+describe("scrubMessage — chaves dos provedores de cobrança (spec cobrança §6)", () => {
+  // Montadas por partes: um literal com a forma exata de chave real dispara o
+  // secret scanning do GitHub no push, mesmo sendo falso.
+  const VETORES = [
+    ["sk", "live", "Fak3Ch4v3Stripe"].join("_"),
+    ["rk", "test", "Fak3Restrita99"].join("_"),
+    ["pk", "test", "Fak3Publica00"].join("_"),
+    ["whsec", "Fak3SegredoDoWebhook"].join("_"),
+    "$" + ["aact", "prod", "000MzkwODA2MWY2+OGM3/MWRlMDU2NWM3MzJlNzZmNGZhZGY6OjAwMDAw=="].join("_"),
+  ];
+
+  it.each(VETORES)("apaga %s inteira", (chave) => {
+    expect(scrubMessage(`o provedor recusou a chamada com ${chave} às 10h`)).toBe(
+      "o provedor recusou a chamada com [CHAVE] às 10h",
+    );
+  });
+
+  it("⭐ chave com dígitos sai inteira, e não vira meio telefone", () => {
+    const chave = ["sk", "test", "11987654321abcdef"].join("_");
+    expect(scrubMessage(`chave ${chave}`)).toBe("chave [CHAVE]");
+  });
+
+  it("controle: o prefixo sozinho não é chave", () => {
+    expect(scrubMessage("use uma chave sk_live_ ou rk_live_")).toBe("use uma chave sk_live_ ou rk_live_");
+  });
+});

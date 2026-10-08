@@ -115,6 +115,11 @@ export async function previewGateContext(
     messagingWindow: { lastInboundAt: lastInbound },
     pacing: {
       knobs: cfg.knobs,
+      // A prévia propõe a RESPOSTA a uma mensagem recebida: vale a janela
+      // `resposta_*` (0495), a mesma que `approved-reply.ts` usa ao enviar o
+      // rascunho aprovado (#1984). Sem isto, o rascunho da prévia seria vetado
+      // pelo `outside_window` da janela de DISPARO (7h-22h) em vez da de resposta.
+      resposta: true,
       state: channel
         ? await loadPacingState(db, org, channel, {
             now,

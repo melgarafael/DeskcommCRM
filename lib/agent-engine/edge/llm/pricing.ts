@@ -104,6 +104,14 @@ const USD_PER_MTOK: Record<string, Preco> = {
   // fica sem efeito. O 2.0 Flash não tem cache implícito nem aparece mais na
   // página: leitura = entrada, que nunca é aplicada porque nunca vem leitura.
   // Fora da tabela: a faixa acima de 200K tokens de entrada do 2.5 Pro e do 3.1 Pro.
+  // Gemini 3.x da migration 0600 (#2533), preço Standard de
+  // ai.google.dev/gemini-api/docs/pricing conferido em 08/10/2026. 3.6/3.7/3.8
+  // Flash estão em promoção até 31/12/2026 e passam a 1.5 / 7.5 (cache 0.15)
+  // em 01/01/2027 — esta tabela e o ai_pricing precisam mudar juntos nessa data.
+  'gemini-3.8-flash': { input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite5m: 0.75, cacheWrite1h: 0.75 },
+  'gemini-3.7-flash': { input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite5m: 0.75, cacheWrite1h: 0.75 },
+  'gemini-3.6-flash': { input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite5m: 0.75, cacheWrite1h: 0.75 },
+  'gemini-3.1-flash-lite': { input: 0.25, output: 1.5, cacheRead: 0.025, cacheWrite5m: 0.25, cacheWrite1h: 0.25 },
   'gemini-3.5-flash': { input: 1.5, output: 9, cacheRead: 0.15, cacheWrite5m: 1.5, cacheWrite1h: 1.5 },
   // 3.5 Flash-Lite: tarifa Standard de ai.google.dev/gemini-api/docs/pricing
   // (06/10/2026). O armazenamento de cache ($1/MTok/h) não é por chamada.

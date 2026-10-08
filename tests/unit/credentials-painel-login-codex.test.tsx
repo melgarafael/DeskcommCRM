@@ -28,13 +28,13 @@ vi.mock("@/app/actions/settings/conectarLoginCodex", () => ({
 }));
 
 describe("o painel de conexão da empresa", () => {
-  it("mostra o aviso do Codex, o campo de colagem e o estado da conta", () => {
+  it("mostra o aviso SIWC, o campo de colagem e o estado da conta", () => {
     render(
-      <PainelDeLoginCodex url="https://auth.openai.com/oauth/authorize?x=1" codeVerifier={"v".repeat(60)} conectado={false} validada={false} />,
+      <PainelDeLoginCodex url="https://auth.openai.com/api/accounts/authorize?x=1" codeVerifier={"v".repeat(60)} conectado={false} validada={false} siwcAutorizado={false} />,
     );
     expect(screen.getByTestId("painel-login-codex")).toBeTruthy();
     expect(screen.getByTestId("aviso-login-codex").textContent).toContain(
-      "nada disso é contrato público da OpenAI",
+      "termos e limites de uso da assinatura",
     );
     expect(screen.getByLabelText("Endereço em que o navegador parou")).toBeTruthy();
     expect(screen.getByTestId("estado-login-codex").textContent).toContain(
@@ -45,7 +45,7 @@ describe("o painel de conexão da empresa", () => {
 
   it("diz que a conta conectada é DA EMPRESA e oferece desconectar", () => {
     render(
-      <PainelDeLoginCodex url="u" codeVerifier={"v".repeat(60)} conectado={true} validada={true} />,
+      <PainelDeLoginCodex url="u" codeVerifier={"v".repeat(60)} conectado={true} validada={true} siwcAutorizado={true} />,
     );
     expect(screen.getByTestId("estado-login-codex").textContent).toContain(
       "Conta conectada nesta empresa",
@@ -54,9 +54,19 @@ describe("o painel de conexão da empresa", () => {
     cleanup();
   });
 
+  it("identifica um login legado que precisa ser reconectado com SIWC", () => {
+    render(
+      <PainelDeLoginCodex url="u" codeVerifier={"v".repeat(60)} conectado={true} validada={true} siwcAutorizado={false} />,
+    );
+    expect(screen.getByTestId("estado-login-codex").textContent).toContain(
+      "ainda não autorizou o uso do plano ChatGPT",
+    );
+    cleanup();
+  });
+
   it("conecta com o código colado e desconecta pela mesma ação da empresa", async () => {
     render(
-      <PainelDeLoginCodex url="u" codeVerifier={"v".repeat(60)} conectado={true} validada={true} />,
+      <PainelDeLoginCodex url="u" codeVerifier={"v".repeat(60)} conectado={true} validada={true} siwcAutorizado={true} />,
     );
     await userEvent.type(screen.getByLabelText("Endereço em que o navegador parou"), "abc");
     await userEvent.click(screen.getByRole("button", { name: "Conectar" }));
