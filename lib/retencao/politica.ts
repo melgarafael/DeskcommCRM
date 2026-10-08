@@ -352,8 +352,36 @@ export const RETENCAO_CHECKPOINTS_DIAS_PADRAO = 180;
 /** Piso de 30 dias: o turno de um mês atrás ainda é investigável por inteiro. */
 export const RETENCAO_CHECKPOINTS_DIAS_PISO = 30;
 
+/**
+ * Teto de 36500 dias (100 anos) para todo knob que passa por
+ * `interpretarRetencao`. Os dois do arquivo de webhooks
+ * (`WEBHOOK_LOG_*_RETENTION_DAYS`) NÃO passam por essa função, mas importam
+ * ESTA constante: `diasDeRetencao` em `lib/env.ts` reduz ao teto com aviso no
+ * boot, e `limiteEm` em `lib/channels/retencao-do-arquivo.ts` corta de novo,
+ * sem log (#2612). Um teto só, num lugar só.
+ *
+ * O piso impede apagar cedo demais; o teto impede é que o número chegue ao
+ * banco. `AUDIT_LOG_RETENTION_DAYS=9999999` vira
+ * `now() - make_interval(days => 9999999)` — uns 27 mil anos antes do mínimo
+ * de `timestamptz` (4713 a.C.) → `timestamp out of range`; e acima de 2³¹−1 o
+ * parâmetro `int` nem é aceito. Como o cron `data-retention` roda toda
+ * rodada, UMA linha no `.env` parava a poda daquela tabela e de todas as que
+ * vêm depois dela em `podarHistorico` (e, pelo acoplamento da #2508, a
+ * varredura de LGPD D+15), com `sweep_run
+ * {falhou:true}` como única pista.
+ *
+ * Um século fica muito além de qualquer janela que alguma tela lê
+ * (`MAX_RANGE_DAYS` é 90 dias) e do maior padrão do arquivo (400 dias).
+ *
+ * VIVE DENTRO de `interpretarRetencao`, de propósito: é uma guarda só, no
+ * lugar por onde TODOS os chamadores passam — o cron `data-retention`,
+ * `lib/webhooks/retencao-da-captacao.ts` e os knobs do #2140 — sem cada
+ * caller precisar se lembrar do teto.
+ */
+export const RETENCAO_TETO_DIAS = 36500;
+
 export interface RetencaoInterpretada {
-  /** Dias a pedir ao banco. Nunca abaixo do piso, nunca `NaN`. */
+  /** Dias a pedir ao banco. Nunca abaixo do piso, nunca acima do teto, nunca `NaN`. */
   readonly dias: number;
   /**
    * Frase pronta em pt-BR quando o valor do operador NÃO foi usado como escrito.
@@ -370,6 +398,8 @@ export interface RetencaoInterpretada {
  * nunca editou `.env`, e a doutrina de packaging exige que ele funcione).
  * Não-numérico, zero ou negativo → o padrão, COM aviso.
  * Abaixo do piso → o piso, COM aviso.
+ * Acima do teto (`RETENCAO_TETO_DIAS`) → o teto, COM aviso, no mesmo formato
+ * do piso: um prazo enorme não pode derrubar o cron com `timestamp out of range`.
  */
 export function interpretarRetencao(
   bruto: string | undefined,
@@ -397,6 +427,15 @@ export function interpretarRetencao(
       aviso:
         `${opcoes.chave}=${numero} está abaixo do piso de ${opcoes.piso} dias — ` +
         `usando ${opcoes.piso}.`,
+    };
+  }
+
+  if (numero > RETENCAO_TETO_DIAS) {
+    return {
+      dias: RETENCAO_TETO_DIAS,
+      aviso:
+        `${opcoes.chave}=${numero} está acima do teto de ${RETENCAO_TETO_DIAS} dias — ` +
+        `usando ${RETENCAO_TETO_DIAS}.`,
     };
   }
 

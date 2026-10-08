@@ -66,6 +66,7 @@ baixar_para() {
 # pelo motivo ERRADO — o `curl` recusava o protocolo do arquivo local antes de a validação
 # rodar, e tirar a validação inteira não deixava o teste vermelho. Medido, não suposto.
 catalogo_tem_forma() {
+  [[ -f "$1" && -s "$1" ]] || return 1
   jq -e '.format_version == 1 and (.entries | type == "array") and (.origin | type == "string")' \
     "$1" >/dev/null 2>&1
 }

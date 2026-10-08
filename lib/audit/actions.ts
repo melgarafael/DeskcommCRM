@@ -1088,6 +1088,18 @@ export const AUDIT_ACTIONS = [
   // Planos de tarefa (#1752): a lista `settings.task_plans` mudou pela rota
   // `settings/task-plans` — mesma família de `campaign.settings_updated`.
   "task_plans.settings_updated",
+
+  // Gestão de tenants pelo admin da plataforma (migration 0614).
+  // A LÁPIDE, gravada pelo banco dentro de `fn_excluir_organizacao`, com
+  // `organization_id` nulo e `resource_id` = a organização excluída.
+  "organization.deleted",
+  // O fecho da exclusão (Storage, logins, canais externos), gravado pela
+  // aplicação depois do commit — `lib/tenants/exclusao.ts`.
+  "organization.deletion_completed",
+  // Leitura da lista de membros com e-mail de login (dado pessoal) de um tenant.
+  "platform_admin.tenant_members_viewed",
+  // O admin da plataforma corrigiu o e-mail de login de um membro (só hashes).
+  "member.email_changed",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
