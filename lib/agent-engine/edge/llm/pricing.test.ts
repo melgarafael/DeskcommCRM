@@ -77,6 +77,10 @@ describe("costCents — cada tarifa isolada, por modelo", () => {
     ["gpt-5.4-nano", 20, 125, 2, 20, 20],
     ["gpt-5.4-pro", 3000, 18000, 3000, 3000, 3000],
     // Google — leitura de cache a 0.1× a entrada (2.0 Flash não tem cache implícito, ver pricing.ts)
+    ["gemini-3.8-flash", 75, 375, 7.5, 75, 75],
+    ["gemini-3.7-flash", 75, 375, 7.5, 75, 75],
+    ["gemini-3.6-flash", 75, 375, 7.5, 75, 75],
+    ["gemini-3.1-flash-lite", 25, 150, 2.5, 25, 25],
     ["gemini-3.5-flash", 150, 900, 15, 150, 150],
     ["gemini-3.5-flash-lite", 30, 250, 3, 30, 30],
     ["gemini-3.1-pro-preview", 200, 1200, 20, 200, 200],

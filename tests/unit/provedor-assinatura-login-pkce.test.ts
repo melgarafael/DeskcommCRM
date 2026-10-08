@@ -1,12 +1,12 @@
 /**
- * O LOGIN DO CODEX POR PKCE — o que este teste guarda.
+ * Sign in with ChatGPT (SIWC) por PKCE — o que este teste guarda.
  *
  *  1. O VETOR DO RFC 7636 (Apêndice B): se `codeChallengeS256` divergir um
  *     byte, o authorize devolve `invalid_request` e ninguém descobre daqui —
  *     descobre só na hora em que alguém tenta conectar.
  *  2. A URL de authorize com TODOS os parâmetros, inclusive os que não somos
- *     donos: `redirect_uri` é o `localhost:1455` da lista branca do Codex e
- *     `scope` precisa trazer `offline_access`, sem o qual não há refresh_token.
+ *     `redirect_uri` é o `127.0.0.1:1455` SIWC, e scopes/resource autorizam
+ *     chamadas à API pública usando a assinatura ChatGPT.
  *  3. A troca do `code` com `fetch` FALSO, devolvendo os dois tokens — prova de
  *     que o corpo do POST é o esperado sem nenhum pedido real a
  *     `auth.openai.com` (não há credencial nesta VPS, e esta frase é o escopo
@@ -20,14 +20,15 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  CLIENT_ID_DO_CODEX,
+  CLIENTE_DINAMICO_SIWC,
   ENDPOINT_DE_TOKEN,
-  ESCOPO_DO_CODEX,
-  REDIRECT_URI_DO_CODEX,
+  ESCOPO_SIWC,
+  ErroDeToken,
+  NOME_DO_CLIENTE_SIWC,
+  REDIRECT_URI_SIWC,
   codeChallengeS256,
   criarSessaoPkce,
   gerarCodeVerifier,
-  gerarEstado,
   montarUrlDeAutorizacao,
   renovarPorRefreshToken,
   trocarCodigoPorTokens,
@@ -61,8 +62,8 @@ describe("o vetor do RFC 7636", () => {
   });
 
   it("verifier e state saem aleatórios, e o verifier tem o formato do RFC (43–128, base64url)", () => {
-    const a = criarSessaoPkce();
-    const b = criarSessaoPkce();
+    const a = criarSessaoPkce("state-a", { nonce: "nonce-a", extAgentHostId: "urn:uuid:host-a" });
+    const b = criarSessaoPkce("state-b", { nonce: "nonce-b", extAgentHostId: "urn:uuid:host-b" });
     expect(a.codeVerifier).not.toBe(b.codeVerifier);
     expect(a.estado).not.toBe(b.estado);
     for (const sessao of [a, b]) {
@@ -72,31 +73,33 @@ describe("o vetor do RFC 7636", () => {
       expect(sessao.estado).toMatch(/^[A-Za-z0-9_-]+$/);
     }
     expect(gerarCodeVerifier()).not.toBe(gerarCodeVerifier());
-    expect(gerarEstado()).not.toBe(gerarEstado());
   });
 });
 
 describe("a URL de authorize", () => {
-  it("traz todos os parâmetros do PKCE, com o redirect_uri e o scope do Codex", () => {
-    const sessao = criarSessaoPkce();
+  it("traz os parâmetros SIWC, recurso, host, nonce e escopos", () => {
+    const sessao = criarSessaoPkce("state-fixo", { nonce: "nonce-fixo", extAgentHostId: "urn:uuid:host-fixo" });
     const url = new URL(sessao.url);
 
-    expect(`${url.origin}${url.pathname}`).toBe("https://auth.openai.com/oauth/authorize");
+    expect(`${url.origin}${url.pathname}`).toBe("https://auth.openai.com/api/accounts/authorize");
     expect(url.searchParams.get("response_type")).toBe("code");
-    expect(url.searchParams.get("client_id")).toBe(CLIENT_ID_DO_CODEX);
-    expect(url.searchParams.get("redirect_uri")).toBe(REDIRECT_URI_DO_CODEX);
-    expect(url.searchParams.get("redirect_uri")).toBe("http://localhost:1455/auth/callback");
+    expect(url.searchParams.get("client_id")).toBe(CLIENTE_DINAMICO_SIWC);
+    expect(url.searchParams.get("redirect_uri")).toBe(REDIRECT_URI_SIWC);
+    expect(url.searchParams.get("redirect_uri")).toBe("http://127.0.0.1:1455/auth/callback");
     expect(url.searchParams.get("scope")).toContain("offline_access");
-    expect(url.searchParams.get("scope")).toBe(ESCOPO_DO_CODEX);
+    expect(url.searchParams.get("scope")).toBe(ESCOPO_SIWC);
+    expect(url.searchParams.get("resource")).toBe("https://api.openai.com/v1");
+    expect(url.searchParams.get("nonce")).toBe("nonce-fixo");
+    expect(url.searchParams.get("ext_agent_host_id")).toBe("urn:uuid:host-fixo");
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
     expect(url.searchParams.get("code_challenge")).toBe(codeChallengeS256(sessao.codeVerifier));
     expect(url.searchParams.get("state")).toBe(sessao.estado);
-    expect(url.searchParams.get("state")!.length).toBeGreaterThanOrEqual(16);
+    expect(url.searchParams.get("state")).toBe("state-fixo");
   });
 
   it("monta a URL com o challenge que quem chamou passou — não com um novo", () => {
     const url = new URL(
-      montarUrlDeAutorizacao({ codeChallenge: "DESAFIO_FIXO", estado: "ESTADO_FIXO" }),
+      montarUrlDeAutorizacao({ codeChallenge: "DESAFIO_FIXO", estado: "ESTADO_FIXO", nonce: "NONCE", extAgentHostId: "HOST" }),
     );
     expect(url.searchParams.get("code_challenge")).toBe("DESAFIO_FIXO");
     expect(url.searchParams.get("state")).toBe("ESTADO_FIXO");
@@ -109,6 +112,8 @@ describe("a troca do code por tokens", () => {
       resposta(200, {
         access_token: "access_de_troca",
         refresh_token: "refresh_de_troca",
+        id_token: "id-token",
+        scope: ESCOPO_SIWC,
         expires_in: 3600,
       }),
     );
@@ -116,6 +121,7 @@ describe("a troca do code por tokens", () => {
     const tokens = await trocarCodigoPorTokens({
       code: "codigo_colado",
       codeVerifier: gerarCodeVerifier(),
+      clientId: "dynamic-client-1",
       fetchImpl: fetchFalso,
     });
 
@@ -129,8 +135,9 @@ describe("a troca do code por tokens", () => {
     const corpo = new URLSearchParams(init.body as string);
     expect(corpo.get("grant_type")).toBe("authorization_code");
     expect(corpo.get("code")).toBe("codigo_colado");
-    expect(corpo.get("client_id")).toBe(CLIENT_ID_DO_CODEX);
-    expect(corpo.get("redirect_uri")).toBe(REDIRECT_URI_DO_CODEX);
+    expect(corpo.get("client_id")).toBe("dynamic-client-1");
+    expect(corpo.get("redirect_uri")).toBe(REDIRECT_URI_SIWC);
+    expect(corpo.get("resource")).toBe("https://api.openai.com/v1");
     expect(corpo.get("code_verifier")!.length).toBeGreaterThanOrEqual(43);
   });
 
@@ -140,6 +147,7 @@ describe("a troca do code por tokens", () => {
     );
     const tokens = await renovarPorRefreshToken({
       refreshToken: "refresh_antigo",
+      clientId: "dynamic-client-1",
       fetchImpl: fetchFalso,
     });
     expect(tokens.access_token).toBe("novo");
@@ -157,6 +165,7 @@ describe("a troca do code por tokens", () => {
       trocarCodigoPorTokens({
         code: "x",
         codeVerifier: gerarCodeVerifier(),
+        clientId: "dynamic-client-1",
         fetchImpl: fetchFalso,
       }),
     ).rejects.toThrow();
@@ -164,6 +173,7 @@ describe("a troca do code por tokens", () => {
       await trocarCodigoPorTokens({
         code: "x",
         codeVerifier: gerarCodeVerifier(),
+        clientId: "dynamic-client-1",
         fetchImpl: fetchFalso,
       });
     } catch (erro) {
@@ -232,3 +242,84 @@ describe("o retry único em 401", () => {
     expect(renovarApos401).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * O QUE O DOC 112 PEDIU A MAIS SOBRE O LOGIN (#2456): segredo nunca na URL, e
+ * revogação reconhecida como revogação.
+ *
+ * Sabotagens que confirmam: mandar o corpo da troca como query string
+ * (`${ENDPOINT_DE_TOKEN}?${corpo}`) deixa o primeiro caso vermelho; tirar o
+ * ramo `revoked` de `classificarFalhaDeToken` deixa o da revogação vermelho;
+ * mandar `agent_name_hint` sempre deixa o da reautorização vermelho.
+ */
+describe("o login por assinatura não põe segredo em URL", () => {
+  it("code, verifier e refresh_token vão no CORPO do POST, nunca na URL", async () => {
+    const fetchFalso = vi.fn(async () =>
+      resposta(200, { access_token: "a", refresh_token: "r", expires_in: 60 }),
+    );
+    const verifier = gerarCodeVerifier();
+    await trocarCodigoPorTokens({ code: "codigo-secreto", codeVerifier: verifier, clientId: "c", fetchImpl: fetchFalso });
+    await renovarPorRefreshToken({ refreshToken: "refresh-secreto", clientId: "c", fetchImpl: fetchFalso });
+
+    for (const chamada of fetchFalso.mock.calls as unknown as [string, RequestInit][]) {
+      const [url, init] = chamada;
+      expect(url).toBe(ENDPOINT_DE_TOKEN);
+      expect(init.method).toBe("POST");
+      for (const segredo of ["codigo-secreto", verifier, "refresh-secreto"]) {
+        expect(url).not.toContain(segredo);
+      }
+    }
+  });
+
+  it("a URL de authorize só leva o challenge, nunca o verifier", () => {
+    const sessao = criarSessaoPkce("state-x", { nonce: "n", extAgentHostId: "urn:uuid:h" });
+    expect(sessao.url).not.toContain(sessao.codeVerifier);
+  });
+});
+
+describe("a revogação da assinatura", () => {
+  it("refresh_token revogado na OpenAI vira o motivo `refresh_token_revoked`, não uma recusa genérica", async () => {
+    const fetchFalso = vi.fn(async () =>
+      resposta(400, { error: "invalid_grant", error_description: "Refresh token has been revoked" }),
+    );
+    const erro = await renovarPorRefreshToken({ refreshToken: "r", clientId: "c", fetchImpl: fetchFalso }).catch(
+      (e: unknown) => e,
+    );
+    expect(erro).toBeInstanceOf(ErroDeToken);
+    expect((erro as ErroDeToken).motivo).toBe("refresh_token_revoked");
+  });
+
+  it("outra recusa continua `recusado` (controle: o ramo da revogação não engole tudo)", async () => {
+    const fetchFalso = vi.fn(async () => resposta(400, { error: "invalid_client" }));
+    const erro = await renovarPorRefreshToken({ refreshToken: "r", clientId: "c", fetchImpl: fetchFalso }).catch(
+      (e: unknown) => e,
+    );
+    expect((erro as ErroDeToken).motivo).toBe("recusado");
+  });
+});
+
+/**
+ * O NOME NA TELA DA OPENAI É O DO APP, NÃO O DA MARCA DA INSTALAÇÃO.
+ *
+ * A documentação da OpenAI para apps auto-hospedados manda pôr em
+ * `agent_name_hint` "o nome real do seu app, usado de forma consistente entre
+ * instalações", e só no primeiro registro; na reautorização com o client_id
+ * emitido, omitir. Quem quiser outro nome o edita na própria tela de
+ * consentimento da OpenAI, antes de aprovar ("display metadata, not
+ * identity"). Fonte: https://developers.openai.com/siwc/token-sharing-open-source/sign-in
+ */
+describe("agent_name_hint", () => {
+  it("vai no primeiro registro, com o nome fixo do app", () => {
+    const url = new URL(montarUrlDeAutorizacao({ codeChallenge: "c", estado: "e", nonce: "n", extAgentHostId: "h" }));
+    expect(url.searchParams.get("agent_name_hint")).toBe(NOME_DO_CLIENTE_SIWC);
+  });
+
+  it("não vai na reautorização com o client_id emitido", () => {
+    const url = new URL(
+      montarUrlDeAutorizacao({ codeChallenge: "c", estado: "e", nonce: "n", extAgentHostId: "h", clientId: "emitido" }),
+    );
+    expect(url.searchParams.get("client_id")).toBe("emitido");
+    expect(url.searchParams.has("agent_name_hint")).toBe(false);
+  });
+});
+

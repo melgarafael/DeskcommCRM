@@ -16,7 +16,7 @@ import { guardServiceTools } from "@/lib/atendimento/fronteira-server";
  * cacheWriteTokens}. Validado no ai@7 via scripts/smoke-llm.sh (modelo real) —
  * upgrade de major re-valida esses paths pelo mesmo gate (regra dura 16).
  */
-import { generateText, stepCountIs, type ModelMessage, type ToolSet } from 'ai';
+import { generateText, stepCountIs, streamText, type ModelMessage, type ToolSet } from 'ai';
 import type pg from 'pg';
 import { z } from 'zod';
 
@@ -856,8 +856,8 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // assinatura ser refeita com a reserva SEM copiar o corpo (duas cópias do
   // `generateText` são duas cópias que um dia divergem — e a divergência seria
   // invisível, porque só uma delas rodaria).
-  const chamarCom = (cfgUsada: OrgLlmConfig, fabrica: (typeof factory)) =>
-    generateText({
+  const chamarCom = async (cfgUsada: OrgLlmConfig, fabrica: (typeof factory)) => {
+    const opcoesBase = {
       // `decisao.baseUrl` só é preenchido quando o painel apontou um endpoint
       // (gateway OpenAI-compatível, ou modelo local). Providers canônicos
       // ignoram o terceiro argumento e vão ao endpoint intrínseco.
@@ -875,12 +875,58 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
           : input.pararQuando === undefined
             ? stepCountIs(input.maxSteps)
             : [stepCountIs(input.maxSteps), input.pararQuando],
+      ...cacheDaCauda(cfgUsada.provider, input.maxSteps),
+    };
+
+    if (cfgUsada.provider === PROVEDOR_POR_ASSINATURA) {
+      // SIWC exige Responses API em streaming e store:false. A assinatura
+      // também não aceita opções de amostragem/teto de saída que generateText
+      // adiciona ao payload. Consumimos o stream completo aqui para preservar
+      // o contrato síncrono do motor e capturar responseMessages dos tool calls.
+      // O AI SDK devolve um `NoOutputGeneratedError` genérico quando o stream
+      // só contém um erro. Guardamos o evento original para preservar status e
+      // mensagem do provedor — a classificação e a reserva precisam reconhecer
+      // 401/429, e a tela de Execuções precisa explicar a falha real.
+      let erroOriginalDoStream: unknown = null;
+      const streamed = streamText({
+        ...opcoesBase,
+        providerOptions: { openai: { store: false } },
+        onError: ({ error }) => {
+          erroOriginalDoStream = error;
+        },
+      });
+      let text: string;
+      let usage: Awaited<typeof streamed.usage>;
+      let response: Awaited<typeof streamed.response>;
+      let steps: Awaited<typeof streamed.steps>;
+      let responseMessages: Awaited<typeof streamed.responseMessages>;
+      try {
+        [text, usage, response, steps, responseMessages] = await Promise.all([
+          streamed.text,
+          streamed.usage,
+          streamed.response,
+          streamed.steps,
+          streamed.responseMessages,
+        ]);
+      } catch (erroDoSdk) {
+        throw erroOriginalDoStream ?? erroDoSdk;
+      }
+      return {
+        text,
+        usage,
+        response: { ...response, messages: responseMessages },
+        steps,
+      } as unknown as Awaited<ReturnType<typeof generateText>>;
+    }
+
+    return generateText({
+      ...opcoesBase,
       temperature,
       topP,
       topK,
       maxOutputTokens: tetoDeSaida(maxOutputTokens, input.maxOutputTokens),
-      ...cacheDaCauda(cfgUsada.provider, input.maxSteps),
     });
+  };
 
   /**
    * A QUEDA DA ASSINATURA (#1639, item 3) — a metade que faltava da política.

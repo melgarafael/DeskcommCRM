@@ -65,17 +65,16 @@ export const REQUESTY_ENDPOINT = 'https://router.requesty.ai/v1';
 /**
  * O endpoint do CODEX — o mesmo login do ChatGPT, falando a API de resposta.
  *
- * A assinatura (`openai-assinatura`) não tem chave: o `access_token` do login
- * por PKCE (`lib/ai/pontos/pkce-da-assinatura.ts`) viaja como `Bearer`, e o
- * destino é o backend que o próprio Codex CLI usa. Não é contrato público —
- * a OpenAI pode mudá-lo sem aviso —, e é por isso que a queda para a chave de
- * API da organização existe: muda o destino, não a conversa.
+ * A assinatura (`openai-assinatura`) não tem chave: o `access_token` SIWC
+ * viaja como Bearer para a API pública de Responses da OpenAI. A chamada é
+ * transmitida (`stream:true`) por `runModelCall`, sem opções fora do contrato
+ * SIWC, e nunca usa endpoints internos do ChatGPT.
  *
  * A allowlist de egress do provider deriva daqui (`contain(...)` abaixo) — mas
  * o CATRACA de host do `branding.test.ts` é régua à parte: ele exige a linha
  * declarada em `HOSTS_DECLARADOS`, que está lá, com categoria e motivo.
  */
-export const OPENAI_CODEX_ENDPOINT = 'https://chatgpt.com/backend-api/codex';
+export const OPENAI_CODEX_ENDPOINT = 'https://api.openai.com/v1';
 
 /**
  * Cabeçalhos OPCIONAIS de atribuição da OpenRouter.
