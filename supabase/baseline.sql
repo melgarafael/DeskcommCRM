@@ -48271,8 +48271,8 @@ create unique index if not exists agent_inbox_canal_pausado_aberto_unico
   on public.agent_inbox_items (organization_id, kind, ref_id)
   where status = 'open' and kind = 'canal_pausado';
 
--- ---- fontes liberadas do banco externo (migration 0594) ----
--- Espelha a migration 0594_banco_externo_fontes_liberadas: o racional inteiro está lá.
+-- ---- fontes liberadas do banco externo (migration 0595) ----
+-- Espelha a migration 0595_banco_externo_fontes_liberadas: o racional inteiro está lá.
 -- Idempotente: `add column if not exists`, constraints derrubadas e recriadas, view
 -- recriada com revoke/grant reemitidos. Linhas existentes ficam 'all'.
 alter table public.external_db_connections
