@@ -77,8 +77,13 @@ export function decidirContato(chaves: ChavesDoContato, candidatos: CandidatoDeC
 
 const COLUNAS = "id, name, email, cpf_hash";
 
+/** Erro de consulta não é "sem candidato": lançar devolve o evento à fila em vez de duplicar contato. */
+function lancarBusca(error: { code?: string | null }): never {
+  throw new Error(`contato_busca:${error.code ?? "sem_code"}`);
+}
+
 async function ativoPorId(admin: SupabaseClient, orgId: string, id: string) {
-  const { data } = await admin
+  const { data, error } = await admin
     .from("contacts")
     .select(COLUNAS)
     .eq("organization_id", orgId)
@@ -86,6 +91,7 @@ async function ativoPorId(admin: SupabaseClient, orgId: string, id: string) {
     .is("is_merged_into", null)
     .eq("is_anonymized", false)
     .maybeSingle();
+  if (error) lancarBusca(error);
   return data as Omit<CandidatoDeContato, "via"> | null;
 }
 
@@ -101,7 +107,7 @@ async function buscarCandidato(
     if (ativo) return { ...ativo, via: "telefone" };
   }
   if (chaves.email) {
-    const { data } = await admin
+    const { data, error } = await admin
       .from("contacts")
       .select(COLUNAS)
       .eq("organization_id", orgId)
@@ -109,10 +115,11 @@ async function buscarCandidato(
       .is("is_merged_into", null)
       .eq("is_anonymized", false)
       .maybeSingle();
+    if (error) lancarBusca(error);
     if (data) return { ...(data as Omit<CandidatoDeContato, "via">), via: "email" };
   }
   if (chaves.cpf) {
-    const { data } = await admin
+    const { data, error } = await admin
       .from("contacts")
       .select(COLUNAS)
       .eq("organization_id", orgId)
@@ -120,6 +127,7 @@ async function buscarCandidato(
       .is("is_merged_into", null)
       .eq("is_anonymized", false)
       .maybeSingle();
+    if (error) lancarBusca(error);
     if (data) return { ...(data as Omit<CandidatoDeContato, "via">), via: "cpf" };
   }
   return null;
