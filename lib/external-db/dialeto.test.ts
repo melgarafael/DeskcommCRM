@@ -120,7 +120,7 @@ describe("criarDialetoDeLeitura (qualquer motor)", () => {
       descreverTabela: vi.fn(async (_schema: string, tabela: string) =>
         tabela === "clientes" ? CLIENTES : tabela === "wp_users" ? WP_USERS : null,
       ),
-      lerTabela: vi.fn(async () => ({ colunas: ["id"], linhas: [], limite: 20, offset: 0 })),
+      lerTabela: vi.fn(async (_pedido: PedidoDeLeitura, ..._resto: unknown[]) => ({ colunas: ["id"], linhas: [], limite: 20, offset: 0 })),
     };
   }
 
