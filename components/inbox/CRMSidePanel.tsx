@@ -65,6 +65,7 @@ interface OrderRow {
   total_cents: number | null;
   currency: string | null;
   created_at: string;
+  numero?: string | null;
 }
 
 interface ActivityRow {
@@ -869,7 +870,7 @@ export function CRMSidePanel({ conversation }: Props) {
                 <div className="min-w-0">
                   <div className="flex items-center gap-1 truncate font-medium">
                     <Receipt size={11} weight="regular" aria-hidden />
-                    {o.external_id ?? o.id.slice(0, 8)}
+                    {o.numero ? `#${o.numero}` : (o.external_id ?? o.id.slice(0, 8))}
                   </div>
                   <div className="text-muted-foreground">
                     {o.status ?? "—"} · {formatMoney(o.total_cents, o.currency)}

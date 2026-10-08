@@ -48,7 +48,7 @@ export const dynamic = "force-dynamic";
 // o negócio (ex.: "Pedido confirmado") direto da conversa, sem ir ao quadro.
 const LEAD_COLS =
   "id, title, status, value_cents, currency, updated_at, pipeline_id, stage_id, custom_fields, crm_pipelines!inner(name, settings, is_archived, etapas:crm_stages!crm_stages_pipeline_id_fkey(id, name, position, is_won, is_lost, is_archived)), crm_stages!crm_leads_stage_id_fkey(name)";
-const ORDER_COLS = "id, external_id, status, total_cents, currency, created_at";
+const ORDER_COLS = "id, external_id, status, total_cents, currency, created_at, ordered_at, numero:payload->>number";
 /** Acompanha o que a timeline mostra — `reason` e `actor_kind` inclusive. */
 /**
  * `performed_by_user_id` entra porque a timeline dizia "Você/time" para TODA
@@ -126,7 +126,7 @@ export async function GET(
       .from("orders")
       .select(ORDER_COLS)
       .eq("contact_id", contactId).eq("organization_id", contactScope.organization_id)
-      .order("created_at", { ascending: false })
+      .order("ordered_at", { ascending: false })
       .limit(3),
     // 12 e não 5. A janela de 5 foi dimensionada quando a timeline não recebia
     // troca de comando: agora um atendimento normal (assumiu → transferiu →

@@ -14979,6 +14979,21 @@ export const DICIONARIO: Traducoes = {
   "Máximo de {n} caracteres.": { es: "Máximo de {n} caracteres." },
   "Salvar alíneas": { es: "Guardar las letras" },
   "Alíneas do art. 15.º salvas.": { es: "Las letras del art. 15.º quedaron guardadas." },
+  // ── Nuvemshop: pedidos sincronizados (E1) ──
+  "Pedidos sincronizados:": { es: "Pedidos sincronizados:" },
+  "Última sincronização:": { es: "Última sincronización:" },
+  "Importando: mês": { es: "Importando: mes" },
+  "Aguardando a primeira sincronização": { es: "Esperando la primera sincronización" },
+  "pedidos não puderam ser importados na última sincronização.": { es: "pedidos no pudieron importarse en la última sincronización." },
+  "Sincronizar agora": { es: "Sincronizar ahora" },
+  "Sincronização iniciada.": { es: "Sincronización iniciada." },
+  "Já está sincronizando.": { es: "Ya se está sincronizando." },
+  "Integração não está conectada.": { es: "La integración no está conectada." },
+  "Apenas admins podem sincronizar.": { es: "Solo los administradores pueden sincronizar." },
+  "Não foi possível iniciar a sincronização. Tente de novo.": { es: "No fue posible iniciar la sincronización. Inténtalo de nuevo." },
+  "A loja revogou o acesso. Desconecte e conecte de novo.": { es: "La tienda revocó el acceso. Desconecta y conecta de nuevo." },
+  "A sincronização falhou. Tente sincronizar de novo.": { es: "La sincronización falló. Intenta sincronizar de nuevo." },
+  "Sincroniza os pedidos da loja e liga cada um ao contato.": { es: "Sincroniza los pedidos de la tienda y vincula cada uno al contacto." },
 };
 
 /**

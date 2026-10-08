@@ -16,6 +16,9 @@ import { Badge } from "@/components/ui/badge";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isConfigured } from "@/lib/nuvemshop/config";
+import { lerEstado } from "@/lib/nuvemshop/sync/estado";
+import { resumirSync } from "@/lib/nuvemshop/sync/resumo";
+import { PedidosDaLoja } from "./_components/PedidosDaLoja";
 import { ConnectButton, DisconnectButton } from "./_components/ConnectButton";
 import { StatusToast } from "./_components/StatusToast";
 import { Suspense } from "react";
@@ -43,6 +46,19 @@ async function loadIntegration(orgId: string): Promise<IntegrationRow | null> {
   return (data as IntegrationRow | null) ?? null;
 }
 
+async function loadResumo(orgId: string) {
+  const admin = createAdminClient();
+  const [estado, { count }] = await Promise.all([
+    lerEstado(admin, orgId).catch(() => null),
+    admin
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgId)
+      .eq("external_provider", "nuvemshop"),
+  ]);
+  return resumirSync(estado, count ?? 0);
+}
+
 export default async function NuvemshopIntegrationPage() {
   const user = await loadAuthUser();
   const activeOrg = user ? await resolveActiveOrg(user) : null;
@@ -51,6 +67,11 @@ export default async function NuvemshopIntegrationPage() {
 
   const integration =
     activeOrg && configured ? await loadIntegration(activeOrg.orgId) : null;
+
+  const resumo =
+    integration && integration.status !== "disconnected" && activeOrg
+      ? await loadResumo(activeOrg.orgId)
+      : null;
 
   const isAdmin = activeOrg?.role === "admin" || (user?.is_platform_admin === true && !user.support);
 
@@ -67,7 +88,7 @@ export default async function NuvemshopIntegrationPage() {
         <div>
           <h1 className="text-xl font-semibold">Nuvemshop</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {traduzir("Sincroniza pedidos, produtos e clientes via OAuth + webhooks.", idioma)}
+            {traduzir("Sincroniza os pedidos da loja e liga cada um ao contato.", idioma)}
           </p>
         </div>
       </header>
@@ -155,6 +176,7 @@ export default async function NuvemshopIntegrationPage() {
                 / 8
               </span>
             </div>
+            {resumo ? <PedidosDaLoja resumo={resumo} idioma={idioma} isAdmin={isAdmin} /> : null}
           </CardContent>
         </Card>
       )}
