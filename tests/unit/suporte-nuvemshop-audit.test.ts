@@ -8,6 +8,9 @@ vi.mock("@/lib/impersonate/support",()=>({supportCallbackWriteAllowed:fake.allow
 vi.mock("@/lib/nuvemshop/config",()=>({getConfig:()=>({clientSecret:"local"}),SUBSCRIBED_EVENTS:["order/created"],eventToSlug:()=>"order-created"}));
 vi.mock("@/lib/nuvemshop/oauth",()=>({exchangeCodeForToken:async()=>({ok:true,accessToken:"local",storeId:"12345",scope:"read_orders"})}));
 vi.mock("@/lib/nuvemshop/api-client",()=>({NuvemshopApiClient:class {async createWebhook(){return {id:1};}}}));
+vi.mock("@/lib/nuvemshop/sync/desautorizada", () => ({ resolverAvisoDeDesautorizacao: async () => undefined }));
+vi.mock("@/lib/nuvemshop/sync/deps", () => ({ depsReais: () => ({}) }));
+vi.mock("@/lib/nuvemshop/sync/iniciar", () => ({ iniciarSincronizacao: async () => ({ ok: true, runId: "r" }) }));
 vi.mock("@/lib/supabase/admin",()=>({createAdminClient:()=>({
  rpc:async()=>({data:"\\x00",error:null}),
  from:()=>({insert:async()=>({error:null}),upsert:()=>({select:()=>({single:async()=>({data:{id:fake.integration},error:null})})}),update:()=>({eq:()=>({eq:async()=>({error:null})})})}),

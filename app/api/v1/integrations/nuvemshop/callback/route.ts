@@ -18,6 +18,9 @@ import { getConfig, SUBSCRIBED_EVENTS, eventToSlug } from "@/lib/nuvemshop/confi
 import { exchangeCodeForToken } from "@/lib/nuvemshop/oauth";
 import { NuvemshopApiClient } from "@/lib/nuvemshop/api-client";
 import { verifyState } from "@/lib/nuvemshop/state";
+import { resolverAvisoDeDesautorizacao } from "@/lib/nuvemshop/sync/desautorizada";
+import { depsReais } from "@/lib/nuvemshop/sync/deps";
+import { iniciarSincronizacao } from "@/lib/nuvemshop/sync/iniciar";
 
 export const dynamic = "force-dynamic";
 
@@ -174,6 +177,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     .eq("organization_id", state.orgId)
     .eq("provider", "nuvemshop");
 
+  // A conexão é o gatilho do backfill de 12 meses (spec §4.2). Reconexão depois
+  // de acesso revogado também passa por aqui: o aviso da Central se resolve e o
+  // run recomeça do cursor. Falha aqui não desfaz a conexão — a reconciliação
+  // de 30 min tenta de novo.
+  if (integration?.id) await resolverAvisoDeDesautorizacao(admin, state.orgId, integration.id);
+  const inicio = await iniciarSincronizacao(depsReais(admin), state.orgId, "conexao").catch(() => null);
+
   await audit({
     actorUserId: state.userId,
     actorAuthSessionId: state.authSessionId,
@@ -185,6 +195,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     metadata: {
       store_id: storeId,
       scopes,
+      sync_iniciado: inicio?.ok === true,
       webhooks_registered: Object.entries(subscriptions)
         .filter(([, v]) => v.id !== null)
         .map(([k]) => k),

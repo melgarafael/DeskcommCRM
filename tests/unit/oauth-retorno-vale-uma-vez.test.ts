@@ -49,6 +49,9 @@ vi.mock("@/lib/nuvemshop/oauth", () => ({
   },
 }));
 vi.mock("@/lib/nuvemshop/api-client", () => ({ NuvemshopApiClient: class {} }));
+vi.mock("@/lib/nuvemshop/sync/desautorizada", () => ({ resolverAvisoDeDesautorizacao: async () => undefined }));
+vi.mock("@/lib/nuvemshop/sync/deps", () => ({ depsReais: () => ({}) }));
+vi.mock("@/lib/nuvemshop/sync/iniciar", () => ({ iniciarSincronizacao: async () => ({ ok: true, runId: "r" }) }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     rpc: async () => ({ data: "\\x00", error: null }),

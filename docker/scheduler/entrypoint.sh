@@ -79,6 +79,9 @@ CRONS="
 */5 * * * *|45|api/v1/cron/agenda-reminder
 */15 * * * *|45|api/v1/cron/agenda-expira-pendentes
 */15 * * * *|60|api/v1/cron/risk-watcher
+# A RECONCILIAÇÃO da Nuvemshop: rede dos webhooks. 30 min é o prazo prometido
+# na spec; o cron só inicia run de loja cujo cursor passou de 25 min.
+*/30 * * * *|60|api/v1/cron/nuvemshop-reconcile
 # O CASO PARADO. De hora em hora, e não a cada 5 minutos: o prazo é de 24h, e
 # uma varredura mais frequente só gastaria consulta para descobrir o mesmo nada.
 7 * * * *|60|api/v1/cron/case-stale-watcher
