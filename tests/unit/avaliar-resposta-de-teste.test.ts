@@ -90,3 +90,28 @@ describe("avaliação da resposta no botão Testar", () => {
     expect([...declarados].sort()).toEqual([...esperados].sort());
   });
 });
+
+describe("avaliação da resposta no botão Testar — mídia do produto (#2490)", () => {
+  const limpo = "Segue a foto do produto que você pediu.";
+  const preparada = {
+    codigo: "IP15",
+    produtoResolvido: true,
+    fotosCadastradas: 1,
+    fotosPreparadas: 1,
+    anexos: [{ storagePath: "org/dry-run/catalogo-a.jpg", mime: "image/jpeg" }],
+  };
+
+  it("texto limpo com a foto PENDENTE não é aprovado", () => {
+    // Sem esta guarda, o candidato de um send_message sem produto_codigo, vindo
+    // depois do que falhou a foto, faria a tela aprovar o teste com a mídia pendente.
+    const r = avaliarRespostaDeTeste(limpo, [
+      { ...preparada, fotosPreparadas: 0, anexos: [], falha: { code: "midia_nao_preparada", message: "x" } },
+    ]);
+    expect(r.passou).toBe(false);
+    expect(r.midia).toHaveLength(1);
+  });
+
+  it("texto limpo com a foto preparada passa — a guarda não reprova tudo", () => {
+    expect(avaliarRespostaDeTeste(limpo, [preparada]).passou).toBe(true);
+  });
+});

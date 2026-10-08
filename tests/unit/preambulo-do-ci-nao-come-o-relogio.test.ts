@@ -64,7 +64,7 @@ const TETOS: Record<string, { minutos: number; razao: string }> = {
   "ci.yml::verify-parte": {
     minutos: 15,
     razao:
-      "a suíte foi repartida em partes (#1185 via #1190; três desde 22/09/2026); cada parte roda uma fatia de uma suíte " +
+      "a suíte foi repartida em partes (#1185 via #1190; três de unit desde 22/09/2026, e uma quarta só de cercas+kit desde 08/10/2026); cada parte roda uma fatia de uma suíte " +
       "que custava 649s de unit num verde. 15 é guarda de travamento; quem denuncia crescimento " +
       "é o passo `Orçamento de tempo do verify-parte` (12 min por parte, medido em 19/09)",
   },
@@ -249,7 +249,7 @@ describe("o preâmbulo do CI não come o orçamento dos testes", () => {
   });
 
   it("o orçamento vale para TODAS as partes da matrix, não só para uma", () => {
-    // `verify-parte` é uma `matrix` (3 partes desde 22/09/2026), e o
+    // `verify-parte` é uma `matrix` (4 partes desde 08/10/2026), e o
     // `ORCAMENTO_MIN` vive num passo ÚNICO que todas as partes executam. Os passos vizinhos (`Cercas`,
     // `Typecheck`, `Lint`, `Kit self-host`) são todos `if: matrix.parte == N` —
     // então pôr um `if:` de parte neste aqui é uma edição de uma linha, natural
@@ -305,6 +305,11 @@ describe("o preâmbulo do CI não come o orçamento dos testes", () => {
     // Mexer na divisão (reequilibrar passos, criar a parte 3) tem dois erros
     // VERDES: `--shard=N/3` com matrix [1, 2] deixa um terço da suíte sem rodar,
     // e `if: matrix.parte == 3` com matrix [1, 2] deixa o passo sem parte.
+    // Desde 08/10/2026 há parte SEM unit (a 4: cercas + kit), excluída por
+    // `if: matrix.parte != 4` no passo de unit — então o N do shard é o número de
+    // partes que RODAM unit, não o tamanho da matrix. Os dois erros verdes novos:
+    // tirar a exclusão (a parte 4 roda `--shard=4/3`, que o vitest recusa ou
+    // duplica) e excluir uma parte do meio (um terço da suíte sem rodar).
     // Que o `--shard` do vitest corta em fatias disjuntas que somam tudo foi
     // provado com o sequenciador dele no PR que moveu o lint (1108 = 554 + 554).
     const texto = readFileSync(join(DIR_WORKFLOWS, "ci.yml"), "utf8");
@@ -321,10 +326,27 @@ describe("o preâmbulo do CI não come o orçamento dos testes", () => {
     expect(partes, "a matrix `parte: [...]` não foi encontrada").toBeDefined();
     expect(partes, "as partes têm de ser 1..N, sem buraco").toEqual(partes!.map((_, i) => i + 1));
 
-    const shards = [...job.matchAll(/--shard=\$\{\{ matrix\.parte \}\}\/(\d+)/g)].map((m) => Number(m[1]));
-    expect(shards, "o passo de unit tem de recortar com --shard=${{ matrix.parte }}/N").toEqual([partes!.length]);
+    // As partes que rodam unit: a matrix MENOS as que o `if:` do passo de unit exclui.
+    const passoUnit = job.match(/^\s+- name: Unit tests[^\n]*\n((?:(?!\s+- (?:name|uses):)[^\n]*\n)*)/m)?.[1];
+    expect(passoUnit, "o passo `Unit tests` não foi encontrado — esta guarda cegou").toBeDefined();
+    const condicaoUnit = passoUnit!.match(/^\s+if: (.*)$/m)?.[1] ?? "";
+    const excluidas = [...condicaoUnit.matchAll(/matrix\.parte != (\d+)/g)].map((m) => Number(m[1]));
+    expect(
+      condicaoUnit.replace(/\s*matrix\.parte != \d+\s*(&&\s*)?/g, "").trim(),
+      "o `if:` do passo de unit só pode EXCLUIR partes (`matrix.parte != N`): outra condição o pula sem a conta abaixo ver",
+    ).toBe("");
+    const comUnit = partes!.filter((n) => !excluidas.includes(n));
+    expect(
+      comUnit,
+      "as partes que rodam unit têm de ser 1..N: `--shard=${{ matrix.parte }}/N` só cobre a suíte se a parte for o índice do shard",
+    ).toEqual(comUnit.map((_, i) => i + 1));
 
-    const alvos = [...job.matchAll(/matrix\.parte == (\d+)/g)].map((m) => Number(m[1]));
+    const shards = [...job.matchAll(/--shard=\$\{\{ matrix\.parte \}\}\/(\d+)/g)].map((m) => Number(m[1]));
+    expect(shards, "o passo de unit tem de recortar com --shard=${{ matrix.parte }}/N, N = partes que rodam unit").toEqual([
+      comUnit.length,
+    ]);
+
+    const alvos = [...job.matchAll(/matrix\.parte [!=]= (\d+)/g)].map((m) => Number(m[1]));
     expect(alvos.length, "nenhum `if: matrix.parte == N` — o regex cegou").toBeGreaterThan(0);
     expect(alvos.filter((n) => !partes!.includes(n)), "passo preso a uma parte que não existe").toEqual([]);
   });

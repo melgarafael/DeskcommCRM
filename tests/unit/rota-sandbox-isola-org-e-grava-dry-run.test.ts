@@ -86,7 +86,14 @@ describe("POST de teste do agente: isolamento e efeitos explícitos", () => {
       ok: true, user: { id: "ffffffff-ffff-4fff-8fff-ffffffffffff", idioma: "pt-BR" },
       org: { orgId: ORG, role: "admin" },
     });
-    mocks.preview.mockResolvedValue({ candidates: [{ body: "Olá!" }], proposals: [], trace: [] });
+    // #2490: o resultado do motor traz `midia` (a preparação das fotos do
+    // produto que a resposta usaria) — o dublê espelha a forma real.
+    mocks.preview.mockResolvedValue({
+      candidates: [{ body: "Olá!" }],
+      proposals: [],
+      trace: [],
+      midia: [],
+    });
   });
 
   it("recusa versão de outra organização antes de criar run ou chamar modelo", async () => {
@@ -117,5 +124,26 @@ describe("POST de teste do agente: isolamento e efeitos explícitos", () => {
       organizationId: ORG, agentId: AGENT, versionId: VERSION, runId: RUN,
       sampleMessage: "Mensagem de teste", channelId: null,
     }));
+  });
+
+  it("candidato com a mídia pendente sai como teste BLOQUEADO (#2490)", async () => {
+    // Um send_message que falhou a foto e outro, sem produto_codigo, que gerou
+    // candidato: a tela não pode aprovar o teste com a foto por preparar.
+    mocks.preview.mockResolvedValue({
+      candidates: [{ body: "Segue a foto" }],
+      proposals: [],
+      trace: [],
+      midia: [{
+        codigo: "IP15", produtoResolvido: true, fotosCadastradas: 1, fotosPreparadas: 0, anexos: [],
+        falha: { code: "midia_nao_preparada", message: "x" },
+      }],
+    });
+    const db = bancoDaRota(ORG);
+    mocks.admin.mockReturnValue(db.admin);
+    const resposta = await POST(requisicao(), ctx);
+    expect(resposta.status).toBe(200);
+    const { data } = (await resposta.json()) as { data: { status: string; guardrails: { passou: boolean } } };
+    expect(data.status).toBe("blocked");
+    expect(data.guardrails.passou).toBe(false);
   });
 });

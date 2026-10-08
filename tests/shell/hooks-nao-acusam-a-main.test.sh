@@ -57,6 +57,11 @@
 #        · aceitar QUALQUER `MERGE_HEAD` (idem): a ref é fabricável pela própria sessão
 #          (`git stash`) e um colega não revisado não é trabalho aceito → FURO-B,
 #          COLEGA-DEL.
+#        · a LETRA do `--name-status`: o regex casava só `M|D|R`, e o `T` (troca de
+#          tipo — invariante vira symlink para um arquivo mais fraco) passava pelo
+#          pre-commit SEM a válvula → caso T-TROCA-TIPO (#2465). O `T` entra
+#          tratado como `M` (mesmas exceções, mesmos limites); o `C` (cópia, que só
+#          aparece com detecção de cópia ligada) entra fechado, como o `R`.
 #     5. falha FECHADA onde a procedência não é decidível: sem MERGE_HEAD (R1), sem
 #        ancestral comum (FECHADO-SEM-BASE) e sem a ref `origin/main` (SEM-REF, cuja
 #        expectativa VOLTOU a 1 — mudança declarada, ver o comentário do caso).
@@ -84,8 +89,8 @@
 #
 # Controle de vivacidade: os casos 2, 3, 4, 5, 6 e 7 são as asserções POSITIVAS (A, B+, D,
 # D2, R1, R1-LIMPO, R-VELHO, FECHADO-SEM-BASE, FURO-A, FURO-A-MH, FURO-B, COLEGA-DEL, MODO,
-# CITADO, SEM-REF, F-A, F-B+, F-CRIA-PRÓPRIA, F-BIG+). Um hook substituído por `exit 0` os
-# deixa vermelhos — é o que prova que este arquivo mede algo.
+# CITADO, SEM-REF, T-TROCA-TIPO, T-PROPRIO, F-A, F-B+, F-CRIA-PRÓPRIA, F-BIG+). Um hook
+# substituído por `exit 0` os deixa vermelhos — é o que prova que este arquivo mede algo.
 #
 # ⚠️ Nenhum número de casos escrito aqui, de propósito: contagem em prosa envelhece a cada
 # caso novo e ninguém a revisa. Quem precisa do número RODA o arquivo — o rodapé o imprime.
@@ -736,6 +741,46 @@ assert_exit "$(exit_de "$r")" 0 "REN-PARA-PROPRIO: a cópia para caminho novo pa
 git -C "$rp" rm -q "$INV"
 r=$(commitar_pelo_dispatcher "$rp" "apaga o original")
 assert_exit "$(exit_de "$r")" 1 "REN-PARA-PROPRIO: apagar o original SEGUE acusado — o par não lava o delete"
+
+# CASO T-TROCA-TIPO (#2465) · o status `T` nem entrava na lista: o regex casava só
+# `M|D|R` e a TROCA DE TIPO passava pelo pre-commit sem a válvula. O exemplo medido na
+# issue: `tests/invariants/x.test.ts` vira SYMLINK para um arquivo mais fraco — o
+# invariante some como avaliador e o guard nem vê a linha. `T` é tratado como `M`.
+# A premissa é medida (o git é quem decide a letra), não deduzida.
+tt="$TMP/t-troca-tipo"; preparar "$tt" "$principal" "$BASE_DA_BRANCH"
+printf 'it("fraco", () => {});\n' > "$tt/fraco.test.ts"
+rm "$tt/$INV"; ln -s ../../fraco.test.ts "$tt/$INV"
+git -C "$tt" add -A
+if [ "$(status_de "$tt" "$INV")" = "T" ]; then
+  ok "T-TROCA-TIPO: o git classifica a troca de tipo como T (a premissa medida na #2465)"
+else falha "T-TROCA-TIPO: o git classifica a troca de tipo como T" "$(git -C "$tt" -c core.quotepath=false diff --cached --name-status)"; fi
+r=$(commitar_pelo_dispatcher "$tt" "o invariante da main vira symlink")
+assert_exit "$(exit_de "$r")" 1 "T-TROCA-TIPO: trocar o invariante da main por symlink é ACUSADO (o T entra como M — #2465)"
+assert_contains "$(saida_de "$r")" "$INV" "T-TROCA-TIPO: e a mensagem nomeia o invariante trocado (não passou/reprovou por outro motivo)"
+# o caminho sozinho não distingue: a saída de um `git commit` que PASSOU também o lista.
+# A frase do guard só aparece quando ele bloqueia.
+assert_contains "$(saida_de "$r")" "tests/invariants/** é congelado" "T-TROCA-TIPO: e quem bloqueou foi o freeze (a frase do guard está na saída)"
+# o controle que fecha: quem bloqueou é ESTE guard, e a válvula declarada segue valendo
+# para o MESMO estado — sem isto, o exit 1 acima provaria só que algum hook reclamou.
+saida=$( cd "$tt" && DESKCOMM_GOV_INVARIANTS_EDIT=1 git commit --no-edit -m "troca de tipo com a valvula declarada" 2>&1 ); rc=$?
+assert_exit "$rc" 0 "T-TROCA-TIPO: e a válvula declarada segue liberando o mesmo estado (é o guard, não outro hook)"
+
+# CASO T-PROPRIO · o outro lado da mesma moeda: o `T` NÃO virou "sempre bloqueado".
+# O invariante é da PRÓPRIA branch (a regra de sempre, caso NOVO-DA-BRANCH) e o `T` é
+# tratado como `M` — pelas MESMAS exceções do `M`, ele passa sem válvula. Sem esta
+# linha, o T-TROCA-TIPO acima ficaria verde até com o guard desligado.
+tp="$TMP/t-proprio"; preparar "$tp" "$principal" "$BASE_DA_BRANCH"
+inv "" "$MARCA_BRANCH" "" > "$tp/tests/invariants/t-proprio.test.ts"
+printf 'it("fraco", () => {});\n' > "$tp/fraco.test.ts"
+commitar "$tp" "a branch cria o invariante proprio e o alvo fraco"
+rm "$tp/tests/invariants/t-proprio.test.ts"; ln -s ../../fraco.test.ts "$tp/tests/invariants/t-proprio.test.ts"
+git -C "$tp" add -A
+if [ "$(status_de "$tp" tests/invariants/t-proprio.test.ts)" = "T" ] \
+   && [ -z "$(git -C "$tp" rev-parse -q --verify "origin/main:tests/invariants/t-proprio.test.ts")" ]; then
+  ok "T-PROPRIO: a premissa — status T, e o caminho NÃO está em origin/main"
+else falha "T-PROPRIO: a premissa (T, ausente da main)" "$(git -C "$tp" -c core.quotepath=false diff --cached --name-status)"; fi
+r=$(commitar_pelo_dispatcher "$tp" "o proprio invariante vira symlink")
+assert_exit "$(exit_de "$r")" 0 "T-PROPRIO: T em invariante da PRÓPRIA branch passa SEM válvula (tratado como M, não como 'T sempre bloqueado')"
 
 # CASO R1 · a sessão FORTALECE o invariante e depois o REVERTE para a versão da main, em
 # commit NORMAL. Identidade de CONTEÚDO não distingue isso de "a main chegando": nas duas

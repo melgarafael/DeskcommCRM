@@ -47,14 +47,14 @@ const MS_POR_DIA = 24 * 60 * 60 * 1000;
 
 /**
  * Quantos dias a janela pode cobrir. O teto limita o que o relatório AFIRMA,
- * não o custo: como a irmã 0037, a RPC lê TODAS as conversas atribuídas da
- * organização e as mensagens de cada uma, qualquer que seja a janela. Medido na
- * triagem do #2504 (Postgres do baseline, 3.000 conversas, sob RLS de gerente):
- * ~14s com janela de 1 dia e ~14s com 90 — o mesmo da `fn_attendant_metrics`.
- * Sem RLS, 17ms: o custo é a checagem de visibilidade por linha. A medição foi
- * sem limite de tempo por consulta; numa instalação com o limite de 8 s do
- * banco (statement_timeout do papel authenticated), a org desse porte pode
- * receber ERRO em vez de lentidão — e a irmã por atendente também.
+ * não o custo. Desde a migration 0596 (#2554), esta RPC e a irmã
+ * `fn_attendant_metrics` cortam pela janela ANTES do lateral: o custo acompanha
+ * as conversas DA janela, não o histórico inteiro da organização. Medido na
+ * triagem do #2554 (Postgres do baseline, 10 mil conversas espalhadas em 120
+ * dias, sob RLS, limite de 8 s do papel authenticated): janela de 1 dia em
+ * ~1,4–1,8 s; 30 dias (~2.500 conversas na janela, a janela que a tela usa) e
+ * 90 dias ainda passam de 8 s — nesse volume a tela recebe ERRO em vez de
+ * lentidão, aqui e na irmã por atendente (issue #2514).
  */
 const DIAS_MAXIMOS = 90;
 

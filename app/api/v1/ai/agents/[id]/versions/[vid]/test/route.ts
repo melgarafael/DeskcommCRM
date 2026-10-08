@@ -176,15 +176,19 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       channelId: version.channel_session_id,
     });
     const finalText = result.candidates.map((c) => c.body).join("\n\n");
+    // #2490 — mídia pendente é teste REPROVADO, mesmo com candidato na mão: o
+    // `send_message` que falhou a foto devolveu erro ao modelo, e aprovar a tela
+    // com aquela resposta seria exatamente o "passou sem preparar" da issue.
+    const midiaPendente = result.midia.some((m) => m.falha !== undefined);
     resultPayload = {
       run_id: runRow.id,
-      status: result.candidates.length ? "ok" : "blocked",
+      status: result.candidates.length && !midiaPendente ? "ok" : "blocked",
       latency_ms: Date.now() - startedAt.getTime(),
       final_text: finalText,
       tool_calls: result.proposals,
       ...result,
       stub: process.env.INTERNAL_AGENT_RUN_STUB === "true",
-      guardrails: avaliarRespostaDeTeste(finalText),
+      guardrails: avaliarRespostaDeTeste(finalText, result.midia),
     };
     // ⚠️ `completed`, não `"ok"`. O CHECK da coluna aceita
     // pending|running|completed|failed|aborted|handoff — `"ok"` é o vocabulário

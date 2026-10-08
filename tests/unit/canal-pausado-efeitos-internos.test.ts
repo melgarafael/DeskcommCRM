@@ -76,8 +76,14 @@ vi.mock("@/lib/supabase/admin", () => ({
 
 // ─── 1. push ────────────────────────────────────────────────────────────────
 const enviarPushDaOrg = vi.fn(async (_org: string, _payload: unknown) => ({ sent: 1, gone: 0 }));
+const enviarPushAQuemVeAConversa = vi.fn(async (_org: string, _conv: string, _payload: unknown) => ({
+  sent: 1,
+  gone: 0,
+}));
 vi.mock("@/lib/notifications/web_push", () => ({
   enviarPushDaOrg: (org: string, payload: unknown) => enviarPushDaOrg(org, payload),
+  enviarPushAQuemVeAConversa: (org: string, conv: string, payload: unknown) =>
+    enviarPushAQuemVeAConversa(org, conv, payload),
   enviarPushAoUsuario: async () => ({ sent: 0, gone: 0 }),
 }));
 vi.mock("@/lib/notifications/vapid", () => ({ vapidPronto: () => true }));
@@ -163,6 +169,7 @@ beforeEach(() => {
   canal.desativado = true;
   canal.leituraFalha = false;
   enviarPushDaOrg.mockClear();
+  enviarPushAQuemVeAConversa.mockClear();
   applyReactivityEvent.mockClear();
   aplicarTextoNosFollowups.mockClear();
   aplicaGatilhoDeRetorno.mockClear();
@@ -196,13 +203,14 @@ describe("consumidor 1 — push no celular", () => {
     const r = await webPushInboundHandler.handle(evento());
     expect(r).toMatchObject({ status: "skipped", detail: "canal_desativado" });
     expect(enviarPushDaOrg).not.toHaveBeenCalled();
+    expect(enviarPushAQuemVeAConversa).not.toHaveBeenCalled();
   });
 
   it("canal ligado → o push sai (a guarda não engoliu o caminho bom)", async () => {
     canal.desativado = false;
     const r = await webPushInboundHandler.handle(evento());
     expect(r.status).toBe("ok");
-    expect(enviarPushDaOrg).toHaveBeenCalledTimes(1);
+    expect(enviarPushAQuemVeAConversa).toHaveBeenCalledTimes(1);
   });
 
   // O grupo é o irmão que a primeira passada não viu: `message.group_received`
@@ -212,13 +220,14 @@ describe("consumidor 1 — push no celular", () => {
     const r = await webPushInboundHandler.handle(evento({ event_type: "message.group_received" }));
     expect(r).toMatchObject({ status: "skipped", detail: "canal_desativado" });
     expect(enviarPushDaOrg).not.toHaveBeenCalled();
+    expect(enviarPushAQuemVeAConversa).not.toHaveBeenCalled();
   });
 
   it("grupo em canal ligado → o push sai", async () => {
     canal.desativado = false;
     const r = await webPushInboundHandler.handle(evento({ event_type: "message.group_received" }));
     expect(r.status).toBe("ok");
-    expect(enviarPushDaOrg).toHaveBeenCalledTimes(1);
+    expect(enviarPushAQuemVeAConversa).toHaveBeenCalledTimes(1);
   });
 });
 

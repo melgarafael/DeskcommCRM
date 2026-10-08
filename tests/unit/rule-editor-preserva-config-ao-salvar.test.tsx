@@ -32,6 +32,7 @@ vi.mock("@/hooks/webhooks/useAutomationRules", () => ({
   useUpdateAutomationRule: () => ({ isPending: false, mutateAsync: h.atualizar }),
 }));
 vi.mock("@/hooks/webhooks/useWebhookSources", () => ({
+  useWebhookSources: () => ({ data: { data: [] } }),
   usePipelines: () => ({
     data: {
       data: [

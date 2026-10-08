@@ -148,7 +148,7 @@ describe("ConditionForm — a regra nasce e muda sem decidir sozinha", () => {
 
   beforeEach(() => {
     etapasDoFluxo = {
-      etapas: [{ stageId: ID_PAGO, stageName: "Pago", pipelineId: "p1", pipelineName: "Vendas" }],
+      etapas: [{ stageId: ID_PAGO, stageName: "Pago", pipelineId: "p1", pipelineName: "Vendas", isPerda: false, settingsDoFunil: null }],
       carregando: false,
       falhou: false,
       nomes: { etapa: (id) => (id === ID_PAGO ? "Pago · Vendas" : null) },

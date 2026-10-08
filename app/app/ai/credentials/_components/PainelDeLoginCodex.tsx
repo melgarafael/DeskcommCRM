@@ -17,7 +17,7 @@ import {
 } from "@/lib/auth/recusa-de-escrita-de-admin";
 
 /**
- * O PAINEL DE LOGIN DO CODEX — o link, o campo de colagem, o aviso e o estado
+ * O PAINEL SIWC — o link, o campo de colagem, o aviso e o estado
  * da conta DESTE empresa.
  *
  * ─── Por que ele mora em Credenciais e não mais em /admin/sistema ──────────
@@ -32,16 +32,16 @@ import {
  * ─── O aviso é longo de propósito ──────────────────────────────────────────
  *
  * As três frases são as que alguém só descobre depois de quebrar: o
- * `client_id` e o `redirect_uri` são do Codex e não nossos; nada ali é
- * contrato público da OpenAI; o recurso nasce DESLIGADO (o interruptor é da
- * instalação); e a reserva de chamada continua sendo a chave de API da
- * organização.
+ * SIWC usa o fluxo público documentado pela OpenAI para apps auto-hospedados;
+ * o recurso nasce DESLIGADO (o interruptor é da instalação), e eventual
+ * reserva continua sendo a chave de API da própria organização.
  */
 export function PainelDeLoginCodex({
   url,
   codeVerifier,
   conectado,
   validada,
+  siwcAutorizado,
 }: {
   url: string;
   codeVerifier: string;
@@ -49,6 +49,8 @@ export function PainelDeLoginCodex({
   conectado: boolean;
   /** `validated_at` preenchido — a troca (ou a renovação) provou o login. */
   validada: boolean;
+  /** A credencial salva autoriza os scopes SIWC para usar a assinatura. */
+  siwcAutorizado: boolean;
 }) {
   const t = useT();
   const [codigo, setCodigo] = useState("");
@@ -62,6 +64,16 @@ export function PainelDeLoginCodex({
       "O código colado não tem cara de código. Cole o endereço inteiro que o navegador mostrou.",
     troca_recusada:
       "A OpenAI recusou o código. Ele é de uso único: gere o link de novo e cole o código novo.",
+    plano_nao_autorizado:
+      "Esta conta não concedeu os escopos necessários para usar modelos pela assinatura. Gere um link novo, autorize o acesso e conecte novamente.",
+    identidade_invalida:
+      "Não foi possível validar a identidade devolvida pela OpenAI. Gere um link novo e tente conectar outra vez.",
+    conta_diferente:
+      "Esta empresa já está vinculada a outra conta ChatGPT. Desconecte a conta atual antes de vincular uma conta diferente.",
+    registro_incompleto:
+      "A OpenAI não concluiu o cadastro desta instalação. Recarregue a tela e tente de novo.",
+    host_siwc:
+      "Não foi possível registrar o identificador desta instalação. Tente de novo e, se persistir, peça ao administrador da instalação para verificar o banco.",
     cifragem:
       "Este servidor não tem a chave de cifra (AI_CRED_AES_KEY) configurada, então o login não pode ser guardado.",
     banco: "O banco recusou a gravação. Tente de novo em instantes.",
@@ -72,9 +84,9 @@ export function PainelDeLoginCodex({
     unauthenticated: "Sessão expirada. Entre de novo.",
     somente_leitura: "Acompanhamento somente leitura ou encerrado.",
     retorno_sem_estado:
-      "Cole o endereço inteiro da barra do navegador (começa com http://localhost:1455/auth/callback), não só o código.",
+      "Cole o endereço inteiro da barra do navegador (começa com http://127.0.0.1:1455/auth/callback), não só o código.",
     estado_invalido:
-      "Este endereço não veio do link desta tela, aberto por você nesta empresa — ou o link venceu (vale 10 minutos). Recarregue a página, abra o link de novo e cole o endereço novo.",
+      "Este endereço não veio do link desta tela, aberto por você nesta empresa — ou o link venceu (vale 10 minutos e uma vez só). Recarregue a página, abra o link de novo e cole o endereço novo.",
   };
 
   function conectar() {
@@ -114,10 +126,10 @@ export function PainelDeLoginCodex({
   return (
     <Card data-testid="painel-login-codex">
       <CardHeader>
-        <CardTitle>{t("Conectar a assinatura do Codex")}</CardTitle>
+        <CardTitle>{t("Conectar a assinatura do ChatGPT")}</CardTitle>
         <CardDescription>
           {t(
-            "Cada empresa conecta a própria conta do ChatGPT. Abra o link e entre com a conta que tem a assinatura. No fim, o navegador vai para um endereço em localhost:1455 que não abre — é esperado. Copie esse endereço inteiro, da barra do navegador, e cole aqui.",
+            "Cada empresa conecta a própria conta do ChatGPT. Abra o link e entre com a conta que tem a assinatura. No fim, o navegador vai para http://127.0.0.1:1455/auth/callback, que pode não abrir — é esperado. Copie esse endereço inteiro, da barra do navegador, e cole aqui.",
           )}
         </CardDescription>
       </CardHeader>
@@ -156,7 +168,7 @@ export function PainelDeLoginCodex({
           <ul className="list-disc space-y-1 pl-5">
             <li>
               {t(
-                "O client_id e o redirect_uri (http://localhost:1455/auth/callback) são os do Codex, não os nossos, e nada disso é contrato público da OpenAI: os dois podem mudar sem aviso.",
+                "A autorização usa Sign in with ChatGPT para apps auto-hospedados. O acesso depende dos termos e limites de uso da assinatura e pode mudar conforme as regras da OpenAI.",
               )}
             </li>
             <li>
@@ -166,7 +178,12 @@ export function PainelDeLoginCodex({
             </li>
             <li>
               {t(
-                "Se a assinatura falhar, a chamada cai na reserva: a chave de API da organização, como sempre.",
+                "A assinatura é pessoal e tem limites por janela de uso. Não compartilhe esta conta entre organizações nem tente contornar os limites.",
+              )}
+            </li>
+            <li>
+              {t(
+                "Para atendimento de clientes em volume, prefira uma chave de API da própria organização. Se configurada, ela pode servir como reserva quando a assinatura atingir limites ou falhar.",
               )}
             </li>
           </ul>
@@ -174,7 +191,9 @@ export function PainelDeLoginCodex({
 
         <div className="flex items-center justify-between gap-3 rounded-lg border p-4 text-sm">
           <p data-testid="estado-login-codex">
-            {jaConectado
+            {jaConectado && !siwcAutorizado && !conectouAgora
+              ? t("Há um login anterior salvo, mas ele ainda não autorizou o uso do plano ChatGPT. Conecte novamente por este link para listar modelos e usar a assinatura.")
+              : jaConectado
               ? t(
                   "Conta conectada nesta empresa, guardada com cifra. O sistema renova o token antes de vencer — na janela de 8 dias, e também na hora em que o sistema acordar.",
                 )
@@ -193,7 +212,7 @@ export function PainelDeLoginCodex({
         {conectouAgora && (
           <p className="text-sm text-muted-foreground" role="status">
             {t(
-              "Login guardado com cifra nesta empresa. A partir de agora o agente fala por esta assinatura; se ela não estiver disponível ou falhar, a chamada cai na chave da empresa.",
+              "Login guardado com cifra nesta empresa. O agente pode usar a assinatura dentro dos limites dela; se houver falha elegível e uma reserva configurada, usa a chave de API desta organização.",
             )}
           </p>
         )}

@@ -20,6 +20,7 @@ import {
   ESCOPOS_OBRIGATORIOS,
   FOLGA_DE_RENOVACAO_MS,
   type TokenDoGoogle,
+  clientSecretTemFormato,
   escoposFaltando,
   fundirTokens,
   lerRespostaDeToken,
@@ -265,5 +266,28 @@ describe("precisaRenovar", () => {
     const vence = new Date("2026-08-26T13:00:00.000Z");
     expect(precisaRenovar(vence, new Date("2026-08-26T12:50:00.000Z"), 15 * 60_000)).toBe(true);
     expect(precisaRenovar(vence, new Date("2026-08-26T12:50:00.000Z"), 60_000)).toBe(false);
+  });
+});
+
+describe("clientSecretTemFormato", () => {
+  it("aceita um secret do Google — com e sem o prefixo GOCSPX-", () => {
+    // 35 chars, o formato de hoje.
+    expect(clientSecretTemFormato("GOCSPX-abcdEFGH1234_ijklMNOP5678-qrs")).toBe(true);
+    // Secret antigo (pré-GOCSPX): a cerca é no conjunto de caracteres, não no
+    // prefixo — travar no prefixo recusaria uma instalação legítima e antiga.
+    expect(clientSecretTemFormato("aB3_xZ9-kL0mN1pQ2rS4tU6v")).toBe(true);
+    // Aparado antes: espaço nas pontas de uma colagem não deve condenar.
+    expect(clientSecretTemFormato("  GOCSPX-limpo_mesmo-123  ")).toBe(true);
+  });
+
+  it("⭐ recusa a colagem do JSON de credenciais — o defeito medido em produção", () => {
+    // O que o dono colou: o secret JUNTO com o resto da linha do arquivo JSON.
+    // A aspa e a vírgula é que o Google rejeitava lá na frente como
+    // `invalid_client`, longe da tela que causou o erro.
+    expect(clientSecretTemFormato('GOCSPX-abcdEFGH1234_ijklMNOP5678-qrs","redirect_uris')).toBe(false);
+    // As três marcas da colagem errada, isoladas.
+    expect(clientSecretTemFormato('GOCSPX-tem"aspa')).toBe(false);
+    expect(clientSecretTemFormato("GOCSPX-tem,virgula")).toBe(false);
+    expect(clientSecretTemFormato("GOCSPX-tem espaco")).toBe(false);
   });
 });

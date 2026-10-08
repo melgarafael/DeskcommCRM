@@ -326,6 +326,9 @@ async function retratarAvisos(d: {
     .update({ status: "resolved" })
     .eq("organization_id", d.orgId)
     .in("kind", ["budget_exceeded", "budget_warning"])
+    // Só os itens do orçamento da ORG e o legado sem referência (gravado antes
+    // de o insert ter ref). O do teto do PLANO não é afrouxado por esta tela.
+    .or("ref_kind.is.null,ref_kind.eq.ai_budget")
     .eq("status", "open")
     .select("id");
   if (error) {

@@ -33,7 +33,10 @@ export async function POST(
     }
     // O card tem de existir na versão VIGENTE. Uma aba aberta antes de uma troca de versão
     // pediria uma ação que a versão instalada talvez não tenha mais.
-    const card = guide.manifest.contributions.crm_cards.find((item) => item.id === input.card_id);
+    // `?? []`: um pacote de DADOS não contribui card nenhum (ADR-0005), então a lista pode faltar.
+    // Sem card, nada casa com o id pedido e o caminho cai na recusa logo abaixo — que é o certo:
+    // pedir para abrir um card num módulo que não tem cards é pedido inválido, não erro de tipo.
+    const card = (guide.manifest.contributions.crm_cards ?? []).find((item) => item.id === input.card_id);
     if (card?.action.capability !== input.capability) {
       throw new ExtensionServiceError(
         "extension_card_unavailable",

@@ -679,8 +679,8 @@ describe('validateFlowForPublish — a regra precisa poder decidir', () => {
   const ETAPA_ARQUIVADA = '7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d';
   const ETAPA_APAGADA = '1b2c3d4e-5f60-4a7b-8c9d-0e1f2a3b4c5d';
   const etapas = new Map([
-    [ETAPA_PAGO, { nome: 'Pago · Vendas', arquivada: false }],
-    [ETAPA_ARQUIVADA, { nome: 'Antiga · Vendas', arquivada: true }],
+    [ETAPA_PAGO, { nome: 'Pago · Vendas', arquivada: false, isPerda: false, settingsDoFunil: null }],
+    [ETAPA_ARQUIVADA, { nome: 'Antiga · Vendas', arquivada: true, isPerda: false, settingsDoFunil: null }],
   ]);
   type Check = Extract<FlowNode, { type: 'condition' }>['config']['checks'][number];
 
@@ -878,8 +878,8 @@ describe('validateFlowForPublish — nós de ação (#2065)', () => {
   const ATIVA = '6f1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b';
   const ARQUIVADA = '7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d';
   const banco = new Map([
-    [ATIVA, { nome: 'Proposta · Vendas', arquivada: false }],
-    [ARQUIVADA, { nome: 'Antiga · Vendas', arquivada: true }],
+    [ATIVA, { nome: 'Proposta · Vendas', arquivada: false, isPerda: false, settingsDoFunil: null }],
+    [ARQUIVADA, { nome: 'Antiga · Vendas', arquivada: true, isPerda: false, settingsDoFunil: null }],
   ]);
   const codigos = (r: ReturnType<typeof validateFlowForPublish>) => (r.ok ? [] : r.errors.map((e) => e.code));
 

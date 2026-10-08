@@ -82,6 +82,17 @@ export const ApiErrorCodes = {
   // POST /admin/tenants/[id]/reactivate sobre suspensão por falta de pagamento:
   // a saída é "Dar prazo" ou "Tornar isenta", nunca o "Reativar" genérico.
   suspensao_de_cobranca: "suspensao_de_cobranca",
+  // Rotas do dono da cobrança (spec da cobrança do revendedor §7e, §7g).
+  // PATCH de plano que muda preço ou intervalo com assinante (em plano_id ou
+  // plano_agendado_id): a saída é arquivar e criar outro.
+  plano_com_assinantes: "plano_com_assinantes",
+  // Troca de plano com a assinatura em dívida (em_atraso/cancelada) ou com o
+  // teste grátis vencido sem pagamento.
+  pagamento_pendente: "pagamento_pendente",
+  // Limite do plano: o gatilho de assentos ou de canais recusou (PT402,
+  // `details` = { recurso, limite }), ou a troca de plano não cabe no uso
+  // (`details.excedente`). Spec cobrança §5.
+  plan_limit_reached: "plan_limit_reached",
   // POST /admin/tenants/[id]/suspend|reactivate quando o descarte da fila bate
   // na trava do aviso do Meet (`appointment_notice_busy`, 40001): outra escrita
   // do mesmo contato está em curso. Nada foi gravado; tentar de novo resolve.
@@ -108,6 +119,36 @@ export const ApiErrorCodes = {
 
   // 422 — semântica
   unprocessable_entity: "unprocessable_entity",
+  plano_invalido: "plano_invalido", // plano inexistente, arquivado, de outro intervalo, ou cobrança desligada
+  // Cobrança do revendedor, PR 3a (spec §7a–§7g, §13). O provedor fora do ar é
+  // 503 e o provedor que recusou é 502: a tela diz "tente de novo" num caso e
+  // "confira os dados" no outro.
+  provedor_indisponivel: "provedor_indisponivel",
+  provedor_recusou: "provedor_recusou",
+  // A instalação ainda não conectou provedor (a empresa lê "o administrador ainda não conectou a cobrança").
+  provedor_nao_conectado: "provedor_nao_conectado",
+  // Trocar de provedor, ou pôr chave de teste no lugar da de produção, com empresas pagando de verdade.
+  provedor_com_assinaturas: "provedor_com_assinaturas",
+  // Trocar a chave de teste pela de produção devolve ao teste grátis quem assinou em teste (D-7): pede confirmação.
+  publicacao_requer_confirmacao: "publicacao_requer_confirmacao",
+  // A chave não passou no teste do provedor (`details.motivo`).
+  chave_recusada: "chave_recusada",
+  // Sem https público o provedor não entrega os avisos de pagamento.
+  url_publica_invalida: "url_publica_invalida",
+  // Outro clique está gerando o link de pagamento desta empresa (reserva de 2 min).
+  checkout_em_preparo: "checkout_em_preparo",
+  // Troca de plano recusada enquanto houver link de pagamento em aberto.
+  checkout_em_aberto: "checkout_em_aberto",
+  // Já existe assinatura esperando o 1º pagamento (`details.link_de_pagamento`).
+  pagamento_em_andamento: "pagamento_em_andamento",
+  // Tornar isenta exige cancelar antes no provedor.
+  assinatura_viva_no_provedor: "assinatura_viva_no_provedor",
+  // O provedor não oferece portal para esta assinatura.
+  sem_portal: "sem_portal",
+  // A chave nova é de OUTRA conta do provedor: os clientes que já pagam não existem nela.
+  chave_de_outra_conta: "chave_de_outra_conta",
+  // Em atraso sem fatura pagável agora (ex.: assinatura pausada): o caminho é o portal.
+  sem_link_de_pagamento: "sem_link_de_pagamento",
   channel_without_session: "channel_without_session", // operação de sessão (reiniciar, parear) pedida a canal que não tem sessão no transporte — o oficial
   janela_fechada: "janela_fechada", // POST /messages por token/agente com texto livre fora das 24h em canal com restrição (131047) — a saída é modelo aprovado (#1614)
   invalid_state_transition: "invalid_state_transition",

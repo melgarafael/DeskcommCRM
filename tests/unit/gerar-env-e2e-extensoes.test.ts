@@ -50,6 +50,8 @@ exit 2
       // A spec do Jev sobe o dublê nesta porta; o servidor sob teste só o
       // alcança se o gerador a escrever.
       expect(ambiente).toContain("JEV_API_BASE_URL=http://127.0.0.1:3996\n");
+      // O dublê da cobrança sobe nesta porta; o servidor só o alcança se nascer com ela.
+      expect(ambiente).toContain("COBRANCA_API_BASE_URL_TESTE=http://127.0.0.1:3995\n");
       expect(ambiente).toContain(`CPF_ENCRYPTION_KEY=${chave}\n`);
       expect(ambiente).toContain("SENTRY_DSN=off\n");
     } finally {

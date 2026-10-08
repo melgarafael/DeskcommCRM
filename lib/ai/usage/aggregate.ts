@@ -1,27 +1,56 @@
 /**
- * Pure aggregator for the AI usage observability dashboard.
+ * Monta o payload da tela "Uso de IA" a partir do que `public.fn_uso_de_ia`
+ * já agregou no banco (migration 0586).
  *
- * Receives raw `ai_invocations` rows + per-day inbound/handoff counts and
- * returns the payload consumed by `/api/v1/ai/usage`. Kept side-effect free
- * to make it easy to unit test.
+ * A agregação morava aqui, em JS, sobre as linhas de `llm_calls` — e o PostgREST
+ * entrega no máximo `max_rows` (1000) linhas: passada a milésima chamada do
+ * período, os dias mais recentes sumiam da conta. Agora o banco soma tudo e este
+ * arquivo só completa os dias sem uso e calcula as razões. (A tabela histórica
+ * `ai_invocations` não é lida aqui nem pela função.)
  */
+import { z } from "zod";
 
-export interface InvocationRow {
-  created_at: string;
-  invocation_kind: string;
-  cost_cents: number | null;
-  prompt_tokens: number | null;
-  completion_tokens: number | null;
-  total_tokens: number | null;
-  latency_ms: number | null;
-}
+const numero = z.coerce.number();
+
+const agregadoSchema = z.object({
+  chamadas: numero,
+  custo_cents: numero,
+  input_tokens: numero,
+  output_tokens: numero,
+  cache_read_tokens: numero,
+  cache_write_tokens: numero,
+  p50_latency_ms: numero,
+  p95_latency_ms: numero,
+});
+
+/** O `jsonb` devolvido por `fn_uso_de_ia`. */
+export const usoDeIaSchema = z.object({
+  // Turnos só nos totais: o custo de um turno é o do job inteiro, e ele não se
+  // reparte por dia nem por purpose sem mudar de definição.
+  totais: agregadoSchema.extend({ turnos: numero, custo_dos_turnos_cents: numero }),
+  dias: z.array(agregadoSchema.extend({ dia: z.string() })),
+  purposes: z.array(agregadoSchema.extend({ purpose: z.string() })),
+  inbounds: z.record(z.string(), numero),
+  handoffs: z.record(z.string(), numero),
+});
+
+export type UsoDeIaDoBanco = z.infer<typeof usoDeIaSchema>;
 
 export interface UsagePayload {
   range: { from: string; to: string };
   totals: {
     cost_cents: number;
     total_tokens: number;
+    /** Chamadas ao modelo — NÃO atendimentos: um turno do agente faz várias. */
     invocations: number;
+    input_tokens: number;
+    cache_read_tokens: number;
+    /** cache_read / input (o input já inclui a parte lida do cache). */
+    cache_hit_rate: number;
+    agent_turns: number;
+    /** null quando não houve turno: zero seria um custo inventado. */
+    avg_cost_per_turn_cents: number | null;
+    /** Latência de UMA chamada ao modelo, não do atendimento inteiro. */
     p50_latency_ms: number;
     p95_latency_ms: number;
     handoff_rate: number;
@@ -53,120 +82,51 @@ export function daysBetween(from: Date, to: Date): string[] {
   return out;
 }
 
-function percentile(sorted: number[], p: number): number {
-  if (sorted.length === 0) return 0;
-  if (sorted.length === 1) return sorted[0]!;
-  const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
-  return sorted[idx]!;
+function razao(parte: number, todo: number): number {
+  return todo > 0 ? Number((parte / todo).toFixed(4)) : 0;
 }
 
-function tokensOf(row: InvocationRow): number {
-  if (row.total_tokens != null) return row.total_tokens;
-  return (row.prompt_tokens ?? 0) + (row.completion_tokens ?? 0);
-}
-
-export function aggregateUsage(
-  rows: InvocationRow[],
-  dailyInbounds: Map<string, number>,
-  dailyHandoffs: Map<string, number>,
+export function montarPayloadDeUso(
+  uso: UsoDeIaDoBanco,
   range: { from: Date; to: Date },
 ): UsagePayload {
   const days = daysBetween(range.from, range.to);
-
-  // Per-day buckets.
-  const buckets = new Map<
-    string,
-    { cost: number; tokens: number; latencies: number[]; count: number }
-  >();
-  for (const day of days) {
-    buckets.set(day, { cost: 0, tokens: 0, latencies: [], count: 0 });
-  }
-
-  const byKind: Record<string, number> = {};
-  let totalCost = 0;
-  let totalTokens = 0;
-  const allLatencies: number[] = [];
-
-  for (const row of rows) {
-    const day = row.created_at.slice(0, 10);
-    const bucket = buckets.get(day);
-    if (!bucket) continue; // outside range — skip defensively
-    const cost = row.cost_cents ?? 0;
-    const tokens = tokensOf(row);
-    const latency = row.latency_ms ?? 0;
-
-    bucket.cost += cost;
-    bucket.tokens += tokens;
-    bucket.count += 1;
-    if (latency > 0) {
-      bucket.latencies.push(latency);
-      allLatencies.push(latency);
-    }
-
-    totalCost += cost;
-    totalTokens += tokens;
-
-    const kind = row.invocation_kind;
-    byKind[kind] = (byKind[kind] ?? 0) + 1;
-  }
-
-  const costSeries: Array<{ day: string; value: number }> = [];
-  const tokensSeries: Array<{ day: string; value: number }> = [];
-  const p50Series: Array<{ day: string; value: number }> = [];
-  const p95Series: Array<{ day: string; value: number }> = [];
-  const handoffSeries: Array<{ day: string; value: number }> = [];
-
-  let totalInvocations = 0;
-  for (const day of days) {
-    const bucket = buckets.get(day)!;
-    const sortedLat = [...bucket.latencies].sort((a, b) => a - b);
-    const p50 = percentile(sortedLat, 50);
-    const p95 = percentile(sortedLat, 95);
-    const inb = dailyInbounds.get(day) ?? 0;
-    const hand = dailyHandoffs.get(day) ?? 0;
-    const rate = inb > 0 ? hand / inb : 0;
-
-    costSeries.push({ day, value: bucket.cost });
-    tokensSeries.push({ day, value: bucket.tokens });
-    p50Series.push({ day, value: p50 });
-    p95Series.push({ day, value: p95 });
-    handoffSeries.push({ day, value: Number(rate.toFixed(4)) });
-
-    totalInvocations += bucket.count;
-  }
-
-  const sortedAll = [...allLatencies].sort((a, b) => a - b);
-  const p50All = percentile(sortedAll, 50);
-  const p95All = percentile(sortedAll, 95);
+  const porDia = new Map(uso.dias.map((d) => [d.dia, d]));
+  const serie = (valor: (day: string) => number) => days.map((day) => ({ day, value: valor(day) }));
 
   let totalInbounds = 0;
   let totalHandoffs = 0;
   for (const day of days) {
-    totalInbounds += dailyInbounds.get(day) ?? 0;
-    totalHandoffs += dailyHandoffs.get(day) ?? 0;
+    totalInbounds += uso.inbounds[day] ?? 0;
+    totalHandoffs += uso.handoffs[day] ?? 0;
   }
-  const overallRate = totalInbounds > 0 ? totalHandoffs / totalInbounds : 0;
 
+  const t = uso.totais;
   return {
-    range: {
-      from: toUtcDay(range.from),
-      to: toUtcDay(range.to),
-    },
+    range: { from: toUtcDay(range.from), to: toUtcDay(range.to) },
     totals: {
-      cost_cents: totalCost,
-      total_tokens: totalTokens,
-      invocations: totalInvocations,
-      p50_latency_ms: p50All,
-      p95_latency_ms: p95All,
-      handoff_rate: Number(overallRate.toFixed(4)),
+      cost_cents: t.custo_cents,
+      total_tokens: t.input_tokens + t.output_tokens,
+      invocations: t.chamadas,
+      input_tokens: t.input_tokens,
+      cache_read_tokens: t.cache_read_tokens,
+      cache_hit_rate: razao(t.cache_read_tokens, t.input_tokens),
+      agent_turns: t.turnos,
+      avg_cost_per_turn_cents: t.turnos > 0 ? t.custo_dos_turnos_cents / t.turnos : null,
+      p50_latency_ms: t.p50_latency_ms,
+      p95_latency_ms: t.p95_latency_ms,
+      handoff_rate: razao(totalHandoffs, totalInbounds),
     },
     series: {
-      cost_cents: costSeries,
-      total_tokens: tokensSeries,
-      p50_latency_ms: p50Series,
-      p95_latency_ms: p95Series,
-      handoff_rate: handoffSeries,
+      cost_cents: serie((day) => porDia.get(day)?.custo_cents ?? 0),
+      total_tokens: serie((day) => {
+        const d = porDia.get(day);
+        return d ? d.input_tokens + d.output_tokens : 0;
+      }),
+      p50_latency_ms: serie((day) => porDia.get(day)?.p50_latency_ms ?? 0),
+      p95_latency_ms: serie((day) => porDia.get(day)?.p95_latency_ms ?? 0),
+      handoff_rate: serie((day) => razao(uso.handoffs[day] ?? 0, uso.inbounds[day] ?? 0)),
     },
-    by_kind: byKind,
+    by_kind: Object.fromEntries(uso.purposes.map((p) => [p.purpose, p.chamadas])),
   };
 }

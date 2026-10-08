@@ -332,8 +332,9 @@ export const crmListFollowups: McpToolDefinition<typeof listarShape> = {
   name: "crm_list_followups",
   description:
     "Lista os retornos de um cliente (informe lead_id OU contact_id), do mais próximo para o mais " +
-    "antigo. Cada item traz situacao: 'agendado' (ainda vai acontecer), 'disparado' (já aconteceu) " +
-    "ou 'cancelado' (alguém desmarcou, com motivo_do_cancelamento). É por aqui que você descobre " +
+    "antigo. Cada item traz situacao: 'agendado' (ainda vai acontecer), 'disparado' (já aconteceu), " +
+    "'nao_disparado' (a empresa estava parada e o retorno NÃO saiu: não diga ao cliente que saiu) ou 'cancelado' (alguém desmarcou, com motivo_do_cancelamento). Valores novos de situacao podem " +
+    "aparecer em versões futuras: trate um valor desconhecido como 'não sei se saiu', nunca como 'saiu'. É por aqui que você descobre " +
     "que um humano desmarcou o retorno — se descobrir, NÃO reagende o mesmo retorno. " +
     "Lista RETORNOS INTERNOS, não compromissos com hora marcada. O mesmo cliente pode ter os dois, " +
     "e não encontrar nada aqui não significa que ele não tenha um horário combinado." +

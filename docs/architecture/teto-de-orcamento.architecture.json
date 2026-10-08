@@ -28,6 +28,7 @@
     { "id": "status", "lane": "borda", "col": 3, "type": "service", "label": "lib/ai/budget/check.ts", "sublabel": "getBudgetStatus — régua única + blocked_now + gasto_incompleto" },
     { "id": "saude", "lane": "borda", "col": 4, "type": "api", "label": "GET /admin/tenants/[id]/health", "sublabel": "o único painel de admin que lê a régua real" },
     { "id": "kpis", "lane": "borda", "col": 5, "type": "api", "label": "GET /admin/dashboard/kpis", "sublabel": "ainda na coluna acumulada — divergência declarada, nunca critical" },
+    { "id": "usoapi", "lane": "borda", "col": 6, "type": "api", "label": "GET /api/v1/ai/usage", "sublabel": "manager+ · cliente da sessão · gráficos e cartões de /app/ai/usage" },
 
     { "id": "decidir", "lane": "regra", "col": 2, "type": "service", "label": "decidirOrcamento()", "sublabel": "6 condições conjuntivas · toda ambiguidade resolve para NÃO bloquear" },
     { "id": "sqlorc", "lane": "regra", "col": 3, "type": "service", "label": "SQL_ORCAMENTO", "sublabel": "um round-trip: lê o estado, retrata alerta obsoleto, abre o aviso" },
@@ -45,6 +46,7 @@
     { "id": "llmcalls", "lane": "dados", "col": 3, "type": "database", "label": "llm_calls", "sublabel": "cost_cents em USD; NULL = preço desconhecido (o furo que a tela confessa)" },
     { "id": "itens", "lane": "dados", "col": 4, "type": "database", "label": "agent_inbox_items", "sublabel": "ref_kind='ai_budget' — é o que permite FECHAR o item depois" },
     { "id": "audit", "lane": "dados", "col": 5, "type": "database", "label": "api_audit_log", "sublabel": "ai.budget_limit_changed · _enforcement_armed · _enforcement_disarmed" },
+    { "id": "usofn", "lane": "dados", "col": 6, "type": "database", "label": "fn_uso_de_ia(uuid,timestamptz,timestamptz,uuid,text)", "sublabel": "uso num PERÍODO escolhido, não a régua do teto mensal · security invoker (0586)" },
 
     { "id": "handoff", "lane": "volta", "col": 2, "type": "service", "label": "performHumanHandoff / triggerHandoff", "sublabel": "conversa → fila humana, razão orcamento_de_ia, zero token" },
     { "id": "conversas", "lane": "volta", "col": 3, "type": "database", "label": "conversations / contacts", "sublabel": "status='pending' · bot_silenced_until='infinity' · force_human=true" },
@@ -95,7 +97,10 @@
     { "id": "e42", "from": "kpis", "to": "budgets", "label": "current_month_consumed_cents — ACUMULADO, e o alerta diz isso" },
     { "id": "e43", "from": "kpis", "to": "saude", "label": "o alerta leva para a tela que tem o número real" },
     { "id": "e44", "from": "midia", "to": "runmodel", "label": "visão, quadros de vídeo e transcrição pelo modelo da organização, mesmo gate; a transcrição pelo serviço (degraus 1 e 2) fica fora (custo null)" },
-    { "id": "e45", "from": "midia", "to": "llmcalls", "label": "o sucesso grava custo em visao_de_imagem e transcricao_de_audio (degrau 3) e soma no gasto do mês" }
+    { "id": "e45", "from": "midia", "to": "llmcalls", "label": "o sucesso grava custo em visao_de_imagem e transcricao_de_audio (degrau 3) e soma no gasto do mês" },
+    { "id": "e46", "from": "card", "to": "usoapi", "label": "a mesma tela: custo, chamadas, turnos e cache do período" },
+    { "id": "e47", "from": "usoapi", "to": "usofn", "label": "RPC, security invoker — a RLS isola, p_org é defesa em profundidade" },
+    { "id": "e48", "from": "usofn", "to": "llmcalls", "label": "sum(cost_cents) por dia e por purpose; turnos = jobs com agent_turn ok" }
   ],
   "cards": [
     {

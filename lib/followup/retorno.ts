@@ -33,9 +33,11 @@ import type { JanelaDeRetorno } from "./janela";
  * (fireOneDue) ou alguém cancelou. Enquanto a diferença não era observável, o
  * agente não tinha como saber que o humano desmarcou o retorno — e o invariante
  * 2 (continuidade humano→IA) ficava pela metade. `cancelled_at` (migration 0102)
- * é o que torna as duas distinguíveis.
+ * é o que torna as duas distinguíveis. `nao_disparado` é o terceiro `enabled = false`:
+ * o scheduler desligou o disparo porque a empresa estava parada (`last_error =
+ * 'org_nao_operante'`) — o retorno NÃO saiu, e quem lê não pode dizer que saiu.
  */
-export type SituacaoDoRetorno = "agendado" | "disparado" | "cancelado";
+export type SituacaoDoRetorno = "agendado" | "disparado" | "nao_disparado" | "cancelado";
 
 /** O payload que viaja no `cron_jobs` e chega ao turno futuro do agente. */
 export interface PayloadDoRetorno {
@@ -279,7 +281,25 @@ export async function listaRetornos(
 export function situacaoDoRetorno(row: {
   enabled: boolean;
   cancelled_at: string | null;
+  last_error?: string | null;
 }): SituacaoDoRetorno {
   if (row.cancelled_at !== null) return "cancelado";
-  return row.enabled ? "agendado" : "disparado";
+  if (row.enabled) return "agendado";
+  return row.last_error === "org_nao_operante" ? "nao_disparado" : "disparado";
+}
+
+/**
+ * O status que a fila de IA › Follow-ups mostra para uma promessa. `enabled=false`
+ * com `last_error='org_nao_operante'` é o disparo único que o scheduler DESLIGOU
+ * porque a empresa estava parada: não foi entregue, e "concluída" diria o contrário.
+ */
+export function statusDaPromessaNaFila(row: {
+  enabled: boolean;
+  cancelled_at: string | null;
+  last_error: string | null;
+}): "agendada" | "concluída" | "cancelada" | "não disparada" {
+  const situacao = situacaoDoRetorno(row);
+  if (situacao === "cancelado") return "cancelada";
+  if (situacao === "agendado") return "agendada";
+  return situacao === "nao_disparado" ? "não disparada" : "concluída";
 }

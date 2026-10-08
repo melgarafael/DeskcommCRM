@@ -34,6 +34,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { basePublicaDaInstalacao } from "@/lib/webhooks/url-publica";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { traduzirLimiteDoPlano } from "@/lib/cobranca/limites";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -144,7 +145,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     phoneNumber: v.phoneNumber ? `+${v.phoneNumber.replace(/\D/g, "")}` : null,
     displayName: v.displayName ?? PARTNER_CHANNEL_LABEL,
   });
-  if (error) return fail("internal_error", error, 500, { requestId });
+  if (error) {
+    // `savePartnerSession` devolve só a mensagem: é ela que carrega o limite do plano.
+    const limite = traduzirLimiteDoPlano(error, authz.user.idioma);
+    if (limite) return fail(limite.code, limite.message, 409, { requestId, details: limite.details });
+    return fail("internal_error", error, 500, { requestId });
+  }
 
   return ok(
     {

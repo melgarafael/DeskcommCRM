@@ -47,6 +47,10 @@ import { ApiError } from "@/lib/api/types";
 import { autorizarCaptacaoParaIA, camposDaCaptacao } from "@/lib/ai/elegibilidade/formulario";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { kickLocalPipeline } from "@/lib/dev/kick-local-pipeline";
+import {
+  normalizarCamposNumericos,
+  webhookFormFieldsSchema,
+} from "@/lib/webhooks/formulario";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -94,7 +98,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   const admin = createAdminClient();
   const { data: source, error: srcErr } = await admin
     .from("webhook_sources")
-    .select("id, name, organization_id, secret_encrypted, default_pipeline_id, default_stage_id, field_map, redirect_to, is_active, authorize_ai_on_capture")
+    .select("id, name, organization_id, secret_encrypted, default_pipeline_id, default_stage_id, field_map, form_fields, redirect_to, is_active, authorize_ai_on_capture")
     .eq("path_token", token)
     .maybeSingle();
   if (srcErr) return fail("internal_error", srcErr.message, 500, { requestId });
@@ -296,6 +300,29 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     const rawPhone = findRawPhoneIfUnnormalized(payload, fieldMap);
     if (rawPhone) mapped.source_metadata.raw_phone = rawPhone;
   }
+
+  const camposConfigurados = webhookFormFieldsSchema.safeParse(source.form_fields ?? []);
+  const tipagem = normalizarCamposNumericos(payload, camposConfigurados.success ? camposConfigurados.data : []);
+  if (tipagem.invalidKeys.length > 0) {
+    await registrarCaptacao(admin, {
+      ...fonteDaCaptacao,
+      ...origemDaCaptacao,
+      capturedName: mapped.name,
+      capturedPhone: mapped.phone,
+      capturedEmail: mapped.email,
+      fields: camposDaCaptacao(mapped.custom_fields, payload, source.authorize_ai_on_capture),
+      utm: mapped.source_metadata,
+      leadId: null,
+      contactId: null,
+      outcome: "recusado",
+      rejectReason: "campo_numerico_invalido",
+    });
+    return fail("invalid_request", "A resposta de um campo numérico tem formato inválido.", 422, {
+      requestId,
+      details: { fields: tipagem.invalidKeys },
+    });
+  }
+  Object.assign(mapped.custom_fields, tipagem.values);
 
   /** O que o formulário trouxe, do jeito que a tela de histórico mostra. */
   // O aceite é evidência de captação, não resposta comercial no card.
@@ -614,6 +641,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   await admin
     .from("webhook_sources")
     .update({ last_received_at: new Date().toISOString() })
+    .eq("organization_id", source.organization_id)
     .eq("id", source.id);
 
   await audit({

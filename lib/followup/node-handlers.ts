@@ -887,7 +887,8 @@ export function processNode(input: {
       // #2065 — mover o card de etapa é PASSAGEM no relógio, como o
       // `internal_task`: o nó avança pela aresta única e quem ESCREVE a etapa é
       // o motor ao aplicar o `advance` (`db.moverLeadNoFunil`, que chama o
-      // `moveLeadHandler` da casa), guardado pelo idempotency_key do evento do
+      // `moveLeadHandler` da casa com o `lost_reason` do bloco, sem padrão
+      // escondido), guardado pelo idempotency_key do evento do
       // passo — replay do tick não move o card duas vezes.
       const edge = selectEdge(edges, node.id, { type: "always" });
       if (!edge) return { kind: "fail", error: `move_lead node "${node.id}" has no outbound edge` };

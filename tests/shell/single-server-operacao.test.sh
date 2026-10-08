@@ -59,15 +59,10 @@ case " $* " in
       # confirmação; a instalação simulada aqui está vazia, então 0
       *" pg_tables"*) printf '0\n' ;;
       *" pg_dump "*) echo "-- dump" ;;
-      *" tar czf /out/"*)
-        [ "${STORAGE_FALHA:-0}" = "1" ] && case " $* " in *storage-*) exit 1;; esac
-        out=""; prev=""
-        for a in "$@"; do
-          case "$prev" in -v) case "$a" in *:/out) out="${a%:/out}";; esac;; esac
-          prev="$a"
-        done
-        alvo="$(printf '%s\n' "$*" | grep -oE '/out/[^ ]+' | head -1)"
-        [ -n "$out" ] && : > "$out/${alvo#/out/}" ;;
+      *" tar czf - "*)
+        # o snapshot sai pela saída padrão; quem grava o arquivo é o host
+        [ "${STORAGE_FALHA:-0}" = "1" ] && case " $* " in *volumes/storage:*) printf 'cortado'; exit 1;; esac
+        printf 'tgz' ;;
     esac ;;
 esac
 exit 0
@@ -261,11 +256,14 @@ check "backup.sh single-server termina bem" test "$rc" -eq 0
 check "backup.sh salva o Storage do Supabase (somente leitura)" contem "$LOG" "-v $SB/volumes/storage:/data:ro"
 check "o arquivo dos anexos existe ao lado do dump" \
   bash -c 'ls "$1"/backups/storage-*.tgz >/dev/null 2>&1' _ "$PROJ"
+rm -f "$PROJ"/backups/storage-*.tgz
 : > "$LOG"
 (cd "$PROJ" && STORAGE_FALHA=1 bash "$KIT_DIR/backup.sh") > "$WORK/bk.out" 2>&1; rc=$?
 check "falha nos anexos REPROVA o backup (não sai 'concluído')" test "$rc" -ne 0
 check "a falha diz que o backup está incompleto" grep -q "NÃO está completo" "$WORK/bk.out"
 check "e não imprime 'backup concluído'" bash -c '! grep -q "backup concluído" "$1"' _ "$WORK/bk.out"
+check "e não deixa o arquivo cortado dos anexos (nem o .parcial) na pasta" \
+  bash -c '! ls "$1"/backups/storage-*.tgz >/dev/null 2>&1 && ! ls "$1"/backups/.storage-*.parcial >/dev/null 2>&1' _ "$PROJ"
 
 printf 'x' | gzip > "$PROJ/backups/db-20260922-030000.sql.gz"
 : > "$PROJ/backups/storage-20260922-030000.tgz"

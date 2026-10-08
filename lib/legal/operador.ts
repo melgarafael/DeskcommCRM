@@ -14,7 +14,7 @@
  */
 import { env } from "@/lib/env";
 import { valorDaInstalacao } from "@/lib/instalacao/config";
-import { branding } from "@/lib/branding";
+import { marcaDaSaida } from "@/lib/branding/saida";
 import { loadAuthUser, orgAtivaSemPortao } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
 
@@ -65,13 +65,28 @@ export function urlDePoliticaSegura(valor: unknown): string | null {
 }
 
 /**
+ * O nome do sistema NESTA instalação — pelo resolvedor que LÊ O BANCO.
+ *
+ * Era `branding().name`, que considera só o `.env` (a semente da instalação), e
+ * a marca gravada pela tela (Administração › Marca, `platform_branding`) não
+ * chegava aos documentos legais: um revendedor que mudou de nome continuava
+ * vendo o nome antigo na política de privacidade e nos termos (#2511).
+ *
+ * `marcaDaSaida(null)` é o mesmo resolvedor sem DOM que a página pública `/`
+ * usa desde o #2510 — banco ACIMA do `.env`, e NUNCA lança. Aqui a recusa não é
+ * caminho de erro aceitável: falha fechada fecharia o texto legal inteiro por
+ * causa de um nome.
+ */
+const sistemaDaInstalacao = async (): Promise<string> => (await marcaDaSaida(null)).nome;
+
+/**
  * Virou `async` porque o contato do encarregado passou a vir do banco (migration
  * 0341), com o arquivo de instalação como piso. As três chamadas vivem dentro de
  * `resolverOperador`, que já era assíncrona — o alcance foi medido antes de
  * mudar a assinatura.
  */
 const SEM_SESSAO = async (): Promise<Operador> => ({
-  sistema: branding().name,
+  sistema: await sistemaDaInstalacao(),
   nome: null,
   razaoSocial: null,
   cnpj: null,
@@ -107,7 +122,7 @@ export async function resolverOperador(): Promise<Operador> {
 
   // Falha de leitura não pode apagar o documento da tela: o texto do produto
   // vale para todo mundo, e o que se perde é só a personalização.
-  if (error || !data) return { ...(await SEM_SESSAO()), sistema: branding().name };
+  if (error || !data) return { ...(await SEM_SESSAO()), sistema: await sistemaDaInstalacao() };
 
   const org = data as {
     display_name: string | null;
@@ -118,7 +133,7 @@ export async function resolverOperador(): Promise<Operador> {
   };
 
   return {
-    sistema: branding().name,
+    sistema: await sistemaDaInstalacao(),
     nome: org.display_name?.trim() || null,
     razaoSocial: org.legal_name?.trim() || null,
     cnpj: org.cnpj?.trim() || null,
