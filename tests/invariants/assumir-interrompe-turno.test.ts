@@ -97,6 +97,13 @@ describe("tomada humana invalida o comando autônomo", () => {
       ),
     ).toBe(1);
   });
+  it("a sessão humana assume sem atravessar a proteção de follow-ups", () => {
+    seedJob("followup_turn");
+    sql(`set role authenticated;
+      select set_config('request.jwt.claims','{"sub":"${OWNER}"}',false);
+      select public.fn_conversation_assign('${ORG}','${CONVERSATION}','${OWNER}','claim',null,false);`);
+    expect(value(`select count(*) from public.job_queue where organization_id='${ORG}' and status='running';`)).toBe(1);
+  });
   it("a tomada revertida não deixa cancelamento fora da transação", () => {
     seedJob("inbound_turn");
     sql(

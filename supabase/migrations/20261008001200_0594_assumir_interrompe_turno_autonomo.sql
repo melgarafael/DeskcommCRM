@@ -25,7 +25,7 @@ begin
   return new;
 end;
 $$;
-revoke all on function public.fn_interromper_turnos_ao_assumir() from public, anon, authenticated;
+revoke execute on function public.fn_interromper_turnos_ao_assumir() from public, anon, authenticated, service_role;
 -- Função de trigger: não há RPC/EXECUTE concedido ao caller.
 drop trigger if exists trg_interromper_turnos_ao_assumir on public.conversation_assignment_events;
 create trigger trg_interromper_turnos_ao_assumir
