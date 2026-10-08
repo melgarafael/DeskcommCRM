@@ -42,21 +42,20 @@ export async function GET(
   const admin = createAdminClient();
 
   /**
-   * ⚠️ AS DUAS RECUSAS RESPONDEM O MESMO 404, e isso é de propósito.
+   * AS DUAS RECUSAS RESPONDEM O MESMO 404: "este módulo não está instalado" e "a sua empresa não
+   * tem nenhuma ficha deste módulo". As duas situações são indistinguíveis — mesmo código, mesma
+   * mensagem, mesmo status.
    *
-   * Antes, "módulo não instalado" dava 404 e "a sua empresa não tem nenhuma ficha" dava 200 com
-   * `rotulo` e `campos`. Quem quisesse descobrir quais módulos as OUTRAS empresas do mesmo
-   * servidor usam só precisava comparar as duas respostas — a rota era um oráculo do catálogo da
-   * instalação. Um cético achou isso quando o conserto anterior (esconder o painel vazio na tela)
-   * já estava verde: a tela não mostrava, e o dado descia de todo jeito.
+   * O motivo é de CONTRATO, e não de sigilo: a existência de um módulo instalado é informação da
+   * INSTALAÇÃO por desenho (ADR-0002 D3), e `GET /api/v1/extensions` já a lista para qualquer
+   * `viewer`, sem recorte por organização. Uma versão anterior deste comentário dizia que a
+   * assimetria era um "oráculo do catálogo" — é falso, e um cético derrubou medindo aquela rota.
    *
-   * Agora as duas são indistinguíveis — mesmo código, mesma mensagem, mesmo status. Quem tem ficha
-   * lê; para todo o resto, o módulo não existe. O recorte por organização de verdade está em
-   * `paineisDaEntidade`, que nem monta o painel; isto aqui é a segunda camada, para a rota não
-   * responder a quem a chamar direto.
+   * O que a simetria compra é uma resposta só para "não há nada seu aqui", em vez de um 200 com
+   * `rotulo` e `campos` e lista vazia. Quem consome tem um caso a menos, e a tela tem um estado a
+   * menos: o recorte de verdade está em `paineisDaEntidade`, que nem monta o painel.
    *
-   * Custo: uma contagem `head` por pedido. A alternativa — devolver lista vazia — é exatamente o
-   * oráculo.
+   * Custo: uma contagem `head` por pedido.
    */
   const semFicha = async (): Promise<boolean> => {
     const { count, error } = await admin

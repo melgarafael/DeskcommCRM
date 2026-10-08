@@ -104,17 +104,18 @@ describe("paineisDaEntidade", () => {
   });
 
   /**
-   * ⚠️ O RECORTE POR ORGANIZAÇÃO, e por que a ausência do painel na TELA não bastava.
+   * O RECORTE POR ORGANIZAÇÃO: painel existe para esta empresa só se ela tem ao menos uma linha
+   * na tabela do módulo.
    *
-   * A primeira versão desta frente escondia o painel vazio no componente. Um cético mostrou que
-   * isso é cosmético: sem recorte aqui, o NOME do módulo chega ao navegador de toda empresa da
-   * instalação por três caminhos — o payload da página (o destino é `"use client"`), a URL do
-   * `fetch` na aba de rede, e a resposta 200 da rota com `rotulo` e `campos`. Numa instalação de
-   * revendedor, isso conta a uma empresa quais módulos as OUTRAS usam.
+   * O corte do MÓDULO continua por instalação (ADR-0002 D3) — a existência de um módulo instalado
+   * é informação da instalação, e `GET /api/v1/extensions` já a lista para qualquer `viewer`. O
+   * que estes casos medem é se vale DESENHAR o painel: sem linha da empresa, ele não tem o que
+   * mostrar, e montá-lo descia o caminho junto (o destino é `"use client"`, então `{ modulo,
+   * objeto }` ia no payload, e o componente ainda buscava a rota).
    *
-   * O corte do módulo é por instalação (ADR-0002 D3) e continua sendo; o que passa a ser por
-   * organização é o que a TELA de uma empresa chega a saber. A régua: painel existe para esta
-   * empresa só se ela tem ao menos uma linha na tabela do módulo.
+   * ⚠️ A primeira versão deste bloco justificava o recorte como proteção contra uma empresa saber
+   * os módulos das OUTRAS. É falso, e um cético derrubou medindo a listagem de extensões. Fica
+   * registrado porque razão errada num comentário envelhece pior que razão nenhuma.
    */
   it("⭐ empresa SEM nenhuma ficha não recebe painel — nem o nome do módulo", async () => {
     mocks.rows.mockReturnValue({ data: [instalacao()], error: null });

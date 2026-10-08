@@ -52,20 +52,22 @@ function declaraRefPara(objeto: ObjetoDeclarado, entidade: EntidadeDoNucleo): bo
 }
 
 /**
- * ⚠️ O `orgId` NÃO É DECORAÇÃO, e a razão foi medida por um cético.
+ * O `orgId` RECORTA O QUE A TELA DE UMA EMPRESA MOSTRA.
  *
- * O módulo é instalado por INSTALAÇÃO (ADR-0002 D3) e isso não muda. O que passa a ser por
- * organização é **o que a tela de uma empresa chega a saber**: sem recorte aqui, o NOME do módulo
- * chega ao navegador de toda empresa da instalação por três caminhos, e esconder o painel no
- * componente não fecha nenhum deles —
+ * O corte do módulo é por INSTALAÇÃO (ADR-0002 D3) e continua sendo: a existência de um módulo
+ * instalado é informação da instalação, e `GET /api/v1/extensions` já a lista para qualquer
+ * `viewer`. O que o `orgId` decide aqui é outra coisa — **se vale desenhar o painel** —, e a régua
+ * é: painel existe para esta empresa só se ela tem ao menos uma linha na tabela do módulo.
  *
- *   1. o destino é `"use client"`, então `{ modulo, objeto }` vai SERIALIZADO no payload da página;
- *   2. o componente busca `/api/v1/modulos/<modulo>/<objeto>`, e o nome aparece na aba de rede;
- *   3. a rota respondia 200 com `rotulo` e `campos` mesmo sem nenhuma ficha da empresa.
+ * Sem isso, a empresa que não usa o módulo recebia um painel que não tinha o que mostrar, e o
+ * caminho dele descia junto (o destino é `"use client"`, então `{ modulo, objeto }` ia serializado
+ * no payload, e o componente ainda buscava a rota). Era estado de tela sem conteúdo, em toda ficha
+ * de contato.
  *
- * Numa instalação de revendedor, isso conta a uma empresa quais módulos as OUTRAS usam. A régua
- * que fecha os três: painel existe para esta empresa só se ela tem ao menos UMA linha na tabela do
- * módulo — e quem decide isso é o servidor, antes de qualquer coisa descer.
+ * ⚠️ Uma versão anterior deste comentário justificava o recorte como proteção contra uma empresa
+ * descobrir os módulos das OUTRAS. Isso é FALSO e um cético o derrubou medindo
+ * `lib/extensions/service.ts` — a listagem já é aberta a `viewer` por desenho. O comportamento
+ * está certo; a razão escrita estava errada, e razão errada envelhece pior que razão nenhuma.
  *
  * Custo: uma contagem `head` por objeto declarado, só para módulos de dados instalados. O catálogo
  * oficial não publica nenhum hoje, então na prática são zero consultas; com N módulos são N

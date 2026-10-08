@@ -22,6 +22,10 @@ const mocks = vi.hoisted(() => ({
   select: vi.fn(),
   /** A contagem de existência por organização: `true` = a empresa não tem ficha nenhuma. */
   semFichasNaOrg: vi.fn(() => false),
+  /** Quando devolve erro, é a CONTAGEM que falhou (não a lista). */
+  erroNaContagem: vi.fn<() => { code: string; message: string } | null>(() => null),
+  /** As organizações pedidas na CONTAGEM, separadas das da lista. */
+  orgsNaContagem: [] as unknown[],
 }));
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: mocks.requireRole }));
@@ -42,9 +46,16 @@ vi.mock("@/lib/supabase/admin", () => ({
         select: (colunas: string, opcoes?: { head?: boolean }) => {
           if (opcoes?.head) {
             const contagem: Record<string, unknown> = {};
-            for (const m of ["eq", "limit"]) contagem[m] = vi.fn(() => contagem);
-            contagem.then = (r: (v: unknown) => unknown) =>
-              r({ count: mocks.semFichasNaOrg() ? 0 : 1, error: null });
+            contagem.limit = vi.fn(() => contagem);
+            contagem.eq = vi.fn((coluna: string, valor: unknown) => {
+              if (coluna === "organization_id") mocks.orgsNaContagem.push(valor);
+              return contagem;
+            });
+            contagem.then = (r: (v: unknown) => unknown) => {
+              const erro = mocks.erroNaContagem();
+              if (erro) return r({ count: null, error: erro });
+              return r({ count: mocks.semFichasNaOrg() ? 0 : 1, error: null });
+            };
             return contagem;
           }
           const lista = mocks.select() as { select: (c: string) => unknown };
@@ -77,6 +88,8 @@ beforeEach(() => {
   const org: ActiveOrg = { orgId: ORG, role: "viewer" } as ActiveOrg;
   mocks.requireRole.mockResolvedValue({ ok: true, org, user: { id: "u1" } });
   mocks.semFichasNaOrg.mockReturnValue(false);
+  mocks.erroNaContagem.mockReturnValue(null);
+  mocks.orgsNaContagem.length = 0;
   mocks.tabelaDoObjeto.mockResolvedValue({
     tabela: "m_clinica_odontograma_marcacao",
     campos: [{ slug: "dente", tipo: "inteiro" }],
@@ -119,14 +132,15 @@ describe("GET /api/v1/modulos/[modulo]/[objeto]", () => {
   });
 
   /**
-   * ⚠️ A ROTA NÃO PODE VIRAR ORÁCULO DE "QUAIS MÓDULOS EXISTEM NESTA INSTALAÇÃO".
+   * AS DUAS RECUSAS SÃO INDISTINGUÍVEIS: "não instalado" e "a sua empresa não tem ficha".
    *
-   * Ela respondia 200 com `rotulo` e `campos` mesmo quando a empresa não tem nenhuma ficha, e o
-   * 404 só existia para módulo NÃO INSTALADO. Quem quisesse descobrir os módulos usados pelas
-   * outras empresas do mesmo servidor só precisava comparar as duas respostas.
+   * É contrato, não sigilo — a existência de um módulo instalado é informação da INSTALAÇÃO por
+   * desenho (ADR-0002 D3), e `GET /api/v1/extensions` já a lista para qualquer `viewer`. O que a
+   * simetria compra é um caso a menos para quem consome e um estado a menos na tela, em vez de um
+   * 200 com `rotulo` e lista vazia.
    *
-   * A régua: as duas situações respondem o MESMO 404, indistinguível. Quem tem ficha lê; para
-   * todo o resto, o módulo não existe.
+   * O caso compara código E mensagem, não só o status: diferença em qualquer um dos dois quebra a
+   * simetria sem mudar o número.
    */
   it("⭐ empresa SEM nenhuma ficha recebe o MESMO 404 de módulo não instalado", async () => {
     mocks.semFichasNaOrg.mockReturnValue(true);
@@ -147,9 +161,37 @@ describe("GET /api/v1/modulos/[modulo]/[objeto]", () => {
 
     expect(r.status).toBe(404);
     expect(naoInstalado.status).toBe(404);
-    // Indistinguíveis: mesmo código E mesma mensagem. Qualquer diferença aqui é o oráculo de volta.
+    // Mesmo código E mesma mensagem — status igual com mensagem diferente não é simetria.
     expect(corpo.error?.code).toBe(corpoNaoInstalado.error?.code);
     expect(corpo.error?.message).toBe(corpoNaoInstalado.error?.message);
+  });
+
+  /**
+   * As DUAS guardas de dentro de `semFicha()`, cada uma com o seu caso. Um cético mostrou que sem
+   * eles a sabotagem passava verde 6/6: tirar o `.eq("organization_id", …)` DA CONTAGEM e trocar
+   * `if (error) return true` por `false` não reprovavam nada. Guarda sem caso que a vigie é guarda
+   * que o próximo refactor apaga.
+   */
+  it("⭐ a CONTAGEM é feita com a organização da SESSÃO — sem isso ela conta as de todo mundo", async () => {
+    mocks.select.mockReturnValue(consulta([{ id: "f1" }]));
+    await chamar("https://x/api/v1/modulos/odontograma/marcacao", {
+      modulo: "odontograma",
+      objeto: "marcacao",
+    });
+    // Sem o filtro, a contagem acha linha de OUTRA empresa e a rota responde 200 para quem não
+    // tem nada — o recorte morre em silêncio, com todos os outros casos verdes.
+    expect(mocks.orgsNaContagem).toEqual([ORG]);
+  });
+
+  it("⭐ contagem que FALHA responde 404, não 200 — na dúvida o módulo não existe aqui", async () => {
+    mocks.erroNaContagem.mockReturnValue({ code: "42P01", message: "sem tabela" });
+    const r = await chamar("https://x/api/v1/modulos/odontograma/marcacao", {
+      modulo: "odontograma",
+      objeto: "marcacao",
+    });
+    // `if (error) return true` é falha FECHADA. Trocar por `false` abriria a leitura justamente
+    // quando o servidor não sabe o que responder.
+    expect(r.status).toBe(404);
   });
 
   it("empresa COM ficha continua lendo — senão o caso de cima seria vacuidade", async () => {

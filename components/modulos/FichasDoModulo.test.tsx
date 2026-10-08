@@ -94,12 +94,12 @@ describe("FichasDoModulo", () => {
   });
 
   /**
-   * ⚠️ 404 É SILÊNCIO; 5xx É AVISO. A distinção é de privacidade, não de estilo.
+   * ⚠️ 404 É SILÊNCIO; 5xx É AVISO.
    *
    * A rota responde o MESMO 404 para "módulo não instalado" e para "esta empresa não tem nenhuma
-   * ficha" — de propósito, para não ser oráculo do catálogo da instalação. Se o componente
-   * traduzisse esse 404 em "Não foi possível carregar o que este módulo guarda", ele desfaria o
-   * cuidado da rota: a frase revelaria que o módulo existe E daria a impressão de defeito.
+   * ficha". Traduzir isso em "Não foi possível carregar o que este módulo guarda" apontaria
+   * defeito onde não há nenhum — o painel diria que falhou quando a resposta correta é que não há
+   * nada para mostrar.
    *
    * Então: 404 não desenha nada. Qualquer outra falha (rede, 5xx) continua avisando, porque aí há
    * de fato algo quebrado e calar seria esconder defeito de quem opera.

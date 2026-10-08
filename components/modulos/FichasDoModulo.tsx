@@ -75,13 +75,12 @@ export function FichasDoModulo({
       try {
         const r = await fetch(url);
         /**
-         * ⚠️ 404 É SILÊNCIO, e isso é privacidade, não estilo.
+         * ⚠️ 404 É SILÊNCIO, NÃO AVISO DE FALHA.
          *
          * A rota responde o MESMO 404 para "módulo não instalado" e para "esta empresa não tem
-         * nenhuma ficha", de propósito, para não ser oráculo do catálogo da instalação. Traduzir
-         * esse 404 em "Não foi possível carregar o que este módulo guarda" desfaria o cuidado da
-         * rota: a frase revelaria que o módulo existe e, de brinde, daria a impressão de defeito
-         * onde não há nenhum.
+         * nenhuma ficha". Traduzir isso em "Não foi possível carregar o que este módulo guarda"
+         * apontaria defeito onde não há nenhum: o painel estaria dizendo que falhou quando a
+         * resposta correta é que não há nada para mostrar.
          *
          * Qualquer OUTRA falha (rede, 5xx) continua avisando — aí há algo quebrado de verdade, e
          * calar seria esconder defeito de quem opera.
