@@ -34,7 +34,7 @@ import { seModuloDesligado } from "../_falha";
 export const dynamic = "force-dynamic";
 
 const COLUNAS_SEGURAS =
-  "id, organization_id, label, host, port, database_name, username, ssl_mode, enabled, max_rows, max_filters, max_response_bytes, customer_key_column, customer_key_kind, last_tested_at, last_test_ok, last_test_error, created_by, created_at, updated_at";
+  "id, organization_id, label, host, port, database_name, username, ssl_mode, enabled, max_rows, max_filters, max_response_bytes, customer_key_column, customer_key_kind, last_tested_at, last_test_ok, last_test_error, created_by, created_at, updated_at, source_mode, sources_count";
 
 export async function GET(): Promise<Response> {
   const requestId = randomUUID();
@@ -118,6 +118,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       ...cifrarSenha(input.password),
       ssl_mode: input.ssl_mode,
       enabled: input.enabled,
+      source_mode: "list",
       max_rows: input.max_rows,
       max_filters: input.max_filters,
       max_response_bytes: input.max_response_bytes,
@@ -147,7 +148,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     resourceType: "external_db_connection",
     resourceId: created.id,
     requestId,
-    metadata: { label: input.label, host: input.host, port: input.port, ssl_mode: input.ssl_mode },
+    metadata: { label: input.label, host: input.host, port: input.port, ssl_mode: input.ssl_mode, source_mode: "list" },
   });
 
   return ok(created, { status: 201, requestId });
