@@ -74,6 +74,7 @@ interface Estado {
   jids: string[];
   auditorias: string[];
   canceladas: number;
+  orgOperante: boolean;
 }
 
 function monta(over: Partial<Estado> = {}, deps: Partial<AvisoDeps> = {}) {
@@ -108,6 +109,7 @@ function monta(over: Partial<Estado> = {}, deps: Partial<AvisoDeps> = {}) {
     jids: [],
     auditorias: [],
     canceladas: 0,
+    orgOperante: true,
     ...over,
   };
 
@@ -148,6 +150,15 @@ function monta(over: Partial<Estado> = {}, deps: Partial<AvisoDeps> = {}) {
       },
       async cancelaPendentesDoCaso() {
         return e.canceladas;
+      },
+      async cancelaEntregaPendenteDoLembrete() {
+        return 0;
+      },
+      async cancelaPendentesDeLembreteComOutroDestino() {
+        return 0;
+      },
+      async organizacaoOperante() {
+        return e.orgOperante;
       },
       async carregaCanal() {
         return e.canal as never;
@@ -201,6 +212,14 @@ afterEach(() => {
 });
 
 describe("aviso ao suporte — nenhum desfecho é `error`", () => {
+  it("caso aberto em organização pausada não envia", async () => {
+    const { deps, estado } = monta({ orgOperante: false });
+    const r = await aplicaAvisoDeCaso(deps, evento());
+
+    expect(r).toMatchObject({ status: "skipped", detail: "org_nao_operante" });
+    expect(estado.enviados).toHaveLength(0);
+  });
+
   it("evento de outro tipo sai `skipped`", async () => {
     const { deps } = monta();
     const r = await aplicaAvisoDeCaso(deps, evento({ event_type: "message.received" }));
@@ -216,7 +235,9 @@ describe("aviso ao suporte — nenhum desfecho é `error`", () => {
   });
 
   it("configuração desligada sai `skipped`, sem tocar a rede", async () => {
-    const { deps, estado } = monta({ cfg: { channel_session_id: CANAL, telefone_destino: "+5531998966398", ligado: false } });
+    const { deps, estado } = monta({
+      cfg: { channel_session_id: CANAL, telefone_destino: "+5531998966398", ligado: false },
+    });
     const r = await aplicaAvisoDeCaso(deps, evento());
     expect(r.status).toBe("skipped");
     expect(estado.enviados).toHaveLength(0);
@@ -229,7 +250,14 @@ describe("aviso ao suporte — nenhum desfecho é `error`", () => {
       { caso: { id: CASO, organization_id: ORG, source: "mcp_externo", status: "awaiting_human" } },
       { caso: { id: CASO, organization_id: ORG, source: "agent", status: "resolved" } },
       { canal: null },
-      { canal: { id: CANAL, status: "WORKING", archived_at: new Date().toISOString(), aceitaMensagemLivre: true } },
+      {
+        canal: {
+          id: CANAL,
+          status: "WORKING",
+          archived_at: new Date().toISOString(),
+          aceitaMensagemLivre: true,
+        },
+      },
       { canal: { id: CANAL, status: "WORKING", archived_at: null, aceitaMensagemLivre: false } },
       { canal: { id: CANAL, status: "STOPPED", archived_at: null, aceitaMensagemLivre: true } },
       { anonimizado: true },
@@ -279,7 +307,13 @@ describe("aviso ao suporte — o que impede o envio", () => {
 
   it("caso fechado entre o evento e o dreno → não envia", async () => {
     const { deps, estado } = monta({
-      caso: { id: CASO, organization_id: ORG, source: "agent", status: "resolved", conversation_id: CONVERSA },
+      caso: {
+        id: CASO,
+        organization_id: ORG,
+        source: "agent",
+        status: "resolved",
+        conversation_id: CONVERSA,
+      },
     });
     const r = await aplicaAvisoDeCaso(deps, evento());
     expect(r.detail).toContain("caso_fechado");
@@ -288,7 +322,13 @@ describe("aviso ao suporte — o que impede o envio", () => {
 
   it("origem que não é do motor → não envia", async () => {
     const { deps, estado } = monta({
-      caso: { id: CASO, organization_id: ORG, source: "mcp_externo", status: "awaiting_human", conversation_id: CONVERSA },
+      caso: {
+        id: CASO,
+        organization_id: ORG,
+        source: "mcp_externo",
+        status: "awaiting_human",
+        conversation_id: CONVERSA,
+      },
     });
     const r = await aplicaAvisoDeCaso(deps, evento());
     expect(r.detail).toContain("origem_nao_aceita");
@@ -467,19 +507,22 @@ describe("aviso ao suporte — o envio bem-sucedido", () => {
   });
 
   it("destino que o transporte não sabe endereçar falha com o código próprio", async () => {
-    const { deps, estado } = monta({}, {
-      transporte: {
-        async configurado() {
-          return true;
-        },
-        async resolveDestino() {
-          return null;
-        },
-        async envia() {
-          throw new Error("não devia chegar aqui");
+    const { deps, estado } = monta(
+      {},
+      {
+        transporte: {
+          async configurado() {
+            return true;
+          },
+          async resolveDestino() {
+            return null;
+          },
+          async envia() {
+            throw new Error("não devia chegar aqui");
+          },
         },
       },
-    });
+    );
     await aplicaAvisoDeCaso(deps, evento());
     expect(estado.patches.at(-1)).toMatchObject({ erro_codigo: "destino_invalido" });
   });
@@ -497,5 +540,25 @@ describe("aviso ao suporte — o laço fecha no fechamento do caso", () => {
     const { deps } = monta({ canceladas: 0 });
     const r = await aplicaAvisoDeCaso(deps, evento({ event_type: EVENTO_CASO_FECHADO }));
     expect(r.status).toBe("skipped");
+  });
+});
+
+describe("envio local sem link", () => {
+  it("envia referência e instrução local sem URL, contabilizando o canal", async () => {
+    const m = monta({}, { urlPublica: "http://localhost:3000" });
+    m.estado.cfg!.sem_link = true;
+    const r = await aplicaAvisoDeCaso(m.deps, evento());
+    expect(r.status).toBe("ok");
+    expect(m.estado.enviados).toHaveLength(1);
+    expect(m.estado.enviados[0]!.body).not.toMatch(/https?:/);
+    expect(m.estado.enviados[0]!.body).toContain("22222222");
+    expect(m.estado.enviados[0]!.body).toContain("Abra Casos no computador");
+    expect(m.estado.ledger).toBe(1);
+  });
+  it("modo local não permite destino da própria organização", async () => {
+    const m = monta({ destinoEhDaPropriaOrg: true }, { urlPublica: "http://localhost:3000" });
+    m.estado.cfg!.sem_link = true;
+    await aplicaAvisoDeCaso(m.deps, evento());
+    expect(m.estado.enviados).toHaveLength(0);
   });
 });

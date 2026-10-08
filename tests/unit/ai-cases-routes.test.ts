@@ -202,6 +202,26 @@ describe("GET /api/v1/ai/cases", () => {
     ).toBe(true);
   });
 
+  it("status=awaiting_human envia somente esse estado ao PostgREST", async () => {
+    session("agent");
+    sessaoComVisibilidade({ visiveis: [CONV_ID] });
+    const admin = makeAdminStub([casoNaConversa(CASE_ID, CONV_ID, "Fulano")]);
+    vi.mocked(createAdminClient).mockReturnValue(
+      admin as unknown as ReturnType<typeof createAdminClient>,
+    );
+    const { GET } = await import("@/app/api/v1/ai/cases/route");
+
+    const res = await GET(
+      new NextRequest("http://localhost/api/v1/ai/cases?status=awaiting_human"),
+    );
+
+    expect(res.status).toBe(200);
+    expect(admin.__calls.inCalls).toContainEqual(["status", ["awaiting_human"]]);
+    expect(
+      admin.__calls.eqCalls.some(([col, val]) => col === "organization_id" && val === ORG_ID),
+    ).toBe(true);
+  });
+
   /**
    * O defeito: `conversations` tem RLS por atendente e esta lista devolve nome e
    * telefone do contato. Com a leitura privilegiada filtrando só

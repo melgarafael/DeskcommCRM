@@ -47,17 +47,274 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import pg from "pg";
 
 import { expect, test, type Page } from "./helpers/test";
 import { createClient } from "@supabase/supabase-js";
+import { createCaseTaskDeliveryHandler } from "../../lib/agent-engine/agent/case-task-delivery";
+import { pgSendLedger, sendWithLedger } from "../../lib/agent-engine/edge/crm/send-ledger";
+import type { InboundTurnDeps } from "../../lib/agent-engine/agent/inbound-turn";
+import type { ChannelSendInput, ChannelSendResult } from "../../lib/agent-engine/channel-adapter";
+import { completeJob, type JobRow } from "../../lib/agent-engine/queue/queue";
 
-import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
+import { carregarEnvLocal, destinoEhLocal } from "../../scripts/lib/env-de-teste";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 const EVIDENCIA = path.join(process.cwd(), "evidence", "casos-vivos", "chat");
 
 /** Esta máquina (e o runner do CI) roda saturada; 5s viram vermelho por azar. */
 const ESPERA = 60_000;
+
+test("tarefa de pagamento: recibo aceito conclui a entrega visível", async ({ page }) => {
+  test.setTimeout(180_000);
+  const caseId = creds.escalacao.case_id;
+  const worker = `case-task-e2e-${caseId}`;
+  const dbUrl = env.SUPABASE_DB_URL;
+  if (
+    !dbUrl ||
+    !destinoEhLocal(dbUrl) ||
+    !env.NEXT_PUBLIC_SUPABASE_URL ||
+    !destinoEhLocal(env.NEXT_PUBLIC_SUPABASE_URL)
+  )
+    throw new Error(
+      "A prova de entrega exige Supabase e Postgres locais; execução remota recusada.",
+    );
+
+  const { data: original, error: readError } = await admin
+    .from("agent_cases")
+    .select("*")
+    .eq("organization_id", creds.org_id)
+    .eq("id", caseId)
+    .single();
+  if (readError || !original) throw new Error("Caso de prova não encontrado.");
+  const { data: purchase, error: purchaseError } = await admin
+    .from("crm_leads")
+    .select("id")
+    .eq("organization_id", creds.org_id)
+    .eq("contact_id", creds.escalacao.contact_id)
+    .limit(1)
+    .single();
+  if (purchaseError || !purchase) throw new Error("Compra de prova não encontrada.");
+
+  const pool = new pg.Pool({ connectionString: dbUrl, max: 2 });
+  const approvedText = `Link oficial fictício revisado para este pedido de prova ${Date.now()}.`;
+  let channelSessionId: string | null = null;
+  let idsDeEventosAntes: string[] | null = null;
+  let idsPacingAntes: string[] | null = null;
+  let idsCopiesAntes: string[] | null = null;
+  let deliveryJobId: string | null = null;
+  let sentMessageId: string | null = null;
+  let physicalSends = 0;
+
+  async function transporteFalso(input: ChannelSendInput): Promise<ChannelSendResult> {
+    const outcome = await sendWithLedger(pgSendLedger(pool), input, async (key, messageId) => {
+      if (!channelSessionId) throw new Error("Conversa de prova sem conexão de canal.");
+      if (input.body !== approvedText) throw new Error("O canal falso recebeu texto não aprovado.");
+      physicalSends += 1;
+      sentMessageId = messageId;
+      const { rows } = await pool.query<{ id: string; status: string }>(
+        `insert into messages(id,organization_id,conversation_id,channel_session_id,contact_id,type,direction,status,sent_via,body,metadata)
+        values($1,$2,$3,$4,$5,'text','outbound','sent','ai',$6,jsonb_build_object('idempotency_key',$7::text))
+        on conflict(id) do update set status=excluded.status
+        returning id,status`,
+        [
+          messageId,
+          creds.org_id,
+          input.conversationId,
+          channelSessionId,
+          input.leadId,
+          input.body,
+          key,
+        ],
+      );
+      if (!rows[0]) throw new Error("O canal falso não gravou o recibo de envio.");
+      return rows[0];
+    });
+    if (outcome.kind === "blocked") return outcome;
+    return {
+      kind: outcome.kind,
+      idempotencyKey: outcome.idempotencyKey,
+      messageId: outcome.crmMessageId,
+    } as ChannelSendResult;
+  }
+
+  const deliveryHandler = createCaseTaskDeliveryHandler({
+    // O canal é injetado abaixo; este client local nunca recebe uma chamada.
+    crmCfg: { supabase: createClient("http://127.0.0.1:54321", "e2e-channel-unused") },
+    log: { info: () => {}, warn: () => {}, error: () => {} },
+    sleep: async () => {},
+    knobs: { queuedRetryDelayMs: 5_000 } as InboundTurnDeps["knobs"],
+    channel: () => ({ send: transporteFalso }),
+  });
+
+  try {
+    const { rows: eventosAntes } = await pool.query<{ id: string }>(
+      "select id from agent_case_events where organization_id=$1 and case_id=$2",
+      [creds.org_id, caseId],
+    );
+    idsDeEventosAntes = eventosAntes.map(({ id }) => id);
+    const { rows: conversas } = await pool.query<{ channel_session_id: string }>(
+      "select channel_session_id from conversations where organization_id=$1 and id=$2",
+      [creds.org_id, creds.escalacao.conversation_id],
+    );
+    channelSessionId = conversas[0]?.channel_session_id ?? null;
+    if (!channelSessionId) throw new Error("Conversa de prova sem conexão de canal.");
+    const { rows: pacingAntes } = await pool.query<{ id: string }>(
+      "select id from pacing_ledger where organization_id=$1 and channel_session_id=$2",
+      [creds.org_id, channelSessionId],
+    );
+    idsPacingAntes = pacingAntes.map(({ id }) => id);
+    const { rows: copiesAntes } = await pool.query<{ id: string }>(
+      "select id from outbound_copies where organization_id=$1 and channel_session_id=$2",
+      [creds.org_id, channelSessionId],
+    );
+    idsCopiesAntes = copiesAntes.map(({ id }) => id);
+
+    const { error } = await admin
+      .from("agent_cases")
+      .update({
+        task_kind: "payment_details",
+        task_state: "awaiting_human",
+        status: "awaiting_human",
+        lead_id: purchase.id,
+        assignee_user_id: null,
+        revision: 0,
+        wait_generation: 1,
+        wait_started_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+        task_payload: {},
+        decision_event_id: null,
+        delivery_job_id: null,
+      })
+      .eq("organization_id", creds.org_id)
+      .eq("id", caseId);
+    if (error) throw error;
+    await login(page, creds.users.manager!.email);
+    await page.goto("/app/ai/cases");
+    await page.getByText(creds.escalacao.case_title, { exact: true }).click();
+    const panel = page.getByRole("region", { name: "Tarefa de pagamento" });
+    await expect(panel).toBeVisible({ timeout: ESPERA });
+    await expect(panel.getByText(/Atrasado — continua pendente/)).toBeVisible();
+    await expect(
+      panel.getByRole("button", { name: "Liberar dados para envio", exact: true }),
+    ).toBeDisabled();
+    await panel.getByRole("button", { name: "Assumir caso", exact: true }).click();
+    await expect(panel.getByLabel("Texto revisado para enviar à cliente")).toBeEnabled({
+      timeout: ESPERA,
+    });
+    await panel.getByLabel("Forma de pagamento").selectOption("card");
+    await panel.getByLabel("Texto revisado para enviar à cliente").fill(approvedText);
+    await captura(page, "60-tarefa-dados-revisados");
+    await panel.screenshot({ path: path.join(EVIDENCIA, "60-painel-pagamento.png") });
+    await panel.getByRole("button", { name: "Liberar dados para envio", exact: true }).click();
+    await expect(panel.getByText("Envio pendente", { exact: true })).toBeVisible({
+      timeout: ESPERA,
+    });
+    await expect(panel.getByText(/mensagem ainda está sendo processada/)).toBeVisible();
+    await captura(page, "61-tarefa-envio-pendente");
+
+    const { rows: tarefa } = await pool.query<{ delivery_job_id: string | null }>(
+      "select delivery_job_id from agent_cases where organization_id=$1 and id=$2",
+      [creds.org_id, caseId],
+    );
+    deliveryJobId = tarefa[0]?.delivery_job_id ?? null;
+    if (!deliveryJobId) throw new Error("A ação pela tela não criou o job de entrega.");
+
+    const { rows: claimed } = await pool.query<JobRow>(
+      `update job_queue set status='running',locked_by=$3,locked_at=clock_timestamp(),attempts=attempts+1
+      where organization_id=$1 and id=$2 and status='pending'
+      returning *,locked_at::text as claim_acquired_at`,
+      [creds.org_id, deliveryJobId, worker],
+    );
+    const job = claimed[0];
+    if (!job?.claim_acquired_at) throw new Error("O job de entrega não pôde ser reivindicado.");
+    await deliveryHandler(job, pool);
+    await completeJob(pool, job.id, worker, undefined, job.claim_acquired_at);
+
+    await page.goto(`/app/ai/cases?caso=${caseId}`);
+    const detail = page.getByRole("region", { name: "Tarefa de pagamento" });
+    await expect(detail).toBeVisible({ timeout: ESPERA });
+    await expect(detail.getByText("Envio confirmado pelo canal", { exact: true })).toBeVisible();
+    await expect(detail.getByRole("status")).toContainText(
+      "O canal confirmou o envio dos dados oficiais. Isso não confirma a leitura pela cliente nem o pagamento.",
+    );
+    await expect(page.getByText("Resolvido", { exact: true }).first()).toBeVisible();
+    await captura(page, "62-envio-confirmado-pelo-canal");
+
+    const { rows: estadoCaso } = await pool.query<{ task_state: string; status: string }>(
+      "select task_state,status from agent_cases where organization_id=$1 and id=$2",
+      [creds.org_id, caseId],
+    );
+    expect(estadoCaso[0]).toEqual({ task_state: "completed", status: "resolved" });
+    const { rows: estadoJob } = await pool.query<{ status: string }>(
+      "select status from job_queue where organization_id=$1 and id=$2",
+      [creds.org_id, deliveryJobId],
+    );
+    expect(estadoJob[0]?.status).toBe("done");
+    const { rows: recibos } = await pool.query<{ status: string; crm_message_id: string }>(
+      "select status,crm_message_id from send_ledger where organization_id=$1 and job_id=$2 and seq=1",
+      [creds.org_id, deliveryJobId],
+    );
+    expect(recibos).toHaveLength(1);
+    expect(recibos[0]).toMatchObject({ status: "accepted", crm_message_id: sentMessageId });
+    const { rows: mensagens } = await pool.query<{ id: string; body: string; status: string }>(
+      "select id,body,status from messages where organization_id=$1 and id=$2",
+      [creds.org_id, sentMessageId],
+    );
+    expect(mensagens).toEqual([{ id: sentMessageId, body: approvedText, status: "sent" }]);
+    expect(physicalSends).toBe(1);
+  } finally {
+    try {
+      // Restore the case before deleting the test job: the case points at it
+      // through delivery_job_id while the send receipt is being asserted.
+      const { error } = await admin
+        .from("agent_cases")
+        .update(original)
+        .eq("organization_id", creds.org_id)
+        .eq("id", caseId);
+      if (error) throw error;
+
+      if (deliveryJobId) {
+        await pool.query("delete from before_send_traces where organization_id=$1 and job_id=$2", [
+          creds.org_id,
+          deliveryJobId,
+        ]);
+        await pool.query("delete from send_ledger where organization_id=$1 and job_id=$2", [
+          creds.org_id,
+          deliveryJobId,
+        ]);
+        if (sentMessageId)
+          await pool.query("delete from messages where organization_id=$1 and id=$2", [
+            creds.org_id,
+            sentMessageId,
+          ]);
+        await pool.query("delete from job_queue where organization_id=$1 and id=$2", [
+          creds.org_id,
+          deliveryJobId,
+        ]);
+      }
+      if (idsDeEventosAntes) {
+        await pool.query(
+          "delete from agent_case_events where organization_id=$1 and case_id=$2 and not (id=any($3::uuid[]))",
+          [creds.org_id, caseId, idsDeEventosAntes],
+        );
+      }
+      if (channelSessionId && idsPacingAntes) {
+        await pool.query(
+          "delete from pacing_ledger where organization_id=$1 and channel_session_id=$2 and not (id=any($3::uuid[]))",
+          [creds.org_id, channelSessionId, idsPacingAntes],
+        );
+      }
+      if (channelSessionId && idsCopiesAntes) {
+        await pool.query(
+          "delete from outbound_copies where organization_id=$1 and channel_session_id=$2 and not (id=any($3::uuid[]))",
+          [creds.org_id, channelSessionId, idsCopiesAntes],
+        );
+      }
+    } finally {
+      await pool.end();
+    }
+  }
+});
 
 interface Creds {
   password: string;
@@ -170,7 +427,12 @@ async function definirVisibilidade(modo: "all" | "own_and_unassigned" | "own" | 
     .eq("id", creds.org_id)
     .single();
   if (error) throw new Error(`não consegui ler settings da org: ${error.message}`);
-  const settings = { ...(((data as { settings: Record<string, unknown> }).settings ?? {}) as Record<string, unknown>) };
+  const settings = {
+    ...(((data as { settings: Record<string, unknown> }).settings ?? {}) as Record<
+      string,
+      unknown
+    >),
+  };
   if (modo === null) delete settings.visibility_mode;
   else settings.visibility_mode = modo;
   const { error: erroEscrita } = await admin
@@ -240,9 +502,7 @@ test.describe("conversar com a IA que abriu o caso", () => {
 
     // O aviso permanente que impede o pior modo de falha de leitura — alguém
     // achar que perguntar aqui manda mensagem ao cliente.
-    await expect(
-      chat.getByText(/Conversa interna\. O cliente não vê nada disto/),
-    ).toBeVisible();
+    await expect(chat.getByText(/Conversa interna\. O cliente não vê nada disto/)).toBeVisible();
 
     // O AVISO DE PERSONA. O caso do cenário nasce por `openCase` sem agente
     // ligado, então quem responde é o assistente padrão da organização — e a
@@ -253,9 +513,7 @@ test.describe("conversar com a IA que abriu o caso", () => {
       chat.getByText(/A IA que abriu este caso não está mais no ar/),
       "o painel tem de declarar QUEM está respondendo quando não é o agente do caso",
     ).toBeVisible();
-    await expect(
-      chat.getByText(/assistente padrão da organização/),
-    ).toBeVisible();
+    await expect(chat.getByText(/assistente padrão da organização/)).toBeVisible();
 
     // ─── 2. a sugestão PREENCHE, nunca envia ──────────────────────────────
     const campo = chat.getByTestId("case-chat-campo");
@@ -301,8 +559,12 @@ test.describe("conversar com a IA que abriu o caso", () => {
     // ─── 5. MEDIDA POR FERRAMENTA, não a olho ─────────────────────────────
     const medida = await page.evaluate(() => {
       const painel = document.querySelector('[data-testid="case-chat"]') as HTMLElement | null;
-      const botao = document.querySelector('[data-testid="case-chat-enviar"]') as HTMLElement | null;
-      const campoEl = document.querySelector('[data-testid="case-chat-campo"]') as HTMLElement | null;
+      const botao = document.querySelector(
+        '[data-testid="case-chat-enviar"]',
+      ) as HTMLElement | null;
+      const campoEl = document.querySelector(
+        '[data-testid="case-chat-campo"]',
+      ) as HTMLElement | null;
       if (!painel || !botao || !campoEl) return null;
       const r = painel.getBoundingClientRect();
       const rb = botao.getBoundingClientRect();

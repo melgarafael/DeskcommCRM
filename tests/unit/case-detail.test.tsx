@@ -82,6 +82,17 @@ describe("CaseDetail", () => {
     expect(screen.getByText("Selecione um caso à esquerda")).toBeInTheDocument();
   });
 
+  it("mostra erro e oferece nova tentativa em vez de manter o skeleton", () => {
+    const refetch = vi.fn();
+    useCaseMock.mockReturnValue({ isLoading: false, isError: true, data: undefined, refetch });
+    render(wrap(<CaseDetail caseId="case-1" />));
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Não foi possível carregar este caso");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    screen.getByRole("button", { name: "Tentar novamente" }).click();
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
   it("mostra summary/blocker rotulados e traduz pelo menos 2 kinds da timeline pra pt-br", () => {
     useCaseMock.mockReturnValue({ isLoading: false, data: BASE_CASE });
     render(wrap(<CaseDetail caseId="case-1" />));

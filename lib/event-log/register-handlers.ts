@@ -1,4 +1,5 @@
 import { followupGatilhoPresencaHandler } from "@/lib/followup/gatilho-presenca.handler";
+import { followupAposDadosConfirmadosHandler } from "@/lib/followup/apos-dados-confirmados.handler";
 import { followupGatilhoRetornoHandler } from "@/lib/followup/gatilho-retorno.handler";
 /**
  * Centralised handler registration for the event_log dispatcher.
@@ -60,6 +61,7 @@ export function ensureHandlersRegistered(): void {
   registerHandler(avisoDeEtapaHandler);
   registerHandler(followupGatilhoLeadHandler);
   registerHandler(followupGatilhoCasoHandler);
+  registerHandler(followupAposDadosConfirmadosHandler);
   // O caso aberto na Central, na hora — escrita curta no banco (um item), ao
   // lado do outro consumidor de `ai.case_opened` que só escreve no banco, e
   // longe do aviso ao suporte, que sai por rede de terceiro.

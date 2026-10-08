@@ -58,7 +58,9 @@ const MARCA_DE_APENDICE = /^-- ---- .* \(migration \d+\) ----/m;
 
 /** A última definição da função que o Postgres usa. */
 function ultimaDefinicao(texto: string): string {
-  const nome = "create or replace function public.fn_definir_aviso_de_caso";
+  // O parêntese delimita o nome exato: `_local` é outra função, não uma
+  // redefinição da guarda canônica.
+  const nome = "create or replace function public.fn_definir_aviso_de_caso(";
   // `lastIndexOf`, nunca `find`: o baseline é dump + apêndice e a ÚLTIMA é a que
   // fica de pé. Ancorar na primeira mede a definição morta.
   const i = texto.lastIndexOf(nome);
@@ -83,6 +85,31 @@ const cadeia = readdirSync(MIGRATIONS)
   .filter((x) => x.texto.includes(ABRE_A_GUARDA));
 
 describe("a guarda de número da própria organização, nos dois artefatos", () => {
+  it("a sonda ignora um wrapper com sufixo e continua escolhendo a última definição exata", () => {
+    const anterior =
+      "create or replace function public.fn_definir_aviso_de_caso() returns void as $$ begin perform 'anterior'; end; $$;";
+    const vigente =
+      "create or replace function public.fn_definir_aviso_de_caso() returns void as $$ begin perform 'vigente'; end; $$;";
+    const wrapper =
+      "create or replace function public.fn_definir_aviso_de_caso_local() returns void as $$ begin perform public.fn_definir_aviso_de_caso(); end; $$;";
+    expect(ultimaDefinicao([anterior, vigente, wrapper].join("\n"))).toBe(vigente);
+    expect(ultimaDefinicao([anterior, wrapper, vigente].join("\n"))).toBe(vigente);
+  });
+
+  it("o wrapper local reutiliza a função canônica antes de gravar o modo local", () => {
+    const local = readFileSync(
+      join(MIGRATIONS, "20261008120000_0600_aviso_de_caso_sem_link.sql"),
+      "utf8",
+    );
+    const chamada = local.indexOf("v_resultado := public.fn_definir_aviso_de_caso(");
+    const gravacao = local.indexOf("update public.config_aviso_de_caso");
+    expect(chamada, "o wrapper deve passar pelas guardas canônicas").toBeGreaterThan(-1);
+    expect(gravacao, "o modo local deve ser gravado depois das guardas").toBeGreaterThan(chamada);
+    expect(local.slice(chamada, gravacao)).toContain(
+      "p_org, p_channel, p_telefone, p_rotulo, p_ligado, p_confirma_contato",
+    );
+  });
+
   it("a sonda está viva — a guarda existe na cadeia e no baseline", () => {
     // Sem este controle, um `indexOf` que voltasse -1 faria tudo passar por
     // vacuidade: é a mesma armadilha do "instrumento quebrado devolve zero".

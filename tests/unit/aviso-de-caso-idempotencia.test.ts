@@ -107,6 +107,12 @@ function monta(existente: Record<string, unknown> | null) {
       async cancelaPendentesDoCaso() {
         return 0;
       },
+      async cancelaEntregaPendenteDoLembrete() {
+        return 0;
+      },
+      async cancelaPendentesDeLembreteComOutroDestino() {
+        return 0;
+      },
       async carregaCanal() {
         return { id: CANAL, status: "WORKING", archived_at: null, aceitaMensagemLivre: true } as never;
       },

@@ -74,6 +74,16 @@ const corpo = z
       .regex(/^\+[1-9][0-9]{7,14}$/),
     rotulo: z.string().trim().max(60).nullable().optional(),
     ligado: z.boolean(),
+    sem_link: z.boolean().optional(),
+    repetir_lembretes_whatsapp: z.boolean().default(false),
+    minutos_lembrete_equipe: z
+      .array(z.number().int().min(1).max(1440))
+      .min(1)
+      .max(10)
+      .default([3, 6, 9])
+      .refine((valores) =>
+        valores.every((valor, indice) => indice === 0 || valores[indice - 1]! < valor),
+      ),
     /** `true` = "eu sei que este número é um cliente meu, e quero mesmo assim". */
     confirma_contato: z.boolean().optional(),
   })
@@ -168,7 +178,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
   // tem permissão, sobre um admin que tem.
   const db = await createClient();
   const { data, error } = await db.rpc(
-    "fn_definir_aviso_de_caso" as never,
+    "fn_definir_aviso_de_caso_repeticao" as never,
     {
       p_org: authz.org.orgId,
       p_channel: dados.channel_session_id,
@@ -176,6 +186,9 @@ export async function PUT(req: NextRequest): Promise<Response> {
       p_rotulo: dados.rotulo ?? null,
       p_ligado: dados.ligado,
       p_confirma_contato: dados.confirma_contato ?? false,
+      p_sem_link: dados.sem_link ?? false,
+      p_repetir_lembretes_whatsapp: dados.repetir_lembretes_whatsapp,
+      p_minutos_lembrete_equipe: dados.minutos_lembrete_equipe,
     } as never,
   );
 
@@ -202,6 +215,9 @@ export async function PUT(req: NextRequest): Promise<Response> {
     resourceId: authz.org.orgId,
     metadata: {
       destino_mascarado: mascara(dados.telefone),
+      ...(dados.sem_link === undefined ? {} : { sem_link: dados.sem_link }),
+      repetir_lembretes_whatsapp: dados.repetir_lembretes_whatsapp,
+      minutos_lembrete_equipe: dados.minutos_lembrete_equipe,
       trocou_numero: Boolean(resultado.trocou_numero),
       antes_ligado: Boolean(resultado.antes_ligado),
       depois_ligado: dados.ligado,

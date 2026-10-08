@@ -92,7 +92,12 @@ function recusa(
 
 export async function enviarAvisoDeTeste(
   deps: DepsDoAvisoDeTeste,
-  entrada: { organizationId: string; channelSessionId: string; telefone: string },
+  entrada: {
+    organizationId: string;
+    channelSessionId: string;
+    telefone: string;
+    sem_link?: boolean;
+  },
 ): Promise<ResultadoDoAvisoDeTeste> {
   const agora = deps.clock();
   const { organizationId: orgId, channelSessionId, telefone } = entrada;
@@ -114,7 +119,8 @@ export async function enviarAvisoDeTeste(
   if (canal.status !== "WORKING") return recusa("canal_desconectado");
 
   // ── 9. O link precisa abrir no celular de outra pessoa ───────────────────
-  if (!urlPublicaUsavel(deps.urlPublica)) return recusa("sem_endereco_publico");
+  if (!entrada.sem_link && !urlPublicaUsavel(deps.urlPublica))
+    return recusa("sem_endereco_publico");
 
   // ── 10. O transporte desta instalação está de pé? ────────────────────────
   if (!(await deps.transporte.configurado(orgId, canal))) return recusa("transporte_ausente");
@@ -148,7 +154,7 @@ export async function enviarAvisoDeTeste(
   const body = montarAvisoDeTeste({
     marca: marca.nome,
     idioma: marca.idioma,
-    link: `${deps.urlPublica.replace(/\/+$/, "")}/app/ai/cases`,
+    link: entrada.sem_link ? null : `${deps.urlPublica.replace(/\/+$/, "")}/app/ai/cases`,
   });
 
   // ── 14. O transporte ─────────────────────────────────────────────────────

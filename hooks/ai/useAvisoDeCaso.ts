@@ -41,6 +41,9 @@ export interface ConfigDoAvisoNaTela {
   telefone: string;
   rotulo: string | null;
   ligado: boolean;
+  sem_link?: boolean;
+  repetir_lembretes_whatsapp: boolean;
+  minutos_lembrete_equipe: number[];
   atualizado_em: string;
 }
 
@@ -108,6 +111,9 @@ export interface EntradaDoSalvar {
   telefone: string;
   rotulo: string | null;
   ligado: boolean;
+  sem_link?: boolean;
+  repetir_lembretes_whatsapp: boolean;
+  minutos_lembrete_equipe: number[];
   /** `true` = "eu sei que esse número é um cliente meu, e quero mesmo assim". */
   confirma_contato?: boolean;
 }

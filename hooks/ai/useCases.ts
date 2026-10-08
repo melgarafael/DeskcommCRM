@@ -2,6 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import type { ChamadoDaLista } from "@/lib/escalacao/chamados";
+import type { CaseTaskFields } from "@/lib/ai/case-task";
 
 /** Espelha o CHECK de agent_cases.status (migration 0066, spec 15 §7). */
 export type CaseStatus = "awaiting_human" | "awaiting_lead" | "resolved" | "escalated" | "cancelled";
@@ -72,7 +73,7 @@ export interface CaseEvent {
   created_at: string;
 }
 
-export interface CaseDetailData {
+export interface CaseDetailData extends Partial<CaseTaskFields> {
   id: string;
   title: string;
   summary: string;
@@ -88,7 +89,7 @@ export interface CaseDetailData {
 }
 
 /** Lista de casos humanos (spec 15 §9). Polling 60s — casos nascem no worker. */
-export function useCases(status: "open" | "resolved" = "open") {
+export function useCases(status: "open" | "resolved" | "awaiting_human" = "open") {
   return useQuery({
     queryKey: ["ai-cases", status],
     refetchInterval: 60_000,

@@ -95,6 +95,7 @@ export interface ConfiguracaoNaTela {
   telefone: string;
   rotulo: string | null;
   ligado: boolean;
+  sem_link?: boolean;
 }
 
 /** O que o `pacing_ledger` responde sobre o número que ENVIA os avisos. */
@@ -171,13 +172,13 @@ function conexaoEscolhida(f: FatosDaTelaDeAviso): ConexaoParaAviso | null {
 
 /**
  * As três condições do switch: uma conexão que MANDA o aviso, um número que o
- * RECEBE e um endereço público para o link abrir.
+ * RECEBE e, quando não está no modo sem link, um endereço público para abrir.
  *
  * Elas são as mesmas três que o motor checa nos passos 8, 9 e 12 — travar aqui
  * é o que evita uma configuração que nasce ligada e nunca entrega.
  */
 export function podeLigarOAviso(f: FatosDaTelaDeAviso): boolean {
-  if (!f.urlPublicaOk) return false;
+  if (!f.urlPublicaOk && !f.config?.sem_link) return false;
   if (!telefoneDeAvisoValido(f.config?.telefone)) return false;
   const canal = conexaoEscolhida(f);
   return canal !== null && canal.aceitaMensagemLivre;
@@ -207,7 +208,7 @@ export function avisosDaTela(f: FatosDaTelaDeAviso): AvisoDaTela[] {
   }
 
   if (!f.urlPublicaOk) {
-    bloqueios.push({ codigo: "sem_endereco_publico", bloqueia: true });
+    bloqueios.push({ codigo: "sem_endereco_publico", bloqueia: !f.config?.sem_link });
   }
 
   // A conexão escolhida sumiu — e ela some de DOIS jeitos, não de um:

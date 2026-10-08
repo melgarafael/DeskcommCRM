@@ -91,7 +91,7 @@ export async function POST(_req: NextRequest): Promise<Response> {
   const db = await createClient();
   const { data, error } = await db
     .from("config_aviso_de_caso")
-    .select("channel_session_id, telefone_destino")
+    .select("channel_session_id, telefone_destino, sem_link")
     .eq("organization_id", orgId)
     .maybeSingle();
   if (error) {
@@ -99,7 +99,11 @@ export async function POST(_req: NextRequest): Promise<Response> {
       requestId,
     });
   }
-  const cfg = data as { channel_session_id: string | null; telefone_destino: string } | null;
+  const cfg = data as {
+    channel_session_id: string | null;
+    telefone_destino: string;
+    sem_link?: boolean;
+  } | null;
   if (!cfg?.channel_session_id) {
     return fail(
       "aviso_nao_configurado",
@@ -124,6 +128,7 @@ export async function POST(_req: NextRequest): Promise<Response> {
       organizationId: orgId,
       channelSessionId: cfg.channel_session_id,
       telefone: cfg.telefone_destino,
+      sem_link: cfg.sem_link ?? false,
     },
   );
 

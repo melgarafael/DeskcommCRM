@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { formatDistanceToNowStrict } from "date-fns";
 
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -28,24 +29,36 @@ export function CaseList() {
   // quebra com "Cannot read properties of null".
   const idDaUrl = useSearchParams()?.get("caso") ?? null;
   const [selectedId, setSelectedId] = useState<string | null>(idDaUrl);
-  const { data, isLoading } = useCases(tab);
+  const { data, isLoading, isError, refetch } = useCases(tab);
 
   return (
     <div className="flex min-h-0 flex-1 gap-6">
       <div className="flex w-full max-w-xs shrink-0 flex-col gap-4">
         <Tabs value={tab} onValueChange={(v) => setTab(v as "open" | "resolved")}>
           <TabsList>
-            <TabsTrigger value="open">{t("Abertos")}{data ? ` (${data.open_count})` : ""}</TabsTrigger>
+            <TabsTrigger value="open">
+              {t("Abertos")}
+              {data ? ` (${data.open_count})` : ""}
+            </TabsTrigger>
             <TabsTrigger value="resolved">{t("Concluídos")}</TabsTrigger>
           </TabsList>
         </Tabs>
 
-        {isLoading ? (
+        {isError ? (
+          <div role="alert" className="space-y-2 rounded-lg border border-border p-3">
+            <p className="text-sm">{t("Não foi possível carregar os casos.")}</p>
+            <Button variant="outline" size="sm" onClick={() => void refetch()}>
+              {t("Tentar novamente")}
+            </Button>
+          </div>
+        ) : null}
+
+        {isLoading && !data ? (
           <div className="space-y-2">
             <Skeleton className="h-16 w-full" />
             <Skeleton className="h-16 w-full" />
           </div>
-        ) : !data || data.cases.length === 0 ? (
+        ) : !data ? null : data.cases.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 py-16 text-center">
             <Robot size={28} className="text-muted-foreground" aria-hidden />
             <p className="text-sm font-medium">
@@ -89,7 +102,10 @@ function CaseRow({
 }) {
   const localeDaData = useLocaleDeData();
   const t = useT();
-  const when = formatDistanceToNowStrict(new Date(item.opened_at), { addSuffix: true, locale: localeDaData });
+  const when = formatDistanceToNowStrict(new Date(item.opened_at), {
+    addSuffix: true,
+    locale: localeDaData,
+  });
   return (
     <li>
       <button

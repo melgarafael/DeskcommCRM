@@ -604,6 +604,7 @@ export const AUDIT_ACTIONS = [
   // o que se quer responder depois é "o sistema cobrou?", e uma linha por caso
   // faria do audit log a própria fila.
   "ai.caso_parado_cobrado",
+  "ai.caso_lembrete_cobrado",
   // Um pedido não confirmado soltou o horário que estava segurando. Audita
   // porque é CANCELAMENTO — o compromisso deixa de existir para quem o pediu —,
   // e sem esta linha a única explicação para o horário ter voltado a aparecer

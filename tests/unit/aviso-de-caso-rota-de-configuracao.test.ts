@@ -82,7 +82,11 @@ function sessao(role: Role = "admin") {
 /** O client de sessão: um `rpc` que devolve o que o caso mandar, e um `from`. */
 function clienteDeSessao(opts: {
   rpc?: { data?: unknown; error?: { message: string } | null };
-  config?: { channel_session_id: string | null; telefone_destino: string } | null;
+  config?: {
+    channel_session_id: string | null;
+    telefone_destino: string;
+    sem_link?: boolean;
+  } | null;
   erroDaConfig?: { message: string } | null;
 }) {
   const rpc = vi.fn(async () => opts.rpc ?? { data: {}, error: null });
@@ -112,6 +116,7 @@ const CORPO_OK = {
   telefone: TELEFONE,
   rotulo: "Plantão da Ana",
   ligado: true,
+  // A omissão deve preservar a compatibilidade e resultar no opt-in desligado.
 };
 
 beforeEach(() => {
@@ -146,6 +151,37 @@ describe("GET — o estado da tela", () => {
       "pode_ligar",
     ]);
   });
+
+  it("devolve a escolha salva de reforços sem inferi-la do aviso inicial", async () => {
+    vi.mocked(lerEstadoDaTelaDeAviso).mockResolvedValue({
+      ...ESTADO_VAZIO,
+      config: {
+        channel_session_id: CANAL,
+        telefone: TELEFONE,
+        rotulo: null,
+        ligado: false,
+        repetir_lembretes_whatsapp: true,
+        minutos_lembrete_equipe: [2, 7, 15],
+        atualizado_em: "2026-10-07T12:00:00.000Z",
+      },
+    } as never);
+    clienteDeSessao({});
+    const r = await GET(new NextRequest("http://localhost/api/v1/ai/cases/alerta"));
+    const corpo = (await r.json()) as {
+      data: {
+        config: {
+          repetir_lembretes_whatsapp: boolean;
+          minutos_lembrete_equipe: number[];
+          ligado: boolean;
+        } | null;
+      };
+    };
+    expect(corpo.data.config).toMatchObject({
+      repetir_lembretes_whatsapp: true,
+      minutos_lembrete_equipe: [2, 7, 15],
+      ligado: false,
+    });
+  });
 });
 
 describe("PUT — salvar a configuração", () => {
@@ -165,14 +201,43 @@ describe("PUT — salvar a configuração", () => {
     const { rpc } = clienteDeSessao({});
     await PUT(put(CORPO_OK));
     expect(rpc).toHaveBeenCalledWith(
-      "fn_definir_aviso_de_caso",
+      "fn_definir_aviso_de_caso_repeticao",
       expect.objectContaining({
         p_org: ORG,
         p_channel: CANAL,
         p_telefone: TELEFONE,
         p_ligado: true,
         p_confirma_contato: false,
+        p_sem_link: false,
+        p_repetir_lembretes_whatsapp: false,
+        p_minutos_lembrete_equipe: [3, 6, 9],
       }),
+    );
+  });
+
+  it("valida 1–10 minutos inteiros, distintos e crescentes, dentro de 24 horas", async () => {
+    const { rpc } = clienteDeSessao({});
+    for (const minutos of [
+      [],
+      [0],
+      [1441],
+      [3, 3],
+      [6, 3],
+      Array.from({ length: 11 }, (_, i) => i + 1),
+      [1.5],
+    ]) {
+      const r = await PUT(put({ ...CORPO_OK, minutos_lembrete_equipe: minutos }));
+      expect(r.status, JSON.stringify(minutos)).toBe(422);
+    }
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("envia a cadência escolhida ao RPC", async () => {
+    const { rpc } = clienteDeSessao({});
+    await PUT(put({ ...CORPO_OK, minutos_lembrete_equipe: [1, 5, 20, 1440] }));
+    expect(rpc).toHaveBeenCalledWith(
+      "fn_definir_aviso_de_caso_repeticao",
+      expect.objectContaining({ p_minutos_lembrete_equipe: [1, 5, 20, 1440] }),
     );
   });
 
@@ -186,7 +251,12 @@ describe("PUT — salvar a configuração", () => {
     };
     expect(entrada.action).toBe("ai.case_alert_settings_changed");
     expect(entrada.metadata.destino_mascarado).toBe("••••6398");
-    expect(entrada.metadata).toMatchObject({ trocou_numero: true, antes_ligado: false, depois_ligado: true });
+    expect(entrada.metadata).toMatchObject({
+      trocou_numero: true,
+      antes_ligado: false,
+      depois_ligado: true,
+      repetir_lembretes_whatsapp: false,
+    });
     // `api_audit_log` é append-only e a cascata de LGPD não o alcança: o que
     // entra ali fica para sempre.
     expect(JSON.stringify(entrada.metadata)).not.toContain("998966398");
@@ -207,7 +277,7 @@ describe("PUT — salvar a configuração", () => {
     const { rpc } = clienteDeSessao({});
     await PUT(put({ ...CORPO_OK, confirma_contato: true }));
     expect(rpc).toHaveBeenCalledWith(
-      "fn_definir_aviso_de_caso",
+      "fn_definir_aviso_de_caso_repeticao",
       expect.objectContaining({ p_confirma_contato: true }),
     );
   });
@@ -240,7 +310,8 @@ describe("PUT — salvar a configuração", () => {
 });
 
 describe("POST /teste — o botão que manda de verdade", () => {
-  const req = () => new NextRequest("http://localhost/api/v1/ai/cases/alerta/teste", { method: "POST" });
+  const req = () =>
+    new NextRequest("http://localhost/api/v1/ai/cases/alerta/teste", { method: "POST" });
 
   it("exige admin", async () => {
     sessao("manager");
@@ -262,7 +333,9 @@ describe("POST /teste — o botão que manda de verdade", () => {
     clienteDeSessao({ config: null });
     const r = await TESTE(req());
     expect(r.status).toBe(422);
-    expect(((await r.json()) as { error: { code: string } }).error.code).toBe("aviso_nao_configurado");
+    expect(((await r.json()) as { error: { code: string } }).error.code).toBe(
+      "aviso_nao_configurado",
+    );
     expect(enviarAvisoDeTeste).not.toHaveBeenCalled();
   });
 
@@ -278,6 +351,7 @@ describe("POST /teste — o botão que manda de verdade", () => {
       organizationId: ORG,
       channelSessionId: CANAL,
       telefone: TELEFONE,
+      sem_link: false,
     });
   });
 
@@ -298,7 +372,10 @@ describe("POST /teste — o botão que manda de verdade", () => {
 
   it("audita nos DOIS desfechos, com o número mascarado e o motivo", async () => {
     clienteDeSessao({ config: { channel_session_id: CANAL, telefone_destino: TELEFONE } });
-    vi.mocked(enviarAvisoDeTeste).mockResolvedValue({ enviado: false, codigo: "canal_desconectado" });
+    vi.mocked(enviarAvisoDeTeste).mockResolvedValue({
+      enviado: false,
+      codigo: "canal_desconectado",
+    });
     await TESTE(req());
     const entrada = vi.mocked(audit).mock.calls[0]![0] as {
       action: string;
@@ -311,5 +388,65 @@ describe("POST /teste — o botão que manda de verdade", () => {
       motivo: "canal_desconectado",
     });
     expect(JSON.stringify(entrada.metadata)).not.toContain("998966398");
+  });
+});
+
+describe("configuração do modo local", () => {
+  it.each([true, false])(
+    "grava sem_link=%s pelo RPC com as guardas originais",
+    async (sem_link) => {
+      const { rpc } = clienteDeSessao({});
+      const r = await PUT(put({ ...CORPO_OK, sem_link }));
+      expect(r.status).toBe(200);
+      expect(rpc).toHaveBeenCalledWith(
+        "fn_definir_aviso_de_caso_repeticao",
+        expect.objectContaining({
+          p_org: ORG,
+          p_sem_link: sem_link,
+          p_repetir_lembretes_whatsapp: false,
+          p_confirma_contato: false,
+        }),
+      );
+    },
+  );
+
+  it("salva o opt-in de reforços independentemente do aviso inicial e do modo sem link", async () => {
+    const { rpc } = clienteDeSessao({});
+    const r = await PUT(
+      put({ ...CORPO_OK, ligado: false, sem_link: true, repetir_lembretes_whatsapp: true }),
+    );
+    expect(r.status).toBe(200);
+    expect(rpc).toHaveBeenCalledWith(
+      "fn_definir_aviso_de_caso_repeticao",
+      expect.objectContaining({
+        p_ligado: false,
+        p_sem_link: true,
+        p_repetir_lembretes_whatsapp: true,
+      }),
+    );
+    const entrada = vi.mocked(audit).mock.calls[0]![0] as {
+      metadata: Record<string, unknown>;
+    };
+    expect(entrada.metadata.repetir_lembretes_whatsapp).toBe(true);
+    expect(JSON.stringify(entrada.metadata)).not.toContain("998966398");
+  });
+  it("o botão de teste usa modo sem link salvo", async () => {
+    clienteDeSessao({
+      config: { channel_session_id: CANAL, telefone_destino: TELEFONE, sem_link: true },
+    });
+    vi.mocked(enviarAvisoDeTeste).mockResolvedValue({
+      enviado: true,
+      destinoMascarado: "***0000",
+      externalId: null,
+    });
+    await TESTE(
+      new NextRequest("http://localhost/api/v1/ai/cases/alerta/teste", { method: "POST" }),
+    );
+    expect(vi.mocked(enviarAvisoDeTeste).mock.calls[0]![1]).toEqual({
+      organizationId: ORG,
+      channelSessionId: CANAL,
+      telefone: TELEFONE,
+      sem_link: true,
+    });
   });
 });

@@ -7,6 +7,11 @@
  */
 export const TAREFAS_DO_RELOGIO = [
   {
+    id: "case-task-reminders",
+    rotulo: "Lembrar pendências de pagamento",
+    porque: "Avisa a equipe aos 3, 6 e 9 minutos sem cobrar a cliente.",
+  },
+  {
     id: "event-log-drain",
     rotulo: "Ler a fila de eventos",
     porque: "Acorda automações e o follow-up quando chega mensagem.",

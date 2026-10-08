@@ -94,9 +94,9 @@ describe("pode ligar o aviso?", () => {
 
   it("não sem número válido", () => {
     const f = fatos();
-    expect(
-      podeLigarOAviso({ ...f, config: { ...f.config!, telefone: "31998966398" } }),
-    ).toBe(false);
+    expect(podeLigarOAviso({ ...f, config: { ...f.config!, telefone: "31998966398" } })).toBe(
+      false,
+    );
   });
 
   it("não quando a conexão escolhida não manda texto livre", () => {
@@ -207,19 +207,19 @@ describe("os estados que alertam sem bloquear", () => {
   });
 
   it("nenhum agente com casos ligados — nenhum aviso vai sair por ninguém", () => {
-    expect(codigos(fatos({ agentesPublicados: { total: 2, comCasos: 0, assistidos: 0 } }))).toContain(
-      "casos_desligados",
-    );
+    expect(
+      codigos(fatos({ agentesPublicados: { total: 2, comCasos: 0, assistidos: 0 } })),
+    ).toContain("casos_desligados");
     // Zero agente publicado é a mesma frase: ninguém está autorizado a abrir caso.
-    expect(codigos(fatos({ agentesPublicados: { total: 0, comCasos: 0, assistidos: 0 } }))).toContain(
-      "casos_desligados",
-    );
+    expect(
+      codigos(fatos({ agentesPublicados: { total: 0, comCasos: 0, assistidos: 0 } })),
+    ).toContain("casos_desligados");
   });
 
   it("todos os agentes em modo assistido — eles sugerem, não abrem caso sozinhos", () => {
-    expect(codigos(fatos({ agentesPublicados: { total: 2, comCasos: 2, assistidos: 2 } }))).toContain(
-      "agente_assistido",
-    );
+    expect(
+      codigos(fatos({ agentesPublicados: { total: 2, comCasos: 2, assistidos: 2 } })),
+    ).toContain("agente_assistido");
     // Um assistido entre dois NÃO alerta: o outro abre caso, e o alerta seria falso.
     expect(
       codigos(fatos({ agentesPublicados: { total: 2, comCasos: 2, assistidos: 1 } })),
@@ -307,5 +307,20 @@ describe("a ordem e a completude", () => {
     );
     expect(lista.length).toBeGreaterThan(0);
     for (const aviso of lista) expect(typeof aviso.codigo).toBe("string");
+  });
+});
+
+describe("modo local sem link", () => {
+  it("desbloqueia somente endereço; canal e destinatário continuam necessários", () => {
+    const f = fatos({ urlPublicaOk: false });
+    expect(podeLigarOAviso(f)).toBe(false);
+    f.config = { ...f.config!, sem_link: true };
+    expect(podeLigarOAviso(f)).toBe(true);
+    expect(avisosDaTela(f).find((a) => a.codigo === "sem_endereco_publico")?.bloqueia).toBe(false);
+    f.config.telefone = "";
+    expect(podeLigarOAviso(f)).toBe(false);
+    f.config.telefone = "+12025550123";
+    f.conexoes = [];
+    expect(podeLigarOAviso(f)).toBe(false);
   });
 });

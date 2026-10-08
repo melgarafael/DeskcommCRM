@@ -17,17 +17,19 @@
  *
  * Mocar o componente esconderia a peça do único teste que monta esta árvore.
  */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EstadoDoAviso } from "@/hooks/ai/useAvisoDeCaso";
 
 const consulta = vi.fn();
+const salvarAviso = vi.fn();
+const atualizarAviso = vi.fn();
 vi.mock("@/hooks/ai/useAvisoDeCaso", () => ({
   CHAVE_DO_AVISO: ["ai-aviso-de-caso"],
   useAvisoDeCaso: () => consulta(),
-  useSalvarAvisoDeCaso: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useSalvarAvisoDeCaso: () => ({ mutateAsync: salvarAviso, isPending: false }),
   useTestarAvisoDeCaso: () => ({ mutateAsync: vi.fn(), isPending: false, data: undefined }),
 }));
 
@@ -49,11 +51,25 @@ function estado(patch: Partial<EstadoDoAviso> = {}): EstadoDoAviso {
       telefone: "+5531998966398",
       rotulo: "Plantão da Ana",
       ligado: true,
+      repetir_lembretes_whatsapp: false,
+      minutos_lembrete_equipe: [3, 6, 9],
       atualizado_em: "2026-09-18T12:00:00.000Z",
     },
     conexoes: [
-      { id: CANAL_QR, nome: "Plantão", status: "WORKING", aceitaMensagemLivre: true, atendeClientes: false },
-      { id: CANAL_OFICIAL, nome: "Oficial", status: "WORKING", aceitaMensagemLivre: false, atendeClientes: true },
+      {
+        id: CANAL_QR,
+        nome: "Plantão",
+        status: "WORKING",
+        aceitaMensagemLivre: true,
+        atendeClientes: false,
+      },
+      {
+        id: CANAL_OFICIAL,
+        nome: "Oficial",
+        status: "WORKING",
+        aceitaMensagemLivre: false,
+        atendeClientes: true,
+      },
     ],
     avisos: [],
     pode_ligar: true,
@@ -63,14 +79,28 @@ function estado(patch: Partial<EstadoDoAviso> = {}): EstadoDoAviso {
   };
 }
 
-function montar(dados: EstadoDoAviso | undefined, extra: { isLoading?: boolean; error?: unknown } = {}) {
-  consulta.mockReturnValue({ data: dados, isLoading: extra.isLoading ?? false, error: extra.error ?? null });
+function montar(
+  dados: EstadoDoAviso | undefined,
+  extra: { isLoading?: boolean; error?: unknown } = {},
+) {
+  consulta.mockReturnValue({
+    data: dados,
+    isLoading: extra.isLoading ?? false,
+    isFetching: false,
+    refetch: atualizarAviso,
+    error: extra.error ?? null,
+  });
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <AvisoNoWhatsApp />
     </QueryClientProvider>,
   );
 }
+
+beforeEach(() => {
+  salvarAviso.mockReset().mockResolvedValue(undefined);
+  atualizarAviso.mockReset();
+});
 
 describe("o seletor de conexão", () => {
   it("só oferece quem manda texto livre — a capacidade, nunca o provedor", () => {
@@ -84,7 +114,13 @@ describe("o seletor de conexão", () => {
     montar(
       estado({
         conexoes: [
-          { id: CANAL_OFICIAL, nome: "Oficial", status: "WORKING", aceitaMensagemLivre: false, atendeClientes: true },
+          {
+            id: CANAL_OFICIAL,
+            nome: "Oficial",
+            status: "WORKING",
+            aceitaMensagemLivre: false,
+            atendeClientes: true,
+          },
         ],
         config: null,
       }),
@@ -105,7 +141,7 @@ describe("os avisos de estado viram frase", () => {
     );
     const bloqueio = screen.getByTestId("alerta-sem_endereco_publico");
     expect(bloqueio.dataset.bloqueia).toBe("sim");
-    expect(bloqueio.textContent).toContain("endereço público do sistema ainda não foi configurado");
+    expect(bloqueio.textContent).toContain("endereço público ainda não foi configurado");
 
     const alerta = screen.getByTestId("alerta-conexao_atende_clientes");
     expect(alerta.dataset.bloqueia).toBe("nao");
@@ -160,7 +196,7 @@ describe("os avisos de estado viram frase", () => {
 describe("o switch e o botão de teste", () => {
   it("o switch fica travado quando a regra diz que não dá para ligar", () => {
     montar(estado({ pode_ligar: false, config: null }));
-    expect(screen.getByRole("switch")).toBeDisabled();
+    expect(screen.getByRole("switch", { name: /^Receber avisos no WhatsApp$/ })).toBeDisabled();
   });
 
   it("sem endereço público o switch fica travado MESMO com conexão e número salvos", () => {
@@ -172,12 +208,12 @@ describe("o switch e o botão de teste", () => {
         avisos: [{ codigo: "sem_endereco_publico", bloqueia: true }],
       }),
     );
-    expect(screen.getByRole("switch")).toBeDisabled();
+    expect(screen.getByRole("switch", { name: /^Receber avisos no WhatsApp$/ })).toBeDisabled();
   });
 
   it("com tudo em ordem o switch destrava", () => {
     montar(estado());
-    expect(screen.getByRole("switch")).toBeEnabled();
+    expect(screen.getByRole("switch", { name: /^Receber avisos no WhatsApp$/ })).toBeEnabled();
   });
 
   it("o botão de teste só fica ativo com configuração SALVA", () => {
@@ -211,24 +247,116 @@ describe("a lista de entregas", () => {
             status: "falhou",
             erro_codigo: "teto_diario_do_numero",
             tentativas: 3,
+            wait_generation: null,
+            reminder_minute: null,
             enviado_em: null,
             created_at: "2026-09-17T10:00:00.000Z",
           },
+          ...([3, 6, 9] as const).map((minuto) => ({
+            id: `e-${minuto}`,
+            case_id: "c1",
+            destino_mascarado: "••••6398",
+            status: "enviado",
+            erro_codigo: null,
+            tentativas: 1,
+            wait_generation: 1,
+            reminder_minute: minuto,
+            enviado_em: `2026-09-17T10:${String(minuto).padStart(2, "0")}:00.000Z`,
+            created_at: `2026-09-17T10:${String(minuto).padStart(2, "0")}:00.000Z`,
+          })),
         ],
       }),
     );
     const lista = screen.getByTestId("lista-de-entregas");
     expect(lista.textContent).toContain("••••6398");
     expect(lista.textContent).toContain("limite diário do período de aquecimento");
+    expect(lista.textContent).toContain("Aviso de abertura");
+    expect(lista.textContent).toContain("Reforço de 3 minutos · Ciclo 1");
+    expect(lista.textContent).toContain("Reforço de 6 minutos · Ciclo 1");
+    expect(lista.textContent).toContain("Reforço de 9 minutos · Ciclo 1");
+    expect(lista.textContent).toContain("Aceito pelo canal");
+    expect(screen.getByText(/sem recibo de entrega, não confirma/i)).toBeInTheDocument();
+    expect(screen.getAllByTestId("entrega-tipo")).toHaveLength(4);
     // O número inteiro nunca entra nesta lista: quem a lê pode ser `manager`.
     expect(lista.textContent).not.toContain("998966398");
   });
 });
 
 describe("o que a tela diz sem ninguém perguntar", () => {
-  it("avisa que o aviso NÃO se repete quando o caso volta a esperar", () => {
+  it("explica a cadência compartilhada entre Central e reforços WhatsApp", () => {
     montar(estado());
-    expect(screen.getByText(/o aviso não se repete/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/abertura e os reforços são opções independentes/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/A Central cria lembretes nos minutos configurados/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: /Lembrete 1/i })).toHaveValue(3);
+    expect(screen.getByRole("spinbutton", { name: /Lembrete 2/i })).toHaveValue(6);
+    expect(screen.getByRole("spinbutton", { name: /Lembrete 3/i })).toHaveValue(9);
+  });
+
+  it("o opt-in de reforços salva sem alterar a configuração do aviso inicial", async () => {
+    montar(estado());
+    const avisoInicial = screen.getByRole("switch", { name: /^Receber avisos no WhatsApp$/ });
+    expect(avisoInicial).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.click(screen.getByRole("switch", { name: /^Reforçar lembretes no WhatsApp$/ }));
+    expect(avisoInicial).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    await waitFor(() =>
+      expect(salvarAviso).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ligado: true,
+          repetir_lembretes_whatsapp: true,
+          minutos_lembrete_equipe: [3, 6, 9],
+          sem_link: false,
+        }),
+      ),
+    );
+  });
+
+  it("adiciona e remove marcos, sem permitir apagar o último", async () => {
+    montar(estado());
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar minuto" }));
+    expect(screen.getByRole("spinbutton", { name: /Lembrete 4/i })).toHaveValue(12);
+
+    fireEvent.click(screen.getByRole("button", { name: /Remover lembrete 2/i }));
+    expect(screen.getAllByRole("spinbutton")).toHaveLength(3);
+    expect(screen.getByRole("spinbutton", { name: /Lembrete 2/i })).toHaveValue(9);
+
+    fireEvent.click(screen.getByRole("button", { name: /Remover lembrete 2/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Remover lembrete 2/i }));
+    expect(screen.getByRole("button", { name: /Remover lembrete 1/i })).toBeDisabled();
+  });
+
+  it("limita o editor a dez marcos", () => {
+    montar(estado());
+    for (let i = 0; i < 7; i += 1) {
+      fireEvent.click(screen.getByRole("button", { name: "Adicionar minuto" }));
+    }
+    expect(screen.getAllByRole("spinbutton")).toHaveLength(10);
+    expect(screen.getByRole("button", { name: "Adicionar minuto" })).toBeDisabled();
+  });
+
+  it("bloqueia salvar valores repetidos ou fora da ordem", () => {
+    montar(estado());
+    fireEvent.change(screen.getByRole("spinbutton", { name: /Lembrete 2/i }), {
+      target: { value: "3" },
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent("Cada minuto pode aparecer uma vez só.");
+    expect(screen.getByRole("button", { name: "Salvar" })).toBeDisabled();
+  });
+
+  it("atualiza o histórico sob demanda sem recarregar enquanto se digita", () => {
+    montar(estado());
+    fireEvent.change(screen.getByRole("spinbutton", { name: /Lembrete 1/i }), {
+      target: { value: "2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Atualizar histórico" }));
+    expect(atualizarAviso).toHaveBeenCalledOnce();
+    expect(screen.getByRole("spinbutton", { name: /Lembrete 1/i })).toHaveValue(2);
   });
 
   it("o laço de retorno sem amostra diz que não há amostra, e não mostra zero", () => {
@@ -259,5 +387,30 @@ describe("a tela degrada sem mentir", () => {
     montar(undefined, { error: new Error("boom") });
     expect(screen.queryByRole("switch")).toBeNull();
     expect(screen.getByText(/Não foi possível abrir esta tela agora/i)).toBeInTheDocument();
+  });
+});
+
+describe("seleção do modo local", () => {
+  it("bloqueia o teste real enquanto a configuração alterada ainda não foi salva", () => {
+    montar(estado());
+    const testar = screen.getByRole("button", { name: "Enviar aviso de teste" });
+    expect(testar).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("switch", { name: /^Sem link — resolver neste computador$/ }));
+    expect(testar).toBeDisabled();
+  });
+
+  it("liga sem domínio e volta a bloquear ao desmarcar o modo local", () => {
+    montar(estado({ avisos: [{ codigo: "sem_endereco_publico", bloqueia: true }] }));
+    const receber = screen.getByRole("switch", { name: /^Receber avisos no WhatsApp$/ });
+    expect(receber).toBeDisabled();
+    const local = screen.getByRole("switch", {
+      name: /^Sem link — resolver neste computador$/,
+    });
+    fireEvent.click(local);
+    expect(receber).toBeEnabled();
+    fireEvent.click(local);
+    expect(receber).toBeDisabled();
+    expect(receber).toHaveAttribute("aria-checked", "false");
   });
 });

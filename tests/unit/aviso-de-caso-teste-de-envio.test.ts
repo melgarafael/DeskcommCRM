@@ -23,10 +23,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  enviarAvisoDeTeste,
-  type DepsDoAvisoDeTeste,
-} from "@/lib/escalacao/aviso-de-teste";
+import { enviarAvisoDeTeste, type DepsDoAvisoDeTeste } from "@/lib/escalacao/aviso-de-teste";
 import type { CanalDoAviso } from "@/lib/escalacao/aviso-ao-suporte";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
@@ -277,5 +274,16 @@ describe("o teste nunca dorme", () => {
     await enviarAvisoDeTeste(d.deps, entrada);
     expect(espiao).not.toHaveBeenCalled();
     espiao.mockRestore();
+  });
+});
+
+describe("teste no modo local", () => {
+  it("prova o aviso salvo sem link e respeita o ledger", async () => {
+    const m = deps({ urlPublica: "http://localhost:3000" });
+    const r = await enviarAvisoDeTeste(m.deps, { ...entrada, sem_link: true });
+    expect(r.enviado).toBe(true);
+    expect(m.enviados).toHaveLength(1);
+    expect(m.enviados[0]!.body).not.toMatch(/https?:/);
+    expect(m.ledger).toHaveLength(1);
   });
 });

@@ -78,7 +78,12 @@ function ids(org: string, conv: string): CaseIds {
  * channel_session) — cada conversa extra do teste precisa do seu PRÓPRIO
  * contato (reaproveitando org/session já seedados).
  */
-async function seedExtraConversation(convId: string, contactId: string, org: string, session: string) {
+async function seedExtraConversation(
+  convId: string,
+  contactId: string,
+  org: string,
+  session: string,
+) {
   const suffix = contactId.slice(-6);
   await pool.query(
     `insert into contacts (id, organization_id, name, phone_number)
@@ -116,10 +121,12 @@ describe("wave 2 — human-cases repositório", () => {
     if (!result.ok) throw new Error("unreachable");
 
     const caseRow = await pool.query(
-      `select status from agent_cases where id = $1`,
+      `select status, wait_started_at, wait_generation from agent_cases where id = $1`,
       [result.caseId],
     );
     expect(caseRow.rows[0]).toMatchObject({ status: "awaiting_human" });
+    expect(caseRow.rows[0].wait_started_at).not.toBeNull();
+    expect(Number(caseRow.rows[0].wait_generation)).toBe(1);
 
     const events = await pool.query(
       `select kind, actor_kind from agent_case_events where case_id = $1`,
@@ -138,7 +145,9 @@ describe("wave 2 — human-cases repositório", () => {
     await seedExtraConversation(otherConv, otherContact, ORG_A, SESSION_A);
     expect(await hasOpenCaseForContact(pool, ORG_A, otherConv)).toBe(false);
 
-    const { rows } = await pool.query(`select id from agent_cases where conversation_id = $1`, [CONV_A]);
+    const { rows } = await pool.query(`select id from agent_cases where conversation_id = $1`, [
+      CONV_A,
+    ]);
     const caseId = rows[0].id as string;
 
     await resolveCaseFromHuman(pool, ORG_A, caseId, ACTOR_A, "Aprovei o desconto de 20%.");
@@ -161,9 +170,20 @@ describe("wave 2 — human-cases repositório", () => {
     });
     expect(rejected).toMatchObject({ ok: false, error: { code: "invalid_case_state" } });
 
+    const beforeAsk = await pool.query(
+      `select wait_started_at, wait_generation from agent_cases where id = $1`,
+      [caseId],
+    );
     await markAwaitingLead(pool, ORG_A, caseId, ACTOR_A, "Qual é o seu CPF?");
-    const afterAsk = await pool.query(`select status from agent_cases where id = $1`, [caseId]);
+    const afterAsk = await pool.query(
+      `select status, wait_started_at, wait_generation from agent_cases where id = $1`,
+      [caseId],
+    );
     expect(afterAsk.rows[0]).toMatchObject({ status: "awaiting_lead" });
+    expect(Number(afterAsk.rows[0].wait_generation)).toBe(
+      Number(beforeAsk.rows[0].wait_generation),
+    );
+    expect(afterAsk.rows[0].wait_started_at).toEqual(beforeAsk.rows[0].wait_started_at);
 
     const provided = await provideCaseUpdate(pool, ids(ORG_A, CONV_A), {
       caseId,
@@ -171,14 +191,28 @@ describe("wave 2 — human-cases repositório", () => {
     });
     expect(provided).toMatchObject({ ok: true });
 
-    const afterProvide = await pool.query(`select status from agent_cases where id = $1`, [caseId]);
+    const afterProvide = await pool.query(
+      `select status, wait_started_at, wait_generation from agent_cases where id = $1`,
+      [caseId],
+    );
     expect(afterProvide.rows[0]).toMatchObject({ status: "awaiting_human" });
+    expect(Number(afterProvide.rows[0].wait_generation)).toBe(
+      Number(afterAsk.rows[0].wait_generation) + 1,
+    );
+    expect(new Date(afterProvide.rows[0].wait_started_at).getTime()).toBeGreaterThanOrEqual(
+      new Date(afterAsk.rows[0].wait_started_at).getTime(),
+    );
 
     const events = await pool.query(
       `select kind, actor_kind, human_action from agent_case_events where case_id = $1 order by created_at`,
       [caseId],
     );
-    expect(events.rows.map((r) => r.kind)).toEqual(["opened", "human_replied", "lead_asked", "lead_provided"]);
+    expect(events.rows.map((r) => r.kind)).toEqual([
+      "opened",
+      "human_replied",
+      "lead_asked",
+      "lead_provided",
+    ]);
     expect(events.rows[3]).toMatchObject({ actor_kind: "lead" });
 
     // limpa esse caso para não interferir no teste de isolamento a seguir
@@ -194,9 +228,17 @@ describe("wave 2 — human-cases repositório", () => {
     if (!opened.ok) throw new Error("setup falhou");
     const caseId = opened.caseId;
 
-    const first = await resolveCaseFromHuman(pool, ORG_A, caseId, ACTOR_A, "Sim, tem garantia de 1 ano.");
+    const first = await resolveCaseFromHuman(
+      pool,
+      ORG_A,
+      caseId,
+      ACTOR_A,
+      "Sim, tem garantia de 1 ano.",
+    );
     expect(first).toBe(true);
-    const row = await pool.query(`select status, closed_at from agent_cases where id = $1`, [caseId]);
+    const row = await pool.query(`select status, closed_at from agent_cases where id = $1`, [
+      caseId,
+    ]);
     expect(row.rows[0].status).toBe("resolved");
     expect(row.rows[0].closed_at).not.toBeNull();
 
@@ -212,9 +254,10 @@ describe("wave 2 — human-cases repositório", () => {
     // quando outro atendente respondeu primeiro.
     const second = await resolveCaseFromHuman(pool, ORG_A, caseId, ACTOR_A, "tentativa duplicada");
     expect(second).toBe(false);
-    const eventsAfter = await pool.query(`select count(*)::int as n from agent_case_events where case_id = $1`, [
-      caseId,
-    ]);
+    const eventsAfter = await pool.query(
+      `select count(*)::int as n from agent_case_events where case_id = $1`,
+      [caseId],
+    );
     expect(eventsAfter.rows[0].n).toBe(3);
   });
 
@@ -227,8 +270,16 @@ describe("wave 2 — human-cases repositório", () => {
     if (!opened.ok) throw new Error("setup falhou");
     const caseId = opened.caseId;
 
-    await escalateCase(pool, ORG_A, caseId, ACTOR_A, "risco jurídico — fora do escopo do time de suporte");
-    const row = await pool.query(`select status, closed_at from agent_cases where id = $1`, [caseId]);
+    await escalateCase(
+      pool,
+      ORG_A,
+      caseId,
+      ACTOR_A,
+      "risco jurídico — fora do escopo do time de suporte",
+    );
+    const row = await pool.query(`select status, closed_at from agent_cases where id = $1`, [
+      caseId,
+    ]);
     expect(row.rows[0].status).toBe("escalated");
     expect(row.rows[0].closed_at).not.toBeNull();
 
@@ -291,7 +342,13 @@ describe("wave 2 — human-cases repositório", () => {
 
     // tentar resolver o caso de A usando o tenantId de B não deve afetar nada —
     // e o false devolvido impede a rota de responder 200 a um no-op cross-tenant
-    const crossTenantResolve = await resolveCaseFromHuman(pool, ORG_B, caseId, ACTOR_A, "tentativa cross-tenant");
+    const crossTenantResolve = await resolveCaseFromHuman(
+      pool,
+      ORG_B,
+      caseId,
+      ACTOR_A,
+      "tentativa cross-tenant",
+    );
     expect(crossTenantResolve).toBe(false);
     const row = await pool.query(`select status from agent_cases where id = $1`, [caseId]);
     expect(row.rows[0].status).toBe("awaiting_human");

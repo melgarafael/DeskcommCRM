@@ -24,6 +24,7 @@ import type { JobRow } from '../queue/queue';
 import type { LeadContext } from '../edge/crm/get-lead-context';
 import { ritualBlocks, runAgentTurn, type InboundTurnDeps, type LeadCheckpointRow } from './inbound-turn';
 import type { LeadStateRow } from './lead-state';
+import { createCaseTaskDeliveryHandler } from './case-task-delivery';
 
 /**
  * Payload enfileirado pela rota humana (Wave 5) ao agir sobre um caso.
@@ -150,6 +151,10 @@ export function createCaseReplyTurnHandler(deps: InboundTurnDeps) {
       throw new Error('job case_reply_turn sem contact_id — o CHECK da fila deveria impedir');
     }
     const payload = caseReplyTurnPayloadSchema.parse(job.payload);
+    if (payload.action === 'task_delivery') {
+      await createCaseTaskDeliveryHandler(deps)(job, pool);
+      return;
+    }
     const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId, case_id: payload.case_id });
 
     if (!isReentryAction(payload.action)) {

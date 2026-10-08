@@ -1,4 +1,6 @@
 import { recoverStuckMessages } from "@/app/api/v1/cron/recover-stuck-messages/route";
+import { audit } from "@/lib/audit";
+import { processarLembretesTarefa } from "@/lib/escalacao/lembretes-tarefa";
 import { idsDoContatoEGemeos } from "@/lib/channels/contato-por-telefone";
 import { drainEventLog } from "@/lib/event-log/drain";
 import { ensureHandlersRegistered } from "@/lib/event-log/register-handlers";
@@ -44,7 +46,10 @@ async function enfileirarFollowup(job: FollowupJobRequest): Promise<void> {
  * batido. Aqui lemos a última inbound (gêmeos de telefone inclusive) e
  * avançamos quem já respondeu.
  */
-export async function aplicarRespostasQueChegaram(admin: SupabaseClient, deps: TickDeps): Promise<number> {
+export async function aplicarRespostasQueChegaram(
+  admin: SupabaseClient,
+  deps: TickDeps,
+): Promise<number> {
   // Org parada não avança fluxo (migration 0501 — o claim do motor também a pula).
   // O corte é no banco, ANTES do `limit`: o embed `!inner` + o filtro de
   // status. Filtrar só em memória deixaria as linhas da org parada (suspender não
@@ -62,8 +67,11 @@ export async function aplicarRespostasQueChegaram(admin: SupabaseClient, deps: T
   const linhas = (data ?? []).filter((row) =>
     ehOperante(
       statusDaOrgEmbutida(
-        (row as { organizations?: { status?: string | null } | Array<{ status?: string | null }> | null })
-          .organizations,
+        (
+          row as {
+            organizations?: { status?: string | null } | Array<{ status?: string | null }> | null;
+          }
+        ).organizations,
       ),
     ),
   );
@@ -105,7 +113,11 @@ export async function executarTickDoRelogio(): Promise<{
   const uma = async (id: string, fn: () => Promise<unknown>): Promise<void> => {
     try {
       const r = await fn();
-      tarefas.push({ id, ok: true, detalhe: r === undefined ? undefined : JSON.stringify(r).slice(0, 400) });
+      tarefas.push({
+        id,
+        ok: true,
+        detalhe: r === undefined ? undefined : JSON.stringify(r).slice(0, 400),
+      });
     } catch (err) {
       const detalhe = err instanceof Error ? err.message : String(err);
       logger.warn("[relogio] tarefa falhou", { id, error: detalhe });
@@ -182,6 +194,19 @@ export async function executarTickDoRelogio(): Promise<{
     const summary = await recoverStuckMessages(admin, new Date(), "relogio");
     if (summary.failed > 0) mexeu = true;
     return summary;
+  });
+
+  await uma("case-task-reminders", async () => {
+    const avisados = await processarLembretesTarefa(admin);
+    if (avisados > 0) {
+      mexeu = true;
+      await audit({
+        action: "ai.caso_lembrete_cobrado",
+        resourceType: "agent_case",
+        metadata: { avisados },
+      });
+    }
+    return { avisados };
   });
 
   return { tarefas, mexeu };
