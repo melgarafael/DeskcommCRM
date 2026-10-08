@@ -833,26 +833,9 @@ if [ -n "$ok" ]; then
   fi
   # Dito aqui pelo mesmo motivo do pin: é no fim que o dono lê.
   if [ -n "$AVISO_SITE_URL" ]; then
-    DOM_AVISO="$(printf '%s' "${NEXT_PUBLIC_APP_URL:-https://SEU_DOMINIO}")"
-    cat <<AVISO
-
-$(c_ylw "  ─── CONFIRA UMA COISA, UMA VEZ SÓ ─────────────────────")
-
-  Os e-mails de acesso (esqueci minha senha, confirmação de cadastro,
-  aceite de convite) levam para o endereço que estiver em Authentication
-  → URL Configuration, no painel do Supabase. Instalações feitas antes de
-  o instalador perguntar o token do Supabase ficaram com o padrão de
-  projeto novo, \`http://localhost:3000\`, que só existe na máquina de
-  quem desenvolve — e aí ninguém consegue redefinir a própria senha.
-
-  Vale conferir. Se já estiver com os valores abaixo, não há nada a fazer:
-
-       Site URL:       ${DOM_AVISO}
-       Redirect URLs:  ${DOM_AVISO%/}/auth/confirm
-
-  Este aviso não se repete — para o instalador cuidar disso sozinho, rode
-  o update com \`export SUPABASE_ACCESS_TOKEN=sbp_...\` no ambiente.
-AVISO
+    # O texto depende da topologia (single-server não tem o que conferir):
+    # ver aviso_do_site_url, em _common.sh.
+    aviso_do_site_url "${NEXT_PUBLIC_APP_URL:-https://SEU_DOMINIO}"
     : > "$MARCA_AVISO_SITE_URL" 2>/dev/null || true
   fi
 else

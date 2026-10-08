@@ -91,6 +91,12 @@ export interface PipelineRow {
   description: string | null;
   position: number;
   is_default: boolean;
+  /**
+   * Marca de funil de clientes (migration 0262). Opcional: sem ela a linha é
+   * "não marcado", que é o estado de fábrica — e é o que a #2559 usa para provar
+   * que ARQUIVAR o funil marcado é recusado.
+   */
+  is_client_pipeline?: boolean;
   is_archived: boolean;
   organization_id: string;
 }

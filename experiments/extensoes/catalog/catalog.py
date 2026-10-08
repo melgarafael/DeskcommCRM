@@ -43,6 +43,7 @@ PERMISSOES = [
     "navigation.agenda",
     "navigation.radar",
     "theme.apply",
+    "dados.proprios",
     # O consentimento para um tema de extensão pintar o produto (ADR-0003, #1095).
     # A ordem espelha `EXTENSION_PERMISSIONS` em `lib/extensions/capacidades.ts` —
     # `tests/unit/catalogo-de-ensaio-espelha-o-vocabulario.test.ts` compara as duas.

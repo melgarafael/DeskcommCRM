@@ -88,6 +88,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
+import { RETENCAO_TETO_DIAS } from "@/lib/retencao/politica";
 
 /** Quantas linhas cada rodada esvazia. Ver o cabeçalho: lote pequeno é o ponto. */
 export const LOTE_PADRAO = 500;
@@ -127,7 +128,14 @@ export class ErroAoApagarLinhasVelhas extends Error {
 }
 
 function limiteEm(dias: number): string {
-  return new Date(Date.now() - dias * 86_400_000).toISOString();
+  // Defesa em profundidade (issue #2612): quem LÊ os dois knobs é
+  // `diasDeRetencao` em `lib/env.ts`, que já reduz ao teto com aviso no boot —
+  // mas esta função também é chamada por teste e pode ser por caller futuro, e
+  // sem o teto ela devolve `RangeError: Invalid time value` para um `1e9` (a
+  // faixa de `Date` acaba em ±8,64e15 ms) e um corte no ano −25353 para um
+  // `9999999`. O AVISO não é daqui: ele sai no lugar em que o valor é lido, uma
+  // vez só, em vez de a cada rodada do cron.
+  return new Date(Date.now() - Math.min(dias, RETENCAO_TETO_DIAS) * 86_400_000).toISOString();
 }
 
 /**

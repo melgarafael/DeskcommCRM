@@ -62,9 +62,13 @@ export async function salvarConfiguracaoDaInstalacao(
   const { user } = escrita.ctx;
 
   const doCatalogo = acharChave(chave);
-  if (!doCatalogo || doCatalogo.controle !== "edita") {
+  if (!doCatalogo || doCatalogo.controle !== "edita" || doCatalogo.telaDona === "cobranca") {
     // Falha fechada: chave fora do catálogo, ou que a tela mostra só como
-    // diagnóstico, não é editável nem por caminho alternativo.
+    // diagnóstico, não é editável nem por caminho alternativo. As da cobrança
+    // (`telaDona: "cobranca"`) têm escritora própria — a Conexão confere a chave
+    // com o provedor, registra o webhook e recusa trocar o provedor de quem tem
+    // assinatura viva; a Régua valida 5–30 dias. Por aqui passariam sem nada
+    // disso (spec da cobrança do revendedor §7a, §10).
     return { ok: false, erro: "Esta configuração não pode ser alterada por aqui." };
   }
 
@@ -121,7 +125,7 @@ export async function voltarConfiguracaoAoPadrao(chave: string): Promise<Resulta
   const { user } = escrita.ctx;
 
   const doCatalogo = acharChave(chave);
-  if (!doCatalogo || doCatalogo.controle !== "edita") {
+  if (!doCatalogo || doCatalogo.controle !== "edita" || doCatalogo.telaDona === "cobranca") {
     return { ok: false, erro: "Esta configuração não pode ser alterada por aqui." };
   }
 

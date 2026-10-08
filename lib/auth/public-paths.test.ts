@@ -82,6 +82,12 @@ describe("isPublicPath", () => {
    * é renovada e ela cai deslogada. Fora da lista, o `proxy` revalida e
    * renova a sessão como em qualquer outra rota da árvore logada.
    */
+  it("libera a ponte da volta do provedor de pagamento, e nenhum sub-path dela", () => {
+    expect(isPublicPath("/cobranca/volta")).toBe(true);
+    expect(isPublicPath("/cobranca/volta/x")).toBe(false);
+    expect(isPublicPath("/cobranca")).toBe(false);
+  });
+
   it("NÃO libera /account-suspended — o proxy precisa renovar a sessão nela", () => {
     expect(isPublicPath("/account-suspended")).toBe(false);
   });

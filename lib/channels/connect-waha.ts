@@ -9,6 +9,7 @@ import { lerGuardarHistorico } from "@/lib/channels/acervo-do-historico";
 import type { WahaClient } from "@/lib/waha/client";
 import { WahaSessionError } from "@/lib/waha/client";
 import { sincronizarRecebimentoDeGrupos } from "@/lib/grupos/sincronizar-filtro";
+import { lerLimiteEstourado } from "@/lib/cobranca/limites";
 
 const channelSchema = z.object({
   id: z.string().uuid(), organization_id: z.string().uuid(), waha_session_name: z.string(),
@@ -43,6 +44,10 @@ export async function connectWahaChannel(authDb: SupabaseClient, serviceDb: Supa
     p_display_name: input.displayName ?? null, p_onboarding: input.onboarding ?? false,
   });
   if (error) {
+    // O gatilho de canais do plano (spec cobrança §5) recusa de dentro da
+    // reserva. Sobe CRU: a rota traduz para 409 com o número, e embrulhar aqui
+    // apagaria a mensagem que o carrega.
+    if (lerLimiteEstourado(error)) throw error;
     const code = ["idempotency_conflict", "connection_in_progress", "connection_mfa_required", "connection_forbidden"].find((c) => error.message.includes(c));
     throw new ChannelConnectionError(code ?? "connection_reservation_failed", error.code === "42501" ? 403 : code ? 409 : 500);
   }

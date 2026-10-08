@@ -39,7 +39,7 @@ import type { createAdminClient } from "@/lib/supabase/admin";
 type Admin = ReturnType<typeof createAdminClient>;
 
 /** O rótulo da linha — fixo, porque é uma por empresa. */
-export const ROTULO_DO_LOGIN_CODEX = "Assinatura do Codex (ChatGPT)";
+export const ROTULO_DO_LOGIN_CODEX = "Assinatura do ChatGPT";
 
 /**
  * A janela da trava de renovação no BANCO. Quem vence o `UPDATE` condicional
@@ -139,10 +139,23 @@ export async function lerLoginCodex(p: {
       tag: byteaToBuffer(data.api_key_tag),
     });
     const json = JSON.parse(bruto) as Partial<TokensDoCodex>;
-    if (typeof json.access_token !== "string" || typeof json.refresh_token !== "string") return null;
+    if (
+      typeof json.access_token !== "string" ||
+      typeof json.refresh_token !== "string" ||
+      typeof json.client_id !== "string" ||
+      !Array.isArray(json.scopes) ||
+      !json.scopes.includes("chatgpt.tokens.use.direct")
+    ) return null;
     return {
       access_token: json.access_token,
       refresh_token: json.refresh_token,
+      client_id: json.client_id,
+      ...(typeof json.id_token === "string" ? { id_token: json.id_token } : {}),
+      ...(typeof json.subject === "string" ? { subject: json.subject } : {}),
+      ...(typeof json.email === "string" ? { email: json.email } : {}),
+      scopes: json.scopes,
+      ...(typeof json.ext_agent_host_id === "string" ? { ext_agent_host_id: json.ext_agent_host_id } : {}),
+      ...(typeof json.token_type === "string" ? { token_type: json.token_type } : {}),
       expires_at: typeof json.expires_at === "number" ? json.expires_at : null,
     };
   } catch {
@@ -230,12 +243,35 @@ export async function renovarComTravaDeBanco(p: {
       tag: byteaToBuffer(atual.api_key_tag),
     });
     const json = JSON.parse(atuais) as Partial<TokensDoCodex>;
-    if (typeof json.refresh_token !== "string") return { ok: false, motivo: "falha" };
+    if (typeof json.refresh_token !== "string" || typeof json.client_id !== "string") {
+      return { ok: false, motivo: "falha" };
+    }
     renovados = await p.renovar({
       access_token: json.access_token ?? "",
       refresh_token: json.refresh_token,
+      client_id: json.client_id,
+      ...(typeof json.id_token === "string" ? { id_token: json.id_token } : {}),
+      ...(typeof json.subject === "string" ? { subject: json.subject } : {}),
+      ...(typeof json.email === "string" ? { email: json.email } : {}),
+      ...(Array.isArray(json.scopes) ? { scopes: json.scopes } : {}),
+      ...(typeof json.ext_agent_host_id === "string" ? { ext_agent_host_id: json.ext_agent_host_id } : {}),
+      ...(typeof json.token_type === "string" ? { token_type: json.token_type } : {}),
       expires_at: typeof json.expires_at === "number" ? json.expires_at : null,
     });
+    renovados = {
+      ...renovados,
+      client_id: renovados.client_id ?? json.client_id,
+      ...(renovados.id_token ? {} : typeof json.id_token === "string" ? { id_token: json.id_token } : {}),
+      ...(renovados.subject ? {} : typeof json.subject === "string" ? { subject: json.subject } : {}),
+      ...(renovados.email ? {} : typeof json.email === "string" ? { email: json.email } : {}),
+      scopes: renovados.scopes ?? (Array.isArray(json.scopes) ? json.scopes : []),
+      ...(renovados.ext_agent_host_id
+        ? {}
+        : typeof json.ext_agent_host_id === "string"
+          ? { ext_agent_host_id: json.ext_agent_host_id }
+          : {}),
+      token_type: renovados.token_type ?? (typeof json.token_type === "string" ? json.token_type : "Bearer"),
+    };
   } catch {
     // A renovação falhou: devolve o relógio de aprovação ao valor lido, para
     // que a próxima tentativa não espere 30 s por uma trava que ninguém segura.
@@ -307,7 +343,10 @@ export async function lerLoginCodexRenovandoSeProxima(p: {
           orgId: p.orgId,
           credentialId: linha.id,
           userId: null,
-          renovar: (atuais) => renovarPorRefreshToken({ refreshToken: atuais.refresh_token }),
+          renovar: (atuais) => {
+            if (!atuais.client_id) throw new Error("credencial_siwc_sem_client_id");
+            return renovarPorRefreshToken({ refreshToken: atuais.refresh_token, clientId: atuais.client_id });
+          },
         });
         if (!r.ok) throw new Error(`renovacao_automática_recusada: ${r.motivo}`);
         renovados = r.tokens;

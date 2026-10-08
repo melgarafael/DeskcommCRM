@@ -634,3 +634,138 @@ describe("a conferência roda FORA da transação do envio (#2121)", () => {
     expect(eventos).toEqual(["conferiu", "connect", "begin", "lock", "commit"]);
   });
 });
+
+describe("#2582 — a paráfrase com o preço na evidência não pode virar vetado_sem_base", () => {
+  // O caso real da 1ª medição (v1.77.0): o agente juntou dois itens que na
+  // evidência aparecem numa linha só, separados por "·". O preço é o mesmo
+  // dos dois lados, e o Jev mesmo assim marcou `nao_esta_na_base`.
+  const LOJA: readonly EvidenciaComercial[] = [
+    {
+      origem: "catalogo",
+      referencia: "doc:peliculas-17pm",
+      titulo: "Películas iPhone 17 Pro Max",
+      conteudo:
+        "- Películas iPhone 17 Pro Max: 3D R$ 79,90 · Flexível R$ 119,90 · Fosca R$ 119,90 · Privace R$ 159,90",
+    },
+  ];
+
+  function naLoja(estado: "observando" | "decidindo", candidata: string) {
+    return { ...entrada(estado, candidata), lerEvidencias: () => LOJA };
+  }
+
+  /** O Jev dizendo "isto não está na base" — é o cenário da issue. */
+  const JEV_NEGA = { claim_0: 0.95, supported_0: 0.1, contradicts_0: 0.05 };
+
+  it("a frase do agente com o preço da evidência passa — e a observação grava 'enviado'", async () => {
+    const b = banco();
+    const r = await conferirAfirmacoes(
+      adminFalso(b),
+      naLoja("observando", "Flexível ou fosca: R$ 119,90"),
+      { ...DEPS, fetchImpl: fetchCom(JEV_NEGA).fetchImpl },
+    );
+    expect(r.veredito).toBe("passa");
+    const observacao = (b.inseridas.jev_observacoes ?? [])[0] as Record<string, unknown>;
+    expect(observacao.rotulo_jev).toBe("enviado");
+  });
+
+  it("em decidindo a mesma frase NÃO veta — o gate deixa passar", async () => {
+    const r = await conferirAfirmacoes(
+      adminFalso(banco()),
+      naLoja("decidindo", "Flexível ou fosca: R$ 119,90"),
+      { ...DEPS, fetchImpl: fetchCom(JEV_NEGA).fetchImpl },
+    );
+    expect(r.veredito).toBe("passa");
+    expect(factualClaimGate.evaluate(gateContexto(r)).pass).toBe(true);
+  });
+
+  it("normalização de número/moeda: '119.90' e 'R$ 119,90' casam com o 'R$ 119,90' da evidência", async () => {
+    for (const frase of [
+      "Flexível ou fosca: 119.90",
+      "Flexível ou fosca: 119,90",
+      "Flexível ou fosca: R$ 119.90",
+    ]) {
+      const r = await conferirAfirmacoes(
+        adminFalso(banco()),
+        naLoja("observando", frase),
+        { ...DEPS, fetchImpl: fetchCom(JEV_NEGA).fetchImpl },
+      );
+      expect(`${frase} → ${r.veredito}`).toBe(`${frase} → passa`);
+    }
+  });
+
+  it("as três bolhas da issue passam apesar do supported baixo no preço", async () => {
+    const candidata = [
+      "A película para iPhone 17 Pro Max sai, como referência:",
+      "3D: R$ 79,90 / Flexível ou fosca: R$ 119,90 / Privace: R$ 159,90",
+      "Trabalhamos com esses modelos, mas preciso confirmar a disponibilidade com a loja.",
+    ].join("\n");
+    const f = fetchCom({
+      claim_0: 0.9, supported_0: 0.9, contradicts_0: 0.05,
+      // O falso negativo medido: o supported da frase com os preços.
+      claim_1: 0.95, supported_1: 0.05, contradicts_1: 0.05,
+      claim_2: 0.85, supported_2: 0.9, contradicts_2: 0.05,
+    });
+    const r = await conferirAfirmacoes(
+      adminFalso(banco()),
+      naLoja("observando", candidata),
+      { ...DEPS, fetchImpl: f.fetchImpl },
+    );
+    expect(r.veredito).toBe("passa");
+  });
+
+  it("REGRESSÃO: preço que não existe em lugar nenhum segue vetado_sem_base", async () => {
+    const b = banco();
+    const r = await conferirAfirmacoes(
+      adminFalso(b),
+      naLoja("decidindo", "Flexível ou fosca: R$ 899,90"),
+      { ...DEPS, fetchImpl: fetchCom(JEV_NEGA).fetchImpl },
+    );
+    expect(r.veredito).toBe("nao_esta_na_base");
+    expect(factualClaimGate.evaluate(gateContexto(r)).pass).toBe(false);
+    const observacao = (b.inseridas.jev_observacoes ?? [])[0] as Record<string, unknown>;
+    expect(observacao.rotulo_jev).toBe("vetado_sem_base");
+  });
+
+  it("REGRESSÃO: um dos itens não tem ESSE preço na evidência → segue vetado", async () => {
+    // "Privace" existe na base, mas custa R$ 159,90 — o 'todos os itens' não passa.
+    const r = await conferirAfirmacoes(
+      adminFalso(banco()),
+      naLoja("decidindo", "Flexível ou privace: R$ 119,90"),
+      { ...DEPS, fetchImpl: fetchCom(JEV_NEGA).fetchImpl },
+    );
+    expect(r.veredito).toBe("nao_esta_na_base");
+    expect(factualClaimGate.evaluate(gateContexto(r)).pass).toBe(false);
+  });
+
+  // Achados da triagem: cada caso abaixo passava com a 1ª versão da corroboração.
+  it.each([
+    // "3D" não é número: o 3D custa R$ 79,90, não R$ 119,90.
+    ["preço de outro item", "3D: R$ 119,90"],
+    // Preço sem item nomeado não amarra a nada; o "17" de "17%" vem de "iPhone 17".
+    ["preço sem item", "Sai por R$ 119,90"],
+    ["percentual sem item", "Tem 17% de desconto"],
+    // O que vem depois do último preço não foi conferido.
+    ["fato extra depois do preço", "Flexível sai por R$ 119,90 e tem frete grátis"],
+    ["valor que só contém o da base", "Flexível: R$ 1.199,00"],
+    ["valor que só se parece com o da base", "Flexível: R$ 11,99"],
+    ["parcela que não está na base", "Flexível em 12x de R$ 9,99"],
+  ])("REGRESSÃO: %s segue vetado (%s)", async (_caso, frase) => {
+    const r = await conferirAfirmacoes(
+      adminFalso(banco()),
+      naLoja("decidindo", frase),
+      { ...DEPS, fetchImpl: fetchCom(JEV_NEGA).fetchImpl },
+    );
+    expect(`${frase} → ${r.veredito}`).toBe(`${frase} → nao_esta_na_base`);
+    expect(factualClaimGate.evaluate(gateContexto(r)).pass).toBe(false);
+  });
+
+  it("REGRESSÃO: frase sem número nenhum não ganha corroboração — segue vetada", async () => {
+    const r = await conferirAfirmacoes(
+      adminFalso(banco()),
+      naLoja("decidindo", "Temos sim, piscina aquecida!"),
+      { ...DEPS, fetchImpl: fetchCom({ claim_0: 0.95, supported_0: 0.05, contradicts_0: 0.1 }).fetchImpl },
+    );
+    expect(r.veredito).toBe("nao_esta_na_base");
+    expect(factualClaimGate.evaluate(gateContexto(r)).pass).toBe(false);
+  });
+});

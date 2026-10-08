@@ -156,6 +156,14 @@ beforeAll(() => {
       ('${ORG_C}', 'org-0501-c', 'Org 0501 C', 'Org 0501 C'),
       ('${ORG_R}', 'org-0501-r', 'Org 0501 R', 'Org 0501 R')
       on conflict (id) do nothing;
+    -- 0552: a suspensão por cobrança só alcança org COM assinatura (sem linha =
+    -- isenta, spec §3.1). A org A é a que os casos suspendem por cobrança.
+    insert into public.cobranca_planos (id, nome, preco_cents, intervalo) values
+      ('c0de0501-8888-4000-8000-000000000001', 'Plano do invariante 0501', 4990, 'mes')
+      on conflict (id) do nothing;
+    insert into public.cobranca_assinaturas (organization_id, plano_id) values
+      ('${ORG_A}', 'c0de0501-8888-4000-8000-000000000001')
+      on conflict (organization_id) do nothing;
     insert into public.user_organizations (user_id, organization_id, role, accepted_at)
       values ('${ADMIN_A}', '${ORG_A}', 'admin', now()) on conflict do nothing;
     do $s$ begin

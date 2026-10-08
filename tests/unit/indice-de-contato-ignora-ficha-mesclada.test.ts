@@ -93,6 +93,19 @@ export function varrer(nomeDoArquivo: string, sql: string): Indice[] {
   return declaracoes(sql).flatMap(({ texto, linha }) => {
     const n = normalizar(texto);
     if (!/\bon public\.contacts\b/.test(n)) return [];
+    // CHAVE TÉCNICA não é índice de IDENTIDADE, e a distinção não é conveniência: é o que o
+    // Postgres permite. Um índice sobre exatamente `(organization_id, id)` existe para uma FK
+    // COMPOSTA poder apontar para `contacts` sem atravessar organização — e FK exige índice único
+    // TOTAL: com `where is_merged_into is null` o Postgres RECUSA a constraint. Também não há
+    // disputa de identidade a resolver ali, porque `id` já é a chave primária; a guarda não
+    // protegeria nada e impediria o uso. Precedentes do mesmo formato, sem guarda:
+    // `channel_sessions_org_id_unique` e o laço `uq_<tabela>_org_id` da 0418.
+    //
+    // ⚠️ O QUE ISTO NÃO ABSOLVE: a ficha mesclada continua referenciável por essa FK. Quem resolve
+    // isso é o REPONTAMENTO na mescla (`fn_mesclar_contatos`), provado em
+    // `tests/invariants/modulo-de-dados-compilador.test.ts`. Abrir esta exceção sem aquele conserto
+    // deixaria a ficha de módulo presa no contato morto.
+    if (/\(\s*organization_id\s*,\s*id\s*\)/.test(n)) return [];
     return [
       {
         arquivo: nomeDoArquivo,

@@ -5,6 +5,7 @@ import {
   cancelaRetorno,
   listaRetornos,
   situacaoDoRetorno,
+  statusDaPromessaNaFila,
   validaInstanteDoRetorno,
   type PayloadDoRetorno,
   type RetornoAgendado,
@@ -255,6 +256,19 @@ describe("situacaoDoRetorno", () => {
       "cancelado",
     );
   });
+
+  it("enabled=false com last_error=org_nao_operante é NÃO disparado: o agente não pode dizer que o retorno saiu", () => {
+    expect(
+      situacaoDoRetorno({ enabled: false, cancelled_at: null, last_error: "org_nao_operante" }),
+    ).toBe("nao_disparado");
+    expect(situacaoDoRetorno({ enabled: false, cancelled_at: null, last_error: null })).toBe("disparado");
+    expect(
+      situacaoDoRetorno({ enabled: false, cancelled_at: "2026-08-04T12:00:00Z", last_error: "org_nao_operante" }),
+    ).toBe("cancelado");
+    expect(
+      situacaoDoRetorno({ enabled: true, cancelled_at: null, last_error: "org_nao_operante" }),
+    ).toBe("agendado");
+  });
 });
 
 describe("listaRetornos", () => {
@@ -284,5 +298,16 @@ describe("resolveJanelaDeRetorno", () => {
     expect(resolveJanelaDeRetorno({ FOLLOWUP_MIN_AHEAD_MS: "600000" }).minAheadMs).toBe(600_000);
     // 0 é válido no stagger (desliga o espalhamento) e inválido nos demais.
     expect(resolveJanelaDeRetorno({ CRON_STAGGER_WINDOW_MS: "0" }).staggerWindowMs).toBe(0);
+  });
+});
+
+describe("statusDaPromessaNaFila", () => {
+  it("desligada pela parada da empresa NÃO é 'concluída'", () => {
+    expect(statusDaPromessaNaFila({ enabled: false, cancelled_at: null, last_error: "org_nao_operante" })).toBe("não disparada");
+  });
+  it("disparada de verdade segue 'concluída'; cancelada e viva não mudam", () => {
+    expect(statusDaPromessaNaFila({ enabled: false, cancelled_at: null, last_error: null })).toBe("concluída");
+    expect(statusDaPromessaNaFila({ enabled: false, cancelled_at: "2026-01-01", last_error: "org_nao_operante" })).toBe("cancelada");
+    expect(statusDaPromessaNaFila({ enabled: true, cancelled_at: null, last_error: "org_nao_operante" })).toBe("agendada");
   });
 });

@@ -24,7 +24,13 @@
 
 import { isIP } from "node:net";
 
-/** O primeiro salto do `x-forwarded-for`, ou o `x-real-ip`. `null` = sem proxy à frente. */
+import { ipEhEspecial } from "@/lib/automation/outbound-ip";
+
+/**
+ * O primeiro salto do `x-forwarded-for`, ou o `x-real-ip`. Sem proxy à frente o
+ * Next já preenche o `x-forwarded-for` com o endereço do socket (ver
+ * `chegouPelaBorda`), então `null` aqui é raro — não é sinal de "sem proxy".
+ */
 export function ipDoCliente(headers: Headers): string | null {
   const encaminhado = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   if (encaminhado) return encaminhado;
@@ -73,4 +79,56 @@ export function ipDoClienteParaInet(headers: Headers): string | null {
   if (bruto === null) return null;
   if (bruto.includes("%") || bruto.includes("/")) return null;
   return isIP(bruto) === 0 ? null : bruto;
+}
+
+/**
+ * Cabeçalhos que só um proxy escreve. O servidor do Next NÃO os inventa — ao
+ * contrário do `x-forwarded-for`, ver abaixo.
+ *
+ *   x-real-ip          — Traefik (sempre) e Nginx Proxy Manager (`proxy.conf`)
+ *   x-forwarded-server — Traefik (sempre)
+ *   cf-connecting-ip   — túnel/borda da Cloudflare
+ *   forwarded          — RFC 7239, quem segue o padrão novo
+ */
+const MARCAS_DE_PROXY = ["x-real-ip", "x-forwarded-server", "cf-connecting-ip", "forwarded"] as const;
+
+/**
+ * A requisição atravessou um proxy de borda (veio da internet)?
+ *
+ * ═══ Por que não basta "tem `x-forwarded-for`" ═══
+ *
+ * O próprio Next preenche `x-forwarded-for` (com o endereço do socket),
+ * `x-forwarded-host`, `-port` e `-proto` quando eles chegam ausentes
+ * (`next/dist/server/base-server.js`, `??=`). Medido numa instalação real: a
+ * chamada que vem da rede interna do Docker chega à rota com
+ * `x-forwarded-for: 10.0.4.x`. A presença do cabeçalho não distingue nada; o
+ * VALOR distingue — o Next põe o endereço privado do vizinho de rede, e todo
+ * proxy de borda põe o do cliente, que é público.
+ *
+ * Interna = nenhuma marca de proxy, `x-forwarded-proto` diferente de `https`
+ * (a rede interna fala HTTP puro; quem termina TLS é a borda) E todo salto do
+ * `x-forwarded-for` (se houver) é endereço de faixa especial (privada,
+ * loopback, link-local…).
+ *
+ * ═══ Por que isto pode decidir, ao contrário de `ipDoCliente` ═══
+ *
+ * Só decide RECUSAR, e se apoia no que os proxies do kit escrevem: o Caddy
+ * substitui o `x-forwarded-for` recebido pelo endereço real e marca
+ * `x-forwarded-proto: https`; o Traefik sempre escreve `x-real-ip` e
+ * `x-forwarded-server`; o Nginx Proxy Manager escreve `x-real-ip`; o túnel da
+ * Cloudflare escreve `cf-connecting-ip`. O `https` cobre também o caso em que
+ * o Docker entrega ao proxy um endereço privado no lugar do cliente.
+ *
+ * ponytail: régua de cabeçalho, válida nos proxies do kit. A camada seguinte
+ * é a assinatura do remetente (exigível em /admin/sistema).
+ */
+export function chegouPelaBorda(headers: Headers): boolean {
+  if (MARCAS_DE_PROXY.some((nome) => headers.has(nome))) return true;
+  if (headers.get("x-forwarded-proto")?.trim().toLowerCase() === "https") return true;
+  const saltos = headers.get("x-forwarded-for");
+  if (saltos === null) return false;
+  return saltos.split(",").some((salto) => {
+    const ip = salto.trim();
+    return isIP(ip) === 0 || !ipEhEspecial(ip);
+  });
 }

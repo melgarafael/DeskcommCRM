@@ -102,6 +102,7 @@ async function carregarQuadroAtual(
   const { data: etapas } = await admin
     .from("crm_stages")
     .select("name, position")
+    .eq("organization_id", orgId)
     .eq("pipeline_id", funil.id)
     .eq("is_archived", false)
     .order("position");

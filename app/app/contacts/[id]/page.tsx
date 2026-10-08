@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
+import { paineisDaEntidade } from "@/lib/modulos/dados/paineis";
 import { createClient } from "@/lib/supabase/server";
 import { ContactDetailClient } from "./_client";
 
@@ -26,5 +27,10 @@ export default async function ContactDetailPage({
     .eq("id", id)
     .maybeSingle();
   if (!contact) notFound();
-  return <ContactDetailClient contactId={id} />;
+  // Resolvido no servidor: a lista de painéis de módulo não precisa de rota pública própria, e a
+  // função nunca lança — ficha de contato é jornada do NÚCLEO, e não depende de extensão (nn.1).
+  // A organização vem da SESSÃO (`resolveActiveOrg`, acima), nunca da URL: é ela que decide se
+  // esta empresa chega a saber que o módulo existe. Ver o cabeçalho de `paineisDaEntidade`.
+  const paineisDeModulo = await paineisDaEntidade("contato", activeOrg.orgId);
+  return <ContactDetailClient contactId={id} paineisDeModulo={paineisDeModulo} />;
 }

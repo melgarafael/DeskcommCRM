@@ -15,6 +15,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { resolverDestinosDosAvisos } from "@/lib/ai/inbox-destino";
+import { anexarLinkDePagamento } from "@/lib/cobranca/central";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -75,6 +76,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     .eq("organization_id", org.orgId)
     .eq("status", "open");
 
-  const items = await resolverDestinosDosAvisos(await createClient(), org.orgId, org.role, data);
+  const comDestino = await resolverDestinosDosAvisos(await createClient(), org.orgId, org.role, data);
+  const items = await anexarLinkDePagamento(admin, org.orgId, org.role, comDestino);
   return ok({ items, open_count: openCount ?? 0 }, { requestId });
 }

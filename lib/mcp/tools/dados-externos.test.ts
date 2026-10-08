@@ -121,6 +121,14 @@ describe("crm_describe_external_data", () => {
     const r = (await crmDescribeExternalData.handler({}, ctxFake([]))) as Record<string, unknown>;
     expect(r.erro).toBe("sem_conexao");
   });
+
+  it("módulo desligado na hora de abrir o acesso: mensagem própria, não o 'não foi possível' genérico", async () => {
+    vi.mocked(abrirAcesso).mockResolvedValue({ ok: false, motivo: "modulo_desligado" });
+    const r = (await crmDescribeExternalData.handler({}, ctxFake())) as Record<string, unknown>;
+    expect(r.erro).toBe("acesso_negado");
+    expect(String(r.mensagem)).toContain("módulo");
+    expect(String(r.mensagem)).not.toBe("não foi possível abrir a conexão.");
+  });
 });
 
 describe("crm_query_external_data", () => {
@@ -288,6 +296,80 @@ describe("crm_query_external_data", () => {
     expect(r.filtro_sem_resultado).toBeTruthy();
     expect(lerTabela).toHaveBeenCalledTimes(1);
     expect(vi.mocked(lerTabela).mock.calls[0]![1].filtros).toHaveLength(1);
+  });
+
+  // Tabela criada por ORM com maiúscula ("Pedido"): o modelo escreve `pedido`.
+  // A busca no catálogo compara em minúscula e ACHA; a conferência de colunas e a
+  // consulta usavam o texto do MODELO e comparavam por igualdade exata — o agente
+  // recebia "essa tabela não existe" para uma tabela que existe.
+  describe("nome da tabela com maiúscula", () => {
+    const PEDIDO: TabelaExterna = { ...TABELA, nome: "Pedido" };
+
+    beforeEach(() => {
+      vi.mocked(listarTabelas).mockResolvedValue([PEDIDO]);
+      // Só o nome REAL existe para o catálogo: igualdade exata, como o SQL de verdade.
+      vi.mocked(colunasDaTabela).mockImplementation(async (_pool, _schema, tabela) =>
+        tabela === "Pedido" ? new Set(["id", "status"]) : null,
+      );
+      vi.mocked(lerTabela).mockResolvedValue({ colunas: ["id"], linhas: [{ id: "1" }], limite: 20, offset: 0 });
+    });
+
+    it("sem schema: acha `Pedido` pedido como `pedido` e consulta pelo nome real", async () => {
+      const r = (await crmQueryExternalData.handler(
+        { connection_id: "conn-1", tabela: "pedido", limite: 20 },
+        ctxFake(),
+      )) as Record<string, unknown>;
+      expect(r.erro).toBeUndefined();
+      expect(r.tabela).toBe("Pedido");
+      expect(vi.mocked(lerTabela).mock.calls[0]![1].tabela).toBe("Pedido");
+    });
+
+    it("com schema informado e tabela em minúscula: cai no catálogo e usa o nome real", async () => {
+      const r = (await crmQueryExternalData.handler(
+        { connection_id: "conn-1", schema: "public", tabela: "pedido", limite: 20 },
+        ctxFake(),
+      )) as Record<string, unknown>;
+      expect(r.erro).toBeUndefined();
+      expect(r.tabela).toBe("Pedido");
+      expect(vi.mocked(lerTabela).mock.calls[0]![1].tabela).toBe("Pedido");
+    });
+
+    it("duas candidatas em schemas diferentes: continua preferindo `public` e devolve o nome da escolhida", async () => {
+      vi.mocked(listarTabelas).mockResolvedValue([
+        { ...TABELA, schema: "outro", nome: "pedido" },
+        { ...TABELA, schema: "public", nome: "Pedido" },
+      ]);
+      vi.mocked(colunasDaTabela).mockImplementation(async (_pool, schema, tabela) =>
+        schema === "public" && tabela === "Pedido" ? new Set(["id"]) : schema === "outro" && tabela === "pedido" ? new Set(["id"]) : null,
+      );
+      const r = (await crmQueryExternalData.handler(
+        { connection_id: "conn-1", tabela: "PEDIDO", limite: 20 },
+        ctxFake(),
+      )) as Record<string, unknown>;
+      expect(r.schema).toBe("public");
+      expect(r.tabela).toBe("Pedido");
+    });
+
+    it("`Pedido` e `pedido` no mesmo schema: quem pede `pedido` lê `pedido`, não a vizinha de outra caixa", async () => {
+      vi.mocked(listarTabelas).mockResolvedValue([
+        { ...TABELA, schema: "public", nome: "Pedido" },
+        { ...TABELA, schema: "public", nome: "pedido" },
+      ]);
+      vi.mocked(colunasDaTabela).mockImplementation(async (_p, schema, tabela) =>
+        schema === "public" && (tabela === "Pedido" || tabela === "pedido") ? new Set(["id"]) : null,
+      );
+      await crmQueryExternalData.handler({ connection_id: "conn-1", tabela: "pedido", limite: 20 }, ctxFake());
+      expect(vi.mocked(lerTabela).mock.calls[0]![1].tabela).toBe("pedido");
+    });
+
+    it("tabela que não existe em nenhuma caixa continua `tabela_nao_encontrada`", async () => {
+      const r = (await crmQueryExternalData.handler(
+        { connection_id: "conn-1", tabela: "fatura", limite: 20 },
+        ctxFake(),
+      )) as Record<string, unknown>;
+      expect(r.erro).toBe("tabela_nao_encontrada");
+      expect(lerTabela).not.toHaveBeenCalled();
+    });
   });
 });
 

@@ -22,6 +22,7 @@ import { createChannelSchema } from "@/lib/schemas/channels";
 import { createClient } from "@/lib/supabase/server";
 import { getWahaClient } from "@/lib/waha/client";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { traduzirLimiteDoPlano } from "@/lib/cobranca/limites";
 
 export const dynamic = "force-dynamic";
 
@@ -126,6 +127,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
     return ok(result.channel, { requestId, status: result.replay ? 200 : 201 });
   } catch (error) {
+    const limite = traduzirLimiteDoPlano(error, authz.user.idioma);
+    if (limite) return fail(limite.code, limite.message, 409, { requestId, details: limite.details });
     if (error instanceof ChannelConnectionError) return fail(error.code,
       error.code === "connection_in_progress" ? t("A conexão ainda está sendo preparada. Aguarde e tente novamente.")
         : error.code === "connection_session_name_too_long" ? t("O identificador desta conexão passou do limite que o WhatsApp aceita. Nada foi criado no WhatsApp — atualize o sistema e tente novamente.")

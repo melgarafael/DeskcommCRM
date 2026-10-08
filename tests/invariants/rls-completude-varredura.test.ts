@@ -340,6 +340,15 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "UPDATE, DELETE nem TRUNCATE para anon, authenticated ou PUBLIC. O " +
       "isolamento é medido num sentido só (org de teste → outra). Migration 0482.",
   },
+  {
+    tabela: "cobranca_assinaturas",
+    razao:
+      "tests/invariants/cobranca-isolamento.test.ts — dois tenants reais por JWT: " +
+      "admin de A lê 1 linha de A e 0 de B, admin de B o espelho, agent de A lê 0 " +
+      "(a leitura é de admin; por isso não cabe em TABLES, cujo usuário semeado é " +
+      "agent), promovido a admin passa a ler (controle), e UPDATE/INSERT/DELETE " +
+      "pela sessão e qualquer leitura por anon dão permission denied. Migration 0510.",
+  },
 ];
 
 /**
