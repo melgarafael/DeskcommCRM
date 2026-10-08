@@ -18,9 +18,9 @@ begin
      and j.payload->'service_boundary'->>'organization_id' = new.organization_id::text
      and j.contact_id = (select c.contact_id from public.conversations c
        where c.organization_id = new.organization_id and c.id = new.conversation_id)
-     and ((j.kind in ('inbound_turn', 'case_reply_turn') and j.status in ('pending', 'running'))
-       or (j.kind = 'followup_turn' and j.status = 'running'));
-  -- Follow-ups futuros continuam sujeitos à política de pausa/cancelamento do fluxo.
+     and j.kind in ('inbound_turn', 'case_reply_turn')
+     and j.status in ('pending', 'running');
+  -- Follow-ups seguem sujeitos à política e à geração próprias do fluxo.
   -- transactional_delivery, approved_reply e operator_turn não têm este dono.
   return new;
 end;

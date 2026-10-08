@@ -4,11 +4,11 @@
  */
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { sql } from "./psql-transporte";
-const ORG = "05920001-0000-4000-8000-000000000001";
-const CONTACT = "05920001-0000-4000-8000-000000000002";
-const SESSION = "05920001-0000-4000-8000-000000000003";
-const CONVERSATION = "05920001-0000-4000-8000-000000000004";
-const OWNER = "05920001-0000-4000-8000-000000000005";
+const ORG = "05940001-0000-4000-8000-000000000001";
+const CONTACT = "05940001-0000-4000-8000-000000000002";
+const SESSION = "05940001-0000-4000-8000-000000000003";
+const CONVERSATION = "05940001-0000-4000-8000-000000000004";
+const OWNER = "05940001-0000-4000-8000-000000000005";
 function value(query: string) {
   return Number(sql(query).trim().split("\n").at(-1));
 }
@@ -24,12 +24,12 @@ function seedJob(kind: string, status = "running", conversation = CONVERSATION) 
       ${status === "running" ? "'worker-tomada'" : "null"}, ${status === "running" ? "now()" : "null"});`);
 }
 beforeAll(() => {
-  sql(`insert into auth.users (id,email) values ('${OWNER}', 'tomada-0592@invariant.test') on conflict do nothing;
-    insert into public.organizations (id,slug,legal_name,display_name) values ('${ORG}','tomada-0592','Tomada','Tomada') on conflict do nothing;
+  sql(`insert into auth.users (id,email) values ('${OWNER}', 'tomada-0594@invariant.test') on conflict do nothing;
+    insert into public.organizations (id,slug,legal_name,display_name) values ('${ORG}','tomada-0594','Tomada','Tomada') on conflict do nothing;
     insert into public.user_organizations (user_id,organization_id,role,accepted_at) values ('${OWNER}','${ORG}','agent',now()) on conflict do nothing;
     insert into public.contacts (id,organization_id,display_name) values ('${CONTACT}','${ORG}','Cliente fictício') on conflict do nothing;
     insert into public.channel_sessions (id,organization_id,waha_session_name,webhook_secret_encrypted)
-      values ('${SESSION}','${ORG}','tomada-0592','\\x00'::bytea) on conflict do nothing;
+      values ('${SESSION}','${ORG}','tomada-0594','\\x00'::bytea) on conflict do nothing;
     insert into public.conversations (id,organization_id,contact_id,channel_session_id,status)
       values ('${CONVERSATION}','${ORG}','${CONTACT}','${SESSION}','open') on conflict do nothing;`);
 });
@@ -70,8 +70,8 @@ describe("tomada humana invalida o comando autônomo", () => {
     for (const kind of ["transactional_delivery", "approved_reply", "operator_turn"])
       seedJob(kind, "pending");
     seedJob("followup_turn", "pending");
-    seedJob("followup_turn");
-    seedJob("inbound_turn", "pending", "05920001-0000-4000-8000-000000000099");
+    seedJob("inbound_turn");
+    seedJob("inbound_turn", "pending", "05940001-0000-4000-8000-000000000099");
     assign();
     expect(
       value(
@@ -83,6 +83,10 @@ describe("tomada humana invalida o comando autônomo", () => {
         `select count(*) from public.job_queue where organization_id='${ORG}' and status in ('pending','running');`,
       ),
     ).toBe(5);
+  });
+  it.each(["transactional_delivery", "approved_reply", "operator_turn", "followup_turn"])("preserva %s em execução", (kind) => {
+    seedJob(kind); assign();
+    expect(value(`select count(*) from public.job_queue where organization_id='${ORG}' and status='running' and locked_by='worker-tomada';`)).toBe(1);
   });
   it.each(["routing", "handoff"])("%s intencional não interrompe o próprio turno", (reason) => {
     seedJob("inbound_turn");
@@ -114,7 +118,7 @@ describe("tomada humana invalida o comando autônomo", () => {
       ),
     ).toBe(1);
     sql(
-      `update public.job_queue set payload=jsonb_set(payload,'{service_boundary,organization_id}','"05920001-0000-4000-8000-000000000099"') where organization_id='${ORG}';`,
+      `update public.job_queue set payload=jsonb_set(payload,'{service_boundary,organization_id}','"05940001-0000-4000-8000-000000000099"') where organization_id='${ORG}';`,
     );
     assign();
     expect(
