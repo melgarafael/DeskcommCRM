@@ -24,8 +24,8 @@ export type TipoDeIdentificador = (typeof TIPOS_DE_IDENTIFICADOR)[number];
 
 /** Espelha o CHECK de `external_db_connections.db_type` e `TipoBanco`. */
 export const TIPOS_DE_BANCO = ["postgres", "mysql"] as const;
-/** O que a API aceita CRIAR hoje: só os motores com driver instalado. O MySQL entra aqui na Fatia 4a-2. */
-export const TIPOS_DE_BANCO_ACEITOS = ["postgres"] as const;
+/** O que a API aceita CRIAR hoje: todos os motores com driver instalado. */
+export const TIPOS_DE_BANCO_ACEITOS = ["postgres", "mysql"] as const;
 
 /** Porta padrão de cada motor. */
 export function portaPadraoDoMotor(tipo: (typeof TIPOS_DE_BANCO)[number]): number {

@@ -14,7 +14,20 @@ vi.mock("./conexao", () => ({
   fecharTodosOsPools: fecharTodosPg,
 }));
 
-import { DriverIndisponivelError, abrirDialeto, driverDe, fecharPool, fecharTodosOsPools, testarConexao } from "./drivers";
+const { criarDialetoMysqlMock, testarMysql, fecharMysql, fecharTodosMysql } = vi.hoisted(() => ({
+  criarDialetoMysqlMock: vi.fn(() => ({ marca: "dialeto-mysql" })),
+  testarMysql: vi.fn(async () => ({ ok: true as const, aviso: "cuidado" })),
+  fecharMysql: vi.fn(async () => undefined),
+  fecharTodosMysql: vi.fn(async () => undefined),
+}));
+vi.mock("./dialetos/mysql/dialeto", () => ({ criarDialetoMysql: criarDialetoMysqlMock }));
+vi.mock("./dialetos/mysql/conexao", () => ({
+  testarConexaoMysql: testarMysql,
+  fecharPoolMysql: fecharMysql,
+  fecharTodosOsPoolsMysql: fecharTodosMysql,
+}));
+
+import { abrirDialeto, driverDe, fecharPool, fecharTodosOsPools, testarConexao } from "./drivers";
 import type { ConexaoExterna } from "./types";
 
 const CONEXAO: ConexaoExterna = {
@@ -42,6 +55,10 @@ beforeEach(() => {
   testarPg.mockClear();
   fecharPg.mockClear();
   fecharTodosPg.mockClear();
+  criarDialetoMysqlMock.mockClear();
+  testarMysql.mockClear();
+  fecharMysql.mockClear();
+  fecharTodosMysql.mockClear();
 });
 
 describe("registro de drivers", () => {
@@ -75,12 +92,32 @@ describe("registro de drivers", () => {
     expect(fecharTodosPg).toHaveBeenCalledTimes(1);
   });
 
-  it("driverDe('mysql') recusa com erro claro enquanto o driver não está instalado", () => {
-    expect(() => driverDe("mysql")).toThrow(DriverIndisponivelError);
-    expect(() => driverDe("mysql")).toThrow(/mysql/);
+  it("abrirDialeto de uma conexão mysql chama criarDialetoMysql com a conexão e a regra, sem tocar no pool do PostgreSQL", () => {
+    const dialeto = abrirDialeto({ ...CONEXAO, dbType: "mysql" });
+    expect(dialeto).toEqual({ marca: "dialeto-mysql" });
+    expect(criarDialetoMysqlMock).toHaveBeenCalledWith({ ...CONEXAO, dbType: "mysql" }, { modo: "all", fontes: [] });
+    expect(obterPoolMock).not.toHaveBeenCalled();
   });
 
-  it("abrirDialeto de uma conexão mysql recusa do mesmo jeito (nunca cai no PostgreSQL por engano)", () => {
-    expect(() => abrirDialeto({ ...CONEXAO, dbType: "mysql" })).toThrow(DriverIndisponivelError);
+  it("testarConexao de uma conexão mysql devolve o que o driver devolveu, com aviso, sem chamar o teste do PostgreSQL", async () => {
+    await expect(testarConexao({ ...CONEXAO, dbType: "mysql" })).resolves.toEqual({ ok: true, aviso: "cuidado" });
+    expect(testarMysql).toHaveBeenCalledWith({ ...CONEXAO, dbType: "mysql" });
+    expect(testarPg).not.toHaveBeenCalled();
+  });
+
+  it("fecharPool chama o fechamento dos DOIS motores", async () => {
+    await fecharPool("conn-1");
+    expect(fecharPg).toHaveBeenCalledWith("conn-1");
+    expect(fecharMysql).toHaveBeenCalledWith("conn-1");
+  });
+
+  it("fecharTodosOsPools chama o fechamento dos DOIS motores", async () => {
+    await fecharTodosOsPools();
+    expect(fecharTodosPg).toHaveBeenCalledTimes(1);
+    expect(fecharTodosMysql).toHaveBeenCalledTimes(1);
+  });
+
+  it("driverDe('mysql') NÃO lança (o driver está instalado)", () => {
+    expect(() => driverDe("mysql")).not.toThrow();
   });
 });

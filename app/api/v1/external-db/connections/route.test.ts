@@ -121,24 +121,34 @@ describe("POST /api/v1/external-db/connections", () => {
     expect(evento.metadata.db_type).toBe("postgres");
   });
 
-  it("criar com db_type mysql é recusado (sem driver instalado) e nem chega ao insert", async () => {
-    const from = vi.fn().mockReturnValue({});
-    deps.admin.mockReturnValue({ from });
+  it("criar com db_type mysql e sem port grava mysql e port 3306 no insert e responde 201; o audit leva mysql", async () => {
+    let inserido: Record<string, unknown> | undefined;
+    deps.admin.mockReturnValue({
+      from: () => ({
+        insert: (payload: Record<string, unknown>) => {
+          inserido = payload;
+          return { select: () => ({ single: async () => ({ data: { id: "c-1", ...payload }, error: null }) }) };
+        },
+      }),
+    });
     const res = await POST(
       new NextRequest("http://localhost/api/v1/external-db/connections", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          label: "x",
+          label: "WP",
           host: "10.0.0.5",
-          database_name: "app",
-          username: "u",
-          password: "p",
+          database_name: "wp",
+          username: "leitor",
+          password: "segredo",
           db_type: "mysql",
         }),
       }),
     );
-    expect(res.status).toBe(422);
-    expect(from).not.toHaveBeenCalled();
+    expect(res.status).toBe(201);
+    expect(inserido?.db_type).toBe("mysql");
+    expect(inserido?.port).toBe(3306);
+    const evento = deps.audit.mock.calls[0]![0] as { metadata: Record<string, unknown> };
+    expect(evento.metadata.db_type).toBe("mysql");
   });
 });

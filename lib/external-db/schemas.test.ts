@@ -52,16 +52,19 @@ describe("criarConexaoSchema", () => {
     expect(() => criarConexaoSchema.parse({ ...VALIDO, ssl_mode: "allow" })).toThrow();
   });
 
-  it("db_type ausente vira postgres; mysql é recusado até ter driver", () => {
+  it("db_type ausente vira postgres; mysql passa; outro motor é recusado", () => {
     expect(criarConexaoSchema.parse(VALIDO).db_type).toBe("postgres");
     expect(criarConexaoSchema.parse({ ...VALIDO, db_type: "postgres" }).db_type).toBe("postgres");
-    expect(() => criarConexaoSchema.parse({ ...VALIDO, db_type: "mysql" })).toThrow();
+    expect(criarConexaoSchema.parse({ ...VALIDO, db_type: "mysql" }).db_type).toBe("mysql");
+    expect(() => criarConexaoSchema.parse({ ...VALIDO, db_type: "oracle" })).toThrow();
   });
 
   it("porta padrão segue o motor", () => {
     expect(portaPadraoDoMotor("postgres")).toBe(5432);
     expect(portaPadraoDoMotor("mysql")).toBe(3306);
     expect(criarConexaoSchema.parse({ ...VALIDO, port: 15432 }).port).toBe(15432);
+    expect(criarConexaoSchema.parse({ ...VALIDO, db_type: "mysql" }).port).toBe(3306);
+    expect(criarConexaoSchema.parse(VALIDO).port).toBe(5432);
   });
 });
 

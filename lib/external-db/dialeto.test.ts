@@ -7,7 +7,7 @@ vi.mock("./leitura", async () => {
   return { ...real, lerTabela: vi.fn() };
 });
 
-import { criarDialetoPostgres, FonteNaoLiberadaError } from "./dialeto";
+import { criarDialetoDeLeitura, criarDialetoPostgres, FonteNaoLiberadaError } from "./dialeto";
 import type { Fonte, RegraDeFontes } from "./fontes";
 import { descreverTabela, listarTabelas } from "./introspeccao";
 import { LeituraInvalidaError, lerTabela, montarConsulta } from "./leitura";
@@ -110,5 +110,42 @@ describe("Dialeto PostgreSQL com fontes liberadas", () => {
       await expect(d.lerTabela(pedido(), new Set())).rejects.toBeInstanceOf(FonteNaoLiberadaError);
       expect(lerTabela).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("criarDialetoDeLeitura (qualquer motor)", () => {
+  function operacoes() {
+    return {
+      listarTabelas: vi.fn(async () => [CLIENTES, WP_USERS]),
+      descreverTabela: vi.fn(async (_schema: string, tabela: string) =>
+        tabela === "clientes" ? CLIENTES : tabela === "wp_users" ? WP_USERS : null,
+      ),
+      lerTabela: vi.fn(async () => ({ colunas: ["id"], linhas: [], limite: 20, offset: 0 })),
+    };
+  }
+
+  it("em modo list, fonte não marcada: colunasDaTabela devolve null e descreverTabela NÃO é chamada", async () => {
+    const op = operacoes();
+    const d = criarDialetoDeLeitura(op, lista(fonte("clientes")));
+    await expect(d.colunasDaTabela("public", "wp_users")).resolves.toBeNull();
+    expect(op.descreverTabela).not.toHaveBeenCalled();
+  });
+
+  it("em modo list, lerTabela com a projeção vazia chama op.lerTabela com as colunas explícitas (nunca *)", async () => {
+    const op = operacoes();
+    const d = criarDialetoDeLeitura(op, lista(fonte("clientes", ["id", "nome"])));
+    const permitidas = (await d.colunasDaTabela("public", "clientes"))!;
+    await d.lerTabela(pedido({ colunas: [] }), permitidas);
+    expect(op.lerTabela).toHaveBeenCalledTimes(1);
+    expect(op.lerTabela.mock.calls[0]![0].colunas).toEqual(["id", "nome"]);
+  });
+
+  it("em modo all a leitura passa direto a op.lerTabela com o pedido original", async () => {
+    const op = operacoes();
+    const d = criarDialetoDeLeitura(op, TUDO);
+    const p = pedido({ colunas: [] });
+    await d.lerTabela(p, new Set());
+    expect(op.lerTabela).toHaveBeenCalledTimes(1);
+    expect(op.lerTabela.mock.calls[0]![0]).toEqual(p);
   });
 });

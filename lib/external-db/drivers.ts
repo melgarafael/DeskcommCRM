@@ -13,6 +13,8 @@
 import { fecharPool as fecharPoolPostgres, fecharTodosOsPools as fecharTodosPostgres, obterPool, testarConexao as testarPostgres } from "./conexao";
 import type { ResultadoDeTeste } from "./conexao";
 import { criarDialetoPostgres, type Dialeto } from "./dialeto";
+import { criarDialetoMysql } from "./dialetos/mysql/dialeto";
+import { fecharPoolMysql, fecharTodosOsPoolsMysql, testarConexaoMysql } from "./dialetos/mysql/conexao";
 import type { ConexaoExterna, TipoBanco } from "./types";
 
 export type { ResultadoDeTeste };
@@ -43,8 +45,15 @@ const postgres: DriverDeBanco = {
   fecharTodosOsPools: () => fecharTodosPostgres(),
 };
 
-/** Os drivers instalados. O MySQL entra aqui na Fatia 4a. */
-const DRIVERS: Partial<Record<TipoBanco, DriverDeBanco>> = { postgres };
+const mysql: DriverDeBanco = {
+  abrirDialeto: (conexao) => criarDialetoMysql(conexao, { modo: conexao.sourceMode, fontes: conexao.fontes }),
+  testar: (conexao) => testarConexaoMysql(conexao),
+  fecharPool: (connectionId) => fecharPoolMysql(connectionId),
+  fecharTodosOsPools: () => fecharTodosOsPoolsMysql(),
+};
+
+/** Os drivers instalados. */
+const DRIVERS: Partial<Record<TipoBanco, DriverDeBanco>> = { postgres, mysql };
 
 function instalados(): DriverDeBanco[] {
   return Object.values(DRIVERS).filter((d): d is DriverDeBanco => d !== undefined);
