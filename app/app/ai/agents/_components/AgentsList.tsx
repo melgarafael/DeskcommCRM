@@ -50,7 +50,7 @@ export function AgentsList({ initialData, canWrite }: Props) {
         {canWrite && (
           <Link href="/app/ai/agents/new">
             <Button className="mt-1">
-              <Plus size={14} aria-hidden className="mr-2" /> {t("Novo agente")}
+              <Plus size={14} aria-hidden className="mr-2" /> {t("Criar novo")}
             </Button>
           </Link>
         )}
@@ -72,7 +72,7 @@ export function AgentsList({ initialData, canWrite }: Props) {
         {canWrite && (
           <Link href="/app/ai/agents/new">
             <Button>
-              <Plus size={14} aria-hidden className="mr-2" /> {t("Novo agente")}
+              <Plus size={14} aria-hidden className="mr-2" /> {t("Criar novo")}
             </Button>
           </Link>
         )}

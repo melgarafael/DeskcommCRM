@@ -1159,6 +1159,7 @@
   "Nenhum agente configurado": "No agent configured",
   "Crie um agente para responder a conversas no WhatsApp com IA. Você configura prompt, tools, gatilhos e janela de contexto.": "Create an agent to respond to WhatsApp conversations with AI. You configure the prompt, tools, triggers, and context window.",
   "Novo agente": "New agent",
+  "Criar novo": "Create new",
   "Nenhum agente corresponde aos filtros atuais.": "No agent matches the current filters.",
   "Buscar por nome…": "Search by name…",
   "Buscar agents": "Search agents",

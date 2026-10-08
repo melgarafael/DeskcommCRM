@@ -431,6 +431,7 @@
   "Nenhum agente configurado": "未配置任何 AI 智能体",
   "Crie um agente para responder a conversas no WhatsApp com IA. Você configura prompt, tools, gatilhos e janela de contexto.": "创建 AI 智能体，用 AI 回复 WhatsApp 中的对话。您可以配置提示词、工具、触发器和上下文窗口。",
   "Novo agente": "新建 AI 智能体",
+  "Criar novo": "新建",
   "Nenhum agente corresponde aos filtros atuais.": "没有 AI 智能体符合当前筛选条件。",
   "Buscar por nome…": "按名称搜索…",
   "Buscar agents": "搜索 AI 智能体",
