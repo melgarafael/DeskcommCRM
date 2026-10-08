@@ -34,7 +34,7 @@ import { RAIZ_DO_REPO, arquivosDeCodigo, caminhoRelativo } from "./helpers/varre
  * mecanismo é intenção. É a mesma lição das definer expostas a `anon`: o gate
  * que existia media a outra metade.
  *
- * ## As duas regras
+ * ## As três regras
  *
  *   - **R1 — escrita que CRIA linha** (`insert`/`upsert`) em tabela com
  *     `organization_id` precisa carregar o tenant: no payload, no `onConflict`
@@ -44,11 +44,21 @@ import { RAIZ_DO_REPO, arquivosDeCodigo, caminhoRelativo } from "./helpers/varre
  *   - **R2 — nenhuma cadeia sem filtro ALGUM**: `select`/`update`/`delete` que
  *     não filtra coluna nenhuma varre (ou reescreve) a tabela inteira, de todos
  *     os tenants. Vale para leitura e para mutação.
+ *   - **R3 — toda cadeia que filtra por CHAVE carrega o tenant**: a R2 aceita
+ *     qualquer filtro como escopo, então `admin.from("x").update(…).eq("id", id)`
+ *     passava verde — a forma do anti-pattern 10 do CLAUDE.md. A R3 cobra
+ *     `organization_id` em toda cadeia não-criadora que filtra sem carregar o
+ *     tenant, ONDE ele é conhecido (código de request: sessão, token, fonte do
+ *     webhook). Quem percorre todas as organizações por desenho (`ESTEIRAS`) ou
+ *     lê linha de plataforma sem organização (`CHAVE_SEM_TENANT_LIBERADA`) sai
+ *     por declaração com a razão escrita — no mesmo molde de `PLATAFORMA` e
+ *     `SEM_FILTRO_LIBERADO`, e as duas listas só encolhem (guarda de órfão).
  *
  * `update`/`delete` por chave primária NÃO entram em R1 de propósito: a linha
  * já existe e foi (ou deveria ter sido) lida com escopo antes; exigir
- * `organization_id` em toda mutação por id seria ruído, e ruído se aprende a
- * ignorar. Quem essa régua cobra é a linha NOVA.
+ * `organization_id` em toda NOVA linha é o que R1 cobra. A mutação por id sem
+ * tenant é o alvo da R3 — e o "ruído" que a segurava está nas dispensas
+ * declaradas, não em omitir a régua. Quem a R1 cobra é a linha NOVA.
  *
  * ## Por que uma varredura, e não mais uma lista
  *
@@ -79,8 +89,10 @@ import { RAIZ_DO_REPO, arquivosDeCodigo, caminhoRelativo } from "./helpers/varre
  *     da conversa em `messages/_handler.ts` → 6/6 verde (e ali ainda vale o
  *     ponto cego do parâmetro); tirar o filtro de org de uma rota com cliente
  *     admin LOCAL, deixando só `.eq("id")` → 6/6 verde; tirar TODOS os filtros
- *     → vermelho em R2. Cobrar `organization_id` em toda leitura por chave é o
- *     passo seguinte, e é mais ruidoso que este — por isso não entrou aqui.
+ *     → vermelho em R2. Cobrar `organization_id` em toda leitura por chave era
+ *     "o passo seguinte" — é hoje a **R3** acima: mesma varredura, régua nova,
+ *     com as dispensas declaradas e revisáveis em `ESTEIRAS`/
+ *     `CHAVE_SEM_TENANT_LIBERADA`.
  *     O defeito de 14/set segue guardado por um invariante de COMPORTAMENTO,
  *     `tests/invariants/envio-nao-alcanca-conversa-de-outro-tenant.test.ts`,
  *     não por esta varredura.
@@ -142,6 +154,71 @@ const SEM_FILTRO_LIBERADO: readonly { arquivo: string; tabela: string; motivo: s
       "filtra é cada chamador — `enviarPushDaOrg`/`removerPush` filtram por " +
       "`organization_id` e, na remoção, por `endpoint`. A cadeia sem filtro não " +
       "consulta nada: ela não foi aguardada.",
+  },
+];
+
+/**
+ * ESTEIRAS: fora da R3 (a R2 segue valendo). Percorrem todas as organizações
+ * por desenho e pegam a linha por um claim, sem organização conhecida antes da
+ * leitura. Só encolhe.
+ */
+const ESTEIRAS: readonly { caminho: string; motivo: string }[] = [
+  {
+    caminho: "app/api/v1/cron/",
+    motivo:
+      "Cron varre a instalação inteira e age sobre a linha que acabou de ler. " +
+      "Guardado pelo segredo do cron e pela R2.",
+  },
+  {
+    caminho: "workers/voice-agent/",
+    motivo:
+      "O Asterisk entrega só o id do canal. A linha de voice_calls é achada por " +
+      "ele, e as escritas seguintes usam o id que essa leitura devolveu.",
+  },
+  {
+    caminho: "lib/ai/dispatcher/",
+    motivo:
+      "Claim de event_log pelo id do evento. O evento carrega a organização, e o " +
+      "handler que o consome filtra por ela.",
+  },
+  {
+    caminho: "lib/lgpd/storage-redaction-queue.ts",
+    motivo:
+      "Fila de remoção de mídia: cada item é processado pelo id que o próprio " +
+      "processador acabou de reivindicar.",
+  },
+];
+
+/**
+ * Exceções da R3, cadeia a cadeia, com a razão escrita. Só encolhe.
+ */
+const CHAVE_SEM_TENANT_LIBERADA: readonly { arquivo: string; tabela: string; motivo: string }[] = [
+  {
+    arquivo: "app/api/v1/ai/skills/[name]/route.ts",
+    tabela: "skill_versions",
+    motivo:
+      "Versão de plataforma tem organization_id nulo. O id vem de skill_pointers, " +
+      "lido com filtro de organização logo acima.",
+  },
+  {
+    arquivo: "app/api/v1/ai/skills/route.ts",
+    tabela: "skill_versions",
+    motivo:
+      "Mesma razão: os ids vêm dos pointers da organização e dos de plataforma " +
+      "(organization_id nulo).",
+  },
+  {
+    arquivo: "app/app/ai/skills/page.tsx",
+    tabela: "skill_versions",
+    motivo:
+      "Mesma leitura da API de skills, feita no servidor da página.",
+  },
+  {
+    arquivo: "lib/extensions/service.ts",
+    tabela: "extension_operations",
+    motivo:
+      "Operação de extensão é da instalação, com organization_id nulo nas de " +
+      "plataforma. A rota de revert é guardada por papel de plataforma.",
   },
 ];
 
@@ -326,6 +403,17 @@ const semFiltroNenhum = CADEIAS.filter((c) => !c.criaLinha && !c.filtra && !c.ca
   .filter((c) => !emPlataforma(c))
   .filter((c) => !SEM_FILTRO_LIBERADO.some((e) => e.arquivo === c.arquivo && e.tabela === c.tabela));
 
+const emEsteira = (c: Cadeia): boolean => ESTEIRAS.some((e) => c.arquivo.startsWith(e.caminho));
+
+/** Toda cadeia que filtra por ALGO que não é o tenant — a forma da R3. */
+const porChaveSemTenant = CADEIAS.filter((c) => !c.criaLinha && c.filtra && !c.carregaOTenant);
+
+/** R3: a mesma forma, menos o que está declarado (plataforma, esteira, exceção). */
+const chaveSemTenant = porChaveSemTenant
+  .filter((c) => !emPlataforma(c))
+  .filter((c) => !emEsteira(c))
+  .filter((c) => !CHAVE_SEM_TENANT_LIBERADA.some((e) => e.arquivo === c.arquivo && e.tabela === c.tabela));
+
 describe("o cliente de serviço também responde ao tenant", () => {
   it("a varredura enxerga o schema e os arquivos (guarda de vacuidade)", () => {
     // Sem isto, um regex que deixasse de casar (ou um caminho de schema
@@ -376,6 +464,16 @@ describe("o cliente de serviço também responde ao tenant", () => {
     ).toEqual([]);
   });
 
+  it("R3: cadeia de service role por chave carrega o tenant onde ele é conhecido", () => {
+    expect(
+      chaveSemTenant.map(descreverCadeia),
+      "Cadeia de service role que filtra por OUTRA coluna sem `organization_id`: um id adivinhado " +
+        "ou vindo do body alcança a linha de outra organização. Acrescente " +
+        '`.eq("organization_id", …)` com a organização já resolvida (sessão, token, fonte do ' +
+        "webhook), ou declare em ESTEIRAS / CHAVE_SEM_TENANT_LIBERADA com a razão escrita.",
+    ).toEqual([]);
+  });
+
   it("as declarações continuam válidas e sem nome órfão", () => {
     for (const p of PLATAFORMA) {
       const alcancadas = CADEIAS.filter((c) => c.arquivo.startsWith(p.caminho));
@@ -390,6 +488,24 @@ describe("o cliente de serviço também responde ao tenant", () => {
       expect(
         achado,
         `exceção órfã: \`${e.arquivo}\` já não alcança \`${e.tabela}\` sem filtro — remova de SEM_FILTRO_LIBERADO`,
+      ).toBeDefined();
+      expect(e.motivo.trim().length, `exceção sem razão escrita: ${e.arquivo}`).toBeGreaterThan(20);
+    }
+    for (const e of ESTEIRAS) {
+      const alcancadas = porChaveSemTenant.filter(
+        (c) => !emPlataforma(c) && c.arquivo.startsWith(e.caminho),
+      );
+      expect(
+        alcancadas.length,
+        `esteira órfã: \`${e.caminho}\` não alcança mais nenhuma cadeia por chave sem tenant — remova de ESTEIRAS`,
+      ).toBeGreaterThan(0);
+      expect(e.motivo.trim().length, `esteira sem razão escrita: ${e.caminho}`).toBeGreaterThan(20);
+    }
+    for (const e of CHAVE_SEM_TENANT_LIBERADA) {
+      const achado = porChaveSemTenant.find((c) => c.arquivo === e.arquivo && c.tabela === e.tabela);
+      expect(
+        achado,
+        `exceção órfã: \`${e.arquivo}\` já não alcança \`${e.tabela}\` sem o tenant — remova de CHAVE_SEM_TENANT_LIBERADA`,
       ).toBeDefined();
       expect(e.motivo.trim().length, `exceção sem razão escrita: ${e.arquivo}`).toBeGreaterThan(20);
     }

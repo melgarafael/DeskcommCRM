@@ -29,6 +29,8 @@ export interface AssinaturaDoCard {
   trial_ate: string | null;
   prazo_extra_ate: string | null;
   provedor: string | null;
+  plano_agendado_id: string | null;
+  proximo_vencimento: string | null;
 }
 
 /** `YYYY-MM-DD` do campo de data → fim daquele dia no fuso de quem clicou, em ISO UTC. */
@@ -37,7 +39,7 @@ export function fimDoDia(dia: string): string {
 }
 
 /** A frase de cada recurso que passa do plano; `{n}` é quanto remover. */
-const FRASE_DO_EXCEDENTE = {
+export const FRASE_DO_EXCEDENTE = {
   assentos: "Revogue o acesso de {n} pessoa(s) em Equipe.",
   canais: "Exclua {n} número(s) em Conexões.",
 } as const;
@@ -91,12 +93,12 @@ export function CardDeCobranca({
   const data = new Intl.DateTimeFormat(idioma, { dateStyle: "short" });
   const nomeDoPlano = (id: string) => planos.find((p) => p.id === id)?.nome ?? "—";
 
-  async function agir(acao: () => Promise<unknown>, sucesso: string) {
+  async function agir(acao: () => Promise<unknown>, sucesso: string | ((resultado: unknown) => string)) {
     setOcupado(true);
     setRemover([]);
     try {
-      await acao();
-      toast.success(sucesso);
+      const resultado = await acao();
+      toast.success(typeof sucesso === "string" ? sucesso : sucesso(resultado));
       router.refresh();
       // O refresh só renova o servidor; ações e banner leem o cache do react-query.
       await queryClient.invalidateQueries({ queryKey: ["admin", "tenant", orgId] });
@@ -121,6 +123,15 @@ export function CardDeCobranca({
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
           <dt className="text-muted-foreground">{t("Plano")}</dt>
           <dd>{nomeDoPlano(assinatura.plano_id)}</dd>
+          {assinatura.plano_agendado_id && (
+            <>
+              <dt className="text-muted-foreground">{t("Novo plano")}</dt>
+              <dd>
+                {nomeDoPlano(assinatura.plano_agendado_id)}
+                {assinatura.proximo_vencimento && `, ${t("a partir de")} ${data.format(new Date(assinatura.proximo_vencimento))}`}
+              </dd>
+            </>
+          )}
           <dt className="text-muted-foreground">{t("Situação")}</dt>
           <dd>{t(ROTULO_DO_ESTADO[assinatura.estado])}</dd>
           {assinatura.trial_ate && (
@@ -181,7 +192,21 @@ export function CardDeCobranca({
             </select>
           </div>
           {assinatura ? (
-            <Button disabled={ocupado || !escolhido} onClick={() => agir(() => apiClient.patch(base, { plano_id: escolhido }), t("Plano trocado."))}>
+            <Button
+              disabled={ocupado || !escolhido}
+              onClick={() =>
+                agir(
+                  () => apiClient.patch(base, { plano_id: escolhido }),
+                  // `apiClient` devolve o envelope inteiro (`{ data }`, lib/api/client.ts), não o `data`.
+                  (r) =>
+                    t(
+                      (r as { data?: { plano_agendado_id?: string | null } } | null)?.data?.plano_agendado_id
+                        ? "Troca agendada: o novo plano vale a partir da próxima cobrança paga."
+                        : "Plano trocado.",
+                    ),
+                )
+              }
+            >
               {t("Trocar plano")}
             </Button>
           ) : (

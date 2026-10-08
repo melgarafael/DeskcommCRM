@@ -110,7 +110,17 @@ export function useRouters(initial?: { routers: RouterListItem[] }) {
 export function useRouter(id: string, initial?: RouterDetailState) {
   return useQuery({
     queryKey: detailKey(id),
-    ...(initial !== undefined ? { initialData: initial } : {}),
+    // #2569 — `placeholderData`, não `initialData`: o snapshot do SSR é o
+    // estado ENQUANTO a busca não volta, não o estado final. Com `initialData`
+    // o React Query grava `dataUpdatedAt = Date.now()` (query-core, `query.ts`),
+    // o `staleTime` de 30 s de `makeQueryClient()` o deixa fresco e
+    // `shouldFetchOnMount` (`queryObserver.ts`) volta falso — o
+    // `GET /api/v1/ai/routers/<id>` NUNCA acontecia ao abrir o editor, a
+    // reidratação do `draftMembers` (que só dispara quando `members` muda)
+    // ficava sem efeito e o seletor ficava em "Sem destino" para sempre, com a
+    // API devolvendo o `pipeline_id` que ninguém pedia. O placeholder não entra
+    // no cache: o que fica guardado é sempre a resposta da API.
+    ...(initial !== undefined ? { placeholderData: initial } : {}),
     queryFn: () =>
       apiClient
         .get<{ data: RouterDetailState }>(`/api/v1/ai/routers/${encodeURIComponent(id)}`)

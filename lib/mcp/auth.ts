@@ -190,6 +190,7 @@ export async function resolveApiToken(
   supabase
     .from("api_tokens")
     .update({ last_used_at: new Date().toISOString() })
+    .eq("organization_id", data.organization_id)
     .eq("id", data.id)
     .then(({ error: updErr }) => {
       if (updErr) console.error("[mcp.auth] last_used_at update failed", updErr.message);

@@ -18,6 +18,7 @@ const campos = {
   max_canais: z.number().int().min(1).max(INT4_MAX).nullable(),
   teto_ia_usd_cents: z.number().int().min(100).max(INT4_MAX).nullable(),
   padrao_no_cadastro: z.boolean(),
+  oferecido_ao_cliente: z.boolean(),
 };
 
 export const novoPlanoSchema = z.strictObject({
@@ -29,6 +30,7 @@ export const novoPlanoSchema = z.strictObject({
   max_canais: campos.max_canais.optional(),
   teto_ia_usd_cents: campos.teto_ia_usd_cents.optional(),
   padrao_no_cadastro: campos.padrao_no_cadastro.optional(),
+  oferecido_ao_cliente: campos.oferecido_ao_cliente.optional(),
 });
 
 export const edicaoDoPlanoSchema = z
@@ -37,4 +39,4 @@ export const edicaoDoPlanoSchema = z
   .refine((v) => Object.keys(v).length > 0, "Nada para mudar.");
 
 export const COLUNAS_DO_PLANO =
-  "id, nome, preco_cents, moeda, intervalo, trial_dias, max_assentos, max_canais, teto_ia_usd_cents, padrao_no_cadastro, arquivado_em, created_at, updated_at";
+  "id, nome, preco_cents, moeda, intervalo, trial_dias, max_assentos, max_canais, teto_ia_usd_cents, padrao_no_cadastro, oferecido_ao_cliente, arquivado_em, created_at, updated_at";
