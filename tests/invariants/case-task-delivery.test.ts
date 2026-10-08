@@ -185,7 +185,7 @@ const handler = createCaseTaskDeliveryHandler({
 });
 
 describe("entrega de tarefa usa aprovação literal, guarda real e recibo durável", () => {
-  it("confirmação financeira encerra só a retomada da compra mesmo se o aviso falhar", async () => {
+  it("abrir conferência financeira encerra só a retomada da compra mesmo se o aviso falhar", async () => {
     const details = await approve();
     const detailsJob = await claim(details.delivery_job_id!);
     await handler(detailsJob, pool);
@@ -268,6 +268,20 @@ describe("entrega de tarefa usa aprovação literal, guarda real e recibo duráv
         contextSnapshot: (await readCaseTask(pool, org, detailsCase))!.context_snapshot ?? {},
       },
     );
+    const statesAtReview = (
+      await pool.query(
+        "select id,status,cancel_reason from followup_enrollments where organization_id=$1 and id=any($2::uuid[])",
+        [org, [reminder.id, unrelated.id]],
+      )
+    ).rows;
+    expect(statesAtReview.find((row) => row.id === reminder.id)).toMatchObject({
+      status: "cancelled",
+      cancel_reason: "payment_review_opened",
+    });
+    expect(statesAtReview.find((row) => row.id === unrelated.id)).toMatchObject({
+      status: "active",
+    });
+    await expect(assertAgendaEffectPg(pool, effect)).rejects.toThrow();
     await applyCaseTaskAction(pool, org, caseId, actor, {
       action: "assume",
       expected_revision: (await read())!.revision,
@@ -284,7 +298,7 @@ describe("entrega de tarefa usa aprovação literal, guarda real e recibo duráv
     ).rows;
     expect(states.find((row) => row.id === reminder.id)).toMatchObject({
       status: "cancelled",
-      cancel_reason: "payment_confirmed",
+      cancel_reason: "payment_review_opened",
     });
     expect(states.find((row) => row.id === unrelated.id)).toMatchObject({ status: "active" });
     await expect(assertAgendaEffectPg(pool, effect)).rejects.toThrow();

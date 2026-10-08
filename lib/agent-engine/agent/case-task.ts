@@ -394,6 +394,29 @@ export async function openPaymentTask(
       [ids.tenantId, ids.conversationId],
     );
     const prior = existing[0];
+    if (input.task_kind === "payment_review" && prior?.task_kind === "payment_details" && prior.lead_id) {
+      // A equipe precisa conferir o pagamento antes de qualquer retomada pós-dados.
+      // A transição do caso e o cancelamento ficam na mesma transação; o worker
+      // descarta jobs já enfileirados quando revalida a matrícula.
+      await db.query(
+        `with stopped as (
+          update followup_enrollments e set status='cancelled',cancel_reason='payment_review_opened',
+            completed_at=now(),updated_at=now(),next_eval_at=null,claimed_until=null,revision=e.revision+1
+          where e.organization_id=$1 and e.contact_id=$4 and e.conversation_id=$5
+            and e.status in ('active','waiting_reply','dormente','paused_handoff','paused_manual')
+            and exists (
+              select 1 from agent_cases details where details.organization_id=$1
+                and details.id=$2 and details.lead_id=$3 and details.conversation_id=$5
+                and details.task_kind='payment_details'
+                and details.task_payload->>'post_delivery_enrollment_id'=e.id::text
+            ) returning e.id,e.current_node_id
+        ) insert into followup_enrollment_events
+          (organization_id,enrollment_id,node_id,event_type,payload,idempotency_key)
+        select $1,id,current_node_id,'cancelled',jsonb_build_object('reason','payment_review_opened','case_id',$2::text),
+          'payment-review:' || $2::text from stopped on conflict do nothing`,
+        [ids.tenantId, prior.id, prior.lead_id, conv[0].contact_id, ids.conversationId],
+      );
+    }
     if (prior && ((lead && prior.lead_id && prior.lead_id !== lead) || !prior.task_kind))
       throw new CaseTaskConflict(
         "invalid_state",
