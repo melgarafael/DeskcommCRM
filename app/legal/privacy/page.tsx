@@ -160,6 +160,55 @@ export default async function PrivacyPage() {
           )}
         </p>
       </section>
+
+      {/* A seção que o Google exige de todo app que pede acesso a dados de conta
+          Google: o que é lido, para quê, que não se vende nem treina modelo, o
+          selo de Uso Limitado e como desfazer. Cada frase aqui descreve o que o
+          código faz (escopos em `lib/agenda/google/oauth.ts` e
+          `lib/plataformas-de-anuncio/google/oauth.ts`) — acrescentar acesso novo
+          ao Google sem acrescentar a frase correspondente é descumprir a política
+          de dados de usuário do Google. */}
+      <section className="space-y-2" id="dados-do-google">
+        <h2 className="text-base font-semibold">{t("9. Dados do Google (Agenda e Google Ads)")}</h2>
+        <p>
+          {t(
+            "Quando uma pessoa autorizada da organização conecta uma conta Google a este sistema, os dados recebidos do Google são usados somente para a função que ela pediu:",
+          )}
+        </p>
+        <ul className="list-disc space-y-1 pl-5">
+          <li>
+            <strong>{t("Google Agenda:")}</strong>{" "}
+            {t(
+              "mostrar a ocupação da agenda, criar, alterar e cancelar os agendamentos feitos pelo próprio usuário e evitar choque de horários. O sistema guarda no servidor do operador o título e o horário dos eventos para calcular a ocupação, e o cálculo de horários livres usa apenas o início, o fim e a situação deles. O sistema não lê e-mails.",
+            )}
+          </li>
+          <li>
+            <strong>{t("Google Ads:")}</strong>{" "}
+            {t(
+              "enviar ao Google Ads as vendas que um anúncio trouxe, para que ele aprenda com elas, criar e listar ações de conversão e ler as métricas das campanhas da própria conta de anúncios.",
+            )}
+          </li>
+        </ul>
+        <p>
+          {t(
+            "Os dados do Google ficam no servidor do operador, não são vendidos, não são usados para publicidade e não são usados para treinar modelos de inteligência artificial. O uso e a transferência das informações recebidas das APIs do Google seguem a Política de Dados de Usuário dos Serviços de API do Google, incluindo os requisitos de Uso Limitado.",
+          )}
+        </p>
+        <p>
+          {t(
+            "A conexão com a Agenda pode ser desfeita a qualquer momento em Agenda → Desconectar, e a do Google Ads é retirada pelo operador, a pedido. Em qualquer caso, a pessoa também pode revogar o acesso diretamente em",
+          )}{" "}
+          <a
+            className="underline underline-offset-2"
+            href="https://myaccount.google.com/permissions"
+            target="_blank"
+            rel="noreferrer"
+          >
+            myaccount.google.com/permissions
+          </a>
+          .
+        </p>
+      </section>
     </>
   );
 }

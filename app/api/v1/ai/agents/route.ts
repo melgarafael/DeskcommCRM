@@ -4,9 +4,16 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *                            Inclui kind, priority, published_version_id, paused_at, operation_mode, operation_revision, archived_at,
  *                            e o provider/model da VERSÃO PUBLICADA (ver abaixo).
  *                            Filtro `?include_archived=true` opcional.
- * POST /api/v1/ai/agents  — create agent (admin).
- *                            Mode A (legacy rag_bot): body sem `version` → cria agent
- *                              kind='rag_bot' (mantém compat com Spec 05 / EPIC-06).
+ * POST /api/v1/ai/agents  — create agent (admin). UM caminho de escrita.
+ *                            Mode A (corpo legado, Spec 05 / EPIC-06): body sem
+ *                              `version` → o corpo é CONVERTIDO num `version`
+ *                              (ver `corpoLegadoComoCorpoDeCriacao`) e segue o
+ *                              mesmo bloco
+ *                              do Mode B. Nascia `kind='rag_bot'` SEM nenhuma
+ *                              linha em `ai_agent_versions` — invisível para os
+ *                              dois runtimes, que resolvem o agente pelo join de
+ *                              `published_version_id` (#1357). Continua aceito,
+ *                              continua devolvendo a linha do agente.
  *                            Mode B (mcp_agent S-13.06): body com `version` → cria
  *                              agent kind='mcp_agent' + ai_agent_versions v1 draft
  *                              numa sequência ordenada (rollback se versão falhar).
@@ -22,8 +29,9 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { mcpAgentDraftRecords } from "@/lib/ai/agents/create-draft";
-import { mensagemDoEscopo, validarEscopoDaVersao } from "@/lib/ai/agents/escopo";
+import { codigoDoEscopo, mensagemDoEscopo, validarEscopoDaVersao } from "@/lib/ai/agents/escopo";
 import { agentCreateSchema } from "@/lib/ai/guardrails-schema";
+import { corpoLegadoComoCorpoDeCriacao } from "@/lib/ai/agents/legado-para-versao";
 import { agentMcpCreateSchema } from "@/lib/ai/agents/validation";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -123,57 +131,36 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const admin = createAdminClient();
 
-  if (wantsMcp) {
-    const parsed = agentMcpCreateSchema.safeParse(rawBody);
-    if (!parsed.success) {
+  // Dois formatos de corpo, UM caminho de escrita (issue #1357).
+  //
+  // O corpo legado — sem `version` — gravava `kind='rag_bot'` direto em
+  // `ai_agents`, sem NENHUMA linha em `ai_agent_versions`. Era o formato que só
+  // o editor antigo abria, e que os dois runtimes atuais nem enxergam: o
+  // dispatcher do CRM e o agent-engine resolvem o agente por
+  // `join ai_agent_versions v on v.id = a.published_version_id`
+  // (`lib/agent-engine/agent/agent-config.ts:252`) — o agente nascia mudo, e a
+  // única saída era a recuperação legada da tela. Ele agora deriva o payload de
+  // versão a partir do próprio corpo e cai no MESMO bloco de quem já manda
+  // `version`: criar passa a rascunhar v1, como fazem a tela e o onboarding.
+  let corpo: unknown = rawBody;
+  let veioDoCorpoLegado = false;
+  if (!wantsMcp) {
+    const parseLegado = agentCreateSchema.safeParse(rawBody);
+    if (!parseLegado.success) {
       return fail("validation_failed", t("Campos inválidos."), 422, {
         requestId,
-        details: parsed.error.flatten(),
+        details: parseLegado.error.flatten(),
       });
     }
-    const input = parsed.data;
-
-    // Validate scope before the first write; a rejected form leaves no orphan.
-    const escopo = await validarEscopoDaVersao(admin, organizationId, input.version);
-    if (!escopo.ok) return fail("validation_failed", mensagemDoEscopo(escopo), 422, { requestId });
-    const records = mcpAgentDraftRecords({ orgId: organizationId, userId: authUserId ?? "" }, input);
-    const { data: agentRow, error: agentError } = await admin
-      .from("ai_agents")
-      .insert({ ...records.agent, created_by: authUserId })
-      .select(AGENT_COLUMNS)
-      .single();
-    if (agentError || !agentRow)
-      return fail("internal_error", "Erro ao criar agent.", 500, { requestId });
-    const { data: versionRow, error: versionError } = await admin
-      .from("ai_agent_versions")
-      .insert({ ...records.version, created_by: authUserId })
-      .select(VERSION_COLUMNS)
-      .single();
-    if (versionError || !versionRow) {
-      await admin
-        .from("ai_agents")
-        .update({ archived_at: new Date().toISOString() })
-        .eq("organization_id", organizationId)
-        .eq("id", agentRow.id);
-      return fail("internal_error", t("Erro ao criar versão inicial."), 500, { requestId });
-    }
-
-    void audit({
-      action: "ai_agent.created",
-      actorUserId: authUserId,
-      actorApiTokenId: authz.apiTokenId ?? null,
-      organizationId,
-      resourceType: "ai_agent",
-      resourceId: agentRow.id,
-      requestId,
-      metadata: { kind: "mcp_agent", first_version_id: versionRow.id, priority: input.priority },
+    // `model` omitido mantém o default que o Modo A sempre gravou — não o
+    // DEFAULT da coluna, que é outro (`claude-sonnet-4-6`).
+    corpo = corpoLegadoComoCorpoDeCriacao({
+      ...parseLegado.data,
+      model: parseLegado.data.model ?? "anthropic/claude-sonnet-5",
     });
-
-    return ok({ agent: agentRow, version: versionRow }, { status: 201, requestId });
+    veioDoCorpoLegado = true;
   }
-
-  // Legacy path — kind='rag_bot' (default DB constraint).
-  const parsed = agentCreateSchema.safeParse(rawBody);
+  const parsed = agentMcpCreateSchema.safeParse(corpo);
   if (!parsed.success) {
     return fail("validation_failed", t("Campos inválidos."), 422, {
       requestId,
@@ -182,23 +169,29 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
   const input = parsed.data;
 
-  const { data, error } = await admin
+  // Validate scope before the first write; a rejected form leaves no orphan.
+  const escopo = await validarEscopoDaVersao(admin, organizationId, input.version);
+  if (!escopo.ok) return fail(codigoDoEscopo(escopo), mensagemDoEscopo(escopo), 422, { requestId });
+  const records = mcpAgentDraftRecords({ orgId: organizationId, userId: authUserId ?? "" }, input);
+  const { data: agentRow, error: agentError } = await admin
     .from("ai_agents")
-    .insert({
-      organization_id: organizationId,
-      name: input.name,
-      description: input.description ?? null,
-      model: input.model ?? "anthropic/claude-sonnet-5",
-      system_prompt: input.system_prompt,
-      is_active: true,
-      is_default: false,
-      created_by: authUserId,
-    })
+    .insert({ ...records.agent, created_by: authUserId })
     .select(AGENT_COLUMNS)
     .single();
-
-  if (error || !data) {
+  if (agentError || !agentRow)
     return fail("internal_error", "Erro ao criar agent.", 500, { requestId });
+  const { data: versionRow, error: versionError } = await admin
+    .from("ai_agent_versions")
+    .insert({ ...records.version, created_by: authUserId })
+    .select(VERSION_COLUMNS)
+    .single();
+  if (versionError || !versionRow) {
+    await admin
+      .from("ai_agents")
+      .update({ archived_at: new Date().toISOString() })
+      .eq("organization_id", organizationId)
+      .eq("id", agentRow.id);
+    return fail("internal_error", t("Erro ao criar versão inicial."), 500, { requestId });
   }
 
   void audit({
@@ -207,10 +200,26 @@ export async function POST(req: NextRequest): Promise<Response> {
     actorApiTokenId: authz.apiTokenId ?? null,
     organizationId,
     resourceType: "ai_agent",
-    resourceId: data.id,
+    resourceId: agentRow.id,
     requestId,
-    metadata: { kind: "rag_bot" },
+    metadata: {
+      kind: "mcp_agent",
+      first_version_id: versionRow.id,
+      priority: input.priority,
+      // De onde veio o corpo. Continua sendo uma criação de mcp_agent nos DOIS
+      // casos — o rótulo é para saber quem ainda manda o formato de 2026-04.
+      formato: veioDoCorpoLegado ? "legado" : "version",
+    },
   });
 
-  return ok(data, { status: 201, requestId });
+  // O contrato de resposta de cada formato se mantém: o corpo legado pedia a
+  // LINHA do agente e continua recebendo-a (agora com `kind = "mcp_agent"`; a v1
+  // nasce RASCUNHO, então `published_version_id` fica null até publicar); o corpo
+  // com `version` segue devolvendo `{ agent, version }`. Mudar o formato que
+  // integrador já consome seria trocar o defeito por outro.
+  return ok(veioDoCorpoLegado ? (agentRow as unknown) : { agent: agentRow, version: versionRow }, {
+    status: 201,
+    requestId,
+  });
 }
+

@@ -13,7 +13,8 @@ export type ActionType =
   | "assign_owner"
   | "call_webhook"
   | "start_message_flow"
-  | "create_task";
+  | "create_task"
+  | "apply_task_plan";
 
 export const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   "lead.created": "Quando entrar um contato novo (webhook)",
@@ -68,4 +69,7 @@ export const ACTION_LABELS: Record<ActionType, string> = {
   start_message_flow: "Iniciar fluxo de mensagem",
   // #1540 — a ação que não fala com o cliente: o lembrete é da equipe.
   create_task: "Criar tarefa interna (sem mensagem ao cliente)",
+  // #1752 — a SEQUÊNCIA em vez do lembrete único: aplica um plano salvo em
+  // Tarefas › Planos ao negócio, criando as N tarefas de uma vez e na ordem.
+  apply_task_plan: "Aplicar um plano de tarefas ao negócio",
 };

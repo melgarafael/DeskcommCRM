@@ -57,6 +57,13 @@ GoTrue da sua pilha (SMTP configurado lá); `marca-emails.sh` usa a Management A
 
 ## Trocar de projeto ou restaurar
 
-Restaurar um backup em outro projeto: crie o projeto, rode o instalador de novo com as credenciais
-novas (ele aplica o schema), depois `bash hostgator-setup-kit/restore.sh backups/db-<data>.sql.gz`.
+O `restore.sh` só restaura num banco **vazio**: num banco que já tem as tabelas do sistema ele para
+antes, sem alterar nada (#2120). Por isso ele **não** volta um backup por cima da instalação em uso,
+e a ordem **não** é instalar e depois restaurar — o instalador aplica o schema, e aí o restore recusa.
+
+Restaurar um backup em outro projeto: crie o projeto Supabase novo, **não** rode o instalador nele,
+troque no `.env` a conexão e as chaves do Supabase pelas do projeto novo, rode
+`bash hostgator-setup-kit/restore.sh backups/db-<data>.sql.gz` e reinicie o app. O restore num
+Supabase recém-criado foi medido (`rc=0`, 110 tabelas); a troca do `.env` não foi. Na dúvida, ou
+num Supabase que roda no próprio servidor (single-server), peça ajuda antes.
 O WhatsApp é pareado de novo por QR se o volume do WAHA não foi restaurado.

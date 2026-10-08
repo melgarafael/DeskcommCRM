@@ -69,6 +69,33 @@ describe("scrubMessage", () => {
     expect(out).not.toContain("joao@exemplo.com");
   });
 
+  it("número internacional com +DDI sai inteiro — e não vira `+[CPF]8` (#2345)", () => {
+    // O padrão de CPF comia 11 dos 12 dígitos do `+351…` e sobrava o último.
+    expect(scrubMessage("zap +351912345678 ok")).toBe("zap [PHONE] ok");
+    expect(scrubMessage("zap +351 912 345 678 ok")).toBe("zap [PHONE] ok");
+    expect(scrubMessage("zap +34 612 345 678 ok")).toBe("zap [PHONE] ok");
+  });
+
+  it("a passada internacional não sobra dígito: o +55 fica com o padrão brasileiro e o estrangeiro sai inteiro", () => {
+    // Resultado EXATO de propósito: a guarda `not.toMatch(/\d{3}/)` dos testes
+    // de baixo não vê 2 dígitos sobrando, e era isso que saía — `[PHONE]21` no
+    // +55 (a passada internacional pegava o número brasileiro e parava antes do
+    // fim) e `[PHONE]8`/`[PHONE]0` no estrangeiro com último bloco longo.
+    // Voltar o último bloco a `\d{3,4}` reprova os casos +49/+91; os +55
+    // reprovam quando faltam as duas peças (o `(?!55)` E o `\d{3,}`), que era
+    // o estado do PR. O `(?!55)` sozinho não muda nenhum destes resultados: o
+    // que ele guarda é o Brasil sair igual a antes nas formas com hífen/ponto.
+    expect(scrubMessage("zap +55 11 987654321 ok")).toBe("zap [PHONE] ok");
+    expect(scrubMessage("zap +55 11 34567890 ok")).toBe("zap [PHONE] ok");
+    expect(scrubMessage("zap +49 30 12345678 ok")).toBe("zap [PHONE] ok");
+    expect(scrubMessage("zap +91 98765 43210 ok")).toBe("zap [PHONE] ok");
+  });
+
+  it("os nove dígitos em três blocos (NIF/telemóvel) saem apagados (#2345)", () => {
+    expect(scrubMessage("nif 123 456 789 ok")).toBe("nif [PHONE] ok");
+    expect(scrubMessage("doc 123.456.789 ok")).toBe("doc [PHONE] ok");
+  });
+
   // O mesmo texto vai ao Sentry e ao Jev, e a tela do Jev promete ao admin que
   // o telefone sai apagado. O padrão antigo exigia o DDD colado ao número, sem
   // parênteses: `(11) 98765-4321` e `98765-4321` — os jeitos mais comuns de

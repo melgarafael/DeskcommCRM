@@ -1092,12 +1092,28 @@ Regra: resposta que não **nomeia o artefato concreto** não conta.
    num produto self-host, e um número que deriva sozinho. É decisão do dono do produto; o
    mínimo honesto (o rótulo dizer a unidade real) entra neste commit porque armar um teto
    contra um número lido 5x errado é estrangulamento por outra porta.
-2. **Gasto multimodal continua fora de qualquer teto.**
-   `workers/media-derive-worker.ts:238` chama `generateText` direto, sem `runModelCall`, e não
-   grava `llm_calls`. Transcrição de áudio e leitura de imagem/PDF — o normal de quem usa
-   WhatsApp, que é o canal primário — gastam dinheiro que nenhum teto vê e que não aparece na
-   tela. Se um dia entrar, entra como **degrau de aviso**, nunca bloqueio surpresa, porque a
-   condição 6 protege.
+2. **Gasto multimodal: a visão e a transcrição pelo modelo da organização SOMAM no teto e são
+   barradas por ele; a transcrição pelo serviço fica fora dos dois.** (Atualizado depois deste design: o texto original dizia que o worker de mídia não
+   gravava `llm_calls`, e uma versão seguinte, que a visão somava mas não era barrada.) O
+   worker grava uma linha por chamada que saiu, nos pontos `visao_de_imagem` e
+   `transcricao_de_audio`. A visão (foto e cada quadro de vídeo) leva custo pela tabela de
+   preços e entra em `fn_gasto_de_ia_do_mes`. Ela chama o provedor fora do `runModelCall`, mas
+   antes do `generateText` passa pelo MESMO `aplicarOrcamento` do seam — não uma cópia: com o
+   teto armado e estourado, a foto não sai, a recusa vira linha `orcamento_esgotado` em
+   `llm_calls`, o item `budget_exceeded` abre na Central e a mensagem recebe o marcador de mídia
+   não lida. A transcrição depende do degrau da escada (`lib/messaging/media/escada-de-transcricao.ts`)
+   que a fez, gravado em `llm_calls.origem_da_escolha`. O degrau 3 (`modelo_da_organizacao`)
+   é o modelo de conversa chamado por `generateText`, cobrado por TOKEN: grava tokens e
+   `costCents`, soma no gasto e passa pelo MESMO gate da visão — e, sem preço na tabela,
+   acende o aviso de medição incompleta como qualquer LLM. Os degraus 1 e 2 (o serviço
+   `/v1/audio/transcriptions`) não passam pelo gate nem somam, por três razões escritas no
+   worker: o custo deles é `null` (o serviço tem preço próprio, que o sistema não conhece, e a
+   chamada não lê tokens de volta), então nunca entraria na soma que o teto compara; o degrau 1
+   pode ser o serviço da própria instalação, que não é gasto da organização; e é com a conversa
+   já na fila humana — o efeito do bloqueio — que o áudio transcrito mais serve a quem atende.
+   Pelo mesmo motivo, são só eles que `getBudgetStatus` tira do aviso de preço desconhecido.
+   Para conferir na fonte: `grep -n "aplicarOrcamento\|barradoPeloTeto" workers/media-derive-worker.ts`.
+   A soma nova chega como **degrau de aviso** antes de bloquear, porque a condição 7 protege.
 3. **Modelo sem preço não consome teto.** `pricing.ts:14-19,34-37` casa por prefixo contra
    três chaves Claude e devolve `null` fora delas (o docstring diz isso com todas as letras).
    Id de OpenRouter vem prefixado por vendor (`anthropic/claude-…`, formato documentado em

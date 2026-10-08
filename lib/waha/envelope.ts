@@ -96,6 +96,17 @@ export const wahaPayloadSchema = z.looseObject({
    */
   participant: z.unknown().optional(),
   author: z.unknown().optional(),
+  /**
+   * A mensagem que esta responde — o "responder em cima" do WhatsApp.
+   *
+   * O NOWEB normaliza o campo (`payload.replyTo`: id + texto citado — medido em
+   * produção, issue #2474) e repete o id cru em
+   * `_data.message.<tipo>.contextInfo.stanzaId`. `unknown` como `participant` e
+   * `author`: quem o lê (`citacaoDoPayload`, em `ingest.ts`) confere os tipos
+   * campo a campo, e exigir shape aqui transformaria um formato novo do campo
+   * em mensagem descartada inteira — a regressão que este arquivo evita.
+   */
+  replyTo: z.unknown().optional(),
   /** Id da mensagem ORIGINAL nos eventos `message.edited` / `message.revoked`. */
   editedMessageId: texto,
   revokedMessageId: texto,

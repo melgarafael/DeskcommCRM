@@ -1207,3 +1207,516 @@ describe("dado do operador: t() não traduz o que o operador digitou", () => {
     expect(COMO_CONSERTAR_DADO_DE_OPERADOR).toContain("pnpm test:unit");
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * CHAVE CONSTRUÍDA EM RUNTIME — as DUAS FORMAS de argumento que os dois guards
+ * acima não alcançam. Fecha o que a issue #603 chama de "o guardião não vê
+ * chave dinâmica nem t() sobre dado".
+ *
+ * Cada bloco cobre uma forma de CHAMADA:
+ *
+ *   passo 1 (#1172)  t(TABELA[k]) / t(TABELA.k)  → resolve e cobra espanhol
+ *   cego C (#1867)   t(<parâmetro livre>)        → reprova (dado do operador)
+ *   ESTE bloco       t(`prefixo.${x}`)           → reprova (chave montada)
+ *                    t(<variável que não é parâmetro>) → reprova
+ *
+ * Medido em `origin/main` (`87593afda`) com esta mesma regra, sobre
+ * `app/`, `components/`, `hooks/` e `lib/` (858 arquivos com `t()`, 9.817
+ * chamadas): **5** sítios de template com interpolação e **29** de variável
+ * que não é parâmetro e não resolve — 34 no total, congelados em
+ * `CHAVE_DE_RUNTIME_CONGELADA` abaixo como 31 entradas (arquivo + expressão),
+ * uma por motivo escrito. Os 9 sítios em que a variável É const de topo ou
+ * importada resolvem pelo passo 1 e não entram na lista.
+ *
+ * Por que reprova em vez de só avisar: `traduzir()` devolve a PRÓPRIA chave
+ * quando ela não está no dicionário (`DICIONARIO[texto]?.[idioma] ?? texto`,
+ * lib/i18n/dicionario.ts:14271). A frase montada em runtime não está em
+ * lugar nenhum, então quem escolheu espanhol recebe PORTUGUÊS — e o gate
+ * ficava verde sobre a ausência. É o mesmo silêncio do defeito que o #600
+ * achou vivo na `main` (`08257eed`).
+ *
+ * ─── Recorte declarado: o que ESTE bloco não pega ────────────────────────────
+ *
+ * - `t(<parâmetro livre>)` — é a fatia do cego C (#1867), com a lista e o
+ *   próprio teste de "só encolhe" ali. Aqui entram só identificadores que NÃO
+ *   são parâmetro, para a mesma chamada não ter duas listas.
+ * - `t(obj.campo)`, `t(err.message)`, `TABELA[x] ?? x` — seguem fora, como o
+ *   bloco do cego C já declara (são a maioria dos ~905 sítios não resolvidos).
+ * - Callback anônimo `lista.map((x) => t(x))`: isento pelo passa-adireto do
+ *   cego C porque o corpo é chamada. Medido na mesma varredura: **12** sítios
+ *   anônimos não resolvidos (os outros 331 passa-adireto são a definição
+ *   `const t = (texto) => traduzir(texto, idioma)`). Continuação da #603.
+ * ══════════════════════════════════════════════════════════════════════════════ */
+
+/** As duas formas de argumento que ninguém enxergava. */
+type FormaDeRuntime = "variavel" | "template";
+
+interface SitioDeChaveDeRuntime {
+  /** Caminho relativo à raiz, em barra normal. */
+  readonly arquivo: string;
+  /** 1-based. */
+  readonly linha: number;
+  /** `arquivo:linha` — é assim que a mensagem de falha aponta o conserto. */
+  readonly local: string;
+  /** O argumento EXATAMENTE como está escrito no código. */
+  readonly expressao: string;
+  readonly forma: FormaDeRuntime;
+  /** `t` ou `traduzir`; os dois são cobridos. */
+  readonly chamada: string;
+}
+
+/**
+ * Todo `t(<variável que não é parâmetro>)` e `t(\`prefixo.${x}\`)` das raízes.
+ *
+ * As raízes são caminhos RELATIVOS à raiz do repo, como em `arquivosDeCodigo`.
+ *
+ * O corte de "não é parâmetro" é o que divide este bloco do cego C: o
+ * identificador que é parâmetro de uma função envolvente já é coberto (e
+ * congelado) ali, e reportá-lo duas vezes obrigraria a mesma chamada a ter duas
+ * razões escritas. Template com interpolação não tem esse conflito: nunca é
+ * declaração de parâmetro.
+ */
+function chaveDeRuntime(raizes: readonly string[]): {
+  readonly sitios: SitioDeChaveDeRuntime[];
+  readonly arquivosVarridos: number;
+} {
+  const sitios: SitioDeChaveDeRuntime[] = [];
+  let arquivosVarridos = 0;
+
+  for (const arquivo of arquivosDeCodigo(raizes)) {
+    const rel = caminhoRelativo(arquivo);
+    // O dicionário declara as chaves; a função que as traduz não as usa.
+    if (rel === "lib/i18n/dicionario.ts") continue;
+    const src = readFileSync(arquivo, "utf8");
+    if (!/\bt\(|\btraduzir\(/.test(src)) continue;
+    arquivosVarridos++;
+    const fonte = ts.createSourceFile(arquivo, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+
+    const visita = (no: ts.Node): void => {
+      if (ts.isCallExpression(no) && no.arguments.length > 0) {
+        const alvo = no.expression;
+        const chamada = ts.isIdentifier(alvo)
+          ? alvo.text
+          : ts.isPropertyAccessExpression(alvo)
+            ? alvo.name.text
+            : "";
+        if (chamada === "t" || chamada === "traduzir") {
+          const primeiro = no.arguments[0];
+          if (!primeiro) return;
+          // A linha é lida do argumento BRUTO, igualzinho à catraca de chave
+          // dinâmica: o join com `naoResolvidos` é por `arquivo:linha`, e
+          // desembrulhar antes mudaria a posição em parêntese multilinha.
+          const linha = fonte.getLineAndCharacterOfPosition(primeiro.getStart()).line + 1;
+          const arg = desembrulharNo(primeiro);
+          const forma: FormaDeRuntime | null = ts.isTemplateExpression(arg)
+            ? "template"
+            : ts.isIdentifier(arg) && funcaoQueDeclara(arg) === null
+              ? "variavel"
+              : null;
+          if (forma) {
+            sitios.push({
+              arquivo: rel,
+              linha,
+              local: `${rel}:${linha}`,
+              expressao: arg.getText(fonte),
+              forma,
+              chamada,
+            });
+          }
+        }
+      }
+      ts.forEachChild(no, visita);
+    };
+    visita(fonte);
+  }
+  return { sitios, arquivosVarridos };
+}
+
+/**
+ * Cruza as duas formas com o que a catraca de chave dinâmica NÃO resolve.
+ *
+ * Assimetria declarada, do mesmo jeito que os guards anteriores: o argumento
+ * que o passo 1 resolve (const de topo, tabela importada, `Object.values()`) já
+ * é cobrado em espanhol NAQUELE bloco, então reprovar aqui seria dupla cobrança
+ * sobre o mesmo sítio — e o que ele NÃO resolve é justamente o valor que
+ * ninguém sabe ler: a lista `semCobertura` é a que a allowlist congela.
+ */
+function varrerChaveDeRuntime(raizes: readonly string[]) {
+  const forma = chaveDeRuntime(raizes);
+  const semResolvedor = new Set(
+    varrerChavesDeI18n(raizes).naoResolvidos.map((n) => n.local),
+  );
+  return {
+    arquivosVarridos: forma.arquivosVarridos,
+    sitios: forma.sitios,
+    semCobertura: forma.sitios.filter((s) => semResolvedor.has(s.local)),
+    resolvidas: forma.sitios.filter((s) => !semResolvedor.has(s.local)),
+  };
+}
+
+const COMO_CONSERTAR_DE_RUNTIME =
+  "Chave montada em runtime não está em nenhum dicionário: traduzir() devolve a frase em português. " +
+  'Conserto: escreva o literal em cada ramo (condicao ? t("A") : t("B")) ou troque a interpolação por ' +
+  'placeholder no literal (t("Meta de {indicador}").replace("{indicador}", valor)); se o valor é o que o ' +
+  "operador digitou, tire a chamada de t(). " +
+  "É dívida de antes e não é do seu PR? Escreva a razão em CHAVE_DE_RUNTIME_CONGELADA, neste arquivo, " +
+  "com o par arquivo + expressão — a lista só encolhe. " +
+  "Confira com: pnpm test:unit tests/unit/i18n-espanhol-cobre-a-tela.test.ts";
+
+/**
+ * A dívida de HOJE, congelada — os 34 sítios medidos na `main` `87593afda`
+ * (04/10/2026), como 31 entradas arquivo + expressão.
+ *
+ * Casa por ARQUIVO + EXPRESSÃO, nunca por linha: rebase alheio que sobe três
+ * linhas não pinta vermelho quem não mexeu em tradução. Como as outras listas
+ * desta casa, esta SÓ ENCOLHE — consertar a chamada (literal, ou `t()` fora)
+ * faz a entrada deixar de casar, e a catraca fica vermelha pedindo a remoção.
+ * Entrada nova exige medição nova e razão escrita; razão nunca é "não deu
+ * tempo". Esta fatia é decisão de produto declarada na issue #603, não
+ * decidida aqui: nenhuma tradução foi acrescentada ou mudada por este PR.
+ */
+const CHAVE_DE_RUNTIME_CONGELADA: { arquivo: string; expressao: string; motivo: string }[] = [
+  {
+    arquivo: "app/api/v1/agenda/horarios-livres/route.ts",
+    expressao: "`O período não pode passar de ${MAXIMO_DE_DIAS} dias.`",
+    motivo:
+      "erro de validação de rota: o número é a constante MAXIMO_DE_DIAS, mas a frase é montada em runtime " +
+      "e não pode ser chave de dicionário; virar literal com placeholder é decisão de escopo (issue #603)",
+  },
+  {
+    arquivo: "app/api/v1/ai/providers/route.ts",
+    expressao: "`\"${corpo.default_model}\" não está no catálogo de ${corpo.provider}`",
+    motivo:
+      "rota de API que monta o erro com modelo e provedor vindos do CORPO da requisição: dado de runtime " +
+      "no meio da frase, e app/api não renderiza tela",
+  },
+  {
+    arquivo: "app/api/v1/ai/providers/route.ts",
+    expressao:
+      "`o catálogo de ${corpo.provider} ainda não foi sincronizado nesta instalação, então não deu para conferir \"${corpo.default_model}\" — se o identificador estiver errado, todo ponto que herda o padrão vai falhar.`",
+    motivo:
+      "mesma rota: aviso montado com corpo.provider e corpo.default_model — nenhum valor está escrito no " +
+      "código, então nenhuma entrada do dicionário pode conter a frase inteira",
+  },
+  {
+    arquivo: "app/api/v1/proposals/[id]/send/route.ts",
+    expressao: "`Item sem preço definido: ${semPreco.join(\", \")}. Defina o preço antes de enviar.`",
+    motivo:
+      "erro que lista os itens sem preço devolvidos pelo banco: a lista é dado de runtime, e a frase " +
+      "montada serve só à rota que dispara o envio",
+  },
+  {
+    arquivo: "components/theme/theme-toggle.tsx",
+    expressao: "`Tema: ${theme}. Cmd+Shift+L para alternar.`",
+    motivo:
+      "aria-label do alternador de tema montado com o nome do tema em runtime — tela de produto, e o " +
+      "conserto (literal em cada ramo, claro/escuro) é decisão de produto declarada na issue #603",
+  },
+  {
+    arquivo: "app/api/v1/ai/jev/route.ts",
+    expressao: "soObserva",
+    motivo:
+      "valor lido de TAREFAS_DO_JEV no corpo da rota (linha 654), não é const de topo: é a recusa da " +
+      "própria rota, não frase de tela",
+  },
+  {
+    arquivo: "app/api/v1/conversations/[id]/drafts/route.ts",
+    expressao: "mensagem",
+    motivo:
+      "mensagem montada no corpo da rota antes do throw (linha 126), a partir do dado que o validador " +
+      "da requisição rejeitou",
+  },
+  {
+    arquivo: "app/app/ads/meta/_components/MetaAdsClient.tsx",
+    expressao: "aviso",
+    motivo:
+      "STATUS_DA_CONTA[c.status] atribuído DENTRO do componente (linha 163): conjunto fechado, mas o " +
+      "resolvedor indexa só const de topo",
+  },
+  {
+    arquivo: "app/app/ads/meta/_components/TabelaDeCampanhas.tsx",
+    expressao: "rotulo",
+    motivo:
+      "rotuloDoIndicador(linha.resultado.indicador), helper chamado dentro do componente (linha 234): " +
+      "conjunto fechado que o resolvedor não abre",
+  },
+  {
+    arquivo: "app/app/ai/agents/[id]/_components/RunTrace.tsx",
+    expressao: "errMsgBruto",
+    motivo:
+      "mensagem de erro devolvida pelo servidor (s.error.message, linha 71): dado de runtime — traduzir " +
+      "erro de terceiro mudaria o texto do erro",
+  },
+  {
+    arquivo: "app/app/ai/cases/_components/CaseReplyPanel.tsx",
+    expressao: "disabledReason",
+    motivo:
+      "CASE_REPLY_DISABLED_REASON[status] atribuído dentro do componente (linha 28): tabela fechada " +
+      "fora do índice de const de topo",
+  },
+  {
+    arquivo: "app/app/ai/cases/avisos/_components/AlertasDoAviso.tsx",
+    expressao: "rotulo",
+    motivo:
+      "ROTULO_DO_LINK[aviso.codigo] atribuído dentro do componente (linha 103): tabela fechada fora do " +
+      "alcance do resolvedor",
+  },
+  {
+    arquivo: "app/app/ai/cases/avisos/_components/AvisoNoWhatsApp.tsx",
+    expressao: "frase",
+    motivo:
+      "frase montada no corpo do componente (linha 205) a partir do resultado do envio do aviso de teste",
+  },
+  {
+    arquivo: "app/app/ai/cases/avisos/_components/EntregasDoAviso.tsx",
+    expressao: "frase",
+    motivo:
+      "fraseDoErro(entrega.erro_codigo), helper chamado dentro do componente (linha 101): o código vem " +
+      "do servidor, não do código",
+  },
+  {
+    arquivo: "app/app/ai/providers/_components/CartaoDoJev.tsx",
+    expressao: "aoDecidir",
+    motivo:
+      "registro?.aoDecidir lido dentro do componente (linha 857): frase do registro do Jev, e o índice " +
+      "do registro é dado de runtime",
+  },
+  {
+    arquivo: "app/app/ai/providers/_components/CartaoDoJev.tsx",
+    expressao: "oQueFazer",
+    motivo:
+      "frasesDeFalha[falha.motivo] atribuído dentro do componente (linha 829): tabela fechada usada " +
+      "como variável local",
+  },
+  {
+    arquivo: "app/app/ai/providers/_components/CartaoDoJev.tsx",
+    expressao: "efeito",
+    motivo:
+      "doRegistro(tarefa.id)?.aoConfirmarDecidir (linha 1183): texto do registro da tarefa, origem de " +
+      "runtime para o resolvedor",
+  },
+  {
+    arquivo: "app/app/ai/providers/_components/CartaoDoJev.tsx",
+    expressao: "escolhida",
+    motivo:
+      "frase escolhida pela contagem de mensagens (linha 1288) e passada por t() antes do replace de " +
+      "{dias}: a chave existe só depois da escolha",
+  },
+  {
+    arquivo: "app/app/metrics/_components/PerdasPanel.tsx",
+    expressao: "canonico",
+    motivo:
+      "rotuloDoMotivoDePerda(motivo) chamado dentro do componente (linha 104): o próprio código compara " +
+      "o rótulo com o valor antes de decidir se traduz",
+  },
+  {
+    arquivo: "app/app/settings/atualizacao/_components/UpdatePanel.tsx",
+    expressao: "contaDoBanco",
+    motivo:
+      "textoDaRodadaDoBanco(data.run?.rodada_do_banco) (linha 166): texto derivado de dado do banco, " +
+      "usado nas linhas 189 e 230",
+  },
+  {
+    arquivo: "app/onboarding/funil/_client.tsx",
+    expressao: "explicacao",
+    motivo:
+      "explicacaoDoPasso(etapa.passo) (linha 124): helper chamado dentro do componente sobre o passo " +
+      "vindo do dado da etapa",
+  },
+  {
+    arquivo: "components/admin/ImpersonateButton.tsx",
+    expressao: "rawMsg",
+    motivo:
+      "message de erro devolvida pela API (linha 59): dado de runtime — a mensagem do servidor não é " +
+      "chave de dicionário",
+  },
+  {
+    arquivo: "components/ai/BudgetCard.tsx",
+    expressao: "AVISO_DE_MEDICAO",
+    motivo:
+      "const de topo cujo valor é concatenação de literais com `+` (linha 155): forma que o resolvedor " +
+      "não abre; texto fixo do produto, sem dado nenhum no meio",
+  },
+  {
+    arquivo: "components/ai/CitationsPanel.tsx",
+    expressao: "sourceLabel",
+    motivo:
+      "SOURCE_LABEL[c.source_type] atribuído dentro do componente (linha 48): tabela fechada fora do " +
+      "índice de const de topo",
+  },
+  {
+    arquivo: "components/ai/SourceStatusBadge.tsx",
+    expressao: "label",
+    motivo:
+      "desestruturação de MAP[derived] dentro do componente (linha 58): tabela fechada do módulo, mas o " +
+      "identificador é variável local",
+  },
+  {
+    arquivo: "components/auth/PasswordStrength.tsx",
+    expressao: "label",
+    motivo:
+      "array literal de rótulos indexado por score DENTRO do componente (linha 16): conjunto fechado; a " +
+      "chamada aparece nas linhas 25 e 35",
+  },
+  {
+    arquivo: "components/contacts/TimelineView.tsx",
+    expressao: "reasonTrim",
+    motivo:
+      "it.reason vindo do payload da linha do tempo (linha 114): dado gravado, não frase de tela",
+  },
+  {
+    arquivo: "components/inbox/MessageBubble.tsx",
+    expressao: "senderLabel",
+    motivo:
+      "rótulo do remetente calculado por IIFE dentro do componente (linha 139): a origem é o dado da " +
+      "mensagem",
+  },
+  {
+    arquivo: "components/kanban/FilterBar.tsx",
+    expressao: "rotulo",
+    motivo:
+      "rotuloDoMotivoDePerda(motivo) chamado dentro do componente (linha 185): o código compara o " +
+      "rótulo com o valor antes de decidir se traduz",
+  },
+  {
+    arquivo: "components/operacao/SeloDeAutoria.tsx",
+    expressao: "texto",
+    motivo:
+      "autorNaTela(kind) chamado dentro do componente (linha 45): helper sobre o tipo de autoria, " +
+      "conjunto fechado não resolvível estaticamente",
+  },
+  {
+    arquivo: "components/shell/CommandPalette.tsx",
+    expressao: "rotuloGrupo",
+    motivo:
+      "ROTULO_GRUPO.get(grupoId) ?? grupoId (linha 225): o fallback é o próprio id de runtime, e a " +
+      "chamada aparece nas linhas 227 e 230",
+  },
+];
+
+function ehChaveDeRuntimeCongelada(sitio: SitioDeChaveDeRuntime): boolean {
+  return CHAVE_DE_RUNTIME_CONGELADA.some(
+    (e) => e.arquivo === sitio.arquivo && e.expressao === sitio.expressao,
+  );
+}
+
+describe("chave construída em runtime: t() não recebe o que o código não escreveu", () => {
+  /** Uma varredura só para o describe inteiro: relê centenas de arquivos. */
+  const varredura = varrerChaveDeRuntime(AREAS_DE_PRODUTO);
+
+  it("a varredura enxerga — os verdes abaixo não são vacuidade", () => {
+    expect(
+      varredura.arquivosVarridos,
+      "nenhum arquivo varrido: o caminho das áreas mudou?",
+    ).toBeGreaterThan(300);
+    // O join com a catraca de chave dinâmica é por arquivo:linha. Se algum
+    // sítio ficasse sem lado nenhum, a lista congelada estaria silenciando
+    // chamada em vez de declará-la.
+    expect(
+      varredura.semCobertura.length + varredura.resolvidas.length,
+      "sítio fora dos dois lados do cruzamento com naoResolvidos",
+    ).toBe(varredura.sitios.length);
+    expect(
+      varredura.resolvidas.length,
+      "nenhuma variável resolveu pelo passo 1: o cruzamento parou de achar const de topo",
+    ).toBeGreaterThan(0);
+    expect(
+      varredura.sitios.find(
+        (s) =>
+          s.forma === "template" && s.arquivo === "components/theme/theme-toggle.tsx",
+      ),
+      "o sítio t(`Tema: ${theme}…`) saiu de components/theme/theme-toggle.tsx",
+    ).toBeDefined();
+    expect(
+      varredura.sitios.filter((s) => s.forma === "template").length,
+      "template com interpolação deixou de ser forma de runtime",
+    ).toBeGreaterThanOrEqual(5);
+  });
+
+  it("nenhuma chave construída em runtime passa por t() fora da dívida congelada", () => {
+    const foraDaLista = varredura.semCobertura
+      .filter((s) => !ehChaveDeRuntimeCongelada(s))
+      .map((s) => `${s.local} ${s.chamada}(${s.forma}) ${s.expressao.slice(0, 100)}`);
+    expect(
+      foraDaLista,
+      `${foraDaLista.length} chamada(s) t() com chave montada em runtime ou sobre variável que ninguém ` +
+        `resolve: a frase sai em português para quem escolheu espanhol. ${COMO_CONSERTAR_DE_RUNTIME}`,
+    ).toEqual([]);
+  });
+
+  it("a dívida de runtime só encolhe: entrada que deixou de casar é vermelho", () => {
+    const pagas = CHAVE_DE_RUNTIME_CONGELADA.filter(
+      (e) => !varredura.semCobertura.some((s) => s.arquivo === e.arquivo && s.expressao === e.expressao),
+    ).map((e) => `${e.arquivo} → ${e.expressao.slice(0, 80)} (razão declarada: ${e.motivo.slice(0, 60)}…)`);
+    expect(
+      pagas,
+      `${pagas.length} entrada(s) de CHAVE_DE_RUNTIME_CONGELADA não casam mais com sítio nenhum: a chamada ` +
+        "foi consertada, ou a variável virou literal. Remova a entrada deste arquivo — a lista só encolhe.",
+    ).toEqual([]);
+  });
+
+  it("toda entrada tem razão escrita — lista sem motivo é fraude de gate", () => {
+    const semRazao = CHAVE_DE_RUNTIME_CONGELADA.filter((e) => e.motivo.trim().length < 20).map(
+      (e) => `${e.arquivo} → ${e.expressao.slice(0, 60)}`,
+    );
+    expect(
+      semRazao,
+      "entrada de allowlist sem razão escrita: a issue #603 proíbe allowlist sem motivo",
+    ).toEqual([]);
+    expect(
+      CHAVE_DE_RUNTIME_CONGELADA.length,
+      "a lista nasceu com 31 entradas (34 sítios medidos na main 87593afda) e só pode encolher: " +
+        "entrada nova exige medição nova",
+    ).toBeLessThanOrEqual(31);
+  });
+
+  /** A linha do `t(...)` na fixture, lida do arquivo — para não mentir sobre o local. */
+  const linhaDaFixture = (caso: string, trecho: string): number => {
+    const linhas = readFileSync(join(RAIZ, RAIZ_DAS_FIXTURES, caso, "painel.tsx"), "utf8").split("\n");
+    const achou = linhas.findIndex((l) => l.includes(trecho));
+    expect(achou, `a fixture ${caso} perdeu o trecho ${trecho}`).toBeGreaterThan(-1);
+    return achou + 1;
+  };
+
+  it("fixture VERMELHA reprova a variável local e a chave montada em runtime", () => {
+    const vermelha = varrerChaveDeRuntime([`${RAIZ_DAS_FIXTURES}/chave-de-runtime-vermelha`]);
+    expect(
+      vermelha.semCobertura.map((s) => `${s.local} ${s.forma}`),
+      "o guardião deixou de reprovar t(variável) ou t(`…${}`): o cego voltou",
+    ).toEqual([
+      `${RAIZ_DAS_FIXTURES}/chave-de-runtime-vermelha/painel.tsx:${linhaDaFixture(
+        "chave-de-runtime-vermelha",
+        "{t(rotulo)}",
+      )} variavel`,
+      `${RAIZ_DAS_FIXTURES}/chave-de-runtime-vermelha/painel.tsx:${linhaDaFixture(
+        "chave-de-runtime-vermelha",
+        "{t(`Meta de",
+      )} template`,
+    ]);
+  });
+
+  it("fixture VERDE passa: literal, const de topo, tabela fechada e wrapper", () => {
+    const verde = varrerChaveDeRuntime([`${RAIZ_DAS_FIXTURES}/chave-de-runtime-verde`]);
+    expect(
+      verde.arquivosVarridos,
+      "a fixture verde não foi lida: o caminho mudou?",
+    ).toBe(1);
+    // `t(ROTULO_FIXO)` É uma variável — e resolve pelo passo 1. É ela que prova
+    // que a regra não reprova toda variável, só a que ninguém consegue ler.
+    expect(
+      verde.resolvidas.map((s) => s.expressao),
+      "a const de topo deixou de resolver: o cruzamento com o passo 1 quebrou",
+    ).toEqual(["ROTULO_FIXO"]);
+    expect(
+      verde.semCobertura,
+      "a fixture verde reprovou um desenho legítimo: falso positivo em catraca nova custa a confiança dela",
+    ).toEqual([]);
+  });
+
+  it("a mensagem de falha diz o conserto e o comando de conferência", () => {
+    expect(COMO_CONSERTAR_DE_RUNTIME).toContain("literal");
+    expect(COMO_CONSERTAR_DE_RUNTIME).toContain("CHAVE_DE_RUNTIME_CONGELADA");
+    expect(COMO_CONSERTAR_DE_RUNTIME).toContain("pnpm test:unit");
+  });
+});
+

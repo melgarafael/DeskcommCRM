@@ -37,8 +37,25 @@
  * mesmo lugar sem nunca ser o dono de uma trava longa.
  *
  * São dois passos porque `supabase-js` não escreve `update ... where id in
- * (select ... limit n)`: primeiro escolhe os ids, depois esvazia por id. As
- * duas idas custam menos que a trava que a alternativa pediria.
+ * (select ... limit n)`: primeiro escolhe o lote, depois esvazia. As duas idas
+ * custam menos que a trava que a alternativa pediria.
+ *
+ * ─── E o segundo passo NÃO pode ser por lista de id ─────────────────────────
+ *
+ * Era, e não funcionava. O PostgREST põe o filtro na QUERY STRING: 500 uuids
+ * (36 caracteres cada, fora o separador) passam de 18 KB de URL, e o gateway na
+ * frente dele recusa por tamanho — o Kong 2.8.1 devolve `414 URI too long` acima
+ * de 8.192 B, o mesmo muro que `app/api/v1/conversations/_handler.ts` já mede
+ * (`ORCAMENTO_DE_IDS_NA_URL`). O `archived_at` nunca era gravado, a rodada
+ * seguinte escolhia a MESMA leva, e o ciclo se repetia a cada rodada, com um
+ * `warn` como única voz: a poda existia, rodava, e não esvaziava uma linha.
+ *
+ * O corte agora é o `received_at` da ÚLTIMA linha do lote: o mesmo predicado da
+ * escolha (`archived_at is null`), com um teto de tempo em vez de uma lista.
+ * Nada vai na URL além de duas datas. Pode esvaziar algumas linhas a mais que o
+ * lote — as que empatam no mesmo instante —, e isso é aceitável de propósito:
+ * continua idempotente, continua limitado no tempo, e um empate de microssegundo
+ * não é uma trava longa.
  *
  * ─── A ordem e o erro, na MESMA régua das podas irmãs (issue #1769) ─────────
  *
@@ -134,7 +151,7 @@ export async function podarArquivoDeWebhooks(
   // não escreve nada. É também o predicado do índice parcial da 0163.
   const { data: alvos, error: erroBusca } = await admin
     .from("webhook_events_log")
-    .select("id")
+    .select("id,received_at")
     .is("archived_at", null)
     .lt("received_at", limiteEm(opcoes.diasComCorpo))
     .order("received_at", { ascending: true })
@@ -147,11 +164,16 @@ export async function podarArquivoDeWebhooks(
     return { esvaziadas: 0, apagadas: 0, temMais: false };
   }
 
-  const ids = (alvos ?? []).map((r) => (r as { id: string }).id);
+  const linhas = (alvos ?? []) as { id: string; received_at: string }[];
+  // O corte é a data da ÚLTIMA linha do lote — as linhas vêm da mais velha para
+  // a mais nova, então tudo até ela é o lote inteiro e nada além dele. A string
+  // vai como o banco a devolveu: passar por `Date` perderia os microssegundos e
+  // deixaria a própria última linha de fora do teto.
+  const corte = linhas.length > 0 ? (linhas[linhas.length - 1]?.received_at ?? null) : null;
   let esvaziadas = 0;
 
-  if (ids.length > 0) {
-    const { error: erroUpdate } = await admin
+  if (corte !== null) {
+    const { data: esvaziadasRows, error: erroUpdate } = await admin
       .from("webhook_events_log")
       .update({
         raw_body: null,
@@ -162,14 +184,21 @@ export async function podarArquivoDeWebhooks(
         // investigar não saberia se o arquivo falhou ou se a poda passou.
         archived_at: new Date().toISOString(),
       })
-      .in("id", ids);
+      // O MESMO predicado da escolha, e por isso continua idempotente: linha já
+      // esvaziada não volta a ser escolhida nem a ser escrita.
+      .is("archived_at", null)
+      .lte("received_at", corte)
+      .select("id");
 
     if (erroUpdate) {
       logger.warn("[retencao-webhook] não consegui esvaziar o lote", {
         detail: erroUpdate.message.slice(0, 160),
       });
     } else {
-      esvaziadas = ids.length;
+      // Contar o que VOLTOU, e não o que se pediu: o empate de instante pode
+      // levar algumas linhas a mais, e o número que a rodada reporta tem de ser
+      // o que aconteceu.
+      esvaziadas = (esvaziadasRows ?? []).length;
     }
   }
 
@@ -227,7 +256,7 @@ export async function podarArquivoDeWebhooks(
       // fila continua cheia de linhas que o passo 1 ainda tem que esvaziar, e
       // quem chama usa este sinal para saber que a poda não chegou ao regime
       // estável — o que, numa falha, é literalmente verdade.
-      temMais: ids.length >= lote,
+      temMais: linhas.length >= lote,
     });
   }
 
@@ -237,6 +266,6 @@ export async function podarArquivoDeWebhooks(
     // Lote cheio = ainda há fila. Quem chama pode usar isto para saber que a
     // poda ainda não alcançou o estado estável — útil no primeiro dia, quando
     // há 31 mil linhas atrasadas e a varredura leva várias rodadas.
-    temMais: ids.length >= lote,
+    temMais: linhas.length >= lote,
   };
 }

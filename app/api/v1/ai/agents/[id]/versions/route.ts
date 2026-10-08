@@ -17,7 +17,7 @@ import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { mensagemDoEscopo, validarEscopoDaVersao } from "@/lib/ai/agents/escopo";
+import { codigoDoEscopo, mensagemDoEscopo, validarEscopoDaVersao } from "@/lib/ai/agents/escopo";
 import { versionCreateSchema } from "@/lib/ai/agents/validation";
 import { lerAmbiente } from "@/lib/instalacao/ambiente";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -147,11 +147,14 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     // no array, a versão é publicada, e o assistente não acha nada — sem erro,
     // com a tela mostrando a marcação como se estivesse valendo.
     const escopo = await validarEscopoDaVersao(admin, organizationId, {
+      provider: v.provider,
       pipeline_ids: v.pipeline_ids,
       knowledge_source_ids: v.knowledge_source_ids,
+      credential_id: v.credential_id,
+      channel_session_id: v.channel_session_id,
     });
     if (!escopo.ok) {
-      return fail("validation_failed", mensagemDoEscopo(escopo), 422, { requestId });
+      return fail(codigoDoEscopo(escopo), mensagemDoEscopo(escopo), 422, { requestId });
     }
 
     const nextNumber = (maxRow?.version_number ?? 0) + 1;

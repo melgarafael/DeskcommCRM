@@ -154,7 +154,7 @@ echo "URL do Supabase: a da nuvem E a de um Supabase próprio"
 # recria o mesmo beco em prosa.
 #
 # FRONTEIRA (o cabeçalho deste arquivo): aqui se mede só o `case` de formato. A
-# chamada a /auth/v1/health é dublada, porque prender esta suíte a DNS é trocar
+# chamada a /auth/v1/verify é dublada, porque prender esta suíte a DNS é trocar
 # um teste por um oráculo. O que aquela chamada prova de fato — e o que ela NÃO
 # prova — é medição de instalação real; ver o relatório da triagem.
 sburl_ok() {  # sburl_ok <descrição> <pass|reject> <url> [trecho esperado]...
@@ -163,8 +163,9 @@ sburl_ok() {  # sburl_ok <descrição> <pass|reject> <url> [trecho esperado]...
   out="$(bash -c '
       INSTALL_SH_LIB=1 . ./install.sh
       set +e
-      # Só o formato está sob teste: para o dublê, a rede responde 200 a todos.
-      curl() { printf 200; }
+      # Só o formato está sob teste: para o dublê, todo host é um GoTrue (o
+      # JSON que /auth/v1/verify devolve sem parâmetros, como medido).
+      curl() { printf '\''{"msg":"Verify requires a verification type"}\n400'\''; }
       v_supabase_url "$1"' _ "$url" 2>&1)"; rc=$?
   if [ "$expect" = pass ]; then
     if [ $rc -eq 0 ]; then printf '  ✓ %s\n' "$desc"
@@ -193,6 +194,92 @@ sburl_ok "rejeita http:// (sem TLS)"               reject "http://db-crm.exemplo
 # migraria do `case` para a prosa, onde não há catraca nenhuma.
 sburl_ok "a recusa ensina o caso da NUVEM"         reject "meu-supabase" "supabase.co"
 sburl_ok "a recusa ensina o caso do Supabase PRÓPRIO" reject "meu-supabase" "servidor"
+
+echo "URL do Supabase: quem responde tem de ser o GoTrue, não qualquer servidor"
+# O validador aceitava QUALQUER código HTTP diferente de 000. Medido numa VPS
+# com Coolify (PR 4, E7 Passo 1): a 127.0.0.1:8000 é o PAINEL do Coolify e
+# responde 302 — e teria passado como "o Supabase local". A 8001 (o Envoy do
+# Supabase) é a certa.
+#
+# O dublê reproduz o que foi MEDIDO, sem chave (a URL é perguntada antes das
+# chaves, então o validador não tem apikey para mandar):
+#   - Envoy self-hosted e gateway da nuvem: /auth/v1/health → 401 (o gateway
+#     exige apikey; ninguém do GoTrue respondeu ainda); /auth/v1/verify é rota
+#     ABERTA (link de e-mail) e quem responde é o GoTrue: 400 com o JSON dele.
+#   - Coolify na 8000: 302 com HTML de redirecionamento para /login, em tudo.
+#   - Um site qualquer: 200 com HTML.
+# O dublê imita `-o` e `-w` do curl de verdade, para não amarrar o teste à
+# forma da chamada — só ao que o servidor responde.
+gotrue_curl_duble() {
+  curl() {
+    local a prev="" url="" fmt="" so_codigo=0 body code
+    for a; do
+      case "$prev" in -w) fmt="$a";; -o) so_codigo=1;; esac
+      case "$a" in http://*|https://*) url="$a";; esac
+      prev="$a"
+    done
+    case "$url" in
+      http://127.0.0.1:8001/auth/v1/verify*|https://*.supabase.co/auth/v1/verify*|https://db-crm.exemplo.com.br/auth/v1/verify*)
+        body='{"code":400,"error_code":"validation_failed","msg":"Verify requires a verification type"}'; code=400;;
+      http://127.0.0.1:8001/*|https://*.supabase.co/*|https://db-crm.exemplo.com.br/*)
+        body='Unauthorized'; code=401;;
+      https://api.exemplo.com.br/*)
+        # Uma API qualquer que devolve JSON com "msg" e 200: o corpo sozinho
+        # não separa ela do GoTrue; o código separa.
+        body='{"ok":true,"msg":"pong"}'; code=200;;
+      http://127.0.0.1:8000/*)
+        body='<!DOCTYPE html><html><head><title>Redirecting to http://127.0.0.1:8000/login</title></head></html>'; code=302;;
+      *)
+        body='<!DOCTYPE html><html><body>Bem-vindo</body></html>'; code=200;;
+    esac
+    [ "$so_codigo" = 1 ] || printf '%s' "$body"
+    [ -z "$fmt" ] || { fmt="${fmt//%\{http_code\}/$code}"; printf "$fmt"; }
+    return 0
+  }
+}
+gotrue_ok() {  # gotrue_ok <descrição> <pass|reject> <url> <single-server: 0|1> <url interna> [trecho esperado]...
+  local desc="$1" expect="$2" url="$3" ss="$4" interna="$5" out rc want
+  shift 5
+  out="$(bash -c "
+      INSTALL_SH_LIB=1 . ./install.sh
+      set +e
+      $(declare -f gotrue_curl_duble)
+      gotrue_curl_duble
+      SINGLE_SERVER=\"\$2\" SUPABASE_INTERNAL_URL=\"\$3\"
+      v_supabase_url \"\$1\"" _ "$url" "$ss" "$interna" 2>&1)"; rc=$?
+  if [ "$expect" = pass ]; then
+    if [ $rc -eq 0 ]; then printf '  ✓ %s\n' "$desc"
+    else printf '  ✗ %s  (esperava aceitar, rejeitou: %s)\n' "$desc" "$(printf '%s' "$out" | head -1)"; fail=1; fi
+    return
+  fi
+  if [ $rc -eq 0 ]; then printf '  ✗ %s  (esperava rejeitar, aceitou)\n' "$desc"; fail=1; return; fi
+  for want in "$@"; do
+    if ! grep -qi -- "$want" <<<"$out"; then
+      printf '  ✗ %s  (rejeitou, mas a mensagem não fala de: %s)\n     disse: %s\n' \
+        "$desc" "$want" "$(printf '%s' "$out" | head -1)"; fail=1; return
+    fi
+  done
+  printf '  ✓ %s\n' "$desc"
+}
+# O caso medido: single-server apontando para a porta do painel do Coolify.
+gotrue_ok "single-server: painel do Coolify (302) é RECUSADO" reject \
+  "https://crm.exemplo.com.br" 1 "http://127.0.0.1:8000" "não é o Supabase" "127.0.0.1:8000"
+# O caso certo da mesma VPS: o Envoy do Supabase na 8001.
+gotrue_ok "single-server: o Envoy do Supabase (GoTrue) é ACEITO" pass \
+  "https://crm.exemplo.com.br" 1 "http://127.0.0.1:8001"
+# Sem quebrar a nuvem: o gateway dela também deixa /auth/v1/verify aberto.
+gotrue_ok "nuvem: projeto .supabase.co é ACEITO" pass \
+  "https://abcdefghijklmnop.supabase.co" 0 ""
+gotrue_ok "Supabase próprio atrás de domínio é ACEITO" pass \
+  "https://db-crm.exemplo.com.br" 0 ""
+# O mesmo defeito fora do single-server: a URL do SITE da empresa no lugar da
+# do Supabase respondia 200 e passava.
+gotrue_ok "um site qualquer (200 HTML) é RECUSADO" reject \
+  "https://www.exemplo.com.br" 0 "" "não é o Supabase"
+# "msg" no corpo não basta: o GoTrue devolve 400 ali (medido no GoTrue do kit,
+# v2.196.0). Uma API que responda 200 com "msg" não é o Supabase.
+gotrue_ok "200 com 'msg' no corpo é RECUSADO" reject \
+  "https://api.exemplo.com.br" 0 "" "não é o Supabase" "HTTP 200"
 
 echo "chaves do Supabase (formato/papel/projeto)"
 ok "rejeita service_role no campo anon" reject v_anon    "$(mkjwt service_role abcdefghijklmnop)" "preciso da 'anon'"
@@ -1498,7 +1585,16 @@ rt_ok() {  # rt_ok <descrição> <esperado> <netmode> <redes do contêiner> <bri
 # devolve o nome dela nos dois campos; modo host devolve "host" nos dois.
 rt_ok "Traefik em bridge própria → a rede DELE"  coolify    coolify    "coolify "        crm_proxy
 rt_ok "Traefik na bridge default → bridge"       bridge     bridge     "bridge "         crm_proxy
-rt_ok "Traefik em 2 redes → a primeira"          coolify    coolify    "coolify web "    crm_proxy
+rt_ok "Traefik em 2 redes com a coolify → coolify" coolify    coolify    "coolify web "    crm_proxy
+# O docker devolve as redes em ORDEM ALFABÉTICA (o template percorre um mapa), e
+# "a primeira" era a rede que vence o sorteio do alfabeto, não a que o painel usa
+# para os sites. Medido numa VPS com Coolify: com uma rede "aaa-simulado"
+# pendurada no coolify-proxy, a descoberta devolveu aaa-simulado.
+rt_ok "2 redes, coolify NÃO é a primeira → coolify" coolify coolify   "aaa-simulado coolify " crm_proxy
+# Sem a coolify entre elas não há como saber qual é a do proxy: vazio, e quem
+# chama recusa mandando declarar TRAEFIK_NETWORK. Chutar pode ligar o CRM à rede
+# de outro projeto, ou a uma rede `internal` que derruba o `up -d`.
+rt_ok "2 redes sem a coolify → não escolhe (vazio)" ''      rede-a     "rede-a rede-b "  crm_proxy
 # ESTE é o defeito da issue #139: em modo host `.NetworkSettings.Networks` devolve
 # a string "host", que é uma rede de driver `host` — gravá-la em TRAEFIK_NETWORK
 # mata o `up -d` com "network host declared as external, but could not be found".
@@ -1738,7 +1834,8 @@ montar_vps() {
   cp -R manutencao "$raiz/"
   : > "$VPS_PROJ/docker-compose.prod.yml"
   cat > "$raiz/bin/docker"
-  # Só o v_supabase_url exige resposta online (000 reprova); os outros toleram.
+  # Só o v_supabase_url exige resposta online (000 reprova, e quem responde tem
+  # de ser o GoTrue — o ramo `*auth/v1/verify*`); os outros toleram.
   #
   # O dublê fala DOIS protocolos porque o install.sh passou a sondar o GHCR
   # antes de pinar as imagens (`ghcr_status`/`trio_publicado` no _common.sh): o
@@ -1754,6 +1851,8 @@ montar_vps() {
 case "$*" in
   *ghcr.io/token*) printf '{"token":"dublê"}' ;;
   *ghcr.io/v2/*)   printf '%s' "${DUBLE_GHCR:-200}" ;;
+  # O v_supabase_url exige o GoTrue: o JSON de /auth/v1/verify sem parâmetros.
+  *auth/v1/verify*) printf '{"msg":"Verify requires a verification type"}\n400' ;;
   *)               printf 200 ;;
 esac
 STUBCURL
@@ -2360,6 +2459,19 @@ STUB
   fi
   printf '  ✓ sem chave de IA: instala, .env inteiro, e a tela final dá o caminho de volta\n'
 
+  # O MESMO rabo lembra o caminho do ENVIO de e-mail (issue #1110): sem Resend
+  # nem SMTP, o convite e o PDF de LGPD não saem, e a tela final diz onde ligar.
+  if ! grep -q 'O envio de e-mail ainda não funciona' <<<"$rabo"; then
+    printf '  ✗ a tela final não avisa que o envio de e-mail ainda não funciona\n'
+    printf '     últimas linhas da saída:\n'
+    printf '%s\n' "$saida" | grep -v '^$' | tail -15 | sed 's/^/       /'
+    exit 1
+  fi
+  if ! grep -q 'Admin → E-mail' <<<"$rabo"; then
+    printf '  ✗ o aviso da tela final não diz ONDE configurar o envio (Admin → E-mail)\n'; exit 1
+  fi
+  printf '  ✓ sem Resend/SMTP: a tela final dá o caminho do envio de e-mail\n'
+
   # ── O outro lado: com a chave, o aviso NÃO aparece ────────────────────────
   # Sem isto, um `pendencia_da_ia` que imprimisse sempre passaria no caso acima
   # e viraria ruído em toda instalação que já tem chave — inclusive nas rodadas
@@ -2375,6 +2487,22 @@ STUB
     printf '     (o instalador recebeu a chave do .env mas o aviso da pendência saiu mesmo assim)\n'; exit 1
   fi
   printf '  ✓ com a chave presente, o lembrete não aparece (o aviso não é ruído permanente)\n'
+
+  # ── O outro lado do e-mail: com a Resend no .env, o aviso NÃO aparece ─────
+  # Mesma régua do controle da IA: um `pendencia_do_email` que imprimisse sempre
+  # viraria ruído em toda instalação que já manda e-mail.
+  printf '%s\nRESEND_API_KEY=%s\nRESEND_FROM_EMAIL=%s\n' \
+    "$BASE_ENV" "'re-teste'" "'eu@exemplo.com.br'" > "$VPS_PROJ/.env"
+  saida="$(rodar_sem_ia)"
+  if ! grep -q 'Instalação concluída' <<<"$saida"; then
+    printf '  ✗ (controle do e-mail) a rodada com Resend não chegou à tela final — cenário inconclusivo\n'
+    exit 1
+  fi
+  if grep -q 'O envio de e-mail ainda não funciona' <<<"$saida"; then
+    printf '  ✗ com a Resend no .env, a tela final avisou que falta envio de e-mail\n'
+    printf '     (o instalador recebeu a chave do .env mas o aviso da pendência saiu mesmo assim)\n'; exit 1
+  fi
+  printf '  ✓ com a Resend no .env, o lembrete do envio não aparece\n'
 ) || fail=1
 rm -rf "$TMP_SEM_IA"
 
@@ -2702,6 +2830,68 @@ STUB
   printf '  ✓ com prova na coluna Ports segue sem perguntar, e usa a rede do proxy\n'
 ) || fail=1
 rm -rf "$TMP5"
+
+echo "integração: Traefik pendurado em MAIS DE UMA rede Docker"
+# A função acima decide; este caso prova que o install.sh obedece à decisão —
+# inclusive à recusa, que só vale se o instalador PARAR em vez de cair num
+# default. As redes do proxy vêm de REDES_DO_PROXY para a mesma VPS servir aos
+# três desfechos.
+TMP_REDES="$(mktemp -d)"
+(
+  montar_vps "$TMP_REDES" "crmredes" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOCKER_LOG"
+case "$1" in
+  compose) case "$*" in *" exec "*) printf 'healthy\n{"data":{"status":"healthy"}}\n' ;; esac; exit 0 ;;
+  run)     case "$*" in *--entrypoint*) exit 1 ;; esac; exit 0 ;;
+  ps)      for a in "$@"; do [ "$a" = "network=host" ] && em_host=1; done
+           [ "${em_host:-0}" = 1 ] && exit 0
+           printf 'coolify-proxy|coolify|traefik:v3.3|0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp\n'
+           exit 0 ;;
+  inspect) case "$*" in *NetworkMode*) printf '%s\n' "${REDES_DO_PROXY%% *}";; *Networks*) printf '%s \n' "$REDES_DO_PROXY";; esac; exit 0 ;;
+  network) case "$2" in inspect) printf 'bridge\n' ;; esac; exit 0 ;;
+esac
+exit 0
+STUB
+  export REDES_DO_PROXY="aaa-simulado coolify"
+  saida="$(rodar install.sh --yes)"
+  chegou_na_deteccao || exit 1
+  if ! grep -qx 'TRAEFIK_NETWORK="coolify"' "$VPS_PROJ/.env"; then
+    printf '  ✗ com aaa-simulado e coolify, TRAEFIK_NETWORK saiu %s (esperava coolify)\n' \
+      "$(grep -E '^TRAEFIK_NETWORK=' "$VPS_PROJ/.env" || echo '(ausente)')"; exit 1
+  fi
+  printf '  ✓ entre várias redes, prefere a coolify mesmo fora da ordem alfabética\n'
+
+  export REDES_DO_PROXY="rede-a rede-b"
+  saida="$(rodar install.sh --yes)"
+  chegou_na_deteccao || exit 1
+  if grep -qE '^TRAEFIK_NETWORK=' "$VPS_PROJ/.env"; then
+    printf '  ✗ sem a coolify escolheu às cegas: %s\n' "$(grep -E '^TRAEFIK_NETWORK=' "$VPS_PROJ/.env")"; exit 1
+  fi
+  if ! grep -q 'rede-a rede-b' <<<"$saida" || ! grep -q 'TRAEFIK_NETWORK=<nome>' <<<"$saida"; then
+    printf '  ✗ a recusa não nomeia as redes encontradas e/ou não manda declarar TRAEFIK_NETWORK\n'
+    printf '%s\n' "$saida" | tail -5 | sed 's/^/       /'; exit 1
+  fi
+  printf '  ✓ sem a coolify, para nomeando as redes e mandando declarar TRAEFIK_NETWORK\n'
+
+  saida="$(rodar install.sh --yes "TRAEFIK_NETWORK='rede-b'")"
+  chegou_na_deteccao || exit 1
+  if ! grep -qx 'TRAEFIK_NETWORK="rede-b"' "$VPS_PROJ/.env"; then
+    printf '  ✗ TRAEFIK_NETWORK declarado não venceu a descoberta: saiu %s\n' \
+      "$(grep -E '^TRAEFIK_NETWORK=' "$VPS_PROJ/.env" || echo '(ausente)')"; exit 1
+  fi
+  printf '  ✓ TRAEFIK_NETWORK declarado continua vencendo a descoberta\n'
+
+  # Exportado no ambiente (sem estar no .env) passa pela MESMA condição -z.
+  saida="$(TRAEFIK_NETWORK=rede-b rodar install.sh --yes)"
+  chegou_na_deteccao || exit 1
+  if ! grep -qx 'TRAEFIK_NETWORK="rede-b"' "$VPS_PROJ/.env"; then
+    printf '  ✗ TRAEFIK_NETWORK exportado não venceu a descoberta: saiu %s\n' \
+      "$(grep -E '^TRAEFIK_NETWORK=' "$VPS_PROJ/.env" || echo '(ausente)')"; exit 1
+  fi
+  printf '  ✓ TRAEFIK_NETWORK exportado no ambiente também vence a descoberta\n'
+) || fail=1
+rm -rf "$TMP_REDES"
 
 echo "DDL: a conexão do schema é separada da que vai para os contêineres (issue #192)"
 # `SUPABASE_DB_URL` acumulava dois papéis numa string só: ela vai para o `.env`

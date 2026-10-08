@@ -1,12 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { wahaContactPayload } from "@/lib/waha/contact-card";
 import {
+  limparMemoCheckExists,
   resolveCanonicalCusChatId,
   resolveWhatsappIdForContactCard,
   sendChatIdFromCheckResult,
   whatsappIdFromCheckResult,
 } from "@/lib/waha/resolve-contact-whatsapp-id";
+
+
+beforeEach(() => limparMemoCheckExists());
 
 describe("whatsappIdFromCheckResult", () => {
   it("prefere pn sobre chatId", () => {

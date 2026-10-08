@@ -8,7 +8,7 @@ import {
   createBrasilApiClient,
   mapBrasilApiToCompanyFields,
 } from "@/lib/brasil-api/client";
-import { normalizeCnpj } from "@/lib/crm-b2b/normalize";
+import { formatCnpj, normalizeCnpj } from "@/lib/crm-b2b/normalize";
 import { logger } from "@/lib/logger";
 
 type SB = SupabaseClient;
@@ -72,7 +72,10 @@ export async function enrichCompanyFromBrasilApi(
         enrichment_error: `${result.code}: ${result.message}`,
         enriched_at: new Date().toISOString(),
         normalized_cnpj: normalized,
-        cnpj: normalized,
+        // Uma falha de enriquecimento NÃO pode trocar o CNPJ formatado pelo
+        // valor sem máscara (relato #1937: `33547054000120` no lugar de
+        // `33.547.054/0001-20`). O dígito fica em normalized_cnpj.
+        cnpj: formatCnpj(normalized),
       })
       .eq("organization_id", organizationId)
       .eq("id", companyId);
@@ -90,7 +93,7 @@ export async function enrichCompanyFromBrasilApi(
     .update({
       ...fields,
       normalized_cnpj: normalized,
-      cnpj: normalized,
+      cnpj: formatCnpj(normalized),
       enrichment_status: "completed",
       enrichment_error: null,
       enriched_at: new Date().toISOString(),

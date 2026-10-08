@@ -177,6 +177,22 @@
       "type": "service",
       "label": "sendMessageHandler",
       "sublabel": "a mensagem ao cliente, com as guardas de envio"
+    },
+    {
+      "id": "autorizar-ia-formulario",
+      "lane": "entendimento",
+      "col": 5,
+      "type": "lib",
+      "label": "fn_authorize_ai_form_capture",
+      "sublabel": "opção desligada por padrão; origem e consentimento explícito"
+    },
+    {
+      "id": "contato-elegivel-ia",
+      "lane": "dados",
+      "col": 5,
+      "type": "table",
+      "label": "contacts.ai_authorized_at",
+      "sublabel": "gate allowlist; preserva atendimento humano"
     }
   ],
   "edges": [
@@ -335,6 +351,24 @@
       "from": "rota",
       "to": "formulario",
       "label": "200 com lead_id, ou 303 para redirect_to"
+    },
+    {
+      "id": "form-ai-entrada",
+      "from": "rota",
+      "to": "autorizar-ia-formulario",
+      "label": "somente captação nova completa com aceite"
+    },
+    {
+      "id": "form-ai-captura",
+      "from": "captacao",
+      "to": "autorizar-ia-formulario",
+      "label": "fonte, request, card e contato conferidos"
+    },
+    {
+      "id": "form-ai-saida",
+      "from": "autorizar-ia-formulario",
+      "to": "contato-elegivel-ia",
+      "label": "autorização atômica ou recusa; nunca envia mensagem"
     }
   ],
   "cards": [

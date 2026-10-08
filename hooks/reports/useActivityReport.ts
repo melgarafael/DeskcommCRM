@@ -13,7 +13,7 @@ export interface RelatorioComJanela extends RelatorioDeAtividades {
  * corte do dia seria UTC, e a atividade das 21h de Brasília apareceria no dia
  * seguinte — o relatório afirmaria trabalho num dia sem trabalho.
  */
-function fusoDoNavegador(): string {
+export function fusoDoNavegador(): string {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   } catch {

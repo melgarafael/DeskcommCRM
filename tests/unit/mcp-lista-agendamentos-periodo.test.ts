@@ -149,6 +149,8 @@ describe("a resposta tem o que um calendário mostra (issue #1744)", () => {
       inicio: ITEM.iniciaEm,
       fim: ITEM.terminaEm,
       fuso: ITEM.fuso,
+      quando: 'sábado 12/09 às 12:00',
+      fim_quando: 'sábado 12/09 às 12:30',
       situacao: ITEM.situacao,
       contato: { id: CONTATO, nome: "Maria Silva" },
       atendente: { id: DONO, nome: "Ana Souza" },

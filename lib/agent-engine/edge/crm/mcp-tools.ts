@@ -19,6 +19,7 @@ import { claimOfJob } from '@/lib/agent-engine/queue/claim';
  */
 import type { Tool } from 'ai';
 
+import { carregarServidorMcpExternoDoTurno } from '@/lib/mcp/servidor-externo/carregar';
 import { pickToolsFromMcp, type RuntimeHandoffSignal } from '@/lib/ai/runtime/tools';
 import { mintEphemeralToken, revokeEphemeralToken } from '@/lib/ai/runtime/mcp_token';
 import { IDS_DO_HARNESS, motivoDoHarness } from '@/lib/mcp/tools/ferramentas-do-harness';
@@ -56,8 +57,12 @@ export interface McpTurnTools {
 
 export async function buildMcpTurnTools(
   cfg: CrmEdgeConfig,
-  /** `contactId`: o contato do turno — ver `contatoDoTurno` em `lib/ai/runtime/tools.ts`. */
-  ids: { organizationId: string; jobId: string; contactId?: string },
+  /**
+   * `contactId`: o contato do turno — ver `contatoDoTurno` em `lib/ai/runtime/tools.ts`.
+   * Obrigatório de propósito: `null` só onde não há cliente (o ensaio do agente);
+   * omiti-lo num turno de conversa abriria as leituras escopadas por ele.
+   */
+  ids: { organizationId: string; jobId: string; contactId: string | null },
   agentConfig: PublishedAgentConfig,
   log: Logger,
   options?: { readOnly: boolean },
@@ -126,6 +131,18 @@ export async function buildMcpTurnTools(
   // O engine não usa o sinal de handoff da ponte (a tool está bloqueada) — dummy.
   const handoffSignal: RuntimeHandoffSignal = { triggered: false };
 
+  // #2147 — servidor MCP externo registrado pela instalação. `null` SEM REDE
+  // quando o agente não escolheu nenhuma remota (item 7) ou quando
+  // `ids.contactId` está presente, turno de conversa (item 8, escolha (b)): o
+  // servidor remoto não recebe o contato do turno, então uma leitura dele
+  // poderia devolver dado de OUTRO cliente ao modelo e do modelo ao contato.
+  const servidorExterno = await carregarServidorMcpExternoDoTurno(
+    cfg.supabase,
+    ids.organizationId,
+    allowed,
+    { ...(ids.contactId ? { contatoDoTurno: ids.contactId } : {}) },
+  );
+
   const tools = pickToolsFromMcp({
     supabase: cfg.supabase,
     ctx,
@@ -143,6 +160,7 @@ export async function buildMcpTurnTools(
     modulosLigados: await modulosLigados(cfg.supabase),
     capacidadesLigadas: await capacidadesDaOrganizacao(cfg.supabase, ids.organizationId),
     ...(ids.contactId ? { contatoDoTurno: ids.contactId } : {}),
+    ...(servidorExterno ? { servidorMcpExterno: servidorExterno } : {}),
   });
 
   return {

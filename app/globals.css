@@ -47,7 +47,7 @@
   --color-border-strong: #d2cdbf;
 
   /* Accent — Sage (11 stops) */
-  --color-accent-50:  #f3f6f1;
+  --color-accent-50: #f3f6f1;
   --color-accent-100: #e4ebe0;
   --color-accent-200: #c8d6c1;
   --color-accent-300: #a4ba9a;
@@ -64,7 +64,7 @@
   --color-accent-hover: var(--color-accent-700);
 
   /* Neutrals — greige (11 stops, light) */
-  --color-neutral-50:  #faf9f6;
+  --color-neutral-50: #faf9f6;
   --color-neutral-100: #f3f1ec;
   --color-neutral-200: #e7e3da;
   --color-neutral-300: #d2cdbf;
@@ -118,7 +118,7 @@
   --shadow-xs: 0 1px 2px 0 rgba(20, 18, 14, 0.04);
   --shadow-sm: 0 1px 2px 0 rgba(20, 18, 14, 0.05), 0 1px 1px 0 rgba(20, 18, 14, 0.03);
   --shadow-md: 0 4px 12px -2px rgba(20, 18, 14, 0.06), 0 2px 4px -1px rgba(20, 18, 14, 0.04);
-  --shadow-lg: 0 12px 32px -6px rgba(20, 18, 14, 0.10), 0 4px 12px -2px rgba(20, 18, 14, 0.06);
+  --shadow-lg: 0 12px 32px -6px rgba(20, 18, 14, 0.1), 0 4px 12px -2px rgba(20, 18, 14, 0.06);
   --shadow-xl: 0 24px 48px -12px rgba(20, 18, 14, 0.16), 0 8px 16px -4px rgba(20, 18, 14, 0.08);
 
   /* Density — Aerada */
@@ -127,13 +127,26 @@
   --density-px: 20px;
   --density-py: 16px;
 
-  /* Motion */
+  /* Motion — os quatro pares canônicos de `docs/design-system/07-motion-language.md`.
+     Os nomes daqui são os de lá: `ease-out` = `ease-out-fast` (hover, micro-feedback),
+     `ease-in-out` = `ease-base` (fade, cor), `ease-out-slow` = página/modal/gaveta,
+     `ease-spring` = pop pontual.
+
+     `--ease-out-slow` e `--duration-spring` faltavam, e a falta não era cosmética:
+     a curva `(0.16, 1, 0.3, 1)` é a que a lei MANDA usar em transição de página,
+     modal e gaveta, e ela existia só em `app/design/showcase.css`, em
+     `app/design/lib/tokens.ts` e em três documentos — em lugar nenhum que o
+     produto pudesse consumir. Sem este par a lei era inimplementável, e foi por
+     isso que todo overlay ficou sem movimento (ver o bloco de keyframes no fim
+     deste arquivo). */
   --ease-out: cubic-bezier(0.2, 0, 0, 1);
   --ease-in-out: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ease-out-slow: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --duration-fast: 120ms;
   --duration-base: 200ms;
   --duration-slow: 320ms;
+  --duration-spring: 420ms;
 
   /* Z-index */
   --z-base: 0;
@@ -206,14 +219,14 @@
    * não duplicado aqui — assim a relação entre a faixa e o fundo é uma só,
    * e não dois hex que envelhecem separados.
    */
-  --agenda-pessoa-1: #ac4d40;   /* telha */
-  --agenda-pessoa-2: #bd7c20;   /* âmbar */
-  --agenda-pessoa-3: #7e6f01;   /* oliva */
-  --agenda-pessoa-4: #11a19b;   /* turquesa */
-  --agenda-pessoa-5: #0b7a9a;   /* azul */
-  --agenda-pessoa-6: #608bda;   /* índigo */
-  --agenda-pessoa-7: #7b5bad;   /* violeta */
-  --agenda-pessoa-8: #cc77b1;   /* framboesa */
+  --agenda-pessoa-1: #ac4d40; /* telha */
+  --agenda-pessoa-2: #bd7c20; /* âmbar */
+  --agenda-pessoa-3: #7e6f01; /* oliva */
+  --agenda-pessoa-4: #11a19b; /* turquesa */
+  --agenda-pessoa-5: #0b7a9a; /* azul */
+  --agenda-pessoa-6: #608bda; /* índigo */
+  --agenda-pessoa-7: #7b5bad; /* violeta */
+  --agenda-pessoa-8: #cc77b1; /* framboesa */
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -289,7 +302,7 @@
   --shadow-xs: 0 1px 2px 0 rgba(20, 18, 14, 0.04);
   --shadow-sm: 0 1px 2px 0 rgba(20, 18, 14, 0.05), 0 1px 1px 0 rgba(20, 18, 14, 0.03);
   --shadow-md: 0 4px 12px -2px rgba(20, 18, 14, 0.06), 0 2px 4px -1px rgba(20, 18, 14, 0.04);
-  --shadow-lg: 0 12px 32px -6px rgba(20, 18, 14, 0.10), 0 4px 12px -2px rgba(20, 18, 14, 0.06);
+  --shadow-lg: 0 12px 32px -6px rgba(20, 18, 14, 0.1), 0 4px 12px -2px rgba(20, 18, 14, 0.06);
   --shadow-xl: 0 24px 48px -12px rgba(20, 18, 14, 0.16), 0 8px 16px -4px rgba(20, 18, 14, 0.08);
   --background: var(--color-bg);
   --foreground: var(--color-text);
@@ -316,14 +329,14 @@
    * dentro de página escura herdaria os valores escuros, e a amostra de cor
    * mentiria sobre a cor que a pessoa tem.
    */
-  --agenda-pessoa-1: #ac4d40;   /* telha */
-  --agenda-pessoa-2: #bd7c20;   /* âmbar */
-  --agenda-pessoa-3: #7e6f01;   /* oliva */
-  --agenda-pessoa-4: #11a19b;   /* turquesa */
-  --agenda-pessoa-5: #0b7a9a;   /* azul */
-  --agenda-pessoa-6: #608bda;   /* índigo */
-  --agenda-pessoa-7: #7b5bad;   /* violeta */
-  --agenda-pessoa-8: #cc77b1;   /* framboesa */
+  --agenda-pessoa-1: #ac4d40; /* telha */
+  --agenda-pessoa-2: #bd7c20; /* âmbar */
+  --agenda-pessoa-3: #7e6f01; /* oliva */
+  --agenda-pessoa-4: #11a19b; /* turquesa */
+  --agenda-pessoa-5: #0b7a9a; /* azul */
+  --agenda-pessoa-6: #608bda; /* índigo */
+  --agenda-pessoa-7: #7b5bad; /* violeta */
+  --agenda-pessoa-8: #cc77b1; /* framboesa */
 }
 
 [data-theme="dark"] {
@@ -343,7 +356,7 @@
   --color-border-strong: #444239;
 
   /* Accent stays same hex stops; default shifts up for dark contrast */
-  --color-accent-50:  #f3f6f1;
+  --color-accent-50: #f3f6f1;
   --color-accent-100: #e4ebe0;
   --color-accent-200: #c8d6c1;
   --color-accent-300: #a4ba9a;
@@ -360,7 +373,7 @@
   --color-accent-hover: var(--color-accent-300);
 
   /* Neutrals — greige (11 stops, dark) */
-  --color-neutral-50:  #f5f4ef;
+  --color-neutral-50: #f5f4ef;
   --color-neutral-100: #e6e4dc;
   --color-neutral-200: #bbb8ac;
   --color-neutral-300: #8e8b7f;
@@ -387,11 +400,11 @@
   --color-info-fg: #9bbfd2;
 
   /* Shadows — heavier in dark */
-  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.30);
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.40), 0 1px 1px 0 rgba(0, 0, 0, 0.20);
-  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.45), 0 2px 4px -1px rgba(0, 0, 0, 0.30);
-  --shadow-lg: 0 12px 32px -6px rgba(0, 0, 0, 0.55), 0 4px 12px -2px rgba(0, 0, 0, 0.40);
-  --shadow-xl: 0 24px 48px -12px rgba(0, 0, 0, 0.65), 0 8px 16px -4px rgba(0, 0, 0, 0.50);
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4), 0 1px 1px 0 rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.45), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 12px 32px -6px rgba(0, 0, 0, 0.55), 0 4px 12px -2px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 24px 48px -12px rgba(0, 0, 0, 0.65), 0 8px 16px -4px rgba(0, 0, 0, 0.5);
 
   /* shadcn-compat aliases */
   --background: var(--color-bg);
@@ -532,10 +545,9 @@
   --color-card-foreground: var(--color-text);
 
   /* Tipografia */
-  --font-sans: var(--font-atkinson), ui-sans-serif, system-ui, -apple-system,
-    "Segoe UI", Roboto, sans-serif;
-  --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco,
-    Consolas, monospace;
+  --font-sans:
+    var(--font-atkinson), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   /* Espaçamento. Os valores são px LITERAIS (`--space-6` = 24px), não rem — e
      essa diferença é carregada por quem consome: ver o cálculo de altura em
@@ -578,6 +590,7 @@
   /* Motion */
   --ease-out: var(--ease-out);
   --ease-in-out: var(--ease-in-out);
+  --ease-out-slow: var(--ease-out-slow);
   --ease-spring: var(--ease-spring);
 }
 
@@ -592,7 +605,78 @@
 @utility duration-slow {
   transition-duration: var(--duration-slow);
 }
+@utility duration-spring {
+  transition-duration: var(--duration-spring);
+}
 
+/* ---- Área segura do rodapé (notch e indicador de home) --------------------
+   `env(safe-area-inset-bottom)` só devolve número diferente de zero quando o
+   documento declara `viewport-fit=cover` — que é o `viewportFit: "cover"` do
+   `viewport` em `app/layout.tsx`. Sem aquela linha este utilitário é um
+   `max(var(--space-6), 0px)` e não muda nada; com ela, o conteúdo para de ficar
+   atrás do indicador de home no iOS em tela cheia.
+
+   Por que utilitário e não classe arbitrária espalhada: a faixa de baixo já tem
+   DONO — o contrato de `lib/ui/rodape-ocupado.tsx`. Este utilitário é o piso
+   dele para quando não há peça fixa registrada; quando há, quem decide é o
+   `estiloDaReserva()`, que também soma a área segura ao `max()`. Duas medidas
+   para a mesma coisa foi exatamente o defeito da issue #1305. */
+@utility pb-area-segura {
+  padding-bottom: max(var(--space-6), env(safe-area-inset-bottom, 0px));
+}
+
+/* ---- Alvo de 44px SEM mexer no desenho -------------------------------------
+   Para o controle cujo tamanho visível é parte do desenho e não pode crescer.
+
+   O caso que a criou: os avatares do filtro de pessoas da agenda medem 32px e
+   se SOBREPÕEM (`-space-x-2`). Engordá-los para 44 afastaria um do outro e
+   desfaria a pilha; e o truque de `p-3.5 -m-3.5`, que resolveu o X das gavetas,
+   não serve aqui porque a margem negativa brigaria com a do `space-x`.
+
+   Um pseudo-elemento centralizado resolve: ele não ocupa espaço no fluxo, não
+   muda uma linha de layout, e o clique nele é clique no botão — então a área
+   que o dedo alcança cresce e o desenho fica idêntico.
+
+   `max(100%, 2.75rem)` para o alvo nunca ENCOLHER um controle que já passe de
+   44px. E `content: none` de `lg` para cima: ali quem aciona é cursor, e uma
+   área invisível maior que o botão só atrapalharia os vizinhos. */
+.ds-alvo-44 {
+  position: relative;
+}
+
+.ds-alvo-44::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  width: max(100%, 2.75rem);
+  height: max(100%, 2.75rem);
+}
+
+@media (width >= 64rem) {
+  .ds-alvo-44::after {
+    content: none;
+  }
+}
+
+/* ---- O X do aviso (sonner) -------------------------------------------------
+   O botão de fechar do toast mede **20×20** — medido em 360px, e ele aparece em
+   TODA tela do produto, porque `closeButton` está ligado no `app/layout.tsx`.
+   Vinte pixels é alvo de cursor; o dedo que erra acerta o conteúdo do aviso, que
+   em muitos casos navega para outro lugar.
+
+   Em CSS e não em prop: o sonner desenha esse botão por dentro e não expõe
+   classe para ele; o que ele expõe é o atributo. A faixa visível continua a
+   mesma — cresce a área que recebe o toque, como no X das gavetas.
+
+   Até `lg`, o mesmo corte de `components/ui/button.tsx`. */
+@media (width < 64rem) {
+  [data-sonner-toast] [data-close-button] {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+}
 
 @layer base {
   /* O preflight do v4 não pinta mais borda por padrão (`border: 0 solid`, cor
@@ -698,17 +782,32 @@
     overflow-x: clip;
     background-color: var(--color-bg);
     color: var(--color-text);
-    font-family: var(--font-atkinson), ui-sans-serif, system-ui, -apple-system,
-      "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
+    font-family:
+      var(--font-atkinson),
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      Roboto,
+      "Helvetica Neue",
+      Arial,
+      sans-serif;
+    font-feature-settings:
+      "rlig" 1,
+      "calt" 1,
+      "ss01" 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
 
-  code, kbd, pre, samp {
-    font-family: var(--font-mono), ui-monospace, "SFMono-Regular", Menlo,
-      Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  code,
+  kbd,
+  pre,
+  samp {
+    font-family:
+      var(--font-mono), ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono",
+      "Courier New", monospace;
     font-variant-numeric: tabular-nums;
   }
 
@@ -962,5 +1061,445 @@
   .agenda-coluna-horarios {
     transition: none;
     transform: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOVIMENTO DOS SOBREPOSTOS — a lei de `docs/design-system/07-motion-language.md`
+   ═══════════════════════════════════════════════════════════════════════════
+
+   ─── O defeito que este bloco fecha ────────────────────────────────────────
+
+   TODO sobreposto do produto abria de um quadro para o outro: gaveta, modal,
+   menu, seletor, dica. Não por escolha — por classe que não existe.
+
+   O shadcn gera `animate-in` / `animate-out` / `fade-in-0` / `zoom-in-95` /
+   `slide-in-from-left` assumindo o plugin `tailwindcss-animate`, que NUNCA foi
+   instalado aqui. Classe inexistente no Tailwind não é erro: ela simplesmente
+   não gera CSS. Eram ~24 delas, em `sheet`, `dialog`, `alert-dialog`, `popover`,
+   `dropdown-menu`, `select`, `tooltip` e nos dois painéis de chamada — todas
+   escritas, nenhuma com efeito, e o build verde o tempo todo. O comentário em
+   `.agenda-coluna-horarios`, acima, já tinha registrado o diagnóstico.
+
+   ─── Por que `animation` e não `transition` ────────────────────────────────
+
+   Não é estilo: é requisito do Radix. O `Presence` dele decide quando DESMONTAR
+   o nó olhando `getComputedStyle(node).animationName !== "none"` e esperando o
+   `animationend`. Com `transition`, o nó sai da árvore no mesmo quadro em que
+   `data-state` vira `closed` — a animação de saída não chega a existir. É por
+   isso que o shadcn usa animação, e não transição, e por isso a volta para
+   `transition` aqui faria a gaveta fechar seca de novo.
+
+   ─── Uma curva, e a divergência da lei ─────────────────────────────────────
+
+   A lei se contradiz: a seção "Component enter/exit" diz "320ms ease-spring"
+   para a gaveta, e a tabela de curvas diz `ease-out-slow` para "page enter,
+   modal, sheet". Segui a TABELA. `ease-spring` tem passagem acima de 1
+   (`0.34, 1.56, 0.64, 1`): numa gaveta ancorada na borda, o excesso desenharia
+   a gaveta PASSANDO da borda e voltando — abre uma faixa vazia de alguns pixels
+   entre a gaveta e o lado da tela, no meio da entrada. A tabela está certa e a
+   prosa envelheceu; a prosa foi corrigida no mesmo PR. */
+
+/* ---- A cortina ---------------------------------------------------------- */
+@keyframes ds-cortina-entra {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes ds-cortina-sai {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.ds-cortina[data-state="open"] {
+  animation: ds-cortina-entra var(--duration-base) var(--ease-in-out) both;
+}
+.ds-cortina[data-state="closed"] {
+  animation: ds-cortina-sai var(--duration-base) var(--ease-in-out) both;
+}
+
+/* ---- A gaveta (Sheet), por lado ----------------------------------------
+   UM par de keyframes serve os quatro lados: o lado só decide de ONDE ela vem,
+   e isso é um token (`--ds-gaveta-de`) que o atributo `data-lado` troca. Quatro
+   pares de keyframes seriam a mesma animação escrita quatro vezes.
+
+   A propriedade é `translate` (individual), e não `transform`, pelo mesmo
+   motivo explicado no bloco do modal mais abaixo: o Tailwind 4 compila
+   `translate-x-*`/`translate-y-*` para `translate`, e as duas propriedades
+   COMPÕEM em vez de se substituir. Hoje nenhuma gaveta carrega classe de
+   translate, então `transform` funcionaria — mas no dia em que alguém
+   acrescentar uma, `transform` somaria em silêncio e `translate` substitui.
+   O modo de falha mais seguro, pelo mesmo preço.
+
+   Dois valores nas duas pontas (`100% 0` → `0 0`), de propósito: é o mesmo
+   formato nos dois extremos, então o navegador interpola número contra número.
+   Formatos diferentes empurram para interpolação por matriz, que é onde o
+   Safari costuma divergir do Chrome — e o aviso de `.agenda-coluna-horarios`
+   sobre "falha calado no Safari" é deste repositório, não teórico. */
+.ds-gaveta {
+  --ds-gaveta-de: 100% 0;
+}
+.ds-gaveta[data-lado="left"] {
+  --ds-gaveta-de: -100% 0;
+}
+.ds-gaveta[data-lado="top"] {
+  --ds-gaveta-de: 0 -100%;
+}
+.ds-gaveta[data-lado="bottom"] {
+  --ds-gaveta-de: 0 100%;
+
+  /* A gaveta de BAIXO é a única que encosta no indicador de home, e por isso é
+     a única que reserva a área segura aqui.
+
+     Em regra de CSS, e não em utilitário: `padding-bottom` por utilitário e o
+     `p-6` da base do Sheet são os dois um seletor de UMA classe, então quem
+     vence depende da ordem em que o Tailwind emite as duas — que não é contrato.
+     `.ds-gaveta[data-lado="bottom"]` é classe MAIS atributo, e ganha do `.p-6`
+     por especificidade, que é contrato.
+
+     Consequência a conhecer: numa gaveta de baixo isto vence também um `p-0`
+     passado por quem chama. É deliberado — conteúdo encostado no indicador de
+     home não é escolha de layout, é defeito. As gavetas da esquerda e da direita
+     ficam de fora porque elas usam `p-0` de propósito (a navegação do celular
+     desenha a própria lista até a borda) e ali a área segura é tratada por
+     dentro, no último item. */
+  padding-bottom: max(var(--space-6), env(safe-area-inset-bottom, 0px));
+}
+
+@keyframes ds-gaveta-entra {
+  from {
+    translate: var(--ds-gaveta-de);
+  }
+  to {
+    translate: 0 0;
+  }
+}
+@keyframes ds-gaveta-sai {
+  from {
+    translate: 0 0;
+  }
+  to {
+    translate: var(--ds-gaveta-de);
+  }
+}
+
+/* A gaveta só DESLIZA — sem opacidade. A lei pede "slide + fade do backdrop",
+   e é a cortina que faz o fade. Somar opacidade à gaveta a deixaria translúcida
+   no meio do caminho, com o conteúdo da página aparecendo através dela.
+
+   O atraso de 8ms cumpre o "a cortina entra ANTES do conteúdo (5–10ms)" da lei.
+   `both` é obrigatório junto do atraso: sem `animation-fill-mode`, durante os
+   8ms o nó pinta no estado FINAL (já aberto, no lugar) e só então salta para o
+   começo — um quadro de gaveta inteira piscando antes de a animação começar. */
+.ds-gaveta[data-state="open"] {
+  animation: ds-gaveta-entra var(--duration-slow) var(--ease-out-slow) 8ms both;
+}
+.ds-gaveta[data-state="closed"] {
+  animation: ds-gaveta-sai var(--duration-slow) var(--ease-out-slow) both;
+}
+
+/* ---- O modal (Dialog e AlertDialog) ------------------------------------
+   Os números são os da lei: 8px de subida, `scale(0.985)` e 320ms. Duas
+   propriedades em movimento (opacidade e posição), que é o teto que ela declara.
+
+   ⚠️ AQUI AS PROPRIEDADES INDIVIDUAIS `translate` E `scale`, E NUNCA `transform`.
+   Isto não é preferência — é a diferença entre centralizado e fora da tela.
+
+   O modal se centraliza com `left-[50%] top-[50%]` mais um deslocamento de
+   -50%/-50%, escrito como `translate-x-[-50%] translate-y-[-50%]` em
+   `components/ui/dialog.tsx`. E o Tailwind 4 compila aquelas classes para a
+   propriedade INDIVIDUAL:
+
+       .translate-x-\[-50\%\] {
+         --tw-translate-x: -50%;
+         translate: var(--tw-translate-x) var(--tw-translate-y);
+       }
+
+   `translate` e `transform` são propriedades DIFERENTES, e o navegador aplica as
+   duas em sequência. Animar `transform: translate(-50%, …)` somaria ao `-50%`
+   que já vem do `translate` do Tailwind: o modal nasceria deslocado 100% para
+   cima e para a esquerda — fora da janela — e voltaria ao lugar no fim da
+   animação. Animando a MESMA propriedade, o keyframe substitui o valor do
+   Tailwind durante a animação e `both` o mantém no fim; antes dela, e se a
+   animação nunca rodar, vale o do Tailwind. Os dois valores em repouso são o
+   mesmo `-50% -50%`, então não há estado em que o modal saia do centro.
+
+   O suporte é o mesmo que o framework já exige de si: se `translate` individual
+   não existisse no navegador, as classes de centralização do Tailwind 4 também
+   não funcionariam. */
+/* O DESLOCAMENTO DE CENTRALIZAÇÃO VEM DE VARIÁVEL, E ISSO NÃO É ENFEITE.
+
+   `animation-fill-mode: both` faz o valor FINAL do keyframe continuar valendo
+   depois que a animação termina — então um `-50% -50%` cravado aqui VENCE o
+   `translate-y-0` de qualquer modal que escolha outro ancoramento, e o Tailwind
+   não tem como ganhar dessa disputa.
+
+   Foi o que aconteceu com a paleta de comandos (⌘K), que abria em `top-[10%]`
+   com `translate-y-0`: a animação a puxava meia altura para cima do próprio
+   ponto, e ela saía cortada no topo da tela. Com variável, quem ancora
+   diferente só declara `--ds-modal-y` e a animação acompanha. */
+@keyframes ds-modal-entra {
+  from {
+    opacity: 0;
+    translate: var(--ds-modal-x, -50%) calc(var(--ds-modal-y, -50%) + 8px);
+    scale: 0.985;
+  }
+  to {
+    opacity: 1;
+    translate: var(--ds-modal-x, -50%) var(--ds-modal-y, -50%);
+    scale: 1;
+  }
+}
+@keyframes ds-modal-sai {
+  from {
+    opacity: 1;
+    translate: var(--ds-modal-x, -50%) var(--ds-modal-y, -50%);
+    scale: 1;
+  }
+  to {
+    opacity: 0;
+    translate: var(--ds-modal-x, -50%) calc(var(--ds-modal-y, -50%) + 8px);
+    scale: 0.985;
+  }
+}
+
+.ds-modal[data-state="open"] {
+  animation: ds-modal-entra var(--duration-slow) var(--ease-out-slow) 8ms both;
+}
+.ds-modal[data-state="closed"] {
+  animation: ds-modal-sai var(--duration-slow) var(--ease-out-slow) both;
+}
+
+/* ---- Painéis presos a um gatilho (menu, seletor, popover, dica) --------
+   `fade + 8px` em 200ms, e o deslocamento vem do LADO em que o Radix abriu
+   (`data-side`), que é o que faz o painel parecer sair do botão em vez de
+   aparecer solto perto dele. É a "continuidade espacial" que abre a lei.
+
+   Sem o -50% de centralização aqui: quem posiciona estes painéis é o Radix, na
+   camada de cima (`[data-radix-popper-content-wrapper]`), então o deslocamento
+   deste nó é só o nosso. E `translate` individual, pelo mesmo motivo do modal. */
+@keyframes ds-painel-entra {
+  from {
+    opacity: 0;
+    translate: var(--ds-painel-de, 0 -8px);
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+@keyframes ds-painel-sai {
+  from {
+    opacity: 1;
+    translate: 0 0;
+  }
+  to {
+    opacity: 0;
+    translate: var(--ds-painel-de, 0 -8px);
+  }
+}
+
+/* O deslocamento aponta para o GATILHO: painel que abriu para baixo
+   (`data-side="bottom"`) entra subindo de -8px, como se saísse do botão. É a
+   "continuidade espacial" que abre a lei — a interface se desloca da posição
+   anterior para a atual, em vez de aparecer. */
+.ds-painel[data-side="top"] {
+  --ds-painel-de: 0 8px;
+}
+.ds-painel[data-side="bottom"] {
+  --ds-painel-de: 0 -8px;
+}
+.ds-painel[data-side="left"] {
+  --ds-painel-de: 8px 0;
+}
+.ds-painel[data-side="right"] {
+  --ds-painel-de: -8px 0;
+}
+
+.ds-painel[data-state="open"] {
+  animation: ds-painel-entra var(--duration-base) var(--ease-out) both;
+}
+.ds-painel[data-state="closed"] {
+  animation: ds-painel-sai var(--duration-fast) var(--ease-out) both;
+}
+
+/* ---- Peça que surge da borda (painéis de chamada) ----------------------
+   Para peça que MONTA e DESMONTA sem passar pelo `Presence` do Radix: não há
+   `data-state` para o CSS ler, então existe só a entrada. A saída seguiria
+   precisando de quem segure o nó na árvore até o `animationend`, e nem o painel
+   de chamada ativa nem o aviso de chamada entrando têm isso hoje — eles
+   simplesmente deixam de ser renderizados, que é o comportamento de antes.
+
+   `--ds-surge-de` diz de qual borda. O painel de chamada vem de baixo (ele mora
+   no canto inferior direito); o aviso de chamada entrando vem de cima. */
+@keyframes ds-surge {
+  from {
+    opacity: 0;
+    translate: var(--ds-surge-de, 0 16px);
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+.ds-surge {
+  animation: ds-surge var(--duration-slow) var(--ease-out-slow) both;
+}
+.ds-surge[data-de="cima"] {
+  --ds-surge-de: 0 -16px;
+}
+
+/* ---- Entrada de rota: NÃO EXISTE, e a decisão está registrada ----------
+   A lei pede transição de página (tipo 1: fade + 8px de subida, 320ms). Ela não
+   foi construída, e isto é escolha medida, não esquecimento.
+
+   O gancho idiomático seria `app/app/template.tsx` — o Next o remonta a cada
+   navegação, e `layout.tsx` não serve porque persiste entre rotas. Mas um
+   `template.tsx` acrescenta um `<div>` entre o `<main>` da casca e a página, e
+   **55 páginas de `app/app/**` usam `h-full`, `flex-1` ou `min-h-0` na raiz**,
+   contando com o `<main>` como pai DIRETO. Com o wrapper no meio, `h-full`
+   passa a resolver contra um div de altura automática: colapso de layout
+   silencioso em toda a área do tenant, por um ganho cosmético.
+
+   Aplicar por página, na raiz de cada tela, evita o wrapper — e foi recusado por
+   outro motivo: as superfícies remontam em granularidades diferentes. Em
+   `/app/inbox/[id]` a página remonta a cada CONVERSA aberta, então a "transição
+   de tela" viraria uma piscada a cada clique na lista. Movimento que aparece em
+   duas telas e não nas outras duas lê como defeito, não como linguagem.
+
+   O sinal de que a navegação está em curso já existe e é honesto:
+   `components/shell/BarraDeProgressoNavegacao.tsx`.
+
+   Para construir isto depois, o caminho é tirar o `h-full` da raiz das páginas
+   (fazendo o `<main>` ser `flex flex-col` e as páginas `flex-1`), e só então o
+   wrapper fica barato. É refatoração de layout, não de movimento. */
+
+/* ---- Esqueleto de carregamento ----------------------------------------
+   ─── O defeito medido ───────────────────────────────────────────────────
+   O primitivo era `animate-pulse bg-primary/10`, e `bg-primary/10` dá **1,146:1
+   sobre branco**: o esqueleto era invisível — a tela parecia vazia, não
+   carregando. A medição não é minha; está na tabela de
+   `components/agenda/estados.tsx:34-44`, que contornou o problema localmente e
+   registrou, com razão, que consertar o primitivo era item de produto e não
+   conserto de passagem (113 usos em 51 arquivos). Aqui ele sobe para o
+   primitivo. A tabela, sobre superfície branca:
+
+       candidato          cheio    apagado   delta L*
+       bg-primary/10      1.146     1.067      2.81
+       bg-border          1.281     1.129      4.85
+       border-strong      1.588     1.249      8.82
+       neutral-400        2.512     1.525     16.77   <- escolhido
+
+   ─── Por que gradiente, e não o pulso consertado ────────────────────────
+   O `animate-pulse` oscila a opacidade entre 1 e .5, então o esqueleto vive
+   entre DOIS contrastes — e o pior deles, 1.525:1, é quase invisível de novo.
+   Metade de cada ciclo desfazia o conserto. O gradiente mantém o corpo SEMPRE
+   no piso medido e faz passar uma faixa de contraste MAIOR: o movimento nunca
+   vai para baixo. É também o que a lei pede (§4), em 1.6s — "não 1s, fica
+   frenético; não 2s, fica lento".
+
+   Os hexes da lei (`surface-elevated` misturado com `accent-soft`) ficaram de
+   fora de propósito: aquele trecho foi escrito para a paleta do showcase, e
+   aqui existe medição. Medição vence ilustração.
+
+   ─── O brilho anda em DIREÇÕES OPOSTAS nos dois temas ───────────────────
+   `neutral-400` foi escolhido por ser quase simétrico (2.512 claro / 2.622
+   escuro), e a casa registrou por quê: "um esqueleto que aparece num tema e
+   some no outro é o mesmo defeito resolvido pela metade". A faixa que atravessa
+   tem de respeitar isso.
+
+   As rampas são desenhadas separadamente, não invertidas — no claro a 500
+   (#7d786c) é mais ESCURA que a 400 (#a9a395), e no escuro a 500 (#444239)
+   também é. Contra fundo claro, mais escuro = mais contraste; contra fundo
+   escuro, mais escuro = MENOS contraste. Usar a 500 nos dois temas daria uma
+   faixa que realça no claro e APAGA no escuro, caindo abaixo do piso justamente
+   onde o esqueleto já é mais difícil de ver. Então o brilho é a 500 no claro e
+   a 300 no escuro: nos dois casos ele se afasta do fundo, e o piso de 2.5:1
+   nunca é furado. */
+@keyframes ds-esqueleto {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.ds-esqueleto {
+  --ds-esqueleto-corpo: var(--color-neutral-400);
+  --ds-esqueleto-brilho: var(--color-neutral-500);
+  background-image: linear-gradient(
+    90deg,
+    var(--ds-esqueleto-corpo) 0%,
+    var(--ds-esqueleto-brilho) 50%,
+    var(--ds-esqueleto-corpo) 100%
+  );
+  background-size: 200% 100%;
+  animation: ds-esqueleto 1.6s linear infinite;
+}
+
+[data-theme="dark"] .ds-esqueleto {
+  --ds-esqueleto-brilho: var(--color-neutral-300);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOVIMENTO REDUZIDO — o atalho global que a lei prescreve
+   ═══════════════════════════════════════════════════════════════════════════
+
+   A lei manda "simplificar para fade de duração reduzida", não remover: o
+   destino é o mesmo, só sem o percurso. Os dois blocos deliberados acima
+   (`.card-pulse`, que mantém o anel PARADO e legível, e
+   `.agenda-coluna-horarios`, que entrega a coluna sem o deslize) continuam
+   valendo — eles declaram `animation: none` e `transition: none`, e sem nome de
+   animação nem propriedade de transição a duração abaixo não tem o que encurtar.
+
+   ─── Duas exceções, e as duas pelo MESMO motivo ─────────────────────────────
+
+   `animation-iteration-count: 1` é o termo perigoso deste bloco: ele para toda
+   animação que existe para dizer "ainda estou trabalhando". Parada, ela passa a
+   dizer "travei" — e sinal de travamento é PIOR do que o movimento que se
+   quis evitar. Quem desligou animação pediu calma, não pediu uma interface que
+   parece quebrada.
+
+   1. `.ds-esqueleto` — a própria lei abre esta: "skeleton shimmer pode manter
+      (não causa motion sickness)". Sem a exceção, o gradiente congelaria no
+      primeiro ciclo e sobraria uma faixa cinza imóvel.
+
+   2. `.animate-spin` — **31 usos no produto**, e é o indicador de "carregando"
+      mais comum da casa (inclusive dentro do painel de chamada, onde ele
+      acompanha "Chamando…"). Um círculo de progresso imóvel ao lado da palavra
+      "Chamando…" é exatamente a leitura errada. Rotação pequena e contínua está
+      na mesma categoria do shimmer: não é movimento de deslocamento, que é o
+      que dispara desconforto vestibular.
+
+   As duas devolvem a duração ORIGINAL além da contagem: só repor
+   `iteration-count` deixaria a animação repetindo em 0.01ms, o que é pior que
+   parada — vira cintilação. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .ds-esqueleto {
+    animation-duration: 1.6s !important;
+    animation-iteration-count: infinite !important;
+  }
+
+  .animate-spin {
+    animation-duration: 1s !important;
+    animation-iteration-count: infinite !important;
   }
 }

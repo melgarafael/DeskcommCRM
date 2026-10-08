@@ -43,6 +43,12 @@ vi.mock("@/lib/api/client", () => ({ apiClient: api }));
 vi.mock("@/components/feedback/ApiErrorToast", () => ({ showApiError: vi.fn() }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), loading: vi.fn(), dismiss: vi.fn() } }));
 vi.mock("@/app/app/ai/credentials/_actions", () => ({ refreshCredentialsView: vi.fn(async () => {}) }));
+// A página pergunta pelo interruptor `login_codex` (#1672); desligado, o painel
+// do login por assinatura não entra, e o aviso é o único assunto deste teste.
+vi.mock("@/lib/instalacao/modulos", async (orig) => ({
+  ...((await orig()) as Record<string, unknown>),
+  moduloLigado: vi.fn(async () => false),
+}));
 vi.mock("@/lib/auth/server", () => ({
   requireAuth: vi.fn(async () => ({ id: "actor", idioma: "pt-BR" })),
   resolveActiveOrg: vi.fn(async () => ({ orgId: ORG, role: "admin" })),

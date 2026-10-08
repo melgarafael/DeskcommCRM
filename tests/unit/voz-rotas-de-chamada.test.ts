@@ -219,6 +219,26 @@ describe("o discador respeita quem pediu para não ser incomodado", () => {
     expect(inseridas).toEqual([]);
   });
 
+  it("contato marcado como pessoal não recebe ligação (spec 21)", async () => {
+    respostas["channel_sessions"] = SESSAO_PAREADA;
+    respostas["contacts"] = {
+      data: {
+        id: CONTATO,
+        phone_number: "5511900000000",
+        name: "Mãe",
+        is_blocked: false,
+        is_personal: true,
+        is_anonymized: false,
+      },
+      error: null,
+    };
+    const res = await discar();
+    expect(res.status).toBe(403);
+    expect((await corpo(res)).error).toMatchObject({ message: "Contato marcado como pessoal." });
+    expect(wacalls.startCall).not.toHaveBeenCalled();
+    expect(inseridas).toEqual([]);
+  });
+
   it("contato anonimizado não recebe ligação", async () => {
     respostas["channel_sessions"] = SESSAO_PAREADA;
     respostas["contacts"] = {

@@ -18,6 +18,7 @@ import { sendEmail } from "@/lib/email/roteador";
 import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
 import { valorDaInstalacao } from "@/lib/instalacao/config";
+import { citacaoDaLei, PAIS_PADRAO, perfilDoPais, type PerfilDoPais } from "@/lib/legal/perfil-do-pais";
 import { diasAtePrazo, diasDeAtraso, prazoEmBr } from "./sla";
 import type { LgpdRequest } from "./types";
 
@@ -41,6 +42,14 @@ export interface TriggerSlaAlarmArgs {
    * pinta o botão — sem ela o alarme sairia com a cor de outro produto.
    */
   marca: MarcaDeSaida;
+  /**
+   * `organizations.country`, lido na MESMA consulta do watcher que já traz o
+   * encarregado — nenhuma leitura a mais por pedido. `null`/ausente = Brasil,
+   * com o texto de sempre. Fora do Brasil o alarme não afirma a LGPD (doc 88).
+   * Obrigatória de propósito: quem esquecer de passá-la recebe erro de tipo, e
+   * não o alarme brasileiro calado numa organização de Portugal.
+   */
+  country: string | null;
 }
 
 export interface TriggerSlaAlarmResult {
@@ -56,6 +65,8 @@ export async function triggerSlaAlarm(
   args: TriggerSlaAlarmArgs,
 ): Promise<TriggerSlaAlarmResult> {
   const { request, threshold, organizationDpoEmail, organizationName, marca } = args;
+  const perfil = perfilDoPais(args.country);
+  const noBrasil = perfil.codigo === PAIS_PADRAO;
 
   // ──────────────────────────────────────────────────────────────────────────
   // 1. 24-hour dedup guard
@@ -130,7 +141,20 @@ export async function triggerSlaAlarm(
       // (`app/lgpd/pedido/[id]/route.ts`).
       const requestUrl = `${appUrl}/lgpd/pedido/${request.id}`;
 
-      const subject = `[LGPD] Solicitação ${shortId} próxima do vencimento`;
+      // O Brasil fica byte a byte igual; fora dele, o rótulo não nomeia lei.
+      // `store_redact` é a Nuvemshop avisando que o lojista desinstalou o app
+      // (`webhooks/nuvemshop/store-redact`): não é pedido de titular, e o prazo
+      // do art. 12.º, n.º 3 do RGPD não o rege.
+      const daLoja = !noBrasil && request.request_type === "store_redact";
+      const etiqueta = noBrasil ? "[LGPD]" : daLoja ? "[Apagamento da loja]" : "[Pedido de titular]";
+      const solicitacao = noBrasil ? "A solicitação LGPD" : "A solicitação";
+      const rodapeForaDoBrasil = daLoja ? "Prazo interno do sistema." : prazoInternoForaDoBrasil(perfil);
+      const rodapeHtml = noBrasil
+        ? "Base legal: LGPD Lei nº 13.709/2018, Art. 18. SLA obrigatório conforme regulamentação vigente."
+        : rodapeForaDoBrasil;
+      const rodapeTexto = noBrasil ? "Base legal: LGPD Lei nº 13.709/2018, Art. 18." : rodapeForaDoBrasil;
+
+      const subject = `${etiqueta} Solicitação ${shortId} próxima do vencimento`;
 
       const thresholdLabel =
         threshold === "data_request_d5"
@@ -154,29 +178,29 @@ export async function triggerSlaAlarm(
       const html = `<!doctype html>
 <html lang="pt-BR">
 <body style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:${NEUTROS_DE_SAIDA.texto};line-height:1.5;max-width:560px;margin:0 auto;padding:24px;">
-  <h2 style="margin:0 0 12px;font-size:18px;">[LGPD] Alerta de SLA — Solicitação #${shortId}</h2>
+  <h2 style="margin:0 0 12px;font-size:18px;">${etiqueta} Alerta de SLA — Solicitação #${shortId}</h2>
   <p>Olá,</p>
-  <p>A solicitação LGPD <strong>#${shortId}</strong> de <strong>${orgName}</strong> atingiu o limiar <strong>${thresholdLabel}</strong>.</p>
+  <p>${solicitacao} <strong>#${shortId}</strong> de <strong>${orgName}</strong> atingiu o limiar <strong>${thresholdLabel}</strong>.</p>
   ${overdueNote}
   <p>Status atual: <code>${request.request_type}</code> / <code>${request.status}</code></p>
   <p style="margin:24px 0;">
     <a href="${requestUrl}" style="background:${marca.accent};color:${marca.accentFg};padding:10px 18px;border-radius:6px;text-decoration:none;display:inline-block;">Ver solicitação no painel</a>
   </p>
-  <p style="font-size:12px;color:${NEUTROS_DE_SAIDA.suave};">Base legal: LGPD Lei nº 13.709/2018, Art. 18. SLA obrigatório conforme regulamentação vigente.</p>
+  <p style="font-size:12px;color:${NEUTROS_DE_SAIDA.suave};">${rodapeHtml}</p>
 </body>
 </html>`;
 
       // Texto puro não escapa: `&amp;` no corpo de um alarme é ruído.
-      const text = `[LGPD] Alerta de SLA — Solicitação #${shortId}
+      const text = `${etiqueta} Alerta de SLA — Solicitação #${shortId}
 
-A solicitação LGPD #${shortId} de ${organizationName || marca.nome} atingiu o limiar ${thresholdLabel}.
+${solicitacao} #${shortId} de ${organizationName || marca.nome} atingiu o limiar ${thresholdLabel}.
 ${daysOverdue > 0 ? `Esta solicitação está ${daysOverdue} dia(s) em atraso.` : `Prazo: ${dueFmt}.`}
 
 Status: ${request.request_type} / ${request.status}
 
 Acesse: ${requestUrl}
 
-Base legal: LGPD Lei nº 13.709/2018, Art. 18.`;
+${rodapeTexto}`;
 
       const result = await sendEmail({
         to: recipientEmail,
@@ -250,6 +274,16 @@ Base legal: LGPD Lei nº 13.709/2018, Art. 18.`;
   }
 
   return { alarmed, sentry: sentryOk, email: emailOk };
+}
+
+/**
+ * O rodapé do alarme fora do Brasil: o prazo do sistema é INTERNO e mais curto
+ * que o legal. O sufixo do RGPD só sai quando a lei do país é o RGPD revisado;
+ * país sem citação revisada não ganha lei nenhuma afirmada.
+ */
+function prazoInternoForaDoBrasil(perfil: PerfilDoPais): string {
+  const rgpd = perfil.lei?.nome === "RGPD" && citacaoDaLei(perfil) !== null;
+  return `Prazo interno do sistema, mais curto que o prazo legal${rgpd ? " (RGPD: um mês, art. 12.º, n.º 3)" : ""}.`;
 }
 
 /**

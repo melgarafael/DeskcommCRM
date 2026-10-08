@@ -58,7 +58,7 @@ O procedimento completo está em [`doctrine/packaging.md`](doctrine/packaging.md
 - [ ] Ensaio de atualização numa instalação **real e não-fresca**: `update.sh` a partir da
       versão anterior, sem editar arquivo nenhum na mão
 - [ ] `GET /api/v1/health` responde `version: "X.Y.Z"` depois do update
-- [ ] O domínio responde **307** (redireciona para o login), não 404 — 404 com contêiner
+- [ ] `/` responde **200** (a página inicial pública) e `/app` responde **307** (redireciona pro login), não 404 — 404 com contêiner
       `healthy` significa labels de roteamento perdidas (ver `runbooks/deploy.md`)
 - [ ] Smoke manual pela tela: login com MFA, criar lead, receber e enviar mensagem no WhatsApp,
       ver a entrada no audit log, abrir o kanban

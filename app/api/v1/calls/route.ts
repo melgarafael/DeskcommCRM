@@ -33,6 +33,7 @@ import { createCallSchema, listCallsQuerySchema } from "@/lib/schemas/calls";
 import { validateRequest } from "@/lib/schemas/_validate";
 import { createClient } from "@/lib/supabase/server";
 import { originateCall } from "@/lib/voip/ariClient";
+import { idsDeContatosPessoais } from "@/app/api/v1/conversations/_handler";
 
 export const dynamic = "force-dynamic";
 
@@ -45,8 +46,10 @@ const LIST_COLS =
  * teve (`ringing`/`in_progress`/`completed`/`no_answer`/`busy`/`failed`/`canceled`)
  * — feito aqui, não no banco, porque o CHECK de `status` em `voice_calls` é
  * vocabulário de terceiro (não é nosso pra estender).
+ *
+ * Exportada para o teste provar o mapeamento da recusada de bloqueado.
  */
-function mapStatusParaApi(status: string, endReason: string | null): string {
+export function mapStatusParaApi(status: string, endReason: string | null): string {
   if (status === "connected") return "in_progress";
   if (status !== "ended") return "ringing"; // starting|ringing
   switch (endReason) {
@@ -57,6 +60,12 @@ function mapStatusParaApi(status: string, endReason: string | null): string {
     case "failed":
       return "failed";
     case "cancelled":
+      return "canceled";
+    // Bloqueado na ligação é recusado — a recusada (contato
+    // "privado") cai em "Cancelada", o rótulo existente mais próximo de
+    // recusa, sem inventar vocabulário novo e sem expor `end_reason`.
+    // SABOTAGEM: remover este case = recusada volta a "completed" (vermelho).
+    case "contact_blocked":
       return "canceled";
     default:
       return "completed";
@@ -89,6 +98,15 @@ export async function GET(req: NextRequest): Promise<Response> {
     .eq("provider", "sip")
     .order("started_at", { ascending: false })
     .limit(q.limit);
+
+  // Chamada de pessoal fica ESCONDIDA (spec 21, etapa 14): some do histórico e
+  // só volta ao desmarcar. A de bloqueado continua aparecendo como recusada
+  // (`contact_blocked` → `canceled` em `mapStatusParaApi`) — por isso o filtro
+  // é só de pessoal, pela mesma primitiva de ids da lista do inbox.
+  const pessoais = await idsDeContatosPessoais(supabase, activeOrg.orgId);
+  if (pessoais.length > 0) {
+    query = query.not("contact_id", "in", `(${pessoais.join(",")})`);
+  }
 
   if (q.direction) query = query.eq("direction", q.direction);
 
@@ -150,6 +168,36 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const supabase = await createClient();
+
+  // Ligar para pessoal é envio para fora da operação (spec 21, etapa 12): a
+  // discagem recusa como o `send` recusa — sem exceção, em todo papel que
+  // alcança esta rota. Via lead, resolve o contato do negócio antes de
+  // perguntar; sem contato ligado, não há o que vetar.
+  {
+    let contatoId: string | null = input.contactId ?? null;
+    if (!contatoId && input.leadId) {
+      const { data: negocio } = await supabase
+        .from("crm_leads")
+        .select("contact_id")
+        .eq("organization_id", activeOrg.orgId)
+        .eq("id", input.leadId)
+        .maybeSingle();
+      contatoId = ((negocio as { contact_id?: string | null } | null)?.contact_id ?? null) as
+        | string
+        | null;
+    }
+    if (contatoId) {
+      const { data: alvo } = await supabase
+        .from("contacts")
+        .select("is_personal")
+        .eq("organization_id", activeOrg.orgId)
+        .eq("id", contatoId)
+        .maybeSingle();
+      if ((alvo as { is_personal?: boolean } | null)?.is_personal === true) {
+        return fail("forbidden", "Contato marcado como pessoal.", 403, { requestId });
+      }
+    }
+  }
 
   // Trunk da organização (Configurações > Trunk SIP) — fallback pro env pra
   // quem ainda não cadastrou nada na tela.

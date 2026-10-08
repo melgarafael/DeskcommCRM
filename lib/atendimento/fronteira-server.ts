@@ -52,6 +52,9 @@ export function currentExecutionBoundary(): ServiceBoundary | null {
 export function currentExecutionJob(): JobRow | null {
   return execution.getStore()?.job ?? null;
 }
+export function currentExecutionAgentOperation(): AgentOperationContext | null {
+  return execution.getStore()?.agentOperation ?? null;
+}
 export function setExecutionAgentOperation(context: AgentOperationContext): void {
   const scope = execution.getStore();
   if (scope) scope.agentOperation = context;

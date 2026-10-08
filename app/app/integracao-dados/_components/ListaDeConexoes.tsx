@@ -158,6 +158,13 @@ export function ListaDeConexoes({ initialData, canWrite }: Props) {
               {conexao.last_test_ok === false && conexao.last_test_error && (
                 <p className="truncate text-xs text-destructive">{conexao.last_test_error}</p>
               )}
+              {!conexao.customer_key_column && (
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  {t(
+                    "Nas conversas, o assistente consulta este banco sem limitar ao cliente que está falando. Escolha, em Editar, a coluna que identifica o cliente.",
+                  )}
+                </p>
+              )}
             </div>
 
             <div className="flex shrink-0 items-center gap-2">

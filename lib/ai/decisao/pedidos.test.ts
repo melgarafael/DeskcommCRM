@@ -17,6 +17,7 @@ import { lerConfigDoJev } from "@/lib/ai/decisao/config";
 import { TAREFA_DO_PEDIDO_PARA_PARAR } from "@/lib/ai/decisao/tarefas";
 import { POLITICAS_DE_AVISO } from "@/lib/ai/inbox-destino";
 import {
+  AVISOS_DA_REGRA,
   AVISOS_DOS_PEDIDOS,
   avisarAEquipe,
   CORTE_DO_PEDIDO,
@@ -414,10 +415,11 @@ describe("Avisar a equipe", () => {
   /**
    * O corpo fica aberto na Central por dias: ele não pode afirmar o que muda
    * enquanto isso — com quem a conversa está, que nada foi bloqueado, qual é
-   * "a última" mensagem.
+   * "a última" mensagem. Vale também para o aviso que a regra abre sobre a
+   * transcrição de um áudio (#2246).
    */
   it("o texto do aviso não afirma estado que muda depois de ele abrir", () => {
-    for (const aviso of Object.values(AVISOS_DOS_PEDIDOS)) {
+    for (const aviso of [...Object.values(AVISOS_DOS_PEDIDOS), ...Object.values(AVISOS_DA_REGRA)]) {
       for (const texto of [aviso.titulo, aviso.corpo, DICIONARIO[aviso.corpo]?.es ?? ""]) {
         expect(texto).not.toMatch(/segue com o assistente|nada foi bloqueado|última mensagem|sigue con el asistente|nada fue bloqueado|último mensaje/i);
       }
@@ -436,7 +438,9 @@ describe("Avisar a equipe", () => {
   it("o pedido de parar de receber não promete bloqueio por uma pessoa, e cita uma palavra que a regra de fato bloqueia", () => {
     const zh = JSON.parse(readFileSync("lib/i18n/traducoes/zh-CN.json", "utf8")) as Record<string, string>;
     const t = TAREFA_DO_PEDIDO_PARA_PARAR;
-    const comAPalavra = [AVISOS_DOS_PEDIDOS.opt_out.corpo, t.aoDecidir, t.aoConfirmarDecidir, t.oQueFaz];
+    // Do aviso pelo áudio (#2246) só entra o corpo de parar de receber: o de
+    // falar com uma pessoa diz "pessoa" por construção, e não é defeito.
+    const comAPalavra = [AVISOS_DOS_PEDIDOS.opt_out.corpo, AVISOS_DA_REGRA.opt_out.corpo, t.aoDecidir, t.aoConfirmarDecidir, t.oQueFaz];
     const semPessoa = [...comAPalavra, POLITICAS_DE_AVISO.jev_parar_de_receber.orientacao];
     for (const pt of semPessoa) {
       for (const texto of [pt, DICIONARIO[pt]?.es, zh[pt]]) {
@@ -448,6 +452,23 @@ describe("Avisar a equipe", () => {
       for (const texto of [pt, DICIONARIO[pt]?.es ?? "", zh[pt] ?? ""]) {
         const palavra = /\b[A-Z]{4,}\b/.exec(texto)?.[0] ?? "";
         expect(ehPedidoDeOptOut(palavra), `"${palavra}" em: ${texto.slice(0, 60)}…`).toBe(true);
+      }
+    }
+  });
+
+  /**
+   * O aviso é gravado no idioma da organização (`traduzir`), e `traduzir` cai
+   * no português quando falta a chave — sem erro nenhum. Os quatro textos do
+   * aviso pelo áudio (#2246) existem nos três idiomas.
+   */
+  it("o aviso que a regra abre pelo áudio tem tradução em es, en e zh", () => {
+    const en = JSON.parse(readFileSync("lib/i18n/traducoes/en.json", "utf8")) as Record<string, string>;
+    const zh = JSON.parse(readFileSync("lib/i18n/traducoes/zh-CN.json", "utf8")) as Record<string, string>;
+    for (const aviso of Object.values(AVISOS_DA_REGRA)) {
+      for (const pt of [aviso.titulo, aviso.corpo]) {
+        expect(DICIONARIO[pt]?.es, `es de "${pt.slice(0, 40)}…"`).toBeTruthy();
+        expect(en[pt], `en de "${pt.slice(0, 40)}…"`).toBeTruthy();
+        expect(zh[pt], `zh de "${pt.slice(0, 40)}…"`).toBeTruthy();
       }
     }
   });

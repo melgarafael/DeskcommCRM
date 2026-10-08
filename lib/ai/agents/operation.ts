@@ -7,6 +7,19 @@ export interface AgentOperationContext {
   versionId: string;
   revision: string;
 }
+export function mesmaOperacao(
+  a: AgentOperationContext | null | undefined,
+  b: AgentOperationContext | null | undefined,
+): boolean {
+  return (
+    !!a &&
+    !!b &&
+    a.organizationId === b.organizationId &&
+    a.agentId === b.agentId &&
+    a.versionId === b.versionId &&
+    a.revision === b.revision
+  );
+}
 function assert(
   row:
     | {

@@ -167,7 +167,7 @@ não de convenção de pasta. **Nº de leitores** conta arquivos de produção
 | `SUPABASE_DB_URL` | BOOTSTRAP | app + worker | 4 | `lib/agent-engine/db/request-pool.ts:15` | Connection string do `pg` cru — é por ela que o worker alcança o banco. |
 | `UPSTASH_REDIS_REST_TOKEN` | BOOTSTRAP | app + worker | 3 | `app/api/v1/health/route.ts:107` | ⚠ o par é `SRH_TOKEN` no contêiner `srh` (docker-compose.prod.yml). |
 | `WACALLS_API_TOKEN` | BOOTSTRAP | app + worker | 3 | `app/api/v1/voice/events/route.ts:75` | ⚠ o par é `WACALLS_API_TOKEN` no contêiner `wacalls` (profile `voz`). |
-| `WAHA_HMAC_SECRET` | BOOTSTRAP | app | 1 | `lib/waha/webhook-auth.ts:53` | ⚠ o par é `WHATSAPP_HOOK_HMAC` no contêiner WAHA (docker-compose.prod.yml:151). |
+| `WAHA_HMAC_SECRET` | BOOTSTRAP | app | 1 | `lib/waha/webhook-auth.ts:53` | ⚠ o par é `WHATSAPP_HOOK_HMAC_KEY` no contêiner WAHA (docker-compose.prod.yml) — com `_KEY`, o nome sem ele o WAHA ignora e nunca assina. |
 | `SUPABASE_DB_ADMIN_URL` | BOOTSTRAP | **nenhum** | 0 | `— (sem leitor)` | Conexão de DDL do kit; `tests/unit/env-ddl-fora-do-app.test.ts` PROÍBE o app de lê-la. |
 | `WAHA_WEBHOOK_BASE_URL` | BOOTSTRAP | **nenhum** | 0 | `— (sem leitor)` | ÓRFÃ no código; o único consumidor é o compose, que monta `WHATSAPP_HOOK_URL` do contêiner WAHA. |
 | `IMPERSONATE_COOKIE_SECRET` | CHAVE-MESTRA | app | 2 | `lib/impersonate/cookie.ts:84` | HMAC do cookie de impersonate; um segredo de sessão não volta ao banco que a sessão protege. |

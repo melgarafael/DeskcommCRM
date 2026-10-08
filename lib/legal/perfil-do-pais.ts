@@ -33,6 +33,31 @@
  *     países do que a lista oferece; é o que permite preparar o trabalho sem
  *     publicar o que ninguém revisou.
  *
+ * ─── Portugal: revisão feita por IA, por delegação do dono (doc 88) ───────
+ *
+ * Em 2026-10-05 a citação `RGPD art. 15.º (Regulamento (UE) 2016/679)` foi
+ * conferida por revisão AUTOMATIZADA, feita por IA por delegação do dono do
+ * produto (doc 88 das decisões; issues #1033 e #1946). NÃO é parecer jurídico
+ * e não houve advogado em Portugal. Fontes conferidas: o RGPD em português no
+ * JO L 119 de 4.5.2016 (repositório de publicações da UE, com as retificações
+ * do JO L 127/2018 e do JO L 74/2021, que não tocam os arts. 12.º, 15.º, 17.º
+ * e 20.º) e a reprodução da PGR Lisboa; a Lei n.º 58/2019 (nada nela muda o
+ * art. 15.º); as Guidelines 01/2022 do EDPB. O prazo do produto (7 e 15 dias
+ * úteis, calendário português) foi simulado de 2026 a 2030 e nunca passa do
+ * mês do art. 12.º, n.º 3.
+ *
+ * Por isso o perfil leva `revisadaPorIa` — a tela declara a natureza da
+ * revisão a quem responde pelo documento — e `rotuloNoDocumento: "Direito
+ * exercido"`: no RGPD, "base legal" é o art. 6.º (licitude), e o art. 15.º é
+ * o direito que o titular exerceu.
+ *
+ * Ressalva da Nuvemshop, reconferida em 2026-10-05: a Nuvemshop não abre loja
+ * em Portugal, e os 3 webhooks dela são o único caminho que cria pedido de
+ * titular (vigiado por `tests/unit/so-a-nuvemshop-cria-pedido-de-titular`).
+ * Uma organização portuguesa com loja Nuvemshop BRASILEIRA alcança o fluxo; aí
+ * o titular é brasileiro e as duas leis podem valer — citar o RGPD não é
+ * falso, mas é incompleto.
+ *
  * ─── A separação documento × forma (regra adotada do #928) ────────────────
  *
  * Não se inventa dígito verificador. País com checksum público documentado
@@ -103,6 +128,27 @@ export interface DocumentoDoTitular {
   normaliza(valor: string): string;
 }
 
+/**
+ * Os rótulos da tela da ORGANIZAÇÃO — o nome legal da empresa e o número que a
+ * identifica (`legal_name` e `cnpj` no schema de Configurações).
+ *
+ * Mesma razão de `DocumentoDoTitular.rotulo`: o vocabulário de TELA é
+ * propriedade do país, e não do componente. Enquanto
+ * `app/app/settings/tenant/_form.tsx` escrevia "Razão social" e "CNPJ" em
+ * duro, uma organização portuguesa via o Brasil na própria tela de
+ * Configurações (issue #1946, item 4) — o mesmo defeito que o #1945 corrigiu
+ * nos diálogos de negócio e de contato.
+ *
+ * A coluna continua `cnpj` e o schema não muda: muda só o que se lê na tela,
+ * a mesma régua de `apelidosDoCabecalho` (o vocabulário de tela muda, o dado não).
+ */
+export interface EmpresaDoPais {
+  /** O rótulo da tela do nome legal: "Razão social", "Denominação social". */
+  rotuloNomeLegal: string;
+  /** O rótulo da tela do número da empresa: "CNPJ", "NIPC". */
+  rotuloNumero: string;
+}
+
 export interface LeiCitada {
   /** Sigla pela qual a lei é conhecida: "LGPD", "GDPR". */
   nome: string;
@@ -115,6 +161,34 @@ export interface LeiCitada {
    * o documento não cita esta lei (ver cabeçalho).
    */
   revisada: boolean;
+  /**
+   * A revisão foi feita por IA, sem advogado local. A tela de Configurações
+   * declara isso a quem responde pelo documento (ver o cabeçalho).
+   */
+  revisadaPorIa?: true;
+  /**
+   * Como o documento de acesso rotula a citação. Ausente = "Base legal", o
+   * rótulo de sempre — o Brasil não declara este campo, e por isso o
+   * `data.json` brasileiro não ganha chave nova.
+   */
+  rotuloNoDocumento?: string;
+}
+
+/**
+ * A autoridade de supervisão do país — a alínea f) do art. 15.º, n.º 1.
+ *
+ * Mora no PERFIL, e não no módulo do art. 15.º, porque é propriedade do país:
+ * trocar de país troca a autoridade junto com a lei e com o calendário (mesma
+ * razão de `lei`, `calendario` e `padroesDePii`). Um país sem autoridade
+ * revisada não declara o campo, e o relatório não emite a alínea f) — a mesma
+ * régua de `lei.revisada`: a lei errada, ou a autoridade errada, é pior do que
+ * não citar.
+ */
+export interface AutoridadeDeSupervisao {
+  /** Como a autoridade é conhecida, já com a sigla: "Comissão Nacional de Proteção de Dados (CNPD)". */
+  nome: string;
+  /** Onde o titular reclama. Site oficial, não buscado em runtime. */
+  site: string;
 }
 
 export interface CalendarioDeDiasUteis {
@@ -131,6 +205,13 @@ export interface PerfilDoPais {
   nome: string;
   documento: DocumentoDoTitular;
   /**
+   * Os rótulos da tela da ORGANIZAÇÃO — nome legal e número da empresa.
+   *
+   * Vêm do país junto com `documento`, porque a mesma troca de país na tela de
+   * Configurações troca os dois: o rótulo não é do componente.
+   */
+  empresa: EmpresaDoPais;
+  /**
    * Um telefone DESTE país em E.164, para o exemplo dos formulários.
    *
    * Mora aqui porque o campo é o mesmo em toda tela e o exemplo não é: o
@@ -140,6 +221,14 @@ export interface PerfilDoPais {
   telefoneExemplo: string;
   /** `null` quando o país ainda não tem lei revisada para citar. */
   lei: LeiCitada | null;
+  /**
+   * A autoridade a quem o titular reclama (art. 15.º, n.º 1, al. f)). Ausente
+   * em países cuja citação não foi revisada — e o Brasil, cujo documento segue
+   * a LGPD (art. 18, II) e não a lista do RGPD, não declara este campo: a
+   * regra byte a byte do doc 88 (`tests/fixtures/lgpd-brasil-antes-do-doc88/`)
+   * é o que trava o PDF brasileiro.
+   */
+  autoridadeDeSupervisao?: AutoridadeDeSupervisao;
   calendario: CalendarioDeDiasUteis;
   /** Padrões PRÓPRIOS do país; e-mail/telefone são universais e moram fora. */
   padroesDePii: readonly PadraoDePiiDoPais[];
@@ -201,6 +290,11 @@ const PERFIL_BR: PerfilDoPais = {
   codigo: "BR",
   nome: "Brasil",
   documento: DOCUMENTO_BR,
+  // O par que a tela da organização mostra no Brasil (issue #1946, item 4).
+  empresa: {
+    rotuloNomeLegal: "Razão social",
+    rotuloNumero: "CNPJ",
+  },
   telefoneExemplo: "+5511999998888",
   lei: {
     nome: "LGPD",
@@ -244,12 +338,30 @@ const PERFIL_PT: PerfilDoPais = {
   codigo: "PT",
   nome: "Portugal",
   documento: DOCUMENTO_PT,
+  // Como Portugal chama o mesmo par (issue #1946, item 4): `Denominação social`
+  // é a designação legal da firma, e `NIPC` o Número de Identificação de
+  // Pessoas Coletivas — o análogo do CNPJ, e não um NIF de titular.
+  empresa: {
+    rotuloNomeLegal: "Denominação social",
+    rotuloNumero: "NIPC",
+  },
   telefoneExemplo: "+351912345678",
   lei: {
     nome: "RGPD",
     numero: "Regulamento (UE) 2016/679",
     artigo: "art. 15.º",
-    revisada: false,
+    // Revisada por IA em 2026-10-05, por delegação do dono (doc 88) — não é
+    // parecer jurídico. Registro completo no cabeçalho deste arquivo.
+    revisada: true,
+    revisadaPorIa: true,
+    rotuloNoDocumento: "Direito exercido",
+  },
+  // Alínea f) do art. 15.º, n.º 1: a autoridade portuguesa. Conferida em
+  // 2026-10-05 na fonte primária (site oficial da CNPD) junto com o resto da
+  // revisão do doc 88; a mesma ressalva vale — revisão por IA, sem advogado.
+  autoridadeDeSupervisao: {
+    nome: "Comissão Nacional de Proteção de Dados (CNPD)",
+    site: "https://www.cnpd.pt",
   },
   calendario: {
     feriados: HOLIDAYS_PT_ISO,
@@ -257,18 +369,37 @@ const PERFIL_PT: PerfilDoPais = {
   },
   padroesDePii: [
     {
+      // ANTES do NIF: `+351 912 345 678` tem três blocos que o padrão de NIF
+      // também casaria (o miolo `912 345 678`), e o telefone é o dono do número.
+      tipo: "telefonePT",
+      marcador: "[TELEFONE]",
+      fonte: "\\+351[\\s.-]?\\d{3}[\\s.-]?\\d{3}[\\s.-]?\\d{3}",
+      naoCobre:
+        "telemóvel de 9 dígitos sem o `+351` — é indistinguível de um NIF e os dois são PII; o que separa é o prefixo",
+    },
+    {
+      tipo: "iban",
+      marcador: "[IBAN]",
+      fonte: "\\bPT\\d{2}(?:\\s?\\d{4}){5}\\s?\\d\\b",
+      naoCobre: "IBAN de outro país e IBAN colado a letra sem o prefixo `PT`",
+    },
+    {
       tipo: "nif",
       marcador: "[NIF]",
-      fonte: "\\b\\d{9}\\b",
+      // O lookahead deixa o CPF separado (`123.456.789-09`) para o padrão
+      // brasileiro: sem ele, os nove primeiros dígitos viravam `[NIF]` e os
+      // dois do dígito de controlo sobravam no texto (medido na cerca
+      // `mascara-da-ingestao-tem-o-brasil-por-baixo`).
+      fonte: "\\b(?:PT\\s?)?\\d{3}[ .]?\\d{3}[ .]?\\d{3}(?![.\\s-]\\d{2}\\b)\\b",
       naoCobre:
-        "NIF com menos de 9 dígitos e número de telemóvel português de 9 dígitos — sem o prefixo `+351` o padrão não distingue um do outro",
+        "NIF colado a letra sem o prefixo `PT` (ex.: `nif123456789`) e NIF com menos de 9 dígitos",
     },
     {
       tipo: "codigoPostal",
       marcador: "[CODIGO_POSTAL]",
-      fonte: "\\b\\d{4}-\\d{3}\\b",
+      fonte: "\\b\\d{4}[-\\s]\\d{3}\\b",
       naoCobre:
-        "código postal sem hífen e código estrangeiro (CEP brasileiro usa ponto e 8 dígitos)",
+        "código postal sem separador (7 dígitos) e código estrangeiro (CEP brasileiro usa ponto e 8 dígitos)",
     },
   ],
 };

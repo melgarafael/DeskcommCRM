@@ -35,6 +35,7 @@ import { CSV_MAX_BYTES, CSV_MAX_DATA_ROWS, decodificarCsv } from "@/lib/contacts
 import { traduzir } from "@/lib/i18n/dicionario";
 import { lerPlanilhaDeLeads, type ErroDaLinha } from "@/lib/leads/planilha";
 import { createLeadHandler } from "@/app/api/v1/leads/_handler";
+import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -189,6 +190,12 @@ export async function POST(req: NextRequest): Promise<Response> {
   // e o produto passaria a ter duplicata que ele mesmo fabricou.
   const contatoPorTelefone = new Map<string, string>();
 
+  // Só os contatos que ESTA requisição criou, na ordem em que criou — é esta
+  // lista que `desfazContatosCriados` devolve ao banco quando a importação cai
+  // no meio (#2297, caminho 3). Os contatos que JÁ existiam não entram aqui:
+  // apagá-los seria destruir dado de quem veio antes de nós.
+  const contatosCriados: string[] = [];
+
   for (const linha of lido.leads) {
     try {
       let contactId: string | null = null;
@@ -228,6 +235,7 @@ export async function POST(req: NextRequest): Promise<Response> {
             } else {
               contactId = (criado as { id: string }).id;
               resumo.contatos_criados += 1;
+              contatosCriados.push(contactId);
             }
           }
           if (contactId) contatoPorTelefone.set(linha.telefone, contactId);
@@ -255,6 +263,14 @@ export async function POST(req: NextRequest): Promise<Response> {
       // não é desta organização, ela não será na linha 2 nem na 300. Seguir
       // gastaria 300 tentativas para dar o mesmo erro 300 vezes.
       if (err instanceof ApiError && (err.status === 404 || err.status === 422)) {
+        // O QUE JÁ TINHA SIDO FEITO NÃO PODE SOBRAR (#2297, caminho 3): o
+        // contato da linha 1 é criado ANTES do `createLeadHandler` da linha 1 —
+        // e a recusa da régua (422) morre a importação inteira logo em seguida.
+        // Sem este desfazimento o cadastro ficava com um contato órfão que
+        // ninguém pediu e que nenhum negócio aponta. Só os contatos DESTA
+        // requisição, e só os que ficaram sem negócio: o de linha que já virou
+        // card é do cliente e fica.
+        await desfazContatosCriados(supabase, orgId, contatosCriados);
         return fail(err.code, err.message, err.status, { requestId });
       }
       resumo.erros.push({
@@ -280,6 +296,63 @@ export async function POST(req: NextRequest): Promise<Response> {
   });
 
   return ok(resumo, { requestId });
+}
+
+/**
+ * Devolve ao banco os contatos que ESTA importação criou e que ficaram sem
+ * negócio (#2297, caminho 3).
+ *
+ * A ordem da rota é a defeituosa: o contato nasce antes do `createLeadHandler`
+ * da mesma linha, e um 404 (etapa de outra organização) ou um 422 (a régua de
+ * campos obrigatórios) derruba a importação INTEIRA logo depois — a linha 1 já
+ * tinha gravado o contato, e ele ficava órfão no cadastro.
+ *
+ * O corte é deliberado em DUAS pontas:
+ *
+ *   - só contatos DESTA requisição (a lista `contatosCriados`), nunca os que a
+ *     busca por telefone já encontrava: apagar um contato pré-existente seria
+ *     destruir dado do cliente para consertar o nosso erro;
+ *   - só os que NENHUM negócio aponta (`crm_leads.contact_id`): uma linha que
+ *     passou antes daquela que derrubou já nasceu com card, e o contato dela é
+ *     dado de verdade.
+ *
+ * Nunca lança e nunca mascara o erro original: falhou, loga com os ids e a rota
+ * devolve o 404/422 que a pessoa precisa ver. Um desfazimento que virasse 500
+ * trocaria um resto rastreável por uma importação sem diagnóstico.
+ */
+async function desfazContatosCriados(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  orgId: string,
+  ids: string[],
+): Promise<void> {
+  if (ids.length === 0) return;
+  try {
+    const { data: usados, error: erroDaLeitura } = await supabase
+      .from("crm_leads")
+      .select("contact_id")
+      .eq("organization_id", orgId)
+      .in("contact_id", ids);
+    if (erroDaLeitura) throw new Error(erroDaLeitura.message);
+
+    const comNegocio = new Set(
+      (usados ?? []).map((linha) => (linha as { contact_id: string | null }).contact_id),
+    );
+    const orfaos = ids.filter((id) => !comNegocio.has(id));
+    if (orfaos.length === 0) return;
+
+    const { error: erroDoDelete } = await supabase
+      .from("contacts")
+      .delete()
+      .eq("organization_id", orgId)
+      .in("id", orfaos);
+    if (erroDoDelete) throw new Error(erroDoDelete.message);
+  } catch (err) {
+    logger.warn("[leads.import] não devolvi os contatos criados após a recusa", {
+      organizationId: orgId,
+      contatos: ids,
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 200),
+    });
+  }
 }
 
 export async function GET(): Promise<Response> {

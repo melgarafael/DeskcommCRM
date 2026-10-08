@@ -160,6 +160,8 @@ HTTP `scripts/duble-jev-e2e.mjs`, que grava cada chamada num arquivo que a spec 
 | J32.22 | A sexta tarefa: "Ler a resposta ao follow-up" (onda 4.1), vista pela tela | com o Jev ligado no aceite de cada mensagem, ela aparece no cartão com o selo "Nova", **observando sozinha** (R7) e **sem "Deixar o Jev decidir"**: a linha diz, em frase de leigo, por que só observa nesta versão (a saída move o cliente no fluxo, e primeiro se mede a concordância com respostas de verdade); a frase de "Nova" não promete o botão; a concordância é "…puseram a resposta do cliente na mesma saída do fluxo em X de Y mensagens." (a mesma unidade do "Ainda não há mensagens medidas"); com só ela comparando, a frase do cartão (antes e depois de ligar) não fala em deixar o Jev decidir; numa empresa sem follow-up PUBLICADO com o passo "Classificar (IA)" de duas saídas ou mais E sem inscrição andando numa versão com ele (desativar o follow-up não encerra as inscrições, e o motor segue mandando as respostas ao Jev), "Não roda" com o motivo e o link para Follow-ups, antes e depois de ligar; um passo de uma saída só não vai ao Jev (concordância certa por construção); e fora do "Usada em" da chave; a rota recusa `decidindo` nela (422 `jev_tarefa_so_observa`, com a mesma frase, no idioma de quem pede) e um `decidindo` gravado por outra versão vale observando; o cartão do ponto "Ler a resposta ao follow-up" diz que o Jev observa e o modelo decide; em Execuções a chamada tem o nome do ponto e a origem de observação | **PASS em tela** (26/09): `jev-followup.spec.ts` verde contra `pnpm e2e:build` numa bancada fresca, junto das specs do Jev e de follow-up (`21 passed`); e **prova de campo com as chaves reais** (instalação fresca, OpenAI e TypeSafe): a Marina respondeu "Agora não dá, estou viajando. Me chama semana que vem?" a um follow-up publicado pela API do construtor, a IA de sempre (gpt-5.6-terra, 1097 ms) e o Jev (0,99, 335 ms) escolheram "pediu para falar depois", o fluxo seguiu pela saída da IA de sempre, e o cartão mostrou "em 1 de 1 mensagens". O envio da ação foi concluído pelo seam `complete-turn` (a bancada não tem WAHA); daí em diante tudo rodou pelo caminho de produção. Unit/jsdom: `CartaoDoJev.test.tsx`, `route.test.ts`, `tarefas.test.ts`, `credenciais-aviso-so-decisao.test.tsx`. |
 | J32.23 | O Jev no passo "Classificar (IA)" do follow-up | com resposta do cliente ao envio do fluxo e a tarefa rodando: o Jev recebe SÓ o que o cliente digitou (passado pelo `scrubMessage`; sem o histórico nem a mensagem anterior), numa chamada só dele, com as saídas do passo como opções — sem "nenhuma" — e a dica do passo na instrução; **o fluxo segue SEMPRE pela saída da IA de sempre**, mesmo com o Jev discordando, e ninguém espera por ele; o par (saída dele × saída dela) vai para `jev_observacoes` amarrado ao `job_id` e ao `message_id` REAL da resposta (achado pela conversa, texto e segundo), com o custo em `llm_calls` (`followup_classify`, `jev_observacao`) no mesmo comando, sem texto do cliente; o retry do mesmo job não conta em dobro (a primeira resposta do Jev fica; o custo da segunda entra); a IA de sempre que falha deixa o par sem ela, e o retry o completa; tarefa pausada ou Jev desligado ⇒ nada sai; sem resposta (`awaiting_reply`) ou resposta em áudio transcrito ⇒ o Jev não é perguntado | **PASS** no `test:db` pelo caminho de produção (`tests/invariants/jev-followup-no-turno.test.ts`, 10 casos: tick do motor, `job_queue`, `claimJobs` e o handler real `createFollowupTurnHandler` com a ponte, Postgres real, a IA de sempre no registry dublê e o Jev num `fetch` dublê; mais a FK que o embed do cartão nomeia). Sabotagem medida: sem o `scrubMessage` reprova (a) e o unitário; perguntar com a tarefa desligada reprova os dois (d); a saída do Jev movendo o fluxo reprova (a)+(b) (`e_nao` no lugar de `e_quer`); gravar sem o `message_id` reprova (c) (duas observações); uma escrita em `conversations` no módulo reprova a cerca R3. **PASS em unit**: `lib/ai/decisao/followup.test.ts` (a pergunta, o contrato do fornecedor, a leitura da resposta, a gravação) e `tests/unit/followup-classificar-sem-resposta.test.ts`. Sem prova e2e (o CI não sobe o agent-worker) |
 
+| J32.24 | O Jev roteia sozinho, com a IA de sempre de reserva (PR #2061, @vitorlacerdadigital) | Provedores mantém a comparação e oferece o modo sob demanda **só onde a empresa tem a IA de sempre** (decisão B do mantenedor, doc 89): sem ela a opção não liga, o cartão diz por quê, o `PATCH` recusa com `jev_sem_ia_de_sempre` e o turno compara (R2); o editor salva a janela 0–16 da IA de sempre (novo padrão 8, legado 4), e o Jev segue recebendo só a mensagem atual (o histórico dele espera a TypeSafe, DEC-012); Testar classificação dispensa a IA de sempre quando o Jev tem intenção confiável; Execuções › Roteamento mostra decisões, custo conhecido, revisão humana e acesso à conversa. | Unit/API e Postgres real (`tests/invariants/jev-roteador-no-turno.test.ts`): turno sob demanda com e sem reserva, e sem a IA de sempre o modo não liga. Tela: `tests/e2e/jev-roteador.spec.ts` cobre configuração, prévia independente e revisão persistida com dados sintéticos. Não mede economia nem acurácia real do fornecedor. |
+
 **Achados da execução em campo (2026-09-24), todos consertados antes do PR:** a spec do CI
 recarregava a página com o POST da chave em voo e o salvamento morria (status `-1` no trace);
 aviso da Central fechado sem `resolved_at`; "Usada em" sumia depois de editar a chave; "Nome"
@@ -304,6 +306,14 @@ mecanismo; o patch de código deste PR foi exercitado no receptor local. **Não 
 entrega desses quatro convites nas caixas finais, todos os provedores e uma nova
 jornada Playwright em instalação fresca. Nenhum endereço ou token real é necessário
 para reproduzir o teste local.
+
+### J5.16 `[P0]` — O link de senha, convite e cadastro resiste ao verificador do Hotmail/Outlook (#2183)
+
+O verificador de links do Outlook/Hotmail abre o link do e-mail antes da pessoa e gastava o token de uso único: quem clicava depois recebia "link expirado". O link agora leva à tela **Confirmar acesso** (`/login/continuar`), e só o botão **Continuar** (POST) gasta o token. Prova pela tela, num build de produção com o `baseline.sql` (contribuição de @fabianmartinelli-fm):
+
+- `evidence/2026-10-03-link-resiste-a-verificador/01-confirmar-acesso.png` — a tela que o link abre, depois que o verificador já seguiu o link;
+- `evidence/2026-10-03-link-resiste-a-verificador/02-definir-nova-senha.png` — o Continuar leva à definição de senha com o token ainda válido;
+- `evidence/2026-10-03-link-resiste-a-verificador/03-confirmar-acesso-celular.png` — a mesma tela no celular.
 
 ## J6 — Webhooks: receber, automatizar, provar `[P0]`
 
@@ -585,6 +595,7 @@ ao cliente dele, e a tela de acesso é a primeira coisa que qualquer usuário v�
 | J10.7 | Nome com apóstrofo (`Sant'Ana Odontologia`) | o `.env` sobrevive: 18/18 nos três consumidores de compose | PASS |
 | J10.8 | Cor escura de marca não quebra o contraste | o anel de foco respeita o piso de 3:1 em ambos os temas | PASS (unit) |
 | J10.9 | Dois logos, um por tema, com remoção independente | arte escura sem moldura na prévia, menu e login; remover apenas a escura preserva o padrão com a proteção anterior | `tests/e2e/logo-moldura-no-tema-escuro.spec.ts`, caso (7); ver evidência da execução no PR |
+| J10.10 | Administrador salva CSS visual da instalação | CSS aparece no login sem sessão, em valor computado; salvar vazio remove; folha global afeta as organizações | SPEC adicionada em `tests/e2e/marca-logo.spec.ts`; execução pendente |
 
 **Bug de produto achado ao executar (2026-08-14), e é o que justifica esta jornada
 existir.** O caso J10.1 reprovou no CI, e não por defeito do teste: quem sobe o
@@ -1128,7 +1139,7 @@ ação `send_ai_message`, retomada manual (`lib/escalacao/retomada.ts`).
 | J20.12 | Follow-up em cliente atual (não autorizado, gate allowlist) | NÃO enrola | **CÓDIGO** — `silence-sweep.ts` `loadSilentContactIds` consulta a regra compartilhada e pula `!permitidoPeloGate`; **E2E** — `tests/e2e/j20-elegibilidade-followup.spec.ts` (fluxo de silêncio publicado pela API + cron real: silencioso autorizado → nasce `followup_enrollments`; silencioso NÃO autorizado, mesmo canal → nenhum enrollment) |
 | J20.13 | Reinício do worker com backlog de eventos pending | zero disparos: cada evento cujo inbound já foi superado vira `done` sem job | **UNIT** — `drain.test.ts` "evento superado por inbound mais recente" |
 | J20.14 | Submissão antiga (fora do TTL) | NÃO reativa a IA sozinha | **UNIT** — `gate.test.ts` "submissão antiga (fora da janela)", `drain.test.ts` "autorização EXPIRADA" |
-| J20.15 | Org SEM versão de agente publicada (caminho legado `ai-response-worker`), gate allowlist, contato não autorizado | IA NÃO responde por este caminho tampouco | **UNIT** — `ai-response-worker-elegibilidade.test.ts` (skip `nao_elegivel_para_ia` antes de ler mensagem/agente; fail-closed em erro de leitura) |
+| J20.15 | Org SEM versão de agente publicada (caminho legado `ai-response-worker`), gate allowlist, contato não autorizado | IA NÃO responde por este caminho tampouco | **UNIT** — `ai-response-worker-elegibilidade.test.ts` (skip `nao_elegivel_para_ia` antes de ler a mensagem; a leitura dos candidatos legados em `ai_agents` vem primeiro — sem candidato, sai com uma consulta; fail-closed em erro de leitura) |
 | J20.16 | Follow-up de TEXTO FIXO drenado inline (`enviarTextoFixoPendente`, sem worker), contato não autorizado | NÃO envia; job vira `done` | **UNIT** — `enviar-texto-fixo.test.ts` "conversa NÃO elegível" (+ fail-closed volta pra `pending`) |
 | J20.17 | Cliente antigo irritado (gate allowlist, não autorizado) → worker de sentimento dispara `low_sentiment` | `triggerHandoff` NÃO dispara: sem "um humano vai te atender", sem mexer no estado da conversa | **UNIT** — `handoff-orchestrator-elegibilidade.test.ts` (`bloqueioPorAllowlist` e `conversa_silenciada` barram; fail-closed em erro) |
 | J20.18 | Eu respondo o cliente à mão pelo meu WhatsApp numa conversa autorizada | IA para naquela conversa por um PRAZO renovado a cada nova fala humana — o da EMPRESA (`settings.routing.manual_reply_silence_minutes`, Configurações › Atendimento, 5 min a 24 h; padrão `PRAZO_DO_SILENCIO_MS`, 60 min; diagnóstico de @gaberaldo-svg no #2005: clínica que atende o dia inteiro pelo celular nunca via a IA voltar) —, SEM apagar `ai_authorized_at`; volta sozinha quando o prazo vence, ou antes por "devolver ao automático" | **UNIT** — `atendimento-manual.test.ts` (as duas pontas do prazo medidas pelo motor real `decidirElegibilidade`, renovação, e o que NUNCA encurta: `'infinity'` do handoff formal e janela mais longa) + `waha-ingest-atendimento-manual.test.ts` (via `dispatchWahaEvent` real; eco do próprio envio NÃO pausa) + guarda de fonte no Zernio + fiação em `handoff-fantasma-fiacao.test.ts` + o prazo da empresa em `atendimento-manual.test.ts` (15 min gravado; erro/exceção ao ler o ajuste ainda pausa com 60; `#off` nem consulta) e os valores inválidos em `prazo-silencio-knob.test.ts` + o campo em `app/app/settings/atendimento/_form.test.tsx`; **E2E** — `tests/e2e/j20-elegibilidade-atendimento-manual.spec.ts` (webhook `fromMe` genuíno → `bot_silenced_until` finito e futuro, nunca `'infinity'`, + rastro; `ai_authorized_at` intacto; 2ª mensagem RENOVA o prazo; tela mostra o selo; "devolver ao automático" solta a trava e a autorização continua) |
@@ -1334,6 +1345,52 @@ APROVAR um pedido de LGPD pelo hub (a spec abre o pedido, não aprova).
 `evidence/suspensao-administrativa/hub-atendente.png`,
 `evidence/suspensao-administrativa/central-apos-reativar.png`.
 
+## J41 — O dono cria planos e os limites de pessoas, números e IA valem de verdade `[P1]` (2026-09-30)
+
+**Origem:** PR 2 da cobrança do revendedor
+(`docs/superpowers/specs/2026-09-29-cobranca-do-revendedor-design.md`, §2.2, §2.3, §5, §7(g)(h), §9).
+A chave `MODULO_COBRANCA` ainda não pode ser ligada pela tela (fica em
+`MODULOS_AINDA_NAO_LIGAVEIS` até a PR 3a), então os casos com a chave ligada
+gravam `platform_config.MODULO_COBRANCA='ligado'` direto no banco pelo fixture.
+
+| Caso | Spec | Estado |
+|---|---|---|
+| O dono acha a porta Cobrança, cria um plano (1 pessoa, 1 número, 5 dias) e o atribui à empresa B pelo card do tenant | `tests/e2e/cobranca-suspensao-e-limites.spec.ts` | CI (PARTE_6) |
+| A admin de B vê a faixa de teste grátis; o convite com o plano cheio é recusado antes do e-mail, com a mensagem do plano | idem | CI (PARTE_6) |
+| Reativar membro acima do teto pela API da sessão: o `PT402` atravessa o PostgREST real e vira 409 `plan_limit_reached` | idem | CI (PARTE_6) |
+| Billing mostra o teste grátis e o uso 1 de 1 | idem | CI (PARTE_6) |
+| B suspensa por cobrança: o dono dá prazo pelo card e B volta; suspensa de novo, desligar a chave em /admin/sistema a libera e a porta some | idem | CI (PARTE_6) |
+| Sem a chave: formulário de novo tenant, painel do tenant, /admin/sistema, Billing e menu como antes; nenhuma faixa; Recursos opcionais sem cobrança | `tests/e2e/cobranca-desligada.spec.ts` | CI (PARTE_6) |
+| As duas tabelas: forma, vocabulário, grants, colunas mortas fora | `tests/invariants/cobranca-tabelas.test.ts` | test:db |
+| Isolamento: admin de A lê só A; `agent` não lê; a sessão não escreve; `cobranca_planos` invisível | `tests/invariants/cobranca-isolamento.test.ts` | test:db |
+| O limite do plano: nulo com a chave desligada, isenta ou sem teto; recurso fora do vocabulário = 22023 | `tests/invariants/cobranca-limite-do-plano.test.ts` | test:db |
+| Assentos: teto 2 → 3º membro `PT402` com a mensagem que o app lê; entradas concorrentes → uma passa; provisório pela sessão → `42501` | `tests/invariants/cobranca-assentos.test.ts` | test:db |
+| Canais: idem com desarquivar, troca de organização, reconexão do número já ativo e `wacalls` fora da conta | `tests/invariants/cobranca-canais.test.ts` | test:db |
+| Teste grátis na criação: chave ligada + plano do cadastro → `trial`; criado por platform admin → nada; chave desligada → `settings.plan` como antes | `tests/invariants/cobranca-trial-na-criacao.test.ts` | test:db |
+| Suspensão por cobrança poupa a isenta; reativar zera o aviso; desligar libera só as de cobrança | `tests/invariants/cobranca-suspensao-e-liberacao.test.ts` | test:db |
+| Teto de IA do plano no Postgres real; o orçamento da org não retrata o aviso do plano | `tests/invariants/teto-do-plano.test.ts` | test:db |
+| Aviso do plano e aviso do orçamento convivem sem se retratar | `tests/invariants/cobranca-aviso-do-plano-e-do-orcamento.test.ts` | test:db |
+| Teto de IA do plano: chave própria nunca bloqueia; finalidade isenta segue; `AI_BUDGET_ENFORCEMENT=off` desliga | `lib/agent-engine/edge/llm/orcamento.test.ts` | unit |
+| O mapa vivo espelha os mapas vizinhos e nenhuma peça é ilha | `tests/unit/mapas-de-arquitetura.test.ts` | unit |
+
+**Evidência** (gerada pelo e2e da PARTE_6 no CI e versionada a partir do artefato
+`evidencia-parte-6`): `evidence/cobranca-planos-e-limites/admin-cobranca-planos.png`,
+`evidence/cobranca-planos-e-limites/tenant-card-cobranca.png`,
+`evidence/cobranca-planos-e-limites/convite-recusado-pelo-plano.png`,
+`evidence/cobranca-planos-e-limites/billing-teste-gratis.png`,
+`evidence/cobranca-planos-e-limites/sistema-desligar-libera.png`,
+`evidence/cobranca-planos-e-limites/desligada-novo-tenant.png`,
+`evidence/cobranca-planos-e-limites/desligada-billing.png`,
+`evidence/cobranca-planos-e-limites/desligada-recursos-opcionais.png`.
+
+**Não coberto pela tela:** ligar a chave pela tela (PR 3a, quando ela sair de
+`MODULOS_AINDA_NAO_LIGAVEIS`); pagamento, régua de avisos e suspensão
+automática por falta de pagamento (PR 3a); o aceite de convite recusado pelo
+limite (provado em `tests/invariants/cobranca-assentos.test.ts` e em
+`lib/auth/aplicar-convite.test.ts`, não pela tela); o teto de IA do plano
+bloqueando uma conversa com agente publicado (provado em unit e no Postgres
+real, não pela tela).
+
 ## Jornadas exercitadas (instalação final, virgem)
 
 | Jornada | Resultado |
@@ -1381,7 +1438,7 @@ APROVAR um pedido de LGPD pelo hub (a spec abre o pedido, não aprova).
 | 19 | 🟠 **A regra de bloqueio no Caddy não valia**: fora de um bloco `route`, o Caddy reordena e `respond` vem depois de `reverse_proxy` — o catch-all atendia primeiro | após o deploy, o POST sem assinatura ainda respondia 200 | `route { }` para valer a ordem escrita |
 | 20 | 🔴 **Mudança no Caddyfile nunca chegava em quem já instalou.** Bind mount de um arquivo fica preso ao inode; `git pull` cria inode novo e o contêiner segue lendo o antigo | inode 3283869 no host x 3271833 no contêiner, com conteúdo velho, depois de um `update.sh` que disse "concluída" | `update.sh` recria o contêiner do proxy |
 
-**Nota de método:** medi o que o WAHA realmente envia **antes** de escrever o conserto. Os eventos reais chegam **sem assinatura** (2026.7.2 CORE não assina, mesmo com `WHATSAPP_HOOK_HMAC` no contêiner) — o único evento com header no log era a minha própria injeção. Passar a exigir assinatura por padrão derrubaria a ingestão de mensagens de todo mundo: por isso a defesa padrão é de rede, e a exigência de assinatura fica atrás de `WAHA_WEBHOOK_REQUIRE_SIGNATURE` para quem roda WAHA Plus.
+**Nota de método:** medi o que o WAHA realmente envia **antes** de escrever o conserto. Os eventos reais chegavam **sem assinatura** — na época li isso como "2026.7.2 CORE não assina", mas a medição de 2026-10-04 mostrou a causa real: o compose entregava `WHATSAPP_HOOK_HMAC`, nome que não existe na doc do WAHA (o certo é `WHATSAPP_HOOK_HMAC_KEY`), então ele ignorava e nunca assinava. O único evento com header no log era a minha própria injeção. Passar a exigir assinatura por padrão derrubaria a ingestão de mensagens de todo mundo: por isso a defesa padrão é de rede, e a exigência de assinatura fica atrás de `WAHA_WEBHOOK_REQUIRE_SIGNATURE` para quem tem o WAHA assinando.
 
 **Efeito colateral no mundo real, registrado:** ao conectar o WhatsApp **pessoal** do dono, o agente começou a responder contatos reais (4 respostas automáticas para 2 pessoas) assinando "assistente virtual da loja". O agente foi despublicado. Recomendação: testar agente com número descartável, e avaliar um modo "só observa" para primeira conexão.
 
@@ -1697,8 +1754,10 @@ bash install.sh
 #       de acesso. Se a pergunta não aparecer na sua execução, é regressão — o
 #       caso da VPS limpa em `test-validators.sh` a vigia.
 
-# 2. Confira que o domínio responde 307 (redirect para o login), não 404
+# 2. Confira que `/` responde 200 (página inicial pública) e `/app` responde 307
+#    (redirect para o login), não 404
 curl -s -o /dev/null -w '%{http_code}\n' https://<DOMAIN>/
+curl -s -o /dev/null -w '%{http_code}\n' https://<DOMAIN>/app
 
 # 3. Logue como o admin criado pelo install, abra /admin/marca e grave a cor
 #    (`#f2c94c` serve). Depois SAIA da sessão.
@@ -3087,6 +3146,10 @@ sim. Consertado pela ordem: publicar primeiro, decidir a porta depois.
 ## Conversões de anúncios — reprocessamento
 
 [P1] `tests/e2e/conversoes-reprocessamento.spec.ts`: administrador abre Conversões sem credenciais opcionais, vê o que falta, identifica origem de uma venda pendente e agenda reprocessamento pela tela. A spec confere o evento exclusivo e captura screenshot; integra o CI. O teste não prova aceite/atribuição por contas reais de anúncios.
+
+### Regras de etapa da Meta sem conexão direta (06/10/2026)
+
+- [P1] `tests/e2e/conversoes-reprocessamento.spec.ts`: organização SEM conexão direta com a Meta. Com a chave "Enviar vendas pelo canal da conversa" desligada, a seção "O que cada etapa do funil informa à Meta" não aparece; ligada, aparece com as etapas do funil para editar. Evidência: `evidence/regras-meta-pelo-canal/01-regras-visiveis-sem-conexao-direta.png`. Não prova o envio ao provedor (coberto por `tests/unit/conversao-pelo-canal.test.ts`).
 
 ### Conversões Google: captura e qualificação
 

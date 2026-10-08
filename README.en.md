@@ -204,10 +204,10 @@ filters that noise and prints `✓ banco atualizado`. If the database is busy wi
 customers, it applies again on its own (up to 3 passes) and says so — this holds from the update
 after the one that installs this fix. If you see `⚠ Apareceram avisos no banco que NÃO são os esperados`, that one
 is worth keeping: the **end** of the output tells you what to do in each case (repeat with `--force`
-when the database was busy, declare `SUPABASE_DB_ADMIN_URL` when it was permissions). Restoring the
-backup is the last resort.
+when the database was busy, declare `SUPABASE_DB_ADMIN_URL` when it was permissions).
 
-**Something went wrong?** `bash hostgator-setup-kit/restore.sh` returns to the backup.
+**Something went wrong?** Keep the message and ask for help. `restore.sh` does **not** put the
+backup back over the database in use: it only restores into an empty database (see [`hostgator-setup-kit/README.md`](hostgator-setup-kit/README.md)).
 **Just want a diagnosis?** `bash hostgator-setup-kit/healthcheck.sh`.
 
 > ⚠️ **On an older install that doesn't have the screen agent yet**, run `update.sh` **twice**:

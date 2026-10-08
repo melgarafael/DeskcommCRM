@@ -12,6 +12,7 @@ import {
   getConversationHandler,
 } from "@/app/api/v1/conversations/_handler";
 import { listMessagesHandler } from "@/app/api/v1/messages/_handler";
+import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
 import {
   criarRascunho,
@@ -63,6 +64,23 @@ export const crmListConversations: McpToolDefinition<typeof listInputShape> = {
   requiresRole: "agent",
   requiresScope: "mcp:read",
   handler: async (input, ctx) => {
+    // ── QUEM ESTÁ NA OUTRA PONTA (#2178 → #2184) ──────────────────────────
+    //
+    // `ctx.contatoDoTurno` é contexto de CONFIANÇA (injetado por
+    // `lib/ai/runtime/tools.ts`, nunca escrito pelo modelo); sem ele — rota
+    // HTTP, MCP externo, agente sem conversa — `contatoEfetivo` é o
+    // `contact_id` pedido, ou nada. Sem contato, a listagem é a de antes; com
+    // `contact_id` pedido, o filtro agora vai na consulta e não na página.
+    const doTurno = ctx.contatoDoTurno;
+    // ESCOPO, e não tradução: com o contato do turno na mão, pedir
+    // explicitamente o contato de OUTRO cliente é interseção vazia — devolver
+    // as conversas do turno responderia outra pergunta, e devolver as do
+    // cliente pedido deixaria o texto do lado de lá sair pelo turno. A lista
+    // vazia é a resposta honesta aos dois lados, e é o que já acontecia.
+    if (doTurno && input.contact_id && input.contact_id !== doTurno) {
+      return { conversations: [], cursor: null, has_more: false };
+    }
+    const contatoEfetivo = doTurno ?? input.contact_id;
     const result = await listConversationsHandler(
       ctx.supabase,
       {
@@ -85,36 +103,31 @@ export const crmListConversations: McpToolDefinition<typeof listInputShape> = {
         // omitir a chave seria erro de tipo — não omissão silenciosa.
         tag: undefined,
         modo: undefined,
+        // O CONTATO VAI NA CONSULTA, não no recorte depois dela (#2184).
+        // Filtrar a página já truncada escondia a conversa mais antiga do
+        // mesmo cliente (fora da página) e deixava o cursor descrevendo a
+        // varredura da organização; no `WHERE`, cursor e `has_more` passam a
+        // ser honestos para o conjunto do contato.
+        contact_id: contatoEfetivo,
         limit: input.limit,
         cursor: input.cursor,
       },
     );
-    let conversations = result.conversations;
-    if (input.contact_id) {
-      conversations = conversations.filter((c) => c.contact_id === input.contact_id);
-    }
-    // ── A CONVERSA É COM ALGUÉM (#2178) ─────────────────────────────────────
+    const conversations = result.conversations;
+    // ── O ESCOPO AGORA MORA NO `WHERE`, E A PAGINAÇÃO SEGUE VIVA (#2184) ──
     //
-    // Mesmo escopo do #2175 em `crm_search_contacts`: a listagem filtra
-    // `organization_id`, então não há vazamento entre ORGANIZAÇÕES, mas
-    // alcançava os outros clientes da MESMA organização — com
-    // `last_message_preview` junto, que é texto do lado de lá indo para o
-    // WhatsApp do cliente A, encaminhável, sem volta.
+    // Aqui havia um filtro em memória sobre a página devolvida pelo handler, e
+    // com ele o `cursor`/`has_more` eram zerados ("a próxima página voltaria a
+    // ser varredura"). O defeito medido na issue: com 10 conversas por página,
+    // a conversa mais antiga do mesmo cliente fora daquela página ficava
+    // invisível para o agente, e o `has_more: false` dizia que não havia mais
+    // nada. Com o contato no predicado, a página É do cliente — a próxima
+    // página também, então os dois voltam a valer.
     //
-    // ESCOPO, não tradução: o pedido continua sendo o que o modelo escreveu e
-    // o filtro continua sendo o do handler; muda só QUEM a resposta alcança.
-    // `ctx.contatoDoTurno` é contexto de CONFIANÇA (injetado por
-    // `lib/ai/runtime/tools.ts`, nunca escrito pelo modelo); sem ele — rota
-    // HTTP, MCP externo, agente sem conversa — a lista segue a da
-    // organização, exatamente como antes. O Operador TEM contato do turno
-    // (`operator-turn.ts` passa `contactId`) e também fica escopado.
-    //
-    // A paginação morre junto: `cursor`/`has_more` descrevem a página da
-    // varredura da organização, e a próxima página voltaria a ser varredura.
-    const doTurno = ctx.contatoDoTurno;
-    if (doTurno) {
-      conversations = conversations.filter((c) => c.contact_id === doTurno);
-    }
+    // Mesmo escopo do #2175: a listagem filtra `organization_id`, então não há
+    // vazamento entre ORGANIZAÇÕES, mas alcançava os outros clientes da MESMA
+    // organização — com `last_message_preview` junto, que é texto do lado de
+    // lá indo para o WhatsApp do cliente A, encaminhável, sem volta.
     // Nomes (dedupe) e posições de fila (1 query cada) — sem N+1 na listagem.
     const names = await resolveUserNames(
       ctx.supabase,
@@ -141,8 +154,8 @@ export const crmListConversations: McpToolDefinition<typeof listInputShape> = {
         unread_count: c.unread_count_for_assignee,
         is_group: c.is_group,
       })),
-      cursor: doTurno ? null : result.cursor,
-      has_more: doTurno ? false : result.has_more,
+      cursor: result.cursor,
+      has_more: result.has_more,
     };
   },
 };
@@ -162,15 +175,29 @@ export const crmGetConversation: McpToolDefinition<typeof getInputShape> = {
   requiresRole: "agent",
   requiresScope: "mcp:read",
   handler: async (input, ctx) => {
-    const conv = await getConversationHandler(
-      ctx.supabase,
-      {
-        organization_id: ctx.organizationId,
-        actor: ctx.actor,
-        requestId: ctx.requestId,
-      },
-      input.conversation_id,
-    );
+    let conv: Awaited<ReturnType<typeof getConversationHandler>> | null = null;
+    try {
+      conv = await getConversationHandler(
+        ctx.supabase,
+        {
+          organization_id: ctx.organizationId,
+          actor: ctx.actor,
+          requestId: ctx.requestId,
+        },
+        input.conversation_id,
+      );
+    } catch (e: unknown) {
+      // Com turno, o `404` (não existe, ou é de outra organização) vira a
+      // MESMA recusa da conversa de outro cliente, como no histórico: um uuid
+      // não ganha veredito sobre existência. Sem turno, sobe como antes; erro
+      // que não é `404` sobe sempre.
+      if (!(e instanceof ApiError) || e.status !== 404) throw e;
+      if (ctx.contatoDoTurno) {
+        conv = null;
+      } else {
+        throw e;
+      }
+    }
     // ── A CONVERSA DE QUEM NÃO É DESTA CONVERSA NÃO ABRE AQUI (#2178) ────────
     //
     // RECUSA, e não tradução: trocar o uuid pedido pelo da conversa do turno
@@ -188,7 +215,7 @@ export const crmGetConversation: McpToolDefinition<typeof getInputShape> = {
     // HTTP, MCP externo, agente sem conversa — qualquer conversa da
     // organização segue abrindo como antes. O Operador recebe o contato do
     // turno e também fica escopado.
-    if (ctx.contatoDoTurno && conv.contact_id !== ctx.contatoDoTurno) {
+    if (!conv || (ctx.contatoDoTurno && conv.contact_id !== ctx.contatoDoTurno)) {
       return {
         permitido: false,
         motivo: "fora_da_conversa",
@@ -253,17 +280,41 @@ export const crmGetConversationHistory: McpToolDefinition<typeof historyInputSha
     // —, porque `listMessagesHandler` recebe o uuid da conversa e não devolve
     // `contact_id`. Aqui ela custa uma ida extra ao banco, e só quando há
     // contato do turno: sem ele, o caminho é idêntico ao de antes.
+    //
+    // ── O `404` NÃO PODE VIRAR ORÁCULO (#2184) ────────────────────────────
+    //
+    // O handler responde `404 not_found` para DUAS coisas que ele não
+    // distingue, de propósito: o id não existe, e o id é de outra
+    // organização — a consulta filtra `organization_id` e os dois viram a
+    // mesma "linha ausente". Com o 404 subindo, o turno ficava respondendo
+    // `404` para um uuid inexistente e `fora_da_conversa` para a conversa do
+    // outro cliente: dois estados distintos para o MESMO "não é seu para
+    // ler", e o primeiro deles ainda mudava conforme um campo de contexto
+    // (sem contato do turno, o uuid inexistente segue devolvendo lista vazia).
+    //
+    // Por isso o `404` vira a MESMA recusa do cliente de outro contato. O
+    // contrato do handler não muda (a rota HTTP continua respondendo `404`),
+    // quem erra o uuid não ganha um veredito sobre existência, e as três
+    // respostas — não existe, é de outra organização, é de outro cliente —
+    // ficam byte a byte iguais. `ApiError` que não seja `404` sobe: infra não
+    // é limite de negócio (mesma regra de `lib/mcp/tools/agendamento.ts`).
     if (ctx.contatoDoTurno) {
-      const conv = await getConversationHandler(
-        ctx.supabase,
-        {
-          organization_id: ctx.organizationId,
-          actor: ctx.actor,
-          requestId: ctx.requestId,
-        },
-        input.conversation_id,
-      );
-      if (conv.contact_id !== ctx.contatoDoTurno) {
+      let conv: { contact_id: string | null } | null = null;
+      try {
+        conv = await getConversationHandler(
+          ctx.supabase,
+          {
+            organization_id: ctx.organizationId,
+            actor: ctx.actor,
+            requestId: ctx.requestId,
+          },
+          input.conversation_id,
+        );
+      } catch (e) {
+        if (!(e instanceof ApiError) || e.status !== 404) throw e;
+        conv = null;
+      }
+      if (!conv || conv.contact_id !== ctx.contatoDoTurno) {
         return {
           permitido: false,
           motivo: "fora_da_conversa",
@@ -273,16 +324,21 @@ export const crmGetConversationHistory: McpToolDefinition<typeof historyInputSha
         };
       }
     }
-    const result = await listMessagesHandler(
-      ctx.supabase,
-      {
-        organization_id: ctx.organizationId,
-        actor: ctx.actor,
-        requestId: ctx.requestId,
-      },
-      input.conversation_id,
-      { limit: input.limit, cursor: input.cursor },
-    );
+    let result: Awaited<ReturnType<typeof listMessagesHandler>>;
+    try {
+      result = await listMessagesHandler(
+        ctx.supabase,
+        {
+          organization_id: ctx.organizationId,
+          actor: ctx.actor,
+          requestId: ctx.requestId,
+        },
+        input.conversation_id,
+        { limit: input.limit, cursor: input.cursor },
+      );
+    } catch (e: unknown) {
+      throw e;
+    }
     return {
       messages: result.messages.map((m) => ({
         id: m.id,

@@ -56,6 +56,30 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   if (!(await supportCallbackWriteAllowed(state.orgId, state.userId, state.authSessionId))) return redirectTo("/app/integrations/nuvemshop?error=invalid_state");
 
+  const admin = createAdminClient();
+
+  // O retorno vale UMA vez: o nonce do `state` é queimado ANTES da troca, na
+  // mesma tabela e pela mesma razão do callback do Google Agenda
+  // (`app/api/v1/agenda/google/callback/route.ts`). Todo `state` emitido hoje
+  // carrega a pessoa (`connectNuvemshop`); sem ela não há linha a gravar, e
+  // sem gravar não há uso único a garantir — recusa, como qualquer outro erro.
+  const { error: erroDoNonce } = state.userId
+    ? await admin.from("calendar_oauth_nonces").insert({
+        nonce: state.nonce,
+        organization_id: state.orgId,
+        user_id: state.userId,
+        expira_em: new Date(state.expMs).toISOString(),
+      })
+    : { error: { code: "sem_pessoa" } };
+  if (erroDoNonce) {
+    await audit({
+      action: "nuvemshop.oauth_failed",
+      organizationId: state.orgId,
+      metadata: { reason: erroDoNonce.code === "23505" ? "state_reused" : "nonce_unavailable" },
+    });
+    return redirectTo(`/app/integrations/nuvemshop?error=invalid_state`);
+  }
+
   // Exchange code for access token.
   const tokenRes = await exchangeCodeForToken(code, cfg);
   if (!tokenRes.ok) {
@@ -68,7 +92,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   const { accessToken, scope, storeId } = tokenRes;
-  const admin = createAdminClient();
 
   // Encrypt access token + webhook secret (we keep the client_secret in env, but
   // tenant_integrations.webhook_secret_encrypted is NOT NULL — we store the

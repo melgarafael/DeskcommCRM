@@ -64,7 +64,7 @@ vi.mock("@sentry/nextjs", () => ({
 /** O que o DELETE do arquivo forense devolve nesta rodada. */
 let respostaDeleteArquivo: { data: { id: string }[]; error: { message: string } | null };
 /** O que a busca do arquivo forense enxerga (passo 1, o esvaziamento). */
-let linhasDoArquivo: { id: string }[] = [];
+let linhasDoArquivo: { id: string; received_at: string }[] = [];
 /** O que o DELETE da captação devolve — a poda IRMÃ, que roda no mesmo tique. */
 let respostaDeleteCaptacao: { data: { id: string }[]; error: { message: string } | null };
 /** A ordem que cada poda mandou ao banco, e com que lote. `apagando` diz de que cadeia veio. */
@@ -111,6 +111,7 @@ vi.mock("@/lib/supabase/admin", () => ({
           return cadeia;
         },
         lt: () => cadeia,
+        lte: () => cadeia,
         is: () => cadeia,
         in: () => cadeia,
         update: () => cadeia,
@@ -254,7 +255,10 @@ describe("a falha do DELETE sobe — ela não vira `apagadas: 0`", () => {
     const admin = await banco({
       arquivo: { error: { message: "permission denied" } },
     });
-    linhasDoArquivo = Array.from({ length: 3 }, (_, i) => ({ id: `e${i}` }));
+    linhasDoArquivo = Array.from({ length: 3 }, (_, i) => ({
+      id: `e${i}`,
+      received_at: `2026-01-0${i + 1}T10:00:00.000Z`,
+    }));
     const erro = await podarArquivoDeWebhooks(admin, {
       diasComCorpo: 7,
       diasParaApagar: 90,
@@ -372,7 +376,10 @@ describe("o handler do cron — a falha do arquivo sai pelo mesmo canal das irm�
     // `esvaziadas: 0` ao operador, que é a mentira que a issue descreve com
     // outro nome.
     await banco({ arquivo: { error: { message: "permission denied" } } });
-    linhasDoArquivo = [{ id: "e1" }, { id: "e2" }];
+    linhasDoArquivo = [
+      { id: "e1", received_at: "2026-01-01T10:00:00.000Z" },
+      { id: "e2", received_at: "2026-01-02T10:00:00.000Z" },
+    ];
     const resposta = await chamarCron();
     expect(resposta.status).toBe(500);
     const corpo = (await resposta.json()) as {

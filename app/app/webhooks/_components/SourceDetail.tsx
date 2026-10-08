@@ -10,6 +10,7 @@ import { formatDistanceToNowStrict } from "date-fns";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -31,7 +32,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { copyToClipboard } from "@/lib/clipboard";
-import { Copy, Trash, CaretDown } from "@/lib/ui/icons";
+import { Copy, Trash, CaretDown, PencilSimple, Check, X } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import {
   useDeleteWebhookSource,
@@ -41,7 +42,13 @@ import {
 } from "@/hooks/webhooks/useWebhookSources";
 import { usePermission } from "@/hooks/auth/AuthProvider";
 import { HEADER_ASSINATURA_DE_ENTRADA } from "@/lib/webhooks/assinatura";
+import {
+  gerarHtmlDoFormulario,
+  webhookFormFieldsSchema,
+  type WebhookFormField,
+} from "@/lib/webhooks/formulario";
 import { useT } from "@/hooks/i18n/useT";
+import { WebhookFormFieldsEditor } from "./WebhookFormFieldsEditor";
 
 interface Props {
   source: WebhookSourceRow;
@@ -60,13 +67,14 @@ function publicUrl(pathToken: string): string {
   return `${base}/api/v1/webhooks/in/${pathToken}`;
 }
 
-function formSnippet(url: string, t: (texto: string) => string): string {
-  return `<form action="${url}" method="POST">
-  <input name="nome" placeholder="${t("Seu nome")}" required />
-  <input name="telefone" placeholder="${t("Seu WhatsApp")}" required />
-  <input name="email" type="email" placeholder="${t("Seu e-mail")}" />
-  <button type="submit">${t("Quero receber contato")}</button>
-</form>`;
+function formSnippet(url: string, fields: readonly WebhookFormField[], t: (texto: string) => string): string {
+  return gerarHtmlDoFormulario(url, fields, {
+    nome: t("Seu nome"),
+    telefone: t("Seu WhatsApp"),
+    email: t("Seu e-mail"),
+    enviar: t("Quero receber contato"),
+    selecione: t("Selecione uma opção"),
+  });
 }
 
 /**
@@ -113,8 +121,17 @@ export function SourceDetail({ source, open, onOpenChange }: Props) {
   const { data: eventsRes, refetch: refetchEvents } = useWebhookSourceEvents(
     open ? source.id : null,
   );
+  const [autorizacaoIA, setAutorizacaoIA] = React.useState<{ id: string; ativa: boolean } | null>(null);
+  const autorizaIA = autorizacaoIA?.id === source.id ? autorizacaoIA.ativa : source.authorize_ai_on_capture;
   const [testing, setTesting] = React.useState(false);
   const [testOk, setTestOk] = React.useState(false);
+  const [formFields, setFormFields] = React.useState<WebhookFormField[]>(source.form_fields ?? []);
+  const [savedFormFields, setSavedFormFields] = React.useState<WebhookFormField[]>(source.form_fields ?? []);
+  const sourceIdDosCampos = React.useRef(source.id);
+  const sourceIdDoNome = React.useRef(source.id);
+  const [nomeFonteSalvo, setNomeFonteSalvo] = React.useState(source.name);
+  const [nomeFonteRascunho, setNomeFonteRascunho] = React.useState(source.name);
+  const [editandoNome, setEditandoNome] = React.useState(false);
   const podeGerirWebhooks = usePermission("webhooks.manage");
   /**
    * `source` é um SNAPSHOT: `SourcesTab` guarda o objeto da lista num estado e
@@ -137,6 +154,7 @@ export function SourceDetail({ source, open, onOpenChange }: Props) {
   const events = eventsRes?.data ?? [];
   const temAssinatura = assinatura?.id === source.id ? assinatura.ativa : source.has_secret;
   const secretRevelado = revelado?.id === source.id ? revelado.valor : null;
+  const formFieldsDirty = JSON.stringify(formFields) !== JSON.stringify(savedFormFields);
 
   const aplicarSecret = (secret: string | null, aviso: string) =>
     update.mutate(
@@ -150,6 +168,61 @@ export function SourceDetail({ source, open, onOpenChange }: Props) {
         },
       },
     );
+  React.useEffect(() => {
+    if (sourceIdDosCampos.current === source.id) return;
+    sourceIdDosCampos.current = source.id;
+    const fields = source.form_fields ?? [];
+    setFormFields(fields);
+    setSavedFormFields(fields);
+  }, [source.id, source.form_fields]);
+
+  React.useEffect(() => {
+    if (sourceIdDoNome.current === source.id) return;
+    sourceIdDoNome.current = source.id;
+    setNomeFonteSalvo(source.name);
+    setNomeFonteRascunho(source.name);
+    setEditandoNome(false);
+  }, [source.id, source.name]);
+
+  const salvarNomeFonte = async () => {
+    const nome = nomeFonteRascunho.trim();
+    if (!nome) {
+      toast.error(t("Informe um nome para a fonte."));
+      return;
+    }
+    try {
+      const res = await update.mutateAsync({ id: source.id, name: nome });
+      setNomeFonteSalvo(res.data.name);
+      setNomeFonteRascunho(res.data.name);
+      setEditandoNome(false);
+      toast.success(t("Nome da fonte atualizado."));
+    } catch {
+      /* erro já mostrado pelo showApiError */
+    }
+  };
+
+  const salvarCamposDoFormulario = async () => {
+    const normalizados = formFields.map((field) => ({
+      ...field,
+      ...(field.type === "select"
+        ? { options: (field.options ?? []).map((option) => option.trim()).filter(Boolean) }
+        : {}),
+    }));
+    const parsed = webhookFormFieldsSchema.safeParse(normalizados);
+    if (!parsed.success) {
+      toast.error(t(parsed.error.issues[0]?.message ?? "Revise os campos do formulário."));
+      return;
+    }
+    try {
+      const res = await update.mutateAsync({ id: source.id, form_fields: parsed.data });
+      const fields = res.data.form_fields ?? parsed.data;
+      setFormFields(fields);
+      setSavedFormFields(fields);
+      toast.success(t("Perguntas do formulário salvas."));
+    } catch {
+      /* erro já mostrado pelo showApiError */
+    }
+  };
 
   const sendTestLead = async () => {
     setTesting(true);
@@ -200,7 +273,70 @@ export function SourceDetail({ source, open, onOpenChange }: Props) {
       <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
         <SheetHeader>
           <div className="flex items-center gap-2">
-            <SheetTitle>{source.name}</SheetTitle>
+            {editandoNome ? (
+              <>
+                <SheetTitle className="sr-only">{nomeFonteSalvo}</SheetTitle>
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <Input
+                    aria-label={t("Nome da fonte")}
+                    autoFocus
+                    value={nomeFonteRascunho}
+                    maxLength={120}
+                    onChange={(event) => setNomeFonteRascunho(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void salvarNomeFonte();
+                      }
+                      if (event.key === "Escape") {
+                        setNomeFonteRascunho(nomeFonteSalvo);
+                        setEditandoNome(false);
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="secondary"
+                    aria-label={t("Salvar nome")}
+                    disabled={update.isPending || !nomeFonteRascunho.trim()}
+                    onClick={() => void salvarNomeFonte()}
+                  >
+                    <Check />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    aria-label={t("Cancelar edição do nome")}
+                    disabled={update.isPending}
+                    onClick={() => {
+                      setNomeFonteRascunho(nomeFonteSalvo);
+                      setEditandoNome(false);
+                    }}
+                  >
+                    <X />
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="flex min-w-0 items-center gap-2">
+                <SheetTitle>{nomeFonteSalvo}</SheetTitle>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  aria-label={t("Editar nome da fonte")}
+                  disabled={!podeGerirWebhooks || update.isPending}
+                  onClick={() => {
+                    setNomeFonteRascunho(nomeFonteSalvo);
+                    setEditandoNome(true);
+                  }}
+                >
+                  <PencilSimple />
+                </Button>
+              </div>
+            )}
             <Badge variant={source.is_active ? "success" : "neutral"}>
               {source.is_active ? t("Ativa") : t("Pausada")}
             </Badge>
@@ -228,15 +364,53 @@ export function SourceDetail({ source, open, onOpenChange }: Props) {
             </div>
           </section>
 
+          <section className="space-y-2 rounded-sm border border-border p-3">
+            <div className="flex items-center justify-between gap-3">
+              <label htmlFor="authorize-ai-on-capture" className="block text-sm font-medium text-text">
+                {t("Autorizar IA para leads deste formulário")}
+              </label>
+              <Switch id="authorize-ai-on-capture" checked={Boolean(autorizaIA)}
+                disabled={!podeGerirWebhooks || update.isPending || (!temAssinatura && !autorizaIA)}
+                onCheckedChange={(ativa) => update.mutate(
+                  { id: source.id, authorize_ai_on_capture: ativa },
+                  { onSuccess: (res) => setAutorizacaoIA({ id: source.id, ativa: res.data.authorize_ai_on_capture }) },
+                )} />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {t("Autoriza somente novos envios completos com consentimento explícito para atendimento automatizado. Não retoma contatos bloqueados ou em atendimento humano. O agente e o canal precisam estar configurados para atender.")}
+            </p>
+            {!temAssinatura && <p className="text-sm text-muted-foreground">
+              {t("Configure a assinatura da fonte antes de autorizar IA. Para remover a assinatura, desligue primeiro a autorização de IA.")}
+            </p>}
+            <p className="text-sm text-muted-foreground">
+              {t("O integrador deve enviar external_id, ai_service_consent: true, submission_status: completed e ai_service_consent_version com a versão do aviso aceito. Aceitar apenas a política de privacidade não autoriza a IA. Sem external_id, o envio não concede nem renova a autorização; reenviar com o mesmo external_id não libera de novo. Uma recusa (false) num envio completo e válido revoga, mesmo sem external_id.")}
+            </p>
+          </section>
+
+          <section className="space-y-2">
+            <p className="text-sm font-medium text-text">{t("Personalizar perguntas do formulário")}</p>
+            <p className="text-xs text-muted-foreground">
+              {t("As respostas extras ficam nos campos personalizados do lead e no histórico desta captação. O checkbox envia sim ou não; a lista permite escolher uma opção.")}
+            </p>
+            <WebhookFormFieldsEditor fields={formFields} onChange={setFormFields} />
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={!formFieldsDirty || update.isPending}
+              onClick={() => void salvarCamposDoFormulario()}
+            >
+              {update.isPending ? t("Salvando…") : t("Salvar perguntas")}
+            </Button>
+          </section>
           <section className="space-y-2">
             <p className="text-sm font-medium text-text">
               {t("Formulário pronto para colar no seu site")}
             </p>
-            <Textarea readOnly rows={6} value={formSnippet(url, t)} className="font-mono text-xs" />
+            <Textarea readOnly rows={Math.min(24, 8 + formFields.length * 3)} value={formSnippet(url, formFields, t)} className="font-mono text-xs" />
             <Button
               type="button"
               variant="secondary"
-              onClick={() => copy(formSnippet(url, t), t("Formulário copiado."), t)}
+              onClick={() => copy(formSnippet(url, formFields, t), t("Formulário copiado."), t)}
             >
               <Copy /> {t("Copiar formulário")}
             </Button>

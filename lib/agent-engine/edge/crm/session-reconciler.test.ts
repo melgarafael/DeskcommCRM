@@ -193,3 +193,25 @@ describe("redrive × organização parada", () => {
     expect(query).toHaveBeenCalledWith(expect.stringContaining("error_code = 'org_suspensa'"), ["message-test", "org-test"]);
   });
 });
+
+describe("redrive × canal pausado (#2318)", () => {
+  it("canal com metadata.disabled: a mensagem vira failed/channel_disabled e nada sai para o WAHA", async () => {
+    const send = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response());
+    const query = vi.fn()
+      .mockResolvedValueOnce({ rows: [{
+        id: "message-test", organization_id: "org-test", body: "Resposta de antes da pausa",
+        waha_session_name: "session-test", phone_number: "+5511999998888",
+        wa_identity: null, wa_lid: null, is_group: false, group_chat_id: null,
+      }] })
+      .mockResolvedValueOnce({ rows: [{ n: "0" }] })
+      .mockResolvedValueOnce({ rows: [{ metadata: { disabled: true }, phone_number: "+5511999998888", operante: true }] })
+      .mockResolvedValue({ rows: [] });
+
+    expect(await redriveQueued({ query } as unknown as pg.Pool, {
+      wahaBaseUrl: "http://127.0.0.1:9999", wahaApiKey: "test-key",
+      intervalMs: 1, redriveMinAgeMs: 0, redriveBatchSize: 10, redriveSpacingMs: 0,
+    }, createLogger())).toBe(0);
+    expect(send).not.toHaveBeenCalled();
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("error_code = 'channel_disabled'"), ["message-test", "org-test"]);
+  });
+});

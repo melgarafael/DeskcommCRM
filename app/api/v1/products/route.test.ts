@@ -136,3 +136,166 @@ vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
   requireSupportWrite: vi.fn(async () => null),
   authenticatedSessionId: vi.fn(async () => "f2200000-0000-4000-8000-000000000099"),
 }));
+
+// ─── GET: busca no servidor e paginação opcional ───────────────────────────
+
+/** As chamadas que a rota fez no construtor de consulta — o alvo das asserções. */
+interface ConsultaGravada {
+  selectOpts: unknown;
+  or: string[];
+  range: [number, number] | null;
+  limit: number | null;
+}
+let consulta: ConsultaGravada;
+
+function supabaseDeLeitura(linhas: unknown[], total: number) {
+  consulta = { selectOpts: undefined, or: [], range: null, limit: null };
+  const resultado = { data: linhas, error: null, count: total };
+  const construtor = {
+    eq: () => construtor,
+    or: (f: string) => {
+      consulta.or.push(f);
+      return construtor;
+    },
+    order: () => construtor,
+    range: async (de: number, ate: number) => {
+      consulta.range = [de, ate];
+      return resultado;
+    },
+    limit: async (n: number) => {
+      consulta.limit = n;
+      return resultado;
+    },
+  };
+  return {
+    from: () => ({
+      select: (_colunas: string, opts?: unknown) => {
+        consulta.selectOpts = opts;
+        return construtor;
+      },
+    }),
+  };
+}
+
+function listar(qs: string): NextRequest {
+  return new NextRequest(`http://localhost/api/v1/products${qs}`, { method: "GET" });
+}
+
+describe("GET /api/v1/products — o catálogo inteiro, não os 500 primeiros", () => {
+  it("sem `pagina`, responde como sempre: até 500 linhas e sem `meta`", async () => {
+    vi.mocked(createClient).mockResolvedValue(supabaseDeLeitura([{ id: "p1" }], 1) as never);
+    const { GET } = await import("./route");
+
+    const res = await GET(listar(""));
+    const corpo = await res.json();
+
+    expect(consulta.limit).toBe(500);
+    expect(consulta.range).toBeNull();
+    expect(corpo.meta).toBeUndefined();
+  });
+
+  it.each(["0", "abc", "-1"])("`pagina=%s` inválida conta como ausente: formato antigo, sem `meta`", async (p) => {
+    vi.mocked(createClient).mockResolvedValue(supabaseDeLeitura([{ id: "p1" }], 1) as never);
+    const { GET } = await import("./route");
+
+    const corpo = await (await GET(listar(`?pagina=${p}`))).json();
+
+    expect(consulta.limit).toBe(500);
+    expect(consulta.range).toBeNull();
+    expect(corpo.meta).toBeUndefined();
+  });
+
+  it("com `pagina=3`, pede ao banco a terceira fatia de 50 e devolve o total", async () => {
+    vi.mocked(createClient).mockResolvedValue(supabaseDeLeitura([{ id: "p1" }], 4412) as never);
+    const { GET } = await import("./route");
+
+    const res = await GET(listar("?pagina=3"));
+    const corpo = await res.json();
+
+    expect(consulta.range).toEqual([100, 149]);
+    expect(consulta.selectOpts).toEqual({ count: "exact" });
+    expect(corpo.meta).toMatchObject({ total: 4412, pagina: 3, por_pagina: 50, has_more: true });
+  });
+
+  it("a busca com vírgula não injeta condição no `.or()`", async () => {
+    vi.mocked(createClient).mockResolvedValue(supabaseDeLeitura([], 0) as never);
+    const { GET } = await import("./route");
+
+    await GET(listar(`?busca=${encodeURIComponent("pistola,ativo.eq.false")}`));
+
+    // Quatro colunas, quatro condições — nenhuma vinda do texto digitado.
+    expect(consulta.or).toHaveLength(1);
+    expect(consulta.or[0]?.split(",")).toHaveLength(4);
+  });
+
+  // O banco do mock TEM produto: se a rota consultar sem filtro, `data` volta
+  // cheio. Medir só a ausência do `.or()` deixava passar justamente isso — o
+  // catálogo inteiro no seletor da proposta, que busca a cada tecla.
+  it.each(["c", ", ,", "()"])(
+    "termo abaixo do piso (%j) devolve lista vazia, sem ir ao banco — como a busca de contatos",
+    async (termo) => {
+      vi.mocked(createClient).mockResolvedValue(supabaseDeLeitura([{ id: "p1" }], 1) as never);
+      const { GET } = await import("./route");
+
+      const res = await GET(listar(`?busca=${encodeURIComponent(termo)}`));
+      const corpo = await res.json();
+
+      expect(corpo.data).toEqual([]);
+      expect(consulta.limit).toBeNull();
+      expect(consulta.range).toBeNull();
+    },
+  );
+
+  it("termo abaixo do piso com `pagina` devolve lista vazia COM `meta`", async () => {
+    vi.mocked(createClient).mockResolvedValue(supabaseDeLeitura([{ id: "p1" }], 1) as never);
+    const { GET } = await import("./route");
+
+    const res = await GET(listar("?busca=c&pagina=2"));
+    const corpo = await res.json();
+
+    expect(corpo.data).toEqual([]);
+    expect(corpo.meta).toEqual({ total: 0, pagina: 2, por_pagina: 50, has_more: false });
+  });
+});
+
+describe("GET /api/v1/products — página além da última", () => {
+  /**
+   * O PostgREST responde 416 `PGRST103` quando o `range` começa depois do
+   * total (medido contra o Supabase local). A contagem que a rota faz em
+   * seguida é um `head` sem linhas, que resolve direto na consulta.
+   */
+  function supabaseAlemDoFim(totalAgora: number) {
+    const contagem = {
+      eq: () => contagem,
+      or: () => contagem,
+      then: (resolve: (v: unknown) => void) => resolve({ count: totalAgora, error: null }),
+    };
+    const listagem = {
+      eq: () => listagem,
+      or: () => listagem,
+      order: () => listagem,
+      range: async () => ({
+        data: null,
+        count: null,
+        error: { code: "PGRST103", message: "Requested range not satisfiable" },
+      }),
+    };
+    return {
+      from: () => ({
+        select: (_c: string, opts?: { head?: boolean }) => (opts?.head ? contagem : listagem),
+      }),
+    };
+  }
+
+  it("devolve lista vazia com o total de agora, não erro 500", async () => {
+    vi.mocked(createClient).mockResolvedValue(supabaseAlemDoFim(529) as never);
+    const { GET } = await import("./route");
+
+    const res = await GET(listar("?pagina=99"));
+    const corpo = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(corpo.data).toEqual([]);
+    expect(corpo.meta).toMatchObject({ total: 529, pagina: 99, has_more: false });
+  });
+});

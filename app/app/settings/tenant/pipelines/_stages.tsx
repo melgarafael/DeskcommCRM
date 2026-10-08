@@ -256,6 +256,32 @@ export function periodoDaTaxa(
 }
 
 /**
+ * A frase da ETAPA ATUAL (issue #2032) — quem está NA coluna AGORA, medido
+ * pela ENTRADA do negócio na etapa (`crm_leads.stage_changed_at`, carimbada
+ * pelo trigger da 0071, com `created_at` de reserva para quem não tem carimbo).
+ *
+ * Duas honestidades nesta frase:
+ *
+ * - `null` sem ninguém. Etapa vazia não ganha frase — «0 h» afirmaria que
+ *   alguém acabou de entrar, que é o oposto do silêncio.
+ * - A origem está ESCRITA junto, porque a taxa logo acima é de OUTRA
+ *   população (quem passou pela etapa na janela de dias) e este número é de
+ *   quem está aqui fora de qualquer janela. Sem as duas frases dizerem qual é
+ *   qual, o leitor soma medida que não se soma.
+ */
+export function fraseDeTempoNaEtapa(
+  linha: { quantidade: number; horas_mediana: number | null },
+  t: (texto: string) => string = (texto) => texto,
+): string | null {
+  if (linha.quantidade === 0 || linha.horas_mediana === null) return null;
+  const mediana = t("mediana de {horas} h desde a entrada (stage_changed_at)").replace(
+    "{horas}",
+    String(linha.horas_mediana),
+  );
+  return `${contagemDeNegocios(linha.quantidade, t)} ${t("nesta etapa agora")} — ${mediana}.`;
+}
+
+/**
  * A contagem ao lado do campo de probabilidade, com o convite só quando a
  * amostra sustenta.
  *
@@ -472,6 +498,10 @@ export function StagesSection({
         {etapas.map((etapa, i) => {
           const passo = passos.get(etapa.id) ?? null;
           const taxa = corpoDasTaxas?.taxas.find((linha) => linha.etapa_id === etapa.id) ?? null;
+          const tempo =
+            corpoDasTaxas?.tempo_na_etapa?.etapas.find((linha) => linha.etapa_id === etapa.id) ??
+            null;
+          const fraseDeTempo = tempo ? fraseDeTempoNaEtapa(tempo, t) : null;
           const erroDaLinha = erro?.etapaId === etapa.id ? erro.texto : null;
           const confirmandoAqui = confirmacao?.etapaId === etapa.id ? confirmacao : null;
           const arquivandoAqui = arquivamento?.etapaId === etapa.id ? arquivamento : null;
@@ -526,6 +556,24 @@ export function StagesSection({
                       desabilitado={ocupado}
                       aoAceitar={(valor) => aplicar(etapa.id, { win_probability: valor })}
                     />
+                  ) : null}
+                  {/* #2032 — a etapa ATUAL, ao lado da taxa histórica (#1753),
+                      que é de OUTRA população: aquela mede quem passou na
+                      janela, esta quem está aqui agora. Ganho e perda ficam de
+                      fora porque lá a coluna não segura trabalho em curso — o
+                      tempo dela é tempo desde o desfecho, não espera. */}
+                  {!etapa.is_won && !etapa.is_lost && fraseDeTempo ? (
+                    <p
+                      className="text-xs leading-snug text-text-muted"
+                      data-testid={`tempo-etapa-${etapa.id}`}
+                    >
+                      {fraseDeTempo}
+                      {/* Este bloco não tem período: o corte é na leitura dos
+                          negócios abertos, e a frase diz isso — não a da taxa. */}
+                      {corpoDasTaxas?.tempo_na_etapa?.truncado
+                        ? ` ${t("Amostra limitada: este número cobre só parte dos negócios abertos do funil.")}`
+                        : ""}
+                    </p>
                   ) : null}
                 </div>
 

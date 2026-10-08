@@ -209,9 +209,9 @@ describe("a sétima cópia não nasce", () => {
       motivo: "nome do CANAL conectado",
     },
     {
-      arquivo: "components/inbox/ConversationListItem.tsx",
-      trecho: "canal?.phone_number ?? canal?.display_name ?? null",
-      motivo: "número da EMPRESA por onde a conversa chegou, não o do cliente",
+      arquivo: "components/connections/RedesSociaisClient.tsx",
+      trecho: "{orfao.display_name ?? orfao.account_id}",
+      motivo: "rótulo do CANAL órfão (channel_sessions), não de contato",
     },
     {
       arquivo: "lib/ai/classifier-models.ts",

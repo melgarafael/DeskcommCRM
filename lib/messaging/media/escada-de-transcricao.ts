@@ -64,12 +64,12 @@ import {
   apiTranscriptionProvider,
   idiomasDaTranscricao,
   modeloDeTranscricaoEmVigor,
+  type ORIGENS_DA_TRANSCRICAO_POR_SERVICO,
 } from "@/lib/messaging/media/transcription";
 
 export type OrigemDaTranscricao =
-  | "servico_da_instalacao"
+  | (typeof ORIGENS_DA_TRANSCRICAO_POR_SERVICO)[number]
   | "modelo_da_organizacao"
-  | "padrao_openai_compativel"
   | "nada";
 
 /** O que o degrau escolhido RODA — e o que a tela pode anunciar. */
@@ -154,28 +154,40 @@ export function transcricaoPeloModelo(modelo: {
   languages?: readonly string[];
 }): TranscriptionProvider {
   const registry = createDefaultRegistry();
+  // É uma chamada de LLM cobrada por token, não um serviço de transcrição: o
+  // uso volta junto do texto para o worker gravar tokens e custo.
+  const transcribeMedindo: NonNullable<TranscriptionProvider["transcribeMedindo"]> = async (audio, mime) => {
+    const factory = registry[modelo.provider];
+    if (!factory) {
+      // Mesma recusa do resto da cadeia: provedor sem fábrica não transcreve,
+      // e a exceção vira `failed` + motivo no worker em vez de texto vazio.
+      throw new Error(`transcription_provider_unavailable: ${modelo.provider}`);
+    }
+    const res = await generateText({
+      model: factory(modelo.apiKey, modelo.modelId, modelo.baseUrl ?? undefined),
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "file", data: audio, mediaType: mime.split(";")[0]!.trim() },
+            { type: "text", text: promptDeTranscricao(modelo.languages ?? []) },
+          ],
+        },
+      ],
+    });
+    return {
+      texto: (res.text ?? "").trim(),
+      uso: {
+        inputTokens: res.usage.inputTokens ?? 0,
+        outputTokens: res.usage.outputTokens ?? 0,
+        cacheReadTokens: res.usage.inputTokenDetails.cacheReadTokens ?? 0,
+        cacheWriteTokens: res.usage.inputTokenDetails.cacheWriteTokens ?? 0,
+      },
+    };
+  };
   return {
-    async transcribe(audio, mime) {
-      const factory = registry[modelo.provider];
-      if (!factory) {
-        // Mesma recusa do resto da cadeia: provedor sem fábrica não transcreve,
-        // e a exceção vira `failed` + motivo no worker em vez de texto vazio.
-        throw new Error(`transcription_provider_unavailable: ${modelo.provider}`);
-      }
-      const res = await generateText({
-        model: factory(modelo.apiKey, modelo.modelId, modelo.baseUrl ?? undefined),
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "file", data: audio, mediaType: mime.split(";")[0]!.trim() },
-              { type: "text", text: promptDeTranscricao(modelo.languages ?? []) },
-            ],
-          },
-        ],
-      });
-      return (res.text ?? "").trim();
-    },
+    transcribe: async (audio, mime) => (await transcribeMedindo(audio, mime)).texto,
+    transcribeMedindo,
   };
 }
 

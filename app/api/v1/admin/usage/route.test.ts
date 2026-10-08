@@ -54,6 +54,12 @@ function dubleAdmin(tabelas: Record<string, Linha[]>) {
         consulta(tabela, [...predicados, (l) => l[coluna] !== valor], ordem),
       in: (coluna: string, valores: unknown[]) =>
         consulta(tabela, [...predicados, (l) => valores.includes(l[coluna])], ordem),
+      limit: (n: number) => {
+        // Teto aplicado de verdade, como o PostgREST: sem ele, um dublê
+        // sem limite faria qualquer paginação parecer correta.
+        let vistos = 0;
+        return consulta(tabela, [...predicados, () => vistos++ < n], ordem);
+      },
       gte: () => consulta(tabela, predicados, ordem),
       // `order` é o que faz o caso "maior prioridade" medir a ROTA e não o
       // dublê: sem ele, o vencedor seria o primeiro do fixture, e a ordem que a

@@ -41,13 +41,19 @@ async function pedirToken(corpo: URLSearchParams, agora: Date): Promise<LeituraD
     // Sem resposta do Google, nada foi decidido do lado de lá. Quem chama
     // classifica com `classificarErroDoGoogle`, que lê isso como transitório.
     const motivo = erro instanceof Error ? erro.message : String(erro);
-    return { ok: false, motivo: "resposta_invalida", detalhe: `sem resposta do Google: ${motivo}` };
+    return { ok: false, motivo: "resposta_invalida", detalhe: `sem resposta do Google: ${motivo}`, status: null };
   }
 
   // O corpo é lido MESMO em erro: é nele que vem `{"error":"invalid_grant"}`,
   // que é como o Google diz "o usuário revogou o acesso" — com HTTP 400, não
   // 401. Descartar o corpo por causa do status perderia o único sinal que
   // distingue "reconecte" de "tente de novo".
+  //
+  // O status só viaja quando o Google RECUSOU (não-2xx). Um 2xx que falha depois
+  // — corpo cortado por timeout/reset no meio do JSON, ou sem `access_token` —
+  // não é recusa: com o 200 junto, o cron classificaria `permanente` e marcaria
+  // a agenda `error` por um soluço de rede (#2400). `null` = transitório.
+  const statusDaRecusa = resposta.ok ? null : resposta.status;
   let bruto: unknown;
   try {
     bruto = await resposta.json();
@@ -56,10 +62,11 @@ async function pedirToken(corpo: URLSearchParams, agora: Date): Promise<LeituraD
       ok: false,
       motivo: "resposta_invalida",
       detalhe: `HTTP ${resposta.status} com corpo ilegível`,
+      status: statusDaRecusa,
     };
   }
 
-  return lerRespostaDeToken(bruto, { agora });
+  return lerRespostaDeToken(bruto, { agora, status: statusDaRecusa });
 }
 
 /** Troca o `code` do consentimento pelo primeiro par de tokens. */

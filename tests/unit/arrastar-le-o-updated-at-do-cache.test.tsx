@@ -264,3 +264,174 @@ describe("mexer no negócio e arrastar em seguida", () => {
     );
   });
 });
+
+/**
+ * O PONTO DE USO DO #2545 — a `position_in_stage` que o arrasto grava com o
+ * FILTRO ligado.
+ *
+ * O quadro monta o `before`/`after` a partir da lista que ele renderiza, e quem
+ * monta a página passa essa lista JÁ FILTRADA (`_client.tsx`,
+ * `leads={filteredLeads}`). Aqui as duas listas do produto ficam separadas de
+ * propósito: o cache `["board", PIPELINE]` guarda o funil INTEIRO e o
+ * `KanbanBoard` recebe só o que o filtro deixa ver. O que se afirma é a régua
+ * da issue — a posição gravada não pode ser a de nenhum card da etapa,
+ * escondido ou não.
+ */
+const A_VISIVEL = "card-a";
+const OCULTO_B = "card-b";
+const OCULTO_C = "card-c";
+const D_SOLTO = "card-d";
+
+function card(id: string, stageId: string, pos: number, tags: string[] = []) {
+  return {
+    id,
+    stage_id: stageId,
+    position_in_stage: pos,
+    updated_at: ANTES,
+    tags,
+  } as BoardData["leads"][number];
+}
+
+function funilInteiro(leads: BoardData["leads"]): BoardData {
+  return {
+    pipeline: { id: PIPELINE, settings: null } as unknown as BoardData["pipeline"],
+    stages: [
+      { id: "s-1", name: "Novo", position: 0 },
+      { id: "s-2", name: "Contato", position: 1 },
+    ] as unknown as BoardData["stages"],
+    leads,
+  };
+}
+
+/**
+ * Monta o quadro COM o filtro, como a página faz: o funil inteiro vai para o
+ * cache (é dele que o `after` é lido) e só os cards visíveis vão para as props
+ * (é deles que o `before` e o `destination.index` são contados).
+ */
+async function montarComFiltro(funil: BoardData, visiveis: BoardData["leads"]): Promise<void> {
+  qc.setQueryData<BoardData>(["board", PIPELINE], funil);
+  render(
+    <KanbanBoard
+      pipelineId={PIPELINE}
+      stages={funil.stages}
+      leads={visiveis}
+      pipeline={funil.pipeline}
+    />,
+    { wrapper },
+  );
+  await waitFor(() => expect(capturado.onDragEnd).not.toBeNull());
+}
+
+/** O mesmo gesto do mouse, mas com o `DropResult` do caso. */
+async function arrastarPara(resultado: unknown): Promise<void> {
+  await act(async () => {
+    capturado.onDragEnd?.(resultado);
+  });
+}
+
+type CorpoDoMove = { stage_id: string; position_in_stage: number };
+
+function posicaoGravada(): number {
+  const chamadas = post.mock.calls as unknown as Array<[string, CorpoDoMove]>;
+  const ultima = chamadas[chamadas.length - 1];
+  if (!ultima) throw new Error("o quadro não mandou POST /move nenhum");
+  return ultima[1].position_in_stage;
+}
+
+/**
+ * A régua da issue, escrita como ela escreve: "uma posição que NENHUM outro
+ * card da etapa tem". É esta asserção que o pré-fix derruba — a posição gravada
+ * é justamente a do card que o filtro escondeu.
+ */
+function nenhumEmpateNaEtapa(funil: BoardData, stageId: string, pos: number): void {
+  const empatados = funil.leads
+    .filter((l) => l.stage_id === stageId && l.position_in_stage === pos)
+    .map((l) => l.id);
+  expect(empatados).toEqual([]);
+}
+
+describe("soltar com o filtro ligado não empata a posição com o card escondido", () => {
+  it("no fim de outra etapa: grava 1500, não a 2000 do card B escondido", async () => {
+    // Etapa s-1 com A(1000, quente), B(2000) e C(3000); o filtro de tag deixa só
+    // A. Soltar D no fim da coluna visível dava midpoint(1000, null) = 2000,
+    // que é a posição do B — o empate que a issue relata.
+    const funil = funilInteiro([
+      card(A_VISIVEL, "s-1", 1000, ["quente"]),
+      card(OCULTO_B, "s-1", 2000),
+      card(OCULTO_C, "s-1", 3000),
+      card(D_SOLTO, "s-2", 1000, ["quente"]),
+    ]);
+    const visiveis = [
+      card(A_VISIVEL, "s-1", 1000, ["quente"]),
+      card(D_SOLTO, "s-2", 1000, ["quente"]),
+    ];
+    post.mockResolvedValue({ data: {} });
+    await montarComFiltro(funil, visiveis);
+
+    await arrastarPara({
+      draggableId: D_SOLTO,
+      source: { droppableId: "s-2", index: 0 },
+      destination: { droppableId: "s-1", index: 1 },
+      reason: "DROP",
+      type: "DEFAULT",
+      mode: "FLUID",
+    });
+
+    nenhumEmpateNaEtapa(funil, "s-1", posicaoGravada());
+    expect(posicaoGravada()).toBe(1500);
+    expect(post).toHaveBeenCalledWith(
+      `/api/v1/leads/${D_SOLTO}/move`,
+      expect.objectContaining({ stage_id: "s-1", position_in_stage: 1500 }),
+    );
+  });
+
+  it("reordenando na mesma etapa até o fim: grava 2500, não a 3000 do card C escondido", async () => {
+    // Visíveis A(1000) e B(2000), escondido C(3000). Arrastar A para baixo do B
+    // dava midpoint(2000, null) = 3000 — a posição do C.
+    const funil = funilInteiro([
+      card(A_VISIVEL, "s-1", 1000, ["quente"]),
+      card(OCULTO_B, "s-1", 2000),
+      card(OCULTO_C, "s-1", 3000),
+    ]);
+    const visiveis = [card(A_VISIVEL, "s-1", 1000, ["quente"]), card(OCULTO_B, "s-1", 2000)];
+    post.mockResolvedValue({ data: {} });
+    await montarComFiltro(funil, visiveis);
+
+    await arrastarPara({
+      draggableId: A_VISIVEL,
+      source: { droppableId: "s-1", index: 0 },
+      destination: { droppableId: "s-1", index: 1 },
+      reason: "DROP",
+      type: "DEFAULT",
+      mode: "FLUID",
+    });
+
+    nenhumEmpateNaEtapa(funil, "s-1", posicaoGravada());
+    expect(posicaoGravada()).toBe(2500);
+  });
+
+  it("sem nenhum card escondido a posição é a de sempre (o controle que não pode mudar)", async () => {
+    // Visível = funil inteiro: o `after` é null e midpoint(2000, null) = 3000,
+    // igualzinho ao de antes do conserto.
+    const leads = [
+      card(A_VISIVEL, "s-1", 1000),
+      card(OCULTO_B, "s-1", 2000),
+      card(D_SOLTO, "s-2", 1000),
+    ];
+    const funil = funilInteiro(leads);
+    post.mockResolvedValue({ data: {} });
+    await montarComFiltro(funil, leads);
+
+    await arrastarPara({
+      draggableId: D_SOLTO,
+      source: { droppableId: "s-2", index: 0 },
+      destination: { droppableId: "s-1", index: 2 },
+      reason: "DROP",
+      type: "DEFAULT",
+      mode: "FLUID",
+    });
+
+    nenhumEmpateNaEtapa(funil, "s-1", posicaoGravada());
+    expect(posicaoGravada()).toBe(3000);
+  });
+});

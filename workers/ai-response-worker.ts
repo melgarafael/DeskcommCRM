@@ -20,7 +20,7 @@ import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 
 import { generateText, type LanguageModel } from "ai";
 
-import { DEFAULT_BOT_MODEL, gatewayConfig, gatewayHeaders } from "@/lib/ai/gateway";
+import { gatewayConfig, gatewayHeaders } from "@/lib/ai/gateway";
 import { embedText } from "@/lib/ai/embed";
 import { MODELO_DE_EMBEDDING_DO_GOOGLE } from "@/lib/ai/embeddings/chave";
 import { getBudgetStatus, type BudgetStatus } from "@/lib/ai/budget/check";
@@ -28,10 +28,14 @@ import {
   AVISO_CORPO,
   AVISO_TITULO,
   BLOQUEIO_TITULO,
+  CORPO_TETO_DO_PLANO,
   corpoDoBloqueio,
   decidirOrcamento,
+  decidirTetoDoPlano,
   HANDOFF_REASON_ORCAMENTO,
+  TITULO_TETO_DO_PLANO,
 } from "@/lib/agent-engine/edge/llm/orcamento";
+import type { OrigemDaChaveLlm } from "@/lib/agent-engine/edge/llm/credentials";
 import { computeCost } from "@/lib/ai/cost";
 import { silencioVigente } from "@/lib/inbox/comando-da-conversa";
 import { logInvocation } from "@/lib/ai/log-invocation";
@@ -183,34 +187,6 @@ export async function processMessageReceived(row: EventRow): Promise<ProcessResu
     };
   }
 
-  // ── Teto de gasto (IA-02) — mesma decisão e mesma régua que o engine aplica.
-  //
-  // ⚠️ A POSIÇÃO É LOAD-BEARING, e ela mudou. O veto morava dentro de
-  // `buildContext`, e `processMessageReceived` faz `return` no primeiro skip —
-  // então ele barrava G1 ("quero falar com um atendente"), G4 legal (menção a
-  // Procon/advogado) e G4 stage ANTES de qualquer um deles rodar. Enquanto as
-  // flags `is_throttled`/`is_disabled` não tinham escritor vivo isso era letra
-  // morta; a partir do momento em que o teto vincula de verdade, um lead que
-  // PEDE um humano receberia silêncio. Pedido explícito de humano e menção legal
-  // são determinísticos e custam ZERO token — não há razão para um teto de GASTO
-  // barrá-los. Mesma razão pela qual o guard de modelo-sem-provedor, logo abaixo,
-  // também fica depois de G1/G4.
-  const veto = await vetoPorTetoDeGasto({
-    orgId: ctx.organization_id,
-    conversationId: ctx.conversation_id,
-    serviceBoundary: ctx.serviceBoundary,
-    leadId,
-  });
-  if (veto !== null) {
-    logger.info("[ai-response-worker] skip", {
-      reason: veto.reason,
-      detail: veto.detail,
-      conversation_id: conversationId,
-      message_id: messageId,
-    });
-    return { status: "skipped", reason: veto.reason, detail: veto.detail };
-  }
-
   // Mesma armadilha que quebrava o ai-sentiment-worker, e aqui ela é mais cara:
   // este é o worker que RESPONDE O CLIENTE. `ctx.agent.model` é uma string vinda
   // do banco (ai_agents.model), e no AI SDK string com barra é roteada pelo
@@ -242,6 +218,37 @@ export async function processMessageReceived(row: EventRow): Promise<ProcessResu
       reason: "ai_gateway_key_missing",
       detail: `nenhuma chave configurada atende o modelo "${ctx.agent.model}"`,
     };
+  }
+
+  // ── Teto de gasto (IA-02) — mesma decisão e mesma régua que o engine aplica.
+  //
+  // ⚠️ A POSIÇÃO É LOAD-BEARING, e ela mudou. O veto morava dentro de
+  // `buildContext`, e `processMessageReceived` faz `return` no primeiro skip —
+  // então ele barrava G1 ("quero falar com um atendente"), G4 legal (menção a
+  // Procon/advogado) e G4 stage ANTES de qualquer um deles rodar. Enquanto as
+  // flags `is_throttled`/`is_disabled` não tinham escritor vivo isso era letra
+  // morta; a partir do momento em que o teto vincula de verdade, um lead que
+  // PEDE um humano receberia silêncio. Pedido explícito de humano e menção legal
+  // são determinísticos e custam ZERO token — não há razão para um teto de GASTO
+  // barrá-los. Mesma razão pela qual o guard de modelo-sem-provedor, logo abaixo,
+  // também fica depois de G1/G4.
+  const veto = await vetoPorTetoDeGasto({
+    orgId: ctx.organization_id,
+    conversationId: ctx.conversation_id,
+    serviceBoundary: ctx.serviceBoundary,
+    leadId,
+    // O teto de IA do PLANO só vincula a chave da instalação (spec cobrança §5):
+    // é por isso que a resolução do modelo agora vem antes deste veto.
+    origemDaChave: resolvido.origem === "padrao" ? "chave_da_instalacao" : "credencial_da_organizacao",
+  });
+  if (veto !== null) {
+    logger.info("[ai-response-worker] skip", {
+      reason: veto.reason,
+      detail: veto.detail,
+      conversation_id: conversationId,
+      message_id: messageId,
+    });
+    return { status: "skipped", reason: veto.reason, detail: veto.detail };
   }
 
   // Daqui para baixo, o modelo RESOLVIDO pelo painel é o que vai para o provedor
@@ -405,6 +412,7 @@ async function vetoPorTetoDeGasto(alvo: {
   orgId: string;
   conversationId: string;
   leadId: string | null;
+  origemDaChave: OrigemDaChaveLlm;
 }): Promise<SkipDecision | null> {
   const orgId = alvo.orgId;
   let status: BudgetStatus;
@@ -421,11 +429,25 @@ async function vetoPorTetoDeGasto(alvo: {
     return null;
   }
 
-  // Retorno mais cedo de todos: no dia 1 toda organização está em 'off', e nem
-  // a consulta do aviso chega a sair.
-  if (status.enforcement_mode === "off") return null;
+  // A alavanca de emergência desliga os DOIS tetos (decisão D-9 da cobrança) —
+  // a mesma ordem de `aplicarOrcamento` no engine.
+  if (status.enforcement_env === "off") return null;
 
   const admin = createAdminClient();
+
+  // O TETO DE IA DO PLANO vem antes do orçamento da org, e só vincula a chave
+  // da instalação (spec cobrança §5).
+  if (alvo.origemDaChave === "chave_da_instalacao") {
+    const vetoDoPlano = await vetoPorTetoDoPlano(admin, alvo, {
+      gastoCents: status.current_month_consumed_cents,
+      chave: status.enforcement_env,
+    });
+    if (vetoDoPlano !== null) return vetoDoPlano;
+  }
+
+  // Retorno mais cedo do orçamento da org: no dia 1 toda organização está em
+  // 'off', e nem a consulta do aviso chega a sair.
+  if (status.enforcement_mode === "off") return null;
   // "Neste mês", e não "aberto": fechar o aviso à mão não pode virar bypass
   // permanente do bloqueio — é a mesma régua da CTE `avisado_antes`.
   //
@@ -480,6 +502,7 @@ async function vetoPorTetoDeGasto(alvo: {
       severity: "warn",
       title: AVISO_TITULO,
       body: AVISO_CORPO,
+      refKind: "ai_budget",
     });
     logger.warn("[ai-response] gasto de IA passou do aviso — a resposta SEGUE", {
       organization_id: orgId,
@@ -495,6 +518,7 @@ async function vetoPorTetoDeGasto(alvo: {
     severity: "critical",
     title: BLOQUEIO_TITULO,
     body: corpoDoBloqueio(status.current_month_consumed_cents, status.monthly_limit_cents),
+    refKind: "ai_budget",
   });
 
   // ── A CONVERSA VAI PARA A FILA HUMANA, IGUAL AO ENGINE ────────────────────
@@ -514,35 +538,102 @@ async function vetoPorTetoDeGasto(alvo: {
   //
   // Nunca lança (contrato do orquestrador), então uma falha aqui não impede a
   // recusa — mas ela é logada lá dentro.
+  return devolverAoHumanoPorTeto(alvo, {
+    source: "teto_de_gasto",
+    gastoCents: status.current_month_consumed_cents,
+    tetoCents: status.monthly_limit_cents,
+  });
+}
+
+/**
+ * O teto de IA do PLANO no caminho legado — espelho do passo (2) de
+ * `aplicarOrcamento`. Ler o teto falhou → segue: o orçamento da org continua
+ * aplicado logo depois, pelo chamador.
+ */
+async function vetoPorTetoDoPlano(
+  admin: ReturnType<typeof createAdminClient>,
+  alvo: {
+    serviceBoundary?: ServiceBoundary;
+    orgId: string;
+    conversationId: string;
+    leadId: string | null;
+    origemDaChave: OrigemDaChaveLlm;
+  },
+  leitura: { gastoCents: number; chave: BudgetStatus["enforcement_env"] },
+): Promise<SkipDecision | null> {
+  const { data, error } = await admin.rpc("fn_limite_do_plano", {
+    p_org: alvo.orgId,
+    p_recurso: "ia_usd_cents",
+  });
+  if (error) {
+    logger.warn("[ai-response] teto do plano não pôde ser lido — a resposta SEGUE sem ele", {
+      organization_id: alvo.orgId,
+      causa: `${error.code ?? "sem_sqlstate"}: ${error.message}`,
+    });
+    return null;
+  }
+  const tetoCents = typeof data === "number" ? data : null;
+  const veredito = decidirTetoDoPlano({
+    tetoUsdCents: tetoCents,
+    gastoUsdCents: leitura.gastoCents,
+    origemDaChave: alvo.origemDaChave,
+    purpose: "agent_turn",
+    chave: leitura.chave,
+  });
+  if (veredito.acao === "seguir") return null;
+
+  await abrirItemDeOrcamento(admin, alvo.orgId, {
+    kind: "budget_exceeded",
+    severity: "critical",
+    title: TITULO_TETO_DO_PLANO,
+    body: CORPO_TETO_DO_PLANO,
+    refKind: "plano",
+  });
+  return devolverAoHumanoPorTeto(alvo, {
+    source: "teto_do_plano",
+    gastoCents: leitura.gastoCents,
+    tetoCents: tetoCents ?? 0,
+  });
+}
+
+/**
+ * A saída comum dos dois tetos: a conversa vai para a FILA HUMANA, igual ao
+ * engine. Sem isto, os dois caminhos dariam respostas OPOSTAS ao mesmo
+ * veredito — e o alerta aberto, que promete fila humana, mentiria.
+ * `triggerHandoff` é o irmão local de `performHumanHandoff` (este worker não
+ * pode importar o engine) e nunca lança.
+ */
+async function devolverAoHumanoPorTeto(
+  alvo: { serviceBoundary?: ServiceBoundary; orgId: string; conversationId: string; leadId: string | null },
+  teto: { source: "teto_de_gasto" | "teto_do_plano"; gastoCents: number; tetoCents: number },
+): Promise<SkipDecision> {
   await triggerHandoff({
     conversationId: alvo.conversationId,
     serviceBoundary: alvo.serviceBoundary,
-    organizationId: orgId,
+    organizationId: alvo.orgId,
     reason: HANDOFF_REASON_ORCAMENTO,
     origem: "legado_teto",
     leadId: alvo.leadId,
-    metadata: {
-      source: "teto_de_gasto",
-      gasto_cents: status.current_month_consumed_cents,
-      teto_cents: status.monthly_limit_cents,
-    },
+    metadata: { source: teto.source, gasto_cents: teto.gastoCents, teto_cents: teto.tetoCents },
   });
-
   logger.warn("[ai-response] resposta recusada pelo teto de gasto — conversa na fila humana", {
-    organization_id: orgId,
+    organization_id: alvo.orgId,
     conversation_id: alvo.conversationId,
-    gasto_cents: status.current_month_consumed_cents,
-    teto_cents: status.monthly_limit_cents,
+    fonte: teto.source,
+    gasto_cents: teto.gastoCents,
+    teto_cents: teto.tetoCents,
   });
   return skip("budget_exceeded");
 }
 
 /**
  * Abre o item na Central, deduplicado por episódio ABERTO — mesmo predicado das
- * CTEs de `SQL_ORCAMENTO`. Não é atômico (o `select` e o `insert` são duas
- * idas), e o statement do engine também não trava nada: dois drains
- * simultâneos podem abrir dois itens iguais lá e aqui. Item repetido é ruído;
- * item ausente seria a IA parando sem nada na tela explicando.
+ * CTEs de `SQL_ORCAMENTO`. O `select` e o `insert` continuam sendo duas idas:
+ * dois drains simultâneos ainda passam pela busca juntos, mas agora o índice
+ * único parcial `agent_inbox_budget_aberto_unico` (migration 0540) sustenta o
+ * predicado no banco — quem chega segundo recebe `23505`, que o insert abaixo
+ * trata como "já havia item" (loga e segue). Item repetido é ruído; item
+ * ausente seria a IA parando sem nada na tela explicando.
  *
  * `ref_kind`/`ref_id` existem para que alguém possa FECHAR o item depois — o
  * PATCH de `/api/v1/ai/budget` e o retrato abaixo dependem deles.
@@ -550,13 +641,15 @@ async function vetoPorTetoDeGasto(alvo: {
 async function abrirItemDeOrcamento(
   admin: ReturnType<typeof createAdminClient>,
   orgId: string,
-  item: { kind: string; severity: string; title: string; body: string },
+  item: { kind: string; severity: string; title: string; body: string; refKind: "ai_budget" | "plano" },
 ): Promise<void> {
   const { count, error: erroDaBusca } = await admin
     .from("agent_inbox_items")
     .select("id", { count: "exact", head: true })
     .eq("organization_id", orgId)
     .eq("kind", item.kind)
+    // Dedup por teto: o item do plano não cala o da org, nem o contrário.
+    .eq("ref_kind", item.refKind)
     .eq("status", "open");
   if (erroDaBusca) {
     logger.warn("[ai-response] dedupe do item de orçamento falhou — item não aberto", {
@@ -574,15 +667,24 @@ async function abrirItemDeOrcamento(
     severity: item.severity,
     title: item.title,
     body: item.body,
-    ref_kind: "ai_budget",
+    ref_kind: item.refKind,
     ref_id: orgId,
   });
   if (error) {
-    logger.warn("[ai-response] item de orçamento não pôde ser aberto na Central", {
-      organization_id: orgId,
-      kind: item.kind,
-      causa: error.message,
-    });
+    // `23505` = o índice único parcial da 0540 recusou a segunda linha: o item
+    // JÁ estava aberto (outro processo chegou primeiro). É desfecho normal, não
+    // falha — o log separa os dois para não caçar fantasma.
+    const jaEstavaAberto = error.code === "23505";
+    logger.warn(
+      jaEstavaAberto
+        ? "[ai-response] item de orçamento já estava aberto — segunda linha recusada"
+        : "[ai-response] item de orçamento não pôde ser aberto na Central",
+      {
+        organization_id: orgId,
+        kind: item.kind,
+        causa: error.message,
+      },
+    );
   }
 }
 
@@ -596,7 +698,9 @@ async function retratarItensDeOrcamento(
     .update({ status: "resolved" })
     .eq("organization_id", orgId)
     .eq("status", "open")
-    .in("kind", ["budget_exceeded", "budget_warning"]);
+    .in("kind", ["budget_exceeded", "budget_warning"])
+    // O mesmo recorte da CTE `retrata`: nunca o item do teto do PLANO.
+    .or("ref_kind.is.null,ref_kind.eq.ai_budget");
   if (error) {
     logger.warn("[ai-response] retrato dos itens de orçamento falhou", {
       organization_id: orgId,
@@ -619,12 +723,54 @@ interface BuildContextInput {
 async function buildContext(input: BuildContextInput): Promise<GuardDecision> {
   const admin = createAdminClient();
 
+  // A PRIMEIRA consulta, de propósito: toda organização com agente publicado
+  // emite `message.received` por mensagem, e este worker não tem o que fazer
+  // nela sem candidato legado — sai aqui com uma ida ao banco em vez de quatro.
+  // Quem tem candidato segue a ordem de sempre (guardas → aviso de legado →
+  // triagem G1/G4).
+  //
+  // `is_active` sozinho NÃO é "quem atende", e tratá-lo como se fosse era o
+  // buraco: pausar um `mcp_agent` limpava `published_version_id` e deixava
+  // `is_active` de pé, então este SELECT continuava trazendo o agente que o dono
+  // acabara de pausar — e a trava `engine_owns_reply` logo abaixo, que é
+  // ORG-WIDE, deixava de valer exatamente quando o último publicado era pausado.
+  // (Hoje pausar grava só `paused_at` e a versão segue publicada; a régua lê a
+  // pausa, e não depende de qual das duas formas a pausa tem.)
+  // Resultado medido em produção: pausar o agente o fazia VOLTAR a responder,
+  // com o `system_prompt` do cadastro no lugar do da versão publicada.
+  //
+  // A régua agora é a mesma que a tela usa (`lib/ai/agents/no-ar.ts`).
+  //
+  // ⚠️ Quem PROTEGE é a régua, não o `.is("archived_at", null)` abaixo — medido
+  // por sabotagem: apagar o filtro deixa os 4 casos de
+  // `tests/unit/agente-pausado-nao-atende.test.ts` verdes, porque
+  // `estadoDoAgente` já devolve "arquivado". O filtro fica por ser mais barato
+  // não trazer do banco o que vai ser descartado; não confie nele como guarda.
+  // Sem `.limit(1)`: o primeiro da ordem pode ser justamente o que a régua
+  // recusa, e cortar antes de filtrar faria um `mcp_agent` pausado — que é
+  // `is_default` na instalação que o onboarding cria — esconder o `rag_bot`
+  // legítimo logo abaixo dele. A ordem (`is_default`, depois `created_at`) é a
+  // de sempre; o que muda é que ela agora escolhe entre os ELEGÍVEIS.
+  const { data: candidatos } = await admin
+    .from("ai_agents")
+    .select(
+      "id, organization_id, model, system_prompt, config, guardrails, active_kb_version_id, is_active, is_default, kind, published_version_id, archived_at, paused_at",
+    )
+    .eq("organization_id", input.organizationId)
+    .eq("is_active", true)
+    .is("archived_at", null)
+    .order("is_default", { ascending: false })
+    .order("created_at", { ascending: true });
+
+  const agent = (candidatos ?? []).find(precisaRecuperarLegado) ?? null;
+  if (!agent) return skip("agent_inactive_or_missing");
+
   // Conversation + contact + agent in 2 round trips. Service-role bypasses RLS,
   // so org filter is mandatory on every where-clause.
   const { data: conv, error: convErr } = await admin
     .from("conversations")
     .select(
-      "id, organization_id, contact_id, channel_session_id, last_inbound_at, bot_silenced_until, last_handoff_at, assignee_kind, contacts:contact_id(id, name, display_name, locale, is_blocked, force_human)",
+      "id, organization_id, contact_id, channel_session_id, last_inbound_at, bot_silenced_until, last_handoff_at, assignee_kind, contacts:contact_id(id, name, display_name, locale, is_blocked, is_personal, force_human)",
     )
     .eq("id", input.conversationId)
     .eq("organization_id", input.organizationId)
@@ -648,12 +794,15 @@ async function buildContext(input: BuildContextInput): Promise<GuardDecision> {
       display_name: string | null;
       locale: string | null;
       is_blocked: boolean;
+      /** Spec 21: contato pessoal nunca recebe turno (mesma família de guard do bloqueio). */
+      is_personal: boolean;
       force_human: boolean;
     } | null;
   };
   const c = conv as unknown as ConvRow;
   if (!c.contacts) return skip("conversation_not_found", "contact join missing");
   if (c.contacts.is_blocked) return skip("contact_blocked");
+  if (c.contacts.is_personal === true) return skip("contact_personal");
   if (c.contacts.force_human) return skip("force_human");
   // G3-02 — assignee de 1ª classe: humano atendendo (kind='user') veta o bot
   // deterministicamente, mesma família de guard de force_human/bot_silenced_until.
@@ -727,48 +876,11 @@ async function buildContext(input: BuildContextInput): Promise<GuardDecision> {
   const inbound_body = (msg.body ?? "").trim();
   if (!inbound_body) return skip("empty_inbound_body");
 
-  // O agente legado desta organização.
-  //
-  // `is_active` sozinho NÃO é "quem atende", e tratá-lo como se fosse era o
-  // buraco: pausar um `mcp_agent` limpava `published_version_id` e deixava
-  // `is_active` de pé, então este SELECT continuava trazendo o agente que o dono
-  // acabara de pausar — e a trava `engine_owns_reply` logo abaixo, que é
-  // ORG-WIDE, deixava de valer exatamente quando o último publicado era pausado.
-  // (Hoje pausar grava só `paused_at` e a versão segue publicada; a régua lê a
-  // pausa, e não depende de qual das duas formas a pausa tem.)
-  // Resultado medido em produção: pausar o agente o fazia VOLTAR a responder,
-  // com o `system_prompt` do cadastro no lugar do da versão publicada.
-  //
-  // A régua agora é a mesma que a tela usa (`lib/ai/agents/no-ar.ts`).
-  //
-  // ⚠️ Quem PROTEGE é a régua, não o `.is("archived_at", null)` abaixo — medido
-  // por sabotagem: apagar o filtro deixa os 4 casos de
-  // `tests/unit/agente-pausado-nao-atende.test.ts` verdes, porque
-  // `estadoDoAgente` já devolve "arquivado". O filtro fica por ser mais barato
-  // não trazer do banco o que vai ser descartado; não confie nele como guarda.
-  // Sem `.limit(1)`: o primeiro da ordem pode ser justamente o que a régua
-  // recusa, e cortar antes de filtrar faria um `mcp_agent` pausado — que é
-  // `is_default` na instalação que o onboarding cria — esconder o `rag_bot`
-  // legítimo logo abaixo dele. A ordem (`is_default`, depois `created_at`) é a
-  // de sempre; o que muda é que ela agora escolhe entre os ELEGÍVEIS.
-  const { data: candidatos } = await admin
-    .from("ai_agents")
-    .select(
-      "id, organization_id, model, system_prompt, config, guardrails, active_kb_version_id, is_active, is_default, kind, published_version_id, archived_at, paused_at",
-    )
-    .eq("organization_id", input.organizationId)
-    .eq("is_active", true)
-    .is("archived_at", null)
-    .order("is_default", { ascending: false })
-    .order("created_at", { ascending: true });
-
+  // O aviso de legado sai só para a conversa que passou as guardas acima.
   for (const candidate of candidatos ?? []) {
     if (precisaRecuperarLegado(candidate))
       await recordLegacyNotice(admin, input.organizationId, candidate.id, "sem_versao");
   }
-  const agent = (candidatos ?? []).find(precisaRecuperarLegado) ?? null;
-
-  if (!agent) return skip("agent_inactive_or_missing");
 
   // O ENGINE É O DONO DA RESPOSTA QUANDO HÁ VERSÃO PUBLICADA (issue #129).
   //
@@ -847,7 +959,13 @@ async function buildContext(input: BuildContextInput): Promise<GuardDecision> {
         // decisão que a lê ("este agente atende?") ficava sem o dado.
         paused_at: agent.paused_at,
         id: agent.id,
-        model: agent.model || DEFAULT_BOT_MODEL,
+        // Sem `|| DEFAULT_BOT_MODEL` (issue #2377): aquele OU injetava um
+        // Claude da Anthropic num agente sem modelo — para uma empresa em
+        // OpenAI — no caminho que responde sozinho. `ai_agents.model` é NOT
+        // NULL com default no banco e a API exige min(1); vindo vazio mesmo assim,
+        // o resolvedor PULA com motivo no log (este ponto não pede queda para o
+        // par da organização).
+        model: agent.model,
         system_prompt: agent.system_prompt,
         config: (agent.config as Record<string, unknown>) ?? {},
         guardrails: (agent.guardrails as Record<string, unknown>) ?? {},

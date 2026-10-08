@@ -193,13 +193,22 @@ export const TAREFA_DA_MANIPULACAO = {
  * nunca o Jev (R2). Só roda onde há um roteador ativo: sem ele o turno não
  * classifica nada (`tarefaSemRoteador`).
  */
+export const ROTEADOR_SOB_DEMANDA = "O Jev escolhe primeiro. A IA de sempre só entra em caso de falha, baixa confiança ou intenção inválida.";
+/**
+ * Por que o Jev não roteia sozinho nesta empresa (decisão B do doc 89, R2 do
+ * DEC-012): a mesma frase na recusa do PATCH e no cartão.
+ */
+export const ROTEADOR_SOB_DEMANDA_SEM_IA =
+  "Sem a sua IA de sempre, o Jev não escolhe o agente sozinho: é ela que cobre quando ele falha ou fica em dúvida. Cadastre uma chave de IA em Agentes IA › Credenciais para usar este modo. Até lá, vale a comparação.";
+
 export const TAREFA_DO_ROTEADOR = {
   id: "roteador",
   ponto: "intent_router",
   primitiva: "choice",
   alcance: "mensagem",
   familia: "substitui",
-  // Os dois perguntam a cada mensagem (`resolve-turn-agent.ts`), e sem a
+  // Texto do modo comparação. Sob demanda, a tela usa ROTEADOR_SOB_DEMANDA.
+  // Na comparação, os dois perguntam a cada mensagem, e sem a
   // resposta da IA de sempre a do Jev não vale (R2) — ao contrário do clima.
   // "Agente de fallback" é o nome do campo na tela do roteador: "o de reserva
   // do roteador" não levava o leigo ao campo que ele precisa conferir.
@@ -306,6 +315,104 @@ export const TAREFA_DO_FOLLOWUP = {
     "Lê a resposta do cliente à mensagem do follow-up, sozinha, e diz em qual das saídas que você criou no fluxo ela se encaixa.",
 } as const satisfies TarefaDoJev;
 
+/**
+ * A conferência de campo personalizado do negócio (#2234): antes de a IA gravar
+ * um campo do funil na ficha, conferir nas mensagens do CLIENTE se foi ele quem
+ * disse aquele valor. Hoje `crm_update_lead` grava `custom_fields` direto
+ * (`lib/mcp/tools/leads.ts`), sem nenhuma conferência — os campos de CONTATO já
+ * têm proposta com confirmação humana (#1650), os do negócio não, e uma
+ * confirmação humana a cada valor seria pesada demais.
+ *
+ * É `novo`: não há mecanismo de conferência hoje com o que concordar. É
+ * `alcance: "conversa"` de propósito: o degrau 2 lê as mensagens pendentes do
+ * TURNO, em geral 1 a 3 juntas — mais que o aceite de "cada mensagem, sozinha",
+ * então sem o aceite da conversa (`config.aceite.alcance`) ela nasce DESLIGADA
+ * e a ficha segue gravando como hoje.
+ *
+ * O degrau 1 (número, data, e-mail e valor monetário conferidos em código, sem
+ * rede) não depende do Jev: ele acontece antes, em quem chama (`./campo-do-negocio`).
+ */
+export const TAREFA_DA_CONFERENCIA_DE_CAMPO = {
+  id: "campo_do_negocio",
+  primitiva: "noul",
+  alcance: "conversa",
+  familia: "novo",
+  aoDecidir:
+    "O Jev confere, nas mensagens que o cliente deixou sem resposta neste turno, se foi ele quem disse o valor do campo. O valor que ele não disse deixa de ser gravado e o assistente é mandado perguntar para ele; os outros campos da mesma chamada seguem gravando.",
+  aoConfirmarDecidir:
+    "Antes de a IA gravar um campo personalizado do negócio, o Jev vai conferir nas mensagens do cliente se foi ele quem informou aquele valor. Ele não disse: o campo não é gravado e a IA pergunta ao cliente.",
+  concordancia: {
+    antes: "dias, o Jev e o jeito de hoje deram o mesmo destino a",
+    depois: "campos do negócio.",
+  },
+  rotulo: "Conferir o campo antes de a IA gravar",
+  oQueFaz:
+    "Lê o que o cliente disse nas mensagens ainda sem resposta do turno e confere se o valor que a IA quer gravar no campo personalizado do negócio foi ele quem informou.",
+} as const satisfies TarefaDoJev;
+
+/**
+ * O sinal de urgência que a regra não viu (#2232, `./urgencia.ts`). A regra de
+ * hoje é o léxico de `lib/agent-engine/guardrails/sinal-de-urgencia.ts`, que
+ * roda SÓ quando o `pacingCapVeto` adia o turno — e é só lá, e só onde ela
+ * disse não, que o Jev é perguntado. É `cascata`, como os dois pedidos: a
+ * pergunta que a regex já pegou nem sai, e o que ele faz de diferente é abrir
+ * o MESMO alerta crítico que ela abre (`kind='handoff'`), nunca responder.
+ */
+export const TAREFA_DA_URGENCIA = {
+  id: "sinal_de_urgencia",
+  primitiva: "noul",
+  alcance: "mensagem",
+  familia: "cascata",
+  aoDecidir:
+    "Quando o Jev percebe, numa mensagem represada pelo teto de envio, um risco à segurança ou à saúde que a regra de urgência não reconheceu, ele abre um aviso na Central, com o alerta crítico que a regra abriria, para alguém da equipe responder na hora. Ele nunca passa a conversa nem responde ao cliente.",
+  aoConfirmarDecidir:
+    "Quando o Jev perceber, numa mensagem represada pelo teto de envio, um risco à segurança ou à saúde que a regra de urgência não reconheceu, ele abre um aviso na Central, com o alerta crítico que a regra abriria, para alguém da equipe responder na hora. Ele nunca passa a conversa nem responde ao cliente.",
+  percebidos: {
+    nenhuma:
+      "Nos últimos {dias} dias, o Jev ainda não percebeu nenhuma mensagem represada pelo teto de envio com um risco que a regra de urgência de hoje não reconheceu.",
+    uma: "Nos últimos {dias} dias, o Jev percebeu {n} mensagem represada pelo teto de envio com um risco que a regra de urgência de hoje não reconheceu.",
+    varias:
+      "Nos últimos {dias} dias, o Jev percebeu {n} mensagens represadas pelo teto de envio com um risco que a regra de urgência de hoje não reconheceu.",
+  },
+  rotulo: "Perceber risco de segurança numa mensagem represada",
+  oQueFaz:
+    "Lê a última mensagem do cliente quando o teto de envio adiou a resposta, só se a regra de urgência de hoje não viu nela um risco à segurança ou à saúde — e conta as mensagens com esse risco que ela não reconheceu. Ele nunca passa a conversa nem responde.",
+} as const satisfies TarefaDoJev;
+
+/**
+ * A chamada da conferência de fato (#2231): afirmação de fato da RESPOSTA do
+ * assistente, conferida contra a evidência consultada no turno. É ponto no
+ * registro (o Jev é chamado por ela, e a credencial do ponto é a que resolve),
+ * e `soObserva` nesta versão — o cartão não oferece "Deixar o Jev decidir" e a
+ * rota recusa `decidindo`, porque o que falta não é pergunta, é escolha: a
+ * saída depois de N vetos no mesmo turno (frase segura ou passar para humano)
+ * ainda não foi decidida. Um `decidindo` gravado por outra versão vale
+ * `observando` (`estadoSobOAceite`), que é o que esta faz.
+ */
+export const AFIRMACAO_DE_FATO = {
+  purpose: "afirmacao_de_fato",
+  rotulo: "Conferir afirmações de fato na resposta",
+  porQue: "O Jev foi perguntado se o que a resposta afirma sobre o negócio está escrito nas evidências consultadas neste turno.",
+  porQueNaFalha: "O Jev não respondeu: a mensagem foi como estava, sem a conferência de fato.",
+} as const;
+
+export const TAREFA_DA_AFIRMACAO_DE_FATO = {
+  id: "afirmacao_de_fato",
+  ponto: "afirmacao_de_fato",
+  primitiva: "noul",
+  alcance: "mensagem",
+  familia: "novo",
+  soObserva:
+    "Nesta versão a conferência de fato só observa: ela grava o que teria sido corrigido, mas nenhum envio é barrado. Deixar o Jev decidir sozinho só depois que você vir no cartão quantas mensagens teriam sido corrigidas.",
+  concordancia: {
+    antes: "dias, a conferência de fato e o envio de hoje concordaram em",
+    depois: "respostas — as duas deixaram passar a mesma afirmação.",
+  },
+  rotulo: "Conferir afirmações de fato na resposta",
+  oQueFaz:
+    "Lê a resposta que o assistente vai enviar e confere, nas evidências consultadas neste turno, se o que ele afirma sobre o negócio está escrito ali — ou se o material diz o contrário.",
+} as const satisfies TarefaDoJev;
+
 export const TAREFAS_DO_JEV: readonly TarefaDoJev[] = [
   TAREFA_DO_CLIMA,
   TAREFA_DA_MANIPULACAO,
@@ -313,6 +420,9 @@ export const TAREFAS_DO_JEV: readonly TarefaDoJev[] = [
   TAREFA_DO_PEDIDO_DE_HUMANO,
   TAREFA_DO_PEDIDO_PARA_PARAR,
   TAREFA_DO_FOLLOWUP,
+  TAREFA_DA_CONFERENCIA_DE_CAMPO,
+  TAREFA_DA_URGENCIA,
+  TAREFA_DA_AFIRMACAO_DE_FATO,
 ];
 
 /**
@@ -322,6 +432,21 @@ export const TAREFAS_DO_JEV: readonly TarefaDoJev[] = [
 export function tarefaPodeDecidir(tarefa: Pick<TarefaDoJev, "soObserva">): boolean {
   return tarefa.soObserva === undefined;
 }
+
+/**
+ * A chamada da conferência de campo (#2234): também sem ponto no registro — o
+ * degrau 2 do `crm_update_lead` é quem pergunta, e as perguntas são por CAMPO,
+ * não por tarefa (`./campo-do-negocio`). Mesmo enquadramento de
+ * `PEDIDOS_DO_CLIENTE`, incluindo o `porQue` como PERGUNTA: a chamada sai só
+ * quando há campo para conferir, e a falha não muda nada no atendimento.
+ */
+export const CONFERENCIA_DE_CAMPO = {
+  purpose: "jev_campo_do_negocio",
+  rotulo: "Conferir o campo antes de a IA gravar",
+  porQue:
+    "O Jev foi perguntado se o cliente disse, nas mensagens ainda sem resposta deste turno, o valor do campo personalizado do negócio que a IA ia gravar.",
+  porQueNaFalha: "O Jev não respondeu: o campo foi gravado como antes, sem a conferência.",
+} as const;
 
 /**
  * A chamada que pergunta os dois pedidos (`./pedidos.ts`) precisa de um
@@ -348,11 +473,27 @@ export const PEDIDOS_DO_CLIENTE = {
 } as const;
 
 /**
+ * A chamada que pergunta o sinal de urgência da mensagem represada
+ * (`./urgencia.ts`), também sem ponto no registro: quem a decide é a regra de
+ * urgência do turno, que não usa modelo, e o que ela faz é abrir um alerta na
+ * Central. Mesmo enquadramento de `PEDIDOS_DO_CLIENTE`.
+ */
+export const SINAL_DE_URGENCIA = {
+  purpose: "jev_sinal_de_urgencia",
+  rotulo: "Perceber risco de segurança na mensagem represada",
+  porQue:
+    "O Jev foi perguntado, numa mensagem represada pelo teto de envio, se ela relata um risco à segurança ou à saúde que a regra de urgência de hoje não reconheceu. Ele não responde nem passa a conversa.",
+  porQueNaFalha: "O Jev não respondeu: valeu só a regra de urgência de hoje.",
+} as const;
+
+/**
  * O nome de gente da chamada do Jev com este `purpose`: o da tarefa daquele
  * ponto, ou o dos pedidos. `null` quando não é chamada do Jev.
  */
 export function rotuloDaChamadaDoJev(purpose: string): string | null {
+  if (purpose === CONFERENCIA_DE_CAMPO.purpose) return CONFERENCIA_DE_CAMPO.rotulo;
   if (purpose === PEDIDOS_DO_CLIENTE.purpose) return PEDIDOS_DO_CLIENTE.rotulo;
+  if (purpose === SINAL_DE_URGENCIA.purpose) return SINAL_DE_URGENCIA.rotulo;
   return TAREFAS_DO_JEV.find((t) => t.ponto === purpose)?.rotulo ?? null;
 }
 

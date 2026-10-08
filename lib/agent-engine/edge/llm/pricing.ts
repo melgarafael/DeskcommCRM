@@ -4,7 +4,9 @@
  *
  * Fontes: https://platform.claude.com/docs/en/about-claude/pricing (Anthropic) e
  * https://developers.openai.com/api/docs/pricing (OpenAI, tabela Standard, conferida em
- * 23/09/2026). Cache da Anthropic: leitura = 0.1× a entrada; gravação = 1.25× no TTL de 5 minutos e 2× no de
+ * 23/09/2026). Google: entrada/saída do `ai_pricing` do catálogo curado; leitura de cache de
+ * https://ai.google.dev/gemini-api/docs/pricing, conferida em 02/10/2026 (ver o bloco Gemini).
+ * Cache da Anthropic: leitura = 0.1× a entrada; gravação = 1.25× no TTL de 5 minutos e 2× no de
  * 1 hora — os dois TTLs que o knob `LLM_CACHE_TTL` aceita (`lib/agent-engine/env.ts`),
  * e é por isso que `costCents` recebe o TTL em vigor em vez de supor a doutrina.
  *
@@ -87,6 +89,31 @@ const USD_PER_MTOK: Record<string, Preco> = {
   'gpt-5.4-nano': { input: 0.2, output: 1.25, cacheRead: 0.02, cacheWrite5m: 0.2, cacheWrite1h: 0.2 },
   'gpt-5.4-pro': { input: 30, output: 180, cacheRead: 30, cacheWrite5m: 30, cacheWrite1h: 30 },
 
+  // Google — os seis Gemini do catálogo curado (migrations 0023 e 0101), com o
+  // preço do `ai_pricing` em vigor (centavos/100). Sem estas linhas o custo de
+  // toda org em Google saía NULL e o teto mensal não disparava.
+  // Cache: o caching implícito liga sozinho do 2.5 em diante e o motor monta um
+  // prefixo estável para reaproveitá-lo, então num turno típico a maior parte da
+  // entrada chega como `cacheReadTokens` (o @ai-sdk/google mapeia
+  // `cachedContentTokenCount` para lá). Cobrar essa parte pelo preço cheio
+  // superfaturava ~10× e, com o teto em bloqueio, cortava o atendimento antes do
+  // teto escolhido — a armadilha 2 com o sinal invertido. Leitura = 0.1× a
+  // entrada, conforme "Context caching price" de ai.google.dev/gemini-api/docs/pricing
+  // (faixa ≤200K, conferida em 02/10/2026). O implícito não cobra gravação, e o
+  // motor não usa cache explícito (sem `cachedContent`), então gravação = entrada
+  // fica sem efeito. O 2.0 Flash não tem cache implícito nem aparece mais na
+  // página: leitura = entrada, que nunca é aplicada porque nunca vem leitura.
+  // Fora da tabela: a faixa acima de 200K tokens de entrada do 2.5 Pro e do 3.1 Pro.
+  'gemini-3.5-flash': { input: 1.5, output: 9, cacheRead: 0.15, cacheWrite5m: 1.5, cacheWrite1h: 1.5 },
+  // 3.5 Flash-Lite: tarifa Standard de ai.google.dev/gemini-api/docs/pricing
+  // (06/10/2026). O armazenamento de cache ($1/MTok/h) não é por chamada.
+  'gemini-3.5-flash-lite': { input: 0.3, output: 2.5, cacheRead: 0.03, cacheWrite5m: 0.3, cacheWrite1h: 0.3 },
+  'gemini-3.1-pro-preview': { input: 2, output: 12, cacheRead: 0.2, cacheWrite5m: 2, cacheWrite1h: 2 },
+  'gemini-2.5-pro': { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite5m: 1.25, cacheWrite1h: 1.25 },
+  'gemini-2.5-flash': { input: 0.3, output: 2.5, cacheRead: 0.03, cacheWrite5m: 0.3, cacheWrite1h: 0.3 },
+  'gemini-2.5-flash-lite': { input: 0.1, output: 0.4, cacheRead: 0.01, cacheWrite5m: 0.1, cacheWrite1h: 0.1 },
+  'gemini-2.0-flash': { input: 0.1, output: 0.4, cacheRead: 0.1, cacheWrite5m: 0.1, cacheWrite1h: 0.1 },
+
   // Jev (TypeSafe AI), a versão FIXADA em lib/ai/decisao/cliente.ts. Fonte:
   // docs.typesafe.ai/models.md, conferida em 23/09/2026 — "Charged per input
   // token. Output tokens are free." A API devolve output_tokens > 0 mesmo assim:
@@ -124,6 +151,11 @@ export function precoDoModelo(model: string): Preco | undefined {
     USD_PER_MTOK[semPrefixo.replace(/-\d{8}$/, "")] ??
     USD_PER_MTOK[semPrefixo.replace(/-\d{4}-\d{2}-\d{2}$/, "")]
   );
+}
+
+/** O motor sabe cobrar este modelo — sem isso o custo sai null e o teto não o vê. */
+export function temPrecoNoMotor(model: string): boolean {
+  return precoDoModelo(model) !== undefined;
 }
 
 /**

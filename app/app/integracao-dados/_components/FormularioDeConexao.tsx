@@ -42,6 +42,14 @@ const MODOS_TLS = [
   { valor: "disable", rotulo: "Sem TLS (rede local confiável)" },
 ] as const;
 
+/** "nenhum" é só da tela: vira `null` nos dois campos ao salvar. */
+const IDENTIFICADORES = [
+  { valor: "nenhum", rotulo: "Não configurado" },
+  { valor: "phone", rotulo: "Telefone do cliente" },
+  { valor: "email", rotulo: "E-mail do cliente" },
+] as const;
+type Identificador = (typeof IDENTIFICADORES)[number]["valor"];
+
 /** O tamanho da resposta é gravado em bytes, mas a tela fala em KB. */
 const KB = 1024;
 const KB_MIN = Math.ceil(LIMITE_RESPOSTA_BYTES.minimo / KB);
@@ -69,6 +77,7 @@ const schema = z.object({
     .int()
     .min(KB_MIN, "Fora do limite permitido")
     .max(KB_MAX, "Fora do limite permitido"),
+  customer_key_column: z.string().trim().max(128),
 });
 
 interface Props {
@@ -104,6 +113,10 @@ export function FormularioDeConexao({ open, onOpenChange, conexao }: Props) {
   const [maxResponseKb, setMaxResponseKb] = useState(
     String(Math.round((conexao?.max_response_bytes ?? LIMITE_RESPOSTA_BYTES.padrao) / KB)),
   );
+  const [identificador, setIdentificador] = useState<Identificador>(
+    conexao?.customer_key_kind ?? "nenhum",
+  );
+  const [colunaDoCliente, setColunaDoCliente] = useState(conexao?.customer_key_column ?? "");
   const [salvando, setSalvando] = useState(false);
   const [erros, setErros] = useState<Record<string, string | undefined>>({});
 
@@ -121,6 +134,7 @@ export function FormularioDeConexao({ open, onOpenChange, conexao }: Props) {
       max_rows: maxRows,
       max_filters: maxFilters,
       max_response_kb: maxResponseKb,
+      customer_key_column: colunaDoCliente,
     });
     if (!parsed.success) {
       const flat = parsed.error.flatten().fieldErrors;
@@ -134,9 +148,19 @@ export function FormularioDeConexao({ open, onOpenChange, conexao }: Props) {
         max_rows: flat.max_rows?.[0],
         max_filters: flat.max_filters?.[0],
         max_response_kb: flat.max_response_kb?.[0],
+        customer_key_column: flat.customer_key_column?.[0],
       });
       return;
     }
+
+    if (identificador !== "nenhum" && parsed.data.customer_key_column.length === 0) {
+      setErros({ customer_key_column: t("Informe o nome da coluna.") });
+      return;
+    }
+    const chaveDoCliente =
+      identificador === "nenhum"
+        ? { customer_key_column: null, customer_key_kind: null }
+        : { customer_key_column: parsed.data.customer_key_column, customer_key_kind: identificador };
 
     // Ao editar, senha em branco significa "manter a guardada"; ao criar, a
     // senha é obrigatória. A rota recusa o contrário — barrar aqui explica antes.
@@ -159,6 +183,7 @@ export function FormularioDeConexao({ open, onOpenChange, conexao }: Props) {
           max_rows: parsed.data.max_rows,
           max_filters: parsed.data.max_filters,
           max_response_bytes: parsed.data.max_response_kb * KB,
+          ...chaveDoCliente,
           ...(parsed.data.password ? { password: parsed.data.password } : {}),
         });
         toast.success(t("Conexão atualizada."));
@@ -175,6 +200,7 @@ export function FormularioDeConexao({ open, onOpenChange, conexao }: Props) {
           max_rows: parsed.data.max_rows,
           max_filters: parsed.data.max_filters,
           max_response_bytes: parsed.data.max_response_kb * KB,
+          ...chaveDoCliente,
         });
         toast.success(t("Conexão criada. Use Testar para conferir o acesso."));
       }
@@ -302,6 +328,51 @@ export function FormularioDeConexao({ open, onOpenChange, conexao }: Props) {
             </div>
             <Switch id="ext-enabled" checked={enabled} onCheckedChange={setEnabled} />
           </div>
+
+          <fieldset className="space-y-3 rounded-md border p-3">
+            <legend className="px-1 text-sm font-medium">{t("Cliente nas conversas")}</legend>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Na conversa com um cliente, o assistente só lê as linhas em que esta coluna é igual ao telefone ou ao e-mail de quem está falando. Sem isso, ele consulta este banco nas conversas sem limitar ao cliente.",
+              )}
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="ext-key-kind">{t("O que identifica o cliente")}</Label>
+                <Select value={identificador} onValueChange={(v) => setIdentificador(v as Identificador)}>
+                  <SelectTrigger id="ext-key-kind">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {IDENTIFICADORES.map((i) => (
+                      <SelectItem key={i.valor} value={i.valor}>
+                        {t(i.rotulo)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ext-key-column">{t("Nome da coluna")}</Label>
+                <Input
+                  id="ext-key-column"
+                  value={colunaDoCliente}
+                  onChange={(e) => setColunaDoCliente(e.target.value)}
+                  disabled={identificador === "nenhum"}
+                  placeholder={identificador === "email" ? "email" : "telefone"}
+                  maxLength={128}
+                />
+                {erros.customer_key_column && (
+                  <p className="text-xs text-destructive">{erros.customer_key_column}</p>
+                )}
+              </div>
+            </div>
+            {identificador === "phone" && (
+              <p className="text-[11px] text-muted-foreground">
+                {t("O telefone precisa estar gravado só com números, com ou sem o código do país ou o sinal + (5511999998888, 11999998888 ou +5511999998888).")}
+              </p>
+            )}
+          </fieldset>
 
           <fieldset className="space-y-3 rounded-md border p-3">
             <legend className="px-1 text-sm font-medium">{t("Limites de leitura")}</legend>

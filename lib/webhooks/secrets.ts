@@ -49,6 +49,10 @@ export interface RuleActionInput {
  * (hex cifrado) em ações call_webhook antes de gravar no jsonb da regra.
  * `secret_enc` já presente (round-trip do editor sem re-digitar) passa direto.
  * Retorna null se a cifra estiver indisponível (caller responde 422).
+ *
+ * Desce nas opções do `ai_decide` (#1970): um `call_webhook` lá dentro é tão
+ * gravável quanto um de topo, e sem a descida o segredo dele ia aberto para o
+ * jsonb — e de volta em todo `select("*")` da lista de regras.
  */
 export async function encryptRuleActionSecrets(
   admin: SupabaseClient,
@@ -56,15 +60,33 @@ export async function encryptRuleActionSecrets(
 ): Promise<RuleActionInput[] | null> {
   const out: RuleActionInput[] = [];
   for (const action of actions) {
-    if (action.type === "call_webhook" && typeof action.config?.secret === "string" && action.config.secret) {
-      const enc = await encryptWebhookSecret(admin, action.config.secret);
-      if (enc === null) return null;
-      const { secret: _plain, ...restConfig } = action.config;
-      out.push({ ...action, config: { ...restConfig, secret_enc: enc.replace(/^\\x/, "") } });
-    } else {
-      const { secret: _drop, ...restConfig } = action.config ?? {};
-      out.push({ ...action, config: restConfig });
-    }
+    const cifrada = await cifrarAcao(admin, action);
+    if (cifrada === null) return null;
+    out.push(cifrada);
   }
   return out;
+}
+
+async function cifrarAcao(admin: SupabaseClient, action: RuleActionInput): Promise<RuleActionInput | null> {
+  if (action.type === "call_webhook" && typeof action.config?.secret === "string" && action.config.secret) {
+    const enc = await encryptWebhookSecret(admin, action.config.secret);
+    if (enc === null) return null;
+    const { secret: _plain, ...restConfig } = action.config;
+    return { ...action, config: { ...restConfig, secret_enc: enc.replace(/^\\x/, "") } };
+  }
+  const { secret: _drop, ...restConfig } = action.config ?? {};
+  if (action.type === "ai_decide" && Array.isArray(restConfig.opcoes)) {
+    const opcoes: unknown[] = [];
+    for (const opcao of restConfig.opcoes as Array<{ acao?: RuleActionInput }>) {
+      if (!opcao?.acao) {
+        opcoes.push(opcao);
+        continue;
+      }
+      const acao = await cifrarAcao(admin, opcao.acao);
+      if (acao === null) return null;
+      opcoes.push({ ...opcao, acao });
+    }
+    return { ...action, config: { ...restConfig, opcoes } };
+  }
+  return { ...action, config: restConfig };
 }

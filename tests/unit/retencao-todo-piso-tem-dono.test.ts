@@ -69,6 +69,23 @@ const DONO_NO_SQL: Record<string, string> = {
   OBSERVACOES_DO_JEV: "fn_expurgar_observacoes_do_jev",
   // migration 0428 — os candidatos ao golden set (issue #1695).
   CANDIDATOS_GOLDEN: "fn_expurgar_candidatos_do_golden",
+  // migration 0587 — as tabelas append-only da IA, no MESMO commit da migration.
+  TELEMETRIA_DE_IA: "fn_expurgar_telemetria_de_ia_vencida",
+  RITMO_DE_ENVIO: "fn_expurgar_ritmo_de_envio_vencido",
+  COPIAS_ENVIADAS: "fn_expurgar_copias_enviadas_vencidas",
+  CHECKPOINTS: "fn_expurgar_checkpoints_superados",
+};
+
+/**
+ * Pares cujo prazo é POR ORGANIZAÇÃO (uma coluna), e não o argumento
+ * `p_retencao_dias`. O piso mora no corpo da função do mesmo jeito; muda só a
+ * expressão que o `greatest` recebe. O valor é [função dona, coluna lida].
+ */
+const DONO_POR_COLUNA: Record<string, readonly [string, string]> = {
+  // migration 0557 (#1534, PR #2180) — a mídia de mensagem. O prazo é
+  // `organizations.media_retention_days`, lido na junção `o`; o piso de 30 vale
+  // mesmo com valor menor gravado no banco.
+  MIDIA: ["fn_enfileirar_midia_vencida", "o.media_retention_days"],
 };
 
 /**
@@ -118,7 +135,7 @@ describe("todo piso de retenção tem dono no SQL, ou isenção escrita", () => 
     // É este caso que faz a lista deixar de ser fixa. Um quinto par exportado
     // amanhã cai aqui até alguém decidir a qual dos dois lados ele pertence.
     const orfaos = paresDeclarados().filter(
-      (p) => !(p in DONO_NO_SQL) && !(p in SEM_FUNCAO_NO_SQL),
+      (p) => !(p in DONO_NO_SQL) && !(p in DONO_POR_COLUNA) && !(p in SEM_FUNCAO_NO_SQL),
     );
     expect(
       orfaos,
@@ -133,6 +150,12 @@ describe("todo piso de retenção tem dono no SQL, ou isenção escrita", () => 
     const esperado = `greatest(coalesce(p_retencao_dias, ${valor(prefixo, "PADRAO")}), ${valor(prefixo, "PISO")})`;
     // Dentro do CORPO da função, e não no arquivo inteiro: fila e espelho têm os
     // mesmos números, e a busca ampla deixaria um cobrir o sumiço do outro.
+    expect(corpoDaFuncao(fn)).toContain(esperado);
+  });
+
+  it.each(Object.keys(DONO_POR_COLUNA))("o piso de %s está no corpo da função dele", (prefixo) => {
+    const [fn, coluna] = DONO_POR_COLUNA[prefixo] as readonly [string, string];
+    const esperado = `greatest(coalesce(${coluna}, ${valor(prefixo, "PADRAO")}), ${valor(prefixo, "PISO")})`;
     expect(corpoDaFuncao(fn)).toContain(esperado);
   });
 

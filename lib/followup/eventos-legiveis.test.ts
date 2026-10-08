@@ -1,4 +1,8 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
+
+import { DICIONARIO } from "@/lib/i18n/dicionario";
 
 import {
   descreveEvento,
@@ -164,6 +168,27 @@ describe("descreveEvento", () => {
     expect(r.detalhe).toBe("sai num envio novo quando a conta for reativada");
   });
 
+  it("o turno descartado pela PAUSA da inscrição aponta a pausa, não a conta (#2262)", () => {
+    const r = descreveEvento(
+      evento({ node_id: "action-1", event_type: EVENTO_TURNO_DESCARTADO, payload: { motivo: "inscricao_pausada" } }),
+      nos,
+      "pt-BR",
+    );
+    expect(r.titulo).toBe("O envio deste passo foi descartado porque a inscrição está pausada");
+    expect(r.detalhe).toBe("sai num envio novo quando a inscrição for retomada");
+  });
+
+  it("as duas frases do turno descartado têm espanhol e inglês — o dossiê as passa por t() dinâmico, que o guarda de i18n não vê", () => {
+    const en = JSON.parse(readFileSync("lib/i18n/traducoes/en.json", "utf8")) as Record<string, string>;
+    for (const motivo of ["org_nao_operante", "inscricao_pausada"]) {
+      const r = descreveEvento(evento({ node_id: "action-1", event_type: EVENTO_TURNO_DESCARTADO, payload: { motivo } }), nos, "pt-BR");
+      for (const frase of [r.titulo, r.detalhe ?? ""]) {
+        expect(DICIONARIO[frase]?.es, `sem espanhol: ${frase}`).toBeTruthy();
+        expect(en[frase], `sem inglês: ${frase}`).toBeTruthy();
+      }
+    }
+  });
+
   it("o classificar que espera a resposta diz que ESPERA, e até quando — não parece travado", () => {
     const r = descreveEvento(
       evento({ node_id: "action-1", event_type: EVENTO_CLASSIFICACAO_ESPERANDO, payload: { until: "2026-08-11T12:00:00.000Z" } }),
@@ -183,6 +208,21 @@ describe("descreveEvento", () => {
     );
     expect(r.titulo).toBe("O cliente não respondeu dentro do prazo");
     expect(r.detalhe).toBe("foi para Primeira cutucada");
+  });
+
+  it("o mover recusado diz que o card NÃO andou, com o motivo da recusa", () => {
+    const r = descreveEvento(
+      evento({
+        node_id: "m1",
+        event_type: "move_lead_failed",
+        payload: { error: "Informe o motivo da perda.", codigo: "lost_reason_required" },
+      }),
+      nos,
+      "pt-BR",
+    );
+    expect(r.titulo).toBe("Não conseguiu mover o card para a etapa escolhida");
+    expect(r.detalhe).toBe("Informe o motivo da perda.");
+    expect(r.autor).toBe("motor");
   });
 
   it("tipo desconhecido não vira jargão disfarçado de frase, mas também não some", () => {

@@ -13,6 +13,7 @@ import { autoriaDaMudanca } from "@/lib/operacao/autoria";
 import { updateWebhookSourceSchema } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { assinaturaObrigatoriaAusente } from "@/lib/webhooks/assinatura-autorizacao";
 import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -50,12 +51,16 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   const supabase = await createClient();
   const { data: existing, error: fetchErr } = await supabase
     .from("webhook_sources")
-    .select("id")
+    .select("id, authorize_ai_on_capture, secret_encrypted")
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
   if (!existing) return fail("not_found", t("Fonte não encontrada."), 404, { requestId });
+
+  if (assinaturaObrigatoriaAusente(existing, parsed.data)) {
+    return fail("signature_required", t("Configure a assinatura da fonte antes de autorizar IA. Para remover a assinatura, desligue primeiro a autorização de IA."), 422, { requestId });
+  }
 
   // secret plaintext do input vira secret_encrypted (migration 0041); a coluna
   // em claro não existe mais. `secret: null` remove o segredo da fonte.
@@ -89,6 +94,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     .from("webhook_sources")
     .update(patch)
     .eq("id", id)
+    .eq("organization_id", activeOrg.orgId)
     .select("*")
     .single();
   if (updErr) return fail("internal_error", updErr.message, 500, { requestId });

@@ -41,7 +41,19 @@ describe("ImageMedia", () => {
 describe("StickerMedia", () => {
   it("renderiza skeleton enquanto carregando", () => {
     render(<StickerMedia messageId="m2" />);
-    const skeleton = document.querySelector(".animate-pulse");
+    // `[data-esqueleto]`, e não `.animate-pulse`.
+    //
+    // A classe era a da implementação, e quando ela mudou (o esqueleto passou a
+    // ser uma faixa que atravessa, em vez de um pulso de opacidade — o pulso
+    // vivia entre dois contrastes e o pior deles era quase invisível) este
+    // seletor deixou de casar com qualquer coisa. O caso de presença reprovou,
+    // que é o certo; o de AUSÊNCIA, logo abaixo, passou a valer vácuo:
+    // `not.toBeInTheDocument()` contra seletor que nunca casa passa sempre,
+    // inclusive com o esqueleto preso na tela para sempre.
+    //
+    // O atributo é contrato do primitivo (`components/ui/skeleton.tsx`); a
+    // classe é detalhe dele.
+    const skeleton = document.querySelector("[data-esqueleto]");
     expect(skeleton).toBeInTheDocument();
   });
 
@@ -55,7 +67,19 @@ describe("StickerMedia", () => {
     render(<StickerMedia messageId="m2" />);
     const img = screen.getByAltText("Figurinha");
     fireEvent.load(img);
-    const skeleton = document.querySelector(".animate-pulse");
+    // `[data-esqueleto]`, e não `.animate-pulse`.
+    //
+    // A classe era a da implementação, e quando ela mudou (o esqueleto passou a
+    // ser uma faixa que atravessa, em vez de um pulso de opacidade — o pulso
+    // vivia entre dois contrastes e o pior deles era quase invisível) este
+    // seletor deixou de casar com qualquer coisa. O caso de presença reprovou,
+    // que é o certo; o de AUSÊNCIA, logo abaixo, passou a valer vácuo:
+    // `not.toBeInTheDocument()` contra seletor que nunca casa passa sempre,
+    // inclusive com o esqueleto preso na tela para sempre.
+    //
+    // O atributo é contrato do primitivo (`components/ui/skeleton.tsx`); a
+    // classe é detalhe dele.
+    const skeleton = document.querySelector("[data-esqueleto]");
     expect(skeleton).not.toBeInTheDocument();
   });
 

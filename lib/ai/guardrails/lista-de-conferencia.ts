@@ -45,11 +45,24 @@ export interface ConferenciaDeSaida {
   oQueProtege: string;
   /**
    * `null` = não se desliga, e o texto diz por quê.
-   * Objeto = há escolha real, e ela custa dinheiro — o custo vai na tela.
+   * Objeto = há escolha real, e o que ela custa vai na tela.
+   *
+   * `consultaModelo` separa as duas razões de haver escolha. As camadas que consultam um
+   * modelo custam dinheiro por mensagem, e o padrão delas vem do servidor. A afirmação
+   * clínica não custa nada: é escolha porque só serve a negócio de saúde, e o padrão
+   * dela é desligado, sem servidor nenhum. Sem este campo, a tela diria "o modelo usado
+   * se escolhe em Provedores" e "vem da configuração do servidor" sobre uma camada que
+   * não tem modelo nem configuração de servidor.
    */
-  escolha: { custo: string } | null;
+  escolha: { custo: string; consultaModelo: boolean } | null;
   /** Por que não se desliga. Vazio quando há escolha. */
   porQueNaoSeDesliga: string;
+  /**
+   * Sem interruptor NESTA tela, mas com escolha em outra (a conferência de fato
+   * liga no cartão do Jev). Toma o lugar do "Isto não se desliga.", que ali
+   * seria mentira.
+   */
+  escolhaEmOutraTela?: string;
   /**
    * A chave da camada em `org_guardrail_layers`, quando há escolha.
    *
@@ -59,7 +72,7 @@ export interface ConferenciaDeSaida {
    * a tela deixa de encontrar o estado e mostra "carregando…" para sempre —
    * aconteceu ao escrever isto, e o teste de componente pegou.
    */
-  camada: "promessa_semantica" | "jailbreak" | null;
+  camada: "promessa_semantica" | "jailbreak" | "afirmacao_clinica" | null;
 }
 
 /**
@@ -130,9 +143,20 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
     rotulo: "Conferir promessas em texto livre",
     oQueProtege:
       "Uma segunda leitura, feita por um modelo, para pegar a promessa escrita de um jeito que a regra fixa não reconhece.",
-    escolha: { custo: "+1 consulta ao modelo por mensagem enviada" },
+    escolha: { custo: "+1 consulta ao modelo por mensagem enviada", consultaModelo: true },
     porQueNaoSeDesliga: "",
     camada: "promessa_semantica",
+  },
+  {
+    nome: "factual_claim",
+    rotulo: "Conferir afirmações de fato na resposta",
+    oQueProtege:
+      "Confere se o que o assistente afirma sobre o negócio (horário, preço, endereço) está no material que ele consultou para responder.",
+    escolha: null,
+    escolhaEmOutraTela: "Liga-se no cartão do Jev, em Provedores de IA.",
+    porQueNaoSeDesliga:
+      "Vem desligada. Nesta versão ela só anota o que encontrou e não barra nenhuma mensagem; ligada, custa +1 consulta ao Jev por resposta.",
+    camada: null,
   },
   {
     nome: "case_promise",
@@ -153,6 +177,21 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
     porQueNaoSeDesliga:
       "É a conferência que derrubou o vazamento medido de 30% para zero. Desligar reabre exatamente o defeito que ela existe para fechar.",
      camada: null,
+  },
+  {
+    nome: "clinical_claim",
+    rotulo: "Não fazer afirmação clínica",
+    oQueProtege:
+      "Barra a mensagem em que o assistente diz o que a pessoa tem, indica remédio ou dose, " +
+      "garante resultado ou afirma que uma lesão é câncer.",
+    escolha: {
+      custo:
+        "Não custa nada e reconhece frases em português e espanhol. Só serve para " +
+        "saúde: em outros negócios pode barrar frases normais, como \"passe o creme hidratante\".",
+      consultaModelo: false,
+    },
+    porQueNaoSeDesliga: "",
+    camada: "afirmacao_clinica",
   },
   {
     nome: "agenda_stall",
@@ -188,7 +227,7 @@ export const CONFERENCIA_DE_ENTRADA: ConferenciaDeSaida = {
   rotulo: "Detectar tentativa de manipular o assistente",
   oQueProtege:
     "Lê a mensagem que chega e reconhece quem está tentando fazer o assistente ignorar as suas instruções.",
-  escolha: { custo: "+1 consulta ao modelo por mensagem recebida" },
+  escolha: { custo: "+1 consulta ao modelo por mensagem recebida", consultaModelo: true },
   porQueNaoSeDesliga: "",
   camada: "jailbreak",
 };

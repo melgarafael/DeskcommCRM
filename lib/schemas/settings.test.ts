@@ -57,6 +57,7 @@ describe("tenantSchema", () => {
       locale: "pt-BR",
       currency: "BRL",
       media_retention_days: 90,
+      media_retention_enforced: true,
       dpo_email: "dpo@acme.com",
       privacy_policy_url: "https://acme.com/privacy",
     });
@@ -82,6 +83,7 @@ describe("tenantSchema", () => {
       locale: "pt-BR",
       currency: "BRL",
       media_retention_days: 90,
+      media_retention_enforced: true,
       lost_reasons_extra: ["Sem orçamento"],
     });
     expect(r.success).toBe(true);
@@ -129,6 +131,14 @@ describe("notificationPrefsSchema", () => {
 });
 
 describe("pipelineConfigPatchSchema", () => {
+  // A porta da comanda do ganho (#1477): o zod descarta chave desconhecida, então
+  // tirá-la do schema faria a caixa da tela gravar NADA, sem erro nenhum.
+  it("mantém `comanda_no_ganho` booleano e recusa qualquer outra forma", () => {
+    const r = pipelineConfigPatchSchema.safeParse({ comanda_no_ganho: true });
+    expect(r.success && r.data.comanda_no_ganho).toBe(true);
+    expect(pipelineConfigPatchSchema.safeParse({ comanda_no_ganho: "true" }).success).toBe(false);
+  });
+
   it("accepts partial vocabulary patch", () => {
     const r = pipelineConfigPatchSchema.safeParse({
       vocabulary: { lead: "Cliente", won: "Pago" },

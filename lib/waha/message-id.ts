@@ -39,6 +39,24 @@ export function bareWaMessageId(id: string): string {
 }
 
 /**
+ * A forma em que o ENVIO grava `messages.external_id` — a MESMA string que o
+ * eco grava, senão o `unique (organization_id, external_id)` nunca recusa a
+ * segunda linha (#196).
+ *
+ *   conversa individual — a cauda: o eco grava `bare` desde o #1855.
+ *   GRUPO (`@g.us`)     — o id INTACTO: o eco de grupo grava `p.id` cru
+ *                         (`ingerirMensagemDeGrupo` em `lib/waha/ingest.ts` →
+ *                         `lib/grupos/ingest.ts`). E o id de grupo pode ter um
+ *                         4º segmento, o participante
+ *                         (`true_<grupo>@g.us_<msg>_<participante>`): ali a
+ *                         "cauda" seria o JID do participante, a mesma string
+ *                         para todo envio da sessão no grupo.
+ */
+export function canonicalWahaExternalId(id: string): string {
+  return id.includes('@g.us') ? id : bareWaMessageId(id);
+}
+
+/**
  * As formas que o ECO de uma mensagem que nós mandamos pode ter gravado em
  * `messages.external_id` — para achar e apagar a linha que o webhook criou antes
  * de o envio conhecer o próprio id.
@@ -61,10 +79,13 @@ export function bareWaMessageId(id: string): string {
  * divergência não quebra nada à vista: ela só faz o eco sumir por um caminho e
  * ficar pelo outro — que é como a mensagem duplicada "voltava".
  *
- * ⚠️ LIMITE CONHECIDO, o mesmo nos dois caminhos: se o engine ecoar com um chat
- * diferente do que usamos para enviar (`@lid` de um lado, `@c.us` do outro), o
- * composto construído não casa e a duplicata fica. O conserto de raiz é canonizar
- * o id nas duas pontas — desenho na issue #196 do DeskcommCRM.
+ * ⚠️ LIMITE CONHECIDO: se o engine ecoar com um chat diferente do que usamos
+ * para enviar (`@lid` de um lado, `@c.us` do outro), o composto construído aqui
+ * não casa. O envio normal contorna: `removerEcoDoProprioEnvio`
+ * (`app/api/v1/messages/_handler.ts`) também apaga pelo SUFIXO `_<bare>`, que
+ * vale para qualquer formato de chat. O reenvio do watchdog ainda depende só
+ * desta lista. O conserto de raiz segue sendo canonizar o id nas duas pontas —
+ * desenho na issue #196 do DeskcommCRM.
  */
 export function wahaEchoExternalIds(externalId: string, recipient: string): string[] {
   const bare = bareWaMessageId(externalId);

@@ -39,6 +39,7 @@
  * dentro, com log, e o seguinte roda mesmo assim.
  */
 import { audit } from "@/lib/audit";
+import { idsDosCanaisDesativados } from "@/lib/channels/desativado";
 import { encerraDemanda } from "@/lib/leads/encerramento";
 import { garantirLeadDaConversa } from "@/lib/leads/nascimento-do-lead";
 import type { CanonicalLostReason } from "@/lib/schemas/leads";
@@ -53,7 +54,7 @@ import { casarClickRef } from "@/lib/plataformas-de-anuncio/meta/captura-de-cliq
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
 import { ehContatoDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
-import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
+import { acelerarFollowupDoInbound, drenarEventosDoInbound } from "@/lib/dev/kick-local-pipeline";
 import { origemDoNegocioPeloCanal } from "@/lib/channels/origem-do-negocio";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { casarCampanha, lerCampanhas } from "@/lib/ai/elegibilidade/campanha";
@@ -155,19 +156,35 @@ export async function aplicarEfeitosPosEntrada(
   }
 
   await aplicarOptOut(admin, entrada);
+  // Contato pessoal (spec 21, etapa 6): a mensagem já está gravada, com o
+  // carimbo de não-lida que o ingest gravou — mas NADA nasce dela: sem negócio,
+  // sem campanha, sem follow-up, sem IA (fila e resposta). O STOP continua na
+  // frente: `aplicarOptOut` rodou acima de propósito, então um STOP de pessoal
+  // ainda bloqueia (a ordem 1-2-3 do cabeçalho não muda).
+  if (await ehContatoPessoal(admin, entrada)) {
+    logger.info("[pos-entrada] efeitos pulados: contato pessoal", {
+      organizationId: entrada.organizationId,
+      origem: entrada.origem,
+    });
+    return;
+  }
   await guardarOrigemDaPagina(admin, entrada);
   await abrirDemanda(admin, entrada);
   await avaliarCampanha(admin, entrada);
-  // A resposta do lead avança o follow-up AQUI. O despacho do agente (LLM)
-  // vem depois: no Hobby ele estoura o tempo da request e o próximo texto
-  // do fluxo ficava esperando o relógio.
-  await acelerarPipelineDeEventos(admin, {
+  const sinal = {
     organizationId: entrada.organizationId,
     contactId: entrada.contactId,
     messageId: entrada.messageId,
     texto: entrada.texto,
-  });
+  };
+  // UMA VOZ: a resposta do cliente avança o follow-up DESTE contato antes de o
+  // turno do agente ser pedido.
+  await acelerarFollowupDoInbound(admin, sinal);
   await pedirDespachoDoAgente(admin, entrada);
+  // O dreno do event_log vem DEPOIS do despacho: nenhum handler dele decide se
+  // o agente fala (o "cliente voltou" é previsto por `deveCederTurnoAoRetorno`
+  // nas duas ordens), e cada evento drenado aqui atrasava o pedido do turno.
+  await drenarEventosDoInbound(admin, sinal);
 }
 
 /**
@@ -230,6 +247,34 @@ async function avaliarCampanha(admin: Admin, entrada: EntradaDeMensagem): Promis
       conversation_id: entrada.conversationId,
       detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
     });
+  }
+}
+
+/**
+ * Contato marcado como pessoal (`contacts.is_personal`, spec 21).
+ *
+ * Fail-open de propósito, como o resto do arquivo: a mensagem JÁ está gravada;
+ * se a leitura falhar, o seguinte roda mesmo assim — e a segunda defesa (a
+ * recusa em `garantirLeadDaConversa`, `contato_pessoal`) continua valendo para
+ * o negócio. Uma exceção aqui viraria 500 para o provider e tempestade de
+ * reentregas.
+ */
+async function ehContatoPessoal(admin: Admin, entrada: EntradaDeMensagem): Promise<boolean> {
+  try {
+    const { data } = await admin
+      .from("contacts")
+      .select("is_personal")
+      .eq("organization_id", entrada.organizationId)
+      .eq("id", entrada.contactId)
+      .maybeSingle();
+    return (data as { is_personal?: boolean } | null)?.is_personal === true;
+  } catch (err) {
+    logger.warn("pos-entrada: leitura de is_personal falhou (os efeitos seguem)", {
+      organization_id: entrada.organizationId,
+      contact_id: entrada.contactId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+    });
+    return false;
   }
 }
 
@@ -418,6 +463,29 @@ async function abrirDemanda(admin: Admin, entrada: EntradaDeMensagem): Promise<v
  */
 async function pedirDespachoDoAgente(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
   if (!entrada.messageId) return;
+
+  // Canal desativado pelo operador nunca acorda o agente: a entrega foi gravada
+  // (quarentena), mas não gera turno, fila nem gasto. Uma ida curta, antes do
+  // `emit_event` — o ponto mais barato da cadeia, comum aos canais.
+  // Falha para dentro de propósito: se a leitura falhar, despacha — as
+  // barreiras de baixo (drain, elegibilidade, turno) também leem o flag, e a
+  // ingestão nunca pode virar 500 por causa de um passo de efeito.
+  try {
+    const idsOff = await idsDosCanaisDesativados(admin, entrada.organizationId);
+    if (idsOff.includes(entrada.channelSessionId)) {
+      logger.info("pos-entrada: canal desativado — despacho pulado", {
+        organization_id: entrada.organizationId,
+        conversation_id: entrada.conversationId,
+        origem: entrada.origem,
+      });
+      return;
+    }
+  } catch (err) {
+    logger.warn("pos-entrada: leitura de canais desativados falhou — despachando", {
+      organization_id: entrada.organizationId,
+      detail: err instanceof Error ? err.message.slice(0, 120) : "unknown",
+    });
+  }
 
   const { error } = await admin.rpc("emit_event" as never, {
     p_event_type: "ai_agent.dispatch_requested",

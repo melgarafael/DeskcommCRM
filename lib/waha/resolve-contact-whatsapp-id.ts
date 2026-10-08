@@ -42,7 +42,51 @@ export function sendChatIdFromCheckResult(r: WahaCheckExistsResult): string | nu
   return id ? `${id}@c.us` : null;
 }
 
+/**
+ * Memo do check-exists POSITIVO, por (sessão, dígitos).
+ *
+ * Sem ele, toda bolha a um celular BR faz 1–2 GET ao WAHA antes do envio — uma
+ * resposta do agente em 3 bolhas pergunta 3 vezes a mesma coisa em segundos.
+ *
+ * - Só o positivo entra: negativo ou falha pode ser o WAHA engasgado, e
+ *   memoizá-lo prenderia o envio no número bruto por 10 min.
+ * - A sessão na chave isola os tenants: `waha_session_name` é UNIQUE e cada
+ *   `channel_sessions` pertence a uma organização.
+ * - 10 min limita o quanto um `@lid` trocado no WhatsApp fica velho aqui.
+ * - Nada disto vai para `source_metadata.waha_lid` — ver `lib/waha/send.ts`.
+ */
+export const TTL_DO_MEMO_CHECK_EXISTS_MS = 10 * 60_000;
+export const TETO_DO_MEMO_CHECK_EXISTS = 5000;
+
+const _memoCheckExists = new Map<string, { at: number; r: WahaCheckExistsResult }>();
+
+/** Esvazia o memo. Usado pelos testes. */
+export function limparMemoCheckExists(): void {
+  _memoCheckExists.clear();
+}
+
 async function firstExistingOnWhatsapp(
+  client: WahaClient,
+  session: string,
+  phone: string,
+): Promise<WahaCheckExistsResult | null> {
+  const chave = `${session}\u0000${phone.replace(/\D/g, "")}`;
+  const memo = _memoCheckExists.get(chave);
+  if (memo && Date.now() - memo.at < TTL_DO_MEMO_CHECK_EXISTS_MS) return memo.r;
+
+  const r = await consultarVariantes(client, session, phone);
+  _memoCheckExists.delete(chave);
+  if (r) {
+    // Map itera na ordem de inserção: a primeira chave é a mais antiga.
+    if (_memoCheckExists.size >= TETO_DO_MEMO_CHECK_EXISTS) {
+      _memoCheckExists.delete(_memoCheckExists.keys().next().value!);
+    }
+    _memoCheckExists.set(chave, { at: Date.now(), r });
+  }
+  return r;
+}
+
+async function consultarVariantes(
   client: WahaClient,
   session: string,
   phone: string,

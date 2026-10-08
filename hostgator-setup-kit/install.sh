@@ -227,7 +227,14 @@ show_recovery() {
   printf '%s\n'   "$(t "abra o Supabase > SQL Editor e rode (ATENÇÃO: apaga todos os dados):")"
   printf '  %s\n\n' "drop schema public cascade; create schema public;"
 }
-trap 'rc=$?; [ "$rc" -ne 0 ] && show_recovery; exit $rc' EXIT
+# O temporário da pendência de e-mail (passo 7) também sai aqui, em QUALQUER
+# saída: sem isto cada instalação deixava um /tmp/tmp.* com o aviso dentro.
+# Zerado aqui para o trap só apagar o que ESTE script criou: um valor herdado do
+# ambiente apontaria o `rm -f` para um arquivo alheio se a instalação morresse
+# antes do passo 7.
+PENDENCIA_EMAIL=
+apaga_temporarios() { [ -z "${PENDENCIA_EMAIL:-}" ] || rm -f "$PENDENCIA_EMAIL"; }
+trap 'rc=$?; apaga_temporarios; [ "$rc" -ne 0 ] && show_recovery; exit $rc' EXIT
 
 # ── Validadores ─────────────────────────────────────────────────────────────
 # Cada validador recebe o valor, imprime a explicação do problema em português
@@ -305,7 +312,7 @@ v_supabase_url() {
   case "$1" in
     https://*.supabase.co) ;;
     # Supabase SELF-HOSTED (ex.: https://db-crm.exemplo.com.br). A prova é a
-    # chamada a /auth/v1/health logo abaixo, que vale para qualquer host — o
+    # chamada a /auth/v1/verify logo abaixo, que vale para qualquer host — o
     # que se dispensa aqui é só a suposição de que todo Supabase é o da nuvem.
     https://*) ;;
     *supabase.co*) echo "$(t "Cole a URL completa, começando com https:// — ex.: https://abcdefgh.supabase.co")"; return 1;;
@@ -321,13 +328,28 @@ v_supabase_url() {
       *) echo "$(t "O modo single-server exige SUPABASE_INTERNAL_URL com http:// ou https:// para validar o Supabase local.")"; return 1;;
     esac
   fi
-  local code
-  code="$(curl -s -o /dev/null -w '%{http_code}' -m 15 "${health_url%/}/auth/v1/health" 2>/dev/null)" || code=000
+  # Responder não basta: tem de ser o GoTrue. Qualquer código ≠ 000 passava, e
+  # numa VPS com Coolify a 127.0.0.1:8000 é o PAINEL dele (302 para /login) —
+  # medido no PR 4. A URL é perguntada ANTES das chaves, então não há apikey, e
+  # sem ela o gateway (Envoy no self-hosted, o da nuvem) barra /auth/v1/health
+  # com 401. /auth/v1/verify é rota aberta (é o link dos e-mails): quem responde
+  # é o próprio GoTrue, com o JSON de erro dele (`"msg"`), na nuvem e no
+  # self-hosted. O corpo sozinho não basta (qualquer API pode ter "msg"): exige
+  # também o 400 que o GoTrue devolve ali sem parâmetros — medido no GoTrue do
+  # kit (supabase/gotrue v2.196.0): `{"code":400,...,"msg":"Verify requires a
+  # verification type"}`. Com `type`+`token` ele devolve 303, mas não mandamos.
+  local resp code
+  resp="$(curl -s -m 15 -w '\n%{http_code}' "${health_url%/}/auth/v1/verify" 2>/dev/null)" || resp=000
+  code="${resp##*$'\n'}"
   if [ "$code" = "000" ]; then
     echo "$(t "Não consegui alcançar {1} — confira se o projeto existe, está ativo (projeto pausado não responde) e se o VPS tem internet." "$health_url")"
     return 1
   fi
-  return 0
+  case "$code:${resp%$'\n'*}" in
+    400:*'"msg"'*) return 0;;
+  esac
+  echo "$(t "{1} respondeu (HTTP {2}), mas não é o Supabase: o serviço de login dele não atendeu em /auth/v1/verify. Confira o endereço (e a porta, se houver outro painel no servidor)." "$health_url" "$code")"
+  return 1
 }
 
 # Confere formato + faz a chamada real que só a chave certa responde.
@@ -781,10 +803,21 @@ unico_traefik() {  # unico_traefik  < linhas "nome|projeto|imagem|portas"  → e
 #     mesmo criaria — "network <projeto>_internal declared as external, but could
 #     not be found" numa instalação nova; (2) a `internal` tem o redis SEM SENHA,
 #     e a rede do proxy é a única que um dia pode receber contêiner de fora.
+#
+#   Traefik em MAIS DE UMA rede  → a `coolify` se ela estiver entre elas; senão
+#     vazio, e quem chama recusa pedindo TRAEFIK_NETWORK. O docker lista as redes
+#     em ordem alfabética, então "a primeira" é a que vence o alfabeto, não a que
+#     o painel usa para os sites — medido numa VPS com Coolify: com uma rede
+#     `aaa-simulado` pendurada no coolify-proxy, esta função devolveu
+#     `aaa-simulado`. O que aconteceria com o domínio NÃO foi medido; o risco de
+#     escolher às cegas é ligar o CRM à rede de outro projeto, ou a uma rede
+#     `internal`/não-attachable que derruba o `up -d`.
 rede_do_traefik() {  # rede_do_traefik <NetworkMode do contêiner> <redes do contêiner> <bridge do projeto>
   local netmode="${1:-}" redes="${2:-}" nossa="${3:-}"
   [ "$netmode" = host ] && { printf '%s' "$nossa"; return 0; }
-  printf '%s' "$redes" | awk '{print $1}'
+  set -- $redes
+  [ $# -le 1 ] && { printf '%s' "${1:-}"; return 0; }
+  case " $* " in *" coolify "*) printf 'coolify' ;; esac
 }
 
 # Como o Traefik da hospedagem CHAMA as portas 80 e 443. Os nomes `web` e
@@ -1377,7 +1410,7 @@ FIELDS=(
   # comportamento de sempre para quem não tem marca própria.
   "APP_ACCENT_HEX|Cor da sua marca em hex, ex.: #7a5cd6 (Enter usa a cor do sistema)||v_hex||opcional"
   "SUPPORT_EMAIL|E-mail de suporte que SEUS clientes veem (Enter pula)||v_email||opcional"
-  "RESEND_API_KEY|Chave da Resend — envia convite e e-mail de LGPD (resend.com/api-keys, Enter pula)|||secret|opcional"
+  "RESEND_API_KEY|Chave da Resend — envia convite e e-mail de LGPD (resend.com/api-keys; Enter pula: dá para configurar depois, em Admin → E-mail)|||secret|opcional"
   "RESEND_FROM_EMAIL|Remetente dos e-mails, de um domínio verificado na Resend (Enter pula)||v_email||opcional"
 )
 
@@ -1500,6 +1533,9 @@ if [ "$REVERSE_PROXY" = "traefik" ] && [ -z "${TRAEFIK_NETWORK:-}" ] && [ -n "$t
     c_dim "$(t "  (o Traefik roda em modo host, então o CRM publica numa rede própria: {1})" "$TRAEFIK_NETWORK")"
 fi
 if [ "$REVERSE_PROXY" = "traefik" ] && [ -z "${TRAEFIK_NETWORK:-}" ]; then
+  [ "$(printf '%s' "${traefik_redes:-}" | wc -w)" -gt 1 ] && \
+    die "$(t "O seu Traefik está em mais de uma rede Docker ({1}) e não sei por qual ele alcança os sites.
+Ponha TRAEFIK_NETWORK=<nome> no .env com a rede certa antes de tentar de novo." "${traefik_redes% }")"
   die "$(t "Não consegui descobrir a rede Docker do seu Traefik. Rode 'docker network ls',
 identifique a rede dele e ponha TRAEFIK_NETWORK=<nome> no .env antes de tentar de novo.")"
 fi
@@ -2126,6 +2162,50 @@ $(c_ylw "  ─── $(t "A IA ainda não atende — falta cadastrar a chave") �
 PEND
 }
 
+# ── A pendência do ENVIO de e-mail, quando nada ficou no .env ───────────────
+# A issue #1110 registrou a ponta que o #714 deixou visível: o campo da Resend é
+# `opcional` desde então, mas quem pulava terminava sem saber que o caminho de
+# volta existe. A tela final é a única que a pessoa lê inteira (mesma régua do
+# `pendencia_da_ia`), e o aviso diz ONDE configurar e O QUE ainda não sai.
+#
+# Critério: nenhum remetente DE AMBIENTE — nem a chave da Resend, nem o host do
+# SMTP. Quem cadastrou pela tela `/admin/email` (banco, que PREVALECE sobre o
+# .env) reconhece o aviso e ignora; o kit não lê o banco aqui.
+#
+# A topologia muda o que falar: num Supabase PRÓPRIO o GoTrue usa o SMTP do CRM
+# para "esqueci a senha" e confirmação de cadastro, então a tela só alcança o
+# login por e-mail depois do `update.sh`. Na nuvem, esses e-mails são do
+# Supabase e o que falta é só o envio do produto.
+pendencia_do_email() {
+  [ -n "${RESEND_API_KEY:-}" ] && return 0
+  [ -n "${SMTP_HOST:-}" ] && return 0
+
+  cat <<PEND
+
+$(c_ylw "  ─── $(t "O envio de e-mail ainda não funciona") ─────────────────────")
+
+  $(t "Você deixou a chave da Resend para depois e não preencheu um SMTP. O CRM")
+  $(t "está no ar; o que não sai é o convite para a equipe e o e-mail com o PDF")
+  $(t "de LGPD.")
+
+  $(t "Para ligar, cadastre em Admin → E-mail o servidor SMTP próprio ou o")
+  $(t "serviço externo (Resend). O que a tela salva fica CIFRADO no banco e")
+  $(t "prevalece sobre o .env.")
+PEND
+
+  case "${NEXT_PUBLIC_SUPABASE_URL:-}" in
+    https://*.supabase.co*) return 0 ;;
+  esac
+
+  cat <<PEND
+
+  $(t "No SEU Supabase, os e-mails de acesso (senha, cadastro) também saem pelo")
+  $(t "SMTP do CRM. Depois de salvar na tela, rode:")
+
+      bash hostgator-setup-kit/update.sh
+PEND
+}
+
 PENDENCIA_EMAIL="$(mktemp)"
 PENDENCIA_ARQUIVO="$PENDENCIA_EMAIL" \
   SUPABASE_ACCESS_TOKEN="${SUPABASE_ACCESS_TOKEN:-}" \
@@ -2399,8 +2479,8 @@ $(c_ylw "═══════════════════════�
 
 INCOMPLETO
   # Sai != 0 para que automação (e o --yes) saiba que não terminou saudável,
-  # mas sem o trap: a receita de "apague tudo e recomece" não cabe aqui.
-  trap - EXIT
+  # mas sem o show_recovery: a receita de "apague tudo e recomece" não cabe aqui.
+  trap apaga_temporarios EXIT
   exit 1
 fi
 
@@ -2425,6 +2505,7 @@ $(c_grn " $(t "Instalação concluída!")")
 $(c_grn "═══════════════════════════════════════════════════════")
 
 $(pendencia_dos_emails)
+$(pendencia_do_email)
 $(pendencia_da_ia)
   1. $(t "Acesse:")  https://${DOMAIN}
      $(t "(o SSL leva ~1min pra emitir no primeiro acesso)")

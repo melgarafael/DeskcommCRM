@@ -31,14 +31,30 @@ describe("padrão das camadas fora do worker", () => {
       { layer: "jailbreak", enabled: false },
       { layer: "camada_de_uma_versao_futura", enabled: true },
     ];
-    expect(escolhaDasLinhas(linhas)).toEqual({ promessa_semantica: null, jailbreak: false });
-    expect(camadasEfetivas(linhas, { promessa_semantica: true, jailbreak: true })).toEqual({
+    expect(escolhaDasLinhas(linhas)).toEqual({
+      promessa_semantica: null,
+      jailbreak: false,
+      afirmacao_clinica: null,
+    });
+    expect(
+      camadasEfetivas(linhas, { promessa_semantica: true, jailbreak: true, afirmacao_clinica: false }),
+    ).toEqual({
       promessa_semantica: true,
       jailbreak: false,
+      afirmacao_clinica: false,
     });
-    expect(camadasEfetivas([], { promessa_semantica: false, jailbreak: true })).toEqual({
+    expect(
+      camadasEfetivas([], { promessa_semantica: false, jailbreak: true, afirmacao_clinica: false }),
+    ).toEqual({
       promessa_semantica: false,
       jailbreak: true,
+      afirmacao_clinica: false,
     });
+  });
+
+  it("a afirmação clínica nasce desligada e sem variável de ambiente: só a organização liga", () => {
+    // Nenhuma variável liga a camada — nem uma que pareça ser dela.
+    expect(padraoDasCamadasNoAmbiente({ PROMISE_SEMANTIC_ENABLED: "true" }).afirmacao_clinica).toBe(false);
+    expect(camadasEfetivas([{ layer: "afirmacao_clinica", enabled: true }]).afirmacao_clinica).toBe(true);
   });
 });

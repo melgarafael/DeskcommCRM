@@ -261,6 +261,10 @@ export type ProvideCaseUpdateResult =
  * evento 'lead_provided' (actor_kind='lead' — a info veio do lead, não do
  * agente nem do humano). De qualquer outro estado é no-op: {ok:false,
  * error.code:'invalid_case_state'}.
+ *
+ * O caso tem de ser DA CONVERSA do turno (`ids.conversationId`): o `case_id`
+ * vem do modelo, e caso de outra conversa cai na mesma resposta de estado
+ * errado — sem alterar nada e sem distinguir os dois.
  */
 export async function provideCaseUpdate(
   db: pg.Pool,

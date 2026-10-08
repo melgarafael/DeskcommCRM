@@ -180,6 +180,41 @@ describe("mapas de arquitetura — coerência interna", () => {
     }
   });
 
+  it("a cobrança do revendedor está no mapa: nenhuma peça é ilha e todo espelho existe", () => {
+    // Spec §13: o mapa espelha recursos-opcionais, teto-de-orcamento,
+    // organizacoes-e-acesso e central-avisos, e traz o event_log, que não tem
+    // mapa próprio. "Espelha" só é verificável se o nó disser QUAL peça do
+    // outro mapa ele é: renomear a peça lá reprova aqui.
+    type NoComEspelho = { id: string; lane: string; label: string; espelho?: string };
+    const ler = (nome: string) =>
+      JSON.parse(fs.readFileSync(path.join(DIR, nome), "utf8")) as {
+        nodes: NoComEspelho[];
+        edges: NonNullable<Mapa["edges"]>;
+      };
+    const m = ler("cobranca-do-revendedor.architecture.json");
+    const grau = (id: string) => m.edges.filter((e) => e.from === id || e.to === id).length;
+    for (const n of m.nodes) {
+      expect(grau(n.id), `${n.id} com menos de 2 arestas — é ilha pelo invariante 1`).toBeGreaterThanOrEqual(2);
+    }
+    const espelhos = m.nodes.filter((n) => n.espelho !== undefined).map((n) => ({ id: n.id, alvo: n.espelho ?? "" }));
+    for (const { id, alvo } of espelhos) {
+      const [arquivo = "", alvoId = ""] = alvo.split("#");
+      const outro = ler(arquivo);
+      expect(outro.nodes.some((n) => n.id === alvoId), `${id} espelha ${alvo}, que não existe mais`).toBe(true);
+    }
+    for (const mapa of ["recursos-opcionais", "teto-de-orcamento", "organizacoes-e-acesso", "central-avisos"]) {
+      expect(
+        espelhos.some((e) => e.alvo.startsWith(`${mapa}.architecture.json#`)),
+        `nenhuma peça espelha ${mapa}`,
+      ).toBe(true);
+    }
+    expect(m.nodes.some((n) => n.id === "eventLog"), "o event_log não tem mapa próprio: ele mora aqui").toBe(true);
+    const liga = (de: string, para: string) => m.edges.some((e) => e.from === de && e.to === para);
+    expect(liga("acaoModulo", "fnLiberar"), "desligar a chave não libera quem foi suspenso por cobrança").toBe(true);
+    expect(liga("fnLimite", "tetoPlano"), "o teto de IA do plano não sai da régua única de limites").toBe(true);
+    expect(liga("trgCanais", "rotasCanais"), "o limite de números não volta como mensagem para a tela").toBe(true);
+  });
+
   it("a suspensão que suspende está no mapa, e nenhuma peça dela é ilha", () => {
     // O caso concreto do DoD 13 para a PR 1 da cobrança do revendedor. O laço
     // de retorno é `fnReativar → itemCentral → central → fila`: é por ele que
@@ -322,5 +357,54 @@ describe("o mapa do turno conhece todos os turnos", () => {
     for (const [kind, porque] of Object.entries(NAO_SAO_TURNO)) {
       expect(porque.length, `${kind} sem motivo escrito`).toBeGreaterThan(25);
     }
+  });
+});
+
+/**
+ * TODO CHAMADOR DO GATE DE ORÇAMENTO É PEÇA DO MAPA DO TETO.
+ *
+ * `aplicarOrcamento` deixou de ser privado do seam para que o worker de mídia
+ * recusasse com a MESMA régua — e o mapa seguiu mostrando só o turno chegando
+ * nele. Quem mede o raio de uma mudança no gate pelo mapa não enxergava a visão
+ * de imagem. Mesma lógica do caso dos kinds acima: o que se guarda é estrutural
+ * (cada arquivo que chama o gate tem nó com aresta até ele), nunca o texto.
+ */
+describe("o mapa do teto conhece todos os chamadores do gate", () => {
+  const RAIZES = ["lib", "workers", "app"];
+  const DEFINICAO = path.join("lib", "agent-engine", "edge", "llm", "run-model-call.ts");
+
+  const varrer = (dir: string): string[] =>
+    fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) return e.name === "node_modules" ? [] : varrer(p);
+      return /\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name) ? [p] : [];
+    });
+
+  it("cada arquivo que chama aplicarOrcamento tem nó ligado ao gate", () => {
+    const chamadores = RAIZES.flatMap((r) => varrer(path.join(process.cwd(), r)))
+      .map((p) => path.relative(process.cwd(), p))
+      .filter((p) => p !== DEFINICAO)
+      .filter((p) => /\baplicarOrcamento\(/.test(fs.readFileSync(p, "utf8")));
+    // Controle positivo: sem o worker de mídia, a varredura compararia com lista vazia.
+    expect(chamadores, "não achei chamador nenhum — ENSINE ESTE TESTE").toContain(
+      path.join("workers", "media-derive-worker.ts"),
+    );
+
+    const mapa = JSON.parse(
+      fs.readFileSync(path.join(DIR, "teto-de-orcamento.architecture.json"), "utf8"),
+    ) as { nodes: Array<{ id: string; label?: string }>; edges: Array<{ from: string; to: string }> };
+    const gate = mapa.nodes.find((n) => (n.label ?? "").includes("aplicarOrcamento"));
+    expect(gate, "o nó do gate sumiu do mapa do teto").toBeTruthy();
+
+    const ausentes = chamadores.filter((arquivo) => {
+      const nome = path.basename(arquivo).replace(/\.tsx?$/, "");
+      const nos = mapa.nodes.filter((n) => (n.label ?? "").includes(nome)).map((n) => n.id);
+      return !mapa.edges.some((e) => nos.includes(e.from) && e.to === gate!.id);
+    });
+    expect(
+      ausentes,
+      "arquivo que chama aplicarOrcamento sem nó (com o nome do arquivo no label) " +
+        "e aresta até o gate no mapa do teto.\n",
+    ).toEqual([]);
   });
 });

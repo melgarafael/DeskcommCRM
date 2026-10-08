@@ -71,6 +71,7 @@ function entrada(over: Record<string, unknown> = {}) {
     locale: "es",
     currency: "MXN",
     media_retention_days: 365,
+    media_retention_enforced: true,
     dpo_email: null,
     privacy_policy_url: null,
     ...over,

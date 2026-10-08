@@ -95,7 +95,7 @@ export function StageColumn({
   //
   // Também por moeda, com a mesma função de moeda e a mesma `primeira` do total:
   // mesmas moedas, na mesma ordem. Arredonda por negócio, como antes.
-  const probDaColuna = stage.is_won ? 100 : stage.is_lost ? 0 : stage.win_probability ?? null;
+  const probDaColuna = stage.is_won ? 100 : stage.is_lost ? 0 : (stage.win_probability ?? null);
   const ponderados =
     probDaColuna === null
       ? null
@@ -135,7 +135,22 @@ export function StageColumn({
 
   return (
     <div
-      className="bg-surface-muted/40 flex min-h-full w-80 shrink-0 flex-col rounded-lg border border-border"
+      /*
+        `w-[85vw] max-w-80 snap-center md:w-80` — a coluna cabe na tela do
+        celular, e uma por vez.
+
+        Com `w-80` fixo (320px) numa tela de 360px a coluna ocupava 89% da
+        largura útil e a de ao lado aparecia como uma fatia de poucos pixels: um
+        quadro que parece CORTADO em vez de rolável, sem pista de que há mais
+        etapa adiante. 85vw deixa uma sobra, que é onde a coluna seguinte se
+        anuncia — e `snap-center` faz a rolagem parar nela em vez de deixar o
+        dedo no meio de duas.
+
+        `max-w-80` segura o crescimento no tablet: 85% de 1023px seriam 870px, e
+        coluna de etapa não vira painel. De `md` para cima volta o `w-80` de
+        sempre, onde a graça é justamente ver várias etapas ao mesmo tempo.
+      */
+      className="bg-surface-muted/40 flex min-h-full w-[85vw] max-w-80 shrink-0 snap-center flex-col rounded-lg border border-border md:w-80"
       data-etapa-do-quadro={stage.id}
     >
       {/* Cabeçalho e total PRESOS no alto do quadro enquanto os cards rolam: com
@@ -168,7 +183,14 @@ export function StageColumn({
               className={cn(
                 "h-4 w-4 shrink-0 cursor-pointer accent-accent transition-opacity",
                 "focus:opacity-100 disabled:cursor-default",
-                selecionadosAqui > 0 ? "opacity-100" : "opacity-0 group-hover/etapa:opacity-100",
+                // `pointer-coarse:opacity-100` pelo mesmo motivo da caixa do
+                // card (ver `components/kanban/KanbanCard.tsx`): no toque o
+                // hover nunca acontece, e "selecionar a etapa inteira" é o gesto
+                // que faz a ação em lote valer a pena. Sem ele, mover trinta
+                // cards no celular eram trinta arrastes.
+                selecionadosAqui > 0
+                  ? "opacity-100"
+                  : "opacity-0 group-hover/etapa:opacity-100 pointer-coarse:opacity-100",
               )}
             />
             <span

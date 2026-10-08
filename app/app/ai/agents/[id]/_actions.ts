@@ -23,7 +23,7 @@ import { audit } from "@/lib/audit";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { mensagemDoEscopo, validarEscopoDaVersao } from "@/lib/ai/agents/escopo";
+import { codigoDoEscopo, mensagemDoEscopo, validarEscopoDaVersao } from "@/lib/ai/agents/escopo";
 import {
   agentMcpCreateSchema,
   agentMcpPatchSchema,
@@ -33,6 +33,7 @@ import {
 } from "@/lib/ai/agents/validation";
 import { publishAgentVersion } from "@/lib/ai/agents/publish";
 import { escolherVersoesDaTela } from "@/lib/ai/agents/versoes-da-tela";
+import { toolIdAceito } from "@/lib/mcp/servidor-externo/ids";
 import { VALID_TOOL_IDS } from "@/lib/mcp/tools";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -167,11 +168,14 @@ export async function saveAgentDraftAction(
   // material apagado (ou de outra organização) produz uma configuração muda: a
   // tela mostra a marcação, o assistente não acha nada, e ninguém vê erro.
   const escopo = await validarEscopoDaVersao(admin, activeOrg.orgId, {
+    provider: v.provider,
     pipeline_ids: v.pipeline_ids,
     knowledge_source_ids: v.knowledge_source_ids,
+    credential_id: v.credential_id,
+    channel_session_id: v.channel_session_id,
   });
   if (!escopo.ok) {
-    return { ok: false, error: "validation_failed", message: mensagemDoEscopo(escopo) };
+    return { ok: false, error: codigoDoEscopo(escopo), message: mensagemDoEscopo(escopo) };
   }
 
   // Em QUAL rascunho esta escrita cai — pela MESMA régua que a tela usa para
@@ -397,7 +401,7 @@ export async function publishAgentAction(
     return { ok: false, error: "version_not_found" };
   }
   const tools = (targetV.tool_ids ?? []) as string[];
-  const invalid = tools.filter((t) => !valid.has(t));
+  const invalid = tools.filter((t) => !toolIdAceito(t, valid));
   if (invalid.length > 0) {
     return { ok: false, error: "tool_id_invalid", details: { invalid } };
   }
@@ -506,9 +510,18 @@ export async function revertToVersionAction(
   // Espelha tool_id check do publish.
   const tools = ((source as { tool_ids: string[] | null }).tool_ids ?? []) as string[];
   const valid = new Set<string>(VALID_TOOL_IDS as readonly string[]);
-  const invalid = tools.filter((t) => !valid.has(t));
+  const invalid = tools.filter((t) => !toolIdAceito(t, valid));
   if (invalid.length > 0) {
     return { ok: false, error: "tool_id_invalid", details: { invalid } };
+  }
+
+  // Voltar a uma versão de quando a assinatura estava ligada regravaria o
+  // provedor que a instalação desligou — a mesma régua do salvar.
+  const escopo = await validarEscopoDaVersao(admin, activeOrg.orgId, {
+    provider: (source as { provider: string }).provider,
+  });
+  if (!escopo.ok) {
+    return { ok: false, error: codigoDoEscopo(escopo), message: mensagemDoEscopo(escopo) };
   }
 
   // Cria draft idêntica com retry em 23505 (race no version_number).
@@ -698,6 +711,12 @@ export async function createMcpAgentAction(
 
   const requestId = randomUUID();
   const admin = createAdminClient();
+
+  // Antes da primeira escrita: recusado aqui, não sobra agente órfão.
+  const escopo = await validarEscopoDaVersao(admin, activeOrg.orgId, parsed.data.version);
+  if (!escopo.ok) {
+    return { ok: false, error: codigoDoEscopo(escopo), message: mensagemDoEscopo(escopo) };
+  }
 
   // Cria agent kind='mcp_agent' + v1 draft. Compensa rollback se versão falhar.
   const { data: agentRow, error: agentErr } = await admin

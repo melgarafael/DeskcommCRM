@@ -12,6 +12,10 @@ export async function GET() {
   const response = ok(
     {
       organization_id: authz.org.orgId,
+      // O nome junto do id: é o que o aviso da #2335 mostra na tela — um uuid
+      // cru no aviso é exatamente o defeito que o conserto de `no_active_org`
+      // descreve em `lib/api/client.ts`.
+      organization_name: authz.org.name,
       interface_settings: settings,
       signature: JSON.stringify(settings),
     },

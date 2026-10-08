@@ -16,11 +16,14 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * o resultado cairia no fallback/genérico em produção.
  *
  * Com a tarefa do roteador do Jev rodando, o Jev responde a mesma frase ao mesmo
- * tempo, e a tela mostra as duas escolhas lado a lado (`jev`). Nada disso vira
+ * tempo no modo comparação. Sob demanda, só consulta a IA de sempre se o
+ * Jev não tiver intenção confiável. A tela distingue reserva não consultada
+ * de falha de resposta. Nada disso vira
  * observação (R5): uma frase digitada por quem configura não é concordância de
  * atendimento. O custo dele entra em `llm_calls`, como o do classificador de
- * sempre neste mesmo clique (R8). Decidindo, a escolha dele é a que valeria em
- * produção — com a IA de sempre respondendo; sem ela, vale a regra de hoje (R2).
+ * sempre quando consultado neste clique (R8). A prévia segue o modo salvo, e
+ * o sob demanda só vale onde a empresa tem a IA de sempre; sem ela, vale a
+ * regra de hoje (R2).
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -31,11 +34,11 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSkillsPool } from "@/lib/ai/skills/db";
 import { env } from "@/lib/env";
-import { llmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/llm/credentials";
+import { llmEdgeConfigFromEnv, temIaDeSempre } from "@/lib/agent-engine/edge/llm/credentials";
 import { createLogger } from "@/lib/agent-engine/obs/logger";
 import { loadActiveRouter } from "@/lib/agent-engine/agent/router-config";
 import { classifyIntent, type IntentVerdict } from "@/lib/agent-engine/agent/intent-classifier";
-import { destinoDoVeredito } from "@/lib/agent-engine/agent/resolve-turn-agent";
+import { destinoDoVeredito, vereditoConfiavelDoRoteador } from "@/lib/agent-engine/agent/resolve-turn-agent";
 import { consultarJevNoRoteador, registrarRoteadorDoJev } from "@/lib/ai/decisao/roteador";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -114,16 +117,25 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     contactId: null,
     jobId: null,
   });
-  const [verdict, estadoDoJev, escolhaDoJev] = await Promise.all([
-    classifyIntent(
-      pool,
-      llmCfg,
-      { tenantId: org.orgId, leadId: null, jobId: null, router: loaded, signal: parsed.data.message },
-      { log },
-    ),
-    jev.estado,
-    jev.escolha,
+  const [modo, estadoDoJev] = await Promise.all([
+    jev.modo ?? Promise.resolve("comparacao"), jev.estado,
   ]);
+  // A mesma regra do turno (decisão B, doc 89): sem a IA de sempre, o Jev não
+  // decide sozinho nem na prévia — vale a comparação, e a R2.
+  const independente = modo === "sob_demanda" && estadoDoJev === "decidindo" &&
+    await temIaDeSempre(pool, llmCfg, org.orgId, loaded.classifierProvider);
+  const classificar = () => classifyIntent(
+    pool, llmCfg,
+    { tenantId: org.orgId, leadId: null, jobId: null, router: loaded, signal: parsed.data.message },
+    { log },
+  );
+  // Na comparação, as duas consultas seguem em paralelo. Na decisão independente,
+  // a mesma régua do turno real determina se a reserva precisa ser chamada.
+  const comparacao = independente ? null : classificar();
+  const escolhaDoJev = await jev.escolha;
+  const jevConfiavel = vereditoConfiavelDoRoteador(loaded, escolhaDoJev?.veredito ?? null);
+  const iaConsultada = !independente || !jevConfiavel;
+  const verdict = comparacao !== null ? await comparacao : iaConsultada ? await classificar() : null;
   if (escolhaDoJev !== null) {
     await registrarRoteadorDoJev(pool, {
       organizationId: org.orgId,
@@ -160,6 +172,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   return ok(
     {
+      ia_consultada: iaConsultada,
+      modo_roteador: modo,
       intent_name: iaRespondeu ? verdict.intentName : null,
       // `?? null`, nunca `?? 0`: sem veredito não houve medição, e zero é uma
       // AFIRMAÇÃO ("o classificador tem certeza de que não é nada"). A tela local
@@ -184,7 +198,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
               agent_name: agenteDoJev === agentId ? agentName : await nomeDoAgente(agenteDoJev),
               // Em produção vale a escolha dele: decidindo, respondendo, e com a
               // IA de sempre respondendo também (R2).
-              decide: estadoDoJev === "decidindo" && escolhaDoJev !== null && iaRespondeu,
+              decide: independente ? jevConfiavel : estadoDoJev === "decidindo" && escolhaDoJev !== null && iaRespondeu,
             },
     },
     { requestId },

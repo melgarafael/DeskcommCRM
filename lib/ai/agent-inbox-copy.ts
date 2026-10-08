@@ -52,6 +52,11 @@ export const KIND_LABEL = {
   // chegam e ninguém responde. "Modo de teste sem número autorizado" descreve
   // o campo; "a IA não responde ninguém" é o que faz o operador agir.
   canal_mudo_sem_numero: "Um canal está em modo de teste — a IA não responde ninguém nele",
+  // Diz o que ACONTECEU e a consequência para quem está do outro lado. "Pausado"
+  // sozinho descreve o toggle que alguém clicou; "não recebe nem envia
+  // mensagens" é o que muda para quem estava esperando mensagem neste canal —
+  // e é a frase que faz quem lê no outro turno abrir o item.
+  canal_pausado: "Um canal foi pausado — não recebe nem envia mensagens",
   // Diz o que o CLIENTE está esperando, não o que o sistema deixou de gravar.
   // "Promessa não cumprida" é a única frase que faz o dono do negócio agir: do
   // lado de lá existe uma pessoa que ouviu um compromisso e está aguardando.
@@ -101,9 +106,11 @@ export const KIND_LABEL = {
   jev_parar_de_receber: "Pedido para parar de receber mensagens, percebido pelo Jev",
   proposta_travada: "Uma proposta ficou presa em envio e voltou a rascunho",
   proposta_pronta_para_revisao: "Uma proposta está pronta para revisão",
-  // Igual ao `title` que fn_reativar_organizacao grava: diz o que a pessoa tem
-  // de FAZER agora — as conversas que chegaram durante a suspensão ficaram sem resposta.
-  org_reativada: "A conta foi reativada — há conversas para revisar",
+  // Rótulo do KIND, embaixo de todo item org_reativada. Desde a 0583 o `title`
+  // que fn_reativar_organizacao grava varia ("há conversas para revisar" ou
+  // "há agendamentos e follow-ups para revisar"), e o rótulo não promete nenhum
+  // dos dois: o que parou está no corpo; o que fazer, na orientação.
+  org_reativada: "A conta foi reativada — há o que revisar",
   other: "Aviso do assistente",
 } as const satisfies Record<InboxKind, string>;
 

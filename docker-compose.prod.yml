@@ -38,6 +38,11 @@ services:
     env_file: .env
     environment:
       SUPABASE_DB_ADMIN_URL: ""
+      # O `worker` deste arquivo drena o event_log em poucos segundos (2 s com
+      # fila, até 10 s parado); o webhook de mensagem não precisa mais drenar a
+      # fila de todas as organizações dentro da requisição
+      # (lib/dev/kick-local-pipeline.ts).
+      EVENT_LOG_WORKER_DRAINS: ${EVENT_LOG_WORKER_DRAINS:-true}
     depends_on:
       srh:
         condition: service_started
@@ -150,7 +155,9 @@ services:
       # SÓ por `message` foram ZERO, e 1.642 chegaram só por `message.any` (os
       # que saíram de nós, que `message` não cobre). Superconjunto estrito.
       WHATSAPP_HOOK_EVENTS: "message.any,message.ack,message.edited,message.revoked,session.status,state.change"
-      WHATSAPP_HOOK_HMAC: ${WAHA_HMAC_SECRET}
+      # Nome EXATO da doc do WAHA (events#hmac-authentication): WHATSAPP_HOOK_HMAC
+      # não existe nele — sem o _KEY ele ignora e nunca assina.
+      WHATSAPP_HOOK_HMAC_KEY: ${WAHA_HMAC_SECRET}
       # WAHA lê WHATSAPP_DEFAULT_ENGINE (NÃO WAHA_DEFAULT_ENGINE — o nome errado
       # fazia cair no default WEBJS, engine com browser que trava/corrompe a sessão
       # quando o WhatsApp Web atualiza; NOWEB é websocket direto, estável e leve).

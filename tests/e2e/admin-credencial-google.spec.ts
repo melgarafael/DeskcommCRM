@@ -107,7 +107,22 @@ test.describe("Credencial do Google da instalação, pela tela (#370)", () => {
 
     // ── Cadastro pela tela ───────────────────────────────────────────────────
     await page.getByTestId("google-client-id").fill(CLIENT_ID_DE_TESTE);
+
+    // A colagem errada medida em produção: o secret JUNTO com o resto da linha
+    // do arquivo JSON de credenciais (aspa e vírgula). A tela avisa na hora e
+    // trava o Salvar — antes, isso gravava e só falhava ao conectar, como
+    // `invalid_client` do Google, longe desta tela.
+    await page.getByTestId("google-client-secret").fill(`${CLIENT_SECRET_DE_TESTE}","redirect_uris`);
+    await expect(page.getByTestId("google-secret-formato-ruim")).toBeVisible();
+    await expect(
+      page.getByTestId("google-salvar"),
+      "Salvar ficou habilitado com um secret que tem aspa e vírgula",
+    ).toBeDisabled();
+    await page.screenshot({ path: evidencia("1b-colagem-recusada.png"), fullPage: true });
+
+    // Corrigido para o valor limpo: o aviso some e o Salvar habilita.
     await page.getByTestId("google-client-secret").fill(CLIENT_SECRET_DE_TESTE);
+    await expect(page.getByTestId("google-secret-formato-ruim")).toHaveCount(0);
     await expect(page.getByTestId("google-salvar")).toBeEnabled();
     await page.getByTestId("google-salvar").click();
     await expect(page.getByText(/credenciais do google salvas/i)).toBeVisible({ timeout: 15_000 });

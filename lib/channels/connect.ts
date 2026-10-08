@@ -108,10 +108,27 @@ export async function validatePartnerCredentials(
   const conta = contas.find((c) => String(c._id ?? c.id) === accountId) ?? null;
 
   if (!conta) {
+    // O operador colou o id do PERFIL no campo CONTA (o provedor lista perfis
+    // em outro endpoint): sem distinguir, o par certo vira "não encontrada".
+    // Best-effort de propósito — se a consulta falhar, cai na mensagem do caso.
+    if (await pareceIdDePerfil(apiKey, accountId)) {
+      return { ok: false, reason: "Este id é de um PERFIL. Aqui vai o id da CONTA." };
+    }
+    if (contas.length === 0) {
+      // Medido contra o provedor com chave válida: sem perfil a lista vem
+      // `{"accounts":[]}` — a chave presta, mas não lista nada sozinha.
+      return {
+        ok: false,
+        reason: "A chave não lista nenhuma conta. Confira o perfil e a conta no painel do provedor.",
+      };
+    }
     // A chave presta, mas não alcança esta conta. É diferente de chave inválida,
     // e a mensagem precisa dizer QUAL das duas para o operador saber o que
     // corrigir.
-    return { ok: false, reason: "Conta não encontrada para esta chave." };
+    return {
+      ok: false,
+      reason: "Conta fora do alcance desta chave. Confira se a conta pertence ao perfil desta chave.",
+    };
   }
 
   if (conta.platform !== "whatsapp") {
@@ -128,6 +145,30 @@ export async function validatePartnerCredentials(
     displayName: typeof conta.displayName === "string" ? conta.displayName : null,
     qualityRating: typeof meta.qualityRating === "string" ? meta.qualityRating : null,
   };
+}
+
+/**
+ * O id colado é de um PERFIL, não de uma CONTA?
+ *
+ * Confere em `GET /v1/profiles` sem adivinhar a forma do provedor: só vale o
+ * que a resposta prova (lista com o id). Qualquer falha — rede, status, corpo
+ * inesperado — devolve `false` e quem responde é a mensagem do caso.
+ */
+async function pareceIdDePerfil(apiKey: string, accountId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${zernioBaseUrl()}/v1/profiles`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) return false;
+    const json = (await res.json().catch(() => null)) as {
+      profiles?: Record<string, unknown>[];
+    } | null;
+    const perfis = Array.isArray(json?.profiles) ? json.profiles : [];
+    return perfis.some((p) => String(p._id ?? p.id) === accountId);
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------

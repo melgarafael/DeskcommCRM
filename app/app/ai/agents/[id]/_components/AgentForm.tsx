@@ -36,7 +36,7 @@ import { useT } from "@/hooks/i18n/useT";
 import Link from "next/link";
 
 import { TETO_TOOLS_POR_AGENTE } from "@/lib/mcp/tools/selecao-por-pacote";
-import { PROVEDORES } from "@/lib/ai/pontos/provedores";
+import { PROVEDOR_POR_ASSINATURA, PROVEDORES } from "@/lib/ai/pontos/provedores";
 
 import { ModelPicker, useModelMeta } from "./ModelPicker";
 import { CHAVE_DA_INSTALACAO, CredentialPicker, STATUS_LABEL, findCredential } from "./CredentialPicker";
@@ -115,6 +115,12 @@ interface BaseProps {
    * página server component, do mesmo jeito que as credenciais.
    */
   provedorPadrao?: string;
+  /**
+   * Os provedores que ESTA instalação oferece — o servidor filtra por
+   * `idsDosProvedoresOferecidos` (a assinatura do ChatGPT só com o módulo
+   * `login_codex` ligado). Ausente = sem a assinatura (falha fechada).
+   */
+  provedoresOferecidos?: readonly string[];
   channelSessions: ChannelSessionLite[];
   routerMembership?: { routerId: string; routerName: string } | null;
   readOnly?: boolean;
@@ -223,6 +229,10 @@ const DEFAULT_TRIGGER: TriggerValue = {
   concurrency: "one_per_conversation",
 };
 
+const SEM_A_ASSINATURA: readonly string[] = PROVEDORES.map((p) => p.id).filter(
+  (id) => id !== PROVEDOR_POR_ASSINATURA,
+);
+
 /**
  * O provedor inicial de um agente que ainda não tem versão.
  *
@@ -232,8 +242,11 @@ const DEFAULT_TRIGGER: TriggerValue = {
  * formulário pedindo para escolher de novo. Fora da lista, `anthropic` (o que
  * o seed da instalação sempre teve).
  */
-export function provedorInicial(provedorPadrao?: string): Provider {
-  if (provedorPadrao && PROVEDORES.some((p) => p.id === provedorPadrao)) {
+export function provedorInicial(
+  provedorPadrao?: string,
+  oferecidos: readonly string[] = SEM_A_ASSINATURA,
+): Provider {
+  if (provedorPadrao && oferecidos.includes(provedorPadrao)) {
     return provedorPadrao as Provider;
   }
   return "anthropic";
@@ -252,13 +265,14 @@ export function buildState(args: {
    * continua sendo o último degrau, para instalação que ainda não escolheu nada.
    */
   provedorPadrao?: string;
+  provedoresOferecidos?: readonly string[];
 }): FormState {
-  const { agent, version, t, provedorPadrao } = args;
+  const { agent, version, t, provedorPadrao, provedoresOferecidos } = args;
   return {
     name: agent?.name ?? "",
     description: agent?.description ?? "",
     priority: agent?.priority ?? 0,
-    provider: (version?.provider as Provider) ?? provedorInicial(provedorPadrao),
+    provider: (version?.provider as Provider) ?? provedorInicial(provedorPadrao, provedoresOferecidos),
     model: version?.model ?? "",
     // `null` gravado = a versão usa a chave da instalação. Sem esta tradução,
     // reabrir o agente mostraria o campo em branco e pediria para escolher de novo.
@@ -379,7 +393,12 @@ export function AgentForm(props: Props) {
       const ref = props.base ?? props.draft ?? props.published;
       return buildState({ agent: props.agent, version: ref, t });
     }
-    return buildState({ version: null, t, provedorPadrao: props.provedorPadrao });
+    return buildState({
+      version: null,
+      t,
+      provedorPadrao: props.provedorPadrao,
+      provedoresOferecidos: props.provedoresOferecidos,
+    });
   }, [isEdit, props, t]);
 
   const [form, setForm] = React.useState<FormState>(baseline);
@@ -878,7 +897,16 @@ export function AgentForm(props: Props) {
                     nenhum item casava com o valor, e o primeiro save silencioso
                     trocava o provedor do dono por outro.
                   */}
-                  {PROVEDORES.map((p) => (
+                  {/*
+                    Só o que a instalação oferece — mais o provedor já gravado,
+                    para o campo não abrir em branco (o mesmo defeito acima); a
+                    gravação é que recusa um desligado.
+                  */}
+                  {PROVEDORES.filter(
+                    (p) =>
+                      (props.provedoresOferecidos ?? SEM_A_ASSINATURA).includes(p.id) ||
+                      p.id === form.provider,
+                  ).map((p) => (
                     <SelectItem key={p.id} value={p.id}>
                       {p.rotulo}
                     </SelectItem>

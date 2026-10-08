@@ -15,7 +15,8 @@ import { requireRole } from "@/lib/auth/require-role";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
-vi.mock("@/lib/ai/credenciais/guardar", () => ({
+vi.mock("@/lib/ai/credenciais/guardar", async (importOriginal) => ({
+  ...((await importOriginal()) as Record<string, unknown>),
   guardarCredencial: vi.fn(async () => ({ ok: true, id: "cred-jev", last4: "c0de" })),
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
@@ -57,6 +58,14 @@ describe("POST /api/v1/ai/credentials", () => {
     expect(guardarCredencial).toHaveBeenCalledWith(
       expect.objectContaining({ provider: "typesafe", orgId: ORG, apiKey: "apikey_de_teste_123456" }),
     );
+  });
+
+  it("a assinatura do ChatGPT colada responde 422 apontando o login, não 500", async () => {
+    vi.mocked(guardarCredencial).mockResolvedValueOnce({ ok: false, motivo: "assinatura_so_pelo_login" });
+    const res = await postar({ provider: "openai-assinatura", label: "X", api_key: "texto-colado-123" });
+    expect(res.status).toBe(422);
+    const corpo = (await res.json()) as { error: { message: string } };
+    expect(corpo.error.message).toMatch(/login em IA › Credenciais/);
   });
 
   it("provedor que ninguém declarou segue recusado (a catraca não virou peneira)", async () => {

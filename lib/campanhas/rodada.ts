@@ -44,7 +44,7 @@ import { beginServiceAtOrigin } from "@/lib/atendimento/origem";
 import { logger } from "@/lib/logger";
 import { OrgNaoOperanteError, STATUS_OPERANTE, ehOperante, statusDaOrgEmbutida } from "@/lib/organizacao/operante";
 
-import { motivoParaExcluir, recusouMarketing } from "./elegibilidade";
+import { motivoParaExcluir, recusouMarketing, statusDaSaida } from "./elegibilidade";
 import { hashDoEndereco } from "./exclusoes";
 import { renderizar } from "./renderizador";
 import { escolherNumero, poolDaCampanha, type NumeroDisponivel } from "./rodizio";
@@ -229,6 +229,7 @@ interface DestinatarioRow {
     display_name: string | null;
     phone_number: string | null;
     is_blocked: boolean;
+    is_personal: boolean;
     is_anonymized: boolean;
     consent: unknown;
   } | null;
@@ -243,7 +244,7 @@ async function rodarUmaCampanha(
     .from("campaign_recipients")
     .select(
       "id, contact_id, recipient_address, rendered_body, " +
-        "contacts(id, name, display_name, phone_number, is_blocked, is_anonymized, consent)",
+        "contacts(id, name, display_name, phone_number, is_blocked, is_personal, is_anonymized, consent)",
     )
     .eq("campaign_id", campanha.id)
     .eq("status", "pending")
@@ -286,6 +287,7 @@ async function rodarUmaCampanha(
     contactId: alvo.contact_id,
     telefone: contato?.phone_number ?? alvo.recipient_address,
     bloqueado: !!contato?.is_blocked,
+    pessoal: !!contato?.is_personal,
     anonimizado: !!contato?.is_anonymized,
     recusouMarketing: recusouMarketing(contato?.consent),
   });
@@ -293,7 +295,7 @@ async function rodarUmaCampanha(
     await admin
       .from("campaign_recipients")
       .update({
-        status: motivo === "opt_out" ? "opted_out" : "skipped",
+        status: statusDaSaida(motivo),
         eligibility_status: "excluded",
         exclusion_reason: motivo,
         opted_out_at: motivo === "opt_out" ? agora.toISOString() : null,

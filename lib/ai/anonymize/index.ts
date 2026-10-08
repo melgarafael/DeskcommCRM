@@ -80,6 +80,17 @@ export function padroesDePii(perfis?: readonly PerfilDoPais[]): PadraoDePiiDoPai
 }
 
 /**
+ * A máscara da INGESTÃO para o RAG: os padrões do país da organização e, por
+ * baixo, os do Brasil. Uma organização que troca de BR para PT continua tendo
+ * cliente brasileiro na conversa — sem o Brasil por baixo, CPF formatado e CEP
+ * passariam intactos para o índice (medido no doc 88). Para o Brasil não muda
+ * nada: `padroesDePii` deduplica por `tipo`.
+ */
+export function padroesDaIngestao(perfil: PerfilDoPais): PadraoDePiiDoPais[] {
+  return padroesDePii([perfil, perfilDoPais(null)]);
+}
+
+/**
  * Build fresh regex instances per call. The `g` flag carries `lastIndex`
  * across `.test()` calls and would silently corrupt the leak guard.
  */

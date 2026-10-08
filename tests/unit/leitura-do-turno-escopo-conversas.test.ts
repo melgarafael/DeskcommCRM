@@ -47,6 +47,7 @@ const { listConversationsHandler, getConversationHandler } = await import(
 const { listMessagesHandler } = await import("@/app/api/v1/messages/_handler");
 const { auditMcpToolCall } = await import("@/lib/mcp/audit");
 const { pickToolsFromMcp } = await import("@/lib/ai/runtime/tools");
+const { ApiError } = await import("@/lib/api/types");
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 /** Quem está do outro lado DO LADO DE CÁ — o contato que este turno atende. */
@@ -191,7 +192,25 @@ const idsDe = (r: unknown) =>
 
 beforeEach(() => {
   supabase = supabaseFalso();
-  vi.mocked(listConversationsHandler).mockReset().mockResolvedValue(paginaDeConversas() as never);
+  // O duplo REPETE o contrato do handler (#2184): o `contact_id` que a
+  // ferramenta passa já sai como predicado da consulta, então a página que
+  // volta é do contato. O predicado em si — o `eq("contact_id", …)` no `WHERE`,
+  // antes do `.limit` — é medido em
+  // `tests/unit/contato-do-turno-filtra-no-banco.test.ts`.
+  vi.mocked(listConversationsHandler)
+    .mockReset()
+    .mockImplementation(async (_s, _c, q) => {
+      const pagina = paginaDeConversas();
+      const filtro = (q as { contact_id?: string }).contact_id;
+      return (
+        filtro
+          ? {
+              ...pagina,
+              conversations: pagina.conversations.filter((c) => c.contact_id === filtro),
+            }
+          : pagina
+      ) as never;
+    });
   vi.mocked(getConversationHandler)
     .mockReset()
     .mockResolvedValue(conversa(CONVERSA_DE_B, DE_OUTRO_CLIENTE, PREVIA_DE_B) as never);
@@ -208,13 +227,21 @@ describe("com contato do turno, a leitura de conversa só alcança o contato del
     expect(idsDe(r)).toContain(CONVERSA_DA_CONVERSA);
     expect(JSON.stringify(r)).not.toContain(PREVIA_DE_B);
     expect(JSON.stringify(r)).not.toContain(EMAIL_DE_B);
+    // E o contato saiu NA CONSULTA do handler — é o predicado, e não um
+    // recorte da página, que garante a lista acima (#2184).
+    expect(vi.mocked(listConversationsHandler).mock.calls[0]![2]).toMatchObject({
+      contact_id: DA_CONVERSA,
+    });
   });
 
-  // Escopo, não tradução: o cursor/`has_more` descrevem a página da
-  // VARREDURA da organização, e a próxima página voltaria a ser varredura.
-  it("crm_list_conversations sem cursor nem has_more para a varredura da organização", async () => {
+  // O escopo mora no `WHERE` (#2184), então a página É do contato: a próxima
+  // página continua sendo dele, e cursor/`has_more` voltam a valer. Era o
+  // contrário enquanto o filtro era de página — com 10 conversas por página, a
+  // conversa mais antiga do mesmo cliente ficava invisível e o
+  // `has_more: false` dizia que não havia mais nada.
+  it("crm_list_conversations mantém cursor e has_more porque a página já é do contato", async () => {
     const r = await executar(["crm_list_conversations"], {}, DA_CONVERSA);
-    expect(r).toMatchObject({ cursor: null, has_more: false });
+    expect(r).toMatchObject({ cursor: "cur-2", has_more: true });
   });
 
   // Mesma coisa com o filtro explícito: pedir o contato de OUTRO cliente não
@@ -346,5 +373,40 @@ describe("sem contato do turno, nada muda", () => {
   it("os pedidos de qualquer contato continuam vindo", async () => {
     const r = await executar(["crm_list_contact_orders"], { contact_id: DE_OUTRO_CLIENTE });
     expect(r).toMatchObject({ pedidos: [{ id: "pp-1", tracking_code: RASTREIO_DE_B }] });
+  });
+});
+
+// `crm_get_conversation` com turno: uuid inexistente (o handler responde 404,
+// o mesmo de "é de outra organização") recebe a MESMA recusa da conversa de
+// outro cliente. Sem turno, o 404 segue como antes.
+describe("crm_get_conversation: o 404 não abre um estado distinto no turno", () => {
+  const NAO_EXISTE = () => new ApiError(404, "not_found", undefined, "req-1", "Conversa não encontrada.");
+
+  it("⭐ uuid inexistente recebe a mesma recusa da conversa de outro cliente", async () => {
+    const deOutro = await executar(["crm_get_conversation"], { conversation_id: CONVERSA_DE_B }, DA_CONVERSA);
+    vi.mocked(getConversationHandler).mockRejectedValue(NAO_EXISTE());
+    const inexistente = await executar(
+      ["crm_get_conversation"],
+      { conversation_id: "aaaaaaaa-9999-4999-8999-999999999999" },
+      DA_CONVERSA,
+    );
+    expect(deOutro).toMatchObject({ permitido: false, motivo: "fora_da_conversa" });
+    expect(inexistente).toEqual(deOutro);
+  });
+
+  it("erro que não é 404 continua subindo no turno", async () => {
+    vi.mocked(getConversationHandler).mockRejectedValue(
+      new ApiError(500, "internal_error", undefined, "req-1", "banco caiu"),
+    );
+    const r = await executar(["crm_get_conversation"], { conversation_id: CONVERSA_DE_B }, DA_CONVERSA);
+    expect(r).not.toMatchObject({ motivo: "fora_da_conversa" });
+    expect(r).toHaveProperty("error");
+  });
+
+  it("CONTROLE: sem contato do turno, o 404 continua sendo 404", async () => {
+    vi.mocked(getConversationHandler).mockRejectedValue(NAO_EXISTE());
+    const r = await executar(["crm_get_conversation"], { conversation_id: CONVERSA_DE_B });
+    expect(r).not.toMatchObject({ motivo: "fora_da_conversa" });
+    expect(r).toHaveProperty("error");
   });
 });

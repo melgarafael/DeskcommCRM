@@ -8,9 +8,10 @@ import { useT } from "@/hooks/i18n/useT";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, formatRelative, isToday, isYesterday } from "date-fns";
 import { toast } from "sonner";
+import { apiClient } from "@/lib/api/client";
 import { CaretDown, CaretUp, ChatCircle, Trash } from "@/lib/ui/icons";
 import {
   Table,
@@ -33,11 +34,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useActiveOrg } from "@/hooks/auth/AuthProvider";
-import { useDeleteContact } from "@/hooks/contacts/useDeleteContact";
+import { useDeleteContact, mensagemDeBloqueioPorVinculo } from "@/hooks/contacts/useDeleteContact";
 import type { ContactOrderBy } from "@/lib/schemas/contacts";
 import type { Contact } from "@/lib/types/contacts";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
+import { useConversaNovaComEscolhaDeCanal } from "@/components/channels/SeletorDeCanalParaConversa";
 
 interface Props {
   contacts: Contact[];
@@ -113,33 +115,50 @@ export function ContactsTable({ contacts, orderBy, orderDir, onSort }: Props) {
   const clientesLigado = useActiveOrg()?.cliente_pela_agenda === true;
   const del = useDeleteContact();
   const [alvo, setAlvo] = useState<Contact | null>(null);
-  const [abrindo, setAbrindo] = useState<string | null>(null);
   const router = useRouter();
   const qc = useQueryClient();
+  // Issue #2382 — seletor de canal ao INICIAR a conversa. O diálogo é o retorno
+  // do hook (nulo quando não há o que escolher), e o que acontece depois de
+  // abrir é daqui: invalidar a lista e navegar para o inbox.
+  const {
+    iniciarConversa: abrirConversa,
+    abrindo,
+    seletor: seletorDeCanal,
+  } = useConversaNovaComEscolhaDeCanal({
+    aoAbrir: async (conversationId) => {
+      await qc.invalidateQueries({ queryKey: ["contacts"] });
+      router.push(`/app/inbox?id=${conversationId}`);
+    },
+  });
+
+  // Pré-checagem da exclusão (issue #1925): o diálogo "Excluir contato?" avisa
+  // que a Agenda vai barrar ANTES do clique, com a MESMA contagem que o 409
+  // usa (rota `contacts/[id]/vinculos`). Consulta só quando há alvo — uma
+  // contagem por linha da lista seria N requisições para ver a tabela.
+  // Se a prévia falhar, nada trava: sem ela o 409 continua barando e a frase
+  // do erro já nomeia o vínculo.
+  const alvoId = alvo?.id ?? null;
+  const vinculos = useQuery({
+    queryKey: ["contato-vinculos-para-excluir", alvoId],
+    enabled: alvoId !== null,
+    retry: false,
+    queryFn: async () => {
+      if (!alvoId) return { vinculos: [], por_tabela: {} };
+      const corpo = await apiClient.get<{
+        data?: { vinculos: string[]; por_tabela: Record<string, number> };
+      }>(`/api/v1/contacts/${alvoId}/vinculos`);
+      // O MESMO formato do `error.details` do 409: a frase da tela é uma só,
+      // servida pela mesma função dos dois caminhos.
+      return corpo.data ?? { vinculos: [], por_tabela: {} };
+    },
+  });
+  const avisoDeVinculo = alvo ? mensagemDeBloqueioPorVinculo(vinculos.data, t) : null;
 
   async function iniciarConversa(c: Contact) {
     if (!c.phone_number || abrindo) return;
-    setAbrindo(c.id);
-    try {
-      const res = await fetch("/api/v1/conversations/open-with-contact", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contact_id: c.id, phone_number: c.phone_number }),
-      });
-      const json = (await res.json()) as {
-        data?: { conversation_id: string };
-        error?: { message?: string };
-      };
-      if (!res.ok || !json.data?.conversation_id) {
-        throw new Error(json.error?.message ?? t("Não foi possível abrir a conversa."));
-      }
-      await qc.invalidateQueries({ queryKey: ["contacts"] });
-      router.push(`/app/inbox?id=${json.data.conversation_id}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? t(err.message) : t("Não foi possível abrir a conversa."));
-    } finally {
-      setAbrindo(null);
-    }
+    // O hook decide se há escolha (issue #2382) e faz o POST; quem decide o
+    // destino depois é `aoAbrir`, declarado acima.
+    await abrirConversa({ contact_id: c.id, phone_number: c.phone_number });
   }
 
   async function confirmarExclusao() {
@@ -226,6 +245,13 @@ export function ContactsTable({ contacts, orderBy, orderDir, onSort }: Props) {
                 {c.is_anonymized && <Badge variant="destructive">{t("Anonimizado")}</Badge>}
                 {c.is_blocked && <Badge variant="warning">{t("Bloqueado")}</Badge>}
                 {/*
+                  Selo "Pessoal" lido da COLUNA, nunca da etiqueta (critério 5):
+                  mesma regra do aviso acima — etiqueta se edita, coluna não.
+                  "Ativo" some junto: pessoal está fora da operação, então
+                  chamar de ativo mentiria na mesma linha em que o selo conta.
+                */}
+                {c.is_personal && <Badge variant="secondary">{t("Pessoal")}</Badge>}
+                {/*
                   Lê a COLUNA, nunca a tag, e só com a regra ligada: a tag
                   `cliente` é removível à mão e pelo PATCH (que substitui `tags`
                   por inteiro), e um selo que some porque alguém editou
@@ -235,7 +261,7 @@ export function ContactsTable({ contacts, orderBy, orderDir, onSort }: Props) {
                 {clientesLigado && c.first_service_at && (
                   <Badge variant="secondary">{t("Cliente")}</Badge>
                 )}
-                {!c.is_anonymized && !c.is_blocked && (
+                {!c.is_anonymized && !c.is_blocked && !c.is_personal && (
                   <Badge variant="success">{t("Ativo")}</Badge>
                 )}
               </div>
@@ -262,7 +288,7 @@ export function ContactsTable({ contacts, orderBy, orderDir, onSort }: Props) {
                     className="h-8 w-8"
                     title={t("Iniciar conversa no Inbox")}
                     aria-label={`${t("Iniciar conversa com")} ${displayName(c, t)} ${t("no Inbox")}`}
-                    disabled={abrindo === c.id}
+                    disabled={abrindo}
                     onClick={() => void iniciarConversa(c)}
                   >
                     <ChatCircle size={16} weight="regular" aria-hidden />
@@ -293,6 +319,20 @@ export function ContactsTable({ contacts, orderBy, orderDir, onSort }: Props) {
             {alvo
               ? `${t("Isso remove")} ${displayName(alvo, t)} ${t("e a conversa associada, se houver. Esta ação não pode ser desfeita.")}`
               : null}
+            {/*
+              O aviso ANTES do clique (issue #1925): a recusa já nomeava o
+              vínculo, mas só depois que a pessoa tentava. Mesma frase do 409
+              (plural e chave vindos do servidor), e o link vai direto para a
+              Agenda — é lá que o compromisso é cancelado.
+            */}
+            {avisoDeVinculo ? (
+              <span className="mt-2 block text-sm font-medium text-warning-fg">
+                {avisoDeVinculo}{" "}
+                <Link href="/app/agenda" className="underline">
+                  {t("Abrir Agenda")}
+                </Link>
+              </span>
+            ) : null}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -307,6 +347,8 @@ export function ContactsTable({ contacts, orderBy, orderDir, onSort }: Props) {
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+    {/* Issue #2382 — o seletor de canal, quando há mais de um elegível. */}
+    {seletorDeCanal}
     </>
   );
 }

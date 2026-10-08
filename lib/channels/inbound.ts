@@ -30,7 +30,7 @@ import {
 } from "./graph-parceiro/webhook";
 import { sincronizarSaudeDaConexao } from "./health";
 import { lerEnvelopeMeta } from "./meta/envelope";
-import { ingestMetaEcho, ingestMetaInbound } from "./meta/ingest";
+import { ingestMetaAppContactSync, ingestMetaEcho, ingestMetaInbound } from "./meta/ingest";
 import { parseMetaWebhook } from "./meta/webhook";
 import { samePhone } from "./phone-variants";
 import {
@@ -409,6 +409,21 @@ async function datafyInbound(
         channelSessionId: input.session.id,
       });
       desfechos.push(`eco:${r.status}`);
+      continue;
+    }
+    if (e.kind === "app_contact_sync") {
+      // Coexistência pelo parceiro: contato editado no endereço do app. Mesma
+      // régua das outras entradas — o número do payload tem de ser o DESTA sessão,
+      // senão é de outro número e não vaza para cá.
+      if (e.phoneNumberId !== refs.phoneNumberId) {
+        desfechos.push("outro_numero");
+        continue;
+      }
+      const r = await ingestMetaAppContactSync(admin, e, {
+        organizationId: orgId,
+        channelSessionId: input.session.id,
+      });
+      desfechos.push(`contato:${r.status}`);
       continue;
     }
     if (e.kind === "message_status") {

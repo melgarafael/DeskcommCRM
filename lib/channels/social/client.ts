@@ -4,14 +4,20 @@ export class SocialError extends Error {
   constructor(
     message: string,
     public status = 502,
+    public upstreamStatus?: number,
   ) {
     super(message);
   }
 }
 /** Fixed provider origin. Credentials never follow a redirect to another host. */
-export async function socialRequest(key: string, path: string, body?: unknown): Promise<unknown> {
+export async function socialRequest(
+  key: string,
+  path: string,
+  body?: unknown,
+  method: "GET" | "POST" | "DELETE" = body === undefined ? "GET" : "POST",
+): Promise<unknown> {
   const response = await fetch(`${zernioBaseUrl()}/v1/${path}`, {
-    method: body === undefined ? "GET" : "POST",
+    method,
     redirect: "error",
     cache: "no-store",
     signal: AbortSignal.timeout(15_000),
@@ -24,8 +30,10 @@ export async function socialRequest(key: string, path: string, body?: unknown): 
         ? "Acesso recusado. Confira a chave e as permissões no provedor."
         : `O provedor não concluiu a operação (HTTP ${response.status}).`,
       response.status === 429 ? 429 : 502,
+      response.status,
     );
-  return response.json();
+  // A DELETE may answer 204 or an empty body; nothing in it is needed.
+  return method === "DELETE" ? null : response.json();
 }
 const accountSchema = z.object({
   _id: z.string(),

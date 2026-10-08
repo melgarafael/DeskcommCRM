@@ -542,15 +542,18 @@ describe("o padrão da organização com o par (provedor, modelo) incoerente", (
     });
   });
 
-  it("catálogo vazio do provedor mantém o de antes", async () => {
+  it("catálogo vazio NÃO mantém o par incoerente: openai + claude é recusado", async () => {
     // A OpenRouter chega com zero linhas até o cron de catálogo rodar: sem
-    // modelo para escolher, nada é inventado.
+    // modelo para escolher, nada é inventado. E o par gravado
+    // `{provider: 'openai', default_model: 'claude-sonnet-5'}` também deixa de
+    // ser entregue como antes (item (a) da issue #2377): o degrau `oGravado`
+    // era por ali que um Claude chegava ao endpoint da OpenAI.
     const r = await resolver({ provider: "openai", default_model: "claude-sonnet-5" }, []);
-    expect(r?.modelId).toBe("openai/claude-sonnet-5");
+    expect(r).toBeNull();
   });
 
-  it("catálogo ilegível mantém o de antes, sem lançar", async () => {
+  it("catálogo ilegível não lança e não entrega o par incoerente", async () => {
     const r = await resolver({ provider: "openai", default_model: "claude-sonnet-5" }, "falha");
-    expect(r?.modelId).toBe("openai/claude-sonnet-5");
+    expect(r).toBeNull();
   });
 });

@@ -164,7 +164,10 @@ async function idiomaDaOrganizacao(db: Queryable, orgId: string) {
 }
 
 /**
- * Abre o aviso na Central — um por organização enquanto estiver aberto. Aponta
+ * Abre o aviso na Central — um por organização enquanto estiver aberto. O
+ * `kind_e_titulo` é sustentado pelo índice único parcial
+ * `agent_inbox_other_por_titulo_aberto_unico` (migration 0539), que cobre os
+ * dois casos (com e sem credencial: a chave é o título). Aponta
  * para a credencial da organização daquele provedor quando ela existe; com a
  * chave da instalação (sem linha em `ai_provider_credentials`) o aviso fica sem
  * destino e o corpo diz o que fazer.

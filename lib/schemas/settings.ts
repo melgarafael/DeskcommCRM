@@ -110,6 +110,13 @@ export const tenantSchema = z.object({
   locale: z.enum(LOCALES),
   currency: z.enum(MOEDAS),
   media_retention_days: z.coerce.number().int().min(30).max(3650),
+  /**
+   * Interruptor da limpeza automática de mídia antiga (issue #1534, migration
+   * 0557). `true` é o padrão do banco, para a organização que já existia e para
+   * a nova: a limpeza roda desde a 0432. Quem desliga é a tela; quem aplica é a
+   * função do banco. Sem este campo a tela prometeria o que a coluna não grava.
+   */
+  media_retention_enforced: z.boolean(),
   dpo_email: z
     .string()
     .email()
@@ -157,6 +164,7 @@ export const customFieldSchema = z.object({
     "text",
     "textarea",
     "number",
+    "currency",
     "date",
     "select",
     "multiselect",
@@ -247,6 +255,15 @@ export const pipelineConfigPatchSchema = z.object({
   won_reasons: z.array(z.string().min(1).max(80)).max(50).optional(),
   /** Obrigatóriedade do motivo de ganho, opt-in por funil (padrão: não exigir). */
   won_reason_required: z.boolean().optional(),
+  /**
+   * A comanda do ganho, opt-in por funil (CR do PR #2220, #1477). Ausente ou
+   * `false` é DESLIGADO — o padrão que a doutrina de extensões exige ("se
+   * nenhuma organização ativar isto, a operação comum continua inteira?"): em
+   * loja com checkout, infoproduto ou imobiliária o valor do negócio não é
+   * conta a receber. Quem lê é o consumidor de `lead.won`
+   * (`lib/financeiro/comanda-do-ganho.handler.ts`), não esta tela.
+   */
+  comanda_no_ganho: z.boolean().optional(),
   /**
    * O que acontece quando um negócio ENCERRADO volta (issue #1538). Ausente é
    * `mesmo_registro`, o comportamento de antes: reabre o mesmo negócio. Com

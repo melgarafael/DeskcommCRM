@@ -13,10 +13,14 @@
  *
  * ─── Por que o texto NÃO é escolha de quem usa ──────────────────────────────
  *
- * `melhorFrenteSobre` decide preto ou branco pela razão de contraste — a mesma
- * função que decide o texto dos botões da marca. Deixar a cor do texto para
- * quem escolhe a etiqueta é o caminho mais curto para um chip ilegível, e quem
- * paga é quem atende, não quem configurou.
+ * `escolheAFrente` (`lib/branding/contraste.ts`) decide preto ou branco pela
+ * razão de contraste — a mesma régua que decide o texto dos botões da marca, e
+ * que responde pelo piso de 4,5 de cada tom (issue #2373). Deixar a cor do
+ * texto para quem escolhe a etiqueta é o caminho mais curto para um chip
+ * ilegível, e quem paga é quem atende, não quem configurou. A frente vem do
+ * ESTILO calculado, nunca de classe: um `text-*` aqui (ou um `style` passado
+ * por quem usa o chip) sobrescreveria o cálculo em silêncio — o teste
+ * `tests/unit/chip-contraste-da-etiqueta.test.ts` vigia os dois caminhos.
  *
  * ─── Sem cor, exatamente o que existia ──────────────────────────────────────
  *

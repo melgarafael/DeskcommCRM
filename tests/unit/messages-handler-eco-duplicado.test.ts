@@ -159,6 +159,32 @@ describe('eco do próprio envio na janela em que a linha ainda não tem external
   });
 });
 
+describe('eco com OUTRO formato de chat (@lid × @c.us) — medido em 06/10/2026', () => {
+  it('o envio foi pelo número e o eco voltou pelo @lid: a duplicata sai mesmo assim', async () => {
+    // O composto que o envio constrói usa o chat do ENVIO (`…@c.us`); o NOWEB
+    // ecoou pelo outro formato do mesmo contato. Antes, este eco ficava.
+    wahaRespondendo(BARE);
+    const { supabase, messages } = dubleCom([
+      ecoDoWebhook({ external_id: `true_65721790906556@lid_${BARE}` }),
+    ]);
+
+    await sendMessageHandler(supabase, ctx, input);
+
+    expect(messages, 'o eco pelo @lid sobreviveu e a frase ficou duas vezes').toHaveLength(1);
+    expect(messages[0]!.external_id).toBe(BARE);
+  });
+
+  it('o sufixo é o id INTEIRO: outra mensagem que só termina parecido não é tocada', async () => {
+    wahaRespondendo(BARE);
+    const outra = ecoDoWebhook({ id: 'celular-1', external_id: `true_65721790906556@lid_XX${BARE}`, body: 'outra' });
+    const { supabase, messages } = dubleCom([outra]);
+
+    await sendMessageHandler(supabase, ctx, input);
+
+    expect(messages.map((m) => m.id)).toContain('celular-1');
+  });
+});
+
 describe('o que a correção NÃO pode apagar', () => {
   it('mensagem que o dono digitou no celular na MESMA conversa continua lá', async () => {
     // ESTE é o caso que reprovou a correção pelo lado do webhook. Uma mensagem

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { Pipeline, Stage } from "@/lib/kanban/types";
+import type { WebhookFormField } from "@/lib/webhooks/formulario";
 
 export interface WebhookSourceRow {
   id: string;
@@ -10,12 +11,14 @@ export interface WebhookSourceRow {
   name: string;
   path_token: string;
   is_active: boolean;
+  authorize_ai_on_capture: boolean;
   kind: string;
   last_received_at: string | null;
   default_pipeline_id: string;
   default_stage_id: string;
   redirect_to: string | null;
   field_map: Record<string, unknown>;
+  form_fields: WebhookFormField[];
   has_secret: boolean;
   created_at: string;
   updated_at: string;
@@ -87,8 +90,11 @@ export function useUpdateWebhookSource() {
       ...patch
     }: {
       id: string;
+      name?: string;
       is_active?: boolean;
+      authorize_ai_on_capture?: boolean;
       secret?: string | null;
+      form_fields?: WebhookFormField[];
     }) => apiClient.patch<{ data: WebhookSourceRow }>(`/api/v1/webhook-sources/${id}`, patch),
     onError: showApiError,
     onSuccess: () => {

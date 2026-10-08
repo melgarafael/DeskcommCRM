@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 
 import { invalidarCredencialDoGoogle } from "@/lib/agenda/google/config";
+import { FORMATO_DO_CLIENT_SECRET } from "@/lib/agenda/google/oauth";
 import { audit } from "@/lib/audit";
 import { escritaDeAdminOuRecusa } from "@/lib/auth/escritaDeAdminOuRecusa";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -58,8 +59,29 @@ const entradaSchema = z.object({
    * segredo, que a tela nunca mostra de volta. Vazio significa "mantenha o que
    * está gravado", NÃO "apague" — apagar é outro botão, e confundir os dois
    * derrubaria a conexão de todo mundo num salvamento distraído.
+   *
+   * ── Por que o `regex`, e o defeito que ele fecha ───────────────────────────
+   *
+   * Um client secret do Google só contém `[A-Za-z0-9_-]`. Sem esta cerca, o
+   * campo aceitava qualquer coisa de 10–300 chars, e o modo de falha medido em
+   * produção foi colar o secret JUNTO com o resto da linha do arquivo JSON de
+   * credenciais — `GOCSPX-xxxx","redirect_uris` — que tem aspa e vírgula. O save
+   * gravava os caracteres a mais, e a única pista chegava lá na frente, na troca
+   * do código, como `invalid_client` do Google: um erro que aponta para o Google
+   * e não para a colagem. É o mesmo raciocínio do `min(10)` do `client_id` acima,
+   * virado para o campo que a tela nunca mostra de volta e por isso ninguém
+   * relê. A cerca é no CONJUNTO de caracteres, não no prefixo `GOCSPX-`: secrets
+   * antigos do Google não o têm, e o Google pode mudar o formato — o que não
+   * muda é que aspa, vírgula e espaço nunca pertencem a um secret. A regra mora
+   * em `oauth.ts` (pura), para o formulário avisar na hora pela MESMA cerca.
    */
-  client_secret: z.string().trim().min(10).max(300).optional(),
+  client_secret: z
+    .string()
+    .trim()
+    .min(10)
+    .max(300)
+    .regex(FORMATO_DO_CLIENT_SECRET, "client_secret_invalido")
+    .optional(),
 });
 
 export type GoogleOAuthInput = z.infer<typeof entradaSchema>;
@@ -71,6 +93,19 @@ export async function updateGoogleOAuth(input: GoogleOAuthInput): Promise<Update
 
   const parsed = entradaSchema.safeParse(input);
   if (!parsed.success) {
+    // O formato do secret merece frase própria, e não o genérico `invalid_input`:
+    // é a falha que a tela precisa explicar com uma AÇÃO ("copie só o GOCSPX-"),
+    // não um código. O campo é `type="password"` e some ao salvar — quem errou a
+    // colagem não tem como reler e descobrir sozinho. Mesma razão do `min(10)` do
+    // `client_id`, virada para o campo que ninguém relê.
+    const erroDoSecret = parsed.error.flatten().fieldErrors.client_secret;
+    if (erroDoSecret?.includes("client_secret_invalido")) {
+      return {
+        ok: false,
+        error:
+          "A chave secreta tem caracteres que não existem numa chave do Google (como aspas, vírgula ou espaço). Copie só o valor que começa com GOCSPX-, sem nada colado depois.",
+      };
+    }
     return { ok: false, error: "invalid_input", details: parsed.error.flatten() };
   }
 

@@ -27,6 +27,7 @@ import type { LeadCandidate } from "@/lib/leads/active-lead";
 import { anexarDadosDoContato, type LinhaDoContatoNoQuadro } from "@/lib/kanban/dados-do-contato";
 import { buscaEmLotes } from "@/lib/supabase/em-lotes";
 import { createClient } from "@/lib/supabase/server";
+import { idsDeContatosPessoais } from "@/app/api/v1/conversations/_handler";
 import type { BoardData, Pipeline, Stage } from "@/lib/kanban/types";
 import type { Lead } from "@/lib/types/leads";
 
@@ -477,10 +478,25 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (leadsErr) return fail("internal_error", leadsErr.message, 500, { requestId });
   if (!pipeline) return fail("resource_not_found", t("Pipeline não encontrado."), 404, { requestId });
 
+  // Contato pessoal some do board mas a linha continua no banco (spec 21, etapa
+  // 8, decisão 2 — critério 4): o card não é listado e volta ao desmarcar, com
+  // o histórico intacto. Filtro em memória sobre a lista já lida: o board não
+  // pagina, então nada se perde por filtrar depois de ler. NUNCA `delete`.
+  const pessoais = await idsDeContatosPessoais(
+    supabase,
+    (pipeline as Pipeline).organization_id,
+  );
+  const leadsVisiveis =
+    pessoais.length > 0
+      ? ((leads ?? []) as Lead[]).filter(
+          (l) => l.contact_id === null || !pessoais.includes(l.contact_id),
+        )
+      : ((leads ?? []) as Lead[]);
+
   const leadsWithOwner = await withOwnerAgents(
     supabase,
     (pipeline as Pipeline).organization_id,
-    (leads ?? []) as Lead[],
+    leadsVisiveis,
   );
   if (leadsWithOwner.error) {
     return fail("internal_error", leadsWithOwner.error, 500, { requestId });

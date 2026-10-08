@@ -60,6 +60,14 @@ import {
   RETENCAO_AUDITORIA_DIAS_PISO,
   RETENCAO_CANDIDATOS_GOLDEN_DIAS_PADRAO,
   RETENCAO_CANDIDATOS_GOLDEN_DIAS_PISO,
+  RETENCAO_CHECKPOINTS_DIAS_PADRAO,
+  RETENCAO_CHECKPOINTS_DIAS_PISO,
+  RETENCAO_COPIAS_ENVIADAS_DIAS_PADRAO,
+  RETENCAO_COPIAS_ENVIADAS_DIAS_PISO,
+  RETENCAO_RITMO_DE_ENVIO_DIAS_PADRAO,
+  RETENCAO_RITMO_DE_ENVIO_DIAS_PISO,
+  RETENCAO_TELEMETRIA_DE_IA_DIAS_PADRAO,
+  RETENCAO_TELEMETRIA_DE_IA_DIAS_PISO,
   RETENCAO_AVISO_DE_CASO_DIAS_PADRAO,
   RETENCAO_AVISO_DE_CASO_DIAS_PISO,
   RETENCAO_CONVERSA_DO_CASO_DIAS_PADRAO,
@@ -68,6 +76,7 @@ import {
   RETENCAO_ESPELHO_AGENDA_DIAS_PISO,
   RETENCAO_FILA_DIAS_PADRAO,
   RETENCAO_FILA_DIAS_PISO,
+  RETENCAO_MIDIA_DIAS_PISO,
   RETENCAO_OBSERVACOES_DO_JEV_DIAS_PADRAO,
   RETENCAO_OBSERVACOES_DO_JEV_DIAS_PISO,
   RETENCAO_PASSAGEM_DIAS_PADRAO,
@@ -145,6 +154,46 @@ export interface ResultadoDaRetencao {
   candidatos_do_golden_apagados: number;
   lotes_candidatos_do_golden: number;
   candidatos_do_golden_tem_resto: boolean;
+  /**
+   * A MÍDIA de mensagem vencida enfileirada para remoção (migration 0557,
+   * issue #1534) — `vencidas + orfas` do `fn_enfileirar_midia_vencida`, a mesma
+   * leitura do cron `media-retention`. Os dois crons chamam a MESMA função: a
+   * delas (05:20) drena `whatsapp-media` por conta própria, esta (04:40) é o
+   * dreno que o autor do #1534 confirmou — cada um para no primeiro lote
+   * incompleto, então a dupla só acelera quem já teria drenado sozinho.
+   */
+  midia_enfileirada: number;
+  /** A linha `deleted` da FILA DE MÍDIA expurgada nesta rodada (0435/#1765). */
+  midia_expurgada: number;
+  lotes_midia: number;
+  midia_tem_resto: boolean;
+  /**
+   * O piso de 30 dias da mídia, em número de relatório. Diferente das irmãs, o
+   * prazo da mídia é POR ORGANIZAÇÃO (`organizations.media_retention_days`) e
+   * mora dentro do `greatest(...)` do corpo da função — o que se reporta aqui é
+   * o degrau abaixo do qual nenhum banco pode ir.
+   */
+  retencao_midia_dias: number;
+  /** A telemetria da IA vencida — llm_calls, metrics, skill_activations, ai_router_decisions (0587). */
+  telemetria_de_ia_apagada: number;
+  lotes_telemetria_de_ia: number;
+  telemetria_de_ia_tem_resto: boolean;
+  retencao_telemetria_de_ia_dias: number;
+  /** O ritmo de envio vencido — pacing_ledger, menos a última linha de cada número (0587). */
+  ritmo_de_envio_apagado: number;
+  lotes_ritmo_de_envio: number;
+  ritmo_de_envio_tem_resto: boolean;
+  retencao_ritmo_de_envio_dias: number;
+  /** As cópias enviadas vencidas — outbound_copies, menos a janela do anti-repetição (0587). */
+  copias_enviadas_apagadas: number;
+  lotes_copias_enviadas: number;
+  copias_enviadas_tem_resto: boolean;
+  retencao_copias_enviadas_dias: number;
+  /** Os checkpoints superados — nunca o último da fronteira nem o de job vivo (0587). */
+  checkpoints_apagados: number;
+  lotes_checkpoints: number;
+  checkpoints_tem_resto: boolean;
+  retencao_checkpoints_dias: number;
   retencao_fila_dias: number;
   retencao_auditoria_dias: number;
   retencao_espelho_dias: number;
@@ -171,9 +220,29 @@ export interface PodaDb {
       | "fn_expurgar_avisos_de_caso_vencidos"
       | "fn_expurgar_prospeccao_vencida"
       | "fn_expurgar_observacoes_do_jev"
-      | "fn_expurgar_candidatos_do_golden",
+      | "fn_expurgar_candidatos_do_golden"
+      | "fn_expurgar_telemetria_de_ia_vencida"
+      | "fn_expurgar_ritmo_de_envio_vencido"
+      | "fn_expurgar_copias_enviadas_vencidas"
+      | "fn_expurgar_checkpoints_superados",
     args: { p_retencao_dias: number; p_limite: number },
   ): Promise<{ data: number | null; error: { message: string } | null }>;
+  /**
+   * A DÉCIMA segunda poda (migration 0557, issue #1534): a retenção de mídia.
+   *
+   * Método PRÓPRIO, e não mais uma entrada na união do `rpc` — mesma exceção do
+   * rascunho e pela razão inversa: `fn_enfileirar_midia_vencida` recebe UM
+   * argumento (`p_limite`) e devolve JSONB (`{vencidas, orfas, expurgadas}`),
+   * enquanto o `rpc` das irmãs recebe `p_retencao_dias` + `p_limite` e devolve
+   * número. Mandar `p_retencao_dias` para ela é PGRST202 (função não existe
+   * para essa assinatura) e ler o JSONB como número é NaN calado no relatório.
+   *
+   * O prazo NÃO vem daqui: ele é por organização (`media_retention_days`) e
+   * mora dentro do `greatest(...)` do corpo da função, com o piso de 30 dias.
+   */
+  enfileirarMidia(
+    lote: number,
+  ): Promise<{ data: RetornoDaFilaDeMidia | null; error: { message: string } | null }>;
   /**
    * A DÉCIMA poda é a única que não é `security definer`: a tabela 0419 nunca
    * teve função de expurgo, então o corte (`expires_at` mais velho que o prazo)
@@ -199,7 +268,11 @@ async function drenar(
     | "fn_expurgar_avisos_de_caso_vencidos"
     | "fn_expurgar_prospeccao_vencida"
     | "fn_expurgar_observacoes_do_jev"
-    | "fn_expurgar_candidatos_do_golden",
+    | "fn_expurgar_candidatos_do_golden"
+    | "fn_expurgar_telemetria_de_ia_vencida"
+    | "fn_expurgar_ritmo_de_envio_vencido"
+    | "fn_expurgar_copias_enviadas_vencidas"
+    | "fn_expurgar_checkpoints_superados",
   dias: number,
 ): Promise<{ apagadas: number; lotes: number; temResto: boolean }> {
   let apagadas = 0;
@@ -253,6 +326,58 @@ async function drenarRascunhos(
 }
 
 /**
+ * O retorno JSONB do `fn_enfileirar_midia_vencida` (0432/0557).
+ *
+ * Três chaves, e a leitura delas é o relatório da rodada: `vencidas` (mensagem
+ * vencida), `orfas` (arquivo sem ponteiro) e `expurgadas` (linha `deleted` da
+ * fila, 0435/#1765). Todas opcionais porque uma função antiga no banco devolve
+ * só as duas primeiras — mesmo `?? 0` do cron `media-retention`.
+ */
+export interface RetornoDaFilaDeMidia {
+  vencidas?: number;
+  orfas?: number;
+  expurgadas?: number;
+}
+
+/**
+ * A décima segunda poda (migration 0557, issue #1534): a retenção de mídia.
+ *
+ * Mesmo laço de `drenar` — par no lote incompleto, teto por invocação,
+ * `temResto` quando o teto fecha — e a MESMA regra de erro: sobe. As duas
+ * diferenças são de formato, não de regra: o argumento é SÓ o lote (o prazo é
+ * por organização e mora no `greatest(...)` do corpo da função) e a contagem
+ * vem em JSONB.
+ *
+ * O par é a SOMA de `vencidas` com `orfas`, porque as duas põem arquivo na mesma
+ * fila e o relatório pergunta "quanto saiu do caminho do banco"; `expurgadas` é
+ * contada à parte porque ela apaga LINHA DE FILA, não mídia — quem só expurgou
+ * audita (é mutação), mas não enfileirou nada para remoção.
+ */
+async function drenarMidia(
+  db: PodaDb,
+): Promise<{ enfileirada: number; expurgada: number; lotes: number; temResto: boolean }> {
+  let enfileirada = 0;
+  let expurgada = 0;
+  let lotes = 0;
+  for (let i = 0; i < MAX_LOTES; i += 1) {
+    const { data, error } = await db.enfileirarMidia(TAMANHO_DO_LOTE);
+    if (error) throw new Error(`fn_enfileirar_midia_vencida: ${error.message}`);
+    const r = (typeof data === "object" && data !== null ? data : {}) as RetornoDaFilaDeMidia;
+    const vencidas = r.vencidas ?? 0;
+    const orfas = r.orfas ?? 0;
+    expurgada += r.expurgadas ?? 0;
+    enfileirada += vencidas + orfas;
+    lotes += 1;
+    // Par em qualquer uma das duas categorias, como no cron `media-retention`:
+    // `vencidas` esgotou mas `orfas` ainda tem o teto = ainda há o que drenar.
+    if (vencidas < TAMANHO_DO_LOTE && orfas < TAMANHO_DO_LOTE) {
+      return { enfileirada, expurgada, lotes, temResto: false };
+    }
+  }
+  return { enfileirada, expurgada, lotes, temResto: true };
+}
+
+/**
  * Separado do handler HTTP para o teste exercitar a REGRA (o laço de lotes, o
  * teto, o corte no lote incompleto) sem montar request/auth — mesmo desenho de
  * `recoverStuckMessages`.
@@ -270,6 +395,10 @@ export async function podarHistorico(
     JEV_OBSERVACOES_RETENTION_DAYS?: string;
     DRAFT_RETENTION_DAYS?: string;
     GOLDEN_CANDIDATES_RETENTION_DAYS?: string;
+    AI_TELEMETRY_RETENTION_DAYS?: string;
+    PACING_LEDGER_RETENTION_DAYS?: string;
+    OUTBOUND_COPIES_RETENTION_DAYS?: string;
+    LEAD_CHECKPOINT_RETENTION_DAYS?: string;
   },
 ): Promise<ResultadoDaRetencao> {
   const fila = interpretarRetencao(ambiente.JOB_QUEUE_RETENTION_DAYS, {
@@ -331,6 +460,30 @@ export async function podarHistorico(
     piso: RETENCAO_CANDIDATOS_GOLDEN_DIAS_PISO,
   });
 
+  const telemetriaDeIa = interpretarRetencao(ambiente.AI_TELEMETRY_RETENTION_DAYS, {
+    chave: "AI_TELEMETRY_RETENTION_DAYS",
+    padrao: RETENCAO_TELEMETRIA_DE_IA_DIAS_PADRAO,
+    piso: RETENCAO_TELEMETRIA_DE_IA_DIAS_PISO,
+  });
+
+  const ritmoDeEnvio = interpretarRetencao(ambiente.PACING_LEDGER_RETENTION_DAYS, {
+    chave: "PACING_LEDGER_RETENTION_DAYS",
+    padrao: RETENCAO_RITMO_DE_ENVIO_DIAS_PADRAO,
+    piso: RETENCAO_RITMO_DE_ENVIO_DIAS_PISO,
+  });
+
+  const copiasEnviadas = interpretarRetencao(ambiente.OUTBOUND_COPIES_RETENTION_DAYS, {
+    chave: "OUTBOUND_COPIES_RETENTION_DAYS",
+    padrao: RETENCAO_COPIAS_ENVIADAS_DIAS_PADRAO,
+    piso: RETENCAO_COPIAS_ENVIADAS_DIAS_PISO,
+  });
+
+  const checkpoints = interpretarRetencao(ambiente.LEAD_CHECKPOINT_RETENTION_DAYS, {
+    chave: "LEAD_CHECKPOINT_RETENTION_DAYS",
+    padrao: RETENCAO_CHECKPOINTS_DIAS_PADRAO,
+    piso: RETENCAO_CHECKPOINTS_DIAS_PISO,
+  });
+
   const jobs = await drenar(db, "fn_podar_fila_de_jobs", fila.dias);
   const linhas = await drenar(db, "fn_expurgar_auditoria_vencida", auditoria.dias);
   const eventos = await drenar(db, "fn_expurgar_espelho_da_agenda", espelho.dias);
@@ -375,6 +528,22 @@ export async function podarHistorico(
   // Padrão 90 / piso 30, a janela em que o near-miss ainda é curável — o piso mora no
   // CORPO da função, como nas irmãs. A linha é rótulo, sem texto de cliente.
   const candidatosDrenados = await drenar(db, "fn_expurgar_candidatos_do_golden", candidatosDoGolden.dias);
+  // Décima segunda poda (migration 0557, issue #1534): a retenção de MÍDIA que a
+  // tela prometia e que nada aplicava. O prazo não é knob de ambiente — é
+  // `organizations.media_retention_days`, com o piso de 30 dias no `greatest(...)`
+  // do corpo da função —, então o que este laço decide é só QUANTO drenar por
+  // rodada: lotes de 1000, teto de 20, parando no primeiro incompleto.
+  const midiaDrenada = await drenarMidia(db);
+  // Da décima terceira à décima sexta: as tabelas append-only da IA (0587). As
+  // guardas de cada uma — a última linha do número no ritmo, a janela do
+  // anti-repetição nas cópias, o último checkpoint da fronteira e o de job vivo
+  // — moram no CORPO das funções, como o piso. `event_log` não entra: é o
+  // livro-razão de idempotência dos gatilhos de tempo, e podá-lo reenviaria
+  // WhatsApp.
+  const telemetriaDrenada = await drenar(db, "fn_expurgar_telemetria_de_ia_vencida", telemetriaDeIa.dias);
+  const ritmoDrenado = await drenar(db, "fn_expurgar_ritmo_de_envio_vencido", ritmoDeEnvio.dias);
+  const copiasDrenadas = await drenar(db, "fn_expurgar_copias_enviadas_vencidas", copiasEnviadas.dias);
+  const checkpointsDrenados = await drenar(db, "fn_expurgar_checkpoints_superados", checkpoints.dias);
 
   return {
     jobs_apagados: jobs.apagadas,
@@ -408,6 +577,26 @@ export async function podarHistorico(
     lotes_rascunhos: rascunhosDrenados.lotes,
     rascunhos_tem_resto: rascunhosDrenados.temResto,
     candidatos_do_golden_tem_resto: candidatosDrenados.temResto,
+    midia_enfileirada: midiaDrenada.enfileirada,
+    midia_expurgada: midiaDrenada.expurgada,
+    lotes_midia: midiaDrenada.lotes,
+    midia_tem_resto: midiaDrenada.temResto,
+    telemetria_de_ia_apagada: telemetriaDrenada.apagadas,
+    lotes_telemetria_de_ia: telemetriaDrenada.lotes,
+    telemetria_de_ia_tem_resto: telemetriaDrenada.temResto,
+    retencao_telemetria_de_ia_dias: telemetriaDeIa.dias,
+    ritmo_de_envio_apagado: ritmoDrenado.apagadas,
+    lotes_ritmo_de_envio: ritmoDrenado.lotes,
+    ritmo_de_envio_tem_resto: ritmoDrenado.temResto,
+    retencao_ritmo_de_envio_dias: ritmoDeEnvio.dias,
+    copias_enviadas_apagadas: copiasDrenadas.apagadas,
+    lotes_copias_enviadas: copiasDrenadas.lotes,
+    copias_enviadas_tem_resto: copiasDrenadas.temResto,
+    retencao_copias_enviadas_dias: copiasEnviadas.dias,
+    checkpoints_apagados: checkpointsDrenados.apagadas,
+    lotes_checkpoints: checkpointsDrenados.lotes,
+    checkpoints_tem_resto: checkpointsDrenados.temResto,
+    retencao_checkpoints_dias: checkpoints.dias,
     retencao_fila_dias: fila.dias,
     retencao_auditoria_dias: auditoria.dias,
     retencao_espelho_dias: espelho.dias,
@@ -418,6 +607,7 @@ export async function podarHistorico(
     retencao_observacoes_do_jev_dias: observacoesDoJev.dias,
     retencao_rascunho_dias: rascunho.dias,
     retencao_candidatos_do_golden_dias: candidatosDoGolden.dias,
+    retencao_midia_dias: RETENCAO_MIDIA_DIAS_PISO,
     avisos: [
       fila.aviso,
       auditoria.aviso,
@@ -429,6 +619,10 @@ export async function podarHistorico(
       observacoesDoJev.aviso,
       rascunho.aviso,
       candidatosDoGolden.aviso,
+      telemetriaDeIa.aviso,
+      ritmoDeEnvio.aviso,
+      copiasEnviadas.aviso,
+      checkpoints.aviso,
     ].filter((a): a is string => a !== null),
   };
 }
@@ -478,7 +672,20 @@ export function houveEfeito(resultado: ResultadoDaRetencao): boolean {
     // A décima primeira, pela mesma razão das dez: uma rodada que só apagou
     // candidato ao golden set vencido apagaria linha sem deixar registro —
     // encolhimento silencioso.
-    resultado.candidatos_do_golden_apagados > 0
+    resultado.candidatos_do_golden_apagados > 0 ||
+    // A décima segunda, pela mesma razão das onze anteriores: a retenção de
+    // mídia (#1534) põe arquivo na fila e anula coluna de mensagem — drenar sem
+    // trilha seria apagar mídia de cliente em silêncio. `midia_expurgada` entra
+    // na mesma conta pelo motivo do #1765: expurgar LINHA DE FILA também é
+    // mutação, e uma rodada que só fez isso não pode ser indistinguível de uma
+    // que não fez nada.
+    resultado.midia_enfileirada > 0 ||
+    resultado.midia_expurgada > 0 ||
+    // As quatro da 0587, pela mesma razão: o predicado esquecido é mudo.
+    resultado.telemetria_de_ia_apagada > 0 ||
+    resultado.ritmo_de_envio_apagado > 0 ||
+    resultado.copias_enviadas_apagadas > 0 ||
+    resultado.checkpoints_apagados > 0
   );
 }
 
@@ -523,6 +730,16 @@ async function handle(req: NextRequest): Promise<Response> {
           .limit(lote);
         return { data: Array.isArray(data) ? data.length : null, error };
       },
+      // A décima segunda poda (migration 0557, #1534): a retenção de mídia. O
+      // retorno é JSONB (`{vencidas, orfas, expurgadas}`), por isso um método
+      // próprio em vez de mais uma entrada na união do `rpc` — ver a JSDoc de
+      // `PodaDb.enfileirarMidia`.
+      async enfileirarMidia(lote) {
+        const { data, error } = await admin.rpc("fn_enfileirar_midia_vencida" as never, {
+          p_limite: lote,
+        } as never);
+        return { data: (data ?? null) as RetornoDaFilaDeMidia | null, error };
+      },
     };
     resultado = await podarHistorico(db, {
       JOB_QUEUE_RETENTION_DAYS: env.JOB_QUEUE_RETENTION_DAYS,
@@ -534,6 +751,10 @@ async function handle(req: NextRequest): Promise<Response> {
       JEV_OBSERVACOES_RETENTION_DAYS: env.JEV_OBSERVACOES_RETENTION_DAYS,
       DRAFT_RETENTION_DAYS: env.DRAFT_RETENTION_DAYS,
       GOLDEN_CANDIDATES_RETENTION_DAYS: env.GOLDEN_CANDIDATES_RETENTION_DAYS,
+      AI_TELEMETRY_RETENTION_DAYS: env.AI_TELEMETRY_RETENTION_DAYS,
+      PACING_LEDGER_RETENTION_DAYS: env.PACING_LEDGER_RETENTION_DAYS,
+      OUTBOUND_COPIES_RETENTION_DAYS: env.OUTBOUND_COPIES_RETENTION_DAYS,
+      LEAD_CHECKPOINT_RETENTION_DAYS: env.LEAD_CHECKPOINT_RETENTION_DAYS,
     });
     // ── A cascata de anonimização que ficou pela metade ──────────────────
     //

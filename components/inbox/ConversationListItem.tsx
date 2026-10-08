@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
+import { rotuloDoCanalDaConversa } from "@/lib/channels/estado";
 
 interface Props {
   conversation: ConversationWithContact;
@@ -208,11 +209,17 @@ export function ConversationListItem({
       : (ROTULO_DO_COMANDO[comando.quem] ?? ROTULO_DO_COMANDO.ninguem),
   );
 
-  // O número DA EMPRESA por onde esta conversa chegou — não o do cliente. Com
-  // dois canais é o que decide o tom da resposta e qual número a pessoa vê
-  // respondendo. Cai no nome do canal quando não há número (canal recém-criado).
+  // QUEM MANDA ESTA CONVERSA — o número DA EMPRESA por onde ela chegou, não o
+  // do cliente. Com dois canais é o que decide o tom da resposta e qual número
+  // a pessoa vê respondendo.
+  //
+  // #2383: quando o canal tem nome ou número, o texto é o MESMO do card da tela
+  // de canais (`/app/connections`), com o nome amigável na frente — antes o
+  // número vencia o nome, e um canal chamado "Peças" saía na lista como o
+  // número cru. Sem canal associado (grupo, conversa sem sessão, não-WA) e sem
+  // nome E sem número o badge continua não existindo, como estava.
   const canal = conversation.channel_sessions ?? null;
-  const rotuloCanal = canal?.phone_number ?? canal?.display_name ?? null;
+  const rotuloCanal = rotuloDoCanalDaConversa(canal, t);
 
   const temSelos =
     visibleTags.length > 0 ||
@@ -346,13 +353,18 @@ export function ConversationListItem({
             {mostrarAtendente && comando.quem === "humano" && (
               <OwnerBadge ownerKind="user" ownerName={comando.nome ?? t("Atendente")} compacto />
             )}
+            {/* #2383: `min-w-0` + `max-w` + `truncate` — o mesmo tratamento do
+                badge do cabeçalho. Uma linha de badges é `flex-wrap`, então um
+                nome de canal comprido ESTOURARIA a faixa para fora da coluna da
+                lista (critério de aceite: layout utilizável com nomes maiores).
+                O `title` devolve o texto inteiro para quem passa o mouse. */}
             {mostrarCanal && rotuloCanal && (
               <Badge
                 variant="outline"
-                className="h-4 gap-1 px-1.5 text-[10px] font-normal text-text-muted"
+                className="h-4 min-w-0 max-w-[9rem] gap-1 truncate px-1.5 text-[10px] font-normal text-text-muted"
                 title={`${t("Entrou por")} ${rotuloCanal}`}
               >
-                {rotuloCanal}
+                <span className="truncate">{rotuloCanal}</span>
               </Badge>
             )}
             {c?.is_blocked && (

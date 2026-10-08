@@ -1,5 +1,4 @@
-import { assertAgentOperationPg } from '@/lib/ai/agents/operation';
-import type { AgentOperationContext } from '@/lib/ai/agents/operation';
+import { assertAgentOperationPg, type AgentOperationContext } from '@/lib/ai/agents/operation';
 import { assertApprovedReplyPg, type ApprovedReplyContext } from '@/lib/ai/replies/delivery';
 import { assertMeetingDeliveryPg, type MeetingDeliveryContext } from '@/lib/agenda/meet-delivery';
 import type { JobClaim } from '../../queue/claim';
@@ -104,13 +103,16 @@ export const AGENT_ACTOR_ID = 'agent-engine';
 /**
  * Envia UMA mensagem do turno pelo handler do app. Intenção exactly-once,
  * entrega at-least-once: throws (transporte) deixam o ledger em 'requested' —
- * o retry reconcilia por `messages.metadata.idempotency_key` antes de reenviar.
+ * o retry reconcilia pela PK (`messages.id` = chave) antes de reenviar, com
+ * `messages.metadata.idempotency_key` só como reserva para linha antiga.
  */
 export async function sendTurnMessage(
   db: Queryable,
   cfg: CrmEdgeConfig,
   input: SendMessageInput,
 ): Promise<SendOutcome> {
+  // Antes do ledger, não só no handler: recusada lá dentro, a bolha deixa uma
+  // linha 'requested' que o disjuntor de saúde conta como envio (total_sends).
   if (input.agentOperation) await assertAgentOperationPg(db, input.agentOperation);
   const { rows: sourceJobs } = await db.query<{ kind: string; payload: Record<string, unknown> }>(
     'select payload,kind from job_queue where id=$1 and organization_id=$2 and contact_id=$3',

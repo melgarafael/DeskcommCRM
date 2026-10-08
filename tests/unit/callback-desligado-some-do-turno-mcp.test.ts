@@ -30,11 +30,26 @@ const { buildMcpTurnTools } = await import("@/lib/agent-engine/edge/crm/mcp-tool
 
 const TOOLS = ["crm_schedule_followup", "crm_list_followups", "crm_cancel_followup"];
 
+/**
+ * Falso do Supabase só com o que `buildMcpTurnTools` passou a tocar: desde
+ * #2147 ele lê `organizations.settings` procurando servidor MCP externo.
+ * Este arquivo mede o followup, não esse servidor — então o falso devolve um
+ * registro sem settings e o turno segue como antes (é o mesmo esquema do
+ * mock de `@/lib/supabase/server` lá em cima).
+ */
+const supabaseSemServidorExterno = {
+  from: () => ({
+    select: () => ({
+      eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }),
+    }),
+  }),
+};
+
 async function idsEntreguesAoModelo(followup: unknown): Promise<string[]> {
   const agentConfig = { agentId: "agente-1", toolIds: TOOLS, pipelineIds: [], followup };
   const out = await buildMcpTurnTools(
-    { supabase: {} as never },
-    { organizationId: "org-1", jobId: "job-1" },
+    { supabase: supabaseSemServidorExterno as never },
+    { organizationId: "org-1", jobId: "job-1", contactId: null },
     agentConfig as never,
     { warn: vi.fn() } as never,
   );

@@ -24,7 +24,7 @@ import { type NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { audit } from "@/lib/audit";
-import { encryptCpfSql, hashCpf } from "@/lib/contacts/cpf";
+import { camposCpfParaGravar } from "@/lib/contacts/cpf";
 import { traduzir } from "@/lib/i18n/dicionario";
 import {
   CSV_MAX_BYTES,
@@ -248,11 +248,11 @@ export async function POST(req: NextRequest): Promise<Response> {
       consent: {},
     };
     if (contato.cpf) {
-      insertRow.cpf_hash = hashCpf(contato.cpf as string);
-      // LGPD: além do hash (dedupe), grava a versão cifrada — igual ao create
-      // unitário, senão o contato importado nasce sem CPF recuperável.
-      const enc = await encryptCpfSql(supabase, contato.cpf as string);
-      if (enc) insertRow.cpf_encrypted = enc;
+      // LGPD: hash (dedupe) e versão cifrada nascem JUNTOS — o CHECK
+      // `contacts_cpf_consistency` recusa a linha se só um dos dois existir
+      // (#2522). Sem cifra disponível a linha segue SEM CPF, em vez de voltar
+      // em `errors` e parar a reimportação inteira.
+      Object.assign(insertRow, await camposCpfParaGravar(supabase, contato.cpf as string));
     }
 
     const { data: criado, error: insErr } = await supabase

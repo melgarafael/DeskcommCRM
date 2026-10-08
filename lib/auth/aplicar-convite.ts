@@ -43,7 +43,7 @@ import type { InvitePayload } from "@/lib/auth/invite-token";
 
 export type ResultadoDoConvite =
   | { ok: true; membershipId: string; mudou: boolean }
-  | { ok: false; motivo: "invalid_or_expired" | "internal_error" };
+  | { ok: false; motivo: "invalid_or_expired" | "internal_error" | "limite_do_plano" };
 
 export async function aplicarConvite(params: {
   userId: string;
@@ -80,7 +80,15 @@ export async function aplicarConvite(params: {
       ok: false,
       // 42501 é a recusa da própria função (convite revogado ou posterior à
       // revogação) — não é falha de infraestrutura e não merece 500.
-      motivo: error.code === "42501" ? "invalid_or_expired" : "internal_error",
+      // PT402 é o gatilho de assentos do plano (spec cobrança §5, decisão
+      // D-10): a empresa está no teto de pessoas. Quem aceita precisa ler isso,
+      // e não "o convite venceu" — pedir outro link falharia igual.
+      motivo:
+        error.code === "42501"
+          ? "invalid_or_expired"
+          : error.code === "PT402"
+            ? "limite_do_plano"
+            : "internal_error",
     };
   }
 

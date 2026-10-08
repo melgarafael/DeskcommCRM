@@ -94,10 +94,13 @@ export function getRegisteredHandlers(): readonly EventHandler[] {
  */
 export async function dispatchEvent(
   row: EventRow,
-  opts: { orgParada: boolean },
+  opts: { orgParada: boolean; soHandlers?: readonly string[] },
 ): Promise<HandlerResult[]> {
   const matches = _handlers.filter(
-    (h) => h.events.includes(row.event_type) && !row.consumed_by.includes(h.key),
+    (h) =>
+      h.events.includes(row.event_type) &&
+      !row.consumed_by.includes(h.key) &&
+      (!opts.soHandlers || opts.soHandlers.includes(h.key)),
   );
   if (!matches.length) return [];
 

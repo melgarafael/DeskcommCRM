@@ -236,6 +236,9 @@ export async function duplicateAgentAction(id: string): Promise<ActionResult<{ n
 
   if (!result.ok) {
     if (result.error === "not_found") return { ok: false, error: "not_found" };
+    if (result.error === "provedor_desligado") {
+      return { ok: false, error: result.error, message: result.message };
+    }
     return { ok: false, error: "internal_error", message: result.message };
   }
 

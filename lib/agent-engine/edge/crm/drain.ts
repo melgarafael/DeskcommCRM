@@ -21,6 +21,7 @@ import type { Logger } from '../../obs/logger';
 import { enqueueJob } from '../../queue/queue';
 import { decidirRajada, debounceEfetivo } from './debounce';
 import { avisoDeEventoMorto, IA_QUE_NAO_RESPONDEU } from '@/lib/event-log/aviso-de-evento-morto';
+import { canalDesativado } from '@/lib/channels/desativado';
 import { TIPOS_DERIVAVEIS, DERIVACAO_TERMINADA } from '@/lib/messaging/media/derivable';
 import { haQuemAtendaASessao } from '@/lib/ai/agents/quem-atende-a-sessao';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
@@ -67,7 +68,9 @@ const ALLOWLIST_TTL_MS_PADRAO = 21 * 24 * 60 * 60 * 1000;
 
 /** Um tick do drain: claima um lote de eventos e os transforma em jobs. */
 export async function drainTick(pool: pg.Pool, knobs: DrainKnobs, log: Logger): Promise<number> {
-  // Reaper de eventos órfãos — barato (update indexado), roda a cada tick.
+  // Reaper de eventos órfãos, a cada tick. Quem o serve é o parcial
+  // `event_log_processing_por_tipo_idx` (event_type where status='processing',
+  // migration 0585); o `= any(consumed_by)` é filtro e não usa o GIN.
   await pool.query(
     `update event_log set status = 'pending', updated_at = now()
      where event_type = 'ai_agent.dispatch_requested'
@@ -272,6 +275,21 @@ async function processEvent(
   if (modeRows[0]?.mode === 'external') {
     log.info('drain: org em modo external (spec 14) — evento pulado', { event_id: event.id });
     return 'processado';
+  }
+
+  // Canal desativado pelo operador: defesa em profundidade do `pedirDespachoDoAgente`
+  // (que já não emite para desativado). Evento antigo em voo ou emit direto cai
+  // aqui e é consumido sem job, antes de qualquer custo.
+  if (p.channel_session_id) {
+    const { rows: canalRows } = await pool.query<{ metadata: unknown }>(
+      'select metadata from channel_sessions where organization_id = $1 and id = $2',
+      [event.organization_id, p.channel_session_id],
+    );
+    const meta = canalRows[0]?.metadata;
+    if (canalDesativado(meta)) {
+      log.info('drain: canal desativado — evento consumido sem job', { event_id: event.id });
+      return 'processado';
+    }
   }
 
   // Grupos: skip, sem exceção (regra dura nº 12).

@@ -15,6 +15,7 @@ import { bufToBytea, byteaToBuffer, decryptKey, encryptKey } from "@/lib/crypto/
 import { logger } from "@/lib/logger";
 
 import { LIMITE_FILTROS, LIMITE_LINHAS, LIMITE_RESPOSTA_BYTES } from "./limites";
+import type { TipoDeIdentificador } from "./schemas";
 import type { ConexaoExterna, ModoTls } from "./types";
 
 /** Um valor de limite ausente/ inválido cai no padrão — nunca em "sem limite". */
@@ -66,6 +67,8 @@ interface LinhaConexao {
   max_rows: number | null;
   max_filters: number | null;
   max_response_bytes: number | null;
+  customer_key_column: string | null;
+  customer_key_kind: TipoDeIdentificador | null;
   updated_at: string;
 }
 
@@ -77,7 +80,7 @@ export async function carregarConexao(
   const { data, error } = await admin
     .from("external_db_connections")
     .select(
-      "id, organization_id, label, host, port, database_name, username, password_encrypted, password_iv, password_tag, ssl_mode, enabled, max_rows, max_filters, max_response_bytes, updated_at",
+      "id, organization_id, label, host, port, database_name, username, password_encrypted, password_iv, password_tag, ssl_mode, enabled, max_rows, max_filters, max_response_bytes, customer_key_column, customer_key_kind, updated_at",
     )
     .eq("organization_id", organizationId)
     .eq("id", connectionId)
@@ -123,6 +126,10 @@ export async function carregarConexao(
       maxRows: limiteOuPadrao(data.max_rows, LIMITE_LINHAS.padrao),
       maxFilters: limiteOuPadrao(data.max_filters, LIMITE_FILTROS.padrao),
       maxResponseBytes: limiteOuPadrao(data.max_response_bytes, LIMITE_RESPOSTA_BYTES.padrao),
+      chaveDoCliente:
+        data.customer_key_column && data.customer_key_kind
+          ? { coluna: data.customer_key_column, tipo: data.customer_key_kind }
+          : null,
       versao: data.updated_at,
     },
   };

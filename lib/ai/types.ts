@@ -35,6 +35,8 @@ export type SkipReason =
   | "agent_inactive_or_missing"
   | "kb_version_missing"
   | "contact_blocked"
+  /** Contato marcado como pessoal (spec 21): o turno nem começa, como no bloqueio. */
+  | "contact_personal"
   | "force_human"
   | "assigned_to_human"
   | "window_24h_expired"

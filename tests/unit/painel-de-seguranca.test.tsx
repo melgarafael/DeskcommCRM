@@ -93,14 +93,24 @@ describe("painel de segurança — o que se confere antes de enviar", () => {
     // Contar a tela inteira faria esta guarda reprovar por um interruptor que
     // a regra dela nunca quis cobrir; afrouxar o número para três faria o
     // contrário, deixando entrar uma camada paga nova sem ninguém olhar.
+    //
+    // A contagem de camadas PAGAS continua dois, e é ela que guarda a regra acima. A
+    // afirmação clínica é o terceiro interruptor de conferência, mas não é paga — é
+    // escolha porque só serve a saúde —, e por isso é contada à parte: assim uma camada
+    // paga nova ainda reprova aqui.
     const { container } = renderPainel();
     await waitFor(() =>
       expect(
         container.querySelectorAll('[data-testid^="conferencia-"][role="switch"]'),
-      ).toHaveLength(2),
+      ).toHaveLength(3),
     );
+    const pagas = [...CONFERENCIAS_DE_SAIDA, CONFERENCIA_DE_ENTRADA].filter(
+      (c) => c.escolha?.consultaModelo === true,
+    );
+    expect(pagas.map((c) => c.nome).sort()).toEqual(["jailbreak_detect", "semantic_promise"]);
     expect(screen.getByTestId("conferencia-semantic_promise-liga")).toBeTruthy();
     expect(screen.getByTestId("conferencia-jailbreak_detect-liga")).toBeTruthy();
+    expect(screen.getByTestId("conferencia-clinical_claim-liga")).toBeTruthy();
 
     // E o interruptor do estilo existe, FORA do cartão das conferências: se ele
     // migrar para dentro da lista, a contagem acima volta a três e reprova.
@@ -145,7 +155,11 @@ describe("painel de segurança — o que se confere antes de enviar", () => {
   it("cada conferência sem escolha DIZ por que não se desliga", () => {
     renderPainel();
 
-    const fixas = CONFERENCIAS_DE_SAIDA.filter((c) => c.escolha === null);
+    // A conferência de fato (#2231) não tem interruptor AQUI, mas se liga no
+    // cartão do Jev: dizer "não se desliga" sobre ela seria mentira.
+    const fixas = CONFERENCIAS_DE_SAIDA.filter(
+      (c) => c.escolha === null && c.escolhaEmOutraTela === undefined,
+    );
     // 10 das 11 hoje (subiu de 9/10 quando `agenda_stall` entrou na cadeia — ver
     // `before-send.ts`). A contagem entra na asserção de propósito: se alguém tornar
     // uma delas "configurável", este número muda e a mudança tem de ser deliberada.
@@ -156,6 +170,13 @@ describe("painel de segurança — o que se confere antes de enviar", () => {
       // Proibição sem razão é o que faz alguém procurar como contornar.
       expect(linha.textContent?.length ?? 0).toBeGreaterThan(50);
     }
+  });
+
+  it("a conferência de fato diz ONDE se liga, e não que não se desliga", () => {
+    renderPainel();
+    const linha = screen.getByTestId("conferencia-factual_claim-fixa");
+    expect(linha.textContent).toContain("cartão do Jev");
+    expect(linha.textContent).not.toContain("não se desliga");
   });
 
   it("as configuráveis dizem o CUSTO — é o que torna a escolha uma escolha", () => {
@@ -170,7 +191,14 @@ describe("painel de segurança — o que se confere antes de enviar", () => {
     for (const c of [...CONFERENCIAS_DE_SAIDA, CONFERENCIA_DE_ENTRADA]) {
       if (c.escolha === null) continue;
       const linha = screen.getByTestId(`conferencia-${c.nome}-escolha`);
-      expect(linha.textContent).toContain("consulta ao modelo");
+      if (c.escolha.consultaModelo) {
+        expect(linha.textContent).toContain("consulta ao modelo");
+      } else {
+        // A que não consulta modelo diz que não custa — e NÃO manda a pessoa a
+        // Provedores escolher um modelo que ela não usa.
+        expect(linha.textContent).toContain("Não custa nada");
+        expect(linha.textContent).not.toContain("Provedores de IA");
+      }
     }
   });
 

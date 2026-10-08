@@ -19,7 +19,9 @@
  * esta função não loga; quem a chama também não ecoa o stub.
  */
 import type { ModelMessage } from '../edge/llm/run-model-call';
-import { countPayloadTokens } from '../edge/crm/get-lead-context';
+import type { ToolResultPart } from 'ai';
+
+import { CHARS_PER_TOKEN, countPayloadTokens } from '../edge/crm/get-lead-context';
 
 /** Knobs do pruning (env PRUNE_TOOL_RESULTS_*; defaults conservadores no .env.example). */
 export interface PruneToolResultsKnobs {
@@ -45,6 +47,19 @@ const STUB_RESULT_MAX_CHARS = 160;
 function truncateOneLine(s: string, max: number): string {
   const oneLine = s.replace(/\s+/g, ' ').trim();
   return oneLine.length <= max ? oneLine : `${oneLine.slice(0, max)}…`;
+}
+
+function toolResultText(output: ToolResultPart['output']): string {
+  switch (output.type) {
+    case 'text':
+    case 'error-text':
+      return output.value;
+    case 'json':
+    case 'error-json':
+      return JSON.stringify(output.value);
+    default:
+      return JSON.stringify(output);
+  }
 }
 
 function buildStub(toolName: string, args: unknown, resultText: string): string {
@@ -87,20 +102,7 @@ export function pruneToolResults(messages: ModelMessage[], knobs: PruneToolResul
       if (part.type !== 'tool-result') {
         return part;
       }
-      const output = part.output;
-      let resultText: string;
-      switch (output.type) {
-        case 'text':
-        case 'error-text':
-          resultText = output.value;
-          break;
-        case 'json':
-        case 'error-json':
-          resultText = JSON.stringify(output.value);
-          break;
-        default:
-          resultText = JSON.stringify(output);
-      }
+      const resultText = toolResultText(part.output);
       if (countPayloadTokens(resultText) <= knobs.minResultTokens) {
         return part; // política: pequeno demais para valer o stub
       }
@@ -111,4 +113,49 @@ export function pruneToolResults(messages: ModelMessage[], knobs: PruneToolResul
     });
     return { ...m, content };
   });
+}
+
+/**
+ * Achata as partes de ferramenta da fita em TEXTO, para a chamada de fechamento (checkpoint).
+ *
+ * Por quê: o fechamento vai SEM `tools`, e a fita inteira (`responseMessages`) traz
+ * tool-call/tool-result em todo turno com ferramenta — `send_message` é ferramenta. A API da
+ * Anthropic recusa blocos tool_use/tool_result sem `tools` definidas, e o fechamento lançaria
+ * DEPOIS de a resposta já ter saído. Texto vale em qualquer provedor.
+ *
+ * Cada tool-call vira, no lugar dela, a linha "ferramenta X chamada com {args} → resultado";
+ * as mensagens `tool` saem (o resultado já está na linha). O texto do assistant fica como
+ * está. Teto por resultado: `maxResultTokens` — o mesmo knob do pruning (MIN_RESULT_TOKENS),
+ * para o prompt do fechamento não crescer sem limite em turno com muita ferramenta.
+ */
+export function toolPartsAsText(messages: ModelMessage[], maxResultTokens?: number): ModelMessage[] {
+  const resultById = new Map<string, string>();
+  for (const m of messages) {
+    if (m.role === 'system' || m.role === 'user' || typeof m.content === 'string') continue;
+    for (const part of m.content) {
+      if (part.type === 'tool-result') resultById.set(part.toolCallId, toolResultText(part.output));
+    }
+  }
+  const capChars = maxResultTokens === undefined ? undefined : Math.floor(maxResultTokens * CHARS_PER_TOKEN);
+
+  const out: ModelMessage[] = [];
+  for (const m of messages) {
+    if (m.role === 'tool') continue;
+    if (m.role !== 'assistant' || !Array.isArray(m.content)) {
+      out.push(m);
+      continue;
+    }
+    const content = m.content.flatMap((part) => {
+      if (part.type === 'tool-call') {
+        const raw = resultById.get(part.toolCallId);
+        const args = part.input === undefined ? '—' : truncateOneLine(JSON.stringify(part.input), STUB_ARGS_MAX_CHARS);
+        const result = raw === undefined ? 'sem resultado' : capChars === undefined ? raw : truncateOneLine(raw, capChars);
+        return [{ type: 'text' as const, text: `[ferramenta ${part.toolName} chamada com ${args} → ${result}]` }];
+      }
+      if (part.type === 'tool-result' || part.type === 'tool-approval-request') return [];
+      return [part];
+    });
+    if (content.length > 0) out.push({ ...m, content });
+  }
+  return out;
 }

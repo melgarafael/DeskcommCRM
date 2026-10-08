@@ -160,6 +160,19 @@ export const contactListQuerySchema = z.object({
    */
   modo: z.enum(MODOS_DE_ETIQUETA).optional(),
   source: z.string().optional(),
+  /**
+   * Só pessoais / esconder pessoais (spec 21, etapa 13).
+   *
+   * `"true"`/`"false"` como TEXTO — vem de `searchParams`, que só conhece
+   * texto — e não `z.coerce.boolean()`, que transformaria `"false"` em `true`
+   * (o mesmo aviso de `is_group` em `lib/schemas/messaging.ts`). Aceita
+   * boolean de verdade porque o MCP chama este schema direto, sem URL no
+   * meio. Ausente = excluir pessoais: o padrão da lista e do MCP search.
+   */
+  pessoais: z
+    .union([z.boolean(), z.enum(["true", "false"])])
+    .optional()
+    .transform((v) => v === true || v === "true"),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   order_by: z.enum(CONTACT_ORDER_BY).default("last_activity_at"),

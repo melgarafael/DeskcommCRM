@@ -8,6 +8,7 @@ import type { ChannelRoutingSettings } from "@/lib/routing/channel-policies";
 import { toast } from "sonner";
 
 import type { ChannelDeletionImpact } from "@/app/api/v1/channel-sessions/[id]/route";
+import type { ResultadoDoLoteDePausa } from "@/app/api/v1/channel-sessions/disabled/route";
 import { copyToClipboard } from "@/lib/clipboard";
 import { randomId } from "@/lib/random-id";
 import { apiClient } from "@/lib/api/client";
@@ -27,6 +28,7 @@ import { usePacingKnobs } from "@/hooks/channels/usePacingKnobs";
 import { AntiBanSheet } from "./AntiBanSheet";
 import { GruposSheet } from "./GruposSheet";
 import { PairingOptions } from "./PairingOptions";
+import { ChannelAcervo } from "./ChannelAcervo";
 import { ChannelAiAccess } from "./ChannelAiAccess";
 import { ParaIntegrar } from "./ParaIntegrar";
 import { Badge } from "@/components/ui/badge";
@@ -43,13 +45,16 @@ import {
   ArrowsClockwise,
   CheckCircle,
   CircleNotch,
+  Pause,
   Phone,
+  Play,
   Plus,
   ShieldCheck,
   Trash,
   UsersThree,
   Warning,
 } from "@/lib/ui/icons";
+import { canalDesativado } from "@/lib/channels/desativado";
 import { lerEstadoDoCanal } from "@/lib/channels/estado";
 import { fonteDeTemplates } from "@/lib/channels/templates-fonte";
 import { useT } from "@/hooks/i18n/useT";
@@ -130,6 +135,72 @@ function enumerar(partes: (string | null)[], t: (texto: string) => string): stri
   return uteis.length > 0 ? `${uteis.join(", ")} ${t("e")} ${ultimo}` : ultimo;
 }
 
+/**
+ * A conta da ação em lote em frases que o operador lê de uma vez (issue #2387).
+ *
+ * Exportada para teste porque é a parte que MENTE quando erra: os critérios 1, 2
+ * e 5 da issue são asserções sobre ESTA função — "um toast diz quantos mudaram
+ * e quantos já estavam", "arquivado fica fora sem virar erro" e "a tela nunca
+ * afirma sucesso total com falha preenchida". Um teste que só clicasse no botão
+ * provaria que o clique chega ao endpoint, não que a frase é verdadeira.
+ *
+ * As três contagens saem juntas porque são a mesma operação vista por três
+ * ângulos; `falharam` DOMINA a frase: havendo um id que não saiu, não existe
+ * toast de sucesso — nem que todos os outros tenham mudado. É por isso que o
+ * retorno separa `sucesso` de `erro` em vez de devolver uma string só: quem
+ * chama não precisa lembrar dessa regra para não mentir.
+ *
+ * `arquivados` entra na frase (é canal que ficou de fora, não um erro — o
+ * critério 2) e `jaEstavam` também (é a idempotência tornada visível — o
+ * critério 3: repetir "Pausar todas" devolve esta linha, não um segundo audit).
+ */
+export function frasesDoLoteDePausa(
+  resultado: ResultadoDoLoteDePausa,
+  t: (texto: string) => string = (texto) => texto,
+): { sucesso: string | null; erro: string | null } {
+  const { disabled: pausar } = resultado;
+
+  const contagens: (string | null)[] = [
+    resultado.alterados > 0
+      ? contar(
+          resultado.alterados,
+          pausar ? "canal pausado agora" : "canal reativado agora",
+          pausar ? "canais pausados agora" : "canais reativados agora",
+          t,
+        )
+      : null,
+    resultado.jaEstavam > 0
+      ? contar(
+          resultado.jaEstavam,
+          pausar ? "canal já estava pausado" : "canal já estava reativado",
+          pausar ? "canais já estavam pausados" : "canais já estavam reativados",
+          t,
+        )
+      : null,
+    resultado.arquivados > 0
+      ? contar(resultado.arquivados, "canal arquivado fica de fora", "canais arquivados ficam de fora", t)
+      : null,
+  ];
+  const mudou = enumerar(contagens, t);
+
+  if (resultado.falharam.length > 0) {
+    // A falha vem com OS IDS: dizer "algo falhou" sem dizer o quê obriga o
+    // operador a conferir canal por canal — que é justamente o trabalho que a
+    // ação em lote existe para evitar.
+    const falhou =
+      `${pausar ? t("Não foi possível pausar") : t("Não foi possível retomar")} ` +
+      `${contar(resultado.falharam.length, "canal", "canais", t)}: ${resultado.falharam.join(", ")}.`;
+    return { sucesso: null, erro: mudou ? `${falhou} ${mudou}.` : falhou };
+  }
+
+  if (!mudou) return { sucesso: null, erro: null };
+  // "Nada mudou" é o desfecho HONESTO da repetição: o lote é idempotente, e
+  // dizer "3 canais pausados" quando nenhum mudou seria o mesmo sucesso falso
+  // que a rota evita ao separar `alterados` de `jaEstavam`.
+  const cabeca = resultado.alterados > 0 ? t("Feito:") : t("Nada mudou:");
+  return { sucesso: `${cabeca} ${mudou}.`, erro: null };
+}
+
 export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean }) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
@@ -151,6 +222,13 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
   const [gruposId, setGruposId] = useState<string | null>(null);
   const [toDelete, setToDelete] = useState<ChannelSession | null>(null);
   const pacingItems = usePacingKnobs().data?.items ?? [];
+
+  // A mesma lista que a tela desenha é a que a ação em lote comanda: filtrar
+  // social aqui (como a tela já faz) evita um botão que pede ids que ninguém vê.
+  const list = (sessions ?? []).filter((session) => session.provider !== CHANNEL_PROVIDER_SOCIAL);
+  /** Alvo de cada botão de lote — os dois só existem quando têm o que fazer. */
+  const paraPausar = list.filter((c) => !canalDesativado(c.metadata));
+  const paraRetomar = list.filter((c) => canalDesativado(c.metadata));
 
   // Mexer nos canais (criar, excluir, reconectar, health check) muda a LISTA de
   // conexões — e a ficha de Proteção de envio (`pacing-knobs`) é indexada por
@@ -238,6 +316,61 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
     [invalidate],
   );
 
+  // Pausar = canal desativado pelo operador: a entrega é gravada mas não entra
+  // na inbox, não dispara IA e não gera follow-up. Reativar volta tudo sem
+  // reimportar nada. Diferente de excluir: o canal continua listado.
+  const handleToggleDisabled = useCallback(
+    async (c: ChannelSession) => {
+      const desligar = !canalDesativado(c.metadata);
+      setBusyId(c.id);
+      try {
+        await apiClient.patch(`/api/v1/channel-sessions/${c.id}/disabled`, { disabled: desligar });
+        toast.success(desligar ? t("Canal pausado.") : t("Canal reativado."));
+        invalidate();
+      } catch (err) {
+        toast.error(errMsg(err, "Não foi possível mudar o estado do canal.", t));
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [invalidate, t],
+  );
+
+  // Ação em lote (issue #2387): UMA requisição para a lista toda, UM invalidate
+  // para a tela toda e um toast que divulga a conta que a API devolveu —
+  // `alterados`, `jaEstavam` e, quando houver, os ids que não saíram. O caminho
+  // do servidor é o mesmo da rota unitária (RPC `fn_definir_canal_desativado`,
+  // um audit por canal), então o que muda aqui é só o número de cliques.
+  const [loteOcupado, setLoteOcupado] = useState(false);
+  const handleLote = useCallback(
+    async (pausar: boolean) => {
+      const alvo = (pausar ? paraPausar : paraRetomar).map((c) => c.id);
+      if (alvo.length === 0) return;
+      setLoteOcupado(true);
+      try {
+        const res = await apiClient.patch<{ data: ResultadoDoLoteDePausa }>(
+          "/api/v1/channel-sessions/disabled",
+          { disabled: pausar, ids: alvo },
+        );
+        // `frasesDoLoteDePausa` nunca devolve sucesso com falha preenchida; a
+        // ordem abaixo não é otimização, é a garantia de que não há caminho que
+        // avise "Feito" com um id em `falharam`.
+        const frases = frasesDoLoteDePausa(res.data, t);
+        if (frases.erro) toast.error(frases.erro);
+        else if (frases.sucesso) toast.success(frases.sucesso);
+      } catch (err) {
+        toast.error(errMsg(err, "Não foi possível mudar o estado dos canais.", t));
+      } finally {
+        setLoteOcupado(false);
+        // Um só invalidate para a ação inteira: recarregar por canal seria os N
+        // cliques que este botão existe para substituir (critério 8). Também
+        // no caminho de erro — falha parcial mudou alguns canais de verdade.
+        invalidate();
+      }
+    },
+    [paraPausar, paraRetomar, invalidate, t],
+  );
+
   const handleDeleted = useCallback(() => {
     setToDelete(null);
     invalidate();
@@ -248,8 +381,6 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
     setQr(null);
     invalidate();
   }, [invalidate, t]);
-
-  const list = (sessions ?? []).filter((session) => session.provider !== CHANNEL_PROVIDER_SOCIAL);
 
   return (
     <div className="flex flex-col gap-4">
@@ -275,6 +406,44 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                 aria-hidden
               />
               {t("Atualizar saúde")}
+            </Button>
+          )}
+          {/* Ação em lote (#2387): o "todas" que resolve a janela de manutenção
+              do rodízio (#1330) — um número esquecido no meio de N cliques é o
+              defeito que este botão existe para evitar. Cada um só aparece
+              quando TEM alvo: "Retomar todas" com ninguém pausado seria um
+              botão que promete uma conta que não fecha. Sem exigir o serviço do
+              WhatsApp: pausar é gravar `metadata.disabled`, nada de transporte.
+              O total no rótulo é o mesmo que o toast confirma depois — o
+              operador vê a conta antes e depois do clique. */}
+          {paraPausar.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={loteOcupado}
+              onClick={() => void handleLote(true)}
+            >
+              {loteOcupado ? (
+                <CircleNotch size={14} className="animate-spin" aria-hidden />
+              ) : (
+                <Pause size={14} aria-hidden />
+              )}
+              {t("Pausar todas")} ({paraPausar.length})
+            </Button>
+          )}
+          {paraRetomar.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={loteOcupado}
+              onClick={() => void handleLote(false)}
+            >
+              {loteOcupado ? (
+                <CircleNotch size={14} className="animate-spin" aria-hidden />
+              ) : (
+                <Play size={14} aria-hidden />
+              )}
+              {t("Retomar todas")} ({paraRetomar.length})
             </Button>
           )}
           <Button size="sm" disabled={creating || !wahaConfigured} onClick={handleConnectNew}>
@@ -384,6 +553,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
           {list.map((c) => {
             const info = statusInfo(c.status, t);
+            const pausado = canalDesativado(c.metadata);
             const policy = routing.data?.data?.channels?.find((channel) => channel.id === c.id);
             // Sem o serviço no ar a rota de exclusão falha fechado (503) para
             // quem depende dele: oferecer o botão seria prometer uma ação que
@@ -411,6 +581,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                     )}
                   </div>
                   <Badge variant={info.variant}>{info.label}</Badge>
+                  {pausado && <Badge variant="neutral">{t("Pausado")}</Badge>}
                 </div>
                 <p className="text-[11px] text-muted-foreground">
                   {c.last_health_check_at
@@ -418,6 +589,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                     : t("Ainda não verificado")}
                 </p>
                 <ChannelAiAccess channelId={c.id} />
+                {dependeDoTransporte(c) && <ChannelAcervo channelId={c.id} />}
                 <p className="text-xs text-muted-foreground">{t(!policy ? "Consulte os responsáveis em Atendimento." : policy.mode === "legacy_unconfigured" ? "Usa todos os atendentes elegíveis da organização." : policy.mode === "restricted_empty" ? "Ninguém configurado — as conversas ficarão na fila." : "Somente as pessoas selecionadas recebem este número.")}</p>
                 <div className="mt-auto flex flex-wrap gap-2">
                   {/* Some no canal oficial em vez de aparecer desabilitado: não é
@@ -442,6 +614,26 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                   <Button variant="outline" size="sm" onClick={() => setAntiBanId(c.id)}>
                     <ShieldCheck size={14} aria-hidden />
                     {t("Proteção de envio")}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={busyId === c.id}
+                    aria-label={
+                      pausado
+                        ? `${t("Retomar")} ${channelLabel(c, t)}`
+                        : `${t("Pausar")} ${channelLabel(c, t)}`
+                    }
+                    onClick={() => void handleToggleDisabled(c)}
+                  >
+                    {busyId === c.id ? (
+                      <CircleNotch size={14} className="animate-spin" aria-hidden />
+                    ) : pausado ? (
+                      <Play size={14} aria-hidden />
+                    ) : (
+                      <Pause size={14} aria-hidden />
+                    )}
+                    {pausado ? t("Retomar") : t("Pausar")}
                   </Button>
                   {capabilitiesOf((c.provider ?? DEFAULT_CHANNEL_PROVIDER) as ChannelProvider).groups !==
                     "none" && (

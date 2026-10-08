@@ -32,7 +32,7 @@ import {
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { audit } from "@/lib/audit";
 import { carregarRosterDeAtendimento, podeAssumirAgora } from "@/lib/escalacao/atendentes";
-import { lerChamado, listarChamados } from "@/lib/escalacao/chamados";
+import { lerChamado, listarChamados, type ConversasVisiveis } from "@/lib/escalacao/chamados";
 import { lerContinuidadeHumana } from "@/lib/escalacao/continuidade";
 import { devolverAtendimentoAoAgente } from "@/lib/escalacao/retomada";
 import type { McpContext, McpToolDefinition } from "../types";
@@ -126,6 +126,23 @@ export const crmListAvailableAttendants: McpToolDefinition<typeof atendentesInpu
 // crm_list_human_cases
 // ---------------------------------------------------------------------------
 
+/**
+ * O recorte dos casos humanos para quem pede: sem contato do turno, `"todas"`
+ * (ver o comentário de `crm_list_human_cases`); com ele, só as conversas desse
+ * contato — o caso é de uma conversa, e a conversa tem dono em
+ * `conversations.contact_id`. Lista vazia é recorte válido: nenhum caso passa.
+ */
+async function casosVisiveisNoTurno(ctx: McpContext): Promise<ConversasVisiveis> {
+  if (!ctx.contatoDoTurno) return "todas";
+  const { data, error } = await ctx.supabase
+    .from("conversations")
+    .select("id")
+    .eq("organization_id", ctx.organizationId)
+    .eq("contact_id", ctx.contatoDoTurno);
+  if (error) throw new Error(`casos_do_turno_falhou: ${error.message}`);
+  return (data ?? []).map((c) => (c as { id: string }).id);
+}
+
 const listaChamadosInputShape = {
   state: z.enum(["abertos", "fechados"]).default("abertos"),
   limit: z.number().int().min(1).max(50).default(20),
@@ -136,7 +153,8 @@ export const crmListHumanCases: McpToolDefinition<typeof listaChamadosInputShape
   description:
     "Casos humanos da org por estado. 'abertos' = awaiting_human|awaiting_lead; 'fechados' = " +
     "resolved|escalated|cancelled. Devolve title, blocker, status, conversation_id e o nome do " +
-    "contato. open_count é sempre o total de abertos, independente do filtro.",
+    "contato. open_count é sempre o total de abertos, independente do filtro." +
+    " Em conversa de atendimento, só os casos do contato desta conversa (open_count também).",
   inputSchema: listaChamadosInputShape,
   category: "read",
   requiresRole: "agent",
@@ -151,7 +169,9 @@ export const crmListHumanCases: McpToolDefinition<typeof listaChamadosInputShape
       // MENOS casos do que enxerga hoje — ele abriu esses casos e é quem
       // acompanha a fila inteira. A divergência com a tela é deliberada e está
       // declarada no tipo (`ConversasVisiveis`), não escondida num default.
-      visiveisPara: "todas",
+      // DURANTE UM TURNO, o recorte é o do contato da conversa — lista e
+      // `open_count` pelo mesmo recorte, como `listarChamados` já garante.
+      visiveisPara: await casosVisiveisNoTurno(ctx),
     });
     return { cases: chamados, open_count: abertos };
   },
@@ -170,7 +190,8 @@ export const crmGetHumanCase: McpToolDefinition<typeof chamadoInputShape> = {
   description:
     "Detalhe de um caso humano + timeline completa (eventos com actor_kind, human_action e o " +
     "texto escrito). Inclui `human_continuity`: o resumo pronto do que a pessoa decidiu nesta " +
-    "conversa — use ele para retomar sem pedir de novo o que já foi combinado.",
+    "conversa — use ele para retomar sem pedir de novo o que já foi combinado." +
+    " Em conversa de atendimento, só abre caso do contato desta conversa.",
   inputSchema: chamadoInputShape,
   category: "read",
   requiresRole: "agent",
@@ -178,10 +199,21 @@ export const crmGetHumanCase: McpToolDefinition<typeof chamadoInputShape> = {
   handler: async (input, ctx) => {
     // `"todas"` pela mesma razão de `crm_list_human_cases`: cliente admin por
     // contrato, e um caso que o agente abriu não pode sumir para ele porque a
-    // conversa não está atribuída a ninguém.
+    // conversa não está atribuída a ninguém. DURANTE UM TURNO, o recorte é o
+    // do contato da conversa, e `null` (não existe, outra organização, outro
+    // cliente) vira UMA recusa só — um uuid não vira oráculo de existência.
     const chamado = await lerChamado(ctx.supabase, ctx.organizationId, input.case_id, {
-      visiveisPara: "todas",
+      visiveisPara: await casosVisiveisNoTurno(ctx),
     });
+    if (!chamado && ctx.contatoDoTurno) {
+      return {
+        permitido: false,
+        motivo: "fora_da_conversa",
+        mensagem:
+          "esta conversa é com outra pessoa — um caso que não é deste cliente não é seu para ver; " +
+          "siga a conversa com quem está falando.",
+      };
+    }
     if (!chamado) throw new Error("case_not_found");
 
     const continuidade = await lerContinuidadeHumana(

@@ -348,3 +348,36 @@ describe("o turno de envio que já RODAVA no instante da suspensão", () => {
     ]);
   });
 });
+
+describe("0510: o aviso da volta não conta o turno de envio que o motor refaz", () => {
+  it("⭐ turno send_message descartado COM turn_discarded não vira 'passo descartado' no org_reativada", async () => {
+    await seedOrg(ORG_SUSPENSA);
+    const inscricao = await seedEnrollment(ORG_SUSPENSA, ACTION_END, "a1");
+    await runFollowupTick(deps(), { limit: 5 });
+    expect(await turnos(inscricao)).toEqual(["pending"]);
+    const { rows: marco } = await pool.query<{ agora: string }>(`select clock_timestamp()::text as agora`);
+
+    await suspender(ORG_SUSPENSA);
+    expect(await turnos(inscricao)).toEqual(["failed|org_nao_operante"]);
+    const { rows: evento } = await pool.query(
+      `select count(*)::int as n from followup_enrollment_events where enrollment_id = $1 and event_type = 'turn_discarded'`,
+      [inscricao],
+    );
+    expect(evento[0].n).toBe(1);
+
+    await reativar(ORG_SUSPENSA);
+    const { rows: volta } = await pool.query(
+      `select payload->>'passos_descartados' as passos from event_log
+        where organization_id = $1 and event_type = 'tenant.reactivated' and created_at >= $2::timestamptz
+        order by created_at desc limit 1`,
+      [ORG_SUSPENSA, marco[0]!.agora],
+    );
+    expect(volta[0]?.passos).toBe("0");
+    const { rows: avisos } = await pool.query(
+      `select count(*)::int as n from agent_inbox_items
+        where organization_id = $1 and kind = 'org_reativada' and created_at >= $2::timestamptz`,
+      [ORG_SUSPENSA, marco[0]!.agora],
+    );
+    expect(avisos[0].n).toBe(0);
+  });
+});

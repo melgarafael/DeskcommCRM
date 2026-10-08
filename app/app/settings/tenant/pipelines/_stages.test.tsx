@@ -825,9 +825,30 @@ describe("taxa histórica por etapa — a contagem ao lado do campo (#1753)", ()
       { etapa_id: "e2", total: 7, ganhos: 3, percentual: 43, sugestao: null },
       { etapa_id: "e5", total: 0, ganhos: 0, percentual: null, sugestao: null },
     ],
+    // #2032 — a etapa ATUAL, que é OUTRA população da `taxas` acima.
+    tempo_na_etapa: {
+      medida: "etapa atual",
+      ancora: "crm_leads.stage_changed_at (created_at de reserva)",
+      base: "negócios que estão na etapa AGORA — fora da janela de dias",
+      amostra: 3,
+      limite: 1000,
+      truncado: false,
+      etapas: [
+        // Quem está NA etapa: 2 há 216 h (9 dias) — a frase é destes.
+        { etapa_id: "e1", quantidade: 2, horas_media: 216, horas_mediana: 216, com_carimbo: 2, sem_carimbo: 0 },
+        // Vazia: sem frase, e nunca «0 h».
+        { etapa_id: "e2", quantidade: 0, horas_media: null, horas_mediana: null, com_carimbo: 0, sem_carimbo: 0 },
+        // Ganho: tem gente, mas a coluna não segura trabalho em curso.
+        { etapa_id: "e3", quantidade: 5, horas_media: 10, horas_mediana: 10, com_carimbo: 5, sem_carimbo: 0 },
+      ],
+    },
   };
 
-  function montarTaxa(resposta: typeof RESPOSTA = RESPOSTA) {
+  /**
+   * `Partial` porque o corpo pode ser o de uma leitura em CACHE anterior ao
+   * bloco `tempo_na_etapa` (#2032) — a tela tem de ler ambos sem erro de tipo.
+   */
+  function montarTaxa(resposta: Partial<typeof RESPOSTA> = RESPOSTA) {
     vi.mocked(apiClient.get).mockImplementation((async (rota: string) =>
       rota.includes("/win-rates")
         ? { data: resposta }
@@ -886,6 +907,49 @@ describe("taxa histórica por etapa — a contagem ao lado do campo (#1753)", ()
     expect(await screen.findByTestId("taxa-e1")).toHaveTextContent(
       "Amostra limitada: este número cobre só parte do período.",
     );
+  });
+
+  /**
+   * #2032 — a etapa ATUAL, publicada AO LADO da taxa e com o nome de qual é.
+   * A frase tem de dizer a fonte (`stage_changed_at`) porque a taxa acima é de
+   * outra população: sem isso o leitor soma medida que não se soma.
+   */
+  it("mostra quem está NA etapa agora, com a fonte escrita, e só nas colunas de espera", async () => {
+    montarTaxa();
+    const linha = await screen.findByTestId("tempo-etapa-e1");
+    expect(linha).toHaveTextContent(
+      "2 negócios nesta etapa agora — mediana de 216 h desde a entrada (stage_changed_at).",
+    );
+    // Etapa vazia: sem frase, e nunca «0 h».
+    expect(screen.queryByTestId("tempo-etapa-e2")).not.toBeInTheDocument();
+    // Ganho/perda não esperam: a coluna não segura trabalho em curso.
+    expect(screen.queryByTestId("tempo-etapa-e3")).not.toBeInTheDocument();
+    // E nada disso muda a taxa histórica da mesma etapa.
+    expect(screen.getByTestId("taxa-e1")).toHaveTextContent("20 negócios encerrados passaram");
+  });
+
+  /**
+   * O bloco bateu o teto de leitura: a frase avisa que é amostra — com a frase
+   * DELE, sem «período», porque esta medida não tem janela.
+   */
+  it("bloco truncado avisa que cobre só parte dos negócios abertos, sem falar em período", async () => {
+    montarTaxa({ ...RESPOSTA, tempo_na_etapa: { ...RESPOSTA.tempo_na_etapa, truncado: true } });
+    const linha = await screen.findByTestId("tempo-etapa-e1");
+    expect(linha).toHaveTextContent("Amostra limitada: este número cobre só parte dos negócios abertos do funil.");
+    expect(linha).not.toHaveTextContent("período");
+  });
+
+  it("bloco inteiro não fala em amostra limitada", async () => {
+    montarTaxa();
+    const linha = await screen.findByTestId("tempo-etapa-e1");
+    expect(linha).not.toHaveTextContent("Amostra limitada");
+  });
+
+  /** Corpo de uma leitura em cache anterior a este PR: sem o bloco, sem erro. */
+  it("sem o bloco tempo_na_etapa a tela segue mostrando a taxa", async () => {
+    montarTaxa({ ...RESPOSTA, tempo_na_etapa: undefined });
+    await screen.findByTestId("taxa-e1");
+    expect(screen.queryByTestId("tempo-etapa-e1")).not.toBeInTheDocument();
   });
 
   it("ganho e perda não recebem sugestão: lá a chance vale 100 e 0 na regra", async () => {

@@ -5,6 +5,7 @@
  * frequência e cópia de schema envelhece. Estes tipos descrevem só o que o
  * conector precisa — a conexão decifrada e o retrato do catálogo lido ao vivo.
  */
+import type { TipoDeIdentificador } from "./schemas";
 
 /** Modos de TLS aceitos, alinhados ao CHECK de `external_db_connections.ssl_mode`. */
 export type ModoTls = "disable" | "prefer" | "require" | "verify-ca" | "verify-full";
@@ -33,7 +34,18 @@ export interface ConexaoExterna {
   maxFilters: number;
   /** Teto de bytes da resposta devolvida ao modelo (`max_response_bytes`). */
   maxResponseBytes: number;
+  /**
+   * Qual coluna das tabelas externas guarda o telefone ou o e-mail do cliente.
+   * Durante a conversa, a consulta do agente é filtrada por ela com o dado do
+   * contato do turno; `null` = não configurada, e a consulta segue sem esse filtro.
+   */
+  chaveDoCliente: ChaveDoCliente | null;
   versao: string;
+}
+
+export interface ChaveDoCliente {
+  coluna: string;
+  tipo: TipoDeIdentificador;
 }
 
 /** Uma coluna do catálogo externo, na ordem em que aparece na tabela. */

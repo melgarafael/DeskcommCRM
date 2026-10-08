@@ -134,6 +134,32 @@ set_env_var "$supabase_env" ENABLE_EMAIL_AUTOCONFIRM false
 set_env_var "$supabase_env" PROXY_DOMAIN "$domain"
 set_env_var "$supabase_env" CERTBOT_EMAIL "admin@${domain}"
 set_env_var "$supabase_env" SINGLE_SERVER_NETWORK "$SINGLE_SERVER_NETWORK"
+# ── #2099: o Traefik da hospedagem também publica as APIs do Supabase ───────
+# O Caddyfile.single-server roteia as seis prefixos do Supabase para o Envoy
+# (`@supabase`); o docker-compose.traefik.yml foi escrito para Supabase
+# EXTERNO e manda tudo para o app. Sem a rota, `v_sb_key()` chama
+# /auth/v1/settings, o Traefik entrega ao app, vem 404 e a validação da fase 2
+# do install.sh morre em "NEXT_PUBLIC_SUPABASE_ANON_KEY inválido".
+#
+# As etiquetas moram em supabase-single-server.override.yml e existem em todo
+# modo; quem decide se o Traefik enxerga o Envoy é a chave gravada AQUI, ANTES
+# do `dc_supabase up -d --wait`: no primeiro boot o contêiner já nasce com a
+# rota, e numa re-execução o compose o recria porque o label mudou.
+if [ "${REVERSE_PROXY:-caddy}" = "traefik" ]; then
+  set_env_var "$supabase_env" TRAEFIK_ENABLE true
+  set_env_var "$supabase_env" TRAEFIK_HOST "$domain"
+  # Entrypoint/certresolver fora do padrão só chegam pelo ambiente de quem
+  # instala: o install.sh descobre os dele (entrypoints_do_traefik) DEPOIS
+  # desta subida, e a fase 2 — que depende da rota — já passou. Os defaults são
+  # os mesmos do docker-compose.traefik.yml.
+  set_env_var "$supabase_env" TRAEFIK_ENTRYPOINT "${TRAEFIK_ENTRYPOINT:-websecure}"
+  set_env_var "$supabase_env" TRAEFIK_CERTRESOLVER "${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+else
+  # Gravado explicitamente, não deixado em aberto: uma re-execução em modo
+  # Caddy sobre uma árvore que já foi Traefik desliga a rota, em vez de deixar
+  # um `true` órfão interpolando.
+  set_env_var "$supabase_env" TRAEFIK_ENABLE false
+fi
 set_env_var "$supabase_env" COMPOSE_FILE "docker-compose.yml:docker-compose.deskcomm.yml"
 set_env_var "$supabase_env" COMPOSE_PROJECT_NAME "$(projeto_do_supabase)"
 gw_port="$(ler_env "$supabase_env" API_GW_HTTP_PORT)"

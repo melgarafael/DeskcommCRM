@@ -32,7 +32,19 @@ vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => undefined, getAll: () => [] }),
 }));
 vi.mock("@/app/actions/auth/signOut", () => ({ signOut: async () => {} }));
-vi.mock("@/lib/branding/saida", () => ({ emailDeSuporte: async () => "suporte@exemplo.com" }));
+vi.mock("@/lib/branding/saida", () => ({
+  emailDeSuporte: async () => "suporte@exemplo.com",
+  // O nome da marca das páginas fora do `/app` também vem daqui (#2511): stub
+  // no formato exato de `MarcaDeSaida`, porque o layout de `/legal` renderiza
+  // `marca.nome` — sem este export o mock quebra a página inteira.
+  marcaDaSaida: async () => ({
+    nome: "Produto",
+    logoUrl: null,
+    accent: "#5b5bd6",
+    accentFg: "#ffffff",
+    origens: { nome: "padrao", cor: "#5b5bd6" },
+  }),
+}));
 vi.mock("@/lib/branding", () => ({ branding: () => ({ name: "Produto" }) }));
 vi.mock("@/lib/auth/rate-limit", () => ({
   authRateLimited: async () => false,

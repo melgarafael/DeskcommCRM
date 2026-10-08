@@ -112,6 +112,21 @@ export async function aplicarRespostaNaCampanha(
 ): Promise<ResumoDaResposta> {
   const { organizationId, contactId, recebidoEm } = entrada;
 
+  // Contato pessoal (spec 21, caminho 6): a resposta dele não carimba NADA —
+  // nem `replied_at`, nem saída. O que estava pendente já saiu no marcar com
+  // status próprio (etapa 4); carimbar aqui ressuscitaria métrica de quem a
+  // operação escondeu.
+  const { data: contato, error: contatoErro } = await admin
+    .from("contacts")
+    .select("is_personal")
+    .eq("organization_id", organizationId)
+    .eq("id", contactId)
+    .maybeSingle();
+  if (contatoErro) throw new Error(`resposta de campanha: leitura do contato — ${contatoErro.message}`);
+  if ((contato as { is_personal?: boolean } | null)?.is_personal === true) {
+    return { atribuiu: false, optOut: 0 };
+  }
+
   // A janela vem da ORGANIZAÇÃO, com o default do produto quando ninguém
   // escolheu. Ler config nunca derruba a atribuição: `lerConfiguracao` cai no
   // padrão em vez de lançar.

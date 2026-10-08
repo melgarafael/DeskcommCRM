@@ -59,6 +59,11 @@ import { fusoDaOrganizacao } from "@/lib/agent-engine/agent/fuso-da-org";
 import { loadOrgMemory, renderOrgMemory } from "@/lib/agent-engine/agent/org-memory";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import {
+  LlmNotConfiguredError,
+  resolveOrgLlmConfig,
+  type LlmEdgeConfig,
+} from "@/lib/agent-engine/edge/llm/credentials";
+import {
   LIMIAR_PADRAO_BUSCA,
   buscarConhecimento,
   resolverAcervoDoAgente,
@@ -128,6 +133,47 @@ interface ContextoDaRota {
   t: (texto: string) => string;
   caseId: string;
   db: Awaited<ReturnType<typeof createClient>>;
+}
+
+/**
+ * A tela oferece o clique quando o POST CONSEGUIRIA falar com o modelo — e quem
+ * responde isso é o MESMO resolvedor que `runModelCall` chama antes de sair
+ * (`resolveOrgLlmConfig`), com o MESMO override que `responderSobreOCaso` passa
+ * (o do agente do caso quando a persona é dele; nenhum quando é a padrão).
+ * Régua paralela divergia: agente pausado com credencial (a tela dizia sim, o
+ * POST caía no padrão da organização) e caso sem agente com credencial da
+ * organização (a tela dizia não, o POST respondia).
+ *
+ * Só `LlmNotConfiguredError` vira `false`. Qualquer outra falha (banco, chave
+ * que não decifra) vira `null` AQUI, com log: só `ia_configurada` fica
+ * desconhecida, e o resto do estado (contato bloqueado, caso obsoleto) segue.
+ */
+async function iaConfiguradaParaACasa(
+  pool: ReturnType<typeof getRequestPool>,
+  llmCfg: LlmEdgeConfig,
+  organizationId: string,
+  persona: PersonaDaConversa,
+  requestId: string,
+): Promise<boolean | null> {
+  try {
+    await resolveOrgLlmConfig(
+      pool,
+      llmCfg,
+      organizationId,
+      persona.fonte === "agente_do_caso"
+        ? { provider: persona.agente.provider, credentialId: persona.agente.credentialId }
+        : undefined,
+    );
+    return true;
+  } catch (erro) {
+    if (erro instanceof LlmNotConfiguredError) return false;
+    logger.warn("[conversa-do-caso] não deu para conferir a IA da organização — ia_configurada fica null", {
+      requestId,
+      organizationId,
+      erro: erro instanceof Error ? erro.message : String(erro),
+    });
+    return null;
+  }
 }
 
 /**
@@ -240,21 +286,28 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
     const pool = getRequestPool();
     const caso = await lerCaso(pool, c.orgId, c.caseId);
     if (caso !== null) {
-      persona = personaParaTela(await personaDeAgora(pool, c.orgId, caso.agent_id));
+      const personaAgora = await personaDeAgora(pool, c.orgId, caso.agent_id);
+      persona = personaParaTela(personaAgora);
       const { rows: contato } = await pool.query<{ is_blocked: boolean; is_anonymized: boolean }>(
         `select is_blocked, is_anonymized from contacts where organization_id = $1 and id = $2`,
         [c.orgId, caso.contact_id],
       );
-      const cfg = requestTurnDeps().llmCfg;
+      // Sem IA utilizável a tela não oferece o clique: numa instalação fresca,
+      // um botão que sempre falha é pior que um botão ausente com a frase que
+      // diz onde configurar. "Utilizável" é o que o POST usaria — ver o helper.
+      const iaConfigurada = await iaConfiguradaParaACasa(
+        pool,
+        requestTurnDeps().llmCfg,
+        c.orgId,
+        personaAgora,
+        requestId,
+      );
       estado = {
         caso_obsoleto: await casoEstaObsoleto(pool, c.orgId, caso.context_snapshot),
         contato_bloqueado: contato[0]?.is_blocked ?? null,
         contato_anonimizado: contato[0]?.is_anonymized ?? null,
         status: caso.status,
-        // Sem chave de IA a tela não oferece o clique: numa instalação fresca,
-        // um botão que sempre falha é pior que um botão ausente com a frase que
-        // diz onde configurar.
-        ia_configurada: Boolean(cfg.anthropicApiKey || cfg.openaiApiKey || cfg.openrouterApiKey),
+        ia_configurada: iaConfigurada,
       };
     }
   } catch (erro) {

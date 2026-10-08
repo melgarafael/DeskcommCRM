@@ -30,7 +30,9 @@ export function IncomingCallBanner() {
   // visual é a garantia de que a chamada não passa despercebida, o som é reforço.
   useEffect(() => {
     if (!call) return;
-    const AudioCtx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    const AudioCtx =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = new AudioCtx();
     const beep = (quando: number) => {
@@ -66,7 +68,22 @@ export function IncomingCallBanner() {
     <div
       role="alertdialog"
       aria-label={t("Chamada de voz recebida")}
-      className="fixed inset-x-0 top-4 z-50 mx-auto flex w-[min(420px,calc(100%-2rem))] items-center gap-4 rounded-xl border border-border bg-popover p-4 shadow-2xl animate-in fade-in slide-in-from-top-4"
+      // `data-de="cima"` troca a direção de onde a peça surge: este aviso desce
+      // do topo, e o painel de chamada ativa sobe do rodapé.
+      data-de="cima"
+      /*
+        `ds-surge` no lugar de `animate-in fade-in slide-in-from-top-4`: as três
+        vinham do plugin `tailwindcss-animate`, que nunca foi instalado aqui, e
+        classe inexistente no Tailwind não gera CSS nem erro. O aviso de chamada
+        recebida — a peça do produto em que o movimento mais importa, porque ela
+        reivindica atenção — aparecia seca.
+
+        `top-[max(1rem,env(safe-area-inset-top))]` em vez de `top-4`: desde que
+        `app/layout.tsx` declarou `viewportFit: "cover"`, 16px do topo caem
+        dentro da área da barra de status no iOS em tela cheia, e o aviso nascia
+        por baixo dela.
+      */
+      className="ds-surge fixed inset-x-0 top-[max(1rem,env(safe-area-inset-top))] z-50 mx-auto flex w-[min(420px,calc(100%-2rem))] items-center gap-4 rounded-xl border border-border bg-popover p-4 shadow-2xl"
     >
       <Avatar className="h-12 w-12 shrink-0">
         {contact?.id ? (

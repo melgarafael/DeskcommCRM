@@ -4,13 +4,8 @@ import { avaliarRespostaDeTeste } from "@/lib/ai/agents/avaliar-resposta-de-test
 import { BEFORE_SEND_GATES } from "@/lib/agent-engine/guardrails/before-send";
 
 /**
- * O botão "Testar" avalia a resposta — e diz o que não avaliou.
- *
- * O defeito que isto conserta: a rota de teste chama o runtime `@deprecated`,
- * que não importa `runBeforeSend`. Medido em 2026-08-05, com controle positivo:
- * nenhum literal da cadeia (`internal_vocabulary`, `case_promise_without_case`,
- * `messaging_window_closed`) aparece no build do app Next. O self-hoster testava,
- * via limpo, publicava, e produção divergia.
+ * A checagem textual suplementar não substitui os gates do motor de prévia,
+ * nem comprova autorização ou segurança de um envio real.
  */
 describe("avaliação da resposta no botão Testar", () => {
   it("pega o vazamento REAL medido em produção", () => {
@@ -40,6 +35,18 @@ describe("avaliação da resposta no botão Testar", () => {
     expect(avaliarRespostaDeTeste(undefined).naoAvaliados.length).toBeGreaterThan(0);
   });
 
+  it("texto vazio (teste bloqueado) não sai como `passou: true`", () => {
+    // Sem resposta não existe veredito de conteúdo para mostrar como aprovado.
+    for (const vazio of [undefined, "", "   \n"]) {
+      const r = avaliarRespostaDeTeste(vazio);
+      expect(r.passou, JSON.stringify(vazio)).toBe(false);
+      expect(r.avaliado, JSON.stringify(vazio)).toBe(false);
+      // Não há termo achado: a tela não pode dizer "usa palavras internas".
+      expect(r.termos).toEqual([]);
+    }
+    expect(avaliarRespostaDeTeste("olá, tudo bem?").avaliado).toBe(true);
+  });
+
   it("declara o que NÃO avaliou — a lista é o conserto, não um detalhe", () => {
     const r = avaliarRespostaDeTeste("olá, tudo bem?");
     expect(r.passou).toBe(true);
@@ -49,6 +56,14 @@ describe("avaliação da resposta no botão Testar", () => {
     for (const n of r.naoAvaliados) {
       expect(n.porque, `${n.gate} sem motivo legível`).not.toBe("");
     }
+  });
+
+  it("não promete ausência de custo nem confunde checagem textual com prévia do motor", () => {
+    const r = avaliarRespostaDeTeste("olá");
+    const semantico = r.naoAvaliados.find((n) => n.gate === "semantic_promise");
+    expect(semantico?.porque).toContain("checagem textual");
+    expect(semantico?.porque).not.toMatch(/não gasta|sem (?:chamada|custo)/i);
+    expect(semantico?.porque).toMatch(/modelo|prévia/i);
   });
 
   it("o motivo de cada não-avaliado é escrito para o DONO DO NEGÓCIO", () => {
@@ -73,5 +88,30 @@ describe("avaliação da resposta no botão Testar", () => {
     // outros da cadeia têm de estar declarados.
     const esperados = BEFORE_SEND_GATES.map((g) => g.name).filter((n) => n !== "internal_vocabulary");
     expect([...declarados].sort()).toEqual([...esperados].sort());
+  });
+});
+
+describe("avaliação da resposta no botão Testar — mídia do produto (#2490)", () => {
+  const limpo = "Segue a foto do produto que você pediu.";
+  const preparada = {
+    codigo: "IP15",
+    produtoResolvido: true,
+    fotosCadastradas: 1,
+    fotosPreparadas: 1,
+    anexos: [{ storagePath: "org/dry-run/catalogo-a.jpg", mime: "image/jpeg" }],
+  };
+
+  it("texto limpo com a foto PENDENTE não é aprovado", () => {
+    // Sem esta guarda, o candidato de um send_message sem produto_codigo, vindo
+    // depois do que falhou a foto, faria a tela aprovar o teste com a mídia pendente.
+    const r = avaliarRespostaDeTeste(limpo, [
+      { ...preparada, fotosPreparadas: 0, anexos: [], falha: { code: "midia_nao_preparada", message: "x" } },
+    ]);
+    expect(r.passou).toBe(false);
+    expect(r.midia).toHaveLength(1);
+  });
+
+  it("texto limpo com a foto preparada passa — a guarda não reprova tudo", () => {
+    expect(avaliarRespostaDeTeste(limpo, [preparada]).passou).toBe(true);
   });
 });

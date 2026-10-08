@@ -403,6 +403,23 @@ export const listConversationsQuerySchema = z.object({
       message: `A busca precisa de pelo menos ${PISO_DA_BUSCA} caracteres.`,
     })
     .optional(),
+  /**
+   * Só as conversas DESTE contato — e o filtro é do BANCO, não da página (#2184).
+   *
+   * `crm_list_conversations` vinha filtrando o contato em memória, sobre a
+   * página que o handler já tinha truncado (10 por padrão, até 50): o
+   * `has_more: false` que saía junto dizia ao agente que não havia mais nada,
+   * e uma conversa MAIS ANTIGA do mesmo cliente, fora daquela página, ficava
+   * inalcançável. O filtro por `input.contact_id` tinha o mesmo defeito — só
+   * que mantinha o cursor, o que é pior: o cursor seguia descrevendo a
+   * varredura da ORGANIZAÇÃO, e a próxima página voltava a ser varredura.
+   *
+   * Estando no schema, a chave atravessa as quatro peças com a cerca
+   * `rota-le-todo-filtro-do-schema` cobrindo a rota, e o predicado compõe com
+   * os demais antes do `.limit` — cursor e `has_more` passam a ser honestos
+   * para o conjunto do contato.
+   */
+  contact_id: z.string().uuid().optional(),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });

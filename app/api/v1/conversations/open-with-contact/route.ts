@@ -70,6 +70,9 @@ export async function POST(req: NextRequest): Promise<Response> {
     if (msg === "invalid_phone") {
       return fail("validation_error", t("Telefone inválido."), 422, { requestId });
     }
+    if (msg === "contact_personal") {
+      return fail("forbidden", t("Contato marcado como pessoal."), 403, { requestId });
+    }
     return fail("internal_error", msg, 500, { requestId });
   }
 }

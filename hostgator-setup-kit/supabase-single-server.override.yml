@@ -22,6 +22,45 @@ services:
         aliases: [envoy, kong]
       deskcomm_private:
         aliases: [supabase-envoy]
+    # #2099 — quando o proxy reverso da VPS é um Traefik PRÓPRIO, as seis
+    # superfícies públicas do Supabase precisam de rota NELE. O
+    # Caddyfile.single-server tem a regra (@supabase); o
+    # docker-compose.traefik.yml foi escrito para Supabase EXTERNO e manda tudo
+    # para o app — sem as etiquetas abaixo o Traefik entrega /auth/v1* ao app,
+    # que devolve 404, e a validação da fase 2 do install.sh morre em
+    # "NEXT_PUBLIC_SUPABASE_ANON_KEY inválido".
+    #
+    # O arquivo é o MESMO override de todos os modos, então a rota nasce
+    # desligada: `traefik.enable` é o que o instalador liga, gravando
+    # TRAEFIK_ENABLE=true no .env do Supabase (install-single-server.sh, antes
+    # do `dc_supabase up -d --wait`). Quem nunca passou por ali — a instalação
+    # em Caddy, a maioria — recebe o default `false` e um Traefik que por acaso
+    # exista na VPS não passa a publicar este contêiner.
+    labels:
+      traefik.enable: "${TRAEFIK_ENABLE:-false}"
+      # Rede onde o Traefik acha o IP do Envoy: a ponte privada desta
+      # instalação, a mesma declarada em `networks` lá embaixo — o Envoy já
+      # está nela, com o apelido supabase-envoy. A rede do PROXY
+      # (TRAEFIK_NETWORK) não é declarada aqui de propósito: uma rede externa
+      # ausente é recusada ANTES de o compose criar qualquer coisa e derrubaria
+      # a instalação em Caddy, que não tem essa rede. Em Traefik `--network
+      # host` (Hostinger, o cenário de `unico_traefik()`) o host alcança
+      # qualquer bridge, então este IP chega.
+      traefik.docker.network: "${SINGLE_SERVER_NETWORK:-deskcomm_single_server}"
+      # As seis prefixos do Caddyfile.single-server, uma a uma. O `PathPrefix`
+      # aceita um valor por chamada; o `||` é a forma que o Traefik v2 e o v3
+      # entendem — e é ele que dá prioridade de casa à regra.
+      traefik.http.routers.deskcomm-supabase.rule: "Host(`${TRAEFIK_HOST:-}`) && (PathPrefix(`/auth/v1`) || PathPrefix(`/rest/v1`) || PathPrefix(`/realtime/v1`) || PathPrefix(`/storage/v1`) || PathPrefix(`/functions/v1`) || PathPrefix(`/graphql/v1`))"
+      traefik.http.routers.deskcomm-supabase.entrypoints: "${TRAEFIK_ENTRYPOINT:-websecure}"
+      traefik.http.routers.deskcomm-supabase.tls.certresolver: "${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+      # 500: acima da rota geral do app (`deskcomm`, cuja prioridade padrão é o
+      # tamanho da regra) e abaixo do bloqueio 1000 do webhook do WAHA.
+      traefik.http.routers.deskcomm-supabase.priority: "500"
+      traefik.http.routers.deskcomm-supabase.service: "deskcomm-supabase"
+      traefik.http.routers.deskcomm-supabase.middlewares: "deskcomm-supabase-compress"
+      traefik.http.services.deskcomm-supabase.loadbalancer.server.port: "8000"
+      # `encode gzip` do Caddyfile, que vale para o domínio inteiro.
+      traefik.http.middlewares.deskcomm-supabase-compress.compress: "true"
 
   auth:
     container_name: !reset null
