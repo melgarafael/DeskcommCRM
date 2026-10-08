@@ -2,7 +2,8 @@
 # conferir-mapa.sh — avisa quando uma tela do menu ficou fora do mapa da skill.
 #
 # Compara cada href de NAV_CATALOG (lib/navigation/catalogo.ts) com o que o
-# references/mapa-da-interface.md da skill cita entre crases. Só AVISA, nunca
+# references/mapa-da-interface.md da skill cita entre crases, e se o mapa ainda
+# a chama pelo nome que o menu usa hoje. Só AVISA, nunca
 # reprova: quem decidir transformar em bloqueio é o dono do produto.
 #
 # Uso: bash scripts/conferir-mapa.sh [--ci] [--estrito]
@@ -80,6 +81,23 @@ for linha in $ENTRADAS; do
       SAIDA="$SAIDA⚠ tela fora do mapa da skill de operação: $tela ($href)
 "
     fi
+  else
+    # A tela está no mapa; confere se o mapa ainda a chama pelo nome do menu
+    # (a 1.78.0 trocou "Billing" por "Plano e cobrança" e o endereço não mudou).
+    linha_do_mapa="$(grep -F "\`$href\`" "$MAPA" | head -1)"
+    case "$linha_do_mapa" in
+      "| $tela |"*) ;;
+      *)
+        FALTAS=$((FALTAS + 1))
+        if [ "$MODO_CI" -eq 1 ]; then
+          SAIDA="$SAIDA::warning file=.agents/skills/deskcomm-operacao/references/mapa-da-interface.md::tela renomeada no menu e não no mapa da skill de operação: $tela ($href)
+"
+        else
+          SAIDA="$SAIDA⚠ tela renomeada no menu e não no mapa da skill de operação: $tela ($href)
+"
+        fi
+        ;;
+    esac
   fi
 done
 IFS="$OLD_IFS"
@@ -88,7 +106,7 @@ if [ "$FALTAS" -eq 0 ]; then
   echo "✓ mapa da skill cobre as $TOTAL telas do menu"
 else
   printf '%s' "$SAIDA"
-  echo "mapa da skill: $TOTAL telas no menu, $FALTAS fora do mapa"
+  echo "mapa da skill: $TOTAL telas no menu, $FALTAS fora do mapa ou com nome antigo"
   echo "→ acrescente a tela em .agents/skills/deskcomm-operacao/references/mapa-da-interface.md (e, se o fragmento descreve uma funcionalidade nova, em references/funcionalidades/<área>.md); depois rode pnpm skills:sync"
 fi
 

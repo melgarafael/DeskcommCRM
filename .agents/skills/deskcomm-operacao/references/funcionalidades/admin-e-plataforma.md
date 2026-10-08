@@ -1,7 +1,7 @@
 # Funcionalidades — Administração e plataforma
 
 O que há aqui: telas de /admin e o que só o dono da VPS vê ou configura.
-Extraído do CHANGELOG até a 1.77.0 e conferido contra o menu e o código em 2026-10-08.
+Extraído do CHANGELOG até a 1.78.0 e conferido contra o menu e o código em 2026-10-08.
 O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 `bash scripts/buscar.sh <palavra>` (a pasta é a da skill).
 
@@ -49,6 +49,9 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 - **Tema no Modo Plataforma** — A tarja ganha troca de claro, escuro e sistema com atalho de teclado. Onde: Administração → Modo Plataforma → tema. _(desde 1.54.0)_
 
 ### Administração → Sistema
+- **Cobrança dos seus clientes** — Opcional e desligada: ligue em Recursos opcionais, conecte a Stripe em Administração › Cobrança e crie os planos. Empresa nova ganha teste grátis; pagamento atrasado gera aviso na Central, faixa no topo e e-mail, e suspensão depois da tolerância (5 a 30 dias, padrão 7, com aviso final 48 horas antes); paga, volta sozinha. O menu Billing da empresa passa a se chamar Plano e cobrança. Os limites por plano chegam travados: nenhuma empresa tem teto ainda. Onde: Administração → Cobrança. _(desde 1.78.0)_
+- **Módulos guardam informação própria** — Um módulo de nicho declara as fichas que guarda e o servidor cria as tabelas, isoladas por empresa; a informação aparece na ficha do contato. O catálogo oficial ainda não publica módulo desse tipo. _(desde 1.78.0)_
+- **Rota global do webhook do WhatsApp só da rede interna** — Quem roda o WAHA em outro servidor precisa apontar o webhook para o endereço com o token do canal; quem usa o WAHA da instalação não faz nada. _(desde 1.78.0)_
 
 - **Sinal de assinatura no Sistema** — O Admin Sistema diz se as entregas do WhatsApp chegam assinadas nos últimos 7 dias. _(desde 1.75.0)_
 - **Comportamento da instalação** — Quatro chaves saem do arquivo para a tela com piso no .env e auditoria. _(desde 1.38.0)_

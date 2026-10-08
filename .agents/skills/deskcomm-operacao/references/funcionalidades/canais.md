@@ -1,7 +1,7 @@
 # Funcionalidades — Canais
 
 O que há aqui: conexões, Webhooks, integrações e proteções de envio.
-Extraído do CHANGELOG até a 1.77.0 e conferido contra o menu e o código em 2026-10-08.
+Extraído do CHANGELOG até a 1.78.0 e conferido contra o menu e o código em 2026-10-08.
 O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 `bash scripts/buscar.sh <palavra>` (a pasta é a da skill).
 
@@ -39,6 +39,8 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 - **Loja Nuvemshop ligada** — Pedidos e clientes da loja entram no CRM sem digitação. (fora do menu desde 1.15.0, só pela busca). _(desde 1.0.0)_
 
 ### Canais → Webhooks
+- **Formulário próprio por fonte** — Cada fonte de entrada gera um formulário com perguntas extras (listas, caixas, números, valores em reais), pode ser renomeada, e as respostas ficam no lead. Onde: Canais → Webhooks → Fontes. _(desde 1.78.0)_
+- **Automação limitada a uma fonte** — As automações de novos contatos podem valer só para uma fonte de entrada. Onde: Canais → Webhooks → regras. _(desde 1.78.0)_
 
 - **Formulário autoriza IA** — Fonte de formulário pode autorizar novos contatos para a IA com consentimento explícito. Onde: Canais → Webhooks → Fontes. _(desde 1.76.0)_
 - **Webhook de ganho e perda** — Saída ganha gatilhos de ganho, perda, reabertura e troca de responsável. _(desde 1.71.0)_

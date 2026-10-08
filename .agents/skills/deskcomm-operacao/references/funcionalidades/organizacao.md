@@ -1,7 +1,7 @@
 # Funcionalidades — Organização
 
 O que há aqui: conta, empresa, equipe, acesso, LGPD e conversões.
-Extraído do CHANGELOG até a 1.77.0 e conferido contra o menu e o código em 2026-10-08.
+Extraído do CHANGELOG até a 1.78.0 e conferido contra o menu e o código em 2026-10-08.
 O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 `bash scripts/buscar.sh <palavra>` (a pasta é a da skill).
 
@@ -67,6 +67,7 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 - **Regras de comissão** — Lista define percentual por pessoa, serviço ou ambos, valendo a específica. Onde: Organização → Financeiro → Comissão. _(desde 1.41.0)_
 
 ### Organização → LGPD
+- **Arquivo de dados para o titular (Brasil)** — Quem pede acesso aos próprios dados recebe também o arquivo com todas as mensagens e sem as anotações da equipe (LGPD, art. 18, II). Onde: Organização → LGPD. _(desde 1.78.0)_
 
 - **Relatório cita o país** — Acesso cita a lei do país; sem revisão não cita nenhuma e conta feriado local. (alíneas do art. 15 para Portugal na 1.74.0). Onde: Organização → LGPD → relatório. _(desde 1.35.0)_
 - **Esquecer e exportar** — Pedido apaga em cascata por worker; anonimizar vale mais que excluir. _(desde 1.0.0)_
@@ -82,6 +83,7 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 - **Aviso com aba fechada** — Navegador avisa na bandeja com VAPID no .env; sem chave segue igual. Onde: Organização → Notificações → push. _(desde 1.8.0)_
 
 ### Organização → Organização
+- **Alíneas do art. 15.º pela tela** — Para organização fora do Brasil, o cartão em Configurações › Empresa preenche as alíneas a), c) e d) que o relatório de acesso imprime. Onde: Organização → Organização. _(desde 1.78.0)_
 
 - **Portugal como país** — O seletor de país oferece Portugal, com NIF, telefone +351 e prazos do RGPD. _(desde 1.70.0)_
 - **Retenção de mídia cumprida** — Arquivos vencidos e órfãos saem do armazenamento todo dia; padrão 365 dias. (interruptor na 1.74.0; anexos de nota desde 1.76.0). Onde: Organização → Organização → retenção de mídia. _(desde 1.53.0)_

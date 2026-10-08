@@ -139,7 +139,7 @@ Hub: "Configurações" → `/app/settings`
 | Conversões | Organização → Hub "Configurações" → Conversões `/app/settings/conversoes` | Devolver ao anúncio as vendas que ele trouxe, e marcar a origem de quem chega pelo site. | administrador |  |
 | Meta Ads | Organização → Hub "Configurações" → Meta Ads `/app/settings/meta-ads` | Conectar a conta de anúncios para ler o desempenho das campanhas. | administrador |  |
 | Marca | Organização → Hub "Configurações" → Marca `/app/settings/marca` | O nome e a cor que sua empresa mostra dentro do sistema. | administrador |  |
-| Billing | Organização → Hub "Configurações" → Billing `/app/settings/billing` | Plano e cobrança. | administrador |  |
+| Plano e cobrança | Organização → Hub "Configurações" → Plano e cobrança `/app/settings/billing` | Pagamento, troca de plano e faturas da sua empresa. | administrador |  |
 | Tipos de agendamento | Organização → Hub "Configurações" → Tipos de agendamento `/app/settings/tenant/agenda` | O que se pode marcar, quanto dura, onde acontece e quem atende. | todos |  |
 | Propostas | Organização → Hub "Configurações" → Propostas `/app/settings/tenant/proposals` | Configure a validade padrão e condições para propostas comerciais. | gerente ou acima | Só aparece se o módulo `propostas` estiver ligado. |
 | Modelos de proposta | Organização → Hub "Configurações" → Modelos de proposta `/app/settings/tenant/proposals/modelos` | Personalize os modelos da plataforma ou crie os da sua empresa, inclusive a partir de uma proposta que você já usa. | gerente ou acima | Só aparece se o recurso `propostas` estiver ligado. |

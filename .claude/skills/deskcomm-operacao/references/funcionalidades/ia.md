@@ -1,13 +1,13 @@
 # Funcionalidades — Agente de IA
 
 O que há aqui: agentes, follow-ups, fluxos, roteadores, conhecimento e supervisão.
-Extraído do CHANGELOG até a 1.77.0 e conferido contra o menu e o código em 2026-10-08.
+Extraído do CHANGELOG até a 1.78.0 e conferido contra o menu e o código em 2026-10-08.
 O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 `bash scripts/buscar.sh <palavra>` (a pasta é a da skill).
 
 ### Agente de IA → Agentes
 
-- **Modelo Gemini Flash-Lite** — O seletor de modelos do Google ganha o Gemini 3.5 Flash-Lite com ferramentas e visão. _(desde 1.77.0)_
+- **Modelos Gemini** — O seletor de modelos do Google traz o Gemini 3.5 Flash-Lite, com ferramentas e visão (ampliada na 1.78.0: 3.1 Flash-Lite e 3.6, 3.7 e 3.8 Flash). _(desde 1.77.0)_
 - **Bloqueio de afirmação clínica** — Proteção que barra diagnóstico, remédio e garantia de resultado; abre caso se insistir. Onde: Agente de IA → Agentes → Segurança. _(desde 1.74.0)_
 - **Aviso fora do horário** — Dá para configurar um texto de aviso para quem escreve fora do atendimento. Onde: Agente de IA → Agentes → gatilho de horário. _(desde 1.72.0)_
 - **Limiar de sentimento na tela** — O agente ganha cartão de limiar; o medidor passa a medir hostilidade no atendimento. _(desde 1.71.0)_
@@ -71,6 +71,7 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 - **Base que responde** — Material vira resposta com análise de clima junto. _(desde 1.0.0)_
 
 ### Agente de IA → Credenciais
+- **ChatGPT por assinatura com login próprio** — A conexão usa o "Sign in with ChatGPT" e a lista de modelos é por empresa; quem conectou antes precisa conectar de novo. Onde: Agente de IA → Credenciais. _(desde 1.78.0)_
 
 - **Login ChatGPT por assinatura** — Com interruptor da instalação, cada empresa conecta a assinatura no Credenciais. _(desde 1.74.0)_
 - **Provedor personalizado OpenAI** — Credenciais aceita endpoint próprio com teste de conexão antes de salvar. _(desde 1.50.0)_
@@ -142,6 +143,7 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 - **Editar skill na tela** — Skill ganha Editar com histórico e Restaurar; pacote com arquivos segue por zip. _(desde 1.44.0)_
 
 ### Agente de IA → Uso e orçamento
+- **Ligações do agente de voz em Uso de IA** — Cada ligação grava tokens e duração; o custo em dinheiro ainda não é calculado e não entra no limite de gasto. Onde: Agente de IA → Uso e orçamento. _(desde 1.78.0)_
 
 - **Gasto com foto e áudio no Uso** — Descrever foto, ler vídeo e transcrever áudio passam a somar no gasto do mês. _(desde 1.77.0)_
 - **Uso conta o período inteiro** — A tela passa a somar todas as chamadas e separa chamadas de turnos, com cartões novos. _(desde 1.77.0)_

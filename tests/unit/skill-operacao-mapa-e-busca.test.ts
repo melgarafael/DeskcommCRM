@@ -54,7 +54,7 @@ function roda(script: string, args: string[], raiz: string): { saida: string; rc
 }
 
 /** Monta raiz mínima: catalogo.ts com 3 telas + mapa citando as indicadas. */
-function raizFalsa(citadas: string[]): string {
+function raizFalsa(citadas: string[], nomes: Record<string, string> = {}): string {
   const dir = mkdtempSync(join(tmpdir(), "mapa-"));
   mkdirSync(join(dir, "lib/navigation"), { recursive: true });
   mkdirSync(join(dir, ".agents/skills/deskcomm-operacao/references"), { recursive: true });
@@ -69,7 +69,11 @@ function raizFalsa(citadas: string[]): string {
     "\n];\n";
   writeFileSync(join(dir, "lib/navigation/catalogo.ts"), catalogo);
   const mapa =
-    "# Mapa\n\n" + citadas.map((h) => `| Tela | Caminho \`${h}\` |\n`).join("") + "\n";
+    "# Mapa\n\n" +
+    citadas
+      .map((h) => `| ${nomes[h] ?? telas.find((x) => x.href === h)?.label ?? "Tela"} | Caminho \`${h}\` |\n`)
+      .join("") +
+    "\n";
   writeFileSync(join(dir, ".agents/skills/deskcomm-operacao/references/mapa-da-interface.md"), mapa);
   return dir;
 }
@@ -98,6 +102,15 @@ describe("skill-operacao — conferir-mapa.sh avisa da tela que falta", () => {
     const dir = raizFalsa(["/app/inbox", "/app/radar"]);
     const { rc } = roda(CONFERIR, ["--estrito"], dir);
     expect(rc).toBe(1);
+  });
+
+  it.skipIf(!temBash)("tela renomeada no menu e não no mapa: avisa pelo nome novo, sai com 0", () => {
+    const dir = raizFalsa(["/app/inbox", "/app/radar", "/app/agenda"], { "/app/radar": "Painel antigo" });
+    const { saida, rc } = roda(CONFERIR, [], dir);
+    expect(rc).toBe(0);
+    expect(saida).toContain("renomeada");
+    expect(saida).toContain("Radar (/app/radar)");
+    expect(saida).not.toContain("Inbox (/app/inbox)");
   });
 
   it.skipIf(!temBash)("mapa completo: sai com 0 e imprime a linha de cobertura", () => {

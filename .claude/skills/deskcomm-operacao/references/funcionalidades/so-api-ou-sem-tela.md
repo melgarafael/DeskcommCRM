@@ -1,7 +1,7 @@
 # Funcionalidades — Só API ou sem tela
 
 O que há aqui: o que só existe por rota, token, variável ou rotina.
-Extraído do CHANGELOG até a 1.77.0 e conferido contra o menu e o código em 2026-10-08.
+Extraído do CHANGELOG até a 1.78.0 e conferido contra o menu e o código em 2026-10-08.
 O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 `bash scripts/buscar.sh <palavra>` (a pasta é a da skill).
 

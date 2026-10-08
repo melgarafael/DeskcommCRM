@@ -1,7 +1,7 @@
 # Funcionalidades — Atendimento
 
 O que há aqui: tela de conversa, agenda, radar e avisos que chegam a quem atende.
-Extraído do CHANGELOG até a 1.77.0 e conferido contra o menu e o código em 2026-10-08.
+Extraído do CHANGELOG até a 1.78.0 e conferido contra o menu e o código em 2026-10-08.
 O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 `bash scripts/buscar.sh <palavra>` (a pasta é a da skill).
 
@@ -27,6 +27,9 @@ O menu e o código mandam sobre este arquivo; para ver o que mudou depois, use
 - **Agenda na tela** — Tipos, grade, marcar e remarcar com motivo; IA consulta e marca junto. _(desde 1.7.0)_
 
 ### Atendimento → Inbox
+- **Largura das colunas do Inbox ajustável** — Arraste a divisória da lista de conversas e da ficha do contato em tablet e notebook; a escolha fica no navegador e o duplo clique volta ao padrão. Onde: Atendimento → Inbox → divisória. _(desde 1.78.0)_
+- **Prévia do modelo aprovado com a janela fechada** — Na conversa com a janela de 24 horas fechada, escolher um modelo aprovado mostra cabeçalho, corpo, rodapé e botões, atualizados enquanto você preenche. Onde: Atendimento → Inbox → modelo. _(desde 1.78.0)_
+- **Aviso de mensagem para quem cuida** — O aviso de mensagem recebida vai ao atendente e aos administradores; sem atendente mas com negócio aberto, ao dono e aos administradores; sem responsável, à equipe toda. _(desde 1.78.0)_
 
 - **Selo do canal no inbox** — A lista e o cabeçalho mostram por qual canal cada conversa entrou, com o nome dado em Conexões. _(desde 1.77.0)_
 - **Menção com @ na nota** — Digitar @ na nota interna lista atendentes e avisa só a pessoa escolhida. Onde: Atendimento → Inbox → nota interna. _(desde 1.76.0)_
