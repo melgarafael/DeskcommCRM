@@ -149,7 +149,8 @@ fresca**, a partir da versão anterior:
 ```bash
 bash hostgator-setup-kit/update.sh
 curl -s https://<DOMAIN>/api/v1/health | jq -r '.data.version'   # esperado: X.Y.Z
-curl -s -o /dev/null -w '%{http_code}\n' https://<DOMAIN>/       # esperado: 307
+curl -s -o /dev/null -w '%{http_code}\n' https://<DOMAIN>/       # esperado: 200 (página inicial pública)
+curl -s -o /dev/null -w '%{http_code}\n' https://<DOMAIN>/app    # esperado: 307 (para /login)
 grep -E '^(APP|WORKER|SCHEDULER)_IMAGE=' .env                    # esperado: as três em X.Y.Z
 docker compose -f docker-compose.prod.yml ps                     # esperado: tudo healthy
 ```

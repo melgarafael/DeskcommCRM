@@ -4,6 +4,11 @@
  * O agente enxerga o outro sistema do dono — o segundo CRM, o ERP, a base que
  * outro produto escreve. Sem isto, o conector seria só uma tela de configuração.
  *
+ * `modulo: "banco_externo"`: com o módulo desligado em `/admin/sistema`, estas
+ * duas entradas somem da tela de capacidades, do agente publicado e do cliente MCP
+ * externo — ninguém liga o que não existe, e o agente não chama o que vai recusar.
+ * Ver `deModuloDesligado` em `./index.ts` (mesmo padrão de `./honorarios.ts`).
+ *
  * Os nomes vivem no `crm_*` porque são contrato de wire: renomear quebraria
  * agentes publicação em VPS de cliente. A camada de apresentação fala a língua
  * de quem configura, não a de quem programa (ver `tests/unit/catalogo-tools-leigo-friendly.test.ts`).
@@ -26,6 +31,7 @@ export const TOOLS_DADOS_EXTERNOS = declararTools([
     // inteira de atender. Quem quer as duas capacidades no dia a dia liga
     // "Organizar" — que é onde se cadastra a origem dos dados.
     pacotes: ["organizar"],
+    modulo: "banco_externo",
   },
   {
     name: "crm_query_external_data",
@@ -36,5 +42,6 @@ export const TOOLS_DADOS_EXTERNOS = declararTools([
     oQueToca: "Banco de dados conectado",
     risco: "seguro",
     pacotes: ["organizar"],
+    modulo: "banco_externo",
   },
 ]);

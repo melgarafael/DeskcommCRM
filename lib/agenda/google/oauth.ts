@@ -68,6 +68,33 @@ export const ENDERECO_DE_CONSENTIMENTO = "https://accounts.google.com/o/oauth2/v
 export const ENDERECO_DE_TOKEN = "https://oauth2.googleapis.com/token";
 
 /**
+ * O conjunto de caracteres de um client secret do Google — e o guarda contra a
+ * colagem errada.
+ *
+ * Um client secret do Google só contém `[A-Za-z0-9_-]`. A cerca é no CONJUNTO
+ * de caracteres de propósito, e não no prefixo `GOCSPX-`: secrets antigos não o
+ * têm, e o Google pode mudar o formato. O que não muda é que aspa, vírgula,
+ * espaço e chave nunca pertencem a um secret.
+ *
+ * O defeito que isto fecha foi medido em produção: colar, no campo da tela, o
+ * secret JUNTO com o resto da linha do arquivo JSON de credenciais —
+ * `GOCSPX-xxxx","redirect_uris` — que carrega aspa e vírgula. O campo é
+ * `type="password"` e nunca volta a aparecer, então ninguém relê o que ficou
+ * gravado; a única pista chegava lá na frente, na troca do código, como
+ * `invalid_client` do Google — um erro que aponta para o Google e não para a
+ * colagem.
+ *
+ * Pura, sem rede e sem `process.env`: a server action que grava e o formulário
+ * que avisa na hora bebem da MESMA regra, para não divergirem.
+ */
+export const FORMATO_DO_CLIENT_SECRET = /^[A-Za-z0-9_-]+$/;
+
+/** `true` quando o texto (já aparado) tem o formato de um client secret do Google. */
+export function clientSecretTemFormato(secret: string): boolean {
+  return FORMATO_DO_CLIENT_SECRET.test(secret.trim());
+}
+
+/**
  * Renovar com folga, não no vencimento.
  *
  * O `access_token` dura cerca de uma hora. Renovar só quando ele já expirou

@@ -60,6 +60,7 @@ const FONTE: WebhookSourceRow = {
   default_stage_id: "s-1",
   redirect_to: null,
   field_map: {},
+  form_fields: [],
   has_secret: false,
   created_at: "2026-09-30T10:00:00Z",
   updated_at: "2026-09-30T10:00:00Z",

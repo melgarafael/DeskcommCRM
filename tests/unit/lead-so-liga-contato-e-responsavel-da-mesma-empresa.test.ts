@@ -265,6 +265,56 @@ describe("a recusa do gatilho do banco (migration 0403) vira a mesma resposta, n
   });
 });
 
+describe("a recusa da RLS de crm_leads (42501) vira 403, não 500", () => {
+  // `fn_can_view_lead` (migration 0036) devolve false para o `agent` quando o
+  // dono é null no modo 'own' (o "Novo Lead" não manda responsável) ou é um
+  // colega no 'own_and_unassigned'. O Postgres recusa a linha com 42501.
+  const recusaDaRls = {
+    code: "42501",
+    message: 'new row violates row-level security policy for table "crm_leads"',
+  };
+
+  it("no INSERT (Atendente no modo 'own', negócio sem responsável) → 403 forbidden", async () => {
+    recusaDoGatilho = recusaDaRls;
+    await expect(createLeadHandler(banco as never, ctx, novo())).rejects.toMatchObject({
+      status: 403,
+      code: "forbidden",
+    });
+    expect(leadsGravados()).toHaveLength(0);
+  });
+
+  it("no UPDATE (o mesmo caminho do PATCH) → 403 forbidden", async () => {
+    recusaDoGatilho = recusaDaRls;
+    await expect(
+      updateLeadHandler(banco as never, ctx, LEAD, { title: "Outro título" } as never),
+    ).rejects.toMatchObject({ status: 403, code: "forbidden" });
+    expect(leadsGravados()).toHaveLength(0);
+  });
+
+  it("42501 de outra origem (GRANT faltando) continua 500 com a mensagem do banco", async () => {
+    recusaDoGatilho = { code: "42501", message: "permission denied for function fn_x" };
+    await expect(createLeadHandler(banco as never, ctx, novo())).rejects.toMatchObject({
+      status: 500,
+      code: "internal_error",
+      message: "permission denied for function fn_x",
+    });
+    recusaDoGatilho = {
+      code: "42501",
+      message: 'new row violates row-level security policy for table "crm_lead_activities"',
+    };
+    await expect(
+      updateLeadHandler(banco as never, ctx, LEAD, { title: "Outro título" } as never),
+    ).rejects.toMatchObject({ status: 500, code: "internal_error" });
+  });
+
+  it("a frase explica o porquê, em vez de \"tente de novo\"", async () => {
+    recusaDoGatilho = recusaDaRls;
+    const recusa = await createLeadHandler(banco as never, ctx, novo()).catch((e) => e);
+    expect(recusa.message).toContain("visibilidade");
+    expect(recusa.message).not.toMatch(/tente de novo|Erro interno/i);
+  });
+});
+
 describe("clone para outro funil: o dono vem da ORIGEM", () => {
   const origem = (dono: string): OrigemParaClonar =>
     ({

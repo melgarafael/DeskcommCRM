@@ -44,7 +44,7 @@ export interface StageClassifierKnobs {
 /** Instrução FIXA do classificador — marcador estável (como CHECKPOINT_INSTRUCTION) p/ os testes. */
 export const STAGE_CLASSIFIER_INSTRUCTION =
   'Você é um classificador auxiliar de estágio de funil de vendas (NÃO responde ao lead). ' +
-  'Com base na conversa acima e no estágio atual, indique em que estágio a conversa está AGORA. ' +
+  'Com base no resumo, na conversa acima e no estágio atual, indique em que estágio a conversa está AGORA. ' +
   'Definições dos estágios:\n' +
   '- new: lead recém-chegado, ainda sem diálogo real (só um primeiro "oi"/pergunta genérica, sem contexto).\n' +
   '- contacted: já houve troca inicial e rapport, mas o lead ainda não revelou necessidade ou dor concreta.\n' +
@@ -55,13 +55,51 @@ export const STAGE_CLASSIFIER_INSTRUCTION =
   '- lost: o lead recusou, desistiu ou pediu para parar de ser contatado.\n' +
   'Responda SOMENTE com uma palavra — o nome exato do estágio, em inglês. Sem explicação, sem pontuação.';
 
-function buildClassifierMessage(context: LeadContext, currentStage: LeadStage): string {
+/** Quantas mensagens recentes o classificador lê — o que veio antes chega pelo resumo. */
+export const MENSAGENS_PARA_O_ESTAGIO = 10;
+/** Teto por mensagem: um PDF ou transcrição longa não decide estágio pelo tamanho. */
+const CARACTERES_POR_MENSAGEM = 600;
+
+/**
+ * O que o classificador LÊ: o estágio, o resumo do que veio antes, o desfecho
+ * da última proposta e as últimas mensagens em texto corrido.
+ *
+ * Até aqui ia `JSON.stringify(context)` inteiro: telefone e e-mail do contato
+ * (PII que nenhum estágio precisa), chaves repetidas por mensagem, carimbos de
+ * hora e caminhos de mídia — tokens pagos em TODO turno para devolver uma
+ * palavra. O resumo do checkpoint cobre o que saiu da janela, e a proposta é o
+ * sinal que separa `negotiating`/`won`/`lost` sem precisar da conversa inteira.
+ */
+export function buildClassifierMessage(
+  context: LeadContext,
+  currentStage: LeadStage,
+  resumo: string | null = null,
+): string {
+  const recentes = context.messages.slice(-MENSAGENS_PARA_O_ESTAGIO).map((m) => {
+    const quem = m.direction === 'inbound' ? 'cliente' : 'loja';
+    const texto =
+      m.body.length > CARACTERES_POR_MENSAGEM ? `${m.body.slice(0, CARACTERES_POR_MENSAGEM)}…` : m.body;
+    return `${quem}: ${texto}`;
+  });
+  const proposta = context.last_proposal;
   return [
     '## Estágio atual do funil (registro)',
     currentStage,
+    ...(resumo !== null && resumo.trim() !== ''
+      ? ['', '## Resumo do que veio antes', resumo.trim()]
+      : []),
+    ...(proposta != null
+      ? [
+          '',
+          '## Última proposta',
+          proposta.decision_reason
+            ? `${proposta.status} (motivo: ${proposta.decision_reason})`
+            : proposta.status,
+        ]
+      : []),
     '',
-    '## Conversa a classificar (transcript)',
-    JSON.stringify(context),
+    '## Conversa recente (da mais antiga para a mais nova)',
+    ...recentes,
     '',
     STAGE_CLASSIFIER_INSTRUCTION,
   ].join('\n');
@@ -114,6 +152,8 @@ export async function classifyStage(
   args: {
     context: LeadContext;
     currentStage: LeadStage;
+    /** `rolling_summary` do checkpoint vigente — o que saiu da janela de mensagens. */
+    resumo?: string | null;
     model?: string;
     llmOverride?: LlmResolveOverride;
   },
@@ -132,7 +172,7 @@ export async function classifyStage(
         ...(args.model !== undefined ? { model: args.model } : {}),
         ...(args.llmOverride !== undefined ? { llmOverride: args.llmOverride } : {}),
         messages: [
-          { role: 'user', content: buildClassifierMessage(args.context, args.currentStage) },
+          { role: 'user', content: buildClassifierMessage(args.context, args.currentStage, args.resumo ?? null) },
         ],
       },
       { registry: deps.registry, log: deps.log },

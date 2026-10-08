@@ -50,13 +50,13 @@ describe("carregaEtapasCitadas", () => {
 
   it("filtra pela organização e devolve «Etapa · Funil», com o arquivamento", async () => {
     const { cliente, pedido } = clienteFalso({
-      data: [{ id: ID_A, name: "Pago", is_archived: true, crm_pipelines: { name: "Vendas" } }],
+      data: [{ id: ID_A, name: "Pago", is_archived: true, is_lost: false, crm_pipelines: { name: "Vendas", settings: null } }],
       error: null,
     });
     const r = await carregaEtapasCitadas(cliente, "org-1", [condicao("c1", [{ field: "lead_stage", op: "eq", value: ID_A }])]);
     expect(pedido.tabela).toBe("crm_stages");
     expect(pedido.filtros).toContainEqual(["organization_id", "org-1"]);
-    expect(r).toEqual({ ok: true, etapas: new Map([[ID_A, { nome: "Pago · Vendas", arquivada: true }]]) });
+    expect(r).toEqual({ ok: true, etapas: new Map([[ID_A, { nome: "Pago · Vendas", arquivada: true, isPerda: false, settingsDoFunil: null }]]) });
     if (!r.ok) return;
     expect(nomesDasEtapas(r.etapas).etapa?.(ID_A)).toBe("Pago · Vendas");
     expect(nomesDasEtapas(r.etapas).etapa?.(ID_B)).toBeNull();

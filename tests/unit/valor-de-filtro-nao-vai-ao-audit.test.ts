@@ -94,6 +94,7 @@ describe("consulta ao banco externo: o valor do filtro não vai ao audit", () =>
       auth,
       toolIds: ["crm_query_external_data"],
       handoffToolEnabled: false,
+      modulosLigados: ["banco_externo"],
       handoffSignal: { triggered: false },
     });
     const { execute } = montadas.crm_query_external_data as unknown as {
@@ -107,7 +108,7 @@ describe("consulta ao banco externo: o valor do filtro não vai ao audit", () =>
   });
 
   it("pelo servidor MCP público", async () => {
-    const server = createMcpServer(auth, "req-1");
+    const server = createMcpServer(auth, "req-1", ["banco_externo"]);
     const [cliente, servidor] = InMemoryTransport.createLinkedPair();
     await server.connect(servidor);
     const client = new Client({ name: "teste", version: "0.0.0" });

@@ -28,6 +28,7 @@ import { loadAuthUser, mfaEmDivida } from "@/lib/auth/server";
 import { orgAtivaDaApi, requireRole } from "@/lib/auth/require-role";
 import { CHANNEL_PROVIDER_SOCIAL, CHANNEL_PROVIDER_WAHA } from "@/lib/channels/capabilities";
 import { resolverSaudeDaConexaoRemovida } from "@/lib/channels/health";
+import { sincronizarAvisoDePausa } from "@/lib/channels/central-de-pausa";
 import { desfazerWebhookDoNumero } from "@/lib/channels/meta/webhook-override";
 import { numeroObservadoDaSessao } from "@/lib/channels/numero-observado";
 import { apagarAssinaturaSocial } from "@/lib/channels/social/store";
@@ -541,6 +542,17 @@ export async function DELETE(
       erro: err instanceof Error ? err.message : String(err),
     });
   }
+
+  // ─── O AVISO DE PAUSA TAMBÉM NÃO FICA ÓRFÃO (issue #2389, critério 3) ─────
+  //
+  // Mesma razão e mesma régua do bloco acima: arquivar/excluir tira o emissor.
+  // Com o item de pausa aberto, ele resolve com motivo `canal_arquivado` —
+  // nesta rodada, sem clique de ninguém (lição do #1023).
+  await sincronizarAvisoDePausa(
+    createAdminClient(),
+    { id, organization_id: activeOrg.orgId },
+    { autor: (user.full_name ?? "").trim() || user.email || user.id, idioma: user.idioma },
+  );
 
   void audit({
     action: arquivar ? "channel.archived" : "channel.deleted",

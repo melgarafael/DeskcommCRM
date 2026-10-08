@@ -253,6 +253,28 @@ export interface ChannelAdapter {
   echoExternalIds?(input: { externalId: string; recipient: string }): string[];
 
   /**
+   * A forma CANÔNICA de gravar `messages.external_id` de uma mensagem que este
+   * canal acabou de aceitar — a mesma que o `unique (organization_id,
+   * external_id)` usa para recusar a segunda linha.
+   *
+   * Existe porque a resposta de envio e o webhook do eco podem devolver PONTAS
+   * DIFERENTES do mesmo id (a cauda × o id completo, no WhatsApp). Gravar um
+   * lado numa forma e o outro noutra é o defeito da issue #196: os dois lados
+   * escrevem strings diferentes do mesmo identificador, o unique fica mudo e a
+   * janela entre o `SELECT` do dedup e o `INSERT` nasce a segunda linha com a
+   * mesma frase. Normalizar no PONTO DE ESCRITA fecha a janela sem migration e
+   * sem backfill — quem lê (`handleAck`, `echoExternalIds`) já procura as duas
+   * formas.
+   *
+   * É conhecimento do CANAL, não de quem envia — por isso mora aqui e não no
+   * handler, que é justamente o que o lint de canal impede.
+   *
+   * OPCIONAL: um canal cujo id já é único e simétrico não implementa, e quem
+   * chama grava o `externalId` exatamente como veio.
+   */
+  canonicalExternalId?(externalId: string): string;
+
+  /**
    * O telefone por trás de um identificador opaco, quando o canal souber.
    *
    * OPCIONAL: nem todo canal tem identidade opaca, e nem todo que tem sabe

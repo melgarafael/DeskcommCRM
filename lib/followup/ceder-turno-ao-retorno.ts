@@ -112,9 +112,11 @@ export async function deveCederTurnoAoRetorno(
     if (estado.is_group || estado.is_blocked || humanoNoComando(estado, agora)) return false;
 
     // O produtor costuma rodar ANTES deste drain: `aplicarEfeitosPosEntrada`
-    // drena o event_log na própria requisição e só depois pede o despacho do
-    // agente. Aí a inscrição que ESTA mensagem criou já está viva, e a checagem
-    // de "vivos" abaixo a confundiria com outro fluxo ocupando o slot. O
+    // drena o gatilho de retorno na própria requisição, logo depois de pedir o
+    // despacho, e o turno ainda espera o debounce. Costuma, não sempre — por
+    // isso a previsão abaixo. Quando rodou, a inscrição que ESTA mensagem
+    // criou já está viva, e a checagem de "vivos" abaixo a confundiria com
+    // outro fluxo ocupando o slot. O
     // produtor grava o `message_id` no evento de inscrição: se ele existe, o
     // fluxo já é a voz deste retorno.
     const { rows: inscritoPorEsta } = await pool.query(
@@ -129,13 +131,21 @@ export async function deveCederTurnoAoRetorno(
     );
     if (inscritoPorEsta[0]) return true;
 
-    const { rows: vivos } = await pool.query<{ pointer_id: string }>(
-      `select pointer_id from followup_enrollments
-        where organization_id = $1 and contact_id = $2
-          and status in ('active','waiting_reply','paused_handoff','paused_manual')
-        limit 1`,
-      [pedido.organizationId, pedido.contactId],
+    // O produtor grava a inscrição e o evento dela em duas escritas. Um claim
+    // entre as duas não acha o evento acima, mas acha a inscrição viva — e ela
+    // nasceu de um retorno DEPOIS desta mensagem chegar: é a voz deste retorno
+    // (ou de uma mensagem seguinte da mesma rajada), não outro fluxo no slot.
+    const { rows: vivos } = await pool.query<{ pointer_id: string; nasceu_depois: boolean | null }>(
+      `select e.pointer_id, e.started_at >= m.created_at as nasceu_depois
+         from followup_enrollments e
+         left join messages m
+           on m.organization_id = e.organization_id and m.id = $3
+        where e.organization_id = $1 and e.contact_id = $2
+          and e.status in ('active','waiting_reply','paused_handoff','paused_manual')`,
+      [pedido.organizationId, pedido.contactId, pedido.messageId],
     );
+    const idsDeRetorno = new Set(pointers.map((p) => p.id));
+    if (vivos.some((v) => v.nasceu_depois === true && idsDeRetorno.has(v.pointer_id))) return true;
     if (vivos[0]) return false;
 
     const { rows: anteriores } = await pool.query<{ sent_at: string | null }>(

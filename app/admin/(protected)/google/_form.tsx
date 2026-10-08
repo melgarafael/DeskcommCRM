@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { updateGoogleOAuth } from "@/app/actions/settings/updateGoogleOAuth";
+import { clientSecretTemFormato } from "@/lib/agenda/google/oauth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -41,8 +42,15 @@ export function FormularioDoGoogle({
   const [clientSecret, setClientSecret] = useState("");
   const [salvando, iniciar] = useTransition();
 
+  // O secret digitado tem caractere que não existe numa chave do Google (aspa,
+  // vírgula, espaço — a marca da colagem errada do JSON de credenciais). Só vale
+  // quando há algo digitado: vazio significa "mantenha o que está gravado". A
+  // cerca é a MESMA do servidor (`clientSecretTemFormato`), para não divergir.
+  const secretComFormatoRuim = clientSecret.trim().length > 0 && !clientSecretTemFormato(clientSecret);
+
   const podeSalvar =
     clientId.trim().length >= 10 &&
+    !secretComFormatoRuim &&
     // Sem segredo gravado, ele é OBRIGATÓRIO — salvar só o client id deixaria a
     // instalação com meia credencial, que é indistinguível de nenhuma para o
     // resolvedor e não diz isso a ninguém.
@@ -94,11 +102,17 @@ export function FormularioDoGoogle({
             onChange={(e) => setClientSecret(e.target.value)}
             placeholder={temSegredoSalvo ? "••••••••  (já cadastrada)" : "GOCSPX-…"}
           />
-          <p className="text-xs text-muted-foreground">
-            {temSegredoSalvo
-              ? t("Já existe uma chave cadastrada. Deixe em branco para mantê-la, ou digite uma nova para substituir.")
-              : t("Ela é guardada cifrada e nunca volta a aparecer nesta tela.")}
-          </p>
+          {secretComFormatoRuim ? (
+            <p data-testid="google-secret-formato-ruim" className="text-xs text-warning">
+              {t("Essa chave tem aspas, vírgula ou espaço — sinal de que veio colada junto com o resto do arquivo. Copie só o valor que começa com GOCSPX-, sem nada colado depois.")}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {temSegredoSalvo
+                ? t("Já existe uma chave cadastrada. Deixe em branco para mantê-la, ou digite uma nova para substituir.")
+                : t("Ela é guardada cifrada e nunca volta a aparecer nesta tela.")}
+            </p>
+          )}
         </div>
 
         {/*

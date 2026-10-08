@@ -17,7 +17,9 @@ import {
   agrupaPorPrazo,
   diaLocalDoPrazo,
   estaAtrasada,
+  estaEncerrada,
   faixaDePrazo,
+  proximoEstadoAoAlternar,
   type Tarefa,
 } from "@/lib/tarefas/tipos";
 
@@ -124,5 +126,42 @@ describe("o dia do calendário é o dia de QUEM OLHA", () => {
 
   it("prazo de manhã também casa com o próprio dia", () => {
     expect(diaLocalDoPrazo(local(2026, 3, 5, 9))).toBe("2026-03-05");
+  });
+});
+
+/**
+ * #2549 — a caixa "Reabrir a tarefa" numa tarefa CANCELADA gravava `done`.
+ *
+ * A caixa da lista é pintada por `estaEncerrada` (cancelada = encerrada, caixa
+ * marcada, rótulo "Reabrir"), mas o cliente decidia o próximo status olhando
+ * só `done`. Dois códigos dizendo o que é "encerrada": o clique reabria para
+ * CONCLUÍDA e a rota registrava "Tarefa concluída" na linha do tempo. A regra
+ * agora é uma função pura só, e é ela que este bloco prende.
+ */
+describe("alternar a caixa da lista (#2549)", () => {
+  it("cancelada reabre para pendente — NUNCA para concluída", () => {
+    // Previsto na `main` antiga: `cancelled` não era `done`, a condição caía no
+    // ramo falso e o PATCH saía com {"status":"done"}. Medido aqui: `pending`.
+    expect(proximoEstadoAoAlternar("cancelled")).toBe("pending");
+    expect(proximoEstadoAoAlternar("cancelled")).not.toBe("done");
+  });
+
+  it("concluída reabre para pendente — o caso que já funcionava", () => {
+    expect(proximoEstadoAoAlternar("done")).toBe("pending");
+  });
+
+  it("o que ainda pede ação vira concluída", () => {
+    expect(proximoEstadoAoAlternar("pending")).toBe("done");
+    expect(proximoEstadoAoAlternar("in_progress")).toBe("done");
+  });
+
+  it("a caixa e o cliente partilham a MESMA regra do que é encerrada", () => {
+    // Se a função voltar a divergir de `estaEncerrada`, a tela mostra
+    // "Reabrir a tarefa" e o cliente grava outra coisa — que era o defeito.
+    for (const status of ["pending", "in_progress", "done", "cancelled"] as const) {
+      const proximo = proximoEstadoAoAlternar(status);
+      const reabriu = proximo === "pending";
+      expect(reabriu).toBe(estaEncerrada({ status }));
+    }
   });
 });

@@ -309,6 +309,14 @@ const schema = z.object({
   // duplicado ou perdido (bug real da fusão).
   AGENT_DISPATCH_CONSUMER: z.enum(["engine", "native"]).optional().default("engine"),
 
+  // Há um worker drenando o `event_log` em laço ao lado deste app? Quem declara
+  // é o compose que sobe os dois (`docker-compose.prod.yml`), não o `.env`:
+  // vazio é "não", e o webhook de mensagem segue drenando a fila inteira dentro
+  // da própria requisição. `1`/`true` troca isso por um dreno só da organização
+  // e dos gatilhos de follow-up — `lib/dev/kick-local-pipeline.ts`.
+  // `z.string()` e não `z.enum`: valor torto aqui não pode derrubar o app.
+  EVENT_LOG_WORKER_DRAINS: z.string().optional().default(""),
+
   /**
    * Kill switch do teto de gasto de IA — a alavanca que o operador da VPS puxa
    * às 2h da manhã quando a IA parou e ele não sabe SQL.
@@ -489,6 +497,16 @@ const schema = z.object({
    * 30 (a janela em que um near-miss ainda é curável).
    */
   GOLDEN_CANDIDATES_RETENTION_DAYS: z.string().optional().default(""),
+  /**
+   * As tabelas append-only da IA (migration 0587). `z.string()` pela MESMA razão
+   * das irmãs — quem interpreta é `lib/retencao/politica.ts`, onde lixo cai no
+   * padrão em vez de derrubar o app. Padrões/pisos: telemetria 400/100, ritmo de
+   * envio 2/2, cópias enviadas 30/7, checkpoints superados 180/30.
+   */
+  AI_TELEMETRY_RETENTION_DAYS: z.string().optional().default(""),
+  PACING_LEDGER_RETENTION_DAYS: z.string().optional().default(""),
+  OUTBOUND_COPIES_RETENTION_DAYS: z.string().optional().default(""),
+  LEAD_CHECKPOINT_RETENTION_DAYS: z.string().optional().default(""),
 
   // LGPD export (S-08.04)
   LGPD_SIGNING_KEY: z.string().optional().default(""),

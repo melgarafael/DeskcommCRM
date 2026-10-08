@@ -57,8 +57,12 @@ const acusar = (nome: string, pular: (arquivo: string) => boolean = () => false)
 describe("rota de API não redireciona org suspensa (a CLASSE)", () => {
   it("o instrumento enxerga o terreno (controle positivo)", () => {
     expect(API.length).toBeGreaterThan(100);
+    // Basta enxergar o identificador: um piso perto da contagem do dia (era
+    // 20, exatamente o que a main tinha) reprovava quem troca `orgAtivaDaApi`
+    // pelo portão mais forte, `requireRole` — medido no #2456, na rota de
+    // modelos. Quem diz se as rotas estão certas são os dois casos abaixo.
     expect(API.filter((f) => usosDoIdentificador(f.fonte, f.arquivo, "orgAtivaDaApi").length > 0).length)
-      .toBeGreaterThanOrEqual(20);
+      .toBeGreaterThan(0);
   });
 
   it("nenhuma rota de app/api usa resolveActiveOrg (redirect vira 307 HTML no fetch)", () => {

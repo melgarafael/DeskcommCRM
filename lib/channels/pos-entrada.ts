@@ -54,7 +54,7 @@ import { casarClickRef } from "@/lib/plataformas-de-anuncio/meta/captura-de-cliq
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
 import { ehContatoDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
-import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
+import { acelerarFollowupDoInbound, drenarEventosDoInbound } from "@/lib/dev/kick-local-pipeline";
 import { origemDoNegocioPeloCanal } from "@/lib/channels/origem-do-negocio";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { casarCampanha, lerCampanhas } from "@/lib/ai/elegibilidade/campanha";
@@ -171,16 +171,20 @@ export async function aplicarEfeitosPosEntrada(
   await guardarOrigemDaPagina(admin, entrada);
   await abrirDemanda(admin, entrada);
   await avaliarCampanha(admin, entrada);
-  // A resposta do lead avança o follow-up AQUI. O despacho do agente (LLM)
-  // vem depois: no Hobby ele estoura o tempo da request e o próximo texto
-  // do fluxo ficava esperando o relógio.
-  await acelerarPipelineDeEventos(admin, {
+  const sinal = {
     organizationId: entrada.organizationId,
     contactId: entrada.contactId,
     messageId: entrada.messageId,
     texto: entrada.texto,
-  });
+  };
+  // UMA VOZ: a resposta do cliente avança o follow-up DESTE contato antes de o
+  // turno do agente ser pedido.
+  await acelerarFollowupDoInbound(admin, sinal);
   await pedirDespachoDoAgente(admin, entrada);
+  // O dreno do event_log vem DEPOIS do despacho: nenhum handler dele decide se
+  // o agente fala (o "cliente voltou" é previsto por `deveCederTurnoAoRetorno`
+  // nas duas ordens), e cada evento drenado aqui atrasava o pedido do turno.
+  await drenarEventosDoInbound(admin, sinal);
 }
 
 /**

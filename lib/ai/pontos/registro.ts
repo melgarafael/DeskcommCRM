@@ -178,6 +178,16 @@ export interface PontoDeIa {
   };
 }
 
+/**
+ * Ids dos dois pontos que gravam em `llm_calls` FORA do seam, por insert direto
+ * do worker de mídia — constante, para o `purpose` gravado e o id daqui não
+ * divergirem (a tela de Execuções rotula a linha pelo id). As entradas abaixo
+ * seguem com o id LITERAL, porque testes ancoram o recorte do ponto nele;
+ * `midia-grava-custo-em-llm-calls` confere que cada constante casa com uma entrada.
+ */
+export const PONTO_TRANSCRICAO_DE_AUDIO = "transcricao_de_audio";
+export const PONTO_VISAO_DE_IMAGEM = "visao_de_imagem";
+
 export const PONTOS_DE_IA: readonly PontoDeIa[] = [
   {
     id: "agent_preview",
@@ -580,7 +590,7 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     },
     sintomaDeFalha:
       "O cliente manda áudio e o agente responde como se não tivesse recebido nada.",
-    registraEm: "nenhum",
+    registraEm: "llm_calls",
   },
   {
     id: "visao_de_imagem",
@@ -592,7 +602,7 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     emissor: "workers/media-derive-worker.ts",
     sintomaDeFalha:
       "O cliente manda uma foto do produto ou um comprovante e o agente age como se a imagem não existisse.",
-    registraEm: "nenhum",
+    registraEm: "llm_calls",
   },
 
   // ────────────────────────── Melhorar e testar ────────────────────────────

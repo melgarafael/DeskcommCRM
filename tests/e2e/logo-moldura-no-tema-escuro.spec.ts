@@ -653,9 +653,20 @@ test.describe("a moldura do logo no tema escuro", () => {
       "src",
       urlClara!,
     );
-    expect(
-      fundoEClaro((await medirMoldura(page.locator("[data-previa-do-logo='escuro'] img"))).fundo),
-    ).toBe(true);
+    // Poll, não leitura única: a moldura chega ~80ms DEPOIS do src (re-render do
+    // refresh do remover()), e a leitura única caía nessa janela — o MESMO commit
+    // de prévia passou e falhou no CI (#1218). Moldura que nunca chega ainda reprova.
+    await expect
+      .poll(
+        async () => {
+          const m = await medirMoldura(page.locator("[data-previa-do-logo='escuro'] img"));
+          return fundoEClaro(m.fundo)
+            ? "claro"
+            : `${m.fundo} em <${m.tagDoPai} class="${m.classeDoPai}">`;
+        },
+        { message: "moldura branca atrás do logo claro na prévia escura", timeout: 5_000 },
+      )
+      .toBe("claro");
     await page.reload();
     await expect(page.locator("[data-previa-do-logo='claro'] img")).toHaveAttribute(
       "src",

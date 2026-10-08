@@ -39,7 +39,11 @@ import { describe, expect, it } from "vitest";
  *
  * Que o conteúdo exportado seja suficiente — só que a tabela é VISITADA.
  * E não olha o PDF: `activities` está no payload e não no relatório, o que é
- * legítimo (o worker sobe `data.json` E `report.pdf`, e o JSON leva tudo).
+ * legítimo (o worker sobe `data.json` E `report.pdf`, e o JSON leva o payload).
+ * "Leva o payload" tem exceção desde o doc 103: `copiaDoTitular` tira do
+ * arquivo o que é da equipe, e duas seções que a cascata redige —
+ * `conversation_notes` e `case_chat_messages` — são VISITADAS aqui e não vão ao
+ * titular. É decisão do dono, não esquecimento: ver `lib/lgpd/copia-do-titular.ts`.
  */
 
 const RAIZ = path.resolve(__dirname, "../..");

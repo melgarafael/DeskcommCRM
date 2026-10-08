@@ -112,3 +112,34 @@ export function nomeDoCanal(
   if (telefone) return telefone;
   return t("Número sem nome");
 }
+
+/**
+ * O rótulo do canal NAS TELAS DE CONVERSA — lista e cabeçalho do inbox (#2383).
+ *
+ * Devolve `null` quando não há o que mostrar, e esse é o motivo de existir uma
+ * função ao lado da `nomeDoCanal`: a regra de "cabe badge aqui?" era do próprio
+ * arquivo da lista (`canal?.phone_number ?? …`), e o cabeçalho não tinha
+ * rótulo nenhum. Duas telas calculando o MESMO fato por conta própria é como as
+ * leituras divergem — ver o histórico de `comandoDaConversa`, que unificou
+ * quatro leituras de "quem manda" por esse mesmo motivo.
+ *
+ * O TEXTO é o da tela de canais (`/app/connections`): `nomeDoCanal` prefere o
+ * nome amigável, cai no número quando não há nome, e nunca entrega
+ * `waha_session_name` (o `org_2dd5e6ea` documentado acima). Ou seja, o badge
+ * da conversa e o card do canal dizem a mesma string — não há uma segunda
+ * cadeia de regras para manter em sincronia.
+ *
+ * O único degrau cortado aqui é o último: canal sem apelido **e** sem número
+ * devolve `null`, não `"Número sem nome"`. Na lista isso seria a mesma palavra
+ * em toda linha — o ruído que a prop `mostrarCanal` existe para evitar — e já
+ * era assim antes desta função; manter é zero regressão do fallback.
+ */
+export function rotuloDoCanalDaConversa(
+  canal: { display_name?: string | null; phone_number?: string | null } | null | undefined,
+  t: (texto: string) => string = (texto) => texto,
+): string | null {
+  if (!canal) return null;
+  const temApelido = Boolean(canal.display_name?.trim());
+  const temNumero = Boolean(canal.phone_number?.trim());
+  return temApelido || temNumero ? nomeDoCanal(canal, t) : null;
+}

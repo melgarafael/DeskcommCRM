@@ -8,6 +8,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { canalDesativado } from "@/lib/channels/desativado";
+import { sincronizarAvisoDePausa } from "@/lib/channels/central-de-pausa";
 
 export const dynamic = "force-dynamic";
 
@@ -171,6 +172,21 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   // Id que não voltou na leitura não existe nesta organização (ou nunca
   // existiu): falha nomeada, nunca sucesso falso.
   for (const id of ids) if (!encontrados.has(id)) falharam.add(id);
+
+  // Um item da Central POR canal que mudou (critério 5 da #2389) — a mesma
+  // conta do audit: N operações da mesma requisição, cada uma nomeando a linha
+  // que mudou. Um item "N canais" não leva quem resolve de volta ao canal
+  // certo, e o laço fecha sozinho em cada um.
+  const autor = (auth.user.full_name ?? "").trim() || auth.user.email || auth.user.id;
+  await Promise.all(
+    alterados.map((canal) =>
+      sincronizarAvisoDePausa(
+        admin,
+        { id: canal, organization_id: auth.org.orgId },
+        { autor, idioma: auth.user.idioma },
+      ),
+    ),
+  );
 
   return ok(
     {

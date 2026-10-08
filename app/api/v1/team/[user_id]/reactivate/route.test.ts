@@ -36,7 +36,7 @@ const ALVO = "33333333-3333-4333-8333-333333333333";
 /** O `update` observado, para as asserções. */
 let ultimoUpdate: Record<string, unknown> | null = null;
 
-function bancoCom(linha: unknown, erroUpdate: { message: string } | null = null) {
+function bancoCom(linha: unknown, erroUpdate: { message: string; code?: string } | null = null) {
   ultimoUpdate = null;
   const update = vi.fn((valores: Record<string, unknown>) => {
     ultimoUpdate = valores;
@@ -146,5 +146,24 @@ describe("reativar membro", () => {
 
     const res = await POST(pedido(), ctx);
     expect(res.status).toBe(500);
+  });
+
+  it("⭐ plano sem vaga: 409 plan_limit_reached com o número, e nada é auditado", async () => {
+    // Spec da cobrança §5: o gatilho de assentos recusa com PT402. Antes era 500
+    // "internal_error" — o admin clicava de novo e de novo.
+    bancoCom(
+      { id: "m1", user_id: ALVO, role: "agent", revoked_at: "2026-09-10T22:45:53Z" },
+      { code: "PT402", message: "limite_do_plano:assentos:3" },
+    );
+    const { POST } = await import("./route");
+
+    const res = await POST(pedido(), ctx);
+    const body = await res.json();
+
+    expect(res.status).toBe(409);
+    expect(body.error.code).toBe("plan_limit_reached");
+    expect(body.error.message).toContain("Seu plano permite 3 pessoas");
+    expect(body.error.details).toEqual({ recurso: "assentos", limite: 3 });
+    expect(audit).not.toHaveBeenCalled();
   });
 });

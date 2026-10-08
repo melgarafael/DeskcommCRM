@@ -50,6 +50,12 @@ export interface OpcoesDoDubleDoHandler {
   organizacao?: LinhaDoDuble;
   /** Linhas de `calendar_appointments` lidas pela guarda de agenda. Padrão: `[]`. */
   agenda?: LinhaDoDuble[];
+  /**
+   * A linha de `ai_agents` que a conferência da operação do agente lê pela REST
+   * (`assertAgentOperationSupabase`). Função = estado vivo: o teste pausa o
+   * agente entre uma bolha e outra.
+   */
+  agente?: LinhaDoDuble | null | (() => LinhaDoDuble | null);
 }
 
 export interface RetornoDoDubleDoHandler {
@@ -153,6 +159,7 @@ export function criarDubleDoHandler(
       meta_templates: [],
       channel_sessions: [],
       organizations: [],
+      ai_agents: [],
     },
     rpcs: [],
   };
@@ -302,6 +309,23 @@ export function criarDubleDoHandler(
               resolve,
               reject,
             ),
+        };
+        return cadeia;
+      }
+
+      if (tabela === "ai_agents") {
+        const cadeia = {
+          select: (colunas = "") => {
+            capturas.selects.ai_agents!.push(colunas);
+            return cadeia;
+          },
+          eq: () => {
+            return cadeia;
+          },
+          maybeSingle: async () => ({
+            data: typeof opcoes.agente === "function" ? opcoes.agente() : (opcoes.agente ?? null),
+            error: null,
+          }),
         };
         return cadeia;
       }

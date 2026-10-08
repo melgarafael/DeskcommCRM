@@ -2179,6 +2179,10 @@
   "Tags do lead": "销售线索标签",
   "Origem (utm_source)": "来源（utm_source）",
   "Etapa de destino": "目标阶段",
+  "Motivo da perda": "流失原因",
+  "Escolha o motivo": "选择原因",
+  "Escolha o motivo da perda.": "请选择流失原因。",
+  "falta o motivo da perda": "缺少流失原因",
   "Texto da mensagem": "消息文本",
   "Tags do contato": "联系人标签",
   "Tag adicionada": "已添加标签",
@@ -3298,6 +3302,7 @@
   "Tente ajustar os filtros ou a busca.": "请尝试调整筛选条件或搜索。",
   "Entrou no funil": "进入销售漏斗",
   "primeira mensagem recebida no WhatsApp": "在 WhatsApp 收到的第一条消息",
+  "primeira mensagem enviada pelo celular": "从手机发送的第一条消息",
   "primeira mensagem recebida no Instagram": "在 Instagram 收到的第一条消息",
   "primeira mensagem recebida no Facebook": "在 Facebook 收到的第一条消息",
   "primeira ligação recebida": "收到的第一通电话",
@@ -3350,6 +3355,7 @@
   "Fluxo concluído": "流程已完成",
   "O fluxo parou de tentar": "流程已停止尝试",
   "Falhou neste passo": "此步骤失败",
+  "Não conseguiu mover o card para a etapa escolhida": "无法将卡片移动到所选阶段",
   "O cliente respondeu — o fluxo acordou na hora": "客户回复了——流程立即被唤醒",
   "Encerrado porque o cliente respondeu": "因客户回复而结束",
   "Encerrado porque o cliente pediu para parar": "因客户要求停止而结束",
@@ -4114,6 +4120,8 @@
   "Endereço de retorno": "返回地址",
   "Já existe uma chave cadastrada. Deixe em branco para mantê-la, ou digite uma nova para substituir.": "已存在已注册的密钥。留空以保留它，或输入新密钥以替换。",
   "Ela é guardada cifrada e nunca volta a aparecer nesta tela.": "它会被加密保存，且不会再次出现在此屏幕上。",
+  "Essa chave tem aspas, vírgula ou espaço — sinal de que veio colada junto com o resto do arquivo. Copie só o valor que começa com GOCSPX-, sem nada colado depois.": "这个密钥包含引号、逗号或空格——说明它是和文件的其余内容一起粘贴的。请只复制以 GOCSPX- 开头的值，后面不要粘贴任何内容。",
+  "A chave secreta tem caracteres que não existem numa chave do Google (como aspas, vírgula ou espaço). Copie só o valor que começa com GOCSPX-, sem nada colado depois.": "该密钥包含 Google 密钥中不存在的字符（例如引号、逗号或空格）。请只复制以 GOCSPX- 开头的值，后面不要粘贴任何内容。",
   "Esta instalação já tem as credenciais no arquivo de configuração do servidor. O que você salvar aqui passa a valer no lugar delas; apagar o que está aqui faz o sistema voltar a usar as do arquivo.": "此安装已在服务器配置文件中拥有凭据。你在此保存的内容将取代它们生效；删除此处内容会使系统重新使用文件中的凭据。",
   "Ao trocar uma credencial já em uso:": "更换正在使用的凭据时：",
   "quem já conectou a agenda vai precisar conectar de novo. O Google invalida as autorizações antigas quando o aplicativo muda — não há como evitar, e ninguém perde compromisso por isso.": "已经连接过日历的人需要重新连接。当应用发生变化时，Google 会使旧授权失效——这无法避免，而且没有人会因此丢失日程。",
@@ -5539,5 +5547,6 @@
   "O integrador deve enviar external_id, ai_service_consent: true, submission_status: completed e ai_service_consent_version com a versão do aviso aceito. Aceitar apenas a política de privacidade não autoriza a IA. Sem external_id, o envio não concede nem renova a autorização; reenviar com o mesmo external_id não libera de novo. Uma recusa (false) num envio completo e válido revoga, mesmo sem external_id.": "集成需发送 external_id、ai_service_consent: true、submission_status: completed 和 ai_service_consent_version（已接受声明的版本）。仅接受隐私政策不授权 AI。没有 external_id 的提交不会授予或续期授权；使用相同 external_id 重新发送不会再次授权。完整且有效的提交中的拒绝（false）会撤销授权，即使没有 external_id。",
   "Configure a assinatura da fonte antes de autorizar IA. Para remover a assinatura, desligue primeiro a autorização de IA.": "授权 AI 前请先配置来源签名。移除签名前，请先关闭 AI 授权。",
   "Atendimento por IA autorizado pelo consentimento explícito deste formulário.": "已根据此表单中的明确同意授权 AI 接待。",
-  "Este envio não concedeu nova autorização de IA. Confira o consentimento e o estado do contato antes de configurar o atendimento.": "此次提交未授予新的 AI 授权。配置接待前，请先核对同意情况和联系人状态。"
+  "Este envio não concedeu nova autorização de IA. Confira o consentimento e o estado do contato antes de configurar o atendimento.": "此次提交未授予新的 AI 授权。配置接待前，请先核对同意情况和联系人状态。",
+  "Uma resposta numérica não estava no formato aceito pelo formulário. Confira se o campo contém apenas números e use o formato BRL na pergunta de moeda.": "数字答案格式不符合表单要求。请确认字段仅包含数字，货币问题请使用巴西雷亚尔格式。"
 }

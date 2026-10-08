@@ -7,6 +7,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getAdapter } from '@/lib/channels';
 import { DETALHE_CREDENCIAL_RECUSADA } from '@/lib/channels/health';
 import { statusHttpDoErroWaha } from '@/lib/channels/adapters/waha';
+import {
+  limparMemoCheckExists,
+  TTL_DO_MEMO_CHECK_EXISTS_MS,
+} from '@/lib/waha/resolve-contact-whatsapp-id';
 
 /** A organização atravessa o seam desde a issue #236. */
 const ORG = "00000000-0000-4000-8000-000000000236";
@@ -40,6 +44,8 @@ function sendTextBody(fetchMock: ReturnType<typeof vi.fn>) {
 }
 
 afterEach(() => {
+  limparMemoCheckExists();
+  vi.useRealTimers();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
@@ -174,6 +180,89 @@ describe('adapter WAHA', () => {
     });
 
     expect(sendTextBody(fetchMock).chatId).toBe('23423462304912@lid');
+  });
+
+  describe('memo do check-exists', () => {
+    const enviar = (to: string, sessionRef = 'default') =>
+      getAdapter('waha').send({ organizationId: ORG, sessionRef, to, kind: 'text', body: 'oi' });
+    const checks = (fetchMock: ReturnType<typeof vi.fn>) =>
+      fetchMock.mock.calls.filter(([url]) => String(url).includes('/api/contacts/check-exists'))
+        .length;
+
+    it('2 envios ao mesmo número fazem 1 check-exists, e o 2º sai ao mesmo destino', async () => {
+      const fetchMock = stubWaha({ id: { _serialized: 'ABC123' } }, () => ({
+        numberExists: true,
+        chatId: '23423462304912@lid',
+      }));
+
+      await enviar('5532984793302@c.us');
+      await enviar('5532984793302@c.us');
+
+      expect(checks(fetchMock)).toBe(1);
+      const destinos = fetchMock.mock.calls
+        .filter(([url]) => String(url).includes('/api/sendText'))
+        .map(([, init]) => JSON.parse(String((init as RequestInit).body)).chatId);
+      expect(destinos).toEqual(['23423462304912@lid', '23423462304912@lid']);
+    });
+
+    it('a sessão faz parte da chave: outra sessão consulta de novo', async () => {
+      const fetchMock = stubWaha({ id: { _serialized: 'ABC123' } });
+
+      await enviar('5532984793302@c.us', 'org-a');
+      await enviar('5532984793302@c.us', 'org-b');
+
+      expect(checks(fetchMock)).toBe(2);
+    });
+
+    it('consulta que falhou não entra no memo', async () => {
+      vi.stubEnv('WAHA_API_BASE_URL', WAHA_BASE);
+      vi.stubEnv('WAHA_API_KEY', 'hash123');
+      let falhar = true;
+      const fetchMock = vi.fn().mockImplementation((url: string) => {
+        if (String(url).includes('/api/contacts/check-exists')) {
+          return Promise.resolve(
+            falhar ? new Response('{}', { status: 503 }) : Response.json({ numberExists: true, chatId: '23423462304912@lid' }),
+          );
+        }
+        return Promise.resolve(Response.json({ id: { _serialized: 'ABC123' } }));
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await enviar('5532984793302@c.us');
+      const depoisDaFalha = checks(fetchMock);
+      falhar = false;
+      await enviar('5532984793302@c.us');
+
+      expect(checks(fetchMock)).toBeGreaterThan(depoisDaFalha);
+      expect(sendTextBody(fetchMock).chatId).toBe('5532984793302@c.us');
+      const ultimo = fetchMock.mock.calls.filter(([url]) => String(url).includes('/api/sendText')).at(-1)!;
+      expect(JSON.parse(String((ultimo[1] as RequestInit).body)).chatId).toBe('23423462304912@lid');
+    });
+
+    it('negativo não entra no memo', async () => {
+      const fetchMock = stubWaha({ id: { _serialized: 'ABC123' } }, () => ({ numberExists: false }));
+
+      await enviar('5532984793302@c.us');
+      const depoisDoPrimeiro = checks(fetchMock);
+      await enviar('5532984793302@c.us');
+
+      expect(checks(fetchMock)).toBe(depoisDoPrimeiro * 2);
+    });
+
+    it('o memo expira no TTL', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-02T12:00:00Z'));
+      const fetchMock = stubWaha({ id: { _serialized: 'ABC123' } });
+
+      await enviar('5532984793302@c.us');
+      vi.setSystemTime(Date.now() + TTL_DO_MEMO_CHECK_EXISTS_MS - 1);
+      await enviar('5532984793302@c.us');
+      expect(checks(fetchMock)).toBe(1);
+
+      vi.setSystemTime(Date.now() + 1);
+      await enviar('5532984793302@c.us');
+      expect(checks(fetchMock)).toBe(2);
+    });
   });
 
   it('áudio vai pelo plano de mídia do WAHA (sendVoice), não por sendText', async () => {

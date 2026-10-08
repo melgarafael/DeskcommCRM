@@ -301,7 +301,7 @@ O que precisa estar intacto, e o que responde por cada um:
 | Sessão do WhatsApp pareada | a conexão continua `WORKING` na tela de Conexões, **sem pedir QR de novo** | volume `waha-data` |
 | Mídia recebida | uma conversa antiga ainda abre áudio/imagem | Supabase Storage |
 | Conversas, contatos, leads | contagens iguais às de antes | banco (Supabase) |
-| Certificado HTTPS | o domínio responde 307 sem aviso de certificado | volume do Caddy |
+| Certificado HTTPS | o domínio responde 200 (página inicial pública) sem aviso de certificado | volume do Caddy |
 | Customizações do operador no `.env` | `diff /root/.env.antes-remediacao .env` mostra **só** as chaves de imagem | `.env` |
 
 O `update.sh` mexe em exatamente três chaves do `.env` (`APP_IMAGE`, `APP_PULL_POLICY` e

@@ -293,9 +293,14 @@ export const internalTaskConfigSchema = z.strictObject({
  * (`flowGraphSchema`) e o nó nasce sem destino — quem exige etapa escolhida é o
  * `validate-publish` (`etapa_destino_ausente`), como a condição com regra em
  * branco.
+ *
+ * `lost_reason` é opcional para não invalidar grafo já publicado: quem montou
+ * o fluxo antes desta régua continua válido, e quem publica com destino em
+ * etapa de perda precisa preenchê-lo (`motivo_da_perda_ausente`).
  */
 export const moveLeadConfigSchema = z.strictObject({
   stage_id: z.string().max(64),
+  lost_reason: z.string().max(500).optional(),
 });
 
 /**

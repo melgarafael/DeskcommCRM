@@ -139,11 +139,58 @@ export function embutirMencoes(texto: string, mencoes: readonly MencaoEscolhida[
   for (const mencao of maisLongoPrimeiro) {
     const nome = mencao.nome.trim();
     if (!nome || !mencao.id.trim()) continue;
-    const re = new RegExp(`@${escaparRegex(nome)}(?![\\p{L}\\p{N}])`, "iu");
+    const re = regexDaMencao(nome);
     if (!re.test(saida)) continue; // apagou ou reescreveu o nome: deixa como está
     saida = saida.replace(re, montarMencao(mencao));
   }
   return saida;
+}
+
+/**
+ * A régua de "o `@Nome` está no texto?" — a MESMA do `embutirMencoes`.
+ *
+ * Existe para as duas perguntas (casar na saída e podar na edição) não
+ * divergirem no primeiro ajuste: se a poda usasse um `includes()` cru, um nome
+ * dentro de outro (`@Ana Lima123`) seguraria uma escolha que o `embutirMencoes`
+ * nunca casaria — e a escolha morta voltaria a roubar a ocorrência da próxima,
+ * que é exatamente o defeito da #2463.
+ */
+function regexDaMencao(nome: string): RegExp {
+  return new RegExp(`@${escaparRegex(nome)}(?![\\p{L}\\p{N}])`, "iu");
+}
+
+/**
+ * Esta escolha ainda tem o nome dela no texto?
+ *
+ * `false` para rótulo vazio (nada a casar) — quem chama decide o que fazer.
+ */
+export function mencaoAindaNoTexto(texto: string, mencao: MencaoEscolhida): boolean {
+  const nome = mencao.nome.trim();
+  if (!nome) return false;
+  return regexDaMencao(nome).test(texto);
+}
+
+/**
+ * As escolhas que continuam valendo depois de uma edição do texto (#2463).
+ *
+ * ─── O defeito que isto conserta ────────────────────────────────────────────
+ *
+ * A lista de escolhas só era zerada quando a nota era salva. Se a pessoa
+ * apagava uma menção do texto, a escolha correspondente continuava ali — e, com
+ * duas pessoas de mesmo rótulo, a escolha APAGADA roubava o `@Nome` da nova:
+ * "escolher Ana (pessoa 1), apagar, escolher Ana (pessoa 2)" gravava o id da
+ * pessoa 1, e a notificação ia para quem não foi mencionado.
+ *
+ * Este é o veredito de presença, e não de posição: com N ocorrências no texto,
+ * o pareamento ocorrência↔escolha continua sendo do `embutirMencoes` (garantia
+ * 1 da docstring dele). Quem poda cedo não precisa saber em qual ocorrência a
+ * escolha mora — só que ela ainda tem alguma.
+ */
+export function podarMencoes(texto: string, mencoes: readonly MencaoEscolhida[]): MencaoEscolhida[] {
+  const restantes = mencoes.filter((mencao) => mencaoAindaNoTexto(texto, mencao));
+  // Mesma referência quando nada saiu: o chamador pode usar isto num `setState`
+  // a cada tecla sem re-renderizar por nada.
+  return restantes.length === mencoes.length ? (mencoes as MencaoEscolhida[]) : restantes;
 }
 
 /** Escapa o que seria metacaracter de regex no NOME DA PESSOA (ponto, parêntese…). */

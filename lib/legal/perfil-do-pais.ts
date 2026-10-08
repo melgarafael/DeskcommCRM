@@ -128,6 +128,27 @@ export interface DocumentoDoTitular {
   normaliza(valor: string): string;
 }
 
+/**
+ * Os rótulos da tela da ORGANIZAÇÃO — o nome legal da empresa e o número que a
+ * identifica (`legal_name` e `cnpj` no schema de Configurações).
+ *
+ * Mesma razão de `DocumentoDoTitular.rotulo`: o vocabulário de TELA é
+ * propriedade do país, e não do componente. Enquanto
+ * `app/app/settings/tenant/_form.tsx` escrevia "Razão social" e "CNPJ" em
+ * duro, uma organização portuguesa via o Brasil na própria tela de
+ * Configurações (issue #1946, item 4) — o mesmo defeito que o #1945 corrigiu
+ * nos diálogos de negócio e de contato.
+ *
+ * A coluna continua `cnpj` e o schema não muda: muda só o que se lê na tela,
+ * a mesma régua de `apelidosDoCabecalho` (o vocabulário de tela muda, o dado não).
+ */
+export interface EmpresaDoPais {
+  /** O rótulo da tela do nome legal: "Razão social", "Denominação social". */
+  rotuloNomeLegal: string;
+  /** O rótulo da tela do número da empresa: "CNPJ", "NIPC". */
+  rotuloNumero: string;
+}
+
 export interface LeiCitada {
   /** Sigla pela qual a lei é conhecida: "LGPD", "GDPR". */
   nome: string;
@@ -183,6 +204,13 @@ export interface PerfilDoPais {
   /** Nome do país como o operador o lê. */
   nome: string;
   documento: DocumentoDoTitular;
+  /**
+   * Os rótulos da tela da ORGANIZAÇÃO — nome legal e número da empresa.
+   *
+   * Vêm do país junto com `documento`, porque a mesma troca de país na tela de
+   * Configurações troca os dois: o rótulo não é do componente.
+   */
+  empresa: EmpresaDoPais;
   /**
    * Um telefone DESTE país em E.164, para o exemplo dos formulários.
    *
@@ -262,6 +290,11 @@ const PERFIL_BR: PerfilDoPais = {
   codigo: "BR",
   nome: "Brasil",
   documento: DOCUMENTO_BR,
+  // O par que a tela da organização mostra no Brasil (issue #1946, item 4).
+  empresa: {
+    rotuloNomeLegal: "Razão social",
+    rotuloNumero: "CNPJ",
+  },
   telefoneExemplo: "+5511999998888",
   lei: {
     nome: "LGPD",
@@ -305,6 +338,13 @@ const PERFIL_PT: PerfilDoPais = {
   codigo: "PT",
   nome: "Portugal",
   documento: DOCUMENTO_PT,
+  // Como Portugal chama o mesmo par (issue #1946, item 4): `Denominação social`
+  // é a designação legal da firma, e `NIPC` o Número de Identificação de
+  // Pessoas Coletivas — o análogo do CNPJ, e não um NIF de titular.
+  empresa: {
+    rotuloNomeLegal: "Denominação social",
+    rotuloNumero: "NIPC",
+  },
   telefoneExemplo: "+351912345678",
   lei: {
     nome: "RGPD",
