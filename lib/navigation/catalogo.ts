@@ -998,8 +998,10 @@ export const NAV_CATALOG = [
   },
   {
     href: "/app/settings/billing",
-    label: "Billing",
-    description: "Plano e cobrança.",
+    // Spec da cobrança §9: as mensagens de limite e a Central mandam para
+    // "Configurações › Plano e cobrança" — o item precisa ter esse nome.
+    label: "Plano e cobrança",
+    description: "Pagamento, troca de plano e faturas da sua empresa.",
     icon: "Receipt",
     group: "organizacao",
     section: "Sua empresa",

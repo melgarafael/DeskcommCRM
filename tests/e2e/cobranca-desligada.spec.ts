@@ -3,8 +3,8 @@
  * §9, §12 — `cobranca-desligada.spec.ts`).
  *
  * O self-hoster de empresa única vê o formulário de novo tenant com o rótulo
- * "Plano", o painel do tenant sem card de cobrança, /admin/sistema sem o
- * interruptor (ainda travado), a tela Billing como antes, nenhuma faixa,
+ * "Plano", o painel do tenant sem card de cobrança, /admin/sistema com o
+ * interruptor DESLIGADO, a tela Billing como antes, nenhuma faixa,
  * nenhum item de admin, e "Recursos opcionais" sem a cobrança.
  *
  * Precondição medida, não suposta (Review Focus 5): a chave é da INSTALAÇÃO, e
@@ -85,11 +85,12 @@ test("sem a chave, nada da cobrança aparece e o que existia segue igual", async
 
     await page.goto("/admin/sistema");
     await expect(page.getByRole("switch", { name: "Banco de dados externo" })).toBeVisible();
-    await expect(page.getByRole("switch", { name: "Cobrança dos seus clientes" })).toHaveCount(0);
+    // PR 3a: a chave saiu de MODULOS_AINDA_NAO_LIGAVEIS — o interruptor aparece para todo dono, DESLIGADO.
+    await expect(page.getByRole("switch", { name: "Cobrança dos seus clientes" })).toHaveAttribute("aria-checked", "false");
 
     // ── A empresa: Billing como antes, nenhuma faixa, recursos sem cobrança ─
     await page.goto("/app/settings/billing");
-    await expect(page.getByRole("heading", { name: "Billing" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Plano e cobrança" })).toBeVisible();
     await expect(page.getByText("Em breve — Fase 2")).toBeVisible();
     await expect(page.getByText(/teste grátis/i)).toHaveCount(0);
     await page.screenshot({ path: `${EVIDENCIA}/desligada-billing.png`, fullPage: true });

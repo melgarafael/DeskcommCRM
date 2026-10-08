@@ -16,6 +16,8 @@ export interface AgentInboxItem {
   status: "open" | "ack" | "resolved";
   created_at: string;
   destination: DestinoDoAviso;
+  /** Só nos avisos da cobrança, e só para quem administra: o link que paga em um clique. */
+  link_de_pagamento?: string | null;
 }
 
 export interface AgentInboxData {

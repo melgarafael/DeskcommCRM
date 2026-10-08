@@ -1043,6 +1043,20 @@ export const AUDIT_ACTIONS = [
   "cobranca.prazo_concedido",
   "cobranca.isencao_definida",
   "cobranca.modulo_desligado",
+  // ── Cobrança do revendedor — provedor e régua (PR 3a, spec §13) ──────────
+  // Conexão e publicação da chave (metadata só com last4, NUNCA a chave);
+  // checkout iniciado; estado traduzido da releitura (com statusBruto, só
+  // quando mudou); cancelamento no fim; suspensão e reativação por cobrança;
+  // rodada do cron com efeito; tolerância da régua salva.
+  "cobranca.provedor_conectado",
+  "cobranca.modo_publicado",
+  "cobranca.checkout_iniciado",
+  "cobranca.estado_mudou",
+  "cobranca.assinatura_cancelada",
+  "cobranca.org_suspensa",
+  "cobranca.org_reativada",
+  "cobranca.rodada",
+  "cobranca.regua_salva",
   // O servidor MCP externo registrado pela instalação (#2147): gravado (ou
   // apagado, com `registrado: false` no metadata) em
   // `organizations.settings.mcp_externo`. É mutação de TENANT — o endereço que

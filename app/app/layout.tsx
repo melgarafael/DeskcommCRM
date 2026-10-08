@@ -23,8 +23,8 @@ import {
   ImpersonateBanner,
 } from "@/components/app/ImpersonateBanner";
 import { ConexaoCaidaBanner } from "@/components/app/ConexaoCaidaBanner";
-import { FaixaDoTesteGratis } from "@/components/cobranca/FaixaDoTesteGratis";
-import { diasDeTesteRestantes } from "@/lib/cobranca/faixa";
+import { FaixaDaCobranca } from "@/components/cobranca/FaixaDaCobranca";
+import { faixaDaCobranca, type FaixaDaCobranca as Faixa } from "@/lib/cobranca/faixa";
 import { logger } from "@/lib/logger";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 import { listarConexoesCaidas, type ConexaoCaida } from "@/lib/channels/health";
@@ -69,7 +69,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // EPIC-02: gate /app/* on completed onboarding.
   // EPIC-11: gate /app/* on org not being suspended (S-11.08).
   let conexoesCaidas: ConexaoCaida[] = [];
-  let diasDeTeste: number | null = null;
+  let faixa: Faixa = null;
+  let orgFuso: string | null = null;
   let enrolled = false;
   let needsMfaGate = false;
 
@@ -102,7 +103,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     const [orgRes, conexoes, isEnrolled, mfaRequired, modulos] = await Promise.all([
       admin
         .from("organizations")
-        .select("onboarded_at, status, settings")
+        .select("onboarded_at, status, settings, timezone")
         .eq("id", activeOrg.orgId)
         .maybeSingle(),
       listarConexoesCaidas(admin, activeOrg.orgId),
@@ -146,21 +147,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     };
 
     // A faixa do teste grátis (spec da cobrança §9): uma consulta a mais SÓ com
-    // a cobrança ligada e para o admin. Falha aberta na INFORMAÇÃO: sem a
+    // a cobrança ligada (quem não administra só vê o atraso). Falha aberta na INFORMAÇÃO: sem a
     // leitura, nenhuma faixa — o que ela diz não trava nada.
-    if (modulos.includes("cobranca") && roleAtLeast(activeOrg.role, "admin")) {
+    if (modulos.includes("cobranca")) {
       const { data, error } = await admin
         .from("cobranca_assinaturas")
-        .select("estado, trial_ate")
+        .select("estado, trial_ate, vencida_desde, cancela_no_fim, proximo_vencimento, link_de_pagamento, provedor")
         .eq("organization_id", activeOrg.orgId)
         .maybeSingle();
       if (error) {
-        logger.warn("app: assinatura ilegível — sem faixa de teste grátis", {
+        logger.warn("app: assinatura ilegível — sem faixa da cobrança", {
           organization_id: activeOrg.orgId,
           codigo: error.code,
         });
       } else {
-        diasDeTeste = diasDeTesteRestantes(data, new Date());
+        orgFuso = orgRow?.timezone ?? null;
+        faixa = faixaDaCobranca(data, new Date(), roleAtLeast(activeOrg.role, "admin"));
       }
     }
 
@@ -321,7 +323,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <EstiloDoTemaDaExtensao css={cssDoTemaDaExtensao} />
         <ImpersonateBanner impersonating={impersonating} />
         <ConexaoCaidaBanner caidas={conexoesCaidas} />
-        {diasDeTeste !== null && <FaixaDoTesteGratis dias={diasDeTeste} />}
+        {faixa !== null && <FaixaDaCobranca faixa={faixa} fuso={orgFuso} />}
         {needsMfaGate ? (
           // Gate always mounted for MFA-required roles; it latches the blocking
           // decision client-side so the enroll Server Action's revalidation

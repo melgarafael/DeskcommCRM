@@ -70,7 +70,11 @@ export interface ChaveDaInstalacao {
    * mostram campos diferentes do MESMO mecanismo, e nenhuma opção aparece em
    * duas. Se um dia aparecer, o defeito não é de tela — é de catálogo.
    */
-  readonly telaDona?: "credenciais" | "email";
+  //
+  // `"cobranca"` (spec da cobrança do revendedor §10): as chaves da cobrança
+  // moram em `/admin/cobranca`, e SÓ a Conexão e a Régua as escrevem — as ações
+  // genéricas de configuração as recusam.
+  readonly telaDona?: "credenciais" | "email" | "cobranca";
   readonly rotulo: string;
   /** O que é, para quem não programa. Uma frase. */
   readonly explicacao: string;
@@ -154,6 +158,52 @@ export const CATALOGO_DA_INSTALACAO: readonly ChaveDaInstalacao[] = [
     grupo: "seguranca",
     natureza: "texto",
     controle: "edita",
+  },
+
+  // ── COBRANÇA DOS SEUS CLIENTES (spec cobrança do revendedor §10) ─────────
+  // Moram em /admin/cobranca. A Conexão é a ÚNICA escritora do provedor e das
+  // credenciais (confere a chave, registra o webhook, recusa trocar o provedor
+  // de quem tem assinatura viva); a Régua, da tolerância. Os leitores
+  // (`lib/cobranca/configuracao.ts`) ignoram o `.env`: só vale o que a tela gravou.
+  {
+    chave: "COBRANCA_PROVEDOR",
+    rotulo: "Provedor de cobrança dos seus clientes",
+    explicacao:
+      "Por onde as empresas desta instalação pagam a assinatura. É escolhido quando você conecta a chave em Cobrança › Conexão.",
+    grupo: "integracao",
+    natureza: "texto",
+    controle: "edita",
+    telaDona: "cobranca",
+  },
+  {
+    chave: "COBRANCA_TOLERANCIA_DIAS",
+    rotulo: "Dias de tolerância antes de suspender",
+    explicacao:
+      "Quantos dias depois do vencimento a empresa ainda usa o sistema antes de ser suspensa. De 5 a 30; o padrão é 7.",
+    grupo: "integracao",
+    natureza: "numero",
+    controle: "edita",
+    telaDona: "cobranca",
+  },
+  {
+    chave: "STRIPE_SECRET_KEY",
+    rotulo: "Chave secreta da Stripe",
+    explicacao:
+      "A chave que deixa o sistema criar assinaturas e ler pagamentos na sua conta Stripe. Prefira a chave restrita, que começa com rk_.",
+    grupo: "integracao",
+    natureza: "segredo",
+    controle: "edita",
+    telaDona: "cobranca",
+  },
+  {
+    chave: "STRIPE_WEBHOOK_SECRET",
+    rotulo: "Segredo dos avisos de pagamento da Stripe",
+    explicacao:
+      "Confere que um aviso de pagamento veio mesmo da Stripe. É criado sozinho quando você conecta a chave.",
+    grupo: "integracao",
+    natureza: "segredo",
+    controle: "edita",
+    telaDona: "cobranca",
   },
 
   // ── DIAGNÓSTICO: de partida ───────────────────────────────────────────────

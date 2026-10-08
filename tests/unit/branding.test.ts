@@ -936,6 +936,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     categoria: "FORNECEDOR",
     motivo: "endpoint da API da Nuvemshop/Tiendanube (ordens e catálogo do e-commerce do cliente).",
   },
+  "api.stripe.com": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint da API da Stripe (`lib/cobranca/provedores/stripe.ts`): é por onde o DONO da instalação cobra as empresas dele, com a chave da conta Stripe DELE. É o destino do request; trocar pelo domínio do revendedor faria a cobrança não chegar a lugar nenhum.",
+  },
   "www.tiendanube.com": {
     categoria: "FORNECEDOR",
     motivo:

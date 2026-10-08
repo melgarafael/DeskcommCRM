@@ -41,7 +41,7 @@ async function lerCobrancaDoTenant(orgId: string) {
     admin.from("cobranca_planos").select("id, nome, arquivado_em").order("nome"),
     admin
       .from("cobranca_assinaturas")
-      .select("plano_id, estado, trial_ate, prazo_extra_ate, provedor")
+      .select("plano_id, estado, trial_ate, prazo_extra_ate, provedor, plano_agendado_id, proximo_vencimento")
       .eq("organization_id", orgId)
       .maybeSingle(),
     admin.from("organizations").select("status, suspended_kind, settings").eq("id", orgId).maybeSingle(),

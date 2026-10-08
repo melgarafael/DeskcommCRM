@@ -149,6 +149,29 @@ describe("destinos da Central", () => {
     expect(gestor?.destination.estado).toBe("sem_permissao");
   });
 
+  it("aviso da cobrança leva o admin a Plano e cobrança, com ou sem referência", async () => {
+    const [daRegua, doTetoDeIa, deOutraOrg] = await resolverDestinosDosAvisos(leitor().client, ORG, "admin", [
+      aviso("cobranca", null, null),
+      aviso("cobranca", "plano", ORG),
+      aviso("cobranca", "plano", ID),
+    ]);
+    expect(daRegua?.destination).toEqual({
+      estado: "disponivel",
+      href: "/app/settings/billing",
+      rotulo: "Abrir plano e cobrança",
+      orientacao: POLITICAS_DE_AVISO.cobranca.orientacao,
+    });
+    expect(doTetoDeIa?.destination).toEqual({
+      estado: "disponivel",
+      href: "/app/settings/billing",
+      rotulo: "Abrir plano e cobrança",
+    });
+    expect(deOutraOrg?.destination.estado).toBe("indisponivel");
+    // Plano é assunto do admin: o gestor vê o aviso e é mandado a quem administra.
+    const [gestor] = await resolverDestinosDosAvisos(leitor().client, ORG, "manager", [aviso("cobranca", null, null)]);
+    expect(gestor?.destination.estado).toBe("sem_permissao");
+  });
+
   it("envio preso representa uma conversa, não todas", async () => {
     const [item] = await resolverDestinosDosAvisos(leitor().client, ORG, "agent", [aviso("message_send_stuck")]);
     expect(item?.destination).toMatchObject({ rotulo: "Abrir uma conversa afetada" });

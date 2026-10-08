@@ -442,10 +442,10 @@ select (select teto from orc)         as teto,
 export const TITULO_TETO_DO_PLANO = 'O uso de IA do plano acabou';
 export const CORPO_TETO_DO_PLANO =
   'O uso de IA incluído no plano acabou neste mês. As conversas foram para a equipe. ' +
-  'Peça a quem administra o sistema para trocar de plano, cadastre uma chave de IA própria ou aguarde o próximo mês.';
+  'Troque de plano em Configurações › Plano e cobrança, cadastre uma chave de IA própria ou aguarde o próximo mês.';
 /** Vai para `llm_calls.error_message` e para o `last_error` da fila — a instrução numa linha. */
 export const MOTIVO_TETO_DO_PLANO =
-  'uso de IA incluído no plano da empresa esgotado neste mês — chamada recusada antes de sair byte para o provedor; peça a quem administra o sistema para trocar de plano, cadastre uma chave de IA própria ou aguarde a virada do mês (agent_inbox_items kind=budget_exceeded ref_kind=plano)';
+  'uso de IA incluído no plano da empresa esgotado neste mês — chamada recusada antes de sair byte para o provedor; troque de plano em Configurações › Plano e cobrança, cadastre uma chave de IA própria ou aguarde a virada do mês (agent_inbox_items kind=budget_exceeded ref_kind=plano)';
 
 export type VereditoDoPlano =
   | {
