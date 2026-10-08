@@ -4,6 +4,8 @@ Status: **PROPOSTA**. Base CONFIRMADA na Spec 20 e no código citado; o resto é
 
 Linhas citadas medidas em 07/10/2026 no commit `17a67d3da` (remedidas na `main`, que já contém o filtro por cliente #2280). A parte do rastro do agente (Segurança, item 4, e "Quais tabelas do CRM a leitura toca") foi medida em `1b193c85c`; a `main` seguinte (`548d70cd`) entrou com a retenção das tabelas da IA (migration 0587), que não toca `ai_agent_runs`.
 
+*Atualização de 08/10/2026: os itens C1a a C1g foram MEDIDOS (ver "Não medido, e o que já foi medido"). Menções a "INFERIDO" ou "não medido" nas seções abaixo que se refiram a esses itens descrevem o estado de 07/10/2026 e estão superadas por essa tabela.*
+
 ## Objetivo
 
 O conector `banco_externo` (Spec 20) hoje só fala PostgreSQL. Nem todo sistema do dono é
@@ -15,22 +17,36 @@ WordPress funciona por consequência (MySQL genérico + receita de VIEW que acha
 não por código específico. WP-REST com senha de aplicação é outra família (HTTP, não SQL)
 e fica para depois, como provider separado.
 
-## Não medido (medir antes de implementar)
+## Não medido, e o que já foi medido
 
-Nada abaixo é afirmação. Cada item vira um caso de integração (ver "Testes e prova"):
+Cada item virou um caso de integração (ver "Testes e prova"). As linhas C1a a C1g foram MEDIDAS em 08/10/2026 (resultado em cada linha); o que continua sem medição está dito na própria linha:
 
 | # | O que não se sabe | Teste que mede |
 |---|---|---|
-| C1a | Se `START TRANSACTION READ ONLY` recusa escrita numa tabela **MyISAM**. **NÃO MEDIDO**. | Integração contra MySQL 8 com uma tabela MyISAM: tenta `INSERT` dentro de `START TRANSACTION READ ONLY` e registra se recusou ou gravou. |
-| C1b | Se o driver `mysql2`, falando com um servidor hostil que peça `LOAD DATA LOCAL INFILE`, entrega arquivo da máquina do cliente. Defesa **PROPOSTA**: tirar a flag com `flags: ["-LOCAL_FILES"]` — **NÃO MEDIDO** se o driver aceita essa forma. | Integração contra servidor MySQL hostil (ou dublê de protocolo) que pede `LOAD DATA LOCAL`; confirma que nada é enviado com e sem a flag. |
-| C1c | O que o `mysql2` faz com `ssl` desligado e com `verify-ca`. **NÃO MEDIDO**. **PROPOSTA**: no modo `disable`, simplesmente **omitir** a opção `ssl` em vez de passar `false`. | Integração contra MySQL sem TLS (modo `disable`, opção omitida) e contra MySQL com CA autoassinada (modo `verify-ca`), registrando conecta/recusa em cada combinação. |
-| C1d | Se `MAX_EXECUTION_TIME` também interrompe a **espera por trava de metadados** (não só a execução). **NÃO MEDIDO** — INFERIDO (documentação do MySQL, não medido) que talvez não interrompa. | Integração com um `ALTER TABLE` pendurado numa segunda sessão (trava de metadados presa) enquanto o `SELECT` com a dica roda; registra se o `SELECT` morre no tempo ou espera junto. |
-| C1e | Se o `standalone` do app leva o `mysql2` completo. **NÃO MEDIDO** — INFERIDO (comportamento do rastreamento, não medido). | Build do app (`pnpm build`) + `node server.js` abrindo uma conexão MySQL de teste; registra `MODULE_NOT_FOUND` ou sucesso. Licença e versão do `mysql2` também NÃO MEDIDAS (não está instalado) e se conferem ao adicionar. |
-| C1f | Quanto custa a consulta de catálogo num banco de WordPress de verdade (milhares de colunas por plugins). **NÃO MEDIDO** — INFERIDO que pode ser lenta (ver "Desempenho do catálogo"). | Integração contra cópia de um WP real: tempo de `listarTabelas` no PG-equivalente e no MySQL, com e sem filtro de tabela. |
-| C1g | Se o catálogo do MySQL de verdade respeita os privilégios do usuário. **NÃO MEDIDO** — INFERIDO. | Integração com usuário só-`SELECT`-em-uma-view: `listarTabelas` devolve só ela ou o banco inteiro; registra o observado. |
+| C1a | Se `START TRANSACTION READ ONLY` recusa escrita numa tabela **MyISAM**. **MEDIDO em 08/10/2026 (MySQL 8.0): o INSERT foi recusado (erro 1792) em InnoDB e também em MyISAM, com 0 linhas gravadas.** | Integração contra MySQL 8 com uma tabela MyISAM: tenta `INSERT` dentro de `START TRANSACTION READ ONLY` e registra se recusou ou gravou. |
+| C1b | Se o driver `mysql2`, falando com um servidor hostil que peça `LOAD DATA LOCAL INFILE`, entrega arquivo da máquina do cliente. Defesa **PROPOSTA**: tirar a flag com `flags: ["-LOCAL_FILES"]` — **MEDIDO em 08/10/2026: o driver aceita `flags: ["-LOCAL_FILES"]`; a instrução `LOAD DATA LOCAL INFILE` foi recusada com e sem a flag (o `mysql2` exige `streamFactory`). NÃO MEDIDO: um servidor hostil de verdade (dublê de protocolo) que peça o arquivo sem o cliente ter pedido a instrução.** | Integração contra servidor MySQL hostil (ou dublê de protocolo) que pede `LOAD DATA LOCAL`; confirma que nada é enviado com e sem a flag. |
+| C1c | O que o `mysql2` faz com `ssl` desligado e com `verify-ca`. **MEDIDO em 08/10/2026: `disable` conecta sem TLS (com a opção `ssl` omitida); `prefer` e `require` conectam com TLS_AES_256_GCM_SHA384; `verify-ca` falha com certificado autoassinado, como esperado.** **PROPOSTA**: no modo `disable`, simplesmente **omitir** a opção `ssl` em vez de passar `false`. | Integração contra MySQL sem TLS (modo `disable`, opção omitida) e contra MySQL com CA autoassinada (modo `verify-ca`), registrando conecta/recusa em cada combinação. |
+| C1d | Se `MAX_EXECUTION_TIME` também interrompe a **espera por trava de metadados** (não só a execução). **MEDIDO em 08/10/2026: atrás de um `ALTER TABLE` pendurado, o `SELECT` falhou após cerca de 5 s (erro 1205, `lock_wait_timeout`) em vez de ficar pendurado. NÃO MEDIDO isoladamente: se `MAX_EXECUTION_TIME` sozinho também interromperia essa espera.** | Integração com um `ALTER TABLE` pendurado numa segunda sessão (trava de metadados presa) enquanto o `SELECT` com a dica roda; registra se o `SELECT` morre no tempo ou espera junto. |
+| C1e | Se o `standalone` do app leva o `mysql2` completo. **MEDIDO em 08/10/2026: o build `standalone` leva o `mysql2` (job `standalone-leva-mysql2` verde).** | Build do app (`pnpm build`) + `node server.js` abrindo uma conexão MySQL de teste; registra `MODULE_NOT_FOUND` ou sucesso. Versão e licença do `mysql2` conferidas ao adicionar: 3.24.5, MIT. |
+| C1f | Quanto custa a consulta de catálogo num banco de WordPress de verdade (milhares de colunas por plugins). **MEDIDO em 08/10/2026 num banco sintético de 300 tabelas e 9.300 colunas: 71 ms. NÃO MEDIDO: uma cópia de WordPress real.** | Integração contra cópia de um WP real: tempo de `listarTabelas` no PG-equivalente e no MySQL, com e sem filtro de tabela. |
+| C1g | Se o catálogo do MySQL de verdade respeita os privilégios do usuário. **MEDIDO em 08/10/2026: um usuário só com SELECT numa view enxerga só essa view.** | Integração com usuário só-`SELECT`-em-uma-view: `listarTabelas` devolve só ela ou o banco inteiro; registra o observado. |
 
 Tudo marcado **INFERIDO** nesta spec vira CONFIRMADO ou é corrigido pelo mesmo teste de
 integração; nada disso entra em código antes disso.
+
+### Medições feitas depois da proposta (CI do fork do autor, MySQL 8.0, 08/10/2026)
+
+- Somente-leitura: o INSERT dentro de `START TRANSACTION READ ONLY` é recusado (erro 1792) em InnoDB e também em MyISAM, com 0 linhas gravadas. O temor de que o MyISAM ignorasse o READ ONLY não se confirmou.
+- `LOAD DATA LOCAL`: recusado com a flag `-LOCAL_FILES` e também sem ela (o `mysql2` exige `streamFactory`).
+- TLS: `disable` conecta sem TLS; `prefer` e `require` conectam com TLS_AES_256_GCM_SHA384; `verify-ca` falha com certificado autoassinado, como esperado.
+- Trava de metadados: atrás de um `ALTER TABLE`, o SELECT falhou após cerca de 5 s (erro 1205) em vez de ficar pendurado.
+- Tempo limite: com `max_execution_time=10000`, `select sleep(25)` terminou em cerca de 10 s, sem erro.
+- Catálogo: 300 tabelas e 9.300 colunas em 71 ms; um usuário só com SELECT numa view enxerga só essa view.
+- Aviso de privilégio: view só-SELECT = sem aviso; `banco.*` = "lê o banco inteiro"; SELECT+INSERT = "pode escrever"; `root` = os dois avisos.
+- Acento: `'joao'` contém `'João Silva'` (a collation padrão ignora acento e maiúscula, como a spec previa).
+- Empacotamento: o build `standalone` do app leva o `mysql2`.
+
+Estas medições respondem a itens que a versão anterior da spec chamava de "não medido". Continuam NÃO medidos: MariaDB, MySQL 5.7, TLS verify-full com certificado válido, um servidor MySQL hostil de verdade (dublê de protocolo), uma cópia de WordPress real, `MAX_EXECUTION_TIME` isolado da espera por trava de metadados, e a prova numa VPS.
 
 ## Decisões
 
@@ -114,7 +130,7 @@ Arquivos que chamam hoje com `pg.Pool` e mudam de chamada interna (CONFIRMADO ab
 | `tests/unit/valor-de-filtro-nao-vai-ao-audit.test.ts:26-39` | Simula os mesmos três módulos |
 | `lib/instalacao/modulos.test.ts:13,116-127` | Simula o gate do módulo via `abrirAcesso()` com o módulo desligado |
 
-Mapeamento TLS MySQL (**PROPOSTA**, a confirmar em C1c): `disable→opção `ssl` omitida`,
+Mapeamento TLS MySQL (medido em C1c: F3): `disable→opção `ssl` omitida`,
 `prefer/require→{rejectUnauthorized:false}`, `verify-ca/verify-full→{rejectUnauthorized:true}`.
 Default continua `require`; `disable` só para rede local confiável.
 
@@ -178,10 +194,10 @@ e `set local idle_in_transaction_session_timeout` (`conexao.ts:134-137`, CONFIRM
 
 | Trava PG | Equivalente MySQL (PROPOSTA) | Motivo |
 |---|---|---|
-| `statement_timeout` (10 s) | `MAX_EXECUTION_TIME(10000)` — INFERIDO (documentação, não medido): só vale para `SELECT`, MySQL 5.7.8+. Aplicar **a cada vez que a conexão é emprestada do pool** (ou como dica `/*+ MAX_EXECUTION_TIME(10000) */` no `SELECT`), **NUNCA só na criação do pool**: `SET SESSION` fica preso na conexão reutilizada, ao contrário do `SET LOCAL`. | Evita que um `SELECT` pesado prenda o worker. |
-| `lock_timeout` | `SET SESSION lock_wait_timeout = 5` a cada empréstimo, junto com o tempo máximo de execução — INFERIDO (documentação do MySQL, não medido). Cobre a espera por **trava de metadados** (por exemplo enquanto um `ALTER TABLE` roda no banco do cliente — o WordPress faz isso ao atualizar plugin; o padrão do servidor é muito longo). Se C1d medir que `MAX_EXECUTION_TIME` já interrompe essa espera, esta linha cai. | Sem ela, um `ALTER` no banco de origem pendura a leitura até o padrão do servidor. |
+| `statement_timeout` (10 s) | `MAX_EXECUTION_TIME(10000)` — MEDIDO em 08/10/2026: `select sleep(25)` terminou em cerca de 10 s, sem erro. INFERIDO (documentação, não medido): só vale para `SELECT`, MySQL 5.7.8+. Aplicar **a cada vez que a conexão é emprestada do pool** (ou como dica `/*+ MAX_EXECUTION_TIME(10000) */` no `SELECT`), **NUNCA só na criação do pool**: `SET SESSION` fica preso na conexão reutilizada, ao contrário do `SET LOCAL`. | Evita que um `SELECT` pesado prenda o worker. |
+| `lock_timeout` | `SET SESSION lock_wait_timeout = 5` a cada empréstimo, junto com o tempo máximo de execução — MEDIDO em 08/10/2026 (F4): o que cortou a espera foi o `lock_wait_timeout` (~5 s, erro 1205); `MAX_EXECUTION_TIME` sozinho nessa espera NÃO foi medido. Cobre a espera por **trava de metadados** (por exemplo enquanto um `ALTER TABLE` roda no banco do cliente — o WordPress faz isso ao atualizar plugin; o padrão do servidor é muito longo). | Sem ela, um `ALTER` no banco de origem pendura a leitura até o padrão do servidor. |
 | `idle_in_transaction_session_timeout` | Sem equivalente direto — INFERIDO (documentação, não medido). Aceitar: leitura consistente do InnoDB (MVCC) não trava esperando lock de escrita. | Paridade aproximada sem custo. |
-| MyISAM (qualquer trava) | **NÃO MEDIDO (C1a e C1d)**: MyISAM trava a tabela na leitura; o efeito real das travas nela só existe depois do teste. | Não prometer o que não se mediu. |
+| MyISAM (qualquer trava) | **MEDIDO**: o INSERT é recusado também em MyISAM. **NÃO MEDIDO**: o efeito das travas de leitura em MyISAM (INFERIDO, documentação: o MyISAM trava a tabela inteira na leitura). | Não prometer o que não se mediu. |
 
 ### Introspecção MySQL (`lib/external-db/dialetos/mysql/introspeccao.ts`)
 
@@ -250,7 +266,7 @@ silenciosa.
 | `multipleStatements` | `false` | Sem segunda sentença por chamada, em nenhum dialeto. |
 | Pool | `connectionLimit: 2`, `connectTimeout: 5000`, `idleTimeout: 30000` | Os mesmos valores de `conexao.ts:24-27` (CONFIRMADO: `MAX_CONEXOES_POR_POOL = 2`, `CONNECTION_TIMEOUT_MS = 5_000`, `IDLE_TIMEOUT_MS = 30_000`). |
 | Binário (BLOB/BINARY) | Hex com prefixo `0x` | Formato definido por dialeto; o do PostgreSQL (`\x…`, `leitura.ts:164`, CONFIRMADO) continua como está. |
-| `LOAD DATA LOCAL` | `flags: ["-LOCAL_FILES"]` — confirmar que o driver aceita essa forma (C1b, NÃO MEDIDO) | Servidor hostil não pode puxar arquivo da máquina do cliente. |
+| `LOAD DATA LOCAL` | `flags: ["-LOCAL_FILES"]` — o driver aceita essa forma (F2) | Servidor hostil não pode puxar arquivo da máquina do cliente. |
 
 ## Como o agente lê o banco externo (PostgreSQL hoje × MySQL)
 
@@ -390,10 +406,11 @@ libera" (casos `SELECT` em `*.*` e em `banco.*` mantidos).
 
 `listarTabelas` roda a consulta completa ao catálogo a cada chamada em que o schema não veio
 ou veio errado (`dados-externos.ts:425-445`, CONFIRMADO), sem cache; no MySQL a consulta fica
-presa a um banco, mas um WordPress com muitos plugins tem milhares de colunas — INFERIDO
-(não medido) que pode ser lenta; medir em C1f.
+presa a um banco, mas um WordPress com muitos plugins tem milhares de colunas — medido em C1f (F7): 71 ms no catálogo sintético; WordPress real NÃO medido.
 
 ### Defeitos existentes no PostgreSQL que a fase 1 expõe
+
+**ENTREGUE na Fatia 1 (#2537, mesclado em 08/10/2026; commit `812b3da2d`).** O texto abaixo é o diagnóstico que originou aquele PR; os "CONFIRMADO POR LEITURA" valem para a `main` de `17a67d3da`, anterior ao conserto.
 
 **A tool vaza a existência do módulo desligado (CONFIRMADO POR LEITURA, não executado).**
 As duas entradas de `lib/mcp/tools/catalogo/dados-externos.ts:13-40` NÃO declaram
@@ -405,7 +422,7 @@ continua oferecida ao agente e ao MCP externo, e a resposta cai em `mensagemDeAc
 (`dados-externos.ts:182-197`, CONFIRMADO — sem caso `modulo_desligado`, cai no `default`):
 "não foi possível abrir a conexão.". E `sem_conexao` manda "cadastrar em Integração de
 dados" — tela que dá 404 com o módulo desligado (`app/app/integracao-dados/layout.tsx:13`,
-CONFIRMADO). **PROPOSTA — decisão do mantenedor: Fatia 1 (PR próprio, antes de tudo; leva os dois defeitos desta seção)** (não depende do dialeto; tem testes próprios): declarar `modulo: "banco_externo"` nas duas entradas e acrescentar o caso `modulo_desligado` a `mensagemDeAcesso`.
+CONFIRMADO). **ENTREGUE (#2537) —** (não depende do dialeto; tem testes próprios): declarar `modulo: "banco_externo"` nas duas entradas e acrescentar o caso `modulo_desligado` a `mensagemDeAcesso`.
 
 **Nome da tabela com maiúscula (CONFIRMADO POR LEITURA, não executado).** A busca no
 catálogo compara em minúscula (`candidatas`, `dados-externos.ts:433`, CONFIRMADO), mas
@@ -416,7 +433,7 @@ igualdade exata (`c.table_name = $2`, `introspeccao.ts:136`, CONFIRMADO). Numa t
 segunda consulta não acha — o agente recebe `tabela_nao_encontrada` ("essa tabela não
 existe. Confira o nome com crm_describe_external_data.", 447-451) quando ela existe (e a resposta devolve o mesmo texto, `tabela:
 input.tabela` em 527, não o nome real). As linhas 434-436 são o outro caso: nem o catálogo achou ("não encontrei essa tabela."). No MySQL em Linux os nomes também diferenciam maiúscula
-(INFERIDO). **PROPOSTA — decisão do mantenedor: mesmo PR do defeito do módulo desligado (Fatia 1, que sai antes de tudo)** (mexe nas linhas que o dialeto reescreve de todo jeito): usar `escolhida.nome` (o nome real do catálogo) nas duas
+(INFERIDO). **ENTREGUE (#2537) — mesmo PR do defeito do módulo desligado (Fatia 1, que sai antes de tudo)** (mexe nas linhas que o dialeto reescreve de todo jeito): usar `escolhida.nome` (o nome real do catálogo) nas duas
 chamadas e cobrir com teste de unidade da tool (tabela `Pedido` pedida como `pedido`).
 
 ## Fontes liberadas
@@ -631,8 +648,8 @@ bytes do `describe` existem para manter esse custo sob controle.
    de pool (`acesso.ts`). Janela de DNS-rebinding permanece declarada.
 2. **Leitura real no MySQL:** transação `READ ONLY` + geração exclusiva de `SELECT` +
    usuário `GRANT SELECT` + aviso de privilégio excessivo no teste (D5). A garantia para
-   MyISAM é NÃO MEDIDO (C1a, C1d).
-3. **Arquivo local:** defesa `LOCAL_FILES` proposta, a confirmar em C1b.
+   MyISAM foi MEDIDO (F1, F4).
+3. **Arquivo local:** defesa `LOCAL_FILES` medida em C1b (F2); servidor hostil de verdade NÃO medido.
 4. **LGPD:** PII fora do audit; sem valores de filtro na querystring (regra atual mantida).
    Duas metades que a frase antiga escondia: o dado vai ao provedor de IA (os tokens que
    entram no modelo são os mesmos — ver "Fora de escopo") E fica no rastro do agente
@@ -705,7 +722,7 @@ bytes do `describe` existem para manter esse custo sob controle.
 
 ### Integração (precisa de MySQL de verdade)
 
-- Casos que viram gate quando houver job que os execute: C1a (MyISAM + `READ ONLY`), C1b
+- Casos de integração que o job `mysql-integracao.yml` (informativo, não obrigatório) executa hoje (F9): C1a (MyISAM + `READ ONLY`), C1b
   (`LOAD DATA LOCAL` hostil), C1c (TLS `disable`/omitido e `verify-ca`), C1d (trava de
   metadados), C1e (standalone leva o `mysql2`), C1f (catálogo de WP real), C1g (catálogo
   respeita privilégios), `describe` + `query` com collation/acentos (`ç/ã/CAIXA`) nos dois
@@ -753,12 +770,18 @@ Cada fatia sai num PR próprio:
 | Fatia | O que entrega | Depende de | Toca schema? | Toca tela? |
 |---|---|---|---|---|
 | 1 | Os dois defeitos da seção "Defeitos existentes": as ferramentas somem com o módulo desligado + nome da tabela com maiúscula | — | Não | Não |
-| 2a | Fontes liberadas no banco, no núcleo e na API (`source_mode`, `sources`, `aplicarFontes`, rotas `catalog`/`sources`); nasce o `Dialeto` só com PostgreSQL | 1 | Sim | Não |
+| 2a | Fontes liberadas no banco, no núcleo e na API (`source_mode`, `sources`, `aplicarFontes`, rotas `catalog`/`sources`); nasce o `Dialeto` só com PostgreSQL | 1 (satisfeita) | Sim | Não |
 | 2b | Painel "O que o assistente pode ver" (marcação de fontes) | 2a | Não | Sim |
 | 3 | O `Dialeto` ganha `consultar`, `testar`, `fechar` e a escolha pelo `db_type`; refatoração sem mudar comportamento | 2a | Não | Não |
 | 4a | MySQL: `db_type`, `last_test_aviso`, driver, dialeto, interpretador de `SHOW GRANTS`, runbook | 3 | Sim | Não |
 | 4b | Seletor de motor e aviso de privilégio na tela | 2b, 4a | Não | Sim |
 | 5 | Tamanho da resposta no registro de auditoria (separável) | — | Não | Não |
+
+**Estado da entrega (08/10/2026):**
+
+- Fatia 1: entregue — #2537 (mesclado em 08/10/2026).
+- Fatias 2a, 2b, 3, 4a e 4b: prontas e provadas no fork; aguardam a D6.
+- Fatia 5: aberta no #2614.
 
 Princípio: cada fatia entrega software que funciona sozinho; as fatias que tocam schema passam pelo teste de banco do CI; a prova pela tela vale a partir das fatias 2b e 4b.
 
@@ -778,16 +801,14 @@ Medido contra a `main` `17a67d3da`, que já contém o #2280; fatias 1 e 2a parte
   (`extensoes.md:62`, `docs/specs/extensoes-declarativas-v1.md:118`). "Extensão" fica como destino futuro,
   sem promessa. A expressão "módulo oficial" segue a ADR-0002 (aceita em 17/09/2026).
 - **Dependência nova (Fatia 4a)**: `mysql2` entra em `dependencies` do `package.json` com
-  `pnpm-lock.yaml` atualizado (`mysql2` não está instalado — CONFIRMADO por busca no
-  `package.json`, que só tem `pg`; licença e versão NÃO MEDIDAS, a conferir ao adicionar).
+  `pnpm-lock.yaml` atualizado (`mysql2` não estava instalado quando esta spec foi escrita — CONFIRMADO por busca no `package.json`, que só tinha `pg`; hoje consta `mysql2` 3.24.5, licença MIT).
   O `Dockerfile.worker:16-18` faz `pnpm install --frozen-lockfile` (CONFIRMADO), então o
   worker recebe a dependência sozinho. Para a imagem do app o risco é outro:
   `next.config.ts` usa `output: "standalone"` fora da Vercel (`next.config.ts:17`, CONFIRMADO) e o comentário
   do próprio arquivo explica que o standalone copia SÓ o que o rastreamento detecta
   (`next.config.ts:18-52`, CONFIRMADO — precedentes do `@swc/helpers` e do `pdfjs-dist`).
   Decisão: a fachada importa os dois dialetos com `import` ESTÁTICO (nunca `import()` com
-  caminho calculado), para o rastreamento enxergar o `mysql2` — INFERIDO (comportamento do
-  rastreamento com `mysql2` não medido); a prova é `pnpm build` + `next start` com uma
+  caminho calculado), para o rastreamento enxergar o `mysql2` — MEDIDO (F6): o `standalone` leva o `mysql2`; a prova é `pnpm build` + `next start` com uma
   conexão MySQL de teste (C1e). O peso que o `mysql2` acrescenta é uma medida a FAZER, não uma
   que já existe: o `build-and-size` (`.github/workflows/perf.yml`, CONFIRMADO) roda
   `pnpm build` em :37-38 e publica só o tamanho do `.next` no resumo em :47-53 — não
@@ -797,8 +818,8 @@ Medido contra a `main` `17a67d3da`, que já contém o #2280; fatias 1 e 2a parte
   `build-and-size`, que é onde a triagem pediu a medida) e declara a diferença no PR. O peso
   da imagem Docker em si é NÃO MEDIDO (não localizei job que o meça).
 - Fragmento em `.changes/` (formato em
-  `docs/doctrine/versionamento.md:124-133`; exemplo em
-  `.changes/canal-desativado-nao-entra-na-inbox.md`: `impacto`, `secao`, `titulo` + prosa
+  `docs/doctrine/versionamento.md`, seção "O fragmento"; exemplo em
+  qualquer arquivo de `.changes/` (liste com `ls .changes/*.md`): `impacto`, `secao`, `titulo` + prosa
   para o operador) — **um por fatia, PROPOSTA — decisão do mantenedor**: Fatia 1,
   `nada_mudou` (correções de defeito, nada de novo para o operador); Fatia 2a,
   `capacidade_nova` (conexões novas nascem com a lista vazia — o assistente só enxerga o
