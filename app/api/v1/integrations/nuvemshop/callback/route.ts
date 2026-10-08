@@ -13,6 +13,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/lib/env";
 import { audit } from "@/lib/audit";
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getConfig, SUBSCRIBED_EVENTS, eventToSlug } from "@/lib/nuvemshop/config";
 import { exchangeCodeForToken } from "@/lib/nuvemshop/oauth";
@@ -181,8 +182,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // de acesso revogado também passa por aqui: o aviso da Central se resolve e o
   // run recomeça do cursor. Falha aqui não desfaz a conexão — a reconciliação
   // de 30 min tenta de novo.
-  if (integration?.id) await resolverAvisoDeDesautorizacao(admin, state.orgId, integration.id);
-  const inicio = await iniciarSincronizacao(depsReais(admin), state.orgId, "conexao").catch(() => null);
+  let sync: { iniciado: boolean; motivo?: string } = { iniciado: false };
+  try {
+    if (integration?.id) await resolverAvisoDeDesautorizacao(admin, state.orgId, integration.id);
+    const inicio = await iniciarSincronizacao(depsReais(admin), state.orgId, "conexao");
+    sync = inicio.ok ? { iniciado: true } : { iniciado: false, motivo: inicio.motivo };
+  } catch (err) {
+    const motivo = err instanceof Error ? err.message.slice(0, 200) : "erro_desconhecido";
+    logger.warn("[nuvemshop.sync] início pela conexão falhou", { organization_id: state.orgId, motivo });
+    sync = { iniciado: false, motivo: "excecao" };
+  }
 
   await audit({
     actorUserId: state.userId,
@@ -195,7 +204,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     metadata: {
       store_id: storeId,
       scopes,
-      sync_iniciado: inicio?.ok === true,
+      sync_iniciado: sync.iniciado,
+      ...(sync.motivo ? { sync_motivo: sync.motivo } : {}),
       webhooks_registered: Object.entries(subscriptions)
         .filter(([, v]) => v.id !== null)
         .map(([k]) => k),

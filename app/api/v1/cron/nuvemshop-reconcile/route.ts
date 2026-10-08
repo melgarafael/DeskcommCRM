@@ -11,6 +11,7 @@ import type { NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { logger } from "@/lib/logger";
 import { depsReais } from "@/lib/nuvemshop/sync/deps";
 import { iniciarSincronizacao } from "@/lib/nuvemshop/sync/iniciar";
 import { ehOperante, STATUS_OPERANTE, statusDaOrgEmbutida } from "@/lib/organizacao/operante";
@@ -76,14 +77,23 @@ async function executar(req: NextRequest): Promise<Response> {
 
   const deps = depsReais(admin);
   let iniciados = 0;
+  let falhas = 0;
   for (const orgId of decidirQuemReconciliar((linhas ?? []) as LinhaDeIntegracao[], estados, new Date())) {
-    const r = await iniciarSincronizacao(deps, orgId, "reconciliacao");
-    if (r.ok) {
-      iniciados++;
-      await audit({ action: "nuvemshop.sync_requested", organizationId: orgId, metadata: { origem: "reconciliacao", run_id: r.runId } });
+    try {
+      const r = await iniciarSincronizacao(deps, orgId, "reconciliacao");
+      if (r.ok) {
+        iniciados++;
+        await audit({ action: "nuvemshop.sync_requested", organizationId: orgId, metadata: { origem: "reconciliacao", run_id: r.runId } });
+      }
+    } catch (err) {
+      falhas++;
+      logger.warn("[nuvemshop.reconcile] falha ao iniciar a loja", {
+        organization_id: orgId,
+        motivo: err instanceof Error ? err.message.slice(0, 200) : "erro_desconhecido",
+      });
     }
   }
-  return ok({ candidatos: orgIds.length, iniciados });
+  return ok({ candidatos: orgIds.length, iniciados, falhas });
 }
 
 export const GET = executar;
