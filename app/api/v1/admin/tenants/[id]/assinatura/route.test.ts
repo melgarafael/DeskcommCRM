@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   audit: vi.fn(),
   ligada: true,
   banco: undefined as unknown as BancoFalso,
+  adaptador: { trocarPlano: vi.fn(), lerSituacao: vi.fn() },
 }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
 vi.mock("@/lib/auth/server", () => ({ mfaEmDivida: async () => false, loadAuthUser: async () => null }));
@@ -23,8 +24,10 @@ vi.mock("@/lib/instalacao/modulos", async (importOriginal) => ({
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => h.banco.cliente }));
 vi.mock("@/lib/audit", () => ({ audit: h.audit }));
+vi.mock("@/lib/cobranca/provedores", () => ({ adaptador: () => h.adaptador }));
 
 import { EscritaDePlatformAdminNegada } from "@/lib/auth/requirePlatformAdmin";
+import { ErroDoProvedor } from "@/lib/cobranca/provedores/contrato";
 
 import { DELETE, PATCH, POST } from "./route";
 
@@ -62,7 +65,8 @@ function responder(c: Cadeia): Resposta {
     return { data: { organization_id: TENANT, plano_id: (argumentos(c, "update")?.[0] as { plano_id: string }).plano_id } };
   }
   // delete: o dublê respeita o filtro de provedor que a rota manda.
-  return { data: m.assinatura && m.assinatura.provedor === null ? { plano_id: m.assinatura.plano_id } : null };
+  const filtroDoProvedor = valorDoFiltro(c, "eq", "provedor") ?? null;
+  return { data: m.assinatura && (m.assinatura.provedor ?? null) === filtroDoProvedor ? { plano_id: m.assinatura.plano_id } : null };
 }
 
 const ctx = (id = TENANT) => ({ params: Promise.resolve({ id }) });
@@ -76,6 +80,8 @@ const escritas = () => h.banco.cadeias.filter((c) => c.tabela === "cobranca_assi
 beforeEach(() => {
   vi.clearAllMocks();
   h.ligada = true;
+  h.adaptador.trocarPlano.mockResolvedValue(undefined);
+  h.adaptador.lerSituacao.mockResolvedValue({ assinaturasVivas: 0 });
   h.escrita.mockResolvedValue({ user: { id: h.ator }, platformAdmin: { user_id: h.ator, scope: "full", mfa_required: false } });
   m = {
     org: { id: TENANT, status: "active", suspended_kind: null },
@@ -153,7 +159,7 @@ describe("PATCH — trocar plano (§7e; PR 2 sem provedor)", () => {
     expect((await res.json()).data).toEqual({ changed: true, plano_id: PRO.id });
     const [update] = escritas();
     expect(Object.keys(argumentos(update!, "update")?.[0] as object).sort()).toEqual(["plano_agendado_id", "plano_id", "updated_at"]);
-    expect(filtros(update!)).toEqual([["eq", "organization_id", TENANT], ["eq", "plano_id", BASICO.id], ["is", "provedor", null]]);
+    expect(filtros(update!)).toEqual([["eq", "organization_id", TENANT], ["eq", "plano_id", BASICO.id], ["is", "plano_agendado_id", null], ["is", "provedor", null], ["is", "checkout_expira_em", null]]);
     expect(h.audit).toHaveBeenCalledWith(expect.objectContaining({
       action: "cobranca.plano_trocado", metadata: { de: BASICO.id, para: PRO.id, quando: "imediato" },
     }));
@@ -187,9 +193,18 @@ describe("PATCH — trocar plano (§7e; PR 2 sem provedor)", () => {
     expect((await (await PATCH(pedido("PATCH", { plano_id: PRO.id }), ctx())).json()).error.code).toBe("pagamento_pendente");
     expect(escritas()).toEqual([]);
   });
-  it("com provedor → 409 state_conflict e nada muda (troca agendada chega com o provedor)", async () => {
-    m.assinatura = { ...m.assinatura, provedor: "stripe" };
-    expect((await (await PATCH(pedido("PATCH", { plano_id: PRO.id }), ctx())).json()).error.code).toBe("state_conflict");
+  it("com provedor, depois do teste: agenda para a próxima cobrança paga e muda o preço no provedor", async () => {
+    m.assinatura = { ...m.assinatura, estado: "ativa", trial_ate: null, provedor: "stripe", provedor_assinatura_id: "sub_1", proximo_vencimento: "2026-11-01T00:00:00.000Z" };
+    const res = await PATCH(pedido("PATCH", { plano_id: PRO.id }), ctx());
+    expect((await res.json()).data).toEqual({ changed: true, plano_id: BASICO.id, plano_agendado_id: PRO.id, vale_a_partir_de: "2026-11-01T00:00:00.000Z" });
+    expect(h.adaptador.trocarPlano).toHaveBeenCalledWith(expect.objectContaining({ assinaturaRef: "sub_1" }));
+    expect(Object.keys(argumentos(escritas()[0]!, "update")?.[0] as object).sort()).toEqual(["plano_agendado_id", "updated_at"]);
+    expect(h.audit).toHaveBeenCalledWith(expect.objectContaining({ metadata: { de: BASICO.id, para: PRO.id, quando: "agendado" } }));
+  });
+  it("provedor fora do ar na troca: 503 e nada gravado", async () => {
+    m.assinatura = { ...m.assinatura, estado: "ativa", trial_ate: null, provedor: "stripe", provedor_assinatura_id: "sub_1" };
+    h.adaptador.trocarPlano.mockRejectedValueOnce(new ErroDoProvedor(503, "api_error", true));
+    expect((await PATCH(pedido("PATCH", { plano_id: PRO.id }), ctx())).status).toBe(503);
     expect(escritas()).toEqual([]);
   });
   it("sem linha (isenta) → 404", async () => {
@@ -223,12 +238,26 @@ describe("DELETE — tornar isenta (PR 2: sem lerSituacao)", () => {
     expect((await (await DELETE(pedido("DELETE"), ctx())).json()).data).toEqual({ changed: true, reativada: false });
     expect(h.banco.rpcs).toEqual([]);
   });
-  it("com provedor: 409 state_conflict, nada apagado, nada reativado", async () => {
-    m.assinatura = { ...m.assinatura, provedor: "stripe" };
+  it("com provedor e assinatura viva lá: 409 assinatura_viva_no_provedor, nada apagado nem reativado", async () => {
+    m.assinatura = { ...m.assinatura, provedor: "stripe", provedor_cliente_id: "cus_1" };
     m.org = { id: TENANT, status: "suspended", suspended_kind: "cobranca" };
-    expect((await (await DELETE(pedido("DELETE"), ctx())).json()).error.code).toBe("state_conflict");
+    h.adaptador.lerSituacao.mockResolvedValueOnce({ assinaturasVivas: 1 });
+    expect((await (await DELETE(pedido("DELETE"), ctx())).json()).error.code).toBe("assinatura_viva_no_provedor");
+    expect(escritas()).toEqual([]);
     expect(h.banco.rpcs).toEqual([]);
     expect(h.audit).not.toHaveBeenCalled();
+  });
+  it("⭐ com provedor e nada vivo lá: apaga com o filtro do provedor e do cliente lidos, e reativa", async () => {
+    m.assinatura = { ...m.assinatura, provedor: "stripe", provedor_cliente_id: "cus_1" };
+    m.org = { id: TENANT, status: "suspended", suspended_kind: "cobranca" };
+    expect((await (await DELETE(pedido("DELETE"), ctx())).json()).data).toEqual({ changed: true, reativada: true });
+    expect(filtros(escritas()[0]!)).toEqual([["eq", "organization_id", TENANT], ["eq", "provedor", "stripe"], ["eq", "provedor_cliente_id", "cus_1"]]);
+  });
+  it("leitura do provedor que falha: 503 e nada apagado", async () => {
+    m.assinatura = { ...m.assinatura, provedor: "stripe", provedor_cliente_id: "cus_1" };
+    h.adaptador.lerSituacao.mockRejectedValueOnce(new ErroDoProvedor(503, "api_error", true));
+    expect((await DELETE(pedido("DELETE"), ctx())).status).toBe(503);
+    expect(escritas()).toEqual([]);
   });
   it("já isenta e ativa: 200 changed:false, sem audit (idempotente)", async () => {
     m.assinatura = null;

@@ -16,7 +16,12 @@ import { enviarTextoFixoPendente } from "@/lib/followup/enviar-texto-fixo";
 
 vi.mock("@/lib/env", () => ({ env: { INTERNAL_SECRET: "dev-secret", INTERNAL_CRON_SECRET: "" } }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
-vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({ from: vi.fn(), rpc: vi.fn(async()=>({data:0,error:null})) })) }));
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: vi.fn(() => ({
+    from: vi.fn(),
+    rpc: vi.fn(async () => ({ data: 0, error: null })),
+  })),
+}));
 vi.mock("@/lib/followup/engine", () => ({
   runFollowupTick: vi.fn(),
   createSupabaseAdminClient: vi.fn(() => ({})),
@@ -59,8 +64,8 @@ describe("GET/POST /api/v1/cron/followup-flow-worker", () => {
     const { POST } = await import("@/app/api/v1/cron/followup-flow-worker/route");
     const res = await POST(req({ authorization: "Bearer dev-secret" }));
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { data: typeof summary };
-    expect(body.data).toEqual(summary);
+    const body = (await res.json()) as { data: typeof summary & { confirmation_sweep: unknown } };
+    expect(body.data).toEqual({ ...summary, confirmation_sweep: { ok: true, avisos: 0 } });
     expect(vi.mocked(createSupabaseAdminClient)).toHaveBeenCalledWith(expect.anything());
     expect(vi.mocked(createAdminClient)).toHaveBeenCalled();
     expect(vi.mocked(enviarTextoFixoPendente)).toHaveBeenCalled();
@@ -95,10 +100,85 @@ describe("GET/POST /api/v1/cron/followup-flow-worker", () => {
     expect(vi.mocked(audit)).not.toHaveBeenCalled();
     expect(vi.mocked(enviarTextoFixoPendente)).not.toHaveBeenCalled();
   });
-  it("leitura da confirmação indisponível recusa o tick sem auditar sucesso",async()=>{
-    vi.mocked(createAdminClient).mockReturnValueOnce({rpc:vi.fn(async()=>({data:null,error:{message:"database down"}}))} as never);
-    const {POST}=await import("@/app/api/v1/cron/followup-flow-worker/route");
-    expect((await POST(req({authorization:"Bearer dev-secret"}))).status).toBe(500);
-    expect(runFollowupTick).not.toHaveBeenCalled();expect(audit).not.toHaveBeenCalled();
+  // Antes, erro na varredura de confirmação de presença devolvia 500 ANTES do
+  // motor: um defeito só na agenda parava o follow-up de todas as orgs. Os dois
+  // casos abaixo provam que a falha fica isolada — o motor roda, o dreno roda —
+  // e que ela NÃO some: volta na resposta, no log e na trilha.
+  it.each([
+    [
+      "erro devolvido pelo banco",
+      () => ({
+        from: vi.fn(),
+        rpc: vi.fn(async () => ({ data: null, error: { message: "database down" } })),
+      }),
+      "database down",
+    ],
+    [
+      "exceção do client (rede)",
+      () => ({
+        from: vi.fn(),
+        rpc: vi.fn(async () => {
+          throw new Error("fetch failed");
+        }),
+      }),
+      "fetch failed",
+    ],
+  ])(
+    "varredura de confirmação falha (%s) → motor de follow-up ainda roda",
+    async (_caso, admin, erro) => {
+      vi.mocked(createAdminClient).mockReturnValueOnce(admin() as never);
+      const summary = { claimed: 1, advanced: 1, scheduled: 0, failed: 0, dead: 0 };
+      vi.mocked(runFollowupTick).mockResolvedValue(summary);
+      const { logger } = await import("@/lib/logger");
+      const logErro = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+
+      const { POST } = await import("@/app/api/v1/cron/followup-flow-worker/route");
+      const res = await POST(req({ authorization: "Bearer dev-secret" }));
+
+      expect(res.status).toBe(200);
+      expect(vi.mocked(runFollowupTick)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(enviarTextoFixoPendente)).toHaveBeenCalled();
+      const body = (await res.json()) as { data: Record<string, unknown> };
+      expect(body.data).toEqual({ ...summary, confirmation_sweep: { ok: false, erro } });
+      expect(logErro).toHaveBeenCalledWith(
+        expect.stringContaining("fn_appointment_confirmation_sweep"),
+        expect.objectContaining({ error: erro }),
+      );
+      expect(vi.mocked(audit)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "agenda.confirmation_sweep_run",
+          metadata: { falhou: true, erro },
+        }),
+      );
+      // O motor rodou e mexeu: a trilha dele continua sendo escrita.
+      expect(vi.mocked(audit)).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "followup.worker_run", metadata: summary }),
+      );
+      logErro.mockRestore();
+    },
+  );
+
+  it("varredura com avisos audita agenda.confirmation_sweep_run e devolve a contagem", async () => {
+    vi.mocked(createAdminClient).mockReturnValueOnce({
+      from: vi.fn(),
+      rpc: vi.fn(async () => ({ data: 2, error: null })),
+    } as never);
+    vi.mocked(runFollowupTick).mockResolvedValue({
+      claimed: 0,
+      advanced: 0,
+      scheduled: 0,
+      failed: 0,
+      dead: 0,
+    });
+
+    const { POST } = await import("@/app/api/v1/cron/followup-flow-worker/route");
+    const res = await POST(req({ authorization: "Bearer dev-secret" }));
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { confirmation_sweep: unknown } };
+    expect(body.data.confirmation_sweep).toEqual({ ok: true, avisos: 2 });
+    expect(vi.mocked(audit)).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "agenda.confirmation_sweep_run", metadata: { avisos: 2 } }),
+    );
   });
 });

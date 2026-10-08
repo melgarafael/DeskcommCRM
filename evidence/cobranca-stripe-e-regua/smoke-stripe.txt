@@ -1,0 +1,10 @@
+✓ chave de teste aceita na versão 2026-08-26.dahlia; produção exigida recusa
+✓ cliente cus_VOLs…
+✓ clienteExiste: o da conta sim, o inexistente não (a guarda da troca de chave)
+✓ Checkout em modo assinatura criado
+✓ lerSituacao: ativa, paga, fim do período em 31.0 dias (current_period_end do item)
+✓ trocarPlano: preço novo no item, nenhuma fatura de proração
+✓ cancelarNoFim: segue ativa até o fim do período
+✓ portal do cliente aberto com a configuração da instalação
+✓ prepararWebhook + confirmar: um endpoint, segredo whsec_ devolvido (não impresso)
+✓ SMOKE STRIPE OK (versão 2026-08-26.dahlia)

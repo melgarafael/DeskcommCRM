@@ -22,7 +22,7 @@ const BASE = `/api/v1/admin/tenants/${ORG}/assinatura`;
 const BASICO = { id: "cccccccc-0000-4000-8000-000000000001", nome: "Básico", arquivado_em: null };
 const PRO = { id: "cccccccc-0000-4000-8000-000000000002", nome: "Pro", arquivado_em: null };
 const VELHO = { id: "cccccccc-0000-4000-8000-000000000003", nome: "Velho", arquivado_em: "2026-09-01T00:00:00Z" };
-const EM_TESTE = { plano_id: BASICO.id, estado: "trial" as const, trial_ate: "2026-10-10T12:00:00Z", prazo_extra_ate: null, provedor: null };
+const EM_TESTE = { plano_id: BASICO.id, estado: "trial" as const, trial_ate: "2026-10-10T12:00:00Z", prazo_extra_ate: null, provedor: null, plano_agendado_id: null, proximo_vencimento: null };
 
 beforeEach(() => {
   vi.clearAllMocks();

@@ -862,7 +862,7 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
     return await failRun(run, "runtime_error", message, startedAt);
   } finally {
     if (ephemeralTokenId) {
-      await revokeEphemeralToken(ephemeralTokenId).catch(() => {
+      await revokeEphemeralToken(ephemeralTokenId, run.organization_id).catch(() => {
         // Token TTL=300s; lingering revoke failure is non-critical.
       });
     }
