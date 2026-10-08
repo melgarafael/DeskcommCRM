@@ -1,3 +1,4 @@
+import { guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { idsDeContatosPessoais } from "@/app/api/v1/conversations/_handler";
@@ -639,6 +640,7 @@ export async function createLeadHandler(
   const currency = input.currency ?? (await moedaDaOrganizacao(supabase, ctx.organization_id));
 
   const serviceOrigin = ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, input.contact_id ?? null);
+  await guardServiceEffect();
   const { data: lead, error: insErr } = await supabase
     .from("crm_leads")
     .insert({
@@ -851,6 +853,7 @@ export async function updateLeadHandler(
   const tagServiceOrigin = input.tags !== undefined
     ? ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, input.contact_id ?? existing.contact_id)
     : null;
+  await guardServiceEffect();
   const { data: updated, error: updErr } = await supabase
     .from("crm_leads")
     .update(patch)
@@ -1250,6 +1253,7 @@ export async function moveLeadHandler(
 
   const serviceOrigin = ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, lead.contact_id);
   const nowIso = new Date().toISOString();
+  await guardServiceEffect();
   const { data: updated, error: updErr } = await supabase
     .from("crm_leads")
     .update({

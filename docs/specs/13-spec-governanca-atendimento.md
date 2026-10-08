@@ -566,3 +566,27 @@ de governança implementado lá além das próprias specs — nada a anotar.
 ### B.3 — Contagem
 
 implementado: **9** · parcial: **5** · ausente: **6** (dos quais 1 sem feature G* → INB-01 na inbox).
+
+## Turno autônomo após tomada humana (migration 0592)
+
+Assumir ou transferir a conversa invalida, na transação do evento de atribuição,
+os jobs `inbound_turn`/`case_reply_turn` pendentes ou em execução e o
+`followup_turn` em execução daquela conversa e organização. O lease original é
+revogado; devolver ao automático não revive o trabalho antigo. A atribuição por
+roteamento e o handoff intencional do próprio agente não têm essa semântica.
+
+A fronteira de execução verifica o lease antes de efeitos e novamente após
+consultas assíncronas nos caminhos de reserva, alteração de card e envio.
+`approved_reply`, `transactional_delivery` e `operator_turn` seguem suas próprias
+autoridades. Follow-up futuro continua sujeito à política do fluxo.
+
+O gatilho e a revalidação não desfazem efeito já concluído nem retiram mensagem
+já entregue ao transporte. Não há transação mantida durante HTTP: uma tomada
+que ocorrer entre a última conferência e o início do efeito ainda pode encontrar
+aquela operação em andamento.
+
+Prova: `tests/invariants/assumir-interrompe-turno.test.ts` no baseline PostgreSQL;
+`tests/unit/assumir-interrompe-turno.test.ts`,
+`tests/unit/pessoa-marca-fora-da-grade.test.ts` e
+`tests/unit/envio-por-bolha-confere-uma-vez.test.ts` para a fronteira e os handlers.
+Tela, modelo real e transporte externo são medições separadas.
