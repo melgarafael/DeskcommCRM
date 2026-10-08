@@ -1056,6 +1056,11 @@ export const AUDIT_ACTIONS = [
   // Planos de tarefa (#1752): a lista `settings.task_plans` mudou pela rota
   // `settings/task-plans` — mesma família de `campaign.settings_updated`.
   "task_plans.settings_updated",
+
+  // Fontes liberadas do banco externo (Spec 23): o administrador trocou o modo
+  // (`all`/`list`) e a lista do que o assistente pode ler. O metadata carrega só
+  // CONTAGENS (modo e número de fontes), nunca nomes de tabela ou de coluna.
+  "external_db_sources.updated",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
