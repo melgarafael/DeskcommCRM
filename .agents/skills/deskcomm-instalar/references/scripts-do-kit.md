@@ -28,6 +28,17 @@ dois arquivos — senão o contêiner sobe sem as etiquetas de roteamento e o do
 docker compose -f docker-compose.prod.yml -f docker-compose.traefik.yml --env-file .env up -d app
 ```
 
+Atrás de NAT (`REVERSE_PROXY=cloudflared`), o override é o
+`docker-compose.cloudflared.yml` — ele desliga o Caddy e sobe o `cloudflared`, que publica
+por `app:3000`:
+
+```bash
+docker compose -f docker-compose.prod.yml -f docker-compose.cloudflared.yml --env-file .env up -d
+```
+
+O `dc()`/`dc_files()` do kit já escolhem o overlay certo por `REVERSE_PROXY`, então os
+scripts (`install.sh`, `update.sh`, `healthcheck.sh`) fazem isso sozinhos.
+
 ## Validar um valor sem instalar
 
 O instalador expõe seus validadores como biblioteca — útil para conferir uma connection string ou

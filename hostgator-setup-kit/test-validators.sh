@@ -1773,6 +1773,45 @@ STUB
 npm_rede_e2e "rede do NPM presente: install/update seguem"        segue 0
 npm_rede_e2e "rede do NPM sumiu (prune/down -v): morre explicando" morre 1
 
+echo "proxy reverso: Cloudflare Tunnel (atrás de NAT)"
+# Como o NPM, o cloudflared é sempre declarado à mão no .env — não há nada para
+# detectar. O que se prova é o CALL SITE (dc()/dc_files() entram o override) e
+# que garantir_rede_do_proxy NÃO exige rede externa: o cloudflared sobe na rede
+# interna do próprio compose.
+if REVERSE_PROXY=cloudflared dc_files | grep -q 'docker-compose.cloudflared.yml'; then
+  printf '  ✓ dc_files() entra o docker-compose.cloudflared.yml com REVERSE_PROXY=cloudflared\n'
+else
+  printf '  ✗ dc_files() não entrou o docker-compose.cloudflared.yml (deu: %s)\n' \
+    "$(REVERSE_PROXY=cloudflared dc_files)"; fail=1
+fi
+if REVERSE_PROXY=caddy dc_files | grep -q 'docker-compose.cloudflared.yml'; then
+  printf '  ✗ dc_files() entrou o override do Cloudflare SEM REVERSE_PROXY=cloudflared (vacuidade)\n'; fail=1
+else
+  printf '  ✓ REVERSE_PROXY=caddy (default): dc_files() não menciona o override do Cloudflare\n'
+fi
+# garantir_rede_do_proxy com cloudflared não pode nem olhar rede externa: não há
+# nenhuma. O dublê responde "inexistente" para qualquer inspect — se a função
+# tentasse conferir, morreria pedindo TRAEFIK_NETWORK.
+_cloudflared_rede() {  # → segue | morre
+  local dir real kit="$PWD"
+  dir="$(mktemp -d)"; mkdir -p "$dir/bin"
+  cat > "$dir/bin/docker" <<STUB
+#!/usr/bin/env bash
+exit 1
+STUB
+  chmod +x "$dir/bin/docker"
+  if (cd "$dir" && env PATH="$dir/bin:$PATH" REVERSE_PROXY=cloudflared PROJECT_DIR="$dir" \
+        bash -c '. "$1/_common.sh"; garantir_rede_do_proxy' _ "$kit") >/dev/null 2>&1
+  then real=segue; else real=morre; fi
+  rm -rf "$dir"
+  printf '%s' "$real"
+}
+if [ "$(_cloudflared_rede)" = segue ]; then
+  printf '  ✓ cloudflared não exige rede externa: garantir_rede_do_proxy segue sem tocar o Docker\n'
+else
+  printf '  ✗ cloudflared tentou conferir rede externa e morreu (não usa nenhuma)\n'; fail=1
+fi
+
 echo "proxy reverso: quanta confiança a eleição merece"
 # A eleição por porta publicada traz a evidência (a coluna Ports diz ':80->'); a
 # varredura por modo host não traz nenhuma — em modo host a coluna é vazia para
@@ -3504,6 +3543,7 @@ NEXT_PUBLIC_APP_URL='https://crm.exemplo.com.br'" >/dev/null
 caddy_skip_e2e "caddy (default): recria o próprio proxy"       caddy   ""                                          sim
 caddy_skip_e2e "traefik: nunca recria o Caddy"                  traefik "TRAEFIK_NETWORK='crmcaddyskip_proxy'"      nao
 caddy_skip_e2e "npm: nunca recria o Caddy"                      npm     "PROXY_NETWORK_NAME='proxy_network'"       nao
+caddy_skip_e2e "cloudflared: nunca recria o Caddy"              cloudflared "CLOUDFLARE_TUNNEL_TOKEN='token'"     nao
 
 echo "nome do projeto que o docker compose usa"
 # O compose faz TrimLeft("_-") no basename. Sem isso, uma pasta /root/_deskcomm

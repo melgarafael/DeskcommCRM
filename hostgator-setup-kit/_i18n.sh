@@ -68,6 +68,14 @@ la línea TRAEFIK_NETWORK del .env: el kit crea y usa la red '{3}'.
 Si no, ejecuta 'docker network ls' y pon la bridge correcta en TRAEFIK_NETWORK en el .env.
 Si es una overlay de Swarm, tiene que haberse creado con --attachable —
 sin eso un contenedor de compose común no puede entrar en ella."
+  ["REVERSE_PROXY=cloudflared não é suportado no modo single-server, porque o Supabase self-hosted depende do Caddy para publicar as APIs (Auth, REST, Storage...). Use o proxy padrão (Caddy) ou o Cloudflare Tunnel apenas com o Supabase na nuvem."]="REVERSE_PROXY=cloudflared no es compatible con el modo single-server, porque el Supabase self-hosted depende de Caddy para publicar las APIs (Auth, REST, Storage...). Usa el proxy por defecto (Caddy), o el Cloudflare Tunnel solo con el Supabase en la nube."
+  ["REVERSE_PROXY=cloudflared exige CLOUDFLARE_TUNNEL_TOKEN no .env.
+Crie o túnel em Zero Trust > Networks > Tunnels, copie o token para essa linha
+e rode de novo. Em Public Hostnames, aponte o seu domínio para http://app:3000."]="REVERSE_PROXY=cloudflared exige CLOUDFLARE_TUNNEL_TOKEN en el .env.
+Crea el túnel en Zero Trust > Networks > Tunnels, copia el token a esa línea
+y vuelve a ejecutar. En Public Hostnames, apunta tu dominio a http://app:3000."
+  ["✓ Cloudflare Tunnel: o Caddy fica desligado e o cloudflared publica por app:3000"]="✓ Cloudflare Tunnel: Caddy queda apagado y cloudflared publica por app:3000"
+  ["  (lembre de bloquear /api/v1/webhooks/waha no WAF da Cloudflare — ver docker-compose.cloudflared.yml)"]="  (recuerda bloquear /api/v1/webhooks/waha en el WAF de Cloudflare — ver docker-compose.cloudflared.yml)"
   ["Pausando o sistema para mexer no banco com segurança."]="Pausando el sistema para modificar la base de datos con seguridad."
   ["⛔ PEÇAS DO BANCO NÃO VOLTARAM depois da atualização:"]="⛔ PARTES DE LA BASE DE DATOS NO VOLVIERON después de la actualización:"
   ["   Enquanto elas estiverem paradas, o CRM não consegue ler nem gravar."]="   Mientras estén detenidas, el CRM no puede leer ni escribir."

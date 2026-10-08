@@ -47,6 +47,26 @@ São conclusões de leitura de código.
 (nunca query string), plaintext do token nunca persistido. O problema **não é o guard;
 é a ausência de limite de tentativas na frente dele.**
 
+### 1.1 O proxy da borda também é superfície (e o túnel, uma borda terceirizada)
+
+No stack padrão, o `Caddyfile` responde **403** a `/api/v1/webhooks/waha` — o webhook
+global, sem token na URL — antes de chegar ao app. O `docker-compose.traefik.yml`
+reproduz esse bloqueio; o `docker-compose.npm.yml` deixa o roteamento para o painel do
+NPM, e ali o bloqueio é responsabilidade do operador.
+
+O `docker-compose.cloudflared.yml` (instalação atrás de NAT, `REVERSE_PROXY=cloudflared`)
+**não tem como impor o 403 pelo compose**: o roteamento é administrado à distância, no
+painel da Cloudflare. O caminho continua protegido pelo HMAC do webhook
+(`WAHA_HMAC_SECRET`, `lib/waha/ingest.ts`), mas a primeira camada — o bloqueio do caminho
+— precisa ser uma regra de WAF/Access da Cloudflare. Sem essa regra, o único controle que
+sobra é o HMAC. CONFIRMADO por leitura do overlay e do `Caddyfile`.
+
+Fora isso, o túnel **reduz** a superfície clássica: não publica porta de entrada nenhuma
+(nada de 80/443 escutando), então a varredura de porta e o `network_mode: host` que este
+documento assume como premissa não existem nesse modo. O token do túnel é credencial de
+saída; vazá-lo permite publicar rotas no túnel da conta, e por isso ele nunca aparece em
+log nem em query string.
+
 ---
 
 ## 2. Riscos por ordem de exploração

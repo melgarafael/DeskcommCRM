@@ -1,0 +1,106 @@
+# docker-compose.cloudflared.yml — override para instalação ATRÁS DE NAT, onde
+# nada pode publicar porta e quem resolve o acesso é o Cloudflare Tunnel.
+#
+#   docker compose -f docker-compose.prod.yml -f docker-compose.cloudflared.yml --env-file .env up -d
+#
+# QUANDO USAR
+# -----------
+# O `caddy` do stack base publica 80/443 e emite o certificado Let's Encrypt.
+# Isso pressupõe que a internet alcança a máquina nessas portas. Atrás de NAT
+# (ou de CGNAT, ou de uma rede que proíbe inbound) não alcança: o Caddy nunca
+# obtém certificado e o domínio não abre. O Cloudflare Tunnel inverte o sentido:
+# o `cloudflared` abre uma conexão de SAÍDA contínua para a borda da Cloudflare,
+# e é a borda que atende o domínio. Nenhuma porta de entrada é necessária.
+#
+# Com este override:
+#
+#   1. o serviço `caddy` ganha um profile que nunca é ativado — o compose
+#      simplesmente não o cria (não há 80/443 para publicar);
+#   2. sobe o `cloudflared`, que fala com `app:3000` pela rede interna.
+#
+# O comportamento padrão (sem este arquivo) fica EXATAMENTE como antes: quem não
+# passa o `-f docker-compose.cloudflared.yml` não é afetado por nada aqui.
+#
+# SÓ O TOKEN MORA AQUI
+# --------------------
+# O túnel é "remotely-managed": a configuração inteira (qual hostname aponta
+# para qual serviço, TLS, Access) vive no painel da Cloudflare, não em arquivo
+# local. O `.env` guarda só o token do túnel:
+#
+#   CLOUDFLARE_TUNNEL_TOKEN=<token do túnel>
+#
+# Passos no painel (Zero Trust > Networks > Tunnels):
+#
+#   1. crie um túnel e copie o token para CLOUDFLARE_TUNNEL_TOKEN no .env;
+#   2. em Public Hostnames, aponte o seu domínio para o serviço
+#        http://app:3000
+#      (o nome `app` existe na rede interna do compose; NÃO use https, NÃO use
+#      o IP do host — o TLS é terminado na borda da Cloudflare);
+#   3. aponte DOMAIN, NEXT_PUBLIC_APP_URL e NEXT_PUBLIC_ADMIN_URL no .env para
+#      esse mesmo hostname (https://...). Os redirects de login/recuperação do
+#      Supabase Auth também precisam listá-lo.
+#
+# ⚠️ O WEBHOOK GLOBAL DO WAHA FICA PÚBLICO — PROTEJA NA BORDA
+# -----------------------------------------------------------
+# No stack base o Caddy responde 403 a `/api/v1/webhooks/waha` (webhook global,
+# sem token na URL). O túnel entrega esse caminho ao app, então a proteção tem
+# de existir no painel da Cloudflare — crie uma regra que bloqueie o caminho:
+#
+#   Security > WAF > Custom rules
+#     Se:  http.host eq "SEU-DOMINIO" and http.request.uri.path eq "/api/v1/webhooks/waha"
+#     Então: Block
+#
+# O HMAC do webhook (WAHA_HMAC_SECRET) continua valendo como segunda camada,
+# mas o bloqueio é a primeira e a razão de ele existir é não depender só dela.
+#
+# ⚠️ O TETO DE 100 SEGUNDOS DA CLOUDFLARE
+# ---------------------------------------
+# A borda da Cloudflare corta requisições HTTP acima de ~100s (504/524), e isso
+# não é configurável no plano padrão. Nesta stack as rotas longas NÃO passam
+# pelo túnel: o runner do agente (`/api/internal/agents/run*`) é chamado de
+# dentro, e o WAHA chama `http://app:3000` direto pela rede interna. Se um dia
+# uma rota exposta ao navegador precisar de mais de 100s, ela esbarrará nesse
+# teto.
+#
+# A única porta que continua publicada por um serviço nosso não é HTTP (o áudio
+# WebRTC do `wacalls`, UDP) — proxy L7 nenhum carrega UDP, e NAT também não.
+# Esse módulo é opcional e desligado por padrão; quem o ligar atrás de NAT
+# precisa de outro caminho para a mídia, e isso está fora do escopo deste overlay.
+
+services:
+  cloudflared:
+    # Imagem UPSTREAM: referencia-se com tag fixa, nunca se republica
+    # (docs/doctrine/packaging.md). Tag de versão é imutável aqui, então
+    # `pull_policy: missing` — `always` amarraria a subida do CRM à
+    # disponibilidade do Docker Hub.
+    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:2026.10.0}
+    pull_policy: missing
+    restart: unless-stopped
+    # O token vem do .env. `:?` faz o compose RECUSAR subir sem ele em vez de
+    # iniciar um contêiner mudo que reinicia em loop — falha cedo e alto.
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN ausente no .env}
+    # `tunnel run` lê o token de TUNNEL_TOKEN (o modo remotely-managed). Sem
+    # `--no-autoupdate`, a imagem tenta se atualizar sozinha e só reinicia.
+    command: tunnel --no-autoupdate run
+    depends_on:
+      app:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Só a rede INTERNA. O cloudflared não publica porta nenhuma e alcança o
+    # público porque ELE abre a conexão de saída pelos servidores da Cloudflare
+    # — é justamente o que dispensa NAT e porta de entrada.
+    networks: [internal]
+
+  # O Caddy não é removido do compose (isso exigiria editar o arquivo base e
+  # quebraria quem usa o padrão) — ele só é posto num profile que nunca é
+  # ligado. ATENÇÃO: nomear o serviço explicitamente (`docker compose up -d
+  # caddy`) ATIVA o profile dele e o contêiner sobe assim mesmo, tentando
+  # publicar 80/443. É por isso que o update.sh confere REVERSE_PROXY antes de
+  # recriar o proxy.
+  caddy:
+    profiles: ["caddy-nao-usado-com-proxy-externo"]

@@ -11,6 +11,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_i18n.sh"
 COMPOSE="docker-compose.prod.yml"
 COMPOSE_TRAEFIK="docker-compose.traefik.yml"
 COMPOSE_NPM="docker-compose.npm.yml"
+COMPOSE_CLOUDFLARED="docker-compose.cloudflared.yml"
 # Overlay que constrói as imagens no lugar de puxá-las. Existe no repo com
 # `pull_policy: never` nas três imagens e sai do MESMO commit que o `git
 # checkout` deixou no disco — é o caminho de quem não consegue usar as imagens
@@ -241,6 +242,14 @@ unset _deskcomm_chamador
 #             Docker — o roteamento é manual, na UI dele). Entra o override, que
 #             desliga o Caddy e garante o `app` na rede/IP que o Proxy Host
 #             espera. Ver o cabeçalho de docker-compose.npm.yml.
+#   cloudflared → a instalação está ATRÁS DE NAT: nada pode publicar porta e o
+#             acesso é resolvido pelo Cloudflare Tunnel. Entra o override, que
+#             desliga o Caddy e sobe o `cloudflared` falando com app:3000 pela
+#             rede interna. A configuração do túnel mora no painel da Cloudflare;
+#             o .env guarda só CLOUDFLARE_TUNNEL_TOKEN. Ver o cabeçalho de
+#             docker-compose.cloudflared.yml. NÃO é suportado no single-server
+#             (install-single-server.sh recusa): lá o Caddy publica também as
+#             APIs do Supabase.
 #
 # Todo `docker compose` do kit passa por aqui: com proxy externo, um comando sem
 # o override subiria o Caddy e ele iria bater de frente com o proxy da hospedagem.
@@ -269,6 +278,7 @@ dc() {
   case "${REVERSE_PROXY:-caddy}" in
   traefik) docker compose -f "$COMPOSE" -f "$COMPOSE_TRAEFIK" ${ca[@]+"${ca[@]}"} "$@" ;;
   npm)     docker compose -f "$COMPOSE" -f "$COMPOSE_NPM" ${ca[@]+"${ca[@]}"} "$@" ;;
+  cloudflared) docker compose -f "$COMPOSE" -f "$COMPOSE_CLOUDFLARED" ${ca[@]+"${ca[@]}"} "$@" ;;
   *)       docker compose -f "$COMPOSE" ${ca[@]+"${ca[@]}"} "$@" ;;
   esac
 }
@@ -298,6 +308,7 @@ dc_files() {
   case "${REVERSE_PROXY:-caddy}" in
   traefik) printf -- '-f %s -f %s%s' "$COMPOSE" "$COMPOSE_TRAEFIK" "$sufixo" ;;
   npm)     printf -- '-f %s -f %s%s' "$COMPOSE" "$COMPOSE_NPM" "$sufixo" ;;
+  cloudflared) printf -- '-f %s -f %s%s' "$COMPOSE" "$COMPOSE_CLOUDFLARED" "$sufixo" ;;
   *)       printf -- '-f %s%s' "$COMPOSE" "$sufixo" ;;
   esac
 }
@@ -1087,7 +1098,14 @@ build_local_permitido() {  # build_local_permitido <versão alvo>
 # se devolve a versão anterior quando há UM SERVIÇO POSITIVAMENTE fora do ar.
 servicos_fora_do_ar() {
   local esperados="app worker scheduler" saida svc estado conhecidos=0 rodando=" " fora=""
-  case "${REVERSE_PROXY:-caddy}" in traefik|npm) ;; *) esperados="$esperados caddy" ;; esac
+  # Com proxy externo (traefik/npm) não há Caddy. Com cloudflared, quem faz as
+  # vezes do proxy é o próprio contêiner do túnel: ele tem de estar de pé, senão
+  # o site fica mudo mesmo com app/worker/scheduler saudáveis.
+  case "${REVERSE_PROXY:-caddy}" in
+  traefik|npm) ;;
+  cloudflared) esperados="$esperados cloudflared" ;;
+  *)           esperados="$esperados caddy" ;;
+  esac
   # shellcheck disable=SC2046
   # Com prazo pelo mesmo motivo do healthcheck: um `ps` preso no resolver
   # saturado prenderia aqui o fim da atualização. Estourou = "não sei".
@@ -1376,6 +1394,9 @@ Rode 'docker network ls', identifique a rede do seu NPM (Settings > a que o
 contêiner dele já está conectado) e ponha PROXY_NETWORK_NAME=<nome> no .env
 antes de tentar de novo." "$rede")"
   fi
+  # cloudflared cai fora aqui de propósito: ele NÃO usa rede externa — sobe na
+  # rede interna do próprio compose e fala com o app por ela. Não há bridge a
+  # conferir nem a criar.
   [ "${REVERSE_PROXY:-caddy}" = "traefik" ] || return 0
   local nossa drv erro
   nossa="$(rede_reservada_do_proxy)"
