@@ -103,23 +103,20 @@ export function FichasDoModulo({
   if (!dados) return null;
 
   /**
-   * PAINEL SEM FICHA NÃO É DESENHADO — e isto é decisão de produto, não economia de
-   * pixel.
+   * PAINEL SEM FICHA NÃO É DESENHADO.
    *
-   * O módulo de dados é instalado por INSTALAÇÃO (ADR-0002 D3: "o corte é por
-   * instalação"), não por empresa, e o liga/desliga por empresa das extensões
-   * declarativas (`organization_extensions.enabled`) não serve ao perfil `data`: o
-   * CHECK de `configuration` exige `density`/`show_description`, e a instalação não
-   * cria linha nessa tabela — travar o painel ali o esconderia em TODA instalação.
+   * O módulo de dados é instalado para a INSTALAÇÃO inteira (ADR-0002 D3: "o corte é por
+   * instalação"), e não por empresa. O painel, portanto, só aparece onde existe dado da própria
+   * empresa — e não onde o módulo meramente existe.
    *
-   * Sem esta guarda, numa instalação de revendedor a barbearia que nunca pediu o
-   * módulo odontológico veria "Odontograma — Nada guardado aqui ainda." em toda
-   * ficha de contato. Não é só ruído: expõe a existência de um módulo de outro
-   * cliente do mesmo servidor.
+   * ⚠️ ANTES DE MUDAR ESTA GUARDA, leia os dois:
    *
-   * Na onda 1 a rota é só leitura, então painel vazio não oferece nada — nem um
-   * botão de adicionar. Quando a escrita entrar, esta guarda tem de ser revista
-   * junto, senão não haverá como criar a primeira ficha pela tela.
+   *   - o caso "sem nenhuma ficha, o painel NÃO é desenhado" em `FichasDoModulo.test.tsx`, que é
+   *     o que de fato impede a volta do painel vazio;
+   *   - o cabeçalho da migration `0611`, seção "Por que o corte é por INSTALAÇÃO".
+   *
+   * Ela precisa ser revista quando a ESCRITA pela tela entrar: hoje a rota é só leitura, então
+   * painel vazio não oferece nada; com escrita, não haveria como criar a primeira ficha.
    */
   if (dados.fichas.length === 0) return null;
 

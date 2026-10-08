@@ -62,22 +62,19 @@ describe("FichasDoModulo", () => {
   });
 
   /**
-   * ⚠️ ESTE CASO MUDOU DE EXIGÊNCIA, e a razão é de produto.
+   * ⚠️ ESTE CASO MUDOU DE EXIGÊNCIA, e é ele que sustenta a guarda.
    *
-   * Ele pedia uma frase ("Nada guardado aqui ainda.") quando não há ficha. Mas o
-   * módulo de dados é instalado por INSTALAÇÃO (ADR-0002 D3), não por empresa — e
-   * `organization_extensions.enabled`, o liga/desliga por empresa das extensões
-   * declarativas, não serve ao perfil `data`: o CHECK de `configuration` exige
-   * `density`/`show_description`, e a instalação não cria linha nessa tabela.
+   * Ele pedia uma frase ("Nada guardado aqui ainda.") quando não há ficha. A regra agora é outra:
+   * o módulo de dados é instalado para a INSTALAÇÃO inteira (ADR-0002 D3), não por empresa, então
+   * o painel só aparece onde existe dado da própria empresa — e não onde o módulo meramente
+   * existe. O liga/desliga por empresa das extensões declarativas
+   * (`organization_extensions.enabled`) não serve ao perfil `data`: o CHECK de `configuration`
+   * exige `density`/`show_description`, e a instalação não cria linha nessa tabela, então travar
+   * o painel ali o esconderia em toda instalação.
    *
-   * Consequência medida: numa instalação de revendedor, a barbearia que nunca
-   * pediu o módulo odontológico via um cartão "Odontograma — Nada guardado aqui
-   * ainda." em TODA ficha de contato. Isso não é só ruído: expõe a existência de
-   * um módulo de outro cliente do mesmo servidor.
-   *
-   * Na onda 1 a rota é SÓ LEITURA, então painel vazio não oferece nada a ninguém —
-   * nem um botão de adicionar. Portanto painel sem ficha não é desenhado. Quem usa
-   * o módulo e tem dado continua vendo tudo; quem não usa deixa de ver o cartão.
+   * Na onda 1 a rota é SÓ LEITURA, então painel vazio não oferece nada a ninguém — nem um botão
+   * de adicionar. Quando a escrita entrar, este caso e a guarda em `FichasDoModulo.tsx` mudam
+   * juntos, senão não haverá como criar a primeira ficha pela tela.
    */
   it("sem nenhuma ficha, o painel NÃO é desenhado — nem título, nem frase, nem tabela", async () => {
     comFichas([]);

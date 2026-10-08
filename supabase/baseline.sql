@@ -47555,8 +47555,9 @@ grant execute on function public.fn_publish_ai_agent_version(uuid,uuid,uuid,bool
 -- declara `configuration: {}`. Além disso a instalação NÃO cria linha nessa tabela — só
 -- `fn_extensions_configure` cria. Travar o painel em `enabled` esconderia o painel em TODA
 -- instalação, porque a linha nunca existe. Então o corte segue o da ADR-0002 D3 ("o corte é por
--- instalação"), e o ruído que isso geraria numa empresa que não usa o módulo é resolvido na TELA:
--- painel sem nenhuma ficha não é desenhado (`components/modulos/FichasDoModulo.tsx`).
+-- instalação"). A consequência disso é resolvida na TELA, e não aqui: o painel só aparece onde há
+-- dado da própria empresa — painel sem nenhuma ficha não é desenhado
+-- (`components/modulos/FichasDoModulo.tsx`, com o caso que o prova em `FichasDoModulo.test.tsx`).
 
 -- ── O alvo da referência precisa de chave composta ──────────────────────────────────────────────
 --
