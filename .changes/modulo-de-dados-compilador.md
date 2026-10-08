@@ -10,9 +10,9 @@ O que isso muda na tela: a ficha de um contato passa a mostrar o que os módulos
 
 Três proteções ficam valendo desde já:
 
-- as informações de um módulo não são alcançáveis direto pelo navegador: toda leitura e escrita passa pelas rotas do sistema, que registram quem fez o quê;
+- as informações de um módulo não são alcançáveis direto pelo navegador: as tabelas do módulo são fechadas para o acesso do navegador, e a leitura passa por uma rota do sistema que confere a empresa de quem pediu;
 - a ligação de uma ficha de módulo com um contato é conferida **junto com a empresa dona do contato**, de modo que um módulo não consegue apontar para o cliente de outra empresa na mesma instalação;
-- um módulo que falhe, ou que seja desinstalado, não derruba nem esvazia a ficha do contato — o painel dele sai e o resto continua.
+- um módulo que falhe não derruba nem esvazia a ficha do contato — o painel dele sai e o resto continua.
 
 Ao juntar dois contatos duplicados, as fichas de módulo passam a acompanhar o contato que ficou, em vez de permanecerem presas ao que saiu da junção.
 

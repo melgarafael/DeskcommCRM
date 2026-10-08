@@ -54,8 +54,21 @@ function fksEntre(origem: string, destino: string): string[] {
   return [...inline, ...alters].map((m) => m[1]!);
 }
 
-/** `tabela!dica(...)` ou `tabela!inner(...)` — a segunda NÃO é dica, é modificador de join. */
-const SEM_DICA = /extension_artifacts!(inner|left)\s*\(/;
+/**
+ * Um embed sem dica, nas DUAS formas que o PostgREST aceita:
+ *
+ *   - `extension_artifacts(manifest)`        — a forma NUA
+ *   - `extension_artifacts!inner(manifest)`  — `!inner` é modificador de JOIN, não dica
+ *
+ * A primeira versão desta catraca só olhava a forma com `!`, e um cético mostrou que
+ * a sabotagem passava verde: trocar `!artifact_id!inner(` por `(` deixava o embed
+ * igualmente ambíguo e a cerca calada. Cerca que não pega a forma mais simples do
+ * defeito é cerca que dá falsa segurança.
+ *
+ * A dica legítima é o nome da COLUNA (`!artifact_id`), e por isso o padrão exige que,
+ * depois do `!`, venha algo que NÃO seja apenas um modificador de join.
+ */
+const SEM_DICA = /extension_artifacts(?:!(?:inner|left))?\s*\(/;
 
 describe("embed de PostgREST para tabela com várias FKs", () => {
   const fks = fksEntre("extension_installations", "extension_artifacts");
@@ -69,7 +82,7 @@ describe("embed de PostgREST para tabela com várias FKs", () => {
     const culpados: string[] = [];
     for (const arquivo of arquivosDeCodigo(["lib", "app", "components", "workers", "hooks"])) {
       const texto = readFileSync(arquivo, "utf8");
-      if (!texto.includes("extension_artifacts!")) continue;
+      if (!texto.includes("extension_artifacts")) continue;
       for (const [i, linha] of texto.split("\n").entries()) {
         if (SEM_DICA.test(linha)) {
           culpados.push(`${arquivo.replace(RAIZ + "/", "")}:${i + 1}`);

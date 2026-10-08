@@ -61,13 +61,39 @@ describe("FichasDoModulo", () => {
     expect(screen.queryByText("12500")).toBeNull();
   });
 
-  it("sem nenhuma ficha, diz isso em uma frase — não mostra tabela vazia", async () => {
+  /**
+   * ⚠️ ESTE CASO MUDOU DE EXIGÊNCIA, e a razão é de produto.
+   *
+   * Ele pedia uma frase ("Nada guardado aqui ainda.") quando não há ficha. Mas o
+   * módulo de dados é instalado por INSTALAÇÃO (ADR-0002 D3), não por empresa — e
+   * `organization_extensions.enabled`, o liga/desliga por empresa das extensões
+   * declarativas, não serve ao perfil `data`: o CHECK de `configuration` exige
+   * `density`/`show_description`, e a instalação não cria linha nessa tabela.
+   *
+   * Consequência medida: numa instalação de revendedor, a barbearia que nunca
+   * pediu o módulo odontológico via um cartão "Odontograma — Nada guardado aqui
+   * ainda." em TODA ficha de contato. Isso não é só ruído: expõe a existência de
+   * um módulo de outro cliente do mesmo servidor.
+   *
+   * Na onda 1 a rota é SÓ LEITURA, então painel vazio não oferece nada a ninguém —
+   * nem um botão de adicionar. Portanto painel sem ficha não é desenhado. Quem usa
+   * o módulo e tem dado continua vendo tudo; quem não usa deixa de ver o cartão.
+   */
+  it("sem nenhuma ficha, o painel NÃO é desenhado — nem título, nem frase, nem tabela", async () => {
     comFichas([]);
 
-    render(<FichasDoModulo modulo="odontograma" objeto="marcacao" contatoId="c1" />);
+    const { container } = render(
+      <FichasDoModulo modulo="odontograma" objeto="marcacao" contatoId="c1" />,
+    );
 
-    expect(await screen.findByText(/nada guardado|nenhum registro/i)).toBeTruthy();
+    // Espera a leitura terminar antes de afirmar ausência: sem isto o teste
+    // passaria só por estar medindo o estado de carregamento.
+    await waitFor(() => expect(fetchFalso).toHaveBeenCalled());
+    await waitFor(() => expect(container.querySelector("[data-carregando]")).toBeNull());
+
+    expect(screen.queryByText(/nada guardado|nenhum registro/i)).toBeNull();
     expect(screen.queryByRole("table")).toBeNull();
+    expect(screen.queryByText("Odontograma")).toBeNull();
   });
 
   it("quando a leitura falha, avisa e NÃO derruba a ficha do contato", async () => {

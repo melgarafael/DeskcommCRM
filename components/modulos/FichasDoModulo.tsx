@@ -102,6 +102,27 @@ export function FichasDoModulo({
 
   if (!dados) return null;
 
+  /**
+   * PAINEL SEM FICHA NÃO É DESENHADO — e isto é decisão de produto, não economia de
+   * pixel.
+   *
+   * O módulo de dados é instalado por INSTALAÇÃO (ADR-0002 D3: "o corte é por
+   * instalação"), não por empresa, e o liga/desliga por empresa das extensões
+   * declarativas (`organization_extensions.enabled`) não serve ao perfil `data`: o
+   * CHECK de `configuration` exige `density`/`show_description`, e a instalação não
+   * cria linha nessa tabela — travar o painel ali o esconderia em TODA instalação.
+   *
+   * Sem esta guarda, numa instalação de revendedor a barbearia que nunca pediu o
+   * módulo odontológico veria "Odontograma — Nada guardado aqui ainda." em toda
+   * ficha de contato. Não é só ruído: expõe a existência de um módulo de outro
+   * cliente do mesmo servidor.
+   *
+   * Na onda 1 a rota é só leitura, então painel vazio não oferece nada — nem um
+   * botão de adicionar. Quando a escrita entrar, esta guarda tem de ser revista
+   * junto, senão não haverá como criar a primeira ficha pela tela.
+   */
+  if (dados.fichas.length === 0) return null;
+
   const titulo = dados.rotulo[idioma] ?? dados.rotulo["pt-BR"] ?? modulo;
 
   return (

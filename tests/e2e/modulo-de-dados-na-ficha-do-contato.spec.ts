@@ -265,17 +265,43 @@ test("a ficha do contato mostra o que o módulo de dados guarda, com o rótulo d
 
 test("módulo removido: o painel sai e a ficha do contato segue inteira", async ({ page }) => {
   const creds = lerCreds();
+  const dono = creds.users.dono ?? creds.users.admin;
+  if (!dono?.id) throw new Error(".e2e-creds.json sem dono/admin com id");
   const db = banco();
   const id = identidade("b");
   const { contatoId } = await instalarModuloDeDados(db, creds.org_id, id);
 
   // Remover é LÓGICO e preserva dados (não-negociável 7): as tabelas ficam, as telas saem.
-  const { error } = await db
+  //
+  // ⚠️ PELA RPC REAL, e não por `update` direto. A primeira versão daqui escrevia
+  // `removed_at` na mão com a chave de serviço e o banco recusou:
+  // `permission denied for table extension_installations`. Foi a doutrina funcionando contra o meu
+  // atalho pela SEGUNDA vez nesta mesma spec — a fixture de instalação já tinha levado o mesmo
+  // "não" ao tentar um `insert` em `extension_artifacts`. As tabelas do framework são fechadas até
+  // para a chave de serviço, e TODA escrita passa por RPC que revalida ator, organização e papel
+  // (não-negociável 3).
+  //
+  // E não é só permissão: `update` à mão provaria a tela e MENTIRIA sobre a origem. A remoção real
+  // abre operação, confere a revisão vista, desliga as organizações e audita — nada disso acontece
+  // num `update`, e um painel que sumisse por causa de uma coluna crua não prova que a remoção de
+  // verdade o faz sumir. É o mesmo caminho de `removeExtension` em `lib/extensions/service.ts`.
+  const { data: instalacao, error: erroLeitura } = await db
     .from("extension_installations")
-    .update({ removed_at: new Date().toISOString() })
+    .select("id, revision")
     .eq("publisher", id.publicador)
-    .eq("name", id.modulo);
-  if (error) throw new Error(`remover: ${error.message}`);
+    .eq("name", id.modulo)
+    .is("removed_at", null)
+    .single();
+  if (erroLeitura) throw new Error(`ler instalação: ${erroLeitura.message}`);
+
+  const { randomUUID } = await import("node:crypto");
+  const remocao = await db.rpc("fn_extensions_remove_installation", {
+    p_actor: dono.id,
+    p_operation: randomUUID(),
+    p_installation: instalacao!.id,
+    p_expected_installation_revision: instalacao!.revision,
+  });
+  if (remocao.error) throw new Error(`remover: ${remocao.error.message}`);
 
   await entrar(page);
   await page.goto(`/app/contacts/${contatoId}`);

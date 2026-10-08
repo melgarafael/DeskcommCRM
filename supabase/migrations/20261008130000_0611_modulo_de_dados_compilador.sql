@@ -11,10 +11,27 @@
 -- para o DDL é construído pela função e escapado com `format(%I)`; nada do JSON entra como texto cru,
 -- e o TIPO vem de um vocabulário fechado — tipo desconhecido levanta, nunca vira texto solto.
 --
--- O QUE ESTA MIGRATION AINDA NÃO FAZ (a onda 1 não termina aqui, e o PR o declara): a referência
--- composta por organização, o truncamento de nome em 63 bytes, a idempotência da recompilação, a
--- validação completa do artefato no banco, o registro em `modulos_instalados`, a rota e a tela. Cada
--- um entra com o seu próprio teste vermelho antes.
+-- O QUE ESTA MIGRATION AINDA NÃO FAZ. Esta lista já afirmou o inverso do que o PR entrega — ela
+-- dizia que a referência composta, a rota e a tela ficavam para depois, e as três entraram. Foi um
+-- cético que pegou, lendo a prosa contra o diff. O que falta de verdade, hoje:
+--
+--   * truncamento de nome em 63 bytes (o limite do identificador no Postgres);
+--   * idempotência da RECOMPILAÇÃO (reinstalar a mesma versão com objeto novo);
+--   * registro em `modulos_instalados` (o módulo de dados não aparece em `/admin/modulos`);
+--   * liga/desliga POR ORGANIZAÇÃO — ver a nota no fim deste cabeçalho.
+--
+-- Cada um entra com o seu próprio teste vermelho antes.
+--
+-- ── Por que o corte é por INSTALAÇÃO, e não por organização (onda 1) ────────────────────────────
+--
+-- `organization_extensions.enabled` é o liga/desliga por empresa das extensões DECLARATIVAS, e ele
+-- não serve ao perfil `data` como está: o CHECK de `configuration` exige as chaves `density` e
+-- `show_description`, que são da apresentação de um guia, e o manifesto de um módulo de dados
+-- declara `configuration: {}`. Além disso a instalação NÃO cria linha nessa tabela — só
+-- `fn_extensions_configure` cria. Travar o painel em `enabled` esconderia o painel em TODA
+-- instalação, porque a linha nunca existe. Então o corte segue o da ADR-0002 D3 ("o corte é por
+-- instalação"), e o ruído que isso geraria numa empresa que não usa o módulo é resolvido na TELA:
+-- painel sem nenhuma ficha não é desenhado (`components/modulos/FichasDoModulo.tsx`).
 
 -- ── O alvo da referência precisa de chave composta ──────────────────────────────────────────────
 --
@@ -27,7 +44,7 @@
 -- `create unique index` sem `concurrently` toma lock de escrita, e numa VPS com a ingestão de
 -- WhatsApp no ar isso pararia o atendimento. O kit já aplica o baseline em janela de atualização.
 --
--- A guarda é a mesma do laço da 0418 (alvos `crm_pipelines`, `crm_stages`, `ai_agents`): cria só se
+-- A guarda é a mesma do laço da 0378 (alvos `crm_pipelines`, `crm_stages`, `ai_agents`): cria só se
 -- NÃO houver índice único sobre exatamente essas duas colunas, senão toda instalação ganharia um
 -- segundo índice idêntico, pago em cada escrita de contato.
 do $$
