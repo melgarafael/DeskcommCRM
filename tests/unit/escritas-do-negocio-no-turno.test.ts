@@ -207,10 +207,14 @@ describe("reprodução com os handlers nativos", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     // O update já gravou; a atividade/auditoria da edição ainda não ocorreram.
     // Sem a fila, o movimento entra pela porta da etapa antes desta liberação.
-    expect(sb.lead.description).toBe(editar.description);
-    expect(sb.leiturasEtapa).toBe(0);
-    sb.liberaEdicao.liberar();
-    const resultados = await Promise.all([edicao, movimento]);
+    let resultados: unknown[];
+    try {
+      expect(sb.lead.description).toBe(editar.description);
+      expect(sb.leiturasEtapa).toBe(0);
+    } finally {
+      sb.liberaEdicao.liberar();
+      resultados = await Promise.all([edicao, movimento]);
+    }
     expect(resultados.every((r) => !!r && typeof r === "object" && "lead" in r)).toBe(true);
     expect(sb.lead).toMatchObject({ stage_id: ETAPA, description: editar.description });
     expect(vi.mocked(audit).mock.calls.map(([a]) => a.action)).toEqual([
