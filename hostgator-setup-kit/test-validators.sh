@@ -3211,6 +3211,144 @@ NEXT_PUBLIC_APP_URL='https://crm.exemplo.com.br'"
 ) || fail=1
 rm -rf "$TMP_AVISO"
 
+echo "e-mails de acesso: o aviso da 1ª atualização respeita a topologia"
+# O aviso acima é o da NUVEM (painel do Supabase + token sbp_). Ele saía em TODA
+# topologia — o install.sh nunca cria o marcador —, e mandava quem tem o
+# Supabase na própria VPS a outra conta. Pelo update.sh inteiro, até o fim:
+#   - Supabase próprio fora do kit: confere SITE_URL no .env DELE, sem sbp_;
+#   - single-server: nada a conferir (o kit grava SITE_URL e
+#     ADDITIONAL_REDIRECT_URLS), nenhum aviso.
+TMP_AVISO_TOPO="$(mktemp -d)"
+(
+  montar_vps "$TMP_AVISO_TOPO" "crmtopo" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOCKER_LOG"
+case "$1" in
+  compose) case "$*" in *" exec "*) printf 'healthy\n{"data":{"status":"healthy"}}\n' ;; esac; exit 0 ;;
+esac
+exit 0
+STUB
+  cp supabase-single-server.override.yml "$TMP_AVISO_TOPO/"
+  mkdir -p "$VPS_PROJ/supabase"; : > "$VPS_PROJ/supabase/baseline.sql"
+  (cd "$VPS_PROJ" && git init -q -b main . \
+    && git -c user.email=t@exemplo -c user.name=teste add -A \
+    && git -c user.email=t@exemplo -c user.name=teste commit -qm base \
+    && git tag v9.9.9) >/dev/null 2>&1
+  unset SUPABASE_ACCESS_TOKEN
+
+  proprio="$(rodar update.sh "" "INTERNAL_SECRET='segredo-de-teste'
+NEXT_PUBLIC_APP_URL='https://crm.exemplo.com.br'
+NEXT_PUBLIC_SUPABASE_URL='https://supabase.meucliente.com.br'")"
+  rm -f "$VPS_PROJ/.deskcomm-site-url-avisado"
+  mkdir -p "$VPS_PROJ/.runtime/supabase"
+  printf '%s\n' "SITE_URL=https://crm.exemplo.com.br" > "$VPS_PROJ/.runtime/supabase/.env"
+  single="$(rodar update.sh "" "INTERNAL_SECRET='segredo-de-teste'
+NEXT_PUBLIC_APP_URL='https://crm.exemplo.com.br'
+NEXT_PUBLIC_SUPABASE_URL='https://crm.exemplo.com.br'
+SINGLE_SERVER=1")"
+
+  for par in "proprio:$proprio" "single:$single"; do
+    nome="${par%%:*}"; saida="${par#*:}"
+    # CONTROLE POSITIVO: sem chegar ao fim, a ausência do aviso não mede nada.
+    if ! grep -q 'Atualização concluída' <<<"$saida"; then
+      printf '  ✗ %s: o update.sh não chegou ao fim — cenário inconclusivo, não verde\n' "$nome"
+      printf '     última linha: %s\n' "$(printf '%s' "$saida" | grep -v '^$' | tail -1)"
+      exit 1
+    fi
+    if grep -qE 'sbp_|painel do Supabase' <<<"$saida"; then
+      printf '  ✗ %s: a 1ª atualização mandou buscar o token sbp_ / o painel da nuvem\n' "$nome"; exit 1
+    fi
+  done
+  if ! grep -q 'SITE_URL=https://crm.exemplo.com.br' <<<"$proprio"; then
+    printf '  ✗ Supabase próprio: o aviso não manda conferir o SITE_URL no .env dele\n'; exit 1
+  fi
+  if grep -q 'CONFIRA UMA COISA' <<<"$single"; then
+    printf '  ✗ single-server: o aviso do Site URL saiu, e o Site URL ali é do kit\n'; exit 1
+  fi
+  printf '  ✓ Supabase próprio confere o SITE_URL dele, single-server fica calado — nenhum pede sbp_\n'
+) || fail=1
+rm -rf "$TMP_AVISO_TOPO"
+
+echo "e-mails de acesso: o single-server fica calado já na atualização que traz o conserto"
+# Na atualização que traz o conserto, quem roda é o update.sh ANTIGO (o bash lê
+# o arquivo que abriu; o checkout troca o inode), com o texto da nuvem embutido.
+# O que ele faz depois do checkout é reler o _common.sh NOVO e chamar
+# atualizar_supabase_single_server — ANTES de decidir o aviso pelo marcador. É
+# no corpo dela que o marcador nasce, ou o single-server lê o sbp_ uma última vez.
+#
+# O antigo é o update.sh de hoje com o bloco do aviso trocado pelo texto que ele
+# embutia até a v. que trouxe aviso_do_site_url (main c71a27af7): medido em
+# 2026-10-08, a reconstrução é byte a byte o update.sh daquele commit. Fica
+# reconstruído, e não por `git show`, porque o CI faz checkout raso.
+TMP_AVISO_ANTIGO="$(mktemp -d)"
+(
+  montar_vps "$TMP_AVISO_ANTIGO" "crmantigo" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOCKER_LOG"
+case "$1" in
+  compose) case "$*" in *" exec "*) printf 'healthy\n{"data":{"status":"healthy"}}\n' ;; esac; exit 0 ;;
+esac
+exit 0
+STUB
+  cp supabase-single-server.override.yml "$TMP_AVISO_ANTIGO/"
+  mkdir -p "$VPS_PROJ/supabase" "$VPS_PROJ/.runtime/supabase"; : > "$VPS_PROJ/supabase/baseline.sql"
+  printf '%s\n' "SITE_URL=https://crm.exemplo.com.br" > "$VPS_PROJ/.runtime/supabase/.env"
+  (cd "$VPS_PROJ" && git init -q -b main . \
+    && git -c user.email=t@exemplo -c user.name=teste add -A \
+    && git -c user.email=t@exemplo -c user.name=teste commit -qm base \
+    && git tag v9.9.9) >/dev/null 2>&1
+  VELHO="$(cat <<'VELHO'
+    DOM_AVISO="$(printf '%s' "${NEXT_PUBLIC_APP_URL:-https://SEU_DOMINIO}")"
+    cat <<AVISO
+
+$(c_ylw "  ─── CONFIRA UMA COISA, UMA VEZ SÓ ─────────────────────")
+
+  Os e-mails de acesso (esqueci minha senha, confirmação de cadastro,
+  aceite de convite) levam para o endereço que estiver em Authentication
+  → URL Configuration, no painel do Supabase. Instalações feitas antes de
+  o instalador perguntar o token do Supabase ficaram com o padrão de
+  projeto novo, \`http://localhost:3000\`, que só existe na máquina de
+  quem desenvolve — e aí ninguém consegue redefinir a própria senha.
+
+  Vale conferir. Se já estiver com os valores abaixo, não há nada a fazer:
+
+       Site URL:       ${DOM_AVISO}
+       Redirect URLs:  ${DOM_AVISO%/}/auth/confirm
+
+  Este aviso não se repete — para o instalador cuidar disso sozinho, rode
+  o update com \`export SUPABASE_ACCESS_TOKEN=sbp_...\` no ambiente.
+AVISO
+VELHO
+)"
+  # ENVIRON, e não `awk -v`: o -v interpreta as barras do \` do texto.
+  VELHO="$VELHO" awk '
+    /^    # O texto depende da topologia \(single-server/ { next }
+    /^    # ver aviso_do_site_url, em _common\.sh\./        { next }
+    /^    aviso_do_site_url /                               { print ENVIRON["VELHO"]; next }
+    { print }' update.sh > "$TMP_AVISO_ANTIGO/update.sh"
+  # CONTROLE: sem a troca, o cenário mediria o update.sh novo outra vez.
+  if grep -q 'aviso_do_site_url' "$TMP_AVISO_ANTIGO/update.sh" \
+     || ! grep -qF 'export SUPABASE_ACCESS_TOKEN=sbp_' "$TMP_AVISO_ANTIGO/update.sh"; then
+    printf '  ✗ não consegui reconstruir o update.sh antigo — cenário inconclusivo, não verde\n'; exit 1
+  fi
+  unset SUPABASE_ACCESS_TOKEN
+
+  single="$(rodar update.sh "" "INTERNAL_SECRET='segredo-de-teste'
+NEXT_PUBLIC_APP_URL='https://crm.exemplo.com.br'
+NEXT_PUBLIC_SUPABASE_URL='https://crm.exemplo.com.br'
+SINGLE_SERVER=1")"
+  if ! grep -q 'Atualização concluída' <<<"$single"; then
+    printf '  ✗ o update.sh antigo não chegou ao fim — cenário inconclusivo, não verde\n'
+    printf '     última linha: %s\n' "$(printf '%s' "$single" | grep -v '^$' | tail -1)"
+    exit 1
+  fi
+  if grep -qE 'CONFIRA UMA COISA|sbp_' <<<"$single"; then
+    printf '  ✗ single-server: o update.sh antigo + _common.sh novo ainda mandou buscar o token sbp_\n'; exit 1
+  fi
+  printf '  ✓ update.sh antigo + _common.sh novo: o single-server não vê o aviso sbp_\n'
+) || fail=1
+rm -rf "$TMP_AVISO_ANTIGO"
+
 echo "DDL: nenhum script do kit manda a string do APP para o Postgres"
 # A guarda de CLASSE. Os três cenários acima provam o install.sh e o update.sh
 # pelo comportamento; esta linha alcança os irmãos que nenhuma fixture roda

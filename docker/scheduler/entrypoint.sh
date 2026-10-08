@@ -101,6 +101,10 @@ CRONS="
 # repetição enquanto a âncora não mudar. Minuto 37, e não o 23 da data do funil:
 # as duas varrem crm_leads e não devem disputar a mesma batida num self-host pequeno.
 37 * * * *|60|api/v1/cron/lead-time-triggers
+# A COBRANCA DOS SEUS CLIENTES. De hora em hora: a reativacao chega pelo aviso
+# do provedor, em segundos, e a hora so pesa na regua, que conta em dias. Minuto
+# 43, longe das outras varreduras horarias. Chave desligada: sai na hora.
+43 * * * *|120|api/v1/cron/cobranca
 # O canal mudo (doc 11, decisão B): varredura de banco, sem rede, com régua em
 # DIAS. Diária e de madrugada porque o estado que ela lê muda em dias — de 5 em
 # 5 minutos seriam 288 varreduras para nada, e o aviso chegaria na mesma hora.

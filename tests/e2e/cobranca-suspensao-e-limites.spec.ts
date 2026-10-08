@@ -132,6 +132,8 @@ test("o dono cria o plano, os limites valem pela tela, e prazo e desligar a chav
     await page.goto("/admin/dashboard");
     await page.getByRole("link", { name: "Cobrança" }).first().click();
     await page.waitForURL("**/admin/cobranca");
+    // PR 3a: /admin/cobranca em abas; a inicial é a Visão geral.
+    await page.getByRole("tab", { name: "Planos" }).click();
     await page.getByLabel("Nome do plano").fill(NOME_DO_PLANO);
     await page.getByLabel("Preço (R$)").fill("49,90");
     await page.getByLabel("Dias de teste grátis").fill("5");

@@ -34,7 +34,8 @@ import {
   type LinhaDeBinding,
 } from "@/lib/ai/pontos/resolver";
 import { PAPEIS, PONTOS_DE_IA, PONTO_POR_ID } from "@/lib/ai/pontos/registro";
-import { PROVEDORES, ehProvedorSuportado } from "@/lib/ai/pontos/provedores";
+import { PROVEDORES, ehProvedorSuportado, PROVEDOR_POR_ASSINATURA } from "@/lib/ai/pontos/provedores";
+import { listarModelosDaAssinatura } from "@/lib/ai/catalogo/modelos-da-assinatura";
 import { validarBinding } from "@/lib/ai/pontos/validar-binding";
 import { lerAmbiente } from "@/lib/instalacao/ambiente";
 import { decidirTranscricao } from "@/lib/messaging/media/escada-de-transcricao";
@@ -129,7 +130,7 @@ export async function GET(): Promise<Response> {
   // coluna — a mesma que discordava do motor. Reconciliar aqui, uma vez, é o
   // que faz a lista, o aviso do binding e o motor darem a MESMA resposta.
   // Ver `lib/ai/pontos/capacidade-em-vigor.ts`.
-  const modelos = ((modelosRes.data ?? []) as ModeloDoCatalogo[]).map((m) => ({
+  const modelosGlobais = ((modelosRes.data ?? []) as ModeloDoCatalogo[]).map((m) => ({
     ...m,
     supports_vision: enxergaImagem({
       provider: m.provider,
@@ -137,6 +138,23 @@ export async function GET(): Promise<Response> {
       doCatalogo: m.supports_vision,
     }),
   }));
+  const temAssinatura = (credsRes.data ?? []).some(
+    (credential) => credential.provider === PROVEDOR_POR_ASSINATURA,
+  );
+  const modelosDaAssinatura = temAssinatura
+    ? await listarModelosDaAssinatura(org.orgId)
+    : null;
+  const modelos = [
+    ...modelosGlobais,
+    ...(modelosDaAssinatura ?? []).map((m) => ({
+      ...m,
+      supports_vision: enxergaImagem({
+        provider: "openai",
+        modelId: m.model_id,
+        doCatalogo: m.supports_vision,
+      }),
+    })),
+  ];
   const capacidadePorModelo = new Map(modelos.map((m) => [`${m.provider}|${m.model_id}`, m]));
 
   // ─── QUEM OUVE O ÁUDIO: a MESMA escada do worker (#2189/#2190) ────────────

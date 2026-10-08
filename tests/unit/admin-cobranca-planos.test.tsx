@@ -16,7 +16,7 @@ import { PlanosDaInstalacao, type PlanoDaTela } from "@/app/admin/(protected)/co
 
 const PLANO: PlanoDaTela = {
   id: "cccccccc-0000-4000-8000-000000000001", nome: "Básico", preco_cents: 4990, intervalo: "mes", trial_dias: 14,
-  max_assentos: 3, max_canais: null, teto_ia_usd_cents: null, padrao_no_cadastro: false, arquivado_em: null,
+  max_assentos: 3, max_canais: null, teto_ia_usd_cents: null, padrao_no_cadastro: false, oferecido_ao_cliente: true, arquivado_em: null,
 };
 
 beforeEach(() => {
@@ -76,5 +76,16 @@ describe("Planos da instalação", () => {
     await waitFor(() => expect(h.patch).toHaveBeenCalledTimes(1));
     expect(h.patch.mock.calls[0]![0]).toBe(`/api/v1/admin/cobranca/planos/${PLANO.id}`);
     expect(h.patch.mock.calls[0]![1]).toMatchObject({ nome: "Básico", preco_cents: 4990, max_assentos: 3 });
+  });
+  it("⭐ esconder um plano das empresas é PATCH, e o plano escondido mostra que só o dono o atribui", async () => {
+    const u = userEvent.setup();
+    const { rerender } = render(<PlanosDaInstalacao planos={[PLANO]} />);
+    await u.click(screen.getByRole("button", { name: "Esconder das empresas" }));
+    await waitFor(() =>
+      expect(h.patch).toHaveBeenCalledWith(`/api/v1/admin/cobranca/planos/${PLANO.id}`, { oferecido_ao_cliente: false }),
+    );
+    rerender(<PlanosDaInstalacao planos={[{ ...PLANO, oferecido_ao_cliente: false }]} />);
+    expect(screen.getByText("Só você atribui")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Mostrar às empresas" })).toBeTruthy();
   });
 });

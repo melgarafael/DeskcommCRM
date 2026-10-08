@@ -46,6 +46,20 @@ export function ehOperante(status: string | null | undefined): boolean {
 }
 
 /**
+ * Por que a organização está suspensa, ou `null` quando ela não está suspensa
+ * (inclusive redigida ou arquivada com o tipo residual). Tipo nulo em org
+ * suspensa vale como `administrativa`, como nas funções de estado. É o único
+ * lugar que compara `status` com o literal da suspensão.
+ */
+export function tipoDaSuspensao(
+  status: string | null | undefined,
+  kind: string | null | undefined,
+): TipoDeSuspensao | null {
+  if (status !== "suspended") return null;
+  return kind === "cobranca" ? "cobranca" : "administrativa";
+}
+
+/**
  * A organização não opera. `ApiError` 403 `org_suspended`: a rota /messages o
  * traduz em resposta (app/api/v1/messages/route.ts) e o agent-worker cancela sem
  * retry quem tem `terminal === true` (workers/agent-worker/main.ts,

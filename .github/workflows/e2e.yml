@@ -719,6 +719,14 @@ jobs:
       #
       # Se um dia uma spec de follow-up entrar na PARTE_1 com nome depois de
       # `relogio-`, é aqui que se olha: ou ela vai para a PARTE_2, ou esta vai.
+      #
+      # `cobranca-revendedor` [P0] entrou em 2026-09-30 (PR 3a da cobrança do
+      # revendedor) nesta parte, a de menor duração medida no run 37356008162
+      # (1077 s, entre as partes 1, 2, 3, 5 e 6). Semeia orgs, pessoas e planos
+      # pelo service role e pela tela, sobe o dublê da Stripe em 127.0.0.1:3995
+      # (COBRANCA_API_BASE_URL_TESTE do .env.e2e) e devolve as chaves da
+      # instalação como achou.
+      # PREVISÃO, não medida: ~5 min de caso.
       SPECS_PARTE_2: >-
         agente-marca-consulta.spec.ts
         agenda-marcar-pela-tela.spec.ts
@@ -734,6 +742,7 @@ jobs:
         escalacao-ciclo.spec.ts
         distribuicao-atendimento.spec.ts
         capacidades-do-agente.spec.ts
+        cobranca-revendedor.spec.ts
         escopo-de-funil-do-agente.spec.ts
         followup-tempo-adaptativo.spec.ts
         gatilho-de-etapa.spec.ts
@@ -1210,6 +1219,7 @@ jobs:
         fonte-de-captacao-assina-os-envios.spec.ts
         inbox-busca-e-filtros-dizem-a-verdade.spec.ts
         mapas-em-provedores.spec.ts
+        modulo-de-dados-na-ficha-do-contato.spec.ts
         painel-de-configuracao-da-instalacao.spec.ts
         protecao-de-envio-nao-congela-o-padrao.spec.ts
         prova-painel-provedores.spec.ts
@@ -1243,12 +1253,22 @@ jobs:
       # (ZERNIO_API_BASE_URL + conta e chave), e isso é ambiente do `next start`,
       # não da spec — ligá-lo no `.env.e2e` de todas as partes mudaria o que as
       # outras specs medem. Roda local; o comando está no cabeçalho da spec.
+      #
+      # `cobranca-stripe-teste` entrou aqui em 2026-09-30 (PR 3a da cobrança do
+      # revendedor): exige uma CHAVE DE TESTE da Stripe (STRIPE_TEST_SECRET_KEY,
+      # sk_test_/rk_test_; a de produção é recusada ao carregar o arquivo) e uma
+      # URL PÚBLICA https para a Stripe entregar os avisos. Nenhuma das duas
+      # cabe num repositório público nem no runner. O CI prova o mesmo caminho
+      # em `cobranca-revendedor`, contra o dublê que assina os avisos de
+      # verdade. Só esta prova que a Stripe real ainda responde o contrato da
+      # versão fixada. Sem a chave, ela pula; o cabeçalho tem a receita.
       FORA_DO_CI: >-
         inbox-tempo-real.spec.ts
         cadastro-sem-confirmacao-de-email.spec.ts
         aviso-de-caso-chega-no-whatsapp.spec.ts
         jev-chave-real.spec.ts
         modelos-do-parceiro-editar-apagar.spec.ts
+        cobranca-stripe-teste.spec.ts
     steps:
       # ── O RELÓGIO DESTA PARTE: ONDE O TETO DE 30 MIN COMEÇA A CONTAR ──────
       #

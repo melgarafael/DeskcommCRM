@@ -290,7 +290,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     if (itemsErr) {
       // Fonte sem item nenhum é fonte vazia: melhor desfazer do que deixar uma
       // linha que promete conteúdo e nunca vai indexar nada.
-      await admin.from("ai_knowledge_sources").delete().eq("id", ksId);
+      await admin.from("ai_knowledge_sources").delete().eq("organization_id", activeOrg.orgId).eq("id", ksId);
       console.error("[ai-knowledge-sources] insert dos itens falhou:", itemsErr.message);
       return fail("internal_error", t("Erro ao gravar o conteúdo do material."), 500, { requestId });
     }

@@ -22,7 +22,9 @@ import { DEFAULT_CLASSIFIER_MODEL } from "@/lib/ai/gateway";
 import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
 import { lerAmbiente } from "@/lib/instalacao/ambiente";
 import { logger } from "@/lib/logger";
-import { criarSessaoPkce } from "@/lib/ai/pontos/pkce-da-assinatura";
+import { criarSessaoPkce, gerarNonceSiwc, CLIENTE_DINAMICO_SIWC } from "@/lib/ai/pontos/pkce-da-assinatura";
+import { lerLoginCodex } from "@/lib/ai/credenciais/login-codex";
+import { lerOuCriarHostIdSiwc } from "@/lib/ai/credenciais/host-siwc";
 import { emitirEstado } from "@/lib/agenda/google/estado";
 import { env } from "@/lib/env";
 import { PROVEDOR_POR_ASSINATURA, PROVEDORES } from "@/lib/ai/pontos/provedores";
@@ -85,16 +87,31 @@ export default async function CredentialsPage() {
   // `state`. Sem segredo utilizável o painel não aparece — um login que
   // ninguém consegue conferir não deve ser oferecido.
   let sessaoPkce: ReturnType<typeof criarSessaoPkce> | null = null;
+  let siwcAutorizado = false;
   if (moduloLoginCodex) {
     try {
+      const admin = createAdminClient();
+      const [hostId, tokens] = await Promise.all([
+        lerOuCriarHostIdSiwc(admin),
+        lerLoginCodex({ admin, orgId: activeOrg.orgId }),
+      ]);
+      siwcAutorizado = tokens !== null;
+      if (!hostId) throw new Error("host_siwc_nao_persistido");
+      const clientId = tokens?.client_id;
+      const nonce = gerarNonceSiwc();
       sessaoPkce = criarSessaoPkce(
         emitirEstado(
-          { organizationId: activeOrg.orgId, userId: user.id },
-          { segredo: env.INTERNAL_SECRET, agora: new Date() },
+          {
+            organizationId: activeOrg.orgId,
+            userId: user.id,
+            authSessionId: clientId ?? CLIENTE_DINAMICO_SIWC,
+          },
+          { segredo: env.INTERNAL_SECRET, agora: new Date(), nonce },
         ),
+        { nonce, ...(clientId ? { clientId } : {}), extAgentHostId: hostId },
       );
     } catch (err) {
-      logger.warn("[ai/credentials] login por assinatura sem state assinado (INTERNAL_SECRET?)", {
+      logger.warn("[ai/credentials] login SIWC indisponível (state/host do servidor)", {
         error: err instanceof Error ? err.message : String(err),
       });
     }
@@ -221,6 +238,7 @@ export default async function CredentialsPage() {
           codeVerifier={sessaoPkce.codeVerifier}
           conectado={linhaDeLogin !== null}
           validada={linhaDeLogin?.validated_at != null}
+          siwcAutorizado={siwcAutorizado}
         />
       )}
       <CredentialsList

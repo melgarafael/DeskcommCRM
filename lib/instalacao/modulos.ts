@@ -239,10 +239,10 @@ export function esquecerMemoDosModulos(): void {
 /**
  * Módulos que existem no código mas ainda NÃO podem ser ligados por quem opera
  * (a capacidade chega em partes e o que a torna usável ainda não entrou).
- * `cobranca`: a PR 2 traz planos e limites sem provedor de pagamento; ligar só
- * faz sentido com o provedor (PR 3a), que a tira daqui. Desligar segue permitido.
+ * Vazia desde a PR 3a da cobrança do revendedor, que trouxe o provedor de
+ * pagamento. O mecanismo fica: a próxima capacidade entregue em partes o usa.
  */
-export const MODULOS_AINDA_NAO_LIGAVEIS: readonly ModuloOpcional[] = ["cobranca"];
+export const MODULOS_AINDA_NAO_LIGAVEIS: readonly ModuloOpcional[] = [];
 
 /**
  * Módulos que são decisão SÓ de quem administra o servidor e não aparecem para a

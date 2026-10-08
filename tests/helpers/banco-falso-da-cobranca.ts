@@ -22,7 +22,7 @@ export interface Resposta {
   count?: number | null;
 }
 
-const ENCADEIAM = ["select", "insert", "update", "delete", "upsert", "eq", "neq", "is", "in", "or", "not", "order", "limit"] as const;
+const ENCADEIAM = ["select", "insert", "update", "delete", "upsert", "eq", "neq", "is", "in", "or", "not", "gte", "order", "limit"] as const;
 const ESCRITAS = new Set(["insert", "update", "delete", "upsert"]);
 const FILTROS = new Set(["eq", "neq", "is", "in", "or", "not"]);
 

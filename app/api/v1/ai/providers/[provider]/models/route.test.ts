@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-import { loadAuthUser, orgAtivaSemPortao } from "@/lib/auth/server";
+import { requireRole } from "@/lib/auth/require-role";
+import { fail } from "@/lib/api/wrappers";
+import { listarModelosDaAssinatura } from "@/lib/ai/catalogo/modelos-da-assinatura";
 import { createClient } from "@/lib/supabase/server";
 import type { AuthUser } from "@/lib/auth/types";
 
@@ -23,7 +25,8 @@ import type { AuthUser } from "@/lib/auth/types";
  * dublê, não do código.
  */
 
-vi.mock("@/lib/auth/server", () => ({ loadAuthUser: vi.fn(), orgAtivaSemPortao: vi.fn() }));
+vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
+vi.mock("@/lib/ai/catalogo/modelos-da-assinatura", () => ({ listarModelosDaAssinatura: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 
 const ORG_ID = "33333333-3333-4333-8333-333333333333";
@@ -87,19 +90,27 @@ function stubDoBanco(linhas: LinhaDeModelo[]) {
 }
 
 function autorizado() {
-  vi.mocked(loadAuthUser).mockResolvedValue({
-    id: "11111111-1111-4111-8111-111111111111",
-    email: "dono@example.com",
-    full_name: null,
-    avatar_url: null,
-    is_platform_admin: false,
-    idioma: "pt-BR",
-  } as unknown as AuthUser);
-  vi.mocked(orgAtivaSemPortao).mockResolvedValue({
-    orgId: ORG_ID,
-    role: "admin",
-    org_status: "active",
-  } as unknown as Awaited<ReturnType<typeof orgAtivaSemPortao>>);
+  vi.mocked(requireRole).mockResolvedValue({
+    ok: true,
+    user: {
+      id: "11111111-1111-4111-8111-111111111111",
+      email: "dono@example.com",
+      full_name: null,
+      avatar_url: null,
+      is_platform_admin: false,
+      idioma: "pt-BR",
+      organizations: [],
+    } as AuthUser,
+    org: { orgId: ORG_ID, name: "Org", role: "admin" },
+  });
+}
+
+/** O que o `requireRole` real devolve a quem está abaixo do papel mínimo. */
+function papelInsuficiente() {
+  vi.mocked(requireRole).mockResolvedValue({
+    ok: false,
+    response: fail("forbidden", "Papel insuficiente.", 403),
+  });
 }
 
 function listar(provider = "openai") {
@@ -154,5 +165,58 @@ describe("GET /api/v1/ai/providers/:provider/models — o que o agente pode esco
   it("provedor que a lista não conhece continua 404", async () => {
     const res = await listar("provedor-fantasma");
     expect(res.status).toBe(404);
+  });
+});
+
+/**
+ * SÓ GESTOR LISTA MODELOS (doc 112 do mantenedor, opção A).
+ *
+ * Pela assinatura, listar é chamar a OpenAI com o token da empresa e regravar
+ * `models_available` — que é o que decide o "Publicar". A régua é a da irmã
+ * `GET /api/v1/ai/providers` e a da tela que usa esta rota (o editor do
+ * agente): `manager`. A autorização vem antes da validação do provedor, então
+ * quem não pode listar recebe 403 até para um provedor que não existe.
+ *
+ * Sabotagem que confirma: trocar "manager" por "agent" deixa o primeiro caso
+ * vermelho; tirar o `requireRole` deixa os dois seguintes vermelhos; validar o
+ * provedor antes dele deixa vermelho o caso do provedor desconhecido (404).
+ */
+describe("GET /api/v1/ai/providers/:provider/models — quem pode listar", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(createClient).mockResolvedValue(
+      stubDoBanco(CATALOGO) as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+  });
+
+  it("pede gestor, a mesma régua da configuração de IA", async () => {
+    autorizado();
+    await listar();
+    expect(vi.mocked(requireRole)).toHaveBeenCalledWith(
+      "manager",
+      expect.objectContaining({ resource: "ai_providers" }),
+    );
+  });
+
+  it("abaixo de gestor, a assinatura da empresa não é consultada", async () => {
+    papelInsuficiente();
+    const res = await listar("openai-assinatura");
+    expect(res.status).toBe(403);
+    expect(vi.mocked(listarModelosDaAssinatura)).not.toHaveBeenCalled();
+    expect(vi.mocked(createClient)).not.toHaveBeenCalled();
+  });
+
+  it("abaixo de gestor, provedor desconhecido também é 403 — a autorização vem antes da validação", async () => {
+    papelInsuficiente();
+    const res = await listar("provedor-fantasma");
+    expect(res.status).toBe(403);
+  });
+
+  it("gestor lista a assinatura da organização que o portão resolveu", async () => {
+    autorizado();
+    vi.mocked(listarModelosDaAssinatura).mockResolvedValue([]);
+    const res = await listar("openai-assinatura");
+    expect(res.status).toBe(200);
+    expect(vi.mocked(listarModelosDaAssinatura)).toHaveBeenCalledWith(ORG_ID);
   });
 });

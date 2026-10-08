@@ -403,7 +403,7 @@ export function validateProviderKey(
       return Promise.resolve({
         ok: false,
         error:
-          'assinatura_pelo_login: esta credencial não é uma chave — conecte-a no painel "Conectar com o Codex" da tela de Credenciais desta empresa.',
+          'assinatura_pelo_login: esta credencial não é uma chave — conecte a conta do ChatGPT no painel de Credenciais desta empresa.',
       });
     default: {
       // Sem `never` aqui: o tipo é derivado das listas, e elas
