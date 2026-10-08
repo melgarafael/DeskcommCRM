@@ -166,7 +166,7 @@
       "id": "telaLista",
       "lane": "ui",
       "label": "Lista de conexões",
-      "sublabel": "todos veem · card de cadastro/edição só para admin",
+      "sublabel": "todos veem · card de cadastro/edição só para admin · selo do motor e aviso do teste",
       "type": "route",
       "dot": "purple"
     },
