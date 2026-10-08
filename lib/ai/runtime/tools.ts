@@ -33,6 +33,7 @@ import { resolveActiveLeadForContact, type LeadCandidate } from "@/lib/leads/act
 import { podeChamarFerramenta, recusaParaOModelo } from "@/lib/leads/escopo-de-funil";
 import { escritaCabeNoTurno } from "./escopo-das-escritas";
 import { chaveDaEscritaDoNegocio, criarFilaDeEscritasDoNegocio } from "./escritas-do-negocio";
+import { guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 
 export interface RuntimeHandoffSignal {
   triggered: boolean;
@@ -415,10 +416,15 @@ function wrapMcpTool(
         // A trava otimista nativa continua recusando interferência humana real.
         const result = await executarEscrita(
           chaveDaEscritaDoNegocio(input.ctx.organizationId, def, argsRecord),
-          () => def.handler(
-            argsRecord as never,
-            input.contatoDoTurno ? { ...input.ctx, contatoDoTurno: input.contatoDoTurno } : input.ctx,
-          ),
+          async () => {
+            // O comando pode ter sido perdido enquanto esta escrita esperava na fila.
+            // A guarda anterior à chamada não autoriza começar um handler depois disso.
+            if (def.category === "write") await guardServiceEffect();
+            return def.handler(
+              argsRecord as never,
+              input.contatoDoTurno ? { ...input.ctx, contatoDoTurno: input.contatoDoTurno } : input.ctx,
+            );
+          },
         );
 
         // Capture handoff signal so the runtime can short-circuit the loop.

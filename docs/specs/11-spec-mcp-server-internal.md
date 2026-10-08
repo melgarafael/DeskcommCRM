@@ -50,6 +50,9 @@ anterior para o mesmo par organização/negócio, incluindo suas atividades e
 eventos. A chave usa o negócio efetivo após a tradução do contato do turno.
 Leituras e negócios diferentes continuam em paralelo. Papel, escopo, auditoria
 e o filtro otimista de `moveLeadHandler` continuam nativos.
+Ao começar um handler de escrita, a ponte revalida a fronteira de atendimento
+com `guardServiceEffect`, depois de qualquer espera na fila. A autoridade que
+valia quando a chamada chegou não é reutilizada como permissão para executá-la.
 
 A fila é local ao turno: não ordena requisições HTTP/MCP externas, turnos
 distintos, ações humanas nem ferramentas que resolvem o negócio indiretamente

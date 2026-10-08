@@ -2,12 +2,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { McpContext } from "@/lib/mcp/types";
 import type * as ActivityEmitter from "@/lib/leads/activity-emitter";
+import type * as ServiceBoundary from "@/lib/atendimento/fronteira-server";
 import {
   chaveDaEscritaDoNegocio,
   criarFilaDeEscritasDoNegocio,
 } from "@/lib/ai/runtime/escritas-do-negocio";
 
-const dublês = vi.hoisted(() => ({ banco: null as unknown }));
+const dublês = vi.hoisted(() => ({ banco: null as unknown, comandoVigente: true }));
+vi.mock("@/lib/atendimento/fronteira-server", async (original) => ({
+  ...(await original() as typeof ServiceBoundary),
+  guardServiceEffect: vi.fn(async () => {
+    if (!dublês.comandoVigente) throw new Error("service_boundary_stale");
+  }),
+}));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => dublês.banco }));
 vi.mock("@/lib/atendimento/origem", () => ({
   observeServiceOrigin: vi.fn().mockResolvedValue({}),
@@ -23,7 +30,8 @@ vi.mock("@/lib/leads/activity-emitter", async (original) => ({
 }));
 vi.mock("@/lib/mcp/tools", async () => {
   const { crmUpdateLead, crmMoveLeadStage } = await import("@/lib/mcp/tools/leads");
-  const tools = [crmUpdateLead, crmMoveLeadStage];
+  const { crmManageTags } = await import("@/lib/mcp/tools/governance");
+  const tools = [crmUpdateLead, crmMoveLeadStage, crmManageTags];
   return { allTools: tools, getToolByName: (nome: string) => tools.find((t) => t.name === nome) };
 });
 
@@ -83,7 +91,13 @@ function banco() {
       const filtros: Record<string, unknown> = {};
       let patch: Record<string, unknown> | null = null;
       const q = {
-        then: (resolver: (r: unknown) => unknown) => resolver({ data: [{ ...lead }], error: null }),
+        then: (resolver: (r: unknown) => unknown) => {
+          if (patch) {
+            Object.assign(lead, patch);
+            bump();
+          }
+          return resolver({ data: [{ ...lead }], error: null });
+        },
         select: () => q,
         eq: (campo: string, valor: unknown) => {
           filtros[campo] = valor;
@@ -141,7 +155,7 @@ function contexto(sb: unknown): McpContext {
     supabase: sb as SupabaseClient,
   };
 }
-function montar(sb: unknown, contatoDoTurno?: string) {
+function montar(sb: unknown, contatoDoTurno?: string, incluirTags = false) {
   const ctx = contexto(sb);
   return pickToolsFromMcp({
     supabase: ctx.supabase,
@@ -153,7 +167,7 @@ function montar(sb: unknown, contatoDoTurno?: string) {
       apiTokenId: ctx.apiTokenId,
       scopes: ["mcp:read", "mcp:write"],
     },
-    toolIds: [crmUpdateLead.name, crmMoveLeadStage.name],
+    toolIds: [crmUpdateLead.name, crmMoveLeadStage.name, ...(incluirTags ? ["crm_manage_tags"] : [])],
     pipelineIds: [FUNIL],
     handoffToolEnabled: false,
     handoffSignal: { triggered: false },
@@ -164,7 +178,10 @@ const mover = { lead_id: LEAD, to_stage_id: ETAPA, position_in_stage: 10 };
 const editar = { lead_id: LEAD, description: "Atualização fictícia" };
 const options = { toolCallId: "chamada-ficticia", messages: [], context: undefined };
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  dublês.comandoVigente = true;
+});
 
 describe("reprodução com os handlers nativos", () => {
   it("edição seguida de movimento no mesmo passo relê a revisão após a atividade", async () => {
@@ -250,6 +267,32 @@ describe("reprodução com os handlers nativos", () => {
     expect(sb.lead.description).toBe("Edição humana");
     expect(await tools.crm_update_lead!.execute!(editar, options)).toHaveProperty("lead");
     expect(vi.mocked(auditMcpToolCall).mock.calls.map(([a]) => a.success)).toEqual([false, true]);
+  });
+
+  it("tags que aguardam outra escrita revalidam o comando antes de começar; um turno novo continua", async () => {
+    const sb = banco();
+    dublês.banco = sb;
+    sb.lead.tags = ["vip"];
+    const tools = montar(sb, undefined, true);
+    const movimento = tools.crm_move_lead_stage!.execute!(mover, options);
+    await sb.leuEtapa.espera;
+    const args = { target_kind: "lead", target_id: LEAD, remove: ["vip"] };
+    const tags = tools.crm_manage_tags!.execute!(args, options);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Remover não cria evento de tag nova nem ganha guarda via observeServiceOrigin.
+    expect(sb.lead.tags).toEqual(["vip"]);
+    dublês.comandoVigente = false;
+    sb.liberaEtapa.liberar();
+    await movimento;
+    expect(await tags).toEqual({ error: "service_boundary_stale" });
+    expect(sb.lead.tags).toEqual(["vip"]);
+    expect(vi.mocked(audit).mock.calls.map(([a]) => a.action)).toEqual(["lead.moved"]);
+    expect(vi.mocked(auditMcpToolCall).mock.calls.map(([a]) => a.success)).toEqual([true, false]);
+    // A fila não confunde a revogação antiga com a autoridade de um turno novo.
+    dublês.comandoVigente = true;
+    expect(await montar(sb, undefined, true).crm_manage_tags!.execute!(args, options))
+      .toMatchObject({ tags: [] });
+    expect(sb.lead.tags).toEqual([]);
   });
 });
 
