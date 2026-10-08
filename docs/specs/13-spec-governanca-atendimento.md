@@ -577,8 +577,13 @@ roteamento e o handoff intencional do próprio agente não têm essa semântica.
 A fronteira de execução verifica o lease antes de efeitos e novamente após
 consultas assíncronas nos caminhos de reserva, alteração de card e envio.
 `approved_reply`, `transactional_delivery` e `operator_turn` seguem suas próprias
-autoridades. Follow-ups continuam sujeitos à política e à geração próprias do fluxo; este
-conserto não invalida os jobs de follow-up.
+autoridades. O follow-up em execução recebe no `event_log` um fato terminal de
+revogação com seu job e conversa, na mesma transação de Assumir. A guarda de
+lease (inclusive o envio inline) lê esse fato; devolver não o remove. O worker
+encerra somente o turno e registra `turn_discarded` na mesma transação, sob sua
+autoridade interna, para que retomar uma inscrição pausada não pareça worker
+morto. A política pause/cancel/allow e os follow-ups futuros continuam próprios
+do fluxo; Assumir não altera o estado da inscrição.
 
 O gatilho e a revalidação não desfazem efeito já concluído nem retiram mensagem
 já entregue ao transporte. Não há transação mantida durante HTTP: uma tomada
@@ -589,4 +594,6 @@ Prova: `tests/invariants/assumir-interrompe-turno.test.ts` no baseline PostgreSQ
 `tests/unit/assumir-interrompe-turno.test.ts`,
 `tests/unit/pessoa-marca-fora-da-grade.test.ts` e
 `tests/unit/envio-por-bolha-confere-uma-vez.test.ts` para a fronteira e os handlers.
-Tela, modelo real e transporte externo são medições separadas.
+A spec já existente `tests/e2e/inbox-quem-manda.spec.ts` acrescenta a prova de
+revogação no clique Assumir e persistência após Devolver. Modelo real e transporte
+externo são medições separadas.

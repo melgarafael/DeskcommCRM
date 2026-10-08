@@ -241,6 +241,46 @@ test.describe("Inbox — quem manda nesta conversa", () => {
     // -----------------------------------------------------------------
     // (2) A pessoa assume — pelo botão, como ela faria.
     // -----------------------------------------------------------------
+    // Um turno executa e outro aguarda ANTES do clique. Sem esta precondição,
+    // a tela provaria só silêncio futuro, deixando o turno antigo escapar.
+    const { data: fronteira, error: erroFronteira } = await admin.rpc("fn_service_boundary", {
+      p_org: creds.org_id,
+      p_conversation: conversaId,
+    });
+    if (erroFronteira || !fronteira)
+      throw new Error(`capturar atendimento: ${erroFronteira?.message ?? "ausente"}`);
+    const { data: turnos, error: erroTurnos } = await admin
+      .from("job_queue")
+      .insert(
+        ["inbound_turn", "case_reply_turn"].map((kind) => ({
+          organization_id: creds.org_id,
+          contact_id: contatoId,
+          kind,
+          status: kind === "inbound_turn" ? "running" : "pending",
+          locked_by: kind === "inbound_turn" ? "e2e-turno-antes-da-tomada" : null,
+          locked_at: kind === "inbound_turn" ? new Date().toISOString() : null,
+          payload: {
+            conversation_id: conversaId,
+            contact_id: contatoId,
+            service_boundary: fronteira,
+          },
+        })),
+      )
+      .select("id, status");
+    if (erroTurnos) throw new Error(`turnos já iniciados: ${erroTurnos.message}`);
+    expect(turnos).toHaveLength(2);
+    expect(turnos!.map((t) => t.status).sort()).toEqual(["pending", "running"]);
+    const idsDosTurnos = turnos!.map((t) => t.id);
+    async function comandoDosTurnos() {
+      const { data, error } = await admin
+        .from("job_queue")
+        .select("id,status,locked_by,locked_at,last_error")
+        .eq("organization_id", creds.org_id)
+        .in("id", idsDosTurnos)
+        .order("id");
+      if (error) throw new Error(`conferir comando: ${error.message}`);
+      return data;
+    }
     await page.getByRole("button", { name: /^Assumir$/i }).click();
 
     // -----------------------------------------------------------------
@@ -267,6 +307,17 @@ test.describe("Inbox — quem manda nesta conversa", () => {
     // parou. `bot_silenced_until` é o gate que os três guards do motor leem.
     // -----------------------------------------------------------------
     await expect.poll(async () => silencioNoBanco(), { timeout: 30_000 }).toMatch(/infinity/);
+    await expect
+      .poll(async () => comandoDosTurnos(), { timeout: 30_000 })
+      .toEqual(
+        idsDosTurnos.sort().map((id) => ({
+          id,
+          status: "failed",
+          locked_by: null,
+          locked_at: null,
+          last_error: "conversation_command_taken",
+        })),
+      );
 
     // -----------------------------------------------------------------
     // (5) A troca de comando aparece na linha do tempo do painel.
@@ -295,6 +346,22 @@ test.describe("Inbox — quem manda nesta conversa", () => {
     await expect(comando).toContainText(/autom/i, { timeout: 30_000 });
     await expect(page.getByTestId("badge-atendimento-humano")).toHaveCount(0);
     await captura(page, "3-devolvido-ao-automatico");
+    // Voltar ao automático autoriza um próximo turno; não revive o comando antigo.
+    expect(await comandoDosTurnos()).toEqual(
+      idsDosTurnos.map((id) => ({
+        id,
+        status: "failed",
+        locked_by: null,
+        locked_at: null,
+        last_error: "conversation_command_taken",
+      })),
+    );
+    const { error: erroLimpeza } = await admin
+      .from("job_queue")
+      .delete()
+      .eq("organization_id", creds.org_id)
+      .in("id", idsDosTurnos);
+    if (erroLimpeza) throw new Error(`limpar turnos fictícios: ${erroLimpeza.message}`);
   });
 
   test("a conversa que o automático escalou APARECE na Fila", async ({ page }) => {

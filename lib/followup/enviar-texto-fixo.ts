@@ -151,9 +151,18 @@ export async function enviarTextoFixoPendente(
     } catch (err) {
       const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err);
       logger.warn("[dev.pipeline] envio inline falhou", { error: message });
-      if (err instanceof OrgNaoOperanteError) {
-        // Turno que já rodava quando a org parou: o motor precisa do evento para
-        // enfileirar um turno novo na reativação (ver fn_followup_turno_descartado).
+      let revogado = false;
+      if (err instanceof StaleServiceBoundaryError) {
+        const {data: fato,error: falhaDeLeitura} = await admin.from("event_log")
+          .select("id").eq("organization_id",job.organization_id).eq("entity_id",job.id)
+          .eq("entity_kind","job").eq("event_type","conversation.autonomous_turn_revoked")
+          .eq("status","done").limit(1);
+        if (falhaDeLeitura) throw falhaDeLeitura;
+        revogado = !!fato?.length;
+      }
+      if (err instanceof OrgNaoOperanteError || revogado) {
+        // Turno revogado durante pausa/tomada ou suspensão: a inscrição precisa
+        // do rastro de descarte para retomar sem falso worker morto.
         const { error: falhaDoDescarte } = await admin.rpc("fn_followup_turno_descartado", { p_org: job.organization_id, p_job: job.id });
         if (falhaDoDescarte) throw falhaDoDescarte;
       }

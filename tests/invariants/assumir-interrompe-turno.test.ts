@@ -2,13 +2,30 @@
  * Roda no PostgreSQL descartável de scripts/test-db.sh, com o baseline inteiro.
  * Não mede LLM, tela ou transporte externo já iniciado.
  */
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import pg from "pg";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { requireCurrentAutonomousTurn } from "@/lib/atendimento/fronteira-server";
+import { descartarFollowupObsoleto } from "@/lib/atendimento/descartar-followup-obsoleto";
+import type { JobRow } from "@/lib/agent-engine/queue/queue";
 import { sql } from "./psql-transporte";
 const ORG = "05940001-0000-4000-8000-000000000001";
 const CONTACT = "05940001-0000-4000-8000-000000000002";
 const SESSION = "05940001-0000-4000-8000-000000000003";
 const CONVERSATION = "05940001-0000-4000-8000-000000000004";
 const OWNER = "05940001-0000-4000-8000-000000000005";
+const pool = new pg.Pool({
+  connectionString: `postgresql://postgres:postgres@127.0.0.1:${process.env.TEST_DB_PORT ?? 54329}/postgres`,
+  max: 3,
+});
+afterAll(() => pool.end());
+async function runningJob() {
+  return (
+    await pool.query<JobRow>(
+      "select *, locked_at::text as claim_acquired_at from job_queue where organization_id=$1 and status='running'",
+      [ORG],
+    )
+  ).rows[0]!;
+}
 function value(query: string) {
   return Number(sql(query).trim().split("\n").at(-1));
 }
@@ -84,10 +101,18 @@ describe("tomada humana invalida o comando autônomo", () => {
       ),
     ).toBe(5);
   });
-  it.each(["transactional_delivery", "approved_reply", "operator_turn", "followup_turn"])("preserva %s em execução", (kind) => {
-    seedJob(kind); assign();
-    expect(value(`select count(*) from public.job_queue where organization_id='${ORG}' and status='running' and locked_by='worker-tomada';`)).toBe(1);
-  });
+  it.each(["transactional_delivery", "approved_reply", "operator_turn"])(
+    "preserva %s em execução",
+    (kind) => {
+      seedJob(kind);
+      assign();
+      expect(
+        value(
+          `select count(*) from public.job_queue where organization_id='${ORG}' and status='running' and locked_by='worker-tomada';`,
+        ),
+      ).toBe(1);
+    },
+  );
   it.each(["routing", "handoff"])("%s intencional não interrompe o próprio turno", (reason) => {
     seedJob("inbound_turn");
     assign(reason);
@@ -102,8 +127,102 @@ describe("tomada humana invalida o comando autônomo", () => {
     sql(`set role authenticated;
       select set_config('request.jwt.claims','{"sub":"${OWNER}"}',false);
       select public.fn_conversation_assign('${ORG}','${CONVERSATION}','${OWNER}','claim',null,false);`);
-    expect(value(`select count(*) from public.job_queue where organization_id='${ORG}' and status='running';`)).toBe(1);
+    expect(
+      value(
+        `select count(*) from public.job_queue where organization_id='${ORG}' and status='running';`,
+      ),
+    ).toBe(1);
   });
+  it("revoga follow-up em execução mesmo após devolver e numa transação iniciada antes do lease", async () => {
+    const tx = await pool.connect();
+    try {
+      await tx.query("begin");
+      await tx.query("select now()");
+      seedJob("followup_turn");
+      const job = await runningJob();
+      await requireCurrentAutonomousTurn(pool, job);
+      await tx.query("select fn_conversation_assign($1,$2,$3,'claim',null,false)", [
+        ORG,
+        CONVERSATION,
+        OWNER,
+      ]);
+      await tx.query("commit");
+      assign("release", null);
+      await expect(requireCurrentAutonomousTurn(pool, job)).rejects.toThrow(
+        "service_boundary_stale",
+      );
+      expect(
+        (
+          await pool.query("select fn_followup_claim_current($1,$2,$3,$4) as current", [
+            ORG,
+            job.id,
+            job.locked_by,
+            job.claim_acquired_at,
+          ])
+        ).rows[0]!.current,
+      ).toBe(false);
+      await descartarFollowupObsoleto(pool, job, "worker-tomada");
+      expect(
+        value(
+          `select count(*) from job_queue where id='${job.id}' and status='failed' and locked_by is null;`,
+        ),
+      ).toBe(1);
+      seedJob("followup_turn");
+      await expect(requireCurrentAutonomousTurn(pool, await runningJob())).resolves.toBeUndefined();
+    } finally {
+      await tx.query("rollback");
+      tx.release();
+    }
+  });
+  it.each(["paused_handoff", "cancelled"])(
+    "o descarte preserva a decisão %s do fluxo e não inventa worker morto",
+    async (status) => {
+      const ver = (
+        await pool.query(
+          "insert into followup_flow_versions(organization_id,graph) values($1,'{}') returning id",
+          [ORG],
+        )
+      ).rows[0]!.id;
+      const ptr = (
+        await pool.query(
+          "insert into followup_flow_pointers(organization_id,name,handoff_policy,active_version_id) values($1,$2,$3,$4) returning id",
+          [ORG, `tomada-${status}`, status === "cancelled" ? "cancel" : "pause", ver],
+        )
+      ).rows[0]!.id;
+      const enrollment = (
+        await pool.query(
+          `insert into followup_enrollments(organization_id,pointer_id,version_id,contact_id,conversation_id,current_node_id,status,next_eval_at)
+      values($1,$2,$3,$4,$5,'enviar',$6,null) returning id`,
+          [ORG, ptr, ver, CONTACT, CONVERSATION, status],
+        )
+      ).rows[0]!.id;
+      await pool.query(
+        `insert into job_queue(organization_id,contact_id,kind,status,locked_by,locked_at,payload)
+        values($1::uuid,$2::uuid,'followup_turn','running','worker-tomada',clock_timestamp(),
+          jsonb_build_object('service_boundary',jsonb_build_object('organization_id',$1::text,'conversation_id',$3::text),
+            'purpose','send_message','followup_enrollment_id',$4::text,'node_id','enviar','source_step_key','tomada:0'))`,
+        [ORG, CONTACT, CONVERSATION, enrollment],
+      );
+      const job = await runningJob();
+      assign();
+      await descartarFollowupObsoleto(pool, job, "worker-tomada");
+      await descartarFollowupObsoleto(pool, job, "worker-tomada");
+      expect(
+        (await pool.query("select status from followup_enrollments where id=$1", [enrollment]))
+          .rows[0]!.status,
+      ).toBe(status);
+      expect(
+        value(
+          `select count(*) from followup_enrollment_events where enrollment_id='${enrollment}' and event_type='turn_discarded';`,
+        ),
+      ).toBe(status === "cancelled" ? 0 : 1);
+      expect(
+        value(
+          `select count(*) from job_queue where id='${job.id}' and status='failed' and locked_by is null;`,
+        ),
+      ).toBe(1);
+    },
+  );
   it("a tomada revertida não deixa cancelamento fora da transação", () => {
     seedJob("inbound_turn");
     sql(

@@ -77,7 +77,11 @@ export async function requireCurrentAutonomousTurn(
   const { rows } = await db.query<{ current: boolean }>(
     `select exists(select 1 from job_queue where organization_id=$1 and id=$2
       and contact_id=$3 and kind=$4 and status='running'
-      and locked_by=$5 and locked_at=$6::timestamptz) as current`,
+      and locked_by=$5 and locked_at=$6::timestamptz
+      and not exists (select 1 from event_log e where e.organization_id=$1
+        and e.event_type='conversation.autonomous_turn_revoked' and e.entity_kind='job'
+        and e.entity_id=job_queue.id and e.status='done'
+        and e.payload->>'conversation_id'=job_queue.payload->'service_boundary'->>'conversation_id')) as current`,
     [job.organization_id, job.id, job.contact_id, job.kind, claim.worker_id, claim.acquired_at],
   );
   if (!rows[0]?.current) throw new StaleServiceBoundaryError();

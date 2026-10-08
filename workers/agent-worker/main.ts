@@ -1,3 +1,4 @@
+import { descartarFollowupObsoleto } from "@/lib/atendimento/descartar-followup-obsoleto";
 import { createApprovedReplyHandler } from "@/lib/agent-engine/agent/approved-reply";
 import { turnKnobsFromEnv } from "@/lib/agent-engine/agent/turn-knobs";
 import { createMeetDeliveryHandler } from "@/lib/agent-engine/agent/meet-delivery";
@@ -564,7 +565,9 @@ export async function startWorker(
         ) {
           await avisarRespostaDeCasoObsoleto(pool, job.organization_id, job.payload.case_id);
         }
-        if (terminal) {
+        if (err instanceof StaleServiceBoundaryError && job.kind === "followup_turn") {
+          await descartarFollowupObsoleto(pool, job, workerId);
+        } else if (terminal) {
           await cancelJob(pool, job.id, workerId, errMsg(err), claimOfJob(job)?.acquired_at);
         } else {
           await failJob(pool, job.id, workerId, err, claimOfJob(job)?.acquired_at);
