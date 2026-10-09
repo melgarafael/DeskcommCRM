@@ -35,6 +35,8 @@ import {
 import { useT } from "@/hooks/i18n/useT";
 import { LIMITE_FILTROS, LIMITE_LINHAS, LIMITE_RESPOSTA_BYTES } from "@/lib/external-db/limites";
 
+import { ComoCriarAcesso } from "./ComoCriarAcesso";
+
 const MODOS_TLS = [
   { valor: "require", rotulo: "Obrigatório (padrão)" },
   { valor: "verify-full", rotulo: "Verificar certificado e host" },
@@ -273,6 +275,7 @@ export function FormularioDeConexao({ open, onOpenChange, conexao }: Props) {
                 {t("No MySQL, conecte com um usuário só de leitura (apenas SELECT). Se for um WordPress, crie uma view com os dados que o assistente deve ver.")}
               </p>
             )}
+            <ComoCriarAcesso motor={dbType} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="ext-label">{t("Nome da conexão")}</Label>

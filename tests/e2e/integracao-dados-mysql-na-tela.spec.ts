@@ -143,9 +143,14 @@ test.describe("Motor e aviso na tela", () => {
     await page.getByRole("option", { name: "MySQL" }).click();
     await expect(page.locator("#ext-port")).toHaveValue("3306");
     await expect(page.getByText(/No MySQL, conecte com um usuário só de leitura/)).toBeVisible();
+    await expect(page.getByTestId("como-criar-acesso")).toBeVisible();
+    await page.getByTestId("como-criar-acesso").locator("summary").click();
+    await expect(page.getByTestId("como-criar-acesso").getByText(/CREATE USER 'crm_leitura'/)).toBeVisible();
+    await expect(page.getByTestId("como-criar-acesso").getByText(/GRANT SELECT ON NOME_DO_BANCO/)).toBeVisible();
     await page.locator("#ext-port").fill("3307");
     await page.locator("#ext-motor").click();
     await page.getByRole("option", { name: "PostgreSQL" }).click();
+    await expect(page.getByTestId("como-criar-acesso")).toHaveCount(0);
     await expect(page.locator("#ext-port")).toHaveValue("3307");
     await page.screenshot({ path: evidencia("03-novo.png") });
   });
