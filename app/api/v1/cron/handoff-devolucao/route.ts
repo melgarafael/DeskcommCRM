@@ -184,6 +184,20 @@ export async function devolverHandoffsVencidos(
     // pé. Ninguém atende dos dois lados, e a rodada reportava `falhas: 0` sem
     // auditar nada: um defeito real com cara de disputa benigna.
     if (r.erro === "assignment_conflict" && r.detalhe === undefined) continue;
+    // Recusa ESPERADA, não falha (issue 2379): o contato está marcado "sempre
+    // atendimento humano" (`contacts.ai_opt_out`) e é exatamente isto que a
+    // devolução automática não pode desfazer. Contar como `falhas` faria o
+    // cron reclamar a cada tick para sempre sobre um estado que a operação
+    // pediu; não registrar nada esconderia a recusa — então ela vira linha de
+    // log próprio e o shape do retorno fica igual.
+    if (r.erro === "contato_sempre_humano") {
+      logger.info("[handoff-devolucao] devolução recusada: contato é sempre atendimento humano", {
+        conversation_id: conversa.id,
+        organization_id: conversa.organization_id,
+        requestId,
+      });
+      continue;
+    }
     falhas++;
     logger.error("[handoff-devolucao] devolução falhou", {
       conversation_id: conversa.id,
