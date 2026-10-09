@@ -39,7 +39,7 @@ import { VALID_TOOL_IDS } from "@/lib/mcp/tools";
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const VERSION_COLUMNS =
-  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, proposal_ai_draft_enabled, cases_enabled, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin,inbound_debounce_ms";
+  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, handoff_legal_enabled, proposal_ai_draft_enabled, cases_enabled, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin,inbound_debounce_ms";
 
 type ActionResult<T = void> =
   | { ok: true; data?: T }
@@ -315,6 +315,7 @@ export async function saveAgentDraftAction(
         history_token_window: v.history_token_window,
         handoff_keywords: v.handoff_keywords,
         handoff_tool_enabled: v.handoff_tool_enabled,
+        handoff_legal_enabled: v.handoff_legal_enabled,
         proposal_ai_draft_enabled: v.proposal_ai_draft_enabled,
         cases_enabled: v.cases_enabled,
         operator_enabled: v.operator_enabled,
@@ -410,6 +411,7 @@ export async function publishAgentAction(
     orgId: activeOrg.orgId,
     agentId,
     versionId,
+    quemPublicou: { actorUserId: authUser.id, requestId },
   });
 
   if (!result.ok) {
@@ -542,6 +544,7 @@ export async function revertToVersionAction(
     history_token_window: number;
     handoff_keywords: string[];
     handoff_tool_enabled: boolean;
+    handoff_legal_enabled: boolean;
     proposal_ai_draft_enabled: boolean;
     cases_enabled: boolean;
     operator_enabled: boolean;
@@ -589,6 +592,10 @@ export async function revertToVersionAction(
         history_token_window: src.history_token_window,
         handoff_keywords: src.handoff_keywords,
         handoff_tool_enabled: src.handoff_tool_enabled,
+        // Reverter/duplicar leva a chave junto: voltar para uma versão sem ela
+        // seria publicar uma configuração que nunca existiu (mesma régua de
+        // `pipeline_ids` logo abaixo).
+        handoff_legal_enabled: src.handoff_legal_enabled,
         proposal_ai_draft_enabled: src.proposal_ai_draft_enabled,
         cases_enabled: src.cases_enabled,
         operator_enabled: src.operator_enabled,
@@ -627,6 +634,7 @@ export async function revertToVersionAction(
     orgId: activeOrg.orgId,
     agentId,
     versionId: createdId,
+    quemPublicou: { actorUserId: authUser.id, requestId },
   });
   if (!result.ok) {
     // Rollback: remove draft órfã para não deixar lixo (a draft só existe
@@ -759,6 +767,7 @@ export async function createMcpAgentAction(
     history_token_window: v.history_token_window,
     handoff_keywords: v.handoff_keywords,
     handoff_tool_enabled: v.handoff_tool_enabled,
+    handoff_legal_enabled: v.handoff_legal_enabled,
     proposal_ai_draft_enabled: v.proposal_ai_draft_enabled,
     cases_enabled: v.cases_enabled,
     split_messages: v.split_messages,

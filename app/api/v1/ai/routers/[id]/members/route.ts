@@ -77,6 +77,11 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const { members } = parsed.data;
 
   let db: PoolClient | undefined;
+  // #2624: consulta que estoura o query_timeout rejeita a promessa SEM destruir o
+  // socket (pg 8.23, fora do modo pipeline). Liberado com release() sem erro, este
+  // cliente volta ao pool com a transação antiga de pé e é reemprestado nela —
+  // o catch marca o erro e o finally lê dele (mesma direção do #2621).
+  let erroNaTransacao: Error | undefined;
   try {
     if (process.env.SUPABASE_DB_URL) {
       db = await getRequestPool().connect();
@@ -87,6 +92,9 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       await replaceRouterMembersHttp(createAdminClient(), org.orgId, id, members);
     }
   } catch (error) {
+    // Marcado ANTES do rollback: se o próprio rollback estourar, o cliente ainda
+    // sai com erro e o pg-pool o descarta (release(err) → _remove → client.end()).
+    erroNaTransacao = error instanceof Error ? error : new Error(String(error));
     if (db) await db.query("rollback");
     const message = error instanceof Error ? error.message : "";
     const code = (error as { code?: string }).code;
@@ -122,7 +130,7 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       );
     return fail("internal_error", "Erro ao gravar membros do router.", 500, { requestId });
   } finally {
-    db?.release();
+    db?.release(erroNaTransacao);
   }
 
   void audit({

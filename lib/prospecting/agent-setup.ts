@@ -226,6 +226,9 @@ export async function setupProspectingAgent(
   const agentId = setupAgentId(context.orgId, input.campaign_id, input.request_id);
   const requestHash = hash(input);
   const db = await pool.connect();
+  // #2624 — mesma marcação do #2621: o finally só libera COM erro quem falhou
+  // dentro da transação (release(err) → _remove no pg-pool, cliente descartado).
+  let erroNaTransacao: Error | undefined;
   let saved = false;
   const locked: string[] = [];
   let createdNow = false;
@@ -524,6 +527,9 @@ export async function setupProspectingAgent(
       model_label: metadata.model_label,
     };
   } catch (error) {
+    // Marcado ANTES do rollback: se o próprio rollback estourar, o cliente ainda
+    // sai com erro e o pg-pool o descarta (release(err) → _remove → client.end()).
+    erroNaTransacao = error instanceof Error ? error : new Error(String(error));
     await db.query("rollback").catch(() => undefined);
     if (error instanceof AgentSetupError) {
       if (saved) error.agentId = agentId;
@@ -546,6 +552,8 @@ export async function setupProspectingAgent(
         break;
       }
     }
-    db.release(destroy);
+    // #2624: quem falhou dentro da transação sai COM erro; quem só não conseguiu
+    // destravar o lock continua saindo com destroy explícito, como antes.
+    db.release(erroNaTransacao ?? destroy);
   }
 }

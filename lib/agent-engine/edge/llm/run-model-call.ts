@@ -28,6 +28,7 @@ import { PONTO_POR_ID } from '@/lib/ai/pontos/registro';
 import { ParProvedorModeloInvalidoError, validarParProvedorModelo } from '@/lib/ai/par-provedor-modelo';
 import { decidirQuedaDoProvedor } from '@/lib/ai/pontos/reserva-da-assinatura';
 import { scrubMessage } from '@/lib/sentry/scrub';
+import { identificarConteudoBloqueado } from './conteudo-bloqueado';
 
 import type { Logger } from '../../obs/logger';
 import { decidirParaOSeam, marcarEconomicoQueFalhou } from './binding-do-ponto';
@@ -995,6 +996,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       result = await chamarCom(reserva, fabricaDaReserva);
     }
   } catch (err) {
+    err = identificarConteudoBloqueado(err) ?? err;
     // ─── A LINHA QUE FALTAVA ────────────────────────────────────────────────
     //
     // Provedor recusou a chave, modelo não existe, conta sem saldo? A falha
@@ -1061,6 +1063,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     try {
       result = await chamarCom(config, fabricaAtual);
     } catch (errDaReserva) {
+      errDaReserva = identificarConteudoBloqueado(errDaReserva) ?? errDaReserva;
       await registrarFalha(db, {
         input,
         purpose,
@@ -1178,6 +1181,8 @@ export function normalizarErro(err: unknown): {
   error_message: string;
   http_status: number | null;
 } {
+  const bloqueio = identificarConteudoBloqueado(err);
+  if (bloqueio) return { error_code: 'conteudo_bloqueado', error_message: bloqueio.message, http_status: bloqueio.statusCode ?? null };
   const bruto = err instanceof Error ? err.message : String(err);
   const status =
     (err as { statusCode?: number; status?: number })?.statusCode ??
