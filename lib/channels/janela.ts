@@ -78,6 +78,37 @@ export function estadoDaJanela(
 }
 
 /**
+ * Este canal consegue mandar texto livre AGORA — ou o que sair vai ser recusado
+ * na entrega (issue #2595)?
+ *
+ * `estadoDaJanela` é a régua; este predicado é só o veredito "não está fechada"
+ * para quem vai ENVIAR, não para quem mostra relógio. O primeiro consumidor é o
+ * cron de lembrete de agenda, que antes deste fix escolhia o primeiro canal
+ * WORKING e carimbava "enviado" o que a Meta recusa com 131047 — o mesmo engano
+ * medido e documentado em `capabilities.ts`.
+ *
+ * Provider que a matriz NÃO conhece (linha de voz, provider mais novo que esta
+ * imagem) responde `true`: `estadoDaJanela` lança ali, e barrar o envio por uma
+ * regra que não existe puniria um canal que talvez envie — quem barre é só o
+ * `freeformOutsideWindow: false` MEDIDO. Mesma direção de
+ * `lib/agent-engine/agent/followup-turn.ts`, que lê o canal não encontrado como
+ * "não fechado" em vez de travar.
+ */
+export function canalAceitaTextoLivreAgora(
+  provider: string | null | undefined,
+  lastInboundAt: string | null,
+  agora: Date,
+): boolean {
+  let estado: EstadoDaJanela;
+  try {
+    estado = estadoDaJanela(provider, lastInboundAt, agora);
+  } catch {
+    return true;
+  }
+  return estado.tipo !== "fechada";
+}
+
+/**
  * "23h 40m", "40m", "3m".
  *
  * Sem segundos: um número que muda sozinho na tela puxa o olho para o relógio

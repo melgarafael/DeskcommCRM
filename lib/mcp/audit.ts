@@ -19,6 +19,12 @@ interface AuditMcpToolCallInput {
   errorMessage?: string;
   resultSummary?: string;
   /**
+   * Tamanho, em bytes, do JSON devolvido ao modelo (`tamanhoDoResultado`). Só o
+   * NÚMERO: é ele que custa token, e o conteúdo pode ter dado pessoal. Ausente =
+   * a chamada não teve resposta a medir (erro, recusa) ou não deu para medir.
+   */
+  resultBytes?: number;
+  /**
    * Vazio DECLARADO pela tool ("não achei"), quando o `success: false` é isso e
    * não erro técnico. A tool diz qual vazio foi (`motivo`).
    *
@@ -55,7 +61,7 @@ function redactArgs(args: Record<string, unknown>): Record<string, unknown> {
 }
 
 export async function auditMcpToolCall(input: AuditMcpToolCallInput): Promise<void> {
-  const { ctx, toolName, args, durationMs, success, errorMessage, resultSummary, desfecho, motivo } =
+  const { ctx, toolName, args, durationMs, success, errorMessage, resultSummary, resultBytes, desfecho, motivo } =
     input;
 
   const metadata: Record<string, unknown> = {
@@ -68,6 +74,9 @@ export async function auditMcpToolCall(input: AuditMcpToolCallInput): Promise<vo
   };
 
   if (resultSummary) metadata.result_summary = resultSummary.slice(0, 280);
+  if (typeof resultBytes === "number" && Number.isFinite(resultBytes) && resultBytes >= 0) {
+    metadata.result_bytes = Math.floor(resultBytes);
+  }
   if (errorMessage) metadata.error = errorMessage.slice(0, 500);
   if (desfecho) metadata.desfecho = desfecho;
   if (motivo) metadata.motivo = motivo.slice(0, 200);

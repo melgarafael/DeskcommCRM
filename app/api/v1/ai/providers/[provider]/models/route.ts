@@ -11,7 +11,11 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { ehProvedorSuportado, PROVEDOR_POR_ASSINATURA } from "@/lib/ai/pontos/provedores";
-import { listarModelosDaAssinatura } from "@/lib/ai/catalogo/modelos-da-assinatura";
+import {
+  FalhaAoListarModelosDaAssinatura,
+  listarModelosDaAssinatura,
+  type ModeloDaAssinatura,
+} from "@/lib/ai/catalogo/modelos-da-assinatura";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +52,26 @@ export async function GET(
   // Consultá-lo sob o token da organização evita gravar nomes/modelos de uma
   // conta em uma tabela compartilhada entre tenants.
   if (provider === PROVEDOR_POR_ASSINATURA) {
-    const models = await listarModelosDaAssinatura(activeOrg.orgId);
+    let models: ModeloDaAssinatura[] | null;
+    try {
+      models = await listarModelosDaAssinatura(activeOrg.orgId);
+    } catch (erro) {
+      // A conta ESTÁ conectada e a listagem falhou (#2602): dizer "Conecte a
+      // assinatura" aqui seria mentir para o operador — o editor mostrava uma
+      // frase que mandava ele refazer o que já estava feito, enquanto o 403 do
+      // endpoint errado ficava invisível e `models_available` ficava `null`.
+      // O MOTIVO da falha viaja na mensagem; o espelho não foi tocado.
+      const motivo =
+        erro instanceof FalhaAoListarModelosDaAssinatura ? erro.motivo : "erro_inesperado";
+      return fail(
+        "internal_error",
+        `Não consegui listar os modelos da assinatura do ChatGPT (${motivo}). A conta continua conectada; tente de novo ou reconecte-a em IA › Credenciais.`,
+        502,
+        // O motivo também viaja estruturado: o seletor de modelo do editor o
+        // mostra ao lado do texto traduzido, sem recortar esta frase em pt-BR.
+        { requestId, details: { motivo } },
+      );
+    }
     if (!models) {
       return fail("credential_invalid", "Conecte a assinatura do ChatGPT para listar os modelos.", 409, { requestId });
     }

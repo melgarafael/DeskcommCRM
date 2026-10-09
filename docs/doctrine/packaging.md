@@ -214,9 +214,8 @@ default que preserva o comportamento anterior**; se ela precisa existir, quem a 
 - **Por quê:** o operador da VPS é leigo por premissa do produto. "Edite o `.env` antes de
   atualizar" é uma instrução que metade do parque não executa e a outra metade executa errado
   — e o modo de falha é o app não subir depois de uma atualização que já mexeu no banco.
-- **Anti-exemplo estrutural:** o compose de produção tem 7 variáveis sem fallback
-  (`WAHA_API_KEY_SHA512`, `WAHA_WEBHOOK_BASE_URL`, `WAHA_HMAC_SECRET`, `SRH_TOKEN`,
-  `INTERNAL_SECRET`, `DOMAIN`, `ACME_EMAIL`). Medido: o Compose **não** falha quando elas
+- **Anti-exemplo estrutural:** o compose de produção tem variáveis sem fallback — para
+  ver quais, `grep -oE '\$\{[A-Z0-9_]+\}' docker-compose.prod.yml | sort -u`. Medido: o Compose **não** falha quando elas
   faltam — substitui por string vazia, avisa em `stderr` e sobe. `DOMAIN: ""` e
   `WAHA_API_KEY: "sha512:"` quebram em runtime, depois do `up -d`, silenciosamente. Falhar
   tarde e mudo é pior que falhar cedo.
