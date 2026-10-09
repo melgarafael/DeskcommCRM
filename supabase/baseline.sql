@@ -52649,3 +52649,72 @@ create unique index if not exists agent_inbox_budget_do_plano_aberto_unico
 -- Sem alteração de linhas, políticas RLS ou concessões de acesso.
 create index if not exists ai_chunks_content_pt_gin
   on public.ai_chunks using gin (to_tsvector('portuguese'::regconfig, content));
+
+-- ---- pedidos de plataforma sem conector próprio entram por origem genérica (migration 0623) ----
+-- `orders_external_provider_check` conhecia três provedores com integração
+-- nativa (nuvemshop, vtex, shopify) e ninguém mais: a loja da instalação vende
+-- pelo site em Tray e grava em `orders` por uma ponte própria, FORA do produto,
+-- com o contato ligado pelo telefone — o INSERT recebia 23514, e a saída era
+-- alterar a restrição na instalação, com o risco da issue #2442: uma migration
+-- futura que recriasse a lista sem 'tray' faria a atualização parar no meio,
+-- porque as linhas já gravadas violariam o CHECK novo.
+--
+-- Opção 2 da issue (a que o autor prefere): uma ORIGEM GENÉRICA, `external`,
+-- para quem chega por integração própria, com o NOME DA PLATAFORMA no `payload`
+-- (`payload->>'platform'`). O mesmo valor serve Tray, Loja Integrada,
+-- WooCommerce e o que vier, sem a lista crescer a cada caso — e sem fingir ser
+-- um conector que o produto não tem. Os três conectores nativos ficam intactos.
+--
+-- Alargamento, com uma ressalva: um CHECK que aceita MAIS valores não é violado
+-- por linha que passava na lista do produto — mas é por linha de instalação que
+-- alargou a lista à mão (o caso da issue), e essa é convertida logo abaixo. A guarda
+-- continua de pé — valor fora da lista ainda recebe 23514, o que é o trabalho
+-- dela: barrar typo e vocabulário que ninguém decidiu.
+--
+-- Este é o BLOCO ÚNICO desta constraint (regra da issue #159): quem acrescentar
+-- origem futura edita ESTA lista, e não cria um segundo bloco. O `create table`
+-- do dump de instalação segue com a lista de três — a mesma postura de
+-- `webhook_events_log_provider_check` (0151) —, porque quem decide o vocabulário
+-- vigente é este bloco, aplicado no install e no update.
+--
+-- Cuidado de quem usa a origem genérica: o `unique (organization_id,
+-- external_provider, external_id)` passa a valer para DUAS plataformas, então a
+-- ponte namespaceia o `external_id` (ex.: 'tray:10231') — pedido 10231 da Tray
+-- e pedido 10231 da Loja Integrada não podem disputar a mesma linha.
+-- O drop, a conversão e o add vão num bloco SÓ, que é um único comando: se
+-- qualquer passo falhar, nada fica feito e a restrição de antes continua de
+-- pé. Antes eram três comandos soltos e, como o update.sh aplica o baseline
+-- sem ON_ERROR_STOP, um `add` que falhasse deixava a tabela SEM restrição
+-- nenhuma. Agora a falha deixa a instalação exatamente como estava, e o erro
+-- aparece no update.
+--
+-- O drop do começo existe porque a restrição alargada à mão (o caso da própria
+-- #2442) ainda recusaria 'external' na conversão. A conversão pega a linha que
+-- a instalação gravou com uma origem fora da lista ('tray') e a põe no formato
+-- que a ponte deve usar daqui em diante: a plataforma vai para
+-- `payload->>'platform'` (sem sobrescrever uma que já esteja lá) e o
+-- `external_id` ganha o prefixo dela ('tray:10231'). É isso que mantém a chave
+-- única NA PRÁTICA: o par (origem, id) já era único, e (external, origem:id)
+-- só colide em caso forjado — uma linha 'external' prévia com o mesmo id
+-- prefixado, ou ':' dentro da origem ou do id ('tray','a:b' e 'tray:a','b'
+-- viram ambos 'tray:a:b'). Nesse caso o bloco inteiro é desfeito e a
+-- instalação segue com a restrição que tinha.
+-- Idempotente: na segunda passada não sobra linha fora da lista.
+do $pedido_sem_conector$
+begin
+  alter table public.orders
+    drop constraint if exists orders_external_provider_check;
+
+  update public.orders
+     set payload = jsonb_build_object('platform', external_provider) || payload,
+         external_id = external_provider || ':' || external_id,
+         external_provider = 'external'
+   where external_provider not in ('nuvemshop', 'vtex', 'shopify', 'external');
+
+  alter table public.orders
+    drop constraint if exists orders_external_provider_check,
+    add constraint orders_external_provider_check check (external_provider in (
+      'nuvemshop', 'vtex', 'shopify', 'external'
+    ));
+end
+$pedido_sem_conector$;
