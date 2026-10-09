@@ -187,6 +187,12 @@ interface FormState {
   history_token_window: number;
   handoff_keywords: string[];
   handoff_tool_enabled: boolean;
+  /**
+   * A chave por ASSUNTO JURÍDICO (#2097, #2156) — irmã da de cima, só que ela
+   * não remove a ferramenta: troca a descrição que manda passar em "questão
+   * jurídica". Padrão LIGADO (`?? true` abaixo), como a coluna na versão.
+   */
+  handoff_legal_enabled: boolean;
   proposal_ai_draft_enabled: boolean;
   cases_enabled: boolean;
   split_messages: boolean;
@@ -297,6 +303,7 @@ export function buildState(args: {
       "pessoa real",
     ],
     handoff_tool_enabled: version?.handoff_tool_enabled ?? true,
+    handoff_legal_enabled: version?.handoff_legal_enabled ?? true,
     proposal_ai_draft_enabled: version?.proposal_ai_draft_enabled ?? true,
     cases_enabled: version?.cases_enabled ?? false,
     split_messages: version?.split_messages ?? false,
@@ -361,6 +368,7 @@ function toVersionPayload(s: FormState) {
     history_token_window: s.history_token_window,
     handoff_keywords: s.handoff_keywords,
     handoff_tool_enabled: s.handoff_tool_enabled,
+    handoff_legal_enabled: s.handoff_legal_enabled,
     proposal_ai_draft_enabled: s.proposal_ai_draft_enabled,
     cases_enabled: s.cases_enabled,
     split_messages: s.split_messages,
@@ -1279,6 +1287,34 @@ export function AgentForm(props: Props) {
                 {t("Deixar o agente chamar uma pessoa quando perceber que não é caso dele")}
               </Label>
             </div>
+            {/* A chave por ASSUNTO JURÍDICO (#2097, #2156): irmã da de cima,
+                mas com efeito diferente — ela NÃO remove a ferramenta, só troca
+                a descrição que mandava passar em "questão jurídica". Por isso
+                ela fica DESABILITADA quando a de cima está desligada: sem a
+                ferramenta não há descrição nenhuma para trocar. Só admin mexe
+                (toda escrita de versão exige admin), e o pedido explícito de
+                pessoa continua passando dos dois lados. */}
+            <div className="flex items-center gap-2">
+              <Switch
+                id="handoff_legal_enabled"
+                checked={form.handoff_legal_enabled}
+                onCheckedChange={(v) => patch({ handoff_legal_enabled: v })}
+                disabled={disabled || !form.handoff_tool_enabled}
+              />
+              <Label
+                htmlFor="handoff_legal_enabled"
+                className={form.handoff_tool_enabled ? undefined : "text-muted-foreground"}
+              >
+                {t(
+                  "Passar para uma pessoa quando o cliente falar de assunto jurídico (Procon, advogado, processo)",
+                )}
+              </Label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Desligue se assunto jurídico é o trabalho normal deste agente. Quem pede para falar com uma pessoa continua sendo passado.",
+              )}
+            </p>
             <HandoffKeywordsInput
               value={form.handoff_keywords}
               onChange={(v) => patch({ handoff_keywords: v })}

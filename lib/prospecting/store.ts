@@ -62,6 +62,10 @@ export async function withProspectingLock<T>(
   fn: (db: pg.PoolClient) => Promise<T>,
 ): Promise<T> {
   const db = await pool.connect();
+  // #2624: um cliente que falhou aqui NÃO pode voltar ao pool — sem erro, o
+  // pg-pool o reempresta com o pg_advisory_unlock pendente e o lock fica preso
+  // na conexão reaproveitada (o problema apontado na issue).
+  let erroNaTransacao: Error | undefined;
   let locked = false;
   try {
     locked =
@@ -77,13 +81,21 @@ export async function withProspectingLock<T>(
         409,
       );
     return await fn(db);
+  } catch (err) {
+    erroNaTransacao = err instanceof Error ? err : new Error(String(err));
+    throw err;
   } finally {
+    let erroNoUnlock: Error | undefined;
     try {
       if (locked)
         await db.query("select pg_advisory_unlock(hashtextextended($1,0))", [`prospecting:${org}`]);
-    } finally {
-      db.release();
+    } catch (unlockErr) {
+      // #2624: o unlock falhou. O lock de sessão só morre junto com a conexão,
+      // então o cliente é liberado COM erro — o pg-pool chama _remove e o
+      // client.end() derruba a conexão (e o lock) em vez de reemprestá-la.
+      erroNoUnlock = unlockErr instanceof Error ? unlockErr : new Error(String(unlockErr));
     }
+    db.release(erroNaTransacao ?? erroNoUnlock);
   }
 }
 export async function credential(db: pg.Pool | pg.PoolClient, admin: SupabaseClient, org: string) {

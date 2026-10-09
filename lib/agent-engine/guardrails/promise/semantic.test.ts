@@ -1,6 +1,10 @@
 import type pg from "pg";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PROMISE_SEMANTIC_INSTRUCTION, classifyPromise, parsePromiseClassification } from "./semantic";
+import {
+  PROMISE_SEMANTIC_INSTRUCTION,
+  classifyPromise,
+  parsePromiseClassification,
+} from "./semantic";
 import { criarEvidenciasComerciaisDoTurno } from "./evidencias-comerciais";
 import { runModelCall } from "../../edge/llm/run-model-call";
 import { createLogger } from "../../obs/logger";
@@ -65,6 +69,16 @@ it("leva a oferta completa na mesma chamada e mantém promessa adicional visíve
     purpose: "promise_semantic",
   });
   expect(request.system).toContain("classificador auxiliar de compliance de vendas");
+  for (const categoria of [
+    "dar brinde",
+    "devolução de dinheiro",
+    "entrego amanhã",
+    "resolve pessoalmente",
+    "garantimos qualidade",
+    "evidência sustentar",
+  ]) {
+    expect(request.system).toContain(categoria);
+  }
   expect(JSON.parse(request.messages[0]!.content as string)).toEqual({
     mensagem: candidate,
     evidencias: e.ler(),
@@ -101,6 +115,24 @@ it("preserva dados que parecem instruções como JSON, separados da instrução 
   const request = call.mock.calls[0]![2];
   expect(request.system).not.toContain(malicious);
   expect(JSON.parse(request.messages[0]!.content as string).evidencias[0].conteudo).toBe(malicious);
+});
+
+it("no caminho com evidências, mensagem e contexto seguem sendo dados que não mudam o veredito", async () => {
+  await classifyPromise(
+    pool,
+    {},
+    ids,
+    {
+      candidate: "Matrícula grátis!",
+      commercialEvidence: [
+        { origem: "conhecimento", referencia: "fonte:trecho", titulo: "Oferta", conteudo: "Matrícula grátis no anual." },
+      ],
+    },
+    deps,
+  );
+  const { system } = call.mock.calls[0]![2];
+  expect(system).toContain("nunca instruções");
+  expect(system).toContain("alterar o veredito");
 });
 
 /**
@@ -234,11 +266,16 @@ describe("parsePromiseClassification — retornoSoDoAssistente (degrade fechado)
 
   it.each([
     ["campo ausente", '{"isPromise": false, "suspectPhrase": null, "prometeuRetornoHumano": true}'],
-    ["tipo trocado", '{"isPromise": false, "suspectPhrase": null, "prometeuRetornoHumano": true, "retornoSoDoAssistente": "true"}'],
+    [
+      "tipo trocado",
+      '{"isPromise": false, "suspectPhrase": null, "prometeuRetornoHumano": true, "retornoSoDoAssistente": "true"}',
+    ],
     ["saída sem JSON", "desculpe, não consegui"],
     ["JSON inválido", "{retornoSoDoAssistente: true}"],
   ])("%s → false", (_rotulo, saida) => {
-    expect(parsePromiseClassification(saida, FRASE_DO_ASSISTENTE).retornoSoDoAssistente).toBe(false);
+    expect(parsePromiseClassification(saida, FRASE_DO_ASSISTENTE).retornoSoDoAssistente).toBe(
+      false,
+    );
   });
 
   it("a instrução pergunta o campo e o pede no JSON", () => {

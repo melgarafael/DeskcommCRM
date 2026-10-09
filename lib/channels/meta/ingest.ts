@@ -39,6 +39,7 @@ import { encontrarContatoPorTelefone } from "../contato-por-telefone";
 import { marcarConversaComMensagem } from "../marcar-conversa";
 import { canonicalPhoneBR, phoneLookupVariants } from "../phone-variants";
 import type { ChannelTenantScope } from "../types";
+import { nomeDeArquivoLimpo } from "@/lib/messaging/media/nome-de-arquivo";
 import type {
   AppContactSyncEvent,
   InboundMessageEvent,
@@ -241,6 +242,7 @@ export async function ingestMetaInbound(
     return { status: "failed", reason: `conversa: ${erroConversa?.message ?? "sem id"}` };
   }
 
+  const nomeDoArquivo = nomeDeArquivoLimpo(e.media?.filename);
   const { data: inserida, error: erroInsert } = await admin
     .from("messages")
     .insert({
@@ -264,6 +266,11 @@ export async function ingestMetaInbound(
       sent_at: e.sentAt.toISOString(),
       metadata: {
         ...(e.media ? { meta_media_id: e.media.id, voice: e.media.voice } : {}),
+        // Nome original do anexo (#2613) — o cartão do Inbox lê esta chave.
+        // Só quando há nome (a Cloud API manda `filename` só em `document`):
+        // chave vazia não nasce, e o INSERT é o único caminho que escreve
+        // `metadata` aqui, então nada já gravado é sobrescrito.
+        ...(nomeDoArquivo ? { media_filename: nomeDoArquivo } : {}),
         ...(e.sharedContact ? { shared_contact: e.sharedContact } : {}),
       },
     })
@@ -417,6 +424,7 @@ export async function ingestMetaEcho(
     return { status: "failed", reason: `conversa: ${erroConversa?.message ?? "sem id"}` };
   }
 
+  const nomeDoArquivo = nomeDeArquivoLimpo(e.media?.filename);
   const { data: inserida, error: erroInsert } = await admin
     .from("messages")
     .insert({
@@ -436,6 +444,8 @@ export async function ingestMetaEcho(
       metadata: {
         from_business_app: true,
         ...(e.media ? { meta_media_id: e.media.id, voice: e.media.voice } : {}),
+        // Mesma regra da recebida (#2613): nome só quando há nome.
+        ...(nomeDoArquivo ? { media_filename: nomeDoArquivo } : {}),
         ...(e.sharedContact ? { shared_contact: e.sharedContact } : {}),
       },
     })

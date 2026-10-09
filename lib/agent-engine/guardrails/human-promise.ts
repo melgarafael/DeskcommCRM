@@ -116,6 +116,23 @@ function escapeRegex(word: string): string {
 }
 
 /**
+ * Pergunta de consentimento ("quer que eu encaminhe para a equipe?") ainda não é
+ * operação executada. A isenção vale para a mensagem INTEIRA, nunca frase a
+ * frase: basta uma frase com operação alegada, prazo ou retorno anunciado
+ * ("O responsável retorna em 10 minutos") para a análise voltar ao texto todo.
+ */
+function soPedeConsentimento(text: string): boolean {
+  const frases = text.split(/(?<=[.!?\n])/).map((f) => f.trim()).filter(Boolean);
+  return frases.length > 0 && frases.every((f) =>
+    f.endsWith("?") &&
+    /^(?:(?:voce|vc)\s+)?(?:quer|gostaria|prefere|deseja|autoriza|posso|podemos)\b/.test(f) &&
+    /\b(?:encaminh|transfer|pass|fal|consult|verific|cham)\w*/.test(f) &&
+    !/\b(?:ja|vou|vamos|vai|vao|ira|irao|transferi|encaminhei|registrei|acabei)\b/.test(f) &&
+    !/\b(?:hoje|amanha|agora|logo|ate|minutos?|horas?|semana|dias?|\d+\s*h|\d{1,2}:\d{2})\b/.test(f) &&
+    !/\b(?:te|lhe)\s+(?:lig|retorn|respond|contat|procur|cham|d[ae])\w*|\bretorn\w*|\bentr\w*\s+em\s+contato/.test(f));
+}
+
+/**
  * True se a candidata promete envolver um humano/retaguarda. Determinístico,
  * conservador (spec §10.2). Vazio/whitespace = false.
  *
@@ -135,6 +152,7 @@ function escapeRegex(word: string): string {
 export function detectHumanPromise(body: string, extraHumanNames?: readonly string[]): boolean {
   if (body.trim() === "") return false;
   const text = normalize(body);
+  if (soPedeConsentimento(text)) return false;
   if (extraHumanNames === undefined || extraHumanNames.length === 0) {
     return PATTERNS.some((re) => re.test(text));
   }
