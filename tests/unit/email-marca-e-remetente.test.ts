@@ -13,6 +13,13 @@ import { NEUTROS_DE_SAIDA, type MarcaDeSaida } from "@/lib/branding/saida";
 import type { SmtpConfig } from "@/lib/email/config";
 import { buildInviteEmail } from "@/lib/email/templates/invite";
 
+// Estes casos medem remetente e classificação do transporte, com configuração
+// sintética do ambiente. A resolução banco→ambiente tem testes próprios; sem
+// esta fronteira de I/O o unit tentava consultar Supabase e expirava na rede.
+vi.mock("@/lib/instalacao/config", () => ({
+  valorDaInstalacao: async (chave: string) => ({ valor: process.env[chave] ?? null }),
+}));
+
 const MARCA: MarcaDeSaida = {
   nome: "Vendas Turbo",
   logoUrl: null,

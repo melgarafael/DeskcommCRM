@@ -1,3 +1,4 @@
+import { estruturaDeEmail } from "@/lib/email/templates/estrutura";
 /**
  * Convite de time, em PT-BR, sem React Email. Devolve subject/html/text.
  * Estilo inline apenas (compatibilidade com cliente de e-mail); zero asset
@@ -55,16 +56,7 @@ export function buildInviteEmail(opts: InviteEmailOptions): {
    * — o cliente de e-mail desenharia o ícone de imagem quebrada no topo do
    * primeiro e-mail que a pessoa recebe do sistema.
    */
-  const logo = opts.marca.logoUrl
-    ? `<p style="margin:0 0 24px"><img src="${escapeHtml(opts.marca.logoUrl)}" alt="${escapeHtml(marca)}" height="40" style="height:40px;width:auto;max-width:200px;border:0;display:block"></p>`
-    : "";
-
-  const html = `<!doctype html>
-<html lang="pt-BR">
-<body style="margin:0;padding:0;background:${NEUTROS_DE_SAIDA.fundo};font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:${NEUTROS_DE_SAIDA.texto}">
-  <div style="max-width:560px;margin:0 auto;padding:32px 24px">
-    ${logo}
-    <h1 style="font-size:22px;line-height:1.3;margin:0 0 16px;color:${NEUTROS_DE_SAIDA.texto}">
+  const html = estruturaDeEmail(opts.marca, `    <h1 style="font-size:22px;line-height:1.3;margin:0 0 16px;color:${NEUTROS_DE_SAIDA.texto}">
       Você foi convidado para a ${escapeHtml(opts.orgName)}
     </h1>
     <p style="margin:0 0 16px;font-size:15px;line-height:1.5">
@@ -72,20 +64,18 @@ export function buildInviteEmail(opts: InviteEmailOptions): {
       <strong>${escapeHtml(opts.role)}</strong> no ${escapeHtml(marca)}.
     </p>
     <p style="margin:24px 0">
-      <a href="${opts.acceptUrl}" style="display:inline-block;padding:12px 24px;background:${opts.marca.accent};color:${opts.marca.accentFg};border-radius:6px;text-decoration:none;font-weight:600">
+      <a href="${escapeHtml(opts.acceptUrl)}" style="display:inline-block;padding:12px 24px;background:${opts.marca.accent};color:${opts.marca.accentFg};border-radius:6px;text-decoration:none;font-weight:600">
         Aceitar convite
       </a>
     </p>
     <p style="margin:0 0 8px;font-size:13px;color:${NEUTROS_DE_SAIDA.suave}">
       Ou copie e cole este link no navegador:<br>
-      <span style="word-break:break-all;color:${opts.marca.accent}">${opts.acceptUrl}</span>
+      <span style="word-break:break-all;color:${NEUTROS_DE_SAIDA.texto}">${escapeHtml(opts.acceptUrl)}</span>
     </p>
     <p style="margin:24px 0 0;font-size:13px;color:${NEUTROS_DE_SAIDA.suave}">
       Este link expira em <strong>${expiresStr}</strong>. Se você não esperava este convite, pode ignorá-lo.
     </p>
-  </div>
-</body>
-</html>`;
+  `);
 
   const text = [
     `Você foi convidado para a ${opts.orgName} como ${opts.role} no ${marca}.`,

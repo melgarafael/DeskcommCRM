@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { EntrarComGoogle } from "@/components/auth/EntrarComGoogle";
 import { LoginForm } from "@/components/auth/LoginForm";
+import { verifyInviteToken } from "@/lib/auth/invite-token";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { createClient } from "@/lib/supabase/server";
 import { idiomaDoVisitante } from "@/lib/i18n/idiomaAnonimo";
@@ -15,6 +16,8 @@ export default async function LoginPage({
   searchParams: Promise<{ next?: string; reset?: string; error?: string }>;
 }) {
   const { next, reset, error } = await searchParams;
+  const invite = next?.match(/^\/team\/accept-invite\/([^/?#]+)$/)?.[1];
+  const convite = invite ? verifyInviteToken(invite) : null;
   // Fora da árvore de `app/app/layout.tsx` — sem `IdiomaProvider` do lado do
   // servidor (o cliente já tem o seu, montado em `app/(public)/layout.tsx`).
   // Quase nunca há sessão aqui (é a própria tela de entrar), mas resolve do
@@ -139,7 +142,7 @@ export default async function LoginPage({
           )}
         </div>
       )}
-      <LoginForm next={next} />
+      <LoginForm next={next} email={convite?.email} />
       <EntrarComGoogle next={next} />
       <div className="space-y-2 text-center text-sm">
         <p>
@@ -152,7 +155,10 @@ export default async function LoginPage({
         </p>
         <p className="text-muted-foreground">
           {t("Não tem conta?")}{" "}
-          <Link href="/signup" className="font-medium text-foreground underline underline-offset-4">
+          <Link
+            href={convite && invite ? `/signup?invite=${encodeURIComponent(invite)}` : "/signup"}
+            className="font-medium text-foreground underline underline-offset-4"
+          >
             {t("Criar conta")}
           </Link>
         </p>

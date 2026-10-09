@@ -11,7 +11,7 @@
  *   6. Token expirado → "Convite inválido ou expirado"
  *   7. Token adulterado (HMAC quebrado) → idem
  *   8. Email não corresponde: logado com OUTRA conta → "Email não corresponde"
- *   9. Não autenticado → CTA "Fazer login", não o formulário de aceite
+ *   9. Não autenticado → cadastro em destaque e login secundário
  *
  * Pré-req: npx tsx scripts/seed-e2e-invite.ts (o spec roda sozinho se faltar).
  * Contra o Supabase do env (local recomendado — precisa das migrations de RLS
@@ -324,7 +324,7 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     });
     await page.goto(`/team/accept-invite/${valid}`);
     await expect(page.getByRole("heading", { name: /Você foi convidado/i })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Fazer login/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Já tenho conta? Entrar", exact: true })).toBeVisible();
   });
 
   /**
@@ -350,7 +350,7 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     });
 
     await page.goto(`/team/accept-invite/${valid}`);
-    await page.getByRole("link", { name: /ainda não tenho conta/i }).click();
+    await page.getByRole("link", { name: "Criar minha conta", exact: true }).click();
 
     // O token viaja: é ele que faz a conta nova nascer amarrada a este convite
     // em vez de ganhar uma organização própria.

@@ -27,6 +27,9 @@
     "interface"
   ],
   "nodes": [
+    { "id": "authhook", "lane": "saida", "col": 10, "type": "service", "label": "POST /api/v1/webhooks/auth-email", "sublabel": "Standard Webhooks; convite HMAC + destinatário; marca por envio; recibo Redis" },
+    { "id": "catalogoauth", "lane": "saida", "col": 7, "type": "service", "label": "/email-templates/config", "sublabel": "13 modelos com a marca da instalação resolvida no banco" },
+    { "id": "sincronizarauth", "lane": "config", "col": 8, "type": "service", "label": "scripts/email/sincronizar-auth.py", "sublabel": "exportação ou aplicação explícita; backup antes, releitura depois; sem agendamento" },
     {
       "id": "installsh",
       "lane": "config",
@@ -110,6 +113,12 @@
     {"id": "manifestapp", "lane": "saida", "col": 10, "type": "frontend", "label": "manifest → aplicativo instalado", "sublabel": "marca pública da instalação; 192/512 PNG; leitura em runtime"}
   ],
   "edges": [
+    { "id": "e-auth-hook-in", "from": "gotrue", "to": "authhook", "label": "evento assinado; ativação opcional após prova" },
+    { "id": "e-auth-hook-brand", "from": "saida", "to": "authhook", "label": "marca atual da organização assinada ou da instalação" },
+    { "id": "e-auth-hook-out", "from": "authhook", "to": "resend", "label": "transporte SMTP/Resend e auditoria de resultado" },
+    { "id": "emailcatalogo1", "from": "saida", "to": "catalogoauth", "label": "marcaDaSaida(null)" },
+    { "id": "emailcatalogo2", "from": "catalogoauth", "to": "sincronizarauth", "label": "HTML + assuntos sem credenciais" },
+    { "id": "emailcatalogo3", "from": "sincronizarauth", "to": "gotrue", "label": "Management API, somente quando solicitado" },
     { "id": "e1", "from": "installsh", "to": "env", "label": "grava a marca no .env — e o arquivo é escrito com truncamento: chave que o script não grava some no update seguinte" },
     { "id": "e2", "from": "env", "to": "platformbranding", "label": "sementeDoAmbiente(): a 1ª leitura semeia a tabela e marca seeded_from_env" },
     { "id": "e3", "from": "env", "to": "resolver", "label": "camadaDoAmbiente() — a camada mais baixa da pilha, e a ÚNICA porta por onde um hex torto entra: lib/env.ts:201 não valida formato (o formulário e o CHECK barram os outros dois caminhos)" },

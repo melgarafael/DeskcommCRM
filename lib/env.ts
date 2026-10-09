@@ -120,6 +120,8 @@ const schema = z.object({
 
   // Cron / interno
   INTERNAL_SECRET: required("INTERNAL_SECRET"),
+  // Assinatura Standard Webhooks do Send Email Hook. Vazio mantém SMTP Auth atual.
+  AUTH_EMAIL_HOOK_SECRET: z.string().optional().default(""),
   /** Optional dedicated secret for cron endpoints (S-06.07 onwards). */
   INTERNAL_CRON_SECRET: z.string().optional().default(""),
   /**

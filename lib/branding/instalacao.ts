@@ -332,7 +332,15 @@ function avisarUmaVez(chave: string, mensagem: string, contexto: Record<string, 
  * novo sobre schema velho — o que acontece quando a imagem nova sobe antes de o
  * baseline ser aplicado. Ele degrada para o `.env` igual, com um aviso.
  */
-export async function marcaDaInstalacao(): Promise<LinhaDaMarca | null> {
+export async function marcaDaInstalacao(
+  opcoes: { semMemo?: boolean } = {},
+): Promise<LinhaDaMarca | null> {
+  // Saída enviada é irreversível: deve ler a marca atual, inclusive se outro
+  // processo a alterou. A fachada mantém o cache; envio não o lê nem o grava.
+  if (opcoes.semMemo) {
+    const lido = await lerOuSemear();
+    return lido === "erro" ? null : lido;
+  }
   const memoria = memoEmVigor();
   if (memoria && memoria.expiraEm > Date.now()) return memoria.linha;
 
