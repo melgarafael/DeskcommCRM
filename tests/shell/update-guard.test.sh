@@ -757,8 +757,16 @@ check "caminho feliz: a saída não fala em arquitetura nem em construção loca
 # dele também. A recuperação é a MESMA função de _common.sh, exercitada acima de
 # ponta a ponta pelo update.sh; aqui se prova que o install.sh a chama — e logo
 # depois do `up -d` que pode falhar, não em outro lugar qualquer.
-check "install.sh chama a recuperação depois de um up -d que pode falhar" \
-  bash -c "grep -A1 'if ! dc up -d; then' '$REPO_ROOT/hostgator-setup-kit/install.sh' | grep -q 'construir_aqui_e_subir'"
+#
+# A janela do grep era -A1 e virou -A6 na #2631: o portão `build_local_permitido`
+# entrou EXATAMENTE entre o `if ! dc up -d; then` e a chamada da recuperação, e
+# -A1 passou a apontar para o portão. A intenção da prova não mudou (a
+# recuperação fica no bloco do `up -d`); o que se ganhou é a segunda metade da
+# mesma régua: o portão vem ANTES de construir. O comportamento dos dois lados
+# — portão aberto e portão fechado — é provado de ponta a ponta em
+# tests/shell/install-portao-do-build.test.sh.
+check "install.sh consulta o portão build_local_permitido no mesmo bloco do up -d, antes de chamar a recuperação" \
+  bash -c "b=\"\$(grep -A6 'if ! dc up -d; then' '$REPO_ROOT/hostgator-setup-kit/install.sh')\"; printf '%s\n' \"\$b\" | grep -q build_local_permitido && printf '%s\n' \"\$b\" | grep -q construir_aqui_e_subir"
 
 echo "── 12b. Worker, scheduler e voz com image: + build:; o app SEM build:, de propósito (#1060)"
 # A parte boa medida no Compose fica: com `image:` + `build:` no mesmo bloco,

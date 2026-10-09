@@ -927,9 +927,10 @@ restaurar_servicos() {
 # que têm `build:`, o Compose reconstrói sozinho (medido, em qualquer falha de
 # pull) — e é construção barata; o pesado é este. Esta função NÃO decide se
 # pode construir: ela constrói. Quem decide é `build_local_permitido` (o portão
-# da #1955, mais abaixo), e só o update.sh o consulta antes de chamar esta
-# função; o install.sh a chama direto. O
-# desfecho visível antes era o pior possível — a atualização não acontecia, o
+# da #1955, mais abaixo), e os DOIS scripts do kit o consultam antes de chamar
+# esta função — o update.sh devolvendo a versão anterior, o install.sh parando
+# com a mensagem da instalação (#2631: ele a chamava direto, sem o portão).
+# O desfecho visível antes era o pior possível — a atualização não acontecia, o
 # script terminava como se tivesse dado certo e o dono só descobria pelo CRM
 # velho. Pelo botão "Atualizar" do site, nem isso: o agente roda sozinho no
 # cron e não há ninguém lendo a tela.
