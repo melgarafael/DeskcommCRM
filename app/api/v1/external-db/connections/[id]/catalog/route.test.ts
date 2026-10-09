@@ -74,6 +74,9 @@ describe("GET /connections/:id/catalog", () => {
     deps.role.mockResolvedValue({ ok: false, response: new Response(null, { status: 403 }) });
     const res = await GET(new NextRequest("http://localhost/x"), ctx);
     expect(res.status).toBe(403);
+    // O mock devolve 403 para qualquer papel: sem esta linha, trocar "admin" por
+    // "viewer" na rota passava verde (sabotado na triagem do #2634).
+    expect(deps.role).toHaveBeenCalledWith("admin", expect.anything());
     expect(deps.acesso).not.toHaveBeenCalled();
   });
 

@@ -200,7 +200,9 @@ import {
   carregarFontesQueProvamOferta,
   criarEvidenciasComerciaisDoTurno,
 } from '../guardrails/promise/evidencias-comerciais';
+import { criarRecuperadorDeEvidencias } from '../guardrails/promise/recuperar-evidencias';
 import { classifyPromise, memoizarPorCandidata } from '../guardrails/promise/semantic';
+import { montarContextoDaRevisao } from '../guardrails/promise/contexto-da-revisao';
 import { expectativaDeAtendimento } from '@/lib/escalacao/disponibilidade';
 import {
   montarBriefingDaPassagem,
@@ -238,10 +240,80 @@ import {
 } from './turno-ja-respondido';
 
 /**
+ * A descrição da ferramenta `request_human_handoff` nos DOIS lados da chave por
+ * assunto jurídico (#2097, #2156).
+ *
+ * A chave NÃO remove a ferramenta nem cria caminho novo: ela troca só o trecho
+ * que manda o modelo passar a conversa em "questão jurídica/financeira
+ * sensível". Com a chave desligada, sai SÓ o jurídico: a ferramenta existe com
+ * uma frase dizendo que assunto jurídico é o trabalho normal deste atendimento e
+ * não é, sozinho, motivo para passar a conversa — o modelo continua livre para
+ * passar por reclamação séria, questão financeira sensível, pedido da pessoa ou
+ * limite do que pode resolver.
+ *
+ * O que a chave NÃO toca, por decisão do mantenedor (condições 4 do desenho):
+ * `detectHumanHandoffRequest` (o pedido explícito de "quero falar com alguém")
+ * e `handoff_keywords` (a escolha de quem configura o agente) continuam sempre
+ * ligados.
+ *
+ * `true` devolve, BYTE A BYTE, a descrição de antes — é a garantia de que quem
+ * não mexer em nada não muda nada. O texto de um lado só existe uma vez: quem
+ * editar o rodapé altera os dois.
+ */
+export function descricaoDaFerramentaDePassagem(handoffLegalEnabled: boolean): string {
+  return (
+    'Passa a conversa para um ATENDENTE HUMANO imediatamente. Use quando o lead pedir para falar com ' +
+    'uma pessoa, quando a situação exigir alguém humano ' +
+    (handoffLegalEnabled
+      ? '(reclamação séria, questão jurídica/financeira sensível) '
+      : '(reclamação séria, questão financeira sensível; assunto jurídico é o trabalho normal ' +
+        'deste atendimento e não é, sozinho, motivo para passar a conversa) ') +
+    'ou quando você atingir o limite do que pode resolver. ' +
+    'AVISE O LEAD ANTES: mande uma mensagem dizendo que você vai chamar alguém da equipe e SÓ ENTÃO ' +
+    'chame esta ferramenta — depois dela você não consegue mais falar com ele. Se você não avisar, ' +
+    'o sistema manda um aviso padrão no seu lugar. Acionada a ferramenta, encerre o turno. ' +
+    'NUNCA diga ao lead que "já chamei alguém" ou "já passei para a equipe" sem ter chamado esta ' +
+    'ferramenta NO MESMO turno — a frase no passado não substitui a ação, e ninguém é avisado de ' +
+    'verdade. Preencha por_que, o_que_tentei e cliente_quer — quem assumir só vê o que você escrever ' +
+    'aqui.'
+  );
+}
+
+/**
+ * A TROCA da descrição, num ponto só, exercitável fora do turno.
+ *
+ * Chamada por `executarTurnoDoAgente` logo abaixo do ponto que REMOVE a
+ * ferramenta quando `handoff_tool_enabled` está desligado. Se a ferramenta não
+ * está mais no conjunto (chave irmã desligada), aqui não há o que trocar e a
+ * função devolve sem tocar em nada — a ausência é da irmã, não dela.
+ *
+ * `undefined` (fixture antiga que ainda não lê a coluna) conta como LIGADO:
+ * é o lado seguro e é o padrão da coluna.
+ */
+export function aplicaAChaveDeAssuntoJuridico(
+  rawTools: Record<string, unknown>,
+  handoffLegalEnabled: boolean | undefined,
+): void {
+  if (handoffLegalEnabled !== false) return;
+  const ferramenta = rawTools.request_human_handoff;
+  if (typeof ferramenta === 'object' && ferramenta !== null) {
+    rawTools.request_human_handoff = {
+      ...ferramenta,
+      description: descricaoDaFerramentaDePassagem(false),
+    };
+  }
+}
+
+/**
  * Superfície ESTÁTICA das tools do agente (description + inputSchema) — parte do
  * prefixo estável de cache (F2-17). Única fonte: o handler monta as tools reais
  * daqui (+ execute do closure) e `scripts/ops-count-prefix.ts` mede o prefixo
  * real sem precisar de um run. Nada volátil entra aqui, por construção.
+ *
+ * A descrição de `request_human_handoff` sai de
+ * `descricaoDaFerramentaDePassagem(true)` — valor de módulo, constante como o
+ * literal que estava aqui, e com UMA fonte só: a versão desligada da frase mora
+ * na mesma função, então os dois lados não podem divergir.
  */
 export const AGENT_TOOL_DEFS = {
   get_lead_context: {
@@ -357,16 +429,10 @@ export const AGENT_TOOL_DEFS = {
       .passthrough(),
   },
   request_human_handoff: {
-    description:
-      'Passa a conversa para um ATENDENTE HUMANO imediatamente. Use quando o lead pedir para falar com ' +
-      'uma pessoa, quando a situação exigir alguém humano (reclamação séria, questão jurídica/financeira ' +
-      'sensível) ou quando você atingir o limite do que pode resolver. ' +
-      'AVISE O LEAD ANTES: mande uma mensagem dizendo que você vai chamar alguém da equipe e SÓ ENTÃO ' +
-      'chame esta ferramenta — depois dela você não consegue mais falar com ele. Se você não avisar, ' +
-      'o sistema manda um aviso padrão no seu lugar. Acionada a ferramenta, encerre o turno. ' +
-      'NUNCA diga ao lead que "já chamei alguém" ou "já passei para a equipe" sem ter chamado esta ' +
-      'ferramenta NO MESMO turno — a frase no passado não substitui a ação, e ninguém é avisado de verdade. ' +
-      'Preencha por_que, o_que_tentei e cliente_quer — quem assumir só vê o que você escrever aqui.',
+    // Lado LIGADO da chave por assunto jurídico (#2156): o texto inteiro mora
+    // em `descricaoDaFerramentaDePassagem`, que também escreve o lado
+    // desligado — e é ela quem o handler usa quando a versão desliga a chave.
+    description: descricaoDaFerramentaDePassagem(true),
     // Schema LARGO para o SDK (o modelo vê o campo); a validação REAL é a whitelist .strict()
     // + guard de prototype pollution dentro de applyRequestHumanHandoff — campo extra/forjado
     // vira erro de ENSINO ao modelo, nunca exceção do SDK nem strip silencioso.
@@ -2744,13 +2810,19 @@ async function executarTurnoDoAgente(
     return [];
   });
   const evidenciasComerciais = criarEvidenciasComerciaisDoTurno(fontesQueProvamOferta);
+  const recuperarEvidencias = criarRecuperadorDeEvidencias(pool, {
+    tenantId,
+    fontes: fontesQueProvamOferta,
+    registrar: evidenciasComerciais.registrarConhecimento,
+    log: runLog,
+  });
   // Gate 5 da cadeia (F4-02/F4-08): closure do classificador semântico com tenant/lead/job da
   // ROW do job fechados dentro (regra dura nº 1) — resolvido pelo seam agnóstico. undefined =
   // camada off (gate no-op). CUSTO: uma chamada de modelo POR ENVIO quando ligada.
   //
   // Memo POR CORPO e por evidências, por turno (`memoizarPorCandidata`): os
   // fail-safes de vocabulário e de promessa re-rodam a cadeia com o MESMO texto.
-  const semanticClassifier = camadaLigada(
+  const classificadorMemoizado = camadaLigada(
     camadas.promessa_semantica,
     deps.knobs.promiseSemantic?.enabled === true,
   )
@@ -2761,16 +2833,24 @@ async function executarTurnoDoAgente(
           { tenantId, leadId: leadId || null, jobId: job?.id },
           {
             candidate,
-            commercialEvidence: evidenciasComerciais.ler(),
+            commercialEvidence: evidenciasComerciais.ler(candidate),
+            conversationContext: montarContextoDaRevisao(
+              effectiveContext.messages, effectivePrevious?.rolling_summary,
+              (deps.clock?.() ?? new Date()).toISOString(), fusoDaOrg,
+            ),
             ...argsAux(deps.knobs.promiseSemantic?.model),
           },
           { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },
         ),
         // As evidências crescem entre o veto e o reenvio; o veredito de antes
         // da consulta não vale para a mesma frase depois dela.
-        () => JSON.stringify(evidenciasComerciais.ler()),
+        () => evidenciasComerciais.contexto(),
       )
     : undefined;
+  const semanticClassifier = classificadorMemoizado === undefined ? undefined : async (candidate: string) => {
+    await recuperarEvidencias(candidate);
+    return classificadorMemoizado(candidate);
+  };
   // Conferência de fato (#2231): a TERCEIRA camada do before_send, depois da
   // F4-01/F4-02. A evidência é lida NA HORA (nasce no meio do turno) e a
   // chamada tem UMA requisição por turno fechada aqui: os re-runs dos
@@ -3988,6 +4068,17 @@ async function executarTurnoDoAgente(
   if (agentConfig !== null && !agentConfig.handoffToolEnabled) {
     delete rawTools.request_human_handoff;
   }
+
+  // #2156 — a chave por ASSUNTO JURÍDICO mora AO LADO da irmã que desliga a
+  // ferramenta, mas faz o contrário: não remove nada. A ferramenta continua
+  // no modelo e só a descrição troca pela que não manda passar por "questão
+  // jurídica" — a pessoa que pede "quero falar com alguém" e as palavras-chave
+  // que o dono escreveu continuam intocados (outros guardrails, outro fim).
+  // Com a chave ligada (ou ausente em fixture antiga) não há o que trocar:
+  // `AGENT_TOOL_DEFS` já carrega a descrição ligada. A lógica mora em
+  // `aplicaAChaveDeAssuntoJuridico` para o teste do turno exercitá-la fora do
+  // turno (tests/unit/chave-juridico-so-troca-a-descricao.test.ts).
+  aplicaAChaveDeAssuntoJuridico(rawTools, agentConfig?.handoffLegalEnabled);
 
   // Spec 15: snapshot mínimo do contexto disponível pro humano que for atender o
   // caso — campo de CONVENIÊNCIA pra UI, não load-bearing (nada aqui é relido pelo
