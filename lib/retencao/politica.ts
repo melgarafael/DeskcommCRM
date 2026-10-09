@@ -355,8 +355,10 @@ export const RETENCAO_CHECKPOINTS_DIAS_PISO = 30;
 /**
  * Teto de 36500 dias (100 anos) para todo knob que passa por
  * `interpretarRetencao`. Os dois do arquivo de webhooks
- * (`WEBHOOK_LOG_*_RETENTION_DAYS`, `diasDeRetencao` em `lib/env.ts`) NÃO passam
- * por aqui e seguem sem teto.
+ * (`WEBHOOK_LOG_*_RETENTION_DAYS`) NÃO passam por essa função, mas importam
+ * ESTA constante: `diasDeRetencao` em `lib/env.ts` reduz ao teto com aviso no
+ * boot, e `limiteEm` em `lib/channels/retencao-do-arquivo.ts` corta de novo,
+ * sem log (#2612). Um teto só, num lugar só.
  *
  * O piso impede apagar cedo demais; o teto impede é que o número chegue ao
  * banco. `AUDIT_LOG_RETENTION_DAYS=9999999` vira

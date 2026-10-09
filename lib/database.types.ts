@@ -10968,6 +10968,32 @@ export type Database = {
         Args: { p_organization_id: string }
         Returns: number
       }
+      fn_arquivos_da_organizacao: {
+        Args: {
+          p_apos_bucket?: string
+          p_apos_nome?: string
+          p_limite?: number
+          p_org: string
+        }
+        Returns: {
+          bucket_id: string
+          name: string
+        }[]
+      }
+      fn_logins_sem_vinculo: {
+        Args: { p_users: string[] }
+        Returns: string[]
+      }
+      fn_excluir_organizacao: {
+        Args: {
+          p_actor: string
+          p_confirmacao: string
+          p_motivo: string
+          p_org: string
+          p_request_id?: string
+        }
+        Returns: Json
+      }
       fn_suspender_organizacao: {
         Args: {
           p_ator: string

@@ -47,7 +47,15 @@ vi.mock("@/lib/supabase/admin", () => ({
         Promise.resolve(
           ehCarimbo
             ? { data: null, error: mocks.erroNoCarimbo }
-            : { data: tabela === "calendar_appointments" ? [compromisso] : null, error: null },
+            : {
+                data:
+                  tabela === "calendar_appointments"
+                    ? [compromisso]
+                    : tabela === "channel_sessions"
+                      ? [unico.channel_sessions]
+                      : null,
+                error: null,
+              },
         ).then(r);
       return c;
     },

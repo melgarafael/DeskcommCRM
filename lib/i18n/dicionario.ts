@@ -1952,6 +1952,15 @@ export const DICIONARIO: Traducoes = {
   Modelo: { es: "Modelo" },
   "Selecione um modelo": { es: "Selecciona un modelo" },
   "Digite o identificador do modelo": { es: "Escribe el identificador del modelo" },
+  "Conecte a assinatura do ChatGPT em IA › Credenciais para listar os modelos.": {
+    es: "Conecta la suscripción de ChatGPT en IA › Credenciales para listar los modelos.",
+  },
+  "Não consegui listar os modelos da assinatura do ChatGPT. A conta continua conectada; tente de novo ou reconecte-a em IA › Credenciais.": {
+    es: "No pude listar los modelos de la suscripción de ChatGPT. La cuenta sigue conectada; inténtalo de nuevo o reconéctala en IA › Credenciales.",
+  },
+  "Não consegui carregar a lista de modelos. Digite o identificador abaixo.": {
+    es: "No pude cargar la lista de modelos. Escribe el identificador abajo.",
+  },
   "Nenhum modelo disponível": { es: "Ningún modelo disponible" },
   "Nenhuma capacidade disponível ainda para esta jornada.": {
     es: "Todavía no hay capacidades disponibles para esta jornada.",
@@ -4973,6 +4982,48 @@ export const DICIONARIO: Traducoes = {
   "Tenant redigido — ação não disponível": { es: "Tenant anonimizado — acción no disponible" },
   "Suspender tenant": { es: "Suspender tenant" },
   "Reativar tenant": { es: "Reactivar tenant" },
+  // ─── Admin de plataforma: gestão de tenants (editar, excluir, e-mail de acesso) ───
+  "Tenant excluído.": { es: "Tenant eliminado." },
+  "Logins removidos": { es: "Accesos eliminados" },
+  "Logins mantidos (pertencem a outra empresa ou são referenciados)": { es: "Accesos conservados (pertenecen a otra empresa o están referenciados)" },
+  "Arquivos removidos": { es: "Archivos eliminados" },
+  "Integrações externas que não responderam": { es: "Integraciones externas que no respondieron" },
+  "A exclusão não foi concluída": { es: "La eliminación no se completó" },
+  "Excluir tenant definitivamente": { es: "Eliminar tenant definitivamente" },
+  "Esta ação é irreversível. Não há como recuperar o tenant depois.": { es: "Esta acción es irreversible. No hay forma de recuperar el tenant después." },
+  "Serão apagados": { es: "Se eliminarán" },
+  "vínculos de usuário": { es: "vínculos de usuario" },
+  "leads": { es: "leads" },
+  "e todos os demais dados de": { es: "y todos los demás datos de" },
+  "— arquivos, agentes, integrações e configurações. As sessões de WhatsApp são desconectadas.": { es: "— archivos, agentes, integraciones y configuraciones. Las sesiones de WhatsApp se desconectan." },
+  "Ficam guardados: o registro de auditoria da exclusão e o resumo dos pedidos LGPD atendidos. Logins que só pertenciam a este tenant são removidos; quem participa de outra empresa continua.": { es: "Se conservan: el registro de auditoría de la eliminación y el resumen de las solicitudes de protección de datos atendidas. Los accesos que solo pertenecían a este tenant se eliminan; quien participa en otra empresa continúa." },
+  "Motivo da exclusão": { es: "Motivo de la eliminación" },
+  "Ex.: contrato encerrado a pedido do cliente (mínimo 10 caracteres)": { es: "Ej.: contrato terminado a pedido del cliente (mínimo 10 caracteres)" },
+  "Para confirmar, digite o identificador do tenant": { es: "Para confirmar, escribe el identificador del tenant" },
+  "Excluir definitivamente": { es: "Eliminar definitivamente" },
+  "Editar dados do tenant": { es: "Editar datos del tenant" },
+  "Os mesmos dados que o administrador da empresa vê em Configurações › Empresa.": { es: "Los mismos datos que el administrador de la empresa ve en Configuración › Empresa." },
+  "Editar dados": { es: "Editar datos" },
+  "Excluir tenant": { es: "Eliminar tenant" },
+  "Para excluir um tenant, suspenda-o primeiro.": { es: "Para eliminar un tenant, suspéndelo primero." },
+  "Membros e e-mails de acesso": { es: "Miembros y correos de acceso" },
+  "Não foi possível carregar os membros.": { es: "No fue posible cargar los miembros." },
+  "Nenhum membro neste tenant.": { es: "Ningún miembro en este tenant." },
+  "(sem e-mail)": { es: "(sin correo)" },
+  "Dono": { es: "Dueño" },
+  "Admin da plataforma": { es: "Admin de la plataforma" },
+  "O e-mail de um administrador da plataforma só é trocado pelo próprio dono da conta.": { es: "El correo de un administrador de la plataforma solo lo cambia el propio dueño de la cuenta." },
+  "Quem perdeu o acesso a este tenant não tem o e-mail trocado por aqui: a empresa avisada seria uma em que a pessoa já não está.": { es: "A quien perdió el acceso a este tenant no se le cambia el correo por aquí: la empresa avisada sería una en la que la persona ya no está." },
+  "Alterar e-mail": { es: "Cambiar correo" },
+  "E-mail alterado.": { es: "Correo cambiado." },
+  "A pessoa já entra com o novo endereço, e a recuperação de senha vai para ele. A empresa foi avisada na Central.": { es: "La persona ya entra con la nueva dirección, y la recuperación de contraseña va a ella. La empresa fue avisada en la Central." },
+  "Não foi possível alterar o e-mail": { es: "No fue posible cambiar el correo" },
+  "Alterar e-mail de acesso": { es: "Cambiar correo de acceso" },
+  "O novo endereço passa a ser o login e o destino da recuperação de senha. Confirme que ele pertence mesmo a esta pessoa.": { es: "La nueva dirección pasa a ser el acceso y el destino de la recuperación de contraseña. Confirma que realmente pertenece a esta persona." },
+  "E-mail atual": { es: "Correo actual" },
+  "Novo e-mail": { es: "Nuevo correo" },
+  "Este já é o e-mail desta pessoa.": { es: "Este ya es el correo de esta persona." },
+  "Salvar e-mail": { es: "Guardar correo" },
   "Tenant redigido — ações de gestão não disponíveis.": {
     es: "Tenant anonimizado — acciones de gestión no disponibles.",
   },
@@ -8901,6 +8952,14 @@ export const DICIONARIO: Traducoes = {
   "Isso não tem volta: o funil e as etapas dele somem. Se ele já recebeu negócio, a exclusão é recusada e ele continua arquivado.": {
     es: "Esta acción no se puede deshacer: el embudo y sus etapas desaparecen. Si ya recibió negocios, no se puede eliminar y sigue archivado.",
   },
+  // #2559 — as duas recusas novas, ambas com `{nome}` por preencher: a rota
+  // traduz primeiro e só então cola o nome do funil (`t(x).replace("{nome}", …)`).
+  "Já existe um funil ativo chamado «{nome}». Renomeie um dos dois antes de tirar este funil do arquivo.": {
+    es: "Ya existe un embudo activo llamado «{nome}». Renombra uno de los dos antes de desarchivar este embudo.",
+  },
+  "«{nome}» é o funil de clientes: é para ele que vai o lead que já é cliente. Marque OUTRO funil como funil de clientes antes de arquivar este.": {
+    es: "«{nome}» es el embudo de clientes: es hacia él a donde va el lead que ya es cliente. Marca OTRO embudo como embudo de clientes antes de archivar este.",
+  },
   "Novo Lead": { es: "Nuevo Lead" },
   "Não consegui carregar este funil:": { es: "No pude cargar este embudo:" },
   "sem responsável.": { es: "sin responsable." },
@@ -10945,6 +11004,29 @@ export const DICIONARIO: Traducoes = {
       es: "La IA no respondió ni responderá sola a las conversaciones que llegaron durante la suspensión. Abre el Inbox y búscalas en las pestañas Cola y Automático.",
     },
   "Abrir o Inbox": { es: "Abrir el Inbox" },
+  "O e-mail de login de uma pessoa da equipe foi trocado": {
+    es: "Se cambió el correo de inicio de sesión de una persona del equipo",
+  },
+  "Confirme com a pessoa que ela reconhece a troca. Se não reconhece, fale com quem administra o servidor.":
+    {
+      es: "Confirma con la persona que reconoce el cambio. Si no lo reconoce, habla con quien administra el servidor.",
+    },
+  "Abrir a equipe": { es: "Abrir el equipo" },
+  "O e-mail de login da sua conta foi trocado": {
+    es: "Se cambió el correo de inicio de sesión de tu cuenta",
+  },
+  "O e-mail de login da sua conta foi trocado pelo administrador da plataforma em {data}.": {
+    es: "El administrador de la plataforma cambió el correo de inicio de sesión de tu cuenta el {data}.",
+  },
+  "Se você não reconhece a mudança, fale com o administrador da sua empresa.": {
+    es: "Si no reconoces el cambio, habla con el administrador de tu empresa.",
+  },
+  "Este endereço deixa de receber os e-mails de acesso desta conta.": {
+    es: "Esta dirección deja de recibir los correos de acceso de esta cuenta.",
+  },
+  "Suspensa por falta de pagamento: não pode ser excluída enquanto houver cobrança pendente.": {
+    es: "Suspendida por falta de pago: no se puede eliminar mientras haya un cobro pendiente.",
+  },
   // Diálogo de exclusão de canal (`frasesDoImpacto`): singular e plural.
   "chamada de voz": { es: "llamada de voz" },
   "chamadas de voz": { es: "llamadas de voz" },
@@ -13506,6 +13588,8 @@ export const DICIONARIO: Traducoes = {
   "Nenhuma linha retornada.": { es: "No se devolvió ninguna fila." },
   "Chave primária": { es: "Clave primaria" },
   "Ajustar largura da coluna": { es: "Ajustar ancho de la columna" },
+  "Ajustar largura da lista de conversas": { es: "Ajustar ancho de la lista de conversaciones" },
+  "Ajustar largura da ficha do contato": { es: "Ajustar ancho de la ficha del contacto" },
   "Arraste para ajustar a largura": { es: "Arrastra para ajustar el ancho" },
   "Ajustar altura da linha": { es: "Ajustar alto de la fila" },
   "Arraste para ajustar a altura": { es: "Arrastra para ajustar el alto" },
