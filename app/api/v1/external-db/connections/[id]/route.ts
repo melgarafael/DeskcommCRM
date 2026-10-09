@@ -42,7 +42,7 @@ const COLUNAS_SEGURAS =
  * menos as colunas calculadas.
  */
 const COLUNAS_DA_TABELA =
-  "id, organization_id, label, host, port, database_name, username, ssl_mode, enabled, max_rows, max_filters, max_response_bytes, customer_key_column, customer_key_kind, last_tested_at, last_test_ok, last_test_error, created_by, created_at, updated_at, source_mode";
+  "id, organization_id, label, host, port, database_name, username, ssl_mode, enabled, max_rows, max_filters, max_response_bytes, customer_key_column, customer_key_kind, last_tested_at, last_test_ok, last_test_error, created_by, created_at, updated_at, source_mode, db_type, last_test_aviso";
 
 type Ctx = { params: Promise<{ id: string }> };
 

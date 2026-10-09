@@ -110,6 +110,7 @@ describe("POST /api/v1/external-db/connections", () => {
     expect(selecionadas.join(",")).not.toContain("sources_count");
     expect(selecionadas.join(",")).toContain("id");
     expect(selecionadas.join(",")).toContain("source_mode");
+    expect(selecionadas.join(",")).toContain("db_type");
   });
 
   it("o corpo NÃO escolhe o modo: um source_mode mandado pelo cliente é recusado pelo contrato estrito", async () => {
