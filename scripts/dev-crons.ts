@@ -15,6 +15,7 @@ const PATHS = [
   "/api/v1/cron/prospecting",
   "/api/v1/cron/event-log-drain",
   "/api/v1/cron/followup-flow-worker",
+  "/api/v1/cron/case-task-reminders",
 ] as const;
 
 function requiredEnv(name: string): string {

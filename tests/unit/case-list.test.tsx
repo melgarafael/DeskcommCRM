@@ -1,24 +1,24 @@
-import { render, screen } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type * as UseCasesModule from "@/hooks/ai/useCases";
 
 const useCasesMock = vi.fn();
+const refetchMock = vi.fn();
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(),
+}));
 vi.mock("@/hooks/ai/useCases", async () => {
   const actual = await vi.importActual<typeof UseCasesModule>("@/hooks/ai/useCases");
   return { ...actual, useCases: (...args: unknown[]) => useCasesMock(...args) };
 });
-
+vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (text: string) => text }));
+vi.mock("@/hooks/i18n/useLocaleDeData", () => ({ useLocaleDeData: () => undefined }));
 // CaseDetail é testado à parte; aqui só a lista importa.
 vi.mock("@/app/app/ai/cases/_components/CaseDetail", () => ({
   CaseDetail: () => null,
 }));
 
 import { CaseList } from "@/app/app/ai/cases/_components/CaseList";
-
-function wrap(ui: React.ReactNode) {
-  return <QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>;
-}
 
 describe("CaseList", () => {
   it("renderiza os casos com o rótulo pt-br do status (nunca o enum cru)", () => {
@@ -53,7 +53,7 @@ describe("CaseList", () => {
       },
     });
 
-    render(wrap(<CaseList />));
+    render(<CaseList />);
 
     expect(screen.getByText("Cliente pede desconto acima do permitido")).toBeInTheDocument();
     expect(screen.getByText("Aguardando você")).toBeInTheDocument();
@@ -68,9 +68,26 @@ describe("CaseList", () => {
       data: { open_count: 0, cases: [] },
     });
 
-    render(wrap(<CaseList />));
+    render(<CaseList />);
 
     expect(screen.getByText("Nenhum caso aberto")).toBeInTheDocument();
     expect(screen.getByText(/quando a ia precisar de você/i)).toBeInTheDocument();
+  });
+
+  it("distingue erro de consulta de uma fila vazia e oferece retry", () => {
+    refetchMock.mockReset();
+    useCasesMock.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      refetch: refetchMock,
+    });
+
+    render(<CaseList />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Não foi possível carregar os casos");
+    expect(screen.queryByText("Nenhum caso aberto")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(refetchMock).toHaveBeenCalledOnce();
   });
 });

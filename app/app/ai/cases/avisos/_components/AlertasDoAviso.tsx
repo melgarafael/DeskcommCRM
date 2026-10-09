@@ -50,7 +50,7 @@ const CORPO_DO_ESTADO = {
   so_canal_oficial:
     "Seus números atuais só enviam mensagem para quem falou com você nas últimas 24 horas — isso não serve para um aviso interno. Conecte um número pelo QR code para usar este recurso.",
   sem_endereco_publico:
-    "O endereço público do sistema ainda não foi configurado, então o link do aviso não abriria nada. Peça a quem instalou para definir o endereço do seu domínio.",
+    "O endereço público ainda não foi configurado. Para trabalhar localmente, escolha “Sem link — resolver neste computador”. Para usar links, configure o endereço do domínio.",
   conexao_removida:
     "Como a conexão não existe mais, o aviso foi desligado sozinho. Escolha outra conexão abaixo e ligue de novo.",
   conexao_fora_do_ar:

@@ -37,6 +37,10 @@ function admin(casos: Array<Record<string, unknown>>, jaTemAviso: boolean, cap: 
                 cap.filtros.push({ col, val, op: "eq" });
                 return chain;
               },
+              is: (col: string, val: unknown) => {
+                cap.filtros.push({ col, val, op: "is" });
+                return chain;
+              },
               lt: (col: string, val: unknown) => {
                 cap.filtros.push({ col, val, op: "lt" });
                 return chain;
@@ -139,6 +143,9 @@ describe("case-stale-watcher", () => {
     await POST(req());
 
     expect(cap.filtros).toContainEqual({ col: "status", val: "awaiting_human", op: "eq" });
+    // A cadência curta atende todos os casos; este vigia continua sendo a
+    // retaguarda de 24h apenas para casos gerais.
+    expect(cap.filtros).toContainEqual({ col: "task_kind", val: null, op: "is" });
     // `updated_at`, não `opened_at`: qualquer mexida no caso conta como
     // "alguém encostou", e cobrar por idade absoluta avisaria de novo sobre um
     // caso que a equipe está tratando agora.

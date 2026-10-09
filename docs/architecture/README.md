@@ -1,5 +1,7 @@
 # Mapas de arquitetura
 
+O mapa `tarefas-de-pagamento.architecture.json` acompanha as ações humanas de pagamento, o envio com recibo e o relógio de lembretes compartilhado por todos os casos que aguardam a equipe (3/6/9 minutos por padrão). A verificação da implementação está registrada no plano de 04/10/2026 em `docs/superpowers/plans/`.
+
 ## Regra única deste diretório: o JSON é a FONTE; o HTML é DERIVADO
 
 Cada mapa tem um `*.json` (fonte) e pode ter um `*.html` (render).

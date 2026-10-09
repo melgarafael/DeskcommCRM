@@ -70,8 +70,62 @@ const FRASE_EXTRA_DO_TESTE = {
     "Este número mandou uma mensagem agora há pouco. O WhatsApp exige um intervalo entre elas — tente de novo em alguns segundos.",
 } as const;
 
-const RASCUNHO_VAZIO = { canal: "", telefone: "", rotulo: "", ligado: false };
+const RASCUNHO_VAZIO = {
+  canal: "",
+  telefone: "",
+  rotulo: "",
+  ligado: false,
+  sem_link: false,
+  repetir_lembretes_whatsapp: false,
+  minutos_lembrete_equipe: ["3", "6", "9"],
+};
 type Rascunho = typeof RASCUNHO_VAZIO;
+const MINUTOS_PADRAO = [3, 6, 9] as const;
+const MAX_MINUTOS_CONFIGURAVEIS = 10;
+
+type ErroDosMinutos = "quantidade" | "inteiro" | "limite" | "duplicado" | "ordem";
+
+function validarMinutos(entradas: string[]): {
+  valores: number[] | null;
+  erro: ErroDosMinutos | null;
+  indiceComErro: number | null;
+} {
+  if (entradas.length < 1 || entradas.length > MAX_MINUTOS_CONFIGURAVEIS) {
+    return { valores: null, erro: "quantidade", indiceComErro: null };
+  }
+
+  const valores: number[] = [];
+  for (const [indice, entrada] of entradas.entries()) {
+    if (entrada.trim() === "" || !Number.isInteger(Number(entrada))) {
+      return { valores: null, erro: "inteiro", indiceComErro: indice };
+    }
+    const valor = Number(entrada);
+    if (valor < 1 || valor > 1440) {
+      return { valores: null, erro: "limite", indiceComErro: indice };
+    }
+    if (valores.includes(valor)) {
+      return { valores: null, erro: "duplicado", indiceComErro: indice };
+    }
+    if (valores.length > 0 && valores[valores.length - 1]! >= valor) {
+      return { valores: null, erro: "ordem", indiceComErro: indice };
+    }
+    valores.push(valor);
+  }
+  return { valores, erro: null, indiceComErro: null };
+}
+
+function proximoMinuto(entradas: string[]): number {
+  const usados = new Set(
+    entradas.map(Number).filter((valor) => Number.isInteger(valor) && valor >= 1 && valor <= 1440),
+  );
+  const maior = Math.max(0, ...usados);
+  const sugerido = maior + 3;
+  if (sugerido <= 1440 && !usados.has(sugerido)) return sugerido;
+  for (let valor = 1; valor <= 1440; valor += 1) {
+    if (!usados.has(valor)) return valor;
+  }
+  return 1440;
+}
 
 function rascunhoDoEstado(estado: EstadoDoAviso | undefined): Rascunho {
   if (!estado?.config) return RASCUNHO_VAZIO;
@@ -80,12 +134,18 @@ function rascunhoDoEstado(estado: EstadoDoAviso | undefined): Rascunho {
     telefone: estado.config.telefone,
     rotulo: estado.config.rotulo ?? "",
     ligado: estado.config.ligado,
+    sem_link: estado.config.sem_link ?? false,
+    repetir_lembretes_whatsapp: estado.config.repetir_lembretes_whatsapp ?? false,
+    minutos_lembrete_equipe: (estado.config.minutos_lembrete_equipe ?? [...MINUTOS_PADRAO]).map(
+      String,
+    ),
   };
 }
 
 export function AvisoNoWhatsApp() {
   const t = useT();
-  const { data: estado, isLoading, error } = useAvisoDeCaso();
+  const consulta = useAvisoDeCaso();
+  const { data: estado, isLoading, error } = consulta;
 
   if (isLoading) {
     return (
@@ -121,16 +181,18 @@ export function AvisoNoWhatsApp() {
           pessoa está digitando não é atropelado por nenhuma re-consulta. */}
       <FormularioDoAviso key={estado.config?.atualizado_em ?? "sem-configuracao"} estado={estado} />
 
-      {/* F1 da revisão: o aviso sai na ABERTURA do caso e não se repete. Sem esta
-          frase, a equipe conclui que o sistema parou de avisar quando o cliente
-          responde — e passa a não confiar no que chega. */}
       <p className="text-xs text-muted-foreground">
         {t(
-          "O aviso sai quando o assistente abre o caso. Quando o cliente responde e o caso volta a esperar você, o aviso não se repete — acompanhe pela Central de alertas.",
+          "O aviso de abertura e os reforços são opções independentes. Os reforços valem enquanto qualquer caso aguarda a equipe.",
         )}
       </p>
 
-      <EntregasDoAviso entregas={estado.entregas} laco={estado.laco} />
+      <EntregasDoAviso
+        entregas={estado.entregas}
+        laco={estado.laco}
+        atualizando={consulta.isFetching}
+        aoAtualizar={() => void consulta.refetch()}
+      />
     </div>
   );
 }
@@ -150,25 +212,16 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
 
   const oferecidas = estado.conexoes.filter((c) => c.aceitaMensagemLivre);
   const telefoneOk = telefoneDeAvisoValido(rascunho.telefone);
-  const podeSalvar = rascunho.canal !== "" && telefoneOk && !salvar.isPending;
-  /**
-   * O switch, e por que ele NÃO é `estado.pode_ligar` sozinho nem um `||` com o
-   * rascunho.
-   *
-   * `pode_ligar` responde sobre o que está SALVO; o rascunho é o que a pessoa
-   * está digitando agora, e ela precisa conseguir ligar junto com a primeira
-   * gravação. Mas as duas condições não são alternativas: um `||` destravaria o
-   * switch assim que houvesse conexão e número **mesmo sem endereço público** —
-   * e aí o aviso nasceria ligado com um link que não abre nada, que é
-   * exatamente o que o estado bloqueante existe para impedir.
-   *
-   * Então: o veto do servidor (endereço público) vale SEMPRE, e sobre ele o
-   * rascunho precisa ter uma conexão que serve e um número completo.
-   */
+  const minutosValidados = validarMinutos(rascunho.minutos_lembrete_equipe);
+  const podeSalvar =
+    rascunho.canal !== "" && telefoneOk && minutosValidados.valores !== null && !salvar.isPending;
+  /** A URL é obrigatória para links; o modo local precisa só de canal e destino. */
   const semEnderecoPublico = estado.avisos.some((a) => a.codigo === "sem_endereco_publico");
   const canalServe = oferecidas.some((c) => c.id === rascunho.canal);
-  const podeLigar = !semEnderecoPublico && canalServe && telefoneOk;
+  const podeLigar = (!semEnderecoPublico || rascunho.sem_link) && canalServe && telefoneOk;
   const jaSalvo = Boolean(estado.config?.channel_session_id);
+  const alteracoesPendentes = JSON.stringify(rascunho) !== JSON.stringify(rascunhoDoEstado(estado));
+  const podeTestar = jaSalvo && !alteracoesPendentes && !salvar.isPending && !testar.isPending;
 
   async function enviar(confirma: boolean) {
     try {
@@ -177,6 +230,9 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
         telefone: rascunho.telefone,
         rotulo: rascunho.rotulo.trim() === "" ? null : rascunho.rotulo.trim(),
         ligado: rascunho.ligado,
+        sem_link: rascunho.sem_link,
+        repetir_lembretes_whatsapp: rascunho.repetir_lembretes_whatsapp,
+        minutos_lembrete_equipe: minutosValidados.valores ?? [...MINUTOS_PADRAO],
         ...(confirma ? { confirma_contato: true } : {}),
       });
       setConfirmarContato(null);
@@ -276,6 +332,133 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
         />
       </div>
 
+      <section
+        className="flex flex-col gap-3 rounded-lg border p-3"
+        aria-labelledby="cadencia-titulo"
+      >
+        <div className="space-y-1">
+          <h2 id="cadencia-titulo" className="text-sm font-medium">
+            {t("Minutos dos alertas")}
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "A Central cria lembretes nos minutos configurados desde que o caso passa a aguardar a equipe. Enquanto aguarda resposta do cliente, o relógio fica pausado. Com “Reforçar lembretes no WhatsApp” ativo, cada marco também chega à equipe por WhatsApp. Configure de 1 a 10 minutos distintos, em ordem crescente, entre 1 minuto e 24 horas.",
+            )}
+          </p>
+        </div>
+        <ol className="flex flex-col gap-2" data-testid="minutos-lembrete-editor">
+          {rascunho.minutos_lembrete_equipe.map((minuto, indice) => {
+            const inputId = `minutos-lembrete-${indice}`;
+            const indiceInvalido = minutosValidados.indiceComErro === indice;
+            return (
+              <li key={inputId} className="flex items-end gap-2">
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor={inputId}>
+                    {t("Lembrete")} {indice + 1} ({t("minutos desde o início da espera")})
+                  </Label>
+                  <Input
+                    id={inputId}
+                    type="number"
+                    min={1}
+                    max={1440}
+                    step={1}
+                    inputMode="numeric"
+                    className="w-36"
+                    value={minuto}
+                    aria-invalid={indiceInvalido}
+                    aria-describedby={
+                      minutosValidados.erro ? "erro-minutos-lembrete" : "dica-minutos-lembrete"
+                    }
+                    onChange={(e) =>
+                      setRascunho((r) => ({
+                        ...r,
+                        minutos_lembrete_equipe: r.minutos_lembrete_equipe.map((valor, i) =>
+                          i === indice ? e.target.value : valor,
+                        ),
+                      }))
+                    }
+                    data-testid={`minutos-lembrete-${indice}`}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={rascunho.minutos_lembrete_equipe.length <= 1}
+                  aria-label={`${t("Remover lembrete")} ${indice + 1}`}
+                  onClick={() =>
+                    setRascunho((r) => ({
+                      ...r,
+                      minutos_lembrete_equipe: r.minutos_lembrete_equipe.filter(
+                        (_, i) => i !== indice,
+                      ),
+                    }))
+                  }
+                  data-testid={`remover-minuto-${indice}`}
+                >
+                  {t("Remover")}
+                </Button>
+              </li>
+            );
+          })}
+        </ol>
+        {minutosValidados.erro ? (
+          <p id="erro-minutos-lembrete" role="alert" className="text-xs text-destructive">
+            {t(
+              {
+                quantidade: "Mantenha de 1 a 10 lembretes.",
+                inteiro: "Informe um número inteiro de minutos em cada lembrete.",
+                limite: "Cada lembrete deve ficar entre 1 e 1440 minutos.",
+                duplicado: "Cada minuto pode aparecer uma vez só.",
+                ordem: "Coloque os minutos em ordem crescente.",
+              }[minutosValidados.erro],
+            )}
+          </p>
+        ) : (
+          <p id="dica-minutos-lembrete" className="text-xs text-muted-foreground">
+            {t("A Central mantém o alerta pendente até a equipe resolver o caso.")}
+          </p>
+        )}
+        <div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={rascunho.minutos_lembrete_equipe.length >= MAX_MINUTOS_CONFIGURAVEIS}
+            onClick={() =>
+              setRascunho((r) => {
+                const atual = r.minutos_lembrete_equipe;
+                const novo = String(proximoMinuto(atual));
+                const todosNumericos = atual.every((valor) => /^\d+$/.test(valor));
+                const minutos = [...atual, novo];
+                if (todosNumericos) minutos.sort((a, b) => Number(a) - Number(b));
+                return { ...r, minutos_lembrete_equipe: minutos };
+              })
+            }
+            data-testid="adicionar-minuto-lembrete"
+          >
+            {t("Adicionar minuto")}
+          </Button>
+        </div>
+      </section>
+
+      <div className="flex items-start gap-3 rounded-lg border p-3">
+        <Switch
+          id="sem-link"
+          checked={rascunho.sem_link}
+          onCheckedChange={(sem_link) =>
+            setRascunho((r) => ({ ...r, sem_link, ligado: sem_link ? r.ligado : false }))
+          }
+          aria-label={t("Sem link — resolver neste computador")}
+        />
+        <div>
+          <Label htmlFor="sem-link">{t("Sem link — resolver neste computador")}</Label>
+          <p className="text-xs text-muted-foreground">
+            {t("O aviso informa a pendência. Abra Casos neste computador para responder.")}
+          </p>
+        </div>
+      </div>
+
       <div className="flex items-start gap-3 rounded-lg border p-3">
         <Switch
           id="ligado"
@@ -291,6 +474,25 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
           <p className="text-xs text-muted-foreground">
             {t(
               "O aviso sai na hora, inclusive fora do horário comercial — sua equipe não é cliente.",
+            )}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-start gap-3 rounded-lg border p-3">
+        <Switch
+          id="repetir-lembretes-whatsapp"
+          checked={rascunho.repetir_lembretes_whatsapp}
+          onCheckedChange={(v) => setRascunho((r) => ({ ...r, repetir_lembretes_whatsapp: v }))}
+          aria-label={t("Reforçar lembretes no WhatsApp")}
+        />
+        <div className="space-y-1">
+          <Label htmlFor="repetir-lembretes-whatsapp" className="text-sm font-medium">
+            {t("Reforçar lembretes no WhatsApp")}
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Enviar reforços à equipe nos minutos configurados acima enquanto um caso aguarda ação humana. O relógio pausa enquanto aguarda resposta do cliente; se atrasar, envia no máximo o marco atual, sem rajada.",
             )}
           </p>
         </div>
@@ -322,11 +524,7 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
         <Button onClick={() => void enviar(false)} disabled={!podeSalvar}>
           {salvar.isPending ? t("Salvando…") : t("Salvar")}
         </Button>
-        <Button
-          variant="outline"
-          onClick={() => void mandarTeste()}
-          disabled={!jaSalvo || testar.isPending}
-        >
+        <Button variant="outline" onClick={() => void mandarTeste()} disabled={!podeTestar}>
           <PaperPlaneTilt className="mr-2 h-4 w-4" />
           {testar.isPending ? t("Enviando…") : t("Enviar aviso de teste")}
         </Button>

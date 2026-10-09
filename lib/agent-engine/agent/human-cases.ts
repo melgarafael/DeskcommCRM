@@ -28,15 +28,18 @@ import { TIPOS_DE_CASO, type TipoDeCaso } from "@/lib/ai/case-copy";
  * `agent_cases.lead_id` fica NULL sempre — o caso ancora em `conversation_id`
  * (CaseIds não carrega o contact_id: nada aqui o lê).
  */
-import { z } from 'zod';
-import type pg from 'pg';
+import { z } from "zod";
+import type pg from "pg";
 
-import type { Queryable } from '../queue/queue';
+import type { Queryable } from "../queue/queue";
+import { caseTaskKindSchema, CaseTaskConflict, type CaseTaskKind } from "./case-task-schema";
+import { openPaymentTask } from "./case-task";
 
 export interface CaseIds {
   tenantId: string;
   conversationId: string;
   agentId?: string | null;
+  pipelineIds?: readonly string[];
 }
 
 /**
@@ -49,18 +52,18 @@ export interface CaseIds {
  * exatamente um desses).
  */
 export type CaseEventKind =
-  | 'opened'
-  | 'human_replied'
-  | 'lead_asked'
-  | 'lead_provided'
-  | 'lead_unresponsive'
-  | 'resolved'
-  | 'escalated'
-  | 'cancelled'
-  | 'agent_noted'
+  | "opened"
+  | "human_replied"
+  | "lead_asked"
+  | "lead_provided"
+  | "lead_unresponsive"
+  | "resolved"
+  | "escalated"
+  | "cancelled"
+  | "agent_noted"
   // (migration 0292) A equipe foi avisada no WhatsApp de que este caso abriu.
   // Escrito pelo handler do aviso DEPOIS do envio, com `actor_kind='system'`.
-  | 'alert_sent';
+  | "alert_sent";
 
 /**
  * A tupla que o `z.enum` exige, derivada de `TIPOS_DE_CASO` — a fonte única do
@@ -81,6 +84,11 @@ export const openHumanCaseInputSchema = z.strictObject({
    * de triagem — nunca pode ser motivo para o pedido do cliente não chegar.
    */
   kind: z.enum(TIPOS_DE_CASO_KEYS).optional(),
+  task_kind: caseTaskKindSchema
+    .optional()
+    .describe(
+      "payment_details: equipe fornece dados oficiais; payment_review: cliente informou pagamento e equipe confere. Mantém a pendência existente da mesma compra.",
+    ),
 });
 export type OpenHumanCaseInput = z.infer<typeof openHumanCaseInputSchema>;
 
@@ -91,7 +99,7 @@ export const provideCaseUpdateInputSchema = z.strictObject({
 });
 export type ProvideCaseUpdateInput = z.infer<typeof provideCaseUpdateInputSchema>;
 
-const OPEN_STATUSES = ['awaiting_human', 'awaiting_lead'] as const;
+const OPEN_STATUSES = ["awaiting_human", "awaiting_lead"] as const;
 
 /**
  * True se há um caso 'awaiting_human'|'awaiting_lead' aberto para a conversa.
@@ -136,15 +144,16 @@ export async function getCaseAwaitingLead(
   conversationId: string,
 ): Promise<CaseAwaitingLead | null> {
   const { rows } = await db.query<CaseAwaitingLead>(
-    `select c.id, e.body as ask
+    `select c.id, case when c.task_kind is not null then coalesce(c.task_payload->>'next_step',c.task_payload->>'approved_text') else e.body end as ask
        from agent_cases c
-       join lateral (
+       left join lateral (
          select body from agent_case_events
           where case_id = c.id and kind = 'human_replied' and human_action = 'need_lead_info'
           order by created_at desc
           limit 1
        ) e on true
       where c.organization_id = $1 and c.conversation_id = $2 and c.status = 'awaiting_lead'
+        and (c.task_kind is not null or e.body is not null)
       limit 1`,
     [tenantId, conversationId],
   );
@@ -152,8 +161,7 @@ export async function getCaseAwaitingLead(
 }
 
 export type OpenCaseResult =
-  | { ok: true; caseId: string }
-  | { ok: false; error: { code: string; message: string } };
+  { ok: true; caseId: string } | { ok: false; error: { code: string; message: string } };
 
 /**
  * Abre o caso: INSERT agent_cases(status='awaiting_human') + INSERT
@@ -173,19 +181,33 @@ export async function openCase(
     summary: string;
     blocker: string;
     contextSnapshot?: Record<string, unknown>;
-    source?: 'agent' | 'guardrail_autofallback';
+    source?: "agent" | "guardrail_autofallback";
     kind?: string;
+    task_kind?: CaseTaskKind;
   },
 ): Promise<OpenCaseResult> {
   await guardServiceEffect();
-  const source = input.source ?? 'agent';
-  const actorKind = source === 'agent' ? 'agent' : 'system';
+  if (input.task_kind) {
+    try {
+      return {
+        ok: true,
+        caseId: await openPaymentTask(db, ids, { ...input, task_kind: input.task_kind }),
+      };
+    } catch (error) {
+      if (error instanceof CaseTaskConflict)
+        return { ok: false, error: { code: error.code, message: error.message } };
+      throw error;
+    }
+  }
+  const source = input.source ?? "agent";
+  const actorKind = source === "agent" ? "agent" : "system";
 
   const { rows } = await db.query<{ case_id: string }>(
     `with new_case as (
        insert into agent_cases
-         (organization_id, conversation_id, agent_id, title, summary, blocker, context_snapshot, source, kind)
-       select $1, $2, $3, $4, $5, $6, $7::jsonb, $8, $11
+         (organization_id, conversation_id, agent_id, title, summary, blocker, context_snapshot, source, kind,
+          wait_started_at, wait_generation)
+       select $1, $2, $3, $4, $5, $6, $7::jsonb, $8, $11, now(), 1
         where not exists (
           select 1 from agent_cases
            where organization_id = $1 and conversation_id = $2
@@ -204,13 +226,16 @@ export async function openCase(
       input.title,
       input.summary,
       input.blocker,
-      JSON.stringify({ ...(input.contextSnapshot ?? {}), ...(currentExecutionBoundary() ? { service_boundary: currentExecutionBoundary() } : {}) }),
+      JSON.stringify({
+        ...(input.contextSnapshot ?? {}),
+        ...(currentExecutionBoundary() ? { service_boundary: currentExecutionBoundary() } : {}),
+      }),
       source,
       OPEN_STATUSES,
       actorKind,
       // O default mora aqui e no banco: se um caminho novo esquecer de passar, a
       // linha nasce classificada como 'outro' em vez de nula.
-      input.kind ?? 'outro',
+      input.kind ?? "outro",
     ],
   );
 
@@ -219,15 +244,17 @@ export async function openCase(
     return {
       ok: false,
       error: {
-        code: 'case_already_open',
-        message: 'já existe um caso humano aberto para esta conversa; aguarde a resposta do atendente antes de abrir outro.',
+        code: "case_already_open",
+        message:
+          "já existe um caso humano aberto para esta conversa; aguarde a resposta do atendente antes de abrir outro.",
       },
     };
   }
   return { ok: true, caseId };
 }
 
-export type ProvideCaseUpdateResult = { ok: true } | { ok: false; error: { code: string; message: string } };
+export type ProvideCaseUpdateResult =
+  { ok: true } | { ok: false; error: { code: string; message: string } };
 
 /**
  * awaiting_lead -> awaiting_human (o lead respondeu o que o humano pediu) +
@@ -247,7 +274,11 @@ export async function provideCaseUpdate(
   const { rows } = await db.query<{ case_id: string }>(
     `with updated as (
        update agent_cases
-          set status = 'awaiting_human', updated_at = now()
+          set status = 'awaiting_human', updated_at = now(),
+              task_state = case when task_kind is not null then 'awaiting_human' else task_state end,
+              wait_started_at = now(),
+              wait_generation = coalesce(wait_generation, 0) + 1,
+              revision = revision + case when task_kind is not null then 1 else 0 end
         where organization_id = $1 and id = $2 and status = 'awaiting_lead'
           and conversation_id = $4
         returning id
@@ -263,8 +294,9 @@ export async function provideCaseUpdate(
     return {
       ok: false,
       error: {
-        code: 'invalid_case_state',
-        message: 'o caso não está aguardando informação do lead (awaiting_lead); nada foi alterado.',
+        code: "invalid_case_state",
+        message:
+          "o caso não está aguardando informação do lead (awaiting_lead); nada foi alterado.",
       },
     };
   }
@@ -398,16 +430,16 @@ export async function registrarNotaDoAgente(
 }
 
 /** Como um chamado pode terminar pela mão do agente. */
-export type DesfechoDoChamado = 'resolvido' | 'sem_necessidade';
+export type DesfechoDoChamado = "resolvido" | "sem_necessidade";
 
 const STATUS_DO_DESFECHO: Record<DesfechoDoChamado, string> = {
-  resolvido: 'resolved',
-  sem_necessidade: 'cancelled',
+  resolvido: "resolved",
+  sem_necessidade: "cancelled",
 };
 
 const EVENTO_DO_DESFECHO: Record<DesfechoDoChamado, CaseEventKind> = {
-  resolvido: 'resolved',
-  sem_necessidade: 'cancelled',
+  resolvido: "resolved",
+  sem_necessidade: "cancelled",
 };
 
 /**
@@ -434,7 +466,7 @@ export async function encerrarChamadoPeloAgente(
     `with updated as (
        update agent_cases
           set status = $3, closed_at = now(), updated_at = now()
-        where organization_id = $1 and id = $2 and status = any($6::text[])
+        where organization_id = $1 and id = $2 and status = any($6::text[]) and task_kind is null
         returning id
      )
      insert into agent_case_events (organization_id, case_id, kind, actor_kind, body)
@@ -454,6 +486,10 @@ export async function encerrarChamadoPeloAgente(
 }
 
 /** Resumo curto do caso para o inbox de escalação (mesmo espírito de buildHandoffSummary). */
-export function buildCaseSummary(caseRow: { title: string; summary: string; blocker: string }): string {
+export function buildCaseSummary(caseRow: {
+  title: string;
+  summary: string;
+  blocker: string;
+}): string {
   return `${caseRow.title}\n${caseRow.summary}\nBloqueio: ${caseRow.blocker}`;
 }

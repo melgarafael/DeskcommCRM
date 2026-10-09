@@ -1529,92 +1529,56 @@ export type Database = {
           },
         ]
       }
-      agent_cases: {
-        Row: {
-          agent_id: string | null
-          blocker: string
-          closed_at: string | null
-          context_snapshot: Json
-          conversation_id: string
-          created_at: string
-          followup_attempts: number
-          id: string
-          lead_id: string | null
-          opened_at: string
-          organization_id: string
-          source: string
-          status: string
-          summary: string
-          title: string
-          updated_at: string
-        }
-        Insert: {
-          agent_id?: string | null
-          blocker: string
-          closed_at?: string | null
-          context_snapshot?: Json
-          conversation_id: string
-          created_at?: string
-          followup_attempts?: number
-          id?: string
-          lead_id?: string | null
-          opened_at?: string
-          organization_id: string
-          source?: string
-          status?: string
-          summary: string
-          title: string
-          updated_at?: string
-        }
-        Update: {
-          agent_id?: string | null
-          blocker?: string
-          closed_at?: string | null
-          context_snapshot?: Json
-          conversation_id?: string
-          created_at?: string
-          followup_attempts?: number
-          id?: string
-          lead_id?: string | null
-          opened_at?: string
-          organization_id?: string
-          source?: string
-          status?: string
-          summary?: string
-          title?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "agent_cases_agent_id_fkey"
-            columns: ["agent_id"]
-            isOneToOne: false
-            referencedRelation: "ai_agents"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "agent_cases_conversation_id_fkey"
-            columns: ["conversation_id"]
-            isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "agent_cases_lead_id_fkey"
-            columns: ["lead_id"]
-            isOneToOne: false
-            referencedRelation: "crm_leads"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "agent_cases_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
+      "agent_cases": {
+                  Row: {
+                    "agent_id": string | null,"assignee_user_id": string | null,"blocker": string,"closed_at": string | null,"context_snapshot": NonNullable<Json>,"conversation_id": string,"created_at": string,"decision_event_id": string | null,"delivery_job_id": string | null,"followup_attempts": number,"id": string,"kind": string,"lead_id": string | null,"opened_at": string,"organization_id": string,"revision": number,"source": string,"status": string,"summary": string,"task_kind": string | null,"task_payload": NonNullable<Json>,"task_state": string | null,"title": string,"updated_at": string,"wait_generation": number,"wait_started_at": string | null
+                  }
+                  Insert: {
+                    "agent_id"?: string | null,"assignee_user_id"?: string | null,"blocker": string,"closed_at"?: string | null,"context_snapshot"?: NonNullable<Json>,"conversation_id": string,"created_at"?: string,"decision_event_id"?: string | null,"delivery_job_id"?: string | null,"followup_attempts"?: number,"id"?: string,"kind"?: string,"lead_id"?: string | null,"opened_at"?: string,"organization_id": string,"revision"?: number,"source"?: string,"status"?: string,"summary": string,"task_kind"?: string | null,"task_payload"?: NonNullable<Json>,"task_state"?: string | null,"title": string,"updated_at"?: string,"wait_generation"?: number,"wait_started_at"?: string | null
+                  }
+                  Update: {
+                    "agent_id"?: string | null,"assignee_user_id"?: string | null,"blocker"?: string,"closed_at"?: string | null,"context_snapshot"?: NonNullable<Json>,"conversation_id"?: string,"created_at"?: string,"decision_event_id"?: string | null,"delivery_job_id"?: string | null,"followup_attempts"?: number,"id"?: string,"kind"?: string,"lead_id"?: string | null,"opened_at"?: string,"organization_id"?: string,"revision"?: number,"source"?: string,"status"?: string,"summary"?: string,"task_kind"?: string | null,"task_payload"?: NonNullable<Json>,"task_state"?: string | null,"title"?: string,"updated_at"?: string,"wait_generation"?: number,"wait_started_at"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "agent_cases_agent_id_fkey"
+      columns: ["agent_id"]
+isOneToOne: false
+      referencedRelation: "ai_agents"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "agent_cases_conversation_id_fkey"
+      columns: ["conversation_id"]
+isOneToOne: false
+      referencedRelation: "conversations"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "agent_cases_decision_event_id_fkey"
+      columns: ["decision_event_id"]
+isOneToOne: false
+      referencedRelation: "agent_case_events"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "agent_cases_delivery_job_id_fkey"
+      columns: ["delivery_job_id"]
+isOneToOne: false
+      referencedRelation: "job_queue"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "agent_cases_lead_id_fkey"
+      columns: ["lead_id"]
+isOneToOne: false
+      referencedRelation: "crm_leads"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "agent_cases_organization_id_fkey"
+      columns: ["organization_id"]
+isOneToOne: false
+      referencedRelation: "organizations"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },
       agent_inbox_items: {
         Row: {
           appointment_revision: number | null
@@ -10218,7 +10182,67 @@ export type Database = {
           }
         ]
       }
+
+"case_task_reminders": {
+                  Row: {
+                    "case_id": string,"inbox_id": string | null,"minute": number,"organization_id": string,"recorded_at": string,"result": string,"wait_generation": number
+                  }
+                  Insert: {
+                    "case_id": string,"inbox_id"?: string | null,"minute": number,"organization_id": string,"recorded_at"?: string,"result": string,"wait_generation": number
+                  }
+                  Update: {
+                    "case_id"?: string,"inbox_id"?: string | null,"minute"?: number,"organization_id"?: string,"recorded_at"?: string,"result"?: string,"wait_generation"?: number
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "case_task_reminders_case_id_organization_id_fkey"
+      columns: ["case_id","organization_id"]
+isOneToOne: false
+      referencedRelation: "agent_cases"
+      referencedColumns: ["id","organization_id"]
+    },{
+      foreignKeyName: "case_task_reminders_inbox_id_fkey"
+      columns: ["inbox_id"]
+isOneToOne: false
+      referencedRelation: "agent_inbox_items"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "case_task_reminders_organization_id_fkey"
+      columns: ["organization_id"]
+isOneToOne: false
+      referencedRelation: "organizations"
+      referencedColumns: ["id"]
     }
+                  ]
+                },
+
+"config_aviso_de_caso": {
+                  Row: {
+                    "atualizado_por": string | null,"channel_session_id": string | null,"created_at": string,"criado_por": string | null,"destino_jid": string | null,"ligado": boolean,"mensagens_ignoradas": number,"organization_id": string,"rotulo": string | null,"sem_link": boolean,"telefone_destino": string,"ultima_mensagem_ignorada_em": string | null,"updated_at": string
+                  }
+                  Insert: {
+                    "atualizado_por"?: string | null,"channel_session_id"?: string | null,"created_at"?: string,"criado_por"?: string | null,"destino_jid"?: string | null,"ligado"?: boolean,"mensagens_ignoradas"?: number,"organization_id": string,"rotulo"?: string | null,"sem_link"?: boolean,"telefone_destino": string,"ultima_mensagem_ignorada_em"?: string | null,"updated_at"?: string
+                  }
+                  Update: {
+                    "atualizado_por"?: string | null,"channel_session_id"?: string | null,"created_at"?: string,"criado_por"?: string | null,"destino_jid"?: string | null,"ligado"?: boolean,"mensagens_ignoradas"?: number,"organization_id"?: string,"rotulo"?: string | null,"sem_link"?: boolean,"telefone_destino"?: string,"ultima_mensagem_ignorada_em"?: string | null,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "config_aviso_de_caso_channel_session_id_fkey"
+      columns: ["channel_session_id"]
+isOneToOne: false
+      referencedRelation: "channel_sessions"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "config_aviso_de_caso_organization_id_fkey"
+      columns: ["organization_id"]
+isOneToOne: true
+      referencedRelation: "organizations"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },
+}
     Views: {
       calendar_google_reconcilable_appointments: {
         Row: Database["public"]["Tables"]["calendar_appointments"]["Row"]
@@ -11065,7 +11089,15 @@ export type Database = {
           leads: number
         }[]
       }
-    }
+
+"fn_processar_lembretes_tarefa":
+{ Args: { "p_limite"?: number }; Returns: number
+                           },
+
+"fn_definir_aviso_de_caso_local":
+{ Args: { "p_channel": string,"p_confirma_contato"?: boolean,"p_ligado": boolean,"p_org": string,"p_rotulo": string,"p_sem_link"?: boolean,"p_telefone": string }; Returns: Json
+                           },
+}
     Enums: {
       [_ in never]: never
     }

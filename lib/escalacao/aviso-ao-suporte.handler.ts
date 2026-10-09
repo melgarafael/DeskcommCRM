@@ -28,6 +28,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   EVENTO_CASO_ABERTO,
   EVENTO_CASO_FECHADO,
+  EVENTO_LEMBRETE_DE_CASO,
   type TransporteDoAviso,
   aplicaAvisoDeCaso,
   createSupabaseAvisoDb,
@@ -37,8 +38,10 @@ export const AVISO_DE_CASO_HANDLER_KEY = "escalacao-aviso-ao-suporte.v1";
 
 export const avisoDeCasoAoSuporteHandler: EventHandler = {
   key: AVISO_DE_CASO_HANDLER_KEY,
-  naOrgParada: "pula",
-  events: [EVENTO_CASO_ABERTO, EVENTO_CASO_FECHADO],
+  // Roda para que ai.case_task_reminder_due possa se reagendar sem consumir o
+  // evento durante uma pausa. A abertura continua pulando dentro da regra pura.
+  naOrgParada: "roda",
+  events: [EVENTO_CASO_ABERTO, EVENTO_CASO_FECHADO, EVENTO_LEMBRETE_DE_CASO],
   async handle(row): Promise<HandlerResult> {
     try {
       const admin = createAdminClient();

@@ -38,6 +38,7 @@ import { followupGatilhoEtapaHandler } from "@/lib/followup/gatilho-etapa.handle
 import { followupGatilhoLeadHandler } from "@/lib/followup/gatilho-lead.handler";
 import { followupGatilhoPresencaHandler } from "@/lib/followup/gatilho-presenca.handler";
 import { followupGatilhoRetornoHandler } from "@/lib/followup/gatilho-retorno.handler";
+import { followupAposDadosConfirmadosHandler } from "@/lib/followup/apos-dados-confirmados.handler";
 import { followupReactivityHandler } from "@/lib/followup/reactivity.handler";
 import { avisoDeEtapaHandler } from "@/lib/leads/aviso-de-etapa.handler";
 import { comandaDoGanhoHandler } from "@/lib/financeiro/comanda-do-ganho.handler";
@@ -58,6 +59,7 @@ const RODA: EventHandler[] = [
   avisoDeEtapaHandler,
   casoNaCentralHandler,
   comandaDoGanhoHandler,
+  avisoDeCasoAoSuporteHandler,
   mediaPersistHandler,
   lgpdExportHandler,
   lgpdRedactHandler,
@@ -76,8 +78,8 @@ const PULA: EventHandler[] = [
   followupGatilhoLeadHandler,
   followupGatilhoCasoHandler,
   followupGatilhoPresencaHandler,
+  followupAposDadosConfirmadosHandler,
   webPushInboundHandler,
-  avisoDeCasoAoSuporteHandler,
   avisoDePropostaNoWhatsAppHandler,
   conversaoDeVendaHandler,
   conversaoDeQualificacaoHandler,

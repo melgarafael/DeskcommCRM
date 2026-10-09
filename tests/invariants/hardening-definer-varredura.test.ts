@@ -275,6 +275,16 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "função recusa tudo que não seja admin da própria organização.",
   },
   {
+    fn: "fn_definir_aviso_de_caso_local(uuid,uuid,text,text,boolean,boolean,boolean)",
+    razao:
+      "PUT app/api/v1/ai/cases/alerta/route.ts usa createClient da sessão " +
+      "quando sem_link é enviado. A função chama fn_definir_aviso_de_caso " +
+      "na mesma transação antes de gravar o modo local: preserva auth.uid(), " +
+      "admin da própria organização, MFA, suporte, validação do canal e do " +
+      "destino. tests/invariants/aviso-de-caso-sem-link.test.ts prova admin " +
+      "local, recusa do vizinho, anon e service role sem identidade humana.",
+  },
+  {
     fn: "fn_vocabulario_de_tags_operar(uuid,text,text,text,text)",
     razao:
       "POST app/api/v1/tags/vocabulario/route.ts chama com createClient da " +

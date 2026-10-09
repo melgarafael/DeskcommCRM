@@ -4,33 +4,48 @@ import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { formatDistanceToNowStrict } from "date-fns";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCase } from "@/hooks/ai/useCases";
 import { STATUS_BADGE_VARIANT, STATUS_LABEL, caseEventLabel } from "@/lib/ai/case-copy";
 import { useT } from "@/hooks/i18n/useT";
 import { CaseChatPanel } from "./CaseChatPanel";
 import { CaseReplyPanel } from "./CaseReplyPanel";
+import { PaymentTaskPanel } from "./PaymentTaskPanel";
 
 export function CaseDetail({ caseId }: { caseId: string | null }) {
   const localeDaData = useLocaleDeData();
   const t = useT();
-  const { data, isLoading } = useCase(caseId);
+  const { data, isLoading, isError, refetch } = useCase(caseId);
 
   if (caseId === null) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-1 py-16 text-center">
         <p className="text-sm font-medium">{t("Selecione um caso à esquerda")}</p>
-        <p className="text-xs text-muted-foreground">{t("Os detalhes e a resposta aparecem aqui.")}</p>
+        <p className="text-xs text-muted-foreground">
+          {t("Os detalhes e a resposta aparecem aqui.")}
+        </p>
       </div>
     );
   }
 
-  if (isLoading || !data) {
+  if (isLoading && !data) {
     return (
       <div className="space-y-3">
         <Skeleton className="h-8 w-2/3" />
         <Skeleton className="h-24 w-full" />
         <Skeleton className="h-24 w-full" />
+      </div>
+    );
+  }
+
+  if (isError || !data) {
+    return (
+      <div role="alert" className="space-y-3 rounded-lg border border-border p-4">
+        <p>{t("Não foi possível carregar este caso. Atualize antes de registrar uma decisão.")}</p>
+        <Button variant="outline" onClick={() => void refetch()}>
+          {t("Tentar novamente")}
+        </Button>
       </div>
     );
   }
@@ -59,7 +74,9 @@ export function CaseDetail({ caseId }: { caseId: string | null }) {
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-lg border border-border p-3">
-          <p className="text-xs font-medium text-muted-foreground">{t("O que o cliente precisa")}</p>
+          <p className="text-xs font-medium text-muted-foreground">
+            {t("O que o cliente precisa")}
+          </p>
           <p className="mt-1 text-sm">{data.summary}</p>
         </div>
         <div className="rounded-lg border border-border p-3">
@@ -68,7 +85,11 @@ export function CaseDetail({ caseId }: { caseId: string | null }) {
         </div>
       </div>
 
-      <CaseReplyPanel caseId={data.id} status={data.status} />
+      {data.task_kind ? (
+        <PaymentTaskPanel key={data.id} caseId={data.id} />
+      ) : (
+        <CaseReplyPanel caseId={data.id} status={data.status} />
+      )}
 
       {/*
         DEPOIS da decisão, e a ordem é CONTRATO.
@@ -89,7 +110,10 @@ export function CaseDetail({ caseId }: { caseId: string | null }) {
               <span className="text-text">{t(caseEventLabel(ev))}</span>
               {ev.body ? <>: {ev.body}</> : null}
               {" · "}
-              {formatDistanceToNowStrict(new Date(ev.created_at), { addSuffix: true, locale: localeDaData })}
+              {formatDistanceToNowStrict(new Date(ev.created_at), {
+                addSuffix: true,
+                locale: localeDaData,
+              })}
             </li>
           ))}
         </ul>

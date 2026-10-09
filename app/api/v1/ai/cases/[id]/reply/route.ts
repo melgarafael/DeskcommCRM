@@ -70,6 +70,7 @@ const NEW_STATUS: Record<z.infer<typeof bodySchema>["action"], string> = {
 };
 
 interface CaseRow {
+  task_kind: string | null;
   context_snapshot: Record<string, unknown> | null;
   status: string;
   title: string;
@@ -113,7 +114,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   }
 
   const { rows } = await pool.query<CaseRow>(
-    `select ac.status, ac.title, ac.summary, ac.blocker, ac.conversation_id, ac.context_snapshot, conv.contact_id
+    `select ac.status, ac.task_kind, ac.title, ac.summary, ac.blocker, ac.conversation_id, ac.context_snapshot, conv.contact_id
        from agent_cases ac
        join conversations conv
          on conv.id = ac.conversation_id and conv.organization_id = ac.organization_id
@@ -124,6 +125,13 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   if (caseRow === undefined) {
     return fail("not_found", t("Caso não encontrado."), 404, { requestId });
   }
+  if (caseRow.task_kind)
+    return fail(
+      "invalid_state",
+      "Use as ações da tarefa para registrar dados ou conferir pagamento.",
+      409,
+      { requestId },
+    );
   if (caseRow.status !== "awaiting_human") {
     return fail(
       "invalid_state",
@@ -142,59 +150,81 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   if (action === "escalate") {
     const boundary = parseServiceBoundary(caseRow.context_snapshot?.service_boundary);
     try {
-      if (boundary && (boundary.organization_id !== org.orgId || boundary.contact_id !== contactId || boundary.conversation_id !== conversationId)) throw new StaleServiceBoundaryError();
+      if (
+        boundary &&
+        (boundary.organization_id !== org.orgId ||
+          boundary.contact_id !== contactId ||
+          boundary.conversation_id !== conversationId)
+      )
+        throw new StaleServiceBoundaryError();
       await withServiceBoundary(pool, boundary, async () => {
-    const aviso = await avisarLeadDoCrm(createAdminClient(), {
-      organizationId: org.orgId,
-      conversationId,
-      contactId,
-      reason: body,
-      serviceBoundary: boundary!,
-    });
+        const aviso = await avisarLeadDoCrm(createAdminClient(), {
+          organizationId: org.orgId,
+          conversationId,
+          contactId,
+          reason: body,
+          serviceBoundary: boundary!,
+        });
 
-    // O handoff roda ANTES de fechar o caso, e nesta ordem de propósito: ele é
-    // idempotente (re-executar é no-op) e recebe um pg.Pool próprio, então não
-    // entra na transação abaixo. Se ele falhar, o caso continua `awaiting_human`
-    // e a retentativa se cura sozinha; na ordem inversa sobraria um caso
-    // `escalated` que nunca chegou a humano nenhum — e sem volta pela API.
-    // O contexto de quem assume era SÓ o caso — título, resumo e bloqueio. A
-    // spec 15 já mandava levar o resumo do checkpoint da conversa junto, e o
-    // código nunca o fez: quem recebia a passagem de um caso escalado não via
-    // nada do que a IA tinha conversado com o cliente antes de travar.
-    const briefing = montarBriefingDaPassagem({
-      checkpoint: await checkpointDaConversa(pool, org.orgId, contactId),
-      motivo: { codigo: "caso_escalado", texto: body },
-      caso: {
-        titulo: caseRow.title,
-        summary: caseRow.summary,
-        blocker: caseRow.blocker,
-        razaoHumana: body,
-      },
-    });
-    await performHumanHandoff(
-      pool,
-      { tenantId: org.orgId, leadId: contactId, conversationId },
-      {
-        reason: body,
-        conversationSummary: briefing.body,
-        passagem: {
-          origem: "caso_escalado",
-          motivoCodigo: "caso_escalado",
-          briefing,
-          casoId: caseId,
-        },
-        avisoAoLead: aviso,
-        log: createLogger(),
-      },
-    );
+        // O handoff roda ANTES de fechar o caso, e nesta ordem de propósito: ele é
+        // idempotente (re-executar é no-op) e recebe um pg.Pool próprio, então não
+        // entra na transação abaixo. Se ele falhar, o caso continua `awaiting_human`
+        // e a retentativa se cura sozinha; na ordem inversa sobraria um caso
+        // `escalated` que nunca chegou a humano nenhum — e sem volta pela API.
+        // O contexto de quem assume era SÓ o caso — título, resumo e bloqueio. A
+        // spec 15 já mandava levar o resumo do checkpoint da conversa junto, e o
+        // código nunca o fez: quem recebia a passagem de um caso escalado não via
+        // nada do que a IA tinha conversado com o cliente antes de travar.
+        const briefing = montarBriefingDaPassagem({
+          checkpoint: await checkpointDaConversa(pool, org.orgId, contactId),
+          motivo: { codigo: "caso_escalado", texto: body },
+          caso: {
+            titulo: caseRow.title,
+            summary: caseRow.summary,
+            blocker: caseRow.blocker,
+            razaoHumana: body,
+          },
+        });
+        await performHumanHandoff(
+          pool,
+          { tenantId: org.orgId, leadId: contactId, conversationId },
+          {
+            reason: body,
+            conversationSummary: briefing.body,
+            passagem: {
+              origem: "caso_escalado",
+              motivoCodigo: "caso_escalado",
+              briefing,
+              casoId: caseId,
+            },
+            avisoAoLead: aviso,
+            log: createLogger(),
+          },
+        );
       });
     } catch (error) {
       if (!(error instanceof StaleServiceBoundaryError)) throw error;
       // A resposta humana fica registrada, mas não altera o atendimento novo.
-      const registered = await registrarRespostaDeCasoObsoleto(pool, org.orgId, caseId, user.id, body);
-      if (!registered) return fail("invalid_state", "Este caso já foi respondido por outra pessoa.", 409, { requestId });
-      await audit({ action: "ai.case_replied", actorUserId: user.id, organizationId: org.orgId,
-        resourceType: "agent_case", resourceId: caseId, requestId, metadata: { case_action: action, service_stale: true } });
+      const registered = await registrarRespostaDeCasoObsoleto(
+        pool,
+        org.orgId,
+        caseId,
+        user.id,
+        body,
+      );
+      if (!registered)
+        return fail("invalid_state", "Este caso já foi respondido por outra pessoa.", 409, {
+          requestId,
+        });
+      await audit({
+        action: "ai.case_replied",
+        actorUserId: user.id,
+        organizationId: org.orgId,
+        resourceType: "agent_case",
+        resourceId: caseId,
+        requestId,
+        metadata: { case_action: action, service_stale: true },
+      });
       return ok({ status: "resolved", delivery: "service_stale" }, { requestId });
     }
     const escalated = await escalateCase(pool, org.orgId, caseId, user.id, body);

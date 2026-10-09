@@ -51151,3 +51151,927 @@ create unique index if not exists agent_inbox_budget_aberto_unico
 create unique index if not exists agent_inbox_budget_do_plano_aberto_unico
   on public.agent_inbox_items (organization_id)
   where status = 'open' and kind = 'budget_exceeded' and ref_kind = 'plano';
+
+-- ---- aviso interno de caso sem link (migration 0606) ----
+-- manifest: aviso interno opcional sem link para operação local, preservando guardas da configuração.
+alter table public.config_aviso_de_caso add column if not exists sem_link boolean not null default false;
+
+-- Reutiliza as guardas canônicas no mesmo ato transacional; a função antiga
+-- continua compatível com clientes que não conhecem o modo local.
+create or replace function public.fn_definir_aviso_de_caso_local(
+  p_org uuid, p_channel uuid, p_telefone text, p_rotulo text,
+  p_ligado boolean, p_confirma_contato boolean default false,
+  p_sem_link boolean default false
+) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp
+as $$
+declare v_resultado jsonb;
+begin
+  v_resultado := public.fn_definir_aviso_de_caso(
+    p_org, p_channel, p_telefone, p_rotulo, p_ligado, p_confirma_contato);
+  update public.config_aviso_de_caso
+     set sem_link = coalesce(p_sem_link, false)
+   where organization_id = p_org;
+  return v_resultado;
+end;
+$$;
+revoke execute on function public.fn_definir_aviso_de_caso_local(uuid,uuid,text,text,boolean,boolean,boolean) from public, anon;
+grant execute on function public.fn_definir_aviso_de_caso_local(uuid,uuid,text,text,boolean,boolean,boolean) to authenticated;
+
+-- ---- tarefas de pagamento no caso (migration 0607) ----
+-- manifest: tarefas de pagamento com compra fixa, decisão humana, envio e espera separados
+alter table public.agent_cases
+  add column if not exists task_kind text,
+  add column if not exists task_state text,
+  add column if not exists revision bigint not null default 0,
+  add column if not exists wait_generation bigint not null default 0,
+  add column if not exists wait_started_at timestamptz,
+  add column if not exists assignee_user_id uuid references auth.users(id) on delete set null,
+  add column if not exists task_payload jsonb not null default '{}'::jsonb,
+  add column if not exists decision_event_id uuid references public.agent_case_events(id) on delete set null,
+  add column if not exists delivery_job_id uuid references public.job_queue(id) on delete set null;
+alter table public.agent_cases drop constraint if exists agent_cases_task_state_check;
+alter table public.agent_cases add constraint agent_cases_task_state_check
+  check (task_state is null or task_state in ('awaiting_human','awaiting_send','send_failed','awaiting_lead','completed'));
+create index if not exists agent_cases_task_wait_idx on public.agent_cases(organization_id,wait_started_at)
+  where task_kind is not null and task_state in ('awaiting_human','send_failed');
+
+-- Defense in depth in addition to the existing PostgREST write revocations.
+create or replace function public.fn_protect_case_task() returns trigger
+language plpgsql set search_path=public as $$
+begin
+  if new.task_kind is not null and new.lead_id is not null and not exists(
+    select 1 from public.crm_leads l join public.conversations c on c.id=new.conversation_id
+    and c.organization_id=new.organization_id where l.id=new.lead_id and l.organization_id=new.organization_id and l.contact_id=c.contact_id
+  ) then raise exception 'case_task_purchase_mismatch' using errcode='23514'; end if;
+  if current_user in ('anon','authenticated') then
+    if tg_op='INSERT' and new.task_kind is not null then
+      raise exception 'case_task_requires_server' using errcode='42501';
+    elsif tg_op='UPDATE' and (new.task_kind is not null or old.task_kind is not null) and
+      (to_jsonb(new)-'updated_at') is distinct from (to_jsonb(old)-'updated_at') then
+      raise exception 'case_task_requires_server' using errcode='42501';
+    end if;
+  end if;
+  return new;
+end $$;
+revoke execute on function public.fn_protect_case_task() from public,anon,authenticated;
+grant execute on function public.fn_protect_case_task() to service_role;
+drop trigger if exists protect_case_task on public.agent_cases;
+create trigger protect_case_task before insert or update on public.agent_cases
+for each row execute function public.fn_protect_case_task();
+
+-- Exhaustion must become an actionable human wait; an accepted send instead
+-- returns to reconciliation, even if the last acquisition exhausted attempts.
+create or replace function public.fn_case_task_delivery_exhausted() returns trigger
+language plpgsql security definer set search_path=public as $$
+declare v_case uuid;
+begin
+  if new.kind='case_reply_turn' and new.payload->>'action'='task_delivery' and new.status='dead' and old.status is distinct from 'dead' then
+    if exists(select 1 from public.send_ledger where organization_id=new.organization_id and job_id=new.id and seq=1 and status='accepted') then
+      new.status:='pending'; new.run_after:=now()+interval '30 seconds'; return new;
+    end if;
+    update public.agent_cases set task_state='send_failed',revision=revision+1,
+      wait_generation=wait_generation+1,wait_started_at=now(),task_payload=task_payload || jsonb_build_object('delivery_error','delivery_exhausted')
+      where organization_id=new.organization_id and delivery_job_id=new.id and task_state='awaiting_send' and status in ('awaiting_human','awaiting_lead') returning id into v_case;
+    if v_case is not null then
+      insert into public.agent_case_events(organization_id,case_id,kind,actor_kind,body,metadata)
+        values(new.organization_id,v_case,'agent_noted','system','O envio esgotou as tentativas. A decisão continua registrada; revise e tente o envio novamente.',jsonb_build_object('task_action','delivery_failed','job_id',new.id));
+    end if;
+  end if;
+  return new;
+end $$;
+revoke execute on function public.fn_case_task_delivery_exhausted() from public,anon,authenticated;
+grant execute on function public.fn_case_task_delivery_exhausted() to service_role;
+drop trigger if exists case_task_delivery_exhausted on public.job_queue;
+create trigger case_task_delivery_exhausted before update of status on public.job_queue
+for each row execute function public.fn_case_task_delivery_exhausted();
+
+create or replace function public.fn_redigir_tarefa_caso() returns trigger
+language plpgsql security definer set search_path=public as $$
+begin
+  if new.is_anonymized and not old.is_anonymized then
+    update public.agent_cases set task_payload='{}'::jsonb
+      where organization_id=new.organization_id and conversation_id in (
+        select id from public.conversations where organization_id=new.organization_id and contact_id=new.id
+      ) and task_kind is not null;
+  end if;
+  return new;
+end $$;
+revoke execute on function public.fn_redigir_tarefa_caso() from public,anon,authenticated;
+grant execute on function public.fn_redigir_tarefa_caso() to service_role;
+drop trigger if exists redigir_tarefa_caso on public.contacts;
+create trigger redigir_tarefa_caso after update of is_anonymized on public.contacts
+for each row execute function public.fn_redigir_tarefa_caso();
+
+-- ---- lembretes de tarefas de pagamento (migration 0608) ----
+-- manifest: Recibos e Central atômicos para espera humana de pagamento aos 3/6/9 minutos.
+-- A cadência é interna: nenhum HTTP ou envio para a cliente sai desta função.
+create unique index if not exists agent_cases_id_org_task_idx on public.agent_cases(id, organization_id);
+create table if not exists public.case_task_reminders (
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  case_id uuid not null,
+  wait_generation bigint not null,
+  minute smallint not null check (minute in (3,6,9)),
+  result text not null check (result in ('notified','superseded')),
+  recorded_at timestamptz not null default now(),
+  inbox_id uuid references public.agent_inbox_items(id) on delete set null,
+  primary key (organization_id, case_id, wait_generation, minute),
+  foreign key (case_id, organization_id) references public.agent_cases(id, organization_id) on delete cascade
+);
+alter table public.case_task_reminders enable row level security;
+drop policy if exists tenant_isolation_case_task_reminders_all on public.case_task_reminders;
+create policy tenant_isolation_case_task_reminders_all on public.case_task_reminders
+  for select to authenticated using (organization_id in (select public.fn_user_org_ids()));
+revoke all on public.case_task_reminders from public, anon, authenticated;
+grant select on public.case_task_reminders to authenticated;
+grant all on public.case_task_reminders to service_role;
+
+create or replace function public.fn_processar_lembretes_tarefa(p_limite integer default 200)
+returns integer language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  c public.agent_cases%rowtype;
+  instante timestamptz := clock_timestamp();
+  patamar smallint;
+  aviso uuid;
+  quantidade integer := 0;
+  tarefa text;
+begin
+  for c in
+    select ac.* from public.agent_cases ac
+    where ac.task_kind in ('payment_details','payment_review')
+      and public.fn_org_operante(ac.organization_id)
+      and ac.task_state in ('awaiting_human','send_failed')
+      and ac.status in ('awaiting_human','awaiting_lead')
+      and ac.wait_started_at <= instante - interval '3 minutes'
+      and not exists (
+        select 1 from public.case_task_reminders r
+        where r.organization_id=ac.organization_id and r.case_id=ac.id and r.wait_generation=ac.wait_generation
+          and r.minute = case when ac.wait_started_at <= instante-interval '9 minutes' then 9
+            when ac.wait_started_at <= instante-interval '6 minutes' then 6 else 3 end
+      )
+    order by ac.wait_started_at
+    limit greatest(1, least(coalesce(p_limite,200),500))
+    for update of ac skip locked
+  loop
+    -- O lock faz a resolução humana e a cobrança terem ordem total. Os critérios
+    -- do SELECT são reavaliados pelo PostgreSQL ao adquirir a linha atualizada.
+    patamar := case when c.wait_started_at <= instante-interval '9 minutes' then 9
+      when c.wait_started_at <= instante-interval '6 minutes' then 6 else 3 end;
+    select r.inbox_id into aviso from public.case_task_reminders r
+      where r.organization_id=c.organization_id and r.case_id=c.id and r.wait_generation=c.wait_generation
+        and r.inbox_id is not null order by r.minute desc limit 1;
+    tarefa := case when c.task_state='send_failed' then 'Revisar envio que falhou'
+      when c.task_kind='payment_details' then 'Liberar dados de pagamento' else 'Conferir recebimento do pagamento' end;
+    if aviso is null then
+      insert into public.agent_inbox_items(organization_id,kind,severity,title,body,ref_kind,ref_id)
+        values(c.organization_id,'case_stale','warn',tarefa || ' — ' || patamar || ' minutos',
+          'A tarefa aguarda a equipe desde ' || c.wait_started_at::text || '. Abra o caso para resolver.' ||
+          case when patamar=9 then ' Atrasada: permanece pendente até resolução.' else '' end,
+          'agent_case',c.id) returning id into aviso;
+    else
+      update public.agent_inbox_items set status='open',resolved_at=null,
+        title=tarefa || ' — ' || patamar || ' minutos',
+        body='A tarefa aguarda a equipe desde ' || c.wait_started_at::text || '. Abra o caso para resolver.' ||
+          case when patamar=9 then ' Atrasada: permanece pendente até resolução.' else '' end
+        where id=aviso and organization_id=c.organization_id;
+    end if;
+    insert into public.case_task_reminders(organization_id,case_id,wait_generation,minute,result,inbox_id)
+      select c.organization_id,c.id,c.wait_generation,m,
+        case when m=patamar then 'notified' else 'superseded' end, aviso
+      from unnest(array[3,6,9]::smallint[]) m where m<=patamar
+      on conflict (organization_id,case_id,wait_generation,minute) do nothing;
+    quantidade := quantidade+1;
+  end loop;
+  return quantidade;
+end $$;
+revoke execute on function public.fn_processar_lembretes_tarefa(integer) from public,anon,authenticated;
+grant execute on function public.fn_processar_lembretes_tarefa(integer) to service_role;
+
+create or replace function public.fn_encerrar_lembrete_tarefa()
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if new.wait_generation is distinct from old.wait_generation
+    or new.task_state not in ('awaiting_human','send_failed')
+    or new.task_kind is null or new.status not in ('awaiting_human','awaiting_lead') then
+    update public.agent_inbox_items i set status='resolved',resolved_at=clock_timestamp()
+      where i.organization_id=old.organization_id and i.status='open'
+        and exists (select 1 from public.case_task_reminders r
+          where r.organization_id=old.organization_id and r.case_id=old.id
+            and r.wait_generation=old.wait_generation and r.inbox_id=i.id);
+  end if;
+  return new;
+end $$;
+revoke execute on function public.fn_encerrar_lembrete_tarefa() from public,anon,authenticated;
+grant execute on function public.fn_encerrar_lembrete_tarefa() to service_role;
+drop trigger if exists trg_encerrar_lembrete_tarefa on public.agent_cases;
+create trigger trg_encerrar_lembrete_tarefa after update of task_state,task_kind,status,wait_generation
+  on public.agent_cases for each row execute function public.fn_encerrar_lembrete_tarefa();
+notify pgrst, 'reload schema';
+
+-- ---- configuração de cadência dos lembretes (migration 0609) ----
+-- manifest: Torna configurável a cadência de lembretes da Central e dos reforços WhatsApp, preservando recibos e catch-up sem rajada.
+
+-- A função pura valida também a forma do array: somente uma dimensão, índice inicial 1,
+-- 1–10 valores, estritamente crescentes, sem nulos, dentro de 1..1440.
+create or replace function public.fn_minutos_lembrete_equipe_validos(p_minutos smallint[])
+returns boolean
+language plpgsql
+immutable
+set search_path = pg_catalog, pg_temp
+as $$
+declare
+  v_minuto smallint;
+  v_anterior smallint := 0;
+begin
+  if p_minutos is null
+    or coalesce(array_ndims(p_minutos), 0) <> 1
+    or array_lower(p_minutos, 1) <> 1
+    or cardinality(p_minutos) not between 1 and 10 then
+    return false;
+  end if;
+
+  foreach v_minuto in array p_minutos loop
+    if v_minuto is null or v_minuto < 1 or v_minuto > 1440 or v_minuto <= v_anterior then
+      return false;
+    end if;
+    v_anterior := v_minuto;
+  end loop;
+
+  return true;
+end;
+$$;
+revoke all on function public.fn_minutos_lembrete_equipe_validos(smallint[]) from public, anon, authenticated;
+grant execute on function public.fn_minutos_lembrete_equipe_validos(smallint[]) to service_role;
+
+alter table public.config_aviso_de_caso
+  add column if not exists repetir_lembretes_whatsapp boolean not null default false;
+alter table public.config_aviso_de_caso
+  add column if not exists minutos_lembrete_equipe smallint[] not null default array[3,6,9]::smallint[];
+alter table public.config_aviso_de_caso
+  alter column minutos_lembrete_equipe set default array[3,6,9]::smallint[],
+  alter column minutos_lembrete_equipe set not null;
+alter table public.config_aviso_de_caso
+  drop constraint if exists config_aviso_de_caso_minutos_lembrete_equipe_check;
+alter table public.config_aviso_de_caso
+  add constraint config_aviso_de_caso_minutos_lembrete_equipe_check
+  check (public.fn_minutos_lembrete_equipe_validos(minutos_lembrete_equipe));
+
+-- Sem conexão, o opt-in de WhatsApp fica desligado. A cadência continua válida
+-- para a Central e não depende de uma conexão ativa.
+create or replace function public.fn_aviso_de_caso_coerente()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if new.channel_session_id is null then
+    new.ligado := false;
+    new.repetir_lembretes_whatsapp := false;
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.fn_aviso_de_caso_coerente() from public, anon, authenticated;
+
+-- Identidade durável do evento de WhatsApp, sem FK para o barramento: recibos
+-- sobrevivem a uma eventual política futura de retenção do event_log.
+alter table public.case_task_reminders
+  add column if not exists whatsapp_event_id uuid;
+create unique index if not exists case_task_reminders_whatsapp_event_unique
+  on public.case_task_reminders (whatsapp_event_id)
+  where whatsapp_event_id is not null;
+alter table public.case_task_reminders
+  drop constraint if exists case_task_reminders_minute_check;
+alter table public.case_task_reminders
+  drop constraint if exists case_task_reminders_minute_range_check;
+alter table public.case_task_reminders
+  add constraint case_task_reminders_minute_range_check
+  check (minute between 1 and 1440);
+
+-- O aviso inicial mantém sua chave anterior. Reforços passam a usar
+-- org/caso/geração/minuto/destino; recibos já existentes são preservados.
+alter table public.entregas_de_aviso_de_caso
+  add column if not exists wait_generation bigint,
+  add column if not exists reminder_minute smallint;
+alter table public.entregas_de_aviso_de_caso
+  drop constraint if exists entregas_de_aviso_de_caso_reminder_key_check;
+alter table public.entregas_de_aviso_de_caso
+  add constraint entregas_de_aviso_de_caso_reminder_key_check
+  check (
+    (wait_generation is null and reminder_minute is null)
+    or (
+      wait_generation is not null
+      and reminder_minute is not null
+      and reminder_minute between 1 and 1440
+    )
+  );
+
+drop index if exists public.entregas_de_aviso_de_caso_unica;
+create unique index if not exists entregas_de_aviso_de_caso_unica
+  on public.entregas_de_aviso_de_caso (organization_id, case_id, destino)
+  where wait_generation is null and reminder_minute is null;
+create unique index if not exists entregas_de_aviso_de_caso_lembrete_unica
+  on public.entregas_de_aviso_de_caso
+    (organization_id, case_id, wait_generation, reminder_minute, destino)
+  where wait_generation is not null and reminder_minute is not null;
+
+-- A cada execução, só o marco configurado mais recente que já venceu gera aviso.
+-- Marcos anteriores vencidos entram como superseded, nunca como uma rajada.
+create or replace function public.fn_processar_lembretes_tarefa(p_limite integer default 200)
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  c public.agent_cases%rowtype;
+  instante timestamptz := clock_timestamp();
+  marcos smallint[];
+  patamar smallint;
+  ultimo_patamar smallint;
+  aviso uuid;
+  quantidade integer := 0;
+  tarefa text;
+  repetir_whatsapp boolean;
+  evento_whatsapp uuid;
+begin
+  for c in
+    select ac.*
+      from public.agent_cases ac
+     where ac.task_kind in ('payment_details','payment_review')
+       and public.fn_org_operante(ac.organization_id)
+       and ac.task_state in ('awaiting_human','send_failed')
+       and ac.status in ('awaiting_human','awaiting_lead')
+       and exists (
+         select 1
+           from unnest(coalesce(
+             (select cfg.minutos_lembrete_equipe
+                from public.config_aviso_de_caso cfg
+               where cfg.organization_id = ac.organization_id),
+             array[3,6,9]::smallint[]
+           )) as marco(minuto)
+          where ac.wait_started_at <= instante - make_interval(mins => marco.minuto::integer)
+       )
+       and (
+         not exists (
+           select 1
+             from public.case_task_reminders r
+            where r.organization_id = ac.organization_id
+              and r.case_id = ac.id
+              and r.wait_generation = ac.wait_generation
+              and r.minute = (
+                select max(marco.minuto)
+                  from unnest(coalesce(
+                    (select cfg.minutos_lembrete_equipe
+                       from public.config_aviso_de_caso cfg
+                      where cfg.organization_id = ac.organization_id),
+                    array[3,6,9]::smallint[]
+                  )) as marco(minuto)
+                 where ac.wait_started_at <= instante - make_interval(mins => marco.minuto::integer)
+              )
+         and r.result = 'notified'
+         )
+         or (
+           exists (
+             select 1
+               from public.config_aviso_de_caso cfg
+              where cfg.organization_id = ac.organization_id
+                and cfg.repetir_lembretes_whatsapp
+           )
+           and exists (
+             select 1
+               from public.case_task_reminders r
+              where r.organization_id = ac.organization_id
+                and r.case_id = ac.id
+                and r.wait_generation = ac.wait_generation
+                and r.minute = (
+                  select max(marco.minuto)
+                    from unnest(coalesce(
+                      (select cfg.minutos_lembrete_equipe
+                         from public.config_aviso_de_caso cfg
+                        where cfg.organization_id = ac.organization_id),
+                      array[3,6,9]::smallint[]
+                    )) as marco(minuto)
+                   where ac.wait_started_at <= instante - make_interval(mins => marco.minuto::integer)
+                )
+                and r.result = 'notified'
+                and r.whatsapp_event_id is null
+           )
+         )
+       )
+     order by ac.wait_started_at
+     limit greatest(1, least(coalesce(p_limite,200),500))
+     for update of ac skip locked
+  loop
+    marcos := array[3,6,9]::smallint[];
+    select cfg.minutos_lembrete_equipe
+      into marcos
+      from public.config_aviso_de_caso cfg
+     where cfg.organization_id = c.organization_id;
+    if not found or marcos is null then
+      marcos := array[3,6,9]::smallint[];
+    end if;
+
+    select max(marco.minuto)
+      into patamar
+      from unnest(marcos) as marco(minuto)
+     where c.wait_started_at <= instante - make_interval(mins => marco.minuto::integer);
+    if patamar is null then
+      continue;
+    end if;
+    ultimo_patamar := marcos[cardinality(marcos)];
+    select r.inbox_id
+      into aviso
+      from public.case_task_reminders r
+     where r.organization_id = c.organization_id
+       and r.case_id = c.id
+       and r.wait_generation = c.wait_generation
+       and r.inbox_id is not null
+     order by r.minute desc
+     limit 1;
+
+    tarefa := case
+      when c.task_state = 'send_failed' then 'Revisar envio que falhou'
+      when c.task_kind = 'payment_details' then 'Liberar dados de pagamento'
+      else 'Conferir recebimento do pagamento'
+    end;
+
+    if aviso is null then
+      insert into public.agent_inbox_items(organization_id,kind,severity,title,body,ref_kind,ref_id)
+      values (
+        c.organization_id,
+        'case_stale',
+        'warn',
+        tarefa || ' — ' || patamar || ' minutos',
+        'A tarefa aguarda a equipe desde ' || c.wait_started_at::text || '. Abra o caso para resolver.'
+          || case when patamar = ultimo_patamar then ' Atrasada: permanece pendente até resolução.' else '' end,
+        'agent_case',
+        c.id
+      )
+      returning id into aviso;
+    else
+      update public.agent_inbox_items
+         set status = 'open',
+             resolved_at = null,
+             title = tarefa || ' — ' || patamar || ' minutos',
+             body = 'A tarefa aguarda a equipe desde ' || c.wait_started_at::text || '. Abra o caso para resolver.'
+               || case when patamar = ultimo_patamar then ' Atrasada: permanece pendente até resolução.' else '' end
+       where id = aviso
+         and organization_id = c.organization_id;
+    end if;
+
+    insert into public.case_task_reminders as lembrete_atual(organization_id,case_id,wait_generation,minute,result,inbox_id)
+    select c.organization_id,
+           c.id,
+           c.wait_generation,
+           marco.minuto,
+           case when marco.minuto = patamar then 'notified' else 'superseded' end,
+           aviso
+      from unnest(marcos) as marco(minuto)
+     where marco.minuto <= patamar
+    on conflict (organization_id,case_id,wait_generation,minute) do update
+       set result = 'notified',
+           recorded_at = clock_timestamp(),
+           inbox_id = coalesce(lembrete_atual.inbox_id, excluded.inbox_id)
+     where lembrete_atual.result = 'superseded'
+       and lembrete_atual.minute = patamar;
+
+    select coalesce(cfg.repetir_lembretes_whatsapp, false)
+      into repetir_whatsapp
+      from public.config_aviso_de_caso cfg
+     where cfg.organization_id = c.organization_id;
+    repetir_whatsapp := coalesce(repetir_whatsapp, false);
+
+    if repetir_whatsapp then
+      select r.whatsapp_event_id
+        into evento_whatsapp
+        from public.case_task_reminders r
+       where r.organization_id = c.organization_id
+         and r.case_id = c.id
+         and r.wait_generation = c.wait_generation
+         and r.minute = patamar
+         and r.result = 'notified';
+      if evento_whatsapp is null then
+        evento_whatsapp := public.emit_event(
+          'ai.case_task_reminder_due',
+          'agent_case',
+          c.id,
+          jsonb_build_object(
+            'case_id', c.id,
+            'wait_generation', c.wait_generation,
+            'minute', patamar
+          ),
+          '{}'::jsonb,
+          c.organization_id
+        );
+        update public.case_task_reminders
+           set whatsapp_event_id = evento_whatsapp
+         where organization_id = c.organization_id
+           and case_id = c.id
+           and wait_generation = c.wait_generation
+           and minute = patamar
+           and result = 'notified'
+           and whatsapp_event_id is null;
+        if not found then
+          raise exception 'case_task_reminder_event_link_failed';
+        end if;
+      end if;
+    end if;
+
+    quantidade := quantidade + 1;
+  end loop;
+  return quantidade;
+end
+$$;
+revoke execute on function public.fn_processar_lembretes_tarefa(integer) from public, anon, authenticated;
+grant execute on function public.fn_processar_lembretes_tarefa(integer) to service_role;
+
+-- Substitui a assinatura local anterior para que chamadas sem o array não
+-- continuem gravando uma configuração sem os novos marcos.
+drop function if exists public.fn_definir_aviso_de_caso_repeticao(uuid,uuid,text,text,boolean,boolean,boolean,boolean);
+create or replace function public.fn_definir_aviso_de_caso_repeticao(
+  p_org uuid,
+  p_channel uuid,
+  p_telefone text,
+  p_rotulo text,
+  p_ligado boolean,
+  p_confirma_contato boolean default false,
+  p_sem_link boolean default false,
+  p_repetir_lembretes_whatsapp boolean default false,
+  p_minutos_lembrete_equipe smallint[] default array[3,6,9]::smallint[]
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_resultado jsonb;
+  v_repetir_salvo boolean;
+  v_minutos_salvos smallint[];
+begin
+  if not public.fn_minutos_lembrete_equipe_validos(p_minutos_lembrete_equipe) then
+    raise exception using
+      errcode = '22023',
+      message = 'minutos_lembrete_equipe_invalido';
+  end if;
+  v_resultado := public.fn_definir_aviso_de_caso_local(
+    p_org,
+    p_channel,
+    p_telefone,
+    p_rotulo,
+    p_ligado,
+    p_confirma_contato,
+    p_sem_link
+  );
+
+  update public.config_aviso_de_caso
+     set repetir_lembretes_whatsapp = coalesce(p_repetir_lembretes_whatsapp, false),
+         minutos_lembrete_equipe = p_minutos_lembrete_equipe
+   where organization_id = p_org;
+
+  select cfg.repetir_lembretes_whatsapp, cfg.minutos_lembrete_equipe
+    into v_repetir_salvo, v_minutos_salvos
+    from public.config_aviso_de_caso cfg
+   where cfg.organization_id = p_org;
+
+  if not found then
+    raise exception 'aviso_de_caso_configuracao_ausente';
+  end if;
+  if v_minutos_salvos is distinct from p_minutos_lembrete_equipe then
+    raise exception 'aviso_de_caso_cadencia_nao_persistida';
+  end if;
+  return v_resultado || jsonb_build_object(
+    'repetir_lembretes_whatsapp', v_repetir_salvo,
+    'minutos_lembrete_equipe', v_minutos_salvos
+  );
+end;
+$$;
+revoke all on function public.fn_definir_aviso_de_caso_repeticao(
+  uuid,uuid,text,text,boolean,boolean,boolean,boolean,smallint[]
+) from public, anon, authenticated;
+grant execute on function public.fn_definir_aviso_de_caso_repeticao(
+  uuid,uuid,text,text,boolean,boolean,boolean,boolean,smallint[]
+) to authenticated;
+
+notify pgrst, 'reload schema';
+
+-- ---- lembretes em todos os casos que aguardam a equipe (migration 0610) ----
+-- manifest: aplica a cadência configurável a todo caso que aguarda a equipe, sem cobrar enquanto aguarda o cliente
+-- Casos gerais em espera passam a usar o mesmo relógio, recibos e opt-in já usados pelas tarefas financeiras.
+drop trigger if exists trg_encerrar_lembrete_tarefa on public.agent_cases;
+
+-- Backfill idempotente: a última resposta do cliente inicia o episódio atual;
+-- sem esse evento, a abertura é o início. Nunca usamos updated_at, que muda
+-- com comentários, atribuições e outras atividades sem retomada da espera.
+update public.agent_cases c
+   set wait_started_at = coalesce(
+         (
+           select max(e.created_at)
+             from public.agent_case_events e
+            where e.organization_id = c.organization_id
+              and e.case_id = c.id
+              and e.kind = 'lead_provided'
+         ),
+         c.opened_at,
+         c.created_at,
+         clock_timestamp()
+       ),
+       wait_generation = greatest(coalesce(c.wait_generation, 0), 1)
+ where c.task_kind is null
+   and c.task_state is null
+   and c.status = 'awaiting_human'
+   and c.wait_started_at is null;
+
+-- O índice anterior cobria apenas tarefas especializadas. O novo atende todos os
+-- casos em espera, inclusive os gerais, e continua excluindo estados terminais.
+drop index if exists public.agent_cases_task_wait_idx;
+create index if not exists agent_cases_task_wait_idx
+  on public.agent_cases(organization_id, wait_started_at)
+  where wait_started_at is not null
+    and status in ('awaiting_human','awaiting_lead');
+
+create or replace function public.fn_processar_lembretes_tarefa(p_limite integer default 200)
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  c public.agent_cases%rowtype;
+  instante timestamptz := clock_timestamp();
+  marcos smallint[];
+  patamar smallint;
+  ultimo_patamar smallint;
+  aviso uuid;
+  quantidade integer := 0;
+  tarefa text;
+  repetir_whatsapp boolean;
+  evento_whatsapp uuid;
+begin
+  for c in
+    select ac.*
+      from public.agent_cases ac
+     where public.fn_org_operante(ac.organization_id)
+       and ac.wait_started_at is not null
+       and (
+         (
+           ac.task_kind in ('payment_details','payment_review')
+           and ac.task_state in ('awaiting_human','send_failed')
+           and ac.status in ('awaiting_human','awaiting_lead')
+         )
+         or (
+           ac.task_kind is null
+           and ac.task_state is null
+           and ac.status = 'awaiting_human'
+         )
+       )
+       and exists (
+         select 1
+           from unnest(coalesce(
+             (select cfg.minutos_lembrete_equipe
+                from public.config_aviso_de_caso cfg
+               where cfg.organization_id = ac.organization_id),
+             array[3,6,9]::smallint[]
+           )) as marco(minuto)
+          where ac.wait_started_at <= instante - make_interval(mins => marco.minuto::integer)
+       )
+       and (
+         not exists (
+           select 1
+             from public.case_task_reminders r
+            where r.organization_id = ac.organization_id
+              and r.case_id = ac.id
+              and r.wait_generation = ac.wait_generation
+              and r.minute = (
+                select max(marco.minuto)
+                  from unnest(coalesce(
+                    (select cfg.minutos_lembrete_equipe
+                       from public.config_aviso_de_caso cfg
+                      where cfg.organization_id = ac.organization_id),
+                    array[3,6,9]::smallint[]
+                  )) as marco(minuto)
+                 where ac.wait_started_at <= instante - make_interval(mins => marco.minuto::integer)
+              )
+         and r.result = 'notified'
+         )
+         or (
+           exists (
+             select 1
+               from public.config_aviso_de_caso cfg
+              where cfg.organization_id = ac.organization_id
+                and cfg.repetir_lembretes_whatsapp
+           )
+           and exists (
+             select 1
+               from public.case_task_reminders r
+              where r.organization_id = ac.organization_id
+                and r.case_id = ac.id
+                and r.wait_generation = ac.wait_generation
+                and r.minute = (
+                  select max(marco.minuto)
+                    from unnest(coalesce(
+                      (select cfg.minutos_lembrete_equipe
+                         from public.config_aviso_de_caso cfg
+                        where cfg.organization_id = ac.organization_id),
+                      array[3,6,9]::smallint[]
+                    )) as marco(minuto)
+                   where ac.wait_started_at <= instante - make_interval(mins => marco.minuto::integer)
+                )
+                and r.result = 'notified'
+                and r.whatsapp_event_id is null
+           )
+         )
+       )
+     order by ac.wait_started_at
+     limit greatest(1, least(coalesce(p_limite,200),500))
+     for update of ac skip locked
+  loop
+    marcos := array[3,6,9]::smallint[];
+    select cfg.minutos_lembrete_equipe
+      into marcos
+      from public.config_aviso_de_caso cfg
+     where cfg.organization_id = c.organization_id;
+    if not found or marcos is null then
+      marcos := array[3,6,9]::smallint[];
+    end if;
+
+    select max(marco.minuto)
+      into patamar
+      from unnest(marcos) as marco(minuto)
+     where c.wait_started_at <= instante - make_interval(mins => marco.minuto::integer);
+    if patamar is null then
+      continue;
+    end if;
+    ultimo_patamar := marcos[cardinality(marcos)];
+    select r.inbox_id
+      into aviso
+      from public.case_task_reminders r
+     where r.organization_id = c.organization_id
+       and r.case_id = c.id
+       and r.wait_generation = c.wait_generation
+       and r.inbox_id is not null
+     order by r.minute desc
+     limit 1;
+
+    -- Casos gerais podem já ter um alerta aberto do vigia de 24 horas.
+    -- Reutilize-o apenas quando ainda não há recibo no episódio atual.
+    if aviso is null and c.task_kind is null then
+      select i.id
+        into aviso
+        from public.agent_inbox_items i
+       where i.organization_id = c.organization_id
+         and i.kind = 'case_stale'
+         and i.ref_kind = 'agent_case'
+         and i.ref_id = c.id
+         and i.status = 'open'
+       order by i.created_at desc
+       limit 1;
+    end if;
+
+    tarefa := case
+      when c.task_kind is null then 'Caso aguardando equipe'
+      when c.task_state = 'send_failed' then 'Revisar envio que falhou'
+      when c.task_kind = 'payment_details' then 'Liberar dados de pagamento'
+      else 'Conferir recebimento do pagamento'
+    end;
+
+    if aviso is null then
+      insert into public.agent_inbox_items(organization_id,kind,severity,title,body,ref_kind,ref_id)
+      values (
+        c.organization_id,
+        'case_stale',
+        'warn',
+        tarefa || ' — ' || patamar || ' minutos',
+        (case when c.task_kind is null then 'O caso aguarda a equipe desde ' else 'A tarefa aguarda a equipe desde ' end)
+          || c.wait_started_at::text || '. Abra o caso para resolver.'
+          || case when patamar = ultimo_patamar then ' Atrasada: permanece pendente até resolução.' else '' end,
+        'agent_case',
+        c.id
+      )
+      returning id into aviso;
+    else
+      update public.agent_inbox_items
+         set status = 'open',
+             resolved_at = null,
+             title = tarefa || ' — ' || patamar || ' minutos',
+             body = (case when c.task_kind is null then 'O caso aguarda a equipe desde ' else 'A tarefa aguarda a equipe desde ' end)
+          || c.wait_started_at::text || '. Abra o caso para resolver.'
+               || case when patamar = ultimo_patamar then ' Atrasada: permanece pendente até resolução.' else '' end
+       where id = aviso
+         and organization_id = c.organization_id;
+    end if;
+
+    insert into public.case_task_reminders as lembrete_atual(organization_id,case_id,wait_generation,minute,result,inbox_id)
+    select c.organization_id,
+           c.id,
+           c.wait_generation,
+           marco.minuto,
+           case when marco.minuto = patamar then 'notified' else 'superseded' end,
+           aviso
+      from unnest(marcos) as marco(minuto)
+     where marco.minuto <= patamar
+    on conflict (organization_id,case_id,wait_generation,minute) do update
+       set result = 'notified',
+           recorded_at = clock_timestamp(),
+           inbox_id = coalesce(lembrete_atual.inbox_id, excluded.inbox_id)
+     where lembrete_atual.result = 'superseded'
+       and lembrete_atual.minute = patamar;
+
+    select coalesce(cfg.repetir_lembretes_whatsapp, false)
+      into repetir_whatsapp
+      from public.config_aviso_de_caso cfg
+     where cfg.organization_id = c.organization_id;
+    repetir_whatsapp := coalesce(repetir_whatsapp, false);
+
+    if repetir_whatsapp then
+      select r.whatsapp_event_id
+        into evento_whatsapp
+        from public.case_task_reminders r
+       where r.organization_id = c.organization_id
+         and r.case_id = c.id
+         and r.wait_generation = c.wait_generation
+         and r.minute = patamar
+         and r.result = 'notified';
+      if evento_whatsapp is null then
+        evento_whatsapp := public.emit_event(
+          'ai.case_task_reminder_due',
+          'agent_case',
+          c.id,
+          jsonb_build_object(
+            'case_id', c.id,
+            'wait_generation', c.wait_generation,
+            'minute', patamar
+          ),
+          '{}'::jsonb,
+          c.organization_id
+        );
+        update public.case_task_reminders
+           set whatsapp_event_id = evento_whatsapp
+         where organization_id = c.organization_id
+           and case_id = c.id
+           and wait_generation = c.wait_generation
+           and minute = patamar
+           and result = 'notified'
+           and whatsapp_event_id is null;
+        if not found then
+          raise exception 'case_task_reminder_event_link_failed';
+        end if;
+      end if;
+    end if;
+
+    quantidade := quantidade + 1;
+  end loop;
+  return quantidade;
+end
+$$;
+revoke execute on function public.fn_processar_lembretes_tarefa(integer) from public, anon, authenticated;
+grant execute on function public.fn_processar_lembretes_tarefa(integer) to service_role;
+
+create or replace function public.fn_encerrar_lembrete_tarefa()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if new.wait_generation is distinct from old.wait_generation
+    or not (
+      (
+        new.task_kind is null
+        and new.task_state is null
+        and new.status = 'awaiting_human'
+      )
+      or (
+        new.task_kind is not null
+        and new.task_kind in ('payment_details','payment_review')
+        and new.task_state in ('awaiting_human','send_failed')
+        and new.status in ('awaiting_human','awaiting_lead')
+      )
+    )
+  then
+    update public.agent_inbox_items i
+       set status = 'resolved',
+           resolved_at = clock_timestamp()
+     where i.organization_id = old.organization_id
+       and i.status = 'open'
+       and exists (
+         select 1
+           from public.case_task_reminders r
+          where r.organization_id = old.organization_id
+            and r.case_id = old.id
+            and r.wait_generation = old.wait_generation
+            and r.inbox_id = i.id
+       );
+  end if;
+  return new;
+end
+$$;
+revoke execute on function public.fn_encerrar_lembrete_tarefa() from public, anon, authenticated;
+grant execute on function public.fn_encerrar_lembrete_tarefa() to service_role;
+
+create trigger trg_encerrar_lembrete_tarefa
+  after update of task_state, task_kind, status, wait_generation
+  on public.agent_cases
+  for each row execute function public.fn_encerrar_lembrete_tarefa();
+
+notify pgrst, 'reload schema';

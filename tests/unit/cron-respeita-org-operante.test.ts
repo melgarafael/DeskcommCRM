@@ -47,7 +47,8 @@ const PROFUNDIDADE_MAXIMA = 4;
 const NAO_E_FILTRO = new Set([join(RAIZ, "app", "api", "v1", "messages", "_handler.ts")]);
 
 const SEM_FILTRO: Record<string, string> = {
-  "agenda-expira-pendentes": "só libera o horário de pedido pendente vencido; escrita interna, sem custo nem saída",
+  "agenda-expira-pendentes":
+    "só libera o horário de pedido pendente vencido; escrita interna, sem custo nem saída",
   "agenda-google-push": "sincronia com o Google Agenda: deliberadamente não gatilhada (spec §4)",
   "agenda-google-refresh": "renova token do Google Agenda: deliberadamente não gatilhado (spec §4)",
   "agenda-google-sync": "sincronia com o Google Agenda: deliberadamente não gatilhada (spec §4)",
@@ -61,16 +62,20 @@ const SEM_FILTRO: Record<string, string> = {
   "contact-proposals-watcher": "só expira propostas de dado vencidas; escrita interna",
   "data-retention": "retenção e expurgo: obrigação, nunca bloqueada (spec §1.3)",
   "followup-sem-agente": "só abre aviso na Central sobre fluxo sem agente; sem custo nem saída",
-  "handoff-devolucao": "devolve a conversa à IA; a IA só fala por evento, barrado pelo gate e pelo dispatcher",
-  "lead-date-field-due": "só emite lead.date_field_due; o consumidor (automationRulesHandler) é 'pula'",
-  "lead-time-triggers": "só emite lead.silent_for/stage_stale; o consumidor (automationRulesHandler) é 'pula'",
+  "handoff-devolucao":
+    "devolve a conversa à IA; a IA só fala por evento, barrado pelo gate e pelo dispatcher",
+  "lead-date-field-due":
+    "só emite lead.date_field_due; o consumidor (automationRulesHandler) é 'pula'",
+  "lead-time-triggers":
+    "só emite lead.silent_for/stage_stale; o consumidor (automationRulesHandler) é 'pula'",
   "lgpd-sla-watcher": "LGPD nunca é bloqueada (spec §1.3)",
   "media-retention": "retenção de mídia: apagar é obrigação, não custo",
   "proposal-acceptance-rate": "só calcula a taxa e abre aviso interno; sem custo nem saída",
   "proposal-expiry": "só vence proposta e abre aviso interno; sem custo nem saída",
   "proposal-promised-not-created": "só abre aviso interno de promessa vencida; sem custo nem saída",
   "proposta-travada": "só destrava proposta presa em 'enviando'; escrita interna",
-  "recover-stuck-messages": "marca failed e avisa, nunca reenvia: deliberadamente não gatilhado (spec §4)",
+  "recover-stuck-messages":
+    "marca failed e avisa, nunca reenvia: deliberadamente não gatilhado (spec §4)",
   "recurring-entries": "só gera lançamento financeiro pendente; escrita interna",
   "risk-watcher": "só classifica risco e registra a proposta de reativação; nada sai",
   "routing-worker": "só distribui o dono da conversa; sem custo nem saída",
@@ -104,7 +109,42 @@ function soDeTipo(no: ts.ImportDeclaration): boolean {
 }
 
 /** O módulo CHAMA um símbolo de filtro da régua, ou escreve `fn_org_operante(` num literal SQL. */
-function usaAReguaNaFonte(fonte: string, nome: string): boolean {
+function funcoesSqlVigentes(fontes: string[]): Map<string, string> {
+  const funcoes = new Map<string, string>();
+  for (const fonte of fontes) {
+    const semComentarios = fonte.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
+    const definicoes = semComentarios.matchAll(
+      /create\s+(?:or\s+replace\s+)?function\s+(?:public\.)?(\w+)\s*\([^;]*?\bas\s+(\$\w*\$)([\s\S]*?)\2/gi,
+    );
+    for (const definicao of definicoes) funcoes.set(definicao[1]!, definicao[3]!);
+  }
+  return funcoes;
+}
+
+const DIR_MIGRATIONS = join(RAIZ, "supabase", "migrations");
+const SQL_VIGENTE = funcoesSqlVigentes(
+  readdirSync(DIR_MIGRATIONS)
+    .filter((nome) => nome.endsWith(".sql"))
+    .sort()
+    .map((nome) => readFileSync(join(DIR_MIGRATIONS, nome), "utf8")),
+);
+
+function rpcFiltraOrg(
+  nome: string,
+  funcoes: Map<string, string>,
+  visitadas = new Set<string>(),
+): boolean {
+  if (visitadas.has(nome)) return false;
+  visitadas.add(nome);
+  const corpo = funcoes.get(nome);
+  if (!corpo) return false;
+  if (/\b(?:public\.)?fn_org_operante\s*\(/.test(corpo)) return true;
+  return [...corpo.matchAll(/\bpublic\.(fn_\w+)\s*\(/g)].some((chamada) =>
+    rpcFiltraOrg(chamada[1]!, funcoes, visitadas),
+  );
+}
+
+function usaAReguaNaFonte(fonte: string, nome: string, funcoes = SQL_VIGENTE): boolean {
   const arquivo = ts.createSourceFile(nome, fonte, ts.ScriptTarget.Latest, true);
   const nomesLocais = new Set<string>();
   for (const st of arquivo.statements) {
@@ -113,12 +153,24 @@ function usaAReguaNaFonte(fonte: string, nome: string): boolean {
     const nomeados = st.importClause?.namedBindings;
     if (!nomeados || !ts.isNamedImports(nomeados)) continue;
     for (const el of nomeados.elements) {
-      if (!el.isTypeOnly && SIMBOLOS_DE_FILTRO.has((el.propertyName ?? el.name).text)) nomesLocais.add(el.name.text);
+      if (!el.isTypeOnly && SIMBOLOS_DE_FILTRO.has((el.propertyName ?? el.name).text))
+        nomesLocais.add(el.name.text);
     }
   }
   let usa = false;
   const visitar = (no: ts.Node): void => {
     if (usa || ts.isImportDeclaration(no)) return;
+    if (
+      ts.isCallExpression(no) &&
+      ts.isPropertyAccessExpression(no.expression) &&
+      no.expression.name.text === "rpc"
+    ) {
+      const funcao = no.arguments[0];
+      if (funcao && ts.isStringLiteral(funcao) && rpcFiltraOrg(funcao.text, funcoes)) {
+        usa = true;
+        return;
+      }
+    }
     if (ts.isIdentifier(no) && nomesLocais.has(no.text)) {
       usa = true;
       return;
@@ -192,10 +244,31 @@ function rotaRespeita(rota: string): boolean {
 }
 
 describe("a sonda", () => {
+  it("segue RPC real até SQL vigente; comentários, nomes soltos e definição substituída não contam", () => {
+    const funcoes = funcoesSqlVigentes([
+      "create function public.fn_antiga() returns integer language sql as $$ select public.fn_org_operante('x'); $$;",
+      "create or replace function public.fn_antiga() returns integer language sql as $$ select 1; $$;",
+      "create function public.fn_filtrada() returns boolean language sql as $$ select public.fn_org_operante('x'); $$;",
+      "create function public.fn_comentada() returns integer language sql as $$ -- public.fn_org_operante('x')\nselect 1; $$;",
+    ]);
+    expect(usaAReguaNaFonte('await admin.rpc("fn_filtrada");', "rpc.ts", funcoes)).toBe(true);
+    expect(usaAReguaNaFonte('await admin.rpc("fn_antiga");', "rpc.ts", funcoes)).toBe(false);
+    expect(usaAReguaNaFonte('await admin.rpc("fn_comentada");', "rpc.ts", funcoes)).toBe(false);
+    expect(usaAReguaNaFonte('const nome = "fn_filtrada";', "rpc.ts", funcoes)).toBe(false);
+    expect(usaAReguaNaFonte('await admin.rpc("fn_ausente");', "rpc.ts", funcoes)).toBe(false);
+  });
   it("reconhece a chamada da régua e a função SQL (controles positivos)", () => {
-    expect(usaAReguaNaFonte(`import { idsDeOrgsParadas } from "@/lib/organizacao/operante";\nawait idsDeOrgsParadas(admin);`, "a.ts")).toBe(true);
     expect(
-      usaAReguaNaFonte("await pool.query(`select public.fn_org_operante($1) as operante`, [id]);", "b.ts"),
+      usaAReguaNaFonte(
+        `import { idsDeOrgsParadas } from "@/lib/organizacao/operante";\nawait idsDeOrgsParadas(admin);`,
+        "a.ts",
+      ),
+    ).toBe(true);
+    expect(
+      usaAReguaNaFonte(
+        "await pool.query(`select public.fn_org_operante($1) as operante`, [id]);",
+        "b.ts",
+      ),
     ).toBe(true);
   });
 
@@ -212,19 +285,33 @@ describe("a sonda", () => {
       ),
     ).toBe(false);
     expect(
-      usaAReguaNaFonte(`import { assertOrgOperante } from "@/lib/organizacao/operante";\nawait assertOrgOperante(db, id);`, "f.ts"),
+      usaAReguaNaFonte(
+        `import { assertOrgOperante } from "@/lib/organizacao/operante";\nawait assertOrgOperante(db, id);`,
+        "f.ts",
+      ),
     ).toBe(false);
     // Importar o símbolo de filtro sem chamá-lo não filtra nada.
-    expect(usaAReguaNaFonte(`import { ehOperante } from "@/lib/organizacao/operante";\nexport const x = 1;`, "g.ts")).toBe(false);
+    expect(
+      usaAReguaNaFonte(
+        `import { ehOperante } from "@/lib/organizacao/operante";\nexport const x = 1;`,
+        "g.ts",
+      ),
+    ).toBe(false);
     // Todos os especificadores só de tipo equivalem a `import type`.
     expect(
-      usaAReguaNaFonte(`import { type TipoDeSuspensao } from "@/lib/organizacao/operante";\nlet t: TipoDeSuspensao;`, "h.ts"),
+      usaAReguaNaFonte(
+        `import { type TipoDeSuspensao } from "@/lib/organizacao/operante";\nlet t: TipoDeSuspensao;`,
+        "h.ts",
+      ),
     ).toBe(false);
   });
 
   it("usar um símbolo de filtro conta, inclusive com alias (controles positivos)", () => {
     expect(
-      usaAReguaNaFonte(`import { ehOperante as op } from "@/lib/organizacao/operante";\nif (!op(s)) return;`, "i.ts"),
+      usaAReguaNaFonte(
+        `import { ehOperante as op } from "@/lib/organizacao/operante";\nif (!op(s)) return;`,
+        "i.ts",
+      ),
     ).toBe(true);
     expect(
       usaAReguaNaFonte(
@@ -235,9 +322,13 @@ describe("a sonda", () => {
   });
 
   it("segue os imports @/ transitivamente até o módulo que usa o filtro (controles da árvore)", () => {
-    const arvore = (folha: string, importDaRota = `import { a } from "@/lib/a";`): Record<string, string> => ({
+    const arvore = (
+      folha: string,
+      importDaRota = `import { a } from "@/lib/a";`,
+    ): Record<string, string> => ({
       [join(RAIZ, "rota.ts")]: `${importDaRota}\na();`,
-      [join(RAIZ, "lib", "a.ts")]: `import { b } from "@/lib/b";\nimport { rota } from "@/rota";\nexport const a = () => b();`,
+      [join(RAIZ, "lib", "a.ts")]:
+        `import { b } from "@/lib/b";\nimport { rota } from "@/rota";\nexport const a = () => b();`,
       [join(RAIZ, "lib", "b.ts")]: folha,
     });
     const respeitaNa = (arquivos: Record<string, string>) =>
@@ -262,8 +353,15 @@ describe("a sonda", () => {
   });
 
   it("não se engana com comentário nem com import só de tipo (controles negativos)", () => {
-    expect(usaAReguaNaFonte("// não chama fn_org_operante( aqui\nexport const x = 1;", "c.ts")).toBe(false);
-    expect(usaAReguaNaFonte(`import type { TipoDeSuspensao } from "@/lib/organizacao/operante";`, "d.ts")).toBe(false);
+    expect(
+      usaAReguaNaFonte("// não chama fn_org_operante( aqui\nexport const x = 1;", "c.ts"),
+    ).toBe(false);
+    expect(
+      usaAReguaNaFonte(
+        `import type { TipoDeSuspensao } from "@/lib/organizacao/operante";`,
+        "d.ts",
+      ),
+    ).toBe(false);
   });
 });
 
@@ -292,7 +390,8 @@ describe("crons × organização parada", () => {
     // segue importando OrgNaoOperanteError — e isso, sozinho, não mantém a rota verde.
     expect(lerDoDisco(gate)).toContain("ehOperante(");
     expect(lerDoDisco(envio)).toContain("OrgNaoOperanteError");
-    const gateSemFiltro: Ler = (c) => (c === gate ? lerDoDisco(c).replaceAll("ehOperante(", "Boolean(") : lerDoDisco(c));
+    const gateSemFiltro: Ler = (c) =>
+      c === gate ? lerDoDisco(c).replaceAll("ehOperante(", "Boolean(") : lerDoDisco(c);
     expect(caminhoAteOFiltro(rota, gateSemFiltro, resolverNoDisco)).toBeNull();
   });
 
@@ -307,7 +406,10 @@ describe("crons × organização parada", () => {
 
   it("a lista só encolhe: toda entrada existe e ainda não usa a régua", () => {
     for (const rota of Object.keys(SEM_FILTRO)) {
-      expect(existsSync(join(DIR_CRON, rota, "route.ts")), `${rota} não existe mais — tire de SEM_FILTRO`).toBe(true);
+      expect(
+        existsSync(join(DIR_CRON, rota, "route.ts")),
+        `${rota} não existe mais — tire de SEM_FILTRO`,
+      ).toBe(true);
       expect(rotaRespeita(rota), `${rota} já usa a régua — tire de SEM_FILTRO`).toBe(false);
     }
   });

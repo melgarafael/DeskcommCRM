@@ -31,6 +31,7 @@ import Link from "next/link";
 import { format } from "date-fns";
 
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import { FRASE_DO_ERRO_DO_AVISO } from "@/lib/escalacao/vocabulario-do-aviso";
@@ -47,7 +48,7 @@ import { ArrowSquareOut } from "@/lib/ui/icons";
  */
 const SITUACAO_DA_ENTREGA = {
   pendente: "Tentando enviar",
-  enviado: "Entregue",
+  enviado: "Aceito pelo canal",
   falhou: "Não saiu",
   cancelado: "Cancelado",
 } as const;
@@ -56,6 +57,26 @@ function situacao(status: string): string {
   return status in SITUACAO_DA_ENTREGA
     ? SITUACAO_DA_ENTREGA[status as keyof typeof SITUACAO_DA_ENTREGA]
     : status;
+}
+
+function marcoDaEntrega(entrega: EntregaNaTela): {
+  rotulo: string;
+  minuto: number | null;
+  ciclo: string | null;
+} {
+  if (entrega.wait_generation === null && entrega.reminder_minute === null) {
+    return { rotulo: "Aviso de abertura", minuto: null, ciclo: null };
+  }
+
+  if (entrega.wait_generation !== null && entrega.reminder_minute !== null) {
+    return {
+      rotulo: "Reforço de",
+      minuto: entrega.reminder_minute,
+      ciclo: String(entrega.wait_generation),
+    };
+  }
+
+  return { rotulo: "Tipo de aviso não reconhecido", minuto: null, ciclo: null };
 }
 
 function fraseDoErro(codigo: string | null): string | null {
@@ -68,22 +89,44 @@ function fraseDoErro(codigo: string | null): string | null {
 export function EntregasDoAviso({
   entregas,
   laco,
+  atualizando,
+  aoAtualizar,
 }: {
   entregas: EntregaNaTela[];
   laco: LacoDoAviso;
+  atualizando: boolean;
+  aoAtualizar: () => void;
 }) {
   const t = useT();
   const locale = useLocaleDeData();
 
   return (
     <Card className="p-4">
-      <div className="mb-3 space-y-1">
-        <h2 className="text-sm font-semibold">{t("Últimos avisos enviados")}</h2>
-        <p className="text-xs text-muted-foreground">
-          {t(
-            "O que saiu, o que não saiu e por quê. Esta lista é o registro do sistema — ela não some quando alguém resolve um alerta.",
-          )}
-        </p>
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+        <div className="space-y-1">
+          <h2 className="text-sm font-semibold">{t("Histórico de tentativas de aviso")}</h2>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "O que saiu, o que não saiu e por quê. Esta lista é o registro do sistema — ela não some quando alguém resolve um alerta.",
+            )}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "“Aceito pelo canal” confirma que o canal recebeu o pedido de envio; sem recibo de entrega, não confirma que a mensagem chegou ao WhatsApp.",
+            )}
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={atualizando}
+          onClick={aoAtualizar}
+          aria-label={t("Atualizar histórico")}
+          data-testid="atualizar-historico-aviso"
+        >
+          {atualizando ? t("Atualizando…") : t("Atualizar histórico")}
+        </Button>
       </div>
 
       {entregas.length === 0 ? (
@@ -100,6 +143,7 @@ export function EntregasDoAviso({
           {entregas.map((entrega) => {
             const frase = fraseDoErro(entrega.erro_codigo);
             const quando = entrega.enviado_em ?? entrega.created_at;
+            const marco = marcoDaEntrega(entrega);
             return (
               <li key={entrega.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 p-3">
                 <span className="text-xs text-muted-foreground tabular-nums">
@@ -110,6 +154,18 @@ export function EntregasDoAviso({
                   data-testid={`entrega-situacao-${entrega.status}`}
                 >
                   {t(situacao(entrega.status))}
+                </span>
+                <span
+                  className="text-xs font-medium"
+                  data-testid="entrega-tipo"
+                  data-marco={entrega.reminder_minute ?? "abertura"}
+                  data-wait-generation={entrega.wait_generation ?? ""}
+                >
+                  {t(marco.rotulo)}
+                  {marco.minuto === null
+                    ? ""
+                    : ` ${marco.minuto} ${t(marco.minuto === 1 ? "minuto" : "minutos")}`}
+                  {marco.ciclo === null ? "" : ` · ${t("Ciclo")} ${marco.ciclo}`}
                 </span>
                 <span className="text-xs text-muted-foreground">{entrega.destino_mascarado}</span>
                 <Link
@@ -157,7 +213,7 @@ function LacoDeRetorno({ laco }: { laco: LacoDoAviso }) {
       ) : (
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
           <Medida
-            titulo={t("Casos em que o aviso chegou")}
+            titulo={t("Casos em que o canal aceitou o aviso")}
             casos={laco.comAviso.casos}
             respondidos={laco.comAviso.respondidos}
             minutos={laco.comAviso.medianaMinutos}

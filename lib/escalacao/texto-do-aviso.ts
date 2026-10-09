@@ -71,7 +71,8 @@ export interface AvisoDeCaso {
   /** `contacts.name` inteiro — o corte para o primeiro nome é feito aqui. */
   nomeDoCliente: string | null;
   /** O link já montado pelo servidor. É o ÚNICO link do texto. */
-  link: string;
+  link: string | null;
+  referencia?: string;
 }
 
 /**
@@ -122,10 +123,39 @@ export function montarAvisoDeCaso(aviso: AvisoDeCaso): string {
   const travou = sanitizarTextoDoLead(aviso.blocker, TETOS_DO_TEXTO_DO_LEAD.blocker);
   if (travou) linhas.push(`${t("Por que a IA travou")}: ${travou}`);
 
-  linhas.push("", `${t("Abrir")}: ${aviso.link}`, "");
-  linhas.push(t("Responder aqui não chega ao cliente — abra o link para responder."));
+  if (aviso.link) {
+    linhas.push("", `${t("Abrir")}: ${aviso.link}`, "");
+    linhas.push(t("Responder aqui não chega ao cliente — abra o link para responder."));
+  } else {
+    if (aviso.referencia) linhas.push("", `${t("Caso")}: ${aviso.referencia}`);
+    linhas.push(
+      "",
+      t(
+        "Abra Casos no computador onde o sistema está funcionando. Responder aqui não chega ao cliente.",
+      ),
+    );
+  }
 
   return linhas.join("\n");
+}
+
+/** Lembrete mínimo da equipe: identifica o marco e caso, sem ecoar conversa. */
+export function montarLembreteDeCaso(entrada: {
+  marca: string;
+  idioma: Idioma;
+  minute: number;
+  referencia: string;
+}): string {
+  const t = (texto: string): string => traduzir(texto, entrada.idioma);
+  return [
+    `🔔 ${entrada.marca}: ${t("lembrete de caso aguardando a equipe")}`,
+    `${t("Tempo de espera")}: ${entrada.minute} ${t("minutos")}`,
+    `${t("Caso")}: ${entrada.referencia}`,
+    "",
+    t(
+      "Abra Casos no computador onde o sistema está funcionando. Responder aqui não chega ao cliente.",
+    ),
+  ].join("\n");
 }
 
 /**
@@ -150,7 +180,8 @@ export function montarAvisoDeTeste(entrada: {
   marca: string;
   idioma: Idioma;
   /** O link já montado pelo servidor — a lista de casos desta instalação. */
-  link: string;
+  link: string | null;
+  referencia?: string;
 }): string {
   const t = (texto: string): string => traduzir(texto, entrada.idioma);
   return [
@@ -158,12 +189,20 @@ export function montarAvisoDeTeste(entrada: {
     "",
     t("Se esta mensagem chegou, os avisos de caso estão configurados e funcionando."),
     "",
-    t(
-      "Quando o atendimento automático travar, chega aqui o tipo do assunto, o primeiro nome do cliente, o que ele precisa e um link para abrir o atendimento.",
-    ),
+    entrada.link
+      ? t(
+          "Quando o atendimento automático travar, chega aqui o tipo do assunto, o primeiro nome do cliente, o que ele precisa e um link para abrir o atendimento.",
+        )
+      : t(
+          "Quando o atendimento automático travar, abra Casos no computador onde o sistema está funcionando.",
+        ),
     "",
-    `${t("Abrir")}: ${entrada.link}`,
+    ...(entrada.link ? [`${t("Abrir")}: ${entrada.link}`] : []),
     "",
-    t("Responder aqui não chega ao cliente — abra o link para responder."),
+    entrada.link
+      ? t("Responder aqui não chega ao cliente — abra o link para responder.")
+      : t(
+          "Abra Casos no computador onde o sistema está funcionando. Responder aqui não chega ao cliente.",
+        ),
   ].join("\n");
 }

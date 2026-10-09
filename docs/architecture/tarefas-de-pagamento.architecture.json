@@ -1,0 +1,228 @@
+{
+  "schema_version": 1,
+  "diagram_type": "fluxo",
+  "meta": {
+    "titulo": "Pagamento — decisão humana e confirmação de envio",
+    "pergunta": "Como manter a Bia atendendo sem esquecer a liberação dos dados e a conferência do pagamento?",
+    "resumo": "Uma tarefa ligada à compra, com responsável próprio, decisão auditada e envio determinístico. O relógio compartilhado da Central e os reforços opcionais no WhatsApp cobrem todo caso que aguarda a equipe, na cadência configurada por organização (padrão 3/6/9 minutos). Recibo aceito conclui a comunicação e pode iniciar o fluxo escolhido pela equipe."
+  },
+  "lanes": [
+    { "id": "equipe", "label": "Equipe" },
+    { "id": "regra", "label": "Regras e HTTP" },
+    { "id": "banco", "label": "Estado durável" },
+    { "id": "motor", "label": "Worker e relógio" }
+  ],
+  "mainPath": ["tela", "acao", "caso", "entrega", "tela"],
+  "nodes": [
+    {
+      "id": "tela",
+      "lane": "equipe",
+      "col": 1,
+      "type": "frontend",
+      "label": "PaymentTaskPanel",
+      "sublabel": "Assumir/reassumir · vincular compra · liberar dados · registrar conferência"
+    },
+    {
+      "id": "acao",
+      "lane": "regra",
+      "col": 2,
+      "type": "api",
+      "label": "GET/POST /ai/cases/:id/task",
+      "sublabel": "Zod · RBAC · suporte · organização · revisão · auditoria"
+    },
+    {
+      "id": "abertura",
+      "lane": "regra",
+      "col": 1,
+      "type": "regra",
+      "label": "open_human_case.task_kind",
+      "sublabel": "Continua o caso ativo da compra; Bia permanece atendendo"
+    },
+    {
+      "id": "caso",
+      "lane": "banco",
+      "col": 3,
+      "type": "db",
+      "label": "agent_cases + agent_case_events",
+      "sublabel": "Compra · responsável · revisão · episódio · decisão · texto aprovado"
+    },
+    {
+      "id": "entrega",
+      "lane": "motor",
+      "col": 4,
+      "type": "regra",
+      "label": "case_reply_turn: task_delivery",
+      "sublabel": "Texto exato · guardrails · ledger · envio aceito"
+    },
+    {
+      "id": "relogio",
+      "lane": "motor",
+      "col": 2,
+      "type": "regra",
+      "label": "case-task-reminders",
+      "sublabel": "Relógio local · dev-crons · scheduler"
+    },
+    {
+      "id": "central",
+      "lane": "banco",
+      "col": 4,
+      "type": "db",
+      "label": "case_task_reminders + agent_inbox_items",
+      "sublabel": "Recibo único por caso/episódio/patamar · atrasado continua visível"
+    },
+    {
+      "id": "evento_dados",
+      "lane": "banco",
+      "col": 5,
+      "type": "db",
+      "label": "ai.case_task_delivery_confirmed",
+      "sublabel": "Só após dados aceitos · fluxo opcional selecionado pela equipe"
+    },
+    {
+      "id": "matricula",
+      "lane": "motor",
+      "col": 6,
+      "type": "regra",
+      "label": "followup-apos-dados-confirmados.v1",
+      "sublabel": "Revalida compra/origem/recibo · matrícula + recibo atômicos"
+    },
+    {
+      "id": "aviso",
+      "lane": "regra",
+      "col": 4,
+      "type": "regra",
+      "label": "Aviso de abertura sem_link",
+      "sublabel": "Destino interno · referência curta · resolver neste computador"
+    },
+    {
+      "id": "evento_lembrete",
+      "lane": "banco",
+      "col": 5,
+      "type": "db",
+      "label": "ai.case_task_reminder_due",
+      "sublabel": "Evento durável por caso/geração/patamar · opt-in ativo"
+    },
+    {
+      "id": "whatsapp_lembrete",
+      "lane": "regra",
+      "col": 6,
+      "type": "regra",
+      "label": "Reforço interno no WhatsApp",
+      "sublabel": "Revalida caso e marco · pacing · só destino da equipe"
+    },
+    {
+      "id": "recibo_whatsapp",
+      "lane": "banco",
+      "col": 7,
+      "type": "db",
+      "label": "entregas_de_aviso_de_caso",
+      "sublabel": "Abertura e marcos · recibo único por destino e patamar"
+    }
+  ],
+  "edges": [
+    { "id": "p1", "from": "tela", "to": "acao", "label": "ação explícita com expected_revision" },
+    {
+      "id": "p2",
+      "from": "acao",
+      "to": "caso",
+      "label": "lock + evento + fila na mesma transação"
+    },
+    { "id": "p3", "from": "abertura", "to": "caso", "label": "payment_details / payment_review" },
+    { "id": "p4", "from": "caso", "to": "entrega", "label": "job e aprovação do episódio atual" },
+    {
+      "id": "p5",
+      "from": "entrega",
+      "to": "caso",
+      "label": "envio aceito conclui; falha exige revisão, mantém decisão"
+    },
+    {
+      "id": "p6",
+      "from": "caso",
+      "to": "tela",
+      "label": "estado real e responsável retornam à tela"
+    },
+    {
+      "id": "p7",
+      "from": "relogio",
+      "to": "central",
+      "label": "RPC revalida espera e grava recibo/aviso atomicamente"
+    },
+    {
+      "id": "p8",
+      "from": "caso",
+      "to": "central",
+      "label": "resolução ou novo episódio encerra aviso antigo"
+    },
+    { "id": "p9", "from": "central", "to": "tela", "label": "ação leva ao caso pendente" },
+    {
+      "id": "p11",
+      "from": "entrega",
+      "to": "evento_dados",
+      "label": "dados aceitos e escolha de fluxo registrada na mesma transação"
+    },
+    {
+      "id": "p12",
+      "from": "evento_dados",
+      "to": "matricula",
+      "label": "ignora repetição, resposta posterior, conferência ou origem superada"
+    },
+    {
+      "id": "p13",
+      "from": "matricula",
+      "to": "caso",
+      "label": "recibo durável impede rematrícula da mesma entrega"
+    },
+    {
+      "id": "p10",
+      "from": "abertura",
+      "to": "aviso",
+      "label": "aviso de abertura opcional"
+    },
+    {
+      "id": "p14",
+      "from": "relogio",
+      "to": "evento_lembrete",
+      "label": "RPC grava marco e evento na mesma transação"
+    },
+    {
+      "id": "p15",
+      "from": "evento_lembrete",
+      "to": "whatsapp_lembrete",
+      "label": "worker consome após commit; revalida estado atual"
+    },
+    {
+      "id": "p16",
+      "from": "whatsapp_lembrete",
+      "to": "recibo_whatsapp",
+      "label": "destino interno · dedupe · aceito ou falha visível"
+    },
+    {
+      "id": "p17",
+      "from": "caso",
+      "to": "whatsapp_lembrete",
+      "label": "resolução, geração nova ou patamar superado cancela"
+    }
+  ],
+  "cards": [
+    {
+      "titulo": "Relógio absoluto",
+      "texto": "minutos_lembrete_equipe desde wait_started_at para qualquer caso em espera da equipe; default [3,6,9], de 1 a 10 valores únicos crescentes entre 1 e 1440. A espera do cliente pausa o relógio; a resposta inicia nova geração. Assumir/comentar não reinicia. Se o processo atrasar, só o marco configurado mais alto já devido é emitido e os anteriores ficam ultrapassados."
+    },
+    {
+      "titulo": "Recuperação",
+      "texto": "Erro de envio preserva a decisão humana e o ledger. Repetir o envio usa o recibo para evitar duplicação. Compra ambígua exige escolha explícita da equipe."
+    },
+    {
+      "titulo": "Fluxo pósdados configurável",
+      "texto": "A equipe escolhe um fluxo publicado. O consumidor só matricula após recibo accepted e revalidação da compra e do atendimento. Uma decisão humana durável de pagamento confirmado cancela a retomada e impede eventos atrasados da mesma compra/conversa, mesmo se sua comunicação falhar. Não substitui um acompanhamento ativo nem cria tags da loja; suas condições publicadas precisam estar coerentes."
+    },
+    {
+      "titulo": "Não-ligações deliberadas",
+      "texto": "Não há cobrança à cliente pelo relógio interno. O modo sem link não publica o app. Nenhum id de fluxo de loja é gravado no núcleo; habilitar avisos ou publicar um agente continua sendo configuração da instalação."
+    },
+    {
+      "titulo": "WhatsApp da equipe",
+      "texto": "Reforços nos minutos de minutos_lembrete_equipe para qualquer caso aguardando a equipe exigem opt-in separado e começam desligados. O event_log e entregas_de_aviso_de_caso dão continuidade e recibos sem criar fila ou cron; catch-up emite só o marco atual. Pausa mantém o evento recuperável e o consumidor revalida configuração, caso e marco. O histórico diz quando o transporte aceitou o envio; não promete confirmação final de entrega."
+    }
+  ]
+}

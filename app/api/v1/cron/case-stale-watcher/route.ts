@@ -121,6 +121,7 @@ async function handle(req: NextRequest): Promise<Response> {
     .from("agent_cases")
     .select("id, organization_id, title, opened_at, updated_at, followup_attempts")
     .eq("status", "awaiting_human")
+    .is("task_kind", null)
     .lt("updated_at", corte)
     .lt("followup_attempts", TETO_DE_COBRANCAS)
     .order("updated_at", { ascending: true })

@@ -11,9 +11,8 @@
  * 1. **A tela é de quem administra.** Um `manager` não a alcança — ela escolhe
  *    um número conectado e manda dado de cliente para um celular.
  * 2. **Ela declara o estado EFETIVO antes do formulário.** Numa instalação sem
- *    endereço público o produto RECUSA ligar o aviso, diz por quê em português
- *    e deixa o interruptor travado. Configuração aceita que nunca entrega nada
- *    é o pior desfecho possível aqui.
+ *    endereço público o produto RECUSA ligar o aviso com link e oferece o modo
+ *    local sem link. A escolha local é salva e sobrevive ao recarregamento.
  * 3. **Ela não mente sobre o que o teste faz.** O botão avisa, antes do clique,
  *    que manda mensagem de verdade e conta no limite diário do número.
  * 4. **A recusa é honesta ponta a ponta.** Com o aviso configurado e um caso
@@ -27,7 +26,9 @@
  * `lib/escalacao/aviso-ao-suporte.ts:425` recusam quando
  * `urlPublicaUsavel(env.NEXT_PUBLIC_APP_URL)` é falso, e
  * `scripts/gerar-env-e2e.sh` grava `NEXT_PUBLIC_APP_URL=http://localhost:$E2E_PORT`
- * — ou seja, **no CI o produto nunca envia, por construção**. Quem prova o
+ * — ou seja, o cenário de recusa com link nunca envia. O cenário local não
+ * pressiona o botão de teste e bloqueia seu endpoint como proteção adicional.
+ * Quem prova o
  * envio é `tests/e2e/aviso-de-caso-chega-no-whatsapp.spec.ts`, que está em
  * `FORA_DO_CI` com o motivo escrito e cuja prova local está em
  * `evidence/casos-vivos/aviso/`.
@@ -49,7 +50,6 @@ import { expect, test, type Page } from "./helpers/test";
 import { createClient } from "@supabase/supabase-js";
 
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
-import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 const EVIDENCIA = path.join(process.cwd(), "evidence", "casos-vivos", "aviso");
@@ -67,7 +67,12 @@ interface Creds {
 }
 
 const creds = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
-const env = carregarEnvLocal();
+// O runner carrega .env.e2e. Esta spec nunca lê a configuração da instalação.
+const env = process.env;
+const supabaseUrl = new URL(env.NEXT_PUBLIC_SUPABASE_URL!);
+if (!["localhost", "127.0.0.1", "[::1]"].includes(supabaseUrl.hostname)) {
+  throw new Error("Esta spec aceita somente o Supabase local da bancada E2E.");
+}
 const admin = createClient(env.NEXT_PUBLIC_SUPABASE_URL!, env.SUPABASE_SERVICE_ROLE_KEY!, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
@@ -137,7 +142,7 @@ async function captura(page: Page, nome: string): Promise<void> {
 }
 
 function segredoInterno(): string {
-  const secret = carregarEnvLocal().INTERNAL_SECRET?.trim();
+  const secret = process.env.INTERNAL_SECRET?.trim();
   if (!secret) throw new Error("INTERNAL_SECRET não encontrado no ambiente");
   return secret;
 }
@@ -147,6 +152,80 @@ test.describe("aviso de caso no WhatsApp", () => {
     // A configuração e as entregas desta spec somem — ver o cabeçalho.
     await admin.from("entregas_de_aviso_de_caso").delete().eq("organization_id", creds.org_id);
     await admin.from("config_aviso_de_caso").delete().eq("organization_id", creds.org_id);
+  });
+
+  test("modo local sem link: salva e permanece ligado após recarregar, sem enviar mensagem", async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    // Isola o formulário das outras specs que compartilham esta organização QA.
+    const limpeza = await admin
+      .from("config_aviso_de_caso")
+      .delete()
+      .eq("organization_id", creds.org_id);
+    expect(limpeza.error).toBeNull();
+
+    let pedidosDeEnvio = 0;
+    await page.route("**/api/v1/ai/cases/alerta/teste", async (route) => {
+      pedidosDeEnvio++;
+      await route.abort();
+    });
+
+    try {
+      expect(creds.admin_totp?.secret, "o seed tem de gravar admin_totp").toBeTruthy();
+      await loginComTotp(page, creds.users.admin!.email, creds.admin_totp!.secret);
+      await page.goto("/app/ai/cases/avisos");
+      await expect(page.getByRole("heading", { name: "Aviso no WhatsApp" })).toBeVisible({
+        timeout: ESPERA,
+      });
+
+      const receber = page.getByRole("switch", {
+        name: "Receber avisos no WhatsApp",
+        exact: true,
+      });
+      const local = page.getByRole("switch", {
+        name: "Sem link — resolver neste computador",
+        exact: true,
+      });
+      await expect(receber).toBeDisabled();
+      await page.locator("#telefone").fill(NUMERO_DA_EQUIPE);
+      await page.locator("#conexao").click();
+      await page.getByRole("option").first().click();
+      await local.click();
+      await expect(receber).toBeEnabled();
+      await receber.click();
+      await page.getByRole("button", { name: "Salvar", exact: true }).click();
+      await expect(page.getByText("Aviso salvo.").first()).toBeVisible({ timeout: ESPERA });
+
+      await page.reload();
+      await expect(local).toBeChecked({ timeout: ESPERA });
+      await expect(receber).toBeChecked();
+      await expect(page.locator("#telefone")).toHaveValue(NUMERO_DA_EQUIPE);
+      await expect(page.getByTestId("alerta-sem_endereco_publico")).toHaveAttribute(
+        "data-bloqueia",
+        "nao",
+      );
+      await expect(
+        page.getByText("O aviso informa a pendência. Abra Casos neste computador para responder."),
+      ).toBeVisible();
+
+      const salvo = await admin
+        .from("config_aviso_de_caso")
+        .select("sem_link, ligado, telefone_destino")
+        .eq("organization_id", creds.org_id)
+        .single();
+      expect(salvo.error).toBeNull();
+      expect(salvo.data).toEqual({
+        sem_link: true,
+        ligado: true,
+        telefone_destino: NUMERO_DA_EQUIPE,
+      });
+      expect(pedidosDeEnvio, "configurar o modo local não deve enviar avisos de teste").toBe(0);
+      await captura(page, "70-modo-local-salvo-sem-envio");
+    } finally {
+      // A bancada não fica com avisos ligados depois deste cenário.
+      await admin.from("config_aviso_de_caso").delete().eq("organization_id", creds.org_id);
+    }
   });
 
   test("a tela de uma instalação nova: quem entra, o que ela recusa e por quê", async ({
@@ -191,7 +270,7 @@ test.describe("aviso de caso no WhatsApp", () => {
       "sem endereço público o aviso não pode ser ligado — e a tela tem de dizer isso",
     ).toBeVisible({ timeout: ESPERA });
     await expect(alerta).toContainText("Este sistema ainda não tem um endereço na internet");
-    await expect(alerta).toContainText(/o link do aviso não abriria nada/i);
+    await expect(alerta).toContainText(/Para trabalhar localmente/);
     // E o alerta vem antes do formulário no fio do DOM — medido, não suposto.
     const ordem = await page.evaluate(() => {
       const a = document.querySelector('[data-testid="alertas-do-aviso"]');
@@ -218,7 +297,9 @@ test.describe("aviso de caso no WhatsApp", () => {
 
     // ─── 6. o seletor fala de CAPACIDADE, nunca de provedor ───────────────
     await expect(
-      page.getByText("Só aparecem aqui os números que conseguem mandar uma mensagem a qualquer hora."),
+      page.getByText(
+        "Só aparecem aqui os números que conseguem mandar uma mensagem a qualquer hora.",
+      ),
     ).toBeVisible();
     await page.locator("#conexao").click();
     const opcoes = page.getByRole("option");
@@ -276,7 +357,9 @@ test.describe("aviso de caso no WhatsApp", () => {
     expect(m.salvar.visivel, "o botão Salvar não está alcançável").toBe(true);
     expect(m.salvar.altura).toBeGreaterThanOrEqual(32);
     expect(m.salvar.x + m.salvar.largura).toBeLessThanOrEqual(m.janela);
-    expect(m.rolagemHorizontal, "a tela do aviso não pode rolar para o lado").toBeLessThanOrEqual(0);
+    expect(m.rolagemHorizontal, "a tela do aviso não pode rolar para o lado").toBeLessThanOrEqual(
+      0,
+    );
     expect(m.salvar.fonte).toMatch(/Atkinson/i);
     expect(m.salvar.fundo).not.toBe("rgba(0, 0, 0, 0)");
 
@@ -286,7 +369,9 @@ test.describe("aviso de caso no WhatsApp", () => {
     const noTelefone = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
-    expect(noTelefone, "em 390px a tela do aviso não pode rolar para o lado").toBeLessThanOrEqual(0);
+    expect(noTelefone, "em 390px a tela do aviso não pode rolar para o lado").toBeLessThanOrEqual(
+      0,
+    );
     await captura(page, "50-telefone");
     await page.setViewportSize({ width: 1440, height: 1000 });
 
@@ -344,8 +429,12 @@ test.describe("aviso de caso no WhatsApp", () => {
       .select("channel_session_id")
       .eq("organization_id", creds.org_id)
       .single();
-    const canalId = (configuracao as { channel_session_id: string | null } | null)?.channel_session_id;
-    expect(canalId, "a configuração salva pela tela não tem conexão — o passo anterior não pegou").toBeTruthy();
+    const canalId = (configuracao as { channel_session_id: string | null } | null)
+      ?.channel_session_id;
+    expect(
+      canalId,
+      "a configuração salva pela tela não tem conexão — o passo anterior não pegou",
+    ).toBeTruthy();
     const { data: canalAntes } = await admin
       .from("channel_sessions")
       .select("id, status")
@@ -406,10 +495,7 @@ test.describe("aviso de caso no WhatsApp", () => {
       await admin.from("entregas_de_aviso_de_caso").delete().eq("case_id", casoId);
       await admin.from("agent_cases").delete().eq("id", casoId);
       // O canal volta ao estado em que estava — ele é da organização inteira.
-      await admin
-        .from("channel_sessions")
-        .update({ status: canal.status })
-        .eq("id", canal.id);
+      await admin.from("channel_sessions").update({ status: canal.status }).eq("id", canal.id);
     }
   });
 });

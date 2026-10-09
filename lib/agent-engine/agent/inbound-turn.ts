@@ -502,6 +502,7 @@ export const AGENT_TOOL_DEFS = {
         title: z.string().describe('título curto, ex.: "Liberar acesso ao painel"'),
         summary: z.string().describe('o que o lead precisa, em pt-br'),
         blocker: z.string().describe('por que você não consegue resolver sozinho'),
+        task_kind: z.enum(['payment_details', 'payment_review']).optional().describe('payment_details para dados oficiais; payment_review quando cliente informa pagamento. Atualiza a pendência da mesma compra sem abrir outro caso ativo.'),
         // O assunto serve para quem TRIA a fila separar antes de ler. O detalhe
         // continua no título e no resumo — este campo não os substitui, e por
         // isso a lista é curta: muitas opções produzem classificação
@@ -868,7 +869,12 @@ const CASES_SYSTEM_BLOCK =
   'NUNCA narre a causa técnica ou interna (erro de sistema, falha de confirmação, nome de ferramenta, ' +
   'log ou qualquer diagnóstico) — isso é assunto técnico e não vai pro cliente. `title`/`summary`/`blocker` ' +
   'são só para o humano; a mensagem ao lead diz apenas, em linguagem simples, que você vai verificar/ajustar ' +
-  'e volta com uma resposta, sem explicar o motivo interno.';
+  'e volta com uma resposta, sem explicar o motivo interno. ' +
+  'Para a equipe liberar dados oficiais de pagamento, abra open_human_case com task_kind=payment_details. ' +
+  'Quando o cliente relatar que pagou ou enviar comprovante, use task_kind=payment_review: isto pede conferência, ' +
+  'não confirma recebimento. A ferramenta continua a pendência da mesma compra quando já existe um caso ativo. ' +
+  'Nunca encerre uma tarefa de pagamento como se uma pessoa já tivesse registrado a decisão; continue atendendo ' +
+  'e use provide_case_update quando receber a informação solicitada pela equipe.';
 
 /**
  * Bloco de sistema RESIDENTE de transparência — SEMPRE presente, independente de

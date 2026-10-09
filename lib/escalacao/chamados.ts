@@ -12,8 +12,10 @@
  * duplicá-la em PostgREST daria dois donos para a mesma regra.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { CaseTaskFields } from "@/lib/ai/case-task";
 
 export const ESTADOS_ABERTOS = ["awaiting_human", "awaiting_lead"] as const;
+export const ESTADOS_AGUARDANDO_HUMANO = ["awaiting_human"] as const;
 export const ESTADOS_FECHADOS = ["resolved", "escalated", "cancelled"] as const;
 
 /**
@@ -151,7 +153,7 @@ export interface EventoDoChamado {
   created_at: string;
 }
 
-export interface ChamadoDetalhado extends ChamadoDaLista {
+export interface ChamadoDetalhado extends ChamadoDaLista, Partial<CaseTaskFields> {
   source: string;
   closed_at: string | null;
   events: EventoDoChamado[];
@@ -162,10 +164,10 @@ const COLUNAS_LISTA =
   "conversations:conversation_id(contacts:contact_id(name, phone_number))";
 
 const COLUNAS_DETALHE =
-  "id, title, summary, blocker, status, kind, source, opened_at, closed_at, conversation_id, " +
+  "id, title, summary, blocker, status, kind, source, opened_at, closed_at, conversation_id, lead_id, task_kind, task_state, revision, wait_generation, wait_started_at, assignee_user_id, task_payload, decision_event_id, delivery_job_id, " +
   "conversations:conversation_id(contacts:contact_id(name, phone_number))";
 
-interface LinhaComContato {
+interface LinhaComContato extends Partial<CaseTaskFields> {
   id: string;
   title: string;
   summary: string;
@@ -208,9 +210,18 @@ export interface ResultadoDaLista {
 export async function listarChamados(
   supabase: SupabaseClient,
   organizationId: string,
-  opts: { estado: "abertos" | "fechados"; limite?: number; visiveisPara: ConversasVisiveis },
+  opts: {
+    estado: "abertos" | "aguardando_humano" | "fechados";
+    limite?: number;
+    visiveisPara: ConversasVisiveis;
+  },
 ): Promise<ResultadoDaLista> {
-  const estados = opts.estado === "abertos" ? ESTADOS_ABERTOS : ESTADOS_FECHADOS;
+  const estados =
+    opts.estado === "fechados"
+      ? ESTADOS_FECHADOS
+      : opts.estado === "aguardando_humano"
+        ? ESTADOS_AGUARDANDO_HUMANO
+        : ESTADOS_ABERTOS;
   const conversas = recorte(opts.visiveisPara);
 
   const filtrada = supabase
@@ -285,6 +296,16 @@ export async function lerChamado(
     ...achatarContato(linha),
     source: linha.source ?? "agent",
     closed_at: linha.closed_at ?? null,
+    lead_id: linha.lead_id ?? null,
+    task_kind: linha.task_kind ?? null,
+    task_state: linha.task_state ?? null,
+    revision: Number(linha.revision ?? 0),
+    wait_generation: Number(linha.wait_generation ?? 0),
+    wait_started_at: linha.wait_started_at ?? null,
+    assignee_user_id: linha.assignee_user_id ?? null,
+    task_payload: linha.task_payload ?? {},
+    decision_event_id: linha.decision_event_id ?? null,
+    delivery_job_id: linha.delivery_job_id ?? null,
     events: (events ?? []) as EventoDoChamado[],
   };
 }

@@ -60,6 +60,10 @@ export interface EntregaNaTela {
   status: string;
   erro_codigo: string | null;
   tentativas: number;
+  /** NULL junto com reminder_minute identifica a abertura do caso. */
+  wait_generation: number | string | null;
+  /** NULL junto com wait_generation identifica a abertura; reforços usam a cadência configurada. */
+  reminder_minute: number | null;
   enviado_em: string | null;
   created_at: string;
 }
@@ -69,6 +73,9 @@ export interface ConfigNaResposta {
   telefone: string;
   rotulo: string | null;
   ligado: boolean;
+  sem_link?: boolean;
+  repetir_lembretes_whatsapp: boolean;
+  minutos_lembrete_equipe: number[];
   atualizado_em: string;
 }
 
@@ -93,6 +100,9 @@ interface LinhaDeConfig {
   telefone_destino: string;
   rotulo: string | null;
   ligado: boolean;
+  sem_link?: boolean;
+  repetir_lembretes_whatsapp?: boolean | null;
+  minutos_lembrete_equipe?: number[] | null;
   mensagens_ignoradas: number;
   ultima_mensagem_ignorada_em: string | null;
   updated_at: string;
@@ -129,6 +139,7 @@ export async function lerEstadoDaTelaDeAviso(entrada: {
         telefone: config.telefone_destino,
         rotulo: config.rotulo,
         ligado: config.ligado,
+        sem_link: config.sem_link ?? false,
       }
     : null;
 
@@ -156,6 +167,9 @@ export async function lerEstadoDaTelaDeAviso(entrada: {
           telefone: config.telefone_destino,
           rotulo: config.rotulo,
           ligado: config.ligado,
+          sem_link: config.sem_link ?? false,
+          repetir_lembretes_whatsapp: config.repetir_lembretes_whatsapp ?? false,
+          minutos_lembrete_equipe: config.minutos_lembrete_equipe ?? [3, 6, 9],
           atualizado_em: config.updated_at,
         }
       : null,
@@ -171,7 +185,7 @@ async function lerConfig(db: SupabaseClient, orgId: string): Promise<LinhaDeConf
   const { data, error } = await db
     .from("config_aviso_de_caso")
     .select(
-      "channel_session_id, telefone_destino, rotulo, ligado, mensagens_ignoradas, ultima_mensagem_ignorada_em, updated_at",
+      "channel_session_id, telefone_destino, rotulo, ligado, sem_link, repetir_lembretes_whatsapp, minutos_lembrete_equipe, mensagens_ignoradas, ultima_mensagem_ignorada_em, updated_at",
     )
     .eq("organization_id", orgId)
     .maybeSingle();
@@ -185,7 +199,10 @@ async function lerConfig(db: SupabaseClient, orgId: string): Promise<LinhaDeConf
     });
     return null;
   }
-  return (data as LinhaDeConfig | null) ?? null;
+  // `minutos_lembrete_equipe` só existe após a migration de cadência. O schema
+  // gerado é atualizado no fluxo de banco; esta leitura mantém o contrato local
+  // estreito até lá, sem editar o arquivo gerado à mão.
+  return (data as unknown as LinhaDeConfig | null) ?? null;
 }
 
 /**
@@ -318,7 +335,9 @@ async function ehAtendimentoExterno(db: SupabaseClient, orgId: string): Promise<
 async function lerEntregas(db: SupabaseClient, orgId: string): Promise<EntregaNaTela[]> {
   const { data, error } = await db
     .from("entregas_de_aviso_de_caso")
-    .select("id, case_id, destino, status, erro_codigo, tentativas, enviado_em, created_at")
+    .select(
+      "id, case_id, destino, status, erro_codigo, tentativas, wait_generation, reminder_minute, enviado_em, created_at",
+    )
     .eq("organization_id", orgId)
     .order("created_at", { ascending: false })
     .limit(ENTREGAS_NA_LISTA);

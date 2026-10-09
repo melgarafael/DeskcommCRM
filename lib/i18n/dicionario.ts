@@ -37,6 +37,156 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Sem link — resolver neste computador": { es: "Sin enlace — resolver en este ordenador" },
+  "Próximo passo da conferência": { es: "Próximo paso de la comprobación" },
+  "Informe o que falta ou o que deve acontecer em seguida.": {
+    es: "Indica qué falta o qué debe hacerse a continuación.",
+  },
+
+  "Ação registrada. Confira o estado do envio neste caso.": {
+    es: "Acción registrada. Consulta el estado del envío en este caso.",
+  },
+  "O recebimento do pagamento do seu pedido foi confirmado.": {
+    es: "Se confirmó la recepción del pago de tu pedido.",
+  },
+  "Carregando a tarefa de pagamento…": { es: "Cargando la tarea de pago…" },
+  "Não foi possível carregar a tarefa. Atualize antes de confirmar qualquer dado.": {
+    es: "No se pudo cargar la tarea. Actualiza antes de confirmar cualquier dato.",
+  },
+  "Tarefa de pagamento": { es: "Tarea de pago" },
+  "Aguardando a equipe": { es: "Esperando al equipo" },
+  "Envio pendente": { es: "Envío pendiente" },
+  "Falha no envio — precisa de ação": { es: "Error de envío — requiere una acción" },
+  "Aguardando informação da cliente": { es: "Esperando información de la clienta" },
+  "Tarefa concluída": { es: "Tarea completada" },
+  "Espera da equipe": { es: "Espera del equipo" },
+  "Avisos internos aos 3, 6 e 9 minutos. Assumir ou comentar não reinicia o prazo.": {
+    es: "Avisos internos a los 3, 6 y 9 minutos. Asignarte el caso o comentar no reinicia el plazo.",
+  },
+  "A Central avisa aos 3, 6 e 9 minutos. O WhatsApp da equipe repete esses marcos se a opção estiver ativa em Avisos. Assumir ou comentar não reinicia o prazo.": {
+    es: "La Central avisa a los 3, 6 y 9 minutos. WhatsApp repite esos hitos al equipo si la opción está activada en Avisos. Asumir el caso o comentar no reinicia el plazo.",
+  },
+  "Atrasado — continua pendente até a tarefa ser resolvida.": {
+    es: "Retrasado — sigue pendiente hasta que se resuelva la tarea.",
+  },
+  "Identifique a compra antes de liberar dados ou confirmar pagamento.": {
+    es: "Identifica la compra antes de autorizar el envío de datos o confirmar el pago.",
+  },
+  "Compra deste atendimento": { es: "Compra de esta conversación" },
+  "Selecione a compra": { es: "Selecciona la compra" },
+  "Vincular compra ao caso": { es: "Vincular la compra al caso" },
+  "Nenhuma compra disponível. Cadastre o negócio no CRM para este contato e atualize o caso.": {
+    es: "No hay compras disponibles. Registra el negocio en el CRM para este contacto y actualiza el caso.",
+  },
+  "Assumir caso": { es: "Asignarme el caso" },
+  "Reassumir tarefa como gestor": { es: "Reasignarme la tarea como responsable" },
+  "Devolver à equipe": { es: "Devolver al equipo" },
+  "A decisão foi registrada; a mensagem ainda está sendo processada. Esta tela só confirma o envio após o resultado do canal.": {
+    es: "Se registró la decisión; el mensaje sigue en proceso. Esta pantalla confirma el envío solo tras recibir el resultado del canal.",
+  },
+  "A mensagem não teve envio confirmado. Revise a conexão e tente novamente; a decisão financeira registrada permanece válida.": {
+    es: "No se confirmó el envío del mensaje. Revisa la conexión e inténtalo de nuevo; la decisión financiera registrada sigue siendo válida.",
+  },
+  "Tentar envio novamente": { es: "Reintentar el envío" },
+  "Cartão": { es: "Tarjeta" },
+  "Revise os dados oficiais que serão enviados. Liberar os dados não confirma recebimento do pagamento.": {
+    es: "Revisa los datos oficiales que se enviarán. Autorizar su envío no confirma la recepción del pago.",
+  },
+  "Acompanhamento após enviar os dados": { es: "Seguimiento después de enviar los datos" },
+  "Sem acompanhamento automático": { es: "Sin seguimiento automático" },
+  "O fluxo escolhido começa somente após o canal confirmar o envio dos dados.": {
+    es: "El flujo elegido comienza solo cuando el canal confirma el envío de los datos.",
+  },
+  "Pagamento confirmado": { es: "Pago confirmado" },
+  "Não localizado": { es: "No localizado" },
+  "Pedir informação": { es: "Pedir información" },
+  "Texto revisado para enviar à cliente": { es: "Texto revisado para enviar a la clienta" },
+  "O texto revisado será enviado à cliente. Confira o resultado neste caso; um pedido de envio ainda não é uma mensagem enviada.": {
+    es: "Se enviará el texto revisado a la clienta. Consulta el resultado en este caso; una solicitud de envío todavía no es un mensaje enviado.",
+  },
+  "Caso": { es: "Caso" },
+  "O aviso informa a pendência. Abra Casos neste computador para responder.": {
+    es: "El aviso informa la tarea pendiente. Abre Casos en este ordenador para responder.",
+  },
+  "lembrete de caso aguardando a equipe": { es: "recordatorio de caso que espera al equipo" },
+  "Tempo de espera": { es: "Tiempo de espera" },
+  "Abra Casos no computador onde o sistema está funcionando. Responder aqui não chega ao cliente.": {
+    es: "Abre Casos en el ordenador donde funciona el sistema. Responder aquí no llega al cliente.",
+  },
+  "Quando o atendimento automático travar, abra Casos no computador onde o sistema está funcionando.": {
+    es: "Cuando se bloquee la atención automática, abre Casos en el ordenador donde funciona el sistema.",
+  },
+  "O endereço público ainda não foi configurado. Para trabalhar localmente, escolha “Sem link — resolver neste computador”. Para usar links, configure o endereço do domínio.": {
+    es: "No se ha configurado la dirección pública. Para trabajar localmente, elige «Sin enlace — resolver en este ordenador». Para usar enlaces, configura el dominio.",
+  },
+  "Não foi possível carregar os casos que aguardam a equipe.": {
+    es: "No se pudieron cargar los casos que esperan al equipo.",
+  },
+  "caso aguardando a equipe": { es: "caso en espera del equipo" },
+  "casos aguardando a equipe": { es: "casos en espera del equipo" },
+  "A IA abriu e está esperando uma decisão humana.": {
+    es: "La IA abrió este caso y espera una decisión humana.",
+  },
+  "Caso sem título": { es: "Caso sin título" },
+  "Não foi possível confirmar o envio; uma nova tentativa pode duplicar o aviso.": {
+    es: "No fue posible confirmar el envío; un nuevo intento podría duplicar el aviso.",
+  },
+  "Aviso de abertura": { es: "Aviso de apertura" },
+  "Aceito pelo canal": { es: "Aceptado por el canal" },
+  "“Aceito pelo canal” confirma que o canal recebeu o pedido de envio; sem recibo de entrega, não confirma que a mensagem chegou ao WhatsApp.": {
+    es: "“Aceptado por el canal” confirma que el canal recibió la solicitud de envío; sin recibo de entrega, no confirma que el mensaje haya llegado a WhatsApp.",
+  },
+  "A Central cria lembretes nos minutos configurados desde que o caso passa a aguardar a equipe. Enquanto aguarda resposta do cliente, o relógio fica pausado. Com “Reforçar lembretes no WhatsApp” ativo, cada marco também chega à equipe por WhatsApp. Configure de 1 a 10 minutos distintos, em ordem crescente, entre 1 minuto e 24 horas.": {
+    es: "La Central crea recordatorios en los minutos configurados desde que el caso queda a la espera del equipo. Mientras espera la respuesta del cliente, el reloj se pausa. Si está activo “Reforzar recordatorios por WhatsApp”, cada hito también llega al equipo por WhatsApp. Configura de 1 a 10 minutos distintos, en orden ascendente, entre 1 minuto y 24 horas.",
+  },
+  "A Central mantém o alerta pendente até a equipe resolver o caso.": {
+    es: "La Central mantiene la alerta pendiente hasta que el equipo resuelva el caso.",
+  },
+  "Atualizar histórico": { es: "Actualizar historial" },
+  "Minutos dos alertas": { es: "Minutos de las alertas" },
+  "Casos em que o canal aceitou o aviso": { es: "Casos en los que el canal aceptó el aviso" },
+  "Ciclo": { es: "Ciclo" },
+  "Cada lembrete deve ficar entre 1 e 1440 minutos.": {
+    es: "Cada recordatorio debe estar entre 1 y 1440 minutos.",
+  },
+  "minutos desde o início da espera": { es: "minutos desde el inicio de la espera" },
+  "Lembrete": { es: "Recordatorio" },
+  "Remover lembrete": { es: "Quitar recordatorio" },
+  "Adicionar minuto": { es: "Agregar minuto" },
+  "Mantenha de 1 a 10 lembretes.": { es: "Mantén de 1 a 10 recordatorios." },
+  "Informe um número inteiro de minutos em cada lembrete.": {
+    es: "Indica un número entero de minutos para cada recordatorio.",
+  },
+  "Histórico de tentativas de aviso": { es: "Historial de intentos de aviso" },
+  "O aviso de abertura e os reforços são opções independentes. Os reforços valem enquanto qualquer caso aguarda a equipe.": {
+    es: "El aviso de apertura y los recordatorios son opciones independientes. Los recordatorios se aplican mientras cualquier caso espera al equipo.",
+  },
+  "O aviso de abertura não se repete. Quando o cliente responde e o caso volta a aguardar a equipe, a cadência de lembretes começa um novo episódio; os reforços no WhatsApp dependem do opt-in.": {
+    es: "El aviso de apertura no se repite. Cuando el cliente responde y el caso vuelve a esperar al equipo, comienza un nuevo ciclo de recordatorios; los avisos por WhatsApp dependen de la opción activada.",
+  },
+  "Reforçar lembretes no WhatsApp": { es: "Reforzar recordatorios por WhatsApp" },
+  "Enviar reforços à equipe nos minutos configurados acima enquanto um caso aguarda ação humana. O relógio pausa enquanto aguarda resposta do cliente; se atrasar, envia no máximo o marco atual, sem rajada.": {
+    es: "Enviar recordatorios al equipo en los minutos configurados arriba mientras un caso espera acción humana. El reloj se pausa mientras espera la respuesta del cliente; si se retrasa, envía como máximo el hito actual, sin una ráfaga.",
+  },
+  "Reforço de": { es: "Recordatorio de" },
+  "Tipo de aviso não reconhecido": { es: "Tipo de aviso no reconocido" },
+  "Não foi possível carregar este caso. Atualize antes de registrar uma decisão.": {
+    es: "No se pudo cargar este caso. Actualiza antes de registrar una decisión.",
+  },
+  "Não foi possível carregar os casos.": { es: "No se pudieron cargar los casos." },
+  "Envio confirmado pelo canal": { es: "Envío confirmado por el canal" },
+  "a partir do último envio da Bia confirmado pelo canal": {
+    es: "a partir del último envío de Bia confirmado por el canal",
+  },
+  "a partir da última mensagem recebida do cliente": {
+    es: "a partir del último mensaje recibido del cliente",
+  },
+  "Última mensagem recebida do cliente": { es: "Último mensaje recibido del cliente" },
+  "Último envio da Bia confirmado pelo canal": { es: "Último envío de Bia confirmado por el canal" },
+  "A opção padrão usa a última mensagem recebida do cliente. Envios pendentes ou com falha não reiniciam o relógio da opção da Bia.": {
+    es: "La opción predeterminada usa el último mensaje recibido del cliente. Los envíos pendientes o fallidos no reinician el reloj de la opción de Bia.",
+  },
+
   "Conectar a assinatura do ChatGPT": { es: "Conectar la suscripción de ChatGPT" },
   "Cada empresa conecta a própria conta do ChatGPT. Abra o link e entre com a conta que tem a assinatura. No fim, o navegador vai para http://127.0.0.1:1455/auth/callback, que pode não abrir — é esperado. Copie esse endereço inteiro, da barra do navegador, e cole aqui.": {
     es: "Cada empresa conecta su propia cuenta de ChatGPT. Abre el enlace e inicia sesión con la cuenta que tiene la suscripción. Al final, el navegador irá a http://127.0.0.1:1455/auth/callback, que quizá no se abra — es normal. Copia la dirección completa de la barra del navegador y pégala aquí.",
