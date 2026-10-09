@@ -5,7 +5,8 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 import { clientePelaAgendaLigado, colegasPodemMexerNaAgendaLigado } from "@/lib/schemas/settings";
-import { transportaMensagem } from "@/lib/channels/capabilities";
+import { listSelectableChannels } from "@/lib/channels/selectable";
+import { rotuloDoEstadoDoCanal } from "@/lib/channels/estado";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 
 import { TiposDeAgendamentoClient, type TipoRow } from "./_client";
@@ -81,12 +82,12 @@ export default async function TiposDeAgendamentoPage() {
     // pela sessão funciona (a policy de leitura é de membro); gravar é só pela
     // RPC, que a action chama.
     supabase.from("organizations").select("settings").eq("id", activeOrg.orgId).maybeSingle(),
-    supabase
-      .from("channel_sessions")
-      .select("id, display_name, phone_number, provider, status")
-      .eq("organization_id", activeOrg.orgId)
-      .is("archived_at", null)
-      .order("created_at"),
+    listSelectableChannels(supabase, activeOrg.orgId)
+      .then((data) => ({ data, error: null }))
+      .catch((error: unknown) => ({
+        data: [],
+        error: { message: error instanceof Error ? error.message : String(error) },
+      })),
   ]);
 
   // O NOME DE GENTE, e não o fragmento de UUID.
@@ -117,12 +118,10 @@ export default async function TiposDeAgendamentoPage() {
       <TiposDeAgendamentoClient
         tiposIniciais={(tipos ?? []) as TipoRow[]}
         erroCanais={erroCanais ? erroCanais.message : null}
-        canais={(canais ?? [])
-          .filter((c) => transportaMensagem(c.provider))
-          .map((c) => ({
-            id: c.id,
-            nome: `${c.display_name || c.phone_number || t("Canal sem nome")}${c.display_name && c.phone_number ? ` · ${c.phone_number}` : ""}${c.status === "WORKING" ? "" : ` · ${t("desconectado")}`}`,
-          }))}
+        canais={canais.map((c) => ({
+          id: c.id,
+          nome: `${t(c.display_name)}${c.phone_number && c.display_name !== c.phone_number ? ` · ${c.phone_number}` : ""}${c.status === "WORKING" ? "" : ` · ${rotuloDoEstadoDoCanal(c.status, t)}`}`,
+        }))}
         erroDeLeitura={erroTipos ? erroTipos.message : null}
         pessoas={(pessoas ?? []).map((p) => ({
           id: String(p.user_id),
