@@ -2746,7 +2746,7 @@
   "Em negociação": "谈判中",
   "Ganho": "赢单",
   "Perdido": "输单",
-  "O relatório de LGPD entregue ao cliente traz a RAZÃO SOCIAL da sua empresa, e não o nome aqui de cima — é ela que responde legalmente pelos dados. Confira o campo \"Razão social\" em Configurações → Organização.": "交付给客户的 LGPD 报告包含贵公司的法定名称（Razão social），而不是上方显示的名称——依法对数据负责的是该法定名称。请在“设置”→“组织”中查看“法定名称（Razão social）”字段。",
+  "O relatório de {lei} entregue ao cliente traz a {campo_alto} da sua empresa, e não o nome aqui de cima — é ela que responde legalmente pelos dados. Confira o campo \"{campo}\" em Configurações → Organização.": "交付给客户的 {lei} 报告包含贵公司的 {campo_alto}，而不是上方显示的名称——依法对数据负责的是该法定名称。请在“设置”→“组织”中查看“{campo}”字段。",
   "Use a ação \"Webhooks\" → POST, apontando para o endereço acima.": "使用“Webhooks”→“POST”操作，指向上述地址。",
   "Incidentes": "事件",
   "Último acesso": "最后访问",

@@ -618,7 +618,9 @@ export interface ExportPayload {
    * haver mais registros do que os entregues. Lista vazia = nenhuma bateu no
    * teto. Em todo país, junto de `messages_completas` (doc 110, 2A); fora do
    * Brasil é a ressalva que o PDF cita na linha do n.º 3 (o PDF brasileiro não
-   * muda).
+   * muda). Entra também a seção cuja PAGINAÇÃO foi interrompida por erro
+   * (#2576): o arquivo sai com o que chegou, e a lista é o que avisa o titular
+   * de que pode haver mais do que o entregue.
    */
   secoes_no_limite?: string[];
   /** O rótulo do documento do titular no país ("CPF", "Documento"). */
@@ -1266,6 +1268,15 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
           request_id: requestId,
           error: error.message,
         });
+        // Página falhou NO MEIO da paginação (#2576): o arquivo sai com as
+        // mensagens até aqui, e sem esta linha o titular receberia um arquivo
+        // PARCIAL calado — sem dizer que pode haver mais. Registrar a seção
+        // como incompleta é o que `secoes_no_limite` existe para; falhar o
+        // pedido inteiro trocaria um aviso por uma tentativa de novo que leria
+        // a mesma página que acabou de falhar.
+        if (!secoes_no_limite.includes("messages_completas")) {
+          secoes_no_limite.push("messages_completas");
+        }
         break;
       }
       const linhas = data ?? [];
@@ -1465,7 +1476,11 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
       .eq("contact_id", contactId)
       .order("created_at", { ascending: false })
       .limit(500);
-    if (error) {
+    // #1907: a comanda é tabela do módulo `financeiro`. Sem ele instalado, `sales`
+    // não existe (42P01 no Postgres, PGRST205 pelo PostgREST) e o bloco sai vazio
+    // sem registrar falha. Instalado, a leitura acontece mesmo com o módulo
+    // suspenso: o titular tem direito ao que já está gravado.
+    if (error && error.code !== "42P01" && error.code !== "PGRST205") {
       logger.warn("[lgpd-export-worker] sales load failed", {
         request_id: requestId,
         error: error.message,

@@ -21,6 +21,15 @@ const ORG: TenantOrganization = {
   suspended_at: null,
   created_at: "2026-01-01T12:00:00.000Z",
   settings: { plan: "pro" },
+  // Os dados cadastrais que o #1967 passou a carregar no detalhe do tenant.
+  country: null,
+  timezone: null,
+  locale: null,
+  currency: null,
+  media_retention_days: null,
+  media_retention_enforced: true,
+  dpo_email: null,
+  privacy_policy_url: null,
 };
 const COUNTS: TenantCounts = {
   user_count: 1, conversations_count: 0, messages_count: 0, leads_count: 0, orders_count: 0,

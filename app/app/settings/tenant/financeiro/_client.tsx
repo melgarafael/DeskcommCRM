@@ -33,21 +33,29 @@ const TIPO_DE_CONTA: Record<string, string> = {
   other: "Outra",
 };
 
-function useCatalogo<T>(tipo: string) {
+function useCatalogo<T>(tipo: string, enabled = true) {
   return useQuery({
+    enabled,
     queryKey: ["financeiro", "catalogo", tipo],
     queryFn: async () =>
       (await apiClient.get<{ data: T[] }>(`/api/v1/financeiro/catalogo/${tipo}`)).data,
   });
 }
 
-export function CatalogoFinanceiro({ podeEditar }: { podeEditar: boolean }) {
+export function CatalogoFinanceiro({
+  podeEditar,
+  comissaoDisponivel = false,
+}: {
+  podeEditar: boolean;
+  /** Regra de comissão é do módulo `financeiro` (#1907): sem ele, a seção some. */
+  comissaoDisponivel?: boolean;
+}) {
   const t = useT();
   const qc = useQueryClient();
   const contas = useCatalogo<Conta>("contas");
   const formas = useCatalogo<Forma>("formas_de_pagamento");
   const planos = useCatalogo<Plano>("planos_de_conta");
-  const regras = useCatalogo<Regra>("regras_de_comissao");
+  const regras = useCatalogo<Regra>("regras_de_comissao", comissaoDisponivel);
   const recorrencias = useCatalogo<Recorrencia>("recorrencias");
 
   // A regra guarda IDs; a lista precisa de nomes. Buscar aqui evita que o
@@ -273,15 +281,17 @@ export function CatalogoFinanceiro({ podeEditar }: { podeEditar: boolean }) {
         />
       </section>
 
-      <RegrasDeComissao
-        regras={regras.data ?? []}
-        pessoas={pessoas.data ?? []}
-        servicos={servicos.data ?? []}
-        podeEditar={podeEditar}
-        carregando={regras.isLoading}
-        onCriar={(corpo) => criar.mutate({ tipo: "regras_de_comissao", corpo })}
-        onInativar={(id) => inativar.mutate({ tipo: "regras_de_comissao", id })}
-      />
+      {comissaoDisponivel && (
+        <RegrasDeComissao
+          regras={regras.data ?? []}
+          pessoas={pessoas.data ?? []}
+          servicos={servicos.data ?? []}
+          podeEditar={podeEditar}
+          carregando={regras.isLoading}
+          onCriar={(corpo) => criar.mutate({ tipo: "regras_de_comissao", corpo })}
+          onInativar={(id) => inativar.mutate({ tipo: "regras_de_comissao", id })}
+        />
+      )}
 
       <Recorrencias
         recorrencias={recorrencias.data ?? []}

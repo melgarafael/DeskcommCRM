@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { moduloLigado } from "@/lib/instalacao/modulos";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 import { CatalogoFinanceiro } from "./_client";
 
@@ -42,7 +44,10 @@ export default async function Page() {
           {t("Onde o dinheiro fica, como o cliente paga e como cada lançamento é classificado.")}
         </p>
       </div>
-      <CatalogoFinanceiro podeEditar={podeEditar} />
+      <CatalogoFinanceiro
+        podeEditar={podeEditar}
+        comissaoDisponivel={await moduloLigado(createAdminClient(), "financeiro")}
+      />
     </div>
   );
 }

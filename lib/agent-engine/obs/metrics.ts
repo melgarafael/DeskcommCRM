@@ -112,13 +112,17 @@ export async function recordRunMetrics(
   }
 
   // labels SÓ ids/atribuição (job_id É o run id) — PII jamais.
+  // `$1::uuid` explícito: dentro de um UNION o Postgres resolve o parâmetro sem
+  // tipo como `text` antes de olhar a coluna de destino, e o INSERT inteiro cai
+  // (`organization_id is of type uuid but expression is of type text`). Provado
+  // no banco real em `tests/invariants/metricas-do-run-gravam.test.ts`.
   const labels = { job_id: job.id, contact_id: job.contact_id, kind: job.kind };
   await db.query(
     `insert into metrics (organization_id, name, labels, value)
-     select $1, t.name, $2::jsonb, t.value
+     select $1::uuid, t.name, $2::jsonb, t.value
      from unnest($3::text[], $4::float8[]) as t(name, value)
      union all
-     select $1, '${WALL_METRIC}', $2::jsonb,
+     select $1::uuid, '${WALL_METRIC}', $2::jsonb,
             greatest(0, extract(epoch from (clock_timestamp() - $5::timestamptz)) * 1000)
      where $5::timestamptz is not null`,
     [job.organization_id, JSON.stringify(labels), names, values, claim],

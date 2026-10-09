@@ -66,4 +66,22 @@ describe("auditMcpToolCall", () => {
     expect(e.metadata.args.cpf).toBe("[redacted]");
     expect(e.metadata.args.query).toBe("joana");
   });
+
+  it("grava só o NÚMERO de bytes da resposta, quando informado", async () => {
+    await auditMcpToolCall({
+      ctx, toolName: "crm_query_external_data", args: {}, durationMs: 4, success: true, resultBytes: 1234,
+    });
+    const e = auditSpy.mock.calls[0]![0];
+    expect(e.metadata.result_bytes).toBe(1234);
+    expect(JSON.stringify(e.metadata)).not.toContain("conteudo");
+  });
+
+  it("sem tamanho informado, o campo não existe; número inválido também não entra", async () => {
+    await auditMcpToolCall({ ctx, toolName: "crm_list_leads", args: {}, durationMs: 4, success: true });
+    expect("result_bytes" in auditSpy.mock.calls[0]![0].metadata).toBe(false);
+    await auditMcpToolCall({ ctx, toolName: "crm_list_leads", args: {}, durationMs: 4, success: true, resultBytes: -5 });
+    expect("result_bytes" in auditSpy.mock.calls[1]![0].metadata).toBe(false);
+    await auditMcpToolCall({ ctx, toolName: "crm_list_leads", args: {}, durationMs: 4, success: true, resultBytes: Number.NaN });
+    expect("result_bytes" in auditSpy.mock.calls[2]![0].metadata).toBe(false);
+  });
 });

@@ -27,6 +27,8 @@ import {
 } from "@/lib/financeiro/catalogo";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { moduloLigado } from "@/lib/instalacao/modulos";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +39,15 @@ type Ctx = { params: Promise<{ tipo: string }> };
 async function entidade(ctx: Ctx, requestId: string) {
   const { tipo } = await ctx.params;
   if (!ehEntidadeDoCatalogo(tipo)) {
+    return {
+      ok: false as const,
+      response: fail("not_found", "Catálogo desconhecido.", 404, { requestId }),
+    };
+  }
+  // #1907: `commission_rules` é tabela do módulo `financeiro` (a comanda). Sem ele
+  // instalado ela não existe, e este catálogo também não — 404, como as rotas de
+  // comandas. As outras entidades são do caixa, que é núcleo.
+  if (tipo === "regras_de_comissao" && !(await moduloLigado(createAdminClient(), "financeiro"))) {
     return {
       ok: false as const,
       response: fail("not_found", "Catálogo desconhecido.", 404, { requestId }),
