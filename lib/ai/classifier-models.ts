@@ -22,7 +22,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { listarModelosDaAssinatura } from "@/lib/ai/catalogo/modelos-da-assinatura";
+import { listarModelosDaAssinaturaOuVazio } from "@/lib/ai/catalogo/modelos-da-assinatura";
 import { ehProvedorSuportado } from "@/lib/ai/pontos/provedores";
 import { PROVEDOR_POR_ASSINATURA } from "@/lib/ai/pontos/provedores";
 
@@ -92,10 +92,12 @@ export async function listClassifierModels(
   );
 
   if (!origemPorProvider.has(PROVEDOR_POR_ASSINATURA)) return fromCatalog;
-  const accountModels = await listarModelosDaAssinatura(organizationId);
+  // Falha do backend do Codex aqui vira lista vazia + log (#2602): o
+  // classificador sugere o catálogo global, não derruba a sessão de chat.
+  const accountModels = await listarModelosDaAssinaturaOuVazio(organizationId);
   return [
     ...fromCatalog,
-    ...(accountModels ?? []).map((m) => ({
+    ...accountModels.map((m) => ({
       provider: m.provider,
       model_id: m.model_id,
       display_name: m.display_name,

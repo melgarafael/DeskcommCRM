@@ -1,5 +1,15 @@
 import { type NextRequest } from "next/server";
-import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
+import { z } from "zod";
+import {
+  falhaDaEscritaDePlatformAdmin,
+  requirePlatformAdmin,
+  requirePlatformAdminEscrita,
+  type PlatformAdminContext,
+} from "@/lib/auth/requirePlatformAdmin";
+import { requireSupportWrite } from "@/lib/impersonate/support";
+import { logger } from "@/lib/logger";
+import { tenantSchema } from "@/lib/schemas/settings";
+import { gravarDadosCadastrais } from "@/lib/tenants/dados-cadastrais";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
@@ -40,7 +50,15 @@ export async function GET(
       suspended_at,
       suspended_kind,
       created_at,
-      settings
+      settings,
+      country,
+      timezone,
+      locale,
+      currency,
+      media_retention_days,
+      media_retention_enforced,
+      dpo_email,
+      privacy_policy_url
     `,
     )
     .eq("id", id)
@@ -158,4 +176,95 @@ export async function GET(
   });
 
   return ok({ organization: org, counts, integrations }, { requestId });
+}
+
+// ---------------------------------------------------------------------------
+// PATCH /api/v1/admin/tenants/[id] — dados cadastrais pelo admin da plataforma
+// ---------------------------------------------------------------------------
+//
+// Os MESMOS campos (e o mesmo schema) que o admin do tenant edita em
+// Configurações › Empresa, gravados pela mesma função
+// (`lib/tenants/dados-cadastrais.ts`). O que muda é a autoridade: aqui é a
+// plataforma, com escopo `full` e MFA de sessão, e a organização vem do PATH —
+// é o recurso que o admin da plataforma escolheu na lista, não uma org ativa.
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const requestId = randomUUID();
+  const { id } = await params;
+  if (!z.string().uuid().safeParse(id).success) {
+    return fail("not_found", "Tenant not found", 404, { requestId });
+  }
+
+  const supportDenied = await requireSupportWrite(id);
+  if (supportDenied) return supportDenied;
+
+  let adminCtx: PlatformAdminContext;
+  try {
+    adminCtx = await requirePlatformAdminEscrita();
+  } catch (err) {
+    return falhaDaEscritaDePlatformAdmin(err, requestId);
+  }
+
+  let raw: unknown;
+  try {
+    raw = await req.json();
+  } catch {
+    return fail("validation_failed", "Invalid JSON body", 400, { requestId });
+  }
+  const parsed = tenantSchema.safeParse(raw);
+  if (!parsed.success) {
+    return fail("validation_failed", "Dados inválidos", 400, {
+      requestId,
+      details: parsed.error.flatten(),
+    });
+  }
+
+  const admin = createAdminClient();
+  const { data: org, error: orgError } = await admin
+    .from("organizations")
+    .select("id, slug")
+    .eq("id", id)
+    .maybeSingle();
+  if (orgError) return fail("internal_error", orgError.message, 500, { requestId });
+  if (!org) return fail("not_found", "Tenant not found", 404, { requestId });
+
+  const gravado = await gravarDadosCadastrais(admin, id, parsed.data);
+  if (!gravado.ok) {
+    if (gravado.erro === "cnpj_em_uso") {
+      return fail("state_conflict", "Este CNPJ já pertence a outra organização.", 409, { requestId });
+    }
+    return fail("validation_failed", gravado.erro, 400, { requestId });
+  }
+
+  void audit({
+    action: "org.updated",
+    actorUserId: adminCtx.user.id,
+    actingAsPlatformAdmin: true,
+    bypassedRls: true,
+    organizationId: id,
+    resourceType: "organization",
+    resourceId: id,
+    requestId,
+    metadata: { fields_changed: Object.keys(parsed.data), via: "platform_admin" },
+  });
+
+  // Mesmo evento da edição pela tela do tenant: quem consome `org.updated`
+  // não precisa saber quem editou.
+  void admin
+    .rpc("emit_event", {
+      p_event_type: "org.updated",
+      p_entity_kind: "organization",
+      p_entity_id: id,
+      p_payload: { organization_id: id },
+      p_metadata: { request_id: requestId, via: "platform_admin" },
+      p_organization_id: id,
+    })
+    .then(({ error }) => {
+      if (error) logger.warn("[admin.tenants.patch] emit_event falhou", { requestId, erro: error.message });
+    });
+
+  return ok({ id }, { requestId });
 }
