@@ -115,6 +115,11 @@ function adminFalso(c: Cenario) {
           webhook_subscriptions: { "order/created": { id: 77 } },
         });
       }
+      if (tabela === "cobranca_assinaturas") {
+        // Empresa sem linha de cobrança (isenta): a releitura de #2626 lê a
+        // linha, não acha, e não chama o provedor.
+        return leituraSimples(null);
+      }
       throw new Error(`tabela inesperada: ${tabela}`);
     },
     rpc: vi.fn(async (fn: string, args?: unknown) => {

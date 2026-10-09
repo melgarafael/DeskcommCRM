@@ -48790,6 +48790,82 @@ $f$;
 revoke execute on function public.fn_arquivos_da_organizacao(uuid, text, text, integer) from public, anon, authenticated;
 grant execute on function public.fn_arquivos_da_organizacao(uuid, text, text, integer) to service_role;
 
+-- ---- a chave de passagem por assunto jurídico na versão do agente (migration 0616) ----
+-- 0616 (#2097, #2156): `handoff_legal_enabled boolean not null default true` em
+-- `ai_agent_versions`. LIGADO por padrão (quem não mexer fica como hoje), por
+-- AGENTE, na versão publicada (mudar é criar rascunho e publicar) e só admin
+-- escreve — sem código novo, toda escrita de versão já exige admin. O pedido
+-- explícito de pessoa (`detectHumanHandoffRequest`) e `handoff_keywords` não
+-- mudam: esta chave age só na descrição da ferramenta `request_human_handoff`.
+-- O efeito no turno mora em `lib/agent-engine/agent/inbound-turn.ts`.
+--
+-- O bloco de baixo é IDEMPOTENTE (mesmo do .sql da 0616, byte a byte): o kit
+-- self-host aplica SÓ o baseline, e quem usa o Supabase CLI aplica a cadeia —
+-- os dois têm de sair com a mesma trava. A trava passa a cobrir a coluna nova
+-- porque a lista dela é escrita à mão: sem esta linha, uma versão publicada
+-- ficaria editável neste campo para a service key, e
+-- `tests/unit/trigger-imutavel-cobre-todas-as-colunas-de-conteudo.test.ts`
+-- reprovaria.
+
+alter table public.ai_agent_versions
+  add column if not exists handoff_legal_enabled boolean not null default true;
+
+comment on column public.ai_agent_versions.handoff_legal_enabled is
+  'Assunto jurídico é motivo de passar a conversa para uma pessoa? Padrão LIGADO; só admin muda, e a mudança é publicar uma versão nova do agente. Não afeta o pedido explícito de pessoa nem as palavras de passagem.';
+
+create or replace function fn_ai_agent_version_content_immutable() returns trigger
+-- search_path fixo na PRÓPRIA definição: um create or replace sem a cláusula
+-- apaga o alter function ... set search_path da 0521 (invariante
+-- tests/invariants/avisos-do-security-advisor.test.ts).
+language plpgsql set search_path = '' as $fn$
+begin
+  if old.status <> 'draft' and (
+       new.system_prompt          is distinct from old.system_prompt
+    or new.provider               is distinct from old.provider
+    or new.model                  is distinct from old.model
+    or new.credential_id          is distinct from old.credential_id
+    or new.tool_ids               is distinct from old.tool_ids
+    or new.trigger_config         is distinct from old.trigger_config
+    or new.channel_session_id     is distinct from old.channel_session_id
+    or new.max_steps              is distinct from old.max_steps
+    or new.token_budget           is distinct from old.token_budget
+    or new.cost_budget_cents      is distinct from old.cost_budget_cents
+    or new.history_message_window is distinct from old.history_message_window
+    or new.history_token_window   is distinct from old.history_token_window
+    or new.handoff_keywords       is distinct from old.handoff_keywords
+    or new.handoff_tool_enabled   is distinct from old.handoff_tool_enabled
+    or new.handoff_legal_enabled  is distinct from old.handoff_legal_enabled
+    or new.followup               is distinct from old.followup
+    or new.multimodal_input       is distinct from old.multimodal_input
+    or new.video_frames_enabled   is distinct from old.video_frames_enabled
+    or new.split_messages         is distinct from old.split_messages
+    or new.split_max_chars        is distinct from old.split_max_chars
+    or new.cases_enabled          is distinct from old.cases_enabled
+    or new.operator_enabled       is distinct from old.operator_enabled
+    or new.operator_model         is distinct from old.operator_model
+    or new.operator_tool_ids      is distinct from old.operator_tool_ids
+    or new.pipeline_ids           is distinct from old.pipeline_ids
+    or new.knowledge_source_ids   is distinct from old.knowledge_source_ids
+    or new.proposal_ai_draft_enabled is distinct from old.proposal_ai_draft_enabled
+    or new.inbound_debounce_ms    is distinct from old.inbound_debounce_ms
+    or new.version_number         is distinct from old.version_number
+    or new.agent_id               is distinct from old.agent_id
+    or new.organization_id        is distinct from old.organization_id
+  ) then
+    raise exception 'ai_agent_versions % é imutável (status=%): mudança de conteúdo = versão draft nova; rollback = revert (clona + publica)',
+      old.id, old.status;
+  end if;
+  return new;
+end;
+$fn$;
+
+drop trigger if exists trg_ai_agent_versions_content_immutable on public.ai_agent_versions;
+create trigger trg_ai_agent_versions_content_immutable
+  before update on public.ai_agent_versions
+  for each row execute function fn_ai_agent_version_content_immutable();
+
+notify pgrst, 'reload schema';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
@@ -51076,8 +51152,15 @@ create unique index if not exists agent_inbox_budget_do_plano_aberto_unico
   on public.agent_inbox_items (organization_id)
   where status = 'open' and kind = 'budget_exceeded' and ref_kind = 'plano';
 
--- ---- fontes liberadas do banco externo (migration 0613) ----
--- Espelha a migration 0613_banco_externo_fontes_liberadas: o racional inteiro está lá.
+-- ---- Índice textual do acervo da revisão de promessas (migration 0617) ----
+-- manifest: Índice textual português para recuperar evidências de ofertas antes da revisão de promessas.
+-- A expressão é a mesma da consulta e mantém acentos nos dois lados.
+-- Sem alteração de linhas, políticas RLS ou concessões de acesso.
+create index if not exists ai_chunks_content_pt_gin
+  on public.ai_chunks using gin (to_tsvector('portuguese'::regconfig, content));
+
+-- ---- fontes liberadas do banco externo (migration 0618) ----
+-- Espelha a migration 0618_banco_externo_fontes_liberadas: o racional inteiro está lá.
 -- Idempotente: `add column if not exists`, constraints derrubadas e recriadas, view
 -- recriada com revoke/grant reemitidos. Linhas existentes ficam 'all'.
 alter table public.external_db_connections

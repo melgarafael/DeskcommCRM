@@ -138,6 +138,9 @@ describe("PUT /connections/:id/sources", () => {
     deps.role.mockResolvedValue({ ok: false, response: new Response(null, { status: 403 }) });
     const res = await PUT(put({ source_mode: "list", sources: [] }), ctx);
     expect(res.status).toBe(403);
+    // O mock devolve 403 para qualquer papel: sem esta linha, trocar "admin" por
+    // "viewer" na rota passava verde (sabotado na triagem do #2634).
+    expect(deps.role).toHaveBeenCalledWith("admin", expect.anything());
     expect(deps.audit).not.toHaveBeenCalled();
   });
 

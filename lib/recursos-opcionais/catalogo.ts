@@ -614,6 +614,17 @@ const DA_EMPRESA: RecursoOpcional[] = [
 
 const DE_CADA_AGENTE: RecursoOpcional[] = [
   {
+    id: "passagem_por_assunto_juridico",
+    nome: "Passagem por assunto jurídico",
+    oQueFaz:
+      "Por agente e decidido pelo admin: passar a conversa para uma pessoa quando o cliente falar de assunto jurídico (Procon, advogado, processo). Desligada, assunto jurídico passa a ser o trabalho normal deste agente e não é, sozinho, motivo de passagem — quem pede para falar com uma pessoa continua sendo passado. É OUTRA chave: a \"chamar uma pessoa\" de \"Ajustes de cada agente\" liga e desliga a ferramenta inteira; esta só tira a passagem por assunto jurídico.",
+    nivel: "agente",
+    padrao: "ligado",
+    quemDecide: "admin",
+    href: "/app/ai/agents",
+    ler: varia,
+  },
+  {
     id: "ajustes_do_agente",
     nome: "Ajustes de cada agente",
     oQueFaz:

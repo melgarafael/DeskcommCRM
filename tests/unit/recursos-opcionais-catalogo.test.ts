@@ -68,6 +68,27 @@ describe("o catálogo de recursos opcionais não deixa recurso de fora", () => {
     expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);
   });
 
+  it("a chave por assunto jurídico tem a sua linha de agente, com os textos (#2156)", () => {
+    const linha = RECURSOS_OPCIONAIS.find((r) => r.id === "passagem_por_assunto_juridico");
+    expect(
+      linha,
+      "sem linha em lib/recursos-opcionais/catalogo.ts quem desliga a chave não a acha em Recursos opcionais",
+    ).toBeDefined();
+    expect(linha).toMatchObject({
+      nivel: "agente",
+      padrao: "ligado",
+      quemDecide: "admin",
+      href: "/app/ai/agents",
+    });
+    // `ler: varia` — o estado é por agente, não dá para ler "ligado" da empresa.
+    expect(linha!.ler?.({ modulos: [], settings: {}, servidor: {} })).toBe("varia");
+    // O texto diferencia das duas chaves vizinhas, para ninguém ler as duas como
+    // a mesma coisa (pedido do mantenedor na seção 6 do desenho).
+    expect(linha!.oQueFaz).toContain("Ajustes de cada agente");
+    expect(linha!.nome && DICIONARIO[linha!.nome]?.es, "sem espanhol no dicionário").toBeTruthy();
+    expect(DICIONARIO[linha!.oQueFaz]?.es, "sem espanhol no dicionário").toBeTruthy();
+  });
+
   it("todo 'Ajustar' leva a uma tela que existe", () => {
     const mortos = RECURSOS_OPCIONAIS.flatMap((r) => (r.href ? [r.href] : [])).filter(
       (href) => {
