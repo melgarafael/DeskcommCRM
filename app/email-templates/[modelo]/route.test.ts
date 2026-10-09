@@ -10,9 +10,7 @@ import { marcaDaSaida } from "@/lib/branding/saida";
  */
 
 vi.mock("@/lib/branding/saida", async () => {
-  const real = await vi.importActual<typeof import("@/lib/branding/saida")>(
-    "@/lib/branding/saida",
-  );
+  const real = await vi.importActual<typeof import("@/lib/branding/saida")>("@/lib/branding/saida");
   return { ...real, marcaDaSaida: vi.fn() };
 });
 
@@ -70,4 +68,14 @@ describe("GET /email-templates/[modelo]", () => {
     expect(res.headers.get("cache-control")).toMatch(/max-age=\d+/);
     expect(res.headers.get("x-robots-tag")).toContain("noindex");
   });
+});
+
+it("exporta o catálogo Cloud com marca atual e sem cache", async () => {
+  vi.mocked(marcaDaSaida).mockResolvedValue(MARCA);
+  const res = await chamar("config");
+  expect(res.headers.get("cache-control")).toBe("no-store");
+  const config = await res.json();
+  expect(Object.keys(config)).toHaveLength(26);
+  expect(config.mailer_templates_confirmation_content).toContain(MARCA.accent);
+  expect(marcaDaSaida).toHaveBeenCalledWith(null);
 });

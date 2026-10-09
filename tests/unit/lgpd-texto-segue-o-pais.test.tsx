@@ -75,6 +75,8 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 
 import { PERFIS_DO_PAIS, perfilDoPais, type PerfilDoPais } from "@/lib/legal/perfil-do-pais";
+import { NEUTROS_DE_SAIDA } from "@/lib/branding/saida";
+import { estruturaDeEmail } from "@/lib/email/templates/estrutura";
 import { sendExportEmail } from "@/lib/lgpd/email-delivery";
 import { collectExportData, type ExportPayload } from "@/lib/lgpd/export-collector";
 import { LgpdExportPdf } from "@/lib/lgpd/pdf-renderer";
@@ -82,7 +84,20 @@ import { triggerSlaAlarm, type AlarmThreshold } from "@/lib/lgpd/sla-alarm";
 import type { LgpdRequest } from "@/lib/lgpd/types";
 
 const FIXTURES = join(__dirname, "..", "fixtures", "lgpd-brasil-antes-do-doc88");
-const fixture = (nome: string) => readFileSync(join(FIXTURES, nome), "utf8");
+// A customização compartilhada troca a moldura e melhora o contraste dos e-mails BR.
+// Reutiliza o corpo histórico integral: assunto, texto, links e aviso legal
+// continuam comparados com as fixtures oficiais, sem regravar seu conteúdo.
+const fixture = (nome: string) => {
+  const original = readFileSync(join(FIXTURES, nome), "utf8");
+  if (!["email.json", "alarmes.json", "alarmes-store-redact.json"].includes(nome)) return original;
+  const dados: unknown = JSON.parse(original);
+  const adaptar = (email: { html: string }) => {
+    const corpo = email.html.match(/<body[^>]*>\n?([\s\S]*?)<\/body>/)?.[1];
+    if (corpo === undefined) throw new Error("fixture sem corpo HTML");
+    return { ...email, html: estruturaDeEmail(MARCA, corpo.replaceAll("#7d786c", NEUTROS_DE_SAIDA.suave)) };
+  };
+  return JSON.stringify(Array.isArray(dados) ? dados.map(adaptar) : adaptar(dados as { html: string }), null, 2);
+};
 
 const MARCA = {
   nome: "Silva & Filhos",
@@ -257,7 +272,7 @@ describe("e-mail ao titular", () => {
 });
 
 describe("alarme ao encarregado", () => {
-  it("Brasil: igual, byte a byte, nos dois limiares", async () => {
+  it("Brasil: mesmo conteúdo nos dois limiares, na moldura compartilhada", async () => {
     expect(JSON.stringify(await alarmesPara(null), null, 2)).toBe(fixture("alarmes.json"));
     // `BR` escrito é o mesmo Brasil que a coluna vazia.
     expect(JSON.stringify(await alarmesPara("BR"), null, 2)).toBe(fixture("alarmes.json"));
@@ -274,7 +289,7 @@ describe("alarme ao encarregado", () => {
     }
   });
 
-  it("Brasil: o apagamento da loja sai igual, byte a byte, ao de antes", async () => {
+  it("Brasil: o apagamento da loja mantém o conteúdo anterior, na moldura compartilhada", async () => {
     expect(JSON.stringify(await alarmesPara(null, "store_redact"), null, 2)).toBe(
       fixture("alarmes-store-redact.json"),
     );

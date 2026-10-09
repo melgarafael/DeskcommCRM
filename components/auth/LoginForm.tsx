@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { signInWithPassword } from "@/app/actions/auth/signInWithPassword";
 import { Eye, EyeSlash } from "@/lib/ui/icons";
 
-export function LoginForm({ next }: { next?: string }) {
+export function LoginForm({ next, email }: { next?: string; email?: string }) {
   const t = useT();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -26,7 +26,7 @@ export function LoginForm({ next }: { next?: string }) {
     formState: { errors },
   } = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "" },
+    defaultValues: { email: email ?? "", password: "" },
   });
 
   const onSubmit = (values: LoginInput) => {

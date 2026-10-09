@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { configuracaoDeEmailsAuth } from "@/lib/email/templates/configuracao-auth";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import {
   MODELOS_DE_ACESSO,
@@ -57,6 +58,12 @@ export async function GET(
   { params }: { params: Promise<{ modelo: string }> },
 ): Promise<NextResponse> {
   const { modelo } = await params;
+
+  if (modelo === "config") {
+    return NextResponse.json(configuracaoDeEmailsAuth(await marcaDaSaida(null)), {
+      headers: { "cache-control": "no-store", "x-robots-tag": "noindex, nofollow" },
+    });
+  }
 
   if (!MODELOS_DE_ACESSO.includes(modelo as ModeloDeAcesso)) {
     return new NextResponse("modelo desconhecido", { status: 404 });

@@ -79,28 +79,23 @@ export default async function AcceptInvitePage({ params }: PageProps) {
       <Shell idioma={idioma}>
         <h1 className="text-xl font-semibold">{t("Você foi convidado")}</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          {t("Para aceitar o convite como")} <strong>{payload.role}</strong>,{" "}
-          {t("faça login com o email")} <strong>{payload.email}</strong>.
+          {t("Use o e-mail")} <strong>{payload.email}</strong>{" "}
+          {t(
+            "para entrar na equipe que convidou você. Se ainda não tem conta, crie a sua. Se já tem, entre com ela.",
+          )}
         </p>
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <Link
-            href={`/login?next=${next}`}
-            className="inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-          >
-            {t("Fazer login")}
-          </Link>
-          {/*
-            O caminho que faltava. Quem é convidado e ainda NÃO tem conta só
-            tinha "Fazer login" — então criava conta pelo caminho comum, e o
-            provisionamento, sem achar vínculo, abria uma empresa e o tornava
-            admin dela. O token viaja no link para que a conta nova já nasça
-            amarrada a este convite.
-          */}
+        <div className="mt-4 flex flex-col items-stretch gap-3">
           <Link
             href={`/signup?invite=${encodeURIComponent(token)}`}
-            className="text-sm underline underline-offset-4"
+            className="inline-block rounded-md bg-primary px-4 py-2 text-center text-sm font-medium text-primary-foreground"
           >
-            {t("Ainda não tenho conta")}
+            {t("Criar minha conta")}
+          </Link>
+          <Link
+            href={`/login?next=${next}`}
+            className="text-center text-sm underline underline-offset-4"
+          >
+            {t("Já tenho conta? Entrar")}
           </Link>
         </div>
       </Shell>

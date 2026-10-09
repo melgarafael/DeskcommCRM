@@ -126,10 +126,9 @@ describe("o memo da marca da instalação atravessa instâncias do módulo", () 
   it("a invalidação feita pela instância da ROTA alcança a instância da TELA", async () => {
     const tela = await instancia();
     const rota = await instancia();
-    expect(
-      tela,
-      "controle: sem duas instâncias distintas este teste não reproduz nada",
-    ).not.toBe(rota);
+    expect(tela, "controle: sem duas instâncias distintas este teste não reproduz nada").not.toBe(
+      rota,
+    );
 
     // 1. A tela renderizou uma vez — o memo guardou a linha SEM logo.
     expect((await tela.marcaDaInstalacao())?.logo_path).toBeNull();
@@ -142,6 +141,15 @@ describe("o memo da marca da instalação atravessa instâncias do módulo", () 
     // 3. O render seguinte (o `router.refresh()` do campo de logo) TEM de ver o
     //    arquivo. É esta linha que fica vermelha com o memo preso ao módulo.
     expect((await tela.marcaDaInstalacao())?.logo_path).toBe(CAMINHO_SUBIDO);
+  });
+
+  it("saída sem memo lê escrita de outro processo e não altera o cache da fachada", async () => {
+    const marca = await instancia();
+    expect((await marca.marcaDaInstalacao())?.app_name).toBe("Revenda XPTO");
+    banco.linha = { ...SEM_LOGO, app_name: "Marca alterada" };
+    expect((await marca.marcaDaInstalacao({ semMemo: true }))?.app_name).toBe("Marca alterada");
+    expect((await marca.marcaDaInstalacao())?.app_name).toBe("Revenda XPTO");
+    expect(banco.leituras).toBe(2);
   });
 
   it("e no sentido inverso — quem grava pela tela é visto por quem monta o e-mail", async () => {
@@ -298,10 +306,7 @@ describe("a leitura que FALHOU depois da escrita não vira fato memoizado", () =
     //    fica vermelha sem o conserto.
     banco.erro = null;
     const linha = await tela.marcaDaInstalacao();
-    expect(
-      banco.leituras,
-      "a falha não pode ser servida do memo como se fosse leitura",
-    ).toBe(2);
+    expect(banco.leituras, "a falha não pode ser servida do memo como se fosse leitura").toBe(2);
     expect(linha?.logo_path, "o logo recém-subido tem de aparecer no render seguinte").toBe(
       CAMINHO_SUBIDO,
     );

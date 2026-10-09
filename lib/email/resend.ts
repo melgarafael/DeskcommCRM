@@ -26,7 +26,6 @@
  */
 import { Resend } from "resend";
 
-import { env } from "@/lib/env";
 import { valorDaInstalacao } from "@/lib/instalacao/config";
 
 interface SendArgs {
@@ -118,11 +117,8 @@ export async function sendEmail(args: SendArgs): Promise<SendResult> {
   if (!client || !from) {
     if (process.env.NODE_ENV !== "production") {
       console.warn(
-        "[email] envio desligado — falta RESEND_API_KEY ou RESEND_FROM_EMAIL. Payload:",
+        "[email] envio desligado — falta RESEND_API_KEY ou RESEND_FROM_EMAIL.",
         {
-          to: args.to,
-          subject: args.subject,
-          preview: args.text?.slice(0, 200) ?? args.html.slice(0, 200),
           tem_chave: client !== null,
           tem_remetente: from !== null,
         },
