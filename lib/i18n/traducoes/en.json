@@ -9000,5 +9000,12 @@
   "Remova opções repetidas.": "Remove repeated options.",
   "O formulário pode ter até 20 perguntas.": "The form can have up to 20 questions.",
   "Cada pergunta precisa ter uma chave diferente.": "Each question needs a different key.",
-  "Revise os campos do formulário.": "Review the form fields."
+  "Revise os campos do formulário.": "Review the form fields.",
+  "Cliente da sua carteira falou com outro vendedor: {{contact.name}}": "A client from your portfolio spoke with another rep: {{contact.name}}",
+  "Este cliente pertence à carteira de outro vendedor. O negócio novo nasce com o dono da carteira.": "This client belongs to another rep's portfolio. A new deal is born with the portfolio owner.",
+  "Só gerente e administrador podem mudar a carteira do cliente.": "Only managers and administrators can change a client's portfolio.",
+  "O dono precisa ser membro ativo desta empresa, com papel de atendente, gerente ou administrador. Quem só lê, e quem saiu da equipe, não é dono de carteira.": "The owner must be an active member of this company with an agent, manager, or administrator role. Read-only members, and members who left the team, cannot own a portfolio.",
+  "Contato não encontrado nesta empresa.": "Contact not found in this company.",
+  "A origem da carteira não é válida.": "The portfolio source is not valid.",
+  "Não foi possível salvar a carteira do cliente.": "Could not save the client's portfolio."
 }

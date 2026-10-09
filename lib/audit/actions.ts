@@ -1104,6 +1104,10 @@ export const AUDIT_ACTIONS = [
   "platform_admin.tenant_members_viewed",
   // O admin da plataforma corrigiu o e-mail de login de um membro (só hashes).
   "member.email_changed",
+  // O gestor mudou a carteira do cliente (põe/tira o dono) pela porta
+  // dedicada `PATCH /contacts/[id]/carteira` (#2591) — a escrita é do servidor,
+  // então o audit é a única trilha de quem mudou o dono.
+  "contact.carteira_changed",
   // Marca permanente "sempre atendimento humano" (issue 2379): `ai_opt_out`
   // ligado na ficha do contato — a devolução (manual ou automática) não a desfaz.
   "contacts.always_human_marked",

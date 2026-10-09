@@ -5681,6 +5681,34 @@ export const DICIONARIO: Traducoes = {
   "Ver no Kanban": { es: "Ver en el Kanban" },
   "Últimos recebimentos": { es: "Últimos recibidos" },
   "Ainda não chegou nada por aqui.": { es: "Todavía no ha llegado nada por aquí." },
+  // ─── CARTEIRA DO CLIENTE (#2591) ──────────────────────────────────────────
+  // Título da tarefa interna para o vendedor dono (`lib/carteira/aviso-ao-dono.ts`).
+  // `{{contact.name}}` é o placeholder de `interpolarTitulo` — a tradução tem
+  // de mantê-lo, ou o nome do cliente sai do título em espanhol.
+  "Cliente da sua carteira falou com outro vendedor: {{contact.name}}": {
+    es: "El cliente de tu cartera habló con otro vendedor: {{contact.name}}",
+  },
+  // Motivo do 403 quando o negócio novo cairia no cliente de outro vendedor
+  // (rota de criação, modo "Só os seus").
+  "Este cliente pertence à carteira de outro vendedor. O negócio novo nasce com o dono da carteira.": {
+    es: "Este cliente pertenece a la cartera de otro vendedor. El negocio nuevo nace con el dueño de la cartera.",
+  },
+  // Respostas da porta dedicada `PATCH /contacts/[id]/carteira`.
+  "Só gerente e administrador podem mudar a carteira do cliente.": {
+    es: "Solo gerente y administrador pueden cambiar la cartera del cliente.",
+  },
+  "O dono precisa ser membro ativo desta empresa, com papel de atendente, gerente ou administrador. Quem só lê, e quem saiu da equipe, não é dono de carteira.": {
+    es: "El dueño debe ser miembro activo de esta empresa, con rol de agente, gerente o administrador. Quien solo lee, y quien salió del equipo, no es dueño de cartera.",
+  },
+  "Contato não encontrado nesta empresa.": {
+    es: "Contacto no encontrado en esta empresa.",
+  },
+  "A origem da carteira não é válida.": {
+    es: "El origen de la cartera no es válido.",
+  },
+  "Não foi possível salvar a carteira do cliente.": {
+    es: "No fue posible guardar la cartera del cliente.",
+  },
   "assinatura inválida": { es: "firma inválida" },
   // Assinatura HMAC da fonte de captação, na tela de detalhe da fonte.
   "Assinatura (HMAC)": { es: "Firma (HMAC)" },
