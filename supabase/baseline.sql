@@ -51114,7 +51114,7 @@ create view public.external_db_connections_safe
 revoke all on public.external_db_connections_safe from anon;
 grant select on public.external_db_connections_safe to authenticated;
 
--- ---- motor do banco externo e aviso do teste (migration 0614) ----
+-- ---- motor do banco externo e aviso do teste (migration 0615) ----
 alter table public.external_db_connections
   add column if not exists db_type text not null default 'postgres',
   add column if not exists last_test_aviso text;
