@@ -38,7 +38,7 @@ begin
  get diagnostics n=row_count;
  return n;
 end $$;
-revoke all on function public.fn_resolver_avisos_de_lembrete_expirados() from public, anon, authenticated;
+revoke execute on function public.fn_resolver_avisos_de_lembrete_expirados() from public, anon, authenticated;
 grant execute on function public.fn_resolver_avisos_de_lembrete_expirados() to service_role;
 
 
@@ -52,7 +52,7 @@ begin
      where organization_id=new.organization_id and contact_id=new.id);
  return new;
 end $$;
-revoke all on function public.fn_anonimizar_aviso_de_remetente() from public,anon,authenticated,service_role;
+revoke execute on function public.fn_anonimizar_aviso_de_remetente() from public, anon, authenticated, service_role;
 drop trigger if exists trg_anonimizar_aviso_de_remetente on public.contacts;
 create trigger trg_anonimizar_aviso_de_remetente after update of is_anonymized on public.contacts
  for each row when(new.is_anonymized and not old.is_anonymized)
