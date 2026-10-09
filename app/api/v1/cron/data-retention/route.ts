@@ -205,6 +205,16 @@ export interface ResultadoDaRetencao {
   retencao_candidatos_do_golden_dias: number;
   /** Avisos de configuração — nunca ausentes em silêncio quando existem. */
   avisos: string[];
+  /**
+   * Os drenos que FALHARAM nesta rodada, um por linha (`"fn_x: motivo"`).
+   *
+   * A rodada deixou de ser tudo-ou-nada (#2508): cada poda falha sozinha e as
+   * demais seguem. Uma função ausente num clone (grant que não veio, timeout)
+   * não pode impedir as OUTRAS podas nem a retomada de anonimização, que
+   * divide o relógio com elas. A falha entra aqui NOMEADA — é o que mantém a
+   * doutrina da casa: aberta na ação e aberta na informação, nunca engolida.
+   */
+  falhas: string[];
 }
 
 /** Só a superfície que este cron usa — o teste injeta uma implementação. */
@@ -256,6 +266,25 @@ export interface PodaDb {
   ): Promise<{ data: number | null; error: { message: string } | null }>;
 }
 
+/**
+ * Um dreno interrompido NO MEIO carrega o parcial (sugestão 1 do #2645).
+ *
+ * As três podas apagam em lotes de 1000; quando o banco falha no lote 4 de 20,
+ * os 3 lotes anteriores JÁ foram apagados — e o relatório registrava 0. No caso
+ * do expurgo da auditoria isso é pior que um número feio: linhas de auditoria
+ * apagadas ficavam contadas como zero NA PRÓPRIA TRILHA. A classe carrega as
+ * contagens até a falha para o `executarDreno` devolvê-las ao relatório.
+ */
+class DrenoInterrompido<T> extends Error {
+  constructor(
+    mensagem: string,
+    readonly parcial: T,
+  ) {
+    super(mensagem);
+    this.name = "DrenoInterrompido";
+  }
+}
+
 async function drenar(
   db: PodaDb,
   nome:
@@ -282,7 +311,9 @@ async function drenar(
       p_retencao_dias: dias,
       p_limite: TAMANHO_DO_LOTE,
     });
-    if (error) throw new Error(`${nome}: ${error.message}`);
+    if (error) {
+      throw new DrenoInterrompido(`${nome}: ${error.message}`, { apagadas, lotes, temResto: false });
+    }
     const n = data ?? 0;
     lotes += 1;
     apagadas += n;
@@ -316,7 +347,13 @@ async function drenarRascunhos(
   let lotes = 0;
   for (let i = 0; i < MAX_LOTES; i += 1) {
     const { data, error } = await db.apagarRascunhos(corte, TAMANHO_DO_LOTE);
-    if (error) throw new Error(`conversation_drafts: ${error.message}`);
+    if (error) {
+      throw new DrenoInterrompido(`conversation_drafts: ${error.message}`, {
+        apagadas,
+        lotes,
+        temResto: false,
+      });
+    }
     const n = data ?? 0;
     lotes += 1;
     apagadas += n;
@@ -361,7 +398,14 @@ async function drenarMidia(
   let lotes = 0;
   for (let i = 0; i < MAX_LOTES; i += 1) {
     const { data, error } = await db.enfileirarMidia(TAMANHO_DO_LOTE);
-    if (error) throw new Error(`fn_enfileirar_midia_vencida: ${error.message}`);
+    if (error) {
+      throw new DrenoInterrompido(`fn_enfileirar_midia_vencida: ${error.message}`, {
+        enfileirada,
+        expurgada,
+        lotes,
+        temResto: false,
+      });
+    }
     const r = (typeof data === "object" && data !== null ? data : {}) as RetornoDaFilaDeMidia;
     const vencidas = r.vencidas ?? 0;
     const orfas = r.orfas ?? 0;
@@ -375,6 +419,45 @@ async function drenarMidia(
     }
   }
   return { enfileirada, expurgada, lotes, temResto: true };
+}
+
+/**
+ * Cada dreno falha SOZINHO (issue #2508).
+ *
+ * Antes, o primeiro `throw` de um `drenar` abortava a rodada inteira: as podas
+ * seguintes não rodavam, a retomada de anonimização (SLA D+15) era PULADA e a
+ * trilha registrava só `{falhou, erro}` — o que já tinha sido apagado nas
+ * tabelas anteriores sumia da auditoria. Agora a falha vira uma linha nomeada
+ * em `falhas`, e a rodada segue: um grant que não veio num clone derruba UMA
+ * tabela, não o dia.
+ *
+ * `emFalha` é o relatório da poda que não aconteceu (contagens zeradas ou o
+ * formato próprio da mídia) — o resultado continua tendo a MESMA forma, para o
+ * JSON e `houveEfeito` não precisarem saber que houve falha.
+ */
+async function executarDreno<T>(
+  falhas: string[],
+  nome: string,
+  tarefa: () => Promise<T>,
+  emFalha: T,
+): Promise<T> {
+  try {
+    return await tarefa();
+  } catch (err) {
+    const detalhe = err instanceof Error ? err.message : String(err);
+    // O nome sai UMA vez: as três tarefas já prefixam a própria mensagem
+    // (`fn_x: motivo`), e o prefixo daqui a duplicava (`fn_x: fn_x: motivo`).
+    const nomeado = detalhe.startsWith(nome) ? detalhe : `${nome}: ${detalhe}`;
+    // Mesmo teto do caminho antigo de falha total (300 caracteres): falha de
+    // banco cabe num aviso, e mensagem de provider pode vir enorme.
+    falhas.push(nomeado.slice(0, 300));
+    // O parcial dos lotes que JÁ passaram volta ao relatório (sugestão 1 do
+    // #2645): sem isto, o expurgo da auditoria registraria 0 na própria trilha
+    // para linhas que ele apagou de verdade. Erro sem parcial (inesperado) cai
+    // no zerado de sempre.
+    if (err instanceof DrenoInterrompido) return err.parcial as T;
+    return emFalha;
+  }
 }
 
 /**
@@ -484,29 +567,34 @@ export async function podarHistorico(
     piso: RETENCAO_CHECKPOINTS_DIAS_PISO,
   });
 
-  const jobs = await drenar(db, "fn_podar_fila_de_jobs", fila.dias);
-  const linhas = await drenar(db, "fn_expurgar_auditoria_vencida", auditoria.dias);
-  const eventos = await drenar(db, "fn_expurgar_espelho_da_agenda", espelho.dias);
+  // As falhas desta rodada, uma por dreno (ver `executarDreno`): a rodada
+  // segue e cada uma é reportada pelo NOME.
+  const falhas: string[] = [];
+  const zerado = { apagadas: 0, lotes: 0, temResto: false };
+
+  const jobs = await executarDreno(falhas, "fn_podar_fila_de_jobs", () => drenar(db, "fn_podar_fila_de_jobs", fila.dias), zerado);
+  const linhas = await executarDreno(falhas, "fn_expurgar_auditoria_vencida", () => drenar(db, "fn_expurgar_auditoria_vencida", auditoria.dias), zerado);
+  const eventos = await executarDreno(falhas, "fn_expurgar_espelho_da_agenda", () => drenar(db, "fn_expurgar_espelho_da_agenda", espelho.dias), zerado);
   // Quarta poda: os nonces de OAuth já queimados. O `state` vale dez minutos,
   // então um dia é folga de duas ordens de grandeza — e sem esta linha a tabela
   // cresceria para sempre, uma linha por conexão tentada, num produto que se
   // instala e ninguém monitora.
-  const nonces = await drenar(db, "fn_expurgar_nonces_de_oauth", 1);
+  const nonces = await executarDreno(falhas, "fn_expurgar_nonces_de_oauth", () => drenar(db, "fn_expurgar_nonces_de_oauth", 1), zerado);
   // Quinta poda: a conversa da equipe com a IA sobre um caso (migration 0281).
   // O piso de 90 dias mora no CORPO da função; o número daqui é o que o
   // operador pediu, já elevado, e é ele que aparece no relatório da rodada.
-  const conversas = await drenar(db, "fn_expurgar_conversa_do_caso_vencida", conversaDoCaso.dias);
+  const conversas = await executarDreno(falhas, "fn_expurgar_conversa_do_caso_vencida", () => drenar(db, "fn_expurgar_conversa_do_caso_vencida", conversaDoCaso.dias), zerado);
   // Sexta poda: o registro da passagem do atendimento para uma pessoa (0291). O
   // piso de 90 dias mora no CORPO da função, como nas anteriores — e ela tem uma
   // segunda guarda que só ela tem: passagem NÃO RECONHECIDA nunca é apagada, em
   // nenhuma idade. Uma passagem aberta é alguém esperando resposta.
-  const passagens = await drenar(db, "fn_expurgar_passagens_vencidas", passagem.dias);
+  const passagens = await executarDreno(falhas, "fn_expurgar_passagens_vencidas", () => drenar(db, "fn_expurgar_passagens_vencidas", passagem.dias), zerado);
   // Sétima poda: o registro de entrega do aviso de caso no WhatsApp da equipe
   // (0292). O piso de 30 dias mora no CORPO da função, como nas anteriores. Ela
   // não guarda o texto do aviso (só o resumo criptográfico dele), então o que se
   // poda aqui é volume de operação — e é a poda de horizonte mais curto das
   // sete, porque a única pergunta que a linha responde é de semanas.
-  const avisosDeCaso = await drenar(db, "fn_expurgar_avisos_de_caso_vencidos", avisoDeCaso.dias);
+  const avisosDeCaso = await executarDreno(falhas, "fn_expurgar_avisos_de_caso_vencidos", () => drenar(db, "fn_expurgar_avisos_de_caso_vencidos", avisoDeCaso.dias), zerado);
   // Oitava poda: o candidato de prospecção nativa vencido (migration 0408,
   // issue #1313). Padrão 365 / piso 90 — decisão do dono, alinhada ao
   // horizonte da conversa do caso e da captação. O piso mora no CORPO da
@@ -515,35 +603,35 @@ export async function podarHistorico(
   // (`suppression_salt is not null`) nunca entra — é ele que barra a
   // reimportação. É a primeira poda da casa cujo dado é de uma pessoa que
   // NUNCA falou com a empresa, então as duas guardas são a regra, não enfeite.
-  const prospeccaoDrenada = await drenar(db, "fn_expurgar_prospeccao_vencida", prospeccao.dias);
+  const prospeccaoDrenada = await executarDreno(falhas, "fn_expurgar_prospeccao_vencida", () => drenar(db, "fn_expurgar_prospeccao_vencida", prospeccao.dias), zerado);
   // Nona poda: as observações do Jev (0421). Padrão 90 / piso 30, a janela da
   // concordância que o cartão mostra — o piso mora no CORPO da função.
-  const observacoesDrenadas = await drenar(db, "fn_expurgar_observacoes_do_jev", observacoesDoJev.dias);
+  const observacoesDrenadas = await executarDreno(falhas, "fn_expurgar_observacoes_do_jev", () => drenar(db, "fn_expurgar_observacoes_do_jev", observacoesDoJev.dias), zerado);
   // Décima poda: o rascunho sugerido por integração já VENCIDO (migration 0419,
   // issue #1686). A única que não passa pelo `rpc` — a tabela 0419 não tem
   // função de expurgo, e o corte (`expires_at` + prazo) nasce em TypeScript,
   // mesma exceção da captação. Piso de 7 dias mora AQUI, no interpretador.
-  const rascunhosDrenados = await drenarRascunhos(db, rascunho.dias);
+  const rascunhosDrenados = await executarDreno(falhas, "conversation_drafts", () => drenarRascunhos(db, rascunho.dias), zerado);
   // Décima primeira poda: o candidato ao golden set (0428, issue #1695).
   // Padrão 90 / piso 30, a janela em que o near-miss ainda é curável — o piso mora no
   // CORPO da função, como nas irmãs. A linha é rótulo, sem texto de cliente.
-  const candidatosDrenados = await drenar(db, "fn_expurgar_candidatos_do_golden", candidatosDoGolden.dias);
+  const candidatosDrenados = await executarDreno(falhas, "fn_expurgar_candidatos_do_golden", () => drenar(db, "fn_expurgar_candidatos_do_golden", candidatosDoGolden.dias), zerado);
   // Décima segunda poda (migration 0557, issue #1534): a retenção de MÍDIA que a
   // tela prometia e que nada aplicava. O prazo não é knob de ambiente — é
   // `organizations.media_retention_days`, com o piso de 30 dias no `greatest(...)`
   // do corpo da função —, então o que este laço decide é só QUANTO drenar por
   // rodada: lotes de 1000, teto de 20, parando no primeiro incompleto.
-  const midiaDrenada = await drenarMidia(db);
+  const midiaDrenada = await executarDreno(falhas, "fn_enfileirar_midia_vencida", () => drenarMidia(db), { enfileirada: 0, expurgada: 0, lotes: 0, temResto: false });
   // Da décima terceira à décima sexta: as tabelas append-only da IA (0587). As
   // guardas de cada uma — a última linha do número no ritmo, a janela do
   // anti-repetição nas cópias, o último checkpoint da fronteira e o de job vivo
   // — moram no CORPO das funções, como o piso. `event_log` não entra: é o
   // livro-razão de idempotência dos gatilhos de tempo, e podá-lo reenviaria
   // WhatsApp.
-  const telemetriaDrenada = await drenar(db, "fn_expurgar_telemetria_de_ia_vencida", telemetriaDeIa.dias);
-  const ritmoDrenado = await drenar(db, "fn_expurgar_ritmo_de_envio_vencido", ritmoDeEnvio.dias);
-  const copiasDrenadas = await drenar(db, "fn_expurgar_copias_enviadas_vencidas", copiasEnviadas.dias);
-  const checkpointsDrenados = await drenar(db, "fn_expurgar_checkpoints_superados", checkpoints.dias);
+  const telemetriaDrenada = await executarDreno(falhas, "fn_expurgar_telemetria_de_ia_vencida", () => drenar(db, "fn_expurgar_telemetria_de_ia_vencida", telemetriaDeIa.dias), zerado);
+  const ritmoDrenado = await executarDreno(falhas, "fn_expurgar_ritmo_de_envio_vencido", () => drenar(db, "fn_expurgar_ritmo_de_envio_vencido", ritmoDeEnvio.dias), zerado);
+  const copiasDrenadas = await executarDreno(falhas, "fn_expurgar_copias_enviadas_vencidas", () => drenar(db, "fn_expurgar_copias_enviadas_vencidas", copiasEnviadas.dias), zerado);
+  const checkpointsDrenados = await executarDreno(falhas, "fn_expurgar_checkpoints_superados", () => drenar(db, "fn_expurgar_checkpoints_superados", checkpoints.dias), zerado);
 
   return {
     jobs_apagados: jobs.apagadas,
@@ -624,6 +712,7 @@ export async function podarHistorico(
       copiasEnviadas.aviso,
       checkpoints.aviso,
     ].filter((a): a is string => a !== null),
+    falhas,
   };
 }
 
@@ -696,16 +785,10 @@ async function handle(req: NextRequest): Promise<Response> {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
 
+  let admin: ReturnType<typeof createAdminClient>;
   let resultado: ResultadoDaRetencao;
-  let varredura: ResultadoDaVarredura = {
-    examinados: 0,
-    comResiduo: 0,
-    completados: [],
-    temResto: false,
-    falhas: [],
-  };
   try {
-    const admin = createAdminClient();
+    admin = createAdminClient();
     // As duas funções são novas e não estão em `lib/database.types.ts` (gerado a
     // partir de um projeto Supabase vivo) — mesmo tratamento que
     // `recover-stuck-messages` dá a `emit_event`.
@@ -718,8 +801,9 @@ async function handle(req: NextRequest): Promise<Response> {
       // Lote curto, transação fechada a cada rodada, e o retorno `select("id")`
       // é a CONTAGEM que o relatório e `houveEfeito` usam. O `.order("id")` NÃO
       // é enfeite: o PostgREST 12.2 recusa `limit` sem `order` num DELETE
-      // (400 PGRST109), e aqui o erro sobe e derruba a rodada inteira,
-      // inclusive a retomada da cascata de LGPD que vem depois.
+      // (400 PGRST109) — e o erro sobe até o `executarDreno` da rodada, que o
+      // NOMEIA em `falhas` sem derrubar as podas irmãs nem a retomada da
+      // cascata de LGPD (#2508).
       async apagarRascunhos(vencidosAntesDe, lote) {
         const { data, error } = await admin
           .from("conversation_drafts")
@@ -756,38 +840,14 @@ async function handle(req: NextRequest): Promise<Response> {
       OUTBOUND_COPIES_RETENTION_DAYS: env.OUTBOUND_COPIES_RETENTION_DAYS,
       LEAD_CHECKPOINT_RETENTION_DAYS: env.LEAD_CHECKPOINT_RETENTION_DAYS,
     });
-    // ── A cascata de anonimização que ficou pela metade ──────────────────
-    //
-    // Mora AQUI, e não numa rota de cron própria, por uma razão de packaging: o
-    // agendamento vive no serviço `scheduler`, e um cron novo exigiria linha
-    // nova no `docker/scheduler/entrypoint.sh` — que só chega a quem já
-    // instalou depois de a imagem do scheduler ser trocada. Pendurado no
-    // varredor diário que TODO clone já roda, o conserto alcança o parque
-    // instalado sem ninguém editar nada (DoD 15). Nome e cadência também
-    // servem: retenção é remover dado pessoal no prazo, e a LGPD dá D+15.
-    //
-    // O client aqui é o de SERVICE ROLE, que bypassa a RLS — por isso
-    // `completarRedacaoDoContato` filtra `organization_id` à mão em toda query,
-    // com a org vinda da própria linha de `contacts` (fonte confiável).
-    //
-    // Try PRÓPRIO, e não o de fora: uma varredura que explodisse derrubaria o
-    // relatório da PODA junto, e o cron passaria a auditar `falhou: true` num
-    // dia em que o expurgo funcionou. As duas tarefas dividem o relógio, não o
-    // desfecho — quem falha aqui falha aqui, e a falha é dita, não engolida.
-    try {
-      varredura = await varrerRedacoesIncompletas(admin as unknown as ClienteDaCascata);
-    } catch (err) {
-      varredura.falhas.push(err instanceof Error ? err.message : String(err));
-    }
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     logger.error("[data-retention] poda falhou", { error: detail, requestId });
-    // A falha ENTRA na trilha, e é o único caso em que uma rodada que não apagou
-    // nada audita. É o laço de retorno desta peça: sem esta linha, uma poda que
-    // parou de funcionar — grants que não vieram no `update.sh` de um clone,
-    // função ausente — seria indistinguível de uma poda que não tinha nada a
-    // fazer, e o único sinal viveria num `logger.error` dentro do contêiner,
-    // atrás de um `curl` que manda tudo para /dev/null. Teto de 1 linha/dia.
+    // A falha ENTRA na trilha. Este catch só alcança falha de CRIAÇÃO do client
+    // (as podas isolam seus drenos desde o #2508): rodada que morre aqui não
+    // apagou nada por definição, e é o laço de retorno desta peça — sem esta
+    // linha, um clone sem env/credencial seria indistinguível de um dia sem
+    // nada a fazer. A falha PARCIAL também audita sem efeito (ver abaixo).
     void audit({
       action: "retention.sweep_run",
       organizationId: null,
@@ -798,6 +858,39 @@ async function handle(req: NextRequest): Promise<Response> {
     return fail("internal_error", "Failed to prune history.", 500, { requestId });
   }
 
+  // ── A cascata de anonimização que ficou pela metade ──────────────────
+  //
+  // Mora AQUI, e não numa rota de cron própria, por uma razão de packaging: o
+  // agendamento vive no serviço `scheduler`, e um cron novo exigiria linha
+  // nova no `docker/scheduler/entrypoint.sh` — que só chega a quem já
+  // instalou depois de a imagem do scheduler ser trocada. Pendurado no
+  // varredor diário que TODO clone já roda, o conserto alcança o parque
+  // instalado sem ninguém editar nada (DoD 15). Nome e cadência também
+  // servem: retenção é remover dado pessoal no prazo, e a LGPD dá D+15.
+  //
+  // O client aqui é o de SERVICE ROLE, que bypassa a RLS — por isso
+  // `completarRedacaoDoContato` filtra `organization_id` à mão em toda query,
+  // com a org vinda da própria linha de `contacts` (fonte confiável).
+  //
+  // Try PRÓPRIO, FORA do try da poda (#2508): uma varredura que explodisse
+  // derrubaria o relatório da PODA junto, e o cron passaria a auditar
+  // `falhou: true` num dia em que o expurgo funcionou; pior, uma poda que
+  // falhasse PULAVA este bloco e a anonimização pendente perdia o dia. As duas
+  // tarefas dividem o relógio, não o desfecho — quem falha aqui falha aqui, e
+  // a falha é dita, não engolida.
+  let varredura: ResultadoDaVarredura = {
+    examinados: 0,
+    comResiduo: 0,
+    completados: [],
+    temResto: false,
+    falhas: [],
+  };
+  try {
+    varredura = await varrerRedacoesIncompletas(admin as unknown as ClienteDaCascata);
+  } catch (err) {
+    varredura.falhas.push(err instanceof Error ? err.message : String(err));
+  }
+
   for (const aviso of resultado.avisos) {
     logger.warn("[data-retention] configuração de retenção ajustada", { aviso, requestId });
   }
@@ -805,14 +898,24 @@ async function handle(req: NextRequest): Promise<Response> {
   // Ver o cabeçalho: rodada que não apagou nada não é mutação. E rodada que
   // apagou SEMPRE deixa rastro — é isto que impede o expurgo do audit de ser
   // encolhimento silencioso da trilha.
-  if (houveEfeito(resultado)) {
+  //
+  // Falha PARCIAL também audita sem efeito (#2508): a rodada em que uma poda
+  // quebrou precisa ser distinguível, na trilha, da rodada que não tinha nada
+  // a fazer. E o metadata leva as contagens do que JÁ foi apagado — antes, o
+  // catch registrava só `{falhou, erro}` e o trabalho que aconteceu sumia.
+  const houveFalhaParcial = resultado.falhas.length > 0;
+  if (houveEfeito(resultado) || houveFalhaParcial) {
     void audit({
       action: "retention.sweep_run",
       organizationId: null,
       bypassedRls: true,
-      metadata: resultado as unknown as Record<string, unknown>,
+      metadata: { ...(houveFalhaParcial ? { falhou: true } : {}), ...resultado },
       requestId,
     });
+  }
+
+  for (const falha of resultado.falhas) {
+    logger.error("[data-retention] poda parcial falhou", { falha, requestId });
   }
 
   for (const falha of varredura.falhas) {
@@ -846,15 +949,24 @@ async function handle(req: NextRequest): Promise<Response> {
     }
   }
 
-  return ok(
-    {
-      ...resultado,
-      anonimizacoes_examinadas: varredura.examinados,
-      anonimizacoes_completadas: varredura.completados.length,
-      anonimizacoes_tem_resto: varredura.temResto,
-    },
-    { requestId },
-  );
+  const corpo = {
+    ...resultado,
+    anonimizacoes_examinadas: varredura.examinados,
+    anonimizacoes_completadas: varredura.completados.length,
+    anonimizacoes_tem_resto: varredura.temResto,
+  };
+  // Poda parcial é 500: a rodada NÃO está completa, e o operador precisa poder
+  // distinguir isso de um dia em que nada havia a fazer. O detalhe leva o
+  // RELATÓRIO inteiro — contagens das podas que funcionaram, as de anonimização
+  // e as falhas nomeadas: a resposta 500 não pode perder o que a rodada
+  // conseguiu fazer (sugestão 3 do #2645).
+  if (houveFalhaParcial) {
+    return fail("internal_error", "Failed to prune history.", 500, {
+      requestId,
+      details: corpo,
+    });
+  }
+  return ok(corpo, { requestId });
 }
 
 export async function GET(req: NextRequest): Promise<Response> {

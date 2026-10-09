@@ -136,4 +136,17 @@ describe("o fechamento do turno corrige antes de repetir o turno", () => {
     expect(fonte).toMatch(/\{ role: 'user', content: CHECKPOINT_INSTRUCTION \},\s*\.\.\.correcao,/);
     expect(CHECKPOINT_INSTRUCTION).toContain("Sem texto fora do JSON.");
   });
+  it("corrige o_what no segundo compromisso sem apagar a promessa", async () => {
+    const promessa = { o_que: "retornar a resposta da equipe", prazo: null };
+    const corrigido = { ...JSON.parse(VALIDO), declaracao: { intencoes: [], promessas: [{ o_que: "confirmar o pedido", prazo: null }, promessa], nada_a_declarar: false } };
+    const invalido = JSON.parse(JSON.stringify(corrigido));
+    invalido.declaracao.promessas[1] = { o_what: promessa.o_que, prazo: null };
+    const m = modelo(JSON.stringify(invalido), JSON.stringify(corrigido));
+    const r = await fecharOTurno({ pedir: m.pedir });
+    expect(m.pedir).toHaveBeenCalledTimes(2);
+    expect(m.chamadas[1]![1]!.content).toContain("declaracao.promessas.1.o_que: invalid_type");
+    expect(r.corrigido).toBe(true);
+    expect(r.content.declaracao?.promessas).toEqual(corrigido.declaracao.promessas);
+  });
+
 });

@@ -46,6 +46,7 @@ import {
   type LinhaDaInstalacao,
 } from "@/lib/branding/resolve";
 import { marcaDaOrganizacaoSchema } from "@/lib/schemas/settings";
+import { dicaDoRelatorio, type VocabularioDaEmpresa } from "@/lib/legal/dica-do-relatorio-de-dados";
 import { useT } from "@/hooks/i18n/useT";
 
 interface Props {
@@ -71,6 +72,15 @@ interface Props {
     readonly APP_LOGO_URL?: string;
     readonly APP_ACCENT_HEX?: string;
   };
+  /**
+   * O vocabulário da EMPRESA no país da organização (#2503): o rótulo do nome
+   * legal e o nome da lei, resolvidos do perfil (`lib/legal/perfil-do-pais`).
+   *
+   * Vem de fora porque é propriedade do PAÍS, não do componente — a mesma
+   * régua do #1946. Sem ele, a dica do relatório mandava a organização
+   * portuguesa conferir um campo com outro nome.
+   */
+  readonly vocabulario: VocabularioDaEmpresa;
 }
 
 /** Mensagem por código de recusa da server action. */
@@ -125,7 +135,7 @@ function LinhaDeOrigem({ campo, valor }: { campo: string; valor: string }) {
   );
 }
 
-export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente }: Props) {
+export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, vocabulario }: Props) {
   const t = useT();
   const router = useRouter();
   const [nome, setNome] = useState(gravada.app_name ?? "");
@@ -447,9 +457,13 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente }
             )}
           </li>
           <li>
-            {t(
-              'O relatório de LGPD entregue ao cliente traz a RAZÃO SOCIAL da sua empresa, e não o nome aqui de cima — é ela que responde legalmente pelos dados. Confira o campo "Razão social" em Configurações → Organização.',
-            )}
+            {/*
+              O campo e a lei são do PAÍS da organização, não do idioma da tela
+              (#2503): em Portugal a dica tem de dizer "Denominação social" e
+              RGPD — o mesmo vocabulário que Configurações → Organização mostra
+              desde o #2502. Ver `dicaDoRelatorio`.
+            */}
+            {dicaDoRelatorio(t, vocabulario)}
           </li>
           <li>
             {t(

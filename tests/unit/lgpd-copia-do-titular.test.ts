@@ -315,11 +315,15 @@ describe("o arquivo do titular (data.json)", () => {
   it("o worker sobe a cópia do país da organização, desenha o PDF do payload e assina o link para todo país", () => {
     const fonte = readFileSync(join(__dirname, "..", "..", "workers", "lgpd-export-worker.ts"), "utf8");
     // `perfil.codigo`: o MESMO perfil lido uma vez e passado ao coletor e ao e-mail.
-    expect(fonte).toContain("JSON.stringify(copiaDoTitular(data, perfil.codigo), null, 2)");
+    expect(fonte).toContain("partesDoArquivoDoTitular(data, perfil.codigo)");
     expect(fonte).toContain("renderLgpdPdf(data,");
     expect(fonte).toContain(".createSignedUrl(jsonPath, expiresInSec)");
     // O link do arquivo era pedido só fora do Brasil; o país não pode voltar a decidir isso.
     expect(fonte).not.toContain("PAIS_PADRAO");
+    // #2576: o arquivo sai em STREAM. A cópia serializada inteira e o Buffer do
+    // arquivo inteiro são o defeito — não podem voltar a aparecer aqui.
+    expect(fonte).not.toContain("JSON.stringify(copiaDoTitular(");
+    expect(fonte).not.toContain("Buffer.from(JSON.stringify(");
   });
 });
 
