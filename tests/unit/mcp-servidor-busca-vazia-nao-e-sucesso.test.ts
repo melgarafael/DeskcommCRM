@@ -12,7 +12,7 @@ const auditSpy = vi.fn();
 vi.mock("@/lib/mcp/audit", () => ({ auditMcpToolCall: (e: unknown) => auditSpy(e) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
 
-const resposta = vi.hoisted(() => ({ atual: { produtos: [] as unknown[] } }));
+const resposta = vi.hoisted(() => ({ atual: { produtos: [] as unknown[] } as unknown }));
 vi.mock("@/lib/mcp/tools", () => ({
   allTools: [
     {
@@ -23,7 +23,10 @@ vi.mock("@/lib/mcp/tools", () => ({
       requiresScope: "mcp:read",
       motivoDoVazio: (r: unknown) =>
         (r as { produtos: unknown[] }).produtos.length === 0 ? "nenhum produto casou o termo" : null,
-      handler: async () => resposta.atual,
+      handler: async () => {
+        if (resposta.atual instanceof Error) throw resposta.atual;
+        return resposta.atual;
+      },
     },
   ],
 }));
@@ -69,7 +72,22 @@ describe("servidor MCP público — busca vazia não é sucesso (#484)", () => {
     resposta.atual = { produtos: [{ id: "p1" }] };
     await chamar();
     expect(auditSpy).toHaveBeenCalledOnce();
-    expect(auditSpy).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+    // O tamanho do que voltou ao modelo, em bytes UTF-8 — sem isto, tirar o
+    // `resultBytes` deste caminho não deixava vermelho nenhum.
+    expect(auditSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: true,
+        resultBytes: Buffer.byteLength(JSON.stringify({ produtos: [{ id: "p1" }] }), "utf8"),
+      }),
+    );
     expect(auditSpy.mock.lastCall?.[0]).not.toHaveProperty("desfecho");
+  });
+
+  it("erro na tool é auditado sem resultBytes: não houve resposta a medir", async () => {
+    resposta.atual = new Error("banco caiu");
+    await chamar();
+    expect(auditSpy).toHaveBeenCalledOnce();
+    expect(auditSpy).toHaveBeenCalledWith(expect.objectContaining({ success: false, errorMessage: "banco caiu" }));
+    expect(auditSpy.mock.lastCall?.[0]).not.toHaveProperty("resultBytes");
   });
 });

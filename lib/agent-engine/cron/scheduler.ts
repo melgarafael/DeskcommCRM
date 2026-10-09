@@ -203,6 +203,10 @@ async function fireOneDue(
 ): Promise<'fired' | 'retried' | 'disabled' | 'skipped' | 'empty'> {
   const nowMs = (cfg.now ?? Date.now)();
   const client = await pool.connect();
+  // #2506: consulta que estoura o query_timeout rejeita sem destruir o socket
+  // (pg 8.23) — liberar com release() sem erro devolve um cliente com o BEGIN
+  // antigo de pé, e o pool o reempresta nela. O finally lê desta marcação.
+  let erroNaTransacao: Error | undefined;
   try {
     await client.query('begin');
     const { rows } = await client.query<CronJobRow & { operante: boolean }>(
@@ -280,6 +284,7 @@ async function fireOneDue(
       return failure.outcome;
     }
   } catch (err) {
+    erroNaTransacao = err instanceof Error ? err : new Error(String(err));
     try {
       await client.query('rollback');
     } catch (rollbackErr) {
@@ -287,7 +292,7 @@ async function fireOneDue(
     }
     throw err;
   } finally {
-    client.release();
+    client.release(erroNaTransacao);
   }
 }
 

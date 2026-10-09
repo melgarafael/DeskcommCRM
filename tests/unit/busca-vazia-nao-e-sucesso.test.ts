@@ -152,6 +152,8 @@ describe("busca de produtos do agente: 'não achei' não é sucesso (#484)", () 
     expect((resposta as { produtos: unknown[] }).produtos).toHaveLength(1);
     expect(auditoria?.metadata.success).toBe(true);
     expect(auditoria?.metadata).not.toHaveProperty("desfecho");
+    // O tamanho, em bytes UTF-8, do que voltou ao modelo — e só o número.
+    expect(auditoria?.metadata.result_bytes).toBe(Buffer.byteLength(JSON.stringify(resposta), "utf8"));
   });
 
   it("vazio que é RESPOSTA continua sucesso: contato sem pedidos", async () => {
