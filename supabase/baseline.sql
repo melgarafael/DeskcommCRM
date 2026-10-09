@@ -52318,7 +52318,7 @@ create unique index if not exists agent_inbox_budget_do_plano_aberto_unico
 create index if not exists ai_chunks_content_pt_gin
   on public.ai_chunks using gin (to_tsvector('portuguese'::regconfig, content));
 
--- ---- remetente dos lembretes (migration 0622) ----
+-- ---- remetente dos lembretes (migration 0623) ----
 -- manifest: remetente opcional por tipo de agendamento e avisos deduplicados de canal
 -- Sem backfill: nulo preserva o automático; nunca se adivinha um número legado.
 alter table public.calendar_event_types add column if not exists reminder_channel_session_id uuid;
