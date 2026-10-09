@@ -590,6 +590,10 @@ export async function reconcileAppointment(
       shared: boolean,
     ) {
       let conferenceRequestId: string | undefined;
+      // O grupo `location` pode entrar AQUI, depois da decisão: quando o
+      // espaço aberto nasce nesta passada, a projeção nova manda o link e o
+      // `delta` tem de levá-lo. Fora disto `campos` é `fields`, sem mudança.
+      let campos = fields;
       if (
         method !== "DELETE" &&
         a.meeting_state === "pending" &&
@@ -631,8 +635,42 @@ export async function reconcileAppointment(
           }
         }
       }
+      if (espacoAbertoAgora) {
+        // O espaço nasceu ANTES do envio, então esta escrita já sai com o
+        // link: o convidado recebe UM convite com a sala, não um convite sem
+        // link e um "alterado" cinco minutos depois (#2063, item 3).
+        //
+        // O corpo é remontado da projeção nova — o mesmo `localDoEvento` de
+        // sempre, agora com o marcador ligado —, nunca montado à mão aqui.
+        local = localProjection({ ...a, meet_aberto: true });
+        if (method === "POST") {
+          body = paraEventoDoGoogle({
+            ...a,
+            meet_aberto: true,
+            participantes: participantesDoAgendamento({
+              contactEmail: contato?.email,
+              contactName: contato?.nome,
+              guestEmail: a.guest_email,
+            }),
+          }) as unknown as Record<string, unknown>;
+        } else if (method === "PATCH") {
+          campos = [...new Set([...campos, "location" as const])];
+          body = delta(
+            {
+              ...a,
+              meet_aberto: true,
+              contact_email: contato?.email ?? null,
+              contact_nome: contato?.nome ?? null,
+            },
+            event!,
+            base,
+            campos,
+            shared,
+          );
+        }
+      }
       // Se só faltava conferência e a capacidade foi recusada, nenhum PATCH vazio.
-      if (method === "PATCH" && !shared && !fields.length && !conferenceRequestId) return;
+      if (method === "PATCH" && !shared && !campos.length && !conferenceRequestId) return;
       const pending: PendingWrite = {
         ...(conferenceRequestId ? { conference_request_id: conferenceRequestId } : {}),
         operation_id: randomUUID(),
@@ -641,7 +679,7 @@ export async function reconcileAppointment(
         revision: a.revision,
         local_revision: a.google_local_revision,
         desired: local,
-        groups: fields,
+        groups: campos,
         shared,
       };
       await call("prepare", { operation: pending });
@@ -660,11 +698,11 @@ export async function reconcileAppointment(
         ? remoteProjection(response, local, base)
         : { ...local, shared: { ...local.shared, cancelled: true } };
       await commit({
-        base: checkpoint(base, local, observed, fields, shared),
+        base: checkpoint(base, local, observed, campos, shared),
         etag: response?.etag ?? null,
         operation_id: pending.operation_id,
         clear_pending: true,
-        ack: shared || fields.length > 0,
+        ack: shared || campos.length > 0,
       });
       if (conferenceRequestId && response && a.status !== "cancelled") {
         const observation = observeMeeting(response, conferenceRequestId) ?? {
