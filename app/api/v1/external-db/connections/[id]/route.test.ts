@@ -75,5 +75,6 @@ describe("PATCH /api/v1/external-db/connections/:id", () => {
     // Sem isto, pedir sources_count na tabela base quebrava com 42703 e a rota devolvia 500.
     expect(selecionadas.join(",")).not.toContain("sources_count");
     expect(selecionadas.join(",")).toContain("id");
+    expect(selecionadas.join(",")).toContain("source_mode");
   });
 });
