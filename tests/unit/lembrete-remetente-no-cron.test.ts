@@ -83,8 +83,18 @@ vi.mock("@/lib/supabase/admin", () => ({
   }),
 }));
 import { GET } from "@/app/api/v1/cron/agenda-reminder/route";
+function linhas(tabela: string) {
+  const rows = m.rows[tabela];
+  if (!rows) throw new Error(`Fixture ausente: ${tabela}`);
+  return rows;
+}
+function linha(tabela: string, indice = 0) {
+  const row = linhas(tabela)[indice];
+  if (!row) throw new Error(`Linha de fixture ausente: ${tabela}[${indice}]`);
+  return row;
+}
 const rodar = () => GET(new Request("http://localhost/api/v1/cron/agenda-reminder") as never);
-const reserva = () => m.rows.calendar_appointments[0];
+const reserva = () => linha("calendar_appointments", 0);
 const tipo = () => reserva().calendar_event_types as Record<string, unknown>;
 beforeEach(() => {
   vi.clearAllMocks();
@@ -159,7 +169,7 @@ describe("cron escolhe remetente antes de qualquer envio ou carimbo", () => {
     tipo().reminder_channel_session_id = "clinica";
     await rodar();
     expect(m.enviar).toHaveBeenCalledTimes(1);
-    expect(m.conversa.mock.calls[0][3]).toBe("clinica");
+    expect(m.conversa.mock.calls.at(0)?.[3]).toBe("clinica");
   });
   it("manual ambígua não envia/carimba; duas rodadas mantêm um aviso", async () => {
     reserva().conversation_id = null;
@@ -167,8 +177,8 @@ describe("cron escolhe remetente antes de qualquer envio ou carimbo", () => {
     await rodar();
     expect(m.enviar).not.toHaveBeenCalled();
     expect(reserva().reminder_sent_offsets_minutes).toEqual([]);
-    expect(m.rows.agent_inbox_items).toHaveLength(1);
-    expect(m.rows.agent_inbox_items[0]).toMatchObject({
+    expect(linhas("agent_inbox_items")).toHaveLength(1);
+    expect(linha("agent_inbox_items", 0)).toMatchObject({
       status: "open",
       ref_id: "reserva",
       kind: "other",
@@ -179,13 +189,13 @@ describe("cron escolhe remetente antes de qualquer envio ou carimbo", () => {
     await rodar();
     tipo().reminder_channel_session_id = "clinica";
     await rodar();
-    expect(m.rows.agent_inbox_items[0].status).toBe("resolved");
+    expect(linha("agent_inbox_items", 0).status).toBe("resolved");
     expect(m.enviar).toHaveBeenCalledTimes(1);
   });
   it.each(["organization_id", "contact_id"])(
     "conversa com %s diferente nunca libera fallback",
     async (campo) => {
-      m.rows.conversations[0][campo] = "outro";
+      linha("conversations", 0)[campo] = "outro";
       await rodar();
       expect(m.enviar).not.toHaveBeenCalled();
       expect(reserva().reminder_sent_offsets_minutes).toEqual([]);
@@ -193,7 +203,7 @@ describe("cron escolhe remetente antes de qualquer envio ou carimbo", () => {
   );
   it("canal configurado de outra organização não envia", async () => {
     tipo().reminder_channel_session_id = "fora";
-    m.rows.channel_sessions.push({
+    linhas("channel_sessions").push({
       id: "fora",
       organization_id: "outra",
       provider: DEFAULT_CHANNEL_PROVIDER,
@@ -213,15 +223,15 @@ describe("cron escolhe remetente antes de qualquer envio ou carimbo", () => {
     },
   );
   it("canal ligado fora do ar não usa o outro setor", async () => {
-    m.rows.channel_sessions[1].status = "STOPPED";
+    linha("channel_sessions", 1).status = "STOPPED";
     await rodar();
     expect(m.enviar).not.toHaveBeenCalled();
   });
   it("bloqueio e carimbo anteriores continuam sendo respeitados", async () => {
-    m.rows.contacts[0].is_blocked = true;
+    linha("contacts", 0).is_blocked = true;
     await rodar();
     expect(m.enviar).not.toHaveBeenCalled();
-    m.rows.contacts[0].is_blocked = false;
+    linha("contacts", 0).is_blocked = false;
     reserva().reminder_sent_offsets_minutes = [60];
     await rodar();
     expect(m.enviar).not.toHaveBeenCalled();

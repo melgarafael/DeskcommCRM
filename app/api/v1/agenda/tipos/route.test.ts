@@ -503,9 +503,9 @@ describe("canal do lembrete na API de tipos", () => {
     makeAdmin(rows, [{ id: CANAL, organization_id: ORG, provider: DEFAULT_CHANNEL_PROVIDER, archived_at: null }]);
     const { PATCH } = await import("./route");
     expect((await PATCH(req("PATCH", { id: TIPO_DA_ORG, reminder_channel_session_id: CANAL }))).status).toBe(200);
-    expect(rows[0].reminder_channel_session_id).toBe(CANAL);
+    expect(rows[0]?.reminder_channel_session_id).toBe(CANAL);
     expect((await PATCH(req("PATCH", { id: TIPO_DA_ORG, reminder_channel_session_id: null }))).status).toBe(200);
-    expect(rows[0].reminder_channel_session_id).toBeNull();
+    expect(rows[0]?.reminder_channel_session_id).toBeNull();
   });
   it.each([
     { organization_id: OUTRA_ORG }, { archived_at: "2026-10-01T00:00:00Z" }, { provider: CHANNEL_PROVIDER_WACALLS },
@@ -523,6 +523,6 @@ describe("canal do lembrete na API de tipos", () => {
     makeAdmin(rows, [{ id: CANAL, organization_id: ORG, provider: DEFAULT_CHANNEL_PROVIDER, archived_at: null }]);
     const { POST } = await import("./route");
     expect((await POST(req("POST", { name: "Design", category: "procedimento", duration_minutes: 30, location_kind: "in_person", reminder_channel_session_id: CANAL }))).status).toBe(201);
-    expect(rows[0].reminder_channel_session_id).toBe(CANAL);
+    expect(rows[0]?.reminder_channel_session_id).toBe(CANAL);
   });
 });
