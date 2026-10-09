@@ -10,6 +10,14 @@ risco, porque abrir a reunião é exatamente isso: qualquer pessoa com o link
 entra. Desligada (o padrão de quem já instalou), o comportamento atual é
 preservado sem nenhuma mudança.
 
+Quando ligada, o link do espaço aberto entra no campo `location` do evento NA
+PRIMEIRA publicação: o convidado recebe um convite que já tem a sala, não um
+convite sem link e um "alterado" minutos depois. E só o espaço aberto troca o
+local pelo link — o Meet "confiável" do Calendar continua fora da projeção, de
+propósito: o link dele nasce depois da publicação, e mandá-lo para o `location`
+de todo compromisso já publicado viraria um e-mail de "evento alterado" em massa
+para os convidados na primeira sincronização depois desta atualização.
+
 Requer, na conexão do Google da organização, que a API do Meet esteja
 habilitada e que o escopo opcional de criação de espaços tenha sido concedido
 (reconectar com a opção ligada já pede o escopo). Sem o escopo, a reunião continua
