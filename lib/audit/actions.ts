@@ -1100,6 +1100,13 @@ export const AUDIT_ACTIONS = [
   "platform_admin.tenant_members_viewed",
   // O admin da plataforma corrigiu o e-mail de login de um membro (só hashes).
   "member.email_changed",
+
+  // #2593: o TELEFONE de uma ficha SEM número foi GRAVADO na hora, sem decisão
+  // humana, quando o agente ouviu o número na conversa — `proporDadoDoContato`
+  // só toma este caminho com `phone_number` vazio e valor em E.164, e a trava
+  // é o `phone_number is null` no UPDATE. Distinguir de `field_proposed` é o
+  // que permite responder "quantos números entraram sozinhos, e de quem".
+  "contact.field_auto_applied",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
