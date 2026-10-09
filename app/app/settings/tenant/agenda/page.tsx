@@ -5,6 +5,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 import { clientePelaAgendaLigado, colegasPodemMexerNaAgendaLigado } from "@/lib/schemas/settings";
+import { transportaMensagem } from "@/lib/channels/capabilities";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 
 import { TiposDeAgendamentoClient, type TipoRow } from "./_client";
@@ -40,7 +41,8 @@ export default async function TiposDeAgendamentoPage() {
   // `viewer` vê a lista (é informação de operação: quanto dura uma consulta);
   // criar e alterar é `manager`, e a rota cobra de novo — a tela esconder não é
   // autorização, é cortesia.
-  const podeEditar = (user.is_platform_admin && !user.support) || ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
+  const podeEditar =
+    (user.is_platform_admin && !user.support) || ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
 
   const supabase = await createClient();
   // ⚠️ O `error` NÃO é descartável, e descartá-lo já mentiu para quem opera.
@@ -56,11 +58,16 @@ export default async function TiposDeAgendamentoPage() {
   //
   // Lista vazia e falha de leitura são fatos diferentes, e a tela tem de
   // dizer qual dos dois aconteceu.
-  const [{ data: tipos, error: erroTipos }, { data: pessoas }, { data: org }] = await Promise.all([
+  const [
+    { data: tipos, error: erroTipos },
+    { data: pessoas },
+    { data: org },
+    { data: canais, error: erroCanais },
+  ] = await Promise.all([
     supabase
       .from("calendar_event_types")
       .select(
-        "id, name, slug, description, category, duration_minutes, location_kind, location_details, default_owner_user_id, requires_confirmation, is_active, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents",
+        "id, name, slug, description, category, duration_minutes, location_kind, location_details, default_owner_user_id, requires_confirmation, is_active, reminder_channel_session_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents",
       )
       .eq("organization_id", activeOrg.orgId)
       .order("is_active", { ascending: false })
@@ -74,6 +81,12 @@ export default async function TiposDeAgendamentoPage() {
     // pela sessão funciona (a policy de leitura é de membro); gravar é só pela
     // RPC, que a action chama.
     supabase.from("organizations").select("settings").eq("id", activeOrg.orgId).maybeSingle(),
+    supabase
+      .from("channel_sessions")
+      .select("id, display_name, phone_number, provider, status")
+      .eq("organization_id", activeOrg.orgId)
+      .is("archived_at", null)
+      .order("created_at"),
   ]);
 
   // O NOME DE GENTE, e não o fragmento de UUID.
@@ -96,11 +109,20 @@ export default async function TiposDeAgendamentoPage() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">{t("Tipos de agendamento")}</h1>
         <p className="mt-1 text-sm text-text-muted">
-          {t("O que se pode marcar, quanto dura e quem atende. É isto que a tela de marcar e o agente de IA oferecem ao cliente.")}
+          {t(
+            "O que se pode marcar, quanto dura e quem atende. É isto que a tela de marcar e o agente de IA oferecem ao cliente.",
+          )}
         </p>
       </header>
       <TiposDeAgendamentoClient
         tiposIniciais={(tipos ?? []) as TipoRow[]}
+        erroCanais={erroCanais ? erroCanais.message : null}
+        canais={(canais ?? [])
+          .filter((c) => transportaMensagem(c.provider))
+          .map((c) => ({
+            id: c.id,
+            nome: `${c.display_name || c.phone_number || t("Canal sem nome")}${c.display_name && c.phone_number ? ` · ${c.phone_number}` : ""}${c.status === "WORKING" ? "" : ` · ${t("desconectado")}`}`,
+          }))}
         erroDeLeitura={erroTipos ? erroTipos.message : null}
         pessoas={(pessoas ?? []).map((p) => ({
           id: String(p.user_id),

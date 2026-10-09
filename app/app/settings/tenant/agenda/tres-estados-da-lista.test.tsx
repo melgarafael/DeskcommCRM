@@ -1,3 +1,4 @@
+import { apiClient } from "@/lib/api/client";
 /**
  * ERRO DE LEITURA NÃO É LISTA VAZIA.
  *
@@ -26,7 +27,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { TiposDeAgendamentoClient, type TipoRow } from "./_client";
@@ -119,5 +120,29 @@ describe("os três estados da lista de tipos", () => {
     // O defeito original: `const [{ data: tipos }] = await Promise.all(...)`.
     expect(fonte).toMatch(/\[\s*\{[^}]*\berror:\s*erroTipos\b[^}]*\}/);
     expect(fonte).toMatch(/erroDeLeitura=\{\s*erroTipos\b/);
+  });
+});
+
+
+describe("canal dos lembretes pela tela", () => {
+  it("seleção explícita chega ao PATCH e o texto explica a prioridade", async () => {
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: { id: TIPO.id } } as never);
+    montar({ tiposIniciais: [{ ...TIPO, reminder_enabled: true }], canais: [{ id: "clinica", nome: "Clínica · 2218" }, { id: "cursos", nome: "Cursos · 9274" }] });
+    fireEvent.click(screen.getByTestId(`editar-${TIPO.id}`));
+    const seletor = screen.getByTestId(`editar-lembrete-canal-${TIPO.id}`) as HTMLSelectElement;
+    expect(seletor.value).toBe("");
+    fireEvent.change(seletor, { target: { value: "clinica" } });
+    expect(screen.getByText(/vale para todas as reservas deste tipo/)).toBeTruthy();
+    fireEvent.submit(screen.getByTestId(`form-editar-${TIPO.id}`));
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith("/api/v1/agenda/tipos", expect.objectContaining({ reminder_channel_session_id: "clinica" })));
+  });
+  it("falha de leitura preserva o canal guardado, sem voltar ao automático", () => {
+    montar({ tiposIniciais: [{ ...TIPO, reminder_enabled: true, reminder_channel_session_id: "clinica" }], erroCanais: "falha" });
+    fireEvent.click(screen.getByTestId(`editar-${TIPO.id}`));
+    const seletor = screen.getByTestId(`editar-lembrete-canal-${TIPO.id}`) as HTMLSelectElement;
+    expect(seletor.value).toBe("clinica"); expect(seletor.disabled).toBe(true);
+    const dados = new FormData(screen.getByTestId(`form-editar-${TIPO.id}`) as HTMLFormElement);
+    expect(dados.has("reminder_channel_session_id")).toBe(false);
+    expect(screen.getByText(/A escolha guardada será preservada/)).toBeTruthy();
   });
 });

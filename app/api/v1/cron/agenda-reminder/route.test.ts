@@ -31,7 +31,8 @@ import {
 } from "@/lib/channels/capabilities";
 import { canalAceitaTextoLivreAgora } from "@/lib/channels/janela";
 
-import { degrausPendentes, escolherCanalDoLembrete, estaNaHora, montarLembrete } from "./route";
+import { decidirRemetenteDoLembrete } from "@/lib/agenda/remetente-do-lembrete";
+import { degrausPendentes, estaNaHora, montarLembrete } from "./route";
 
 const MIN = 60_000;
 
@@ -171,8 +172,9 @@ describe("isolamento entre organizações (estrutural)", () => {
   });
 
   it("resolve o canal DENTRO da organização do compromisso", () => {
-    const buscaDeCanal = fonte.slice(fonte.indexOf('.from("channel_sessions")'));
-    expect(fonte).toContain('.from("channel_sessions")');
+    const remetente = readFileSync(join(__dirname, "../../../../../lib/agenda/remetente-do-lembrete.ts"), "utf8");
+    const buscaDeCanal = remetente.slice(remetente.indexOf('.from("channel_sessions")'));
+    expect(remetente).toContain('.from("channel_sessions")');
     expect(buscaDeCanal.slice(0, 400)).toContain('.eq("organization_id", org)');
   });
 
@@ -351,44 +353,44 @@ describe("escolherCanalDoLembrete — fora da janela de 24 h não vira \"enviado
   const agora = new Date("2026-10-05T12:00:00Z");
   const ha3Dias = new Date(agora.getTime() - 3 * 24 * 60 * MIN).toISOString();
   const ha1Hora = new Date(agora.getTime() - 60 * MIN).toISOString();
-  const social = { id: "canal-social", provider: CHANNEL_PROVIDER_SOCIAL, lastInboundAt: ha3Dias };
-  const livre = { id: "canal-livre", provider: DEFAULT_CHANNEL_PROVIDER, lastInboundAt: null };
+  const social = { status: "WORKING", archived_at: null, id: "canal-social", provider: CHANNEL_PROVIDER_SOCIAL, lastInboundAt: ha3Dias };
+  const livre = { status: "WORKING", archived_at: null, id: "canal-livre", provider: DEFAULT_CHANNEL_PROVIDER, lastInboundAt: null };
 
   it("(a) canal de hetero-restrição fora da janela: NÃO escolhe — o degrau fica pendente", () => {
     // O lembrete de "3 horas antes" de quem reservou dias antes: o cliente não
     // escreveu há mais de 24 h, então a Meta recusaria a entrega (131047) e o
     // carimbo de "enviado" seria mentira. O motivo é o registrável.
-    const escolha = escolherCanalDoLembrete([social], agora);
+    const escolha = decidirRemetenteDoLembrete([social], null, agora);
     expect(escolha.canal).toBeNull();
     expect(escolha.motivo).toBe("canal_fora_da_janela_24h");
   });
 
   it("(a2) cliente que NUNCA escreveu neste canal também está fora da janela", () => {
-    const escolha = escolherCanalDoLembrete([{ ...social, lastInboundAt: null }], agora);
+    const escolha = decidirRemetenteDoLembrete([{ ...social, lastInboundAt: null }], null, agora);
     expect(escolha.canal).toBeNull();
     expect(escolha.motivo).toBe("canal_fora_da_janela_24h");
   });
 
   it("(b) o MESMO canal com o cliente dentro da janela: envia normal", () => {
-    const escolha = escolherCanalDoLembrete([{ ...social, lastInboundAt: ha1Hora }], agora);
+    const escolha = decidirRemetenteDoLembrete([{ ...social, lastInboundAt: ha1Hora }], null, agora);
     expect(escolha.canal?.id).toBe("canal-social");
     expect(escolha.motivo).toBeNull();
   });
 
   it("(c) canal que pode texto livre (freeformOutsideWindow: true) segue como hoje, sem inbound registrado", () => {
-    const escolha = escolherCanalDoLembrete([livre], agora);
+    const escolha = decidirRemetenteDoLembrete([livre], null, agora);
     expect(escolha.canal?.id).toBe("canal-livre");
     expect(escolha.motivo).toBeNull();
   });
 
   it("(d) sem candidato nenhum o motivo é sem_canal — o pulo nunca é silencioso", () => {
-    const escolha = escolherCanalDoLembrete([], agora);
+    const escolha = decidirRemetenteDoLembrete([], null, agora);
     expect(escolha.canal).toBeNull();
     expect(escolha.motivo).toBe("sem_canal");
   });
 
   it("o SOCIAL fora da janela cede a vez ao PRÓXIMO canal WORKING que possa", () => {
-    const escolha = escolherCanalDoLembrete([social, livre], agora);
+    const escolha = decidirRemetenteDoLembrete([social, livre], null, agora);
     expect(escolha.canal?.id).toBe("canal-livre");
     expect(escolha.motivo).toBeNull();
   });
@@ -408,7 +410,7 @@ describe("a rota escolhe o canal ANTES do carimbo e registra o pulo (#2595)", ()
     // Estrutural, no molde das outras deste arquivo: mover o pular para DEPOIS
     // do carimbo devolveria o defeito da issue — o degrau consumido sem ter
     // saído, e a próxima rodada sem o que tentar.
-    const escolha = fonte.indexOf("const escolha = escolherCanalDoLembrete");
+    const escolha = fonte.indexOf("const escolha = await resolverRemetenteDoLembrete");
     const carimbo = fonte.indexOf("reminder_sent_at: new Date()");
     expect(escolha).toBeGreaterThan(-1);
     expect(carimbo).toBeGreaterThan(-1);
@@ -434,17 +436,18 @@ describe("a rota escolhe o canal ANTES do carimbo e registra o pulo (#2595)", ()
     // canal de hetero-restrição e o lembrete nunca sairia — o defeito
     // simétrico ao da issue. O recorte por org é a mesma cerca das outras
     // buscas desta rota.
-    const busca = fonte.slice(fonte.indexOf('.from("conversations")'));
+    const remetente = readFileSync(join(__dirname, "../../../../../lib/agenda/remetente-do-lembrete.ts"), "utf8");
+    const busca = remetente.slice(remetente.indexOf('.select("channel_session_id, last_inbound_at")'));
     expect(busca.slice(0, 700)).toContain("last_inbound_at");
     expect(busca.slice(0, 700)).toContain('.eq("organization_id", org)');
-    expect(busca.slice(0, 700)).toContain('.eq("contact_id", linha.contact_id)');
+    expect(busca.slice(0, 700)).toContain('.eq("contact_id", compromisso.contact_id)');
   });
 
   it("escolhe pela capability, sem nomear provider nenhum (invariante 1 da doutrina)", () => {
     // A pergunta é "o que o canal permite" e quem responde é
     // `lib/channels/janela.ts`; aqui não há string de provider — o lint de
     // canais (`scripts/lint-channels.ts`) cobraria.
-    expect(fonte).toContain("canalAceitaTextoLivreAgora");
+    expect(readFileSync(join(__dirname, "../../../../../lib/agenda/remetente-do-lembrete.ts"), "utf8")).toContain("canalAceitaTextoLivreAgora");
     for (const provider of PROVIDERS_DE_MENSAGEM) expect(fonte).not.toContain(`"${provider}"`);
   });
 });
