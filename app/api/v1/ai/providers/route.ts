@@ -35,7 +35,7 @@ import {
 } from "@/lib/ai/pontos/resolver";
 import { PAPEIS, PONTOS_DE_IA, PONTO_POR_ID } from "@/lib/ai/pontos/registro";
 import { PROVEDORES, ehProvedorSuportado, PROVEDOR_POR_ASSINATURA } from "@/lib/ai/pontos/provedores";
-import { listarModelosDaAssinatura } from "@/lib/ai/catalogo/modelos-da-assinatura";
+import { listarModelosDaAssinaturaOuVazio } from "@/lib/ai/catalogo/modelos-da-assinatura";
 import { validarBinding } from "@/lib/ai/pontos/validar-binding";
 import { lerAmbiente } from "@/lib/instalacao/ambiente";
 import { decidirTranscricao } from "@/lib/messaging/media/escada-de-transcricao";
@@ -141,8 +141,11 @@ export async function GET(): Promise<Response> {
   const temAssinatura = (credsRes.data ?? []).some(
     (credential) => credential.provider === PROVEDOR_POR_ASSINATURA,
   );
+  // A listagem da assinatura só ALIMENTA esta tela: se o backend do Codex
+  // falhar, a tela de Credenciais continua abrindo (com a lista vazia e o
+  // motivo no log) — o editor do agente é quem recebe o erro de cara (#2602).
   const modelosDaAssinatura = temAssinatura
-    ? await listarModelosDaAssinatura(org.orgId)
+    ? await listarModelosDaAssinaturaOuVazio(org.orgId)
     : null;
   const modelos = [
     ...modelosGlobais,

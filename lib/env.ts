@@ -9,6 +9,8 @@
 
 import { z } from "zod";
 
+import { RETENCAO_TETO_DIAS } from "@/lib/retencao/politica";
+
 const isProd = process.env.NODE_ENV === "production";
 
 /**
@@ -45,6 +47,19 @@ const requiredAlways = (name: string) => z.string().min(1, `${name} é obrigató
  *
  * Desligar a poda não é isto: se tiver de existir, é decisão de produto e vem
  * com nome próprio, não com um zero que o schema recusa.
+ *
+ * ─── E o teto ──────────────────────────────────────────────────────────────
+ *
+ * Sem teto, um `WEBHOOK_LOG_BODY_RETENTION_DAYS=9999999` (medido na #2612)
+ * vira `new Date(Date.now() - 9999999 * 86_400_000)` em `limiteEm`, ou seja,
+ * um corte no ano −25353 indo ao PostgREST; um `1e9` estoura a faixa de
+ * `Date` e lança `RangeError: Invalid time value` antes de chegar lá. Por isso
+ * o valor lido aqui passa por `RETENCAO_TETO_DIAS` (`lib/retencao/politica.ts`
+ * — a MESMA constante dos demais prazos, importada, nunca reimplementada).
+ * Acima do teto: o teto vale e o aviso sai AQUI, no lugar em que o valor é
+ * lido, uma vez só no boot — no formato `chave=valor está acima do teto de N
+ * dias — usando N`, o mesmo do teto de `interpretarRetencao` (#2603). Dentro
+ * do intervalo, o número passa intacto, sem aviso.
  */
 const diasDeRetencao = (nome: string, padrao: number) =>
   z.coerce
@@ -59,6 +74,20 @@ const diasDeRetencao = (nome: string, padrao: number) =>
           `(${error.issues[0]?.message ?? "valor recusado"})`,
       );
       return padrao;
+    })
+    .transform((valor) => {
+      // O teto é aplicado DEPOIS do catch: `catch` devolve o padrão só para
+      // valor inválido, e um `9999999` é um número VÁLIDO demais — ele passaria
+      // pelo catch como estava. Transform é o único ponto em que os dois
+      // desfechos (inválido → padrão, gigante → teto) convivem sem um comer o
+      // outro, e ambos com aviso.
+      if (valor > RETENCAO_TETO_DIAS) {
+        console.warn(
+          `[env] ${nome}=${valor} está acima do teto de ${RETENCAO_TETO_DIAS} dias — usando ${RETENCAO_TETO_DIAS}.`,
+        );
+        return RETENCAO_TETO_DIAS;
+      }
+      return valor;
     });
 
 const schema = z.object({
