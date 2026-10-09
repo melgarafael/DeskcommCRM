@@ -215,6 +215,11 @@ export async function faltaParaOProximoJob(pool: Pool): Promise<number | null> {
 
 export async function claimJobs(pool: Pool, opts: ClaimOptions): Promise<JobRow[]> {
   const client = await pool.connect();
+  // #2506: consulta que estoura o query_timeout rejeita a promessa mas NÃO destrói
+  // o socket (pg 8.23, fora do modo pipeline). Liberado com release() sem erro, este
+  // cliente volta ao pool com a transação antiga aberta e é reemprestado nela — o
+  // próximo dono roda dentro da transação do anterior. O finally lê daqui.
+  let erroNaTransacao: Error | undefined;
   try {
     await client.query('begin');
     await client.query('select pg_advisory_xact_lock($1)', [CLAIM_LOCK_KEY]);
@@ -233,13 +238,14 @@ export async function claimJobs(pool: Pool, opts: ClaimOptions): Promise<JobRow[
     await client.query('commit');
     return rows;
   } catch (err) {
+    erroNaTransacao = err instanceof Error ? err : new Error(String(err));
     await rollback(client, err);
     if (isUniqueViolation(err)) {
       return []; // cinto do índice parcial: corrida residual perde só a rodada
     }
     throw err;
   } finally {
-    client.release();
+    client.release(erroNaTransacao);
   }
 }
 
@@ -257,6 +263,9 @@ export async function completeJob<T = void>(
   acquiredAt?: string,
 ): Promise<T> {
   const client = await pool.connect();
+  // #2506 — mesma marcação do claimJobs: o finally só libera COM erro quem falhou
+  // dentro da transação (senão o pg-pool o reempresta com o BEGIN antigo de pé).
+  let erroNaTransacao: Error | undefined;
   try {
     await client.query('begin');
     const result = (inSameCommit ? await inSameCommit(client) : undefined) as T;
@@ -273,10 +282,11 @@ export async function completeJob<T = void>(
     await client.query('commit');
     return result;
   } catch (err) {
+    erroNaTransacao = err instanceof Error ? err : new Error(String(err));
     await rollback(client, err);
     throw err;
   } finally {
-    client.release();
+    client.release(erroNaTransacao);
   }
 }
 

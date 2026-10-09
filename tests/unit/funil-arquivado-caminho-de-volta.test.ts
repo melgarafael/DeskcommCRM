@@ -28,7 +28,7 @@ import { NextRequest } from "next/server";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { corpo } from "@/app/api/v1/pipelines/_funis";
-import { PATCH } from "@/app/api/v1/pipelines/[id]/route";
+import { DELETE, PATCH } from "@/app/api/v1/pipelines/[id]/route";
 import { ORG_ID, PIPE, authOk, funilRow, makeDb } from "@/tests/helpers/stages-db-double";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
@@ -37,6 +37,10 @@ vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async (
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 
 const ARQUIVADO = "55555555-5555-4555-8555-555555555555";
+/** O funil ATIVO que passou a usar o nome enquanto o outro estava no arquivo (#2559). */
+const OCUPANTE = "66666666-6666-4666-8666-666666666666";
+/** O funil marcado como funil de clientes (#2559). */
+const CLIENTES = "77777777-7777-4777-8777-777777777777";
 
 function patch(id: string, body: Record<string, unknown>): Promise<Response> {
   return PATCH(
@@ -47,6 +51,18 @@ function patch(id: string, body: Record<string, unknown>): Promise<Response> {
     }),
     { params: Promise.resolve({ id }) },
   );
+}
+
+/** A porta de arquivar (`DELETE` sem `?definitivo=1`) — é ela que conta as dependências. */
+function arquivar(id: string): Promise<Response> {
+  return DELETE(
+    new NextRequest(`http://localhost/api/v1/pipelines/${id}`, { method: "DELETE" }),
+    { params: Promise.resolve({ id }) },
+  );
+}
+
+async function mensagem(res: Response): Promise<string> {
+  return ((await res.json()) as { error: { message: string } }).error.message;
 }
 
 beforeEach(() => {
@@ -114,5 +130,79 @@ describe("funil arquivado — o caminho de volta (#979)", () => {
 
     expect(res.status).toBe(409);
     expect(db.escritas.filter((e) => e.table === "crm_pipelines")).toHaveLength(0);
+  });
+
+  /**
+   * #2559/1 — o nome NÃO era conferido na volta. O pedido misto (desarquivar +
+   * renomear) é recusado de propósito, então este era o ÚNICO caminho em que a
+   * lista podia terminar com dois funis iguais: alguém cria outro ativo com o
+   * mesmo nome enquanto o primeiro está no arquivo, e o update simples devolve
+   * o antigo sem avisar. A recusa é 409 com o conselho — mesma família do 409
+   * do pedido misto, e sem renomeação automática.
+   */
+  it("tirar do arquivo com o nome já ocupado por um ATIVO é recusado com o conselho (#2559)", async () => {
+    const db = makeDb({
+      pipelines: [
+        funilRow({ id: PIPE, name: "Vendas", is_default: true }),
+        funilRow({ id: OCUPANTE, name: "GMN antigo" }),
+        // Caixa e espaço sobrando: quem digita "gmn antigo " é o MESMO funil
+        // para `chaveDeNome`, e a régua tem de casar igual.
+        funilRow({ id: ARQUIVADO, name: " GMN ANTIGO ", is_archived: true }),
+      ],
+    });
+    vi.mocked(createClient).mockResolvedValue(db.client as never);
+
+    const res = await patch(ARQUIVADO, { is_archived: false });
+
+    expect(res.status).toBe(409);
+    const texto = await mensagem(res);
+    // Cita o funil que a pessoa VÊ na lista (o ativo), e dá a saída.
+    expect(texto).toContain("GMN antigo");
+    expect(texto).toContain("Renomeie um dos dois");
+    expect(db.escritas.filter((e) => e.table === "crm_pipelines")).toHaveLength(0);
+  });
+
+  /**
+   * #2559/2 — a marca `is_client_pipeline` ficava presa no funil arquivado:
+   * enquanto ele estava no arquivo o lead de cliente caía no padrão
+   * (`lib/leads/nascimento-do-lead.ts` filtra `is_archived = false` junto da
+   * marca), e ao tirar do arquivo a marca voltava sem ninguém ter escolhido.
+   * O molde é o do funil padrão, que já era recusado assim — `MarcaExclusiva`
+   * é um tipo só para as duas marcas serem a mesma regra.
+   */
+  it("arquivar o funil de clientes sem outro marcado é recusado com o conselho (#2559)", async () => {
+    const db = makeDb({
+      pipelines: [
+        funilRow({ id: PIPE, name: "Vendas", is_default: true }),
+        funilRow({ id: CLIENTES, name: "Clientes", is_client_pipeline: true }),
+      ],
+    });
+    vi.mocked(createClient).mockResolvedValue(db.client as never);
+
+    const res = await arquivar(CLIENTES);
+
+    expect(res.status).toBe(422);
+    const texto = await mensagem(res);
+    expect(texto).toContain("«Clientes» é o funil de clientes");
+    expect(texto).toContain("Marque OUTRO funil como funil de clientes");
+    // Nenhuma escrita: nem `is_archived: true` sai.
+    expect(db.escritas.filter((e) => e.table === "crm_pipelines")).toHaveLength(0);
+  });
+
+  /** A regressão da regressão: a recusa nova não pode travar o arquivar comum. */
+  it("arquivar um funil sem marca continua gravando só is_archived", async () => {
+    const db = makeDb({
+      pipelines: [
+        funilRow({ id: PIPE, name: "Vendas", is_default: true }),
+        funilRow({ id: CLIENTES, name: "Clientes" }),
+      ],
+    });
+    vi.mocked(createClient).mockResolvedValue(db.client as never);
+
+    const res = await arquivar(CLIENTES);
+
+    expect(res.status).toBe(200);
+    const escrita = db.escritas.find((e) => e.table === "crm_pipelines");
+    expect(escrita?.patch).toEqual({ is_archived: true });
   });
 });

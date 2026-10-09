@@ -23,7 +23,15 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { degrausPendentes, estaNaHora, montarLembrete } from "./route";
+import {
+  CHANNEL_PROVIDER_SOCIAL,
+  CHANNEL_PROVIDER_WACALLS,
+  DEFAULT_CHANNEL_PROVIDER,
+  PROVIDERS_DE_MENSAGEM,
+} from "@/lib/channels/capabilities";
+import { canalAceitaTextoLivreAgora } from "@/lib/channels/janela";
+
+import { degrausPendentes, escolherCanalDoLembrete, estaNaHora, montarLembrete } from "./route";
 
 const MIN = 60_000;
 
@@ -336,5 +344,107 @@ describe("vesperaNoDiaDaMarcacao — fuso ilegível não derruba a rodada", () =
     const comeca = new Date("2026-10-06T17:00:00Z");
     expect(() => vesperaNoDiaDaMarcacao(comeca, 1440, marcadoEm, "Brasilia")).not.toThrow();
     expect(vesperaNoDiaDaMarcacao(comeca, 1440, marcadoEm, "Brasilia")).toBe(false);
+  });
+});
+
+describe("escolherCanalDoLembrete — fora da janela de 24 h não vira \"enviado\" (#2595)", () => {
+  const agora = new Date("2026-10-05T12:00:00Z");
+  const ha3Dias = new Date(agora.getTime() - 3 * 24 * 60 * MIN).toISOString();
+  const ha1Hora = new Date(agora.getTime() - 60 * MIN).toISOString();
+  const social = { id: "canal-social", provider: CHANNEL_PROVIDER_SOCIAL, lastInboundAt: ha3Dias };
+  const livre = { id: "canal-livre", provider: DEFAULT_CHANNEL_PROVIDER, lastInboundAt: null };
+
+  it("(a) canal de hetero-restrição fora da janela: NÃO escolhe — o degrau fica pendente", () => {
+    // O lembrete de "3 horas antes" de quem reservou dias antes: o cliente não
+    // escreveu há mais de 24 h, então a Meta recusaria a entrega (131047) e o
+    // carimbo de "enviado" seria mentira. O motivo é o registrável.
+    const escolha = escolherCanalDoLembrete([social], agora);
+    expect(escolha.canal).toBeNull();
+    expect(escolha.motivo).toBe("canal_fora_da_janela_24h");
+  });
+
+  it("(a2) cliente que NUNCA escreveu neste canal também está fora da janela", () => {
+    const escolha = escolherCanalDoLembrete([{ ...social, lastInboundAt: null }], agora);
+    expect(escolha.canal).toBeNull();
+    expect(escolha.motivo).toBe("canal_fora_da_janela_24h");
+  });
+
+  it("(b) o MESMO canal com o cliente dentro da janela: envia normal", () => {
+    const escolha = escolherCanalDoLembrete([{ ...social, lastInboundAt: ha1Hora }], agora);
+    expect(escolha.canal?.id).toBe("canal-social");
+    expect(escolha.motivo).toBeNull();
+  });
+
+  it("(c) canal que pode texto livre (freeformOutsideWindow: true) segue como hoje, sem inbound registrado", () => {
+    const escolha = escolherCanalDoLembrete([livre], agora);
+    expect(escolha.canal?.id).toBe("canal-livre");
+    expect(escolha.motivo).toBeNull();
+  });
+
+  it("(d) sem candidato nenhum o motivo é sem_canal — o pulo nunca é silencioso", () => {
+    const escolha = escolherCanalDoLembrete([], agora);
+    expect(escolha.canal).toBeNull();
+    expect(escolha.motivo).toBe("sem_canal");
+  });
+
+  it("o SOCIAL fora da janela cede a vez ao PRÓXIMO canal WORKING que possa", () => {
+    const escolha = escolherCanalDoLembrete([social, livre], agora);
+    expect(escolha.canal?.id).toBe("canal-livre");
+    expect(escolha.motivo).toBeNull();
+  });
+
+  it("provider que a matriz não conhece não é barrado por uma regra que não existe", () => {
+    // A gate só barre o `freeformOutsideWindow: false` MEDIDO: travar linha de
+    // voz ou provider mais novo que esta imagem puniria um canal que talvez
+    // envie — comportamento atual preservado.
+    expect(canalAceitaTextoLivreAgora(CHANNEL_PROVIDER_WACALLS, null, agora)).toBe(true);
+  });
+});
+
+describe("a rota escolhe o canal ANTES do carimbo e registra o pulo (#2595)", () => {
+  const fonte = readFileSync(join(__dirname, "route.ts"), "utf8");
+
+  it("a escolha vem ANTES de reminder_sent_at — fora da janela o degrau não é consumido", () => {
+    // Estrutural, no molde das outras deste arquivo: mover o pular para DEPOIS
+    // do carimbo devolveria o defeito da issue — o degrau consumido sem ter
+    // saído, e a próxima rodada sem o que tentar.
+    const escolha = fonte.indexOf("const escolha = escolherCanalDoLembrete");
+    const carimbo = fonte.indexOf("reminder_sent_at: new Date()");
+    expect(escolha).toBeGreaterThan(-1);
+    expect(carimbo).toBeGreaterThan(-1);
+    expect(escolha).toBeLessThan(carimbo);
+  });
+
+  it("o pular do motivo também vem ANTES do carimbo e usa o motivo devolvido pela escolha", () => {
+    const pular = fonte.indexOf("pular(escolha.motivo)");
+    const carimbo = fonte.indexOf("reminder_sent_at: new Date()");
+    expect(pular).toBeGreaterThan(-1);
+    expect(pular).toBeLessThan(carimbo);
+    // E com `continue`: sem ele, o resto da rodada enviaria de qualquer jeito.
+    expect(fonte.slice(pular, pular + 60)).toContain("continue");
+  });
+
+  it("registra o motivo do pulo no log estruturado do cron — nada some em silêncio", () => {
+    expect(fonte).toContain('logger.warn("[agenda-reminder]');
+    expect(fonte).toContain("motivo: escolha.motivo");
+  });
+
+  it("lê conversations.last_inbound_at DENTRO da organização — a janela é conta, não palpite", () => {
+    // Sem o carimbo do cliente a régua (`estadoDaJanela`) fecharia qualquer
+    // canal de hetero-restrição e o lembrete nunca sairia — o defeito
+    // simétrico ao da issue. O recorte por org é a mesma cerca das outras
+    // buscas desta rota.
+    const busca = fonte.slice(fonte.indexOf('.from("conversations")'));
+    expect(busca.slice(0, 700)).toContain("last_inbound_at");
+    expect(busca.slice(0, 700)).toContain('.eq("organization_id", org)');
+    expect(busca.slice(0, 700)).toContain('.eq("contact_id", linha.contact_id)');
+  });
+
+  it("escolhe pela capability, sem nomear provider nenhum (invariante 1 da doutrina)", () => {
+    // A pergunta é "o que o canal permite" e quem responde é
+    // `lib/channels/janela.ts`; aqui não há string de provider — o lint de
+    // canais (`scripts/lint-channels.ts`) cobraria.
+    expect(fonte).toContain("canalAceitaTextoLivreAgora");
+    for (const provider of PROVIDERS_DE_MENSAGEM) expect(fonte).not.toContain(`"${provider}"`);
   });
 });

@@ -102,6 +102,23 @@ export function validarNomeDeFunil(
 }
 
 /**
+ * O funil ATIVO que já ocupa o nome de `funilId` (#2559) — `null` quando o nome está livre.
+ *
+ * É a MESMA régua de `validarNomeDeFunil` (chave dobrada com `chaveDeNome`,
+ * arquivados de fora), saindo como NOME e não como `Resultado` porque quem
+ * chama é a rota que tira do arquivo: ela precisa do nome do outro funil para
+ * citá-lo no conselho, e para traduzir a frase — `traduzir` só casa a chave do
+ * dicionário quando o texto chega com o `{nome}` ainda por preencher.
+ */
+export function nomeOcupadoPorAtivo(funis: FunilEditavel[], funilId: string): string | null {
+  const funil = funis.find((f) => f.id === funilId);
+  if (!funil) return null;
+  const chave = chaveDeNome(funil.name);
+  const colisao = ativos(funis).find((f) => f.id !== funilId && chaveDeNome(f.name) === chave);
+  return colisao?.name ?? null;
+}
+
+/**
  * Recusa o arquivamento que deixaria a operação sem quadro ou quebraria uma entrada de lead.
  *
  * ⚠️ A ORDEM DAS RECUSAS É A ORDEM DO QUE O USUÁRIO CONSEGUE RESOLVER. Quem tem
@@ -133,6 +150,30 @@ export function validarArquivamento(
       erro:
         `«${funil.name}» é o funil padrão: é para ele que vai o negócio criado sem funil escolhido. ` +
         `Marque OUTRO funil como padrão antes de arquivar este.`,
+    };
+  }
+
+  // #2559 — A MARCA DE FUNIL DE CLIENTES NÃO VAI PRESA NO ARQUIVO.
+  //
+  // Arquivar gravava só `is_archived = true` e deixava `is_client_pipeline`
+  // no funil que sumia da lista. Enquanto isso, `lib/leads/nascimento-do-lead.ts`
+  // filtra `is_client_pipeline` junto de `is_archived = false`: o lead de cliente
+  // caía no padrão sem aviso, e ao TIRAR DO ARQUIVO a marca voltava sem ninguém
+  // ter escolhido — era a surpresa nº 2 da #2559. É o MESMO molde do funil
+  // padrão logo acima (`MarcaExclusiva` é um tipo só para as duas serem a mesma
+  // regra), e a ordem é a mesma: o que só resolve marcando OUTRO vem antes das
+  // dependências. A marca do outro tem de existir (ou ninguém decide nada), mas
+  // o índice `uniq_crm_pipelines_org_client` já garante que só um a carrega.
+  //
+  // ⚠️ O `{nome}` NOMEIA O FUNIL COMO CHAVE DE TRADUÇÃO, não como texto final:
+  // este módulo devolve PT e a rota `DELETE` faz `t(erro).replace("{nome}", …)`.
+  // Aqui dentro interpolar o nome deixaria a frase fora do dicionário.
+  if (funil.is_client_pipeline && !funis.some((f) => f.id !== funilId && f.is_client_pipeline)) {
+    return {
+      ok: false,
+      erro:
+        "«{nome}» é o funil de clientes: é para ele que vai o lead que já é cliente. " +
+        "Marque OUTRO funil como funil de clientes antes de arquivar este.",
     };
   }
 

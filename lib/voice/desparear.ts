@@ -52,6 +52,20 @@ async function tolerarSessaoInexistente(acao: () => Promise<void>): Promise<void
   }
 }
 
+/**
+ * Só o lado do transporte: logout e delete da sessão no WaCalls, tolerando a
+ * sessão que ele já não conhece. Exportado para a exclusão de tenant
+ * (`lib/tenants/exclusao.ts`), que o chama DEPOIS do commit com o id lido antes
+ * — quando a linha do banco já não existe para `despareaVoz` ler e arquivar.
+ */
+export async function desligarSessaoDeVozNoTransporte(
+  wacalls: WacallsClient,
+  sessionId: string,
+): Promise<void> {
+  await tolerarSessaoInexistente(() => wacalls.logoutSession(sessionId));
+  await tolerarSessaoInexistente(() => wacalls.deleteSession(sessionId));
+}
+
 export async function despareaVoz(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any>,
@@ -83,8 +97,7 @@ export async function despareaVoz(
     // Sem sessão lá não há aparelho vinculado por ela, e recusar deixava a
     // organização presa: o pareamento responde 409 para o banco que diz
     // "pareado", e este caminho, a única saída, devolvia 502 para sempre.
-    await tolerarSessaoInexistente(() => wacalls.logoutSession(sessaoNoWacalls));
-    await tolerarSessaoInexistente(() => wacalls.deleteSession(sessaoNoWacalls));
+    await desligarSessaoDeVozNoTransporte(wacalls, sessaoNoWacalls);
   }
 
   const agora = new Date().toISOString();

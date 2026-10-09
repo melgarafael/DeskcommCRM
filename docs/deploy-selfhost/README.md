@@ -46,7 +46,9 @@ Edite o `.env` e preencha (mínimo):
   > (é o caso da nuvem: a string do pooler já vem privilegiada). Preencha quando
   > o Postgres for **seu** e a de cima for uma role menor — ver §2.
 - **Domínio**: `DOMAIN`, `NEXT_PUBLIC_APP_URL=https://SEU_DOMINIO`,
-  `WAHA_WEBHOOK_BASE_URL=https://SEU_DOMINIO`
+  `WAHA_WEBHOOK_BASE_URL=http://app:3000`
+  > O WAHA da stack chama o app pela rede interna do Docker — nunca pelo
+  > domínio: a rota global do webhook só atende a rede interna.
   > Rodando SEM TLS (ex.: `http://IP:PORTA`, sem o Caddy)? Basta o
   > `NEXT_PUBLIC_APP_URL` começar com `http://` — o cookie de sessão deixa de
   > ser `Secure` automaticamente e o login funciona. Com `https://`, `Secure`

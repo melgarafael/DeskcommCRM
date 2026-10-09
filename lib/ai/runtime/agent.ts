@@ -201,6 +201,10 @@ export function buildModel(
     // o monta é o leitor próprio (`lerLoginCodexRenovandoSeProxima`), nunca a
     // tela de chave. Sem este caso o ensaio responderia `unsupported_provider`
     // enquanto o worker atenderia a mensagem real.
+    // A LISTAGEM de modelos desta assinatura não vem daqui (#2602): o mesmo
+    // token medido responde 403 `Missing scopes: api.model.read` na API
+    // pública, e ela fala com o backend do Codex
+    // (`OPENAI_CODEX_MODELS_ENDPOINT`, em `providers.ts`).
     case PROVEDOR_POR_ASSINATURA:
       return createOpenAI({ apiKey, baseURL: OPENAI_CODEX_ENDPOINT })(modelId);
     case "google":
