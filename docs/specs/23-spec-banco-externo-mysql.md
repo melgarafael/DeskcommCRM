@@ -57,7 +57,7 @@ Estas medições respondem a itens que a versão anterior da spec chamava de "n�
 | D3 | Colunas novas | Quatro colunas em `external_db_connections`, em **duas migrations**: Fatia 2a (`source_mode text not null default 'all'` com `CHECK (source_mode in ('all','list'))`, `sources jsonb not null default '[]'` com `CHECK (jsonb_typeof(sources) = 'array')` + teto de tamanho) e Fatia 4a (`db_type text not null default 'postgres'` com `CHECK (db_type in ('postgres','mysql'))`, `last_test_aviso text` anulável, o aviso de privilégio da D5). Postgres existente não sente nada (defaults cobrem). `sources_count` NÃO é coluna da tabela: é a expressão `jsonb_array_length(sources)` na view `_safe`; as quatro colunas da tabela são as listadas. |
 | D4 | Núcleo | Interface **`Dialeto`** atrás do mesmo contrato: `consultar`, `listarTabelas`, `descreverTabela`, `colunasDaTabela`, `lerTabela`, `testar`, `fechar`. A interface nasce na Fatia 2a com os métodos de leitura (`listarTabelas`, `colunasDaTabela`, `lerTabela`) e `catalogoCompleto` (só para a tela de marcação, administrador), ligada à conexão (pool + regra de fontes), e cresce na Fatia 3 (`consultar`, `testar`, `fechar` e a escolha pelo `db_type`). O `Acesso` de `lib/external-db/acesso.ts` passa a devolver o **dialeto** no lugar de `pool: pg.Pool` (`acesso.ts:26-28`, CONFIRMADO que hoje devolve o pool) — isso já vale na Fatia 2a. O contrato HTTP e o das tools MCP é **aditivo e compatível: nada que existe muda de forma** (o que se soma está em "API"); **as chamadas internas mudam** (lista em "Núcleo" abaixo). |
 | D5 | Somente leitura no MySQL | Quatro camadas: (1) `START TRANSACTION READ ONLY`; (2) só gerar `SELECT` em `montarConsulta()`; (3) operar com usuário MySQL `GRANT SELECT` apenas; (4) **PROPOSTA — decisão do mantenedor**: ao testar a conexão, rodar `SHOW GRANTS` e, se o usuário tiver mais que `SELECT`, gravar um aviso legível na coluna nova `last_test_aviso` (exposta na view e mostrada na tela como aviso amarelo, separado do erro) — por exemplo "este usuário pode escrever; crie um usuário só de leitura". Motivo: quem cola a senha do `wp-config` de um WordPress está colando um usuário com todos os poderes. A garantia final para MyISAM é **NÃO MEDIDO (C1a)**. Regras de leitura do `SHOW GRANTS` (NÃO MEDIDO, a medir na integração): o usuário é considerado escritor se QUALQUER linha trouxer `ALL PRIVILEGES` ou um destes privilégios fora de `SELECT`/`USAGE`: INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, TRUNCATE, GRANT OPTION, FILE, SUPER, PROCESS, EXECUTE, CREATE ROUTINE, ALTER ROUTINE, TRIGGER, EVENT, LOCK TABLES; `GRANT USAGE` sozinho não é aviso; linha de role (`GRANT role TO user`) é NÃO MEDIDO — havendo role, o teste grava "não consegui conferir os papéis; confirme que o usuário só lê". Quem falhar ao rodar `SHOW GRANTS` (sem permissão) não derruba o teste de conexão: grava "não consegui conferir os privilégios". Leitura ampla demais (ver "O que o agente consegue ver") também é aviso: `SELECT` em `*.*` ou em `banco.*` grava "este usuário lê o banco inteiro; libere só as views que o agente deve ver". Isso é uma ajuda, não a garantia (a garantia continuam as camadas 1 a 3). |
-| D6 | WordPress | Sem código WP no núcleo. Receita em docs: expor `view_imoveis_disponiveis` achatada; o agente lê a view. |
+| D6 | WordPress | Sem código WP no núcleo. Receita no guia dentro da janela de conexão (Fatia 4b): expor `view_imoveis_disponiveis` achatada; o agente lê a view. |
 | D7 | Fontes liberadas | **DECIDIDA nesta proposta**: o MySQL só sai com a lista — o administrador marca, por conexão, quais tabelas/views (e quais colunas) o assistente e a grade podem ler. Entra primeiro nas fatias 2a/2b, só com PostgreSQL; o MySQL (4a/4b) vem depois e já nasce com ela. Resolve custo (a lista inteira deixava de voltar ao modelo) e exposição (`wp_users` fora da vista). Consulta salva e cópia em cache ficam de fora (ver "Fora de escopo"). Detalhe em "Fontes liberadas". |
 
 ## Superfície
@@ -773,15 +773,16 @@ Cada fatia sai num PR próprio:
 | 2a | Fontes liberadas no banco, no núcleo e na API (`source_mode`, `sources`, `aplicarFontes`, rotas `catalog`/`sources`); nasce o `Dialeto` só com PostgreSQL | 1 (satisfeita) | Sim | Não |
 | 2b | Painel "O que o assistente pode ver" (marcação de fontes) | 2a | Não | Sim |
 | 3 | O `Dialeto` ganha `consultar`, `testar`, `fechar` e a escolha pelo `db_type`; refatoração sem mudar comportamento | 2a | Não | Não |
-| 4a | MySQL: `db_type`, `last_test_aviso`, driver, dialeto, interpretador de `SHOW GRANTS`, runbook | 3 | Sim | Não |
-| 4b | Seletor de motor e aviso de privilégio na tela | 2b, 4a | Não | Sim |
+| 4a | MySQL: `db_type`, `last_test_aviso`, driver, dialeto, interpretador de `SHOW GRANTS` | 3 | Sim | Não |
+| 4b | Seletor de motor, aviso de privilégio e guia "Como criar um acesso só de leitura" na tela | 2b, 4a | Não | Sim |
 | 5 | Tamanho da resposta no registro de auditoria (separável) | — | Não | Não |
 
-**Estado da entrega (08/10/2026):**
+**Estado da entrega (09/10/2026):**
 
 - Fatia 1: entregue — #2537 (mesclado em 08/10/2026).
-- Fatias 2a, 2b, 3, 4a e 4b: prontas e provadas no fork; aguardam a D6.
-- Fatia 5: aberta no #2614.
+- Fatia 5: entregue — #2614 e #2633 (mesclados).
+- Fatia 2a: aberta e pronta para revisão — #2634.
+- Fatias 2b, 3, 4a e 4b: abertas e empilhadas — #2635 (2b), #2636 (3), #2637 (4a-1: motor e aviso do teste na conexão), #2638 (4a-2a: dialeto MySQL), #2640 (4a-2b: MySQL 8 de verdade num workflow informativo) e #2639 (4b: tela do motor e guia de acesso). Dependem da decisão da D6.
 
 Princípio: cada fatia entrega software que funciona sozinho; as fatias que tocam schema passam pelo teste de banco do CI; a prova pela tela vale a partir das fatias 2b e 4b.
 
@@ -809,14 +810,7 @@ Medido contra a `main` `17a67d3da`, que já contém o #2280; fatias 1 e 2a parte
   (`next.config.ts:18-52`, CONFIRMADO — precedentes do `@swc/helpers` e do `pdfjs-dist`).
   Decisão: a fachada importa os dois dialetos com `import` ESTÁTICO (nunca `import()` com
   caminho calculado), para o rastreamento enxergar o `mysql2` — MEDIDO (F6): o `standalone` leva o `mysql2`; a prova é `pnpm build` + `next start` com uma
-  conexão MySQL de teste (C1e). O peso que o `mysql2` acrescenta é uma medida a FAZER, não uma
-  que já existe: o `build-and-size` (`.github/workflows/perf.yml`, CONFIRMADO) roda
-  `pnpm build` em :37-38 e publica só o tamanho do `.next` no resumo em :47-53 — não
-  constrói a imagem Docker e não compara com limite (a linha 55 diz que limiares, Lighthouse
-  e bundle-analyzer, ficaram adiados). **PROPOSTA — decisão do mantenedor**: a Fatia 4a
-  registra o tamanho do `.next` antes e depois de acrescentar o `mysql2` (no resumo do
-  `build-and-size`, que é onde a triagem pediu a medida) e declara a diferença no PR. O peso
-  da imagem Docker em si é NÃO MEDIDO (não localizei job que o meça).
+  conexão MySQL de teste (C1e). O peso que o `mysql2` acrescenta: MEDIDO no `build-and-size` (resumo do job, `du -sh`) — `.next` = 2,0 GB e `.next/static` = 14 MB tanto na 4a-1 (sem `mysql2`, run perf #5858) quanto na 4a-2a (com `mysql2`, run perf #5859): sem diferença visível nessa régua, que arredonda. O `build-and-size` (`.github/workflows/perf.yml`, CONFIRMADO) roda `pnpm build` e publica só o tamanho do `.next` no resumo; não constrói a imagem Docker e não compara com limite (a linha 55 diz que limiares, Lighthouse e bundle-analyzer, ficaram adiados). O peso da imagem Docker em si é NÃO MEDIDO (não localizei job que o meça).
 - Fragmento em `.changes/` (formato em
   `docs/doctrine/versionamento.md`, seção "O fragmento"; exemplo em
   qualquer arquivo de `.changes/` (liste com `ls .changes/*.md`): `impacto`, `secao`, `titulo` + prosa
@@ -832,11 +826,7 @@ Medido contra a `main` `17a67d3da`, que já contém o #2280; fatias 1 e 2a parte
   página usa `traduzir()`/`dicionario` (padrão CONFIRMADO em
   `app/app/integracao-dados/_components/FormularioDeConexao.tsx` e `page.tsx:50-53`) —
   nenhuma string de motor vai chapada em português no JSX.
-- Runbook do usuário MySQL só de leitura (`GRANT SELECT`) como entregável da Fatia 4a, caminho
-  **PROPOSTO**: `docs/runbooks/banco-externo-mysql.md` (`ls docs/runbooks | grep -i banco`
-  hoje devolve vazio — CONFIRMADO). O runbook ensina três passos: criar o usuário só de
-  leitura, criar a view e conceder `SELECT` só nela, e marcar a view em "O que o assistente
-  pode ver".
+- Guia "Como criar um acesso só de leitura" dentro da janela de conexão, entregável da Fatia 4b (decisão de 09/10/2026: a instrução fica onde a função é usada, no padrão do `ComoUsar`, e não num arquivo em `docs/runbooks/`, que quase nenhum operador abre). É um guia que abre e fecha, só para MySQL: os comandos foram medidos num MySQL 8; para PostgreSQL não há comando medido e o guia não aparece. Ensina três passos: criar o usuário só de leitura, criar a view e conceder `SELECT` só nela, e marcar a view em "O que o assistente pode ver". Um teste garante que o guia nunca ensine `GRANT` no banco inteiro, `ALL PRIVILEGES` ou escrita (`lib/external-db/guia-de-acesso.test.ts`).
 - Documentação (Definition of Done do `CLAUDE.md`, item 10 — "Doc atualizada se mudou
   contrato"): a Spec 20 ganha duas notas, uma por fatia — na Fatia 2a, a revisão da D6 (é
   ela que cria a lista); só na Fatia 4a, a nota "desde a Spec 23 o conector também fala
