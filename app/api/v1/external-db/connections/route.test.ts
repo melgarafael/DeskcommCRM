@@ -26,8 +26,11 @@ import { POST } from "./route";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 
+const selecionadas: string[] = [];
+
 beforeEach(() => {
   vi.clearAllMocks();
+  selecionadas.length = 0;
   deps.modulo.mockResolvedValue(true);
   deps.support.mockResolvedValue(null);
   deps.rate.mockResolvedValue({ allowed: true });
@@ -46,7 +49,12 @@ describe("POST /api/v1/external-db/connections", () => {
       from: () => ({
         insert: (payload: Record<string, unknown>) => {
           inserido = payload;
-          return { select: () => ({ single: async () => ({ data: { id: "c-1", ...payload }, error: null }) }) };
+          return {
+            select: (colunas: string) => {
+              selecionadas.push(colunas);
+              return { single: async () => ({ data: { id: "c-1", ...payload }, error: null }) };
+            },
+          };
         },
       }),
     });
@@ -69,6 +77,38 @@ describe("POST /api/v1/external-db/connections", () => {
     expect(inserido?.source_mode).toBe("list");
     const evento = deps.audit.mock.calls[0]![0] as { metadata: Record<string, unknown> };
     expect(evento.metadata.source_mode).toBe("list");
+  });
+
+  it("a escrita volta da TABELA BASE: o select do insert não pede a coluna calculada sources_count", async () => {
+    deps.admin.mockReturnValue({
+      from: () => ({
+        insert: (payload: Record<string, unknown>) => ({
+          select: (colunas: string) => {
+            selecionadas.push(colunas);
+            return { single: async () => ({ data: { id: "c-1", ...payload }, error: null }) };
+          },
+        }),
+      }),
+    });
+
+    const res = await POST(
+      new NextRequest("http://localhost/api/v1/external-db/connections", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          label: "Outro CRM",
+          host: "10.0.0.5",
+          database_name: "app",
+          username: "leitor",
+          password: "segredo",
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    // Sem isto, pedir sources_count na tabela base quebrava com 42703 e a rota devolvia 500.
+    expect(selecionadas.join(",")).not.toContain("sources_count");
+    expect(selecionadas.join(",")).toContain("id");
   });
 
   it("o corpo NÃO escolhe o modo: um source_mode mandado pelo cliente é recusado pelo contrato estrito", async () => {

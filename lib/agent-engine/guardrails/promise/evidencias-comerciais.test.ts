@@ -78,6 +78,60 @@ describe("evidências comerciais do turno", () => {
     expect(criarEvidenciasComerciaisDoTurno(["fonte-a"]).ler()).toEqual([]);
   });
 
+  it("buscas amplas de catálogo não expulsam a política já consultada", () => {
+    const e = criarEvidenciasComerciaisDoTurno(["fonte-a"]);
+    const politica =
+      "A demonstração é gratuita, uma sessão de 15 minutos. Agendamento sujeito a disponibilidade.";
+    e.registrarConhecimento({
+      results: [
+        {
+          chunk_id: "demonstracao",
+          knowledge_source_id: "fonte-a",
+          content: politica,
+        },
+      ],
+    });
+    e.registrarCatalogo({
+      produtos: Array.from({ length: 48 }, (_, i) => ({
+        ...produto,
+        codigo: `P-${i}`,
+        descricao: "x".repeat(850) + " Não inclui matrícula.",
+      })),
+    });
+    const pacote = e.ler("Temos demonstração gratuita. Qual período prefere?");
+    expect(pacote.find((p) => p.origem === "conhecimento")?.conteudo).toBe(politica);
+    expect(pacote.some((p) => p.origem === "catalogo")).toBe(true);
+    expect(JSON.stringify(pacote).length).toBeLessThanOrEqual(16_000);
+  });
+
+  it("nova consulta de política não apaga o plano e condições citados na candidata", () => {
+    const e = criarEvidenciasComerciaisDoTurno(["fonte-a"]);
+    e.registrarCatalogo({
+      produtos: [
+        { ...produto, codigo: "INFANTIL-1X", nome: "Curso infantil 1x anual", preco: "R$ 199,50" },
+        ...Array.from({ length: 36 }, (_, i) => ({
+          ...produto,
+          codigo: `ADULTO-${i}`,
+          nome: `Curso adulto 3x anual ${i}`,
+          descricao: "x".repeat(700),
+        })),
+      ],
+    });
+    e.registrarConhecimento({
+      results: Array.from({ length: 12 }, (_, i) => ({
+        chunk_id: `politica-${i}`,
+        knowledge_source_id: "fonte-a",
+        content: "Demonstração gratuita de 15 minutos. " + "x".repeat(800),
+      })),
+    });
+    const pacote = e.ler("No curso infantil 1x, o anual fica R$ 199,50 com matrícula grátis.");
+    expect(pacote.find((p) => p.referencia === "INFANTIL-1X")?.conteudo).toContain(
+      "somente no anual",
+    );
+    expect(pacote.length).toBeLessThanOrEqual(20);
+    expect(JSON.stringify(pacote).length).toBeLessThanOrEqual(16_000);
+  });
+
   it("substitui repetição e limita o contexto descartando itens inteiros, nunca uma ressalva", () => {
     const e = criarEvidenciasComerciaisDoTurno([]);
     e.registrarCatalogo({ produtos: [produto, produto] });
@@ -104,9 +158,9 @@ describe("evidências comerciais do turno", () => {
 describe("qual material do agente pode provar uma oferta", () => {
   it("aceita perguntas e respostas, documento e catálogo, inclusive com nome legado", () => {
     const aceitos = ["faq", "documento", "policy", "catalogo", "catalog", "nuvemshop_catalog"];
-    expect(
-      fontesQueProvamOferta(aceitos.map((tipo) => ({ id: tipo, source_type: tipo }))),
-    ).toEqual(aceitos);
+    expect(fontesQueProvamOferta(aceitos.map((tipo) => ({ id: tipo, source_type: tipo })))).toEqual(
+      aceitos,
+    );
   });
 
   it("recusa Conversas anteriores, seus nomes legados e tipo desconhecido", () => {

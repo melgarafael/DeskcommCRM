@@ -343,6 +343,32 @@
       "type": "frontend",
       "label": "IA › Execuções › Roteamento",
       "sublabel": "até 500 casos; custo e latência por modo, concordância separada de acurácia revisada; administrador marca acerto"
+    },
+    {
+      "id": "contextoRevisor",
+      "lane": "guardrails",
+      "col": 5,
+      "type": "backend",
+      "label": "Contexto da revisão",
+      "sublabel": "pedido/perfil curado, separado de evidências comerciais",
+      "tag": "montarContextoDaRevisao"
+    },
+    {
+      "id": "bloqueioProvedor",
+      "lane": "guardrails",
+      "col": 6,
+      "type": "backend",
+      "label": "Bloqueio do provedor",
+      "sublabel": "metadado conhecido, sem expor o corpo",
+      "tag": "identificarConteudoBloqueado"
+    },
+    {
+      "id": "execucoesFalhas",
+      "lane": "app",
+      "col": 7,
+      "type": "screen",
+      "label": "Execuções e prévia",
+      "sublabel": "conteudo_bloqueado; revisão pelo operador"
     }
   ],
   "edges": [
@@ -807,7 +833,31 @@
       "id": "evidencias-comerciais-gates",
       "from": "turn",
       "to": "gates",
-      "label": "Catálogo/acervo consultados no turno → contexto limitado da promessa semântica; sem bypass"
+      "label": "Catálogo/acervo + busca textual na base ativa → seleção pertinente à candidata → promessa semântica; sem bypass"
+    },
+    {
+      "id": "turn-contexto-revisor",
+      "from": "turn",
+      "to": "contextoRevisor",
+      "label": "mensagens/resumo curados, momento e fuso da organização"
+    },
+    {
+      "id": "contexto-revisor-gates",
+      "from": "contextoRevisor",
+      "to": "gates",
+      "label": "contexto de elegibilidade → classificador; conversa não autoriza oferta"
+    },
+    {
+      "id": "turn-bloqueio-provedor",
+      "from": "turn",
+      "to": "bloqueioProvedor",
+      "label": "falha estruturada pelo seam de modelo"
+    },
+    {
+      "id": "bloqueio-execucoes",
+      "from": "bloqueioProvedor",
+      "to": "execucoesFalhas",
+      "label": "llm_calls e mensagem sanitizada no teste"
     }
   ],
   "cards": [
@@ -865,8 +915,8 @@
       "dot": "amber",
       "title": "Promessas conferidas contra fontes consultadas",
       "items": [
-        "Entrada: produtos ativos/disponíveis do catálogo e trechos das fontes habilitadas (FAQ, documento, catálogo; nunca Conversas anteriores) consultados no turno",
-        "Saída: candidata inteira + evidências limitadas → classificador → gates existentes; sem exceção automática",
+        "Entrada: produtos ativos/disponíveis do catálogo e trechos das fontes habilitadas (FAQ, documento, catálogo; nunca Conversas anteriores), incluindo consulta textual complementar ao índice ativo",
+        "Saída: candidata inteira + seleção limitada por relevância, preservando política e produto → classificador → gates existentes; sem exceção automática",
         "Sem fonte consultada mantém regra anterior; cliente, notas e prompt não autorizam oferta",
         "Laço: impedimento no Teste → humano corrige Catálogo/Conhecimento → próxima consulta usa a fonte atualizada"
       ]
