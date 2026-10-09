@@ -5219,7 +5219,7 @@
   "Privacidade e dados do cliente": "隐私与客户数据",
   "Procura a resposta nos materiais que você cadastrou, para o assistente responder com a informação da sua empresa em vez de inventar.": "在你登记的材料中查找答案，让助手使用你企业的信息回复，而不是自行编造。",
   "Procura um produto no catálogo da loja e devolve o preço exato e o que está disponível, para o assistente responder com o valor cadastrado em vez de estimar.": "在店铺商品目录中查找商品，并返回准确价格和可售情况，让助手使用登记的价格回复，而不是估算。",
-  "Quando o cliente diz o e-mail, o nome ou o telefone dele na conversa, guarda essa informação para uma pessoa conferir antes de entrar na ficha.": "当客户在对话中说出邮箱、姓名或电话时，保存该信息，供人工在录入档案前核对。",
+  "Quando o cliente diz o e-mail, o nome ou o telefone dele na conversa, guarda essa informação para uma pessoa conferir antes de entrar na ficha — exceto o telefone de um cadastro sem número, que entra na hora, em formato E.164, sem sobrescrever quem já tem número.": "当客户在对话中说出邮箱、姓名或电话时，保存该信息，供人工在录入档案前核对——没有号码的档案除外：电话号码会立即以 E.164 格式写入，且绝不覆盖已有号码。",
   "Registra uma nova oportunidade de venda no funil, para que o interesse demonstrado pelo cliente não se perca.": "在销售漏斗中登记新的销售商机，避免客户表现出的兴趣流失。",
   "Registrar o que aconteceu num chamado": "记录工单中发生的情况",
   "Registrar se a pessoa veio ou faltou": "记录对方是否到场",
