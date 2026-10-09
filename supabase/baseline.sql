@@ -50294,7 +50294,7 @@ create trigger trg_crm_lead_nasce_na_carteira
 notify pgrst, 'reload schema';
 
 
--- ---- remetente dos lembretes (migration 0623) ----
+-- ---- remetente dos lembretes (migration 0625) ----
 -- manifest: remetente opcional por tipo de agendamento e avisos deduplicados de canal
 -- Sem backfill: nulo preserva o automático; nunca se adivinha um número legado.
 alter table public.calendar_event_types add column if not exists reminder_channel_session_id uuid;
