@@ -103,6 +103,9 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     orgId: organizationId,
     agentId: id,
     versionId: parsed.data.version_id,
+    // #2156: com quem/publicação a chave por assunto jurídico muda vira
+    // `ai_agent.legal_handoff_changed` com ator e requestId preenchidos.
+    quemPublicou: { actorUserId: authUserId, actorApiTokenId: authz.apiTokenId ?? null, requestId },
   });
 
   if (!result.ok) {

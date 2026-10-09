@@ -31,8 +31,10 @@
  *     `valid_signature = true` para evento não verificado.
  *
  * A defesa que não depende do WAHA saber assinar é de rede: a rota global (sem
- * token) deixa de ser publicada pelo Caddy, porque o WAHA fala com o app pela
- * rede interna do Docker e nunca precisou dela pela internet. Ver Caddyfile.
+ * token) só atende a rede interna do Docker, porque o WAHA fala com o app por
+ * ali e nunca precisou dela pela internet. A própria rota recusa com 404 o que
+ * traz a marca de um proxy de borda (`chegouPelaBorda`, lib/http/ip-do-cliente.ts,
+ * régua válida nos proxies que o kit sobe).
  */
 import { env } from "@/lib/env";
 import { exigirAssinaturaNoWebhookDaInstalacao } from "@/lib/instalacao/comportamento";
