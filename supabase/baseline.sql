@@ -51076,8 +51076,8 @@ create unique index if not exists agent_inbox_budget_do_plano_aberto_unico
   on public.agent_inbox_items (organization_id)
   where status = 'open' and kind = 'budget_exceeded' and ref_kind = 'plano';
 
--- ---- fontes liberadas do banco externo (migration 0613) ----
--- Espelha a migration 0613_banco_externo_fontes_liberadas: o racional inteiro está lá.
+-- ---- fontes liberadas do banco externo (migration 0618) ----
+-- Espelha a migration 0618_banco_externo_fontes_liberadas: o racional inteiro está lá.
 -- Idempotente: `add column if not exists`, constraints derrubadas e recriadas, view
 -- recriada com revoke/grant reemitidos. Linhas existentes ficam 'all'.
 alter table public.external_db_connections

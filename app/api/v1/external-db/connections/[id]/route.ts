@@ -34,6 +34,11 @@ export const dynamic = "force-dynamic";
 const COLUNAS_SEGURAS =
   "id, organization_id, label, host, port, database_name, username, ssl_mode, enabled, max_rows, max_filters, max_response_bytes, customer_key_column, customer_key_kind, last_tested_at, last_test_ok, last_test_error, created_by, created_at, updated_at, source_mode, sources_count";
 
+/** As escritas (insert/update) voltam da TABELA BASE, que não tem as colunas calculadas da view. */
+const COLUNAS_DA_TABELA = COLUNAS_SEGURAS.split(", ")
+  .filter((c) => c !== "sources_count")
+  .join(", ");
+
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
@@ -127,7 +132,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     .update(patch)
     .eq("organization_id", activeOrg.orgId)
     .eq("id", id)
-    .select(COLUNAS_SEGURAS)
+    .select(COLUNAS_DA_TABELA)
     .maybeSingle();
 
   if (error) {
