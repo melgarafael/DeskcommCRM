@@ -15,14 +15,14 @@ import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import { createLeadHandler, moveLeadHandler } from "@/app/api/v1/leads/_handler";
 import {
-  escolheEtapaDeDestino,
-  montaPayloadDoClone,
-  recusaTrocaDeFunil,
-  type EtapaDoFunil,
   type OrigemParaClonar,
 } from "@/lib/leads/clonar-para-funil";
-import { encerraDemanda } from "@/lib/leads/encerramento";
-import { motivoDaPerdaDaOrigem } from "@/lib/leads/motivo-da-perda";
+// MESMA transferência do roteador de intenção (#2155): duas implementações de
+// "trocar de funil" divergiriam na primeira mudança de uma delas.
+import { COLUNAS_DA_ORIGEM, transfereParaOFunil } from "@/lib/leads/transfere-para-o-funil";
+
+/** O que a linha do tempo diz de quem levou o card — o roteador de intenção diz outra coisa. */
+const RAZAO_DA_AUTOMACAO = "Levado para outro funil pela automação";
 
 async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise<ActionResultDetail> {
   const pipelineId = typeof config.pipeline_id === "string" ? config.pipeline_id : null;
@@ -36,12 +36,17 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     actor: { type: "webhook_source", id: ctx.ruleId },
     requestId: `rule:${ctx.ruleId}`,
   };
-  const lead = ctx.context.lead as { id: string; pipeline_id: string; contact_id?: string } | undefined;
+  // A LINHA INTEIRA do negócio, como `buildContext` a lê (`select *` de
+  // `crm_leads`): o ramo abaixo precisa de `title`, `tags`, `custom_fields` e
+  // companhia quando o caminho é a transferência (#2155).
+  const lead = ctx.context.lead as OrigemParaClonar | undefined;
   const contact = ctx.context.contact as
     | { id: string; name?: string | null; display_name?: string | null; phone_number?: string | null }
     | undefined;
 
-  const contactId = contact?.id ?? lead?.contact_id;
+  // `?? undefined` porque `OrigemParaClonar.contact_id` admite `null` (a linha
+  // do banco) e `publicaNoContexto` aceita `string | undefined`.
+  const contactId = contact?.id ?? lead?.contact_id ?? undefined;
   handlerCtx.serviceOrigin = contactId
     ? (await originFromAutomationEvent(ctx, contactId)) ?? { kind: "unavailable", reason: "origin_capture_failed" }
     : { kind: "unavailable", reason: "origin_capture_failed" };
@@ -49,6 +54,50 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
   try {
     if (lead) {
       if (lead.pipeline_id !== pipelineId) {
+        // ── O GATILHO lead.tag_added COM O NEGÓCIO EM OUTRO FUNIL: A REGRA TRANSFERE (#2155) ──
+        //
+        // O caminho que TRANSFERE (`transfereParaOFunil`, o mesmo da rota
+        // `POST /api/v1/leads/[id]/clone`) era alcançável SÓ pelo ramo por
+        // contato — e o ramo por contato roda quando o evento NÃO traz o
+        // negócio. Com o negócio no evento, o galho acima devolvia
+        // `cross_pipeline_move_not_allowed` e a regra "Recepção etiqueta,
+        // regra transfere" ficava sem saída: `run_count = 0` e o card parado
+        // no funil de entrada.
+        //
+        // O escopo é ESTREITO de propósito: só `lead.tag_added`. É o gatilho
+        // da que a Recepção usa para etiquetar, é o que a issue mediu, e é a
+        // fatia que não pede migration. Os demais gatilhos que trazem o
+        // negócio (`lead.created`, `lead.stage_changed`, …) seguem recusando —
+        // a proposta principal da #2155 (destino por intenção em
+        // `ai_router_members`) continua fora, porque exige migration.
+        if (ctx.event?.event_type === "lead.tag_added") {
+          // UMA TRANSFERÊNCIA POR EVENTO: o motor monta `context` uma vez e o
+          // passa a TODAS as regras aplicáveis (`engine.ts`), e o
+          // `publicaNoContexto` abaixo troca o negócio do evento pelo clone.
+          // Sem esta guarda, uma 2ª regra `lead.tag_added` para outro funil
+          // casando no mesmo evento transferia o clone de novo (A→B→C, ou
+          // A→B→A com regras opostas). Negócio no contexto que não é o do
+          // evento = outra regra já o transferiu: vale a primeira, como no ramo
+          // por contato.
+          if (lead.id !== ctx.event.entity_id) {
+            return {
+              type: "create_or_move_lead",
+              status: "failed",
+              error: "lead_already_transferred_in_event",
+            };
+          }
+          const transferencia = await transfereParaOFunil(ctx.admin, ctx.organizationId, handlerCtx, lead, pipelineId, stageId, RAZAO_DA_AUTOMACAO);
+          if (!transferencia.ok) {
+            return { type: "create_or_move_lead", status: "failed", error: transferencia.error };
+          }
+          // O CLONE é o negócio das próximas ações da regra — não o que fechou.
+          publicaNoContexto(ctx, transferencia.clone, contactId);
+          return {
+            type: "create_or_move_lead",
+            status: "success",
+            detail: { transferido: String(transferencia.clone.id ?? ""), origem: lead.id },
+          };
+        }
         return { type: "create_or_move_lead", status: "failed", error: "cross_pipeline_move_not_allowed" };
       }
       const movido = await moveLeadHandler(ctx.admin, handlerCtx, lead.id, { to_stage_id: stageId });
@@ -82,7 +131,7 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
       // "trocar de funil" divergiriam na primeira mudança de uma delas.
       const emOutroFunil = await negocioAbertoEmOutroFunil(ctx, contact.id, pipelineId);
       if (emOutroFunil) {
-        const transferencia = await transfereParaOFunil(ctx, handlerCtx, emOutroFunil, pipelineId, stageId);
+        const transferencia = await transfereParaOFunil(ctx.admin, ctx.organizationId, handlerCtx, emOutroFunil, pipelineId, stageId, RAZAO_DA_AUTOMACAO);
         if (!transferencia.ok) {
           return { type: "create_or_move_lead", status: "failed", error: transferencia.error };
         }
@@ -142,10 +191,6 @@ async function negocioAbertoDoContato(
   return (data as { id?: string } | null)?.id ?? null;
 }
 
-/** As colunas que o clone precisa copiar da origem. */
-const COLUNAS_DA_ORIGEM =
-  "id, pipeline_id, status, title, description, contact_id, value_cents, currency, " +
-  "owner_user_id, owner_agent_id, expected_close_date, tags, source, custom_fields, source_metadata";
 
 /**
  * O negócio ABERTO do contato em qualquer OUTRO funil, se houver um.
@@ -174,65 +219,7 @@ async function negocioAbertoEmOutroFunil(
   return (data as OrigemParaClonar | null) ?? null;
 }
 
-/**
- * Leva o negócio do contato para o funil da regra: clona e encerra a origem.
- *
- * Mesma ordem da rota do clone, e pelas mesmas razões: o funil de destino
- * confere a etapa, a origem confere se tem onde fechar (sem isso o clone
- * nasceria com a origem aberta — o defeito de novo, agora em dobro) e só então
- * o clone é criado e a origem encerrada como PERDIDA com o motivo da
- * transferência. O motivo é o canônico `moved_to_another_pipeline`, que não é
- * perda comercial: `fn_attendant_metrics` o exclui (migration 0266).
- *
- * Devolve o erro em vez de lançar: quem chama transforma isso no `status:
- * "failed"` da execução, que é o que a aba Atividade mostra ao operador.
- */
-async function transfereParaOFunil(
-  ctx: ActionCtx,
-  handlerCtx: HandlerCtx,
-  origem: OrigemParaClonar,
-  pipelineId: string,
-  stageId: string,
-): Promise<{ ok: true; clone: Record<string, unknown> } | { ok: false; error: string }> {
-  const recusa = recusaTrocaDeFunil(origem, pipelineId);
-  if (recusa) return { ok: false, error: recusa.code };
 
-  const { data: etapas, error: etapasErr } = await ctx.admin
-    .from("crm_stages")
-    .select("id, pipeline_id, position, is_won, is_lost, is_archived")
-    .eq("organization_id", ctx.organizationId)
-    .eq("pipeline_id", pipelineId)
-    .eq("is_archived", false)
-    .order("position", { ascending: true });
-  if (etapasErr) return { ok: false, error: etapasErr.message };
-
-  const destino = escolheEtapaDeDestino((etapas ?? []) as EtapaDoFunil[], stageId);
-  if (!destino.ok) return { ok: false, error: destino.code };
-
-  const { data: etapaDePerda, error: perdaErr } = await ctx.admin
-    .from("crm_stages")
-    .select("id")
-    .eq("organization_id", ctx.organizationId)
-    .eq("pipeline_id", origem.pipeline_id)
-    .eq("is_lost", true)
-    .eq("is_archived", false)
-    .limit(1)
-    .maybeSingle();
-  if (perdaErr) return { ok: false, error: perdaErr.message };
-  if (!etapaDePerda) return { ok: false, error: "origem_sem_etapa_de_perda" };
-
-  const clone = await createLeadHandler(ctx.admin, handlerCtx, montaPayloadDoClone(origem, destino.etapa));
-
-  await encerraDemanda(ctx.admin, handlerCtx, {
-    leadId: origem.id,
-    desfecho: "lost",
-    motivo: motivoDaPerdaDaOrigem(null),
-    razaoNaTimeline: "Levado para outro funil pela automação",
-    payloadNaTimeline: { to_pipeline_id: pipelineId, to_lead_id: clone.id },
-  });
-
-  return { ok: true, clone: clone as unknown as Record<string, unknown> };
-}
 
 /**
  * As ações seguintes da MESMA regra passam a enxergar o lead.

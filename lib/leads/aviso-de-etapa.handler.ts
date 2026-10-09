@@ -110,6 +110,7 @@ async function handle(row: EventRow): Promise<HandlerResult> {
 
 export const avisoDeEtapaHandler: EventHandler = {
   key: CONSUMER_KEY,
+  naOrgParada: "roda",
   events: ["lead.stage_changed"],
   handle,
 };

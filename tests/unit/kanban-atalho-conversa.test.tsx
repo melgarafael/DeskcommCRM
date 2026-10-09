@@ -14,9 +14,11 @@ import { describe, expect, it, vi } from "vitest";
  *
  * ─── O que os casos vigiam ──────────────────────────────────────────────────
  *
- * Metade prova que o slot SOME quando não há conversa — lead criado à mão ou
- * por webhook não tem contato, e um "sem mensagens" cinza em metade dos cards
- * ocuparia a linha para não dizer nada.
+ * Metade prova que o slot SOME quando não há conversa — lead criado à mão não
+ * tem contato, e um "sem mensagens" cinza em metade dos cards ocuparia a linha
+ * para não dizer nada. Lead com CONTATO mas sem conversa é outro caso, e virou
+ * a ação "Abrir conversa" da #1993: ele tem contrato próprio, em
+ * `components/kanban/ConversaSlot.test.tsx`.
  *
  * O resto vigia o gesto: o card inteiro é arrastável e abre o dossiê ao clicar,
  * então o atalho precisa parar a propagação — senão um clique tem dois
@@ -73,9 +75,9 @@ describe("mostra a última mensagem", () => {
 });
 
 describe("some quando não há conversa", () => {
-  it("lead sem conversa não renderiza NADA", () => {
-    // Lead criado à mão ou por webhook não tem contato. Um "sem mensagens"
-    // cinza em metade dos cards ocuparia a linha para não dizer nada.
+  it("lead sem conversa E sem contato não renderiza NADA", () => {
+    // Criado à mão, sem contato: um "sem mensagens" cinza em metade dos cards
+    // ocuparia a linha para não dizer nada — e sem alvo não há ação a oferecer.
     const { container } = render(<ConversaSlot conversa={null} />);
     expect(container).toBeEmptyDOMElement();
   });
@@ -139,6 +141,25 @@ describe("o elo que some sem barulho", () => {
     ).toMatch(/leads:\s*leadsComMarcadores\.leads/);
   });
 
+  it("contato SEM conversa sai como `null`, não ausente — senão \"Abrir conversa\" nunca aparece (#1993)", () => {
+    // O slot e o dossiê só pintam a ação com `conversa === null`; `undefined` é
+    // "ainda não carregou" e fica mudo. A primeira versão do #2207 testava o
+    // componente com `conversa={null}` direto, um valor que a rota não produzia:
+    // ela fazia `...(conversa ? { conversa } : {})` e o campo saía AUSENTE. O
+    // componente estava certo e o botão nunca aparecia no quadro de verdade.
+    const fonte = readFileSync("app/api/v1/pipelines/[id]/board/route.ts", "utf8");
+    const corpo = fonte.slice(fonte.indexOf("async function withConversas"));
+    const daFuncao = corpo.slice(0, corpo.indexOf("\n}\n"));
+    // Lead sem contato continua sem o campo: ele sai antes, e é ausência legítima.
+    expect(daFuncao).toMatch(/if \(!lead\.contact_id\) return lead;/);
+    expect(daFuncao, "contato sem conversa precisa virar `conversa: null`").toMatch(
+      /conversa:\s*conversa\s*\?\?\s*null/,
+    );
+    expect(daFuncao, "espalhar condicional deixa o campo ausente (undefined)").not.toMatch(
+      /\.\.\.\(conversa\s*\?/,
+    );
+  });
+
   it("a mais RECENTE por contato — não a primeira que o banco devolver", () => {
     const fonte = readFileSync("app/api/v1/pipelines/[id]/board/route.ts", "utf8");
     expect(fonte).toMatch(/order\("last_message_at",\s*\{\s*ascending:\s*false/);
@@ -146,6 +167,10 @@ describe("o elo que some sem barulho", () => {
 
   it("o card renderiza o slot", () => {
     const fonte = readFileSync("components/kanban/KanbanCard.tsx", "utf8");
-    expect(fonte).toContain("<ConversaSlot conversa={lead.conversa} />");
+    // A prévia E a ação "Abrir conversa" (#1993) saem do mesmo slot: o card
+    // passa os dois dados do contato para ele decidir qual dos dois pintar.
+    expect(fonte).toMatch(/<ConversaSlot\s+conversa=\{lead\.conversa\}/);
+    expect(fonte).toContain("contactId={lead.contact_id}");
+    expect(fonte).toContain("phone={lead.contact_phone}");
   });
 });

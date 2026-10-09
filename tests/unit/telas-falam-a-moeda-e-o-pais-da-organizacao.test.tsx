@@ -36,6 +36,9 @@ import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 const XISTAO: PerfilDoPais = {
   codigo: "XI",
   nome: "Xistão",
+  // Rótulos da tela da organização do país sintético — o campo é obrigatório
+  // no perfil justamente para país novo declarar os seus (#1946, item 4).
+  empresa: { rotuloNomeLegal: "Razão do Xistão", rotuloNumero: "CNPJ do Xistão" },
   telefoneExemplo: "+999123456789",
   documento: {
     rotulo: "Bilhete",
@@ -221,7 +224,7 @@ describe("o documento e o exemplo de telefone seguem o país da organização", 
 describe("a organização ativa leva moeda e país ao cliente", () => {
   it("o embed da membership pede as duas colunas", () => {
     const fonte = readFileSync("lib/auth/server.ts", "utf8");
-    expect(fonte).toMatch(/organizations\(display_name, locale, timezone, currency, country\)/);
+    expect(fonte).toMatch(/organizations\(display_name, locale, timezone, currency, country, status, suspended_kind\)/);
     expect(fonte).toContain("currency: org?.currency ?? null");
     expect(fonte).toContain("country: org?.country ?? null");
   });

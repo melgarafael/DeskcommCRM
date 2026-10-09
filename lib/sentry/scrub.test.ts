@@ -69,6 +69,33 @@ describe("scrubMessage", () => {
     expect(out).not.toContain("joao@exemplo.com");
   });
 
+  it("número internacional com +DDI sai inteiro — e não vira `+[CPF]8` (#2345)", () => {
+    // O padrão de CPF comia 11 dos 12 dígitos do `+351…` e sobrava o último.
+    expect(scrubMessage("zap +351912345678 ok")).toBe("zap [PHONE] ok");
+    expect(scrubMessage("zap +351 912 345 678 ok")).toBe("zap [PHONE] ok");
+    expect(scrubMessage("zap +34 612 345 678 ok")).toBe("zap [PHONE] ok");
+  });
+
+  it("a passada internacional não sobra dígito: o +55 fica com o padrão brasileiro e o estrangeiro sai inteiro", () => {
+    // Resultado EXATO de propósito: a guarda `not.toMatch(/\d{3}/)` dos testes
+    // de baixo não vê 2 dígitos sobrando, e era isso que saía — `[PHONE]21` no
+    // +55 (a passada internacional pegava o número brasileiro e parava antes do
+    // fim) e `[PHONE]8`/`[PHONE]0` no estrangeiro com último bloco longo.
+    // Voltar o último bloco a `\d{3,4}` reprova os casos +49/+91; os +55
+    // reprovam quando faltam as duas peças (o `(?!55)` E o `\d{3,}`), que era
+    // o estado do PR. O `(?!55)` sozinho não muda nenhum destes resultados: o
+    // que ele guarda é o Brasil sair igual a antes nas formas com hífen/ponto.
+    expect(scrubMessage("zap +55 11 987654321 ok")).toBe("zap [PHONE] ok");
+    expect(scrubMessage("zap +55 11 34567890 ok")).toBe("zap [PHONE] ok");
+    expect(scrubMessage("zap +49 30 12345678 ok")).toBe("zap [PHONE] ok");
+    expect(scrubMessage("zap +91 98765 43210 ok")).toBe("zap [PHONE] ok");
+  });
+
+  it("os nove dígitos em três blocos (NIF/telemóvel) saem apagados (#2345)", () => {
+    expect(scrubMessage("nif 123 456 789 ok")).toBe("nif [PHONE] ok");
+    expect(scrubMessage("doc 123.456.789 ok")).toBe("doc [PHONE] ok");
+  });
+
   // O mesmo texto vai ao Sentry e ao Jev, e a tela do Jev promete ao admin que
   // o telefone sai apagado. O padrão antigo exigia o DDD colado ao número, sem
   // parênteses: `(11) 98765-4321` e `98765-4321` — os jeitos mais comuns de
@@ -253,5 +280,32 @@ describe("sentryScrubHooks", () => {
       data: { url: urlComToken },
     });
     expect(JSON.stringify(crumb)).not.toContain(TOKEN);
+  });
+});
+
+describe("scrubMessage — chaves dos provedores de cobrança (spec cobrança §6)", () => {
+  // Montadas por partes: um literal com a forma exata de chave real dispara o
+  // secret scanning do GitHub no push, mesmo sendo falso.
+  const VETORES = [
+    ["sk", "live", "Fak3Ch4v3Stripe"].join("_"),
+    ["rk", "test", "Fak3Restrita99"].join("_"),
+    ["pk", "test", "Fak3Publica00"].join("_"),
+    ["whsec", "Fak3SegredoDoWebhook"].join("_"),
+    "$" + ["aact", "prod", "000MzkwODA2MWY2+OGM3/MWRlMDU2NWM3MzJlNzZmNGZhZGY6OjAwMDAw=="].join("_"),
+  ];
+
+  it.each(VETORES)("apaga %s inteira", (chave) => {
+    expect(scrubMessage(`o provedor recusou a chamada com ${chave} às 10h`)).toBe(
+      "o provedor recusou a chamada com [CHAVE] às 10h",
+    );
+  });
+
+  it("⭐ chave com dígitos sai inteira, e não vira meio telefone", () => {
+    const chave = ["sk", "test", "11987654321abcdef"].join("_");
+    expect(scrubMessage(`chave ${chave}`)).toBe("chave [CHAVE]");
+  });
+
+  it("controle: o prefixo sozinho não é chave", () => {
+    expect(scrubMessage("use uma chave sk_live_ ou rk_live_")).toBe("use uma chave sk_live_ ou rk_live_");
   });
 });

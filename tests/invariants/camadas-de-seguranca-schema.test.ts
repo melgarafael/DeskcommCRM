@@ -147,6 +147,7 @@ describe("schema das camadas de segurança por organização", () => {
     expect(await lerCamadasDaOrg(pool, ORG_A)).toEqual({
       promessa_semantica: null,
       jailbreak: null,
+      afirmacao_clinica: null,
     });
   });
 
@@ -159,6 +160,7 @@ describe("schema das camadas de segurança por organização", () => {
     expect(await lerCamadasDaOrg(pool, ORG_A)).toEqual({
       promessa_semantica: false,
       jailbreak: true,
+      afirmacao_clinica: null,
     });
   });
 
@@ -170,6 +172,7 @@ describe("schema das camadas de segurança por organização", () => {
     expect(await lerCamadasDaOrg(pool, ORG_B)).toEqual({
       promessa_semantica: null,
       jailbreak: null,
+      afirmacao_clinica: null,
     });
   });
 
@@ -183,6 +186,7 @@ describe("schema das camadas de segurança por organização", () => {
     expect(await lerCamadasDaOrg(pool, ORG_A)).toEqual({
       promessa_semantica: null,
       jailbreak: null,
+      afirmacao_clinica: null,
     });
   });
 });

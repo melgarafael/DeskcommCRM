@@ -10,6 +10,19 @@ vi.mock("@/lib/auth/server", () => ({
   mfaEmDivida: vi.fn(async () => false),
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
+// A escrita da instalação passa por requirePlatformAdminEscrita (scope 'full' +
+// MFA em dia): o dublê entrega a linha REAL de `platform_admins`, para que a
+// regra rode de verdade em vez de ser encenada.
+const pa = vi.hoisted(() => ({ row: null as Record<string, unknown> | null }));
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: async () => ({
+    auth: { getUser: async () => ({ data: { user: { id: "11111111-1111-4111-8111-111111111111" } } }) },
+    from: () => {
+      const q = { select: () => q, eq: () => q, is: () => q, maybeSingle: async () => ({ data: pa.row }) };
+      return q;
+    },
+  }),
+}));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 
 const OWNER = { id: "11111111-1111-4111-8111-111111111111", email: "dono@x.com", is_platform_admin: true };
@@ -42,6 +55,7 @@ let runSelectError: { message: string } | null;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  pa.row = { user_id: "11111111-1111-4111-8111-111111111111", scope: "full", mfa_required: false, revoked_at: null };
   inserted = null;
   runRow = null;
   runUpdatePatch = null;
@@ -749,9 +763,20 @@ describe("POST /api/v1/system/update", () => {
   });
 
   it("nega para quem não é dono do servidor", async () => {
+    pa.row = null;
     vi.mocked(loadAuthUser).mockResolvedValue(MEMBRO as never);
     const { POST } = await import("../update/route");
     expect((await POST(post())).status).toBe(403);
+    expect(inserted).toBeNull();
+  });
+
+  it("nega o platform admin somente leitura (support_readonly) com forbidden_scope", async () => {
+    pa.row = { ...pa.row, scope: "support_readonly" };
+    vi.mocked(loadAuthUser).mockResolvedValue(OWNER as never);
+    const { POST } = await import("../update/route");
+    const res = await POST(post());
+    expect(res.status).toBe(403);
+    expect((await res.json()).error.code).toBe("forbidden_scope");
     expect(inserted).toBeNull();
   });
 

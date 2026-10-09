@@ -68,6 +68,33 @@ export const ENDERECO_DE_CONSENTIMENTO = "https://accounts.google.com/o/oauth2/v
 export const ENDERECO_DE_TOKEN = "https://oauth2.googleapis.com/token";
 
 /**
+ * O conjunto de caracteres de um client secret do Google — e o guarda contra a
+ * colagem errada.
+ *
+ * Um client secret do Google só contém `[A-Za-z0-9_-]`. A cerca é no CONJUNTO
+ * de caracteres de propósito, e não no prefixo `GOCSPX-`: secrets antigos não o
+ * têm, e o Google pode mudar o formato. O que não muda é que aspa, vírgula,
+ * espaço e chave nunca pertencem a um secret.
+ *
+ * O defeito que isto fecha foi medido em produção: colar, no campo da tela, o
+ * secret JUNTO com o resto da linha do arquivo JSON de credenciais —
+ * `GOCSPX-xxxx","redirect_uris` — que carrega aspa e vírgula. O campo é
+ * `type="password"` e nunca volta a aparecer, então ninguém relê o que ficou
+ * gravado; a única pista chegava lá na frente, na troca do código, como
+ * `invalid_client` do Google — um erro que aponta para o Google e não para a
+ * colagem.
+ *
+ * Pura, sem rede e sem `process.env`: a server action que grava e o formulário
+ * que avisa na hora bebem da MESMA regra, para não divergirem.
+ */
+export const FORMATO_DO_CLIENT_SECRET = /^[A-Za-z0-9_-]+$/;
+
+/** `true` quando o texto (já aparado) tem o formato de um client secret do Google. */
+export function clientSecretTemFormato(secret: string): boolean {
+  return FORMATO_DO_CLIENT_SECRET.test(secret.trim());
+}
+
+/**
  * Renovar com folga, não no vencimento.
  *
  * O `access_token` dura cerca de uma hora. Renovar só quando ele já expirou
@@ -145,7 +172,12 @@ export type MotivoDeTokenIlegivel = "resposta_invalida" | "erro_do_google" | "se
 
 export type LeituraDeToken =
   | { ok: true; token: TokenDoGoogle }
-  | { ok: false; motivo: MotivoDeTokenIlegivel; detalhe: string };
+  /**
+   * `status` é o HTTP da resposta quando HOUVE uma; `null` quando o Google não
+   * respondeu (rede). Quem classifica precisa dos dois lados: sem ele, uma
+   * recusa 400 do Google chegava ao cron como "sem resposta" (#2393).
+   */
+  | { ok: false; motivo: MotivoDeTokenIlegivel; detalhe: string; status: number | null };
 
 function texto(v: unknown): string | null {
   return typeof v === "string" && v.trim() ? v.trim() : null;
@@ -156,22 +188,29 @@ function texto(v: unknown): string | null {
  *
  * Não lança: a resposta vem da rede, e um `throw` aqui viraria 500 numa rota que
  * precisa redirecionar o navegador com um motivo legível.
+ *
+ * O `status` chega de fora porque esta camada é pura: quem fala com a rede
+ * (`token.ts`) é quem o tem em mãos. Sem ele, `null` — "o Google não respondeu".
  */
-export function lerRespostaDeToken(bruto: unknown, opcoes: { agora: Date }): LeituraDeToken {
+export function lerRespostaDeToken(
+  bruto: unknown,
+  opcoes: { agora: Date; status?: number | null },
+): LeituraDeToken {
+  const status = opcoes.status ?? null;
   if (typeof bruto !== "object" || bruto === null) {
-    return { ok: false, motivo: "resposta_invalida", detalhe: `resposta não é objeto: ${typeof bruto}` };
+    return { ok: false, motivo: "resposta_invalida", detalhe: `resposta não é objeto: ${typeof bruto}`, status };
   }
   const r = bruto as Record<string, unknown>;
 
   const erro = texto(r.error);
   if (erro) {
     const descricao = texto(r.error_description);
-    return { ok: false, motivo: "erro_do_google", detalhe: descricao ? `${erro}: ${descricao}` : erro };
+    return { ok: false, motivo: "erro_do_google", detalhe: descricao ? `${erro}: ${descricao}` : erro, status };
   }
 
   const accessToken = texto(r.access_token);
   if (!accessToken) {
-    return { ok: false, motivo: "sem_access_token", detalhe: "resposta sem `access_token`" };
+    return { ok: false, motivo: "sem_access_token", detalhe: "resposta sem `access_token`", status };
   }
 
   // Sem validade declarada, tratamos como JÁ vencido. É o desfecho conservador:

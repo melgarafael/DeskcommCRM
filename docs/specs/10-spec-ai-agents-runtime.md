@@ -80,6 +80,7 @@ Sem novos workers de infra — reusa `event_log` + cron Spec 07.
 | openai | `gpt-4o` | GPT-4o (legacy) | Compat |
 | google | `gemini-2.5-pro` | Gemini 2.5 Pro | Flagship Google |
 | google | `gemini-2.5-flash` | Gemini 2.5 Flash | Cheap/fast |
+| google | `gemini-3.5-flash-lite` | Gemini 3.5 Flash-Lite | Ferramentas e visão; 1.048.576 tokens de entrada |
 
 A tabela `ai_models` é populada via seed. UI consulta `GET /api/v1/ai/providers/{p}/models` que retorna lista filtrada por `deprecated_at IS NULL`.
 

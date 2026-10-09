@@ -280,8 +280,9 @@ cp /root/.env.antes-remediacao .env
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-O banco **não** volta com isso. Para voltá-lo, `bash hostgator-setup-kit/restore.sh` com o
-dump que o A3 gerou — e ele pede confirmação digitada, de propósito.
+O banco **não** volta com isso, e o `restore.sh` também não o volta por cima do banco em uso:
+ele só restaura num banco vazio e, num banco com as tabelas do sistema, para sem alterar nada
+(#2120). Guarde o dump que o A3 gerou e peça ajuda.
 
 ### A4. Verificar que o worker mudou de verdade `[ENSAIADO]`
 
@@ -300,7 +301,7 @@ O que precisa estar intacto, e o que responde por cada um:
 | Sessão do WhatsApp pareada | a conexão continua `WORKING` na tela de Conexões, **sem pedir QR de novo** | volume `waha-data` |
 | Mídia recebida | uma conversa antiga ainda abre áudio/imagem | Supabase Storage |
 | Conversas, contatos, leads | contagens iguais às de antes | banco (Supabase) |
-| Certificado HTTPS | o domínio responde 307 sem aviso de certificado | volume do Caddy |
+| Certificado HTTPS | o domínio responde 200 (página inicial pública) sem aviso de certificado | volume do Caddy |
 | Customizações do operador no `.env` | `diff /root/.env.antes-remediacao .env` mostra **só** as chaves de imagem | `.env` |
 
 O `update.sh` mexe em exatamente três chaves do `.env` (`APP_IMAGE`, `APP_PULL_POLICY` e

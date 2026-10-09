@@ -5,8 +5,9 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 import { montarEstadoDaChave } from "@/lib/ai/embeddings/estado";
+import { listarAgentesQueUsam } from "@/lib/ai/knowledge/agentes-que-usam";
 import type { SourceRow } from "@/hooks/ai/useKnowledgeSources";
-import { AcervoClient, type AgenteQueUsa } from "./_client";
+import { AcervoClient } from "./_client";
 
 export const dynamic = "force-dynamic";
 
@@ -39,44 +40,23 @@ export default async function AcervoPage() {
     redirect("/403");
   }
 
-
   const supabase = await createClient();
 
-  const [{ data: sourcesRaw }, { data: agentesRaw }, estadoDaChave] =
-    await Promise.all([
-      supabase
-        .from("ai_knowledge_sources")
-        .select("*")
-        .eq("organization_id", activeOrg.orgId)
-        .order("created_at", { ascending: false }),
-      // Quem consulta o quê. A tela precisa disto para responder "se eu arquivar
-      // este material, quem para de saber dele?" — sem essa resposta, arquivar é
-      // um tiro no escuro.
-      supabase
-        .from("ai_agents")
-        .select("id, name, published_version_id, ai_agent_versions!inner(id, knowledge_source_ids)")
-        .eq("organization_id", activeOrg.orgId)
-        .is("archived_at", null),
-      montarEstadoDaChave(supabase, activeOrg.orgId),
-    ]);
+  const [{ data: sourcesRaw }, { agentes }, estadoDaChave] = await Promise.all([
+    supabase
+      .from("ai_knowledge_sources")
+      .select("*")
+      .eq("organization_id", activeOrg.orgId)
+      .order("created_at", { ascending: false }),
+    // Quem consulta o quê. A tela precisa disto para responder "se eu arquivar
+    // este material, quem para de saber dele?" — sem essa resposta, arquivar é
+    // um tiro no escuro. O embed nomeia a FK e o erro não é engolido; quem sabe
+    // disto é `lib/ai/knowledge/agentes-que-usam.ts`.
+    listarAgentesQueUsam(supabase, activeOrg.orgId),
+    montarEstadoDaChave(supabase, activeOrg.orgId),
+  ]);
 
   const initialSources = (sourcesRaw ?? []) as unknown as SourceRow[];
-
-  const agentes: AgenteQueUsa[] = ((agentesRaw ?? []) as unknown as Array<{
-    id: string;
-    name: string;
-    published_version_id: string | null;
-    ai_agent_versions: Array<{ id: string; knowledge_source_ids: string[] | null }>;
-  }>)
-    .map((a) => {
-      const publicada = a.ai_agent_versions.find((v) => v.id === a.published_version_id);
-      return {
-        id: a.id,
-        nome: a.name,
-        materiais: publicada?.knowledge_source_ids ?? [],
-      };
-    })
-    .filter((a) => a.materiais.length > 0);
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">

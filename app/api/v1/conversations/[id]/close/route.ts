@@ -50,9 +50,11 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     p_org: visible.organization_id, p_conversation: id, p_status: "closed",
     p_expected: parsed.data.expected_revision ?? visible.service_revision,
   });
-  if (error) return fail(error.code === "40001" ? "conflict" : "internal_error",
-    error.code === "40001" ? t("O atendimento mudou. Atualize e tente novamente.") : error.message,
-    error.code === "40001" ? 409 : 500, { requestId });
+  // PT409: revisão obsoleta (migration 0514). 40001: contato trocou no meio, ou banco anterior à 0514.
+  const conflito = error?.code === "PT409" || error?.code === "40001";
+  if (error) return fail(conflito ? "conflict" : "internal_error",
+    conflito ? t("O atendimento mudou. Atualize e tente novamente.") : error.message,
+    conflito ? 409 : 500, { requestId });
   const conv = data as unknown as Conversation;
 
   await audit({

@@ -75,6 +75,10 @@ export async function buildNativeMediaParts(args: BuildNativeMediaPartsArgs): Pr
   // no máximo 1 item — maxItems fica só como teto declarado na assinatura.
   const latestInbound = [...args.messages].reverse().find((m) => m.direction === "inbound");
   const candidates = latestInbound?.media_storage_path ? [latestInbound].slice(0, maxItems) : [];
+  // A retenção (migration 0557, #1534) anula `media_storage_path` E `media_url`
+  // ao expirar, então quem expirou nem entra em `candidates` — o download abaixo
+  // é inalcançável para mídia podada. O comentário fica porque a guarda é
+  // ESTRUTURAL (coluna nula), não uma checagem que alguém possa esquecer.
 
   const parts: NativeMediaPart[] = [];
   // ponytail: esta camada é aprimoramento, não caminho crítico — o derivado textual

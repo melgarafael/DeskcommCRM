@@ -25,6 +25,8 @@
 import { z } from 'zod';
 import type pg from 'pg';
 
+import { extrairJsonDoTexto } from '@/lib/agent-engine/texto/extrair-json-do-texto';
+
 import type { Logger } from '../obs/logger';
 import type { ProviderRegistry } from '../edge/llm/providers';
 import type { LlmResolveOverride } from '../edge/llm/credentials';
@@ -81,14 +83,18 @@ const flushOutputSchema = z.object({
   notes: z.array(z.object({ headline: z.string().min(1), body: z.string().min(1) })).default([]),
 });
 
-/** Extrai o JSON do texto do modelo (tolerante a cerca de código/prosa) SEM ecoar o texto (PII). */
+/**
+ * Extrai o JSON do texto do modelo (tolerante a cerca de código/prosa e a
+ * REPETIÇÃO — modelos roteados por OpenRouter ecoam o objeto; o slice antigo
+ * `lastIndexOf('}')` pegava o fim da segunda cópia e anulava o parse) SEM ecoar
+ * o texto (PII).
+ */
 function extractJson(text: string): unknown {
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start === -1 || end <= start) {
-    throw new Error('resposta do modelo auxiliar sem JSON');
+  const valor = extrairJsonDoTexto(text);
+  if (valor === null) {
+    throw new Error("resposta do modelo auxiliar sem JSON");
   }
-  return JSON.parse(text.slice(start, end + 1));
+  return valor;
 }
 
 /**

@@ -20,6 +20,12 @@ interface PublicEnv {
    * `resolveBranding` entende, e a mesma que o `.env` entregava.
    */
   APP_NAME?: string;
+  /**
+   * Servidor de videochamada (Jitsi Meet, #2440). Origem da sala, que abre
+   * em nova aba (`<url>/sala-<uuid aleatório>`). Vazio = a instalação não oferece
+   * videochamada e o botão some do header. Ver `lib/video/jitsi.ts`.
+   */
+  JITSI_SERVER_URL?: string;
   APP_LOGO_URL?: string;
 }
 

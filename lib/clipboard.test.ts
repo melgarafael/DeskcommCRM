@@ -61,3 +61,88 @@ describe("copyToClipboard — dentro E fora de secure context", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+/**
+ * Família #2580 — "Endereço da fonte" em Webhooks: painel modal (Sheet/Dialog)
+ * com focus trap. O fallback precisa nascer DENTRO da árvore do diálogo e
+ * focar o textarea antes de selecionar, senão o execCommand copia nada.
+ */
+describe("copyToClipboard — fallback dentro de painel modal com focus trap", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    document.body.innerHTML = "";
+  });
+
+  /** Monta a tela: um dialog role=dialog com o botão copiar dentro (foco nele, como o trap faz). */
+  function montaDialogo(): HTMLElement {
+    document.body.innerHTML = `
+      <div id="fora"><button id="fora-botao">copiar fora</button></div>
+      <div role="dialog" aria-modal="true" id="dialogo">
+        <button id="copiar">Copiar</button>
+      </div>`;
+    (document.querySelector("#copiar") as HTMLButtonElement).focus();
+    return document.querySelector("#dialogo") as HTMLElement;
+  }
+
+  it("com diálogo aberto o textarea nasce DENTRO do diálogo e o copy roda com ele anexado", async () => {
+    const dialogo = montaDialogo();
+    vi.stubGlobal("navigator", {}); // sem Clipboard API — cai direto no fallback
+    let textareaDentroDoDialogo = false;
+    document.execCommand = vi.fn(() => {
+      textareaDentroDoDialogo = dialogo.querySelector("textarea") !== null;
+      return true;
+    });
+    await expect(copyToClipboard("https://hooks.exemplo.com/f/abc")).resolves.toBe(true);
+    expect(document.execCommand).toHaveBeenCalledWith("copy");
+    expect(textareaDentroDoDialogo).toBe(true);
+    // o helper limpa depois: nada de textarea vazando dentro do diálogo
+    expect(dialogo.querySelector("textarea")).toBeNull();
+  });
+
+  it("o textarea do fallback chama focus() ANTES de select()", async () => {
+    montaDialogo();
+    vi.stubGlobal("navigator", {});
+    document.execCommand = vi.fn().mockReturnValue(true);
+    const focar = vi.spyOn(HTMLTextAreaElement.prototype, "focus");
+    const selecionar = vi.spyOn(HTMLTextAreaElement.prototype, "select");
+    await copyToClipboard("abc");
+    expect(focar).toHaveBeenCalledTimes(1);
+    expect(selecionar).toHaveBeenCalledTimes(1);
+    expect(focar.mock.invocationCallOrder[0]!).toBeLessThan(
+      selecionar.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("SEM diálogo aberto continua anexando em document.body (demais call sites)", async () => {
+    document.body.innerHTML = `<button id="soltinho">copiar</button>`;
+    (document.querySelector("#soltinho") as HTMLButtonElement).focus();
+    vi.stubGlobal("navigator", {});
+    let textareaNoBody = false;
+    document.execCommand = vi.fn(() => {
+      textareaNoBody = document.querySelector("body > textarea") !== null;
+      return true;
+    });
+    await expect(copyToClipboard("abc")).resolves.toBe(true);
+    expect(textareaNoBody).toBe(true);
+  });
+
+  it("o foco volta ao botão depois da cópia, DENTRO do diálogo", async () => {
+    montaDialogo();
+    const botao = document.querySelector("#copiar") as HTMLButtonElement;
+    vi.stubGlobal("navigator", {});
+    document.execCommand = vi.fn().mockReturnValue(true);
+    await copyToClipboard("abc");
+    expect(document.activeElement).toBe(botao);
+  });
+
+  it("o foco volta ao botão depois da cópia, SEM diálogo aberto", async () => {
+    document.body.innerHTML = `<button id="soltinho">copiar</button>`;
+    const botao = document.querySelector("#soltinho") as HTMLButtonElement;
+    botao.focus();
+    vi.stubGlobal("navigator", {});
+    document.execCommand = vi.fn().mockReturnValue(true);
+    await copyToClipboard("abc");
+    expect(document.activeElement).toBe(botao);
+  });
+});

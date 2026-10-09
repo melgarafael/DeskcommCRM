@@ -33,6 +33,7 @@ export type RoutingOutcome =
   | "skipped_invalid_channel"
   | "skipped_conv_missing"
   | "skipped_invalid_payload"
+  | "skipped_contato_pessoal"
   | "assign_lost_race"
   | "error";
 
@@ -61,6 +62,7 @@ const EMPTY_OUTCOMES = (): Record<RoutingOutcome, number> => ({
   skipped_invalid_channel: 0,
   skipped_conv_missing: 0,
   skipped_invalid_payload: 0,
+  skipped_contato_pessoal: 0,
   assign_lost_race: 0,
   error: 0,
 });
@@ -154,6 +156,19 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
     return "skipped_conv_missing";
   }
 
+  // Contato pessoal não distribui (spec 21, caminho 9): depois da leitura da
+  // conversa — o pulo precisa do contato, que só ela tem.
+  const { data: contato } = await admin
+    .from("contacts")
+    .select("is_personal")
+    .eq("id", conv.contact_id)
+    .eq("organization_id", orgId)
+    .maybeSingle();
+  if ((contato as { is_personal?: boolean } | null)?.is_personal === true) {
+    await markDone(event, "skipped_contato_pessoal");
+    return "skipped_contato_pessoal";
+  }
+
   // organizations.settings.routing → Zod (default manual; knobs = config, não hardcode).
   const { data: org, error: orgError } = await admin
     .from("organizations")
@@ -167,7 +182,7 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
 
   const alreadyAssigned = Boolean(conv.assigned_to_user_id);
   let eligibles: Awaited<ReturnType<typeof loadEligibleAttendants>> = [];
-  if (!alreadyAssigned && config.mode === "round_robin") {
+  if (!alreadyAssigned && (config.mode === "round_robin" || config.mode === "load")) {
     try {
       eligibles = await loadEligibleAttendants(admin, orgId, now, {
         kind: "conversation_channel", channelSessionId: conv.channel_session_id,

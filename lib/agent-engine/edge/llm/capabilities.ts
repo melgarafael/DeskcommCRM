@@ -85,3 +85,41 @@ export function capacidadeEhConhecida(provider: string, modelId: string): boolea
   }
   return PROVIDER_DEFAULT[p] !== undefined;
 }
+
+/**
+ * Este MODELO aceita áudio como ENTRADA — ou seja, consegue transcrever uma
+ * nota de voz sem passar pela API de transcrição de ninguém (#2171).
+ *
+ * É a informação que o ponto `transcricao_de_audio` já declara em
+ * `exige: { audio: true }` — "este ponto PRECISA de quem transcreva" — mas
+ * até aqui nada dizia QUEM no catálogo sabe fazer isso. Sem esta pergunta, o
+ * produto exigia uma segunda conta (uma chave OpenAI) de uma organização que
+ * roda Gemini com a chave do Google já validada, e o áudio ficava sem ler.
+ *
+ * Conservador POR CONSTRUÇÃO, como o resto deste registro: só afirma áudio
+ * para o que se sabe que funciona.
+ *
+ *  - **Google (direto)** — Gemini aceita áudio nativamente na entrada
+ *    (parte `file` com mediaType `audio/*`), que é como a chamada sai aqui.
+ *  - **OpenAI (direto)** — só os modelos de áudio (`*-audio-*`); os modelos de
+ *    chat textuais não aceitam `input_audio`.
+ *  - **Anthropic e provedores desconhecidos** — `false`: o registro não tem
+ *    medida, e o degrau seguinte da escada (o padrão OpenAI-compatível) é o
+ *    desfecho de sempre para quem não declara.
+ *  - **Roteadores** — o prefixo decide, como em `modelCapabilities`: `google/…`
+ *    vale, `openai/…` só com o id de áudio, o resto não.
+ *  - `whisper`, `tts`, `embedding`, `moderation` — nunca: não são modelos de
+ *    conversa (deny-list de sempre, `TEXT_ONLY_HINTS`).
+ */
+export function transcreveAudio(provider: string, modelId: string): boolean {
+  const id = (modelId ?? "").toLowerCase();
+  if (TEXT_ONLY_HINTS.some((h) => id.includes(h))) return false;
+  const p = provider?.toLowerCase() ?? "";
+  if (ROTEADORES.has(p)) {
+    const fabricante = id.includes("/") ? id.slice(0, id.indexOf("/")) : "";
+    return fabricante === "google" || (fabricante === "openai" && id.includes("audio"));
+  }
+  if (p === "google") return true;
+  if (p === "openai") return id.includes("audio");
+  return false;
+}

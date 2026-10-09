@@ -29,8 +29,10 @@ delas** — a doutrina proíbe preencher lacuna com suposição plausível. Trê
 A primeira linha foi fechada em 2026-09-13 e é a que destrava o resto: **retainer por cliente
 operado**. O trabalho imediato passa a ser o console de agência
 (`docs/specs/19-spec-console-de-agencia.md`), e não um medidor de consumo — cobrar por consumo
-exigiria construir medidor → fatura antes do primeiro real, e hoje não existe nenhuma tabela de
-plano, fatura ou assinatura no schema.
+exigiria construir medidor → fatura antes do primeiro real, e o schema não tem tabela que fature o
+operador de agentes (a régua é a pergunta da brecha "Faturamento e planos", §3). A cobrança que o
+**dono de uma instalação** faz das empresas que atende é outro eixo, decidido à parte na
+[ADR-0004](../adr/0004-cobranca-do-revendedor.md), e não é esta linha.
 
 ---
 
@@ -46,9 +48,10 @@ e ele nunca é sabotado — a mesma regra de ouro que já vale para a parceria d
 **Invariante 3.** Nenhum serviço de produção constrói na máquina do cliente, e a atualização
 nunca exige edição manual de arquivo. Vale integralmente a lei de [`packaging.md`](./packaging.md).
 
-**Consequência prática:** cobrar por licença ou por assento **contraria** a promessa MIT escrita
-em `VISION.md` e exigiria reescrever a identidade do projeto. Cobrar pela operação não exige nada
-disso.
+**Consequência prática:** o projeto — mantenedor ou operador de agentes — cobrar por licença ou por
+assento **contraria** a promessa MIT escrita em `VISION.md` e exigiria reescrever a identidade do
+projeto. O dono de uma instalação que cobra as empresas dela é outro eixo
+([ADR-0004](../adr/0004-cobranca-do-revendedor.md)). Cobrar pela operação não exige nada disso.
 
 ---
 
@@ -93,19 +96,34 @@ não é aceite; **a prova é o comportamento visto**, não o teste que prova a s
 
 | Brecha                                                                                                                                                              | Critério de aceite                                                             | Como se prova                                |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------- |
-| **Faturamento e planos** — zero tabelas de plano, fatura ou assinatura no schema                                                                                    | Um operador emite cobrança de N clientes sem planilha paralela                 | comando abaixo, que hoje devolve 0           |
+| **Faturamento e planos do operador de agentes** (eixo 2, o retainer) — não há tabela que fature o operador; a cobrança do revendedor (eixo 3, [ADR-0004](../adr/0004-cobranca-do-revendedor.md)) é outra coisa e não fecha esta brecha                                                                                    | Um operador emite cobrança de N clientes sem planilha paralela                 | a pergunta abaixo, respondida tabela a tabela           |
 | **Console de agência multi-cliente** — `app/admin/` é do administrador da instalação, com sessão de suporte auditada (`docs/support-sessions.md`), não uma carteira | Operar 3 clientes (modelo de agente, saúde, transferência) numa tela só        | Playwright contra o app rodando              |
 | **Pacotes de agente por nicho** — hoje são procedimento manual descrito nas skills                                                                                  | Criar um agente novo para um cliente a partir de um pacote, sem editar arquivo | sessão real + diff do agente publicado       |
 | **Aceite por cliente** — existe avaliação (`lib/ai/agents/avaliar-resposta-de-teste.ts`, `scripts/flywheel-judge-live.ts`), não um portão de entrega por conta      | Um agente só é entregue e cobrado com o conjunto de avaliação aprovado         | rodada de avaliação com resultado registrado |
 | **MCP público** — declarado fora do MVP em `docs/specs/11-spec-mcp-server-internal.md`                                                                              | Cliente pluga o próprio agente com uma API key                                 | token real + chamada de tool observada       |
 | **SLA e observabilidade por conta** — `lib/agent-engine/obs/metrics.ts` e `lib/agent-engine/health/circuit.ts` existem, falta a superfície por cliente              | Um cliente vê a saúde do próprio agente sem acesso interno                     | tela real por organização                    |
 
-A régua da primeira linha — **hoje devolve 0**, e continua devolvendo 0 até existir:
+A régua da primeira linha é uma **pergunta**, não uma contagem. Liste as tabelas do schema com
+cara de cobrança:
 
 ```bash
-grep -oiE 'create table (if not exists )?public\.[a-z_]+' supabase/baseline.sql \
-  | grep -icE 'invoice|^create table (if not exists )?public\.(billing|plans|subscriptions|quota|credits)$'
+grep -oiE 'create table (if not exists )?"?public"?\."?[a-z_]+' supabase/baseline.sql \
+  | tr -d '"' | grep -iE 'invoice|billing|fatura|plan|assinatura|subscription|cobranca|quota|credit'
 ```
+
+e responda, para cada linha: **esta tabela fatura o retainer de um cliente operado?** A brecha só
+fecha quando alguma responder "sim". Duas classes de linha respondem "não" e não fecham nada:
+
+- tabela de outro domínio que casa o nome — `account_plans` é o plano de contas do caixa,
+  `push_subscriptions` é inscrição de notificação;
+- as tabelas `cobranca_*`, quando existirem: são a cobrança **do revendedor** (eixo 3,
+  [ADR-0004](../adr/0004-cobranca-do-revendedor.md)) — o dono da instalação cobrando as empresas
+  que atende, com plano fixo. Não medem nem faturam operação de agentes.
+
+A régua anterior devolvia zero, e hoje esse zero é verdadeiro — mas por sorte: ela só via
+`public.x` sem aspas (o trecho do dump, escrito `"public"."x"`, ficava fora) e só casava nomes em
+inglês. As tabelas `cobranca_*` passariam por ela invisíveis pelo nome, e o zero seguiria lido como
+"a brecha está aberta" pelo motivo errado.
 
 ---
 
@@ -115,8 +133,13 @@ grep -oiE 'create table (if not exists )?public\.[a-z_]+' supabase/baseline.sql 
    `lib/agent-engine/`. Tirar o runtime de volta é o refactor mais caro do repositório e não se
    paga com prova comercial nenhuma. O CRM como função já se obtém via MCP, sem mover arquivo.
 2. **Não construir faturamento antes do primeiro operador que paga.** Sem cliente pagante, o
-   desenho do medidor é adivinhação.
-3. **Não cobrar por licença nem por assento** (invariantes 1 e 2).
+   desenho do medidor é adivinhação. Vale para o faturamento do **operador de agentes** (o
+   retainer, §0), não para a cobrança do revendedor, que é outro eixo e tem decisão própria
+   ([ADR-0004](../adr/0004-cobranca-do-revendedor.md)).
+3. **Não cobrar por licença nem por assento** (invariantes 1 e 2). A proibição é do
+   **mantenedor e do operador de agentes**. Quem instala e cobra as empresas da própria instalação
+   escolhe planos, preço e limites — inclusive de pessoas — como configuração dele, e todo limite
+   nasce nulo, isto é, sem teto, até ele definir um (ADR-0004).
 4. **Não inventar preço, SLA nem número.** O primeiro cliente real define os três.
 5. **Não perseguir certificação** (SOC 2, ISO 27001), multi-região ou idioma adicional enquanto
    não houver demanda enterprise em mãos — está declarado fora de escopo de propósito.

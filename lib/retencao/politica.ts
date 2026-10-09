@@ -263,8 +263,125 @@ export const RETENCAO_CANDIDATOS_GOLDEN_DIAS_PADRAO = 90;
  */
 export const RETENCAO_CANDIDATOS_GOLDEN_DIAS_PISO = 30;
 
+/**
+ * 365 dias para a MÍDIA de mensagem (`messages.media_storage_path` / bucket
+ * `whatsapp-media`, migration 0432).
+ *
+ * É o padrão do formulário da organização (`organizations.media_retention_days`,
+ * migration 0432/#1731). A MÍDIA que a empresa promete guardar não é tratada
+ * como a auditoria (1825 dias): é o ATTACHMENT do canal, reconstruível pelo
+ * provedor enquanto ele a tiver — o que a política segura é o custo e a
+ * finalidade, não o histórico legal.
+ *
+ * Quem APLICA é `fn_enfileirar_midia_vencida` (0432 + 0557), chamada em lotes
+ * pelo cron `media-retention` — e o piso mora DENTRO do corpo da função
+ * (`greatest(...)`), valendo para qualquer chamador, inclusive um `psql` na mão.
+ *
+ * ⚠️ MÍDIA TEM INTERRUPTOR (migration 0557, issue #1534): a função só enfileira
+ * mídia vencida de organização com `media_retention_enforced = true`, que é o
+ * PADRÃO — a limpeza roda desde a 0432 e quem já existia continua com ela
+ * (doc 92, opção A). Esta dupla de constantes descreve o PADRÃO e o PISO; quem
+ * decide se VALE para uma organização é o interruptor, não estes números.
+ */
+export const RETENCAO_MIDIA_DIAS_PADRAO = 365;
+/**
+ * Piso de 30 dias para a MÍDIA: o mesmo piso que o formulário do tenant.
+ *
+ * Valor menor gravado direto no banco encontra o `greatest(..., 30)` no corpo
+ * da função e vira 30 — a régua do formulário é também a do banco, como as
+ * irmãs. Não pode ficar abaixo disso: o aceite do #1534 diz explicitamente que
+ * o piso vale mesmo com valor menor no banco.
+ */
+export const RETENCAO_MIDIA_DIAS_PISO = 30;
+
+/**
+ * 400 dias para a TELEMETRIA DA IA (`llm_calls`, `metrics`, `skill_activations`,
+ * `ai_router_decisions` — migration 0587), um prazo para as quatro.
+ *
+ * A tela que mais olha para trás olha 90 dias (`MAX_RANGE_DAYS` em
+ * `app/api/v1/ai/usage` e `app/api/v1/ai/evolution`); o orçamento olha o mês
+ * corrente. Pouco mais de um ano deixa comparar o mesmo mês do ano anterior.
+ *
+ * Quem aplica é `fn_expurgar_telemetria_de_ia_vencida`, com o piso no CORPO. Ela
+ * NUNCA apaga `llm_calls` com `legacy_invocation_id`: o backfill da 0130, que o
+ * `update.sh` reaplica, recopiaria a linha de `ai_invocations` a cada atualização.
+ */
+export const RETENCAO_TELEMETRIA_DE_IA_DIAS_PADRAO = 400;
+/** Piso de 100 dias: acima da janela de 90 que as telas de uso e evolução mostram. */
+export const RETENCAO_TELEMETRIA_DE_IA_DIAS_PISO = 100;
+
+/**
+ * 2 dias para o RITMO DE ENVIO (`pacing_ledger`, migration 0587) — o padrão É o
+ * piso, porque nenhum leitor olha mais longe.
+ *
+ * `loadPacingState` e `lerEstadoDoPacing` perguntam o último envio do número e
+ * quantos saíram desde a meia-noite local (no máximo 24 h atrás). A função
+ * `fn_expurgar_ritmo_de_envio_vencido` NUNCA apaga a última linha de cada número,
+ * em nenhuma idade — é dela que o espaçamento do próximo envio mede. Subir o
+ * knob só serve a quem quer investigar à mão os envios de dias passados.
+ */
+export const RETENCAO_RITMO_DE_ENVIO_DIAS_PADRAO = 2;
+/** Piso de 2 dias: o dobro do dia local, a janela mais longa que o ritmo lê. */
+export const RETENCAO_RITMO_DE_ENVIO_DIAS_PISO = 2;
+
+/**
+ * 30 dias para as CÓPIAS ENVIADAS (`outbound_copies`, migration 0587), e nunca
+ * as últimas `windowSize` do número.
+ *
+ * O gate anti-template-idêntico (`loadRecentCopies`) lê as últimas `windowSize`
+ * do número (20, ou o knob de `channel_knobs.spinning_knobs`), sem olhar a
+ * idade. `fn_expurgar_copias_enviadas_vencidas` guarda o MAIOR entre isso e o
+ * prazo. A tabela guarda texto enviado sem `contact_id` — fora da cascata de
+ * LGPD —, então guardar menos é também apagar menos texto de pessoa sem dono.
+ */
+export const RETENCAO_COPIAS_ENVIADAS_DIAS_PADRAO = 30;
+/** Piso de 7 dias: o que o operador investiga depois de um alerta de número. */
+export const RETENCAO_COPIAS_ENVIADAS_DIAS_PISO = 7;
+
+/**
+ * 180 dias para o CHECKPOINT SUPERADO (`lead_checkpoints`, migration 0587).
+ *
+ * Só sai o que já não é o último da sua fronteira (conversa, revisão do
+ * atendimento, demanda e revisão dela — o recorte de `latestCheckpoint`) e não
+ * é lido por job `pending`/`running` (nem pelo próprio `job_id`, nem pelo
+ * `origin_job_id` do Operador). O checkpoint vigente de cada atendimento fica
+ * para sempre; o que se poda é o resumo de turnos que um resumo mais novo já
+ * substituiu. Quem aplica é `fn_expurgar_checkpoints_superados`, piso no CORPO.
+ */
+export const RETENCAO_CHECKPOINTS_DIAS_PADRAO = 180;
+/** Piso de 30 dias: o turno de um mês atrás ainda é investigável por inteiro. */
+export const RETENCAO_CHECKPOINTS_DIAS_PISO = 30;
+
+/**
+ * Teto de 36500 dias (100 anos) para todo knob que passa por
+ * `interpretarRetencao`. Os dois do arquivo de webhooks
+ * (`WEBHOOK_LOG_*_RETENTION_DAYS`) NÃO passam por essa função, mas importam
+ * ESTA constante: `diasDeRetencao` em `lib/env.ts` reduz ao teto com aviso no
+ * boot, e `limiteEm` em `lib/channels/retencao-do-arquivo.ts` corta de novo,
+ * sem log (#2612). Um teto só, num lugar só.
+ *
+ * O piso impede apagar cedo demais; o teto impede é que o número chegue ao
+ * banco. `AUDIT_LOG_RETENTION_DAYS=9999999` vira
+ * `now() - make_interval(days => 9999999)` — uns 27 mil anos antes do mínimo
+ * de `timestamptz` (4713 a.C.) → `timestamp out of range`; e acima de 2³¹−1 o
+ * parâmetro `int` nem é aceito. Como o cron `data-retention` roda toda
+ * rodada, UMA linha no `.env` parava a poda daquela tabela e de todas as que
+ * vêm depois dela em `podarHistorico` (e, pelo acoplamento da #2508, a
+ * varredura de LGPD D+15), com `sweep_run
+ * {falhou:true}` como única pista.
+ *
+ * Um século fica muito além de qualquer janela que alguma tela lê
+ * (`MAX_RANGE_DAYS` é 90 dias) e do maior padrão do arquivo (400 dias).
+ *
+ * VIVE DENTRO de `interpretarRetencao`, de propósito: é uma guarda só, no
+ * lugar por onde TODOS os chamadores passam — o cron `data-retention`,
+ * `lib/webhooks/retencao-da-captacao.ts` e os knobs do #2140 — sem cada
+ * caller precisar se lembrar do teto.
+ */
+export const RETENCAO_TETO_DIAS = 36500;
+
 export interface RetencaoInterpretada {
-  /** Dias a pedir ao banco. Nunca abaixo do piso, nunca `NaN`. */
+  /** Dias a pedir ao banco. Nunca abaixo do piso, nunca acima do teto, nunca `NaN`. */
   readonly dias: number;
   /**
    * Frase pronta em pt-BR quando o valor do operador NÃO foi usado como escrito.
@@ -281,6 +398,8 @@ export interface RetencaoInterpretada {
  * nunca editou `.env`, e a doutrina de packaging exige que ele funcione).
  * Não-numérico, zero ou negativo → o padrão, COM aviso.
  * Abaixo do piso → o piso, COM aviso.
+ * Acima do teto (`RETENCAO_TETO_DIAS`) → o teto, COM aviso, no mesmo formato
+ * do piso: um prazo enorme não pode derrubar o cron com `timestamp out of range`.
  */
 export function interpretarRetencao(
   bruto: string | undefined,
@@ -308,6 +427,15 @@ export function interpretarRetencao(
       aviso:
         `${opcoes.chave}=${numero} está abaixo do piso de ${opcoes.piso} dias — ` +
         `usando ${opcoes.piso}.`,
+    };
+  }
+
+  if (numero > RETENCAO_TETO_DIAS) {
+    return {
+      dias: RETENCAO_TETO_DIAS,
+      aviso:
+        `${opcoes.chave}=${numero} está acima do teto de ${RETENCAO_TETO_DIAS} dias — ` +
+        `usando ${RETENCAO_TETO_DIAS}.`,
     };
   }
 

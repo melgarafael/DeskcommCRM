@@ -45,6 +45,30 @@ describe("mapInboundPayload", () => {
   });
 });
 
+describe("ruído da plataforma do formulário", () => {
+  // Envio real do JetFormBuilder (2026-09-30), só as chaves — nome/telefone/e-mail
+  // chegam por chave de topo e já eram reconhecidos; o lixo interno é que entrava
+  // no card do lead.
+  const jetFormBuilder = {
+    name: "Maria Teste",
+    phone: "11988887777",
+    email: "maria.teste@example.com",
+    message: "teste",
+    __refer: "https://site.example/testes/",
+    __form_id: "26981",
+    __is_ajax: "1",
+  };
+  it("não vira campo do lead", () => {
+    const m = mapInboundPayload(jetFormBuilder);
+    expect(m).toMatchObject({ name: "Maria Teste", phone: "+5511988887777", email: "maria.teste@example.com" });
+    expect(m.custom_fields).toEqual({ message: "teste" });
+  });
+  it("campo próprio que começa com _ NÃO é descartado", () => {
+    const m = mapInboundPayload({ nome: "Ana", _origem: "instagram", __meu_campo: "x" });
+    expect(m.custom_fields).toEqual({ _origem: "instagram", __meu_campo: "x" });
+  });
+});
+
 describe("verifyInboundSignature", () => {
   const body = '{"nome":"Ana"}';
   const secret = "s3cr3t";

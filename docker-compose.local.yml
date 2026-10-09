@@ -20,6 +20,8 @@ services:
     env_file: ${LOCAL_ENV_FILE:-.env.local}
     environment:
       WAHA_API_BASE_URL: http://waha:3000
+      # O `worker` abaixo drena o event_log; ver docker-compose.prod.yml.
+      EVENT_LOG_WORKER_DRAINS: ${EVENT_LOG_WORKER_DRAINS:-true}
     ports:
       - "${APP_PORT:-3000}:3000"
     extra_hosts:
@@ -54,7 +56,12 @@ services:
       waha:
         condition: service_healthy
     ports:
-      - "8787:8787"
+      # Só 127.0.0.1: /healthz e /metrics do worker não têm autenticação e o
+      # /metrics conta filas, sessões e custo de todas as empresas. Sem endereço
+      # de bind o Docker publica em 0.0.0.0 — qualquer um na mesma rede (Wi-Fi
+      # do café, LAN do escritório) lia os números. O healthcheck roda DENTRO do
+      # container e não depende desta linha.
+      - "127.0.0.1:8787:8787"
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8787/healthz"]
       interval: 30s
@@ -101,7 +108,8 @@ services:
       WAHA_API_KEY: "sha512:${WAHA_API_KEY_SHA512}"
       WHATSAPP_HOOK_URL: http://host.docker.internal:${APP_PORT:-3000}/api/v1/webhooks/waha
       WHATSAPP_HOOK_EVENTS: "message.any,message.ack,message.edited,message.revoked,session.status,state.change"
-      WHATSAPP_HOOK_HMAC: ${WAHA_HMAC_SECRET}
+      # Nome EXATO da doc do WAHA (events#hmac-authentication): sem o _KEY ele ignora.
+      WHATSAPP_HOOK_HMAC_KEY: ${WAHA_HMAC_SECRET}
       WHATSAPP_DEFAULT_ENGINE: NOWEB
       WAHA_DASHBOARD_ENABLED: "true"
       WHATSAPP_RESTART_ALL_SESSIONS: "True"

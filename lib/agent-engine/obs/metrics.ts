@@ -21,10 +21,16 @@
 import type pg from 'pg';
 
 import { sessionHealthMetrics, type SessionHealthMetric } from '../edge/crm/session-watchdog';
-import type { JobRow } from '../queue/queue';
+import type { JobRow, Queryable } from '../queue/queue';
 
 /** nome da métrica de 1ª classe do caching — âncora do alerta e dos testes */
 export const CACHE_RATIO_METRIC = 'run_cache_read_ratio';
+
+/** espera do job na fila até o claim (inclui debounce) — ver recordRunMetrics */
+export const QUEUE_WAIT_METRIC = 'run_queue_wait_ms';
+
+/** duração do job do claim ao fechamento, no relógio do banco */
+export const WALL_METRIC = 'run_wall_ms';
 
 /** discriminador do episódio do alerta em inbox_items.ref_kind (kind é CHECK da 0001) */
 export const CACHE_ALERT_REF_KIND = 'cache_hit_ratio';
@@ -40,13 +46,23 @@ export interface CacheAlertKnobs {
 }
 
 /**
- * Agrega as llm_calls do run recém-fechado em métricas `run_*`. Devolve quantas
- * linhas gravou (0 = job sem chamada de modelo — nada a registrar). `job` é a ROW
- * da fila (fonte confiável de tenant/lead — regra dura nº 1), nunca payload.
+ * Agrega as llm_calls do run recém-fechado em métricas `run_*` e grava os dois
+ * tempos do job. Devolve quantas chamadas de modelo o run teve (0 = o alerta de
+ * cache não tem o que avaliar). `job` é a ROW da fila (fonte confiável de
+ * tenant/lead — regra dura nº 1), nunca payload.
+ *
+ * Os tempos vêm do claim, e não de `job_queue.locked_at`: o done zera essa
+ * coluna (queue.ts, completeJob), então depois do job ela não mede nada.
+ *   - `run_queue_wait_ms` = claim − created_at. INCLUI o debounce (run_after
+ *     nasce no futuro) e qualquer adiamento: é espera, não lentidão do worker;
+ *     o runbook `docs/runbooks/medir-custo-e-latencia-da-ia.md` separa as parcelas.
+ *   - `run_wall_ms` = agora − claim, no relógio do BANCO (o claim também é
+ *     `now()` do banco): o relógio do worker não entra na subtração. Inclui o
+ *     atraso humano deliberado antes da 1ª bolha.
  */
 export async function recordRunMetrics(
   db: pg.Pool,
-  job: Pick<JobRow, 'id' | 'organization_id' | 'contact_id' | 'kind'>,
+  job: Pick<JobRow, 'id' | 'organization_id' | 'contact_id' | 'kind' | 'created_at' | 'claim_acquired_at'>,
 ): Promise<number> {
   const { rows } = await db.query<{
     calls: number;
@@ -67,9 +83,7 @@ export async function recordRunMetrics(
     [job.organization_id, job.id],
   );
   const agg = rows[0];
-  if (agg === undefined || agg.calls === 0) {
-    return 0;
-  }
+  const calls = agg?.calls ?? 0;
   const names: string[] = [];
   const values: number[] = [];
   const push = (name: string, value: number | null): void => {
@@ -78,25 +92,42 @@ export async function recordRunMetrics(
       values.push(value);
     }
   };
-  push('run_llm_calls', agg.calls);
-  push('run_input_tokens', agg.input_tokens);
-  push('run_output_tokens', agg.output_tokens);
-  push('run_cache_read_tokens', agg.cache_read_tokens);
-  push(CACHE_RATIO_METRIC, agg.input_tokens > 0 ? agg.cache_read_tokens / agg.input_tokens : 0);
-  // custo NULL = preço desconhecido (pricing.ts) — não gravar (0 mentiria "grátis")
-  push('run_cost_cents', agg.cost_cents);
-  // soma das latências das chamadas LLM do run (não wall time do job)
-  push('run_llm_latency_ms', agg.llm_latency_ms);
+  if (agg !== undefined && calls > 0) {
+    push('run_llm_calls', agg.calls);
+    push('run_input_tokens', agg.input_tokens);
+    push('run_output_tokens', agg.output_tokens);
+    push('run_cache_read_tokens', agg.cache_read_tokens);
+    push(CACHE_RATIO_METRIC, agg.input_tokens > 0 ? agg.cache_read_tokens / agg.input_tokens : 0);
+    // custo NULL = preço desconhecido (pricing.ts) — não gravar (0 mentiria "grátis")
+    push('run_cost_cents', agg.cost_cents);
+    // soma das latências das chamadas LLM do run (não wall time do job)
+    push('run_llm_latency_ms', agg.llm_latency_ms);
+  }
+  const claim = job.claim_acquired_at ?? null;
+  if (claim !== null) {
+    push(QUEUE_WAIT_METRIC, Math.max(0, new Date(claim).getTime() - new Date(job.created_at).getTime()));
+  }
+  if (names.length === 0) {
+    return calls;
+  }
 
   // labels SÓ ids/atribuição (job_id É o run id) — PII jamais.
+  // `$1::uuid` explícito: dentro de um UNION o Postgres resolve o parâmetro sem
+  // tipo como `text` antes de olhar a coluna de destino, e o INSERT inteiro cai
+  // (`organization_id is of type uuid but expression is of type text`). Provado
+  // no banco real em `tests/invariants/metricas-do-run-gravam.test.ts`.
   const labels = { job_id: job.id, contact_id: job.contact_id, kind: job.kind };
   await db.query(
     `insert into metrics (organization_id, name, labels, value)
-     select $1, t.name, $2::jsonb, t.value
-     from unnest($3::text[], $4::float8[]) as t(name, value)`,
-    [job.organization_id, JSON.stringify(labels), names, values],
+     select $1::uuid, t.name, $2::jsonb, t.value
+     from unnest($3::text[], $4::float8[]) as t(name, value)
+     union all
+     select $1::uuid, '${WALL_METRIC}', $2::jsonb,
+            greatest(0, extract(epoch from (clock_timestamp() - $5::timestamptz)) * 1000)
+     where $5::timestamptz is not null`,
+    [job.organization_id, JSON.stringify(labels), names, values, claim],
   );
-  return names.length;
+  return calls;
 }
 
 export interface CacheAlertResult {
@@ -173,6 +204,22 @@ export interface MetricsSnapshot {
   sends: { requested: number; accepted: number; queued: number; vetoed: number; failed: number };
   /** saúde por sessão WAHA (F2-14) */
   sessions: SessionHealthMetric[];
+}
+
+/**
+ * Fila viva para o `/healthz`, que o docker consulta a cada 30s. Cada subselect desce
+ * pelo índice parcial do seu status (`idx_job_queue_claim`, `idx_job_queue_running`);
+ * agrupar por status varria a fila inteira, 90 dias de jobs terminais, para devolver
+ * duas contagens. `dead` não tem índice parcial e fica no snapshot do `/metrics`.
+ */
+export async function profundidadeDaFilaViva(
+  db: Queryable,
+): Promise<{ pending: number; running: number }> {
+  const { rows } = await db.query<{ pending: number; running: number }>(
+    `select (select count(*)::int from job_queue where status = 'pending') as pending,
+            (select count(*)::int from job_queue where status = 'running') as running`,
+  );
+  return { pending: rows[0]?.pending ?? 0, running: rows[0]?.running ?? 0 };
 }
 
 /** Snapshot agregado do GET /metrics — leitura pura, nada é mutado. */

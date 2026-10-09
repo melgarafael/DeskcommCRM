@@ -45,7 +45,13 @@ const LAYOUT = "app/app/layout.tsx";
  * Toda peça FIXA do rodapé do produto. Peça nova entra nesta lista — é ela que
  * mantém o número da peça rastreável até o arquivo que a desenha.
  */
-const PECAS = ["components/voice/ActiveCallPanel.tsx"] as const;
+const PECAS = [
+  "components/voice/ActiveCallPanel.tsx",
+  // A barra de abas do celular encosta na borda de baixo (`distancia: 0`) e é a
+  // peça mais ALTA do rodapé — sem ela declarada, o fim de toda lista ficava por
+  // baixo das abas, que é o mesmo defeito da #1305 numa peça nova.
+  "components/shell/BarraInferior.tsx",
+] as const;
 
 /** O arquivo sem comentários: o que o código diz, não o que o comentário conta. */
 function codigo(rel: string): string {
@@ -67,9 +73,18 @@ describe("o contrato tem as três partes", () => {
     expect(contrato).toMatch(/VARIAVEL_DA_OCUPACAO = "--rodape-ocupado"/);
     expect(contrato).toMatch(/PISO_DO_RODAPE = 24/);
     // O valor que o navegador computa: nunca menos que o `p-6` que o `<main>` já
-    // tem, e nunca menos que a peça declarou.
+    // tem, nunca menos que a peça declarou, e nunca menos que a área segura.
+    //
+    // A ÁREA SEGURA ENTROU NO `max()` e esta régua cresceu com ela. O indicador
+    // de home do iOS em tela cheia ocupa ~34px e não é peça nossa — ninguém o
+    // declara, nada o registra. Sem ele aqui havia um buraco estreito e real:
+    // peça de 20px de alcance faz a reserva valer 24px (o piso), 24 < 34, e o
+    // estilo inline vence a classe `pb-area-segura` do `<main>` — o conteúdo
+    // voltava para debaixo do indicador POR CAUSA da peça que devia protegê-lo.
+    // Os três termos no mesmo `max()` é o mesmo argumento de `reservaDoRodape`:
+    // medidas que não se somam resolvem-se pelo pior caso.
     expect(contrato).toMatch(
-      /`max\(\$\{PISO_DO_RODAPE\}px, var\(\$\{VARIAVEL_DA_OCUPACAO\}, 0px\)\)`/,
+      /`max\(\$\{PISO_DO_RODAPE\}px, env\(safe-area-inset-bottom, 0px\), var\(\$\{VARIAVEL_DA_OCUPACAO\}, 0px\)\)`/,
     );
     // Sem peça registrada não há faixa: o rodapé de quem não está em chamada é
     // exatamente o de antes (é a razão pela qual a exceção do gate do Inbox não

@@ -21,6 +21,13 @@ export const NODE_TYPES = [
   // que advocacia, saúde e serviços regulados precisam — o sistema lembra a
   // equipe, a mensagem sai de uma pessoa.
   'internal_task',
+  // #2065: dois tipos de ACAO que não falam com o cliente — o fluxo deixa de
+  // só mandar mensagem. `move_lead` move o card para outra etapa (o mesmo
+  // escritor de etapa do board/automação), `edit_lead_tag` grava tag no lead
+  // (a MESMA `add_tag` do motor de automação). "Disparar campanha" ficou de
+  // fora desta fatia e é o passo seguinte da issue.
+  'move_lead',
+  'edit_lead_tag',
   'end',
 ] as const;
 export type NodeType = (typeof NODE_TYPES)[number];
@@ -273,6 +280,46 @@ export const internalTaskConfigSchema = z.strictObject({
 });
 
 /**
+ * Nó `move_lead` (#2065) — mover o card para outra etapa do MESMO funil.
+ *
+ * Só a etapa, sem `pipeline_id`: quem escolhe o destino é o SELETOR de etapas
+ * da tela, e quem RECUSA troca de funil é a casa — `moveLeadHandler`
+ * (`app/api/v1/leads/_handler`) devolve `pipeline_immutable_use_clone` quando a
+ * etapa não é do funil do lead, a mesma régua do board, das automações e da
+ * tool MCP. Repetir aqui a pergunta de funil seria uma segunda régua para a
+ * mesma regra.
+ *
+ * `stage_id` aceita vazio porque o rascunho é validado SÓ estruturalmente
+ * (`flowGraphSchema`) e o nó nasce sem destino — quem exige etapa escolhida é o
+ * `validate-publish` (`etapa_destino_ausente`), como a condição com regra em
+ * branco.
+ *
+ * `lost_reason` é opcional para não invalidar grafo já publicado: quem montou
+ * o fluxo antes desta régua continua válido, e quem publica com destino em
+ * etapa de perda precisa preenchê-lo (`motivo_da_perda_ausente`).
+ */
+export const moveLeadConfigSchema = z.strictObject({
+  stage_id: z.string().max(64),
+  lost_reason: z.string().max(500).optional(),
+});
+
+/**
+ * Nó `edit_lead_tag` (#2065) — grava tag no lead, o merge idempotente da ação
+ * `add_tag` do motor de automação (`lib/automation/actions/add-tag.ts`), com os
+ * MESMOS limites do schema de webhook (`lib/schemas/webhooks.ts`): até 10 tags
+ * de até 60 caracteres.
+ *
+ * Lista vazia é rascunho em construção (mesma degradação do `stage_id`); o
+ * publish recusa (`tag_ausente`) — um nó que não grava nada não pode ser
+ * publicado como se gravasse.
+ */
+export const editLeadTagConfigSchema = z.strictObject({
+  tags: z
+    .array(z.string().max(60, "Tag muito longa: máximo de 60 caracteres."))
+    .max(10, "No máximo 10 tags por caixa."),
+});
+
+/**
  * One rule of a `condition` node. In `branching: 'per_check'` it IS a branch,
  * so it carries the stable id an edge references and the label the handle shows
  * — identity lives on the rule itself, never in a parallel array that would
@@ -516,6 +563,28 @@ export const flowNodeSchema = z.discriminatedUnion('type', [
       y: z.number(),
     }),
     config: internalTaskConfigSchema,
+  }),
+  // Nó de ação (#2065): move o card para outra etapa do funil
+  z.strictObject({
+    id: z.string().min(1),
+    type: z.literal('move_lead'),
+    label: z.string().min(1).max(60),
+    position: z.strictObject({
+      x: z.number(),
+      y: z.number(),
+    }),
+    config: moveLeadConfigSchema,
+  }),
+  // Nó de ação (#2065): grava tag no lead, sem mensagem
+  z.strictObject({
+    id: z.string().min(1),
+    type: z.literal('edit_lead_tag'),
+    label: z.string().min(1).max(60),
+    position: z.strictObject({
+      x: z.number(),
+      y: z.number(),
+    }),
+    config: editLeadTagConfigSchema,
   }),
   // End node: terminal state
   z.strictObject({

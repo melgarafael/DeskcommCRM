@@ -92,6 +92,13 @@ export interface Message {
   media_mime: string | null;
   media_size_bytes: number | null;
   media_storage_path: string | null;
+  /** Transcrição de mídia derivada (áudio→texto). Só disponível quando
+   * `media_derived_status === 'ready'`. A realimentação chega aqui vinda das
+   * colunas `messages.media_derived_text/status` (#2057). Elas já eram usadas
+   * pela IA; agora o balão da inbox também as lê para o atendente que não
+   * consegue ouvir. */
+  media_derived_text?: string | null;
+  media_derived_status?: string | null;
   // Espelha o CHECK do banco (messages_sent_via_check): 'crm', 'external_device',
   // 'automation', 'ai', 'user', 'system'. O tipo listava só três e o TypeScript
   // aceitava os demais só porque o dado vem do Supabase sem cast — a tela então

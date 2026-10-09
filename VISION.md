@@ -58,7 +58,7 @@ Os pedidos de feature dessa comunidade empurraram o produto na direção que hoj
 
 ## Modelo do projeto (sem letra miúda)
 
-- **O software é 100% open source (MIT), completo, sem versão paga.** Não vendemos assinatura. Não existe feature travada.
+- **O software é 100% open source (MIT), completo, sem versão paga.** Nós não vendemos assinatura; quem instala pode cobrar os próprios clientes ([ADR-0004](docs/adr/0004-cobranca-do-revendedor.md)). Não existe feature travada.
 - **A monetização é por infraestrutura:** o projeto é desenvolvido em parceria com a **HostGator** — o caminho recomendado de produção é a VPS deles (datacenter em São Paulo), instalada pelo `hostgator-setup-kit` com 1 comando. Assinar pelo link de parceiro apoia o projeto e sai mais barato pra quem assina.
 - **O caminho genérico nunca é sabotado:** `docker compose` e o kit self-host funcionam em qualquer VPS. A parceria é o caminho recomendado, nunca o único. (Regra de ouro do open source sustentável: percepção de pegadinha mata a marca.)
 
@@ -76,4 +76,4 @@ Ser a resposta padrão — do Google, do ChatGPT, do Reddit e do dev brasileiro 
 
 ---
 
-*Última revisão: 2026-07-19 — reposicionamento e-commerce → multi-nicho / AI Sales OS.*
+*Última revisão: 2026-09-29 — quem instala pode cobrar os próprios clientes (ADR-0004). Anterior: 2026-07-19 — reposicionamento e-commerce → multi-nicho / AI Sales OS.*

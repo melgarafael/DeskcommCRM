@@ -10,7 +10,8 @@
 -- do app exigem Supabase real; o worker/agente funcionam integralmente.
 --
 -- Fonte: o mesmo prelude do gate de CI (scripts/test-db.sh) — se editar um,
--- edite o outro.
+-- edite o outro. O invariante `selfhost-prelude-aplica-o-baseline` aplica este
+-- arquivo + o baseline num banco vazio e reprova quando eles se separam.
 
 do $$
 begin
@@ -57,18 +58,39 @@ create table if not exists storage.objects (
 );
 
 -- Stub de auth.users (FKs do baseline apontam pra cá).
+--
+-- `raw_user_meta_data` é o nome real da coluna no GoTrue; o baseline a lê
+-- (fn_conversation_assign, backfill de conversations.assigned_to_user_name).
+-- O `alter` alcança quem aplicou uma versão anterior deste prelude.
 create table if not exists auth.users (
   id uuid primary key default gen_random_uuid(),
   email text unique,
+  raw_user_meta_data jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
+alter table auth.users add column if not exists raw_user_meta_data jsonb not null default '{}'::jsonb;
 
--- Stub de auth.uid() lendo o claim `sub` de request.jwt.claims (mesmo contrato
--- do Supabase; os testes simulam o JWT via set_config).
+-- Contrato Supabase usado pelo suporte: sessão é do Auth, nunca do produto.
+create table if not exists auth.sessions (
+ id uuid primary key, user_id uuid not null references auth.users(id),
+ aal text, not_after timestamptz
+);
+create table if not exists auth.mfa_factors (
+ id uuid primary key, user_id uuid not null references auth.users(id), status text, factor_type text default 'totp'
+);
+create or replace function auth.jwt() returns jsonb language sql stable as $$
+ select coalesce(nullif(current_setting('request.jwt.claim',true),''),nullif(current_setting('request.jwt.claims',true),''))::jsonb;
+$$;
+
+-- Stub de auth.uid() — mesmo corpo do Supabase (o `nullif` protege o CAST:
+-- GUC já tocado na sessão vale '' e não NULL).
 create or replace function auth.uid() returns uuid
   language sql stable
   as $fn$
-    select nullif(current_setting('request.jwt.claims', true)::jsonb ->> 'sub', '')::uuid
+    select coalesce(
+      nullif(current_setting('request.jwt.claim.sub', true), ''),
+      (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')
+    )::uuid
   $fn$;
 
 grant usage on schema auth, extensions, storage to anon, authenticated, service_role;

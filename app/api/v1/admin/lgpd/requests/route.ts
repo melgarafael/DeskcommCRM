@@ -12,6 +12,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
+import { computeRiskLevel } from "@/lib/lgpd/balde-de-sla";
 
 export const dynamic = "force-dynamic";
 
@@ -33,24 +34,13 @@ const querySchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// Risk level computation (server-side)
+// Risk level
+//
+// `computeRiskLevel` mora em `lib/lgpd/balde-de-sla.ts`, ao lado do balde da
+// organização: os dois selos classificam o mesmo `due_at` e têm de virar no mesmo
+// instante. A versão que estava aqui comparava milissegundos e marcava `expired`
+// às 21h da VÉSPERA do prazo — a causa e a medição estão no cabeçalho de lá.
 // ---------------------------------------------------------------------------
-
-type RiskLevel = "expired" | "at_risk" | "warning" | "ok";
-
-function computeRiskLevel(dueAt: string | null, receivedAt: string): RiskLevel {
-  if (!dueAt) return "ok";
-  const now = Date.now();
-  const due = new Date(dueAt).getTime();
-  const received = new Date(receivedAt).getTime();
-  const msUntilDue = due - now;
-
-  if (msUntilDue < 0) return "expired";
-  if (msUntilDue < 24 * 60 * 60 * 1000) return "at_risk";
-  const totalWindow = due - received;
-  if (totalWindow > 0 && msUntilDue < totalWindow * 0.5) return "warning";
-  return "ok";
-}
 
 // ---------------------------------------------------------------------------
 // Cursor helpers

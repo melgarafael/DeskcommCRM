@@ -52,6 +52,11 @@ export const KIND_LABEL = {
   // chegam e ninguém responde. "Modo de teste sem número autorizado" descreve
   // o campo; "a IA não responde ninguém" é o que faz o operador agir.
   canal_mudo_sem_numero: "Um canal está em modo de teste — a IA não responde ninguém nele",
+  // Diz o que ACONTECEU e a consequência para quem está do outro lado. "Pausado"
+  // sozinho descreve o toggle que alguém clicou; "não recebe nem envia
+  // mensagens" é o que muda para quem estava esperando mensagem neste canal —
+  // e é a frase que faz quem lê no outro turno abrir o item.
+  canal_pausado: "Um canal foi pausado — não recebe nem envia mensagens",
   // Diz o que o CLIENTE está esperando, não o que o sistema deixou de gravar.
   // "Promessa não cumprida" é a única frase que faz o dono do negócio agir: do
   // lado de lá existe uma pessoa que ouviu um compromisso e está aguardando.
@@ -94,8 +99,21 @@ export const KIND_LABEL = {
   // devia estar recebendo mensagem e não recebe, e é isso que faz alguém abrir
   // o aviso. O passo que conserta fica no corpo.
   followup_sem_agente: "Um follow-up está publicado e não está disparando",
+  // Diz QUEM percebeu: o pedido não foi visto pela regra de hoje, e o aviso é
+  // uma leitura do Jev — quem abre precisa saber que a conversa não foi passada
+  // nem o contato bloqueado. O que fazer vai no corpo.
+  jev_pedido_de_humano: "Pedido para falar com uma pessoa, percebido pelo Jev",
+  jev_parar_de_receber: "Pedido para parar de receber mensagens, percebido pelo Jev",
   proposta_travada: "Uma proposta ficou presa em envio e voltou a rascunho",
   proposta_pronta_para_revisao: "Uma proposta está pronta para revisão",
+  // Rótulo do KIND, embaixo de todo item org_reativada. Desde a 0583 o `title`
+  // que fn_reativar_organizacao grava varia ("há conversas para revisar" ou
+  // "há agendamentos e follow-ups para revisar"), e o rótulo não promete nenhum
+  // dos dois: o que parou está no corpo; o que fazer, na orientação.
+  org_reativada: "A conta foi reativada — há o que revisar",
+  // Régua de cobrança ou teto de IA do plano: quem resolve é o admin, em Plano e cobrança.
+  cobranca: "Plano e cobrança da empresa precisam de atenção",
+  email_de_login_trocado: "O e-mail de login de uma pessoa da equipe foi trocado",
   other: "Aviso do assistente",
 } as const satisfies Record<InboxKind, string>;
 

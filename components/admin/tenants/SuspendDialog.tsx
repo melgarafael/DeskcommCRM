@@ -76,7 +76,7 @@ export function SuspendDialog({ open, onClose, organizationId }: SuspendDialogPr
           <AlertDialogTitle>{t("Suspender tenant")}</AlertDialogTitle>
           <AlertDialogDescription>
             {t(
-              "A suspensão bloqueará o acesso dos usuários deste tenant à plataforma. Esta ação pode ser revertida.",
+              "A empresa perde o acesso, e a IA, os envios e as automações dela param. Mensagens na fila e tarefas agendadas são descartadas e não saem ao reativar; os follow-ups em andamento retomam de onde pararam. As mensagens que chegarem continuam gravadas.",
             )}
           </AlertDialogDescription>
         </AlertDialogHeader>

@@ -379,6 +379,43 @@ function iniciaisAtePontoEVirgula(fonte: string, desde: number): string {
   return fonte.slice(desde);
 }
 
+/** Um membro de união → o primitivo dele, ou LANÇA (ver `alargaIdentificador`). */
+function alargaMembro(id: string, membro: string, rhs: string): string {
+  if (/^"[^"]*"$/.test(membro)) return "string";
+  if (/^-?\d+(\.\d+)?$/.test(membro)) return "number";
+
+  // (typeof C)[number]["campo"]
+  const t = /^\(typeof\s+(\w+)\)\s*\[\s*number\s*\]\s*\[\s*"(\w+)"\s*\]$/.exec(membro);
+  if (t) {
+    const literais = literaisDeCampo(t[1]!, t[2]!);
+    if (literais.length === 0) {
+      throw new Error(
+        `extrator de tipo: ${id} deriva de (typeof ${t[1]})[number]["${t[2]}"], mas não ` +
+          `achei nenhum literal de ${t[2]} nas constantes citadas. Lista vazia aqui seria ` +
+          `comparação por vacuidade — ensine o extrator.`,
+      );
+    }
+    if (literais.every((v) => typeof v === "string")) return "string";
+    throw new Error(
+      `extrator de tipo: ${id} não é união de string e este extritor não sabe alargar ` +
+        `o tipo — ensine, em vez de chutar.`,
+    );
+  }
+
+  // typeof C, com `const C = "literal"` (ex.: `typeof PROVEDOR_POR_ASSINATURA`)
+  const c = /^typeof\s+(\w+)$/.exec(membro);
+  if (c) {
+    const corpo = iniciaisDe(c[1]!)?.trim() ?? null;
+    if (corpo !== null && /^"[^"]*"(\s+as\s+const)?$/.test(corpo)) return "string";
+  }
+
+  throw new Error(
+    `extrator de tipo: não sei alargar \`${id}\` (= \`${rhs.slice(0, 80)}\`). ` +
+      `Ensinando alargaIdentificador é o conserto: chutar \`string\` faria o par ` +
+      `passar por palpite, que é o defeito que este invariante existe para pegar.`,
+  );
+}
+
 /**
  * Alarga um IDENTIFICADOR ao primitivo que ele representa.
  *
@@ -389,6 +426,8 @@ function iniciaisAtePontoEVirgula(fonte: string, desde: number): string {
  *  - união de literais de string (`"a" | "b"`) → `string`;
  *  - `(typeof C)[number]["campo"]` → lê os literais de `campo` nas constantes
  *    citadas (com expansão de spread) e, se todos forem string, → `string`;
+ *  - `typeof C`, com `C` constante de literal de string → `string`;
+ *  - união dos anteriores, quando todos alargam ao mesmo primitivo;
  *  - primitivo direto (`string`, `number`, …) → ele mesmo.
  *
  * Qualquer outra forma LANÇA. Devolver `string` por palpite transformaria o
@@ -409,33 +448,14 @@ function alargaIdentificador(id: string): string {
       if (!decl) continue;
       const rhs = decl[1]!.replace(/\s+/g, " ").trim();
 
-      // união de literais de string
-      const membros = rhs.split("|").map((s) => s.trim());
-      if (membros.length > 0 && membros.every((m) => /^"[^"]*"$/.test(m))) return "string";
-      if (membros.length > 0 && membros.every((m) => /^-?\d+(\.\d+)?$/.test(m))) return "number";
-
-      // (typeof C)[number]["campo"]
-      const t = /^\(typeof\s+(\w+)\)\s*\[\s*number\s*\]\s*\[\s*"(\w+)"\s*\]$/.exec(rhs);
-      if (t) {
-        const literais = literaisDeCampo(t[1]!, t[2]!);
-        if (literais.length === 0) {
-          throw new Error(
-            `extrator de tipo: ${id} deriva de (typeof ${t[1]})[number]["${t[2]}"], mas não ` +
-              `achei nenhum literal de ${t[2]} nas constantes citadas. Lista vazia aqui seria ` +
-              `comparação por vacuidade — ensine o extrator.`,
-          );
-        }
-        if (literais.every((v) => typeof v === "string")) return "string";
-        throw new Error(
-          `extrator de tipo: ${id} não é união de string e este extritor não sabe alargar ` +
-            `o tipo — ensine, em vez de chutar.`,
-        );
-      }
-
+      // Uma união alarga quando TODO membro alarga ao MESMO primitivo. O `|`
+      // inicial da forma multilinha produz um membro vazio, que não é membro.
+      const membros = rhs.split("|").map((s) => s.trim()).filter(Boolean);
+      const primitivos = new Set(membros.map((m) => alargaMembro(id, m, rhs)));
+      if (primitivos.size === 1) return [...primitivos][0]!;
       throw new Error(
-        `extrator de tipo: não sei alargar \`${id}\` (= \`${rhs.slice(0, 80)}\`). ` +
-          `Ensinando alargaIdentificador é o conserto: chutar \`string\` faria o par ` +
-          `passar por palpite, que é o defeito que este invariante existe para pegar.`,
+        `extrator de tipo: ${id} (= \`${rhs.slice(0, 80)}\`) une primitivos diferentes ` +
+          `(${[...primitivos].join(", ")}) — não sei alargar sem chutar. Ensine o extrator.`,
       );
     }
   }

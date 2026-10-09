@@ -20,14 +20,19 @@ import { McpAuthError, ensureRole, ensureScope } from "@/lib/mcp/auth";
 import type { McpAuthResult } from "@/lib/mcp/auth";
 import { logger } from "@/lib/logger";
 import { allTools, getToolByName } from "@/lib/mcp/tools";
+import { escolhasRemotas } from "@/lib/mcp/servidor-externo/ids";
+import { definirFerramentasRemotas } from "@/lib/mcp/tools/externo";
+import type { ServidorMcpExternoMontado } from "@/lib/mcp/servidor-externo/carregar";
 import { catalogEntry, deCapacidadeDesligada, deModuloDesligado } from "@/lib/mcp/tools/catalog";
 import type { CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
 import type { ModuloOpcional } from "@/lib/instalacao/modulos";
 import { higienizarUuidsDeAterro } from "@/lib/mcp/uuid-de-aterro";
 import { recusaDeCapacidadeParaOModelo } from "@/lib/mcp/recusa-para-o-modelo";
+import { tamanhoDoResultado } from "@/lib/mcp/resultado-bytes";
 import type { McpContext, McpToolDefinition } from "@/lib/mcp/types";
 import { resolveActiveLeadForContact, type LeadCandidate } from "@/lib/leads/active-lead";
 import { podeChamarFerramenta, recusaParaOModelo } from "@/lib/leads/escopo-de-funil";
+import { escritaCabeNoTurno } from "./escopo-das-escritas";
 
 export interface RuntimeHandoffSignal {
   triggered: boolean;
@@ -74,6 +79,16 @@ export interface PickToolsInput {
    * do turno à mão, esse id é traduzido para o negócio aberto dele.
    */
   contatoDoTurno?: string;
+  /**
+   * Servidor MCP externo REGISTRADO pela instalação, já com as ferramentas que
+   * ele anunciou (#2147).
+   *
+   * Ausente = não existe servidor: o catálogo compilado continua sendo a
+   * única fonte de tool do turno, sem nenhuma chamada de rede. Quem monta é
+   * `carregarServidorMcpExternoDoTurno`, ANTES daqui — descobrir é rede e este montador
+   * é síncrono.
+   */
+  servidorMcpExterno?: ServidorMcpExternoMontado;
 }
 
 /**
@@ -174,6 +189,13 @@ const PREPARAR_PROPOSTA_TOOL_NAME = "crm_preparar_proposta";
 
 function shapeToZodObject(shape: Record<string, z.ZodTypeAny>): z.ZodTypeAny {
   // The MCP tool inputSchema is a Zod *raw shape* (object of zod types).
+  //
+  // Shape VAZIO vira registro livre, e não `z.object({})`: um servidor MCP
+  // externo pode anunciar ferramenta sem `properties` (#2147), e `z.object({})`
+  // faria o Zod DESCARTAR todo argumento antes do handler ver — a chamada
+  // sairia vazia para o ERP, sem erro em lugar nenhum. Nenhuma tool compilada
+  // tem shape vazio, então isto só muda o que é novo.
+  if (Object.keys(shape).length === 0) return z.record(z.string(), z.unknown());
   return z.object(shape);
 }
 
@@ -234,16 +256,50 @@ function wrapMcpTool(
         ensureScope(input.auth.scopes, def.requiresScope);
         ensureRole(input.auth.role, def.requiresRole);
 
+        // ── DE QUEM É O REGISTRO QUE ESTA ESCRITA ALCANÇA — do contato do turno
+        //
+        // `write` E `handoff`: a passagem também age sobre uma conversa. A regra
+        // e o mapa campo → dono moram em `escopo-das-escritas.ts`; o `lead_id`
+        // segue com a guarda logo abaixo. Sem contato do turno, nada muda.
+        if (input.contatoDoTurno && def.category !== "read") {
+          const escopo = await escritaCabeNoTurno(
+            input.supabase,
+            input.ctx.organizationId,
+            input.contatoDoTurno,
+            def.name,
+            argsRecord,
+          );
+          if (!escopo.permitido) {
+            void auditMcpToolCall({
+              ctx: input.ctx,
+              toolName: def.name,
+              args: argsAudit,
+              durationMs: Date.now() - startedAt,
+              success: false,
+              errorMessage: `contato_da_conversa:${escopo.motivo}`,
+            });
+            return escopo;
+          }
+        }
+
         // ── DE QUE NEGÓCIO É ESTA ESCRITA — do contato da conversa ──────────
         //
-        // Só ESCRITA: `crm_list_followups`, `crm_list_appointments` e irmãs têm
+        // Só ESCRITA (`write` e `handoff`): `crm_list_followups`, `crm_list_appointments` e irmãs têm
         // `lead_id` e são leituras; trocar ali faria o modelo perguntar por um
-        // negócio e receber outro. Só com contato do turno: o Operador, a rota
-        // HTTP e as automações seguem com o `lead_id` de quem chamou. Antes do
-        // escopo, para o escopo julgar o negócio que de fato vai ser escrito.
+        // negócio e receber outro. Só com contato do turno — que o turno de
+        // atendimento E o do Operador recebem (`operator-turn.ts` passa
+        // `contactId: job.contact_id`): a rota HTTP e as automações seguem com o
+        // `lead_id` de quem chamou. Antes do escopo, para o escopo julgar o
+        // negócio que de fato vai ser escrito.
+        //
+        // A LEITURA não traduz — ela ESCOPA, e o faz no handler, com o
+        // `ctx.contatoDoTurno` que passamos na chamada abaixo (#2158): trocar o
+        // id mudaria a pergunta do modelo, escopar muda só quem a resposta
+        // alcança. Quem recebe identificador de contato e é do turno segue
+        // abrindo; quem é de outro cliente é recusado com o motivo em texto.
         if (
           input.contatoDoTurno &&
-          def.category === "write" &&
+          def.category !== "read" &&
           typeof argsRecord.lead_id === "string"
         ) {
           const alvo = await negocioDaEscritaDoTurno(
@@ -347,7 +403,16 @@ function wrapMcpTool(
           return { permitido: false, motivo: veredito.motivo, mensagem: explicacao };
         }
 
-        const result = await def.handler(argsRecord as never, input.ctx);
+        // O contato do turno como CONTEXTO ao lado de `ctx.organizationId`, e
+        // não como argumento que o modelo escreve: é o handler que precisa
+        // saber com quem a conversa está, e quem sabe é o runtime. Injetado
+        // aqui, no único ponto que tem `input`, para valer para todo chamador
+        // de `pickToolsFromMcp` — quem não tem contato de turno (rota HTTP,
+        // MCP externo, agente sem conversa) continua com o ctx de antes (#2158).
+        const result = await def.handler(
+          argsRecord as never,
+          input.contatoDoTurno ? { ...input.ctx, contatoDoTurno: input.contatoDoTurno } : input.ctx,
+        );
 
         // Capture handoff signal so the runtime can short-circuit the loop.
         if (def.name === HANDOFF_TOOL_NAME) {
@@ -369,12 +434,30 @@ function wrapMcpTool(
         // Só quem declara é afetado: sem `motivoDoVazio` nada muda.
         const motivoDoVazio = def.motivoDoVazio?.(result) ?? null;
 
+        // Recusa devolvida PELO HANDLER também não é sucesso (#2158): a ficha de
+        // outro cliente recusada em `crm_get_contact` volta no mesmo formato da
+        // recusa de escrita acima, e entra no audit como ela — `success: false`
+        // e o motivo em `error` —, senão a recusa some contada como acerto.
+        const recusa = recusaDoHandler(result);
+        if (recusa !== null) {
+          void auditMcpToolCall({
+            ctx: input.ctx,
+            toolName: def.name,
+            args: argsAudit,
+            durationMs: Date.now() - startedAt,
+            success: false,
+            errorMessage: `contato_da_conversa:${recusa}`,
+          });
+          return result;
+        }
+
         void auditMcpToolCall({
           ctx: input.ctx,
           toolName: def.name,
           args: argsAudit,
           durationMs: Date.now() - startedAt,
           success: motivoDoVazio === null,
+          resultBytes: tamanhoDoResultado(result),
           ...(motivoDoVazio === null
             ? {}
             : { desfecho: "sem_resultado" as const, motivo: motivoDoVazio }),
@@ -419,6 +502,13 @@ function wrapMcpTool(
       }
     },
   });
+}
+
+/** O `motivo` de uma recusa `{ permitido: false, motivo }` devolvida pelo handler, ou `null`. */
+function recusaDoHandler(result: unknown): string | null {
+  if (typeof result !== "object" || result === null) return null;
+  const r = result as { permitido?: unknown; motivo?: unknown };
+  return r.permitido === false && typeof r.motivo === "string" ? r.motivo : null;
 }
 
 export function pickToolsFromMcp(input: PickToolsInput): Record<string, Tool> {
@@ -482,6 +572,53 @@ export function pickToolsFromMcp(input: PickToolsInput): Record<string, Tool> {
       const tool = allTools.find((t) => t.name === nome);
       if (tool) {
         result[nome] = wrapMcpTool(tool, input);
+      }
+    }
+  }
+
+  // ── Ferramentas remotas ESCOLHIDAS pelo agente (#2147, itens 6, 7 e 8) ───
+  //
+  // Depois de tudo: as remotas somam às compiladas e nunca substituem nenhuma
+  // (o nome colidindo é descartado lá em `definirFerramentasRemotas`, com o
+  // motivo no log). Passam pelo MESMO `wrapMcpTool`, então auditoria, papel,
+  // escopo e a devolução de texto em vez de exceção valem para elas — e é
+  // passando por ele que uma remota classificada como ESCRITA cai na
+  // conferência de escopo do turno logo acima (`escrita_sem_escopo_do_turno`)
+  // em vez de atravessá-la.
+  //
+  // A ESCOLHA é do `tool_ids` da versão, com prefixo estável `mcp_externo:`
+  // (item 6, `servidor-externo/ids.ts`) — não do cadastro: registrar o servidor
+  // não dá ferramenta a agente nenhum. DESLIGADO POR PADRÃO (item 7): sem
+  // servidor, ou com servidor mas sem id remoto escolhido, este bloco não
+  // monta nada, e o turno é o catálogo de sempre sem rede nenhuma.
+  //
+  // Fora dos filtros de módulo e capacidade de ORGANIZAÇÃO por desenho: quem
+  // registra o servidor é a instalação, o endereço não vem de pacote nenhum e
+  // o catálogo compilado não sabe que essas ferramentas existem — filtrá-las
+  // por chave que só existe dentro dele as deixaria invisíveis para sempre.
+  if (input.servidorMcpExterno) {
+    const escolhas = escolhasRemotas(input.toolIds);
+    if (escolhas.length > 0) {
+      const ocupados = new Set(allTools.map((t) => t.name));
+      const remotas = definirFerramentasRemotas(
+        input.servidorMcpExterno.servidor,
+        input.servidorMcpExterno.ferramentas,
+        ocupados,
+        escolhas,
+        // Junta de teste (ver `ServidorMcpExternoMontado.fetch`): em produção
+        // isto vem vazio e a saída usa o guard anti-SSRF.
+        input.servidorMcpExterno.fetch ? { fetch: input.servidorMcpExterno.fetch } : undefined,
+      );
+      for (const def of remotas) {
+        // ESCOLHA (b), item 8, em dois níveis. O primeiro é
+        // `carregarServidorMcpExterno`, que não carrega servidor nenhum para
+        // turno com contato — este é o de defesa: se um chamador futuro
+        // passar as duas coisas, a LEITURA remota não monta (o servidor não
+        // recebe o contato do turno e poderia devolver dado de outro cliente)
+        // e a ESCRITA monta para ser RECUSADA logo acima por
+        // `escrita_sem_escopo_do_turno`, nunca executada.
+        if (input.contatoDoTurno && def.category === "read") continue;
+        result[def.name] = wrapMcpTool(def, input);
       }
     }
   }

@@ -213,10 +213,10 @@ describe("devolver o atendimento: as três travas", () => {
   });
 
   it("o guarda do envio lê a mesma coluna — sem soltá-la, nada sai", async () => {
-    // `before-send.ts`: select (is_blocked or force_human) as stopped.
+    // `before-send.ts`: select (is_blocked or force_human or is_personal) as stopped.
     const parado = async () => {
       const { rows } = await pool.query<{ stopped: boolean }>(
-        "select (is_blocked or force_human) as stopped from contacts where organization_id = $1 and id = $2",
+        "select (is_blocked or force_human or is_personal) as stopped from contacts where organization_id = $1 and id = $2",
         [GOV_ORG, ESC_CONTATO],
       );
       return rows[0]!.stopped;

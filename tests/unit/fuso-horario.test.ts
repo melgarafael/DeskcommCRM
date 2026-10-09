@@ -117,17 +117,19 @@ describe("os fusos OFERECIDOS — a lista, não o padrão", () => {
    */
   it("oferece Luanda, e a tela da empresa também", () => {
     expect(FUSOS_OFERECIDOS.map((f) => f.codigo)).toContain("Africa/Luanda");
+    // A tela da empresa não escreve mais a lista à mão: ela é `FUSOS_OFERECIDOS`.
     const formulario = readFileSync("app/app/settings/tenant/_form.tsx", "utf8");
-    expect(formulario).toContain("Africa/Luanda");
+    expect(formulario).toContain("FUSOS_OFERECIDOS.map(");
   });
 
-  // As quatro listas são três fontes: `FUSOS_OFERECIDOS` (jornada e janela de
-  // envio) e as duas escritas à mão, da empresa e do perfil. Lisboa faltava
-  // nas três — e o assistente de boas-vindas já a oferecia.
-  it("oferece Lisboa nas três fontes", () => {
+  // As telas da empresa e do perfil tinham listas escritas à mão — e Lisboa
+  // faltava nas três fontes enquanto o assistente de boas-vindas já a
+  // oferecia. Hoje as duas leem `FUSOS_OFERECIDOS`; a regra de uma lista só
+  // mora em `tests/unit/fusos-uma-lista-so.test.ts`.
+  it("oferece Lisboa, e as telas da empresa e do perfil leem a mesma lista", () => {
     expect(FUSOS_OFERECIDOS.map((f) => f.codigo)).toContain("Europe/Lisbon");
     for (const arquivo of ["app/app/settings/tenant/_form.tsx", "app/app/settings/profile/_form.tsx"]) {
-      expect(readFileSync(arquivo, "utf8"), arquivo).toContain('"Europe/Lisbon"');
+      expect(readFileSync(arquivo, "utf8"), arquivo).toContain("FUSOS_OFERECIDOS.map(");
     }
   });
 

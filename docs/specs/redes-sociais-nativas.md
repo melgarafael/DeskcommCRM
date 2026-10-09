@@ -40,6 +40,18 @@ pode liberar ou pausar pela tela, depois de vincular um agente e avaliar se outr
 automação já responde à conta. Nenhum webhook externo é desativado pela conexão.
 Histórico anterior não é importado nem reprocessado automaticamente.
 
+### As duas chaves (spec 22, D1)
+
+A chave do perfil (`channel_integrations`) é gerenciar; cada canal social guarda
+uma cópia (`channel_sessions.zernio_token_encrypted`) para os fundos, com o env
+como fallback. Salvar a credencial na tela reescreve a cópia em TODOS os canais
+do perfil — inclusive os arquivados, que podem voltar. Quando a chave troca no
+provedor, reconfigurar com a chave certa ressincroniza tudo; nenhuma sessão
+velha prende a faixa. Conta removida e recriada no provedor ganha `accountId`
+novo: a linha velha aparece em `orphaned_channels` do GET e a tela oferece
+Excluir. Trocar de perfil exige desvincular o antigo, e desvincular exige zero
+canais ativos.
+
 ## Sistema vivo
 
 Entrada: contas autorizadas e webhook assinado. Saída: Inbox, mensagens e motor

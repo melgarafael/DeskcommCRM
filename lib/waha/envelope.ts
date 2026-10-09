@@ -44,6 +44,19 @@ const booleano = z.boolean().nullish();
 const wahaMediaSchema = z.looseObject({
   url: texto,
   mimetype: texto,
+  /**
+   * Nome ORIGINAL do arquivo, só quando a mensagem TEM um (`"some-file.pdf"`;
+   * imagem e áudio vêm `null`) — é o campo `media.filename` documentado pelo
+   * WAHA em "Receive messages" (waha.devlike.pro/docs/how-to/receive-messages).
+   *
+   * Ganha tipo porque o código passa a LÊ-lo sem guarda própria
+   * (`mediaFilenameOf`, em `lib/waha/ingest.ts`) e gravá-lo em
+   * `metadata.media_filename`, que o cartão do Inbox já usa (#2613). `nullish`
+   * idem `url`/`mimetype`: WAHA escreve `null` para "não tenho este campo", e
+   * recusar o payload por isso transformaria mensagem com anexo em mensagem
+   * descartada.
+   */
+  filename: texto,
 });
 
 /**
@@ -96,6 +109,17 @@ export const wahaPayloadSchema = z.looseObject({
    */
   participant: z.unknown().optional(),
   author: z.unknown().optional(),
+  /**
+   * A mensagem que esta responde — o "responder em cima" do WhatsApp.
+   *
+   * O NOWEB normaliza o campo (`payload.replyTo`: id + texto citado — medido em
+   * produção, issue #2474) e repete o id cru em
+   * `_data.message.<tipo>.contextInfo.stanzaId`. `unknown` como `participant` e
+   * `author`: quem o lê (`citacaoDoPayload`, em `ingest.ts`) confere os tipos
+   * campo a campo, e exigir shape aqui transformaria um formato novo do campo
+   * em mensagem descartada inteira — a regressão que este arquivo evita.
+   */
+  replyTo: z.unknown().optional(),
   /** Id da mensagem ORIGINAL nos eventos `message.edited` / `message.revoked`. */
   editedMessageId: texto,
   revokedMessageId: texto,

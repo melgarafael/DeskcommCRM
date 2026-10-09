@@ -79,7 +79,7 @@ describe("a guarda da máquina", () => {
 const TODOS =
   "${{ vars.EXECUTOR_PROPRIO == 'ligado' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && 'deskcomm-proprio' || 'ubuntu-latest' }}";
 const SO_PR =
-  "${{ vars.EXECUTOR_PROPRIO == 'ligado' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && 'deskcomm-proprio' || 'ubuntu-latest' }}";
+  "${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || (vars.EXECUTOR_PROPRIO == 'ligado' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && 'deskcomm-proprio' || 'ubuntu-latest') }}";
 
 const ESPERADO: Record<string, string> = {
   "ci.yml::verify-parte": TODOS,
@@ -119,6 +119,12 @@ describe("o roteamento dos workflows", () => {
   it("exatamente os jobs pesados podem ir para a máquina, cada um com a expressão declarada", () => {
     const naMaquina = Object.fromEntries([...mapa].filter(([, v]) => v.includes("deskcomm-proprio")));
     expect(naMaquina).toEqual(ESPERADO);
+  });
+
+  it("publica cada arquitetura em runner nativo do GitHub", () => {
+    expect(mapa.get("publish-image.yml::build-and-push")).toBe(
+      "${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}",
+    );
   });
 
   it("nenhum workflow com pull_request_target manda job para a máquina", () => {

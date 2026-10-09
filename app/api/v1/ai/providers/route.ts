@@ -1,4 +1,9 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
+import {
+  MENSAGEM_PROVEDOR_DESLIGADO,
+  provedorDesligadoNaInstalacao,
+  provedorOferecido,
+} from "@/lib/ai/pontos/provedores-oferecidos";
 /**
  * GET/PUT /api/v1/ai/providers — a configuração de IA de cada ponto do sistema.
  *
@@ -22,19 +27,22 @@ import { requireRole } from "@/lib/auth/require-role";
 import { roleAtLeast } from "@/lib/auth/types";
 import {
   decidirBinding,
+  escolherModeloEconomico,
   EXPLICACAO_DA_ORIGEM,
   PONTOS_DO_AGENTE_PUBLICADO,
   PONTOS_QUE_HERDAM_DO_AGENTE,
   type LinhaDeBinding,
 } from "@/lib/ai/pontos/resolver";
 import { PAPEIS, PONTOS_DE_IA, PONTO_POR_ID } from "@/lib/ai/pontos/registro";
-import { PROVEDORES, ehProvedorSuportado } from "@/lib/ai/pontos/provedores";
+import { PROVEDORES, ehProvedorSuportado, PROVEDOR_POR_ASSINATURA } from "@/lib/ai/pontos/provedores";
+import { listarModelosDaAssinaturaOuVazio } from "@/lib/ai/catalogo/modelos-da-assinatura";
 import { validarBinding } from "@/lib/ai/pontos/validar-binding";
 import { lerAmbiente } from "@/lib/instalacao/ambiente";
-import { modeloDeTranscricaoEmVigor } from "@/lib/messaging/media/transcription";
+import { decidirTranscricao } from "@/lib/messaging/media/escada-de-transcricao";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { temPrecoNoMotor } from "@/lib/agent-engine/edge/llm/pricing";
 
 export const dynamic = "force-dynamic";
 
@@ -44,9 +52,22 @@ interface ModeloDoCatalogo {
   display_name: string;
   supports_tools: boolean;
   supports_vision: boolean;
+  supports_embedding: boolean;
   input_price_per_million_cents: number | null;
   output_price_per_million_cents: number | null;
   context_window: number | null;
+}
+
+/** O knob de ambiente dos pontos do degrau econômico — o mesmo que `lib/agent-engine/env.ts` lê no worker. */
+function knobDoPontoEconomico(pontoId: string): string | undefined {
+  const nome =
+    pontoId === "stage_classifier"
+      ? "STAGE_CLASSIFIER_MODEL"
+      : pontoId === "jailbreak_detect"
+        ? "JAILBREAK_CLASSIFIER_MODEL"
+        : undefined;
+  const valor = nome === undefined ? undefined : process.env[nome]?.trim();
+  return valor ? valor : undefined;
 }
 
 export async function GET(): Promise<Response> {
@@ -70,7 +91,7 @@ export async function GET(): Promise<Response> {
     db
       .from("ai_models")
       .select(
-        "provider, model_id, display_name, supports_tools, supports_vision, input_price_per_million_cents, output_price_per_million_cents, context_window",
+        "provider, model_id, display_name, supports_tools, supports_vision, supports_embedding, input_price_per_million_cents, output_price_per_million_cents, context_window",
       )
       .is("deprecated_at", null)
       .order("provider")
@@ -93,7 +114,7 @@ export async function GET(): Promise<Response> {
   );
 
   const llm = ((orgRes.data?.settings as { llm?: Record<string, unknown> } | null)?.llm ??
-    {}) as { provider?: string; default_model?: string | null };
+    {}) as { provider?: string; default_model?: string | null; enabled_models?: unknown };
   const padraoDaOrganizacao = {
     provider: typeof llm.provider === "string" ? llm.provider : "anthropic",
     defaultModel: typeof llm.default_model === "string" ? llm.default_model : null,
@@ -109,7 +130,7 @@ export async function GET(): Promise<Response> {
   // coluna — a mesma que discordava do motor. Reconciliar aqui, uma vez, é o
   // que faz a lista, o aviso do binding e o motor darem a MESMA resposta.
   // Ver `lib/ai/pontos/capacidade-em-vigor.ts`.
-  const modelos = ((modelosRes.data ?? []) as ModeloDoCatalogo[]).map((m) => ({
+  const modelosGlobais = ((modelosRes.data ?? []) as ModeloDoCatalogo[]).map((m) => ({
     ...m,
     supports_vision: enxergaImagem({
       provider: m.provider,
@@ -117,7 +138,62 @@ export async function GET(): Promise<Response> {
       doCatalogo: m.supports_vision,
     }),
   }));
+  const temAssinatura = (credsRes.data ?? []).some(
+    (credential) => credential.provider === PROVEDOR_POR_ASSINATURA,
+  );
+  // A listagem da assinatura só ALIMENTA esta tela: se o backend do Codex
+  // falhar, a tela de Credenciais continua abrindo (com a lista vazia e o
+  // motivo no log) — o editor do agente é quem recebe o erro de cara (#2602).
+  const modelosDaAssinatura = temAssinatura
+    ? await listarModelosDaAssinaturaOuVazio(org.orgId)
+    : null;
+  const modelos = [
+    ...modelosGlobais,
+    ...(modelosDaAssinatura ?? []).map((m) => ({
+      ...m,
+      supports_vision: enxergaImagem({
+        provider: "openai",
+        modelId: m.model_id,
+        doCatalogo: m.supports_vision,
+      }),
+    })),
+  ];
   const capacidadePorModelo = new Map(modelos.map((m) => [`${m.provider}|${m.model_id}`, m]));
+
+  // ─── QUEM OUVE O ÁUDIO: a MESMA escada do worker (#2189/#2190) ────────────
+  //
+  // A tela não decide sozinha o que o worker decide lá longe: ela roda a
+  // escada com os MESMOS dados que já estão nesta requisição — credenciais
+  // ativas da organização e knobs do `.env` do processo — e entrega a decisão
+  // ao resolvedor. Um lugar decide; os dois lados leem o mesmo lugar; a régua
+  // `tests/unit/a-tela-e-o-motor-concordam-sobre-imagem.test.ts` compara.
+  //
+  // A aproximação é sobre EXISTIR chave, nunca sobre qual é: o anúncio só
+  // precisa saber em qual degrau o áudio cai. "Existe" aqui é o mesmo critério
+  // de `resolveOrgLlmConfig` — credencial ATIVA e VALIDADA da organização, ou
+  // a chave da instalação em `.env` (o Google não tem chave de instalação, e
+  // `lerAmbiente` devolve `false` para ele, como o runtime recusa).
+  const ambienteDaInstalacao = lerAmbiente();
+  const credenciais = (credsRes.data ?? []) as { provider: string; validated_at: string | null }[];
+  const chaveExiste = (provider: string): string | null =>
+    credenciais.some((c) => c.provider === provider && c.validated_at) ||
+    ambienteDaInstalacao.chavesDeProvedor[provider] === true
+      ? "chave-existente"
+      : null;
+  const transcricao = await decidirTranscricao({
+    conversa:
+      padraoDaOrganizacao.defaultModel !== null
+        ? {
+            provider: padraoDaOrganizacao.provider,
+            apiKey: chaveExiste(padraoDaOrganizacao.provider),
+            modelId: padraoDaOrganizacao.defaultModel,
+            // A base do provedor custom não é selecionada aqui; ela só muda
+            // PARA ONDE a chamada vai, e este lado pergunta QUAL degrau roda.
+            baseUrl: null,
+          }
+        : null,
+    chaveOpenai: async () => chaveExiste("openai"),
+  });
 
   const pontos = PONTOS_DE_IA.map((ponto) => {
     const decisao = decidirBinding({
@@ -141,8 +217,27 @@ export async function GET(): Promise<Response> {
       // `lib/instalacao/ambiente.ts` já faz para as chaves.
       // Enquanto ficar `undefined`, a origem "veio da instalação" nunca aparece
       // nesta tela, mesmo quando é ela que vale em runtime.
-      modeloDeAmbiente: undefined,
+      // Os dois pontos do degrau econômico leem o knob: com ele preenchido, o
+      // motor roda o knob e a tela anunciaria o econômico. Os demais seguem a
+      // dívida descrita acima.
+      modeloDeAmbiente: knobDoPontoEconomico(ponto.id),
       padraoDaOrganizacao,
+      // A MESMA escolha econômica do seam (`binding-do-ponto.ts`), sobre o mesmo
+      // catálogo e a mesma restrição de modelos habilitados — senão a tela
+      // anunciaria o modelo do agente num classificador que roda no econômico.
+      economicoDoProvedor: (provider, modeloAtual) =>
+        escolherModeloEconomico(
+          modelosRes.data ?? [],
+          provider,
+          modeloAtual,
+          Array.isArray(llm.enabled_models)
+            ? llm.enabled_models.filter((m): m is string => typeof m === "string")
+            : [],
+          temPrecoNoMotor,
+        ),
+      // A escada só muda a resposta do ponto que ela governa; o resolvedor a
+      // lê apenas em `fixo.escada`.
+      transcricao,
     });
     const chave = `${decisao.provider}|${decisao.modelId ?? ""}`;
     const capacidade = capacidadePorModelo.get(chave);
@@ -168,21 +263,19 @@ export async function GET(): Promise<Response> {
       mandadoPeloAgente: agentePublicado !== null && PONTOS_DO_AGENTE_PUBLICADO.has(ponto.id),
       efetivo: {
         provider: decisao.provider,
-        // O ponto fixo de transcrição declara `whisper-1`, mas `TRANSCRIPTION_MODEL`
-        // (o mesmo `.env` do worker) troca o modelo que roda: a tela anuncia o que
-        // roda, pela mesma função que o worker usa.
-        modelId:
-          ponto.id === "transcricao_de_audio"
-            ? modeloDeTranscricaoEmVigor({
-                model: process.env.TRANSCRIPTION_MODEL,
-                apiKey: process.env.TRANSCRIPTION_API_KEY,
-                baseUrl: process.env.TRANSCRIPTION_BASE_URL,
-              })
-            : decisao.modelId,
+        // O modelo de transcrição vem DA ESCADA, e não de um literal no
+        // registro nem de um override aqui (#2190): a mesma
+        // `decidirTranscricao` do worker escolhe o degrau, e o resolvedor
+        // devolve o anúncio daquele degrau. Um override seria um segundo
+        // lugar decidindo o mesmo assunto — a forma como o defeito nasceu.
+        modelId: decisao.modelId,
         credentialId: decisao.credentialId,
         baseUrl: decisao.baseUrl,
         origem: decisao.origem,
-        porQue: EXPLICACAO_DA_ORIGEM[decisao.origem],
+        // O motivo ESCOLHIDO, quando a origem tem um (a escada devolve o do
+        // degrau escolhido): "por que este áudio vai para aquele lugar", que a
+        // frase genérica da origem não sabe dizer.
+        porQue: decisao.motivo ?? EXPLICACAO_DA_ORIGEM[decisao.origem],
       },
       avisos: [
         ...decisao.avisos,
@@ -197,6 +290,10 @@ export async function GET(): Promise<Response> {
     };
   });
 
+  // O módulo `login_codex` desligado tira a assinatura da lista E a linha do
+  // login das credenciais — a mesma regra da tela de Credenciais.
+  const oferece = await provedorOferecido(createAdminClient());
+
   return ok({
     papeis: PAPEIS,
     pontos,
@@ -205,11 +302,11 @@ export async function GET(): Promise<Response> {
     // ponto; o que faltava era CHEGAR À TELA, e sem isso não havia como
     // mostrá-lo nem trocá-lo (invariante 6: toda configuração tem superfície).
     padrao: padraoDaOrganizacao,
-    provedores: PROVEDORES,
+    provedores: PROVEDORES.filter((p) => oferece(p.id)),
     // Só chave de quem CONVERSA. A do Jev contada aqui apagaria o aviso "você
     // ainda não cadastrou nenhuma chave" com a empresa sem IA para atender, e
     // nenhum ponto desta tela sabe usá-la.
-    credenciais: (credsRes.data ?? []).filter((c) => ehProvedorSuportado(c.provider)),
+    credenciais: (credsRes.data ?? []).filter((c) => oferece(c.provider)),
     // Sem chave cadastrada, o aviso só pode dizer "o atendimento usa a chave que
     // veio na instalação" quando ela existe. A mesma conta de
     // `app/app/ai/credentials/page.tsx`.
@@ -254,6 +351,8 @@ export async function PUT(req: NextRequest): Promise<Response> {
     return fail("invalid_body", t("corpo inválido"), 422, { details: parsed.error.issues });
   }
   const corpo = parsed.data;
+  const desligado = await provedorDesligado(corpo.provider);
+  if (desligado) return desligado;
 
   const ponto = PONTO_POR_ID.get(corpo.purpose);
   if (!ponto) return fail("ponto_desconhecido", `"${corpo.purpose}" não é um ponto do sistema`, 404);
@@ -396,6 +495,8 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     return fail("invalid_body", t("corpo inválido"), 422, { details: parsed.error.issues });
   }
   const corpo = parsed.data;
+  const desligado = await provedorDesligado(corpo.provider);
+  if (desligado) return desligado;
 
   const db = await createClient();
 
@@ -508,6 +609,17 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     padrao: { provider: corpo.provider, defaultModel: corpo.default_model },
     avisos,
   });
+}
+
+/**
+ * O Zod já recusou o provedor que o sistema não conhece; aqui cai o que ele
+ * conhece mas esta instalação desligou (a assinatura do ChatGPT, com o módulo
+ * `login_codex` fora). Sem isto, um PUT/PATCH direto gravava a assinatura num
+ * ponto ou no padrão que a tela nem oferece.
+ */
+async function provedorDesligado(provider: string): Promise<Response | null> {
+  if (!(await provedorDesligadoNaInstalacao(createAdminClient(), provider))) return null;
+  return fail("provedor_desligado", MENSAGEM_PROVEDOR_DESLIGADO, 422);
 }
 
 function instalacaoTemChaveDeIa(): boolean {

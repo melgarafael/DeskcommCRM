@@ -34,6 +34,14 @@ export interface EtapaEditavel extends EtapaDoMapa {
    * de nome/papel/ordem deste arquivo nunca a leem — quem lê é a previsão.
    */
   win_probability?: number | null;
+  /**
+   * Janela de "esfriando" em horas (`crm_stages.expected_duration_hours`), a
+   * coluna que o radar lê (`resolveStageWindow`). `null` = a etapa nunca
+   * configurou e vale o padrão de 24 h/72 h. Opcional pela mesma razão do
+   * campo acima: as regras deste arquivo não a decidem — quem decide é a
+   * validação de 1 a 8760, em `validarJanelaDeEsfriamento`.
+   */
+  expected_duration_hours?: number | null;
   slug: string;
   position: number;
   is_archived: boolean;
@@ -104,6 +112,34 @@ export function validarNomeDeEtapa(
     };
   }
 
+  return { ok: true };
+}
+
+/** A janela de "esfriando" aceita, em horas: de uma hora a um ano. */
+export const JANELA_MIN_H = 1;
+export const JANELA_MAX_H = 8760;
+
+/**
+ * Recusa a janela de esfriamento que o radar não saberia interpretar.
+ *
+ * A coluna é `crm_stages.expected_duration_hours numeric`, SEM CHECK — a
+ * migration que colocaria o `between 1 and 8760` ficou fora deste escopo, então
+ * esta função e o Zod das rotas são a ÚNICA rede antes do banco. Fora da faixa
+ * o problema é real em duas direções: `0` ou negativo faz o radar nunca
+ * esfriar (todo lead eternamente "em dia"), e um número enorme empurra a
+ * janela crítica para anos — alarme que ninguém nunca vê, que é o mesmo
+ * defeito dos alarmes falsos que esta issue veio consertar.
+ *
+ * `null` não passa por aqui: é o valor que LIMPA a configuração e volta ao
+ * padrão de 24 h/72 h, e limpar é sempre legítimo.
+ */
+export function validarJanelaDeEsfriamento(horas: number): Resultado {
+  if (!Number.isInteger(horas) || horas < JANELA_MIN_H || horas > JANELA_MAX_H) {
+    return {
+      ok: false,
+      erro: `A janela de esfriamento vai de ${JANELA_MIN_H} a ${JANELA_MAX_H} horas (uma hora a um ano).`,
+    };
+  }
   return { ok: true };
 }
 

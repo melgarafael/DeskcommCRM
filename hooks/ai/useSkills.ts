@@ -4,6 +4,18 @@ import { apiClient } from "@/lib/api/client";
 import { ApiError, type ApiErrorBody } from "@/lib/api/types";
 import { randomId } from "@/lib/random-id";
 
+export interface ComparativoSkill {
+  descricao_mudou: boolean;
+  matcher_mudou: boolean;
+  any_adicionadas: string[];
+  any_removidas: string[];
+  corpo_mudou: boolean;
+  linhas_adicionadas: number;
+  linhas_removidas: number;
+  mudou_em: Array<"descricao" | "matcher" | "corpo">;
+  resumo: string;
+}
+
 export interface InstalledSkill {
   name: string;
   description: string;
@@ -11,6 +23,8 @@ export interface InstalledSkill {
   source: "manual" | "catalog";
   /** True quando o catálogo publicou versão nova depois da cópia da org (só p/ source 'catalog'). */
   versao_nova_catalogo: boolean;
+  /** Comparativo (o que mudou) entre a cópia da org e a versão nova do catálogo; null quando não há versão nova. */
+  comparativo: ComparativoSkill | null;
   updated_at: string;
 }
 export interface CatalogSkill {
@@ -35,8 +49,10 @@ export interface SkillComCorpo {
   matcher: SkillMatcher;
   version_id: string;
   updated_at?: string;
-  /** Skill de pacote (.zip com arquivos): o editor avisa e não salva — o PUT devolve 409. */
+  /** Skill de pacote (.zip com arquivos): o texto é editável e o PUT herda manifesto + arquivos na versão nova (#2047). */
   tem_arquivos_do_pacote?: boolean;
+  /** Paths do manifesto (`references/` e `assets/`) — a UI mostra como somente leitura. */
+  arquivos_do_pacote?: string[];
 }
 
 export interface SalvarSkillBody {

@@ -26,6 +26,7 @@ import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
@@ -75,6 +76,13 @@ export async function POST(req: NextRequest): Promise<Response> {
   };
   const numeros: number[] = [];
 
+  // A MOEDA VEM DA ORGANIZAÇÃO, lida UMA vez para o lote inteiro — cada linha
+  // nasce na mesma unidade que a organização declarou. Sem isto a comanda
+  // nascia em BRL (default `'BRL'` de `sales.currency`) em toda organização
+  // que opera em euro, e o faturamento em lote escrevia a venda no bloco BRL
+  // do relatório (#2160). O corpo nem declara `currency`: o Zod descarta.
+  const moeda = await moedaDaOrganizacao(supabase, org);
+
   for (const ag of agendamentos ?? []) {
     const tipo = Array.isArray(ag.calendar_event_types)
       ? ag.calendar_event_types[0]
@@ -100,6 +108,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         appointment_id: ag.id,
         attendant_user_id: authz.user.id,
         created_by_user_id: authz.user.id,
+        currency: moeda,
       })
       .select("id, number")
       .single();

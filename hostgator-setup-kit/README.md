@@ -13,7 +13,7 @@ Este kit sobe o **DeskcommCRM** no seu servidor VPS da HostGator. Você tem dois
 > ```
 
 > **Outra hospedagem?** O kit é feito para a HostGator (é a parceria do projeto e o caminho
-> testado de ponta a ponta), mas roda em qualquer VPS **x86_64/amd64** com Docker. Se a sua já vem com um
+> testado de ponta a ponta), mas roda em qualquer VPS **x86_64/amd64 ou ARM64/aarch64** com Docker. Se a sua já vem com um
 > **proxy reverso próprio** ocupando as portas 80/443 — caso de Hostinger, Coolify, Dokploy
 > e CapRover —, o instalador **detecta isso sozinho** e publica o CRM através dele, em vez
 > de tentar subir um Caddy que não caberia. Ver
@@ -104,9 +104,11 @@ Owner/Admin. Não dá para hospedar vários clientes numa conta só.
 
 ## Requisitos do VPS
 
-- **Arquitetura x86_64/amd64.** As imagens oficiais publicadas atualmente são `linux/amd64`.
-  VPS ARM64/aarch64 ainda não são suportadas pelo kit; use uma VPS x86_64/amd64 enquanto
-  não houver imagens multi-arquitetura.
+- **Arquitetura x86_64/amd64 ou ARM64/aarch64.** As imagens DeskcommCRM são publicadas para
+  `linux/amd64` e `linux/arm64`; o instalador seleciona a variante oficial ARM64 NOWEB do WAHA.
+  O modo com Supabase self-hosted na mesma VPS também funciona em ARM64: a versão upstream
+  fixada pelo kit (`self-hosted/v0.8.1`) e as imagens dos seus 11 serviços têm manifestos
+  `linux/arm64`. Ao atualizar `SUPABASE_REF`, confira de novo os manifestos de todas as imagens.
 - **4 GB RAM recomendados.** A imagem é pré-buildada, então o servidor não compila nada e a
   stack SOBE com 2 GB — mas operar é outra coisa: são 7 contêineres, e o WAHA consome
   ~150 MB por sessão de WhatsApp além de ~300 MB de overhead do Node. Com 2 GB você roda
@@ -150,6 +152,30 @@ declare `REVERSE_PROXY=traefik` no `.env` — aí a escolha é sua e ele segue s
 | `reset-mfa.sh` | Remove o MFA de um usuário travado |
 | `healthcheck.sh` | Diagnóstico dos serviços |
 
+> ⚠️ **Restaurar um backup: o `restore.sh` só restaura num banco VAZIO.** O dump do
+> `backup.sh` sai com `--no-owner --no-privileges` e **sem `--clean`**: ele não tem `DROP` nem
+> `TRUNCATE`, e os `CREATE TABLE` não têm `IF NOT EXISTS`. Antes de pedir a confirmação, o
+> `restore.sh` conta as tabelas de `public` e, se o banco já tem as tabelas do sistema, **para
+> com mensagem própria** — nada é alterado e o `psql` nem é chamado. Ou seja: hoje ele **não**
+> volta o backup por cima da instalação que está em uso (isso está em aberto na issue #2120).
+>
+> O caminho que funciona hoje é restaurar num **projeto Supabase novo, em que o instalador
+> ainda não rodou** (o instalador cria as tabelas, e aí o restore recusa), e depois apontar a
+> instalação para esse projeto — trocando no `.env` a conexão e as chaves do Supabase pelas do
+> projeto novo. Medimos a parte do restore num Supabase recém-criado (`rc=0`, 110 tabelas); a
+> troca do `.env` não foi medida. Se não tiver segurança para fazer essa troca, ou se o seu
+> Supabase roda no próprio servidor (single-server, onde não há projeto novo para criar),
+> **peça ajuda antes**.
+>
+> O `psql` roda **sem** `-v ON_ERROR_STOP=1 --single-transaction`. Essas flags faziam o
+> restore falhar também em **banco vazio**: o dump traz os schemas internos (`auth`,
+> `storage`, `realtime`, `vault`) e extensões como `pg_net`, que já existem num Supabase
+> novo — medido em Supabase novo, Postgres 17 puro e database nova, as três deram `rc=3` e
+> 0 tabelas; sem elas, nos dois primeiros, o mesmo dump entrou com `rc=0` e 110 tabelas. Sem a
+> transação única não há rollback: em falha fatal do `psql`, confira o estado do banco antes
+> de repetir. (Gerar o dump com `--clean --if-exists` mudaria o formato dele — decisão do
+> mantenedor, issue #2120.)
+
 ## Automações e webhooks
 
 O `install.sh` (e o `update.sh`, a cada atualização) já ativa sozinho um cron que roda todo minuto e "puxa" a fila de eventos pendentes (`/api/v1/cron/event-log-drain`) — é isso que faz uma automação disparar de verdade no seu servidor (ex.: enviar uma mensagem de WhatsApp quando um pedido muda de status). **Sem esse cron, as automações ficam paradas na fila e nunca rodam** — é um requisito, não um extra.
@@ -163,6 +189,52 @@ source .env && curl -s -H "Authorization: Bearer ${INTERNAL_SECRET}" "${NEXT_PUB
 ```
 
 Resposta esperada: `{"data":{"scanned":N,...}}` (N pode ser 0 se não houver eventos na fila — o importante é receber esse formato, não um erro de autenticação ou de conexão).
+
+## CA do Supabase e TLS verificado (issue #829)
+
+Quem exige verificação TLS (`sslmode=verify-full`, Node com `rejectUnauthorized: true`) falha com
+`SELF_SIGNED_CERT_IN_CHAIN` na conexão com o pooler do Supabase: a cadeia dele não está na trust
+store padrão do servidor. A correção **nunca é desligar a verificação** — é declarar a CA oficial
+com UMA chave no `.env`:
+
+```bash
+mkdir -p /root/certs
+curl -fsSL -o /root/certs/prod-ca-2021.crt \
+  https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt
+```
+
+```bash
+# no .env do projeto
+SUPABASE_SSL_ROOT_CERT=/root/certs/prod-ca-2021.crt
+```
+
+O valor é o caminho **desta máquina (host)**, fora do checkout. Com a chave declarada e o arquivo
+existindo, o kit entrega a mesma CA aos três consumidores da issue:
+
+| consumidor | como recebe |
+|---|---|
+| runtime (`app`, `worker`, `scheduler`) | overlay `docker-compose.supabase-ca.yml` — volume `:ro` + `NODE_EXTRA_CA_CERTS`; o `dc()` do kit só acrescenta o overlay com a CA pronta |
+| clientes Postgres efêmeros (`docker run postgres:17-alpine psql`, `pg_dump`, baseline, backup/restore) | `pg_container()` monta o arquivo `:ro` e exporta `PGSSLROOTCERT` |
+| diagnóstico | `healthcheck.sh` roda `select 1` com `sslmode=verify-full` + `sslrootcert` |
+
+Confira com o diagnóstico do kit:
+
+```bash
+bash hostgator-setup-kit/healthcheck.sh
+# com a CA:  ✓ TLS do banco verificado (sslmode=verify-full com a CA de SUPABASE_SSL_ROOT_CERT)
+# sem ela:   (opcional) SUPABASE_SSL_ROOT_CERT não declarada no .env — nada a verificar.
+```
+
+Idempotente (pode rodar quantas vezes quiser), sem segredo em log (o kit nunca imprime a connection
+string), e a verificação de cadeia e de hostname continua ligada nos dois sentidos. A instalação que
+não declara a chave continua com o comportamento de antes; o healthcheck só mostra uma linha
+informativa, e no single-server diz que o passo não se aplica.
+
+Um efeito para quem **declara** a CA: na libpq, `PGSSLROOTCERT` apontando para um arquivo que existe
+faz `sslmode=require` se comportar como `verify-ca`. Nos psql do kit (instalação, atualização,
+backup), uma connection string com `require` passa a verificar a cadeia — e uma CA errada faz esses
+comandos falharem fechado. Sem `sslmode` na string, vale o padrão da libpq (`prefer`), que não
+verifica certificado — e isso não muda.
 
 ## Suporte
 

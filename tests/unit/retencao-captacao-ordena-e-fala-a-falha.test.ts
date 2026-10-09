@@ -57,7 +57,7 @@ vi.mock("@sentry/nextjs", () => ({
 /** O que o DELETE da captação devolve nesta rodada. */
 let respostaDelete: { data: { id: string }[]; error: { message: string } | null };
 /** As linhas que a busca do arquivo forense enxerga (o outro par da rodada). */
-let linhasDoArquivo: { id: string }[] = [];
+let linhasDoArquivo: { id: string; received_at?: string }[] = [];
 /** O que a poda mandou ao banco, na ordem em que mandou. */
 let ordensPedidas: { coluna: string }[] = [];
 /** O tamanho do lote que chegou no `limit`. */
@@ -99,6 +99,9 @@ vi.mock("@/lib/supabase/admin", () => ({
         select: () => busca,
         is: () => busca,
         lt: () => busca,
+        // `lte`: desde o #2324 o esvaziamento corta por DATA (o `received_at` da
+        // última linha do lote), não por lista de ids na URL.
+        lte: () => busca,
         order: () => busca,
         update: () => busca,
         in: () => busca,
@@ -254,7 +257,7 @@ describe("o handler do cron — a falha da captação sai pelo mesmo canal das i
     // que o `data-retention` e o `media-retention` devolvem quando uma das
     // suas podas falha.
     await banco({ error: { message: "connection reset by peer" } });
-    linhasDoArquivo = [{ id: "e1" }];
+    linhasDoArquivo = [{ id: "e1", received_at: "2026-01-01T00:00:00.000000+00:00" }];
     const resposta = await chamarCron();
     expect(resposta.status).toBe(500);
     const corpo = (await resposta.json()) as {

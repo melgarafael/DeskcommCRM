@@ -24,8 +24,14 @@ import { agruparPerdas, type PerdaLinha } from "@/lib/metrics/perdas";
 export const dynamic = "force-dynamic";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-/** Teto da leitura: acima disso o relatório diz que está cortado, não mente. */
-const LIMITE = 5000;
+/**
+ * Teto da leitura: até 5 páginas de 1000, acima disso o relatório diz que está
+ * cortado. PAGINADO, não `.limit(5000)`: o PostgREST corta toda resposta em
+ * `max_rows` (1000, `supabase/config.toml`) sem erro nenhum — um `.limit`
+ * maior que isso devolve 1000 linhas caladas e o `truncado` nunca ligava.
+ */
+const TAMANHO_DA_PAGINA = 1000;
+const PAGINAS_MAXIMAS = 5;
 
 const querySchema = z.object({
   from: z.string().datetime({ offset: true }).optional(),
@@ -64,23 +70,42 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const supabase = createAdminClient();
 
-  const [perdas, funis, etapas] = await Promise.all([
-    supabase
+  const [funis, etapas] = await Promise.all([
+    supabase.from("crm_pipelines").select("id, settings").eq("organization_id", activeOrg.orgId),
+    supabase.from("crm_stages").select("id, name").eq("organization_id", activeOrg.orgId),
+  ]);
+
+  if (funis.error) return fail("internal_error", funis.error.message, 500, { requestId });
+  if (etapas.error) return fail("internal_error", etapas.error.message, 500, { requestId });
+
+  // Ordem DESCENDENTE: se o teto cortar, sobra o período mais RECENTE. O fim é
+  // provado pelo `count` exato ou por página VAZIA — nunca por página curta
+  // (`lib/agenda/protecao-followup.ts`): numa instalação com `max_rows`
+  // menor que a página, página curta não é fim.
+  const linhas: PerdaLinha[] = [];
+  let totalNaJanela: number | null = null;
+  let acabou = false;
+  for (let pagina = 0; pagina < PAGINAS_MAXIMAS && !acabou; pagina++) {
+    const inicio = linhas.length;
+    const { data, error, count } = await supabase
       .from("crm_leads")
-      .select("lost_reason, lost_from_stage_id, value_cents, currency, pipeline_id")
+      .select(
+        "lost_reason, lost_from_stage_id, value_cents, currency, pipeline_id",
+        pagina === 0 ? { count: "exact" } : undefined,
+      )
       .eq("organization_id", activeOrg.orgId)
       .eq("status", "lost")
       .gte("closed_at", from.toISOString())
       .lt("closed_at", to.toISOString())
       .order("closed_at", { ascending: false })
-      .limit(LIMITE),
-    supabase.from("crm_pipelines").select("id, settings").eq("organization_id", activeOrg.orgId),
-    supabase.from("crm_stages").select("id, name").eq("organization_id", activeOrg.orgId),
-  ]);
-
-  if (perdas.error) return fail("internal_error", perdas.error.message, 500, { requestId });
-  if (funis.error) return fail("internal_error", funis.error.message, 500, { requestId });
-  if (etapas.error) return fail("internal_error", etapas.error.message, 500, { requestId });
+      .order("id", { ascending: false })
+      .range(inicio, inicio + TAMANHO_DA_PAGINA - 1);
+    if (error) return fail("internal_error", error.message, 500, { requestId });
+    if (pagina === 0) totalNaJanela = count;
+    const lote = (data ?? []) as PerdaLinha[];
+    linhas.push(...lote);
+    acabou = lote.length === 0 || (totalNaJanela !== null && linhas.length >= totalNaJanela);
+  }
 
   const settingsPorFunil: Record<string, unknown> = {};
   for (const funil of funis.data ?? []) settingsPorFunil[funil.id] = funil.settings;
@@ -88,14 +113,13 @@ export async function GET(req: NextRequest): Promise<Response> {
   const nomesDasEtapas: Record<string, string> = {};
   for (const etapa of etapas.data ?? []) nomesDasEtapas[etapa.id] = etapa.name;
 
-  const linhas = (perdas.data ?? []) as PerdaLinha[];
   const relatorio = agruparPerdas(linhas, { settingsPorFunil, etapas: nomesDasEtapas });
 
   return ok(
     {
       janela: { from: from.toISOString(), to: to.toISOString() },
       ...relatorio,
-      truncado: linhas.length >= LIMITE,
+      truncado: !acabou,
     },
     { requestId },
   );

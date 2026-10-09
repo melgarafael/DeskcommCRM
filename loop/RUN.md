@@ -138,7 +138,7 @@ profundidade).
    bloqueia M/D sem `DESKCOMM_GOV_INVARIANTS_EDIT=1`. Adição (A) passa livre —
    é assim que a suíte cresce. O flip test.fails→normal é a exceção documentada.
 7. **Migration em tripla — enforcement físico**: `check-migration-triple.sh` exige
-   baseline.sql + MANIFEST.md no mesmo commit da migration nova e NNNN inédito em
+   baseline.sql + `-- manifest:` no .sql no mesmo commit da migration nova e NNNN inédito em
    todas as branches locais (a cadeia `vendaval/F2-*` tem migrations não mergeadas).
 8. **Permissões mínimas no headless**: `--permission-mode acceptEdits` +
    `--allowedTools` explícito (nada de `--dangerously-skip-permissions` numa

@@ -151,14 +151,17 @@ describe("venda sem valor no Google", () => {
     mocks.credencial.mockResolvedValue({ ok: false, motivo: "sem_conexao" });
     expect(await conversaoDeVendaHandler.handle(row)).toMatchObject({ detail: "sem_valor" });
   });
-  it("a Meta segue exigindo valor, antes de ler a credencial", async () => {
+  // A decisão da Meta sem valor espera a credencial (#2076: a conversa só é
+  // lida quando a venda tem para onde ir). O modo de valor do Google não vale
+  // para ela nem quando a credencial o traz.
+  it("a Meta segue exigindo valor, mesmo com um modo de valor do Google na credencial", async () => {
     mocks.atribuicao.mockResolvedValue({
       temAtribuicao: true,
       atribuicao: { plataforma: "meta_ads", cliqueDeOrigem: "ctwa", telefone: null },
     });
     mocks.credencial.mockResolvedValue(credencialGoogle("quando_houver"));
     expect(await conversaoDeVendaHandler.handle(row)).toMatchObject({ detail: "sem_valor" });
-    expect(mocks.credencial).not.toHaveBeenCalled();
+    expect(mocks.enviar).not.toHaveBeenCalled();
   });
 });
 

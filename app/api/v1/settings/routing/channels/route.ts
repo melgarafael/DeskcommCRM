@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(): Promise<Response> {
   const requestId = randomUUID();
-  const auth = await requireRole("manager", { requestId, resource: "settings_routing", allowPlatformAdmin: true });
+  const auth = await requireRole("manager", { requestId, resource: "settings_routing", allowPlatformAdmin: "leitura" });
   if (!auth.ok) return auth.response;
   if (await mfaEmDivida()) return fail("mfa_required", "Confirme a verificação em duas etapas.", 403, { requestId });
   try {

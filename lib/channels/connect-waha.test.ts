@@ -11,7 +11,7 @@ const channel = { id: key, organization_id: org, waha_session_name: "owned", sta
  * `STARTING` antes do `returning`, então o status que chega ao código de
  * conexão NUNCA é o status real do canal. `phone_number`, sim.
  */
-function fixture(linha: Partial<typeof channel> & { phone_number?: string | null } = {}) {
+function fixture(linha: Partial<typeof channel> & { phone_number?: string | null; metadata?: Record<string, unknown> } = {}) {
   const finishes: Record<string, unknown>[] = [];
   const noBanco = { ...channel, phone_number: null as string | null, ...linha };
   const reservado = { ...noBanco, status: "STARTING" };
@@ -221,5 +221,30 @@ describe("I1: conectar/reativar ressincroniza o filtro de grupos", () => {
     expect(filtros).toContainEqual(["organization_id", org]);
     expect(f.transport.startExistingSession.mock.invocationCallOrder[0])
       .toBeLessThan(definirRecebimentoDeGrupos.mock.invocationCallOrder[0]!);
+  });
+});
+
+describe("limite de números do plano", () => {
+  it("⭐ o PT402 da reserva sobe CRU — a rota precisa da mensagem com o número", async () => {
+    // O gatilho de canais (spec cobrança §5) recusa de dentro de
+    // `fn_reserve_channel_connection`. Embrulhado em ChannelConnectionError, o
+    // número se perdia e a tela dizia "Não foi possível concluir a conexão".
+    const f = fixture();
+    const recusa = { code: "PT402", message: "limite_do_plano:canais:1" };
+    vi.mocked(f.db.rpc).mockImplementationOnce((async () => ({ data: null, error: recusa })) as never);
+    await expect(connectWahaChannel(f.db, f.db, f.transport, f.input)).rejects.toBe(recusa);
+    expect(f.transport.createSession).not.toHaveBeenCalled();
+  });
+});
+
+describe("a opção por conexão do acervo (#999)", () => {
+  it("pede o store na criação SÓ quando o canal tem a opção ligada", async () => {
+    const ligado = fixture({ metadata: { guardar_historico: true } });
+    await connectWahaChannel(ligado.db, ligado.db, ligado.transport, ligado.input);
+    expect(ligado.transport.createSession).toHaveBeenCalledWith("owned", { guardarHistorico: true });
+
+    const desligado = fixture();
+    await connectWahaChannel(desligado.db, desligado.db, desligado.transport, desligado.input);
+    expect(desligado.transport.createSession).toHaveBeenCalledWith("owned");
   });
 });

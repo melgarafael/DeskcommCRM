@@ -43,6 +43,7 @@ const TABELAS = [
   "meta_ads_landing_pages",
   "meta_ads_click_refs",
   "google_ads_conversion_rules",
+  "meta_ads_conversion_rules",
   "ad_tracking_links",
 ] as const;
 

@@ -17,7 +17,13 @@
 #    tests/unit/cron-routes-scheduled.test.ts; esta aqui pega o caso em que o
 #    arquivo GERADO diverge da lista escrita, que aquele teste não vê.)
 #
-# 3. FALHA FECHADA SEM SEGREDO. Sem INTERNAL_SECRET os crons responderiam 401 e
+# 3. O SEGREDO NÃO ENTRA NA LINHA DE COMANDO. Cada linha do crontab vira o
+#    argumento de um `/bin/sh -c`, e argumento de processo é visível no `ps` do
+#    host a qualquer usuário local enquanto o job roda (o curl vive até o `-m`).
+#    O header vai num arquivo 600 dentro de um diretório 700, e o curl o lê com
+#    `-H @arquivo` — o mesmo padrão do `.env.cron-drain` do kit.
+#
+# 4. FALHA FECHADA SEM SEGREDO. Sem INTERNAL_SECRET os crons responderiam 401 e
 #    nada aconteceria — sem erro, sem log, sem sintoma. O script recusa subir.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
@@ -44,10 +50,10 @@ rodar() { # $1 = valor de INTERNAL_SECRET ("" = ausente)
   local out="$TMP/crontab"
   : > "$out"
   if [ -z "$1" ]; then
-    env -u INTERNAL_SECRET PATH="$TMP/bin:$PATH" CRONTAB_PATH="$out" \
+    env -u INTERNAL_SECRET PATH="$TMP/bin:$PATH" CRONTAB_PATH="$out" CRON_AUTH_DIR="$TMP/auth" \
       sh "$ENTRYPOINT" >"$TMP/saida" 2>&1
   else
-    env INTERNAL_SECRET="$1" PATH="$TMP/bin:$PATH" CRONTAB_PATH="$out" \
+    env INTERNAL_SECRET="$1" PATH="$TMP/bin:$PATH" CRONTAB_PATH="$out" CRON_AUTH_DIR="$TMP/auth" \
       sh "$ENTRYPOINT" >"$TMP/saida" 2>&1
   fi
   echo $?
@@ -63,6 +69,23 @@ check "as $ROTAS_CODIGO rotas do código estão no crontab (achei $ROTAS_CRONTAB
 check "uma linha por cron, nenhuma vazia" \
   test "$(grep -c . "$TMP/crontab")" -eq "$(wc -l < "$TMP/crontab" | tr -d ' ')"
 
+echo "scheduler: o segredo fica fora da linha de comando dos jobs"
+MARCADOR='marcador-do-segredo-7f3a9c'
+RC="$(rodar "$MARCADOR")"
+check "gerou o crontab" test "$RC" -eq 0
+check "o crontab tem linhas (controle: o grep abaixo não passa por vacuidade)" \
+  test "$(grep -c 'api/v1/cron/' "$TMP/crontab")" -gt 0
+check "nenhuma linha do crontab contém o segredo" \
+  test "$(grep -cF "$MARCADOR" "$TMP/crontab")" -eq 0
+check "toda linha lê o header do arquivo (-H @)" \
+  test "$(grep -c "curl .*-H '@$TMP/auth/header'" "$TMP/crontab")" -eq "$(grep -c . "$TMP/crontab")"
+check "o diretório do header é 700" \
+  sh -c "ls -ld '$TMP/auth' | grep -q '^drwx------'"
+check "o arquivo do header é 600" \
+  sh -c "ls -l '$TMP/auth/header' | grep -q '^-rw-------'"
+check "o arquivo tem exatamente o header" \
+  test "$(cat "$TMP/auth/header" 2>/dev/null)" = "Authorization: Bearer $MARCADOR"
+
 echo "scheduler: o segredo atravessa o sh do crond intacto"
 # Os três caracteres que quebram interpolação ingênua, de uma vez só.
 HOSTIL='seg`whoami`redo$HOME-com'\''aspa-e-"aspas"'
@@ -72,7 +95,8 @@ check "gerou o crontab mesmo com segredo cheio de metacaractere" test "$RC" -eq 
 # A medição que importa: pegar a PRIMEIRA linha, tirar o prefixo de agendamento,
 # e mandar um `sh` de verdade avaliá-la — exatamente o que o crond faz. O `curl`
 # é dublado por um script que imprime o header que recebeu.
-printf '#!/bin/sh\nwhile [ $# -gt 0 ]; do [ "$1" = "-H" ] && { printf "%%s" "$2"; exit 0; }; shift; done\nexit 1\n' > "$TMP/bin/curl"
+# `-H @arquivo` é lido como o curl lê: o conteúdo do arquivo é o header.
+printf '#!/bin/sh\nwhile [ $# -gt 0 ]; do [ "$1" = "-H" ] && { case "$2" in @*) cat "${2#@}";; *) printf "%%s" "$2";; esac; exit 0; }; shift; done\nexit 1\n' > "$TMP/bin/curl"
 chmod +x "$TMP/bin/curl"
 LINHA="$(head -1 "$TMP/crontab")"
 COMANDO="${LINHA#* * * * * }"                 # tira o agendamento de 5 campos
@@ -88,15 +112,44 @@ else
   fail=1
 fi
 # Controle negativo do próprio instrumento: se a crase tivesse sido executada, o
-# crontab conteria a saída de `whoami` no lugar dela, não o texto literal.
-check "a crase NÃO foi executada (está literal no arquivo)" \
-  grep -q 'whoami' "$TMP/crontab"
+# arquivo conteria a saída de `whoami` no lugar dela, não o texto literal.
+check "a crase NÃO foi executada (está literal no arquivo do header)" \
+  grep -q 'whoami' "$TMP/auth/header"
+# Só o trecho ANTES da aspa simples: o escape antigo reescrevia a aspa, e o
+# valor inteiro nunca casaria — o check passaria por vacuidade.
+check "o segredo hostil também não está no crontab" \
+  test "$(grep -cF 'seg`whoami`redo$HOME-com' "$TMP/crontab")" -eq 0
 
 echo "scheduler: sem INTERNAL_SECRET, recusa em vez de subir mudo"
 RC="$(rodar '')"
 check "sai com código 1" test "$RC" -eq 1
 check "explica o motivo na saída" grep -q "INTERNAL_SECRET" "$TMP/saida"
 check "não deixou crontab pela metade" test ! -s "$TMP/crontab"
+
+echo "scheduler: uma falha de cron não some em silêncio (#1109)"
+# Reexecuta o entrypoint (o bloco acima deixou o crontab vazio) e troca o
+# `curl` por um dublê que FALHA como um 401 de verdade: `-f` sai 22 e `-S`
+# imprime o status para o STDERR.
+RC="$(rodar 'segredo-simples')"
+check "gerou o crontab de novo" test "$RC" -eq 0
+printf '#!/bin/sh\necho "curl: (22) The requested URL returned error: 401" >&2\nexit 22\n' > "$TMP/bin/curl"
+chmod +x "$TMP/bin/curl"
+LINHA_FALHA="$(grep -m1 'sync-model-catalog' "$TMP/crontab")"
+# Roda a linha INTEIRA, exatamente como o `sh -c` do crond roda — sem cortar o
+# `||` que é o objeto deste bloco.
+if [ -n "$LINHA_FALHA" ]; then
+  PATH="$TMP/bin:$PATH" sh -c "${LINHA_FALHA#* * * * * }" >"$TMP/falha.out" 2>"$TMP/falha.err"
+else
+  printf 'sem linha de sync-model-catalog no crontab\n' >"$TMP/falha.err"
+fi
+check "o STDOUT continua descartado (o corpo da resposta não vaza pro log)" \
+  test ! -s "$TMP/falha.out"
+check "o status do 401 chega ao STDERR (era isto que o 2>&1 engolia)" \
+  grep -q 'returned error: 401' "$TMP/falha.err"
+check "a mensagem nomeia a rota que falhou" \
+  grep -q 'sync-model-catalog' "$TMP/falha.err"
+check "a mensagem diz o que o operador deve conferir" \
+  grep -q 'INTERNAL_SECRET' "$TMP/falha.err"
 
 if [ "$fail" -eq 0 ]; then
   echo "OK — todas as provas passaram."

@@ -142,9 +142,25 @@ describe("loadAuthUser — falha de permissão não vira 'sem organização'", (
         // `null`, e não um padrão inventado no meio do caminho.
         currency: null,
         country: null,
+        // Status e tipo da suspensão da organização (spec da cobrança §4):
+        // mesma carona, mesmo contrato — sem a coluna, `null`.
+        org_status: null,
+        suspended_kind: null,
         interface_settings: { preset: "completa" },
       },
     ]);
+  });
+
+  it("traz status e tipo de suspensão da org e o scope do platform admin", async () => {
+    consultas.platformAdmins = { data: { user_id: "u1", scope: "support_readonly", revoked_at: null }, error: null };
+    consultas.memberships = {
+      data: [{ organization_id: "o1", role: "admin", organizations: { display_name: "Acme", status: "suspended", suspended_kind: "cobranca" } }],
+      error: null,
+    };
+    const u = await loadAuthUser();
+    expect(u?.is_platform_admin).toBe(true);
+    expect(u?.platform_admin_scope).toBe("support_readonly");
+    expect(u?.organizations[0]).toMatchObject({ org_status: "suspended", suspended_kind: "cobranca" });
   });
 
   /**
@@ -165,6 +181,7 @@ describe("loadAuthUser — falha de permissão não vira 'sem organização'", (
             timezone: "Europe/Lisbon",
             currency: "EUR",
             country: "PT",
+            status: "active",
           },
         },
       ],

@@ -25,16 +25,6 @@ fi
 # encontrasse no código o definiria no `.env` e não veria efeito.
 APP_ORIGIN="http://app:3000"
 
-# O crond executa cada linha por `/bin/sh -c`, então o segredo é REAVALIADO pelo
-# shell na hora de disparar. Interpolá-lo cru dentro de aspas duplas fazia com
-# que um `$` no valor virasse expansão de variável (o header sairia truncado, e
-# todo cron responderia 401 em silêncio) e uma crase virasse substituição de
-# comando — execução arbitrária a cada minuto. Medido com um segredo hostil: a
-# versão com aspas duplas entregava `segrafaelmelgacoredo/Users/rafaelmelgaco…`,
-# com o `whoami` EXECUTADO. Aqui o valor vai entre aspas SIMPLES, com as aspas
-# simples internas escapadas — dentro delas o sh não interpreta nada.
-SEGREDO_SEGURO="$(printf '%s' "$INTERNAL_SECRET" | sed "s/'/'\\\\''/g")"
-
 # minuto|timeout|caminho — uma linha por cron. O caminho vai COMPLETO de
 # propósito: o literal `api/v1/cron/<rota>` é o contrato que
 # tests/unit/cron-routes-scheduled.test.ts (e mais dois) leem por grep — esse
@@ -62,7 +52,7 @@ CRONS="
 * * * * *|25|api/v1/cron/followup-flow-worker
 * * * * *|45|api/v1/cron/event-log-drain
 * * * * *|25|api/v1/cron/routing-worker
-* * * * *|25|api/v1/cron/recover-stuck-messages
+*/5 * * * *|25|api/v1/cron/recover-stuck-messages
 * * * * *|25|api/v1/cron/proposta-travada
 * * * * *|45|api/v1/cron/webhook-replay
 */5 * * * *|25|api/v1/cron/storage-redaction?limit=50
@@ -111,6 +101,10 @@ CRONS="
 # repetição enquanto a âncora não mudar. Minuto 37, e não o 23 da data do funil:
 # as duas varrem crm_leads e não devem disputar a mesma batida num self-host pequeno.
 37 * * * *|60|api/v1/cron/lead-time-triggers
+# A COBRANCA DOS SEUS CLIENTES. De hora em hora: a reativacao chega pelo aviso
+# do provedor, em segundos, e a hora so pesa na regua, que conta em dias. Minuto
+# 43, longe das outras varreduras horarias. Chave desligada: sai na hora.
+43 * * * *|120|api/v1/cron/cobranca
 # O canal mudo (doc 11, decisão B): varredura de banco, sem rede, com régua em
 # DIAS. Diária e de madrugada porque o estado que ela lê muda em dias — de 5 em
 # 5 minutos seriam 288 varreduras para nada, e o aviso chegaria na mesma hora.
@@ -136,11 +130,39 @@ CRONS="
 DESTINO="${CRONTAB_PATH:-/etc/crontabs/root}"
 
 umask 077
+# O segredo vai num ARQUIVO, nunca na linha do crontab. Cada linha vira o
+# argumento de um `/bin/sh -c`, e argumento de processo aparece no `ps` do host
+# para qualquer usuário local enquanto o job roda — e o curl vive até o `-m`.
+# O curl lê o header com `-H @arquivo` (curl ≥ 7.55), o mesmo padrão do
+# `.env.cron-drain` do kit. De brinde, o valor deixa de passar pelo sh do crond:
+# `$`, crase e aspas no segredo não precisam mais de escape nenhum.
+# CRON_AUTH_DIR é ponto de injeção do teste, como o CRONTAB_PATH abaixo.
+AUTH_DIR="${CRON_AUTH_DIR:-/run/deskcomm-cron}"
+AUTH_FILE="$AUTH_DIR/header"
+mkdir -p "$AUTH_DIR"
+chmod 700 "$AUTH_DIR"
+# Com o umask 077 o arquivo nasce 600 desde o primeiro byte; o chmod cobre um
+# arquivo que já existisse de um start anterior.
+printf 'Authorization: Bearer %s\n' "$INTERNAL_SECRET" > "$AUTH_FILE"
+chmod 600 "$AUTH_FILE"
+
 : > "$DESTINO"
 echo "$CRONS" | while IFS='|' read -r quando timeout rota; do
   [ -n "$rota" ] || continue
-  printf '%s curl -fsS -m%s -H '"'"'Authorization: Bearer %s'"'"' "%s/%s" >/dev/null 2>&1\n' \
-    "$quando" "$timeout" "$SEGREDO_SEGURO" "$APP_ORIGIN" "$rota" >> "$DESTINO"
+  # `>/dev/null` só no STDOUT: o corpo da resposta é grande e não interessa aqui.
+  # O STDERR era o que a redireção antiga (`>/dev/null 2>&1`) engolia junto — e
+  # foi ali que a issue #1109 ficou seis versões invisível: o `sync-model-catalog`
+  # tomava 401 do scheduler todo dia, o `curl -f` saía diferente de zero e o
+  # crontab descartava saída E erro, então o catálogo ficava vazio sem que
+  # ninguém visse um sintoma. Agora o status continua no STDERR do `curl -fsS`
+  # (é o `-S` que o imprime) e, quando o comando falha, a linha acrescenta uma
+  # frase dizendo qual rota falhou e o que conferir — os dois no STDERR, que o
+  # `crond -f` entrega ao `docker logs` do scheduler. Em rodada saudável não há
+  # uma linha a mais: o `||` só dispara em falha.
+  # % é proibido aqui (crontab de vixie trata como início de stdin) e `$`/crase
+  # seriam reavaliados pelo sh do crond — nenhum dos dois aparece na mensagem.
+  printf '%s curl -fsS -m%s -H '"'"'@%s'"'"' "%s/%s" >/dev/null || echo "deskcomm-cron: FALHOU %s — veja o erro do curl logo acima; se for 401 ou 403, o segredo que este scheduler manda não é o que o app enxerga: confira INTERNAL_SECRET/INTERNAL_CRON_SECRET no .env e rode docker compose up -d --force-recreate app scheduler" >&2\n' \
+    "$quando" "$timeout" "$AUTH_FILE" "$APP_ORIGIN" "$rota" "$rota" >> "$DESTINO"
 done
 
 exec crond -f -l 2

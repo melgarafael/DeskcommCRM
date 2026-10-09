@@ -20,8 +20,8 @@ const ACEITE = { em: "2026-09-23T12:00:00.000Z", por: ADMIN };
 
 describe("lerConfigDoJev", () => {
   it("sem nada gravado, desligado em observação", () => {
-    expect(lerConfigDoJev({})).toEqual({ ligado: false, modo: "observacao", aceite: null });
-    expect(lerConfigDoJev(null)).toEqual({ ligado: false, modo: "observacao", aceite: null });
+    expect(lerConfigDoJev({})).toEqual({ ligado: false, modo: "observacao", modo_roteador: "comparacao", aceite: null });
+    expect(lerConfigDoJev(null)).toEqual({ ligado: false, modo: "observacao", modo_roteador: "comparacao", aceite: null });
   });
 
   it("lê o que foi gravado", () => {

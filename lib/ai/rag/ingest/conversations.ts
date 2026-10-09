@@ -21,7 +21,7 @@
 
 import { embedText } from "@/lib/ai/embed";
 import { modeloDeEmbedding, resolverChaveDeEmbedding } from "@/lib/ai/embeddings/chave";
-import { anonymize, detectResidualPii, padroesDePii } from "@/lib/ai/anonymize";
+import { anonymize, detectResidualPii, padroesDaIngestao } from "@/lib/ai/anonymize";
 import { perfilDaOrganizacao } from "@/lib/legal/perfil-do-pais";
 import { chunkText, computeContentHash } from "@/lib/ai/rag/chunker";
 import {
@@ -111,6 +111,7 @@ async function ensureConversationsSource(
 interface ConvRow {
   id: string;
   organization_id: string;
+  contact_id: string;
 }
 
 interface MsgRow {
@@ -128,6 +129,30 @@ function buildTranscript(messages: MsgRow[]): string {
     lines.push(`${speaker}: ${body}`);
   }
   return lines.join("\n");
+}
+
+/**
+ * Tira do lote as conversas de contatos pessoais (spec 21, etapa 9).
+ *
+ * Uma leitura a mais por lote, e não por conversa: os contatos do lote são
+ * poucos (teto `cap`) e a pergunta é uma só.
+ */
+async function semConversasDePessoal(
+  admin: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  convs: ConvRow[],
+): Promise<ConvRow[]> {
+  if (convs.length === 0) return convs;
+  const ids = [...new Set(convs.map((c) => c.contact_id))];
+  const { data } = await admin
+    .from("contacts")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("is_personal", true)
+    .in("id", ids);
+  const pessoais = new Set(((data ?? []) as Array<{ id: string }>).map((c) => c.id));
+  if (pessoais.size === 0) return convs;
+  return convs.filter((c) => !pessoais.has(c.contact_id));
 }
 
 export async function ingestConversationsBatch(
@@ -157,7 +182,7 @@ export async function ingestConversationsBatch(
   // 1. Pull eligible conversations.
   const { data: convRows, error: convErr } = await admin
     .from("conversations")
-    .select("id, organization_id")
+    .select("id, organization_id, contact_id")
     .eq("organization_id", organizationId)
     .eq("usable_for_rag", true)
     .eq("status", "resolved")
@@ -170,7 +195,15 @@ export async function ingestConversationsBatch(
     return { processed: 0, flaggedReview: 0, skipped: 0, embeddingSkipped: false };
   }
 
-  const conversations = (convRows ?? []) as ConvRow[];
+  // Contato pessoal nunca é ingerido (spec 21, etapa 9): a conversa some do
+  // acervo junto com o resto. O lote que já passou continua respondível se
+  // nada for feito — por isso o marcar zera `usable_for_rag` na hora
+  // (`contacts/[id]/personal/route.ts`); aqui cai quem é pessoal agora.
+  const conversations = await semConversasDePessoal(
+    admin,
+    organizationId,
+    (convRows ?? []) as ConvRow[],
+  );
   if (conversations.length === 0) {
     return { processed: 0, flaggedReview: 0, skipped: 0, embeddingSkipped: false };
   }
@@ -201,8 +234,9 @@ export async function ingestConversationsBatch(
 
   // O perfil do PAÍS da organização (issue #1033): o mesmo conjunto de padrões
   // anonimiza e vigia. Resolvido UMA vez por rodada — ler por conversa daria o
-  // mesmo resultado e uma consulta por conversa.
-  const padroes = padroesDePii([await perfilDaOrganizacao(admin, organizationId)]);
+  // mesmo resultado e uma consulta por conversa. O Brasil vai por baixo de
+  // qualquer país: ver `padroesDaIngestao`.
+  const padroes = padroesDaIngestao(await perfilDaOrganizacao(admin, organizationId));
 
   for (const conv of conversations) {
     // Defense in depth: re-check org id.

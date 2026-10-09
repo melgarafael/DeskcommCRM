@@ -60,6 +60,14 @@ import {
   RETENCAO_AUDITORIA_DIAS_PISO,
   RETENCAO_CANDIDATOS_GOLDEN_DIAS_PADRAO,
   RETENCAO_CANDIDATOS_GOLDEN_DIAS_PISO,
+  RETENCAO_CHECKPOINTS_DIAS_PADRAO,
+  RETENCAO_CHECKPOINTS_DIAS_PISO,
+  RETENCAO_COPIAS_ENVIADAS_DIAS_PADRAO,
+  RETENCAO_COPIAS_ENVIADAS_DIAS_PISO,
+  RETENCAO_RITMO_DE_ENVIO_DIAS_PADRAO,
+  RETENCAO_RITMO_DE_ENVIO_DIAS_PISO,
+  RETENCAO_TELEMETRIA_DE_IA_DIAS_PADRAO,
+  RETENCAO_TELEMETRIA_DE_IA_DIAS_PISO,
   RETENCAO_AVISO_DE_CASO_DIAS_PADRAO,
   RETENCAO_AVISO_DE_CASO_DIAS_PISO,
   RETENCAO_CONVERSA_DO_CASO_DIAS_PADRAO,
@@ -68,6 +76,7 @@ import {
   RETENCAO_ESPELHO_AGENDA_DIAS_PISO,
   RETENCAO_FILA_DIAS_PADRAO,
   RETENCAO_FILA_DIAS_PISO,
+  RETENCAO_MIDIA_DIAS_PISO,
   RETENCAO_OBSERVACOES_DO_JEV_DIAS_PADRAO,
   RETENCAO_OBSERVACOES_DO_JEV_DIAS_PISO,
   RETENCAO_PASSAGEM_DIAS_PADRAO,
@@ -145,6 +154,46 @@ export interface ResultadoDaRetencao {
   candidatos_do_golden_apagados: number;
   lotes_candidatos_do_golden: number;
   candidatos_do_golden_tem_resto: boolean;
+  /**
+   * A MÍDIA de mensagem vencida enfileirada para remoção (migration 0557,
+   * issue #1534) — `vencidas + orfas` do `fn_enfileirar_midia_vencida`, a mesma
+   * leitura do cron `media-retention`. Os dois crons chamam a MESMA função: a
+   * delas (05:20) drena `whatsapp-media` por conta própria, esta (04:40) é o
+   * dreno que o autor do #1534 confirmou — cada um para no primeiro lote
+   * incompleto, então a dupla só acelera quem já teria drenado sozinho.
+   */
+  midia_enfileirada: number;
+  /** A linha `deleted` da FILA DE MÍDIA expurgada nesta rodada (0435/#1765). */
+  midia_expurgada: number;
+  lotes_midia: number;
+  midia_tem_resto: boolean;
+  /**
+   * O piso de 30 dias da mídia, em número de relatório. Diferente das irmãs, o
+   * prazo da mídia é POR ORGANIZAÇÃO (`organizations.media_retention_days`) e
+   * mora dentro do `greatest(...)` do corpo da função — o que se reporta aqui é
+   * o degrau abaixo do qual nenhum banco pode ir.
+   */
+  retencao_midia_dias: number;
+  /** A telemetria da IA vencida — llm_calls, metrics, skill_activations, ai_router_decisions (0587). */
+  telemetria_de_ia_apagada: number;
+  lotes_telemetria_de_ia: number;
+  telemetria_de_ia_tem_resto: boolean;
+  retencao_telemetria_de_ia_dias: number;
+  /** O ritmo de envio vencido — pacing_ledger, menos a última linha de cada número (0587). */
+  ritmo_de_envio_apagado: number;
+  lotes_ritmo_de_envio: number;
+  ritmo_de_envio_tem_resto: boolean;
+  retencao_ritmo_de_envio_dias: number;
+  /** As cópias enviadas vencidas — outbound_copies, menos a janela do anti-repetição (0587). */
+  copias_enviadas_apagadas: number;
+  lotes_copias_enviadas: number;
+  copias_enviadas_tem_resto: boolean;
+  retencao_copias_enviadas_dias: number;
+  /** Os checkpoints superados — nunca o último da fronteira nem o de job vivo (0587). */
+  checkpoints_apagados: number;
+  lotes_checkpoints: number;
+  checkpoints_tem_resto: boolean;
+  retencao_checkpoints_dias: number;
   retencao_fila_dias: number;
   retencao_auditoria_dias: number;
   retencao_espelho_dias: number;
@@ -156,6 +205,16 @@ export interface ResultadoDaRetencao {
   retencao_candidatos_do_golden_dias: number;
   /** Avisos de configuração — nunca ausentes em silêncio quando existem. */
   avisos: string[];
+  /**
+   * Os drenos que FALHARAM nesta rodada, um por linha (`"fn_x: motivo"`).
+   *
+   * A rodada deixou de ser tudo-ou-nada (#2508): cada poda falha sozinha e as
+   * demais seguem. Uma função ausente num clone (grant que não veio, timeout)
+   * não pode impedir as OUTRAS podas nem a retomada de anonimização, que
+   * divide o relógio com elas. A falha entra aqui NOMEADA — é o que mantém a
+   * doutrina da casa: aberta na ação e aberta na informação, nunca engolida.
+   */
+  falhas: string[];
 }
 
 /** Só a superfície que este cron usa — o teste injeta uma implementação. */
@@ -171,9 +230,29 @@ export interface PodaDb {
       | "fn_expurgar_avisos_de_caso_vencidos"
       | "fn_expurgar_prospeccao_vencida"
       | "fn_expurgar_observacoes_do_jev"
-      | "fn_expurgar_candidatos_do_golden",
+      | "fn_expurgar_candidatos_do_golden"
+      | "fn_expurgar_telemetria_de_ia_vencida"
+      | "fn_expurgar_ritmo_de_envio_vencido"
+      | "fn_expurgar_copias_enviadas_vencidas"
+      | "fn_expurgar_checkpoints_superados",
     args: { p_retencao_dias: number; p_limite: number },
   ): Promise<{ data: number | null; error: { message: string } | null }>;
+  /**
+   * A DÉCIMA segunda poda (migration 0557, issue #1534): a retenção de mídia.
+   *
+   * Método PRÓPRIO, e não mais uma entrada na união do `rpc` — mesma exceção do
+   * rascunho e pela razão inversa: `fn_enfileirar_midia_vencida` recebe UM
+   * argumento (`p_limite`) e devolve JSONB (`{vencidas, orfas, expurgadas}`),
+   * enquanto o `rpc` das irmãs recebe `p_retencao_dias` + `p_limite` e devolve
+   * número. Mandar `p_retencao_dias` para ela é PGRST202 (função não existe
+   * para essa assinatura) e ler o JSONB como número é NaN calado no relatório.
+   *
+   * O prazo NÃO vem daqui: ele é por organização (`media_retention_days`) e
+   * mora dentro do `greatest(...)` do corpo da função, com o piso de 30 dias.
+   */
+  enfileirarMidia(
+    lote: number,
+  ): Promise<{ data: RetornoDaFilaDeMidia | null; error: { message: string } | null }>;
   /**
    * A DÉCIMA poda é a única que não é `security definer`: a tabela 0419 nunca
    * teve função de expurgo, então o corte (`expires_at` mais velho que o prazo)
@@ -199,7 +278,11 @@ async function drenar(
     | "fn_expurgar_avisos_de_caso_vencidos"
     | "fn_expurgar_prospeccao_vencida"
     | "fn_expurgar_observacoes_do_jev"
-    | "fn_expurgar_candidatos_do_golden",
+    | "fn_expurgar_candidatos_do_golden"
+    | "fn_expurgar_telemetria_de_ia_vencida"
+    | "fn_expurgar_ritmo_de_envio_vencido"
+    | "fn_expurgar_copias_enviadas_vencidas"
+    | "fn_expurgar_checkpoints_superados",
   dias: number,
 ): Promise<{ apagadas: number; lotes: number; temResto: boolean }> {
   let apagadas = 0;
@@ -253,6 +336,87 @@ async function drenarRascunhos(
 }
 
 /**
+ * O retorno JSONB do `fn_enfileirar_midia_vencida` (0432/0557).
+ *
+ * Três chaves, e a leitura delas é o relatório da rodada: `vencidas` (mensagem
+ * vencida), `orfas` (arquivo sem ponteiro) e `expurgadas` (linha `deleted` da
+ * fila, 0435/#1765). Todas opcionais porque uma função antiga no banco devolve
+ * só as duas primeiras — mesmo `?? 0` do cron `media-retention`.
+ */
+export interface RetornoDaFilaDeMidia {
+  vencidas?: number;
+  orfas?: number;
+  expurgadas?: number;
+}
+
+/**
+ * A décima segunda poda (migration 0557, issue #1534): a retenção de mídia.
+ *
+ * Mesmo laço de `drenar` — par no lote incompleto, teto por invocação,
+ * `temResto` quando o teto fecha — e a MESMA regra de erro: sobe. As duas
+ * diferenças são de formato, não de regra: o argumento é SÓ o lote (o prazo é
+ * por organização e mora no `greatest(...)` do corpo da função) e a contagem
+ * vem em JSONB.
+ *
+ * O par é a SOMA de `vencidas` com `orfas`, porque as duas põem arquivo na mesma
+ * fila e o relatório pergunta "quanto saiu do caminho do banco"; `expurgadas` é
+ * contada à parte porque ela apaga LINHA DE FILA, não mídia — quem só expurgou
+ * audita (é mutação), mas não enfileirou nada para remoção.
+ */
+async function drenarMidia(
+  db: PodaDb,
+): Promise<{ enfileirada: number; expurgada: number; lotes: number; temResto: boolean }> {
+  let enfileirada = 0;
+  let expurgada = 0;
+  let lotes = 0;
+  for (let i = 0; i < MAX_LOTES; i += 1) {
+    const { data, error } = await db.enfileirarMidia(TAMANHO_DO_LOTE);
+    if (error) throw new Error(`fn_enfileirar_midia_vencida: ${error.message}`);
+    const r = (typeof data === "object" && data !== null ? data : {}) as RetornoDaFilaDeMidia;
+    const vencidas = r.vencidas ?? 0;
+    const orfas = r.orfas ?? 0;
+    expurgada += r.expurgadas ?? 0;
+    enfileirada += vencidas + orfas;
+    lotes += 1;
+    // Par em qualquer uma das duas categorias, como no cron `media-retention`:
+    // `vencidas` esgotou mas `orfas` ainda tem o teto = ainda há o que drenar.
+    if (vencidas < TAMANHO_DO_LOTE && orfas < TAMANHO_DO_LOTE) {
+      return { enfileirada, expurgada, lotes, temResto: false };
+    }
+  }
+  return { enfileirada, expurgada, lotes, temResto: true };
+}
+
+/**
+ * Cada dreno falha SOZINHO (issue #2508).
+ *
+ * Antes, o primeiro `throw` de um `drenar` abortava a rodada inteira: as podas
+ * seguintes não rodavam, a retomada de anonimização (SLA D+15) era PULADA e a
+ * trilha registrava só `{falhou, erro}` — o que já tinha sido apagado nas
+ * tabelas anteriores sumia da auditoria. Agora a falha vira uma linha nomeada
+ * em `falhas`, e a rodada segue: um grant que não veio num clone derruba UMA
+ * tabela, não o dia.
+ *
+ * `emFalha` é o relatório da poda que não aconteceu (contagens zeradas ou o
+ * formato próprio da mídia) — o resultado continua tendo a MESMA forma, para o
+ * JSON e `houveEfeito` não precisarem saber que houve falha.
+ */
+async function executarDreno<T>(
+  falhas: string[],
+  nome: string,
+  tarefa: () => Promise<T>,
+  emFalha: T,
+): Promise<T> {
+  try {
+    return await tarefa();
+  } catch (err) {
+    const detalhe = err instanceof Error ? err.message : String(err);
+    falhas.push(`${nome}: ${detalhe}`);
+    return emFalha;
+  }
+}
+
+/**
  * Separado do handler HTTP para o teste exercitar a REGRA (o laço de lotes, o
  * teto, o corte no lote incompleto) sem montar request/auth — mesmo desenho de
  * `recoverStuckMessages`.
@@ -270,6 +434,10 @@ export async function podarHistorico(
     JEV_OBSERVACOES_RETENTION_DAYS?: string;
     DRAFT_RETENTION_DAYS?: string;
     GOLDEN_CANDIDATES_RETENTION_DAYS?: string;
+    AI_TELEMETRY_RETENTION_DAYS?: string;
+    PACING_LEDGER_RETENTION_DAYS?: string;
+    OUTBOUND_COPIES_RETENTION_DAYS?: string;
+    LEAD_CHECKPOINT_RETENTION_DAYS?: string;
   },
 ): Promise<ResultadoDaRetencao> {
   const fila = interpretarRetencao(ambiente.JOB_QUEUE_RETENTION_DAYS, {
@@ -331,29 +499,58 @@ export async function podarHistorico(
     piso: RETENCAO_CANDIDATOS_GOLDEN_DIAS_PISO,
   });
 
-  const jobs = await drenar(db, "fn_podar_fila_de_jobs", fila.dias);
-  const linhas = await drenar(db, "fn_expurgar_auditoria_vencida", auditoria.dias);
-  const eventos = await drenar(db, "fn_expurgar_espelho_da_agenda", espelho.dias);
+  const telemetriaDeIa = interpretarRetencao(ambiente.AI_TELEMETRY_RETENTION_DAYS, {
+    chave: "AI_TELEMETRY_RETENTION_DAYS",
+    padrao: RETENCAO_TELEMETRIA_DE_IA_DIAS_PADRAO,
+    piso: RETENCAO_TELEMETRIA_DE_IA_DIAS_PISO,
+  });
+
+  const ritmoDeEnvio = interpretarRetencao(ambiente.PACING_LEDGER_RETENTION_DAYS, {
+    chave: "PACING_LEDGER_RETENTION_DAYS",
+    padrao: RETENCAO_RITMO_DE_ENVIO_DIAS_PADRAO,
+    piso: RETENCAO_RITMO_DE_ENVIO_DIAS_PISO,
+  });
+
+  const copiasEnviadas = interpretarRetencao(ambiente.OUTBOUND_COPIES_RETENTION_DAYS, {
+    chave: "OUTBOUND_COPIES_RETENTION_DAYS",
+    padrao: RETENCAO_COPIAS_ENVIADAS_DIAS_PADRAO,
+    piso: RETENCAO_COPIAS_ENVIADAS_DIAS_PISO,
+  });
+
+  const checkpoints = interpretarRetencao(ambiente.LEAD_CHECKPOINT_RETENTION_DAYS, {
+    chave: "LEAD_CHECKPOINT_RETENTION_DAYS",
+    padrao: RETENCAO_CHECKPOINTS_DIAS_PADRAO,
+    piso: RETENCAO_CHECKPOINTS_DIAS_PISO,
+  });
+
+  // As falhas desta rodada, uma por dreno (ver `executarDreno`): a rodada
+  // segue e cada uma é reportada pelo NOME.
+  const falhas: string[] = [];
+  const zerado = { apagadas: 0, lotes: 0, temResto: false };
+
+  const jobs = await executarDreno(falhas, "fn_podar_fila_de_jobs", () => drenar(db, "fn_podar_fila_de_jobs", fila.dias), zerado);
+  const linhas = await executarDreno(falhas, "fn_expurgar_auditoria_vencida", () => drenar(db, "fn_expurgar_auditoria_vencida", auditoria.dias), zerado);
+  const eventos = await executarDreno(falhas, "fn_expurgar_espelho_da_agenda", () => drenar(db, "fn_expurgar_espelho_da_agenda", espelho.dias), zerado);
   // Quarta poda: os nonces de OAuth já queimados. O `state` vale dez minutos,
   // então um dia é folga de duas ordens de grandeza — e sem esta linha a tabela
   // cresceria para sempre, uma linha por conexão tentada, num produto que se
   // instala e ninguém monitora.
-  const nonces = await drenar(db, "fn_expurgar_nonces_de_oauth", 1);
+  const nonces = await executarDreno(falhas, "fn_expurgar_nonces_de_oauth", () => drenar(db, "fn_expurgar_nonces_de_oauth", 1), zerado);
   // Quinta poda: a conversa da equipe com a IA sobre um caso (migration 0281).
   // O piso de 90 dias mora no CORPO da função; o número daqui é o que o
   // operador pediu, já elevado, e é ele que aparece no relatório da rodada.
-  const conversas = await drenar(db, "fn_expurgar_conversa_do_caso_vencida", conversaDoCaso.dias);
+  const conversas = await executarDreno(falhas, "fn_expurgar_conversa_do_caso_vencida", () => drenar(db, "fn_expurgar_conversa_do_caso_vencida", conversaDoCaso.dias), zerado);
   // Sexta poda: o registro da passagem do atendimento para uma pessoa (0291). O
   // piso de 90 dias mora no CORPO da função, como nas anteriores — e ela tem uma
   // segunda guarda que só ela tem: passagem NÃO RECONHECIDA nunca é apagada, em
   // nenhuma idade. Uma passagem aberta é alguém esperando resposta.
-  const passagens = await drenar(db, "fn_expurgar_passagens_vencidas", passagem.dias);
+  const passagens = await executarDreno(falhas, "fn_expurgar_passagens_vencidas", () => drenar(db, "fn_expurgar_passagens_vencidas", passagem.dias), zerado);
   // Sétima poda: o registro de entrega do aviso de caso no WhatsApp da equipe
   // (0292). O piso de 30 dias mora no CORPO da função, como nas anteriores. Ela
   // não guarda o texto do aviso (só o resumo criptográfico dele), então o que se
   // poda aqui é volume de operação — e é a poda de horizonte mais curto das
   // sete, porque a única pergunta que a linha responde é de semanas.
-  const avisosDeCaso = await drenar(db, "fn_expurgar_avisos_de_caso_vencidos", avisoDeCaso.dias);
+  const avisosDeCaso = await executarDreno(falhas, "fn_expurgar_avisos_de_caso_vencidos", () => drenar(db, "fn_expurgar_avisos_de_caso_vencidos", avisoDeCaso.dias), zerado);
   // Oitava poda: o candidato de prospecção nativa vencido (migration 0408,
   // issue #1313). Padrão 365 / piso 90 — decisão do dono, alinhada ao
   // horizonte da conversa do caso e da captação. O piso mora no CORPO da
@@ -362,19 +559,35 @@ export async function podarHistorico(
   // (`suppression_salt is not null`) nunca entra — é ele que barra a
   // reimportação. É a primeira poda da casa cujo dado é de uma pessoa que
   // NUNCA falou com a empresa, então as duas guardas são a regra, não enfeite.
-  const prospeccaoDrenada = await drenar(db, "fn_expurgar_prospeccao_vencida", prospeccao.dias);
+  const prospeccaoDrenada = await executarDreno(falhas, "fn_expurgar_prospeccao_vencida", () => drenar(db, "fn_expurgar_prospeccao_vencida", prospeccao.dias), zerado);
   // Nona poda: as observações do Jev (0421). Padrão 90 / piso 30, a janela da
   // concordância que o cartão mostra — o piso mora no CORPO da função.
-  const observacoesDrenadas = await drenar(db, "fn_expurgar_observacoes_do_jev", observacoesDoJev.dias);
+  const observacoesDrenadas = await executarDreno(falhas, "fn_expurgar_observacoes_do_jev", () => drenar(db, "fn_expurgar_observacoes_do_jev", observacoesDoJev.dias), zerado);
   // Décima poda: o rascunho sugerido por integração já VENCIDO (migration 0419,
   // issue #1686). A única que não passa pelo `rpc` — a tabela 0419 não tem
   // função de expurgo, e o corte (`expires_at` + prazo) nasce em TypeScript,
   // mesma exceção da captação. Piso de 7 dias mora AQUI, no interpretador.
-  const rascunhosDrenados = await drenarRascunhos(db, rascunho.dias);
+  const rascunhosDrenados = await executarDreno(falhas, "conversation_drafts", () => drenarRascunhos(db, rascunho.dias), zerado);
   // Décima primeira poda: o candidato ao golden set (0428, issue #1695).
   // Padrão 90 / piso 30, a janela em que o near-miss ainda é curável — o piso mora no
   // CORPO da função, como nas irmãs. A linha é rótulo, sem texto de cliente.
-  const candidatosDrenados = await drenar(db, "fn_expurgar_candidatos_do_golden", candidatosDoGolden.dias);
+  const candidatosDrenados = await executarDreno(falhas, "fn_expurgar_candidatos_do_golden", () => drenar(db, "fn_expurgar_candidatos_do_golden", candidatosDoGolden.dias), zerado);
+  // Décima segunda poda (migration 0557, issue #1534): a retenção de MÍDIA que a
+  // tela prometia e que nada aplicava. O prazo não é knob de ambiente — é
+  // `organizations.media_retention_days`, com o piso de 30 dias no `greatest(...)`
+  // do corpo da função —, então o que este laço decide é só QUANTO drenar por
+  // rodada: lotes de 1000, teto de 20, parando no primeiro incompleto.
+  const midiaDrenada = await executarDreno(falhas, "fn_enfileirar_midia_vencida", () => drenarMidia(db), { enfileirada: 0, expurgada: 0, lotes: 0, temResto: false });
+  // Da décima terceira à décima sexta: as tabelas append-only da IA (0587). As
+  // guardas de cada uma — a última linha do número no ritmo, a janela do
+  // anti-repetição nas cópias, o último checkpoint da fronteira e o de job vivo
+  // — moram no CORPO das funções, como o piso. `event_log` não entra: é o
+  // livro-razão de idempotência dos gatilhos de tempo, e podá-lo reenviaria
+  // WhatsApp.
+  const telemetriaDrenada = await executarDreno(falhas, "fn_expurgar_telemetria_de_ia_vencida", () => drenar(db, "fn_expurgar_telemetria_de_ia_vencida", telemetriaDeIa.dias), zerado);
+  const ritmoDrenado = await executarDreno(falhas, "fn_expurgar_ritmo_de_envio_vencido", () => drenar(db, "fn_expurgar_ritmo_de_envio_vencido", ritmoDeEnvio.dias), zerado);
+  const copiasDrenadas = await executarDreno(falhas, "fn_expurgar_copias_enviadas_vencidas", () => drenar(db, "fn_expurgar_copias_enviadas_vencidas", copiasEnviadas.dias), zerado);
+  const checkpointsDrenados = await executarDreno(falhas, "fn_expurgar_checkpoints_superados", () => drenar(db, "fn_expurgar_checkpoints_superados", checkpoints.dias), zerado);
 
   return {
     jobs_apagados: jobs.apagadas,
@@ -408,6 +621,26 @@ export async function podarHistorico(
     lotes_rascunhos: rascunhosDrenados.lotes,
     rascunhos_tem_resto: rascunhosDrenados.temResto,
     candidatos_do_golden_tem_resto: candidatosDrenados.temResto,
+    midia_enfileirada: midiaDrenada.enfileirada,
+    midia_expurgada: midiaDrenada.expurgada,
+    lotes_midia: midiaDrenada.lotes,
+    midia_tem_resto: midiaDrenada.temResto,
+    telemetria_de_ia_apagada: telemetriaDrenada.apagadas,
+    lotes_telemetria_de_ia: telemetriaDrenada.lotes,
+    telemetria_de_ia_tem_resto: telemetriaDrenada.temResto,
+    retencao_telemetria_de_ia_dias: telemetriaDeIa.dias,
+    ritmo_de_envio_apagado: ritmoDrenado.apagadas,
+    lotes_ritmo_de_envio: ritmoDrenado.lotes,
+    ritmo_de_envio_tem_resto: ritmoDrenado.temResto,
+    retencao_ritmo_de_envio_dias: ritmoDeEnvio.dias,
+    copias_enviadas_apagadas: copiasDrenadas.apagadas,
+    lotes_copias_enviadas: copiasDrenadas.lotes,
+    copias_enviadas_tem_resto: copiasDrenadas.temResto,
+    retencao_copias_enviadas_dias: copiasEnviadas.dias,
+    checkpoints_apagados: checkpointsDrenados.apagadas,
+    lotes_checkpoints: checkpointsDrenados.lotes,
+    checkpoints_tem_resto: checkpointsDrenados.temResto,
+    retencao_checkpoints_dias: checkpoints.dias,
     retencao_fila_dias: fila.dias,
     retencao_auditoria_dias: auditoria.dias,
     retencao_espelho_dias: espelho.dias,
@@ -418,6 +651,7 @@ export async function podarHistorico(
     retencao_observacoes_do_jev_dias: observacoesDoJev.dias,
     retencao_rascunho_dias: rascunho.dias,
     retencao_candidatos_do_golden_dias: candidatosDoGolden.dias,
+    retencao_midia_dias: RETENCAO_MIDIA_DIAS_PISO,
     avisos: [
       fila.aviso,
       auditoria.aviso,
@@ -429,7 +663,12 @@ export async function podarHistorico(
       observacoesDoJev.aviso,
       rascunho.aviso,
       candidatosDoGolden.aviso,
+      telemetriaDeIa.aviso,
+      ritmoDeEnvio.aviso,
+      copiasEnviadas.aviso,
+      checkpoints.aviso,
     ].filter((a): a is string => a !== null),
+    falhas,
   };
 }
 
@@ -478,7 +717,20 @@ export function houveEfeito(resultado: ResultadoDaRetencao): boolean {
     // A décima primeira, pela mesma razão das dez: uma rodada que só apagou
     // candidato ao golden set vencido apagaria linha sem deixar registro —
     // encolhimento silencioso.
-    resultado.candidatos_do_golden_apagados > 0
+    resultado.candidatos_do_golden_apagados > 0 ||
+    // A décima segunda, pela mesma razão das onze anteriores: a retenção de
+    // mídia (#1534) põe arquivo na fila e anula coluna de mensagem — drenar sem
+    // trilha seria apagar mídia de cliente em silêncio. `midia_expurgada` entra
+    // na mesma conta pelo motivo do #1765: expurgar LINHA DE FILA também é
+    // mutação, e uma rodada que só fez isso não pode ser indistinguível de uma
+    // que não fez nada.
+    resultado.midia_enfileirada > 0 ||
+    resultado.midia_expurgada > 0 ||
+    // As quatro da 0587, pela mesma razão: o predicado esquecido é mudo.
+    resultado.telemetria_de_ia_apagada > 0 ||
+    resultado.ritmo_de_envio_apagado > 0 ||
+    resultado.copias_enviadas_apagadas > 0 ||
+    resultado.checkpoints_apagados > 0
   );
 }
 
@@ -489,16 +741,10 @@ async function handle(req: NextRequest): Promise<Response> {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
 
+  let admin: ReturnType<typeof createAdminClient>;
   let resultado: ResultadoDaRetencao;
-  let varredura: ResultadoDaVarredura = {
-    examinados: 0,
-    comResiduo: 0,
-    completados: [],
-    temResto: false,
-    falhas: [],
-  };
   try {
-    const admin = createAdminClient();
+    admin = createAdminClient();
     // As duas funções são novas e não estão em `lib/database.types.ts` (gerado a
     // partir de um projeto Supabase vivo) — mesmo tratamento que
     // `recover-stuck-messages` dá a `emit_event`.
@@ -511,8 +757,9 @@ async function handle(req: NextRequest): Promise<Response> {
       // Lote curto, transação fechada a cada rodada, e o retorno `select("id")`
       // é a CONTAGEM que o relatório e `houveEfeito` usam. O `.order("id")` NÃO
       // é enfeite: o PostgREST 12.2 recusa `limit` sem `order` num DELETE
-      // (400 PGRST109), e aqui o erro sobe e derruba a rodada inteira,
-      // inclusive a retomada da cascata de LGPD que vem depois.
+      // (400 PGRST109) — e o erro sobe até o `executarDreno` da rodada, que o
+      // NOMEIA em `falhas` sem derrubar as podas irmãs nem a retomada da
+      // cascata de LGPD (#2508).
       async apagarRascunhos(vencidosAntesDe, lote) {
         const { data, error } = await admin
           .from("conversation_drafts")
@@ -522,6 +769,16 @@ async function handle(req: NextRequest): Promise<Response> {
           .order("id")
           .limit(lote);
         return { data: Array.isArray(data) ? data.length : null, error };
+      },
+      // A décima segunda poda (migration 0557, #1534): a retenção de mídia. O
+      // retorno é JSONB (`{vencidas, orfas, expurgadas}`), por isso um método
+      // próprio em vez de mais uma entrada na união do `rpc` — ver a JSDoc de
+      // `PodaDb.enfileirarMidia`.
+      async enfileirarMidia(lote) {
+        const { data, error } = await admin.rpc("fn_enfileirar_midia_vencida" as never, {
+          p_limite: lote,
+        } as never);
+        return { data: (data ?? null) as RetornoDaFilaDeMidia | null, error };
       },
     };
     resultado = await podarHistorico(db, {
@@ -534,30 +791,11 @@ async function handle(req: NextRequest): Promise<Response> {
       JEV_OBSERVACOES_RETENTION_DAYS: env.JEV_OBSERVACOES_RETENTION_DAYS,
       DRAFT_RETENTION_DAYS: env.DRAFT_RETENTION_DAYS,
       GOLDEN_CANDIDATES_RETENTION_DAYS: env.GOLDEN_CANDIDATES_RETENTION_DAYS,
+      AI_TELEMETRY_RETENTION_DAYS: env.AI_TELEMETRY_RETENTION_DAYS,
+      PACING_LEDGER_RETENTION_DAYS: env.PACING_LEDGER_RETENTION_DAYS,
+      OUTBOUND_COPIES_RETENTION_DAYS: env.OUTBOUND_COPIES_RETENTION_DAYS,
+      LEAD_CHECKPOINT_RETENTION_DAYS: env.LEAD_CHECKPOINT_RETENTION_DAYS,
     });
-    // ── A cascata de anonimização que ficou pela metade ──────────────────
-    //
-    // Mora AQUI, e não numa rota de cron própria, por uma razão de packaging: o
-    // agendamento vive no serviço `scheduler`, e um cron novo exigiria linha
-    // nova no `docker/scheduler/entrypoint.sh` — que só chega a quem já
-    // instalou depois de a imagem do scheduler ser trocada. Pendurado no
-    // varredor diário que TODO clone já roda, o conserto alcança o parque
-    // instalado sem ninguém editar nada (DoD 15). Nome e cadência também
-    // servem: retenção é remover dado pessoal no prazo, e a LGPD dá D+15.
-    //
-    // O client aqui é o de SERVICE ROLE, que bypassa a RLS — por isso
-    // `completarRedacaoDoContato` filtra `organization_id` à mão em toda query,
-    // com a org vinda da própria linha de `contacts` (fonte confiável).
-    //
-    // Try PRÓPRIO, e não o de fora: uma varredura que explodisse derrubaria o
-    // relatório da PODA junto, e o cron passaria a auditar `falhou: true` num
-    // dia em que o expurgo funcionou. As duas tarefas dividem o relógio, não o
-    // desfecho — quem falha aqui falha aqui, e a falha é dita, não engolida.
-    try {
-      varredura = await varrerRedacoesIncompletas(admin as unknown as ClienteDaCascata);
-    } catch (err) {
-      varredura.falhas.push(err instanceof Error ? err.message : String(err));
-    }
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     logger.error("[data-retention] poda falhou", { error: detail, requestId });
@@ -577,6 +815,39 @@ async function handle(req: NextRequest): Promise<Response> {
     return fail("internal_error", "Failed to prune history.", 500, { requestId });
   }
 
+  // ── A cascata de anonimização que ficou pela metade ──────────────────
+  //
+  // Mora AQUI, e não numa rota de cron própria, por uma razão de packaging: o
+  // agendamento vive no serviço `scheduler`, e um cron novo exigiria linha
+  // nova no `docker/scheduler/entrypoint.sh` — que só chega a quem já
+  // instalou depois de a imagem do scheduler ser trocada. Pendurado no
+  // varredor diário que TODO clone já roda, o conserto alcança o parque
+  // instalado sem ninguém editar nada (DoD 15). Nome e cadência também
+  // servem: retenção é remover dado pessoal no prazo, e a LGPD dá D+15.
+  //
+  // O client aqui é o de SERVICE ROLE, que bypassa a RLS — por isso
+  // `completarRedacaoDoContato` filtra `organization_id` à mão em toda query,
+  // com a org vinda da própria linha de `contacts` (fonte confiável).
+  //
+  // Try PRÓPRIO, FORA do try da poda (#2508): uma varredura que explodisse
+  // derrubaria o relatório da PODA junto, e o cron passaria a auditar
+  // `falhou: true` num dia em que o expurgo funcionou; pior, uma poda que
+  // falhasse PULAVA este bloco e a anonimização pendente perdia o dia. As duas
+  // tarefas dividem o relógio, não o desfecho — quem falha aqui falha aqui, e
+  // a falha é dita, não engolida.
+  let varredura: ResultadoDaVarredura = {
+    examinados: 0,
+    comResiduo: 0,
+    completados: [],
+    temResto: false,
+    falhas: [],
+  };
+  try {
+    varredura = await varrerRedacoesIncompletas(admin as unknown as ClienteDaCascata);
+  } catch (err) {
+    varredura.falhas.push(err instanceof Error ? err.message : String(err));
+  }
+
   for (const aviso of resultado.avisos) {
     logger.warn("[data-retention] configuração de retenção ajustada", { aviso, requestId });
   }
@@ -584,14 +855,24 @@ async function handle(req: NextRequest): Promise<Response> {
   // Ver o cabeçalho: rodada que não apagou nada não é mutação. E rodada que
   // apagou SEMPRE deixa rastro — é isto que impede o expurgo do audit de ser
   // encolhimento silencioso da trilha.
-  if (houveEfeito(resultado)) {
+  //
+  // Falha PARCIAL também audita sem efeito (#2508): a rodada em que uma poda
+  // quebrou precisa ser distinguível, na trilha, da rodada que não tinha nada
+  // a fazer. E o metadata leva as contagens do que JÁ foi apagado — antes, o
+  // catch registrava só `{falhou, erro}` e o trabalho que aconteceu sumia.
+  const houveFalhaParcial = resultado.falhas.length > 0;
+  if (houveEfeito(resultado) || houveFalhaParcial) {
     void audit({
       action: "retention.sweep_run",
       organizationId: null,
       bypassedRls: true,
-      metadata: resultado as unknown as Record<string, unknown>,
+      metadata: { ...(houveFalhaParcial ? { falhou: true } : {}), ...resultado },
       requestId,
     });
+  }
+
+  for (const falha of resultado.falhas) {
+    logger.error("[data-retention] poda parcial falhou", { falha, requestId });
   }
 
   for (const falha of varredura.falhas) {
@@ -625,15 +906,23 @@ async function handle(req: NextRequest): Promise<Response> {
     }
   }
 
-  return ok(
-    {
-      ...resultado,
-      anonimizacoes_examinadas: varredura.examinados,
-      anonimizacoes_completadas: varredura.completados.length,
-      anonimizacoes_tem_resto: varredura.temResto,
-    },
-    { requestId },
-  );
+  const corpo = {
+    ...resultado,
+    anonimizacoes_examinadas: varredura.examinados,
+    anonimizacoes_completadas: varredura.completados.length,
+    anonimizacoes_tem_resto: varredura.temResto,
+  };
+  // Poda parcial é 500: a rodada NÃO está completa, e o operador precisa poder
+  // distinguir isso de um dia em que nada havia a fazer. O detalhe nomeia as
+  // falhas; o relatório completo, com as contagens do que foi apagado, segue na
+  // trilha (`retention.sweep_run` acima).
+  if (houveFalhaParcial) {
+    return fail("internal_error", "Failed to prune history.", 500, {
+      requestId,
+      details: { falhas: resultado.falhas },
+    });
+  }
+  return ok(corpo, { requestId });
 }
 
 export async function GET(req: NextRequest): Promise<Response> {

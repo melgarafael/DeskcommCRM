@@ -180,10 +180,10 @@ ruido y muestra `✓ banco atualizado`. Si la base está ocupada con el CRM aten
 nuevo sola (hasta 3 pasadas) y lo dice en pantalla — esto vale desde la actualización siguiente a la
 que instale esta corrección. Si aparece `⚠ Apareceram avisos no banco que NÃO são os esperados`, ahí sí guarda el
 mensaje: el **final** de la salida dice qué hacer en cada caso (repetir con `--force` cuando la base
-estaba ocupada, declarar `SUPABASE_DB_ADMIN_URL` cuando fue permiso). Restaurar el backup es el
-último recurso.
+estaba ocupada, declarar `SUPABASE_DB_ADMIN_URL` cuando fue permiso).
 
-**¿Salió mal?** `bash hostgator-setup-kit/restore.sh` vuelve al backup.
+**¿Salió mal?** Guarda el mensaje y pide ayuda. El `restore.sh` **no** vuelve el backup sobre la
+base de datos en uso: solo restaura en una base de datos vacía (ver [`hostgator-setup-kit/README.md`](hostgator-setup-kit/README.md)).
 **¿Solo quieres diagnosticar?** `bash hostgator-setup-kit/healthcheck.sh`.
 
 > ⚠️ **En una instalación vieja que todavía no tiene el agente de la pantalla**, ejecuta

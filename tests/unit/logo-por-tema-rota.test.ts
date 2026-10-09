@@ -15,12 +15,28 @@ const mocks = vi.hoisted(() => ({
 const org = "22222222-2222-4222-8222-222222222222";
 vi.mock("@/lib/auth/server", () => ({
   loadAuthUser: async () => mocks.user,
-  resolveActiveOrg: async () => ({
+  orgAtivaSemPortao: async () => ({
     orgId: "22222222-2222-4222-8222-222222222222",
     role: mocks.role,
+    org_status: "active",
   }),
   mfaEmDivida: async () => false,
 }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/auth/requirePlatformAdmin", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/auth/requirePlatformAdmin")>();
+  const { loadAuthUser: usuarioDoCaso } = await import("@/lib/auth/server");
+  return {
+    ...real,
+    // Segue o usuário do caso: o dono do servidor passa; os demais levam o
+    // redirect que o helper real faria. Scope e MFA: lib/auth/requirePlatformAdmin.test.ts.
+    requirePlatformAdminEscrita: async () => {
+      const u = await usuarioDoCaso();
+      if (!u?.is_platform_admin) throw new Error("NEXT_REDIRECT;/admin/forbidden");
+      return { user: { id: u.id }, platformAdmin: { user_id: u.id, scope: "full", mfa_required: false } };
+    },
+  };
+});
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
 vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({
   checkRateLimit: async () => ({ allowed: true }),

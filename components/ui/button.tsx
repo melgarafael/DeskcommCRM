@@ -19,7 +19,19 @@ const buttonVariants = cva(
   [
     "inline-flex items-center justify-center gap-2 whitespace-nowrap",
     "rounded-sm font-medium",
-    "transition-[background-color,border-color,color,box-shadow,transform]",
+    // `transform` SAIU da lista, e `translate` não entrou no lugar.
+    //
+    // O recuo do toque é `active:translate-y-px`, lá embaixo. No Tailwind 4 essa
+    // classe compila para a propriedade INDIVIDUAL `translate`, não para
+    // `transform` — então `transform` nesta lista era uma propriedade que nunca
+    // muda, pedindo transição para nada.
+    //
+    // E `translate` fica fora de propósito: o recuo do `:active` é o único
+    // retorno INSTANTÂNEO da interface — é ele que faz o botão parecer apertado
+    // em vez de clicado. A lei pede 80ms, que nem existe na tabela de durações
+    // dela própria; transicionar em `duration-fast` (120ms) deixaria a descida
+    // E a subida arrastadas, que é o oposto do que o recuo comunica.
+    "transition-[background-color,border-color,color,box-shadow]",
     "duration-fast ease-out",
     "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
     "disabled:pointer-events-none disabled:opacity-50",
@@ -29,20 +41,15 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        primary:
-          "bg-accent text-accent-foreground hover:bg-accent-hover shadow-xs",
-        default:
-          "bg-accent text-accent-foreground hover:bg-accent-hover shadow-xs",
+        primary: "bg-accent text-accent-foreground hover:bg-accent-hover shadow-xs",
+        default: "bg-accent text-accent-foreground hover:bg-accent-hover shadow-xs",
         secondary:
           "bg-surface-elevated text-text border border-border hover:border-accent hover:text-accent",
         outline:
           "bg-transparent text-text border border-border hover:border-accent hover:text-accent",
-        ghost:
-          "bg-transparent text-text hover:bg-accent-soft hover:text-accent",
-        destructive:
-          "bg-error text-white hover:brightness-95 shadow-xs",
-        link:
-          "bg-transparent text-accent underline underline-offset-4 decoration-1 hover:decoration-2 h-auto p-0",
+        ghost: "bg-transparent text-text hover:bg-accent-soft hover:text-accent",
+        destructive: "bg-error text-white hover:brightness-95 shadow-xs",
+        link: "bg-transparent text-accent underline underline-offset-4 decoration-1 hover:decoration-2 h-auto p-0",
       },
       // Alturas de toque: abaixo de `lg` (mesmo corte que o resto da casca
       // usa pra decidir "é celular/tablet, é mouse") toda variante bate os
@@ -66,8 +73,7 @@ const buttonVariants = cva(
 );
 
 export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
-    VariantProps<typeof buttonVariants> {
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
   asChild?: boolean;
 }
 
@@ -75,11 +81,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, ...props }, ref) => {
     const Comp = asChild ? Slot : "button";
     return (
-      <Comp
-        className={cn(buttonVariants({ variant, size, className }))}
-        ref={ref}
-        {...props}
-      />
+      <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />
     );
   },
 );

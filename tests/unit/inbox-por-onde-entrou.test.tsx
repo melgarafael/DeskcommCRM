@@ -45,9 +45,20 @@ const pintar = (conv: ConversationWithContact, mostrarCanal: boolean) =>
     />,
   );
 
-describe("mostra o número da empresa quando há mais de um canal", () => {
-  it("pinta o número por onde a conversa entrou", () => {
+describe("mostra POR ONDE a conversa entrou — o canal da empresa, nunca o cliente", () => {
+  // #2383: o rótulo passou a ser o MESMO da tela de canais (`nomeDoCanal`),
+  // com o nome amigável na frente. Antes era `phone_number ?? display_name` e
+  // um canal que a dona chamou de "MP wp" saía aqui como o número cru — o
+  // número que ela não reconhece, no lugar do nome que ela escolheu. Medido:
+  // o MESMO canal renderiza "+19392301037" na lista e "MP wp" em /connections.
+  it("pinta o NOME do canal — o número cru só entra quando não há nome", () => {
     pintar(comCanal({ phone_number: "+19392301037", display_name: "MP wp" }), true);
+    expect(screen.getByText("MP wp")).toBeInTheDocument();
+    expect(screen.queryByText("+19392301037")).not.toBeInTheDocument();
+  });
+
+  it("sem nome amigável, o número é o que sobra — e ele aparece", () => {
+    pintar(comCanal({ phone_number: "+19392301037", display_name: null }), true);
     expect(screen.getByText("+19392301037")).toBeInTheDocument();
   });
 
@@ -56,6 +67,32 @@ describe("mostra o número da empresa quando há mais de um canal", () => {
     // pior que mostrar como ele se chama.
     pintar(comCanal({ phone_number: null, display_name: "Canal novo" }), true);
     expect(screen.getByText("Canal novo")).toBeInTheDocument();
+  });
+
+  it("dois números do MESMO provider continuam distinguíveis — nome/número", () => {
+    // #2383 (critério 4): "Peças" e a linha sem apelido são as MESMAS
+    // wa_conversations/waha no mesmo provider; o que as separa na lista é o
+    // nome amigável, e o número entra onde não há nome. Duas linhas iguais na
+    // lista seriam o atendente respondendo no canal errado.
+    const mesmoProvider = (canal: { phone_number: string | null; display_name: string | null }) =>
+      ({ ...comCanal(canal), channel: "whatsapp", provider: "waha" }) as ConversationWithContact;
+
+    pintar(mesmoProvider({ phone_number: "+55179991111", display_name: "Peças" }), true);
+    pintar(mesmoProvider({ phone_number: "+55179992222", display_name: null }), true);
+
+    expect(screen.getByText("Peças")).toBeInTheDocument();
+    expect(screen.getByText("+55179992222")).toBeInTheDocument();
+    expect(screen.queryByText("+55179991111")).not.toBeInTheDocument();
+  });
+
+  it("nome de canal comprido encolhe — `min-w-0` + `max-w` + `truncate` na faixa", () => {
+    // #2383 (critério 5): a linha de selos é `flex-wrap`; sem limite o nome
+    // "Centro Automotivo Norte" levaria a faixa inteira para fora da coluna.
+    pintar(comCanal({ phone_number: null, display_name: "Centro Automotivo Norte" }), true);
+    const badge = screen.getByTitle("Entrou por Centro Automotivo Norte");
+    expect(badge.className).toContain("max-w-");
+    expect(badge.className).toContain("truncate");
+    expect(badge.querySelector("span.truncate")).not.toBeNull();
   });
 
   it("explica o rótulo no title — o número solto não diz o que é", () => {

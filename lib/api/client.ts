@@ -1,6 +1,8 @@
 import type { ZodSchema } from "zod";
 
 import { ApiError, type ApiErrorBody } from "@/lib/api/types";
+import { mostrarAvisoOrgDivergente } from "@/lib/auth/aviso-org-divergente";
+import { CODIGO_ORG_DIVERGENTE, HEADER_ORG_DA_ABA, orgDaAba } from "@/lib/auth/org-da-aba";
 import { randomId } from "@/lib/random-id";
 
 type HttpMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
@@ -150,6 +152,19 @@ function pedirDecisaoAoServidor(): void {
   window.location.reload();
 }
 
+/**
+ * A EMPRESA FOI SUSPENSA COM A TELA ABERTA. Diferente de `no_active_org`, aqui
+ * o destino é um só — o hub `/account-suspended` (pagar, LGPD, trocar de
+ * empresa) —, então não há o que perguntar ao servidor: vai direto. Já no hub,
+ * não navega de novo (a trava contra o laço é o próprio endereço).
+ */
+const HUB_DA_SUSPENSAO = "/account-suspended";
+
+function irParaOHubDaSuspensao(): void {
+  if (typeof window === "undefined" || window.location.pathname === HUB_DA_SUSPENSAO) return;
+  window.location.assign(HUB_DA_SUSPENSAO);
+}
+
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -247,6 +262,11 @@ async function request<T>(
 
   if (MUTATING_METHODS.has(method)) {
     headers["Idempotency-Key"] ??= opts.idempotencyKey ?? randomId();
+    // A organização DESTA aba, declarada em toda ESCRITA (#2335, metade 2).
+    // Só em método mutante: leitura não carrega o header, então a recusa do
+    // servidor (`org_divergente`) nunca alcança um GET.
+    const aba = orgDaAba();
+    if (aba?.orgId) headers[HEADER_ORG_DA_ABA] = aba.orgId;
   }
 
   const serializedBody =
@@ -312,6 +332,26 @@ async function request<T>(
         // com erro em vez de ficar pendurado esperando uma resposta que não vem.
         if (res.status === 403 && e.code === "no_active_org") {
           pedirDecisaoAoServidor();
+        }
+        if (res.status === 403 && e.code === "org_suspended") {
+          irParaOHubDaSuspensao();
+        }
+        // #2335, metade 2: o servidor recusou a escrita porque a organização
+        // que ESTA aba declarou diverge do cookie `active_org`. A tela traduz
+        // o código no MESMO aviso da metade 1 (leitura) — mesma janela, mesma
+        // decisão, venha o aviso de onde vier. O `throw` de baixo continua:
+        // quem chamou precisa terminar com erro em vez de ficar pendurado.
+        if (e.code === CODIGO_ORG_DIVERGENTE) {
+          const detalhes = (e.details ?? {}) as {
+            organization_id?: string;
+            organization_name?: string;
+          };
+          const aba = orgDaAba();
+          mostrarAvisoOrgDivergente({
+            daAba: aba?.nome ?? null,
+            daSessao: detalhes.organization_name ?? detalhes.organization_id ?? null,
+            idioma: aba?.idioma ?? null,
+          });
         }
         throw new ApiError(
           res.status,

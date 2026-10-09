@@ -35,6 +35,8 @@ const SCAN_LIMIT = 500;
 interface OrgRow {
   dpo_email: string | null;
   display_name: string | null;
+  /** O país decide o texto do alarme (doc 88) — lido nesta mesma consulta. */
+  country: string | null;
 }
 
 type RequestWithOrg = LgpdRequest & OrgRow;
@@ -64,7 +66,8 @@ export async function GET(req: NextRequest): Promise<Response> {
       *,
       organizations!inner(
         dpo_email,
-        display_name
+        display_name,
+        country
       )
     `,
     )
@@ -148,6 +151,7 @@ export async function GET(req: NextRequest): Promise<Response> {
         organizationDpoEmail: dpoEmail,
         organizationName: orgName,
         marca: await marcaDe(row.organization_id),
+        country: orgData?.country ?? null,
       });
 
       if (result.reason === "dedup_24h") {

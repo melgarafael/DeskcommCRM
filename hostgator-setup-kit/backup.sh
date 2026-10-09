@@ -7,7 +7,18 @@ source "$(dirname "$0")/_common.sh"
 enter_project
 
 BACKUP_DIR="${BACKUP_DIR:-$PROJECT_DIR/backups}"
+# Backup é o banco inteiro, a sessão do WhatsApp (quem a lê fala pelo número da
+# empresa) e os anexos dos clientes: só o dono lê. Todo arquivo de backup nasce
+# no HOST, deste umask e com dono = quem chamou: os `tar` dos contêineres mandam
+# o snapshot pela saída padrão em vez de gravar numa montagem — gravado lá
+# dentro, ele nasceria do umask da imagem (022) e do root do contêiner, ilegível
+# para quem roda o backup pelo grupo docker. O `chmod` fecha a pasta que um
+# backup antigo deixou 755; onde o sistema de arquivos o recusa (CIFS/NFS), o
+# backup segue — os arquivos já nascem 600 — em vez de derrubar o update.sh.
+umask 077
 mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR" 2>/dev/null \
+  || c_ylw "⚠ não consegui fechar a pasta $BACKUP_DIR (chmod 700): os arquivos deste backup saem legíveis só pelo dono, mas a pasta ficou como estava."
 # Timestamp vem do host (não do script) pra manter determinismo do kit.
 ts="$(date +%Y%m%d-%H%M%S)"
 
@@ -45,8 +56,7 @@ vol="$(volume_waha_data)"
 # retenção dos 14 e o pareamento do WhatsApp — o que este snapshot existe para
 # poupar — só se dava por perdido no dia do restore.
 parcial="$BACKUP_DIR/.waha-$ts.tgz.parcial"
-if ! docker run --rm -v "${vol}:/data:ro" -v "$BACKUP_DIR:/out" alpine:3.20 \
-       tar czf "/out/${parcial##*/}" -C /data . 2>/dev/null; then
+if ! docker run --rm -v "${vol}:/data:ro" alpine:3.20 tar czf - -C /data . 2>/dev/null > "$parcial"; then
   rm -f "$parcial"
   c_ylw "⚠ não consegui ler o volume das sessões ('$vol'): o backup do banco está feito, mas o pareamento do WhatsApp NÃO entrou nele."
 elif ! tar_tem_sessao "$parcial"; then
@@ -63,9 +73,13 @@ fi
 # restauração devolvia anexos quebrados. Por isso aqui falha é FALHA.
 if [ "${SINGLE_SERVER:-0}" = "1" ]; then
   step "Arquivos anexados (Storage) → $BACKUP_DIR/storage-$ts.tgz"
-  docker run --rm -v "$(dir_do_supabase)/volumes/storage:/data:ro" -v "$BACKUP_DIR:/out" alpine:3.20 \
-    tar czf "/out/storage-$ts.tgz" -C /data . \
-    || die "Não consegui salvar os arquivos anexados: este backup NÃO está completo."
+  parcial_st="$BACKUP_DIR/.storage-$ts.tgz.parcial"
+  if ! docker run --rm -v "$(dir_do_supabase)/volumes/storage:/data:ro" alpine:3.20 \
+       tar czf - -C /data . > "$parcial_st"; then
+    rm -f "$parcial_st"
+    die "Não consegui salvar os arquivos anexados: este backup NÃO está completo."
+  fi
+  mv "$parcial_st" "$BACKUP_DIR/storage-$ts.tgz"
   c_grn "✓ anexos: $(du -h "$BACKUP_DIR/storage-$ts.tgz" | awk '{print $1}')"
 fi
 

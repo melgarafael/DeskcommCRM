@@ -21,8 +21,20 @@
  *
  * 3. Identidade. Para conversão vinda de anúncio clique-para-WhatsApp, o
  *    `ctwa_clid` é o que liga a venda ao clique — é ele que carrega a atribuição,
- *    e o telefone hasheado só reforça. Sem o clique não há o que reportar, e é
- *    isso que o chamador chama de `sem_atribuicao`.
+ *    e o telefone hasheado só reforça. A exceção é quem veio de anúncio para
+ *    uma PÁGINA (UTM da Meta, sem clique): aí o telefone é a identidade, e a
+ *    origem declarada muda (ver abaixo). Sem nenhum dos dois, é recusa.
+ *
+ * 4. Página ou WABA (#2098). No mesmo evento `business_messaging` do canal
+ *    `whatsapp`, a Meta exige `user_data.page_id` OU
+ *    `user_data.whatsapp_business_account_id` — sem eles ela recusa com
+ *    error_subcode 2804116 ("Falta a identificação da Página ou da conta do
+ *    WhatsApp Business") e NENHUMA venda clique-para-WhatsApp passava. Os ids
+ *    vêm da credencial (`meta/identidade.ts`, gravados pela tela de
+ *    Conversões); o transporte manda o que existir e NUNCA inventa — id
+ *    errado não é recusa melhor, é evento atribuído à conta de outra pessoa.
+ *    Quando não há id, o envio segue e a recusa é da Meta; a frase dela vai
+ *    para o `detail` do livro-razão, e não o "Invalid parameter" genérico.
  *
  * ─── Por que `business_messaging` e não `website` ───────────────────────────
  *
@@ -81,8 +93,16 @@ async function enviar(
   credencial: CredencialDeConversao,
   conversao: ConversaoOffline,
 ): Promise<ResultadoDeEnvio> {
-  if (conversao.evento !== "Purchase" || conversao.valorCentavos === null)
-    return { tipo: "permanente", detalhe: "Este transporte aceita apenas compras com valor." };
+  // Dois formatos e só dois: a compra, que exige valor (regra 1), e o evento de
+  // ETAPA, que sai com o nome padrão escolhido na regra e sem valor — o negócio
+  // ainda não foi vendido, e um valor ali ensinaria receita que não existiu.
+  const ehCompra = conversao.evento === "Purchase";
+  const nomeNoFio = ehCompra ? "Purchase" : conversao.eventoNaPlataforma?.trim();
+  if (ehCompra ? conversao.valorCentavos === null : !nomeNoFio)
+    return {
+      tipo: "permanente",
+      detalhe: "Este transporte aceita compras com valor ou eventos de etapa com o nome da Meta.",
+    };
   const idadeMs = Date.now() - conversao.ocorridoEm.getTime();
   if (idadeMs > IDADE_MAXIMA_MS) {
     const dias = Math.floor(idadeMs / (24 * 60 * 60 * 1000));
@@ -94,28 +114,68 @@ async function enviar(
     };
   }
 
-  const userData: Record<string, unknown> = {
-    ctwa_clid: conversao.cliqueDeOrigem,
-  };
+  // Com clique: anúncio clique-para-WhatsApp, `business_messaging` + `ctwa_clid`.
+  // Sem clique: a pessoa veio de anúncio para a PÁGINA e a venda fechou no CRM.
+  // `business_messaging` sem `ctwa_clid` é recusado, e `website` exige dados do
+  // navegador que o CRM não tem — `system_generated` é a origem declarada para
+  // venda registrada em sistema, casada pelo telefone em hash.
+  const comClique = conversao.cliqueDeOrigem.trim() !== "";
+  if (!comClique && !conversao.telefone) {
+    return {
+      tipo: "permanente",
+      detalhe:
+        "Sem o clique do anúncio e sem telefone no contato, a Meta não tem como reconhecer o cliente.",
+    };
+  }
+
+  const userData: Record<string, unknown> = comClique ? { ctwa_clid: conversao.cliqueDeOrigem } : {};
+  // ─── Página ou WABA, só no clique-para-WhatsApp (#2098) ────────────────────
+  //
+  // A Meta cobra UM dos dois apenas quando a origem é `business_messaging` +
+  // canal `whatsapp`. No caminho da página (`system_generated`) os ids não são
+  // exigidos, e mandá-los lá acrescentaria dado que ninguém pediu.
+  //
+  // UM por envio, não os dois: a plataforma pede "o que estiver vinculado ao
+  // conjunto de dados", então mandar o par inteiro exibiria um id que talvez
+  // não seja deste dataset — e a página é a identidade do clique. A WABA entra
+  // só quando não há página. Sem nenhum dos dois: nada é acrescentado, o
+  // evento sai como antes e a recusa (com a frase da Meta) fica no livro-razão.
+  if (comClique) {
+    const pageId = credencial.meta?.pageId ?? null;
+    const wabaId = credencial.meta?.whatsappBusinessAccountId ?? null;
+    if (pageId) userData.page_id = pageId;
+    else if (wabaId) userData.whatsapp_business_account_id = wabaId;
+    else
+      logger.warn("[conversoes.meta] sem page_id nem whatsapp_business_account_id", {
+        leadId: conversao.leadId,
+        organizationId: conversao.organizationId,
+        motivo: "identidade_ausente_em_settings_conversions",
+      });
+  }
+
   // Array de propósito: o formato aceita múltiplos valores por campo, e mandar
   // string crua onde ele espera lista é aceito com aviso e ignorado no match.
   if (conversao.telefone) userData.ph = [hash(conversao.telefone)];
 
+  const customData: Record<string, unknown> = {};
+  if (ehCompra && conversao.valorCentavos !== null) {
+    customData.value = conversao.valorCentavos / 100;
+    customData.currency = conversao.moeda.toUpperCase();
+  }
+
   const corpo: Record<string, unknown> = {
     data: [
       {
-        event_name: conversao.evento,
+        event_name: nomeNoFio,
         // Segundos, não milissegundos. Em ms o evento cai a ~55 mil anos no
         // futuro, e a resposta é 200 — some sem erro.
         event_time: Math.floor(conversao.ocorridoEm.getTime() / 1000),
         event_id: conversao.eventoId,
-        action_source: "business_messaging",
-        messaging_channel: "whatsapp",
+        ...(comClique
+          ? { action_source: "business_messaging", messaging_channel: "whatsapp" }
+          : { action_source: "system_generated" }),
         user_data: userData,
-        custom_data: {
-          value: conversao.valorCentavos / 100,
-          currency: conversao.moeda.toUpperCase(),
-        },
+        ...(Object.keys(customData).length > 0 ? { custom_data: customData } : {}),
       },
     ],
   };
@@ -161,9 +221,26 @@ async function enviar(
   let codigo: number | null = null;
   let mensagem = texto.slice(0, 400);
   try {
-    const json = JSON.parse(texto) as { error?: { code?: number; message?: string } };
+    const json = JSON.parse(texto) as {
+      error?: {
+        code?: number;
+        message?: string;
+        error_user_title?: string;
+        error_user_msg?: string;
+      };
+    };
     if (typeof json.error?.code === "number") codigo = json.error.code;
     if (json.error?.message) mensagem = json.error.message;
+    // A frase QUE A META MOSTRA AO USUÁRIO (#2098). O `message` dela é o
+    // "Invalid parameter" que não diz nada — foi exatamente isso que escondeu
+    // o page_id faltando por quanto tempo. Com `error_user_title` +
+    // `error_user_msg` o `detail` do livro-razão passa a nomear a causa, que é
+    // o que quem opera consegue corrigir. Cortado em 400, como o texto cru.
+    if (json.error?.error_user_msg || json.error?.error_user_title) {
+      const titulo = json.error.error_user_title?.trim();
+      const frase = json.error.error_user_msg?.trim();
+      mensagem = [mensagem, titulo, frase].filter(Boolean).join(" — ").slice(0, 400);
+    }
   } catch {
     // Corpo não-JSON num erro é o caso de gateway/WAF no meio. Fica o texto cru.
   }

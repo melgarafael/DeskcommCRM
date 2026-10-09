@@ -69,6 +69,29 @@ export function janelaDeRajada(debounceMs: number, agora: number = Date.now()): 
   return debounceMs > 0 ? new Date(agora + debounceMs) : undefined;
 }
 
+/**
+ * Teto da janela de rajada configurável por agente (#1856): não deixar ninguém
+ * travar o atendimento sem querer. Vale também como default de tela/UX.
+ */
+export const TETO_DEBOUNCE_MS = 60_000;
+
+/**
+ * Janela de rajada EFETIVA de um agente.
+ *
+ * `null`/`undefined` (campo vazio na versão) = o `INBOUND_DEBOUNCE_MS` da
+ * instalação — regressão zero para quem nunca mexeu no campo. O valor
+ * configurado é CLAMPADO em [0, TETO_DEBOUNCE_MS]: 0 desliga a coalescência e
+ * valores acima do teto (dado sujo que entrou por fora da validação) caem para
+ * 60s em vez de travar o atendimento.
+ */
+export function debounceEfetivo(
+  configurado: number | null | undefined,
+  padraoInstalacao: number,
+): number {
+  if (configurado === null || configurado === undefined) return padraoInstalacao;
+  return Math.min(Math.max(0, configurado), TETO_DEBOUNCE_MS);
+}
+
 /** Decide entre carona em job existente e janela nova. */
 export async function decidirRajada(
   pool: pg.Pool,

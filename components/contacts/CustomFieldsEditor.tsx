@@ -1,10 +1,12 @@
 "use client";
+import { useState } from "react";
 /**
  * CustomFieldsEditor — lê `crm_pipelines.settings.fields[]` e renderiza o
  * input certo por tipo. Usado pelo dossiê e pelo painel do inbox, via
  * `LeadFieldsForm`.
  */
 import { useActiveOrg } from "@/hooks/auth/AuthProvider";
+import { parseReaisToCents } from "@/lib/money";
 import { Input } from "@/components/ui/input";
 import { perfilDoPais } from "@/lib/legal/perfil-do-pais";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,6 +26,7 @@ export type CustomFieldType =
   | "text"
   | "textarea"
   | "number"
+  | "currency"
   | "date"
   | "select"
   | "multiselect"
@@ -51,6 +54,7 @@ interface Props {
 
 export function CustomFieldsEditor({ fields, value, onChange, disabled, className }: Props) {
   const t = useT();
+  const [rascunhosDeMoeda, setRascunhosDeMoeda] = useState<Record<string, string>>({});
   // O campo é do mesmo caminho do contato: o exemplo segue o país da
   // organização, e não o DDI brasileiro em duro.
   const telefoneExemplo = perfilDoPais(useActiveOrg()?.country).telefoneExemplo;
@@ -99,6 +103,40 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
                 />
               </div>
             );
+          case "currency": {
+            const valorNumerico = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : null;
+            const formatado =
+              valorNumerico !== null && Number.isFinite(valorNumerico)
+                ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(valorNumerico)
+                : "";
+            return (
+              <div key={f.key} className="space-y-2">
+                {labelEl}
+                <Input
+                  id={id}
+                  type="text"
+                  inputMode="decimal"
+                  value={rascunhosDeMoeda[f.key] ?? formatado}
+                  onChange={(e) => setRascunhosDeMoeda((current) => ({ ...current, [f.key]: e.target.value }))}
+                  onBlur={() => {
+                    const draft = rascunhosDeMoeda[f.key];
+                    if (draft === undefined) return;
+                    const raw = draft.trim().replace(/^R\$\s*/i, "").replace(/\s/g, "");
+                    const centavos = raw === "" ? null : parseReaisToCents(raw);
+                    if (centavos !== null) set(f.key, centavos / 100);
+                    else if (raw === "") set(f.key, null);
+                    setRascunhosDeMoeda((current) => {
+                      const next = { ...current };
+                      delete next[f.key];
+                      return next;
+                    });
+                  }}
+                  disabled={disabled}
+                  placeholder="R$ 0,00"
+                />
+              </div>
+            );
+          }
           case "date":
             return (
               <div key={f.key} className="space-y-2">

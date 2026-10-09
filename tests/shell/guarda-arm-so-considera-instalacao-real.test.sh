@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# ── #1778 — a guarda de ARM só considera instalação REAL ─────────────────────
+# ── #1778 — a guarda de arquitetura sem suporte só considera instalação REAL ───────────────────────
 #
 # O DEFEITO, e por que o teste do #1775 não podia pegá-lo:
 #
 #   O #1775 separou instalação NOVA (recusa em não-x86_64) de instalação
 #   EXISTENTE (aviso, e o script segue até o build local). O critério de
 #   "existente" lia o estado do DIRETÓRIO — compose E um `.env` — e um
-#   `install.sh --yes` numa VPS ARM NOVA com o `.env` já preenchido (copiado de
+#   `install.sh --yes` numa VPS com arquitetura sem suporte e `.env` já preenchido (copiado de
 #   outra máquina, gerado por automação, ou deixado por uma rodada anterior que
 #   parou no meio) passava como existente e ia construir as imagens na própria
 #   VPS. O caminho alcançado é o mesmo build local que o install.sh já tem
 #   (por volta da linha 2209), então não é risco de segurança: é a instalação
-#   NOVA em ARM deixar de ser recusada, que é o que a guarda do #1042 existe
+#   NOVA em arquitetura sem suporte deixar de ser recusada, que é o que a guarda do #1042 existe
 #   para impedir.
 #
 #   O teste do #1775 não podia ver isso porque a fixture dele (`montar_instalacao`)
@@ -24,13 +24,13 @@
 #
 #   Prova que a guarda decide pelo que a instalação DEIXOU (marcador, contêiner
 #   do projeto, contêiner do Supabase single-server) e não pelo que chegou
-#   pronto na pasta: com `.env` e nada instalado, aarch64 é recusada com a
+#   pronto na pasta: com `.env` e nada instalado, riscv64 é recusada com a
 #   recusa do #1042. Prova que os três sinais de instalação real continuam
 #   passando, que o filtro de contêiner é por PROJETO (o de outra instalação na
 #   mesma VPS não vale), que `docker` indisponível não vira instalação inventada,
 #   e que em x86_64 o `docker` nem é chamado — a guarda não perguntou nada.
 #
-#   NÃO prova nada numa VPS ARM de verdade: `uname` e `docker` são dublês, o
+#   NÃO prova nada numa VPS com arquitetura sem suporte de verdade: `uname` e `docker` são dublês, o
 #   diretório é descartável (mktemp) e nenhum contêiner sobe. O que se prova é
 #   a DECISÃO da guarda, que é onde o critério mora.
 #
@@ -70,7 +70,7 @@ mkdir -p "$WORK/bin"
 # binário de verdade.
 cat > "$WORK/bin/uname" <<STUB
 #!/usr/bin/env bash
-[ "\$*" = "-m" ] && { printf '%s\n' "\${FAKE_ARCH:-aarch64}"; exit 0; }
+[ "\$*" = "-m" ] && { printf '%s\n' "\${FAKE_ARCH:-riscv64}"; exit 0; }
 exec "$REAL_UNAME" "\$@"
 STUB
 # `docker` responde ao ÚNICO comando que a guarda faz: `ps -a -q --filter
@@ -160,21 +160,21 @@ nome_derivado() { basename "$1" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-'
 
 # ─────────────────────────────────────────────────────────────────────────────
 echo '── 1. A DEFÉITO DA #1778: .env preenchido + NADA instalado é instalação'
-echo '      NOVA, e aarch64 é recusada com a recusa do #1042'
-# A receita do relato: `install.sh --yes` numa VPS ARM NOVA cujo `.env` veio
+echo '      NOVA, e riscv64 é recusada com a recusa do #1042'
+# A receita do relato: `install.sh --yes` numa VPS com arquitetura sem suporte e instalação NOVA cujo `.env` veio
 # pronto (copiado de outra máquina, gerado por automação, ou deixado por uma
 # rodada que parou no meio). Compose e `.env` estão lá — que era o que bastava.
 # O resultado tem de ser a RECUSA, com o texto do #1042, e sem a palavra do
 # aviso de instalação existente.
 R1="$WORK/caso1"; mkdir -p "$R1"; montar_pasta "$R1/deskcommcrm" 0
-guarda "$R1" aarch64
+guarda "$R1" riscv64
 check ".env + compose e NADA instalado → a instalação NÃO é real" \
   test "$VEREDITO" = NOVA
-check "e aarch64 é recusada (rc=$RC, e != 0)" test "$RC" -ne 0
+check "e riscv64 é recusada (rc=$RC, e != 0)" test "$RC" -ne 0
 check "a recusa é a do #1042 (orienta a VPS suportada)" \
-  grep -q 'Use uma VPS x86_64/amd64' "$WORK/guarda.out"
+  grep -q 'Use uma VPS x86_64/amd64 ou ARM64/aarch64' "$WORK/guarda.out"
 check "a recusa diz qual arquitetura foi encontrada" \
-  grep -q 'aarch64' "$WORK/guarda.out"
+  grep -q 'riscv64' "$WORK/guarda.out"
 check "e NÃO diz que a instalação já existe (o aviso do #1775)" \
   nao_contem 'JÁ EXISTE' "$WORK/guarda.out"
 
@@ -182,7 +182,7 @@ check "e NÃO diz que a instalação já existe (o aviso do #1775)" \
 echo
 echo '── 2. OS TRÊS SINAIS DE INSTALAÇÃO REAL CONTINUAM PASSANDO (#1775 intacto)'
 # O contrapeso obrigatório: o que o #1775 consertou não pode ser desfeito. Sem
-# esta seção, um conserto que recusasse TUDO em ARM também ficaria verde.
+# esta seção, um conserto que recusasse TUDO em arquitetura sem suporte também ficaria verde.
 R2="$WORK/caso2"; mkdir -p "$R2"; montar_pasta "$R2/deskcommcrm" 0
 marcar_instalacao() {  # marcar_instalacao <diretório> [versão]
   printf 'instalado_em=2026-09-27T00:00:00Z\nversao=%s\n' "${2:-0.9.0}" \
@@ -192,30 +192,30 @@ marcar_instalacao() {  # marcar_instalacao <diretório> [versão]
 # 2a. O marcador, que o install.sh grava com a stack no ar. É o sinal mais
 # forte: a instalação em si escreveu que terminou.
 marcar_instalacao "$R2/deskcommcrm"
-guarda "$R2" aarch64
+guarda "$R2" riscv64
 check "o marcador .deskcomm-instalado → a instalação é real" test "$VEREDITO" = REAL
-check "e aarch64 passa pela guarda (rc=$RC, e == 0)" test "$RC" -eq 0
+check "e riscv64 passa pela guarda (rc=$RC, e == 0)" test "$RC" -eq 0
 check "com o aviso de que a instalação já existe, e não com a recusa" \
   grep -q 'JÁ EXISTE' "$WORK/guarda.out"
 check "e a recusa do #1042 NÃO aparece" \
-  nao_contem 'Use uma VPS x86_64/amd64' "$WORK/guarda.out"
+  nao_contem 'Use uma VPS x86_64/amd64 ou ARM64/aarch64' "$WORK/guarda.out"
 
 # 2b. O contêiner do projeto, que é o caso de quem instalou numa versão
 # anterior e por isso não tem marcador. Precisa ser o contêiner do projeto
 # DESTA instalação — daí o nome derivado da pasta, e não um nome qualquer.
 R2B="$WORK/caso2b"; mkdir -p "$R2B"; montar_pasta "$R2B/deskcommcrm" 0
-guarda "$R2B" aarch64 "$(nome_derivado "$R2B/deskcommcrm")"
+guarda "$R2B" riscv64 "$(nome_derivado "$R2B/deskcommcrm")"
 check "contêiner do projeto DESTA instalação → é real" test "$VEREDITO" = REAL
-check "e aarch64 passa pela guarda (rc=$RC, e == 0)" test "$RC" -eq 0
+check "e riscv64 passa pela guarda (rc=$RC, e == 0)" test "$RC" -eq 0
 check "com o aviso de instalação existente" grep -q 'JÁ EXISTE' "$WORK/guarda.out"
 
 # 2c. O contêiner do Supabase single-server, que o modo single-server cria com
 # o sufixo `-supabase` no nome do projeto. Sem este sinal, quem instalou em
-# single-server passaria a ser recusado numa VPS ARM — uma regressão nova.
+# single-server passaria a ser recusado numa VPS com arquitetura sem suporte — uma regressão nova.
 R2C="$WORK/caso2c"; mkdir -p "$R2C"; montar_pasta "$R2C/deskcommcrm" 0
-guarda "$R2C" aarch64 "$(nome_derivado "$R2C/deskcommcrm")-supabase"
+guarda "$R2C" riscv64 "$(nome_derivado "$R2C/deskcommcrm")-supabase"
 check "contêiner do Supabase single-server → é real" test "$VEREDITO" = REAL
-check "e aarch64 passa pela guarda (rc=$RC, e == 0)" test "$RC" -eq 0
+check "e riscv64 passa pela guarda (rc=$RC, e == 0)" test "$RC" -eq 0
 
 # 2d. O COMPOSE_PROJECT_NAME do `.env` manda sobre o nome derivado da pasta, e
 # o guard tem de procurar pelo que os contêineres carregam de verdade. Uma
@@ -223,10 +223,10 @@ check "e aarch64 passa pela guarda (rc=$RC, e == 0)" test "$RC" -eq 0
 # nomeia o projeto no `.env` justamente para não disputar o parque com a outra.
 R2D="$WORK/caso2d"; mkdir -p "$R2D"; montar_pasta "$R2D/deskcommcrm" 0
 printf 'COMPOSE_PROJECT_NAME=deskcommcrm-2\n' >> "$R2D/deskcommcrm/.env"
-guarda "$R2D" aarch64 "deskcommcrm-2"
+guarda "$R2D" riscv64 "deskcommcrm-2"
 check "COMPOSE_PROJECT_NAME do .env manda sobre o nome da pasta → é real" \
   test "$VEREDITO" = REAL
-check "e aarch64 passa pela guarda (rc=$RC, e == 0)" test "$RC" -eq 0
+check "e riscv64 passa pela guarda (rc=$RC, e == 0)" test "$RC" -eq 0
 
 # ─────────────────────────────────────────────────────────────────────────────
 echo
@@ -238,19 +238,19 @@ echo '      que não respondeu'
 # projeto, qualquer VPS com Docker vira "instalação existente" e a recusa do
 # #1042 deixa de existir em cima de um `docker ps` qualquer.
 R3="$WORK/caso3"; mkdir -p "$R3"; montar_pasta "$R3/deskcommcrm" 0
-guarda "$R3" aarch64 "wordpress_app_pljr imobplus-server-app-1 traefik"
+guarda "$R3" riscv64 "wordpress_app_pljr imobplus-server-app-1 traefik"
 check "contêiner de OUTRO programa na mesma VPS → a instalação NÃO é real" \
   test "$VEREDITO" = NOVA
-check "e aarch64 é recusada (rc=$RC, e != 0)" test "$RC" -ne 0
-check "a recusa é a do #1042" grep -q 'Use uma VPS x86_64/amd64' "$WORK/guarda.out"
+check "e riscv64 é recusada (rc=$RC, e != 0)" test "$RC" -ne 0
+check "a recusa é a do #1042" grep -q 'Use uma VPS x86_64/amd64 ou ARM64/aarch64' "$WORK/guarda.out"
 
 # Um `docker` que não responde (fora do PATH, daemon parado, sem permissão no
 # socket) devolve vazio, e vazio é "não achei" — a resposta que manda RECUSAR.
 # O contrário seria adivinhar instalação a partir de um Docker que não falou.
 R3B="$WORK/caso3b"; mkdir -p "$R3B"; montar_pasta "$R3B/deskcommcrm" 0
-guarda "$R3B" aarch64
+guarda "$R3B" riscv64
 : > "$DOCKER_LOG"
-( cd "$R3B" && env -i PATH="/usr/bin:/bin" HOME="${HOME:-/root}" FAKE_ARCH=aarch64 \
+( cd "$R3B" && env -i PATH="/usr/bin:/bin" HOME="${HOME:-/root}" FAKE_ARCH=riscv64 \
     bash -c '. "$0"
              if instalacao_real_do_kit_aqui; then echo REAL; else echo NOVA; fi' "$COMMON" \
 ) > "$WORK/sem-docker.txt" 2>&1
@@ -260,10 +260,10 @@ check "sem docker no PATH, a instalação NÃO é inventada" \
 # Sem `.env` não há nem nome de projeto para procurar — e a pasta nem é uma
 # instalação. O guard nem deve chamar o docker aqui.
 R3C="$WORK/caso3c"; mkdir -p "$R3C"; montar_pasta "$R3C/deskcommcrm" 1
-guarda "$R3C" aarch64 "$(nome_derivado "$R3C/deskcommcrm")"
+guarda "$R3C" riscv64 "$(nome_derivado "$R3C/deskcommcrm")"
 check "sem .env (e com contêiner do projeto lá) → a instalação NÃO é real" \
   test "$VEREDITO" = NOVA
-check "e aarch64 é recusada (rc=$RC, e != 0)" test "$RC" -ne 0
+check "e riscv64 é recusada (rc=$RC, e != 0)" test "$RC" -ne 0
 check "e o docker nem é chamado sem .env" docker_nao_falou
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -359,7 +359,7 @@ check "e o painel de recuperação do install.sh também o apaga" \
 check "e o marcador está no .gitignore (estado da VPS, não do repositório)" \
   grep -qx '.deskcomm-instalado' "$REPO_ROOT/.gitignore"
 # O update.sh também grava, com o app saudável. Depois deste conserto, uma
-# instalação ARM NOVA é recusada — então toda instalação ARM que existe veio
+# instalação NOVA numa arquitetura sem suporte é recusada — então toda instalação nessa arquitetura que existe veio
 # de antes e NÃO tem marcador; o único sinal dela seria o contêiner, e um
 # `down` sem `-v` (ou um `prune`) a faria ser recusada como nova, o mesmo
 # defeito do #1775. Gravar no update fecha isso a partir da atualização

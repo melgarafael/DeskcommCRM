@@ -6,6 +6,7 @@
  */
 import type { EventHandler, HandlerResult } from "@/lib/event-log/dispatcher";
 import { aplicarTextoNosFollowups, textoDoPayloadInbound } from "@/lib/followup/aplicar-inbound";
+import { canalDoEventoDesativado } from "@/lib/channels/desativado";
 import { applyReactivityEvent, createSupabaseReactivityClient } from "@/lib/followup/reactivity";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -13,10 +14,22 @@ export const FOLLOWUP_REACTIVITY_HANDLER_KEY = "followup-reactivity.v1";
 
 export const followupReactivityHandler: EventHandler = {
   key: FOLLOWUP_REACTIVITY_HANDLER_KEY,
+  naOrgParada: "roda",
   events: ["message.received", "ai.handoff_triggered", "ai.handoff_resolved"],
   async handle(row): Promise<HandlerResult> {
     try {
       const admin = createAdminClient();
+      // Canal DESATIVADO (#2329): o fluxo não anda com mensagem de um canal
+      // que o operador desligou — a entrega foi gravada, mas ninguém está
+      // atendendo por ali. Sem a guarda, o `message.received` de um canal
+      // pausado avançava o nó e gravava texto no follow-up.
+      if (await canalDoEventoDesativado(admin, row.organization_id, row.payload)) {
+        return {
+          consumer_key: FOLLOWUP_REACTIVITY_HANDLER_KEY,
+          status: "skipped",
+          detail: "canal_desativado",
+        };
+      }
       const db = createSupabaseReactivityClient(admin);
       const summary = await applyReactivityEvent(db, () => new Date(), row);
       if (row.event_type === "message.received") {

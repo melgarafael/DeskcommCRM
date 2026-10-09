@@ -74,6 +74,9 @@ function makeAdmin(cap: Captura, jaRegistrada: boolean) {
       // que é o cenário deste arquivo (a mensagem é digitação humana de
       // verdade). Quem cobre o eco é `eco-do-envio-nao-silencia-o-bot.test.ts`.
       is: () => chain,
+      // A re-checagem pós-insert (corrida com o envio) filtra por `neq`. O
+      // `maybeSingle` deste dublê responde pelo cenário, não pelos filtros.
+      neq: () => chain,
       gte: () => chain,
       order: () => chain,
       maybeSingle: () => {

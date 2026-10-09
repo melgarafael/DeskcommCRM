@@ -95,6 +95,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     resource: "contact",
     allowPlatformAdmin: true,
     organizationId: existing.organization_id,
+    permiteOrgSuspensa: true,
   });
   if (!authz.ok) return authz.response;
 

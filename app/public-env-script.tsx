@@ -71,6 +71,11 @@ export async function PublicEnvScript({
     // `""`), então o navegador não precisa aprender um segundo jeito de dizer
     // "não tem logo".
     APP_LOGO_URL: marca.logoUrl ?? "",
+    // Servidor de videochamada (Jitsi, #2440): URL pública, não segredo, e
+    // precisa ser do RUNTIME pelo mesmo motivo da marca — self-hoster roda
+    // imagem pré-buildada e NEXT_PUBLIC_* seria queimada no build. Vazio =
+    // a instalação não oferece videochamada (lib/video/jitsi.ts).
+    JITSI_SERVER_URL: env.JITSI_SERVER_URL,
   })
     // Evita quebrar o </script> se algum valor contiver a sequência.
     .replace(/</g, "\\u003c");

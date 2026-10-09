@@ -98,7 +98,10 @@ Detalham schema SQL e payloads exatos. **Consulte antes de modelar qualquer cois
 | [`specs/19`](specs/19-spec-console-de-agencia.md) | **Console de Agência** — operar N organizações clientes; unidade de cobrança decidida (retainer por cliente operado). Lei em [`doctrine/operacao-de-agentes.md`](doctrine/operacao-de-agentes.md) |
 | [`adr/0001-packaging-e-distribuicao.md`](adr/0001-packaging-e-distribuicao.md) | ADR do packaging: namespace, os 3 packages, e o que foi recusado |
 | [`adr/0002-tabelas-de-modulo-num-banco-so.md`](adr/0002-tabelas-de-modulo-num-banco-so.md) | **Aceita em 17/09/2026.** Tabelas de módulo opcional: um banco só, `public`, criadas por função provisionadora fixa quando o módulo é instalado |
+| [`adr/0003-perfil-declarativo-v2-portas-nomeadas-e-vitrine.md`](adr/0003-perfil-declarativo-v2-portas-nomeadas-e-vitrine.md) | **Aceita em 17/09/2026.** Perfil declarativo v2 das extensões: portas nomeadas e o metadado de loja no catálogo |
+| [`adr/0004-cobranca-do-revendedor.md`](adr/0004-cobranca-do-revendedor.md) | **Aceita em 29/09/2026.** Cobrança do revendedor: o terceiro eixo de dinheiro — o dono da instalação cobra as empresas que atende; capacidade do núcleo com chave, desligada por padrão; revisa a condição 2 da ADR-0002 só para este caso |
 | [`architecture/agent-turn.html`](architecture/agent-turn.html) | Diagrama do turno do agente (inbound → guardrails → outbound) |
+| [`architecture/agenda-no-turno.md`](architecture/agenda-no-turno.md) | Fonte de horários locais de reservas, releitura após ações e registros do próximo turno |
 | [`specs/pre-go-live-whatsapp.md`](specs/pre-go-live-whatsapp.md) | Modo de teste do WhatsApp por canal: lista de telefones, abertura ao público e compatibilidade com autorização por origem |
 | [`specs/19`](specs/19-spec-console-de-agencia.md) | **Console de Agência** — operar N organizações clientes; unidade de cobrança decidida (retainer por cliente operado). Lei em [`doctrine/operacao-de-agentes.md`](doctrine/operacao-de-agentes.md) |
 | [`architecture/pre-go-live-whatsapp.architecture.json`](architecture/pre-go-live-whatsapp.architecture.json) | Mapa do pré-go-live, configuração administrativa e gate compartilhado |
@@ -137,6 +140,7 @@ acessibilidade).
 | [`runbooks/waha-hostgator.md`](runbooks/waha-hostgator.md) | Runbook do WAHA em produção |
 | [`runbooks/cloudpanel.md`](runbooks/cloudpanel.md) | **VPS que já tem CloudPanel/Nginx nas portas 80/443** — o modo proxy externo do kit, o endereço fixo para o Nginx do host e o 403 do webhook global |
 | [`runbooks/ai-credentials-rotation.md`](runbooks/ai-credentials-rotation.md) | Rotação de credenciais de IA |
+| [`runbooks/css-personalizado.md`](runbooks/css-personalizado.md) | **CSS personalizado que trancou a tela** — `?sem_css=1` e o `delete` em `platform_config` |
 | [`../SECURITY.md`](../SECURITY.md) | Política de reporte de vulnerabilidade |
 
 ## 7. Testes e QA

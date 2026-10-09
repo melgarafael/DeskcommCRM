@@ -9,33 +9,53 @@
  * Fluxo:
  *  1. `loadAuthUser()` — valida o JWT via `supabase.auth.getUser()` (nunca
  *     `getSession()`); 401 se não autenticado.
- *  2. `resolveActiveOrg()` — org ativa de fonte confiável (cookie validado
+ *  2. `orgAtivaSemPortao()` — org ativa de fonte confiável (cookie validado
  *     contra memberships), NUNCA do body; 403 `forbidden_tenant` se ausente.
- *  3. `rpc fn_user_role_in_org(org)` — role efetivo direto do banco, a MESMA
- *     função SECURITY DEFINER que as policies RLS usam (fonte única de
- *     verdade); falha fechada se membership foi revogado.
- *  4. Rank insuficiente → audit `authz.denied` (fire-and-forget) + 403.
+ *     SEM o portão de `resolveActiveOrg`: aquele REDIRECIONA a org suspensa, e
+ *     rota de API responde 403 JSON, não 307 HTML.
+ *  3. Org não operante (`lib/organizacao/operante.ts`) → 403 `org_suspended`,
+ *     salvo `permiteOrgSuspensa` (só LGPD e cobrança — cerca
+ *     `tests/unit/org-suspensa-so-nas-rotas-permitidas.test.ts`).
+ *  4. Atalho de platform admin: `"leitura"` libera qualquer scope; `true` só
+ *     `scope === 'full'` sem dívida de MFA.
+ *  5. `rpc fn_user_role_in_org(org)` — role efetivo direto do banco, a MESMA
+ *     função SECURITY DEFINER que as policies RLS usam; falha fechada se o
+ *     membership foi revogado.
+ *  6. Rank insuficiente → audit `authz.denied` (fire-and-forget) + 403.
  */
+import { headers } from "next/headers";
 import type { NextResponse } from "next/server";
 
 import { fail, type ApiError } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
+import { CODIGO_ORG_DIVERGENTE, HEADER_ORG_DA_ABA } from "@/lib/auth/org-da-aba";
+import { loadAuthUser, mfaEmDivida, orgAtivaSemPortao } from "@/lib/auth/server";
 import { ROLE_RANK, type ActiveOrg, type AuthUser, type Role } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { STATUS_OPERANTE, ehOperante } from "@/lib/organizacao/operante";
 import { createClient } from "@/lib/supabase/server";
 
 export type RoleCheck =
   | { ok: true; user: AuthUser; org: ActiveOrg }
   | { ok: false; response: NextResponse<ApiError> };
 
+const MENSAGEM_DE_MFA =
+  "Esta sessão precisa da verificação em duas etapas. Entre novamente com o código do aplicativo.";
+
 interface RequireRoleOpts {
   /** Correlaciona a resposta e o audit com o X-Request-Id da rota. */
   requestId?: string;
   /** resource_type gravado no audit `authz.denied` (ex.: "api_tokens"). */
   resource?: string;
-  /** Platform admin (role transversal) bypassa o rank do tenant. */
-  allowPlatformAdmin?: boolean;
+  /**
+   * Platform admin (role transversal) bypassa o rank do tenant.
+   * - `true`: rota que ESCREVE — só `scope === 'full'` e sessão sem dívida de
+   *   MFA; `support_readonly` cai no rank normal do tenant.
+   * - `"leitura"`: qualquer scope. Só em handler `GET` exportado — `requireRole`
+   *   não recebe o método, e quem garante isso é
+   *   `tests/unit/admin-escrita-exige-scope-full.test.ts`.
+   */
+  allowPlatformAdmin?: boolean | "leitura";
   /**
    * Override da org onde o role é resolvido (default: org ativa do cookie).
    * Use quando a autorização é sobre a org do RECURSO (ex.: LGPD anonymize —
@@ -43,6 +63,53 @@ interface RequireRoleOpts {
    * NUNCA do body. O role vem de `fn_user_role_in_org(p_org)` nessa org.
    */
   organizationId?: string;
+  /** Deixa passar org NÃO operante. Só rotas de LGPD e de cobrança. */
+  permiteOrgSuspensa?: boolean;
+}
+
+/** O 403 da org não operante — o MESMO em `requireRole` e em `orgAtivaDaApi`. */
+function orgSuspensa(user: AuthUser, requestId?: string): NextResponse<ApiError> {
+  return fail("org_suspended", traduzir("A conta desta empresa está suspensa.", user.idioma), 403, {
+    requestId,
+  });
+}
+
+export type OrgDaApi =
+  | { ok: true; org: ActiveOrg | null }
+  | { ok: false; response: NextResponse<ApiError> };
+
+/**
+ * A org ativa para Route Handler que não passa por `requireRole` (rotas que
+ * escolhem o próprio 401/403 de "sem org"). Org não operante → 403
+ * `org_suspended` em JSON, e o cliente (lib/api/client.ts) leva a janela ao hub.
+ *
+ * NÃO use `resolveActiveOrg` em `app/api/**`: ele REDIRECIONA, o `fetch` segue
+ * o 307 e entrega o HTML de `/account-suspended` à tela como se fosse o dado
+ * (cerca `tests/unit/api-nao-redireciona-org-suspensa.test.ts`).
+ * Sem usuário, sem org: `{ ok: true, org: null }`, e a rota responde o seu "sem org".
+ */
+export async function orgAtivaDaApi(user: AuthUser | null, requestId?: string): Promise<OrgDaApi> {
+  const org = user ? await orgAtivaSemPortao(user) : null;
+  if (user && org && !ehOperante(org.org_status)) {
+    return { ok: false, response: orgSuspensa(user, requestId) };
+  }
+  return { ok: true, org };
+}
+
+/**
+ * A organização que a ABA declara no header `X-Org-Da-Aba`, ou `null`.
+ *
+ * `try` porque o `headers()` só existe dentro de um contexto de requisição: fora
+ * dele (suíte que não mockou, chamada de script) não há aba que discorde de
+ * nada, e a ausência do header é justamente "não há nada a recusar".
+ */
+async function orgDaAbaNoHeader(): Promise<string | null> {
+  try {
+    const valor = (await headers()).get(HEADER_ORG_DA_ABA);
+    return valor && valor.trim() ? valor.trim() : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -50,7 +117,13 @@ interface RequireRoleOpts {
  * `if (!authz.ok) return authz.response;`
  */
 export async function requireRole(min: Role, opts: RequireRoleOpts = {}): Promise<RoleCheck> {
-  const { requestId, resource, allowPlatformAdmin = false, organizationId } = opts;
+  const {
+    requestId,
+    resource,
+    allowPlatformAdmin = false,
+    organizationId,
+    permiteOrgSuspensa = false,
+  } = opts;
 
   const user = await loadAuthUser();
   if (!user) {
@@ -65,18 +138,29 @@ export async function requireRole(min: Role, opts: RequireRoleOpts = {}): Promis
   if (organizationId) {
     const membership = user.organizations.find((o) => o.organization_id === organizationId);
     org = user.support?.organization_id === organizationId
-      ? { orgId: organizationId, name: user.support.name, role: user.support.access_mode === "full" ? "admin" : "viewer" }
+      ? {
+          orgId: organizationId,
+          name: user.support.name,
+          role: user.support.access_mode === "full" ? "admin" : "viewer",
+          // `fn_support_context` só dá 'active' com a org em 'active' (e o
+          // acompanhamento encerrado já saiu acima).
+          org_status: STATUS_OPERANTE,
+        }
       : membership
       ? {
           orgId: membership.organization_id,
           name: membership.organization_name,
           role: membership.role,
+          org_status: membership.org_status ?? null,
+          suspended_kind: membership.suspended_kind ?? null,
         }
-      : allowPlatformAdmin && user.is_platform_admin
-        ? { orgId: organizationId, name: "—", role: "viewer" }
+      : allowPlatformAdmin !== false && user.is_platform_admin
+        // Sem membership o status é desconhecido: `null` falha fechado. Hoje o
+        // único chamador (LGPD anonymize) passa `permiteOrgSuspensa`.
+        ? { orgId: organizationId, name: "—", role: "viewer", org_status: null }
         : null;
   } else {
-    org = await resolveActiveOrg(user);
+    org = await orgAtivaSemPortao(user);
   }
   if (!org) {
     return {
@@ -85,8 +169,69 @@ export async function requireRole(min: Role, opts: RequireRoleOpts = {}): Promis
     };
   }
 
-  if (allowPlatformAdmin && user.is_platform_admin && !user.support) {
-    return { ok: true, user, org };
+  // #2335, metade 2 — A ESCRITA NÃO PODE IR PARA UMA ORGANIZAÇÃO DIFERENTE DA
+  // QUE A ABA MOSTRA. O cookie `active_org` é um por sessão do NAVEGADOR: com
+  // duas abas abertas, alguém troca de organização na primeira e a segunda
+  // continua com as props antigas enquanto o servidor já responde pela nova —
+  // e a escrita dela cai na organização errada. A aba declara qual é a dela no
+  // header `X-Org-Da-Aba` (carimbado pelo `apiClient` SÓ em mutante); divergiu
+  // do cookie → recusa com código próprio, que a tela traduz no mesmo aviso da
+  // metade 1 (leitura).
+  //
+  // Sem header nada muda: leitura não carrega, chamada que não passa pelo
+  // `apiClient` não carrega, e server action segue o parâmetro explícito do
+  // precedente #2068. Este bloco é a porta de ESCRITA, e o `requireRole` é o
+  // gate único que toda rota /api/v1 já atravessa.
+  const aba = await orgDaAbaNoHeader();
+  if (aba) {
+    // Com `organizationId` (override para a org do RECURSO — ex.: LGPD, que
+    // escreve na org do CONTATO) a comparação é com o COOKIE, nunca com o
+    // recurso: a aba declara a própria organização, não a de quem recebe a
+    // escrita. `orgAtivaSemPortao` é `cache()` por requisição, não é leitura
+    // nova.
+    const orgDoCookie = organizationId ? await orgAtivaSemPortao(user) : org;
+    if (orgDoCookie && orgDoCookie.orgId !== aba) {
+      return {
+        ok: false,
+        response: fail(
+          CODIGO_ORG_DIVERGENTE,
+          t("Esta aba está numa organização diferente da sessão. Recarregar?"),
+          409,
+          {
+            requestId,
+            details: {
+              organization_id: orgDoCookie.orgId,
+              organization_name: orgDoCookie.name,
+            },
+          },
+        ),
+      };
+    }
+  }
+
+  // ANTES do atalho de platform admin: nada que custe ou saia roda em org
+  // parada, nem pelas mãos do dono da instalação.
+  if (!permiteOrgSuspensa && !ehOperante(org.org_status)) {
+    return { ok: false, response: orgSuspensa(user, requestId) };
+  }
+
+  if (user.is_platform_admin && !user.support && allowPlatformAdmin !== false) {
+    if (allowPlatformAdmin === "leitura") return { ok: true, user, org };
+    if (user.platform_admin_scope === "full") {
+      if (await mfaEmDivida()) {
+        void audit({
+          action: "authz.denied",
+          actorUserId: user.id,
+          organizationId: org.orgId,
+          resourceType: resource ?? null,
+          requestId,
+          metadata: { reason: "mfa_required", via: "platform_admin" },
+        });
+        return { ok: false, response: fail("mfa_required", t(MENSAGEM_DE_MFA), 403, { requestId }) };
+      }
+      return { ok: true, user, org };
+    }
+    // `support_readonly` com `true`: sem atalho — segue para o rank do tenant.
   }
 
   // Role efetivo do banco (não do snapshot do cookie/membership em memória).
@@ -135,17 +280,7 @@ export async function requireRole(min: Role, opts: RequireRoleOpts = {}): Promis
       requestId,
       metadata: { reason: "mfa_required", effective_role: effectiveRole ?? null },
     });
-    return {
-      ok: false,
-      response: fail(
-        "mfa_required",
-        t(
-          "Esta sessão precisa da verificação em duas etapas. Entre novamente com o código do aplicativo.",
-        ),
-        403,
-        { requestId },
-      ),
-    };
+    return { ok: false, response: fail("mfa_required", t(MENSAGEM_DE_MFA), 403, { requestId }) };
   }
 
   if (rank < ROLE_RANK[min]) {

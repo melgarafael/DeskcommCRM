@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   authorize: vi.fn(),
   knobs: vi.fn(),
   open: vi.fn(),
+  paradas: vi.fn(),
+  prepare: vi.fn(),
 }));
 vi.mock("@/app/api/v1/messages/_handler", () => ({ sendMessageHandler: mocks.send }));
 vi.mock("@/lib/audit", () => ({ audit: mocks.audit }));
@@ -46,12 +48,21 @@ vi.mock("@/lib/agent-engine/pacing/engine", () => ({
   },
 }));
 vi.mock("@/lib/env", () => ({ env: {} }));
+// Só `idsDeOrgsParadas` é dublê: `OrgNaoOperanteError` segue a classe real
+// (a Task 26b a usa no `catch` do tick, e `instanceof` exige a mesma classe).
+vi.mock("@/lib/organizacao/operante", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/organizacao/operante")>()),
+  idsDeOrgsParadas: mocks.paradas,
+}));
 vi.mock("@/lib/prospecting/store", () => ({
   withProspectingLock: vi.fn(),
   synchronizeSearch: vi.fn(),
   validateConfig: vi.fn().mockResolvedValue(undefined),
+  prepararCandidatoNoEnvio: mocks.prepare,
 }));
-import { sendNextCandidate } from "@/lib/prospecting/worker";
+import { sendNextCandidate, tickProspecting } from "@/lib/prospecting/worker";
+import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
+import { withProspectingLock } from "@/lib/prospecting/store";
 import type { Campaign } from "@/lib/prospecting/store";
 const id = "10000000-0000-4000-8000-000000000001";
 const campaign = {
@@ -87,13 +98,14 @@ function database(
     retry_at: null as Date | null,
     last_attempt: null as Date | null,
   },
+  row: Record<string, unknown> = candidate,
 ) {
   return {
     query: vi.fn(async (sql: string) => {
       if (sql.startsWith("select daily_message_limit"))
         return { rows: [{ daily_message_limit: 50 }] };
       if (sql.includes("count(*) filter")) return { rows: [counts] };
-      if (sql.startsWith("select * from prospecting_candidates")) return { rows: [candidate] };
+      if (sql.startsWith("select * from prospecting_candidates")) return { rows: [row] };
       if (sql.startsWith("select published_version_id"))
         return { rows: [{ published_version_id: id, operation_revision: 1 }] };
       return { rows: [] };
@@ -223,5 +235,157 @@ describe("gradual outreach", () => {
     expect(
       db.query.mock.calls.some(([q]) => q.startsWith("update messages set status='failed'")),
     ).toBe(true);
+  });
+});
+
+describe("tick da prospecção × organização parada", () => {
+  it("exclui as paradas NO SQL, via fn_org_operante, antes do limit — sem lista de ids na query (issue #2015)", async () => {
+    const query = vi.fn(async (_sql: string, _params?: unknown[]) => ({ rows: [] }));
+    await tickProspecting({ query } as never, {} as never);
+    const [sql, params] = query.mock.calls[0]!;
+    expect(sql).toMatch(/fn_org_operante/);
+    expect(sql.indexOf("fn_org_operante")).toBeLessThan(sql.indexOf("limit 20"));
+    // Nenhuma lista de ids de org parada é carregada nem passada à query — a
+    // régua SQL decide no banco, e a query não cortaria em `max_rows`.
+    expect(sql).not.toMatch(/organization_id <> all/);
+    expect(params ?? []).toEqual([]);
+  });
+});
+
+describe("tick da prospecção × organização que para no meio do envio", () => {
+  function tickComEnvioQueFalha(erro: Error) {
+    mocks.paradas.mockResolvedValue([]);
+    mocks.send.mockRejectedValueOnce(erro);
+    const base = database();
+    const db = {
+      query: vi.fn(async (sql: string) =>
+        sql.startsWith("select * from prospecting_campaigns where organization_id=$1 and status='running'")
+          ? { rows: [campaign] }
+          : base.query(sql),
+      ),
+    };
+    (withProspectingLock as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      async (_pool: unknown, _org: unknown, fn: (d: unknown) => Promise<unknown>) => fn(db),
+    );
+    const pool = { query: vi.fn(async () => ({ rows: [{ organization_id: id }] })) };
+    return { db, rodar: () => tickProspecting(pool as never, {} as never) };
+  }
+  const gravou = (db: { query: ReturnType<typeof vi.fn> }, trecho: string) =>
+    db.query.mock.calls.some(([sql]) => String(sql).includes(trecho));
+
+  it("OrgNaoOperanteError no envio NÃO pausa a campanha nem queima o candidato: ele volta à fila", async () => {
+    const { db, rodar } = tickComEnvioQueFalha(new OrgNaoOperanteError(id, "suspended"));
+    await rodar();
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+    expect(gravou(db, "status='paused'")).toBe(false);
+    expect(gravou(db, "update prospecting_candidates set status='failed',error=$3")).toBe(false);
+    expect(gravou(db, "update prospecting_candidates set status='queued'")).toBe(true);
+  });
+
+  it("controle: falha inesperada do envio continua pausando a campanha e marcando o candidato failed", async () => {
+    const { db, rodar } = tickComEnvioQueFalha(new Error("provedor fora do ar"));
+    await rodar();
+    expect(gravou(db, "status='paused'")).toBe(true);
+    expect(gravou(db, "update prospecting_candidates set status='failed',error=$3")).toBe(true);
+  });
+});
+
+describe("funil só no envio (`funnel_entry: on_send`)", () => {
+  const noEnvio = {
+    ...campaign,
+    config: { ...campaign.config, funnel_entry: "on_send" },
+  } as Campaign;
+  /** A empresa está na fila, mas ainda não existe no CRM: sem conversa, contato nem fronteira. */
+  const naFila = {
+    id: "candidate",
+    contact_id: null,
+    lead_id: null,
+    conversation_id: null,
+    service_boundary: null,
+    message_id: "stable-message",
+    phone: "+5511999990000",
+    data: { name: "Example", socials: [] },
+  };
+
+  it("prepara a empresa ANTES de gerar e enviar, e envia com os dados que a preparação criou", async () => {
+    mocks.prepare.mockResolvedValue(candidate);
+    const db = database(undefined, naFila);
+    await sendNextCandidate({} as never, db as never, {} as never, noEnvio);
+    expect(mocks.prepare).toHaveBeenCalledTimes(1);
+    expect(mocks.prepare.mock.calls[0]?.[4]).toMatchObject({
+      id: "candidate",
+      conversation_id: null,
+    });
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+    const antes = mocks.prepare.mock.invocationCallOrder[0] ?? Infinity;
+    expect(antes, "criar a pegada vem antes do envio").toBeLessThan(
+      mocks.send.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(mocks.send.mock.calls[0]?.[2]).toMatchObject({ conversation_id: id });
+  });
+
+  it("empresa que saiu da fila no caminho (pulada ou recusada pelo CRM): não gera, não envia, não grava tentativa", async () => {
+    mocks.prepare.mockResolvedValue(null);
+    const db = database(undefined, naFila);
+    await sendNextCandidate({} as never, db as never, {} as never, noEnvio);
+    expect(mocks.generate).not.toHaveBeenCalled();
+    expect(mocks.send).not.toHaveBeenCalled();
+    expect(
+      db.query.mock.calls.some(([q]) => String(q).includes("attempted_at=now()")),
+      "sem tentativa: a próxima rodada pega a seguinte",
+    ).toBe(false);
+  });
+
+  it("empresa que já tem conversa não é preparada de novo", async () => {
+    const db = database(undefined, candidate);
+    await sendNextCandidate({} as never, db as never, {} as never, noEnvio);
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("no modo `on_start` (o padrão) a preparação nunca roda, nem para quem estiver sem conversa", async () => {
+    const db = database(undefined, naFila);
+    await expect(
+      sendNextCandidate({} as never, db as never, {} as never, campaign),
+    ).rejects.toMatchObject({ escopo: "candidato" });
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+});
+
+describe("funil só no envio: a checagem do canal vem ANTES de criar qualquer coisa", () => {
+  const noEnvio = {
+    ...campaign,
+    config: { ...campaign.config, funnel_entry: "on_send" },
+  } as Campaign;
+  const naFila = {
+    id: "candidate",
+    contact_id: null,
+    lead_id: null,
+    conversation_id: null,
+    service_boundary: null,
+    message_id: "stable-message",
+    phone: "+5511999990000",
+    data: { name: "Example", socials: [] },
+  };
+
+  it("canal que recusa a abordagem: a campanha pausa SEM ter deixado contato, negócio nem conversa", async () => {
+    mocks.preflight.mockResolvedValue({ permite: false, motivo: "telefone fora da lista liberada" });
+    const db = database(undefined, naFila);
+    await expect(
+      sendNextCandidate({} as never, db as never, {} as never, noEnvio),
+    ).rejects.toThrow("O canal ainda não permite esta abordagem");
+    expect(mocks.prepare, "recusa do canal vem antes de qualquer criação").not.toHaveBeenCalled();
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+
+  it("a checagem usa o telefone da empresa que ainda está só na fila", async () => {
+    mocks.prepare.mockResolvedValue(candidate);
+    await sendNextCandidate({} as never, database(undefined, naFila) as never, {} as never, noEnvio);
+    expect(mocks.preflight.mock.calls[0]?.[1]).toMatchObject({
+      contactPhoneNumber: "+5511999990000",
+    });
+    const checagem = mocks.preflight.mock.invocationCallOrder[0] ?? Infinity;
+    expect(checagem).toBeLessThan(mocks.prepare.mock.invocationCallOrder[0] ?? 0);
   });
 });

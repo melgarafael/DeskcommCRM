@@ -7,6 +7,11 @@
 
 # `union` = fica com os dois lados, sem marcador. Para uma tabela de registro,
 # é a resolução que um humano faria à mão em 100% dos casos.
+#
+# ⚠️ Mas só no git LOCAL: o GitHub ignora driver de merge, e o PR ficava
+# CONFLICTING do mesmo jeito. Desde 02/10/2026 migration nova não toca mais o
+# MANIFEST (a descrição é `-- manifest:` no próprio .sql). O `union` fica só
+# enquanto houver PR antigo em voo com linha aqui.
 supabase/migrations/MANIFEST.md merge=union
 
 # ─── E por que `supabase/baseline.sql` NÃO está aqui ────────────────────────

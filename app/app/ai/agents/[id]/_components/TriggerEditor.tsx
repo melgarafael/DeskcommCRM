@@ -4,6 +4,7 @@ import * as React from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -19,6 +20,12 @@ export interface BusinessHoursValue {
   start: string;
   end: string;
   weekdays: number[];
+  /**
+   * Aviso de fora do horário (#1926) — texto fixo enviado NA HORA quando o
+   * cliente escreve fora da janela, uma vez por contato por período fechado.
+   * Ausente/vazio = sem aviso (comportamento de antes).
+   */
+  notice?: string | null;
 }
 
 export interface TriggerValue {
@@ -241,6 +248,25 @@ export function TriggerEditor({ value, onChange, disabled, organizationTimezone 
                   );
                 })}
               </div>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="bh_notice">{t("Mensagem fora do horário (opcional)")}</Label>
+              <Textarea
+                id="bh_notice"
+                rows={3}
+                maxLength={1000}
+                value={bh.notice ?? ""}
+                onChange={(e) => patchBh({ notice: e.target.value })}
+                disabled={disabled}
+                placeholder={t(
+                  "Ex.: Nosso atendimento funciona de segunda a sexta, das 8h às 18h. Recebemos sua mensagem e respondemos no próximo horário de atendimento.",
+                )}
+              />
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Quando o cliente escrever fora do horário, esta mensagem é enviada na hora — uma vez por cliente por período fechado, e nunca para quem pediu para parar. Deixe em branco para não enviar.",
+                )}
+              </p>
             </div>
           </div>
         ) : null}

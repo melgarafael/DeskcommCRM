@@ -333,7 +333,39 @@ describe("model and router prerequisites", () => {
   it("fails closed when there is no usable credential or platform key", async () => {
     mocks.platform.mockReturnValue(null);
     const db = { query: vi.fn().mockResolvedValue({ rows: [] }) } as unknown as pg.PoolClient;
-    await expect(resolveSetupModel(db, org)).rejects.toThrow("Configure uma chave");
+    await expect(resolveSetupModel(db, org, null, () => true)).rejects.toThrow("Configure uma chave");
+  });
+  // #2458: o modelo escolhido aqui é GRAVADO na versão. Um agente publicado com a
+  // assinatura do ChatGPT, com o módulo desligado, é pulado — e a escolha segue
+  // para a próxima credencial utilizável, em vez de recriar a assinatura.
+  it("skips a provider the installation does not offer and keeps choosing", async () => {
+    mocks.platform.mockReturnValue(null);
+    const db = {
+      query: vi.fn(async (sql: string, params?: unknown[]) => {
+        if (sql.includes("from ai_agents a"))
+          return {
+            rows: [
+              { provider: "openai-assinatura", model: "gpt-5.5", credential_id: "cred-assinatura", display_name: "GPT" },
+            ],
+          };
+        if (sql.includes("from organizations")) return { rows: [{ settings: {} }] };
+        if (sql.includes("from ai_provider_credentials"))
+          return { rows: [{ id: "cred-assinatura", provider: "openai-assinatura" }, { id: "cred-claude", provider: "anthropic" }] };
+        // Modelo para QUALQUER provedor: quem pula a assinatura é `oferece`, não o catálogo.
+        if (sql.includes("from ai_models"))
+          return {
+            rows: [
+              { model_id: `modelo-${String(params?.[0])}`, display_name: "M", is_default_for_provider: true, supports_tools: true },
+            ],
+          };
+        return { rows: [] };
+      }),
+    } as unknown as pg.PoolClient;
+    const semAssinatura = (id: string) => id !== "openai-assinatura";
+    expect(await resolveSetupModel(db, org, null, semAssinatura)).toMatchObject({
+      provider: "anthropic",
+      credential_id: "cred-claude",
+    });
   });
   it("validates all replacement agents before deleting existing router members", async () => {
     const db = {

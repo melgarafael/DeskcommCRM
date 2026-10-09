@@ -164,16 +164,16 @@ jobs:
           esac
 
   # Em pull_request este job NÃO roda: lá ele só construía e descartava, e as
-  # MESMAS três imagens já são construídas — com o mesmo Dockerfile e o mesmo
+  # MESMAS quatro imagens já são construídas — com o mesmo Dockerfile e o mesmo
   # contexto — por `imagem-do-app-sobe` e `imagens-de-fundo-sobem`, que ainda
-  # as sobem. Eram 3 builds Docker por push de PR sem medir nada a mais. O
+  # as sobem. Eram 4 builds Docker por push de PR sem medir nada a mais. O
   # `imagens-ok` aceita o `skipped` dele SÓ em pull_request.
   build-and-push:
     needs: [a-tag-veio-da-main]
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     concurrency:
-      group: ${{ github.workflow }}-build-and-push-${{ matrix.name }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
+      group: ${{ github.workflow }}-build-and-push-${{ matrix.name }}-${{ matrix.arch }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     permissions:
       contents: read
@@ -181,9 +181,15 @@ jobs:
 
     strategy:
       # fail-fast desligado: se o worker quebrar, ainda quero saber se o app
-      # também quebrou. Com ele ligado, o primeiro erro esconde os outros dois e
+      # também quebrou. Com ele ligado, o primeiro erro esconde os demais e
       # o conserto vira uma rodada por imagem.
       fail-fast: false
+      # `name` e `arch` são os DOIS eixos, e o `include` só completa receita e
+      # título casando pelo `name`. Não ponha as imagens só no `include` com
+      # `arch` de eixo único: um `include` que não toca chave ORIGINAL é somado
+      # a todas as combinações, e o seguinte SOBRESCREVE o valor que o anterior
+      # somou — sairiam 2 jobs, os dois da última imagem. Vigiado por
+      # tests/unit/toda-imagem-publicada-constroi-em-pr.test.ts.
       matrix:
         include:
           - name: deskcommcrm
@@ -198,6 +204,8 @@ jobs:
           - name: deskcomm-voice-agent
             dockerfile: Dockerfile.voice-agent
             title: DeskcommCRM voice agent
+        name: [deskcommcrm, deskcomm-worker, deskcomm-scheduler, deskcomm-voice-agent]
+        arch: [amd64, arm64]
 
     steps:
       - uses: actions/checkout@v7
@@ -227,6 +235,9 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.name }}
+          flavor: |
+            latest=false
+            suffix=-${{ matrix.arch }},onlatest=true
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
@@ -270,8 +281,8 @@ jobs:
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          # linux/amd64: o VPS HostGator e a imagem do WAHA são amd64.
-          platforms: linux/amd64
+          # Cada arquitetura compila no runner nativo; o job abaixo une os manifests.
+          platforms: ${{ matrix.arch == 'arm64' && 'linux/arm64' || 'linux/amd64' }}
           # PR de fork não tem permissão de escrita no GHCR, e publicar imagem
           # de código não revisado seria pior que não gatear. Em PR: constrói
           # (que é o gate) e descarta.
@@ -282,10 +293,60 @@ jobs:
             APP_VERSION=${{ steps.ver.outputs.value }}
           # Cache por imagem: cada uma tem camadas diferentes, e um escopo único
           # faria uma sobrescrever o cache da outra a cada run.
-          cache-from: type=gha,scope=${{ matrix.name }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          cache-from: type=gha,scope=${{ matrix.name }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}-${{ matrix.arch }}
           # Sem build-args de segredo: a imagem é genérica (NEXT_PUBLIC_* viram
           # placeholder; valores reais entram em runtime no VPS do usuário).
+
+  juntar-manifestos:
+    needs: [build-and-push]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-juntar-manifestos-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Resolver tags das imagens
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/deskcommcrm
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/deskcomm-worker
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/deskcomm-scheduler
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/deskcomm-voice-agent
+          flavor: latest=false
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ github.ref_type == 'branch' && github.ref_name == 'main' }}
+
+      - name: Unir AMD64 e ARM64 em cada tag
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            docker buildx imagetools create \
+              --tag "$tag" \
+              "${tag}-amd64" \
+              "${tag}-arm64"
+          done <<< "$TAGS"
 
   # A imagem do app CONSTRÓI e MORRE ao subir? Este job existe porque isso
   # aconteceu: `next@16.3.1` passou a resolver `@swc/helpers` por ESM, o file
@@ -309,9 +370,17 @@ jobs:
     # Na `main` e em tag esta imagem vira a que o parque instala: ela se constrói
     # nas máquinas do GitHub, nunca numa máquina nossa. Guarda contra fork:
     # comentário do e2e-parte no e2e.yml.
-    runs-on: ${{ vars.EXECUTOR_PROPRIO == 'ligado' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && 'deskcomm-proprio' || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || (vars.EXECUTOR_PROPRIO == 'ligado' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && 'deskcomm-proprio' || 'ubuntu-latest') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: arm64
+            platform: linux/arm64
     concurrency:
-      group: ${{ github.workflow }}-imagem-do-app-sobe-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
+      group: ${{ github.workflow }}-imagem-do-app-sobe-${{ matrix.arch }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     permissions:
       contents: read
@@ -326,7 +395,7 @@ jobs:
         with:
           context: .
           file: Dockerfile
-          platforms: linux/amd64
+          platforms: ${{ matrix.platform }}
           push: false
           load: true
           tags: deskcomm-smoke:pr
@@ -334,11 +403,13 @@ jobs:
             APP_VERSION=smoke
           # Mesmo escopo de cache do build-and-push: as camadas são idênticas,
           # então na prática este job reaproveita aquele build em vez de repeti-lo.
-          cache-from: type=gha,scope=deskcommcrm
+          cache-from: |
+            type=gha,scope=deskcommcrm-${{ matrix.arch }}
+            type=gha,scope=deskcommcrm
           # Em PR o build-and-push não roda, então quem grava o cache do PR é
           # este job — sem isto o segundo push do mesmo PR reconstruiria do
           # zero. Fora de PR continua só lendo: quem grava é o build-and-push.
-          cache-to: ${{ github.event_name == 'pull_request' && 'type=gha,mode=max,scope=deskcommcrm' || '' }}
+          cache-to: ${{ github.event_name == 'pull_request' && format('type=gha,mode=max,scope=deskcommcrm-{0}', matrix.arch) || '' }}
 
       - name: O container chega a servir?
         run: |
@@ -347,7 +418,7 @@ jobs:
             -e NEXT_PUBLIC_SUPABASE_URL=https://exemplo.supabase.co \
             -e NEXT_PUBLIC_SUPABASE_ANON_KEY=chave-de-mentira \
             -e SUPABASE_SERVICE_ROLE_KEY=chave-de-mentira \
-            -e SUPABASE_DB_URL=postgres://u:p@127.0.0.1:5432/postgres \
+            -e SUPABASE_DB_URL=postgres://127.0.0.1:5432/postgres \
             -e SENTRY_DSN=off \
             deskcomm-smoke:pr
 
@@ -436,14 +507,14 @@ jobs:
   # NÚMERO sempre (cada imagem, independente — ninguém instala por um número que
   # o instalador não escreveu) e mover o CANAL num job final.
   promover-stable:
-    # Sem `always()`, e isso é o ponto: `needs` só libera quando as TRÊS entradas
+    # Sem `always()`, e isso é o ponto: `needs` só libera quando as QUATRO entradas
     # deram `success`. Com `always()` o canal andaria por cima de uma irmã que
     # falhou, que é exatamente o defeito de volta com outra roupa.
     # `imagens-de-fundo-sobem` entrou aqui de propósito (#604): worker ou
     # scheduler que não sobe/carrega o laço do event_log não pode virar o
     # `stable` de quem self-hospeda — publicar seria empurrar o defeito da #648
     # canal abaixo.
-    needs: [build-and-push, imagem-do-app-sobe, imagens-de-fundo-sobem]
+    needs: [build-and-push, juntar-manifestos, imagem-do-app-sobe, imagens-de-fundo-sobem]
     # As três condições, e cada uma barra um caminho medido. Sem `push`, um
     # dispatch numa release ANTIGA faria `stable` REGREDIR, e todo self-hoster no
     # default do compose sofreria downgrade silencioso no próximo `up -d` — app
@@ -526,9 +597,17 @@ jobs:
     # Na `main` e em tag esta imagem vira a que o parque instala: ela se constrói
     # nas máquinas do GitHub, nunca numa máquina nossa. Guarda contra fork:
     # comentário do e2e-parte no e2e.yml.
-    runs-on: ${{ vars.EXECUTOR_PROPRIO == 'ligado' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && 'deskcomm-proprio' || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || (vars.EXECUTOR_PROPRIO == 'ligado' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && 'deskcomm-proprio' || 'ubuntu-latest') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: arm64
+            platform: linux/arm64
     concurrency:
-      group: ${{ github.workflow }}-imagens-de-fundo-sobem-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
+      group: ${{ github.workflow }}-imagens-de-fundo-sobem-${{ matrix.arch }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     # Só leitura, explícita: sem o bloco o GITHUB_TOKEN herda o default do
     # REPOSITÓRIO — configuração que vive fora do repo, muda num clique e não
@@ -546,7 +625,7 @@ jobs:
         with:
           context: .
           file: Dockerfile.worker
-          platforms: linux/amd64
+          platforms: ${{ matrix.platform }}
           push: false
           load: true
           tags: deskcomm-worker:pr
@@ -555,21 +634,25 @@ jobs:
           # de um push e quente nos seguintes — "reaproveita aquele build" só
           # vale a partir do segundo. Medido em 16/09/2026 no primeiro run deste
           # gate: manifesto importado, camadas reconstruídas.
-          cache-from: type=gha,scope=deskcommcrm-worker
+          cache-from: |
+            type=gha,scope=deskcommcrm-worker-${{ matrix.arch }}
+            type=gha,scope=deskcommcrm-worker
           # Mesma razão do job do app: em PR, quem grava o cache é este job.
-          cache-to: ${{ github.event_name == 'pull_request' && 'type=gha,mode=max,scope=deskcommcrm-worker' || '' }}
+          cache-to: ${{ github.event_name == 'pull_request' && format('type=gha,mode=max,scope=deskcommcrm-worker-{0}', matrix.arch) || '' }}
 
       - name: Build local da imagem do scheduler (sem push)
         uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.scheduler
-          platforms: linux/amd64
+          platforms: ${{ matrix.platform }}
           push: false
           load: true
           tags: deskcomm-scheduler:pr
-          cache-from: type=gha,scope=deskcommcrm-scheduler
-          cache-to: ${{ github.event_name == 'pull_request' && 'type=gha,mode=max,scope=deskcommcrm-scheduler' || '' }}
+          cache-from: |
+            type=gha,scope=deskcommcrm-scheduler-${{ matrix.arch }}
+            type=gha,scope=deskcommcrm-scheduler
+          cache-to: ${{ github.event_name == 'pull_request' && format('type=gha,mode=max,scope=deskcommcrm-scheduler-{0}', matrix.arch) || '' }}
 
       # A QUARTA imagem (módulo opcional de telefonia, #677). Ela entrou na
       # `main` sem nunca ter sido construída: `build-and-push` tem a matriz com
@@ -584,12 +667,14 @@ jobs:
         with:
           context: .
           file: Dockerfile.voice-agent
-          platforms: linux/amd64
+          platforms: ${{ matrix.platform }}
           push: false
           load: true
           tags: deskcomm-voice-agent:pr
-          cache-from: type=gha,scope=deskcommcrm-voice-agent
-          cache-to: ${{ github.event_name == 'pull_request' && 'type=gha,mode=max,scope=deskcommcrm-voice-agent' || '' }}
+          cache-from: |
+            type=gha,scope=deskcommcrm-voice-agent-${{ matrix.arch }}
+            type=gha,scope=deskcommcrm-voice-agent
+          cache-to: ${{ github.event_name == 'pull_request' && format('type=gha,mode=max,scope=deskcommcrm-voice-agent-{0}', matrix.arch) || '' }}
 
       - name: O laço do event_log CARREGA dentro da imagem do worker?
         run: |
@@ -646,7 +731,7 @@ jobs:
             -e NEXT_PUBLIC_SUPABASE_URL=https://exemplo.supabase.co \
             -e NEXT_PUBLIC_SUPABASE_ANON_KEY=chave-de-mentira \
             -e SUPABASE_SERVICE_ROLE_KEY=chave-de-mentira \
-            -e SUPABASE_DB_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres \
+            -e SUPABASE_DB_URL=postgres://127.0.0.1:5432/postgres \
             -e SENTRY_DSN=off \
             deskcomm-worker:pr
 
@@ -815,7 +900,7 @@ jobs:
     # justificativa do teste antecipa — "um job novo nasce sem bloco e herda o
     # default de novo".
     permissions: {}
-    needs: [a-tag-veio-da-main, build-and-push, imagem-do-app-sobe, imagens-de-fundo-sobem]
+    needs: [a-tag-veio-da-main, build-and-push, juntar-manifestos, imagem-do-app-sobe, imagens-de-fundo-sobem]
     steps:
       - name: Falhar se qualquer imagem não construiu — ou se o app não sobe
         env:
@@ -823,12 +908,14 @@ jobs:
           PORTAO: ${{ needs.a-tag-veio-da-main.result }}
           ALCANCE: ${{ needs.a-tag-veio-da-main.outputs.imagem }}
           BUILD: ${{ needs.build-and-push.result }}
+          MANIFESTO: ${{ needs.juntar-manifestos.result }}
           APP: ${{ needs.imagem-do-app-sobe.result }}
           FUNDO: ${{ needs.imagens-de-fundo-sobem.result }}
         run: |
           set -euo pipefail
           echo "evento=${EVENTO} a-tag-veio-da-main=${PORTAO} imagem=${ALCANCE:-<vazio>}"
           echo "build-and-push:         ${BUILD}"
+          echo "juntar-manifestos:      ${MANIFESTO}"
           echo "imagem-do-app-sobe:     ${APP}"
           echo "imagens-de-fundo-sobem: ${FUNDO}"
           # O portão reprova antes de tudo: tag fora da main deixa os builds
@@ -839,8 +926,10 @@ jobs:
           # publica, e só `success` serve.
           if [ "$EVENTO" = "pull_request" ]; then
             [ "$BUILD" = "skipped" ]
+            [ "$MANIFESTO" = "skipped" ]
           else
             [ "$BUILD" = "success" ]
+            [ "$MANIFESTO" = "success" ]
           fi
           # `skipped` dos jobs que sobem as imagens só é aceito com `imagem=nao`
           # — PR que não alcança imagem nenhuma. Qualquer outra combinação

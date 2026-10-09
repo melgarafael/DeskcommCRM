@@ -125,6 +125,7 @@ export async function aplicaAvisoDeProposta(deps: AvisoDePropostaDeps, row: Even
 
   const canal = await deps.db.carregaCanal(orgId, canalId);
   if (!canal || canal.archived_at) return falha("canal_arquivado");
+  if (canal.desativado) return falha("canal_desativado");
   if (!canal.aceitaMensagemLivre) return falha("canal_nao_aceita_aviso_livre");
   if (canal.status !== "WORKING") {
     if (tentativa >= TETO_DE_TENTATIVAS_DO_CANAL) return falha("canal_desconectado");

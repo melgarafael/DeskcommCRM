@@ -6,7 +6,10 @@
  * and a strict Zod schema so the result is always typed.
  *
  * Com o Jev (System One) ligado em `organizations.settings.jev`, ele mede
- * primeiro — ver o bloco "O Jev primeiro" no meio do arquivo.
+ * primeiro — ver o bloco "O Jev primeiro" no meio do arquivo. E, na mesma
+ * mensagem, pergunta a ele pelos pedidos do cliente (uma pessoa, parar de
+ * receber mensagens) onde a regra de hoje não os pegou — ver "Os pedidos do
+ * cliente", logo antes, e `./ai-sentiment-worker.pedidos.ts`.
  *
  * Design principles (CLAUDE.md):
  * - Service-role admin client bypasses RLS → EVERY query filters `organization_id`
@@ -22,6 +25,7 @@ import { z } from "zod";
 import { costCents } from "@/lib/agent-engine/edge/llm/pricing";
 import { resolverAgenteDaConversa } from "@/lib/ai/agents/agente-da-conversa";
 import { agenteAtende, precisaRecuperarLegado } from "@/lib/ai/agents/no-ar";
+import { podeGastarComIa } from "@/lib/ai/budget/pode-gastar";
 import { computeCost } from "@/lib/ai/cost";
 import { avisarNaCentral, fecharAvisoDoJev } from "@/lib/ai/decisao/aviso";
 import { MODELO_DO_JEV } from "@/lib/ai/decisao/cliente";
@@ -29,17 +33,22 @@ import { medirClima, type ClimaMedido } from "@/lib/ai/decisao/clima";
 import { lerConfigDoJev } from "@/lib/ai/decisao/config";
 import { falhasSeguidas } from "@/lib/ai/decisao/disjuntor";
 import { CHAVES_DO_CLIMA, type MotorDoClima } from "@/lib/ai/decisao/metadados-do-clima";
+import { avisarAEquipe, TAREFAS_DOS_PEDIDOS, type PedidosObservados } from "@/lib/ai/decisao/pedidos";
 import { estadoEfetivoDaTarefa, TAREFA_DO_CLIMA } from "@/lib/ai/decisao/tarefas";
 import { codigoDoErroDoJev } from "@/lib/ai/decisao/textos";
 import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
-import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
+import { ttlDaAutorizacaoMs, type DecisaoDeElegibilidade } from "@/lib/ai/elegibilidade/gate";
 import { DEFAULT_CLASSIFIER_MODEL } from "@/lib/ai/gateway";
 import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
 import { logInvocation, type LogInvocationInput } from "@/lib/ai/log-invocation";
 import { DEFAULT_SENTIMENT_THRESHOLD, SENTIMENT_SYSTEM_PROMPT } from "@/lib/ai/prompts/sentiment";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
+import { MENSAGEM_REDIGIDA } from "@/lib/lgpd/cascata";
+import { logger } from "@/lib/logger";
+import { aiDispatchModeSchema } from "@/lib/schemas/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { aConversaAgora, perguntarOsPedidosDoCliente } from "@/workers/ai-sentiment-worker.pedidos";
 
 const SENTIMENT_MODEL = DEFAULT_CLASSIFIER_MODEL; // "anthropic/claude-haiku-4-5"
 const CLASSIFY_TIMEOUT_MS = 5_000;
@@ -77,32 +86,6 @@ export interface SentimentResult {
 
 export async function processSentiment(event: EventRow): Promise<SentimentResult> {
   try {
-    // Sem portão de `.env` na frente: `isAiGatewayConfigured()` só olhava três
-    // variáveis de ambiente e barrava a chave colada pela tela (IA ›
-    // Credenciais) e a OpenAI. Quem sabe se existe modelo é o resolver abaixo,
-    // que devolve `null` quando nada existe.
-    //
-    // Passar SENTIMENT_MODEL como string cai no gateway da Vercel mesmo sem
-    // chave (plano anônimo) e devolve "Unauthenticated ... Configure
-    // AI_GATEWAY_API_KEY" — o que quebrava este worker em toda instalação que
-    // só tem ANTHROPIC_API_KEY, ou seja, o padrão do install.sh. O resolver
-    // devolve o provider certo para a chave que existir.
-    // O painel de provedores manda AQUI também. Sem esta linha, a tela
-    // oferecia "Medir o clima da conversa", aceitava a escolha e dizia
-    // "salvo" — e este worker seguia usando o modelo padrão. Botão que não
-    // controla nada é pior que botão ausente: gasta a confiança de quem clicou.
-    // O id padrão é da Anthropic: numa empresa que atende pela OpenAI, Google
-    // ou DeepSeek sem modelo escolhido para o clima, ninguém o executa, e o
-    // clima ficava mudo enquanto o painel dizia "Usando o padrão da
-    // organização". A queda para o padrão da organização é o que torna isso
-    // verdade. A rota do cartão do Jev faz a MESMA pergunta.
-    const resolvido = await resolverModeloDoPonto(
-      "sentiment_classify",
-      event.organization_id,
-      SENTIMENT_MODEL,
-      { naFaltaUsarOPadraoDaOrganizacao: true },
-    );
-
     const messageId =
       (event.payload?.["message_id"] as string | undefined) ?? event.entity_id ?? null;
     const conversationId = (event.payload?.["conversation_id"] as string | undefined) ?? null;
@@ -123,17 +106,15 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
       .eq("id", event.organization_id)
       .maybeSingle();
     const daOrg = org as { settings?: unknown; locale?: string | null } | null;
-    const climaDoJev = estadoEfetivoDaTarefa(lerConfigDoJev(daOrg?.settings), TAREFA_DO_CLIMA);
-
-    // Sem IA de linguagem e sem o Jev, não há quem meça.
-    if (!resolvido && climaDoJev === "desligada") {
-      return { skipped: true, reason: "ai_gateway_key_missing" };
-    }
+    const configDoJev = lerConfigDoJev(daOrg?.settings);
+    const climaDoJev = estadoEfetivoDaTarefa(configDoJev, TAREFA_DO_CLIMA);
+    // Os pedidos do cliente não dependem do clima: rodam com ele pausado.
+    const pedidosRodam = TAREFAS_DOS_PEDIDOS.some((t) => estadoEfetivoDaTarefa(configDoJev, t) !== "desligada");
 
     // ── Load message (programmatic org filter) ────────────────────────────
     const { data: message, error: msgErr } = await admin
       .from("messages")
-      .select("id, body, direction, conversation_id, organization_id, metadata")
+      .select("id, body, direction, conversation_id, organization_id, metadata, created_at")
       .eq("id", messageId)
       .eq("organization_id", event.organization_id)
       .maybeSingle();
@@ -148,28 +129,34 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     }
 
     // ── Guard: non-empty body ─────────────────────────────────────────────
+    // Os pedidos do cliente também ficam de fora aqui: um pedido por ÁUDIO chega
+    // com o corpo vazio, e a transcrição (que o turno lê) só é gravada depois
+    // (`workers/media-derive-worker.ts`). O Jev não é perguntado sobre ele.
     const body = (message.body ?? "").trim();
     if (!body) {
       return { skipped: true, reason: "empty_body" };
     }
 
     // ── Guard: elegibilidade da IA ────────────────────────────────────────
-    // O único efeito deste worker é alimentar o handoff por sentimento
-    // (`ai.sentiment_alert` → `triggerHandoff`). Numa conversa que o gate
-    // `allowlist` barra, `triggerHandoff` já se recusa — então classificar aqui
-    // seria só queimar um Haiku à toa. Pula cedo. `open` (o default) segue.
-    // Fail-closed: erro de leitura → pula (sem custo, sem efeito).
+    // Os efeitos deste worker são o handoff por sentimento (`ai.sentiment_alert`
+    // → `triggerHandoff`) e os pedidos do cliente. Com `!permite` os dois são
+    // nada: `triggerHandoff` recusa pela MESMA régua (orchestrator.ts, "GATE DE
+    // ELEGIBILIDADE") e `perguntarOsPedidosDoCliente` devolve `null` sem
+    // `iaPodeResponder`. Classificar seria pagar o modelo por um alerta que
+    // ninguém consome — conversa com uma pessoa, silenciada, contato passado a
+    // humano, trava da lista. Fail-closed: erro de leitura → pula.
     const convIdParaGate = conversationId ?? (message.conversation_id as string | null);
+    let elegib: DecisaoDeElegibilidade | null = null;
     if (convIdParaGate) {
       try {
-        const elegib = await decidirElegibilidadeDaConversaViaSupabase(admin, {
+        elegib = await decidirElegibilidadeDaConversaViaSupabase(admin, {
           organizationId: event.organization_id,
           conversationId: convIdParaGate,
           agora: new Date(),
           ttlMs: ttlDaAutorizacaoMs(process.env),
         });
-        if (elegib !== null && elegib.bloqueioPorAllowlist) {
-          return { skipped: true, reason: "nao_elegivel_para_ia" };
+        if (elegib !== null && !elegib.permite) {
+          return { skipped: true, reason: `nao_elegivel_para_ia:${elegib.motivo}` };
         }
       } catch {
         return { skipped: true, reason: "elegibilidade_indeterminada" };
@@ -189,7 +176,7 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     // deles não fazia nada. (issue #486)
     const { data: conversa } = await admin
       .from("conversations")
-      .select("id, channel_session_id, active_ai_agent_id")
+      .select("id, channel_session_id, active_ai_agent_id, contact_id, is_group")
       .eq("id", message.conversation_id)
       .eq("organization_id", event.organization_id)
       .maybeSingle();
@@ -228,6 +215,40 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
       return { skipped: true, reason: "nenhum_agente_no_ar" };
     }
 
+    // ── O modelo do clima, depois das guardas baratas ─────────────────────
+    // Três leituras e uma decifragem: fica atrás de tudo que pula sem ele.
+    //
+    // Sem portão de `.env` na frente: `isAiGatewayConfigured()` só olhava três
+    // variáveis de ambiente e barrava a chave colada pela tela (IA ›
+    // Credenciais) e a OpenAI. Quem sabe se existe modelo é o resolver abaixo,
+    // que devolve `null` quando nada existe.
+    //
+    // Passar SENTIMENT_MODEL como string cai no gateway da Vercel mesmo sem
+    // chave (plano anônimo) e devolve "Unauthenticated ... Configure
+    // AI_GATEWAY_API_KEY" — o que quebrava este worker em toda instalação que
+    // só tem ANTHROPIC_API_KEY, ou seja, o padrão do install.sh. O resolver
+    // devolve o provider certo para a chave que existir.
+    // O painel de provedores manda AQUI também. Sem esta linha, a tela
+    // oferecia "Medir o clima da conversa", aceitava a escolha e dizia
+    // "salvo" — e este worker seguia usando o modelo padrão. Botão que não
+    // controla nada é pior que botão ausente: gasta a confiança de quem clicou.
+    // O id padrão é da Anthropic: numa empresa que atende pela OpenAI, Google
+    // ou DeepSeek sem modelo escolhido para o clima, ninguém o executa, e o
+    // clima ficava mudo enquanto o painel dizia "Usando o padrão da
+    // organização". A queda para o padrão da organização é o que torna isso
+    // verdade. A rota do cartão do Jev faz a MESMA pergunta.
+    const resolvido = await resolverModeloDoPonto(
+      "sentiment_classify",
+      event.organization_id,
+      SENTIMENT_MODEL,
+      { naFaltaUsarOPadraoDaOrganizacao: true },
+    );
+
+    // Sem IA de linguagem e sem o Jev, não há quem meça nem o que perguntar.
+    if (!resolvido && climaDoJev === "desligada" && !pedidosRodam) {
+      return { skipped: true, reason: "ai_gateway_key_missing" };
+    }
+
     const { agente: agent, motivo: motivoDoAgente } = resolverAgenteDaConversa(
       candidatos ?? [],
       conversa
@@ -259,251 +280,342 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
       invocation_kind: "sentiment_classify",
     } satisfies Partial<LogInvocationInput>;
 
-    // ── O Jev primeiro, quando ligado ──────────────────────────────────────
+    // ── O teto de gasto de IA, ANTES de qualquer chamada paga ─────────────
     //
-    // Três desfechos, e o estado do clima (`./tarefas`) só pesa no primeiro:
-    //  - mediu: em "decide" (ou sem IA de linguagem para comparar) a nota dele
-    //    vale e o LLM nem roda; em "observacao" o LLM roda e decide, e as duas
-    //    notas ficam em `messages.metadata` para o cartão medir a concordância
-    //    (se o LLM falhar, a nota do Jev vale);
-    //  - falhou na rede: a IA de sempre mede como reserva, e a linha dela diz
-    //    isso (`reserva_do_jev`). Linha de erro do Jev só quando NINGUÉM mediu —
-    //    uma falha que a reserva cobriu não é erro para quem opera;
-    //  - não tentou (sem chave, disjuntor aberto): nada sai para a rede, e sem
-    //    chave o caminho é exatamente o de antes do Jev.
-    // Falha que não passa sozinha (chave recusada, sem crédito, pergunta nossa
-    // recusada) abre aviso na Central, com ou sem reserva — DEPOIS de se saber
-    // se a reserva mediu, porque é isso que o aviso afirma. O aviso se fecha
-    // sozinho quando o Jev volta a medir.
-    const clima: ClimaMedido | null = climaDoJev !== "desligada"
-      ? await medirClima({ organizationId: event.organization_id, mensagem: body })
-      : null;
-
-    if (clima?.ok) {
-      await fecharAvisoDoJev(admin, event.organization_id);
+    // Este worker roda a cada mensagem recebida e não passa pelo seam do engine
+    // nem pelo guard do caminho legado — os dois lugares onde o teto vinculava.
+    // Com a organização em "parar a IA" e o teto estourado, o turno ia para a
+    // fila humana e o clima seguia cobrando cada mensagem. A pergunta é a MESMA
+    // decisão pura dos outros dois (`podeGastarComIa` → `decidirOrcamento`):
+    // "só avisar" e "desligado" seguem; só o veredito `bloquear` pula.
+    //
+    // Aqui, e não mais abaixo, porque daqui para baixo TUDO é pago: o Jev do
+    // clima, o Jev dos pedidos e o LLM de reserva. E depois dos guards baratos
+    // (mensagem, direção, elegibilidade, agente no ar), para a leitura do
+    // orçamento não rodar à toa em mensagem que nem seria classificada.
+    // Pular não deixa linha em `llm_calls` — não houve chamada —, e o motivo
+    // fica no resultado do consumidor do event_log e no log.
+    const orcamento = await podeGastarComIa(event.organization_id, "sentiment_classify");
+    if (!orcamento.pode) {
+      logger.info("[ai-sentiment-worker] clima não medido: teto de gasto de IA atingido", {
+        organization_id: event.organization_id,
+        message_id: messageId,
+        gasto_cents: orcamento.gastoCents,
+        teto_cents: orcamento.tetoCents,
+      });
+      return { skipped: true, reason: "orcamento_de_ia_estourado" };
     }
-    /**
-     * A linha da medição do Jev sai DEPOIS da decisão, com a origem do que
-     * aconteceu: "jev" quando a nota dele decidiu, "jev_observacao" quando a IA
-     * de sempre decidiu. Antes da decisão a linha não sabia — em observação com a
-     * IA de sempre caída, é a nota do Jev que decide.
-     */
-    const registrarMedicaoDoJev = (decidiu: boolean): void => {
-      if (!clima?.ok) return;
-      logInvocation({
-        ...comum,
-        provider: "typesafe",
-        model: `typesafe/${clima.modelo}`,
-        origem_da_escolha: decidiu ? "jev" : "jev_observacao",
-        prompt_tokens: clima.tokensDeEntrada,
-        completion_tokens: clima.tokensDeSaida,
-        latency_ms: clima.latenciaMs,
-        // Fracionário, sem o `Math.ceil` de `computeCost`: a centavo por
-        // chamada, o Jev custaria ~600x o preço real (D4). Versão sem preço na
-        // tabela sai `null`, nunca o preço de outra.
-        cost_cents: costCents(clima.modelo, {
-          inputTokens: clima.tokensDeEntrada,
-          outputTokens: clima.tokensDeSaida,
-          cacheReadTokens: 0,
-          cacheWriteTokens: 0,
-        }),
-        finish_reason: null,
-      });
-    };
 
-    const jevFalhouNaRede = clima !== null && !clima.ok && clima.tentouRede ? clima : null;
-    /** `reservaMediu` é o que o corpo do aviso afirma — por isso só se sabe no fim. */
-    const avisarSeExigeAcao = async (reservaMediu: boolean): Promise<void> => {
-      if (!jevFalhouNaRede?.exigeAcao) return;
-      await avisarNaCentral(admin, {
-        organizationId: event.organization_id,
-        idioma: normalizarIdioma(daOrg?.locale ?? null),
-        motivo: jevFalhouNaRede.motivo,
-        temReserva: reservaMediu,
-      });
-    };
-    const registrarFalhaDoJev = (): void => {
-      if (jevFalhouNaRede === null) return;
-      logInvocation({
-        ...comum,
-        provider: "typesafe",
-        model: `typesafe/${MODELO_DO_JEV}`,
-        origem_da_escolha: "jev",
-        prompt_tokens: 0,
-        completion_tokens: 0,
-        latency_ms: jevFalhouNaRede.latenciaMs,
-        cost_cents: 0,
-        finish_reason: "error",
-        error_code: codigoDoErroDoJev(jevFalhouNaRede.motivo),
-        error_payload: { motivo: jevFalhouNaRede.motivo },
-      });
-    };
-
-    let decisao: { score: number; engine: MotorDoClima; latenciaMs: number };
-    if (clima?.ok && (climaDoJev === "decidindo" || resolvido === null)) {
-      decisao = { score: clima.score01, engine: "jev", latenciaMs: clima.latenciaMs };
-    } else if (resolvido === null) {
-      registrarFalhaDoJev();
-      if (jevFalhouNaRede) {
-        await avisarSeExigeAcao(false);
-        // Sem IA de linguagem, a falha que "passa sozinha" (fora do ar, lento,
-        // ilegível) deixa o clima sem medição do mesmo jeito — e enquanto ela
-        // não passa, ninguém sabe. Várias seguidas é queda, não tropeço: vira o
-        // MESMO aviso (mesmo título, mesmo dedupe, fecha no próximo sucesso).
-        if (
-          !jevFalhouNaRede.exigeAcao &&
-          falhasSeguidas({ organizationId: event.organization_id, tarefa: TAREFA_DO_CLIMA.id }) >=
-            FALHAS_SEGUIDAS_PARA_AVISAR_SEM_RESERVA
-        ) {
-          await avisarNaCentral(admin, {
-            organizationId: event.organization_id,
-            idioma: normalizarIdioma(daOrg?.locale ?? null),
-            motivo: jevFalhouNaRede.motivo,
-            temReserva: false,
-            quedaSustentada: true,
-          });
-        }
-        return { skipped: true, reason: "jev_falhou_sem_reserva" };
+    // ── Os pedidos do cliente, ao lado do clima ────────────────────────────
+    //
+    // Numa chamada PRÓPRIA ao Jev, começada aqui e esperada só no fim
+    // (`finally`): corre EM PARALELO à do clima, nunca muda o desfecho dele, e o
+    // dreno não segue com ela ainda no ar. Nunca rejeita. O aviso de "Avisar a
+    // equipe" sai no `finally`, depois de se saber o que o clima fez e de reler
+    // a conversa (`aConversaAgora`).
+    const pedidos: Promise<PedidosObservados | null> = pedidosRodam
+      ? perguntarOsPedidosDoCliente(admin, {
+          organizationId: event.organization_id,
+          messageId,
+          conversationId: conversa?.id ?? null,
+          sessaoId: (conversa?.channel_session_id as string | null | undefined) ?? null,
+          contactId: conversa?.contact_id ?? null,
+          grupo: conversa?.is_group === true,
+          iaPodeResponder: elegib?.permite === true,
+          // O dreno descarta o turno do modo externo antes de tudo (spec 14), e
+          // a regra de hoje não roda. O turno cedido ao follow-up de retorno
+          // (`deveCederTurnoAoRetorno`) fica declarado, não espelhado — ver a cola.
+          atendimentoExterno:
+            aiDispatchModeSchema.parse((daOrg?.settings as { ai_dispatch_mode?: unknown } | null | undefined)?.ai_dispatch_mode) ===
+            "external",
+          agentId: agent?.id ?? null,
+          config: configDoJev,
+          mensagem: body,
+          idioma: normalizarIdioma(daOrg?.locale ?? null),
+        })
+      : Promise.resolve(null);
+    // O clima desta mensagem chamou uma pessoa: o pedido de pessoa que o Jev
+    // perceber nela não vira aviso — a conversa já está indo para a equipe.
+    let climaChamouUmaPessoa = false;
+    try {
+      // O Jev ligado só para os pedidos, sem IA de linguagem: o clima não tem
+      // quem o meça.
+      if (!resolvido && climaDoJev === "desligada") {
+        return { skipped: true, reason: "ai_gateway_key_missing" };
       }
-      // O Jev está ligado aqui (desligado e sem IA de linguagem, o worker já saiu
-      // lá em cima), então o motivo é o dele: `ai_gateway_key_missing` mandava
-      // quem lê o log caçar uma chave que não falta quando o disjuntor só segura.
-      return {
-        skipped: true,
-        reason: clima?.ok === false ? `jev_${clima.motivo}` : "ai_gateway_key_missing",
-      };
-    } else {
-      // O Jev ligado, com chave, e sem resposta: quem mede é a reserva.
-      const reserva = clima !== null && !clima.ok && clima.motivo !== "sem_credencial";
-      const origem = reserva ? ({ origem_da_escolha: "reserva_do_jev" } as const) : {};
-      const inicio = Date.now();
-      let medido: Awaited<ReturnType<typeof classificarComLlm>> | null = null;
-      let erroDaIa: unknown = null;
-      try {
-        medido = await classificarComLlm(resolvido.model, body);
-      } catch (err) {
-        erroDaIa = err;
-        // A FALHA também vira linha em `llm_calls`. A 0128 fez isso para o seam do
-        // agent-engine, e este worker não passa por lá — então, até aqui, escolher
-        // no painel um modelo que não existe fazia toda classificação falhar sem
-        // deixar rastro nenhum: a tela de Execuções, cuja razão de existir é
-        // responder "por que falhou", não mostrava nada para este ponto, com o
-        // painel dizendo que estava configurado.
-        //
-        // A linha de ERRO não leva `reserva_do_jev`: essa origem diz "a IA de
-        // sempre mediu no lugar dele", e aqui ela não mediu. Quando o Jev já
-        // tinha medido (observação), leva `jev_cobriu` — a tela não mostra a
-        // consequência de um clima que foi medido.
+
+      // ── O Jev primeiro, quando ligado ──────────────────────────────────────
+      //
+      // Três desfechos, e o estado do clima (`./tarefas`) só pesa no primeiro:
+      //  - mediu: em "decide" (ou sem IA de linguagem para comparar) a nota dele
+      //    vale e o LLM nem roda; em "observacao" o LLM roda e decide, e as duas
+      //    notas ficam em `messages.metadata` para o cartão medir a concordância
+      //    (se o LLM falhar, a nota do Jev vale);
+      //  - falhou na rede: a IA de sempre mede como reserva, e a linha dela diz
+      //    isso (`reserva_do_jev`). Linha de erro do Jev só quando NINGUÉM mediu —
+      //    uma falha que a reserva cobriu não é erro para quem opera;
+      //  - não tentou (sem chave, disjuntor aberto): nada sai para a rede, e sem
+      //    chave o caminho é exatamente o de antes do Jev.
+      // Falha que não passa sozinha (chave recusada, sem crédito, pergunta nossa
+      // recusada) abre aviso na Central, com ou sem reserva — DEPOIS de se saber
+      // se a reserva mediu, porque é isso que o aviso afirma. O aviso se fecha
+      // sozinho quando o Jev volta a medir.
+      const clima: ClimaMedido | null = climaDoJev !== "desligada"
+        ? await medirClima({ organizationId: event.organization_id, mensagem: body })
+        : null;
+
+      if (clima?.ok) {
+        await fecharAvisoDoJev(admin, event.organization_id);
+      }
+      /**
+       * A linha da medição do Jev sai DEPOIS da decisão, com a origem do que
+       * aconteceu: "jev" quando a nota dele decidiu, "jev_observacao" quando a IA
+       * de sempre decidiu. Antes da decisão a linha não sabia — em observação com a
+       * IA de sempre caída, é a nota do Jev que decide.
+       */
+      const registrarMedicaoDoJev = (decidiu: boolean): void => {
+        if (!clima?.ok) return;
         logInvocation({
           ...comum,
-          ...(clima?.ok ? ({ origem_da_escolha: "jev_cobriu" } as const) : {}),
-          model: resolvido.modelId,
-          prompt_tokens: 0,
-          completion_tokens: 0,
-          latency_ms: Date.now() - inicio,
-          cost_cents: 0,
-          finish_reason: "error",
-          error_payload: { message: err instanceof Error ? err.message : String(err) },
-        });
-      }
-      if (medido !== null) {
-        const latenciaMs = Date.now() - inicio;
-        logInvocation({
-          ...comum,
-          ...origem,
-          model: resolvido.modelId,
-          prompt_tokens: medido.promptTokens,
-          completion_tokens: medido.completionTokens,
-          latency_ms: latenciaMs,
-          cost_cents: await computeCost({
-            model: resolvido.modelId,
-            promptTokens: medido.promptTokens,
-            completionTokens: medido.completionTokens,
+          provider: "typesafe",
+          model: `typesafe/${clima.modelo}`,
+          origem_da_escolha: decidiu ? "jev" : "jev_observacao",
+          prompt_tokens: clima.tokensDeEntrada,
+          completion_tokens: clima.tokensDeSaida,
+          latency_ms: clima.latenciaMs,
+          // Fracionário, sem o `Math.ceil` de `computeCost`: a centavo por
+          // chamada, o Jev custaria ~600x o preço real (D4). Versão sem preço na
+          // tabela sai `null`, nunca o preço de outra.
+          cost_cents: costCents(clima.modelo, {
+            inputTokens: clima.tokensDeEntrada,
+            outputTokens: clima.tokensDeSaida,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
           }),
           finish_reason: null,
         });
-        decisao = { score: medido.score, engine: "llm", latenciaMs };
-        await avisarSeExigeAcao(true);
-      } else if (clima?.ok) {
-        // Observação com a IA de sempre caída: o Jev já mediu, e a nota dele é a
-        // única que existe. Descartá-la deixaria o cliente irritado passar sem
-        // ninguém ser chamado, com a medição na mão.
+      };
+
+      const jevFalhouNaRede = clima !== null && !clima.ok && clima.tentouRede ? clima : null;
+      /** `reservaMediu` é o que o corpo do aviso afirma — por isso só se sabe no fim. */
+      const avisarSeExigeAcao = async (reservaMediu: boolean): Promise<void> => {
+        if (!jevFalhouNaRede?.exigeAcao) return;
+        await avisarNaCentral(admin, {
+          organizationId: event.organization_id,
+          idioma: normalizarIdioma(daOrg?.locale ?? null),
+          motivo: jevFalhouNaRede.motivo,
+          temReserva: reservaMediu,
+        });
+      };
+      const registrarFalhaDoJev = (): void => {
+        if (jevFalhouNaRede === null) return;
+        logInvocation({
+          ...comum,
+          provider: "typesafe",
+          model: `typesafe/${MODELO_DO_JEV}`,
+          origem_da_escolha: "jev",
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          latency_ms: jevFalhouNaRede.latenciaMs,
+          cost_cents: 0,
+          finish_reason: "error",
+          error_code: codigoDoErroDoJev(jevFalhouNaRede.motivo),
+          error_payload: { motivo: jevFalhouNaRede.motivo },
+        });
+      };
+
+      let decisao: { score: number; engine: MotorDoClima; latenciaMs: number };
+      if (clima?.ok && (climaDoJev === "decidindo" || resolvido === null)) {
         decisao = { score: clima.score01, engine: "jev", latenciaMs: clima.latenciaMs };
-      } else {
-        // Ninguém mediu. O `throw` mantém o desfecho de antes — quem decide o
-        // retorno continua sendo o catch global, que nunca derruba o bot.
+      } else if (resolvido === null) {
         registrarFalhaDoJev();
-        await avisarSeExigeAcao(false);
-        throw erroDaIa;
+        if (jevFalhouNaRede) {
+          await avisarSeExigeAcao(false);
+          // Sem IA de linguagem, a falha que "passa sozinha" (fora do ar, lento,
+          // ilegível) deixa o clima sem medição do mesmo jeito — e enquanto ela
+          // não passa, ninguém sabe. Várias seguidas é queda, não tropeço: vira o
+          // MESMO aviso (mesmo título, mesmo dedupe, fecha no próximo sucesso).
+          if (
+            !jevFalhouNaRede.exigeAcao &&
+            falhasSeguidas({ organizationId: event.organization_id, tarefa: TAREFA_DO_CLIMA.id }) >=
+              FALHAS_SEGUIDAS_PARA_AVISAR_SEM_RESERVA
+          ) {
+            await avisarNaCentral(admin, {
+              organizationId: event.organization_id,
+              idioma: normalizarIdioma(daOrg?.locale ?? null),
+              motivo: jevFalhouNaRede.motivo,
+              temReserva: false,
+              quedaSustentada: true,
+            });
+          }
+          return { skipped: true, reason: "jev_falhou_sem_reserva" };
+        }
+        // O Jev está ligado aqui (desligado e sem IA de linguagem, o worker já saiu
+        // lá em cima), então o motivo é o dele: `ai_gateway_key_missing` mandava
+        // quem lê o log caçar uma chave que não falta quando o disjuntor só segura.
+        return {
+          skipped: true,
+          reason: clima?.ok === false ? `jev_${clima.motivo}` : "ai_gateway_key_missing",
+        };
+      } else {
+        // O Jev ligado, com chave, e sem resposta: quem mede é a reserva.
+        const reserva = clima !== null && !clima.ok && clima.motivo !== "sem_credencial";
+        const origem = reserva ? ({ origem_da_escolha: "reserva_do_jev" } as const) : {};
+        const inicio = Date.now();
+        let medido: Awaited<ReturnType<typeof classificarComLlm>> | null = null;
+        let erroDaIa: unknown = null;
+        try {
+          medido = await classificarComLlm(resolvido.model, body);
+        } catch (err) {
+          erroDaIa = err;
+          // A FALHA também vira linha em `llm_calls`. A 0128 fez isso para o seam do
+          // agent-engine, e este worker não passa por lá — então, até aqui, escolher
+          // no painel um modelo que não existe fazia toda classificação falhar sem
+          // deixar rastro nenhum: a tela de Execuções, cuja razão de existir é
+          // responder "por que falhou", não mostrava nada para este ponto, com o
+          // painel dizendo que estava configurado.
+          //
+          // A linha de ERRO não leva `reserva_do_jev`: essa origem diz "a IA de
+          // sempre mediu no lugar dele", e aqui ela não mediu. Quando o Jev já
+          // tinha medido (observação), leva `jev_cobriu` — a tela não mostra a
+          // consequência de um clima que foi medido.
+          logInvocation({
+            ...comum,
+            ...(clima?.ok ? ({ origem_da_escolha: "jev_cobriu" } as const) : {}),
+            model: resolvido.modelId,
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            latency_ms: Date.now() - inicio,
+            cost_cents: 0,
+            finish_reason: "error",
+            error_payload: { message: err instanceof Error ? err.message : String(err) },
+          });
+        }
+        if (medido !== null) {
+          const latenciaMs = Date.now() - inicio;
+          logInvocation({
+            ...comum,
+            ...origem,
+            model: resolvido.modelId,
+            prompt_tokens: medido.promptTokens,
+            completion_tokens: medido.completionTokens,
+            latency_ms: latenciaMs,
+            cost_cents: await computeCost({
+              model: resolvido.modelId,
+              promptTokens: medido.promptTokens,
+              completionTokens: medido.completionTokens,
+            }),
+            finish_reason: null,
+          });
+          decisao = { score: medido.score, engine: "llm", latenciaMs };
+          await avisarSeExigeAcao(true);
+        } else if (clima?.ok) {
+          // Observação com a IA de sempre caída: o Jev já mediu, e a nota dele é a
+          // única que existe. Descartá-la deixaria o cliente irritado passar sem
+          // ninguém ser chamado, com a medição na mão.
+          decisao = { score: clima.score01, engine: "jev", latenciaMs: clima.latenciaMs };
+        } else {
+          // Ninguém mediu. O `throw` mantém o desfecho de antes — quem decide o
+          // retorno continua sendo o catch global, que nunca derruba o bot.
+          registrarFalhaDoJev();
+          await avisarSeExigeAcao(false);
+          throw erroDaIa;
+        }
       }
-    }
 
-    registrarMedicaoDoJev(decisao.engine === "jev");
+      registrarMedicaoDoJev(decisao.engine === "jev");
 
-    // ── Merge sentiment into messages.metadata ────────────────────────────
-    const existingMetadata = (message.metadata as Record<string, unknown> | null) ?? {};
-    const updatedMetadata = {
-      ...existingMetadata,
-      [CHAVES_DO_CLIMA.nota]: decisao.score,
-      sentiment_latency_ms: decisao.latenciaMs,
-      [CHAVES_DO_CLIMA.motor]: decisao.engine,
-      ...(clima?.ok
-        ? { [CHAVES_DO_CLIMA.notaDoJev]: clima.score01, [CHAVES_DO_CLIMA.modeloDoJev]: clima.modelo }
-        : {}),
-    };
+      // ── Merge sentiment into messages.metadata ────────────────────────────
+      const existingMetadata = (message.metadata as Record<string, unknown> | null) ?? {};
+      const updatedMetadata = {
+        ...existingMetadata,
+        [CHAVES_DO_CLIMA.nota]: decisao.score,
+        sentiment_latency_ms: decisao.latenciaMs,
+        [CHAVES_DO_CLIMA.motor]: decisao.engine,
+        // O limiar COM O QUAL esta nota foi cortada (#2219): é o do agente da
+        // conversa, e não o default. A concordância do cartão do Jev lê daqui —
+        // sem gravá-lo, um agente em 0,1 tinha a conta dele medida contra 0,3.
+        // Vai junto com a nota (não só no alerta) porque as mensagens ACIMA do
+        // limiar também entram na concordância, e são justamente as que o
+        // alerta não emite.
+        [CHAVES_DO_CLIMA.limiar]: threshold,
+        ...(clima?.ok
+          ? { [CHAVES_DO_CLIMA.notaDoJev]: clima.score01, [CHAVES_DO_CLIMA.modeloDoJev]: clima.modelo }
+          : {}),
+      };
 
-    const { error: updateErr } = await admin
-      .from("messages")
-      .update({ metadata: updatedMetadata })
-      .eq("id", messageId)
-      .eq("organization_id", event.organization_id);
+      const { error: updateErr } = await admin
+        .from("messages")
+        .update({ metadata: updatedMetadata })
+        .eq("id", messageId)
+        .eq("organization_id", event.organization_id)
+        // Mesma guarda LGPD do media-derive-worker (#1991): `updatedMetadata`
+        // parte da foto lida antes da classificação, e a anonimização que rodar
+        // nesse meio tempo zera `metadata` — regravá-la devolveria o dado
+        // apagado, mais a nota derivada, a uma mensagem já redigida.
+        .filter("body", "isdistinct", MENSAGEM_REDIGIDA);
 
-    if (updateErr) {
-      console.warn("[ai-sentiment-worker] metadata update failed", {
-        message_id: messageId,
-        error: updateErr.message,
-      });
-    }
-
-    // ── Emit alert if below threshold ────────────────────────────────────
-    if (decisao.score < threshold) {
-      const { error: emitErr } = await admin.rpc(
-        "emit_event" as never,
-        {
-          p_event_type: "ai.sentiment_alert",
-          p_entity_kind: "message",
-          p_entity_id: messageId,
-          p_payload: {
-            message_id: messageId,
-            conversation_id: conversationId ?? message.conversation_id ?? null,
-            [CHAVES_DO_CLIMA.nota]: decisao.score,
-            // Qual motor mediu: a passagem para humano marca "(percebido pelo
-            // Jev)" na linha do tempo da equipe (D11).
-            [CHAVES_DO_CLIMA.motor]: decisao.engine,
-          },
-          // `agent_id` e `motivo` viajam com o alerta porque o limiar é o número
-          // que decidiu emiti-lo: sem eles, "por que este alerta saiu?" recomeça
-          // do zero, e foi essa ausência que deixou o defeito da #486 invisível
-          // pela tela — os dois campos existiam e um não fazia nada.
-          p_metadata: {
-            source: "ai-sentiment-worker",
-            threshold,
-            agent_id: agent?.id ?? null,
-            agente_resolvido_por: motivoDoAgente,
-          },
-          p_organization_id: event.organization_id,
-        } as never,
-      );
-
-      if (emitErr) {
-        console.warn("[ai-sentiment-worker] ai.sentiment_alert emit failed", {
+      if (updateErr) {
+        console.warn("[ai-sentiment-worker] metadata update failed", {
           message_id: messageId,
-          error: emitErr.message,
+          error: updateErr.message,
         });
       }
-    }
 
-    return { skipped: false, sentiment_score: decisao.score };
+      // ── Emit alert if below threshold ────────────────────────────────────
+      if (decisao.score < threshold) {
+        const { error: emitErr } = await admin.rpc(
+          "emit_event" as never,
+          {
+            p_event_type: "ai.sentiment_alert",
+            p_entity_kind: "message",
+            p_entity_id: messageId,
+            p_payload: {
+              message_id: messageId,
+              conversation_id: conversationId ?? message.conversation_id ?? null,
+              [CHAVES_DO_CLIMA.nota]: decisao.score,
+              // Qual motor mediu: a passagem para humano marca "(percebido pelo
+              // Jev)" na linha do tempo da equipe (D11).
+              [CHAVES_DO_CLIMA.motor]: decisao.engine,
+            },
+            // `agent_id` e `motivo` viajam com o alerta porque o limiar é o número
+            // que decidiu emiti-lo: sem eles, "por que este alerta saiu?" recomeça
+            // do zero, e foi essa ausência que deixou o defeito da #486 invisível
+            // pela tela — os dois campos existiam e um não fazia nada.
+            p_metadata: {
+              source: "ai-sentiment-worker",
+              threshold,
+              agent_id: agent?.id ?? null,
+              agente_resolvido_por: motivoDoAgente,
+            },
+            p_organization_id: event.organization_id,
+          } as never,
+        );
+
+        if (emitErr) {
+          console.warn("[ai-sentiment-worker] ai.sentiment_alert emit failed", {
+            message_id: messageId,
+            error: emitErr.message,
+          });
+        } else {
+          climaChamouUmaPessoa = true;
+        }
+      }
+
+      return { skipped: false, sentiment_score: decisao.score };
+    } finally {
+      const observados = await pedidos;
+      if (observados) {
+        await avisarAEquipe(admin, observados, { chamouUmaPessoa: climaChamouUmaPessoa }, () =>
+          aConversaAgora(
+            admin,
+            event.organization_id,
+            observados.entrada.conversationId,
+            (message.created_at as string | null | undefined) ?? null,
+          ),
+        );
+      }
+    }
   } catch (err) {
     // Global catch: NEVER throw — must not break the bot path.
     console.warn("[ai-sentiment-worker] sentiment_classify_failed", {

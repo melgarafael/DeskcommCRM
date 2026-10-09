@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useT } from "@/hooks/i18n/useT";
+import { MENSAGEM_DA_RECUSA_DE_ESCRITA, ehRecusaDeEscrita } from "@/lib/auth/recusa-de-escrita-de-admin";
 import type { ModoDeCadastro } from "@/lib/auth/politica-de-cadastro";
 
 /**
@@ -32,7 +33,7 @@ export function FormularioDeCadastro({ modoInicial }: { modoInicial: ModoDeCadas
       const r = await updateSignupMode({ signup_mode: novo });
       if (!r.ok) {
         setModo(anterior);
-        setErro(t("Não deu para salvar. Tente de novo em instantes."));
+        setErro(t(ehRecusaDeEscrita(r.error) ? MENSAGEM_DA_RECUSA_DE_ESCRITA[r.error] : "Não deu para salvar. Tente de novo em instantes."));
       }
     });
   }

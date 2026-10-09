@@ -40,18 +40,18 @@ const SONDA_B = "d0d0d0d0-0478-4000-8000-000000000042";
 /** Admin de plataforma SEM vínculo com GOV_ORG. */
 const PLAT_ADMIN = "d0d0d0d0-0478-4000-8000-000000000050";
 
-const inserirNota = (id: string) =>
-  `insert into public.conversation_notes (id, organization_id, conversation_id, body, created_by_name)
-     values ('${id}', '${GOV_ORG}', '${GOV_CONV_AGENT_B}', 'sonda de escrita', 'sonda')`;
+const inserirNota = (id: string, autor: string) =>
+  `insert into public.conversation_notes (id, organization_id, conversation_id, body, created_by_user_id, created_by_name)
+     values ('${id}', '${GOV_ORG}', '${GOV_CONV_AGENT_B}', 'sonda de escrita', '${autor}', 'sonda')`;
 
 beforeAll(() => {
   seedGov();
   sql(`
     delete from public.conversation_notes where id in ('${SONDA_A}', '${SONDA_B}');
     insert into public.conversation_notes
-      (id, organization_id, conversation_id, body, created_by_name)
-      values ('${NOTA}', '${GOV_ORG}', '${GOV_CONV_AGENT_B}', 'nota na conversa do B', 'seed')
-      on conflict (id) do update set body = excluded.body;
+      (id, organization_id, conversation_id, body, created_by_user_id, created_by_name)
+      values ('${NOTA}', '${GOV_ORG}', '${GOV_CONV_AGENT_B}', 'nota na conversa do B', '${GOV_AGENT_B}', 'seed')
+      on conflict (id) do update set body = excluded.body, created_by_user_id = '${GOV_AGENT_B}';
 
     insert into auth.users (id, email)
       values ('${PLAT_ADMIN}', 'plat-admin-0478@invariant.test') on conflict do nothing;
@@ -63,7 +63,7 @@ beforeAll(() => {
 
 describe("0478 — a escrita acompanha a visibilidade da conversa", () => {
   it("quem NÃO vê a conversa não insere nota nela", () => {
-    expect(writeCountAs(GOV_AGENT_A, inserirNota(SONDA_A))).toBe(0);
+    expect(writeCountAs(GOV_AGENT_A, inserirNota(SONDA_A, GOV_AGENT_A))).toBe(0);
   });
 
   it("quem NÃO vê a conversa não altera a nota dela", () => {
@@ -82,7 +82,7 @@ describe("0478 — a escrita acompanha a visibilidade da conversa", () => {
   });
 
   it("CONTROLE POSITIVO: o dono da conversa insere e altera nota nela", () => {
-    expect(writeCountAs(GOV_AGENT_B, inserirNota(SONDA_B))).toBe(1);
+    expect(writeCountAs(GOV_AGENT_B, inserirNota(SONDA_B, GOV_AGENT_B))).toBe(1);
     expect(
       writeCountAs(
         GOV_AGENT_B,

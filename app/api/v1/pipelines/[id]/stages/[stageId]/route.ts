@@ -53,6 +53,18 @@ const bodySchema = z
     win_probability: z.number().int().min(0).max(100).nullable().optional(),
     /** Negócio que entra nesta etapa abre um aviso na Central (migration 0440). */
     avisar_na_central: z.boolean().optional(),
+    /**
+     * Janela de "esfriando" da etapa, em HORAS — a coluna
+     * `crm_stages.expected_duration_hours`, que o radar já lê
+     * (`resolveStageWindow`). `null` limpa e a etapa volta ao padrão de
+     * 24 h/72 h.
+     *
+     * 1 a 8760 inteiro (uma hora a um ano). A issue propõe um migration com
+     * `CHECK (between 1 and 8760)`, e ela é a parte 2 do escopo: a coluna hoje
+     * é `numeric` sem CHECK, então este Zod é a rede de segurança — recusar
+     * aqui é mandar a frase em português antes de tocar no banco.
+     */
+    expected_duration_hours: z.number().int().min(1).max(8760).nullable().optional(),
   })
   .strict()
   .refine((b) => Object.keys(b).length > 0, { message: "Nada para alterar." });

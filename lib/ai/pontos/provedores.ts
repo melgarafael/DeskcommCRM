@@ -45,6 +45,23 @@ export interface ProvedorSuportado {
   prefixoDaChave: string;
 }
 
+/**
+ * O LOGIN POR ASSINATURA (#1639) — vocabulário da credencial E da conversa.
+ *
+ * A linha em `ai_provider_credentials` deste provedor guarda um PAR DE TOKENOS
+ * (access + refresh), não uma chave de API: quem a lê é o painel de conexão da
+ * empresa, a renovação e o resolvedor da assinatura — nunca um leitor genérico
+ * (`lib/ai/credentials.ts` recusa este provider de propósito: mandaria o JSON
+ * dos tokens como se fosse chave).
+ *
+ * A constante mora aqui (e não em `./reserva-da-assinatura`) porque é
+ * vocabulário: quem escreve e quem lê importam do mesmo lugar, sem ciclo. Ela
+ * vem ANTES de `PROVEDORES` porque é dentro da lista, na entrada do provedor,
+ * que este id é usado — um `const` declarado depois da lista estouraria em TDZ
+ * na hora de avaliar o próprio array.
+ */
+export const PROVEDOR_POR_ASSINATURA = "openai-assinatura";
+
 export const PROVEDORES = [
   {
     id: "anthropic",
@@ -65,6 +82,26 @@ export const PROVEDORES = [
     catalogoSincronizavel: false,
     ondePegarAChave: "https://platform.openai.com/api-keys",
     prefixoDaChave: "sk-…",
+  },
+  {
+    id: PROVEDOR_POR_ASSINATURA,
+    rotulo: "OpenAI pela assinatura (ChatGPT)",
+    quandoUsar:
+      "Conecte sua conta pessoal do ChatGPT dentro dos limites da assinatura; para operação em volume, prefira uma chave de API da organização. Uma chave da própria organização pode servir de reserva.",
+    // A assinatura não se aponta para outro endereço nem sincroniza catálogo:
+    // o endpoint é o da própria OpenAI e o modelo vem do que a conta tem.
+    aceitaEndpointProprio: false,
+    catalogoSincronizavel: false,
+    // Não existe chave a copiar aqui: quem conecta é o painel de Credenciais
+    // desta instalação (Sign in with ChatGPT por PKCE). O link aponta para o
+    // serviço cuja ASSINATURA este provedor usa — o MESMO host de
+    // `OPENAI_CODEX_MODELS_ENDPOINT`, a listagem de modelos que fala com o
+    // backend do Codex (#2602). Por isso a catraca de marca vê um destino só:
+    // `chatgpt.com`, declarado como FORNECEDOR (o código FALA com ele).
+    ondePegarAChave: "https://chatgpt.com/",
+    // Placeholder do campo de chave, que para este provedor não tem o que
+    // colar: o texto já diz a recusa antes de a pessoa tentar.
+    prefixoDaChave: "conectado pelo login — não se cola chave",
   },
   {
     id: "google",
@@ -188,7 +225,24 @@ export const IDS_DE_PROVEDOR_DE_DECISAO = PROVEDORES_DE_DECISAO.map(
 /** Tudo o que tem chave cadastrável: a tela de Credenciais e a rota dela. */
 export const PROVEDORES_COM_CHAVE = [...PROVEDORES, ...PROVEDORES_DE_DECISAO] as const;
 
-export type ProvedorComChave = (typeof PROVEDORES_COM_CHAVE)[number]["id"];
+/**
+ * O LOGIN POR ASSINATURA — por que esta entrada fica em `PROVEDORES_COM_CHAVE`
+ * embora não se pareça com uma chave.
+ *
+ * `PROVEDORES_COM_CHAVE` é a união das duas listas (`tests/unit/provedores-de-decisao-catraca.test.ts`
+ * cobra que seja exatamente elas), e a assinatura entrou em `PROVEDORES`
+ * porque o seletor do agente, o padrão da empresa e o validador de escrita
+ * derivam de lá: é a lista de quem CONVERSA, e este provedor conversa.
+ *
+ * O que NÃO mudou: colar o par de tokens como chave continua sendo o erro que
+ * este provider existe para não cometer — quem lê a linha é o painel de
+ * conexão, a renovação e `resolveOrgLlmConfig` (um leitor genérico mandaria o
+ * JSON dos tokens no lugar da chave), e `validateProviderKey` devolve recusa
+ * explicando que a credencial nasce pelo login.
+ */
+export type ProvedorComChave =
+  | (typeof PROVEDORES_COM_CHAVE)[number]["id"]
+  | typeof PROVEDOR_POR_ASSINATURA;
 
 export const IDS_COM_CHAVE = PROVEDORES_COM_CHAVE.map((p) => p.id) as unknown as readonly [
   ProvedorComChave,

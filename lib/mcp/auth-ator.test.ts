@@ -63,3 +63,35 @@ describe("o que os handlers fazem com este ator", () => {
     expect(pulaOGate(deriveActor(["mcp:write"], TOKEN_ID))).toBe(false);
   });
 });
+
+describe("o papel do token", () => {
+  const papel = (scopes: string[]) => {
+    const ator = deriveActor(scopes, TOKEN_ID);
+    return "role" in ator ? ator.role : undefined;
+  };
+
+  // A tela grava os escopos na ordem dos cliques: gerente clicado antes de
+  // administrador deixava `role:manager` primeiro, o primeiro encontrado
+  // vencia, e configurar o agente (#2052) fechava em 403. As duas ordens
+  // existem em banco, então as duas têm de valer admin.
+  it("gerente clicado ANTES de administrador: vale o administrador", () => {
+    expect(papel(["mcp:read", "role:manager", "role:admin", "config:write"])).toBe("admin");
+  });
+
+  it("administrador clicado ANTES de gerente: vale o administrador", () => {
+    expect(papel(["role:admin", "role:manager"])).toBe("admin");
+  });
+
+  it("sem papel nenhum, o padrão continua `agent`", () => {
+    expect(papel(["mcp:write"])).toBe("agent");
+  });
+
+  it("papel abaixo do padrão não sobe: `role:viewer` sozinho continua `viewer`", () => {
+    expect(papel(["mcp:read", "role:viewer"])).toBe("viewer");
+  });
+
+  it("papel desconhecido é ignorado, e não derruba o papel válido", () => {
+    expect(papel(["role:dono", "role:manager"])).toBe("manager");
+    expect(papel(["role:dono"])).toBe("agent");
+  });
+});

@@ -166,10 +166,45 @@ export function SkillsClient({ initialState }: Props) {
                   {skill.description && <p className="text-text-muted">{skill.description}</p>}
                   {skill.versao_nova_catalogo && (
                     <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-accent bg-accent-soft p-2.5 text-xs">
-                      <span className="flex items-center gap-1.5 text-text">
-                        <Info className="shrink-0" aria-hidden />
-                        {t(
-                          "Há uma versão nova desta skill no catálogo. Se você editou esta cópia, suas alterações ficam só no Histórico de versões: ao adotar, a versão nova do catálogo passa a ser a ativa. Confira antes de adotar.",
+                      <span className="flex flex-col gap-1.5 text-text">
+                        <span className="flex items-center gap-1.5">
+                          <Info className="shrink-0" aria-hidden />
+                          {t(
+                            "Há uma versão nova desta skill no catálogo. Se você editou esta cópia, suas alterações ficam só no Histórico de versões: ao adotar, a versão nova do catálogo passa a ser a ativa. Confira antes de adotar.",
+                          )}
+                        </span>
+                        {skill.comparativo && skill.comparativo.mudou_em.length > 0 && (
+                          <span className="flex flex-col gap-1 pl-6">
+                            <span className="font-medium text-text">
+                              {t("Se você adotar a versão do catálogo, muda:")}
+                            </span>
+                            <span className="flex flex-wrap gap-x-3 gap-y-0.5 text-text-muted">
+                              {skill.comparativo.mudou_em.includes("descricao") && (
+                                <span>• {t("Descrição")}</span>
+                              )}
+                              {skill.comparativo.mudou_em.includes("matcher") &&
+                                (skill.comparativo.any_adicionadas.length > 0 ||
+                                  skill.comparativo.any_removidas.length > 0) && (
+                                  <span>
+                                    • {t("Palavras-chave de ativação")}:{" "}
+                                    {skill.comparativo.any_adicionadas.length > 0 && (
+                                      <span className="text-accent">+{skill.comparativo.any_adicionadas.join(", ")}</span>
+                                    )}
+                                    {skill.comparativo.any_adicionadas.length > 0 &&
+                                      skill.comparativo.any_removidas.length > 0 && <span aria-hidden> </span>}
+                                    {skill.comparativo.any_removidas.length > 0 && (
+                                      <span className="text-destructive">−{skill.comparativo.any_removidas.join(", ")}</span>
+                                    )}
+                                  </span>
+                                )}
+                              {skill.comparativo.mudou_em.includes("corpo") && (
+                                <span>
+                                  • {t("Procedimento (corpo)")}: +{skill.comparativo.linhas_adicionadas} −
+                                  {skill.comparativo.linhas_removidas}
+                                </span>
+                              )}
+                            </span>
+                          </span>
                         )}
                       </span>
                       {canManage && (

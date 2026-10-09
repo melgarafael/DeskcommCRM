@@ -73,8 +73,14 @@ async function contatoDaRota(contactId: string): Promise<Record<string, unknown>
   }
 }
 
-async function contactNotifyBits(contactId: string): Promise<{ title: string; icon?: string }> {
+async function contactNotifyBits(contactId: string): Promise<{
+  title: string;
+  icon?: string;
+  /** Spec 21, caminho 1: pessoal não entrega aviso — a linha já traz a marca. */
+  pessoal: boolean;
+}> {
   const row = await contatoDaRota(contactId);
+  const pessoal = (row as { is_personal?: boolean } | null)?.is_personal === true;
   const title = nomeDoContato(row as { display_name?: string | null; name?: string | null } | null) ?? "Nova mensagem";
   let icon: string | undefined;
   try {
@@ -86,7 +92,7 @@ async function contactNotifyBits(contactId: string): Promise<{ title: string; ic
   } catch {
     // sem foto: badge da marca
   }
-  return { title, icon };
+  return { title, icon, pessoal };
 }
 
 async function contactIdFromRow(
@@ -105,6 +111,37 @@ async function contactIdFromRow(
     return typeof c?.contact_id === "string" ? c.contact_id : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Esta pessoa deve ser avisada desta mensagem? A regra (conversa com
+ * responsável avisa só ele e os administradores; sem responsável, todos) é a
+ * MESMA do push do servidor — `lib/notifications/destinatarios-da-mensagem.ts`
+ * — e é decidida pela rota, no servidor.
+ *
+ * Por que não decidir aqui com `GET /conversations/[id]` e o papel ativo: o
+ * ramo "sem atendente, mas o contato tem negócio aberto com dono" depende de
+ * `crm_leads`, e a RLS esconde de um `agent` (no modo de visibilidade padrão)
+ * todo negócio de outro dono. Daqui, "não vejo negócio" e "não há negócio" são
+ * a mesma resposta — e o atendente seria avisado justamente do cliente alheio.
+ * O cabeçalho da rota tem o argumento inteiro.
+ *
+ * Só `avisar === false` cala. Rota fora do ar, 403, resposta sem o campo:
+ * avisa, como antes da regra existir — um aviso a mais incomoda, um a menos
+ * deixa cliente sem resposta.
+ */
+async function devoAvisar(conversationId: string | null): Promise<boolean> {
+  if (!conversationId) return true;
+  try {
+    const r = await fetch(`/api/v1/conversations/${conversationId}/aviso-de-mensagem`, {
+      credentials: "include",
+    });
+    if (!r.ok) return true;
+    const json = (await r.json()) as { data?: { avisar?: unknown } | null };
+    return json.data?.avisar !== false;
+  } catch {
+    return true;
   }
 }
 
@@ -133,10 +170,14 @@ export function useInboundMessageAlerts(): void {
       return;
     }
     void (async () => {
+      if (!(await devoAvisar(conversationId))) return;
       const contactId = await contactIdFromRow(row, conversationId);
       const bits = contactId
         ? await contactNotifyBits(contactId)
-        : { title: "Nova mensagem" as const, icon: undefined };
+        : { title: "Nova mensagem" as const, icon: undefined, pessoal: false };
+      // Pessoal não avisa (spec 21, caminho 1): nem toast, nem push de tela —
+      // o choke é aqui, antes do `entregarAviso`; `emit`/`sounds` não mudam.
+      if (bits.pessoal) return;
       entregarAviso({
         category: "message",
         kind: "message_inbound",

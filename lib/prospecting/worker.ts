@@ -24,10 +24,12 @@ import { logger } from "@/lib/logger";
 import { assertProspectingDelivery } from "./guard";
 import { campaignConfigSchema } from "./schema";
 import { ProspectingError } from "./provider";
+import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 import {
   withProspectingLock,
   synchronizeSearch,
   validateConfig,
+  prepararCandidatoNoEnvio,
   type Campaign,
   type Candidate,
 } from "./store";
@@ -125,19 +127,38 @@ export async function sendNextCandidate(
       return;
     }
   }
-  const p = (
+  const queued = (
     await db.query<Candidate>(
       "select * from prospecting_candidates where organization_id=$1 and campaign_id=$2 and status='queued' order by created_at,id limit 1",
       [c.organization_id, c.id],
     )
   ).rows[0];
-  if (!p) {
+  if (!queued) {
     await db.query(
       "update prospecting_campaigns set status='completed',updated_at=now() where organization_id=$1 and id=$2 and status='running'",
       [c.organization_id, c.id],
     );
     return;
   }
+  // A checagem do canal olha o telefone desta empresa (modo de teste, lista liberada) e vem
+  // ANTES de qualquer criação: se ela recusar, a campanha pausa sem ter deixado contato,
+  // negócio nem conversa para trás — que é exatamente o que o modo `on_send` quer evitar.
+  const preflight = await decidirPreGoLiveDoCanalViaSupabase(admin, {
+    organizationId: c.organization_id,
+    channelSessionId: cfg.channel_session_id,
+    contactPhoneNumber: queued.phone ?? "",
+  });
+  if (!preflight.permite)
+    throw new ProspectingError(`O canal ainda não permite esta abordagem: ${preflight.motivo}.`);
+  // MODO `on_send`: a empresa está na fila, mas ainda NÃO existe no CRM — contato,
+  // negócio e conversa nascem agora, na vez dela de ser abordada. Se ela saiu da fila
+  // no caminho (virou contato por outro lado, ou o CRM recusou o cadastro), não houve
+  // tentativa: `attempted_at` não foi gravado, e a próxima rodada pega a seguinte.
+  const p =
+    cfg.funnel_entry === "on_send" && !queued.conversation_id
+      ? await prepararCandidatoNoEnvio(db, admin, c, cfg, queued)
+      : queued;
+  if (!p) return;
   // O idioma da instalação decide a PALAVRA de saída. Uma consulta por envio, no
   // mesmo caminho que já faz várias — e o envio é limitado a 1 por vez pelo
   // ritmo anti-banimento, então não há volume aqui para otimizar.
@@ -148,13 +169,6 @@ export async function sendNextCandidate(
         [c.organization_id],
       )
     ).rows[0]?.locale ?? null;
-  const preflight = await decidirPreGoLiveDoCanalViaSupabase(admin, {
-    organizationId: c.organization_id,
-    channelSessionId: cfg.channel_session_id,
-    contactPhoneNumber: p.phone ?? "",
-  });
-  if (!preflight.permite)
-    throw new ProspectingError(`O canal ainda não permite esta abordagem: ${preflight.motivo}.`);
   const boundary = parseServiceBoundary(p.service_boundary);
   if (!boundary || !p.contact_id || !p.conversation_id)
     // DO CANDIDATO: este não tem contato/conversa resolvidos. O próximo pode ter.
@@ -321,6 +335,16 @@ export async function sendNextCandidate(
       requestId: `prospecting:${p.id}`,
     });
   } catch (error) {
+    // Organização parada: a porta de saída lança ANTES de qualquer envio, então
+    // o candidato não foi tentado. Volta à fila (`queued`); marcá-lo `failed`
+    // o tiraria da lista para sempre por algo que não é dele.
+    if (error instanceof OrgNaoOperanteError) {
+      await db.query(
+        "update prospecting_candidates set status='queued',updated_at=now() where organization_id=$1 and id=$2",
+        [c.organization_id, p.id],
+      );
+      throw error;
+    }
     await db.query(
       "update prospecting_candidates set status='failed',error=$3,updated_at=now() where organization_id=$1 and id=$2",
       [
@@ -336,8 +360,14 @@ export async function sendNextCandidate(
 }
 
 export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient) {
+  // Organização parada (suspensa, redigida, arquivada) não prospecta: a busca é
+  // paga e a abordagem sai para fora. O corte é no SQL, antes do `limit 20`:
+  // a ordem é `min(updated_at)`, e a org pulada nunca toca `updated_at` —
+  // filtrar depois a deixaria no topo para sempre. A régua é a SQL
+  // `fn_org_operante` (mesma de `organizations.status = 'active'`) — não se
+  // trafega a lista de ids das paradas na consulta (cortaria em `max_rows`).
   const { rows: organizations } = await pool.query<{ organization_id: string }>(
-    "select organization_id from prospecting_campaigns where status='running' or search_status in ('starting','running') group by organization_id order by min(updated_at) limit 20",
+    "select pc.organization_id from prospecting_campaigns pc where (pc.status='running' or pc.search_status in ('starting','running')) and public.fn_org_operante(pc.organization_id) group by pc.organization_id order by min(pc.updated_at) limit 20",
   );
   const deadline = Date.now() + 180000;
   let processed = 0;
@@ -385,6 +415,20 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient) {
           try {
             await sendNextCandidate(pool, db, admin, c);
           } catch (error) {
+            // Organização parada entre a escolha do tick e o envio (a porta de
+            // saída lança `OrgNaoOperanteError`): não é falha da campanha nem do
+            // candidato. Pausar deixaria a lista parada DEPOIS da reativação,
+            // esperando alguém retomar à mão. Ela segue `running`; o filtro do
+            // tick (`idsDeOrgsParadas`) a deixa de fora até a org voltar. O
+            // `return` pula o carimbo de `updated_at` e a contagem: nesta rodada
+            // a org não devia nem estar aqui.
+            if (error instanceof OrgNaoOperanteError) {
+              logger.info("[prospecting] organização parada no envio; a campanha segue", {
+                organization_id: org,
+                campaign_id: c.id,
+              });
+              return;
+            }
             // DE QUEM É A FALHA decide se a fila para.
             //
             // Antes, QUALQUER exceção pausava a campanha inteira: um número

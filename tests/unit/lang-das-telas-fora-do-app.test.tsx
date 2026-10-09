@@ -32,7 +32,19 @@ vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => undefined, getAll: () => [] }),
 }));
 vi.mock("@/app/actions/auth/signOut", () => ({ signOut: async () => {} }));
-vi.mock("@/lib/branding/saida", () => ({ emailDeSuporte: async () => "suporte@exemplo.com" }));
+vi.mock("@/lib/branding/saida", () => ({
+  emailDeSuporte: async () => "suporte@exemplo.com",
+  // O nome da marca das páginas fora do `/app` também vem daqui (#2511): stub
+  // no formato exato de `MarcaDeSaida`, porque o layout de `/legal` renderiza
+  // `marca.nome` — sem este export o mock quebra a página inteira.
+  marcaDaSaida: async () => ({
+    nome: "Produto",
+    logoUrl: null,
+    accent: "#5b5bd6",
+    accentFg: "#ffffff",
+    origens: { nome: "padrao", cor: "#5b5bd6" },
+  }),
+}));
 vi.mock("@/lib/branding", () => ({ branding: () => ({ name: "Produto" }) }));
 vi.mock("@/lib/auth/rate-limit", () => ({
   authRateLimited: async () => false,
@@ -40,10 +52,37 @@ vi.mock("@/lib/auth/rate-limit", () => ({
 }));
 vi.mock("@/lib/auth/invite-token", () => ({ verifyInviteToken: () => null }));
 
+// `/account-suspended` virou o hub: exige sessão e lê o estado da org. As peças
+// de LGPD e a troca de org são clientes com dados próprios e ficam de fora daqui.
+// O que se mede aqui é só o `lang`.
+vi.mock("@/lib/auth/server", () => ({
+  requireAuth: async () => ({
+    id: "u",
+    email: "x@exemplo.com",
+    is_platform_admin: false,
+    support: null,
+    idioma: locale.valor === "es" ? "es" : "pt-BR",
+    organizations: [{ organization_id: "o", organization_name: "Empresa", role: "admin" }],
+  }),
+  orgAtivaSemPortao: async () => ({ orgId: "o", name: "Empresa", role: "admin", org_status: "suspended" }),
+}));
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: () => ({
+    from: () => ({ select: () => ({ in: async () => ({ data: [{ id: "o", status: "suspended" }], error: null }) }) }),
+  }),
+}));
+vi.mock("@/app/app/lgpd/requests/RequestsTable", () => ({ RequestsTable: () => null }));
+vi.mock("@/app/app/lgpd/requests/[id]/_client", () => ({ LgpdRequestDetail: () => null }));
+vi.mock("@/app/onboarding/_components/OutrasOrganizacoes", () => ({ OutrasOrganizacoes: () => null }));
+
 const TELAS: Array<[string, () => Promise<ReactElement>]> = [
   ["/403", async () => (await import("@/app/403/page")).default()],
   ["/500", async () => (await import("@/app/500/page")).default()],
-  ["/account-suspended", async () => (await import("@/app/account-suspended/page")).default()],
+  [
+    "/account-suspended",
+    async () =>
+      (await import("@/app/account-suspended/page")).default({ searchParams: Promise.resolve({}) }),
+  ],
   ["/acesso-revogado", async () => (await import("@/app/acesso-revogado/page")).default()],
   ["/admin/forbidden", async () => (await import("@/app/admin/forbidden/page")).default()],
   [

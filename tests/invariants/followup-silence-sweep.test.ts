@@ -106,9 +106,19 @@ function silenceSweepDb(): SilenceSweepDb {
         id: string;
         organization_id: string;
         active_version_id: string | null;
-        trigger_config: { kind: string; params?: { threshold_minutes: number; segments?: string[] } };
+        trigger_config: {
+          kind: string;
+          params?: {
+            threshold_minutes: number;
+            segments?: string[];
+            reentry_pause_minutes?: number;
+            max_silence_minutes?: number;
+            reentry_pause_basis?: "ultima_mensagem" | "ultimo_envio";
+          };
+        };
+        handoff_policy: "pause" | "cancel" | "allow";
       }>(
-        `select id, organization_id, active_version_id, trigger_config
+        `select id, organization_id, active_version_id, trigger_config, handoff_policy
          from followup_flow_pointers
          where status = 'active' and active_version_id is not null`,
       );
@@ -121,11 +131,19 @@ function silenceSweepDb(): SilenceSweepDb {
           active_version_id: row.active_version_id,
           threshold_minutes: row.trigger_config.params!.threshold_minutes,
           segments: row.trigger_config.params!.segments ?? [],
+          reentry_pause_minutes: row.trigger_config.params!.reentry_pause_minutes ?? 0,
+          ...(row.trigger_config.params!.max_silence_minutes
+            ? { max_silence_minutes: row.trigger_config.params!.max_silence_minutes }
+            : {}),
+          ...(row.trigger_config.params!.reentry_pause_basis
+            ? { reentry_pause_basis: row.trigger_config.params!.reentry_pause_basis }
+            : {}),
+          handoff_policy: row.handoff_policy,
         });
       }
       return pointers;
     },
-    async loadSilentContactIds(orgId, cutoffIso, segments) {
+    async loadSilentContactIds(orgId, cutoffIso, segments, desdeIso) {
       const { rows } = await pool.query<{ contact_id: string; last_inbound_at: string; tags: string[]; is_blocked: boolean }>(
         `select conv.contact_id, max(conv.last_inbound_at) as last_inbound_at,
                 c.tags as tags, c.is_blocked as is_blocked
@@ -137,9 +155,11 @@ function silenceSweepDb(): SilenceSweepDb {
         [orgId, CONVERSATION_TERMINAL_STATUSES],
       );
       const cutoff = new Date(cutoffIso).getTime();
+      const desde = desdeIso ? new Date(desdeIso).getTime() : null;
       return rows
         .filter((r) => !r.is_blocked)
         .filter((r) => new Date(r.last_inbound_at).getTime() <= cutoff)
+        .filter((r) => desde === null || new Date(r.last_inbound_at).getTime() >= desde)
         .filter((r) => segments.length === 0 || segments.some((s) => r.tags.includes(s)))
         .map((r) => r.contact_id);
     },
@@ -152,6 +172,52 @@ function silenceSweepDb(): SilenceSweepDb {
             and enabled and cancelled_at is null and contact_id is not null
             and payload->>'followup_enrollment_id' is null`,
         [orgId],
+      );
+      return new Set(rows.map((r) => r.contact_id));
+    },
+    // Mesma régua de `createSupabaseSilenceSweepDb`: inscrição ENCERRADA deste
+    // fluxo (o mais tardio entre `completed_at` e `updated_at` é o fim) e a
+    // última mensagem do contato.
+    async loadEncerramentosDoFluxo(orgId, pointerId, contactIds) {
+      const { rows } = await pool.query<{ contact_id: string; fim: Date; ultima: Date | null }>(
+        `select e.contact_id,
+                max(greatest(coalesce(e.completed_at, e.updated_at), e.updated_at)) as fim,
+                (select max(conv.last_inbound_at) from conversations conv
+                  where conv.organization_id = $1 and conv.contact_id = e.contact_id) as ultima
+           from followup_enrollments e
+          where e.organization_id = $1 and e.pointer_id = $2
+            and e.status in ('completed', 'cancelled', 'dead')
+            and e.contact_id = any($3::uuid[])
+          group by e.contact_id`,
+        [orgId, pointerId, contactIds],
+      );
+      return new Map(
+        rows.map((r) => [r.contact_id, { encerradaEm: r.fim.getTime(), ultimaMensagemEm: r.ultima?.getTime() ?? null }]),
+      );
+    },
+    // A conversa MAIS RECENTE do contato decide, como na produção.
+    async loadContatosComPessoaNoComando(orgId, contactIds) {
+      const { rows } = await pool.query<{ contact_id: string }>(
+        `select contact_id from (
+           select distinct on (conv.contact_id) conv.contact_id,
+                  (conv.assignee_kind = 'user' or c.force_human
+                   or coalesce(conv.bot_silenced_until > now(), false)) as com_pessoa
+             from conversations conv
+             join contacts c on c.id = conv.contact_id
+            where conv.organization_id = $1 and conv.contact_id = any($2::uuid[])
+            order by conv.contact_id, conv.last_inbound_at desc nulls last
+         ) x where com_pessoa`,
+        [orgId, contactIds],
+      );
+      return new Set(rows.map((r) => r.contact_id));
+    },
+    // Mesma pergunta do adaptador de produção: vivo em QUALQUER fluxo da org.
+    async loadContatosComInscricaoViva(orgId, contactIds) {
+      const { rows } = await pool.query<{ contact_id: string }>(
+        `select distinct contact_id from followup_enrollments
+          where organization_id = $1 and contact_id = any($2::uuid[])
+            and status in ('active','waiting_reply','paused_handoff','paused_manual')`,
+        [orgId, contactIds],
       );
       return new Set(rows.map((r) => r.contact_id));
     },
@@ -237,10 +303,14 @@ async function seedOrg(org: string): Promise<void> {
   );
 }
 
-async function seedContact(org: string, opts?: { tags?: string[]; isBlocked?: boolean }): Promise<string> {
+async function seedContact(
+  org: string,
+  opts?: { tags?: string[]; isBlocked?: boolean; forceHuman?: boolean },
+): Promise<string> {
   const { rows } = await pool.query<{ id: string }>(
-    `insert into contacts (organization_id, display_name, tags, is_blocked) values ($1, 'Silence Contact', $2, $3) returning id`,
-    [org, opts?.tags ?? [], opts?.isBlocked ?? false],
+    `insert into contacts (organization_id, display_name, tags, is_blocked, force_human)
+     values ($1, 'Silence Contact', $2, $3, $4) returning id`,
+    [org, opts?.tags ?? [], opts?.isBlocked ?? false, opts?.forceHuman ?? false],
   );
   return rows[0]!.id;
 }
@@ -298,7 +368,15 @@ async function seedConversationAt(org: string, contactId: string, atIso: string)
 
 async function seedSilenceFlow(
   org: string,
-  opts?: { thresholdMinutes?: number; segments?: string[]; comIa?: boolean },
+  opts?: {
+    thresholdMinutes?: number;
+    segments?: string[];
+    comIa?: boolean;
+    reentryPauseMinutes?: number;
+    handoffPolicy?: "pause" | "cancel" | "allow";
+    maxSilenceMinutes?: number;
+    reentryPauseBasis?: "ultima_mensagem" | "ultimo_envio";
+  },
 ): Promise<{ pointerId: string; versionId: string }> {
   const graph = {
     nodes: [
@@ -317,12 +395,24 @@ async function seedSilenceFlow(
   const versionId = versionRows[0]!.id;
   const triggerConfig = {
     kind: "silence",
-    params: { threshold_minutes: opts?.thresholdMinutes ?? 60, segments: opts?.segments ?? [] },
+    params: {
+      threshold_minutes: opts?.thresholdMinutes ?? 60,
+      segments: opts?.segments ?? [],
+      ...(opts?.reentryPauseMinutes !== undefined ? { reentry_pause_minutes: opts.reentryPauseMinutes } : {}),
+      ...(opts?.maxSilenceMinutes !== undefined ? { max_silence_minutes: opts.maxSilenceMinutes } : {}),
+      ...(opts?.reentryPauseBasis !== undefined ? { reentry_pause_basis: opts.reentryPauseBasis } : {}),
+    },
   };
   const { rows: pointerRows } = await pool.query<{ id: string }>(
-    `insert into followup_flow_pointers (organization_id, name, status, active_version_id, trigger_config)
-     values ($1, $2, 'active', $3, $4) returning id`,
-    [org, `Silence Flow ${Date.now()}-${Math.random()}`, versionId, JSON.stringify(triggerConfig)],
+    `insert into followup_flow_pointers (organization_id, name, status, active_version_id, trigger_config, handoff_policy)
+     values ($1, $2, 'active', $3, $4, $5) returning id`,
+    [
+      org,
+      `Silence Flow ${Date.now()}-${Math.random()}`,
+      versionId,
+      JSON.stringify(triggerConfig),
+      opts?.handoffPolicy ?? "pause",
+    ],
   );
   return { pointerId: pointerRows[0]!.id, versionId };
 }
@@ -826,7 +916,15 @@ describe("runSilenceSweep — 1 follow-up vivo por lead ORG-WIDE (Task 8.6, furo
     const contactId = await seedContact(org);
     await seedConversation(org, contactId, 90); // silencioso p/ os dois
 
-    const deps = { db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK };
+    // Este caso mede o ÍNDICE: o pré-filtro de inscrição viva da varredura fica
+    // desligado aqui, senão ele mesmo pularia o 2º fluxo e o RED (o spam do
+    // índice antigo) nunca apareceria. O índice é a garantia; o pré-filtro é
+    // economia — e tem caso próprio logo abaixo.
+    const deps = {
+      db: { ...silenceSweepDb(), loadContatosComInscricaoViva: async () => new Set<string>() },
+      gateDb: pgGateDb(),
+      clock: CLOCK,
+    };
 
     try {
       // RED — índice como era ANTES da 0062: (pointer_id, contact_id)
@@ -850,6 +948,39 @@ describe("runSilenceSweep — 1 follow-up vivo por lead ORG-WIDE (Task 8.6, furo
       await pool.query(`delete from followup_enrollments where contact_id = $1`, [contactId]);
       await setOneLiveIndex("organization_id, contact_id");
     }
+  });
+
+  it("com o pré-filtro, o 2º fluxo nem TENTA inscrever quem já está vivo (sem 23505 a cada minuto)", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const flowA = await seedSilenceFlow(org, { thresholdMinutes: 30 });
+    const flowB = await seedSilenceFlow(org, { thresholdMinutes: 30 });
+    await seedPublishedAgentVersion(org, { enabled: true, pointerIds: [flowA.pointerId, flowB.pointerId] });
+    const contactId = await seedContact(org);
+    await seedConversation(org, contactId, 90);
+
+    const base = silenceSweepDb();
+    const tentativas: string[] = [];
+    const db: SilenceSweepDb = {
+      ...base,
+      insertEnrollment: async (input) => {
+        if (input.contact_id === contactId) tentativas.push(input.pointer_id);
+        return base.insertEnrollment(input);
+      },
+    };
+    const deps = { db, gateDb: pgGateDb(), clock: CLOCK };
+
+    const primeira = await runSilenceSweep(deps);
+    expect(primeira.enrolled).toBe(1);
+    expect(tentativas).toHaveLength(1); // o 2º fluxo leu "já vivo" e pulou sem tentar
+    expect(primeira.skipped_existing).toBeGreaterThanOrEqual(1);
+
+    // os ticks seguintes (1×/min em produção) também não tentam: era aqui que
+    // nasciam os ~124 mil 23505 por dia
+    await runSilenceSweep(deps);
+    await runSilenceSweep(deps);
+    expect(tentativas).toHaveLength(1);
+    expect(await countLiveForContact(org, contactId)).toBe(1);
   });
 
   it("contato JÁ vivo no fluxo A → sweep do fluxo B NÃO enrolla (índice do baseline)", async () => {
@@ -950,5 +1081,181 @@ describe("dedup 0062 — >1 enrollment vivo pro mesmo (org,contact) vira 1 vivo 
       await pool.query(`delete from followup_enrollments where contact_id = $1`, [contactId]);
       await setOneLiveIndex("organization_id, contact_id");
     }
+  });
+});
+
+// ---- pausa de reentrada e pessoa no comando (lib/followup/pausa-de-reentrada.ts) ----
+
+/** Uma inscrição ENCERRADA deste fluxo, terminada há `agoMinutes`. */
+async function seedEncerrada(
+  org: string,
+  pointerId: string,
+  versionId: string,
+  contactId: string,
+  agoMinutes: number,
+  status: "cancelled" | "completed" = "cancelled",
+): Promise<void> {
+  await pool.query(
+    `insert into followup_enrollments
+       (organization_id, pointer_id, version_id, contact_id, current_node_id, status, next_eval_at, completed_at, updated_at)
+     values ($1, $2, $3, $4, 't1', $5, null, now() - interval '${agoMinutes} minutes', now() - interval '${agoMinutes} minutes')`,
+    [org, pointerId, versionId, contactId, status],
+  );
+}
+
+describe("runSilenceSweep — pausa de reentrada", () => {
+  it("⭐ quem encerrou uma inscrição deste fluxo há menos que a pausa não volta a entrar", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId, versionId } = await seedSilenceFlow(org, { thresholdMinutes: 60, reentryPauseMinutes: 48 * 60 });
+    const contactId = await seedContact(org);
+    await seedConversation(org, contactId, 90); // respondeu há 90 min e calou
+    await seedEncerrada(org, pointerId, versionId, contactId, 90); // a resposta cancelou a inscrição
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(summary.skipped_reentry_pause).toBe(1);
+    expect(await countEnrollments(pointerId, contactId)).toBe(1); // só a encerrada
+  });
+
+  it("depois da pausa inteira sem o cliente escrever, o fluxo recomeça", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId, versionId } = await seedSilenceFlow(org, { thresholdMinutes: 60, reentryPauseMinutes: 48 * 60 });
+    const contactId = await seedContact(org);
+    await seedConversation(org, contactId, 49 * 60);
+    await seedEncerrada(org, pointerId, versionId, contactId, 49 * 60);
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(summary.skipped_reentry_pause).toBe(0);
+    expect(summary.enrolled).toBe(1);
+    expect(await countEnrollments(pointerId, contactId)).toBe(2);
+  });
+
+  it("a mensagem mais recente do cliente recomeça a contagem, mesmo com a inscrição encerrada há mais tempo", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId, versionId } = await seedSilenceFlow(org, { thresholdMinutes: 60, reentryPauseMinutes: 48 * 60 });
+    const contactId = await seedContact(org);
+    await seedEncerrada(org, pointerId, versionId, contactId, 60 * 60); // encerrada há 60 h
+    await seedConversation(org, contactId, 20 * 60); // mas escreveu de novo há 20 h
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(summary.skipped_reentry_pause).toBe(1);
+    expect(await countEnrollments(pointerId, contactId)).toBe(1);
+  });
+
+  it("⭐ pausa contada do último ENVIO: encerrada há 25 h e o cliente escreveu há 20 min — entra de novo", async () => {
+    // O toque curto "10 min depois de calar, no máximo 1× por dia": pela base da
+    // última mensagem, a pausa de 24 h nunca se cumpriria dentro do teto de 60 min.
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId, versionId } = await seedSilenceFlow(org, {
+      thresholdMinutes: 10, maxSilenceMinutes: 60, reentryPauseMinutes: 24 * 60, reentryPauseBasis: "ultimo_envio",
+    });
+    const contactId = await seedContact(org);
+    await seedEncerrada(org, pointerId, versionId, contactId, 25 * 60);
+    await seedConversation(org, contactId, 20);
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(summary.skipped_reentry_pause).toBe(0);
+    expect(summary.enrolled).toBe(1);
+    expect(await countEnrollments(pointerId, contactId)).toBe(2);
+  });
+
+  it("controle da base: a mesma situação, contada da última mensagem, segue em pausa", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId, versionId } = await seedSilenceFlow(org, {
+      thresholdMinutes: 10, maxSilenceMinutes: 60, reentryPauseMinutes: 24 * 60,
+    });
+    const contactId = await seedContact(org);
+    await seedEncerrada(org, pointerId, versionId, contactId, 25 * 60);
+    await seedConversation(org, contactId, 20);
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(summary.skipped_reentry_pause).toBe(1);
+    expect(await countEnrollments(pointerId, contactId)).toBe(1);
+  });
+
+  it("pausa contada do último envio: encerrada há 2 h, ainda não entra", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId, versionId } = await seedSilenceFlow(org, {
+      thresholdMinutes: 10, maxSilenceMinutes: 60, reentryPauseMinutes: 24 * 60, reentryPauseBasis: "ultimo_envio",
+    });
+    const contactId = await seedContact(org);
+    await seedEncerrada(org, pointerId, versionId, contactId, 2 * 60);
+    await seedConversation(org, contactId, 20);
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(summary.skipped_reentry_pause).toBe(1);
+    expect(await countEnrollments(pointerId, contactId)).toBe(1);
+  });
+
+  it("controle: sem pausa configurada, o mesmo contato volta a entrar no limiar de sempre", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId, versionId } = await seedSilenceFlow(org, { thresholdMinutes: 60 });
+    const contactId = await seedContact(org);
+    await seedConversation(org, contactId, 90);
+    await seedEncerrada(org, pointerId, versionId, contactId, 90);
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(summary.enrolled).toBe(1);
+    expect(await countEnrollments(pointerId, contactId)).toBe(2);
+  });
+
+  it("quem nunca passou pelo fluxo entra no limiar de sempre, com pausa configurada", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId } = await seedSilenceFlow(org, { thresholdMinutes: 60, reentryPauseMinutes: 48 * 60 });
+    const contactId = await seedContact(org);
+    await seedConversation(org, contactId, 90);
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(summary.enrolled).toBe(1);
+    expect(await countEnrollments(pointerId, contactId)).toBe(1);
+  });
+});
+
+describe("runSilenceSweep — pessoa no comando da conversa", () => {
+  it("⭐ contato em force_human não é inscrito num fluxo sem handoff_policy='allow'", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId } = await seedSilenceFlow(org, { thresholdMinutes: 60, handoffPolicy: "cancel" });
+    const contactId = await seedContact(org, { forceHuman: true });
+    await seedConversation(org, contactId, 90);
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(summary.skipped_human_owned).toBe(1);
+    expect(await countEnrollments(pointerId, contactId)).toBe(0);
+  });
+
+  it("controle: com handoff_policy='allow' o fluxo foi feito para rodar com a pessoa — inscreve", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId } = await seedSilenceFlow(org, { thresholdMinutes: 60, handoffPolicy: "allow" });
+    const contactId = await seedContact(org, { forceHuman: true });
+    await seedConversation(org, contactId, 90);
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(summary.skipped_human_owned).toBe(0);
+    expect(await countEnrollments(pointerId, contactId)).toBe(1);
+  });
+});
+
+describe("runSilenceSweep — teto do silêncio", () => {
+  it("⭐ com teto de 60 min, quem está calado há 20 min entra e quem está há 3 h fica de fora", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId } = await seedSilenceFlow(org, { thresholdMinutes: 10, maxSilenceMinutes: 60 });
+    const naFaixa = await seedContact(org);
+    await seedConversation(org, naFaixa, 20);
+    const antigo = await seedContact(org);
+    await seedConversation(org, antigo, 180);
+
+    await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(await countEnrollments(pointerId, naFaixa)).toBe(1);
+    expect(await countEnrollments(pointerId, antigo)).toBe(0);
   });
 });

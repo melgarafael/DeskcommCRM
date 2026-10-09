@@ -11,11 +11,17 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { ChipDeEtiqueta } from "@/components/tags/ChipDeEtiqueta";
 import { OwnerBadge } from "@/components/kanban/OwnerBadge";
-import { comandoDaConversa, esperaDaConversa } from "@/lib/inbox/comando-da-conversa";
+import {
+  comandoDaConversa,
+  esperaDaConversa,
+  ROTULO_DO_COMANDO,
+  STATUS_ENCERRADOS,
+} from "@/lib/inbox/comando-da-conversa";
 import { cn } from "@/lib/utils";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
+import { rotuloDoCanalDaConversa } from "@/lib/channels/estado";
 
 interface Props {
   conversation: ConversationWithContact;
@@ -187,12 +193,33 @@ export function ConversationListItem({
   });
   const isAi = comando.quem === "automatico";
   const dot = COR_DO_COMANDO[comando.quem] ?? COR_DO_COMANDO.ninguem;
+  // A cor sozinha não se explica: quem não decorou a tabela perguntava o que
+  // cada bolinha queria dizer. A palavra é a de ROTULO_DO_COMANDO, o rótulo que
+  // o produto já define para cada estado, no passar do mouse e no leitor de
+  // tela — antes ela era `aria-hidden`.
+  //
+  // Encerrada vence `humano` só na PALAVRA. Fechar não solta o dono
+  // (`fn_service_status`), e `comandoDaConversa` segue dizendo `humano` para
+  // nomear quem atendeu — a cor acompanha isso e fica como estava. Mas escrever
+  // "Em atendimento" numa conversa fechada afirmaria no presente um atendimento
+  // que acabou.
+  const rotuloDoComando = t(
+    STATUS_ENCERRADOS.has(conversation.status)
+      ? ROTULO_DO_COMANDO.encerrada
+      : (ROTULO_DO_COMANDO[comando.quem] ?? ROTULO_DO_COMANDO.ninguem),
+  );
 
-  // O número DA EMPRESA por onde esta conversa chegou — não o do cliente. Com
-  // dois canais é o que decide o tom da resposta e qual número a pessoa vê
-  // respondendo. Cai no nome do canal quando não há número (canal recém-criado).
+  // QUEM MANDA ESTA CONVERSA — o número DA EMPRESA por onde ela chegou, não o
+  // do cliente. Com dois canais é o que decide o tom da resposta e qual número
+  // a pessoa vê respondendo.
+  //
+  // #2383: quando o canal tem nome ou número, o texto é o MESMO do card da tela
+  // de canais (`/app/connections`), com o nome amigável na frente — antes o
+  // número vencia o nome, e um canal chamado "Peças" saía na lista como o
+  // número cru. Sem canal associado (grupo, conversa sem sessão, não-WA) e sem
+  // nome E sem número o badge continua não existindo, como estava.
   const canal = conversation.channel_sessions ?? null;
-  const rotuloCanal = canal?.phone_number ?? canal?.display_name ?? null;
+  const rotuloCanal = rotuloDoCanalDaConversa(canal, t);
 
   const temSelos =
     visibleTags.length > 0 ||
@@ -238,7 +265,9 @@ export function ConversationListItem({
             "absolute -bottom-0.5 -left-0.5 h-3 w-3 rounded-full border-2 border-background",
             dot,
           )}
-          aria-hidden
+          role="img"
+          aria-label={rotuloDoComando}
+          title={rotuloDoComando}
         />
         <ChannelLogo channel={canal} size={16} className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-background ring-2 ring-background" />
       </div>
@@ -324,13 +353,18 @@ export function ConversationListItem({
             {mostrarAtendente && comando.quem === "humano" && (
               <OwnerBadge ownerKind="user" ownerName={comando.nome ?? t("Atendente")} compacto />
             )}
+            {/* #2383: `min-w-0` + `max-w` + `truncate` — o mesmo tratamento do
+                badge do cabeçalho. Uma linha de badges é `flex-wrap`, então um
+                nome de canal comprido ESTOURARIA a faixa para fora da coluna da
+                lista (critério de aceite: layout utilizável com nomes maiores).
+                O `title` devolve o texto inteiro para quem passa o mouse. */}
             {mostrarCanal && rotuloCanal && (
               <Badge
                 variant="outline"
-                className="h-4 gap-1 px-1.5 text-[10px] font-normal text-text-muted"
+                className="h-4 min-w-0 max-w-[9rem] gap-1 truncate px-1.5 text-[10px] font-normal text-text-muted"
                 title={`${t("Entrou por")} ${rotuloCanal}`}
               >
-                {rotuloCanal}
+                <span className="truncate">{rotuloCanal}</span>
               </Badge>
             )}
             {c?.is_blocked && (

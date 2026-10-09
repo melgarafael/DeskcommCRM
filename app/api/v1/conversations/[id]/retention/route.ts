@@ -10,8 +10,10 @@ import { type NextRequest } from "next/server";
 import { PACING_DEFAULTS } from "@/lib/agent-engine/pacing/defaults";
 import { janelaDeEnvioAberta } from "@/lib/agent-engine/pacing/engine";
 import { fusoDaJanela } from "@/lib/agent-engine/pacing/store";
+import type { TipoDeEnvio } from "@/lib/agent-engine/guardrails/before-send";
 import { ok, fail } from "@/lib/api/wrappers";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser } from "@/lib/auth/server";
+import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
 
@@ -39,7 +41,9 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   const authUser = await loadAuthUser();
   const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
-  const activeOrg = authUser ? await resolveActiveOrg(authUser) : null;
+  const ativa = await orgAtivaDaApi(authUser, requestId);
+  if (!ativa.ok) return ativa.response;
+  const activeOrg = ativa.org;
   if (!activeOrg) {
     return fail("no_active_org", t("No active organization."), 403, { requestId });
   }
@@ -60,7 +64,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const since = new Date(Date.now() - RETENTION_LOOKBACK_MS).toISOString();
   const { data: traces, error: traceErr } = await supabase
     .from("before_send_traces")
-    .select("id, created_at, vetoed_gate, vetoed_code")
+    .select("id, created_at, vetoed_gate, vetoed_code, tipo_envio")
     .eq("organization_id", activeOrg.orgId)
     .eq("contact_id", conv.contact_id)
     .not("vetoed_gate", "is", null)
@@ -76,7 +80,9 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const [{ data: knobs }, { data: orgRow }, { data: ultimaSaida }] = await Promise.all([
     supabase
       .from("channel_knobs")
-      .select("window_start_hour, window_end_hour, allow_sunday, timezone")
+      .select(
+        "window_start_hour, window_end_hour, resposta_start_hour, resposta_end_hour, allow_sunday, timezone",
+      )
       .eq("organization_id", activeOrg.orgId)
       .eq("channel_session_id", conv.channel_session_id)
       .maybeSingle(),
@@ -96,30 +102,65 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // O MESMO fuso que o motor usa para decidir (`fusoDaJanela`): override do
   // canal → fuso da organização → padrão. Antes esta rota caía direto em São
   // Paulo e o aviso dizia "fora da janela" com a hora de outra cidade.
-  const context = {
-    window_start_hour: knobs?.window_start_hour ?? PACING_DEFAULTS.windowStartHour,
-    window_end_hour: knobs?.window_end_hour ?? PACING_DEFAULTS.windowEndHour,
-    allow_sunday: knobs?.allow_sunday ?? PACING_DEFAULTS.allowSunday,
-    timezone: fusoDaJanela(knobs?.timezone, (orgRow as { timezone?: string | null } | null)?.timezone),
+  //
+  // AGORA o par de horas depende do TIPO do envio retido (#2112): `before_send_traces`
+  // grava `tipo_envio` (`resposta` × `disparo`, migration 0535) e cada veto é
+  // julgado pela janela que o MOTOR usaria para aquele tipo — `resposta_*` para
+  // resposta (#1984, herança coluna a coluna de `effectiveKnobs`), `window_*`
+  // para disparo/follow-up. Antes TODO veto era tratado como resposta, e um
+  // disparo retido às 3h era "resolvido" ou "segurado" pela janela errada.
+  const respostaStartHour =
+    knobs?.resposta_start_hour ?? knobs?.window_start_hour ?? PACING_DEFAULTS.respostaStartHour;
+  const respostaEndHour =
+    knobs?.resposta_end_hour ?? knobs?.window_end_hour ?? PACING_DEFAULTS.respostaEndHour;
+  const disparoStartHour = knobs?.window_start_hour ?? PACING_DEFAULTS.windowStartHour;
+  const disparoEndHour = knobs?.window_end_hour ?? PACING_DEFAULTS.windowEndHour;
+  const timezone = fusoDaJanela(knobs?.timezone, (orgRow as { timezone?: string | null } | null)?.timezone);
+  const allowSunday = knobs?.allow_sunday ?? PACING_DEFAULTS.allowSunday;
+
+  // Os knobs EFETIVOS do motor para os dois pares: `janelaDeEnvioAberta` lê
+  // `window*` quando `resposta=false` e `resposta*` quando `true`, então os dois
+  // pares vão preenchidos e o terceiro argumento escolhe qual vale.
+  const knobsEfetivos = {
+    ...PACING_DEFAULTS,
+    windowStartHour: disparoStartHour,
+    windowEndHour: disparoEndHour,
+    respostaStartHour,
+    respostaEndHour,
+    allowSunday,
+    timezone,
   };
+
+  /** O tipo do veto — `null` no banco é linha anterior à 0535: era resposta. */
+  const tipoDoTrace = (tr: { tipo_envio?: string | null }): TipoDeEnvio =>
+    tr.tipo_envio === "disparo" ? "disparo" : "resposta";
 
   // O aviso diz o estado de AGORA, não o histórico:
   //   - retenção seguida de uma resposta que saiu já foi resolvida;
   //   - "fora da janela" com a janela ABERTA agora é mentira — o próximo turno
   //     reavalia com a janela aberta.
+  // Cada trace é comparado com a janela do SEU tipo: a resposta aberta não
+  // resolve um disparo retido, nem o contrário.
+  const agora = new Date();
   const saiuDepoisEm = (ultimaSaida as { created_at?: string } | null)?.created_at ?? null;
-  const janelaAbertaAgora = janelaDeEnvioAberta(new Date(), {
-    ...PACING_DEFAULTS,
-    windowStartHour: context.window_start_hour,
-    windowEndHour: context.window_end_hour,
-    allowSunday: context.allow_sunday,
-    timezone: context.timezone,
+  const janelaAbertaAgora = (tipo: TipoDeEnvio): boolean =>
+    janelaDeEnvioAberta(agora, knobsEfetivos, tipo === "resposta");
+  const vigentes = (traces ?? []).filter((tr) => {
+    if (saiuDepoisEm !== null && Date.parse(tr.created_at) <= Date.parse(saiuDepoisEm)) return false;
+    return !(tr.vetoed_code === "outside_window" && janelaAbertaAgora(tipoDoTrace(tr)));
   });
-  const vigentes = (traces ?? []).filter(
-    (tr) =>
-      (saiuDepoisEm === null || Date.parse(tr.created_at) > Date.parse(saiuDepoisEm)) &&
-      !(tr.vetoed_code === "outside_window" && janelaAbertaAgora),
-  );
+
+  // O contexto que a tela usa para compor a copy nomeia a janela do envio que
+  // ela está explicando — a do TIPO do veto mais recente, não sempre a de
+  // resposta. Sem retenção vigente o contexto é o de resposta (o da tela não é
+  // renderizado nesse caso).
+  const tipoDoAviso = vigentes[0] !== undefined ? tipoDoTrace(vigentes[0]) : "resposta";
+  const context = {
+    window_start_hour: tipoDoAviso === "disparo" ? disparoStartHour : respostaStartHour,
+    window_end_hour: tipoDoAviso === "disparo" ? disparoEndHour : respostaEndHour,
+    allow_sunday: allowSunday,
+    timezone,
+  };
 
   return ok({ retentions: vigentes, context }, { requestId });
 }

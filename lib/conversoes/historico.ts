@@ -31,7 +31,7 @@ export const MOTIVOS_AGUARDANDO = [
 export interface FiltrosDoHistorico {
   periodo: Periodo;
   situacao: Situacao;
-  /** `Purchase`, `QualifiedLead`, `Etapa:<uuid>` ou vazio para todos. */
+  /** `Purchase`, `QualifiedLead`, `Etapa:<uuid>`, `MetaEtapa:<uuid>` ou vazio para todos. */
   evento: string;
   plataforma: "" | "google_ads" | "meta_ads";
   busca: string;
@@ -93,7 +93,7 @@ export function lerFiltros(bruto: Record<string, string | undefined>): FiltrosDo
   return {
     periodo: um(PERIODOS, bruto.periodo, "30d"),
     situacao: um(SITUACOES, bruto.situacao, "todas"),
-    evento: /^(Purchase|QualifiedLead|Etapa:[0-9a-f-]{36})$/.test(evento) ? evento : "",
+    evento: /^(Purchase|QualifiedLead|(Meta)?Etapa:[0-9a-f-]{36})$/.test(evento) ? evento : "",
     plataforma: um(["", "google_ads", "meta_ads"] as const, bruto.plataforma, ""),
     // Só letras, números, espaço e pontuação comum: vai para um ilike.
     busca: (bruto.busca ?? "")

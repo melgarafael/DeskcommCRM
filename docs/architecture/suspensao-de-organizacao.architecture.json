@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Suspensão que suspende",
+    "subtitle": "Uma régua de 'opera', uma única escrita do estado e a revisão depois da volta",
+    "output": "suspensao-de-organizacao.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "pessoa", "label": "Pessoa" },
+    { "id": "app", "label": "Aplicativo" },
+    { "id": "motor", "label": "Motor da IA e barramento" },
+    { "id": "db", "label": "Banco" }
+  ],
+  "mainPath": ["telaAdmin", "rotaSuspensao", "fnSuspender", "orgs", "operante", "sessao", "hub"],
+  "nodes": [
+    { "id": "telaAdmin", "lane": "pessoa", "col": 0, "type": "ui", "label": "/admin/tenants/[id] › Suspender / Reativar", "sublabel": "o botão lê organizations.status" },
+    { "id": "rotaSuspensao", "lane": "app", "col": 1, "type": "api", "label": "POST admin/tenants/[id]/suspend · /reactivate", "sublabel": "requirePlatformAdminEscrita: scope full + MFA; kind cobranca → 409" },
+    { "id": "fnSuspender", "lane": "db", "col": 2, "type": "database", "label": "fn_suspender_organizacao", "sublabel": "for update; kind; fila e envio fechados; tenant.suspended na mesma transação" },
+    { "id": "fnReativar", "lane": "db", "col": 2, "type": "database", "label": "fn_reativar_organizacao", "sublabel": "guarda do kind; zero rajada; conta conversas com inbound desde suspended_at" },
+    { "id": "orgs", "lane": "db", "col": 3, "type": "table", "label": "organizations.status + suspended_kind" },
+    { "id": "filaEEnvio", "lane": "db", "col": 3, "type": "table", "label": "job_queue pending → failed · messages queued → failed" },
+    { "id": "gatilhoEstado", "lane": "db", "col": 4, "type": "database", "label": "trg_organizacao_estado_so_pelo_servidor", "sublabel": "authenticated/anon: 42501 em status, suspended_*, created_by e INSERT" },
+    { "id": "eventLog", "lane": "db", "col": 4, "type": "table", "label": "event_log", "sublabel": "tenant.suspended / tenant.reactivated; evento de org parada consumido como skipped" },
+    { "id": "itemCentral", "lane": "db", "col": 4, "type": "table", "label": "agent_inbox_items kind org_reativada", "sublabel": "sem referência; severity warn" },
+    { "id": "postgrest", "lane": "app", "col": 3, "type": "api", "label": "PostgREST com JWT de sessão", "sublabel": "inclusive platform admin support_readonly" },
+    { "id": "operante", "lane": "app", "col": 4, "type": "lib", "label": "lib/organizacao/operante.ts · fn_org_operante", "sublabel": "opera ⇔ status = 'active'" },
+    { "id": "sessao", "lane": "app", "col": 5, "type": "service", "label": "resolveActiveOrg · orgAtivaDaApi · requireRole · resolveApiToken", "sublabel": "tela: redirect /account-suspended · API: 403 org_suspended" },
+    { "id": "lgpd", "lane": "app", "col": 6, "type": "api", "label": "/api/v1/lgpd/**", "sublabel": "permiteOrgSuspensa: a LGPD nunca para" },
+    { "id": "motor", "lane": "motor", "col": 5, "type": "service", "label": "gate de elegibilidade · dispatcher naOrgParada", "sublabel": "veto org_nao_operante; handler 'pula' → skipped" },
+    { "id": "hub", "lane": "pessoa", "col": 6, "type": "ui", "label": "/account-suspended (hub)", "sublabel": "suporte ou 'avise o administrador'; LGPD; voltar para outra empresa" },
+    { "id": "central", "lane": "pessoa", "col": 5, "type": "ui", "label": "Central de avisos (/app/ai/inbox)" },
+    { "id": "fila", "lane": "pessoa", "col": 7, "type": "ui", "label": "/app/inbox, abas Fila e Automático" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "telaAdmin", "to": "rotaSuspensao", "label": "suspender / reativar com motivo" },
+    { "id": "e2", "from": "rotaSuspensao", "to": "fnSuspender", "label": "kind administrativa" },
+    { "id": "e3", "from": "rotaSuspensao", "to": "fnReativar", "label": "kind exigido administrativa" },
+    { "id": "e4", "from": "fnSuspender", "to": "orgs", "label": "status=suspended, suspended_kind" },
+    { "id": "e5", "from": "fnSuspender", "to": "filaEEnvio", "label": "pending/queued → failed" },
+    { "id": "e6", "from": "fnSuspender", "to": "eventLog", "label": "tenant.suspended" },
+    { "id": "e7", "from": "fnReativar", "to": "orgs", "label": "status=active, suspended_* nulos" },
+    { "id": "e8", "from": "fnReativar", "to": "filaEEnvio", "label": "cinto: pending antigo → failed" },
+    { "id": "e9", "from": "fnReativar", "to": "eventLog", "label": "tenant.reactivated" },
+    { "id": "e10", "from": "fnReativar", "to": "itemCentral", "label": "um item com a contagem de conversas" },
+    { "id": "e11", "from": "postgrest", "to": "gatilhoEstado", "label": "PATCH/INSERT com JWT" },
+    { "id": "e12", "from": "gatilhoEstado", "to": "orgs", "label": "guarda as colunas de estado" },
+    { "id": "e13", "from": "gatilhoEstado", "to": "postgrest", "label": "recusa 42501" },
+    { "id": "e14", "from": "orgs", "to": "telaAdmin", "label": "mostra Suspender ou Reativar" },
+    { "id": "e15", "from": "orgs", "to": "operante", "label": "status" },
+    { "id": "e16", "from": "operante", "to": "sessao", "label": "ehOperante" },
+    { "id": "e17", "from": "operante", "to": "motor", "label": "orgStatus / idsDeOrgsParadas" },
+    { "id": "e18", "from": "motor", "to": "eventLog", "label": "skipped: org_nao_operante" },
+    { "id": "e19", "from": "sessao", "to": "hub", "label": "redirect da org parada" },
+    { "id": "e20", "from": "sessao", "to": "lgpd", "label": "exceção permiteOrgSuspensa" },
+    { "id": "e21", "from": "hub", "to": "lgpd", "label": "pedidos de LGPD no próprio hub" },
+    { "id": "e22", "from": "sessao", "to": "fila", "label": "só com org operante" },
+    { "id": "e23", "from": "itemCentral", "to": "central", "label": "projeção sob RLS" },
+    { "id": "e24", "from": "central", "to": "fila", "label": "Abrir o Inbox" }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Não-ligações declaradas: o que a suspensão NÃO corta",
+      "items": [
+        "webhooks de entrada (waha, meta, channel, in/[token], nuvemshop) continuam gravando: a mensagem chega e fica, e nada responde",
+        "landings anuncios/*/[org] e rastreio/[id] seguem de pé (decisão D-11): cortá-las desperdiçaria a verba de anúncio do cliente final",
+        "escrita de dados de negócio pelo PostgREST, por membro da org suspensa, segue pela RLS (decisão D-12). Nada que custe ou saia passa por aí",
+        "fn_support_write_allowed e emit_event NÃO olham o status: derrubariam a LGPD e a própria entrada de mensagens"
+      ]
+    }
+  ]
+}

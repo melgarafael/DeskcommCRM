@@ -119,6 +119,13 @@ set_env_var "$supabase_env" SUPABASE_PUBLIC_URL "https://${domain}"
 set_env_var "$supabase_env" API_EXTERNAL_URL "https://${domain}/auth/v1"
 set_env_var "$supabase_env" SITE_URL "https://${domain}"
 set_env_var "$supabase_env" ADDITIONAL_REDIRECT_URLS "https://${domain}/auth/confirm,https://${domain}/**"
+# ── E-mails de acesso: o GoTrue busca o MOLDE no app (#2109) ────────────────
+# A função mora no _common.sh porque o update.sh também a chama, para quem
+# instalou antes deste conserto (o porquê está lá). Gravada ANTES do
+# `dc_supabase up -d --wait` de baixo: no primeiro boot o auth já nasce
+# configurado, e numa re-execução o compose recria o contêiner cujo ambiente
+# mudou.
+gravar_modelos_do_gotrue "$supabase_env" "https://${domain}"
 # Confirmacao de e-mail fica LIGADA: sem ela qualquer pessoa cria conta com
 # um e-mail que nao e dela. Fixada aqui, e nao herdada do default do Supabase,
 # para que um bump do SUPABASE_REF nao a desligue calado. Vigiado por
@@ -127,6 +134,32 @@ set_env_var "$supabase_env" ENABLE_EMAIL_AUTOCONFIRM false
 set_env_var "$supabase_env" PROXY_DOMAIN "$domain"
 set_env_var "$supabase_env" CERTBOT_EMAIL "admin@${domain}"
 set_env_var "$supabase_env" SINGLE_SERVER_NETWORK "$SINGLE_SERVER_NETWORK"
+# ── #2099: o Traefik da hospedagem também publica as APIs do Supabase ───────
+# O Caddyfile.single-server roteia as seis prefixos do Supabase para o Envoy
+# (`@supabase`); o docker-compose.traefik.yml foi escrito para Supabase
+# EXTERNO e manda tudo para o app. Sem a rota, `v_sb_key()` chama
+# /auth/v1/settings, o Traefik entrega ao app, vem 404 e a validação da fase 2
+# do install.sh morre em "NEXT_PUBLIC_SUPABASE_ANON_KEY inválido".
+#
+# As etiquetas moram em supabase-single-server.override.yml e existem em todo
+# modo; quem decide se o Traefik enxerga o Envoy é a chave gravada AQUI, ANTES
+# do `dc_supabase up -d --wait`: no primeiro boot o contêiner já nasce com a
+# rota, e numa re-execução o compose o recria porque o label mudou.
+if [ "${REVERSE_PROXY:-caddy}" = "traefik" ]; then
+  set_env_var "$supabase_env" TRAEFIK_ENABLE true
+  set_env_var "$supabase_env" TRAEFIK_HOST "$domain"
+  # Entrypoint/certresolver fora do padrão só chegam pelo ambiente de quem
+  # instala: o install.sh descobre os dele (entrypoints_do_traefik) DEPOIS
+  # desta subida, e a fase 2 — que depende da rota — já passou. Os defaults são
+  # os mesmos do docker-compose.traefik.yml.
+  set_env_var "$supabase_env" TRAEFIK_ENTRYPOINT "${TRAEFIK_ENTRYPOINT:-websecure}"
+  set_env_var "$supabase_env" TRAEFIK_CERTRESOLVER "${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+else
+  # Gravado explicitamente, não deixado em aberto: uma re-execução em modo
+  # Caddy sobre uma árvore que já foi Traefik desliga a rota, em vez de deixar
+  # um `true` órfão interpolando.
+  set_env_var "$supabase_env" TRAEFIK_ENABLE false
+fi
 set_env_var "$supabase_env" COMPOSE_FILE "docker-compose.yml:docker-compose.deskcomm.yml"
 set_env_var "$supabase_env" COMPOSE_PROJECT_NAME "$(projeto_do_supabase)"
 gw_port="$(ler_env "$supabase_env" API_GW_HTTP_PORT)"
@@ -159,7 +192,12 @@ fi
 app_env="$ROOT_DIR/.env"
 set_env_var "$app_env" DOMAIN "$domain"
 set_env_var "$app_env" ACME_EMAIL "admin@${domain}"
-set_env_var "$app_env" REVERSE_PROXY caddy
+# #2099: quem ja tem um proxy reverso proprio nas portas 80/443 (a topologia
+# que o unico_traefik() do kit documenta) exporta REVERSE_PROXY=traefik antes de
+# chamar este instalador. Gravar "caddy" fixo sobrescrevia a escolha e o Caddy
+# subia batendo de frente com o proxy da hospedagem. O default continua caddy:
+# sem a variavel no ambiente, nada muda para quem ja instala hoje.
+set_env_var "$app_env" REVERSE_PROXY "${REVERSE_PROXY:-caddy}"
 set_env_var "$app_env" SINGLE_SERVER 1
 set_env_var "$app_env" SINGLE_SERVER_NETWORK "$SINGLE_SERVER_NETWORK"
 set_env_var "$app_env" PSQL_DOCKER_NETWORK "$SINGLE_SERVER_NETWORK"

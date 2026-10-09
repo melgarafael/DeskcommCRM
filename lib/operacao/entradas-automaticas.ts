@@ -24,6 +24,7 @@ import { ApiError } from "@/lib/api/types";
 import type { Actor } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
 import { autoriaDaMudanca } from "@/lib/operacao/autoria";
+import type { WebhookFormField } from "@/lib/webhooks/formulario";
 
 type SB = SupabaseClient;
 
@@ -41,12 +42,14 @@ export interface FonteVisivel {
   organization_id: string;
   name: string;
   is_active: boolean;
+  authorize_ai_on_capture: boolean;
   kind: string;
   path_token: string;
   default_pipeline_id: string;
   default_stage_id: string;
   redirect_to: string | null;
   field_map: Record<string, unknown>;
+  form_fields: WebhookFormField[];
   last_received_at: string | null;
   has_secret: boolean;
   created_at: string;
@@ -64,12 +67,16 @@ export interface FonteVisivel {
  */
 const COLUNAS =
   "id, organization_id, name, is_active, kind, path_token, default_pipeline_id, default_stage_id, " +
-  "redirect_to, field_map, last_received_at, secret_encrypted, created_at, updated_at, " +
-  "last_change_actor_kind, last_change_at";
+  "redirect_to, field_map, form_fields, last_received_at, secret_encrypted, created_at, updated_at, " +
+  "last_change_actor_kind, last_change_at, authorize_ai_on_capture";
 
 function semSegredo(linha: Record<string, unknown>): FonteVisivel {
   const { secret_encrypted, ...resto } = linha;
-  return { ...(resto as unknown as Omit<FonteVisivel, "has_secret">), has_secret: secret_encrypted !== null };
+  return {
+    ...(resto as unknown as Omit<FonteVisivel, "has_secret" | "form_fields">),
+    form_fields: Array.isArray(resto.form_fields) ? (resto.form_fields as WebhookFormField[]) : [],
+    has_secret: secret_encrypted !== null,
+  };
 }
 
 export async function listarEntradasAutomaticas(
@@ -179,6 +186,7 @@ export interface NovaEntradaAutomatica {
   default_stage_id: string;
   redirect_to?: string | null;
   field_map?: Record<string, string[]>;
+  form_fields?: WebhookFormField[];
   /** Já CIFRADO pelo chamador. A operação nunca vê plaintext de segredo. */
   secret_encrypted?: string | null;
 }
@@ -209,6 +217,7 @@ export async function criarEntradaAutomatica(
       default_pipeline_id: input.default_pipeline_id,
       default_stage_id: input.default_stage_id,
       field_map: input.field_map ?? {},
+      form_fields: input.form_fields ?? [],
       redirect_to: input.redirect_to ?? null,
       ...autoriaDaMudanca(deps.actor),
     })

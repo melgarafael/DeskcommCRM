@@ -3,7 +3,9 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { inboundEhDestaPergunta, textoDoPayloadInbound } from "./aplicar-inbound";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { aplicarTextoNosFollowups, inboundEhDestaPergunta, textoDoPayloadInbound } from "./aplicar-inbound";
 
 describe("textoDoPayloadInbound", () => {
   it("lê body_preview do evento emitido pelo banco", () => {
@@ -45,5 +47,53 @@ describe("aplicarTextoNosFollowups — uma mensagem, uma pergunta", () => {
     const chamadas = src.match(/await aplicarTextoAosEnrollmentsEmEspera\(/g) ?? [];
     expect(chamadas.length).toBe(1);
     expect(src).toMatch(/for \(let i = 0; i < 6; i\+\+\) \{[\s\S]*aplicarTextoAosEnrollmentsEmEspera/);
+  });
+});
+
+/**
+ * Banco de mentira que só anota quais tabelas foram tocadas. Toda leitura volta
+ * vazia, exceto `organizations`, que devolve o status pedido.
+ */
+function bancoQueAnota(statusDaOrg: string): { admin: SupabaseClient; tabelas: string[] } {
+  const tabelas: string[] = [];
+  const admin = {
+    from(tabela: string) {
+      tabelas.push(tabela);
+      const resposta =
+        tabela === "organizations" ? { data: { status: statusDaOrg }, error: null } : { data: [], error: null };
+      // Qualquer filtro encadeia; `maybeSingle` e o `await` direto resolvem.
+      const encadeia: object = new Proxy(
+        {},
+        {
+          get(_alvo, metodo) {
+            if (metodo === "then") {
+              return (ok: (r: unknown) => unknown) => Promise.resolve(resposta).then(ok);
+            }
+            if (metodo === "maybeSingle") {
+              return async () => (tabela === "organizations" ? resposta : { data: null, error: null });
+            }
+            return () => encadeia;
+          },
+        },
+      );
+      return encadeia;
+    },
+  } as unknown as SupabaseClient;
+  return { admin, tabelas };
+}
+
+describe("aplicarTextoNosFollowups — org parada", () => {
+  const sinal = { organizationId: "org-1", contactId: "contato-1", texto: "sim" };
+
+  it("org suspensa: lê só o status da org — não enfileira, não avança e não envia", async () => {
+    const { admin, tabelas } = bancoQueAnota("suspended");
+    await aplicarTextoNosFollowups(admin, sinal);
+    expect(tabelas).toEqual(["organizations"]);
+  });
+
+  it("controle: org operante segue para os follow-ups do contato", async () => {
+    const { admin, tabelas } = bancoQueAnota("active");
+    await aplicarTextoNosFollowups(admin, sinal);
+    expect(tabelas).toContain("followup_enrollments");
   });
 });

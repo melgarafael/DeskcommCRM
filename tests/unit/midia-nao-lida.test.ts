@@ -17,7 +17,7 @@
  *
  * Guardar só um deixaria metade do problema de pé.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
@@ -93,24 +93,38 @@ describe("o vocabulário do banco acompanha", () => {
     ).toBeDefined();
 
     const baseline = readFileSync("supabase/baseline.sql", "utf8");
-    const check = /severity text not null default '[a-z]+' check \(severity in \(([^)]*)\)\)/.exec(baseline);
+    const check = /severity text not null default '[a-z]+' check \(severity in \(([^)]*)\)\)/.exec(
+      baseline,
+    );
     expect(check, "não achei o CHECK de severity no baseline — instrumento cego").not.toBeNull();
     const aceitos = [...(check?.[1] ?? "").matchAll(/'([a-z]+)'/g)].map((m) => m[1]);
-    expect(aceitos.length, "a lista de severities veio vazia — instrumento cego").toBeGreaterThan(1);
+    expect(aceitos.length, "a lista de severities veio vazia — instrumento cego").toBeGreaterThan(
+      1,
+    );
     expect(
       aceitos,
       `o worker grava severity="${severityDoWorker}", que o banco recusa — o aviso nunca abre`,
     ).toContain(severityDoWorker);
   });
 
-  it("o worker CONFERE o retorno do insert do aviso", () => {
+  it("o worker CONFERE o retorno do insert do aviso — e só o 23505 é desfecho normal", () => {
     // `supabase-js` não lança em erro de banco: devolve `{ error }`. Enquanto o
     // retorno era descartado, a recusa era engolida, o worker devolvia "ok" e
     // nada era logado — um aviso que falha em silêncio é pior que aviso nenhum,
     // porque faz o próximo diagnóstico começar da premissa errada.
     const fonte = readFileSync("workers/media-derive-worker.ts", "utf8");
     const trecho = fonte.slice(fonte.indexOf('kind: "midia_nao_lida"'));
-    expect(trecho.slice(0, 1200)).toMatch(/if \(error\)/);
+    expect(trecho.slice(0, 2000), "o retorno do insert deixou de ser conferido").toMatch(
+      /if \(error/,
+    );
+    // E a ÚNICA exceção é o código que o índice da 0527 levanta: o `select`
+    // acima pergunta sem trava, então perder a corrida para o índice quer dizer
+    // exatamente o que o aviso quer (já existe um aberto). Logar isso como
+    // recusa de banco seria alarme falso em cima de um alarme correto.
+    expect(
+      trecho.slice(0, 2000),
+      "o 23505 deixou de ser isentado — ou a isenção sumiu, ou o código mudou de número",
+    ).toMatch(/error\.code !== "23505"/);
   });
 
   it("a constraint é reconstruída UMA vez só no baseline", () => {
@@ -119,5 +133,35 @@ describe("o vocabulário do banco acompanha", () => {
     const baseline = readFileSync("supabase/baseline.sql", "utf8");
     const ocorrencias = baseline.split("add constraint agent_inbox_items_kind_check").length - 1;
     expect(ocorrencias).toBe(1);
+  });
+
+  it("o aviso é único por organização aberta — na cadeia E no baseline (issue #880)", () => {
+    // O dedupe deste aviso era uma PERGUNTA e uma ESCRITA separadas
+    // (`workers/media-derive-worker.ts`: consulta "já existe aberto?" e insere
+    // depois), e o lote de derivação roda em paralelo: dois workers leem "não
+    // existe" antes de qualquer escrita e abrem dois avisos. O índice parcial é
+    // a forma atômica do que o código já queria.
+    const migracoes = readdirSync("supabase/migrations").filter((f) => /_0527_/.test(f));
+    expect(migracoes.length, "a migration da 0527 não está no lugar").toBe(1);
+    const migracao = readFileSync(`supabase/migrations/${migracoes[0]}`, "utf8");
+    const baseline = readFileSync("supabase/baseline.sql", "utf8");
+
+    // A CHAVE: (organização, kind) e NÃO o título — aqui o `select` já ignora o
+    // `tipo` e quer um aviso por organização, ao contrário do `event_dead`, cujo
+    // título entra na chave por causa das duas famílias que convivem abertas.
+    const indice =
+      /create unique index if not exists (\w+)\s+on public\.agent_inbox_items \(([^)]*)\)\s+where ([^;]*);/.exec(
+        migracao,
+      );
+    expect(indice, "não achei o índice parcial na migration — instrumento cego").not.toBeNull();
+    expect(indice![2]!.replace(/\s+/g, " ").trim()).toBe("organization_id, kind");
+    expect(indice![3]!.replace(/\s+/g, " ").trim()).toBe(
+      "status = 'open' and kind = 'midia_nao_lida'",
+    );
+    expect(baseline, "o índice não chegou ao baseline — o self-host não recebe").toContain(
+      indice![1]!,
+    );
+    // E o bloco do baseline é o MESMO texto (o `install.sh` aplica só ele).
+    expect(baseline).toContain(indice![0]!.trim());
   });
 });

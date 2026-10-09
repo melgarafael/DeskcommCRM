@@ -8,6 +8,7 @@ import { format } from "date-fns";
 import { ShieldCheck, PencilSimple, LockOpen } from "@/lib/ui/icons";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
+import { FichasDoModulo } from "@/components/modulos/FichasDoModulo";
 import { ChipDeEtiqueta } from "@/components/tags/ChipDeEtiqueta";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,10 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useContact } from "@/hooks/contacts/useContact";
 import { useUnblockContact } from "@/hooks/contacts/useUnblockContact";
+import {
+  useMarkPersonalContact,
+  useUnmarkPersonalContact,
+} from "@/hooks/contacts/usePersonalContact";
 import { useHierarquiaDoAnuncio } from "@/hooks/contacts/useHierarquiaDoAnuncio";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
@@ -43,6 +48,8 @@ import { DialButton } from "@/components/voice/DialButton";
 
 interface Props {
   contactId: string;
+  /** Painéis de módulo de dados que declaram referência a contato. Resolvido no servidor. */
+  paineisDeModulo?: { modulo: string; objeto: string }[];
 }
 
 /**
@@ -63,7 +70,7 @@ function NivelDaOrigem({ rotulo, valor }: { rotulo: string; valor: string | null
   );
 }
 
-export function ContactDetailClient({ contactId }: Props) {
+export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const q = useContact(contactId);
@@ -78,6 +85,10 @@ export function ContactDetailClient({ contactId }: Props) {
   // O hook fica ANTES dos early returns: chamá-lo depois mudaria a ordem dos
   // hooks entre renderizações e o React reprova.
   const desbloquear = useUnblockContact(contactId);
+  // Marcar/desmarcar pessoal (spec 21, etapa 15): os hooks ficam aqui pelo
+  // mesmo motivo do `desbloquear` acima.
+  const marcarPessoal = useMarkPersonalContact(contactId);
+  const desmarcarPessoal = useUnmarkPersonalContact(contactId);
 
   /*
     Pede o nome da campanha SÓ quando há um anúncio e ainda não há nome.
@@ -116,6 +127,13 @@ export function ContactDetailClient({ contactId }: Props) {
   const contact = q.data.data;
   const isAdmin =
     (user.is_platform_admin && !user.support) || (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin);
+  // Gerente e dono marcam/desmarcam pessoal (spec 21, decisão 1, D3) — e este
+  // gate fica LADO A LADO com o `isAdmin` do desbloquear, cada um com seu
+  // motivo: desfazer descadastro reabre um canal que o cliente fechou (só
+  // admin, LGPD); pessoal é decisão operacional (gerente pode).
+  const podeMarcarPessoal =
+    (user.is_platform_admin && !user.support) ||
+    (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager);
 
   // Uma decisão, um lugar (lib/contacts/rotulo-do-contato.ts). Esta tela era
   // uma das DUAS que ignoravam o telefone: contato com número e sem nome
@@ -169,6 +187,9 @@ export function ContactDetailClient({ contactId }: Props) {
               <ChipDeEtiqueta key={t} tag={t} />
             ))}
             {contact.is_blocked && <Badge variant="warning">{t("Bloqueado")}</Badge>}
+            {/* Selo lido da COLUNA, nunca da etiqueta (critério 5): editar
+                etiquetas não apaga o selo — mesma regra do "Bloqueado" acima. */}
+            {contact.is_personal && <Badge variant="secondary">{t("Pessoal")}</Badge>}
             {contact.is_anonymized && <Badge variant="destructive">{t("Anonimizado")}</Badge>}
           </div>
         </div>
@@ -212,6 +233,50 @@ export function ContactDetailClient({ contactId }: Props) {
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
+            )}
+            {/* PESSOAL (spec 21, etapa 15): gerente marca e desmarca; sem
+                exceção de envio — quem é pessoal não recebe por nenhum caminho.
+                Marcar confirma (esconde da operação); desmarcar é direto. */}
+            {!contact.is_personal && podeMarcarPessoal && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    disabled={marcarPessoal.isPending}
+                    className="shrink-0"
+                    data-testid="marcar-pessoal"
+                  >
+                    <span>{t("Marcar como pessoal")}</span>
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{t("Marcar este contato como pessoal?")}</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {t("O contato sai da operação: conversas fecham, IA, follow-ups, campanha e envios param. O histórico continua no banco e volta à vista ao desmarcar; follow-ups e campanhas cancelados não voltam.")}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => marcarPessoal.mutate()}>
+                      {t("Marcar como pessoal")}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+            {contact.is_personal && podeMarcarPessoal && (
+              <Button
+                variant="outline"
+                disabled={desmarcarPessoal.isPending}
+                className="shrink-0"
+                data-testid="desmarcar-pessoal"
+                onClick={() => desmarcarPessoal.mutate()}
+              >
+                <span>
+                  {desmarcarPessoal.isPending ? t("Desmarcando...") : t("Desmarcar pessoal")}
+                </span>
+              </Button>
             )}
             <DialButton contactId={contactId} hasPhone={!!contact.phone_number} />
             <Button variant="outline" onClick={() => setEditOpen(true)} className="shrink-0">
@@ -354,6 +419,20 @@ export function ContactDetailClient({ contactId }: Props) {
           <div className="mt-4">
             <RoteirosDoContato contactId={contactId} />
           </div>
+          {/*
+            O que os módulos de dados instalados guardam sobre esta pessoa. A lista vem do servidor e
+            é vazia quando não há módulo com ficha de contato — então quem não instalou nada não vê
+            nada a mais, que é o estado de primeira classe do não-negociável 1.
+          */}
+          {paineisDeModulo.map((painel) => (
+            <div className="mt-4" key={`${painel.modulo}:${painel.objeto}`}>
+              <FichasDoModulo
+                modulo={painel.modulo}
+                objeto={painel.objeto}
+                contatoId={contactId}
+              />
+            </div>
+          ))}
         </TabsContent>
 
         <TabsContent value="timeline" className="mt-4">

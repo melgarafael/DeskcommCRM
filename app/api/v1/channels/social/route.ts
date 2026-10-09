@@ -7,6 +7,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
+import { traduzirLimiteDoPlano } from "@/lib/cobranca/limites";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import {
   SOCIAL_NETWORKS,
@@ -17,8 +18,10 @@ import { listSocialAccounts, socialRequest, SocialError } from "@/lib/channels/s
 import {
   readSocialIntegration,
   configureSocialIntegration,
+  desvincularPerfilSocial,
   socialChannels,
   connectSocialInbox,
+  disconnectSocialAccount,
 } from "@/lib/channels/social/store";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +45,14 @@ const inputSchema = z.discriminatedUnion("action", [
   z
     .object({ action: z.literal("health"), account_id: z.string().regex(/^[a-f0-9]{24}$/) })
     .strict(),
+  z
+    .object({
+      action: z.literal("disconnect"),
+      account_id: z.string().regex(/^[a-f0-9]{24}$/),
+      remove_account: z.boolean(),
+    })
+    .strict(),
+  z.object({ action: z.literal("unlink") }).strict(),
 ]);
 function publicBase(): string {
   const url = new URL(env.NEXT_PUBLIC_APP_URL);
@@ -68,6 +79,12 @@ export async function GET() {
     const config = await readSocialIntegration(db, auth.org.orgId);
     const channels = await socialChannels(db, auth.org.orgId);
     const accounts = config ? await listSocialAccounts(config.key, config.profileId) : [];
+    const contaNoPerfil = new Set(accounts.map((a) => a._id));
+    // Sem integração não há perfil para comparar: tudo órfão seria ruído, e a
+    // tela de vincular já cobre esse estado. A lista só existe com perfil.
+    const orfaos = config
+      ? channels.filter((c) => !contaNoPerfil.has(c.accountId))
+      : [];
     return ok(
       {
         label: SOCIAL_PROVIDER_LABEL,
@@ -84,6 +101,17 @@ export async function GET() {
             active: a.isActive,
             inbox_supported: inboxSupported(a.platform),
             channel: channels.find((c) => c.accountId === a._id) ?? null,
+          })),
+        // Canal ativo cuja conta saiu do perfil (removida e recriada no
+        // provedor, ou perfil trocado por fora): a faixa do topo o lê e o
+        // cartão mostra o novo — sem esta lista a linha é inalcançável e a
+        // faixa é eterna. A exclusão usa a ação disconnect (sem remover a
+        // conta): apaga a assinatura no provedor, arquiva e fecha os avisos.
+        orphaned_channels: orfaos.map((c) => ({
+            channel_id: c.id,
+            account_id: c.accountId,
+            display_name: c.display_name,
+            status: c.status,
           })),
       },
       { requestId, headers },
@@ -129,6 +157,15 @@ export async function POST(req: Request) {
       result = { configured: true };
     } else if (body.action === "inbox") {
       result = await connectSocialInbox(db, auth.org.orgId, body.account_id, publicBase());
+    } else if (body.action === "disconnect") {
+      result = await disconnectSocialAccount(
+        db,
+        auth.org.orgId,
+        body.account_id,
+        body.remove_account,
+      );
+    } else if (body.action === "unlink") {
+      result = await desvincularPerfilSocial(db, auth.org.orgId);
     } else {
       const config = await readSocialIntegration(db, auth.org.orgId);
       if (!config) throw new SocialError("Configure a integração primeiro.", 422);
@@ -171,15 +208,29 @@ export async function POST(req: Request) {
       result = { auth_url: url.toString() };
     }
     void audit({
-      action: "channel.social_configured",
+      action:
+        body.action === "disconnect"
+          ? "channel.social_disconnected"
+          : body.action === "unlink"
+            ? "channel.social_desvinculado"
+            : "channel.social_configured",
       organizationId: auth.org.orgId,
       actorUserId: auth.user.id,
       resourceType: "social_connections",
       requestId,
-      metadata: { operation: body.action },
+      metadata: {
+        operation: body.action,
+        ...(body.action === "disconnect" || body.action === "unlink"
+          ? { ...(result as object) }
+          : {}),
+        ...(body.action === "disconnect" ? { account_id: body.account_id } : {}),
+      },
     });
     return ok(result, { requestId, headers });
   } catch (error) {
+    const limite = traduzirLimiteDoPlano(error, auth.user.idioma);
+    if (limite)
+      return fail(limite.code, limite.message, 409, { requestId, headers, details: limite.details });
     return failure(error, requestId);
   }
 }

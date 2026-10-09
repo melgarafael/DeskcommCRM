@@ -13,6 +13,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { ApiError } from "@/lib/api/types";
 import { logger } from "@/lib/logger";
 
 /** No que a captação deu. Espelha o CHECK de `webhook_lead_captures.outcome`. */
@@ -27,7 +28,13 @@ export type DesfechoDaCaptacao = "criado" | "duplicado" | "recusado";
 export type MotivoDaRecusa =
   | "sem_campo_mapeavel"
   | "assinatura_invalida"
-  | "erro_ao_criar_lead";
+  | "assinatura_indecifravel"
+  | "erro_ao_criar_lead"
+  /** A régua de campos obrigatórios barrou a criação (#2297, caminho 4). */
+  | "recusa_da_regra"
+  /** Recusa que não é nem do funil nem da etapa da fonte — o rótulo não mente. */
+  | "erro_inesperado"
+  | "campo_numerico_invalido";
 
 /** O que a tela mostra para cada motivo, em português de gente. */
 export const MOTIVO_DA_RECUSA_LABEL: Record<MotivoDaRecusa, string> = {
@@ -35,9 +42,39 @@ export const MOTIVO_DA_RECUSA_LABEL: Record<MotivoDaRecusa, string> = {
     "O envio não trazia nome, telefone nem e-mail reconhecíveis — confira os nomes dos campos do formulário.",
   assinatura_invalida:
     "A assinatura não conferiu. Quem enviou não usou o segredo configurado nesta fonte.",
+  assinatura_indecifravel:
+    "O segredo de assinatura desta fonte não pôde ser lido nesta instalação, então nada entra por ela. Cadastre a assinatura de novo na fonte.",
   erro_ao_criar_lead:
     "Os dados chegaram, mas o lead não pôde ser criado — confira se o funil e a etapa da fonte ainda existem.",
+  recusa_da_regra:
+    "Os dados chegaram, mas a régua de campos obrigatórios recusou o negócio: a etapa do funil exige um campo que o formulário não trouxe.",
+  erro_inesperado:
+    "Os dados chegaram, mas a criação do negócio falhou por outro motivo — não é nem o funil nem a etapa da fonte.",
+  campo_numerico_invalido:
+    "Uma resposta numérica não estava no formato aceito pelo formulário. Confira se o campo contém apenas números e use o formato BRL na pergunta de moeda.",
 };
+
+/**
+ * O motivo CERTO para uma recusa de `createLeadHandler` (#2297, caminho 4).
+ *
+ * O rótulo de `erro_ao_criar_lead` promete "funil e etapa da fonte", e essa
+ * promessa só é verdadeira para os códigos que SÃO sobre funil e etapa. Qualquer
+ * outra recusa — a régua de campos obrigatórios na frente, uma falha interna —
+ * mostrava a frase errada na tela "Leads recebidos", que é justamente onde quem
+ * depura a fonte procura por que nada entrou.
+ *
+ * A isenção da rota (`exigirCamposDaEtapa: false`, decisão do #2295) continua
+ * intacta: isto é vocabulário do rótulo, não da régua. O vocabulário da coluna
+ * `reject_reason` é ABERTO por decisão escrita no cabeçalho deste arquivo —
+ * nenhum CHECK a validar —, então um código novo cai em `erro_inesperado` até
+ * ser nomeado aqui.
+ */
+export function motivoDaRecusaDaCriacao(erro: unknown): MotivoDaRecusa {
+  const codigo = erro instanceof ApiError ? erro.code : "";
+  if (codigo === "required_fields_missing") return "recusa_da_regra";
+  if (codigo === "not_found" || codigo === "stage_pipeline_mismatch") return "erro_ao_criar_lead";
+  return "erro_inesperado";
+}
 
 export interface CaptacaoParaRegistrar {
   organizationId: string;

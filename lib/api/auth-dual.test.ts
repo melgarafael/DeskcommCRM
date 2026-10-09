@@ -119,6 +119,16 @@ describe("resolveAuthDual", () => {
     expect(requireRole).not.toHaveBeenCalled();
   });
 
+  it("token de org suspensa responde 403 org_suspended", async () => {
+    vi.mocked(validateBearerToken).mockRejectedValue(new McpAuthError(-32002, 403, "Organization suspended.", "org_suspended"));
+    const r = await resolveAuthDual(req({ authorization: "Bearer dsk_x_y" }), OPCOES);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.response.status).toBe(403);
+      expect((await r.response.json()).error.code).toBe("org_suspended");
+    }
+  });
+
   it("sem Authorization, usa a sessão", async () => {
     sessaoOk();
 
@@ -171,6 +181,49 @@ describe("os caminhos de envio passam pelo proxy", () => {
     expect(isPublicPath("/api/v1/conversations/open-with-contact")).toBe(true);
     // Mídia: sem ela o cartão de fidelidade não sai depois do corte.
     expect(isPublicPath("/api/v1/conversations/abc-123/media")).toBe(true);
+  });
+
+  it("libera as rotas de configuração de IA/follow-up/agenda (issue #1875)", () => {
+    expect(isPublicPath("/api/v1/ai/followup-flows")).toBe(true);
+    expect(isPublicPath("/api/v1/ai/followup-flows/from-model")).toBe(true);
+    expect(isPublicPath("/api/v1/ai/agents")).toBe(true);
+    expect(
+      isPublicPath("/api/v1/ai/agents/11111111-1111-4111-8111-111111111111/versions"),
+    ).toBe(true);
+    expect(isPublicPath("/api/v1/prospecting")).toBe(true);
+    expect(isPublicPath("/api/v1/agenda/tipos")).toBe(true);
+  });
+
+  it("libera versão, publicação e teste do agente (issue #2052)", () => {
+    const AGENTE = "11111111-1111-4111-8111-111111111111";
+    const VERSAO = "22222222-2222-4222-8222-222222222222";
+    expect(isPublicPath(`/api/v1/ai/agents/${AGENTE}`)).toBe(true);
+    expect(isPublicPath(`/api/v1/ai/agents/${AGENTE}/publish`)).toBe(true);
+    expect(isPublicPath(`/api/v1/ai/agents/${AGENTE}/versions/${VERSAO}`)).toBe(true);
+    expect(isPublicPath(`/api/v1/ai/agents/${AGENTE}/versions/${VERSAO}/test`)).toBe(true);
+    // E NÃO dá carona: os irmãos seguem só-sessão, e um segmento que não é
+    // UUID (ou um sufixo qualquer) não entra de carona em cima de um que entra.
+    expect(isPublicPath("/api/v1/ai/agents/assignable")).toBe(false);
+    expect(isPublicPath("/api/v1/ai/agents/abc")).toBe(false);
+    expect(isPublicPath(`/api/v1/ai/agents/${AGENTE}/pause`)).toBe(false);
+    expect(isPublicPath(`/api/v1/ai/agents/${AGENTE}/versions/${VERSAO}/rollback`)).toBe(false);
+    expect(isPublicPath(`/api/v1/ai/agents/${AGENTE}/versions/`)).toBe(false);
+  });
+
+  it("não dá carona aos irmãos que seguem só-sessão (issue #1875)", () => {
+    // followup-flows: publicar, duplicar e [id] continuam exigindo a tela.
+    expect(isPublicPath("/api/v1/ai/followup-flows/123/publish")).toBe(false);
+    expect(isPublicPath("/api/v1/ai/followup-flows/123/duplicate")).toBe(false);
+    expect(isPublicPath("/api/v1/ai/followup-flows/123")).toBe(false);
+    expect(isPublicPath("/api/v1/ai/followup-flows/xpto")).toBe(false);
+    // agents: assignable segue só-sessão; o segmento da versão é UUID.
+    expect(isPublicPath("/api/v1/ai/agents/assignable")).toBe(false);
+    expect(isPublicPath("/api/v1/ai/agents/abc/versions")).toBe(false);
+    // prospecting: só a raiz; os irmãos de /agents (chat, prepare, session) seguem só-sessão.
+    expect(isPublicPath("/api/v1/prospecting/agents")).toBe(false);
+    expect(isPublicPath("/api/v1/prospecting/agents/chat")).toBe(false);
+    // agenda/tipos: o irmão /reativar segue só-sessão.
+    expect(isPublicPath("/api/v1/agenda/tipos/reativar")).toBe(false);
   });
 
   it("não dá carona a sub-paths que não têm suporte a Bearer", () => {

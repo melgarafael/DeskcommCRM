@@ -27,8 +27,9 @@
  */
 import type pg from 'pg';
 
-import { parseWahaMessageId, wahaEchoExternalIds } from '@/lib/waha/message-id';
+import { canonicalWahaExternalId, parseWahaMessageId, wahaEchoExternalIds } from '@/lib/waha/message-id';
 import { lerNumerosDeTeste, numeroPodeTestar, preGoLiveAtivo } from '@/lib/ai/elegibilidade/pre-go-live';
+import { canalDesativado } from '@/lib/channels/desativado';
 
 import type { Logger } from '../../obs/logger';
 
@@ -189,11 +190,16 @@ function chatIdOf(m: QueuedRow): string | null {
 /**
  * Marca `sent` a mensagem que o WAHA acabou de aceitar.
  *
+ * O id é gravado na FORMA CANÔNICA, a mesma que o eco grava
+ * (`canonicalWahaExternalId`: a cauda em conversa individual, desde o #1855; o
+ * id intacto em grupo): só assim o `unique (organization_id, external_id)`
+ * enxerga a colisão e devolve `23505`. No NOWEB a resposta de envio já é a cauda e nada
+ * muda; no WEBJS ela vem como `_serialized` e, gravada aqui, nunca colidia com
+ * o eco — a segunda linha nascia sem que este tratamento chegasse a rodar.
+ *
  * Devolve `true` quando o id NÃO pôde ser gravado porque o eco dela já o ocupa.
- * No WEBJS o eco grava o `_serialized`, exatamente a string que o envio devolve,
- * e o unique `(organization_id, external_id)` recusa uma segunda linha com o
- * mesmo id. Antes, essa recusa caía no `catch` do laço como "erro transiente —
- * mantida queued", e o cliente recebia a mesma mensagem de novo a cada tick — a
+ * Antes, essa recusa caía no `catch` do laço como "erro transiente — mantida
+ * queued", e o cliente recebia a mesma mensagem de novo a cada tick — a
  * armadilha medida na issue #196 do DeskcommCRM. Aqui a mensagem sai `sent` sem
  * o id, e quem o grava é `stampExternalIdAfterEcho`, depois que o eco sai.
  *
@@ -205,6 +211,7 @@ async function markRedriveSent(
   m: QueuedRow,
   externalId: string | null,
 ): Promise<boolean> {
+  const canonico = externalId === null ? null : canonicalWahaExternalId(externalId);
   try {
     await pool.query(
       `update messages
@@ -212,7 +219,7 @@ async function markRedriveSent(
            external_id = coalesce($2, external_id),
            metadata = metadata || '{"redrive":"watchdog"}'::jsonb
        where id = $1 and organization_id = $3 and status = 'queued'`,
-      [m.id, externalId, m.organization_id],
+      [m.id, canonico, m.organization_id],
     );
     return false;
   } catch (err) {
@@ -273,6 +280,12 @@ async function removeRedriveEcho(
  * em `sent`: sem entregue, sem lida. `external_id is null` garante que isto nunca
  * sobrescreve um id que outro caminho já gravou.
  *
+ * A FORMA É A CANÔNICA (`canonicalWahaExternalId`) pela mesma razão do carimbo
+ * do envio: é a string que o eco grava, e só gravando a MESMA string é que o
+ * `unique (organization_id, external_id)` recusa uma segunda linha quando outro
+ * eco entra aqui. No NOWEB o id do envio já era a cauda — nada muda; no WEBJS o
+ * `_serialized` gravado aqui nunca colidia com o eco.
+ *
  * BLINDADO pelo mesmo motivo de `removeRedriveEcho`. Se o eco não saiu (a remoção
  * falhou), o unique recusa de novo e a mensagem fica `sent` sem id: sem ack e com
  * a duplicata na tela — mas sem reenvio.
@@ -287,7 +300,7 @@ async function stampExternalIdAfterEcho(
     await pool.query(
       `update messages set external_id = $2
        where id = $1 and organization_id = $3 and external_id is null`,
-      [m.id, externalId, m.organization_id],
+      [m.id, canonicalWahaExternalId(externalId), m.organization_id],
     );
   } catch (err) {
     log.warn('watchdog: mensagem reenviada ficou sem id — o eco ainda o ocupa', {
@@ -370,8 +383,8 @@ export async function redriveQueued(
       // A lista pode mudar enquanto a mensagem espera ou entre itens do lote.
       // Este redrive fala direto com o WAHA, portanto também precisa da guarda
       // do sink. Falha de leitura cai no catch e NÃO envia.
-      const { rows: acesso } = await pool.query<{ metadata: unknown; phone_number: string | null }>(
-        `select s.metadata, c.phone_number
+      const { rows: acesso } = await pool.query<{ metadata: unknown; phone_number: string | null; operante: boolean }>(
+        `select s.metadata, c.phone_number, public.fn_org_operante(m.organization_id) as operante
          from messages m
          join channel_sessions s on s.id = m.channel_session_id and s.organization_id = m.organization_id
          join contacts c on c.id = m.contact_id and c.organization_id = m.organization_id
@@ -380,6 +393,32 @@ export async function redriveQueued(
       );
       const atual = acesso[0];
       if (!atual) continue;
+      // Organização parada não fala: o resgate direto ao WAHA não pode ser a
+      // porta dos fundos da suspensão. Mesmo desfecho que a suspensão grava.
+      if (atual.operante !== true) {
+        await pool.query(
+          `update messages set status = 'failed', error_code = 'org_suspensa',
+             error_message = 'Envio automático bloqueado: a organização está suspensa.'
+           where id = $1 and organization_id = $2 and status = 'queued'`,
+          [m.id, m.organization_id],
+        );
+        log.info('watchdog: reenvio bloqueado — organização não operante', { message_id: m.id });
+        continue;
+      }
+      // Canal PAUSADO pelo operador: a fila de antes da pausa não sai por aqui.
+      // `failed` e não `queued`, o mesmo desfecho que o `messages/_handler`
+      // grava: deixá-la na fila faria o resgate mandar tudo de uma vez quando o
+      // operador retomasse o canal.
+      if (canalDesativado(atual.metadata)) {
+        await pool.query(
+          `update messages set status = 'failed', error_code = 'channel_disabled',
+             error_message = 'Este canal está desativado. Reative-o na Central de Conexões para voltar a enviar.'
+           where id = $1 and organization_id = $2 and status = 'queued'`,
+          [m.id, m.organization_id],
+        );
+        log.info('watchdog: reenvio bloqueado — canal pausado', { message_id: m.id });
+        continue;
+      }
       if (preGoLiveAtivo(atual.metadata) && !numeroPodeTestar(atual.phone_number ?? '', lerNumerosDeTeste(atual.metadata))) {
         await pool.query(
           `update messages set status = 'failed', error_code = 'pre_go_live',

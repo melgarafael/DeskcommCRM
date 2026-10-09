@@ -66,7 +66,7 @@ function bancoFalso(resultado: { data: unknown; error: { message: string } | nul
 }
 
 /** Linha de `api_tokens` como o lookup devolve (schema real, token morto ou vivo). */
-function linhaDeToken(extra: { revoked_at?: string | null; expires_at?: string | null } = {}) {
+function linhaDeToken(extra: { revoked_at?: string | null; expires_at?: string | null; organizations?: { status: string } } = {}) {
   return {
     id: "11111111-1111-4111-8111-111111111111",
     organization_id: "22222222-2222-4222-8222-222222222222",
@@ -74,6 +74,7 @@ function linhaDeToken(extra: { revoked_at?: string | null; expires_at?: string |
     revoked_at: null,
     expires_at: null,
     created_by: "33333333-3333-4333-8333-333333333333",
+    organizations: { status: "active" },
     ...extra,
   };
 }
@@ -174,5 +175,12 @@ describe("validateBearerToken: teto de falhas (issue #1447)", () => {
     expect(tentativas[0]).toMatchObject({ tipo: "falha", mcpCode: -32001, httpStatus: 401 });
     expect(tentativas[4]).toMatchObject({ tipo: "falha", mcpCode: -32001, httpStatus: 401 });
     expect(tentativas[5]).toMatchObject({ tipo: "falha", mcpCode: -32004, httpStatus: 429 });
+  });
+
+  it("token válido de org suspensa não paga imposto: 40 chamadas, todas 403, nenhuma 429", async () => {
+    bancoFalso({ data: linhaDeToken({ organizations: { status: "suspended" } }), error: null });
+    for (let i = 0; i < 40; i++) {
+      expect(await tentar("dsk_token_de_org_suspensa", "10.9.9.9")).toMatchObject({ tipo: "falha", mcpCode: -32002, httpStatus: 403 });
+    }
   });
 });

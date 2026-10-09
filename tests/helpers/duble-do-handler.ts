@@ -46,10 +46,16 @@ export interface OpcoesDoDubleDoHandler {
    * — um vermelho que denunciaria o stub, não o código.
    */
   indiceUnicoMensagem?: boolean;
-  /** Linha de `organizations` lida pelo aviso ao lead. Padrão: `{ settings: {} }`. */
+  /** Linha de `organizations` lida pelo aviso ao lead, pela guarda de agenda e pelo assert de org operante. Padrão: `{ settings: {}, status: "active" }`. */
   organizacao?: LinhaDoDuble;
   /** Linhas de `calendar_appointments` lidas pela guarda de agenda. Padrão: `[]`. */
   agenda?: LinhaDoDuble[];
+  /**
+   * A linha de `ai_agents` que a conferência da operação do agente lê pela REST
+   * (`assertAgentOperationSupabase`). Função = estado vivo: o teste pausa o
+   * agente entre uma bolha e outra.
+   */
+  agente?: LinhaDoDuble | null | (() => LinhaDoDuble | null);
 }
 
 export interface RetornoDoDubleDoHandler {
@@ -153,6 +159,7 @@ export function criarDubleDoHandler(
       meta_templates: [],
       channel_sessions: [],
       organizations: [],
+      ai_agents: [],
     },
     rpcs: [],
   };
@@ -261,8 +268,10 @@ export function criarDubleDoHandler(
       }
 
       if (tabela === "organizations") {
-        // Lido pelo aviso ao lead (idioma da organização) e pela guarda de
-        // agenda. Padrão `{ settings: {} }`, que é o que os casos legados devolviam.
+        // Lido pelo aviso ao lead (idioma da organização), pela guarda de agenda
+        // e pelo `assertOrgOperante` do topo do handler. Padrão operante: sem o
+        // `status`, todo caso legado viraria 403 `org_suspended`.
+        const padrao = { settings: {}, status: "active" };
         const cadeia = {
           select: (colunas = "") => {
             capturas.selects.organizations!.push(colunas);
@@ -272,11 +281,8 @@ export function criarDubleDoHandler(
             capturas.filtros.organizations!.push({ coluna, valor });
             return cadeia;
           },
-          maybeSingle: async () => ({
-            data: opcoes.organizacao ?? { settings: {} },
-            error: null,
-          }),
-          single: async () => ({ data: opcoes.organizacao ?? { settings: {} }, error: null }),
+          maybeSingle: async () => ({ data: opcoes.organizacao ?? padrao, error: null }),
+          single: async () => ({ data: opcoes.organizacao ?? padrao, error: null }),
         };
         return cadeia;
       }
@@ -303,6 +309,23 @@ export function criarDubleDoHandler(
               resolve,
               reject,
             ),
+        };
+        return cadeia;
+      }
+
+      if (tabela === "ai_agents") {
+        const cadeia = {
+          select: (colunas = "") => {
+            capturas.selects.ai_agents!.push(colunas);
+            return cadeia;
+          },
+          eq: () => {
+            return cadeia;
+          },
+          maybeSingle: async () => ({
+            data: typeof opcoes.agente === "function" ? opcoes.agente() : (opcoes.agente ?? null),
+            error: null,
+          }),
         };
         return cadeia;
       }
@@ -412,6 +435,21 @@ export function criarDubleDoHandler(
               in: (coluna: string, valores: unknown[]) => {
                 filtros.push((r) => valores.includes(r[coluna]));
                 capturas.filtros.messages!.push({ coluna, valor: valores });
+                return cadeia;
+              },
+              // LIKE do Postgres, APLICADO: `%` é qualquer sequência, `_` um
+              // caractere, `\_` o sublinhado literal. A remoção do eco por sufixo
+              // (`_<id bare>`, @lid × @c.us) é exatamente o que este elo mede.
+              like: (coluna: string, padrao: string) => {
+                const re = new RegExp(
+                  "^" +
+                    padrao.replace(/\\_|%|_|[.*+?^${}()|[\]\\]/g, (t) =>
+                      t === "\\_" ? "_" : t === "%" ? ".*" : t === "_" ? "." : `\\${t}`,
+                    ) +
+                    "$",
+                );
+                filtros.push((r) => typeof r[coluna] === "string" && re.test(r[coluna] as string));
+                capturas.filtros.messages!.push({ coluna, valor: `like:${padrao}` });
                 return cadeia;
               },
               then: (

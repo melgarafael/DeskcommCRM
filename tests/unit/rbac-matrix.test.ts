@@ -13,7 +13,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, orgAtivaSemPortao, resolveActiveOrg } from "@/lib/auth/server";
 import { audit } from "@/lib/audit";
 import { createClient } from "@/lib/supabase/server";
 import type { AuthUser, Role } from "@/lib/auth/types";
@@ -21,6 +21,7 @@ import type { AuthUser, Role } from "@/lib/auth/types";
 vi.mock("@/lib/auth/server", () => ({
   loadAuthUser: vi.fn(),
   resolveActiveOrg: vi.fn(),
+  orgAtivaSemPortao: vi.fn(),
   // Sessão sem dívida de MFA: estes testes medem RBAC, não o gate de
   // segundo fator (que tem suíte própria em require-role-mfa.test.ts).
   mfaEmDivida: vi.fn(async () => false),
@@ -89,6 +90,9 @@ function session(role: Role | null, tables: Record<string, unknown> = {}) {
   vi.mocked(loadAuthUser).mockResolvedValue(user);
   vi.mocked(resolveActiveOrg).mockResolvedValue(
     role ? { orgId: ORG_ID, name: "Org", role } : null,
+  );
+  vi.mocked(orgAtivaSemPortao).mockResolvedValue(
+    role ? { orgId: ORG_ID, name: "Org", role, org_status: "active" } : null,
   );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   vi.mocked(createClient).mockResolvedValue(makeSupabaseStub(role, tables) as any);

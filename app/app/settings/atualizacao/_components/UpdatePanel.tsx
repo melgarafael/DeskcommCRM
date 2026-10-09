@@ -223,8 +223,9 @@ export function UpdatePanel() {
             "que é a que está no ar agora, e os seus dados estão intactos. O banco de dados já tinha sido atualizado e permanece assim — isso é seguro, a versão",
           )}{" "}
           {anterior}{" "}
-          {t("funciona com ele. Se quiser desfazer também o banco, use a cópia de segurança feita antes da tentativa (")}
-          <code>bash hostgator-setup-kit/restore.sh</code>).
+          {t(
+            "funciona com ele. A cópia de segurança feita antes da tentativa continua guardada no servidor, mas ela não volta por cima do banco em uso: só restaura num banco vazio. Se precisar desfazer também o banco, peça ajuda a quem cuida do servidor.",
+          )}
         </p>
         {contaDoBanco ? (
           <p className="mt-3 text-sm text-muted-foreground">{t(contaDoBanco)}</p>

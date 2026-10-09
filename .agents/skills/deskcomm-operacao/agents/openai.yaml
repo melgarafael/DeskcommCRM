@@ -1,0 +1,6 @@
+interface:
+  display_name: "Operar o DeskcommCRM"
+  short_description: "Encontra telas, explica fluxos e orienta o uso diário do CRM pela interface"
+  default_prompt: "Use a skill deskcomm-operacao e me mostre onde fica e como usar o recurso do DeskcommCRM que eu preciso."
+policy:
+  allow_implicit_invocation: true

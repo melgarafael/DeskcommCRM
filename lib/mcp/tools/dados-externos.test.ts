@@ -12,7 +12,7 @@ vi.mock("@/lib/external-db/leitura", async () => {
 
 import { abrirAcesso } from "@/lib/external-db/acesso";
 import { colunasDaTabela, listarTabelas } from "@/lib/external-db/introspeccao";
-import { LeituraInvalidaError, lerTabela } from "@/lib/external-db/leitura";
+import { LeituraInvalidaError, lerTabela, montarConsulta } from "@/lib/external-db/leitura";
 import type { ConexaoExterna, TabelaExterna } from "@/lib/external-db/types";
 import type { McpContext } from "@/lib/mcp/types";
 
@@ -31,6 +31,7 @@ const CONEXAO: ConexaoExterna = {
   maxRows: 200,
   maxFilters: 20,
   maxResponseBytes: 30_000,
+  chaveDoCliente: null,
   versao: "2026-09-11T00:00:00.000Z",
 };
 
@@ -119,6 +120,14 @@ describe("crm_describe_external_data", () => {
   it("sem conexão ativa, explica em vez de lançar", async () => {
     const r = (await crmDescribeExternalData.handler({}, ctxFake([]))) as Record<string, unknown>;
     expect(r.erro).toBe("sem_conexao");
+  });
+
+  it("módulo desligado na hora de abrir o acesso: mensagem própria, não o 'não foi possível' genérico", async () => {
+    vi.mocked(abrirAcesso).mockResolvedValue({ ok: false, motivo: "modulo_desligado" });
+    const r = (await crmDescribeExternalData.handler({}, ctxFake())) as Record<string, unknown>;
+    expect(r.erro).toBe("acesso_negado");
+    expect(String(r.mensagem)).toContain("módulo");
+    expect(String(r.mensagem)).not.toBe("não foi possível abrir a conexão.");
   });
 });
 
@@ -288,6 +297,80 @@ describe("crm_query_external_data", () => {
     expect(lerTabela).toHaveBeenCalledTimes(1);
     expect(vi.mocked(lerTabela).mock.calls[0]![1].filtros).toHaveLength(1);
   });
+
+  // Tabela criada por ORM com maiúscula ("Pedido"): o modelo escreve `pedido`.
+  // A busca no catálogo compara em minúscula e ACHA; a conferência de colunas e a
+  // consulta usavam o texto do MODELO e comparavam por igualdade exata — o agente
+  // recebia "essa tabela não existe" para uma tabela que existe.
+  describe("nome da tabela com maiúscula", () => {
+    const PEDIDO: TabelaExterna = { ...TABELA, nome: "Pedido" };
+
+    beforeEach(() => {
+      vi.mocked(listarTabelas).mockResolvedValue([PEDIDO]);
+      // Só o nome REAL existe para o catálogo: igualdade exata, como o SQL de verdade.
+      vi.mocked(colunasDaTabela).mockImplementation(async (_pool, _schema, tabela) =>
+        tabela === "Pedido" ? new Set(["id", "status"]) : null,
+      );
+      vi.mocked(lerTabela).mockResolvedValue({ colunas: ["id"], linhas: [{ id: "1" }], limite: 20, offset: 0 });
+    });
+
+    it("sem schema: acha `Pedido` pedido como `pedido` e consulta pelo nome real", async () => {
+      const r = (await crmQueryExternalData.handler(
+        { connection_id: "conn-1", tabela: "pedido", limite: 20 },
+        ctxFake(),
+      )) as Record<string, unknown>;
+      expect(r.erro).toBeUndefined();
+      expect(r.tabela).toBe("Pedido");
+      expect(vi.mocked(lerTabela).mock.calls[0]![1].tabela).toBe("Pedido");
+    });
+
+    it("com schema informado e tabela em minúscula: cai no catálogo e usa o nome real", async () => {
+      const r = (await crmQueryExternalData.handler(
+        { connection_id: "conn-1", schema: "public", tabela: "pedido", limite: 20 },
+        ctxFake(),
+      )) as Record<string, unknown>;
+      expect(r.erro).toBeUndefined();
+      expect(r.tabela).toBe("Pedido");
+      expect(vi.mocked(lerTabela).mock.calls[0]![1].tabela).toBe("Pedido");
+    });
+
+    it("duas candidatas em schemas diferentes: continua preferindo `public` e devolve o nome da escolhida", async () => {
+      vi.mocked(listarTabelas).mockResolvedValue([
+        { ...TABELA, schema: "outro", nome: "pedido" },
+        { ...TABELA, schema: "public", nome: "Pedido" },
+      ]);
+      vi.mocked(colunasDaTabela).mockImplementation(async (_pool, schema, tabela) =>
+        schema === "public" && tabela === "Pedido" ? new Set(["id"]) : schema === "outro" && tabela === "pedido" ? new Set(["id"]) : null,
+      );
+      const r = (await crmQueryExternalData.handler(
+        { connection_id: "conn-1", tabela: "PEDIDO", limite: 20 },
+        ctxFake(),
+      )) as Record<string, unknown>;
+      expect(r.schema).toBe("public");
+      expect(r.tabela).toBe("Pedido");
+    });
+
+    it("`Pedido` e `pedido` no mesmo schema: quem pede `pedido` lê `pedido`, não a vizinha de outra caixa", async () => {
+      vi.mocked(listarTabelas).mockResolvedValue([
+        { ...TABELA, schema: "public", nome: "Pedido" },
+        { ...TABELA, schema: "public", nome: "pedido" },
+      ]);
+      vi.mocked(colunasDaTabela).mockImplementation(async (_p, schema, tabela) =>
+        schema === "public" && (tabela === "Pedido" || tabela === "pedido") ? new Set(["id"]) : null,
+      );
+      await crmQueryExternalData.handler({ connection_id: "conn-1", tabela: "pedido", limite: 20 }, ctxFake());
+      expect(vi.mocked(lerTabela).mock.calls[0]![1].tabela).toBe("pedido");
+    });
+
+    it("tabela que não existe em nenhuma caixa continua `tabela_nao_encontrada`", async () => {
+      const r = (await crmQueryExternalData.handler(
+        { connection_id: "conn-1", tabela: "fatura", limite: 20 },
+        ctxFake(),
+      )) as Record<string, unknown>;
+      expect(r.erro).toBe("tabela_nao_encontrada");
+      expect(lerTabela).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe("motivoDoVazioExterno — o audit não conta erro como sucesso (#484)", () => {
@@ -298,5 +381,104 @@ describe("motivoDoVazioExterno — o audit não conta erro como sucesso (#484)",
     expect(motivoDoVazioExterno({ tabelas: [] })).toBeNull();
     expect(crmQueryExternalData.motivoDoVazio).toBe(motivoDoVazioExterno);
     expect(crmDescribeExternalData.motivoDoVazio).toBe(motivoDoVazioExterno);
+  });
+});
+
+describe("crm_query_external_data durante a conversa: só as linhas do cliente", () => {
+  // `contatoDoTurno` é contexto de confiança do runtime; o valor do filtro sai
+  // do cadastro do contato, nunca do modelo.
+  const PEDIDO = { connection_id: "conn-1", schema: "public", tabela: "assinaturas", limite: 20 };
+  const COM_CHAVE: ConexaoExterna = { ...CONEXAO, chaveDoCliente: { coluna: "telefone", tipo: "phone" } };
+
+  /** ctx de turno: registra os `.eq()` da leitura do contato para provar org + id. */
+  function ctxDoTurno(contato: { phone_number: string | null; email: string | null } | null) {
+    const eq: Array<[string, unknown]> = [];
+    const chain = {
+      select: () => chain,
+      eq: (c: string, v: unknown) => {
+        eq.push([c, v]);
+        return chain;
+      },
+      order: async () => ({ data: [{ id: "conn-1", label: "Outro CRM" }], error: null }),
+      maybeSingle: async () => ({ data: contato, error: null }),
+    };
+    const ctx = { ...ctxFake(), contatoDoTurno: "contato-1", supabase: { from: () => chain } } as unknown as McpContext;
+    return { ctx, eq };
+  }
+
+  beforeEach(() => {
+    vi.mocked(colunasDaTabela).mockResolvedValue(new Set(["id", "status", "telefone", "email"]));
+    vi.mocked(lerTabela).mockResolvedValue({ colunas: ["id"], linhas: [], limite: 20, offset: 0 });
+  });
+
+  it("conexão sem a coluna configurada: a consulta segue como antes, sem filtro do cliente", async () => {
+    const { ctx, eq } = ctxDoTurno({ phone_number: "+5511999998888", email: null });
+    const r = (await crmQueryExternalData.handler(PEDIDO, ctx)) as Record<string, unknown>;
+    expect(r.erro).toBeUndefined();
+    expect(vi.mocked(lerTabela).mock.calls[0]![1].filtros).toEqual([]);
+    // Sem coluna, o contato nem é lido.
+    expect(eq).not.toContainEqual(["id", "contato-1"]);
+  });
+
+  it("com a coluna configurada, o filtro do cliente entra junto com o do modelo", async () => {
+    vi.mocked(abrirAcesso).mockResolvedValue({ ok: true, conexao: COM_CHAVE, pool: {} as never });
+    const { ctx, eq } = ctxDoTurno({ phone_number: "+5511999998888", email: null });
+    // O modelo tenta o telefone de OUTRA pessoa: o filtro dele soma, não substitui.
+    await crmQueryExternalData.handler(
+      { ...PEDIDO, filtros: [{ coluna: "telefone", operador: "eq", valor: "5521988887777" }] },
+      ctx,
+    );
+    expect(eq).toEqual(
+      expect.arrayContaining([
+        ["organization_id", "org-1"],
+        ["id", "contato-1"],
+      ]),
+    );
+    const pedido = vi.mocked(lerTabela).mock.calls[0]![1];
+    expect(pedido.filtros).toEqual([
+      { coluna: "telefone", operador: "eq", valor: "5521988887777" },
+      { coluna: "telefone", operador: "in", valor: ["+5511999998888", "5511999998888", "11999998888"] },
+    ]);
+    // Parametrizado: o telefone do cliente vai nos values, nunca no texto do SQL.
+    const sql = montarConsulta(pedido, new Set(["id", "status", "telefone"]));
+    expect(sql.text).toContain('"telefone" in ($2, $3, $4)');
+    expect(sql.text).not.toContain("5511999998888");
+    expect(sql.text).toContain(" and ");
+  });
+
+  it("por e-mail, o valor é o do contato (e a forma minúscula)", async () => {
+    vi.mocked(abrirAcesso).mockResolvedValue({
+      ok: true,
+      conexao: { ...CONEXAO, chaveDoCliente: { coluna: "email", tipo: "email" } },
+      pool: {} as never,
+    });
+    const { ctx } = ctxDoTurno({ phone_number: null, email: "Ana@Loja.com" });
+    await crmQueryExternalData.handler(PEDIDO, ctx);
+    expect(vi.mocked(lerTabela).mock.calls[0]![1].filtros).toEqual([
+      { coluna: "email", operador: "in", valor: ["Ana@Loja.com", "ana@loja.com"] },
+    ]);
+  });
+
+  it("tabela sem a coluna do cliente: recusa em vez de ler sem o filtro", async () => {
+    vi.mocked(abrirAcesso).mockResolvedValue({ ok: true, conexao: COM_CHAVE, pool: {} as never });
+    vi.mocked(colunasDaTabela).mockResolvedValue(new Set(["id", "status"]));
+    const { ctx } = ctxDoTurno({ phone_number: "+5511999998888", email: null });
+    const r = (await crmQueryExternalData.handler(PEDIDO, ctx)) as Record<string, unknown>;
+    expect(r.erro).toBe("tabela_sem_identificador_do_cliente");
+    expect(lerTabela).not.toHaveBeenCalled();
+  });
+
+  it("contato sem o dado no cadastro: recusa", async () => {
+    vi.mocked(abrirAcesso).mockResolvedValue({ ok: true, conexao: COM_CHAVE, pool: {} as never });
+    const { ctx } = ctxDoTurno({ phone_number: null, email: "a@b.com" });
+    const r = (await crmQueryExternalData.handler(PEDIDO, ctx)) as Record<string, unknown>;
+    expect(r.erro).toBe("cliente_sem_identificador");
+    expect(lerTabela).not.toHaveBeenCalled();
+  });
+
+  it("CONTROLE: fora da conversa, a consulta segue sem filtro do cliente, configurada ou não", async () => {
+    vi.mocked(abrirAcesso).mockResolvedValue({ ok: true, conexao: COM_CHAVE, pool: {} as never });
+    await crmQueryExternalData.handler(PEDIDO, ctxFake());
+    expect(vi.mocked(lerTabela).mock.calls[0]![1].filtros).toEqual([]);
   });
 });

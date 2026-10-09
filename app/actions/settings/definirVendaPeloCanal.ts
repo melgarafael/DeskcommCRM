@@ -15,7 +15,7 @@ import { z } from "zod";
 
 import { audit } from "@/lib/audit";
 import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
 import { supportWriteError } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -37,7 +37,7 @@ export async function definirVendaPeloCanal(ligar: boolean): Promise<ResultadoVe
   const org = await resolveActiveOrg(user);
   if (!org) return { ok: false, error: "forbidden_tenant" };
   // Mesmo gate da tela e das outras actions de Conversões.
-  if (!(user.is_platform_admin && !user.support) && ROLE_RANK[org.role] < ROLE_RANK.admin) {
+  if (!podeAdministrarEmpresa(user, org)) {
     return { ok: false, error: "forbidden_role" };
   }
   if (await mfaEmDivida()) return { ok: false, error: "mfa_required" };

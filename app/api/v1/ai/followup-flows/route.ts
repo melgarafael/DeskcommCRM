@@ -3,14 +3,19 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * GET  /api/v1/ai/followup-flows — lista pointers da org ativa (any member).
  * POST /api/v1/ai/followup-flows — cria draft (manager+). Nasce status='draft',
  *   draft_graph null, trigger_config default 'manual' (default do banco).
+ *
+ * Aceita sessão de navegador OU Bearer `dsk_...` (api_tokens), resolvidos por
+ * `lib/api/auth-dual.ts`: a mesma dualidade de `/api/v1/contacts` e
+ * `/api/v1/messages`. No ramo do token, `organization_id` sai da LINHA DO TOKEN
+ * — nunca do body — e a org é escrita pelo client admin. Sem a entrada em
+ * `lib/auth/public-paths.ts`, o proxy devolve 401 antes do handler.
  */
 import { randomUUID } from "node:crypto";
-import type { NextRequest } from "next/server";
+import { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createFollowupFlowSchema } from "@/lib/followup/api-schemas";
@@ -29,16 +34,20 @@ const LIST_COLUMNS = "id, name, status, active_version_id, handoff_policy, updat
  */
 export async function GET(req?: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("viewer", { requestId, resource: "followup_flows" });
+  const authz = await resolveAuthDual(req ?? new NextRequest("http://local/"), {
+    requestId,
+    resource: "followup_flows",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
-  const { org: activeOrg } = authz;
+  const { organizationId, supabase } = authz;
 
   const querRoteiros = req?.nextUrl.searchParams.get("surface") === "atendimento";
-  const supabase = await createClient();
   const base = supabase
     .from("followup_flow_pointers")
     .select(LIST_COLUMNS)
-    .eq("organization_id", activeOrg.orgId);
+    .eq("organization_id", organizationId);
   const { data, error } = await (querRoteiros
     ? base.eq("surface", "atendimento")
     : base.neq("surface", "atendimento")
@@ -52,10 +61,18 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "followup_flows" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "followup_flows",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user, org: activeOrg } = authz;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
+  const { organizationId, actor, apiTokenId, supabase } = authz;
+
+  const teto = await tetoDeEscritaDoToken(authz, "followup_flows", requestId);
+  if (teto) return teto;
 
   let raw: unknown;
   try {
@@ -81,11 +98,10 @@ export async function POST(req: NextRequest): Promise<Response> {
     return fail("not_found", t("Fluxo não encontrado."), 404, { requestId });
   }
 
-  const supabase = await createClient();
   const { data: created, error: insErr } = await supabase
     .from("followup_flow_pointers")
     .insert({
-      organization_id: activeOrg.orgId,
+      organization_id: organizationId,
       name: parsed.data.name,
       ...(parsed.data.surface !== undefined ? { surface: parsed.data.surface } : {}),
     })
@@ -103,8 +119,9 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   void audit({
     action: "followup_flow.created",
-    actorUserId: user.id,
-    organizationId: activeOrg.orgId,
+    actorUserId: actor.type === "user" ? actor.id : null,
+    actorApiTokenId: apiTokenId ?? null,
+    organizationId,
     resourceType: "followup_flow_pointer",
     resourceId: created.id,
     requestId,

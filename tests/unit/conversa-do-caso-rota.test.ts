@@ -26,6 +26,10 @@ import { responderSobreOCaso } from "@/lib/agent-engine/agent/conversa-do-caso";
 import { fail } from "@/lib/api/wrappers";
 import { ROLE_RANK, type AuthUser, type Role } from "@/lib/auth/types";
 import { LlmNotConfiguredError } from "@/lib/agent-engine/edge/llm/run-model-call";
+import { resolveOrgLlmConfig } from "@/lib/agent-engine/edge/llm/credentials";
+import { resolverPersona } from "@/lib/agent-engine/agent/conversa-do-caso/persona";
+import type { ResultadoDaBusca } from "@/lib/ai/knowledge/busca";
+import type { Citation } from "@/lib/ai/citations/types";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
@@ -37,8 +41,16 @@ vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: vi.fn() }));
 vi.mock("@/lib/agent-engine/agent/conversa-do-caso", () => ({
   responderSobreOCaso: vi.fn(),
 }));
+// `llmCfg` controlável: o default imita uma instalação COM chave no ambiente
+// (o que os outros testes assumem); os testes de `ia_configurada` o zeram para
+// provar o caminho da credencial da organização, que é o caso real da Vercel.
+const ambiente = vi.hoisted(() => ({ llmCfg: { anthropicApiKey: "k" } as Record<string, unknown> }));
 vi.mock("@/lib/agent-engine/agent/request-deps", () => ({
-  requestTurnDeps: () => ({ llmCfg: { anthropicApiKey: "k" }, log: undefined, registry: undefined }),
+  requestTurnDeps: () => ({ llmCfg: ambiente.llmCfg, log: undefined, registry: undefined }),
+}));
+vi.mock("@/lib/agent-engine/edge/llm/credentials", async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  resolveOrgLlmConfig: vi.fn(async () => ({})),
 }));
 vi.mock("@/lib/agent-engine/agent/conversa-do-caso/persona", async (original) => ({
   ...(await original<Record<string, unknown>>()),
@@ -64,6 +76,7 @@ const CASE_ID = "33333333-3333-4333-8333-333333333333";
 const CONV_ID = "44444444-4444-4444-8444-444444444444";
 const CONTACT_ID = "55555555-5555-4555-8555-555555555555";
 const TURN_ID = "77777777-7777-4777-8777-777777777777";
+const AGENT_ID = "66666666-6666-4666-8666-666666666666";
 
 function session(effectiveRole: Role = "agent") {
   const user: AuthUser = {
@@ -160,6 +173,7 @@ const CORPO_OK = { turn_id: TURN_ID, pergunta: "Por que a IA não resolveu sozin
 
 beforeEach(() => {
   vi.clearAllMocks();
+  ambiente.llmCfg = { anthropicApiKey: "k" };
   session("agent");
   vi.mocked(requireSupportWrite).mockResolvedValue(null);
   vi.mocked(checkRateLimit).mockResolvedValue({ allowed: true, count: 1, limit: 12, window_sec: 60 });
@@ -410,5 +424,205 @@ describe("GET", () => {
     const corpo = (await r.json()) as { data: { mensagens: unknown[]; estado: Record<string, unknown> } };
     expect(corpo.data.mensagens).toHaveLength(1);
     expect(corpo.data.estado.caso_obsoleto).toBeNull();
+  });
+});
+
+describe("GET — ia_configurada pergunta ao MESMO resolvedor que o POST usa", () => {
+  // O bug: `ia_configurada` olhava SÓ o ambiente, e a org que configura IA por
+  // `IA › Credenciais` via "nenhum provedor". A resposta certa é a do resolvedor
+  // que `runModelCall` chama antes de sair, com o override que
+  // `responderSobreOCaso` passa — régua paralela diverge do POST.
+  const get = () => GET(new NextRequest(`http://localhost/api/v1/ai/cases/${CASE_ID}/chat`), { params: Promise.resolve({ id: CASE_ID }) });
+  const estado = async () => ((await (await get()).json()) as { data: { estado: Record<string, unknown> } }).data.estado;
+  const CASO_GET = {
+    id: CASE_ID, title: "Desconto", kind: "outro", summary: "20%", blocker: "10%",
+    status: "awaiting_human", opened_at: "2026-03-10T12:00:00Z", agent_id: null,
+    conversation_id: CONV_ID, contact_id: CONTACT_ID, context_snapshot: null,
+  };
+  const agente = { agentId: AGENT_ID, agentName: "Ana", provider: "openai", credentialId: "cred-1" };
+
+  it("persona do agente do caso: o resolvedor recebe o provider E a credencial do agente → true", async () => {
+    ambiente.llmCfg = {};
+    sessaoComVisibilidade([CONV_ID]);
+    poolFalso({ caso: { ...CASO_GET, agent_id: AGENT_ID } });
+    vi.mocked(resolverPersona).mockResolvedValueOnce({ fonte: "agente_do_caso", agente, nome: "Ana" } as never);
+    expect((await estado()).ia_configurada).toBe(true);
+    expect(vi.mocked(resolveOrgLlmConfig)).toHaveBeenCalledWith(expect.anything(), {}, ORG_ID, { provider: "openai", credentialId: "cred-1" });
+  });
+
+  it("caso SEM agente e org com IA configurada: o padrão da organização responde → true (a régua paralela dizia false)", async () => {
+    ambiente.llmCfg = {};
+    sessaoComVisibilidade([CONV_ID]);
+    poolFalso();
+    expect((await estado()).ia_configurada).toBe(true);
+    expect(vi.mocked(resolveOrgLlmConfig)).toHaveBeenCalledWith(expect.anything(), {}, ORG_ID, undefined);
+  });
+
+  it("agente PAUSADO: a credencial dele não conta — o resolvedor vê o padrão da organização, sem override", async () => {
+    ambiente.llmCfg = {};
+    sessaoComVisibilidade([CONV_ID]);
+    poolFalso({ caso: { ...CASO_GET, agent_id: AGENT_ID } });
+    vi.mocked(resolverPersona).mockResolvedValueOnce({ fonte: "padrao_da_organizacao", motivo: "pausado" });
+    vi.mocked(resolveOrgLlmConfig).mockRejectedValueOnce(new LlmNotConfiguredError());
+    expect((await estado()).ia_configurada).toBe(false);
+    expect(vi.mocked(resolveOrgLlmConfig)).toHaveBeenCalledWith(expect.anything(), {}, ORG_ID, undefined);
+  });
+
+  it("resolvedor diz LlmNotConfiguredError → false (a tela mostra onde configurar)", async () => {
+    sessaoComVisibilidade([CONV_ID]);
+    poolFalso();
+    vi.mocked(resolveOrgLlmConfig).mockRejectedValueOnce(new LlmNotConfiguredError());
+    expect((await estado()).ia_configurada).toBe(false);
+  });
+
+  it("falha no resolvedor (banco, chave que não decifra) NÃO vira 'sem IA' e NÃO apaga o resto do estado", async () => {
+    sessaoComVisibilidade([CONV_ID]);
+    // Fronteira válida e atendimento atual ausente → `caso_obsoleto: true`: um
+    // valor que só existe se o estado foi montado, ao contrário do `null` inicial.
+    const service_boundary = {
+      organization_id: ORG_ID, contact_id: CONTACT_ID, conversation_id: CONV_ID,
+      service_revision: 1, demanda_id: null, demanda_revision: null,
+    };
+    poolFalso({
+      caso: { ...CASO_GET, context_snapshot: { service_boundary } },
+      contato: { is_blocked: true, is_anonymized: false },
+    });
+    vi.mocked(resolveOrgLlmConfig).mockRejectedValueOnce(new Error("Unsupported state or unable to authenticate data"));
+    const r = await get();
+    expect(r.status).toBe(200);
+    const e = ((await r.json()) as { data: { estado: Record<string, unknown> } }).data.estado;
+    expect(e.ia_configurada).toBeNull();
+    expect(e.contato_bloqueado).toBe(true);
+    expect(e.contato_anonimizado).toBe(false);
+    expect(e.caso_obsoleto).toBe(true);
+    expect(e.status).toBe("awaiting_human");
+  });
+});
+
+describe("POST — F3 (#1869): o chat cita o acervo", () => {
+  // A rota injeta os resolvedores por `ctx.citacoes` (seam de teste, mesmo
+  // desenho do `deps` de `searchKnowledge`) — sem depender de mock de módulo.
+  const t = (deps: {
+    resolverAcervo?: (s: unknown, org: string, agent: string) => Promise<string[]>;
+    buscar?: (s: unknown, _p: unknown) => Promise<ResultadoDaBusca>;
+  }) => POST(pedido(CORPO_OK), { params: Promise.resolve({ id: CASE_ID }), citacoes: deps });
+  const casoComAgente = {
+    id: CASE_ID,
+    title: "Desconto",
+    kind: "outro",
+    summary: "20%",
+    blocker: "10%",
+    status: "awaiting_human",
+    opened_at: "2026-03-10T12:00:00Z",
+    agent_id: AGENT_ID,
+    conversation_id: CONV_ID,
+    contact_id: CONTACT_ID,
+    context_snapshot: null,
+  };
+
+  it("agente com base: a resposta devolve as citações do acervo", async () => {
+    sessaoComVisibilidade([CONV_ID]);
+    poolFalso({ caso: casoComAgente });
+    const resolverAcervo = vi.fn(async (_s: unknown, _org: string, agent: string) => {
+      expect(agent).toBe(AGENT_ID);
+      return ["src-1"];
+    });
+    const buscar = vi.fn(async () => ({
+      trechos: [
+        {
+          chunk_id: "c-1",
+          knowledge_source_id: "src-1",
+          source_name: "Manual de descontos",
+          content: "A política permite 20%.",
+          similarity: 0.81,
+        },
+      ],
+      melhorSimilaridade: 0.81,
+    }));
+
+    const r = await t({ resolverAcervo, buscar });
+    expect(r.status).toBe(200);
+    const corpo = (await r.json()) as { data: { citacoes: Citation[] } };
+    expect(resolverAcervo).toHaveBeenCalledTimes(1);
+    expect(buscar).toHaveBeenCalledTimes(1);
+    expect(corpo.data.citacoes).toHaveLength(1);
+    expect(corpo.data.citacoes[0]!).toMatchObject({
+      chunk_id: "c-1",
+      knowledge_source_id: "src-1",
+      source_anchor: "Manual de descontos",
+      score: 0.81,
+    });
+    expect(corpo.data.citacoes[0]!.snippet).toContain("20%");
+  });
+
+  it("agente SEM material (acervo vazio): sem citação e sem segunda busca", async () => {
+    sessaoComVisibilidade([CONV_ID]);
+    poolFalso({ caso: casoComAgente });
+    const resolverAcervo = vi.fn(async () => []);
+    const buscar = vi.fn(async () => ({ trechos: [], melhorSimilaridade: null }));
+
+    const r = await t({ resolverAcervo, buscar });
+    expect(r.status).toBe(200);
+    expect((await r.json()) as { data: { citacoes: unknown[] } }).toMatchObject({
+      data: { citacoes: [] },
+    });
+    expect(buscar).not.toHaveBeenCalled();
+  });
+
+  it("agente do caso ausente (agent_id null): nem resolve o acervo", async () => {
+    sessaoComVisibilidade([CONV_ID]);
+    poolFalso(); // caso default tem agent_id: null
+    const resolverAcervo = vi.fn(async () => []);
+    const buscar = vi.fn(async () => ({ trechos: [], melhorSimilaridade: null }));
+
+    const r = await t({ resolverAcervo, buscar });
+    expect(r.status).toBe(200);
+    expect(resolverAcervo).not.toHaveBeenCalled();
+    expect((await r.json()) as { data: { citacoes: unknown[] } }).toMatchObject({
+      data: { citacoes: [] },
+    });
+  });
+
+  it("a FALHA da busca do acervo não derruba o POST — resposta sai sem citação", async () => {
+    sessaoComVisibilidade([CONV_ID]);
+    poolFalso({ caso: casoComAgente });
+    const resolverAcervo = vi.fn(async () => ["src-1"]);
+    const buscar = vi.fn(async () => {
+      throw new Error("embedding sem chave");
+    });
+
+    const r = await t({ resolverAcervo, buscar });
+    expect(r.status).toBe(200); // nunca 500 — a resposta de IA já aconteceu
+    expect((await r.json()) as { data: { citacoes: unknown[] } }).toMatchObject({
+      data: { citacoes: [] },
+    });
+  });
+
+  it("LGPD mantida: contato ANONIMIZADO devolve 422 SEM consultar o acervo", async () => {
+    sessaoComVisibilidade([CONV_ID]);
+    poolFalso({ contato: { is_blocked: false, is_anonymized: true } });
+    const resolverAcervo = vi.fn(async () => []);
+    const buscar = vi.fn(async () => ({ trechos: [], melhorSimilaridade: null }));
+
+    const r = await t({ resolverAcervo, buscar });
+    expect(r.status).toBe(422);
+    expect(resolverAcervo).not.toHaveBeenCalled();
+    expect(buscar).not.toHaveBeenCalled();
+  });
+
+  it("idempotência mantida: replay (`turn_id` repetido) devolve o turno SEM buscar o acervo", async () => {
+    sessaoComVisibilidade([CONV_ID]);
+    poolFalso({ inserirLanca: { code: "23505" }, caso: casoComAgente });
+    const resolverAcervo = vi.fn(async () => []);
+    const buscar = vi.fn(async () => ({ trechos: [], melhorSimilaridade: null }));
+
+    const r = await t({ resolverAcervo, buscar });
+    expect(r.status).toBe(200);
+    const corpo = (await r.json()) as { data: Record<string, unknown> };
+    expect(corpo).toMatchObject({ data: { replay: true } });
+    // O formato que a guarda `?.` da tela protege: o replay volta SEM `citacoes`.
+    expect(corpo.data).not.toHaveProperty("citacoes");
+    expect(resolverAcervo).not.toHaveBeenCalled();
+    expect(buscar).not.toHaveBeenCalled();
   });
 });

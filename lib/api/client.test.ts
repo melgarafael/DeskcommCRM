@@ -368,3 +368,68 @@ describe("apiClient — quando a organização some debaixo da tela", () => {
     expect(reload).toHaveBeenCalledTimes(2);
   });
 });
+
+/**
+ * A EMPRESA FOI SUSPENSA COM A TELA ABERTA (acabamentos do PR 1, itens 6 e 23).
+ *
+ * As rotas de API respondem 403 `org_suspended`; sem o cliente encaminhar, a
+ * pessoa ficava com listas vazias e erros até recarregar à mão.
+ */
+describe("apiClient — quando a empresa é suspensa com a tela aberta", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  let assign: ReturnType<typeof vi.fn>;
+  let reload: ReturnType<typeof vi.fn>;
+  let pathname: string;
+
+  const suspensa = () =>
+    jsonResponse(403, {
+      error: { code: "org_suspended", message: "A conta desta empresa está suspensa." },
+    });
+
+  beforeEach(() => {
+    vi.resetModules();
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    assign = vi.fn();
+    reload = vi.fn();
+    pathname = "/app/inbox";
+    vi.stubGlobal("window", {
+      location: { assign, reload, get pathname() { return pathname; } },
+      sessionStorage: { getItem: () => null, setItem: () => undefined, removeItem: () => undefined },
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("leva a janela ao hub /account-suspended, e quem chamou termina com o erro", async () => {
+    fetchMock.mockResolvedValue(suspensa());
+    const { apiClient: cliente } = await import("@/lib/api/client");
+
+    await expect(cliente.get("/api/v1/conversations")).rejects.toThrow(
+      "A conta desta empresa está suspensa.",
+    );
+    expect(assign).toHaveBeenCalledWith("/account-suspended");
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("já no hub, não navega de novo (sem laço)", async () => {
+    pathname = "/account-suspended";
+    fetchMock.mockResolvedValue(suspensa());
+    const { apiClient: cliente } = await import("@/lib/api/client");
+
+    await expect(cliente.get("/api/v1/conversations")).rejects.toThrow();
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it("CONTROLE — outro 403 não navega", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(403, { error: { code: "forbidden", message: "sem permissão" } }),
+    );
+    const { apiClient: cliente } = await import("@/lib/api/client");
+
+    await expect(cliente.get("/api/v1/conversations")).rejects.toThrow();
+    expect(assign).not.toHaveBeenCalled();
+  });
+});

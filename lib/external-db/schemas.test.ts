@@ -79,3 +79,27 @@ describe("leituraQuerySchema", () => {
     expect(() => leituraQuerySchema.parse({ limit: String(LIMITE_LINHAS.maximo + 1) })).toThrow();
   });
 });
+
+describe("coluna que identifica o cliente", () => {
+  it("nasce sem configuração, e coluna e tipo andam juntos", () => {
+    const sem = criarConexaoSchema.parse(VALIDO);
+    expect(sem.customer_key_column).toBeNull();
+    expect(sem.customer_key_kind).toBeNull();
+    expect(
+      criarConexaoSchema.parse({ ...VALIDO, customer_key_column: "telefone", customer_key_kind: "phone" })
+        .customer_key_kind,
+    ).toBe("phone");
+    expect(criarConexaoSchema.safeParse({ ...VALIDO, customer_key_column: "telefone" }).success).toBe(false);
+    expect(criarConexaoSchema.safeParse({ ...VALIDO, customer_key_kind: "cpf", customer_key_column: "x" }).success).toBe(
+      false,
+    );
+  });
+
+  it("no PATCH, um sem o outro é recusado; os dois null desligam", () => {
+    expect(atualizarConexaoSchema.safeParse({ customer_key_kind: "email" }).success).toBe(false);
+    expect(
+      atualizarConexaoSchema.safeParse({ customer_key_column: null, customer_key_kind: null }).success,
+    ).toBe(true);
+    expect(atualizarConexaoSchema.safeParse({ label: "x" }).success).toBe(true);
+  });
+});

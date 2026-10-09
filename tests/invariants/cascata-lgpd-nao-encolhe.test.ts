@@ -121,6 +121,7 @@ const TIPOS_RESERVADOS = [
   "ai.case_closed", //               0279
   "ai.case_opened", //               0279
   "appointment.outcome_confirmed", //herdado
+  "contact.birthday", //             0551
   "message.received", //             herdado
 ] as const;
 

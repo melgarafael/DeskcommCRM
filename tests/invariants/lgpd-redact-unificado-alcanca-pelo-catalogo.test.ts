@@ -247,11 +247,22 @@ const DECISOES: Record<string, Decisao> = {
     caminho: "gatilho",
     razao: "0174: captured_name/captured_email/captured_phone (o payload cru de captação) zerados por gatilho — a entrada na dívida do invariante irmão é o aviso de que este instrumento não lia gatilho.",
   },
-  // ── manter: a linha e o conteúdo ficam, por decisão ───────────────────────
   ai_agent_runs: {
-    decidida: "manter",
-    razao: "A LINHA fica (status, erro, tokens, ids das mensagens: é a trilha do que o agente fez), mas tool_calls NÃO é livre de PII — guarda o texto do modelo e os argumentos/resultados das ferramentas, com nome e trechos do que a pessoa escreveu. É redigido pela camada de app, lib/lgpd/cascata.ts passo 6 (#1957/#1958), que preserva o nome das ferramentas e apaga o resto: a rota de anonimizar roda na hora; o pedido formal (lgpd-redact-worker) chama só esta função e é alcançado na varredura diária do cron data-retention. `manter` aqui descreve SÓ a função SQL, que não toca a tabela; o destino é o gatilho da virada, no desenho da 0391.",
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao: "0494 (#1964): a LINHA fica (status, erro, tokens, ids das mensagens: é a trilha do que o agente fez), mas tool_calls — texto do modelo, argumentos e resultados das ferramentas, com nome e trechos do que a pessoa escreveu — é redigido na virada de is_anonymized pelo gatilho fn_redigir_conversas_ao_anonimizar (fn_lgpd_redigir_tool_calls preserva o nome das ferramentas e apaga o resto, `redacted = true` em todo passo), a MESMA porta que o desenho da 0391 e que a app já usava em lib/lgpd/cascata.ts passo 6.",
   },
+  lead_notes: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao: "DÍVIDA PARCIAL QUITADA na 0494 (#1964): headline/body são texto livre do agente SOBRE a pessoa (e embedding é derivado dele). A virada de is_anonymized redige os dois (→ `(anonimizado)`, `embedding` → null) pelo gatilho fn_redigir_conversas_ao_anonimizar — a mesma porta da 0391 e a mesma régua que a app usava em lib/lgpd/cascata.ts passo 5. O irmão (lgpd-cascata-alcanca-quem-guarda-pessoa) mantém a entrada na dívida porque o instrumento dele só lê fn_lgpd_cascade_redact_contact + trg_reply_redact, não este gatilho — a dívida lá sai no dia em que aquele instrumento derivar também os gatilhos de contacts, no desenho da 0391.",
+  },
+  lead_state: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao: "0494 (#1964): a LINHA e o estágio ficam (é o estado do negócio), mas next_action (texto) e qualification (jsonb) — texto livre que cita a pessoa — são zerados na virada de is_anonymized pelo gatilho fn_redigir_conversas_ao_anonimizar (a porta da 0391 que a app já usava em lib/lgpd/cascata.ts passo 7).",
+  },
+  // ── manter: a linha e o conteúdo ficam, por decisão ───────────────────────
   before_send_traces: {
     decidida: "manter",
     razao: "Traço de decisão do gate de envio (vetoed_gate/vetoed_code) para auditoria de POR QUE a mensagem não saiu; é código de vocabulário, não o conteúdo enviado — o corpo mora em messages.",
@@ -267,14 +278,6 @@ const DECISOES: Record<string, Decisao> = {
   google_ads_click_refs: {
     decidida: "manter",
     razao: "gclid/token de clique da plataforma e a query de aterrissagem — identificador de campanha que existe para casar o clique ao contato. Sem nome, telefone ou e-mail; apagar desfaria a atribuição da conversão.",
-  },
-  lead_notes: {
-    decidida: "manter",
-    razao: "⚠️ DÍVIDA PARCIAL, não conforto: headline/body são texto livre do agente SOBRE a pessoa. Desde o #1958 são redigidos (e o embedding zerado) pela camada de app, lib/lgpd/cascata.ts passo 5: a rota de anonimizar roda na hora; o pedido formal (lgpd-redact-worker) chama só esta função e só é alcançado na varredura diária do cron data-retention. A função SQL continua sem tocá-los — `manter` descreve ELA. Vira `redigir`+`gatilho` (desenho da 0391) no MESMO commit que a virada de is_anonymized os alcançar, e o irmão tira a dívida naquele commit.",
-  },
-  lead_state: {
-    decidida: "manter",
-    razao: "A LINHA e o estágio ficam (é o estado do negócio), mas next_action (texto) e qualification (jsonb) NÃO são vocabulário fechado: o agente escreve ali texto livre que cita a pessoa. São zerados pela camada de app, lib/lgpd/cascata.ts passo 7 (#1957/#1958): a rota de anonimizar roda na hora; o pedido formal (lgpd-redact-worker) chama só esta função e é alcançado na varredura diária do cron data-retention. `manter` descreve SÓ a função SQL; o destino é o gatilho da virada, no desenho da 0391.",
   },
   lead_state_transitions: {
     decidida: "manter",

@@ -29,7 +29,7 @@ filtra `organization_id` **manualmente**, resolvido de fonte confiável (cookie,
 webhook, token de path), **nunca do body**. No backend é sempre `getUser()`, nunca `getSession()`.
 
 **Schema sai em tripla.** Arquivo em `supabase/migrations/`, apêndice **idempotente** no
-`supabase/baseline.sql`, e linha no `MANIFEST.md`. O kit self-host aplica **só o baseline** — o que
+`supabase/baseline.sql`, e linha `-- manifest: <o quê e por quê>` no cabeçalho do `.sql` (o `MANIFEST.md` é histórico; não recebe linha nova). O kit self-host aplica **só o baseline** — o que
 não chega lá não chega em quem instalou numa VPS, que é o cliente que paga. Constraint nova exige
 corrigir os dados **antes**, senão o `update.sh` do clone quebra.
 

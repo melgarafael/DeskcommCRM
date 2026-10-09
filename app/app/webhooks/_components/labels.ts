@@ -13,11 +13,21 @@ export type ActionType =
   | "assign_owner"
   | "call_webhook"
   | "start_message_flow"
-  | "create_task";
+  | "create_task"
+  | "apply_task_plan";
 
 export const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   "lead.created": "Quando entrar um contato novo (webhook)",
   "lead.stage_changed": "Quando um lead mudar de etapa",
+  // #1528 — os quatro que nascem do trigger do banco e valem para todo caminho
+  // que termina num UPDATE do lead (arraste, botão, lote, IA, o mover da
+  // automação). Criar já ganho/perdido ou já com dono NÃO emite: o trigger
+  // retorna cedo no INSERT. A frase diz o DESFECHO, que é
+  // o que quem integra escuta — não o botão que a pessoa apertou.
+  "lead.won": "Quando um negócio for ganho",
+  "lead.lost": "Quando um negócio for perdido",
+  "lead.reopened": "Quando um lead encerrado for reaberto",
+  "lead.assigned": "Quando o responsável do lead mudar",
   "message.received": "Quando chegar mensagem no WhatsApp",
   // A frase é do ponto de vista de quem RECEBE o aviso: a falha é do envio, e
   // é ela que manda o integrador verificar. "não for entregue" cobre os dois
@@ -59,4 +69,7 @@ export const ACTION_LABELS: Record<ActionType, string> = {
   start_message_flow: "Iniciar fluxo de mensagem",
   // #1540 — a ação que não fala com o cliente: o lembrete é da equipe.
   create_task: "Criar tarefa interna (sem mensagem ao cliente)",
+  // #1752 — a SEQUÊNCIA em vez do lembrete único: aplica um plano salvo em
+  // Tarefas › Planos ao negócio, criando as N tarefas de uma vez e na ordem.
+  apply_task_plan: "Aplicar um plano de tarefas ao negócio",
 };

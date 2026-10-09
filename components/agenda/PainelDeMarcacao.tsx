@@ -82,6 +82,7 @@ export function PainelDeMarcacao({
   fontesDefasadas,
   googleCoberturaParcial,
   onMesVisivel,
+  mesCarregado,
   quemSeraAtendido,
   horarioInicial,
   permiteEncaixe = false,
@@ -150,6 +151,18 @@ export function PainelDeMarcacao({
    * entrega 42 dias mortos ou desliga para não produzir esse estado.
    */
   onMesVisivel?: (mes: Date) => void;
+  /**
+   * De que mês são os `horariosPorDia` que chegaram — `null` enquanto a
+   * consulta não respondeu. Ausente (a vitrine, com dado fixo), o painel
+   * confia nos horários como sempre.
+   *
+   * O mês em tela mora aqui e o da consulta mora em quem chama, e os dois
+   * trocam em momentos diferentes. Sem saber de que mês são os dados, o painel
+   * (a) acendia o dia 1º do mês novo com a sobra da janela do velho
+   * (`janelaDoMesVisivel` vai até `endOfMonth + 1 dia`) e (b) não tinha como
+   * distinguir "carregando" de "este mês acabou" — ver a abertura, abaixo.
+   */
+  mesCarregado?: Date | null;
   /** Agenda conectada que parou de atualizar: o horário fica bloqueado, e a tela diz desde quando. */
   fontesDefasadas?: Array<{ nome?: string; desde?: string }>;
   /**
@@ -324,10 +337,36 @@ export function PainelDeMarcacao({
    * É a ÚNICA expressão de clicável: o botão do dia e `nenhumDiaClicavel` leem
    * esta função, para os dois não voltarem a divergir (ver o bloco acima).
    */
+  const dadosDoMesEmTela = mesCarregado === undefined || (mesCarregado !== null && isSameMonth(mesCarregado, mes));
+  /** Tem horário publicado — a única fonte de `data-disponivel` e da abertura. */
+  const temHorario = (d: Date): boolean =>
+    dadosDoMesEmTela && isSameMonth(d, mes) && (horariosPorDia[format(d, "yyyy-MM-dd")]?.length ?? 0) > 0;
   const diaClicavel = (d: Date): boolean =>
-    isSameMonth(d, mes) &&
-    ((horariosPorDia[format(d, "yyyy-MM-dd")]?.length ?? 0) > 0 ||
-      (encaixeLigado && d.getTime() >= inicioDeHoje));
+    temHorario(d) || (isSameMonth(d, mes) && encaixeLigado && d.getTime() >= inicioDeHoje);
+
+  /**
+   * A ABERTURA NÃO CAI NUM MÊS QUE ACABOU.
+   *
+   * No último dia útil do mês, depois do último horário, o painel abria no mês
+   * de hoje com todo dia apagado e "Nenhum horário livre em setembro" — e o
+   * próximo horário, amanhã, atrás de uma seta que nada apontava. Todo mês.
+   * Foi o que reprovou o e2e de todos os PRs em 30/09/2026 a partir de ~16h BRT.
+   *
+   * A decisão é tomada UMA vez, quando os horários do mês de abertura chegam:
+   * sem nenhum horário publicado nele, o painel passa ao mês seguinte. Quem
+   * volta à mão (para um encaixe hoje) fica onde voltou. Sem jornada publicada
+   * não há o que procurar no mês seguinte, e o aviso é o próximo passo.
+   */
+  // Ajuste de estado DURANTE o render, não num efeito: o mês morto nem chega a
+  // ser pintado (https://react.dev/learn/you-might-not-need-an-effect).
+  const [aberturaDecidida, setAberturaDecidida] = React.useState(false);
+  const aberturaCarregada = mesCarregado != null && dadosDoMesEmTela && isSameMonth(mes, ancora);
+  if (!aberturaDecidida && aberturaCarregada && !instanteInicial) {
+    setAberturaDecidida(true);
+    if (publicouHorarios && !erroAoCarregar && !semanas.flat().some(temHorario)) {
+      setMes(startOfMonth(addDays(startOfMonth(mes), 32)));
+    }
+  }
 
   const nenhumDiaClicavel = semanas.flat().every((d) => !diaClicavel(d));
 
@@ -751,7 +790,7 @@ export function PainelDeMarcacao({
             // A exceção é o ENCAIXE: ali o clique entrega outra coisa — o campo
             // de hora —, e o dia sem grade fica clicável mas SEM a cor de vaga.
             // `data-disponivel` segue dizendo "tem horário publicado".
-            const disponivel = livres.length > 0 && isSameMonth(d, mes);
+            const disponivel = temHorario(d);
             const clicavel = diaClicavel(d);
             const soEncaixe = clicavel && !disponivel;
             const escolhido = dia !== null && isSameDay(d, dia);

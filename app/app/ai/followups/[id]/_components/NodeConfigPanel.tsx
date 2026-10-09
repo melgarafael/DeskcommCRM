@@ -19,6 +19,8 @@ import { ConditionForm } from "./forms/ConditionForm";
 import { EndForm } from "./forms/EndForm";
 import { InternalTaskForm } from "./forms/InternalTaskForm";
 import { MatchReplyForm } from "./forms/MatchReplyForm";
+import { MoveLeadForm } from "./forms/MoveLeadForm";
+import { EditLeadTagForm } from "./forms/EditLeadTagForm";
 import { RepeatForm } from "./forms/RepeatForm";
 import { SkillForm } from "./forms/SkillForm";
 import { WaitForm } from "./forms/WaitForm";
@@ -155,6 +157,16 @@ export function NodeConfigPanel({
         {type === "internal_task" && (
           <InternalTaskForm
             config={node.data.config as ConfigOf<"internal_task">}
+            onChange={(config) => onChange({ config })}
+          />
+        )}
+        {/* #2065 — os dois nós de ação que não falam com o cliente. */}
+        {type === "move_lead" && (
+          <MoveLeadForm config={node.data.config as ConfigOf<"move_lead">} onChange={(config) => onChange({ config })} />
+        )}
+        {type === "edit_lead_tag" && (
+          <EditLeadTagForm
+            config={node.data.config as ConfigOf<"edit_lead_tag">}
             onChange={(config) => onChange({ config })}
           />
         )}

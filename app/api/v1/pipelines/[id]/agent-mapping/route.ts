@@ -91,6 +91,11 @@ const bodySchema = z.object({
  */
 type EtapaComAutoria = EtapaDoMapa & {
   avisar_na_central?: boolean | null;
+  /**
+   * Janela de "esfriando" da etapa, em horas (`crm_stages.expected_duration_hours`).
+   * `null` = a etapa não configurou e o radar usa o padrão de 24 h/72 h.
+   */
+  expected_duration_hours?: number | null;
   last_change_actor_kind: string | null;
   last_change_at: string | null;
 };
@@ -115,7 +120,7 @@ async function lerFunil(
     // consulta só para ela seria um round-trip por render numa tela de
     // configuração — e um caminho a mais para a lista e a autoria divergirem.
     .select(
-      "id, name, is_won, is_lost, win_probability, agent_stage_hint, avisar_na_central, last_change_actor_kind, last_change_at",
+      "id, name, is_won, is_lost, win_probability, agent_stage_hint, avisar_na_central, expected_duration_hours, last_change_actor_kind, last_change_at",
     )
     .eq("organization_id", orgId)
     .eq("pipeline_id", pipelineId)
@@ -149,6 +154,10 @@ function corpo(etapas: EtapaComAutoria[]) {
       is_won: e.is_won,
       is_lost: e.is_lost,
       avisar_na_central: e.avisar_na_central === true,
+      // A janela de esfriando viaja na MESMA leitura: a tela de etapas é quem
+      // a edita, e sem ela aqui o campo nasceria sempre vazio — uma edição
+      // apagaria a configuração gravada sem ninguém perceber.
+      expected_duration_hours: e.expected_duration_hours ?? null,
       last_change_actor_kind: e.last_change_actor_kind ?? null,
       last_change_at: e.last_change_at ?? null,
     })),

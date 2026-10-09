@@ -63,6 +63,19 @@ export async function lerAtribuicao(
       : {};
 
   const clique = typeof meta.ad_source_id === "string" ? meta.ad_source_id.trim() : "";
+  const telefone = linha.phone_number ? linha.phone_number.replace(/\D/g, "") || null : null;
+
+  // Quem chegou pela PÁGINA (link com código de origem) é carimbado `site`, sem
+  // clique. Se a UTM aponta para a Meta, a pessoa veio de um anúncio que levou à
+  // página — a venda é reportada à Meta pelo telefone, sem `ctwa_clid`. O
+  // transporte lê o `cliqueDeOrigem` vazio e troca a identidade do evento.
+  if (!clique && meta.ad_platform === "site" && utmDaMeta(meta.utm_source)) {
+    return {
+      temAtribuicao: true,
+      atribuicao: { plataforma: "meta_ads", cliqueDeOrigem: "", telefone },
+    };
+  }
+
   // Sem o clique não há atribuição utilizável: é ele que liga a venda ao anúncio.
   // Ter `ad_platform` sem `ad_source_id` acontece quando o payload trouxe o
   // referral sem o identificador — a 0164 grava os dois como vieram.
@@ -92,7 +105,24 @@ export async function lerAtribuicao(
       cliqueDeOrigem: clique,
       // Só dígitos: a plataforma exige E.164 sem `+` nem separadores ANTES do
       // hash. Normalizar depois do hash seria tarde — o hash já estaria errado.
-      telefone: linha.phone_number ? linha.phone_number.replace(/\D/g, "") || null : null,
+      telefone,
     },
   };
+}
+
+/**
+ * Os `utm_source` que significam "anúncio da Meta". Lista fechada e explícita:
+ * quem monta o link escolhe o texto, e casar por "contém face" pegaria
+ * `facebook_organico` e mandaria venda orgânica para a conta de anúncios.
+ */
+export const UTM_SOURCES_DA_META: ReadonlySet<string> = new Set([
+  "meta",
+  "facebook",
+  "fb",
+  "instagram",
+  "ig",
+]);
+
+function utmDaMeta(valor: unknown): boolean {
+  return typeof valor === "string" && UTM_SOURCES_DA_META.has(valor.trim().toLowerCase());
 }

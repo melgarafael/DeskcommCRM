@@ -16,8 +16,8 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { requireRole } from "@/lib/auth/require-role";
+import { loadAuthUser } from "@/lib/auth/server";
+import { orgAtivaDaApi, requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { parseFaqMarkdown } from "@/lib/ai/rag/ingest/faq";
@@ -78,7 +78,9 @@ export async function GET(_req: NextRequest): Promise<Response> {
   if (!authUser) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
-  const activeOrg = await resolveActiveOrg(authUser);
+  const ativa = await orgAtivaDaApi(authUser, requestId);
+  if (!ativa.ok) return ativa.response;
+  const activeOrg = ativa.org;
   if (!activeOrg) {
     return fail("forbidden", "Nenhuma organização ativa.", 403, { requestId });
   }
@@ -288,7 +290,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     if (itemsErr) {
       // Fonte sem item nenhum é fonte vazia: melhor desfazer do que deixar uma
       // linha que promete conteúdo e nunca vai indexar nada.
-      await admin.from("ai_knowledge_sources").delete().eq("id", ksId);
+      await admin.from("ai_knowledge_sources").delete().eq("organization_id", activeOrg.orgId).eq("id", ksId);
       console.error("[ai-knowledge-sources] insert dos itens falhou:", itemsErr.message);
       return fail("internal_error", t("Erro ao gravar o conteúdo do material."), 500, { requestId });
     }

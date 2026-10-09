@@ -55,14 +55,14 @@ export type ResultadoDaTarefa =
   | { ok: true; tarefa_id: string; assigned_to: string | null }
   | { ok: false; codigo: "sem_alvo" | "sem_dono" | "titulo_vazio" | "falha"; erro?: string };
 
-type LeadDoPedido = {
+export type LeadDoPedido = {
   id: string;
   title?: string | null;
   contact_id?: string | null;
   owner_user_id?: string | null;
 };
 
-type ContatoDoPedido = {
+export type ContatoDoPedido = {
   id: string;
   name?: string | null;
   display_name?: string | null;
@@ -92,6 +92,31 @@ export function interpolarTitulo(
     .replaceAll("{{lead.title}}", leadTitle)
     .replaceAll("{{contact.name}}", contatoNome)
     .trim();
+}
+
+/**
+ * A recusa de CONFIGURAÇÃO de UM passo — sem escrever nada.
+ *
+ * Esta função É a regra `sem_dono`/`titulo_vazio`, num sítio só: quem chama
+ * duas vezes com a mesma entrada tem de recusar do mesmo jeito. O portão novo
+ * é o do plano (`lib/tarefas/plano.ts`), que confere TODOS os passos antes do
+ * primeiro INSERT; sem esta função, a validação do plano seria uma cópia das
+ * linhas abaixo e as duas divergiriam no primeiro ajuste — os dois "validam o
+ * mesmo passo", só que um deixa passar o que o outro recusa.
+ *
+ * `sem_alvo` NÃO é daqui: ele depende de não haver lead nem contato, que é uma
+ * pergunta do pedido, não do passo.
+ */
+export function recusaDeConfiguracao(
+  atribuirA: AtribuicaoDaTarefa,
+  titulo: string,
+  valores: { lead?: LeadDoPedido | null; contact?: ContatoDoPedido | null },
+): "sem_dono" | "titulo_vazio" | null {
+  const atribuido =
+    typeof atribuirA === "object" ? atribuirA.usuario_id : (valores.lead?.owner_user_id ?? null);
+  if (!atribuido) return "sem_dono";
+  if (!interpolarTitulo(titulo, valores)) return "titulo_vazio";
+  return null;
 }
 
 /**
@@ -138,17 +163,12 @@ export async function criarTarefaInterna(
     return { ok: false, codigo: "sem_alvo" };
   }
 
+  const recusa = recusaDeConfiguracao(pedido.atribuirA, pedido.titulo, { lead, contact });
+  if (recusa) return { ok: false, codigo: recusa };
+
   const assignedTo =
     typeof pedido.atribuirA === "object" ? pedido.atribuirA.usuario_id : (lead?.owner_user_id ?? null);
-  if (typeof pedido.atribuirA === "object" && !assignedTo) {
-    return { ok: false, codigo: "sem_dono" };
-  }
-  if (typeof pedido.atribuirA === "string" && !assignedTo) {
-    return { ok: false, codigo: "sem_dono" };
-  }
-
   const titulo = interpolarTitulo(pedido.titulo, { lead, contact });
-  if (!titulo) return { ok: false, codigo: "titulo_vazio" };
 
   const dueDate = new Date(agora.getTime() + pedido.venceEmDias * 86_400_000).toISOString();
 

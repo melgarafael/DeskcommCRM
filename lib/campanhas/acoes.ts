@@ -24,6 +24,7 @@ import { baseLegalValida, motivoParaExcluir, recusouMarketing } from "./elegibil
 import { ehStatusDaCampanha, podeTransitar } from "./maquina-de-estados";
 import { prepararCampanha } from "./preparacao";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
+import { camposDoDestinatario } from "./consulta-de-audiencia";
 import { renderizar } from "./renderizador";
 import type { StatusDaCampanha } from "./tipos";
 
@@ -389,7 +390,7 @@ export async function testarAcao(
 
   const { data: contato } = await admin
     .from("contacts")
-    .select("id, name, display_name, phone_number, is_blocked, is_anonymized, consent")
+    .select("id, name, display_name, phone_number, is_blocked, is_personal, is_anonymized, consent")
     .eq("organization_id", c.organization_id)
     .eq("id", contactId)
     .maybeSingle();
@@ -407,6 +408,7 @@ export async function testarAcao(
     display_name: string | null;
     phone_number: string | null;
     is_blocked: boolean;
+    is_personal: boolean;
     is_anonymized: boolean;
     consent: unknown;
   };
@@ -417,6 +419,7 @@ export async function testarAcao(
     contactId: linha.id,
     telefone: linha.phone_number,
     bloqueado: linha.is_blocked,
+    pessoal: linha.is_personal === true,
     anonimizado: linha.is_anonymized,
     recusouMarketing: recusouMarketing(linha.consent),
   });
@@ -429,9 +432,17 @@ export async function testarAcao(
     };
   }
 
+  // Os campos personalizados que o TEXTO usa entram aqui pelo MESMO caminho da
+  // prévia: teste que não resolvia `{{lead.gancho}}` reprovaria o texto que o
+  // envio manda certo.
+  const campos = await camposDoDestinatario(admin, {
+    organizationId: c.organization_id,
+    contactId: linha.id,
+    corpo: c.message_body ?? "",
+  });
   const render = renderizar(
     c.message_body ?? "",
-    { nome: nomeDoContato(linha) },
+    { nome: nomeDoContato(linha), ...campos },
     { agora, fuso },
   );
   if (render.faltando.length > 0) {

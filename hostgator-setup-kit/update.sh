@@ -21,6 +21,21 @@ source "$KIT_DIR/_common.sh"
 source "$KIT_DIR/manutencao.sh"
 enter_project
 
+# ── 0-. O laço do diagnóstico (#1955) ───────────────────────────────────────
+# Toda execução termina com um arquivo legível — inclusive as que MORREM antes
+# de chegar ao banco (preflight, backup, checkout), que é justamente onde não
+# havia rastro nenhum: o que sobrava era a cauda do log que o agente guarda, e
+# o apagão de resolver da issue não deixava rastro do POR QUÊ.
+#
+# O gatilho do passo do banco (`trap restaurar_servicos EXIT INT TERM HUP`)
+# SUBSTITUI este — e de lá para baixo quem escreve o mesmo arquivo é
+# `restaurar_servicos`, que chama esta mesma função. Os dois caminhos escrevem
+# no MESMO arquivo, e o diagnóstico é silencioso: nunca na stdout.
+DIAGNOSTICO_ARQUIVO="$PROJECT_DIR/.deskcomm-update-diagnostico.log"
+UPDATE_STATUS="em andamento"
+UPDATE_ETAPA="início, antes de decidir a versão"
+trap diagnostico_de_atualizacao EXIT
+
 FORCE=""; SKIP_BACKUP=""; TARGET_TAG=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -176,11 +191,33 @@ else
   c_ylw "Vou atualizar para a versão $TARGET_TAG com segurança."
 fi
 
+# ── 1.5 Preflight: dá para atualizar sem derrubar o que está no ar? (#1955) ──
+# MEDIDO numa instalação real, reproduzido 2x: sem esta pergunta o update parava
+# os serviços e só descobria a hora que o registro não respondia — aí o fallback
+# de construção local consumiu a memória inteira da VPS (OOM no `next-build`) e
+# o app ficou 502 até um restart manual do Docker.
+#
+# ANTES do backup, do checkout e de QUALQUER `docker stop`, de propósito: quando
+# o preflight falha, `refuse` devolve RC 3 (o agent.sh lê como "esta atualização
+# nunca começou" e não tenta desfazer nada) e a versão ATUAL segue no ar.
+step "Conferindo se dá para atualizar (preflight)"
+if ! MOTIVO_PREFLIGHT="$(preflight_atualizacao "$TARGET_TAG")"; then
+  refuse "Atualização NÃO começou — nada foi parado, nada foi baixado, e a versão atual segue no ar.
+  Motivo: $MOTIVO_PREFLIGHT
+  Resolva o motivo acima e rode de novo:
+    bash hostgator-setup-kit/update.sh"
+fi
+if build_local_pedido; then
+  c_grn "✓ preflight — o Docker respondeu; construção local pedida (DESKCOMM_BUILD_LOCAL), sem depender do registro."
+else
+  c_grn "✓ preflight — as quatro imagens da $TARGET_TAG estão prontas no registro."
+fi
+
 # ── 2. Backup de segurança ANTES de tocar no banco ───────────────────────────
 if [ -z "$SKIP_BACKUP" ]; then
   step "Backup de segurança (antes de mexer no banco)"
   if bash "$KIT_DIR/backup.sh"; then
-    c_grn "✓ backup feito — se algo der errado, dá pra restaurar (restore.sh)."
+    c_grn "✓ backup feito. Ele só volta num banco VAZIO, não por cima deste (restore.sh; ver hostgator-setup-kit/README.md)."
   else
     if [ -n "${DESKCOMM_AGENT_REPORT:-}" ] || [ ! -t 0 ]; then
       die "O backup preventivo falhou. Atualização automática interrompida para proteger os dados."
@@ -276,7 +313,7 @@ BANCO_INCOMPLETO=""
 BANCO_RESTANTE=""
 # O que fazer, dito por causa, no passo 4 e de novo no fim. Rodar o update.sh sem
 # --force responderia "já está na versão mais recente" e não tocaria no banco.
-# O restore vem por ÚLTIMO: ele desfaz também o que o CRM gravou desde o backup.
+# O backup não é saída aqui: o restore.sh só restaura num banco vazio (#2120).
 orientar_banco_incompleto() {
   # As duas metades SOMAM: uma lista pode ter disputa (que repetir cura) e erro de
   # permissão ou de dado (que não). Escolher uma só escondia a ação possível.
@@ -296,7 +333,8 @@ orientar_banco_incompleto() {
     *)
       c_ylw "  O resto dos erros acima repetir não cura: guarde a mensagem e peça ajuda." ;;
   esac
-  c_ylw "  Só em último caso, volte ao backup feito antes desta atualização (restore.sh)."
+  c_ylw "  O backup feito antes desta atualização NÃO volta por cima deste banco (o restore.sh só"
+  c_ylw "  restaura num banco vazio). Se precisar voltar o banco ao estado anterior, peça ajuda."
 }
 if [ -f supabase/baseline.sql ]; then
   # O aviso PRIMEIRO: entre pausar e anunciar, quem estivesse com a tela aberta
@@ -516,7 +554,7 @@ if [ -f supabase/baseline.sql ]; then
     c_red "   sem erro nenhum, e isso é indistinguível de 'não há dados'."
     printf '%s\n' "$faltando" | sed 's/|/ na tabela /; s/^/   • /' | head -20
     c_ylw "   O log do banco está em .deskcomm-banco.log — mande-o para o suporte."
-    c_ylw "   Para voltar ao estado anterior: bash restore.sh"
+    c_ylw "   O backup NÃO volta por cima deste banco (restore.sh só em banco vazio): peça ajuda."
     # ⛔ E A ATUALIZAÇÃO PARA AQUI.
     #
     # Antes ela seguia: imprimia este bloco vermelho e ia para o passo 5, que
@@ -613,6 +651,14 @@ step "Baixando a versão nova do app e reiniciando"
 # antigo grava só `APP_IMAGE`, e o worker fica seguindo um canal móvel.
 PIN_FALTANDO_ANTES="$(pin_incompleto .env)"
 
+# O snapshot que torna o rollback possível (#1955, critério 4): os OITO pins de
+# versão do `.env` ANTES de gravar os novos. É a última janela em que a versão
+# anterior ainda está escrita — depois de `gravar_imagens` + dos `export` logo
+# abaixo, TODO `up -d` seguinte (inclusive o da volta e o do gatilho de saída)
+# já aponta para a versão nova. É por isso que a instalação da issue terminou
+# com os serviços em `Created`: a "volta" usava imagens que não existiam.
+armar_rollback_de_versao .env
+
 VERSAO_ALVO="${TARGET_TAG#v}"
 export APP_IMAGE="${IMG_APP}:${VERSAO_ALVO}"
 export WORKER_IMAGE="${IMG_WORKER}:${VERSAO_ALVO}"
@@ -629,25 +675,39 @@ gravar_imagens .env "$VERSAO_ALVO"
 VOZ_CRIADA="$(completar_segredos_da_voz .env)" || VOZ_CRIADA=""
 [ -n "$VOZ_CRIADA" ] && c_ylw "  (preparei as credenciais da chamada de voz no .env — ela segue DESLIGADA)"
 
-# `dc pull` falha se alguma das três imagens ainda não existir no registro — o
+# `dc pull` falha se alguma das três imagens ainda não existir no registro
+# (quatro com o profile `telefonia`, que liga o voice-agent) — o
 # que acontece numa instalação atualizando para a primeira versão publicada
-# depois desta mudança, ou se um run de publicação quebrou. Nesse caso o compose
-# ainda tem `build:` ao lado do `image:` do worker e do scheduler, então o
-# `up -d` os constrói localmente: pior que puxar, melhor que não atualizar.
+# depois desta mudança, ou se um run de publicação quebrou. Worker, scheduler e
+# voz têm `build:` ao lado do `image:`, e o Compose os constrói sozinho em
+# QUALQUER falha de pull (medido — não só na de arquitetura): pior que puxar,
+# melhor que não atualizar. O `app` fica SEM `build:` de propósito (#1060): se a
+# imagem dele não veio, o `up -d` logo abaixo FALHA e quem decide é o portão
+# `build_local_permitido` — construir aqui ou recusar, conforme o registro
+# responde ou não.
 if ! dc pull; then
-  # A mensagem distingue os dois casos porque a consequência é oposta, e uma
-  # frase tranquilizadora sobre o caso errado é o pior desfecho possível: o
-  # `worker` e o `scheduler` têm `build:` ao lado do `image:` e o `up -d` os
-  # constrói; o `app` NÃO tem, então se for a imagem dele que falta, o `up -d`
-  # falha logo abaixo e a guarda dele constrói a versão aqui — e dizer "sigo
-  # assim mesmo" teria sido mentira.
+  # A mensagem distingue os dois casos porque a CAUSA é diferente, e uma frase
+  # tranquilizadora sobre o caso errado é o pior desfecho possível. Se a do app
+  # veio, o que faltar em worker, scheduler ou voz o Compose constrói sozinho no
+  # `up -d` (medido: qualquer falha de pull, não só a de arquitetura). Se a do
+  # app NÃO veio, ele não tem `build:` no compose de produção de propósito: o
+  # `up -d` falha e quem decide é o portão `build_local_permitido` — com o
+  # registro respondendo ele constrói a versão aqui; sem resposta do registro ele
+  # RECUSA, de propósito (guarda da #1955). "Construído aqui" sem essa ressalva
+  # prometeria justamente o que o portão nega no pior caso. Os dois diagnósticos
+  # também contam coisas distintas: "o app veio e falta outra peça" × "o app não
+  # veio", que aponta para a versão ainda não publicada (ou o pacote privado).
   if dc pull app >/dev/null 2>&1; then
     c_ylw "⚠ Não consegui puxar todas as imagens da versão ${VERSAO_ALVO}."
     c_ylw "  A do app veio; o que faltar é construído aqui (mais lento, mesmo resultado)."
   else
     c_ylw "⚠ Não consegui puxar a imagem do APP na versão ${VERSAO_ALVO}."
     c_ylw "  Causas comuns: a versão ainda está publicando, ou o pacote está privado no GHCR."
-    c_ylw "  Vou tentar subir mesmo assim — se falhar, rode de novo em alguns minutos."
+    c_ylw "  Vou tentar subir mesmo assim — se o up -d falhar, quem decide o passo"
+    c_ylw "  seguinte é a recuperação: com o registro respondendo ela constrói as"
+    c_ylw "  imagens desta versão aqui (15 a 25 min); sem resposta do registro ela"
+    c_ylw "  recusa, de propósito, para não gastar a memória desta VPS."
+    c_ylw "  Se não subir, rode de novo em alguns minutos."
   fi
 fi
 # A rede do proxy externo é declarada como EXTERNA no compose: se ela sumiu
@@ -658,11 +718,14 @@ fi
 garantir_rede_do_proxy
 # O `up -d` falha por imagem ausente no disco e, com ele, a atualização inteira:
 # numa VPS de arquitetura diferente da das imagens publicadas o `pull` acima não
-# traz nada, e o `app` — ao contrário do worker e do scheduler — não tem `build:`
-# ao lado do `image:`, então o Compose não tem como construí-lo. Sem esta guarda
-# o script terminava como se tivesse dado certo e o dono ficava na versão velha
-# sem saber; pelo botão "Atualizar" do site, pior: o agente roda sozinho no cron
-# e não há ninguém lendo a tela para desconfiar.
+# traz nada. Worker, scheduler e voz têm `build:` ao lado do `image:` e o
+# Compose os constrói sozinho em QUALQUER falha de pull (medido — tag
+# inexistente, registro fora por DNS, "no matching manifest"); o `app` NÃO tem,
+# de propósito (#1060) — é a falta da imagem dele que faz o `up -d` falhar e
+# entrega a decisão a esta guarda, única que julga quando o registro não
+# responde. Sem ela o script terminava como se tivesse dado certo e o dono
+# ficava na versão velha sem saber; pelo botão "Atualizar" do site, pior: o
+# agente roda sozinho no cron e não há ninguém lendo a tela para desconfiar.
 #
 # O gatilho é o CÓDIGO DE SAÍDA, nunca o texto do erro — arquitetura da VPS, tag
 # ainda publicando, pacote privado no registro e registro fora do ar caem no
@@ -684,11 +747,31 @@ garantir_rede_do_proxy
 manutencao_desce
 CONSTRUIU_AQUI=""
 if ! dc up -d; then
+  # ── O PORTÃO DO BUILD LOCAL (#1955, critério 2) ─────────────────────────
+  # O gatilho continua sendo o CÓDIGO DE SAÍDA do `up -d` (nunca o texto do
+  # erro — arquitetura, tag publicando, pacote privado e registro fora caem no
+  # mesmo caminho), mas a CONSTRUÇÃO deixou de ser o que acontece SOZINHO
+  # quando quem falhou é o REGISTRO: foi o que transformou um apagão de DNS em
+  # OOM no `next-build` e a instalação em 502.
+  #
+  # Quem tem registro respondendo continua se recuperando sozinho — é a
+  # recuperação de arquitetura do #1060/#1143 e ela não pode sumir. Quem quer
+  # construir de propósito pede com DESKCOMM_BUILD_LOCAL=1.
+  if ! build_local_permitido "$VERSAO_ALVO"; then
+    c_red "✖ A atualização não terminou: o registro de imagens não responde, e a construção local está DESLIGADA por padrão."
+    c_ylw "  Sem resposta do registro (DNS/rede) a construção local gastaria a memória"
+    c_ylw "  desta VPS e deixaria os serviços parados — é exatamente o defeito da #1955."
+    c_ylw "  A versão anterior volta sozinha no fim desta saída; o diagnóstico fica em:"
+    c_ylw "    .deskcomm-update-diagnostico.log"
+    c_ylw "  Para construir as imagens aqui DE PROPÓSITO (mais lento, exige memória):"
+    c_ylw "    DESKCOMM_BUILD_LOCAL=1 bash hostgator-setup-kit/update.sh --to $TARGET_TAG --force"
+    exit 1
+  fi
   if construir_aqui_e_subir "$VERSAO_ALVO"; then
     CONSTRUIU_AQUI=1
   else
     c_red "✖ A atualização não terminou: nem as imagens prontas desta versão nem a construção aqui funcionaram."
-    c_ylw "  O CRM segue no ar, na versão anterior. O erro está logo acima;"
+    c_ylw "  A versão anterior volta sozinha no fim desta saída. O erro está logo acima;"
     c_ylw "  para reproduzir só a construção: docker compose $(dc_files) -f ${COMPOSE_BUILD} build"
     exit 1
   fi
@@ -726,11 +809,24 @@ step "Conferindo se o app voltou no ar"
 ok=""
 wait_app_healthy 20 3 >/dev/null && ok=1
 if [ -n "$ok" ]; then
-  # O marcador que a guarda de ARM lê (#1778). Instalação ARM nova é recusada,
-  # então toda instalação ARM que existe veio de antes do marcador e só seria
-  # reconhecida pelo contêiner — que um `down` sem `-v` apaga. Gravar aqui, com
-  # o app saudável, fecha esse caso a partir desta atualização. Falhar em
-  # gravar não desfaz nada: a guarda segue caindo no sinal do contêiner.
+  # ── E OS OUTROS SERVIÇOS? (#1955, critério 6) ─────────────────────────
+  # O app responder não é o parque inteiro de pé: worker, scheduler e o proxy
+  # sobem no MESMO `up -d` e podem ter ficado em `Created`/`Exited` pela mesma
+  # imagem que faltou. A promessa da issue é "saiem saudáveis OU o rollback
+  # roda" — e rollback só roda se alguém CONSTATAR o serviço fora. Lista vazia
+  # (o `ps` não respondeu) não derruba nada: só se devolve a versão anterior
+  # havendo um serviço positivamente fora do ar.
+  FORA_DO_AR="$(servicos_fora_do_ar || true)"
+  if [ -n "$FORA_DO_AR" ]; then c_red "✖ O app respondeu, mas estes serviços NÃO subiram: $FORA_DO_AR"; c_ylw "  Voltando para a versão anterior automaticamente — o desfecho está no fim desta saída."; exit 1; fi
+  # Daqui para baixo a atualização ACABOU: é o único ponto em que todas as
+  # peças provaram estar de pé, e por isso é aqui que o rollback é desarmado.
+  UPDATE_STATUS="concluído"
+  desarmar_rollback_de_versao
+  # O marcador que a guarda de arquitetura lê (#1778). Instalações antigas só
+  # seriam reconhecidas pelo contêiner — que um `down` sem `-v` apaga. Gravar
+  # aqui, com o app saudável, fecha esse caso a partir desta atualização.
+  # Falhar em gravar não desfaz nada: a guarda segue caindo no sinal do
+  # contêiner para arquiteturas que ainda não têm imagens publicadas.
   marcar_instalacao_feita "$TARGET_TAG" || true
   if [ -n "$BANCO_INCOMPLETO" ]; then
     c_ylw "⚠ App no ar e saudável, mas o banco NÃO terminou limpo — o que fazer está no fim desta saída."
@@ -754,26 +850,9 @@ if [ -n "$ok" ]; then
   fi
   # Dito aqui pelo mesmo motivo do pin: é no fim que o dono lê.
   if [ -n "$AVISO_SITE_URL" ]; then
-    DOM_AVISO="$(printf '%s' "${NEXT_PUBLIC_APP_URL:-https://SEU_DOMINIO}")"
-    cat <<AVISO
-
-$(c_ylw "  ─── CONFIRA UMA COISA, UMA VEZ SÓ ─────────────────────")
-
-  Os e-mails de acesso (esqueci minha senha, confirmação de cadastro,
-  aceite de convite) levam para o endereço que estiver em Authentication
-  → URL Configuration, no painel do Supabase. Instalações feitas antes de
-  o instalador perguntar o token do Supabase ficaram com o padrão de
-  projeto novo, \`http://localhost:3000\`, que só existe na máquina de
-  quem desenvolve — e aí ninguém consegue redefinir a própria senha.
-
-  Vale conferir. Se já estiver com os valores abaixo, não há nada a fazer:
-
-       Site URL:       ${DOM_AVISO}
-       Redirect URLs:  ${DOM_AVISO%/}/auth/confirm
-
-  Este aviso não se repete — para o instalador cuidar disso sozinho, rode
-  o update com \`export SUPABASE_ACCESS_TOKEN=sbp_...\` no ambiente.
-AVISO
+    # O texto depende da topologia (single-server não tem o que conferir):
+    # ver aviso_do_site_url, em _common.sh.
+    aviso_do_site_url "${NEXT_PUBLIC_APP_URL:-https://SEU_DOMINIO}"
     : > "$MARCA_AVISO_SITE_URL" 2>/dev/null || true
   fi
 else

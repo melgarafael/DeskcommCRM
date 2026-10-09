@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 /**
@@ -45,10 +45,23 @@ function comEnv(redisUrl: string, redisToken: string) {
   }));
 }
 
+/**
+ * Os endereços que a rota tentou alcançar. O spy deixa a chamada passar (não
+ * troca o `fetch`): o que se mede é se a tentativa EXISTIU, e o controle
+ * positivo abaixo prova que o spy enxerga a chamada ao Redis quando ela existe.
+ */
+function enderecosTentados(espiao: { mock: { calls: unknown[][] } }): string[] {
+  return espiao.mock.calls.map(([alvo]) => (alvo instanceof Request ? alvo.url : String(alvo)));
+}
+
 describe("GET /api/v1/health — o motivo aponta para o que precisa ser feito", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.doUnmock("@/lib/env");
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("⭐ `.env` com as aspas sobrando: o motivo é a CONFIGURAÇÃO, e o serviço nem é procurado", async () => {
@@ -56,16 +69,19 @@ describe("GET /api/v1/health — o motivo aponta para o que precisa ser feito", 
     comEnv('"https://fila-do-cliente.exemplo:80"', "token-de-teste");
     const { GET } = await import("@/app/api/v1/health/route");
 
-    const t0 = Date.now();
+    const espiao = vi.spyOn(globalThis, "fetch");
+
     const { data } = await (await GET(pedido())).json();
-    const decorrido = Date.now() - t0;
 
     expect(data.checks.redis.reason).toBe("configuracao_invalida");
     expect(data.checks.redis.status).toBe("down");
     // Sem ida à rede: um endereço que não é endereço não tem o que ser tentado.
-    // O número é folgado de propósito — o que se mede é a AUSÊNCIA da tentativa,
-    // não a latência.
-    expect(decorrido, "houve ida à rede para um endereço malformado").toBeLessThan(2_000);
+    // Medido pelo `fetch`, não pelo relógio — o tempo da rota inteira inclui
+    // Supabase e WAHA, e passou de 2s num CI lento sem tentativa nenhuma ao Redis.
+    expect(
+      enderecosTentados(espiao).filter((u) => u.includes("fila-do-cliente.exemplo")),
+      "houve ida à rede para um endereço malformado",
+    ).toEqual([]);
   });
 
   it("⭐ configuração BEM formada e serviço inalcançável: o motivo volta a ser de alcance", async () => {
@@ -74,8 +90,17 @@ describe("GET /api/v1/health — o motivo aponta para o que precisa ser feito", 
     // A porta 9 é reservada (discard) e recusa na hora — nada fica pendurado.
     comEnv("http://127.0.0.1:9", "token-de-teste");
     const { GET } = await import("@/app/api/v1/health/route");
+    const espiao = vi.spyOn(globalThis, "fetch");
 
     const { data } = await (await GET(pedido())).json();
+
+    // O spy NÃO está cego: com endereço bem formado, a tentativa ao Redis
+    // aparece. Sem isto, o `toEqual([])` do caso acima passaria com um spy que
+    // não vê chamada nenhuma.
+    expect(
+      enderecosTentados(espiao).some((u) => u.includes("127.0.0.1:9")),
+      "o spy não viu a ida à rede que a configuração válida faz",
+    ).toBe(true);
 
     expect(data.checks.redis.status).toBe("down");
     expect(

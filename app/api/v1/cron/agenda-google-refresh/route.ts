@@ -132,7 +132,12 @@ export async function renovarAgendasDoGoogle(
 
     const leitura = await renovarToken(app, refresh, { agora: opcoes.agora });
     if (!leitura.ok) {
-      const classificacao = classificarErroDoGoogle({ error: leitura.detalhe }, "token");
+      // O status vai junto (#2393): sem ele, uma recusa 400 do Google virava
+      // "sem resposta" na tela e `transitorio` na classificação.
+      const classificacao = classificarErroDoGoogle(
+        { error: leitura.detalhe, status: leitura.status },
+        "token",
+      );
       const novoEstado = estadoDaConexaoApos(classificacao.desfecho);
       if (novoEstado && novoEstado !== "healthy") {
         await marcarConexao(admin, linha, novoEstado, classificacao.mensagem);

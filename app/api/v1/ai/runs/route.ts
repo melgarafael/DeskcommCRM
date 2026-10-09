@@ -14,6 +14,7 @@ import type { NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { PROVEDOR_DO_JEV } from "@/lib/ai/decisao/credencial";
+import { CONFERENCIA_DE_CAMPO, PEDIDOS_DO_CLIENTE, rotuloDaChamadaDoJev } from "@/lib/ai/decisao/tarefas";
 import {
   JEV_FALHOU_AO_LADO,
   JEV_FALHOU_E_A_IA_COBRIU,
@@ -131,11 +132,14 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const execucoes = ((data ?? []) as LinhaDeExecucao[]).map((l) => {
     const ponto = PONTO_POR_ID.get(l.purpose);
+    // As chamadas do Jev sem ponto (os pedidos, a conferência de campo) têm o porquê delas.
+    const chamadaSemPonto = [PEDIDOS_DO_CLIENTE, CONFERENCIA_DE_CAMPO].find((c) => c.purpose === l.purpose);
     return {
       ...l,
       // O nome de gente do ponto. Sem isto a tela mostraria `flywheel_judge`, e
-      // o operador não tem por que saber o que é isso.
-      pontoRotulo: ponto?.rotulo ?? l.purpose,
+      // o operador não tem por que saber o que é isso. A chamada do Jev que não
+      // é de ponto nenhum (os pedidos do cliente) tem o nome dela.
+      pontoRotulo: ponto?.rotulo ?? rotuloDaChamadaDoJev(l.purpose) ?? l.purpose,
       // "typesafe" na coluna, "Jev (TypeSafe AI)" na tela.
       provedorRotulo: rotuloDoProvedor(l.provider) ?? l.provider,
       // A consequência daquele ponto falhar, que é o que liga uma linha de log
@@ -144,22 +148,31 @@ export async function GET(req: NextRequest): Promise<Response> {
       //  - `jev_cobriu`: a IA de sempre caiu em observação, mas a nota do Jev
       //    já estava na mão e decidiu;
       //  - `jev_observacao`: o Jev falhou numa tarefa do turno (a manipulação,
-      //    o roteador) — o turno seguiu como sem ele;
+      //    o roteador, a resposta ao follow-up) — o turno seguiu como sem ele;
       //  - `reserva_do_jev` numa linha de erro: o roteador decidindo, e a IA de
-      //    sempre escolheu o agente no lugar do Jev.
+      //    sempre escolheu o agente no lugar do Jev;
+      //  - `economico_coberto_pela_reserva`: o modelo econômico foi recusado e a
+      //    mesma chamada se repetiu no modelo de antes.
       // A falha do Jev com origem `jev` é a do clima sem reserva: aí é real.
       consequencia:
         l.status === "erro" &&
         l.origem_da_escolha !== "jev_cobriu" &&
         l.origem_da_escolha !== "jev_observacao" &&
-        l.origem_da_escolha !== "reserva_do_jev"
+        l.origem_da_escolha !== "reserva_do_jev" &&
+        l.origem_da_escolha !== "economico_coberto_pela_reserva"
           ? (ponto?.sintomaDeFalha ?? null)
           : null,
       oQueFazer: l.status === "erro" ? (O_QUE_FAZER[l.error_code ?? ""] ?? null) : null,
       // Nas linhas de falha do Jev, a frase da origem ("O Jev decidiu.", "O Jev
-      // observou…") seria falsa — ele não respondeu.
+      // observou…") seria falsa — ele não respondeu. As chamadas sem ponto têm as
+      // delas: nos pedidos ele não decide nem compara, e sem ele vale a regra; na
+      // conferência de campo, sem ele o campo é gravado como antes.
       porQueEsteModelo:
-        l.status === "erro" && l.origem_da_escolha === "jev"
+        chamadaSemPonto !== undefined
+          ? l.status === "erro"
+            ? chamadaSemPonto.porQueNaFalha
+            : chamadaSemPonto.porQue
+          : l.status === "erro" && l.origem_da_escolha === "jev"
           ? JEV_FALHOU_SEM_RESERVA
           : l.status === "erro" && l.origem_da_escolha === "jev_observacao"
             ? JEV_FALHOU_AO_LADO

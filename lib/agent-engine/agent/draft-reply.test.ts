@@ -40,6 +40,7 @@ const AGENT: PublishedAgentConfig = {
   proposalAiDraftEnabled: true,
   splitMessages: false,
   splitMaxChars: 400,
+  inboundDebounceMs: null,
   multimodalInput: false,
   casesEnabled: false,
   toolIds: [],

@@ -6,7 +6,12 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
 import { MagnifyingGlass } from "@/lib/ui/icons";
-import { NAV_GROUPS, searchable, type NavDestination, type NavGroupId } from "@/lib/navigation/registry";
+import {
+  NAV_GROUPS,
+  searchable,
+  type NavDestination,
+  type NavGroupId,
+} from "@/lib/navigation/registry";
 import { cn } from "@/lib/utils";
 
 /**
@@ -37,7 +42,22 @@ export function CommandPalette({
   const t = useT();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="top-[10%] max-w-2xl translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-3xl">
+      {/*
+        CENTRALIZADA, e não mais ancorada em `top-[10%]`.
+
+        O ancoramento no alto é convenção de paleta de comando em editor, mas
+        aqui ele brigava com a animação de entrada que este mesmo ramo
+        acrescentou: `ds-modal` termina num deslocamento próprio e, com
+        `fill-mode: both`, esse valor vence o `translate-y-0` daqui — a paleta
+        era puxada meia altura para cima e saía cortada no topo.
+
+        O keyframe passou a ler `--ds-modal-y` (ver `app/globals.css`), então
+        ancorar diferente voltou a ser possível. Mas centralizar é melhor para
+        ESTA tela: a paleta mostra resultados agrupados com descrição e, no
+        notebook, passava do rodapé. Centralizada, a sobra se reparte nas duas
+        pontas e o teto do `DialogContent` resolve o resto com rolagem.
+      */}
+      <DialogContent className="max-w-2xl gap-0 overflow-hidden p-0 sm:max-w-3xl">
         <DialogTitle className="sr-only">{t("Buscar telas")}</DialogTitle>
         {/* O miolo é um componente à parte porque o Radix o DESMONTA ao fechar:
             busca e destaque nascem zerados na próxima abertura por construção,
@@ -87,14 +107,18 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
       const casaCategoria = categoriaAtiva === "todos" || d.group === categoriaAtiva;
       if (!casaCategoria) return false;
       if (!termo) return true;
-      return normalizar(`${d.label} ${d.description} ${ROTULO_GRUPO.get(d.group) ?? ""}`).includes(termo);
+      return normalizar(`${d.label} ${d.description} ${ROTULO_GRUPO.get(d.group) ?? ""}`).includes(
+        termo,
+      );
     });
     if (termo) return filtrados;
     // O catálogo não é contíguo por grupo (a Prospecção, de CRM, vem antes do
     // Inbox). Sem reordenar, a 1ª seção seria a do 1º item e as setas, que
     // andam por este array, pulariam de uma seção para outra. Ordenado pelo
     // NAV_GROUPS, a ordem do array é a ordem da tela. O sort é estável.
-    return [...filtrados].sort((a, b) => (ORDEM_GRUPO.get(a.group) ?? 0) - (ORDEM_GRUPO.get(b.group) ?? 0));
+    return [...filtrados].sort(
+      (a, b) => (ORDEM_GRUPO.get(a.group) ?? 0) - (ORDEM_GRUPO.get(b.group) ?? 0),
+    );
   }, [busca, visiveis, categoriaAtiva]);
 
   // Agrupamento para exibição visual estruturada quando não há busca específica digitada
@@ -158,7 +182,9 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
           value={busca}
           onChange={(e) => aoDigitar(e.target.value)}
           onKeyDown={aoTeclar}
-          placeholder={t("Buscar por nome, objetivo ou função (ex: leads, agenda, prompt, whatsapp)...")}
+          placeholder={t(
+            "Buscar por nome, objetivo ou função (ex: leads, agenda, prompt, whatsapp)...",
+          )}
           className="h-13 w-full bg-transparent text-sm text-foreground outline-hidden placeholder:text-muted-foreground"
         />
         {busca && (
@@ -178,7 +204,7 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
           type="button"
           onClick={() => mudarCategoria("todos")}
           className={cn(
-            "rounded-md px-2.5 py-1 font-medium transition-colors whitespace-nowrap",
+            "rounded-md px-2.5 py-1 font-medium whitespace-nowrap transition-colors",
             categoriaAtiva === "todos"
               ? "bg-foreground text-background shadow-xs"
               : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -194,7 +220,7 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
               type="button"
               onClick={() => mudarCategoria(cat.id)}
               className={cn(
-                "rounded-md px-2.5 py-1 font-medium transition-colors whitespace-nowrap",
+                "rounded-md px-2.5 py-1 font-medium whitespace-nowrap transition-colors",
                 categoriaAtiva === cat.id
                   ? "bg-foreground text-background shadow-xs"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -211,7 +237,9 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
           <p className="font-medium text-foreground">
             {t("Nada encontrado para")} “{busca}”.
           </p>
-          <p className="mt-1 text-xs">{t("Tente buscar por outro termo ou selecione 'Todas' nas categorias.")}</p>
+          <p className="mt-1 text-xs">
+            {t("Tente buscar por outro termo ou selecione 'Todas' nas categorias.")}
+          </p>
         </div>
       ) : emModoCatalogo ? (
         /* Modo Catálogo Visível: agrupado por departamentos/módulos para ver tudo de relance */
@@ -226,7 +254,7 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
             return (
               <div key={grupoId} role="group" aria-label={t(rotuloGrupo)} className="space-y-2">
                 <div className="flex items-center justify-between border-b pb-1">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <h3 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
                     {t(rotuloGrupo)}
                   </h3>
                   <span className="text-[11px] text-muted-foreground">
@@ -265,8 +293,15 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
                           <Icon size={16} aria-hidden />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-xs font-semibold leading-tight">{t(d.label)}</p>
-                          <p className={cn("mt-0.5 line-clamp-2 text-[11px] leading-snug", secundario)}>
+                          <p className="truncate text-xs leading-tight font-semibold">
+                            {t(d.label)}
+                          </p>
+                          <p
+                            className={cn(
+                              "mt-0.5 line-clamp-2 text-[11px] leading-snug",
+                              secundario,
+                            )}
+                          >
                             {t(d.description)}
                           </p>
                         </div>
@@ -320,7 +355,12 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2">
                     <span className="text-sm font-medium">{t(d.label)}</span>
-                    <span className={cn("truncate text-[10px] font-medium tracking-wider uppercase", secundario)}>
+                    <span
+                      className={cn(
+                        "truncate text-[10px] font-medium tracking-wider uppercase",
+                        secundario,
+                      )}
+                    >
                       {t(ROTULO_GRUPO.get(d.group) ?? "")}
                     </span>
                   </div>

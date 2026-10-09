@@ -131,4 +131,23 @@ describe("aplicarConvite consulta a LINHA, não só o token", () => {
       motivo: "invalid_or_expired",
     });
   });
+
+  it("⭐ PT402 do gatilho de assentos vira limite_do_plano — não é 'convite vencido' nem 500", async () => {
+    // Spec da cobrança §5 e decisão D-10: a trava de verdade do limite de
+    // pessoas é no ACEITE. Sem este ramo, quem aceita lia "o convite pode ter
+    // vencido" e pedia um link novo — que falharia igual.
+    const { createAdminClient } = await import("@/lib/supabase/admin");
+    const admin = adminComConvite({ revoked_at: null });
+    admin.rpc = vi.fn(async () => ({
+      data: null,
+      error: { code: "PT402", message: "limite_do_plano:assentos:3" },
+    })) as never;
+    vi.mocked(createAdminClient).mockReturnValue(admin as never);
+
+    const { aplicarConvite } = await import("@/lib/auth/aplicar-convite");
+    expect(await aplicarConvite({ userId: USUARIO_ID, payload: PAYLOAD })).toEqual({
+      ok: false,
+      motivo: "limite_do_plano",
+    });
+  });
 });

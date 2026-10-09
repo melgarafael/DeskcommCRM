@@ -46,6 +46,9 @@ export {
   Dot,
   // actions
   ArrowBendUpLeft,
+  // videochamada (#2440): ícone de câmera, não Video (que no Phosphor é a
+  // janela de player) — junto do Phone do DialButton, a família é a mesma.
+  VideoCamera,
   List,
   Bell,
   BellSlash,

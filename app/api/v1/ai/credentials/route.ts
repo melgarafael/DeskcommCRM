@@ -16,7 +16,7 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
-import { guardarCredencial } from "@/lib/ai/credenciais/guardar";
+import { guardarCredencial, MENSAGEM_ASSINATURA_SO_PELO_LOGIN } from "@/lib/ai/credenciais/guardar";
 import { IDS_COM_CHAVE } from "@/lib/ai/pontos/provedores";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -147,6 +147,9 @@ export async function POST(req: NextRequest): Promise<Response> {
         409,
         { requestId },
       );
+    }
+    if (guardado.motivo === "assinatura_so_pelo_login") {
+      return fail("validation_failed", t(MENSAGEM_ASSINATURA_SO_PELO_LOGIN), 422, { requestId });
     }
     return fail("internal_error", "Erro ao criar credential.", 500, { requestId });
   }

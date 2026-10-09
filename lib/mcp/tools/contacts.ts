@@ -27,12 +27,14 @@ const searchInputShape = {
 export const crmSearchContacts: McpToolDefinition<typeof searchInputShape> = {
   name: "crm_search_contacts",
   description:
-    "Busca contatos do CRM por nome, email ou telefone. Retorna ate 50 matches com id, nome, telefone, email, tags e timestamps. Sempre escopado a organization do token.",
+    "Busca contatos do CRM por nome, email ou telefone. Retorna ate 50 matches com id, nome, telefone, email, tags e timestamps. Sempre escopado a organization do token." +
+    " Em conversa de atendimento, devolve apenas o contato desta conversa.",
   inputSchema: searchInputShape,
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
   handler: async (input, ctx) => {
+    const doTurno = ctx.contatoDoTurno;
     const result = await listContactsHandler(
       ctx.supabase,
       {
@@ -45,9 +47,40 @@ export const crmSearchContacts: McpToolDefinition<typeof searchInputShape> = {
         limit: input.limit,
         cursor: input.cursor,
       },
+      // O escopo vai NA CONSULTA, antes do limite: filtrar a página depois
+      // devolvia vazio quando o contato do turno não estava entre os primeiros
+      // que casavam com o termo.
+      doTurno,
     );
+
+    // ── A CONVERSA É COM ALGUÉM (#2158) ─────────────────────────────────────
+    //
+    // A escrita já era escopada pelo contato do turno (`negocioDaEscritaDoTurno`);
+    // a LEITURA não era — e esta é a que devolve telefone E e-mail numa resposta
+    // só. Num atendimento com o cliente A, o modelo buscava "Maria" e recebia a
+    // ficha da cliente B: audit gravando `success: true`, e o dado saía no
+    // WhatsApp do outro lado, encaminhável, sem volta. Diferente da escrita, que
+    // suja um cadastro e dá para corrigir, a leitura sai do prédio.
+    //
+    // ESCOPO, e não tradução: o termo continua sendo o que o modelo digitou, e
+    // continua sendo o `listContactsHandler` que decide o que casa — muda só
+    // QUEM a resposta alcança, e quem alcança é o contato desta conversa. É o
+    // propósito declarado da ferramenta ("saber com quem está falando"), que o
+    // runtime já sabe sem perguntar.
+    //
+    // `ctx.contatoDoTurno` é contexto de CONFIANÇA: nasce no runtime e é
+    // injetado em `lib/ai/runtime/tools.ts` — o modelo não escreve esse campo.
+    // Sem ele (rota HTTP, MCP externo, agente sem conversa), a busca segue
+    // alcançando a base da organização, exatamente como antes. O Operador TEM
+    // contato do turno (`operator-turn.ts` passa `job.contact_id`) e também
+    // fica escopado — o lado seguro, porque ele não fala com o lead.
+    //
+    // A paginação morre junto: `cursor`/`has_more` descrevem a varredura da
+    // ORGANIZAÇÃO, e a próxima página voltaria a ser varredura.
+    const visiveis = doTurno ? result.contacts.filter((c) => c.id === doTurno) : result.contacts;
+
     return {
-      contacts: result.contacts.map((c) => ({
+      contacts: visiveis.map((c) => ({
         id: c.id,
         name: nomeDoContato(c),
         phone: c.phone_number,
@@ -55,11 +88,14 @@ export const crmSearchContacts: McpToolDefinition<typeof searchInputShape> = {
         tags: c.tags ?? [],
         is_blocked: c.is_blocked,
         is_anonymized: c.is_anonymized,
+        // Espelha a coluna como os outros selos: a lista já exclui pessoais por
+        // padrão (etapa 13), e este campo prova o elo coluna → ferramenta.
+        is_personal: c.is_personal,
         created_at: c.created_at,
         last_activity_at: c.last_activity_at,
       })),
-      cursor: result.cursor,
-      has_more: result.has_more,
+      cursor: doTurno ? null : result.cursor,
+      has_more: doTurno ? false : result.has_more,
     };
   },
 };
@@ -71,12 +107,36 @@ const getInputShape = {
 export const crmGetContact: McpToolDefinition<typeof getInputShape> = {
   name: "crm_get_contact",
   description:
-    "Retorna detalhes de um contato pelo UUID. Inclui tags, consent, source. CPF nunca retornado em plaintext via MCP (sempre mascarado).",
+    "Retorna detalhes de um contato pelo UUID. Inclui tags, consent, source. CPF nunca retornado em plaintext via MCP (sempre mascarado)." +
+    " Em conversa de atendimento, devolve a ficha do contato desta conversa.",
   inputSchema: getInputShape,
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
   handler: async (input, ctx) => {
+    // ── A FICHA DE QUEM NÃO É DESTA CONVERSA NÃO ABRE AQUI (#2158) ──────────
+    //
+    // RECUSA, e não tradução: trocar o uuid pedido pelo do contato do turno
+    // faria o modelo perguntar por um cliente e receber outro — a mesma razão
+    // que `lib/ai/runtime/tools.ts` escreve para não trocar `lead_id` em
+    // leitura. Escopar aqui seria trocar, e o pedido é de ficha, não de busca.
+    //
+    // O motivo vem em TEXTO, na mesma forma que `negocioDaEscritaDoTurno`
+    // devolve ao modelo, para ele ler por que foi recusado e seguir a conversa
+    // sem gastar turno numa exceção. `ctx.contatoDoTurno` é contexto de
+    // CONFIANÇA (injetado pelo runtime, nunca escrito pelo modelo); sem ele —
+    // rota HTTP, MCP externo, agente sem conversa — a ficha de qualquer
+    // contato da organização segue abrindo como antes. O Operador recebe o
+    // contato do turno e também é recusado aqui.
+    if (ctx.contatoDoTurno && input.contact_id !== ctx.contatoDoTurno) {
+      return {
+        permitido: false,
+        motivo: "fora_da_conversa",
+        mensagem:
+          "esta conversa é com outra pessoa — a ficha de um cliente que não é o desta conversa " +
+          "não é sua para abrir; siga a conversa com quem está falando.",
+      };
+    }
     const contact = await getContactHandler(
       ctx.supabase,
       {
@@ -86,6 +146,20 @@ export const crmGetContact: McpToolDefinition<typeof getInputShape> = {
       },
       { contactId: input.contact_id, decryptPurpose: null },
     );
+    // ── A FICHA DE PESSOAL NÃO SAI PELO MCP (spec 21, etapa 12) ─────────────
+    //
+    // RECUSA no tool, com motivo em texto para o modelo (molde do #2158 acima):
+    // a ficha carrega telefone e e-mail, e pessoal está fora da operação. A
+    // ficha da TELA continua abrindo — é nela que mora o botão desmarcar (D10).
+    if (contact.is_personal === true) {
+      return {
+        permitido: false,
+        motivo: "contato_pessoal",
+        mensagem:
+          "este contato foi marcado como pessoal — ele está fora da operação: a ficha " +
+          "não é sua para abrir e nada se escreve para ele; siga a conversa com quem está falando.",
+      };
+    }
     return {
       id: contact.id,
       name: contact.name,
@@ -97,6 +171,7 @@ export const crmGetContact: McpToolDefinition<typeof getInputShape> = {
       consent: contact.consent ?? {},
       is_blocked: contact.is_blocked,
       is_anonymized: contact.is_anonymized,
+      is_personal: contact.is_personal,
       cpf_available: contact.cpf_available,
       created_at: contact.created_at,
       last_activity_at: contact.last_activity_at,

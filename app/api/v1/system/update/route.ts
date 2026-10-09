@@ -10,6 +10,7 @@ import type { NextRequest } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { falhaDaEscritaDePlatformAdmin, requirePlatformAdminEscrita } from "@/lib/auth/requirePlatformAdmin";
 import { loadAuthUser } from "@/lib/auth/server";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -27,8 +28,12 @@ export async function POST(_req: NextRequest): Promise<Response> {
   // `unauthenticated` (não `unauthorized`): esse último é reservado ao segredo
   // interno das rotas host↔app (lib/api/errors.ts) — aqui falta é sessão.
   if (!user) return fail("unauthenticated", "Faça login para continuar.", 401);
-  if (!user.is_platform_admin) {
-    return fail("forbidden", "Só o dono do servidor pode atualizar o sistema.", 403);
+  // Atualizar o servidor é ESCRITA da instalação: support_readonly e sessão com
+  // dívida de MFA não disparam. O 401 acima fica: sem sessão é `unauthenticated`.
+  try {
+    await requirePlatformAdminEscrita();
+  } catch (err) {
+    return falhaDaEscritaDePlatformAdmin(err, undefined, "Só o dono do servidor pode atualizar o sistema.");
   }
 
   const db = createAdminClient();

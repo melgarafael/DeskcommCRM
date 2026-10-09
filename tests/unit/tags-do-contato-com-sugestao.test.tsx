@@ -157,7 +157,7 @@ describe("ContactTagsEditor", () => {
     // leituras na mesma tela (o vocabulário das sugestões e o mapa de cores).
     get.mockImplementation(async (url: string) =>
       url === "/api/v1/tags/cores"
-        ? { data: [{ tag: "google", cor: "#e54d2e" }] }
+        ? { data: [{ tag: "google", cor: "#e35537" }] }
         : { data: ["google", "vip"] },
     );
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -172,7 +172,7 @@ describe("ContactTagsEditor", () => {
     const google = await screen.findByRole("button", { name: "+ google" }, { timeout: 5000 });
     const ponto = google.querySelector('[data-ponto-da-etiqueta="google"]');
     expect(ponto).not.toBeNull();
-    expect(ponto?.getAttribute("style") ?? "").toMatch(/rgb\(229,\s*77,\s*46\)|#e54d2e/i);
+    expect(ponto?.getAttribute("style") ?? "").toMatch(/rgb\(227,\s*85,\s*55\)|#e35537/i);
 
     // A que não tem cor continua sem ponto: um ponto cinza ao lado de cada
     // etiqueta transformaria "não escolhi" em "escolhi cinza".

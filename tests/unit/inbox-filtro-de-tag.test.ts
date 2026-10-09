@@ -47,7 +47,7 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/auth/server", () => ({
   mfaEmDivida: vi.fn(async () => false),
   loadAuthUser: async () => ({ id: "u-1" }),
-  resolveActiveOrg: async () => ({ orgId: "org-1", role: "agent" }),
+  orgAtivaSemPortao: async () => ({ orgId: "org-1", role: "agent", org_status: "active" }),
 }));
 
 /** A query que o handler recebeu na última chamada. */

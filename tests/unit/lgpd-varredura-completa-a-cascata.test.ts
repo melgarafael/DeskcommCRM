@@ -33,6 +33,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MAX_CONTATOS_EXAMINADOS,
   MAX_CONTATOS_POR_VARREDURA,
+  MENSAGEM_REDIGIDA,
   NOTA_REDIGIDA,
   SUFIXO_ANONIMIZADO,
   type ClienteDaCascata,
@@ -92,7 +93,7 @@ interface Linha {
   payload?: unknown;
   is_anonymized?: boolean;
   headline?: string;
-  body?: string;
+  body?: string | null;
   tool_calls?: unknown;
   social_identity?: unknown;
   next_action?: string | null;
@@ -103,6 +104,7 @@ interface Linha {
   completed_at?: string | null;
   cancel_reason?: string | null;
   embedding?: unknown;
+  media_derived_text?: string | null;
 }
 
 interface Escrita {
@@ -133,6 +135,7 @@ function banco(linhas: Linha[]) {
         filtros: Array<[string, unknown]>,
         dentro: [string, string[]] | null,
         faixas: Array<[string, string]> = [],
+        naoNulos: string[] = [],
       ): Linha[] =>
         linhas.filter((l) => {
           if ((l.id.split(":")[0] ?? "") !== tabela) return false;
@@ -144,6 +147,12 @@ function banco(linhas: Linha[]) {
           for (const [col, val] of faixas) {
             const atual = (l as unknown as Record<string, string | undefined>)[col];
             if (atual === undefined || !(atual < val)) return false;
+          }
+          // `.not(col, "is", null)` do passo da transcrição (0497). Ignorá-lo
+          // faria a mensagem já limpa voltar como resíduo e mascararia a idempotência.
+          for (const col of naoNulos) {
+            const atual = (l as unknown as Record<string, unknown>)[col];
+            if (atual === null || atual === undefined) return false;
           }
           // O `.in()` da cascata vem em DUAS colunas — `id` no UPDATE das
           // atividades, `contact_id` na detecção em bloco. Um dublê que
@@ -162,6 +171,7 @@ function banco(linhas: Linha[]) {
       ) => {
         const filtros: Array<[string, unknown]> = [];
         const faixas: Array<[string, string]> = [];
+        const naoNulos: string[] = [];
         let dentro: [string, string[]] | null = null;
         let teto: number | null = null;
         const q: Record<string, unknown> = {
@@ -177,6 +187,10 @@ function banco(linhas: Linha[]) {
             dentro = [col, vals];
             return q;
           },
+          not: (col: string) => {
+            naoNulos.push(col);
+            return q;
+          },
           select: () => q,
           order: () => q,
           limit: (n: number) => {
@@ -184,7 +198,7 @@ function banco(linhas: Linha[]) {
             return q;
           },
           then: (r: (v: unknown) => unknown) => {
-            let achadas = casar(filtros, dentro, faixas);
+            let achadas = casar(filtros, dentro, faixas, naoNulos);
             if (teto !== null) achadas = achadas.slice(0, teto);
             if (modo === "update") {
               aplicar(tabela, patch, achadas);
@@ -386,6 +400,7 @@ describe("a unidade que as duas bocas compartilham", () => {
       runsRedigidas: 0,
       estadosRedigidos: 0,
       socialIdentidadeRedigida: false,
+      transcricoesRedigidas: 0,
       tabelas: [],
       falhas: [],
     };
@@ -396,6 +411,7 @@ describe("a unidade que as duas bocas compartilham", () => {
     expect(houveRedacao({ ...vazio, runsRedigidas: 1 })).toBe(true);
     expect(houveRedacao({ ...vazio, estadosRedigidos: 1 })).toBe(true);
     expect(houveRedacao({ ...vazio, socialIdentidadeRedigida: true })).toBe(true);
+    expect(houveRedacao({ ...vazio, transcricoesRedigidas: 1 })).toBe(true);
   });
 
   it("⭐ `tabelas` lista só o que foi tocado — não o literal das três", async () => {
@@ -532,6 +548,73 @@ describe("a unidade que as duas bocas compartilham", () => {
     await varrerRedacoesIncompletas(alvo.cliente);
     const run = alvo.linhas.find((l) => l.id === "ai_agent_runs:1")!;
     expect(run.tool_calls, "reescreveu uma run que nunca teve argumentos").toEqual([]);
+  });
+});
+
+describe("a transcrição da mídia sai junto (0497, triagem do #1988)", () => {
+  // O banco redige o body da mensagem na virada de is_anonymized; a transcrição
+  // (`media_derived_text`) ficava. A varredura é quem alcança a que o
+  // `media-derive-worker` grava DEPOIS da anonimização — nenhum gatilho dispara ali.
+  const audio = (sufixo: string, over: Partial<Linha> = {}): Linha => ({
+    id: `messages:${sufixo}`,
+    organization_id: ORG,
+    contact_id: "contacts:a",
+    body: MENSAGEM_REDIGIDA,
+    media_derived_text: "oi, aqui é a Maria, meu CPF é 123",
+    ...over,
+  });
+
+  it("⭐ mensagem anonimizada que guardou a transcrição: a varredura apaga", async () => {
+    alvo = banco([contatoAnonimizado(), audio("1")]);
+
+    const r = await varrerRedacoesIncompletas(alvo.cliente);
+
+    expect(r.completados).toHaveLength(1);
+    expect(r.completados[0]!.resultado.transcricoesRedigidas).toBe(1);
+    expect(r.completados[0]!.resultado.tabelas).toContain("messages:media_derived_text");
+    expect(alvo.linhas.find((l) => l.id === "messages:1")!.media_derived_text).toBeNull();
+  });
+
+  it("⭐ poupa quem voltou a escrever, o vizinho e a outra org", async () => {
+    alvo = banco([
+      contatoAnonimizado(),
+      // body de verdade: mensagem NOVA de quem voltou (religado pelo LID).
+      audio("nova", { body: null, media_derived_text: "voltei, quero o orçamento" }),
+      // mesmo body-sentinela, mas de OUTRO contato da mesma org, não anonimizado.
+      audio("vizinho", { contact_id: "contacts:b" }),
+      // mesmo contact_id em OUTRA org — só existe se algo já vazou.
+      audio("outra-org", { organization_id: OUTRA_ORG }),
+    ]);
+
+    const r = await varrerRedacoesIncompletas(alvo.cliente);
+
+    expect(r.completados).toEqual([]);
+    expect(alvo.linhas.find((l) => l.id === "messages:nova")!.media_derived_text).toBe("voltei, quero o orçamento");
+    expect(alvo.linhas.find((l) => l.id === "messages:vizinho")!.media_derived_text).not.toBeNull();
+    expect(alvo.linhas.find((l) => l.id === "messages:outra-org")!.media_derived_text).not.toBeNull();
+  });
+
+  it("⭐ idempotente: a segunda passada não escreve nada", async () => {
+    alvo = banco([contatoAnonimizado(), audio("1"), audio("2")]);
+
+    const primeira = await varrerRedacoesIncompletas(alvo.cliente);
+    expect(primeira.completados[0]!.resultado.transcricoesRedigidas).toBe(2);
+    const escritas = alvo.escritas.length;
+
+    const segunda = await varrerRedacoesIncompletas(alvo.cliente);
+
+    expect(segunda.completados).toEqual([]);
+    expect(alvo.escritas.length).toBe(escritas);
+  });
+
+  it("a rota (completarRedacaoDoContato) apaga pelo mesmo passo", async () => {
+    alvo = banco([contatoAnonimizado(), audio("1")]);
+
+    const r = await completarRedacaoDoContato(alvo.cliente, { id: "contacts:a", organizationId: ORG });
+
+    expect(r.transcricoesRedigidas).toBe(1);
+    expect(houveRedacao(r)).toBe(true);
+    expect(alvo.linhas.find((l) => l.id === "messages:1")!.media_derived_text).toBeNull();
   });
 });
 

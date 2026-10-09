@@ -15,6 +15,8 @@ import {
   JEV_FALHOU_SEM_RESERVA,
   O_QUE_FAZER_DO_JEV,
 } from "@/lib/ai/decisao/textos";
+import { CONFERENCIA_DE_CAMPO, PEDIDOS_DO_CLIENTE } from "@/lib/ai/decisao/tarefas";
+import { DICIONARIO } from "@/lib/i18n/dicionario";
 import { PONTO_POR_ID } from "@/lib/ai/pontos/registro";
 import { EXPLICACAO_DA_ORIGEM } from "@/lib/ai/pontos/resolver";
 import { requireRole } from "@/lib/auth/require-role";
@@ -118,6 +120,78 @@ describe("GET /api/v1/ai/runs", () => {
       "Anthropic (Claude)",
       "fornecedor-que-saiu",
     ]);
+  });
+
+  /**
+   * A chamada do Jev que pergunta os pedidos do cliente não é ponto do registro
+   * (não há modelo para escolher ali): sem o nome dela, a tela mostraria
+   * `jev_pedidos`. A falha que pede ação dela não afirma consequência — nada no
+   * atendimento dependia do Jev. E o "por quê" é dela: os textos de origem do
+   * Jev falam de decidir, de comparar e da "IA de sempre", e aqui nenhum vale.
+   */
+  it("a chamada dos pedidos do cliente chega com nome de gente, com o porquê dela, e a falha sem consequência", async () => {
+    linhas = [
+      linha({ purpose: "jev_pedidos", provider: "typesafe", model: "typesafe/jev-1.13.0", origem_da_escolha: "jev_observacao" }),
+      linha({
+        purpose: "jev_pedidos",
+        provider: "typesafe",
+        status: "erro",
+        error_code: "jev_sem_credito",
+        origem_da_escolha: "jev_observacao",
+      }),
+      linha({ purpose: "ponto_que_ninguem_conhece" }),
+      // Avisando a equipe, a origem é `jev` — e mesmo assim ele não "decidiu" nada.
+      linha({ purpose: "jev_pedidos", provider: "typesafe", model: "typesafe/jev-1.13.0", origem_da_escolha: "jev" }),
+    ];
+    const { corpo } = await pedir();
+    const [ok, falha, estranho, avisando] = corpo.data.execucoes;
+    expect(ok.pontoRotulo).toBe("Perceber pedidos do cliente");
+    expect(ok.porQueEsteModelo).toBe(PEDIDOS_DO_CLIENTE.porQue);
+    expect(avisando.porQueEsteModelo).toBe(PEDIDOS_DO_CLIENTE.porQue);
+    expect(falha).toMatchObject({
+      pontoRotulo: "Perceber pedidos do cliente",
+      consequencia: null,
+      porQueEsteModelo: PEDIDOS_DO_CLIENTE.porQueNaFalha,
+      oQueFazer: O_QUE_FAZER_DO_JEV.jev_sem_credito,
+    });
+    for (const texto of [ok.porQueEsteModelo, avisando.porQueEsteModelo, falha.porQueEsteModelo]) {
+      expect(texto).not.toMatch(/decidiu|comparar|IA de sempre/);
+    }
+    // A chamada sai em quase toda mensagem — quase todas são perguntas comuns.
+    // O porquê não pode pressupor que houve um pedido ("não reconheceu o
+    // pedido"): 100 linhas leriam como 100 pedidos perdidos. E ela sai também
+    // quando a regra pegou o OUTRO pedido ("quero falar com um atendente" é
+    // perguntado só sobre parar de receber): o porquê não pode dizer que a
+    // regra não viu pedido NENHUM. É uma pergunta sobre esta mensagem.
+    for (const texto of [PEDIDOS_DO_CLIENTE.porQue, DICIONARIO[PEDIDOS_DO_CLIENTE.porQue]?.es ?? ""]) {
+      expect(texto, "a tradução existe (controle)").not.toBe("");
+      expect(texto).not.toMatch(/\bo pedido\b|\bel pedido\b|reconheceu|reconoció/i);
+      expect(texto).not.toMatch(/não viu pedido|no vio ningún pedido|nenhum pedido|ningún pedido/i);
+      expect(texto).toMatch(/perguntado se esta mensagem|preguntó a Jev si este mensaje/);
+    }
+    // Controle: o purpose desconhecido segue saindo como está.
+    expect(estranho.pontoRotulo).toBe("ponto_que_ninguem_conhece");
+  });
+
+  it("a conferência de campo do negócio (#2234) chega com nome de gente e o porquê dela, no sucesso e na falha", async () => {
+    linhas = [
+      linha({ purpose: CONFERENCIA_DE_CAMPO.purpose, provider: "typesafe", model: "typesafe/jev-1.13.0", origem_da_escolha: "jev" }),
+      linha({
+        purpose: CONFERENCIA_DE_CAMPO.purpose,
+        provider: "typesafe",
+        status: "erro",
+        error_code: "jev_sem_credito",
+        origem_da_escolha: "jev_observacao",
+      }),
+    ];
+    const { corpo } = await pedir();
+    const [ok, falha] = corpo.data.execucoes;
+    expect(ok).toMatchObject({ pontoRotulo: CONFERENCIA_DE_CAMPO.rotulo, porQueEsteModelo: CONFERENCIA_DE_CAMPO.porQue });
+    expect(falha).toMatchObject({
+      pontoRotulo: CONFERENCIA_DE_CAMPO.rotulo,
+      consequencia: null,
+      porQueEsteModelo: CONFERENCIA_DE_CAMPO.porQueNaFalha,
+    });
   });
 
   it("a reserva que cobriu o Jev não carrega consequência; a falha sem reserva carrega", async () => {
@@ -229,6 +303,31 @@ describe("GET /api/v1/ai/runs", () => {
     expect(falha.oQueFazer).toBe(O_QUE_FAZER_DO_JEV.jev_credencial_invalida);
     expect(falha.porQueEsteModelo).toBe(JEV_FALHOU_AO_LADO);
     expect(corpo.data.resumo.erros).toBe(1);
+  });
+
+  /**
+   * A resposta ao follow-up (onda 4): as duas linhas que `lib/ai/decisao/followup.ts`
+   * grava — a medida e a falha que pede ação — com o nome do ponto, sem afirmar
+   * que o Jev decidiu nem a consequência de o follow-up travar (a saída foi a
+   * da IA de sempre). É a leitura que `tests/invariants/jev-followup-no-turno.test.ts`
+   * confere no banco.
+   */
+  it("a linha do Jev na resposta ao follow-up diz o nome do ponto, que ele só observou, e a falha dele não trava o follow-up", async () => {
+    const doFollowup = { purpose: "followup_classify", provider: "typesafe", model: "typesafe/jev-1.13.0", origem_da_escolha: "jev_observacao" };
+    linhas = [
+      linha(doFollowup),
+      linha({ ...doFollowup, status: "erro", error_code: "jev_sem_credito", http_status: 402, input_tokens: 0, output_tokens: 0, cost_cents: 0 }),
+    ];
+    const { corpo } = await pedir();
+    const [medida, falha] = corpo.data.execucoes;
+    expect(medida.pontoRotulo).toBe("Ler a resposta ao follow-up");
+    expect(medida.porQueEsteModelo).toBe(EXPLICACAO_DA_ORIGEM.jev_observacao);
+    expect(falha.pontoRotulo).toBe("Ler a resposta ao follow-up");
+    // Controle: o ponto TEM sintoma ("o follow-up trava") — e a falha do Jev não o causa.
+    expect(PONTO_POR_ID.get("followup_classify")?.sintomaDeFalha).toBeTruthy();
+    expect(falha.consequencia).toBeNull();
+    expect(falha.porQueEsteModelo).toBe(JEV_FALHOU_AO_LADO);
+    expect(falha.oQueFazer).toBe(O_QUE_FAZER_DO_JEV.jev_sem_credito);
   });
 
   it("observação com a IA de sempre caída: a falha dela não afirma consequência que não houve", async () => {

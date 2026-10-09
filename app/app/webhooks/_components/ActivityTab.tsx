@@ -102,6 +102,8 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   no_target: "O evento que disparou a regra não trouxe um lead nem um contato para etiquetar.",
   no_lead_or_contact: "O evento que disparou a regra não trouxe um lead para criar ou mover.",
   cross_pipeline_move_not_allowed: "Mover um lead para outro funil está desligado nesta organização.",
+  lead_already_transferred_in_event:
+    "Outra regra deste mesmo evento já levou o lead para outro funil. Vale a primeira regra; esta não transfere de novo.",
   flow_not_active:
     "O funil escolhido não está ativo, então a inscrição não foi feita. Ative o funil ou escolha outro na automação.",
   live_enrollment_exists: "O contato já está em um funil ativo — esta ação não inscreve duas vezes.",
@@ -116,6 +118,9 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   missing_url: "Esta ação de webhook não tem endereço configurado. Abra a automação e preencha.",
   unknown_action:
     "A regra usa um tipo de ação que esta instalação não tem (pode ter saído em uma atualização). Abra a automação e escolha outra ação.",
+  // #1528 — o motor pula atribuir/mover nos gatilhos do trigger (laço).
+  acao_fecharia_laco:
+    "Neste gatilho esta ação não roda: atribuir responsável ou mover o lead dispararia a automação de novo, sem fim. Abra a automação e tire a ação.",
   /*
    * #1540 — a ação criar tarefa. Estes quatro não passam por literal nenhum
    * em lib/automation: nascem em lib/tarefas/criar-tarefa.ts como
@@ -133,6 +138,36 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
     "A tarefa não foi criada: o título ficou vazio depois de preencher os campos do texto. Escreva um título que não dependa só de dado que faltou.",
   falha:
     "A tarefa não foi criada: o banco recusou a gravação. Tente de novo em alguns minutos; se persistir, abra a tarefa na agenda para ver o detalhe.",
+  /*
+   * #1752 — o PLANO de tarefas. Mesmo caminho dos quatro acima: nasce em
+   * `lib/tarefas/plano.ts` como `resultado.codigo` e chega pelo `reason` da
+   * ação `apply_task_plan` (declaração em ORIGENS, no teste da guarda). Só
+   * este é novo — os outros quatro já têm frase por virem do criar-tarefa.
+   */
+  plano_nao_encontrado:
+    "O plano não foi aplicado: o plano escolhido nesta regra não existe mais na lista da organização. Abra a automação e escolha outro plano.",
+  /* #1970 — a ação ai_decide. Estes quatro nascem aqui em lib/automation/actions/ai-decide.ts
+     e chegam ao run por `detail.reason`/`action.error` (mesmo casal de canais da guarda). */
+  custo_de_token_nao_registrado:
+    "A ação não rodou: a regra foi gravada sem declarar o gasto de IA (custo_de_token). Corrija a regra pela API; este passo ainda não tem tela.",
+  config_invalida:
+    "A ação não rodou: a instrução ou as opções estão incompletas. Abra a automação e revise o texto e as alternativas.",
+  escolha_fora_do_conjunto:
+    "A IA devolveu uma opção que não está na lista desta ação, então nada foi executado. Corrija a instrução da regra para deixar as opções mais claras.",
+  acao_alvo_desconhecida:
+    "A opção escolhida aponta para uma ação que esta instalação não tem (pode ter saído em uma atualização). Abra a automação e escolha outra ação.",
+  /* #2367 — o interruptor POR EMPRESA: o quinto motivo que nasce no mesmo arquivo,
+     e o único que a tela pode consertar por aqui (o caminho está na própria frase). */
+  ai_decide_desligado_na_empresa:
+    "A ação não rodou: o interruptor desta empresa desligou todos os passos a IA decide, então o modelo não foi consultado e nada foi executado. Ligue o interruptor em Configurações, na tela Automações.",
+  /* #2367 — o mesmo interruptor, mas ILEGÍVEL: erro de leitura não vira "ligado"
+     (o operador pode ter desligado) nem "desligado" (a tela mentiria sobre quem). */
+  ai_decide_interruptor_ilegivel:
+    "A ação não rodou: não deu para ler agora o interruptor da IA desta empresa, então o modelo não foi consultado e nada foi executado. As próximas execuções tentam de novo.",
+  /* vêm do decider (lib/automation/decider.ts) pelo mesmo `decisao.motivo`. */
+  resposta_vazia: "A IA não devolveu nenhuma escolha entre as opções desta ação. Tente de novo ou corrija a instrução.",
+  sem_json: "A IA respondeu fora do formato esperado e nada foi executado. Tente de novo em alguns minutos.",
+  escolha_ausente: "A IA respondeu sem dizer qual opção escolher, então nada foi executado. Tente de novo ou corrija a instrução.",
 };
 
 function explicacaoDe(

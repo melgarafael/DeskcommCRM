@@ -2,7 +2,10 @@
 # check-migration-triple.sh — a tripla de migration é indivisível (doutrina do repo).
 # Commit que ADICIONA arquivo em supabase/migrations/*.sql precisa, no MESMO commit:
 #   1. mudança em supabase/baseline.sql (apêndice idempotente)
-#   2. mudança em supabase/migrations/MANIFEST.md (linha na tabela Applied)
+#   2. descrição: uma linha `-- manifest: <o quê e por quê>` no próprio .sql
+#      (desde 02/10/2026; o MANIFEST.md parou de receber linha nova porque era
+#      o arquivo que TODO PR com migration tocava, e o GitHub ignora merge=union).
+#      Linha no MANIFEST.md staged ainda passa, para PR aberto antes da mudança.
 # E o NNNN do nome novo não pode existir em NENHUMA branch local — a cadeia
 # vendaval/F2-* tem migrations não mergeadas; colisão de sequência é bug real.
 # Bypass (correção orientada pelo dono): DESKCOMM_GOV_MIGRATION_EDIT=1.
@@ -48,16 +51,23 @@ staged=$(git diff --cached --name-only)
 
 if ! grep -qx 'supabase/baseline.sql' <<<"$staged"; then
   echo "pre-commit BLOQUEADO: migration nova sem apêndice em supabase/baseline.sql no MESMO commit." >&2
-  echo "A tripla é indivisível (CLAUDE.md §Migrations): migrations/*.sql + baseline.sql + MANIFEST.md." >&2
+  echo "A tripla é indivisível (CLAUDE.md §Migrations): migrations/*.sql + baseline.sql + linha \`-- manifest:\` no .sql." >&2
   echo "Sem o baseline, self-hosters nunca recebem a mudança. Correção orientada pelo dono: DESKCOMM_GOV_MIGRATION_EDIT=1." >&2
   exit 1
 fi
 
+# Sem `grep -q`: com `pipefail`, o -q fecha o cano cedo, o `git show` morre de
+# SIGPIPE e um .sql COM descrição seria lido como sem.
 if ! grep -qx 'supabase/migrations/MANIFEST.md' <<<"$staged"; then
-  echo "pre-commit BLOQUEADO: migration nova sem linha em supabase/migrations/MANIFEST.md no MESMO commit." >&2
-  echo "A tripla é indivisível (CLAUDE.md §Migrations): migrations/*.sql + baseline.sql + MANIFEST.md." >&2
-  echo "Correção orientada pelo dono: DESKCOMM_GOV_MIGRATION_EDIT=1." >&2
-  exit 1
+  while IFS= read -r p; do
+    [ -z "$p" ] && continue
+    if ! git show ":$p" 2>/dev/null | grep -E '^-- manifest:[[:space:]]*[^[:space:]]' >/dev/null; then
+      echo "pre-commit BLOQUEADO: '$p' sem descrição — ponha uma linha \`-- manifest: <o quê e por quê>\` no cabeçalho do .sql." >&2
+      echo "NÃO acrescente linha no supabase/migrations/MANIFEST.md: ele é histórico, e era o arquivo que fazia todo PR com migration conflitar." >&2
+      echo "Correção orientada pelo dono: DESKCOMM_GOV_MIGRATION_EDIT=1." >&2
+      exit 1
+    fi
+  done <<<"$new_migrations"
 fi
 
 # Um arquivo pode colidir no NNNN E no timestamp ao mesmo tempo — e colide, na
@@ -108,16 +118,21 @@ fi
 # `populacao=` ANTES do `if`: o hook roda com `set -u`, e uma variável nunca
 # atribuída aborta o script inteiro — o hook saía com 1 SEM mensagem nenhuma,
 # que é o pior formato de falha possível num guard.
-populacao=""
+# A população vai para um ARQUIVO, nunca para uma variável: no clone do mantenedor
+# (29/09/2026) ela tinha ~1,29 M linhas (~112 MB), e o teste de vazio que havia aqui,
+# `${populacao// /}`, é uma substituição de padrão do bash — quadrática no tamanho da
+# string. O hook não terminava em 45 min. O grep lê o arquivo direto.
+populacao="$(mktemp)" || { echo "pre-commit BLOQUEADO: mktemp falhou — a população de migrations não pôde ser medida. Correção orientada pelo dono: DESKCOMM_GOV_MIGRATION_EDIT=1." >&2; exit 1; }
+trap 'rm -f "$populacao"' EXIT
 if declare -F pop_migrations >/dev/null 2>&1; then
   # O HEAD entra SEMPRE: `pop_refs_de_outrem` tira a ref cujo SHA é o do HEAD (a
   # #1155), e sem devolvê-lo aqui a migration que a PRÓPRIA branch já commitou
   # sumia da conta — a segunda 0411 e o carimbo repetido passavam calados, e a
   # dica de próximo livre apontava para o número da branch. O próprio arquivo
   # encenado não é acusado: o `grep -vE " <nome>$"` abaixo o tira.
-  populacao="$(pop_migrations $refs HEAD 2>/dev/null || true)"
+  { pop_migrations $refs HEAD 2>/dev/null || true; } >"$populacao" || { echo "pre-commit BLOQUEADO: não foi possível gravar a população de migrations em $populacao. Correção orientada pelo dono: DESKCOMM_GOV_MIGRATION_EDIT=1." >&2; exit 1; }
 fi
-if [ -z "${populacao// /}" ] && [ -z "${populacao//$'\n'/}" ]; then
+if ! grep -q . "$populacao"; then
   if ! declare -F pop_migrations >/dev/null 2>&1; then
     fallback=""
     for ref in $refs HEAD; do
@@ -129,7 +144,7 @@ if [ -z "${populacao// /}" ] && [ -z "${populacao//$'\n'/}" ]; then
       # fosse o primeiro da ref.
       [ -n "$arquivos" ] && fallback="${fallback}$(awk -v r="$ref" '{ print r, $0 }' <<<"$arquivos")"$'\n'
     done
-    populacao="$fallback"
+    printf '%s' "$fallback" >"$populacao"
     echo "pre-commit AVISO: scripts/migration-populacao.sh AUSENTE — NNNN medido sobre ${refs//$'\n'/ }. Quem mede a população inteira (main do produto ∪ PRs abertos): pnpm checar:colisao-de-migration (#1273)" >&2
   elif [ -z "$base" ]; then
     echo "pre-commit AVISO: nenhuma migration resolvida na população ($base e as refs do clone) — a unicidade de NNNN NÃO foi medida (#1273). Rode: pnpm checar:colisao-de-migration" >&2
@@ -145,12 +160,12 @@ while IFS= read -r path; do
     exit 1
   fi
   # O MESMO arquivo nesta população é o PR de quem roda: não é colisão.
-  conflict=$(grep -E "^[A-Za-z0-9_./-]+ [0-9]{14}_${nnnn}_.+\.sql$" <<<"$populacao" \
+  conflict=$(grep -E "^[A-Za-z0-9_./-]+ [0-9]{14}_${nnnn}_.+\.sql$" "$populacao" \
     | grep -vE " ${fname}\$" || true)
   if [ -n "$conflict" ]; then
     echo "pre-commit BLOQUEADO: sequência NNNN=$nnnn de '$fname' já existe em: $(awk '{printf "%s(%s) ", $1, $2}' <<<"$conflict" | sed 's/ $//')" >&2
     if declare -F pop_dica_proximo_livre >/dev/null 2>&1; then
-      pop_dica_proximo_livre "$nnnn" "$base" "$populacao" >&2
+      pop_dica_proximo_livre "$nnnn" "$base" "$(cut -d' ' -f2- "$populacao" | LC_ALL=C sort -u)" >&2
     else
       echo "Para o próximo número livre (main do produto ∪ PRs abertos): pnpm checar:colisao-de-migration" >&2
     fi
@@ -194,7 +209,7 @@ while IFS= read -r path; do
   [ -z "$ts" ] && continue
   grep -qw "$ts" <<<"$DIVIDA_DE_TIMESTAMP" && continue
 
-  conflict=$(grep -E "^[A-Za-z0-9_./-]+ ${ts}_[0-9]{4}_.+\.sql$" <<<"$populacao" \
+  conflict=$(grep -E "^[A-Za-z0-9_./-]+ ${ts}_[0-9]{4}_.+\.sql$" "$populacao" \
     | grep -vE " ${fname}\$" || true)
   if [ -n "$conflict" ]; then
     echo "pre-commit BLOQUEADO: o TIMESTAMP $ts de '$fname' já existe em: $(awk '{printf "%s(%s) ", $1, $2}' <<<"$conflict" | sed 's/ $//')" >&2

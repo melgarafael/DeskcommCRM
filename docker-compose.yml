@@ -34,7 +34,8 @@ services:
       WHATSAPP_HOOK_URL: ${WAHA_HOOK_BASE_URL:-http://host.docker.internal:3003}/api/v1/webhooks/waha
       WHATSAPP_HOOK_EVENTS: "message.any,message.ack,message.edited,message.revoked,session.status,state.change"
       # HMAC SHA512 do payload, validado server-side via crypto.timingSafeEqual.
-      WHATSAPP_HOOK_HMAC: ${WAHA_HMAC_SECRET}
+      # Nome EXATO da doc do WAHA (events#hmac-authentication): sem o _KEY ele ignora.
+      WHATSAPP_HOOK_HMAC_KEY: ${WAHA_HMAC_SECRET}
       # Engine NOWEB por default (mais leve, ~150MB; estável). O env é
       # WHATSAPP_DEFAULT_ENGINE — WAHA_DEFAULT_ENGINE NÃO existe no WAHA e caía
       # silenciosamente no default WEBJS (browser, trava a sessão).
@@ -75,7 +76,12 @@ services:
       # do compose (serviço waha, porta interna 3000). Sobrepõe o .env.local.
       WAHA_API_BASE_URL: http://waha:3000
     ports:
-      - "8787:8787"
+      # Só 127.0.0.1: /healthz e /metrics do worker não têm autenticação e o
+      # /metrics conta filas, sessões e custo de todas as empresas. Sem endereço
+      # de bind o Docker publica em 0.0.0.0 — qualquer um na mesma rede (Wi-Fi
+      # do café, LAN do escritório) lia os números. O healthcheck roda DENTRO do
+      # container e não depende desta linha.
+      - "127.0.0.1:8787:8787"
     healthcheck:
       # 127.0.0.1 explícito: localhost resolve p/ ::1 e o healthz escuta só IPv4.
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8787/healthz"]

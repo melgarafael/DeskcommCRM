@@ -1,9 +1,10 @@
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ refresh: vi.fn(), realtime: vi.fn(), toast: vi.fn() }));
+const mocks = vi.hoisted(() => ({ refresh: vi.fn(), realtime: vi.fn(), toast: vi.fn(), aviso: vi.fn(), recarregar: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mocks.refresh }) }));
-vi.mock("sonner", () => ({ toast: { info: mocks.toast } }));
+vi.mock("sonner", () => ({ toast: { info: mocks.toast, warning: mocks.aviso } }));
 vi.mock("@/hooks/realtime/useRealtimeChannel", () => ({ useRealtimeChannel: mocks.realtime }));
+vi.mock("@/lib/auth/recarregar-aba", () => ({ recarregarAba: mocks.recarregar }));
 import { InterfaceRefresh } from "./InterfaceRefresh";
 const a = { orgId: "a", name: "A", role: "agent" as const, interface_settings: { preset: "completa" as const } };
 const fetcher = vi.fn();
@@ -88,4 +89,38 @@ it("foco cobre evento perdido, suporte não assina nem consulta preferência de 
   fetcher.mockClear();
   await act(async () => { window.dispatchEvent(new Event("focus")); });
   expect(fetcher).not.toHaveBeenCalled();
+});
+it("#2335 — a sessão mudou em outra aba: AVISA, sem refresh silencioso nem recarga sozinha", async () => {
+  // Mesmo cookie, duas abas: alguém trocou para "b" no seletor da outra aba,
+  // então o servidor já responde por "b" enquanto ESTA aba continua com a prop
+  // "a" (props fixas durante a vida do documento). A linha 50 da main só agia
+  // quando os dois eram IGUAIS — a divergência passava em branco.
+  fetcher.mockResolvedValue({
+    ok: true,
+    json: async () => ({
+      data: {
+        organization_id: "b",
+        organization_name: "B",
+        signature: JSON.stringify({ preset: "completa" }),
+      },
+    }),
+  });
+  render(<InterfaceRefresh userId="user" org={a} support={false} />);
+  await act(async () => { mocks.realtime.mock.lastCall![0].onChange({}); });
+
+  await waitFor(() => expect(mocks.aviso).toHaveBeenCalledOnce());
+  const [mensagem, opcoes] = mocks.aviso.mock.calls[0]!;
+  expect(mensagem).toContain("organização diferente da sessão");
+  expect(mensagem).toContain("(A → B)");
+  expect(opcoes.id).toBe("org-divergente");
+  expect(opcoes.action.label).toBe("Recarregar");
+  // Recarregar aqui apagaria o formulário em edição (#2313): nada de refresh
+  // RSC mandando dados da outra organização para dentro desta tela, e nada de
+  // location.reload()/assign() sem o pedido de quem está na tela.
+  expect(mocks.refresh).not.toHaveBeenCalled();
+  expect(mocks.toast).not.toHaveBeenCalled();
+  expect(mocks.recarregar).not.toHaveBeenCalled();
+  // A recarga acontece SÓ quando a pessoa clica no aviso.
+  opcoes.action.onClick();
+  expect(mocks.recarregar).toHaveBeenCalledOnce();
 });

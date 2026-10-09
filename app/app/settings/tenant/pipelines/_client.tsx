@@ -225,6 +225,12 @@ function PipelineEditor({
   const [wonRequired, setWonRequired] = useState(
     (pipeline.settings as { won_reason_required?: unknown } | null)?.won_reason_required === true,
   );
+  // A comanda do ganho (#1477): opt-in, e o PADRÃO é a chave ausente — só o
+  // `true` explícito liga. Ausência aqui renderiza desmarcado, que é o mesmo
+  // que o consumidor de `lead.won` lê no banco.
+  const [comandaNoGanho, setComandaNoGanho] = useState(
+    (pipeline.settings as { comanda_no_ganho?: unknown } | null)?.comanda_no_ganho === true,
+  );
   const [retomaComoNovo, setRetomaComoNovo] = useState(
     modoDeReabertura(pipeline.settings) === "novo_negocio",
   );
@@ -286,6 +292,7 @@ function PipelineEditor({
       lost_reasons: motivosComCategoria,
       won_reasons: wonReasons,
       won_reason_required: wonRequired,
+      comanda_no_ganho: comandaNoGanho,
       reabertura: retomaComoNovo ? "novo_negocio" : "mesmo_registro",
     };
     startTransition(async () => {
@@ -406,6 +413,27 @@ function PipelineEditor({
         </p>
       </div>
 
+      {/* ─── A COMANDA DO GANHO (#1477) ───────────────────────────────
+          Porta do consumidor de `lead.won`. Desligada por padrão, pela régua
+          de `docs/doctrine/extensoes.md`: quem não ativar continua com a
+          operação inteira, e em loja com checkout o valor do negócio não é
+          conta a receber. */}
+      <div className="space-y-1">
+        <label className="flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={comandaNoGanho}
+            onChange={(e) => setComandaNoGanho(e.target.checked)}
+          />
+          {t("Abrir comanda ao ganhar um negócio neste funil")}
+        </label>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Desligado, ganhar não mexe no financeiro: loja com checkout, infoproduto e imobiliária não vivem de conta a receber. Ligado, o arrasto para a etapa de ganho e o botão Ganhar abrem uma comanda com o valor e o contato do negócio.",
+          )}
+        </p>
+      </div>
+
       <div className="space-y-2">
         <Label className="text-xs">{t("Campos do lead neste funil")}</Label>
         <p className="text-xs text-muted-foreground">
@@ -447,7 +475,7 @@ function PipelineEditor({
               <SelectContent>
                 {TIPOS_DE_CAMPO.map((tipo) => (
                   <SelectItem key={tipo} value={tipo}>
-                    {tipo}
+                    {tipo === "currency" ? t("Moeda (BRL)") : tipo}
                   </SelectItem>
                 ))}
               </SelectContent>

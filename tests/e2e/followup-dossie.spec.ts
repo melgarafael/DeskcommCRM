@@ -63,6 +63,12 @@ function concluiTurno(orgId: string, enrollmentId: string, nodeId: string, resul
   );
 }
 
+/** Um subcomando do helper de SQL cru; devolve o JSON da última linha. */
+function helper(args: string[]): unknown {
+  const saida = execFileSync("npx", ["tsx", "scripts/e2e-followup-journey-helpers.ts", ...args], { encoding: "utf8" });
+  return JSON.parse(saida.trim().split("\n").filter(Boolean).pop() ?? "null");
+}
+
 function loadCreds(): Creds {
   const precisaSeed = (): boolean => {
     if (!fs.existsSync(CREDS_PATH)) return true;
@@ -104,11 +110,11 @@ interface Cenario {
 /**
  * Fluxo real publicado + contato + negócio + enrollment, tudo pela API pública.
  *
- * O grafo tem uma ESPERA no meio de propósito: é o nó em que o enrollment fica
+ * O grafo padrão tem uma ESPERA no meio de propósito: é o nó em que o enrollment fica
  * parado com relógio no futuro, que é a condição de "adiar" e de "pular" — e é
  * onde o `timing_plan`, quando existir, apareceria.
  */
-async function montaCenario(page: Page, tag: string): Promise<Cenario> {
+async function montaCenario(page: Page, tag: string, grafo?: object): Promise<Cenario> {
   const stamp = Date.now();
   const flowName = `E2E Dossiê ${tag} ${stamp}`;
   const contactName = `Cliente Dossiê ${tag} ${stamp}`;
@@ -117,7 +123,7 @@ async function montaCenario(page: Page, tag: string): Promise<Cenario> {
   expect(flowRes.status()).toBe(201);
   const { data: flow } = (await flowRes.json()) as ApiOk<{ id: string }>;
 
-  const graph = {
+  const graph = grafo ?? {
     nodes: [
       { id: "trigger-1", type: "trigger", label: "Início", position: { x: 0, y: 0 }, config: {} },
       {
@@ -392,5 +398,76 @@ test.describe("dossiê do follow-up — ler a história e intervir", () => {
 
     await page.request.post(`/api/v1/ai/followups/enrollments/${enrollment.id}/cancel`, { data: {} });
     await page.request.post(`/api/v1/ai/followup-flows/${flow.id}/disable`, { data: {} });
+  });
+
+  test("o classificar sem resposta: o dossiê diz que ESPERA e, vencido o prazo, que o cliente não respondeu", async ({ page }) => {
+    test.setTimeout(180_000);
+    await login(page, creds.users.manager!.email);
+    const P = { x: 0, y: 0 };
+    const cenario = await montaCenario(page, "classificar", {
+      nodes: [
+        { id: "trigger-1", type: "trigger", label: "Início", position: P, config: {} },
+        {
+          id: "classify-1",
+          type: "ai_classify",
+          label: "Classificar resposta",
+          position: P,
+          config: { classes: ["quer"], grace_timeout_ms: 86_400_000 },
+        },
+        { id: "end-quer", type: "end", label: "Quer", position: P, config: { outcome: "converted" } },
+        { id: "end-sem-resposta", type: "end", label: "Sem resposta", position: P, config: { outcome: "exhausted" } },
+        { id: "end-outros", type: "end", label: "Outros", position: P, config: { outcome: "exhausted" } },
+      ],
+      edges: [
+        { id: "edge-1", source: "trigger-1", target: "classify-1", priority: 0, condition: { type: "always" } },
+        { id: "edge-2", source: "classify-1", target: "end-quer", priority: 0, condition: { type: "class_match", value: "quer" } },
+        { id: "edge-3", source: "classify-1", target: "end-sem-resposta", priority: 0, condition: { type: "class_match", value: "no_reply" } },
+        { id: "edge-4", source: "classify-1", target: "end-outros", priority: 0, condition: { type: "always" } },
+      ],
+    });
+
+    // O motor anda pelo cron até onde o passo pede. Outros enrollments do banco
+    // de dev disputam o `limit` do claim; sem conferir, o seam seguinte seria
+    // no-op calado num nó que o enrollment ainda não alcançou.
+    const ondeEsta = () => helper(["get-enrollment", cenario.enrollmentId]) as { current_node_id: string; status: string };
+    async function tickAte(chegou: (e: { current_node_id: string; status: string }) => boolean, rotulo: string): Promise<void> {
+      for (let i = 0; i < 8 && !chegou(ondeEsta()); i++) await rodaTickDoMotor(page);
+      expect(chegou(ondeEsta()), `o motor não chegou a "${rotulo}": ${JSON.stringify(ondeEsta())}`).toBe(true);
+    }
+
+    // [REAL] trigger → classificar → 1ª entrada: o motor enfileira o turno de
+    // classificar e estaciona em waiting_reply com a carência correndo.
+    await tickAte((e) => e.current_node_id === "classify-1" && e.status === "waiting_reply", "classificar esperando");
+    // [INJETADO] o worker roda o job e o cliente ainda não respondeu: o turno
+    // devolve `awaiting_reply` — o mesmo seam da jornada (followup-journey).
+    concluiTurno(creds.org_id, cenario.enrollmentId, "classify-1", { kind: "awaiting_reply" });
+    // [REAL] a carência vence sem resposta: o relógio pula e o MOTOR decide
+    // "sem resposta" sozinho, sem modelo e sem job.
+    helper(["fast-forward-enrollment", cenario.enrollmentId]);
+    await tickAte((e) => e.current_node_id === "end-sem-resposta", "carência vencida → Sem resposta");
+
+    // --- da fila para o dossiê, pelo clique ---
+    await page.goto("/app/ai/followups");
+    await page.getByRole("tab", { name: "Fila" }).click();
+    await page.getByLabel("Buscar contato").fill(cenario.contactName);
+    await page.waitForResponse(
+      (r) => r.url().includes("/api/v1/ai/followups/queue") && r.url().includes("q=") && r.status() === 200,
+      { timeout: 60_000 },
+    );
+    const linha = page.locator('[data-testid="queue-row"]', { hasText: cenario.contactName });
+    await expect(linha).toBeVisible({ timeout: 30_000 });
+    await linha.getByTestId("queue-abrir-dossie").click();
+    await page.waitForURL(new RegExp(`/app/ai/followups/enrollments/${cenario.enrollmentId}`));
+
+    // A espera e o porquê da saída, em português — nem "travado", nem "Seguiu em frente".
+    const historia = page.getByTestId("dossie-timeline");
+    await expect(historia).toContainText("Esperando a resposta do cliente", { timeout: 30_000 });
+    await expect(historia).toContainText("O cliente não respondeu dentro do prazo");
+    await expect(historia).toContainText("foi para Sem resposta");
+    await expect(historia).not.toContainText("classify_waiting");
+    await expect(historia).not.toContainText("no_reply");
+    await page.screenshot({ path: path.join(ARTIFACTS_DIR, "08-classificar-sem-resposta.png"), fullPage: true });
+
+    await limpa(page, cenario);
   });
 });

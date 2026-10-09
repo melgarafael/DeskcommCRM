@@ -90,6 +90,11 @@ Se faltar Docker, o instalador pergunta e instala sozinho.
 | **IA** | Uma chave de **OpenRouter**, **Anthropic** ou **OpenAI** — o instalador pergunta qual você quer |
 | **WhatsApp** | Seu número, conectado por QR code no onboarding (ou o canal oficial da Meta) |
 
+O instalador também atende VPS ARM64/aarch64, como a Oracle Ampere A1, e escolhe a imagem
+NOWEB oficial do WAHA compatível com essa arquitetura. Vale para os dois caminhos: com Supabase
+externo e com o Supabase na mesma VPS (as imagens do Supabase self-hosted fixadas pelo kit também
+são publicadas para `linux/arm64`). Nada é compilado na VPS.
+
 > 💡 **O Supabase pode ser criado pelo próprio instalador.** Exporte um
 > `SUPABASE_ACCESS_TOKEN` antes de rodar e ele cria o projeto, espera o banco ficar saudável,
 > busca as 4 credenciais e descobre o host do pooler testando conexão real — sem copiar e colar.
@@ -200,9 +205,10 @@ ruído e mostra `✓ banco atualizado`. Se o banco estiver ocupado com o CRM ate
 novo sozinho (até 3 passadas) e conta isso na tela — isso vale a partir da atualização seguinte à
 que instalar esta correção. Se aparecer `⚠ Apareceram avisos no banco que NÃO são os esperados`, aí sim guarde a
 mensagem: o **fim** da saída diz o que fazer em cada caso (repetir com `--force` quando foi o banco
-ocupado, declarar `SUPABASE_DB_ADMIN_URL` quando foi permissão). Restaurar o backup é o último recurso.
+ocupado, declarar `SUPABASE_DB_ADMIN_URL` quando foi permissão).
 
-**Deu ruim?** `bash hostgator-setup-kit/restore.sh` volta pro backup.
+**Deu ruim?** Guarde a mensagem e peça ajuda. O `restore.sh` **não** volta o backup por cima do
+banco em uso: ele só restaura num banco vazio (ver [`hostgator-setup-kit/README.md`](hostgator-setup-kit/README.md)).
 **Quer só diagnosticar?** `bash hostgator-setup-kit/healthcheck.sh`.
 
 > ⚠️ **Numa instalação antiga que ainda não tem o agente da tela**, rode `update.sh` **duas
@@ -541,7 +547,10 @@ Este é um projeto **self-host**: cada pessoa roda o CRM na **própria infraestr
   **desligada**. Se você aceitar o Sentry da comunidade, o que é enviado são **relatórios
   de erro** (stack trace) com CPF, telefone e e-mail substituídos, cabeçalhos sensíveis
   removidos, e token de webhook/convite redigido da URL — **sem** rastreamento de
-  performance e **sem** replay de sessão, que ficam em 0 nesse caminho. Para desligar a
+  performance e **sem** replay de sessão contínuo, que ficam em 0 nesse caminho. Vai
+  junto do erro a gravação dos instantes que o antecederam, com texto e mídia mascarados,
+  as mesmas URLs redigidas e nenhuma gravação nas páginas com credencial na URL
+  ([`lib/sentry/replay.ts`](lib/sentry/replay.ts)). Para desligar a
   qualquer momento: `SENTRY_DSN=off` no `.env`. Para mandar ao **seu** Sentry (aí sim com
   performance e replay): `SENTRY_DSN=<seu-dsn>`. O que é redigido, e por quê, está em
   [`lib/sentry/scrub.ts`](lib/sentry/scrub.ts); a resolução do DSN em

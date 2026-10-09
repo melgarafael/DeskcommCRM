@@ -135,3 +135,19 @@ describe("ligado", () => {
     });
   });
 });
+
+describe("limite de números do plano", () => {
+  it("⭐ gatilho de canais recusou: 409 plan_limit_reached com o número, e nada é auditado", async () => {
+    h.ligado.mockReturnValue(true);
+    h.find.mockResolvedValue(null);
+    h.validate.mockResolvedValue({ ok: true, phoneNumberId: "PN", wabaId: "WABA", displayPhoneNumber: "5531", verifiedName: "Loja" });
+    // `saveGraphPartnerSession` devolve só `error.message` — a tradução lê a mensagem.
+    h.save.mockResolvedValue({ error: "limite_do_plano:canais:2", channelSessionId: null });
+    const r = await POST(req("POST", { token: "x".repeat(30) }));
+    const corpo = await r.json();
+    expect(r.status).toBe(409);
+    expect(corpo.error.code).toBe("plan_limit_reached");
+    expect(corpo.error.message).toContain("Seu plano permite 2 números conectados");
+    expect(h.audit).not.toHaveBeenCalled();
+  });
+});

@@ -2,6 +2,7 @@ import {claimOfJob,type JobClaim} from "../queue/claim";
 import {resultadoDoEnvioDoFollowup} from "../edge/crm/send-ledger";
 import { parseServiceBoundary } from "@/lib/atendimento/fronteira";
 import { requireCurrentServiceBoundary } from "@/lib/atendimento/fronteira-server";
+import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 /**
  * Handler do job `followup_turn` (F3-03; blueprint 1.3) — a peça BUILD da
  * continuidade. A F3-01 (cron persistente) dispara e a F3-02 (tool schedule_followup)
@@ -24,7 +25,12 @@ import type pg from 'pg';
 
 import { withFields } from '../obs/logger';
 import type { JobRow } from '../queue/queue';
-import { getLeadContext, type LeadContext } from '../edge/crm/get-lead-context';
+import {
+  getLeadContext,
+  textoDoClienteNaUltimaMensagem,
+  type LeadContext,
+  type LeadContextMessage,
+} from '../edge/crm/get-lead-context';
 import { WahaChannelAdapter } from '../edge/channel/waha-adapter';
 import { applySendOutcome } from '../edge/crm/send-message';
 import { runBeforeSend } from '../guardrails/before-send';
@@ -44,6 +50,7 @@ import {
   type LeadCheckpointRow,
 } from './inbound-turn';
 import { isLeadInHandoff } from './human-handoff';
+import { aplicarPessoaNoComandoAoTurno } from '@/lib/followup/pessoa-no-comando-no-turno';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import {
   followupPublicadoDoEnrollment,
@@ -57,6 +64,7 @@ import {
   type EsperaParaPlanejar,
   type PropostaDeEsperaBruta,
 } from './followup-flow-classify';
+import { consultarJevNoFollowup } from '@/lib/ai/decisao/followup';
 
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
@@ -116,6 +124,8 @@ export type FollowupFlowTurnResult =
   | { kind: 'sent' }
   | { kind: 'skipped'; reason: string }
   | { kind: 'classified'; class: string }
+  /** Classificar sem resposta ao envio do fluxo: nada a concluir, só o rastro da espera. */
+  | { kind: 'awaiting_reply' }
   /** O envio ficou estacionado até `until` (janela fechada) — nem saiu, nem foi recusado. */
   | { kind: 'deferred'; until: Date; reason: string }
   | { kind: 'planned'; propostas: PropostaDeEsperaBruta[]; modelo: string };
@@ -231,7 +241,7 @@ function lastInboundOf(context: LeadContext): { body: string; sentAt: string } |
  * desde a última vez que falamos" vira `null` (onda 5: o classify SÓ tem algo
  * pra classificar quando o lead respondeu DEPOIS do nosso último envio).
  */
-function lastInboundSinceLastOutbound(context: LeadContext): string | null {
+function lastInboundSinceLastOutbound(context: LeadContext): LeadContextMessage | null {
   let lastOutboundAt: number | null = null;
   for (const m of context.messages) {
     if (m.direction === 'outbound') lastOutboundAt = Date.parse(m.sent_at);
@@ -240,10 +250,82 @@ function lastInboundSinceLastOutbound(context: LeadContext): string | null {
     const m = context.messages[i]!;
     if (m.direction === 'inbound') {
       const at = Date.parse(m.sent_at);
-      return lastOutboundAt === null || at > lastOutboundAt ? m.body : null;
+      return lastOutboundAt === null || at > lastOutboundAt ? m : null;
     }
   }
   return null;
+}
+
+/**
+ * Quando o fluxo fechou o seu último envio (`action_sent`) — o marco a partir do
+ * qual o que o lead escreve é RESPOSTA ao fluxo. `null` quando o fluxo ainda não
+ * mandou nada (classificar logo depois do acionamento).
+ */
+async function envioDoFluxoFechadoEm(pool: pg.Pool, orgId: string, enrollmentId: string): Promise<Date | null> {
+  const { rows } = await pool.query<{ fechado_em: Date | null }>(
+    `select max(created_at) as fechado_em from followup_enrollment_events
+      where organization_id = $1 and enrollment_id = $2 and event_type = 'action_sent'`,
+    [orgId, enrollmentId],
+  );
+  return rows[0]?.fechado_em ?? null;
+}
+
+/**
+ * A resposta do lead ao envio DO FLUXO: a última inbound com texto depois da
+ * mensagem que o fluxo mandou — mesmo que o agente ou uma pessoa tenha
+ * respondido no meio. "Depois do último outbound de qualquer um"
+ * (`lastInboundSinceLastOutbound`) perdia exatamente o caso comum numa
+ * organização com agente ativo: o lead responde, o agente responde antes de o
+ * job de classificar rodar, e a resposta some — o fluxo saía por "sem resposta"
+ * com o cliente tendo respondido.
+ *
+ * A mensagem do fluxo é o último outbound até `envioFechadoEm` (o passo de envio
+ * fecha DEPOIS de a mensagem sair). A POSIÇÃO no histórico decide, não o
+ * horário: `sent_at` aqui vem truncado no segundo, e a resposta que chega no
+ * mesmo segundo do fechamento continua depois da mensagem na lista.
+ *
+ * Mídia usa o corpo que o contexto já compõe (transcrição/descrição quando
+ * houver); inbound sem texto nenhum não vira pergunta ao modelo.
+ *
+ * ponytail: se a mensagem do fluxo saiu da janela do histórico (`historyLimit`),
+ * vale o horário, no segundo — a resposta que chegou entre o envio e o
+ * fechamento do passo fica de fora só nesse caso.
+ */
+function respostaAoEnvioDoFluxo(context: LeadContext, envioFechadoEm: Date): LeadContextMessage | null {
+  const limite = envioFechadoEm.getTime();
+  const envio = context.messages.findLastIndex((m) => m.direction === 'outbound' && Date.parse(m.sent_at) <= limite);
+  const piso = Math.floor(limite / 1000) * 1000;
+  const resposta = context.messages
+    .slice(envio + 1)
+    .findLast((m) => m.direction === 'inbound' && m.body.trim() !== '' && (envio >= 0 || Date.parse(m.sent_at) >= piso));
+  return resposta ?? null;
+}
+
+/**
+ * O id, em `messages`, da resposta que o contexto escolheu — o contexto não o
+ * carrega (ele vai inteiro ao modelo, e um id por mensagem seria ruído pago).
+ * Pela conversa do contexto, pelo texto e pelo segundo em que chegou: o
+ * `sent_at` do contexto vem truncado no segundo (`isoLocalComOffset`). Duas
+ * respostas iguais no mesmo segundo são a mesma resposta para quem compara, e a
+ * ordem é a do histórico (`sent_at desc, id desc`). `null` quando não acha — a
+ * única mensagem que não cabe no orçamento sai do contexto cortada ao meio.
+ */
+async function idDaResposta(
+  pool: pg.Pool,
+  orgId: string,
+  conversationId: string | null,
+  resposta: LeadContextMessage,
+): Promise<string | null> {
+  if (conversationId === null) return null;
+  const { rows } = await pool.query<{ id: string }>(
+    `select id from messages
+      where organization_id = $1 and conversation_id = $2 and direction = 'inbound' and body = $3
+        and sent_at >= $4::timestamptz and sent_at < $4::timestamptz + interval '1 second'
+      order by sent_at desc, id desc
+      limit 1`,
+    [orgId, conversationId, resposta.body, resposta.sent_at],
+  );
+  return rows[0]?.id ?? null;
 }
 
 /**
@@ -262,14 +344,164 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
 
     const boundary = parseServiceBoundary(job.payload.service_boundary);
     await requireCurrentServiceBoundary(pool, boundary);
-    const { rows: targetRows } = await pool.query<{ channel_session_id: string; archived_at: string | null }>(
-      `select c.channel_session_id, to_jsonb(cs)->>'archived_at' as archived_at from conversations c
+    const { rows: targetRows } = await pool.query<{ channel_session_id: string; archived_at: string | null; canal_desativado: string | null }>(
+      `select c.channel_session_id, to_jsonb(cs)->>'archived_at' as archived_at, to_jsonb(cs)->'metadata'->>'disabled' as canal_desativado from conversations c
        join channel_sessions cs on cs.id=c.channel_session_id and cs.organization_id=c.organization_id
        where c.organization_id=$1 and c.id=$2 and c.contact_id=$3`,
       [tenantId, boundary!.conversation_id, leadId]);
     if (!targetRows[0]) throw new Error('conversa de origem indisponível');
     if (targetRows[0].archived_at) throw new Error('canal arquivado');
+    // Canal DESATIVADO (#2329): consumir SEM ERRO, em vez de `throw`.
+    //
+    // `throw` mandava o job para a fila de retentativa: 5 tentativas gastas para
+    // descartar uma mensagem que não pode sair, e no fim um `dead` com o aviso
+    // CRÍTICO "Job descartado" na Central — UM por follow-up, sem ninguém poder
+    // fazer nada (o canal continua desligado). O desfecho próprio é este: o job
+    // termina `done`, com o motivo no log, sem pagar o turno de modelo nem
+    // acender alerta.
+    //
+    // `turn_discarded` NÃO é gravado aqui, ao contrário do descarte por
+    // organização parada (migration 0501): lá a reativação reenfileira porque o
+    // `claim` não entrega inscrição com a org parada; com o CANAL pausado não há
+    // essa barreira, e o evento enfileiraria um turno novo a cada recheck até o
+    // operador religar — justamente a reação que esta issue está barrando.
+    if (targetRows[0].canal_desativado === 'true') {
+      deps.log?.info('followup_turn: canal desativado — turno consumido sem rodar', {
+        job_id: job.id,
+        tenant_id: tenantId,
+        lead_id: leadId,
+        motivo: 'canal_desativado',
+      });
+      return;
+    }
     const target: ReentrySendTarget = { tenantId, leadId, conversationId: boundary!.conversation_id, channelSessionId: targetRows[0]!.channel_session_id };
+
+    // A INSCRIÇÃO PRECISA ESTAR VIVA ANTES DE QUALQUER EFEITO. O turno já
+    // enfileirado sobrevive ao fluxo: apagar o fluxo pela rota apaga as
+    // inscrições (#1913) e o `cron_jobs` do adiamento para a janela continua de
+    // pé, mas a checagem de atualidade só rodava no `complete` — DEPOIS do
+    // envio. A mensagem de um fluxo apagado saía calada, e o job terminava
+    // `done`. A MESMA régua do caminho inline (`enviarTextoFixoPendente`,
+    // `lib/followup/enviar-texto-fixo.ts`): inscrição existente, no MESMO nó, e
+    // em estado que anda (`active`/`waiting_reply`). Fora disso o turno termina
+    // sem tocar a cadeia; o worker fecha o job como `done` no caminho normal.
+    //
+    // `node_id` ausente NÃO é descartado aqui de propósito: payload de fluxo
+    // sem nó é defeito de programação e segue falhando alto em
+    // `runFlowDrivenTurn`, como falhava.
+    if (payload.followup_enrollment_id !== undefined && payload.node_id !== undefined) {
+      // PESSOA NO COMANDO: a política de handoff do fluxo vale também para a
+      // conversa assumida à mão, que não emite `ai.handoff_triggered`. Com
+      // `pause` o passo é ADIADO e confere de novo (o mesmo `deferred` da janela
+      // de envio, abaixo); cancelada, a inscrição cai no descarte logo abaixo.
+      if (payload.purpose === 'send_message') {
+        const agora = (deps.clock ?? ((): Date => new Date()))();
+        const pessoa = await aplicarPessoaNoComandoAoTurno(
+          pool,
+          {
+            organizationId: tenantId,
+            enrollmentId: payload.followup_enrollment_id,
+            nodeId: payload.node_id,
+            contactId: leadId,
+          },
+          agora,
+        );
+        if (pessoa !== null) {
+          withFields(deps.log, {
+            job_id: job.id,
+            tenant_id: tenantId,
+            lead_id: leadId,
+            enrollment_id: payload.followup_enrollment_id,
+          }).info('turno de fluxo não fala por cima de quem assumiu a conversa', {
+            inscricao: pessoa.kind,
+            ...(pessoa.kind === 'adiada' ? { next_run_at: pessoa.ate.toISOString() } : {}),
+          });
+        }
+        if (pessoa?.kind === 'adiada') {
+          const complete = deps.completeFollowupTurn;
+          if (!complete) {
+            throw new Error(
+              'passo adiado por pessoa no comando sem completeFollowupTurn — o enrollment não saberia do adiamento',
+            );
+          }
+          await rescheduleReentry(pool, { tenantId, leadId, jobId: job.id, at: pessoa.ate, payload: job.payload });
+          await complete(pool, {
+            jobId: job.id,
+            jobClaim: claimOfJob(job),
+            organizationId: tenantId,
+            enrollmentId: payload.followup_enrollment_id,
+            nodeId: payload.node_id,
+            result: { kind: 'deferred', until: pessoa.ate, reason: 'pessoa_no_comando' },
+          });
+          return;
+        }
+      }
+      const { rows: inscricaoRows } = await pool.query<{ current_node_id: string; status: string }>(
+        `select current_node_id, status from followup_enrollments where organization_id = $1 and id = $2 limit 1`,
+        [tenantId, payload.followup_enrollment_id],
+      );
+      const inscricao = inscricaoRows[0];
+      const viva =
+        inscricao !== undefined &&
+        inscricao.current_node_id === payload.node_id &&
+        (inscricao.status === 'active' || inscricao.status === 'waiting_reply');
+      if (!viva) {
+        withFields(deps.log, {
+          job_id: job.id,
+          tenant_id: tenantId,
+          lead_id: leadId,
+          enrollment_id: payload.followup_enrollment_id,
+        }).info('turno de fluxo descartado — a inscrição não está mais viva', {
+          motivo: inscricao === undefined ? 'inscricao_ausente' : 'fora_do_no_ou_encerrada',
+          status: inscricao?.status ?? null,
+          no_do_payload: payload.node_id,
+          no_atual: inscricao?.current_node_id ?? null,
+        });
+        // #2262 — O DESCARTE DURANTE A PAUSA NÃO PODE SER SILÉNCIO.
+        //
+        // Apagada, encerrada ou em outro nó: não há nada a reenfileirar, e o
+        // silêncio acima está certo. PAUSADA é o caso oposto — a inscrição
+        // continua viva no MESMO nó (`paused_handoff` do handoff humano,
+        // `paused_manual` da intervenção), com um consumidor de retomada em
+        // `lib/followup/reactivity.ts` / `lib/followup/intervencao.ts`. Sem
+        // rastro, o último evento da estadia continua sendo o `turn_enqueued`
+        // deste job: na retomada o motor lê `actionEnqueued = waitElapsed &&
+        // !turnoDaAcaoDescartado(...)` como "turno em voo", não enfileira nada
+        // (só recheca) e a sequência fica parada no nó até o dead-man marcá-la
+        // `dead` com `action_turn_never_completed` — motivo falso, porque quem
+        // descartou foi a pausa.
+        //
+        // `turn_discarded` é o rastro que JÁ existe para isto (migration 0501,
+        // mesma chave `…:descartado` que não conta como passo em
+        // `fn_followup_job_current`): o motor enfileira um turno novo no
+        // primeiro tick depois da retomada. Escrito aqui pelo worker — sem
+        // `auth.uid()`, o gatilho `fn_followup_generation_write` deixa o
+        // servidor gravar; pela sessão, um manager continuaria recusado.
+        if (
+          inscricao !== undefined &&
+          inscricao.current_node_id === payload.node_id &&
+          (inscricao.status === 'paused_handoff' || inscricao.status === 'paused_manual') &&
+          payload.purpose === 'send_message'
+        ) {
+          await pool.query(
+            `insert into followup_enrollment_events
+               (organization_id, enrollment_id, node_id, event_type, payload, idempotency_key)
+             values ($1, $2, $3, 'turn_discarded', $4, $5)
+             on conflict (enrollment_id, idempotency_key) where idempotency_key is not null do nothing`,
+            [
+              tenantId,
+              payload.followup_enrollment_id,
+              payload.node_id,
+              { job_id: job.id, motivo: 'inscricao_pausada' },
+              `${typeof job.payload.source_step_key === 'string' && job.payload.source_step_key !== ''
+                ? job.payload.source_step_key
+                : job.id}:descartado`,
+            ],
+          );
+        }
+        return;
+      }
+    }
 
     const clock = deps.clock ?? ((): Date => new Date());
 
@@ -337,20 +569,32 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
     // Onda 5 (Task 5.1): turno DIRIGIDO POR FLUXO — guard exclusivo, nunca cai nos
     // caminhos legados abaixo (F3-03/F3-04 seguem intocados quando o campo falta).
     if (payload.followup_enrollment_id !== undefined) {
-      await runFlowDrivenTurn(deps, job, pool, ctx, clock, target, {
-        enrollmentId: payload.followup_enrollment_id,
-        nodeId: payload.node_id,
-        purpose: payload.purpose,
-        promptHint: payload.prompt_hint,
-        fixedBody: payload.fixed_body,
-        templateId: payload.template_id,
-        fallbackTemplateId: payload.fallback_template_id,
-        voltaIndex: payload.volta_index,
-        voltaTotal: payload.volta_total,
-        classes: payload.classes,
-        hint: payload.hint,
-        waits: payload.waits,
-      });
+      try {
+        await runFlowDrivenTurn(deps, job, pool, ctx, clock, target, {
+          enrollmentId: payload.followup_enrollment_id,
+          nodeId: payload.node_id,
+          purpose: payload.purpose,
+          promptHint: payload.prompt_hint,
+          fixedBody: payload.fixed_body,
+          templateId: payload.template_id,
+          fallbackTemplateId: payload.fallback_template_id,
+          voltaIndex: payload.volta_index,
+          voltaTotal: payload.volta_total,
+          classes: payload.classes,
+          hint: payload.hint,
+          waits: payload.waits,
+        });
+      } catch (err) {
+        // A organização parou com este turno JÁ rodando: a suspensão só descarta o
+        // `pending`, e o envio foi barrado aqui. O erro segue para a fila cancelar o
+        // job (`terminal`), mas antes o motor precisa saber que o turno saiu sem
+        // enviar — senão a reativação lê o cancelamento como worker morto e o
+        // dead-man mata a inscrição com `action_turn_never_completed`.
+        if (err instanceof OrgNaoOperanteError && payload.purpose === 'send_message') {
+          await pool.query('select public.fn_followup_turno_descartado($1, $2)', [tenantId, job.id]);
+        }
+        throw err;
+      }
       return;
     }
 
@@ -509,19 +753,73 @@ async function runFlowDrivenTurn(
     if (!context.ok) {
       throw new Error(`turno de classificação do fluxo falhou em get_lead_context (${context.error.code})`);
     }
+    const envioFechadoEm = await envioDoFluxoFechadoEm(pool, target.tenantId, enrollmentId);
+    // Sem envio do fluxo antes deste nó, vale a regra de antes: a última inbound
+    // que ninguém respondeu ainda.
+    const resposta =
+      envioFechadoEm === null
+        ? lastInboundSinceLastOutbound(context.context)
+        : respostaAoEnvioDoFluxo(context.context, envioFechadoEm);
+    if (resposta === null) {
+      // O lead ainda não respondeu ao envio do fluxo: não há o que classificar
+      // AGORA, e isso não é "sem resposta". O turno não conclui o passo — o
+      // enrollment segue em `waiting_reply` com a carência inteira; só deixa o
+      // rastro da espera no dossiê. Quem decide daqui é o motor: a resposta que
+      // chegar acorda o nó (reactivity → novo turno de classify) e a carência
+      // vencida roteia `no_reply` sem LLM (`case "ai_classify"` em
+      // lib/followup/node-handlers.ts). Concluir aqui com `no_reply` avançava o
+      // fluxo segundos depois do envio.
+      runLog.info('classificação adiada — o lead ainda não respondeu; o nó segue esperando a resposta ou a carência', {
+        node_id: nodeId,
+      });
+      await complete(pool, { jobId: job.id, jobClaim: claimOfJob(job), organizationId: target.tenantId, enrollmentId, nodeId, result: { kind: 'awaiting_reply' } });
+      return;
+    }
+    // O Jev lê a MESMA resposta, ao mesmo tempo, e só observa: a saída que move
+    // o fluxo é sempre a da IA de sempre, e ninguém espera por ele. Vai só o que
+    // o cliente digitou — resposta em mídia (transcrição, texto lido) não sai.
+    const conversaDaResposta = context.context.conversation_id;
+    const jev = consultarJevNoFollowup(
+      pool,
+      {
+        organizationId: target.tenantId,
+        contactId: target.leadId,
+        jobId: job.id,
+        conversationId: conversaDaResposta,
+        mensagem: textoDoClienteNaUltimaMensagem([resposta]),
+        classes,
+        ...(input.hint !== undefined ? { dica: input.hint } : {}),
+        idDaMensagem: () => idDaResposta(pool, target.tenantId, conversaDaResposta, resposta),
+      },
+      deps.jev,
+    );
     const cls = await classifyFollowupReply(
       pool,
       deps.llmCfg,
       { tenantId: target.tenantId, leadId: target.leadId, jobId: job.id },
       {
-        candidateText: lastInboundSinceLastOutbound(context.context),
+        candidateText: resposta.body,
         classes,
         ...(input.hint !== undefined ? { hint: input.hint } : {}),
         ...(deps.knobs.followupAi?.model !== undefined ? { model: deps.knobs.followupAi.model } : {}),
       },
       { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },
-    );
-    await complete(pool, { jobId:job.id,jobClaim:claimOfJob(job), organizationId: target.tenantId, enrollmentId, nodeId, result: { kind: 'classified', class: cls } });
+    ).catch((erro: unknown) => {
+      // Sem a saída dela o job vai ser repetido: o Jev fica sem par agora, e a
+      // repetição completa o par (`registrarFollowupDoJev`).
+      jev.observar(null);
+      throw erro;
+    });
+    // O par só leva a saída DEPOIS de ela concluir o passo: se a conclusão cair,
+    // o retry classifica de novo — e pode escolher outra —, e o par tem de ser
+    // com a saída que moveu o fluxo, não com a desta tentativa.
+    // ponytail: a conclusão que o motor descarta calada (o nó já andou por
+    // outro job) ainda observa; o par que fica é o de quem gravou primeiro.
+    await complete(pool, { jobId:job.id,jobClaim:claimOfJob(job), organizationId: target.tenantId, enrollmentId, nodeId, result: { kind: 'classified', class: cls } }).catch((erro: unknown) => {
+      jev.observar(null);
+      throw erro;
+    });
+    jev.observar(cls);
     return;
   }
 

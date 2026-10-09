@@ -20,14 +20,17 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * CHECK: um modelo quebrado entraria no banco em silêncio e só apareceria
  * quando o dono da clínica abrisse o construtor. O catálogo é código nosso, e
  * por isso a falha é 500 `modelo_invalido` — defeito do produto, não do pedido.
+ *
+ * Auth: sessão de navegador OU Bearer `dsk_...` (api_tokens) via
+ * `lib/api/auth-dual.ts` — a mesma dualidade das demais rotas de configuração
+ * que aceitam token. No ramo do token, a org sai da linha do token.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
 import { instalarModeloSchema, triggerConfigSchema } from "@/lib/followup/api-schemas";
 import { flowGraphSchema } from "@/lib/followup/graph-schema";
 import { validateFlowForPublish } from "@/lib/followup/validate-publish";
@@ -41,10 +44,18 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "followup_flows" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "followup_flows",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user, org: activeOrg } = authz;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
+  const { organizationId, actor, apiTokenId, supabase } = authz;
+
+  const teto = await tetoDeEscritaDoToken(authz, "followup_flows", requestId);
+  if (teto) return teto;
 
   let raw: unknown;
   try {
@@ -66,8 +77,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     return fail("not_found", t("Este modelo não existe mais."), 404, { requestId });
   }
 
-  const supabase = await createClient();
-
   // A etapa é conferida AQUI, com alguém na tela — e não só no publish. Etapa de
   // outra organização, apagada ou arquivada deixa o fluxo `active` sem nunca
   // enrollar ninguém: fluxo morto com cara de vivo.
@@ -84,7 +93,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       .from("crm_stages")
       .select("id, name, is_archived")
       .eq("id", parsed.data.stage_id)
-      .eq("organization_id", activeOrg.orgId)
+      .eq("organization_id", organizationId)
       .maybeSingle();
     if (etapaErr) return fail("internal_error", etapaErr.message, 500, { requestId });
     if (!etapa) {
@@ -123,7 +132,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const { data: criado, error: insErr } = await supabase
     .from("followup_flow_pointers")
     .insert({
-      organization_id: activeOrg.orgId,
+      organization_id: organizationId,
       name: nome,
       draft_graph: grafo.data,
       trigger_config: gatilho.data,
@@ -152,8 +161,9 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   void audit({
     action: "followup_flow.created",
-    actorUserId: user.id,
-    organizationId: activeOrg.orgId,
+    actorUserId: actor.type === "user" ? actor.id : null,
+    actorApiTokenId: apiTokenId ?? null,
+    organizationId,
     resourceType: "followup_flow_pointer",
     resourceId: criado.id,
     requestId,

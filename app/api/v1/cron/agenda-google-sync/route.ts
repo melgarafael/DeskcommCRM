@@ -85,6 +85,23 @@ async function executar(req: NextRequest) {
         if (result !== "complete") complete = false;
         else completedCalendars += 1;
         if (result !== "busy") effects.set(org, (effects.get(org) ?? 0) + 1);
+        // O marco da PRÓPRIA leitura desta agenda. `last_sync_at` é por agenda,
+        // não por conta: quem só bloqueia horário foi lida na mesma rodada que a
+        // de destino, e a tela ("Ainda não sincronizada") não pode dizer o
+        // contrário. Só quem leu de verdade carimba: `busy` não leu nada (outra
+        // rodada segura a aquisição ou a agenda está indisponível) e `failed`
+        // não terminou — nesse caso é a `sync_error` da própria linha que conta
+        // o que houve, e um carimbo aqui mentiria. `partial` avançou um
+        // checkpoint do ciclo (página gravada no cursor), então é leitura real.
+        if (result === "complete" || result === "partial") {
+          const { error: stampError } = await db
+            .from("calendar_connection_calendars")
+            .update({ last_sync_at: new Date().toISOString() })
+            .eq("organization_id", org)
+            .eq("connection_id", connection.id)
+            .eq("id", calendar.id);
+          if (stampError) throw stampError;
+        }
       }
       await db
         .from("calendar_connections")

@@ -316,6 +316,40 @@ describe("hooks não acusam o MERGE da main (#374)", () => {
     expect(rodar(dir, MIG_MANTENEDOR).rc).toBe(0);
   });
 
+  // A descrição saiu do MANIFEST.md para o próprio .sql (`-- manifest: ...`): o
+  // MANIFEST era o arquivo que todo PR com migration tocava, e o GitHub ignora o
+  // merge=union. O .sql é GRANDE de propósito: com `pipefail`, um `grep -q` fecha
+  // o cano antes de o `git show` terminar e a descrição presente lê como ausente.
+  it("(e) descrição no cabeçalho do .sql passa SEM tocar o MANIFEST, nos dois guards", () => {
+    const { dir } = fixture();
+    const corpo = "select 5;\n".repeat(50_000);
+    writeFileSync(
+      join(dir, "supabase/migrations/20260303000000_0412_descrita.sql"),
+      `-- manifest: a descrição mora no arquivo\n${corpo}`,
+    );
+    writeFileSync(join(dir, "supabase/baseline.sql"), "-- baseline\n-- descrita\n");
+    git(dir, "add", "-A");
+    expect(git(dir, "diff", "--cached", "--name-only")).not.toContain("MANIFEST.md");
+
+    const contribuidor = rodar(dir, MIG_CONTRIBUIDOR);
+    expect(contribuidor.rc, contribuidor.saida.slice(0, 400)).toBe(0);
+    const mantenedor = rodar(dir, MIG_MANTENEDOR);
+    expect(mantenedor.rc, mantenedor.saida.slice(0, 400)).toBe(0);
+  });
+
+  it("(e) migration sem descrição em lugar nenhum segue BARRADA nos dois guards", () => {
+    const { dir } = fixture();
+    writeFileSync(join(dir, "supabase/migrations/20260303000000_0412_muda.sql"), "-- manifest:\nselect 6;\n");
+    writeFileSync(join(dir, "supabase/baseline.sql"), "-- baseline\n-- muda\n");
+    git(dir, "add", "-A");
+
+    for (const hook of [MIG_CONTRIBUIDOR, MIG_MANTENEDOR]) {
+      const r = rodar(dir, hook);
+      expect(r.rc, `${hook}: ${r.saida.slice(0, 400)}`).toBe(1);
+      expect(r.saida).toContain("sem descrição");
+    }
+  });
+
   it("(c) invariante NOVO da branch passa — a catraca não é bloqueio de tudo", () => {
     const { dir } = fixture();
     writeFileSync(join(dir, "tests/invariants/novo-da-branch.test.ts"), CONGELADO);

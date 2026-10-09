@@ -39,7 +39,10 @@
  * dentro, com log, e o seguinte roda mesmo assim.
  */
 import { audit } from "@/lib/audit";
+import { idsDosCanaisDesativados } from "@/lib/channels/desativado";
+import { encerraDemanda } from "@/lib/leads/encerramento";
 import { garantirLeadDaConversa } from "@/lib/leads/nascimento-do-lead";
+import type { CanonicalLostReason } from "@/lib/schemas/leads";
 import {
   ehAPrimeiraMensagemDoContato,
   estamparOrigemDaPagina,
@@ -51,7 +54,8 @@ import { casarClickRef } from "@/lib/plataformas-de-anuncio/meta/captura-de-cliq
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
 import { ehContatoDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
-import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
+import { acelerarFollowupDoInbound, drenarEventosDoInbound } from "@/lib/dev/kick-local-pipeline";
+import { origemDoNegocioPeloCanal } from "@/lib/channels/origem-do-negocio";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { casarCampanha, lerCampanhas } from "@/lib/ai/elegibilidade/campanha";
 
@@ -111,6 +115,15 @@ export interface EntradaDeMensagem {
    * lendo o `event_log` meses depois, se saiba por onde a mensagem entrou.
    */
   origem: string;
+  /**
+   * O valor de `conversations.channel` desta conversa (`instagram`,
+   * `facebook`…). Ausente quer dizer WhatsApp.
+   *
+   * Este sim decide: é dele que sai a origem do negócio que nasce
+   * (`origemDoNegocioPeloCanal`). Sem ele, o negócio do direct do Instagram
+   * nascia com `source = 'whatsapp'`.
+   */
+  canal?: string;
 }
 
 /**
@@ -143,19 +156,35 @@ export async function aplicarEfeitosPosEntrada(
   }
 
   await aplicarOptOut(admin, entrada);
+  // Contato pessoal (spec 21, etapa 6): a mensagem já está gravada, com o
+  // carimbo de não-lida que o ingest gravou — mas NADA nasce dela: sem negócio,
+  // sem campanha, sem follow-up, sem IA (fila e resposta). O STOP continua na
+  // frente: `aplicarOptOut` rodou acima de propósito, então um STOP de pessoal
+  // ainda bloqueia (a ordem 1-2-3 do cabeçalho não muda).
+  if (await ehContatoPessoal(admin, entrada)) {
+    logger.info("[pos-entrada] efeitos pulados: contato pessoal", {
+      organizationId: entrada.organizationId,
+      origem: entrada.origem,
+    });
+    return;
+  }
   await guardarOrigemDaPagina(admin, entrada);
   await abrirDemanda(admin, entrada);
   await avaliarCampanha(admin, entrada);
-  // A resposta do lead avança o follow-up AQUI. O despacho do agente (LLM)
-  // vem depois: no Hobby ele estoura o tempo da request e o próximo texto
-  // do fluxo ficava esperando o relógio.
-  await acelerarPipelineDeEventos(admin, {
+  const sinal = {
     organizationId: entrada.organizationId,
     contactId: entrada.contactId,
     messageId: entrada.messageId,
     texto: entrada.texto,
-  });
+  };
+  // UMA VOZ: a resposta do cliente avança o follow-up DESTE contato antes de o
+  // turno do agente ser pedido.
+  await acelerarFollowupDoInbound(admin, sinal);
   await pedirDespachoDoAgente(admin, entrada);
+  // O dreno do event_log vem DEPOIS do despacho: nenhum handler dele decide se
+  // o agente fala (o "cliente voltou" é previsto por `deveCederTurnoAoRetorno`
+  // nas duas ordens), e cada evento drenado aqui atrasava o pedido do turno.
+  await drenarEventosDoInbound(admin, sinal);
 }
 
 /**
@@ -222,6 +251,34 @@ async function avaliarCampanha(admin: Admin, entrada: EntradaDeMensagem): Promis
 }
 
 /**
+ * Contato marcado como pessoal (`contacts.is_personal`, spec 21).
+ *
+ * Fail-open de propósito, como o resto do arquivo: a mensagem JÁ está gravada;
+ * se a leitura falhar, o seguinte roda mesmo assim — e a segunda defesa (a
+ * recusa em `garantirLeadDaConversa`, `contato_pessoal`) continua valendo para
+ * o negócio. Uma exceção aqui viraria 500 para o provider e tempestade de
+ * reentregas.
+ */
+async function ehContatoPessoal(admin: Admin, entrada: EntradaDeMensagem): Promise<boolean> {
+  try {
+    const { data } = await admin
+      .from("contacts")
+      .select("is_personal")
+      .eq("organization_id", entrada.organizationId)
+      .eq("id", entrada.contactId)
+      .maybeSingle();
+    return (data as { is_personal?: boolean } | null)?.is_personal === true;
+  } catch (err) {
+    logger.warn("pos-entrada: leitura de is_personal falhou (os efeitos seguem)", {
+      organization_id: entrada.organizationId,
+      contact_id: entrada.contactId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+    });
+    return false;
+  }
+}
+
+/**
  * 1 · Quem pediu para sair, sai.
  *
  * O update é incondicional (não filtra por `is_blocked` atual) de propósito:
@@ -266,6 +323,94 @@ async function aplicarOptOut(admin: Admin, entrada: EntradaDeMensagem): Promise<
       origem: entrada.origem,
       detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
     });
+    // Sem o bloqueio gravado não há o que fechar: o contato segue recebendo, e
+    // fechar o negócio de quem o sistema não conseguiu proteger esconderia o
+    // problema no funil em vez de deixá-lo no log.
+    return;
+  }
+
+  await fecharNegociosAbertosDeQuemPediuParar(admin, entrada);
+}
+
+/**
+ * Motivo canônico de perda (`CANONICAL_LOST_REASONS`, migration 0513): "Pediu
+ * para não receber mensagens". Não é `requested_by_customer` ("Cliente solicitou
+ * cancelamento") — pedir silêncio não é cancelar (decisão do dono, doc 85).
+ */
+const MOTIVO_DA_PERDA_POR_OPT_OUT = "opted_out_of_messages" satisfies CanonicalLostReason;
+
+/**
+ * Quem pediu para parar não é mais uma oportunidade: o negócio aberto dele vira
+ * "Perdido — Pediu para não receber mensagens". Inclusive pedido já pago — o
+ * dono escolheu fechar TODO negócio aberto (opção B, não B').
+ *
+ * Medido em produção: os dois opt-outs de um dia bloquearam o contato um segundo
+ * depois do "parar" (`contact.blocked`, sem usuário), mas o negócio ficou aberto
+ * na etapa de origem até um operador arrastá-lo à mão minutos depois. Enquanto
+ * isso o card seguia contando como demanda viva e sujando o radar de risco.
+ *
+ * Roda DEPOIS do bloqueio gravado e ANTES do nascimento do lead (o passo 2 já
+ * recusa contato bloqueado, então não nasce card novo para quem acabou de sair).
+ * Usa `encerraDemanda` — a mesma regra do botão "perdido" e da IA —, que é
+ * idempotente, filtra `organization_id`, grava a timeline e a auditoria.
+ *
+ * NUNCA lança: a mensagem já entrou e o bloqueio já foi gravado; uma falha aqui
+ * (funil sem etapa de perdido, por exemplo) fica no log e não derruba a ingestão.
+ */
+async function fecharNegociosAbertosDeQuemPediuParar(
+  admin: Admin,
+  entrada: EntradaDeMensagem,
+): Promise<void> {
+  try {
+    const { data, error } = await admin
+      .from("crm_leads")
+      .select("id")
+      .eq("organization_id", entrada.organizationId)
+      .eq("contact_id", entrada.contactId)
+      .eq("status", "open");
+    if (error) {
+      logger.warn("pos-entrada: negócios do contato que pediu para parar não lidos", {
+        organization_id: entrada.organizationId,
+        contact_id: entrada.contactId,
+        detail: error.message.slice(0, 160),
+      });
+      return;
+    }
+    for (const lead of (data ?? []) as Array<{ id: string }>) {
+      try {
+        await encerraDemanda(
+          admin,
+          {
+            organization_id: entrada.organizationId,
+            // `webhook_source`, como o nascimento do lead: a mensagem chegou pelo
+            // canal e o produto agiu — não foi uma pessoa. A timeline traduz para
+            // "sistema".
+            actor: { type: "webhook_source", id: "canal-inbound" },
+            requestId: entrada.requestId ?? `opt-out:${entrada.conversationId}`,
+          },
+          {
+            leadId: lead.id,
+            desfecho: "lost",
+            motivo: MOTIVO_DA_PERDA_POR_OPT_OUT,
+            razaoNaTimeline: "O cliente pediu para não receber mais mensagens",
+            payloadNaTimeline: { conversation_id: entrada.conversationId },
+          },
+        );
+      } catch (err) {
+        logger.warn("pos-entrada: negócio de quem pediu para parar não foi fechado", {
+          organization_id: entrada.organizationId,
+          contact_id: entrada.contactId,
+          lead_id: lead.id,
+          detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+        });
+      }
+    }
+  } catch (err) {
+    logger.warn("pos-entrada: fechamento dos negócios de quem pediu para parar falhou", {
+      organization_id: entrada.organizationId,
+      contact_id: entrada.contactId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+    });
   }
 }
 
@@ -282,6 +427,7 @@ async function abrirDemanda(admin: Admin, entrada: EntradaDeMensagem): Promise<v
       contactId: entrada.contactId,
       conversationId: entrada.conversationId,
       nomeDoContato: entrada.nomeDoContato,
+      origem: origemDoNegocioPeloCanal(entrada.canal),
     });
 
     // Os DOIS desfechos viram log. Sem a linha do "não criou", o silêncio de
@@ -317,6 +463,29 @@ async function abrirDemanda(admin: Admin, entrada: EntradaDeMensagem): Promise<v
  */
 async function pedirDespachoDoAgente(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
   if (!entrada.messageId) return;
+
+  // Canal desativado pelo operador nunca acorda o agente: a entrega foi gravada
+  // (quarentena), mas não gera turno, fila nem gasto. Uma ida curta, antes do
+  // `emit_event` — o ponto mais barato da cadeia, comum aos canais.
+  // Falha para dentro de propósito: se a leitura falhar, despacha — as
+  // barreiras de baixo (drain, elegibilidade, turno) também leem o flag, e a
+  // ingestão nunca pode virar 500 por causa de um passo de efeito.
+  try {
+    const idsOff = await idsDosCanaisDesativados(admin, entrada.organizationId);
+    if (idsOff.includes(entrada.channelSessionId)) {
+      logger.info("pos-entrada: canal desativado — despacho pulado", {
+        organization_id: entrada.organizationId,
+        conversation_id: entrada.conversationId,
+        origem: entrada.origem,
+      });
+      return;
+    }
+  } catch (err) {
+    logger.warn("pos-entrada: leitura de canais desativados falhou — despachando", {
+      organization_id: entrada.organizationId,
+      detail: err instanceof Error ? err.message.slice(0, 120) : "unknown",
+    });
+  }
 
   const { error } = await admin.rpc("emit_event" as never, {
     p_event_type: "ai_agent.dispatch_requested",

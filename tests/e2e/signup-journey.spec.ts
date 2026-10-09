@@ -12,7 +12,7 @@
  */
 import { test, expect } from "./helpers/test";
 
-import { waitForEmail, extractAuthConfirmLink, uniqueEmail } from "./helpers/auth";
+import { waitForEmail, extractAuthConfirmLink, seguirLinkDeAcesso, uniqueEmail } from "./helpers/auth";
 
 test("criar conta: signup → e-mail de confirmação → onboarding → re-login", async ({
   page,
@@ -39,7 +39,7 @@ test("criar conta: signup → e-mail de confirmação → onboarding → re-logi
   // 3. Abre o e-mail real no Mailpit e segue o link
   const html = await waitForEmail(email, "Confirme seu e-mail");
   const link = extractAuthConfirmLink(html, baseURL!);
-  await page.goto(link);
+  await seguirLinkDeAcesso(page, link);
 
   // 4. Autenticado no onboarding — tenant provisionado
   await expect(page).toHaveURL(/\/onboarding\/welcome/);

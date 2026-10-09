@@ -34,6 +34,8 @@ import {
   type ChaveDeOrcamento,
   type ModoDeOrcamento,
 } from "@/lib/agent-engine/edge/llm/orcamento";
+import { PONTO_TRANSCRICAO_DE_AUDIO } from "@/lib/ai/pontos/registro";
+import { ORIGENS_DA_TRANSCRICAO_POR_SERVICO } from "@/lib/messaging/media/transcription";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -57,7 +59,9 @@ export interface BudgetStatus {
   enforcement_effective_at: string | null;
   /**
    * Há chamadas de IA NESTE MÊS cujo custo o produto não sabe calcular
-   * (`llm_calls.cost_cents is null`).
+   * (`llm_calls.cost_cents is null` numa linha `ok` que não é de transcrição
+   * pelo serviço, degraus 1 e 2 — o porquê das duas exclusões está na
+   * consulta, em `getBudgetStatus`).
    *
    * ⚠️ É O FURO DEBAIXO DA PROTEÇÃO INTEIRA, e por isso ele é um campo do
    * contrato e não uma nota num doc. `pricing.ts` casa o `model` por id EXATO
@@ -161,15 +165,33 @@ export async function getBudgetStatus(orgId: string): Promise<BudgetStatus> {
       .select("id", { count: "exact", head: true })
       .eq("organization_id", orgId)
       .eq("kind", "budget_exceeded")
+      // Só o orçamento da ORG e o legado sem referência: a mesma régua do
+      // retratarAvisos de app/api/v1/ai/budget/route.ts. O aviso do teto do
+      // PLANO (ref_kind='plano') não é deste card nem se destrava por ele.
+      .or("ref_kind.is.null,ref_kind.eq.ai_budget")
       .eq("status", "open"),
     // O furo de medição, medido onde ele aparece: chamada do mês sem custo
     // conhecido. `idx_llm_calls_org_time (organization_id, created_at)` serve o
     // filtro; `head: true` não traz linha nenhuma.
+    //
+    // Duas linhas têm `cost_cents` nulo sem que o modelo seja desconhecido, e o
+    // aviso diria a quem lê que é: a de FALHA (o provedor recusou, zero token
+    // cobrado) e a de transcrição pelo SERVIÇO (degraus 1 e 2 da escada), que
+    // tem preço próprio e não devolve tokens — toda instalação de WhatsApp que
+    // recebe um áudio acenderia o aviso. O degrau 3 da mesma escada é o modelo
+    // de conversa, cobrado por token: sem preço na tabela, ele É o furo, e
+    // excluir o `purpose` inteiro o apagava. Por isso o corte é pela origem
+    // gravada na linha; transcrição sem origem conta (na dúvida, avisa).
     admin
       .from("llm_calls")
       .select("id", { count: "exact", head: true })
       .eq("organization_id", orgId)
       .is("cost_cents", null)
+      .eq("status", "ok")
+      .or(
+        `purpose.neq.${PONTO_TRANSCRICAO_DE_AUDIO},origem_da_escolha.is.null,` +
+          `origem_da_escolha.not.in.(${ORIGENS_DA_TRANSCRICAO_POR_SERVICO.join(",")})`,
+      )
       .gte("created_at", inicioDoMesUtc()),
   ]);
 

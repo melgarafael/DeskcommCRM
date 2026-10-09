@@ -8,10 +8,13 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { contarUsoQueBloqueia, type VersaoVinculada } from "@/lib/ai/credenciais/uso";
 import { lerConfigDoJev } from "@/lib/ai/decisao/config";
 import {
+  algumFluxoQueClassifica,
   algumRoteadorQuePergunta,
   estadoEfetivoDaTarefa,
+  INSCRICAO_ENCERRADA,
   TAREFAS_DO_JEV,
   tarefaSemCamada,
+  tarefaSemFluxo,
   tarefaSemRoteador,
 } from "@/lib/ai/decisao/tarefas";
 import { camadasEfetivas } from "@/lib/agent-engine/guardrails/camadas-da-org";
@@ -19,9 +22,17 @@ import { DEFAULT_CLASSIFIER_MODEL } from "@/lib/ai/gateway";
 import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
 import { lerAmbiente } from "@/lib/instalacao/ambiente";
 import { logger } from "@/lib/logger";
-import { PROVEDORES } from "@/lib/ai/pontos/provedores";
+import { criarSessaoPkce, gerarNonceSiwc, CLIENTE_DINAMICO_SIWC } from "@/lib/ai/pontos/pkce-da-assinatura";
+import { lerLoginCodex } from "@/lib/ai/credenciais/login-codex";
+import { lerOuCriarHostIdSiwc } from "@/lib/ai/credenciais/host-siwc";
+import { emitirEstado } from "@/lib/agenda/google/estado";
+import { env } from "@/lib/env";
+import { PROVEDOR_POR_ASSINATURA, PROVEDORES } from "@/lib/ai/pontos/provedores";
+import { moduloLigado } from "@/lib/instalacao/modulos";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { tagDeIdioma } from "@/lib/i18n/datas";
 import { CredentialsList } from "./_components/CredentialsList";
+import { PainelDeLoginCodex } from "./_components/PainelDeLoginCodex";
 
 export const dynamic = "force-dynamic";
 
@@ -44,8 +55,67 @@ export default async function CredentialsPage() {
     .eq("organization_id", activeOrg.orgId)
     .order("created_at", { ascending: false });
 
-  const credentials = (data ?? []) as CredentialRow[];
+  const todas = (data ?? []) as CredentialRow[];
+
+  // O INTERRUPTOR DA INSTALAÇÃO (#1672, itens 6 e 9): desligado, a linha do
+  // login por assinatura NÃO aparece aqui — nem no painel, nem na lista de
+  // chaves. A leitura do banco continua acontecendo (a linha é da empresa,
+  // cifrada e protegida por RLS), mas ninguém a enxerga: o leitor próprio
+  // (`lib/ai/credenciais/login-codex.ts`) também recusa quando o módulo está
+  // fora.
+  const moduloLoginCodex = await moduloLigado(createAdminClient(), "login_codex");
+
+  // A linha do login por assinatura não é uma CHAVE de API: ela guarda o par
+  // de tokens da conta da empresa, e vai para o painel próprio. Fora da lista
+  // de chaves, ela também não mentiria como "credencial" no agrupamento por
+  // provedor (que só conhece quem cadastra chave).
+  const linhaDeLogin = moduloLoginCodex
+    ? (todas.find((c) => c.provider === PROVEDOR_POR_ASSINATURA) ?? null)
+    : null;
+  const credentials = todas.filter((c) => c.provider !== PROVEDOR_POR_ASSINATURA);
   const canWrite = ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
+  // O par PKCE DESTA renderização: o link mostrado e o verifier do campo de
+  // colagem nascem juntos — e só JUNTOS valem: o `code` que o navegador deixa
+  // não troca sem o verifier. Nenhum dos dois circula sozinho (o `code` só
+  // existe no navegador de quem conecta, e a troca acontece no servidor), mas
+  // isso não faz do verifier um valor público: é segredo de uso ÚNICO, que
+  // existe para esta conexão e morre com ela. Não é chave da OpenAI — quem
+  // tiver os dois, porém, troca o `code` por tokens.
+  //
+  // O `state` é ASSINADO com a empresa e a pessoa (o mesmo `emitirEstado` da
+  // agenda do Google): a action só troca o código cujo retorno traz este
+  // `state`. Sem segredo utilizável o painel não aparece — um login que
+  // ninguém consegue conferir não deve ser oferecido.
+  let sessaoPkce: ReturnType<typeof criarSessaoPkce> | null = null;
+  let siwcAutorizado = false;
+  if (moduloLoginCodex) {
+    try {
+      const admin = createAdminClient();
+      const [hostId, tokens] = await Promise.all([
+        lerOuCriarHostIdSiwc(admin),
+        lerLoginCodex({ admin, orgId: activeOrg.orgId }),
+      ]);
+      siwcAutorizado = tokens !== null;
+      if (!hostId) throw new Error("host_siwc_nao_persistido");
+      const clientId = tokens?.client_id;
+      const nonce = gerarNonceSiwc();
+      sessaoPkce = criarSessaoPkce(
+        emitirEstado(
+          {
+            organizationId: activeOrg.orgId,
+            userId: user.id,
+            authSessionId: clientId ?? CLIENTE_DINAMICO_SIWC,
+          },
+          { segredo: env.INTERNAL_SECRET, agora: new Date(), nonce },
+        ),
+        { nonce, ...(clientId ? { clientId } : {}), extAgentHostId: hostId },
+      );
+    } catch (err) {
+      logger.warn("[ai/credentials] login SIWC indisponível (state/host do servidor)", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   // Mesma regra do DELETE — e a mesma da FK `ON DELETE RESTRICT`: TODA versão
   // que aponta para a credencial trava a exclusão, não só a publicada. O número
@@ -89,11 +159,35 @@ export default async function CredentialsPage() {
         .eq("is_active", true)
     : { data: null, error: null };
   const temRoteadorQuePergunta = !erroDosRoteadores && algumRoteadorQuePergunta(roteadoresAtivos ?? []);
-  if (erroDasCamadas || erroDosRoteadores) {
-    logger.warn("credenciais: o \"Usada em\" do Jev saiu sem conferir a camada ou o roteador", {
+  // O follow-up: sem um publicado com o passo "Classificar (IA)", nem uma
+  // inscrição andando numa versão com ele, ninguém lê a resposta do cliente — a
+  // mesma leitura da rota do cartão. Leitura que falha: a tarefa sai da lista, idem.
+  const [{ data: fluxosPublicados, error: erroDosPublicados }, { data: versoesEmCurso, error: erroDasEmCurso }] =
+    jevLigado
+      ? await Promise.all([
+          supabase
+            .from("followup_flow_pointers")
+            .select("versao:followup_flow_versions!followup_flow_pointers_active_version_id_fkey(graph)")
+            .eq("organization_id", activeOrg.orgId)
+            .eq("status", "active"),
+          supabase
+            .from("followup_flow_versions")
+            .select("graph, inscricoes:followup_enrollments!inner(id)")
+            .eq("organization_id", activeOrg.orgId)
+            .not("inscricoes.status", "in", INSCRICAO_ENCERRADA)
+            .limit(1, { referencedTable: "inscricoes" }),
+        ])
+      : [{ data: null, error: null }, { data: null, error: null }];
+  const erroDosFluxos = erroDosPublicados ?? erroDasEmCurso;
+  const temFluxoQueClassifica =
+    !erroDosFluxos &&
+    algumFluxoQueClassifica([...(fluxosPublicados ?? []), ...(versoesEmCurso ?? []).map((versao) => ({ versao }))]);
+  if (erroDasCamadas || erroDosRoteadores || erroDosFluxos) {
+    logger.warn("credenciais: o \"Usada em\" do Jev saiu sem conferir a camada, o roteador ou os follow-ups", {
       organization_id: activeOrg.orgId,
       camadas: erroDasCamadas?.message ?? null,
       roteadores: erroDosRoteadores?.message ?? null,
+      fluxos: erroDosFluxos?.message ?? null,
     });
   }
   // A mesma pergunta que o worker faz: sem a chave do Jev, há IA principal para medir?
@@ -104,7 +198,8 @@ export default async function CredentialsPage() {
           (t) =>
             estadoEfetivoDaTarefa(configDoJev, t) !== "desligada" &&
             (camadas === null ? t.camada === undefined : !tarefaSemCamada(t, camadas)) &&
-            !tarefaSemRoteador(t, temRoteadorQuePergunta),
+            !tarefaSemRoteador(t, temRoteadorQuePergunta) &&
+            !tarefaSemFluxo(t, temFluxoQueClassifica),
         ).map((t) => t.rotulo),
         temIaPrincipal:
           (await resolverModeloDoPonto("sentiment_classify", activeOrg.orgId, DEFAULT_CLASSIFIER_MODEL, {
@@ -137,6 +232,15 @@ export default async function CredentialsPage() {
           )}
         </p>
       </header>
+      {moduloLoginCodex && sessaoPkce && (
+        <PainelDeLoginCodex
+          url={sessaoPkce.url}
+          codeVerifier={sessaoPkce.codeVerifier}
+          conectado={linhaDeLogin !== null}
+          validada={linhaDeLogin?.validated_at != null}
+          siwcAutorizado={siwcAutorizado}
+        />
+      )}
       <CredentialsList
         initialData={credentials}
         canWrite={canWrite}

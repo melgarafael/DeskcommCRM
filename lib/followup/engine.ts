@@ -29,6 +29,7 @@ import {
   occupancyEventCount,
   pisoDoInboundDaEspera,
   rechecksOciososDaAcao,
+  turnoDaAcaoDescartado,
   actionTurnCompleted,
   processNode,
   repeatTakenFromEvents,
@@ -50,6 +51,14 @@ import {
 } from "./no-show-recuperacao-esgotada";
 import { interpolarDestino, persistirRespostaFollowupSupabase } from "./persistir-resposta";
 import { criarTarefaInterna as criarTarefaNoCrm } from "@/lib/tarefas/criar-tarefa";
+import { moveLeadHandler } from "@/app/api/v1/leads/_handler";
+import type { HandlerCtx } from "@/lib/api/handlers/types";
+import { ApiError } from "@/lib/api/types";
+import { getAction } from "@/lib/automation/actions";
+// Efeito de import: registra a ação `add_tag` no MESMO mapa que o motor de
+// automação usa. A tag do follow-up é a tag da automação — não uma segunda.
+import "@/lib/automation/actions/add-tag";
+import type { EventRow } from "@/lib/event-log/dispatcher";
 import { quandoDoRetornoVivo, reavaliarDepoisDoRetorno } from "./retorno-segura-o-fluxo";
 import { triggerConfigSchema } from "./api-schemas";
 
@@ -165,6 +174,28 @@ export interface AdminClient {
     config: Extract<FlowNode, { type: "internal_task" }>["config"];
   }): Promise<void>;
   /**
+   * Nó `move_lead` (#2065): move o card para outra etapa. Mesma razão de
+   * `criarTarefaInterna` — opcional, o tick nunca trava; omitida, o nó AVANÇA
+   * sem mover (é o que um teste de engine puro observa) e a produção grava
+   * pelo `moveLeadHandler` da casa.
+   */
+  moverLeadNoFunil?(item: {
+    organization_id: string;
+    contact_id: string;
+    enrollment_id: string;
+    config: Extract<FlowNode, { type: "move_lead" }>["config"];
+  }): Promise<void>;
+  /**
+   * Nó `edit_lead_tag` (#2065): merge idempotente de tags no lead — a MESMA
+   * `add_tag` do motor de automação. Opcional pelas mesmas razões acima.
+   */
+  editarTagDoLead?(item: {
+    organization_id: string;
+    contact_id: string;
+    enrollment_id: string;
+    config: Extract<FlowNode, { type: "edit_lead_tag" }>["config"];
+  }): Promise<void>;
+  /**
    * Régua de recuperação de falta esgotada sem resposta — abre um item na
    * Central referenciando o COMPROMISSO. Opcional: só a produção precisa; os
    * adaptadores de teste que não exercitam no-show podem omitir. Ver
@@ -239,6 +270,7 @@ function eventPayload(result: NodeResult): Record<string, unknown> {
         ...(result.repeat !== undefined
           ? { repeat_index: result.repeat.index, repeat_total: result.repeat.total }
           : {}),
+        ...(result.class !== undefined ? { class: result.class } : {}),
       };
     case "wait":
       return {
@@ -428,6 +460,73 @@ async function applyResult(
       // de novo no tick seguinte e tentaria a MESMA tarefa — a trava é o
       // evento, que já está gravado). O warn é o que o suporte lê.
       logger.warn("followup_internal_task_failed", {
+        organization_id: enrollment.organization_id,
+        enrollment_id: enrollment.id,
+        node_id: node.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  // ── #2065: os dois nós de ACAO que não falam com o cliente ──────────────
+  //
+  // Mesma forma e MESMO motivo do `internal_task` acima: a escrita nasce DEPOIS
+  // do evento do passo, porque o `idempotency_key` (`${nó}:${passo}`) é a trava
+  // — um replay do tick não move o card duas vezes nem grava a tag duas vezes.
+  // E, como ali, falha de gravação não reverteria o avanço: o enrollment já
+  // avança e o warn é o que o suporte lê (o tick seguinte não tenta de novo, é
+  // a trava do evento que impede).
+  if (result.kind === "advance" && !isReplay && node.type === "move_lead") {
+    try {
+      await db.moverLeadNoFunil?.({
+        organization_id: enrollment.organization_id,
+        contact_id: enrollment.contact_id,
+        enrollment_id: enrollment.id,
+        config: node.config,
+      });
+    } catch (err) {
+      logger.warn("followup_move_lead_failed", {
+        organization_id: enrollment.organization_id,
+        enrollment_id: enrollment.id,
+        node_id: node.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      // A recusa vira linha na trilha da inscrição — quem montou o fluxo vê o
+      // card parado onde o fluxo diz que andou. Chave própria (`:falha`) para o
+      // replay não duplicar; o registro tem o próprio try/catch para nunca
+      // derrubar o tick nem reverter o avanço.
+      try {
+        await db.insertEnrollmentEvent({
+          organization_id: enrollment.organization_id,
+          enrollment_id: enrollment.id,
+          node_id: node.id,
+          event_type: "move_lead_failed",
+          payload: {
+            error: err instanceof Error ? err.message : String(err),
+            codigo: err instanceof ApiError ? err.code : null,
+          },
+          idempotency_key: `${idemKey}:falha`,
+        });
+      } catch (registroErr) {
+        logger.warn("followup_move_lead_failed_event_failed", {
+          organization_id: enrollment.organization_id,
+          enrollment_id: enrollment.id,
+          node_id: node.id,
+          error: registroErr instanceof Error ? registroErr.message : String(registroErr),
+        });
+      }
+    }
+  }
+  if (result.kind === "advance" && !isReplay && node.type === "edit_lead_tag") {
+    try {
+      await db.editarTagDoLead?.({
+        organization_id: enrollment.organization_id,
+        contact_id: enrollment.contact_id,
+        enrollment_id: enrollment.id,
+        config: node.config,
+      });
+    } catch (err) {
+      logger.warn("followup_edit_lead_tag_failed", {
         organization_id: enrollment.organization_id,
         enrollment_id: enrollment.id,
         node_id: node.id,
@@ -740,7 +839,8 @@ async function processEnrollment(
       wokeEarly = events.some((e) => e.node_id === node.id && e.idempotency_key === wakeKey);
     }
     if (node.type === "action") {
-      actionEnqueued = waitElapsed;
+      // Turno descartado pela suspensão: a estadia RETOMA com um turno novo.
+      actionEnqueued = waitElapsed && !turnoDaAcaoDescartado(events, node.id);
       // NÃO é `occupancyEventCount`: o dead-man mede ociosidade DESDE A ÚLTIMA
       // prova de vida do turno, e um adiamento de janela é prova de vida. Ver
       // `rechecksOciososDaAcao` / `EVENTO_ACAO_ADIADA` em node-handlers.ts.
@@ -1030,6 +1130,131 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
           enrollment_id: item.enrollment_id,
           motivo: resultado.codigo,
         });
+      }
+    },
+    /**
+     * #2065 — nó `move_lead`: move o card para outra etapa REUSANDO o escritor
+     * de etapa da casa, `moveLeadHandler` — o mesmo que usam o board, o lote,
+     * as automações (`create_or_move_lead`) e a tool MCP `crm_move_lead_stage`.
+     * Ele é quem valida etapa existente, organização certa, troca de funil
+     * (`pipeline_immutable_use_clone`) e reabertura de negócio encerrado; aqui
+     * só resolvemos QUAL negócio e repassamos o motivo da perda que o bloco
+     * guarda (`lost_reason`, sem padrão escondido) — e deixamos a recusa subir
+     * (o `applyResult` registra em `followup_move_lead_failed` sem reverter o avanço).
+     *
+     * O negócio é o mais recente do contato NO FUNIL DA ETAPA DE DESTINO. O
+     * mais recente de qualquer funil, quando o contato tem negócio em dois,
+     * escolhia às vezes o do outro funil — e a troca de funil é recusada, então
+     * o card nunca andava e o fluxo seguia como se tivesse andado.
+     *
+     * O ator é o próprio enrollment: a variante não-pessoa do `Actor` é
+     * `webhook_source`, e nenhum actor de sistema existe — o id é
+     * `followup:<enrollment>`, então a timeline e o audit mostram de onde veio.
+     */
+    async moverLeadNoFunil(item) {
+      const { data: etapa, error: etapaErr } = await admin
+        .from("crm_stages")
+        .select("pipeline_id")
+        .eq("organization_id", item.organization_id)
+        .eq("id", item.config.stage_id)
+        .maybeSingle();
+      if (etapaErr) throw new Error(etapaErr.message);
+      if (!etapa) throw new Error("etapa_destino_inexistente");
+
+      const { data: lead, error } = await admin
+        .from("crm_leads")
+        .select("id")
+        .eq("organization_id", item.organization_id)
+        .eq("contact_id", item.contact_id)
+        .eq("pipeline_id", etapa.pipeline_id)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!lead) {
+        // Contato sem negócio neste funil não tem card para mover — não é defeito do fluxo.
+        logger.warn("followup_move_lead_skipped", {
+          organization_id: item.organization_id,
+          enrollment_id: item.enrollment_id,
+          motivo: "sem_negocio_no_funil",
+        });
+        return;
+      }
+      const handlerCtx: HandlerCtx = {
+        organization_id: item.organization_id,
+        actor: { type: "webhook_source", id: `followup:${item.enrollment_id}` },
+        requestId: `followup:${item.enrollment_id}`,
+      };
+      // O motivo da perda viaja junto quando quem montou o fluxo escolheu um —
+      // sem ele a etapa de perda recusa com 422 e o publish já barrou antes.
+      // Sem motivo configurado a chave nem viaja: nada de padrão escondido.
+      const motivo = item.config.lost_reason?.trim();
+      await moveLeadHandler(
+        admin,
+        handlerCtx,
+        lead.id,
+        motivo ? { to_stage_id: item.config.stage_id, lost_reason: motivo } : { to_stage_id: item.config.stage_id },
+      );
+    },
+    /**
+     * #2065 — nó `edit_lead_tag`: a MESMA ação `add_tag` do motor de automação,
+     * pelo MESMO registro (`getAction`) — merge idempotente, evento
+     * `lead.tag_added`/`contact.tag_added` e anti-loop saem de lá, não há nada
+     * duplicado aqui.
+     *
+     * Duas decisões de contexto, e as duas são honestidade de dado:
+     *
+     * - O lead chega como LINHA INTEIRA (`select *`), não como recorte: a
+     *   própria `add_tag` avisa que um recorte faz `prev = []` e o UPDATE
+     *   APAGARIA as tags existentes do negócio.
+     * - `event` vem VAZIO de propósito. A origem do serviço
+     *   (`originFromAutomationEvent`) devolve `null` quando não há evento raiz,
+     *   e `null` é a origem "indisponível" — nunca inventamos um id de evento
+     *   que não existe no `event_log` para viajar no payload do evento gravado.
+     */
+    async editarTagDoLead(item) {
+      const { data: lead, error } = await admin
+        .from("crm_leads")
+        .select("*")
+        .eq("organization_id", item.organization_id)
+        .eq("contact_id", item.contact_id)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+
+      const context: Record<string, unknown> = {};
+      if (lead) {
+        context.lead = lead;
+      } else {
+        // Sem negócio, a `add_tag` grava no CONTATO — é o alvo dela, não um
+        // fallback inventado aqui.
+        const { data: contato, error: contatoErr } = await admin
+          .from("contacts")
+          .select("*")
+          .eq("organization_id", item.organization_id)
+          .eq("id", item.contact_id)
+          .maybeSingle();
+        if (contatoErr) throw new Error(contatoErr.message);
+        if (contato) context.contact = contato;
+      }
+
+      const acao = getAction("add_tag");
+      if (!acao) throw new Error("add_tag_nao_registrada");
+      const resultado = await acao.execute(
+        {
+          admin,
+          organizationId: item.organization_id,
+          ruleId: `followup:${item.enrollment_id}`,
+          ruleName: "Fluxo de follow-up",
+          event: {} as EventRow,
+          context,
+          requestId: `followup:${item.enrollment_id}`,
+        },
+        { tags: item.config.tags },
+      );
+      if (resultado.status === "failed") {
+        throw new Error(resultado.error ?? "add_tag_failed");
       }
     },
     async abrirAvisoRecuperacaoEsgotada(item) {
