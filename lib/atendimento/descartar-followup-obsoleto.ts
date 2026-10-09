@@ -1,4 +1,6 @@
 import type { Pool } from "pg";
+import { logger } from "@/lib/logger";
+import type { Logger } from "@/lib/agent-engine/obs/logger";
 import { claimOfJob } from "@/lib/agent-engine/queue/claim";
 import { cancelJob, type JobRow } from "@/lib/agent-engine/queue/queue";
 
@@ -10,6 +12,7 @@ export async function descartarFollowupObsoleto(
   pool: Pool,
   job: JobRow,
   workerId: string,
+  log: Pick<Logger, "warn"> = logger,
 ): Promise<void> {
   const claim = claimOfJob(job);
   if (!claim || job.kind !== "followup_turn") return;
@@ -24,12 +27,15 @@ export async function descartarFollowupObsoleto(
     );
     if (rows.length) {
       await tx.query(
-        `select fn_followup_turno_descartado($1,$2) where exists (
-        select 1 from event_log where organization_id=$1 and entity_id=$2
-          and entity_kind='job' and event_type='conversation.autonomous_turn_revoked' and status='done')`,
+        `select fn_followup_turno_descartado($1,$2) where public.fn_autonomous_turn_revoked($1,$2)`,
         [job.organization_id, job.id],
       );
       await cancelJob(tx, job.id, workerId, "service_boundary_stale", claim.acquired_at);
+    } else {
+      // Não registra descarte nem altera o lease que já pertence a outro ciclo.
+      log.warn("followup_stale_discard_lease_changed", {
+        job_id: job.id, organization_id: job.organization_id, kind: job.kind,
+      });
     }
     await tx.query("commit");
   } catch (error) {

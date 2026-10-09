@@ -153,12 +153,11 @@ export async function enviarTextoFixoPendente(
       logger.warn("[dev.pipeline] envio inline falhou", { error: message });
       let revogado = false;
       if (err instanceof StaleServiceBoundaryError) {
-        const {data: fato,error: falhaDeLeitura} = await admin.from("event_log")
-          .select("id").eq("organization_id",job.organization_id).eq("entity_id",job.id)
-          .eq("entity_kind","job").eq("event_type","conversation.autonomous_turn_revoked")
-          .eq("status","done").limit(1);
+        const {data: fato,error: falhaDeLeitura} = await admin.rpc("fn_autonomous_turn_revoked", {
+          p_org: job.organization_id, p_job: job.id,
+        });
         if (falhaDeLeitura) throw falhaDeLeitura;
-        revogado = !!fato?.length;
+        revogado = fato === true;
       }
       if (err instanceof OrgNaoOperanteError || revogado) {
         // Turno revogado durante pausa/tomada ou suspensão: a inscrição precisa
