@@ -1,9 +1,0 @@
----
-impacto: capacidade_nova
-secao: adicionado
-titulo: Você pode cobrar as empresas que atende, com pagamento pela Stripe, avisos de atraso e reativação automática
----
-
-Quem administra a instalação passa a poder transformar o sistema num serviço próprio e cobrar as empresas que atende. É opcional e começa desligado. Para quem não liga, só muda o nome do item de menu Billing, que passa a se chamar Plano e cobrança, e aparece o interruptor em Admin › Recursos opcionais. Para usar, ligue "Cobrança dos seus clientes" em Admin › Recursos opcionais, conecte sua conta da Stripe em Admin › Cobrança (a tela diz se a chave é de teste ou de produção e mostra só os quatro últimos caracteres dela), crie os planos, escolha qual vale para quem se cadastra e quais as empresas podem escolher sozinhas. Uma lista de passos na mesma tela mostra o que falta até a primeira cobrança de verdade, inclusive a troca da chave de teste pela de produção.
-
-Cada empresa nova ganha um teste grátis e assina pela página de pagamento da Stripe, com as formas de pagamento da sua conta (no Brasil, cartão). Se um pagamento atrasa, a empresa é avisada na Central, numa faixa no topo do sistema e por e-mail, se o envio de e-mail estiver configurado, com o caminho para pagar. Depois de uma tolerância que você escolhe (de 5 a 30 dias, 7 por padrão) e de um aviso final com pelo menos 48 horas de antecedência, a empresa é suspensa. Enquanto estiver suspensa e devendo, ela recebe um lembrete por semana com o caminho para pagar, e volta sozinha assim que o pagamento é confirmado, sem disparar de uma vez o que ficou parado. No teste grátis, a troca de plano espera o link de pagamento em aberto ser pago ou expirar. Você pode dar prazo ou isentar qualquer empresa pelo painel dela. Nenhuma configuração ou ação é necessária para atualizar.

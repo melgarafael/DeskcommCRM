@@ -5,6 +5,13 @@
  * atual). Resolve a channel_session por `body.session` (= waha_session_name).
  * A variante /waha/[token] é a rota per-tenant canônica de produção.
  *
+ * Só atende a REDE INTERNA. O WAHA da stack chama `http://app:3000` pela rede
+ * do Docker; quem está do outro lado da borda pública usa a rota por token.
+ * Requisição que traz a marca de um proxy de borda recebe 404
+ * (`chegouPelaBorda`, lib/http/ip-do-cliente.ts — régua de cabeçalho, válida
+ * nos proxies que o kit sobe). A regra mora na aplicação para valer igual em
+ * qualquer modo de instalação, sem depender da configuração do proxy.
+ *
  * Pipeline: lookup session -> verifica HMAC SHA512 -> loga em
  * webhook_events_log -> processarEventoWaha (ingestão compartilhada, ver
  * lib/waha/ingest.ts). Idempotência e resolução atômica de contato/conversa
@@ -16,6 +23,7 @@ import type { NextRequest, NextResponse } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
+import { chegouPelaBorda } from "@/lib/http/ip-do-cliente";
 import { carregarComportamentoDaInstalacao } from "@/lib/instalacao/comportamento-servidor";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -29,6 +37,16 @@ export const runtime = "nodejs";
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const requestId = randomUUID();
+
+  // Antes de ler o corpo e de tocar o banco: ver o cabeçalho deste arquivo.
+  if (chegouPelaBorda(req.headers)) {
+    // `warn` e sem corpo: o rastro serve a quem configurou o WAHA por um
+    // endereço público e viu a ingestão parar — a rota certa é a por token.
+    logger.warn("[waha.webhook] rota global recusou requisição vinda da borda", {
+      request_id: requestId,
+    });
+    return fail("not_found", "not found", 404, { requestId });
+  }
 
   const rawBody = await req.text();
   // ─── O contrato do fio, em DOIS momentos ─────────────────────────────────
@@ -60,9 +78,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (roteamento.motivo === "json_invalido") {
       return fail("invalid_request", "invalid_json", 400, { requestId });
     }
-    // `error`, e aqui isto está certo: o Caddy do kit responde 403 para este
-    // caminho exato (`Caddyfile`, `@waha_global`), então quem chega aqui é o
-    // WAHA pela rede interna. Recusa de contrato nesta rota é o fio ter mudado.
+    // `error`, e aqui isto está certo: requisição vinda da borda pública já
+    // saiu com 404 no topo desta função, então quem chega aqui é o WAHA pela
+    // rede interna.
+    // Recusa de contrato nesta rota é o fio ter mudado.
     // Na rota por token, que é pública de propósito, o mesmo log é `warn`.
     logger.error("[waha.webhook] payload fora do contrato do canal", {
       request_id: requestId,

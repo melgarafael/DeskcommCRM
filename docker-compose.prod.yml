@@ -142,7 +142,11 @@ services:
       # Prefixo sha512: faz o WAHA HASHEAR o X-Api-Key recebido e comparar com este
       # hash. Sem o prefixo ele compara literal → o app (que manda o plaintext) toma 401.
       WAHA_API_KEY: "sha512:${WAHA_API_KEY_SHA512}"
-      WHATSAPP_HOOK_URL: ${WAHA_WEBHOOK_BASE_URL}/api/v1/webhooks/waha
+      # Fixo na rede interna, como o WAHA_API_BASE_URL do worker: o WAHA desta
+      # stack mora ao lado do `app`, e a rota global só atende a rede interna
+      # (app/api/v1/webhooks/waha/route.ts). Lido do .env, um endereço público
+      # ali faria a entrega parar sem nenhum arquivo ter mudado.
+      WHATSAPP_HOOK_URL: http://app:3000/api/v1/webhooks/waha
       # `message` NÃO entra, e `message.any` sozinho não perde nada — medido.
       #
       # O WAHA emite os DOIS para a mesma mensagem, e `lib/waha/ingest.ts` já

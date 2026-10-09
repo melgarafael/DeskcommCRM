@@ -73,8 +73,40 @@ export const REQUESTY_ENDPOINT = 'https://router.requesty.ai/v1';
  * A allowlist de egress do provider deriva daqui (`contain(...)` abaixo) — mas
  * o CATRACA de host do `branding.test.ts` é régua à parte: ele exige a linha
  * declarada em `HOSTS_DECLARADOS`, que está lá, com categoria e motivo.
+ *
+ * A LISTAGEM de modelos da assinatura é o pedaço que NÃO cabe neste endpoint
+ * (#2602): o mesmo `access_token` SIWC medido em 2026-10-08 respondeu 403
+ * `Missing scopes: api.model.read` em `/v1/models` e 200 no backend do Codex.
+ * Por isso ela fala por `OPENAI_CODEX_MODELS_ENDPOINT`, logo abaixo; a chamada
+ * de chat continua aqui, na API pública de Responses.
  */
 export const OPENAI_CODEX_ENDPOINT = 'https://api.openai.com/v1';
+
+/**
+ * O endpoint de LISTAGEM de modelos da assinatura — o MESMO backend com que o
+ * Codex CLI fala (`/backend-api/codex`).
+ *
+ * MEDIDO na issue #2602 com o token do Sign in with ChatGPT (Codex CLI
+ * 0.160.1, plano plus), o MESMO token nos DOIS endereços:
+ *
+ *   GET https://api.openai.com/v1/models            → 403 "You have
+ *      insufficient permissions … Missing scopes: api.model.read" (o token
+ *      SIWC não tem escopo da API pública de plataforma);
+ *   GET https://chatgpt.com/backend-api/codex/models?client_version=0.160.1
+ *      → 200, 10 modelos no formato `{ models: [{ slug, visibility: "list" }] }`.
+ *
+ * A coluna `ai_provider_credentials.models_available` é o que a
+ * `fn_publish_ai_agent_version` (0592) confere no "Publicar"; apontar a
+ * listagem para a API pública gravava `null` para sempre e todo publish
+ * respondia `model_not_found` (#2602). Com este endereço a lista passa a ser
+ * gravada a partir de uma resposta que SABEMOS interpretar.
+ *
+ * O `client_version` é o parâmetro que o próprio Codex CLI envia; a medição
+ * acima foi com `0.160.1` e sem um token real não dá para medir se o backend
+ * exige o parâmetro — por isso ele só viaja quando `CODEX_CLIENT_VERSION`
+ * está declarado no ambiente (knob de fuga, não default).
+ */
+export const OPENAI_CODEX_MODELS_ENDPOINT = 'https://chatgpt.com/backend-api/codex/models';
 
 /**
  * Cabeçalhos OPCIONAIS de atribuição da OpenRouter.
@@ -280,6 +312,11 @@ export function createDefaultRegistry(opts?: {
      * Sem injeção de `reasoning.effort` também: o knob é da fábrica `openai`,
      * e o campo existe onde a OpenAI o documenta — aqui ele só correria o risco
      * de o backend recusar um parâmetro que não pediu.
+     *
+     * A LISTAGEM de modelos desta credencial (#2602) não passa por aqui: ela
+     * fala com o backend do Codex (`OPENAI_CODEX_MODELS_ENDPOINT`), porque o
+     * token SIWC medido devolve 403 `Missing scopes: api.model.read` na API
+     * pública — enquanto a chamada de chat continua na API pública de Responses.
      */
     [PROVEDOR_POR_ASSINATURA]: (apiKey, modelId) =>
       createOpenAI({
