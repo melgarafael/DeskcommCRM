@@ -153,6 +153,23 @@ export interface AgendamentoParaGoogle {
   location_kind: TipoDeLocal;
   location_details?: string | null;
   meeting_url?: string | null;
+  /**
+   * #2063 — o `meeting_url` nasceu do espaço ABERTO (`spaces.create` com
+   * `accessType: OPEN`), não do Meet "confiável" do Calendar.
+   *
+   * É o marcador que o review de 08/10 pediu (caminho 2): SÓ com ele o link
+   * vira `location`. Sem o marcador a projeção continua a de sempre
+   * (`location_details`), que é a regra que protege todo compromisso já
+   * publicado com Meet do Calendar — o link deles nasce DEPOIS da
+   * publicação, e se entrasse na projeção a primeira passada do cron mandaria
+   * um PATCH `sendUpdates=all` para cada compromisso com Meet já publicado,
+   * inclusive passados e com a opção desligada.
+   *
+   * Absente/falso é o estado de TODO agendamento que não passou pelo espaço
+   * aberto, inclusive os antigos: os testes da main montam o agendamento sem
+   * esta chave, e é exatamente o que se espera.
+   */
+  meet_aberto?: boolean | null;
   participantes?: ParticipanteDoAgendamento[];
   /** Quando já existe, é a identidade do evento lá — nunca se gera outra. */
   google_ical_uid?: string | null;
@@ -271,21 +288,28 @@ const STATUS_PARA_GOOGLE: Record<StatusDoAgendamento, "confirmed" | "tentative" 
 /**
  * O que escrever no campo `location`, que é o que a pessoa lê no calendário.
  *
- * ─── Por que `google_meet` devolve o link (#2063) ──────────────────────────
+ * ─── Por que `google_meet` só devolve o link do espaço ABERTO (#2063) ──────
  *
- * O link do Meet só existe DEPOIS de nascer (o Google o cria, ou a API do Meet
- * o devolve), então a PRIMEIRA passada sai sem ele e sobra `detalhes`. A partir
- * daí, porém, ele tem de viajar por ESTA projeção: `location` é o único campo
- * que o `delta` compara, e é ele que um PATCH posterior leva.
+ * O link do Meet nasce DEPOIS da publicação — o Google o cria no `POST`
+ * (`conferenceData.createRequest`), ou a API do Meet o devolve quando a
+ * organização ligou a opção de acesso aberto. `location` é o único campo que o
+ * `delta` compara, então É por esta projeção que um link publica depois.
  *
- * Antes, `google_meet` devolvia só `detalhes` enquanto `video_link` devolvia o
- * link — três casos perdiam o endereço aberto por causa disso: o PATCH do local
- * (sem diferença na projeção, não havia o que publicar), o PATCH que é só de
- * reunião (o `return` antecipado de `sync-executor.ts`, que sai quando não há
- * grupo nenhum) e o retry do POST depois que o espaço já está `ready` (o corpo
- * volta a sair daqui, e saía sem o link). Injetar `location` no corpo lá dentro
- * faria o link depender de qual caminho o executor tomou; aqui ele depende só
- * do estado do agendamento, que é a mesma coisa para todos.
+ * Mas o link do Meet do Calendar NÃO pode entrar aqui. Ele muda a projeção de
+ * TODO compromisso com Meet já publicado na primeira passada do cron depois da
+ * atualização, e pelo `compare()` cada um vira `publish` → um PATCH
+ * `sendUpdates=all` para os convidados de cada um — inclusive compromissos
+ * passados (a seleção do cron não filtra por data), em toda organização, mesmo
+ * com a opção desligada. Pior: o `comConviteDaFicha` (`sync-model.ts`) só segura
+ * o e-mail da ficha enquanto o compromisso não muda; como a decisão passa a ser
+ * `publish`, ele passaria a anexar o e-mail do cliente da ficha a cada um
+ * desses PATCH — o convite em massa que a decisão do doc 36 (opção b) veta.
+ * Por isso as duas regras da main seguem valendo: sem marcador, `google_meet`
+ * devolve `detalhes`, idêntico ao que sempre foi.
+ *
+ * O espaço ABERTO entra pelo marcador `meet_aberto` (caminho 2 do review de
+ * 08/10). Com ele, o link É o local — mesma régua do `video_link`. Sem link
+ * ainda (primeira passada, antes de nascer) sobra `detalhes`, como sempre.
  */
 function localDoEvento(a: AgendamentoParaGoogle): string | undefined {
   const detalhes = a.location_details?.trim() || "";
@@ -299,10 +323,9 @@ function localDoEvento(a: AgendamentoParaGoogle): string | undefined {
     case "video_link":
       return a.meeting_url?.trim() || detalhes || undefined;
     case "google_meet":
-      // Mesma régua do `video_link`: quando o link já existe ele É o local — é
-      // o que a pessoa vai clicar. Sem link ainda (primeira passada) sobra
-      // `detalhes`, como sempre.
-      return a.meeting_url?.trim() || detalhes || undefined;
+      // Só o espaço ABERTO troca o local pelo link (#2063). O Meet do
+      // Calendar continua fora da projeção — ver o cabeçalho desta função.
+      return (a.meet_aberto ? a.meeting_url?.trim() : "") || detalhes || undefined;
   }
 }
 

@@ -14,6 +14,7 @@ import {
   checkpoint,
   delta,
   groups,
+  hash,
   localProjection,
   remoteProjection,
   sameShared,
@@ -142,7 +143,11 @@ export async function decidirEspacoAberto(
 ): Promise<boolean> {
   if (!connectionId) return false;
   try {
-    const [{ data: orgRow }, conn] = await Promise.all([
+    // As DUAS leituras vêm no envelope do PostgREST (`{data, error}`), não a
+    // linha crua: ler `scopes` do envelope achava `undefined` sempre, o gate
+    // ficava falso para TODO organização e a opção nunca abria espaço nenhum.
+    // Medido no executor de mentira de `agenda-google-meet-aberto-no-corpo`.
+    const [{ data: orgRow, error: erroOrg }, { data: connRow, error: erroConexao }] = await Promise.all([
       db.from("organizations").select("settings").eq("id", org).maybeSingle(),
       db
         .from("calendar_connections")
@@ -151,8 +156,9 @@ export async function decidirEspacoAberto(
         .eq("id", connectionId)
         .maybeSingle(),
     ]);
+    if (erroOrg || erroConexao) return false;
     const ligada = meetAbertoLigado((orgRow as { settings?: unknown } | null)?.settings);
-    const escopos = (conn as { scopes?: string[] | null } | null)?.scopes ?? [];
+    const escopos = (connRow as { scopes?: string[] | null } | null)?.scopes ?? [];
     return deveCriarEspacoAberto({ ligada }, escopos);
   } catch {
     return false;
@@ -223,10 +229,10 @@ export async function reconcileAppointment(
      * link como `ready`. Devolve `false` em QUALQUER recusa — API desativada,
      * cota, 403, escopo que o Google ignora.
      *
-     * ⚠️ O link NÃO é injetado no corpo aqui. Ele entra pela projeção normal
-     * (`localDoEvento`, o mesmo ramo do `video_link`), que é a mesma para todo
-     * caminho do executor; injetar `location` neste ponto faria o link depender
-     * de qual caminho o executor tomou.
+     * ⚠️ É chamado ANTES de o corpo ser finalizado (`send`), e não depois: a
+     * primeira publicação do caminho aberto sai JÁ com o link no `location`.
+     * O corpo é (re)montado da projeção que o link acabou de mudar, nunca
+     * injetado campo a campo — a montagem fica num lugar só, `localDoEvento`.
      *
      * ⚠️ A recusa NÃO segura a publicação: quem cai no Meet "confiável" do
      * Calendar é o chamador — um link com "pedir para participar" é melhor que
@@ -248,8 +254,29 @@ export async function reconcileAppointment(
         return false;
       }
     };
-    let local = localProjection(a);
+    /** Se o espaço aberto nasceu nesta passada, o corpo ainda vai sair dele. */
+    let espacoAbertoAgora = false;
+    /**
+     * O marcador PERSISTENTE do espaço aberto (#2063, caminho 2 do review de
+     * 08/10): o `location` que mandamos ao Google é o link do espaço aberto.
+     *
+     * Não há coluna nova nem migration: a prova está no registro da própria
+     * publicação, que já existe — `google_base_projection.local.location` é o
+     * hash do `location` publicado, e ele é igual ao hash do `meeting_url` de
+     * hoje SÓ quando o link publicado é este. `meeting_url` sozinho não
+     * distingue: o link "confiável" do Calendar também mora ali.
+     *
+     * As duas regras da main valem por construção. Compromisso publicado com
+     * Meet do Calendar: `base.local.location` é o hash dos `location_details`,
+     * nunca o do link — sem marcador, `localDoEvento` devolve os detalhes e a
+     * projeção não muda. E ainda que mudasse por acaso (a pessoa escreveu o
+     * próprio link nos detalhes), o hash publicado e o do link seriam do MESMO
+     * texto: nada sai do lugar, nenhum PATCH.
+     */
+    const espacoAbertoPublicado = () =>
+      Boolean(a.meeting_url?.trim() && base?.local.location === hash(a.meeting_url));
     let base = a.google_base_projection;
+    let local = localProjection({ ...a, meet_aberto: espacoAbertoPublicado() });
     // Listagem é sinal de mudança, não versão para um PATCH: GET exato revalida.
     const event = await api.get(a.google_calendar_id, a.google_event_id);
     const linked = event?.extendedProperties?.private;
@@ -440,7 +467,7 @@ export async function reconcileAppointment(
         await commit({ base: next, conflict: null, clear_pending: true, etag: event.etag });
       }
     }
-    local = localProjection(a);
+    local = localProjection({ ...a, meet_aberto: espacoAbertoPublicado() });
     base = a.google_base_projection;
     if (!event) {
       if (wasPublished) {
@@ -579,17 +606,18 @@ export async function reconcileAppointment(
           });
         } else {
           // #2063 — o espaço aberto SÓ quando a organização ligou a opção E a
-          // conexão tem o escopo opcional; o link do Meet nasce via
-          // `spaces.create` (accessType OPEN) e entra na projeção do evento
-          // pelo `localDoEvento`, como o `video_link` — nunca injetado no corpo.
+          // conexão tem o escopo opcional; o link nasce via `spaces.create`
+          // (accessType OPEN) e entra no `location` pela projeção
+          // (`localDoEvento`, com o marcador `meet_aberto`) — nunca injetado
+          // campo a campo.
           //
           // Qualquer recusa da API do Meet (desativada, escopo ausente, 403,
           // cota) cai no Meet "confiável" do Calendar: um link com "pedir para
           // participar" é melhor que nenhum link, e a recusa não segura a
           // publicação do evento nesta passada.
-          const espacoAberto =
+          espacoAbertoAgora =
             (await decidirEspacoAberto(db, org, a.google_connection_id)) && (await criarEspacoAberto());
-          if (!espacoAberto) {
+          if (!espacoAbertoAgora) {
             conferenceRequestId = a.meeting_request_id;
             body = {
               ...body,
