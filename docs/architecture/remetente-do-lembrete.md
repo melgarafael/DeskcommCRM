@@ -12,6 +12,14 @@ Canal explícito/vinculado desconectado, arquivado, pausado ou fora da janela de
 
 Não se altera horário, conteúdo dos lembretes, degraus, cooldown, guardas do envio nativo ou carimbo antes do envio. Não se deduz remetente de tags, título, responsável ou última conversa. O campo nasce nulo; nenhum dado legado é remapeado.
 
+## Operação com vários canais e exclusão
+
+Com dois ou mais canais elegíveis e sem canal no tipo nem conversa válida da reserva, o automático fica impedido e a Central indica a configuração necessária. Configure o remetente em cada tipo que recebe reservas manuais; não é preciso alterar compromissos ou fabricar conversas. Com um vínculo válido, outros canais elegíveis não impedem o envio.
+
+Arquivar, pausar ou desconectar o canal preserva o vínculo e impede troca silenciosa. Excluir fisicamente a sessão limpa apenas `reminder_channel_session_id`; organização, serviço, duração, preço e lembretes são preservados. O tipo volta à seleção automática descrita acima: conversa válida primeiro, ou único elegível. Se restar apenas outro canal elegível e não houver conversa vinculada, esse canal poderá ser escolhido; para manter uma escolha explícita, configure o substituto antes de excluir. Havendo ambiguidade ou conversa sem canal válido, o envio continua impedido.
+
+A leitura automática conserva contagem exata e lê os canais WORKING não arquivados da organização. O teto de dez linhas foi retirado deliberadamente para não confundir uma lista parcial com o conjunto completo; não foi medido ganho de desempenho. As guardas de lista truncada e erro de leitura continuam obrigatórias.
+
 ## Sistema vivo
 
 - **Entrada e leitura:** Configurações › Tipos de agendamento (`page.tsx`, `_client.tsx`) e GET `/api/v1/agenda/tipos`.

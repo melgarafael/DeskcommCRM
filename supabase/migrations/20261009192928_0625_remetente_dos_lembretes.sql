@@ -1,13 +1,15 @@
 -- manifest: remetente opcional por tipo de agendamento e avisos deduplicados de canal
 -- Sem backfill: nulo preserva o automático; nunca se adivinha um número legado.
 alter table public.calendar_event_types add column if not exists reminder_channel_session_id uuid;
+-- Substitui também a FK da prévia deste PR em uma reaplicação.
+-- A exclusão limpa só o canal: organization_id permanece obrigatório.
 do $$ begin
-  if not exists (select 1 from pg_constraint where conname='calendar_event_types_reminder_channel_org_fkey'
-    and conrelid='public.calendar_event_types'::regclass) then
-    alter table public.calendar_event_types add constraint calendar_event_types_reminder_channel_org_fkey
-      foreign key (organization_id, reminder_channel_session_id)
-      references public.channel_sessions(organization_id, id) on delete no action deferrable initially deferred;
-  end if;
+  alter table public.calendar_event_types
+    drop constraint if exists calendar_event_types_reminder_channel_org_fkey;
+  alter table public.calendar_event_types add constraint calendar_event_types_reminder_channel_org_fkey
+    foreign key (organization_id, reminder_channel_session_id)
+    references public.channel_sessions(organization_id, id)
+    on delete set null (reminder_channel_session_id) deferrable initially deferred;
 end $$;
 comment on column public.calendar_event_types.reminder_channel_session_id is
   'Remetente explícito dos lembretes. Nulo: conversa da reserva ou único canal elegível. Nunca troca de número se o indicado estiver indisponível.';

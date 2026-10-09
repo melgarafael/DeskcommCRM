@@ -1,5 +1,6 @@
 /** O vínculo de canal é limitado pelo banco, mesmo com service_role. Avisos têm
  * ciclo completo: dedup, resolução após cancelamento/vencimento/desativação. */
+import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { beforeAll, describe, expect, it } from "vitest";
 const container = process.env.TEST_DB_CONTAINER;
@@ -67,6 +68,51 @@ describe("configuração de remetente em banco real", () => {
       select count(*) from calendar_event_types where organization_id='${B}'; commit;`);
     expect(out).toContain(C);
     expect(out).toContain("\n0\n");
+  });
+  it("reaplicação substitui a FK antiga sem apagar a configuração existente", () => {
+    // Reproduz a prévia anterior do PR, que instalava NO ACTION.
+    sql(`alter table calendar_event_types drop constraint calendar_event_types_reminder_channel_org_fkey;
+      alter table calendar_event_types add constraint calendar_event_types_reminder_channel_org_fkey
+      foreign key (organization_id, reminder_channel_session_id)
+      references channel_sessions(organization_id,id) on delete no action deferrable initially deferred;`);
+    const migration = readFileSync(
+      "supabase/migrations/20261009192928_0625_remetente_dos_lembretes.sql",
+      "utf8",
+    );
+    sql(migration);
+    sql(migration);
+    expect(
+      sql(`select reminder_channel_session_id from calendar_event_types where id='${T}'`),
+    ).toBe(C);
+    expect(
+      sql(`select pg_get_constraintdef(oid) from pg_constraint
+      where conname='calendar_event_types_reminder_channel_org_fkey'
+      and conrelid='calendar_event_types'::regclass`),
+    ).toContain("ON DELETE SET NULL (reminder_channel_session_id)");
+  });
+  it("excluir um canal limpa só o vínculo, preserva o serviço e não afeta outra organização", () => {
+    const removido = "ca110009-0000-4000-8000-000000000007";
+    const tipo = "ca110009-0000-4000-8000-000000000008";
+    const outroTipo = "ca110009-0000-4000-8000-000000000009";
+    sql(`insert into channel_sessions(id,organization_id,webhook_secret_encrypted,waha_session_name)
+      values('${removido}','${A}','fixture','fixture-removivel');
+      insert into calendar_event_types(id,organization_id,name,slug,reminder_channel_session_id,
+        reminder_enabled,duration_minutes,default_price_cents) values
+      ('${tipo}','${A}','Serviço preservado','servico-preservado','${removido}',true,45,12345),
+      ('${outroTipo}','${B}','Outro serviço','outro-servico','${D}',true,30,54321);
+      begin; delete from channel_sessions where id='${removido}' and organization_id='${A}'; commit;`);
+    expect(
+      sql(`select organization_id,reminder_channel_session_id is null,name,
+      reminder_enabled,duration_minutes,default_price_cents from calendar_event_types where id='${tipo}'`),
+    ).toBe(`${A}|t|Serviço preservado|t|45|12345`);
+    expect(sql(`select count(*) from channel_sessions where id='${removido}'`)).toBe("0");
+    expect(
+      sql(`select reminder_channel_session_id from calendar_event_types where id='${T}'`),
+    ).toBe(C);
+    expect(
+      sql(`select organization_id,reminder_channel_session_id,reminder_enabled,default_price_cents
+      from calendar_event_types where id='${outroTipo}'`),
+    ).toBe(`${B}|${D}|t|54321`);
   });
   it("aviso duplicado é recusado atomicamente, mas pode reabrir após resolução", () => {
     sql(
