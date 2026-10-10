@@ -149,10 +149,16 @@ export async function triggerSlaAlarm(
       const etiqueta = noBrasil ? "[LGPD]" : daLoja ? "[Apagamento da loja]" : "[Pedido de titular]";
       const solicitacao = noBrasil ? "A solicitação LGPD" : "A solicitação";
       const rodapeForaDoBrasil = daLoja ? "Prazo interno do sistema." : prazoInternoForaDoBrasil(perfil);
+      // O rótulo vem do PERFIL do país (issue #2344): o art. 18 da LGPD é um
+      // DIREITO do titular, não uma base legal. O Brasil declara "Direito
+      // exercido"; o `??` cobre só perfil construído à mão em teste.
+      const rotulo = perfil.lei?.rotuloNoDocumento ?? "Base legal";
       const rodapeHtml = noBrasil
-        ? "Base legal: LGPD Lei nº 13.709/2018, Art. 18. SLA obrigatório conforme regulamentação vigente."
+        ? `${rotulo}: LGPD Lei nº 13.709/2018, Art. 18. SLA obrigatório conforme regulamentação vigente.`
         : rodapeForaDoBrasil;
-      const rodapeTexto = noBrasil ? "Base legal: LGPD Lei nº 13.709/2018, Art. 18." : rodapeForaDoBrasil;
+      const rodapeTexto = noBrasil
+        ? `${rotulo}: LGPD Lei nº 13.709/2018, Art. 18.`
+        : rodapeForaDoBrasil;
 
       const subject = `${etiqueta} Solicitação ${shortId} próxima do vencimento`;
 

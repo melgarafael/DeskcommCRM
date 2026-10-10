@@ -21,6 +21,9 @@ vi.mock("@/lib/legal/operador", () => ({
     dpoEmail: null,
     politicaPropria: null,
     resolvido: false,
+    // Coluna vazia = Brasil (lib/legal/perfil-do-pais.ts). O vocabulário da
+    // política em PT é coberto por `lgpd-rotulos-por-pais.test.tsx` (#2344).
+    pais: null as string | null,
   }),
   nomeDoOperador: () => "o operador desta instalação",
 }));

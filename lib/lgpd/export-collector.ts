@@ -588,11 +588,25 @@ export interface ExportPayload {
    */
   lei_citada: string | null;
   /**
-   * Como o documento rotula a citação ("Direito exercido" em Portugal).
-   * AUSENTE no Brasil — o renderizador usa "Base legal" — para o `data.json`
-   * brasileiro sair igual byte a byte (doc 88).
+   * Como o documento rotula a citação ("Direito exercido" em Portugal e,
+   * desde a issue #2344, no Brasil também). AUSENTE no Brasil — o
+   * renderizador lê o rótulo do PERFIL PADRÃO — para o `data.json` brasileiro
+   * sair igual byte a byte (doc 88).
    */
   lei_rotulo?: string;
+  /**
+   * O papel do responsável pelos dados, no vocabulário do país: "Responsável
+   * pelo tratamento" em Portugal (RGPD art. 4.º, n.º 7). AUSENTE no Brasil —
+   * o renderizador usa o rótulo do PERFIL PADRÃO ("Controlador"), pela mesma
+   * régua do `lei_rotulo`: nenhuma chave nova no `data.json` brasileiro.
+   */
+  papel_controlador?: string;
+  /**
+   * O papel de quem recebe os pedidos do titular: "Encarregado da proteção de
+   * dados" em Portugal (RGPD art. 37.º). Ausente no Brasil, que segue com
+   * "Encarregado (DPO)" pelo perfil padrão.
+   */
+  papel_encarregado?: string;
   /**
    * Fuso IANA da organização, para as datas do documento. Ausente no Brasil,
    * que segue no formato de sempre (`America/Sao_Paulo`, sem nome de fuso).
@@ -2284,16 +2298,20 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
 }
 
 /**
- * O que só existe no documento FORA do Brasil: o rótulo da citação e o fuso.
- * Para o Brasil devolve `{}` — nenhuma chave nova no `data.json` (doc 88).
+ * O que só existe no documento FORA do Brasil: o rótulo da citação, os papéis
+ * e o fuso. Para o Brasil devolve `{}` — nenhuma chave nova no `data.json`
+ * (doc 88). O rótulo brasileiro ("Direito exercido", issue #2344) e os papéis
+ * brasileiros saem do PERFIL PADRÃO no renderizador, não daqui.
  */
 function foraDoBrasil(
   perfil: PerfilDoPais,
   controlador: Controlador,
-): Pick<ExportPayload, "lei_rotulo" | "fuso"> {
+): Pick<ExportPayload, "lei_rotulo" | "papel_controlador" | "papel_encarregado" | "fuso"> {
   if (perfil.codigo === PAIS_PADRAO) return {};
   return {
     ...(perfil.lei?.rotuloNoDocumento ? { lei_rotulo: perfil.lei.rotuloNoDocumento } : {}),
+    papel_controlador: perfil.papel.controlador,
+    papel_encarregado: perfil.papel.encarregado,
     ...(controlador.timezone ? { fuso: controlador.timezone } : {}),
   };
 }

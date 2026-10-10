@@ -219,6 +219,8 @@ describe("POST /api/v1/contacts/import — a planilha segue o PAÍS da organiza�
     nome: "Xistão",
     // País sintético declara os SEUS rótulos de organização (#1946, item 4).
     empresa: { rotuloNomeLegal: "Razão do Xistão", rotuloNumero: "Registro do Xistão" },
+    // País sintético declara os SEUS papéis legais (#2344).
+    papel: { controlador: "Controlador do Xistão", encarregado: "Encarregado do Xistão" },
     telefoneExemplo: "+999000000000",
     documento: {
       rotulo: "Bilhete",

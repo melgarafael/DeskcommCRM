@@ -28,6 +28,15 @@ export interface Operador {
   cnpj: string | null;
   /** Contato do encarregado de dados (LGPD). */
   dpoEmail: string | null;
+  /**
+   * ISO-3166 alpha-2 da organização ativa, ou `null` (Brasil, o padrão).
+   *
+   * Existe para a política de privacidade (`app/legal/privacy/page.tsx`) falar
+   * a língua legal do país: "controlador"/"CNPJ"/"LGPD" no Brasil, "responsável
+   * pelo tratamento"/"NIPC"/"RGPD" em Portugal (issue #2344). Mesma razão de
+   * `lib/legal/perfil-do-pais.ts` — o vocabulário é do país, não do texto fixo.
+   */
+  pais: string | null;
   /** Política própria do operador, já checada — nunca o valor cru do banco. */
   politicaPropria: string | null;
   /**
@@ -93,6 +102,9 @@ const SEM_SESSAO = async (): Promise<Operador> => ({
   dpoEmail: (await valorDaInstalacao("LGPD_DPO_EMAIL")).valor?.trim() || null,
   politicaPropria: null,
   resolvido: false,
+  // Sem sessão não há organização para ler: vale o Brasil, o mesmo "vazio" da
+  // coluna `organizations.country`.
+  pais: null,
 });
 
 /**
@@ -116,7 +128,7 @@ export async function resolverOperador(): Promise<Operador> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("organizations")
-    .select("display_name, legal_name, cnpj, dpo_email, privacy_policy_url")
+    .select("display_name, legal_name, cnpj, dpo_email, privacy_policy_url, country")
     .eq("id", activeOrg.orgId)
     .maybeSingle();
 
@@ -130,6 +142,7 @@ export async function resolverOperador(): Promise<Operador> {
     cnpj: string | null;
     dpo_email: string | null;
     privacy_policy_url: string | null;
+    country: string | null;
   };
 
   return {
@@ -144,6 +157,7 @@ export async function resolverOperador(): Promise<Operador> {
       null,
     politicaPropria: urlDePoliticaSegura(org.privacy_policy_url),
     resolvido: true,
+    pais: org.country?.trim() || null,
   };
 }
 
