@@ -1,12 +1,10 @@
 /**
- * GET /api/v1/leads/[id]/contatos-relacionados — a F1 da #1506.
+ * GET/POST/PATCH/DELETE /api/v1/leads/[id]/contatos-relacionados.
  *
- * POR QUE ESTA ROTA EXISTE: o negócio guarda UM contato (`crm_leads.contact_id`)
- * e as outras pessoas viram texto na descrição. O schema já prevê o vínculo —
- * `crm_lead_links` com `target_kind='contact'` (Spec 02 §2.6) — mas nada no
- * produto lê `target_kind='contact'`: nem escritor, nem leitor. Escola (aluno +
- * responsável), clínica (paciente + quem paga) e imobiliária (casal + corretor)
- * cabem todos aqui, sem tabela nova e sem migration.
+ * O negócio guarda UM contato principal (`crm_leads.contact_id`). Outras pessoas
+ * ficam em `crm_lead_links` com `target_kind='contact'` e `link_kind='related'`
+ * (Spec 02 §2.6). Escola (aluno + responsável), clínica (paciente + quem paga)
+ * e imobiliária (casal + corretor) cabem aqui sem tabela nova ou migration.
  *
  * TRÊS DECISÕES QUE O TESTE PRENDE:
  *
@@ -25,11 +23,17 @@
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
+import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
+import { audit } from "@/lib/audit";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { loadAuthUser } from "@/lib/auth/server";
+import { requireRole } from "@/lib/auth/require-role";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { emitLeadActivity } from "@/lib/leads/activity-emitter";
+import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -50,10 +54,26 @@ interface LinhaDeContato {
 /** O que a tela recebe por pessoa: a âncora, o nome, o papel e o estado LGPD. */
 export interface ContatoRelacionado {
   contact_id: string;
+  /** ID que o vínculo realmente guarda; pode ser uma lápide de fusão. */
+  vinculo_contact_id: string;
   nome: string | null;
   papel: string | null;
   anonimizado: boolean;
 }
+
+const idContato = z.string().uuid();
+const corpoBase = z.object({ contact_id: idContato });
+const corpoCriacao = corpoBase.extend({ papel: z.string().trim().max(40).optional() }).strict();
+const corpoEdicao = corpoBase.extend({ papel: z.string().trim().max(40) }).strict();
+const corpoRemocao = corpoBase.strict();
+
+type Operacao = "adicionar" | "editar" | "remover";
+
+const motivoDaOperacao: Record<Operacao, string> = {
+  adicionar: "Adicionou uma pessoa relacionada ao negócio",
+  editar: "Alterou a função de uma pessoa relacionada ao negócio",
+  remover: "Removeu uma pessoa relacionada do negócio",
+};
 
 /** `metadata.papel` é texto livre (F2 limita a 40); aqui só lemos o que veio. */
 function papelDo(metadata: unknown): string | null {
@@ -155,6 +175,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     vistos.add(contato.id);
     resultado.push({
       contact_id: contato.id,
+      vinculo_contact_id: link.target_id,
       nome: nomeDoContato(contato),
       papel: papelDo(link.metadata),
       anonimizado: contato.is_anonymized === true,
@@ -162,4 +183,182 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
 
   return ok(resultado, { requestId });
+}
+
+async function escrever(req: NextRequest, ctx: RouteCtx, operacao: Operacao): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+  const requestId = randomUUID();
+  const authz = await requireRole("agent", { requestId, resource: "crm_lead_links" });
+  if (!authz.ok) return authz.response;
+  const { id: leadId } = await ctx.params;
+  const idioma = authz.user.idioma;
+  const t = (texto: string) => traduzir(texto, idioma);
+  if (!z.string().uuid().safeParse(leadId).success) {
+    return fail("validation_failed", t("Negócio inválido."), 422, { requestId });
+  }
+
+  const schema =
+    operacao === "adicionar" ? corpoCriacao : operacao === "editar" ? corpoEdicao : corpoRemocao;
+  const parsed = schema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) {
+    return fail("validation_failed", t("Confira o contato e a função (até 40 caracteres)."), 422, {
+      requestId,
+    });
+  }
+  const { contact_id: contactId } = parsed.data;
+  const valorPapel = "papel" in parsed.data ? parsed.data.papel : undefined;
+  const papel = typeof valorPapel === "string" ? valorPapel.trim() : "";
+  const orgId = authz.org.orgId;
+  const supabase = await createClient();
+
+  // A org vem da sessão, e as duas pontas são conferidas ANTES da escrita.
+  // `target_id` é polimórfico e não possui FK para contacts.
+  const { data: lead, error: leadErr } = await supabase
+    .from("crm_leads")
+    .select("id, organization_id, contact_id")
+    .eq("id", leadId)
+    .eq("organization_id", orgId)
+    .maybeSingle();
+  if (leadErr) return fail("internal_error", leadErr.message, 500, { requestId });
+  if (!lead) return fail("not_found", t("Negócio não encontrado."), 404, { requestId });
+  if (lead.contact_id === contactId) {
+    return fail("already_primary", t("Este já é o contato principal do negócio."), 409, {
+      requestId,
+    });
+  }
+
+  const { data: contato, error: contatoErr } = await supabase
+    .from("contacts")
+    .select("id, organization_id, kind, is_personal, is_anonymized, is_merged_into")
+    .eq("id", contactId)
+    .eq("organization_id", orgId)
+    .maybeSingle();
+  if (contatoErr) return fail("internal_error", contatoErr.message, 500, { requestId });
+  if (!contato) return fail("not_found", t("Contato não encontrado."), 404, { requestId });
+  if (operacao !== "remover" && contato.is_personal) {
+    return fail("forbidden", t("Contato marcado como pessoal."), 403, { requestId });
+  }
+  if (operacao === "editar" && contato.is_anonymized) {
+    return fail("invalid_contact", t("Contato anonimizado não pode receber nova função."), 422, {
+      requestId,
+    });
+  }
+  if (operacao === "adicionar" && contato.is_merged_into) {
+    return fail("merged_contact", t("Este cadastro foi unido a outro contato. Selecione o cadastro atual."), 409, { requestId });
+  }
+  if (operacao === "adicionar" && (contato.kind !== "person" || contato.is_anonymized)) {
+    return fail("invalid_contact", t("Selecione um contato ativo."), 422, { requestId });
+  }
+
+  let mudou = true;
+  if (operacao === "adicionar") {
+    const { error } = await supabase.from("crm_lead_links").insert({
+      organization_id: orgId,
+      lead_id: leadId,
+      target_kind: "contact",
+      target_id: contactId,
+      link_kind: "related",
+      metadata: papel ? { papel } : {},
+      created_by_user_id: authz.user.id,
+    });
+    if (error?.code === "23505") {
+      return fail("already_related", t("Este contato já está relacionado ao negócio."), 409, {
+        requestId,
+      });
+    }
+    if (error) return fail("internal_error", error.message, 500, { requestId });
+  } else {
+    const { data: vinculo, error: vinculoErr } = await supabase
+      .from("crm_lead_links")
+      .select("id, metadata")
+      .eq("lead_id", leadId)
+      .eq("organization_id", orgId)
+      .eq("target_kind", "contact")
+      .eq("target_id", contactId)
+      .eq("link_kind", "related")
+      .maybeSingle();
+    if (vinculoErr) return fail("internal_error", vinculoErr.message, 500, { requestId });
+    if (!vinculo) return fail("not_found", t("Vínculo não encontrado."), 404, { requestId });
+
+    if (operacao === "editar") {
+      mudou = papelDo(vinculo.metadata) !== (papel || null);
+      if (mudou) {
+        const metadata =
+          vinculo.metadata &&
+          typeof vinculo.metadata === "object" &&
+          !Array.isArray(vinculo.metadata)
+            ? (vinculo.metadata as Record<string, unknown>)
+            : {};
+        const { data, error } = await supabase
+          .from("crm_lead_links")
+          .update({ metadata: { ...metadata, papel: papel || null } })
+          .eq("id", vinculo.id)
+          .eq("organization_id", orgId)
+          .select("id")
+          .maybeSingle();
+        if (error) return fail("internal_error", error.message, 500, { requestId });
+        if (!data) return fail("not_found", t("Vínculo não encontrado."), 404, { requestId });
+      }
+    } else {
+      const { data, error } = await supabase
+        .from("crm_lead_links")
+        .delete()
+        .eq("id", vinculo.id)
+        .eq("organization_id", orgId)
+        .select("id")
+        .maybeSingle();
+      if (error) return fail("internal_error", error.message, 500, { requestId });
+      if (!data) return fail("not_found", t("Vínculo não encontrado."), 404, { requestId });
+    }
+  }
+
+  if (mudou) {
+    const atividade = await emitLeadActivity(supabase, {
+      organizationId: orgId,
+      leadId,
+      contactId: lead.contact_id,
+      type: "lead_edited",
+      sourceModule: "crm",
+      sourceId: leadId,
+      actor: { type: "user", id: authz.user.id },
+      reason: motivoDaOperacao[operacao],
+      payload: { fields: ["contatos_relacionados"], operation: operacao },
+    });
+    if (!atividade.ok) {
+      await registraFalhaDeAtividade(supabase, {
+        organizationId: orgId,
+        leadId,
+        tipo: "lead_edited",
+        origem: "leads/[id]/contatos-relacionados",
+        erro: atividade.error,
+        requestId,
+      });
+    }
+    await audit({
+      action: "lead.updated",
+      actorUserId: authz.user.id,
+      organizationId: orgId,
+      resourceType: "crm_lead",
+      resourceId: leadId,
+      requestId,
+      metadata: { fields: ["contatos_relacionados"], operation: operacao },
+    });
+  }
+  return ok(
+    { contact_id: contactId, papel: papel || null, changed: mudou },
+    { requestId, status: operacao === "adicionar" ? 201 : 200 },
+  );
+}
+
+export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  return escrever(req, ctx, "adicionar");
+}
+
+export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  return escrever(req, ctx, "editar");
+}
+
+export async function DELETE(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  return escrever(req, ctx, "remover");
 }

@@ -179,6 +179,7 @@ describe("GET contatos-relacionados — a F1 da #1506", () => {
     expect(data).toEqual([
       {
         contact_id: MARIA,
+        vinculo_contact_id: MARIA,
         nome: "Maria Silva",
         papel: "Responsável financeiro",
         anonimizado: false,
@@ -216,6 +217,7 @@ describe("GET contatos-relacionados — a F1 da #1506", () => {
     expect(data).toEqual([
       {
         contact_id: VENCEDORA,
+        vinculo_contact_id: LAPIDE,
         nome: "Maria da Silva",
         papel: null,
         anonimizado: false,
@@ -235,6 +237,7 @@ describe("GET contatos-relacionados — a F1 da #1506", () => {
     expect(data).toEqual([
       {
         contact_id: ANON,
+        vinculo_contact_id: ANON,
         nome: "Cliente Anonimizado #7",
         papel: null,
         anonimizado: true,

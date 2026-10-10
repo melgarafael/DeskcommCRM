@@ -5,6 +5,7 @@ import { useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +15,7 @@ import { useUpdateContact } from "@/hooks/contacts/useUpdateContact";
 import { useT } from "@/hooks/i18n/useT";
 import { chaveDoQuadro } from "@/hooks/kanban/useBoard";
 import { useContatosRelacionados } from "@/hooks/leads/useContatosRelacionados";
+import { apiClient } from "@/lib/api/client";
 import {
   aplicarLinks,
   EXEMPLO_DE_LINK,
@@ -26,6 +28,7 @@ import {
 } from "@/lib/leads/links-de-contato";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import type { Contact } from "@/lib/types/contacts";
+import { SeletorDeContato } from "./SeletorDeContato";
 
 interface Props {
   contactId: string | null;
@@ -36,6 +39,7 @@ interface Props {
    * `useContatosRelacionados` segura a chamada sem `leadId`.
    */
   leadId?: string | null;
+  podeEditarRelacionados?: boolean;
 }
 
 /**
@@ -51,10 +55,15 @@ interface Props {
  * Os LINKS são editáveis aqui: não têm regra além de "ser um endereço http(s)",
  * e são o dado que o funil mais precisa preencher de passagem.
  *
- * As PESSOAS RELACIONADAS são só leitura nesta fatia: escrever (adicionar,
- * remover, dar papel) é a F2 da mesma issue, com `POST`/`DELETE` nesta rota.
+ * As PESSOAS RELACIONADAS têm cadastro próprio e papel opcional. A conversa do
+ * negócio continua ancorada no contato principal.
  */
-export function ContatoDoNegocio({ contactId, pipelineId, leadId }: Props) {
+export function ContatoDoNegocio({
+  contactId,
+  pipelineId,
+  leadId,
+  podeEditarRelacionados = false,
+}: Props) {
   const t = useT();
   return (
     <>
@@ -63,7 +72,11 @@ export function ContatoDoNegocio({ contactId, pipelineId, leadId }: Props) {
       ) : (
         <p className="text-xs text-text-muted">{t("Este negócio não tem contato vinculado.")}</p>
       )}
-      <PessoasRelacionadas leadId={leadId ?? null} />
+      <PessoasRelacionadas
+        leadId={leadId ?? null}
+        contactId={contactId}
+        podeEditar={podeEditarRelacionados}
+      />
     </>
   );
 }
@@ -101,21 +114,63 @@ function ContatoVinculado({ contactId, pipelineId }: { contactId: string; pipeli
 }
 
 /**
- * As outras pessoas do negócio (#1506 F1): a lista que faltava embaixo do
- * contato principal.
+ * As outras pessoas do negócio (#1506): lista e edição abaixo do principal.
  *
- * Sumida por padrão, e não "vazia": negócio sem relacionado não ganha um título
- * de seção pendurado no dossiê, e quem carrega a tela não vê nem um piscar de
- * lista vazia antes de a resposta chegar. O erro NÃO some — ele é a única coisa
- * que a pessoa tem a ler quando a rota falha.
+ * Quem pode editar vê a porta de inclusão mesmo quando a lista está vazia.
+ * Para quem só consulta, uma lista vazia continua sem ocupar espaço.
  *
  * O `papel` vem do `metadata` escrito pelo atendente (texto livre, F2 limita a
  * 40) e o nome vem do cadastro: dado de quem usou o produto, não frase de
  * interface, então os dois saem como vieram em qualquer idioma.
  */
-function PessoasRelacionadas({ leadId }: { leadId: string | null }) {
+function PessoasRelacionadas({
+  leadId,
+  contactId,
+  podeEditar,
+}: {
+  leadId: string | null;
+  contactId: string | null;
+  podeEditar: boolean;
+}) {
   const t = useT();
+  const qc = useQueryClient();
   const { data, isLoading, isError } = useContatosRelacionados(leadId);
+  const [adicionando, setAdicionando] = useState(false);
+  const [selecionado, setSelecionado] = useState<Contact | null>(null);
+  const [papel, setPapel] = useState("");
+  const [editando, setEditando] = useState<string | null>(null);
+  const [papelEmEdicao, setPapelEmEdicao] = useState("");
+  const [acaoEmCurso, setAcaoEmCurso] = useState<string | null>(null);
+
+  async function aplicar(metodo: "post" | "patch" | "delete", contact_id: string, funcao?: string) {
+    if (!leadId || acaoEmCurso) return;
+    setAcaoEmCurso(`${metodo}:${contact_id}`);
+    try {
+      const caminho = `/api/v1/leads/${leadId}/contatos-relacionados`;
+      const corpo = funcao === undefined ? { contact_id } : { contact_id, papel: funcao };
+      await apiClient[metodo](caminho, corpo);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["contatos-relacionados", leadId] }),
+        qc.invalidateQueries({ queryKey: ["timeline", leadId] }),
+      ]);
+      if (metodo === "post") {
+        setAdicionando(false);
+        setSelecionado(null);
+        setPapel("");
+        toast.success(t("Contato relacionado adicionado."));
+      } else if (metodo === "patch") {
+        setEditando(null);
+        toast.success(t("Função atualizada."));
+      } else {
+        toast.success(t("Contato relacionado removido."));
+      }
+    } catch (err) {
+      showApiError(err);
+    } finally {
+      setAcaoEmCurso(null);
+    }
+  }
+
   if (isError) {
     return (
       <p className="mt-2 text-xs text-destructive">
@@ -125,21 +180,133 @@ function PessoasRelacionadas({ leadId }: { leadId: string | null }) {
   }
   if (isLoading) return null;
   const pessoas = data?.data ?? [];
-  if (pessoas.length === 0) return null;
+  if (!leadId || (pessoas.length === 0 && !podeEditar)) return null;
   return (
-    <div className="mt-3 space-y-1" data-testid="pessoas-relacionadas">
-      <p className="text-[11px] font-medium tracking-wide text-text-muted uppercase">
-        {t("Pessoas relacionadas")}
-      </p>
-      <ul className="space-y-1">
+    <div className="mt-3 space-y-2" data-testid="pessoas-relacionadas">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] font-medium tracking-wide text-text-muted uppercase">
+          {t("Pessoas relacionadas")}
+        </p>
+        {podeEditar && !adicionando && (
+          <Button type="button" variant="outline" size="sm" onClick={() => setAdicionando(true)}>
+            {t("Adicionar contato")}
+          </Button>
+        )}
+      </div>
+      {pessoas.length === 0 && (
+        <p className="text-xs text-text-muted">{t("Nenhuma pessoa relacionada ainda.")}</p>
+      )}
+      <ul className="space-y-2">
         {pessoas.map((pessoa) => (
-          <li key={pessoa.contact_id} className="flex flex-wrap items-baseline gap-x-2 text-xs">
-            <span className="min-w-0 truncate">{pessoa.nome ?? "—"}</span>
-            {pessoa.papel && <span className="text-text-muted">({pessoa.papel})</span>}
-            {pessoa.anonimizado && <span className="text-text-muted">{t("Anonimizado")}</span>}
+          <li
+            key={pessoa.contact_id}
+            className="rounded-md border border-border px-2 py-1.5 text-xs"
+          >
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <Link
+                href={`/app/contacts/${pessoa.contact_id}`}
+                className="min-w-0 font-medium underline-offset-2 hover:underline"
+              >
+                {pessoa.nome ?? "—"}
+              </Link>
+              {pessoa.papel && <span className="text-text-muted">({pessoa.papel})</span>}
+              {pessoa.anonimizado && <span className="text-text-muted">{t("Anonimizado")}</span>}
+              {podeEditar && (
+                <span className="ml-auto flex gap-2">
+                  {!pessoa.anonimizado && (
+                    <button
+                      type="button"
+                      className="text-text-muted hover:text-text"
+                      onClick={() => {
+                        setEditando(pessoa.contact_id);
+                        setPapelEmEdicao(pessoa.papel ?? "");
+                      }}
+                      disabled={!!acaoEmCurso}
+                    >
+                      {t("Editar função")}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="text-destructive hover:underline"
+                    onClick={() => void aplicar("delete", pessoa.vinculo_contact_id)}
+                    disabled={!!acaoEmCurso}
+                  >
+                    {t("Remover")}
+                  </button>
+                </span>
+              )}
+            </div>
+            {editando === pessoa.contact_id && (
+              <form
+                className="mt-2 space-y-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void aplicar("patch", pessoa.vinculo_contact_id, papelEmEdicao);
+                }}
+              >
+                <Input
+                  aria-label={t("Função do contato")}
+                  value={papelEmEdicao}
+                  onChange={(e) => setPapelEmEdicao(e.target.value)}
+                  maxLength={40}
+                  placeholder={t("Ex.: responsável financeiro")}
+                />
+                <div className="flex gap-2">
+                  <Button type="submit" size="sm" disabled={!!acaoEmCurso}>
+                    {t("Salvar")}
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setEditando(null)}>
+                    {t("Cancelar")}
+                  </Button>
+                </div>
+              </form>
+            )}
           </li>
         ))}
       </ul>
+      {adicionando && (
+        <form
+          className="space-y-2 rounded-md border border-border p-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (selecionado) void aplicar("post", selecionado.id, papel);
+          }}
+        >
+          <SeletorDeContato
+            escolhido={selecionado}
+            onEscolher={setSelecionado}
+            excluirIds={[...(contactId ? [contactId] : []), ...pessoas.map((p) => p.contact_id)]}
+          />
+          <Label htmlFor="papel-do-contato-relacionado" className="text-xs">
+            {t("Função no negócio (opcional)")}
+          </Label>
+          <Input
+            id="papel-do-contato-relacionado"
+            value={papel}
+            onChange={(e) => setPapel(e.target.value)}
+            maxLength={40}
+            placeholder={t("Ex.: responsável financeiro")}
+          />
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" disabled={!selecionado || !!acaoEmCurso}>
+              {t("Adicionar")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setAdicionando(false);
+                setSelecionado(null);
+                setPapel("");
+              }}
+            >
+              {t("Cancelar")}
+            </Button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }

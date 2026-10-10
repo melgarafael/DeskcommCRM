@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Pessoas relacionadas ao negócio",
+    "subtitle": "Uma pessoa principal e outras fichas ligadas ao mesmo lead",
+    "output": "pessoas-relacionadas.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "tela", "label": "Dossiê do negócio" },
+    { "id": "api", "label": "API autenticada" },
+    { "id": "dados", "label": "Dados do tenant" }
+  ],
+  "mainPath": ["dossie", "seletor", "rota", "links", "lista"],
+  "nodes": [
+    { "id": "dossie", "lane": "tela", "col": 1, "type": "frontend", "label": "LeadDossier → ContatoDoNegocio" },
+    { "id": "seletor", "lane": "tela", "col": 2, "type": "frontend", "label": "SeletorDeContato + função" },
+    { "id": "lista", "lane": "tela", "col": 4, "type": "frontend", "label": "Pessoas relacionadas" },
+    { "id": "rota", "lane": "api", "col": 3, "type": "api", "label": "GET/POST/PATCH/DELETE contatos-relacionados" },
+    { "id": "contacts", "lane": "dados", "col": 2, "type": "database", "label": "contacts", "sublabel": "mesma organização, pessoa ativa" },
+    { "id": "lead", "lane": "dados", "col": 1, "type": "database", "label": "crm_leads.contact_id", "sublabel": "principal; continua ancorando conversa e automações" },
+    { "id": "links", "lane": "dados", "col": 3, "type": "database", "label": "crm_lead_links", "sublabel": "contact + related; metadata.papel" },
+    { "id": "timeline", "lane": "dados", "col": 4, "type": "database", "label": "crm_lead_activities + api_audit_log" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "dossie", "to": "seletor", "label": "adicionar, editar função, remover" },
+    { "id": "e2", "from": "seletor", "to": "contacts", "label": "buscar ou cadastrar pessoa" },
+    { "id": "e3", "from": "seletor", "to": "rota", "label": "contact_id e função" },
+    { "id": "e4", "from": "lead", "to": "rota", "label": "verifica lead e principal" },
+    { "id": "e5", "from": "contacts", "to": "rota", "label": "valida tenant e estado" },
+    { "id": "e6", "from": "rota", "to": "links", "label": "grava e remove vínculo" },
+    { "id": "e7", "from": "links", "to": "rota", "label": "GET lista os relacionados" },
+    { "id": "e8", "from": "rota", "to": "lista", "label": "nome, função e ficha" },
+    { "id": "e9", "from": "rota", "to": "timeline", "label": "atividade e auditoria sem PII" },
+    { "id": "e10", "from": "timeline", "to": "dossie", "label": "mudança aparece na linha do tempo" }
+  ]
+}

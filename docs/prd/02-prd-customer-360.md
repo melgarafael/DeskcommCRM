@@ -92,6 +92,13 @@ Esta camada também define o **vocabulary** — como cada tenant chama seu "lead
 - `tags` text[] indexado com GIN
 - `last_activity_at` denormalizado por trigger (caminho **I**ntegrar do DIRC)
 
+Um negócio pode envolver outras pessoas além do contato principal: o dossiê
+permite procurar ou cadastrar contatos, vinculá-los com uma função opcional,
+editar essa função e remover o vínculo. Cada pessoa mantém sua própria ficha;
+o lead, a conversa e as automações continuam usando `contact_id` como âncora.
+O vínculo é `crm_lead_links` (`target_kind='contact'`, `link_kind='related'`),
+sem duplicar o negócio nem reduzir a segunda pessoa a texto livre.
+
 **ACs principais.**
 - Criar lead via `POST /api/v1/leads` com `pipeline_id` obrigatório e `stage_id` opcional (default = primeiro stage do pipeline)
 - Lead criado a partir de pedido Nuvemshop tem `source='nuvemshop_order'` e `source_metadata.order_id` preenchido
