@@ -188,7 +188,29 @@ export function SidebarContent({
             {[...nome][0]?.toUpperCase() ?? brand.initial}
           </span>
         )}
+        {/* Issue #2722 — o controle de recolher mora no ALTO, como no
+            mercado: na linha da logo, à direita, quando a barra está aberta. */}
+        {showCollapseControl && !collapsed && (
+          <div className="ml-auto pl-2">
+            <BotaoDeRecolher
+              collapsed={false}
+              isPending={isPending}
+              onClick={() => startTransition(() => toggleSidebar(collapsed))}
+            />
+          </div>
+        )}
       </div>
+      {/* Issue #2722 — no trilho recolhido (64px) não cabe controle ao lado
+          do símbolo: ele vira uma faixa imediatamente abaixo da marca. */}
+      {showCollapseControl && collapsed && (
+        <div className="border-b px-2 py-1">
+          <BotaoDeRecolher
+            collapsed
+            isPending={isPending}
+            onClick={() => startTransition(() => toggleSidebar(collapsed))}
+          />
+        </div>
+      )}
       {/*
         A DENSIDADE É MEDIDA, NÃO ESTÉTICA.
 
@@ -350,27 +372,46 @@ export function SidebarContent({
           </Link>
         )}
         <VersionFooter collapsed={collapsed} onNavigate={onNavigate} />
-        {showCollapseControl && (
-          <button
-            type="button"
-            onClick={() => startTransition(() => toggleSidebar(collapsed))}
-            disabled={isPending}
-            className={cn(
-              "flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-              collapsed && "justify-center px-2",
-            )}
-            aria-label={collapsed ? t("Expandir sidebar") : t("Recolher sidebar")}
-          >
-            {collapsed ? (
-              <CaretDoubleRight size={14} aria-hidden />
-            ) : (
-              <CaretDoubleLeft size={14} aria-hidden />
-            )}
-            {!collapsed && <span>{t("Recolher")}</span>}
-          </button>
-        )}
       </div>
     </>
+  );
+}
+
+/**
+ * Issue #2722 — o MESMO controle de antes (classes, `toggleSidebar` via
+ * `startTransition`, `isPending`, `aria-label` Recolher/Expandir), só que no
+ * ALTO: na linha da logo quando aberta (padrão de mercado), e numa faixa sob
+ * o símbolo quando recolhida — os 64px do trilho não comportam botão ao lado
+ * da marca sem espremer.
+ */
+function BotaoDeRecolher({
+  collapsed,
+  isPending,
+  onClick,
+}: {
+  collapsed: boolean;
+  isPending: boolean;
+  onClick: () => void;
+}) {
+  const t = useT();
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={isPending}
+      className={cn(
+        "flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+        collapsed && "justify-center px-2",
+      )}
+      aria-label={collapsed ? t("Expandir sidebar") : t("Recolher sidebar")}
+    >
+      {collapsed ? (
+        <CaretDoubleRight size={14} aria-hidden />
+      ) : (
+        <CaretDoubleLeft size={14} aria-hidden />
+      )}
+      {!collapsed && <span>{t("Recolher")}</span>}
+    </button>
   );
 }
 
