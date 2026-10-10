@@ -5,8 +5,8 @@ import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { loadChannelKnobs, loadPacingState, recordSend } from "@/lib/agent-engine/pacing/store";
 import {
   decidePacing,
-  janelaDeEnvioAberta,
-  proximaAberturaDaJanela,
+  janelaDeProspeccaoAberta,
+  proximaAberturaDaProspeccao,
 } from "@/lib/agent-engine/pacing/engine";
 import { gerarAbordagemDeFormulario } from "@/lib/agent-engine/agent/abordagem-de-formulario";
 import { llmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/llm/credentials";
@@ -49,7 +49,13 @@ export async function sendNextCandidate(
     cfg.channel_session_id,
   );
   const now = new Date();
-  const nextWindow = janelaDeEnvioAberta(now, knobs) ? null : proximaAberturaDaJanela(now, knobs);
+  // O PORTÃO DA PROSPECÇÃO: dias próprios (`prospeccao_dias`, 0630) + horas de
+  // disparo — e NÃO o domingo compartilhado. Fora dele, o envio fica agendado
+  // para a próxima abertura, sem tentativa e sem queimar quota: a fila espera,
+  // não morre. Resposta, massa e retomada seguem o portão genérico delas.
+  const nextWindow = janelaDeProspeccaoAberta(now, knobs)
+    ? null
+    : proximaAberturaDaProspeccao(now, knobs);
   if (nextWindow) {
     await db.query(
       "update prospecting_campaigns set next_send_at=$3 where organization_id=$1 and id=$2",
@@ -74,6 +80,10 @@ export async function sendNextCandidate(
     knobs,
     state: pacingState,
     crmDailyLimit: channel.daily_message_limit,
+    // Sem isto, o veto de domingo do portão genérico calaria a prospecção no
+    // dia que os dias próprios liberaram — o atalho acima deixaria passar e o
+    // gate barraria: a fila andaria um dia e pararia no outro, sem motivo visível.
+    prospeccao: true,
   });
   if (!pacing.allow || pacing.waitMs > 0) {
     const next = pacing.allow ? new Date(now.getTime() + pacing.waitMs) : pacing.nextAllowedAt;

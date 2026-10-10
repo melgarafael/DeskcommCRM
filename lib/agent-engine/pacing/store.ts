@@ -26,6 +26,8 @@ interface ChannelKnobsRow {
   atraso_minimo_ms: number | null;
   atraso_maximo_ms: number | null;
   allow_sunday: boolean | null;
+  /** Dias da prospecção (0630, `smallint[]`, 0=dom … 6=sáb). Coluna NOT NULL. */
+  prospeccao_dias: number[] | null;
   timezone: string | null;
   warmup_daily_caps: unknown; // jsonb — shape validado em parseWarmupCaps (nunca confiado)
   /** Nulo quando o número não tem linha em channel_knobs (o `left join` da leitura). */
@@ -79,6 +81,24 @@ export function parseWarmupCaps(value: unknown): WarmupStep[] | null {
   return steps.length > 0 ? steps : null;
 }
 
+/**
+ * Dias da prospecção vindos do banco (0630, `smallint[]`, 0=dom … 6=sáb).
+ * Fora do 0..6, duplicado ou vazio → null: o load cai na regra antiga
+ * (`allowSunday`), com warn — a mesma falha fechada do warm-up (nunca exceção
+ * no caminho de envio, nunca fila parada em silêncio por dado corrupto).
+ */
+export function parseDiasDaProspeccao(value: unknown): number[] | null {
+  if (!Array.isArray(value)) return null;
+  const dias = [
+    ...new Set(
+      value.filter(
+        (d): d is number => typeof d === "number" && Number.isInteger(d) && d >= 0 && d <= 6,
+      ),
+    ),
+  ].sort((a, b) => a - b);
+  return dias.length > 0 ? dias : null;
+}
+
 export interface ChannelPacingConfig {
   knobs: PacingKnobs;
   /** null = sem linha em channel_knobs → o engine trata como idade 0 (conservador). */
@@ -102,7 +122,7 @@ export async function loadChannelKnobs(
     `select k.throttle_ms, k.jitter_max_ms, k.window_start_hour, k.window_end_hour,
             k.resposta_start_hour, k.resposta_end_hour,
             k.atraso_notar_ms, k.ms_por_caractere, k.atraso_minimo_ms, k.atraso_maximo_ms,
-            k.allow_sunday, k.timezone, k.warmup_daily_caps, k.number_activated_at,
+            k.allow_sunday, k.prospeccao_dias, k.timezone, k.warmup_daily_caps, k.number_activated_at,
             o.timezone as org_timezone
      from organizations o
      left join channel_knobs k
@@ -146,6 +166,20 @@ export async function loadChannelKnobs(
       respostaStartHour: row.resposta_start_hour ?? row.window_start_hour ?? PACING_DEFAULTS.respostaStartHour,
       respostaEndHour: row.resposta_end_hour ?? row.window_end_hour ?? PACING_DEFAULTS.respostaEndHour,
       allowSunday: row.allow_sunday ?? PACING_DEFAULTS.allowSunday,
+      // Dias próprios da prospecção (0630). Inválido/vazio cai na regra antiga
+      // (`allowSunday`), com warn — nunca fila parada em silêncio.
+      prospeccaoDias: (() => {
+        const dias = parseDiasDaProspeccao(row.prospeccao_dias);
+        if (dias) return dias;
+        if (row.prospeccao_dias !== null && row.prospeccao_dias !== undefined) {
+          logger?.warn('prospeccao_dias inválido em channel_knobs — usando a regra antiga', {
+            tenantId,
+            channelSessionId,
+          });
+        }
+        const domingo = row.allow_sunday ?? PACING_DEFAULTS.allowSunday;
+        return domingo ? [...PACING_DEFAULTS.prospeccaoDias] : [1, 2, 3, 4, 5, 6];
+      })(),
       timezone: fusoDaJanela(row.timezone, row.org_timezone),
       warmupDailyCaps,
     },

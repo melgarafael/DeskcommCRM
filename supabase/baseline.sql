@@ -52967,3 +52967,30 @@ alter table public.platform_branding
 
 comment on column public.platform_branding.accent_dark_hex is
   'Segunda semente da marca (#2482), só para o tema ESCURO: o bloco [data-theme=dark] deriva dela pela mesma derivarMarca, com os mesmos pisos de contraste. NULL = os dois temas derivam de accent_hex, como sempre. --color-brand continua sendo accent_hex (e-mail e logo nao tem tema). Lida/escrita so server-side (service_role), como o resto da tabela.';
+
+-- ---- dias da semana da prospecção por conexão (migration 0630) ----
+-- A prospecção ganha os dias próprios em channel_knobs.prospeccao_dias
+-- (smallint[], 0=domingo … 6=sábado); as horas continuam as da janela de
+-- disparo. Default todos os dias (regressão zero); o backfill congela seg–sáb
+-- para quem tinha allow_sunday = false, só nas linhas ainda no padrão.
+-- Reaplicável: add column if not exists + drop constraint if exists antes do add.
+alter table public.channel_knobs
+   add column if not exists prospeccao_dias smallint[] not null default '{0,1,2,3,4,5,6}';
+
+comment on column public.channel_knobs.prospeccao_dias is
+  'Dias da semana em que a PROSPECÇÃO pode abordar (0=domingo … 6=sábado). Só a prospecção lê isto; resposta, disparo em massa e retomada seguem allow_sunday. Default = todos os dias (comportamento anterior).';
+
+update public.channel_knobs
+  set prospeccao_dias = '{1,2,3,4,5,6}'
+  where allow_sunday is false
+    and prospeccao_dias = '{0,1,2,3,4,5,6}';
+
+alter table public.channel_knobs
+  drop constraint if exists channel_knobs_prospeccao_dias_validos;
+
+alter table public.channel_knobs
+  add constraint channel_knobs_prospeccao_dias_validos
+  check (
+    prospeccao_dias <@ '{0,1,2,3,4,5,6}'::smallint[]
+    and cardinality(prospeccao_dias) between 1 and 7
+  );

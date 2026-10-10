@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   authorize: vi.fn(),
   knobs: vi.fn(),
   open: vi.fn(),
+  prospeccaoAberta: vi.fn(),
   paradas: vi.fn(),
   prepare: vi.fn(),
 }));
@@ -35,8 +36,13 @@ vi.mock("@/lib/agent-engine/pacing/store", () => ({
 }));
 vi.mock("@/lib/agent-engine/pacing/engine", () => ({
   janelaDeEnvioAberta: mocks.open,
+  // A prospecção lê o portão próprio (dias + horas, 0630) — o genérico não é
+  // mais chamado neste worker. Sem estas duas chaves o import morre e TODOS os
+  // casos desta suíte falham com "not a function", não só os de janela.
+  janelaDeProspeccaoAberta: mocks.prospeccaoAberta,
   decidePacing: () => ({ allow: true, waitMs: 0 }),
   proximaAberturaDaJanela: () => new Date(Date.now() + 3600000),
+  proximaAberturaDaProspeccao: () => new Date(Date.now() + 3600000),
   // O ritmo da esteira fria (`lib/prospecting/ritmo-da-esteira-fria.ts`) deriva
   // o teto diário DESTA função em vez de manter uma tabela de degraus própria.
   // O mock precisa dela, senão o import do worker morre antes de qualquer caso
@@ -116,6 +122,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.knobs.mockResolvedValue({ knobs: {} });
   mocks.open.mockReturnValue(true);
+  mocks.prospeccaoAberta.mockReturnValue(true);
   mocks.preflight.mockResolvedValue({ permite: true });
   mocks.guard.mockResolvedValue(undefined);
   mocks.boundary.mockResolvedValue(undefined);
@@ -201,9 +208,17 @@ describe("gradual outreach", () => {
     expect(mocks.generate).not.toHaveBeenCalled();
   });
   it("stops outside the configured window", async () => {
-    mocks.open.mockReturnValue(false);
-    await sendNextCandidate({} as never, database() as never, {} as never, campaign);
+    mocks.prospeccaoAberta.mockReturnValue(false);
+    const db = database();
+    await sendNextCandidate({} as never, db as never, {} as never, campaign);
     expect(mocks.send).not.toHaveBeenCalled();
+    // Sem tentativa e sem trilha: reagendou para a próxima abertura e voltou.
+    expect(
+      db.query.mock.calls.some(
+        ([q]) => q.includes("update prospecting_campaigns set next_send_at=$3"),
+      ),
+    ).toBe(true);
+    expect(mocks.audit).not.toHaveBeenCalled();
   });
   it("fails closed when channel settings cannot be read", async () => {
     mocks.knobs.mockRejectedValue(new Error("database unavailable"));

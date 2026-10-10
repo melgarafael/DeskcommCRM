@@ -67,6 +67,8 @@ A ativação separa as empresas (as desmarcadas, as sem telefone e as que já s�
 
 Há uma campanha ativa por organização, até 50 tentativas em 24 horas no conjunto das campanhas, e intervalo mínimo de cinco minutos. Falhas e envios incertos consomem o limite. A janela do número, modo de teste, versão do agente, fechamento do atendimento, recusa, pausa e intervenção humana continuam ativos. Pausar interrompe novas abordagens; uma transmissão já iniciada pode concluir.
 
+**Dias da prospecção por conexão.** A primeira abordagem só sai nos dias marcados em **Conexões › Proteção de envio › Dias da prospecção** (`channel_knobs.prospeccao_dias`, 0=domingo … 6=sábado), dentro da janela de disparo do número. Fora do dia, o envio fica agendado para a próxima abertura, sem tentativa e sem queimar quota — a fila espera, não morre. Os dias são próprios da prospecção: desligar o domingo em **Enviar aos domingos** cala a resposta e os disparos em massa no domingo, mas não a prospecção (e vice-versa). Instalação nova nasce com todos os dias; quem tinha o domingo desligado migra com seg a sáb, e a mudança de dias entra em `api_audit_log` (`ai.pacing_knobs_updated`).
+
 **Ajustar o ritmo depois de iniciada.** Com a campanha **pausada**, o administrador troca o limite por dia (1 a 50) e o intervalo (5 a 1440 minutos) em **Editar ritmo**, ao lado de **Retomar fila**; a ação é `adjust_pace` em `POST /api/v1/prospecting` (issue #2095). O valor novo vale a partir do próximo envio. Só esses dois campos mudam: conexão, agente, funil, base legal e instrução da campanha seguem fixos depois de iniciada. A mudança entra em `api_audit_log` com o ritmo anterior e o novo.
 
 ## Operação e recuperação

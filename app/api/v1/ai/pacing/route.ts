@@ -31,7 +31,7 @@ export const dynamic = "force-dynamic";
 const KNOB_COLUMNS =
   // As duas janelas entram no SELECT: sem `resposta_*` aqui, a ficha Anti-ban
   // mostraria 7h-22h como se fosse a janela da resposta — e é a de DISPARO.
-  "throttle_ms, jitter_max_ms, window_start_hour, window_end_hour, resposta_start_hour, resposta_end_hour, allow_sunday, timezone, warmup_daily_caps, number_activated_at, atraso_notar_ms, ms_por_caractere, atraso_minimo_ms, atraso_maximo_ms";
+  "throttle_ms, jitter_max_ms, window_start_hour, window_end_hour, resposta_start_hour, resposta_end_hour, allow_sunday, prospeccao_dias, timezone, warmup_daily_caps, number_activated_at, atraso_notar_ms, ms_por_caractere, atraso_minimo_ms, atraso_maximo_ms";
 
 /**
  * `organizations.timezone`, para a tela mostrar o fuso em que o motor avalia a
@@ -172,6 +172,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
       atraso_minimo_ms: null,
       atraso_maximo_ms: null,
       allow_sunday: null,
+      prospeccao_dias: null,
       timezone: null,
       warmup_daily_caps: null,
     }),
