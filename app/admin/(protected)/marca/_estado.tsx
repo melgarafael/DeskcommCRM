@@ -46,6 +46,12 @@ interface Props {
   readonly fallbackMotivo: string | null;
   /** A derivação da cor que está NO CAMPO. `null` = campo vazio ou cor inválida. */
   readonly derivada: Marca | null;
+  /**
+   * A derivação que pinta o TEMA ESCURO: a da segunda cor quando ela existe
+   * (#2482), senão a mesma `derivada`. O contraste "No modo escuro" mede o
+   * botão que o escuro pinta, não um que a cor principal já não pinta.
+   */
+  readonly derivadaEscura: Marca | null;
   readonly avisos: readonly Aviso[];
   /** `false` quando a serialização recusaria esta cor — ela não chegaria à tela. */
   readonly seriaAplicada: boolean;
@@ -111,6 +117,7 @@ export function EstadoDaMarca({
   fallbackEm,
   fallbackMotivo,
   derivada,
+  derivadaEscura,
   avisos,
   seriaAplicada,
 }: Props) {
@@ -185,7 +192,7 @@ export function EstadoDaMarca({
           </p>
           <ul className="mt-2 space-y-1 text-sm">
             <LinhaDeContraste rotulo={t("No modo claro")} tokens={derivada.claro} />
-            <LinhaDeContraste rotulo={t("No modo escuro")} tokens={derivada.escuro} />
+            <LinhaDeContraste rotulo={t("No modo escuro")} tokens={(derivadaEscura ?? derivada).escuro} />
           </ul>
 
           <h3 className="mt-5 text-sm font-medium text-text">{t("O que o sistema ajustou")}</h3>
