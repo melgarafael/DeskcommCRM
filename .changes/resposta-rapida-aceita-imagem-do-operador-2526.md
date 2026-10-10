@@ -12,4 +12,4 @@ Ao escolher a resposta rápida na conversa, o texto e as imagens entram juntos n
 
 Você não precisa fazer nada. Modelos já cadastrados continuam como estão; a coluna nova nasce vazia, e a imagem é uma escolha opcional em cada Resposta rápida.
 
-Contribuição de @webtecnica (#NNNN).
+Contribuição de @webtecnica (#2704).
