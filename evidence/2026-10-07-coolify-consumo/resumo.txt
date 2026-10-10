@@ -1,0 +1,111 @@
+== coolify-so
+coolify	n=10	mem_med=320 MiB	mem_max=371 MiB	cpu_med=5.5%	cpu_max=45.1%
+coolify-db	n=10	mem_med=36 MiB	mem_max=40 MiB	cpu_med=0.6%	cpu_max=2.4%
+coolify-realtime	n=10	mem_med=49 MiB	mem_max=49 MiB	cpu_med=0.3%	cpu_max=0.4%
+coolify-redis	n=10	mem_med=6 MiB	mem_max=9 MiB	cpu_med=0.9%	cpu_max=2.2%
+TOTAL-coolify	461 MiB	(maior soma num mesmo instante)
+MAQUINA	n=10	used_max=653 MiB	available_min=6784 MiB	(free -m: inclui dockerd/containerd/docker-proxy)
+== repouso-sem-canal
+coolify	n=10	mem_med=114 MiB	mem_max=118 MiB	cpu_med=1.4%	cpu_max=4.1%
+coolify-db	n=10	mem_med=15 MiB	mem_max=16 MiB	cpu_med=0.4%	cpu_max=2.3%
+coolify-proxy	n=10	mem_med=36 MiB	mem_max=36 MiB	cpu_med=0.8%	cpu_max=3.0%
+coolify-realtime	n=10	mem_med=18 MiB	mem_max=19 MiB	cpu_med=0.3%	cpu_max=0.3%
+coolify-redis	n=10	mem_med=8 MiB	mem_max=8 MiB	cpu_med=0.7%	cpu_max=2.2%
+coolify-sentinel	n=10	mem_med=6 MiB	mem_max=6 MiB	cpu_med=0.1%	cpu_max=0.6%
+deskcommcrm-app-1	n=10	mem_med=183 MiB	mem_max=184 MiB	cpu_med=0.1%	cpu_max=1.1%
+deskcommcrm-redis-1	n=10	mem_med=1 MiB	mem_max=1 MiB	cpu_med=0.3%	cpu_max=0.3%
+deskcommcrm-scheduler-1	n=10	mem_med=1 MiB	mem_max=1 MiB	cpu_med=0.0%	cpu_max=0.2%
+deskcommcrm-srh-1	n=10	mem_med=7 MiB	mem_max=7 MiB	cpu_med=0.1%	cpu_max=0.1%
+deskcommcrm-supabase-api-gw-1	n=10	mem_med=14 MiB	mem_max=14 MiB	cpu_med=0.5%	cpu_max=1.9%
+deskcommcrm-supabase-auth-1	n=10	mem_med=12 MiB	mem_max=12 MiB	cpu_med=0.4%	cpu_max=1.9%
+deskcommcrm-supabase-db-1	n=10	mem_med=216 MiB	mem_max=219 MiB	cpu_med=1.5%	cpu_max=4.1%
+deskcommcrm-supabase-functions-1	n=10	mem_med=2 MiB	mem_max=2 MiB	cpu_med=0.4%	cpu_max=2.0%
+deskcommcrm-supabase-imgproxy-1	n=10	mem_med=21 MiB	mem_max=22 MiB	cpu_med=1.1%	cpu_max=4.6%
+deskcommcrm-supabase-meta-1	n=10	mem_med=38 MiB	mem_max=39 MiB	cpu_med=0.9%	cpu_max=8.0%
+deskcommcrm-supabase-realtime-1	n=10	mem_med=50 MiB	mem_max=50 MiB	cpu_med=0.3%	cpu_max=0.6%
+deskcommcrm-supabase-rest-1	n=10	mem_med=43 MiB	mem_max=43 MiB	cpu_med=1.0%	cpu_max=3.1%
+deskcommcrm-supabase-storage-1	n=10	mem_med=29 MiB	mem_max=30 MiB	cpu_med=0.4%	cpu_max=2.3%
+deskcommcrm-supabase-studio-1	n=10	mem_med=167 MiB	mem_max=168 MiB	cpu_med=0.7%	cpu_max=7.0%
+deskcommcrm-supabase-supavisor-1	n=10	mem_med=32 MiB	mem_max=32 MiB	cpu_med=1.0%	cpu_max=3.7%
+deskcommcrm-waha-1	n=10	mem_med=61 MiB	mem_max=61 MiB	cpu_med=0.1%	cpu_max=0.1%
+deskcommcrm-worker-1	n=10	mem_med=110 MiB	mem_max=110 MiB	cpu_med=0.1%	cpu_max=0.7%
+TOTAL-coolify	203 MiB	(maior soma num mesmo instante)
+TOTAL-crm	364 MiB	(maior soma num mesmo instante)
+TOTAL-supabase	629 MiB	(maior soma num mesmo instante)
+MAQUINA	n=10	used_max=1531 MiB	available_min=5993 MiB	(free -m: inclui dockerd/containerd/docker-proxy)
+== repouso-com-canal
+coolify	n=10	mem_med=128 MiB	mem_max=134 MiB	cpu_med=0.8%	cpu_max=3.4%
+coolify-db	n=10	mem_med=17 MiB	mem_max=18 MiB	cpu_med=0.2%	cpu_max=2.2%
+coolify-proxy	n=10	mem_med=38 MiB	mem_max=42 MiB	cpu_med=0.2%	cpu_max=0.3%
+coolify-realtime	n=10	mem_med=16 MiB	mem_max=19 MiB	cpu_med=0.9%	cpu_max=2.2%
+coolify-redis	n=10	mem_med=8 MiB	mem_max=9 MiB	cpu_med=0.7%	cpu_max=2.2%
+coolify-sentinel	n=10	mem_med=7 MiB	mem_max=7 MiB	cpu_med=0.0%	cpu_max=0.0%
+deskcommcrm-app-1	n=10	mem_med=202 MiB	mem_max=212 MiB	cpu_med=0.0%	cpu_max=0.0%
+deskcommcrm-redis-1	n=10	mem_med=1 MiB	mem_max=1 MiB	cpu_med=0.5%	cpu_max=2.2%
+deskcommcrm-scheduler-1	n=10	mem_med=2 MiB	mem_max=3 MiB	cpu_med=0.2%	cpu_max=1.6%
+deskcommcrm-srh-1	n=10	mem_med=4 MiB	mem_max=4 MiB	cpu_med=0.1%	cpu_max=0.1%
+deskcommcrm-supabase-api-gw-1	n=10	mem_med=15 MiB	mem_max=15 MiB	cpu_med=0.6%	cpu_max=2.3%
+deskcommcrm-supabase-auth-1	n=10	mem_med=11 MiB	mem_max=12 MiB	cpu_med=0.3%	cpu_max=1.6%
+deskcommcrm-supabase-db-1	n=10	mem_med=200 MiB	mem_max=208 MiB	cpu_med=1.9%	cpu_max=4.5%
+deskcommcrm-supabase-functions-1	n=10	mem_med=3 MiB	mem_max=3 MiB	cpu_med=0.4%	cpu_max=2.1%
+deskcommcrm-supabase-imgproxy-1	n=10	mem_med=17 MiB	mem_max=19 MiB	cpu_med=0.9%	cpu_max=4.7%
+deskcommcrm-supabase-meta-1	n=10	mem_med=25 MiB	mem_max=27 MiB	cpu_med=1.8%	cpu_max=7.4%
+deskcommcrm-supabase-realtime-1	n=10	mem_med=44 MiB	mem_max=48 MiB	cpu_med=0.4%	cpu_max=0.8%
+deskcommcrm-supabase-rest-1	n=10	mem_med=44 MiB	mem_max=44 MiB	cpu_med=0.5%	cpu_max=2.5%
+deskcommcrm-supabase-storage-1	n=10	mem_med=23 MiB	mem_max=24 MiB	cpu_med=0.5%	cpu_max=1.9%
+deskcommcrm-supabase-studio-1	n=10	mem_med=104 MiB	mem_max=106 MiB	cpu_med=0.8%	cpu_max=7.3%
+deskcommcrm-supabase-supavisor-1	n=10	mem_med=36 MiB	mem_max=38 MiB	cpu_med=0.3%	cpu_max=0.6%
+deskcommcrm-waha-1	n=10	mem_med=103 MiB	mem_max=104 MiB	cpu_med=0.2%	cpu_max=1.2%
+deskcommcrm-worker-1	n=10	mem_med=57 MiB	mem_max=61 MiB	cpu_med=0.4%	cpu_max=1.2%
+TOTAL-coolify	225 MiB	(maior soma num mesmo instante)
+TOTAL-crm	379 MiB	(maior soma num mesmo instante)
+TOTAL-supabase	532 MiB	(maior soma num mesmo instante)
+MAQUINA	n=10	used_max=1360 MiB	available_min=6164 MiB	(free -m: inclui dockerd/containerd/docker-proxy)
+== conversa
+coolify	n=48	mem_med=134 MiB	mem_max=198 MiB	cpu_med=6.1%	cpu_max=105.1%
+coolify-db	n=48	mem_med=18 MiB	mem_max=21 MiB	cpu_med=0.7%	cpu_max=2.4%
+coolify-proxy	n=48	mem_med=112 MiB	mem_max=112 MiB	cpu_med=0.8%	cpu_max=2.6%
+coolify-realtime	n=48	mem_med=21 MiB	mem_max=21 MiB	cpu_med=0.7%	cpu_max=2.6%
+coolify-redis	n=48	mem_med=8 MiB	mem_max=9 MiB	cpu_med=0.8%	cpu_max=2.7%
+coolify-sentinel	n=48	mem_med=8 MiB	mem_max=8 MiB	cpu_med=0.3%	cpu_max=2.2%
+deskcommcrm-app-1	n=48	mem_med=206 MiB	mem_max=210 MiB	cpu_med=1.3%	cpu_max=19.8%
+deskcommcrm-redis-1	n=48	mem_med=1 MiB	mem_max=1 MiB	cpu_med=0.3%	cpu_max=0.3%
+deskcommcrm-scheduler-1	n=48	mem_med=2 MiB	mem_max=3 MiB	cpu_med=0.1%	cpu_max=3.7%
+deskcommcrm-srh-1	n=48	mem_med=7 MiB	mem_max=7 MiB	cpu_med=0.0%	cpu_max=0.1%
+deskcommcrm-supabase-api-gw-1	n=48	mem_med=16 MiB	mem_max=20 MiB	cpu_med=0.6%	cpu_max=3.6%
+deskcommcrm-supabase-auth-1	n=48	mem_med=12 MiB	mem_max=12 MiB	cpu_med=0.3%	cpu_max=1.9%
+deskcommcrm-supabase-db-1	n=48	mem_med=163 MiB	mem_max=212 MiB	cpu_med=1.3%	cpu_max=7.8%
+deskcommcrm-supabase-functions-1	n=48	mem_med=3 MiB	mem_max=3 MiB	cpu_med=0.4%	cpu_max=2.1%
+deskcommcrm-supabase-imgproxy-1	n=48	mem_med=24 MiB	mem_max=28 MiB	cpu_med=1.0%	cpu_max=5.7%
+deskcommcrm-supabase-meta-1	n=48	mem_med=29 MiB	mem_max=38 MiB	cpu_med=1.8%	cpu_max=9.4%
+deskcommcrm-supabase-realtime-1	n=48	mem_med=51 MiB	mem_max=51 MiB	cpu_med=0.4%	cpu_max=2.7%
+deskcommcrm-supabase-rest-1	n=48	mem_med=44 MiB	mem_max=46 MiB	cpu_med=1.2%	cpu_max=5.8%
+deskcommcrm-supabase-storage-1	n=48	mem_med=24 MiB	mem_max=25 MiB	cpu_med=0.3%	cpu_max=2.1%
+deskcommcrm-supabase-studio-1	n=48	mem_med=117 MiB	mem_max=125 MiB	cpu_med=1.6%	cpu_max=8.4%
+deskcommcrm-supabase-supavisor-1	n=48	mem_med=40 MiB	mem_max=40 MiB	cpu_med=0.8%	cpu_max=3.1%
+deskcommcrm-waha-1	n=48	mem_med=108 MiB	mem_max=108 MiB	cpu_med=0.1%	cpu_max=0.4%
+deskcommcrm-worker-1	n=48	mem_med=117 MiB	mem_max=118 MiB	cpu_med=0.3%	cpu_max=1.9%
+TOTAL-coolify	368 MiB	(maior soma num mesmo instante)
+TOTAL-crm	446 MiB	(maior soma num mesmo instante)
+TOTAL-supabase	569 MiB	(maior soma num mesmo instante)
+MAQUINA	n=48	used_max=1688 MiB	available_min=5836 MiB	(free -m: inclui dockerd/containerd/docker-proxy)
+
+== F4 Passo 3 (regra de dimensionamento, 2026-10-07; numeros acima, LC_ALL=C)
+Janelas: F1 15:31:00-15:35:52Z, F2 15:45:07-15:49:58Z (sessao WAHA em FAILED: o QR expirou antes da janela), F3 16:05:51-16:12:30Z.
+Todas as janelas rodaram DENTRO do flock /root/.vps-teste.lock; TOTAL-terceiros = 0 em todas as amostras (nenhuma linha de grupo terceiros no docker stats).
+DIVERGENCIA (o plano supoe "sem swap"): desde 2026-10-07 13:46:10Z existe /swapfile de 4 GiB (persistente no fstab), criado por OUTRA sessao,
+depois de 14 OOM do kernel em processos node de terceiros (13:32-13:44Z, antes da rodada 1 do PR 4). Durante as janelas o swap tinha ~1,6 GiB em uso,
+e ~1611 MiB eram paginas dos NOSSOS contêineres (16:26:59Z: coolify 280, supabase 797, crm 534; ver swap-e-oom.txt).
+O MEM USAGE do docker stats e o "used" do free -m NAO contam swap: os numeros abaixo sao RAM residente numa maquina COM swap.
+Regua 1 (a do plano, used da MAQUINA na conversa, amostras com TOTAL-terceiros=0): minimo = 1688 MiB.
+Regua 2 (soma no mesmo instante dos tres grupos nossos, conversa): 1362 MiB (coolify 368, supabase 569, crm 446 sao maximos por grupo, nao no mesmo instante).
+Regua 3 (residente + swap dos nossos, limite superior, swap lido 15 min depois da janela): 1688 + 1611 = 3299 MiB.
+Folga ate os mem_limit do CRM (conversa): app 768-210 + worker 512-118 + waha 1280-108 = 2124 MiB.
+memory.peak (com cache, desde a subida): supabase 1828, coolify 1019 MiB; folga ate o peak: supabase 1828-569=1259, coolify 1019-368=651.
+Recomendado, leitura A (minimo + folga CRM + folga ate o peak):    1688 + 2124 + 1910 = 5722 MiB (5,6 GiB) -> <= 6,2 GiB -> 8 GB.
+Recomendado, leitura B (minimo + folga CRM + peak inteiro):        1688 + 2124 + 2847 = 6659 MiB (6,5 GiB) -> >  6,2 GiB -> 16 GB.
+Recomendado, leitura A sobre a regua 3:                             3299 + 2124 + 1910 = 7333 MiB (7,2 GiB) -> 16 GB.
+DECISAO 8 GB x 16 GB: NAO TOMADA pelo executor. Depende (1) de qual leitura da regra vale e (2) de remedir sem swap ou aceitar a regua 3.
+Maquina inteira sem swap: NAO MEDIDA. VPS de 4 GB: NAO MEDIDA.
+Disco: imagens 19,84 GB no Docker (TODAS, inclui Coolify e terceiros), banco+anexos do Supabase 105 MiB (volumes), / com 37G usados de 196G.
+OOM do kernel durante as janelas da F: 0 (os 14 sao de 13:32-13:44Z). Conteineres nossos com OOMKilled/reinicio: 0 nas tres janelas.

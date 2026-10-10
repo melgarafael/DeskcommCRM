@@ -1,0 +1,13 @@
+tar: This does not look like a tar archive
+tar: Exiting with failure status due to previous errors
+ponte: linhas antes=1 depois=0
+ponte exit=1 falhas=1
+  ✗ bridge: o terceiro arquivo é a cópia do kit
+porta exit=127 falhas=0
+sed: can't read hostgator-setup-kit/install-single-server.sh: No such file or directory
+ls: cannot access '/root/pr4-sabotagem*': No such file or directory
+porta: linhas antes=1 depois=0
+porta exit=1 falhas=2
+  ✗ porta 8001 exportada: gravada no .env do Supabase (o compose só lê de lá)
+  ✗ porta 8001 exportada: a URL interna do CRM segue a mesma porta
+ls: cannot access '/root/pr4-sabotagem*': No such file or directory

@@ -88,11 +88,22 @@ const TABELAS_NA_CASCATA = [
   // 0291 — o briefing da passagem: title/body/notes/content e as tentativas.
   // `body` é `not null` e recebe o RÓTULO, não `null`.
   "passagens_de_atendimento",
-  // 0359 — o texto livre da comanda: `notes`, `cancel_reason` e
-  // `reverse_reason`. O valor, o status, as datas e o vínculo com o contato
-  // FICAM: a venda é registro financeiro da organização, e desligá-la faria o
-  // relatório por cliente deixar de fechar com o faturamento do período.
-  "sales",
+  // 0359 — texto livre da comanda. `sales` SAIU da cascata por decisão
+  // deliberada (PR #1907, migration 0620): o passo 6c alterava a comanda pelo
+  // NOME, e as cinco tabelas da comanda saíram do `baseline.sql` para nascerem
+  // só na instalação do módulo (ADR-0002 D2/D3) — sem o módulo a alteração
+  // abortava a ANONIMIZAÇÃO INTEIRA com `relation "sales" does not exist` (68
+  // ocorrências no CI do #1907, item 1 do mantenedor), e a D8 (0485) proíbe o
+  // núcleo nomear tabela de módulo. A redação NÃO sumiu: ela passou para a
+  // SEÇÃO declarada `financeiro/sales` em `modulo_secoes_lgpd`, que
+  // `trg_lgpd_secoes_de_modulo` aplica nos dois caminhos de anonimização e que
+  // `lgpd-redact-unificado-alcanca-pelo-catalogo.test.ts` mede como caminho
+  // `secao`. Esta lista é a catraca do que o NÚCLEO redige com o corpo na mão;
+  // tabela de módulo vive no mecanismo declarado, não aqui. Na seção o efeito é
+  // o MESMO do passo 6c antigo: `notes` some (NULO), `cancel_reason` e
+  // `reverse_reason` viram '[redigido]' só onde havia texto (nulo continua nulo),
+  // `updated_at` = now(), e o valor/status/datas e o vínculo com o contato FICAM
+  // (medido em `comanda-anonimizada-pela-secao.test.ts`).
   // 0345 — nome, telefone, endereço e `maps_url` do negócio raspado antes de
   // existir conversa. O passo alcança por vínculo OU POR TELEFONE (variantes do
   // nono dígito): quando o número já era de um contato conhecido, o candidato

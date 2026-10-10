@@ -1,0 +1,3 @@
+# G1 Passo 0 (2026-10-07T16:52:32Z) roteiro coolify-concluir-assistente exit=0; /onboarding abriu em 'Welcome to Coolify' (estado nao persistido), clicou 'Skip setup', servers_abre_em=/servers; localhost com status 'Attention required' na lista; badge 'Update available' (AUTOUPDATE=false)
+0|f
+0

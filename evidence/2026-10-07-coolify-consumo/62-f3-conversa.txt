@@ -1,0 +1,28 @@
+== envios (F3 Passo 2)
+msg 1 -> 200
+msg 2 -> 200
+msg 3 -> 200
+msg 4 -> 200
+msg 5 -> 200
+== desfecho (+60 s; 15 min e desde inicio-conversa=2026-10-07T18:43:23Z)
+inbound 5
+llm_calls 0
+event_log:done 17
+event_log_desde_inicio:done 14
+event_type_desde_inicio:lead.created 1
+event_type_desde_inicio:channel_session.status_changed 1
+event_type_desde_inicio:conversation.routing_requested 1
+event_type_desde_inicio:message.received 5
+event_type_desde_inicio:central.aviso_criado 1
+event_type_desde_inicio:ai_agent.dispatch_requested 5
+== runner: docker run do psql (horarios)
+docker-run-runner-inicio:token 2026-10-07T18:42:52Z
+docker-run-runner-fim:token 2026-10-07T18:42:53Z
+descarte-30s-depois-do-docker-run 2026-10-07T18:42:53Z
+inicio-conversa=2026-10-07T18:43:23Z
+f3-amostragem-fim 2026-10-07T18:49:00Z
+docker-run-runner-inicio:desfecho 2026-10-07T18:50:00Z
+docker-run-runner-fim:desfecho 2026-10-07T18:50:01Z
+docker-run-runner-inicio:f3b 2026-10-07T18:50:01Z
+docker-run-runner-fim:f3b 2026-10-07T18:50:02Z
+docker-run-runner-manual(contagem channel_sessions, Mac) terminou antes de 2026-10-07T18:42:49Z

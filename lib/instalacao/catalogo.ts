@@ -205,6 +205,26 @@ export const CATALOGO_DA_INSTALACAO: readonly ChaveDaInstalacao[] = [
     controle: "edita",
     telaDona: "cobranca",
   },
+  {
+    chave: "ASAAS_API_KEY",
+    rotulo: "Chave de API do Asaas",
+    explicacao:
+      "A chave que deixa o sistema criar assinaturas e ler pagamentos na sua conta Asaas. Comece pela do sandbox, que começa com $aact_hmlg_.",
+    grupo: "integracao",
+    natureza: "segredo",
+    controle: "edita",
+    telaDona: "cobranca",
+  },
+  {
+    chave: "ASAAS_WEBHOOK_TOKEN",
+    rotulo: "Token dos avisos de pagamento do Asaas",
+    explicacao:
+      "Confere que um aviso de pagamento veio mesmo do Asaas. É criado quando você conecta a chave; se o Asaas pedir o cadastro manual do aviso, a tela mostra o token uma única vez.",
+    grupo: "integracao",
+    natureza: "segredo",
+    controle: "edita",
+    telaDona: "cobranca",
+  },
 
   // ── DIAGNÓSTICO: de partida ───────────────────────────────────────────────
   {

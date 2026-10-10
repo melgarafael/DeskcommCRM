@@ -264,6 +264,11 @@ export const AUDIT_ACTIONS = [
   // trilha dizer nos dois sentidos, como `archived`/`reactivated`.
   "channel.disabled",
   "channel.enabled",
+  // A janela de manutenção (#2388): criar e cancelar são mutações da tela e
+  // auditam como toda mutação. A pausa e a retomada que a janela aplica saem
+  // como `channel.disabled`/`channel.enabled`, com `origem: schedule`.
+  "channel.schedule_created",
+  "channel.schedule_cancelled",
   // Chamada de voz WhatsApp (WaCalls, spec 18) — pareamento do segundo
   // dispositivo vinculado, opt-in por org. Admin only.
   //
@@ -1109,6 +1114,10 @@ export const AUDIT_ACTIONS = [
   "platform_admin.tenant_members_viewed",
   // O admin da plataforma corrigiu o e-mail de login de um membro (só hashes).
   "member.email_changed",
+  // O gestor mudou a carteira do cliente (põe/tira o dono) pela porta
+  // dedicada `PATCH /contacts/[id]/carteira` (#2591) — a escrita é do servidor,
+  // então o audit é a única trilha de quem mudou o dono.
+  "contact.carteira_changed",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

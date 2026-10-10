@@ -1,0 +1,7 @@
+coolify	631 MiB
+coolify-db	109 MiB
+coolify-realtime	78 MiB
+coolify-redis	11 MiB
+               total        used        free      shared  buff/cache   available
+Mem:            7940         603        2159         219        5177        6835
+Swap:              0           0           0
