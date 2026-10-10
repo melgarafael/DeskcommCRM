@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { ChipDeEtiqueta } from "@/components/tags/ChipDeEtiqueta";
 import { PontoDaEtiqueta } from "@/components/tags/PontoDaEtiqueta";
+import { SeletorDeCorDaEtiqueta } from "@/components/tags/SeletorDeCorDaEtiqueta";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { X, Plus } from "@/lib/ui/icons";
@@ -10,6 +11,7 @@ import {
   useUpdateConversationTags,
   useConversationTagVocabulary,
 } from "@/hooks/inbox/useConversationTags";
+import { useDefinirCorDaEtiqueta } from "@/hooks/tags/useDefinirCorDaEtiqueta";
 
 interface Props {
   conversationId: string;
@@ -21,7 +23,10 @@ interface Props {
 export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
   const t = useT();
   const [draft, setDraft] = useState("");
+  // Issue #2718 — tom escolhido ANTES do "+": a etiqueta nasce colorida.
+  const [cor, setCor] = useState<string | null>(null);
   const mutation = useUpdateConversationTags();
+  const { definirCor } = useDefinirCorDaEtiqueta();
   const { data: vocabulary } = useConversationTagVocabulary(orgId);
 
   // Normalização espelha o Zod do PATCH (trim+lowercase); dedup no set.
@@ -32,8 +37,13 @@ export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
   function add(raw: string) {
     const tag = raw.trim().toLowerCase().slice(0, 40);
     if (!tag || tags.includes(tag) || tags.length >= 20) return;
+    const escolhida = cor;
     apply([...tags, tag]);
     setDraft("");
+    setCor(null);
+    // A cor é VOCABULÁRIO, não da linha (#2718): chamada independente do
+    // attach — a SQL faz append do verbete, e falhar aqui não desfaz a tag.
+    if (escolhida) void definirCor(tag, escolhida);
   }
 
   function remove(tag: string) {
@@ -83,6 +93,12 @@ export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
           disabled={mutation.isPending || tags.length >= 20}
           className="h-7 text-xs"
           aria-label={t("Adicionar tag à conversa")}
+        />
+        <SeletorDeCorDaEtiqueta
+          cor={cor}
+          onChange={setCor}
+          tag={draft.trim() || undefined}
+          disabled={mutation.isPending || tags.length >= 20}
         />
         <Button
           size="sm"
