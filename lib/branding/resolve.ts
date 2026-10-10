@@ -48,7 +48,9 @@ export type CodigoDaResolucao =
   | "algoritmo_desconhecido"
   | "papel_desconhecido"
   | "papel_nao_pinta"
-  | "derivacao_falhou";
+  | "derivacao_falhou"
+  /** A cor do TEMA ESCURO (#2482) é neutra: o escuro pinta com a escala do produto. */
+  | "cor_escura_acromatica";
 
 /**
  * Mesma disciplina do `Motivo` de `contraste.ts`: emite FORMA, nunca
@@ -81,6 +83,14 @@ export type CamadaDeMarca = {
    * de onde o dado inválido veio.
    */
   readonly cor?: unknown;
+  /**
+   * A cor da marca NO TEMA ESCURO (#2482) — o par, do jeito que `logoDarkUrl`
+   * é o par de `logoUrl`. Envelope CRU, mesmo desenho de `cor`: mesma forma,
+   * mesma validação, mesma `derivarMarca`. Ausente = os dois temas continuam
+   * derivando da MESMA semente, que é o comportamento de sempre — e é por isso
+   * que a chave Some do objeto resolvido quando ninguém a definiu.
+   */
+  readonly corEscura?: unknown;
 };
 
 export type CorResolvida = {
@@ -89,6 +99,14 @@ export type CorResolvida = {
   readonly papel: PapelDaSemente | "desconhecido";
   /** Os tokens derivados. `null` quando a semente não pinta o produto. */
   readonly derivada: Marca | null;
+  /**
+   * A derivação da SEGUNDA semente (#2482) — só o bloco escuro a consome.
+   *
+   * A chave é ABSENTE (não `null`) quando não há segunda cor: `css.ts` lê
+   * `cor.corEscura` e, sem a chave, segue exatamente o caminho de antes, byte a
+   * byte. Uma instalação legada não ganha ramo nenhum — ganha ausência.
+   */
+  readonly corEscura?: { readonly semente: string; readonly derivada: Marca };
 };
 
 export type MarcaResolvida = Branding & {
@@ -99,6 +117,8 @@ export type MarcaResolvida = Branding & {
     readonly logoUrl: string;
     readonly logoDarkUrl?: string;
     readonly cor: string;
+    /** Só existe quando a MESMA camada que venceu a cor definiu a do escuro. */
+    readonly corEscura?: string;
   };
   readonly motivos: readonly MotivoDaMarca[];
 };
@@ -182,6 +202,122 @@ function derivarComCache(semente: string, regua: Regua): Marca {
 }
 
 /**
+ * A SEGUNDA semente — a cor do tema escuro (#2482), da mesma camada que venceu
+ * a cor principal.
+ *
+ * ── Por que ela NUNCA derruba a cor principal ───────────────────────────────
+ *
+ * A cor principal já está pintando o produto inteiro no ponto onde esta função
+ * é chamada. Um hex torto aqui tem de custar o TEMA ESCURO, não o login, o
+ * e-mail e a tela de erro: a ação é recusar a segunda semente e manter o
+ * comportamento de antes (o escuro deriva do claro), com o motivo à mão — o
+ * mesmo "falhar fechado na AÇÃO, aberto na INFORMAÇÃO" do resolvedor.
+ *
+ * `format`/`algo`/`papel` seguem a mesma régua do envelope principal
+ * (`schema.ts`): forma de outra versão não se adivinha, e papel que não é
+ * `accent` não pinta. Só que, aqui, "não pintar" significa "voltar à primeira
+ * semente", não "sem marca nenhuma".
+ *
+ * Os motivos da derivação saem COM OS DA PRINCIPAL na mesma lista: a tela de
+ * marca mostra o que o sistema ajustou, e com duas sementes ela tem de mostrar
+ * as duas — é o critério 2 da issue ("com o motivo mostrado na tela").
+ *
+ * ── Só os motivos do ESCURO ─────────────────────────────────────────────────
+ *
+ * `derivarMarca` deriva os DOIS temas, mas esta semente só pinta o escuro. Os
+ * motivos do claro dela descrevem um bloco que ela nunca pinta — e, medido com
+ * `#1c261d` + `#d9ac62`, o `semantica_deslocada` do claro do âmbar fazia a
+ * tela avisar "parecida com erro", cor que nada no produto chegou a usar.
+ *
+ * Semente neutra é o mesmo caso por outro lado: o escuro pinta com a escala do
+ * PRODUTO, e os ajustes medidos ali são a paleta do produto contra ela mesma
+ * (ver `suaCorPinta` em `linguagem.ts`). Sai um motivo só, com código próprio:
+ * o `marca_acromatica` diz "a sua fica reservada ao logo", e isso é falso para
+ * a cor principal, que segue pintando o claro.
+ */
+function derivarCorEscura(
+  cru: unknown,
+  origem: string,
+  regua: Regua,
+  motivos: MotivoDaMarca[],
+): { semente: string; derivada: Marca } | null {
+  const recusar = (codigo: CodigoDaResolucao, detalhe: string) => {
+    motivos.push({ codigo, origem, tema: "escuro", alvo: "--color-accent", detalhe });
+    return null;
+  };
+  if (cru === null || cru === undefined) return null;
+
+  const lido = esquemaDaCorDaMarca.safeParse(cru);
+  if (!lido.success) {
+    const noHex = lido.error.issues.some((i) => i.path[0] === "semente_hex" && i.code === "custom");
+    if (noHex) {
+      return recusar(
+        "semente_invalida",
+        "a cor do tema escuro não é um hex de cor (#rgb ou #rrggbb); " +
+          "o tema escuro continua derivando da cor principal",
+      );
+    }
+    const campos = [...new Set(lido.error.issues.map((i) => i.path.join(".") || "(raiz)"))].sort();
+    return recusar(
+      "envelope_malformado",
+      `a cor do tema escuro está fora da forma esperada (${campos.join(", ")}); ` +
+        `o tema escuro continua derivando da cor principal`,
+    );
+  }
+
+  const envelope = lido.data;
+  if (envelope.format !== FORMATO_ATUAL) {
+    return recusar(
+      "formato_desconhecido",
+      `formato ${envelope.format} não é o desta versão (${FORMATO_ATUAL}); ` +
+        `o tema escuro continua derivando da cor principal`,
+    );
+  }
+  if (envelope.algo !== ALGORITMO_ATUAL) {
+    // Mesmo tratamento do envelope principal: a semente é ENTRADA, então esta
+    // versão deriva com o algoritmo dela e anota — é o que faz rollback manter
+    // a marca no ar.
+    motivos.push({
+      codigo: "algoritmo_desconhecido",
+      origem,
+      tema: "escuro",
+      alvo: "--color-accent",
+      detalhe: `a cor do tema escuro veio gravada na versão ${envelope.algo}; ` +
+        `esta instalação deriva na ${ALGORITMO_ATUAL}`,
+    });
+  }
+  if (!ehPapelConhecido(envelope.papel_da_semente) || envelope.papel_da_semente !== "accent") {
+    return recusar(
+      "papel_nao_pinta",
+      "a cor do tema escuro foi configurada só como identidade; " +
+        "o tema escuro continua derivando da cor principal",
+    );
+  }
+
+  const semente = normalizarHex(envelope.semente_hex);
+  try {
+    const derivada = derivarComCache(semente, regua);
+    if (derivada.origemDaRampa === "produto") {
+      motivos.push({
+        codigo: "cor_escura_acromatica",
+        origem,
+        tema: "escuro",
+        alvo: "--color-accent",
+        detalhe: "a cor do tema escuro é neutra; o tema escuro pinta com a escala do produto",
+      });
+      return { semente, derivada };
+    }
+    for (const m of derivada.motivos) {
+      if (m.tema !== "escuro") continue;
+      motivos.push({ codigo: m.codigo, origem, tema: m.tema, alvo: m.alvo, detalhe: m.detalhe });
+    }
+    return { semente, derivada };
+  } catch (erro) {
+    return recusar("derivacao_falhou", semIdentidade(erro instanceof Error ? erro.message : String(erro)));
+  }
+}
+
+/**
  * Valida um envelope cru e, se ele pintar, deriva os tokens.
  *
  * Devolve `null` em `cor` quando a camada não tem nada a dizer sobre cor —
@@ -191,6 +327,7 @@ function resolverCor(
   cru: unknown,
   origem: string,
   regua: Regua,
+  cruEscura?: unknown,
 ): { cor: CorResolvida | null; motivos: MotivoDaMarca[] } {
   const motivos: MotivoDaMarca[] = [];
   const anotar = (codigo: CodigoDaResolucao, detalhe: string, alvo: string | null = null) => {
@@ -277,10 +414,25 @@ function resolverCor(
 
   try {
     const derivada = derivarComCache(semente, regua);
+    // A segunda semente SÓ entra depois de a principal ter pintado: sem accent
+    // principal não existe bloco escuro para ela pendurar, e uma camada que
+    // declara só a cor do escuro não tem o que a pintar.
+    const motivosDoEscuro: MotivoDaMarca[] = [];
+    const corEscura =
+      cruEscura === undefined || cruEscura === null
+        ? undefined
+        : derivarCorEscura(cruEscura, origem, regua, motivosDoEscuro);
     for (const m of derivada.motivos) {
+      // Com a segunda semente, o escuro deixa de derivar desta: os ajustes que
+      // a principal faria no escuro descrevem um bloco que ela não pinta mais.
+      if (corEscura && m.tema === "escuro") continue;
       motivos.push({ codigo: m.codigo, origem, tema: m.tema, alvo: m.alvo, detalhe: m.detalhe });
     }
-    return { cor: { semente, papel, derivada }, motivos };
+    motivos.push(...motivosDoEscuro);
+    return {
+      cor: { semente, papel, derivada, ...(corEscura ? { corEscura } : {}) },
+      motivos,
+    };
   } catch (erro) {
     // Não é `catch` que silencia: o motivo sai com a mensagem real (sem o hex).
     // Existe porque a alternativa é a exceção subir até o layout e derrubar o
@@ -322,7 +474,7 @@ export function resolverMarca(camadas: readonly CamadaDeMarca[], regua: Regua): 
 
   for (const camada of camadas) {
     if (!("cor" in camada)) continue;
-    const tentativa = resolverCor(camada.cor, camada.origem, regua);
+    const tentativa = resolverCor(camada.cor, camada.origem, regua, camada.corEscura);
     motivos.push(...tentativa.motivos);
     if (tentativa.cor) {
       cor = tentativa.cor;
@@ -340,6 +492,7 @@ export function resolverMarca(camadas: readonly CamadaDeMarca[], regua: Regua): 
       logoUrl: logo?.origem ?? PADRAO,
       ...(logoEscuro ? { logoDarkUrl: logoEscuro.origem } : {}),
       cor: origemDaCor,
+      ...(cor?.corEscura ? { corEscura: origemDaCor } : {}),
     },
     motivos,
   };
@@ -380,6 +533,12 @@ export type LinhaDaInstalacao = {
    */
   readonly favicon_path?: string | null;
   readonly accent_hex?: string | null;
+  /**
+   * A cor do TEMA ESCURO (#2482), migration 0627. Opcional e `null` = a
+   * instalação não definiu, e os dois temas derivam de `accent_hex` — que é o
+   * caso de TODA linha gravada antes desta coluna.
+   */
+  readonly accent_dark_hex?: string | null;
 };
 
 /**
@@ -399,6 +558,9 @@ export type LinhaDaInstalacao = {
 export function camadaDaInstalacao(linha: LinhaDaInstalacao | null): CamadaDeMarca {
   if (!linha) return { origem: "banco" };
   const hex = (linha.accent_hex ?? "").trim();
+  // A cor do escuro é da MESMA camada que a do claro (#2482): o par se fecha
+  // aqui, como o de logo — ver `logoDarkUrl` acima. Hex vazio não vira a chave.
+  const hexEscuro = (linha.accent_dark_hex ?? "").trim();
   // O arquivo subido vence a URL colada, DENTRO desta camada — ver `logoDaCamada`.
   const logoUrl = logoDaCamada(linha.logo_path, linha.logo_url);
   const logoDarkUrl = logoDaCamada(linha.logo_dark_path, null);
@@ -420,6 +582,7 @@ export function camadaDaInstalacao(linha: LinhaDaInstalacao | null): CamadaDeMar
     logoUrl,
     ...(logoDarkUrl ? { logoDarkUrl } : {}),
     cor: envelopeDeSemente(hex),
+    ...(hexEscuro.length > 0 ? { corEscura: envelopeDeSemente(hexEscuro) } : {}),
   };
 }
 
@@ -475,6 +638,12 @@ export type MarcaDaOrganizacao = {
    */
   readonly logo_path?: string | null;
   readonly logo_dark_path?: string | null;
+  /**
+   * A cor do TEMA ESCURO desta organização (#2482) — a chave `accent_dark_hex`
+   * de `settings.branding`, sem coluna nova: o jsonb acolhe o campo pelo mesmo
+   * motivo de `logo_dark_path` (kit self-host com código velho sobre dado novo).
+   */
+  readonly accent_dark_hex?: string | null;
 };
 
 /**
@@ -506,6 +675,7 @@ export type MarcaDaOrganizacao = {
 export function camadaDaOrganizacao(marca: MarcaDaOrganizacao | null): CamadaDeMarca {
   if (!marca) return { origem: "organizacao" };
   const hex = (marca.accent_hex ?? "").trim();
+  const hexEscuro = (marca.accent_dark_hex ?? "").trim();
   const logoUrl = logoDaCamada(marca.logo_path, null);
   const logoDarkUrl = logoDaCamada(marca.logo_dark_path, null);
   if (hex.length === 0)
@@ -521,5 +691,6 @@ export function camadaDaOrganizacao(marca: MarcaDaOrganizacao | null): CamadaDeM
     logoUrl,
     ...(logoDarkUrl ? { logoDarkUrl } : {}),
     cor: envelopeDeSemente(hex),
+    ...(hexEscuro.length > 0 ? { corEscura: envelopeDeSemente(hexEscuro) } : {}),
   };
 }
