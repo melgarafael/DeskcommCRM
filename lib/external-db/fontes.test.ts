@@ -190,11 +190,12 @@ describe("teto de bytes (espelha o CHECK do banco)", () => {
   });
 
   it("conta bytes, não caracteres: caracteres passam, bytes estouram", () => {
-    // "é" tem 1 caractere e 2 bytes: 200 fontes × 20 colunas de 64 "é" cabem
-    // em 262144 caracteres, mas passam de 262144 bytes.
-    const lista = Array.from({ length: 200 }, (_, i) => fonteCheia(i, Array(20).fill("é".repeat(64))));
-    expect(JSON.stringify(lista).length).toBeLessThanOrEqual(262144);
-    expect(tamanhoComoJsonb(lista)).toBeGreaterThan(MAX_BYTES_DAS_FONTES);
+    // "é" tem 1 caractere e 2 bytes: 100 fontes × 22 colunas de 64 "é" cabem
+    // com folga em 240000 caracteres (153091), mas passam com folga de 280000
+    // bytes (296790). Medido por cálculo avulso, não por estimativa.
+    const lista = Array.from({ length: 100 }, (_, i) => fonteCheia(i, Array(22).fill("é".repeat(64))));
+    expect(JSON.stringify(lista).length).toBeLessThanOrEqual(240000);
+    expect(tamanhoComoJsonb(lista)).toBeGreaterThanOrEqual(280000);
     expect(fontesSchema.safeParse(lista).success).toBe(false);
   });
 

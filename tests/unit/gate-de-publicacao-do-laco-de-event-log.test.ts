@@ -94,23 +94,31 @@ describe("o sinal de prontidão do laço do event_log (#604)", () => {
     expect(FLUXO).toContain(MARCA_LACO_CARREGADO);
   });
 
-  it("o `/healthz` do worker publica a prontidão nos DOIS ramos — 200 e 503", () => {
+  it("o `/healthz` do worker publica a prontidão nos TRÊS ramos — 503 do drain da IA, 200 e 503 do banco", () => {
     // A sonda lê `event_log_drain.carregado`. Se o handler parar de publicar o
     // campo, o gate reprova por ausência; o caso pior é o outro: o campo sumir
     // do ramo 503 e a prontidão desaparecer justo quando o banco cai.
     // Afirmação sobre o texto do handler — sem Docker não há handler de pé.
     // Quem mede comportamento é a sonda, no runner.
-    const MAIN = readFileSync(join(RAIZ, "workers", "agent-worker", "main.ts"), "utf8");
+    // O handler mora em `healthz.ts` desde a #2505 (o `main.ts` não é importável).
+    // As âncoras são do corpo de CADA ramo: `respond(res, 200,` casava primeiro no
+    // `/metrics`, e a asserção de ordem passava sem olhar o `/healthz`.
+    const HEALTHZ = readFileSync(join(RAIZ, "workers", "agent-worker", "healthz.ts"), "utf8");
     const publicacoes = [
-      ...MAIN.matchAll(/event_log_drain:\s*prontidaoDoLacoDeEventLog\(\)/g),
+      ...HEALTHZ.matchAll(/event_log_drain:\s*prontidaoDoLacoDeEventLog\(\)/g),
     ].map((m) => m.index ?? -1);
-    expect(publicacoes, "a prontidão tem que aparecer nos dois ramos").toHaveLength(2);
-    const ramoOk = MAIN.indexOf("respond(res, 200,");
-    const ramoDegradado = MAIN.indexOf("respond(res, 503,");
-    expect(ramoOk).toBeGreaterThan(-1);
-    expect(ramoDegradado).toBeGreaterThan(-1);
-    expect(publicacoes[0]).toBeGreaterThan(ramoOk);
-    expect(publicacoes[1]).toBeGreaterThan(ramoDegradado);
+    expect(publicacoes, "a prontidão tem que aparecer nos três ramos").toHaveLength(3);
+    const ramoIaParada = HEALTHZ.indexOf("if (ia_drain.parado)");
+    const ramoOk = HEALTHZ.indexOf('status: "ok"');
+    const ramoBancoFora = HEALTHZ.indexOf("queue: null");
+    expect(ramoIaParada).toBeGreaterThan(-1);
+    expect(ramoOk).toBeGreaterThan(ramoIaParada);
+    expect(ramoBancoFora).toBeGreaterThan(ramoOk);
+    expect(publicacoes[0]).toBeGreaterThan(ramoIaParada);
+    expect(publicacoes[0]).toBeLessThan(ramoOk);
+    expect(publicacoes[1]).toBeGreaterThan(ramoOk);
+    expect(publicacoes[1]).toBeLessThan(ramoBancoFora);
+    expect(publicacoes[2]).toBeGreaterThan(ramoBancoFora);
   });
 });
 
