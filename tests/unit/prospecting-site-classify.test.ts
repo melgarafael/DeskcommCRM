@@ -14,6 +14,10 @@ describe("site-classify", () => {
   it("reconhece agregador sem rede", () => {
     expect(ehAgregador("https://www.instagram.com/clinica/")).toBe(true);
     expect(ehAgregador("https://linktr.ee/fulano")).toBe(true);
+    expect(ehAgregador("https://linkr.bio/fulano")).toBe(true);
+    expect(ehAgregador("https://allmylinks.com/fulano")).toBe(true);
+    expect(ehAgregador("https://carrd.co/fulano")).toBe(true);
+    expect(ehAgregador("https://solo.to/fulano")).toBe(true);
     expect(ehAgregador("https://forms.gle/abc")).toBe(true);
     expect(ehAgregador("https://api.whatsapp.com/send?phone=5511")).toBe(true);
     expect(ehAgregador("https://m.blog.facebook.com/x")).toBe(true);

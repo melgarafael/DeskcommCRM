@@ -31,11 +31,17 @@ export const DOMINIOS_AGREGADORES = [
   "instagram.com",
   "facebook.com",
   "linktr.ee",
+  "linkr.bio",
+  "linkbio.co",
+  "bio.link",
+  "beacons.ai",
+  "allmylinks.com",
+  "solo.to",
+  "campsite.bio",
+  "carrd.co",
   "forms.gle",
   "api.whatsapp.com",
   "wa.me",
-  "linkbio.co",
-  "beacons.ai",
 ] as const;
 
 /** Assinatura de construtor pronto por URL final → rótulo único. */

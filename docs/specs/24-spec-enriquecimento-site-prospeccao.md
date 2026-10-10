@@ -121,6 +121,8 @@ interface SiteEnrichment {
 
 `sem-https, ssl-invalido, fora-do-ar, dns-morto, http-{status}, nao-mobile, lento, quase-vazia, construtor-{Wix,Canva,...}, sem-atualizacao-desde-{ano}, conteudo-misto, falta-{whatsapp,tel,mailto,social,mapa,fotos,titulo,description,favicon}`. Nada fora desta lista chega à tela nem ao prompt — é a cerca contra IA inventando diagnóstico.
 
+Os domínios das assinaturas (agregadores, construtores) viajam no código que embarca: estão declarados na catraca de marca (`branding.test.ts`, categoria `RECONHECIMENTO` com decisão escrita — nunca chamados, nunca exibidos). Assinatura nova de construtor/agregador exige a linha na lista, ou o teste reprova.
+
 ### 3.4 Estratégia + prompt por situação (determinístico + Gateway)
 
 * `lib/prospecting/estrategia-site.ts` (função pura): `data.site` → `{cenario, angulo, ganchos[≤3], objecoes[{objecao,resposta}][≤3], proximoPasso}`. Cenários na ordem do sistema de referência, validados contra a amostra real: `agregador/sem-site` ("Instagram ativo, invisível no Google"), `fora-do-ar` (aviso de cortesia, urgência máxima), `ssl-invalido/sem-https` (print do "não seguro"), `nao-mobile`, `lento`, `construtor-*` ("nota alta merece site à altura"), `quase-vazia`, `site-ok` (prioridade baixa, sem ângulo de conserto).
