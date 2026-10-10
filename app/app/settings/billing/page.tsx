@@ -55,6 +55,8 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
               linkDePagamento={painel.assinatura.link_de_pagamento}
               cancelaNoFim={painel.assinatura.cancela_no_fim}
               planosParaTroca={painel.planosParaTroca}
+              provedor={painel.checkout.provedor}
+              documentoDoCadastro={painel.checkout.documentoDoCadastro}
               voltouDoCheckout={(await searchParams).voltou === "1"}
               noHub={false}
               fuso={painel.fuso}

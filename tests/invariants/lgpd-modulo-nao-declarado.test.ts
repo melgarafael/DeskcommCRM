@@ -77,13 +77,30 @@ interface Violacao {
  * ALLOWLIST — tabela de módulo com dado da pessoa que a VARREdura enxerga e que
  * fica FORA da anonimização por decisão escrita. A mesmíssima régua do catálogo
  * de recursos opcionais (#1876): o poder de deixar de fora não é silencioso,
- * precisa de motivo. Vazia hoje — o único módulo (honorários) nem cai na régua.
+ * precisa de motivo. Hoje: as duas tabelas do financeiro que a régua enxerga e
+ * que já tem decisão escrita no repositório (as razões dizem de onde cada uma
+ * vem — nada entra aqui só porque caía na régua).
  *
  * Formato da chave: `<modulo>.<tabela>`. O motivo precisa de ≥ 60 caracteres
  * (a mesma régua de `manter` do redact-unificado, #1504): deixar de fora por
  * padrão é o mesmo defeito de não decidir.
  */
-const ALLOWLIST: Record<string, string> = {};
+const ALLOWLIST: Record<string, string> = {
+  "financeiro.commission_rules":
+    "commission_rules não tem ligação nenhuma com a pessoa: guarda a regra de " +
+    "comissão (tipo, evento, percentual, atendente/serviço) e a coluna `name` é o " +
+    "rótulo da regra de negócio, não dado de contato. O que derruba a régua é o " +
+    "regex achar a palavra `name`, não o dado — por isso a decisão é não " +
+    "declarar seção: declarar faria a anonimização zerar TODAS as regras da " +
+    "organização (a ligação seria organization_id, sem contato na tabela).",
+  "financeiro.loyalty_ledger":
+    "Decisão escrita do #1504 (razão `manter` de " +
+    "lgpd-redact-unificado-alcanca-pelo-catalogo.test.ts): o extrato de pontos " +
+    "fica FORA da anonimização porque o histórico de saldo tem de fechar — " +
+    "quantidade, reason em vocabulário do programa e idempotency_key são dado " +
+    "do programa de fidelidade, e a pessoa por trás já está anônima na cascata " +
+    "(contact_id vira contato anonimizado, não contato legível).",
+};
 
 /**
  * Tabela/coluna de MODULO entra na régua de LGPD quando:

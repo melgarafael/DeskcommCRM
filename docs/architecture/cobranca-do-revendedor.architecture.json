@@ -2,7 +2,7 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "Cobrança do revendedor — planos, limites, Stripe e régua",
+    "title": "Cobrança do revendedor — planos, limites, Stripe, Asaas e régua",
     "subtitle": "O provedor só acorda a leitura; o estado vem da releitura, a régua avisa com o link de pagamento e quem paga volta sozinho",
     "output": "cobranca-do-revendedor.html",
     "quality_profile": "standard"
@@ -52,9 +52,10 @@
     { "id": "regua", "lane": "db", "col": 5, "type": "database", "label": "fn_gasto_de_ia_do_mes(uuid)", "sublabel": "a régua única de gasto; soma o mês inteiro, inclusive chave própria (D-9)", "espelho": "teto-de-orcamento.architecture.json#regua" },
     { "id": "telaConexao", "lane": "dono", "col": 2, "type": "ui", "label": "/admin/cobranca › Visão geral · Conexão · Régua", "sublabel": "checklist de publicação; selo TESTE/PRODUÇÃO; problemas do dono; última leitura; tolerância 5–30" },
     { "id": "rotaConexao", "lane": "app", "col": 3, "type": "api", "label": "POST admin/cobranca/conexao · PATCH admin/cobranca/regua", "sublabel": "única escritora das chaves telaDona:'cobranca'; cifra com AI_CRED_AES_KEY; audit provedor_conectado, modo_publicado, regua_salva" },
-    { "id": "baseTeste", "lane": "app", "col": 3, "type": "lib", "label": "base-de-teste.ts · COBRANCA_API_BASE_URL_TESTE", "sublabel": "só loopback e só com o app em loopback; vazio = api.stripe.com" },
-    { "id": "adaptador", "lane": "app", "col": 4, "type": "lib", "label": "lib/cobranca/provedores/{contrato,stripe,index}.ts", "sublabel": "fetch sem SDK; Stripe-Version fixada; Idempotency-Key em todo POST" },
+    { "id": "baseTeste", "lane": "app", "col": 3, "type": "lib", "label": "base-de-teste.ts · COBRANCA_API_BASE_URL_TESTE", "sublabel": "só loopback e só com o app em loopback; Stripe em <base>/v1, Asaas em <base>/v3; vazio = APIs oficiais" },
+    { "id": "adaptador", "lane": "app", "col": 4, "type": "lib", "label": "lib/cobranca/provedores/{contrato,stripe,asaas,index}.ts", "sublabel": "fetch sem SDK; Stripe: Stripe-Version fixada e Idempotency-Key em todo POST; Asaas: access_token, User-Agent próprio, releitura antes de criar, datas civis no fim do dia em São Paulo" },
     { "id": "stripe", "lane": "provedor", "col": 5, "type": "external", "label": "Stripe (API, Checkout, fatura, portal)", "sublabel": "no CI: tests/e2e/fixtures/provedor-de-cobranca.ts em 127.0.0.1:3995, que assina os avisos" },
+    { "id": "asaas", "lane": "provedor", "col": 6, "type": "external", "label": "Asaas (API v3: fatura com Pix, boleto e cartão)", "sublabel": "sandbox ou produção pelo prefixo da chave; no CI: o mesmo dublê em 127.0.0.1:3995, dialeto /v3 (tests/e2e/fixtures/provedor-de-cobranca-asaas.ts); fora do CI: scripts/smoke-asaas.ts" },
     { "id": "rotaWebhook", "lane": "app", "col": 5, "type": "api", "label": "POST webhooks/cobranca/[provedor]", "sublabel": "corpo cru; assinatura em tempo constante; 23505 com linha received reemite; recusa deixa rastro (valid_signature=false) e só recusas contam no limite" },
     { "id": "webhookLog", "lane": "db", "col": 6, "type": "table", "label": "webhook_events_log (stripe|asaas)", "sublabel": "org nula; corpo {id,type}; sem cabeçalhos" },
     { "id": "sinalHandler", "lane": "app", "col": 6, "type": "service", "label": "cobrancaSinalHandler", "sublabel": "naOrgParada:'roda'; coalesce 30 s por relida_em" },
@@ -153,21 +154,27 @@
     { "id": "e85", "from": "assinaturas", "to": "telaConexao", "label": "saúde e problemas do dono" },
     { "id": "e86", "from": "webhookLog", "to": "telaConexao", "label": "último aviso do provedor há X" },
     { "id": "e87", "from": "hub", "to": "stripe", "label": "Pagar agora abre a fatura hospedada" },
-    { "id": "e88", "from": "billing", "to": "stripe", "label": "checkout e portal hospedados" }
+    { "id": "e88", "from": "billing", "to": "stripe", "label": "checkout e portal hospedados" },
+    { "id": "e89", "from": "adaptador", "to": "asaas", "label": "fetch com access_token; lerSituacao com includeDeleted" },
+    { "id": "e90", "from": "asaas", "to": "rotaWebhook", "label": "aviso com asaas-access-token (token estático: só acorda a leitura, nunca gravado)" },
+    { "id": "e91", "from": "billing", "to": "asaas", "label": "Assinar com CPF/CNPJ (vai ao Asaas, não ao banco); Pagar agora abre a fatura (invoiceUrl)" },
+    { "id": "e92", "from": "hub", "to": "asaas", "label": "Pagar agora abre a fatura do Asaas" },
+    { "id": "e93", "from": "telaConexao", "to": "asaas", "label": "webhook manual: passo a passo copiável, token mostrado uma vez" }
   ],
   "cards": [
     {
       "dot": "rose",
-      "title": "Não-ligações declaradas: o que a PR 3a NÃO liga",
+      "title": "Não-ligações declaradas: o que a cobrança NÃO liga",
       "items": [
-        "Asaas (PR 3b): o contrato já o comporta, mas só a Stripe está no registro de adaptadores",
+        "o aviso do Asaas é um token estático, sem assinatura nem horário: o corpo é só ponteiro e toda decisão vem da releitura (risco 5)",
+        "o CPF/CNPJ de quem paga vai direto ao Asaas e não é gravado no banco (§2.3)",
         "o corpo do aviso do provedor nunca decide estado: webhook_events_log guarda só {id,type}; toda decisão vem de lerSituacao",
         "emit_event não reserva cobranca.sinal: um sinal forjado custa no máximo uma releitura a cada 30 s por empresa, o mesmo que Já paguei",
         "nenhuma chamada ao provedor dentro de transação ou com lock aberto: leitura primeiro, escrita curta com compare-and-set depois",
         "SQL_CONFIG_COM_ORCAMENTO (credentials.ts) não consulta o teto do plano: o catch dele desligaria o orçamento da org inteiro",
         "empresa sem linha em cobranca_assinaturas é isenta de limite, régua e cobrança; a org do dono e toda org anterior à chave nascem assim",
         "a empresa não vê a cobrança em Recursos opcionais; troca de plano só vale na virada paga (D-3), salvo no teste grátis (D-13)",
-        "sem nota fiscal, cupom, Pix recorrente nem upgrade imediato cobrando a diferença (spec §1.2)"
+        "sem nota fiscal, cupom, Pix Automático nem upgrade imediato cobrando a diferença (spec §1.2); Pix e boleto recorrentes são a assinatura do Asaas"
       ]
     }
   ]
