@@ -4099,6 +4099,15 @@ export const DICIONARIO: Traducoes = {
   "O agente passa a aceitar instruções de estranhos e pode falar em nome da empresa coisas que você nunca autorizou.": {
     es: "El agente pasa a aceptar instrucciones de extraños y puede decir en nombre de la empresa cosas que nunca autorizaste.",
   },
+  "Confirmar compromisso de retorno humano": {
+    es: "Confirmar el compromiso de respuesta humana",
+  },
+  "Segunda opinião somente quando a revisão marcou retorno ou ação humana. Distingue convite, avaliação durante o serviço e pedido ao cliente de um compromisso real. Só atua com escolha explícita habilitada neste ponto; sem ela, vale a revisão anterior. Não altera a decisão comercial.": {
+    es: "Segunda opinión solo cuando la revisión detectó una respuesta o acción humana. Distingue una invitación, una evaluación durante el servicio y una petición al cliente de un compromiso real. Solo actúa con una elección explícita habilitada en este punto; sin ella, prevalece la revisión anterior. No modifica la decisión comercial.",
+  },
+  "A marcação da primeira revisão é preservada; descrições de serviço podem continuar exigindo um caso indevidamente. A falha da segunda opinião aparece nas Execuções.": {
+    es: "Se conserva la marca de la primera revisión; las descripciones del servicio pueden seguir exigiendo un caso indebidamente. El fallo de la segunda opinión aparece en las Ejecuciones.",
+  },
   "Impedir promessa que não se cumpre": {
     es: "Impedir promesas que no se cumplen",
   },

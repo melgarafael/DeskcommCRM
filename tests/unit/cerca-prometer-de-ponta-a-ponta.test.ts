@@ -3,10 +3,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 
-import {
-  casePromiseGate,
-  type GateContext,
-} from "@/lib/agent-engine/guardrails/before-send";
+import { casePromiseGate, type GateContext } from "@/lib/agent-engine/guardrails/before-send";
 import { parsePromiseClassification } from "@/lib/agent-engine/guardrails/promise/semantic";
 
 /**
@@ -106,12 +103,10 @@ const frasesQuePrometemRetorno = [
 ];
 
 /**
- * Os índices que o detector LÉXICO pega sozinho — as outras CINCO vazam sem a
- * camada semântica. Medido em 2026-09-16: (2) "para o responsável" e (6) "para o
- * setor comercial" nomeiam o alvo humano colado ao verbo e casam com o padrão
- * antigo; as demais quebram o padrão com um objeto no meio ou dispensam o alvo.
+ * O detector léxico reconhece alvos humanos e o compromisso explícito de retorno
+ * ligado à equipe. Os exemplos restantes ainda dependem da camada semântica.
  */
-const INDICES_QUE_O_LEXICO_PEGA = new Set([2, 6]);
+const INDICES_QUE_O_LEXICO_PEGA = new Set([1, 2, 6]);
 
 const falasInocentes = [
   "Bom dia! Como posso ajudar?",
@@ -121,33 +116,22 @@ const falasInocentes = [
 ];
 
 describe("cerca prometer de ponta a ponta", () => {
-  it.each(frasesQuePrometemRetorno)(
-    "COM a camada semântica, VETA sem caso aberto: %s",
-    (frase) => {
-      // O caminho normal: `PROMISE_SEMANTIC_ENABLED` nasce com default `'true'`,
-      // então a organização que não mexeu em `org_guardrail_layers` está aqui.
-      // O sinal semântico pega as SETE — inclusive as CINCO que o léxico sozinho
-      // deixa passar. É o conserto do defeito medido.
-      const verdict = casePromiseGate.evaluate(comCtxSemantico(frase));
-      expect(verdict.pass).toBe(false);
-      if (!verdict.pass) {
-        expect(verdict.code).toBe("case_promise_without_case");
-      }
-    },
-  );
+  it.each(frasesQuePrometemRetorno)("COM a camada semântica, VETA sem caso aberto: %s", (frase) => {
+    // O caminho normal: `PROMISE_SEMANTIC_ENABLED` nasce com default `'true'`,
+    // então a organização que não mexeu em `org_guardrail_layers` está aqui.
+    // O sinal semântico cobre também os exemplos que o léxico deixa passar.
+    const verdict = casePromiseGate.evaluate(comCtxSemantico(frase));
+    expect(verdict.pass).toBe(false);
+    if (!verdict.pass) {
+      expect(verdict.code).toBe("case_promise_without_case");
+    }
+  });
 
   it.each(frasesQuePrometemRetorno.map((frase, i) => [i, frase] as const))(
     "SEM a camada semântica o vazamento VOLTA — só o léxico veta (índice %i): %s",
     (i, frase) => {
-      // Este caso NÃO é um defeito a consertar — é a verdade sobre o produto,
-      // escrita. A camada semântica é opcional por organização
-      // (`org_guardrail_layers`, regra `escolhaDaOrg ?? padraoDoAmbiente`), e
-      // quem a desliga para economizar chamada de modelo precisa saber o que
-      // acabou de desligar: das SETE frases, só as DUAS que nomeiam o alvo humano
-      // colado ao verbo continuam vetadas. As outras CINCO vazam.
-      //
-      // Se o produto um dia decidir que desligar a camada é proibido, este caso
-      // fica vermelho — e é esse o sinal, não um defeito.
+      // A camada semântica continua opcional por organização. Sem ela, o gate
+      // depende dos padrões do detector léxico; esta matriz registra sua cobertura.
       const verdict = casePromiseGate.evaluate(comCtx(frase));
       if (INDICES_QUE_O_LEXICO_PEGA.has(i)) {
         expect(verdict.pass, `a frase ${i} deveria ser vetada pelo léxico`).toBe(false);
@@ -155,29 +139,20 @@ describe("cerca prometer de ponta a ponta", () => {
           expect(verdict.code).toBe("case_promise_without_case");
         }
       } else {
-        expect(
-          verdict.pass,
-          `a frase ${i} vaza sem a camada semântica — reabrir isto exige decisão de produto`,
-        ).toBe(true);
+        expect(verdict.pass, `a frase ${i} ainda depende da camada semântica`).toBe(true);
       }
     },
   );
 
-  it.each(falasInocentes)(
-    "CONTROLE — não veta fala inocente: %s",
-    (frase) => {
-      const verdict = casePromiseGate.evaluate(comCtx(frase));
-      expect(verdict.pass).toBe(true);
-    },
-  );
+  it.each(falasInocentes)("CONTROLE — não veta fala inocente: %s", (frase) => {
+    const verdict = casePromiseGate.evaluate(comCtx(frase));
+    expect(verdict.pass).toBe(true);
+  });
 
-  it.each(frasesQuePrometemRetorno)(
-    "com caso já aberto, nenhuma é vetada: %s",
-    (frase) => {
-      const verdict = casePromiseGate.evaluate(comCtx(frase, { hasOpenCase: true }));
-      expect(verdict.pass).toBe(true);
-    },
-  );
+  it.each(frasesQuePrometemRetorno)("com caso já aberto, nenhuma é vetada: %s", (frase) => {
+    const verdict = casePromiseGate.evaluate(comCtx(frase, { hasOpenCase: true }));
+    expect(verdict.pass).toBe(true);
+  });
 
   it("o campo semântico é OPCIONAL — sem ele, o gate cai no léxico", () => {
     // Este caso existe para preservar a restrição congelada: se `semanticPromise`
@@ -215,30 +190,43 @@ describe("cerca prometer — follow-up agendado como destino (opção a)", () =>
     },
   });
   const ctx = (body: string, extra: Partial<GateContext>) =>
-    ({ body, casesEnabled: true, hasOpenCase: false, openedCaseThisTurn: false, ...extra }) as never;
+    ({
+      body,
+      casesEnabled: true,
+      hasOpenCase: false,
+      openedCaseThisTurn: false,
+      ...extra,
+    }) as never;
 
   it.each([
     "Vou encaminhar as informações para a equipe e te retorno com a proposta.",
     "Vou encaminhar as informações do site imobiliário para análise e te retorno com a proposta.",
-  ])("(i) promessa da EMPRESA + follow-up agendado continua VETADA, sem citar follow-up: %s", (frase) => {
-    const v = casePromiseGate.evaluate(ctx(frase, { ...veredito(true, false), ...AGENDADO }));
-    expect(v.pass).toBe(false);
-    if (!v.pass) {
-      expect(v.code).toBe("case_promise_without_case");
-      expect(v.reason).toContain("open_human_case");
-      expect(v.reason).not.toContain("schedule_followup");
-    }
-  });
+  ])(
+    "(i) promessa da EMPRESA + follow-up agendado continua VETADA, sem citar follow-up: %s",
+    (frase) => {
+      const v = casePromiseGate.evaluate(ctx(frase, { ...veredito(true, false), ...AGENDADO }));
+      expect(v.pass).toBe(false);
+      if (!v.pass) {
+        expect(v.code).toBe("case_promise_without_case");
+        expect(v.reason).toContain("open_human_case");
+        expect(v.reason).not.toContain("schedule_followup");
+      }
+    },
+  );
 
   const FRASE_DO_ASSISTENTE = "Combinado! Te retorno amanhã de manhã.";
 
   it("(ii) promessa do ASSISTENTE + follow-up agendado PASSA", () => {
-    const v = casePromiseGate.evaluate(ctx(FRASE_DO_ASSISTENTE, { ...veredito(true, true), ...AGENDADO }));
+    const v = casePromiseGate.evaluate(
+      ctx(FRASE_DO_ASSISTENTE, { ...veredito(true, true), ...AGENDADO }),
+    );
     expect(v.pass).toBe(true);
   });
 
   it("(iii) a mesma frase SEM follow-up é vetada e oferece as duas saídas", () => {
-    const v = casePromiseGate.evaluate(ctx(FRASE_DO_ASSISTENTE, { ...veredito(true, true), ...SEM_AGENDAR }));
+    const v = casePromiseGate.evaluate(
+      ctx(FRASE_DO_ASSISTENTE, { ...veredito(true, true), ...SEM_AGENDAR }),
+    );
     expect(v.pass).toBe(false);
     if (!v.pass) {
       expect(v.reason).toContain("schedule_followup");
@@ -258,7 +246,10 @@ describe("cerca prometer — follow-up agendado como destino (opção a)", () =>
   });
 
   it.each([
-    ["sem o campo novo", '{"isPromise": false, "suspectPhrase": null, "prometeuRetornoHumano": true}'],
+    [
+      "sem o campo novo",
+      '{"isPromise": false, "suspectPhrase": null, "prometeuRetornoHumano": true}',
+    ],
     [
       "campo com tipo trocado",
       '{"isPromise": false, "suspectPhrase": null, "prometeuRetornoHumano": true, "retornoSoDoAssistente": "true"}',
@@ -282,7 +273,9 @@ describe("cerca prometer — follow-up agendado como destino (opção a)", () =>
     // E a frase que o léxico pega segue vetada, com o follow-up agendado.
     const lexico = frasesQuePrometemRetorno[2]!;
     const semanticPromise = parsePromiseClassification("desculpe, não consegui", lexico);
-    expect(casePromiseGate.evaluate(ctx(lexico, { semanticPromise, ...AGENDADO })).pass).toBe(false);
+    expect(casePromiseGate.evaluate(ctx(lexico, { semanticPromise, ...AGENDADO })).pass).toBe(
+      false,
+    );
   });
 
   it("(v) frase que o LÉXICO pega + follow-up agendado continua vetada, mesmo se o modelo errar", () => {
@@ -295,7 +288,10 @@ describe("cerca prometer — follow-up agendado como destino (opção a)", () =>
   });
 
   it("fiação: o turno marca o follow-up só DEPOIS de o agendamento dar certo, e o passa ao gate", () => {
-    const fonte = fs.readFileSync(path.join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts"), "utf8");
+    const fonte = fs.readFileSync(
+      path.join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts"),
+      "utf8",
+    );
     const bloco = fonte.slice(fonte.indexOf("rawTools.schedule_followup = tool("));
     const falha = bloco.indexOf("if (!res.ok)");
     const marca = bloco.indexOf("followupAgendadoNesteTurno = true");

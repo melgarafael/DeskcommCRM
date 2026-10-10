@@ -344,7 +344,7 @@ export async function classifyPromise(
       "human_return_confirmation",
     );
     // Sem escolha explícita, conserva a revisão existente sem chamada extra.
-    if (!binding?.is_enabled) return initial;
+    if (!binding?.is_enabled || binding.purpose !== "human_return_confirmation") return initial;
     const confirmation = await runModelCall(
       db,
       cfg,
@@ -353,8 +353,7 @@ export async function classifyPromise(
         ...(ids.leadId != null ? { leadId: ids.leadId } : {}),
         ...(ids.jobId !== undefined ? { jobId: ids.jobId } : {}),
         purpose: "human_return_confirmation",
-        model: binding.model_id,
-        llmOverride: { provider: binding.provider, credentialId: binding.credential_id },
+        // O seam resolve o binding deste ponto; não herda modelo do agente.
         system: CONFIRMAR_RETORNO_INSTRUCTION,
         messages: [
           {
