@@ -12,6 +12,8 @@ import { gerarAbordagemDeFormulario } from "@/lib/agent-engine/agent/abordagem-d
 import { llmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/llm/credentials";
 import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 import { comSaida } from "./rodape-de-saida";
+import { splitForSend } from "@/lib/agent-engine/agent/split-message";
+import type { Message } from "@/lib/types/messaging";
 import {
   proximoEnvioDaEsteiraFria,
   tetoDiarioDaEsteiraFria,
@@ -39,6 +41,15 @@ export async function sendNextCandidate(
   db: pg.PoolClient,
   admin: SupabaseClient,
   c: Campaign,
+  /**
+   * A pausa ENTRE bolhas, injetável para o teste (mesmo expediente do `sleep`
+   * do turno). Bolhas são mensagens FÍSICAS no mesmo número: saírem no mesmo
+   * milissegundo é a cadência de robô que a detecção de automação procura, e o
+   * ritmo do número (`throttle_ms` + `jitter_max_ms`, 0010) já existe para
+   * isto. Só entre bolhas — a primeira sai já.
+   */
+  dormir: (ms: number) => Promise<void> = (ms) =>
+    new Promise((resolve) => setTimeout(resolve, ms)),
 ) {
   const cfg = campaignConfigSchema.parse(c.config);
   await validateConfig(db, c.organization_id, cfg);
@@ -212,8 +223,18 @@ export async function sendNextCandidate(
     await assertProspectingDelivery(admin, guard);
     await assertServiceBoundarySupabase(admin, boundary);
     const agent = (
-      await db.query(
-        "select published_version_id,operation_revision from ai_agents where organization_id=$1 and id=$2 and operation_mode='automatic' and paused_at is null and archived_at is null",
+      await db.query<{
+        published_version_id: string;
+        operation_revision: number | string;
+        split_messages: boolean | null;
+        split_max_chars: number | null;
+      }>(
+        // O ESTILO DE RESPOSTA do agente mora na versão publicada (`ai_agent_versions`,
+        // migration 0059), não no agente: é a MESMA coluna que a tela "Estilo de
+        // resposta" grava e que o turno inbound lê. `LEFT JOIN` porque a ponta é o
+        // agente — sem versão publicada a linha continua vindo, e o teste de
+        // `published_version_id` abaixo responde com o mesmo erro de antes.
+        "select a.published_version_id,a.operation_revision,v.split_messages,v.split_max_chars from ai_agents a left join ai_agent_versions v on v.organization_id=a.organization_id and v.id=a.published_version_id where a.organization_id=$1 and a.id=$2 and a.operation_mode='automatic' and a.paused_at is null and a.archived_at is null",
         [c.organization_id, cfg.agent_id],
       )
     ).rows[0];
@@ -252,41 +273,77 @@ export async function sendNextCandidate(
     });
     if (!authorization.ok)
       throw new ProspectingError("Não foi possível preparar o atendimento da resposta.");
-    const message = await sendMessageHandler(
-      admin,
-      {
-        organization_id: c.organization_id,
-        actor: { type: "ai_agent", id: p.id, agent_id: cfg.agent_id, role: "ai_operator" },
-        requestId: `prospecting:${p.id}`,
-        serviceBoundary: boundary,
-        internalMessageId: p.message_id,
-        proactiveContext: { organizationId: c.organization_id, contactId: p.contact_id },
-        prospectingDelivery: guard,
-        agentOperation: {
-          organizationId: c.organization_id,
-          agentId: cfg.agent_id,
-          versionId: agent.published_version_id,
-          revision: String(agent.operation_revision),
-        },
-      },
-      {
-        conversation_id: p.conversation_id,
-        type: "text",
-        // A SAÍDA vai junto da primeira mensagem, e é montada aqui — não pedida
-        // ao modelo. Sem ela, a saída que a pessoa usa é "Denunciar spam", que
-        // é invisível ao sistema e queima o número do CLIENTE que instalou.
-        // O idioma sai de `organizations.locale`: um rodapé em português numa
-        // instalação em espanhol oferece uma palavra que a pessoa não responde,
-        // e o detector de opt-out só reconhece a palavra ISOLADA.
-        body: comSaida(generated.texto, locale),
-      },
+    // A SAÍDA é montada aqui — não pedida ao modelo — e vem junto do corpo, que
+    // é fatiado abaixo. Sem ela, a saída que a pessoa usa é "Denunciar spam", que
+    // é invisível ao sistema e queima o número do CLIENTE que instalou. O idioma
+    // sai de `organizations.locale`: um rodapé em português numa instalação em
+    // espanhol oferece uma palavra que a pessoa não responde, e o detector de
+    // opt-out só reconhece a palavra ISOLADA. Como o rodapé é parágrafo próprio,
+    // ele vira a ÚLTIMA bolha: quem lê a apresentação recebe a saída logo em
+    // seguida, não antes dela.
+    const corpo = comSaida(generated.texto, locale);
+    // A MESMA decisão de fatiamento do turno do agente (`splitForSend` é a fonte
+    // única — issue #654): o "Estilo de resposta" da tela tem de valer para a
+    // mensagem fria, que é justamente a que mais parece robô quando sai de uma
+    // vez. `?? false`/`?? 600` são os mesmos defaults do turno: agente sem os
+    // campos (clone anterior à 0059) continua em balão único.
+    const baloes = splitForSend(
+      corpo,
+      agent.split_messages ?? false,
+      agent.split_max_chars ?? 600,
     );
-    const sent = ["sent", "delivered", "read"].includes(message.status);
-    if (!sent) {
+    let mensagem: Message | undefined;
+    let falhouEm: Message | undefined;
+    for (let i = 0; i < baloes.length; i++) {
+      // Bolhas são mensagens FÍSICAS no mesmo número: saírem juntas é a cadência
+      // de robô que a detecção procura. O ritmo do número (throttle + jitter,
+      // knobs 0010) que decide a pausa — a primeira sai sem esperar.
+      if (i > 0)
+        await dormir(
+          (knobs.throttleMs ?? 1200) + Math.floor(Math.random() * (knobs.jitterMaxMs ?? 800)),
+        );
+      mensagem = await sendMessageHandler(
+        admin,
+        {
+          organization_id: c.organization_id,
+          actor: { type: "ai_agent", id: p.id, agent_id: cfg.agent_id, role: "ai_operator" },
+          requestId: `prospecting:${p.id}`,
+          serviceBoundary: boundary,
+          // O RECIBO E A IDEMPOTÊNCIA do candidato moram na PRIMEIRA bolha: é a
+          // linha `messages` de id estável (`p.message_id`) que o `sending`
+          // grava antes, e o eco do próprio envio casa por ela. As demais são
+          // mensagens próprias — repetir o id faria o handler devolver a linha
+          // de antes sem enviar (o ramo 23505).
+          ...(i === 0 ? { internalMessageId: p.message_id } : {}),
+          proactiveContext: { organizationId: c.organization_id, contactId: p.contact_id },
+          prospectingDelivery: guard,
+          agentOperation: {
+            organizationId: c.organization_id,
+            agentId: cfg.agent_id,
+            versionId: agent.published_version_id,
+            revision: String(agent.operation_revision),
+          },
+        },
+        {
+          conversation_id: p.conversation_id,
+          type: "text",
+          body: baloes[i]!,
+        },
+      );
+      // Veto/bloqueio/falha: para aqui, como o `sendInBubbles` do turno. Não se
+      // segue mandando bolha atrás de um canal que acabou de recusar.
+      if (!["sent", "delivered", "read"].includes(mensagem.status)) {
+        falhouEm = mensagem;
+        break;
+      }
+    }
+    const sent = falhouEm === undefined;
+    if (falhouEm) {
       // This lane never auto-retries an uncertain send. The Inbox keeps the evidence.
+      // O id é o da bolha que falhou (pode não ser a primeira).
       await db.query(
         "update messages set status='failed' where organization_id=$1 and id=$2 and status in ('queued','sending')",
-        [c.organization_id, p.message_id],
+        [c.organization_id, falhouEm.id ?? p.message_id],
       );
     }
     await db.query(
