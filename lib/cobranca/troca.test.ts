@@ -180,7 +180,7 @@ describe("trocarPlanoDaOrg", () => {
 
   // #2609: com a id da sessão guardada, o link em aberto NÃO trava mais a troca —
   // a sessão expira NO PROVEDOR (antes da escrita), a troca vale na hora e o link
-  // antigo deixa de valer. Sem a id guardada (linha anterior à 0629) não há o que
+  // antigo deixa de valer. Sem a id guardada (linha anterior à 0632) não há o que
   // expirar, e vale a recusa do teste acima.
   it("⭐ #2609 link em aberto com a sessão guardada: a troca expira a sessão no provedor, conclui e limpa o link", async () => {
     m.linha = {

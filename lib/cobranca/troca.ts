@@ -134,7 +134,7 @@ export async function trocarPlanoDaOrg(
   }
   // Enquanto houver link de pagamento em aberto, o plano não muda — a menos que
   // dê para expirá-lo no provedor (#2609): aí a troca vale na hora e o link
-  // antigo deixa de valer. Sem a id da sessão guardada (linha anterior à 0629)
+  // antigo deixa de valer. Sem a id da sessão guardada (linha anterior à 0632)
   // não há o que expirar, e o link continuaria valendo FORA: vale a recusa.
   const linkEmAberto = atual.checkout_url !== null && atual.checkout_expira_em !== null && Date.parse(atual.checkout_expira_em) > agora.getTime();
   const bloqueia = !desfazendo && emTeste && atual.provedor !== null && atual.provedor_assinatura_id === null && linkEmAberto;
