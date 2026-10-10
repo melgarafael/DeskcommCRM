@@ -1,0 +1,18 @@
+.env:OWNER_PASSWORD=0
+admin-credentials:OWNER_PASSWORD=0
+padroes=0
+sonda: 0 linhas nao-zero
+⚠ Sem SMTP no CRM: 'esqueci a senha' e a confirmação de cadastro não enviam e-mail. Configure em /admin/email e rode o update.sh de novo.
+✖ A versão v1.76.0 é ANTERIOR à que já está instalada neste servidor.
+     Instalar ela seria voltar no tempo e desligar coisas que você já tem.
+exit=3
+⚠ Sem SMTP no CRM: 'esqueci a senha' e a confirmação de cadastro não enviam e-mail. Configure em /admin/email e rode o update.sh de novo.
+✓ atualização pela tela ativa (agente a cada 5 minutos)
+
+▶ Procurando atualizações
+✖ A versão v1.76.0 é ANTERIOR à que já está instalada neste servidor.
+     Instalar ela seria voltar no tempo e desligar coisas que você já tem.
+     Não mexi em nada: nem no banco, nem no app — está tudo como estava.
+     Se você REALMENTE quer voltar para a v1.76.0, rode:
+       bash hostgator-setup-kit/update.sh --to v1.76.0 --force
+exit=3

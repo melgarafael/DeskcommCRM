@@ -1,11 +1,17 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { bancoFalso, valorDoFiltro, type Cadeia, type Resposta } from "@/tests/helpers/banco-falso-da-cobranca";
 
-vi.mock("@/lib/cobranca/configuracao", () => ({ provedorDaInstalacao: async () => "stripe" }));
+const h = vi.hoisted(() => ({ provedor: "stripe" as string | null, lidas: [] as string[] }));
+vi.mock("@/lib/cobranca/configuracao", () => ({ provedorDaInstalacao: async () => h.provedor }));
 vi.mock("@/lib/cobranca/provedores", () => ({ modoDoProvedor: async () => "teste" }));
 vi.mock("@/lib/cobranca/provedores/base-de-teste", () => ({ baseDeTesteDaCobranca: () => null }));
-vi.mock("@/lib/instalacao/config", () => ({ estadoParaTela: async () => ({ last4: "4242" }) }));
+vi.mock("@/lib/instalacao/config", () => ({
+  estadoParaTela: async (chave: string) => {
+    h.lidas.push(chave);
+    return { last4: "4242" };
+  },
+}));
 vi.mock("@/lib/email/roteador", () => ({ emailConfigurado: async () => false }));
 
 import { leituraAtrasada, lerVisaoGeral, montarChecklist, type DadosDaVisaoGeral } from "./visao-geral";
@@ -16,6 +22,11 @@ const VAZIA: DadosDaVisaoGeral = {
   problemas: { credencialInvalida: 0, cobrancaDupla: 0, pagouCancelada: 0, avisosComErro: 0, avisosRecusados: 0 },
 };
 const passo = (d: DadosDaVisaoGeral, id: string) => montarChecklist(d).find((p) => p.id === id);
+
+beforeEach(() => {
+  h.provedor = "stripe";
+  h.lidas = [];
+});
 
 describe("montarChecklist", () => {
   it("instalação nova: nada feito, na ordem que leva até cobrar de verdade, e o primeiro passo é conectar a chave", () => {
@@ -97,5 +108,45 @@ describe("lerVisaoGeral", () => {
     expect(v.compraConcluida).toBe(true);
     const sem = await lerVisaoGeral(bancoFalso(leitor([{ estado: "trial", ultimo_erro: null, assinaturas_vivas: 0 }]), () => ({ data: [] })).cliente as never);
     expect(sem.compraConcluida).toBe(false);
+  });
+
+  it("⭐ com o Asaas conectado, os 4 últimos saem da chave do Asaas (sem isso o passo da chave nunca marca)", async () => {
+    h.provedor = "asaas";
+    const v = await lerVisaoGeral(bancoFalso(leitor([]), () => ({ data: [] })).cliente as never);
+    expect(h.lidas).toEqual(["ASAAS_API_KEY"]);
+    expect(v.chaveLast4).toBe("4242");
+  });
+
+  it("⭐ Asaas em teste grátis com a assinatura criada e NADA pago não é compra concluída (o Assinar do Asaas cria a assinatura sem pagamento)", async () => {
+    const clicou = await lerVisaoGeral(
+      bancoFalso(leitor([{ estado: "trial", ultimo_erro: null, assinaturas_vivas: 1, provedor: "asaas" }]), () => ({ data: [] })).cliente as never,
+    );
+    expect(clicou.compraConcluida).toBe(false);
+    const pagou = await lerVisaoGeral(
+      bancoFalso(leitor([{ estado: "ativa", ultimo_erro: null, assinaturas_vivas: 1, provedor: "asaas" }]), () => ({ data: [] })).cliente as never,
+    );
+    expect(pagou.compraConcluida).toBe(true);
+  });
+});
+
+describe("checklist com o Asaas (PR 3b)", () => {
+  it("⭐ o aviso ensina conferir URL e token do cadastro manual e aponta a Conexão; só marca com o primeiro aviso válido", () => {
+    const asaas = { ...VAZIA, provedor: "asaas" as const, modo: "teste" as const, chaveLast4: "0001" };
+    expect(passo(asaas, "aviso")).toMatchObject({ feito: false, href: "/admin/cobranca?aba=conexao" });
+    expect(passo(asaas, "aviso")?.comoFazer).toContain("token");
+    expect(passo({ ...asaas, ultimoAvisoEm: "2026-10-06T10:00:00Z" }, "aviso")?.feito).toBe(true);
+    // A releitura do cron ativa sem aviso nenhum: com o aviso manual quebrado, compra feita NÃO prova o aviso.
+    expect(passo({ ...asaas, compraConcluida: true }, "aviso")?.feito).toBe(false);
+    expect(passo(asaas, "compra")?.comoFazer).toContain("sandbox do Asaas");
+    expect(passo(asaas, "compra")?.comoFazer).not.toContain("4242");
+    expect(passo(asaas, "publicar")?.comoFazer).toContain("$aact_prod_");
+    expect(passo(asaas, "publicar")?.comoFazer).toContain("NÃO conseguem pagar");
+  });
+
+  it("controle: a Stripe segue com o texto de sempre", () => {
+    const stripe = { ...VAZIA, provedor: "stripe" as const, modo: "teste" as const, chaveLast4: "4242" };
+    expect(passo(stripe, "aviso")?.href).toBeNull();
+    expect(passo(stripe, "compra")?.comoFazer).toContain("4242 4242 4242 4242");
+    expect(passo(stripe, "publicar")?.comoFazer).toContain("sk_live_");
   });
 });

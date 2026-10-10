@@ -11,6 +11,7 @@
  * segunda linha de defesa.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { ChannelConversionInput } from "@/lib/channels/types";
 
 /**
  * Os eventos padrão que a Meta aceita também em conversão de conversa
@@ -32,6 +33,18 @@ export const VALORES_DE_EVENTO_DA_META = EVENTOS_DA_META.map((e) => e.valor) as 
   EventoDaMeta,
   ...EventoDaMeta[],
 ];
+
+/**
+ * Os eventos de etapa que o canal sabe repassar (`ChannelConversionInput`) — um
+ * recorte de `EVENTOS_DA_META`. Mora aqui, e não no envio, para o texto da
+ * pendência (`MOTIVO_LEGIVEL.evento_fora_do_canal`) listar a MESMA coisa que o
+ * envio aceita, com os rótulos da tela.
+ */
+export const EVENTOS_DE_ETAPA_NO_CANAL = [
+  "InitiateCheckout",
+  "LeadSubmitted",
+  "AddToCart",
+] as const satisfies readonly (ChannelConversionInput["event"] & EventoDaMeta)[];
 
 export function ehEventoDaMeta(valor: unknown): valor is EventoDaMeta {
   return (

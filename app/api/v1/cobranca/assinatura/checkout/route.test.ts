@@ -54,6 +54,8 @@ const assinar = (corpo?: Record<string, unknown>) =>
   );
 const updates = () => h.banco.cadeias.filter((c) => c.tabela === "cobranca_assinaturas" && operacao(c) === "update").map((c) => argumentos(c, "update")?.[0] as Record<string, unknown>);
 const codigo = async (res: Response) => ((await res.json()) as { error: { code: string; details?: unknown } }).error;
+const CNPJ = ["11", "222", "333", "0001", "81"].join("");
+const lerAssinatura = () => h.banco.cadeias.filter((c) => c.tabela === "cobranca_assinaturas");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -190,6 +192,83 @@ describe("checkout da assinatura", () => {
     expect(res.headers.get("X-Request-Id")).toBeTruthy();
     expect(h.logError).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(h.logError.mock.calls)).not.toContain("sk_test_segredo");
+    expect(updates().at(-1)).toEqual({ checkout_expira_em: null });
+  });
+});
+
+describe("checkout da assinatura pelo Asaas (PR 3b)", () => {
+  it("⭐ Asaas sem cliente e sem documento: 422 documento_obrigatorio, sem reservar nem chamar o provedor", async () => {
+    h.provedor = "asaas";
+    const res = await assinar();
+    expect(res.status).toBe(422);
+    expect((await codigo(res)).code).toBe("documento_obrigatorio");
+    expect(updates()).toEqual([]);
+    expect(h.ad.garantirCliente).not.toHaveBeenCalled();
+  });
+
+  it("documento com dígito errado: 422 documento_invalido antes de ler a assinatura", async () => {
+    h.provedor = "asaas";
+    const res = await assinar({ documento: CNPJ.slice(0, 13) + "2" });
+    expect(res.status).toBe(422);
+    expect((await codigo(res)).code).toBe("documento_invalido");
+    expect(lerAssinatura()).toEqual([]);
+  });
+
+  it("⭐ Asaas com documento válido (com máscara): só garantirCliente o recebe, já normalizado — nada gravado, auditado ou logado com ele", async () => {
+    h.provedor = "asaas";
+    h.ad.garantirCliente.mockResolvedValue("cus_asaas_1");
+    const res = await assinar({ documento: "11.222.333/0001-81" });
+    expect(res.status).toBe(200);
+    expect(h.ad.garantirCliente).toHaveBeenCalledWith({ id: ORG, nome: "Loja Legal Ltda", email: "admin@loja.com", documento: CNPJ });
+    expect(JSON.stringify(updates())).not.toContain(CNPJ);
+    expect(JSON.stringify(h.audit.mock.calls)).not.toContain(CNPJ);
+    expect(JSON.stringify(h.logError.mock.calls)).not.toContain(CNPJ);
+  });
+
+  it("Asaas com o cliente já criado (reassinar depois de cancelar): não pede o documento de novo", async () => {
+    h.provedor = "asaas";
+    m.linha = { ...EM_TESTE, estado: "cancelada", provedor: "asaas", provedor_cliente_id: "cus_asaas_1" };
+    h.ad.lerSituacao.mockResolvedValue({ assinaturasVivas: 0, linkDePagamento: null });
+    expect((await assinar()).status).toBe(200);
+    expect(h.ad.garantirCliente).not.toHaveBeenCalled();
+  });
+
+  it("⭐ Asaas: o cliente é gravado ANTES de criar a assinatura (o SUBSCRIPTION_CREATED chega durante o POST e precisa achar a empresa)", async () => {
+    h.provedor = "asaas";
+    h.ad.garantirCliente.mockResolvedValue("cus_asaas_1");
+    let escritasAntesDoInicio = -1;
+    h.ad.iniciarAssinatura.mockImplementation(async () => {
+      escritasAntesDoInicio = updates().length;
+      return { url: "https://sandbox.asaas.com/i/pay_1", expiraEm: null, assinaturaRef: "sub_asaas_1" };
+    });
+    expect((await assinar({ documento: CNPJ })).status).toBe(200);
+    expect(escritasAntesDoInicio).toBe(2);
+    expect(updates()[1]).toEqual({ provedor: "asaas", modo: "teste", provedor_cliente_id: "cus_asaas_1", updated_at: expect.any(String) });
+    const cliente = h.banco.cadeias.filter((c) => c.tabela === "cobranca_assinaturas" && operacao(c) === "update")[1]!;
+    expect(filtros(cliente)).toEqual(expect.arrayContaining([["is", "checkout_url", null]]));
+    expect(filtros(cliente).some((f) => f[0] === "eq" && f[1] === "checkout_expira_em")).toBe(true);
+  });
+
+  it("⭐ Asaas: a fase 3 grava a assinatura que o provedor já criou (sem ela, a troca no teste grátis não chegaria ao Asaas)", async () => {
+    h.provedor = "asaas";
+    h.ad.garantirCliente.mockResolvedValue("cus_asaas_1");
+    h.ad.iniciarAssinatura.mockResolvedValue({ url: "https://sandbox.asaas.com/i/pay_1", expiraEm: null, assinaturaRef: "sub_asaas_1" });
+    expect((await assinar({ documento: CNPJ })).status).toBe(200);
+    expect(updates().at(-1)).toMatchObject({ provedor: "asaas", provedor_cliente_id: "cus_asaas_1", provedor_assinatura_id: "sub_asaas_1", checkout_url: "https://sandbox.asaas.com/i/pay_1" });
+  });
+
+  it("controle: na Stripe nada muda — duas escritas (reserva e fase 3) e nenhuma assinatura gravada no Assinar", async () => {
+    await assinar();
+    expect(updates()).toHaveLength(2);
+    expect(updates()[1]).not.toHaveProperty("provedor_assinatura_id");
+  });
+
+  it("⭐ o Asaas recusou um documento de dígitos certos: 422 documento_recusado, não o 502 'fale com quem administra'", async () => {
+    h.provedor = "asaas";
+    h.ad.garantirCliente.mockRejectedValue(new ErroDoProvedor(400, "invalid_cpfCnpj", false));
+    const res = await assinar({ documento: CNPJ });
+    expect(res.status).toBe(422);
+    expect((await codigo(res)).code).toBe("documento_recusado");
     expect(updates().at(-1)).toEqual({ checkout_expira_em: null });
   });
 });

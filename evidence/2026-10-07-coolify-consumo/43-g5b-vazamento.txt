@@ -1,0 +1,10 @@
+linhas=136
+nao_zero:
+.env:OWNER_PASSWORD=1
+admin-credentials:OWNER_PASSWORD=1
+deskcomm-guardado-2026-10-07-1353/env:OWNER_PASSWORD=1
+deskcomm-guardado-2026-10-07-1419/env:OWNER_PASSWORD=1
+deskcomm-guardado-2026-10-07-1353/admin-credentials:OWNER_PASSWORD=1
+deskcomm-guardado-2026-10-07-1419/admin-credentials:OWNER_PASSWORD=1
+600 /root/install-g5b.log
+600 /root/pr4/deskcommcrm/.runtime/supabase-setup.log

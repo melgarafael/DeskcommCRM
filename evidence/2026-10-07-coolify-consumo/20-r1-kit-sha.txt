@@ -1,0 +1,12 @@
+bundle-ok
+456c052599f806ee76d84ebca69dc25fb9e22dc7
+0
+true
+https://github.com/melgarafael/DeskcommCRM.git
+hostgator-setup-kit/supabase-single-server.traefik.yml
+0
+ls: cannot access '/root/pr4/deskcommcrm/.runtime': No such file or directory
+456c052599f806ee76d84ebca69dc25fb9e22dc7
+0
+0
+ls: cannot access '/root/pr4/deskcommcrm/.runtime': No such file or directory

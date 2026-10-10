@@ -103,10 +103,13 @@ describe("trocarPlanoDaOrg", () => {
     expect(escritas()).toEqual([]);
   });
 
-  it("o provedor recusa por período corrente pendente (Asaas): 409 pagamento_pendente", async () => {
+  it("⭐ o provedor recusa por período corrente pendente (Asaas): 409 com o código da spec, e nada gravado", async () => {
     m.linha = { ...PAGANDO };
     trocarNoProvedor.mockRejectedValue(new ErroDoProvedor(null, "pagamento_do_periodo_pendente", false));
-    expect(await trocar("pro")).toMatchObject({ ok: false, status: 409, code: "pagamento_pendente" });
+    expect(await trocar("pro")).toMatchObject({
+      ok: false, status: 409, code: "pagamento_do_periodo_pendente", message: FRASE_DO_PERIODO_PENDENTE,
+    });
+    expect(escritas()).toEqual([]);
   });
 
   it("outro intervalo: 422 plano_invalido", async () => {
@@ -183,5 +186,25 @@ describe("trocarPlanoDaOrg", () => {
     m.linha = { ...PAGANDO, plano_id: "mini", plano_agendado_id: "pro" };
     m.assentos = 3;
     expect(await trocar("mini")).toMatchObject({ ok: true, planoAgendadoId: null });
+  });
+});
+
+const FRASE_DO_PERIODO_PENDENTE =
+  'A mensalidade de agora ainda não foi paga. Pague em "Pagar agora" e troque de plano depois que o pagamento for confirmado (Pix: minutos; boleto: até 1 dia útil).';
+
+describe("troca no teste grátis com a assinatura já criada no provedor (Asaas, PR 3b)", () => {
+  const FATURA = "https://sandbox.asaas.com/i/pay_1";
+
+  it("⭐ o provedor leva o preço novo à fatura aberta, e o link dela FICA (o próximo Assinar devolve a mesma fatura)", async () => {
+    m.linha = { ...EM_TESTE, provedor: "asaas", provedor_assinatura_id: "sub_asaas_1", checkout_url: FATURA };
+    expect(await trocar("pro")).toMatchObject({ ok: true, quando: "imediato", planoId: "pro" });
+    expect(trocarNoProvedor).toHaveBeenCalledWith({ assinaturaRef: "sub_asaas_1", plano: { id: "pro", nome: "pro", precoCents: 9990, intervalo: "mes" } });
+    expect(Object.keys(argumentos(escritas()[0]!, "update")?.[0] as object).sort()).toEqual(["plano_agendado_id", "plano_id", "updated_at"]);
+  });
+
+  it("controle: sem assinatura no provedor, o link pendente saiu com o preço antigo e é limpo, como no PR 3a", async () => {
+    m.linha = { ...EM_TESTE, checkout_url: "https://checkout.stripe.com/c/pay/cs_1" };
+    await trocar("pro");
+    expect(argumentos(escritas()[0]!, "update")?.[0]).toMatchObject({ checkout_url: null, checkout_expira_em: null });
   });
 });

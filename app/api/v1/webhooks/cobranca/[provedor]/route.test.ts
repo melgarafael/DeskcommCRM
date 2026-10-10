@@ -53,6 +53,12 @@ const pedido = (provedor = "stripe", corpo = '{"id":"evt_1"}', ip: string | null
   );
 const doLog = (op: string) => h.banco.cadeias.filter((c) => c.tabela === "webhook_events_log" && operacao(c) === op);
 const emits = () => h.banco.rpcs.filter((r) => r.nome === "emit_event");
+const TOKEN_ASAAS = ["token", "do", "aviso", "0123456789abcdef"].join("_");
+const doAsaas = (headers: Record<string, string>) =>
+  POST(
+    new NextRequest("http://localhost/api/v1/webhooks/cobranca/asaas", { method: "POST", body: '{"id":"evt_1"}', headers }),
+    { params: Promise.resolve({ provedor: "asaas" }) },
+  );
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -153,5 +159,45 @@ describe("webhook da cobrança", () => {
   it("corpo acima de 1 MB: 413", async () => {
     expect((await pedido("stripe", "x".repeat(1_048_577))).status).toBe(413);
     expect(doLog("insert")).toEqual([]);
+  });
+});
+
+describe("webhook da cobrança pelo Asaas (PR 3b)", () => {
+  it("⭐ Asaas: o token do cabeçalho nunca é gravado — nem como assinatura, que só a Stripe tem", async () => {
+    const res = await doAsaas({ "asaas-access-token": TOKEN_ASAAS, "stripe-signature": "t=1,v1=forjada" });
+    expect(res.status).toBe(200);
+    expect(argumentos(doLog("insert")[0]!, "insert")?.[0]).toMatchObject({ provider: "asaas", signature_header: null, headers: null });
+    expect(JSON.stringify([h.banco.cadeias, h.banco.rpcs])).not.toContain(TOKEN_ASAAS);
+  });
+
+  it("Asaas com token errado: 401, a linha de recusa sem token e sem assinatura", async () => {
+    h.sinal = null;
+    expect((await doAsaas({ "asaas-access-token": TOKEN_ASAAS, "stripe-signature": "t=1,v1=forjada" })).status).toBe(401);
+    expect(argumentos(doLog("insert")[0]!, "insert")?.[0]).toMatchObject({ provider: "asaas", signature_header: null, valid_signature: false });
+    expect(JSON.stringify(h.banco.cadeias)).not.toContain(TOKEN_ASAAS);
+  });
+
+  it("⭐ token vazado inundando com clientes que não existem: acima do balde, 200 SEM gravar linha (429 pararia a fila do Asaas)", async () => {
+    m.dona = null;
+    h.permitido = false;
+    const res = await doAsaas({ "asaas-access-token": TOKEN_ASAAS, "x-forwarded-for": "10.0.0.9" });
+    expect(res.status).toBe(200);
+    // Trocar o x-forwarded-for não troca o balde: a chave é global por provedor.
+    await doAsaas({ "asaas-access-token": TOKEN_ASAAS, "x-forwarded-for": "10.0.0.10" });
+    expect(h.baldes).toEqual(["cobranca-webhook-desconhecido:asaas", "cobranca-webhook-desconhecido:asaas"]);
+    expect(doLog("insert")).toEqual([]);
+  });
+
+  it("abaixo do balde, o aviso de cliente desconhecido do Asaas segue gravado como antes (a reconciliação cura)", async () => {
+    m.dona = null;
+    expect((await doAsaas({ "asaas-access-token": TOKEN_ASAAS })).status).toBe(200);
+    expect(doLog("insert")).toHaveLength(1);
+    expect(argumentos(doLog("update")[0]!, "update")?.[0]).toMatchObject({ status: "error", error_message: "cliente_desconhecido" });
+  });
+
+  it("controle: aviso VÁLIDO de cliente conhecido do Asaas nunca passa por balde nenhum", async () => {
+    h.permitido = false;
+    expect((await doAsaas({ "asaas-access-token": TOKEN_ASAAS })).status).toBe(200);
+    expect(h.baldes).toEqual([]);
   });
 });

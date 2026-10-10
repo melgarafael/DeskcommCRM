@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
-import { scrubMessage, scrubUrl, sentryScrubHooks } from "./scrub";
+import { isSensitiveHeader, scrubMessage, scrubUrl, sentryScrubHooks } from "./scrub";
 
 // Issue #100. O que estes testes travam: com `tracesSampleRate: 1` e sem
 // hooks de transação/span/breadcrumb, a URL crua saía do
@@ -292,6 +292,7 @@ describe("scrubMessage — chaves dos provedores de cobrança (spec cobrança §
     ["pk", "test", "Fak3Publica00"].join("_"),
     ["whsec", "Fak3SegredoDoWebhook"].join("_"),
     "$" + ["aact", "prod", "000MzkwODA2MWY2+OGM3/MWRlMDU2NWM3MzJlNzZmNGZhZGY6OjAwMDAw=="].join("_"),
+    "$" + ["aact", "hmlg", "000MzkwODA2MWY2OGM3MWRlMDU2NWM3MzJlNzZmNGZhZGY6OjAwMDAw"].join("_"),
   ];
 
   it.each(VETORES)("apaga %s inteira", (chave) => {
@@ -307,5 +308,17 @@ describe("scrubMessage — chaves dos provedores de cobrança (spec cobrança §
 
   it("controle: o prefixo sozinho não é chave", () => {
     expect(scrubMessage("use uma chave sk_live_ ou rk_live_")).toBe("use uma chave sk_live_ ou rk_live_");
+  });
+});
+
+describe("o token do aviso do Asaas (spec da cobrança §2.4)", () => {
+  it("o cabeçalho asaas-access-token é sensível: o Sentry nunca o leva", () => {
+    expect(isSensitiveHeader("asaas-access-token")).toBe(true);
+    const event = sentryScrubHooks.beforeSend({
+      request: { headers: { "asaas-access-token": "valor-que-nao-pode-sair-0123", "content-type": "application/json" } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    expect(event.request?.headers).not.toHaveProperty("asaas-access-token");
+    expect(event.request?.headers).toHaveProperty("content-type");
   });
 });
