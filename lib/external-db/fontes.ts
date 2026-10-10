@@ -30,6 +30,42 @@ export const MAX_FONTES = 200;
 export const MAX_COLUNAS_POR_FONTE = 200;
 export const MAX_DESCRICAO = 300;
 
+/**
+ * Teto de bytes da lista de fontes. **Espelha o CHECK da migration
+ * `20261009071741_0618_banco_externo_fontes_liberadas.sql`**:
+ * `check (jsonb_typeof(sources) = 'array' and octet_length(sources::text) <= 262144)`.
+ * Se um dos dois mudar, o outro acompanha (o teste ao lado lê o número do .sql
+ * e compara com esta constante).
+ */
+export const MAX_BYTES_DAS_FONTES = 262144;
+
+/**
+ * O texto que o Postgres emite ao converter o valor para `jsonb` e de volta
+ * para texto (o `sources::text` do CHECK): **um espaço depois de cada `:` e de
+ * cada `,`** (`{"a": 1, "b": [1, 2]}`). `JSON.stringify` não põe esses espaços,
+ * então medir com ele aceitaria lista que estoura o CHECK no banco (e o PUT
+ * responderia 500 em vez de 422). A ordem das chaves não muda o tamanho, então
+ * a ordem de inserção serve para medir.
+ */
+function textoComoJsonb(valor: unknown): string {
+  if (valor === null || valor === undefined) return "null";
+  if (Array.isArray(valor)) return `[${valor.map(textoComoJsonb).join(", ")}]`;
+  if (typeof valor === "object") {
+    const pares = Object.entries(valor).map(([chave, conteudo]) => `${JSON.stringify(chave)}: ${textoComoJsonb(conteudo)}`);
+    return `{${pares.join(", ")}}`;
+  }
+  return JSON.stringify(valor);
+}
+
+/**
+ * Bytes UTF-8 do valor como o `jsonb::text` do Postgres o emite — a mesma
+ * medida do `octet_length(sources::text)` do CHECK (acento conta 2 bytes).
+ * Pura: é o que os testes conferem.
+ */
+export function tamanhoComoJsonb(valor: unknown): number {
+  return new TextEncoder().encode(textoComoJsonb(valor)).length;
+}
+
 export const fonteSchema = z
   .object({
     schema: z.string().trim().min(1).max(128),
@@ -56,6 +92,13 @@ export const fontesSchema = z
       }
       vistas.add(chave);
     });
+  })
+  // O banco corta em 256 KiB (CHECK com `octet_length(sources::text)`): sem
+  // este teto no Zod, um corpo válido por aqui estourava lá e o PUT devolvia
+  // 500 em vez de 422. A medida é a do jsonb (`tamanhoComoJsonb`), não a do
+  // `JSON.stringify` — ver o teste "mede como o jsonb" ao lado.
+  .refine((fontes) => tamanhoComoJsonb(fontes) <= MAX_BYTES_DAS_FONTES, {
+    message: "a lista de fontes passa de 256 KiB; libere menos tabelas ou menos colunas",
   });
 
 export type Fonte = z.infer<typeof fonteSchema>;

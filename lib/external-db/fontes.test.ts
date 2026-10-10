@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -5,8 +7,10 @@ import {
   colunasLiberadas,
   fontesSchema,
   lerFontesDoBanco,
+  MAX_BYTES_DAS_FONTES,
   MAX_FONTES,
   tabelaLiberada,
+  tamanhoComoJsonb,
   type Fonte,
   type RegraDeFontes,
 } from "./fontes";
@@ -135,5 +139,68 @@ describe("tabelaLiberada e colunasLiberadas", () => {
 
   it("tabela fora da lista tem conjunto null mesmo existindo no catálogo", () => {
     expect(colunasLiberadas(lista(f("public", "clientes")), CATALOGO[2]!)).toBeNull();
+  });
+});
+
+describe("teto de bytes (espelha o CHECK do banco)", () => {
+  const fonteCheia = (i: number, colunas: string[]): Fonte => ({
+    schema: "s",
+    tabela: `t${i}`,
+    colunas,
+    descricao: "",
+  });
+
+  it("tamanhoComoJsonb mede como o jsonb: espaço depois de cada ':' e ','", () => {
+    // `[{"schema":"a","tabela":"b","colunas":null,"descricao":""}]` (59 bytes
+    // pelo JSON.stringify) vira `[{"schema": "a", ... }]` (66 bytes) no
+    // `jsonb::text` do Postgres: 4 ':' + 3 ',' = 7 espaços a mais.
+    expect(tamanhoComoJsonb([{ schema: "a", tabela: "b", colunas: null, descricao: "" }])).toBe(66);
+    expect(Buffer.byteLength(JSON.stringify([{ schema: "a", tabela: "b", colunas: null, descricao: "" }]), "utf8")).toBe(59);
+  });
+
+  it("acento conta como 2 bytes", () => {
+    expect(tamanhoComoJsonb(["é"])).toBe(6); // `[` + `"é"` (1 + 2 + 1) + `]`
+  });
+
+  it("aceita lista logo abaixo de 256 KiB", () => {
+    const abaixo = Array.from({ length: 9 }, (_, i) => fonteCheia(i, Array(200).fill("a".repeat(128))));
+    expect(tamanhoComoJsonb(abaixo)).toBeLessThanOrEqual(MAX_BYTES_DAS_FONTES);
+    expect(() => fontesSchema.parse(abaixo)).not.toThrow();
+  });
+
+  it("recusa lista logo acima de 256 KiB com mensagem em português", () => {
+    const acima = Array.from({ length: 10 }, (_, i) => fonteCheia(i, Array(200).fill("a".repeat(128))));
+    expect(tamanhoComoJsonb(acima)).toBeGreaterThan(MAX_BYTES_DAS_FONTES);
+    const lido = fontesSchema.safeParse(acima);
+    expect(lido.success).toBe(false);
+    if (!lido.success) {
+      expect(lido.error.issues.map((i) => i.message).join(" ")).toContain("256 KiB");
+    }
+  });
+
+  it("mede como o jsonb, não como o JSON.stringify", () => {
+    // 200 fontes × 200 colunas de "aaa": cada ':' e ',' estrutural ganha um
+    // espaço no `jsonb::text` (~41 mil bytes a mais). O ingênuo passa, o
+    // banco cortaria — o Zod tem de recusar.
+    const lista = Array.from({ length: 200 }, (_, i) => fonteCheia(i, Array(200).fill("aaa")));
+    const ingenua = Buffer.byteLength(JSON.stringify(lista), "utf8");
+    expect(ingenua).toBeLessThanOrEqual(MAX_BYTES_DAS_FONTES);
+    expect(tamanhoComoJsonb(lista)).toBeGreaterThan(MAX_BYTES_DAS_FONTES);
+    expect(fontesSchema.safeParse(lista).success).toBe(false);
+  });
+
+  it("conta bytes, não caracteres: caracteres passam, bytes estouram", () => {
+    // "é" tem 1 caractere e 2 bytes: 200 fontes × 20 colunas de 64 "é" cabem
+    // em 262144 caracteres, mas passam de 262144 bytes.
+    const lista = Array.from({ length: 200 }, (_, i) => fonteCheia(i, Array(20).fill("é".repeat(64))));
+    expect(JSON.stringify(lista).length).toBeLessThanOrEqual(262144);
+    expect(tamanhoComoJsonb(lista)).toBeGreaterThan(MAX_BYTES_DAS_FONTES);
+    expect(fontesSchema.safeParse(lista).success).toBe(false);
+  });
+
+  it("MAX_BYTES_DAS_FONTES é o número do CHECK da migration 0618", () => {
+    const sql = readFileSync("supabase/migrations/20261009071741_0618_banco_externo_fontes_liberadas.sql", "utf8");
+    const casou = /octet_length\(sources::text\)\s*<=\s*(\d+)/.exec(sql);
+    expect(casou?.[1]).toBe(String(MAX_BYTES_DAS_FONTES));
   });
 });
