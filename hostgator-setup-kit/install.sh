@@ -2373,12 +2373,18 @@ fi
 #
 # Na instalação não há versão anterior para onde voltar (o update.sh devolve a
 # anterior e aponta o diagnóstico), então a recusa é UM die com a mensagem da
-# instalação: o que não respondeu foi o registro, o que fazer é rodar de novo
-# em alguns minutos, e a saída de propósito é o DESKCOMM_BUILD_LOCAL=1.
+# instalação — e o que ela DIZ sobre o motivo é separado (#2648): o veredito
+# 'indisponivel' que o portão lê junta causas com diagnósticos OPPOSTOS (sem
+# buildx, registro fora, tag ainda publicando, sonda estourada no prazo), e a
+# mesma separação que o preflight do update.sh já fazia agora cabe aqui. Quem
+# decide a frase é `motivo_da_recusa_do_build_local` (em _common.sh), na mesma
+# ordem em que o portão decide: o operador sem buildx recebe "instale o
+# buildx", não "mexa na rede". A saída de propósito continua sendo o
+# DESKCOMM_BUILD_LOCAL=1.
 CONSTRUIU_AQUI=""
 if ! dc up -d; then
   if ! build_local_permitido "$VERSAO_ALVO"; then
-    die "$(t "Não coloquei o CRM no ar: o registro de imagens não respondeu, e a construção local está DESLIGADA por padrão. Sem resposta do registro (DNS/rede) a construção aqui gastaria a memória desta VPS e derrubaria o resto junto — é o defeito da #1955, e numa instalação não há versão anterior para onde voltar. As imagens prontas continuam sendo a única saída: rode este install.sh de novo em alguns minutos. Para construir as imagens aqui DE PROPÓSITO (mais lento, exige memória): {1}" "DESKCOMM_BUILD_LOCAL=1 bash hostgator-setup-kit/install.sh --yes")"
+    die "$(t "Não coloquei o CRM no ar: {1} A construção local segue fechada por padrão, e numa instalação não há versão anterior para onde voltar. Para construir as imagens aqui DE PROPÓSITO (mais lento, exige memória): {2}" "$(motivo_da_recusa_do_build_local "$VERSAO_ALVO")" "DESKCOMM_BUILD_LOCAL=1 bash hostgator-setup-kit/install.sh --yes")"
   fi
   if construir_aqui_e_subir "$VERSAO_ALVO"; then
     CONSTRUIU_AQUI=1

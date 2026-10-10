@@ -1092,6 +1092,40 @@ build_local_permitido() {  # build_local_permitido <versão alvo>
   [ "$(veredito_das_imagens_da_release "${1:-}")" != "indisponivel" ]
 }
 
+# Por que o portão recusou? Ecoa UM motivo, pronto para a mensagem da recusa.
+#
+# O veredito que o portão lê é 'indisponivel', e ele JUNTA causas com
+# diagnósticos OPPOSTOS (#2648): sem o plugin buildx a inspeção falha nas
+# quatro imagens; registro fora, tag ainda sem imagens publicadas e sonda
+# estourada no `com_prazo 20` falham do mesmo jeito no mesmo código de saída.
+# O update.sh já separava isso no preflight (`preflight_atualizacao`); o
+# install.sh citava "o registro de imagens não respondeu" para tudo, e o dono
+# de uma VPS cuja rede está boa ia mexer na rede à toa enquanto o que faltava
+# era o pacote docker-buildx-plugin.
+#
+# A ordem espelha o portão: primeiro a proibição explícita (que dispensa
+# sondar), depois o buildx (sem ele a sonda forçaria o veredito errado), e só
+# então o registro. O que NÃO se separa de fora — registro fora × tag sem
+# imagens × prazo estourado — é o MESMO código de saída, e o kit nunca
+# adivinha pelo TEXTO do erro: o motivo nomeia os três em vez de escolher um.
+motivo_da_recusa_do_build_local() {  # motivo_da_recusa_do_build_local <versão alvo>
+  local versao="${1:-}"
+  versao="${versao#v}"
+  case "${DESKCOMM_BUILD_LOCAL:-}" in
+    0|nao|não|no)
+      printf '%s' "$(t "a construção local foi desligada por você mesmo nesta execução (DESKCOMM_BUILD_LOCAL={1}), e o portão obedece — tire a variável ou troque o valor por 1 para construir de propósito." "${DESKCOMM_BUILD_LOCAL}")"
+      return 0 ;;
+  esac
+  # Sem buildx a inspeção falha nas QUATRO imagens e o veredito sai
+  # 'indisponivel' — o mesmo de registro fora. Conferir o plugin ANTES de
+  # atribuir a falha ao registro é o que o preflight do update.sh já fazia.
+  if ! com_prazo 20 docker buildx version >/dev/null 2>&1; then
+    printf '%s' "$(t "o plugin buildx do Docker não está instalado nesta VPS, e é com ele que confiro se a versão {1} está publicada — sem ele a sonda falha nas quatro imagens e o veredito sai como 'registro fora', o diagnóstico errado para uma VPS cuja rede está boa. Instale o pacote docker-buildx-plugin e rode este install.sh de novo." "$versao")"
+    return 0
+  fi
+  printf '%s' "$(t "o registro de imagens não respondeu para a versão {1} (DNS/rede, ou a tag ainda sem nenhuma imagem publicada — de fora os dois se parecem, e o kit não adivinha pelo texto do erro). Sem resposta do registro a construção aqui gastaria a memória desta VPS à toa, que é o defeito da #1955. Rode este install.sh de novo em alguns minutos." "$versao")"
+}
+
 # Os serviços que deveriam estar de pé depois do `up -d` (#1955, critério 6).
 # Ecoa, um por linha, os que NÃO estão rodando. Vazio = "não sei".
 #
