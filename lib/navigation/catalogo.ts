@@ -707,6 +707,59 @@ export const NAV_CATALOG = [
     // ⚠️ O grupo "canais" não tem hub, então o ⌘K passa a ser a ÚNICA porta
     // navegável. Para voltar a mostrá-la, basta devolver `sidebar: true`.
   },
+  // ── Instagram — ManyChat próprio para DM e comentários ──────────────────────
+  //
+  // Porta de entrada para o hub Instagram do GIP War Room 2.0. O usuário chega
+  // aqui para configurar automações de comentários e DMs (flows tipo ManyChat),
+  // ver os tokens de webhook para configurar no Meta e gerenciar etiquetas.
+  //
+  // Fica antes de Webhooks (canal geral) porque o Instagram tem seu próprio
+  // endpoint de webhook no Graph API, distinto dos webhooks internos.
+  {
+    href: "/app/instagram",
+    label: "Instagram",
+    description: "Automações de DM e comentários — motor ManyChat próprio com flows, etiquetas e webhook do Instagram.",
+    icon: "InstagramLogo",
+    group: "canais",
+    minRole: "manager",
+    sidebar: true,
+  },
+  {
+    href: "/app/instagram/automacoes",
+    label: "Automações Instagram",
+    description: "Crie e edite flows de automação para comentários e DMs do Instagram.",
+    icon: "InstagramLogo",
+    group: "canais",
+    minRole: "manager",
+    sidebar: false, // acessa pelo hub /app/instagram
+  },
+  {
+    href: "/app/instagram/automacoes/novo",
+    label: "Novo Flow Instagram",
+    description: "Formulário de criação de um novo flow de automação de Instagram.",
+    icon: "InstagramLogo",
+    group: "canais",
+    minRole: "manager",
+    sidebar: false, // acessa pela lista de automações
+  },
+  {
+    href: "/app/instagram/webhooks",
+    label: "Tokens de Webhook Instagram",
+    description: "Gerencie tokens de URL para configurar o webhook do Instagram Graph API no Meta.",
+    icon: "InstagramLogo",
+    group: "canais",
+    minRole: "manager",
+    sidebar: false, // acessa pelo hub /app/instagram
+  },
+  {
+    href: "/app/instagram/etiquetas",
+    label: "Etiquetas Instagram",
+    description: "Etiquetas aplicadas pelas automações de Instagram nos contatos e no funil político.",
+    icon: "InstagramLogo",
+    group: "canais",
+    minRole: "manager",
+    sidebar: false, // acessa pelo hub /app/instagram
+  },
   {
     href: "/app/webhooks",
     label: "Webhooks",

@@ -47447,3 +47447,167 @@ alter table public.campaign_recipients
   ));
 
 notify pgrst, 'reload schema';
+-- ---- ig_automation_flows + ig_comment_events + ig_webhook_tokens (migration 0629) ----
+--
+-- Motor ManyChat próprio para Instagram: automações de comentários e DMs.
+-- Tabelas criadas idempotentemente; RLS isolada por organização.
+
+-- ig_automation_flows -------------------------------------------------------
+create table if not exists public.ig_automation_flows (
+  id                   uuid primary key default gen_random_uuid(),
+  organization_id      uuid not null references public.organizations(id) on delete cascade,
+  nome                 text not null,
+  descricao            text,
+  ativo                boolean not null default true,
+  trigger_tipo         text not null,
+  trigger_config       jsonb not null default '{}',
+  acoes                jsonb not null default '[]',
+  stats                jsonb not null default '{}',
+  ultima_ativacao_at   timestamptz,
+  created_at           timestamptz not null default now(),
+  updated_at           timestamptz not null default now()
+);
+
+alter table public.ig_automation_flows
+  add column if not exists nome text,
+  add column if not exists descricao text,
+  add column if not exists ativo boolean default true,
+  add column if not exists trigger_tipo text,
+  add column if not exists trigger_config jsonb default '{}',
+  add column if not exists acoes jsonb default '[]',
+  add column if not exists stats jsonb default '{}',
+  add column if not exists ultima_ativacao_at timestamptz;
+
+alter table public.ig_automation_flows
+  drop constraint if exists ig_automation_flows_trigger_tipo_check;
+alter table public.ig_automation_flows
+  add constraint ig_automation_flows_trigger_tipo_check
+    check (trigger_tipo in (
+      'comment_keyword','comment_no_post','dm_keyword',
+      'novo_seguidor','story_reply','novo_comentario'
+    ));
+
+create index if not exists idx_ig_automation_flows_org_ativo
+  on public.ig_automation_flows(organization_id, ativo);
+create index if not exists idx_ig_automation_flows_org_trigger
+  on public.ig_automation_flows(organization_id, trigger_tipo);
+
+-- RLS
+alter table public.ig_automation_flows enable row level security;
+drop policy if exists tenant_isolation_ig_automation_flows_all on public.ig_automation_flows;
+create policy tenant_isolation_ig_automation_flows_all
+  on public.ig_automation_flows
+  for all
+  using (organization_id = any(public.fn_user_org_ids()));
+
+-- ig_comment_events ---------------------------------------------------------
+create table if not exists public.ig_comment_events (
+  id                        uuid primary key default gen_random_uuid(),
+  organization_id           uuid not null references public.organizations(id) on delete cascade,
+  channel_session_id        uuid references public.channel_sessions(id) on delete set null,
+  instagram_comment_id      text not null,
+  instagram_media_id        text,
+  from_instagram_id         text not null,
+  from_username             text,
+  texto                     text,
+  parent_comment_id         text,
+  field                     text,
+  raw_payload               jsonb not null default '{}',
+  processado                boolean not null default false,
+  processado_at             timestamptz,
+  flow_acionado_id          uuid references public.ig_automation_flows(id) on delete set null,
+  dm_enviada                boolean not null default false,
+  dm_enviada_at             timestamptz,
+  respondido_em_comentario  boolean not null default false,
+  resposta_comentario_at    timestamptz,
+  received_at               timestamptz not null default now(),
+  created_at                timestamptz not null default now(),
+  unique (organization_id, instagram_comment_id)
+);
+
+alter table public.ig_comment_events
+  add column if not exists channel_session_id uuid references public.channel_sessions(id) on delete set null,
+  add column if not exists instagram_media_id text,
+  add column if not exists from_username text,
+  add column if not exists texto text,
+  add column if not exists parent_comment_id text,
+  add column if not exists field text,
+  add column if not exists raw_payload jsonb default '{}',
+  add column if not exists processado boolean default false,
+  add column if not exists processado_at timestamptz,
+  add column if not exists flow_acionado_id uuid references public.ig_automation_flows(id) on delete set null,
+  add column if not exists dm_enviada boolean default false,
+  add column if not exists dm_enviada_at timestamptz,
+  add column if not exists respondido_em_comentario boolean default false,
+  add column if not exists resposta_comentario_at timestamptz,
+  add column if not exists received_at timestamptz default now();
+
+create index if not exists idx_ig_comment_events_org_processado
+  on public.ig_comment_events(organization_id, processado);
+create index if not exists idx_ig_comment_events_org_media
+  on public.ig_comment_events(organization_id, instagram_media_id);
+create index if not exists idx_ig_comment_events_org_received
+  on public.ig_comment_events(organization_id, received_at desc);
+
+-- RLS
+alter table public.ig_comment_events enable row level security;
+drop policy if exists tenant_isolation_ig_comment_events_all on public.ig_comment_events;
+create policy tenant_isolation_ig_comment_events_all
+  on public.ig_comment_events
+  for all
+  using (organization_id = any(public.fn_user_org_ids()));
+
+-- ig_webhook_tokens ---------------------------------------------------------
+create table if not exists public.ig_webhook_tokens (
+  id                 uuid primary key default gen_random_uuid(),
+  organization_id    uuid not null references public.organizations(id) on delete cascade,
+  channel_session_id uuid references public.channel_sessions(id) on delete cascade,
+  path_token         text not null unique,
+  descricao          text,
+  ativo              boolean not null default true,
+  ultimo_ping_at     timestamptz,
+  created_at         timestamptz not null default now()
+);
+
+alter table public.ig_webhook_tokens
+  add column if not exists channel_session_id uuid references public.channel_sessions(id) on delete cascade,
+  add column if not exists descricao text,
+  add column if not exists ativo boolean default true,
+  add column if not exists ultimo_ping_at timestamptz;
+
+create index if not exists idx_ig_webhook_tokens_path
+  on public.ig_webhook_tokens(path_token) where ativo = true;
+create index if not exists idx_ig_webhook_tokens_org
+  on public.ig_webhook_tokens(organization_id);
+
+-- RLS
+alter table public.ig_webhook_tokens enable row level security;
+drop policy if exists tenant_isolation_ig_webhook_tokens_all on public.ig_webhook_tokens;
+create policy tenant_isolation_ig_webhook_tokens_all
+  on public.ig_webhook_tokens
+  for all
+  using (organization_id = any(public.fn_user_org_ids()));
+
+-- fn_ig_webhook_token_por_path ----------------------------------------------
+-- Resolve organization_id + channel_session_id a partir de um path_token.
+-- Security definer: o service_role chama isso ANTES de fazer qualquer leitura
+-- de body, garantindo que o tenant é resolvido de fonte confiável (a URL).
+-- Revogada de anon/public; só service_role pode chamar.
+create or replace function public.fn_ig_webhook_token_por_path(p_path_token text)
+returns table (
+  organization_id    uuid,
+  channel_session_id uuid
+)
+language sql
+security definer
+stable
+as $$
+  select organization_id, channel_session_id
+    from public.ig_webhook_tokens
+   where path_token = p_path_token
+     and ativo = true
+   limit 1;
+$$;
+
+revoke execute on function public.fn_ig_webhook_token_por_path(text) from public, anon;
+grant  execute on function public.fn_ig_webhook_token_por_path(text) to service_role;

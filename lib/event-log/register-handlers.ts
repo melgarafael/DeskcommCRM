@@ -30,6 +30,7 @@ import { conversaoDeVendaHandler } from "@/lib/conversoes/envio.handler";
 import { avisoDeEtapaHandler } from "@/lib/leads/aviso-de-etapa.handler";
 import { avisoDeCasoAoSuporteHandler } from "@/lib/escalacao/aviso-ao-suporte.handler";
 import { avisoDePropostaNoWhatsAppHandler } from "@/lib/propostas/aviso-no-whatsapp.handler";
+import { igAutomacaoHandler } from "@/lib/ig-automacoes/motor.handler";
 import { registerHandler } from "@/lib/event-log/dispatcher";
 
 let _registered = false;
@@ -54,6 +55,10 @@ export function ensureHandlersRegistered(): void {
   registerHandler(lgpdExportHandler);
   registerHandler(lgpdRedactHandler);
   registerHandler(automationRulesHandler);
+  // Motor de automação do Instagram (ManyChat próprio): avalia flows e emite
+  // side-effects para event_log — nunca faz HTTP direto. Fica ao lado do motor
+  // de automação de atendimento, que tem o mesmo perfil (só banco + event_log).
+  registerHandler(igAutomacaoHandler);
   registerHandler(followupGatilhoEtapaHandler);
   // Escrita curta no banco (um item na Central), vizinha do gatilho de etapa
   // que consome o mesmo evento.
