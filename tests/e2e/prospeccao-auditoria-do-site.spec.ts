@@ -42,6 +42,7 @@ const SUFIXO = "qa24";
 function dadosCandidato(
   nome: string,
   place: string,
+  telefone: string,
   nota: number | null,
   avaliacoes: number,
   site: Record<string, unknown>,
@@ -50,12 +51,12 @@ function dadosCandidato(
     organization_id: "",
     campaign_id: "",
     place_id: `${place}-${SUFIXO}`,
-    phone: "+5511999990001",
+    phone: telefone,
     status: "new",
     data: {
       key: `${place}-${SUFIXO}`,
       name: nome,
-      phone: "+5511999990001",
+      phone: telefone,
       website: "https://vitta-qa.test/",
       category: "Clínica de estética",
       address: "Rua QA, 1",
@@ -129,8 +130,8 @@ test.describe("Auditoria do site na fila de prospecção (#2703)", () => {
       .select("id")
       .single();
     if (erroCampanha || !campanha) throw new Error(`semear campanha: ${erroCampanha?.message}`);
-    const fria = dadosCandidato("Clínica Fria QA", "place-fria", 4.2, 10, SITE_FRIO);
-    const quente = dadosCandidato("Clínica Vitta QA", "place-quente", 5.0, 120, SITE_QUENTE);
+    const fria = dadosCandidato("Clínica Fria QA", "place-fria", "+5511999990001", 4.2, 10, SITE_FRIO);
+    const quente = dadosCandidato("Clínica Vitta QA", "place-quente", "+5511999990002", 5.0, 120, SITE_QUENTE);
     // Timestamps explícitos: a ordem padrão é `created_at desc`, e dois inserts
     // no mesmo milissegundo deixariam a ordem inicial indefinida (flake).
     for (const [candidato, criadoEm] of [
@@ -159,7 +160,8 @@ test.describe("Auditoria do site na fila de prospecção (#2703)", () => {
     const creds = lerCreds();
     await loginComoAdmin(page, creds);
     await page.goto("/app/prospecting");
-    await page.getByRole("button", { name: NOME_CAMPANHA, exact: true }).click();
+    // O botão traz nome + status ("Pausada · 0 empresas"): casa por substring.
+    await page.getByRole("button", { name: new RegExp(NOME_CAMPANHA) }).click();
 
     const linhaQuente = page.getByRole("row", { name: /Clínica Vitta QA/ });
     const linhaFria = page.getByRole("row", { name: /Clínica Fria QA/ });
@@ -181,6 +183,12 @@ test.describe("Auditoria do site na fila de prospecção (#2703)", () => {
       .allTextContents();
     expect(ordemAntes[0]).toContain("Fria");
     await page.getByLabel("Ordenar").selectOption("score");
+    // A troca dispara refetch (queryKey muda): espera as linhas voltarem.
+    await expect(page.getByRole("row", { name: /Clínica (Vitta|Fria) QA/ }).first()).toBeVisible();
+    await page.waitForFunction(() => {
+      const linhas = document.querySelectorAll("tbody tr");
+      return linhas.length >= 2;
+    });
     const ordemDepois = await page
       .getByRole("row", { name: /Clínica (Vitta|Fria) QA/ })
       .allTextContents();
