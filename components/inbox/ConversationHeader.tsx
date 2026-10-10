@@ -16,7 +16,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { JanelaSelo } from "@/components/inbox/JanelaSelo";
 import { ChannelLogo } from "@/components/inbox/ChannelLogo";
-import { Phone, ArrowRight, MagnifyingGlass } from "@/lib/ui/icons";
+import { Phone, ArrowRight, MagnifyingGlass, DotsThree } from "@/lib/ui/icons";
+import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
@@ -108,6 +109,25 @@ export function ConversationHeader({
   const [confirmFecharOpen, setConfirmFecharOpen] = useState(false);
   const [confirmArquivarOpen, setConfirmArquivarOpen] = useState(false);
   const [confirmPessoalOpen, setConfirmPessoalOpen] = useState(false);
+  /**
+   * O ⋮ DO CELULAR (#2494): abaixo de `md` esta barra empilhava oito ações em
+   * várias linhas e o histórico ficava com a sobra. Abaixo de 768px as
+   * SECUNDÁRIAS ficam atrás do "Mais"; acima delas nada muda — os mesmos
+   * botões, na mesma barra, com as mesmas classes de antes.
+   *
+   * O que decide a largura é CSS, nunca media query em JavaScript: `useMediaQuery`
+   * só responde depois da hidratação e a primeira pintura mostraria o layout
+   * errado (decisão registrada em `components/inbox/InboxLayout.tsx`). Este
+   * estado só ABRE e FECHA o grupo; ele não decide largura nenhuma.
+   */
+  const [menuMaisAberto, setMenuMaisAberto] = useState(false);
+  /**
+   * A CLASSE DAS SECUNDÁRIAS. Vazia com o menu aberto (e sempre vazia no
+   * desktop, onde o ⋮ não existe): o escondido é sempre MEDIA-SCOPED —
+   * `max-md:hidden`, nunca um `hidden` solto, que tiraria a ação de 1280px
+   * junto. A `inbox-header-nao-trava` é quem cobra que nada suma do DOM.
+   */
+  const esconderSecundarias = menuMaisAberto ? "" : "max-md:hidden";
 
   const c = conversation.contacts ?? null;
   const displayName = rotuloDoContato(c, t);
@@ -207,8 +227,17 @@ export function ConversationHeader({
     //
     // Reorganizar em vez de esconder: acima de ~1440px o header fica IDÊNTICO ao
     // de antes (uma linha), e quando aperta a barra desce para a linha de baixo.
-    // Nenhuma ação some — um menu "mais" esconderia o "Lembrar" que a spec
-    // `canais-baseline` clica, e, pior, esconderia ação de quem atende.
+    //
+    // NO CELULAR (#2494) a mesma barra espremia o histórico em ~390px: oito
+    // ações em várias linhas, mais nome, status e comando. Abaixo de `md`
+    // (768px) as SECUNDÁRIAS passam para o "Mais" (⋮) — nada é removido, elas
+    // continuam no DOM e voltam ao toque —, e só as duas de quem atende
+    // ("Assumir" e "Devolver ao automático") ficam soltas na barra. Acima de
+    // `md` NADA muda: os mesmos botões, nas mesmas posições, com as mesmas
+    // classes — é por isso que a spec `canais-baseline`, que clica "Lembrar",
+    // segue vendo a ação na barra (viewport de desktop), e é por isso que a
+    // `inbox-header-nao-trava` continua verde: o escondido é CSS com mídia,
+    // nunca saída de markup.
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background px-4 py-3">
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-1.5">
@@ -349,6 +378,7 @@ export function ConversationHeader({
           <Button
             size="sm"
             variant="outline"
+            className={esconderSecundarias}
             disabled={release.isPending}
             onClick={() => release.mutate({ conversation_id: conversation.id })}
           >
@@ -393,6 +423,7 @@ export function ConversationHeader({
           <Button
             size="sm"
             variant="outline"
+            className={esconderSecundarias}
             disabled={pausar.isPending}
             data-testid="pausar-o-automatico"
             // `podePausar` já exige dono != null, então este botão NUNCA aparece
@@ -405,27 +436,38 @@ export function ConversationHeader({
           </Button>
         )}
         {!encerrada && (
-          <Button size="sm" variant="outline" onClick={() => setReassignOpen(true)}>
+          <Button
+            size="sm"
+            variant="outline"
+            className={esconderSecundarias}
+            onClick={() => setReassignOpen(true)}
+          >
             {t("Transferir")}
           </Button>
         )}
+        {/* O `Lembrar` é um componente à parte e não aceita `className`, então
+            quem esconde é o invólucro — a classe é lida de cima até a barra
+            (mesma leitura de `escondeNoCelular` no teste do celular). */}
         {!encerrada && (
-          <SnoozeButton
-            conversationId={conversation.id}
-            snoozeUntil={conversation.snooze_until ?? null}
-          />
+          <span className={esconderSecundarias}>
+            <SnoozeButton
+              conversationId={conversation.id}
+              snoozeUntil={conversation.snooze_until ?? null}
+            />
+          </span>
         )}
         {!encerrada && (
           <Button
             size="sm"
             variant="outline"
+            className={esconderSecundarias}
             disabled={close.isPending}
             onClick={() => setConfirmFecharOpen(true)}
           >
             {t("Fechar")}
           </Button>
         )}
-        {encerrada && <Button size="sm" variant="outline" disabled={reopen.isPending}
+        {encerrada && <Button size="sm" variant="outline" className={esconderSecundarias} disabled={reopen.isPending}
           onClick={() => reopen.mutate({ conversation_id: conversation.id, expected_revision: conversation.service_revision })}>
           {t("Reabrir")}
         </Button>}
@@ -441,6 +483,7 @@ export function ConversationHeader({
           <Button
             size="sm"
             variant="ghost"
+            className={esconderSecundarias}
             disabled={arquivar.isPending}
             onClick={() => setConfirmArquivarOpen(true)}
           >
@@ -454,6 +497,7 @@ export function ConversationHeader({
           <Button
             size="sm"
             variant="outline"
+            className={esconderSecundarias}
             disabled={marcarPessoal.isPending}
             data-testid="marcar-pessoal"
             title={t("Tira este contato da operação: a conversa sai do inbox.")}
@@ -466,6 +510,7 @@ export function ConversationHeader({
           <Button
             size="sm"
             variant="outline"
+            className={esconderSecundarias}
             disabled={desmarcarPessoal.isPending}
             data-testid="desmarcar-pessoal"
             title={t("Devolve este contato à operação: a conversa volta ao inbox.")}
@@ -486,13 +531,36 @@ export function ConversationHeader({
             contato — por isso a condição é a mesma do painel, e não um valor
             escolhido à parte. Não é esconder ação; é não repeti-la. */}
         {c?.id && (
-          <Button asChild size="sm" variant="ghost" className="xl:hidden">
+          <Button asChild size="sm" variant="ghost" className={cn("xl:hidden", esconderSecundarias)}>
             <Link href={`/app/contacts/${c.id}`} className="flex items-center gap-1">
               {t("Ver contato")}
               <ArrowRight size={12} weight="regular" aria-hidden />
             </Link>
           </Button>
         )}
+        {/* O ⋮ DO CELULAR (#2494) — "Mais". Abaixo de `md` ele revela as
+            secundárias que a barra deixou de espremar; acima de 768px ele não
+            desenha, porque ali as mesmas ações já estão soltas na barra (é o
+            MESMO corte da barra "Conversas / Ficha" e das colunas do inbox).
+
+            Nada some do markup por causa dele: a `inbox-header-nao-trava` cobra
+            que as ações continuem no cabeçalho, e este botão só muda a classe
+            que o CSS aplica abaixo de `md`. `aria-expanded` é o contrato de
+            "isto abre o grupo", e o rótulo é a chave `Mais` — a mesma da aba
+            "Mais" da barra de celular (o catraca da #1625 proíbe o nome
+            "Mais ações", que é o de um menu que esconde ação de quem atende;
+            aqui quem atende não entra). */}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="md:hidden"
+          data-testid="menu-mais-acoes"
+          aria-label={t("Mais")}
+          aria-expanded={menuMaisAberto}
+          onClick={() => setMenuMaisAberto((aberto) => !aberto)}
+        >
+          <DotsThree size={16} className="-rotate-90" aria-hidden />
+        </Button>
       </div>
         {/* O aviso pertence à operação automática. Abaixo da barra ele não
             alarga a ficha do contato nem muda a posição dos botões.
