@@ -154,7 +154,11 @@ export async function trocarPlanoDaOrg(
     } catch (e) {
       if (!(e instanceof ErroDoProvedor)) throw e;
       if (e.codigo === "pagamento_do_periodo_pendente") {
-        return recusa(409, "pagamento_pendente", "Aguarde a confirmação do pagamento atual para trocar de plano.");
+        return recusa(
+          409,
+          "pagamento_do_periodo_pendente",
+          'A mensalidade de agora ainda não foi paga. Pague em "Pagar agora" e troque de plano depois que o pagamento for confirmado (Pix: minutos; boleto: até 1 dia útil).',
+        );
       }
       if (e.transitorio) {
         // A resposta pode ter se perdido com o preço já mudado: não afirme "nada mudou".
@@ -174,8 +178,11 @@ export async function trocarPlanoDaOrg(
         plano_id: novo.id,
         plano_agendado_id: null,
         updated_at: agora.toISOString(),
-        // O link em aberto sem assinatura já foi recusado acima; o que sobra sai junto, e o próximo "Assinar" parte do plano gravado.
-        ...(atual.checkout_url ? { checkout_url: null, checkout_expira_em: null } : {}),
+        // O link em aberto sem assinatura já foi recusado acima; o que sobra sai junto, e o
+        // próximo "Assinar" parte do plano gravado. Com a assinatura já no provedor (o Asaas a
+        // cria no Assinar), o provedor acabou de pôr o preço novo na fatura aberta: o link é o
+        // mesmo e fica.
+        ...(atual.checkout_url && !provedorDaTroca ? { checkout_url: null, checkout_expira_em: null } : {}),
       }
     : { plano_agendado_id: novo.id === atual.plano_id ? null : novo.id, updated_at: agora.toISOString() };
   let pedido = admin.from("cobranca_assinaturas").update(campos).eq("organization_id", orgId).eq("plano_id", atual.plano_id);

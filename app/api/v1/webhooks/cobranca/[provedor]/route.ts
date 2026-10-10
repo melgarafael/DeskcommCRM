@@ -30,6 +30,8 @@ export const dynamic = "force-dynamic";
 
 const LIMITE_DO_CORPO = 1_048_576;
 const RECUSAS_POR_MINUTO = 120;
+/** Avisos VÁLIDOS do Asaas de cliente que não existe aqui, por IP: o teto do token vazado. */
+const DESCONHECIDOS_POR_MINUTO = 120;
 
 type Rota = { params: Promise<{ provedor: string }> };
 
@@ -43,6 +45,11 @@ export async function POST(req: NextRequest, { params }: Rota) {
   if (!(await moduloLigado(admin, "cobranca"))) return naoExiste();
   const segredo = await segredoDoWebhook(provedor);
   if (!segredo) return naoExiste();
+  // Só a Stripe ASSINA (o cabeçalho é assinatura, não credencial). O Asaas manda o
+  // token estático no `asaas-access-token` — a credencial inteira, que nunca é
+  // gravada (spec §2.4). Ler `stripe-signature` de um aviso do Asaas gravaria o
+  // que quem chamou quisesse.
+  const assinatura = provedor === "stripe" ? req.headers.get("stripe-signature") : null;
 
   if (Number(req.headers.get("content-length") ?? "0") > LIMITE_DO_CORPO) {
     return fail("payload_too_large", "Aviso grande demais.", 413, { requestId });
@@ -84,10 +91,6 @@ export async function POST(req: NextRequest, { params }: Rota) {
     return fail("unauthorized", "Assinatura inválida.", 401, { requestId });
   }
 
-  const linha = await gravarPonteiro(admin, provedor, sinal, req.headers.get("stripe-signature"));
-  if (linha === "erro") return fail("internal_error", "Não foi possível registrar o aviso.", 500, { requestId });
-  if (linha.status === "processed") return ok({ duplicado: true }, { requestId });
-
   const agora = new Date().toISOString();
   const { data: dona, error: erroDaDona } = sinal.clienteRef
     ? await admin
@@ -99,6 +102,22 @@ export async function POST(req: NextRequest, { params }: Rota) {
     : { data: null, error: null };
   if (erroDaDona) return fail("internal_error", "Não foi possível identificar a empresa.", 500, { requestId });
   const org = (dona as { organization_id: string } | null)?.organization_id ?? null;
+  if (!org && provedor === "asaas") {
+    // O token do Asaas é estático: vazado, ele assina avisos de clientes que não
+    // existem, e cada um viraria uma linha nova. Acima do balde, 200 SEM gravar:
+    // 429 faria o Asaas interromper a fila, e com ela os avisos verdadeiros; o
+    // que for de verdade, a reconciliação cura. Cliente conhecido nunca entra aqui.
+    // Chave GLOBAL por provedor, não por IP: o IP é o primeiro salto do
+    // x-forwarded-for, que quem tem o token controla — um IP por aviso daria um
+    // balde novo a cada um. O custo: o atacante pode empurrar para fora outros
+    // avisos de cliente DESCONHECIDO, e esses a reconciliação cura.
+    const taxa = await checkRateLimit(`cobranca-webhook-desconhecido:${provedor}`, DESCONHECIDOS_POR_MINUTO, 60);
+    if (!taxa.allowed) return ok({ ignorado: "limite_de_desconhecidos" }, { requestId });
+  }
+
+  const linha = await gravarPonteiro(admin, provedor, sinal, assinatura);
+  if (linha === "erro") return fail("internal_error", "Não foi possível registrar o aviso.", 500, { requestId });
+  if (linha.status === "processed") return ok({ duplicado: true }, { requestId });
   if (!org) {
     await admin
       .from("webhook_events_log")

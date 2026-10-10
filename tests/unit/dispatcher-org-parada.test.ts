@@ -40,6 +40,7 @@ import { followupGatilhoPresencaHandler } from "@/lib/followup/gatilho-presenca.
 import { followupGatilhoRetornoHandler } from "@/lib/followup/gatilho-retorno.handler";
 import { followupReactivityHandler } from "@/lib/followup/reactivity.handler";
 import { avisoDeEtapaHandler } from "@/lib/leads/aviso-de-etapa.handler";
+import { avisoAoDonoDaCarteira } from "@/lib/carteira/aviso-ao-dono";
 import { comandaDoGanhoHandler } from "@/lib/financeiro/comanda-do-ganho.handler";
 import { webPushInboundHandler } from "@/lib/notifications/push.handler";
 import { avisoDePropostaNoWhatsAppHandler } from "@/lib/propostas/aviso-no-whatsapp.handler";
@@ -62,6 +63,9 @@ const RODA: EventHandler[] = [
   lgpdExportHandler,
   lgpdRedactHandler,
   cobrancaSinalHandler,
+  // #2591 — tarefa interna para o dono da carteira: escrita no próprio banco,
+  // sem rede, roda com a organização parada (mesma régua do aviso de etapa).
+  avisoAoDonoDaCarteira,
 ];
 
 const PULA: EventHandler[] = [

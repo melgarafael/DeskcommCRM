@@ -45,9 +45,11 @@ describe("uma chave da instalação mora numa tela só", () => {
     const daCobranca = CATALOGO_DA_INSTALACAO.filter((d) => d.telaDona === "cobranca")
       .map((d) => d.chave)
       .sort();
-    expect(daCobranca).toEqual(["COBRANCA_PROVEDOR", "COBRANCA_TOLERANCIA_DIAS", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"]);
-    // As duas credenciais são segredo: cifradas no banco, a tela vê só os 4 últimos.
-    for (const chave of ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"]) {
+    expect(daCobranca).toEqual([
+      "ASAAS_API_KEY", "ASAAS_WEBHOOK_TOKEN", "COBRANCA_PROVEDOR", "COBRANCA_TOLERANCIA_DIAS", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET",
+    ]);
+    // As quatro credenciais são segredo: cifradas no banco, a tela vê só os 4 últimos.
+    for (const chave of ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "ASAAS_API_KEY", "ASAAS_WEBHOOK_TOKEN"]) {
       expect(acharChave(chave)?.natureza, chave).toBe("segredo");
     }
   });

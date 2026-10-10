@@ -1,0 +1,5 @@
+2026-10-07T16:41:26Z
+https 307 -> https://<ip-da-vps>.sslip.io/app
+http 301 -> https://<ip-da-vps>.sslip.io/
+HTTP/2 307 
+307

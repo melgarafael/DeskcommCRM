@@ -941,6 +941,16 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint da API da Stripe (`lib/cobranca/provedores/stripe.ts`): é por onde o DONO da instalação cobra as empresas dele, com a chave da conta Stripe DELE. É o destino do request; trocar pelo domínio do revendedor faria a cobrança não chegar a lugar nenhum.",
   },
+  "api.asaas.com": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint de PRODUÇÃO da API do Asaas (`lib/cobranca/provedores/asaas.ts`): Pix e boleto recorrentes com que o DONO da instalação cobra as empresas dele, com a chave da conta Asaas DELE. Destino do request, não marca.",
+  },
+  "api-sandbox.asaas.com": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint do SANDBOX do Asaas (`lib/cobranca/provedores/asaas.ts`): a chave `$aact_hmlg_` do dono só funciona aqui, e é com ela que ele testa antes de publicar.",
+  },
   "www.tiendanube.com": {
     categoria: "FORNECEDOR",
     motivo:

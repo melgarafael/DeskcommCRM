@@ -1476,7 +1476,11 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
       .eq("contact_id", contactId)
       .order("created_at", { ascending: false })
       .limit(500);
-    if (error) {
+    // #1907: a comanda é tabela do módulo `financeiro`. Sem ele instalado, `sales`
+    // não existe (42P01 no Postgres, PGRST205 pelo PostgREST) e o bloco sai vazio
+    // sem registrar falha. Instalado, a leitura acontece mesmo com o módulo
+    // suspenso: o titular tem direito ao que já está gravado.
+    if (error && error.code !== "42P01" && error.code !== "PGRST205") {
       logger.warn("[lgpd-export-worker] sales load failed", {
         request_id: requestId,
         error: error.message,

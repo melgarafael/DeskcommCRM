@@ -1,0 +1,9 @@
+coollabsio/coolify:4.3.23
+coollabsio/coolify-helper:1.0.17
+coollabsio/coolify-realtime:1.0.19
+coollabsio/sentinel:1.0.1
+coollabsio/sentinel:1.0.2
+pgvector/pgvector:pg15
+postgres:15-alpine
+redis:7-alpine
+traefik:v3.6

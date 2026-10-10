@@ -1,0 +1,31 @@
+inicio=2026-10-07T17:15:39Z
+▶ Preparando o Supabase self-hosted self-hosted/v0.8.1
+===> Setup starting in /root/pr4/deskcommcrm
+===> This may take several minutes...
+===> Skipping system-package installation (--skip-deps)
+===> Sparse-cloning supabase repo at self-hosted/v0.8.1
+===> Creating project at /root/pr4/deskcommcrm/.runtime/supabase
+===> Non-interactive: using default URLs (edit .env to change)
+===> Setting CERTBOT_EMAIL=admin@example.com
+===> Generating secrets and legacy API keys
+===> Generating asymmetric key pair and opaque API keys
+===> Recorded base version in .supabase-version (ref=self-hosted/v0.8.1)
+===> Pulling Docker images
+▶ Subindo o Supabase local
+▶ Configurando o CRM sem perguntas adicionais
+⚠ sem SUPABASE_ACCESS_TOKEN — não dá para configurar os e-mails de acesso sozinho.
+         ⚠ o separador é & — um ? aqui quebra o link (vira ?type=x?token_hash=y)
+✓ dono criado e promovido a super-admin
+✓ containers no ar
+✓ app no ar e saudável
+  Você deixou a chave da Resend para depois e não preencheu um SMTP. O CRM
+  Para ligar, cadastre em Admin → E-mail o servidor SMTP próprio ou o
+  SMTP do CRM. Depois de salvar na tela, rode:
+Credenciais iniciais (arquivo protegido com permissao 600):
+  usuario: dono-teste@exemplo.com.br
+  arquivo: /root/pr4/deskcommcrm/.runtime/admin-credentials
+A IA inicia desativada; configure um provedor depois em Agente de IA.
+ATENCAO: sem SMTP, 'esqueci a senha' e a confirmacao de cadastro NAO enviam e-mail.
+exit=0
+fim=2026-10-07T17:17:02Z
+linhas_do_log=343

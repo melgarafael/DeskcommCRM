@@ -1,0 +1,20 @@
+# ficha da vps-teste ANTES de qualquer instalação (Task 0.2), extraída de 00-linha-de-base.txt
+# (o 00-* não é versionado: tem hostname, MAC e o sha do authorized_keys)
+2026-10-06T20:26:50Z
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+6.8.0-138-generic
+x86_64
+4
+model name	: AMD EPYC 9J45 128-Core Processor
+kvm
+               total        used        free      shared  buff/cache   available
+Mem:            7940         258        6489           4        1192        7427
+Swap:              0           0           0
+/dev/sda3       196G  4.8G  183G   3% /
+cgroup2fs
+SEM_DOCKER
+ip_forward=0
+iptables=0
+grupo_docker=nenhum
+units_enabled=85
+ipv6_global=0
