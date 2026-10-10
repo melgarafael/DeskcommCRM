@@ -21,6 +21,7 @@ import { MediaUnavailable } from "@/components/inbox/media/MediaUnavailable";
 import { ContactCard } from "@/components/inbox/media/ContactCard";
 import { LocationCard } from "@/components/inbox/media/LocationCard";
 import { localizacaoDaMensagem } from "@/lib/messaging/localizacao";
+import { resolveSharedContact } from "@/lib/messaging/contact-card";
 import {
   extractCitations,
   isAiGeneratedMessage,
@@ -334,6 +335,8 @@ export function MessageBubble({
                 ? t("Esta mensagem foi apagada")
                 : citada.metadata?.crm_hidden_at
                 ? t("Mensagem ocultada no CRM")
+                : citada.type === "contact"
+                ? resolveSharedContact(citada)?.name || t("Contato")
                 : citada.body?.trim() || t("(sem texto)")}
             </div>
           </div>

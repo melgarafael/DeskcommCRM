@@ -348,6 +348,13 @@ describe("pino compartilhado pelo cliente", () => {
   });
 });
 
+it("citação de contato compartilhado mostra o nome em vez do vCard bruto", () => {
+  const vcard = "BEGIN:VCARD\nFN:Rafa Baldin\nTEL;type=CELL:+5511999999999\nEND:VCARD";
+  render(<MessageBubble message={msg({ body: "Resposta" })} citada={msg({ id: "c2", type: "contact", body: vcard })} />);
+  expect(screen.getByText("Rafa Baldin")).toBeInTheDocument();
+  expect(screen.queryByText(/BEGIN:VCARD/)).toBeNull();
+});
+
 /**
  * O remetente de GRUPO, acima do balão recebido.
  *

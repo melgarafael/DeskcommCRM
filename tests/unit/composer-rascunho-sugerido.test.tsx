@@ -27,6 +27,15 @@ vi.mock("@/lib/api/client", () => ({
 import { Composer } from "@/components/inbox/Composer";
 import type { AvisoDeRascunho } from "@/lib/inbox/rascunho-sugerido";
 
+it("prévia de resposta a contato mostra nome sem vCard bruto", () => {
+  renderComposer({ respondendo: {
+    id: "c1", direction: "inbound", type: "contact", metadata: {},
+    body: "BEGIN:VCARD\nFN:Rafa Baldin\nTEL:+5511999999999\nEND:VCARD",
+  } });
+  expect(screen.getByText("Rafa Baldin")).toBeInTheDocument();
+  expect(screen.queryByText(/BEGIN:VCARD/)).toBeNull();
+});
+
 /**
  * O COMPOSER COM RASCUNHO SUGERIDO (issue #1611) — "nada é enviado sem o
  * clique" provado pelo dois lados: o texto JÁ está no campo quando a tela
