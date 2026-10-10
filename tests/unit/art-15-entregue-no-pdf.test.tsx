@@ -10,7 +10,7 @@
  * ─── O que cada caso fecha ──────────────────────────────────────────────────
  *
  * - alíneas preenchidas pelo RESPONSÁVEL (a, c, d) saem de
- *   `organizations.settings.art15`, com "não informado pelo controlador" onde
+ *   `organizations.settings.art15`, com "não informado pelo <papel do país>" (#2344) onde
  *   ele deixou em branco — mentir numa alínea exigida é pior que imprimi-la
  *   vazia;
  * - a alínea f) sai do `autoridadeDeSupervisao` do PERFIL do país (CNPD em
@@ -247,7 +247,15 @@ describe("art. 15.º, n.º 1 — alínea a alínea no PDF", () => {
   it("Portugal: sem o responsável preencher, cada alínea diz que não foi informada", async () => {
     const payload = await coleta("PT");
     const tudo = pdf(payload);
-    expect(tudo.match(/não informado pelo controlador/g), "as 3 alíneas vazias").toHaveLength(3);
+    // O vazio repete o nome que a lei DO PAÍS dá ao papel (#2344): em Portugal
+    // a alínea fala em "responsável pelo tratamento", não no controlador da LGPD.
+    expect(
+      tudo.match(/não informado pelo responsável pelo tratamento/g),
+      "as 3 alíneas vazias",
+    ).toHaveLength(3);
+    expect(tudo, "o vazio de Portugal não usa o vocabulário brasileiro").not.toContain(
+      "não informado pelo controlador",
+    );
     // O vazio não pode virar mentira: nenhuma finalidade inventada.
     expect(tudo).not.toContain("Atendimento ao cliente");
   });

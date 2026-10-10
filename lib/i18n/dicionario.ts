@@ -7196,6 +7196,11 @@ export const DICIONARIO: Traducoes = {
   "O relatório de {lei} entregue ao cliente traz a {campo_alto} da sua empresa, e não o nome aqui de cima — é ela que responde legalmente pelos dados. Confira o campo \"{campo}\" em Configurações → Organização.": {
     es: "El informe de {lei} que se entrega al cliente incluye la {campo_alto} de tu empresa, no el nombre de arriba, porque es ella quien responde legalmente por los datos. Revisa el campo \"{campo}\" en Configuración → Organización.",
   },
+  // País sem citação revisada não cita lei nenhuma (issue #2344): o `??
+  // "LGPD"` do call site afirmava a lei brasileira a quem nem tem perfil.
+  "O relatório entregue ao cliente traz a {campo_alto} da sua empresa, e não o nome aqui de cima — é ela que responde legalmente pelos dados. Confira o campo \"{campo}\" em Configurações → Organização.": {
+    es: "El informe entregado al cliente muestra la {campo_alto} de tu empresa, no el nombre de arriba, porque es ella quien responde legalmente por los datos. Revisa el campo \"{campo}\" en Configuración → Organización.",
+  },
   "Use a ação \"Webhooks\" → POST, apontando para o endereço acima.": {
     es: "Usa la acción \"Webhooks\" → POST y apunta a la dirección de arriba.",
   },
@@ -8612,9 +8617,18 @@ export const DICIONARIO: Traducoes = {
   "Como esta instalação do": { es: "Cómo esta instalación de" },
   "trata dados pessoais.": { es: "trata los datos personales." },
   "1. Quem é o controlador": { es: "1. Quién es el responsable" },
+  // Vocabulário do RGPD em pt-PT para a política de uma organização de
+  // Portugal (issue #2344): "responsável pelo tratamento" (art. 4.º, n.º 7).
+  "1. Quem é o responsável pelo tratamento": { es: "1. Quién es el responsable del tratamiento" },
   "O controlador dos dados tratados aqui é": { es: "El responsable de los datos tratados aquí es" },
+  "O responsável pelo tratamento dos dados tratados aqui é": {
+    es: "El responsable del tratamiento de los datos tratados aquí es",
+  },
   "quem instalou e opera este sistema. Os autores do software não têm acesso a este servidor nem aos dados guardados nele, e não são controladores nem operadores desses dados.": {
     es: "quien instaló y opera este sistema. Los autores del software no tienen acceso a este servidor ni a los datos guardados en él, y no son responsables ni encargados de esos datos.",
+  },
+  "quem instalou e opera este sistema. Os autores do software não têm acesso a este servidor nem aos dados guardados nele, e não são responsáveis pelo tratamento nem operadores desses dados.": {
+    es: "quien instaló y opera este sistema. Los autores del software no tienen acceso a este servidor ni a los datos guardados en él, y no son responsables del tratamiento ni encargados de esos datos.",
   },
   "2. Que dados são tratados": { es: "2. Qué datos se tratan" },
   "De quem é atendido:": { es: "De quien recibe atención:" },
@@ -8659,6 +8673,9 @@ export const DICIONARIO: Traducoes = {
   "A LGPD garante a você confirmar se há tratamento, acessar seus dados, corrigir dados incompletos ou desatualizados, pedir anonimização ou eliminação, saber com quem foram compartilhados e revogar consentimento.": {
     es: "La LGPD te da derecho a confirmar si se tratan tus datos, acceder a ellos, corregir datos incompletos o desactualizados, pedir su anonimización o eliminación, saber con quién se compartieron y revocar tu consentimiento.",
   },
+  "O RGPD garante-lhe confirmar se há tratamento, aceder aos seus dados, corrigir dados incompletos ou desatualizados, pedir anonimização ou eliminação, saber com quem foram partilhados e retirar o consentimento.": {
+    es: "El RGPD le garantiza confirmar si hay tratamiento, acceder a sus datos, corregir datos incompletos o desactualizados, pedir su anonimización o eliminación, saber con quién fueron compartidos y retirar el consentimiento.",
+  },
   "O sistema atende esses pedidos por um fluxo próprio: a exportação reúne o que existe sobre a pessoa, e a anonimização remove a identificação preservando o histórico de atendimento — por isso ela": {
     es: "El sistema atiende estas solicitudes con un flujo propio: la exportación reúne lo que existe sobre la persona, y la anonimización elimina su identificación y conserva el historial de atención; por eso",
   },
@@ -8668,11 +8685,18 @@ export const DICIONARIO: Traducoes = {
     es: "El acceso se controla con cuenta, contraseña y rol. La verificación en dos pasos es opcional para todos y solo se puede exigir a quien administra. Cada organización alojada solo ve sus propios datos y las claves de integración se guardan cifradas.",
   },
   "8. Encarregado e contato": { es: "8. Encargado y contacto" },
+  "8. Encarregado da proteção de dados e contato": { es: "8. Encargado de protección de datos y contacto" },
   "Para exercer seus direitos ou tirar dúvidas sobre privacidade, fale com o encarregado de dados:": {
     es: "Para ejercer tus derechos o resolver dudas sobre privacidad, habla con el encargado de datos:",
   },
+  "Para exercer seus direitos ou tirar dúvidas sobre privacidade, fale com o encarregado da proteção de dados:": {
+    es: "Para ejercer sus derechos o resolver dudas sobre privacidad, hable con el encargado de protección de datos:",
+  },
   "O operador ainda não publicou um endereço de contato do encarregado de dados nesta instalação. Os pedidos devem ser feitos pelos canais de atendimento da própria organização.": {
-    es: "El operador todavía no publicó una dirección de contacto del encargado de datos en esta instalación. Las solicitudes deben hacerse por los canales de atención de la propia organización.",
+    es: "El operador todavía no publicó una dirección de contacto del encargado de datos en esta instalación. Las solicitudes deben hacerse por los canais de atención de la propia organización.",
+  },
+  "O operador ainda não publicou um endereço de contato do encarregado da proteção de dados nesta instalação. Os pedidos devem ser feitos pelos canais de atendimento da própria organização.": {
+    es: "El operador todavía no publicó una dirección de contacto del encargado de protección de datos en esta instalación. Las solicitudes deben hacerse por los canais de atención de la propia organización.",
   },
 
   "As regras de uso desta instalação do": { es: "Las reglas de uso de esta instalación de" },

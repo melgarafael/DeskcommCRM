@@ -41,8 +41,45 @@ import {
   DIREITOS_DA_ALINEA_E,
   NAO_INFORMADO_PELO_CONTROLADOR,
 } from "@/lib/legal/art15";
+import { PAIS_PADRAO, PERFIS_DO_PAIS } from "@/lib/legal/perfil-do-pais";
 
 import type { ExportPayload } from "./export-collector";
+
+/**
+ * O vocabulário legal do PAÍS que o produto chama de padrão (issue #2344).
+ *
+ * O payload que este renderizador desenha não traz o código do país: o Brasil
+ * é quem não declara nada (`foraDoBrasil`), e é o perfil dele que decide o
+ * rótulo de quem responde pelos dados e o da citação. Quem DESenha sem perfil
+ * — payload de teste, país sem registro — cai no mesmo padrão, que é o
+ * vocabulário brasileiro de sempre ("Controlador", "Encarregado (DPO)").
+ */
+const PADRAO = PERFIS_DO_PAIS[PAIS_PADRAO]!;
+
+/** O papel do responsável pelos dados: o do payload, ou o do perfil padrão. */
+function papelControlador(data: ExportPayload): string {
+  return data.papel_controlador ?? PADRAO.papel.controlador;
+}
+
+/** O papel de quem recebe os pedidos do titular: o do payload, ou o padrão. */
+function papelEncarregado(data: ExportPayload): string {
+  return data.papel_encarregado ?? PADRAO.papel.encarregado;
+}
+
+/**
+ * O que a alínea do art. 15.º em branco diz, no vocabulário do país.
+ *
+ * A constante de `lib/legal/art15.ts` é o texto brasileiro de sempre, e o
+ * Brasil é o perfil padrão: no papel dele o texto continua byte a byte o mesmo.
+ * Fora dele a frase repete o nome que a lei do país dá ao papel — em Portugal
+ * a seção do art. 15.º falava em "controlador", palavra que o RGPD pt-PT não
+ * usa (issue #2344).
+ */
+function naoInformado(data: ExportPayload): string {
+  const papel = papelControlador(data);
+  if (papel === PADRAO.papel.controlador) return NAO_INFORMADO_PELO_CONTROLADOR;
+  return `não informado pelo ${papel.toLocaleLowerCase("pt-BR")}`;
+}
 
 const styles = StyleSheet.create({
   page: {
@@ -203,7 +240,7 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
             {/* A lei vem do PERFIL do país da organização (issue #1033): país
                 sem citação revisada não cita lei nenhuma — citar a errada é
                 pior do que não citar artigo nenhum. */}
-            {`${data.lei_rotulo ?? "Base legal"}: `}{data.lei_citada ?? "não declarada (país sem citação revisada)"} ·
+            {`${data.lei_rotulo ?? PADRAO.lei?.rotuloNoDocumento ?? "Base legal"}: `}{data.lei_citada ?? "não declarada (país sem citação revisada)"} ·
             Solicitação #{shortId}
           </Text>
         </View>
@@ -254,19 +291,19 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
             <View style={styles.row}>
               <Text style={styles.label}>a) Finalidades:</Text>
               <Text style={styles.value}>
-                {data.art15.finalidades ?? NAO_INFORMADO_PELO_CONTROLADOR}
+                {data.art15.finalidades ?? naoInformado(data)}
               </Text>
             </View>
             <View style={styles.row}>
               <Text style={styles.label}>c) Destinatários:</Text>
               <Text style={styles.value}>
-                {data.art15.destinatarios ?? NAO_INFORMADO_PELO_CONTROLADOR}
+                {data.art15.destinatarios ?? naoInformado(data)}
               </Text>
             </View>
             <View style={styles.row}>
               <Text style={styles.label}>d) Conservação:</Text>
               <Text style={styles.value}>
-                {data.art15.prazo_conservacao ?? NAO_INFORMADO_PELO_CONTROLADOR}
+                {data.art15.prazo_conservacao ?? naoInformado(data)}
               </Text>
             </View>
             <View style={styles.itemBlock}>
@@ -624,12 +661,15 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
         ) : null}
 
         {/* Footer */}
-        {/* CONTROLADOR, nunca marca — ver o cabeçalho deste arquivo. */}
+        {/* O PAPEL do responsável pelos dados, nunca marca — e o nome do papel
+            é do PAÍS da organização (issue #2344): no RGPD em pt-PT os dois
+            são "responsável pelo tratamento" e "encarregado da proteção de
+            dados". Ver o cabeçalho deste arquivo sobre a marca. */}
         <View style={styles.footer} fixed>
           <Text>
-            Controlador: {data.organization_legal_name || "—"} · Relatório de Acesso aos
-            Dados{data.lei_citada ? ` — ${data.lei_citada}` : ""} · Encarregado (DPO):{" "}
-            {encarregado(data)} · Validade do link de download conforme e-mail recebido
+            {`${papelControlador(data)}: ${data.organization_legal_name || "—"} · Relatório de Acesso aos Dados${
+              data.lei_citada ? ` — ${data.lei_citada}` : ""
+            } · ${papelEncarregado(data)}: ${encarregado(data)} · Validade do link de download conforme e-mail recebido`}
           </Text>
         </View>
       </Page>
