@@ -28,6 +28,22 @@
  * `force_human` continua **irrevogável pelo agente** (a regra dura do harness):
  * quem chama isto decide devolver, e a tool que expõe esta função ao modelo é
  * marcada como capacidade de risco crítico — não entra ligada por pacote.
+ *
+ * ─── A trava PERMANENTE (issue 2379) ────────────────────────────────────────
+ *
+ * Existe uma segunda marca no contato, `contacts.ai_opt_out` (migration 0624):
+ * "sempre atendimento humano". Ela é separada de `force_human` de propósito —
+ * `force_human` nasce da escalação e morre aqui, e misturar os dois faria toda
+ * escalação automática virar permanente.
+ *
+ * `ai_opt_out` é o pred que este arquivo consulta PRIMEIRO, antes de qualquer
+ * escrita. Com ela ligada, devolver o comando é exatamente o gesto que a
+ * operação pediu para não acontecer: a conversa ficaria com a IA de novo sem
+ * ninguém decidir. Então a função recusa (`erro: "contato_sempre_humano"`) e o
+ * estado volta intacto — silêncio, dono, `force_human` e autorização.
+ *
+ * Os dois caminhos passam por aqui: o botão da tela/tool e o cron
+ * `handoff-devolucao` (chama esta MESMA função com `origem.automatica`).
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -54,7 +70,21 @@ export type RetomadaFalha =
   /** Alguém assumiu a conversa entre a leitura e a escrita. */
   | "assignment_conflict"
   /** O sinal de retomada do follow-up não foi emitido — ver comentário abaixo. */
-  | "resume_signal_failed";
+  | "resume_signal_failed"
+  /**
+   * Contato marcado "sempre atendimento humano" (`contacts.ai_opt_out`,
+   * migration 0624 / issue 2379). NÃO é falha técnica e NÃO é corrida: é o
+   * estado que a operação pediu, então o chamador loga como recusa esperada
+   * (cron `handoff-devolucao`) em vez de como erro.
+   */
+  | "contato_sempre_humano"
+  /**
+   * A leitura da marca permanente falhou. Fail-closed: sem ler `ai_opt_out` não
+   * dá para provar que a devolução é segura, então nada é escrito — mesmo
+   * custo de um defeito de banco, e nunca o de devolver um contato que pediu
+   * para ficar com humano.
+   */
+  | "contact_state_unreadable";
 
 /**
  * De onde veio a devolução. Ausente = alguém clicou (tela ou tool do agente).
@@ -102,6 +132,33 @@ export async function devolverAtendimentoAoAgente(
   if (convErr) return { ok: false, erro: "conversation_not_found", detalhe: convErr.message };
   if (!convData) return { ok: false, erro: "conversation_not_found" };
   const conv = convData as unknown as ConversaRow;
+
+  // (0) A TRAVA PERMANENTE (issue 2379) — ANTES de ler continuidade e, sobretudo,
+  // antes de escrever qualquer coisa. `contacts.ai_opt_out` diz que este contato
+  // é de atendimento humano para sempre, e a devolução é justamente o caminho
+  // que antigamente desfazia a marca sem ninguém decidir (o cron automático
+  // chama esta MESMA função). Nada aqui mexe em silêncio, dono, `force_human` nem
+  // autorização: o estado volta intacto e quem chamou decide o que fazer com a
+  // recusa. Fail-closed na leitura: erro de banco não pode virar devolução.
+  if (conv.contact_id !== null) {
+    const { data: contatoData, error: contatoLeituraErr } = await supabase
+      .from("contacts")
+      .select("ai_opt_out")
+      .eq("id", conv.contact_id)
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+    if (contatoLeituraErr) {
+      return { ok: false, erro: "contact_state_unreadable", detalhe: contatoLeituraErr.message };
+    }
+    if ((contatoData as { ai_opt_out?: boolean } | null)?.ai_opt_out === true) {
+      logger.info("[escalacao.retomada] devolução recusada: contato é sempre atendimento humano", {
+        conversation_id: input.conversationId,
+        contact_id: conv.contact_id,
+        origem: input.origem ? "automatica" : "manual",
+      });
+      return { ok: false, erro: "contato_sempre_humano" };
+    }
+  }
 
   const jaEstavaComOAgente =
     conv.assigned_to_user_id === null &&

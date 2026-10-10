@@ -370,6 +370,8 @@ type ContactEmbed =
       ai_authorized_at: string | null;
       phone_number: string | null;
       force_human: boolean | null;
+      /** A marca permanente "sempre atendimento humano" (issue 2379). */
+      ai_opt_out: boolean | null;
     }
   | null;
 
@@ -439,7 +441,7 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
       const { data, error } = await admin
         .from("conversations")
         .select(
-          "id, service_revision, current_demanda_id, demandas!conversations_current_demanda_id_fkey(revision,fechada_em), status, assignee_kind, bot_silenced_until, messages!messages_conversation_id_fkey(organization_id,contact_id,conversation_id,service_revision,demanda_id,demanda_revision,sent_at), contact_id, last_inbound_at, contacts:contact_id(tags, is_blocked, ai_authorized_at, phone_number, force_human), sessao:channel_session_id(metadata), organizations:organization_id(status)",
+          "id, service_revision, current_demanda_id, demandas!conversations_current_demanda_id_fkey(revision,fechada_em), status, assignee_kind, bot_silenced_until, messages!messages_conversation_id_fkey(organization_id,contact_id,conversation_id,service_revision,demanda_id,demanda_revision,sent_at), contact_id, last_inbound_at, contacts:contact_id(tags, is_blocked, ai_authorized_at, phone_number, force_human, ai_opt_out), sessao:channel_session_id(metadata), organizations:organization_id(status)",
         )
         .eq("organization_id", orgId).eq("demandas.organization_id", orgId)
         .eq("contacts.organization_id", orgId).eq("sessao.organization_id", orgId)
@@ -498,6 +500,10 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
               aiTestPhoneNumbers: metadata.ai_test_phone_numbers,
               contactPhoneNumber: row.contacts?.phone_number ?? null,
               forceHuman: false,
+              // A marca PERMANENTE (issue 2379) entra na MESMA decisão: este sweep
+              // retoma follow-up de contato em silêncio, e retomar um contato que
+              // pediu para ficar com humano é reabrir o atendimento da IA por relógio.
+              aiOptOut: row.contacts?.ai_opt_out ?? false,
               assigneeKind: null,
               botSilencedUntil: null,
               aiAuthorizedAt: row.contacts?.ai_authorized_at ?? null,
@@ -515,6 +521,7 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
             pessoaNoComando:
               row.assignee_kind === "user" ||
               row.contacts?.force_human === true ||
+              row.contacts?.ai_opt_out === true ||
               (row.bot_silenced_until != null && Date.parse(row.bot_silenced_until) > agora.getTime()),
           });
         }

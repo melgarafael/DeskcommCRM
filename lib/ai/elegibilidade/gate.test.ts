@@ -17,6 +17,7 @@ const base: EstadoDeElegibilidade = {
   canalDesativado: false,
   modo: "open",
   forceHuman: false,
+  aiOptOut: false,
   botSilencedUntil: null,
   assigneeKind: "ai",
   aiAuthorizedAt: null,
@@ -231,6 +232,7 @@ describe("montarEstadoDeElegibilidade — a org viaja", () => {
     const e = montarEstadoDeElegibilidade({
       aiGate: null,
       forceHuman: false,
+      aiOptOut: false,
       assigneeKind: null,
       botSilencedUntil: null,
       aiAuthorizedAt: null,
@@ -246,6 +248,7 @@ describe("montarEstadoDeElegibilidade — a org viaja", () => {
     const e = montarEstadoDeElegibilidade({
       aiGate: "open",
       forceHuman: false,
+      aiOptOut: false,
       assigneeKind: null,
       botSilencedUntil: null,
       aiAuthorizedAt: null,
@@ -262,6 +265,7 @@ describe("montarEstadoDeElegibilidade — a org viaja", () => {
       const e = montarEstadoDeElegibilidade({
         aiGate: "open",
         forceHuman: false,
+        aiOptOut: false,
         assigneeKind: null,
         botSilencedUntil: null,
         aiAuthorizedAt: null,
@@ -275,6 +279,7 @@ describe("montarEstadoDeElegibilidade — a org viaja", () => {
     const ligado = montarEstadoDeElegibilidade({
       aiGate: "open",
       forceHuman: false,
+      aiOptOut: false,
       assigneeKind: null,
       botSilencedUntil: null,
       aiAuthorizedAt: null,

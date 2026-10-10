@@ -42,6 +42,14 @@ interface Captura {
 interface CenarioBanco {
   /** null = conversa não encontrada / de outra org. */
   conversa: Record<string, unknown> | null;
+  /**
+   * A linha de `contacts` que a retomada lê antes de escrever — é ali que mora
+   * `ai_opt_out`, a marca permanente "sempre atendimento humano" (issue 2379).
+   * Ausente = contato sem a marca (o caso que já funcionava).
+   */
+  contato?: Record<string, unknown> | null;
+  /** Falha na LEITURA do contato — a retomada tem de recusar sem escrever nada. */
+  erroAoLerContato?: { message: string } | null;
   /** 0 linhas no UPDATE da conversa = alguém assumiu na corrida. */
   updateDaConversaCasa?: boolean;
   chamados?: Array<Record<string, unknown>>;
@@ -86,6 +94,12 @@ function fazerSupabase(cenario: CenarioBanco, cap: Captura) {
         }
         if (tabela === "conversations") {
           return Promise.resolve({ data: cenario.conversa, error: null });
+        }
+        if (tabela === "contacts") {
+          return Promise.resolve({
+            data: cenario.contato ?? null,
+            error: cenario.erroAoLerContato ?? null,
+          });
         }
         if (tabela === "lead_checkpoints") {
           return Promise.resolve({ data: cenario.checkpointAnterior ?? null, error: null });
@@ -464,5 +478,77 @@ describe("devolver o atendimento ao agente", () => {
     );
     const naConversa = cap.updates.find((u) => u.tabela === "conversations");
     expect(naConversa?.valores.status).toBe("closed");
+  });
+
+  // ─── A TRAVA PERMANENTE "SEMPRE ATENDIMENTO HUMANO" (issue 2379) ──────────
+  //
+  // O defeito que estes casos prendem: a devolução — CLICADA ou AUTOMÁTICA —
+  // limpava `contacts.force_human` e trazia a conversa de volta para a IA de um
+  // contato que a operação marcou para ficar com humano para sempre. A marca é
+  // `contacts.ai_opt_out` (migration 0624), separada da trava de handoff, e é
+  // lida ANTES de qualquer escrita: com ela ligada, a função recusa e o estado
+  // volta intacto.
+  //
+  // Escritos por EFEITO OBSERVÁVEL, pelo mesmo motivo do resto do arquivo: um
+  // caso que só pedisse "recusou" continuaria verde se alguém recusasse DEPOIS
+  // de já ter limpado a trava — que é exatamente o formato do defeito original.
+
+  it("contato com a trava permanente NÃO é devolvido à IA: recusa sem tocar em nada", async () => {
+    const cap = novaCaptura();
+    const res = await retomar(
+      cenarioComAtendimentoHumano({ contato: { id: CONTATO, ai_opt_out: true } }),
+      cap,
+    );
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.erro).toBe("contato_sempre_humano");
+    // NADA escrito: nem a conversa (que voltaria para a IA), nem o contato (que
+    // perderia force_human), nem a autorização do allowlist.
+    expect(cap.updates, "escreveu estado com a trava ligada").toEqual([]);
+    expect(cap.inserts).toEqual([]);
+    expect(cap.rpc.map((c) => c.fn), "emitiu sinal de retomada").toEqual([]);
+  });
+
+  it("devolução AUTOMÁTICA (cron) respeita a MESMA trava — é o caminho que a issue mediu", async () => {
+    const cap = novaCaptura();
+    const cron: Actor = { type: "webhook_source", id: "cron:handoff-devolucao" };
+    const res = await retomar(
+      cenarioComAtendimentoHumano({ contato: { id: CONTATO, ai_opt_out: true } }),
+      cap,
+      cron,
+      { automatica: { minutos: 60 } },
+    );
+
+    // O cron chama a MESMA função — o conserto é um só para os dois caminhos.
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.erro).toBe("contato_sempre_humano");
+    expect(cap.updates).toEqual([]);
+    expect(cap.rpc).toEqual([]);
+  });
+
+  it("contato SEM a trava permanente continua sendo devolvido — o controle do mesmo cenário", async () => {
+    const cap = novaCaptura();
+    const res = await retomar(
+      cenarioComAtendimentoHumano({ contato: { id: CONTATO, ai_opt_out: false } }),
+      cap,
+    );
+
+    expect(res.ok).toBe(true);
+    expect(cap.updates.filter((u) => u.tabela === "contacts")).toContainEqual({
+      tabela: "contacts",
+      valores: { force_human: false },
+    });
+  });
+
+  it("leitura do contato falhando: fail-closed — recusa sem escrever nada", async () => {
+    const cap = novaCaptura();
+    const res = await retomar(
+      cenarioComAtendimentoHumano({ erroAoLerContato: { message: "conexao caiu" } }),
+      cap,
+    );
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.erro).toBe("contact_state_unreadable");
+    expect(cap.updates).toEqual([]);
   });
 });

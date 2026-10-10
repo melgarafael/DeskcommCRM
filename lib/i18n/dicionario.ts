@@ -10170,6 +10170,14 @@ export const DICIONARIO: Traducoes = {
   // Contato pessoal (spec 21): botão no cabeçalho da conversa e na ficha,
   // selo na lista e filtro "Pessoais".
   "Marcar como pessoal": { es: "Marcar como personal" },
+  // Issue 2379 — a marca PERMANENTE "sempre atendimento humano".
+  "Sempre atendimento humano": { es: "Siempre atendimento humano" },
+  "Marcar como sempre humano": { es: "Marcar como siempre atendimento humano" },
+  "Marcar este contato como sempre humano?": { es: "¿Marcar este contacto como siempre atendimento humano?" },
+  "A IA deixa de responder este contato para sempre: a devolução automática e o botão de devolver ao automático passam a recusar, e a marca só sai por aqui. A conversa atual continua com a equipe.": { es: "La IA deja de responder a este contacto para siempre: la devolución automática y el botón de devolver al automático pasan a rechazar, y la marca solo se quita desde aquí. La conversa actual sigue con el equipo." },
+  "Remover marca de humano": { es: "Quitar marca de humano" },
+  "Removendo...": { es: "Quitando..." },
+  "Não foi possível alterar a marca de atendimento humano.": { es: "No fue posible cambiar la marca de atendimento humano." },
   "Desmarcar pessoal": { es: "Desmarcar personal" },
   "Desmarcando...": { es: "Desmarcando..." },
   "Marcar este contato como pessoal?": { es: "¿Marcar este contacto como personal?" },

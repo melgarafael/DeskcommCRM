@@ -1519,7 +1519,12 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
 
 /**
  * STOP direto da fonte (pós-fusão, mesmo banco): `contacts.is_blocked` OR
- * `contacts.force_human`, lidos sob o lock — não existe mais cache no harness.
+ * `contacts.force_human` OR `contacts.is_personal` OR `contacts.ai_opt_out`,
+ * lidos sob o lock — não existe mais cache no harness.
+ *
+ * `ai_opt_out` é a marca PERMANENTE "sempre atendimento humano" (issue 2379):
+ * `force_human` é a trava de handoff, que a devolução limpa; esta é a que ela
+ * não alcança, e por isso as duas estão no mesmo predicado.
  */
 /**
  * O canal desta sessão, do banco (migration 0087) — nunca suposto.
@@ -1559,7 +1564,11 @@ async function readStopFlags(
   const { rows } = await db.query<{ stopped: boolean }>(
     humanMeetingCommand
       ? 'select (is_blocked or is_personal) as stopped from contacts where organization_id = $1 and id = $2'
-      : 'select (is_blocked or force_human or is_personal) as stopped from contacts where organization_id = $1 and id = $2',
+      // `ai_opt_out` (issue 2379): a marca permanente "sempre atendimento
+      // humano" entra no MESMO stop, e não numa nova consulta — o custo é
+      // nulo e a garantia é que nenhum escritor futuro de `force_human` consegue
+      // devolver a IA para um contato que a operação trancou.
+      : 'select (is_blocked or force_human or is_personal or ai_opt_out) as stopped from contacts where organization_id = $1 and id = $2',
     [organizationId, contactId],
   );
   return rows[0]?.stopped === true;
