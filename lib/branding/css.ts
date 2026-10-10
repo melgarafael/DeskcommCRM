@@ -110,7 +110,18 @@ function declaracoesDoTema(cor: CorResolvida, tema: "claro" | "escuro"): Declara
   const derivada = cor.derivada;
   if (!derivada) return saida;
 
-  const t = tema === "claro" ? derivada.claro : derivada.escuro;
+  // ── A segunda semente (#2482) ─────────────────────────────────────────────
+  //
+  // Só o ESCURO troca de fonte: com `corEscura` preenchida, o bloco
+  // `[data-theme="dark"]` deriva da segunda semente pela MESMA `derivarMarca`
+  // — mesmos pisos de contraste, mesmo deslocamento de rampa —, e o claro
+  // segue na primeira. Sem a chave, `fonte` é a própria `derivada`, que é o
+  // caminho de antes: a ausência é o caso normal, não um ramo especial.
+  //
+  // `--color-brand` continua sendo a semente PRINCIPAL nos DOIS blocos: ele é
+  // declarado acima, antes deste ponto, e é o que e-mail e logo leem.
+  const fonte = tema === "escuro" && cor.corEscura ? cor.corEscura.derivada : derivada;
+  const t = tema === "claro" ? fonte.claro : fonte.escuro;
 
   // Os 11 stops saem JÁ DESLOCADOS, e por isso podem diferir entre os dois
   // blocos. Os rótulos vêm de `GRAUS` (rampa.ts) e não de uma lista repetida
@@ -152,7 +163,7 @@ function declaracoesDoTema(cor: CorResolvida, tema: "claro" | "escuro"): Declara
   // sempre significou. Com d=0 — a Sage e toda marca que já cabe — a saída é
   // idêntica à de antes, byte a byte.
   for (const [i, grau] of GRAUS.entries()) {
-    saida.push([`--color-accent-${grau}`, stop(derivada.rampa, i + t.deslocamento)]);
+    saida.push([`--color-accent-${grau}`, stop(fonte.rampa, i + t.deslocamento)]);
   }
 
   saida.push(

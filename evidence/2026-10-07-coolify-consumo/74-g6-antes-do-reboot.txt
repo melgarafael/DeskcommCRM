@@ -1,0 +1,6 @@
+Created symlink /etc/systemd/system/multi-user.target.wants/deskcomm-fecha-painel.service → /etc/systemd/system/deskcomm-fecha-painel.service.
+ipv4=3 ipv6=3 ativo=active
+-- antes do reboot
+conteineres=23
+coolify coolify-db coolify-proxy coolify-realtime coolify-redis coolify-sentinel deskcommcrm-app-1 deskcommcrm-redis-1 deskcommcrm-scheduler-1 deskcommcrm-srh-1 deskcommcrm-supabase-api-gw-1 deskcommcrm-supabase-auth-1 deskcommcrm-supabase-db-1 deskcommcrm-supabase-functions-1 deskcommcrm-supabase-imgproxy-1 deskcommcrm-supabase-meta-1 deskcommcrm-supabase-realtime-1 deskcommcrm-supabase-rest-1 deskcommcrm-supabase-storage-1 deskcommcrm-supabase-studio-1 deskcommcrm-supabase-supavisor-1 deskcommcrm-waha-1 deskcommcrm-worker-1 
+2026-09-30 14:25:05

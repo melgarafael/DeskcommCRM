@@ -34,6 +34,8 @@ export interface MarcaGravada {
    */
   readonly logo_path: string | null;
   readonly accent_hex: string | null;
+  /** A cor do TEMA ESCURO (#2482) — o par; `null` = só a cor acima pinta. */
+  readonly accent_dark_hex: string | null;
   readonly show_powered_by: boolean;
 }
 
@@ -86,11 +88,14 @@ export function FormularioDaMarca({
   const router = useRouter();
   const [nome, setNome] = useState(gravada.app_name ?? "");
   const [hex, setHex] = useState(gravada.accent_hex ?? "");
+  const [hexEscuro, setHexEscuro] = useState(gravada.accent_dark_hex ?? "");
   const [erroTecnico, setErroTecnico] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const hexLimpo = hex.trim();
   const hexValido = hexLimpo.length === 0 || ehHexValido(hexLimpo);
+  const hexEscuroLimpo = hexEscuro.trim();
+  const hexEscuroValido = hexEscuroLimpo.length === 0 || ehHexValido(hexEscuroLimpo);
 
   /**
    * A resolução AO VIVO, pelo mesmo caminho que o servidor usa no render.
@@ -107,10 +112,19 @@ export function FormularioDaMarca({
   const resolvida = useMemo(
     () =>
       resolverMarca(
-        [{ origem: "tela", cor: hexLimpo.length > 0 ? envelopeDeSemente(hexLimpo) : undefined }],
+        [
+          {
+            origem: "tela",
+            cor: hexLimpo.length > 0 ? envelopeDeSemente(hexLimpo) : undefined,
+            // O par (#2482): a segunda semente entra pelo MESMO envelope e a
+            // mesma validação — o preview mostra o que o servidor vai emitir.
+            corEscura:
+              hexEscuroLimpo.length > 0 ? envelopeDeSemente(hexEscuroLimpo) : undefined,
+          },
+        ],
         REGUA_DO_PRODUTO,
       ),
-    [hexLimpo],
+    [hexLimpo, hexEscuroLimpo],
   );
 
   // A mesma serialização que decide se a cor chega ao `<style>` da página —
@@ -119,6 +133,11 @@ export function FormularioDaMarca({
   const serializacao = useMemo(() => cssDaMarca(resolvida.cor), [resolvida.cor]);
 
   const derivada = resolvida.cor?.derivada ?? null;
+  /**
+   * A derivação do TEMA ESCURO (#2482): com a segunda cor, é OUTRA — e a
+   * prévia tem de marcar o tom que o escuro vai usar, não o da primeira.
+   */
+  const derivadaEscura = resolvida.cor?.corEscura?.derivada ?? derivada;
 
   /**
    * Em que degrau da escada cada papel pousou.
@@ -129,16 +148,18 @@ export function FormularioDaMarca({
    * tira tem de marcar o degrau que de fato pinta, não um que não existe.
    */
   const degraus = useMemo(() => {
-    if (!derivada) return null;
+    // Os DOIS têm de ser não-nulos: `derivadaEscura` é `?? derivada`, então a
+    // guarda de cima estreita a variável errada e o TS não infere o par.
+    if (!derivada || !derivadaEscura) return null;
     const preso = (indice: number) => Math.max(0, Math.min(10, indice));
     return {
       // A cor da pessoa só ocupa um degrau quando a escada foi gerada a partir
       // dela. Marca neutra usa a escada do produto, e ali ela não está.
       suaCor: derivada.origemDaRampa === "semente" ? K : null,
       claro: preso(REGUA_DO_PRODUTO.claro.indices.accent + derivada.claro.deslocamento),
-      escuro: preso(REGUA_DO_PRODUTO.escuro.indices.accent + derivada.escuro.deslocamento),
+      escuro: preso(REGUA_DO_PRODUTO.escuro.indices.accent + derivadaEscura.escuro.deslocamento),
     };
-  }, [derivada]);
+  }, [derivada, derivadaEscura]);
 
   // A distância é medida a partir da COR DA PESSOA, que é a referência de quem
   // lê — e não a partir do tom padrão de cada modo, que é a referência do motor.
@@ -155,7 +176,7 @@ export function FormularioDaMarca({
   );
 
   const legenda = useMemo<ItemDaLegenda[]>(() => {
-    if (!derivada || !degraus) return [];
+    if (!derivada || !derivadaEscura || !degraus) return [];
     return [
       {
         rotulo: t("Sua cor"),
@@ -164,9 +185,14 @@ export function FormularioDaMarca({
         nota: degraus.suaCor === null ? t("fora da escala — fica só no logo") : undefined,
       },
       { rotulo: t("Botões no modo claro"), hex: derivada.claro.accent, indice: degraus.claro },
-      { rotulo: t("Botões no modo escuro"), hex: derivada.escuro.accent, indice: degraus.escuro },
+      {
+        rotulo: t("Botões no modo escuro"),
+        // #2482: o escuro deriva da SEGUNDA semente quando ela existe.
+        hex: derivadaEscura.escuro.accent,
+        indice: degraus.escuro,
+      },
     ];
-  }, [derivada, degraus, t]);
+  }, [derivada, derivadaEscura, degraus, t]);
 
   function handleSubmit(evento: React.FormEvent) {
     evento.preventDefault();
@@ -182,6 +208,9 @@ export function FormularioDaMarca({
       // apagá-lo.
       logo_url: gravada.logo_url,
       accent_hex: hexLimpo || null,
+      // O par da cor (#2482): vazio vira `null`, que é "apague" — os dois
+      // temas voltam a derivar da cor principal.
+      accent_dark_hex: hexEscuroLimpo || null,
       // `logo_path` NÃO entra aqui, e a ausência é a decisão: quem grava o
       // arquivo é `/api/v1/marca/logo`, e o `upsert` desta action não inclui a
       // coluna — então salvar o nome não pode apagar o logo. (Na camada da
@@ -309,6 +338,58 @@ export function FormularioDaMarca({
           </p>
         </div>
 
+        {/*
+          O PAR da cor (#2482), do mesmo jeito que o logo já era par aqui em
+          cima. O mesmo controle, a mesma validação, a mesma serialização — o
+          que muda é só para qual tema a semente vale.
+        */}
+        <div className="space-y-2">
+          <Label htmlFor="accent_dark_hex">
+            {t("Cor da marca no tema escuro (opcional)")}
+          </Label>
+          <div className="flex items-center gap-3">
+            <label
+              className="relative h-10 w-10 shrink-0 cursor-pointer overflow-hidden rounded-sm border border-border"
+              style={{
+                backgroundColor: ehHexValido(hexEscuroLimpo)
+                  ? normalizarHex(hexEscuroLimpo)
+                  : COR_NEUTRA_DO_SELETOR,
+              }}
+            >
+              <span className="sr-only">{t("Escolher a cor visualmente")}</span>
+              <input
+                type="color"
+                value={
+                  ehHexValido(hexEscuroLimpo)
+                    ? normalizarHex(hexEscuroLimpo)
+                    : COR_NEUTRA_DO_SELETOR
+                }
+                onChange={(e) => setHexEscuro(e.target.value)}
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              />
+            </label>
+            <Input
+              id="accent_dark_hex"
+              value={hexEscuro}
+              onChange={(e) => setHexEscuro(e.target.value)}
+              placeholder="#7a5cd6"
+              spellCheck={false}
+              autoComplete="off"
+              aria-invalid={!hexEscuroValido}
+              aria-describedby="ajuda-da-cor-escura"
+              className="w-36 font-mono"
+            />
+            {hexEscuroLimpo.length > 0 && !hexEscuroValido ? (
+              <span className="text-sm text-error-fg">
+                {t("Use um código de cor como #7a5cd6.")}
+              </span>
+            ) : null}
+          </div>
+          <p id="ajuda-da-cor-escura" className="text-xs text-text-muted">
+            {t("Deixe em branco para os dois modos usarem a cor acima.")}
+          </p>
+        </div>
+
         {derivada ? (
           <div className="space-y-2">
             <p className="text-sm text-text-muted">
@@ -363,6 +444,7 @@ export function FormularioDaMarca({
         fallbackEm={fallbackEm}
         fallbackMotivo={fallbackMotivo}
         derivada={derivada}
+        derivadaEscura={derivadaEscura}
         avisos={avisos}
         seriaAplicada={serializacao.css !== null}
       />
@@ -371,7 +453,7 @@ export function FormularioDaMarca({
         {erroTecnico ? (
           <span className="font-mono text-xs text-text-muted">{erroTecnico}</span>
         ) : null}
-        <Button type="submit" disabled={isPending || !hexValido}>
+        <Button type="submit" disabled={isPending || !hexValido || !hexEscuroValido}>
           {isPending ? t("Salvando…") : t("Salvar")}
         </Button>
       </div>

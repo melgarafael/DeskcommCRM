@@ -565,6 +565,17 @@ beforeAll(() => {
         insert into public.import_rows (organization_id, batch_id, row_number, raw_data)
           values (v_org, v_lote, 2, '{"nome": "RLS invariant"}'::jsonb)
           on conflict (batch_id, row_number) do nothing;
+
+        -- migration 0626 (#2388): a janela de manutencao de conexoes. Vazar a
+        -- linha entrega ao vizinho os horarios em que o outro vai mexer nas
+        -- conexoes dele e o canal alvo da janela — e a retomada programada
+        -- passaria a ser do vizinho. Select-then-insert, como as irmas acima.
+        if not exists (select 1 from public.channel_schedules where organization_id = v_org) then
+          insert into public.channel_schedules
+            (organization_id, channel_session_id, starts_at, ends_at)
+          values
+            (v_org, v_sess, timestamptz '2030-01-01 03:00:00+00', timestamptz '2030-01-01 05:00:00+00');
+        end if;
       end loop;
     end
     $seed$;
@@ -730,6 +741,12 @@ export const TABLES = [
   "company_people",
   "import_batches",
   "import_rows",
+  // migration 0626 (#2388) — a janela de manutenção de conexões: horários e
+  // canal alvo. Leitura org-flat (o dono enxerga as próprias janelas na tela
+  // de Conexões); a escrita é do admin e do servidor, e o cron aplica pela
+  // RPC. Vazar a linha entrega ao vizinho quando o outro vai mexer nas
+  // conexões dele — e a retomada programada passaria a ser do vizinho.
+  "channel_schedules",
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A

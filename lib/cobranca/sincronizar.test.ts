@@ -28,7 +28,7 @@ const LINHA = {
   provedor: "stripe", provedor_cliente_id: "cus_1", provedor_assinatura_id: "sub_1", vencida_desde: null,
   proximo_vencimento: "2026-11-01T00:00:00.000Z", cancela_no_fim: false, prazo_extra_ate: null,
   ultimo_aviso: null, ultimo_aviso_em: null, relida_em: ha(1), link_de_pagamento: null, assinaturas_vivas: 1,
-  updated_at: ha(1),
+  checkout_url: null, checkout_expira_em: null, updated_at: ha(1),
 };
 
 function situacao(p: Partial<Situacao> = {}): Situacao {
@@ -236,6 +236,22 @@ describe("sincronizar", () => {
     expect(await rodar()).toMatchObject({ acao: "nada" });
     expect(enviarAviso).not.toHaveBeenCalled();
   });
+  it("⭐ checkout em andamento (reserva sem link, prazo vivo): a leitura NÃO a limpa — a fase 3 do checkout a fecha", async () => {
+    m.linha = { ...LINHA, checkout_url: null, checkout_expira_em: new Date(AGORA.getTime() + 2 * 60_000).toISOString() };
+    ler.mockResolvedValue(situacao({ assinaturasVivas: 1 }));
+    await rodar();
+    const campos = argumentos(escritas()[0]!, "update")?.[0] as Record<string, unknown>;
+    expect(Object.keys(campos)).not.toContain("checkout_expira_em");
+    expect(Object.keys(campos)).not.toContain("checkout_url");
+  });
+
+  it("link de checkout já gravado e assinatura viva: a leitura limpa o checkout (ele já foi usado)", async () => {
+    m.linha = { ...LINHA, checkout_url: "https://checkout.example.com/x", checkout_expira_em: new Date(AGORA.getTime() + 60 * 60_000).toISOString() };
+    ler.mockResolvedValue(situacao({ assinaturasVivas: 1 }));
+    await rodar();
+    expect(argumentos(escritas()[0]!, "update")?.[0]).toMatchObject({ checkout_url: null, checkout_expira_em: null });
+  });
+
   it("⭐ assinatura que morreu com plano agendado: o agendado é apagado da linha, e o plano atual fica", async () => {
     m.linha = { ...LINHA, plano_agendado_id: "plano-b" };
     ler.mockResolvedValue(situacao({ cancelada: true, existe: false, assinaturasVivas: 0, statusBruto: "canceled" }));

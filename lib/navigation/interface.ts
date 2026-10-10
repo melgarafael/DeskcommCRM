@@ -115,8 +115,38 @@ export function destinosDaInterface(
   const allowed = permitidos(platform, role, modulos, capacidades);
   const chosen =
     settings.destinos ?? (settings.preset === "simplificada" ? SIMPLIFICADA : undefined);
+  /**
+   * As DUAS origens de `chosen` não têm a mesma autoridade, e tratá-las igual
+   * escondia a porta de todo módulo que a instalação ligasse depois.
+   *
+   * `destinos` é escolha de uma PESSOA, item por item, numa tela que listava
+   * aquela porta — ela manda, inclusive sobre módulo ligado. Já `SIMPLIFICADA`
+   * é lista do PRODUTO, escrita antes de existir módulo opcional: ela diz
+   * "menu enxuto", nunca "esta empresa decidiu esconder Empresas". Quem
+   * escolheu o preset num dia em que a porta não existia não decidiu nada
+   * sobre ela, e ligar o módulo em Recursos opcionais não acendia nada —
+   * módulo ligado no banco, invisível na tela, sem aviso em lugar nenhum.
+   *
+   * O CUSTO, declarado: o enxuto ganha UMA porta por módulo ligado — três no caso
+   * do B2B, que tem três telas, e nenhuma nos dois módulos que não criam porta.
+   * Módulo nasce desligado, então quem não liga nada não vê diferença. O número
+   * exato não fica escrito aqui porque envelheceria a cada tela nova; para medir:
+   * `destinosDaInterface({ preset: "simplificada" }, false, "admin", MODULOS_OPCIONAIS).length`
+   * contra o mesmo com `[]`.
+   *
+   * `modulos` entra na condição de propósito: sem a lista (quem só pergunta
+   * "sobra alguma porta?"), `permitidos` já deixou passar porta de módulo
+   * DESLIGADO, e a exceção vazaria exatamente o que o gate existe para barrar.
+   * O papel segue decidindo antes — isto é apresentação, nunca autorização.
+   */
+  const deModuloLigado = (d: NavMetadata): boolean =>
+    settings.destinos === undefined && !!d.modulo && !!modulos && modulos.includes(d.modulo);
   return allowed.filter(
-    (d) => essencial(d, role, platform) || !chosen || chosen.includes(d.href as NavDestinationId),
+    (d) =>
+      essencial(d, role, platform) ||
+      deModuloLigado(d) ||
+      !chosen ||
+      chosen.includes(d.href as NavDestinationId),
   );
 }
 export function interfaceTemDestino(
@@ -174,9 +204,31 @@ const SO_O_ESSENCIAL: readonly NavDestinationId[] = ids.filter((id) =>
  * falha ABERTA, exatamente o oposto do pretendido aqui.
  */
 export function combinarInterfaces(daEmpresa: unknown, doVinculo: unknown): InterfaceSettings {
-  const empresa = conjuntoEscolhido(lerInterface(daEmpresa).settings);
-  const vinculo = conjuntoEscolhido(lerInterface(doVinculo).settings);
+  const sEmpresa = lerInterface(daEmpresa).settings;
+  const sVinculo = lerInterface(doVinculo).settings;
+  const empresa = conjuntoEscolhido(sEmpresa);
+  const vinculo = conjuntoEscolhido(sVinculo);
   if (!empresa && !vinculo) return INTERFACE_COMPLETA;
+
+  /**
+   * ⚠️ PRESET SOBREVIVE À COMBINAÇÃO, e sem isto a exceção da porta de módulo é CÓDIGO MORTO.
+   *
+   * `destinosDaInterface` distingue as duas origens de escolha: `destinos` é lista escrita por uma
+   * PESSOA, item a item, e manda sobre tudo; `simplificada` é lista do PRODUTO, e não pode ser
+   * lida como "esta empresa decidiu esconder Empresas". Mas esta função expandia o preset em
+   * `destinos` antes de entregar — e aí as duas origens chegavam lá idênticas.
+   *
+   * Resultado medido: a exceção para porta de módulo LIGADO nunca disparava em produção
+   * (`lib/auth/server.ts` chama esta função), e os casos que eu havia escrito passavam só porque
+   * usavam a forma crua `{ preset: "simplificada" }`, que o produto nunca entrega. Um cético
+   * achou, medindo as quatro combinações.
+   *
+   * Então: quando NENHUM dos lados escreveu lista à mão, o preset atravessa inteiro. Basta um lado
+   * ter lista explícita para o resultado voltar a ser lista — aí existe decisão humana a respeitar.
+   */
+  const soPreset = sEmpresa.destinos === undefined && sVinculo.destinos === undefined;
+  if (soPreset) return { preset: "simplificada" };
+
   const soUm = empresa ?? vinculo;
   if (!empresa || !vinculo) return { preset: "completa", destinos: [...(soUm as readonly NavDestinationId[])] };
   const comuns = empresa.filter((id) => vinculo.includes(id));

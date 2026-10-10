@@ -1,0 +1,4 @@
+2026-10-07T16:52:55Z
+aaa-simulado coolify 
+rede=aaa-simulado
+raiz 307

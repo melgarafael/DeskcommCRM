@@ -1,0 +1,7 @@
+== diff -u do arquivo inteiro: versoes-antes (18:36:20Z) x versoes-depois (18:50:03Z), sem filtro
+76b5076d5249aaa4c09ca58639523561fa5b8ceb007da6a2f7906c2456b81aec  versoes-antes.txt
+76b5076d5249aaa4c09ca58639523561fa5b8ceb007da6a2f7906c2456b81aec  versoes-depois.txt
+      45 versoes-antes.txt
+      45 versoes-depois.txt
+      90 total
+diff_exit=0

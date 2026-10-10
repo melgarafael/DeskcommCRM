@@ -1,0 +1,57 @@
+H1 2026-10-07T18:00:37Z: HEAD=2c7fc24264c69d431a436ff367dcf918d9b51bb2 (merge de origin/main ce5b87a3c sobre 44c5df541); arvore /root/pr4-testes = git archive HEAD
+lista = scripts.test:shell do package.json (38), um por vez, timeout 900
+update-guard.test exit=0
+test-validators exit=0
+baseline-reaplica-apos-disputa.test exit=0
+dono-do-projeto.test exit=0
+scheduler-entrypoint.test exit=0
+cron-sem-crontab-previo.test exit=0
+senha-do-cron-vazada.test exit=0
+owner-id-por-email.test exit=0
+deskcomm-contribuir.test exit=0
+colisao-de-migration.test exit=0
+test-db-recusa-sem-vitest.test exit=0
+guard-hooks-atualizados.test exit=0
+hooks-nao-acusam-a-main.test exit=0
+merge-auto-commit-passa-pelos-guards.test exit=0
+env-e2e-porta-do-stack.test exit=0
+instalar-guias.test exit=0
+arquitetura-kit.test exit=0
+guarda-arm-nao-mata-a-recuperacao.test exit=0
+guarda-arm-so-considera-instalacao-real.test exit=1
+extensao-nao-instala.test exit=1
+atualizacao-para-quem-fala-com-o-banco.test exit=0
+desinstalar-docker.test exit=0
+stack-local.test exit=0
+e2e-build-recusa-sem-next.test exit=0
+smoke-llm-recusa-sem-tsx.test exit=0
+waha-backup-volume.test exit=0
+single-server-installer.test exit=0
+gotrue-modelos-recuperacao.test exit=0
+single-server-operacao.test exit=0
+ubuntu-production-installer.test exit=0
+atualizacao-de-fora-nao-pula-o-backup.test exit=0
+release-publicada-nao-maior-tag.test exit=0
+regras-isolamento-sem-modulo.test exit=0
+single-server-traefik.test exit=0
+single-server-traefik-supabase.test exit=0
+atualizacao-preflight-e-rollback.test exit=0
+ca-supabase-tls.test exit=0
+restore-falha-alto.test exit=0
+FIM
+guarda-arm-so-considera-instalacao-real.test: provas: 1 vermelho(s) de 47 FALHOU — 1 prova(s). 
+extensao-nao-instala.test: FALHOU: 1 
+diferencial (mesmos dois testes na arvore de origin/main ce5b87a3c, /root/pr4/h1-main):
+main guarda-arm-so-considera-instalacao-real:   ✗ sem docker no PATH, a instalação NÃO é inventada
+branch guarda-arm-so-considera-instalacao-real:   ✗ sem docker no PATH, a instalação NÃO é inventada
+main extensao-nao-instala:   FALHA — arquivo vazio foi aceito
+branch extensao-nao-instala:   FALHA — arquivo vazio foi aceito
+release:conferir (local) exit=0: 1.76.0 + minor = 1.77.0 (27 fragmentos); single-server-atras-do-coolify = capacidade_nova adicionado; single-server-chaves-fora-da-tela = nada_mudou corrigido
+single-server-traefik-supabase.test: Todos os testes da rota do Supabase no Traefik passaram.
+single-server-installer.test: Todos os testes do modo single-server passaram.
+single-server-operacao.test: 
+single-server-traefik.test: todos os casos passaram
+gotrue-modelos-recuperacao.test: Todos os testes dos modelos de recuperação passaram.
+scheduler-entrypoint.test: OK — todas as provas passaram.
+single-server-operacao.test: ok: single-server não colide, faz backup dos anexos, manda e-mail e atualiza o Supabase (exit=0)
+single-server-traefik-supabase.test: ✓=82 ✗=0 (exit=0)

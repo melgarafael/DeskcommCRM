@@ -111,6 +111,26 @@ export const NAV_GROUPS: NavGroup[] = [
 export const GRUPO_NO_RODAPE: NavGroupId = "organizacao";
 
 /**
+ * A PORTA SOBE AO MENU LATERAL? — a regra, num lugar só.
+ *
+ * `sidebarGroups` (`lib/navigation/registry.ts`) e o texto de "onde o módulo aparece"
+ * (`lib/navigation/onde-o-modulo-aparece.ts`) precisam concordar: se o primeiro desenha a porta no
+ * menu e o segundo anuncia o passo do hub, o produto mente para quem liga o módulo. A condição
+ * estava ESCRITA NOS DOIS — copiada —, e cópia de regra diverge sem avisar.
+ *
+ * `temEscolhaExplicita` é "a empresa escreveu lista de áreas à mão". Ele só importa para grupo SEM
+ * hub: ali não há "Ver tudo" para hospedar a porta, então ela sobe ao menu quando a empresa
+ * personalizou. Com hub, quem decide é só o `sidebar` do destino.
+ */
+export function sobeAoMenuLateral(
+  d: Pick<NavMetadata, "sidebar" | "group">,
+  temEscolhaExplicita: boolean,
+): boolean {
+  const grupo = NAV_GROUPS.find((g) => g.id === d.group);
+  return !!d.sidebar || (!grupo?.hub && temEscolhaExplicita);
+}
+
+/**
  * Como `minRole` foi escolhido — medido tela a tela, não estimado:
  *
  *   1. A página redireciona por papel?  → usa esse papel. Assim a navegação

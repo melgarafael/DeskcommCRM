@@ -1,0 +1,26 @@
+coolify	631 MiB
+coolify-db	112 MiB
+coolify-proxy	123 MiB
+coolify-realtime	91 MiB
+coolify-redis	20 MiB
+coolify-sentinel	20 MiB
+deskcommcrm-app-1	285 MiB
+deskcommcrm-redis-1	12 MiB
+deskcommcrm-scheduler-1	30 MiB
+deskcommcrm-srh-1	104 MiB
+deskcommcrm-supabase-api-gw-1	94 MiB
+deskcommcrm-supabase-auth-1	38 MiB
+deskcommcrm-supabase-db-1	349 MiB
+deskcommcrm-supabase-functions-1	109 MiB
+deskcommcrm-supabase-imgproxy-1	104 MiB
+deskcommcrm-supabase-meta-1	183 MiB
+deskcommcrm-supabase-realtime-1	252 MiB
+deskcommcrm-supabase-rest-1	57 MiB
+deskcommcrm-supabase-storage-1	284 MiB
+deskcommcrm-supabase-studio-1	294 MiB
+deskcommcrm-supabase-supavisor-1	342 MiB
+deskcommcrm-waha-1	570 MiB
+deskcommcrm-worker-1	398 MiB
+               total        used        free      shared  buff/cache   available
+Mem:            7940        2752        3035         374        2152        4510
+Swap:              0           0           0

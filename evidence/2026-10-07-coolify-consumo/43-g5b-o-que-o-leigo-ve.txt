@@ -1,0 +1,15 @@
+inicio=2026-10-07T17:47:07Z
+▶ Subindo o Supabase local
+▶ Configurando o CRM sem perguntas adicionais
+⚠ sem SUPABASE_ACCESS_TOKEN — não dá para configurar os e-mails de acesso sozinho.
+         ⚠ o separador é & — um ? aqui quebra o link (vira ?type=x?token_hash=y)
+✓ dono criado e promovido a super-admin
+✓ containers no ar
+✓ app no ar e saudável
+Credenciais iniciais (arquivo protegido com permissao 600):
+  usuario: dono-teste@exemplo.com.br
+exit=0
+fim=2026-10-07T17:48:19Z
+generating_secrets=0
+setup_log_mtime=2026-10-07 14:45:05.876235153 -0300
+sb_env_mtime=2026-10-07 14:47:07.603113088 -0300

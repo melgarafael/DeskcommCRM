@@ -140,6 +140,8 @@ proxy errado deixa o site no ar sem responder, o instalador mostra o que encontr
 confirmação. Em `bash install.sh --yes` não há a quem perguntar: ele para e pede que você
 declare `REVERSE_PROXY=traefik` no `.env` — aí a escolha é sua e ele segue sem perguntar.
 
+Atrás do proxy do Coolify (ou outro Traefik em rede Docker própria): veja [docs/saas/coolify.md](../docs/saas/coolify.md) — a porta do banco (API_GW_HTTP_PORT) e a rede do proxy (TRAEFIK_NETWORK) vão no comando.
+
 ## Scripts do kit
 
 | Script | Função |
