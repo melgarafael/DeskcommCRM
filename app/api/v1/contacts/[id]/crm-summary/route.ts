@@ -101,26 +101,33 @@ export async function GET(
     if (contactScope.is_anonymized) return { enrichment: null, enrichment_error: false };
     try {
       const admin = createAdminClient();
-      const [candidato, organizacao] = await Promise.all([
-        admin.from("prospecting_candidates")
-          .select("data, created_at")
-          .eq("organization_id", contactScope.organization_id).eq("contact_id", contactId)
-          .order("created_at", { ascending: false }).limit(1).maybeSingle(),
-        admin.from("organizations")
-          .select("settings")
-          .eq("id", contactScope.organization_id)
-          .maybeSingle(),
-      ]);
+      const candidato = await admin.from("prospecting_candidates")
+        .select("data, created_at")
+        .eq("organization_id", contactScope.organization_id).eq("contact_id", contactId)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (candidato.error) return { enrichment: null, enrichment_error: true };
       if (!candidato.data) return { enrichment: null, enrichment_error: false };
       const parsed = prospectEnrichmentSchema.safeParse(candidato.data.data);
       if (!parsed.success) return { enrichment: null, enrichment_error: true };
+      // Personalização só quando há auditoria para personalizar: sem `site`
+      // não há vocabulário a sobrescrever, e a query a mais sairia de graça
+      // em todo painel aberto (é o caminho quente do inbox).
+      let personalizacao = null;
+      if (parsed.data.site) {
+        const organizacao = await admin.from("organizations")
+          .select("settings")
+          .eq("id", contactScope.organization_id)
+          .maybeSingle();
+        if (!organizacao.error) {
+          personalizacao = lerPersonalizacao(
+            (organizacao.data as { settings?: unknown } | null)?.settings,
+          );
+        }
+      }
       return {
         enrichment: { ...parsed.data, collected_at: candidato.data.created_at },
         enrichment_error: false,
-        personalizacao: lerPersonalizacao(
-          (organizacao.data as { settings?: unknown } | null)?.settings,
-        ),
+        personalizacao,
       };
     } catch {
       return { enrichment: null, enrichment_error: true };
