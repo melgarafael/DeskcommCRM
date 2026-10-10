@@ -520,6 +520,18 @@ create index idx_crm_lead_links_lead
   on public.crm_lead_links (lead_id);
 ```
 
+Para `target_kind='contact'` e `link_kind='related'`, o vínculo representa uma
+pessoa adicional do mesmo negócio. `crm_leads.contact_id` continua sendo o contato
+principal; `metadata.papel` é a função opcional da pessoa relacionada (até 40
+caracteres). O dossiê lê esses vínculos por `GET
+/api/v1/leads/{id}/contatos-relacionados` e permite `POST`, `PATCH` e `DELETE`
+na mesma rota, com `contact_id` no corpo. `POST` e `PATCH` aceitam `papel`; somente
+`PATCH` o exige (vazio remove a função). Escrita exige papel `agent` ou superior,
+contato ativo da mesma organização e rejeita o contato principal ou duplicado.
+Cada mudança aparece na timeline do negócio e no audit log, sem copiar nome,
+telefone ou função para esses logs. Remover o vínculo não apaga o cadastro da pessoa.
+As conversas e automações do lead continuam ancoradas em `crm_leads.contact_id`.
+
 ### 2.7 Tabela `merge_queue`
 
 Fila de candidatos ambíguos quando identity resolution encontra >1 contact.

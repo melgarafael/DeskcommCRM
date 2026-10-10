@@ -16,6 +16,7 @@ ser fonte sem ninguém decidir isso.
 
 | arquivo | escopo |
 |---|---|
+| `pessoas-relacionadas.architecture.json` | dossiê do negócio: busca e cadastro da segunda pessoa, função opcional, vínculo tenant-aware em `crm_lead_links`, retorno para a lista e timeline; o contato principal segue ancorando a conversa |
 | `conversoes-de-anuncios.architecture.json` | venda, entrega, protocolo assíncrono, pendências e reprocessamento |
 | `prospeccao-nativa.architecture.json` | busca comercial, fila gradual, configuração conversacional persistente, sandbox e assistente de voz opcional |
 | `pre-go-live-whatsapp.architecture.json` | modo de teste por canal (issue #573): configuração administrativa, gate compartilhado, releitura no envio e validação pelo Inbox |

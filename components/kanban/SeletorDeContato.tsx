@@ -28,9 +28,11 @@ const RESULTADOS_NA_TELA = 8;
 interface Props {
   escolhido: Contact | null;
   onEscolher: (contato: Contact | null) => void;
+  /** Contato principal e pessoas já vinculadas não devem reaparecer na busca. */
+  excluirIds?: readonly string[];
 }
 
-export function SeletorDeContato({ escolhido, onEscolher }: Props) {
+export function SeletorDeContato({ escolhido, onEscolher, excluirIds = [] }: Props) {
   const t = useT();
   const [termo, setTermo] = useState("");
   const [busca, setBusca] = useState("");
@@ -44,7 +46,7 @@ export function SeletorDeContato({ escolhido, onEscolher }: Props) {
 
   const lista = useContactList(busca ? { search: busca } : { limit: RESULTADOS_NA_TELA });
   const achados = (lista.data?.pages.flatMap((p) => p.data) ?? [])
-    .filter((c) => !c.is_anonymized)
+    .filter((c) => !c.is_anonymized && !c.is_personal && !excluirIds.includes(c.id))
     .slice(0, RESULTADOS_NA_TELA);
 
   function escolher(contato: Contact) {
@@ -110,7 +112,9 @@ export function SeletorDeContato({ escolhido, onEscolher }: Props) {
         </ul>
       )}
       {busca !== "" && achados.length === 0 && !lista.isLoading && (
-        <p className="text-xs text-muted-foreground">{t("Nenhum contato com esse nome ou telefone.")}</p>
+        <p className="text-xs text-muted-foreground">
+          {t("Nenhum contato com esse nome ou telefone.")}
+        </p>
       )}
       <Button type="button" variant="outline" size="sm" onClick={() => setCriando(true)}>
         {t("Criar contato")}
