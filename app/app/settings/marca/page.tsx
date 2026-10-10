@@ -84,6 +84,7 @@ export default async function MarcaDaOrganizacaoPage() {
         gravada={{
           app_name: gravada?.app_name ?? null,
           accent_hex: gravada?.accent_hex ?? null,
+          accent_dark_hex: gravada?.accent_dark_hex ?? null,
           // O CAMINHO no bucket, não a URL: quem converte é `logoDaCamada`, do
           // lado do navegador, com a base do Storage injetada em runtime. Mandar
           // a URL pronta do servidor faria a tela ter uma segunda regra de
@@ -100,6 +101,7 @@ export default async function MarcaDaOrganizacaoPage() {
           logo_url: linha?.logo_url ?? null,
           logo_path: linha?.logo_path ?? null,
           accent_hex: linha?.accent_hex ?? null,
+          accent_dark_hex: linha?.accent_dark_hex ?? null,
         }}
         // Só os três campos de marca do ambiente, nunca o objeto `env` inteiro:
         // isto atravessa a fronteira para o navegador, e o que atravessa é o que

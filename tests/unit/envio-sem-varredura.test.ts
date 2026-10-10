@@ -185,7 +185,8 @@ describe("/healthz: só a fila viva, pelos índices parciais", () => {
   });
 
   it("o handler do worker usa a função, não o group by antigo", () => {
-    const main = readFileSync(join(process.cwd(), "workers", "agent-worker", "main.ts"), "utf8");
+    // O handler do `/healthz` mora em `healthz.ts` desde a #2505.
+    const main = readFileSync(join(process.cwd(), "workers", "agent-worker", "healthz.ts"), "utf8");
     expect(main).toContain("await profundidadeDaFilaViva(pool)");
     const inicio = main.indexOf("const uptime_s");
     // O fim procurado DEPOIS do início: há um `respond(res, 503` antes dele (a

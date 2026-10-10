@@ -62,6 +62,8 @@ interface Props {
   readonly gravada: {
     readonly app_name: string | null;
     readonly accent_hex: string | null;
+    /** A cor do TEMA ESCURO (#2482) — o par; `null` = só a cor acima pinta. */
+    readonly accent_dark_hex: string | null;
     readonly logo_path: string | null;
   };
   /** A linha da marca da INSTALAÇÃO — a camada logo abaixo desta. */
@@ -140,12 +142,15 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, 
   const router = useRouter();
   const [nome, setNome] = useState(gravada.app_name ?? "");
   const [hex, setHex] = useState(gravada.accent_hex ?? "");
+  const [hexEscuro, setHexEscuro] = useState(gravada.accent_dark_hex ?? "");
   const [erroTecnico, setErroTecnico] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const nomeLimpo = nome.trim();
   const hexLimpo = hex.trim();
   const hexValido = hexLimpo.length === 0 || ehHexValido(hexLimpo);
+  const hexEscuroLimpo = hexEscuro.trim();
+  const hexEscuroValido = hexEscuroLimpo.length === 0 || ehHexValido(hexEscuroLimpo);
 
   // As duas camadas de baixo, montadas uma vez. `abaixo` sozinho responde "o que
   // aparece se eu não definir nada"; com a camada da organização na frente,
@@ -165,6 +170,10 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, 
           camadaDaOrganizacao({
             app_name: nomeLimpo.length > 0 ? nomeLimpo : null,
             accent_hex: hexLimpo.length > 0 ? hexLimpo : null,
+            // O par (#2482): mesma camada, mesma precedência por campo —
+            // organização sem cor do escuro não herda a do revendedor, assim
+            // como não herda o logo dele quando define o próprio.
+            accent_dark_hex: hexEscuroLimpo.length > 0 ? hexEscuroLimpo : null,
             // GRAVADO, não digitado: o logo não é campo deste formulário — ele
             // já está no banco quando esta tela renderiza. Entra na prévia para
             // que o bloco "de onde vem cada coisa" possa responder sobre ele.
@@ -174,7 +183,7 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, 
         ],
         REGUA_DO_PRODUTO,
       ),
-    [nomeLimpo, hexLimpo, gravada.logo_path, abaixo],
+    [nomeLimpo, hexLimpo, hexEscuroLimpo, gravada.logo_path, abaixo],
   );
 
   // A MESMA serialização, com o MESMO escopo, que o layout de `/app` roda no
@@ -187,6 +196,11 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, 
   );
 
   const derivada = resolvida.cor?.derivada ?? null;
+  /**
+   * A derivação do TEMA ESCURO (#2482): com a segunda cor, é OUTRA — e a
+   * prévia tem de marcar o tom que o escuro vai usar, não o da primeira.
+   */
+  const derivadaEscura = resolvida.cor?.corEscura?.derivada ?? derivada;
 
   /**
    * Em que degrau da escada cada papel pousou. O clamp não é zelo: com
@@ -194,14 +208,16 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, 
    * pontas (`stop()`). A tira tem de marcar o degrau que de fato pinta.
    */
   const degraus = useMemo(() => {
-    if (!derivada) return null;
+    // Os DOIS têm de ser não-nulos: `derivadaEscura` é `?? derivada`, então a
+    // guarda de cima estreita a variável errada e o TS não infere o par.
+    if (!derivada || !derivadaEscura) return null;
     const preso = (indice: number) => Math.max(0, Math.min(10, indice));
     return {
       suaCor: derivada.origemDaRampa === "semente" ? K : null,
       claro: preso(REGUA_DO_PRODUTO.claro.indices.accent + derivada.claro.deslocamento),
-      escuro: preso(REGUA_DO_PRODUTO.escuro.indices.accent + derivada.escuro.deslocamento),
+      escuro: preso(REGUA_DO_PRODUTO.escuro.indices.accent + derivadaEscura.escuro.deslocamento),
     };
-  }, [derivada]);
+  }, [derivada, derivadaEscura]);
 
   // A distância é medida a partir da COR DA PESSOA, que é a referência de quem
   // lê. Ver `DistanciaAteSuaCor` em `lib/branding/linguagem.ts`.
@@ -217,7 +233,7 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, 
   );
 
   const legenda = useMemo<ItemDaLegenda[]>(() => {
-    if (!derivada || !degraus) return [];
+    if (!derivada || !derivadaEscura || !degraus) return [];
     return [
       {
         rotulo: t("Sua cor"),
@@ -226,9 +242,14 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, 
         nota: degraus.suaCor === null ? t("fora da escala — fica só no logo") : undefined,
       },
       { rotulo: t("Botões no modo claro"), hex: derivada.claro.accent, indice: degraus.claro },
-      { rotulo: t("Botões no modo escuro"), hex: derivada.escuro.accent, indice: degraus.escuro },
+      {
+        rotulo: t("Botões no modo escuro"),
+        // #2482: o escuro deriva da SEGUNDA semente quando ela existe.
+        hex: derivadaEscura.escuro.accent,
+        indice: degraus.escuro,
+      },
     ];
-  }, [derivada, degraus, t]);
+  }, [derivada, derivadaEscura, degraus, t]);
 
   function handleSubmit(evento: React.FormEvent) {
     evento.preventDefault();
@@ -239,6 +260,7 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, 
     const lido = marcaDaOrganizacaoSchema.safeParse({
       app_name: nomeLimpo.length > 0 ? nomeLimpo : null,
       accent_hex: hexLimpo.length > 0 ? hexLimpo : null,
+      accent_dark_hex: hexEscuroLimpo.length > 0 ? hexEscuroLimpo : null,
     });
     if (!lido.success) {
       toast.error(t("Confira os campos: algum valor não está no formato esperado."));
@@ -330,6 +352,57 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, 
           </div>
           <p id="ajuda-da-cor-da-organizacao" className="text-xs text-text-muted">
             {t("Deixe em branco para voltar à cor que o sistema já usa.")}
+          </p>
+        </div>
+
+        {/*
+          O PAR da cor (#2482), mesmo desenho do campo de cima e do par de
+          logo: só muda para qual tema a semente vale.
+        */}
+        <div className="space-y-2">
+          <Label htmlFor="org_accent_dark_hex">
+            {t("Cor da sua marca no tema escuro (opcional)")}
+          </Label>
+          <div className="flex items-center gap-3">
+            <label
+              className="relative h-10 w-10 shrink-0 cursor-pointer overflow-hidden rounded-sm border border-border"
+              style={{
+                backgroundColor: ehHexValido(hexEscuroLimpo)
+                  ? normalizarHex(hexEscuroLimpo)
+                  : COR_NEUTRA_DO_SELETOR,
+              }}
+            >
+              <span className="sr-only">{t("Escolher a cor visualmente")}</span>
+              <input
+                type="color"
+                value={
+                  ehHexValido(hexEscuroLimpo)
+                    ? normalizarHex(hexEscuroLimpo)
+                    : COR_NEUTRA_DO_SELETOR
+                }
+                onChange={(e) => setHexEscuro(e.target.value)}
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              />
+            </label>
+            <Input
+              id="org_accent_dark_hex"
+              value={hexEscuro}
+              onChange={(e) => setHexEscuro(e.target.value)}
+              placeholder="#7a5cd6"
+              spellCheck={false}
+              autoComplete="off"
+              aria-invalid={!hexEscuroValido}
+              aria-describedby="ajuda-da-cor-escura-da-organizacao"
+              className="w-36 font-mono"
+            />
+            {hexEscuroLimpo.length > 0 && !hexEscuroValido ? (
+              <span className="text-sm text-error-fg">
+                {t("Use um código de cor como #7a5cd6.")}
+              </span>
+            ) : null}
+          </div>
+          <p id="ajuda-da-cor-escura-da-organizacao" className="text-xs text-text-muted">
+            {t("Deixe em branco para os dois modos usarem a cor acima.")}
           </p>
         </div>
 
@@ -488,7 +561,7 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, 
         {erroTecnico ? (
           <span className="font-mono text-xs text-text-muted">{erroTecnico}</span>
         ) : null}
-        <Button type="submit" disabled={isPending || !hexValido}>
+        <Button type="submit" disabled={isPending || !hexValido || !hexEscuroValido}>
           {isPending ? t("Salvando…") : t("Salvar")}
         </Button>
       </div>
