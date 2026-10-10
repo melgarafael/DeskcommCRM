@@ -7658,6 +7658,76 @@ export type Database = {
           },
         ]
       }
+      scheduled_messages: {
+        Row: {
+          id: string
+          organization_id: string
+          conversation_id: string
+          created_by_user_id: string | null
+          body: string
+          scheduled_at: string
+          status: string
+          message_id: string | null
+          error_code: string | null
+          claimed_at: string | null
+          finished_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          conversation_id: string
+          created_by_user_id?: string | null
+          body: string
+          scheduled_at: string
+          status?: string
+          message_id?: string | null
+          error_code?: string | null
+          claimed_at?: string | null
+          finished_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          conversation_id?: string
+          created_by_user_id?: string | null
+          body?: string
+          scheduled_at?: string
+          status?: string
+          message_id?: string | null
+          error_code?: string | null
+          claimed_at?: string | null
+          finished_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_messages_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_messages_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           ack: number | null

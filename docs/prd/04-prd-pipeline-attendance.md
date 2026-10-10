@@ -379,7 +379,7 @@ Pipeline + Atendimento é considerado **MVP-completo** quando:
 - Permissão por pipeline (`user_pipeline_access`) — herdado do Sub-PRD 01
 - Mover lead entre pipelines — não suportado no MVP
 - Templates com categorias, analytics de uso, A/B — pós-MVP
-- Mensagem agendada / send later — pós-MVP
+- Mensagem agendada / send later — disponível no compositor do Inbox para texto livre, com cancelamento antes do envio e indicação de falha na conversa. O horário deve estar dentro da janela de 24 horas quando o canal a exige.
 - Drag-drop em mobile — pós-MVP
 - Co-edição em tempo real do mesmo card (estilo Figma) — fora-do-escopo permanente
 - Voice notes nativas no composer — pós-MVP (no MVP só upload)

@@ -16,6 +16,7 @@ import { AttachmentPreviewDialog } from "@/components/inbox/composer/AttachmentP
 import { ContactPickerDialog } from "@/components/inbox/composer/ContactPickerDialog";
 import { AudioRecorder } from "@/components/inbox/composer/AudioRecorder";
 import { ReplyReviewPanel } from "@/components/inbox/composer/ReplyReviewPanel";
+import { ScheduledMessages, ScheduledMessagesPanel } from "@/components/inbox/composer/ScheduledMessages";
 import { EmojiButton } from "@/components/inbox/composer/EmojiButton";
 import {
   MentionMenu,
@@ -519,6 +520,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             </button>
           </div>
         )}
+        {mode === "reply" && <ScheduledMessagesPanel conversationId={conversationId} />}
         <div className="flex items-end gap-2">
           {/* O "+" existe nos DOIS modos desde a F3 da #1863: em "Nota interna"
               ele abre o mesmo menu, com as DUAS primeiras opções — foto/vídeo e
@@ -607,6 +609,17 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             disabled={mode === "note" ? isDisabled : respostaBarrada}
             aria-label={t("Mensagem")}
           />
+          {mode === "reply" && <ScheduledMessages
+            conversationId={conversationId}
+            body={text}
+            disabled={respostaBarrada}
+            quoting={!!respondendo}
+            onScheduled={() => {
+              setText("");
+              consumirRascunhoEnviado();
+              requestAnimationFrame(() => autoresize());
+            }}
+          />}
           {text.trim() || mode === "note" ? (
             <Button
               type="button"

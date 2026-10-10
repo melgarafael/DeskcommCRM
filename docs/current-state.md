@@ -317,6 +317,14 @@ consequência natural de trabalho em branches paralelas, mas ilustra a regra:
    check `Vercel`:
    `gh api repos/melgarafael/DeskcommCRM/commits/main/status --jq '[.statuses[].context]'`.
 
+7. **Mensagem agendada no Inbox** — o compositor grava texto e horário em
+   `scheduled_messages`, mostra pendências e permite cancelar enquanto `pending`. O
+   `scheduler` chama `api/v1/cron/scheduled-messages` a cada minuto; a rota reivindica
+   cada linha de forma condicional e usa o mesmo `sendMessageHandler` do envio humano.
+   Texto livre fora da janela de 24 horas é recusado ao agendar e revalidado no envio.
+   Uma tentativa interrompida não é reenviada automaticamente: após 10 minutos fica
+   como resultado incerto para evitar duplicidade no telefone do cliente.
+
 ---
 
 ## 6. Perguntas para o responsável
