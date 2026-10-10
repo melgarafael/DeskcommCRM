@@ -231,6 +231,30 @@ function ipv6Interno(normalizado: string): boolean {
 }
 
 /**
+ * True para endereço que nunca pode ser alvo de fetch (privado, loopback,
+ * link-local, reservado). Vale para literal do URL e para IP resolvido no DNS
+ * (inclui mapeado IPv4 `::ffff:10.0.0.1`). Nomes passam — a recusa deles é no
+ * DNS da fase de rede, nunca aqui.
+ */
+export function enderecoInterno(ip: string): boolean {
+  const normalizado = ip.toLowerCase().replace(/^\[(.*)\]$/, "$1");
+  const mapeado = normalizado.startsWith("::ffff:") ? normalizado.slice("::ffff:".length) : null;
+  const alvo = mapeado ?? normalizado;
+  const versao = isIP(alvo);
+  if (versao === 4) {
+    const partes = alvo.split(".").map(Number);
+    if (partes.length !== 4 || !partes.every((n) => Number.isInteger(n) && n >= 0 && n <= 255)) return false;
+    if (ipv4Privado(partes)) return true;
+    if (mapeado !== null) return false;
+    return false;
+  }
+  if (versao === 6) {
+    return ipv6Interno(normalizado);
+  }
+  return false;
+}
+
+/**
  * Guarda SSRF — parte pura (sem DNS). O alvo vem do banco (dado de terceiro),
  * então o fetch da fase de rede resolve o host e aplica a MESMA recusa a nomes
  * antes de conectar; aqui caem os literais. Retorna o motivo ou null (liberado
@@ -296,4 +320,48 @@ export function descreverProblema(codigo: string): string {
     return DESCRICOES[item] ?? `sem ${item}`;
   }
   return DESCRICOES[codigo] ?? codigo;
+}
+
+/**
+ * O veredito que viaja em `prospecting_candidates.data.site`.
+ * Escrito pelo worker (fase pura no insert, fase rede no tick) e pela
+ * reanálise manual; lido pela tela e pela abordagem fria. Ausência = pendente.
+ */
+export interface SiteEnrichment {
+  ver: 1;
+  classe: ClasseDeSite;
+  problemas: string[];
+  checklist: RaioXDoSite;
+  final_url: string | null;
+  http_status: number | null;
+  /** Milissegundos do fetch (teto 8000). Fase pura grava 0: nunca houve rede. */
+  tempo_ms: number;
+  conteudo_resumo: string | null;
+  /** Best-effort (§3.5 da spec 24). v1: sempre null; faixa lenta em fase posterior. */
+  pagespeed: { nota: number; lcp: string | null; medida_em: string } | null;
+  verificado_em: string;
+}
+
+/**
+ * Veredito puro (sem rede) para o insert: agregador e sem-site já nascem
+ * resolvidos — ~40% medidos escapam do fetch. Retorna null quando precisa
+ * da fase de rede (o tick preenche depois).
+ */
+export function vereditoPuro(website: string | null | undefined, agoraIso: string): SiteEnrichment | null {
+  const vazio: RaioXDoSite = { tem: [], falta: [] };
+  if (ehSemSite(website)) {
+    return {
+      ver: 1, classe: "sem-site", problemas: [], checklist: vazio,
+      final_url: null, http_status: null, tempo_ms: 0,
+      conteudo_resumo: null, pagespeed: null, verificado_em: agoraIso,
+    };
+  }
+  if (ehAgregador(website)) {
+    return {
+      ver: 1, classe: "agregador", problemas: [], checklist: vazio,
+      final_url: null, http_status: null, tempo_ms: 0,
+      conteudo_resumo: null, pagespeed: null, verificado_em: agoraIso,
+    };
+  }
+  return null;
 }

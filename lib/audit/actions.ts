@@ -241,6 +241,14 @@ export const AUDIT_ACTIONS = [
   // Emitida pelo worker quando houve EFEITO (tentativa de envio), nunca em
   // rodada de cron vazia.
   "prospecting.approach_sent",
+  // A BUSCA que FECHOU (spec 24). Responde "onde foram parar os resultados":
+  // total, inseridos, duplicados (já na base) e inválidos — mais a distribuição
+  // das classes do enriquecimento quando houve. Uma vez por busca, na transição
+  // para `succeeded`.
+  "prospecting.search_completed",
+  // O ENRIQUECIMENTO que RODOU (spec 24). Só quando ≥1 candidato ganhou
+  // `data.site` na rodada; metadata conta por classe, sem PII e sem URL.
+  "prospecting.site_enriched",
   "channel.pairing_code_requested",
   "channel.social_configured",
   "channel.social_disconnected",

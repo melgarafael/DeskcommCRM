@@ -22,6 +22,7 @@ import { decidirPreGoLiveDoCanalViaSupabase } from "@/lib/ai/elegibilidade/consu
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { assertProspectingDelivery } from "./guard";
+import { enriquecerSitesPendentes } from "./site-enrich";
 import { campaignConfigSchema } from "./schema";
 import { ProspectingError } from "./provider";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
@@ -359,7 +360,7 @@ export async function sendNextCandidate(
   }
 }
 
-export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient) {
+export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient, requestId?: string) {
   // Organização parada (suspensa, redigida, arquivada) não prospecta: a busca é
   // paga e a abordagem sai para fora. O corte é no SQL, antes do `limit 20`:
   // a ordem é `min(updated_at)`, e a org pulada nunca toca `updated_at` —
@@ -370,6 +371,7 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient) {
     "select pc.organization_id from prospecting_campaigns pc where (pc.status='running' or pc.search_status in ('starting','running')) and public.fn_org_operante(pc.organization_id) group by pc.organization_id order by min(pc.updated_at) limit 20",
   );
   const deadline = Date.now() + 180000;
+  const tickId = requestId ?? `prospecting:tick:${Date.now()}`;
   let processed = 0;
   for (const { organization_id: org } of organizations) {
     if (Date.now() >= deadline) break;
@@ -405,6 +407,9 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient) {
             );
           }
         }
+        // Enriquecimento de sites (spec 24): depois da busca materializar e
+        // antes do envio consumir quota/LLM. Nunca lança (fail-open).
+        await enriquecerSitesPendentes(db, org, tickId, deadline);
         const c = (
           await db.query<Campaign>(
             "select * from prospecting_campaigns where organization_id=$1 and status='running'",
